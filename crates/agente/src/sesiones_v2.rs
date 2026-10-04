@@ -594,10 +594,19 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
         let destino = objetivo.display().to_string();
         let origen = format!("{version}:{padre}");
         let incluir = format!("/{nombre}");
-        let out = restic::run_raw(
+        // Con `--json`, restic dice cuánto lleva: la ventana del equipo lo enseña (escritura en el disco).
+        let mut al_avanzar = |l: &str| {
+            if let Ok(v) = serde_json::from_str::<Value>(l) {
+                if v["message_type"] == "status" {
+                    guarda.progreso(v["bytes_restored"].as_u64(), v["total_bytes"].as_u64());
+                }
+            }
+        };
+        let out = restic::run_raw_lines(
             acc,
-            &["restore", &origen, "--target", &destino, "--include", &incluir, "--overwrite", if reemplazar { "always" } else { "never" }],
+            &["restore", &origen, "--target", &destino, "--include", &incluir, "--overwrite", if reemplazar { "always" } else { "never" }, "--json"],
             Duration::from_secs(24 * 3600),
+            &mut al_avanzar,
         )?;
         if out.code != Some(0) {
             return Err(restic::exit_error(out.code, &out.stderr));

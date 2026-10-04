@@ -134,9 +134,18 @@ pub struct Actividad {
     pub bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes_total: Option<u64>,
-    /// Bytes por segundo, si la tarea lo sabe.
+    /// Bytes por segundo que procesa restic (lo que lee o salta), si lo sabe.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub velocidad: Option<u64>,
+    /// Lectura real del disco (bytes/s), si el sistema la da.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lectura: Option<u64>,
+    /// Lo que se escribe o sube al destino (bytes/s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subida: Option<u64>,
+    /// Archivos por segundo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archivos_s: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quedan_s: Option<u64>,
     #[serde(default)]
@@ -186,6 +195,9 @@ pub fn actividad_copia(r: &crate::agent::RunningCopy, nombre: &str, ahora: DateT
         bytes: t["bytes"].as_u64(),
         bytes_total: t["bytes_total"].as_u64(),
         velocidad: t["velocidad"].as_u64(),
+        lectura: t["lectura"].as_u64(),
+        subida: t["subida"].as_u64(),
+        archivos_s: t["archivos_s"].as_u64(),
         quedan_s: t["quedan_s"].as_u64(),
         empezo: r.started.clone(),
     })
@@ -302,27 +314,37 @@ pub mod en_marcha {
 
 // ---------- La serie del ritmo ----------
 
-/// El ritmo de los últimos minutos: `(segundo Unix, bytes/s, tipo)`.
+/// Una muestra: `[segundo Unix, lectura B/s, escritura B/s, archivos/s, tipo]`.
+/// «Escritura» es lo que va al destino: la subida (copia, copia externa, espejo,
+/// nube) o lo que se escribe en el disco al restaurar.
+pub type Punto = (i64, u64, u64, u64, String);
+
+/// En una verificación, el ritmo que se deduce de los bytes es lectura; en las
+/// demás tareas sin ritmos propios, escritura (lo que sube o se restaura).
+fn ritmo_es_lectura(tipo: &str) -> bool {
+    tipo == "verificacion"
+}
+
+/// Los ritmos de los últimos minutos.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Serie {
-    pub puntos: VecDeque<(i64, u64, String)>,
+    pub puntos: VecDeque<Punto>,
     /// Bytes de cada tarea en la muestra anterior (para las que no dan ritmo).
     #[serde(skip)]
     previos: HashMap<String, (i64, u64)>,
 }
 
 impl Serie {
-    /// Una muestra en `t` con lo que está en marcha. El ritmo es la suma del
-    /// de cada tarea: el que da (restic) o la diferencia de bytes desde la
-    /// muestra anterior. Sin nada en marcha no se añade nada (la gráfica se
-    /// queda con lo último y lo va soltando).
+    /// Una muestra en `t` con lo que está en marcha: la suma de cada tarea. Si
+    /// una tarea no da sus ritmos (restic los da en las copias), la diferencia
+    /// de bytes desde la muestra anterior. Sin nada en marcha no se añade nada
+    /// (la gráfica se queda con lo último y lo va soltando).
     pub fn muestra(&mut self, t: i64, actividades: &[Actividad]) {
-        let mut total = 0u64;
+        let (mut lectura, mut escritura, mut archivos) = (0u64, 0u64, 0u64);
         let mut principal: Option<(&str, u64)> = None;
         let mut vistos = HashMap::new();
         for a in actividades {
-            let ritmo = a.velocidad.or_else(|| {
-                let b = a.bytes?;
+            let delta = a.bytes.and_then(|b| {
                 let (t0, b0) = *self.previos.get(&a.id)?;
                 let dt = t - t0;
                 (dt > 0 && b >= b0).then(|| (b - b0) / dt as u64)
@@ -330,10 +352,18 @@ impl Serie {
             if let Some(b) = a.bytes {
                 vistos.insert(a.id.clone(), (t, b));
             }
-            let r = ritmo.unwrap_or(0);
-            total = total.saturating_add(r);
-            if principal.is_none_or(|(_, m)| r > m) {
-                principal = Some((&a.tipo, r));
+            let (l, e) = if a.lectura.is_some() || a.subida.is_some() || a.velocidad.is_some() {
+                (a.lectura.or(a.velocidad).unwrap_or(0), a.subida.unwrap_or(0))
+            } else if ritmo_es_lectura(&a.tipo) {
+                (delta.unwrap_or(0), 0)
+            } else {
+                (0, delta.unwrap_or(0))
+            };
+            lectura = lectura.saturating_add(l);
+            escritura = escritura.saturating_add(e);
+            archivos = archivos.saturating_add(a.archivos_s.unwrap_or(0));
+            if principal.is_none_or(|(_, m)| l.max(e) > m) {
+                principal = Some((&a.tipo, l.max(e)));
             }
         }
         self.previos = vistos;
@@ -342,7 +372,7 @@ impl Serie {
             if self.puntos.back().is_some_and(|p| p.0 >= t) {
                 self.puntos.pop_back();
             }
-            self.puntos.push_back((t, total, tipo.to_string()));
+            self.puntos.push_back((t, lectura, escritura, archivos, tipo.to_string()));
         }
         self.recortar(t);
     }
@@ -398,9 +428,9 @@ pub struct EstadoVentana {
     pub v: u32,
     #[serde(default)]
     pub escrito: Option<String>,
-    /// `(segundo Unix, bytes/s, tipo)`.
+    /// `[segundo Unix, lectura B/s, escritura B/s, archivos/s, tipo]`.
     #[serde(default)]
-    pub serie: Vec<(i64, u64, String)>,
+    pub serie: Vec<Punto>,
     #[serde(default)]
     pub historial: Vec<Dia>,
 }
@@ -725,15 +755,27 @@ mod tests {
     #[test]
     fn serie_acotada_y_con_ritmo() {
         let mut s = Serie::default();
-        // El ritmo de restic, tal cual.
-        s.muestra(1000, &[act("a", "copia", Some(10), Some(500))]);
-        assert_eq!(s.puntos.back().unwrap(), &(1000, 500, "copia".to_string()));
-        // Sin ritmo: la diferencia de bytes entre muestras.
+        // Lo que da restic, tal cual: lectura y subida medidas, archivos por segundo.
+        let mut a = act("a", "copia", Some(10), Some(500));
+        a.lectura = Some(400);
+        a.subida = Some(120);
+        a.archivos_s = Some(7);
+        s.muestra(1000, &[a]);
+        assert_eq!(s.puntos.back().unwrap(), &(1000, 400, 120, 7, "copia".to_string()));
+        // Sin lectura medida, la de restic.
+        s.muestra(1001, &[act("a", "copia", Some(10), Some(500))]);
+        assert_eq!(s.puntos.back().unwrap().1, 500);
+        // Sin ritmos: la diferencia de bytes entre muestras, como escritura (restaurar)...
         let mut s = Serie::default();
         s.muestra(1000, &[act("b", "restauracion", Some(1_000), None)]);
-        assert_eq!(s.puntos.back().unwrap().1, 0, "la primera muestra no sabe el ritmo");
+        assert_eq!(s.puntos.back().unwrap().2, 0, "la primera muestra no sabe el ritmo");
         s.muestra(1002, &[act("b", "restauracion", Some(5_000), None)]);
-        assert_eq!(s.puntos.back().unwrap(), &(1002, 2_000, "restauracion".to_string()));
+        assert_eq!(s.puntos.back().unwrap(), &(1002, 0, 2_000, 0, "restauracion".to_string()));
+        // ... o como lectura (verificar).
+        let mut v = Serie::default();
+        v.muestra(10, &[act("v", "verificacion", Some(0), None)]);
+        v.muestra(12, &[act("v", "verificacion", Some(800), None)]);
+        assert_eq!(v.puntos.back().unwrap(), &(12, 400, 0, 0, "verificacion".to_string()));
         // Nada en marcha: no se añade.
         s.muestra(1004, &[]);
         assert_eq!(s.puntos.len(), 2);
@@ -748,7 +790,7 @@ mod tests {
         // Dos a la vez: se suman y manda la más rápida.
         let mut s = Serie::default();
         s.muestra(10, &[act("d", "verificacion", None, Some(100)), act("e", "copia", None, Some(900))]);
-        assert_eq!(s.puntos.back().unwrap(), &(10, 1000, "copia".to_string()));
+        assert_eq!(s.puntos.back().unwrap(), &(10, 1000, 0, 0, "copia".to_string()));
         // En el mismo segundo, la última manda.
         s.muestra(10, &[act("e", "copia", None, Some(50))]);
         assert_eq!(s.puntos.len(), 1);
@@ -923,10 +965,14 @@ mod tests {
             updated: Some(ahora.to_rfc3339()),
             phase: None,
             bytes_per_s: Some(1234),
+            read_bps: Some(1000),
+            upload_bps: Some(300),
+            files_per_s: Some(4),
         };
         let a = actividad_copia(&r, "Documentos", ahora).unwrap();
         assert_eq!((a.tipo.as_str(), a.clave.as_str(), a.fase.as_str()), ("copia", "copia:r1#k1", "subiendo"));
         assert_eq!((a.porcentaje, a.velocidad, a.quedan_s), (Some(0.5), Some(1234), Some(30)));
+        assert_eq!((a.lectura, a.subida, a.archivos_s), (Some(1000), Some(300), Some(4)));
         let t = crate::tasks::RunningTask {
             repo_id: "r1".into(),
             kind: "offsite".into(),
