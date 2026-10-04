@@ -164,9 +164,9 @@
 {#if lista.length}
   <div class="linea">
     <div class="herr">
-      <div class="segmentos" role="group" aria-label="Escala">
+      <div class="segmented inline" role="group" aria-label="Escala">
         {#each ZOOMS as z (z)}
-          <button type="button" aria-pressed={zoom === z} onclick={() => cambiarZoom(z)}>{ZOOM[z].texto}</button>
+          <button type="button" class:on={zoom === z} aria-pressed={zoom === z} onclick={() => cambiarZoom(z)}>{ZOOM[z].texto}</button>
         {/each}
       </div>
       <div class="nav">
@@ -278,30 +278,6 @@
     display: flex;
     align-items: center;
     gap: 2px;
-  }
-  .segmentos {
-    display: inline-flex;
-    padding: 2px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-  .segmentos button {
-    min-height: 26px;
-    padding: 0 10px;
-    font: inherit;
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    color: var(--text-2);
-    background: none;
-    border: 0;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-  }
-  .segmentos button[aria-pressed="true"] {
-    color: var(--text-1);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
   }
 
   /* La pista: el eje abajo, las marcas encima. */
