@@ -128,9 +128,15 @@ servicio siempre tiene una instancia esperando. `PIPE_REJECT_REMOTE_CLIENTS`. El
 cliente comprueba que la tubería es de SYSTEM o de los administradores y abre
 con `SECURITY_IDENTIFICATION` (el servidor no puede suplantarlo). Cada conexión,
 una petición (una línea JSON, como mucho 64 KiB; respuestas hasta 4 MiB) y como
-mucho 4 a la vez; una conexión que no dice nada en 10 s se cierra. Linux:
-`/run/resguardo-agente/ipc.sock` (`0666` en un directorio de root; lo que
-autoriza es la prueba; el cliente exige que el socket sea de root). En pruebas
+mucho 4 a la vez; la petición entera tiene que llegar en 10 s (plazo total, no
+por lectura) o se cierra. **El servicio sabe quién pide**: tras leer la
+petición identifica al cliente con su token (`ImpersonateNamedPipeClient` a
+nivel de identificación y `RevertToSelf` enseguida; si no pudiera volver,
+aborta): su SID y si es administrador (SYSTEM, o del grupo Administradores
+aunque UAC lo deje «solo para denegar»). Linux:
+`/run/resguardo-agente/ipc.sock` (`0666` en un directorio de root, que tiene que
+ser de root; lo que autoriza es la prueba; el cliente exige que el socket sea de
+root; quién pide, por `SO_PEERCRED`; como mucho 4 a la vez). En pruebas
 (`RESGUARDO_AGENT_DIR`, solo compilaciones de desarrollo), otro nombre: nunca el
 del servicio instalado.
 
@@ -141,14 +147,25 @@ mientras está desbloqueada (10 minutos sin usarla). Cada petición va atada a u
 **reto de un solo uso**:
 
 1. `{"op":"hola"}` → `{ "v":1, "reto", "sal_equipo", "modo": "sin_clave"|"local"|"gestionado"|"web"|"pendiente"|"desvinculado" }`
-   (retos: 60 s, como mucho 16 vivos).
+   (retos: 60 s; cada reto es **de la cuenta que lo pidió** y solo ella lo
+   gasta; como mucho 16 vivos por cuenta y 256 en total: otra cuenta que pide
+   muchos no echa los de las demás).
 2. `{"op":"…","reto":"…","prueba":"<b64>", …}`.
 
 El servicio: gasta el reto (siempre, aunque falle: **sin repetición**), mira el
-límite, y compara la prueba en **tiempo constante**. **Límites**: 5 fallos
-seguidos bloquean 1 minuto, cada bloqueo siguiente el doble (hasta 1 hora); tras
-un fallo, como mucho un intento por segundo; un acierto lo reinicia. Al registro
-solo va «clave de administración incorrecta» o qué se cambió, nunca la petición.
+límite, y compara la prueba en **tiempo constante**. **Límites, por cuenta del
+equipo**: 5 fallos seguidos bloquean 1 minuto, cada bloqueo siguiente el doble
+(hasta 1 hora); tras un fallo, como mucho un intento por segundo; un acierto lo
+reinicia. Un usuario que prueba claves solo se bloquea a sí mismo: el
+administrador, con su cuenta, sigue entrando (como mucho 64 cuentas en memoria).
+Al registro solo va «clave de administración incorrecta desde la cuenta
+S-1-5-21-…» o qué se cambió, nunca la petición.
+
+Lo que cambia el vínculo (`crear_clave`, `ajustes`, `config`,
+`crear_repositorio`, `retencion`, `copia_externa`, `cambiar_clave`) se hace
+bajo el mismo cerrojo que las órdenes de las consolas, leyendo el vínculo ya
+dentro: una orden que llegue a la vez no se pierde (su `seq`, sus `nonce`, una
+clave nueva o una consola quitada).
 
 ¿Por qué la prueba y no un HMAC? El equipo solo guarda `SHA-256(prueba)`: para
 comprobar un HMAC tendría que guardar la prueba. Viaja por una tubería local con
@@ -157,13 +174,13 @@ ACL, atada a un reto de un uso: lo mismo que ya viaja (cifrado) en cada orden.
 | Op | Cuándo | Qué hace |
 |---|---|---|
 | `hola` | siempre | reto, sal y modo |
-| `crear_clave` | sin vínculo ni consola web | modo local: verificador y `K_cfg` (de la ventana) |
+| `crear_clave` | sin vínculo ni consola web, **solo un administrador del equipo** | modo local: verificador y `K_cfg` (de la ventana) |
 | `comprobar` | con clave | «Desbloquear» |
 | `ajustes` | con clave (no en la consola web) | `escritorio`; si hay consola, se sube |
 | `estado_local` | local | repositorios, destinos, configuración, nubes, resumen |
 | `crear_repositorio`, `config`, `retencion`, `copia_externa`, `pausar`, `reanudar` | local | lo mismo que las órdenes de la consola (`gestion_v2`) |
 | `carpetas`, `explorar` | local | las sesiones `elegir_carpetas` y `explorar` (versiones, listar, buscar, Qué cambió…) |
-| `restaurar` | local | junto al original, en su sitio o en otra carpeta |
+| `restaurar` | local | junto al original, en su sitio o en otra carpeta (§5) |
 | `guarda_copias`, `conectar_nube`, `quitar_nube` | local | Servidor de copias, espejo y nubes |
 | `historial`, `kit`, `cambiar_clave`, `vincular` | local | |
 
@@ -176,8 +193,14 @@ Equipo recién instalado, sin vincular: la ventana ofrece **«Usar sin consola»
 1. Clave de administración (12 caracteres o más, dos veces). La ventana genera
    `sal_equipo` y `sal_cliente` y calcula `verificador` y `K_cfg` como la consola;
    el servicio crea el vínculo en modo local (sin servidor) con claves propias.
-   Solo si no hay vínculo ni consola web: quien llega primero a un equipo recién
-   instalado la pone (como el código de vincular).
+   Solo si no hay vínculo ni consola web, y **solo un administrador del
+   equipo** (su cuenta, sin «Ejecutar como administrador»: la ventana nunca va
+   elevada; el servicio mira el grupo Administradores en su token). Si no, el
+   primer usuario sin privilegios que abriera la ventana se quedaría con la
+   clave y, con ella, con lo que el servicio hace como SYSTEM. En Linux, root.
+   Quien tiene la clave del modo local decide qué se copia (cualquier carpeta)
+   y tiene las contraseñas de los repositorios: trátala como la de un
+   administrador del equipo.
 2. Después, todo con la clave (lo mismo que la consola, con su lógica y sus
    componentes: `EditorHorario`, `EditorRetencion`, `lib/horario`, `lib/ganchos`,
    `lib/verificacion`…):
@@ -191,6 +214,16 @@ Equipo recién instalado, sin vincular: la ventana ofrece **«Usar sin consola»
      vigilar las copias de una aplicación) y **verificación automática**.
    - **Restaurar**: versiones, recorrerlas, «Qué cambió», restaurar archivos o
      carpetas junto al original, en su sitio (reemplazando o no) o en otra carpeta.
+     Restaura el servicio (SYSTEM), así que: «otra carpeta» tiene que existir en
+     un disco del equipo, sin enlaces en su camino, sin `..`, nombres que Windows
+     recorta (`a.`, `a `) ni flujos (`a:b`), sin `\\?\` ni red, y no ser del
+     sistema, de los programas ni de Resguardo, tampoco por su ruta real
+     (`C:\PROGRA~1`); lo restaurado va siempre a una carpeta **nueva**
+     «Restaurado …» que crea el agente («… (2)» si ya hay algo con ese nombre:
+     nunca una unión que alguien dejara antes adivinando la hora) y que, desde
+     la ventana, nace solo para SYSTEM, Administradores y quien la pide (nadie
+     más puede poner un enlace dentro mientras se escribe). «En su sitio», no si
+     la carpeta es ahora un enlace.
    - **Más**: pausar, historial completo, kit, cambiar la clave, «Guardar copias
      de otros» (Servidor de copias) con su espejo a una carpeta o a Dropbox /
      Google Drive (`rclone authorize` lo abre la ventana **como el usuario**, en

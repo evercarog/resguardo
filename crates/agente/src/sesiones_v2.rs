@@ -551,10 +551,79 @@ fn partes(ruta: &str) -> Result<(String, String), String> {
     Ok((padre.to_string(), nombre.to_string()))
 }
 
-/// `restaurar {repo, version, rutas, destino: "junto"|"original", reemplazar}`.
+/// «En otra carpeta» (solo la ventana del equipo): una carpeta que ya existe en
+/// un disco de este equipo, sin enlaces en su camino (un usuario podría haber
+/// puesto una unión hacia la carpeta de Windows), sin nombres que Windows
+/// recorta o interpreta (`a.`, `a `, `a:flujo`, `..`) y que no sea del sistema,
+/// de los programas ni de Resguardo, tampoco escrita con nombres cortos
+/// (`C:\PROGRA~1`): se mira también su ruta real.
+fn carpeta_destino(d: &str) -> Result<std::path::PathBuf, String> {
+    let mal = || "Elige una carpeta de un disco de este equipo donde restaurar (que no sea del sistema ni de los programas).".to_string();
+    if d.is_empty() || d.chars().any(char::is_control) || d.len() > 1024 {
+        return Err(mal());
+    }
+    if cfg!(windows) {
+        let b = d.as_bytes();
+        if b.len() < 3 || !b[0].is_ascii_alphabetic() || b[1] != b':' || b[2] != b'\\' {
+            return Err(mal());
+        }
+        let resto = d[3..].trim_end_matches('\\');
+        if !resto.is_empty()
+            && resto
+                .split('\\')
+                .any(|c| c.is_empty() || c == "." || c == ".." || c.ends_with(['.', ' ']) || c.contains(['/', ':', '*', '?', '"', '<', '>', '|']))
+        {
+            return Err(mal());
+        }
+    } else if !d.starts_with('/') || d.starts_with("//") || d.split('/').any(|c| c == "." || c == "..") {
+        return Err(mal());
+    }
+    let p = std::path::Path::new(d);
+    if crate::platform::hay_enlace_en_el_camino(p) {
+        return Err("Esa carpeta es un enlace o está dentro de uno: elige una carpeta normal.".into());
+    }
+    match std::fs::symlink_metadata(p) {
+        Ok(m) if m.is_dir() => {}
+        _ => return Err("Esa carpeta no existe (o no es una carpeta): elígela con el explorador.".into()),
+    }
+    let real = std::fs::canonicalize(p).map_err(|_| mal())?;
+    let real = real.to_string_lossy();
+    if real.starts_with(r"\\?\UNC\") || carpeta_del_sistema(d) || carpeta_del_sistema(real.strip_prefix(r"\\?\").unwrap_or(&real)) {
+        return Err(mal());
+    }
+    Ok(p.to_path_buf())
+}
+
+/// La carpeta «Restaurado …» dentro de `padre`: **nueva** (si ya hay algo con
+/// ese nombre, «… (2)», «… (3)»…), nunca una que ya estaba (podría ser una
+/// unión que puso otro usuario, con el nombre adivinado por la hora), y con
+/// `padre` sin enlaces en su camino. Con `dueno` nace solo para SYSTEM,
+/// Administradores y esa cuenta (ver [`crate::platform::crear_carpeta_nueva`]).
+fn carpeta_restaurado(padre: &std::path::Path, nombre: &str, dueno: Option<&str>) -> Result<std::path::PathBuf, String> {
+    match std::fs::symlink_metadata(padre) {
+        Ok(m) if m.is_dir() => {}
+        _ => return Err(format!("La carpeta donde restaurar ya no existe: {}", padre.display())),
+    }
+    if crate::platform::hay_enlace_en_el_camino(padre) {
+        return Err(format!("{} es un enlace o está dentro de uno: no se restaura ahí.", padre.display()));
+    }
+    for n in 1..=50 {
+        let p = if n == 1 { padre.join(nombre) } else { padre.join(format!("{nombre} ({n})")) };
+        match crate::platform::crear_carpeta_nueva(&p, dueno) {
+            Ok(()) => return Ok(p),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("No se pudo crear la carpeta donde restaurar: {e}")),
+        }
+    }
+    Err("Ya hay demasiadas carpetas «Restaurado» con esa hora: vuelve a intentarlo en un minuto.".into())
+}
+
+/// `restaurar {repo, version, rutas, destino: "junto"|"original"|"carpeta", carpeta?, reemplazar}`.
 /// «junto»: en una carpeta nueva «Restaurado …» al lado de cada ruta; «original»:
-/// en su sitio (sin `reemplazar`, nunca sobrescribe).
-pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
+/// en su sitio (sin `reemplazar`, nunca sobrescribe); «carpeta» (solo la ventana
+/// del equipo): en una carpeta nueva «Restaurado …» dentro de la que se elija.
+/// `dueno`: la cuenta que lo pide en el equipo (la ventana), si se sabe.
+pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result<String, String> {
     let version = c["version"].as_str().unwrap_or("");
     if !restic::valid_snapshot_id(version) {
         return Err("Versión no válida.".into());
@@ -565,13 +634,7 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
     }
     // v1.36 (solo la ventana del equipo, con la clave): «carpeta», en la que elija el administrador.
     let carpeta = match c["destino"].as_str() {
-        Some("carpeta") => {
-            let d = c["carpeta"].as_str().unwrap_or("");
-            if !std::path::Path::new(d).is_absolute() || d.contains('\0') || carpeta_del_sistema(d) {
-                return Err("Elige una carpeta del equipo donde restaurar (que no sea del sistema).".into());
-            }
-            Some(std::path::PathBuf::from(d))
-        }
+        Some("carpeta") => Some(carpeta_destino(c["carpeta"].as_str().unwrap_or(""))?),
         _ => None,
     };
     let junto = match c["destino"].as_str() {
@@ -596,6 +659,8 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
     let guarda = crate::escritorio::en_marcha::empezar("restauracion", repo, &nombre);
     let sello = chrono::Local::now().format("%Y-%m-%d %H%M").to_string();
     let mut destinos = Vec::new();
+    // Las carpetas «Restaurado …» ya creadas en esta restauración (una por cada carpeta de arriba).
+    let mut creadas: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
     for ruta in &rutas {
         let (padre, nombre) = partes(ruta)?;
         let mut objetivo = match &carpeta {
@@ -603,7 +668,17 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
             None => std::path::PathBuf::from(ruta_local(&padre)?),
         };
         if junto {
-            objetivo = objetivo.join(format!("Restaurado {sello}"));
+            objetivo = match creadas.iter().find(|(arriba, _)| *arriba == objetivo) {
+                Some((_, hecha)) => hecha.clone(),
+                None => {
+                    let hecha = carpeta_restaurado(&objetivo, &format!("Restaurado {sello}"), dueno)?;
+                    creadas.push((objetivo, hecha.clone()));
+                    hecha
+                }
+            };
+        } else if crate::platform::hay_enlace_en_el_camino(&objetivo) {
+            // En su sitio: la carpeta (o una de arriba) se cambió por un enlace después de la copia.
+            return Err(format!("«{ruta}»: su carpeta en el equipo es ahora un enlace; restáuralo junto al original."));
         }
         let destino = objetivo.display().to_string();
         let origen = format!("{version}:{padre}");
@@ -925,6 +1000,123 @@ mod tests {
             assert!(carpeta_del_sistema("/etc/x") && carpeta_del_sistema("/proc"));
             assert!(!carpeta_del_sistema("/srv/copias"));
         }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// «En otra carpeta» (la ventana del equipo): solo carpetas normales de un
+    /// disco del equipo, nunca del sistema, ni por un enlace ni con nombres
+    /// que Windows recorta o interpreta.
+    #[test]
+    fn restaurar_en_otra_carpeta_solo_donde_se_puede() {
+        let base = std::env::temp_dir().join(format!("resguardo-destino-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("Destino")).unwrap();
+        let bien = base.join("Destino").display().to_string();
+        assert!(carpeta_destino(&bien).is_ok(), "{bien}");
+        assert!(carpeta_destino(&base.join("no-existe").display().to_string()).is_err());
+        assert!(carpeta_destino("").is_err());
+        assert!(carpeta_destino("relativa").is_err());
+        if cfg!(windows) {
+            for mal in [
+                r"C:\Windows\System32".to_string(),
+                r"c:\windows".to_string(),
+                r"C:\Program Files".to_string(),
+                r"C:\ProgramData\ResguardoAgente".to_string(),
+                r"\\?\C:\Windows\System32".to_string(),
+                r"\\nas\copias".to_string(),
+                "C:/Windows/System32".to_string(),
+                format!(r"{bien}\..\..\..\Windows"),
+                format!(r"{bien}\."),
+                format!("{bien}."),
+                format!("{bien} "),
+                format!("{bien}:flujo"),
+            ] {
+                assert!(carpeta_destino(&mal).is_err(), "{mal}");
+            }
+            // Con su nombre corto (8.3), la carpeta de los programas sigue siendo del sistema.
+            let corto = std::process::Command::new("cmd").args(["/c", "for %I in (\"C:\\Program Files\") do @echo %~sI"]).output().ok();
+            if let Some(c) = corto.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|c| c.contains('~')) {
+                assert!(carpeta_destino(&c).is_err(), "{c}");
+            }
+            // Una unión (la puede crear cualquier usuario) hacia otra carpeta: no.
+            let union = base.join("Union");
+            let ok =
+                std::process::Command::new("cmd").args(["/c", "mklink", "/J"]).arg(&union).arg(base.join("Destino")).output().is_ok_and(|o| o.status.success());
+            if ok {
+                assert!(carpeta_destino(&union.display().to_string()).unwrap_err().contains("enlace"));
+                std::fs::create_dir_all(union.join("dentro")).ok();
+                assert!(carpeta_destino(&union.join("dentro").display().to_string()).is_err());
+            }
+        } else {
+            assert!(carpeta_destino("/etc").is_err() && carpeta_destino("/usr/lib").is_err());
+            assert!(carpeta_destino(&format!("{bien}/../../../etc")).is_err());
+            #[cfg(unix)]
+            {
+                let enlace = base.join("Enlace");
+                if std::os::unix::fs::symlink(base.join("Destino"), &enlace).is_ok() {
+                    assert!(carpeta_destino(&enlace.display().to_string()).is_err());
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// La carpeta «Restaurado …» siempre es nueva: si alguien dejó antes una
+    /// con ese nombre (o una unión, adivinando la hora), se usa otra.
+    #[test]
+    fn restaurado_siempre_en_una_carpeta_nueva() {
+        let base = std::env::temp_dir().join(format!("resguardo-restaurado-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("Otra")).unwrap();
+        let nombre = "Restaurado 2026-10-05 1200";
+        let a = carpeta_restaurado(&base, nombre, None).unwrap();
+        assert_eq!(a, base.join(nombre));
+        // Ya existe (la de antes, o una puesta a propósito): otra.
+        let b = carpeta_restaurado(&base, nombre, None).unwrap();
+        assert_eq!(b, base.join(format!("{nombre} (2)")));
+        if cfg!(windows) {
+            let trampa = format!("{nombre} (3)");
+            let ok = std::process::Command::new("cmd")
+                .args(["/c", "mklink", "/J"])
+                .arg(base.join(&trampa))
+                .arg(base.join("Otra"))
+                .output()
+                .is_ok_and(|o| o.status.success());
+            if ok {
+                let c = carpeta_restaurado(&base, nombre, None).unwrap();
+                assert_eq!(c, base.join(format!("{nombre} (4)")), "la unión no se usa");
+                assert!(!crate::platform::hay_enlace_en_el_camino(&c));
+                // Y dentro de una unión, tampoco.
+                assert!(carpeta_restaurado(&base.join(&trampa), nombre, None).is_err());
+                assert!(std::fs::read_dir(base.join("Otra")).unwrap().next().is_none(), "nada escrito por la unión");
+            }
+        }
+        assert!(carpeta_restaurado(&base.join("no-existe"), nombre, None).is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Con la cuenta de quien la pide (la ventana), la carpeta nace solo para
+    /// SYSTEM, Administradores y esa cuenta: quien la pide puede usarla.
+    #[cfg(windows)]
+    #[test]
+    fn restaurado_con_dueno() {
+        let base = std::env::temp_dir().join(format!("resguardo-dueno-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let sid = std::process::Command::new("whoami")
+            .args(["/user", "/fo", "csv", "/nh"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().rsplit(',').next().map(|s| s.trim_matches('"').to_string()))
+            .filter(|s| crate::platform::sid_valido(s));
+        if let Some(sid) = sid {
+            let d = carpeta_restaurado(&base, "Restaurado 2026-10-05 1200", Some(&sid)).unwrap();
+            std::fs::write(d.join("x.txt"), b"x").unwrap();
+            assert_eq!(std::fs::read(d.join("x.txt")).unwrap(), b"x");
+        }
+        // Un «SID» que no lo es no entra en los permisos.
+        assert!(carpeta_restaurado(&base, "Otra", Some("S-1-5-21)(A;;FA;;;WD")).is_err());
+        assert!(!crate::platform::sid_valido("S-1-5-21)(A;;FA;;;WD") && crate::platform::sid_valido("S-1-5-21-1-2-3-1001"));
         let _ = std::fs::remove_dir_all(&base);
     }
 
