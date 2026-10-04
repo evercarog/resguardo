@@ -14,9 +14,12 @@
 //!   tiempo constante. La calcula la ventana: el servicio nunca ve la clave.
 //!   Atada a un **reto de un solo uso** que da `hola` (caduca en
 //!   [`RETO_VIDA_S`]; se gasta aunque falle: no se puede repetir).
-//! - **Límites**: 5 fallos seguidos bloquean 1 minuto, el doble cada vez
-//!   (hasta 1 hora); tras un fallo, como mucho un intento por segundo. Nada
-//!   de la petición va al registro.
+//! - **Límites**, por cuenta del equipo (la que da el sistema, no la
+//!   petición): 5 fallos seguidos bloquean 1 minuto, el doble cada vez (hasta
+//!   1 hora); tras un fallo, como mucho un intento por segundo. Los retos
+//!   también son de cada cuenta. Nada de la petición va al registro.
+//! - La primera clave (modo sin consola) solo la pone un administrador del
+//!   equipo ([`puede_crear_clave`]).
 
 use base64::Engine;
 use serde_json::{json, Value};
@@ -48,31 +51,40 @@ fn sin_prueba(op: &str) -> bool {
 
 // ---------- Retos y límites (sin sistema operativo: se prueban) ----------
 
-/// Los retos dados y aún sin usar.
+/// Retos sin usar a la vez entre todas las cuentas.
+const RETOS_TOTAL: usize = 256;
+
+/// Los retos dados y aún sin usar, cada uno de la cuenta que lo pidió: solo
+/// ella puede gastarlo, y otra cuenta que pide muchos no echa los suyos.
 #[derive(Default)]
 pub struct Retos {
-    vivos: Vec<(String, i64)>,
+    vivos: Vec<(String, i64, String)>,
 }
 
 impl Retos {
-    /// Uno nuevo (32 bytes aleatorios).
-    pub fn nuevo(&mut self, ahora_ms: i64) -> String {
+    /// Uno nuevo (32 bytes aleatorios) para la cuenta `quien`.
+    pub fn nuevo(&mut self, ahora_ms: i64, quien: &str) -> String {
         use crypto_box::aead::rand_core::RngCore;
         let mut b = [0u8; 32];
         crypto_box::aead::OsRng.fill_bytes(&mut b);
         let r = B64.encode(b);
-        self.vivos.retain(|(_, c)| *c > ahora_ms);
-        if self.vivos.len() >= RETOS_MAX {
+        self.vivos.retain(|(_, c, _)| *c > ahora_ms);
+        if self.vivos.iter().filter(|(_, _, q)| q == quien).count() >= RETOS_MAX {
+            if let Some(i) = self.vivos.iter().position(|(_, _, q)| q == quien) {
+                self.vivos.remove(i);
+            }
+        }
+        if self.vivos.len() >= RETOS_TOTAL {
             self.vivos.remove(0);
         }
-        self.vivos.push((r.clone(), ahora_ms + RETO_VIDA_S * 1000));
+        self.vivos.push((r.clone(), ahora_ms + RETO_VIDA_S * 1000, quien.to_string()));
         r
     }
 
-    /// Lo gasta: `true` si estaba vivo. Nunca vale dos veces.
-    pub fn gastar(&mut self, reto: &str, ahora_ms: i64) -> bool {
-        let Some(i) = self.vivos.iter().position(|(r, _)| r == reto) else { return false };
-        let (_, caduca) = self.vivos.remove(i);
+    /// Lo gasta: `true` si estaba vivo y es de `quien`. Nunca vale dos veces.
+    pub fn gastar(&mut self, reto: &str, ahora_ms: i64, quien: &str) -> bool {
+        let Some(i) = self.vivos.iter().position(|(r, _, q)| r == reto && q == quien) else { return false };
+        let (_, caduca, _) = self.vivos.remove(i);
         caduca > ahora_ms
     }
 }
@@ -121,37 +133,93 @@ impl Limitador {
     }
 }
 
+/// Quién está al otro lado del canal local. Lo dice el sistema (el token del
+/// cliente de la tubería o las credenciales del socket), nunca la petición.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Cliente {
+    /// SID de la cuenta (Windows) o `uid:N` (Unix). Vacío si no se supo.
+    pub id: String,
+    /// ¿Es SYSTEM o root, o una cuenta del grupo Administradores (también con
+    /// UAC, cuando el grupo va «solo para denegar» en su token filtrado)?
+    pub admin: bool,
+}
+
+/// Cuentas distintas de las que se recuerdan los fallos a la vez (en un equipo
+/// hay pocas; se olvidan primero las que no están bloqueadas).
+const LIMITADORES_MAX: usize = 64;
+
 /// El estado del servidor entre peticiones (en memoria del servicio).
 #[derive(Default)]
 pub struct Servidor {
     pub retos: Retos,
-    pub limitador: Limitador,
+    /// Un límite de intentos **por cuenta** del equipo: un usuario que prueba
+    /// claves solo se bloquea a sí mismo, no deja sin ventana al administrador.
+    limitadores: std::collections::HashMap<String, Limitador>,
 }
 
 /// Lo que dice el servidor cuando la prueba no vale (siempre lo mismo: no da pistas).
 pub const CLAVE_INCORRECTA: &str = "La clave de administración no es correcta.";
 
 impl Servidor {
+    /// El límite de intentos de la cuenta `quien` (vacío: las que no se pudieron identificar, juntas).
+    fn limitador(&mut self, quien: &str, ahora_ms: i64) -> &mut Limitador {
+        if !self.limitadores.contains_key(quien) && self.limitadores.len() >= LIMITADORES_MAX {
+            self.limitadores.retain(|_, l| l.bloqueado_hasta > ahora_ms);
+            if self.limitadores.len() >= LIMITADORES_MAX {
+                // Todas bloqueadas (no pasa en un equipo de verdad): se olvida la que antes se desbloquea.
+                if let Some(k) = self.limitadores.iter().min_by_key(|(_, l)| l.bloqueado_hasta).map(|(k, _)| k.clone()) {
+                    self.limitadores.remove(&k);
+                }
+            }
+        }
+        self.limitadores.entry(quien.to_string()).or_default()
+    }
+
+    /// Tras cambiar la clave: los fallos de esa cuenta se olvidan.
+    pub fn olvidar_fallos(&mut self, quien: &str) {
+        self.limitadores.remove(quien);
+    }
+
     /// Comprueba el reto y la prueba de una petición contra el verificador.
-    /// El reto se gasta siempre (aunque falle lo demás).
-    pub fn autorizar(&mut self, pet: &Value, verificador: Option<&[u8]>, ahora_ms: i64) -> Result<(), String> {
+    /// El reto se gasta siempre (aunque falle lo demás). Los fallos cuentan
+    /// para la cuenta `quien` (la del cliente, que da el sistema).
+    pub fn autorizar(&mut self, pet: &Value, verificador: Option<&[u8]>, ahora_ms: i64, quien: &str) -> Result<(), String> {
         let reto = pet["reto"].as_str().unwrap_or("");
-        if !self.retos.gastar(reto, ahora_ms) {
+        if !self.retos.gastar(reto, ahora_ms, quien) {
             return Err("La petición caducó o ya se usó: vuelve a intentarlo.".into());
         }
-        self.limitador.puede(ahora_ms)?;
+        self.limitador(quien, ahora_ms).puede(ahora_ms)?;
         let Some(ver) = verificador else { return Err("Este equipo aún no tiene clave de administración.".into()) };
         let prueba = pet["prueba"].as_str().and_then(|p| B64.decode(p).ok()).unwrap_or_default();
         // Tiempo constante (y la prueba vacía o de otro tamaño, igual que una mala).
         if prueba.len() == 32 && resguardo_protocolo::derivaciones::comprueba_prueba(&prueba, ver) {
-            self.limitador.acierto();
+            self.limitador(quien, ahora_ms).acierto();
             Ok(())
         } else {
-            let n = self.limitador.fallo(ahora_ms);
-            crate::agent::log(&format!("Ventana del equipo: clave de administración incorrecta{}.", if n == 0 { " (bloqueado un rato)" } else { "" }));
+            let n = self.limitador(quien, ahora_ms).fallo(ahora_ms);
+            let cuenta = if quien.is_empty() { "una cuenta sin identificar".to_string() } else { format!("la cuenta {quien}") };
+            crate::agent::log(&format!(
+                "Ventana del equipo: clave de administración incorrecta desde {cuenta}{}.",
+                if n == 0 { " (bloqueada un rato)" } else { "" }
+            ));
             Err(CLAVE_INCORRECTA.into())
         }
     }
+}
+
+/// ¿Puede `cliente` poner la clave de administración por primera vez (modo sin
+/// consola)? Solo SYSTEM/root o un administrador del equipo: si no, el primer
+/// usuario sin privilegios que abriera la ventana en un equipo recién
+/// instalado se quedaría con la clave y, con ella, con lo que hace el servicio
+/// como SYSTEM (qué se copia y dónde, restaurar…). En pruebas (compilación de
+/// desarrollo con `RESGUARDO_AGENT_DIR`), cualquiera.
+pub fn puede_crear_clave(cliente: &Cliente, pruebas: bool) -> Result<(), String> {
+    if cliente.admin || pruebas {
+        return Ok(());
+    }
+    Err("Solo un administrador de este equipo puede ponerle la clave de administración por primera vez. \
+         Pide a quien lo administra que abra Resguardo con su cuenta (no hace falta «Ejecutar como administrador»)."
+        .into())
 }
 
 // ---------- Lo que calcula la ventana (cliente) ----------
@@ -235,8 +303,16 @@ pub fn poner_escritorio(v: &mut crate::servidor_v2::Vinculo, e: crate::escritori
 }
 
 /// Una petición, en el servicio. `servidor` guarda los retos y los fallos.
-pub fn atender(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Value {
-    respuesta(atender_(servidor, pet))
+pub fn atender(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Cliente) -> Value {
+    respuesta(atender_(servidor, pet, cliente))
+}
+
+/// Las operaciones que cambian y guardan el vínculo: se hacen bajo el cerrojo
+/// de las consolas, leyendo el vínculo ya dentro. Si no, una orden de una
+/// consola que llegase mientras tanto (su `seq`, sus `nonce`, una clave nueva,
+/// una consola quitada…) se perdería al guardar una copia vieja.
+fn cambia_vinculo(op: &str) -> bool {
+    matches!(op, "crear_clave" | "ajustes" | "crear_repositorio" | "config" | "retencion" | "copia_externa" | "cambiar_clave")
 }
 
 fn respuesta(r: Result<Value, String>) -> Value {
@@ -246,20 +322,23 @@ fn respuesta(r: Result<Value, String>) -> Value {
     }
 }
 
-/// Quien atiende las peticiones (el servicio: [`atender`]; en las pruebas, otro).
-pub type Atiende = std::sync::Arc<dyn Fn(&Value) -> Value + Send + Sync>;
+/// Quien atiende las peticiones (el servicio: [`atender`]; en las pruebas, otro),
+/// con quién pide (lo dice el sistema).
+pub type Atiende = std::sync::Arc<dyn Fn(&Value, &Cliente) -> Value + Send + Sync>;
 
 fn ahora_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value, String> {
+fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Cliente) -> Result<Value, String> {
     use crate::servidor_v2 as s;
     let op = pet["op"].as_str().unwrap_or("");
+    // Lo que cambia el vínculo, bajo el cerrojo de las consolas desde antes de leerlo.
+    let _cerrojo = cambia_vinculo(op).then(crate::consolas_v2::cerrojo);
     let web = crate::endpoint::load().is_some_and(|e| !e.stopped);
     let v = s::cargar();
     if op == "hola" {
-        let reto = servidor.lock().map_err(|_| "Ocupado.")?.retos.nuevo(ahora_ms());
+        let reto = servidor.lock().map_err(|_| "Ocupado.")?.retos.nuevo(ahora_ms(), &cliente.id);
         return Ok(json!({
             "v": 1,
             "reto": reto,
@@ -268,19 +347,28 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
         }));
     }
     if op == "crear_clave" {
-        // Solo un equipo sin clave, sin vincular y sin la consola web: quien llega
-        // primero a un equipo recién instalado la pone (como el código de vincular).
-        let mut sv = servidor.lock().map_err(|_| "Ocupado.")?;
-        if !sv.retos.gastar(pet["reto"].as_str().unwrap_or(""), ahora_ms()) {
-            return Err("La petición caducó o ya se usó: vuelve a intentarlo.".into());
+        // Solo un equipo sin clave, sin vincular y sin la consola web, y solo un
+        // administrador del equipo (nunca el primer usuario que abra la ventana).
+        {
+            let mut sv = servidor.lock().map_err(|_| "Ocupado.")?;
+            if !sv.retos.gastar(pet["reto"].as_str().unwrap_or(""), ahora_ms(), &cliente.id) {
+                return Err("La petición caducó o ya se usó: vuelve a intentarlo.".into());
+            }
+            sv.limitador(&cliente.id, ahora_ms()).puede(ahora_ms())?;
         }
-        sv.limitador.puede(ahora_ms())?;
+        if let Err(e) = puede_crear_clave(cliente, crate::agent::test_mode()) {
+            crate::agent::log(&format!("Ventana del equipo: la cuenta {} (sin ser administradora) intentó poner la clave de administración.", cliente.id));
+            return Err(e);
+        }
         if v.is_some() || web {
             return Err("Este equipo ya tiene clave de administración o está vinculado a una consola.".into());
         }
         let nuevo = vinculo_local(pet)?;
         s::guardar(&nuevo)?;
-        crate::agent::log("Ventana del equipo: clave de administración puesta; el equipo se usa sin consola (modo local).");
+        crate::agent::log(&format!(
+            "Ventana del equipo: clave de administración puesta por la cuenta {}; el equipo se usa sin consola (modo local).",
+            cliente.id
+        ));
         crate::agente::refrescar_bandeja();
         return Ok(json!({ "modo": "local" }));
     }
@@ -288,7 +376,7 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
         return Err("Operación no válida.".into());
     }
     let verificador = v.as_ref().and_then(|v| v.verificador.as_deref()).and_then(|x| B64.decode(x).ok());
-    servidor.lock().map_err(|_| "Ocupado.")?.autorizar(pet, verificador.as_deref(), ahora_ms())?;
+    servidor.lock().map_err(|_| "Ocupado.")?.autorizar(pet, verificador.as_deref(), ahora_ms(), &cliente.id)?;
     let mut v = v.ok_or("Este equipo aún no tiene clave de administración.")?;
     let local = modo(Some(&v), web) == "local";
     match op {
@@ -339,7 +427,9 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
                 "repo": repo, "version": pet["version"], "rutas": pet["rutas"], "destino": destino,
                 "carpeta": pet["carpeta"], "reemplazar": pet["reemplazar"].as_bool().unwrap_or(false),
             });
-            let m = crate::sesiones_v2::restaurar(&acc, &c)?;
+            // La carpeta «Restaurado …» se crea solo para SYSTEM, Administradores y
+            // quien la pide: nadie más puede cambiar nada dentro mientras restic escribe.
+            let m = crate::sesiones_v2::restaurar(&acc, &c, (!cliente.id.is_empty()).then_some(cliente.id.as_str()))?;
             crate::agent::log("Ventana del equipo: archivos restaurados (modo local).");
             Ok(json!({ "mensaje": m }))
         }
@@ -400,7 +490,7 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
             v.k_cfg = nuevo.k_cfg;
             s::guardar(&v)?;
             if let Ok(mut sv) = servidor.lock() {
-                sv.limitador.acierto();
+                sv.olvidar_fallos(&cliente.id);
             }
             crate::agent::log("Ventana del equipo: clave de administración cambiada en el equipo.");
             Ok(json!({ "mensaje": "Clave de administración cambiada." }))
@@ -523,9 +613,11 @@ fn leer_linea(r: &mut (impl std::io::Read + ?Sized), max: usize) -> Result<Vec<u
 }
 
 /// Atiende una conexión: una petición y su respuesta.
-fn servir(atiende: &Atiende, conexion: &mut (impl std::io::Read + std::io::Write)) {
+/// Quién es el cliente se pregunta al sistema después de leer la petición
+/// (Windows solo deja identificar al cliente de una tubería cuando ya escribió).
+fn servir<C: std::io::Read + std::io::Write>(atiende: &Atiende, conexion: &mut C, identificar: impl FnOnce(&C) -> Cliente) {
     let respuesta = match leer_linea(conexion, MAX_MENSAJE).and_then(|l| serde_json::from_slice::<Value>(&l).map_err(|_| "Petición no válida.".to_string())) {
-        Ok(pet) => atiende(&pet),
+        Ok(pet) => atiende(&pet, &identificar(conexion)),
         Err(e) => json!({ "ok": false, "error": e }),
     };
     let mut texto = respuesta.to_string();
@@ -567,7 +659,7 @@ pub fn pedir_con_prueba(op: &str, prueba_b64: &str, mut cuerpo: Value) -> Result
 pub fn hilo() {
     std::thread::spawn(|| {
         let servidor = std::sync::Arc::new(std::sync::Mutex::new(Servidor::default()));
-        let atiende: Atiende = std::sync::Arc::new(move |pet: &Value| atender(&servidor, pet));
+        let atiende: Atiende = std::sync::Arc::new(move |pet: &Value, cliente: &Cliente| atender(&servidor, pet, cliente));
         loop {
             if let Err(e) = transporte::escuchar(&direccion(), atiende.clone()) {
                 crate::agent::log(&format!("Ventana del equipo: no se pudo abrir el canal local ({e}); se reintenta en un minuto."));
@@ -588,15 +680,21 @@ mod transporte {
         ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo, SDDL_REVISION_1, SE_KERNEL_OBJECT,
     };
     use windows_sys::Win32::Security::{
-        IsWellKnownSid, WinBuiltinAdministratorsSid, WinLocalSystemSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
+        GetTokenInformation, IsWellKnownSid, RevertToSelf, TokenGroups, TokenUser, WinBuiltinAdministratorsSid, WinLocalSystemSid, OWNER_SECURITY_INFORMATION,
+        PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, OPEN_EXISTING, PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT,
     };
     use windows_sys::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PeekNamedPipe, WaitNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
-        PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, ImpersonateNamedPipeClient, PeekNamedPipe, WaitNamedPipeW, PIPE_READMODE_BYTE,
+        PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
     };
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, OpenThreadToken};
+
+    /// Atributos de un grupo en un token (winnt.h).
+    const SE_GROUP_ENABLED: u32 = 0x4;
+    const SE_GROUP_USE_FOR_DENY_ONLY: u32 = 0x10;
 
     /// Lo que pide el cliente: leer y escribir datos (lo que la DACL da a los usuarios).
     const ACCESO_CLIENTE: u32 = 0x0012_008B;
@@ -632,17 +730,18 @@ mod transporte {
         Ok(h)
     }
 
-    /// Una conexión con una espera para la petición (un cliente que no dice
-    /// nada no deja el hilo bloqueado para siempre).
+    /// Una conexión con un plazo **total** para leer (en el servicio, la
+    /// petición entera: un cliente que no dice nada, o que manda un byte de vez
+    /// en cuando, no deja el hilo ocupado para siempre).
     pub struct Conexion {
         archivo: File,
         h: HANDLE,
-        espera: std::time::Duration,
+        limite: std::time::Instant,
     }
 
     impl std::io::Read for Conexion {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            let limite = std::time::Instant::now() + self.espera;
+            let limite = self.limite;
             loop {
                 let mut hay: u32 = 0;
                 // SAFETY: handle válido mientras vive la conexión; punteros a variables locales.
@@ -708,8 +807,9 @@ mod transporte {
                 std::thread::spawn(move || {
                     let h = hv as HANDLE;
                     // SAFETY: el handle pasa a ser del `File`, que lo cierra al soltarlo.
-                    let mut c = Conexion { archivo: unsafe { File::from_raw_handle(h as _) }, h, espera: std::time::Duration::from_millis(ESPERA_PETICION_MS) };
-                    servir(&atiende, &mut c);
+                    let limite = std::time::Instant::now() + std::time::Duration::from_millis(ESPERA_PETICION_MS);
+                    let mut c = Conexion { archivo: unsafe { File::from_raw_handle(h as _) }, h, limite };
+                    servir(&atiende, &mut c, |c| identificar(c.h));
                     // Se cierra sin DisconnectNamedPipe: así el cliente aún puede leer la
                     // respuesta (desconectar descarta lo que no haya leído).
                     drop(c);
@@ -720,6 +820,73 @@ mod transporte {
         // SAFETY: lo reservó ConvertStringSecurityDescriptorToSecurityDescriptorW.
         unsafe { LocalFree(sd as _) };
         r
+    }
+
+    /// Quién es el cliente de la tubería: su token (a nivel de identificación,
+    /// que es lo que el cliente permite) dice su SID y si es administrador.
+    /// Si algo falla, un cliente sin identificar y sin privilegios.
+    pub fn identificar(h: HANDLE) -> Cliente {
+        // SAFETY: handle de una tubería conectada de la que ya se leyó; el token
+        // se abre como el servicio (OpenAsSelf) y se cierra; se deja de suplantar
+        // antes de nada más.
+        unsafe {
+            if ImpersonateNamedPipeClient(h) == 0 {
+                return Cliente::default();
+            }
+            let mut token: HANDLE = std::ptr::null_mut();
+            let abierto = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut token) != 0;
+            if RevertToSelf() == 0 {
+                // Seguir como otro usuario no es una opción.
+                std::process::abort();
+            }
+            if !abierto {
+                return Cliente::default();
+            }
+            let c = cliente_de_token(token);
+            CloseHandle(token);
+            c
+        }
+    }
+
+    /// Lo que devuelve GetTokenInformation (alineado para leerlo como su estructura).
+    unsafe fn info_token(token: HANDLE, clase: i32) -> Option<Vec<u64>> {
+        let mut largo = 0u32;
+        GetTokenInformation(token, clase, std::ptr::null_mut(), 0, &mut largo);
+        if largo == 0 || largo > 1 << 20 {
+            return None;
+        }
+        let mut buf = vec![0u64; (largo as usize).div_ceil(8)];
+        (GetTokenInformation(token, clase, buf.as_mut_ptr() as _, largo, &mut largo) != 0).then_some(buf)
+    }
+
+    unsafe fn cliente_de_token(token: HANDLE) -> Cliente {
+        use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+        let Some(usuario) = info_token(token, TokenUser) else { return Cliente::default() };
+        let sid = (*(usuario.as_ptr() as *const TOKEN_USER)).User.Sid;
+        let mut texto: windows_sys::core::PWSTR = std::ptr::null_mut();
+        let id = if ConvertSidToStringSidW(sid, &mut texto) != 0 && !texto.is_null() {
+            let largo = (0..).take_while(|&i| *texto.add(i) != 0).count();
+            let s = String::from_utf16_lossy(std::slice::from_raw_parts(texto, largo));
+            LocalFree(texto as _);
+            s
+        } else {
+            String::new()
+        };
+        let mut admin = IsWellKnownSid(sid, WinLocalSystemSid) != 0;
+        if !admin {
+            if let Some(grupos) = info_token(token, TokenGroups) {
+                // Punteros sin referencias intermedias: la lista sigue más allá del primer elemento declarado.
+                let g = grupos.as_ptr() as *const TOKEN_GROUPS;
+                let n = ((*g).GroupCount as usize).min(grupos.len() * 8 / std::mem::size_of::<windows_sys::Win32::Security::SID_AND_ATTRIBUTES>());
+                let lista = std::slice::from_raw_parts(std::ptr::addr_of!((*g).Groups) as *const windows_sys::Win32::Security::SID_AND_ATTRIBUTES, n);
+                // Administradores, activo (elevado o sin UAC) o «solo para denegar» (el
+                // token filtrado de UAC de un administrador: la ventana nunca va elevada).
+                admin = lista
+                    .iter()
+                    .any(|x| IsWellKnownSid(x.Sid, WinBuiltinAdministratorsSid) != 0 && x.Attributes & (SE_GROUP_ENABLED | SE_GROUP_USE_FOR_DENY_ONLY) != 0);
+            }
+        }
+        Cliente { id, admin }
     }
 
     /// ¿La tubería es de SYSTEM o de los administradores? (Si no, la creó otro usuario.)
@@ -774,7 +941,8 @@ mod transporte {
                     return Err("El canal local no es del servicio de Resguardo: no se usa.".into());
                 }
                 // SAFETY: el handle pasa a ser del `File`.
-                return Ok(Conexion { archivo: unsafe { File::from_raw_handle(h as _) }, h, espera: std::time::Duration::from_secs(24 * 3600) });
+                let limite = std::time::Instant::now() + std::time::Duration::from_secs(24 * 3600);
+                return Ok(Conexion { archivo: unsafe { File::from_raw_handle(h as _) }, h, limite });
             }
             if unsafe { GetLastError() } != ERROR_PIPE_BUSY {
                 return Err("El servicio de Resguardo no responde (¿está en marcha?).".into());
@@ -788,39 +956,107 @@ mod transporte {
 #[cfg(unix)]
 mod transporte {
     use super::*;
+    use std::io::{Read as _, Write as _};
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::os::unix::io::AsRawFd;
     use std::os::unix::net::{UnixListener, UnixStream};
+
+    /// Un socket con un plazo **total** para leer la petición (no por lectura:
+    /// un cliente que manda un byte de vez en cuando no retiene el hilo).
+    pub struct Conexion {
+        s: UnixStream,
+        limite: std::time::Instant,
+    }
+
+    impl std::io::Read for Conexion {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let queda = self.limite.saturating_duration_since(std::time::Instant::now());
+            if queda.is_zero() {
+                return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "sin petición"));
+            }
+            self.s.set_read_timeout(Some(queda))?;
+            self.s.read(buf)
+        }
+    }
+
+    impl std::io::Write for Conexion {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.s.write(buf)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.s.flush()
+        }
+    }
+
+    /// Quién es el cliente: el uid que da el núcleo (SO_PEERCRED / getpeereid).
+    fn identificar(s: &UnixStream) -> Cliente {
+        let fd = s.as_raw_fd();
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let uid = {
+            let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+            let mut largo = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+            // SAFETY: fd abierto; estructura de salida local con su tamaño.
+            let r = unsafe { libc::getsockopt(fd, libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut largo) };
+            (r == 0).then_some(cred.uid)
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        let uid = {
+            let (mut uid, mut gid) = (0 as libc::uid_t, 0 as libc::gid_t);
+            // SAFETY: fd abierto; salidas locales.
+            (unsafe { libc::getpeereid(fd, &mut uid, &mut gid) } == 0).then_some(uid)
+        };
+        match uid {
+            Some(u) => Cliente { id: format!("uid:{u}"), admin: u == 0 },
+            None => Cliente::default(),
+        }
+    }
 
     pub fn escuchar(direccion: &str, atiende: Atiende) -> Result<(), String> {
         let ruta = std::path::Path::new(direccion);
         if let Some(dir) = ruta.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-            if !crate::agent::test_mode() {
-                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
+            if !cfg!(test) && !crate::agent::test_mode() {
+                // La carpeta, de root y sin escritura para nadie más (nadie puede
+                // cambiar el socket por otro entre que se crea y se usa).
+                let m = std::fs::symlink_metadata(dir).map_err(|e| e.to_string())?;
+                if !m.is_dir() || m.uid() != 0 {
+                    return Err(format!("{} no es una carpeta de root", dir.display()));
+                }
+                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
             }
         }
         let _ = std::fs::remove_file(ruta);
         let l = UnixListener::bind(ruta).map_err(|e| e.to_string())?;
         // Cualquier usuario local puede hablar; lo que autoriza es la prueba.
         let _ = std::fs::set_permissions(ruta, std::fs::Permissions::from_mode(0o666));
+        let activas = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         for c in l.incoming().flatten() {
-            let atiende = atiende.clone();
+            // Como mucho 4 a la vez (como en Windows): un usuario no agota los hilos del servicio.
+            if activas.load(std::sync::atomic::Ordering::SeqCst) >= 4 {
+                drop(c);
+                continue;
+            }
+            activas.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (atiende, activas) = (atiende.clone(), activas.clone());
             std::thread::spawn(move || {
-                let mut c = c;
-                let _ = c.set_read_timeout(Some(std::time::Duration::from_millis(ESPERA_PETICION_MS)));
-                servir(&atiende, &mut c);
+                let limite = std::time::Instant::now() + std::time::Duration::from_millis(ESPERA_PETICION_MS);
+                let mut c = Conexion { s: c, limite };
+                servir(&atiende, &mut c, |c| identificar(&c.s));
+                drop(c);
+                activas.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             });
         }
         Ok(())
     }
 
-    pub fn conectar(direccion: &str) -> Result<UnixStream, String> {
+    pub fn conectar(direccion: &str) -> Result<Conexion, String> {
         // El socket tiene que ser de root (si no, lo puso otro usuario).
         let dueno = std::fs::metadata(direccion).map(|m| m.uid()).map_err(|_| "El servicio de Resguardo no responde (¿está en marcha?).".to_string())?;
         if dueno != 0 && !cfg!(test) && !crate::agent::test_mode() {
             return Err("El canal local no es del servicio de Resguardo: no se usa.".into());
         }
-        UnixStream::connect(direccion).map_err(|_| "El servicio de Resguardo no responde (¿está en marcha?).".into())
+        let s = UnixStream::connect(direccion).map_err(|_| "El servicio de Resguardo no responde (¿está en marcha?).".to_string())?;
+        Ok(Conexion { s, limite: std::time::Instant::now() + std::time::Duration::from_secs(24 * 3600) })
     }
 }
 
@@ -840,21 +1076,21 @@ mod tests {
         let ver = verificador_de(CLAVE, &sal);
         let mut s = Servidor::default();
         let t = 1_000_000;
-        let reto = s.retos.nuevo(t);
+        let reto = s.retos.nuevo(t, "S-1-5-21-1");
         let bien = json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() });
-        assert!(s.autorizar(&bien, Some(&ver), t).is_ok());
+        assert!(s.autorizar(&bien, Some(&ver), t, "S-1-5-21-1").is_ok());
         // La mala, con su reto: no, y sin decir más.
-        let reto = s.retos.nuevo(t + 2_000);
+        let reto = s.retos.nuevo(t + 2_000, "S-1-5-21-1");
         let mal = json!({ "reto": reto, "prueba": prueba("otra clave cualquiera", &sal).unwrap() });
-        assert_eq!(s.autorizar(&mal, Some(&ver), t + 2_000).unwrap_err(), CLAVE_INCORRECTA);
+        assert_eq!(s.autorizar(&mal, Some(&ver), t + 2_000, "S-1-5-21-1").unwrap_err(), CLAVE_INCORRECTA);
         // Sin prueba, o con basura: igual que una mala.
-        let reto = s.retos.nuevo(t + 4_000);
-        assert_eq!(s.autorizar(&json!({ "reto": reto }), Some(&ver), t + 4_000).unwrap_err(), CLAVE_INCORRECTA);
-        let reto = s.retos.nuevo(t + 6_000);
-        assert_eq!(s.autorizar(&json!({ "reto": reto, "prueba": "!!" }), Some(&ver), t + 6_000).unwrap_err(), CLAVE_INCORRECTA);
+        let reto = s.retos.nuevo(t + 4_000, "S-1-5-21-1");
+        assert_eq!(s.autorizar(&json!({ "reto": reto }), Some(&ver), t + 4_000, "S-1-5-21-1").unwrap_err(), CLAVE_INCORRECTA);
+        let reto = s.retos.nuevo(t + 6_000, "S-1-5-21-1");
+        assert_eq!(s.autorizar(&json!({ "reto": reto, "prueba": "!!" }), Some(&ver), t + 6_000, "S-1-5-21-1").unwrap_err(), CLAVE_INCORRECTA);
         // Un equipo sin clave no acepta nada.
-        let reto = s.retos.nuevo(t + 8_000);
-        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), None, t + 8_000).is_err());
+        let reto = s.retos.nuevo(t + 8_000, "S-1-5-21-1");
+        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), None, t + 8_000, "S-1-5-21-1").is_err());
     }
 
     #[test]
@@ -863,26 +1099,26 @@ mod tests {
         let ver = verificador_de(CLAVE, &sal);
         let mut s = Servidor::default();
         let t = 5_000_000;
-        let reto = s.retos.nuevo(t);
+        let reto = s.retos.nuevo(t, "S-1-5-21-1");
         let pet = json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() });
-        assert!(s.autorizar(&pet, Some(&ver), t).is_ok());
+        assert!(s.autorizar(&pet, Some(&ver), t, "S-1-5-21-1").is_ok());
         // La misma petición otra vez (repetida por quien la vio): no.
-        assert!(s.autorizar(&pet, Some(&ver), t + 5_000).unwrap_err().contains("ya se usó"));
+        assert!(s.autorizar(&pet, Some(&ver), t + 5_000, "S-1-5-21-1").unwrap_err().contains("ya se usó"));
         // Un reto inventado: no.
-        assert!(s.autorizar(&json!({ "reto": B64.encode([9u8; 32]), "prueba": pet["prueba"] }), Some(&ver), t + 7_000).is_err());
+        assert!(s.autorizar(&json!({ "reto": B64.encode([9u8; 32]), "prueba": pet["prueba"] }), Some(&ver), t + 7_000, "S-1-5-21-1").is_err());
         // Un reto caducado: no (y se gasta).
-        let reto = s.retos.nuevo(t + 10_000);
+        let reto = s.retos.nuevo(t + 10_000, "S-1-5-21-1");
         let tarde = t + 10_000 + RETO_VIDA_S * 1000 + 1;
         let pet = json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() });
-        assert!(s.autorizar(&pet, Some(&ver), tarde).is_err());
-        assert!(s.autorizar(&pet, Some(&ver), tarde + 2_000).is_err());
+        assert!(s.autorizar(&pet, Some(&ver), tarde, "S-1-5-21-1").is_err());
+        assert!(s.autorizar(&pet, Some(&ver), tarde + 2_000, "S-1-5-21-1").is_err());
         // Un reto gastado por una prueba mala tampoco sirve para la buena.
-        let reto = s.retos.nuevo(t + 20_000);
-        assert!(s.autorizar(&json!({ "reto": reto, "prueba": B64.encode([0u8; 32]) }), Some(&ver), t + 20_000).is_err());
-        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t + 22_000).is_err());
+        let reto = s.retos.nuevo(t + 20_000, "S-1-5-21-1");
+        assert!(s.autorizar(&json!({ "reto": reto, "prueba": B64.encode([0u8; 32]) }), Some(&ver), t + 20_000, "S-1-5-21-1").is_err());
+        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t + 22_000, "S-1-5-21-1").is_err());
         // No se acumulan retos sin fin.
         for i in 0..100 {
-            s.retos.nuevo(t + 30_000 + i);
+            s.retos.nuevo(t + 30_000 + i, "S-1-5-21-1");
         }
         assert!(s.retos.vivos.len() <= RETOS_MAX);
     }
@@ -940,16 +1176,96 @@ mod tests {
         let mala = prueba("no es la clave", &sal).unwrap();
         for _ in 0..FALLOS_MAX {
             t += 1_000;
-            let reto = s.retos.nuevo(t);
-            assert!(s.autorizar(&json!({ "reto": reto, "prueba": mala }), Some(&ver), t).is_err());
+            let reto = s.retos.nuevo(t, "S-1-5-21-1");
+            assert!(s.autorizar(&json!({ "reto": reto, "prueba": mala }), Some(&ver), t, "S-1-5-21-1").is_err());
         }
         t += 1_000;
-        let reto = s.retos.nuevo(t);
-        let e = s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t).unwrap_err();
+        let reto = s.retos.nuevo(t, "S-1-5-21-1");
+        let e = s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t, "S-1-5-21-1").unwrap_err();
         assert!(e.contains("Demasiados intentos"), "{e}");
         t += BLOQUEO_MS;
-        let reto = s.retos.nuevo(t);
-        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t).is_ok());
+        let reto = s.retos.nuevo(t, "S-1-5-21-1");
+        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t, "S-1-5-21-1").is_ok());
+    }
+
+    /// Un usuario que prueba claves solo se bloquea a sí mismo: el
+    /// administrador (otra cuenta) sigue pudiendo entrar.
+    #[test]
+    fn el_bloqueo_es_de_cada_cuenta() {
+        let sal = B64.encode([4u8; 16]);
+        let ver = verificador_de(CLAVE, &sal);
+        let mut s = Servidor::default();
+        let mut t = 20_000_000;
+        let mala = prueba("no es la clave", &sal).unwrap();
+        for _ in 0..FALLOS_MAX * 3 {
+            t += 1_000;
+            let reto = s.retos.nuevo(t, "S-1-5-21-1001");
+            assert!(s.autorizar(&json!({ "reto": reto, "prueba": mala }), Some(&ver), t, "S-1-5-21-1001").is_err());
+        }
+        // El intruso, bloqueado.
+        t += 1_000;
+        let reto = s.retos.nuevo(t, "S-1-5-21-1001");
+        let e = s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t, "S-1-5-21-1001").unwrap_err();
+        assert!(e.contains("Demasiados intentos"), "{e}");
+        // El administrador, no (ni siquiera espera el segundo entre intentos del otro).
+        let reto = s.retos.nuevo(t, "S-1-5-21-500");
+        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t, "S-1-5-21-500").is_ok());
+        // Muchas cuentas distintas no hacen crecer la memoria sin fin.
+        for i in 0..(LIMITADORES_MAX as i64 * 3) {
+            let reto = s.retos.nuevo(t + i, &format!("S-1-5-21-{i}"));
+            let _ = s.autorizar(&json!({ "reto": reto, "prueba": mala }), Some(&ver), t + i, &format!("S-1-5-21-{i}"));
+        }
+        assert!(s.limitadores.len() <= LIMITADORES_MAX);
+        // Cambiar la clave olvida los fallos de esa cuenta.
+        s.olvidar_fallos("S-1-5-21-1001");
+        let reto = s.retos.nuevo(t + 10_000, "S-1-5-21-1001");
+        assert!(s.autorizar(&json!({ "reto": reto, "prueba": prueba(CLAVE, &sal).unwrap() }), Some(&ver), t + 10_000, "S-1-5-21-1001").is_ok());
+    }
+
+    /// Un reto solo vale para la cuenta que lo pidió, y otra cuenta que pide
+    /// muchos no echa los de las demás.
+    #[test]
+    fn retos_de_cada_cuenta() {
+        let sal = B64.encode([6u8; 16]);
+        let ver = verificador_de(CLAVE, &sal);
+        let mut s = Servidor::default();
+        let t = 30_000_000;
+        let del_admin = s.retos.nuevo(t, "S-1-5-21-500");
+        for i in 0..1000 {
+            s.retos.nuevo(t + i, "S-1-5-21-1001");
+        }
+        assert!(s.retos.vivos.len() <= RETOS_TOTAL);
+        assert!(s.retos.vivos.iter().filter(|x| x.2 == "S-1-5-21-1001").count() <= RETOS_MAX);
+        let bien = prueba(CLAVE, &sal).unwrap();
+        // Otra cuenta no puede usar el reto del administrador…
+        let otro = s.retos.nuevo(t + 2_000, "S-1-5-21-1001");
+        assert!(s.autorizar(&json!({ "reto": del_admin, "prueba": bien }), Some(&ver), t + 2_000, "S-1-5-21-1001").unwrap_err().contains("ya se usó"));
+        // …ni el administrador el de otra; el suyo sigue vivo.
+        assert!(s.autorizar(&json!({ "reto": otro, "prueba": bien }), Some(&ver), t + 2_000, "S-1-5-21-500").is_err());
+        assert!(s.autorizar(&json!({ "reto": del_admin, "prueba": bien }), Some(&ver), t + 2_000, "S-1-5-21-500").is_ok());
+    }
+
+    /// Lo que guarda el vínculo se hace bajo el cerrojo de las consolas.
+    #[test]
+    fn lo_que_cambia_el_vinculo_va_con_cerrojo() {
+        for op in ["crear_clave", "ajustes", "crear_repositorio", "config", "retencion", "copia_externa", "cambiar_clave"] {
+            assert!(cambia_vinculo(op), "{op}");
+        }
+        // Lo largo (restaurar, explorar) no retiene las órdenes de las consolas.
+        for op in ["hola", "restaurar", "explorar", "carpetas", "estado_local", "historial"] {
+            assert!(!cambia_vinculo(op), "{op}");
+        }
+    }
+
+    /// La primera clave (modo sin consola) solo la pone un administrador del equipo.
+    #[test]
+    fn solo_un_administrador_pone_la_primera_clave() {
+        let usuario = Cliente { id: "S-1-5-21-1001".into(), admin: false };
+        let admin = Cliente { id: "S-1-5-21-500".into(), admin: true };
+        assert!(puede_crear_clave(&usuario, false).unwrap_err().contains("Solo un administrador"));
+        assert!(puede_crear_clave(&Cliente::default(), false).is_err(), "sin identificar: no");
+        assert!(puede_crear_clave(&admin, false).is_ok());
+        assert!(puede_crear_clave(&usuario, true).is_ok(), "en pruebas, cualquiera");
     }
 
     #[test]
@@ -1014,10 +1330,12 @@ mod tests {
         };
         // Sin tocar el disco: un `hola` de verdad (reto) y lo demás, como si el equipo no tuviera clave.
         let servidor = std::sync::Mutex::new(Servidor::default());
-        let atiende: Atiende = std::sync::Arc::new(move |pet: &Value| {
+        let atiende: Atiende = std::sync::Arc::new(move |pet: &Value, cliente: &Cliente| {
             respuesta(match pet["op"].as_str() {
-                Some("hola") => Ok(json!({ "reto": servidor.lock().unwrap().retos.nuevo(ahora_ms()) })),
-                _ => servidor.lock().unwrap().autorizar(pet, None, ahora_ms()).map(|_| Value::Null),
+                // Quién dice el sistema que es el cliente (esta misma prueba).
+                Some("quien") => Ok(json!({ "id": cliente.id, "admin": cliente.admin })),
+                Some("hola") => Ok(json!({ "reto": servidor.lock().unwrap().retos.nuevo(ahora_ms(), &cliente.id) })),
+                _ => servidor.lock().unwrap().autorizar(pet, None, ahora_ms(), &cliente.id).map(|_| Value::Null),
             })
         });
         let d = direccion.clone();
@@ -1047,6 +1365,37 @@ mod tests {
         let mut c = transporte::conectar(&direccion).unwrap();
         let r = pedir_en(&mut c, &format!("{}\n", json!({ "op": "ajustes", "reto": r["datos"]["reto"], "escritorio": { "ventana": "off", "avisos": "off" } })));
         assert_eq!(r["ok"], false);
+        // El servicio sabe quién pide (lo dice el sistema, no la petición): esta cuenta.
+        let mut c = transporte::conectar(&direccion).unwrap();
+        let r = pedir_en(
+            &mut c,
+            "{\"op\":\"quien\",\"id\":\"S-1-5-18\"}
+",
+        );
+        let id = r["datos"]["id"].as_str().unwrap_or("").to_string();
+        #[cfg(windows)]
+        assert!(id.starts_with("S-1-5-"), "{r}");
+        #[cfg(unix)]
+        {
+            assert_eq!(id, format!("uid:{}", unsafe { libc::geteuid() }), "{r}");
+            assert_eq!(r["datos"]["admin"], unsafe { libc::geteuid() } == 0);
+        }
+        // Una petición que llega a trozos, más despacio que el plazo total: se corta.
+        use std::io::Write;
+        let mut c = transporte::conectar(&direccion).unwrap();
+        let inicio = std::time::Instant::now();
+        let mut cortada = false;
+        while inicio.elapsed() < std::time::Duration::from_millis(ESPERA_PETICION_MS + 5_000) {
+            if c.write_all(b" ").is_err() {
+                cortada = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        assert!(
+            cortada || leer_linea(&mut c, MAX_RESPUESTA).is_ok_and(|l| String::from_utf8_lossy(&l).contains("ok")),
+            "una conexión lenta no se queda para siempre"
+        );
         // Demasiado grande: no.
         let mut c = transporte::conectar(&direccion).unwrap();
         let grande = format!("{{\"op\":\"hola\",\"x\":\"{}\"}}\n", "a".repeat(MAX_MENSAJE + 10));

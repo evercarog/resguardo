@@ -129,6 +129,65 @@ fn carpetas_locales() {
     }
 }
 
+/// ¿Es `sid` un SID en texto (`S-1-5-21-…`)? Solo cifras y guiones: va dentro de un SDDL.
+pub fn sid_valido(sid: &str) -> bool {
+    sid.len() <= 184 && sid.starts_with("S-1-") && sid[4..].split('-').all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Crea **una** carpeta nueva (nunca sigue un enlace: si ya hay algo con ese
+/// nombre, falla con `AlreadyExists`). Con `dueno` (el SID de quien la pide),
+/// en Windows nace ya con permisos propios, sin heredar los de la carpeta de
+/// arriba: SYSTEM, Administradores y esa cuenta. Así nadie más puede poner un
+/// enlace dentro mientras el servicio escribe en ella. En Unix, de root y 0755.
+pub fn crear_carpeta_nueva(p: &Path, dueno: Option<&str>) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        if let Some(sid) = dueno {
+            use windows_sys::Win32::Foundation::LocalFree;
+            use windows_sys::Win32::Security::Authorization::{ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1};
+            use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+            use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+            if !sid_valido(sid) {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "cuenta no válida"));
+            }
+            let ancho = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+            let sddl = ancho(&format!("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{sid})"));
+            let ruta = ancho(&p.to_string_lossy());
+            let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+            // SAFETY: cadenas terminadas en cero; `sd` lo reserva Windows y se libera con LocalFree.
+            unsafe {
+                if ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) == 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                let sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
+                let ok = CreateDirectoryW(ruta.as_ptr(), &sa) != 0;
+                let err = std::io::Error::last_os_error();
+                LocalFree(sd as _);
+                return if ok { Ok(()) } else { Err(err) };
+            }
+        }
+        std::fs::create_dir(p)
+    }
+    #[cfg(unix)]
+    {
+        let _ = dueno;
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o755).create(p)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = dueno;
+        std::fs::create_dir(p)
+    }
+}
+
+/// ¿Hay un enlace (simbólico, unión o punto de montaje) en `p` o en alguna
+/// carpeta de su camino? Los marcadores de OneDrive y otros puntos de
+/// reanálisis que no redirigen no cuentan.
+pub fn hay_enlace_en_el_camino(p: &Path) -> bool {
+    p.ancestors().any(|a| std::fs::symlink_metadata(a).is_ok_and(|m| m.file_type().is_symlink()))
+}
+
 /// Crea (si hace falta) una carpeta de datos de SYSTEM y la deja solo para
 /// SYSTEM y Administradores (como la carpeta privada del agente).
 pub fn carpeta_privada(p: &Path) -> Result<(), String> {
