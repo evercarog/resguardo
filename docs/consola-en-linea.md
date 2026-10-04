@@ -257,6 +257,12 @@ DuckDNS). Lo demás lo hace `preparar-vm.sh`.
    la dirección de los agentes (`https://agentes.consola.ejemplo.com`), el
    instalador listo de Windows o la línea de Linux. Los equipos necesitan
    salir a internet por el 443; nada más.
+   El paquete de Linux no trae el instalador del agente de Windows: para
+   «Descargar instalador listo», sube `Resguardo-Agente-setup.exe` de la
+   misma publicación a la máquina y, por SSH,
+   `sudo resguardo-server poner-instalador-agente Resguardo-Agente-setup.exe --sha256 <el de SHA256SUMS>`
+   (sin reiniciar; ver [servidor-linux.md](servidor-linux.md#el-instalador-listo-de-windows)).
+   Sin él, la consola ofrece el instalador normal y un código.
 
 9. **Conectar las consolas locales.** Si ya tienes un Resguardo Server en la
    oficina, en él: «Conectar también a otra consola» con la dirección de los
@@ -472,6 +478,9 @@ que A: úsalo solo si no puedes conservar la identidad.
 
 - La **llave de publicación** (minisign): hasta que exista, los paquetes se
   copian a mano y se comprueban por su SHA-256.
+- El **instalador de Windows dentro del paquete de Linux**: la CI de Linux no
+  lo compila (se hace en Windows, con NSIS), así que se pone a mano con
+  `poner-instalador-agente` (paso 8).
 - El **agente de arm64** lleva restic, pero no rest-server ni rclone con
   huella fijada: en arm64, «Este equipo guarda copias» y el espejo en la nube
   aún no se usan (no hace falta para la consola).

@@ -287,6 +287,19 @@ jobs:
           sudo journalctl -u resguardo-server --no-pager | grep -q 'Primer arranque'
           # Sin sudo: lo explica.
           nunca resguardo-server codigo-inicial
+          # «Descargar instalador listo» en Linux: poner-instalador-agente (aquí, un
+          # ejecutable de Windows de prueba) y la consola lo ofrece sin reiniciar.
+          curl -fsSk https://127.0.0.1:8443/api/servidor | jq -e '.instalador_agente == false'
+          python3 -c 'import struct,sys; b=bytearray(256*1024); b[0:2]=b"MZ"; b[0x3c:0x40]=struct.pack("<I",0x80); b[0x80:0x84]=b"PE\0\0"; sys.stdout.buffer.write(b)' > setup-prueba.exe
+          head -c 1000 /dev/urandom > no-es-exe.exe
+          nunca sudo resguardo-server poner-instalador-agente no-es-exe.exe
+          nunca sudo resguardo-server poner-instalador-agente setup-prueba.exe --sha256 0000000000000000000000000000000000000000000000000000000000000000
+          nunca resguardo-server poner-instalador-agente setup-prueba.exe
+          SUMA=$(sha256sum setup-prueba.exe | cut -d' ' -f1)
+          sudo resguardo-server poner-instalador-agente setup-prueba.exe --sha256 "$SUMA" | tee poner.txt
+          grep -q "$SUMA" poner.txt
+          sudo stat -c '%U %a' /var/lib/resguardo-server/agente /var/lib/resguardo-server/agente/Resguardo-Agente-setup.exe | tee /dev/stderr | tr '\n' ' ' | grep -q '^resguardo-server 700 resguardo-server 600 $'
+          curl -fsSk https://127.0.0.1:8443/api/servidor | jq -e '.instalador_agente == true'
           # Actualizar encima conserva los datos (y avisa de que es la misma versión).
           sudo sh paquetes-servidor/instalar-servidor.sh --paquete paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz --sin-firma | tee reinstalar.txt
           grep -q 'Misma versión' reinstalar.txt

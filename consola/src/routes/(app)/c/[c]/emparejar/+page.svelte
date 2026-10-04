@@ -360,7 +360,7 @@
 
       {#if (so === "windows" && modoWin === "listo") || so === "linux"}
         {#if so === "windows" && !puedeListo}
-          <div class="notice notice-info"><p>Este servidor no trae el instalador del agente (viene con Resguardo Server para Windows). Usa «Instalador normal y un código».</p></div>
+          <div class="notice notice-info"><p>Este servidor no tiene el instalador del agente: viene con Resguardo Server para Windows y, en un servidor Linux, se pone con <code>sudo resguardo-server poner-instalador-agente Resguardo-Agente-setup.exe</code>. Mientras tanto, usa «Instalador normal y un código».</p></div>
         {:else}
           <div class="field">
             <label class="field-label" for="p-nombre">Nombre del equipo</label>
