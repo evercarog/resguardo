@@ -1,17 +1,23 @@
 // Lo que está en marcha ahora en los equipos del cliente abierto (v1.25): el
 // progreso de las copias y de las tareas largas, casi en vivo.
 //
-// El servidor lo tiene solo en memoria (`GET …/progreso`): aquí se pregunta
+// El servidor lo tiene solo en memoria (`GET …/progreso`). Con el canal en
+// vivo (v1.3x, vivo.svelte.ts) se pregunta en cuanto el servidor dice que algo
+// empezó, cambió o terminó (y de respaldo cada 30 s). Sin canal, como antes:
 // cada 3 s mientras algo está en marcha (o justo después de mandar «Copiar
 // ahora») y cada 12 s si no. Con un servidor anterior (404), se toma de los
 // informes (`progreso`, si el agente lo manda), cada 15 s.
 //
-// Cuando algo termina, se vuelve a cargar el cliente (el estado de la copia,
-// la última vuelta…) y avisa a quien lo pida con `alTerminar`.
+// Cuando algo termina, se vuelve a cargar el cliente y los últimos informes
+// (el estado de la copia, la última copia, el espacio…) y avisa a quien lo
+// pida con `alTerminar`. Sin canal, se vuelve a cargar también unos segundos
+// después: el informe del final de la tarea llega un momento más tarde.
 
 import * as api from "./api";
 import { anotar, type Ritmo } from "$ui/ritmos";
 import { cargarCliente } from "./estado.svelte";
+import { recargarInformes } from "./informes.svelte";
+import { alCambiar, vivo } from "./vivo.svelte";
 import type { TareaEnMarcha, TipoTarea } from "./tipos";
 
 export interface EnMarchaEquipo {
@@ -29,6 +35,10 @@ export const enMarcha = $state({
 const RAPIDO = 3_000;
 const LENTO = 12_000;
 const INFORMES = 15_000;
+/** Con el canal en vivo, solo de respaldo (y para quitar lo que caducó). */
+const CON_VIVO = 30_000;
+/** Sin canal: tras terminar algo, se vuelve a cargar a estos plazos (el informe del final llega después). */
+const TRAS_TERMINAR = [5_000, 15_000];
 /** Tras mandar una orden que pone algo en marcha, se pregunta deprisa este rato. */
 const PRONTO = 90_000;
 /** Un informe más viejo que esto ya no dice qué está en marcha. */
@@ -117,15 +127,33 @@ async function preguntar(cliente: string, n: number, siempre = false) {
       pulso.ahora = ahora;
       latir();
       if (terminadas.length) {
-        void cargarCliente(cliente, { silencioso: true });
+        refrescarTrasTerminar(cliente);
         for (const [e, t] of terminadas) for (const f of oyentes) f(e, t);
       }
     }
-    siguiente = !enMarcha.enVivo ? INFORMES : hayAlgo() || Date.now() < deprisaHasta ? RAPIDO : LENTO;
+    siguiente = !enMarcha.enVivo ? INFORMES : vivo.conectado ? CON_VIVO : hayAlgo() || Date.now() < deprisaHasta ? RAPIDO : LENTO;
   } catch {
     /* sin conexión o sin sesión: se reintenta despacio */
   }
   if (n === vuelta) temporizador = setTimeout(() => void preguntar(cliente, n), siguiente);
+}
+
+/** Algo terminó: el resumen y los informes, ya (y sin canal, otra vez en unos segundos). */
+function refrescarTrasTerminar(cliente: string) {
+  const ya = () => {
+    if (enMarcha.cliente !== cliente) return;
+    void cargarCliente(cliente, { silencioso: true });
+    void recargarInformes(cliente);
+  };
+  ya();
+  if (!vivo.conectado) for (const ms of TRAS_TERMINAR) setTimeout(ya, ms);
+}
+
+/** Pregunta ya (lo pide el canal en vivo). */
+function preguntarYa(cliente: string, n: number) {
+  if (n !== vuelta) return;
+  if (temporizador) clearTimeout(temporizador);
+  void preguntar(cliente, n);
 }
 
 /** Empieza a seguir lo que está en marcha en un cliente. Devuelve cómo parar. */
@@ -148,7 +176,12 @@ export function vigilarProgreso(cliente: string): () => void {
     }
   };
   document.addEventListener("visibilitychange", alVolver);
+  // El canal en vivo dice cuándo empieza, cambia o termina algo (o que se perdió algo: `resync`).
+  const dejarVivo = alCambiar((cs) => {
+    if (cs.some((c) => c.t === "progreso" || c.t === "resync" || (c.t === "orden" && c.estado === "en_marcha"))) preguntarYa(cliente, n);
+  });
   return () => {
+    dejarVivo();
     document.removeEventListener("visibilitychange", alVolver);
     if (n === vuelta) {
       vuelta++;

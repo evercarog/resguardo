@@ -8,7 +8,8 @@
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
+  import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import {
     CalendarClock,
@@ -68,6 +69,16 @@
       .equipo(c, e)
       .then((x) => ((equipo = x), (error = "")))
       .catch((x) => (error = (x as Error).message));
+  });
+  // Al día sin recargar (sin vaciar la página): cuando el canal en vivo dice que algo de este equipo cambió.
+  $effect(() => {
+    const [cc, ee] = [c, e];
+    return untrack(() =>
+      seguirCambios(() => api.equipo(cc, ee).then((x) => ee === e && (equipo = x), () => {}), {
+        ms: 0,
+        toca: (x) => (x.t === "informe" || x.t === "config" || x.t === "equipo" || (x.t === "progreso" && x.estado === "termina")) && tocaEquipo(x, ee),
+      }),
+    );
   });
 
   const copias = $derived(equipo?.resumen?.copias ?? []);

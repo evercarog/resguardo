@@ -7,7 +7,8 @@
   // descifrar) y la prueba del equipo (para la orden), se comprueba la etiqueta
   // y la clave se olvida. Todo se borra al salir.
   import Migas from "$lib/componentes/Migas.svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
+  import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { CalendarClock, FolderOpen, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
@@ -61,6 +62,16 @@
   $effect(() => {
     void id;
     api.equipo(c, id).then((e) => (equipo = e), (e) => (error = e.message));
+  });
+  // Su estado al día (próxima vez, última copia…) sin tocar lo que se está editando (`cfg`).
+  $effect(() => {
+    const [cc, ee] = [c, id];
+    return untrack(() =>
+      seguirCambios(() => api.equipo(cc, ee).then((e) => ee === id && (equipo = e), () => {}), {
+        ms: 0,
+        toca: (x) => (x.t === "informe" || x.t === "config" || x.t === "equipo" || (x.t === "progreso" && x.estado === "termina")) && tocaEquipo(x, ee),
+      }),
+    );
   });
   onDestroy(() => {
     borrar(kcfg, prueba);

@@ -21,6 +21,8 @@ export interface Servidor {
   url_agentes?: string | null;
   /** v1.34: consola en internet (cuotas por cliente más estrictas por defecto). */
   publico?: boolean;
+  /** v1.3x: canal en vivo de la consola (`GET /api/clientes/{c}/vivo`, WebSocket). */
+  vivo?: boolean;
 }
 
 /** v1.34: cuotas de un cliente. null = la predeterminada; 0 = sin límite. */

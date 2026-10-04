@@ -7,7 +7,8 @@
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
   import { diasEquipo, ultimas24h } from "$lib/panel";
-  import { onMount } from "svelte";
+  import { untrack } from "svelte";
+  import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import {
@@ -131,9 +132,17 @@
   $effect(() => {
     if (tab === "informes" && id) void cargarInformes();
   });
-  onMount(() => {
-    const t = setInterval(() => document.visibilityState === "visible" && enFondo(cargar), 8000);
-    return () => clearInterval(t);
+  // Al día sin recargar: con el canal en vivo, cuando cambia algo de este equipo; sin él, cada 8 s.
+  $effect(() => {
+    const eq = id;
+    return untrack(() => {
+      const dejar = seguirCambios(() => enFondo(cargar), { ms: 8000, toca: (x) => x.t !== "historial" && (x.t !== "progreso" || x.estado === "termina") && tocaEquipo(x, eq) });
+      const dejarInformes = seguirCambios(() => tab === "informes" && cargarInformes(), { ms: 0, toca: (x) => x.t === "informe" && tocaEquipo(x, eq) });
+      return () => {
+        dejar();
+        dejarInformes();
+      };
+    });
   });
 
   const salud = $derived(equipo ? saludEquipo(equipo, reloj.ahora) : null);
