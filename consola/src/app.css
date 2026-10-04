@@ -4,6 +4,10 @@
 html {
   scroll-padding-top: var(--sp-16, 64px);
 }
+:root {
+  /* Barra lateral plegada a iconos (docs/diseno.md §5). */
+  --sidebar-plegada: 60px;
+}
 
 /* En la web se puede seleccionar el texto (copiar un nombre, una huella…). */
 body {
@@ -663,6 +667,6 @@ button.fila {
   padding: 8px 12px;
 }
 /* Barra lateral: elementos de 28 px (antes 32). */
-:root[data-densidad="compacta"] .barra .items a {
+:root[data-densidad="compacta"] .barra:not(.plegada) .items a {
   height: 28px;
 }

@@ -17,6 +17,7 @@
   import { actual, app, cargarClientes } from "$lib/estado.svelte";
   import { todasEnMarcha } from "$lib/progreso.svelte";
   import { ponerIcono } from "$lib/favicon";
+  import { barra } from "$lib/barra.svelte";
 
   let { children }: { children: Snippet } = $props();
   let cajon = $state(false);
@@ -70,9 +71,9 @@
 
 {#if app.cuenta}
   <a class="saltar" href="#contenido" onclick={saltar}>Saltar al contenido</a>
-  <div class="marco">
+  <div class="marco" class:plegada={barra.plegada}>
     <!-- La barra lateral ya es un <nav> con nombre: sin <aside> alrededor (un punto de referencia de más). -->
-    <div class="lateral"><BarraLateral /></div>
+    <div class="lateral"><BarraLateral plegable /></div>
 
     <header class="movil">
       <button class="icon-btn" bind:this={botonMenu} aria-label="Abrir el menú" aria-expanded={cajon} aria-controls={cajon ? "cajon" : undefined} onclick={() => (cajon = true)}><Menu size={20} /></button>
@@ -112,6 +113,11 @@
     display: grid;
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
     min-height: 100dvh;
+    transition: grid-template-columns var(--dur) var(--ease);
+  }
+  /* Plegada a iconos (lib/barra.svelte.ts). */
+  .marco.plegada {
+    grid-template-columns: var(--sidebar-plegada) minmax(0, 1fr);
   }
   .lateral {
     position: sticky;
@@ -144,7 +150,7 @@
     outline: none;
   }
   @media (max-width: 1100px) {
-    .marco {
+    .marco:not(.plegada) {
       grid-template-columns: 232px minmax(0, 1fr);
     }
   }
