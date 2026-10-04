@@ -608,6 +608,7 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
 ```
 
 - v1.36 (copias): `lectura` (lo que restic lee del disco) y `subida` (lo que escribe o sube al destino), en bytes/s medidos en el proceso de restic (E/S del proceso; en Windows la red cuenta como «otra» E/S), y `archivos_s` (archivos por segundo), suavizados. Para las gráficas en vivo de la consola (`GraficaOndas`); un agente anterior no los manda y un servidor anterior los quita (la consola enseña la barra de siempre).
+- v1.3x (pendiente de numerar al unir): `lectura` y `subida` también en `verificar`, `verificar_externa`, `prueba_restauracion` y `copia_externa`, de los contadores de E/S del restic que corre (como en las copias). Sin ellos (agente anterior, o un sistema que no los da), la consola los deduce de `bytes`, como hasta ahora.
 - Copias: `antes_de_copiar` mientras corren los ganchos, `preparando` sin cifras de restic todavía, `escaneando` mientras restic aún cuenta (copia a la vez, sin `quedan_s`), `subiendo` con total y `quedan_s`, `terminando` al guardar la versión. Las demás tareas: `preparando` o `en_marcha`, con `etapa`. `versiones*` solo en `copia_externa`.
 - Todos los campos salvo `tipo`, `repo` y `fase` pueden faltar o ser `null`. El servidor deja solo estos campos (textos cortos, números enteros no negativos, `porcentaje` entre 0 y 1), como mucho 8 tareas y 16 KiB por mensaje.
 
@@ -1094,3 +1095,4 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
   - El servidor no cambia en nada más. Lo nuevo en el equipo (la ventana, los avisos, el canal local con la clave y el modo sin consola) no pasa por el servidor.
 - v1.3x (pendiente de numerar al unir). Todo es compatible hacia atrás:
   - **Correos con la marca del cliente** (§13): un correo de un solo cliente con marca lleva su logo (PNG dentro del correo, `multipart/related` con `Content-ID`) y su acento en la cabecera; lo que junta varios clientes, neutro. Ni la API ni los demás canales (webhook, ntfy, Telegram) cambian.
+  - **Ritmos reales** (§6 `Tarea`, agente): `lectura` y `subida` también en las verificaciones, la prueba de restauración y la copia externa, de los contadores de E/S del proceso de restic (como en las copias); en la ventana del equipo, también el espejo a una nube (de rclone) y los bytes copiados del espejo a una carpeta. El servidor ya los deja pasar; una consola anterior los ignora o los usa igual que en las copias.

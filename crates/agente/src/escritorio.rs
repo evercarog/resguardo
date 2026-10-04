@@ -215,6 +215,10 @@ pub fn actividad_tarea(t: &crate::tasks::RunningTask, nombre: &str) -> Actividad
         porcentaje: t.percent.map(redondeo),
         bytes: t.bytes_done,
         bytes_total: t.bytes_total,
+        // Lectura y subida reales (contadores de E/S de restic); sin ellos, la serie
+        // las deduce de los bytes, como antes.
+        lectura: t.read_bps,
+        subida: t.upload_bps,
         quedan_s: t.eta_s,
         empezo: t.started.clone(),
         ..Default::default()
@@ -269,6 +273,16 @@ pub mod en_marcha {
                         (Some(b), Some(t)) if t > 0 => Some(super::redondeo(b as f64 / t as f64)),
                         _ => None,
                     };
+                }
+            }
+        }
+
+        /// Lo que lee y escribe o sube de verdad (bytes/s), si se mide (rclone).
+        pub fn ritmos(&self, lectura: Option<u64>, subida: Option<u64>) {
+            if let Ok(mut v) = EN_CURSO.lock() {
+                if let Some(a) = v.iter_mut().find(|a| a.id == self.id) {
+                    a.lectura = lectura;
+                    a.subida = subida;
                 }
             }
         }
@@ -985,10 +999,13 @@ mod tests {
             started: "x".into(),
             stage: r"C:\secreto".into(),
             percent: Some(0.2),
+            read_bps: Some(800),
+            upload_bps: Some(700),
             ..Default::default()
         };
         let a = actividad_tarea(&t, "Servidor");
         assert_eq!((a.tipo.as_str(), a.fase.as_str()), ("copia_externa", "en_marcha"));
+        assert_eq!((a.lectura, a.subida), (Some(800), Some(700)));
         assert!(!serde_json::to_string(&a).unwrap().contains("secreto"));
     }
 }

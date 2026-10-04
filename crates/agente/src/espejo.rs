@@ -176,6 +176,12 @@ pub struct Resumen {
 
 /// Copia `origen` en `destino` con las reglas de arriba.
 pub fn copiar(origen: &Path, destino: &Path) -> Result<Resumen, String> {
+    copiar_con(origen, destino, &mut |_| {})
+}
+
+/// Lo mismo, diciendo los bytes copiados hasta ahora tras cada archivo
+/// (la ventana del equipo saca de ahí el ritmo).
+pub fn copiar_con(origen: &Path, destino: &Path, avance: &mut dyn FnMut(u64)) -> Result<Resumen, String> {
     let mut r = Resumen::default();
     let ahora = SystemTime::now();
     let mut pendientes: Vec<PathBuf> = vec![PathBuf::new()];
@@ -229,6 +235,7 @@ pub fn copiar(origen: &Path, destino: &Path) -> Result<Resumen, String> {
             std::fs::rename(&tmp, &dest).map_err(|e| format!("No se pudo terminar {}: {e}", dest.display()))?;
             r.copiados += 1;
             r.bytes += m.len();
+            avance(r.bytes);
         }
     }
     Ok(r)
@@ -241,12 +248,14 @@ pub fn toca(e: &Espejo, ahora: chrono::DateTime<chrono::Local>) -> bool {
     ahora.time() >= h && !e.ultima.as_deref().is_some_and(|u| u.starts_with(&hoy))
 }
 
-/// Copia a un destino. Devuelve el texto del resultado.
-fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>) -> Result<String, String> {
+/// Copia a un destino, contando cómo va en `guarda` (la ventana del equipo: los
+/// bytes copiados a una carpeta; lo que lee y sube rclone a una nube). Devuelve
+/// el texto del resultado.
+fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate::escritorio::en_marcha::Guarda) -> Result<String, String> {
     if d.tipo == "nube" {
         let nombre = d.nube.as_deref().unwrap_or_default();
         let n = crate::nube::buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
-        return crate::nube::copiar(&n, origen, &d.carpeta, limite_kib);
+        return crate::nube::copiar(&n, origen, &d.carpeta, limite_kib, &mut |l, s| guarda.ritmos(l, s));
     }
     // La carpeta de destino: local, sin enlaces en el camino y de Administradores.
     crate::platform::carpeta_local_valida(&d.carpeta)?;
@@ -254,7 +263,7 @@ fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>) -> Result<Strin
     if destino.exists() && !crate::platform::owned_by_admins(destino) {
         return Err("la carpeta del espejo no es de Administradores (vuelve a poner el espejo para corregirla).".into());
     }
-    let r = copiar(origen, destino)?;
+    let r = copiar_con(origen, destino, &mut |b| guarda.progreso(Some(b), None))?;
     let texto =
         format!("{} archivos nuevos ({} MB), {} ya estaban, {} se dejan para la próxima vez.", r.copiados, r.bytes / (1024 * 1024), r.iguales, r.recientes);
     if r.distintos > 0 {
@@ -288,7 +297,7 @@ pub fn si_toca() {
                 None => ("espejo", "Disco o carpeta del equipo".to_string()),
             };
             let guarda = crate::escritorio::en_marcha::empezar(tipo, &i.to_string(), &nombre);
-            let texto = match copiar_a(Path::new(&c.path), &d, e.limite_kib) {
+            let texto = match copiar_a(Path::new(&c.path), &d, e.limite_kib, &guarda) {
                 Ok(t) => {
                     guarda.terminar("ok");
                     format!("Espejo hecho en {}: {t}", d.texto())
@@ -356,8 +365,12 @@ mod tests {
         for f in ["ana/repo/config", "ana/repo/data/ab/abcdef"] {
             std::fs::File::options().write(true).open(o.join(f)).unwrap().set_modified(viejo).unwrap();
         }
-        let r = copiar(&o, &d).unwrap();
+        let mut avances = Vec::new();
+        let r = copiar_con(&o, &d, &mut |b| avances.push(b)).unwrap();
         assert_eq!((r.copiados, r.bytes), (2, 11));
+        // Los bytes copiados, tras cada archivo (de ahí sale el ritmo en la ventana).
+        assert_eq!(avances.len(), 2);
+        assert_eq!(avances.last(), Some(&11));
         assert!(!d.join("ana/repo/locks").exists());
         assert_eq!(std::fs::read(d.join("ana/repo/data/ab/abcdef")).unwrap(), b"datos");
         // Otra vuelta: nada nuevo. Y lo borrado en el origen sigue en el espejo.
