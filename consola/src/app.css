@@ -146,6 +146,7 @@ button.fila {
   font-size: var(--fs-sm);
   color: var(--text-3);
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Tarjeta con padding estándar. */
@@ -195,18 +196,29 @@ button.fila {
   }
 }
 
-/* Tablas sencillas (auditoría, informes). */
+/* Tablas sencillas (auditoría, informes; docs/diseno.md §4 «Tablas»):
+ * líneas finas sin cebra, cabecera pequeña y fija si la tabla es larga,
+ * cifras a la derecha y tabulares (.der), lo técnico en mono. */
 .tabla {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
 }
 .tabla th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 8px 12px;
   text-align: left;
   font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
   font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
   color: var(--text-3);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 .tabla td {
@@ -214,11 +226,31 @@ button.fila {
   border-top: 1px solid var(--border);
   vertical-align: top;
 }
+.tabla tbody tr:first-child td,
 .tabla tr:first-child td {
   border-top: none;
 }
+.tabla tbody tr {
+  transition: background var(--dur-fast) var(--ease);
+}
+.tabla tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+.tabla .der {
+  text-align: right;
+}
+.tabla .mono {
+  font-size: 12px;
+}
 .desplazable {
   overflow-x: auto;
+}
+/* Tablas largas: se desplazan dentro de su tarjeta con la cabecera fija. */
+@media (min-width: 641px) {
+  .desplazable.alto {
+    max-height: min(72vh, 720px);
+    overflow-y: auto;
+  }
 }
 
 /* Pestañas (docs/diseno.md §4): subrayado del acento bajo la activa. */
@@ -250,6 +282,11 @@ button.fila {
 .pestanas .on {
   color: var(--text-1);
   border-bottom-color: var(--accent);
+}
+.pestanas a:focus-visible,
+.pestanas button:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 
 /* Línea de privacidad discreta. */
@@ -501,14 +538,26 @@ button.fila {
 .c-et {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
   font-weight: 500;
   color: var(--text-3);
 }
+.c-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 .c-val {
-  margin-top: 4px;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-stat);
   line-height: 28px;
   font-weight: 600;
@@ -573,6 +622,7 @@ button.fila {
   height: 32px;
   color: var(--text-2);
   background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 .tile-nombre {
@@ -669,4 +719,11 @@ button.fila {
 /* Barra lateral: elementos de 28 px (antes 32). */
 :root[data-densidad="compacta"] .barra:not(.plegada) .items a {
   height: 28px;
+}
+
+/* Al imprimir (el informe), la cabecera de las tablas no se fija. */
+@media print {
+  .tabla th {
+    position: static;
+  }
 }

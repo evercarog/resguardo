@@ -546,7 +546,7 @@
           </div>
         {/if}
         <p class="sub">
-          <span class="junto">{equipo.so} · agente {equipo.version_agente}</span>
+          <span class="junto">{equipo.so} · agente <span class="pastilla mono">{equipo.version_agente}</span></span>
           {#if equipo.rol === "almacenamiento"}<span class="junto">· Guarda copias <Ayuda id="guarda-copias" /></span>{/if}
           <span class="junto">·
             {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)"></span>Conectado</span><Ayuda id="conectado" />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}</span
@@ -797,7 +797,7 @@
               <div class="fila">
                 <span class="fila-texto">
                   <span class="fila-titulo">{d.nombre}</span>
-                  <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{d.donde ? ` · ${d.donde}` : ""}{d.inmutable ? " · solo añadir" : ""}</span>
+                  <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · solo añadir" : ""}</span>
                 </span>
                 {#if puede.administrar(rol) && d.tipo !== "local"}
                   <button
@@ -825,7 +825,7 @@
             <span class="card-icon on"><Server size={18} /></span>
             <div>
               <h3>Guarda copias <Ayuda id="guarda-copias" /></h3>
-              <p class="faint">Puerto {g.puerto} · {g.solo_red_local ? "solo redes internas" : "abierto a otras sedes"} · {plural(g.usuarios ?? 0, "equipo copia aquí", "equipos copian aquí")}</p>
+              <p class="faint">Puerto <span class="pastilla mono">{g.puerto}</span> · {g.solo_red_local ? "solo redes internas" : "abierto a otras sedes"} · {plural(g.usuarios ?? 0, "equipo copia aquí", "equipos copian aquí")}</p>
             </div>
           </div>
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
@@ -948,7 +948,7 @@
           <div class="card p-0 desplazable">
             <table class="tabla">
               <caption class="sr-only">Informes recibidos de {equipo.nombre}</caption>
-              <thead><tr><th scope="col">Recibido</th><th scope="col">Copias</th><th scope="col">Datos nuevos</th><th scope="col">Archivos</th><th scope="col">Resultado</th></tr></thead>
+              <thead><tr><th scope="col">Recibido</th><th scope="col">Copias</th><th scope="col" class="der">Datos nuevos</th><th scope="col" class="der">Archivos</th><th scope="col">Resultado</th></tr></thead>
               <tbody>
                 {#each informes as inf (inf.recibido)}
                   {@const cs = inf.datos.copias ?? []}
@@ -956,8 +956,8 @@
                   <tr>
                     <td><time datetime={inf.recibido} use:tip={fechaLarga(inf.recibido)}>{fechaLarga(inf.recibido)}</time></td>
                     <td>{cs.map((x) => x.nombre ?? x.id).join(", ") || "—"}</td>
-                    <td class="num">{bytes(cs.reduce((n, x) => n + (x.bytes ?? 0), 0))}</td>
-                    <td class="num">{numero(cs.reduce((n, x) => n + (x.archivos ?? 0), 0))}</td>
+                    <td class="num der">{bytes(cs.reduce((n, x) => n + (x.bytes ?? 0), 0))}</td>
+                    <td class="num der">{numero(cs.reduce((n, x) => n + (x.archivos ?? 0), 0))}</td>
                     <td>
                       <Chip pequeno tono={tono(peor)} texto={TEXTO_ESTADO[peor]} />
                       {#each cs.filter((x) => x.mensaje) as x (x.id)}<p class="msg faint">{x.mensaje}</p>{/each}
