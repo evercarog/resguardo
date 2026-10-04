@@ -479,7 +479,7 @@ fn dias_motor(dias: &[u8]) -> Result<Vec<u8>, String> {
 
 impl Horario {
     /// El horario del plan que ejecuta el agente.
-    fn plan_schedule(&self) -> Result<crate::plans::PlanSchedule, String> {
+    pub(crate) fn plan_schedule(&self) -> Result<crate::plans::PlanSchedule, String> {
         use crate::plans::{PlanSchedule, ScheduleRule};
         if self.reglas.is_empty() {
             let days = dias_motor(&self.dias)?;
@@ -565,17 +565,38 @@ pub struct Configuracion {
 /// `restic check` y, con porcentaje, `--read-data-subset` **rotativo** (cada vez
 /// la parte siguiente, así en 100/porcentaje verificaciones se lee todo).
 /// 0 %: solo la estructura; 100 %: todo cada vez.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+///
+/// v1.3x (`admite: "verificacion_horario"`): con `horario` (el mismo que el de
+/// las copias, con sus reglas), se verifica cuando toca cualquiera de ellas y
+/// `cada_dias` no cuenta (la consola lo manda igual, para un agente anterior).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct VerificacionAuto {
+    #[serde(default)]
     pub cada_dias: u32,
     pub porcentaje: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horario: Option<Horario>,
 }
 
 /// La primera verificación automática, de madrugada (fuera de las horas de copia).
 const HORA_VERIFICACION: u32 = 3;
 
 impl VerificacionAuto {
+    /// Las reglas del horario, si lo tiene (y no está vacío).
+    fn reglas(&self) -> Result<Option<Vec<crate::plans::ScheduleRule>>, String> {
+        let Some(h) = self.horario.as_ref().filter(|h| !h.reglas.is_empty() || !h.horas.is_empty()) else { return Ok(None) };
+        let plan = h.plan_schedule().map_err(|e| format!("Horario de la verificación: {e}"))?;
+        plan.validate().map_err(|e| format!("Horario de la verificación: {e}"))?;
+        Ok(Some(plan.effective_rules()))
+    }
+
     pub fn valida(&self) -> Result<(), String> {
+        if self.porcentaje > 100 {
+            return Err("El porcentaje de la verificación va de 0 a 100.".into());
+        }
+        if self.reglas()?.is_some() {
+            return Ok(());
+        }
         if !(1..=31).contains(&self.cada_dias) {
             return Err("La verificación automática va de cada día a cada 31 días.".into());
         }
@@ -597,35 +618,62 @@ impl VerificacionAuto {
 
     /// La de una verificación del agente (lo que enseña el resumen).
     pub fn de(v: &crate::tasks::Verify) -> Option<VerificacionAuto> {
-        let crate::agent::Schedule::Hours { every } = v.schedule else { return None };
         let porcentaje = if v.rotate_parts > 0 { (100.0 / f64::from(v.rotate_parts)).round() as u8 } else { v.subset_percent };
-        Some(VerificacionAuto { cada_dias: (every / 24).max(1), porcentaje })
+        match &v.schedule {
+            crate::agent::Schedule::Hours { every } => Some(VerificacionAuto { cada_dias: (every / 24).max(1), porcentaje, horario: None }),
+            crate::agent::Schedule::Rules { rules } => {
+                // `cada_dias`: lo más que pasa entre dos (para una consola anterior).
+                let hueco = crate::plans::PlanSchedule::from_rules(rules.clone()).max_gap_hours();
+                let horario = Horario { dias: vec![], horas: vec![], reglas: rules.iter().map(regla_de_motor).collect() };
+                Some(VerificacionAuto { cada_dias: hueco.div_ceil(24).clamp(1, 31), porcentaje, horario: Some(horario) })
+            }
+            _ => None,
+        }
     }
 
-    /// La verificación del agente. La primera, a las 03:00 siguientes (y
-    /// después, cada `cada_dias` días desde la anterior).
+    /// El horario de la verificación en el agente.
+    fn schedule(&self) -> crate::agent::Schedule {
+        match self.reglas() {
+            Ok(Some(rules)) => crate::agent::Schedule::Rules { rules },
+            _ => crate::agent::Schedule::Hours { every: self.cada_dias.clamp(1, 31) * 24 },
+        }
+    }
+
+    /// La verificación del agente. Con horario, la primera cuando toque; si
+    /// no, a las 03:00 siguientes (y después, cada `cada_dias` días desde la anterior).
     pub fn verify(&self, ahora: chrono::DateTime<chrono::Local>) -> crate::tasks::Verify {
         use chrono::TimeZone;
-        let every = self.cada_dias * 24;
+        let (subset_percent, rotate_parts) = self.partes();
+        let schedule = self.schedule();
+        if matches!(schedule, crate::agent::Schedule::Rules { .. }) {
+            return crate::tasks::Verify { schedule, subset_percent, rotate_parts, enabled_at: ahora.to_rfc3339() };
+        }
+        let every = self.cada_dias.clamp(1, 31) * 24;
         let hoy = ahora.date_naive().and_hms_opt(HORA_VERIFICACION, 0, 0).and_then(|t| chrono::Local.from_local_datetime(&t).earliest());
         let primera = match hoy {
             Some(t) if t > ahora + chrono::Duration::hours(1) => t,
             Some(t) => t + chrono::Duration::days(1),
             None => ahora + chrono::Duration::hours(1),
         };
-        let (subset_percent, rotate_parts) = self.partes();
-        crate::tasks::Verify {
-            schedule: crate::agent::Schedule::Hours { every },
-            subset_percent,
-            rotate_parts,
-            enabled_at: (primera - chrono::Duration::hours(i64::from(every))).to_rfc3339(),
-        }
+        crate::tasks::Verify { schedule, subset_percent, rotate_parts, enabled_at: (primera - chrono::Duration::hours(i64::from(every))).to_rfc3339() }
     }
 
     /// ¿Hace lo mismo que `v`? (Entonces se deja como está: no vuelve a empezar.)
     pub fn igual_que(&self, v: &crate::tasks::Verify) -> bool {
         let (subset, rotate) = self.partes();
-        v.schedule == (crate::agent::Schedule::Hours { every: self.cada_dias * 24 }) && v.subset_percent == subset && v.rotate_parts == rotate
+        v.schedule == self.schedule() && v.subset_percent == subset && v.rotate_parts == rotate
+    }
+}
+
+/// Una regla del motor (días 0 = lunes) como la de la consola (1 = lunes).
+fn regla_de_motor(r: &crate::plans::ScheduleRule) -> Regla {
+    use crate::plans::ScheduleRule as S;
+    let dias = |d: &[u8]| d.iter().map(|x| x + 1).collect();
+    match r {
+        S::At { days, times } => Regla::Horas { dias: dias(days), horas: times.clone() },
+        S::Every { days, every_min, from, to } => Regla::Intervalo { dias: dias(days), cada_min: *every_min, desde: from.clone(), hasta: to.clone() },
+        S::EveryDays { every, start, time } => Regla::CadaDias { cada: *every, inicio: start.clone(), hora: time.clone() },
+        S::Monthly { day, time } => Regla::Mensual { dia: *day, hora: time.clone() },
     }
 }
 
@@ -766,7 +814,10 @@ fn estado_de(result: &str) -> &'static str {
 /// en la retención (también la del almacén), `config.verificaciones` y
 /// `guarda_copias { anadir, local: true }` (un repositorio en su propio almacén).
 /// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
-pub const ADMITE: [&str; 5] = ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio"];
+/// v1.3x: `verificacion_horario` (la verificación automática con un horario de reglas) y
+/// `retencion_almacen_horario` (la retención del almacén, también con reglas).
+pub const ADMITE: [&str; 7] =
+    ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario"];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
 const PUERTOS_PROPUESTOS: [u16; 6] = [8000, 8002, 8004, 8080, 8888, 9000];
@@ -793,6 +844,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         let va = VerificacionAuto::de(r.verify.as_ref()?)?;
         Some(json!({
             "cada_dias": va.cada_dias, "porcentaje": va.porcentaje,
+            // v1.3x: con horario, sus reglas (como las de las copias).
+            "horario": va.horario,
             "proxima": crate::tasks::next_verify(r, &tareas).map(|t| t.to_rfc3339()),
             "todo_leido": tareas.rotation.get(&crate::tasks::rotation_key("verify", id)).and_then(|x| x.last_full_at.clone()),
         }))
@@ -1415,7 +1468,7 @@ mod tests {
     #[test]
     fn verificacion_automatica() {
         use chrono::TimeZone;
-        let va = |cada_dias, porcentaje| VerificacionAuto { cada_dias, porcentaje };
+        let va = |cada_dias, porcentaje| VerificacionAuto { cada_dias, porcentaje, horario: None };
         assert_eq!(va(7, 0).partes(), (0, 0), "solo la estructura");
         assert_eq!(va(7, 100).partes(), (100, 0), "todo cada vez");
         assert_eq!(va(7, 10).partes(), (0, 10), "rotativa: en 10 vueltas, todo");
@@ -1453,7 +1506,57 @@ mod tests {
     }
 
     fn v_de(cada_dias: u32, porcentaje: u8) -> crate::tasks::Verify {
-        VerificacionAuto { cada_dias, porcentaje }.verify(chrono::Local::now())
+        VerificacionAuto { cada_dias, porcentaje, horario: None }.verify(chrono::Local::now())
+    }
+
+    /// v1.3x: la verificación con un horario de reglas (como el de las copias).
+    #[test]
+    fn verificacion_con_horario() {
+        use chrono::TimeZone;
+        let h = |reglas: Value| -> Horario { serde_json::from_value(json!({ "reglas": reglas })).unwrap() };
+        // Los sábados y domingos a las 02:00, y el día 1 de cada mes a las 04:00; un 20 %.
+        let va = VerificacionAuto {
+            cada_dias: 7,
+            porcentaje: 20,
+            horario: Some(h(json!([{ "tipo": "horas", "dias": [6, 7], "horas": ["02:00"] }, { "tipo": "mensual", "dia": 1, "hora": "04:00" }]))),
+        };
+        assert!(va.valida().is_ok());
+        let ahora = chrono::Local.with_ymd_and_hms(2026, 10, 7, 15, 0, 0).unwrap(); // miércoles
+        let v = va.verify(ahora);
+        assert!(v.validate().is_ok());
+        assert!(matches!(&v.schedule, crate::agent::Schedule::Rules { rules } if rules.len() == 2));
+        assert_eq!(v.rotate_parts, 5);
+        let since = chrono::DateTime::parse_from_rfc3339(&v.enabled_at).unwrap().with_timezone(&chrono::Local);
+        // No toca hasta el sábado a las 02:00; entonces sí (una vez).
+        assert!(!v.schedule.is_due(since, chrono::Local.with_ymd_and_hms(2026, 10, 10, 1, 59, 0).unwrap()));
+        let sabado = chrono::Local.with_ymd_and_hms(2026, 10, 10, 2, 1, 0).unwrap();
+        assert!(v.schedule.is_due(since, sabado));
+        assert!(!v.schedule.is_due(sabado, sabado + chrono::Duration::hours(3)), "ya hecha");
+        // Se lee de vuelta (con las reglas) y no vuelve a empezar si llega la misma.
+        let de = VerificacionAuto::de(&v).unwrap();
+        assert_eq!(de.porcentaje, 20);
+        assert!((1..=31).contains(&de.cada_dias), "un número para una consola anterior");
+        assert_eq!(serde_json::to_value(&de.horario).unwrap()["reglas"][0], json!({ "tipo": "horas", "dias": [6, 7], "horas": ["02:00"] }));
+        assert!(va.igual_que(&v) && de.igual_que(&v));
+        assert!(!VerificacionAuto { horario: None, ..va.clone() }.igual_que(&v));
+        // Un horario que no vale (cada 0 días) se rechaza; sin reglas ni horas, manda `cada_dias`.
+        let malo = VerificacionAuto { horario: Some(h(json!([{ "tipo": "cada_dias", "cada": 0, "inicio": "2026-10-01", "hora": "03:00" }]))), ..va.clone() };
+        assert!(malo.valida().is_err());
+        let vacio = VerificacionAuto { cada_dias: 3, porcentaje: 0, horario: Some(Horario { dias: vec![], horas: vec![], reglas: vec![] }) };
+        assert!(vacio.valida().is_ok());
+        assert_eq!(vacio.verify(ahora).schedule, crate::agent::Schedule::Hours { every: 72 });
+        // Lo que la consola manda sin reglas cuando cabe en una lista de horas (`dias`/`horas`).
+        let simple = VerificacionAuto { horario: Some(serde_json::from_value(json!({ "dias": [7], "horas": ["03:00"] })).unwrap()), ..va.clone() };
+        assert!(simple.valida().is_ok());
+        assert_eq!(
+            simple.verify(ahora).schedule,
+            crate::agent::Schedule::Rules { rules: vec![crate::plans::ScheduleRule::At { days: vec![6], times: vec!["03:00".into()] }] }
+        );
+        // Lo que manda una consola anterior (sin `horario`) sigue igual.
+        let viejo: VerificacionAuto = serde_json::from_value(json!({ "cada_dias": 7, "porcentaje": 10 })).unwrap();
+        assert_eq!(viejo.horario, None);
+        assert!(!serde_json::to_string(&viejo).unwrap().contains("horario"));
+        assert!(ADMITE.contains(&"verificacion_horario"));
     }
 
     #[test]
