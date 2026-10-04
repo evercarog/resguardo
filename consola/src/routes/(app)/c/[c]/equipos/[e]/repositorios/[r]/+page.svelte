@@ -57,6 +57,9 @@
   import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia } from "$lib/componentes/detalle/navegar";
   import { leerSeleccion } from "$lib/detalle";
   import "$lib/componentes/detalle/pulsable.css";
+  import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
+  import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
+  import { objetoDe } from "$lib/notas.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -205,6 +208,7 @@
         </div>
       {/if}
     </header>
+    <Observaciones tipo="repositorio" objeto={objetoDe(e, rid)} />
 
     <IndicePagina
       items={[
@@ -394,6 +398,7 @@
         <span use:tip={fechaLarga(equipo.ultimo_informe?.recibido)}>Sin rutas ni nombres de archivos.</span>
       </p>
     {/if}
+    <Comentarios tipo="repositorio" objeto={objetoDe(e, rid)} />
   {/if}
 </div>
 

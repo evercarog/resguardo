@@ -27,6 +27,8 @@
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
   import CuandoSeLlena from "$lib/componentes/llenado/CuandoSeLlena.svelte";
+  import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
+  import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
 
   interface Urgente {
     tono: Tono;
@@ -136,6 +138,7 @@
     <Esqueleto forma="cifras" n={3} etiqueta="Cargando el estado…" />
     <Esqueleto forma="filas" n={4} />
   {:else}
+    <Observaciones tipo="cliente" objeto={actual.cliente.id} />
     <section class="card resumen tone-{tonoTitular}" aria-labelledby="titular">
       <Anuncio texto={titular} />
       <div class="cab">
@@ -274,6 +277,8 @@
     {/if}
 
     {#if delFiltro.length}<CuandoSeLlena equipos={delFiltro} todos={actual.equipos} {informes} cliente={c} ahora={reloj.ahora} />{/if}
+
+    <Comentarios tipo="cliente" objeto={actual.cliente.id} titulo="Comentarios del cliente" />
 
     <p class="privacidad"><LockKeyhole size={12} />El servidor no puede leer tus archivos ni tus contraseñas: van cifrados entre este navegador y cada equipo.</p>
   {/if}

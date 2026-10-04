@@ -14,6 +14,8 @@
   import RecibirCliente from "$lib/componentes/RecibirCliente.svelte";
   import DarCodigoConexion from "$lib/componentes/DarCodigoConexion.svelte";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
+  import CampoObservaciones from "$lib/componentes/notas/CampoObservaciones.svelte";
+  import { errorTextoNota, guardarObservacion } from "$lib/notas.svelte";
 
   let cargado = $state(false);
   let nuevo = $state(page.url.searchParams.get("nuevo") === "1");
@@ -21,6 +23,7 @@
   let tambien = $state(false);
   let nombre = $state("");
   let espera = $state(24);
+  let observaciones = $state("");
   let ocupado = $state(false);
   let error = $state("");
 
@@ -35,6 +38,7 @@
     error = "";
     try {
       const c = await api.crearCliente(nombre.trim(), espera);
+      if (observaciones.trim()) await guardarObservacion(c.id, "cliente", c.id, observaciones).catch(() => avisar("El cliente se creó, pero sus observaciones no se guardaron.", "warn"));
       await cargarClientes();
       nuevo = false;
       avisar(`Cliente «${c.nombre}» creado. Empieza añadiendo su primer equipo.`);
@@ -121,10 +125,11 @@
         </select>
         <span class="field-hint">Cuánto esperan las órdenes que pueden borrar copias antes de aplicarse. Mientras tanto se pueden cancelar.</span>
       </div>
+      <CampoObservaciones id="obs-cliente" bind:valor={observaciones} filas={2} />
       {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
       <footer>
         <button type="button" class="btn btn-ghost" onclick={() => (nuevo = false)}>Cancelar</button>
-        <button class="btn btn-primary" disabled={ocupado || !nombre.trim()}>{ocupado ? "Creando…" : "Crear cliente"}</button>
+        <button class="btn btn-primary" disabled={ocupado || !nombre.trim() || !!errorTextoNota(observaciones)}>{ocupado ? "Creando…" : "Crear cliente"}</button>
       </footer>
     </form>
   </Modal>

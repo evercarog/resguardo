@@ -1,6 +1,9 @@
 <script lang="ts">
   // Repositorios y destinos del cliente: dónde se guardan las copias y cómo de
   // protegidas están. Los datos salen de lo que informa cada equipo (sin rutas).
+  import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
+  import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
+  import { objetoDe } from "$lib/notas.svelte";
   import { tip } from "$lib/tooltip";
   import { bytesRepo, destinoDe, estadoRepo, informeDe, nVersiones, pruebaRestauracion, verificacion } from "$lib/repo";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
@@ -20,6 +23,8 @@
   import Vacio from "$lib/componentes/Vacio.svelte";
 
   let nuevo = $state(false);
+  /** Las notas de un destino (no tiene página propia). */
+  let notasDestino = $state<{ id: string; nombre: string } | null>(null);
   /** Repositorios (y destinos nuevos) en camino: se ven en su sitio mientras el equipo los crea. */
   const enCamino = $derived(pendientesDe("repositorios"));
   const destinosEnCamino = $derived([...pendientesDe("destinos"), ...enCamino.filter((p) => p.destinoNuevo && !destinos.some((d) => d.nombre === p.destinoNuevo))]);
@@ -123,7 +128,7 @@
             <a class="card tile destino" href="/c/{actual.id}/equipos/{a.id}">
               <span class="tile-cab">
                 <span class="tile-ic"><Server size={16} /></span>
-                <span class="tile-nombre"><strong>{a.nombre}</strong><span>Almacén · puerto <span class="pastilla mono">{a.resumen?.guarda_copias?.puerto ?? "—"}</span></span></span>
+                <span class="tile-nombre"><strong>{a.nombre} <ContadorNotas tipo="equipo" objeto={a.id} /></strong><span>Almacén · puerto <span class="pastilla mono">{a.resumen?.guarda_copias?.puerto ?? "—"}</span></span></span>
                 <ChevronRight size={16} class="flecha" />
               </span>
               <p class="tile-linea num">
@@ -138,12 +143,15 @@
             <div class="card tile destino">
               <span class="tile-cab">
                 <span class="tile-ic"><Icono size={16} /></span>
-                <span class="tile-nombre"><strong>{d.nombre}</strong><span>{TIPO[d.tipo] ?? d.tipo}{#if d.donde && d.donde !== d.nombre}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}</span></span>
+                <span class="tile-nombre"><strong>{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></strong><span>{TIPO[d.tipo] ?? d.tipo}{#if d.donde && d.donde !== d.nombre}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}</span></span>
               </span>
               <p class="tile-linea num">
                 {#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else}Sin repositorios todavía{/if} · lo usa{d.equipos.size > 1 ? "n" : ""} {[...d.equipos].join(", ")}
               </p>
-              {#if d.inmutable}<span class="tile-chips"><span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span></span>{/if}
+              <span class="tile-chips">
+                {#if d.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
+                <button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
+              </span>
             </div>
           {/each}
         </div>
@@ -171,7 +179,7 @@
               {#each repos as r (r.equipo.id + r.id)}
                 <tr>
                   <td>
-                    <a class="enlace-repo" href="/c/{actual.id}/equipos/{r.equipo.id}/repositorios/{encodeURIComponent(r.id)}"><Database size={14} /><strong>{r.nombre}</strong></a>{#if r.solo_lectura} <span class="badge badge-sm tone-neutral" use:tip={"Importado de otro equipo: se puede explorar y restaurar, pero ninguna copia escribe en él."}>Solo lectura</span>{/if}
+                    <a class="enlace-repo" href="/c/{actual.id}/equipos/{r.equipo.id}/repositorios/{encodeURIComponent(r.id)}"><Database size={14} /><strong>{r.nombre}</strong></a> <ContadorNotas tipo="repositorio" objeto={objetoDe(r.equipo.id, r.id)} />{#if r.solo_lectura} <span class="badge badge-sm tone-neutral" use:tip={"Importado de otro equipo: se puede explorar y restaurar, pero ninguna copia escribe en él."}>Solo lectura</span>{/if}
                     {#if r.retencion}<span class="faint pequeno bloque">{r.retencion}</span>{/if}
                   </td>
                   <td><Chip pequeno tono={r.estado.tono} texto={r.estado.texto} /></td>
@@ -190,7 +198,7 @@
           {#each repos as r (r.equipo.id + r.id)}
             <a class="fila" href="/c/{actual.id}/equipos/{r.equipo.id}/repositorios/{encodeURIComponent(r.id)}">
               <span class="fila-texto">
-                <span class="fila-titulo">{r.nombre}{#if r.solo_lectura} <span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}</span>
+                <span class="fila-titulo">{r.nombre} <ContadorNotas tipo="repositorio" objeto={objetoDe(r.equipo.id, r.id)} />{#if r.solo_lectura} <span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}</span>
                 <span class="fila-sub">{r.equipo.nombre} · {nombreDestino(r.destino)}</span>
                 <span class="fila-sub num">{numero(nVersiones(r))} versiones · {bytes(r.bytes)} · verificado <Tiempo iso={r.verificado} nada="nunca" /></span>
               </span>
@@ -213,6 +221,7 @@
 {#if nuevo && actual.cliente}
   <NuevoRepositorio cliente={actual.cliente} equipos={actual.equipos} destinos={destinos} onclose={() => (nuevo = false)} />
 {/if}
+{#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 <style>
   .en-camino {

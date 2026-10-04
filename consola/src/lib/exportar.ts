@@ -2,7 +2,8 @@
 //
 // El navegador junta lo que el servidor sabe del cliente (equipos con sus
 // llaves públicas y etiquetas, configuraciones cifradas, informes, avisos y
-// la auditoría entera con su cadena de hashes), lo cifra con
+// la auditoría entera con su cadena de hashes; v1.3x: también las
+// observaciones y los comentarios), lo cifra con
 // K_exp = HKDF(Argon2id(clave_admin, sal_cliente), "resguardo-kexp-v1") y
 // solo entonces lo descarga o lo sube. En el servidor nuevo (que recibió el
 // cliente con la misma sal) se descifra aquí y se importa el historial.
@@ -11,7 +12,7 @@ import { argon2Navegador } from "./cripto/argon2";
 import { borrar, deUtf8, utf8 } from "./cripto/bytes";
 import { kExp, materialCliente } from "./cripto/claves";
 import { cabeceraPaquete, cifrarPaquete, descifrarPaquete } from "./cripto/paquete";
-import type { Aviso, Cliente, EntradaAuditoria, Equipo, Informe } from "./tipos";
+import type { Aviso, Cliente, EntradaAuditoria, Equipo, Informe, NotasExportadas } from "./tipos";
 
 export interface ContenidoPaquete {
   formato: "resguardo-cliente";
@@ -24,6 +25,8 @@ export interface ContenidoPaquete {
   informes: { equipo: string; recibido: string; datos: Informe["datos"] }[];
   avisos: { equipo: string | null; tipo: string; mensaje: string; creado: string }[];
   auditoria: EntradaAuditoria[];
+  /** v1.3x: observaciones y comentarios (un paquete anterior no los trae). */
+  notas?: NotasExportadas;
 }
 
 /** Junta el contenido (en claro, solo en memoria). */
@@ -52,6 +55,12 @@ export async function juntar(cliente: Cliente, alPaso: (t: string) => void = () 
     if (pag.length < 500) break;
     desde = pag[pag.length - 1].n;
   }
+  alPaso("Leyendo las observaciones y los comentarios…");
+  // Un servidor anterior no las tiene (404): el paquete va sin ellas.
+  const notas = await api.notasTodas(cliente.id).catch((err) => {
+    if (err instanceof api.ApiError && err.codigo === "no_existe") return undefined;
+    throw err;
+  });
   return {
     formato: "resguardo-cliente",
     v: 1,
@@ -63,6 +72,7 @@ export async function juntar(cliente: Cliente, alPaso: (t: string) => void = () 
     informes,
     avisos,
     auditoria,
+    ...(notas && (notas.observaciones.length || notas.comentarios.length) ? { notas } : {}),
   };
 }
 
@@ -108,7 +118,7 @@ export async function abrir(claveAdmin: string, cliente: Cliente, paquete: Uint8
 
 /** Sube al servidor nuevo el historial (la auditoría, solo si su cadena está entera; una sola vez). */
 export const importar = (c: string, x: ContenidoPaquete) =>
-  api.importarHistorial(c, { origen: x.origen, auditoria: x.auditoria, informes: x.informes, avisos: x.avisos });
+  api.importarHistorial(c, { origen: x.origen, auditoria: x.auditoria, informes: x.informes, avisos: x.avisos, ...(x.notas ? { notas: x.notas } : {}) });
 
 export const nombreArchivo = (cliente: Cliente) =>
   `${cliente.nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "cliente"}-${new Date().toISOString().slice(0, 10)}.resguardo-cliente`;

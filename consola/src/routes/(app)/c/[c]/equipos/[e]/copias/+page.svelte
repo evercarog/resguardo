@@ -24,6 +24,8 @@
   import { horarioEnFrase, lista, plural, relativo, resumenHorario } from "$lib/formato";
   import { errorReglas, normalizar, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "$lib/horario";
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
+  import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
+  import { objetoDe } from "$lib/notas.svelte";
   import type { Configuracion, CopiaConfig, EquipoDetalle, Escritorio, Gancho, VerificacionAuto } from "$lib/tipos";
   import { admiteVerificacion, errorVerificacion, fraseVerificacion, PORCENTAJES, VERIFICACION_POR_DEFECTO } from "$lib/verificacion";
   import { errorGancho, fraseGancho, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "$lib/ganchos";
@@ -423,6 +425,8 @@
           />
         </div>
         <p class="frase">{frase(k)}</p>
+        <!-- v1.3x: van aparte (en el servidor, sin la clave): se guardan al momento, no con «Enviar». -->
+        {#if guardadas.has(k.id)}<Observaciones tipo="copia" objeto={objetoDe(equipo.id, k.id)} compacto />{/if}
         {#if usadas[k.id]}
           <div class="notice notice-info usada">
             <LayoutTemplate size={16} />

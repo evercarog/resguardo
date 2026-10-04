@@ -82,6 +82,11 @@
   import { comprobarLlaves, fijadaEl, type EstadoLlaves } from "$lib/fijadas";
   import { ErrorEtiqueta, kcfgComprobada } from "$lib/ordenar";
   import { borrar } from "$lib/cripto/bytes";
+  import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
+  import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
+  import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
+  import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
+  import { objetoDe } from "$lib/notas.svelte";
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
@@ -94,6 +99,8 @@
   let informes = $state<Informe[]>([]);
   let error = $state("");
   let renombrando = $state(false);
+  /** Las notas de un destino (no tiene página propia). */
+  let notasDestino = $state<{ id: string; nombre: string } | null>(null);
   let editarEtiquetas = $state(false);
   let nuevoNombre = $state("");
 
@@ -595,6 +602,7 @@
     {#if trasladado}
       <div class="notice notice-info trasladado"><Info size={16} /><p>{equipo.nombre} se trasladó a otro servidor y ya no recibe órdenes desde aquí. Se conserva su historial.</p></div>
     {/if}
+    <Observaciones tipo="equipo" objeto={equipo.id} />
 
     {#if otrasConsolas.length && !trasladado}
       <section class="consolas-eq" aria-label="Otras consolas">
@@ -691,7 +699,7 @@
               {@const prox = proximaDe(k, equipo.ultimo_informe, reloj.ahora)}
               <div class="fila">
                 <span class="fila-texto">
-                  <a class="fila-titulo enlace-copia" href="/c/{c}/equipos/{equipo.id}/copias/{encodeURIComponent(k.id)}" use:tip={`Ver el detalle de «${k.nombre}»`}>{k.nombre}<ChevronRight size={14} /></a>
+                  <a class="fila-titulo enlace-copia" href="/c/{c}/equipos/{equipo.id}/copias/{encodeURIComponent(k.id)}" use:tip={`Ver el detalle de «${k.nombre}»`}>{k.nombre}<ContadorNotas tipo="copia" objeto={objetoDe(equipo.id, k.id)} /><ChevronRight size={14} /></a>
                   <span class="fila-sub">{horarioEnFrase(k.horario)}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {repos.find((r) => r.id === k.repo)?.nombre ?? k.repo}</span>
                   {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo">{vuelta.mensaje}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
@@ -744,7 +752,7 @@
                 <a class="repo-cab enlace" href="/c/{c}/equipos/{equipo.id}/repositorios/{encodeURIComponent(r.id)}" use:tip={`Ver el detalle de «${r.nombre}»`}>
                   <span class="card-icon on"><Database size={18} /></span>
                   <div class="repo-nombre">
-                    <h3>{r.nombre}{#if r.solo_lectura} <span class="badge badge-sm tone-neutral" use:tip={"Importado de otro equipo: se puede explorar y restaurar, pero ninguna copia escribe en él."}>Solo lectura</span>{/if}</h3>
+                    <h3>{r.nombre} <ContadorNotas tipo="repositorio" objeto={objetoDe(equipo.id, r.id)} />{#if r.solo_lectura} <span class="badge badge-sm tone-neutral" use:tip={"Importado de otro equipo: se puede explorar y restaurar, pero ninguna copia escribe en él."}>Solo lectura</span>{/if}</h3>
                     <p class="faint">en {nombreDestino(r.destino)}</p>
                   </div>
                   {#if ej}<Chip pequeno tono={TONO_RESULTADO[ej.resultado]} texto={ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado]} />{/if}
@@ -796,9 +804,10 @@
             {#each destinos as d (d.id)}
               <div class="fila">
                 <span class="fila-texto">
-                  <span class="fila-titulo">{d.nombre}</span>
+                  <span class="fila-titulo">{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></span>
                   <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · solo añadir" : ""}</span>
                 </span>
+                <button class="btn btn-sm btn-ghost" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
                 {#if puede.administrar(rol) && d.tipo !== "local"}
                   <button
                     class="btn btn-sm btn-ghost"
@@ -932,6 +941,7 @@
           </div>
         </section>
       {/if}
+      <Comentarios tipo="equipo" objeto={equipo.id} />
     {:else if tab === "ordenes"}
       <section>
         {#if ordenes.length}
@@ -1092,6 +1102,8 @@
 {#if copiarEn && equipo && actual.cliente}
   <CopiarEnAlmacen cliente={actual.cliente} {equipo} almacen={copiarEn} onclose={() => ((copiarEn = null), void cargar())} />
 {/if}
+
+{#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 {#if comprobar && equipo}
   <Modal labelledby="t-comprobar" onclose={() => ((comprobar = false), (claveComprobar = ""))} width={460} dismissible={false}>
