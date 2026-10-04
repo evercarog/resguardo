@@ -3761,13 +3761,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tao",
  "tokio",
  "tray-icon",
  "tungstenite 0.27.0",
  "ureq",
  "uuid",
+ "windows 0.62.2",
  "windows-service",
  "windows-sys 0.61.2",
+ "wry",
  "zip",
 ]
 

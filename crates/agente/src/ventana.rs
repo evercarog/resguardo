@@ -3,7 +3,8 @@
 //!
 //! La ventana es **otro proceso**, como el usuario, que solo vive mientras
 //! está abierta: el WebView2 del sistema (wry + tao) con una página metida en
-//! el ejecutable (`ventana/index.html`, compilada desde `consola/ventana`).
+//! el ejecutable (`crates/agente/ventana/`, compilada desde `consola/ventana`)
+//! y servida con un protocolo propio (`http://resguardo.localhost/`, sin red).
 //! Lee `gestionado-bandeja.json` y `gestionado-ventana.json` cada segundo y se
 //! los pasa a la página. Lo que pide la página:
 //! - «Copiar ahora»: la solicitud de siempre (`agent::request_backup`);
@@ -12,9 +13,32 @@
 //!   guarda en memoria mientras la ventana sigue «desbloqueada» (10 minutos
 //!   sin usarla): nunca la clave.
 
-/// La página de la ventana (una sola, con todo dentro). Si no está compilada,
-/// una que lo dice.
-pub const PAGINA: &str = include_str!("../ventana/index.html");
+// La página de la ventana y sus partes (lo que deja `npm run build:ventana`
+// en crates/agente/ventana; si no está compilada, una página que lo dice).
+include!(concat!(env!("OUT_DIR"), "/ventana_archivos.rs"));
+
+/// Dónde se sirve la página (protocolo propio: sin servidor web ni puertos).
+pub const ORIGEN: &str = "http://resguardo.localhost/";
+
+/// Un archivo de la página y su tipo.
+pub fn archivo(ruta: &str) -> Option<(&'static [u8], &'static str)> {
+    let nombre = ruta.trim_start_matches('/');
+    let nombre = if nombre.is_empty() { "index.html" } else { nombre };
+    let (_, datos) = ARCHIVOS.iter().find(|(n, _)| *n == nombre)?;
+    let tipo = match nombre.rsplit('.').next().unwrap_or("") {
+        "html" => "text/html; charset=utf-8",
+        "js" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "woff2" => "font/woff2",
+        _ => "application/octet-stream",
+    };
+    Some((datos, tipo))
+}
+
+/// Política de contenido de la página: solo lo suyo, sin red.
+pub const CSP: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// Título de la ventana (también para encontrarla si ya está abierta).
 pub const TITULO: &str = "Resguardo Agente";
@@ -23,7 +47,26 @@ pub const TITULO: &str = "Resguardo Agente";
 pub const DESBLOQUEO_S: u64 = 600;
 
 /// Lo que la página puede pedir al servicio con la clave.
-pub const OPS_CON_CLAVE: [&str; 8] = ["ajustes", "estado_local", "crear_repositorio", "config", "carpetas", "versiones", "listar", "restaurar"];
+pub const OPS_CON_CLAVE: [&str; 18] = [
+    "ajustes",
+    "estado_local",
+    "crear_repositorio",
+    "config",
+    "carpetas",
+    "explorar",
+    "restaurar",
+    "retencion",
+    "copia_externa",
+    "pausar",
+    "reanudar",
+    "guarda_copias",
+    "conectar_nube",
+    "quitar_nube",
+    "historial",
+    "kit",
+    "vincular",
+    "comprobar",
+];
 
 /// La ventana, en sistemas sin ella.
 #[cfg(not(windows))]
@@ -287,6 +330,38 @@ mod win {
                 desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = Some((ipc::prueba(clave, &sal)?, Instant::now()));
                 Ok(r)
             }
+            "cambiar_clave" => {
+                // La clave nueva se deriva aquí (como la consola): al servicio solo van el verificador y K_cfg.
+                let prueba = desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().ok_or("bloqueada")?;
+                let clave = p["clave"].as_str().unwrap_or("");
+                let datos = ipc::datos_clave_nueva(clave)?;
+                let sal = datos["sal_equipo"].as_str().unwrap_or_default().to_string();
+                let r = ipc::pedir_con_prueba("cambiar_clave", &prueba, datos)?;
+                desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = Some((ipc::prueba(clave, &sal)?, Instant::now()));
+                Ok(r)
+            }
+            "nube_autorizar" => {
+                // `rclone authorize` como el usuario (abre su navegador); el token va al servicio con la clave.
+                let tipo = p["tipo"].as_str().unwrap_or("");
+                if !matches!(tipo, "dropbox" | "drive") {
+                    return Err("Tipo de nube no admitido.".into());
+                }
+                let prueba = desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().ok_or("bloqueada")?;
+                let conf = carpeta_usuario().join("rclone-vacio.conf");
+                let _ = std::fs::create_dir_all(carpeta_usuario());
+                let salida = std::process::Command::new(crate::nube::comprobar_binario()?)
+                    .args(["authorize", tipo, "--config"])
+                    .arg(&conf)
+                    .stdin(std::process::Stdio::null())
+                    .output()
+                    .map_err(|e| format!("No se pudo ejecutar rclone: {e}"))?;
+                let _ = std::fs::remove_file(&conf);
+                if !salida.status.success() {
+                    return Err("No se terminó de dar permiso (¿se cerró el navegador?).".into());
+                }
+                let token = crate::nube::token_de_salida(&String::from_utf8_lossy(&salida.stdout)).ok_or("No llegó el permiso de la nube.")?;
+                ipc::pedir_con_prueba("conectar_nube", &prueba, json!({ "tipo": tipo, "nombre": p["nombre"], "token": token }))
+            }
             "servicio" => {
                 let op = p["que"].as_str().unwrap_or("");
                 if !OPS_CON_CLAVE.contains(&op) {
@@ -340,12 +415,24 @@ mod win {
             _ => "",
         };
         let webview = wry::WebViewBuilder::new_with_web_context(&mut contexto)
-            .with_html(PAGINA)
+            .with_custom_protocol("resguardo".into(), |_, req| {
+                use wry::http::Response;
+                match archivo(req.uri().path()) {
+                    Some((datos, tipo)) => Response::builder()
+                        .header("Content-Type", tipo)
+                        .header("Content-Security-Policy", CSP)
+                        .header("X-Content-Type-Options", "nosniff")
+                        .body(std::borrow::Cow::Borrowed(datos))
+                        .unwrap_or_else(|_| Response::new(std::borrow::Cow::Borrowed(&[][..]))),
+                    None => Response::builder().status(404).body(std::borrow::Cow::Borrowed(&[][..])).unwrap_or_else(|_| Response::new(std::borrow::Cow::Borrowed(&[][..]))),
+                }
+            })
+            .with_url(ORIGEN)
             .with_initialization_script(format!("window.__resguardoVersion={:?};{inicio}", crate::version_programa()))
             .with_background_color((15, 15, 17, 255))
             .with_devtools(cfg!(debug_assertions))
             // La página no navega a ninguna parte ni abre ventanas: la consola, por «abrir_consola».
-            .with_navigation_handler(|url| url.starts_with("about:") || url.starts_with("data:"))
+            .with_navigation_handler(|url| url.starts_with(ORIGEN) || url == "about:blank")
             .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
             .with_ipc_handler(move |req| {
                 let _ = p_ipc.send_event(Evento::Pedido(req.body().clone()));
@@ -403,5 +490,17 @@ mod win {
                 _ => {}
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn la_pagina_esta_dentro() {
+        let (html, tipo) = super::archivo("/").expect("index.html");
+        assert!(tipo.starts_with("text/html"));
+        assert!(std::str::from_utf8(html).unwrap().contains("Resguardo"));
+        assert!(super::archivo("/../Cargo.toml").is_none());
+        assert!(super::archivo("/no-existe.js").is_none());
     }
 }

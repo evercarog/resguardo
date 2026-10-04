@@ -325,31 +325,141 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
             crate::agente::refrescar_bandeja();
             Ok(json!({ "mensaje": m }))
         }
-        "carpetas" => crate::sesiones_v2::operar_local(&crate::sesiones_v2::Tipo::Carpetas, "carpetas", &pet["p"]),
-        "versiones" | "listar" => {
+        "carpetas" => {
+            let que = pet["que"].as_str().unwrap_or("carpetas");
+            crate::sesiones_v2::operar_local(&crate::sesiones_v2::Tipo::Carpetas, que, &pet["p"])
+        }
+        "explorar" => {
             let acc = crate::gestion_v2::acceso(&v, pet["repo"].as_str().unwrap_or(""))?;
-            crate::sesiones_v2::operar_local(&crate::sesiones_v2::Tipo::Explorar(Box::new(acc)), op, &pet["p"])
+            crate::sesiones_v2::operar_local(&crate::sesiones_v2::Tipo::Explorar(Box::new(acc)), pet["que"].as_str().unwrap_or(""), &pet["p"])
         }
         "restaurar" => {
             let repo = pet["repo"].as_str().unwrap_or("");
             let acc = crate::gestion_v2::acceso(&v, repo)?;
-            // Siempre junto al original (nunca se reemplaza nada desde la ventana).
-            let c = json!({ "repo": repo, "version": pet["version"], "rutas": pet["rutas"], "destino": "junto" });
+            // Junto al original, en su sitio (sin reemplazar si no se pide) o en otra carpeta.
+            let destino = pet["destino"].as_str().filter(|d| matches!(*d, "original" | "carpeta")).unwrap_or("junto");
+            let c = json!({
+                "repo": repo, "version": pet["version"], "rutas": pet["rutas"], "destino": destino,
+                "carpeta": pet["carpeta"], "reemplazar": pet["reemplazar"].as_bool().unwrap_or(false),
+            });
             let m = crate::sesiones_v2::restaurar(&acc, &c)?;
             crate::agent::log("Ventana del equipo: archivos restaurados (modo local).");
             Ok(json!({ "mensaje": m }))
+        }
+        "retencion" => {
+            let repo = pet["repo"].as_str().unwrap_or("").to_string();
+            let m = crate::gestion_v2::cambiar_retencion(&mut v, &pet["retencion"], &repo)?;
+            s::guardar(&v)?;
+            // Se aplica ya, en segundo plano (puede tardar: `forget --prune`).
+            if pet["aplicar"] == true {
+                let copia = v.clone();
+                std::thread::spawn(move || {
+                    let r = crate::gestion_v2::aplicar_retencion(&copia, &repo);
+                    crate::agent::log(&format!("Ventana del equipo: retención aplicada: {}", r.unwrap_or_else(|e| format!("ERROR: {e}"))));
+                });
+            }
+            Ok(json!({ "mensaje": m }))
+        }
+        "copia_externa" => {
+            let repo = pet["repo"].as_str().unwrap_or("").to_string();
+            let m = crate::gestion_v2::cambiar_copia_externa(&mut v, &pet["externa"], &repo)?;
+            s::guardar(&v)?;
+            Ok(json!({ "mensaje": m }))
+        }
+        "pausar" => Ok(json!({ "mensaje": crate::gestion_v2::pausar(&v, &json!({ "horas": pet["horas"] }))? })),
+        "reanudar" => Ok(json!({ "mensaje": crate::gestion_v2::reanudar(&v, &json!({}))? })),
+        "guarda_copias" => {
+            // Este equipo guarda copias (su Servidor de copias) y su espejo; añadir
+            // equipos cliente necesita una consola (su contraseña se sella para ella).
+            if pet["cuerpo"].get("anadir").is_some() {
+                return Err("Para que otros equipos guarden aquí, vincula este equipo a una consola.".into());
+            }
+            let (m, _) = crate::gestion_v2::guarda_copias(&pet["cuerpo"], false)?;
+            Ok(json!({ "mensaje": m }))
+        }
+        "conectar_nube" => Ok(json!({
+            "mensaje": crate::nube::anadir(pet["tipo"].as_str().unwrap_or(""), pet["nombre"].as_str().unwrap_or(""), pet["token"].as_str().unwrap_or(""))?
+        })),
+        "quitar_nube" => Ok(json!({ "mensaje": crate::nube::quitar(pet["nombre"].as_str().unwrap_or(""))? })),
+        "historial" => Ok(historial()),
+        "kit" => Ok(kit(&v)),
+        "cambiar_clave" => {
+            let nuevo = vinculo_local(pet)?;
+            v.sal_equipo = nuevo.sal_equipo;
+            v.verificador = nuevo.verificador;
+            v.k_cfg = nuevo.k_cfg;
+            s::guardar(&v)?;
+            if let Ok(mut sv) = servidor.lock() {
+                sv.limitador.acierto();
+            }
+            crate::agent::log("Ventana del equipo: clave de administración cambiada en el equipo.");
+            Ok(json!({ "mensaje": "Clave de administración cambiada." }))
+        }
+        "vincular" => {
+            // Conserva todo: con clave, queda pendiente del alta de la consola con la MISMA clave.
+            let r = s::vincular(pet["url"].as_str().unwrap_or(""), pet["codigo"].as_str().unwrap_or(""), &crate::web::default_device_name())?;
+            Ok(json!({ "sas": r.sas, "sas_v3": r.sas_v3, "huella_ca": r.huella_ca, "servidor": r.servidor, "espera_alta": r.espera_alta }))
         }
         _ => Err(format!("Operación desconocida: «{op}».")),
     }
 }
 
-/// Repositorios, destinos (sin credenciales) y copias, para el editor local.
+/// Repositorios, destinos (sin credenciales), copias, nubes y el Servidor de
+/// copias, para el editor local. Lo mismo que ve la consola en el resumen, más
+/// la carpeta de los destinos locales (aquí la ve el administrador del equipo).
 pub fn estado_local(v: &crate::servidor_v2::Vinculo) -> Value {
+    let config = crate::agent::load_config();
+    let pausa = config.repos.iter().filter_map(|r| r.active_pause(chrono::Local::now())).map(|p| p.until.clone()).next();
     json!({
-        "repositorios": v.repos_v2.iter().filter(|r| !r.solo_lectura).map(|r| json!({ "id": r.id, "nombre": r.nombre, "destino": r.destino })).collect::<Vec<_>>(),
+        "repositorios": v.repos_v2.iter().filter(|r| !r.solo_lectura).map(|r| json!({
+            "id": r.id, "nombre": r.nombre, "destino": r.destino, "retencion": r.retencion,
+            "externa": r.externa.as_ref().map(|e| json!({ "destino": e["destino"], "hora": e["hora"] })),
+        })).collect::<Vec<_>>(),
         "destinos": v.destinos.iter().map(|d| json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde })).collect::<Vec<_>>(),
         "config": v.config_v1.clone().unwrap_or_else(|| json!({ "v": 1, "copias": [] })),
+        "resumen": crate::gestion_v2::resumen(v),
+        "nubes": crate::nube::lista(),
+        "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
+        "nombre_equipo": crate::web::default_device_name(),
     })
+}
+
+/// Lo que ha pasado en el equipo (copias, verificaciones, cambios), lo último primero.
+pub fn historial() -> Value {
+    let mut e = crate::history::read(&crate::history::agent_file());
+    e.reverse();
+    e.truncate(300);
+    json!(e
+        .iter()
+        .map(|x| json!({
+            "tipo": x.kind, "origen": x.origin, "repo": x.repo_name, "copia": x.plan_name,
+            "empezo": x.started, "cuando": x.finished, "resultado": x.result,
+            "mensaje": crate::web::public_message(&x.message),
+            "bytes": x.data_added, "nuevos": x.files_new, "cambiados": x.files_changed, "sin_cambios": x.unchanged,
+        }))
+        .collect::<Vec<_>>())
+}
+
+/// El kit de recuperación de cada repositorio: dónde está (sin usuario ni
+/// contraseña del servidor) y su ID de restic. Las contraseñas no salen de
+/// aquí: se escriben a mano en la hoja impresa (o al crear el repositorio).
+pub fn kit(v: &crate::servidor_v2::Vinculo) -> Value {
+    json!(v
+        .repos_v2
+        .iter()
+        .filter(|r| !r.solo_lectura)
+        .map(|r| {
+            let destino = v.destinos.iter().find(|d| d.id == r.destino);
+            let acc = crate::gestion_v2::acceso(v, &r.id);
+            json!({
+                "id": r.id, "nombre": r.nombre,
+                "destino": destino.map(|d| d.nombre.clone()), "tipo": destino.map(|d| d.tipo.clone()),
+                "ubicacion": acc.as_ref().ok().map(|a| crate::kit::public_location(&a.location)),
+                "id_restic": acc.as_ref().ok().and_then(|a| crate::kit::config_id(a).ok()),
+                "usuario_servidor": destino.and_then(|d| d.usuario.clone()),
+            })
+        })
+        .collect::<Vec<_>>())
 }
 
 // ---------- Transporte ----------

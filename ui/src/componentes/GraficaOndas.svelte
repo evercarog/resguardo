@@ -8,16 +8,16 @@
     puntos: [number, number][];
   }
 
-  /** «12,4 MB/s», «850 KB/s». */
+  /** «12,4 MB/s», «850 kB/s» (unidades decimales, como restic y la consola). */
   export function porSegundo(v: number): string {
-    const u = ["B/s", "KB/s", "MB/s", "GB/s"];
+    const u = ["B/s", "kB/s", "MB/s", "GB/s"];
     let i = 0;
-    while (v >= 1024 && i < u.length - 1) {
-      v /= 1024;
+    while (v >= 1000 && i < u.length - 1) {
+      v /= 1000;
       i++;
     }
-    const n = i === 0 || v >= 100 ? Math.round(v).toString() : v.toFixed(1).replace(".", ",").replace(/,0$/, "");
-    return `${n} ${u[i]}`;
+    const n = v.toLocaleString("es", { maximumFractionDigits: v < 10 && i > 0 ? 1 : 0 });
+    return `${n} ${u[i]}`;
   }
 </script>
 
@@ -135,13 +135,13 @@
     maxSuave = maxSuave ? maxSuave + (objetivo - maxSuave) * (prefersReducedMotion.current ? 1 : 0.12) : objetivo;
     const arriba = 6;
     const y = (v: number) => h - 1 - (v / maxSuave) * (h - arriba - 1);
-    // Rejilla discreta: tres líneas, con su cifra.
     ctx.strokeStyle = tinta.linea;
     ctx.lineWidth = 1;
     ctx.fillStyle = tinta.texto;
     ctx.font = "11px system-ui, sans-serif";
     ctx.textBaseline = "bottom";
-    for (const f of [1 / 3, 2 / 3]) {
+    // Rejilla: dos líneas en las grandes, una en las bajas (sin cifras encimadas).
+    for (const f of h >= 90 ? [1 / 3, 2 / 3] : [2 / 3]) {
       const yy = Math.round(h - f * (h - arriba)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(0, yy);
@@ -159,8 +159,8 @@
       const ys = pts.map((p) => y(p[1]));
       // Área con degradado.
       const g = ctx.createLinearGradient(0, arriba, 0, h);
-      g.addColorStop(0, color + "70");
-      g.addColorStop(0.6, color + "26");
+      g.addColorStop(0, color + "8c");
+      g.addColorStop(0.55, color + "33");
       g.addColorStop(1, color + "05");
       ctx.beginPath();
       ctx.moveTo(xs[0], h);
