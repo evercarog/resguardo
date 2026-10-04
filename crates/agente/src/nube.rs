@@ -338,13 +338,13 @@ fn resumen_de_rclone(err: &str) -> (String, Option<String>) {
 }
 
 /// Copia `origen` a la nube. Devuelve el resumen de rclone.
-pub fn copiar(n: &Nube, origen: &Path, carpeta: &str, limite_kib: Option<u32>) -> Result<String, String> {
+pub fn copiar(n: &Nube, origen: &Path, carpeta: &str, limite_kib: Option<u32>, ritmos: &mut dyn FnMut(Option<u64>, Option<u64>)) -> Result<String, String> {
     if !carpeta_remota_valida(carpeta) {
         return Err("Carpeta de la nube no válida.".into());
     }
     let n = &al_dia(n, &renovar_dropbox)?;
     let conf = crate::agent::private_dir().join("rclone-vacio.conf");
-    let out = comando(n, &conf)?.args(argumentos_copia(origen, carpeta, limite_kib)).output().map_err(|e| format!("No se pudo ejecutar rclone: {e}"));
+    let out = comando(n, &conf).and_then(|mut c| salida_midiendo(c.args(argumentos_copia(origen, carpeta, limite_kib)), ritmos));
     // Si rclone renovó el token, lo deja en ese archivo (carpeta privada): se
     // guarda protegido con los demás y el archivo se borra.
     if let Some(nuevo) = std::fs::read_to_string(&conf).ok().and_then(|t| token_de_conf(&t)).filter(|t| *t != n.token) {
@@ -363,6 +363,43 @@ pub fn copiar(n: &Nube, origen: &Path, carpeta: &str, limite_kib: Option<u32>) -
     } else {
         Err(format!("{} {texto}", error.unwrap_or_else(|| "rclone terminó con error.".into())))
     }
+}
+
+/// Como `Command::output`, pero mientras rclone trabaja dice cada 2 s lo que lee
+/// y sube de verdad (bytes/s, de sus contadores de E/S), para la ventana del equipo.
+fn salida_midiendo(c: &mut std::process::Command, ritmos: &mut dyn FnMut(Option<u64>, Option<u64>)) -> Result<std::process::Output, String> {
+    use std::io::Read;
+    let mut hijo =
+        c.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("No se pudo ejecutar rclone: {e}"))?;
+    // Leer en hilos aparte: rclone nunca se bloquea escribiendo.
+    let leer = |r: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut b = Vec::new();
+            if let Some(mut r) = r {
+                let _ = r.read_to_end(&mut b);
+            }
+            b
+        })
+    };
+    let salida = leer(hijo.stdout.take().map(|x| Box::new(x) as Box<dyn Read + Send>));
+    let errores = leer(hijo.stderr.take().map(|x| Box::new(x) as Box<dyn Read + Send>));
+    let pid = hijo.id();
+    let mut ritmo = crate::progreso_v2::RitmoIo::default();
+    let estado = loop {
+        match hijo.try_wait() {
+            Ok(Some(e)) => break e,
+            Ok(None) => {
+                let (l, s) = ritmo.medir(Some(pid));
+                ritmos(l, s);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(e) => {
+                let _ = hijo.kill();
+                return Err(format!("No se pudo esperar a rclone: {e}"));
+            }
+        }
+    };
+    Ok(std::process::Output { status: estado, stdout: salida.join().unwrap_or_default(), stderr: errores.join().unwrap_or_default() })
 }
 
 /// v1.31 («¿Cuándo se llena?»): el espacio de la cuenta (`rclone about --json`).

@@ -3,7 +3,9 @@
   // carpeta del equipo, un servidor de copias (rest-server), S3, B2 o SFTP;
   // su retención (con los preajustes de la consola, p. ej. «Programas contables») y su
   // copia externa. Al crear uno, su contraseña y el kit de recuperación.
-  import { Database, FolderOpen, HardDrive, Plus, Printer, Server, ShieldCheck } from "@lucide/svelte";
+  // Como en la consola: «Usar uno que ya existe» (p. ej. el de la app de
+  // escritorio, con su historial) y «Traer historial» de otro a uno de aquí.
+  import { Database, FolderOpen, HardDrive, History, Plus, Printer, Server, ShieldCheck } from "@lucide/svelte";
   import EditorRetencion from "$lib/componentes/EditorRetencion.svelte";
   import { copiaRegla, errorRegla, PRESETS, resumenRegla } from "$lib/retencion";
   import type { Regla } from "$lib/tipos";
@@ -11,6 +13,8 @@
   import { contrasenaNueva, idDe, TIPOS_DESTINO, type DestinoLocal, type PropsParte, type RepoLocal } from "./comun";
   import ElegirCarpeta from "./ElegirCarpeta.svelte";
   import Kit from "./Kit.svelte";
+  import TraerHistorial from "./TraerHistorial.svelte";
+  import UsarExistente from "./UsarExistente.svelte";
 
   let { estado, recargar, alBloquear }: PropsParte = $props();
   let error = $state("");
@@ -73,6 +77,10 @@
     }
   }
 
+  // ---- Uno que ya existe y traer historial (como en la consola) ----
+  let existente = $state(false);
+  let historialDe = $state<string | null>(null);
+
   // ---- Retención ----
   let retencion = $state<null | { repo: RepoLocal; regla: Regla }>(null);
   async function guardarRetencion(aplicar: boolean) {
@@ -132,10 +140,15 @@
       </div>
       <p class="v-mini">Se guardan: {r.retencion ? resumenRegla(r.retencion) : "todas las versiones (sin retención)."}</p>
       <p class="v-mini">Copia externa: {r.externa ? `a «${destinoDe(r.externa.destino)?.nombre ?? r.externa.destino}» cada día a las ${r.externa.hora}` : "no"}.</p>
-      <div class="v-fila">
-        <button class="btn btn-sm" onclick={() => (retencion = { repo: r, regla: copiaRegla(r.retencion ?? PRESETS[2].regla) })}><ShieldCheck size={14} aria-hidden="true" />Qué versiones se guardan</button>
+      <div class="v-fila nuevos">
+        <button class="btn btn-sm" onclick={() => (retencion ={ repo: r, regla: copiaRegla(r.retencion ?? PRESETS[2].regla) })}><ShieldCheck size={14} aria-hidden="true" />Qué versiones se guardan</button>
         <button class="btn btn-sm" onclick={() => (externa = { repo: r, destino: r.externa?.destino ?? "", tipo: "local", donde: "", usuario: "", secreto: "", hora: r.externa?.hora ?? "02:00" })}>Copia externa</button>
+        <button class="btn btn-sm" onclick={() => (historialDe = historialDe === r.id ? null : r.id)}><History size={14} aria-hidden="true" />Traer historial</button>
       </div>
+
+      {#if historialDe === r.id}
+        <TraerHistorial repo={r} {estado} {alBloquear} alCerrar={() => (historialDe = null)} />
+      {/if}
 
       {#if retencion?.repo.id === r.id}
         <div class="v-pila sub">
@@ -239,8 +252,22 @@
         <button class="btn btn-primary" disabled={ocupado || !!problemaNuevo}>{ocupado ? "Creando (puede tardar)…" : "Crear"}</button>
       </div>
     </form>
+  {:else if existente}
+    <UsarExistente
+      {estado}
+      {recargar}
+      {alBloquear}
+      alCerrar={() => (existente = false)}
+      alHecho={(m) => {
+        existente = false;
+        hecho = m;
+      }}
+    />
   {:else}
-    <button class="btn btn-primary" onclick={empezarNuevo}><Plus size={15} aria-hidden="true" />{estado.repositorios.length ? "Otro sitio para copias" : "Elegir dónde guardar las copias"}</button>
+    <div class="v-fila nuevos">
+      <button class="btn btn-primary" onclick={empezarNuevo}><Plus size={15} aria-hidden="true" />{estado.repositorios.length ? "Otro sitio para copias" : "Elegir dónde guardar las copias"}</button>
+      <button class="btn" onclick={() => ((existente = true), (hecho = error = ""))}><Database size={15} aria-hidden="true" />Usar uno que ya existe</button>
+    </div>
   {/if}
   {#if creado}<button class="btn btn-sm" onclick={() => window.print()}><Printer size={14} aria-hidden="true" />Imprimir el kit</button>{/if}
   {#if hecho}<p class="v-ok" role="status">{hecho}</p>{/if}
@@ -252,7 +279,8 @@
     padding-top: var(--sp-3);
     border-top: 1px solid var(--border);
   }
-  .presets {
+  .presets,
+  .nuevos {
     flex-wrap: wrap;
   }
   .fin {

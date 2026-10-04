@@ -595,6 +595,11 @@ pub struct RunningTask {
     /// Fecha de la versión que se está subiendo.
     #[serde(default)]
     pub current_snapshot_time: Option<String>,
+    /// Lo que restic lee y escribe o sube (bytes/s), de sus contadores de E/S.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_bps: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_bps: Option<u64>,
 }
 
 /// Progreso de una tarea, tal como lo informa quien la ejecuta.
@@ -935,8 +940,13 @@ pub fn run() -> i32 {
         let part = current_part(state.rotation.get(&rot_key), parts);
         let mut last_write = std::time::Instant::now();
         let mut last_web = std::time::Instant::now();
+        let mut ritmo = crate::progreso_v2::RitmoIo::default();
         let mut report = |p: &TaskProgress| {
+            // Se llama desde la salida de restic (en su hilo): el restic que corre ahora.
+            let (lectura, escritura) = ritmo.medir(restic::pid_en_marcha());
             if let Some(r) = state.running.as_mut() {
+                r.read_bps = lectura;
+                r.upload_bps = escritura;
                 r.stage = p.stage.clone();
                 r.done = p.done;
                 r.total = p.total;

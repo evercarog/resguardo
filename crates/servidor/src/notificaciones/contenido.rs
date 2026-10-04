@@ -11,13 +11,45 @@ use super::{Alerta, Mensaje, Severidad};
 use crate::almacen::Ts;
 use chrono::FixedOffset;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
-/// Cómo escribir: la dirección pública de la consola (para los enlaces) y la zona del servidor.
+/// Cómo escribir: la dirección pública de la consola (para los enlaces), la zona
+/// del servidor y la marca de los clientes de los mensajes (si la tienen).
 #[derive(Clone, Debug)]
 pub struct Formato {
     pub url_consola: Option<String>,
     pub zona: FixedOffset,
+    /// Cliente → su marca (v1.32). Un correo de un solo cliente sale con la suya;
+    /// uno que junta varios (un resumen de todos, un grupo de avisos), neutro.
+    pub marcas: BTreeMap<String, MarcaCorreo>,
+}
+
+/// La marca de un cliente en el correo: su nombre, el acento (claro y oscuro,
+/// los de la consola) y su logo (PNG, que va **dentro** del correo como
+/// `cid:`: nunca una imagen de fuera).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MarcaCorreo {
+    pub nombre: String,
+    pub acento: Option<(&'static str, &'static str)>,
+    pub logo: Option<Vec<u8>>,
+}
+
+/// El `Content-ID` del logo del cliente en el correo (multipart/related).
+pub const CID_LOGO: &str = "logo-cliente@resguardo";
+
+/// Los colores de un acento de la consola (docs/diseno.md §2): (claro, oscuro).
+pub fn colores_acento(acento: &str) -> Option<(&'static str, &'static str)> {
+    Some(match acento {
+        "teal" => ("#0f766e", "#3cc4ad"),
+        "blue" => ("#2563eb", "#6aa1ff"),
+        "indigo" => ("#4f46e5", "#8e8cff"),
+        "violet" => ("#7c3aed", "#b38bff"),
+        "rose" => ("#d6336c", "#ff7aa6"),
+        "amber" => ("#b45309", "#f2b33d"),
+        "graphite" => ("#3f3f46", "#d4d4d8"),
+        _ => return None,
+    })
 }
 
 /// Un mensaje listo para cualquier canal.
@@ -30,6 +62,9 @@ pub struct Salida {
     pub html: String,
     pub severidad: Severidad,
     pub enlace: Option<String>,
+    /// El logo del cliente (PNG) que el HTML enseña como `cid:` [`CID_LOGO`]: el
+    /// correo lo lleva dentro (multipart/related). Los demás canales no lo usan.
+    pub logo: Option<Vec<u8>>,
 }
 
 // ---------- Texto sin rutas ni secretos ----------
@@ -211,7 +246,7 @@ impl Tono {
 
 const TONOS: [Tono; 5] = [Tono::Critico, Tono::Importante, Tono::Informativo, Tono::Bien, Tono::Neutro];
 
-fn estilos() -> String {
+fn estilos(marca: Option<&MarcaCorreo>) -> String {
     let mut claro = String::new();
     for t in TONOS {
         let (c, f) = t.claro();
@@ -230,9 +265,14 @@ fn estilos() -> String {
          body,.fondo{{background:#0f0f11!important}}.tarjeta{{background:#151518!important;border-color:#25252a!important}}\
          .t1{{color:#ededf0!important}}.t2{{color:#a6a6b0!important}}.t3{{color:#96969f!important}}\
          .linea{{border-color:#25252a!important}}.suave{{background:#1b1b1f!important}}\
-         .boton{{background:#3cc4ad!important;color:#0b0b0d!important}}a{{color:#3cc4ad}}{oscuro}}}\
+         .boton{{background:#3cc4ad!important;color:#0b0b0d!important}}a{{color:#3cc4ad}}{oscuro}{acento}}}\
          @media (max-width:620px){{.marco{{width:100%!important}}.relleno{{padding:20px!important}}\
-         }}"
+         }}",
+        // El acento del cliente, en oscuro.
+        acento = marca
+            .and_then(|m| m.acento)
+            .map(|(_, d)| format!(".acento{{background:{d}!important}}.borde-acento{{border-top-color:{d}!important}}"))
+            .unwrap_or_default(),
     )
 }
 
@@ -257,8 +297,50 @@ fn boton(url: &str, texto: &str) -> String {
     )
 }
 
+/// El tamaño del logo en la cabecera: 32 px de alto (y como mucho 180 de ancho),
+/// con su proporción (de la cabecera IHDR del PNG). Con `width` y `height` en el
+/// HTML: algunos clientes de correo no hacen caso del CSS.
+fn medidas_logo(png: &[u8]) -> (u32, u32) {
+    let (ancho, alto) = match png.get(16..24) {
+        Some(b) => (u32::from_be_bytes([b[0], b[1], b[2], b[3]]).max(1), u32::from_be_bytes([b[4], b[5], b[6], b[7]]).max(1)),
+        None => (1, 1),
+    };
+    let w = (ancho as u64 * 32 / alto as u64).clamp(1, 180) as u32;
+    let h = if w == 180 { (alto as u64 * 180 / ancho as u64).clamp(1, 32) as u32 } else { 32 };
+    (w, h)
+}
+
+/// La cabecera: «Resguardo Server», o la marca del cliente (su logo, o un
+/// cuadro con su acento, y su nombre) con «Resguardo» al lado.
+fn cabecera(marca: Option<&MarcaCorreo>) -> String {
+    let Some(m) = marca else {
+        return "<tr><td style=\"padding:0 4px 14px;font-size:14px;line-height:20px\" class=\"t1\">\
+                <span style=\"display:inline-block;width:10px;height:10px;border-radius:3px;background:#0f766e;vertical-align:middle\"></span>\
+                <strong class=\"t1\" style=\"color:#18181b;vertical-align:middle\">&nbsp;Resguardo</strong> <span class=\"t3\" style=\"color:#666670;vertical-align:middle\">Server</span></td></tr>"
+            .to_string();
+    };
+    let simbolo = match &m.logo {
+        Some(png) => {
+            let (w, h) = medidas_logo(png);
+            format!(
+                "<img src=\"cid:{CID_LOGO}\" width=\"{w}\" height=\"{h}\" alt=\"{}\" style=\"display:inline-block;width:{w}px;height:{h}px;border:0;outline:none;vertical-align:middle\">",
+                esc(&m.nombre)
+            )
+        }
+        None => format!(
+            "<span class=\"acento\" style=\"display:inline-block;width:12px;height:12px;border-radius:3px;background:{};vertical-align:middle\"></span>",
+            m.acento.map_or("#0f766e", |(c, _)| c)
+        ),
+    };
+    format!(
+        "<tr><td style=\"padding:0 4px 14px;font-size:14px;line-height:20px\" class=\"t1\">{simbolo}\
+         <strong class=\"t1\" style=\"color:#18181b;vertical-align:middle\">&nbsp;{}</strong> <span class=\"t3\" style=\"color:#666670;vertical-align:middle\">· Resguardo</span></td></tr>",
+        esc(&m.nombre)
+    )
+}
+
 /// La página entera: cabecera, tarjeta con el contenido y pie.
-fn pagina(f: &Formato, asunto: &str, previo: &str, cuerpo: &str) -> String {
+fn pagina(f: &Formato, marca: Option<&MarcaCorreo>, asunto: &str, previo: &str, cuerpo: &str) -> String {
     let ajustes =
         enlace(f, "/ajustes").map(|u| format!(" <a href=\"{}\" style=\"color:#666670\" class=\"t3\">Elige qué te llega</a>.", esc(&u))).unwrap_or_default();
     format!(
@@ -269,16 +351,18 @@ fn pagina(f: &Formato, asunto: &str, previo: &str, cuerpo: &str) -> String {
          <div style=\"display:none;max-height:0;overflow:hidden;opacity:0\">{previo}</div>\
          <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" class=\"fondo\" style=\"background:#f7f7f8\"><tr><td align=\"center\" style=\"padding:24px 12px\">\
          <table role=\"presentation\" class=\"marco\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:600px;max-width:600px;font-family:{FUENTE}\">\
-         <tr><td style=\"padding:0 4px 14px;font-size:14px;line-height:20px\" class=\"t1\">\
-         <span style=\"display:inline-block;width:10px;height:10px;border-radius:3px;background:#0f766e;vertical-align:middle\"></span>\
-         <strong class=\"t1\" style=\"color:#18181b;vertical-align:middle\">&nbsp;Resguardo</strong> <span class=\"t3\" style=\"color:#666670;vertical-align:middle\">Server</span></td></tr>\
-         <tr><td class=\"tarjeta relleno\" style=\"background:#ffffff;border:1px solid #e9e9ec;border-radius:12px;padding:28px\">\n{cuerpo}\n</td></tr>\
+         {cabecera}\
+         <tr><td class=\"tarjeta relleno{clase_borde}\" style=\"background:#ffffff;border:1px solid #e9e9ec;{borde}border-radius:12px;padding:28px\">\n{cuerpo}\n</td></tr>\
          <tr><td class=\"t3\" style=\"padding:16px 4px;color:#666670;font-size:12px;line-height:18px\">\
          Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.{ajustes}</td></tr>\
          </table></td></tr></table></body></html>\n",
         asunto = esc(asunto),
-        estilos = estilos(),
+        estilos = estilos(marca),
         previo = esc(previo),
+        cabecera = cabecera(marca),
+        // Con el acento del cliente: una línea de su color arriba de la tarjeta.
+        clase_borde = if marca.and_then(|m| m.acento).is_some() { " borde-acento" } else { "" },
+        borde = marca.and_then(|m| m.acento).map(|(c, _)| format!("border-top:3px solid {c};")).unwrap_or_default(),
     )
 }
 
@@ -328,7 +412,7 @@ fn alerta(m: &Mensaje) -> Option<(&Alerta, bool)> {
     }
 }
 
-fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato) -> Salida {
+fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
     let enlace = enlace(f, &a.ruta);
     let asunto = if resuelto { format!("{} · {}", a.titulo, a.cliente) } else { format!("{}: {} · {}", a.severidad.texto(), a.titulo, a.cliente) };
     let mut datos = vec![("Cliente", a.cliente.clone())];
@@ -363,7 +447,7 @@ fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato) -> Salida {
     if let Some(u) = &enlace {
         cuerpo.push_str(&boton(u, "Ver en la consola"));
     }
-    let html = pagina(f, &asunto, &format!("{} · {}", a.texto, sitio(a)), &cuerpo);
+    let html = pagina(f, m, &asunto, &format!("{} · {}", a.texto, sitio(a)), &cuerpo);
     Salida {
         evento: if resuelto { "recuperacion" } else { "aviso" },
         asunto,
@@ -371,12 +455,13 @@ fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato) -> Salida {
         html,
         severidad: if resuelto { Severidad::Informativo } else { a.severidad },
         enlace,
+        logo: logo_de(m),
     }
 }
 
 const PIE_TEXTO: &str = "\n—\nResguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.\n";
 
-fn grupo(alertas: &[(&Alerta, bool)], f: &Formato) -> Salida {
+fn grupo(alertas: &[(&Alerta, bool)], f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
     let n = alertas.len();
     let sev = alertas.iter().filter(|(_, r)| !r).map(|(a, _)| a.severidad).max().unwrap_or(Severidad::Informativo);
     let criticos = alertas.iter().filter(|(a, r)| !r && a.severidad == Severidad::Critico).count();
@@ -430,8 +515,8 @@ fn grupo(alertas: &[(&Alerta, bool)], f: &Formato) -> Salida {
     if let Some(u) = &enlace {
         cuerpo.push_str(&boton(u, "Ver los avisos en la consola"));
     }
-    let html = pagina(f, &asunto, explicacion, &cuerpo);
-    Salida { evento: "grupo", asunto, texto, html, severidad: sev, enlace }
+    let html = pagina(f, m, &asunto, explicacion, &cuerpo);
+    Salida { evento: "grupo", asunto, texto, html, severidad: sev, enlace, logo: logo_de(m) }
 }
 
 // ---------- Resúmenes ----------
@@ -505,7 +590,7 @@ fn cifra(valor: &str, etiqueta: &str) -> String {
     )
 }
 
-fn resumen(r: &Resumen, f: &Formato) -> Salida {
+fn resumen(r: &Resumen, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
     let z = f.zona;
     let asunto = asunto_resumen_en(r, z);
     let equipos: usize = r.clientes.iter().map(|c| c.equipos.len()).sum();
@@ -560,8 +645,8 @@ fn resumen(r: &Resumen, f: &Formato) -> Salida {
     }
     texto.push_str(PIE_TEXTO.trim_start_matches('\n'));
     let previo = format!("{} · {} · {}", plural(equipos as u64, "equipo", "equipos"), plural(fallos as u64, "fallo", "fallos"), tamano(bytes));
-    let html = pagina(f, &asunto, &previo, &cuerpo);
-    Salida { evento: "resumen", asunto, texto, html, severidad: Severidad::Informativo, enlace }
+    let html = pagina(f, m, &asunto, &previo, &cuerpo);
+    Salida { evento: "resumen", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m) }
 }
 
 fn bloque_cliente(c: &ResumenCliente, f: &Formato) -> String {
@@ -609,7 +694,7 @@ fn bloque_cliente(c: &ResumenCliente, f: &Formato) -> String {
     s
 }
 
-fn prueba(quien: &str, f: &Formato) -> Salida {
+fn prueba(quien: &str, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
     let asunto = "Prueba de notificaciones de Resguardo".to_string();
     let explicacion = format!("Es un mensaje de prueba de Resguardo Server que pidió {quien}. Si lo ves, este canal está listo para los avisos.");
     let enlace = enlace(f, "/");
@@ -624,25 +709,59 @@ fn prueba(quien: &str, f: &Formato) -> Salida {
     if let Some(u) = &enlace {
         cuerpo.push_str(&boton(u, "Abrir la consola"));
     }
-    let html = pagina(f, &asunto, &explicacion, &cuerpo);
-    Salida { evento: "prueba", asunto, texto, html, severidad: Severidad::Informativo, enlace }
+    let html = pagina(f, m, &asunto, &explicacion, &cuerpo);
+    Salida { evento: "prueba", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m) }
+}
+
+fn logo_de(m: Option<&MarcaCorreo>) -> Option<Vec<u8>> {
+    m.and_then(|m| m.logo.clone())
+}
+
+/// Los clientes de los que hablan los mensajes (id y nombre), sin repetir.
+pub fn clientes_de(ms: &[Mensaje]) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = Vec::new();
+    let mut poner = |id: &str, nombre: &str| {
+        if !v.iter().any(|(x, _)| x == id) {
+            v.push((id.to_string(), nombre.to_string()));
+        }
+    };
+    for m in ms {
+        match m {
+            Mensaje::Aviso(a) | Mensaje::Recuperacion(a) => poner(&a.cliente_id, &a.cliente),
+            Mensaje::Resumen(r) => r.clientes.iter().for_each(|c| poner(&c.id, &c.nombre)),
+            Mensaje::Prueba { .. } => {}
+        }
+    }
+    v
+}
+
+/// La marca con la que sale: la del cliente si todo es de uno solo (y la tiene);
+/// lo que junta varios clientes, neutro. La prueba de un canal de un cliente
+/// (sin cliente en el mensaje) sale con la suya si es la única que se dio.
+fn marca_de<'a>(ms: &[Mensaje], f: &'a Formato) -> Option<&'a MarcaCorreo> {
+    match clientes_de(ms).as_slice() {
+        [] => (f.marcas.len() == 1).then(|| f.marcas.values().next()).flatten(),
+        [(id, _)] => f.marcas.get(id),
+        _ => None,
+    }
 }
 
 /// Uno o varios mensajes (agrupados) en un solo mensaje para cualquier canal.
 pub fn componer(ms: &[Mensaje], f: &Formato) -> Salida {
+    let marca = marca_de(ms, f);
     match ms {
-        [Mensaje::Resumen(r)] => resumen(r, f),
-        [Mensaje::Prueba { quien }] => prueba(quien, f),
+        [Mensaje::Resumen(r)] => resumen(r, f, marca),
+        [Mensaje::Prueba { quien }] => prueba(quien, f, marca),
         [m] => {
             let (a, resuelto) = alerta(m).expect("aviso o recuperación");
-            una_alerta(a, resuelto, f)
+            una_alerta(a, resuelto, f, marca)
         }
         _ => {
             let alertas: Vec<(&Alerta, bool)> = ms.iter().filter_map(alerta).collect();
             if alertas.len() == 1 {
-                una_alerta(alertas[0].0, alertas[0].1, f)
+                una_alerta(alertas[0].0, alertas[0].1, f, marca)
             } else {
-                grupo(&alertas, f)
+                grupo(&alertas, f, marca)
             }
         }
     }
@@ -743,7 +862,72 @@ mod tests {
     const HASTA: Ts = 1_791_100_800;
 
     fn formato() -> Formato {
-        Formato { url_consola: Some("https://copias.ejemplo.com:8443".into()), zona: FixedOffset::east_opt(2 * 3600).unwrap() }
+        Formato { url_consola: Some("https://copias.ejemplo.com:8443".into()), zona: FixedOffset::east_opt(2 * 3600).unwrap(), marcas: BTreeMap::new() }
+    }
+
+    /// Un PNG de 64 × 16 (solo la firma y la cabecera: lo que mira el correo).
+    fn png_de_prueba() -> Vec<u8> {
+        let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13];
+        b.extend_from_slice(b"IHDR");
+        b.extend_from_slice(&64u32.to_be_bytes());
+        b.extend_from_slice(&16u32.to_be_bytes());
+        b.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
+        b
+    }
+
+    fn con_marca(logo: bool) -> Formato {
+        let mut f = formato();
+        f.marcas.insert("cl-1".into(), MarcaCorreo { nombre: "Altamar & Asociados".into(), acento: colores_acento("violet"), logo: logo.then(png_de_prueba) });
+        f
+    }
+
+    #[test]
+    fn correo_con_la_marca_del_cliente() {
+        // Un aviso de un cliente con marca: su logo (dentro del correo, cid:) y su acento en la cabecera.
+        let s = componer(&[Mensaje::Aviso(alerta_de_prueba())], &con_marca(true));
+        sin_secretos(&s);
+        assert_eq!(s.logo.as_deref(), Some(png_de_prueba().as_slice()));
+        assert!(s.html.contains(&format!("src=\"cid:{CID_LOGO}\" width=\"128\" height=\"32\"")), "{}", s.html);
+        assert!(s.html.contains("alt=\"Altamar &amp; Asociados\""));
+        assert!(s.html.contains("border-top:3px solid #7c3aed;") && s.html.contains(".borde-acento{border-top-color:#b38bff!important}"));
+        // Ninguna imagen de fuera.
+        assert!(!s.html.contains("src=\"http"), "{}", s.html);
+        muestra("aviso-marca.html", &s.html);
+        // Lo demás, igual que sin marca (el texto no cambia).
+        let neutro = componer(&[Mensaje::Aviso(alerta_de_prueba())], &formato());
+        assert_eq!((s.asunto.as_str(), s.texto.as_str()), (neutro.asunto.as_str(), neutro.texto.as_str()));
+        assert!(neutro.logo.is_none() && !neutro.html.contains("cid:"));
+
+        // Solo el acento: un cuadro de su color (también en oscuro).
+        let s = componer(&[Mensaje::Aviso(alerta_de_prueba())], &con_marca(false));
+        assert!(s.logo.is_none() && !s.html.contains("cid:"));
+        assert!(s.html.contains("background:#7c3aed;vertical-align:middle") && s.html.contains(".acento{background:#b38bff!important}"));
+
+        // Varios clientes en un mismo correo: neutro.
+        let mut otro = alerta_de_prueba();
+        otro.cliente_id = "cl-2".into();
+        otro.cliente = "Otro cliente".into();
+        let s = componer(&[Mensaje::Aviso(alerta_de_prueba()), Mensaje::Aviso(otro)], &con_marca(true));
+        assert!(s.logo.is_none() && !s.html.contains("cid:") && !s.html.contains("#7c3aed"));
+        assert!(s.html.contains("&nbsp;Resguardo</strong>"));
+        // Un resumen de varios clientes, también.
+        let mut r = Resumen {
+            periodo: Periodo::Semanal,
+            desde: HASTA - 7 * 86_400,
+            hasta: HASTA,
+            clientes: vec![crate::notificaciones::resumen::tests::cliente_de_prueba(HASTA)],
+        };
+        let mut c2 = r.clientes[0].clone();
+        c2.id = "cl-2".into();
+        r.clientes.push(c2);
+        let s = componer(&[Mensaje::Resumen(r.clone())], &con_marca(true));
+        assert!(s.logo.is_none() && !s.html.contains("#7c3aed"));
+        // El de un solo cliente (el suyo), con su marca.
+        r.clientes.truncate(1);
+        let mut f = con_marca(true);
+        let marca = f.marcas.remove("cl-1").unwrap();
+        f.marcas.insert(r.clientes[0].id.clone(), marca);
+        assert!(componer(&[Mensaje::Resumen(r)], &f).logo.is_some());
     }
 
     fn alerta_de_prueba() -> Alerta {
