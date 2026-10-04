@@ -549,12 +549,12 @@ pub struct Configuracion {
     /// repositorios que no están se quedan sin verificación automática.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verificaciones: Option<std::collections::BTreeMap<String, VerificacionAuto>>,
-    /// v1.3x: la ventana y los avisos del escritorio (docs/agente-ventana.md §2):
+    /// v1.36: la ventana y los avisos del escritorio (docs/agente-ventana.md §2):
     /// `{ ventana: off|siempre_disponible|al_trabajar, avisos: off|errores|todo }`.
     /// Sin el campo (una consola anterior), se queda el que hubiera.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escritorio: Option<Value>,
-    /// v1.3x: cuándo se cambió por última vez en el propio equipo (con la clave de
+    /// v1.36: cuándo se cambió por última vez en el propio equipo (con la clave de
     /// administración); la consola lo enseña como «cambiado en el equipo». Lo pone
     /// el equipo: una `config` de la consola lo quita.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -765,7 +765,7 @@ fn estado_de(result: &str) -> &'static str {
 /// v1.28: lo que entiende este agente, en `resumen.admite`: plazos y horarias
 /// en la retención (también la del almacén), `config.verificaciones` y
 /// `guarda_copias { anadir, local: true }` (un repositorio en su propio almacén).
-/// v1.3x: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
+/// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
 pub const ADMITE: [&str; 5] = ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio"];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -800,7 +800,7 @@ pub fn resumen(v: &Vinculo) -> Value {
     json!({
         // v1.28: lo que este agente sabe hacer de lo nuevo (la consola no ofrece lo que no).
         "admite": ADMITE,
-        // v1.3x: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
+        // v1.36: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
         "escritorio": v.config_v1.as_ref().map(|c| crate::escritorio::Escritorio::de_config(c).a_json()),
         "escritorio_cambiado_en_equipo": v.config_v1.as_ref().and_then(|c| c.get("cambiado_en_equipo")).filter(|x| x.is_string()),
         "copias": copias.iter().map(|k| {
@@ -844,7 +844,7 @@ pub fn resumen(v: &Vinculo) -> Value {
             "hacia": c.destino.url,
             "hasta": chrono::DateTime::from_timestamp(c.hasta, 0).map(|d| d.to_rfc3339()),
         })),
-        // v1.3x: las consolas que gestionan el equipo (esta, `esta: true`) y de cuál vino el último cambio.
+        // v1.36: las consolas que gestionan el equipo (esta, `esta: true`) y de cuál vino el último cambio.
         "consolas": crate::consolas_v2::resumen(v),
         "cambio_config": crate::consolas_v2::resumen_cambio(v),
     })
@@ -871,7 +871,7 @@ pub fn subir_resumen_si_cambio(v: &mut Vinculo) {
 }
 
 /// Sube la configuración cifrada con `K_cfg` y el resumen en claro a la
-/// consola activa y deja pendiente la de las demás (v1.3x: la sube el canal de
+/// consola activa y deja pendiente la de las demás (v1.36: la sube el canal de
 /// cada una enseguida, cifrada con su `K_cfg`; una consola apagada no frena).
 pub fn subir_config(v: &mut Vinculo) -> Result<(), String> {
     // Sin consola (modo local, docs/agente-ventana.md §5): no hay a quién subirla.
@@ -885,7 +885,7 @@ pub fn subir_config(v: &mut Vinculo) -> Result<(), String> {
 }
 
 /// Sube la configuración cifrada y el resumen solo a la consola activa. Con
-/// ellos van (v1.3x) la etiqueta del equipo calculada con la `K_cfg` de esa
+/// ellos van (v1.36) la etiqueta del equipo calculada con la `K_cfg` de esa
 /// consola y la espera mínima: tras cambiar la clave o la espera desde otra
 /// consola, esta queda al día sola. Un servidor anterior los ignora.
 pub fn subir_config_enlace(v: &mut Vinculo) -> Result<(), String> {

@@ -234,7 +234,7 @@ pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
         e.vinculado = true;
         let host = anfitrion(&v.url).to_string();
         if v.modo == "gestionado" && !v.otras.is_empty() {
-            // v1.3x: varias consolas a la vez (todas pueden ver y restaurar).
+            // v1.35: varias consolas a la vez (todas pueden ver y restaurar).
             let otras: Vec<String> = v.otras.iter().map(|o| anfitrion(&o.url).to_string()).collect();
             e.privacy =
                 format!("Este equipo lo gestionan varias consolas ({host}, {}): sus administradores pueden ver y restaurar sus copias.", otras.join(", "));
@@ -979,7 +979,7 @@ mod tests {
         // Una copia «en curso» sin noticias desde hace mucho no se cree.
         let viejo = ahora() + chrono::Duration::hours(2);
         assert!(componer(&f, &viejo).en_curso.is_none());
-        // v1.3x: con otra consola, salen las dos.
+        // v1.36: con otra consola, salen las dos.
         let dos = crate::servidor_v2::Vinculo {
             otras: vec![crate::consolas_v2::Enlace { url: "https://consola.ejemplo.com".into(), secreto: "s".into(), ..Default::default() }],
             ..vinculo.clone()

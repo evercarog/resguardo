@@ -435,7 +435,7 @@ export async function sembrar(vacio = false) {
       resumen: {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
         admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples"],
-        // v1.3x: también la gestiona una consola en línea (y el último cambio vino de allí).
+        // v1.36: también la gestiona una consola en línea (y el último cambio vino de allí).
         consolas: [
           { id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true },
           { id: "en-linea", nombre: "Consola en línea", url: "https://consola.ejemplo.com", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", sal_cliente: "c2FsLWRlbC1jbGllbnRlLTE2", ultimo_contacto: hace(15), desde: hace(60 * 24 * 20), esta: false },

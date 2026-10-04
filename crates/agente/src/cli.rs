@@ -530,7 +530,7 @@ fn estado(now: chrono::DateTime<chrono::Local>) -> String {
             if let Some(c) = &v.cambio {
                 let _ = writeln!(s, "  Cambio de servidor en curso hacia {}", c.destino.url);
             }
-            // v1.3x: varias consolas a la vez.
+            // v1.35: varias consolas a la vez.
             for e in &v.otras {
                 let _ = writeln!(s, "  También lo gestiona: {} ({})", crate::consolas_v2::nombre_de(&e.nombre, &e.url), e.url);
             }

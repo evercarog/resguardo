@@ -49,7 +49,7 @@ export const NIVEL: Record<string, Nivel> = {
   clave_almacen: "repo",
   retencion_almacen: "admin",
   aplicar_retencion_almacen: "admin",
-  // v1.3x: varias consolas a la vez (docs/consolas-multiples.md).
+  // v1.35: varias consolas a la vez (docs/consolas-multiples.md).
   anadir_consola: "admin",
   quitar_consola: "admin",
 };

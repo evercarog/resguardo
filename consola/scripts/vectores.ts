@@ -717,7 +717,7 @@ console.log("\n· Progreso en vivo (v1.25)");
   igual("ninguna", textoSeveridades([]), "Nada al momento");
 }
 
-// v1.3x: varias consolas a la vez. El código de conexión va y vuelve igual, se
+// v1.35: varias consolas a la vez. El código de conexión va y vuelve igual, se
 // rechaza caducado, de esta misma consola o dañado, y `anadir_consola` lleva lo
 // que el agente comprueba (consolas_v2.rs, `pedido`).
 {

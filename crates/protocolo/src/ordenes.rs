@@ -86,7 +86,7 @@ pub const TIPOS: &[Tipo] = &[
     t("desvincular", Administracion, false, false, true),
     t("cambiar_servidor", Administracion, false, false, true),
     t("cambiar_clave_admin", Administracion, false, false, true),
-    // v1.3x: varias consolas a la vez (docs/consolas-multiples.md). No reducen la
+    // v1.35: varias consolas a la vez (docs/consolas-multiples.md). No reducen la
     // protección, pero son sensibles: solo administradores, y el equipo avisa a todas.
     t("anadir_consola", Administracion, false, false, true),
     t("quitar_consola", Administracion, false, false, true),
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(tipo("retencion_almacen").unwrap().nivel, Nivel::Administracion);
         assert!(DESTRUCTIVAS_SEGUN_CUERPO.contains(&"retencion_almacen") && !tipo("retencion_almacen").unwrap().destructiva);
         assert!(tipo("aplicar_retencion_almacen").unwrap().destructiva);
-        // v1.3x: varias consolas. Con la clave de administración, solo administradores, sin espera.
+        // v1.35: varias consolas. Con la clave de administración, solo administradores, sin espera.
         for t in ["anadir_consola", "quitar_consola"] {
             let t = tipo(t).unwrap();
             assert!(t.nivel == Nivel::Administracion && t.solo_administradores && !t.destructiva);

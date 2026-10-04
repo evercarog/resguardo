@@ -102,7 +102,7 @@ Qué se mide (de verdad, no estimado):
 | Copia externa, espejo, nube | — | bytes subidos (si la tarea los da) | — |
 
 La copia manda además `lectura`, `subida` y `archivos_s` en el progreso de la
-consola (v1.3x): la consola pinta las mismas ondas en la fila de la copia.
+consola (v1.36): la consola pinta las mismas ondas en la fila de la copia.
 
 ### `gestionado-ventana.json`
 

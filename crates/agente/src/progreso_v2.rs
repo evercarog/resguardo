@@ -73,7 +73,7 @@ pub fn tarea_copia(r: &RunningCopy, nombre: Option<&str>, ahora: DateTime<Local>
         "bytes": con_cifras.then_some(r.bytes_done),
         "bytes_total": con_cifras.then_some(r.total_bytes),
         "velocidad": if fase == "subiendo" || fase == "escaneando" { r.bytes_per_s } else { None },
-        // v1.3x: lo que restic lee del disco y lo que sube o escribe en el destino (bytes/s,
+        // v1.36: lo que restic lee del disco y lo que sube o escribe en el destino (bytes/s,
         // medido en el proceso) y archivos por segundo, para las gráficas en vivo.
         "lectura": if con_cifras { r.read_bps } else { None },
         "subida": if con_cifras { r.upload_bps } else { None },

@@ -15,7 +15,7 @@
   import GraficaOndas from "$ui/componentes/GraficaOndas.svelte";
   import { porSegundoArchivos, serieArchivos, seriesBytes } from "$ui/ritmos";
 
-  // `grafica`: las ondas en vivo (lectura y subida, y archivos por segundo) si el agente las manda (v1.3x).
+  // `grafica`: las ondas en vivo (lectura y subida, y archivos por segundo) si el agente las manda (v1.36).
   let { tarea, equipo, compacto = false, titulo, grafica = true }: { tarea: TareaEnMarcha; equipo: string; compacto?: boolean; titulo?: string; grafica?: boolean } = $props();
   const ritmo = $derived(grafica && !compacto ? ritmoDe(equipo, tarea) : undefined);
   const ondas = $derived(seriesBytes(tarea.tipo, ritmo).filter((s) => s.puntos.length >= 2));

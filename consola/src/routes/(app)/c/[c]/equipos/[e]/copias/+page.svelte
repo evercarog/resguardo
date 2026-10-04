@@ -244,7 +244,7 @@
   // Por repositorio: cada N días, un porcentaje rotativo. Solo con un agente que
   // la entiende (`admite`); con uno anterior no se manda el campo.
   const admiteVerif = $derived(admiteVerificacion(equipo));
-  /** v1.3x: la ventana y los avisos del equipo (docs/agente-ventana.md). */
+  /** v1.36: la ventana y los avisos del equipo (docs/agente-ventana.md). */
   const admiteEscritorio = $derived(!!equipo?.resumen?.admite?.includes("escritorio"));
   const escritorio = $derived<Escritorio>(cfg?.escritorio ?? { ventana: cfg?.bandeja?.visible === false ? "off" : "siempre_disponible", avisos: cfg?.bandeja?.avisos ? "errores" : "off" });
   function ponerEscritorio(cambio: Partial<Escritorio>) {
@@ -324,11 +324,11 @@
         repositorios: c0.repositorios,
         destinos: c0.destinos,
         verificacion: c0.verificacion ?? null,
-        // v1.3x: con `escritorio`, `bandeja.avisos` dice lo mismo para un agente anterior.
+        // v1.36: con `escritorio`, `bandeja.avisos` dice lo mismo para un agente anterior.
         bandeja: c0.escritorio ? { visible: c0.bandeja?.visible ?? true, avisos: c0.escritorio.avisos !== "off" } : (c0.bandeja ?? null),
         // v1.28: solo a un agente que la entiende, y solo si se ha tocado alguna vez.
         ...(admiteVerif && c0.verificaciones ? { verificaciones: c0.verificaciones } : {}),
-        // v1.3x: la ventana y los avisos (si el agente lo entiende y lo tiene o se ha tocado).
+        // v1.36: la ventana y los avisos (si el agente lo entiende y lo tiene o se ha tocado).
         ...(admiteEscritorio && c0.escritorio ? { escritorio: c0.escritorio } : {}),
       };
       const o = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "config", cuerpo: { config }, secretos: { prueba }, alPaso: (t) => (paso = t) });

@@ -446,7 +446,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }, 7000);
       return;
     }
-    // --- v1.3x: varias consolas a la vez (docs/consolas-multiples.md) ------------
+    // --- v1.35: varias consolas a la vez (docs/consolas-multiples.md) ------------
     case "anadir_consola": {
       const url = String(c.url ?? "");
       const identidad = String(c.identidad ?? "");

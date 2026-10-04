@@ -156,7 +156,7 @@
   /** Un equipo trasladado a otro servidor ya no recibe órdenes de este: se ve, pero no se toca. */
   const trasladado = $derived(equipo?.modo === "trasladado");
   const rol = $derived(trasladado && rolCliente ? "lectura" : rolCliente);
-  // v1.3x: las otras consolas que gestionan este equipo y el último cambio, si vino de una de ellas.
+  // v1.36: las otras consolas que gestionan este equipo y el último cambio, si vino de una de ellas.
   const otrasConsolas = $derived((equipo?.resumen?.consolas ?? []).filter((x) => !x.esta));
   const cambioDeOtra = $derived.by(() => {
     const c = equipo?.resumen?.cambio_config;
@@ -1017,7 +1017,7 @@
             {/if}
             {#if puede.administrar(rol)}
               {#if otrasConsolas.length}
-                <!-- v1.3x: con otras consolas, desvincular solo quita esta (las demás siguen). -->
+                <!-- v1.36: con otras consolas, desvincular solo quita esta (las demás siguen). -->
                 <button
                   class="btn btn-sm"
                   onclick={() =>

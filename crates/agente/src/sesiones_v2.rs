@@ -563,7 +563,7 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
     if rutas.is_empty() || rutas.len() > 100 {
         return Err("Elige entre 1 y 100 archivos o carpetas.".into());
     }
-    // v1.3x (solo la ventana del equipo, con la clave): «carpeta», en la que elija el administrador.
+    // v1.36 (solo la ventana del equipo, con la clave): «carpeta», en la que elija el administrador.
     let carpeta = match c["destino"].as_str() {
         Some("carpeta") => {
             let d = c["carpeta"].as_str().unwrap_or("");

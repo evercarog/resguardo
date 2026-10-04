@@ -165,7 +165,7 @@ export interface Invitacion {
  * El contrato no fija su forma todavía; esto es lo que la consola sabe pintar
  * (ver «Preguntas» en consola/README.md). Todo es opcional.
  */
-/** v1.3x: una consola (Resguardo Server) que gestiona el equipo (docs/consolas-multiples.md). */
+/** v1.35: una consola (Resguardo Server) que gestiona el equipo (docs/consolas-multiples.md). */
 export interface ConsolaDelEquipo {
   id: string;
   nombre: string;
@@ -181,9 +181,9 @@ export interface ConsolaDelEquipo {
 }
 
 export interface ResumenEquipo {
-  /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.3x «escritorio»). */
+  /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.36 «escritorio»). */
   admite?: string[];
-  /** v1.3x: la ventana y los avisos en el equipo (docs/agente-ventana.md), y cuándo se cambiaron allí. */
+  /** v1.36: la ventana y los avisos en el equipo (docs/agente-ventana.md), y cuándo se cambiaron allí. */
   escritorio?: Escritorio | null;
   escritorio_cambiado_en_equipo?: string | null;
   /** v1.19 (agente ≥ 0.7.7): un puerto libre para «Este equipo guarda copias». */
@@ -193,9 +193,9 @@ export interface ResumenEquipo {
   respaldo_dias?: number;
   /** v1.6: cambio de servidor en curso (si lo hay). */
   traslado?: { estado: "en_marcha"; hacia: string; hasta: string } | null;
-  /** v1.3x: las consolas que gestionan el equipo (la que lo recibe, `esta: true`). */
+  /** v1.36: las consolas que gestionan el equipo (la que lo recibe, `esta: true`). */
   consolas?: ConsolaDelEquipo[];
-  /** v1.3x: el último cambio (configuración, repositorios…) y desde qué consola llegó. */
+  /** v1.36: el último cambio (configuración, repositorios…) y desde qué consola llegó. */
   cambio_config?: { tipo: string; cuando: string; consola: { nombre: string; url: string; identidad: string } } | null;
   copias?: CopiaResumen[];
   repositorios?: RepositorioResumen[];
@@ -561,7 +561,7 @@ export interface TareaEnMarcha {
   bytes_total?: number | null;
   /** Bytes por segundo, suavizado. */
   velocidad?: number | null;
-  /** v1.3x: lectura real del disco y subida (o escritura) al destino, bytes/s; archivos por segundo. */
+  /** v1.36: lectura real del disco y subida (o escritura) al destino, bytes/s; archivos por segundo. */
   lectura?: number | null;
   subida?: number | null;
   archivos_s?: number | null;
@@ -750,13 +750,13 @@ export interface Configuracion {
   /** v1.28: verificación automática por repositorio. Sin el campo, el agente no toca la que haya. */
   verificaciones?: Record<string, VerificacionAuto>;
   bandeja?: { visible: boolean; avisos: boolean };
-  /** v1.3x: la ventana y los avisos en el equipo (docs/agente-ventana.md). */
+  /** v1.36: la ventana y los avisos en el equipo (docs/agente-ventana.md). */
   escritorio?: Escritorio;
-  /** v1.3x: lo puso el equipo al cambiar algo con la clave en su ventana. */
+  /** v1.36: lo puso el equipo al cambiar algo con la clave en su ventana. */
   cambiado_en_equipo?: string;
 }
 
-/** v1.3x: la ventana del agente y sus avisos. */
+/** v1.36: la ventana del agente y sus avisos. */
 export interface Escritorio {
   ventana: "off" | "siempre_disponible" | "al_trabajar";
   avisos: "off" | "errores" | "todo";

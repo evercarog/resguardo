@@ -35,7 +35,7 @@ const PRONTO = 90_000;
 const INFORME_VIGENTE = 3 * 60_000;
 
 let temporizador: ReturnType<typeof setTimeout> | null = null;
-/** v1.3x: los ritmos de cada tarea (lectura, subida, archivos/s) de los últimos 5 minutos. */
+/** v1.36: los ritmos de cada tarea (lectura, subida, archivos/s) de los últimos 5 minutos. */
 const ritmos = new Map<string, Ritmo>();
 /** Cambia cada vez que llegan ritmos nuevos (para que las gráficas se repinten). */
 export const ritmosVersion = $state({ n: 0 });

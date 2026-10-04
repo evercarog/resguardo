@@ -94,7 +94,7 @@ pub struct Vinculo {
     /// pendiente de que ese servidor dé el alta con la misma clave (§3.5, camino 3).
     #[serde(default)]
     pub adopcion: Option<crate::traslado_v2::Adopcion>,
-    // ---- v1.3x: varias consolas a la vez (consolas_v2.rs, docs/consolas-multiples.md) ----
+    // ---- v1.35: varias consolas a la vez (consolas_v2.rs, docs/consolas-multiples.md) ----
     /// Id interno del vínculo de estos campos (vacío en un archivo anterior: «principal»).
     #[serde(default)]
     pub enlace_id: String,
@@ -733,7 +733,7 @@ pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
         None
     };
     let orden_id = meta["id"].as_str().unwrap_or("").to_string();
-    // v1.3x: de qué consola viene el cambio (las demás enseñan «Cambiado desde otra
+    // v1.36: de qué consola viene el cambio (las demás enseñan «Cambiado desde otra
     // consola»). Antes de ejecutarla, para que ya vaya en el resumen que sube; si no se
     // hace, se deja como estaba.
     let antes = v.ultimo_cambio.clone();
@@ -900,13 +900,13 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             }
             v.verificador = Some(ver);
             let vieja = v.k_cfg.replace(kcfg.clone());
-            // v1.3x: la K_cfg nueva de las demás consolas (cada una con su sal).
+            // v1.36: la K_cfg nueva de las demás consolas (cada una con su sal).
             crate::consolas_v2::cambiar_kcfg_de_las_demas(v, vieja.as_deref(), &kcfg, c);
             // La configuración, cifrada ya con la clave nueva (y su etiqueta nueva).
             let _ = g::subir_config(v);
             Ok(hecha("Clave de administración cambiada."))
         }
-        // v1.3x: varias consolas a la vez (consolas_v2.rs).
+        // v1.35: varias consolas a la vez (consolas_v2.rs).
         "anadir_consola" => crate::consolas_v2::anadir(v, c, orden_id, seq).map(en_marcha),
         "quitar_consola" => {
             let m = crate::consolas_v2::quitar(v, c)?;
@@ -938,7 +938,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
                 Ok(Resultado { detalle: Some(json!({ "trozos": n }).to_string()), ..hecha("Descarga lista en el relé.") })
             }))
         }
-        // v1.3x: con otras consolas, solo se va esta (las demás siguen gestionándolo).
+        // v1.36: con otras consolas, solo se va esta (las demás siguen gestionándolo).
         "desvincular" => {
             let quedan = v.otras.len();
             if c["modo"] == "dejar_de_copiar" {
@@ -1139,7 +1139,7 @@ fn orden_de(id: &str, o: &Value) -> Option<(Resultado, Option<String>, Vinculo)>
 pub fn ronda() -> Result<bool, String> {
     // Un servidor nuevo pendiente de dar el alta (vincular con clave ya puesta).
     crate::traslado_v2::ronda_adopcion();
-    // v1.3x: una vuelta con cada consola; el resultado es el de la principal.
+    // v1.36: una vuelta con cada consola; el resultado es el de la principal.
     let ids = cargar().map(|v| v.ids_enlaces()).unwrap_or_default();
     let mut principal = Ok(false);
     for (i, id) in ids.iter().enumerate() {
@@ -1198,7 +1198,7 @@ fn ronda_de(id: &str) -> Result<bool, String> {
     let Some(v) = crate::consolas_v2::vista(id) else { return Ok(false) };
     // v1.23: lo que falte del historial del equipo en este servidor.
     subir_bitacora(&v, crate::bitacora::ultima_del_servidor(&r));
-    // v1.3x: la configuración que cambió otra consola.
+    // v1.36: la configuración que cambió otra consola.
     subir_pendiente(id);
     // Un cambio de servidor en curso: se intenta en cada vuelta.
     if v.cambio.is_some() {
@@ -1371,7 +1371,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                 return Ok(());
             }
         }
-        // v1.3x: la configuración que cambió otra consola, a esta.
+        // v1.36: la configuración que cambió otra consola, a esta.
         if v.config_pendiente {
             subir_pendiente(id);
         }
@@ -1746,7 +1746,7 @@ mod tests {
         disco.ultimo_seq = 7;
         disco.config_seq = 3;
         assert!(!cambiado_fuera(&canal, &disco), "lo que guarda el propio agente (órdenes, configuración) no cuenta");
-        // v1.3x: un alta pendiente (vincular con otro servidor) ya no cierra el canal: la
+        // v1.36: un alta pendiente (vincular con otro servidor) ya no cierra el canal: la
         // mira el hilo del servicio por su lado, y el canal nunca guarda una copia vieja
         // del vínculo (cada cambio se hace sobre lo que hay en el disco).
         disco.adopcion = Some(crate::traslado_v2::Adopcion { url: "https://b:8443".into(), ..Default::default() });

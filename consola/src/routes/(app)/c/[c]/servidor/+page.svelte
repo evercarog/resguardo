@@ -76,7 +76,7 @@
     }
   };
   const respaldos = $derived(ultima("servidores_respaldo"));
-  /** v1.3x: las otras consolas de cada equipo (lo dice su resumen) y las conexiones aún en curso. */
+  /** v1.36: las otras consolas de cada equipo (lo dice su resumen) y las conexiones aún en curso. */
   const conOtras = $derived(activos.filter((e) => (e.resumen?.consolas ?? []).some((x) => !x.esta)));
   const conexiones = $derived(ultima("anadir_consola").filter((o) => o.estado !== "hecha" && o.estado !== "cancelada"));
   const enCurso = $derived(

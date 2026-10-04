@@ -375,7 +375,7 @@ struct Subidas {
     al_dia: Option<(u64, Option<String>)>,
 }
 
-/// Una por servidor (v1.3x: con varias consolas, cada una lleva su cuenta).
+/// Una por servidor (v1.35: con varias consolas, cada una lleva su cuenta).
 static SUBIDAS: Mutex<Option<std::collections::HashMap<String, Subidas>>> = Mutex::new(None);
 
 /// Sube lo que falte en el servidor (en tandas de 500, lo más reciente primero).

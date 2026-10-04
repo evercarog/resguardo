@@ -167,7 +167,7 @@ pub struct Recibir {
     /// La etiqueta la calcula el propio equipo con su `K_cfg`; la consola la comprueba como siempre.
     etiqueta: String,
     espera_min_horas: Option<i64>,
-    /// v1.3x: `anadir_consola` si el equipo se conecta también a este servidor
+    /// v1.36: `anadir_consola` si el equipo se conecta también a este servidor
     /// (sigue gestionado desde otro): solo cambia el texto del aviso.
     #[serde(default)]
     motivo: Option<String>,
@@ -373,7 +373,7 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         return Err(ErrorApi::datos("La firma del resultado no es de este equipo."));
     }
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
-    // v1.3x: `quitar_consola` de esta misma consola («Dejar esta consola»): el equipo lo dice en el
+    // v1.36: `quitar_consola` de esta misma consola («Dejar esta consola»): el equipo lo dice en el
     // detalle firmado (sigue gestionado desde otras, pero ya no desde aquí).
     let deja_esta_consola = r.estado == "hecha"
         && orden.tipo == "quitar_consola"
@@ -471,12 +471,12 @@ pub struct Config {
     seq: u64,
     cifrado: String,
     resumen: Value,
-    /// v1.3x: la etiqueta que calcula el equipo con la `K_cfg` de este servidor. Tras
+    /// v1.36: la etiqueta que calcula el equipo con la `K_cfg` de este servidor. Tras
     /// cambiar la clave de administración (quizá desde otra consola), la de aquí
     /// queda al día. Solo en un equipo ya confirmado (si no, la pone la consola).
     #[serde(default)]
     etiqueta: Option<String>,
-    /// v1.3x: la espera mínima que aplica el equipo (quizá la cambió otra consola).
+    /// v1.36: la espera mínima que aplica el equipo (quizá la cambió otra consola).
     #[serde(default)]
     espera_min_horas: Option<i64>,
 }
@@ -499,7 +499,7 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
             let previo = if papel == "almacenamiento" { actual.clone() } else { None };
             db.guardar_config(&ctx, &equipo, c.seq, &c.cifrado, &c.resumen)?;
             db.poner_papel(&ctx, &equipo, papel)?;
-            // v1.3x: lo que pudo cambiar otra consola (la clave o la espera): el equipo lo dice al subir su configuración.
+            // v1.36: lo que pudo cambiar otra consola (la clave o la espera): el equipo lo dice al subir su configuración.
             if let Some(e) = actual.as_ref().filter(|e| e.confirmado) {
                 if let Some(et) = c.etiqueta.as_deref().filter(|et| b64_32(et) && e.etiqueta.as_deref() != Some(*et)) {
                     db.confirmar_equipo(&ctx, &equipo, et)?;

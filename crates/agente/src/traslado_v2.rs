@@ -75,7 +75,7 @@ pub fn cambiar_servidor(v: &mut Vinculo, c: &Value, orden: &str, seq: u64) -> Re
         return Err("Este equipo aún no tiene la clave de administración (falta el alta).".into());
     }
     let destino = servidor_de(c)?;
-    // v1.3x: a un servidor que ya es otra de sus consolas, no (sería la misma dos veces).
+    // v1.36: a un servidor que ya es otra de sus consolas, no (sería la misma dos veces).
     if v.otras.iter().any(|e| e.identidad == destino.identidad) {
         return Err("Ese servidor ya gestiona este equipo (es otra de sus consolas): quita esta consola en vez de cambiarla.".into());
     }
@@ -96,7 +96,7 @@ pub fn trasladar(v: &Vinculo, destino: &Servidor) -> Result<Vinculo, String> {
 /// Se da de alta en otro servidor con su ficha (`POST /api/agente/recibir`, con
 /// la etiqueta calculada con `v.k_cfg`) y comprueba que tiene la identidad
 /// esperada y la demuestra. Devuelve el vínculo con ese servidor en los campos
-/// de siempre (sin guardarlo ni subir nada). `motivo` (v1.3x): `anadir_consola`.
+/// de siempre (sin guardarlo ni subir nada). `motivo` (v1.36): `anadir_consola`.
 pub fn recibir_en(v: &Vinculo, destino: &Servidor, motivo: Option<&str>) -> Result<Vinculo, String> {
     let k: [u8; 32] = v.k_cfg.as_deref().and_then(|k| B64.decode(k).ok()).and_then(|k| k.try_into().ok()).ok_or("Falta K_cfg.")?;
     let box_pub = claves::public_of(&v.box_secret)?;
@@ -133,7 +133,7 @@ pub fn recibir_en(v: &Vinculo, destino: &Servidor, motivo: Option<&str>) -> Resu
     n.config_seq = 0;
     n.cambio = None;
     n.ultimo_ok = chrono::Utc::now().timestamp();
-    // v1.3x: lo de la consola anterior no vale en esta.
+    // v1.36: lo de la consola anterior no vale en esta.
     n.nombre_consola.clear();
     n.sal_cliente = None;
     n.fallos.clear();
@@ -210,7 +210,7 @@ pub fn servidores_respaldo(v: &mut Vinculo, c: &Value) -> Result<String, String>
     Ok(format!("{} servidores de respaldo (si este no responde en {dias} días).", v.respaldo.len()))
 }
 
-/// Tras una vuelta sin respuesta de la consola activa (`v`, v1.3x: cada una
+/// Tras una vuelta sin respuesta de la consola activa (`v`, v1.36: cada una
 /// tiene sus respaldos): si pasaron los días fijados, se muda al primer
 /// respaldo que le acepte. No guarda (lo hace quien la llama).
 pub fn comprobar_respaldo(v: &mut Vinculo) {
@@ -282,7 +282,7 @@ fn con_adopcion(v: &Vinculo, a: &Adopcion) -> Vinculo {
     n.modo = "gestionado".into();
     n.cambio = None;
     n.adopcion = None;
-    // v1.3x: sustituye a la consola principal; lo de esa no vale en esta.
+    // v1.36: sustituye a la consola principal; lo de esa no vale en esta.
     n.nombre_consola.clear();
     n.sal_cliente = None;
     n.fallos.clear();
