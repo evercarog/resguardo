@@ -120,20 +120,25 @@ export function rio(horas: number[], paso: number, desde: number, hasta: number)
 }
 
 /**
- * Junta las marcas que quedan demasiado cerca (en píxeles) para verse: de
- * izquierda a derecha, una marca se une al grupo anterior si está a menos de
- * `minimo` px de la última del grupo. Devuelve los grupos con su posición
- * media; los de una sola marca son marcas sueltas.
+ * Junta las marcas que no caben: por tramos de `paso` ms alineados al tiempo
+ * (así las burbujas no bailan al arrastrar), un tramo con tres o más marcas
+ * en el que alguna queda a menos de `minimo` px de la anterior es una
+ * burbuja (en su posición media); si no, sus marcas van sueltas.
  */
-export function agrupar<T extends { x: number }>(marcas: T[], minimo: number): { x: number; xs: T[] }[] {
-  const orden = [...marcas].sort((a, b) => a.x - b.x);
-  const out: { x: number; xs: T[] }[] = [];
-  for (const m of orden) {
-    const g = out.at(-1);
-    if (g && m.x - g.xs.at(-1)!.x < minimo) g.xs.push(m);
-    else out.push({ x: m.x, xs: [m] });
+export function agrupar<T extends { x: number; t: number }>(marcas: T[], paso: number, minimo: number): { x: number; xs: T[] }[] {
+  const tramos = new Map<number, T[]>();
+  for (const m of [...marcas].sort((a, b) => a.t - b.t)) {
+    const k = Math.floor(m.t / paso);
+    const g = tramos.get(k);
+    if (g) g.push(m);
+    else tramos.set(k, [m]);
   }
-  for (const g of out) g.x = g.xs.reduce((s, m) => s + m.x, 0) / g.xs.length;
+  const out: { x: number; xs: T[] }[] = [];
+  for (const xs of tramos.values()) {
+    const apretadas = xs.length >= 3 && xs.some((m, i) => i > 0 && m.x - xs[i - 1].x < minimo);
+    if (apretadas) out.push({ x: xs.reduce((s, m) => s + m.x, 0) / xs.length, xs });
+    else for (const m of xs) out.push({ x: m.x, xs: [m] });
+  }
   return out;
 }
 

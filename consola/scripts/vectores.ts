@@ -838,8 +838,11 @@ console.log("\n· Progreso en vivo (v1.25)");
   cierto("río: va de 0 a 1 y el pico está donde hay más versiones", Math.max(...r.v) === 1 && Math.min(...r.v) >= 0 && r.desde + pico * r.paso <= DIA_MS && r.desde + (pico + 1) * r.paso > 0);
   cierto("río: tramos alineados (no tiembla al arrastrar)", r.desde % DIA_MS === 0 && rio([5], DIA_MS, DIA_MS * 0.3, DIA_MS * 2).desde === rio([5], DIA_MS, DIA_MS * 0.7, DIA_MS * 2).desde);
   igual("río sin versiones: todo a 0", rio([], DIA_MS, 0, DIA_MS * 3).v.every((x) => x === 0), true);
-  igual("burbujas: se juntan las que no caben", agrupar([{ x: 0 }, { x: 4 }, { x: 8 }, { x: 30 }, { x: 52 }, { x: 58 }], 10).map((g) => g.xs.length), [3, 1, 2]);
-  igual("burbuja: en la posición media", agrupar([{ x: 0 }, { x: 4 }, { x: 8 }], 10)[0].x, 4);
+  // Tramos de 100 ms y 1 px por ms: [0, 4, 8] no caben; 130 va sola; [210, 216] son solo dos; [300, 340, 380] caben.
+  const mk = (...ts: number[]) => ts.map((t) => ({ t, x: t }));
+  igual("burbujas: se juntan las que no caben (3 o más en su tramo)", agrupar(mk(0, 4, 8, 130, 210, 216, 300, 340, 380), 100, 10).map((g) => g.xs.length), [3, 1, 1, 1, 1, 1, 1]);
+  igual("burbuja: en la posición media", agrupar(mk(0, 4, 8), 100, 10)[0].x, 4);
+  igual("burbujas: tramos alineados al tiempo (no bailan al arrastrar)", agrupar(mk(95, 99, 101, 104, 108), 100, 10).map((g) => g.xs.length), [1, 1, 3]);
   const fr = franjasRetencion(vs.map((v) => ({ id: v.id, t: Date.parse(v.hora) })), mot, ahora);
   igual("franjas: de la más reciente a la más antigua", fr.map((f) => f.p), ["diarias", "semanales"]);
   igual("franjas: cuántas guarda cada regla", fr.map((f) => f.n), fr.map((f) => [...mot.values()].filter((m) => m === f.p).length));
