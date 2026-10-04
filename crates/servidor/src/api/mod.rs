@@ -4,7 +4,7 @@ mod clientes;
 mod cuentas;
 mod equipos;
 pub(crate) mod instaladores;
-mod marca;
+pub(crate) mod marca;
 mod notificaciones;
 mod ordenes;
 mod plantillas;

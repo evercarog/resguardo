@@ -135,10 +135,26 @@ pub fn peticion(
     }
 }
 
-/// El correo (multiparte: texto y HTML) para una persona.
+/// El cuerpo: texto y HTML (multipart/alternative); con el logo del cliente, el
+/// HTML y su imagen van juntos (multipart/related, `Content-ID` [`contenido::CID_LOGO`]):
+/// el correo no carga nada de fuera.
+fn cuerpo(s: &Salida) -> lettre::message::MultiPart {
+    use lettre::message::header::ContentType;
+    use lettre::message::{Attachment, MultiPart, SinglePart};
+    match &s.logo {
+        None => MultiPart::alternative_plain_html(s.texto.clone(), s.html.clone()),
+        Some(png) => MultiPart::alternative().singlepart(SinglePart::plain(s.texto.clone())).multipart(
+            MultiPart::related()
+                .singlepart(SinglePart::html(s.html.clone()))
+                .singlepart(Attachment::new_inline(contenido::CID_LOGO.to_string()).body(png.clone(), ContentType::parse("image/png").expect("tipo válido"))),
+        ),
+    }
+}
+
+/// El correo (multiparte: texto y HTML, y el logo del cliente si lo tiene) para una persona.
 pub fn correo(canal: &Canal, secretos: &BTreeMap<String, String>, para: &str, s: &Salida) -> Result<Correo, Fallo> {
     use lettre::message::header::{HeaderName, HeaderValue};
-    use lettre::message::{Mailbox, MultiPart};
+    use lettre::message::Mailbox;
     let falta = |q: &str| Fallo::definitivo(format!("Al canal de correo le falta {q}."));
     let de: Mailbox = canal.config.remitente.as_deref().ok_or_else(|| falta("el remitente"))?.parse().map_err(|_| falta("un remitente válido"))?;
     let a: Mailbox = para.parse().map_err(|_| Fallo::definitivo("La dirección de la persona no es válida."))?;
@@ -148,7 +164,7 @@ pub fn correo(canal: &Canal, secretos: &BTreeMap<String, String>, para: &str, s:
         .subject(s.asunto.clone())
         .raw_header(HeaderValue::new(HeaderName::new_from_ascii_str("Auto-Submitted"), "auto-generated".into()))
         .raw_header(HeaderValue::new(HeaderName::new_from_ascii_str("X-Auto-Response-Suppress"), "All".into()))
-        .multipart(MultiPart::alternative_plain_html(s.texto.clone(), s.html.clone()))
+        .multipart(cuerpo(s))
         .map_err(|_| Fallo::definitivo("No se pudo preparar el correo."))?;
     Ok(Correo {
         host: canal.config.host.clone().ok_or_else(|| falta("el servidor"))?,
@@ -337,7 +353,7 @@ mod tests {
     }
 
     fn formato() -> Formato {
-        Formato { url_consola: Some("https://copias.ejemplo.com".into()), zona: chrono::FixedOffset::east_opt(0).unwrap() }
+        Formato { url_consola: Some("https://copias.ejemplo.com".into()), zona: chrono::FixedOffset::east_opt(0).unwrap(), marcas: Default::default() }
     }
 
     fn prueba() -> Vec<Mensaje> {
@@ -432,6 +448,21 @@ mod tests {
         assert!(crudo.contains("multipart/alternative"), "{crudo}");
         assert!(crudo.contains("text/plain") && crudo.contains("text/html"));
         assert!(crudo.contains("Auto-Submitted: auto-generated"));
+        assert!(!crudo.contains("multipart/related") && !crudo.contains("Content-ID"));
         assert!(correo(&c, &BTreeMap::new(), "no es un correo", &s).is_err());
+
+        // Con el logo del cliente: el HTML y la imagen, juntos (multipart/related con su Content-ID).
+        let mut f = formato();
+        f.marcas.insert(
+            "x".into(),
+            contenido::MarcaCorreo { nombre: "Cliente".into(), acento: contenido::colores_acento("blue"), logo: Some(b"\x89PNG\r\n\x1a\nfalso".to_vec()) },
+        );
+        let s = contenido::componer(&prueba(), &f);
+        let m = correo(&c, &BTreeMap::new(), "ana@ejemplo.com", &s).unwrap();
+        let crudo = String::from_utf8_lossy(&m.mensaje.formatted()).to_string();
+        assert!(crudo.contains("multipart/alternative") && crudo.contains("multipart/related"), "{crudo}");
+        assert!(crudo.contains(&format!("Content-ID: <{}>", contenido::CID_LOGO)), "{crudo}");
+        assert!(crudo.contains("image/png") && crudo.contains("Content-Disposition: inline"), "{crudo}");
+        assert!(s.html.contains(&format!("cid:{}", contenido::CID_LOGO)));
     }
 }
