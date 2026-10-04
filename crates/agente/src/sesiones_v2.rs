@@ -171,6 +171,15 @@ struct Memoria {
     ocupa: Option<(String, Value)>,
 }
 
+/// Lo mismo que una sesión, desde la ventana del equipo en modo local
+/// (ipc_local, con la clave de administración): elegir carpetas y explorar.
+pub fn operar_local(tipo: &Tipo, op: &str, p: &Value) -> Result<Value, String> {
+    if !ops(tipo).contains(&op) {
+        return Err(format!("Operación no disponible: «{op}»."));
+    }
+    operar(tipo, op, p, &mut Memoria::default())
+}
+
 fn operar(tipo: &Tipo, op: &str, p: &Value, memoria: &mut Memoria) -> Result<Value, String> {
     match (tipo, op) {
         (Tipo::Carpetas, "carpetas") => Ok(json!({ "entradas": carpetas(p["ruta"].as_str().unwrap_or(""))? })),
@@ -570,6 +579,10 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
             return Err(format!("«{r}» no está en las carpetas que copia este equipo: restáuralo junto al original."));
         }
     }
+    // Para la ventana y los avisos del escritorio (el nombre del repositorio, sin rutas).
+    let repo = c["repo"].as_str().unwrap_or("");
+    let nombre = crate::agent::load_config().repos.iter().find(|r| r.id == repo).map(|r| r.name.clone()).unwrap_or_else(|| "Copias".into());
+    let guarda = crate::escritorio::en_marcha::empezar("restauracion", repo, &nombre);
     let sello = chrono::Local::now().format("%Y-%m-%d %H%M").to_string();
     let mut destinos = Vec::new();
     for ruta in &rutas {
@@ -593,6 +606,7 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
             destinos.push(destino);
         }
     }
+    guarda.terminar("ok");
     // Rutas entre comillas: así se quitan enteras (con espacios) donde no deben verse.
     Ok(format!("Restaurado ({} elementos) en «{}».", rutas.len(), destinos.join("», «")))
 }

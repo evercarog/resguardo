@@ -549,6 +549,16 @@ pub struct Configuracion {
     /// repositorios que no están se quedan sin verificación automática.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verificaciones: Option<std::collections::BTreeMap<String, VerificacionAuto>>,
+    /// v1.3x: la ventana y los avisos del escritorio (docs/agente-ventana.md §2):
+    /// `{ ventana: off|siempre_disponible|al_trabajar, avisos: off|errores|todo }`.
+    /// Sin el campo (una consola anterior), se queda el que hubiera.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escritorio: Option<Value>,
+    /// v1.3x: cuándo se cambió por última vez en el propio equipo (con la clave de
+    /// administración); la consola lo enseña como «cambiado en el equipo». Lo pone
+    /// el equipo: una `config` de la consola lo quita.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cambiado_en_equipo: Option<String>,
 }
 
 /// «Verificar automáticamente cada `cada_dias` días, `porcentaje` % de los datos»:
@@ -656,10 +666,24 @@ fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
 
 /// `config {config}`: aplica la configuración (sin secretos) y la sube cifrada.
 pub fn aplicar_config(v: &mut Vinculo, c: &Value) -> Result<String, String> {
-    let cfg: Configuracion = serde_json::from_value(c["config"].clone()).map_err(|e| format!("Configuración no válida: {e}"))?;
+    aplicar_config_desde(v, c, false)
+}
+
+/// `aplicar_config`, desde la consola (`en_equipo: false`) o desde el propio
+/// equipo con la clave de administración (la ventana, en modo local).
+pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Result<String, String> {
+    let mut cfg: Configuracion = serde_json::from_value(c["config"].clone()).map_err(|e| format!("Configuración no válida: {e}"))?;
     if cfg.v != 1 {
         return Err("Versión de la configuración no admitida (se espera v = 1).".into());
     }
+    match &cfg.escritorio {
+        Some(e) => {
+            crate::escritorio::Escritorio::validar(e)?;
+        }
+        // Una consola que no sabe de la ventana no deshace lo que haya.
+        None => cfg.escritorio = v.config_v1.as_ref().and_then(|c| c.get("escritorio")).filter(|e| e.is_object()).cloned(),
+    }
+    cfg.cambiado_en_equipo = en_equipo.then(|| chrono::Local::now().to_rfc3339());
     let mut ids = std::collections::HashSet::new();
     for k in &cfg.copias {
         if !id_valido(&k.id) || !ids.insert(k.id.clone()) {
@@ -741,8 +765,8 @@ fn estado_de(result: &str) -> &'static str {
 /// v1.28: lo que entiende este agente, en `resumen.admite`: plazos y horarias
 /// en la retención (también la del almacén), `config.verificaciones` y
 /// `guarda_copias { anadir, local: true }` (un repositorio en su propio almacén).
-/// v1.3x: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`).
-pub const ADMITE: [&str; 4] = ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples"];
+/// v1.3x: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
+pub const ADMITE: [&str; 5] = ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio"];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
 const PUERTOS_PROPUESTOS: [u16; 6] = [8000, 8002, 8004, 8080, 8888, 9000];
@@ -776,6 +800,9 @@ pub fn resumen(v: &Vinculo) -> Value {
     json!({
         // v1.28: lo que este agente sabe hacer de lo nuevo (la consola no ofrece lo que no).
         "admite": ADMITE,
+        // v1.3x: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
+        "escritorio": v.config_v1.as_ref().map(|c| crate::escritorio::Escritorio::de_config(c).a_json()),
+        "escritorio_cambiado_en_equipo": v.config_v1.as_ref().and_then(|c| c.get("cambiado_en_equipo")).filter(|x| x.is_string()),
         "copias": copias.iter().map(|k| {
             let run = estado.runs.get(&crate::plans::plan_key(&k.repo, &k.id));
             json!({
@@ -847,6 +874,10 @@ pub fn subir_resumen_si_cambio(v: &mut Vinculo) {
 /// consola activa y deja pendiente la de las demás (v1.3x: la sube el canal de
 /// cada una enseguida, cifrada con su `K_cfg`; una consola apagada no frena).
 pub fn subir_config(v: &mut Vinculo) -> Result<(), String> {
+    // Sin consola (modo local, docs/agente-ventana.md §5): no hay a quién subirla.
+    if v.url.is_empty() {
+        return Ok(());
+    }
     for e in v.otras.iter_mut() {
         e.config_pendiente = true;
     }

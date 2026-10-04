@@ -53,9 +53,11 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Com",
   "Win32_System_Console",
   "Win32_System_LibraryLoader",
+  "Win32_System_Pipes",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
+  "Win32_System_IO",
   "Wdk_System_Threading",
   "Win32_UI_HiDpi",
   "Win32_UI_Shell",
@@ -63,6 +65,12 @@ windows-sys = { version = "0.61", features = [
 ] }
 windows-service = "0.7"
 tray-icon = "0.25"
+# La ventana del agente (docs/agente-ventana.md): el WebView2 del sistema, sin
+# las piezas de Linux (las mismas versiones que ya usa la app de escritorio).
+wry = { version = "0.57", default-features = false }
+tao = { version = "0.37", default-features = false, features = ["rwh_06"] }
+# Avisos nativos de Windows (WinRT), con grupo y etiqueta.
+windows = { version = "0.62", features = ["UI_Notifications", "Data_Xml_Dom", "Foundation"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
