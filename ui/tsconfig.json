@@ -1,0 +1,12 @@
+{
+  "//": "Propio de ui/: sin él, las herramientas tomarían el de la raíz (el de la app de escritorio). La consola compila ui/ con su configuración.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "strict": true,
+    "skipLibCheck": true
+  }
+}

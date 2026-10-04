@@ -1,0 +1,12 @@
+Volvió a funcionar la copia «Documentos» en «PC-Contabilidad»
+
+Falló 3 veces desde el 2 oct, 10:00; ahora vuelve a ir bien.
+
+Cliente: Altamar & Asociados
+Equipo: PC-Contabilidad
+Cuándo: 4 oct 2026, 09:50
+
+Ver en la consola: https://copias.ejemplo.com:8443/c/cl-1/equipos/e1
+
+—
+Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.

@@ -1,0 +1,5 @@
+# Copia este archivo como config.toml con los datos públicos de tu proyecto de Supabase
+# (Project Settings → API) para que la app los proponga al vincular equipos.
+[env]
+RESGUARDO_WEB_URL = "https://TU-PROYECTO.supabase.co"
+RESGUARDO_WEB_KEY = "sb_publishable_..."

@@ -1,0 +1,20 @@
+name: Idea o mejora
+description: Propón algo nuevo o un cambio.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: Cuéntanos el caso de uso antes que la solución.
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+  - type: textarea
+    id: seguridad
+    attributes:
+      label: ¿Afecta a la seguridad o a la privacidad?
+      description: Por ejemplo, si el servidor o la web verían algo nuevo, o si cambia quién puede ordenar qué.

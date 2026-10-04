@@ -1,0 +1,4 @@
+# Mismo directorio de compilación que antes del espacio de trabajo: los
+# instaladores siguen en src-tauri/target/release/bundle.
+[build]
+target-dir = "src-tauri/target"

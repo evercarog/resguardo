@@ -1,0 +1,21 @@
+Resguardo
+Copyright (C) 2026 Ever Caro y los colaboradores de Resguardo
+Licencia: GNU Affero General Public License v3.0 o posterior (ver LICENSE).
+
+Resguardo incluye y distribuye los siguientes programas de terceros, sin
+modificar, cada uno con su propia licencia:
+
+- restic (https://restic.net), licencia BSD de 2 cláusulas.
+  Texto: src-tauri/licenses/restic-LICENSE.txt
+
+- rest-server (https://github.com/restic/rest-server), licencia BSD de 2
+  cláusulas.
+  Texto: src-tauri/licenses/rest-server-LICENSE.txt
+
+- rclone (https://rclone.org), licencia MIT. Lo usa el agente para el espejo
+  en la nube del Servidor de copias (Dropbox, Google Drive, OneDrive…).
+  Texto: src-tauri/licenses/rclone-LICENSE.txt
+
+Las bibliotecas de Rust y de JavaScript con las que se compila Resguardo
+tienen sus propias licencias. El inventario está en THIRD-PARTY.md y se
+regenera con scripts/inventario-licencias.mjs.

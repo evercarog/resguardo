@@ -1,0 +1,37 @@
+#cloud-config
+# Resguardo Server en una máquina virtual nueva de Ubuntu (Oracle Cloud, Google
+# Cloud, Hetzner…): pégalo en «cloud-init» / «Datos de usuario» / «Startup
+# script» al crear la máquina. Guía: docs/consola-en-linea.md.
+#
+# Deja la máquina lista para preparar-vm.sh: actualizada, con las
+# actualizaciones de seguridad automáticas y lo que el script necesita. No
+# instala Resguardo Server ni abre puertos: eso lo hace preparar-vm.sh, con el
+# paquete que copies por SSH y comprobando su firma o su SHA-256.
+
+package_update: true
+package_upgrade: true
+packages:
+  - unattended-upgrades
+  - fail2ban
+  - python3-systemd
+  - curl
+  - ca-certificates
+
+write_files:
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    content: |
+      // Resguardo (cloud-init): listas cada día y actualizaciones de seguridad automáticas.
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+  - path: /etc/motd.d/resguardo
+    permissions: "0644"
+    content: |
+      Resguardo Server (docs/consola-en-linea.md): copia aquí el paquete por SSH y
+        mkdir resguardo && tar -xzf resguardo-server-*-linux-musl.tar.gz -C resguardo
+        sudo sh resguardo/preparar-vm.sh --dominio consola.ejemplo.com --acme-correo tu@correo \
+             --paquete resguardo-server-<arq>-linux-musl.tar.gz
+
+runcmd:
+  - [systemctl, enable, --now, unattended-upgrades]

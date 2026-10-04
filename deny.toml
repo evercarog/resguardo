@@ -1,0 +1,60 @@
+# cargo-deny: licencias, avisos de seguridad, prohibiciones y orígenes.
+# https://embarkstudios.github.io/cargo-deny/
+# La lista de licencias es la misma que la de scripts/inventario-licencias.mjs.
+
+[graph]
+all-features = false
+
+[advisories]
+# Avisos de RustSec: vulnerabilidades y crates sin mantener.
+yanked = "deny"
+ignore = [
+  # proc-macro-error 1.x está sin mantener. Llega solo por la pila GTK de Linux
+  # de Tauri (glib-macros 0.18 → gtk → tray-icon/tauri); es una macro de
+  # compilación, no código que se ejecute en Resguardo, y no tiene
+  # vulnerabilidad conocida. Quitar cuando Tauri pase a gtk-rs 0.19+.
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error sin mantener, solo vía la pila GTK de Tauri en Linux (macro de compilación)" },
+  # glib 0.18: `VariantStrIter` no es seguro (unsound) en sus `Iterator`. Llega
+  # solo por la pila GTK de Tauri en Linux (gtk/atk/webkit2gtk → tauri,
+  # tray-icon, muda, tao): la app de escritorio, no el agente, el servidor ni
+  # el motor (`cargo tree -i glib --target x86_64-unknown-linux-gnu`). Resguardo
+  # no usa `glib::Variant` ni recorre `VariantStrIter`. Quitar cuando Tauri pase
+  # a gtk-rs 0.19+ (glib ≥ 0.20, con la corrección).
+  { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter unsound, solo vía la pila GTK de Tauri en Linux (app de escritorio); no se usa VariantStrIter" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "MPL-2.0",
+  "CC0-1.0",
+  "0BSD",
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  "MIT-0",
+  "Unlicense",
+  "AGPL-3.0-or-later",
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Las dependencias de ruta del propio espacio de trabajo no llevan versión.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

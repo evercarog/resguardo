@@ -1,0 +1,142 @@
+<!doctype html>
+<!-- Lo que enseña el service worker si no se llega a la consola (sin red o con
+     el servidor apagado). Sin scripts y sin nada externo: estilos en línea
+     (la CSP admite 'unsafe-inline' en estilos, no en scripts). «Reintentar»
+     es un enlace a la misma dirección. -->
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Sin conexión · Resguardo Server</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #ffffff;
+        --surface-2: #f4f4f5;
+        --surface-3: #ececee;
+        --text-1: #18181b;
+        --text-2: #52525b;
+        --text-3: #666670;
+        --accent: #0f766e;
+        --accent-contrast: #ffffff;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f0f11;
+          --surface: #151518;
+          --surface-2: #1b1b1f;
+          --surface-3: #232328;
+          --text-1: #ededf0;
+          --text-2: #a6a6b0;
+          --text-3: #96969f;
+          --accent: #3cc4ad;
+          --accent-contrast: #0b0b0d;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 12px;
+        min-height: 100dvh;
+        padding: 24px 16px;
+        font: 14px/20px "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+        color: var(--text-1);
+        background: var(--bg);
+        text-align: center;
+        -webkit-font-smoothing: antialiased;
+      }
+      h1 {
+        margin: 8px 0 0;
+        font-size: 22px;
+        line-height: 28px;
+        font-weight: 650;
+        letter-spacing: -0.018em;
+      }
+      p {
+        max-width: 420px;
+        margin: 0;
+        color: var(--text-2);
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        height: 34px;
+        margin-top: 8px;
+        padding: 0 14px;
+        font-weight: 500;
+        color: var(--accent-contrast);
+        text-decoration: none;
+        background: var(--accent);
+        border-radius: 8px;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      svg {
+        width: 176px;
+        height: 132px;
+      }
+      .t,
+      .tt,
+      .ta {
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .t {
+        stroke: var(--text-2);
+      }
+      .tt {
+        stroke: var(--text-3);
+        opacity: 0.75;
+      }
+      .ta {
+        stroke: var(--accent);
+      }
+      .f {
+        fill: var(--surface);
+      }
+      .fa {
+        fill: color-mix(in srgb, var(--accent) 14%, var(--surface));
+      }
+      .suelo {
+        fill: var(--surface-3);
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- La ilustración «sin-conexion» de ui/src/componentes/Ilustracion.svelte. -->
+    <svg viewBox="0 0 160 120" aria-hidden="true" focusable="false">
+      <ellipse class="suelo" cx="80" cy="106" rx="54" ry="5" />
+      <path class="t" d="M22 76h20c6 0 10-4 10-10v-2" />
+      <rect class="f t" x="44" y="46" width="22" height="18" rx="4" />
+      <path class="t" d="M50 46v-9M60 46v-9" />
+      <rect class="fa ta" x="94" y="42" width="26" height="26" rx="6" />
+      <path class="ta" d="M102 52v6M112 52v6" />
+      <path class="t" d="M120 55h20" />
+      <path class="tt" d="M76 40l4 6M84 36v8M90 42l-4 4" />
+      <path class="tt" d="M76 72l4-5M84 76v-8M90 70l-4-3" />
+    </svg>
+    <h1>Sin conexión con la consola</h1>
+    <p>No llegamos a Resguardo Server. Comprueba la red (o que el servidor esté encendido) y vuelve a intentarlo. Tus copias siguen haciéndose en los equipos.</p>
+    <a href="">Reintentar</a>
+  </body>
+</html>

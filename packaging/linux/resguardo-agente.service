@@ -1,0 +1,41 @@
+# Resguardo Agente (systemd). Lo instalan instalar-agente.sh, el paquete .deb
+# o `resguardo-agente --install-service` (que cambia la ruta de ExecStart por
+# la del binario que lo ejecuta). Binarios en /opt/resguardo-agente.
+[Unit]
+Description=Resguardo Agente (copias de seguridad gestionadas)
+Documentation=https://github.com/evercarog/resguardo/blob/main/docs/plataforma.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Como root: tiene que poder leer todo lo que copia y escribir lo que restaura.
+ExecStart=/opt/resguardo-agente/resguardo-agente --service
+Restart=on-failure
+RestartSec=30
+# Copias en segundo plano: que no le quiten CPU ni disco al resto del equipo.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Endurecimiento compatible con copiar y restaurar cualquier ruta.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+StateDirectory=resguardo-agente
+StateDirectoryMode=0755
+UMask=0077
+KillMode=mixed
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

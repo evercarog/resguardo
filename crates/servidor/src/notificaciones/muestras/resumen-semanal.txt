@@ -1,0 +1,16 @@
+Resumen semanal de copias
+Del 27 sep al 4 oct 2026, 10:00.
+
+3 equipos · 3 copias correctas · 2 fallos · 7,0 GB en uso
+
+== Altamar & Asociados ==
+- Servidor [Con fallos]: Última copia correcta: 30 sep, 10:00 · 2 fallos · 1 copia correcta · 1,6 GB
+- Portátil de Ana [Sin contacto]: Sin copias correctas · conectó por última vez el 1 oct, 10:00
+- PC-Contabilidad [Bien]: Última copia correcta: 4 oct, 09:00 · 2 copias correctas · 5,4 GB
+Necesita atención:
+  · Falló la copia «SQL» en «Servidor» (2 veces)
+  · «Portátil de Ana» no conecta con el servidor
+Ver en la consola: https://copias.ejemplo.com:8443/c/cl
+
+—
+Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.

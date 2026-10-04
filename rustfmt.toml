@@ -1,0 +1,4 @@
+# Estilo del código Rust (cargo fmt). El proyecto prefiere líneas largas y
+# expresiones en una línea cuando caben.
+max_width = 160
+use_small_heuristics = "Max"

@@ -1,0 +1,14 @@
+Falló la copia «Documentos» en «PC-Contabilidad»
+
+No se pudo leer [ruta] ([dirección])
+
+Cliente: Altamar & Asociados
+Equipo: PC-Contabilidad
+Cuándo: 4 oct 2026, 09:50
+Veces: 3 veces desde el 2 oct, 10:00
+Gravedad: Crítico
+
+Ver en la consola: https://copias.ejemplo.com:8443/c/cl-1/equipos/e1
+
+—
+Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.

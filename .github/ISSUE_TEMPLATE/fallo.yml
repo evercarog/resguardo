@@ -1,0 +1,48 @@
+name: Fallo
+description: Algo no funciona como debería.
+labels: ["fallo"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por avisar. **Si es un problema de seguridad, no lo publiques aquí**: sigue SECURITY.md.
+        No pegues contraseñas, claves, rutas privadas ni nombres de clientes.
+  - type: textarea
+    id: que
+    attributes:
+      label: Qué pasa
+      description: Qué hiciste, qué esperabas y qué ocurrió.
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducirlo
+      placeholder: "1. …\n2. …\n3. …"
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Resguardo
+      placeholder: "0.6.8"
+    validations:
+      required: true
+  - type: dropdown
+    id: componente
+    attributes:
+      label: Componente
+      options:
+        - App de escritorio
+        - Agente / copias automáticas
+        - Resguardo Agente (equipo gestionado)
+        - Servidor de copias
+        - Instalador
+        - Otro
+  - type: input
+    id: sistema
+    attributes:
+      label: Sistema
+      placeholder: "Windows 11 24H2, Debian 12…"
+  - type: textarea
+    id: registro
+    attributes:
+      label: Registro o capturas (sin datos sensibles)

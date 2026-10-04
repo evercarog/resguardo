@@ -1,0 +1,72 @@
+[package]
+name = "resguardo-servidor"
+version = "0.7.15"
+description = "Resguardo Server: consola web, API y canal de los agentes (ver docs/plataforma.md)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "resguardo_servidor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "resguardo-server"
+path = "src/main.rs"
+
+[dependencies]
+resguardo-protocolo = { path = "../protocolo", version = "0.1.0" }
+resguardo-motor = { path = "../motor", version = "0.1.0" }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "ws", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1", "service"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "set-header", "limit", "timeout"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+argon2 = "0.5"
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+# Firmas ES256 de la cuenta ACME (crate::acme): el mismo ring que ya usa rustls.
+ring = "0.17"
+rand = "0.9"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rcgen = "0.13"
+subtle = "2"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+# Notificaciones (crate::notificaciones): secretos de los canales cifrados en la base de datos,
+# correo por SMTP con rustls (sin OpenSSL) y webhook, ntfy y Telegram por HTTPS (el mismo
+# ureq con rustls que ya usa el agente).
+chacha20poly1305 = "0.10"
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "hostname", "rustls-tls"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+# Consola web dentro del binario (feature `consola-integrada`; compila consola/build).
+rust-embed = { version = "8", optional = true, features = ["debug-embed", "mime-guess"] }
+
+[target.'cfg(windows)'.dependencies]
+# El servicio de Windows «ResguardoServer».
+windows-service = "0.7"
+
+[features]
+# Lleva dentro la consola de `consola/build` (antes: `npm ci && npm run build` en consola/).
+# `--consola DIR` sigue teniendo prioridad.
+consola-integrada = ["dep:rust-embed"]
+
+[dev-dependencies]
+# Pruebas de propiedades (docs/plataforma.md, §7.3).
+proptest = { version = "1", default-features = false, features = ["std"] }
+# Tiempo en pausa en las pruebas (los límites de tiempo, sin esperarlos de verdad).
+tokio = { version = "1", features = ["test-util", "io-util"] }
+tokio-tungstenite = "0.27"
+http-body-util = "0.1"
+tempfile = "3"

@@ -1,0 +1,2 @@
+Aquí va Resguardo-Agente-setup.exe (lo genera «npm run build:agente»).
+La app lo incluye para «Equipos gestionados → Preparar un equipo».

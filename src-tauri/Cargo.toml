@@ -1,0 +1,96 @@
+[package]
+name = "resguardo"
+version = "0.6.8"
+description = "Interfaz gráfica para restic"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+default-run = "resguardo"
+# Aún no se publica en crates.io (deja que cargo-deny acepte las dependencias de ruta).
+publish = false
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "resguardo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "resguardo"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+# Huella del restic incluido (ver build.rs). Ya estaba en Cargo.lock.
+sha2 = "0.10"
+
+[dependencies]
+resguardo-protocolo = { path = "../crates/protocolo" }
+resguardo-motor = { path = "../crates/motor" }
+resguardo-agente = { path = "../crates/agente", version = "0.7.15" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Almacén de secretos del sistema: Credential Manager (Windows), Keychain (macOS), Secret Service (Linux)
+keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
+uuid = { version = "1", features = ["v4"] }
+# Firma SigV4 para listar los repositorios de un bucket S3 (ver s3list.rs).
+sha2 = "0.10"
+hmac = "0.12"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# HTTP para Resguardo Web; TLS con el almacén de certificados del sistema.
+ureq = { version = "3", default-features = false, features = ["native-tls", "rustls", "json"] }
+# Agente v2: TLS con la autoridad fijada de Resguardo Server y su WebSocket.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tungstenite = { version = "0.27", default-features = false, features = ["handshake", "__rustls-tls"] }
+# Una sola instancia (abrir otra vez trae la ventana al frente) e inicio con Windows.
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+crypto_box = { version = "0.9.1", features = ["seal"] }
+base64 = "0.22"
+bcrypt = "0.15"
+rcgen = "0.13"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Cryptography",
+  "Win32_System_Com",
+  "Win32_System_Console",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Wdk_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# Windows Hello (UserConsentVerifier) para bloquear la app. Las mismas
+# versiones que ya usa Tauri: no añade crates nuevos.
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Security_Credentials_UI",
+  "Win32_Foundation",
+  "Win32_System_WinRT",
+] }
+windows-future = "0.3"
+# Avisos de Windows (la misma biblioteca que usa Tauri), con acción al pulsarlos.
+tauri-winrt-notification = "0.8"
+windows-service = "0.7"
+
+[dev-dependencies]
+# Pruebas del agente v2 contra un Resguardo Server real (en el mismo proceso).
+resguardo-servidor = { path = "../crates/servidor", version = "0.7.15" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+resguardo-motor = { path = "../crates/motor", features = ["testing"] }
+tauri = { version = "2", features = ["test"] }
+
+# El perfil de publicación está en el Cargo.toml del espacio de trabajo (raíz).

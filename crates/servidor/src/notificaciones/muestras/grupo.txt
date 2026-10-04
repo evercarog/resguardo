@@ -1,0 +1,15 @@
+3 avisos de Resguardo (1 crítico)
+
+Se juntaron en un solo mensaje para no llenarte la bandeja (tope de avisos por hora u horas de silencio).
+
+- [Crítico] Falló la copia «Documentos» en «PC-Contabilidad» (Altamar & Asociados · PC-Contabilidad, 4 oct, 09:50)
+  No se pudo leer [ruta] ([dirección])
+- [Importante] «Servidor» no conecta con el servidor (Altamar & Asociados · PC-Contabilidad, 4 oct, 09:50)
+  «Servidor» lleva más de 24 h sin conectar con el servidor.
+- [Resuelto] Volvió a funcionar la copia «Documentos» en «PC-Contabilidad» (Altamar & Asociados · PC-Contabilidad, 4 oct, 09:50)
+  Falló 3 veces desde el 2 oct, 10:00; ahora vuelve a ir bien.
+
+Ver en la consola: https://copias.ejemplo.com:8443/c/cl-1/avisos
+
+—
+Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.

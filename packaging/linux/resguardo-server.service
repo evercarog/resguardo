@@ -1,0 +1,58 @@
+# Resguardo Server (systemd). Lo instalan instalar-servidor.sh y el paquete .deb.
+# Binario en /opt/resguardo-server; datos en /var/lib/resguardo-server (0700,
+# del usuario de sistema resguardo-server). Configuración (puerto, nombres del
+# certificado): /etc/resguardo-server/servidor.env. Registro: journalctl -u resguardo-server.
+[Unit]
+Description=Resguardo Server (consola y canal de los agentes de Resguardo)
+Documentation=https://github.com/evercarog/resguardo/blob/main/docs/servidor-linux.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=resguardo-server
+Group=resguardo-server
+# RESGUARDO_ESCUCHAR (por defecto 0.0.0.0:8443) y RESGUARDO_NOMBRES.
+EnvironmentFile=-/etc/resguardo-server/servidor.env
+ExecStart=/opt/resguardo-server/resguardo-server --datos /var/lib/resguardo-server
+Restart=on-failure
+RestartSec=5
+
+# Endurecimiento: el servidor solo necesita su carpeta de datos y la red.
+# (En un CT de Proxmox sin privilegios hace falta «nesting» activado: sin él,
+# systemd no puede crear estos espacios y el servicio falla con 226/NAMESPACE.)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+# Sin privilegios: 8443 no los necesita. Para un puerto < 1024, en una
+# ampliación (systemctl edit resguardo-server): AmbientCapabilities=CAP_NET_BIND_SERVICE
+# y CapabilityBoundingSet=CAP_NET_BIND_SERVICE.
+CapabilityBoundingSet=
+AmbientCapabilities=
+StateDirectory=resguardo-server
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/resguardo-server
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

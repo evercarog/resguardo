@@ -1,0 +1,143 @@
+{
+  "code_hash": [
+    {
+      "code": "ABCD-EFGH-JK",
+      "hash": "f57cbf1e3e471b25db4b8ad0844df41b2dae9c7d1944944d128e49294d412f66"
+    },
+    {
+      "code": "abcd efgh jk",
+      "hash": "f57cbf1e3e471b25db4b8ad0844df41b2dae9c7d1944944d128e49294d412f66"
+    }
+  ],
+  "derivaciones": {
+    "argon2id": {
+      "longitud": 32,
+      "m_kib": 65536,
+      "p": 1,
+      "t": 3
+    },
+    "argon2id_cliente": "2UQUTQ+0059RiQHvUy5MjReOHsbzV77ntcdnUpKfZKE=",
+    "clave_admin": "caballo bateria grapa correcta",
+    "etiqueta": {
+      "box_pub": "V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=",
+      "equipo": "equipo-1",
+      "sign_pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+      "valor": "VsFuAPu/NN+J+knOsv69uQFSwf09sNm7IAUXAZL0ppo="
+    },
+    "identidad_servidor": {
+      "equipo": "equipo-1",
+      "firma": "GR03o8iApLIifm0uKkB5iDssbBjuGeH35Y8JJjUmjjLssjyRaSes8s7WecXHvyunSal0yixn7vTYsaJNsS14Dg==",
+      "publica": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+      "reto": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+      "seed": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+      "texto": "resguardo-servidor-v1|BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=|equipo-1"
+    },
+    "k_cfg": "3NQlQm4APgDEvKYAQKkbOuaorz65zi09HazGWC54UAg=",
+    "k_exp": "11ysmeSbKvSy3TaMZSkRR3El6Xu7xBKBrOjFFB71xYA=",
+    "nfc": {
+      "clave_nfc": "Contraseña de máquina",
+      "clave_nfd": "Contraseña de máquina",
+      "prueba_admin": "X+LG7j+sDY9W7Cs+GUpa9Bw9HejrEZ1AD/hUI+MhG8s=",
+      "sal_equipo": "AwMDAwMDAwMDAwMDAwMDAw=="
+    },
+    "prueba_admin": "v0vkTKYu85By9YlFiPVTSpeAHUW1VFiyg7pdJ30gXFU=",
+    "resultado": {
+      "texto": "resguardo-resultado-v1|orden-1|18|hecha|Copia hecha.|"
+    },
+    "sal_cliente": "BAQEBAQEBAQEBAQEBAQEBA==",
+    "sal_equipo": "AwMDAwMDAwMDAwMDAwMDAw==",
+    "sas_v2": {
+      "box_pub": "V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=",
+      "identidad_servidor": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+      "sas": "244 163",
+      "sign_pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="
+    },
+    "sas_v3": {
+      "box_pub": "V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=",
+      "huella_ca": "3F:A1:09:7C:52:E4:8B:D0:16:2A:9E:C3:75:0B:F8:44:D9:61:2C:A7:30:5E:B2:8F:E1:47:0A:96:CD:13:7B:58",
+      "huella_normalizada": "3FA1097C52E48BD0162A9EC3750BF844D9612CA7305EB28FE1470A96CD137B58",
+      "huella_otra": "3F:A1:09:7C:52:E4:8B:D0:16:2A:9E:C3:75:0B:F8:44:D9:61:2C:A7:30:5E:B2:8F:E1:47:0A:96:CD:13:7B:59",
+      "identidad_servidor": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+      "sas": "457 646",
+      "sas_otra": "225 873",
+      "sas_sin_huella": "078 876",
+      "sign_pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="
+    },
+    "verificador": "oIx7aaIlL/sfgxKahPccisjahyvx7KyZyc7Tfd4R+mc="
+  },
+  "ed25519": {
+    "message_json": "{\"v\":1,\"endpoint\":\"equipo-1\",\"seq\":42,\"issued_at\":\"2026-10-02T10:00:00-05:00\",\"kind\":\"backup_now\",\"body\":{\"plan\":\"documentos\"}}",
+    "public": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+    "seed": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+    "signature": "SGbuja4KEh3Xi/NSPraREybdUDLBRjF3A9jVqiqAu4d5lC49moyZDtdOv/W4Ze6hGd4u6XntYAutDtcGPaygAA=="
+  },
+  "nota": "Vectores de prueba del protocolo de Resguardo. Base64 estándar con relleno. Ver crates/protocolo.",
+  "paquete": {
+    "json": "{\"v\":1,\"cliente\":{\"nombre\":\"Sur\"}}",
+    "k_exp": "11ysmeSbKvSy3TaMZSkRR3El6Xu7xBKBrOjFFB71xYA=",
+    "nonce": "Dw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8P",
+    "paquete": "UkVTR1VBUkRPLUNMSUVOVEUtMQpCQVFFQkFRRUJBUUVCQVFFQkFRRUJBPT0KAAAASg8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDwOPkES+R33PZmoXJ17Y8xXIX6WqpmwsjchYawrkP9KTWYOGA16dZn3ZgQS6whsW8RKU",
+    "regla": "\"RESGUARDO-CLIENTE-1\\n\" + sal_cliente_b64 + \"\\n\" + por cada trozo de 4 MiB: u32 big-endian(longitud) + nonce(24) + XChaCha20-Poly1305(K_exp, nonce, datos, aad = \"resguardo-cliente-v1|\" + n + \"|\" + (último ? 1 : 0))",
+    "sal_cliente": "BAQEBAQEBAQEBAQEBAQEBA=="
+  },
+  "plantilla": {
+    "cifrado": "EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQUiu4Q2iZdydIYemnaO2zpmtxa8dd9xy+A9nUh7UiE2adp1efYkWtVb3Pr6+kMVffrHk1RPDNecvrqJecBTcW1iemLDgs0uYDA71CCQnCh7lV4P76+ZgiUW2aTGNo/q0XQ1SDn8eOuXgs/gi/6BgxWVxNXTaGczHTFQqR9YwGb/AyTH2ihUQiX8NB3WkR186yEyhz5t6YEFjbVcLVa4QUr6BnElhCjahSwwqxjwFsnNuVxYhE/6XOPMf7RNszX8fTVRAkrCkQgwT7xUyLxhCnCuE=",
+    "cliente": "cliente-1",
+    "id": "pla-1",
+    "json": "{\"v\":1,\"id\":\"pla-1\",\"nombre\":\"Copia de Siigo\",\"copia\":{\"carpetas\":[\"C:\\\\SIIWI01\"],\"exclusiones\":[\"*.tmp\"],\"horario\":{\"dias\":[1,2,3,4,5],\"horas\":[\"13:00\"]},\"solo_si_cambios\":true,\"gancho\":null}}",
+    "k_cfg": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
+    "k_plantillas": "UCpYNWM8jEXp5VmqfDYLUZxLO5ea51Yvx0aOpbqf0z4=",
+    "nonce": "EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ"
+  },
+  "respaldo_consola": {
+    "clave": "Ñandú gris 2026 · respaldo de la consola",
+    "publica": "t6R827TBU986xnSyIgCktEpvT+nRspKlcHlO1GjnS2k=",
+    "regla": "secreto = HKDF-SHA256(Argon2id(NFC(clave), sal, m=65536, t=3, p=1, 32), salt = \"\", info = \"resguardo-respaldo-consola-v1\"); publica = X25519(secreto) (clave pública de crypto_box)",
+    "sal": "DAwMDAwMDAwMDAwMDAwMDA==",
+    "secreto": "B37K9yx4Y2Q5vLtVJU34bzDdb1exicdHORI8C4p8EtU="
+  },
+  "sas": {
+    "console_sign_pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+    "endpoint_box_pub": "V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=",
+    "regla": "SHA-256(\"resguardo-sas-v1|\" + console_sign_pub + \"|\" + endpoint_box_pub); primeros 4 bytes big-endian mod 1000000; \"NNN NNN\"",
+    "sas": "545 365"
+  },
+  "signed_envelope": {
+    "plain": "{\"payload\":\"eyJ2IjoxLCJlbmRwb2ludCI6ImVxdWlwby0xIiwic2VxIjo0MiwiaXNzdWVkX2F0IjoiMjAyNi0xMC0wMlQxMDowMDowMC0wNTowMCIsImtpbmQiOiJiYWNrdXBfbm93IiwiYm9keSI6eyJwbGFuIjoiZG9jdW1lbnRvcyJ9fQ==\",\"sig\":\"SGbuja4KEh3Xi/NSPraREybdUDLBRjF3A9jVqiqAu4d5lC49moyZDtdOv/W4Ze6hGd4u6XntYAutDtcGPaygAA==\"}",
+    "regla": "plano del sobre = JSON {\"payload\": base64(message_json), \"sig\": base64(firma)}; después, sobre sellado X25519 (libsodium crypto_box_seal) para el equipo",
+    "sealed": "XX10uMzqP0KEOIBQcITQRZKE2RM5uIV9EG6vTzHrtTAmJnLm182RQkYihxXvNMuLSqPIOTwpAMT88vs6xImt/cEQIWPPued6bUI53q9itnAvV47oRb70bSgn2ayYw1qK3mWwQPYPcxR2g2BmDHlz8pvh+sKnnUdjwOze4WsTjTY4vfFKiW6I4wDL2rLTqW7Y0ztiD/rTA0CSWgTKptzXIG2UOOCwo/8vXtKJjxXYW5F1VmMCBHLl31/CXiEkau4AMtAIRdi3zJGceru64SkYXDFPLVKeLB/OPfrXuAViQoz6cIb3qBZN1TmCgr4Bc2HnDXj/LqZSMAx7PmjDFnF7JBoiox/byTlaBMNrxHDBjO/TtwyUaADkVgpulplvTohEAgSCkjXfh3ZlL4PTBcQyWE5mjETL63vM8ZLgOIU4NN+pKdLl+hsPiy6kzg=="
+  },
+  "simetrico": {
+    "config": {
+      "cifrado": "Dg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OTubhXm8vwTR5qRRX6dMPuUEtvo2zjPTS8SgHrl6KRRCwIBzBu7okkqS3+mo4LRQzNZquWFFrQf9XG6qhO/KeUjv4wA==",
+      "equipo": "equipo-1",
+      "json": "{\"v\":1,\"copias\":[],\"repositorios\":[],\"destinos\":[]}",
+      "k_cfg": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
+      "nonce": "Dg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4O",
+      "seq": 7
+    },
+    "relevo": {
+      "cifrado": "DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0Nz5nnSZdVHLLXSOsEgZgJK/FLiX04Pm8bsnl7",
+      "clave": "CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=",
+      "datos": "dHJvem8gZmluYWw=",
+      "n": 2,
+      "nonce": "DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0N",
+      "relevo_id": "relevo-1",
+      "ultimo": true
+    },
+    "sesion": {
+      "cifrado_consola": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMEids7RBjdyCiWo8bC/efoVOGbUug7i/NNlisShTVMqHw4CeXCGWWYyAsBcA2H7/4Xy6OqjYQX53svQ==",
+      "clave_sesion": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+      "json": "{\"i\":1,\"op\":\"carpetas\",\"ruta\":\"C:\\\\Users\"}",
+      "k_consola": "sfYsc3DIwLc47TnNYS++jOhCeUR4jfCKT4ae6Ep66Tc=",
+      "k_equipo": "koyUCZkK1XibddqtHvcPNd6eO6LW9VFG8rbcxUA9Ik0=",
+      "nonce": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+      "sesion_id": "0f0e0d0c-0b0a-4908-8706-050403020100"
+    }
+  },
+  "version": 1,
+  "x25519": {
+    "public": "V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=",
+    "secret": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk="
+  }
+}

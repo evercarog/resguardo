@@ -1,0 +1,27 @@
+# Espacio de trabajo de Resguardo (ver docs/plataforma.md, «Repositorios»).
+#
+# - src-tauri/        app de escritorio (Tauri)
+# - crates/agente     agente de Resguardo (Windows y Linux) y lo que comparte con la app
+# - crates/protocolo  formatos de las órdenes, sobres y criptografía (con vectores de prueba)
+# - crates/motor      motor de copias: restic, planes, retención y tamaños
+# - crates/servidor   Resguardo Server (esqueleto)
+#
+# El directorio de compilación sigue siendo src-tauri/target (ver .cargo/config.toml).
+[workspace]
+resolver = "2"
+members = ["src-tauri", "crates/protocolo", "crates/motor", "crates/agente", "crates/servidor"]
+exclude = ["fuzz"]
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["Ever Caro", "Colaboradores de Resguardo"]
+repository = "https://github.com/evercarog/resguardo"
+
+# Optimización para el tamaño: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

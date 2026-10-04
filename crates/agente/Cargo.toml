@@ -1,0 +1,75 @@
+[package]
+name = "resguardo-agente"
+version = "0.7.15"
+description = "Agente de Resguardo: copias programadas, Servidor de copias, equipos gestionados y agente v2 de Resguardo Server"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "resguardo_agente"
+path = "src/lib.rs"
+
+[[bin]]
+name = "resguardo-agente"
+path = "src/bin/resguardo-agente.rs"
+
+[dependencies]
+resguardo-protocolo = { path = "../protocolo", version = "0.1.0" }
+resguardo-motor = { path = "../motor", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+hmac = "0.12"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tungstenite = { version = "0.27", default-features = false, features = ["handshake", "__rustls-tls"] }
+crypto_box = { version = "0.9.1", features = ["seal"] }
+base64 = "0.22"
+bcrypt = "0.15"
+# Descargas de varios archivos en un zip (deflate en Rust puro).
+zip = { version = "2", default-features = false, features = ["deflate"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+# Almacén de secretos del usuario (la app de escritorio): Credential Manager
+# en Windows y Keychain en macOS. En Linux el agente no lo usa (sus secretos
+# van en archivos solo para root).
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
+
+[target.'cfg(windows)'.dependencies]
+# En Windows, TLS con el almacén de certificados del sistema (schannel).
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Cryptography",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_Console",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Wdk_System_Threading",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows-service = "0.7"
+tray-icon = "0.25"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# Pruebas de propiedades (docs/plataforma.md, §7.3).
+proptest = { version = "1", default-features = false, features = ["std"] }
+resguardo-servidor = { path = "../servidor", version = "0.7.15" }
+resguardo-motor = { path = "../motor", version = "0.1.0", features = ["testing"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

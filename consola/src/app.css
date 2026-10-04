@@ -1,0 +1,668 @@
+/* Ajustes de la consola web sobre el sistema de diseño común ($ui/estilos.css). */
+
+/* Lo que recibe el foco no queda tapado por lo fijo de arriba (índice de página, cabecera del móvil). WCAG 2.4.11. */
+html {
+  scroll-padding-top: var(--sp-16, 64px);
+}
+
+/* En la web se puede seleccionar el texto (copiar un nombre, una huella…). */
+body {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+a {
+  color: var(--accent-text);
+  text-underline-offset: 2px;
+}
+a.btn,
+a.link,
+a.icon-btn {
+  text-decoration: none;
+}
+a.btn {
+  color: var(--text-1);
+}
+a.btn-primary {
+  color: var(--accent-contrast);
+}
+a.btn-ghost {
+  color: var(--text-2);
+}
+
+/* «Saltar al contenido»: el primer elemento con foco; solo se ve al enfocarlo con el teclado. */
+.saltar {
+  position: fixed;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 100;
+  padding: 8px 14px;
+  font-weight: 500;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-radius: var(--radius);
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.saltar:focus-visible,
+.saltar:focus {
+  transform: none;
+}
+
+/* Contenido principal. */
+.contenido {
+  padding: var(--sp-8);
+}
+@media (max-width: 1100px) {
+  .contenido {
+    padding: var(--sp-6);
+  }
+}
+
+/* Móvil (docs/diseno.md §1 y §5): titulares algo menores y 16 px de margen. */
+@media (max-width: 640px) {
+  :root {
+    --fs-display: 24px;
+    --lh-display: 30px;
+    --fs-title: 20px;
+    --lh-title: 26px;
+  }
+  .contenido {
+    padding: var(--sp-4);
+  }
+  .page-top h1 {
+    font-size: var(--fs-title);
+    line-height: var(--lh-title);
+  }
+}
+
+/* Filas de lista (docs/diseno.md §4). */
+.lista {
+  display: flex;
+  flex-direction: column;
+}
+.fila {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 44px;
+  padding: 10px var(--sp-4);
+  border-top: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+}
+.fila:first-child {
+  border-top: none;
+}
+a.fila,
+button.fila {
+  transition: background var(--dur-fast) var(--ease);
+}
+a.fila:hover,
+button.fila:hover {
+  background: var(--surface-2);
+}
+/* Dentro de una tarjeta, el contorno de foco va por dentro (si no, lo corta el borde). */
+a.fila:focus-visible,
+button.fila:focus-visible {
+  outline-offset: -2px;
+}
+button.fila {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  cursor: pointer;
+}
+.fila-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.fila-titulo {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fila-sub {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fila-meta {
+  flex: none;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  text-align: right;
+}
+
+/* Tarjeta con padding estándar. */
+.card.p {
+  padding: var(--sp-5);
+}
+.card.p-0 {
+  overflow: hidden;
+}
+
+/* Rejillas de tarjetas que se adaptan al ancho. */
+.rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-3);
+}
+
+/* Formularios. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.form .fila-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-4);
+}
+.error-campo {
+  font-size: var(--fs-sm);
+  color: var(--bad);
+}
+
+/* Número grande del SAS y códigos. */
+.codigo-grande {
+  font-family: var(--mono);
+  font-size: 34px;
+  line-height: 44px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .codigo-grande {
+    font-size: 26px;
+    line-height: 34px;
+  }
+}
+
+/* Tablas sencillas (auditoría, informes). */
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.tabla th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+.tabla td {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.tabla tr:first-child td {
+  border-top: none;
+}
+.desplazable {
+  overflow-x: auto;
+}
+
+/* Pestañas (docs/diseno.md §4): subrayado del acento bajo la activa. */
+.pestanas {
+  display: flex;
+  gap: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pestanas a,
+.pestanas button {
+  flex: none;
+  padding: 8px 2px 10px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.pestanas a:hover,
+.pestanas button:hover {
+  color: var(--text-1);
+}
+.pestanas .on {
+  color: var(--text-1);
+  border-bottom-color: var(--accent);
+}
+
+/* Línea de privacidad discreta. */
+.privacidad {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* Campo con un botón al lado (p. ej. «Explorar…» junto a una carpeta). */
+.con-boton {
+  display: flex;
+  gap: 8px;
+}
+.con-boton > .input {
+  flex: 1;
+  min-width: 0;
+}
+.con-boton > .btn {
+  flex: none;
+}
+
+/* Etiquetas de equipos: paleta Okabe-Ito (se distingue con daltonismo), solo en el punto. */
+:root {
+  --et-0: #0072b2;
+  --et-1: #e69f00;
+  --et-2: #009e73;
+  --et-3: #cc79a7;
+  --et-4: #d55e00;
+  --et-5: #56b4e9;
+  --et-6: #7a7a85;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --et-0: #5aa9e6;
+    --et-1: #f0b33a;
+    --et-2: #33c29a;
+    --et-3: #dd95be;
+    --et-4: #f07f3c;
+    --et-5: #8fd0f5;
+    --et-6: #a3a3ad;
+  }
+}
+:root[data-theme="dark"],
+:root[data-theme="black"] {
+  --et-0: #5aa9e6;
+  --et-1: #f0b33a;
+  --et-2: #33c29a;
+  --et-3: #dd95be;
+  --et-4: #f07f3c;
+  --et-5: #8fd0f5;
+  --et-6: #a3a3ad;
+}
+
+/* Migas (docs/diseno.md §4): dónde estás y cómo volver. La última es la página actual. */
+.migas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin: 0 0 calc(-1 * var(--sp-2));
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-3);
+}
+.migas li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.migas a {
+  /* Objetivo de al menos 24 px de alto (WCAG 2.5.8). */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  text-decoration: none;
+  border-radius: 4px;
+}
+.migas a:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+.migas [aria-current="page"] {
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  font-weight: 500;
+}
+.migas .sep {
+  flex: none;
+  color: var(--border-strong);
+}
+
+/* Texto con botón de copiar al lado (códigos, rutas, huellas). */
+.copiable {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: middle;
+}
+.copiable > code,
+.copiable > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.copiable > button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.copiable > button:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+.copiable > button.hecho {
+  color: var(--ok);
+}
+
+/* Cabecera de página en móvil: la acción principal baja a su propia línea y ocupa el ancho. */
+@media (max-width: 640px) {
+  .page-top > .btn-primary,
+  .page-top > a.btn-primary {
+    width: 100%;
+  }
+}
+
+/* Tooltip (lib/tooltip.ts, docs/diseno.md §4): un solo globo para toda la página. */
+.rg-tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 4px 8px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--bg);
+  background: var(--text-1);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    visibility 0s linear var(--dur-fast);
+}
+.rg-tooltip[data-visible] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+/* Una abreviatura o un dato con explicación (Tip.svelte): subrayado de puntos. */
+.tip-texto {
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+  border-radius: 3px;
+}
+
+/* Cabecera de página (CabeceraPagina.svelte): icono, título, resumen y acciones. */
+.cabecera-pagina {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: calc(-1 * var(--sp-2));
+}
+.cp-texto {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cp-resumen {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-2);
+}
+.cp-acciones {
+  align-self: center;
+}
+@media (max-width: 860px) {
+  .cabecera-pagina {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .cabecera-pagina .page-icon {
+    display: none;
+  }
+  .cabecera-pagina .cp-acciones {
+    width: 100%;
+  }
+}
+
+/* Cifras (Cifra.svelte, docs/diseno.md §4): fila de 4; dos por fila por debajo de 900 px. */
+.cifras {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.cifra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 14px var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  animation: rise var(--dur-slow) var(--ease-out) both;
+}
+.cifra:nth-child(2) {
+  animation-delay: 40ms;
+}
+.cifra:nth-child(3) {
+  animation-delay: 80ms;
+}
+.cifra:nth-child(4) {
+  animation-delay: 120ms;
+}
+.c-et {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--text-3);
+}
+.c-val {
+  margin-top: 4px;
+  font-size: var(--fs-stat);
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.c-val::first-letter {
+  text-transform: uppercase;
+}
+.c-val small {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-3);
+}
+.c-sub {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.c-sub.mal,
+.c-sub .mal {
+  color: var(--bad);
+}
+@media (max-width: 900px) {
+  .cifras {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .cifra {
+    padding: var(--sp-3);
+  }
+}
+
+/* Tarjeta tranquila de un destino o un almacén (Repositorios y destinos), como TarjetaEquipo. */
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-4);
+  color: inherit;
+  text-decoration: none;
+}
+.tile-cab {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.tile-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.tile-nombre {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.tile-nombre strong {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-nombre span {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+}
+.tile-linea {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-2);
+}
+.tile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Entrada de cada vista: un fundido corto (sin movimiento con «reducir movimiento»).
+ * Solo al empezar («backwards»): al acabar no deja transform, que rompería lo fijo de dentro. */
+.contenido > .page {
+  animation: entrar-vista var(--dur-slow) var(--ease-out) backwards;
+}
+@keyframes entrar-vista {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Densidad compacta (Mi cuenta → Apariencia; docs/diseno.md §5): menos aire
+ * en listas, tablas y tarjetas para quien lleva muchos equipos. Solo cambian
+ * márgenes y altos de fila: los textos y los botones siguen igual, y todo lo
+ * que se pulsa conserva 24 px o más (WCAG 2.5.8). Los selectores llevan
+ * `:root[data-densidad]` delante para ganar a los estilos de cada componente. */
+@media (min-width: 641px) {
+  :root[data-densidad="compacta"] .contenido {
+    padding: var(--sp-5) var(--sp-6);
+  }
+}
+:root[data-densidad="compacta"] .page {
+  gap: var(--sp-4);
+}
+:root[data-densidad="compacta"] .card.p {
+  padding: var(--sp-4);
+}
+:root[data-densidad="compacta"] .fila {
+  min-height: 34px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: var(--sp-3);
+  padding-right: var(--sp-3);
+}
+:root[data-densidad="compacta"] .tabla th {
+  padding: 6px 10px;
+}
+:root[data-densidad="compacta"] .tabla td {
+  padding: 5px 10px;
+}
+:root[data-densidad="compacta"] .tile,
+:root[data-densidad="compacta"] .card.tile {
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+}
+:root[data-densidad="compacta"] .rejilla,
+:root[data-densidad="compacta"] .cifras {
+  gap: var(--sp-2);
+}
+:root[data-densidad="compacta"] .cifra {
+  padding: 10px var(--sp-3);
+}
+:root[data-densidad="compacta"] .section-head {
+  margin-bottom: var(--sp-2);
+}
+:root[data-densidad="compacta"] .empty-state {
+  padding: var(--sp-6) var(--sp-4);
+}
+:root[data-densidad="compacta"] .notice {
+  padding: 8px 12px;
+}
+/* Barra lateral: elementos de 28 px (antes 32). */
+:root[data-densidad="compacta"] .barra .items a {
+  height: 28px;
+}

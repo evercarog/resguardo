@@ -1,0 +1,46 @@
+/*
+ * «Pulsar para ver más»: cifras, recuentos y barras que abren su detalle.
+ * Se ven pulsables (cursor, subrayado al pasar, anillo de foco) sin parecer
+ * botones grandes: el dato sigue siendo lo principal.
+ */
+.pulsable {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+  transition:
+    color var(--dur-fast) var(--ease),
+    text-decoration-color var(--dur-fast) var(--ease);
+}
+.pulsable:hover {
+  color: var(--accent-text);
+  text-decoration: underline solid currentColor;
+}
+.pulsable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Un bloque entero (una cifra, una fila) que abre su detalle. */
+.pulsable-bloque {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.pulsable-bloque:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

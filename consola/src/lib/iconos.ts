@@ -1,0 +1,90 @@
+// Iconos de siempre para lo mismo (docs/diseno.md §4, «Iconografía»): cada
+// tipo de orden y cada sección de la consola llevan el mismo icono en la
+// barra lateral, la paleta, las listas y las cabeceras.
+import {
+  Activity,
+  ArrowRightLeft,
+  BellRing,
+  Cable,
+  ClipboardList,
+  CloudUpload,
+  Database,
+  DatabaseZap,
+  Download,
+  FileBarChart,
+  FlaskConical,
+  FolderSearch,
+  FolderTree,
+  History,
+  KeyRound,
+  LayoutDashboard,
+  Lock,
+  Monitor,
+  Pause,
+  Play,
+  Server,
+  Settings2,
+  ShieldCheck,
+  Trash2,
+  Unlock,
+  Users,
+} from "@lucide/svelte";
+
+type Icono = typeof Play;
+
+/** Las secciones del cliente (barra lateral, paleta, cabeceras). */
+export const ICONO_SECCION = {
+  estado: LayoutDashboard,
+  equipos: Monitor,
+  repositorios: Database,
+  restaurar: History,
+  ordenes: ClipboardList,
+  avisos: BellRing,
+  informes: FileBarChart,
+  actividad: Activity,
+  servidor: ArrowRightLeft,
+  ajustes: Users,
+} satisfies Record<string, Icono>;
+
+const ORDEN: Record<string, Icono> = {
+  copiar_ahora: Play,
+  reanudar: Play,
+  pausar: Pause,
+  verificar_ahora: ShieldCheck,
+  probar_restauracion: FlaskConical,
+  subir_ahora: CloudUpload,
+  restaurar: History,
+  descargar: Download,
+  explorar: FolderSearch,
+  abrir_sesion: FolderSearch,
+  elegir_carpetas: FolderTree,
+  config: Settings2,
+  alta: KeyRound,
+  cambiar_clave_admin: KeyRound,
+  rotar_contrasena_repo: KeyRound,
+  clave_almacen: KeyRound,
+  desbloquear: Unlock,
+  crear_repositorio: DatabaseZap,
+  adoptar_repositorio: DatabaseZap,
+  importar_repositorio: DatabaseZap,
+  copiar_historial: History,
+  quitar_repositorio: Trash2,
+  dejar_de_copiar: Trash2,
+  baja_equipo: Trash2,
+  cambiar_retencion: Lock,
+  aplicar_retencion: Lock,
+  retencion_almacen: Lock,
+  aplicar_retencion_almacen: Lock,
+  guarda_copias: Server,
+  servidores_respaldo: Server,
+  cambiar_servidor: ArrowRightLeft,
+  anadir_consola: ArrowRightLeft,
+  quitar_consola: Cable,
+  desvincular: Cable,
+  conectar_nube: CloudUpload,
+  quitar_nube: CloudUpload,
+  cambiar_copia_externa: CloudUpload,
+};
+
+/** El icono de un tipo de orden (o uno genérico). */
+export const iconoOrden = (tipo: string): Icono => ORDEN[tipo] ?? ClipboardList;

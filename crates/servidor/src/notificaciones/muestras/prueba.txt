@@ -1,0 +1,8 @@
+Las notificaciones funcionan
+
+Es un mensaje de prueba de Resguardo Server que pidió Ana. Si lo ves, este canal está listo para los avisos.
+
+Consola: https://copias.ejemplo.com:8443/
+
+—
+Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.

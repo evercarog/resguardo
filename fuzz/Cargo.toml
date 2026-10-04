@@ -1,0 +1,47 @@
+# Fuzzing de los analizadores del protocolo (cargo-fuzz; necesita Rust nightly).
+#
+#   cargo install cargo-fuzz
+#   cargo +nightly fuzz run sobre_sellado
+#   cargo +nightly fuzz run sobre_firmado
+#   cargo +nightly fuzz run mensaje_firmado
+#
+# Fuera del espacio de trabajo a propósito (exclude en el Cargo.toml raíz).
+[package]
+name = "resguardo-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+ed25519-dalek = "2"
+base64 = "0.22"
+serde_json = "1"
+resguardo-protocolo = { path = "../crates/protocolo" }
+
+[[bin]]
+name = "sobre_sellado"
+path = "fuzz_targets/sobre_sellado.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sobre_firmado"
+path = "fuzz_targets/sobre_firmado.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mensaje_firmado"
+path = "fuzz_targets/mensaje_firmado.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,524 @@
+# Integración continua de Resguardo.
+#
+# Qué se ejecuta:
+# - en cada push y PR: Linux (crates compartidos y agente, formato, cargo-deny,
+#   interfaz, paquetes del agente y del servidor en x86_64 y arm64, y el kit de
+#   la consola en internet);
+# - la app completa en Windows: en PR hacia main, en main y a mano.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  sin-referencias:
+    name: Sin referencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sin clientes, equipos ni redes reales en el árbol
+        run: node scripts/sin-referencias.mjs
+
+  consola:
+    name: Consola web (Resguardo Server)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: consola
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: consola/package-lock.json
+      - run: npm ci
+      - name: svelte-check
+        run: npm run check
+      - name: Vectores del protocolo y libsodium
+        run: npm run test:vectores
+      - name: Compilación (lo que el servidor lleva dentro)
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: consola-build
+          path: consola/build/
+          retention-days: 7
+
+  rust-linux:
+    name: Crates compartidos (Linux)
+    needs: consola
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: consola-build
+          path: consola/build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Formato
+        run: cargo fmt --all --check
+      - name: Clippy (protocolo, motor, servidor)
+        run: cargo clippy -p resguardo-protocolo -p resguardo-motor -p resguardo-servidor --all-targets -- -D warnings
+      - name: Pruebas (protocolo, motor, servidor)
+        # Sin restic en este ejecutor: las pruebas que lo ejecutan se omiten
+        # (las cubre la CI de Windows, con el restic oficial y su huella).
+        run: cargo test -p resguardo-protocolo -p resguardo-motor -p resguardo-servidor
+      - name: Servidor con la consola dentro
+        run: |
+          cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings
+          cargo test -p resguardo-servidor --features consola-integrada
+      - name: Clippy (agente de Linux)
+        run: cargo clippy -p resguardo-agente --all-targets -- -D warnings
+      - name: Pruebas (agente de Linux)
+        run: cargo test -p resguardo-agente
+
+  e2e-linux:
+    name: Escenario de extremo a extremo (Linux)
+    # Los programas de verdad juntos: resguardo-server, dos resguardo-agente,
+    # restic y rest-server (consola/scripts/e2e, «npm run e2e»). De momento no
+    # bloquea: si falla, la CI sigue en verde y el registro queda como artefacto.
+    # Quitar continue-on-error cuando lleve un tiempo estable.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    env:
+      RESGUARDO_E2E_BINARIOS: ${{ github.workspace }}/.e2e/binarios
+      RESGUARDO_E2E_TMP: ${{ github.workspace }}/.e2e/tmp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: consola/package-lock.json
+      - name: restic y rest-server oficiales (con su huella)
+        # Sin ellos (p. ej. sin red), el escenario se salta solo.
+        run: |
+          sh scripts/fetch-binarios-linux.sh "$RESGUARDO_E2E_BINARIOS" || echo "::warning::No se pudieron descargar restic y rest-server; el escenario se saltará."
+      - name: Compilar el servidor y el agente (desarrollo)
+        run: cargo build -p resguardo-servidor -p resguardo-agente --bins
+      - name: Escenario
+        working-directory: consola
+        run: |
+          mkdir -p "$RESGUARDO_E2E_TMP"
+          npm ci
+          npm run e2e
+      - name: Registros del escenario
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-registros
+          path: |
+            .e2e/tmp/**/*.log
+            .e2e/tmp/**/*.eml
+          retention-days: 7
+
+  agente-linux-paquetes:
+    name: Paquetes del agente (Linux, musl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: Herramientas de musl
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+      - name: Compilar (estático)
+        run: cargo build --release -p resguardo-agente --bin resguardo-agente --target x86_64-unknown-linux-musl
+      - name: .tar.gz y .deb (sin firmar)
+        run: |
+          BIN=src-tauri/target/x86_64-unknown-linux-musl/release/resguardo-agente
+          if ldd "$BIN" 2>/dev/null | grep -q '=>'; then echo "No es estático"; exit 1; fi
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="resguardo-agente") | .version')
+          # restic, rest-server y rclone oficiales (GitHub), con sus huellas, junto al binario.
+          sh scripts/fetch-binarios-linux.sh src-tauri/target/x86_64-unknown-linux-musl/release
+          sh -n packaging/linux/instalar-agente.sh
+          sh packaging/linux/construir-paquetes.sh "$BIN" "$VERSION" x86_64 paquetes
+          dpkg-deb --info paquetes/*.deb
+          dpkg-deb --contents paquetes/*.deb
+          tar -tzvf paquetes/*.tar.gz
+          if dpkg-deb -f paquetes/*.deb Depends | grep -q restic; then echo "El .deb no debe depender del restic de la distribución"; exit 1; fi
+          systemd-analyze verify packaging/linux/resguardo-agente.service 2>&1 | grep -v "Failed to resolve\|not executable\|No such file" || true
+      - name: Instalar con instalar-agente.sh, comprobar y quitar
+        run: |
+          nunca() { if "$@"; then echo "No debía funcionar: $*"; exit 1; fi; }
+          P=paquetes/resguardo-agente-x86_64-linux-musl.tar.gz
+          # Sin firma ni --sin-firma: se niega.
+          nunca sudo sh paquetes/instalar-agente.sh --paquete "$P"
+          # Un paquete que no coincide con su SHA256SUMS: se niega.
+          mkdir -p malo && cp "$P" malo/ && echo "0000000000000000000000000000000000000000000000000000000000000000  resguardo-agente-x86_64-linux-musl.tar.gz" > malo/SHA256SUMS
+          nunca sudo sh paquetes/instalar-agente.sh --paquete malo/resguardo-agente-x86_64-linux-musl.tar.gz --sin-firma
+          sudo sh paquetes/instalar-agente.sh --paquete "$P" --sin-firma | tee instalacion.txt
+          grep -q 'coincide con su SHA256SUMS' instalacion.txt
+          grep -q 'resguardo-agente vincular' instalacion.txt
+          systemctl is-active resguardo-agente
+          sudo resguardo-agente estado | tee estado.txt
+          grep -q 'Sin vincular' estado.txt
+          # Los binarios oficiales, junto al agente.
+          /opt/resguardo-agente/restic version | tee /dev/stderr | grep -q '^restic 0\.19\.1 '
+          /opt/resguardo-agente/rest-server --version | tee /dev/stderr | grep -q '0\.14\.0'
+          /opt/resguardo-agente/rclone version | tee /dev/stderr | grep -q '^rclone v1\.75\.1'
+          for f in restic rest-server rclone; do test -f /opt/resguardo-agente/$f-LICENSE.txt; done
+          # «Este equipo guarda copias» con el rest-server del paquete (huella fijada en el agente).
+          sudo mkdir -p /srv/copias-ci
+          # Con «solo redes internas» (lo predeterminado): la tabla propia de nftables.
+          sudo resguardo-agente guardar-copias activar --carpeta /srv/copias-ci --puerto 8002
+          sudo nft list table inet resguardo | grep -q 'tcp dport 8002'
+          for i in $(seq 1 20); do systemctl is-active --quiet resguardo-guarda-copias && break; sleep 1; done
+          systemctl is-active resguardo-guarda-copias
+          for i in $(seq 1 20); do curl -sk -o /dev/null https://127.0.0.1:8002/ && break; sleep 1; done
+          curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8002/ | tee /dev/stderr | grep -qv '^000$'
+          # Un puerto ocupado: se niega sin tocar al que lo usa.
+          python3 -m http.server 8003 --bind 0.0.0.0 >/dev/null 2>&1 &
+          PY=$!
+          sleep 1
+          nunca sudo resguardo-agente guardar-copias activar --carpeta /srv/copias-ci --puerto 8003 --toda-la-red
+          curl -fsS -o /dev/null http://127.0.0.1:8003/
+          kill "$PY" || true
+          # Actualizar encima: sigue todo en marcha, y avisa de que es la misma versión.
+          sudo sh /opt/resguardo-agente/instalar-agente.sh --paquete "$P" --sin-firma | tee reinstalar.txt
+          grep -q 'Misma versión' reinstalar.txt
+          systemctl is-active resguardo-agente
+          # Un paquete más antiguo que el instalado: lo dice con las dos versiones.
+          echo 99.0.0 | sudo tee /opt/resguardo-agente/VERSION >/dev/null
+          sudo sh paquetes/instalar-agente.sh --paquete "$P" --sin-firma | tee anterior.txt
+          grep -q 'ya tienes la 99.0.0' anterior.txt
+          systemctl is-active resguardo-agente
+          # Quitar (la configuración se queda) y purgar.
+          sudo sh /opt/resguardo-agente/instalar-agente.sh --desinstalar
+          sudo test -d /var/lib/resguardo-agente
+          nunca systemctl is-active resguardo-agente
+          nunca test -e /opt/resguardo-agente
+          nunca sudo nft list table inet resguardo
+          sudo sh paquetes/instalar-agente.sh --paquete "$P" --sin-firma
+          sudo sh /opt/resguardo-agente/instalar-agente.sh --desinstalar --purgar
+          nunca sudo test -e /var/lib/resguardo-agente
+          nunca systemctl is-active resguardo-guarda-copias
+      - name: Instalar el .deb, comprobar y purgar
+        run: |
+          nunca() { if "$@"; then echo "No debía funcionar: $*"; exit 1; fi; }
+          sudo apt-get install -y -qq ./paquetes/resguardo-agente_*_amd64.deb
+          systemctl is-active resguardo-agente
+          sudo resguardo-agente estado
+          /opt/resguardo-agente/restic version
+          sudo apt-get purge -y -qq resguardo-agente
+          nunca sudo test -e /var/lib/resguardo-agente
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agente-linux-x86_64
+          path: paquetes/
+          retention-days: 14
+
+  servidor-linux-paquetes:
+    name: Paquetes del servidor (Linux, musl, con la consola)
+    needs: consola
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: consola-build
+          path: consola/build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: servidor-musl
+      - name: Herramientas de musl
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+      - name: Compilar (estático, con la consola dentro)
+        run: cargo build --release -p resguardo-servidor --features consola-integrada --bin resguardo-server --target x86_64-unknown-linux-musl
+      - name: .tar.gz y .deb (sin firmar)
+        run: |
+          BIN=src-tauri/target/x86_64-unknown-linux-musl/release/resguardo-server
+          file "$BIN"
+          if ldd "$BIN" 2>/dev/null | grep -q '=>'; then echo "No es estático"; exit 1; fi
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="resguardo-servidor") | .version')
+          sh -n packaging/linux/instalar-servidor.sh
+          sh packaging/linux/construir-paquetes.sh servidor "$BIN" "$VERSION" x86_64 paquetes-servidor
+          dpkg-deb --info paquetes-servidor/*.deb
+          dpkg-deb --contents paquetes-servidor/*.deb
+          tar -tzvf paquetes-servidor/*.tar.gz
+          # El kit de la consola en internet va dentro (y su SHA-256 en SHA256SUMS).
+          tar -tzf paquetes-servidor/*.tar.gz | grep -q '^./preparar-vm.sh$'
+          tar -tzf paquetes-servidor/*.tar.gz | grep -q '^./fail2ban/filter.d/resguardo-server.conf$'
+          grep -q ' preparar-vm.sh$' paquetes-servidor/SHA256SUMS
+          dpkg-deb --contents paquetes-servidor/*.deb | grep -q 'opt/resguardo-server/nube/preparar-vm.sh'
+          systemd-analyze verify packaging/linux/resguardo-server.service 2>&1 | grep -v "Failed to resolve\|not executable\|No such file" || true
+      - name: Instalar con instalar-servidor.sh, comprobar y quitar
+        run: |
+          nunca() { if "$@"; then echo "No debía funcionar: $*"; exit 1; fi; }
+          sudo sh paquetes-servidor/instalar-servidor.sh --paquete paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz --sin-firma
+          systemctl is-active resguardo-server
+          sudo stat -c '%U %a %n' /var/lib/resguardo-server | tee /dev/stderr | grep -q '^resguardo-server 700 '
+          [ "$(ps -o uid= -C resguardo-server | tr -d ' ')" = "$(id -u resguardo-server)" ]
+          # La consola (HTML) por HTTPS con el certificado propio.
+          curl -fsSk https://127.0.0.1:8443/ | grep -qi '<!doctype html'
+          # El certificado lo firma la autoridad propia y su huella es la que se muestra.
+          sudo resguardo-server codigo-inicial | tee codigo.txt
+          grep -q 'Código de primer arranque' codigo.txt
+          HUELLA=$(sudo cat /var/lib/resguardo-server/tls/ca.huella)
+          grep -q "$HUELLA" codigo.txt
+          sudo journalctl -u resguardo-server --no-pager | grep -q 'Primer arranque'
+          # Sin sudo: lo explica.
+          nunca resguardo-server codigo-inicial
+          # Actualizar encima conserva los datos (y avisa de que es la misma versión).
+          sudo sh paquetes-servidor/instalar-servidor.sh --paquete paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz --sin-firma | tee reinstalar.txt
+          grep -q 'Misma versión' reinstalar.txt
+          [ "$(sudo cat /var/lib/resguardo-server/tls/ca.huella)" = "$HUELLA" ]
+          sudo sh /opt/resguardo-server/instalar-servidor.sh --desinstalar
+          sudo test -d /var/lib/resguardo-server
+          nunca systemctl is-active resguardo-server
+          sudo sh paquetes-servidor/instalar-servidor.sh --paquete paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz --sin-firma
+          sudo sh /opt/resguardo-server/instalar-servidor.sh --desinstalar --purgar
+          nunca sudo test -e /var/lib/resguardo-server
+          nunca id resguardo-server
+      - name: Instalar el .deb, comprobar y purgar
+        run: |
+          nunca() { if "$@"; then echo "No debía funcionar: $*"; exit 1; fi; }
+          sudo apt-get install -y -qq ./paquetes-servidor/resguardo-server_*_amd64.deb
+          for i in $(seq 1 20); do sudo test -f /var/lib/resguardo-server/control.db && break; sleep 1; done
+          systemctl is-active resguardo-server
+          curl -fsSk https://127.0.0.1:8443/ | grep -qi '<!doctype html'
+          sudo resguardo-server codigo-inicial
+          sudo apt-get purge -y -qq resguardo-server
+          nunca sudo test -e /var/lib/resguardo-server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: servidor-linux-x86_64
+          path: paquetes-servidor/
+          retention-days: 14
+
+  linux-arm64-paquetes:
+    name: Paquetes del agente y del servidor (Linux arm64, musl)
+    # Para Oracle Cloud Ampere (Always Free) y otras máquinas arm64: compilación
+    # cruzada desde x86_64 con cargo-zigbuild (zig como enlazador y compilador de C
+    # para ring y SQLite). Se prueban con qemu: el servidor arranca y responde.
+    needs: consola
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: consola-build
+          path: consola/build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: arm64-musl
+      - name: zig, cargo-zigbuild y qemu
+        run: |
+          python3 -m pip install --user --quiet cargo-zigbuild
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static file
+      - name: Compilar (estático, el servidor con la consola dentro)
+        run: |
+          cargo zigbuild --release -p resguardo-servidor --features consola-integrada --bin resguardo-server --target aarch64-unknown-linux-musl
+          cargo zigbuild --release -p resguardo-agente --bin resguardo-agente --target aarch64-unknown-linux-musl
+      - name: Comprobar con qemu
+        run: |
+          D=src-tauri/target/aarch64-unknown-linux-musl/release
+          for b in resguardo-server resguardo-agente; do
+            file "$D/$b" | tee /dev/stderr | grep -q 'ARM aarch64'
+            file "$D/$b" | grep -Eq 'statically linked|static-pie linked' || { echo "$b no es estático"; exit 1; }
+          done
+          qemu-aarch64-static "$D/resguardo-server" --ayuda | grep -q -- '--dominio'
+          qemu-aarch64-static "$D/resguardo-agente" --version
+          # El servidor arranca, crea sus datos y responde por HTTPS (con la consola dentro).
+          mkdir -p /tmp/rs-arm64
+          qemu-aarch64-static "$D/resguardo-server" --datos /tmp/rs-arm64 --escuchar 127.0.0.1:18443 > /tmp/rs-arm64.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do curl -fsSk -o /dev/null https://127.0.0.1:18443/api/servidor && break; sleep 1; done
+          curl -fsSk https://127.0.0.1:18443/api/servidor | jq -e '.version and .identidad'
+          curl -fsSk https://127.0.0.1:18443/ | grep -qi '<!doctype html'
+          kill "$PID" || true
+          cat /tmp/rs-arm64.log
+      - name: .tar.gz y .deb (sin firmar) con SHA256SUMS
+        run: |
+          D=src-tauri/target/aarch64-unknown-linux-musl/release
+          V_SERVIDOR=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="resguardo-servidor") | .version')
+          V_AGENTE=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="resguardo-agente") | .version')
+          sh packaging/linux/construir-paquetes.sh servidor "$D/resguardo-server" "$V_SERVIDOR" aarch64 paquetes-servidor-arm64
+          # El agente con el restic oficial de arm64 (huella del archivo fijada).
+          sh scripts/fetch-binarios-linux.sh "$D" aarch64
+          sh packaging/linux/construir-paquetes.sh "$D/resguardo-agente" "$V_AGENTE" aarch64 paquetes-agente-arm64
+          for p in paquetes-servidor-arm64 paquetes-agente-arm64; do
+            dpkg-deb -f "$p"/*.deb Architecture | grep -qx arm64
+            (cd "$p" && sha256sum -c SHA256SUMS)
+            tar -tzvf "$p"/*.tar.gz
+          done
+          tar -tzf paquetes-servidor-arm64/resguardo-server-aarch64-linux-musl.tar.gz | grep -q 'preparar-vm.sh'
+          tar -tzf paquetes-agente-arm64/resguardo-agente-aarch64-linux-musl.tar.gz | grep -q '^./restic$'
+          qemu-aarch64-static "$D/restic" version | tee /dev/stderr | grep -q '^restic 0\.19\.1 '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: servidor-linux-aarch64
+          path: paquetes-servidor-arm64/
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agente-linux-aarch64
+          path: paquetes-agente-arm64/
+          retention-days: 14
+
+  consola-en-linea:
+    name: Kit de la consola en internet (preparar-vm.sh, fail2ban)
+    # preparar-vm.sh en una máquina Ubuntu limpia (la del ejecutor), con el paquete
+    # de x86_64. Sin dominio de verdad: la autoridad ACME es una dirección que no
+    # responde (nunca se molesta a Let's Encrypt); se comprueba que el servidor
+    # escucha en 443 y 80, sirve el certificado propio en agentes.<dominio>, redirige
+    # el 80 a HTTPS, y que fail2ban cuenta sus «Acceso fallido».
+    needs: servidor-linux-paquetes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: servidor-linux-x86_64
+          path: paquetes-servidor
+      - name: Sintaxis
+        run: |
+          sh -n packaging/linux/nube/preparar-vm.sh
+          python3 -c 'import sys, yaml; yaml.safe_load(open("packaging/linux/nube/cloud-init.yaml"))'
+          head -n 1 packaging/linux/nube/cloud-init.yaml | grep -qx '#cloud-config'
+      - name: preparar-vm.sh
+        run: |
+          mkdir kit && tar -xzf paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz -C kit
+          sudo sh kit/preparar-vm.sh --dominio ci.ejemplo.com --acme-correo ci@ejemplo.com \
+            --acme-directorio http://127.0.0.1:9/directorio \
+            --paquete paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz --sin-firma | tee preparar.txt
+          grep -q 'Listo.' preparar.txt
+          # Otra vez: deja todo igual.
+          sudo sh kit/preparar-vm.sh --dominio ci.ejemplo.com --acme-correo ci@ejemplo.com \
+            --acme-directorio http://127.0.0.1:9/directorio \
+            --paquete paquetes-servidor/resguardo-server-x86_64-linux-musl.tar.gz --sin-firma > /dev/null
+      - name: Comprobar
+        run: |
+          nunca() { if "$@"; then echo "No debía funcionar: $*"; exit 1; fi; }
+          systemctl is-active resguardo-server
+          [ "$(ps -o uid= -C resguardo-server | tr -d ' ')" = "$(id -u resguardo-server)" ]
+          sudo ss -ltnp | grep -E ':443 .*resguardo'
+          sudo ss -ltnp | grep -E ':80 .*resguardo'
+          sudo grep -qx 'RESGUARDO_DOMINIO=ci.ejemplo.com' /etc/resguardo-server/servidor.env
+          [ "$(grep -c '^RESGUARDO_DOMINIO=' /etc/resguardo-server/servidor.env)" = 1 ]
+          # Los agentes: agentes.<dominio>, con la autoridad propia (la de codigo-inicial).
+          R="--resolve agentes.ci.ejemplo.com:443:127.0.0.1 --resolve ci.ejemplo.com:443:127.0.0.1"
+          curl -fsS $R -k https://agentes.ci.ejemplo.com/api/servidor | jq -e '.url_agentes == "https://agentes.ci.ejemplo.com" and .publico == true'
+          sudo cp /var/lib/resguardo-server/tls/ca.crt ca-propia.crt && sudo chmod 644 ca-propia.crt
+          curl -fsS $R --cacert ca-propia.crt https://agentes.ci.ejemplo.com/api/servidor > /dev/null
+          # El 80: a HTTPS en el dominio, venga con el nombre que venga.
+          curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Host: otro.ejemplo.net' http://127.0.0.1/entrar | tee /dev/stderr | grep -qx '301 https://ci.ejemplo.com/entrar'
+          # Sin certificado público (la autoridad no responde): lo dice y lo reintenta.
+          for i in $(seq 1 20); do sudo journalctl -u resguardo-server --no-pager | grep -q 'Certificado público de ci.ejemplo.com: no se pudo obtener' && break; sleep 1; done
+          sudo journalctl -u resguardo-server --no-pager | grep -q 'Certificado público de ci.ejemplo.com: no se pudo obtener'
+          # El primer arranque, por SSH: la dirección pública y la identidad.
+          sudo resguardo-server codigo-inicial --datos /var/lib/resguardo-server | tee codigo.txt
+          grep -q 'Código de primer arranque' codigo.txt
+          grep -q 'Identidad del servidor' codigo.txt
+          # fail2ban: un acceso fallido deja su línea y el filtro la encuentra.
+          curl -s $R -k -o /dev/null -X POST -H 'X-Resguardo: 1' -H 'content-type: application/json' \
+            -d '{"correo":"nadie@ejemplo.com","contrasena":"mal"}' https://ci.ejemplo.com/api/sesion
+          sleep 1
+          sudo journalctl -u resguardo-server --no-pager | grep -q 'Acceso fallido desde 127.0.0.1: entrar (POST /api/sesion)'
+          # (el journalmatch lo pone el propio filtro, en [Init])
+          sudo fail2ban-regex systemd-journal resguardo-server | tee f2b.txt
+          grep -Eq 'Failregex: [1-9][0-9]* total' f2b.txt
+          sudo fail2ban-client status resguardo-server
+          # Actualizaciones automáticas, cortafuegos y copias para llevar fuera.
+          grep -q 'Unattended-Upgrade "1"' /etc/apt/apt.conf.d/20auto-upgrades
+          sudo ufw status | tee /dev/stderr | grep -q '443/tcp'
+          nunca sudo sh -c "ufw status | grep -q '8443'"
+          systemctl list-timers --all | grep -q resguardo-consola-fuera
+          sudo test -d /var/backups/resguardo-consola
+          sudo systemctl start resguardo-consola-fuera.service || true
+      - name: Registro
+        if: failure()
+        run: sudo journalctl -u resguardo-server -n 100 --no-pager
+
+  cargo-deny:
+    name: cargo-deny (licencias, avisos, orígenes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  interfaz:
+    name: Interfaz y vectores de prueba (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: svelte-check
+        run: npm run check
+      - name: Compilación de la interfaz
+        run: npx vite build
+      - name: Vectores del protocolo (Rust ↔ JS)
+        run: node crates/protocolo/vectors/verificar.mjs
+
+  app-windows:
+    name: App completa (Windows)
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> src-tauri/target"
+      - name: restic, rest-server y rclone oficiales (con su huella)
+        shell: pwsh
+        run: |
+          ./scripts/fetch-restic.ps1
+          ./scripts/fetch-rest-server.ps1
+          ./scripts/fetch-rclone.ps1
+          # Las pruebas buscan restic junto a ellas o en el PATH.
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/restic" | Out-Null
+          Copy-Item src-tauri/binaries/restic-x86_64-pc-windows-msvc.exe "$env:RUNNER_TEMP/restic/restic.exe"
+          "$env:RUNNER_TEMP/restic" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite build
+      - name: Clippy (todo el espacio de trabajo)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Pruebas (incluida la integración real con rest-server)
+        env:
+          RESGUARDO_TEST_REST_SERVER: ${{ github.workspace }}\src-tauri\binaries\rest-server-x86_64-pc-windows-msvc.exe
+        run: cargo test --workspace

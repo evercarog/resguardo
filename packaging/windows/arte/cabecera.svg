@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+  <!-- Imagen de la cabecera de las páginas interiores de los instaladores
+       (MUI_HEADERIMAGE_BITMAP, 150×57, a la derecha). Fondo blanco, como la
+       cabecera, para que no se note el borde; el logotipo y unos escudos tenues.
+       scripts/arte-instaladores.mjs la convierte en cabecera.bmp y cabecera@2x.bmp. -->
+  <defs>
+    <linearGradient id="marca" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#19a58e"/>
+      <stop offset="1" stop-color="#0a5d52"/>
+    </linearGradient>
+    <pattern id="puntos" width="9" height="9" patternUnits="userSpaceOnUse">
+      <circle cx="4.5" cy="4.5" r="0.7" fill="#0f766e" fill-opacity="0.18"/>
+    </pattern>
+    <linearGradient id="hacia-la-izquierda" x1="1" y1="0" x2="0" y2="0">
+      <stop offset="0.2" stop-color="#ffffff"/>
+      <stop offset="0.85" stop-color="#000000"/>
+    </linearGradient>
+    <mask id="desvanecer">
+      <rect width="150" height="57" fill="url(#hacia-la-izquierda)"/>
+    </mask>
+    <path id="escudo" d="M32 11.5 16.5 17v13.2c0 10.1 6.5 18.9 15.5 22.3 9-3.4 15.5-12.2 15.5-22.3V17L32 11.5Z"/>
+  </defs>
+
+  <rect width="150" height="57" fill="#ffffff"/>
+  <rect width="150" height="57" fill="url(#puntos)" mask="url(#desvanecer)"/>
+  <g fill="none" stroke="#0f766e" stroke-linejoin="round">
+    <use href="#escudo" transform="translate(122 28.5) scale(1.55) translate(-32 -32)" stroke-width="0.6" stroke-opacity="0.14"/>
+    <use href="#escudo" transform="translate(122 28.5) scale(2.2) translate(-32 -32)" stroke-width="0.45" stroke-opacity="0.08"/>
+  </g>
+
+  <!-- El logotipo (assets/logo.svg) a 40 px. -->
+  <g transform="translate(102 8.5) scale(0.625)">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#marca)"/>
+    <use href="#escudo" fill="#ffffff" fill-opacity="0.14" stroke="#ffffff" stroke-width="3.4" stroke-linejoin="round"/>
+    <path d="M38.8 27.4a7.6 7.6 0 1 1-2.3-4.6" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M37.6 18.8v5h-5" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

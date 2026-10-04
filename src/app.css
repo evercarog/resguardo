@@ -1,0 +1,1205 @@
+/* Sistema de diseño de Resguardo: tokens y estilos base compartidos.
+ * Referencia común con la web: docs/diseno.md (los nombres de las variables
+ * son los mismos). Estilo sobrio y moderno: mucho aire, pocos bordes, colores
+ * apagados y el color reservado para el estado.
+ *
+ * Temas: <html data-theme="light|dark|black"> (sin atributo = según el sistema)
+ * y <html data-accent="teal|blue|indigo|violet|rose|amber|graphite">.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --font: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --font-display: var(--font);
+  --mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  /* Escala tipográfica (tamaño / interlineado) */
+  --fs-display: 30px;
+  --lh-display: 36px;
+  --fs-title: 22px;
+  --lh-title: 28px;
+  --fs-stat: 22px;
+  --fs-h2: 15px;
+  --lh-h2: 22px;
+  --fs-body: 14px;
+  --lh-body: 20px;
+  --fs-sm: 13px;
+  --lh-sm: 18px;
+  --fs-xs: 12px;
+  --lh-xs: 16px;
+  --fs-overline: 11px;
+
+  /* Espaciado (base 4) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* Radios */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Movimiento */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 260ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Disposición */
+  --sidebar-w: 248px;
+  --content-max: 1120px;
+
+  /* Acento por defecto: verde azulado (el de la marca) */
+  --accent-l: #0f766e;
+  --accent-d: #3cc4ad;
+}
+
+:root[data-accent="blue"] {
+  --accent-l: #2563eb;
+  --accent-d: #6aa1ff;
+}
+:root[data-accent="indigo"] {
+  --accent-l: #4f46e5;
+  --accent-d: #8e8cff;
+}
+:root[data-accent="violet"] {
+  --accent-l: #7c3aed;
+  --accent-d: #b38bff;
+}
+:root[data-accent="rose"] {
+  --accent-l: #d6336c;
+  --accent-d: #ff7aa6;
+}
+:root[data-accent="amber"] {
+  --accent-l: #b45309;
+  --accent-d: #f2b33d;
+}
+:root[data-accent="graphite"] {
+  --accent-l: #3f3f46;
+  --accent-d: #d4d4d8;
+}
+
+/* ---------- Modo claro ---------- */
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --surface-3: #ececee;
+  --border: #e9e9ec;
+  --border-strong: #d5d5da;
+  --text-1: #18181b;
+  --text-2: #52525b;
+  --text-3: #666670;
+  --overlay: rgb(9 9 11 / 0.4);
+
+  --accent: var(--accent-l);
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, black);
+  --accent-contrast: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accent-text: color-mix(in srgb, var(--accent) 85%, black);
+
+  --ok: #137538;
+  --warn: #a8520a;
+  --bad: #c42121;
+  --info: #2257d6;
+  --paused: #6d28d9;
+  --neutral: #666670;
+  --soft: 9%;
+  --bad-contrast: #ffffff;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.18);
+  --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* ---------- Modo oscuro (por el sistema o elegido) ----------
+ * El bloque se repite porque una media query no se puede combinar con un
+ * selector de atributo en la misma regla. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0f11;
+    --bg-subtle: #0b0b0d;
+    --surface: #151518;
+    --surface-2: #1b1b1f;
+    --surface-3: #232328;
+    --border: #25252a;
+    --border-strong: #34343b;
+    --text-1: #ededf0;
+    --text-2: #a6a6b0;
+    --text-3: #90909a;
+    --overlay: rgb(0 0 0 / 0.6);
+
+    --accent: var(--accent-d);
+    --accent-hover: color-mix(in srgb, var(--accent) 88%, white);
+    --accent-contrast: #0b0b0d;
+    --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+    --accent-text: color-mix(in srgb, var(--accent) 80%, white);
+
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --info: #60a5fa;
+    --paused: #a78bfa;
+    --neutral: #90909a;
+    --soft: 14%;
+    --bad-contrast: #1a0806;
+
+    --shadow-sm: none;
+    --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+  }
+}
+:root[data-theme="dark"],
+:root[data-theme="black"] {
+  color-scheme: dark;
+  --bg: #0f0f11;
+  --bg-subtle: #0b0b0d;
+  --surface: #151518;
+  --surface-2: #1b1b1f;
+  --surface-3: #232328;
+  --border: #25252a;
+  --border-strong: #34343b;
+  --text-1: #ededf0;
+  --text-2: #a6a6b0;
+  --text-3: #90909a;
+  --overlay: rgb(0 0 0 / 0.6);
+
+  --accent: var(--accent-d);
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, white);
+  --accent-contrast: #0b0b0d;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-text: color-mix(in srgb, var(--accent) 80%, white);
+
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --info: #60a5fa;
+  --paused: #a78bfa;
+  --neutral: #90909a;
+  --soft: 14%;
+  --bad-contrast: #1a0806;
+
+  --shadow-sm: none;
+  --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+}
+
+/* Negro: oscuro con fondos negros puros (pantallas OLED, salas oscuras). */
+:root[data-theme="black"] {
+  --bg: #000000;
+  --bg-subtle: #000000;
+  --surface: #0a0a0b;
+  --surface-2: #121214;
+  --surface-3: #19191c;
+  --border: #1f1f23;
+  --border-strong: #2e2e33;
+}
+
+/* Derivados comunes a todos los temas: fondos suaves de estado. */
+:root {
+  --ok-soft: color-mix(in srgb, var(--ok) var(--soft), transparent);
+  --warn-soft: color-mix(in srgb, var(--warn) var(--soft), transparent);
+  --bad-soft: color-mix(in srgb, var(--bad) var(--soft), transparent);
+  --info-soft: color-mix(in srgb, var(--info) var(--soft), transparent);
+  --paused-soft: color-mix(in srgb, var(--paused) var(--soft), transparent);
+  --neutral-soft: color-mix(in srgb, var(--neutral) var(--soft), transparent);
+
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Una app de escritorio no debería permitir seleccionar la interfaz entera. */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input,
+textarea,
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* Cifras alineadas (estadísticas, tablas, tiempos). */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.muted {
+  color: var(--text-2);
+}
+.faint {
+  color: var(--text-3);
+}
+
+/* ---------- Botones ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--text-1);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform 60ms;
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.btn-danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: var(--bad-contrast);
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 88%, black);
+}
+.btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-sm);
+}
+.btn-lg {
+  height: 40px;
+  padding: 0 18px;
+}
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Foco visible con teclado: contorno del acento (el anillo difuso queda para los campos). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.input:focus-visible {
+  outline: none;
+}
+
+/* Solo para lectores de pantalla. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Campos ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  color: var(--text-1);
+}
+.field-hint {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+}
+.input {
+  width: 100%;
+  height: 34px;
+  padding: 0 11px;
+  font: inherit;
+  color: var(--text-1);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+textarea.input {
+  height: auto;
+  padding: 9px 11px;
+  resize: vertical;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+
+/* ---------- Tarjetas y avisos ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.notice svg {
+  flex: none;
+  margin-top: 1px;
+}
+.notice-success {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.notice-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.notice-danger {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.notice-info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.notice p {
+  margin: 0;
+  color: var(--text-1);
+}
+
+/* ---------- Barras de desplazamiento ---------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-3);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Entrada suave: solo opacidad y transform (baratas, las hace la GPU). */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Etiqueta de campo con un enlace de ayuda «?» al lado. */
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ---------- Piezas compartidas por las vistas ----------
+ * Mismo aspecto en Estado, Actividad, copias y destinos: así la app se lee
+ * como un solo producto. Los componentes solo añaden lo propio. */
+
+/* Contenedor de una vista principal. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+/* Cabecera de una copia o un destino: icono, título y acciones. */
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 4px;
+}
+.page-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-lg);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.page-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.page-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.page-title {
+  min-width: 0;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+/* Cabecera sencilla (Estado, Actividad): título, subtítulo y acciones a la derecha. */
+.page-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 16px;
+}
+.page-top h1 {
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  font-weight: 650;
+  letter-spacing: -0.018em;
+}
+.page-top p {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+/* Ventanas estrechas: las acciones bajan debajo del título. */
+@media (max-width: 1200px) {
+  .page-head {
+    flex-wrap: wrap;
+  }
+  .page-head .page-actions {
+    width: 100%;
+  }
+}
+
+/* Título de una tarjeta o sección. */
+.section-title {
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Cifras destacadas (tarjetas pequeñas con etiqueta y valor). */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  animation: rise var(--dur-slow) var(--ease-out) both;
+}
+.stat:nth-child(2) {
+  animation-delay: 40ms;
+}
+.stat:nth-child(3) {
+  animation-delay: 80ms;
+}
+.stat:nth-child(4) {
+  animation-delay: 120ms;
+}
+.stat-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 18px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-3);
+}
+.stat-value {
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stat-value::first-letter {
+  text-transform: uppercase;
+}
+.stat-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Contadores con icono (Estado y Actividad). */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.kpi {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 12px 16px;
+  color: var(--kpi, var(--text-3));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  animation: rise var(--dur-slow) var(--ease-out) both;
+}
+.kpi > svg {
+  grid-row: span 2;
+}
+.kpi strong {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.kpi span {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Selector segmentado (opciones excluyentes). Cada botón lleva aria-pressed. */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-3);
+  border-radius: var(--radius);
+}
+.segmented.inline {
+  display: inline-grid;
+  grid-auto-columns: auto;
+  align-self: flex-start;
+}
+.segmented > button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+.segmented > button:hover {
+  color: var(--text-1);
+}
+.segmented > button.on {
+  color: var(--text-1);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
+}
+.segmented > button:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Botón con aspecto de enlace. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--accent-text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Acción dentro de un aviso («Aplicar cambios», «Programar ahora»…). */
+.notice-action {
+  margin-left: 6px;
+  padding: 0;
+  font: inherit;
+  font-weight: 650;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.notice-action svg {
+  vertical-align: -1px;
+}
+
+/* Datos pequeños en recuadros («Próxima», «Última»…). */
+.fact-boxes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.fact-boxes > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fact-boxes > div > .faint:first-child {
+  font-size: 12px;
+}
+
+/* Icono de una tarjeta de sección (se ilumina si está activa). */
+.card-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  color: var(--text-3);
+  background: var(--surface-2);
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+.card-icon.on {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+/* Filas «cargando». */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+.skeleton > div {
+  height: 20px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  animation: fade-pulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes fade-pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+
+/* ---------- Primitivas compartidas ---------- */
+
+/* Etiqueta de estado. El tono se elige con .tone-*; siempre con icono y texto. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 0 8px;
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  border-radius: 999px;
+  color: var(--tone, var(--text-2));
+  background: color-mix(in srgb, var(--tone, var(--neutral)) var(--soft), transparent);
+}
+.badge svg {
+  flex: none;
+}
+.badge-sm {
+  gap: 4px;
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 18px;
+}
+.tone-accent {
+  --tone: var(--accent-text);
+}
+.tone-success,
+.tone-ok {
+  --tone: var(--ok);
+}
+.tone-warn {
+  --tone: var(--warn);
+}
+.tone-danger,
+.tone-bad {
+  --tone: var(--bad);
+}
+.tone-info {
+  --tone: var(--info);
+}
+.tone-paused {
+  --tone: var(--paused);
+}
+.tone-muted,
+.tone-neutral {
+  --tone: var(--neutral);
+}
+
+/* Punto de estado (siempre con un texto o aria-label al lado). */
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--tone, var(--neutral));
+}
+
+/* Interruptor (ajustes que se aplican al momento): <input type="checkbox" class="switch">. */
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: transform var(--dur) var(--ease-out);
+}
+.switch:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+.switch:checked::after {
+  transform: translateX(14px);
+}
+.switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Interruptor con su título y una línea de explicación. */
+.switch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.switch-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--fs-sm);
+}
+.switch-row .switch {
+  flex: none;
+  margin-top: 1px;
+}
+input[type="checkbox"]:not(.switch),
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* Cabecera de sección: título (con contador) y acción a la derecha. */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.section-head h2 {
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  font-weight: 600;
+}
+.section-head .count {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+/* Estado vacío: icono de línea, una frase y una acción. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-10) var(--sp-6);
+  text-align: center;
+  color: var(--text-2);
+}
+.empty-state > svg {
+  color: var(--text-3);
+}
+.empty-state p {
+  margin: 0;
+  max-width: 420px;
+}
+.empty-state strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.empty-state > span,
+.empty-state p span {
+  display: block;
+  max-width: 440px;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+/* Barra de progreso: pista fina; con .live, un brillo suave recorre el relleno. */
+.progress {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone, var(--accent));
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.progress.live > div {
+  background-color: var(--tone, var(--accent));
+  background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 0.35) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* Explicación breve con icono delante (debajo de una opción). */
+.icon-note {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.icon-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.icon-note.warn {
+  color: var(--warn);
+}
+
+/* Grupo de opciones (radio). */
+.radios {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.radios.inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+}
+
+.danger-text,
+.err {
+  color: var(--bad);
+}
+.spacer {
+  flex: 1;
+}
+
+/* Tecla (atajos). */
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  color: var(--text-1);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+}
+
+/* Brillo suave en las barras de progreso de copias, subidas, verificaciones
+ * y restauraciones (sin movimiento si el sistema pide reducirlo). */
+.track > .fill:not(.indeterminate) {
+  background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 0.3) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* ---------- Diálogos ----------
+ * Cabecera común: icono en una caja suave, título, una línea y cerrar a la
+ * derecha. (El pie con las acciones a la derecha lo da Modal.) */
+.dlg-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+.dlg-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 1;
+  min-width: 0;
+}
+.dlg-title > div {
+  min-width: 0;
+}
+.dlg-title h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.dlg-title p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+.dlg-title p strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.ticon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.ticon.warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.ticon.danger {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+.ticon.neutral {
+  color: var(--text-2);
+  background: var(--surface-2);
+}
