@@ -14,7 +14,7 @@
   }: { ilustracion: NombreIlustracion; titulo: string; texto?: string; nivel?: 1 | 2; pantallaCompleta?: boolean; children?: Snippet } = $props();
 </script>
 
-<div class="pantalla-error" class:completa={pantallaCompleta} role={nivel === 2 ? "alert" : undefined}>
+<div class="pantalla-error" class:completa={pantallaCompleta} class:fondo-portada={pantallaCompleta} role={nivel === 2 ? "alert" : undefined}>
   <Ilustracion nombre={ilustracion} ancho={176} />
   {#if nivel === 1}<h1>{titulo}</h1>{:else}<h2>{titulo}</h2>{/if}
   {#if texto}<p>{texto}</p>{/if}

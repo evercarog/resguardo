@@ -7,6 +7,47 @@ html {
 :root {
   /* Barra lateral plegada a iconos (docs/diseno.md §5). */
   --sidebar-plegada: 60px;
+  /* Pantallas sin sesión y de error: cuánto acento lleva el resplandor del fondo. */
+  --portada-brillo: 7%;
+  --portada-puntos: 18%;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --portada-brillo: 16%;
+    --portada-puntos: 22%;
+  }
+}
+:root[data-theme="dark"],
+:root[data-theme="black"] {
+  --portada-brillo: 16%;
+  --portada-puntos: 22%;
+}
+
+/* Fondo de las pantallas sin sesión (entrar, primer arranque, invitación) y
+ * de error: un resplandor del acento arriba y una rejilla de puntos que se
+ * desvanece hacia los bordes. Decorativo y quieto: el contenido va en una
+ * tarjeta opaca, así que no cambia ningún contraste. */
+.fondo-portada {
+  position: relative;
+  isolation: isolate;
+  background: var(--bg-subtle);
+}
+.fondo-portada::before,
+.fondo-portada::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.fondo-portada::before {
+  background: radial-gradient(ellipse 60% 42% at 50% 0%, color-mix(in srgb, var(--accent) var(--portada-brillo), transparent), transparent 72%);
+}
+.fondo-portada::after {
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-3) var(--portada-puntos), transparent) 1px, transparent 0);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 28%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 28%, #000 0%, transparent 78%);
 }
 
 /* En la web se puede seleccionar el texto (copiar un nombre, una huella…). */
