@@ -61,7 +61,7 @@
   let marco = 0;
   let ultimoPintado = 0;
   let colores: Record<string, string> = {};
-  let tinta = { linea: "#888", texto: "#888" };
+  let tinta = { linea: "#888", texto: "#888", guia: "#888", brillo: 10, letra: "system-ui, sans-serif" };
   let leidoColores = 0;
 
   const ahoraPintado = () => Date.now() - retraso;
@@ -83,7 +83,15 @@
     if (!caja) return;
     const cs = getComputedStyle(caja);
     for (const s of series) colores[s.color] = cs.getPropertyValue(s.color).trim() || "#2a78d6";
-    tinta = { linea: cs.getPropertyValue("--border").trim() || "#ddd", texto: cs.getPropertyValue("--text-3").trim() || "#888" };
+    // Los tokens comunes de las gráficas (--graf-*): rejilla, ejes y brillo (fuerte en oscuro, apenas en claro).
+    const v = (n: string, d: string) => cs.getPropertyValue(n).trim() || d;
+    tinta = {
+      linea: v("--graf-rejilla", v("--border", "#ddd")),
+      texto: v("--graf-eje", v("--text-3", "#888")),
+      guia: v("--graf-guia", v("--text-3", "#888")),
+      brillo: Number(v("--graf-brillo-px", "10")) || 0,
+      letra: v("--font", "system-ui, sans-serif"),
+    };
     leidoColores = Date.now();
   }
 
@@ -148,9 +156,10 @@
     ctx.strokeStyle = tinta.linea;
     ctx.lineWidth = 1;
     ctx.fillStyle = tinta.texto;
-    ctx.font = "11px system-ui, sans-serif";
+    ctx.font = `500 10.5px ${tinta.letra}`;
     ctx.textBaseline = "bottom";
-    // Rejilla: dos líneas en las grandes, una en las bajas (sin cifras encimadas).
+    // Rejilla fina y discontinua: dos líneas en las grandes, una en las bajas (sin cifras encimadas).
+    ctx.setLineDash([2, 3]);
     for (const f of h >= 90 ? [1 / 3, 2 / 3] : [2 / 3]) {
       const yy = Math.round(h - f * (h - arriba)) + 0.5;
       ctx.beginPath();
@@ -159,6 +168,7 @@
       ctx.stroke();
       ctx.fillText(formato((f * maxSuave) / 1.0), 4, yy - 2);
     }
+    ctx.setLineDash([]);
     // De la más alta a la más baja: las pequeñas quedan delante y se ven.
     const orden = [...series].sort((a, b) => pico(b) - pico(a));
     for (const s of orden) {
@@ -183,7 +193,7 @@
       // La línea, con brillo.
       ctx.save();
       ctx.shadowColor = color;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = tinta.brillo;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.lineJoin = "round";
@@ -195,7 +205,7 @@
     }
     // La cruz al pasar el ratón.
     if (cursor !== null) {
-      ctx.strokeStyle = tinta.texto;
+      ctx.strokeStyle = tinta.guia;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
       ctx.moveTo(cursor + 0.5, 0);
@@ -289,7 +299,7 @@
       onpointerleave={() => (cursor = null)}
     ></canvas>
     {#if enCursor && cursor !== null}
-      <div class="tip" style:left={`${Math.min(cursor + 10, Math.max(0, ancho - 150))}px`} aria-hidden="true">
+      <div class="graf-tip tip" style:left={`${Math.min(cursor + 10, Math.max(0, ancho - 150))}px`} aria-hidden="true">
         {#each enCursor as { s, v } (s.id)}
           <div><span class="muestra" style:background={`var(${s.color})`}></span>{s.nombre}: <b class="num">{v === null ? "—" : formato(v)}</b></div>
         {/each}
@@ -351,18 +361,10 @@
     display: block;
     touch-action: none;
   }
+  /* El globo es .graf-tip (ui/estilos.css), el mismo de todas las gráficas. */
   .tip {
-    position: absolute;
     top: 6px;
-    pointer-events: none;
-    padding: 6px 8px;
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow-md);
-    font-size: var(--fs-xs);
     color: var(--text-2);
-    white-space: nowrap;
   }
   .tip div {
     display: flex;

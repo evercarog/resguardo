@@ -143,7 +143,7 @@
         {/if}
       </svg>
       {#if dato}
-        <div class="tip num" style:left="{Math.min(Math.max(X(dato.t), 70), W - 70)}px" aria-hidden="true">{dato.texto}</div>
+        <div class="graf-tip tip num" style:left="{Math.min(Math.max(X(dato.t), 70), W - 70)}px" aria-hidden="true">{dato.texto}</div>
       {/if}
     {/if}
   </div>
@@ -183,57 +183,41 @@
     outline-offset: 2px;
   }
   .base {
-    stroke: var(--border-strong);
+    stroke: var(--graf-base);
   }
   .capacidad {
-    stroke: var(--text-3);
+    stroke: var(--graf-eje);
     stroke-dasharray: 2 3;
   }
   .hoy {
-    stroke: var(--border-strong);
+    stroke: var(--graf-rejilla);
+    stroke-dasharray: 2 3;
   }
   .guia {
-    stroke: var(--text-3);
+    stroke: var(--graf-guia);
     stroke-dasharray: 2 2;
   }
   .linea {
     fill: none;
-    stroke: var(--text-2);
+    stroke: var(--graf-linea);
     stroke-width: 1.5;
     stroke-linejoin: round;
+    /* En oscuro, un brillo sobrio bajo la línea (como un gráfico en vivo). */
+    filter: var(--graf-brillo);
   }
   .prevision {
     fill: none;
-    stroke: var(--text-2);
+    stroke: var(--graf-linea);
     stroke-width: 1.5;
     stroke-dasharray: 5 4;
   }
   .area-arriba {
-    stop-color: var(--text-3);
-    stop-opacity: 0.2;
+    stop-color: var(--graf-area);
+    stop-opacity: var(--graf-area-alfa);
   }
   .area-abajo {
-    stop-color: var(--text-3);
+    stop-color: var(--graf-area);
     stop-opacity: 0.02;
-  }
-  /* En oscuro, un brillo sobrio bajo la línea (como un gráfico en vivo). */
-  :global(:root[data-theme="dark"]) .area-arriba,
-  :global(:root[data-theme="black"]) .area-arriba {
-    stop-color: var(--accent);
-    stop-opacity: 0.28;
-  }
-  :global(:root[data-theme="dark"]) .linea,
-  :global(:root[data-theme="black"]) .linea {
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 45%, transparent));
-  }
-  @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .area-arriba {
-      stop-color: var(--accent);
-      stop-opacity: 0.28;
-    }
-    :global(:root:not([data-theme="light"])) .linea {
-      filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 45%, transparent));
-    }
   }
   .lleno {
     fill: var(--surface);
@@ -249,22 +233,16 @@
   .rotulo {
     font-size: 10.5px;
     font-variant-numeric: tabular-nums;
-    fill: var(--text-3);
+    fill: var(--graf-eje);
   }
   .rotulo {
     fill: var(--text-2);
   }
+  /* El globo es .graf-tip (ui/estilos.css); aquí solo dónde va. */
   .tip {
-    position: absolute;
     top: -6px;
-    padding: 3px 8px;
-    font-size: var(--fs-xs);
-    color: var(--bg);
-    white-space: nowrap;
-    background: var(--text-1);
-    border-radius: 6px;
+    color: var(--text-1);
     translate: -50% -100%;
-    pointer-events: none;
   }
   .datos {
     margin-top: 6px;
