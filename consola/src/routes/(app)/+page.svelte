@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Inicio: el último cliente abierto, el único que hay o la lista.
+  // Inicio: con más de un cliente, «Todos los clientes»; con uno, ese; sin ninguno, la lista.
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { app, cargarClientes } from "$lib/estado.svelte";
@@ -7,14 +7,8 @@
 
   onMount(async () => {
     await cargarClientes();
-    let ultimo: string | null = null;
-    try {
-      ultimo = localStorage.getItem("resguardo.cliente");
-    } catch {
-      /* sin almacenamiento */
-    }
-    const destino = app.clientes.find((c) => c.id === ultimo) ?? (app.clientes.length === 1 ? app.clientes[0] : null);
-    await goto(destino ? `/c/${destino.id}` : "/clientes", { replaceState: true });
+    const n = app.clientes.length;
+    await goto(n > 1 ? "/todos" : n === 1 ? `/c/${app.clientes[0].id}` : "/clientes", { replaceState: true });
   });
 </script>
 
