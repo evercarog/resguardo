@@ -902,3 +902,51 @@ export interface MisNotif {
   dia_semanal: number;
   clientes: { id: string; nombre: string; rol: Rol; correo: boolean; preferencias: PrefsNotif }[];
 }
+
+// --- v1.3x: observaciones y comentarios (lib/notas.svelte.ts) -----------------
+
+/** De qué es una nota. `repositorio` y `copia`: «<equipo>/<id>»; `destino`: su id; `cliente`: el id del cliente. */
+export type TipoNota = "cliente" | "equipo" | "repositorio" | "copia" | "destino";
+
+export interface IndiceNota {
+  tipo: TipoNota;
+  objeto: string;
+  /** La primera línea de la observación, sin marcas (o null si no tiene). */
+  titulo: string | null;
+  observacion: boolean;
+  comentarios: number;
+  actualizada: string;
+}
+
+export interface ObservacionNota {
+  texto: string;
+  actualizada: string;
+  /** Nombre de quien la cambió por última vez. */
+  por: string;
+}
+
+export interface ComentarioNota {
+  id: string;
+  texto: string;
+  autor: { id: string; nombre: string };
+  creado: string;
+  editado: string | null;
+  /** Lo puede cambiar quien mira (su autor, en sus 15 minutos). */
+  editable: boolean;
+  /** Lo puede borrar (su autor en sus 15 minutos, o un propietario). */
+  borrable: boolean;
+}
+
+export interface NotasObjeto {
+  tipo: TipoNota;
+  objeto: string;
+  observacion: ObservacionNota | null;
+  comentarios: ComentarioNota[];
+  minutos_edicion: number;
+}
+
+/** Para el paquete de exportación. */
+export interface NotasExportadas {
+  observaciones: { tipo: TipoNota; objeto: string; texto: string; actualizada: string; por: string }[];
+  comentarios: { id: string; tipo: TipoNota; objeto: string; texto: string; autor: string; creado: string; editado: string | null }[];
+}
