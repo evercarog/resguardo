@@ -53,8 +53,12 @@ let reintento: ReturnType<typeof setTimeout> | null = null;
 let vigia: ReturnType<typeof setInterval> | null = null;
 let pendientes: Cambio[] = [];
 let juntando: ReturnType<typeof setTimeout> | null = null;
-/** ¿Ya hubo un saludo en este cliente? (el primero no necesita refrescar nada). */
+/** ¿Ya hubo un saludo en este cliente? */
 let saludado = false;
+/** Cuándo se abrió este cliente (el primer saludo, si llega enseguida, no necesita refrescar nada). */
+let abierto = 0;
+/** Lo que tarda como mucho el primer saludo para no volver a pedir lo que la pantalla acaba de cargar. */
+const RECIEN_CARGADO = 3_000;
 
 /** Oye los cambios del cliente abierto (ya juntados). Devuelve cómo dejar de oír. */
 export function alCambiar(f: (cs: Cambio[]) => void): () => void {
@@ -98,8 +102,9 @@ function alMensaje(n: number, datos: unknown) {
   if (m.t === "hola") {
     vivo.conectado = true;
     intentos = 0;
-    // Tras un corte: lo que pasó mientras tanto no llegó.
-    if (saludado) recibir({ t: "resync" });
+    // Tras un corte (o si el canal se abrió más tarde, p. ej. con la pestaña oculta al
+    // cargar): lo que pasó mientras tanto no llegó.
+    if (saludado || Date.now() - abierto > RECIEN_CARGADO) recibir({ t: "resync" });
     saludado = true;
   } else if (m.t && TIPOS.has(m.t)) {
     recibir({ t: m.t as TipoCambio, equipo: m.equipo ?? null, orden: m.orden, estado: m.estado });
@@ -174,6 +179,7 @@ export function conectarVivo(cliente: string): () => void {
   vivo.cliente = cliente;
   intentos = 0;
   saludado = false;
+  abierto = Date.now();
   pendientes = [];
   abrir(n);
   const alVolver = () => {

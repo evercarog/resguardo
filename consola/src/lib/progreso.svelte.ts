@@ -138,15 +138,20 @@ async function preguntar(cliente: string, n: number, siempre = false) {
   if (n === vuelta) temporizador = setTimeout(() => void preguntar(cliente, n), siguiente);
 }
 
-/** Algo terminó: el resumen y los informes, ya (y sin canal, otra vez en unos segundos). */
+/**
+ * Algo terminó: el resumen y los informes, ya y otra vez en unos segundos. Con
+ * el canal en vivo no hace falta: el layout del cliente los pide al oír que
+ * terminó y otra vez con el informe del final.
+ */
 function refrescarTrasTerminar(cliente: string) {
+  if (vivo.conectado) return;
   const ya = () => {
     if (enMarcha.cliente !== cliente) return;
     void cargarCliente(cliente, { silencioso: true });
     void recargarInformes(cliente);
   };
   ya();
-  if (!vivo.conectado) for (const ms of TRAS_TERMINAR) setTimeout(ya, ms);
+  for (const ms of TRAS_TERMINAR) setTimeout(ya, ms);
 }
 
 /** Pregunta ya (lo pide el canal en vivo). */
