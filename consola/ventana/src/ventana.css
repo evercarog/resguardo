@@ -1,0 +1,73 @@
+/* La ventana del agente: una columna estrecha (420–520 px), con el sistema de
+ * diseño común ($ui/estilos.css). Sin fuentes propias: la del sistema. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+#app {
+  height: 100%;
+}
+input,
+textarea,
+select {
+  user-select: text;
+}
+.v-pila {
+  display: grid;
+  gap: var(--sp-3);
+}
+.v-fila {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.v-titulo {
+  margin: 0;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.v-sub {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-2);
+}
+.v-mini {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+}
+.v-tarjeta {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4);
+}
+.v-cortar {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-error {
+  color: var(--bad);
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+.v-ok {
+  color: var(--ok);
+  font-size: var(--fs-sm);
+  margin: 0;
+}

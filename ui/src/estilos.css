@@ -127,6 +127,13 @@
   --shadow-md: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.06);
   --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.18);
   --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+
+  /* Gráficas en vivo (GraficaOndas): lectura, escritura/subida y archivos por
+   * segundo. Azul, naranja y aguamarina: validados para daltonismo en claro y
+   * oscuro (docs/diseno.md, «Gráficas en vivo»). */
+  --onda-1: #2a78d6;
+  --onda-2: #eb6834;
+  --onda-3: #1baf7a;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -168,6 +175,10 @@
     --shadow-sm: none;
     --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.5);
     --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+
+    --onda-1: #3987e5;
+    --onda-2: #d95926;
+    --onda-3: #199e70;
   }
 }
 :root[data-theme="dark"],
@@ -204,6 +215,10 @@
   --shadow-sm: none;
   --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.5);
   --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+
+  --onda-1: #3987e5;
+  --onda-2: #d95926;
+  --onda-3: #199e70;
 }
 
 /* Negro: oscuro con fondos negros puros (pantallas OLED, salas oscuras). */

@@ -91,11 +91,18 @@ pub fn main() -> i32 {
     if has("--tray") {
         return report(tray::run());
     }
+    // La ventana (docs/agente-ventana.md): la abre la bandeja, como el usuario.
+    if has("--ventana") {
+        return report(crate::ventana::run());
+    }
     // En primer plano, sin servicio (pruebas o Linux sin systemd): el canal con
     // el servidor y una vuelta del agente cada `--cada` segundos (300 por defecto).
     if has("--primer-plano") {
         let cada = value("--cada").and_then(|s| s.parse::<u64>().ok()).unwrap_or(300).max(10);
         crate::servidor_v2::hilo();
+        crate::ipc_local::hilo();
+        #[cfg(windows)]
+        hilo_bandeja();
         // En pruebas, el Servidor de copias corre dentro de este proceso.
         if crate::agent::test_mode() && crate::server::load().enabled {
             std::thread::spawn(crate::server::run_forever);
@@ -129,35 +136,103 @@ fn report(r: Result<(), String>) -> i32 {
     }
 }
 
+/// La bandeja al día ya (tras un cambio desde la ventana).
+pub fn refrescar_bandeja() {
+    write_tray_status();
+}
+
 /// Escribe lo que muestra la bandeja (`bandeja::ARCHIVO`). Lo hace el
 /// servicio, que puede leer el estado cifrado; la bandeja corre como el
 /// usuario y solo lee este archivo, sin rutas ni mensajes del agente.
-fn write_tray_status() {
+fn write_tray_status() -> crate::bandeja::EstadoBandeja {
     // La vuelta del servicio y el hilo de la bandeja no escriben a la vez (mismo archivo temporal).
     static ESCRIBIENDO: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _turno = ESCRIBIENDO.lock().unwrap_or_else(|e| e.into_inner());
     let fase5 = crate::endpoint::load();
     let vinculo = crate::servidor_v2::cargar();
-    let (config, estado) = (crate::agent::load_config(), crate::agent::load_state());
+    let (config, estado, tareas) = (crate::agent::load_config(), crate::agent::load_state(), crate::tasks::load_state());
     let fuentes = crate::bandeja::Fuentes {
         fase5: fase5.as_ref(),
         vinculo: vinculo.as_ref(),
         config: &config,
         estado: &estado,
+        tareas: &tareas,
         solicitudes: crate::agent::requests_dir().is_dir(),
     };
-    let _ = crate::agent::write_json(crate::bandeja::ARCHIVO, &crate::bandeja::componer(&fuentes, &chrono::Local::now().fixed_offset()));
+    let e = crate::bandeja::componer(&fuentes, &chrono::Local::now().fixed_offset());
+    let _ = crate::agent::write_json(crate::bandeja::ARCHIVO, &e);
+    e
 }
 
 /// Mientras corre el servicio, la bandeja al día cada medio minuto (también
 /// durante una copia, para el progreso, y con la fecha que le dice que el
-/// servicio sigue vivo).
+/// servicio sigue vivo). Con algo en marcha y la ventana o los avisos de
+/// «empezó» encendidos, cada 2 s, con la serie del ritmo para la ventana
+/// (docs/agente-ventana.md §7); con todo apagado, como siempre.
 #[cfg(windows)]
 fn hilo_bandeja() {
-    std::thread::spawn(|| loop {
-        write_tray_status();
-        std::thread::sleep(Duration::from_secs(30));
+    std::thread::spawn(|| {
+        let mut ventana = Ventana::default();
+        loop {
+            let e = write_tray_status();
+            let rapido = crate::escritorio::muestreo_rapido(e.escritorio, !e.actividades.is_empty());
+            ventana.escribir(&e);
+            if rapido {
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+            if !crate::escritorio::muestreo_rapido(e.escritorio, true) {
+                // Ventana y avisos de «empezó» apagados: como siempre.
+                std::thread::sleep(Duration::from_secs(30));
+                continue;
+            }
+            // Si no, entre vuelta y vuelta tranquila se mira cada 2 s si empezó algo
+            // (leer los estados pequeños que ya escriben los procesos del agente).
+            for _ in 0..15 {
+                std::thread::sleep(Duration::from_secs(2));
+                // Con las mismas reglas de «viva» (un estado que dejó un proceso cortado no cuenta).
+                let (config, estado, tareas) = (crate::agent::load_config(), crate::agent::load_state(), crate::tasks::load_state());
+                if !crate::escritorio::actividades_de(&config, &estado, &tareas).is_empty() {
+                    break;
+                }
+            }
+        }
     });
+}
+
+/// `gestionado-ventana.json`: la serie del ritmo y el historial pequeño. Solo
+/// si la ventana no está apagada (si lo está, se borra y no se muestrea nada).
+#[derive(Default)]
+struct Ventana {
+    serie: crate::escritorio::Serie,
+    /// El historial se lee como mucho cada minuto (o al terminar una copia).
+    historial: Option<(std::time::Instant, usize, Vec<crate::escritorio::Dia>)>,
+}
+
+impl Ventana {
+    fn escribir(&mut self, e: &crate::bandeja::EstadoBandeja) {
+        let archivo = crate::agent::agent_dir().join(crate::escritorio::ARCHIVO_VENTANA);
+        if e.escritorio.ventana == crate::escritorio::Ventana::Off {
+            self.serie = Default::default();
+            let _ = std::fs::remove_file(archivo);
+            return;
+        }
+        let ahora = chrono::Local::now();
+        self.serie.muestra(ahora.timestamp(), &e.actividades);
+        let hechas = e.hechas.len() + e.hechas.iter().map(|h| h.cuando.len()).sum::<usize>();
+        let viejo = self.historial.as_ref().is_none_or(|(t, n, _)| t.elapsed() >= Duration::from_secs(60) || *n != hechas);
+        if viejo {
+            let dias = crate::escritorio::historial(&crate::history::read(&crate::history::agent_file()), ahora.date_naive());
+            self.historial = Some((std::time::Instant::now(), hechas, dias));
+        }
+        let estado = crate::escritorio::EstadoVentana {
+            v: 1,
+            escrito: Some(ahora.to_rfc3339()),
+            serie: self.serie.puntos.iter().cloned().collect(),
+            historial: self.historial.as_ref().map(|h| h.2.clone()).unwrap_or_default(),
+        };
+        let _ = crate::agent::write_json(crate::escritorio::ARCHIVO_VENTANA, &estado);
+    }
 }
 
 /// Una vuelta: lo firmado por la consola y, después, el ciclo del agente de
@@ -281,6 +356,8 @@ mod service {
         // Agente v2: el canal con Resguardo Server (si el equipo está vinculado a uno).
         crate::servidor_v2::hilo();
         hilo_bandeja();
+        // La ventana del equipo: ajustes y modo local con la clave (docs/agente-ventana.md §4).
+        crate::ipc_local::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         loop {
@@ -391,6 +468,8 @@ mod service {
             libc::signal(libc::SIGINT, al_recibir_senal as *const () as libc::sighandler_t);
         }
         crate::servidor_v2::hilo();
+        // El canal local con la clave de administración (docs/agente-ventana.md §4).
+        crate::ipc_local::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         'vueltas: loop {
@@ -611,11 +690,19 @@ mod tray {
         Ok(())
     }
 
+    /// Abre la ventana (otro proceso, que solo vive mientras está abierta).
+    fn abrir_ventana() {
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe).arg("--ventana").spawn();
+        }
+    }
+
     /// Una sola bandeja por sesión (la del inicio de sesión y la que abre el instalador).
     fn single_instance() -> bool {
         use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
         use windows_sys::Win32::System::Threading::CreateMutexW;
-        let name = wide("Local\\ResguardoAgenteBandeja");
+        // En pruebas (carpeta de pruebas, solo en desarrollo), otro: no choca con la del agente instalado.
+        let name = wide(if crate::agent::test_mode() { "Local\\ResguardoAgenteBandejaPruebas" } else { "Local\\ResguardoAgenteBandeja" });
         // El mutex vive mientras viva el proceso (no se cierra a propósito).
         unsafe {
             let h = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
@@ -638,11 +725,21 @@ mod tray {
         if let Some(i) = icono(variante, lado) {
             builder = builder.with_icon(i);
         }
+        // Con la ventana disponible, pulsar el icono la abre (el menú, con el botón derecho).
+        let disponible = |e: &EstadoBandeja| e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado;
+        let mut con_ventana = disponible(&estado);
+        builder = builder.with_menu_on_left_click(!con_ventana);
         let tray = builder.build().map_err(|e| format!("No se pudo crear el icono de la bandeja: {e}"))?;
         // La consola puede ocultarlo.
         let mut visible = estado.show;
         let _ = tray.set_visible(visible);
-        // Bucle de mensajes de Windows (lo necesita el icono) y, cada pocos segundos, el estado al día.
+        // Avisos nativos (WinRT) en su hilo; los que Windows no admita, como globo.
+        let avisador = crate::ventana::Avisador::nuevo();
+        // Las tareas ya en marcha al arrancar no abren la ventana ni avisan.
+        let mut vistas = std::collections::HashSet::new();
+        crate::escritorio::abrir_al_empezar(&mut vistas, &estado.actividades, estado.escritorio.ventana, true);
+        // Bucle de mensajes de Windows (lo necesita el icono) y, cada pocos segundos, el estado al día
+        // (cada segundo mientras algo está en marcha, para avisar y abrir la ventana enseguida).
         let mut ultima_lectura = std::time::Instant::now();
         loop {
             // SAFETY: bucle de mensajes estándar con un MSG propio.
@@ -664,17 +761,46 @@ mod tray {
                     },
                     // Hasta el próximo inicio de sesión (si se muestra o no lo decide la consola).
                     Some(Accion::Ocultar) => return Ok(()),
+                    Some(Accion::Ventana) => abrir_ventana(),
                     None => {}
                 }
             }
-            if ultima_lectura.elapsed() >= Duration::from_secs(5) {
+            while let Ok(evento) = tray_icon::TrayIconEvent::receiver().try_recv() {
+                if let tray_icon::TrayIconEvent::Click { button: tray_icon::MouseButton::Left, button_state: tray_icon::MouseButtonState::Up, .. } = evento {
+                    if con_ventana {
+                        abrir_ventana();
+                    }
+                }
+            }
+            // Pulsar un aviso abre la ventana; los que no salieron como aviso nativo, como globo.
+            while avisador.pulsados.try_recv().is_ok() {
+                if con_ventana {
+                    abrir_ventana();
+                }
+            }
+            while let Ok(a) = avisador.globos.try_recv() {
+                if visible {
+                    globo(&tray, &a.titulo, &a.texto, a.error);
+                }
+            }
+            let cada = if estado.actividades.is_empty() { 5 } else { 1 };
+            if ultima_lectura.elapsed() >= Duration::from_secs(cada) {
                 ultima_lectura = std::time::Instant::now();
                 let nuevo = leer();
                 let t = ahora();
-                if nuevo.toasts && visible {
-                    for a in bandeja::avisos(&estado, &nuevo) {
-                        globo(&tray, &a.titulo, &a.texto, a.error);
+                // Fallar, recuperarse, empezar y terminar, según `escritorio.avisos` (la bandeja y el
+                // servicio son el mismo programa: siempre se entienden).
+                if visible {
+                    for a in crate::escritorio::avisos(&estado.actividades, &estado.hechas, &nuevo.actividades, &nuevo.hechas, nuevo.escritorio.avisos, false) {
+                        avisador.avisar(a);
                     }
+                }
+                if crate::escritorio::abrir_al_empezar(&mut vistas, &nuevo.actividades, nuevo.escritorio.ventana, false) && !elevado {
+                    abrir_ventana();
+                }
+                if disponible(&nuevo) != con_ventana {
+                    con_ventana = disponible(&nuevo);
+                    tray.set_show_menu_on_left_click(!con_ventana);
                 }
                 let v = bandeja::variante(&nuevo, &t);
                 if v != variante {

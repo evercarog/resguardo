@@ -225,6 +225,41 @@ pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(data.to_vec())
 }
 
+/// Lo que ha leído y escrito un proceso desde que empezó, en bytes:
+/// `(leído, escrito)`. En Windows, «escrito» suma la escritura en disco y la
+/// «otra» E/S (la red: lo que sube a un servidor o a la nube); en Linux,
+/// `rchar` y `wchar` de `/proc/<pid>/io` (también cuentan la red). Para las
+/// gráficas de la ventana y de la consola (lectura y subida reales).
+pub fn io_proceso(pid: u32) -> Option<(u64, u64)> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{GetProcessIoCounters, OpenProcess, IO_COUNTERS, PROCESS_QUERY_LIMITED_INFORMATION};
+        // SAFETY: handle propio que se cierra; estructura de salida local.
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                return None;
+            }
+            let mut c: IO_COUNTERS = std::mem::zeroed();
+            let ok = GetProcessIoCounters(h, &mut c) != 0;
+            CloseHandle(h);
+            ok.then_some((c.ReadTransferCount, c.WriteTransferCount + c.OtherTransferCount))
+        }
+    }
+    #[cfg(unix)]
+    {
+        let t = std::fs::read_to_string(format!("/proc/{pid}/io")).ok()?;
+        let campo = |k: &str| t.lines().find_map(|l| l.strip_prefix(k)).and_then(|v| v.trim().parse::<u64>().ok());
+        Some((campo("rchar:")?, campo("wchar:")?))
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// ¿El proceso tiene permisos de administrador?
 pub fn is_elevated() -> bool {
     #[cfg(windows)]

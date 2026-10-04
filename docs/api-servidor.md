@@ -355,6 +355,8 @@ En un destino `local`, `donde` es `null` (sería una ruta del equipo). `destinos
 
 v1.35 (varias consolas, [consolas-multiples.md](consolas-multiples.md)): el resumen lleva también `consolas: [{ id, nombre, url, identidad, sal_cliente | null, ultimo_contacto | null (redondeado a 15 min), desde | null, esta }]` (las consolas que gestionan el equipo; `esta: true` la que recibe el resumen; sin credenciales), `cambio_config: { tipo, cuando, consola: { nombre, url, identidad } } | null` (el último cambio y desde qué consola llegó: si no es esta, la consola enseña «Cambiado desde otra consola») y `admite` con `"consolas_multiples"`.
 
+v1.3x: `admite` incluye `"escritorio"` y el resumen lleva `escritorio: { ventana, avisos }` (lo que tiene el equipo, también deducido de `bandeja`) y `escritorio_cambiado_en_equipo` (RFC 3339 o `null`): la consola enseña «En el equipo» sin descifrar la configuración.
+
 v1.28: el resumen lleva `admite: ["retencion_plazos", "verificacion_auto", "almacen_propio"]` (lo nuevo que entiende el agente: la consola no ofrece lo que no) y, por repositorio, `repositorios[].retencion_regla` (la `Retencion` tal cual, §5; `retencion` sigue siendo su texto) y `repositorios[].verificacion_auto: { cada_dias, porcentaje, proxima, todo_leido } | null` (la verificación automática, §6; `todo_leido`: cuándo terminó la última vuelta completa de la rotativa).
 
 En un equipo que guarda copias, `guarda_copias.retenciones` (v1.22) es la retención que aplica ese almacén: `[{ usuario, repo, retencion: Retencion, texto, horario: { dias, hora }, horario_texto, verificar, clave: "ok" | "pendiente" | "sin_probar", ultima, resultado: "ok" | "fallo" | null, mensaje, versiones, proxima }]`. Nunca lleva la clave (§5, `retencion_almacen`).
@@ -531,12 +533,15 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
   "repositorios": [{ "id", "nombre", "destino": "<id de destino>", "retencion": Retencion | null }],
   "destinos": [{ "id", "nombre", "tipo", "donde" }],
   "verificacion": null, "bandeja": null,
-  "verificaciones": { "<id del repositorio>": { "cada_dias": 7, "porcentaje": 10 } }
+  "verificaciones": { "<id del repositorio>": { "cada_dias": 7, "porcentaje": 10 } },
+  "escritorio": { "ventana": "off" | "siempre_disponible" | "al_trabajar", "avisos": "off" | "errores" | "todo" },
+  "cambiado_en_equipo": "<RFC 3339>"
 }
 ```
 
 - La consola manda en `config` solo lo que decide: `copias` (y `verificaciones`, `bandeja`). `repositorios` y `destinos` los escribe el equipo a partir de `crear_repositorio`; los que mande la consola se ignoran. `verificacion` (global) no lo usa nadie: el agente lo guarda tal cual.
 - **Verificación automática** (v1.28, `verificaciones`): por repositorio, cada `cada_dias` días (1–31) `restic check` leyendo un `porcentaje` de los datos (0–100) **rotativo**: el agente lo parte en `round(100/porcentaje)` partes (de 2 a 52) y cada vez lee la siguiente (`--read-data-subset n/t`), así en esas vueltas lee todo; 0 %: solo la estructura; 100 %: todo cada vez. La primera, a las 03:00 siguientes; después, `cada_dias` días desde el comienzo de la anterior (también si fue un «Verificar ahora»). Va con las copias del agente: un repositorio sin copias activas no se verifica solo (se pone cuando la tenga). Sin el campo (consola anterior) no se toca la que haya; con él, la de un repositorio que no está se quita, y la que no cambia no vuelve a empezar. Un repositorio que no es del equipo o es importado, o `cada_dias` fuera de 1–31 → la configuración entera `fallida`. Agentes anteriores ignoran el campo: la consola solo lo manda si el resumen trae `admite: ["verificacion_auto", …]`.
+- **Ventana y avisos en el equipo** (v1.3x, `escritorio`; docs/agente-ventana.md): `ventana` (`off`: sin ventana; `siempre_disponible`: «Abrir Resguardo» en el icono; `al_trabajar`: además se abre sola al empezar una copia, restauración, verificación o subida) y `avisos` (`off`; `errores`: al fallar y al recuperarse; `todo`: también al empezar y al terminar). Sin el campo (consola anterior) se queda el que haya; sin ninguno, se deduce de `bandeja` (`avisos` → `errores` u `off`; `visible` → `siempre_disponible` u `off`). La consola manda también `bandeja.avisos = avisos != "off"` para un agente anterior, y solo manda `escritorio` si el resumen trae `admite: ["escritorio", …]`. Un valor desconocido o un campo de más → la configuración entera `fallida`. **Desde el equipo**: con la clave de administración (la ventana, por un canal local autenticado), el equipo cambia `escritorio`, pone `cambiado_en_equipo` y sube la configuración como siempre; una `config` de la consola lo quita. En **modo local** (sin consola) el equipo se configura entero así; al vincularlo con la misma clave, la consola lo adopta con todo (§3.5, camino 3).
 - Cada copia tiene que usar un repositorio que el equipo ya tenga. `dias`: 1 = lunes … 7 = domingo.
 - **Horario con reglas** (v1.24, agente ≥ 0.7.9): `horario.reglas` (opcional, hasta 20) se suman; toca cuando toca cualquiera:
   - `{ "tipo": "horas", "dias": [1, 2, 3, 4, 5], "horas": ["08:00", "13:00"] }`: a estas horas (hasta 48), esos días.
@@ -597,10 +602,12 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
   "repo": "<id>", "copia": "<id de la copia>" | null, "nombre": "<nombre de la copia>" | null,
   "fase": "antes_de_copiar" | "preparando" | "escaneando" | "subiendo" | "terminando" | "en_marcha",
   "etapa": "<qué hace, en palabras>" | null, "porcentaje": 0.42 | null,
-  "archivos", "archivos_total", "bytes", "bytes_total", "velocidad": "<bytes/s>", "quedan_s",
+  "archivos", "archivos_total", "bytes", "bytes_total", "velocidad": "<bytes/s>",
+  "lectura": "<bytes/s>", "subida": "<bytes/s>", "archivos_s", "quedan_s",
   "versiones", "versiones_total", "empezo": "<RFC 3339>", "actualizado": "<RFC 3339>" }
 ```
 
+- v1.3x (copias): `lectura` (lo que restic lee del disco) y `subida` (lo que escribe o sube al destino), en bytes/s medidos en el proceso de restic (E/S del proceso; en Windows la red cuenta como «otra» E/S), y `archivos_s` (archivos por segundo), suavizados. Para las gráficas en vivo de la consola (`GraficaOndas`); un agente anterior no los manda y un servidor anterior los quita (la consola enseña la barra de siempre).
 - Copias: `antes_de_copiar` mientras corren los ganchos, `preparando` sin cifras de restic todavía, `escaneando` mientras restic aún cuenta (copia a la vez, sin `quedan_s`), `subiendo` con total y `quedan_s`, `terminando` al guardar la versión. Las demás tareas: `preparando` o `en_marcha`, con `etapa`. `versiones*` solo en `copia_externa`.
 - Todos los campos salvo `tipo`, `repo` y `fase` pueden faltar o ser `null`. El servidor deja solo estos campos (textos cortos, números enteros no negativos, `porcentaje` entre 0 y 1), como mucho 8 tareas y 16 KiB por mensaje.
 
@@ -1080,3 +1087,8 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
   - **`POST /api/agente/recibir`**: `motivo` (opcional). **`config`** (WebSocket y `POST /api/agente/config`): `etiqueta` y `espera_min_horas` (opcionales; el servidor los guarda si el equipo está confirmado y cambiaron).
   - **Agente**: el vínculo pasa a ser una lista (`otras` en `servidor.bin`; uno anterior es una lista de uno, sin migrar nada), un canal por consola, `seq`, `K_cfg`, bloqueos y respaldo por consola, `nonce` común; CLI `consolas`.
   - **Consola**: «Conectar también a otra consola…» y «Dar un código de conexión…» (cliente → Servidor), «Gestionarlo también desde aquí» (Clientes → Recibir un cliente), «También lo gestiona … · Quitar» y «Cambiado desde otra consola» en cada equipo, y «Dejar de gestionar desde aquí» en vez de «Desvincular» cuando hay otras.
+- v1.3x (pendiente de numerar al unir: la ventana del agente, docs/agente-ventana.md). Todo opcional y compatible:
+  - **Configuración** (§6): `escritorio { ventana, avisos }` y `cambiado_en_equipo` (lo pone el equipo al cambiar algo con la clave en su ventana). Sin el campo, el agente conserva el que tuviera.
+  - **Resumen** (§4): `admite` con `"escritorio"`, `escritorio` y `escritorio_cambiado_en_equipo`.
+  - **Progreso** (§8): `lectura`, `subida` y `archivos_s` en las copias. El servidor los deja pasar (son números como los demás); uno anterior los quita.
+  - El servidor no cambia en nada más. Lo nuevo en el equipo (la ventana, los avisos, el canal local con la clave y el modo sin consola) no pasa por el servidor.

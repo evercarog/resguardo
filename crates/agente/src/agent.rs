@@ -513,6 +513,15 @@ pub struct RunningCopy {
     /// Ritmo reciente de restic (bytes leídos por segundo, suavizado).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes_per_s: Option<u64>,
+    /// Lectura real del disco de restic (bytes/s, suavizado), si el sistema la da.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_bps: Option<u64>,
+    /// Lo que restic escribe o sube al destino (bytes/s, suavizado).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_bps: Option<u64>,
+    /// Archivos por segundo (suavizado).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_per_s: Option<u64>,
 }
 
 /// Ritmo suavizado: el nuevo tramo pesa un 40 % (sin saltos bruscos en la consola).
@@ -1838,8 +1847,13 @@ pub fn run() -> i32 {
                 updated: None,
                 phase: None,
                 bytes_per_s: None,
+                read_bps: None,
+                upload_bps: None,
+                files_per_s: None,
             });
             let _ = write_json("state.json", &state);
+            // Lo que restic ha leído y escrito (para la lectura y la subida reales).
+            let mut io_antes: Option<(u32, (u64, u64))> = None;
             // La web muestra «Copiando…» mientras dura.
             crate::web::report_started(&config, &secrets, &mut state);
             let mut last_write = std::time::Instant::now();
@@ -1859,10 +1873,20 @@ pub fn run() -> i32 {
                 let seconds = last_write.elapsed().as_secs_f64();
                 last_write = std::time::Instant::now();
                 let now = Local::now().to_rfc3339();
+                let io = restic::pid_en_marcha().and_then(|pid| crate::platform::io_proceso(pid).map(|x| (pid, x)));
                 if let Some(r) = state.running.as_mut() {
                     let bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
+                    let files_done = v["files_done"].as_u64().unwrap_or(0);
                     if r.updated.is_some() && r.phase.is_none() {
                         r.bytes_per_s = smoothed_rate(r.bytes_per_s, bytes_done.saturating_sub(r.bytes_done), seconds);
+                        r.files_per_s = smoothed_rate(r.files_per_s, files_done.saturating_sub(r.files_done), seconds);
+                        // Del mismo restic que la muestra anterior.
+                        if let (Some((p0, (l0, e0))), Some((p1, (l1, e1)))) = (io_antes, io) {
+                            if p0 == p1 {
+                                r.read_bps = smoothed_rate(r.read_bps, l1.saturating_sub(l0), seconds);
+                                r.upload_bps = smoothed_rate(r.upload_bps, e1.saturating_sub(e0), seconds);
+                            }
+                        }
                     }
                     r.phase = None;
                     r.percent = v["percent_done"].as_f64();
@@ -1873,6 +1897,7 @@ pub fn run() -> i32 {
                     r.seconds_remaining = v["seconds_remaining"].as_u64();
                     r.updated = Some(now.clone());
                 }
+                io_antes = io;
                 // El agente sigue vivo aunque la copia sea larga.
                 state.last_tick = Some(now);
                 let _ = write_json("state.json", &state);

@@ -171,6 +171,15 @@ struct Memoria {
     ocupa: Option<(String, Value)>,
 }
 
+/// Lo mismo que una sesión, desde la ventana del equipo en modo local
+/// (ipc_local, con la clave de administración): elegir carpetas y explorar.
+pub fn operar_local(tipo: &Tipo, op: &str, p: &Value) -> Result<Value, String> {
+    if !ops(tipo).contains(&op) {
+        return Err(format!("Operación no disponible: «{op}»."));
+    }
+    operar(tipo, op, p, &mut Memoria::default())
+}
+
 fn operar(tipo: &Tipo, op: &str, p: &Value, memoria: &mut Memoria) -> Result<Value, String> {
     match (tipo, op) {
         (Tipo::Carpetas, "carpetas") => Ok(json!({ "entradas": carpetas(p["ruta"].as_str().unwrap_or(""))? })),
@@ -554,8 +563,19 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
     if rutas.is_empty() || rutas.len() > 100 {
         return Err("Elige entre 1 y 100 archivos o carpetas.".into());
     }
+    // v1.3x (solo la ventana del equipo, con la clave): «carpeta», en la que elija el administrador.
+    let carpeta = match c["destino"].as_str() {
+        Some("carpeta") => {
+            let d = c["carpeta"].as_str().unwrap_or("");
+            if !std::path::Path::new(d).is_absolute() || d.contains('\0') || carpeta_del_sistema(d) {
+                return Err("Elige una carpeta del equipo donde restaurar (que no sea del sistema).".into());
+            }
+            Some(std::path::PathBuf::from(d))
+        }
+        _ => None,
+    };
     let junto = match c["destino"].as_str() {
-        Some("junto") | None => true,
+        Some("junto") | Some("carpeta") | None => true,
         Some("original") => false,
         Some(_) => return Err("Destino no válido («junto» u «original»).".into()),
     };
@@ -570,21 +590,37 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
             return Err(format!("«{r}» no está en las carpetas que copia este equipo: restáuralo junto al original."));
         }
     }
+    // Para la ventana y los avisos del escritorio (el nombre del repositorio, sin rutas).
+    let repo = c["repo"].as_str().unwrap_or("");
+    let nombre = crate::agent::load_config().repos.iter().find(|r| r.id == repo).map(|r| r.name.clone()).unwrap_or_else(|| "Copias".into());
+    let guarda = crate::escritorio::en_marcha::empezar("restauracion", repo, &nombre);
     let sello = chrono::Local::now().format("%Y-%m-%d %H%M").to_string();
     let mut destinos = Vec::new();
     for ruta in &rutas {
         let (padre, nombre) = partes(ruta)?;
-        let mut objetivo = std::path::PathBuf::from(ruta_local(&padre)?);
+        let mut objetivo = match &carpeta {
+            Some(d) => d.clone(),
+            None => std::path::PathBuf::from(ruta_local(&padre)?),
+        };
         if junto {
             objetivo = objetivo.join(format!("Restaurado {sello}"));
         }
         let destino = objetivo.display().to_string();
         let origen = format!("{version}:{padre}");
         let incluir = format!("/{nombre}");
-        let out = restic::run_raw(
+        // Con `--json`, restic dice cuánto lleva: la ventana del equipo lo enseña (escritura en el disco).
+        let mut al_avanzar = |l: &str| {
+            if let Ok(v) = serde_json::from_str::<Value>(l) {
+                if v["message_type"] == "status" {
+                    guarda.progreso(v["bytes_restored"].as_u64(), v["total_bytes"].as_u64());
+                }
+            }
+        };
+        let out = restic::run_raw_lines(
             acc,
-            &["restore", &origen, "--target", &destino, "--include", &incluir, "--overwrite", if reemplazar { "always" } else { "never" }],
+            &["restore", &origen, "--target", &destino, "--include", &incluir, "--overwrite", if reemplazar { "always" } else { "never" }, "--json"],
             Duration::from_secs(24 * 3600),
+            &mut al_avanzar,
         )?;
         if out.code != Some(0) {
             return Err(restic::exit_error(out.code, &out.stderr));
@@ -593,6 +629,7 @@ pub fn restaurar(acc: &restic::Access, c: &Value) -> Result<String, String> {
             destinos.push(destino);
         }
     }
+    guarda.terminar("ok");
     // Rutas entre comillas: así se quitan enteras (con espacios) donde no deben verse.
     Ok(format!("Restaurado ({} elementos) en «{}».", rutas.len(), destinos.join("», «")))
 }

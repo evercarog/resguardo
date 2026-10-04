@@ -11,8 +11,15 @@
   import type { TareaEnMarcha } from "$lib/tipos";
   import { pctPintado, pctVisible, pulso } from "$lib/progreso.svelte";
   import { cifrasTarea, porcentaje, textoCorto, textoDuracion, textoFase } from "$lib/textoProgreso";
+  import { ritmoDe } from "$lib/progreso.svelte";
+  import GraficaOndas from "$ui/componentes/GraficaOndas.svelte";
+  import { porSegundoArchivos, serieArchivos, seriesBytes } from "$ui/ritmos";
 
-  let { tarea, equipo, compacto = false, titulo }: { tarea: TareaEnMarcha; equipo: string; compacto?: boolean; titulo?: string } = $props();
+  // `grafica`: las ondas en vivo (lectura y subida, y archivos por segundo) si el agente las manda (v1.3x).
+  let { tarea, equipo, compacto = false, titulo, grafica = true }: { tarea: TareaEnMarcha; equipo: string; compacto?: boolean; titulo?: string; grafica?: boolean } = $props();
+  const ritmo = $derived(grafica && !compacto ? ritmoDe(equipo, tarea) : undefined);
+  const ondas = $derived(seriesBytes(tarea.tipo, ritmo).filter((s) => s.puntos.length >= 2));
+  const ondasArchivos = $derived(serieArchivos(ritmo).filter((s) => s.puntos.length >= 2));
 
   // El reloj y el avance entre noticias son los de progreso.svelte.ts: así este
   // número es el mismo que el de la barra lateral y el de las tarjetas.
@@ -69,6 +76,10 @@
         {#if cifras.length}<span>{cifras.join(" · ")}</span>{/if}
         {#if lleva}<span class="faint">lleva {lleva}</span>{/if}
       </p>
+    {/if}
+    {#if ondas.length}
+      <GraficaOndas series={ondas} titulo={`Ritmo de «${nombre || fase}»`} alto={72} retraso={6000} />
+      {#if ondasArchivos.length}<GraficaOndas series={ondasArchivos} titulo="Archivos por segundo" alto={36} retraso={6000} formato={porSegundoArchivos} />{/if}
     {/if}
     {#if callado}<p class="callado">Sin noticias del equipo desde hace {callado} min: puede estar esperando al almacén o haberse apagado.</p>{/if}
   </div>

@@ -38,12 +38,14 @@ pub mod console;
 pub mod discover;
 pub mod discreto;
 pub mod endpoint;
+pub mod escritorio;
 pub mod espacio;
 pub mod espejo;
 pub mod ganchos;
 pub mod gestion_v2;
 pub mod history;
 pub mod informe_v2;
+pub mod ipc_local;
 pub mod jobs;
 pub mod kit;
 pub mod managed;
@@ -71,6 +73,7 @@ pub mod tasks;
 #[cfg(test)]
 mod traslado_it;
 pub mod traslado_v2;
+pub mod ventana;
 pub mod web;
 
 /// Orden de búsqueda de DLL seguro (ver platform::harden_dll_search).

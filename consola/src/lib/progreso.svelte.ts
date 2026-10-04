@@ -10,6 +10,7 @@
 // la última vuelta…) y avisa a quien lo pida con `alTerminar`.
 
 import * as api from "./api";
+import { anotar, type Ritmo } from "$ui/ritmos";
 import { cargarCliente } from "./estado.svelte";
 import type { TareaEnMarcha, TipoTarea } from "./tipos";
 
@@ -34,6 +35,15 @@ const PRONTO = 90_000;
 const INFORME_VIGENTE = 3 * 60_000;
 
 let temporizador: ReturnType<typeof setTimeout> | null = null;
+/** v1.3x: los ritmos de cada tarea (lectura, subida, archivos/s) de los últimos 5 minutos. */
+const ritmos = new Map<string, Ritmo>();
+/** Cambia cada vez que llegan ritmos nuevos (para que las gráficas se repinten). */
+export const ritmosVersion = $state({ n: 0 });
+/** El ritmo de una tarea (para `GraficaOndas`). */
+export function ritmoDe(equipo: string, t: TareaEnMarcha): Ritmo | undefined {
+  void ritmosVersion.n;
+  return ritmos.get(claveTarea(equipo, t));
+}
 /**
  * Cuándo llegó (con el reloj de aquí) la última noticia de cada tarea. Así la
  * barra que avanza sola entre noticias es la misma en todas partes: la barra
@@ -93,7 +103,16 @@ async function preguntar(cliente: string, n: number, siempre = false) {
       const terminadas = Object.entries(antes).flatMap(([e, x]) => x.tareas.filter((t) => !quedan.has(claveTarea(e, t))).map((t) => [e, t] as const));
       const ahora = Date.now();
       for (const k of [...llegadas.keys()]) if (!quedan.has(k)) llegadas.delete(k);
-      for (const [e, x] of Object.entries(nuevo)) for (const t of x.tareas) llegadas.set(claveTarea(e, t), ahora);
+      for (const k of [...ritmos.keys()]) if (!quedan.has(k)) ritmos.delete(k);
+      for (const [e, x] of Object.entries(nuevo))
+        for (const t of x.tareas) {
+          const k = claveTarea(e, t);
+          llegadas.set(k, ahora);
+          // Con el instante de la noticia del agente si lo dice (si no, el de llegada).
+          const cuando = Date.parse(t.actualizado ?? "");
+          ritmos.set(k, anotar(ritmos.get(k), Number.isFinite(cuando) ? cuando : ahora, { ...t, tipo: t.tipo }));
+        }
+      ritmosVersion.n++;
       enMarcha.porEquipo = nuevo;
       pulso.ahora = ahora;
       latir();
@@ -118,6 +137,7 @@ export function vigilarProgreso(cliente: string): () => void {
     enMarcha.porEquipo = {};
     enMarcha.enVivo = true;
     llegadas.clear();
+    ritmos.clear();
     latir();
   }
   void preguntar(cliente, n, true);

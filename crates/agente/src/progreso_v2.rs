@@ -73,6 +73,11 @@ pub fn tarea_copia(r: &RunningCopy, nombre: Option<&str>, ahora: DateTime<Local>
         "bytes": con_cifras.then_some(r.bytes_done),
         "bytes_total": con_cifras.then_some(r.total_bytes),
         "velocidad": if fase == "subiendo" || fase == "escaneando" { r.bytes_per_s } else { None },
+        // v1.3x: lo que restic lee del disco y lo que sube o escribe en el destino (bytes/s,
+        // medido en el proceso) y archivos por segundo, para las gráficas en vivo.
+        "lectura": if con_cifras { r.read_bps } else { None },
+        "subida": if con_cifras { r.upload_bps } else { None },
+        "archivos_s": if con_cifras { r.files_per_s } else { None },
         "quedan_s": if fase == "subiendo" { r.seconds_remaining } else { None },
         "empezo": r.started,
         "actualizado": r.updated,
@@ -174,6 +179,9 @@ mod tests {
             updated: None,
             phase: None,
             bytes_per_s: None,
+            read_bps: None,
+            upload_bps: None,
+            files_per_s: None,
         }
     }
 
@@ -206,6 +214,9 @@ mod tests {
         r.total_bytes = 10_000;
         r.seconds_remaining = Some(90);
         r.bytes_per_s = Some(2_000);
+        r.read_bps = Some(3_000);
+        r.upload_bps = Some(900);
+        r.files_per_s = Some(12);
         r.updated = Some(ahora.to_rfc3339());
         let t = tarea_copia(&r, Some("Documentos"), ahora).unwrap();
         assert_eq!(t["tipo"], "copia");
@@ -217,6 +228,7 @@ mod tests {
         assert_eq!(t["bytes_total"], 10_000);
         assert_eq!(t["velocidad"], 2_000);
         assert_eq!(t["quedan_s"], 90);
+        assert_eq!((t["lectura"].as_u64(), t["subida"].as_u64(), t["archivos_s"].as_u64()), (Some(3_000), Some(900), Some(12)));
         // Un estado de hace una hora es de un proceso que se cortó.
         r.updated = Some((ahora - chrono::Duration::minutes(60)).to_rfc3339());
         assert!(tarea_copia(&r, None, ahora).is_none());

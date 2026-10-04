@@ -420,15 +420,32 @@ fn take_line(line: String, out: &mut Vec<u8>, on_line: &mut Option<&mut dyn FnMu
     out.push(b'\n');
 }
 
+thread_local! {
+    /// El restic que está lanzando este hilo (para medir su lectura y escritura).
+    static PID_EN_MARCHA: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+}
+
+/// El proceso de restic que corre ahora en este hilo, si hay uno (dentro de
+/// `on_line` de [`run_raw_lines`]: el de esa misma ejecución).
+pub fn pid_en_marcha() -> Option<u32> {
+    PID_EN_MARCHA.with(|p| p.get())
+}
+
 fn run_raw_inner(
     access: &Access,
     args: &[&str],
     timeout: Duration,
     cancel: Option<&AtomicBool>,
-    mut on_line: Option<&mut dyn FnMut(&str)>,
+    on_line: Option<&mut dyn FnMut(&str)>,
 ) -> Result<RawOutput, String> {
     let mut child = spawn_cmd(repo_command(access).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
+    PID_EN_MARCHA.with(|p| p.set(Some(child.id())));
+    let r = run_child(&mut child, timeout, cancel, on_line);
+    PID_EN_MARCHA.with(|p| p.set(None));
+    r
+}
 
+fn run_child(child: &mut Child, timeout: Duration, cancel: Option<&AtomicBool>, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<RawOutput, String> {
     // Leer en hilos aparte para que restic nunca se bloquee escribiendo.
     let stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
@@ -468,7 +485,7 @@ fn run_raw_inner(
     };
 
     if outcome.is_err() {
-        kill_tree(&mut child);
+        kill_tree(child);
         let _ = child.wait();
     }
     let _ = out_thread.join();

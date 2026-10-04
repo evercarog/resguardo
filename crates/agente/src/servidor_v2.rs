@@ -116,6 +116,14 @@ pub struct Vinculo {
     /// El último cambio de configuración y desde qué consola.
     #[serde(default)]
     pub ultimo_cambio: Option<crate::consolas_v2::UltimoCambio>,
+    /// Cambios hechos en el propio equipo con la clave de administración (la
+    /// ventana, ipc_local): el canal abierto los ve como «cambiado fuera».
+    #[serde(default, skip_serializing_if = "es_cero")]
+    pub cambio_local: u64,
+}
+
+fn es_cero(n: &u64) -> bool {
+    *n == 0
 }
 
 fn espera_por_defecto() -> i64 {
@@ -146,7 +154,11 @@ fn escrito() -> Option<std::time::SystemTime> {
 /// si siguiera, nunca miraría el alta pendiente (eso lo hace el sondeo) y la
 /// borraría al guardar su copia con el siguiente informe o la siguiente orden.
 fn cambiado_fuera(canal: &Vinculo, disco: &Vinculo) -> bool {
-    disco.url != canal.url || disco.equipo_id != canal.equipo_id || disco.secreto != canal.secreto || disco.modo != canal.modo
+    disco.url != canal.url
+        || disco.equipo_id != canal.equipo_id
+        || disco.secreto != canal.secreto
+        || disco.modo != canal.modo
+        || disco.cambio_local > canal.cambio_local
 }
 
 pub fn guardar(v: &Vinculo) -> Result<(), String> {
@@ -1747,6 +1759,9 @@ mod tests {
         disco.url = "https://c:8443".into();
         disco.equipo_id = "e2".into();
         assert!(cambiado_fuera(&canal, &disco), "un vínculo nuevo");
+        let mut disco = canal.clone();
+        disco.cambio_local = 1;
+        assert!(cambiado_fuera(&canal, &disco), "ajustes cambiados en el equipo (la ventana)");
     }
 
     #[test]

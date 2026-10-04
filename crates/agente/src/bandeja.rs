@@ -107,6 +107,18 @@ pub struct EstadoBandeja {
     /// Cuándo lo escribió el servicio (RFC 3339).
     #[serde(default)]
     pub escrito: Option<String>,
+    /// v0.7.15: la ventana y los avisos (docs/agente-ventana.md).
+    #[serde(default)]
+    pub escritorio: crate::escritorio::Escritorio,
+    /// Lo que está en marcha (copias, restauraciones, verificaciones, subidas).
+    #[serde(default)]
+    pub actividades: Vec<crate::escritorio::Actividad>,
+    /// Lo último terminado de cada tarea (para los avisos).
+    #[serde(default)]
+    pub hechas: Vec<crate::escritorio::Hecha>,
+    /// Modo sin consola: se administra en el propio equipo, con su clave.
+    #[serde(default)]
+    pub local: bool,
 }
 
 fn si() -> bool {
@@ -127,6 +139,10 @@ impl Default for EstadoBandeja {
             en_curso: None,
             pedir: false,
             escrito: None,
+            escritorio: Default::default(),
+            actividades: Vec::new(),
+            hechas: Vec::new(),
+            local: false,
         }
     }
 }
@@ -145,6 +161,8 @@ pub struct Fuentes<'a> {
     pub vinculo: Option<&'a crate::servidor_v2::Vinculo>,
     pub config: &'a crate::agent::AgentConfig,
     pub estado: &'a crate::agent::AgentState,
+    /// Verificaciones y copias externas (`tasks.json`).
+    pub tareas: &'a crate::tasks::TasksState,
     /// Existe la carpeta de solicitudes (se puede pedir «Copiar ahora»).
     pub solicitudes: bool,
 }
@@ -197,8 +215,22 @@ fn en_curso_de(estado: &crate::agent::AgentState, copias: &[CopiaBandeja], ahora
 pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
     let copias = copias_de(f.config, f.estado, ahora);
     let en_curso = en_curso_de(f.estado, &copias, ahora);
-    let mut e = EstadoBandeja { copias, en_curso, pedir: f.solicitudes, escrito: Some(ahora.to_rfc3339()), ..Default::default() };
-    if let Some(v) = f.vinculo {
+    let mut e = EstadoBandeja {
+        copias,
+        en_curso,
+        pedir: f.solicitudes,
+        escrito: Some(ahora.to_rfc3339()),
+        actividades: crate::escritorio::actividades_de(f.config, f.estado, f.tareas),
+        hechas: crate::escritorio::hechas_de(f.config, f.estado, f.tareas),
+        ..Default::default()
+    };
+    if let Some(v) = f.vinculo.filter(|v| v.modo == "local" && v.url.is_empty() && v.verificador.is_some()) {
+        // Sin consola (docs/agente-ventana.md §5): se administra aquí, con su clave.
+        e.vinculado = true;
+        e.local = true;
+        e.privacy = "Este equipo se administra en el propio equipo, con su clave de administración.".into();
+        e.escritorio = v.config_v1.as_ref().map(crate::escritorio::Escritorio::de_config).unwrap_or_default();
+    } else if let Some(v) = f.vinculo {
         e.vinculado = true;
         let host = anfitrion(&v.url).to_string();
         if v.modo == "gestionado" && !v.otras.is_empty() {
@@ -219,7 +251,10 @@ pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
         }
         let bandeja = v.config_v1.as_ref().and_then(|c| c.get("bandeja")).filter(|b| b.is_object());
         e.show = bandeja.and_then(|b| b["visible"].as_bool()).unwrap_or(true);
-        e.toasts = bandeja.and_then(|b| b["avisos"].as_bool()).unwrap_or(false);
+        e.escritorio = match v.config_v1.as_ref() {
+            Some(c) => crate::escritorio::Escritorio::de_config(c),
+            None => crate::escritorio::Escritorio::de_bandeja(e.show, false),
+        };
     } else if let Some(s) = f.fase5 {
         e.vinculado = true;
         e.privacy = format!("Este equipo lo gestiona «{}»: sus copias se guardan allí y su administrador puede restaurarlas.", s.console_name);
@@ -227,8 +262,10 @@ pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
             e.aviso = Some(format!("«{}» ya no gestiona este equipo.", s.console_name));
         }
         e.show = s.config.as_ref().is_none_or(|c| c.tray);
-        e.toasts = s.config.as_ref().is_some_and(|c| c.tray_toasts);
+        e.escritorio = crate::escritorio::Escritorio::de_bandeja(e.show, s.config.as_ref().is_some_and(|c| c.tray_toasts));
     }
+    // Para las bandejas anteriores: «avisos» es avisar de los errores.
+    e.toasts = e.escritorio.avisos != crate::escritorio::Avisos::Off;
     e.text = linea_estado(&e, ahora);
     e
 }
@@ -257,7 +294,7 @@ pub fn nivel(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> Nivel {
     if servicio_callado(e, ahora) {
         return Nivel::Atencion;
     }
-    if e.en_curso.is_some() {
+    if e.en_curso.is_some() || !e.actividades.is_empty() {
         return Nivel::Copiando;
     }
     if e.copias.iter().any(|c| c.resultado == "error") {
@@ -338,6 +375,10 @@ pub fn linea_estado(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> String 
             None => format!("Copiando «{}»…", c.nombre),
         };
     }
+    // Otra tarea en marcha (restaurar, verificar, subir).
+    if let Some(a) = e.actividades.first() {
+        return cortar(&texto_actividad(a), 120);
+    }
     if let Some(a) = &e.aviso {
         return a.clone();
     }
@@ -357,6 +398,22 @@ pub fn linea_estado(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> String 
         None => "Esperando la primera copia.".into(),
         Some(t) if (*ahora - t).num_days() >= COPIA_VIEJA_DIAS => format!("La última copia correcta fue {}.", hace(t, ahora)),
         Some(_) => "Tus archivos están protegidos.".into(),
+    }
+}
+
+/// «Restaurando desde «Copias»… 40 %», «Verificando «Disco USB»…».
+pub fn texto_actividad(a: &crate::escritorio::Actividad) -> String {
+    let que = match a.tipo.as_str() {
+        "restauracion" => format!("Restaurando desde «{}»…", a.nombre),
+        "verificacion" => format!("Verificando «{}»…", a.nombre),
+        "copia_externa" => format!("Subiendo la copia externa de «{}»…", a.nombre),
+        "espejo" => format!("Copiando el espejo a «{}»…", a.nombre),
+        "nube" => format!("Subiendo a «{}»…", a.nombre),
+        _ => format!("Copiando «{}»…", a.nombre),
+    };
+    match a.porcentaje {
+        Some(p) => format!("{que} {}", por_ciento(p)),
+        None => que,
     }
 }
 
@@ -390,6 +447,10 @@ pub fn tooltip(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> String {
             Some(p) => format!("copiando «{}» ({})", c.nombre, por_ciento(p)),
             None => format!("copiando «{}»", c.nombre),
         });
+    } else if let Some(a) = e.actividades.first() {
+        let t = texto_actividad(a);
+        let mut c = t.chars();
+        partes.push(c.next().map(|p| p.to_lowercase().chain(c).collect()).unwrap_or_default());
     } else if let Some(a) = &e.aviso {
         partes.push(a.trim_end_matches('.').to_string());
     } else if e.copias.is_empty() {
@@ -445,6 +506,8 @@ pub enum Accion {
     Copiar(Vec<String>),
     /// Quitar el icono hasta el próximo inicio de sesión.
     Ocultar,
+    /// Abrir la ventana (docs/agente-ventana.md).
+    Ventana,
 }
 
 /// Parte un texto en líneas de hasta `ancho` caracteres, por los espacios.
@@ -472,8 +535,8 @@ pub enum Entrada {
     Opcion(String, Accion),
 }
 
-/// El menú: el estado en una línea, quién gestiona el equipo, las copias
-/// (solo lectura), «Copiar ahora» (si se puede pedir), «Abrir la consola»,
+/// El menú: el estado en una línea, quién gestiona el equipo, «Abrir
+/// Resguardo» (la ventana, si no está apagada), las copias (solo lectura), «Copiar ahora» (si se puede pedir), «Abrir la consola»,
 /// «Ver el registro» y «Ocultar el icono».
 ///
 /// `elevado`: la bandeja corre como administrador (la abrió el instalador).
@@ -484,6 +547,10 @@ pub fn menu(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>, elevado: bool) -> 
     // Quién gestiona el equipo, en líneas cortas (un menú no parte el texto).
     m.extend(en_lineas(&e.privacy, 60).into_iter().map(Entrada::Texto));
     m.push(Entrada::Separador);
+    // La ventana, si no está apagada (y nunca como administrador: sería un navegador elevado).
+    if e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado {
+        m.push(Entrada::Opcion("Abrir Resguardo".into(), Accion::Ventana));
+    }
     if e.vinculado {
         let filas: Vec<Entrada> = if e.copias.is_empty() {
             vec![Entrada::Texto("Aún no hay copias asignadas".into())]
@@ -733,6 +800,23 @@ mod tests {
     }
 
     #[test]
+    fn otras_tareas_en_marcha() {
+        let mut e = vinculado(vec![copia("Documentos", "ok", Some("2026-10-05T14:08:00+02:00"), None)]);
+        e.actividades.push(crate::escritorio::Actividad {
+            id: "x".into(),
+            clave: "restauracion:r".into(),
+            tipo: "restauracion".into(),
+            nombre: "Disco USB".into(),
+            fase: "en_marcha".into(),
+            porcentaje: Some(0.4),
+            ..Default::default()
+        });
+        assert_eq!(nivel(&e, &ahora()), Nivel::Copiando);
+        assert_eq!(linea_estado(&e, &ahora()), "Restaurando desde «Disco USB»… 40 %");
+        assert_eq!(tooltip(&e, &ahora()), "Resguardo · restaurando desde «Disco USB»… 40 %");
+    }
+
+    #[test]
     fn error_manda_sobre_correctas() {
         let e = vinculado(vec![
             copia("Documentos", "ok", Some("2026-10-05T14:00:00+02:00"), Some("2026-10-05T15:00:00+02:00")),
@@ -877,7 +961,8 @@ mod tests {
             config_v1: Some(serde_json::json!({ "v": 1, "bandeja": { "visible": false, "avisos": true } })),
             ..Default::default()
         };
-        let f = Fuentes { fase5: None, vinculo: Some(&vinculo), config: &config, estado: &estado, solicitudes: true };
+        let tareas = crate::tasks::TasksState::default();
+        let f = Fuentes { fase5: None, vinculo: Some(&vinculo), config: &config, estado: &estado, tareas: &tareas, solicitudes: true };
         let e = componer(&f, &ahora());
         assert!(e.vinculado && e.pedir && !e.show && e.toasts);
         assert_eq!(e.consola.as_deref(), Some("https://copias.ejemplo.com:8443"));
@@ -905,6 +990,24 @@ mod tests {
         let local = crate::servidor_v2::Vinculo { modo: "local".into(), ..vinculo.clone() };
         let e = componer(&Fuentes { vinculo: Some(&local), ..f }, &ahora());
         assert!(e.consola.is_none() && e.aviso.is_some());
+        // Ventana y avisos: de `bandeja` si la consola no manda `escritorio`, o de `escritorio`.
+        assert_eq!(componer(&f, &ahora()).escritorio.ventana, crate::escritorio::Ventana::Off);
+        let con = crate::servidor_v2::Vinculo {
+            config_v1: Some(serde_json::json!({ "v": 1, "escritorio": { "ventana": "al_trabajar", "avisos": "off" } })),
+            ..vinculo.clone()
+        };
+        let e = componer(&Fuentes { vinculo: Some(&con), ..f }, &ahora());
+        assert_eq!(e.escritorio.ventana, crate::escritorio::Ventana::AlTrabajar);
+        assert!(!e.toasts, "una bandeja anterior tampoco avisa");
+        // Sin consola (modo local, con clave): vinculado, sin aviso de «ya no lo gestiona».
+        let solo = crate::servidor_v2::Vinculo { url: String::new(), modo: "local".into(), verificador: Some("x".into()), config_v1: None, ..vinculo.clone() };
+        let e = componer(&Fuentes { vinculo: Some(&solo), ..f }, &ahora());
+        assert!(e.vinculado && e.local && e.aviso.is_none() && e.consola.is_none());
+        assert_eq!(e.text, "Copiando «Documentos»… 50 %");
+        // (Las restauraciones de otras pruebas también pueden estar en el registro del proceso.)
+        assert_eq!(e.actividades.iter().filter(|a| a.tipo == "copia").count(), 1);
+        assert_eq!(e.hechas.iter().filter(|h| h.tipo == "copia").count(), 1);
+        assert!(!serde_json::to_string(&e).unwrap().contains("Datos"));
     }
 
     fn opciones(m: &[Entrada]) -> Vec<String> {
@@ -926,8 +1029,12 @@ mod tests {
         let m = menu(&e, &ahora(), false);
         assert_eq!(m[0], Entrada::Texto("Tus archivos están protegidos.".into()));
         assert_eq!(m[1], Entrada::Texto(e.privacy.clone()));
-        assert_eq!(m[3], Entrada::Submenu("Copias".into(), vec![Entrada::Texto("Documentos — correcta hace 12 min".into())]));
-        assert_eq!(opciones(&m), ["Copias ▸", "Copiar ahora", "Abrir la consola", "Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
+        assert_eq!(m[3], Entrada::Opcion("Abrir Resguardo".into(), Accion::Ventana));
+        assert_eq!(m[4], Entrada::Submenu("Copias".into(), vec![Entrada::Texto("Documentos — correcta hace 12 min".into())]));
+        assert_eq!(
+            opciones(&m),
+            ["Abrir Resguardo", "Copias ▸", "Copiar ahora", "Abrir la consola", "Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]
+        );
         assert!(m.contains(&Entrada::Opcion("Copiar ahora".into(), Accion::Copiar(vec!["r#Documentos".into()]))));
 
         // Varias copias: un submenú, sin las que están en pausa.
@@ -946,7 +1053,7 @@ mod tests {
         e.pedir = false;
         e.consola = Some("http://inseguro".into());
         let m = menu(&e, &ahora(), true);
-        assert_eq!(opciones(&m), ["Copias ▸", "Ocultar el icono hasta el próximo inicio de sesión"]);
+        assert_eq!(opciones(&m), ["Copias ▸", "Ocultar el icono hasta el próximo inicio de sesión"], "como administrador, sin la ventana");
 
         // La línea de quién lo gestiona, partida para que el menú no sea enorme.
         e.privacy = "Este equipo lo gestiona Resguardo Server (copias.ejemplo.com:8443): su administrador puede ver y restaurar sus copias.".into();
@@ -960,7 +1067,11 @@ mod tests {
         // Sin vincular: ni copias ni consola.
         let m = menu(&EstadoBandeja::default(), &ahora(), false);
         assert_eq!(m[0], Entrada::Texto("Sin vincular a ninguna consola.".into()));
-        assert_eq!(opciones(&m), ["Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
+        assert_eq!(opciones(&m), ["Abrir Resguardo", "Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
+        // Con la ventana apagada desde la consola: el menú de siempre.
+        let mut apagada = EstadoBandeja::default();
+        apagada.escritorio.ventana = crate::escritorio::Ventana::Off;
+        assert_eq!(opciones(&menu(&apagada, &ahora(), false)), ["Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
     }
 
     #[test]

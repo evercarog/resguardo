@@ -10,7 +10,7 @@
   import { onDestroy } from "svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { CalendarClock, FolderOpen, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
+  import { CalendarClock, FolderOpen, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { ApiError } from "$lib/api";
   import { argon2Navegador } from "$lib/cripto/argon2";
@@ -24,7 +24,7 @@
   import { horarioEnFrase, lista, plural, relativo, resumenHorario } from "$lib/formato";
   import { errorReglas, normalizar, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "$lib/horario";
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
-  import type { Configuracion, CopiaConfig, EquipoDetalle, Gancho, VerificacionAuto } from "$lib/tipos";
+  import type { Configuracion, CopiaConfig, EquipoDetalle, Escritorio, Gancho, VerificacionAuto } from "$lib/tipos";
   import { admiteVerificacion, errorVerificacion, fraseVerificacion, PORCENTAJES, VERIFICACION_POR_DEFECTO } from "$lib/verificacion";
   import { errorGancho, fraseGancho, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "$lib/ganchos";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
@@ -244,6 +244,23 @@
   // Por repositorio: cada N días, un porcentaje rotativo. Solo con un agente que
   // la entiende (`admite`); con uno anterior no se manda el campo.
   const admiteVerif = $derived(admiteVerificacion(equipo));
+  /** v1.3x: la ventana y los avisos del equipo (docs/agente-ventana.md). */
+  const admiteEscritorio = $derived(!!equipo?.resumen?.admite?.includes("escritorio"));
+  const escritorio = $derived<Escritorio>(cfg?.escritorio ?? { ventana: cfg?.bandeja?.visible === false ? "off" : "siempre_disponible", avisos: cfg?.bandeja?.avisos ? "errores" : "off" });
+  function ponerEscritorio(cambio: Partial<Escritorio>) {
+    if (!cfg) return;
+    cfg.escritorio = { ...escritorio, ...cambio };
+  }
+  const VENTANAS: [Escritorio["ventana"], string][] = [
+    ["off", "Sin ventana"],
+    ["siempre_disponible", "Desde el icono"],
+    ["al_trabajar", "Al trabajar"],
+  ];
+  const AVISOS_ESCRITORIO: [Escritorio["avisos"], string][] = [
+    ["off", "Ninguno"],
+    ["errores", "Errores"],
+    ["todo", "Todo"],
+  ];
   /** «?verificacion=<repo>»: desde la página del repositorio. */
   const verifPedida = $derived(page.url.searchParams.get("verificacion"));
   let verifVista = false;
@@ -307,9 +324,12 @@
         repositorios: c0.repositorios,
         destinos: c0.destinos,
         verificacion: c0.verificacion ?? null,
-        bandeja: c0.bandeja ?? null,
+        // v1.3x: con `escritorio`, `bandeja.avisos` dice lo mismo para un agente anterior.
+        bandeja: c0.escritorio ? { visible: c0.bandeja?.visible ?? true, avisos: c0.escritorio.avisos !== "off" } : (c0.bandeja ?? null),
         // v1.28: solo a un agente que la entiende, y solo si se ha tocado alguna vez.
         ...(admiteVerif && c0.verificaciones ? { verificaciones: c0.verificaciones } : {}),
+        // v1.3x: la ventana y los avisos (si el agente lo entiende y lo tiene o se ha tocado).
+        ...(admiteEscritorio && c0.escritorio ? { escritorio: c0.escritorio } : {}),
       };
       const o = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "config", cuerpo: { config }, secretos: { prueba }, alPaso: (t) => (paso = t) });
       original = JSON.stringify(cfg);
@@ -499,6 +519,32 @@
       </section>
     {/if}
 
+    <section class="card p verif" id="escritorio" aria-labelledby="t-escritorio">
+      <h2 class="section-title" id="t-escritorio"><MonitorCheck size={16} />En el equipo</h2>
+      {#if !admiteEscritorio}
+        <p class="faint">Actualiza el agente de {equipo.nombre}{versionAgente ? ` (tiene la ${versionAgente})` : ""} para elegir desde aquí su ventana y sus avisos.</p>
+      {:else}
+        <p class="faint">
+          Lo que ve quien usa {equipo.nombre}: una ventana pequeña con el progreso en vivo y avisos de Windows. También se puede cambiar en el propio equipo, con la clave de administración.
+          {#if cfg.cambiado_en_equipo}<span class="chip-equipo">Cambiado en el equipo {relativo(cfg.cambiado_en_equipo)}</span>{/if}
+        </p>
+        <div class="field">
+          <span class="field-label" id="l-esc-ventana">Ventana</span>
+          <div class="segmented inline" role="radiogroup" aria-labelledby="l-esc-ventana">
+            {#each VENTANAS as [v, t] (v)}<button type="button" role="radio" aria-checked={escritorio.ventana === v} class:on={escritorio.ventana === v} onclick={() => ponerEscritorio({ ventana: v })}>{t}</button>{/each}
+          </div>
+          <span class="faint">«Al trabajar»: se abre sola al empezar una copia, una restauración, una verificación o una subida.</span>
+        </div>
+        <div class="field">
+          <span class="field-label" id="l-esc-avisos">Avisos</span>
+          <div class="segmented inline" role="radiogroup" aria-labelledby="l-esc-avisos">
+            {#each AVISOS_ESCRITORIO as [v, t] (v)}<button type="button" role="radio" aria-checked={escritorio.avisos === v} class:on={escritorio.avisos === v} onclick={() => ponerEscritorio({ avisos: v })}>{t}</button>{/each}
+          </div>
+          <span class="faint">«Errores»: al fallar y al recuperarse. «Todo»: también al empezar y al terminar.</span>
+        </div>
+      {/if}
+    </section>
+
     {#if quitadas.length}
       <div class="notice notice-info"><Trash2 size={16} /><p>Al enviar, dejará{quitadas.length === 1 ? "" : "n"} de hacerse {lista(quitadas.map((k) => `«${k.nombre}»`))}. Lo ya guardado sigue en su repositorio. ¿Fue sin querer? «Cancelar cambios» lo deja como estaba.</p></div>
     {/if}
@@ -665,6 +711,15 @@
   }
   .verif p {
     margin: 0;
+  }
+  .chip-equipo {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: var(--fs-xs);
   }
   .verif-fila {
     display: flex;

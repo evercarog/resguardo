@@ -281,11 +281,21 @@ pub fn si_toca() {
     std::thread::spawn(move || {
         let mut hechos: Vec<(Destino, String, Option<crate::espacio::Espacio>)> = Vec::new();
         let mut errores = 0;
-        for d in e.destinos() {
+        for (i, d) in e.destinos().into_iter().enumerate() {
+            // Para la ventana y los avisos del escritorio: sin la carpeta (es una ruta).
+            let (tipo, nombre) = match d.nube.as_deref().filter(|_| d.tipo == "nube") {
+                Some(n) => ("nube", n.to_string()),
+                None => ("espejo", "Disco o carpeta del equipo".to_string()),
+            };
+            let guarda = crate::escritorio::en_marcha::empezar(tipo, &i.to_string(), &nombre);
             let texto = match copiar_a(Path::new(&c.path), &d, e.limite_kib) {
-                Ok(t) => format!("Espejo hecho en {}: {t}", d.texto()),
+                Ok(t) => {
+                    guarda.terminar("ok");
+                    format!("Espejo hecho en {}: {t}", d.texto())
+                }
                 Err(m) => {
                     errores += 1;
+                    drop(guarda);
                     format!("ERROR: espejo del Servidor de copias en {}: {m}", d.texto())
                 }
             };

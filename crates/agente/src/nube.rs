@@ -221,8 +221,28 @@ pub fn conectar(tipo: &str, nombre: &str) -> Result<String, String> {
         return Err("rclone no terminó la autorización (¿se cerró el navegador?).".into());
     }
     let token = token_de_salida(&salida).ok_or("No llegó el permiso de la nube.")?;
+    anadir(tipo, &nombre, &token)
+}
+
+/// Guarda una nube con el token que dio `rclone authorize` (aquí o, en la
+/// ventana del equipo, como el usuario: él abre el navegador y lo trae por
+/// ipc_local con la clave de administración).
+pub fn anadir(tipo: &str, nombre: &str, token: &str) -> Result<String, String> {
+    if !TIPOS.iter().any(|(t, _)| *t == tipo) {
+        return Err(format!("Tipo de nube no admitido: «{tipo}» (dropbox o drive)."));
+    }
+    let nombre = nombre.trim().to_string();
+    if !nombre_valido(&nombre) {
+        return Err("Escribe un nombre para la nube (hasta 60 caracteres).".into());
+    }
+    if !token_plausible(token) {
+        return Err("No llegó el permiso de la nube.".into());
+    }
     let mut nubes = cargar();
-    nubes.push(Nube { nombre: nombre.clone(), tipo: tipo.into(), token, app_key: None });
+    if nubes.iter().any(|n| n.nombre == nombre) {
+        return Err(format!("Ya hay una nube «{nombre}»: quítala antes o usa otro nombre."));
+    }
+    nubes.push(Nube { nombre: nombre.clone(), tipo: tipo.into(), token: token.into(), app_key: None });
     guardar(&nubes)?;
     crate::agent::log(&format!("Nube «{nombre}» ({tipo}) conectada."));
     Ok(format!("Nube «{nombre}» conectada. Ya se puede usar como destino del espejo."))

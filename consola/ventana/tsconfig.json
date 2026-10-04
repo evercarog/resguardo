@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["vite/client"],
+    "paths": {
+      "$ui/*": ["../../ui/src/*"],
+      "$lib/*": ["../src/lib/*"],
+      "svelte": ["../node_modules/svelte"],
+      "svelte/*": ["../node_modules/svelte/*"],
+      "@lucide/svelte": ["../node_modules/@lucide/svelte"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "../../ui/src/**/*.ts", "../../ui/src/**/*.svelte"]
+}
