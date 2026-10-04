@@ -215,21 +215,25 @@ Equipo recién instalado, sin vincular: la ventana ofrece **«Usar sin consola»
 - Qué se avisa: `escritorio::avisos` (probado). Lo que ya había terminado al
   arrancar la bandeja no avisa.
 
-## 7. Ligereza (medido en un Windows 11 con una copia de 24 GB de prueba)
+## 7. Ligereza (medido en Windows 11, copia de prueba de 31 GB a un disco local)
 
 - **Servicio**: con todo apagado, como antes. Con algo en marcha y la ventana o
   «todo», escribe los dos archivos cada 2 s (unos KB). Sin nada en marcha mira
   cada 2 s si empezó algo (leer tres JSON pequeños).
-- **Bandeja**: la misma (lee un archivo pequeño cada 5 s).
+- **Bandeja**: la misma (~5 MB privados; lee un archivo pequeño cada 5 s).
 - **Ventana**: otro proceso que solo existe abierta; al cerrarla se libera todo.
-  WebView2 pesa lo suyo (unos 200 MB privados entre sus procesos, la mayoría el
-  propio WebView2; el proceso de la ventana, ~6 MB); CPU ~0,3 % de un núcleo en
-  reposo; las ondas se pintan a 30 fps como mucho, solo con algo en marcha y la
-  ventana a la vista (con «reducir movimiento», solo al llegar datos).
+  El proceso de la ventana, ~6 MB; WebView2, el resto: ~210–250 MB privados
+  entre sus procesos. CPU: ~0,3 % de un núcleo en reposo y ~2 % con las ondas
+  fluyendo (30 fps como mucho, solo con algo en marcha y la ventana a la vista;
+  con «reducir movimiento», solo al llegar datos).
+- **Ejecutable**: 6,98 MB en release (5,89 MB antes; +~0,47 MB comprimido en el
+  instalador): wry, tao, las piezas de WinRT de `windows` (ya estaban en el
+  `Cargo.lock` por la app) y la página.
 - **Página**: ~41 KB comprimidos lo que se abre siempre; el modo local se carga
-  al abrirlo (en total ~85 KB comprimidos). Sin fuentes propias (la del sistema),
+  al abrirlo (en total ~90 KB comprimidos). Sin fuentes propias (la del sistema),
   sin red: un protocolo propio (`http://resguardo.localhost/`) con CSP estricta.
 - Sin WebView2, «Abrir Resguardo» lo dice en el registro y la bandeja sigue igual.
+- Avisos apagados por el usuario (para Resguardo o para todo Windows): se respeta.
 
 ## 8. Compilar y probar
 

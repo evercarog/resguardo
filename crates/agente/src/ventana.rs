@@ -173,7 +173,13 @@ mod win {
             let _ = al_pulsar.send(());
             Ok(())
         }))?;
-        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(aumid()))?.Show(&t)
+        let avisador = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(aumid()))?;
+        // Avisos apagados por el usuario (para Resguardo o para todo Windows): se respeta,
+        // sin globo de reserva (Windows también lo callaría).
+        if avisador.Setting()? != windows::UI::Notifications::NotificationSetting::Enabled {
+            return Ok(());
+        }
+        avisador.Show(&t)
     }
 
     /// Los avisos se enseñan en su propio hilo (WinRT, sin bloquear la bandeja).
