@@ -157,6 +157,10 @@ export const aceptarInvitacion = (b: { token: string; correo?: string; nombre?: 
 // ---------------------------------------------------------------------------
 
 export const clientesDelServidor = () => pedir<T.ClientesDelServidor>("GET", "/api/servidor/clientes");
+/** v1.3x: «Todos los clientes»: lo de cada cliente del que la cuenta es miembro, en una petición (404 con un servidor anterior). */
+export const panel = (opciones: { invisible?: boolean } = {}) => pedir<import("./global").Panel>("GET", "/api/panel", undefined, opciones);
+/** v1.3x: solo lo que está en marcha en todos esos clientes. */
+export const panelProgreso = () => pedir<import("./global").ProgresoPanel[]>("GET", "/api/panel/progreso", undefined, { invisible: true });
 /** Un cliente para otra persona: sin ser miembro, con su invitación de propietario. */
 export const crearClienteParaOtro = (b: { nombre: string; espera_min_horas?: number; cuotas?: T.Cuotas }) =>
   pedir<{ id: string; nombre: string; invitacion: T.Invitacion }>("POST", "/api/servidor/clientes", b);
