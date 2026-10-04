@@ -250,6 +250,33 @@ router.
 
   Estas reglas no sobreviven a un reinicio: guárdalas en `/etc/nftables.conf`.
 
+## El instalador listo de Windows
+
+En «Añadir equipo», la consola ofrece **Descargar instalador listo** para
+Windows (el equipo se vincula solo al instalarlo) si el servidor tiene el
+instalador genérico del agente, `Resguardo-Agente-setup.exe`. Resguardo Server
+para Windows lo trae; el paquete de Linux no (se compila en Windows). Mientras
+no lo tenga, la consola ofrece «Instalador normal y un código».
+
+Para tenerlo también en Linux, copia `Resguardo-Agente-setup.exe` de la misma
+publicación al CT, comprueba su SHA-256 con el `SHA256SUMS` de la publicación
+y ponlo:
+
+```sh
+sha256sum Resguardo-Agente-setup.exe     # compáralo con SHA256SUMS
+sudo resguardo-server poner-instalador-agente Resguardo-Agente-setup.exe --sha256 <ese valor>
+```
+
+Comprueba que es un ejecutable de Windows y que no es un instalador ya
+preparado para un equipo (esos llevan un código dentro), enseña su SHA-256 y,
+con `--sha256`, se niega si no es ese. Lo deja en
+`/var/lib/resguardo-server/agente/Resguardo-Agente-setup.exe`, solo para el
+usuario del servicio (carpeta 0700, archivo 0600). Vale al momento, sin
+reiniciar; para cambiarlo por el de una versión nueva, se repite.
+
+Si prefieres dejarlo en otro sitio: `RESGUARDO_INSTALADOR_AGENTE=/ruta/al/setup.exe`
+en `servidor.env` (o `--instalador-agente`), y `systemctl restart resguardo-server`.
+
 ## Configuración
 
 `/etc/resguardo-server/servidor.env` (después: `systemctl restart resguardo-server`):
@@ -259,6 +286,7 @@ router.
 | `RESGUARDO_ESCUCHAR` | Dirección y puerto (por defecto `0.0.0.0:8443`). Para un puerto por debajo de 1024 hace falta además `AmbientCapabilities=CAP_NET_BIND_SERVICE` (con `systemctl edit resguardo-server`). |
 | `RESGUARDO_NOMBRES` | Nombres o IP extra para el certificado (separados por comas), p. ej. `resguardo.oficina.lan`. El nombre del CT y sus IP ya van siempre. |
 | `RESGUARDO_MAX_DESCARGA` | Tamaño máximo de una descarga al navegador, en MB (por defecto 500). |
+| `RESGUARDO_INSTALADOR_AGENTE` | Otro instalador del agente para «Descargar instalador listo» (por defecto, el de `poner-instalador-agente`: ver arriba). |
 | `RESGUARDO_DOMINIO`, `RESGUARDO_ACME_CORREO`… | Consola en internet con certificado público: ver [consola-en-linea.md](consola-en-linea.md). |
 
 El certificado del servidor se vuelve a emitir en cada arranque (por si

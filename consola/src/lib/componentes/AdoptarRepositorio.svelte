@@ -213,9 +213,9 @@
           {#if almacen}
             <span class="field-hint">
               {#if carpetaAlmacen && usuarioAlmacen}
-                En {almacen.nombre}, la carpeta debe estar en <code class="selectable">{rutaEnAlmacen(carpetaAlmacen, usuarioAlmacen, rutaLimpia || "<nombre>")}</code>.
+                En {almacen.nombre}, la carpeta debe estar en <span class="pastilla mono ajusta selectable">{rutaEnAlmacen(carpetaAlmacen, usuarioAlmacen, rutaLimpia || "<nombre>")}</span>.
               {:else if usuarioAlmacen}
-                En {almacen.nombre}, dentro de su carpeta de copias, en <code>{usuarioAlmacen}/{rutaLimpia || "<nombre>"}</code>.
+                En {almacen.nombre}, dentro de su carpeta de copias, en <span class="pastilla mono ajusta">{usuarioAlmacen}/{rutaLimpia || "<nombre>"}</span>.
               {:else}
                 Solo el nombre de la carpeta, dentro de la de {equipo?.nombre} en {almacen.nombre}.
               {/if}

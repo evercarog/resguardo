@@ -1085,6 +1085,18 @@ button.card:focus-visible {
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
+/* Valores largos (rutas, nombres de archivo) en una frase: parten en varias líneas. */
+.pastilla.ajusta {
+  display: inline;
+  height: auto;
+  padding: 1px 6px;
+  line-height: inherit;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-sm);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .pastilla svg {
   flex: none;
   color: var(--text-3);

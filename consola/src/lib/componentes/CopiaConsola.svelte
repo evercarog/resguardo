@@ -237,7 +237,7 @@
           <h3>Kit de la copia de la consola · Resguardo Server</h3>
           <dl>
             <dt>Servidor</dt><dd>{typeof location !== "undefined" ? location.host : ""}</dd>
-            <dt>Identidad</dt><dd><code>{huellaCorta(r?.identidad ?? app.servidor?.identidad ?? "")}</code></dd>
+            <dt>Identidad</dt><dd><span class="pastilla mono">{huellaCorta(r?.identidad ?? app.servidor?.identidad ?? "")}</span></dd>
             <dt>Huella TLS</dt><dd><code>{app.servidor?.huella_ca ?? ""}</code></dd>
             <dt>Clave</dt><dd><code class="selectable pw">{clave}</code></dd>
             <dt>Copias en</dt><dd><code>{r?.carpeta}</code> (cada día a las {r?.hora})</dd>

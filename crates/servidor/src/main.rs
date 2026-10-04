@@ -14,6 +14,7 @@ Uso: resguardo-server [opciones]
      resguardo-server codigo-inicial [--datos DIR]
      resguardo-server hacer-respaldo [--datos DIR]
      resguardo-server restaurar-respaldo ARCHIVO [--datos DIR] [--reemplazar] [--confiar-en HUELLA]
+     resguardo-server poner-instalador-agente ARCHIVO.exe [--datos DIR] [--sha256 HEX]
 
   --datos DIR          Carpeta de datos (por defecto /var/lib/resguardo-server; en Windows,
                        C:\\ProgramData\\Resguardo Server)
@@ -29,7 +30,8 @@ Uso: resguardo-server [opciones]
                        lleva dentro el binario compilado con la feature consola-integrada)
   --max-descarga MB    Tamaño máximo de una descarga al navegador (por defecto 500)
   --instalador-agente ARCHIVO  Instalador del agente para «Descargar instalador listo» (por
-                       defecto, agente/Resguardo-Agente-setup.exe junto al programa)
+                       defecto, el de poner-instalador-agente en la carpeta de datos o
+                       agente/Resguardo-Agente-setup.exe junto al programa)
   --ayuda              Esta ayuda
 
   Consola en internet (docs/consola-en-linea.md):
@@ -69,13 +71,23 @@ Uso: resguardo-server [opciones]
                        AB:CD:…); si no coincide, no se restaura. Las copias anteriores a
                        0.7.11 no llevan firma: se avisa y se pide lo mismo.
 
+  poner-instalador-agente ARCHIVO.exe
+                       Pone el instalador del agente de Windows (Resguardo-Agente-setup.exe,
+                       el genérico de la publicación) en la carpeta de datos, para que la
+                       consola ofrezca «Descargar instalador listo» también en un servidor
+                       Linux. Comprueba que es un ejecutable de Windows sin preparar, enseña
+                       su SHA-256 y, con --sha256 HEX, se niega si no es ese. Queda solo para
+                       el usuario del servidor (0600); vale al momento, sin reiniciar. Como
+                       root (sudo). Para cambiarlo, se repite con el nuevo.
+
 Variables de entorno (las opciones tienen prioridad; en Linux, el servicio de systemd
 las lee de /etc/resguardo-server/servidor.env):
   RESGUARDO_DATOS      Como --datos
   RESGUARDO_ESCUCHAR   Como --escuchar (p. ej. 0.0.0.0:8443)
   RESGUARDO_NOMBRES    Como --nombre: varios, separados por comas o espacios
   RESGUARDO_DOMINIO, RESGUARDO_ACME_CORREO, RESGUARDO_DOMINIO_AGENTES, RESGUARDO_URL_AGENTES,
-  RESGUARDO_ACME_DIRECTORIO, RESGUARDO_ACME_HTTP, RESGUARDO_MAX_DESCARGA
+  RESGUARDO_ACME_DIRECTORIO, RESGUARDO_ACME_HTTP, RESGUARDO_MAX_DESCARGA,
+  RESGUARDO_INSTALADOR_AGENTE
                        Como las opciones del mismo nombre
   RESGUARDO_ACME_PRUEBAS=1, RESGUARDO_DETRAS_DE_PROXY=1, RESGUARDO_PUBLICO=1
                        Como --acme-pruebas, --detras-de-proxy y --publico
@@ -149,6 +161,11 @@ enum Modo {
         /// `--confiar-en`: la huella (o la identidad) que se espera, la del kit.
         confiar_en: Option<String>,
     },
+    PonerInstaladorAgente {
+        archivo: PathBuf,
+        /// `--sha256`: el que tiene que tener (el publicado).
+        sha256: Option<String>,
+    },
 }
 
 /// Valor de una variable de entorno `RESGUARDO_*` (vacía = sin poner).
@@ -181,7 +198,7 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
             Some(v) => v.parse().map_err(|_| format!("RESGUARDO_MAX_DESCARGA no es un número de MB: {v}."))?,
             None => 500,
         },
-        instalador_agente: None,
+        instalador_agente: entorno("RESGUARDO_INSTALADOR_AGENTE").map(PathBuf::from),
         dominio: entorno("RESGUARDO_DOMINIO"),
         acme_correo: entorno("RESGUARDO_ACME_CORREO"),
         acme_pruebas: entorno_si("RESGUARDO_ACME_PRUEBAS"),
@@ -195,7 +212,7 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
         publico: entorno_si("RESGUARDO_PUBLICO"),
     };
     c.proxy = entorno_si("RESGUARDO_DETRAS_DE_PROXY");
-    let (mut modo, mut toda_la_red, mut reemplazar, mut confiar_en) = (Modo::Servir, false, false, None);
+    let (mut modo, mut toda_la_red, mut reemplazar, mut confiar_en, mut sha256) = (Modo::Servir, false, false, None, None);
     let mut i = 0;
     let valor = |i: &mut usize| -> Result<String, String> {
         *i += 1;
@@ -228,6 +245,8 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
             "codigo-inicial" | "--codigo-inicial" => modo = Modo::CodigoInicial,
             "hacer-respaldo" => modo = Modo::HacerRespaldo,
             "restaurar-respaldo" => modo = Modo::RestaurarRespaldo { archivo: PathBuf::from(valor(&mut i)?), reemplazar: false, confiar_en: None },
+            "poner-instalador-agente" => modo = Modo::PonerInstaladorAgente { archivo: PathBuf::from(valor(&mut i)?), sha256: None },
+            "--sha256" => sha256 = Some(valor(&mut i)?),
             "--reemplazar" => reemplazar = true,
             "--confiar-en" => confiar_en = Some(valor(&mut i)?),
             "--ayuda" | "--help" | "-h" => {
@@ -243,6 +262,10 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
     }
     if let Modo::RestaurarRespaldo { archivo, .. } = modo {
         modo = Modo::RestaurarRespaldo { archivo, reemplazar, confiar_en };
+    } else if let Modo::PonerInstaladorAgente { archivo, .. } = modo {
+        modo = Modo::PonerInstaladorAgente { archivo, sha256 };
+    } else if sha256.is_some() {
+        return Err("--sha256 va con poner-instalador-agente.".into());
     }
     if c.sin_tls && !c.proxy && !c.escuchar.ip().is_loopback() {
         return Err("Sin TLS solo se permite escuchando en 127.0.0.1 o con --detras-de-proxy.".into());
@@ -313,6 +336,7 @@ fn principal() -> Result<(), String> {
         Modo::CodigoInicial => codigo_inicial(&c),
         Modo::HacerRespaldo => hacer_respaldo(&c),
         Modo::RestaurarRespaldo { archivo, reemplazar, confiar_en } => restaurar_respaldo(&c, &archivo, reemplazar, confiar_en.as_deref()),
+        Modo::PonerInstaladorAgente { archivo, sha256 } => poner_instalador_agente(&c, &archivo, sha256.as_deref()),
         #[cfg(windows)]
         Modo::Servicio => servicio::ejecutar(c),
         #[cfg(windows)]
@@ -510,6 +534,26 @@ fn restaurar_respaldo(c: &Config, archivo: &std::path::Path, reemplazar: bool, c
     Ok(())
 }
 
+/// `poner-instalador-agente`: el instalador genérico del agente de Windows en la carpeta de datos.
+fn poner_instalador_agente(c: &Config, archivo: &std::path::Path, sha256: Option<&str>) -> Result<(), String> {
+    use resguardo_servidor::instalador_agente as ia;
+    // Sin permiso sobre la carpeta de datos (0700, del usuario del servicio): con sudo.
+    let r = ia::poner(&c.datos, archivo, sha256).map_err(|e| if cfg!(unix) && e.contains("os error 13") { format!("{e}: ejecútalo con sudo.") } else { e })?;
+    println!("Instalador del agente puesto en {} ({} KB).", r.ruta.display(), r.bytes / 1024);
+    println!("SHA-256: {}", r.sha256);
+    if sha256.is_some() {
+        println!("Coincide con el SHA-256 esperado.");
+    } else {
+        println!("Compáralo con el de la publicación (SHA256SUMS), o repite con --sha256 <ese valor>.");
+    }
+    if let Some(otro) = &c.instalador_agente {
+        println!("AVISO: el servidor usa otro instalador ({}, de --instalador-agente o RESGUARDO_INSTALADOR_AGENTE).", otro.display());
+    } else {
+        println!("La consola ya ofrece «Descargar instalador listo» para Windows (sin reiniciar el servidor).");
+    }
+    Ok(())
+}
+
 /// El nombre o la IP con que abrir la consola desde otro equipo.
 fn host_consola(c: &Config) -> String {
     if !c.escuchar.ip().is_unspecified() {
@@ -533,11 +577,10 @@ pub fn arrancar(c: Config, salida: &dyn Fn(&str)) -> Result<(), String> {
         None => {}
     }
     let huella = identidad::preparar_tls(&c.datos, &c.nombres)?;
-    // El instalador del agente que trae Resguardo Server para Windows (agente/Resguardo-Agente-setup.exe).
-    let instalador_agente = c.instalador_agente.clone().or_else(|| {
-        let p = std::env::current_exe().ok()?.parent()?.join("agente").join("Resguardo-Agente-setup.exe");
-        p.is_file().then_some(p)
-    });
+    // El instalador del agente: el de la carpeta de datos (poner-instalador-agente) o
+    // el que trae Resguardo Server para Windows (agente/Resguardo-Agente-setup.exe).
+    let junto = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join("agente").join(resguardo_servidor::instalador_agente::NOMBRE)));
+    let instalador_agente = Some(resguardo_servidor::instalador_agente::elegir(c.instalador_agente.clone(), &c.datos, junto));
     let opciones = Opciones {
         max_relevo: c.max_mb * 1024 * 1024,
         https: !c.sin_tls || c.proxy,
@@ -627,6 +670,16 @@ mod pruebas {
         assert!(leer_args(&args(&["restaurar-respaldo", "x", "--confiar-en"])).is_err(), "falta la huella");
         assert!(leer_args(&args(&["restaurar-respaldo"])).is_err(), "falta el archivo");
         assert!(matches!(leer_args(&args(&["hacer-respaldo"])).unwrap().unwrap().1, Modo::HacerRespaldo));
+    }
+
+    #[test]
+    fn poner_instalador_agente_con_sus_opciones() {
+        let (c, modo) = leer_args(&args(&["poner-instalador-agente", "setup.exe", "--sha256", "ab12", "--datos", "/srv/rs"])).unwrap().unwrap();
+        assert!(matches!(modo, Modo::PonerInstaladorAgente { ref archivo, sha256: Some(ref h) } if archivo == &PathBuf::from("setup.exe") && h == "ab12"));
+        assert_eq!(c.datos, PathBuf::from("/srv/rs"));
+        assert!(matches!(leer_args(&args(&["poner-instalador-agente", "x.exe"])).unwrap().unwrap().1, Modo::PonerInstaladorAgente { sha256: None, .. }));
+        assert!(leer_args(&args(&["poner-instalador-agente"])).is_err(), "falta el archivo");
+        assert!(leer_args(&args(&["--sha256", "ab12"])).is_err(), "--sha256 solo con poner-instalador-agente");
     }
 
     #[test]

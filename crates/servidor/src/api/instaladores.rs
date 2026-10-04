@@ -111,7 +111,7 @@ fn sin_instalador() -> ErrorApi {
     ErrorApi::nuevo(
         StatusCode::NOT_FOUND,
         "sin_instalador",
-        "Este servidor no tiene el instalador del agente (se instala con Resguardo Server para Windows). Usa el instalador normal y un código.",
+        "Este servidor no tiene el instalador del agente (viene con Resguardo Server para Windows; en Linux: sudo resguardo-server poner-instalador-agente <Resguardo-Agente-setup.exe>). Usa el instalador normal y un código.",
     )
 }
 

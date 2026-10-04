@@ -360,7 +360,7 @@
 
       {#if (so === "windows" && modoWin === "listo") || so === "linux"}
         {#if so === "windows" && !puedeListo}
-          <div class="notice notice-info"><p>Este servidor no trae el instalador del agente (viene con Resguardo Server para Windows). Usa «Instalador normal y un código».</p></div>
+          <div class="notice notice-info"><p>Este servidor no tiene el instalador del agente: viene con Resguardo Server para Windows y, en un servidor Linux, se pone con <code>sudo resguardo-server poner-instalador-agente Resguardo-Agente-setup.exe</code>. Mientras tanto, usa «Instalador normal y un código».</p></div>
         {:else}
           <div class="field">
             <label class="field-label" for="p-nombre">Nombre del equipo</label>
@@ -397,7 +397,7 @@
         <span class="ok-icono"><CircleCheck size={22} /></span>
         <div>
           <h2 class="section-title">Instalador de «{descargado.nombre}» descargado</h2>
-          <p>Llévalo al equipo y ábrelo como administrador (<code>{descargado.archivo}</code>). Se vinculará solo; después, aquí abajo, comprueba su número y dale de alta. Caduca <Tiempo iso={descargado.caduca} />.</p>
+          <p>Llévalo al equipo y ábrelo como administrador (<span class="pastilla mono ajusta">{descargado.archivo}</span>). Se vinculará solo; después, aquí abajo, comprueba su número y dale de alta. Caduca <Tiempo iso={descargado.caduca} />.</p>
         </div>
       </section>
     {/if}
@@ -715,9 +715,6 @@
   }
   .listo-descarga p {
     margin: 4px 0 0;
-  }
-  .listo-descarga code {
-    overflow-wrap: anywhere;
   }
   .pasos-linux {
     display: grid;

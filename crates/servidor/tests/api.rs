@@ -986,6 +986,27 @@ async fn equipos_preparados_instalador_y_linux() {
     assert_eq!(pedir(&p.app, "GET", &format!("/api/clientes/{c}/emparejamientos"), None, Some(&cookie), &[]).await.json, json!([]));
 }
 
+/// En Linux, `poner-instalador-agente` lo deja en la carpeta de datos: el servidor ya
+/// lo apuntaba ahí al arrancar y lo ofrece en cuanto está, sin reiniciar.
+#[tokio::test]
+async fn instalador_del_agente_puesto_despues() {
+    use resguardo_servidor::instalador_agente as ia;
+    let dir = tempfile::tempdir().unwrap();
+    let ruta = ia::elegir(None, dir.path(), None);
+    assert_eq!(ruta, ia::en_datos(dir.path()));
+    let st = preparar(dir.path(), Opciones { https: false, instalador_agente: Some(ruta), ..Default::default() }).unwrap();
+    let p = Prueba { _dir: dir, st: st.clone(), app: api::router(st) };
+    assert_eq!(pedir(&p.app, "GET", "/api/servidor", None, None, &[]).await.json["instalador_agente"], false);
+    let mut exe = vec![0u8; 128 * 1024];
+    exe[..2].copy_from_slice(b"MZ");
+    exe[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+    exe[0x80..0x84].copy_from_slice(b"PE\0\0");
+    let origen = p._dir.path().join("descargado.exe");
+    std::fs::write(&origen, &exe).unwrap();
+    ia::poner(p._dir.path(), &origen, Some(&ia::sha256_hex(&exe))).unwrap();
+    assert_eq!(pedir(&p.app, "GET", "/api/servidor", None, None, &[]).await.json["instalador_agente"], true);
+}
+
 /// Sin instalador en el servidor (Linux, desarrollo): se dice, y no se gasta ningún código.
 #[tokio::test]
 async fn sin_instalador_del_agente() {

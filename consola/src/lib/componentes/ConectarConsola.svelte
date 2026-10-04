@@ -172,7 +172,7 @@
     </div>
   {:else if paso === "equipos" && datos}
     <form class="form" onsubmit={conectar}>
-      <p class="resumen-dest">Se conectarán a <strong>{datos.nombre}</strong> ({hostDe(datos.url)}), identidad <code>{huellaCorta(datos.identidad)}</code>.</p>
+      <p class="resumen-dest">Se conectarán a <strong>{datos.nombre}</strong> ({hostDe(datos.url)}), identidad <span class="pastilla mono">{huellaCorta(datos.identidad)}</span>.</p>
       <fieldset class="field equipos">
         <legend class="field-label">Equipos</legend>
         {#each activos as e (e.id)}

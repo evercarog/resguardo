@@ -231,7 +231,7 @@
     {#if unica}
       {#if creando}
         <form class="crear" onsubmit={crearCarpeta}>
-          <label class="field-label" for="nueva-carpeta">Carpeta nueva dentro de <code>{dondeCrear}</code></label>
+          <label class="field-label" for="nueva-carpeta">Carpeta nueva dentro de <span class="pastilla mono ajusta">{dondeCrear}</span></label>
           <div class="con-boton">
             <input id="nueva-carpeta" class="input" bind:this={campoNombre} bind:value={creando.nombre} placeholder="Por ejemplo: Resguardo" maxlength="100" autocomplete="off" spellcheck="false" disabled={creando.enviando} aria-required="true" aria-invalid={!!(errorNombre ?? creando.error)} aria-describedby={errorNombre || creando.error ? "nueva-carpeta-error" : undefined} />
             <button class="btn btn-primary" disabled={!creando.nombre || !!errorNombre || creando.enviando}>{#if creando.enviando}<LoaderCircle size={15} class="spin" />Creando…{:else}Crear{/if}</button>
@@ -390,10 +390,6 @@
     flex-direction: column;
     gap: 6px;
     margin-top: var(--sp-3);
-  }
-  .crear code {
-    font-size: 12px;
-    overflow-wrap: anywhere;
   }
   .crear .con-boton {
     display: flex;

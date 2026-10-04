@@ -16,6 +16,7 @@ pub mod cuotas;
 pub mod error;
 pub mod estado;
 pub mod identidad;
+pub mod instalador_agente;
 pub mod notificaciones;
 pub mod pistas;
 pub mod progreso;

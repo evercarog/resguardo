@@ -78,12 +78,12 @@
         <a class="card cliente" href="/c/{c.id}">
           <MarcaCliente nombre={c.nombre} marca={c.marca} tam={40} />
           <span class="texto">
-            <strong>{c.nombre}</strong>
-            <span class="faint">{NOMBRE_ROL[c.rol]}</span>
-          </span>
-          <span class="datos">
-            <span><Monitor size={13} />{plural(c.equipos, "equipo", "equipos")}</span>
-            {#if c.avisos}<span class="badge badge-sm tone-bad"><BellRing size={11} />{plural(c.avisos, "aviso", "avisos")}</span>{/if}
+            <strong title={c.nombre}>{c.nombre}</strong>
+            <span class="meta">
+              <span>{NOMBRE_ROL[c.rol]}</span>
+              <span class="equipos"><Monitor size={13} />{plural(c.equipos, "equipo", "equipos")}</span>
+              {#if c.avisos}<span class="badge badge-sm tone-bad"><BellRing size={11} />{plural(c.avisos, "aviso", "avisos")}</span>{/if}
+            </span>
           </span>
           <ChevronRight size={16} />
         </a>
@@ -148,29 +148,30 @@
   .texto {
     display: flex;
     flex-direction: column;
+    gap: 4px;
     flex: 1;
     min-width: 0;
   }
-  .texto .faint {
-    font-size: var(--fs-sm);
-  }
+  /* En tres columnas el nombre tiene poco sitio: hasta dos líneas antes de cortarse. */
   .texto strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
   }
-  .datos {
-    flex: none;
-  }
-  .datos {
+  /* Debajo del nombre: el papel, los equipos y los avisos. */
+  .meta {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
     font-size: var(--fs-sm);
     color: var(--text-3);
   }
-  .datos > span:first-child {
+  .equipos {
     display: inline-flex;
     align-items: center;
     gap: 5px;
