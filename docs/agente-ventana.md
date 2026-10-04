@@ -166,6 +166,7 @@ ACL, atada a un reto de un uso: lo mismo que ya viaja (cifrado) en cada orden.
 | `restaurar` | local | junto al original, en su sitio o en otra carpeta |
 | `guarda_copias`, `conectar_nube`, `quitar_nube` | local | Servidor de copias, espejo y nubes |
 | `historial`, `kit`, `cambiar_clave`, `vincular` | local | |
+| `adoptar_repositorio`, `copiar_historial`, `historial_traido` | local | «Usar uno que ya existe» (o solo probarlo) y «Traer historial» (en segundo plano; `historial_traido { repo }` dice cómo va: `{ estado, mensaje }` o `null`) |
 
 En un equipo gestionado la ventana solo cambia `escritorio`.
 
@@ -184,7 +185,9 @@ Equipo recién instalado, sin vincular: la ventana ofrece **«Usar sin consola»
    - **Dónde**: carpeta o disco del equipo (USB), rest-server (con su
      certificado), S3, B2 o SFTP; contraseña generada y **kit de recuperación**
      para imprimir; **retención** con los preajustes («Programas contables»…) y
-     «aplicar ya»; **copia externa** a otro destino.
+     «aplicar ya»; **copia externa** a otro destino; **«Usar uno que ya existe»**
+     (p. ej. el de la app de escritorio, con todo su historial) y **«Traer
+     historial»** de otro repositorio a uno de aquí, con los formularios de la consola.
    - **Copias**: carpetas con un explorador del equipo (o escribiendo la ruta),
      exclusiones, reglas de horario (horas, cada N minutos, cada N días, un día
      al mes), «solo si hay cambios», «Antes de copiar» (volcado de SQL Server,
