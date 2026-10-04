@@ -145,7 +145,7 @@ async fn cada_cuenta_ve_solo_sus_clientes() {
     // Ana: A y C (por nombre), con su papel; nada de B.
     let r = pedir(&p.app, "GET", "/api/panel", None, Some(&ana), None).await;
     assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
-    assert_eq!(ids(&r), [a.clone(), c.clone()]);
+    assert_eq!(ids(&r), [a.as_str(), c.as_str()]);
     assert_eq!(r.json["clientes"][0]["rol"], "propietario");
     assert_eq!(r.json["clientes"][0]["equipos"][0]["nombre"], "EQUIPO-DE-A");
     assert_eq!(r.json["clientes"][0]["informes"][0]["equipo"], equipo_a.as_str());
@@ -162,14 +162,14 @@ async fn cada_cuenta_ve_solo_sus_clientes() {
 
     // Luis: solo A, como técnico.
     let r = pedir(&p.app, "GET", "/api/panel", None, Some(&luis), None).await;
-    assert_eq!(ids(&r), [a.clone()]);
+    assert_eq!(ids(&r), [a.as_str()]);
     assert_eq!(r.json["clientes"][0]["rol"], "tecnico");
     assert!(!r.texto.contains(&c), "ni C");
     sin_b(&r, "Luis");
 
     // Bea: solo B, con su informe resumido y lo que está en marcha.
     let r = pedir(&p.app, "GET", "/api/panel", None, Some(&bea), None).await;
-    assert_eq!(ids(&r), [b.clone()]);
+    assert_eq!(ids(&r), [b.as_str()]);
     let cb = &r.json["clientes"][0];
     assert_eq!(cb["equipos"][0]["nombre"], EQUIPO_B);
     assert_eq!(cb["informes"][0]["datos"]["repos"][0]["nombre"], REPO_B);
