@@ -14,9 +14,12 @@
 //!   tiempo constante. La calcula la ventana: el servicio nunca ve la clave.
 //!   Atada a un **reto de un solo uso** que da `hola` (caduca en
 //!   [`RETO_VIDA_S`]; se gasta aunque falle: no se puede repetir).
-//! - **Límites**: 5 fallos seguidos bloquean 1 minuto, el doble cada vez
-//!   (hasta 1 hora); tras un fallo, como mucho un intento por segundo. Nada
-//!   de la petición va al registro.
+//! - **Límites**, por cuenta del equipo (la que da el sistema, no la
+//!   petición): 5 fallos seguidos bloquean 1 minuto, el doble cada vez (hasta
+//!   1 hora); tras un fallo, como mucho un intento por segundo. Los retos
+//!   también son de cada cuenta. Nada de la petición va al registro.
+//! - La primera clave (modo sin consola) solo la pone un administrador del
+//!   equipo ([`puede_crear_clave`]).
 
 use base64::Engine;
 use serde_json::{json, Value};
