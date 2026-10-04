@@ -284,6 +284,20 @@ pub fn carpeta(datos: &Path) -> PathBuf {
     datos.join("acme")
 }
 
+/// Cada autoridad ACME con su carpeta (cuenta y certificados): el Let's Encrypt de
+/// verdad en `<datos>/acme`; el de pruebas u otra, en una subcarpeta. Así, al quitar
+/// `--acme-pruebas`, no se sigue sirviendo el certificado de pruebas.
+pub fn carpeta_de_autoridad(carpeta: &Path, directorio: &str) -> PathBuf {
+    if directorio == LETS_ENCRYPT {
+        carpeta.to_path_buf()
+    } else if directorio == LETS_ENCRYPT_PRUEBAS {
+        carpeta.join("pruebas")
+    } else {
+        let h = Sha256::digest(directorio.as_bytes());
+        carpeta.join(format!("otra-{}", B64U.encode(&h[..6])))
+    }
+}
+
 fn archivos(carpeta: &Path, dominio: &str) -> (PathBuf, PathBuf) {
     (carpeta.join(format!("{dominio}.crt")), carpeta.join(format!("{dominio}.key")))
 }
@@ -522,6 +536,7 @@ pub fn obtener(cfg: &ConfigAcme, carpeta: &Path, retos: &Retos) -> Result<(Strin
 /// Pone el certificado guardado (si lo hay) y arranca la renovación: pide uno
 /// nuevo cuando falta o toca, lo guarda y lo pone en `certs` sin reiniciar.
 pub fn arrancar(cfg: ConfigAcme, carpeta: PathBuf, retos: Retos, certs: Arc<Certificados>) {
+    let carpeta = carpeta_de_autoridad(&carpeta, &cfg.directorio);
     if let Some((pem, clave)) = guardado(&carpeta, &cfg.dominio) {
         match certificado_rustls(&pem, &clave) {
             Ok(c) => certs.poner_publico(c),
@@ -579,6 +594,15 @@ fn csr_de(dominio: &str, clave: &rcgen::KeyPair) -> Result<rcgen::CertificateSig
 #[cfg(test)]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn cada_autoridad_en_su_carpeta() {
+        let base = Path::new("acme");
+        assert_eq!(carpeta_de_autoridad(base, LETS_ENCRYPT), base);
+        assert_eq!(carpeta_de_autoridad(base, LETS_ENCRYPT_PRUEBAS), base.join("pruebas"));
+        let otra = carpeta_de_autoridad(base, "https://127.0.0.1:14000/dir");
+        assert!(otra.starts_with(base) && otra != base && otra != base.join("pruebas"));
+    }
 
     #[test]
     fn la_peticion_solo_lleva_el_dominio() {

@@ -201,7 +201,7 @@ DuckDNS). Lo demás lo hace `preparar-vm.sh`.
 
    ```sh
    sudo sed -i '/^RESGUARDO_ACME_PRUEBAS=/d' /etc/resguardo-server/servidor.env
-   sudo rm -f /var/lib/resguardo-server/acme/consola.ejemplo.com.*
+   # (desde 0.7.16 no hace falta: cada autoridad guarda lo suyo en su carpeta)
    sudo systemctl restart resguardo-server
    ```
 
