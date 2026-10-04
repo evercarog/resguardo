@@ -370,7 +370,7 @@
           <div class="eje" aria-hidden="true">
             {#each marcas as m (m.t)}
               {@const mx = x(m.t)}
-              {#if mx > 2 && mx < w - 24 && Math.abs(mx - x(ahora)) > 34}
+              {#if mx > 2 && mx < w - 24 && (x(ahora) < 0 || x(ahora) > w || Math.abs(mx - Math.min(w - 22, Math.max(22, x(ahora)))) > 46)}
                 <span class="m-txt" class:fuerte={m.fuerte} style:transform="translateX({mx}px)">{m.texto}</span>
               {/if}
             {/each}
