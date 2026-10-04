@@ -1,8 +1,10 @@
 // La línea de tiempo de las versiones («máquina del tiempo», docs/diseno.md §4):
 // lo que no es pantalla. Las escalas (día, semana, mes, año), las marcas del
 // eje, el color de cada copia (tres de una paleta validada para daltonismo,
-// en orden fijo; las demás, en tinta neutra) y la retención simulada (qué se
-// queda y por qué, qué quitaría la próxima vez).
+// en orden fijo; las demás, en tinta neutra), la retención simulada (qué se
+// queda y por qué, qué quitaría la próxima vez) y lo que se dibuja con ella:
+// el «río» de versiones por periodo, las burbujas de las que no caben y las
+// franjas de cada regla.
 import type { DestinoResumen, Equipo, Regla, RepositorioResumen } from "./tipos";
 import { almacenDe, motivosQuedan, reglaDe, type Periodo } from "./retencion";
 
@@ -22,11 +24,12 @@ export interface VersionLinea {
 }
 
 export type Zoom = "dia" | "semana" | "mes" | "ano";
-export const ZOOM: Record<Zoom, { texto: string; ms: number }> = {
-  dia: { texto: "Día", ms: DIA },
-  semana: { texto: "Semana", ms: 7 * DIA },
-  mes: { texto: "Mes", ms: 31 * DIA },
-  ano: { texto: "Año", ms: 366 * DIA },
+/** Cada escala: lo que se ve (`ms`) y el tramo del «río» (`rio`: versiones por hora, por día…). */
+export const ZOOM: Record<Zoom, { texto: string; ms: number; rio: number; por: string }> = {
+  dia: { texto: "Día", ms: DIA, rio: HORA, por: "hora" },
+  semana: { texto: "Semana", ms: 7 * DIA, rio: 6 * HORA, por: "6 horas" },
+  mes: { texto: "Mes", ms: 31 * DIA, rio: DIA, por: "día" },
+  ano: { texto: "Año", ms: 366 * DIA, rio: 7 * DIA, por: "semana" },
 };
 export const ZOOMS = Object.keys(ZOOM) as Zoom[];
 
@@ -91,6 +94,78 @@ export function reglaEfectiva(repo: RepositorioResumen | null | undefined, desti
 }
 
 export const NOMBRE_MOTIVO: Record<Periodo, string> = { horarias: "horaria", diarias: "diaria", semanales: "semanal", mensuales: "mensual", anuales: "anual" };
+/** El rótulo de la franja de cada regla de la retención. */
+export const NOMBRE_FRANJA: Record<Periodo, string> = { horarias: "por hora", diarias: "diarias", semanales: "semanales", mensuales: "mensuales", anuales: "anuales" };
+
+/**
+ * El «río»: cuántas versiones caen en cada tramo de `paso` ms, con los tramos
+ * alineados a múltiplos de `paso` (así no tiembla al arrastrar) y suavizado
+ * con un núcleo binomial (1 4 6 4 1) dos veces. `desde` es el inicio del
+ * primer tramo; `n`, cuántos tramos. Los valores van de 0 a 1 (el máximo).
+ */
+export function rio(horas: number[], paso: number, desde: number, hasta: number): { desde: number; paso: number; v: number[] } {
+  const ini = Math.floor(desde / paso) * paso - 3 * paso;
+  const n = Math.max(1, Math.ceil((hasta - ini) / paso) + 4);
+  let v = new Array<number>(n).fill(0);
+  for (const t of horas) {
+    const i = Math.floor((t - ini) / paso);
+    if (i >= 0 && i < n) v[i]++;
+  }
+  const k = [1, 4, 6, 4, 1];
+  for (let pasada = 0; pasada < 2; pasada++) {
+    v = v.map((_, i) => k.reduce((s, w, j) => s + w * (v[i + j - 2] ?? 0), 0) / 16);
+  }
+  const max = Math.max(...v);
+  return { desde: ini, paso, v: max > 0 ? v.map((x) => x / max) : v };
+}
+
+/**
+ * Junta las marcas que quedan demasiado cerca (en píxeles) para verse: de
+ * izquierda a derecha, una marca se une al grupo anterior si está a menos de
+ * `minimo` px de la última del grupo. Devuelve los grupos con su posición
+ * media; los de una sola marca son marcas sueltas.
+ */
+export function agrupar<T extends { x: number }>(marcas: T[], minimo: number): { x: number; xs: T[] }[] {
+  const orden = [...marcas].sort((a, b) => a.x - b.x);
+  const out: { x: number; xs: T[] }[] = [];
+  for (const m of orden) {
+    const g = out.at(-1);
+    if (g && m.x - g.xs.at(-1)!.x < minimo) g.xs.push(m);
+    else out.push({ x: m.x, xs: [m] });
+  }
+  for (const g of out) g.x = g.xs.reduce((s, m) => s + m.x, 0) / g.xs.length;
+  return out;
+}
+
+/**
+ * Las franjas de la retención, de la más reciente a la más antigua: el tramo
+ * de tiempo que guarda cada regla (de su versión más antigua a la más
+ * reciente, unidas por la mitad del hueco con la de al lado para que no se
+ * pisen ni dejen huecos). `n`: cuántas versiones guarda. La más reciente
+ * llega hasta `ahora`.
+ */
+export function franjasRetencion(versiones: { id: string; t: number }[], motivos: Map<string, Periodo | null> | null, ahora: number): { p: Periodo; desde: number; hasta: number; n: number }[] {
+  if (!motivos) return [];
+  const grupos = new Map<Periodo, { min: number; max: number; n: number }>();
+  for (const v of versiones) {
+    const p = motivos.get(v.id);
+    if (!p) continue;
+    const g = grupos.get(p) ?? { min: Infinity, max: -Infinity, n: 0 };
+    g.min = Math.min(g.min, v.t);
+    g.max = Math.max(g.max, v.t);
+    g.n++;
+    grupos.set(p, g);
+  }
+  const fr = [...grupos].map(([p, g]) => ({ p, ...g })).sort((a, b) => b.max - a.max);
+  return fr.map((f, i) => {
+    const nueva = fr[i - 1];
+    const vieja = fr[i + 1];
+    // Unidas por la mitad: si dos reglas se cruzan (raro), la frontera queda entre las dos.
+    const hasta = nueva ? (f.max + nueva.min) / 2 : Math.max(ahora, f.max);
+    const desde = vieja ? (f.min + vieja.max) / 2 : f.min - Math.max(HORA, (f.max - f.min) * 0.02);
+    return { p: f.p, desde: Math.min(desde, hasta), hasta, n: f.n };
+  });
+}
 
 /** Por qué se queda cada versión (de la lista en cualquier orden), con su id: null = la próxima retención la quitaría. */
 export function retencionDe(versiones: { id: string; hora: string }[], regla: Regla | null): Map<string, Periodo | null> | null {
