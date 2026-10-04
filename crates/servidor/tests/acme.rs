@@ -417,14 +417,16 @@ async fn el_servidor_da_el_publico_en_el_dominio_y_el_propio_a_los_agentes() {
     };
     tokio::spawn(resguardo_servidor::servir(st, https, tls));
     // Hasta que lo tenga (pide el certificado al arrancar).
-    let guardado = datos.path().join("acme").join(format!("{DOMINIO}.crt"));
+    // Cada autoridad, en su carpeta (esta de pruebas, en una subcarpeta de <datos>/acme).
+    let carpeta = resguardo_servidor::acme::carpeta_de_autoridad(&resguardo_servidor::acme::carpeta(datos.path()), &config(&dir).directorio);
+    let guardado = carpeta.join(format!("{DOMINIO}.crt"));
     for _ in 0..200 {
         if guardado.is_file() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(guardado.is_file(), "el certificado público se guarda en <datos>/acme");
+    assert!(guardado.is_file(), "el certificado público se guarda en <datos>/acme (en la carpeta de su autoridad)");
     tokio::time::sleep(Duration::from_millis(100)).await;
     // El dominio, con el público (el navegador confía en su autoridad)…
     saludo_tls(https, DOMINIO, &ca_publica).await.expect("el dominio lleva el certificado público");
