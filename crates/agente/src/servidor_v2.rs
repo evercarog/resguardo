@@ -186,7 +186,7 @@ fn aleatorio<const N: usize>() -> [u8; N] {
 /// `http://` solo para el propio equipo (pruebas o un proxy local).
 /// ¿`http://` a este mismo equipo? Solo con el anfitrión exacto: sin usuario
 /// en la URL («http://localhost@otro/» va a «otro») y con IPv6 entre corchetes.
-fn es_local(url: &str) -> bool {
+pub(crate) fn es_local(url: &str) -> bool {
     let Some(resto) = url.strip_prefix("http://") else { return false };
     let autoridad = resto.split(['/', '?', '#', '\\']).next().unwrap_or("");
     if autoridad.contains('@') {
