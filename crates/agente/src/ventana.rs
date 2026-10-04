@@ -195,7 +195,8 @@ mod win {
                 unsafe {
                     windows_sys::Win32::System::Com::CoInitializeEx(std::ptr::null(), windows_sys::Win32::System::Com::COINIT_MULTITHREADED as u32);
                 }
-                let nativos = registrar_identidad().is_ok();
+                // La identidad de los avisos se registra con el primero (sin avisos, nada).
+                let mut nativos: Option<bool> = None;
                 for a in rx {
                     let mut estado = 5;
                     // SAFETY: un entero de salida.
@@ -205,6 +206,7 @@ mod win {
                     if !crate::escritorio::pasa_aviso(estado, a.error) {
                         continue;
                     }
+                    let nativos = *nativos.get_or_insert_with(|| registrar_identidad().is_ok());
                     if !nativos || mostrar(&a, tx_pulsado.clone()).is_err() {
                         let _ = tx_globo.send(a);
                     }

@@ -468,6 +468,8 @@ mod service {
             libc::signal(libc::SIGINT, al_recibir_senal as *const () as libc::sighandler_t);
         }
         crate::servidor_v2::hilo();
+        // El canal local con la clave de administración (docs/agente-ventana.md §4).
+        crate::ipc_local::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         'vueltas: loop {
