@@ -466,7 +466,7 @@
         {#if admiteSoloCambios}
           <label class="switch-row"
             ><input type="checkbox" class="switch" checked={k.solo_si_cambios !== false} onchange={(e) => (k.solo_si_cambios = e.currentTarget.checked)} /><span
-              >Solo guardar si hay cambios<span class="faint">Si lo apagas, cada vuelta guarda una versión aunque nada haya cambiado.</span></span
+              >Solo guardar si hay cambios<span class="faint">Si lo apagas, cada copia guarda una versión aunque nada haya cambiado.</span></span
             ></label
           >
         {:else}

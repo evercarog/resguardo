@@ -31,7 +31,7 @@
 
 <div class="estado">
   <section>
-    <h3>La última vuelta</h3>
+    <h3>La última copia</h3>
     {#if ultima}
       <button class="pulsable-bloque fila" use:tip={"Ver detalle"} onclick={() => abrirVuelta(ultima!.hora)}>
         <Chip tono={TONO_RESULTADO[ultima.resultado]} texto={TEXTO_RESULTADO[ultima.resultado]} />
@@ -39,14 +39,14 @@
         {#if ultima.mensaje_corto && ultima.resultado !== "ok"}<span class="msg">{explicarError(ultima.mensaje_corto).titulo}: «{ultima.mensaje_corto}»</span>{/if}
       </button>
     {:else}
-      <p class="faint">Todavía no hay vueltas en el informe.</p>
+      <p class="faint">Todavía no hay copias en el informe.</p>
     {/if}
   </section>
 
   <section>
     <h3>Problemas recientes <span class="faint">· 60 días</span></h3>
     {#if !problemas.length}
-      <p class="faint">Ninguno: todas las vueltas fueron bien.</p>
+      <p class="faint">Ninguno: todas las copias fueron bien.</p>
     {:else}
       <ul>
         {#each problemas as e (e.hora)}

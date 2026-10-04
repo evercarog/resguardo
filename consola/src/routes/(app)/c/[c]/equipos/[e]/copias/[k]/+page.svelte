@@ -242,14 +242,14 @@
 
     <div class="cifras" id="sec-resumen">
       {#if ejecuciones[0]}
-        <button class="cifra pulsable-bloque" use:tip={"Ver detalle de la última vuelta"} onclick={() => abrirVuelta(ejecuciones[0].hora)}>
-          <span class="k">Última vuelta</span>
+        <button class="cifra pulsable-bloque" use:tip={"Ver detalle de la última copia"} onclick={() => abrirVuelta(ejecuciones[0].hora)}>
+          <span class="k">Última copia</span>
           <strong class="num">{vuelta ? relativo(vuelta.cuando, reloj.ahora) : "—"}</strong>
           <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : "falló") : "todavía ninguna"}</span>
         </button>
       {:else}
       <div class="cifra">
-        <span class="k">Última vuelta</span>
+        <span class="k">Última copia</span>
         <strong class="num">{vuelta ? relativo(vuelta.cuando, reloj.ahora) : "—"}</strong>
         <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : "falló") : "todavía ninguna"}</span>
       </div>
@@ -260,14 +260,14 @@
         <span class="faint">{k.activa === false ? "desactivada" : pausada ? "en pausa" : proxima && Date.parse(proxima) > reloj.ahora ? cuandoFrase(proxima, reloj.ahora) : horarioEnFrase(k.horario)}</span>
       </div>
       <button class="cifra pulsable-bloque" use:tip={"Ver los problemas recientes"} onclick={abrirEstado}>
-        <span class="k">Vueltas correctas</span>
+        <span class="k">Copias correctas</span>
         <strong class="num">{cifras.vueltas ? `${numero(Math.round((cifras.correctas / cifras.vueltas) * 100))} %` : "—"}</strong>
         <span class="faint">{cifras.vueltas ? `${numero(cifras.correctas)} de ${numero(cifras.vueltas)} en 60 días` : "sin datos todavía"}</span>
       </button>
       <div class="cifra">
         <span class="k">Lo que copia</span>
         <strong class="num">{bytes(cifras.tamano)}</strong>
-        <span class="faint">{cifras.duracionMedia != null ? `unos ${duracion(cifras.duracionMedia)} por vuelta` : "según su última versión"}</span>
+        <span class="faint">{cifras.duracionMedia != null ? `unos ${duracion(cifras.duracionMedia)} por copia` : "según su última versión"}</span>
       </div>
     </div>
 
@@ -283,12 +283,12 @@
               cifras.fallidas ? plural(cifras.fallidas, "falló", "fallaron") : null,
             ]
               .filter(Boolean)
-              .join(" · ") || "Ninguna vuelta todavía"}
+              .join(" · ") || "Ninguna copia todavía"}
             {#if cifras.anadido != null}· añadió {bytes(cifras.anadido)}{/if}
           </p>
         </div>
         <DiasCuadros dias={dias(inf, 60, reloj.ahora)} etiqueta="Resultado de «{k.nombre}» en los últimos 60 días" leyenda elegido={sel.dia} alElegir={elegirDia} />
-        <p class="faint pista-dia">{sel.dia ? "Pulsa otra vez el día para ver todos." : "Pulsa un día para ver solo sus vueltas y versiones."}</p>
+        <p class="faint pista-dia">{sel.dia ? "Pulsa otra vez el día para ver todos." : "Pulsa un día para ver solo sus copias y versiones."}</p>
       </section>
     {/if}
 
@@ -350,9 +350,9 @@
               </li>
             {/each}
           </ul>
-          {#if fila?.cuando}<p class="faint pequeno">En la vuelta de {relativo(fila.cuando, reloj.ahora)}.</p>{/if}
+          {#if fila?.cuando}<p class="faint pequeno">En la copia de {relativo(fila.cuando, reloj.ahora)}.</p>{/if}
         {:else}
-          <p class="faint pequeno">{detalle ? "Nada: copia las carpetas tal cual." : "Nada, o todavía no se ha hecho ninguna vuelta con pasos previos."}</p>
+          <p class="faint pequeno">{detalle ? "Nada: copia las carpetas tal cual." : "Nada, o todavía no se ha hecho ninguna copia con pasos previos."}</p>
         {/if}
       </section>
 
@@ -378,7 +378,7 @@
           </div>
           <div>
             <dt>Si no hay cambios</dt>
-            <dd class="faint">No guarda una versión nueva: la vuelta cuenta como hecha y no ocupa nada.</dd>
+            <dd class="faint">No guarda una versión nueva: la copia cuenta como hecha y no ocupa nada.</dd>
           </div>
           <div>
             <dt>Repositorio</dt>
@@ -412,7 +412,7 @@
       <section class="card p graficas" id="sec-graficas" aria-label="Gráficas de la copia">
         {#if versiones.length >= 2}<GraficaBarras titulo="Datos nuevos por versión" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />{/if}
         {#if conDuracion.length >= 2}
-          <GraficaBarras titulo="Duración por vuelta" datos={conDuracion} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} alElegir={(x) => abrirVuelta(x.hora)} elegido={sel.vuelta} />
+          <GraficaBarras titulo="Duración de cada copia" datos={conDuracion} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} alElegir={(x) => abrirVuelta(x.hora)} elegido={sel.vuelta} />
         {:else}
           <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
         {/if}

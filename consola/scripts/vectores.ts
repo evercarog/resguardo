@@ -7,6 +7,8 @@
 //
 //   npm run test:vectores
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash, createHmac } from "node:crypto";
 import sodium from "libsodium-wrappers";
 import { argon2id as argon2Wasm } from "hash-wasm";
@@ -19,7 +21,7 @@ import { almacenDe, errorHorario, errorRegla, estimarVersiones, leerPlazo, leerR
 import { errorVerificacion, fraseVerificacion, partesVerificacion } from "../src/lib/verificacion";
 import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnAlmacen } from "../src/lib/direccion";
 import { resultadoConError } from "../src/lib/salud";
-import { atrasada, cifrasCopia, estadoCopia, explicarError, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
+import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
 import { bytesRepo, destinoDe, versionDeVuelta } from "../src/lib/repo";
 import type { CopiaResumen, Equipo, Informe, ReglaHorario, RepoInforme, TareaEnMarcha } from "../src/lib/tipos";
 import { cifrasTarea, porcentaje, textoCorto, textoFase, textoQuedan } from "../src/lib/textoProgreso";
@@ -523,6 +525,12 @@ if (v1.paquete) {
   igual("error: archivos en uso", explicarError("3 archivos en uso no se pudieron leer.").titulo, "Algunos archivos no se pudieron leer");
   igual("error: volcado", explicarError("El volcado de SQL Server falló: inicio de sesión").ayuda, "si-volcado");
   igual("error: desconocido", explicarError("algo raro").ayuda, "si-copia-falla");
+  // Cada vez que se hace una copia es «una copia» (no «una vuelta»).
+  cierto("frase: «La última copia»", fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false }, ahora).includes("La última copia, "));
+  cierto(
+    "explicaciones de errores sin «vuelta»",
+    ["No se pudo conectar con el servidor de copias.", "3 archivos en uso no se pudieron leer.", "algo raro"].every((m) => !/vuelta/i.test(JSON.stringify(explicarError(m)))),
+  );
   {
     const vs = [{ ...repo.versiones[0], hora: iso(2, 13, 3) }];
     igual("versionDeVuelta: la que empezó durante la vuelta", versionDeVuelta(vs, { hora: iso(2, 13, 4), copia: "docs", resultado: "ok", mensaje_corto: null, duracion_s: 70 })?.id, "aaaa0001");
@@ -881,6 +889,39 @@ console.log("\n· Cambiar la clave de administración (lib/cambioClave.ts)");
   );
   const g = claveGenerada((n) => new Uint8Array(n).map((_, i) => i * 7));
   cierto("clave generada: 5 grupos de 5, sin letras que se confundan", /^([A-HJ-NP-Z2-9]{5}-){4}[A-HJ-NP-Z2-9]{5}$/.test(g));
+}
+
+// ---------------------------------------------------------------------------
+// Palabras: «copia», no «vuelta» (cada vez que se hace una copia es «una copia»;
+// las verificaciones, «comprobaciones»; lo del espejo, «subidas»). Mira el texto
+// que lee la persona en la consola y en la ventana del equipo: frases con
+// «vuelta(s)» como sustantivo. Los nombres en el código (ultimaVuelta,
+// `?vuelta=` en la URL…) no cuentan.
+// ---------------------------------------------------------------------------
+console.log("\n· Palabras: «copias», no «vueltas»");
+{
+  const frase = /(?<!\p{L})(la|las|una|unas|cada|próxima|siguiente|última|últimas|sus|por|ninguna|esa|esta|muchas|sin|otra|de la)\s+vueltas?(?!\p{L})|(?<!\p{L})vueltas?\s+(correctas?|fallidas?|de la copia|que)(?!\p{L})/iu;
+  const consola = fileURLToPath(new URL("..", import.meta.url));
+  const raices = ["src", "ventana/src"].map((r) => path.join(consola, r));
+  const malas: string[] = [];
+  const recorrer = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const u = path.join(dir, e.name);
+      if (e.isDirectory()) recorrer(u);
+      else if (/\.(ts|svelte|js)$/.test(e.name)) {
+        fs.readFileSync(u, "utf8")
+          .split(/\r?\n/)
+          .forEach((linea, i) => {
+            const t = linea.trim();
+            if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) return;
+            const sinComentario = linea.replace(/\/\*.*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/, "$1");
+            if (frase.test(sinComentario)) malas.push(`${path.relative(consola, u)}:${i + 1}: ${t.slice(0, 120)}`);
+          });
+      }
+    }
+  };
+  for (const r of raices) if (fs.existsSync(r)) recorrer(r);
+  igual("ningún texto con «vuelta(s)» en la consola ni en la ventana", malas, []);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

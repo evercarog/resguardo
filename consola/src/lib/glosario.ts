@@ -187,6 +187,15 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     title: "Retención",
     text: "Cuántas versiones antiguas se conservan. Sin ella, el repositorio crece sin fin.",
   },
+  copia: {
+    title: "Copia",
+    text: "Lo que guarda un equipo (qué carpetas, en qué repositorio y con qué horario) y también cada vez que lo hace: «la última copia», «copias correctas», «copias fallidas». Una copia sin cambios no guarda versión nueva. Las verificaciones del repositorio se cuentan como comprobaciones y lo que manda el espejo, como subidas.",
+  },
+  "en-vivo": {
+    title: "Al día, sin recargar",
+    text: "La consola se entera al momento de lo que pasa en los equipos (una copia que empieza o termina, un informe, un aviso, una orden) y lo enseña sin recargar la página. Si esa conexión no pasa (un proxy, la red), pregunta cada pocos segundos.",
+    todo: "Si una cifra no cambia, mira si hay red con el servidor: la consola vuelve a conectar sola.",
+  },
   kit: {
     title: "Kit de recuperación",
     text: "Una hoja por repositorio con su destino, su id y su contraseña. Con ella se pueden abrir las copias en cualquier equipo, incluso sin Resguardo (con restic).",

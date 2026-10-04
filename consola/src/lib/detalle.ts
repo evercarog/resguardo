@@ -364,7 +364,7 @@ export function migasDe(s: Seleccion, nombreVersion: (id: string) => string): { 
     if (s.vista === "cambios" && s.filtro !== "todos") out.push({ texto: TEXTO_FILTRO[s.filtro], sel: { vista: "cambios", version: s.version, con: s.con, filtro: s.filtro } });
     if (s.vista === "ocupa") out.push({ texto: "Lo que más ocupa", sel: { vista: "ocupa", version: s.version } });
   } else if (s.vista === "espacio") out.push({ texto: "Espacio", sel: { vista: "espacio", version: null } });
-  else if (s.vista === "vuelta") out.push({ texto: "Vuelta de la copia", sel: { vista: "vuelta", vuelta: s.vuelta } });
+  else if (s.vista === "vuelta") out.push({ texto: "Detalle de la copia", sel: { vista: "vuelta", vuelta: s.vuelta } });
   else if (s.vista === "estado") out.push({ texto: "¿Por qué este estado?", sel: { vista: "estado" } });
   return out;
 }

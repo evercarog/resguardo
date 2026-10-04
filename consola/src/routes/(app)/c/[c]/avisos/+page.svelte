@@ -54,7 +54,7 @@
     const d = destinoAviso(a, ultimos.porEquipo[a.equipo]?.datos?.repos ?? []);
     if (!d) return null;
     const base = `/c/${actual.id}/equipos/${a.equipo}/repositorios/${encodeURIComponent(d.repo)}`;
-    return d.vuelta ? { href: `${base}?${new URLSearchParams({ vuelta: d.vuelta })}`, texto: "Ver esa vuelta" } : { href: `${base}?vista=estado`, texto: "Ver el repositorio" };
+    return d.vuelta ? { href: `${base}?${new URLSearchParams({ vuelta: d.vuelta })}`, texto: "Ver esa copia" } : { href: `${base}?vista=estado`, texto: "Ver el repositorio" };
   }
 
   const c = $derived(actual.id);
