@@ -14,7 +14,7 @@ import { claveEspejo, destinosDeCuerpo, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoE
 import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
-import { errorReglas, horaValida, VERSION_REGLAS } from "../lib/horario";
+import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarTarea } from "./progreso";
@@ -82,7 +82,7 @@ export function configInicial(e: EquipoMock): T.Configuracion {
     bandeja: { visible: true, avisos: true },
     // v1.28: la verificación automática que ya tiene (solo un agente que la entiende).
     ...(r.admite?.includes("verificacion_auto")
-      ? { verificaciones: Object.fromEntries((r.repositorios ?? []).filter((x) => x.verificacion_auto).map((x) => [x.id, { cada_dias: x.verificacion_auto!.cada_dias, porcentaje: x.verificacion_auto!.porcentaje }])) }
+      ? { verificaciones: Object.fromEntries((r.repositorios ?? []).filter((x) => x.verificacion_auto).map((x) => [x.id, { cada_dias: x.verificacion_auto!.cada_dias, porcentaje: x.verificacion_auto!.porcentaje, ...(x.verificacion_auto!.horario ? { horario: x.verificacion_auto!.horario } : {}) }])) }
       : {}),
   };
 }
@@ -116,10 +116,13 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       ...(previo.admite?.includes("retencion_plazos") ? { retencion_regla: r.retencion ?? null } : {}),
       ...(previo.admite?.includes("verificacion_auto")
         ? (() => {
-            const v = cfg.verificaciones?.[r.id];
+            const v0 = cfg.verificaciones?.[r.id];
+            // v1.3x: el horario, solo si el agente lo entiende (uno anterior lo ignora).
+            const v = v0 && !previo.admite?.includes("verificacion_horario") ? { cada_dias: v0.cada_dias, porcentaje: v0.porcentaje } : v0;
             const antes = previo.repositorios?.find((p) => p.id === r.id)?.verificacion_auto;
-            const igual = antes && v && antes.cada_dias === v.cada_dias && antes.porcentaje === v.porcentaje;
-            return { verificacion_auto: v ? (igual ? antes : { ...v, proxima: a3(1), todo_leido: null }) : null };
+            const igual = antes && v && antes.cada_dias === v.cada_dias && antes.porcentaje === v.porcentaje && JSON.stringify(antes.horario ?? null) === JSON.stringify(v.horario ?? null);
+            const proxima = v?.horario ? new Date(proximaVez(reglasDe(v.horario), Date.now()) ?? Date.now()).toISOString() : a3(1);
+            return { verificacion_auto: v ? (igual ? antes : { ...v, proxima, todo_leido: null }) : null };
           })()
         : {}),
     })),
@@ -289,7 +292,9 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       else if (!cfg.verificaciones) cfg.verificaciones = previa.verificaciones;
       for (const [r, v] of Object.entries(cfg.verificaciones ?? {})) {
         if (!conocidos.has(r)) return resultado(e, o, "fallida", `La verificación automática es de un repositorio que este equipo no tiene: «${r}».`);
-        if (!(v.cada_dias >= 1 && v.cada_dias <= 31) || !(v.porcentaje >= 0 && v.porcentaje <= 100)) return resultado(e, o, "fallida", "La verificación automática va de cada día a cada 31 días.");
+        const conReglas = v.horario && reglasDe(v.horario).length && e.resumen?.admite?.includes("verificacion_horario");
+        if (conReglas && errorReglas(reglasDe(v.horario!))) return resultado(e, o, "fallida", `Horario de la verificación: ${errorReglas(reglasDe(v.horario!))}`);
+        if ((!conReglas && !(v.cada_dias >= 1 && v.cada_dias <= 31)) || !(v.porcentaje >= 0 && v.porcentaje <= 100)) return resultado(e, o, "fallida", "La verificación automática va de cada día a cada 31 días.");
       }
       e.resumen = resumenDe(e, cfg);
       guardarConfig(e, cfg, plana.seq);
@@ -662,8 +667,10 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       if (!plana.not_before) return resultado(e, o, "rechazada", "Poner la retención borra versiones: falta la espera (not_before).");
       const r = c.retencion as T.Regla;
-      const h = c.horario as T.HorarioRetencion;
-      const err = errorRegla(r, !!g && !!e.resumen?.admite?.includes("retencion_plazos")) ?? errorHorario(h);
+      const h0 = c.horario as T.HorarioRetencion;
+      // v1.3x: las reglas, solo un almacén que las entiende (uno anterior las ignora).
+      const h = h0.reglas?.length && e.resumen?.admite?.includes("retencion_almacen_horario") ? h0 : { dias: h0.dias, hora: h0.hora };
+      const err = errorRegla(r, !!g && !!e.resumen?.admite?.includes("retencion_plazos")) ?? errorHorario(h) ?? (h.reglas?.length ? errorReglas(h.reglas) : null);
       if (err) return resultado(e, o, "fallida", err);
       if (!previa && typeof c.clave !== "string") return resultado(e, o, "fallida", "Falta la clave del almacén para este repositorio.");
       const abre = typeof c.clave === "string" ? clavesAlmacen.has(c.clave) : previa?.clave === "ok";
@@ -673,7 +680,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         retencion: r,
         texto: textoRegla(r),
         horario: h,
-        horario_texto: textoHorario(h),
+        horario_texto: h.reglas?.length ? "según su horario" : textoHorario(h),
         verificar: c.verificar !== false,
         clave: abre ? "ok" : "pendiente",
         ultima: previa?.ultima ?? null,

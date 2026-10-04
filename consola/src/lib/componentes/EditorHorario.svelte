@@ -8,7 +8,7 @@
   // como lista de horas (horas e intervalos de horas, con los mismos días).
   import { untrack } from "svelte";
   import { CalendarClock, Plus, X } from "@lucide/svelte";
-  import { DIAS, DIAS_CORTOS, resumenReglas } from "$lib/formato";
+  import { DIAS, DIAS_CORTOS, horarioEnFrase, resumenReglas } from "$lib/formato";
   import {
     ACTUALIZA,
     copiasAlDia,
@@ -33,7 +33,15 @@
     horario = $bindable(),
     admiteReglas,
     version = null,
-  }: { id: string; horario: Horario; admiteReglas: boolean; version?: string | null } = $props();
+    para = "copias",
+  }: {
+    id: string;
+    horario: Horario;
+    admiteReglas: boolean;
+    version?: string | null;
+    /** v1.3x: también el horario de la verificación automática (sin «copias al día»). */
+    para?: "copias" | "verificacion";
+  } = $props();
 
   // Lo que se edita son las reglas; el horario de la copia se rehace de ellas
   // al cambiar algo. Si el horario cambia desde fuera (una plantilla, «Cancelar
@@ -186,8 +194,8 @@
   </div>
   {#if sinCombinar}<p class="error-campo" role="alert">{ACTUALIZA}: este agente solo guarda reglas con los mismos días y hasta {MAX_HORAS} horas al día.</p>{/if}
 
-  <p class="resumen-horario" aria-live="polite"><CalendarClock size={14} /><span>{resumenReglas(reglas)}</span></p>
-  {#if muchas}<p class="faint pista">Muchas vueltas al día: con «Solo guardar si hay cambios», solo se guarda una versión cuando algo cambió.</p>{/if}
+  <p class="resumen-horario" aria-live="polite"><CalendarClock size={14} /><span>{para === "copias" ? resumenReglas(reglas) : reglas.length ? horarioEnFrase({ dias: [], horas: [], reglas }) : "Sin horario."}</span></p>
+  {#if muchas && para === "copias"}<p class="faint pista">Muchas vueltas al día: con «Solo guardar si hay cambios», solo se guarda una versión cuando algo cambió.</p>{/if}
 </div>
 
 <style>

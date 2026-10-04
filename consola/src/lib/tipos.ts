@@ -268,7 +268,7 @@ export interface RepositorioResumen {
   /** v1.28: la regla tal cual (para editarla); `retencion` es su texto. */
   retencion_regla?: Regla | null;
   /** v1.28: la verificación automática (cada N días, porcentaje rotativo) y cuándo toca. */
-  verificacion_auto?: { cada_dias: number; porcentaje: number; proxima?: string | null; todo_leido?: string | null } | null;
+  verificacion_auto?: { cada_dias: number; porcentaje: number; horario?: Horario | null; proxima?: string | null; todo_leido?: string | null } | null;
   /** Importado de otro equipo (§10): se puede explorar y restaurar, no copiar en él. */
   solo_lectura?: boolean;
   /** v1.14: en un rest-server de solo añadir (adoptado o comprobado): la retención la aplica el servidor. */
@@ -308,6 +308,8 @@ export interface Regla {
 export interface HorarioRetencion {
   dias: number[];
   hora: string;
+  /** v1.3x (almacén con `admite: "retencion_almacen_horario"`): si hay, mandan ellas. */
+  reglas?: ReglaHorario[];
 }
 
 /** v1.22: una retención que aplica un almacén (sin su clave). */
@@ -738,6 +740,11 @@ export interface ResultadoGancho {
 export interface VerificacionAuto {
   cada_dias: number;
   porcentaje: number;
+  /**
+   * v1.3x (agente con `admite: "verificacion_horario"`): el mismo horario que
+   * el de las copias; entonces manda él y `cada_dias` es para un agente anterior.
+   */
+  horario?: Horario | null;
 }
 
 export interface Configuracion {

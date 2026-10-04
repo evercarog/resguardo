@@ -27,7 +27,8 @@
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import { objetoDe } from "$lib/notas.svelte";
   import type { Configuracion, CopiaConfig, EquipoDetalle, Escritorio, Gancho, VerificacionAuto } from "$lib/tipos";
-  import { admiteVerificacion, errorVerificacion, fraseVerificacion, PORCENTAJES, VERIFICACION_POR_DEFECTO } from "$lib/verificacion";
+  import { admiteVerificacion, admiteVerificacionHorario, errorVerificacion, VERIFICACION_POR_DEFECTO } from "$lib/verificacion";
+  import EditorVerificacion from "$lib/componentes/EditorVerificacion.svelte";
   import { errorGancho, fraseGancho, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "$lib/ganchos";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -246,6 +247,8 @@
   // Por repositorio: cada N días, un porcentaje rotativo. Solo con un agente que
   // la entiende (`admite`); con uno anterior no se manda el campo.
   const admiteVerif = $derived(admiteVerificacion(equipo));
+  /** v1.3x: con un horario de reglas (si no, solo «cada N días»). */
+  const admiteVerifHorario = $derived(admiteVerificacionHorario(equipo));
   /** v1.36: la ventana y los avisos del equipo (docs/agente-ventana.md). */
   const admiteEscritorio = $derived(!!equipo?.resumen?.admite?.includes("escritorio"));
   const escritorio = $derived<Escritorio>(cfg?.escritorio ?? { ventana: cfg?.bandeja?.visible === false ? "off" : "siempre_disponible", avisos: cfg?.bandeja?.avisos ? "errores" : "off" });
@@ -282,11 +285,10 @@
   }
   /** ¿Tiene alguna copia activa? (La verificación automática va con las copias del agente.) */
   const conCopias = (repo: string) => !!cfg?.copias.some((k) => k.repo === repo && k.activa);
-  const porcentajes = (actual: number) => (PORCENTAJES.includes(actual) ? PORCENTAJES : [...PORCENTAJES, actual].sort((a, b) => a - b));
 
   const problemas = $derived(
     [
-      ...Object.entries(cfg?.verificaciones ?? {}).flatMap(([r, v]) => (errorVerificacion(v) ? [`la verificación de «${repos.find((x) => x.id === r)?.nombre ?? r}»: ${errorVerificacion(v)!.toLowerCase()}`] : [])),
+      ...Object.entries(cfg?.verificaciones ?? {}).flatMap(([r, v]) => (errorVerificacion(v, admiteVerifHorario) ? [`la verificación de «${repos.find((x) => x.id === r)?.nombre ?? r}»: ${errorVerificacion(v, admiteVerifHorario)!.toLowerCase()}`] : [])),
     ].concat(
     (cfg?.copias ?? []).flatMap((k) => [
       ...(k.activa && !k.carpetas.length ? [`«${k.nombre}» no tiene carpetas.`] : []),
@@ -329,7 +331,10 @@
         // v1.36: con `escritorio`, `bandeja.avisos` dice lo mismo para un agente anterior.
         bandeja: c0.escritorio ? { visible: c0.bandeja?.visible ?? true, avisos: c0.escritorio.avisos !== "off" } : (c0.bandeja ?? null),
         // v1.28: solo a un agente que la entiende, y solo si se ha tocado alguna vez.
-        ...(admiteVerif && c0.verificaciones ? { verificaciones: c0.verificaciones } : {}),
+        // v1.3x: `horario` solo a un agente que lo entiende (con él, `cada_dias` es para uno anterior).
+        ...(admiteVerif && c0.verificaciones
+          ? { verificaciones: Object.fromEntries(Object.entries(c0.verificaciones).map(([r, v]) => [r, admiteVerifHorario && v.horario ? v : { cada_dias: v.cada_dias, porcentaje: v.porcentaje }])) }
+          : {}),
         // v1.36: la ventana y los avisos (si el agente lo entiende y lo tiene o se ha tocado).
         ...(admiteEscritorio && c0.escritorio ? { escritorio: c0.escritorio } : {}),
       };
@@ -501,19 +506,14 @@
         {#if !admiteVerif}
           <p class="faint">Actualiza el agente de {equipo.nombre}{versionAgente ? ` (tiene la ${versionAgente})` : ""} para programarla desde aquí: cada N días, un porcentaje de los datos que va rotando. Mientras, «Verificar» en la página de cada repositorio la hace a mano.</p>
         {:else}
-          <p class="faint">{equipo.nombre} comprueba el repositorio y lee una parte de sus datos cada vez, rotando: con un 10 %, en 10 verificaciones ha leído todo. La primera, a las 03:00 siguientes; mientras verifica, las copias de ese repositorio esperan.</p>
+          <p class="faint">{equipo.nombre} comprueba el repositorio y lee una parte de sus datos cada vez, rotando: con un 10 %, en 10 verificaciones ha leído todo. Cada N días, la primera a las 03:00 siguientes{admiteVerifHorario ? "; o con un horario, como el de las copias" : ""}. Mientras verifica, las copias de ese repositorio esperan.</p>
           {#each repos as r (r.id)}
             {@const va = cfg.verificaciones?.[r.id]}
             <div class="verif-fila" class:resaltada={r.id === verifPedida}>
               <label class="switch-row"><input type="checkbox" class="switch" checked={!!va} onchange={(e) => ponerVerif(r.id, e.currentTarget.checked ? { ...VERIFICACION_POR_DEFECTO } : null)} /><span>{r.nombre}</span></label>
               {#if va}
-                <span class="verif-campos">
-                  <label>cada <input class="input num" type="number" min="1" max="31" value={va.cada_dias} aria-label="Cada cuántos días verificar «{r.nombre}»" oninput={(e) => ponerVerif(r.id, { ...va, cada_dias: Math.trunc(Number(e.currentTarget.value)) })} /> días,</label>
-                  <select class="input" value={va.porcentaje} aria-label="Qué parte de los datos lee cada vez" onchange={(e) => ponerVerif(r.id, { ...va, porcentaje: Number(e.currentTarget.value) })}>
-                    {#each porcentajes(va.porcentaje) as p (p)}<option value={p}>{p === 0 ? "solo la estructura" : p === 100 ? "todos los datos" : `el ${p} % de los datos`}</option>{/each}
-                  </select>
-                </span>
-                <span class="faint frase-verif">{errorVerificacion(va) ?? fraseVerificacion(va)}{conCopias(r.id) ? "" : " Se pondrá cuando el repositorio tenga alguna copia activa."}</span>
+                <EditorVerificacion id={r.id} nombre={r.nombre} valor={va} admiteHorario={admiteVerifHorario} onchange={(v) => ponerVerif(r.id, v)} />
+                {#if !conCopias(r.id)}<span class="faint frase-verif">Se pondrá cuando el repositorio tenga alguna copia activa.</span>{/if}
               {:else}
                 <span class="faint frase-verif">Sin verificación automática.</span>
               {/if}
@@ -736,24 +736,6 @@
   }
   .verif-fila.resaltada {
     border-color: var(--accent, var(--text-1));
-  }
-  .verif-campos {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    font-size: var(--fs-sm);
-  }
-  .verif-campos label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .verif-campos .input.num {
-    width: 4.5em;
-  }
-  .verif-campos select {
-    width: auto;
   }
   .frase-verif {
     flex-basis: 100%;

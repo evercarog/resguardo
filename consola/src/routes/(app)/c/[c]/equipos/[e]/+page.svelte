@@ -876,7 +876,7 @@
                     <span class="ic-d"><Database size={14} /></span>
                     <span class="d-texto">
                       {#if de}<a class="link" href="/c/{c}/equipos/{de.equipo.id}/repositorios/{encodeURIComponent(de.repo.id)}"><strong>{de.repo.nombre}</strong></a> <span class="faint">de {de.equipo.nombre}</span>{:else}<strong>{ra.usuario}/{ra.repo}</strong>{/if}
-                      <span class="faint">{ra.texto} · {ra.horario_texto ?? textoHorario(ra.horario)}{#if ra.ultima}{" · "}<Tiempo iso={ra.ultima} />{/if}</span>
+                      <span class="faint">{ra.texto} · {ra.horario.reglas?.length ? horarioEnFrase({ dias: [], horas: [], reglas: ra.horario.reglas }).replace(/^./, (x) => x.toLowerCase()) : (ra.horario_texto ?? textoHorario(ra.horario))}{#if ra.ultima}{" · "}<Tiempo iso={ra.ultima} />{/if}</span>
                       {#if ra.resultado === "fallo" && ra.mensaje}<span class="msg-fallo">{ra.mensaje}</span>{:else if ra.clave === "pendiente"}<span class="msg-fallo">Su clave aún no abre el repositorio.</span>{/if}
                     </span>
                     {#if ra.resultado}<Chip pequeno tono={ra.resultado === "ok" ? "ok" : "bad"} texto={ra.resultado === "ok" ? "Aplicada" : "Falló"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}

@@ -1,9 +1,11 @@
 // Pruebas del Markdown ligero de las observaciones y los comentarios
 // (src/lib/markdown.ts): que nada de HTML escrito llegue a la página, que
-// solo se enlacen http, https y mailto, y las marcas que sí admite.
+// solo se enlacen http, https y mailto, y las marcas que sí admite. También
+// la verificación automática con horario (src/lib/verificacion.ts, v1.3x).
 //
 //   npm run test:vectores
 import { enlaceSeguro, escapar, markdown, primeraLinea } from "../src/lib/markdown";
+import { conHorario, errorVerificacion, fraseVerificacion } from "../src/lib/verificacion";
 
 let total = 0;
 let fallos = 0;
@@ -49,6 +51,15 @@ igual("primera línea sin marcas", primeraLinea("\n## **Disco** nuevo\nmás"), "
 igual("primera línea: enlace y lista", primeraLinea("- llamar a [Luis](https://e.org) si _falla_"), "llamar a Luis si falla");
 igual("primera línea: fecha al principio", primeraLinea("3/10 cambié el disco"), "3/10 cambié el disco");
 igual("primera línea, recortada", primeraLinea("a".repeat(100)).length, 80);
+
+console.log("\n— Verificación automática con horario (v1.3x) —");
+const domingos = { cada_dias: 7, porcentaje: 10, horario: { dias: [7], horas: ["03:00"] } };
+cierto("con horario", conHorario(domingos) && !conHorario({ cada_dias: 7, porcentaje: 10 }) && !conHorario({ cada_dias: 7, porcentaje: 10, horario: { dias: [], horas: [] } }));
+igual("frase con horario", fraseVerificacion(domingos), "A las 3:00, los domingos: el 10 % de los datos cada vez, todo el repositorio en 10 verificaciones.");
+igual("con horario, cada_dias no cuenta", errorVerificacion({ ...domingos, cada_dias: 0 }), null);
+cierto("un agente anterior no lo admite", errorVerificacion(domingos, false) !== null);
+cierto("regla que no vale", errorVerificacion({ cada_dias: 7, porcentaje: 10, horario: { dias: [], horas: [], reglas: [{ tipo: "mensual", dia: 31, hora: "03:00" }] } }) !== null);
+igual("sin horario, como antes", fraseVerificacion({ cada_dias: 7, porcentaje: 10 }), "Cada 7 días, el 10 % de los datos: todo el repositorio en 10 verificaciones (unos 70 días).");
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);
