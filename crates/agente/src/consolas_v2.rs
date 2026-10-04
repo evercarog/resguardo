@@ -237,7 +237,9 @@ impl Vinculo {
 /// Un solo hilo del proceso cambia el vínculo a la vez (órdenes de dos consolas a la vez).
 static CERROJO: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn cerrojo() -> std::sync::MutexGuard<'static, ()> {
+/// También lo toma `ipc_local` (la ventana del equipo) para leer, cambiar y
+/// guardar el vínculo sin pisar lo que haga a la vez una orden de una consola.
+pub(crate) fn cerrojo() -> std::sync::MutexGuard<'static, ()> {
     CERROJO.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -340,7 +342,9 @@ fn b64_de(s: &str, min: usize, max: usize) -> bool {
 pub fn pedido(c: &Value) -> Result<Pedido, String> {
     let t = |k: &str| c[k].as_str().unwrap_or("").trim().to_string();
     let url = t("url").trim_end_matches('/').to_string();
-    let local = ["http://127.0.0.1", "http://localhost", "http://[::1]"].iter().any(|p| url.starts_with(p));
+    // http:// solo hacia este mismo equipo, con el anfitrión exacto («http://localhost.otro.com»
+    // o «http://localhost@otro» no lo son).
+    let local = s::es_local(&url);
     if !url.starts_with("https://") && !local {
         return Err("La dirección de la otra consola tiene que ser https://.".into());
     }
@@ -737,6 +741,9 @@ mod tests {
         assert!(admite(&v, &p).is_ok());
         for (k, mal) in [
             ("url", json!("http://consola.ejemplo.com")),
+            ("url", json!("http://localhost.ejemplo.com")),
+            ("url", json!("http://127.0.0.1.ejemplo.com:8080")),
+            ("url", json!("http://localhost@consola.ejemplo.com")),
             ("identidad", json!("corta")),
             ("huella_ca", json!("AB:CD")),
             ("ficha", json!("x")),
