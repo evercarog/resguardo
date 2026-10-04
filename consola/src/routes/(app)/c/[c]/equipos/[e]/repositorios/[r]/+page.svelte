@@ -7,7 +7,7 @@
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { page } from "$app/state";
-  import { Cloud, Database, HardDrive, History, Play, Server, ShieldCheck } from "@lucide/svelte";
+  import { Cloud, Database, GitCompareArrows, HardDrive, History, Play, Server, ShieldCheck } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero, relativo } from "$lib/formato";
@@ -54,7 +54,7 @@
   import { reglaEfectiva } from "$lib/lineaTiempo";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
-  import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia } from "$lib/componentes/detalle/navegar";
+  import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia, ir } from "$lib/componentes/detalle/navegar";
   import { leerSeleccion } from "$lib/detalle";
   import "$lib/componentes/detalle/pulsable.css";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
@@ -361,13 +361,13 @@
           alElegir={(id) => (elegida = id)}
           verbo="Ver"
           etiqueta="Versiones de «{repo.nombre}» en el tiempo"
-        />
-        {#if vElegida}
-          <div class="elegida-linea">
-            <span><strong>{fechaLarga(vElegida.hora)}</strong>{vElegida.total_bytes != null ? ` · ${bytes(vElegida.total_bytes)}` : ""}{suyas.find((k) => k.id === vElegida.copia) ? ` · «${suyas.find((k) => k.id === vElegida.copia)!.nombre}»` : ""}</span>
-            {#if puede.ordenar(rol)}<a class="btn btn-sm btn-primary" href={enlace(vElegida, false)}><History size={14} />Explorar y restaurar</a>{/if}
-          </div>
-        {/if}
+        >
+          {#snippet acciones(id)}
+            <!-- En la ficha de la versión elegida. -->
+            <button type="button" class="btn btn-sm" onclick={() => ir({ vista: "cambios", version: id, con: null, filtro: "todos", vuelta: null })}><GitCompareArrows size={14} />Qué cambió</button>
+            {#if puede.ordenar(rol) && vElegida}<a class="btn btn-sm btn-primary" href={enlace(vElegida, false)}><History size={14} />Explorar y restaurar</a>{/if}
+          {/snippet}
+        </LineaTiempoVersiones>
       </section>
     {/if}
 
@@ -428,16 +428,6 @@
   }
   .linea-tiempo h2 {
     margin: 0;
-  }
-  .elegida-linea {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-2) var(--sp-3);
-    padding-top: var(--sp-3);
-    font-size: var(--fs-sm);
-    border-top: 1px solid var(--border);
   }
   .cab {
     display: flex;
