@@ -310,8 +310,13 @@
     font-size: var(--fs-xs);
     overflow-wrap: anywhere;
   }
+  /* Se parte una palabra solo si no cabe (un correo no se corta a media línea);
+   * la huella, siempre en una línea. */
   .actividad td {
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+  }
+  .actividad td.huella {
+    white-space: nowrap;
   }
   /* En el móvil, cada entrada como una tarjeta pequeña. */
   @media (max-width: 640px) {

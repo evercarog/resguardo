@@ -260,7 +260,7 @@
   .barra {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-4);
+    gap: var(--sp-3);
     height: 100%;
     padding: var(--sp-4) var(--sp-3);
     overflow-x: hidden;
@@ -305,7 +305,7 @@
     gap: 8px;
     width: 100%;
     height: 32px;
-    margin-top: calc(-1 * var(--sp-2));
+    margin-top: calc(-1 * var(--sp-1));
     padding: 0 8px 0 10px;
     font: inherit;
     font-size: var(--fs-sm);
@@ -431,7 +431,7 @@
   .grupos {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-4);
+    gap: var(--sp-3);
   }
   .grupo-titulo {
     margin: 0 0 4px;

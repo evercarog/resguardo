@@ -762,7 +762,7 @@ button.fila {
   height: 28px;
 }
 :root[data-densidad="compacta"] .barra .grupos {
-  gap: var(--sp-3);
+  gap: var(--sp-2);
 }
 
 /* Al imprimir (el informe), la cabecera de las tablas no se fija. */
