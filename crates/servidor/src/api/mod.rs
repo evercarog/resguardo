@@ -236,6 +236,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/equipos/{e}/historial", get(equipos::historial))
         .route("/api/clientes/{c}/informes", get(equipos::ultimos_informes))
         .route("/api/clientes/{c}/progreso", get(crate::progreso::ver))
+        // v1.3x: canal en vivo de la consola (WebSocket con pistas de lo que cambió).
+        .route("/api/clientes/{c}/vivo", get(crate::vivo::canal))
         .route("/api/clientes/{c}/emparejamientos", post(equipos::abrir_emparejamiento).get(instaladores::listar))
         .route("/api/clientes/{c}/instaladores", post(instaladores::preparar))
         .route("/api/clientes/{c}/preparados", get(instaladores::contar))
