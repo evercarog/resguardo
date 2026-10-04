@@ -10,42 +10,42 @@ de escritorio que más se echa de menos:
    fallar o recuperarse;
 3. que las dos cosas se **enciendan y apaguen desde la consola y desde el
    propio equipo** (aquí, solo con la clave de administración);
-4. un **modo sin consola**: el agente se puede usar solo, con una clave de
-   administración local, y vincularse más tarde sin perder nada.
+4. un **modo sin consola** completo: el agente se usa solo, con una clave de
+   administración local, y se vincula más tarde sin perder nada.
 
 La app de escritorio (Tauri, `src-tauri/`) sigue congelada: no se toca.
 
 ## 1. Piezas y quién hace qué
 
 ```
-Servicio (SYSTEM)                        Sesión del usuario
-──────────────────                       ─────────────────────────────────────
-one_tick / --agent-run / --agent-tasks   resguardo-agente --tray  (siempre, ~3 MB)
-  state.json, tasks.json (ya existían)     · lee gestionado-bandeja.json cada 5 s
-hilo_bandeja                               · icono, menú, avisos (WinRT o globo)
-  gestionado-bandeja.json  (cada 30 s)     · lanza la ventana (al pulsar o al empezar)
-  gestionado-ventana.json  (cada 2 s       
-     solo si hay algo en marcha y la     resguardo-agente --ventana  (solo abierta)
-     ventana no está apagada)              · WebView2 del sistema (wry + tao)
-ipc_local (tubería con nombre)             · lee gestionado-ventana.json cada 1 s
-  · `hola`, `ajustes`, modo local…         · «Ajustes» y modo local → ipc_local
+Servicio (SYSTEM)                          Sesión del usuario
+───────────────────                        ─────────────────────────────────────────
+one_tick / --agent-run / --agent-tasks     resguardo-agente --tray   (siempre, ~5 MB)
+  state.json, tasks.json (ya existían)       · lee gestionado-bandeja.json (5 s; 1 s con algo en marcha)
+  + read_bps, upload_bps, files_per_s        · icono, menú, avisos (WinRT o globo)
+hilo_bandeja                                 · «Abrir Resguardo», pulsar el icono o un aviso
+  gestionado-bandeja.json  (30 s; 2 s con      → lanza la ventana
+    algo en marcha y ventana o «todo»)
+  gestionado-ventana.json  (solo si la     resguardo-agente --ventana  (solo mientras está abierta)
+    ventana no está apagada)                 · WebView2 del sistema (wry + tao)
+ipc_local (tubería con nombre)               · lee los dos archivos cada segundo (si cambian, a la página)
+  · hola, ajustes, modo local…               · «Ajustes» y modo local → ipc_local, con la prueba de la clave
+registro en memoria (escritorio::en_marcha)
+  · restauraciones, espejo, nube
 ```
 
 - **Ver no da autoridad nueva.** La ventana y la bandeja corren como el usuario
-  y solo leen dos archivos que escribe el servicio en `ProgramData\ResguardoAgente`,
-  sin rutas, sin mensajes del agente y sin secretos (los mismos criterios que
-  `gestionado-bandeja.json`). «Copiar ahora» sigue usando `solicitudes\`.
-- **Lo único privilegiado y nuevo** es `ipc_local`: cambiar los ajustes del
-  escritorio y, en modo local, configurar las copias. Siempre con la clave de
-  administración (§4).
-- **Sin ventana, nada cambia**: si la consola la apaga (`ventana: off`), el
-  servicio no escribe `gestionado-ventana.json` ni muestrea nada; la bandeja es
-  la de siempre.
+  y solo leen dos archivos de `ProgramData\ResguardoAgente`: sin rutas, sin
+  mensajes de restic, sin secretos. «Copiar ahora» sigue usando `solicitudes\`.
+- **Lo único privilegiado y nuevo** es `ipc_local` (§4): cambiar los ajustes del
+  escritorio y, en modo local, administrar el equipo. Siempre con la clave.
+- **Con todo apagado nada cambia**: con `ventana: off` el servicio no escribe
+  `gestionado-ventana.json` ni muestrea, y con `avisos` distinto de `todo` no
+  escribe más a menudo que antes.
 
 ## 2. Ajustes del escritorio (`escritorio`)
 
-En la configuración gestionada (`Configuracion` v1, orden `config`, clave de
-administración):
+En la configuración gestionada (`Configuracion` v1, orden `config`):
 
 ```json
 "escritorio": { "ventana": "al_trabajar", "avisos": "errores" }
@@ -54,189 +54,199 @@ administración):
 | Campo | Valores | Qué hace |
 |---|---|---|
 | `ventana` | `off` | Sin ventana: la bandeja de siempre. |
-| | `siempre_disponible` | «Abrir Resguardo» en el menú del icono (y al pulsarlo). No se abre sola. |
-| | `al_trabajar` | Lo anterior y, además, se abre sola al empezar una copia, restauración, verificación o subida (una vez por tarea; si el usuario la cierra, no vuelve hasta la siguiente). |
+| | `siempre_disponible` | «Abrir Resguardo» en el menú; pulsar el icono la abre. No se abre sola. |
+| | `al_trabajar` | Además se abre sola al empezar una copia, restauración, verificación o subida (una vez por tarea; cerrada, no vuelve hasta la siguiente). |
 | `avisos` | `off` | Ninguno. |
 | | `errores` | Al fallar y al recuperarse (lo que hacía `bandeja.avisos: true`). |
 | | `todo` | También al empezar y al terminar bien. |
 
-**Compatibilidad.** `bandeja: { visible, avisos }` sigue igual y manda sobre el
-icono. Sin `escritorio` (consola anterior), se deduce: `avisos` = `errores` si
-`bandeja.avisos`, si no `off`; `ventana` = `siempre_disponible` si el icono es
-visible, si no `off`. Una `config` **sin** el campo `escritorio` no borra el que
-haya (igual que `verificaciones`): una consola anterior no deshace lo que se
-cambió en el equipo. La consola nueva manda los dos (`bandeja.avisos` =
-`avisos != off`) para que un agente anterior haga lo que puede.
-
-**Cambiar en el equipo.** «Ajustes» en la ventana pide la clave de
-administración; el servicio comprueba la prueba (§4), aplica `escritorio` sobre
-la configuración que tiene, marca `cambiado_en_equipo` (fecha) y la sube
-cifrada a la consola como cualquier cambio de configuración (`subir_config`).
-La consola, al descifrarla, ve el valor nuevo y la marca («cambiado en el
-equipo»); el resumen en claro lleva también `escritorio` (no es secreto) para
-la tarjeta «En el equipo» sin descifrar nada.
-
-**Carreras con el canal.** El canal con el servidor tiene su copia del vínculo
-en memoria y la guarda tras cada informe. Un cambio local sube un contador
-(`cambio_local`) que el canal mira como «cambiado fuera» (`cambiado_fuera`, una
-línea): cierra y vuelve a abrir con lo del disco, igual que tras `vincular`.
+- **Compatibilidad.** Sin `escritorio` (consola anterior) se deduce de `bandeja`
+  (`avisos` → `errores` u `off`; `visible` → `siempre_disponible` u `off`). Una
+  `config` sin el campo no borra el que haya. La consola nueva manda también
+  `bandeja.avisos = (avisos != off)` y solo manda `escritorio` si el resumen trae
+  `admite: ["escritorio"]`.
+- **Desde la consola**: «Cambiar las copias» → tarjeta «En el equipo»; la ficha
+  del equipo enseña lo que tiene (del resumen en claro) y si se cambió allí.
+- **Desde el equipo**: «Ajustes» en la ventana pide la clave; el servicio pone
+  `escritorio`, `cambiado_en_equipo` y sube la configuración como cualquier
+  cambio (`subir_config`). La consola lo ve al descifrarla y en el resumen
+  (`escritorio_cambiado_en_equipo`).
+- **Carreras con el canal**: un cambio local sube `cambio_local`, que el canal
+  trata como «cambiado fuera» (`cambiado_fuera`, una línea).
 
 ## 3. Lo que muestra la ventana
 
-Tamaño fijo 420×640 (se puede redimensionar), sin marco del sistema propio: la
-barra de título de Windows de siempre, tema claro u oscuro según Windows.
+460×720 (se puede cambiar, mínimo 380×520), tema claro u oscuro según Windows.
 
-- **Ahora**: la tarea en marcha (tipo, nombre, fase, %, archivos, bytes, ritmo y
-  «quedan»), con una **gráfica de ritmo en vivo** (los últimos 5 minutos, área
-  con degradado y brillo, el color según el tipo: copia en el acento, restaurar
-  en azul, verificar en violeta, subir en ámbar). Si no hay nada en marcha: el
-  estado tranquilo del icono («Tus archivos están protegidos») y la próxima copia.
-- **Copias**: cada copia con su último resultado, cuándo y la próxima;
-  «Copiar ahora» (la solicitud de siempre).
-- **Historial**: barras de los últimos 14 días (copias correctas, con avisos,
-  fallidas) y la lista de lo último (sin rutas ni mensajes).
-- **Ajustes** (con la clave): ventana y avisos; en modo local, las copias.
+- **Ahora**: cada tarea en marcha (tipo, nombre, fase, %, archivos, bytes,
+  «quedan») y las **ondas en vivo** (`ui/componentes/GraficaOndas.svelte`,
+  compartida con la consola): áreas translúcidas con degradado y brillo que
+  fluyen con el tiempo; **lectura** (azul) y **escritura/subida** (naranja) en
+  bytes/s, y **archivos por segundo** (aguamarina) en otra gráfica (otra unidad:
+  nunca dos ejes). Leyenda con el valor de ahora y el pico, cruz con los valores
+  al pasar el ratón y un resumen para lectores de pantalla. Con poca historia se
+  ve de cerca y se va alejando hasta 5 minutos; al terminar, la onda baja a cero.
+  Sin nada en marcha, el estado tranquilo (última copia, próxima, «Copiar ahora»).
+- **Copias**: cada copia con su resultado, cuándo y la próxima; «Copiar ahora».
+- **Historial**: barras de 14 días (correctas, con avisos, fallidas; con icono y
+  texto, no solo color) y lo último de cada tarea.
+- **Ajustes**: con la clave, la ventana y los avisos; en modo local, todo (§5).
+
+Qué se mide (de verdad, no estimado):
+
+| Tarea | Lectura | Escritura / subida | Archivos/s |
+|---|---|---|---|
+| Copia | E/S de lectura del proceso de restic | E/S de escritura + «otra» (red) del proceso | restic |
+| Restauración | — | bytes restaurados (`restore --json`) | — |
+| Verificación | bytes leídos (si la tarea los da) | — | — |
+| Copia externa, espejo, nube | — | bytes subidos (si la tarea los da) | — |
+
+La copia manda además `lectura`, `subida` y `archivos_s` en el progreso de la
+consola (v1.3x): la consola pinta las mismas ondas en la fila de la copia.
 
 ### `gestionado-ventana.json`
 
 ```json
-{
-  "v": 1,
-  "escrito": "2026-10-05T14:20:02+02:00",
-  "actividades": [{
-    "id": "copia:r1#k1", "tipo": "copia", "nombre": "Documentos", "fase": "subiendo",
-    "porcentaje": 0.42, "archivos": 120, "archivos_total": 300,
-    "bytes": 4000, "bytes_total": 10000, "velocidad": 2000, "quedan_s": 90,
-    "empezo": "2026-10-05T14:15:00+02:00"
-  }],
-  "serie": [[1759666800, 1850000, "copia"], [1759666802, 2010000, "copia"]],
-  "hechas": [{ "clave": "copia:r1#k1", "tipo": "copia", "nombre": "Documentos",
-               "resultado": "ok", "cuando": "…", "bytes": 4000 }],
-  "historial": [{ "dia": "2026-10-05", "ok": 3, "aviso": 0, "fallo": 1 }]
-}
+{ "v": 1, "escrito": "…",
+  "serie": [[1759666800, 652000000, 431000000, 7, "copia"]],
+  "historial": [{ "dia": "2026-10-05", "ok": 3, "aviso": 0, "fallo": 1 }] }
 ```
 
-- `tipo`: `copia`, `restauracion`, `verificacion`, `copia_externa`, `espejo`, `nube`.
-- `serie`: como mucho **150 puntos** (5 minutos a uno cada 2 s); se descartan
-  los de más de 5 minutos. Ritmo en bytes/s: el de restic en las copias; en el
-  resto, la diferencia de bytes entre dos muestras (si la tarea los da).
-- `hechas`: lo último terminado de cada tipo (para los avisos de «terminó»).
-- Sin rutas, sin mensajes de restic, sin nombres de archivo: solo los nombres
-  que da la consola (o el usuario en modo local) y cifras.
+`serie`: `[segundo, lectura B/s, escritura B/s, archivos/s, tipo]`, como mucho
+150 puntos y 5 minutos. Lo que está en marcha (`actividades`) y lo último
+terminado (`hechas`) van en `gestionado-bandeja.json` (también los usa la
+bandeja para avisar). Solo nombres (de la consola o del administrador local) y
+cifras.
 
 ## 4. `ipc_local`: el único camino privilegiado nuevo
 
-**Transporte.** Windows: tubería con nombre `\\.\pipe\ResguardoAgente` creada
-por el servicio con una DACL explícita (`D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)`:
-SYSTEM y administradores, y lectura/escritura para los usuarios con sesión
-interactiva; nadie por red: `PIPE_REJECT_REMOTE_CLIENTS`), una instancia cada
-vez. Linux: `/run/resguardo-agente/ipc.sock`, `0666` en un directorio `0755`
-de root (cualquier usuario local puede *hablar*; lo que autoriza es la prueba,
-igual que en Windows). Mensajes: una línea JSON por petición, como mucho 64 KiB.
+**Transporte.** Windows: tubería `\\.\pipe\ResguardoAgente` del servicio, con
+DACL `D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)(A;;0x0012008B;;;IU)`: los usuarios
+con sesión interactiva leen y escriben datos pero **no pueden crear instancias**
+(sin `FILE_CREATE_PIPE_INSTANCE`), así que nadie puede suplantar la tubería; el
+servicio siempre tiene una instancia esperando. `PIPE_REJECT_REMOTE_CLIENTS`. El
+cliente comprueba que la tubería es de SYSTEM o de los administradores y abre
+con `SECURITY_IDENTIFICATION` (el servidor no puede suplantarlo). Cada conexión,
+una petición (una línea JSON, como mucho 64 KiB; respuestas hasta 4 MiB) y como
+mucho 4 a la vez; una conexión que no dice nada en 10 s se cierra. Linux:
+`/run/resguardo-agente/ipc.sock` (`0666` en un directorio de root; lo que
+autoriza es la prueba; el cliente exige que el socket sea de root). En pruebas
+(`RESGUARDO_AGENT_DIR`, solo compilaciones de desarrollo), otro nombre: nunca el
+del servicio instalado.
 
-**Prueba de administración.** La misma que la consola: `prueba =
-Argon2id(clave_NFC, sal_equipo)` y el equipo guarda `verificador =
-SHA-256(prueba)`. La ventana calcula la prueba (Argon2id, 64 MiB, en su propio
-proceso: el servicio nunca ve la clave) y la manda **atada a un reto de un
-solo uso**:
+**Prueba de administración**, la de la consola: `prueba = Argon2id(clave_NFC,
+sal_equipo)`; el equipo guarda `verificador = SHA-256(prueba)`. La ventana la
+calcula en su proceso (el servicio nunca ve la clave) y la guarda en memoria
+mientras está desbloqueada (10 minutos sin usarla). Cada petición va atada a un
+**reto de un solo uso**:
 
-1. `{"op":"hola"}` → `{"v":1,"reto":"<32 bytes b64>","sal_equipo":"…","modo":"gestionado"|"local"|"sin_clave"|"web"}`.
-   El reto vale para **una** petición y caduca a los 60 s.
-2. `{"op":"ajustes","reto":"…","prueba":"<b64>","escritorio":{…}}`.
+1. `{"op":"hola"}` → `{ "v":1, "reto", "sal_equipo", "modo": "sin_clave"|"local"|"gestionado"|"web"|"pendiente"|"desvinculado" }`
+   (retos: 60 s, como mucho 16 vivos).
+2. `{"op":"…","reto":"…","prueba":"<b64>", …}`.
 
-El servicio comprueba, por este orden: que el reto exista, no esté usado ni
-caducado (se consume aunque falle: **sin repetición**); el bloqueo por
-intentos; y la prueba contra el verificador en **tiempo constante**
-(`derivaciones::comprueba_prueba`). **Límites**: 5 fallos seguidos bloquean 1
-minuto, y cada bloqueo siguiente dura el doble (hasta 1 hora); un acierto lo
-reinicia. Hay además como mucho un intento por segundo (los Argon2id caros los
-hace el cliente, pero un atacante podría probar verificadores a mano). Nada de
-la petición se escribe en el registro: solo «Ajustes cambiados en el equipo» o
-«Clave de administración incorrecta en el equipo (n)».
+El servicio: gasta el reto (siempre, aunque falle: **sin repetición**), mira el
+límite, y compara la prueba en **tiempo constante**. **Límites**: 5 fallos
+seguidos bloquean 1 minuto, cada bloqueo siguiente el doble (hasta 1 hora); tras
+un fallo, como mucho un intento por segundo; un acierto lo reinicia. Al registro
+solo va «clave de administración incorrecta» o qué se cambió, nunca la petición.
 
-¿Por qué mandar la prueba y no un HMAC? El equipo solo guarda `SHA-256(prueba)`:
-para comprobar un HMAC tendría que guardar la prueba (equivalente a la clave
-para las órdenes). La prueba viaja por una tubería local con ACL, dentro de una
-conexión que no sale del equipo, y atada a un reto de un uso; es lo mismo que ya
-viaja (cifrado) en cada orden de la consola.
-
-**Operaciones** (todas menos `hola` con reto y prueba):
+¿Por qué la prueba y no un HMAC? El equipo solo guarda `SHA-256(prueba)`: para
+comprobar un HMAC tendría que guardar la prueba. Viaja por una tubería local con
+ACL, atada a un reto de un uso: lo mismo que ya viaja (cifrado) en cada orden.
 
 | Op | Cuándo | Qué hace |
 |---|---|---|
 | `hola` | siempre | reto, sal y modo |
-| `ajustes` | con clave | cambia `escritorio`; si está vinculado, lo sube |
-| `crear_clave` | **solo sin clave y sin vincular** | modo local: guarda verificador y `K_cfg` (§5) |
-| `estado_local` | modo local | repositorios, destinos y copias (sin contraseñas) |
-| `crear_repositorio` | modo local | `gestion_v2::crear_repositorio` (carpeta, disco USB o rest-server) |
-| `config` | modo local | `gestion_v2::aplicar_config` (copias, carpetas, exclusiones, horario) |
-| `carpetas` | modo local | elegir carpetas del equipo (como la sesión `carpetas`) |
-| `versiones`, `listar` | modo local | explorar un repositorio |
-| `restaurar` | modo local | `sesiones_v2::restaurar`, siempre «junto al original» |
+| `crear_clave` | sin vínculo ni consola web | modo local: verificador y `K_cfg` (de la ventana) |
+| `comprobar` | con clave | «Desbloquear» |
+| `ajustes` | con clave (no en la consola web) | `escritorio`; si hay consola, se sube |
+| `estado_local` | local | repositorios, destinos, configuración, nubes, resumen |
+| `crear_repositorio`, `config`, `retencion`, `copia_externa`, `pausar`, `reanudar` | local | lo mismo que las órdenes de la consola (`gestion_v2`) |
+| `carpetas`, `explorar` | local | las sesiones `elegir_carpetas` y `explorar` (versiones, listar, buscar, Qué cambió…) |
+| `restaurar` | local | junto al original, en su sitio o en otra carpeta |
+| `guarda_copias`, `conectar_nube`, `quitar_nube` | local | Servidor de copias, espejo y nubes |
+| `historial`, `kit`, `cambiar_clave`, `vincular` | local | |
 
-En un equipo gestionado, la ventana solo cambia `escritorio`: las copias las
-decide la consola.
+En un equipo gestionado la ventana solo cambia `escritorio`.
 
 ## 5. Modo sin consola
 
-Al abrir la ventana en un equipo sin vincular y sin clave, se ofrece **«Usar
-sin consola»**:
+Equipo recién instalado, sin vincular: la ventana ofrece **«Usar sin consola»**.
 
-1. El usuario elige una clave de administración (12 caracteres o más, dos veces).
-   La ventana genera `sal_equipo` y `sal_cliente` (16 bytes aleatorios cada una)
-   y calcula `verificador` y `K_cfg` como la consola.
-2. `crear_clave` → el servicio crea el vínculo en **modo local** (`modo:
-   "local"`, sin servidor), con claves propias del equipo (caja y firma) y esos
-   valores. Solo se acepta si no hay vínculo, ni emparejamiento web, ni clave:
-   quien llega primero a un equipo recién instalado la pone (lo mismo que el
-   código de vinculación). Después, cambiarla pide la clave actual.
-3. Con la clave: un repositorio (carpeta del equipo, disco USB o rest-server,
-   con su contraseña, que se recuerda que hay que guardar), copias con
-   carpetas, exclusiones y horario (el mismo `Configuracion` v1 que la
-   consola: mismo validador, mismo motor), «Copiar ahora» y restaurar un
-   archivo desde un explorador sencillo.
-4. **«Vincular a una consola»** más tarde: `resguardo-agente vincular CÓDIGO`
-   (o el instalador «listo») ya conserva todo si el equipo tiene clave: queda
-   pendiente del alta (`adopcion`) y la consola lo adopta con la **misma clave**
-   (y toma su `K_cfg`). Es el camino 3 de api-servidor.md §3.5, sin nada nuevo.
+1. Clave de administración (12 caracteres o más, dos veces). La ventana genera
+   `sal_equipo` y `sal_cliente` y calcula `verificador` y `K_cfg` como la consola;
+   el servicio crea el vínculo en modo local (sin servidor) con claves propias.
+   Solo si no hay vínculo ni consola web: quien llega primero a un equipo recién
+   instalado la pone (como el código de vincular).
+2. Después, todo con la clave (lo mismo que la consola, con su lógica y sus
+   componentes: `EditorHorario`, `EditorRetencion`, `lib/horario`, `lib/ganchos`,
+   `lib/verificacion`…):
+   - **Dónde**: carpeta o disco del equipo (USB), rest-server (con su
+     certificado), S3, B2 o SFTP; contraseña generada y **kit de recuperación**
+     para imprimir; **retención** con los preajustes («como Siigo»…) y
+     «aplicar ya»; **copia externa** a otro destino.
+   - **Copias**: carpetas con un explorador del equipo (o escribiendo la ruta),
+     exclusiones, reglas de horario (horas, cada N minutos, cada N días, un día
+     al mes), «solo si hay cambios», «Antes de copiar» (volcado de SQL Server,
+     vigilar las copias de una aplicación) y **verificación automática**.
+   - **Restaurar**: versiones, recorrerlas, «Qué cambió», restaurar archivos o
+     carpetas junto al original, en su sitio (reemplazando o no) o en otra carpeta.
+   - **Más**: pausar, historial completo, kit, cambiar la clave, «Guardar copias
+     de otros» (Servidor de copias) con su espejo a una carpeta o a Dropbox /
+     Google Drive (`rclone authorize` lo abre la ventana **como el usuario**, en
+     su navegador; el token va al servicio con la clave), y **vincular a una
+     consola**.
+3. **Vincular** conserva todo: el equipo tiene clave, así que queda pendiente
+   del alta (`adopcion`) y la consola lo adopta con la **misma clave** (camino 3
+   de api-servidor.md §3.5). Se enseña el código de comprobación.
 
 ## 6. Avisos
 
-- **WinRT** (`ToastNotificationManager`) con identidad propia: la bandeja
-  registra, para el usuario (`HKCU\Software\Classes\AppUserModelId\Resguardo.Agente`),
-  el nombre «Resguardo» y el icono (un PNG pintado con el mismo escudo). Sin
-  instalador ni accesos directos nuevos. Si falla (Windows antiguo, política),
-  el globo de siempre.
-- **Agrupados**: `Group` por tipo (`copias`, `restauraciones`…) y `Tag` por
-  tarea: «terminó» reemplaza a «empezó» de la misma tarea en el centro de
-  actividades; nunca más de uno por tarea y vuelta.
-- **No molestar**: Windows ya los guarda en silencio con «No molestar» /
-  Asistente de concentración. Además, si `SHQueryUserNotificationState` dice que
-  hay una presentación o un juego a pantalla completa, solo pasan los de error.
+- **WinRT** con identidad propia: la bandeja registra para el usuario
+  `HKCU\Software\Classes\AppUserModelId\Resguardo.Agente` (nombre «Resguardo» y
+  un PNG del escudo en `%LOCALAPPDATA%\Resguardo\Agente`), sin instalador ni
+  accesos directos. Si Windows no los admite, el globo de siempre.
+- **Agrupados**: `Group` por tipo (copias, restauraciones, verificaciones,
+  subidas) y `Tag` por tarea: «terminó» reemplaza a «empezó».
+- **No molestar**: Windows los guarda en silencio. Con una presentación o un
+  juego a pantalla completa (`SHQueryUserNotificationState`) solo pasan los de
+  error. Los que no son de error van sin sonido.
 - **Pulsar** un aviso abre la ventana (si no está apagada).
-- Qué se avisa (`escritorio::avisos`, probado): ver la tabla del §2. Fallar y
-  recuperarse comparan con la ejecución anterior de la misma tarea, como antes.
+- Qué se avisa: `escritorio::avisos` (probado). Lo que ya había terminado al
+  arrancar la bandeja no avisa.
 
-## 7. Ligereza
+## 7. Ligereza (medido en un Windows 11 con una copia de 24 GB de prueba)
 
-- La bandeja no cambia de peso: lee un archivo pequeño cada 5 s.
-- La ventana es **otro proceso** (`--ventana`) que solo existe mientras está
-  abierta: al cerrarla, toda su memoria (y la de WebView2) se libera. Se pinta
-  con `requestAnimationFrame` solo si hay datos nuevos y nada si está minimizada.
-- El servicio muestrea cada 2 s **solo** con algo en marcha y la ventana no
-  apagada; si no, cada 30 s como antes. Muestrear es leer `state.json` y
-  `tasks.json`, que ya se escriben.
-- La interfaz es una página sola (Svelte, sin Inter: la fuente del sistema)
-  metida en el ejecutable; sin servidor web, sin puertos.
-- WebView2 es el del sistema (Windows 10/11 lo traen). Sin WebView2, «Abrir
-  Resguardo» explica que falta y la bandeja sigue igual.
-- Linux: sin ventana por ahora (los equipos Linux suelen ser servidores); el
-  `ipc_local` y el modo local funcionan igual desde la línea de órdenes.
+- **Servicio**: con todo apagado, como antes. Con algo en marcha y la ventana o
+  «todo», escribe los dos archivos cada 2 s (unos KB). Sin nada en marcha mira
+  cada 2 s si empezó algo (leer tres JSON pequeños).
+- **Bandeja**: la misma (lee un archivo pequeño cada 5 s).
+- **Ventana**: otro proceso que solo existe abierta; al cerrarla se libera todo.
+  WebView2 pesa lo suyo (unos 200 MB privados entre sus procesos, la mayoría el
+  propio WebView2; el proceso de la ventana, ~6 MB); CPU ~0,3 % de un núcleo en
+  reposo; las ondas se pintan a 30 fps como mucho, solo con algo en marcha y la
+  ventana a la vista (con «reducir movimiento», solo al llegar datos).
+- **Página**: ~41 KB comprimidos lo que se abre siempre; el modo local se carga
+  al abrirlo (en total ~85 KB comprimidos). Sin fuentes propias (la del sistema),
+  sin red: un protocolo propio (`http://resguardo.localhost/`) con CSP estricta.
+- Sin WebView2, «Abrir Resguardo» lo dice en el registro y la bandeja sigue igual.
 
-## 8. Lo que queda fuera (por ahora)
+## 8. Compilar y probar
 
-- Editor local completo (retención, copia externa, verificación automática,
-  ganchos): en modo local se usan los valores por defecto del motor.
-- Ventana en Linux (WebKitGTK).
-- Cambiar la clave de administración desde la ventana (se hace con la consola
-  o `resguardo-agente` por línea de órdenes).
+- `cd consola && npm run build:ventana` deja la página en `crates/agente/ventana`
+  (va en el repositorio; `build.rs` la mete en el ejecutable). `npm run
+  check:ventana` la comprueba.
+- `RESGUARDO_AGENT_DIR=<carpeta> resguardo-agente --primer-plano` y, en otra
+  consola, `resguardo-agente --ventana` (compilación de desarrollo): ventana
+  contra una carpeta de pruebas, con otra tubería. `RESGUARDO_VENTANA_TEMA=claro|oscuro`
+  fuerza el tema (solo en desarrollo).
+
+## 9. Lo que queda
+
+- Ventana en Linux (WebKitGTK): el `ipc_local` ya funciona allí, falta la ventana.
+- En modo local: adoptar un repositorio que ya existe y traer su historial
+  (las órdenes existen; falta la pantalla), los equipos cliente del Servidor de
+  copias (sus contraseñas se sellan para una consola) y la etiqueta y el
+  nombre del equipo.
+- Medir la lectura y la subida de verificaciones, copias externas y el espejo
+  por E/S del proceso (hoy, por los bytes que dicen las tareas).

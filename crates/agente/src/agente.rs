@@ -699,7 +699,8 @@ mod tray {
     fn single_instance() -> bool {
         use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
         use windows_sys::Win32::System::Threading::CreateMutexW;
-        let name = wide("Local\\ResguardoAgenteBandeja");
+        // En pruebas (carpeta de pruebas, solo en desarrollo), otro: no choca con la del agente instalado.
+        let name = wide(if crate::agent::test_mode() { "Local\\ResguardoAgenteBandejaPruebas" } else { "Local\\ResguardoAgenteBandeja" });
         // El mutex vive mientras viva el proceso (no se cierra a propósito).
         unsafe {
             let h = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
