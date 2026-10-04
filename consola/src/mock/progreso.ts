@@ -8,6 +8,7 @@
 // - «Verificar» deja una verificación en marcha unos 20 s en su repositorio.
 import type * as T from "../lib/tipos";
 import { estado, ID } from "./estado";
+import { ID_OTROS } from "./otrosClientes";
 
 interface Sim {
   cliente: string;
@@ -64,6 +65,14 @@ function sembrar() {
   // Ya va por un tercio, para que se vea moverse con cifras desde el principio.
   s.empezo = Date.now() - (s.preparar + s.escanear + s.subir * 0.35);
   sims.push(s);
+  // v1.3x: otra copia larga en otro cliente (HISTORIAS, de la clínica), para «Todos los clientes».
+  const historias = estado.equipos.find((e) => e.id === ID_OTROS.historias);
+  const kh = historias?.resumen?.copias?.[0];
+  if (historias && kh) {
+    const h: Sim = { cliente: historias.cliente, equipo: historias.id, tipo: "copia", repo: kh.repo, copia: kh.id, nombre: kh.nombre, empezo: 0, ganchos: 0, preparar: 3_000, escanear: 20_000, subir: 9 * 60_000, terminar: 4_000, archivos: 52_310, bytes: 6_200_000_000, bucle: true };
+    h.empezo = Date.now() - (h.preparar + h.escanear + h.subir * 0.6);
+    sims.push(h);
+  }
 }
 
 /** Una tarea en marcha según el tiempo que lleva. */

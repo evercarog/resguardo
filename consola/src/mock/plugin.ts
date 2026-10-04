@@ -343,6 +343,40 @@ const rutas: Ruta[] = [
     },
   ],
 
+  // --- Todos los clientes (v1.3x): solo los clientes de los que la cuenta es miembro ---
+  [
+    "GET",
+    /^\/api\/panel$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      const suyos = estado.clientes.filter((c) => rolEn(cuenta.id, c.id)).sort((a, b) => a.nombre.localeCompare(b.nombre));
+      return {
+        generado: new Date().toISOString(),
+        omitidos: 0,
+        clientes: suyos.map((c) => ({
+          id: c.id,
+          nombre: c.nombre,
+          rol: rolEn(cuenta.id, c.id),
+          marca: marcaJson(c.id),
+          equipos: estado.equipos.filter((e) => e.cliente === c.id).map(publico),
+          avisos_abiertos: estado.avisos.filter((a) => a.cliente === c.id && a.abierto).length,
+          pendientes: estado.ordenes.filter((o) => o.cliente === c.id && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).length,
+          informes: estado.equipos.filter((e) => e.cliente === c.id && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] })),
+          informes_completos: true,
+        })),
+        progreso: suyos.flatMap((c) => progresoDe(c.id).map((p) => ({ ...p, cliente: c.id }))),
+      };
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/panel\/progreso$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      return estado.clientes.filter((c) => rolEn(cuenta.id, c.id)).flatMap((c) => progresoDe(c.id).map((p) => ({ ...p, cliente: c.id })));
+    },
+  ],
+
   // --- Clientes -------------------------------------------------------------
   [
     "GET",
@@ -1312,6 +1346,7 @@ const ACENTOS_MARCA = ["teal", "blue", "indigo", "violet", "rose", "amber", "gra
 const marcasMock = new Map<string, { acento?: string | null; logo?: Buffer; huella?: string; actualizada?: string; por?: string }>([
   ["0a0e1b2c-0000-4000-8000-0000000000a1", { acento: "blue" }],
   ["0a0e1b2c-0000-4000-8000-0000000000a2", { acento: "amber" }],
+  ["0a0e1b2c-0000-4000-8000-0000000000a4", { acento: "teal" }],
 ]);
 function marcaJson(c: string) {
   const m = marcasMock.get(c);
