@@ -1,11 +1,11 @@
 // Los ritmos de lo que está en marcha (lectura, escritura o subida, archivos
 // por segundo) a lo largo de los últimos minutos, para `GraficaOndas`. Lo
-// usan la consola (con el progreso que manda el agente, v1.3x) y la ventana
+// usan la consola (con el progreso que manda el agente, v1.36) y la ventana
 // del agente (con la serie que escribe el servicio).
 
 import type { SerieOnda } from "./componentes/GraficaOndas.svelte";
 
-/** Lo que dice una tarea en marcha (consola, v1.25 y v1.3x). */
+/** Lo que dice una tarea en marcha (consola, v1.25 y v1.36). */
 export interface MuestraRitmo {
   tipo: string;
   /** Lo que procesa restic (bytes/s). */
