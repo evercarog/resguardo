@@ -15,8 +15,8 @@
 //!   Atada a un **reto de un solo uso** que da `hola` (caduca en
 //!   [`RETO_VIDA_S`]; se gasta aunque falle: no se puede repetir).
 //! - **Límites**: 5 fallos seguidos bloquean 1 minuto, el doble cada vez
-//!   (hasta 1 hora); como mucho un intento por segundo. Nada de la petición
-//!   va al registro.
+//!   (hasta 1 hora); tras un fallo, como mucho un intento por segundo. Nada
+//!   de la petición va al registro.
 
 use base64::Engine;
 use serde_json::{json, Value};
@@ -83,7 +83,8 @@ pub struct Limitador {
     fallos: u32,
     rachas: u32,
     bloqueado_hasta: i64,
-    ultimo: Option<i64>,
+    /// El último fallo: tras uno, como mucho un intento por segundo.
+    ultimo_fallo: Option<i64>,
 }
 
 impl Limitador {
@@ -93,18 +94,15 @@ impl Limitador {
             let min = ((self.bloqueado_hasta - ahora_ms) + 59_999) / 60_000;
             return Err(format!("Demasiados intentos con una clave incorrecta. Espera {min} min y vuelve a probar."));
         }
-        if self.ultimo.is_some_and(|u| ahora_ms - u < ENTRE_INTENTOS_MS) {
+        if self.ultimo_fallo.is_some_and(|u| ahora_ms - u < ENTRE_INTENTOS_MS) {
             return Err("Espera un momento antes de volver a intentarlo.".into());
         }
         Ok(())
     }
 
-    pub fn intento(&mut self, ahora_ms: i64) {
-        self.ultimo = Some(ahora_ms);
-    }
-
     /// Un fallo: al quinto seguido, bloqueo (1 min, 2, 4… hasta 1 h).
     pub fn fallo(&mut self, ahora_ms: i64) -> u32 {
+        self.ultimo_fallo = Some(ahora_ms);
         self.fallos += 1;
         if self.fallos >= FALLOS_MAX {
             let ms = (BLOQUEO_MS << self.rachas.min(10)).min(BLOQUEO_MAX_MS);
@@ -119,6 +117,7 @@ impl Limitador {
         self.fallos = 0;
         self.rachas = 0;
         self.bloqueado_hasta = 0;
+        self.ultimo_fallo = None;
     }
 }
 
@@ -141,7 +140,6 @@ impl Servidor {
             return Err("La petición caducó o ya se usó: vuelve a intentarlo.".into());
         }
         self.limitador.puede(ahora_ms)?;
-        self.limitador.intento(ahora_ms);
         let Some(ver) = verificador else { return Err("Este equipo aún no tiene clave de administración.".into()) };
         let prueba = pet["prueba"].as_str().and_then(|p| B64.decode(p).ok()).unwrap_or_default();
         // Tiempo constante (y la prueba vacía o de otro tamaño, igual que una mala).
@@ -277,7 +275,6 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
             return Err("La petición caducó o ya se usó: vuelve a intentarlo.".into());
         }
         sv.limitador.puede(ahora_ms())?;
-        sv.limitador.intento(ahora_ms());
         if v.is_some() || web {
             return Err("Este equipo ya tiene clave de administración o está vinculado a una consola.".into());
         }
@@ -881,16 +878,19 @@ mod tests {
     fn limite_de_intentos() {
         let mut l = Limitador::default();
         let mut t = 0;
-        // Uno por segundo como mucho.
+        // Con la clave buena, sin esperas (la ventana pide varias cosas seguidas).
         assert!(l.puede(t).is_ok());
-        l.intento(t);
+        assert!(l.puede(t + 1).is_ok());
+        // Tras un fallo, uno por segundo como mucho.
+        l.fallo(t);
         assert!(l.puede(t + 500).is_err());
         assert!(l.puede(t + 1_000).is_ok());
+        t += 1_000;
+        l.acierto();
         // Cinco fallos: bloqueado un minuto.
         for _ in 0..FALLOS_MAX {
             t += 1_000;
             assert!(l.puede(t).is_ok());
-            l.intento(t);
             l.fallo(t);
         }
         assert!(l.puede(t + 1_000).unwrap_err().contains("Espera 1 min"));
@@ -900,7 +900,6 @@ mod tests {
         t += BLOQUEO_MS;
         for _ in 0..FALLOS_MAX {
             t += 1_000;
-            l.intento(t);
             l.fallo(t);
         }
         assert!(l.puede(t + BLOQUEO_MS).is_err());

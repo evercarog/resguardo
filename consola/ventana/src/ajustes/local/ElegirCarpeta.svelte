@@ -25,6 +25,7 @@
   let error = $state("");
   let cargando = $state(false);
   let nueva = $state("");
+  let escrita = $state("");
   const id = $props.id();
 
   const sep = (r: string) => (r.includes("\\") || /^[A-Za-z]:/.test(r) ? "\\" : "/");
@@ -39,6 +40,8 @@
   }
 
   async function ir(r: string) {
+    // «D:/Datos» como «D:\Datos» (las migas y «subir» usan la barra de Windows).
+    if (/^[A-Za-z]:/.test(r)) r = r.replaceAll("/", "\\");
     cargando = true;
     error = "";
     try {
@@ -91,6 +94,10 @@
         {/each}
       </div>
     {/if}
+    <form class="v-fila" onsubmit={(e) => (e.preventDefault(), void ir(escrita.trim()))}>
+      <input class="input mono" bind:value={escrita} placeholder="Escribe una ruta (p. ej. D:\Datos)" aria-label="Ir a una carpeta" />
+      <button class="btn btn-sm" disabled={!escrita.trim()}>Ir</button>
+    </form>
     <nav class="migas v-mini" aria-label="Carpeta actual">
       <button class="link" onclick={() => ir("")}>Este equipo</button>
       {#each migas as m (m.ruta)}<ChevronRight size={12} aria-hidden="true" /><button class="link" onclick={() => ir(m.ruta)}>{m.texto}</button>{/each}

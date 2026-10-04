@@ -294,7 +294,7 @@ pub fn nivel(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> Nivel {
     if servicio_callado(e, ahora) {
         return Nivel::Atencion;
     }
-    if e.en_curso.is_some() {
+    if e.en_curso.is_some() || !e.actividades.is_empty() {
         return Nivel::Copiando;
     }
     if e.copias.iter().any(|c| c.resultado == "error") {
@@ -375,6 +375,10 @@ pub fn linea_estado(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> String 
             None => format!("Copiando «{}»…", c.nombre),
         };
     }
+    // Otra tarea en marcha (restaurar, verificar, subir).
+    if let Some(a) = e.actividades.first() {
+        return cortar(&texto_actividad(a), 120);
+    }
     if let Some(a) = &e.aviso {
         return a.clone();
     }
@@ -394,6 +398,22 @@ pub fn linea_estado(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> String 
         None => "Esperando la primera copia.".into(),
         Some(t) if (*ahora - t).num_days() >= COPIA_VIEJA_DIAS => format!("La última copia correcta fue {}.", hace(t, ahora)),
         Some(_) => "Tus archivos están protegidos.".into(),
+    }
+}
+
+/// «Restaurando desde «Copias»… 40 %», «Verificando «Disco USB»…».
+pub fn texto_actividad(a: &crate::escritorio::Actividad) -> String {
+    let que = match a.tipo.as_str() {
+        "restauracion" => format!("Restaurando desde «{}»…", a.nombre),
+        "verificacion" => format!("Verificando «{}»…", a.nombre),
+        "copia_externa" => format!("Subiendo la copia externa de «{}»…", a.nombre),
+        "espejo" => format!("Copiando el espejo a «{}»…", a.nombre),
+        "nube" => format!("Subiendo a «{}»…", a.nombre),
+        _ => format!("Copiando «{}»…", a.nombre),
+    };
+    match a.porcentaje {
+        Some(p) => format!("{que} {}", por_ciento(p)),
+        None => que,
     }
 }
 
@@ -427,6 +447,10 @@ pub fn tooltip(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>) -> String {
             Some(p) => format!("copiando «{}» ({})", c.nombre, por_ciento(p)),
             None => format!("copiando «{}»", c.nombre),
         });
+    } else if let Some(a) = e.actividades.first() {
+        let t = texto_actividad(a);
+        let mut c = t.chars();
+        partes.push(c.next().map(|p| p.to_lowercase().chain(c).collect()).unwrap_or_default());
     } else if let Some(a) = &e.aviso {
         partes.push(a.trim_end_matches('.').to_string());
     } else if e.copias.is_empty() {
@@ -773,6 +797,23 @@ mod tests {
         e.en_curso.as_mut().unwrap().progreso = None;
         assert_eq!(variante(&e, &ahora()), Variante { nivel: Nivel::Copiando, octavos: None });
         assert_eq!(linea_estado(&e, &ahora()), "Copiando «Documentos»…");
+    }
+
+    #[test]
+    fn otras_tareas_en_marcha() {
+        let mut e = vinculado(vec![copia("Documentos", "ok", Some("2026-10-05T14:08:00+02:00"), None)]);
+        e.actividades.push(crate::escritorio::Actividad {
+            id: "x".into(),
+            clave: "restauracion:r".into(),
+            tipo: "restauracion".into(),
+            nombre: "Disco USB".into(),
+            fase: "en_marcha".into(),
+            porcentaje: Some(0.4),
+            ..Default::default()
+        });
+        assert_eq!(nivel(&e, &ahora()), Nivel::Copiando);
+        assert_eq!(linea_estado(&e, &ahora()), "Restaurando desde «Disco USB»… 40 %");
+        assert_eq!(tooltip(&e, &ahora()), "Resguardo · restaurando desde «Disco USB»… 40 %");
     }
 
     #[test]

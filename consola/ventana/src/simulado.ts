@@ -119,6 +119,8 @@ export async function simular(op: string, c: Record<string, unknown>): Promise<u
       return { mensaje: "Copia pedida: empieza en unos segundos." };
     case "bloquear":
       return null;
+    case "desbloqueada":
+      return { abierta: false };
     case "servicio": {
       const que = c.que as string;
       const cuerpo = (c.cuerpo ?? {}) as Record<string, unknown>;

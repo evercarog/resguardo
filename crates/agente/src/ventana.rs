@@ -314,6 +314,8 @@ mod win {
                 desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = Some((prueba, Instant::now()));
                 Ok(r)
             }
+            // ¿Sigue desbloqueada? (Al volver a «Ajustes» no se pide otra vez la clave.)
+            "desbloqueada" => Ok(json!({ "abierta": desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().is_some() })),
             "bloquear" => {
                 desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = None;
                 Ok(Value::Null)
@@ -410,8 +412,8 @@ mod win {
         // Solo en desarrollo: forzar el tema para las capturas (RESGUARDO_VENTANA_TEMA=claro|oscuro).
         let tema = if cfg!(debug_assertions) { std::env::var("RESGUARDO_VENTANA_TEMA").ok() } else { None };
         let inicio = match tema.as_deref() {
-            Some("oscuro") => "document.documentElement.dataset.theme='dark';",
-            Some("claro") => "document.documentElement.dataset.theme='light';",
+            Some("oscuro") => "window.__resguardoTema='dark';",
+            Some("claro") => "window.__resguardoTema='light';",
             _ => "",
         };
         let webview = wry::WebViewBuilder::new_with_web_context(&mut contexto)
@@ -467,7 +469,10 @@ mod win {
         });
         let desbloqueo = Arc::new(Mutex::new(Desbloqueo::default()));
         event_loop.run(move |evento, _, control_flow| {
-            *control_flow = ControlFlow::Wait;
+            // Sin pisar la salida: tras cerrar pueden llegar aún datos en la misma vuelta.
+            if *control_flow != ControlFlow::Exit {
+                *control_flow = ControlFlow::Wait;
+            }
             match evento {
                 Event::UserEvent(Evento::Script(js)) => {
                     let _ = webview.evaluate_script(&js);

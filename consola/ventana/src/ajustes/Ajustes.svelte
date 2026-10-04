@@ -20,6 +20,7 @@
   onMount(async () => {
     try {
       modo = (await pedir<{ modo: Modo }>("hola")).modo;
+      abierta = (await pedir<{ abierta: boolean }>("desbloqueada")).abierta;
     } catch (e) {
       error = (e as Error).message;
     }

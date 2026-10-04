@@ -130,7 +130,7 @@
           <p class="v-mini v-cortar">{d ? `${TIPOS_DESTINO[d.tipo] ?? d.tipo} · ${d.donde}` : r.destino}</p>
         </div>
       </div>
-      <p class="v-mini">Se guardan: {r.retencion ? resumenRegla(r.retencion) : "todas las versiones (sin retención)"}.</p>
+      <p class="v-mini">Se guardan: {r.retencion ? resumenRegla(r.retencion) : "todas las versiones (sin retención)."}</p>
       <p class="v-mini">Copia externa: {r.externa ? `a «${destinoDe(r.externa.destino)?.nombre ?? r.externa.destino}» cada día a las ${r.externa.hora}` : "no"}.</p>
       <div class="v-fila">
         <button class="btn btn-sm" onclick={() => (retencion = { repo: r, regla: copiaRegla(r.retencion ?? PRESETS[2].regla) })}><ShieldCheck size={14} aria-hidden="true" />Qué versiones se guardan</button>

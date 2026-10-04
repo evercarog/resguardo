@@ -36,8 +36,9 @@
     series: SerieOnda[];
     /** Nombre de la gráfica (para el resumen accesible). */
     titulo: string;
-    /** Segundos que se ven (por defecto, 5 minutos). */
+    /** Segundos que se ven como mucho (por defecto, 5 minutos). Con menos historia, se acerca (al menos `minimo`). */
     ventana?: number;
+    minimo?: number;
     alto?: number;
     formato?: (v: number) => string;
     /** Retraso con el que se pinta (ms): da tiempo a que llegue la muestra siguiente y la onda fluye sin saltos. */
@@ -45,7 +46,7 @@
     /** Sin leyenda (si la pone quien la usa). */
     sinLeyenda?: boolean;
   }
-  let { series, titulo, ventana = 300, alto = 140, formato = porSegundo, retraso = 2500, sinLeyenda = false }: Props = $props();
+  let { series, titulo, ventana = 300, minimo = 60, alto = 140, formato = porSegundo, retraso = 2500, sinLeyenda = false }: Props = $props();
 
   let lienzo = $state<HTMLCanvasElement>();
   let caja = $state<HTMLDivElement>();
@@ -53,6 +54,8 @@
   let cursor = $state<number | null>(null);
   let visible = true;
   let maxSuave = 0;
+  /** Los segundos que se ven ahora: se acercan a lo que hay de historia (sin saltos). */
+  let ventanaSuave = 0;
   let marco = 0;
   let ultimoPintado = 0;
   let colores: Record<string, string> = {};
@@ -128,8 +131,13 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const ahora = ahoraPintado();
-    const desde = ahora - ventana * 1000;
-    const x = (t: number) => ((t - desde) / (ventana * 1000)) * w;
+    // Con poca historia (una copia que acaba de empezar) se ve de cerca y se va alejando.
+    const primero = Math.min(...series.map((s) => s.puntos[0]?.[0] ?? Infinity));
+    const objetivoV = Math.max(minimo, Math.min(ventana, Number.isFinite(primero) ? ((ahora - primero) / 1000) * 1.12 : ventana));
+    ventanaSuave = ventanaSuave ? ventanaSuave + (objetivoV - ventanaSuave) * (prefersReducedMotion.current ? 1 : 0.08) : objetivoV;
+    const vista = ventanaSuave;
+    const desde = ahora - vista * 1000;
+    const x = (t: number) => ((t - desde) / (vista * 1000)) * w;
     // La escala se acerca poco a poco al máximo (sin saltos al llegar un pico).
     const objetivo = Math.max(1, ...series.flatMap((s) => enVentana(s, desde).map((p) => p[1]))) * 1.18;
     maxSuave = maxSuave ? maxSuave + (objetivo - maxSuave) * (prefersReducedMotion.current ? 1 : 0.12) : objetivo;
@@ -219,7 +227,8 @@
   /** Lo que valía cada serie en el instante bajo el ratón. */
   const enCursor = $derived.by(() => {
     if (cursor === null || !ancho) return null;
-    const t = ahoraPintado() - ventana * 1000 + (cursor / ancho) * ventana * 1000;
+    const v = ventanaSuave || ventana;
+    const t = ahoraPintado() - v * 1000 + (cursor / ancho) * v * 1000;
     return series.map((s) => {
       let mejor: [number, number] | null = null;
       for (const p of s.puntos) if (!mejor || Math.abs(p[0] - t) < Math.abs(mejor[0] - t)) mejor = p;

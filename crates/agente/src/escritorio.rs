@@ -373,6 +373,10 @@ impl Serie {
                 self.puntos.pop_back();
             }
             self.puntos.push_back((t, lectura, escritura, archivos, tipo.to_string()));
+        } else if let Some(ultimo) = self.puntos.back().filter(|p| p.0 < t && (p.1, p.2, p.3) != (0, 0, 0)) {
+            // Terminó: la onda baja a cero (una vez) en vez de quedarse arriba.
+            let tipo = ultimo.4.clone();
+            self.puntos.push_back((t, 0, 0, 0, tipo));
         }
         self.recortar(t);
     }
@@ -776,9 +780,11 @@ mod tests {
         v.muestra(10, &[act("v", "verificacion", Some(0), None)]);
         v.muestra(12, &[act("v", "verificacion", Some(800), None)]);
         assert_eq!(v.puntos.back().unwrap(), &(12, 400, 0, 0, "verificacion".to_string()));
-        // Nada en marcha: no se añade.
+        // Nada en marcha: baja a cero una vez y ya no se añade más.
         s.muestra(1004, &[]);
-        assert_eq!(s.puntos.len(), 2);
+        assert_eq!(s.puntos.back().unwrap(), &(1004, 0, 0, 0, "restauracion".to_string()));
+        s.muestra(1006, &[]);
+        assert_eq!(s.puntos.len(), 3);
         // Una hora de muestras cada 2 s: nunca más de 150 ni de hace más de 5 minutos.
         let mut s = Serie::default();
         for i in 0..1800 {
