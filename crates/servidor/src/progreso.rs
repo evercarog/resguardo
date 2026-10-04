@@ -29,7 +29,8 @@ pub const CADUCA: Duration = Duration::from_secs(90);
 const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion"];
 const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha"];
 const TEXTOS: &[(&str, usize)] = &[("repo", 64), ("copia", 64), ("nombre", 120), ("etapa", 120), ("empezo", 40), ("actualizado", 40)];
-const NUMEROS: &[&str] = &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "quedan_s", "versiones", "versiones_total"];
+// v1.3x: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
+const NUMEROS: &[&str] = &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
 
 struct Entrada {
     cliente: String,
@@ -143,6 +144,9 @@ mod tests {
         assert_eq!(x["archivos"], 3);
         assert!(x.get("ruta").is_none() && x.get("bytes").is_none() && x.get("velocidad").is_none());
         assert!(limpiar(&json!({})).is_err());
+        // v1.3x: las cifras de las gráficas pasan (enteros no negativos).
+        let v = limpiar(&json!([{ "tipo": "copia", "fase": "subiendo", "repo": "r", "lectura": 1000, "subida": 400, "archivos_s": 12 }])).unwrap();
+        assert_eq!((v[0]["lectura"].as_u64(), v[0]["subida"].as_u64(), v[0]["archivos_s"].as_u64()), (Some(1000), Some(400), Some(12)));
         assert!(limpiar(&json!(vec![json!({}); MAX_TAREAS + 1])).is_err());
         assert!(limpiar(&json!([{ "tipo": "copia", "fase": "subiendo", "repo": "r", "nombre": "x".repeat(MAX_BYTES) }])).is_err());
     }
