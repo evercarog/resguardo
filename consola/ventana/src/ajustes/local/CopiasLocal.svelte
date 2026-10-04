@@ -176,7 +176,7 @@
             </label>
             <div class="v-fila"><input class="input mono" bind:value={g.carpeta} placeholder="C:\ResguardoVolcados" aria-label="Carpeta de los volcados" /><button type="button" class="btn btn-sm" onclick={() => (elegir = i)}>Elegir</button></div>
           {:else}
-            <div class="v-fila"><input class="input mono" bind:value={g.carpeta} placeholder="D:\Siigo\Copias" aria-label="Carpeta a vigilar" /><button type="button" class="btn btn-sm" onclick={() => (elegir = i)}>Elegir</button></div>
+            <div class="v-fila"><input class="input mono" bind:value={g.carpeta} placeholder="D:\Contabilidad\Copias" aria-label="Carpeta a vigilar" /><button type="button" class="btn btn-sm" onclick={() => (elegir = i)}>Elegir</button></div>
             <label class="v-fila"><span class="field-hint">Avisar si lo más nuevo tiene más de</span><input class="input horas" type="number" min="1" max="720" bind:value={g.horas} /><span class="field-hint">horas</span></label>
           {/if}
           {#if errorGancho(g)}<p class="v-mini aviso">{errorGancho(g)}</p>{/if}

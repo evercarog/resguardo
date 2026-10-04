@@ -39,7 +39,7 @@ function bandeja(ahora: number): EstadoBandeja {
     copias: [
       { clave: "principal#docs", nombre: "Documentos", resultado: "ok", cuando: new Date(ahora - 3 * 3600_000).toISOString(), proxima: new Date(ahora + 2 * 3600_000).toISOString() },
       { clave: "principal#fotos", nombre: "Fotos de la familia", resultado: "warning", cuando: new Date(ahora - 26 * 3600_000).toISOString(), proxima: new Date(ahora + 20 * 3600_000).toISOString() },
-      { clave: "principal#conta", nombre: "Contabilidad (Siigo)", resultado: "ok", cuando: new Date(ahora - 40 * 60_000).toISOString(), proxima: new Date(ahora + 20 * 60_000).toISOString() },
+      { clave: "principal#conta", nombre: "Contabilidad", resultado: "ok", cuando: new Date(ahora - 40 * 60_000).toISOString(), proxima: new Date(ahora + 20 * 60_000).toISOString() },
     ],
     pedir: true,
     escrito: new Date(ahora).toISOString(),

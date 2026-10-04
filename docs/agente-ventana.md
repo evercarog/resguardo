@@ -183,7 +183,7 @@ Equipo recién instalado, sin vincular: la ventana ofrece **«Usar sin consola»
    `lib/verificacion`…):
    - **Dónde**: carpeta o disco del equipo (USB), rest-server (con su
      certificado), S3, B2 o SFTP; contraseña generada y **kit de recuperación**
-     para imprimir; **retención** con los preajustes («como Siigo»…) y
+     para imprimir; **retención** con los preajustes («Programas contables»…) y
      «aplicar ya»; **copia externa** a otro destino.
    - **Copias**: carpetas con un explorador del equipo (o escribiendo la ruta),
      exclusiones, reglas de horario (horas, cada N minutos, cada N días, un día

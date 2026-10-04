@@ -1,7 +1,7 @@
 <script lang="ts">
   // Dónde se guardan las copias (modo local): repositorios en un disco o
   // carpeta del equipo, un servidor de copias (rest-server), S3, B2 o SFTP;
-  // su retención (con los preajustes de la consola, p. ej. «como Siigo») y su
+  // su retención (con los preajustes de la consola, p. ej. «Programas contables») y su
   // copia externa. Al crear uno, su contraseña y el kit de recuperación.
   import { Database, FolderOpen, HardDrive, Plus, Printer, Server, ShieldCheck } from "@lucide/svelte";
   import EditorRetencion from "$lib/componentes/EditorRetencion.svelte";

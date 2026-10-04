@@ -30,7 +30,8 @@ const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_exter
 const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha"];
 const TEXTOS: &[(&str, usize)] = &[("repo", 64), ("copia", 64), ("nombre", 120), ("etapa", 120), ("empezo", 40), ("actualizado", 40)];
 // v1.3x: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
-const NUMEROS: &[&str] = &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
+const NUMEROS: &[&str] =
+    &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
 
 struct Entrada {
     cliente: String,
