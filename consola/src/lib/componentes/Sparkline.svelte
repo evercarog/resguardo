@@ -35,6 +35,7 @@
     sobre = Math.min(valores.length - 1, Math.max(0, i + (e.key === "ArrowLeft" ? -1 : 1)));
   }
   const resumen = $derived(valores.length ? `${titulo}: de ${formato(valores[0])} a ${formato(valores.at(-1)!)}` : titulo);
+  const id = $props.id();
 </script>
 
 {#if valores.length >= 2}
@@ -53,7 +54,13 @@
     onkeydown={tecla}
   >
     <svg viewBox="0 0 {W} {alto}" preserveAspectRatio="none" aria-hidden="true">
-      <path class="area" d={area} />
+      <defs>
+        <linearGradient id="spark-{id}" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" class="area-arriba" />
+          <stop offset="1" class="area-abajo" />
+        </linearGradient>
+      </defs>
+      <path class="area" d={area} fill="url(#spark-{id})" />
       <path class="linea" d={linea} />
       {#if sobre !== null}<line class="guia" x1={x(sobre)} x2={x(sobre)} y1="0" y2={alto} />{/if}
     </svg>
@@ -61,7 +68,7 @@
     <span class="punto fin" style:left="100%" style:top="{y(valores.at(-1)!)}px"></span>
     {#if sobre !== null}
       <span class="punto" style:left="{(x(sobre) / W) * 100}%" style:top="{y(valores[sobre])}px"></span>
-      <span class="tip" class:izq={sobre > valores.length / 2} style:left="{(x(sobre) / W) * 100}%">
+      <span class="graf-tip tip" class:izq={sobre > valores.length / 2} style:left="{(x(sobre) / W) * 100}%">
         <strong class="num">{formato(valores[sobre])}</strong><span>{etiquetas[sobre]}</span>
       </span>
     {/if}
@@ -90,17 +97,23 @@
   }
   .linea {
     fill: none;
-    stroke: var(--text-2);
+    stroke: var(--graf-linea);
     stroke-width: 1.5;
     stroke-linejoin: round;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
+    filter: var(--graf-brillo);
   }
-  .area {
-    fill: color-mix(in srgb, var(--text-3) 12%, transparent);
+  .area-arriba {
+    stop-color: var(--graf-area);
+    stop-opacity: var(--graf-area-alfa);
+  }
+  .area-abajo {
+    stop-color: var(--graf-area);
+    stop-opacity: 0;
   }
   .guia {
-    stroke: var(--text-3);
+    stroke: var(--graf-guia);
     stroke-width: 1;
     stroke-dasharray: 2 2;
     vector-effect: non-scaling-stroke;
@@ -117,27 +130,17 @@
   }
   .punto.fin {
     background: var(--accent);
+    /* El punto de hoy brilla un poco (más en oscuro: --graf-brillo-px). */
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 calc(var(--graf-brillo-px) * 1px) color-mix(in srgb, var(--accent) 70%, transparent);
   }
+  /* El globo es .graf-tip (ui/estilos.css); aquí solo dónde va. */
   .tip {
-    position: absolute;
     bottom: calc(100% + 6px);
-    z-index: 3;
-    display: flex;
-    flex-direction: column;
-    padding: 4px 8px;
-    font-size: var(--fs-xs);
-    line-height: var(--lh-xs);
-    white-space: nowrap;
-    color: var(--bg);
-    background: var(--text-1);
-    border-radius: var(--radius-sm);
     translate: -10% 0;
-    pointer-events: none;
   }
   .tip.izq {
     translate: -90% 0;
-  }
-  .tip span {
-    opacity: 0.75;
   }
 </style>

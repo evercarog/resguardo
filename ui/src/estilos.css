@@ -126,7 +126,24 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
   --shadow-md: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.06);
   --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.18);
+  /* Tarjeta que se puede pulsar, al pasar el ratón: se eleva un poco. */
+  --shadow-hover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 20px -10px rgb(0 0 0 / 0.16);
   --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+
+  /* Gráficas (docs/diseno.md §4, «Gráficas»): un solo lenguaje para barras,
+   * minigráficas, previsión, línea de tiempo y ondas. Rejilla fina y
+   * discontinua, ejes apagados, tinta neutra; en oscuro, el área en el
+   * acento con un brillo suave (como un gráfico en vivo). */
+  --graf-rejilla: var(--border);
+  --graf-base: var(--border-strong);
+  --graf-eje: var(--text-3);
+  --graf-linea: var(--text-2);
+  --graf-marca: color-mix(in srgb, var(--text-3) 75%, transparent);
+  --graf-guia: var(--text-3);
+  --graf-area: var(--text-3);
+  --graf-area-alfa: 0.18;
+  --graf-brillo: none;
+  --graf-brillo-px: 3;
 
   /* Gráficas en vivo (GraficaOndas): lectura, escritura/subida y archivos por
    * segundo. Azul, naranja y aguamarina: validados para daltonismo en claro y
@@ -175,6 +192,12 @@
     --shadow-sm: none;
     --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.5);
     --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+    --shadow-hover: 0 10px 24px -12px rgb(0 0 0 / 0.7);
+
+    --graf-area: var(--accent);
+    --graf-area-alfa: 0.28;
+    --graf-brillo: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 45%, transparent));
+    --graf-brillo-px: 10;
 
     --onda-1: #3987e5;
     --onda-2: #d95926;
@@ -215,6 +238,12 @@
   --shadow-sm: none;
   --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.5);
   --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+  --shadow-hover: 0 10px 24px -12px rgb(0 0 0 / 0.7);
+
+  --graf-area: var(--accent);
+  --graf-area-alfa: 0.28;
+  --graf-brillo: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 45%, transparent));
+  --graf-brillo-px: 10;
 
   --onda-1: #3987e5;
   --onda-2: #d95926;
@@ -420,6 +449,9 @@ code,
   background: var(--surface-2);
   color: var(--text-1);
 }
+.btn-ghost:active:not(:disabled) {
+  background: var(--surface-3);
+}
 .btn-danger {
   background: var(--bad);
   border-color: var(--bad);
@@ -456,6 +488,9 @@ code,
 .icon-btn:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text-1);
+}
+.icon-btn:active:not(:disabled) {
+  background: var(--surface-3);
 }
 .icon-btn:disabled {
   opacity: 0.4;
@@ -548,11 +583,29 @@ button.card {
 a.card:hover,
 button.card:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-hover);
 }
 a.card:focus-visible,
 button.card:focus-visible {
   border-color: var(--accent);
+}
+/* Elevación de 1 px al pasar el ratón y vuelta al pulsar; sin movimiento si se pide reducirlo. */
+@media (prefers-reduced-motion: no-preference) {
+  a.card,
+  button.card {
+    transition:
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur-fast) var(--ease-out);
+  }
+  a.card:hover,
+  button.card:hover {
+    transform: translateY(-1px);
+  }
+  a.card:active,
+  button.card:active {
+    transform: none;
+  }
 }
 
 .notice {
@@ -675,8 +728,9 @@ button.card:focus-visible {
   height: 44px;
   border-radius: var(--radius-lg);
   color: var(--text-2);
-  background: var(--surface-2);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 .page-head-text {
   display: flex;
@@ -993,6 +1047,75 @@ button.card:focus-visible {
 }
 
 /* ---------- Primitivas compartidas ---------- */
+
+/* Etiqueta de sección pequeña en mayúsculas (la barra lateral, grupos dentro de una tarjeta). */
+.etiqueta-seccion {
+  margin: 0;
+  font-size: var(--fs-overline);
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Pastilla neutra para un dato (no un estado): tamaños, horas, versiones,
+ * puertos. Con .mono, en monoespaciada y cifras tabulares. */
+.pastilla {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 7px;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.pastilla.mono {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.pastilla svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* Globo de dato de las gráficas (al pasar el ratón o con las flechas): una
+ * ficha pequeña, igual en todas. El valor en tinta fuerte y tabular; la
+ * fecha o la serie, en tinta tenue. */
+.graf-tip {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 9px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+  color: var(--text-3);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+.graf-tip strong,
+.graf-tip b {
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Etiqueta de estado. El tono se elige con .tone-*; siempre con icono y texto. */
 .badge {

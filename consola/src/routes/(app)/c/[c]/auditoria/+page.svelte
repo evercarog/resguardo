@@ -263,7 +263,7 @@
       <Search size={15} />
       <input class="input" type="search" placeholder="Buscar por persona, acción o equipo" bind:value={buscar} aria-label="Buscar en la actividad" />
     </label>
-    <div class="card p-0 desplazable">
+    <div class="card p-0 desplazable alto">
       <table class="tabla actividad">
         <caption class="sr-only">Registro de actividad</caption>
         <thead><tr><th scope="col">N.º</th><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Qué</th><th scope="col">Sobre</th><th scope="col">Huella</th></tr></thead>
@@ -310,8 +310,13 @@
     font-size: var(--fs-xs);
     overflow-wrap: anywhere;
   }
+  /* Se parte una palabra solo si no cabe (un correo no se corta a media línea);
+   * la huella, siempre en una línea. */
   .actividad td {
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+  }
+  .actividad td.huella {
+    white-space: nowrap;
   }
   /* En el móvil, cada entrada como una tarjeta pequeña. */
   @media (max-width: 640px) {

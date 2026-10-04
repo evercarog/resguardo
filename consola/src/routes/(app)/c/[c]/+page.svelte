@@ -179,7 +179,7 @@
     {#if delFiltro.length}
       <div class="cifras" role="list" aria-label="Cifras del cliente">
         <div class="cifra" role="listitem">
-          <span class="c-et"><ShieldCheck size={14} />Equipos al día</span>
+          <span class="c-et"><span class="c-ic" aria-hidden="true"><ShieldCheck size={14} /></span>Equipos al día</span>
           <span class="c-val num">{alDia}<small>{` de ${delFiltro.length}`}</small></span>
           <span class="barra" aria-hidden="true">
             {#each ["ok", "warn", "bad", "paused", "neutral"] as const as t (t)}
@@ -190,17 +190,17 @@
           <span class="c-sub">{cuenta("bad") ? plural(cuenta("bad"), "con un problema", "con problemas") : cuenta("warn") ? plural(cuenta("warn"), "con avisos", "con avisos") : "ninguno con problemas"}</span>
         </div>
         <div class="cifra" role="listitem">
-          <span class="c-et"><Database size={14} />Protegido</span>
+          <span class="c-et"><span class="c-ic" aria-hidden="true"><Database size={14} /></span>Protegido</span>
           <span class="c-val num">{protegido ? bytes(protegido) : "—"}</span>
           <span class="c-sub">en {plural(repos.length, "repositorio", "repositorios")}</span>
         </div>
         <div class="cifra" role="listitem">
-          <span class="c-et"><Archive size={14} />Versiones en 24 h</span>
+          <span class="c-et"><span class="c-ic" aria-hidden="true"><Archive size={14} /></span>Versiones en 24 h</span>
           <span class="c-val num">{numero(recientes.versiones)}</span>
           <span class="c-sub">{#if recientes.fallos}<span class="mal">{plural(recientes.fallos, "vuelta fallida", "vueltas fallidas")}</span>{:else}sin vueltas fallidas{/if}</span>
         </div>
         <div class="cifra" role="listitem">
-          <span class="c-et"><CalendarClock size={14} />Próxima copia</span>
+          <span class="c-et"><span class="c-ic" aria-hidden="true"><CalendarClock size={14} /></span>Próxima copia</span>
           <span class="c-val" use:tip={proxima ? cuandoFrase(proxima.cuando, reloj.ahora) : undefined}>{proxima ? relativo(proxima.cuando, reloj.ahora) : "—"}</span>
           <span class="c-sub">{proxima ? `${proxima.copia} · ${proxima.equipo.nombre}` : "nada programado"}</span>
         </div>

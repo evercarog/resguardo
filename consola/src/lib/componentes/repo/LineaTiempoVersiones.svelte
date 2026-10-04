@@ -332,10 +332,10 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    border-left: 1px solid var(--border);
+    border-left: 1px solid var(--graf-rejilla);
   }
   .m.fuerte {
-    border-left-color: var(--border-strong);
+    border-left-color: var(--graf-base);
   }
   .m-txt {
     position: absolute;
@@ -343,14 +343,14 @@
     left: 4px;
     font-size: 10.5px;
     font-variant-numeric: tabular-nums;
-    color: var(--text-3);
+    color: var(--graf-eje);
     white-space: nowrap;
   }
   .ahora {
     position: absolute;
     top: 0;
     bottom: 0;
-    border-left: 1px dashed var(--text-3);
+    border-left: 1px dashed var(--graf-guia);
   }
   .ahora span {
     position: absolute;
@@ -427,41 +427,19 @@
   .marca.activa .forma {
     scale: 1.25;
   }
-  /* Colores de las copias (dataviz: los tres primeros, validados en claro y en oscuro). */
+  /* Colores de las copias: los de las gráficas en vivo (--onda-1…3, validados
+   * para daltonismo en claro y en oscuro); la cuarta en adelante, tinta tenue. */
   .h0 {
-    --c: #2a78d6;
+    --c: var(--onda-1);
   }
   .h1 {
-    --c: #eb6834;
+    --c: var(--onda-2);
   }
   .h2 {
-    --c: #1baf7a;
+    --c: var(--onda-3);
   }
   .h3 {
     --c: var(--text-3);
-  }
-  :global(:root[data-theme="dark"]) .h0,
-  :global(:root[data-theme="black"]) .h0 {
-    --c: #3987e5;
-  }
-  :global(:root[data-theme="dark"]) .h1,
-  :global(:root[data-theme="black"]) .h1 {
-    --c: #d95926;
-  }
-  :global(:root[data-theme="dark"]) .h2,
-  :global(:root[data-theme="black"]) .h2 {
-    --c: #199e70;
-  }
-  @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .h0 {
-      --c: #3987e5;
-    }
-    :global(:root:not([data-theme="light"])) .h1 {
-      --c: #d95926;
-    }
-    :global(:root:not([data-theme="light"])) .h2 {
-      --c: #199e70;
-    }
   }
 
   .ficha {

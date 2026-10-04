@@ -113,7 +113,7 @@
             </button>
           {/each}
           {#if sobre !== null && tip}
-            <div class="tip {tip.lado}" style:left={tip.left} style:right={tip.right} aria-hidden="true">
+            <div class="graf-tip tip {tip.lado}" style:left={tip.left} style:right={tip.right} aria-hidden="true">
               <strong class="num">{formato(puntos[sobre].v)}</strong>
               <span>{fechaCorta(puntos[sobre].hora)} · Ver detalle</span>
             </div>
@@ -139,7 +139,7 @@
           </span>
         {/each}
         {#if sobre !== null && tip}
-          <div class="tip {tip.lado}" style:left={tip.left} style:right={tip.right} aria-hidden="true">
+          <div class="graf-tip tip {tip.lado}" style:left={tip.left} style:right={tip.right} aria-hidden="true">
             <strong class="num">{formato(puntos[sobre].v)}</strong>
             <span>{fechaCorta(puntos[sobre].hora)}</span>
           </div>
@@ -206,6 +206,7 @@
     font-size: 10.5px;
     line-height: 12px;
     text-align: right;
+    color: var(--graf-eje);
   }
   .eje-y span {
     position: absolute;
@@ -221,7 +222,7 @@
     gap: 2px;
     min-width: 0;
     height: 96px;
-    border-bottom: 1px solid var(--border-strong);
+    border-bottom: 1px solid var(--graf-base);
     cursor: crosshair;
   }
   .plot:focus-visible {
@@ -232,7 +233,7 @@
     left: 0;
     right: 0;
     height: 0;
-    border-top: 1px dashed var(--border);
+    border-top: 1px dashed var(--graf-rejilla);
     pointer-events: none;
   }
   .guia {
@@ -240,7 +241,7 @@
     top: 0;
     bottom: 0;
     width: 0;
-    border-left: 1px dashed var(--text-3);
+    border-left: 1px dashed var(--graf-guia);
     pointer-events: none;
   }
   .col {
@@ -257,13 +258,14 @@
     margin: 0 auto;
     border-radius: 2px 2px 0 0;
     /* 75 %: las marcas llegan a 3:1 sobre la tarjeta (WCAG 1.4.11). */
-    background: color-mix(in srgb, var(--text-3) 75%, transparent);
+    background: var(--graf-marca);
     transform-origin: bottom;
     animation: crecer 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
     animation-delay: calc(var(--i) * 10ms);
   }
   .col.on .bar {
     background: var(--accent);
+    filter: var(--graf-brillo);
   }
   /* Barras que abren su detalle: botones sin aspecto de botón. */
   .pulsable-plot {
@@ -305,21 +307,10 @@
       animation: none;
     }
   }
+  /* El globo es .graf-tip (ui/estilos.css); aquí solo dónde va. */
   .tip {
-    position: absolute;
     bottom: calc(100% + 6px);
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    padding: 4px 8px;
-    font-size: var(--fs-xs);
-    line-height: var(--lh-xs);
-    white-space: nowrap;
-    color: var(--bg);
-    background: var(--text-1);
-    border-radius: var(--radius-sm);
-    pointer-events: none;
   }
   .tip.centro {
     translate: -50% 0;
@@ -329,9 +320,6 @@
   }
   .tip.fin {
     align-items: flex-end;
-  }
-  .tip span {
-    opacity: 0.75;
   }
   .datos {
     margin-top: 8px;
@@ -355,7 +343,9 @@
     display: flex;
     justify-content: space-between;
     margin: 6px 0 0 54px;
-    font-size: var(--fs-xs);
+    font-size: 10.5px;
     line-height: var(--lh-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--graf-eje);
   }
 </style>

@@ -30,7 +30,7 @@
 </script>
 
 <div class="cifra" role="listitem">
-  <span class="c-et"><Icono size={14} />{etiqueta}</span>
+  <span class="c-et"><span class="c-ic" aria-hidden="true"><Icono size={14} /></span>{etiqueta}</span>
   <span class="c-val num" use:tip={detalle}>{valor}{#if de}<small>{` ${de}`}</small>{/if}</span>
   {@render extra?.()}
   {#if sub}<span class="c-sub" class:mal>{sub}</span>{/if}
