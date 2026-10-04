@@ -131,8 +131,8 @@
     <p class="entre">
       {#if dif?.primera}Es la primera versión de su copia: no hay otra anterior con la que compararla.
       {:else}
-        De <strong>{desde ? fechaCorta(cuandoDe(desde) ?? dif?.desdeCuando) : "la versión anterior de la misma copia"}</strong>{#if desde}{" "}<code>{desde.slice(0, 8)}</code>{/if}
-        a <strong>{fechaCorta("hora" in version ? version.hora : null)}</strong> <code>{version.id.slice(0, 8)}</code>
+        De <strong>{desde ? fechaCorta(cuandoDe(desde) ?? dif?.desdeCuando) : "la versión anterior de la misma copia"}</strong>{#if desde}{" "}<span class="pastilla mono" title={desde}>{desde.slice(0, 8)}</span>{/if}
+        a <strong>{fechaCorta("hora" in version ? version.hora : null)}</strong> <span class="pastilla mono" title={version.id}>{version.id.slice(0, 8)}</span>
       {/if}
     </p>
     {#if elegibles.length}

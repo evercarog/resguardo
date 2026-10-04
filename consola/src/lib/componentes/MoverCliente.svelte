@@ -105,7 +105,7 @@
         <textarea id="bloque-servidor" class="input mono" rows="6" bind:value={pegado} placeholder={'{ "url": "https://…", "identidad": "…", "ca_pem": "-----BEGIN CERTIFICATE-----…", "ficha": "…" }'}></textarea>
         {#if typeof destino === "string"}<p class="error-campo">{destino}</p>
         {:else if destino}
-          <span class="field-hint">Irán a <strong>{destino.url}</strong>, identidad <code>{huellaCorta(destino.identidad)}</code>. Compruébala con quien lo administra.</span>
+          <span class="field-hint">Irán a <strong>{destino.url}</strong>, identidad <span class="pastilla mono">{huellaCorta(destino.identidad)}</span>. Compruébala con quien lo administra.</span>
         {/if}
       </div>
 

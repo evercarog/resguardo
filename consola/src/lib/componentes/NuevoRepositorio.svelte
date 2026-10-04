@@ -252,7 +252,7 @@
         <dl>
           <dt>Cliente</dt><dd>{cliente.nombre}</dd>
           <dt>Equipo</dt><dd>{equipo?.nombre}</dd>
-          <dt>Repositorio</dt><dd>{nombre} · <code class="selectable">{repoId}</code></dd>
+          <dt>Repositorio</dt><dd>{nombre} · <span class="pastilla mono selectable">{repoId}</span></dd>
           <dt>Destino</dt><dd>{ubicacion}</dd>
           <dt>Contraseña</dt><dd><code class="selectable pw">{contrasena}</code></dd>
           <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>

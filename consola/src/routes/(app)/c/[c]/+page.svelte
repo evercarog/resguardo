@@ -258,7 +258,7 @@
               <span class="d-ic"><Ic size={16} /></span>
               <span class="fila-texto">
                 <span class="fila-titulo">{d.nombre}</span>
-                <span class="fila-sub">{[d.nombre === TIPO_DESTINO[d.tipo] ? null : TIPO_DESTINO[d.tipo], d.donde && d.donde !== d.nombre ? d.donde : null, plural(d.repos, "repositorio", "repositorios")].filter(Boolean).join(" · ")}{#if d.inmutable || d.tipo === "almacen"}<span class="candado">{" · "}<Lock size={11} />{d.tipo === "almacen" ? "solo añadir" : "inmutable"}</span>{/if}</span>
+                <span class="fila-sub">{#if d.nombre !== TIPO_DESTINO[d.tipo]}{TIPO_DESTINO[d.tipo]}{" · "}{/if}{#if d.donde && d.donde !== d.nombre}<span class="pastilla mono" title={d.donde}>{d.donde}</span>{" · "}{/if}{plural(d.repos, "repositorio", "repositorios")}{#if d.inmutable || d.tipo === "almacen"}<span class="candado">{" · "}<Lock size={11} />{d.tipo === "almacen" ? "solo añadir" : "inmutable"}</span>{/if}</span>
               </span>
               <span class="d-graf">
                 <Sparkline valores={d.serie.map((x) => x.bytes)} etiquetas={d.serie.map((x) => etiquetaDia(x.dia))} formato={bytes} titulo="Datos protegidos en {d.nombre}, últimos 30 días" alto={30} />

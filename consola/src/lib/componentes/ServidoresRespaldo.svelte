@@ -83,7 +83,7 @@
         </div>
         <textarea id="resp-{i}" class="input mono" rows="4" bind:value={bloques[i]} placeholder={'{ "url": "https://…", "identidad": "…", "ca_pem": "…", "ficha": "…" }'}></textarea>
         {#if typeof l === "string"}<p class="error-campo">{l}</p>
-        {:else if l}<span class="field-hint">{l.url} · identidad <code>{huellaCorta(l.identidad)}</code></span>{/if}
+        {:else if l}<span class="field-hint">{l.url} · identidad <span class="pastilla mono">{huellaCorta(l.identidad)}</span></span>{/if}
       </div>
     {/each}
     {#if bloques.length < 3}

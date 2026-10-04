@@ -218,8 +218,8 @@
         <dl>
           <dt>Cliente</dt><dd>{cliente.nombre}</dd>
           <dt>Equipo</dt><dd>{equipo.nombre}</dd>
-          <dt>Repositorio</dt><dd>{nombre} · <code class="selectable">{repoId}</code></dd>
-          <dt>Destino</dt><dd>{almacen.nombre} · <code>{donde}</code></dd>
+          <dt>Repositorio</dt><dd>{nombre} · <span class="pastilla mono selectable">{repoId}</span></dd>
+          <dt>Destino</dt><dd>{almacen.nombre} · <span class="pastilla mono ajusta">{donde}</span></dd>
           <dt>Huella TLS</dt><dd><code>{huella}</code></dd>
           <dt>Contraseña</dt><dd><code class="selectable pw">{contrasena}</code></dd>
           <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>

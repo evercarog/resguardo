@@ -397,7 +397,7 @@
         <span class="ok-icono"><CircleCheck size={22} /></span>
         <div>
           <h2 class="section-title">Instalador de «{descargado.nombre}» descargado</h2>
-          <p>Llévalo al equipo y ábrelo como administrador (<code>{descargado.archivo}</code>). Se vinculará solo; después, aquí abajo, comprueba su número y dale de alta. Caduca <Tiempo iso={descargado.caduca} />.</p>
+          <p>Llévalo al equipo y ábrelo como administrador (<span class="pastilla mono ajusta">{descargado.archivo}</span>). Se vinculará solo; después, aquí abajo, comprueba su número y dale de alta. Caduca <Tiempo iso={descargado.caduca} />.</p>
         </div>
       </section>
     {/if}
@@ -715,9 +715,6 @@
   }
   .listo-descarga p {
     margin: 4px 0 0;
-  }
-  .listo-descarga code {
-    overflow-wrap: anywhere;
   }
   .pasos-linux {
     display: grid;
