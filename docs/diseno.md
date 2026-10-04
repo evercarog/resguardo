@@ -104,6 +104,28 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
 
 - **Fondos suaves:** `color-mix(in srgb, var(--X) 9%, transparent)` en claro y al 14 % en oscuro.
 - **Bordes de estado**, cuando hacen falta: el mismo color al 30 %.
+### Gráficas
+
+Tokens comunes de todas las gráficas (barras, minigráfica, previsión de espacio, línea de tiempo y ondas), para que hablen el mismo idioma:
+
+| Token | Claro | Oscuro | Uso |
+|---|---|---|---|
+| `--graf-rejilla` | `--border` | `--border` | Líneas de referencia, finas y discontinuas (2 3) |
+| `--graf-base` | `--border-strong` | `--border-strong` | La base (línea continua) |
+| `--graf-eje` | `--text-3` | `--text-3` | Rótulos de los ejes, 10,5 px tabular |
+| `--graf-linea` | `--text-2` | `--text-2` | Líneas (1,5 px) |
+| `--graf-marca` | `--text-3` al 75 % | igual | Barras (3:1 sobre la tarjeta) |
+| `--graf-guia` | `--text-3` | `--text-3` | Guía vertical al pasar el ratón o con las flechas |
+| `--graf-area` / `--graf-area-alfa` | `--text-3` / 0,18 | `--accent` / 0,28 | Arriba del degradado del área (abajo se desvanece) |
+| `--graf-brillo` | `none` | `drop-shadow(0 0 3px …)`, acento al 45 % | Brillo bajo la línea y en la barra elegida |
+| `--graf-brillo-px` | 3 | 10 | Desenfoque del brillo en las ondas (canvas) y en el punto de hoy |
+
+Los colores de las series (`--onda-1…3`) son los de «Colores por copia» (§4): la línea de tiempo y las ondas usan los mismos tokens.
+
+### Pantallas sin sesión
+
+`--portada-brillo` (7 % en claro, 16 % en oscuro) y `--portada-puntos` (18 % / 22 %): el resplandor del acento y la rejilla de puntos de `.fondo-portada` (§4).
+
 - **Contraste:** todos los textos de estado y `--text-3` cumplen AA (≥ 4,5:1) sobre `--surface`, `--surface-2` y su fondo suave, en los dos modos (comprobado: el peor caso es 4,70:1, `--warn` claro sobre su fondo suave en `--surface-2`). Ver §7.
 
 ---
@@ -125,6 +147,7 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
   - `--shadow-md: 0 1px 2px rgb(0 0 0 / .04), 0 4px 12px -2px rgb(0 0 0 / .06)` para menús y popovers.
   - `--shadow-lg: 0 24px 48px -12px rgb(0 0 0 / .18)` para modales.
 - **Oscuro:** sin sombras visibles. La jerarquía se marca con los escalones de superficie y con `--border`. Los modales llevan `--shadow-lg` con negro al 50 % y un borde de 1 px.
+- `--shadow-hover` (claro: `0 1px 2px` al 4 % y `0 8px 20px -10px` al 16 %; oscuro: `0 10px 24px -12px` al 70 %): la tarjeta que se puede pulsar, al pasar el ratón.
 - Las tarjetas normales no llevan sombra: les basta el borde de 1 px.
 
 **Foco:** `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }`. Los campos usan, en su lugar, el anillo `--focus: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent)` junto con un borde de acento. El foco nunca se quita sin sustituirlo.
@@ -134,6 +157,7 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
 - **Duraciones:** `--dur-fast 120ms` (hover, pulsar), `--dur 180ms` (abrir o cerrar, plegar) y `--dur-slow 260ms` (cambios de cifras, entrada de la vista).
 - **Curvas:** `--ease-out: cubic-bezier(.2,.8,.2,1)` y `--ease: cubic-bezier(.4,0,.2,1)`.
 - **Movimiento reducido:** con `prefers-reduced-motion: reduce`, todas las duraciones pasan a 0. Se quitan el brillo de progreso, las cifras animadas y los giros que no indican actividad.
+- **Al pasar y al pulsar:** las tarjetas que se pulsan suben 1 px (`--dur-fast`) y vuelven al pulsar; los botones bajan 1 px; los fantasma y los de icono toman `--surface-3` mientras se pulsan. Con movimiento reducido no suben: solo cambian el borde y la sombra.
 - **Entrada de la vista:** cada página entra con un fundido de `--dur-slow` y 4 px hacia arriba, solo al empezar (`animation-fill-mode: backwards`): al acabar no deja `transform`, que rompería lo fijo de dentro. Las cifras y los pasos de un asistente entran igual (`rise`).
 
 ---
@@ -161,7 +185,12 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
 - **Pestañas:** subrayado de 2 px en el color de acento bajo la activa. Texto en `--fs-body` con peso 500: `--text-2` las inactivas y `--text-1` la activa. Sin fondos, y con flechas para moverse.
 - **Chips de estado** (`.badge` + `.tone-*`): alto de 22 (18 el pequeño), padding 0 8, radio 999, `--fs-xs` con peso 600. Llevan siempre icono de 12 px y texto, por ejemplo «Al día» o «Atrasado». El fondo es el `-soft` del tono y el texto, su color.
 - **Punto de estado** (`.dot`): 8 px, en la barra lateral y en listas compactas. Siempre lleva al lado un texto o un `aria-label`.
-- **Tarjetas** (`.card`): fondo `--surface`, borde 1 px `--border`, radio 12, padding 20. Sin sombra. Si se pueden pulsar (`a.card`, `button.card`), el borde pasa a `--border-strong` y, en claro, toman `--shadow-sm` al pasar el ratón; con el foco de teclado, el borde es del acento.
+- **Tarjetas** (`.card`): fondo `--surface`, borde 1 px `--border`, radio 12, padding 20. Sin sombra. Si se pueden pulsar (`a.card`, `button.card`), al pasar el ratón el borde pasa a `--border-strong`, toman `--shadow-hover` y suben 1 px (§3); con el foco de teclado, el borde es del acento.
+- **Escala de radios por tamaño:** 6 lo pequeño (losas de 24, botones pequeños, globos), 8 botones, campos y losas de icono de 32–36, 10 las tarjetas del mapa, 12 las tarjetas, 16 los modales y la tarjeta de entrar, 999 las píldoras.
+- **Losas de icono** (como en las tarjetas de NetBird): el icono en una caja `--surface-2` con borde 1 px `--border` y el icono en `--text-2`. 24 px (radio 6) en las cifras, 32 en las tarjetas tranquilas (`.tile-ic`), 44 en la cabecera de página (`.page-icon`, con un degradado mínimo de `--surface` a `--surface-2`).
+- **Pastilla de dato** (`.pastilla`, `.pastilla.mono`): para un dato técnico que no es un estado (versión del agente, puerto, la dirección de un destino). Alto 20, padding 0 7, radio 999, fondo `--surface-2`, borde `--border`, texto `--text-2` en 11,5 px (11 px monoespaciada y tabular con `.mono`). Nunca lleva color de estado.
+- **Etiqueta de sección** (`.etiqueta-seccion`): `--fs-overline`, peso 600, +0,06em, mayúsculas, `--text-3`. La de los grupos de la barra lateral y la de los grupos dentro de una tarjeta.
+- **Tablas** (`.tabla`): líneas finas `--border` entre filas, **sin cebra**; al pasar el ratón, `--surface-2` al 70 %. Cabecera en `--fs-xs` 600 `--text-3` sobre `--surface`, fija arriba (`position: sticky`); las largas (Actividad) van en `.desplazable.alto` (como mucho 72 vh, solo por encima de 640 px) para que la cabecera se quede a la vista. Cifras tabulares; las cantidades (versiones, tamaños, archivos) a la derecha (`.der`, también en su `<th>`); lo técnico en mono de 12 px. Al imprimir, la cabecera no se fija.
 - **Filas de lista** (`.row`): alto mínimo de 44, padding 10 16 y separador `--border`. Al pasar el ratón, `--surface-2`. Llevan:
   - a la izquierda, un icono o punto de 16;
   - en medio, el título en `--fs-body` con peso 500 y una segunda línea en `--fs-sm` y `--text-3`;
@@ -187,6 +216,7 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
   - `primera-copia`, `restaurado` (logros).
 
   Caja de 160 × 120 (144 px de ancho por defecto, 176 en los errores), **un solo grosor de trazo** (2) con puntas redondas y **dos tintas** de los tokens: la línea en `--text-2` (y `--text-3` para lo secundario), los rellenos en `--surface`/`--surface-2`, un suelo en `--surface-3` y el detalle en el acento (trazo `--accent` y relleno al 14 % sobre `--surface`). Así cambian solas con el claro, el oscuro y el acento elegido. Son decorativas (`aria-hidden`): el texto de al lado dice lo mismo. Movimiento solo sin «reducir movimiento»: un vaivén de 2,5 px en 5 s, un parpadeo suave de los destellos y el ✓ que se dibuja una vez. El estado no lo dicen ellas (no son rojas ni verdes): lo dice el texto.
+- **Fondo de las pantallas sin sesión y de error** (`.fondo-portada`): `--bg-subtle` con un resplandor del acento arriba (elipse de 60 × 42 %, `--portada-brillo`) y una rejilla de puntos de 22 px (`--text-3` a `--portada-puntos`) que se desvanece hacia los bordes. Quieto y decorativo; el contenido va siempre en una tarjeta opaca o en texto con contraste medido sobre él (§7). La tarjeta de entrar (`Portada`): radio 16, sombra amplia (`0 24px 48px -20px` al 22 %) y un filo de luz arriba; en oscuro, borde `--border-strong`. Es la única textura fuera del mapa: el resto de la consola va en superficies lisas.
 - **Pantallas de error** (`PantallaError`, `routes/+error.svelte`): ilustración, título en `--fs-title`, una frase en `--text-2` y una o dos acciones («Ir al inicio», «Reintentar», «Ver mis clientes»). Una dirección que no existe es `no-encontrado`; un cliente que no es de tu cuenta, `sin-permiso`; sin servidor, `sin-conexion`.
 - **Logros:** «Primera copia hecha» (una tarjeta con `primera-copia` y «Entendido» encima de *Primeros pasos*; sale una vez y solo si este navegador vio el cliente sin copias) y la restauración terminada (`restaurado` en el último paso).
 - **Esqueletos:** bloques `--surface-3` con radio 6 y una opacidad que pulsa entre 1 y .5 en 1,2 s (estáticos con movimiento reducido). Imitan la forma real del contenido.
@@ -202,9 +232,9 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
   Cada cuadro lleva un *tooltip* con la fecha y el resultado. Junto a las tarjetas se usa la versión **mini** de 14 días. Los de un equipo juntan las versiones y vueltas de todos sus repositorios.
 
   Para lectores de pantalla, la rejilla es una imagen cuyo texto cuenta los días de cada resultado («Últimos 14 días: 9 días con versiones, 1 día falló, 4 días sin copia.»). Cuando se pueden pulsar (filtrar las versiones de un día), son un solo punto de parada del tabulador con flechas, Inicio y Fin, y al lado va un desplegable «Todos los días» que hace lo mismo con un tamaño cómodo (los cuadros de 11 px no llegan a los 24 px de WCAG 2.5.8).
-- **Gráficas** (una serie por gráfica, nunca doble eje):
+- **Gráficas** (una serie por gráfica, nunca doble eje). Todas con los tokens `--graf-*` (§2) y el mismo **globo de dato** (`.graf-tip`): ficha `--surface` con borde `--border-strong`, radio 6, `--shadow-md`, el valor en `--text-1` 600 tabular y la fecha o la serie en `--text-3`. En oscuro, el área toma el acento con brillo (como un gráfico en vivo); en claro, tinta neutra.
   - **Barras** (`GraficaBarras`): marcas finas (máx. 10 px) en `--text-3` al 75 % (3:1 sobre la tarjeta), ancladas a la base (`--border-strong`); dos líneas de referencia discontinuas en `--border` (la mitad y el máximo) rotuladas a la izquierda en 10,5 px tabular; fechas del principio, el medio y el final abajo; la media en la cabecera. Al pasar el ratón o con las flechas (la gráfica se enfoca), una guía vertical discontinua en `--text-3`, la barra en el acento y su dato en un *tooltip* (y leído en una región viva). Debajo, «Ver los datos» abre la misma serie en una tabla.
-  - **Minigráfica** (`Sparkline`, tendencia de 30 días): trazo de 1,5 px en `--text-2` con un área al 12 % de `--text-3`, el último punto en el acento y, al pasar el ratón o con las flechas, guía y dato del día (también leído en una región viva). Su texto alternativo dice el periodo «de X a Y». Sin ejes: el valor de hoy y el cambio del periodo van al lado, en texto.
+  - **Minigráfica** (`Sparkline`, tendencia de 30 días): trazo de 1,5 px en `--graf-linea` con un área en degradado (`--graf-area`, que se desvanece abajo) y `--graf-brillo`, el último punto en el acento con un halo suave y, al pasar el ratón o con las flechas, guía y dato del día (también leído en una región viva). Su texto alternativo dice el periodo «de X a Y». Sin ejes: el valor de hoy y el cambio del periodo van al lado, en texto.
   - El color de las marcas es tinta neutra; el acento solo señala lo elegido. Los colores de estado solo para estados. Las cifras derivadas («+122 MB», «−3 MB») van en tinta neutra, no en verde ni rojo.
   - **Previsión de espacio** (`GraficaLlenado`, en «¿Cuándo se llena?»): lo ocupado los últimos 60 días (línea de 1,5 px en `--text-2` con un área de `--text-3` que se desvanece; en oscuro, el área en el acento al 28 % y un brillo suave de 3 px bajo la línea), la recta del ritmo actual en discontinua (5 4), la capacidad en punteada `--text-3` rotulada «Capacidad» y el punto de lleno (círculo hueco en `--text-1`) con «lleno · marzo de 2028». Es de líneas, así que el eje empieza cerca del mínimo (rotulado, con los decimales que hagan falta para que los dos rótulos no digan lo mismo). Guía y dato con el ratón o las flechas, región viva y «Ver los datos». El estado (aviso con menos de 3 meses, urgente con menos de 1) va en el chip de al lado, nunca en la línea.
   - **Colores por copia** (la línea de tiempo de las versiones): tres huecos en orden fijo, validados para daltonismo con todos los pares (claro `#2a78d6` `#eb6834` `#1baf7a`, oscuro `#3987e5` `#d95926` `#199e70`); la cuarta copia en adelante y las versiones sin copia, «Otras», en `--text-3`. Cada hueco lleva además su forma (círculo, cuadrado, rombo; raya en «Otras») y siempre hay leyenda: el color nunca va solo. El verde claro no llega a 3:1 sobre blanco: lo compensan la forma, la leyenda, la ficha y la lista de debajo.
@@ -236,10 +266,12 @@ Cada estado tiene un color de texto o icono (`--ok`) y un fondo suave (`--ok-sof
 ## 5. Disposición
 
 - **Barra lateral:** 248 px de ancho (232 por debajo de 1100 px de ventana), fondo `--bg-subtle` y borde derecho `--border`.
-  - Etiquetas de sección en `--fs-overline` y `--text-3`.
-  - Elementos de 32 px de alto con radio 6.
-  - El elemento activo lleva fondo `--surface-2` (o `--surface` sobre el fondo hundido), texto `--text-1` y peso 500, sin barras de color.
-  - Contadores en `--fs-xs` tabular a la derecha y puntos de estado de 8 px.
+  - Arriba, la marca y el botón de plegar; debajo, el selector de cliente (42 px, `--surface` con borde y `--shadow-sm`) y «Buscar o ir a…».
+  - Las secciones del cliente van en **tres grupos** con su etiqueta (`.etiqueta-seccion`): **Protección** (Estado, Equipos, Repositorios y destinos), **Operación** (Restaurar, Órdenes, Avisos) y **Gestión** (Informes, Actividad, Servidor, Personas y ajustes). Cada lista se nombra con su etiqueta (`aria-labelledby`).
+  - Elementos de 32 px de alto con radio 6 e icono de 16 en `--text-3`.
+  - El elemento activo: fondo `--surface` con borde fino (`0 0 0 1px --border` y `--shadow-sm`), texto `--text-1` con peso 550, el icono en `--accent-text` y una **raya del acento** de 3 px a la izquierda (8 px más corta que el elemento por arriba y por abajo).
+  - Contadores en pastilla de 18 px (`--surface-3` y `--text-2`; `--warn-soft`/`--warn` o `--bad-soft`/`--bad` si son de un estado), tabulares.
+  - **Plegada a iconos** (60 px, `--sidebar-plegada`): el botón junto a la marca la pliega y la despliega; se recuerda en el navegador (`rg.barra.plegada`, con `try/catch`) y, si nunca se tocó, se pliega sola por debajo de 1100 px. Plegada: solo los iconos (36 × 36), una raya corta entre grupos, el nombre en `aria-label` y en el tooltip, los contadores encima del icono (en el color del estado, con texto `--accent-contrast` o `--bad-contrast`), lo que está en marcha en una pastilla de icono y porcentaje, y el menú de clientes de 260 px. En el móvil (cajón) nunca se pliega.
 - **Contenido:** ancho máximo de 1120 px, centrado, con padding de 32 (24 por debajo de 1100 px y 16 en móvil en la web).
 - **Ancho mínimo** de la ventana de escritorio: 720 px.
 - **Densidad:** por defecto, **cómoda**. Las tablas de versiones y de actividad usan filas de 40 a 44 px; en las tarjetas, cuatro datos como máximo.
@@ -280,6 +312,7 @@ La consola se revisa con el teclado, con el árbol de accesibilidad del navegado
 **Contraste** (comprobado con la fórmula de WCAG; claro / oscuro):
 
 - Texto: 4,5:1 como mínimo, también el de estado sobre su fondo suave y sobre `--surface-2` (las filas al pasar el ratón). Peores casos: `--warn` claro sobre `--warn-soft` en `--surface-2`, 4,70:1; `--neutral` oscuro sobre su fondo suave en `--surface-2`, 4,74:1; `--text-3` 4,8 / 5,3:1 sobre `--surface-3`.
+- Lo nuevo de la pasada estética (medido con `node` sobre los tokens; claro / oscuro): etiquetas de grupo 5,30 / 6,70; contadores de estado sobre su fondo suave en la barra (también al pasar el ratón) 4,62 / 5,05 en el peor caso; contadores de la barra plegada 5,85 / 7,02; pastillas 5,16 / 5,85 (en tinta tenue); globo de gráfica y cabecera de tabla 5,68 / 6,21; fila de tabla al pasar 5,31; raya del elemento activo ≥ 4,31:1 con los siete acentos; el pie de entrar sobre el resplandor ≥ 4,73.
 - Componentes y gráficos: 3:1. Los campos y el interruptor apagado usan `--border-input` (3,0:1 en el peor caso, sobre `--surface-3` en oscuro; 3,6 / 3,5:1 sobre `--surface`), no `--border-strong` (1,46:1, solo decorativo). Las marcas de las gráficas van al 75 % de `--text-3` (3,3 / 3,8:1).
 - El foco es el contorno de 2 px del acento (≥ 3:1 sobre todos los fondos, con los siete acentos). Un fondo solo (`--surface-2`) no basta como foco: los menús y el «?» llevan también el contorno.
 - Las herramientas: `node` con la fórmula de luminancia sobre los tokens, y en cada página una pasada que mide el color real de cada texto sobre su fondo opaco.

@@ -761,6 +761,9 @@ button.fila {
 :root[data-densidad="compacta"] .barra:not(.plegada) .items a {
   height: 28px;
 }
+:root[data-densidad="compacta"] .barra .grupos {
+  gap: var(--sp-3);
+}
 
 /* Al imprimir (el informe), la cabecera de las tablas no se fija. */
 @media print {

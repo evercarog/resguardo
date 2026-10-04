@@ -123,7 +123,7 @@
             <a class="card tile destino" href="/c/{actual.id}/equipos/{a.id}">
               <span class="tile-cab">
                 <span class="tile-ic"><Server size={16} /></span>
-                <span class="tile-nombre"><strong>{a.nombre}</strong><span>Almacén · puerto {a.resumen?.guarda_copias?.puerto ?? "—"}</span></span>
+                <span class="tile-nombre"><strong>{a.nombre}</strong><span>Almacén · puerto <span class="pastilla mono">{a.resumen?.guarda_copias?.puerto ?? "—"}</span></span></span>
                 <ChevronRight size={16} class="flecha" />
               </span>
               <p class="tile-linea num">
@@ -138,7 +138,7 @@
             <div class="card tile destino">
               <span class="tile-cab">
                 <span class="tile-ic"><Icono size={16} /></span>
-                <span class="tile-nombre"><strong>{d.nombre}</strong><span>{TIPO[d.tipo] ?? d.tipo}{d.donde && d.donde !== d.nombre ? ` · ${d.donde}` : ""}</span></span>
+                <span class="tile-nombre"><strong>{d.nombre}</strong><span>{TIPO[d.tipo] ?? d.tipo}{#if d.donde && d.donde !== d.nombre}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}</span></span>
               </span>
               <p class="tile-linea num">
                 {#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else}Sin repositorios todavía{/if} · lo usa{d.equipos.size > 1 ? "n" : ""} {[...d.equipos].join(", ")}
