@@ -51,6 +51,7 @@ import { cifrarPaquete, descifrarPaquete } from "../src/lib/cripto/paquete";
 import { publicaRespaldo, salRespaldo, secretoRespaldo } from "../src/lib/cripto/respaldo";
 import { desplegar, errorIntervalo, errorRegla as errorReglaHorario, errorReglas, expresable, horarioParaEnviar, normalizar, proximaVez, reconocer, reglasDe, ultimaVez } from "../src/lib/horario";
 import { diasEnFrase, horarioEnFrase, resumenHorario, resumenReglas } from "../src/lib/formato";
+import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
 let fallos = 0;
@@ -829,6 +830,57 @@ console.log("\n· Progreso en vivo (v1.25)");
   igual("colores por orden de configuración; la cuarta, «otras»", [hu.get("a"), hu.get("b"), hu.get("c"), hu.get("d")], [0, 1, 2, 3]);
   igual("eje del mes: el 1 y cada 5 días (sin el 30, pegado al 1)", marcasEje(Date.parse("2026-09-28T00:00:00"), Date.parse("2026-10-12T00:00:00"), "mes").map((m) => new Date(m.t).getDate()), [1, 5, 10]);
   igual("escala inicial: la menor con 6 versiones a la vista", zoomInicial(vs.map((v) => Date.parse(v.hora)), ahora), "semana");
+}
+
+console.log("\n· Cambiar la clave de administración (lib/cambioClave.ts)");
+{
+  const NUEVA = "otra clave de administración, bien larga";
+  const sal = (n: number) => aB64(new Uint8Array(16).fill(n));
+  const nueva = new ClaveNueva(argon2, NUEVA, sal(1));
+  const equipo = {
+    id: "e1",
+    sal_equipo: sal(2),
+    resumen: {
+      consolas: [
+        { id: "a", nombre: "Esta", url: "https://a", identidad: "IA", sal_cliente: sal(1), ultimo_contacto: null, desde: null, esta: true },
+        { id: "b", nombre: "En línea", url: "https://b", identidad: "IB", sal_cliente: sal(3), ultimo_contacto: null, desde: null, esta: false },
+        { id: "c", nombre: "Sin sal", url: "https://c", identidad: "IC", sal_cliente: null, ultimo_contacto: null, desde: null, esta: false },
+      ],
+    },
+  } as unknown as Equipo;
+  const c = await nueva.cuerpo(equipo);
+  igual("verificador = SHA-256(Argon2id(nueva, sal_equipo))", c.verificador, aB64(verificador(await pruebaAdmin(argon2, NUEVA, sal(2)))));
+  igual("k_cfg con la sal de esta consola", c.k_cfg, aB64(kCfg(await materialCliente(argon2, NUEVA, sal(1)))));
+  igual("k_cfg_consolas: solo las otras con sal", Object.keys(c.k_cfg_consolas ?? {}), ["IB"]);
+  igual("la de la otra, con su sal", c.k_cfg_consolas?.IB, aB64(kCfg(await materialCliente(argon2, NUEVA, sal(3)))));
+  igual("sin otras consolas, sin k_cfg_consolas", "k_cfg_consolas" in (await nueva.cuerpo({ sal_equipo: sal(2), resumen: null } as unknown as Equipo)), false);
+  igual("otras consolas por nombre", ClaveNueva.otrasConsolas([equipo]), ["En línea", "Sin sal"]);
+  // Quién tiene qué clave, por su etiqueta.
+  const kA = kCfg(await materialCliente(argon2, "clave anterior de prueba", sal(1)));
+  const kN = deB64(c.k_cfg);
+  const eq = (id: string, k: Uint8Array | null) => ({ id, box_pub: "B", sign_pub: "S", etiqueta: k ? etiquetaEquipo(k, id, "B", "S") : null });
+  const r = repartir([eq("x", kA), eq("y", kN), eq("z", null)], kA, kN);
+  igual("repartir por etiqueta", [r.conActual.map((e) => e.id), r.yaNueva.map((e) => e.id), r.otra.map((e) => e.id)], [["x"], ["y"], ["z"]]);
+  // A medias: la última orden de cada equipo, si no ha terminado.
+  const o = (equipo: string, estado: string, emitida: string) => ({ tipo: "cambiar_clave_admin", equipo, estado: estado as never, emitida, caduca: "2026-10-11T10:00:00+02:00" });
+  igual(
+    "pendientes del cambio",
+    pendientesDeCambio([
+      o("e1", "hecha", "2026-10-04T10:00:00+02:00"),
+      o("e2", "pendiente", "2026-10-04T10:00:00+02:00"),
+      o("e3", "rechazada", "2026-10-04T11:00:00+02:00"),
+      o("e3", "pendiente", "2026-10-04T10:00:00+02:00"),
+      { ...o("e4", "pendiente", "2026-10-04T10:00:00+02:00"), tipo: "config" },
+    ]).map((p) => p.equipo),
+    ["e2"],
+  );
+  igual(
+    "estados",
+    ["hecha", "entregada", "en_marcha", "caducada", "fallida"].map((e) => estadoCambio({ estado: e as never })),
+    ["aplicada", "pendiente", "en_marcha", "cancelada", "rechazada"],
+  );
+  const g = claveGenerada((n) => new Uint8Array(n).map((_, i) => i * 7));
+  cierto("clave generada: 5 grupos de 5, sin letras que se confundan", /^([A-HJ-NP-Z2-9]{5}-){4}[A-HJ-NP-Z2-9]{5}$/.test(g));
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

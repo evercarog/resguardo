@@ -213,7 +213,8 @@ El verificador es **del equipo** (uno), así que tras `cambiar_clave_admin` desd
 - **Las personas**: quien use la otra consola necesita la clave nueva. Es un secreto: el sistema no la reparte (ni puede).
 - **`K_cfg` de cada consola**: la consola que cambia la clave conoce la nueva y la sal de cada consola (va en el resumen, `consolas[].sal_cliente`): manda, además, `k_cfg_consolas: { "<identidad>": "<K_cfg>" }`. Si no lo manda (una consola anterior), el equipo pone la nueva `K_cfg` en las consolas que tenían **la misma** que la que manda (misma sal, mismo resultado) y deja las otras como estaban, con un aviso en el registro: esas siguen cifrando la configuración con la clave anterior hasta que se mande otra vez.
 - **Etiquetas**: el equipo sube con su configuración la etiqueta calculada con la `K_cfg` de cada consola (3): la otra consola, con la clave nueva, comprueba la etiqueta como siempre.
-- Se avisa en todas (`cambio_clave`, como ya hacía el servidor con el resultado firmado; y el resumen lleva el cambio en `cambio_config`).
+- Se avisa en todas (`cambio_clave`: en la que lo manda, con el resultado firmado; en las demás, cuando el equipo les sube la etiqueta nueva con `cambio_config` de `cambiar_clave_admin` desde otra consola).
+- En la consola: cliente → Personas y ajustes → «Cambiar la clave de administración». Comprueba la actual con las etiquetas, manda la orden a cada equipo (con `k_cfg_consolas`) y dice en qué va cada uno; los que no están conectados la aplican al conectar y, mientras, en ellos sigue valiendo la anterior («Cambio a medias»).
 
 ### 4.3 Revocar
 

@@ -788,10 +788,12 @@ fn entregar(db: &dyn Almacen, motor: &Motor, ahora: Ts) -> R<()> {
             continue;
         };
         let secretos = ajustes::abrir_secretos(&canal, &motor.clave, &ambito);
-        let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora) };
+        let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora), marcas: BTreeMap::new() };
         let (sueltos, juntos): (Vec<Envio>, Vec<Envio>) = envios.into_iter().partition(|e| e.mensaje.suelto());
         for e in sueltos {
-            let r = transporte::enviar(transporte.as_ref(), &canal, &secretos, &destino, std::slice::from_ref(&e.mensaje), &formato, &e.id, ahora);
+            let ms = std::slice::from_ref(&e.mensaje);
+            let formato = con_marca(db, &formato, ms, None);
+            let r = transporte::enviar(transporte.as_ref(), &canal, &secretos, &destino, ms, &formato, &e.id, ahora);
             anotar(db, vec![e], r, ahora)?;
         }
         if juntos.is_empty() {
@@ -808,10 +810,40 @@ fn entregar(db: &dyn Almacen, motor: &Motor, ahora: Ts) -> R<()> {
             continue;
         }
         let mensajes: Vec<Mensaje> = juntos.iter().map(|e| e.mensaje.clone()).collect();
+        let formato = con_marca(db, &formato, &mensajes, None);
         let r = transporte::enviar(transporte.as_ref(), &canal, &secretos, &destino, &mensajes, &formato, &juntos[0].id, ahora);
         anotar(db, juntos, r, ahora)?;
     }
     Ok(())
+}
+
+/// El formato con la marca del cliente (v1.32) si todo lo que se manda es de
+/// uno solo y la tiene (su acento o su logo). `cliente`: el de una prueba de
+/// un canal del cliente (el mensaje de prueba no lo lleva). Si no se puede
+/// leer, sale sin marca: un aviso nunca se queda sin enviar por eso.
+fn con_marca(db: &dyn Almacen, base: &contenido::Formato, ms: &[Mensaje], cliente: Option<&str>) -> contenido::Formato {
+    let mut f = base.clone();
+    let clientes = contenido::clientes_de(ms);
+    let (id, nombre) = match (clientes.as_slice(), cliente) {
+        ([(id, nombre)], _) => (id.clone(), nombre.clone()),
+        ([], Some(c)) => match db.cliente(c) {
+            Ok(Some(x)) => (x.id, x.nombre),
+            _ => return f,
+        },
+        _ => return f,
+    };
+    let Ok(m) = crate::api::marca::leer(db, &id) else { return f };
+    let acento = m.acento.as_deref().and_then(contenido::colores_acento);
+    // El logo ya se comprobó al guardarlo (PNG); se vuelve a mirar por si acaso.
+    let logo = m
+        .logo
+        .as_deref()
+        .and_then(|b| base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b).ok())
+        .filter(|b| crate::api::marca::png_valido(b).is_ok());
+    if acento.is_some() || logo.is_some() {
+        f.marcas.insert(id, contenido::MarcaCorreo { nombre, acento, logo });
+    }
+    f
 }
 
 /// Anota cómo fue una entrega (de uno o de varios agrupados).
@@ -861,7 +893,9 @@ pub fn probar(
     let secretos = ajustes::abrir_secretos(canal, &motor.clave, ambito);
     let m = Mensaje::Prueba { quien: quien.into() };
     let id = uuid::Uuid::new_v4().to_string();
-    let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora) };
+    let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora), marcas: BTreeMap::new() };
+    // La prueba de un canal del cliente sale con su marca.
+    let formato = con_marca(db, &formato, std::slice::from_ref(&m), cliente);
     let r = if ajustes::completo(canal) {
         transporte::enviar(motor.transporte().as_ref(), canal, &secretos, destino, std::slice::from_ref(&m), &formato, &id, ahora)
     } else {

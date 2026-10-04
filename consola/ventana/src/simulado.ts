@@ -103,6 +103,8 @@ export function empezar() {
 }
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Cuándo se pidió «Traer historial» (simulado: una versión por segundo). */
+let historialSimulado = 0;
 
 export async function simular(op: string, c: Record<string, unknown>): Promise<unknown> {
   await espera(250);
@@ -179,6 +181,24 @@ export async function simular(op: string, c: Record<string, unknown>): Promise<u
           bytes: 120_000_000 + i * 3_000_000,
         }));
       if (que === "kit") return [{ id: "principal", nombre: "Disco USB", destino: "Disco USB", tipo: "local", ubicacion: "E:\\Copias\\principal", id_restic: "8f1c0d2e9a" }];
+      if (que === "adoptar_repositorio") {
+        const r = cuerpo.repositorio as { solo_probar?: boolean; nombre?: string };
+        if (r.solo_probar)
+          return {
+            mensaje: "Se abre con esa contraseña: 214 versiones, la última del 28 sep 2026.",
+            detalle: { versiones: 214, ultima: new Date(Date.now() - 6 * 86_400_000).toISOString(), solo_anadir: false, en_uso: null, equipos: ["PORTATIL-ANA", "PC-RECEPCION"], etiquetas: [] },
+          };
+        return { mensaje: `Repositorio «${r.nombre}» adoptado con todo su historial (214 versiones). Las copias pueden guardar ya en él.` };
+      }
+      if (que === "copiar_historial") {
+        historialSimulado = Date.now();
+        return { mensaje: "Trayendo el historial… Puede tardar." };
+      }
+      if (que === "historial_traido") {
+        if (!historialSimulado) return null;
+        const n = Math.min(40, Math.floor((Date.now() - historialSimulado) / 1000));
+        return n < 40 ? { estado: "en_marcha", mensaje: `Trayendo el historial: ${n} de 40 versiones…` } : { estado: "hecha", mensaje: "Historial traído: 40 versiones nuevas." };
+      }
       return { mensaje: "Hecho (simulado)." };
     }
     default:

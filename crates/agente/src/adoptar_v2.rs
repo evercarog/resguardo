@@ -401,7 +401,9 @@ static EN_CURSO: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new(
 /// `copiar_historial { repo, origen: {repo} | {destino, ruta, contrasena}, filtro?: {equipos?, etiquetas?} }`:
 /// se comprueba lo que se puede al momento y la copia sigue en segundo plano;
 /// la orden queda `en_marcha` (con el progreso cada minuto) hasta el resultado final.
-pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result<String, String> {
+/// Lo que comprueba `copiar_historial` antes de empezar (y el repositorio queda
+/// «en curso»): el id y el nombre del repositorio, el origen y el filtro.
+fn preparar_historial(v: &Vinculo, c: &Value) -> Result<(String, String, Access, Filtro), String> {
     let repo = texto(c, "repo");
     let r = v.repos_v2.iter().find(|r| r.id == repo).ok_or("Ese repositorio no lo gestiona este servidor.")?;
     if r.solo_lectura {
@@ -420,7 +422,63 @@ pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result
         }
         en_curso.push(repo.clone());
     }
-    let (v, orden, nombre) = (v.clone(), orden.to_string(), r.nombre.clone());
+    Ok((repo, r.nombre.clone(), src, filtro))
+}
+
+/// Al terminar (bien o mal): fuera el origen y el «en curso», y las versiones al día en el próximo informe.
+fn terminar_historial(repo: &str, src: &Access) {
+    soltar(src);
+    if let Ok(mut en_curso) = EN_CURSO.lock() {
+        en_curso.retain(|x| x != repo);
+    }
+    crate::informe_v2::invalidar(repo);
+}
+
+/// En modo local (ventana del equipo, sin consola): cómo va lo que se trae a
+/// cada repositorio (`en_marcha`, `hecha` o `fallida`, y el mensaje). La
+/// ventana lo pregunta mientras está abierta; lo último se queda hasta otro.
+static LOCAL: std::sync::Mutex<Vec<(String, &'static str, String)>> = std::sync::Mutex::new(Vec::new());
+
+fn anotar_local(repo: &str, estado: &'static str, mensaje: String) {
+    if let Ok(mut l) = LOCAL.lock() {
+        l.retain(|(r, _, _)| r != repo);
+        l.push((repo.to_string(), estado, mensaje));
+    }
+}
+
+/// `copiar_historial` en modo local (la ventana del equipo con la clave): lo
+/// mismo, pero el progreso y el resultado se quedan aquí ([`historial_local`]).
+pub fn copiar_historial_local(v: &Vinculo, c: &Value) -> Result<String, String> {
+    let (repo, nombre, src, filtro) = preparar_historial(v, c)?;
+    anotar_local(&repo, "en_marcha", "Preparando…".into());
+    let v = v.clone();
+    let m = format!("Trayendo el historial a «{nombre}»… Puede tardar: depende de cuánto haya que copiar.");
+    std::thread::spawn(move || {
+        let mut aviso = |hechas: usize, total: usize| anotar_local(&repo, "en_marcha", format!("Trayendo el historial: {hechas} de {total} versiones…"));
+        let r = traer(&v, &repo, &src, &filtro, &mut aviso);
+        terminar_historial(&repo, &src);
+        crate::agent::log(&format!("Historial hacia «{nombre}» (ventana del equipo): {}.", if r.is_ok() { "hecho" } else { "falló" }));
+        match r {
+            Ok(m) => anotar_local(&repo, "hecha", m),
+            Err(e) => anotar_local(&repo, "fallida", e),
+        }
+    });
+    Ok(m)
+}
+
+/// Cómo va el historial que se trae a `repo` en modo local: `{ estado, mensaje }` o `null`.
+pub fn historial_local(repo: &str) -> Value {
+    LOCAL
+        .lock()
+        .ok()
+        .and_then(|l| l.iter().find(|(r, _, _)| r == repo).map(|(_, e, m)| json!({ "estado": e, "mensaje": crate::web::public_message(m) })))
+        .unwrap_or(Value::Null)
+}
+
+pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result<String, String> {
+    let (repo, nombre, src, filtro) = preparar_historial(v, c)?;
+    let (v, orden) = (v.clone(), orden.to_string());
+    let m = format!("Trayendo el historial a «{nombre}»… Puede tardar: depende de cuánto haya que copiar.");
     std::thread::spawn(move || {
         let mut ultimo = std::time::Instant::now();
         let mut aviso = |hechas: usize, total: usize| {
@@ -431,12 +489,8 @@ pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result
             }
         };
         let r = traer(&v, &repo, &src, &filtro, &mut aviso);
-        soltar(&src);
-        if let Ok(mut en_curso) = EN_CURSO.lock() {
-            en_curso.retain(|x| *x != repo);
-        }
         // La lista de versiones y el espacio, al día en el próximo informe.
-        crate::informe_v2::invalidar(&repo);
+        terminar_historial(&repo, &src);
         let res = match r {
             Ok(m) => Resultado { estado: "hecha", mensaje: m, detalle: None },
             Err(e) => Resultado { estado: "fallida", mensaje: e, detalle: None },
@@ -449,7 +503,7 @@ pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result
             std::thread::sleep(Duration::from_secs(30 << intento));
         }
     });
-    Ok(format!("Trayendo el historial a «{}»… Puede tardar: depende de cuánto haya que copiar.", r.nombre))
+    Ok(m)
 }
 
 #[cfg(test)]
@@ -639,6 +693,24 @@ mod tests {
         // El mismo repositorio como origen y destino: no.
         let mismo = origen(&v, &json!({ "repo": "nuevo" })).unwrap();
         assert!(traer(&v, "nuevo", &mismo, &Filtro::default(), &mut |_, _| {}).unwrap_err().contains("mismo"));
+
+        // En modo local (ventana del equipo): en segundo plano, y la ventana pregunta cómo va.
+        assert_eq!(historial_local("nuevo"), Value::Null);
+        let c = json!({ "repo": "nuevo", "origen": origen_json });
+        let m = copiar_historial_local(&v, &c).unwrap();
+        assert!(m.contains("Trayendo el historial a «Nuevo»"), "{m}");
+        let mut fin = Value::Null;
+        for _ in 0..600 {
+            fin = historial_local("nuevo");
+            if fin["estado"] != "en_marcha" {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert_eq!(fin["estado"], "hecha", "{fin}");
+        assert!(fin["mensaje"].as_str().unwrap().contains("Nada nuevo"), "{fin}");
+        // Ya no está «en curso»: se puede pedir otra vez.
+        assert!(copiar_historial_local(&v, &json!({ "repo": "otro", "origen": c["origen"] })).unwrap_err().contains("no lo gestiona"));
         let _ = std::fs::remove_dir_all(&b);
     }
 }

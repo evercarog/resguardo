@@ -108,6 +108,9 @@ pub fn tarea_larga(t: &crate::tasks::RunningTask) -> Value {
         "bytes_total": t.bytes_total,
         "versiones": (tipo == "copia_externa" && t.total.is_some()).then_some(t.done),
         "versiones_total": if tipo == "copia_externa" { t.total } else { None },
+        // Lo que restic lee y sube o escribe de verdad (bytes/s, de sus contadores de E/S).
+        "lectura": t.read_bps,
+        "subida": t.upload_bps,
         "quedan_s": t.eta_s,
         "empezo": t.started,
         "actualizado": t.updated,
@@ -132,6 +135,50 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
     }
     out.truncate(MAX_TAREAS);
     out
+}
+
+/// Lo que lee y escribe un proceso hijo (restic o rclone), por segundo, de sus
+/// contadores de E/S (`platform::io_proceso`), como en las copias: la lectura y
+/// la subida reales de una verificación, una copia externa o un espejo a la nube.
+#[derive(Debug, Default)]
+pub struct RitmoIo {
+    /// El proceso, sus contadores y cuándo se leyeron.
+    antes: Option<(u32, (u64, u64), Instant)>,
+    pub lectura: Option<u64>,
+    pub escritura: Option<u64>,
+}
+
+/// Entre dos muestras, al menos esto (menos da ritmos con mucho ruido).
+const RITMO_CADA: Duration = Duration::from_secs(2);
+
+impl RitmoIo {
+    /// Una muestra del proceso `pid` (si hay uno): los ritmos se actualizan, suavizados,
+    /// cada [`RITMO_CADA`] mientras sea el mismo proceso. Devuelve (lectura, escritura).
+    pub fn medir(&mut self, pid: Option<u32>) -> (Option<u64>, Option<u64>) {
+        let ahora = Instant::now();
+        if let Some(io) = pid.and_then(|p| crate::platform::io_proceso(p).map(|x| (p, x))) {
+            self.anotar(io.0, io.1, ahora);
+        }
+        (self.lectura, self.escritura)
+    }
+
+    /// Lo mismo, con los contadores ya leídos (para probarlo).
+    pub fn anotar(&mut self, pid: u32, (l1, e1): (u64, u64), ahora: Instant) {
+        match self.antes {
+            Some((p0, (l0, e0), t0)) if p0 == pid => {
+                let s = ahora.saturating_duration_since(t0);
+                if s < RITMO_CADA {
+                    return;
+                }
+                let s = s.as_secs_f64();
+                self.lectura = crate::agent::smoothed_rate(self.lectura, l1.saturating_sub(l0), s);
+                self.escritura = crate::agent::smoothed_rate(self.escritura, e1.saturating_sub(e0), s);
+            }
+            // Otro proceso (restic lanza varios en una tarea): se empieza a contar desde aquí.
+            _ => {}
+        }
+        self.antes = Some((pid, (l1, e1), ahora));
+    }
 }
 
 /// Decide cuándo mandar el progreso: cada `cada` mientras hay algo en marcha
@@ -256,6 +303,31 @@ mod tests {
         assert_eq!(v["versiones"], 2);
         assert_eq!(v["versiones_total"], 5);
         assert!(!v["etapa"].as_str().unwrap().contains("Ana"), "sin rutas: {}", v["etapa"]);
+        assert!(v["lectura"].is_null() && v["subida"].is_null(), "sin contadores, sin ritmos (la consola los deduce de los bytes)");
+        let v = tarea_larga(&crate::tasks::RunningTask { read_bps: Some(5_000), upload_bps: Some(4_000), ..t });
+        assert_eq!((v["lectura"].as_u64(), v["subida"].as_u64()), (Some(5_000), Some(4_000)));
+    }
+
+    #[test]
+    fn ritmo_de_los_contadores_de_un_proceso() {
+        let mut r = RitmoIo::default();
+        let t0 = Instant::now();
+        r.anotar(7, (1_000, 500), t0);
+        assert_eq!((r.lectura, r.escritura), (None, None), "la primera muestra no sabe el ritmo");
+        // Antes de 2 s, nada nuevo.
+        r.anotar(7, (2_000, 600), t0 + Duration::from_secs(1));
+        assert_eq!(r.lectura, None);
+        r.anotar(7, (5_000, 2_500), t0 + Duration::from_secs(4));
+        assert_eq!((r.lectura, r.escritura), (Some(1_000), Some(500)));
+        // Otro proceso (otro restic de la misma tarea): empieza a contar de nuevo, sin saltos.
+        r.anotar(8, (10, 10), t0 + Duration::from_secs(6));
+        assert_eq!((r.lectura, r.escritura), (Some(1_000), Some(500)));
+        r.anotar(8, (2_010, 10), t0 + Duration::from_secs(8));
+        assert_eq!((r.lectura, r.escritura), (Some(1_000), Some(300)), "suavizado: 0,6 × antes + 0,4 × ahora");
+        // Sin proceso, se queda lo último.
+        assert_eq!(r.medir(None), (Some(1_000), Some(300)));
+        // El propio proceso (siempre existe): mide sin fallar.
+        let _ = r.medir(Some(std::process::id()));
     }
 
     #[test]

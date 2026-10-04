@@ -127,9 +127,11 @@
       const material = await materialCliente(argon2Navegador, clave, actual.cliente.sal_cliente);
       kcfg = kCfg(material);
       borrar(material);
-      // Si el cliente ya tiene equipos, la clave tiene que ser la misma: se comprueba con uno de ellos.
-      const otro = actual.equipos.find((x) => x.confirmado && x.etiqueta);
-      if (otro && !etiquetaValida(kcfg, otro)) throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
+      // Si el cliente ya tiene equipos, la clave tiene que ser la suya: se comprueba con ellos. Con un
+      // cambio de clave a medias (equipos sin conectar aún con la anterior), vale la de cualquiera.
+      const otros = actual.equipos.filter((x) => x.confirmado && x.etiqueta);
+      if (otros.length && !otros.some((x) => etiquetaValida(kcfg!, x)))
+        throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
       paso2 = "Confirmando el equipo…";
       await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
       parar();

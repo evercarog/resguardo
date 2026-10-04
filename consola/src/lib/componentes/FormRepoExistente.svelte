@@ -1,8 +1,9 @@
 <script lang="ts">
   // Dónde está un repositorio que ya existe (de la app de escritorio, de otro
   // programa o hecho a mano) y su contraseña: lo usan «Usar uno que ya existe»
-  // y «Traer historial». Todo viaja sellado solo para el equipo.
-  import { ETIQUETA_TIPO_EXISTENTE, partirDireccion, type RepoExistente, type TipoExistente } from "$lib/adoptar";
+  // y «Traer historial». Todo viaja sellado solo para el equipo. También la
+  // ventana del equipo en modo local (por eso de direccion.ts: sin la API).
+  import { ETIQUETA_TIPO_EXISTENTE, partirDireccion, type RepoExistente, type TipoExistente } from "$lib/direccion";
   import CampoClave from "./CampoClave.svelte";
 
   let {
@@ -10,7 +11,8 @@
     id = "rx",
     nombreEquipo = "el equipo",
     etiquetaTipo = "Dónde está",
-  }: { repo: RepoExistente; id?: string; nombreEquipo?: string; etiquetaTipo?: string } = $props();
+    local = false,
+  }: { repo: RepoExistente; id?: string; nombreEquipo?: string; etiquetaTipo?: string; local?: boolean } = $props();
 
   const EJEMPLO: Record<TipoExistente, string> = {
     rest: "http://192.168.1.20:8000/Contabilidad",
@@ -58,7 +60,11 @@
     </details>
   {/if}
   <CampoClave requerido id="{id}-contrasena" etiqueta="Contraseña del repositorio" ayuda="La que abre las copias: la del kit de recuperación o la que guardaba la app de escritorio." bind:value={repo.contrasena} />
-  <p class="faint nota">La dirección, las credenciales y la contraseña van selladas solo para {nombreEquipo}: el servidor no las ve ni las guarda.</p>
+  {#if local}
+    <p class="faint nota">La dirección, las credenciales y la contraseña van al servicio de este equipo por su canal local: no salen de él.</p>
+  {:else}
+    <p class="faint nota">La dirección, las credenciales y la contraseña van selladas solo para {nombreEquipo}: el servidor no las ve ni las guarda.</p>
+  {/if}
 </div>
 
 <style>

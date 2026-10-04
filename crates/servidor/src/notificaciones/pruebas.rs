@@ -427,3 +427,40 @@ fn la_orden_destructiva_se_cierra_al_terminar_sin_volvio_a_funcionar() {
     let r = p.st.db.notif_registro(None, 100).unwrap();
     assert!(r.iter().all(|e| e.tipo != "recuperacion"), "{r:?}");
 }
+
+/// v1.32: los correos de un cliente con marca llevan su logo dentro (cid:) y su
+/// acento; el webhook no cambia.
+#[test]
+fn correo_con_la_marca_del_cliente() {
+    let p = servidor();
+    // Un PNG mínimo (firma, IHDR de 40 × 20 y IEND), como lo deja la consola.
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13];
+    png.extend_from_slice(b"IHDR");
+    png.extend_from_slice(&40u32.to_be_bytes());
+    png.extend_from_slice(&20u32.to_be_bytes());
+    png.extend_from_slice(&[8, 6, 0, 0, 0, 1, 2, 3, 4]);
+    png.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82]);
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png);
+    p.st.db.poner_valor(&format!("marca:{}", p.ctx.id()), &json!({ "acento": "rose", "logo": b64, "huella": "0123456789abcdef" }).to_string()).unwrap();
+    aviso_a(p.st.db.as_ref(), &p.ctx, Some("e1"), "intentos_fallidos", "5 intentos con la clave de administración mal", T0).unwrap();
+    p.pasada(T0);
+    let correos: Vec<(String, String)> = p
+        .enviados()
+        .into_iter()
+        .filter_map(|e| match e {
+            Enviado::Correo { html, crudo, .. } => Some((html, crudo)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(correos.len(), 2);
+    for (html, crudo) in &correos {
+        assert!(html.contains("cid:logo-cliente@resguardo") && html.contains("width=\"64\" height=\"32\""), "{html}");
+        assert!(html.contains("&nbsp;Ferretería Altamar</strong>") && html.contains("border-top:3px solid #d6336c;"), "{html}");
+        assert!(crudo.contains("multipart/related") && crudo.contains("Content-ID: <logo-cliente@resguardo>"), "{crudo}");
+        assert!(!html.contains("src=\"http"));
+    }
+    // El webhook, igual que siempre (sin imagen).
+    let w = p.webhooks();
+    assert_eq!(w.len(), 1);
+    assert!(!w[0].to_string().contains("cid:") && !w[0].to_string().contains(&b64));
+}
