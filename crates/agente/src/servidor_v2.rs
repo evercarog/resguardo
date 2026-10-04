@@ -928,7 +928,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "restaurar" => {
             let acc = g::acceso(v, repo.unwrap_or(""))?;
             let c = c.clone();
-            Ok(en_segundo_plano(v, orden_id, seq, "restaurar", "Restaurando…", move |_| crate::sesiones_v2::restaurar(&acc, &c).map(hecha)))
+            Ok(en_segundo_plano(v, orden_id, seq, "restaurar", "Restaurando…", move |_| crate::sesiones_v2::restaurar(&acc, &c, None).map(hecha)))
         }
         "descargar" => {
             let acc = g::acceso(v, repo.unwrap_or(""))?;
