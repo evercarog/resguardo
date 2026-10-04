@@ -378,6 +378,19 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value) -> Result<Value,
             "mensaje": crate::nube::anadir(pet["tipo"].as_str().unwrap_or(""), pet["nombre"].as_str().unwrap_or(""), pet["token"].as_str().unwrap_or(""))?
         })),
         "quitar_nube" => Ok(json!({ "mensaje": crate::nube::quitar(pet["nombre"].as_str().unwrap_or(""))? })),
+        // «Usar uno que ya existe» (o solo probarlo) y «Traer historial» (en segundo
+        // plano; la ventana pregunta cómo va), como esas órdenes desde la consola.
+        "adoptar_repositorio" => {
+            let c = &pet["repositorio"];
+            let (m, detalle) = crate::adoptar_v2::adoptar_repositorio(&mut v, c, true)?;
+            if c["solo_probar"] != true {
+                s::guardar(&v)?;
+                crate::agent::log("Ventana del equipo: repositorio que ya existía adoptado (modo local).");
+            }
+            Ok(json!({ "mensaje": m, "detalle": detalle }))
+        }
+        "copiar_historial" => Ok(json!({ "mensaje": crate::adoptar_v2::copiar_historial_local(&v, &pet["historial"])? })),
+        "historial_traido" => Ok(crate::adoptar_v2::historial_local(pet["repo"].as_str().unwrap_or(""))),
         "historial" => Ok(historial()),
         "kit" => Ok(kit(&v)),
         "cambiar_clave" => {

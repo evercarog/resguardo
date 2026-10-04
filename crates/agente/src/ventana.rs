@@ -47,7 +47,7 @@ pub const TITULO: &str = "Resguardo Agente";
 pub const DESBLOQUEO_S: u64 = 600;
 
 /// Lo que la página puede pedir al servicio con la clave.
-pub const OPS_CON_CLAVE: [&str; 18] = [
+pub const OPS_CON_CLAVE: [&str; 21] = [
     "ajustes",
     "estado_local",
     "crear_repositorio",
@@ -64,6 +64,9 @@ pub const OPS_CON_CLAVE: [&str; 18] = [
     "quitar_nube",
     "historial",
     "kit",
+    "adoptar_repositorio",
+    "copiar_historial",
+    "historial_traido",
     "vincular",
     "comprobar",
 ];
