@@ -202,7 +202,8 @@ export class Consola {
     tipo: string,
     cuerpo: Record<string, unknown> = {},
     secretos: Secretos = {},
-    extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean } = {},
+    /** `sinComprobar`: sin mirar antes la etiqueta (para ver que el propio equipo rechaza una clave que no es). */
+    extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean; sinComprobar?: boolean } = {},
   ): Promise<Orden> {
     const e = await this.equipo(c, equipoId);
     const autorizacion: Autorizacion = { prueba_admin: null, clave_repo: null };
@@ -220,7 +221,7 @@ export class Consola {
       this.fijadas.set(`${c.id}|${e.id}`, `${e.box_pub}|${e.sign_pub}`);
     } else if (necesitaAdmin) {
       comprobar(secretos.claveAdmin, `«${tipo}» pide la clave de administración`);
-      await this.comprobarLlaves(c, e, secretos.claveAdmin);
+      if (!extra.sinComprobar) await this.comprobarLlaves(c, e, secretos.claveAdmin);
       autorizacion.prueba_admin = aB64(await pruebaAdmin(argon2, secretos.claveAdmin, e.sal_equipo));
     }
     if (NIVEL[tipo] === "repo") {

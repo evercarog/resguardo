@@ -24,6 +24,8 @@
   import { Palette, Users } from "@lucide/svelte";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
   import EditorMarca from "$lib/componentes/EditorMarca.svelte";
+  import CambiarClaveAdmin from "$lib/componentes/CambiarClaveAdmin.svelte";
+  import { equiposDelCambio, pendientesDeCambio } from "$lib/cambioClave";
 
   let miembros = $state<Miembro[] | null>(null);
   let rolInvitacion = $state<Rol>("tecnico");
@@ -44,7 +46,29 @@
   let progreso = $state("");
   let error = $state("");
 
+  // ---- La clave de administración: cambiarla y si hay un cambio a medias ----
+  let cambiarClave = $state(false);
+  let pendientesClave = $state<{ equipo: string; caduca: string }[]>([]);
+  async function cargarCambioClave() {
+    try {
+      // Las últimas órdenes del cliente (el cambio caduca a los 7 días): la última de cada equipo.
+      const ordenes = [];
+      let antes: string | null = null;
+      for (let i = 0; i < 3; i++) {
+        const p = await api.ordenesCliente(actual.id, { limite: 200, antes });
+        ordenes.push(...p.ordenes);
+        if (!p.siguiente) break;
+        antes = p.siguiente;
+      }
+      pendientesClave = pendientesDeCambio(ordenes);
+    } catch {
+      pendientesClave = [];
+    }
+  }
+  const nombreEquipo = (id: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
+
   async function cargar() {
+    void cargarCambioClave();
     try {
       miembros = await api.miembros(actual.id);
     } catch (e) {
@@ -249,6 +273,20 @@
         </span>
         <button class="btn btn-sm" onclick={() => (editarMarca = true)}><Palette size={14} />Cambiar</button>
       </div>
+      <div class="fila-ajuste">
+        <span>
+          <strong>Clave de administración <Ayuda id="clave-admin" /></strong>
+          {#if pendientesClave.length}
+            <span class="faint aviso-clave" role="status">
+              <TriangleAlert size={13} aria-hidden="true" />Cambio a medias: {pendientesClave.map((p) => nombreEquipo(p.equipo)).join(", ")}
+              {pendientesClave.length === 1 ? "aún no ha aplicado" : "aún no han aplicado"} la clave nueva (en {pendientesClave.length === 1 ? "él" : "ellos"} sigue valiendo la anterior hasta que se conecten; la orden caduca el {fechaLarga(pendientesClave.map((p) => p.caduca).sort()[0])}).
+            </span>
+          {:else}
+            <span class="faint">La guarda cada equipo; el servidor nunca la ve. Cambiarla pide la actual.</span>
+          {/if}
+        </span>
+        <button class="btn btn-sm" onclick={() => (cambiarClave = true)} disabled={!equiposDelCambio(actual.equipos).length}><KeyRound size={14} />Cambiar</button>
+      </div>
     </section>
 
     <section>
@@ -310,6 +348,17 @@
     </section>
   {/if}
 </div>
+
+{#if cambiarClave && actual.cliente}
+  <CambiarClaveAdmin
+    cliente={actual.cliente}
+    equipos={actual.equipos}
+    onclose={() => {
+      cambiarClave = false;
+      void cargarCambioClave();
+    }}
+  />
+{/if}
 
 {#if editarMarca && actual.cliente}
   <EditorMarca cliente={actual.id} nombre={actual.cliente.nombre} marca={actual.cliente.marca} onclose={() => (editarMarca = false)} />
@@ -525,6 +574,14 @@
   }
   .fila-ajuste .faint {
     font-size: var(--fs-sm);
+  }
+  .aviso-clave {
+    display: inline;
+    color: var(--warn);
+  }
+  .aviso-clave :global(svg) {
+    margin-right: 4px;
+    vertical-align: -2px;
   }
   .renombrar {
     display: flex;

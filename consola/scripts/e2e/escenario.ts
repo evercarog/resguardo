@@ -32,7 +32,8 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
-import { kCfg, materialCliente } from "../../src/lib/cripto/claves";
+import { etiquetaValida, kCfg, materialCliente } from "../../src/lib/cripto/claves";
+import { ClaveNueva } from "../../src/lib/cambioClave";
 import { crearCodigo, cuerpoAnadir, leerCodigo } from "../../src/lib/conexion";
 import { publicaRespaldo, salRespaldo } from "../../src/lib/cripto/respaldo";
 import { almacenDe, nuevaClave, reglaParaOrden, seQuedan } from "../../src/lib/retencion";
@@ -49,6 +50,8 @@ const CORREO = "ana@ejemplo.com";
 const CONTRASENA = "una contraseña bien larga para la consola";
 // Con tildes: la consola y el agente la normalizan igual (NFC).
 const CLAVE_ADMIN = "caballo batería grapa correcta";
+// La de después de «Cambiar la clave de administración» (paso 8b).
+const CLAVE_NUEVA = "otra clave de administración, bien larga";
 const CLAVE_RESPALDO = "clave de respaldo de la consola, larga";
 
 // ---------------------------------------------------------------------------
@@ -544,9 +547,10 @@ async function principal() {
     // En la consola de siempre (servidor 2): pegar el código y mandar anadir_consola con la K_cfg de la otra.
     const leido = leerCodigo(codigo, new Date(), s2.url);
     comprobar(typeof leido !== "string", "El código de conexión se lee", leido);
-    const kcfg3 = kCfg(await materialCliente(argon2, CLAVE_ADMIN, leido.sal_cliente));
-    const anadir = () => cuerpoAnadir(leido, aB64(kcfg3), c2.sal_cliente);
-    const conectada = await consola2.hecha(c2, eqB2.id, "anadir_consola", anadir(), { claveAdmin: CLAVE_ADMIN }, {}, 120_000);
+    // La clave de B (cambia en el paso 8b); la K_cfg de la otra consola, con su sal y esa clave.
+    let claveB = CLAVE_ADMIN;
+    const anadir = async () => cuerpoAnadir(leido, aB64(kCfg(await materialCliente(argon2, claveB, leido.sal_cliente))), c2.sal_cliente);
+    const conectada = await consola2.hecha(c2, eqB2.id, "anadir_consola", await anadir(), { claveAdmin: claveB }, {}, 120_000);
     log(`anadir_consola: ${conectada.mensaje}`);
     const c3: Cliente = await consola3.ok("GET", `/api/clientes/${recibido.cliente.id}`);
     await esperar("que B se conecte también al servidor 3", async () => {
@@ -558,29 +562,68 @@ async function principal() {
     const hist3 = (await consola3.ok("GET", `/api/clientes/${c3.id}/equipos/${eqB2.id}/historial?limite=500`)) as any[];
     comprobar(hist3.some((x) => x.tipo === "copia"), "El historial de B llega también a la consola en línea", hist3.length);
     // Órdenes de las dos (cada una con su seq): una desde la en línea…
-    await consola3.hecha(c3, eqB2.id, "cambiar_espera", { horas: 2 }, { claveAdmin: CLAVE_ADMIN });
+    await consola3.hecha(c3, eqB2.id, "cambiar_espera", { horas: 2 }, { claveAdmin: claveB });
     log("Orden desde la consola en línea: hecha");
     // … y la otra consola se entera sola (la espera va con la configuración) y ve de dónde vino.
     await esperar("que el servidor 2 sepa la espera que puso la consola en línea", async () => (await consola2.equipo(c2, eqB2.id)).espera_min_horas === 2, { plazo: 60_000, cada: 1000 });
     await esperar("«Cambiado desde otra consola» en el servidor 2", async () => (await consola2.equipo(c2, eqB2.id)).resumen?.cambio_config?.consola.identidad === srv3.identidad, { plazo: 60_000, cada: 1000 });
     log("La consola local ve el cambio de la en línea");
-    await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 3 }, { claveAdmin: CLAVE_ADMIN });
+    await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 3 }, { claveAdmin: claveB });
     await esperar("la espera de la consola local en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).espera_min_horas === 3, { plazo: 60_000, cada: 1000 });
+
+    // -----------------------------------------------------------------------
+    paso("8b. Cambiar la clave de administración desde la consola local, con la en línea conectada");
+    // Como CambiarClaveAdmin.svelte: verificador del equipo y K_cfg de cada consola (la otra, con su sal).
+    const nueva = new ClaveNueva(argon2, CLAVE_NUEVA, c2.sal_cliente);
+    const cuerpoClave = await nueva.cuerpo(await consola2.equipo(c2, eqB2.id));
+    comprobar(cuerpoClave.k_cfg_consolas?.[srv3.identidad], "La orden lleva la K_cfg nueva de la consola en línea (con su sal)", cuerpoClave);
+    const cambio = await consola2.hecha(c2, eqB2.id, "cambiar_clave_admin", cuerpoClave, { claveAdmin: claveB });
+    log(`cambiar_clave_admin: ${cambio.mensaje}`);
+    const claveVieja = claveB;
+    claveB = CLAVE_NUEVA;
+    // El equipo sube la etiqueta nueva a las dos (cada una con su K_cfg).
+    const k2 = kCfg(await materialCliente(argon2, CLAVE_NUEVA, c2.sal_cliente));
+    const k3 = kCfg(await materialCliente(argon2, CLAVE_NUEVA, c3.sal_cliente));
+    await esperar("la etiqueta con la clave nueva en el servidor 2", async () => etiquetaValida(k2, await consola2.equipo(c2, eqB2.id)), { plazo: 60_000, cada: 1000 });
+    await esperar("la etiqueta con la clave nueva en el servidor 3", async () => etiquetaValida(k3, await consola3.equipo(c3, eqB2.id)), { plazo: 60_000, cada: 1000 });
+    // Con la nueva, las órdenes de administración funcionan desde las dos consolas.
+    await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 3 }, { claveAdmin: claveB });
+    await consola3.hecha(c3, eqB2.id, "cambiar_espera", { horas: 3 }, { claveAdmin: claveB });
+    log("Con la clave nueva: órdenes hechas desde las dos consolas");
+    // Con la anterior: la consola ya no la da por buena (la etiqueta no cuadra)…
+    let paro = "";
+    try {
+      await consola2.mandar(c2, eqB2.id, "cambiar_espera", { horas: 4 }, { claveAdmin: claveVieja });
+    } catch (e) {
+      paro = (e as Error).message;
+    }
+    comprobar(/etiqueta/.test(paro), "La consola no acepta la clave anterior", paro);
+    // … y, mandada igualmente, el equipo la rechaza.
+    const conVieja = await consola2.mandar(c2, eqB2.id, "cambiar_espera", { horas: 4 }, { claveAdmin: claveVieja }, { sinComprobar: true });
+    const rechazo = await consola2.resultado(c2, eqB2.id, conVieja);
+    igual(rechazo.estado, "rechazada", `Con la clave anterior, el equipo la rechaza (${rechazo.mensaje})`);
+    // La consola en línea recibe el aviso del cambio (no le llegó el resultado de la orden: sí la etiqueta nueva).
+    await esperar("el aviso «cambio_clave» en la consola en línea", async () => {
+      const av = (await consola3.ok("GET", `/api/clientes/${c3.id}/avisos?abiertos=1`)) as any[];
+      return av.some((a) => a.tipo === "cambio_clave" && /otra consola/.test(a.mensaje)) || null;
+    }, { plazo: 30_000, cada: 1000 });
+    const aud = (await consola2.ok("GET", `/api/clientes/${c2.id}/auditoria?desde=0&limite=500`)) as any[];
+    comprobar(aud.some((x) => x.accion === "clave_admin_cambiada"), "La auditoría del servidor 2 lo cuenta", aud.map((x) => x.accion));
     // Quitar la en línea desde la local: la local sigue.
-    await consola2.hecha(c2, eqB2.id, "quitar_consola", { identidad: srv3.identidad }, { claveAdmin: CLAVE_ADMIN });
+    await consola2.hecha(c2, eqB2.id, "quitar_consola", { identidad: srv3.identidad }, { claveAdmin: claveB });
     await esperar("que B deje de conectarse al servidor 3", async () => !(await consola3.equipo(c3, eqB2.id)).conectado, { plazo: 60_000, cada: 1000 });
     const avisos3 = (await consola3.ok("GET", `/api/clientes/${c3.id}/avisos?abiertos=1`)) as any[];
     comprobar(avisos3.some((a) => /dejó de conectarse/.test(a.mensaje)), "La en línea recibe un último aviso", avisos3);
     log("Quitada la en línea desde la local");
-    await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 4 }, { claveAdmin: CLAVE_ADMIN });
+    await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 4 }, { claveAdmin: claveB });
     // Y al revés: otra vez la en línea, y es ella la que deja de gestionarlo («Dejar de gestionar»): la local sigue.
-    await consola2.hecha(c2, eqB2.id, "anadir_consola", anadir(), { claveAdmin: CLAVE_ADMIN }, {}, 120_000);
+    await consola2.hecha(c2, eqB2.id, "anadir_consola", await anadir(), { claveAdmin: claveB }, {}, 120_000);
     await esperar("B otra vez en el servidor 3", async () => (await consola3.equipo(c3, eqB2.id)).conectado, { plazo: 90_000, cada: 1000 });
     log("Otra vez en la en línea");
-    const deja = await consola3.hecha(c3, eqB2.id, "desvincular", { modo: "seguir_local" }, { claveAdmin: CLAVE_ADMIN });
+    const deja = await consola3.hecha(c3, eqB2.id, "desvincular", { modo: "seguir_local" }, { claveAdmin: claveB });
     comprobar(/siguen gestionando/.test(deja.mensaje ?? ""), "«Dejar de gestionar» solo quita la en línea", deja.mensaje);
     igual((await consola3.equipo(c3, eqB2.id)).modo, "local", "En la en línea, el equipo queda en local");
-    const traslocal = await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 5 }, { claveAdmin: CLAVE_ADMIN });
+    const traslocal = await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 5 }, { claveAdmin: claveB });
     log(`La consola local sigue: ${traslocal.mensaje}`);
     const lista = B.cli(["consolas"]);
     comprobar(lista.codigo === 0 && lista.salida.includes(s2.url) && !lista.salida.includes(s3.url), "`resguardo-agente consolas`: solo la local", lista.salida);
@@ -588,7 +631,7 @@ async function principal() {
     // -----------------------------------------------------------------------
     paso("9. «Mover a otra consola»: B se va del servidor 2 al 3 sin quedarse nunca sin consola");
     // 1) Conectar también a la otra.
-    await consola2.hecha(c2, eqB2.id, "anadir_consola", anadir(), { claveAdmin: CLAVE_ADMIN }, {}, 120_000);
+    await consola2.hecha(c2, eqB2.id, "anadir_consola", await anadir(), { claveAdmin: claveB }, {}, 120_000);
     // 2) Esperar a que informe allí (como la consola: su resumen aquí la lista con su último contacto).
     await esperar("que B informe en el servidor 3 (visto desde el 2)", async () => {
       const e = await consola2.equipo(c2, eqB2.id);
@@ -597,11 +640,11 @@ async function principal() {
     log("B ya informa en la consola de destino");
     // 3) «Dejar esta consola»: quitar_consola de la propia.
     const srv2 = await consola2.ok("GET", "/api/servidor");
-    const sale = await consola2.hecha(c2, eqB2.id, "quitar_consola", { identidad: srv2.identidad }, { claveAdmin: CLAVE_ADMIN });
+    const sale = await consola2.hecha(c2, eqB2.id, "quitar_consola", { identidad: srv2.identidad }, { claveAdmin: claveB });
     comprobar(JSON.parse(sale.detalle ?? "{}").deja_esta_consola === true, "El equipo dice, firmado, que deja esta consola", sale);
     // 4) Comprobación final: aquí ya no está; allí manda.
     igual((await consola2.equipo(c2, eqB2.id)).modo, "local", "En la consola de origen, el equipo queda fuera");
-    await consola3.hecha(c3, eqB2.id, "cambiar_espera", { horas: 6 }, { claveAdmin: CLAVE_ADMIN });
+    await consola3.hecha(c3, eqB2.id, "cambiar_espera", { horas: 6 }, { claveAdmin: claveB });
     const solo = B.cli(["consolas"]);
     comprobar(solo.codigo === 0 && solo.salida.includes(s3.url) && !solo.salida.includes(s2.url), "`resguardo-agente consolas`: solo la de destino", solo.salida);
     log("B movido al servidor 3");

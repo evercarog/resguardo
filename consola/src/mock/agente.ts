@@ -8,7 +8,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { aB64, deB64, deUtf8, iguales, utf8 } from "../lib/cripto/bytes";
 import { abrir, sellar } from "../lib/cripto/sobre";
-import { mensajeResultado, pruebaCodigo } from "../lib/cripto/claves";
+import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/claves";
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
 import { claveEspejo, destinosDeCuerpo, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
 import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
@@ -240,6 +240,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       e.confirmado = true;
       guardarConfig(e, configInicial(e), plana.seq);
       return resultado(e, o, "hecha", "Equipo dado de alta: ya obedece a la clave de administración del cliente.");
+    }
+    case "cambiar_clave_admin": {
+      // Como el agente: verificador y K_cfg nuevos; la etiqueta, con la K_cfg nueva (la sube con su configuración).
+      const ver = deB64(String(c.verificador ?? ""));
+      const kcfg = deB64(String(c.k_cfg ?? ""));
+      if (ver.length !== 32 || kcfg.length !== 32) return resultado(e, o, "fallida", "Verificador o K_cfg no válidos.");
+      e.verificador = ver;
+      e.kcfg = kcfg;
+      e.etiqueta = etiquetaEquipo(kcfg, e.id, e.box_pub, e.sign_pub);
+      return resultado(e, o, "hecha", "Clave de administración cambiada.");
     }
     case "config": {
       const cfg = c.config as T.Configuracion;

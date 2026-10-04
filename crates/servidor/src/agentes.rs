@@ -409,6 +409,7 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
             db.auditar(&ctx, &format!("equipo:{equipo}"), "trasladado", &equipo, "{}")?;
         }
         if clave_cambiada {
+            db.auditar(&ctx, &format!("equipo:{equipo}"), "clave_admin_cambiada", &equipo, "{}")?;
             crate::notificaciones::aviso(db, &ctx, Some(&equipo), "cambio_clave", "El equipo confirmó el cambio de su clave de administración.")?;
         }
         if deja_el_servidor {
@@ -492,6 +493,11 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
     let papel = if c.resumen["guarda_copias"]["activo"] == true { "almacenamiento" } else { "agente" };
     // El espejo del almacén (va en el resumen): para las notificaciones, si cambió.
     let evento = crate::notificaciones::evento_estado(&st.notif, &a.ctx, &a.equipo, crate::notificaciones::problemas::Fuente::Resumen, &c.resumen);
+    // La clave de administración cambiada desde **otra** consola (docs/consolas-multiples.md §4.2):
+    // aquí no llega el resultado de esa orden, pero sí la etiqueta nueva y de dónde vino el cambio.
+    let clave_desde_otra = (c.resumen["cambio_config"]["tipo"] == "cambiar_clave_admin"
+        && c.resumen["cambio_config"]["consola"]["identidad"].as_str().is_some_and(|i| i != st.identidad_pub))
+    .then(|| texto_corto(c.resumen["cambio_config"]["consola"]["nombre"].as_str().unwrap_or("otra consola"), 80));
     let pistas = st
         .db(move |db| {
             // v1.30: el almacén aplicó la retención en el repositorio de otro equipo: pista a su dueño.
@@ -504,6 +510,15 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
                 if let Some(et) = c.etiqueta.as_deref().filter(|et| b64_32(et) && e.etiqueta.as_deref() != Some(*et)) {
                     db.confirmar_equipo(&ctx, &equipo, et)?;
                     db.auditar(&ctx, &format!("equipo:{equipo}"), "etiqueta_equipo", &equipo, "{}")?;
+                    if let Some(desde) = &clave_desde_otra {
+                        crate::notificaciones::aviso(
+                            db,
+                            &ctx,
+                            Some(&equipo),
+                            "cambio_clave",
+                            &format!("La clave de administración se cambió desde otra consola («{desde}»): aquí vale ya la nueva."),
+                        )?;
+                    }
                 }
                 if let Some(h) = c.espera_min_horas.filter(|h| (1..=168).contains(h) && e.espera_min_horas != Some(*h)) {
                     db.poner_espera_equipo(&ctx, &equipo, h)?;
