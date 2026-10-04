@@ -364,6 +364,9 @@ pub struct Importar {
     informes: Vec<InformeImportado>,
     #[serde(default)]
     avisos: Vec<AvisoImportado>,
+    /// v1.3x: observaciones y comentarios del cliente (opcional).
+    #[serde(default)]
+    notas: Option<super::notas::NotasImportadas>,
 }
 
 fn instante(v: &Value) -> Option<i64> {
@@ -393,6 +396,7 @@ pub async fn importar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
     }
     let ultimo = entradas.last().map(|e| e.hash.clone());
     let (n_aud, n_inf, n_av) = (entradas.len(), p.informes.len(), p.avisos.len());
+    let (obs, coms) = super::notas::preparar_importadas(p.notas.unwrap_or_default(), &origen);
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
     let r = st
         .db_crudo(move |db| {
@@ -407,17 +411,19 @@ pub async fn importar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
                     db.importar_aviso(&ctx, a.equipo.as_deref(), &a.tipo, &a.mensaje, t)?;
                 }
             }
-            db.auditar(
-                &ctx,
-                &actor,
-                "importar_cliente",
-                ctx.id(),
-                &json!({ "origen": origen, "auditoria": n_aud, "ultimo_hash": ultimo, "informes": n_inf, "avisos": n_av }).to_string(),
-            )
+            let (n_obs, n_com) = db.importar_notas(&ctx, &obs, &coms)?;
+            let mut datos = json!({ "origen": origen, "auditoria": n_aud, "ultimo_hash": ultimo, "informes": n_inf, "avisos": n_av });
+            if n_obs + n_com > 0 {
+                datos["observaciones"] = json!(n_obs);
+                datos["comentarios"] = json!(n_com);
+            }
+            db.auditar(&ctx, &actor, "importar_cliente", ctx.id(), &datos.to_string())?;
+            Ok((n_obs, n_com))
         })
         .await?;
-    r.map_err(|e| if e == "ya_importada" { ErrorApi::conflicto("Este cliente ya tiene datos importados.") } else { ErrorApi::datos(e) })?;
-    Ok(Json(json!({ "auditoria": n_aud, "informes": n_inf, "avisos": n_av })))
+    let (n_obs, n_com) =
+        r.map_err(|e| if e == "ya_importada" { ErrorApi::conflicto("Este cliente ya tiene datos importados.") } else { ErrorApi::datos(e) })?;
+    Ok(Json(json!({ "auditoria": n_aud, "informes": n_inf, "avisos": n_av, "observaciones": n_obs, "comentarios": n_com })))
 }
 
 #[derive(Deserialize)]
