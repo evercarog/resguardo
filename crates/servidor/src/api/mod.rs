@@ -7,6 +7,7 @@ pub(crate) mod instaladores;
 pub(crate) mod marca;
 mod notificaciones;
 mod ordenes;
+mod panel;
 mod plantillas;
 mod respaldo;
 mod servidor_clientes;
@@ -203,6 +204,9 @@ pub fn router(st: St) -> Router {
         // Clientes
         .route("/api/clientes", get(clientes::listar).post(clientes::crear))
         .route("/api/clientes/recibir", post(clientes::recibir))
+        // v1.3x: «Todos los clientes» (solo los clientes de los que la cuenta es miembro).
+        .route("/api/panel", get(panel::ver))
+        .route("/api/panel/progreso", get(panel::progreso))
         .route("/api/clientes/{c}/fichas", post(clientes::ficha))
         .route(
             "/api/clientes/{c}/paquete",
