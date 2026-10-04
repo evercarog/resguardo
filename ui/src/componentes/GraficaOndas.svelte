@@ -45,8 +45,10 @@
     retraso?: number;
     /** Sin leyenda (si la pone quien la usa). */
     sinLeyenda?: boolean;
+    /** Fluir (algo en marcha). Si no, se pinta solo al llegar datos: sin gastar nada en reposo. */
+    animar?: boolean;
   }
-  let { series, titulo, ventana = 300, minimo = 60, alto = 140, formato = porSegundo, retraso = 2500, sinLeyenda = false }: Props = $props();
+  let { series, titulo, ventana = 300, minimo = 60, alto = 140, formato = porSegundo, retraso = 2500, sinLeyenda = false, animar = true }: Props = $props();
 
   let lienzo = $state<HTMLCanvasElement>();
   let caja = $state<HTMLDivElement>();
@@ -206,9 +208,9 @@
 
   function bucle() {
     marco = 0;
-    const animar = !prefersReducedMotion.current && visible && !document.hidden;
-    if (animar && Date.now() - ultimoPintado >= 33) pintar();
-    if (animar) marco = requestAnimationFrame(bucle);
+    const fluir = animar && !prefersReducedMotion.current && visible && !document.hidden;
+    if (fluir && Date.now() - ultimoPintado >= 33) pintar();
+    if (fluir) marco = requestAnimationFrame(bucle);
   }
 
   function arrancar() {
@@ -220,6 +222,7 @@
     void series;
     void ancho;
     void cursor;
+    void animar;
     pintar();
     arrancar();
   });

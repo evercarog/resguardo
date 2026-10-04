@@ -89,9 +89,9 @@
 
   {#if series.bytes.length}
     <section class="v-tarjeta ondas" aria-label="Ritmo en vivo">
-      <GraficaOndas series={series.bytes} titulo="Ritmo de los últimos minutos" alto={150} retraso={3000} />
+      <GraficaOndas series={series.bytes} titulo="Ritmo de los últimos minutos" alto={150} retraso={3000} animar={acts.length > 0} />
       {#if series.archivos.length}
-        <GraficaOndas series={series.archivos} titulo="Archivos por segundo" alto={44} retraso={3000} formato={porSegundoArchivos} />
+        <GraficaOndas series={series.archivos} titulo="Archivos por segundo" alto={44} retraso={3000} formato={porSegundoArchivos} animar={acts.length > 0} />
       {/if}
     </section>
   {/if}

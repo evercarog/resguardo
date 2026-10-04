@@ -902,6 +902,19 @@
         </section>
       {/if}
 
+      {#if equipo.resumen?.escritorio}
+        {@const esc = equipo.resumen.escritorio}
+        <section class="card p" aria-labelledby="t-en-equipo">
+          <h3 class="section-title" id="t-en-equipo">En el equipo</h3>
+          <p class="faint nota-almacen">
+            Ventana: {({ off: "sin ventana", siempre_disponible: "desde el icono", al_trabajar: "se abre sola al trabajar" } as const)[esc.ventana]} · Avisos:
+            {({ off: "ninguno", errores: "al fallar y al recuperarse", todo: "todos (empezar, terminar, fallar)" } as const)[esc.avisos]}
+            {#if equipo.resumen.escritorio_cambiado_en_equipo}<br />Cambiado en el equipo {relativo(equipo.resumen.escritorio_cambiado_en_equipo)}.{/if}
+          </p>
+          {#if puede.administrar(rol)}<div class="acciones"><a class="btn btn-sm" href={`/c/${c}/equipos/${equipo.id}/copias#escritorio`}>Cambiar</a></div>{/if}
+        </section>
+      {/if}
+
       {#if propioPosible && puede.administrar(rol)}
         <section class="card p">
           <h3 class="section-title">Copiar en este mismo almacén <Ayuda id="almacen-propio" /></h3>

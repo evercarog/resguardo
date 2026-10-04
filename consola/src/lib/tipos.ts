@@ -181,8 +181,11 @@ export interface ConsolaDelEquipo {
 }
 
 export interface ResumenEquipo {
-  /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»). */
+  /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.3x «escritorio»). */
   admite?: string[];
+  /** v1.3x: la ventana y los avisos en el equipo (docs/agente-ventana.md), y cuándo se cambiaron allí. */
+  escritorio?: Escritorio | null;
+  escritorio_cambiado_en_equipo?: string | null;
   /** v1.19 (agente ≥ 0.7.7): un puerto libre para «Este equipo guarda copias». */
   puerto_libre?: number | null;
   /** v1.6: servidores de respaldo que tiene el equipo y tras cuántos días se iría. */
