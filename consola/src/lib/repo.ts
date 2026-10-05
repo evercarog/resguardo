@@ -194,7 +194,7 @@ export function fraseRepo(r: RepositorioResumen, inf: RepoInforme | null, copias
   const partes = [`Guarda ${plural(n, "versión", "versiones")}${tam ? ` de ${bytes(tam)}` : ""}`];
   if (ult) partes.push(`la última, ${relativo(ult, ahora)}`);
   const ej = ultimaEjecucion(inf);
-  if (ej?.resultado === "fallo") partes.push(`pero la última vuelta falló${ej.mensaje_corto ? ` (${ej.mensaje_corto.replace(/\.$/, "")})` : ""}`);
+  if (ej?.resultado === "fallo") partes.push(`pero la última copia falló${ej.mensaje_corto ? ` (${ej.mensaje_corto.replace(/\.$/, "")})` : ""}`);
   const p = proteccion(inf);
   const fin = p ? (p.pendientes ? `Protección ${p.puntuacion} de ${p.total}: ${p.pendientes === 1 ? "falta una cosa" : `faltan ${p.pendientes} cosas`}.` : "Protegido por todos los frentes.") : "";
   return `${partes.join("; ")}.${fin ? ` ${fin}` : ""}`;

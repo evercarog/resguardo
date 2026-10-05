@@ -718,7 +718,7 @@
                 <Info size={14} />
                 <span>
                   Siempre se comprueba la estructura (índices, copias, carpetas). Leer además los datos detecta archivos dañados en el disco
-                  del servidor. Con «Rotativa», cada vez se lee una parte distinta y al completar la vuelta se ha leído todo; «al azar» no lo
+                  del servidor. Con «Rotativa», cada vez se lee una parte distinta y al completar el ciclo se ha leído todo; «al azar» no lo
                   garantiza. Mientras se verifica, las copias de este repositorio esperan.
                 </span>
               </p>

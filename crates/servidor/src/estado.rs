@@ -67,6 +67,8 @@ pub struct Estado {
     pub limites: Limites,
     /// Lo que está en marcha en cada equipo (v1.25), solo en memoria.
     pub progreso: crate::progreso::Progresos,
+    /// Las consolas con el canal en vivo abierto (v1.39), por cliente.
+    pub vivo: crate::vivo::Vivo,
     /// Notificaciones: clave de los secretos, transporte y lo último de cada equipo.
     pub notif: crate::notificaciones::Motor,
 }

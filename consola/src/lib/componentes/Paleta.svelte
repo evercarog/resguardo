@@ -9,7 +9,7 @@
   import { fade, fly } from "svelte/transition";
   import Anuncio from "./Anuncio.svelte";
   import { goto } from "$app/navigation";
-  import { ArrowRight, Building2, CornerDownLeft, Database, DatabaseZap, FileText, History, Monitor, Play, Plus, RefreshCw, Search } from "@lucide/svelte";
+  import { ArrowRight, Building2, Layers, CornerDownLeft, Database, DatabaseZap, FileText, History, Monitor, Play, Plus, RefreshCw, Search } from "@lucide/svelte";
   import { dur } from "$ui/movimiento";
   import { actual, app, puede } from "$lib/estado.svelte";
   import { saludEquipo } from "$lib/salud";
@@ -86,7 +86,13 @@
     }
     for (const x of app.clientes)
       if (x.id !== c) out.push({ grupo: "Clientes", texto: x.nombre, sub: `${x.equipos} ${x.equipos === 1 ? "equipo" : "equipos"}`, href: `/c/${x.id}`, icono: Building2, claves: sinTildes(x.nombre) });
-    out.push({ grupo: "Ir a", texto: "Todos los clientes", href: "/clientes", icono: Building2, claves: "todos los clientes" });
+    // v1.38: el Estado de todos los clientes juntos (con más de uno), y la lista para gestionarlos.
+    // (el primero de «Ir a», para que se vea sin escribir nada)
+    if (app.clientes.length > 1) {
+      const i = out.findIndex((x) => x.grupo === "Ir a");
+      out.splice(i < 0 ? out.length : i, 0, { grupo: "Ir a", texto: "Todos los clientes", sub: "estado y mapa de todos", href: "/todos", icono: Layers, claves: "todos los clientes estado panel mapa global resumen" });
+    }
+    out.push({ grupo: "Ir a", texto: "Lista de clientes", href: "/clientes", icono: Building2, claves: "lista de clientes gestionar nuevo cliente" });
     out.push({ grupo: "Ir a", texto: "Ayuda", href: "/ayuda", icono: FileText, claves: "ayuda" });
     out.push({ grupo: "Ir a", texto: "Mi cuenta y servidor", href: "/ajustes", icono: FileText, claves: "mi cuenta y servidor ajustes" });
     return out;

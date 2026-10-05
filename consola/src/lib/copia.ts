@@ -117,7 +117,7 @@ export function fraseCopia(
   const partes = [`Copia ${que} de ${o.equipo} en «${o.repo}»${antes}: ${horarioEnFrase(k.horario).replace(/^./, (c) => c.toLowerCase())}.`];
   if (k.activa === false) partes.push("Ahora está desactivada: no se hará hasta que la actives.");
   else if (o.pausada) partes.push("Las copias automáticas están en pausa.");
-  if (o.vuelta) partes.push(`La última vuelta, ${relativo(o.vuelta.cuando, ahora)}, ${TEXTO_VUELTA[o.vuelta.resultado]}.`);
+  if (o.vuelta) partes.push(`La última copia, ${relativo(o.vuelta.cuando, ahora)}, ${TEXTO_VUELTA[o.vuelta.resultado]}.`);
   else partes.push("Todavía no se ha hecho ninguna vez.");
   if (o.proxima && k.activa !== false && Date.parse(o.proxima) > ahora) partes.push(`La próxima será ${cuandoFrase(o.proxima, ahora)}.`);
   return partes.join(" ");
@@ -185,11 +185,11 @@ const EXPLICACIONES: [RegExp, Explicacion][] = [
   ],
   [
     /conectar|conexi(ó|o)n|connection|timeout|tiempo de espera|unreachable|no se encuentra el servidor|10061|10060|dns|red\b/i,
-    { titulo: "No se pudo llegar al destino", texto: "El equipo no alcanzó el sitio donde guarda las copias (otro equipo, un NAS o la nube). Comprueba que está encendido y con red; la siguiente vuelta lo vuelve a intentar sola.", ayuda: "si-copia-falla" },
+    { titulo: "No se pudo llegar al destino", texto: "El equipo no alcanzó el sitio donde guarda las copias (otro equipo, un NAS o la nube). Comprueba que está encendido y con red; la próxima copia lo vuelve a intentar sola.", ayuda: "si-copia-falla" },
   ],
   [
     /en uso|no se pudieron leer|no se pudo leer|acceso denegado|access denied|permiso/i,
-    { titulo: "Algunos archivos no se pudieron leer", texto: "Estaban abiertos por otro programa o sin permiso. El resto se copió; esos entran en la próxima vuelta si están libres.", ayuda: "si-copia-falla" },
+    { titulo: "Algunos archivos no se pudieron leer", texto: "Estaban abiertos por otro programa o sin permiso. El resto se copió; esos entran en la próxima copia si están libres.", ayuda: "si-copia-falla" },
   ],
   [
     /carpeta.*(no existe|no se encuentra)|not found|no existe/i,
@@ -197,7 +197,7 @@ const EXPLICACIONES: [RegExp, Explicacion][] = [
   ],
 ];
 
-const GENERICA: Explicacion = { titulo: "La copia no terminó bien", texto: "El mensaje del equipo dice qué pasó. Lo ya copiado sigue a salvo; la siguiente vuelta lo vuelve a intentar.", ayuda: "si-copia-falla" };
+const GENERICA: Explicacion = { titulo: "La copia no terminó bien", texto: "El mensaje del equipo dice qué pasó. Lo ya copiado sigue a salvo; la próxima copia lo vuelve a intentar.", ayuda: "si-copia-falla" };
 
 export function explicarError(mensaje: string | null | undefined): Explicacion {
   const m = mensaje ?? "";

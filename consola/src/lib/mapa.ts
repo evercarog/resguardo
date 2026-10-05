@@ -7,20 +7,21 @@
 // marcha llega como una función (`enVivo`) para que esto sea TypeScript sin
 // runas (se prueba en scripts/vectores.ts). Con muchos equipos, los que están
 // al día y van a los mismos sitios se juntan en un grupo.
-import type { Equipo, Informe, RepositorioResumen } from "./tipos";
+import type { Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
 
-export type TipoNodo = "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa";
-export type IconoNodo = "equipo" | "grupo" | "almacen" | "disco" | "nube" | "dropbox" | "servidor" | "repo";
+/** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
+export type TipoNodo = "cliente" | "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa";
+export type IconoNodo = "cliente" | "equipo" | "grupo" | "almacen" | "disco" | "nube" | "dropbox" | "servidor" | "repo";
 export type Perspectiva = "equipos" | "repositorios" | "destinos";
 
 export interface NodoMapa {
   id: string;
   tipo: TipoNodo;
-  /** Columna: 0 equipos, 1 repositorios, 2 almacén o destino, 3 espejo y copia externa. */
-  col: 0 | 1 | 2 | 3;
+  /** Columna: 0 equipos, 1 repositorios, 2 almacén o destino, 3 espejo y copia externa (en el de todos los clientes, una más: 0 son los clientes). */
+  col: 0 | 1 | 2 | 3 | 4;
   nombre: string;
   /** Una línea pequeña: «3 copias», «Almacén · 2 repositorios», «cada noche a las 02:00». */
   sub: string;
@@ -35,13 +36,16 @@ export interface NodoMapa {
   cifra?: string;
   /** Algo en marcha ahora (una copia o una copia externa). */
   vivo?: string | null;
+  /** Un cliente (mapa de todos los clientes): su marca y si está plegado. */
+  marca?: MarcaCliente | null;
+  plegado?: boolean;
 }
 
 export interface AristaMapa {
   id: string;
   de: string;
   a: string;
-  tipo: "copia" | "guarda" | "externa" | "espejo";
+  tipo: "cliente" | "copia" | "guarda" | "externa" | "espejo";
   tono: Tono;
   /** En marcha ahora: el trazo se mueve (salvo con movimiento reducido). */
   vivo: boolean;
@@ -343,23 +347,32 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     if (esp.length) frases.push(`${n.nombre} se refleja en ${lista(esp.map((x) => `${x.nombre} (${enFrase(x, ahora)})`))}.`);
   }
 
-  // Orden: los equipos, lo urgente arriba y por nombre; cada columna siguiente,
-  // a la altura media de lo que le llega (menos cruces).
+  return { nodos: ordenarMapa(lista_, aristas), aristas, frases };
+}
+
+/**
+ * Orden de las tarjetas: la primera columna, lo urgente arriba y por nombre
+ * (o en el orden dado, con `primeraFija`); cada columna siguiente, a la altura
+ * media de lo que le llega (menos cruces).
+ */
+export function ordenarMapa(nodos: NodoMapa[], aristas: AristaMapa[], primeraFija = false): NodoMapa[] {
   const orden = new Map<string, number>();
-  const col0 = lista_.filter((n) => n.col === 0).sort((a, b) => PESO[a.tono] - PESO[b.tono] || a.nombre.localeCompare(b.nombre));
+  const col0 = nodos.filter((n) => n.col === 0);
+  if (!primeraFija) col0.sort((a, b) => PESO[a.tono] - PESO[b.tono] || a.nombre.localeCompare(b.nombre));
   col0.forEach((n, i) => orden.set(n.id, i));
   const nodosOrdenados = [...col0];
-  for (const col of [1, 2, 3]) {
+  const ultima = Math.max(0, ...nodos.map((n) => n.col));
+  for (let col = 1; col <= ultima; col++) {
     const media = (n: NodoMapa) => {
       const xs = aristas.filter((a) => a.a === n.id && orden.has(a.de)).map((a) => orden.get(a.de)!);
       return xs.length ? xs.reduce((x, y) => x + y, 0) / xs.length : 1e9;
     };
-    const cs = lista_.filter((n) => n.col === col).map((n) => ({ n, m: media(n) }));
+    const cs = nodos.filter((n) => n.col === col).map((n) => ({ n, m: media(n) }));
     cs.sort((a, b) => a.m - b.m || PESO[a.n.tono] - PESO[b.n.tono] || a.n.nombre.localeCompare(b.n.nombre));
-    cs.forEach((x, i) => orden.set(x.n.id, i + (col === 3 ? 0.5 : 0)));
+    cs.forEach((x, i) => orden.set(x.n.id, i + (col === ultima ? 0.5 : 0)));
     nodosOrdenados.push(...cs.map((x) => x.n));
   }
-  return { nodos: nodosOrdenados, aristas, frases };
+  return nodosOrdenados;
 }
 
 /** Las raíces que se pueden elegir en cada perspectiva (para el selector). */

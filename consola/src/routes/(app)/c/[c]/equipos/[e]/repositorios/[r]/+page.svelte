@@ -7,6 +7,8 @@
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { page } from "$app/state";
+  import { untrack } from "svelte";
+  import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { Cloud, Database, HardDrive, History, Play, Server, ShieldCheck } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
@@ -90,6 +92,31 @@
         hayMas = h.length >= api.HISTORIAL_POR_PAGINA;
       })
       .catch(() => {});
+  });
+  // Al día sin recargar: el equipo (versiones, espacio…) y lo nuevo de su historia, arriba
+  // (sin perder las páginas ya cargadas con «Cargar más»).
+  $effect(() => {
+    const [cc, ee] = [c, e];
+    return untrack(() => {
+      const dejarEquipo = seguirCambios(() => api.equipo(cc, ee).then((x) => ee === e && (equipo = x), () => {}), {
+        ms: 0,
+        toca: (x) => (x.t === "informe" || x.t === "config" || x.t === "equipo" || (x.t === "progreso" && x.estado === "termina")) && tocaEquipo(x, ee),
+      });
+      const dejarHistoria = seguirCambios(
+        () =>
+          api.historialEquipo(cc, ee).then((h) => {
+            if (cc !== c || ee !== e) return;
+            const ya = new Set(historial.map((x) => x.id));
+            const nuevas = h.filter((x) => !ya.has(x.id));
+            if (nuevas.length) historial = [...nuevas, ...historial].sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
+          }, () => {}),
+        { ms: 0, toca: (x) => x.t === "historial" && tocaEquipo(x, ee) },
+      );
+      return () => {
+        dejarEquipo();
+        dejarHistoria();
+      };
+    });
   });
   async function cargarMas() {
     const [cc, ee, ultima] = [c, e, historial.at(-1)];

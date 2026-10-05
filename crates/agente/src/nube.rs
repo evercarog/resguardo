@@ -597,7 +597,7 @@ fn conectar_con(p: PedidoConectar, renovar: Renovar) -> Result<String, String> {
     crate::agent::log(&format!("Nube «{}» (Dropbox) {hecho} desde la consola.", p.nombre));
     let mut m = format!("Dropbox «{}» {hecho} (solo Aplicaciones/Resguardo).", p.nombre);
     if !comprobada {
-        m += " No se pudo comprobar ahora con Dropbox: se comprobará en la próxima vuelta del espejo.";
+        m += " No se pudo comprobar ahora con Dropbox: se comprobará en la próxima subida del espejo.";
     }
     Ok(m)
 }

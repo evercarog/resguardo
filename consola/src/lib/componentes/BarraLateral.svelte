@@ -14,6 +14,7 @@
     Gauge,
     History,
     LayoutDashboard,
+    Layers,
     LogOut,
     Monitor,
     Settings,
@@ -41,6 +42,9 @@
   const plegada = $derived(plegable && barra.plegada);
 
   const c = $derived(actual.id);
+  /** v1.38: en «Todos los clientes» no se enseñan las secciones del último cliente abierto. */
+  const enTodos = $derived(page.url.pathname === "/todos");
+  const variosClientes = $derived(app.clientes.length > 1);
   const rol = $derived(actual.cliente?.rol);
   type Seccion = { href: string; texto: string; icono: typeof Monitor; exacto?: boolean; cuenta?: number; tono?: "warn" | "bad" };
   // Las secciones del cliente, en tres grupos con su etiqueta (el orden de siempre).
@@ -134,17 +138,33 @@
       bind:this={botonCliente}
       aria-expanded={selector}
       aria-controls={selector ? "menu-clientes" : undefined}
-      use:tip={plegada ? (actual.cliente?.nombre ?? "Elige un cliente") : null}
+      use:tip={plegada ? (enTodos ? "Todos los clientes" : (actual.cliente?.nombre ?? "Elige un cliente")) : null}
       onclick={() => (selector = !selector)}
     >
-      <MarcaCliente nombre={actual.cliente?.nombre ?? "·"} marca={actual.cliente?.marca ?? app.clientes.find((x) => x.id === c)?.marca} />
-      <span class="nombre" class:sr-only={plegada}>{actual.cliente?.nombre ?? "Elige un cliente"}</span>
+      {#if enTodos}
+        <span class="ini neutro" aria-hidden="true"><Layers size={14} /></span>
+        <span class="nombre" class:sr-only={plegada}>Todos los clientes</span>
+      {:else}
+        <MarcaCliente nombre={actual.cliente?.nombre ?? "·"} marca={actual.cliente?.marca ?? app.clientes.find((x) => x.id === c)?.marca} />
+        <span class="nombre" class:sr-only={plegada}>{actual.cliente?.nombre ?? "Elige un cliente"}</span>
+      {/if}
       {#if !plegada}<ChevronsUpDown size={14} />{/if}
     </button>
     {#if selector}
       <!-- Un desplegable de enlaces (no un listbox): Tab y las flechas lo recorren, Esc lo cierra. -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="menu card" id="menu-clientes" onkeydown={teclasMenu} onfocusout={fueraDelMenu}>
+        {#if variosClientes}
+          <a
+            href="/todos"
+            aria-current={enTodos ? "true" : undefined}
+            onclick={() => {
+              selector = false;
+              alNavegar?.();
+            }}><span class="ini neutro"><Layers size={13} /></span><span class="nombre">Todos los clientes</span>{#if enTodos}<Check size={14} />{/if}</a
+          >
+          <hr />
+        {/if}
         {#each app.clientes as x (x.id)}
           <a
             aria-current={x.id === c ? "true" : undefined}
@@ -166,7 +186,7 @@
           onclick={() => {
             selector = false;
             alNavegar?.();
-          }}><span class="ini neutro"><Users size={13} /></span><span class="nombre">Todos los clientes</span></a
+          }}><span class="ini neutro"><Users size={13} /></span><span class="nombre">Lista de clientes</span></a
         >
         {#if app.cuenta?.superusuario}
           <a
@@ -201,7 +221,22 @@
     <Search size={15} />{#if !plegada}<span>Buscar o ir a…</span><kbd>{MOD} K</kbd>{/if}
   </button>
 
-  {#if c}
+  {#if variosClientes}
+    <ul class="items global">
+      <li>
+        <a
+          href="/todos"
+          class:on={enTodos}
+          aria-current={enTodos ? "page" : undefined}
+          aria-label={plegada ? "Todos los clientes" : undefined}
+          use:tip={plegada ? "Todos los clientes" : null}
+          onclick={alNavegar}><Layers size={16} />{#if !plegada}<span class="texto">Todos los clientes</span>{/if}</a
+        >
+      </li>
+    </ul>
+  {/if}
+
+  {#if c && !enTodos}
     <div class="grupos">
       {#each grupos as g, gi (g.titulo)}
         <div class="grupo">

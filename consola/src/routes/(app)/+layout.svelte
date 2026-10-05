@@ -4,6 +4,7 @@
   import { fade, fly } from "svelte/transition";
   import { Menu, Search } from "@lucide/svelte";
   import { afterNavigate } from "$app/navigation";
+  import { page } from "$app/state";
   import Logo from "$ui/componentes/Logo.svelte";
   import { dur } from "$ui/movimiento";
   import BarraLateral from "$lib/componentes/BarraLateral.svelte";
@@ -77,7 +78,7 @@
 
     <header class="movil">
       <button class="icon-btn" bind:this={botonMenu} aria-label="Abrir el menú" aria-expanded={cajon} aria-controls={cajon ? "cajon" : undefined} onclick={() => (cajon = true)}><Menu size={20} /></button>
-      <a class="marca" href="/">{#if actual.cliente}<MarcaCliente nombre={actual.cliente.nombre} marca={actual.cliente.marca} tam={24} />{:else}<Logo size={22} />{/if}<span>{actual.cliente?.nombre ?? "Resguardo"}</span></a>
+      {#if page.url.pathname === "/todos"}<a class="marca" href="/todos"><Logo size={22} /><span>Todos los clientes</span></a>{:else}<a class="marca" href="/">{#if actual.cliente}<MarcaCliente nombre={actual.cliente.nombre} marca={actual.cliente.marca} tam={24} />{:else}<Logo size={22} />{/if}<span>{actual.cliente?.nombre ?? "Resguardo"}</span></a>{/if}
       <button class="icon-btn buscar-movil" aria-label="Buscar o ir a…" onclick={() => (atajos.paleta = true)}><Search size={18} /></button>
       <span class="en-marcha-movil"><CopiasEnMarcha compacto /></span>
     </header>

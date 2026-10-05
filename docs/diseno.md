@@ -231,7 +231,7 @@ Los colores de las series (`--onda-1…3`) son los de «Colores por copia» (§4
   - sin copia: `--surface-3`;
   - día futuro o fuera de rango: transparente con borde `--border`.
 
-  Cada cuadro lleva un *tooltip* con la fecha y el resultado. Junto a las tarjetas se usa la versión **mini** de 14 días. Los de un equipo juntan las versiones y vueltas de todos sus repositorios.
+  Cada cuadro lleva un *tooltip* con la fecha y el resultado. Junto a las tarjetas se usa la versión **mini** de 14 días. Los de un equipo juntan las versiones y copias de todos sus repositorios.
 
   Para lectores de pantalla, la rejilla es una imagen cuyo texto cuenta los días de cada resultado («Últimos 14 días: 9 días con versiones, 1 día falló, 4 días sin copia.»). Cuando se pueden pulsar (filtrar las versiones de un día), son un solo punto de parada del tabulador con flechas, Inicio y Fin, y al lado va un desplegable «Todos los días» que hace lo mismo con un tamaño cómodo (los cuadros de 11 px no llegan a los 24 px de WCAG 2.5.8).
 - **Gráficas** (una serie por gráfica, nunca doble eje). Todas con los tokens `--graf-*` (§2) y el mismo **globo de dato** (`.graf-tip`): ficha `--surface` con borde `--border-strong`, radio 6, `--shadow-md`, el valor en `--text-1` 600 tabular y la fecha o la serie en `--text-3`. En oscuro, el área toma el acento con brillo (como un gráfico en vivo); en claro, tinta neutra.
@@ -297,7 +297,7 @@ Los colores de las series (`--onda-1…3`) son los de «Colores por copia» (§4
 - **Informe** (para imprimir): periodo (este mes, el pasado —por defecto los cinco primeros días— o 30 días); portada con la marca del cliente (su logo, o el de Resguardo, y su color en la raya; el logo que antes se guardaba solo en el navegador se ofrece pasarlo al cliente); una frase de resumen; cifras; una pila fina por día (correctas en tinta neutra y fallidas en rojo encima); tabla de equipos con sus cuadros y, de cada equipo, sus repositorios. Al imprimir: A4, solo la hoja, siempre en claro, sin cortar bloques ni filas y con los colores de los cuadros (`print-color-adjust: exact`).
 - **Inicio («Estado»):**
   1. **Resumen grande:** titular en `--fs-display` («Todo protegido», «2 cosas necesitan atención», «Copiando…»), una línea de resumen y una lista breve, ordenada por gravedad, de lo urgente: cada punto con el icono de su estado, quién y qué le pasa, y su acción directa.
-  2. **Cifras:** equipos al día (con una barra fina del reparto por estado), datos protegidos, versiones de las últimas 24 h (y vueltas fallidas) y la próxima copia.
+  2. **Cifras:** equipos al día (con una barra fina del reparto por estado), datos protegidos, versiones de las últimas 24 h (y copias fallidas) y la próxima copia.
   3. **Mapa de la protección** (§4), con el filtro de etiqueta.
   4. **Equipos** en tarjetas de salud: nombre, estado, conexión, última copia y próxima, y los 14 días de todas sus copias.
   5. **Repositorios** en tarjetas tranquilas: nombre, estado, última versión, nube, protección compacta y los 14 días.

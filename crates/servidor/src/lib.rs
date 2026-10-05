@@ -24,6 +24,7 @@ pub mod progreso;
 mod propiedades;
 pub mod registro;
 pub mod respaldo;
+pub mod vivo;
 
 use estado::{Estado, IpCliente, Limites, Opciones, St};
 use std::collections::HashMap;
@@ -49,6 +50,7 @@ pub fn preparar(datos: &Path, opciones: Opciones) -> Result<St, String> {
         cambios: tokio::sync::Notify::new(),
         limites: Limites::default(),
         progreso: Default::default(),
+        vivo: Default::default(),
         notif: notificaciones::Motor::nuevo(notificaciones::cifrado::Clave::de_identidad(&identidad)),
     }))
 }
@@ -62,6 +64,10 @@ pub fn tareas(st: St) {
         let mut t = tokio::time::interval(Duration::from_secs(30));
         loop {
             t.tick().await;
+            // Lo que estaba en marcha y dejó de contarse: terminó (para las consolas en vivo).
+            for (cliente, equipo) in st1.progreso.purgar() {
+                st1.vivo.avisar(&cliente, vivo::Cambio::Progreso(&equipo, vivo::Paso::Termina));
+            }
             let conectados: Vec<String> = st1.conectados.lock().unwrap_or_else(|e| e.into_inner()).keys().cloned().collect();
             for equipo in conectados {
                 let e2 = equipo.clone();
@@ -121,6 +127,7 @@ fn avisar_sin_contacto(st: &St, ctx: &almacen::ClienteCtx, ahora: almacen::Ts) {
                 "equipo_sin_contacto",
                 &format!("«{}» lleva más de 24 h sin conectar con el servidor.", e.nombre),
             );
+            st.vivo.avisar(ctx.id(), vivo::Cambio::Avisos(Some(&e.id)));
         }
     }
 }

@@ -7,6 +7,9 @@
   import * as api from "$lib/api";
   import { dur } from "$ui/movimiento";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
+  import { onMount } from "svelte";
+  import { enFondo } from "$lib/actividad.svelte";
+  import { seguirCambios } from "$lib/vivo.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { plural } from "$lib/formato";
   import type { Aviso, TipoAviso } from "$lib/tipos";
@@ -42,6 +45,8 @@
     void actual.id;
     void cargar();
   });
+  // Los avisos nuevos (o vistos desde otra consola) aparecen solos.
+  onMount(() => seguirCambios(() => enFondo(cargar), { ms: 0, toca: (x) => x.t === "avisos" }));
   $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
   /** La vuelta (o el repositorio) que explica un aviso, en el último informe de su equipo. */
   function relacionado(a: Aviso): { href: string; texto: string } | null {
@@ -49,7 +54,7 @@
     const d = destinoAviso(a, ultimos.porEquipo[a.equipo]?.datos?.repos ?? []);
     if (!d) return null;
     const base = `/c/${actual.id}/equipos/${a.equipo}/repositorios/${encodeURIComponent(d.repo)}`;
-    return d.vuelta ? { href: `${base}?${new URLSearchParams({ vuelta: d.vuelta })}`, texto: "Ver esa vuelta" } : { href: `${base}?vista=estado`, texto: "Ver el repositorio" };
+    return d.vuelta ? { href: `${base}?${new URLSearchParams({ vuelta: d.vuelta })}`, texto: "Ver esa copia" } : { href: `${base}?vista=estado`, texto: "Ver el repositorio" };
   }
 
   const c = $derived(actual.id);

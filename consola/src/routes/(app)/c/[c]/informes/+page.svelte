@@ -5,7 +5,8 @@
   // cada equipo, sus repositorios. Sale del historial que guarda cada equipo
   // (v1.23) o, con un servidor anterior, de sus últimos informes. Sin rutas ni
   // nombres de archivos.
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { seguirCambios } from "$lib/vivo.svelte";
   import { tip } from "$lib/tooltip";
   import { Archive, CalendarRange, CloudUpload, Database, FileBarChart, Monitor, Palette, Printer, ShieldCheck } from "@lucide/svelte";
   import Logo from "$ui/componentes/Logo.svelte";
@@ -92,7 +93,11 @@
   const idsEquipos = $derived(actual.equipos.filter((e) => e.confirmado && e.modo !== "trasladado").map((e) => e.id).join(","));
   const desdeMs = $derived(rango.desde.getTime());
   let periodoCargado = -1;
+  /** Sube cuando un equipo sube historial nuevo (canal en vivo): se vuelven a contar sin vaciar las gráficas. */
+  let recarga = $state(0);
+  onMount(() => seguirCambios(() => recarga++, { ms: 0, toca: (x) => x.t === "historial" }));
   $effect(() => {
+    void recarga;
     const ids = idsEquipos ? idsEquipos.split(",") : [];
     const desde = new Date(desdeMs);
     const n = ++vuelta;
