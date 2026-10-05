@@ -245,7 +245,7 @@
         <span class="p-nombre">{n.nombre}</span>
         <span class="p-sub">{n.tono === "ok" ? (cuando(n) ? `última ${cuando(n)}` : n.sub) : n.estado}</span>
       </span>
-      {#if n.cifra}<span class="cifra num">{n.cifra}</span>{/if}
+      {#if n.cifra}<span class="nodo-cifra num">{n.cifra}</span>{/if}
       <span class="sr-only">{n.tono === "ok" ? `, ${n.estado}` : ""}, {n.sub}</span>
     </a>
   {:else if n.tipo === "cliente"}
@@ -684,7 +684,7 @@
   .pildora.no-ok .p-sub {
     color: var(--text-2);
   }
-  .cifra {
+  .nodo-cifra {
     flex: none;
     padding: 1px 6px;
     font-family: var(--mono);

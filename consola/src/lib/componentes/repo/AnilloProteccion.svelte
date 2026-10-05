@@ -13,7 +13,7 @@
     <circle cx="32" cy="32" r={R} class="pista" />
     {#if proteccion.ratio > 0}<circle cx="32" cy="32" r={R} class="arco" stroke-dasharray="{C * proteccion.ratio} {C}" transform="rotate(-90 32 32)" />{/if}
   </svg>
-  {#if cifra}<span class="cifra num" aria-hidden="true">{proteccion.puntuacion}<small>/{proteccion.total}</small></span>{/if}
+  {#if cifra}<span class="anillo-cifra num" aria-hidden="true">{proteccion.puntuacion}<small>/{proteccion.total}</small></span>{/if}
 </span>
 
 <style>
@@ -38,13 +38,13 @@
     stroke-linecap: round;
     transition: stroke-dasharray var(--dur-slow) var(--ease-out);
   }
-  .cifra {
+  .anillo-cifra {
     grid-area: 1 / 1;
     font-size: var(--fs-h2);
     line-height: 1;
     font-weight: 600;
   }
-  .cifra small {
+  .anillo-cifra small {
     margin-left: 1px;
     font-size: 0.6em;
     font-weight: 400;
