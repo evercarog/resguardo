@@ -16,6 +16,7 @@ export const MOD = esMac ? "⌘" : "Ctrl";
 export const IR_A: { tecla: string; texto: string; ruta: string }[] = [
   { tecla: "s", texto: "Estado", ruta: "" },
   { tecla: "e", texto: "Equipos", ruta: "/equipos" },
+  { tecla: "c", texto: "Copias", ruta: "/copias" },
   { tecla: "r", texto: "Repositorios y destinos", ruta: "/repositorios" },
   { tecla: "t", texto: "Restaurar", ruta: "/restaurar" },
   { tecla: "o", texto: "Órdenes", ruta: "/ordenes" },

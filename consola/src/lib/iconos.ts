@@ -14,6 +14,7 @@ import {
   FileBarChart,
   FlaskConical,
   FolderSearch,
+  FolderSync,
   FolderTree,
   History,
   KeyRound,
@@ -36,6 +37,7 @@ type Icono = typeof Play;
 export const ICONO_SECCION = {
   estado: LayoutDashboard,
   equipos: Monitor,
+  copias: FolderSync,
   repositorios: Database,
   restaurar: History,
   ordenes: ClipboardList,

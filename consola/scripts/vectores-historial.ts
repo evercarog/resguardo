@@ -1,6 +1,8 @@
 // Pruebas de «Historial y versiones» (src/lib/historial.ts) y de la marca de
-// fallos del calendario (src/lib/lineaTiempo.ts). `npm run test:vectores`.
-import type { CopiaResumen, EntradaHistorial, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
+// fallos del calendario (src/lib/lineaTiempo.ts) y de la lista de Copias
+// (src/lib/copiasCliente.ts). `npm run test:vectores`.
+import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
+import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
 import { pasaFiltro, sucesosDe } from "../src/lib/historial";
 import { calendario } from "../src/lib/lineaTiempo";
 
@@ -86,6 +88,28 @@ igual("…y en la cabecera de su día", cal.columnas.reduce((n, c) => n + (c.dia
 igual("…sin cambiar la intensidad (las versiones)", cal.total, 1);
 const tira = calendario(vs, null, ahora, 30, true, [Date.parse(h(14))]);
 igual("en la tira del móvil, también", tira.celdas[0].reduce((n, x) => n + x.fallos, 0), 1);
+
+console.log("\n· Copias del cliente (lib/copiasCliente.ts)");
+const base = { so: "Windows 11", version_agente: "0.7.17", box_pub: "", sign_pub: "", sal_equipo: "", etiqueta: null, modo: "gestionado" as const, confirmado: true, conectado: true, ultimo_contacto: h(0.1), estado_servicio: "en_marcha" as const, siguiente_seq: 1, rol: "agente" as const };
+const e1: Equipo = { ...base, id: "e1", nombre: "CONTABILIDAD", resumen: { destinos: [{ id: "d", nombre: "Almacén", tipo: "rest" }], repositorios: [{ ...repo2 }], copias: [{ id: "k3", nombre: "Siigo", repo: "r2", activa: true, ultima: { cuando: h(3), estado: "fallo", mensaje: "Sin red" } }] } };
+const e2: Equipo = {
+  ...base,
+  id: "e2",
+  nombre: "RECEPCIÓN",
+  modo: "trasladado",
+  resumen: { destinos: [{ id: "d", nombre: "Nube", tipo: "b2" }], repositorios: [{ ...repo }], copias: [{ id: "k1", nombre: "Escritorio", repo: "r1", activa: true }, { id: "k2", nombre: "Facturas", repo: "r1", activa: false }] },
+};
+const filas = filasCopias([e1, e2], { e2: { recibido: h(1), datos: { repos: [inf] } } }, ahora);
+igual("una fila por copia de cada equipo", filas.map((x) => x.clave), ["e1|k3", "e2|k1", "e2|k2"]);
+igual("su estado, de la última copia", filas.map((x) => x.estado.texto), ["Con error", "Con avisos", "Desactivada"]);
+igual("lo que protege: su última versión", filas[1].protegido, 1e9);
+igual("se le pueden mandar órdenes (no a un equipo trasladado ni a una copia desactivada)", filas.map((x) => x.ordenable), [true, false, false]);
+igual("buscar sin tildes y por todas las palabras", filtrarCopias(filas, { buscar: "recepcion escri" }).map((x) => x.clave), ["e2|k1"]);
+igual("filtro «Necesitan atención»", filtrarCopias(filas, { estado: "atencion" }).map((x) => x.clave), ["e1|k3", "e2|k1"]);
+igual("filtro «En pausa o desactivadas»", filtrarCopias(filas, { estado: "paradas" }).map((x) => x.clave), ["e2|k2"]);
+igual("filtro por equipo y por repositorio", [filtrarCopias(filas, { equipo: "e1" }).length, filtrarCopias(filas, { repo: "e2|r1" }).length], [1, 2]);
+igual("orden por estado: primero lo que falla", ordenarCopias(filas, "estado").map((x) => x.clave), ["e1|k3", "e2|k1", "e2|k2"]);
+igual("orden por lo que protege: lo que no se sabe, al final", ordenarCopias(filas, "protegido").map((x) => x.clave)[0], "e2|k1");
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

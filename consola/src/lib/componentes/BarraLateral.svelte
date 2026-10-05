@@ -17,6 +17,7 @@
     Layers,
     LogOut,
     Monitor,
+    FolderSync,
     Settings,
     UserRound,
     Users,
@@ -55,6 +56,7 @@
         items: [
           { href: `/c/${c}`, texto: "Estado", icono: LayoutDashboard, exacto: true },
           { href: `/c/${c}/equipos`, texto: "Equipos", icono: Monitor, cuenta: actual.equipos.length || undefined },
+          { href: `/c/${c}/copias`, texto: "Copias", icono: FolderSync },
           { href: `/c/${c}/repositorios`, texto: "Repositorios y destinos", icono: Database },
         ],
       },

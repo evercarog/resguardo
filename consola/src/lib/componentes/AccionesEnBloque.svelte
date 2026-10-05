@@ -1,5 +1,6 @@
 <script lang="ts">
   // Acciones en bloque sobre varios equipos: «Copiar ahora» y «Verificar».
+  // Con `copias` («equipo|copia», desde la lista de Copias), solo esas copias.
   // Cada equipo recibe sus propias órdenes, selladas para él como siempre
   // (inofensivas: no piden clave). Primero se dice qué va a pasar; después,
   // la lista de equipos con lo que contesta cada uno. Nada destructivo se
@@ -15,7 +16,7 @@
   import BotonCargando from "./BotonCargando.svelte";
 
   type Accion = "copiar" | "verificar";
-  let { cliente, equipos, accion, onclose }: { cliente: Cliente; equipos: Equipo[]; accion: Accion; onclose: () => void } = $props();
+  let { cliente, equipos, accion, copias = null, onclose }: { cliente: Cliente; equipos: Equipo[]; accion: Accion; copias?: Set<string> | null; onclose: () => void } = $props();
 
   interface Tarea {
     tipo: string;
@@ -27,7 +28,7 @@
     equipos.map((e) => {
       const tareas: Tarea[] =
         accion === "copiar"
-          ? (e.resumen?.copias ?? []).filter((k) => k.activa !== false).map((k) => ({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, que: k.nombre }))
+          ? (e.resumen?.copias ?? []).filter((k) => k.activa !== false && (!copias || copias.has(`${e.id}|${k.id}`))).map((k) => ({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, que: k.nombre }))
           : (e.resumen?.repositorios ?? []).filter((r) => !r.solo_lectura && (r.versiones ?? 0) > 0).map((r) => ({ tipo: "verificar_ahora", cuerpo: { repo: r.id }, que: r.nombre }));
       return { equipo: e, tareas };
     }),
@@ -35,7 +36,7 @@
   const conTareas = $derived(plan.filter((p) => p.tareas.length));
   const sinTareas = $derived(plan.filter((p) => !p.tareas.length));
   const total = $derived(conTareas.reduce((n, p) => n + p.tareas.length, 0));
-  const TITULO = { copiar: "Copiar ahora en varios equipos", verificar: "Verificar varios equipos" };
+  const TITULO = $derived(copias ? { copiar: "Copiar ahora las copias elegidas", verificar: "Verificar varios equipos" } : { copiar: "Copiar ahora en varios equipos", verificar: "Verificar varios equipos" });
 
   type Estado = { fase: "cola" | "enviando" | "esperando" | "fin"; ordenes: Orden[]; error?: string };
   let estados = $state<Record<string, Estado>>({});
@@ -117,7 +118,7 @@
     <div>
       <h2 id="t-bloque">{TITULO[accion]}</h2>
       <p>
-        {#if accion === "copiar"}Cada equipo hace ahora sus copias activas, sin esperar a su hora. No borra nada.
+        {#if accion === "copiar"}{copias ? "Cada equipo hace ahora las copias elegidas, sin esperar a su hora." : "Cada equipo hace ahora sus copias activas, sin esperar a su hora."} No borra nada.
         {:else}Cada equipo comprueba una parte de sus repositorios para confirmar que las copias se pueden leer.{/if}
       </p>
     </div>
