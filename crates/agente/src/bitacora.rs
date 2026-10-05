@@ -6,8 +6,9 @@
 //!
 //! - Una línea JSON por cosa que pasa: cada vuelta de una copia (con sus
 //!   cifras y el resultado de sus ganchos), cada verificación, prueba de
-//!   restauración o copia externa, cada vuelta del espejo y los avisos que
-//!   levantó el equipo.
+//!   restauración o copia externa, cada vuelta del espejo, los avisos que
+//!   levantó el equipo y (v1.4x) cada vuelta de la retención con las versiones
+//!   que quitó (`retencion_registro.rs`; con la lista, solo las 50 últimas).
 //! - Solo lo que ya se enseña en la consola: sin rutas (los mensajes pasan por
 //!   `web::public_message`), sin nombres de archivos y sin secretos.
 //! - Un archivo por mes (`privado/bitacora/AAAA-MM.jsonl`), en el que solo se
@@ -45,6 +46,8 @@ pub const MESES_DETALLE: i64 = 12;
 pub const MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// Entradas por petición al servidor (su límite).
 pub const POR_SUBIDA: usize = 500;
+/// Y como mucho tanto por petición (el límite del servidor es 1 MiB).
+pub const BYTES_POR_SUBIDA: usize = 900 * 1024;
 /// Lo que se vuelve a mirar antes de la última hora que tiene el servidor (relojes
 /// y procesos que escriben a la vez); lo repetido no cuenta dos veces.
 const MARGEN_MIN: i64 = 10;
@@ -231,6 +234,8 @@ pub fn compactar_en(dir: &Path, ahora: DateTime<Local>, max_bytes: u64) -> Vec<S
             estado.resumidos.push(mes.to_string());
         }
     }
+    // 0. Las vueltas de la retención: la lista de versiones, solo en las más recientes.
+    compactar_retenciones(dir, &actual);
     // 1. Más de 12 meses: una entrada por copia y día.
     for (mes, path) in segmentos(dir) {
         if mes < limite && !estado.resumidos.contains(&mes) {
@@ -260,6 +265,59 @@ pub fn compactar_en(dir: &Path, ahora: DateTime<Local>, max_bytes: u64) -> Vec<S
     estado.compactada = Some(ahora.format("%Y-%m-%d").to_string());
     guardar_estado(dir, &estado);
     notas
+}
+
+/// Las vueltas de la retención con la lista de versiones quitadas: solo las
+/// [`crate::retencion_registro::DETALLADAS`] más recientes; las anteriores se
+/// quedan con sus cifras. Solo se reescriben meses cerrados (en el actual se
+/// sigue escribiendo). Devuelve cuántas compactó.
+pub fn compactar_retenciones(dir: &Path, actual: &str) -> usize {
+    use crate::retencion_registro::{compactar, con_detalle, DETALLADAS};
+    let segs = segmentos(dir);
+    let mut con: Vec<(i64, String)> = segs
+        .iter()
+        .flat_map(|(_, p)| leer_segmento(p))
+        .filter(con_detalle)
+        .filter_map(|e| Some((hora_de(&e)?.timestamp(), e["id"].as_str()?.to_string())))
+        .collect();
+    if con.len() <= DETALLADAS {
+        return 0;
+    }
+    con.sort_by(|a, b| b.cmp(a));
+    let viejas: HashSet<String> = con.into_iter().skip(DETALLADAS).map(|(_, id)| id).collect();
+    let mut n = 0;
+    for (_, path) in segs.iter().filter(|(mes, _)| mes.as_str() < actual) {
+        let mut l = leer_segmento(path);
+        let mut cambia = 0;
+        for e in l.iter_mut().filter(|e| con_detalle(e) && e["id"].as_str().is_some_and(|id| viejas.contains(id))) {
+            compactar(e);
+            cambia += 1;
+        }
+        if cambia > 0 && reescribir(path, &l) {
+            n += cambia;
+        }
+    }
+    n
+}
+
+/// Las tandas de una subida: como mucho [`POR_SUBIDA`] entradas y [`BYTES_POR_SUBIDA`]
+/// (el servidor no acepta peticiones de más de 1 MiB; las vueltas de la retención
+/// pueden ocupar hasta 96 KiB).
+pub fn tandas(entradas: &[Value]) -> Vec<&[Value]> {
+    let mut out = Vec::new();
+    let (mut desde, mut bytes) = (0, 0);
+    for (i, e) in entradas.iter().enumerate() {
+        let b = e.to_string().len() + 1;
+        if i > desde && (i - desde >= POR_SUBIDA || bytes + b > BYTES_POR_SUBIDA) {
+            out.push(&entradas[desde..i]);
+            (desde, bytes) = (i, 0);
+        }
+        bytes += b;
+    }
+    if desde < entradas.len() {
+        out.push(&entradas[desde..]);
+    }
+    out
 }
 
 /// Compacta una vez al día (lo mira cada proceso que anota).
@@ -415,7 +473,7 @@ pub fn subir_en(dir: &Path, v: &crate::servidor_v2::Vinculo, ultima: Option<&str
     };
     let falta = pendientes(leer_de(dir), if entera { None } else { ultima }, &ya);
     let mut nueva = ultima.map(str::to_string);
-    for tanda in falta.chunks(POR_SUBIDA) {
+    for tanda in tandas(&falta) {
         let (codigo, r) = crate::servidor_v2::llamar(v, "POST", "/api/agente/historial", Some(&json!({ "entradas": tanda })))?;
         if !(200..300).contains(&codigo) {
             return Err(format!("El servidor no aceptó el historial ({codigo})."));
@@ -564,6 +622,42 @@ mod tests {
         assert!(notas.iter().any(|n| n.contains("se quitó")), "{notas:?}");
         assert_eq!(segmentos(&d).last().unwrap().0, mes_de(ahora));
         let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn retenciones_con_detalle_solo_las_ultimas() {
+        let d = dir();
+        let ahora = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap().and_hms_opt(12, 0, 0).unwrap().and_local_timezone(Local).single().unwrap();
+        // 60 vueltas de la retención en meses cerrados (una cada 3 días hacia atrás) y 2 este mes.
+        for i in 0..62i64 {
+            let hora = if i < 2 { ahora - Duration::hours(i + 1) } else { ahora - Duration::days(3 * i + 5) };
+            anotar_en(
+                &d,
+                "retencion",
+                json!({ "id": format!("ret-{i:03}"), "hora": hora.to_rfc3339(), "origen": "equipo", "repo": "r1", "quitadas": 2, "versiones": [["a1b2c3d4", 1, 0, null, 0]], "grupos": [{ "copia": "docs" }], "motivos": ["cupo:diarias"] }),
+            );
+        }
+        assert!(compactar_en(&d, ahora, MAX_BYTES).is_empty());
+        let l = leer_de(&d);
+        let con: Vec<&str> = l.iter().filter(|e| crate::retencion_registro::con_detalle(e)).map(|e| e["id"].as_str().unwrap()).collect();
+        assert_eq!(con.len(), crate::retencion_registro::DETALLADAS);
+        assert!(con.contains(&"ret-000") && con.contains(&"ret-049") && !con.contains(&"ret-050"), "{con:?}");
+        let vieja = l.iter().find(|e| e["id"] == "ret-061").unwrap();
+        assert_eq!((vieja["compactada"].as_bool(), vieja["quitadas"].as_u64(), vieja.get("versiones")), (Some(true), Some(2), None), "las cifras se quedan");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn tandas_por_numero_y_por_tamano() {
+        let pequena = json!({ "id": "x", "tipo": "copia" });
+        let grande = json!({ "id": "y", "tipo": "retencion", "relleno": "z".repeat(90 * 1024) });
+        let v: Vec<Value> = (0..1200).map(|_| pequena.clone()).collect();
+        assert_eq!(tandas(&v).iter().map(|t| t.len()).collect::<Vec<_>>(), [500, 500, 200]);
+        let v: Vec<Value> = (0..25).map(|_| grande.clone()).collect();
+        let t = tandas(&v);
+        assert!(t.iter().all(|t| t.iter().map(|e| e.to_string().len()).sum::<usize>() <= BYTES_POR_SUBIDA), "{}", t.len());
+        assert_eq!(t.iter().map(|t| t.len()).sum::<usize>(), 25);
+        assert!(tandas(&[]).is_empty());
     }
 
     #[test]

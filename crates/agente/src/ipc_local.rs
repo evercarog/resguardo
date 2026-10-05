@@ -441,7 +441,7 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Client
             if pet["aplicar"] == true {
                 let copia = v.clone();
                 std::thread::spawn(move || {
-                    let r = crate::gestion_v2::aplicar_retencion(&copia, &repo);
+                    let r = crate::gestion_v2::aplicar_retencion_por(&copia, &repo, "ventana");
                     crate::agent::log(&format!("Ventana del equipo: retención aplicada: {}", r.unwrap_or_else(|e| format!("ERROR: {e}"))));
                 });
             }

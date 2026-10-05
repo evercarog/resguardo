@@ -1116,6 +1116,12 @@ pub fn cambiar_retencion(v: &mut Vinculo, c: &Value, repo: &str) -> Result<Strin
 
 /// `aplicar_retencion {repo}`: `restic forget --prune` con la retención guardada.
 pub fn aplicar_retencion(v: &Vinculo, repo: &str) -> Result<String, String> {
+    aplicar_retencion_por(v, repo, "orden")
+}
+
+/// Lo mismo, diciendo quién la pidió en la bitácora («Retención en detalle»):
+/// `"orden"` (la consola) o `"ventana"` (la ventana del equipo).
+pub fn aplicar_retencion_por(v: &Vinculo, repo: &str, por: &'static str) -> Result<String, String> {
     let r = v.repos_v2.iter().find(|x| x.id == repo).ok_or("Ese repositorio no lo gestiona este servidor.")?;
     if r.solo_lectura {
         return Err(SOLO_LECTURA.into());
@@ -1123,16 +1129,45 @@ pub fn aplicar_retencion(v: &Vinculo, repo: &str) -> Result<String, String> {
     if solo_anadir(r) == Some(true) {
         return Err(SOLO_ANADIR.into());
     }
-    let politica = r.retencion.as_ref().ok_or("Ese repositorio no tiene retención: cámbiala antes.")?.politica();
+    let regla = r.retencion.as_ref().ok_or("Ese repositorio no tiene retención: cámbiala antes.")?;
+    let politica = regla.politica();
     let acc = acceso(v, repo)?;
+    let inicio = chrono::Local::now();
+    // Lo que había, para anotar qué se quitó (si no se puede leer, se aplica igual).
+    let antes = resguardo_motor::restic::snapshots(&acc).ok();
     let mut args: Vec<String> = vec!["forget".into(), "--prune".into(), "--retry-lock".into(), "30m".into()];
     args.extend(politica.args());
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let out = resguardo_motor::restic::run_raw(&acc, &refs, std::time::Duration::from_secs(6 * 3600))?;
-    if out.code != Some(0) {
-        return Err(resguardo_motor::restic::exit_error(out.code, &out.stderr));
+    let out = resguardo_motor::restic::run_raw(&acc, &refs, std::time::Duration::from_secs(6 * 3600));
+    let r = match &out {
+        Ok(o) if o.code == Some(0) => Ok("Retención aplicada.".to_string()),
+        Ok(o) => Err(resguardo_motor::restic::exit_error(o.code, &o.stderr)),
+        Err(e) => Err(e.clone()),
+    };
+    if let Some(antes) = &antes {
+        let despues = resguardo_motor::restic::snapshots(&acc).ok();
+        let motivos = crate::retencion_registro::motivos(&crate::retencion_registro::candidatas(antes), regla);
+        let salida = out.as_ref().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        crate::retencion_registro::anotar(&crate::retencion_registro::Vuelta {
+            origen: "equipo",
+            por,
+            repo,
+            usuario: None,
+            regla: Some(regla),
+            inicio,
+            antes,
+            despues: despues.as_deref(),
+            motivos: &motivos,
+            copias: &crate::informe_v2::copias_por_version(),
+            liberado: crate::retencion_registro::liberado(&salida).or(despues.as_ref().filter(|d| d.len() == antes.len()).map(|_| 0)),
+            sospechosas: None,
+            resultado: match &r {
+                Ok(m) => Ok(m.as_str()),
+                Err(m) => Err(m.as_str()),
+            },
+        });
     }
-    Ok("Retención aplicada.".into())
+    r
 }
 
 /// `dejar_de_copiar {repo}` y `quitar_repositorio {repo}` (este, además, lo olvida con su contraseña).

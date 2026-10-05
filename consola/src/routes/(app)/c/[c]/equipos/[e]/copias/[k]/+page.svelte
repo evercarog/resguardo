@@ -413,7 +413,7 @@
           {/if}
           <div>
             <dt>Retención <Ayuda id="retencion" /></dt>
-            <dd>{#if repo?.retencion}Guarda {repo.retencion}{:else}<span class="faint">Todas las versiones (sin retención)</span>{/if}</dd>
+            <dd>{#if repo?.retencion}Guarda {repo.retencion}{:else}<span class="faint">Todas las versiones (sin retención)</span>{/if}{#if repo && (repo.retencion || retencionLinea)}{" "}<a class="link-suave" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(repo.id)}/retencion">Ver en detalle</a>{/if}</dd>
           </div>
         </dl>
       </section>
