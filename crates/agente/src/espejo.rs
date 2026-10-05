@@ -231,7 +231,11 @@ pub fn copiar_con(origen: &Path, destino: &Path, avance: &mut dyn FnMut(u64)) ->
             if std::fs::symlink_metadata(&tmp).is_ok() {
                 std::fs::remove_file(&tmp).map_err(|e| format!("No se pudo quitar {}: {e}", tmp.display()))?;
             }
-            std::fs::copy(e.path(), &tmp).map_err(|e| format!("No se pudo copiar a {}: {e}", tmp.display()))?;
+            if let Err(err) = std::fs::copy(e.path(), &tmp) {
+                // Lo copiado a medias no se queda (en un disco lleno, ocuparía lo poco que queda).
+                let _ = std::fs::remove_file(&tmp);
+                return Err(error_al_copiar(&err, destino));
+            }
             std::fs::rename(&tmp, &dest).map_err(|e| format!("No se pudo terminar {}: {e}", dest.display()))?;
             r.copiados += 1;
             r.bytes += m.len();
@@ -239,6 +243,22 @@ pub fn copiar_con(origen: &Path, destino: &Path, avance: &mut dyn FnMut(u64)) ->
         }
     }
     Ok(r)
+}
+
+/// El motivo de un archivo que no se pudo copiar al espejo, con qué hacer.
+fn error_al_copiar(e: &std::io::Error, destino: &Path) -> String {
+    let lleno = e.kind() == std::io::ErrorKind::StorageFull
+        || e.raw_os_error() == Some(if cfg!(windows) { 112 } else { 28 })
+        || resguardo_motor::restic::sin_espacio(&e.to_string().to_lowercase());
+    if lleno {
+        format!(
+            "no queda espacio en el disco del espejo ({}). Libera espacio en él o elige otra carpeta con más sitio; \
+             lo que ya está en el espejo se conserva y lo que falta se copiará en la próxima vuelta.",
+            destino.display()
+        )
+    } else {
+        format!("no se pudo copiar a {}: {e}", destino.display())
+    }
 }
 
 /// ¿Toca hoy? (pasada la hora y aún sin hacer hoy).
@@ -260,7 +280,9 @@ fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate:
     // La carpeta de destino: local, sin enlaces en el camino y de Administradores.
     crate::platform::carpeta_local_valida(&d.carpeta)?;
     let destino = Path::new(&d.carpeta);
-    if destino.exists() && !crate::platform::owned_by_admins(destino) {
+    // En pruebas (RESGUARDO_AGENT_DIR, sin administrador) la carpeta es de quien
+    // corre la prueba, como en `carpeta_privada`.
+    if destino.exists() && !crate::agent::test_mode() && !crate::platform::owned_by_admins(destino) {
         return Err("la carpeta del espejo no es de Administradores (vuelve a poner el espejo para corregirla).".into());
     }
     let r = copiar_con(origen, destino, &mut |b| guarda.progreso(Some(b), None))?;
