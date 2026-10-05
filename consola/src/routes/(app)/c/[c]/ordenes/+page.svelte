@@ -1,7 +1,7 @@
 <script lang="ts">
   // Órdenes del cliente: las que esperan su turno (con «Cancelar») y las
   // últimas de todos los equipos, con su respuesta firmada, por páginas.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { ClipboardList, RefreshCw } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
@@ -42,7 +42,7 @@
     void actual.id;
     void filtro;
     void equipo;
-    void cargar();
+    untrack(() => void cargar());
   });
   // Al día: con el canal en vivo, cuando cambia una orden; sin él, cada 10 s (sin «Cargar más» abierto).
   onMount(() => seguirCambios(() => !siguiente && enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "orden" }));

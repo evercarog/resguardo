@@ -2,7 +2,7 @@
   import { tip } from "$lib/tooltip";
   // Órdenes destructivas esperando su turno: «Pendiente: … · Cancelar».
   // Cualquiera del cliente (salvo «solo lectura») puede cancelarlas.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Clock, X } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
@@ -34,7 +34,7 @@
   // Al cambiar los pendientes del resumen (otra persona canceló o pidió algo), se recarga.
   $effect(() => {
     void actual.pendientes;
-    void cargar();
+    untrack(() => void cargar());
   });
 
   const equipo = (id?: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";

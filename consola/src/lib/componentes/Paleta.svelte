@@ -5,7 +5,7 @@
   // «Añadir equipo», «Nuevo repositorio»). Las acciones abren los mismos
   // diálogos que sus botones de siempre: la paleta no manda nada por su
   // cuenta. Flechas para moverse, Intro para ir, Escape para cerrar.
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
   import Anuncio from "./Anuncio.svelte";
   import { goto } from "$app/navigation";
@@ -175,7 +175,8 @@
     if (atajos.paleta) void tick().then(() => entrada?.focus());
   });
   $effect(() => {
-    if (atajos.paleta && actual.id) void asegurarIndice(actual.id);
+    const c = atajos.paleta ? actual.id : "";
+    if (c) untrack(() => void asegurarIndice(c));
   });
   // Al cerrar, el foco vuelve a donde estaba.
   let previo: HTMLElement | null = null;

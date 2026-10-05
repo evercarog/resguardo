@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { tip } from "$lib/tooltip";
   // Actividad del cliente: el registro encadenado de todo lo que se hace, con
   // «Verificar la cadena» (en el servidor y, para lo cargado, también aquí) y
@@ -78,7 +79,7 @@
     void importada;
     entradas = null;
     resultado = null;
-    void cargar();
+    untrack(() => void cargar());
   });
 
   async function verificar() {

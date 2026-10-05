@@ -30,7 +30,11 @@
     guardar(`equipos.filtro.${actual.id}`, f === "todos" ? "" : f);
   }
   // Los informes, para los cuadros de 14 días de cada fila.
-  $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
   const informeDe = (id: string) => (ultimos.cliente === actual.id ? ultimos.porEquipo[id] : undefined);
 
   const lista = $derived(
@@ -54,7 +58,7 @@
     const c = actual.id;
     if (!c || !puede.administrar(actual.cliente?.rol)) return;
     const cargar = () => api.preparados(c).then((x) => (preparados = x), () => {});
-    void cargar();
+    untrack(() => void cargar());
     return untrack(() => seguirCambios(() => enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "equipo" }));
   });
   // --- Acciones en bloque (solo inofensivas: copiar ahora y verificar) -------

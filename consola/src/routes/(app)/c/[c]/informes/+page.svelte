@@ -112,7 +112,11 @@
       });
     });
   });
-  $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
 
   const enRango = (v: Vuelta) => v.t >= rango.desde.getTime() && v.t < rango.hasta.getTime();
   const delPeriodo = $derived((datos ?? []).map((d) => ({ equipo: actual.equipos.find((e) => e.id === d.equipo.id) ?? d.equipo, vueltas: d.vueltas.filter(enRango) })));

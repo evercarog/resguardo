@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Notificaciones de un cliente (sus propietarios; api-servidor.md §13): por
   // dónde salen sus avisos (el correo y los canales del servidor que lo
   // incluyen), sus canales propios (un correo propio sustituye al del
@@ -24,7 +25,7 @@
   }
   $effect(() => {
     void cliente;
-    void cargar();
+    untrack(() => void cargar());
   });
 </script>
 

@@ -97,7 +97,10 @@
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
-  $effect(() => void cargarUltimos(c, actual.equipos.map((x) => x.id)));
+  $effect(() => {
+    const [cc, ids] = [c, actual.equipos.map((x) => x.id)];
+    untrack(() => void cargarUltimos(cc, ids));
+  });
   const id = $derived(page.params.e ?? "");
   const tab = $derived(page.url.searchParams.get("tab") ?? "resumen");
 
@@ -139,11 +142,12 @@
   }
   $effect(() => {
     void id;
+    void c;
     equipo = null;
-    void cargar();
+    untrack(() => void cargar());
   });
   $effect(() => {
-    if (tab === "informes" && id) void cargarInformes();
+    if (tab === "informes" && id) untrack(() => void cargarInformes());
   });
   // Al día sin recargar: con el canal en vivo, cuando cambia algo de este equipo; sin él, cada 8 s.
   $effect(() => {

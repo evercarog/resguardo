@@ -63,6 +63,9 @@ export async function pedirCodigo(api: ApiCodigos, yaTengo: CodigoAbierto | null
 export function esperaDe(e: unknown): number | null {
   const x = e as { estado?: number; cuerpo?: Record<string, unknown> } | null;
   if (x?.estado !== 429) return null;
+  // Solo el límite de códigos («cuenta» o «ip» son los generales: los explica su mensaje).
+  const limite = x.cuerpo?.limite;
+  if (typeof limite === "string" && limite !== "codigos") return null;
   const s = Number(x.cuerpo?.retry_after);
   return Number.isFinite(s) && s > 0 ? Math.ceil(s) : null;
 }

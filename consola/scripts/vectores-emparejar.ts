@@ -4,11 +4,15 @@
 // ejecuta su efecto de verdad, contando las peticiones).
 //
 //   npm run test:vectores
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { compileModule } from "svelte/compiler";
+import * as compilador from "svelte/compiler";
+// Según cómo lo cargue tsx (ESM o CommonJS), viene suelto o en `default`.
+const { compileModule } = ((compilador as { default?: typeof compilador }).default ?? compilador) as typeof compilador;
 import ts from "typescript";
+import { frenar } from "../src/lib/freno";
+import { mensajePausa, pausaTras } from "../src/lib/pausa429";
 import { codigoAlCargar, esperaDe, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "../src/lib/emparejar";
 import type { Preparado } from "../src/lib/tipos";
 
@@ -93,6 +97,18 @@ igual("menos de un minuto: 1 min", podrasPedirEn(5), "Podrás pedir otro código
 igual("una hora", podrasPedirEn(3600), "Podrás pedir otro código en 1 h.");
 cierto("el mensaje explica por qué (seguridad) y cuándo", /seguridad/.test(mensajeAlPedir(err429(600))) && /en 10 min/.test(mensajeAlPedir(err429(600))));
 igual("otro error: el del servidor", mensajeAlPedir(new Error("Sistema no válido.")), "Sistema no válido.");
+igual("el límite general no es el de códigos", esperaDe(Object.assign(new Error("Demasiadas peticiones."), { estado: 429, cuerpo: { limite: "cuenta", retry_after: 20 } })), null);
+igual("el de códigos, sí", esperaDe(Object.assign(new Error("x"), { estado: 429, cuerpo: { limite: "codigos", retry_after: 20 } })), 20);
+
+console.log("\n— Pausa tras un 429 general (lib/pausa429.ts) —");
+igual("límite por cuenta: pausa lo que diga retry_after", pausaTras(429, "GET", { limite: "cuenta", retry_after: 17 }, 1000), 18_000);
+igual("límite por IP, también en un POST", pausaTras(429, "POST", { limite: "ip", retry_after: 5 }, 0), 5_000);
+igual("límite de una acción (códigos): no para lo demás", pausaTras(429, "POST", { limite: "codigos", retry_after: 3600 }, 0), null);
+igual("servidor anterior, GET: 30 s", pausaTras(429, "GET", { error: "demasiados_intentos" }, 0), 30_000);
+igual("servidor anterior, POST: no", pausaTras(429, "POST", {}, 0), null);
+igual("como mucho 2 min", pausaTras(429, "GET", { limite: "cuenta", retry_after: 99999 }, 0), 120_000);
+igual("otro error: nada", pausaTras(500, "GET", {}, 0), null);
+cierto("el texto dice cuánto", /en 18 s/.test(mensajePausa(18_000, 0)));
 
 // --- La lista de preparados no pide en bucle ----------------------------------
 console.log("\n— Lista de preparados (lib/preparados.svelte.ts) —");
@@ -212,6 +228,87 @@ function montarAntes(pedir: (c: string) => Promise<Preparado[]>): () => void {
   const { prep } = pagina.montar(() => new Promise<Preparado[]>(() => {}), undefined);
   await Promise.race([Promise.all([prep.cargar({ pedir: () => pedir("c1") }), prep.cargar({ pedir: () => pedir("c1") })]), dormir(50)]);
   igual("dos cargas a la vez: una petición", n.peticiones, 1);
+}
+
+// --- Freno de las cargas por avisos del canal (lib/freno.ts) ----------------
+console.log("\n— Freno de las cargas de fondo (lib/freno.ts) —");
+{
+  // Un equipo que parpadea: 500 avisos en ~1 s. Con 100 ms entre cargas: unas 10, no 500.
+  let cargas = 0;
+  let aLaVez = 0;
+  let maxALaVez = 0;
+  const f = frenar(async () => {
+    cargas++;
+    maxALaVez = Math.max(maxALaVez, ++aLaVez);
+    await dormir(30);
+    aLaVez--;
+  }, 100);
+  for (let i = 0; i < 500; i++) {
+    f.pedir();
+    if (i % 25 === 0) await dormir(50);
+  }
+  await dormir(300);
+  cierto(`500 avisos seguidos: ${cargas} cargas (≤ 1 cada 100 ms)`, cargas >= 2 && cargas <= 14);
+  igual("nunca dos cargas a la vez", maxALaVez, 1);
+  const antes = cargas;
+  f.parar();
+  f.pedir();
+  await dormir(200);
+  igual("parado, no carga más", cargas, antes);
+}
+{
+  // Lo último que se pidió siempre se carga (al final), aunque llegue en medio de una carga.
+  let cargas = 0;
+  const f = frenar(async () => {
+    cargas++;
+    await dormir(50);
+  }, 0);
+  f.pedir();
+  await dormir(10);
+  f.pedir();
+  f.pedir();
+  await dormir(200);
+  igual("lo pedido durante una carga: una más al final", cargas, 2);
+}
+
+// --- Ningún $effect lanza una carga siguiendo lo que lee -------------------
+// El fallo de «Añadir equipo»: un $effect que llamaba a una carga que leía (y luego
+// escribía) estado. Toda carga que lance un efecto va dentro de `untrack(…)` o en un
+// helper que ya lo hace (seguir, seguirCambios, conectarVivo, vigilarProgreso).
+console.log("\n— Cargas lanzadas desde $effect (sin seguir lo que leen) —");
+{
+  const src = join(raiz, "src");
+  const archivos: string[] = [];
+  const recorrer = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) recorrer(p);
+      else if (/\.svelte$|\.svelte\.ts$/.test(e.name)) archivos.push(p);
+    }
+  };
+  recorrer(src);
+  const malos: string[] = [];
+  let efectos = 0;
+  for (const a of archivos) {
+    const t = readFileSync(a, "utf8");
+    for (const m of t.matchAll(/\$effect(?:\.pre)?\(/g)) {
+      // El cuerpo del efecto: hasta cerrar el paréntesis.
+      let i = m.index! + m[0].length;
+      let n = 1;
+      const ini = i;
+      while (i < t.length && n > 0) {
+        if (t[i] === "(") n++;
+        else if (t[i] === ")") n--;
+        i++;
+      }
+      efectos++;
+      const cuerpo = t.slice(ini, i);
+      // Fuera de untrack: quitamos lo que va dentro de untrack(…) y miramos si queda una carga.
+      const sinUntrack = cuerpo.replace(/untrack\(\(\)\s*=>[\s\S]*$/m, "");
+      if (/\b(void\s+)?(cargar\w*|asegurarIndice|comprobarLlaves|recargar\w*)\(/.test(sinUntrack)) malos.push(`${a.slice(raiz.length + 1)}:${t.slice(0, m.index).split("\n").length}`);
+    }
+  }
+  igual(`${efectos} efectos: ninguno lanza una carga siguiendo lo que lee`, malos, []);
 }
 
 console.log(`\n${total - fallos}/${total} bien`);

@@ -8,6 +8,7 @@
 // - Las sesiones interactivas usan espera larga (hasta 25 s por petición).
 import type * as T from "./tipos";
 import type { CodigoAbierto } from "./emparejar";
+import { mensajePausa, pausaTras } from "./pausa429";
 import { conexionOk, conexionPerdida, empezar } from "./actividad.svelte";
 
 export class ApiError extends Error {
@@ -52,7 +53,14 @@ async function pedir<R>(metodo: Metodo, ruta: string, cuerpo?: unknown, opciones
   }
 }
 
+/** Tras un 429 de los límites generales: hasta cuándo no se hacen GET (lib/pausa429.ts). */
+let pausaHasta = 0;
+
 async function pedirSinContar<R>(metodo: Metodo, ruta: string, cuerpo: unknown, opciones: { signal?: AbortSignal; sinRedirigir?: boolean }): Promise<R> {
+  if (metodo === "GET" && Date.now() < pausaHasta) {
+    // Sin ir al servidor: volver a preguntar ahora solo alargaría el bloqueo.
+    throw new ApiError("demasiados_intentos", mensajePausa(pausaHasta), 429, { error: "demasiados_intentos", retry_after: Math.ceil((pausaHasta - Date.now()) / 1000) });
+  }
   const headers: Record<string, string> = { Accept: "application/json" };
   if (metodo !== "GET") headers["X-Resguardo"] = "1";
   if (cuerpo !== undefined) headers["Content-Type"] = "application/json";
@@ -86,6 +94,8 @@ async function pedirSinContar<R>(metodo: Metodo, ruta: string, cuerpo: unknown, 
     const d = (datos ?? {}) as { error?: string; mensaje?: string };
     const codigo = d.error ?? (res.status === 401 ? "sin_sesion" : res.status === 403 ? "prohibido" : res.status === 404 ? "no_existe" : res.status === 429 ? "demasiados_intentos" : "interno");
     const err = new ApiError(codigo, d.mensaje || mensajeDe(codigo), res.status, datos as Record<string, unknown>);
+    const pausa = pausaTras(res.status, metodo, datos as Record<string, unknown> | undefined);
+    if (pausa) pausaHasta = Math.max(pausaHasta, pausa);
     if (res.status === 401 && !opciones.sinRedirigir) alPerderSesion?.(codigo);
     throw err;
   }

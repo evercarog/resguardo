@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { tip } from "$lib/tooltip";
   // Estado del cliente (docs/diseno.md §5, «Inicio»): el resumen grande con
   // lo urgente y su acción, cuatro cifras, las órdenes que esperan, la salud
@@ -100,7 +101,11 @@
 
   // El último informe de cada equipo (para los cuadros, la protección de cada
   // repositorio y lo que ocupa cada destino): compartido con otras pantallas.
-  $effect(() => void cargarInformes(c, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [c, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
   const informes = $derived(ultimos.cliente === c ? ultimos.porEquipo : {});
 
   // Las cuatro cifras de arriba.

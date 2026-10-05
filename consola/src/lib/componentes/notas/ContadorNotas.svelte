@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Señal pequeña en listas y tarjetas: el objeto tiene observaciones (con su
   // primera línea en el tooltip) o comentarios (cuántos). Nada si no tiene.
   import { MessageSquare, NotebookPen } from "@lucide/svelte";
@@ -10,7 +11,8 @@
   let { tipo, objeto }: { tipo: TipoNota; objeto: string } = $props();
 
   $effect(() => {
-    if (actual.id) void asegurarIndice(actual.id);
+    const c = actual.id;
+    if (c) untrack(() => void asegurarIndice(c));
   });
   const n = $derived(notas.disponible ? notaDe(tipo, objeto) : undefined);
   const texto = $derived.by(() => {

@@ -14,6 +14,7 @@
 // - Tras reconectar (o si el servidor dice `resync`), se refresca todo: lo que
 //   pasó mientras tanto no llegó.
 import { app } from "./estado.svelte";
+import { frenar } from "./freno";
 
 export type TipoCambio = "informe" | "progreso" | "orden" | "avisos" | "historial" | "config" | "equipo" | "resync";
 
@@ -235,56 +236,23 @@ export const tocaEquipo = (c: Cambio, equipo: string) => c.t === "resync" || !c.
  * cómo parar (para `onMount` o `$effect`).
  */
 export function seguirCambios(cargar: () => unknown, opciones: { ms: number; toca: (c: Cambio) => boolean; minEntre?: number }): () => void {
-  let ultima = Date.now();
-  // Como mucho una carga cada `minEntre` y nunca dos a la vez: los cambios que llegan
-  // seguidos (un equipo que se conecta y se cae en bucle, muchas órdenes) se juntan en
-  // una carga más al final, no en una por cambio.
-  const minEntre = opciones.minEntre ?? MIN_ENTRE_CARGAS;
-  let enCurso = false;
-  let otraVez = false;
-  let diferida: ReturnType<typeof setTimeout> | null = null;
-  let parado = false;
-  const hacer = () => {
-    if (parado) return;
-    if (enCurso) {
-      otraVez = true;
-      return;
-    }
-    const falta = ultima + minEntre - Date.now();
-    if (falta > 0) {
-      diferida ??= setTimeout(() => {
-        diferida = null;
-        hacer();
-      }, falta);
-      return;
-    }
-    ultima = Date.now();
-    enCurso = true;
-    void Promise.resolve()
-      .then(cargar)
-      .catch(() => {})
-      .finally(() => {
-        enCurso = false;
-        if (otraVez) {
-          otraVez = false;
-          hacer();
-        }
-      });
-  };
+  // Como mucho una carga cada `minEntre` y nunca dos a la vez (lib/freno.ts): los cambios
+  // que llegan seguidos (un equipo que se conecta y se cae en bucle, muchas órdenes) se
+  // juntan en una carga más al final, no en una por cambio.
+  const freno = frenar(cargar, opciones.minEntre ?? MIN_ENTRE_CARGAS);
   const dejar = alCambiar((cs) => {
-    if (cs.some((c) => c.t === "resync" || opciones.toca(c))) hacer();
+    if (cs.some((c) => c.t === "resync" || opciones.toca(c))) freno.pedir();
   });
   const t = opciones.ms
     ? setInterval(() => {
         if (!visible()) return;
         const cada = vivo.conectado ? Math.max(opciones.ms, RESPALDO_CON_VIVO) : opciones.ms;
-        if (Date.now() - ultima >= cada - 500) hacer();
+        if (Date.now() - freno.ultima() >= cada - 500) freno.pedir();
       }, opciones.ms)
     : null;
   return () => {
-    parado = true;
+    freno.parar();
     dejar();
     if (t) clearInterval(t);
-    if (diferida) clearTimeout(diferida);
   };
 }

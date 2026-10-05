@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Registro de envíos de las notificaciones (los últimos 100): qué se mandó,
   // a quién, cómo fue y, si falló o espera, por qué (sin secretos ni direcciones).
   import { History, RefreshCw } from "@lucide/svelte";
@@ -32,7 +33,7 @@
   }
   $effect(() => {
     void ambito;
-    void cargar();
+    untrack(() => void cargar());
   });
 
   const visibles = $derived(todos ? (envios ?? []) : (envios ?? []).slice(0, 15));

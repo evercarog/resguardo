@@ -15,7 +15,7 @@
   import { saludEquipo } from "$lib/salud";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { page } from "$app/state";
   import {
     ArrowLeft,
@@ -81,7 +81,11 @@
   type Paso = "origen" | "repo" | "clave" | "version" | "archivos" | "destino" | "progreso";
   let paso = $state<Paso>("origen");
   let equipoId = $state(page.url.searchParams.get("equipo") ?? "");
-  $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
   let repoId = $state(page.url.searchParams.get("repo") ?? "");
   let contrasena = $state("");
   /** Primera vez que este navegador manda una contraseña a este equipo: también la clave de administración. */
@@ -180,11 +184,13 @@
   });
   // Al llegar a la contraseña se mira si las llaves del equipo ya están fijadas aquí.
   $effect(() => {
-    if (paso === "clave" && equipo)
-      void comprobarLlaves(actual.id, equipo).then((x) => {
+    if (paso === "clave" && equipo) {
+      const [cc, eq] = [actual.id, equipo];
+      untrack(() => void comprobarLlaves(cc, eq).then((x) => {
         llavesCambiadas = x === "cambiada";
         pideAdmin = x === "sin_fijar";
-      });
+      }));
+    }
   });
 
   async function abrir(e: SubmitEvent) {

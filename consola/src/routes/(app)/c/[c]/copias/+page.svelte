@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Copias del cliente (docs/diseno.md §5): todas las copias de todos sus
   // equipos en una lista, como Equipos y Repositorios: qué copia, de qué
   // equipo, a qué repositorio y destino, cuándo (en palabras), cómo fue la
@@ -27,7 +28,11 @@
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
 
   // Los informes (la última vuelta de cada copia, lo que protege, «sin cambios»).
-  $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
   const informes = $derived(ultimos.cliente === actual.id ? ultimos.porEquipo : {});
   const filas = $derived(filasCopias(actual.equipos, informes, reloj.ahora));
 
