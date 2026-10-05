@@ -142,6 +142,78 @@ pub struct Offsite {
     /// las mismas credenciales de la subida). `enabled_at` es el de esta verificación.
     #[serde(default)]
     pub verify: Option<Verify>,
+    /// Cómo es el destino: un repositorio que ya existía, con bloqueo de
+    /// objetos o de solo añadir (v1.4x; sin nada, como siempre).
+    #[serde(default, skip_serializing_if = "DestinoExterno::normal")]
+    pub dest: DestinoExterno,
+}
+
+/// Lo que se sabe del destino de una copia externa (`cambiar_copia_externa`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DestinoExterno {
+    /// Era un repositorio que ya existía («Usar uno que ya existe»): si un día
+    /// no aparece, la subida falla en vez de crear otro vacío allí (que lo
+    /// subiría todo de nuevo).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub existing: bool,
+    /// Días de bloqueo de objetos (Object Lock de B2/S3) del destino: nada de
+    /// lo subido se puede borrar antes. La retención solo quita versiones
+    /// (`forget`, sin `prune`) y nunca las de esos últimos días.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_lock_days: Option<u32>,
+    /// Un rest-server de solo añadir: desde aquí no se puede borrar nada (la
+    /// retención la aplica el propio servidor).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub append_only: bool,
+}
+
+impl DestinoExterno {
+    pub fn normal(&self) -> bool {
+        *self == DestinoExterno::default()
+    }
+
+    /// Días de bloqueo que cuentan (0 o nada: sin bloqueo).
+    pub fn lock_days(&self) -> Option<u32> {
+        self.object_lock_days.filter(|d| *d > 0)
+    }
+}
+
+/// Días máximos de bloqueo que se aceptan (10 años).
+pub const MAX_LOCK_DAYS: u32 = 3650;
+
+/// La retención que se aplica en un destino con bloqueo de `days` días: la
+/// misma, pero guardando siempre todo lo de esos días (más uno de margen) para
+/// no intentar borrar archivos que aún están bloqueados. Si ya guardaba más
+/// (`keep_within`), se queda la suya.
+pub fn locked_policy(policy: &Policy, days: u32) -> Policy {
+    let mut p = policy.clone();
+    let minimo = days.saturating_add(1);
+    let suyos = p.keep_within.as_deref().and_then(approx_days);
+    if suyos.is_none_or(|d| d < u64::from(minimo)) {
+        p.keep_within = Some(format!("{minimo}d"));
+    }
+    p
+}
+
+/// Días aproximados de un plazo de restic («30d», «1y6m», «48h»), o `None` si no se entiende.
+fn approx_days(s: &str) -> Option<u64> {
+    let (mut horas, mut n) = (0u64, None::<u64>);
+    for c in s.trim().chars() {
+        match c {
+            '0'..='9' => n = Some(n.unwrap_or(0).checked_mul(10)?.checked_add(u64::from(c.to_digit(10)?))?),
+            'y' | 'm' | 'd' | 'h' => {
+                let v = n.take()?;
+                horas = horas.checked_add(v.checked_mul(match c {
+                    'y' => 8766,
+                    'm' => 730,
+                    'd' => 24,
+                    _ => 1,
+                })?)?;
+            }
+            _ => return None,
+        }
+    }
+    (n.is_none() && horas > 0).then_some(horas / 24)
 }
 
 /// La verificación de cada tipo de tarea: la del destino o la de su copia externa.
@@ -1245,6 +1317,53 @@ pub fn prepare_destination(src: &Access, dest: &Access) -> Result<&'static str, 
     }
 }
 
+/// Antes de cada subida: el destino tiene que existir. Uno nuevo se crea la
+/// primera vez (con los parámetros de troceado del origen); uno que ya
+/// existía («Usar uno que ya existe») nunca se vuelve a crear: si no aparece,
+/// es que algo cambió (otra dirección, otro bucket) y crear uno vacío lo
+/// subiría todo de nuevo.
+pub fn ensure_destination(src: &Access, dest: &Access, existing: bool) -> Result<&'static str, String> {
+    if !existing {
+        return prepare_destination(src, dest);
+    }
+    let probe = restic::run_raw(dest, &["cat", "config", "--no-lock"], restic::CHECK_TIMEOUT)?;
+    match probe.code {
+        Some(0) => Ok("existing"),
+        Some(10) => Err(MISSING_EXISTING.into()),
+        code => Err(restic::exit_error(code, &probe.stderr)),
+    }
+}
+
+pub const MISSING_EXISTING: &str = "El repositorio de la copia externa (uno que ya existía) no aparece en su destino: revisa la dirección y las credenciales. \
+                                    No se crea otro allí para no tener que subirlo todo de nuevo.";
+
+/// El polinomio de troceado de un repositorio (`restic cat config`): dos
+/// repositorios con el mismo trocean igual los archivos y comparten los bloques.
+pub fn chunker_polynomial(acc: &Access) -> Result<String, String> {
+    let out = restic::run_raw(acc, &["cat", "config", "--no-lock"], restic::CHECK_TIMEOUT)?;
+    if out.code != Some(0) {
+        return Err(restic::exit_error(out.code, &out.stderr));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let json = text.lines().skip_while(|l| !l.trim_start().starts_with('{')).collect::<Vec<_>>().join("\n");
+    let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| format!("Respuesta inesperada de restic: {e}"))?;
+    v["chunker_polynomial"].as_str().map(str::to_string).ok_or_else(|| "Respuesta inesperada de restic: falta el troceado.".into())
+}
+
+/// ¿Ya está esa versión del origen en el destino? Como `restic copy`: por su
+/// id o por el de la versión de la que es copia (`original`). Así una versión
+/// traída de otro repositorio (`copiar_historial`) que ya se subió desde
+/// aquel no se cuenta como pendiente.
+fn already_in(present: &std::collections::HashSet<String>, s: &restic::Snapshot) -> bool {
+    present.contains(&s.id) || s.original.as_ref().is_some_and(|o| present.contains(o))
+}
+
+/// Cuántas versiones no se pudieron quitar en un `restic forget` (cada una sale
+/// como «unable to remove snapshots/…» y restic termina igual con 0).
+fn forget_blocked(text: &str) -> usize {
+    text.lines().filter(|l| l.to_lowercase().contains("unable to remove")).count()
+}
+
 fn failed(mut record: RunRecord, message: String) -> RunRecord {
     record.result = "error".into();
     record.message = message;
@@ -1265,9 +1384,21 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
     // conservaría (calculado por restic sobre el origen) y que aún no están en
     // el destino. Si no, cada subida volvería a subir las que la retención del
     // destino ya quitó, una y otra vez.
-    let policy = offsite.retention.as_ref().filter(|p| !p.is_empty());
+    // Con bloqueo de objetos, la retención de allí guarda además todo lo de esos días.
+    let policy: Option<Policy> = offsite.retention.as_ref().filter(|p| !p.is_empty()).map(|p| match offsite.dest.lock_days() {
+        Some(days) => locked_policy(p, days),
+        None => p.clone(),
+    });
+    // Hacia un destino de la consola (`cambiar_copia_externa`), que el agente
+    // crea la primera vez. Las de la app de escritorio ya lo traían creado.
+    if offsite.provider.starts_with("destino:") {
+        report(&TaskProgress::stage("Comprobando el destino…"));
+        if let Err(e) = ensure_destination(&src, &dest, offsite.dest.existing) {
+            return failed(record, e);
+        }
+    }
     report(&TaskProgress::stage("Calculando qué versiones subir…"));
-    let wanted: Option<std::collections::HashSet<String>> = match policy {
+    let wanted: Option<std::collections::HashSet<String>> = match &policy {
         None => None,
         Some(policy) => match crate::retention::preview(&src, policy) {
             Ok(p) => Some(p.items.into_iter().filter(|i| i.keep).map(|i| i.snapshot.id).collect()),
@@ -1282,8 +1413,16 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
     // retención de allí conservaría), de la más antigua a la más reciente. En ese
     // orden (restic respeta el de los argumentos) la primera sube casi todo y las
     // demás solo sus cambios: su «datos añadidos» sirve de peso para el progreso.
+    let mut skipped = 0usize;
     let mut todo: Vec<restic::Snapshot> = match restic::snapshots(&src) {
-        Ok(list) => list.into_iter().filter(|s| !present.contains(&s.id) && wanted.as_ref().is_none_or(|w| w.contains(&s.id))).collect(),
+        Ok(list) => list
+            .into_iter()
+            .filter(|s| {
+                let ya = already_in(&present, s);
+                skipped += usize::from(ya);
+                !ya && wanted.as_ref().is_none_or(|w| w.contains(&s.id))
+            })
+            .collect(),
         Err(e) => return failed(record, e),
     };
     todo.sort_by(|a, b| a.time.cmp(&b.time));
@@ -1360,6 +1499,14 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
                 1 => "1 copia subida.".into(),
                 n => format!("{n} copias subidas."),
             };
+            // La primera subida a un repositorio que ya existía: lo que ya estaba no se repite.
+            if copied.max(started) > 0 && skipped > 0 {
+                record.message.pop();
+                record.message.push_str(&match skipped {
+                    1 => " (1 ya estaba en el destino).".to_string(),
+                    n => format!(" ({n} ya estaban en el destino)."),
+                });
+            }
             record.files_new = Some(copied.max(started));
         }
         Ok(out) => {
@@ -1378,10 +1525,14 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
 
     // Retención en el destino (el origen la gestiona el servidor). Con la subida
     // frenada no se borra nada allí: las versiones anteriores al cambio quedan a salvo.
-    if held && offsite.retention.as_ref().is_some_and(|p| !p.is_empty()) {
+    if held && policy.is_some() {
         record.message.push_str(" Retención no aplicada: la subida está frenada por un cambio inusual.");
     }
-    if let Some(policy) = offsite.retention.as_ref().filter(|p| !p.is_empty() && !held) {
+    // En un servidor de solo añadir no se puede borrar nada desde aquí.
+    if offsite.dest.append_only && policy.is_some() && !held {
+        record.message.push_str(" Retención no aplicada aquí: el destino es de solo añadir (la aplica el propio servidor).");
+    }
+    if let Some(policy) = policy.as_ref().filter(|_| !held && !offsite.dest.append_only) {
         report(&TaskProgress {
             stage: "Aplicando la retención en el repositorio…".into(),
             done: copied,
@@ -1389,16 +1540,40 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
             percent: Some(1.0),
             ..Default::default()
         });
-        let mut args: Vec<String> = vec!["forget".into(), "--prune".into(), "--retry-lock".into(), "30m".into()];
+        let lock = offsite.dest.lock_days();
+        // Con bloqueo de objetos, sin `prune`: borraría (o reescribiría) datos
+        // que aún no se pueden borrar y, al no poder, solo gastaría subida.
+        let mut args: Vec<String> = vec!["forget".into()];
+        if lock.is_none() {
+            args.push("--prune".into());
+        }
+        args.extend(["--retry-lock".into(), "30m".into()]);
         args.extend(policy.args());
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        match restic::run_raw(&dest, &refs, TASK_TIMEOUT) {
-            Ok(out) if out.code == Some(0) => record.message.push_str(" Retención aplicada en el repositorio."),
-            Ok(out) => {
+        match (restic::run_raw(&dest, &refs, TASK_TIMEOUT), lock) {
+            (Ok(out), None) if out.code == Some(0) => record.message.push_str(" Retención aplicada en el repositorio."),
+            (Ok(out), Some(days)) if out.code == Some(0) => {
+                record.message.push_str(&format!(
+                    " Retención aplicada sin liberar espacio (el destino tiene bloqueo de {days} días: se quitan versiones antiguas, sus datos se quedan)."
+                ));
+                match forget_blocked(&out.stderr) {
+                    0 => {}
+                    1 => record.message.push_str(" 1 versión antigua sigue bloqueada: se quitará cuando venza su bloqueo."),
+                    n => record.message.push_str(&format!(" {n} versiones antiguas siguen bloqueadas: se quitarán cuando venza su bloqueo.")),
+                }
+            }
+            (Ok(out), Some(days)) => {
+                record.result = "warning".into();
+                record.message.push_str(&format!(
+                    " La retención en el destino no se pudo aplicar (tiene bloqueo de {days} días; lo subido está a salvo): {}",
+                    restic::exit_error(out.code, &out.stderr)
+                ));
+            }
+            (Ok(out), None) => {
                 record.result = "warning".into();
                 record.message.push_str(&format!(" La retención en el repositorio falló: {}", restic::exit_error(out.code, &out.stderr)));
             }
-            Err(e) => {
+            (Err(e), _) => {
                 record.result = "warning".into();
                 record.message.push_str(&format!(" La retención en el repositorio falló: {e}"));
             }
@@ -1467,6 +1642,7 @@ mod tests {
             enabled_at: hace_rato,
             guard: None,
             verify: None,
+            dest: Default::default(),
         });
         let now = at("2026-09-30 10:30");
         let mut config = AgentConfig { repos: vec![repo], ..Default::default() };
@@ -1517,6 +1693,7 @@ mod tests {
             enabled_at: t("2026-10-01 06:00").to_rfc3339(),
             guard: None,
             verify: None,
+            dest: Default::default(),
         });
         let entry = |finished: &str, snap: Option<&str>, unchanged: bool, result: &str| crate::history::Entry {
             kind: "backup".into(),
@@ -1661,6 +1838,7 @@ mod tests {
             enabled_at: hace_rato.clone(),
             guard: None,
             verify: Some(Verify { schedule: Schedule::Hours { every: 1 }, subset_percent: 0, enabled_at: hace_rato, rotate_parts: 3 }),
+            dest: Default::default(),
         });
         let now = t("2026-10-01 10:30");
         let mut config = AgentConfig { repos: vec![repo], ..Default::default() };
@@ -1723,6 +1901,7 @@ mod tests {
             enabled_at: t("2026-10-01 10:00").to_rfc3339(),
             guard: None,
             verify: None,
+            dest: Default::default(),
         });
         config.repos.push(origen);
         assert!(!kinds(&config, &mut state).contains(&"restore_test"));
@@ -1784,5 +1963,234 @@ mod tests {
         assert_eq!(record.result, "ok", "{}", record.message);
         assert!(record.message.starts_with("Parte 1 de 2 verificada sin errores"), "{}", record.message);
         assert!(stages.iter().any(|s| s.contains("la parte 1 de 2")), "{stages:?}");
+    }
+
+    #[test]
+    fn destino_externo_y_bloqueo() {
+        // Sin los campos nuevos se lee y se escribe como siempre.
+        let o: Offsite =
+            serde_json::from_str(r#"{"location":"b2:cubo:siigo","provider":"destino:nube","schedule":{"kind":"daily","time":"21:00"},"enabled_at":"x"}"#)
+                .unwrap();
+        assert!(o.dest.normal() && o.dest.lock_days().is_none());
+        assert!(!serde_json::to_string(&o).unwrap().contains(r#""dest":"#), "un agente anterior la lee igual");
+        let mut o2 = o.clone();
+        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false };
+        let t = serde_json::to_string(&o2).unwrap();
+        assert!(t.contains(r#""dest":{"existing":true,"object_lock_days":30}"#), "{t}");
+        assert_eq!(serde_json::from_str::<Offsite>(&t).unwrap(), o2);
+        assert_eq!(DestinoExterno { object_lock_days: Some(0), ..Default::default() }.lock_days(), None);
+
+        // Con bloqueo, la retención guarda siempre lo de esos días (y uno más).
+        let p = Policy { keep_last: 1, ..Default::default() };
+        assert_eq!(locked_policy(&p, 30).keep_within.as_deref(), Some("31d"));
+        assert!(locked_policy(&p, 30).args().windows(2).any(|w| w == ["--keep-within", "31d"]), "{:?}", locked_policy(&p, 30).args());
+        // Si ya guardaba más, se queda la suya; si menos, la del bloqueo.
+        let mas = Policy { keep_within: Some("1y".into()), ..Default::default() };
+        assert_eq!(locked_policy(&mas, 30).keep_within.as_deref(), Some("1y"));
+        let menos = Policy { keep_within: Some("7d".into()), ..Default::default() };
+        assert_eq!(locked_policy(&menos, 30).keep_within.as_deref(), Some("31d"));
+        assert_eq!(approx_days("1y6m"), Some(547));
+        assert_eq!(approx_days("48h"), Some(2));
+        assert_eq!(approx_days("x"), None);
+
+        // Lo que dice restic al no poder quitar versiones bloqueadas (y sigue con 0).
+        let salida = "Applying Policy: keep 1 latest snapshots\nunable to remove snapshot/1a2b3c4d from the repository\n\
+                      unable to remove snapshot/5e6f7a8b from the repository\n[0:00] 100.00%  2 / 2 files deleted";
+        assert_eq!(forget_blocked(salida), 2);
+        assert_eq!(forget_blocked("removed snapshot/1a2b3c4d"), 0);
+    }
+
+    #[test]
+    fn versiones_ya_subidas_desde_otro_repositorio() {
+        let snap = |id: &str, original: Option<&str>| {
+            serde_json::from_value::<restic::Snapshot>(
+                serde_json::json!({ "id": id, "short_id": id, "time": "2026-01-01T00:00:00Z", "hostname": "PC", "original": original }),
+            )
+            .unwrap()
+        };
+        // En el destino: la copia de la versión «a1» del repositorio antiguo.
+        let present: std::collections::HashSet<String> = ["d1".to_string(), "a1".to_string()].into();
+        // En el nuevo: la misma versión traída del antiguo (`copiar_historial`) y una nueva.
+        assert!(already_in(&present, &snap("c1", Some("a1"))));
+        assert!(!already_in(&present, &snap("c2", None)));
+        assert!(already_in(&present, &snap("d1", None)));
+    }
+
+    /// Datos que no se comprimen (para medir lo que se sube de verdad).
+    fn aleatorios(semilla: u64, n: usize) -> Vec<u8> {
+        let mut x = semilla.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        (0..n)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 24) as u8
+            })
+            .collect()
+    }
+
+    /// Lo que ocupan los datos de un repositorio local (su carpeta `data`).
+    fn tamano_datos(repo: &std::path::Path) -> u64 {
+        fn suma(p: &std::path::Path) -> u64 {
+            fs::read_dir(p)
+                .map(|d| d.flatten().map(|e| if e.path().is_dir() { suma(&e.path()) } else { e.metadata().map(|m| m.len()).unwrap_or(0) }).sum())
+                .unwrap_or(0)
+        }
+        suma(&repo.join("data"))
+    }
+
+    fn ok(acc: &Access, args: &[&str]) {
+        let out = restic::run_raw(acc, args, Duration::from_secs(300)).unwrap();
+        assert_eq!(out.code, Some(0), "restic {args:?}: {}", out.stderr);
+    }
+
+    /// `restic -r DESTINO <args>` leyendo de ORIGEN (como `copy_access`).
+    fn ok_desde(src: &Access, dest: &Access, args: &[&str]) {
+        let mut both = dest.clone();
+        both.env.push(("RESTIC_FROM_PASSWORD".into(), src.password.clone()));
+        let mut a: Vec<&str> = args.to_vec();
+        a.extend(["--from-repo", src.location.as_str()]);
+        ok(&both, &a);
+    }
+
+    fn base_prueba(nombre: &str) -> std::path::PathBuf {
+        let b = std::env::temp_dir().join(format!("resguardo-externa-{nombre}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&b);
+        fs::create_dir_all(b.join("datos")).unwrap();
+        b
+    }
+
+    fn externa(dest: &std::path::Path, existing: bool, retention: Option<Policy>, lock: Option<u32>) -> Offsite {
+        Offsite {
+            location: dest.display().to_string(),
+            provider: "destino:nube".into(),
+            region: None,
+            schedule: Schedule::Daily { time: "21:00".into() },
+            retention,
+            limit_upload_kib: None,
+            target_name: Some("Nube".into()),
+            enabled_at: Local::now().to_rfc3339(),
+            guard: None,
+            verify: None,
+            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false },
+        }
+    }
+
+    /// El caso de la subida a la nube de la app de escritorio: el repositorio
+    /// antiguo ya se subió (`restic copy`) a la nube; se movió a un almacén
+    /// (repositorio nuevo con su troceado y todo su historial traído) y la
+    /// copia externa del nuevo va a ese mismo repositorio de la nube. Solo
+    /// sube lo nuevo: ni las versiones traídas (ya están allí, por `original`)
+    /// ni sus datos (mismos bloques).
+    #[test]
+    fn copia_externa_a_un_repositorio_que_ya_existe() {
+        if restic::version().is_err() {
+            return; // sin restic
+        }
+        const MIB: usize = 1 << 20;
+        let b = base_prueba("existente");
+        let datos = b.join("datos");
+        fs::write(datos.join("contabilidad.bin"), aleatorios(1, 3 * MIB)).unwrap();
+        let d = datos.display().to_string();
+        // El repositorio antiguo, con una versión.
+        let antiguo = Access::new(b.join("antiguo").display().to_string(), "clave del antiguo");
+        ok(&antiguo, &["init"]);
+        ok(&antiguo, &["backup", "--host", "PC-CONTABLE", "--time", "2026-01-10 10:00:00", &d]);
+        // Su subida a la nube: su propio troceado, otra contraseña.
+        let nube_dir = b.join("nube");
+        let nube = Access::new(nube_dir.display().to_string(), "clave de la nube");
+        ok_desde(&antiguo, &nube, &["init", "--copy-chunker-params"]);
+        ok_desde(&antiguo, &nube, &["copy"]);
+        let primera = tamano_datos(&nube_dir);
+        assert!(primera >= 3 * MIB as u64, "la primera subida lo lleva todo: {primera}");
+        // Otra vez `restic copy` sin nada nuevo: no sube nada ni repite la versión.
+        ok_desde(&antiguo, &nube, &["copy"]);
+        assert_eq!(tamano_datos(&nube_dir), primera);
+        assert_eq!(restic::snapshots(&nube).unwrap().len(), 1);
+        // El nuevo (en el almacén), con el troceado del antiguo y su historial.
+        let nuevo = Access::new(b.join("nuevo").display().to_string(), "clave del nuevo");
+        ok_desde(&antiguo, &nuevo, &["init", "--copy-chunker-params"]);
+        ok_desde(&antiguo, &nuevo, &["copy"]);
+        // Una copia nueva en el almacén: 1 MiB nuevo.
+        fs::write(datos.join("facturas.bin"), aleatorios(2, MIB)).unwrap();
+        ok(&nuevo, &["backup", "--host", "PC-CONTABLE", &d]);
+
+        let repo = AgentRepo { location: nuevo.location.clone(), ..crate::agent::tests::repo_cada_hora() };
+        let secret = Secret {
+            password: nuevo.password.clone(),
+            offsite_password: Some(nube.password.clone()),
+            offsite_location: Some(nube.location.clone()),
+            ..Default::default()
+        };
+        let o = externa(&nube_dir, true, None, None);
+        let mut etapas = Vec::new();
+        let rec = offsite_repo(&repo, &secret, &o, false, &mut |p: &TaskProgress| etapas.push(p.clone()));
+        assert_eq!(rec.result, "ok", "{}", rec.message);
+        assert_eq!(rec.message, "1 copia subida (1 ya estaba en el destino).");
+        assert_eq!(restic::snapshots(&nube).unwrap().len(), 2, "la traída no se repite");
+        let anadido = tamano_datos(&nube_dir) - primera;
+        assert!(anadido >= MIB as u64 && anadido < (MIB + MIB / 2) as u64, "solo lo nuevo (≈1 MiB): {anadido}");
+        // El progreso contaba solo la que faltaba, con su peso estimado.
+        assert!(etapas.iter().any(|p| p.total == Some(1) && p.bytes_total.is_some_and(|t| t >= MIB as u64)), "{etapas:?}");
+        // restic mismo tampoco la repite (`copy` de todo).
+        ok_desde(&nuevo, &nube, &["copy"]);
+        assert_eq!(restic::snapshots(&nube).unwrap().len(), 2);
+        // Al día: nada nuevo.
+        let rec = offsite_repo(&repo, &secret, &o, false, &mut |_| {});
+        assert_eq!(rec.message, "Nada nuevo que subir: el repositorio ya estaba al día.");
+        // Si el que ya existía desaparece (otra dirección…), falla y no crea otro vacío.
+        fs::rename(&nube_dir, b.join("nube-movida")).unwrap();
+        let rec = offsite_repo(&repo, &secret, &o, false, &mut |_| {});
+        assert_eq!((rec.result.as_str(), rec.message.as_str()), ("error", MISSING_EXISTING));
+        assert!(!nube_dir.exists());
+        // Uno nuevo (no «existente») sí se crea la primera vez, con el troceado del origen.
+        let rec = offsite_repo(&repo, &secret, &externa(&nube_dir, false, None, None), false, &mut |_| {});
+        assert_eq!(rec.result, "ok", "{}", rec.message);
+        assert_eq!(chunker_polynomial(&nube).unwrap(), chunker_polynomial(&nuevo).unwrap());
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    /// Con bloqueo de objetos: la retención del destino quita versiones
+    /// (`forget`) pero no hace `prune` (no libera espacio) y nunca quita las de
+    /// los días bloqueados. Sin bloqueo, `forget --prune` sí libera.
+    #[test]
+    fn retencion_con_bloqueo_de_objetos() {
+        if restic::version().is_err() {
+            return;
+        }
+        const MIB: usize = 1 << 20;
+        let b = base_prueba("bloqueo");
+        let datos = b.join("datos");
+        let d = datos.display().to_string();
+        let origen = Access::new(b.join("origen").display().to_string(), "clave del origen");
+        ok(&origen, &["init"]);
+        let hace = |dias: i64| (Local::now() - chrono::Duration::days(dias)).format("%Y-%m-%d %H:%M:%S").to_string();
+        for (i, cuando) in [hace(400), hace(5), hace(0)].iter().enumerate() {
+            fs::write(datos.join("datos.bin"), aleatorios(10 + i as u64, MIB)).unwrap();
+            ok(&origen, &["backup", "--host", "PC", "--time", cuando, &d]);
+        }
+        let repo = AgentRepo { location: origen.location.clone(), ..crate::agent::tests::repo_cada_hora() };
+        let ultima = Policy { keep_last: 1, ..Default::default() };
+        for (lock, quedan) in [(Some(30), 2usize), (None, 1)] {
+            let nube_dir = b.join(format!("nube-{}", lock.unwrap_or(0)));
+            let nube = Access::new(nube_dir.display().to_string(), "clave del origen");
+            let secret = Secret { password: origen.password.clone(), offsite_location: Some(nube.location.clone()), ..Default::default() };
+            // Primero se sube todo (sin retención propia) …
+            let rec = offsite_repo(&repo, &secret, &externa(&nube_dir, false, None, lock), false, &mut |_| {});
+            assert_eq!((rec.result.as_str(), rec.message.as_str()), ("ok", "3 copias subidas."));
+            let todo = tamano_datos(&nube_dir);
+            // … y después, con «la última»: lo de los 30 días bloqueados se queda.
+            let rec = offsite_repo(&repo, &secret, &externa(&nube_dir, false, Some(ultima.clone()), lock), false, &mut |_| {});
+            assert_eq!(rec.result, "ok", "{}", rec.message);
+            assert_eq!(restic::snapshots(&nube).unwrap().len(), quedan, "{lock:?}");
+            if lock.is_some() {
+                assert!(rec.message.contains("sin liberar espacio") && rec.message.contains("bloqueo de 30 días"), "{}", rec.message);
+                assert_eq!(tamano_datos(&nube_dir), todo, "sin prune: no se borra ningún dato");
+            } else {
+                assert!(rec.message.contains("Retención aplicada en el repositorio."), "{}", rec.message);
+                assert!(tamano_datos(&nube_dir) < todo - MIB as u64, "con prune se libera");
+            }
+        }
+        let _ = fs::remove_dir_all(&b);
     }
 }

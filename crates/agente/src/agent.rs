@@ -2582,6 +2582,7 @@ pub mod tests {
                 guard: None,
                 // También se verifica la copia externa (parte 1 de 2, con las credenciales de la subida).
                 verify: Some(crate::tasks::Verify { schedule: Schedule::Hours { every: 1 }, subset_percent: 0, enabled_at: hace_2h.clone(), rotate_parts: 2 }),
+                dest: Default::default(),
             }),
             None,
         )
