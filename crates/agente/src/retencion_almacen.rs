@@ -322,10 +322,6 @@ fn versiones_del_repo(acc: &crate::restic::Access) -> Result<Vec<crate::restic::
     serde_json::from_slice(&out.stdout).map_err(|_| "Respuesta inesperada de restic al listar las versiones.".to_string())
 }
 
-fn contar(acc: &crate::restic::Access) -> Result<usize, String> {
-    versiones_del_repo(acc).map(|v| v.len())
-}
-
 // ---------- Qué versiones quitar (sin fiarse de la hora que pone el equipo) ----------
 //
 // La hora de cada versión la escribe el equipo dueño en el repositorio, y un
@@ -392,11 +388,11 @@ pub struct Plan {
     pub sospechosas: usize,
 }
 
-type Hora = DateTime<chrono::FixedOffset>;
-type Hueco = fn(&Hora) -> i64;
+pub(crate) type Hora = DateTime<chrono::FixedOffset>;
+pub(crate) type Hueco = fn(&Hora) -> i64;
 
 /// Los huecos de restic (`ymdh`, `ymd`, `yw`, `ym`, `y`), en la hora de la propia versión.
-const HUECOS: [Hueco; 5] = [
+pub(crate) const HUECOS: [Hueco; 5] = [
     |t| (i64::from(t.year()) * 10_000 + i64::from(t.month()) * 100 + i64::from(t.day())) * 100 + i64::from(t.hour()),
     |t| i64::from(t.year()) * 10_000 + i64::from(t.month()) * 100 + i64::from(t.day()),
     |t| i64::from(t.iso_week().year()) * 100 + i64::from(t.iso_week().week()),
@@ -510,9 +506,25 @@ fn comprobar_clave(carpeta: &Path, e: &mut Entrada) -> Result<bool, String> {
 pub const SIN_CLAVE: &str = "La clave del almacén aún no abre este repositorio: falta que el equipo dueño la añada \
                              (en la consola, vuelve a guardar «Retención en el almacén» con el equipo encendido).";
 
+/// Lo que pasó en una vuelta, para la bitácora («Retención en detalle»).
+#[derive(Default)]
+pub struct Detalle {
+    /// Las versiones antes y después (`None` si no se pudieron leer).
+    pub antes: Option<Vec<crate::restic::Snapshot>>,
+    pub despues: Option<Vec<crate::restic::Snapshot>>,
+    pub motivos: std::collections::HashMap<String, Option<String>>,
+    pub liberado: Option<u64>,
+    pub sospechosas: usize,
+}
+
 /// Aplica la retención de `e` en `carpeta`: comprueba la clave, `forget --prune`
 /// con su regla y, si se pidió, `check`. Devuelve el mensaje (sin rutas).
 pub fn ejecutar(carpeta: &Path, e: &mut Entrada) -> Result<String, String> {
+    ejecutar_con(carpeta, e, &mut Detalle::default())
+}
+
+/// Lo mismo, apuntando en `d` lo que había, lo que quedó y lo que liberó.
+pub fn ejecutar_con(carpeta: &Path, e: &mut Entrada, d: &mut Detalle) -> Result<String, String> {
     if !comprobar_clave(carpeta, e)? {
         return Err(SIN_CLAVE.into());
     }
@@ -521,6 +533,15 @@ pub fn ejecutar(carpeta: &Path, e: &mut Entrada) -> Result<String, String> {
     let antes = lista.len();
     let versiones: Vec<Version> = lista.iter().map(|s| Version::de(s, carpeta)).collect();
     let plan = planear(&versiones, &e.retencion);
+    // Por qué se va cada una (solo las de confianza: las sospechosas no cuentan).
+    let candidatas: Vec<crate::retencion_registro::Candidata> = versiones
+        .iter()
+        .filter(|v| !v.sospechosa())
+        .filter_map(|v| Some(crate::retencion_registro::Candidata { id: v.id.clone(), grupo: v.grupo.clone(), hora: v.hora? }))
+        .collect();
+    d.motivos = crate::retencion_registro::motivos(&candidatas, &e.retencion);
+    d.sospechosas = plan.sospechosas;
+    d.antes = Some(lista);
     if !plan.quitar.is_empty() {
         // Por ids (lo decidido arriba), en tandas; después, un solo `prune`.
         for tanda in plan.quitar.chunks(100) {
@@ -528,15 +549,21 @@ pub fn ejecutar(carpeta: &Path, e: &mut Entrada) -> Result<String, String> {
             args.extend(tanda.iter().map(String::as_str));
             let out = restic(&acc, &args)?;
             if out.code != Some(0) {
+                d.despues = versiones_del_repo(&acc).ok();
                 return Err(format!("No se pudo aplicar la retención: {}", error_publico(&out)));
             }
         }
         let out = restic(&acc, &["prune", "--retry-lock", "30m"])?;
+        d.despues = versiones_del_repo(&acc).ok();
         if out.code != Some(0) {
             return Err(format!("No se pudo aplicar la retención: {}", error_publico(&out)));
         }
+        d.liberado = crate::retencion_registro::liberado(&String::from_utf8_lossy(&out.stdout));
+    } else {
+        d.despues = versiones_del_repo(&acc).ok();
+        d.liberado = Some(0);
     }
-    let despues = contar(&acc).unwrap_or(antes);
+    let despues = d.despues.as_ref().map_or(antes, Vec::len);
     e.versiones = Some(despues);
     let quitadas = antes.saturating_sub(despues);
     let mut m = match quitadas {
@@ -630,8 +657,13 @@ pub fn configurar(c: &Value) -> Result<String, String> {
 /// Repositorios con la retención aplicándose ahora (orden o horario).
 static EN_MARCHA: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// Aplica ahora la regla guardada de `usuario/repo` y anota el resultado.
+/// Aplica ahora la regla guardada de `usuario/repo` y anota el resultado (pedida con una orden).
 pub fn aplicar(usuario: &str, repo: &str) -> Result<String, String> {
+    aplicar_por(usuario, repo, "orden")
+}
+
+/// Lo mismo, diciendo en la bitácora quién la aplicó: `"orden"` o `"automatica"` (su horario).
+pub fn aplicar_por(usuario: &str, repo: &str, por: &'static str) -> Result<String, String> {
     let carpeta = carpeta_en_este_almacen(usuario, repo)?;
     let mut e = cargar()
         .into_iter()
@@ -645,7 +677,29 @@ pub fn aplicar(usuario: &str, repo: &str) -> Result<String, String> {
         }
         en.push(clave.clone());
     }
-    let r = ejecutar(&carpeta, &mut e);
+    let inicio = Local::now();
+    let mut detalle = Detalle::default();
+    let r = ejecutar_con(&carpeta, &mut e, &mut detalle);
+    if let Some(antes) = &detalle.antes {
+        crate::retencion_registro::anotar(&crate::retencion_registro::Vuelta {
+            origen: "almacen",
+            por,
+            repo,
+            usuario: Some(usuario),
+            regla: Some(&e.retencion),
+            inicio,
+            antes,
+            despues: detalle.despues.as_deref(),
+            motivos: &detalle.motivos,
+            copias: &Default::default(),
+            liberado: detalle.liberado,
+            sospechosas: Some(detalle.sospechosas),
+            resultado: match &r {
+                Ok(m) => Ok(m.as_str()),
+                Err(m) => Err(m.as_str()),
+            },
+        });
+    }
     if let Ok(mut en) = EN_MARCHA.lock() {
         en.retain(|x| *x != clave);
     }
@@ -698,7 +752,7 @@ pub fn si_toca() {
     }
     std::thread::spawn(move || {
         for (u, r) in tocan {
-            let _ = aplicar(&u, &r);
+            let _ = aplicar_por(&u, &r, "automatica");
         }
         HILO.store(false, std::sync::atomic::Ordering::SeqCst);
     });

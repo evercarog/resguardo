@@ -61,6 +61,7 @@ pub mod protection;
 pub mod remote;
 pub mod restore_test;
 pub mod retencion_almacen;
+pub mod retencion_registro;
 pub mod s3list;
 pub mod server;
 #[cfg(test)]
