@@ -360,11 +360,17 @@ export class SesionE2E {
     }
   }
 
-  async pedir(op: string, args: Record<string, unknown> = {}): Promise<any> {
+  /** Lo que el equipo dice que admite en esta sesión (`lista.ops`). */
+  get ops(): string[] | null {
+    return this.recibidos.find((m) => m.op === "lista")?.ops ?? null;
+  }
+
+  /** Con `conError`, devuelve también una respuesta con `error` (para comprobar las validaciones). */
+  async pedir(op: string, args: Record<string, unknown> = {}, conError = false): Promise<any> {
     const i = ++this.i;
     await this.consola.ok("POST", `/api/clientes/${this.c.id}/sesiones/${this.id}/mensajes`, { cifrado: aB64(cifrarMensaje(this.kC, this.id, { op, ...args, i })) });
     const m = await esperar(`la respuesta a «${op}»`, () => this.recibidos.find((x) => x.re === i), { plazo: 60_000, cada: 200 });
-    comprobar(!m.error, `«${op}» respondió con error: ${m.error}`);
+    if (!conError) comprobar(!m.error, `«${op}» respondió con error: ${m.error}`);
     return m;
   }
 
