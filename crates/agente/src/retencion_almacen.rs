@@ -42,14 +42,31 @@ const ARCHIVO: &str = "almacen-retencion.bin";
 const LIMITE: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
 
 /// Cuándo se aplica: días de la semana (1 = lunes … 7 = domingo) y hora local.
+/// v1.3x (`admite: "retencion_almacen_horario"`): o, con `reglas`, cuando toque
+/// cualquiera de ellas (las de los horarios de copia); `dias` y `hora` siguen
+/// para un agente anterior (que no conoce `reglas` y las ignora).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Horario {
     pub dias: Vec<u8>,
     pub hora: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reglas: Vec<crate::gestion_v2::Regla>,
 }
 
 impl Horario {
+    /// Con reglas: su horario del motor.
+    fn plan(&self) -> Option<crate::plans::PlanSchedule> {
+        if self.reglas.is_empty() {
+            return None;
+        }
+        crate::gestion_v2::Horario { dias: vec![], horas: vec![], reglas: self.reglas.clone() }.plan_schedule().ok()
+    }
+
     fn valido(&self) -> Result<(), String> {
+        if !self.reglas.is_empty() {
+            let plan = crate::gestion_v2::Horario { dias: vec![], horas: vec![], reglas: self.reglas.clone() }.plan_schedule()?;
+            return plan.validate();
+        }
         if self.dias.is_empty() || self.dias.iter().any(|d| !(1..=7).contains(d)) {
             return Err("Elige al menos un día (1 = lunes … 7 = domingo).".into());
         }
@@ -58,6 +75,9 @@ impl Horario {
 
     /// «los domingos a las 03:00», «cada día a las 03:00», «lunes y jueves a las 03:00».
     pub fn texto(&self) -> String {
+        if !self.reglas.is_empty() {
+            return if self.reglas.len() == 1 { "según su horario".into() } else { format!("según su horario ({} reglas)", self.reglas.len()) };
+        }
         const NOMBRES: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábados", "domingos"];
         let mut dias = self.dias.clone();
         dias.sort();
@@ -84,11 +104,17 @@ impl Horario {
 
     /// El último hueco que ya pasó (como mucho, hace una semana).
     pub fn ultimo(&self, ahora: DateTime<Local>) -> Option<DateTime<Local>> {
+        if !self.reglas.is_empty() {
+            return self.plan()?.latest_slot(ahora);
+        }
         (0..=7).filter_map(|atras| self.hueco_de(ahora.date_naive() - Duration::days(atras))).find(|h| *h <= ahora)
     }
 
     /// El próximo hueco (después de `ahora`).
     pub fn proximo(&self, ahora: DateTime<Local>) -> Option<DateTime<Local>> {
+        if !self.reglas.is_empty() {
+            return self.plan()?.next_slot(ahora);
+        }
         (0..=7).filter_map(|n| self.hueco_de(ahora.date_naive() + Duration::days(n))).find(|h| *h > ahora)
     }
 }
@@ -732,7 +758,7 @@ mod tests {
             clave_ok: None,
             retencion: Retencion { diarias: 7, semanales: 4, mensuales: 12, anuales: 2, ..Default::default() },
             // Los domingos a las 03:00.
-            horario: Horario { dias: vec![7], hora: "03:00".into() },
+            horario: Horario { dias: vec![7], hora: "03:00".into(), reglas: vec![] },
             verificar: true,
             desde: en(desde).to_rfc3339(),
             ultima: None,
@@ -743,11 +769,29 @@ mod tests {
     }
 
     #[test]
+    fn horario_con_reglas() {
+        use chrono::TimeZone;
+        let r: Horario =
+            serde_json::from_value(serde_json::json!({ "dias": [7], "hora": "03:00", "reglas": [{ "tipo": "mensual", "dia": 1, "hora": "04:00" }] })).unwrap();
+        assert!(r.valido().is_ok());
+        assert_eq!(r.texto(), "según su horario");
+        let ahora = Local.with_ymd_and_hms(2026, 10, 7, 12, 0, 0).unwrap();
+        assert_eq!(r.proximo(ahora), Local.with_ymd_and_hms(2026, 11, 1, 4, 0, 0).earliest());
+        assert_eq!(r.ultimo(ahora), Local.with_ymd_and_hms(2026, 10, 1, 4, 0, 0).earliest());
+        let malo: Horario =
+            serde_json::from_value(serde_json::json!({ "dias": [7], "hora": "03:00", "reglas": [{ "tipo": "mensual", "dia": 31, "hora": "04:00" }] })).unwrap();
+        assert!(malo.valido().is_err());
+        // Sin reglas, como siempre (y no se escriben).
+        let h: Horario = serde_json::from_value(serde_json::json!({ "dias": [7], "hora": "03:00" })).unwrap();
+        assert!(h.reglas.is_empty() && !serde_json::to_string(&h).unwrap().contains("reglas"));
+    }
+
+    #[test]
     fn horario_semanal() {
-        let h = Horario { dias: vec![7], hora: "03:00".into() };
+        let h = Horario { dias: vec![7], hora: "03:00".into(), reglas: vec![] };
         assert_eq!(h.texto(), "los domingos a las 03:00");
-        assert_eq!(Horario { dias: vec![4, 1], hora: "22:30".into() }.texto(), "lunes y jueves a las 22:30");
-        assert_eq!(Horario { dias: (1..=7).collect(), hora: "03:00".into() }.texto(), "cada día a las 03:00");
+        assert_eq!(Horario { dias: vec![4, 1], hora: "22:30".into(), reglas: vec![] }.texto(), "lunes y jueves a las 22:30");
+        assert_eq!(Horario { dias: (1..=7).collect(), hora: "03:00".into(), reglas: vec![] }.texto(), "cada día a las 03:00");
         // Sábado 3 de octubre de 2026: el último domingo fue el 27 de septiembre; el próximo, el 4.
         let sab = Local.with_ymd_and_hms(2026, 10, 3, 12, 0, 0).unwrap();
         assert_eq!(h.ultimo(sab).unwrap(), Local.with_ymd_and_hms(2026, 9, 27, 3, 0, 0).unwrap());
@@ -755,10 +799,10 @@ mod tests {
         // El mismo domingo, antes de la hora: el de la semana pasada.
         let dom = Local.with_ymd_and_hms(2026, 10, 4, 2, 0, 0).unwrap();
         assert_eq!(h.ultimo(dom).unwrap(), Local.with_ymd_and_hms(2026, 9, 27, 3, 0, 0).unwrap());
-        assert!(Horario { dias: vec![], hora: "03:00".into() }.valido().is_err());
-        assert!(Horario { dias: vec![8], hora: "03:00".into() }.valido().is_err());
-        assert!(Horario { dias: vec![1], hora: "3:00".into() }.valido().is_err());
-        assert!(Horario { dias: vec![1], hora: "25:00".into() }.valido().is_err());
+        assert!(Horario { dias: vec![], hora: "03:00".into(), reglas: vec![] }.valido().is_err());
+        assert!(Horario { dias: vec![8], hora: "03:00".into(), reglas: vec![] }.valido().is_err());
+        assert!(Horario { dias: vec![1], hora: "3:00".into(), reglas: vec![] }.valido().is_err());
+        assert!(Horario { dias: vec![1], hora: "25:00".into(), reglas: vec![] }.valido().is_err());
     }
 
     #[test]

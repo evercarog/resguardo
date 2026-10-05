@@ -3,6 +3,8 @@
   // clave de administración). La contraseña del repositorio la genera este
   // navegador, se muestra en el kit de recuperación (para imprimir) y viaja
   // sellada solo para el equipo, igual que las credenciales del destino.
+  import CampoObservaciones from "./notas/CampoObservaciones.svelte";
+  import { errorTextoNota, guardarObservacion, objetoDe } from "$lib/notas.svelte";
   import { onDestroy, untrack } from "svelte";
   import { Check, Database, FolderOpen, KeyRound, LoaderCircle, Printer, TriangleAlert } from "@lucide/svelte";
   import { errorCarpetaDestino } from "$lib/ganchos";
@@ -34,6 +36,8 @@
     destino: destinos[0]?.id ?? "nuevo",
   });
   let equipoId = $state(inicial().equipo);
+  /** v1.3x: observaciones del repositorio (se guardan en el servidor al crearlo). */
+  let observaciones = $state("");
   let nombre = $state("");
   let destinoId = $state<string>(inicial().destino);
   let tipo = $state<"rest" | "b2" | "s3" | "local">("rest");
@@ -138,6 +142,8 @@
         alPaso: (t) => (pasoTxt = t),
       });
       if (paraHistorial) recordarOrigen(cliente.id, equipo.id, id, origen);
+      if (observaciones.trim())
+        await guardarObservacion(cliente.id, "repositorio", objetoDe(equipo.id, id), observaciones).catch((err) => avisar(`El repositorio se pidió, pero las observaciones no se guardaron: ${(err as Error).message}`, "warn"));
       olvidar();
       avisar(
         paraHistorial
@@ -233,6 +239,7 @@
           <p class="faint nota">{almacenElegido.nombre} guarda copias de los equipos de {cliente.nombre}: {equipo?.nombre ?? "el equipo"} tendrá allí su propio usuario y no podrá borrar lo ya copiado. No hace falta escribir dirección ni contraseñas.</p>
         {/if}
       {/if}
+      {#if !almacenElegido}<CampoObservaciones id="r-observaciones" bind:valor={observaciones} filas={2} />{/if}
       <!-- También en un almacén: «Copiar en …» lo pasa a crear_repositorio (parametros_de). -->
       <details class="avanzado" bind:open={paraHistorial}>
         <summary>Para traer el historial de otro repositorio (avanzado)</summary>
@@ -241,7 +248,7 @@
       </details>
       <footer>
         <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-        <button type="button" class="btn btn-primary" disabled={!datosOk} onclick={() => (almacenElegido ? (copiarEn = almacenElegido) : aKit())}>Seguir</button>
+        <button type="button" class="btn btn-primary" disabled={!datosOk || !!errorTextoNota(observaciones)} onclick={() => (almacenElegido ? (copiarEn = almacenElegido) : aKit())}>Seguir</button>
       </footer>
     </div>
   {:else if paso === "kit"}

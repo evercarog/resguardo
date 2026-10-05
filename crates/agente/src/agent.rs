@@ -145,6 +145,10 @@ pub enum Schedule {
         #[serde(default = "default_min_minutes")]
         min_minutes: u32,
     },
+    /// Cuando toque cualquiera de estas reglas (las de los horarios de copia:
+    /// a estas horas, cada N minutos u horas en una franja, cada N días, un
+    /// día de cada mes). La verificación automática con horario (v1.3x).
+    Rules { rules: Vec<crate::plans::ScheduleRule> },
 }
 
 fn default_min_minutes() -> u32 {
@@ -163,6 +167,7 @@ impl Schedule {
             Schedule::Weekly { weekday, time } if *weekday <= 6 => parse_time(time).map(|_| ()),
             Schedule::Weekly { .. } => Err("Día de la semana no válido.".into()),
             Schedule::AfterBackup { min_minutes } if *min_minutes > 1440 => Err("Entre subidas, como mucho 1440 minutos (un día).".into()),
+            Schedule::Rules { rules } => crate::plans::PlanSchedule::from_rules(rules.clone()).validate(),
             _ => Ok(()),
         }
     }
@@ -192,6 +197,7 @@ impl Schedule {
         };
         match self {
             Schedule::Hours { .. } | Schedule::Monitor { .. } | Schedule::Plans | Schedule::AfterBackup { .. } => None,
+            Schedule::Rules { rules } => crate::plans::PlanSchedule::from_rules(rules.clone()).latest_slot(now),
             Schedule::Daily { time } => {
                 let today = at(now.date_naive(), time)?;
                 Some(if today <= now { today } else { at(now.date_naive() - Duration::days(1), time)? })
@@ -215,6 +221,8 @@ impl Schedule {
             Schedule::Hours { every } => reloj_atrasado || now >= since + Duration::hours(*every as i64),
             // «Después de cada copia» se decide en el proceso de tareas (`tasks::after_backup_due`).
             Schedule::Monitor { .. } | Schedule::Plans | Schedule::AfterBackup { .. } => false,
+            // Como un plan de copia: una vez aunque se perdieran varias, y no dos seguidas.
+            Schedule::Rules { rules } => crate::plans::PlanSchedule::from_rules(rules.clone()).is_due(since, now),
             _ => self.latest_slot(now).is_some_and(|slot| since < slot || reloj_atrasado),
         }
     }
@@ -1012,6 +1020,7 @@ pub fn plan_schedule_from_legacy(s: &Schedule) -> Option<crate::plans::PlanSched
             to: String::new(),
             rules: vec![],
         }),
+        Schedule::Rules { rules } => Some(crate::plans::PlanSchedule::from_rules(rules.clone())),
         Schedule::Monitor { .. } | Schedule::Plans | Schedule::AfterBackup { .. } => None,
     }
 }

@@ -20,6 +20,7 @@ import { auditar, DEMO, estado, sembrar, verificarCadena, type EmparejamientoMoc
 import { historialMock } from "./historial";
 import { progresoDe } from "./progreso";
 import { rutasNotificaciones } from "./notificaciones";
+import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
 
 class HttpError extends Error {
@@ -1085,7 +1086,7 @@ const rutas: Ruta[] = [
     (ctx, [c]) => {
       const { cuenta } = miembro(ctx, c, "propietario");
       if (estado.auditoriaImportada.has(c)) throw err(409, "conflicto", "Este cliente ya importó su historial.");
-      const b = ctx.cuerpo as { origen?: string; auditoria?: T.EntradaAuditoria[]; informes?: unknown[]; avisos?: unknown[] };
+      const b = ctx.cuerpo as { origen?: string; auditoria?: T.EntradaAuditoria[]; informes?: unknown[]; avisos?: unknown[]; notas?: T.NotasExportadas };
       const aud = b.auditoria ?? [];
       // Como el servidor: la cadena, entera desde el génesis.
       let prev = "0".repeat(64);
@@ -1094,8 +1095,9 @@ const rutas: Ruta[] = [
         prev = e.hash;
       }
       estado.auditoriaImportada.set(c, aud);
-      auditar(c, cuenta.id, "importar_cliente", b.origen ?? "", { entradas: aud.length, ultimo_hash: prev, informes: b.informes?.length ?? 0, avisos: b.avisos?.length ?? 0 });
-      return { entradas: aud.length };
+      const notas = importarNotas(c, b.notas);
+      auditar(c, cuenta.id, "importar_cliente", b.origen ?? "", { entradas: aud.length, ultimo_hash: prev, informes: b.informes?.length ?? 0, avisos: b.avisos?.length ?? 0, ...notas });
+      return { entradas: aud.length, ...notas };
     },
   ],
   [
@@ -1230,6 +1232,8 @@ const rutas: Ruta[] = [
   ],
   // v1.29: notificaciones (canales, prueba, registro y preferencias).
   ...rutasNotificaciones<Ctx>({ err, cuenta: (ctx) => sesionDe(ctx), miembro }),
+  // v1.3x: observaciones y comentarios.
+  ...rutasNotas<Ctx>({ err, miembro }),
   [
     "POST",
     /^\/api\/__mock\/reiniciar$/,
@@ -1257,6 +1261,7 @@ function darFicha(cliente: string, usos: number, dias: number) {
 
 async function iniciar(vacio = false) {
   await sembrar(vacio);
+  sembrarNotas();
   for (const e of estado.equipos) guardarConfig(e, configInicial(e), 12);
   console.log(`\n  Resguardo Server simulado: ${vacio ? `sin cuentas (código de primer arranque: ${DEMO.codigoArranque})` : `${DEMO.correo} / ${DEMO.contrasena}, TOTP cualquier código de 6 cifras`}\n`);
 }

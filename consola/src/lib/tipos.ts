@@ -270,7 +270,7 @@ export interface RepositorioResumen {
   /** v1.28: la regla tal cual (para editarla); `retencion` es su texto. */
   retencion_regla?: Regla | null;
   /** v1.28: la verificación automática (cada N días, porcentaje rotativo) y cuándo toca. */
-  verificacion_auto?: { cada_dias: number; porcentaje: number; proxima?: string | null; todo_leido?: string | null } | null;
+  verificacion_auto?: { cada_dias: number; porcentaje: number; horario?: Horario | null; proxima?: string | null; todo_leido?: string | null } | null;
   /** Importado de otro equipo (§10): se puede explorar y restaurar, no copiar en él. */
   solo_lectura?: boolean;
   /** v1.14: en un rest-server de solo añadir (adoptado o comprobado): la retención la aplica el servidor. */
@@ -310,6 +310,8 @@ export interface Regla {
 export interface HorarioRetencion {
   dias: number[];
   hora: string;
+  /** v1.3x (almacén con `admite: "retencion_almacen_horario"`): si hay, mandan ellas. */
+  reglas?: ReglaHorario[];
 }
 
 /** v1.22: una retención que aplica un almacén (sin su clave). */
@@ -740,6 +742,11 @@ export interface ResultadoGancho {
 export interface VerificacionAuto {
   cada_dias: number;
   porcentaje: number;
+  /**
+   * v1.3x (agente con `admite: "verificacion_horario"`): el mismo horario que
+   * el de las copias; entonces manda él y `cada_dias` es para un agente anterior.
+   */
+  horario?: Horario | null;
 }
 
 export interface Configuracion {
@@ -903,4 +910,52 @@ export interface MisNotif {
   hora_resumen: string;
   dia_semanal: number;
   clientes: { id: string; nombre: string; rol: Rol; correo: boolean; preferencias: PrefsNotif }[];
+}
+
+// --- v1.3x: observaciones y comentarios (lib/notas.svelte.ts) -----------------
+
+/** De qué es una nota. `repositorio` y `copia`: «<equipo>/<id>»; `destino`: su id; `cliente`: el id del cliente. */
+export type TipoNota = "cliente" | "equipo" | "repositorio" | "copia" | "destino";
+
+export interface IndiceNota {
+  tipo: TipoNota;
+  objeto: string;
+  /** La primera línea de la observación, sin marcas (o null si no tiene). */
+  titulo: string | null;
+  observacion: boolean;
+  comentarios: number;
+  actualizada: string;
+}
+
+export interface ObservacionNota {
+  texto: string;
+  actualizada: string;
+  /** Nombre de quien la cambió por última vez. */
+  por: string;
+}
+
+export interface ComentarioNota {
+  id: string;
+  texto: string;
+  autor: { id: string; nombre: string };
+  creado: string;
+  editado: string | null;
+  /** Lo puede cambiar quien mira (su autor, en sus 15 minutos). */
+  editable: boolean;
+  /** Lo puede borrar (su autor en sus 15 minutos, o un propietario). */
+  borrable: boolean;
+}
+
+export interface NotasObjeto {
+  tipo: TipoNota;
+  objeto: string;
+  observacion: ObservacionNota | null;
+  comentarios: ComentarioNota[];
+  minutos_cambio: number;
+}
+
+/** Para el paquete de exportación. */
+export interface NotasExportadas {
+  observaciones: { tipo: TipoNota; objeto: string; texto: string; actualizada: string; por: string }[];
+  comentarios: { id: string; tipo: TipoNota; objeto: string; texto: string; autor: string; creado: string; editado: string | null }[];
 }

@@ -9,13 +9,14 @@
   import { fade, fly } from "svelte/transition";
   import Anuncio from "./Anuncio.svelte";
   import { goto } from "$app/navigation";
-  import { ArrowRight, Building2, Layers, CornerDownLeft, Database, DatabaseZap, FileText, History, Monitor, Play, Plus, RefreshCw, Search } from "@lucide/svelte";
+  import { ArrowRight, Building2, Layers, CornerDownLeft, Database, DatabaseZap, FileText, History, Monitor, NotebookPen, Play, Plus, RefreshCw, Search } from "@lucide/svelte";
   import { dur } from "$ui/movimiento";
   import { actual, app, puede } from "$lib/estado.svelte";
   import { saludEquipo } from "$lib/salud";
   import { atajos, MOD } from "$lib/atajos.svelte";
   import { acciones } from "$lib/acciones.svelte";
   import { ICONO_SECCION } from "$lib/iconos";
+  import { asegurarIndice, notas } from "$lib/notas.svelte";
 
   interface Item {
     grupo: string;
@@ -83,6 +84,26 @@
       for (const e of actual.equipos)
         for (const k of e.resumen?.copias ?? [])
           out.push({ grupo: "Copias", texto: k.nombre, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/copias/${encodeURIComponent(k.id)}`, icono: RefreshCw, claves: sinTildes(`${k.nombre} ${e.nombre}`) });
+      // v1.3x: observaciones, por su primera línea (nunca el texto entero ni los comentarios).
+      if (notas.cliente === c)
+        for (const n of Object.values(notas.porClave)) {
+          if (!n.titulo) continue;
+          const [eid, id] = n.tipo === "repositorio" || n.tipo === "copia" ? [n.objeto.slice(0, n.objeto.indexOf("/")), n.objeto.slice(n.objeto.indexOf("/") + 1)] : [n.objeto, n.objeto];
+          const e = actual.equipos.find((x) => x.id === eid);
+          const sitio =
+            n.tipo === "cliente"
+              ? { nombre: actual.cliente?.nombre ?? "Cliente", href: `/c/${c}` }
+              : n.tipo === "equipo" && e
+                ? { nombre: e.nombre, href: `/c/${c}/equipos/${e.id}` }
+                : n.tipo === "repositorio" && e
+                  ? { nombre: `${e.resumen?.repositorios?.find((r) => r.id === id)?.nombre ?? id} · ${e.nombre}`, href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(id)}` }
+                  : n.tipo === "copia" && e
+                    ? { nombre: `${e.resumen?.copias?.find((k) => k.id === id)?.nombre ?? id} · ${e.nombre}`, href: `/c/${c}/equipos/${e.id}/copias/${encodeURIComponent(id)}` }
+                    : n.tipo === "destino"
+                      ? { nombre: actual.equipos.flatMap((x) => x.resumen?.destinos ?? []).find((d) => d.id === n.objeto)?.nombre ?? n.objeto, href: `/c/${c}/repositorios` }
+                      : null;
+          if (sitio) out.push({ grupo: "Observaciones", texto: n.titulo, sub: sitio.nombre, href: sitio.href, icono: NotebookPen, claves: sinTildes(`observaciones notas ${n.titulo} ${sitio.nombre}`) });
+        }
     }
     for (const x of app.clientes)
       if (x.id !== c) out.push({ grupo: "Clientes", texto: x.nombre, sub: `${x.equipos} ${x.equipos === 1 ? "equipo" : "equipos"}`, href: `/c/${x.id}`, icono: Building2, claves: sinTildes(x.nombre) });
@@ -151,6 +172,9 @@
   }
   $effect(() => {
     if (atajos.paleta) void tick().then(() => entrada?.focus());
+  });
+  $effect(() => {
+    if (atajos.paleta && actual.id) void asegurarIndice(actual.id);
   });
   // Al cerrar, el foco vuelve a donde estaba.
   let previo: HTMLElement | null = null;

@@ -552,6 +552,21 @@ async function principal() {
       return inf?.verificacion?.ultima && new Date(inf.verificacion.ultima).getTime() >= antesVerificar - 2_000 ? inf.verificacion : null;
     }, { plazo: 180_000, cada: 1000 });
     igual(ver.resultado, "ok", `Verificación (${ver.mensaje_corto ?? ""})`);
+    // v1.3x: con un horario de reglas (como el de las copias); `cada_dias` sigue para un agente anterior.
+    comprobar(eqBAhora.resumen?.admite?.includes("verificacion_horario"), "B admite la verificación con horario");
+    const horarioVerif = { dias: [], horas: [], reglas: [{ tipo: "mensual", dia: 1, hora: "04:00" }, { tipo: "horas", dias: [6, 7], horas: ["02:30"] }] };
+    await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia], verificaciones: { [repoId]: { cada_dias: 7, porcentaje: 25, horario: horarioVerif } } } }, { claveAdmin: CLAVE_ADMIN });
+    const vh = await esperar("la verificación con horario en el resumen", async () => {
+      const v = (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.verificacion_auto as any;
+      return v?.horario?.reglas?.length === 2 ? v : null;
+    }, { plazo: 30_000 });
+    comprobar(vh.porcentaje === 25 && vh.cada_dias >= 1 && vh.cada_dias <= 31 && vh.proxima && new Date(vh.proxima).getTime() > Date.now(), "Con horario: 25 %, un cada_dias para consolas anteriores y la próxima vez", vh);
+    const enProx = new Date(vh.proxima);
+    comprobar((enProx.getDate() === 1 && enProx.getHours() === 4) || ([0, 6].includes(enProx.getDay()) && enProx.getHours() === 2 && enProx.getMinutes() === 30), "La próxima, en una de sus reglas", vh.proxima);
+
+    // v1.3x: observaciones y comentarios (en el servidor, sin la clave); se comprueban tras restaurar la copia de la consola.
+    await consola.ok("PUT", `/api/clientes/${c.id}/notas/observacion`, { tipo: "equipo", objeto: eqB.id, texto: "**Caja**: llamar a Luis si falla" });
+    await consola.ok("POST", `/api/clientes/${c.id}/notas/comentarios`, { tipo: "repositorio", objeto: `${eqB.id}/${repoId}`, texto: "Verificación con horario puesta." });
 
     // -----------------------------------------------------------------------
     paso("6c. Copia de la consola, restaurarla en otra carpeta y que los equipos vuelvan solos");
@@ -578,6 +593,8 @@ async function principal() {
       await esperar(`que ${e.nombre} vuelva a conectar con el servidor restaurado`, async () => (await consolaR.equipo(c, e.id)).conectado, { plazo: 120_000, cada: 1000 });
     }
     const canales = (await consolaR.ok("GET", "/api/servidor/notificaciones")).canales;
+    const notasR = (await consolaR.ok("GET", `/api/clientes/${c.id}/notas`)).objetos as any[];
+    comprobar(notasR.some((o) => o.tipo === "equipo" && o.titulo === "Caja: llamar a Luis si falla") && notasR.some((o) => o.tipo === "repositorio" && o.comentarios === 1), "Las observaciones y los comentarios vinieron en la copia", notasR);
     comprobar(canales.length === 1 && canales[0].completo, "El canal de correo vino en la copia", canales);
     // Una orden desde el servidor restaurado (que recuerda un número de orden anterior).
     const tras = await copiarAhora(consolaR, c);

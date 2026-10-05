@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ContadorNotas from "./notas/ContadorNotas.svelte";
   import { tip } from "$lib/tooltip";
   // Un equipo en el panel de Estado: su salud de un vistazo. Nombre y estado
   // (icono y texto), la última copia y la próxima, los cuadros de 14 días de
@@ -32,7 +33,7 @@
   <div class="cab">
     <span class="ic"><Icono size={16} /></span>
     <span class="nombre">
-      <strong>{equipo.nombre}</strong>
+      <strong>{equipo.nombre} <ContadorNotas tipo="equipo" objeto={equipo.id} /></strong>
       <span class="conn">
         {#if equipo.conectado}<span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado{:else}Visto {relativo(equipo.ultimo_contacto, ahora)}{/if}
       </span>

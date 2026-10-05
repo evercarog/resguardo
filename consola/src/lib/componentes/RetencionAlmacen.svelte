@@ -16,6 +16,10 @@
   import { cuentaAtras } from "$lib/formato";
   import { avisar } from "$lib/avisos.svelte";
   import { cargarCliente } from "$lib/estado.svelte";
+  import EditorHorario from "./EditorHorario.svelte";
+  import { errorReglas, reglasDe } from "$lib/horario";
+  import { horarioEnFrase } from "$lib/formato";
+  import type { Horario } from "$lib/tipos";
   import { admitePlazos, copiaRegla, DIAS_CORTOS, errorHorario, errorRegla, HORARIO_POR_DEFECTO, horarioDeCopias, mismaRegla, nuevaClave, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden, textoHorario, type EnAlmacen } from "$lib/retencion";
   import EditorRetencion from "./EditorRetencion.svelte";
   import type { Cliente, Equipo, Orden, Regla, RepositorioResumen } from "$lib/tipos";
@@ -37,6 +41,14 @@
   let dias = $state<number[]>(inicio().dias);
   let hora = $state(inicio().hora);
   let verificar = $state(inicio().verificar);
+  // v1.3x (almacén con `admite: "retencion_almacen_horario"`): o con un horario de
+  // reglas, como el de las copias. `dias` y `hora` siguen para un almacén anterior.
+  const admiteReglasAlm = $derived(!!en.almacen.resumen?.admite?.includes("retencion_almacen_horario"));
+  const reglasIniciales = () => en.retencion?.horario.reglas ?? [];
+  let conReglas = $state(reglasIniciales().length > 0);
+  let horarioAlm = $state<Horario>(reglasIniciales().length ? { dias: [], horas: [], reglas: $state.snapshot(reglasIniciales()) } : { dias: inicio().dias, horas: [inicio().hora] });
+  const usaReglas = $derived(conReglas && admiteReglasAlm);
+  const fraseReglas = $derived(horarioEnFrase({ dias: [], horas: [], reglas: reglasDe(horarioAlm) }).replace(/^./, (c) => c.toLowerCase()));
   let contrasena = $state("");
   let claveAdmin = $state("");
   let ocupado = $state(false);
@@ -53,7 +65,7 @@
   /** Horarias, plazos y «siempre» (v1.28): los dos agentes tienen que entenderlos. */
   const admite = $derived(admitePlazos(equipo) && admitePlazos(en.almacen));
   const errReg = $derived(errorRegla(regla, admite));
-  const errHor = $derived(errorHorario({ dias, hora }));
+  const errHor = $derived(errorHorario({ dias, hora }) ?? (usaReglas ? errorReglas(reglasDe(horarioAlm)) : null));
   const listo = $derived(!errReg && !errHor && !!claveAdmin && (!pideContrasena || !!contrasena));
   const espera = $derived(almacen.espera_min_horas ?? cliente.espera_min_horas);
 
@@ -99,7 +111,7 @@
         cliente,
         equipo: almacen,
         tipo: "retencion_almacen",
-        cuerpo: { usuario: en.usuario, repo: en.carpeta, ...(clave ? { clave } : {}), retencion: reglaParaOrden(regla), horario: { dias: [...dias], hora }, verificar },
+        cuerpo: { usuario: en.usuario, repo: en.carpeta, ...(clave ? { clave } : {}), retencion: reglaParaOrden(regla), horario: { dias: [...dias], hora, ...(usaReglas ? { reglas: reglasDe(horarioAlm) } : {}) }, verificar },
         secretos: { claveAdmin },
         alPaso: (t) => (paso = t),
       });
@@ -132,7 +144,7 @@
   {:else if hecho}
     <div class="form">
       <p>
-        Listo. {almacen.nombre} aplicará la retención de «{repo.nombre}» {textoHorario({ dias, hora })}
+        Listo. {almacen.nombre} aplicará la retención de «{repo.nombre}» {usaReglas ? fraseReglas : textoHorario({ dias, hora })}
         {#if hecho.not_before}cuando pase la espera (dentro de <strong>{cuentaAtras(hecho.not_before)}</strong>), salvo que alguien la cancele desde <a href="/c/{cliente.id}/ordenes">Órdenes</a>.{:else}.{/if}
       </p>
       <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
@@ -141,6 +153,13 @@
     <form class="form" onsubmit={guardar}>
       <EditorRetencion id="ra" bind:regla {admite} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
 
+      {#if admiteReglasAlm}
+        <label class="switch-row"><input type="checkbox" class="switch" bind:checked={conReglas} /><span>Con un horario como el de las copias<span class="faint">Cada N días, un día de cada mes, varias horas…</span></span></label>
+      {/if}
+      {#if usaReglas}
+        <EditorHorario id="ra-horario" bind:horario={horarioAlm} admiteReglas para="verificacion" />
+        {#if errHor}<p class="error-campo" role="alert">{errHor}</p>{/if}
+      {:else}
       <fieldset class="horario">
         <legend class="field-label">Cuándo la aplica</legend>
         <div class="dias" role="group" aria-label="Días">
@@ -151,6 +170,7 @@
         <label class="hora">a las <input class="input" type="time" bind:value={hora} /></label>
       </fieldset>
       <p class="faint nota">{errHor ?? `${textoHorario({ dias, hora })[0].toUpperCase()}${textoHorario({ dias, hora }).slice(1)}, hora de ${almacen.nombre}. Mejor fuera de las horas de copia: mientras poda, las copias de este repositorio esperan.`}</p>
+      {/if}
       <label class="switch-row"><input type="checkbox" bind:checked={verificar} /><span>Comprobar el repositorio después (que todo se puede leer)</span></label>
 
       <div class="notice notice-warn">

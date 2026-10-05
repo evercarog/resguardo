@@ -204,7 +204,7 @@ export async function bajarPaquete(c: string): Promise<Uint8Array | null> {
 }
 export const borrarPaquete = (c: string) => pedir<void>("DELETE", `${cli(c)}/paquete`);
 /** En el servidor nuevo: el historial que el navegador sacó del paquete. */
-export const importarHistorial = (c: string, b: { origen: string; auditoria: T.EntradaAuditoria[]; informes: { equipo: string; recibido: string; datos: unknown }[]; avisos: { equipo: string | null; tipo: string; mensaje: string; creado: string }[] }) =>
+export const importarHistorial = (c: string, b: { origen: string; auditoria: T.EntradaAuditoria[]; informes: { equipo: string; recibido: string; datos: unknown }[]; avisos: { equipo: string | null; tipo: string; mensaje: string; creado: string }[]; notas?: T.NotasExportadas }) =>
   pedir<unknown>("POST", `${cli(c)}/importar`, b);
 export const auditoriaImportada = (c: string, desde = 0, limite = 500) => pedir<T.EntradaAuditoria[]>("GET", `${cli(c)}/auditoria/importada?desde=${desde}&limite=${limite}`);
 
@@ -229,6 +229,16 @@ export const cancelarEmparejamiento = (c: string, p: string) => pedir<void>("DEL
 export const plantillas = (c: string) => pedir<{ id: string; cifrado: string; actualizada: string; por: string }[]>("GET", `${cli(c)}/plantillas`);
 export const ponerPlantilla = (c: string, id: string, cifrado: string) => pedir<void>("PUT", `${cli(c)}/plantillas/${enc(id)}`, { cifrado });
 export const borrarPlantilla = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/plantillas/${enc(id)}`);
+// v1.3x: observaciones y comentarios (en claro en el servidor; lib/notas.svelte.ts).
+export const indiceNotas = (c: string) => pedir<{ objetos: T.IndiceNota[] }>("GET", `${cli(c)}/notas`, undefined, { invisible: true });
+export const notasDe = (c: string, tipo: T.TipoNota, objeto: string) =>
+  pedir<T.NotasObjeto>("GET", `${cli(c)}/notas/objeto?tipo=${enc(tipo)}&objeto=${enc(objeto)}`, undefined, { invisible: true });
+export const ponerObservacion = (c: string, tipo: T.TipoNota, objeto: string, texto: string) =>
+  pedir<T.ObservacionNota | null>("PUT", `${cli(c)}/notas/observacion`, { tipo, objeto, texto });
+export const comentar = (c: string, tipo: T.TipoNota, objeto: string, texto: string) => pedir<T.ComentarioNota>("POST", `${cli(c)}/notas/comentarios`, { tipo, objeto, texto });
+export const editarComentario = (c: string, id: string, texto: string) => pedir<T.ComentarioNota>("PATCH", `${cli(c)}/notas/comentarios/${enc(id)}`, { texto });
+export const borrarComentario = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/notas/comentarios/${enc(id)}`);
+export const notasTodas = (c: string) => pedir<T.NotasExportadas>("GET", `${cli(c)}/notas/todas`);
 /** v1.19: «Vincular este servidor» (el agente de la máquina del servidor se une solo). */
 export const vincularLocal = (c: string) => pedir<T.Preparado>("POST", `${cli(c)}/equipo-local`);
 export const preparados = (c: string) => pedir<T.Preparado[]>("GET", `${cli(c)}/emparejamientos`);

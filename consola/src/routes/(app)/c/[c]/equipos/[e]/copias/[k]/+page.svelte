@@ -54,6 +54,9 @@
   import { abrirEstado, abrirVersion, abrirVuelta, elegirDia } from "$lib/componentes/detalle/navegar";
   import { leerSeleccion } from "$lib/detalle";
   import "$lib/componentes/detalle/pulsable.css";
+  import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
+  import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
+  import { objetoDe } from "$lib/notas.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -201,6 +204,7 @@
         </div>
       {/if}
     </header>
+    <Observaciones tipo="copia" objeto={objetoDe(e, kid)} />
 
     <EnMarcha equipo={e} copia={kid} marco alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
 
@@ -469,6 +473,7 @@
         <span use:tip={fechaLarga(informe.recibido)}>El servidor no ve rutas ni nombres de archivos.</span>
       </p>
     {/if}
+    <Comentarios tipo="copia" objeto={objetoDe(e, kid)} />
   {/if}
 </div>
 

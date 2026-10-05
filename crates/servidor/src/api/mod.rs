@@ -5,6 +5,7 @@ mod cuentas;
 mod equipos;
 pub(crate) mod instaladores;
 pub(crate) mod marca;
+mod notas;
 mod notificaciones;
 mod ordenes;
 mod panel;
@@ -254,6 +255,13 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/avisos/{a}/visto", post(equipos::aviso_visto))
         .route("/api/clientes/{c}/auditoria", get(equipos::auditoria))
         .route("/api/clientes/{c}/auditoria/verificar", get(equipos::verificar_auditoria))
+        // v1.3x: observaciones y comentarios
+        .route("/api/clientes/{c}/notas", get(notas::indice))
+        .route("/api/clientes/{c}/notas/objeto", get(notas::ver))
+        .route("/api/clientes/{c}/notas/todas", get(notas::todas))
+        .route("/api/clientes/{c}/notas/observacion", put(notas::poner_observacion))
+        .route("/api/clientes/{c}/notas/comentarios", post(notas::comentar))
+        .route("/api/clientes/{c}/notas/comentarios/{k}", patch(notas::editar).delete(notas::borrar))
         // Órdenes
         .route("/api/clientes/{c}/equipos/{e}/ordenes", get(ordenes::listar).post(ordenes::enviar))
         .route("/api/clientes/{c}/ordenes", get(ordenes::listar_cliente))

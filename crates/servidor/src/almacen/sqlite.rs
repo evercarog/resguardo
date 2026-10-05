@@ -255,12 +255,13 @@ impl Sqlite {
         let path = self.dir.join("clientes").join(format!("{}.db", id_seguro(c.id())?));
         let db = abrir(&path, ESQUEMA_CLIENTE)?;
         migrar_cliente(&db)?;
+        db.execute_batch(super::notas::ESQUEMA).map_err(s)?;
         let con = Arc::new(Mutex::new(db));
         mapa.insert(c.id().to_string(), con.clone());
         Ok(con)
     }
 
-    fn con<T>(&self, c: &ClienteCtx, f: impl FnOnce(&Connection) -> R<T>) -> R<T> {
+    pub(super) fn con<T>(&self, c: &ClienteCtx, f: impl FnOnce(&Connection) -> R<T>) -> R<T> {
         let con = self.conexion(c)?;
         let guard = con.lock().unwrap_or_else(|e| e.into_inner());
         f(&guard)
@@ -704,7 +705,8 @@ impl Almacen for Sqlite {
             db.execute("DELETE FROM configs WHERE equipo_id = ?1", [id]).map_err(s)?;
             db.execute("DELETE FROM historial WHERE equipo_id = ?1", [id]).map_err(s)?;
             Ok(())
-        })
+        })?;
+        super::notas::AlmacenNotas::borrar_notas_equipo(self, c, id)
     }
     fn contacto_equipo(&self, c: &ClienteCtx, id: &str, cuando: Ts) -> R<()> {
         self.con(c, |db| {

@@ -18,6 +18,7 @@
   import MenuAcciones, { type AccionMenu } from "./MenuAcciones.svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
   import EnMarcha from "./EnMarcha.svelte";
+  import ContadorNotas from "./notas/ContadorNotas.svelte";
 
   let { equipo, cliente, informe, acciones = false }: { equipo: Equipo; cliente: string; informe?: Informe | null; acciones?: boolean } = $props();
   const salud = $derived(saludEquipo(equipo, reloj.ahora));
@@ -57,7 +58,7 @@
   <a class="fila" href="/c/{cliente}/equipos/{equipo.id}">
     <span class="icono"><Icono size={16} /></span>
     <span class="fila-texto">
-      <span class="fila-titulo">{equipo.nombre}</span>
+      <span class="fila-titulo">{equipo.nombre} <ContadorNotas tipo="equipo" objeto={equipo.id} /></span>
       <span class="solo-movil est-movil"><EnMarcha equipo={equipo.id} compacto /><Chip pequeno tono={salud.tono} texto={salud.texto} /></span>
       <span class="fila-sub">
         {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{equipo.so}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}

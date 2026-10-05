@@ -12,8 +12,11 @@
 //! Todo lo que es de un cliente exige un [`ClienteCtx`], que solo crea la
 //! capa de autorización (miembro comprobado o equipo autenticado).
 
+pub mod notas;
 pub mod postgres;
 pub mod sqlite;
+
+pub use notas::{AlmacenNotas, Comentario, IndiceNotas, Observacion};
 
 use crate::notificaciones::{Envio, Incidente};
 use serde::Serialize;
@@ -323,7 +326,7 @@ pub struct UsoCliente {
 }
 
 /// Lo que la API necesita guardar. Ver [`sqlite::Sqlite`].
-pub trait Almacen: Send + Sync {
+pub trait Almacen: Send + Sync + AlmacenNotas {
     // ---------- Servidor ----------
     fn valor(&self, clave: &str) -> R<Option<String>>;
     fn poner_valor(&self, clave: &str, valor: &str) -> R<()>;
