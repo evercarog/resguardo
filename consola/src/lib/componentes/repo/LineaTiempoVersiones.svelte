@@ -413,7 +413,7 @@
     background: var(--calor-4);
   }
   .sw.raya {
-    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text-3) 55%, transparent) 0 1.5px, var(--calor-0) 1.5px 4px);
+    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text-3) 80%, transparent) 0 1.5px, var(--calor-0) 1.5px 4px);
   }
   .sw.ahora {
     background: var(--calor-0);

@@ -378,7 +378,7 @@
   }
   /* Todas las de la casilla las quitaría la próxima retención: rayada en tinta tenue, sin color. */
   .c.quita {
-    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--raya) 55%, transparent) 0 1.5px, var(--calor-0) 1.5px 4px);
+    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--raya) 80%, transparent) 0 1.5px, var(--calor-0) 1.5px 4px);
   }
   .c.futura,
   .c.fuera {
