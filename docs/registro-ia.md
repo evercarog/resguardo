@@ -24,6 +24,7 @@ La sesión en la nube solo puede subir a esa rama, no a `ia/<tema>`.
   - `crates/agente/src/sesiones_v2.rs`: `ruta_local` y `carpeta_destino` rechazan nombres de dispositivo de Windows (`dispositivo_de_windows`).
   - `crates/servidor/src/main.rs`: `restaurar-respaldo` en Windows llama a `proteger_carpeta` antes de restaurar.
   - `consola`: `lineaVincular` (`lib/emparejar.ts`) comprueba código, dirección y huella antes de enseñar la línea de Linux; si no, aviso. Pruebas en `scripts/vectores-emparejar.ts`.
+  - `crates/servidor` (segundo pedido: un equipo «Sin confirmar» duplicado que no se va): la limpieza de cada 10 min quita los equipos que se unieron con un código y nunca se confirmaron cuando su emparejamiento ya caducó o se anuló (`equipos_sin_alta`, `quitar_sin_alta` en `lib.rs`, con auditoría `quitar_equipo_sin_alta`). Antes el código caducaba pero el equipo quedaba para siempre y la consola no ofrecía cómo quitarlo.
   - `docs/plataforma.md`: esas filas pasan de «Queda» a «Cerrados después».
 - **Comprobado (Linux):** `cargo fmt --check`; `cargo clippy -D warnings` y `cargo test` de protocolo, motor, servidor y agente (472 bien, 1 ignorada); clippy de motor, agente y servidor para `x86_64-pc-windows-gnu` (MinGW); consola `check`, `build`, `test:vectores`; `test:sin-referencias`.
 - **Sin probar / dudas:**
