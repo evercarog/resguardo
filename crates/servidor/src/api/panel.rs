@@ -56,9 +56,9 @@ fn foto_guardada(cliente: &str) -> Option<Arc<Foto>> {
 
 fn guardar_foto(cliente: &str, f: Arc<Foto>) {
     let mut m = FOTOS.lock().unwrap_or_else(|e| e.into_inner());
-    if m.len() > 1_000 {
-        m.retain(|_, f| f.hecha.elapsed() < CACHE);
-    }
+    // Las caducadas fuera siempre (no solo pasadas 1000): cada una puede llevar hasta 4 MB
+    // de informes, y la de cada cliente que alguien miró una vez se quedaba en memoria.
+    m.retain(|_, f| f.hecha.elapsed() < CACHE);
     m.insert(cliente.to_string(), f);
 }
 
@@ -258,6 +258,26 @@ pub async fn progreso(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lo guardado de un cliente que ya nadie mira no se queda en memoria.
+    #[test]
+    fn las_fotos_caducadas_no_se_quedan() {
+        let foto = |hace: u64| {
+            Arc::new(Foto {
+                hecha: Instant::now().checked_sub(Duration::from_secs(hace)).unwrap_or_else(Instant::now),
+                marca: Value::Null,
+                equipos: Vec::new(),
+                ids: HashSet::new(),
+                avisos: 0,
+                pendientes: 0,
+                informes: vec![(json!({ "datos": "x".repeat(1000) }), 1000)],
+            })
+        };
+        guardar_foto("prueba-fotos-vieja", foto(60));
+        guardar_foto("prueba-fotos-nueva", foto(0));
+        let m = FOTOS.lock().unwrap();
+        assert!(!m.contains_key("prueba-fotos-vieja") && m.contains_key("prueba-fotos-nueva"));
+    }
 
     #[test]
     fn el_informe_resumido_es_corto() {
