@@ -678,7 +678,7 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
 - `copia_atrasada`;
 - `servicio_detenido`;
 - `cambio_inusual`;
-- (v1.29; los crea el servidor, ver §13) `verificacion_fallida`, `externa_fallida`, `prueba_fallida`, `espejo_fallido` y `cambio_clave`. `copia_fallida` también la crea el servidor a partir de los informes.
+- (v1.29; los crea el servidor, ver §13) `verificacion_fallida`, `externa_fallida`, `prueba_fallida`, `espejo_fallido` y `cambio_clave`; (v1.43) `retencion_fallida`. `copia_fallida` también la crea el servidor a partir de los informes.
 
 ---
 
@@ -928,6 +928,7 @@ Que los problemas lleguen a quien no abre la consola: por **correo** (SMTP), **w
 | `externa_fallida` | informe: `repos[].externa.resultado = "fallo"` | importante |
 | `prueba_fallida` | informe: `repos[].prueba_restauracion.resultado = "fallo"` | importante |
 | `espejo_fallido` | resumen: `guarda_copias.espejo.resultado` empieza por `ERROR` | importante |
+| `retencion_fallida` (v1.43) | resumen: `guarda_copias.retenciones[].resultado = "fallo"` (por repositorio del almacén) | importante |
 | `cambio_clave` | resultado firmado `hecha` de `cambiar_clave_admin` | crítico |
 | `intentos_fallidos`, `bloqueo`, `cambio_inusual`, `servicio_detenido`, `orden_destructiva` | §6 | crítico |
 | `equipo_sin_contacto`, `copia_atrasada` | §6 | importante |
@@ -1182,3 +1183,9 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
   - **Emparejamientos a medias** (`GET …/a-medias`): al unirse un equipo hay al menos 24 h para comparar el número y darlo de alta (antes caducaba con el código: 15 o 30 min, y el equipo se quedaba unido sin poder confirmarse); confirmado, el servidor guarda el código hasta que el equipo hace el alta (como mucho 7 días), para mandarla si se quedó sin hacer; `GET …/emparejamientos/{p}` da el código mientras sirve también en los de 15 min. Agente: un vínculo a medias (sin el alta, sin otras consolas) se sustituye al volver a pulsar «Vincular este servidor».
   - **429 con el límite**: `limite` («cuenta», «ip», «codigos», «intentos») y, en los de cuenta, IP y códigos, `retry_after`; la consola deja de preguntar de fondo ese tiempo. Cada límite que salta queda (una vez por minuto, IP y límite) en la salida y en `servidor.log`.
   - **`GET /api/clientes/{c}/codigo-abierto`**: el código de 15 min de la cuenta que aún sirve. La consola ya no pierde el código al recargar «Añadir equipo» ni crea uno al abrir la página o cambiar de opción; lo enseña con su caducidad y «Anular». Con un servidor anterior (404) la consola sigue como antes.
+- v1.43 (estabilidad, ver [estabilidad.md](estabilidad.md)). Compatible hacia atrás:
+  - **Aviso `retencion_fallida`** (§13): del resumen, `guarda_copias.retenciones[].resultado = "fallo"`, por repositorio del almacén (importante; «Volvió a funcionar» con el siguiente `ok`). La retención que se aplica sola a su hora fallaba sin avisar. Una consola anterior lo enseña con su tipo tal cual.
+  - **Órdenes que no llegaron**: al abrir el canal o en `POST /api/agente/tomar` con `ultimo_seq`, las `entregada` con un `seq` mayor (salieron por una conexión ya muerta) vuelven a `pendiente` y se entregan otra vez. Las `pendiente` y `entregada` pasada su `caduca` pasan a `caducada` también sin que el equipo se conecte (limpieza cada 10 min).
+  - **Canal del agente**: sin nada del equipo en 150 s (contesta `pong` a cada `ping`, cada 30 s) el servidor lo cierra y el equipo deja de contar como conectado; `ultimo_contacto` solo se anota si contesta.
+  - **`orden_destructiva`**: el aviso se marca visto («Resguardo (ya no está pendiente)») cuando el equipo ya no tiene ninguna destructiva por aplicar.
+  - Agente (después de 0.7.20): las órdenes largas cortadas por un reinicio terminan `fallida` («Se cortó…») al volver, y un resultado que no se pudo mandar se manda cuando vuelve el servidor; el canal se reabre en cuanto el servidor vuelve a contestar tras una caída o un corte de red (no a los 5 min).

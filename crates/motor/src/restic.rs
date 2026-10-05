@@ -208,6 +208,11 @@ fn explain(stderr: &str) -> Option<String> {
         // Servidor de copias (rest-server contesta «507 Insufficient Storage»).
         "No queda espacio en el destino de las copias. Libera espacio en ese disco (o en el del Servidor de copias) o \
          quita versiones antiguas (pestaña «Retención» del repositorio) y vuelve a copiar: lo ya guardado no se pierde."
+    } else if s.contains("ciphertext verification failed") || s.contains("pack id does not match") || s.contains("does not match, want") {
+        // Un archivo de datos del repositorio dañado (en la prueba de resistencia: la retención
+        // del almacén lo encontró al podar y salía el texto de restic tal cual).
+        "Hay datos dañados en el destino: restic no pudo leer bien algún archivo de las copias. Revisa el disco del destino \
+         (o el del Servidor de copias) y pide a tu soporte que lo repare («restic repair packs»)."
     } else if s.contains("401 unauthorized") || s.contains("(401)") {
         "El servidor rechazó el usuario o la contraseña de acceso (401). Comprueba en el servidor que ese usuario sigue \
          existiendo y tiene esa contraseña."
@@ -828,6 +833,8 @@ pub mod tests {
         // Windows en español: los errores del sistema vienen traducidos.
         assert!(e("Fatal: write D:\\x: No hay espacio suficiente en el disco.").starts_with("No queda espacio"));
         assert!(e("write /mnt/x: no space left on device").starts_with("No queda espacio"));
+        // Un archivo dañado en el destino (la retención del almacén al podar, restic 0.18).
+        assert!(e("Fatal: decrypting blob <data/1e0392d8> from pack 6751b1e7 failed: ciphertext verification failed").starts_with("Hay datos dañados"));
         assert!(e("unable to create lock in backend: repository is already locked by PID 12").contains("ocupado"));
         assert!(e("Fatal: unable to open config file: stat E:\\Backups\\config: The system cannot find the path specified.\nIs there a repository at the following location?")
             .contains("¿Está conectado el disco?"));

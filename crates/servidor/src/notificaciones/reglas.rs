@@ -28,7 +28,7 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "servicio_detenido"
         | "orden_destructiva"
         | "cambio_clave" => Severidad::Critico,
-        "equipo_sin_contacto" | "copia_atrasada" | "espejo_fallido" | "externa_fallida" | "prueba_fallida" => Severidad::Importante,
+        "equipo_sin_contacto" | "copia_atrasada" | "espejo_fallido" | "retencion_fallida" | "externa_fallida" | "prueba_fallida" => Severidad::Importante,
         _ => Severidad::Informativo,
     }
 }

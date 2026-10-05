@@ -1,6 +1,6 @@
 //! Qué falla en un equipo, según lo que cuenta: el informe (copias,
 //! verificaciones, copia externa y pruebas de restauración) y el resumen (el
-//! espejo del almacén). Lo que está bien también cuenta: es lo que cierra un
+//! espejo y la retención del almacén). Lo que está bien también cuenta: es lo que cierra un
 //! incidente con «Volvió a funcionar».
 
 use crate::almacen::Ts;
@@ -31,7 +31,7 @@ pub struct Problema {
 pub fn tipos(f: Fuente) -> &'static [&'static str] {
     match f {
         Fuente::Informe => &["copia_fallida", "verificacion_fallida", "externa_fallida", "prueba_fallida"],
-        Fuente::Resumen => &["espejo_fallido"],
+        Fuente::Resumen => &["espejo_fallido", "retencion_fallida"],
     }
 }
 
@@ -86,27 +86,52 @@ pub fn de_informe(datos: &Value) -> (Vec<Problema>, Vec<String>) {
 }
 
 /// El espejo del almacén (`guarda_copias.espejo`): `resultado` empieza por `ERROR` si falló.
+/// Y la retención del almacén (`guarda_copias.retenciones[]`, `resultado = "fallo"`), por
+/// repositorio: sin esto, la que se aplica sola a su hora fallaba sin que nadie se enterara
+/// (en la prueba de resistencia, con un archivo dañado al podar).
 pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
+    let (mut p, mut sanos) = (Vec::new(), Vec::new());
     let e = &resumen["guarda_copias"]["espejo"];
     let resultado = corto(&e["resultado"], 300);
-    if !e.is_object() || resultado.is_empty() {
-        return (Vec::new(), Vec::new());
-    }
-    match resultado.strip_prefix("ERROR") {
-        Some(resto) => {
-            let marca = corto(&e["ultima"], 40);
-            let p = Problema {
-                tipo: "espejo_fallido".into(),
-                sujeto: String::new(),
-                nombre: String::new(),
-                mensaje: resto.trim_start_matches([':', ' ']).to_string(),
-                cuando: crate::api::de_fecha(&marca),
-                marca,
-            };
-            (vec![p], Vec::new())
+    if e.is_object() && !resultado.is_empty() {
+        match resultado.strip_prefix("ERROR") {
+            Some(resto) => {
+                let marca = corto(&e["ultima"], 40);
+                p.push(Problema {
+                    tipo: "espejo_fallido".into(),
+                    sujeto: String::new(),
+                    nombre: String::new(),
+                    mensaje: resto.trim_start_matches([':', ' ']).to_string(),
+                    cuando: crate::api::de_fecha(&marca),
+                    marca,
+                });
+            }
+            None => sanos.push("espejo_fallido|".into()),
         }
-        None => (Vec::new(), vec!["espejo_fallido|".into()]),
     }
+    for r in resumen["guarda_copias"]["retenciones"].as_array().into_iter().flatten().take(MAX_PROBLEMAS) {
+        let (usuario, repo) = (corto(&r["usuario"], 64), corto(&r["repo"], 64));
+        let sujeto = format!("{usuario}_{repo}");
+        if !id_ok(&usuario) || !id_ok(&repo) || sujeto.len() > 64 {
+            continue;
+        }
+        match r["resultado"].as_str() {
+            Some("fallo") => {
+                let marca = corto(&r["ultima"], 40);
+                p.push(Problema {
+                    tipo: "retencion_fallida".into(),
+                    sujeto,
+                    nombre: repo,
+                    mensaje: corto(&r["mensaje"], 300),
+                    cuando: crate::api::de_fecha(&marca),
+                    marca,
+                });
+            }
+            Some("ok") => sanos.push(format!("retencion_fallida|{sujeto}")),
+            _ => {}
+        }
+    }
+    (p, sanos)
 }
 
 /// Para no apuntar lo mismo con cada informe.
@@ -128,6 +153,7 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
         "externa_fallida" => format!("la copia externa de «{nombre}» en «{equipo}»"),
         "prueba_fallida" => format!("la prueba de restauración de «{nombre}» en «{equipo}»"),
         "espejo_fallido" => format!("el espejo de «{equipo}»"),
+        "retencion_fallida" => format!("la retención de «{nombre}» en el almacén «{equipo}»"),
         _ => format!("algo en «{equipo}»"),
     }
 }
@@ -192,5 +218,19 @@ mod tests {
         assert!(p.is_empty());
         assert_eq!(s, vec!["espejo_fallido|".to_string()]);
         assert_eq!(de_resumen(&json!({})), (vec![], vec![]));
+        // La retención del almacén, por repositorio (la que se aplica sola a su hora).
+        let (p, s) = de_resumen(&json!({ "guarda_copias": { "retenciones": [
+            { "usuario": "d8c60f71", "repo": "r-oficina", "resultado": "fallo", "ultima": "2026-10-05T03:00:09-05:00", "mensaje": "Hay datos dañados en el destino" },
+            { "usuario": "a1b2", "repo": "r-caja", "resultado": "ok", "ultima": "2026-10-05T03:00:09-05:00" },
+            { "usuario": "../x", "repo": "r", "resultado": "fallo" },
+            { "usuario": "c3", "repo": "nunca" }
+        ] } }));
+        assert_eq!(p.len(), 1);
+        assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str(), p[0].nombre.as_str()), ("retencion_fallida", "d8c60f71_r-oficina", "r-oficina"));
+        assert_eq!(s, vec!["retencion_fallida|a1b2_r-caja".to_string()]);
+        let (t, ok) = titulos(&p[0], "ALMACEN");
+        assert_eq!(t, "Falló la retención de «r-oficina» en el almacén «ALMACEN»");
+        assert_eq!(titulo_ok(&t), ok);
+        assert!(tipos(Fuente::Resumen).contains(&"retencion_fallida"));
     }
 }

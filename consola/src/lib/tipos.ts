@@ -610,6 +610,8 @@ export type TipoAviso =
   | "externa_fallida"
   | "prueba_fallida"
   | "espejo_fallido"
+  // v1.43: la retención del almacén que falló (la que se aplica sola a su hora).
+  | "retencion_fallida"
   | "cambio_clave";
 
 /**
