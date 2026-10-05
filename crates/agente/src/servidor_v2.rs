@@ -1577,6 +1577,13 @@ fn vincular_local_si_toca() {
     }
 }
 
+/// Antes de reabrir un canal que se cerró porque cambió el vínculo: 1 s la primera vez;
+/// si se repite con canales cortos, el doble cada vez (hasta 60 s) con un poco de azar.
+fn espera_reabrir(rapidas: u32, azar: u8) -> Duration {
+    let base = 1u64 << rapidas.min(6);
+    Duration::from_millis((base.min(60) * 1000) + u64::from(azar) * 4)
+}
+
 /// El servicio: un hilo por consola (`hilo_enlace`) y este, que vigila la lista
 /// (arranca el de una consola nueva), el alta pendiente de un servidor nuevo y
 /// «Vincular este servidor».
@@ -1614,6 +1621,10 @@ pub fn hilo() {
 /// cuando esa consola ya no está.
 fn hilo_enlace(id: &str) {
     let mut aviso = AvisoRepetido::default();
+    // Reaperturas seguidas «porque cambió el vínculo» con canales que duran nada: si algo
+    // lo cambiara una y otra vez, cada apertura y cierre avisa a las consolas abiertas
+    // (y vuelven a pedir). Se espera cada vez más (hasta 1 min), nunca en bucle.
+    let mut rapidas = 0u32;
     while crate::consolas_v2::vista(id).is_some() {
         let inicio = std::time::Instant::now();
         let antes = crate::consolas_v2::vista(id);
@@ -1623,7 +1634,8 @@ fn hilo_enlace(id: &str) {
         if resultado.is_ok() {
             if let (Some(a), Some(d)) = (antes.as_ref(), crate::consolas_v2::vista(id)) {
                 if cambiado_fuera(a, &d) {
-                    std::thread::sleep(Duration::from_secs(1));
+                    rapidas = if inicio.elapsed() < Duration::from_secs(10) { rapidas.saturating_add(1) } else { 0 };
+                    std::thread::sleep(espera_reabrir(rapidas, aleatorio::<1>()[0]));
                     continue;
                 }
             }
@@ -1664,6 +1676,14 @@ fn hilo_enlace(id: &str) {
 mod tests {
     use super::*;
     use resguardo_protocolo::orden_v2::{Autorizacion, OrdenV2};
+
+    #[test]
+    fn reabrir_el_canal_nunca_en_bucle() {
+        assert!(espera_reabrir(0, 0) >= Duration::from_secs(1));
+        assert!(espera_reabrir(3, 0) >= Duration::from_secs(8));
+        assert!(espera_reabrir(30, 255) <= Duration::from_secs(62));
+        assert!(espera_reabrir(30, 0) >= Duration::from_secs(60));
+    }
 
     #[test]
     fn vincular_local_solo_con_este_equipo() {
