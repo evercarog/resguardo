@@ -61,7 +61,7 @@ Hoy cada repositorio tiene **una** copia externa (`tasks::Offsite`: `restic copy
 - [ ] **4c. Filtros** en cada copia derivada: etiquetas, rutas o carpetas y antigüedad («solo las versiones de los últimos 30 días», «solo una al mes»). `restic copy` ya admite `--tag`, `--path` y los ids de versión que se elijan.
 - [ ] **4d. En la consola**, el flujo de cada copia de principio a fin: «Documentos (RECEPCION) → almacén D: → espejo E: y Dropbox; copia externa a B2».
 
-- [ ] **4e. Copias derivadas que hace el almacén, en local.** Problema: el equipo dueño solo llega al almacén por su rest-server (una carpeta, p. ej. `D:\Backups`); no puede escribir en otro disco del almacén (`E:\Backups`) ni usar sus nubes. Solución, con el mismo modelo que la **retención en el almacén** (`docs/compartir.md`): el dueño añade al repositorio una clave del almacén (con la clave de administración y espera) y el almacén hace la copia derivada **él mismo, en local**: origen `<carpeta>/<usuario>/<repo>`, destino cualquier carpeta de sus discos o cualquier destino que él alcance (B2, NAS, Dropbox conectado en él), con filtros (4c), contraseña de destino, retención y horario (incluido «después de cada copia»). Así se puede:
+- [ ] **4e. (Solo si 7b no basta) Copias derivadas que hace el almacén, en local.** Problema: el equipo dueño solo llega al almacén por su rest-server (una carpeta, p. ej. `D:\Backups`); no puede escribir en otro disco del almacén (`E:\Backups`) ni usar sus nubes. Solución, con el mismo modelo que la **retención en el almacén** (`docs/compartir.md`): el dueño añade al repositorio una clave del almacén (con la clave de administración y espera) y el almacén hace la copia derivada **él mismo, en local**: origen `<carpeta>/<usuario>/<repo>`, destino cualquier carpeta de sus discos o cualquier destino que él alcance (B2, NAS, Dropbox conectado en él), con filtros (4c), contraseña de destino, retención y horario (incluido «después de cada copia»). Así se puede:
   - **juntar** varios repositorios (p. ej. los de dos programas de contabilidad) en **un solo repositorio** en `E:` (`restic copy` de cada uno, destino creado con `--copy-chunker-params` del primero para deduplicar);
   - **repartir** uno en varios por etiqueta de la versión (p. ej. `semanal` → un repositorio, `diaria` → otro).
   La contrapartida es la de la retención en el almacén: quien controle el almacén puede **leer** esos repositorios. Opcional por repositorio, dicho claro en la consola, y se reutiliza la misma clave del almacén si ya está.
@@ -88,6 +88,23 @@ Hoy (`consola/src/lib/etiquetas.svelte.ts`) las etiquetas de los equipos tienen 
   - **avisos por etiqueta**: a quién se avisa y con qué importancia (p. ej. los de «Servidores», siempre por push);
   - plantilla por defecto por etiqueta: un equipo nuevo con esa etiqueta recibe esa plantilla (pidiendo la clave de administración).
 - No confundir con las **etiquetas de las versiones** (las de restic, p. ej. `diaria`, `semanal`), que son las que usan los filtros de las copias derivadas (4c, 4e). Valorar enseñarlas también con color en la lista de versiones.
+
+## 7. Destinos independientes, zonas del almacén y copias en cadena
+
+Decidido después de 3, 4 y 5, y **preferido a 4e** porque el almacén sigue sin tener contraseñas. Es el modelo que une el espejo y las copias derivadas en algo que se configura en un solo sitio, la copia.
+
+- [ ] **7a. Destinos de primera clase en la consola.** Crear un destino **sin crear un repositorio** (Dropbox, B2, S3, SFTP, NAS, una zona de un almacén), ponerle **nombre** («Almacén · Disco D», «Dropbox Oficina») y cambiarlo cuando quieras. Hoy el destino de un almacén lleva al equipo y no se renombra; en la app el modelo ya existe (`docs/destinos.md`, `places.json` con `name` editable). Al crear un repositorio se elige un destino de la lista.
+- [ ] **7b. Varias zonas en un almacén.** Un rest-server sirve **una sola carpeta** (`--path`, `crates/agente/src/server.rs`) y el agente no admite enlaces dentro (seguridad), así que `E:\Backups` necesita **otra instancia de rest-server con su puerto** (mismo certificado de la CA del almacén, solo añadir y `--private-repos`, usuarios propios). La consola lo enseña como zonas del mismo almacén: «Almacén · Disco D» (:8000), «Almacén · Disco E» (:8002), cada una un destino de 7a. Espacio libre por zona, firewall por puerto, todo con la clave de administración.
+- [ ] **7c. Copias ordenadas y en cadena.** En «Cambiar las copias», las copias se pueden **ordenar** y una copia puede empezar **«después de la anterior»** (la de arriba): cuando termina bien, empieza la siguiente; si falla, la cadena se para y avisa. Sin horas fijas y sin choques. El horario de siempre sigue disponible para cualquiera de ellas.
+- [ ] **7d. Qué hace cada paso de la cadena.** Al crear una copia, elegir:
+  1. **Copia nueva**: de carpetas del equipo, como ahora.
+  2. **Copia independiente de la anterior**: las versiones del repositorio de arriba a otro destino, con **su contraseña, su retención y sus filtros** (etiquetas, rutas, antigüedad; tarea 4). La hace el equipo dueño (`restic copy`) y, gracias a 7b, puede ir a otra zona del almacén.
+  3. **Espejo de la anterior, con la retención del original**: copia de archivos del repositorio de arriba; lo que la retención quita en el original se quita en el espejo pasados N días (borrado diferido de 3b).
+  4. **Espejo sin retención**: copia de archivos que nunca borra (como el espejo de hoy).
+
+  Los espejos (3 y 4) no necesitan contraseña. Si origen y destino son zonas del mismo almacén, o una nube conectada en él, los hace **el almacén en local**: sin red y sin contraseñas. Para encadenarlos tras una copia de otro equipo, el almacén detecta la versión nueva en `snapshots/` de ese repositorio (3a).
+  Ejemplo: «Contabilidad» → Almacén · Disco D; **después** → Almacén · Disco E (espejo con retención o copia independiente); **después** → Dropbox (espejo o copia independiente).
+- [ ] **7e. Convivencia con el espejo de hoy.** El espejo global del almacén («todo lo que guarda») sigue funcionando; la consola explica que los espejos por copia (7d) son la forma nueva y ofrece pasar uno a otro.
 
 ## Mientras tanto (sin código)
 
