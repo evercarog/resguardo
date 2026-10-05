@@ -11,6 +11,7 @@ import type { Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos"
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
+import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
 export type TipoNodo = "cliente" | "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa";
@@ -36,6 +37,8 @@ export interface NodoMapa {
   cifra?: string;
   /** Algo en marcha ahora (una copia o una copia externa). */
   vivo?: string | null;
+  /** v1.41: un aviso que se ve en la tarjeta (con icono): «En el mismo equipo que protege». */
+  aviso?: string;
   /** Un cliente (mapa de todos los clientes): su marca y si está plegado. */
   marca?: MarcaCliente | null;
   plegado?: boolean;
@@ -86,6 +89,8 @@ const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 export function claveDestino(e: Equipo, r: RepositorioResumen, equipos: Equipo[]): { clave: string; almacen?: Equipo } {
   const d = destinoDe(e.resumen?.destinos, r);
   const almacen = d?.equipo_almacen ? equipos.find((x) => x.id === d.equipo_almacen) : undefined;
+  // Un disco o carpeta local es de su equipo: dos equipos con un «Disco D» no son el mismo sitio.
+  if (!almacen && d?.tipo === "local") return { clave: `de:local|${e.id}|${d.id}` };
   return { clave: almacen ? `al:${almacen.id}` : d ? `de:${d.tipo}|${d.donde ?? d.nombre}` : `de:?|${r.destino}`, almacen };
 }
 
@@ -148,7 +153,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     for (const p of paquetes) {
       const tranquilo =
         saludEquipo(p.equipo, ahora).tono === "ok" &&
-        p.repos.every((x) => estadoRepo(x.r, informeDe(informes[p.equipo.id], x.r.id), p.equipo.resumen?.copias ?? [], ahora).tono === "ok" && !vivo(p.equipo.id, x.r.id, "copia") && !x.r.externa);
+        p.repos.every((x) => estadoRepo(x.r, informeDe(informes[p.equipo.id], x.r.id), p.equipo.resumen?.copias ?? [], ahora).tono === "ok" && !vivo(p.equipo.id, x.r.id, "copia") && !x.r.externa && !riesgoMismoEquipo(x.r, p.equipo, todos));
       if (tranquilo && p.repos.length) {
         const k = [...new Set(p.repos.map((x) => x.destino))].sort().join("+");
         grupos.set(k, [...(grupos.get(k) ?? []), p]);
@@ -175,12 +180,19 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       });
     }
     const d = destinoDe(p.equipo.resumen?.destinos, x.r);
+    // v1.41: un disco local dice de qué equipo es (y si es extraíble o de la red).
+    const l = d?.tipo === "local" ? lugarDe(d, p.equipo, todos) : null;
+    const sub = l
+      ? l.clase === "red"
+        ? "Carpeta de la red"
+        : `${l.clase === "usb" ? "Disco extraíble" : "Disco"} de ${p.equipo.nombre}${d?.unidad ? ` (${d.unidad})` : ""}`
+      : (TIPO_DESTINO[d?.tipo ?? "otro"] ?? "Destino");
     return poner({
       id: x.destino,
       tipo: "destino",
       col: 2,
       nombre: d?.nombre ?? x.r.destino,
-      sub: TIPO_DESTINO[d?.tipo ?? "otro"] ?? "Destino",
+      sub,
       tono: "ok",
       estado: "Recibe copias",
       ultima: null,
@@ -212,6 +224,12 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       vivo: enMarcha,
     });
     const dest = nodoDestino(p, x);
+    // v1.41: las copias se quedan en el mismo equipo que protegen (su disco o su propio almacén).
+    const riesgo = riesgoMismoEquipo(x.r, e, todos);
+    if (riesgo) {
+      if (riesgo.lugar.clase === "almacen_propio") pildora.aviso = "Su propio almacén: mismo equipo";
+      else dest.aviso = "En el mismo equipo";
+    }
     // El destino recuerda la versión más reciente que le llegó (y, si no es un almacén, si llegan copias).
     if (pildora.ultima && (!dest.ultima || pildora.ultima > dest.ultima)) dest.ultima = pildora.ultima;
     const t: Tono = enMarcha ? "info" : est.tono;
@@ -338,7 +356,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         const destinos = aristas.filter((a) => a.de === p.id).map((a) => ({ a, n: por(a.a) }));
         const guarda = destinos.filter((x) => x.a.tipo === "guarda").map((x) => x.n.nombre);
         const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia externa" ? `copia externa (${enFrase(x.n, ahora)})` : `copia externa a ${x.n.nombre} (${enFrase(x.n, ahora)})`));
-        return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)})${ext.length ? `, con ${lista(ext)}` : ""}`;
+        const mismo = p.aviso || destinos.some((x) => x.a.tipo === "guarda" && x.n.aviso) ? ", en el mismo equipo que protege" : "";
+        return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)}${mismo})${ext.length ? `, con ${lista(ext)}` : ""}`;
       });
     frases.push(partes.length ? `${n.nombre} copia ${lista(partes)}.` : `${n.nombre}: ${minus(n.sub)}.`);
   }

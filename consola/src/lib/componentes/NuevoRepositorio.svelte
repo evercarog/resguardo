@@ -25,6 +25,9 @@
   import FormRepoExistente from "./FormRepoExistente.svelte";
   import { TEXTO_TROCEADO, origenCuerpo, recordarOrigen, repoExistenteCompleto, repoExistenteVacio } from "$lib/adoptar";
   import { admiteAlmacenPropio, TEXTO_ALMACEN_PROPIO } from "$lib/retencion";
+  // v1.41: dónde se guardará, en palabras, y el aviso si se queda en el mismo equipo.
+  import { lugarDe } from "$lib/dondeGuarda";
+  import SeGuardaEn from "./SeGuardaEn.svelte";
 
   let { cliente, equipos, destinos, equipoInicial, onclose }: { cliente: Cliente; equipos: Equipo[]; destinos: DestinoResumen[]; equipoInicial?: string; onclose: () => void } = $props();
 
@@ -88,7 +91,22 @@
     destinoId = untrack(() => (otro ? `almacen:${otro.id}` : (destinosEquipo[0]?.id ?? "nuevo")));
   });
   const ubicacion = $derived(destino ? `${destino.nombre}${destino.donde ? ` (${destino.donde})` : ""}` : `${nombreDestino} (${donde})`);
-  const ETIQUETA_TIPO = { rest: "Servidor de copias (rest-server)", b2: "Backblaze B2", s3: "S3 compatible", local: "Disco o carpeta del equipo" };
+  const ETIQUETA_TIPO = { rest: "Servidor de copias (rest-server)", b2: "Backblaze B2", s3: "S3 compatible", local: "Carpeta de este equipo (o un disco USB)" };
+
+  // v1.41: «Se guarda en: …» de lo elegido, y si se queda en el mismo equipo que protege.
+  const letra = (r: string) => /^[a-z]:/i.test(r.trim()) ? `${r.trim()[0].toUpperCase()}:` : null;
+  const lugar = $derived(
+    !equipo
+      ? null
+      : almacenElegido
+        ? lugarDe({ id: "", nombre: almacenElegido.nombre, tipo: "rest", equipo_almacen: almacenElegido.id }, equipo, equipos)
+        : destinoId === "nuevo"
+          ? lugarDe({ id: "", nombre: nombreDestino.trim() || "Destino nuevo", tipo, donde: tipo === "local" ? undefined : donde.trim(), unidad: tipo === "local" ? letra(donde) : undefined, red: tipo === "local" && /^(\\\\|\/\/)/.test(donde.trim()), extraible: tipo === "local" ? null : undefined }, equipo, equipos)
+          : lugarDe(destino, equipo, equipos),
+  );
+  const mismoEquipo = $derived(!!lugar && (lugar.clase === "carpeta" || lugar.clase === "almacen_propio"));
+  /** El almacén de otro equipo que se recomienda en vez de una carpeta de este. */
+  const otroAlmacen = $derived(almacenes.find((a) => a.id !== equipoId));
 
   /** 32 bytes aleatorios en base64url: la contraseña del repositorio. */
   function generar() {
@@ -193,7 +211,7 @@
         <label class="field-label" for="r-destino">Destino</label>
         <select id="r-destino" class="input" bind:value={destinoId}>
           {#each almacenesNuevos as a (a.id)}<option value="almacen:{a.id}">{a.id === equipoId ? `Su propio almacén (${a.nombre})` : `Almacén ${a.nombre} (recomendado)`}</option>{/each}
-          {#each destinosEquipo as d (d.id)}<option value={d.id}>{d.nombre}{d.inmutable ? " · inmutable" : ""}{almacenes.some((a) => esDe(d, a)) ? " · almacén de la oficina" : ""}</option>{/each}
+          {#each destinosEquipo as d (d.id)}<option value={d.id}>{d.nombre}{d.inmutable ? " · inmutable" : ""}{almacenes.some((a) => esDe(d, a)) ? " · almacén de la oficina" : ""}{d.tipo === "local" && !d.red ? (d.extraible ? " · disco extraíble de este equipo" : " · en este mismo equipo") : ""}</option>{/each}
           <option value="nuevo">Un destino nuevo…</option>
         </select>
       </div>
@@ -238,6 +256,22 @@
         {:else}
           <p class="faint nota">{almacenElegido.nombre} guarda copias de los equipos de {cliente.nombre}: {equipo?.nombre ?? "el equipo"} tendrá allí su propio usuario y no podrá borrar lo ya copiado. No hace falta escribir dirección ni contraseñas.</p>
         {/if}
+      {/if}
+      {#if lugar && (destinoId !== "nuevo" || donde.trim())}<p class="donde"><SeGuardaEn {lugar} riesgo={mismoEquipo} /></p>{/if}
+      {#if mismoEquipo && lugar?.clase === "carpeta"}
+        <div class="notice notice-warn" role="note">
+          <TriangleAlert size={16} />
+          <div class="aviso-txt">
+            <p><strong>Se quedaría en el mismo equipo.</strong> Si {equipo?.nombre ?? "el equipo"} se daña o lo cifra un ransomware, se pierden los archivos y sus copias a la vez.{#if otroAlmacen}{" "}{cliente.nombre} tiene un almacén en otro equipo: es lo recomendado.{/if}{" "}Si es un disco USB que guardas aparte, adelante.</p>
+            {#if otroAlmacen}
+              {#if almacenesNuevos.some((a) => a.id === otroAlmacen.id)}
+                <button type="button" class="btn btn-sm" onclick={() => (destinoId = `almacen:${otroAlmacen.id}`)}>Usar el almacén {otroAlmacen.nombre}</button>
+              {:else if destinosEquipo.find((d) => esDe(d, otroAlmacen))}
+                <button type="button" class="btn btn-sm" onclick={() => (destinoId = destinosEquipo.find((d) => esDe(d, otroAlmacen))!.id)}>Usar el almacén {otroAlmacen.nombre}</button>
+              {/if}
+            {/if}
+          </div>
+        </div>
       {/if}
       {#if !almacenElegido}<CampoObservaciones id="r-observaciones" bind:valor={observaciones} filas={2} />{/if}
       <!-- También en un almacén: «Copiar en …» lo pasa a crear_repositorio (parametros_de). -->
@@ -323,6 +357,15 @@
   .nota {
     margin: 0;
     font-size: var(--fs-xs);
+  }
+  .donde {
+    margin: 0;
+  }
+  .aviso-txt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
   .avanzado {
     display: flex;

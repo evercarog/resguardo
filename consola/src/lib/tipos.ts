@@ -340,6 +340,10 @@ export interface DestinoResumen {
   donde?: string;
   inmutable?: boolean;
   equipo_almacen?: string | null;
+  /** v1.41, solo un destino local: su unidad («D:», solo Windows), si es extraíble (USB…; null: no se sabe) y si es de la red. Nunca la ruta. */
+  unidad?: string | null;
+  extraible?: boolean | null;
+  red?: boolean;
 }
 
 export interface Equipo {

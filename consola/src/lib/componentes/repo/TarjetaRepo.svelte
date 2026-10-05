@@ -11,12 +11,19 @@
   import Chip from "../Chip.svelte";
   import AnilloProteccion from "./AnilloProteccion.svelte";
   import DiasCuadros from "./DiasCuadros.svelte";
+  // v1.41: dónde se guarda (y si se queda en el mismo equipo).
+  import { actual } from "$lib/estado.svelte";
+  import { comprobacionLugar, lugarDe, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "../SeGuardaEn.svelte";
 
   let { repo, inf, equipo, cliente, ahora }: { repo: RepositorioResumen; inf: RepoInforme | null; equipo: Equipo; cliente: string; ahora: number } = $props();
 
   const copias = $derived((equipo.resumen?.copias ?? []).filter((k: CopiaResumen) => k.repo === repo.id));
   const destino = $derived(destinoDe(equipo.resumen?.destinos, repo));
-  const prot = $derived(proteccion(inf));
+  const todos = $derived(actual.equipos.length ? actual.equipos : [equipo]);
+  const lugar = $derived(lugarDe(destino, equipo, todos));
+  const riesgo = $derived(riesgoMismoEquipo(repo, equipo, todos));
+  const prot = $derived(proteccion(inf, comprobacionLugar(repo, equipo, todos)));
   const ej = $derived(ultimaEjecucion(inf));
   const ult = $derived(ultimaVersion(repo, inf));
   const n = $derived(nVersiones(repo, inf));
@@ -34,7 +41,8 @@
   <div class="cab">
     <div class="nombre">
       <strong>{repo.nombre}</strong>
-      <span class="faint">{equipo.nombre} · {destino?.nombre ?? repo.destino}</span>
+      <span class="faint">{equipo.nombre}</span>
+      <SeGuardaEn pequeno {lugar} riesgo={!!riesgo} />
     </div>
     <Chip pequeno tono={estado.tono} texto={estado.texto} />
   </div>

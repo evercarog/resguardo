@@ -51,6 +51,7 @@ const CARPETAS: Record<string, string[]> = {
   caja: ["C:\\Facturas"],
   proyectos: ["E:\\Proyectos", "E:\\Audio", "F:\\Entregas", "C:\\Users\\estudio\\Documents"],
   "subida-nube": ["/srv/resguardo/repos"],
+  compartidas: ["E:\\Compartido\\Administracion", "E:\\Compartido\\Ventas", "E:\\Compartido\\Planos"],
 };
 
 export function configInicial(e: EquipoMock): T.Configuracion {
@@ -595,16 +596,26 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const origen = (c.origen ?? {}) as { repo?: string; contrasena?: string };
       if (origen.repo === repo.id) return resultado(e, o, "fallida", "El origen es el mismo repositorio: elige otro.");
       if (/mala/i.test(String(origen.contrasena ?? ""))) return resultado(e, o, "fallida", "Repositorio de origen: la contraseña no abre ese repositorio.");
-      // Como el agente: «en marcha» con el progreso y, al final, «hecha».
-      const total = 40;
+      // Como el agente: «en marcha» con el progreso y, al final, «hecha». De un
+      // repositorio de este equipo (`origen.repo`, «Mover a otro sitio…»), sus
+      // versiones y lo que ocupa; lo ya traído no se repite.
+      const deAqui = origen.repo ? e.resumen?.repositorios?.find((r) => r.id === origen.repo) : undefined;
+      if (origen.repo && !deAqui) return resultado(e, o, "fallida", "El repositorio de origen no lo gestiona este equipo.");
+      const total = deAqui ? (deAqui.versiones ?? 0) : 40;
+      const ya = deAqui ? Math.min(total, repo.versiones ?? 0) : 0;
+      const faltan = total - ya;
       let hechas = 0;
-      resultado(e, o, "en_marcha", `Trayendo el historial: 0 de ${total} versiones…`);
+      resultado(e, o, "en_marcha", `Trayendo el historial: 0 de ${faltan} versiones…`);
       const t = setInterval(() => {
-        hechas = Math.min(total, hechas + 8);
-        if (hechas < total) return resultado(e, o, "en_marcha", `Trayendo el historial: ${hechas} de ${total} versiones…`);
+        hechas = Math.min(faltan, hechas + Math.max(8, Math.ceil(faltan / 6)));
+        if (hechas < faltan) return resultado(e, o, "en_marcha", `Trayendo el historial: ${hechas} de ${faltan} versiones…`);
         clearInterval(t);
-        repo.versiones = (repo.versiones ?? 0) + total;
-        resultado(e, o, "hecha", `Historial traído: ${total} versiones nuevas.`);
+        repo.versiones = deAqui ? total : (repo.versiones ?? 0) + total;
+        if (deAqui) {
+          repo.bytes = deAqui.bytes;
+          repo.ultima_version = deAqui.ultima_version;
+        }
+        resultado(e, o, "hecha", `Historial traído: ${faltan} versiones nuevas.${ya ? ` ${ya} ya estaban.` : ""}`);
       }, 2000);
       return;
     }
@@ -757,6 +768,15 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       repo.retencion = textoRegla(regla);
       if (admite) repo.retencion_regla = regla;
       return resultado(e, o, "hecha", `Retención guardada: ${textoRegla(regla)}.`);
+    }
+    case "quitar_repositorio": {
+      // Como el agente: lo olvida (y deja de copiar en él); lo guardado sigue en su destino.
+      const r = e.resumen?.repositorios?.find((x) => x.id === c.repo);
+      if (!r || !e.resumen) return resultado(e, o, "fallida", "Ese repositorio no existe en este equipo.");
+      e.resumen.repositorios = (e.resumen.repositorios ?? []).filter((x) => x.id !== r.id);
+      e.resumen.copias = (e.resumen.copias ?? []).filter((k) => k.repo !== r.id);
+      guardarConfig(e, configInicial(e), plana.seq);
+      return resultado(e, o, "hecha", `Repositorio «${r.nombre}» quitado de este equipo. Lo guardado sigue en su destino.`);
     }
     default:
       await espera(800);

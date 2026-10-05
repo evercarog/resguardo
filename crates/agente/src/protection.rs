@@ -56,6 +56,8 @@ pub struct Facts {
     pub kit_ok: bool,
     pub kit_stale: bool,
     pub has_retention: bool,
+    /// v1.41: un destino local, qué disco es (unidad, extraíble, de la red). `None`: no es local.
+    pub disk: Option<crate::espacio::Disco>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -249,6 +251,29 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
         item("retencion", State::Ok, "Retención", "Configurada.")
     });
 
+    // 8. v1.41: fuera del equipo que protege (solo un destino local; los demás ya lo están).
+    // Al final, para no mover las anteriores: quien lea `items` por posición sigue igual.
+    if f.kind == "local" && !target {
+        let disk = f.disk.clone().unwrap_or_default();
+        let unidad = disk.unidad.as_deref().map(|u| format!(" ({u})")).unwrap_or_default();
+        items.push(if disk.red {
+            item("lugar", State::Ok, "Fuera de este equipo", "En una carpeta de otra máquina de la red.")
+        } else if disk.extraible == Some(true) {
+            item("lugar", State::Ok, "Fuera de este equipo", format!("En un disco extraíble{unidad}: guárdalo lejos del equipo cuando no copie."))
+        } else if f.has_offsite {
+            item("lugar", State::Ok, "Fuera de este equipo", format!("En este mismo equipo{unidad}, pero con copia externa."))
+        } else {
+            item(
+                "lugar",
+                State::Warn,
+                "Fuera de este equipo",
+                format!(
+                    "En este mismo equipo{unidad}: si se daña o lo cifra un ransomware, se pierden los archivos y las copias. Guárdalas en un almacén de otro equipo o añade una copia externa."
+                ),
+            )
+        });
+    }
+
     Protection { score: items.iter().filter(|i| i.state == State::Ok).count(), total: items.len(), items }
 }
 
@@ -294,6 +319,9 @@ pub fn agent_facts(
         cloud_verify_run: task("verify_offsite"),
         ..Default::default()
     };
+    if f.kind == "local" {
+        f.disk = Some(crate::espacio::disco_de(location));
+    }
     if f.plans == 0 {
         if let Some(src) = cloud_verify_src {
             f.has_cloud_verify = true;
@@ -467,6 +495,34 @@ mod tests {
         let mut f = completo();
         f.append_only = None;
         assert_eq!(evaluate(&f, now()).items[1].state, State::Unknown);
+    }
+
+    #[test]
+    fn copias_en_el_mismo_equipo() {
+        let lugar = |f: &Facts| evaluate(f, now()).items.into_iter().find(|i| i.id == "lugar");
+        // Fuera del equipo (un servidor, la nube): no hace falta decirlo.
+        assert!(lugar(&completo()).is_none());
+        assert_eq!(evaluate(&completo(), now()).total, 7);
+        // En una carpeta del propio equipo, sin copia externa: aviso, con la unidad.
+        let mut f = completo();
+        f.kind = "local".into();
+        f.has_offsite = false;
+        f.disk = Some(crate::espacio::Disco { unidad: Some("D:".into()), extraible: Some(false), red: false });
+        let i = lugar(&f).unwrap();
+        assert_eq!(i.state, State::Warn);
+        assert!(i.detail.starts_with("En este mismo equipo (D:)"), "{}", i.detail);
+        assert_eq!(evaluate(&f, now()).total, 8);
+        // Sin saber qué disco es (un agente que no pudo mirarlo): también aviso.
+        f.disk = None;
+        assert_eq!(lugar(&f).unwrap().state, State::Warn);
+        // Un disco USB, una carpeta de la red o con copia externa: bien.
+        f.disk = Some(crate::espacio::Disco { unidad: Some("E:".into()), extraible: Some(true), red: false });
+        assert_eq!(lugar(&f).unwrap().state, State::Ok);
+        f.disk = Some(crate::espacio::Disco { unidad: None, extraible: Some(false), red: true });
+        assert_eq!(lugar(&f).unwrap().state, State::Ok);
+        f.disk = None;
+        f.has_offsite = true;
+        assert!(lugar(&f).unwrap().detail.contains("con copia externa"));
     }
 
     #[test]
