@@ -29,6 +29,7 @@
   import CuandoSeLlena from "$lib/componentes/llenado/CuandoSeLlena.svelte";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
+  import { riesgosDelCliente } from "$lib/dondeGuarda";
 
   interface Urgente {
     tono: Tono;
@@ -62,6 +63,17 @@
             : { texto: "Ver equipo", href: `/c/${c}/equipos/${e.id}` },
       });
     }
+    // v1.41: copias que se quedan en el mismo equipo que protegen.
+    for (const { equipo: e, repo: r, riesgo } of riesgosDelCliente(delFiltro, actual.equipos))
+      out.push({
+        tono: "warn",
+        texto: riesgo.texto,
+        titulo: `${e.nombre} · copias en el mismo equipo`,
+        detalle: `«${r.nombre}»: ${riesgo.texto}`,
+        accion: puede.administrar(actual.cliente?.rol)
+          ? { texto: "Mover a un almacén…", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}?mover=1` }
+          : { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}` },
+      });
     if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver avisos", href: `/c/${c}/avisos` } });
     return out.sort((a, b) => PESO[a.tono] - PESO[b.tono]);
   });
