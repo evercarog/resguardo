@@ -231,7 +231,11 @@ pub fn entrada(v: &Vuelta) -> Value {
             quedan.sort_by(|a, b| b.time.cmp(&a.time));
             // Unas versiones que quedan en el grupo: la consola sabe de qué copia es alguna (su informe).
             let refs: Vec<String> = quedan.iter().take(REFS).map(|s| corto(&s.id)).collect();
-            json!({ "copia": copia, "refs": Some(refs).filter(|r| !r.is_empty()), "quedan": quedan.len() })
+            let mut g = json!({ "copia": copia, "quedan": quedan.len() });
+            if !refs.is_empty() {
+                g["refs"] = json!(refs);
+            }
+            g
         })
         .collect();
     let mut motivos: Vec<String> = Vec::new();
