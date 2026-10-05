@@ -383,12 +383,13 @@ La espera mínima (`espera_min_horas`, 1–168) **la guarda cada equipo**. Cambi
   "repositorios": [{ "id", "nombre", "destino": "<nombre del destino>", "retencion": "7 diarias · 4 semanales · …" | null,
                      "solo_anadir": true | false | null }],
   "destinos": [{ "id", "nombre", "tipo": "local" | "rest" | "s3" | "b2" | "sftp", "donde": "<servidor o bucket>" | null,
-                 "equipo_almacen": "<id del equipo que guarda copias>" | null }],
+                 "equipo_almacen": "<id del equipo que guarda copias>" | null,
+                 "unidad": "D:" | null, "extraible": true | false | null, "red": true | false }],
   "pausado_hasta": "<RFC 3339>" | "indefinido" | null
 }
 ```
 
-En un destino `local`, `donde` es `null` (sería una ruta del equipo). `destinos[].equipo_almacen` (v1.30, agente ≥ 0.7.14): el equipo que guarda copias de ese destino, si la consola lo dijo al crearlo con «Copiar en …» (`crear_repositorio.destino.equipo_almacen`); `null` en los demás y en los creados antes (la consola los reconoce entonces por el id `almacen-<8 primeros del equipo>` o por el nombre). `repositorios[].solo_anadir` (v1.14): si su rest-server es de solo añadir (la comprobación diaria del agente o la de cuando se adoptó); `null` si no se sabe o no es un rest-server. Desde v1.22 la comprobación usa la autoridad TLS propia del destino (`ca_pem`, la de un almacén), así que un repositorio en un almacén sale `true`. `repositorios[].ruta` (v1.22): la carpeta del repositorio en su servidor rest cuando no es su `id` (uno adoptado); solo un nombre.
+En un destino `local`, `donde` es `null` (sería una ruta del equipo); desde v1.41 lleva en su lugar qué disco es, sin la ruta: `unidad` (la letra, «D:», solo en Windows), `extraible` (un disco USB, FireWire o una tarjeta; `null` si no se pudo saber) y `red` (una carpeta compartida de otra máquina, `\\servidor\copias` o NFS/SMB). Con ello la consola dice «en este mismo equipo (D:)» y avisa si las copias se quedan en el equipo que protegen; un agente anterior no los manda y la consola avisa igual. `destinos[].equipo_almacen` (v1.30, agente ≥ 0.7.14): el equipo que guarda copias de ese destino, si la consola lo dijo al crearlo con «Copiar en …» (`crear_repositorio.destino.equipo_almacen`); `null` en los demás y en los creados antes (la consola los reconoce entonces por el id `almacen-<8 primeros del equipo>` o por el nombre). `repositorios[].solo_anadir` (v1.14): si su rest-server es de solo añadir (la comprobación diaria del agente o la de cuando se adoptó); `null` si no se sabe o no es un rest-server. Desde v1.22 la comprobación usa la autoridad TLS propia del destino (`ca_pem`, la de un almacén), así que un repositorio en un almacén sale `true`. `repositorios[].ruta` (v1.22): la carpeta del repositorio en su servidor rest cuando no es su `id` (uno adoptado); solo un nombre.
 
 v1.35 (varias consolas, [consolas-multiples.md](consolas-multiples.md)): el resumen lleva también `consolas: [{ id, nombre, url, identidad, sal_cliente | null, ultimo_contacto | null (redondeado a 15 min), desde | null, esta }]` (las consolas que gestionan el equipo; `esta: true` la que recibe el resumen; sin credenciales), `cambio_config: { tipo, cuando, consola: { nombre, url, identidad } } | null` (el último cambio y desde qué consola llegó: si no es esta, la consola enseña «Cambiado desde otra consola») y `admite` con `"consolas_multiples"`.
 
@@ -619,7 +620,7 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
   "verificacion": { "ultima", "resultado": "ok" | "aviso" | "fallo", "mensaje_corto" } | null,
   "prueba_restauracion": { … igual } | null,
   "externa": { … igual } | null,
-  "proteccion": { "puntuacion": 5, "total": 7, "items": [{ "id": "copias" | "borrado" | "externa" | "verificacion" | "restauracion" | "kit" | "retencion",
+  "proteccion": { "puntuacion": 5, "total": 7, "items": [{ "id": "copias" | "borrado" | "externa" | "verificacion" | "restauracion" | "kit" | "retencion" | "lugar",
                   "estado": "ok" | "aviso" | "fallo" | "desconocido", "etiqueta", "detalle" }] },
   "recortado": true
 }
@@ -627,7 +628,7 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
 
 - `versiones` y `ejecuciones`: los últimos 60 días, la más reciente primero, como mucho 500 y 400. Los campos numéricos de una versión pueden ser `null` (versiones de restic < 0.17 sin resumen).
 - `versiones` y `espacio` salen de restic y el agente los guarda en caché: las versiones se releen cuando termina una copia (o cada 6 h), el espacio una vez al día. `versiones_leidas` y `espacio.leido` dicen de cuándo son. Desde v1.30 (agente ≥ 0.7.14), al terminar una copia el agente relee sus versiones **antes** de mandar el informe inmediato (como mucho 20 s), así que ese informe y el resumen ya las cuentan; y con la pista `refrescar` (§8) relee las versiones y el espacio del repositorio en el que un almacén acaba de aplicar la retención.
-- `proteccion`: las mismas reglas que la app de escritorio (`protection.rs`). En un equipo gestionado el kit cuenta como guardado (la consola lo muestra al crear el repositorio y pide confirmarlo) y la retención es la de `cambiar_retencion`.
+- `proteccion`: las mismas reglas que la app de escritorio (`protection.rs`). En un equipo gestionado el kit cuenta como guardado (la consola lo muestra al crear el repositorio y pide confirmarlo) y la retención es la de `cambiar_retencion`. v1.41: en un destino local, al final, `lugar` («Fuera de este equipo»): `aviso` si las copias se quedan en una carpeta del propio equipo (o no se sabe qué disco es) sin copia externa; `ok` en un disco extraíble, una carpeta de la red o con copia externa. En los demás destinos no sale (el total sigue siendo el de antes).
 - `proximas` (v1.12): la próxima vez que toca cada copia de la configuración; `null` si está desactivada o su repositorio está en pausa sin fecha (con fecha, la primera hora después de la pausa). Los campos numéricos de `ejecuciones` (v1.12) pueden ser `null` (vueltas que fallaron antes de empezar o de un agente anterior).
 - El informe entero ocupa como mucho ~200 KiB: si no cabe, se recortan a la mitad las ejecuciones y las versiones más antiguas (y `recortado: true`).
 - `ultimo_seq` (agente ≥ 0.7.13): el último número de orden que aceptó el equipo. Si el servidor recuerda uno anterior (p. ej. tras restaurar la copia de la consola), sube su `siguiente_seq` hasta el siguiente: si no, el equipo rechazaría las órdenes nuevas por «repetidas». Nunca lo baja. Un agente anterior no lo manda.
@@ -1168,3 +1169,7 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
   - **Verificación automática con horario** (§6, `verificaciones.<repo>.horario`; agente con `admite: "verificacion_horario"`): las mismas reglas que las copias. Un agente anterior ignora `horario` y sigue con `cada_dias` (la consola lo manda siempre); el resumen trae `horario`.
   - **Retención del almacén con horario** (§5, `retencion_almacen.horario.reglas`; almacén con `admite: "retencion_almacen_horario"`). Uno anterior ignora `reglas` y usa `dias`/`hora`.
   - El servidor no interpreta la configuración ni el resumen: lo de las verificaciones y el almacén no le cambia nada.
+- v1.41 («¿Dónde se guardan las copias?»). Compatible hacia atrás:
+  - **Qué disco es un destino local** (§4): `resumen.destinos[]` de tipo `local` lleva `unidad` («D:», solo Windows), `extraible` (USB, FireWire o tarjeta; `null` si no se sabe) y `red` (carpeta de otra máquina). Nunca la ruta. Un agente anterior no los manda: la consola trata el disco como desconocido y avisa.
+  - **`proteccion.items[]` «lugar»** (§6, informe): solo en destinos locales, al final de la lista. Aviso si las copias se quedan en el equipo que protegen sin copia externa.
+  - La consola dice en cada copia y repositorio dónde se guarda («Se guarda en: Almacén … (otro equipo)», «en este mismo equipo (D:)»…), avisa en Estado de las copias que se quedan en el mismo equipo y ofrece «Mover a otro sitio…»: crea el repositorio en el destino nuevo con `parametros_de: { repo }` del actual, trae su historial (`copiar_historial` con `origen: { repo }`), cambia las copias (`config`) y propone `quitar_repositorio` del anterior. Sin órdenes nuevas: el servidor no cambia.

@@ -885,7 +885,18 @@ pub fn resumen(v: &Vinculo) -> Value {
         })).collect::<Vec<_>>(),
         // Sin la carpeta de un destino local (es una ruta del equipo).
         // v1.30: `equipo_almacen`, el equipo que guarda copias del destino (si se sabe).
-        "destinos": v.destinos.iter().map(|d| json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": (d.tipo != "local").then(|| d.donde.clone()), "equipo_almacen": d.equipo_almacen })).collect::<Vec<_>>(),
+        // v1.41: de un destino local, solo qué disco es (`unidad` «D:», `extraible`, `red`): la
+        // consola avisa si las copias se quedan en el mismo equipo que protegen.
+        "destinos": v.destinos.iter().map(|d| {
+            let mut x = json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": (d.tipo != "local").then(|| d.donde.clone()), "equipo_almacen": d.equipo_almacen });
+            if d.tipo == "local" {
+                let disco = crate::espacio::disco_de(&d.donde).json();
+                for k in ["unidad", "extraible", "red"] {
+                    x[k] = disco[k].clone();
+                }
+            }
+            x
+        }).collect::<Vec<_>>(),
         "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
         "guarda_copias": resumen_guarda_copias(),
         // v1.19: un puerto libre para «Este equipo guarda copias» (la consola lo propone).
@@ -1394,6 +1405,18 @@ mod tests {
         assert!(d.equipo_almacen.is_none() && !serde_json::to_string(&d).unwrap().contains("equipo_almacen"));
         let v = Vinculo { destinos: vec![Destino { equipo_almacen: Some(id.into()), ..d }], ..Default::default() };
         assert_eq!(resumen(&v)["destinos"][0]["equipo_almacen"], id);
+    }
+
+    #[test]
+    fn un_destino_local_dice_que_disco_es_sin_su_ruta() {
+        let local = Destino { id: "nas".into(), nombre: "NAS".into(), tipo: "local".into(), donde: r"\\nas\carpeta-reservada".into(), ..Default::default() };
+        let rest = Destino { id: "srv".into(), nombre: "Servidor".into(), tipo: "rest".into(), donde: "https://x:8000/a/".into(), ..Default::default() };
+        let v = Vinculo { destinos: vec![local, rest], ..Default::default() };
+        let r = resumen(&v);
+        let d = &r["destinos"][0];
+        assert_eq!((d["red"].as_bool(), d["extraible"].as_bool(), d["donde"].is_null()), (Some(true), Some(false), true));
+        assert!(!r.to_string().contains("carpeta-reservada"), "nunca la ruta: {r}");
+        assert!(r["destinos"][1].get("unidad").is_none(), "solo en los locales");
     }
 
     #[test]
