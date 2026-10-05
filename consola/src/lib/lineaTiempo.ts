@@ -1,10 +1,9 @@
 // La línea de tiempo de las versiones («máquina del tiempo», docs/diseno.md §4):
-// lo que no es pantalla. Las escalas (día, semana, mes, año), las marcas del
-// eje, el color de cada copia (tres de una paleta validada para daltonismo,
-// en orden fijo; las demás, en tinta neutra), la retención simulada (qué se
-// queda y por qué, qué quitaría la próxima vez) y lo que se dibuja con ella:
-// el «río» de versiones por periodo, las burbujas de las que no caben y las
-// franjas de cada regla.
+// lo que no es pantalla. El «calendario de calor» (días × horas, o un año día
+// a día como el historial de contribuciones), la «bitácora» (la lista por días),
+// el color de cada copia (tres de una paleta validada para daltonismo, en orden
+// fijo; las demás, en tinta neutra) y la retención simulada (qué se queda y
+// por qué, qué quitaría la próxima vez).
 import type { DestinoResumen, Equipo, Regla, RepositorioResumen } from "./tipos";
 import { almacenDe, motivosQuedan, reglaDe, type Periodo } from "./retencion";
 
@@ -21,53 +20,37 @@ export interface VersionLinea {
   /** Lo nuevo que añadió. */
   anadido?: number | null;
   archivos?: number | null;
+  etiquetas?: string[];
 }
 
-export type Zoom = "dia" | "semana" | "mes" | "ano";
-/** Cada escala: lo que se ve (`ms`) y el tramo del «río» (`rio`: versiones por hora, por día…). */
-export const ZOOM: Record<Zoom, { texto: string; ms: number; rio: number; por: string }> = {
-  dia: { texto: "Día", ms: DIA, rio: HORA, por: "hora" },
-  semana: { texto: "Semana", ms: 7 * DIA, rio: 6 * HORA, por: "6 horas" },
-  mes: { texto: "Mes", ms: 31 * DIA, rio: DIA, por: "día" },
-  ano: { texto: "Año", ms: 366 * DIA, rio: 7 * DIA, por: "semana" },
+/** Lo que se ve del calendario: los últimos 7, 30, 60 o 365 días. */
+export type Rango = 7 | 30 | 60 | 365;
+export const RANGOS: { dias: Rango; texto: string }[] = [
+  { dias: 7, texto: "7 días" },
+  { dias: 30, texto: "30 días" },
+  { dias: 60, texto: "60 días" },
+  { dias: 365, texto: "Un año" },
+];
+
+/** El inicio del día (hora local) de `t`, `n` días después. */
+export function inicioDia(t: number, n = 0): number {
+  const d = new Date(t);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n).getTime();
+}
+/** «2026-09-29» (hora local): la clave de un día, la misma que la de la URL. */
+export const claveDia = (t: number) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-export const ZOOMS = Object.keys(ZOOM) as Zoom[];
 
-/** La escala en la que caben bien las versiones (al menos 6 a la vista, o todas). */
-export function zoomInicial(horas: number[], ahora: number): Zoom {
-  for (const z of ZOOMS) if (horas.filter((t) => t > ahora - ZOOM[z].ms).length >= Math.min(6, horas.length)) return z;
-  return "ano";
-}
-
-const fmtHora = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" });
-const fmtDiaSemana = new Intl.DateTimeFormat("es", { weekday: "short", day: "numeric" });
-const fmtDia = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
-const fmtMes = new Intl.DateTimeFormat("es", { month: "short" });
-const fmtMesAno = new Intl.DateTimeFormat("es", { month: "short", year: "numeric" });
-
-/** Marcas del eje entre `desde` y `hasta` según la escala, alineadas al calendario. */
-export function marcasEje(desde: number, hasta: number, z: Zoom): { t: number; texto: string; fuerte: boolean }[] {
-  const out: { t: number; texto: string; fuerte: boolean }[] = [];
-  const d = new Date(desde);
-  if (z === "dia") {
-    const c = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(d.getHours() / 3) * 3);
-    for (let t = c.getTime(); t <= hasta; t += 3 * HORA) {
-      const x = new Date(t);
-      if (t >= desde) out.push({ t, texto: x.getHours() === 0 ? fmtDia.format(x) : fmtHora.format(x), fuerte: x.getHours() === 0 });
-    }
-  } else if (z === "semana" || z === "mes") {
-    const paso = z === "semana" ? 1 : 5;
-    for (let x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.getTime() <= hasta; x = new Date(x.getFullYear(), x.getMonth(), x.getDate() + 1)) {
-      if (x.getTime() < desde) continue;
-      if (z === "mes" && x.getDate() !== 1 && (x.getDate() % paso !== 0 || x.getDate() > 29)) continue;
-      out.push({ t: x.getTime(), texto: z === "semana" ? fmtDiaSemana.format(x) : fmtDia.format(x), fuerte: x.getDate() === 1 });
-    }
-  } else {
-    for (let x = new Date(d.getFullYear(), d.getMonth(), 1); x.getTime() <= hasta; x = new Date(x.getFullYear(), x.getMonth() + 1, 1)) {
-      if (x.getTime() >= desde) out.push({ t: x.getTime(), texto: x.getMonth() === 0 ? fmtMesAno.format(x) : fmtMes.format(x), fuerte: x.getMonth() === 0 });
-    }
+/** El rango inicial: el menor en el que cae al menos la mitad de las versiones. */
+export function rangoInicial(horas: number[], ahora: number): Rango {
+  if (!horas.length) return 30;
+  for (const { dias } of RANGOS) {
+    const desde = inicioDia(ahora, 1 - dias);
+    if (horas.filter((t) => t >= desde).length * 2 >= horas.length) return dias;
   }
-  return out;
+  return 365;
 }
 
 /**
@@ -94,83 +77,6 @@ export function reglaEfectiva(repo: RepositorioResumen | null | undefined, desti
 }
 
 export const NOMBRE_MOTIVO: Record<Periodo, string> = { horarias: "horaria", diarias: "diaria", semanales: "semanal", mensuales: "mensual", anuales: "anual" };
-/** El rótulo de la franja de cada regla de la retención. */
-export const NOMBRE_FRANJA: Record<Periodo, string> = { horarias: "por hora", diarias: "diarias", semanales: "semanales", mensuales: "mensuales", anuales: "anuales" };
-
-/**
- * El «río»: cuántas versiones caen en cada tramo de `paso` ms, con los tramos
- * alineados a múltiplos de `paso` (así no tiembla al arrastrar) y suavizado
- * con un núcleo binomial (1 4 6 4 1) dos veces. `desde` es el inicio del
- * primer tramo; `n`, cuántos tramos. Los valores van de 0 a 1 (el máximo).
- */
-export function rio(horas: number[], paso: number, desde: number, hasta: number): { desde: number; paso: number; v: number[] } {
-  const ini = Math.floor(desde / paso) * paso - 3 * paso;
-  const n = Math.max(1, Math.ceil((hasta - ini) / paso) + 4);
-  let v = new Array<number>(n).fill(0);
-  for (const t of horas) {
-    const i = Math.floor((t - ini) / paso);
-    if (i >= 0 && i < n) v[i]++;
-  }
-  const k = [1, 4, 6, 4, 1];
-  for (let pasada = 0; pasada < 2; pasada++) {
-    v = v.map((_, i) => k.reduce((s, w, j) => s + w * (v[i + j - 2] ?? 0), 0) / 16);
-  }
-  const max = Math.max(...v);
-  return { desde: ini, paso, v: max > 0 ? v.map((x) => x / max) : v };
-}
-
-/**
- * Junta las marcas que no caben: por tramos de `paso` ms alineados al tiempo
- * (así las burbujas no bailan al arrastrar), un tramo con tres o más marcas
- * en el que alguna queda a menos de `minimo` px de la anterior es una
- * burbuja (en su posición media); si no, sus marcas van sueltas.
- */
-export function agrupar<T extends { x: number; t: number }>(marcas: T[], paso: number, minimo: number): { x: number; xs: T[] }[] {
-  const tramos = new Map<number, T[]>();
-  for (const m of [...marcas].sort((a, b) => a.t - b.t)) {
-    const k = Math.floor(m.t / paso);
-    const g = tramos.get(k);
-    if (g) g.push(m);
-    else tramos.set(k, [m]);
-  }
-  const out: { x: number; xs: T[] }[] = [];
-  for (const xs of tramos.values()) {
-    const apretadas = xs.length >= 3 && xs.some((m, i) => i > 0 && m.x - xs[i - 1].x < minimo);
-    if (apretadas) out.push({ x: xs.reduce((s, m) => s + m.x, 0) / xs.length, xs });
-    else for (const m of xs) out.push({ x: m.x, xs: [m] });
-  }
-  return out;
-}
-
-/**
- * Las franjas de la retención, de la más reciente a la más antigua: el tramo
- * de tiempo que guarda cada regla (de su versión más antigua a la más
- * reciente, unidas por la mitad del hueco con la de al lado para que no se
- * pisen ni dejen huecos). `n`: cuántas versiones guarda. La más reciente
- * llega hasta `ahora`.
- */
-export function franjasRetencion(versiones: { id: string; t: number }[], motivos: Map<string, Periodo | null> | null, ahora: number): { p: Periodo; desde: number; hasta: number; n: number }[] {
-  if (!motivos) return [];
-  const grupos = new Map<Periodo, { min: number; max: number; n: number }>();
-  for (const v of versiones) {
-    const p = motivos.get(v.id);
-    if (!p) continue;
-    const g = grupos.get(p) ?? { min: Infinity, max: -Infinity, n: 0 };
-    g.min = Math.min(g.min, v.t);
-    g.max = Math.max(g.max, v.t);
-    g.n++;
-    grupos.set(p, g);
-  }
-  const fr = [...grupos].map(([p, g]) => ({ p, ...g })).sort((a, b) => b.max - a.max);
-  return fr.map((f, i) => {
-    const nueva = fr[i - 1];
-    const vieja = fr[i + 1];
-    // Unidas por la mitad: si dos reglas se cruzan (raro), la frontera queda entre las dos.
-    const hasta = nueva ? (f.max + nueva.min) / 2 : Math.max(ahora, f.max);
-    const desde = vieja ? (f.min + vieja.max) / 2 : f.min - Math.max(HORA, (f.max - f.min) * 0.02);
-    return { p: f.p, desde: Math.min(desde, hasta), hasta, n: f.n };
-  });
-}
 
 /** Por qué se queda cada versión (de la lista en cualquier orden), con su id: null = la próxima retención la quitaría. */
 export function retencionDe(versiones: { id: string; hora: string }[], regla: Regla | null): Map<string, Periodo | null> | null {
@@ -181,4 +87,224 @@ export function retencionDe(versiones: { id: string; hora: string }[], regla: Re
     regla,
   );
   return new Map(orden.map((v, i) => [v.id, motivos[i]]));
+}
+
+// ── El calendario de calor ────────────────────────────────────────────────
+
+/** Una casilla: un tramo de tiempo con sus versiones. */
+export interface Celda {
+  /** «fila-columna»: para el teclado y el ratón. */
+  k: string;
+  desde: number;
+  hasta: number;
+  /** Las versiones del tramo, de la más reciente a la más antigua. */
+  ids: string[];
+  /** Cuántas quitaría la próxima retención (0 sin regla). */
+  quitan: number;
+  /** 0 sin versiones; 1–4, de menos a más (relativo al máximo a la vista). */
+  nivel: 0 | 1 | 2 | 3 | 4;
+  /** Después de ahora (aún no puede haber nada). */
+  futura: boolean;
+  /** Antes del rango (la primera semana del año, incompleta). */
+  fuera: boolean;
+  /** El tramo de ahora mismo. */
+  ahora: boolean;
+}
+export interface Columna {
+  desde: number;
+  hasta: number;
+  /** El mes, en la primera columna de cada mes. */
+  mes: string | null;
+  /** Debajo: el día del mes (vista por horas) o nada. */
+  pie: string | null;
+  /** La inicial del día de la semana (vista por horas). */
+  inicial: string | null;
+  hoy: boolean;
+  /** Fin de semana (vista por horas): una pista más tenue en la cabecera. */
+  finde: boolean;
+  /** El día entero (vista por horas: la cabecera se puede pulsar). */
+  dia: Celda | null;
+}
+export interface Calendario {
+  /** «horas»: columnas = días, filas = horas; «dias»: columnas = semanas, filas = días de la semana; «tira»: una fila de días. */
+  modo: "horas" | "dias" | "tira";
+  filas: { texto: string; corto: string | null }[];
+  columnas: Columna[];
+  celdas: Celda[][];
+  /** Cuántas horas junta cada fila (vista por horas). */
+  paso: number;
+  /** Lo que hay en el rango. */
+  total: number;
+  quitan: number;
+  diasCon: number;
+  max: number;
+}
+
+const fmtMes = new Intl.DateTimeFormat("es", { month: "short" });
+const fmtMesAno = new Intl.DateTimeFormat("es", { month: "short", year: "numeric" });
+const INICIALES = ["D", "L", "M", "X", "J", "V", "S"];
+const DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+/** Nivel de intensidad (cuatro escalones, como el historial de contribuciones). */
+export function nivelDe(n: number, max: number): 0 | 1 | 2 | 3 | 4 {
+  if (n <= 0) return 0;
+  if (max <= 1) return 4;
+  return Math.max(1, Math.min(4, Math.ceil((n / max) * 4))) as 1 | 2 | 3 | 4;
+}
+
+/**
+ * Las filas de horas: si todas las versiones del rango caen en 14 horas
+ * seguidas o menos (un horario de oficina), una fila por hora de esas;
+ * si no, las 24 horas en filas de 2.
+ */
+export function filasHoras(horas: number[]): { desde: number; paso: number; n: number } {
+  if (!horas.length) return { desde: 0, paso: 2, n: 12 };
+  const hs = horas.map((t) => new Date(t).getHours());
+  const min = Math.min(...hs);
+  const max = Math.max(...hs);
+  if (max - min + 1 <= 14) {
+    // Un poco de aire alrededor, sin pasarse del día.
+    const a = Math.max(0, min - 1);
+    const b = Math.min(23, max + 1);
+    return { desde: a, paso: 1, n: b - a + 1 };
+  }
+  return { desde: 0, paso: 2, n: 12 };
+}
+
+/**
+ * El calendario de las versiones de los últimos `dias` días. `tira`: una sola
+ * fila de días (el móvil); con 365 días, siempre semanas × días de la semana.
+ */
+export function calendario(versiones: { id: string; t: number }[], motivos: Map<string, Periodo | null> | null, ahora: number, dias: Rango, tira = false): Calendario {
+  const hoy = inicioDia(ahora);
+  const inicio = inicioDia(ahora, 1 - dias);
+  const enRango = versiones.filter((v) => v.t >= inicio && v.t <= ahora).sort((a, b) => b.t - a.t);
+  const quita = (id: string) => !!motivos && motivos.get(id) === null;
+  const mk = (k: string, desde: number, hasta: number, fuera = false): Celda => ({ k, desde, hasta, ids: [], quitan: 0, nivel: 0, futura: desde > ahora, fuera, ahora: desde <= ahora && ahora < hasta });
+
+  let modo: Calendario["modo"];
+  let filas: Calendario["filas"];
+  let columnas: Columna[] = [];
+  let celdas: Celda[][];
+  let paso = 24;
+  // El mes, en la primera columna de cada mes (la del principio se quita si la siguiente queda pegada).
+  const ponMes = (cols: Columna[]) => {
+    let anterior = -1;
+    let ultima = -1;
+    cols.forEach((c, i) => {
+      const d = new Date(Math.max(c.desde, inicio));
+      if (d.getMonth() === anterior) return;
+      c.mes = d.getMonth() === 0 || anterior === -1 ? fmtMesAno.format(d) : fmtMes.format(d);
+      if (ultima === 0 && i < 4) cols[0].mes = null;
+      anterior = d.getMonth();
+      ultima = i;
+    });
+  };
+
+  if (dias === 365) {
+    // Semanas (de lunes a domingo) en columnas y los días de la semana en filas.
+    modo = "dias";
+    const lunes = inicioDia(inicio, -((new Date(inicio).getDay() + 6) % 7));
+    const n = Math.round((inicioDia(hoy, 7 - ((new Date(hoy).getDay() + 6) % 7)) - lunes) / DIA / 7);
+    filas = DIAS_SEMANA.map((d, i) => ({ texto: d, corto: i % 2 === 0 && i < 6 ? INICIALES[(i + 1) % 7] : null }));
+    celdas = DIAS_SEMANA.map(() => []);
+    for (let c = 0; c < n; c++) {
+      const desde = inicioDia(lunes, c * 7);
+      columnas.push({ desde, hasta: inicioDia(desde, 7), mes: null, pie: null, inicial: null, hoy: hoy >= desde && hoy < inicioDia(desde, 7), finde: false, dia: null });
+      for (let f = 0; f < 7; f++) {
+        const d = inicioDia(desde, f);
+        celdas[f].push(mk(`${f}-${c}`, d, inicioDia(d, 1), d < inicio));
+      }
+    }
+    // El mes, en la semana que tiene su día 1 (y en la primera, si cabe).
+    let ultima = -9;
+    columnas.forEach((col, c) => {
+      for (let t = Math.max(col.desde, inicio); t < col.hasta; t = inicioDia(t, 1)) {
+        const d = new Date(t);
+        if (d.getDate() === 1 || (c === 0 && d.getDate() < 22)) {
+          col.mes = d.getMonth() === 0 ? fmtMesAno.format(d) : fmtMes.format(d);
+          if (c - ultima < 3 && ultima >= 0) columnas[ultima].mes = null;
+          ultima = c;
+          break;
+        }
+      }
+    });
+    for (const v of enRango) {
+      const c = Math.floor((inicioDia(v.t) - lunes) / DIA / 7 + 1e-6);
+      const f = (new Date(v.t).getDay() + 6) % 7;
+      celdas[f]?.[c]?.ids.push(v.id);
+    }
+  } else {
+    // Días en columnas; en la tira, una fila; si no, las horas en filas.
+    modo = tira ? "tira" : "horas";
+    const fh = tira ? { desde: 0, paso: 24, n: 1 } : filasHoras(enRango.map((v) => v.t));
+    paso = fh.paso;
+    filas = Array.from({ length: fh.n }, (_, i) => {
+      const h = fh.desde + i * fh.paso;
+      const texto = tira ? "Día" : fh.paso === 1 ? `${h}:00` : `${h}:00–${h + fh.paso}:00`;
+      // Un rótulo cada 3 filas por hora (o cada 6 horas en filas de 2).
+      return { texto, corto: tira ? null : (fh.paso === 1 ? h % 3 === 0 : h % 6 === 0) ? `${h}:00` : null };
+    });
+    celdas = filas.map(() => []);
+    for (let c = 0; c < dias; c++) {
+      const desde = inicioDia(inicio, c);
+      const d = new Date(desde);
+      const dia = mk(`d-${c}`, desde, inicioDia(desde, 1));
+      columnas.push({ desde, hasta: dia.hasta, mes: null, pie: String(d.getDate()), inicial: INICIALES[d.getDay()], hoy: desde === hoy, finde: d.getDay() === 0 || d.getDay() === 6, dia });
+      for (let f = 0; f < fh.n; f++) {
+        const a = tira ? desde : desde + (fh.desde + f * fh.paso) * HORA;
+        celdas[f].push(mk(`${f}-${c}`, a, tira ? dia.hasta : a + fh.paso * HORA));
+      }
+    }
+    ponMes(columnas);
+    for (const v of enRango) {
+      const c = Math.round((inicioDia(v.t) - inicio) / DIA);
+      const col = columnas[c];
+      if (!col) continue;
+      col.dia!.ids.push(v.id);
+      const h = new Date(v.t).getHours();
+      const f = tira ? 0 : Math.floor((h - fh.desde) / fh.paso);
+      celdas[f]?.[c]?.ids.push(v.id);
+    }
+  }
+
+  const todas = celdas.flat();
+  const max = Math.max(1, ...todas.map((x) => x.ids.length));
+  for (const x of todas) {
+    x.nivel = nivelDe(x.ids.length, max);
+    x.quitan = x.ids.filter(quita).length;
+  }
+  const maxDia = Math.max(1, ...columnas.map((c) => c.dia?.ids.length ?? 0));
+  for (const c of columnas)
+    if (c.dia) {
+      c.dia.nivel = nivelDe(c.dia.ids.length, maxDia);
+      c.dia.quitan = c.dia.ids.filter(quita).length;
+    }
+  const diasCon = new Set(enRango.map((v) => claveDia(v.t))).size;
+  return { modo, filas, columnas, celdas, paso, total: enRango.length, quitan: enRango.filter((v) => quita(v.id)).length, diasCon, max };
+}
+
+// ── La bitácora ───────────────────────────────────────────────────────────
+
+const fmtDiaLargo = new Intl.DateTimeFormat("es", { weekday: "short", day: "numeric", month: "short" });
+const fmtDiaAno = new Intl.DateTimeFormat("es", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+/** «Hoy», «Ayer» o «Mar, 29 sept» (con el año si no es este). */
+export function nombreDia(t: number, ahora: number): string {
+  const d = inicioDia(t);
+  if (d === inicioDia(ahora)) return "Hoy";
+  if (d === inicioDia(ahora, -1)) return "Ayer";
+  return (new Date(t).getFullYear() === new Date(ahora).getFullYear() ? fmtDiaLargo : fmtDiaAno).format(t).replace(/^./, (x) => x.toUpperCase());
+}
+
+/** Las versiones por días (hora local), del más reciente al más antiguo; dentro, de la más reciente a la más antigua. */
+export function porDias<T extends { t: number }>(versiones: T[]): { dia: number; vs: T[] }[] {
+  const m = new Map<number, T[]>();
+  for (const v of [...versiones].sort((a, b) => b.t - a.t)) {
+    const d = inicioDia(v.t);
+    const g = m.get(d);
+    if (g) g.push(v);
+    else m.set(d, [v]);
+  }
+  return [...m].map(([dia, vs]) => ({ dia, vs }));
 }

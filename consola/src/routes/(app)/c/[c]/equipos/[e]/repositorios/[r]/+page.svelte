@@ -9,7 +9,7 @@
   import { page } from "$app/state";
   import { untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
-  import { Cloud, Database, GitCompareArrows, HardDrive, History, Play, Server, ShieldCheck } from "@lucide/svelte";
+  import { Cloud, Database, HardDrive, History, Play, Server, ShieldCheck } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero, relativo } from "$lib/formato";
@@ -52,7 +52,6 @@
   import SaludProteccion from "$lib/componentes/repo/SaludProteccion.svelte";
   import MenuAcciones from "$lib/componentes/MenuAcciones.svelte";
   import TraerHistorial from "$lib/componentes/TraerHistorial.svelte";
-  import LineaTiempoVersiones from "$lib/componentes/repo/LineaTiempoVersiones.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
@@ -155,9 +154,7 @@
   const estado = $derived(
     ej ? { tono: TONO_RESULTADO[ej.resultado], texto: ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado] } : repo && nVersiones(repo, inf) ? { tono: "ok" as const, texto: "Con versiones" } : { tono: "neutral" as const, texto: "Sin versiones todavía" },
   );
-  // La línea de tiempo: la versión elegida en ella y la retención que se le aplica.
-  let elegida = $state<string | null>(null);
-  const vElegida = $derived(versiones.find((v) => v.id === elegida) ?? null);
+  // La retención que se le aplica (las versiones guardadas la simulan).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
   const enlace = (v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: rid, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
 
@@ -371,29 +368,6 @@
       </section>
     {/if}
 
-    {#if versiones.length}
-      <section class="card p linea-tiempo" aria-labelledby="t-linea">
-        <h2 class="section-title" id="t-linea">Línea de tiempo <span class="count">· {numero(versiones.length)} versiones de 60 días</span></h2>
-        <LineaTiempoVersiones
-          versiones={versiones.map((v) => ({ id: v.id, hora: v.hora, copia: v.copia, bytes: v.total_bytes, anadido: anadidoDe(v), archivos: null }))}
-          {copias}
-          regla={retencionLinea?.regla ?? null}
-          quien={retencionLinea?.quien ?? null}
-          ahora={reloj.ahora}
-          seleccion={elegida}
-          alElegir={(id) => (elegida = id)}
-          verbo="Ver"
-          etiqueta="Versiones de «{repo.nombre}» en el tiempo"
-        >
-          {#snippet acciones(id)}
-            <!-- En la ficha de la versión elegida. -->
-            <button type="button" class="btn btn-sm" onclick={() => ir({ vista: "cambios", version: id, con: null, filtro: "todos", vuelta: null })}><GitCompareArrows size={14} />Qué cambió</button>
-            {#if puede.ordenar(rol) && vElegida}<a class="btn btn-sm btn-primary" href={enlace(vElegida, false)}><History size={14} />Explorar y restaurar</a>{/if}
-          {/snippet}
-        </LineaTiempoVersiones>
-      </section>
-    {/if}
-
     <ListaVersiones
       {repo}
       {inf}
@@ -406,6 +380,8 @@
       elegida={sel.version}
       dia={sel.dia}
       alDia={elegirDia}
+      regla={retencionLinea?.regla ?? null}
+      quien={retencionLinea?.quien ?? null}
     />
 
     {#if inf}
@@ -443,14 +419,6 @@
 {/if}
 
 <style>
-  .linea-tiempo {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-  }
-  .linea-tiempo h2 {
-    margin: 0;
-  }
   .cab {
     display: flex;
     flex-wrap: wrap;

@@ -22,7 +22,6 @@
     ArrowRight,
     Calendar,
     Check,
-    ChevronDown,
     ChevronRight,
     Database,
     Download,
@@ -272,36 +271,15 @@
     }
   }
 
-  const grupos = $derived.by(() => {
-    const m = new Map<string, Version[]>();
-    for (const v of versiones) {
-      const k = new Date(v.cuando).toDateString();
-      m.set(k, [...(m.get(k) ?? []), v]);
-    }
-    return [...m.values()];
-  });
   // La línea de tiempo del paso «Versión»: la copia de cada versión sale del informe (sus ids son los 8 primeros).
   const versionesLinea = $derived.by(() => {
     const inf = equipo && repo ? informeDe(ultimos.porEquipo[equipo.id], repo.id) : null;
     return versiones.map((v) => {
       const x = inf?.versiones.find((i) => v.id.startsWith(i.id) || i.id.startsWith(v.id));
-      return { id: v.id, hora: v.cuando, copia: x?.copia ?? null, bytes: v.bytes ?? x?.total_bytes ?? null, anadido: x ? (x.anadido_empaquetado ?? x.anadido) : null, archivos: v.archivos ?? null };
+      return { id: v.id, hora: v.cuando, copia: x?.copia ?? null, bytes: v.bytes ?? x?.total_bytes ?? null, anadido: x ? (x.anadido_empaquetado ?? x.anadido) : null, archivos: v.archivos ?? null, etiquetas: v.etiquetas ?? [] };
     });
   });
   const retencionLinea = $derived(repo && equipo ? reglaEfectiva(repo, destinoDe(equipo.resumen?.destinos, repo), actual.equipos) : null);
-  /** Al principio, la última semana con versiones; el resto, al pedirlo. */
-  let todosLosDias = $state(false);
-  const gruposVisibles = $derived(todosLosDias ? grupos : grupos.slice(0, 7));
-  /** «Hoy», «Ayer» o el día con su nombre. */
-  function etiquetaDia(iso: string) {
-    const d = new Date(iso);
-    const hoy = new Date(reloj.ahora);
-    const ayer = new Date(reloj.ahora - 86_400_000);
-    if (d.toDateString() === hoy.toDateString()) return `Hoy, ${dia(iso)}`;
-    if (d.toDateString() === ayer.toDateString()) return `Ayer, ${dia(iso)}`;
-    return dia(iso);
-  }
-
   async function restaurar() {
     if (!equipo || !repo || !version || !actual.cliente) return;
     error = "";
@@ -554,7 +532,7 @@
           <p>{plural(versiones.length, "versión guardada", "versiones guardadas")} de «{repo?.nombre}». Elige la de antes del problema (si se borró o estropeó algo, la anterior a ese día).</p>
         </header>
         {#if versiones.length}
-          <div class="card p linea-grafica">
+          <div class="card p">
             <LineaTiempoVersiones
               versiones={versionesLinea}
               copias={equipo?.resumen?.copias?.filter((k) => k.repo === repo?.id) ?? []}
@@ -568,30 +546,6 @@
               }}
               etiqueta="Versiones de «{repo?.nombre ?? ''}» en el tiempo; elige una para ver sus archivos"
             />
-          </div>
-          <div class="card p-0 linea-tiempo">
-            {#each gruposVisibles as g (g[0].id)}
-              <div class="dia-grupo">
-                <h3 class="dia-et">{etiquetaDia(g[0].cuando)}</h3>
-                <ol>
-                  {#each g as v (v.id)}
-                    <li>
-                      <button class="version" onclick={() => elegirVersion(v)}>
-                        <span class="punto" class:primera={v.id === versiones[0].id} aria-hidden="true"></span>
-                        <span class="v-hora num">{hora(v.cuando)}</span>
-                        <span class="v-datos num">{#if v.archivos != null}{plural(v.archivos, "archivo", "archivos")}{/if}{#if v.bytes != null}{" · "}{bytes(v.bytes)}{/if}</span>
-                        {#if v.id === versiones[0].id}<span class="badge badge-sm tone-accent">La más reciente</span>{/if}
-                        {#each v.etiquetas ?? [] as t (t)}<span class="badge badge-sm tone-info">{t}</span>{/each}
-                        <ChevronRight size={15} class="v-flecha" />
-                      </button>
-                    </li>
-                  {/each}
-                </ol>
-              </div>
-            {/each}
-            {#if grupos.length > gruposVisibles.length}
-              <div class="mas-versiones"><button class="btn btn-sm btn-ghost" onclick={() => (todosLosDias = true)}><ChevronDown size={14} />Ver {plural(grupos.length - gruposVisibles.length, "día más", "días más")}</button></div>
-            {/if}
           </div>
         {:else}
           <div class="card"><Vacio icono={Calendar} ilustracion="sin-versiones" titulo="Este repositorio aún no tiene versiones" texto="Cuando se haga su primera copia, aparecerá aquí." /></div>
@@ -889,104 +843,6 @@
     margin-right: auto;
     font-size: var(--fs-sm);
     color: var(--text-2);
-  }
-
-  .linea-grafica {
-    margin-bottom: var(--sp-3);
-  }
-  /* Versiones: una línea de tiempo por días, la más reciente arriba. */
-  .linea-tiempo {
-    max-height: 62vh;
-    overflow: auto;
-    padding: var(--sp-2) 0;
-  }
-  .dia-grupo {
-    padding: var(--sp-2) var(--sp-5);
-  }
-  .dia-et {
-    position: sticky;
-    top: calc(-1 * var(--sp-2));
-    z-index: 1;
-    margin: 0;
-    padding: 6px 0;
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--text-2);
-    background: var(--surface);
-  }
-  .dia-et::first-letter {
-    text-transform: uppercase;
-  }
-  .dia-grupo ol {
-    margin: 0;
-    padding: 0 0 0 7px;
-    list-style: none;
-    border-left: 2px solid var(--border);
-  }
-  .version {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    width: 100%;
-    min-height: 40px;
-    padding: 6px 10px 6px 0;
-    font: inherit;
-    color: var(--text-1);
-    text-align: left;
-    background: none;
-    border: none;
-    border-radius: var(--radius);
-    cursor: pointer;
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .version:hover {
-    background: var(--surface-2);
-  }
-  .punto {
-    flex: none;
-    width: 10px;
-    height: 10px;
-    margin-left: -13px;
-    background: var(--surface);
-    border: 2px solid var(--border-strong);
-    border-radius: 999px;
-  }
-  .punto.primera {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-  .version:hover .punto {
-    border-color: var(--accent);
-  }
-  .v-hora {
-    flex: none;
-    width: 48px;
-    font-weight: 600;
-  }
-  .v-datos {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    font-size: var(--fs-sm);
-    color: var(--text-3);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .version :global(.v-flecha) {
-    flex: none;
-    color: var(--text-3);
-    opacity: 0;
-    transition: opacity var(--dur-fast) var(--ease);
-  }
-  .version:hover :global(.v-flecha),
-  .version:focus-visible :global(.v-flecha) {
-    opacity: 1;
-  }
-  .mas-versiones {
-    display: flex;
-    justify-content: center;
-    padding: var(--sp-2);
   }
 
   /* Archivos. */
@@ -1345,9 +1201,6 @@
     max-width: 380px;
   }
   @media (max-width: 640px) {
-    .dia-grupo {
-      padding: var(--sp-2) var(--sp-4);
-    }
     .meta.fecha {
       display: none;
     }
