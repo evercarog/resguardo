@@ -56,11 +56,11 @@ export const ESTADOS_FILTRO: { id: EstadoFiltro; texto: string }[] = [
 ];
 export type Orden = "estado" | "nombre" | "equipo" | "ultima" | "proxima" | "protegido";
 export const ORDENES: { id: Orden; texto: string }[] = [
-  { id: "estado", texto: "Primero lo que necesita atención" },
+  { id: "estado", texto: "Lo que falla, primero" },
   { id: "nombre", texto: "Por nombre" },
   { id: "equipo", texto: "Por equipo" },
-  { id: "ultima", texto: "La última copia más reciente" },
-  { id: "proxima", texto: "La próxima más cercana" },
+  { id: "ultima", texto: "La última, más reciente" },
+  { id: "proxima", texto: "La próxima, más cercana" },
   { id: "protegido", texto: "Lo que más protege" },
 ];
 

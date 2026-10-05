@@ -11,6 +11,7 @@
   // suceso con su vuelta en el informe abre su detalle. En un equipo, un
   // desplegable elige una copia o un repositorio. «Cargar más» pide lo de
   // antes al historial del equipo.
+  import { onMount, tick } from "svelte";
   import { Archive, Check, Copy, FolderSearch, History, PanelRightOpen } from "@lucide/svelte";
   import "../detalle/pulsable.css";
   import type { CopiaResumen, EntradaHistorial, Informe, Regla, RepoInforme, RepositorioResumen, VersionInforme } from "$lib/tipos";
@@ -84,6 +85,10 @@
   } = $props();
 
   const id = $props.id();
+  // «Ver versiones» (desde la lista de Copias) llega con #t-historial: la sección se pinta cuando llega el equipo.
+  onMount(() => {
+    if (location.hash === "#t-historial") void tick().then(() => document.getElementById("t-historial")?.scrollIntoView({ block: "start" }));
+  });
 
   // En un equipo: todo, un repositorio («r:…») o una copia («k:…»).
   let ver = $state("todo");

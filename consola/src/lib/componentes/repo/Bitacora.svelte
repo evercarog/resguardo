@@ -204,6 +204,8 @@
     list-style: none;
   }
   .bitacora {
+    /* Las filas se adaptan al ancho de la bitácora (no al de la ventana). */
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
@@ -320,7 +322,7 @@
   /* La hora: una columna fija, monoespaciada y tabular. */
   .hora {
     flex: none;
-    width: 3.4em;
+    width: 44px;
     font-family: var(--mono);
     font-size: 12.5px;
     font-weight: 600;
@@ -381,7 +383,7 @@
   /* El motivo de lo que fue mal: debajo, a todo lo ancho, alineado con el texto. */
   .motivo {
     flex-basis: 100%;
-    padding: 0 0 2px calc(3.4em + 10px + 14px + 10px);
+    padding: 0 0 2px 78px;
     font-size: var(--fs-xs);
     line-height: var(--lh-xs);
     color: var(--text-2);
@@ -409,7 +411,7 @@
     gap: 6px;
     padding: 8px 10px 6px;
   }
-  @media (max-width: 640px) {
+  @container (max-width: 600px) {
     .fv,
     .fs {
       row-gap: 2px;
@@ -419,14 +421,23 @@
     .meta-s {
       flex-basis: 100%;
       order: 9;
-      padding-left: calc(3.4em + 10px);
+      padding-left: 54px;
       white-space: normal;
     }
-    .s .meta-s {
-      padding-left: calc(3.4em + 10px + 14px + 10px);
+    .s .meta-s,
+    .motivo {
+      padding-left: 78px;
     }
     .motivo {
       order: 10;
+    }
+    /* Un suceso: el título puede ocupar dos líneas antes que irse solo a la suya. */
+    .titulo-s {
+      flex: 1 1 0;
+      white-space: normal;
+    }
+    .s .hueco {
+      display: none;
     }
     .dato {
       display: none;

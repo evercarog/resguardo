@@ -205,10 +205,7 @@
               </a>
               <ContadorNotas tipo="copia" objeto={objetoDe(x.equipo.id, x.copia.id)} />
               <span class="sub">
-                <a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>
-                <span aria-hidden="true">·</span>
-                {#if x.repo}<a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}/repositorios/{encodeURIComponent(x.repo.id)}">{x.repo.nombre}</a>{:else}{x.copia.repo}{/if}
-                {#if x.destino}<span class="faint">→ {x.destino.nombre}</span>{/if}
+                <a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>{" · "}{#if x.repo}<a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}/repositorios/{encodeURIComponent(x.repo.id)}">{x.repo.nombre}</a>{:else}{x.copia.repo}{/if}{#if x.destino}<span class="faint">{" → "}{x.destino.nombre}</span>{/if}
               </span>
               <span class="sub faint">{horarioEnFrase(x.copia.horario)}</span>
               {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub msg-fallo">{x.vuelta.mensaje}</span>{/if}
@@ -218,10 +215,10 @@
               <Chip tono={x.estado.tono} texto={x.estado.texto} />
             </div>
             <div class="cuando num">
-              <span>{#if x.vuelta}Última <Tiempo iso={x.vuelta.cuando} /><span class="faint"> · {TEXTO_ULTIMA[x.vuelta.resultado]}</span>{:else}<span class="faint">Ninguna todavía</span>{/if}</span>
+              <span>{#if x.vuelta}Última <Tiempo iso={x.vuelta.cuando} /><span class="faint">{" · "}{TEXTO_ULTIMA[x.vuelta.resultado]}</span>{:else}<span class="faint">Ninguna todavía</span>{/if}</span>
               <span class="faint">{#if x.proxima && Date.parse(x.proxima) > reloj.ahora}Próxima <Tiempo iso={x.proxima} />{:else if x.copia.activa === false}Desactivada{:else if x.estado.tono === "paused"}En pausa{:else}Sin próxima a la vista{/if}</span>
             </div>
-            <div class="protegido num" use:tip={"Lo que ocupan sus archivos, según su última versión"}><span class="et-movil">Protege </span>{x.protegido != null ? bytes(x.protegido) : "—"}</div>
+            <div class="protegido num" use:tip={"Lo que ocupan sus archivos, según su última versión"}><span class="et-movil">{"Protege "}</span>{x.protegido != null ? bytes(x.protegido) : "—"}</div>
             <div class="acciones">
               <a class="icon-btn" href={href(x, "#t-historial")} aria-label="Ver las versiones de «{x.copia.nombre}»"><History size={15} /></a>
               {#if puedeOrdenar && x.ordenable && !seleccionando}
@@ -302,6 +299,10 @@
   .hueco {
     flex: 1;
   }
+  /* La fila se adapta al ancho de la lista (con la barra lateral, no al de la ventana). */
+  .lista-copias {
+    container-type: inline-size;
+  }
   /* Cada copia: nombre y de dónde a dónde · estado · última y próxima · lo que protege · acciones. */
   .fila-copia {
     display: grid;
@@ -352,9 +353,7 @@
   }
   .sub {
     flex-basis: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0 6px;
+    display: block;
     font-size: var(--fs-sm);
     color: var(--text-2);
     min-width: 0;
@@ -429,7 +428,7 @@
     font-size: var(--fs-sm);
     font-weight: 500;
   }
-  @media (max-width: 900px) {
+  @container (max-width: 860px) {
     .fila-copia {
       grid-template-columns: minmax(0, 1fr) auto auto;
       grid-template-areas: "p e a" "c c v";
@@ -474,9 +473,11 @@
     }
     .sel {
       flex: 1 1 100%;
+      min-width: 0;
     }
     .sel .input {
       flex: 1;
+      min-width: 0;
       max-width: none;
     }
     .sel > span {
@@ -486,6 +487,8 @@
       min-width: 0;
       flex-basis: 100%;
     }
+  }
+  @container (max-width: 480px) {
     .fila-copia,
     .fila-copia.con-sel {
       grid-template-columns: minmax(0, 1fr) auto;
