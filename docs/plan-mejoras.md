@@ -61,6 +61,12 @@ Hoy cada repositorio tiene **una** copia externa (`tasks::Offsite`: `restic copy
 - [ ] **4c. Filtros** en cada copia derivada: etiquetas, rutas o carpetas y antigüedad («solo las versiones de los últimos 30 días», «solo una al mes»). `restic copy` ya admite `--tag`, `--path` y los ids de versión que se elijan.
 - [ ] **4d. En la consola**, el flujo de cada copia de principio a fin: «Documentos (RECEPCION) → almacén D: → espejo E: y Dropbox; copia externa a B2».
 
+- [ ] **4e. Copias derivadas que hace el almacén, en local.** Problema: el equipo dueño solo llega al almacén por su rest-server (una carpeta, p. ej. `D:\Backups`); no puede escribir en otro disco del almacén (`E:\Backups`) ni usar sus nubes. Solución, con el mismo modelo que la **retención en el almacén** (`docs/compartir.md`): el dueño añade al repositorio una clave del almacén (con la clave de administración y espera) y el almacén hace la copia derivada **él mismo, en local**: origen `<carpeta>/<usuario>/<repo>`, destino cualquier carpeta de sus discos o cualquier destino que él alcance (B2, NAS, Dropbox conectado en él), con filtros (4c), contraseña de destino, retención y horario (incluido «después de cada copia»). Así se puede:
+  - **juntar** varios repositorios (p. ej. los de dos programas de contabilidad) en **un solo repositorio** en `E:` (`restic copy` de cada uno, destino creado con `--copy-chunker-params` del primero para deduplicar);
+  - **repartir** uno en varios por etiqueta de la versión (p. ej. `semanal` → un repositorio, `diaria` → otro).
+  La contrapartida es la de la retención en el almacén: quien controle el almacén puede **leer** esos repositorios. Opcional por repositorio, dicho claro en la consola, y se reutiliza la misma clave del almacén si ya está.
+- [ ] **4f. Más de una carpeta servida por el almacén** (opcional, si 4e no basta): que el Servidor de copias ofrezca varias zonas (`D:`, `E:`), cada una como destino elegible para las copias de los equipos (otro rest-server en otro puerto o rutas por zona), para que un equipo pueda copiar directamente a «Almacén · disco E».
+
 ## 5. «Un repositorio para todos y dividirlo después»: lo que se decidió
 
 Pregunta: copiar todos los equipos a **un solo** repositorio del almacén y repartirlos después en repositorios distintos (por equipo, etiqueta o fecha, con otras claves).
@@ -70,6 +76,18 @@ Pregunta: copiar todos los equipos a **un solo** repositorio del almacén y repa
 - **Lo que sí se hace:** cada equipo con su repositorio (como ahora) y las **copias derivadas** (tarea 4) para repartir: por etiqueta, ruta o fecha, a otros destinos y con otras contraseñas. Si hiciera falta juntar varios equipos en un destino, con una copia derivada de cada uno al mismo repositorio de destino (`restic copy` con `--copy-chunker-params` al crearlo, para deduplicar).
 
 ---
+
+## 6. Etiquetas con color elegido y que sirvan para algo
+
+Hoy (`consola/src/lib/etiquetas.svelte.ts`) las etiquetas de los equipos tienen un color automático (hash del nombre, paleta Okabe-Ito de 7 apta para daltonismo, solo en el punto) y sirven para filtrar.
+
+- [ ] **6a. Elegir el color** de cada etiqueta (de la misma paleta, para que siga siendo accesible), guardado en el servidor por cliente; sin elegir, el de ahora.
+- [ ] **6b. Que tenga efecto:**
+  - agrupar por etiqueta en Estado, Equipos e Informes (un informe por etiqueta, p. ej. «Contabilidad»);
+  - **acciones por etiqueta** en «Varios a la vez» (copiar ahora, pausar, aplicar una plantilla de copias a todos los de «Servidores»);
+  - **avisos por etiqueta**: a quién se avisa y con qué importancia (p. ej. los de «Servidores», siempre por push);
+  - plantilla por defecto por etiqueta: un equipo nuevo con esa etiqueta recibe esa plantilla (pidiendo la clave de administración).
+- No confundir con las **etiquetas de las versiones** (las de restic, p. ej. `diaria`, `semanal`), que son las que usan los filtros de las copias derivadas (4c, 4e). Valorar enseñarlas también con color en la lista de versiones.
 
 ## Mientras tanto (sin código)
 
