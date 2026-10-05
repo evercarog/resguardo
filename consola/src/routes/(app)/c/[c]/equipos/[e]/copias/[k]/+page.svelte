@@ -35,7 +35,7 @@
   import { bytes, cuandoFrase, fechaLarga, horarioEnFrase, numero, plural, relativo } from "$lib/formato";
   import { enPausa } from "$lib/salud";
   import { fraseGancho, ganchosDe, NOMBRE_GANCHO } from "$lib/ganchos";
-  import { anadidoDe, destinoDe, dias, duracion, informeDe } from "$lib/repo";
+  import { anadidoDe, destinoDe, duracion, informeDe } from "$lib/repo";
   import { atrasada, cifrasCopia, estadoCopia, explicarError, filaInforme, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "$lib/copia";
   import type { Configuracion, CopiaConfig, EquipoDetalle, VersionInforme } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -45,10 +45,10 @@
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
-  import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
   import GraficaBarras from "$lib/componentes/repo/GraficaBarras.svelte";
-  import HistorialCopia from "$lib/componentes/repo/HistorialCopia.svelte";
-  import ListaVersiones from "$lib/componentes/repo/ListaVersiones.svelte";
+  import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
+  import { usarHistorialEquipo } from "$lib/historialEquipo.svelte";
+  import { reglaEfectiva } from "$lib/lineaTiempo";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, vuelta…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
   import { abrirEstado, abrirVersion, abrirVuelta, elegirDia } from "$lib/componentes/detalle/navegar";
@@ -104,7 +104,22 @@
   const rol = $derived(equipo?.modo === "trasladado" ? "lectura" : actual.cliente?.rol);
   const almacen = $derived(destino?.equipo_almacen ? actual.equipos.find((x) => x.id === destino.equipo_almacen) : null);
   const espejo = $derived(almacen?.resumen?.guarda_copias?.espejo ?? null);
-  const enlace = (v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: k?.repo ?? "", version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  // La retención que se le aplica a su repositorio (simulada con todas sus versiones, como en su página).
+  const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
+  // v1.23: el historial que guarda el propio equipo (lo de antes, verificaciones, subidas…), por páginas y en vivo.
+  const historia = usarHistorialEquipo(() => c, () => e);
+  /** Las vueltas de 60 días en una frase (antes, encima de sus cuadros). */
+  const resumen60 = $derived(
+    [
+      cifras.correctas - cifras.sinCambios ? plural(cifras.correctas - cifras.sinCambios, "con versión nueva", "con versión nueva") : null,
+      cifras.sinCambios ? plural(cifras.sinCambios, "sin cambios", "sin cambios") : null,
+      cifras.conAvisos ? plural(cifras.conAvisos, "con avisos", "con avisos") : null,
+      cifras.fallidas ? plural(cifras.fallidas, "falló", "fallaron") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") + (cifras.anadido != null ? ` · añadió ${bytes(cifras.anadido)}` : ""),
+  );
 
   /** Problemas de los últimos 60 días, agrupados por explicación (el más reciente primero). */
   const problemas = $derived.by(() => {
@@ -235,12 +250,10 @@
     <IndicePagina
       items={[
         { id: "sec-resumen", texto: "Resumen" },
-        ...(inf ? [{ id: "t-actividad", texto: "60 días" }] : []),
         { id: "t-que", texto: "Qué y cuándo" },
         ...(versiones.length >= 2 || conDuracion.length >= 2 ? [{ id: "sec-graficas", texto: "Gráficas" }] : []),
         ...(problemas.length ? [{ id: "t-errores", texto: "Errores" }] : []),
-        { id: "t-historial-copia", texto: "Historial" },
-        ...(repo ? [{ id: "t-versiones", texto: "Versiones" }] : []),
+        { id: "t-historial", texto: "Historial y versiones" },
       ]}
     />
 
@@ -274,27 +287,6 @@
         <span class="faint">{cifras.duracionMedia != null ? `unos ${duracion(cifras.duracionMedia)} por copia` : "según su última versión"}</span>
       </div>
     </div>
-
-    {#if inf}
-      <section class="card p actividad" aria-labelledby="t-actividad">
-        <div class="act-cab">
-          <h2 class="section-title" id="t-actividad">Últimos 60 días</h2>
-          <p class="faint num">
-            {[
-              cifras.correctas - cifras.sinCambios ? plural(cifras.correctas - cifras.sinCambios, "con versión nueva", "con versión nueva") : null,
-              cifras.sinCambios ? plural(cifras.sinCambios, "sin cambios", "sin cambios") : null,
-              cifras.conAvisos ? plural(cifras.conAvisos, "con avisos", "con avisos") : null,
-              cifras.fallidas ? plural(cifras.fallidas, "falló", "fallaron") : null,
-            ]
-              .filter(Boolean)
-              .join(" · ") || "Ninguna copia todavía"}
-            {#if cifras.anadido != null}· añadió {bytes(cifras.anadido)}{/if}
-          </p>
-        </div>
-        <DiasCuadros dias={dias(inf, 60, reloj.ahora)} etiqueta="Resultado de «{k.nombre}» en los últimos 60 días" leyenda elegido={sel.dia} alElegir={elegirDia} />
-        <p class="faint pista-dia">{sel.dia ? "Pulsa otra vez el día para ver todos." : "Pulsa un día para ver solo sus copias y versiones."}</p>
-      </section>
-    {/if}
 
     <div class="dos">
       <section class="card p que" aria-labelledby="t-que">
@@ -446,26 +438,28 @@
       </section>
     {/if}
 
-    <HistorialCopia {ejecuciones} {versiones} ganchos={ganchosRes} cuandoGanchos={fila?.cuando ?? null} alAbrirVersion={abrirVersion} alAbrirVuelta={abrirVuelta} dia={sel.dia} alDia={elegirDia} />
-
     {#if repo}
-      <ListaVersiones
-        repo={{ ...repo, versiones: undefined }}
-        {inf}
+      <HistorialVersiones
+        fuentes={[{ repo: { ...repo, versiones: undefined }, inf: infRepo, regla: retencionLinea?.regla ?? null, quien: retencionLinea?.quien ?? null }]}
         {copias}
+        soloCopia={k.id}
+        historial={historia.entradas}
+        ultimas={informe?.datos.copias ?? []}
         {enlace}
         ahora={reloj.ahora}
         puedeRestaurar={puede.ordenar(rol)}
-        titulo="Versiones de esta copia"
-        cuadros={false}
+        resumen={inf && cifras.vueltas ? `En 60 días: ${resumen60}` : null}
         vacio={infRepo ? "Cada vez que esta copia encuentre cambios se guardará aquí una versión que podrás explorar y restaurar." : `Llegarán con el próximo informe de ${equipo.nombre}.`}
-        alAbrir={(v, f) => abrirVersion(v.id, f)}
+        alAbrir={(v, _r, f) => abrirVersion(v.id, f)}
+        alAbrirVuelta={(h) => abrirVuelta(h)}
         elegida={sel.version}
         dia={sel.dia}
         alDia={elegirDia}
+        hayMas={historia.hayMas}
+        cargandoMas={historia.cargando}
+        alCargarMas={historia.cargarMas}
       />
     {/if}
-
 
     {#if informe}
       <p class="faint pie">
@@ -478,7 +472,7 @@
 </div>
 
 {#if equipo && repo && k && actual.cliente}
-  <PanelDetalle cliente={actual.cliente} {equipo} {repo} inf={infRepo} {copias} soloCopia={k.id} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
+  <PanelDetalle cliente={actual.cliente} {equipo} {repo} inf={infRepo} {copias} historial={historia.entradas} soloCopia={k.id} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
 {/if}
 
 {#if dialogo && equipo && actual.cliente}
@@ -576,10 +570,6 @@
     width: auto;
     border-radius: 999px;
   }
-  .pista-dia {
-    margin: 6px 0 0;
-    font-size: var(--fs-xs);
-  }
   .cifra .k {
     font-size: var(--fs-xs);
     font-weight: 500;
@@ -595,22 +585,6 @@
   .cifra .faint {
     font-size: var(--fs-xs);
     line-height: var(--lh-xs);
-  }
-  .actividad {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-  }
-  .act-cab {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--sp-2) var(--sp-4);
-  }
-  .act-cab p {
-    margin: 0;
-    font-size: var(--fs-sm);
   }
   .dos {
     display: grid;

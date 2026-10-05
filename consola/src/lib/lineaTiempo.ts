@@ -15,6 +15,8 @@ export interface VersionLinea {
   id: string;
   hora: string;
   copia?: string | null;
+  /** Su repositorio (un equipo enseña los de todos sus repositorios a la vez). */
+  repo?: string | null;
   /** Lo que ocupan sus archivos. */
   bytes?: number | null;
   /** Lo nuevo que añadió. */
@@ -101,6 +103,8 @@ export interface Celda {
   ids: string[];
   /** Cuántas quitaría la próxima retención (0 sin regla). */
   quitan: number;
+  /** Cuántas cosas fallaron en el tramo (copias, comprobaciones…): una marca aparte del color. */
+  fallos: number;
   /** 0 sin versiones; 1–4, de menos a más (relativo al máximo a la vista). */
   nivel: 0 | 1 | 2 | 3 | 4;
   /** Después de ahora (aún no puede haber nada). */
@@ -175,12 +179,13 @@ export function filasHoras(horas: number[]): { desde: number; paso: number; n: n
  * El calendario de las versiones de los últimos `dias` días. `tira`: una sola
  * fila de días (el móvil); con 365 días, siempre semanas × días de la semana.
  */
-export function calendario(versiones: { id: string; t: number }[], motivos: Map<string, Periodo | null> | null, ahora: number, dias: Rango, tira = false): Calendario {
+export function calendario(versiones: { id: string; t: number }[], motivos: Map<string, Periodo | null> | null, ahora: number, dias: Rango, tira = false, fallos: number[] = []): Calendario {
   const hoy = inicioDia(ahora);
   const inicio = inicioDia(ahora, 1 - dias);
   const enRango = versiones.filter((v) => v.t >= inicio && v.t <= ahora).sort((a, b) => b.t - a.t);
+  const fallosEnRango = fallos.filter((t) => t >= inicio && t <= ahora);
   const quita = (id: string) => !!motivos && motivos.get(id) === null;
-  const mk = (k: string, desde: number, hasta: number, fuera = false): Celda => ({ k, desde, hasta, ids: [], quitan: 0, nivel: 0, futura: desde > ahora, fuera, ahora: desde <= ahora && ahora < hasta });
+  const mk = (k: string, desde: number, hasta: number, fuera = false): Celda => ({ k, desde, hasta, ids: [], quitan: 0, fallos: 0, nivel: 0, futura: desde > ahora, fuera, ahora: desde <= ahora && ahora < hasta });
 
   let modo: Calendario["modo"];
   let filas: Calendario["filas"];
@@ -234,10 +239,14 @@ export function calendario(versiones: { id: string; t: number }[], motivos: Map<
       const f = (new Date(v.t).getDay() + 6) % 7;
       celdas[f]?.[c]?.ids.push(v.id);
     }
+    for (const t of fallosEnRango) {
+      const x = celdas[(new Date(t).getDay() + 6) % 7]?.[Math.floor((inicioDia(t) - lunes) / DIA / 7 + 1e-6)];
+      if (x) x.fallos++;
+    }
   } else {
     // Días en columnas; en la tira, una fila; si no, las horas en filas.
     modo = tira ? "tira" : "horas";
-    const fh = tira ? { desde: 0, paso: 24, n: 1 } : filasHoras(enRango.map((v) => v.t));
+    const fh = tira ? { desde: 0, paso: 24, n: 1 } : filasHoras([...enRango.map((v) => v.t), ...fallosEnRango]);
     paso = fh.paso;
     filas = Array.from({ length: fh.n }, (_, i) => {
       const h = fh.desde + i * fh.paso;
@@ -265,6 +274,16 @@ export function calendario(versiones: { id: string; t: number }[], motivos: Map<
       const h = new Date(v.t).getHours();
       const f = tira ? 0 : Math.floor((h - fh.desde) / fh.paso);
       celdas[f]?.[c]?.ids.push(v.id);
+    }
+    for (const t of fallosEnRango) {
+      const c = Math.round((inicioDia(t) - inicio) / DIA);
+      const col = columnas[c];
+      if (!col) continue;
+      col.dia!.fallos++;
+      // Una hora fuera de las filas (las filas siguen a las versiones): la de más cerca.
+      const f = tira ? 0 : Math.max(0, Math.min(fh.n - 1, Math.floor((new Date(t).getHours() - fh.desde) / fh.paso)));
+      const x = celdas[f]?.[c];
+      if (x) x.fallos++;
     }
   }
 

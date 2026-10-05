@@ -9,7 +9,7 @@
   import { fade, fly } from "svelte/transition";
   import Anuncio from "./Anuncio.svelte";
   import { goto } from "$app/navigation";
-  import { ArrowRight, Building2, Layers, CornerDownLeft, Database, DatabaseZap, FileText, History, Monitor, NotebookPen, Play, Plus, RefreshCw, Search } from "@lucide/svelte";
+  import { ArrowRight, Building2, Layers, CornerDownLeft, Database, DatabaseZap, FileText, History, Monitor, NotebookPen, Play, Plus, Search } from "@lucide/svelte";
   import { dur } from "$ui/movimiento";
   import { actual, app, puede } from "$lib/estado.svelte";
   import { saludEquipo } from "$lib/salud";
@@ -48,6 +48,7 @@
       const secciones: [string, string, typeof Search][] = [
         ["Estado", "", ICONO_SECCION.estado],
         ["Equipos", "/equipos", ICONO_SECCION.equipos],
+        ["Copias", "/copias", ICONO_SECCION.copias],
         ["Repositorios y destinos", "/repositorios", ICONO_SECCION.repositorios],
         ["Restaurar archivos", "/restaurar", ICONO_SECCION.restaurar],
         ["Órdenes", "/ordenes", ICONO_SECCION.ordenes],
@@ -73,7 +74,7 @@
         for (const { e, r } of repos)
           out.push({ grupo: "Restaurar", texto: `Restaurar archivos de «${r.nombre}»`, sub: e.nombre, href: `/c/${c}/restaurar?equipo=${encodeURIComponent(e.id)}&repo=${encodeURIComponent(r.id)}`, icono: History, claves: sinTildes(`restaurar archivos ${r.nombre} ${e.nombre}`) });
       }
-      for (const [t, r, ic] of secciones) out.push({ grupo: "Ir a", texto: t, sub: actual.cliente?.nombre, href: `/c/${c}${r}`, icono: ic, claves: sinTildes(t) });
+      for (const [t, r, ic] of secciones) out.push({ grupo: "Ir a", texto: t, sub: actual.cliente?.nombre, href: `/c/${c}${r}`, icono: ic, claves: `${sinTildes(t)} ir a` });
       for (const e of actual.equipos) {
         const s = saludEquipo(e);
         out.push({ grupo: "Equipos", texto: e.nombre, sub: `${s.texto} · ${e.so}`, href: `/c/${c}/equipos/${e.id}`, icono: Monitor, claves: sinTildes(`${e.nombre} ${e.so} ${(e.etiquetas ?? []).join(" ")}`) });
@@ -83,7 +84,7 @@
           out.push({ grupo: "Repositorios", texto: r.nombre, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}`, icono: Database, claves: sinTildes(`${r.nombre} ${e.nombre}`) });
       for (const e of actual.equipos)
         for (const k of e.resumen?.copias ?? [])
-          out.push({ grupo: "Copias", texto: k.nombre, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/copias/${encodeURIComponent(k.id)}`, icono: RefreshCw, claves: sinTildes(`${k.nombre} ${e.nombre}`) });
+          out.push({ grupo: "Copias", texto: k.nombre, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/copias/${encodeURIComponent(k.id)}`, icono: ICONO_SECCION.copias, claves: sinTildes(`${k.nombre} ${e.nombre}`) });
       // v1.40: observaciones, por su primera línea (nunca el texto entero ni los comentarios).
       if (notas.cliente === c)
         for (const n of Object.values(notas.porClave)) {

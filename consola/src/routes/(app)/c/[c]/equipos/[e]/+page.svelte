@@ -6,7 +6,13 @@
   import { bytesRepo, destinoDe, dias, diasCopia, informeDe, nVersiones, proteccion, TEXTO_RESULTADO, TONO_RESULTADO, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
-  import { diasEquipo, ultimas24h } from "$lib/panel";
+  import { ultimas24h } from "$lib/panel";
+  import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
+  import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
+  import { abrirVersion, abrirVuelta, elegirDia } from "$lib/componentes/detalle/navegar";
+  import { leerSeleccion } from "$lib/detalle";
+  import { usarHistorialEquipo } from "$lib/historialEquipo.svelte";
+  import { reglaEfectiva } from "$lib/lineaTiempo";
   import { untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
@@ -166,7 +172,26 @@
   );
   const proximaDeTodas = $derived(pausado ? null : proximaCopia(copias, reloj.ahora));
   const protegidoEquipo = $derived(repos.reduce((n, r) => n + (bytesRepo(r, informeDe(equipo?.ultimo_informe, r.id)) ?? 0), 0));
-  const dias60 = $derived(equipo?.ultimo_informe ? diasEquipo(equipo.ultimo_informe, 60, reloj.ahora) : []);
+  // «Historial y versiones» de todas sus copias y repositorios (el mismo de la página de cada uno).
+  const historia = usarHistorialEquipo(() => c, () => id);
+  const sel = $derived(leerSeleccion(page.url.searchParams));
+  const fuentesHistorial = $derived(
+    repos.map((r) => {
+      const ret = reglaEfectiva(r, destinoDe(destinos, r), actual.equipos);
+      return { repo: r, inf: informeDe(equipo?.ultimo_informe, r.id), regla: ret?.regla ?? null, quien: ret?.quien ?? null };
+    }),
+  );
+  /** El repositorio de lo que se abre en el cajón (la versión o la vuelta de la URL). */
+  let repoCajon = $state<string | null>(null);
+  const repoDetalle = $derived.by(() => {
+    if (!sel.version && !sel.vuelta) return null;
+    const t = sel.vuelta ? Date.parse(sel.vuelta) : NaN;
+    const de = (r: RepositorioResumen) => {
+      const inf = informeDe(equipo?.ultimo_informe, r.id);
+      return (!!sel.version && !!inf?.versiones.some((v) => v.id === sel.version)) || (!sel.version && !!inf?.ejecuciones.some((x) => Math.abs(Date.parse(x.hora) - t) < 60_000));
+    };
+    return repos.find((r) => r.id === repoCajon && de(r)) ?? repos.find(de) ?? null;
+  });
   const recientesEquipo = $derived(equipo ? ultimas24h([equipo], { [equipo.id]: equipo.ultimo_informe ?? null }, reloj.ahora) : { versiones: 0, fallos: 0 });
   const rolCliente = $derived(actual.cliente?.rol);
   /** Un equipo trasladado a otro servidor ya no recibe órdenes de este: se ve, pero no se toca. */
@@ -683,12 +708,6 @@
             <span class="stat-sub">{recientesEquipo.fallos ? plural(recientesEquipo.fallos, "copia fallida", "copias fallidas") : "sin copias fallidas"}</span>
           </div>
         </div>
-        {#if dias60.length}
-          <section class="card p dias60" aria-labelledby="t-dias60">
-            <div class="section-head"><h2 id="t-dias60">Últimos 60 días <span class="count">· todas sus copias</span></h2></div>
-            <DiasCuadros dias={dias60} etiqueta="Resultado de las copias de {equipo.nombre} en los últimos 60 días" leyenda />
-          </section>
-        {/if}
       {/if}
 
       <!-- El camino de sus datos (y, si guarda copias, lo de los demás que guarda). -->
@@ -803,6 +822,28 @@
             {/each}
           </div>
         </section>
+      {/if}
+
+      {#if repos.length}
+        <HistorialVersiones
+          fuentes={fuentesHistorial}
+          {copias}
+          equipo
+          historial={historia.entradas}
+          ultimas={equipo.ultimo_informe?.datos.copias ?? []}
+          enlace={(r, v, todo) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: equipo!.id, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`}
+          ahora={reloj.ahora}
+          puedeRestaurar={puede.ordenar(rol)}
+          vacio="Cada vez que se haga una copia se guardará aquí una versión que podrás explorar y restaurar."
+          alAbrir={(v, r, f) => ((repoCajon = r), abrirVersion(v.id, f))}
+          alAbrirVuelta={(h, r) => ((repoCajon = r), abrirVuelta(h))}
+          elegida={sel.version}
+          dia={sel.dia}
+          alDia={elegirDia}
+          hayMas={historia.hayMas}
+          cargandoMas={historia.cargando}
+          alCargarMas={historia.cargarMas}
+        />
       {/if}
 
       {#if destinos.length || pendDestinos.length}
@@ -1317,6 +1358,11 @@
   {/if}
 {/snippet}
 
+<!-- El cajón de detalle de lo que se abre en «Historial y versiones» (la versión o la copia de la URL, de su repositorio). -->
+{#if equipo && repoDetalle && actual.cliente && tab === "resumen"}
+  <PanelDetalle cliente={actual.cliente} {equipo} repo={repoDetalle} inf={informeDe(equipo.ultimo_informe, repoDetalle.id)} {copias} historial={historia.entradas} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
+{/if}
+
 <style>
   .consolas-eq {
     display: flex;
@@ -1495,9 +1541,6 @@
   }
   .rejilla.repos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
-  }
-  .dias60 .section-head {
-    margin-bottom: var(--sp-3);
   }
   .repo-cab.enlace {
     color: inherit;
