@@ -666,6 +666,55 @@ async function principal() {
     await esperar("la espera de la consola local en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).espera_min_horas === 3, { plazo: 60_000, cada: 1000 });
 
     // -----------------------------------------------------------------------
+    paso("8a. «Mover a otro sitio…» desde la consola local: la en línea lo ve (progreso y, al terminar, en el historial)");
+    // Como MoverRepositorio.svelte: el repositorio nuevo con el mismo troceado y luego el historial, con `mover`.
+    const destinoAlmacen = `almacen-${eqA.id.slice(0, 8)}`;
+    const nuevoId = `movido-${randomBytes(2).toString("hex")}`;
+    await consola2.hecha(
+      c2,
+      eqB2.id,
+      "crear_repositorio",
+      { id: nuevoId, nombre: "Copias movidas", destino: { id: destinoAlmacen }, contrasena: Buffer.from(aleatorio(32)).toString("base64url"), parametros_de: { repo: repoId } },
+      { claveAdmin: claveB },
+      {},
+      120_000,
+    );
+    // Mientras se trae, la en línea pregunta su progreso (puede acabar antes de que llegue: solo se anota).
+    let vistoEnLinea: any = null;
+    let mirando = true;
+    const mirar = (async () => {
+      while (mirando && !vistoEnLinea) {
+        const p = (await consola3.ok("GET", `/api/clientes/${c3.id}/progreso`).catch(() => [])) as any[];
+        vistoEnLinea = p.flatMap((x) => x.tareas ?? []).find((t: any) => t.tipo === "historial" && t.mover) ?? null;
+        await dormir(250);
+      }
+    })();
+    const movido = await consola2.hecha(c2, eqB2.id, "copiar_historial", { repo: nuevoId, origen: { repo: repoId }, mover: { paso: "historial" } }, { claveAdmin: claveB }, {}, 300_000);
+    mirando = false;
+    await mirar;
+    log(`copiar_historial (mover): ${movido.mensaje}`);
+    if (vistoEnLinea) {
+      comprobar(vistoEnLinea.otra_consola === true && vistoEnLinea.origen === repoId && vistoEnLinea.repo === nuevoId, "La en línea lo ve como de otra consola, de qué repositorio a cuál", vistoEnLinea);
+      comprobar(!JSON.stringify(vistoEnLinea).includes(s2.url), "Sin la dirección de la otra consola", vistoEnLinea);
+      log("La consola en línea vio el movimiento en marcha");
+    } else log("(El historial se trajo antes de que la consola en línea viera su progreso: se comprueba el historial)");
+    const entrada = (await esperar("«Mover a otro sitio» en el historial de B en la consola en línea", async () => {
+      const h = (await consola3.ok("GET", `/api/clientes/${c3.id}/equipos/${eqB2.id}/historial?limite=50`)) as any[];
+      return h.find((x) => x.tipo === "historial" && x.mover && x.repo === nuevoId) ?? null;
+    }, { plazo: 120_000, cada: 1000 })) as any;
+    comprobar(entrada.resultado === "ok" && entrada.origen === repoId && entrada.paso === "historial", "La entrada del historial dice de dónde a dónde y cómo acabó", entrada);
+    // Y en la consola que lo mandó, igual.
+    await esperar("la misma entrada en la consola local", async () => {
+      const h = (await consola2.ok("GET", `/api/clientes/${c2.id}/equipos/${eqB2.id}/historial?limite=50`)) as any[];
+      return h.some((x) => x.id === entrada.id) || null;
+    }, { plazo: 60_000, cada: 1000 });
+    // Terminado: ya no está en marcha en ninguna.
+    await esperar("que el movimiento ya no salga en marcha en la en línea", async () => {
+      const p = (await consola3.ok("GET", `/api/clientes/${c3.id}/progreso`)) as any[];
+      return !p.flatMap((x) => x.tareas ?? []).some((t: any) => t.tipo === "historial") || null;
+    }, { plazo: 30_000, cada: 1000 });
+
+    // -----------------------------------------------------------------------
     paso("8b. Cambiar la clave de administración desde la consola local, con la en línea conectada");
     // Como CambiarClaveAdmin.svelte: verificador del equipo y K_cfg de cada consola (la otra, con su sal).
     const nueva = new ClaveNueva(argon2, CLAVE_NUEVA, c2.sal_cliente);
