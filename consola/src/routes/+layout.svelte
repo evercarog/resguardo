@@ -46,10 +46,20 @@
       return;
     }
     if (!PUBLICAS.some((p) => ruta.startsWith(p))) {
-      try {
-        app.cuenta = await api.cuenta({ sinRedirigir: true });
-      } catch {
-        await goto(`/entrar?volver=${encodeURIComponent(ruta + page.url.search)}`, { replaceState: true });
+      // Solo sin sesión (401) se vuelve a entrar: un límite momentáneo (429) o un fallo
+      // de red no cierra la sesión; se reintenta unas veces con espera.
+      for (let intento = 0; ; intento++) {
+        try {
+          app.cuenta = await api.cuenta({ sinRedirigir: true });
+          break;
+        } catch (e) {
+          const estado = e instanceof api.ApiError ? e.estado : 0;
+          if (estado === 401 || estado === 403 || intento >= 5) {
+            await goto(`/entrar?volver=${encodeURIComponent(ruta + page.url.search)}`, { replaceState: true });
+            break;
+          }
+          await new Promise((r) => setTimeout(r, Math.min(15_000, 1500 * 2 ** intento)));
+        }
       }
     }
     app.listo = true;
