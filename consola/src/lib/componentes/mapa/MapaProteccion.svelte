@@ -291,7 +291,7 @@
       onfocus={() => (foco = n.id)}
       onblur={() => (foco = null)}
     >
-      <span class="tile" aria-hidden="true"><Ic size={16} /></span>
+      <span class="n-ic" aria-hidden="true"><Ic size={16} /></span>
       <span class="n-txt">
         <span class="n-nombre">{n.nombre}</span>
         <span class="n-sub">{n.sub}</span>
@@ -559,12 +559,17 @@
   .nodo:hover {
     border-color: var(--border-input);
   }
-  .tile {
+  /* La caja del icono: no se llama `.tile` (la tarjeta tranquila global, con su
+   * padding de 16, empujaba el icono fuera de la caja). */
+  .n-ic {
+    box-sizing: border-box;
     display: grid;
     flex: none;
     place-items: center;
     width: 30px;
     height: 30px;
+    padding: 0;
+    line-height: 0;
     color: var(--text-2);
     background: var(--surface-2);
     border: 1px solid var(--border);

@@ -48,6 +48,8 @@
     elegida = null,
     dia = null,
     alDia,
+    fechas = null,
+    alFechas,
     hayMas = false,
     cargandoMas = false,
     alCargarMas,
@@ -78,6 +80,9 @@
     elegida?: string | null;
     dia?: string | null;
     alDia?: (k: string | null) => void;
+    /** Un intervalo de días (`?desde=&hasta=`). */
+    fechas?: { desde: string; hasta: string } | null;
+    alFechas?: (f: { desde: string; hasta: string } | null) => void;
     /** Hay más historial del equipo por leer («Cargar más»). */
     hayMas?: boolean;
     cargandoMas?: boolean;
@@ -205,6 +210,8 @@
       etiqueta={equipo ? "Historial y versiones del equipo" : `Historial y versiones${vistas[0] ? ` de «${vistas[0].repo.nombre}»` : ""}`}
       dia={dia}
       {alDia}
+      {fechas}
+      {alFechas}
       sucesos={sucesos.sucesos}
       notas={sucesos.notas}
       alAbrirSuceso={alAbrirVuelta ? abrirSuceso : undefined}

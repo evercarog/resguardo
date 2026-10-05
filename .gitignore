@@ -18,3 +18,6 @@ src-tauri/.cargo/config.toml
 # Instalador del agente (lo genera npm run build:agente)
 src-tauri/resources/agente/*.exe
 .e2e/
+
+# Revisiones de seguridad y auditorías locales (no se publican)
+/revisiones/

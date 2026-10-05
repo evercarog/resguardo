@@ -637,8 +637,13 @@ pub fn hechas_de(config: &crate::agent::AgentConfig, estado: &crate::agent::Agen
 }
 
 /// Lo que está en marcha ahora: la copia, la tarea larga y lo del registro.
-pub fn actividades_de(config: &crate::agent::AgentConfig, estado: &crate::agent::AgentState, tareas: &crate::tasks::TasksState) -> Vec<Actividad> {
-    let ahora = chrono::Local::now();
+/// `ahora` decide si la copia sigue viva (se pasa para que la bandeja y las pruebas usen el mismo reloj).
+pub fn actividades_de(
+    config: &crate::agent::AgentConfig,
+    estado: &crate::agent::AgentState,
+    tareas: &crate::tasks::TasksState,
+    ahora: DateTime<chrono::Local>,
+) -> Vec<Actividad> {
     let mut out = Vec::new();
     if let Some(r) = estado.running.as_ref() {
         let nombre = config

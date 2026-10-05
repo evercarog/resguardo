@@ -12,16 +12,34 @@
   // fuera (`dia`/`alDia`, en la URL). En el móvil (≤ 640 px) la bitácora manda
   // y el calendario es una tira de días que se desliza. Se actualiza en vivo:
   // lo que llega se ilumina un momento y se anuncia.
-  import { tick, type Snippet } from "svelte";
+  import { tick, untrack, type Snippet } from "svelte";
   import { X } from "@lucide/svelte";
   import type { Regla } from "$lib/tipos";
   import { numero, plural } from "$lib/formato";
-  import { calendario, claveDia, huecosDeCopia, inicioDia, nombreDia, porDias, RANGOS, rangoInicial, retencionDe, type Celda, type Rango, type VersionLinea } from "$lib/lineaTiempo";
+  import {
+    altoCalendario,
+    calendario,
+    claveDia,
+    diaDeClave,
+    filasHoras,
+    huecosDeCopia,
+    inicioDia,
+    nombreDia,
+    nombreIntervalo,
+    porDias,
+    RANGOS,
+    rangoInicial,
+    retencionDe,
+    type Celda,
+    type Rango,
+    type VersionLinea,
+  } from "$lib/lineaTiempo";
   import { esFallo, FILTROS_HISTORIAL, pasaFiltro, type FiltroHistorial, type NotaVersion, type Suceso } from "$lib/historial";
   import { textoRegla, type Periodo } from "$lib/retencion";
   import CalendarioCalor from "./CalendarioCalor.svelte";
   import Bitacora, { type FilaBitacora } from "./Bitacora.svelte";
   import FormaCopia from "./FormaCopia.svelte";
+  import ElegirFechas from "./ElegirFechas.svelte";
 
   interface Props {
     versiones: VersionLinea[];
@@ -44,6 +62,9 @@
     /** El día elegido («2026-09-29»), si lo lleva la página (en la URL); si no, se guarda aquí. */
     dia?: string | null;
     alDia?: (k: string | null) => void;
+    /** Un intervalo de días («2026-09-01» a «2026-09-30», los dos incluidos), si lo lleva la página (`?desde=&hasta=`); si no, se guarda aquí. */
+    fechas?: { desde: string; hasta: string } | null;
+    alFechas?: (f: { desde: string; hasta: string } | null) => void;
     /** Lo demás que pasó (copias fallidas, sin cambios, comprobaciones, subidas…): con ellos, los filtros. */
     sucesos?: Suceso[] | null;
     /** Lo que se dice de cada versión aparte (avisos de su vuelta, pasos previos). */
@@ -71,6 +92,8 @@
     conCalendario = true,
     dia = null,
     alDia,
+    fechas = null,
+    alFechas,
     sucesos = null,
     notas,
     alAbrirSuceso,
@@ -106,37 +129,67 @@
     if (iniciado || !hay) return;
     iniciado = true;
     rango = rangoInicial([...lista.map((v) => v.t), ...todosSucesos.map((s) => s.t)], ahora);
-    // Si el día de la URL queda fuera, un rango que lo enseñe.
-    if (dia) {
-      const t = Date.parse(`${dia}T12:00:00`);
-      const r = RANGOS.find((x) => t >= inicioDia(ahora, 1 - x.dias));
-      if (r && r.dias > rango) rango = r.dias;
-    }
+    // Si el día o las fechas de la URL quedan fuera, un rango que los enseñe.
+    const t = diaDeClave(dia ?? fechas?.desde);
+    if (t != null) rango = rangoQueEnsena(t, rango);
   });
+  /** El menor periodo (no menor que `r`) que enseña el día `t`. */
+  function rangoQueEnsena(t: number, r: Rango): Rango {
+    const x = RANGOS.find((x) => t >= inicioDia(ahora, 1 - x.dias));
+    return x ? (x.dias > r ? x.dias : r) : 365;
+  }
   let ancho = $state(0);
   const movil = $derived(ancho > 0 && ancho <= 640);
-  const cal = $derived(calendario(lista, motivos, minuto, rango, movil, fallos));
+  // Las filas de horas, las mismas en 7, 30 y 60 días (las de lo que hay en 60):
+  // así el calendario no cambia de alto al cambiar de periodo.
+  const filasFijas = $derived.by(() => {
+    const desde60 = inicioDia(minuto, -59);
+    return filasHoras([...lista.map((v) => v.t), ...fallos].filter((t) => t >= desde60 && t <= minuto));
+  });
+  const cal = $derived(calendario(lista, motivos, minuto, rango, movil, fallos, rango === 365 || movil ? undefined : filasFijas));
+  /** El alto del marco del calendario: el mismo en todos los periodos. */
+  const altoMarco = $derived(altoCalendario(filasFijas.n, movil));
   const inicioRango = $derived(inicioDia(minuto, 1 - rango));
 
-  // El filtro: un día (de fuera, en la URL, o de aquí) o, dentro de él, una hora.
+  // El filtro: un día (de fuera, en la URL, o de aquí) o, dentro de él, una
+  // hora; o un intervalo de días (el selector de fechas, `?desde=&hasta=`).
   let diaLocal = $state<string | null>(null);
+  let fechasLocal = $state<{ desde: string; hasta: string } | null>(null);
   const diaFiltro = $derived(alDia ? dia : diaLocal);
+  const fechasFiltro = $derived(diaFiltro ? null : alFechas ? fechas : fechasLocal);
   let hora = $state<{ desde: number; hasta: number; texto: string } | null>(null);
   const filtro = $derived.by(() => {
-    if (!diaFiltro) return null;
-    const desde = Date.parse(`${diaFiltro}T00:00:00`);
-    if (!Number.isFinite(desde)) return null;
-    if (hora && claveDia(hora.desde) === diaFiltro) return hora;
-    return { desde, hasta: inicioDia(desde, 1), texto: nombreDia(desde, minuto) };
+    if (diaFiltro) {
+      const desde = diaDeClave(diaFiltro);
+      if (desde == null) return null;
+      if (hora && claveDia(hora.desde) === diaFiltro) return hora;
+      return { desde, hasta: inicioDia(desde, 1), texto: nombreDia(desde, minuto) };
+    }
+    const a = diaDeClave(fechasFiltro?.desde);
+    const b = diaDeClave(fechasFiltro?.hasta);
+    if (a == null || b == null) return null;
+    return { desde: Math.min(a, b), hasta: inicioDia(Math.max(a, b), 1), texto: nombreIntervalo(Math.min(a, b), Math.max(a, b), minuto) };
   });
   function ponerDia(k: string | null) {
     if (alDia) alDia(k);
-    else diaLocal = k;
+    else {
+      diaLocal = k;
+      fechasLocal = null;
+    }
   }
-  let todos = $state(false);
-  const POR_PAGINA = 7;
+  function ponerFechas(f: { desde: string; hasta: string } | null) {
+    if (alFechas) alFechas(f);
+    else {
+      fechasLocal = f;
+      diaLocal = null;
+    }
+  }
+  // La bitácora enseña las más recientes (12) y «Ver todas» abre el resto de 40 en 40.
+  const PRIMERAS = 12;
+  const PAGINA = 40;
+  let limite = $state(PRIMERAS);
   function filtrar(c: Celda, texto: string) {
-    todos = false;
+    limite = PRIMERAS;
     // Pulsar otra vez lo mismo quita el filtro.
     if (filtro && filtro.desde === c.desde && filtro.hasta === c.hasta) {
       hora = null;
@@ -149,11 +202,22 @@
   }
   function quitarFiltro() {
     hora = null;
-    ponerDia(null);
+    limite = PRIMERAS;
+    if (diaFiltro) ponerDia(null);
+    else ponerFechas(null);
+  }
+  /** Desde el selector de fechas: un día (como pulsar su casilla) o un intervalo. */
+  function elegirFechas(a: number | null, b: number | null) {
+    hora = null;
+    limite = PRIMERAS;
+    if (a == null || b == null) return quitarFiltro();
+    if (a === b) ponerDia(claveDia(a));
+    else ponerFechas({ desde: claveDia(Math.min(a, b)), hasta: claveDia(Math.max(a, b)) });
+    rango = rangoQueEnsena(Math.min(a, b), rango);
   }
   function cambiarRango(r: Rango) {
     rango = r;
-    todos = false;
+    limite = PRIMERAS;
     if (filtro && filtro.desde < inicioDia(minuto, 1 - r)) quitarFiltro();
   }
 
@@ -170,8 +234,9 @@
   const filas = $derived(
     [...enVista.map((v): FilaBitacora => ({ k: "v", t: v.t, v })), ...ssTramo.filter((s) => pasaFiltro(s, que)).map((s): FilaBitacora => ({ k: "s", t: s.t, s }))].sort((a, b) => b.t - a.t),
   );
-  const dias = $derived(porDias(filas).map((d) => ({ dia: d.dia, filas: d.vs })));
-  const diasVisibles = $derived(filtro || todos ? dias : dias.slice(0, POR_PAGINA));
+  const filasVisibles = $derived(filas.slice(0, limite));
+  const diasVisibles = $derived(porDias(filasVisibles).map((d) => ({ dia: d.dia, filas: d.vs })));
+  const quedan = $derived(filas.length - filasVisibles.length);
   const elegida = $derived(seleccion ? (lista.find((v) => v.id === seleccion) ?? null) : null);
   // Los días con algo, para elegir uno con un control de tamaño cómodo (WCAG 2.5.8).
   const diasConAlgo = $derived.by(() => {
@@ -190,12 +255,16 @@
       .map(([d, n]) => ({ clave: claveDia(d), texto: `${nombreDia(d, minuto)} · ${n.v ? plural(n.v, "versión", "versiones") : plural(n.s, "suceso", "sucesos")}` }));
   });
 
+  /** Los días con algo (versiones o sucesos), para el punto del selector de fechas. */
+  const clavesConAlgo = $derived(new Set([...lista.map((v) => claveDia(v.t)), ...todosSucesos.map((x) => claveDia(x.t))]));
+
   // La elegida (de fuera, p. ej. al abrir su detalle), a la vista.
   $effect(() => {
     const sel = elegida;
     if (!sel) return;
     if (que !== "todo" && que !== "versiones") que = "todo";
-    if (!diasVisibles.some((d) => d.filas.some((f) => f.k === "v" && f.v.id === sel.id)) && vsTramo.some((v) => v.id === sel.id)) todos = true;
+    const i = filas.findIndex((f) => f.k === "v" && f.v.id === sel.id);
+    if (i >= untrack(() => limite)) limite = i + 1;
     void tick().then(() => document.getElementById(`version-${sel.id}`)?.scrollIntoView({ block: "nearest" }));
   });
 
@@ -237,7 +306,8 @@
   const VACIO: Record<FiltroHistorial, string> = {
     todo: "Nada en ese momento.",
     versiones: "Ninguna versión en ese momento.",
-    fallos: "Ningún fallo ni aviso en ese momento.",
+    fallos: "Ningún fallo en ese momento.",
+    avisos: "Ningún aviso en ese momento.",
     comprobaciones: "Ninguna comprobación ni prueba de restauración en ese momento.",
     subidas: "Ninguna subida a la nube ni espejo en ese momento.",
   };
@@ -252,11 +322,13 @@
             <button type="button" class:on={rango === r.dias} aria-pressed={rango === r.dias} onclick={() => cambiarRango(r.dias)}>{r.texto}</button>
           {/each}
         </div>
+        <ElegirFechas desde={filtro ? inicioDia(filtro.desde) : null} hasta={filtro ? inicioDia(filtro.hasta - 1) : null} ahora={minuto} diasCon={clavesConAlgo} alElegir={elegirFechas} />
         {#if herramientas}{@render herramientas()}{/if}
         <p class="resumen num" id="{id}-resumen">{resumen}</p>
       </div>
 
       <div class="calor">
+        <div class="marco" style:height="{altoMarco}px">
         <CalendarioCalor
           {cal}
           {filtro}
@@ -265,6 +337,7 @@
           descrito="{id}-resumen"
           etiqueta="{etiqueta}: calendario de {nombreRango}{cal.modo === 'horas' ? ', un día por columna y las horas en filas' : cal.modo === 'dias' ? ', una semana por columna' : ', un cuadro por día'}. Flechas para moverse; Intro muestra abajo lo de ese momento."
         />
+        </div>
         <div class="pie-cal">
           <div class="leyenda" aria-hidden="true">
             <span class="l escala">Menos<span class="sw n0"></span><span class="sw n1"></span><span class="sw n2"></span><span class="sw n3"></span><span class="sw n4"></span>Más</span>
@@ -275,7 +348,7 @@
           <!-- Lo mismo que las casillas, con un control de tamaño cómodo (WCAG 2.5.8). -->
           <label class="elegir-dia">
             <span class="sr-only">Ver lo de un día</span>
-            <select class="input" value={diaFiltro ?? ""} onchange={(e) => ((hora = null), ponerDia(e.currentTarget.value || null))}>
+            <select class="input" value={diaFiltro ?? ""} onchange={(e) => ((hora = null), (limite = PRIMERAS), e.currentTarget.value ? ponerDia(e.currentTarget.value) : quitarFiltro())}>
               <option value="">Todos los días</option>
               {#if diaFiltro && !diasConAlgo.some((d) => d.clave === diaFiltro)}<option value={diaFiltro}>{filtro?.texto ?? diaFiltro}</option>{/if}
               {#each diasConAlgo as d (d.clave)}<option value={d.clave}>{d.texto}</option>{/each}
@@ -289,7 +362,7 @@
       <div class="bit-cab">
         <h3 class="bit-titulo" id="{id}-bit">
           {#if filtro}<span class="first">{filtro.texto}</span>{:else}{conSucesos ? "Lo más reciente" : "Las últimas"}{/if}
-          <span class="faint num">· {plural(vsTramo.length, "versión", "versiones")}{conSucesos && cuenta.fallos ? ` · ${cuenta.fallos === 1 ? "1 fallo o aviso" : `${numero(cuenta.fallos)} fallos o avisos`}` : ""}</span>
+          <span class="faint num">· {plural(vsTramo.length, "versión", "versiones")}{conSucesos && cuenta.fallos ? ` · ${cuenta.fallos === 1 ? "1 fallo" : `${numero(cuenta.fallos)} fallos`}` : ""}{conSucesos && cuenta.avisos ? ` · ${plural(cuenta.avisos, "aviso", "avisos")}` : ""}</span>
         </h3>
         {#if filtro}
           <button type="button" class="btn btn-sm btn-ghost" onclick={quitarFiltro}><X size={14} />Ver todo</button>
@@ -298,7 +371,7 @@
       {#if conSucesos}
         <div class="filtros" role="group" aria-label="Qué mostrar">
           {#each FILTROS_HISTORIAL as f (f.id)}
-            <button type="button" class="filtro" class:on={que === f.id} aria-pressed={que === f.id} onclick={() => ((que = f.id), (todos = false))}>
+            <button type="button" class="filtro" class:on={que === f.id} aria-pressed={que === f.id} onclick={() => ((que = f.id), (limite = PRIMERAS))}>
               {f.texto}<span class="n num"><span class="sr-only">(</span>{numero(cuenta[f.id])}<span class="sr-only">)</span></span>
             </button>
           {/each}
@@ -320,8 +393,15 @@
           {alAbrirSuceso}
           etiqueta={filtro ? `Lo de ${filtro.texto}` : conSucesos ? `Historial y versiones de ${nombreRango}` : `Versiones de ${nombreRango}`}
         />
-        {#if diasVisibles.length < dias.length}
-          <button type="button" class="btn btn-sm btn-ghost mas" onclick={() => (todos = true)}>Ver {plural(dias.length - diasVisibles.length, "día más", "días más")}</button>
+        {#if quedan > 0}
+          <div class="mas">
+            <button type="button" class="btn btn-sm" aria-describedby="{id}-quedan" onclick={() => (limite += PAGINA)}>
+              {#if limite === PRIMERAS}Ver todas ({numero(filas.length)}){:else}Cargar más{/if}
+            </button>
+            <span class="faint num" id="{id}-quedan">{limite === PRIMERAS ? `Se ven las ${numero(filasVisibles.length)} más recientes.` : `Se ven ${numero(filasVisibles.length)} de ${numero(filas.length)}; quedan ${numero(quedan)}.`}</span>
+          </div>
+        {:else if limite > PRIMERAS && filas.length > PRIMERAS}
+          <div class="mas"><button type="button" class="btn btn-sm btn-ghost" onclick={() => (limite = PRIMERAS)}>Ver solo las más recientes</button></div>
         {/if}
       {:else}
         <p class="faint vacio">
@@ -330,7 +410,7 @@
           {:else}Nada en {nombreRango}: elige un periodo más largo.{/if}
         </p>
       {/if}
-      {#if pie && diasVisibles.length >= dias.length}{@render pie()}{/if}
+      {#if pie && quedan === 0}{@render pie()}{/if}
     </section>
 
     <span class="sr-only" aria-live="polite" aria-atomic="true">{anuncio}</span>
@@ -382,13 +462,16 @@
     --calor-4: #b7d3f6;
   }
   .herr {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-2) var(--sp-4);
+    gap: var(--sp-2) var(--sp-3);
   }
+  /* La frase del periodo, en su propia línea: al cambiar, los controles no se mueven. */
   .resumen {
+    flex-basis: 100%;
+    min-height: 20px;
     margin: 0;
     font-size: var(--fs-sm);
     color: var(--text-2);
@@ -448,7 +531,18 @@
     font-size: var(--fs-xs);
   }
   .mas {
-    align-self: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    font-size: var(--fs-xs);
+  }
+  /* El marco del calendario: el mismo alto en todos los periodos (lo de debajo no salta). */
+  .marco {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
   }
   /* Los filtros de la bitácora: píldoras con su cuenta. */
   .filtros {
@@ -512,6 +606,10 @@
   }
   .movil .calor {
     order: 1;
+  }
+  /* En el móvil la frase ocupa dos líneas: se les guarda el sitio. */
+  .movil .resumen {
+    min-height: 40px;
   }
   .movil .bit {
     order: 2;
