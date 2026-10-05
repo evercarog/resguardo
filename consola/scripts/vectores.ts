@@ -816,8 +816,8 @@ console.log("\n· Progreso en vivo (v1.25)");
   igual("la historia se reconstruye hacia atrás", [alm.serie.length, Math.round((alm.serie.at(-1)!.v - alm.serie[0].v) / 1e9)], [60, 30]);
   igual("con mucho sitio: sin aviso", previsiones([pc(1), lleno(900e9)], { pc1: inf }, "c", ahora)[0].tono, "ok");
 
-  console.log("\n· Línea de tiempo de las versiones (lib/lineaTiempo.ts): retención, colores y eje");
-  const { retencionDe, huecosDeCopia, marcasEje, zoomInicial } = await import("../src/lib/lineaTiempo");
+  console.log("\n· Línea de tiempo de las versiones (lib/lineaTiempo.ts): retención, colores, calendario y bitácora");
+  const { retencionDe, huecosDeCopia, rangoInicial, calendario, filasHoras, nivelDe, porDias, nombreDia } = await import("../src/lib/lineaTiempo");
   const { seQuedan } = await import("../src/lib/retencion");
   // Una versión cada 12 h durante 20 días, con «3 diarias y 2 semanales».
   const vs = Array.from({ length: 40 }, (_, i) => ({ id: `v${i}`, hora: new Date(ahora - i * 12 * 3600_000).toISOString() }));
@@ -828,26 +828,28 @@ console.log("\n· Progreso en vivo (v1.25)");
   cierto("la más antigua, ya sin semanales que gastar, se quitaría", mot.get("v39") === null);
   const hu = huecosDeCopia([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }], ["d", "b", "a", "c", null]);
   igual("colores por orden de configuración; la cuarta, «otras»", [hu.get("a"), hu.get("b"), hu.get("c"), hu.get("d")], [0, 1, 2, 3]);
-  igual("eje del mes: el 1 y cada 5 días (sin el 30, pegado al 1)", marcasEje(Date.parse("2026-09-28T00:00:00"), Date.parse("2026-10-12T00:00:00"), "mes").map((m) => new Date(m.t).getDate()), [1, 5, 10]);
-  igual("escala inicial: la menor con 6 versiones a la vista", zoomInicial(vs.map((v) => Date.parse(v.hora)), ahora), "semana");
-  // El río, las burbujas y las franjas de la retención.
-  const { rio, agrupar, franjasRetencion } = await import("../src/lib/lineaTiempo");
-  const DIA_MS = 86_400_000;
-  const r = rio([0, DIA_MS * 0.2, DIA_MS * 0.4, DIA_MS * 10], DIA_MS, 0, DIA_MS * 12);
-  const pico = r.v.indexOf(1);
-  cierto("río: va de 0 a 1 y el pico está donde hay más versiones", Math.max(...r.v) === 1 && Math.min(...r.v) >= 0 && r.desde + pico * r.paso <= DIA_MS && r.desde + (pico + 1) * r.paso > 0);
-  cierto("río: tramos alineados (no tiembla al arrastrar)", r.desde % DIA_MS === 0 && rio([5], DIA_MS, DIA_MS * 0.3, DIA_MS * 2).desde === rio([5], DIA_MS, DIA_MS * 0.7, DIA_MS * 2).desde);
-  igual("río sin versiones: todo a 0", rio([], DIA_MS, 0, DIA_MS * 3).v.every((x) => x === 0), true);
-  // Tramos de 100 ms y 1 px por ms: [0, 4, 8] no caben; 130 va sola; [210, 216] son solo dos; [300, 340, 380] caben.
-  const mk = (...ts: number[]) => ts.map((t) => ({ t, x: t }));
-  igual("burbujas: se juntan las que no caben (3 o más en su tramo)", agrupar(mk(0, 4, 8, 130, 210, 216, 300, 340, 380), 100, 10).map((g) => g.xs.length), [3, 1, 1, 1, 1, 1, 1]);
-  igual("burbuja: en la posición media", agrupar(mk(0, 4, 8), 100, 10)[0].x, 4);
-  igual("burbujas: tramos alineados al tiempo (no bailan al arrastrar)", agrupar(mk(95, 99, 101, 104, 108), 100, 10).map((g) => g.xs.length), [1, 1, 3]);
-  const fr = franjasRetencion(vs.map((v) => ({ id: v.id, t: Date.parse(v.hora) })), mot, ahora);
-  igual("franjas: de la más reciente a la más antigua", fr.map((f) => f.p), ["diarias", "semanales"]);
-  igual("franjas: cuántas guarda cada regla", fr.map((f) => f.n), fr.map((f) => [...mot.values()].filter((m) => m === f.p).length));
-  cierto("franjas: seguidas, sin huecos ni solapes, y la reciente llega a hoy", fr[0].desde === fr[1].hasta && fr[0].hasta >= ahora && fr[1].desde < fr[1].hasta);
-  igual("sin regla, sin franjas", franjasRetencion([], null, ahora), []);
+  const ts = vs.map((v) => ({ id: v.id, t: Date.parse(v.hora) }));
+  igual("periodo inicial: el menor con la mitad de las versiones (20 días → 30)", rangoInicial(ts.map((v) => v.t), ahora), 30);
+  igual("periodo inicial: si todas son de esta semana, 7 días", rangoInicial(ts.slice(0, 10).map((v) => v.t), ahora), 7);
+  igual("intensidad: cuatro escalones relativos al máximo", [0, 1, 2, 3, 4, 8].map((n) => nivelDe(n, 8)), [0, 1, 1, 2, 2, 4]);
+  // Las filas de horas: un horario de oficina, una por hora (con aire); todo el día, de 2 en 2.
+  const a8 = (h: number) => new Date(2026, 9, 1, h, 30).getTime();
+  igual("filas por hora con un horario de oficina (8 a 18, con una de aire)", filasHoras([a8(8), a8(18)]), { desde: 7, paso: 1, n: 13 });
+  igual("todo el día: las 24 horas de 2 en 2", filasHoras([a8(0), a8(23)]), { desde: 0, paso: 2, n: 12 });
+  const c30 = calendario(ts, mot, ahora, 30);
+  igual("30 días: una columna por día, la última hoy", [c30.modo, c30.columnas.length, c30.columnas.at(-1)!.hoy], ["horas", 30, true]);
+  igual("30 días: cuenta lo que hay en el rango y lo que quitaría la retención", [c30.total, c30.quitan], [40, [...mot.values()].filter((m) => m === null).length]);
+  igual("cada versión cae en su casilla y en su día", [c30.celdas.flat().reduce((s, x) => s + x.ids.length, 0), c30.columnas.reduce((s, c) => s + (c.dia?.ids.length ?? 0), 0)], [40, 40]);
+  cierto("la casilla de ahora existe y lo que viene después es futuro", c30.celdas.flat().filter((x) => x.ahora).length <= 1 && c30.celdas.flat().every((x) => x.futura === x.desde > ahora));
+  const c7 = calendario(ts, mot, ahora, 7, true);
+  igual("la tira del móvil: una fila de días", [c7.modo, c7.filas.length, c7.columnas.length], ["tira", 1, 7]);
+  const c365 = calendario(ts, mot, ahora, 365);
+  igual("un año: semanas × días de la semana, un cuadro por día", [c365.modo, c365.filas.length, c365.columnas.length >= 53], ["dias", 7, true]);
+  cierto("un año: el mes rotulado en la semana de su día 1", c365.columnas.filter((c) => c.mes).length >= 12);
+  igual("un año: todas las versiones dentro", c365.celdas.flat().reduce((s, x) => s + x.ids.length, 0), 40);
+  const dias = porDias(ts);
+  cierto("bitácora: por días, del más reciente al más antiguo", dias.length >= 20 && dias.every((d, i) => i === 0 || d.dia < dias[i - 1].dia) && dias.every((d) => d.vs.every((v, j) => j === 0 || v.t <= d.vs[j - 1].t)));
+  igual("bitácora: «Hoy» y «Ayer»", [nombreDia(ahora, ahora), nombreDia(ahora - 86_400_000, ahora)], ["Hoy", "Ayer"]);
 }
 
 console.log("\n· Cambiar la clave de administración (lib/cambioClave.ts)");
