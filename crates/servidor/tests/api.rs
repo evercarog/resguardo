@@ -1203,6 +1203,17 @@ async fn progreso_en_vivo() {
     let r = pedir(&p.app, "POST", "/api/agente/progreso", Some(json!({ "tareas": [] })), None, &agente).await;
     assert_eq!(r.estado, StatusCode::NO_CONTENT);
     assert_eq!(pedir(&p.app, "GET", &ruta, None, Some(&cookie), &[]).await.json, json!([]));
+    // v1.4x: un «Mover a otro sitio…» que empezó otra consola del equipo se ve aquí también (solo verlo).
+    let mover = json!({ "tipo": "historial", "repo": "nuevo", "origen": "r1", "mover": true, "paso": "historial", "fase": "en_marcha",
+        "otra_consola": true, "consola": "Oficina", "versiones": 56, "versiones_total": 255, "etapa": "Moviéndose a otro sitio: trayendo el historial" });
+    let r = pedir(&p.app, "POST", "/api/agente/progreso", Some(json!({ "tareas": [mover] })), None, &agente).await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT);
+    let t = pedir(&p.app, "GET", &ruta, None, Some(&lectura), &[]).await.json[0]["tareas"][0].clone();
+    assert_eq!(
+        (t["tipo"].as_str(), t["origen"].as_str(), t["mover"].as_bool(), t["otra_consola"].as_bool(), t["consola"].as_str()),
+        (Some("historial"), Some("r1"), Some(true), Some(true), Some("Oficina"))
+    );
+    assert_eq!((t["versiones"].as_u64(), t["versiones_total"].as_u64()), (Some(56), Some(255)));
 }
 
 /// Tras restaurar una copia de la consola, el servidor recuerda un número de orden

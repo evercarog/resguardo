@@ -599,7 +599,8 @@ async fn registrar_aviso(st: &St, a: &Agente, av: Aviso) -> Res<()> {
 /// Entradas por petición y tamaño de cada una (en JSON).
 pub const MAX_ENTRADAS_HISTORIAL: usize = 500;
 const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
-pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso"];
+/// v1.4x: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
+pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "historial"];
 /// 2000-01-01: nada de antes (ni de más de un día en el futuro, por los relojes).
 const HISTORIAL_DESDE: crate::almacen::Ts = 946_684_800;
 /// Avisos que un equipo puede pasar a la lista de avisos con su historial, por día

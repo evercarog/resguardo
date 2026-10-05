@@ -117,7 +117,9 @@ pub fn tarea_larga(t: &crate::tasks::RunningTask) -> Value {
     })
 }
 
-/// Lo que está en marcha ahora mismo en este equipo (vacío si nada).
+/// Lo que está en marcha ahora mismo en este equipo (vacío si nada), tal como
+/// se le cuenta a la consola de `v`: a todas las consolas lo mismo, salvo quién
+/// empezó cada operación (`otra_consola`, ver [`tarea_operacion`]).
 pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
     let ahora = Local::now();
     let copias: Vec<crate::gestion_v2::Copia> = v
@@ -133,8 +135,152 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
     if let Some(t) = crate::tasks::load_state().live_running() {
         out.push(tarea_larga(t));
     }
+    // v1.4x: lo que corre dentro del servicio por una orden (traer el historial, también
+    // al «Mover a otro sitio…»; aplicar la retención) y las restauraciones.
+    let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
+    out.extend(ops::lista().iter().map(|o| tarea_operacion(o, &enlace)));
+    out.extend(crate::escritorio::en_marcha::actividades().iter().filter_map(tarea_restauracion));
     out.truncate(MAX_TAREAS);
     out
+}
+
+/// Una restauración en marcha (del registro del servicio), sin rutas: el repositorio y las cifras.
+pub fn tarea_restauracion(a: &crate::escritorio::Actividad) -> Option<Value> {
+    let repo = a.clave.strip_prefix("restauracion:").filter(|_| a.tipo == "restauracion")?;
+    Some(json!({
+        "tipo": "restauracion",
+        "repo": repo,
+        "fase": if a.bytes.is_none() { "preparando" } else { "en_marcha" },
+        "etapa": "Restaurando",
+        "porcentaje": a.porcentaje,
+        "bytes": a.bytes,
+        "bytes_total": a.bytes_total,
+        "empezo": a.empezo,
+    }))
+}
+
+/// Una operación del servicio como la ve la consola `enlace`. `otra_consola`:
+/// la empezó otra de las consolas del equipo (esta solo la enseña, sin poder
+/// llevarla); `consola`, el nombre que esa consola tiene en el equipo (nunca su
+/// dirección), si tiene uno.
+pub fn tarea_operacion(o: &ops::Operacion, enlace: &str) -> Value {
+    let otra = o.enlace != enlace;
+    let porcentaje = match (o.hechas, o.total) {
+        (Some(h), Some(t)) if t > 0 => Some(((h as f64 / t as f64).clamp(0.0, 1.0) * 1000.0).round() / 1000.0),
+        _ => None,
+    };
+    json!({
+        "tipo": o.tipo,
+        "repo": o.repo,
+        "origen": o.origen,
+        "nombre": o.nombre,
+        "nombre_origen": o.nombre_origen,
+        "mover": o.mover.then_some(true),
+        "paso": o.paso,
+        "fase": if o.tipo == "historial" && o.hechas.is_none() { "preparando" } else { "en_marcha" },
+        "etapa": (!o.etapa.is_empty()).then(|| o.etapa.clone()),
+        "porcentaje": porcentaje,
+        "versiones": o.hechas.filter(|_| o.tipo == "historial"),
+        "versiones_total": o.total.filter(|_| o.tipo == "historial"),
+        "otra_consola": otra,
+        "consola": if otra { o.consola.clone() } else { None },
+        "empezo": o.empezo,
+        "actualizado": o.actualizado,
+    })
+}
+
+/// v1.4x: las operaciones largas que corren dentro del servicio por una orden
+/// (traer el historial —también los pasos de «Mover a otro sitio…»— y aplicar
+/// la retención). Solo en memoria: si el servicio se reinicia, la operación se
+/// cortó con él (y su orden queda fallida, `largas`). Cada canal las cuenta a
+/// su consola con el progreso de siempre, así que TODAS las consolas del
+/// equipo las ven, no solo la que mandó la orden.
+pub mod ops {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
+
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub struct Operacion {
+        pub id: u64,
+        /// `historial` o `retencion`.
+        pub tipo: &'static str,
+        /// El repositorio en el que se hace (al traer el historial, el que lo recibe).
+        pub repo: String,
+        /// Al traer el historial de otro repositorio de este equipo, ese.
+        pub origen: Option<String>,
+        /// El nombre del repositorio (el que le puso la consola).
+        pub nombre: Option<String>,
+        /// El nombre del de `origen`.
+        pub nombre_origen: Option<String>,
+        /// Es un paso de «Mover a otro sitio…».
+        pub mover: bool,
+        /// Qué paso del movimiento: `historial` (todo) o `ultimo` (lo copiado mientras tanto).
+        pub paso: Option<String>,
+        /// La consola que la empezó (id del enlace) y su nombre en el equipo (sin dirección).
+        pub enlace: String,
+        pub consola: Option<String>,
+        pub etapa: String,
+        pub hechas: Option<u64>,
+        pub total: Option<u64>,
+        pub empezo: String,
+        pub actualizado: String,
+    }
+
+    impl Operacion {
+        /// Una operación de `tipo` en `repo` que manda la consola de `v` (su nombre en el equipo, nunca su dirección).
+        pub fn de_consola(v: &crate::servidor_v2::Vinculo, tipo: &'static str, repo: &str, etapa: &str) -> Self {
+            Operacion {
+                tipo,
+                repo: repo.to_string(),
+                nombre: v.repos_v2.iter().find(|r| r.id == repo).map(|r| r.nombre.clone()),
+                enlace: v.id_enlace(),
+                consola: Some(v.nombre_consola.trim().chars().take(60).collect::<String>()).filter(|n| !n.is_empty()),
+                etapa: etapa.to_string(),
+                ..Default::default()
+            }
+        }
+    }
+
+    static OPS: Mutex<Vec<Operacion>> = Mutex::new(Vec::new());
+    static CONTADOR: AtomicU64 = AtomicU64::new(1);
+
+    /// Mientras vive, la operación cuenta como en marcha (al soltarlo, se quita).
+    #[derive(Debug)]
+    pub struct Op(u64);
+
+    pub fn empezar(mut o: Operacion) -> Op {
+        o.id = CONTADOR.fetch_add(1, Ordering::Relaxed);
+        let ahora = chrono::Local::now().to_rfc3339();
+        o.empezo.clone_from(&ahora);
+        o.actualizado = ahora;
+        let id = o.id;
+        OPS.lock().unwrap_or_else(|e| e.into_inner()).push(o);
+        Op(id)
+    }
+
+    impl Op {
+        /// Cómo va: qué hace (en palabras, sin rutas) y, si se saben, cuántas de cuántas.
+        pub fn avance(&self, etapa: &str, hechas: Option<u64>, total: Option<u64>) {
+            let mut l = OPS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(o) = l.iter_mut().find(|o| o.id == self.0) {
+                o.etapa = crate::web::public_message(etapa).chars().take(120).collect();
+                o.hechas = hechas;
+                o.total = total;
+                o.actualizado = chrono::Local::now().to_rfc3339();
+            }
+        }
+    }
+
+    impl Drop for Op {
+        fn drop(&mut self) {
+            OPS.lock().unwrap_or_else(|e| e.into_inner()).retain(|o| o.id != self.0);
+        }
+    }
+
+    /// Las que están en marcha ahora.
+    pub fn lista() -> Vec<Operacion> {
+        OPS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
 }
 
 /// Lo que lee y escribe un proceso hijo (restic o rclone), por segundo, de sus
@@ -306,6 +452,68 @@ mod tests {
         assert!(v["lectura"].is_null() && v["subida"].is_null(), "sin contadores, sin ritmos (la consola los deduce de los bytes)");
         let v = tarea_larga(&crate::tasks::RunningTask { read_bps: Some(5_000), upload_bps: Some(4_000), ..t });
         assert_eq!((v["lectura"].as_u64(), v["subida"].as_u64()), (Some(5_000), Some(4_000)));
+    }
+
+    /// v1.4x: una operación del servicio (traer el historial al mover un repositorio) se
+    /// cuenta a TODAS las consolas; las que no la empezaron la ven como de otra consola,
+    /// con su nombre (nunca su dirección), y al soltarla deja de contarse.
+    #[test]
+    fn operaciones_a_todas_las_consolas() {
+        let mut a = Vinculo { modo: "gestionado".into(), url: "https://192.168.1.20:8443".into(), nombre_consola: "Oficina".into(), ..Default::default() };
+        a.repos_v2.push(crate::gestion_v2::RepoV2 { id: "prueba-ops-r1".into(), nombre: "Contabilidad".into(), ..Default::default() });
+        let mut b = a.clone();
+        b.enlace_id = "otra-consola-de-prueba".into();
+        b.nombre_consola = "En línea".into();
+        let op = ops::Operacion {
+            origen: Some("prueba-ops-r1".into()),
+            nombre_origen: Some("Contabilidad".into()),
+            mover: true,
+            paso: Some("historial".into()),
+            ..ops::Operacion::de_consola(&a, "historial", "prueba-ops-r1", "Moviéndose a otro sitio: preparando…")
+        };
+        assert_eq!(op.consola.as_deref(), Some("Oficina"));
+        let g = ops::empezar(op);
+        let de = |v: &Vinculo| tareas(Some(v)).into_iter().find(|t| t["tipo"] == "historial" && t["repo"] == "prueba-ops-r1").expect("en marcha");
+        let t = de(&b);
+        assert_eq!((t["fase"].as_str(), t["mover"].as_bool(), t["paso"].as_str()), (Some("preparando"), Some(true), Some("historial")));
+        assert_eq!((t["otra_consola"].as_bool(), t["consola"].as_str()), (Some(true), Some("Oficina")), "la otra consola sabe quién la empezó");
+        assert!(!t.to_string().contains("192.168"), "nunca la dirección de la consola: {t}");
+        let t = de(&a);
+        assert_eq!((t["otra_consola"].as_bool(), t["consola"].as_str()), (Some(false), None), "la que la empezó la lleva ella");
+        g.avance(r"Trayendo el historial de C:\Users\Ana\x", Some(56), Some(255));
+        let t = de(&b);
+        assert_eq!((t["fase"].as_str(), t["versiones"].as_u64(), t["versiones_total"].as_u64()), (Some("en_marcha"), Some(56), Some(255)));
+        assert_eq!(t["porcentaje"].as_f64(), Some(0.22));
+        assert!(!t["etapa"].as_str().unwrap().contains("Ana"), "sin rutas: {}", t["etapa"]);
+        assert_eq!(t["origen"], "prueba-ops-r1");
+        drop(g);
+        assert!(!tareas(Some(&b)).iter().any(|t| t["repo"] == "prueba-ops-r1"), "terminó: ya no se cuenta");
+        // Sin nombre en el equipo, ninguno (no se cambia por la dirección).
+        let sin =
+            ops::Operacion::de_consola(&Vinculo { nombre_consola: " ".into(), url: "https://10.0.0.1".into(), ..Default::default() }, "retencion", "r", "x");
+        assert_eq!(sin.consola, None);
+        let t = tarea_operacion(&sin, "otra");
+        assert_eq!((t["fase"].as_str(), t["otra_consola"].as_bool(), t["consola"].is_null()), (Some("en_marcha"), Some(true), true));
+        assert!(t["versiones"].is_null(), "solo el historial cuenta versiones");
+    }
+
+    #[test]
+    fn restauracion_sin_rutas() {
+        let a = crate::escritorio::Actividad {
+            tipo: "restauracion".into(),
+            clave: "restauracion:r9".into(),
+            nombre: "Copias".into(),
+            bytes: Some(10),
+            bytes_total: Some(40),
+            porcentaje: Some(0.25),
+            ..Default::default()
+        };
+        let t = tarea_restauracion(&a).unwrap();
+        assert_eq!(
+            (t["tipo"].as_str(), t["repo"].as_str(), t["fase"].as_str(), t["porcentaje"].as_f64()),
+            (Some("restauracion"), Some("r9"), Some("en_marcha"), Some(0.25))
+        );
+        assert!(tarea_restauracion(&crate::escritorio::Actividad { tipo: "espejo".into(), clave: "espejo:1".into(), ..Default::default() }).is_none());
     }
 
     #[test]

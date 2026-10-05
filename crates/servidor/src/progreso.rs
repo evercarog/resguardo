@@ -27,9 +27,26 @@ pub const MAX_BYTES: usize = 16 * 1024;
 /// agente lo manda cada 5 s por el canal, o cada 10 s por sondeo).
 pub const CADUCA: Duration = Duration::from_secs(90);
 
-const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion"];
+// v1.4x: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`.
+const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"];
 const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha"];
-const TEXTOS: &[(&str, usize)] = &[("repo", 64), ("copia", 64), ("nombre", 120), ("etapa", 120), ("empezo", 40), ("actualizado", 40)];
+// v1.4x: `origen` (el repositorio del que se trae), `nombre_origen`, `paso` y `consola` (el
+// nombre, en el equipo, de la consola que la empezó; nunca su dirección).
+const TEXTOS: &[(&str, usize)] = &[
+    ("repo", 64),
+    ("copia", 64),
+    ("nombre", 120),
+    ("etapa", 120),
+    ("empezo", 40),
+    ("actualizado", 40),
+    ("origen", 64),
+    ("nombre_origen", 120),
+    ("paso", 16),
+    ("consola", 60),
+];
+/// v1.4x: `mover` (un paso de «Mover a otro sitio…») y `otra_consola` (la empezó otra
+/// consola del equipo: aquí solo se enseña).
+const SINO: &[&str] = &["mover", "otra_consola"];
 // v1.36: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
 const NUMEROS: &[&str] =
     &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
@@ -123,6 +140,11 @@ fn limpiar_tarea(t: &Value) -> Option<Value> {
             out.insert((*k).into(), json!(n));
         }
     }
+    for k in SINO {
+        if let Some(b) = o.get(*k).and_then(Value::as_bool) {
+            out.insert((*k).into(), json!(b));
+        }
+    }
     if let Some(p) = o.get("porcentaje").and_then(Value::as_f64).filter(|p| p.is_finite()) {
         out.insert("porcentaje".into(), json!(p.clamp(0.0, 1.0)));
     }
@@ -178,6 +200,28 @@ mod tests {
         assert_eq!((v[0]["lectura"].as_u64(), v[0]["subida"].as_u64(), v[0]["archivos_s"].as_u64()), (Some(1000), Some(400), Some(12)));
         assert!(limpiar(&json!(vec![json!({}); MAX_TAREAS + 1])).is_err());
         assert!(limpiar(&json!([{ "tipo": "copia", "fase": "subiendo", "repo": "r", "nombre": "x".repeat(MAX_BYTES) }])).is_err());
+    }
+
+    /// v1.4x: traer el historial (y los pasos de «Mover a otro sitio…») llega a cada consola
+    /// con quién lo empezó (solo el nombre, acotado) y de qué repositorio.
+    #[test]
+    fn historial_y_mover() {
+        let t = json!([{
+            "tipo": "historial", "fase": "en_marcha", "repo": "nuevo", "origen": "viejo", "nombre_origen": "Contabilidad",
+            "mover": true, "paso": "historial", "otra_consola": true, "consola": "x".repeat(200),
+            "versiones": 56, "versiones_total": 255, "porcentaje": 0.22, "url": "https://10.0.0.1"
+        }, { "tipo": "retencion", "fase": "en_marcha", "repo": "r", "mover": "si" }, { "tipo": "restauracion", "fase": "preparando", "repo": "r" }]);
+        let v = limpiar(&t).unwrap();
+        assert_eq!(v.len(), 3);
+        let h = &v[0];
+        assert_eq!(
+            (h["origen"].as_str(), h["paso"].as_str(), h["mover"].as_bool(), h["otra_consola"].as_bool()),
+            (Some("viejo"), Some("historial"), Some(true), Some(true))
+        );
+        assert_eq!(h["consola"].as_str().unwrap().chars().count(), 60);
+        assert_eq!((h["versiones"].as_u64(), h["versiones_total"].as_u64()), (Some(56), Some(255)));
+        assert!(h.get("url").is_none());
+        assert!(v[1].get("mover").is_none(), "solo sí o no");
     }
 
     #[test]
