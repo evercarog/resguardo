@@ -6,7 +6,7 @@
   // cuenta con la identidad del servidor (y, en v3, la huella de su autoridad
   // TLS); si no coincide con el que da el servidor, no se sigue.
   import Migas from "$lib/componentes/Migas.svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { Apple, Ban, Check, CircleCheck, Copy, Download, KeyRound, LoaderCircle, Monitor, RefreshCw, Server, Shuffle, Terminal, TriangleAlert, X } from "@lucide/svelte";
@@ -206,7 +206,9 @@
   }
   $effect(() => {
     if (!c) return;
-    void cargarLista();
+    // Sin seguir lo que lee cargarLista (lee `lista`): si no, cada respuesta volvía a
+    // lanzar el efecto y la página pedía la lista en bucle (cientos de veces por minuto).
+    untrack(() => void cargarLista());
     const t = setInterval(() => document.visibilityState === "visible" && enFondo(cargarLista), 5000);
     return () => clearInterval(t);
   });
