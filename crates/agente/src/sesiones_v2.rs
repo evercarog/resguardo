@@ -19,10 +19,14 @@
 //! más ocupa) e `historial_archivo {ruta}` (en qué versiones está un archivo).
 //! Mientras una operación tarda, el equipo manda `{ op: "trabajando", sobre }`
 //! cada 20 s (sin `re`: una consola anterior lo ignora).
+//!
+//! v1.4x (en `explorar`): `buscar_todas {texto, desde?, hasta?, max?, indice?}`
+//! (un archivo por su nombre en todas las versiones, agrupado por archivo y
+//! por páginas; ver `resguardo_motor::buscar`).
 
 use crate::servidor_v2::{llamar, Vinculo};
 use base64::Engine;
-use resguardo_motor::{diferencias, restic};
+use resguardo_motor::{buscar as busqueda, diferencias, restic};
 use resguardo_protocolo::simetrico::{self, Lado};
 use serde_json::{json, Value};
 use std::io::Read;
@@ -158,7 +162,7 @@ fn atender(v: &Vinculo, id: &str, clave: &[u8; 32], tipo: &Tipo) -> Result<(), S
 fn ops(tipo: &Tipo) -> &'static [&'static str] {
     match tipo {
         Tipo::Carpetas => &["carpetas", "sugerencias", "crear_carpeta"],
-        Tipo::Explorar(_) => &["versiones", "listar", "buscar", "diferencias", "ocupa", "historial_archivo"],
+        Tipo::Explorar(_) => &["versiones", "listar", "buscar", "diferencias", "ocupa", "historial_archivo", "buscar_todas"],
         Tipo::Basica => &[],
     }
 }
@@ -169,6 +173,8 @@ struct Memoria {
     /// (con tamaños, cuándo era `desde`, el cálculo).
     diferencias: Option<(bool, Option<String>, diferencias::Diferencias)>,
     ocupa: Option<(String, Value)>,
+    /// (lo que se pidió, el resultado) de `buscar_todas`.
+    busqueda: Option<(String, busqueda::Busqueda)>,
 }
 
 /// Lo mismo que una sesión, desde la ventana del equipo en modo local
@@ -204,6 +210,7 @@ fn operar(tipo: &Tipo, op: &str, p: &Value, memoria: &mut Memoria) -> Result<Val
             let ruta = p["ruta"].as_str().unwrap_or("");
             Ok(json!({ "ruta": ruta, "versiones": diferencias::versiones_de_archivo(acc, ruta)? }))
         }
+        (Tipo::Explorar(acc), "buscar_todas") => buscar_todas(acc, p, memoria, busqueda::TIEMPO),
         _ => Err(format!("Operación no disponible en esta sesión: «{op}».")),
     }
 }
@@ -457,6 +464,58 @@ fn ocupa(acc: &restic::Access, version: &str, memoria: &mut Memoria) -> Result<V
     Ok(r)
 }
 
+/// `buscar_todas {texto, desde?, hasta?, max?, indice?}`: los archivos cuyo
+/// nombre lleva `texto` en las versiones de `desde` a `hasta` (RFC 3339), con
+/// las versiones en las que está cada uno. Se busca con `indice` 0 (o sin él)
+/// y se da por páginas (`indice` de la página, `siguiente` o `null`); las
+/// páginas siguientes salen de lo ya encontrado si se pide lo mismo.
+fn buscar_todas(acc: &restic::Access, p: &Value, memoria: &mut Memoria, limite: Duration) -> Result<Value, String> {
+    let texto = busqueda::texto_valido(p["texto"].as_str().unwrap_or(""))?;
+    let (desde, hasta) = (p["desde"].as_str(), p["hasta"].as_str());
+    busqueda::rango(desde, hasta)?;
+    let max = match (&p["max"], p["max"].as_u64().and_then(|n| usize::try_from(n).ok())) {
+        (Value::Null, _) => busqueda::MAX_COINCIDENCIAS,
+        (_, Some(n)) if (1..=busqueda::MAX_COINCIDENCIAS).contains(&n) => n,
+        _ => return Err(format!("«max» no válido (de 1 a {}).", busqueda::MAX_COINCIDENCIAS)),
+    };
+    let indice = match (&p["indice"], p["indice"].as_u64()) {
+        (Value::Null, _) => 0,
+        (_, Some(i)) => usize::try_from(i).unwrap_or(usize::MAX),
+        _ => return Err("«indice» no válido.".into()),
+    };
+    let clave = json!([texto, desde.unwrap_or(""), hasta.unwrap_or(""), max]).to_string();
+    let ya = memoria.busqueda.as_ref().is_some_and(|(k, _)| *k == clave);
+    if indice == 0 || !ya {
+        memoria.busqueda = None;
+        let b = busqueda::buscar(acc, &texto, desde, hasta, max, limite)?;
+        memoria.busqueda = Some((clave, b));
+    }
+    let (_, b) = memoria.busqueda.as_ref().ok_or("Sin búsqueda.")?;
+    Ok(pagina_busqueda(b, indice))
+}
+
+/// Una página de archivos encontrados desde `indice`, que quepa en un mensaje.
+fn pagina_busqueda(b: &busqueda::Busqueda, indice: usize) -> Value {
+    let mut archivos = Vec::new();
+    let mut ocupa = 0usize;
+    let mut i = indice.min(b.archivos.len());
+    while i < b.archivos.len() && archivos.len() < PAGINA_MAX {
+        let a = serde_json::to_value(&b.archivos[i]).unwrap_or(Value::Null);
+        let tam = a.to_string().len() + 1;
+        if !archivos.is_empty() && ocupa + tam > PAGINA_BYTES {
+            break;
+        }
+        ocupa += tam;
+        archivos.push(a);
+        i += 1;
+    }
+    json!({
+        "texto": b.texto, "total_archivos": b.archivos.len(), "coincidencias": b.coincidencias,
+        "versiones_buscadas": b.versiones_buscadas, "versiones_en_rango": b.versiones_en_rango,
+        "recortado": b.recortado, "motivo": b.motivo, "indice": indice, "siguiente": (i < b.archivos.len()).then_some(i), "archivos": archivos,
+    })
+}
+
 fn buscar(acc: &restic::Access, version: &str, texto: &str) -> Result<Vec<Value>, String> {
     if !restic::valid_snapshot_id(version) {
         return Err("Versión no válida.".into());
@@ -465,12 +524,18 @@ fn buscar(acc: &restic::Access, version: &str, texto: &str) -> Result<Vec<Value>
     if texto.is_empty() || texto.chars().count() > 100 || texto.chars().any(char::is_control) {
         return Err("Escribe qué buscar (hasta 100 caracteres).".into());
     }
-    let patron = format!("*{texto}*");
+    // Los caracteres especiales de los patrones pasan a `*` (con `[` restic daba
+    // «syntax error in pattern»); luego, solo lo que se llama así de verdad.
+    let patron = busqueda::patron(texto);
+    let aguja = texto.to_lowercase();
     let out = restic::run(acc, &["find", "--json", "--no-lock", "--ignore-case", "--snapshot", version, "--", &patron])?;
     let v: Value = serde_json::from_slice(&out).unwrap_or(Value::Null);
     let mut res = Vec::new();
     for snap in v.as_array().cloned().unwrap_or_default() {
         for m in snap["matches"].as_array().cloned().unwrap_or_default() {
+            if !busqueda::nombre_coincide(m["path"].as_str().unwrap_or(""), &aguja) {
+                continue;
+            }
             res.push(json!({
                 "ruta": m["path"], "nombre": m["name"], "tipo": if m["type"] == "dir" { "dir" } else { "archivo" }, "bytes": m["size"], "modificado": m["mtime"],
             }));
@@ -1013,6 +1078,112 @@ mod tests {
         }
         // Fuera de «explorar», no.
         assert!(operar(&Tipo::Carpetas, "diferencias", &json!({ "hasta": "aaaaaaaa" }), &mut m).is_err());
+    }
+
+    #[test]
+    fn buscar_todas_valida_lo_que_pide() {
+        let tipo = Tipo::Explorar(Box::new(restic::Access::new("C:/no-existe", "x")));
+        let mut m = Memoria::default();
+        assert!(ops(&tipo).contains(&"buscar_todas"));
+        for (p, error) in [
+            (json!({ "texto": "" }), "Escribe qué buscar"),
+            (json!({ "texto": "a" }), "Escribe qué buscar"),
+            (json!({ "texto": "x".repeat(101) }), "Escribe qué buscar"),
+            (json!({ "texto": "../x" }), "sin / ni"),
+            (json!({ "texto": "fac\u{1}tura" }), "sin / ni"),
+            (json!({ "texto": "factura", "desde": "ayer" }), "Fecha no válida"),
+            (json!({ "texto": "factura", "desde": "2026-10-03T00:00:00Z", "hasta": "2026-10-01T00:00:00Z" }), "posterior"),
+            (json!({ "texto": "factura", "max": 0 }), "«max» no válido"),
+            (json!({ "texto": "factura", "max": 2001 }), "«max» no válido"),
+            (json!({ "texto": "factura", "max": "10" }), "«max» no válido"),
+            (json!({ "texto": "factura", "indice": -1 }), "«indice» no válido"),
+        ] {
+            let e = operar(&tipo, "buscar_todas", &p, &mut m).unwrap_err();
+            assert!(e.contains(error), "{p}: {e}");
+        }
+        assert!(operar(&Tipo::Carpetas, "buscar_todas", &json!({ "texto": "factura" }), &mut m).is_err());
+    }
+
+    #[test]
+    fn paginas_de_la_busqueda() {
+        use resguardo_motor::buscar::{Busqueda, Encontrado, Motivo};
+        use resguardo_motor::diferencias::EnVersion;
+        let v = |i: usize| EnVersion {
+            version: format!("{i:08x}"),
+            cuando: "2026-10-01T10:00:00Z".into(),
+            bytes: Some(i as u64),
+            modificado: Some("2026-10-01T09:00:00Z".into()),
+        };
+        let b = Busqueda {
+            texto: "factura".into(),
+            archivos: (0..400)
+                .map(|i| Encontrado { ruta: format!("/C/Datos/{}/factura-{i:04}.pdf", "x".repeat(150)), versiones: (0..5).map(v).collect(), recortado: false })
+                .collect(),
+            coincidencias: 2000,
+            versiones_buscadas: 5,
+            versiones_en_rango: 5,
+            recortado: true,
+            motivo: Some(Motivo::Limite),
+        };
+        let (mut indice, mut vistos, mut paginas) = (0usize, 0usize, 0);
+        loop {
+            let p = pagina_busqueda(&b, indice);
+            assert!(p.to_string().len() < 200 * 1024, "cabe en un mensaje");
+            assert_eq!((p["total_archivos"].as_u64(), p["motivo"].as_str(), p["recortado"].as_bool()), (Some(400), Some("limite"), Some(true)));
+            let n = p["archivos"].as_array().unwrap().len();
+            assert!(n > 0);
+            assert_eq!(p["archivos"][0]["ruta"], b.archivos[indice].ruta);
+            assert_eq!(p["archivos"][0]["versiones"].as_array().unwrap().len(), 5);
+            vistos += n;
+            paginas += 1;
+            match p["siguiente"].as_u64() {
+                Some(s) => indice = s as usize,
+                None => break,
+            }
+        }
+        assert_eq!(vistos, 400);
+        assert!(paginas > 1, "{paginas} páginas");
+        let p = pagina_busqueda(&b, 99_999);
+        assert!(p["archivos"].as_array().unwrap().is_empty() && p["siguiente"].is_null());
+    }
+
+    /// `buscar_todas` y `buscar` (en una versión) con restic de verdad: un
+    /// nombre con corchetes, en dos versiones y con dos tamaños.
+    #[test]
+    fn buscar_con_restic_de_verdad() {
+        if restic::version().is_err() {
+            eprintln!("omitido: no hay restic");
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("resguardo-sesion-buscar-{}", uuid::Uuid::new_v4().simple()));
+        let datos = base.join("datos");
+        std::fs::create_dir_all(datos.join("Facturas [2026]")).unwrap();
+        std::fs::write(datos.join("Facturas [2026]").join("Factura [1].txt"), "uno").unwrap();
+        let acc = restic::Access::new(base.join("repo").display().to_string(), "contraseña");
+        let lim = Duration::from_secs(120);
+        assert_eq!(restic::run_raw(&acc, &["init"], lim).unwrap().code, Some(0));
+        let d = datos.display().to_string();
+        assert_eq!(restic::run_raw(&acc, &["backup", &d], lim).unwrap().code, Some(0));
+        std::fs::write(datos.join("Facturas [2026]").join("Factura [1].txt"), "uno y dos").unwrap();
+        assert_eq!(restic::run_raw(&acc, &["backup", &d], lim).unwrap().code, Some(0));
+        let vs = restic::snapshots(&acc).unwrap();
+        let tipo = Tipo::Explorar(Box::new(acc));
+        let mut m = Memoria::default();
+        let r = operar(&tipo, "buscar_todas", &json!({ "texto": "factura [1]" }), &mut m).unwrap();
+        assert_eq!((r["total_archivos"].as_u64(), r["versiones_buscadas"].as_u64(), r["siguiente"].is_null()), (Some(1), Some(2), true), "{r}");
+        let a = &r["archivos"][0];
+        assert!(a["ruta"].as_str().unwrap().ends_with("/Facturas [2026]/Factura [1].txt"), "{a}");
+        assert_eq!(a["versiones"].as_array().unwrap().iter().map(|v| v["bytes"].as_u64().unwrap()).collect::<Vec<_>>(), [9, 3]);
+        // La página siguiente sale de lo ya encontrado (sin otro `find`).
+        assert!(m.busqueda.is_some());
+        let r2 = operar(&tipo, "buscar_todas", &json!({ "texto": "factura [1]", "indice": 1 }), &mut m).unwrap();
+        assert!(r2["archivos"].as_array().unwrap().is_empty() && r2["total_archivos"] == 1);
+        // En una versión: con corchetes ya no falla, y solo lo que se llama así (no lo de dentro de la carpeta).
+        let r = operar(&tipo, "buscar", &json!({ "version": vs[0].short_id, "texto": "[1]" }), &mut m).unwrap();
+        assert_eq!(r["resultados"].as_array().unwrap().len(), 1, "{r}");
+        let r = operar(&tipo, "buscar", &json!({ "version": vs[0].short_id, "texto": "Facturas" }), &mut m).unwrap();
+        assert_eq!(r["resultados"].as_array().unwrap().iter().map(|x| x["tipo"].as_str().unwrap()).collect::<Vec<_>>(), ["dir"], "{r}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
