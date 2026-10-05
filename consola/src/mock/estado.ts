@@ -99,6 +99,8 @@ export interface EmparejamientoMock {
   /** Preparado (v1.17): instalador listo o línea de Linux. */
   nombre?: string;
   so?: "windows" | "linux";
+  /** La cuenta que lo pidió (v1.41: se le vuelve a dar el suyo si aún sirve). */
+  por?: string;
 }
 
 export interface Estado {
