@@ -239,7 +239,7 @@
           {/if}
           {#snippet status()}
             <span class:warn-text={!!info && info.repos.length > 0 && !info.task_installed}>{agentStatus}</span>
-            {#if info?.state.last_tick}<span class="faint"> · última vuelta <RelTime iso={info.state.last_tick} /></span>{/if}
+            {#if info?.state.last_tick}<span class="faint"> · última revisión <RelTime iso={info.state.last_tick} /></span>{/if}
           {/snippet}
           {#snippet below()}
             {#if agentError}<p class="bad-text small" role="alert">{agentError}</p>{/if}

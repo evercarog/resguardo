@@ -8,6 +8,7 @@ pub(crate) mod marca;
 mod notas;
 mod notificaciones;
 mod ordenes;
+mod panel;
 mod plantillas;
 mod respaldo;
 mod servidor_clientes;
@@ -204,6 +205,9 @@ pub fn router(st: St) -> Router {
         // Clientes
         .route("/api/clientes", get(clientes::listar).post(clientes::crear))
         .route("/api/clientes/recibir", post(clientes::recibir))
+        // v1.38: «Todos los clientes» (solo los clientes de los que la cuenta es miembro).
+        .route("/api/panel", get(panel::ver))
+        .route("/api/panel/progreso", get(panel::progreso))
         .route("/api/clientes/{c}/fichas", post(clientes::ficha))
         .route(
             "/api/clientes/{c}/paquete",
@@ -237,6 +241,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/equipos/{e}/historial", get(equipos::historial))
         .route("/api/clientes/{c}/informes", get(equipos::ultimos_informes))
         .route("/api/clientes/{c}/progreso", get(crate::progreso::ver))
+        // v1.39: canal en vivo de la consola (WebSocket con pistas de lo que cambió).
+        .route("/api/clientes/{c}/vivo", get(crate::vivo::canal))
         .route("/api/clientes/{c}/emparejamientos", post(equipos::abrir_emparejamiento).get(instaladores::listar))
         .route("/api/clientes/{c}/instaladores", post(instaladores::preparar))
         .route("/api/clientes/{c}/preparados", get(instaladores::contar))

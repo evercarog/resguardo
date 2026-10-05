@@ -97,7 +97,7 @@
       case "espacio":
         return `Espacio de «${repo.nombre}»`;
       case "vuelta":
-        return vuelta?.resultado === "fallo" ? "Una vuelta que falló" : "Una vuelta de la copia";
+        return vuelta?.resultado === "fallo" ? "Una copia que falló" : "Detalle de la copia";
       case "estado":
         return "¿Por qué este estado?";
       default:
@@ -141,7 +141,7 @@
       {#if vuelta}
         <DetalleVuelta {vuelta} {versiones} {ejecuciones} {historial} {copias} repo={repo.id} {enlaceCopia} />
       {:else}
-        <p class="faint">Esa vuelta ya no está en el informe del equipo (solo trae los últimos 60 días).</p>
+        <p class="faint">Esa copia ya no está en el informe del equipo (solo trae los últimos 60 días).</p>
       {/if}
     {:else if sel.vista === "estado"}
       <EstadoRepo inf={soloCopia ? infCopia(inf, soloCopia) : inf} {ahora} />

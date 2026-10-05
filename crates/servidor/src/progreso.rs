@@ -11,6 +11,7 @@ use crate::api::fecha;
 use crate::auth::Usuario;
 use crate::error::{ErrorApi, Res};
 use crate::estado::St;
+pub use crate::vivo::Paso;
 use axum::extract::{Path, State};
 use axum::Json;
 use serde_json::{json, Map, Value};
@@ -46,16 +47,38 @@ struct Entrada {
 pub struct Progresos(Mutex<HashMap<String, Entrada>>);
 
 impl Progresos {
-    /// Anota lo que está en marcha en un equipo; vacío, lo quita.
-    pub fn poner(&self, cliente: &str, equipo: &str, tareas: Vec<Value>) {
+    /// Anota lo que está en marcha en un equipo; vacío, lo quita. Devuelve qué
+    /// pasó, para el canal en vivo de las consolas (`None`: nada que contar).
+    pub fn poner(&self, cliente: &str, equipo: &str, tareas: Vec<Value>) -> Option<Paso> {
         let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let ahora = Instant::now();
+        let habia = m.get(equipo).filter(|e| e.cliente == cliente && ahora.duration_since(e.visto) < CADUCA).map(|e| e.tareas.clone());
         m.retain(|_, e| ahora.duration_since(e.visto) < CADUCA);
         if tareas.is_empty() {
             m.remove(equipo);
+            habia.map(|_| Paso::Termina)
         } else {
+            // Otra tarea (u otra lista) que la de antes: empieza algo; si no, solo cambian las cifras.
+            let paso = match &habia {
+                None => Paso::Empieza,
+                Some(t) if claves(t) != claves(&tareas) => Paso::Empieza,
+                Some(_) => Paso::Cambia,
+            };
             m.insert(equipo.to_string(), Entrada { cliente: cliente.to_string(), recibido: crate::almacen::ahora(), visto: ahora, tareas });
+            Some(paso)
         }
+    }
+
+    /// Quita lo que caducó (el agente dejó de contar) y dice de quién era: `[(cliente, equipo)]`.
+    pub fn purgar(&self) -> Vec<(String, String)> {
+        let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let ahora = Instant::now();
+        let viejos: Vec<(String, String)> =
+            m.iter().filter(|(_, e)| ahora.duration_since(e.visto) >= CADUCA).map(|(id, e)| (e.cliente.clone(), id.clone())).collect();
+        for (_, id) in &viejos {
+            m.remove(id);
+        }
+        viejos
     }
 
     /// Lo que está en marcha en los equipos de un cliente: `[(equipo, recibido, tareas)]`.
@@ -70,6 +93,11 @@ impl Progresos {
         v.sort_by(|a, b| a.0.cmp(&b.0));
         v
     }
+}
+
+/// Qué tareas son (tipo, repositorio y copia), sin sus cifras.
+fn claves(t: &[Value]) -> Vec<String> {
+    t.iter().map(|x| format!("{}|{}|{}", x["tipo"].as_str().unwrap_or(""), x["repo"].as_str().unwrap_or(""), x["copia"].as_str().unwrap_or(""))).collect()
 }
 
 fn texto(s: &str, max: usize) -> String {
@@ -156,12 +184,18 @@ mod tests {
     fn por_cliente_y_vacio_lo_quita() {
         let p = Progresos::default();
         let t = vec![json!({ "tipo": "copia", "fase": "subiendo", "repo": "r" })];
-        p.poner("c1", "e1", t.clone());
+        assert_eq!(p.poner("c1", "e1", t.clone()), Some(Paso::Empieza));
+        assert_eq!(p.poner("c1", "e1", t.clone()), Some(Paso::Cambia));
         p.poner("c2", "e2", t.clone());
         assert_eq!(p.de_cliente("c1").len(), 1);
         assert_eq!(p.de_cliente("c1")[0].0, "e1");
-        p.poner("c1", "e1", vec![]);
+        assert_eq!(p.poner("c1", "e1", vec![]), Some(Paso::Termina));
+        assert_eq!(p.poner("c1", "e1", vec![]), None, "lo que ya no estaba no termina otra vez");
         assert!(p.de_cliente("c1").is_empty());
+        // Otra tarea en el mismo equipo: empieza algo nuevo.
+        let otra = vec![json!({ "tipo": "verificar", "fase": "en_marcha", "repo": "r" })];
+        assert_eq!(p.poner("c2", "e2", otra), Some(Paso::Empieza));
+        assert!(p.purgar().is_empty(), "nada caducado aún");
         assert_eq!(p.de_cliente("c2").len(), 1);
     }
 }

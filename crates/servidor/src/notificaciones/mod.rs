@@ -212,6 +212,9 @@ pub struct Motor {
     huellas: Mutex<HashMap<String, u64>>,
     /// Una pasada a la vez.
     en_pasada: Mutex<()>,
+    /// Clientes con eventos procesados en la última pasada (pueden tener avisos
+    /// nuevos): la tarea de fondo se lo dice a sus consolas en vivo.
+    tocados: Mutex<std::collections::BTreeSet<String>>,
 }
 
 impl Motor {
@@ -222,7 +225,13 @@ impl Motor {
             transporte: RwLock::new(Arc::new(transporte::Real)),
             huellas: Mutex::new(HashMap::new()),
             en_pasada: Mutex::new(()),
+            tocados: Mutex::new(Default::default()),
         }
+    }
+
+    /// Los clientes con eventos procesados desde la última vez (y los olvida).
+    pub fn tomar_tocados(&self) -> Vec<String> {
+        std::mem::take(&mut *self.tocados.lock().unwrap_or_else(|e| e.into_inner())).into_iter().collect()
     }
 
     pub fn transporte(&self) -> Arc<dyn Transporte> {
@@ -290,6 +299,10 @@ pub fn arrancar(st: St) {
                 }
             })
             .await;
+            // Lo procesado pudo crear avisos: las consolas en vivo vuelven a contar los suyos.
+            for cliente in st.notif.tomar_tocados() {
+                st.vivo.avisar(&cliente, crate::vivo::Cambio::Avisos(None));
+            }
         }
     });
 }
@@ -319,7 +332,8 @@ pub fn pasada(db: &Arc<dyn Almacen>, motor: &Motor, ahora: Ts) -> R<()> {
     let db = db.as_ref();
     // Antes que los eventos: una orden destructiva nueva tras cerrarse la anterior vuelve a avisar.
     ordenes_destructivas_terminadas(db, ahora)?;
-    procesar_eventos(db, ahora)?;
+    let tocados = procesar_eventos(db, ahora)?;
+    motor.tocados.lock().unwrap_or_else(|e| e.into_inner()).extend(tocados);
     reconectados(db, ahora)?;
     resumen::si_toca(db, ahora)?;
     entregar(db, motor, ahora)?;
@@ -357,16 +371,20 @@ fn ordenes_destructivas_terminadas(db: &dyn Almacen, ahora: Ts) -> R<()> {
 
 // ---------- Eventos → incidentes → cola ----------
 
-fn procesar_eventos(db: &dyn Almacen, ahora: Ts) -> R<()> {
+/// Procesa los eventos apuntados. Devuelve los clientes a los que tocaban.
+fn procesar_eventos(db: &dyn Almacen, ahora: Ts) -> R<Vec<String>> {
+    let mut tocados = Vec::new();
     for (n, datos) in db.notif_eventos(500)? {
         if let Ok(e) = serde_json::from_str::<Evento>(&datos) {
             if let Err(err) = procesar(db, &e, ahora) {
                 eprintln!("Notificaciones: evento {n}: {err}");
             }
+            let (Evento::Aviso { cliente, .. } | Evento::Estado { cliente, .. }) = e;
+            tocados.push(cliente);
         }
         db.notif_borrar_evento(n)?;
     }
-    Ok(())
+    Ok(tocados)
 }
 
 fn nombre_cliente(db: &dyn Almacen, id: &str) -> R<String> {

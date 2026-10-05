@@ -305,7 +305,7 @@
                 {#if copia.meta}<span class="faint">{" "}({copia.meta})</span>{/if}
               </p>
             {:else}
-              <p class="faint">El equipo aún no ha informado de esta vuelta. La verás en la página de la copia en unos minutos.</p>
+              <p class="faint">El equipo aún no ha informado de esta copia. La verás en la página de la copia en unos minutos.</p>
             {/if}
             <a class="link" href="/c/{cliente.id}/equipos/{equipo.id}/copias/{encodeURIComponent(String(cuerpo.copia ?? ''))}" onclick={cerrar}>Ver la copia</a>
           </div>

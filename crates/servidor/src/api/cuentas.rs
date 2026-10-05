@@ -57,6 +57,8 @@ pub async fn servidor(State(st): State<St>) -> Res<Json<Value>> {
         "url_agentes": st.opciones.url_agentes,
         // v1.34: consola en internet (cuotas más estrictas por defecto).
         "publico": st.opciones.publico,
+        // v1.39: canal en vivo de la consola (`GET /api/clientes/{c}/vivo`).
+        "vivo": true,
     });
     if let Some(k) = dropbox_app_key() {
         v["dropbox_app_key"] = json!(k);

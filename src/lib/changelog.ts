@@ -193,7 +193,7 @@ export const CHANGELOG: Release[] = [
     title: "Verificación rotativa",
     items: [
       "Nueva verificación rotativa: cada vez se leen datos distintos y, tras unas cuantas, se han comprobado todos, sin hacer una verificación larga de golpe.",
-      "Puedes elegir en cuántas partes se reparte y ver cuándo se completó la última vuelta.",
+      "Puedes elegir en cuántas partes se reparte y ver cuándo se leyó todo por última vez.",
     ],
   },
   {

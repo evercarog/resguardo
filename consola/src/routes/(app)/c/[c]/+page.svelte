@@ -200,7 +200,7 @@
         <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><Archive size={14} /></span>Versiones en 24 h</span>
           <span class="c-val num">{numero(recientes.versiones)}</span>
-          <span class="c-sub">{#if recientes.fallos}<span class="mal">{plural(recientes.fallos, "vuelta fallida", "vueltas fallidas")}</span>{:else}sin vueltas fallidas{/if}</span>
+          <span class="c-sub">{#if recientes.fallos}<span class="mal">{plural(recientes.fallos, "copia fallida", "copias fallidas")}</span>{:else}sin copias fallidas{/if}</span>
         </div>
         <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><CalendarClock size={14} /></span>Próxima copia</span>

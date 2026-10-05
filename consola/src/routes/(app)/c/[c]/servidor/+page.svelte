@@ -243,7 +243,7 @@
             </div>
           {/each}
         </div>
-        {#if enCurso}<p class="faint pequeno">Cada equipo lo intenta en cada vuelta durante 24 h. Puedes cerrar esta página: el estado se queda aquí y en «Órdenes».</p>{/if}
+        {#if enCurso}<p class="faint pequeno">Cada equipo lo vuelve a intentar cada poco durante 24 h. Puedes cerrar esta página: el estado se queda aquí y en «Órdenes».</p>{/if}
       {/if}
     </section>
 

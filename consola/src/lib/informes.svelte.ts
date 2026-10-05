@@ -9,6 +9,20 @@ export const ultimos = $state<{ cliente: string; porEquipo: Record<string, Infor
 
 let cargando = "";
 
+/** Vuelve a pedir los últimos informes del cliente (ya cargados): algo cambió. */
+export async function recargarInformes(cliente: string) {
+  if (!cliente || ultimos.cliente !== cliente) return;
+  try {
+    const xs = await api.ultimosInformes(cliente);
+    if (ultimos.cliente !== cliente) return;
+    const m: Record<string, Informe | null> = { ...ultimos.porEquipo };
+    for (const x of xs) m[x.equipo] = { recibido: x.recibido, datos: x.datos };
+    ultimos.porEquipo = m;
+  } catch {
+    /* sin conexión o un servidor anterior (404): se queda lo que había */
+  }
+}
+
 export async function cargarInformes(cliente: string, equipos: string[]) {
   const clave = `${cliente}|${equipos.join(",")}`;
   if (!cliente || clave === cargando) return;

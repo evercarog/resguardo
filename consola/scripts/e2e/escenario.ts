@@ -41,6 +41,7 @@ import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../s
 import { proximaDe } from "../../src/lib/copia";
 import type { Cliente, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
+import { OyenteVivo } from "./vivo";
 import { borrarCarpeta, BuzonSmtp, comprobar, dormir, EXE, ejecutar, esperar, Fallo, igual, log, paso, pasoEnCurso, pararTodo, puertoLibre, WIN } from "./entorno";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
@@ -409,6 +410,82 @@ async function principal() {
       return r && nVersiones(r, inf) === despues.length && JSON.stringify(ids) === JSON.stringify(cortas) ? r : null;
     }, { plazo: 45_000, cada: 1000 });
     log(`B cuenta ${despues.length} versiones ${((Date.now() - trasAlmacen) / 1000).toFixed(1)} s después del resultado del almacén`);
+
+    // -----------------------------------------------------------------------
+    paso("5b. Consola en vivo: la copia programada se ve empezar y sus cifras llegan sin recargar (canal en vivo)");
+    {
+      // El canal como lo abre el navegador: cookie de sesión y Origin de este servidor (desde otra web, no).
+      const ajeno = await OyenteVivo.abrir(s1.url, c.id, consola.cookieSesion, s1.ca, "https://otra.example").then(
+        () => null,
+        (e) => e as { estado?: number },
+      );
+      igual(ajeno?.estado, 403, "El canal en vivo no se abre desde otra web");
+      const oyente = await OyenteVivo.abrir(s1.url, c.id, consola.cookieSesion, s1.ca);
+      try {
+        await oyente.esperar("el saludo", (m) => m.t === "hola", { plazo: 10_000 });
+        // Una hora de copia dentro de un minuto o dos (y al menos 5 min después de la anterior: el agente no copia antes).
+        const minimo = Math.max(Date.now() + 75_000, antes + 5 * 60_000 + 20_000);
+        const slot = new Date(Math.ceil(minimo / 60_000) * 60_000);
+        const horas = [horaCopia, hm(slot)];
+        const conVivo = { ...copia, horario: { ...copia.horario, horas, reglas: [{ tipo: "horas", dias: [1, 2, 3, 4, 5, 6, 7], horas }, copia.horario.reglas[1]] } };
+        await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [conVivo] } }, { claveAdmin: CLAVE_ADMIN });
+        await oyente.esperar("que B subió su configuración", (m) => m.t === "config" && m.equipo === eqB.id, { plazo: 20_000 });
+        // Algo nuevo que copiar (la copia solo guarda versión si hay cambios), y que dure unos
+        // segundos con la subida limitada del modo discreto (el agente cuenta el progreso cada 5 s).
+        fs.writeFileSync(path.join(datosB, "notas.md"), `# Notas\nantes de la copia programada ${randomBytes(4).toString("hex")}\n`);
+        fs.mkdirSync(path.join(datosB, "Relleno-programada"), { recursive: true });
+        for (let n = 0; n < 12; n++) fs.writeFileSync(path.join(datosB, "Relleno-programada", `parte-${n}.bin`), randomBytes(4 * 1024 * 1024));
+        // Lo que ve la consola antes (como «Estado»: el resumen y los últimos informes).
+        type ResumenCliente = { equipos: { id: string; resumen?: { copias?: { id: string; ultima?: { cuando: string } }[]; repositorios?: { id: string }[] } }[] };
+        const cifras = async () => {
+          const [res, infs] = await Promise.all([consola.ok<ResumenCliente>("GET", `/api/clientes/${c.id}/resumen`), consola.ok<{ equipo: string; recibido: string; datos: any }[]>("GET", `/api/clientes/${c.id}/informes`)]);
+          const e = res.equipos.find((x) => x.id === eqB.id);
+          const r = e?.resumen?.repositorios?.find((x) => x.id === repoId);
+          const inf = informeDe(infs.find((x) => x.equipo === eqB.id) ?? null, repoId);
+          return { ultima: e?.resumen?.copias?.find((x) => x.id === "documentos")?.ultima?.cuando ?? null, versiones: r ? nVersiones(r as any, inf) : 0 };
+        };
+        const previas = await cifras();
+        log(`Copia programada a las ${hm(slot)} (en ${Math.round((slot.getTime() - Date.now()) / 1000)} s); la consola ve ${previas.versiones} versiones`);
+        const desde = oyente.mensajes.length;
+        const empieza = await oyente.esperar("que empieza la copia programada de B", (m) => m.t === "progreso" && m.equipo === eqB.id && m.estado === "empieza", {
+          plazo: slot.getTime() - Date.now() + 60_000,
+          desde,
+        });
+        const tarde = (empieza.llegada - slot.getTime()) / 1000;
+        log(`La consola en vivo vio empezar la copia ${tarde.toFixed(1)} s después de su hora`);
+        comprobar(tarde < 30, `La consola se entera de que la copia programada empezó sin recargar (${tarde.toFixed(1)} s)`);
+        // Lo que pide la consola al oírlo: el progreso, con la copia en marcha.
+        const enMarcha = await consola.ok<{ equipo: string; tareas: any[] }[]>("GET", `/api/clientes/${c.id}/progreso`);
+        comprobar(
+          enMarcha.some((x) => x.equipo === eqB.id && x.tareas.some((t) => t.tipo === "copia" && t.copia === "documentos")),
+          "Al oír «empieza», el progreso trae la copia en marcha",
+          enMarcha,
+        );
+        const termina = await oyente.esperar("que termina la copia programada de B", (m) => m.t === "progreso" && m.equipo === eqB.id && m.estado === "termina", {
+          plazo: 180_000,
+          desde: oyente.mensajes.indexOf(empieza) + 1,
+        });
+        // Como la consola: con cada aviso de B desde el final, vuelve a pedir las cifras, hasta que traen la copia nueva.
+        let i = oyente.mensajes.indexOf(termina);
+        let fresco: { aviso: (typeof oyente.mensajes)[number]; listo: number } | null = null;
+        const limite = Date.now() + 30_000;
+        while (!fresco) {
+          const aviso = oyente.mensajes[i];
+          const ahora = await cifras();
+          if (ahora.ultima && ahora.ultima !== previas.ultima && ahora.versiones > previas.versiones) fresco = { aviso, listo: Date.now() };
+          else {
+            const sig = await oyente.esperar("las cifras nuevas de B", (m) => m.equipo === eqB.id && ["informe", "config", "progreso"].includes(m.t), { plazo: Math.max(1_000, limite - Date.now()), desde: i + 1 });
+            i = oyente.mensajes.indexOf(sig);
+          }
+        }
+        const tras = (fresco.listo - termina.llegada) / 1000;
+        log(`Cifras nuevas en la consola ${tras.toFixed(1)} s después del final (al oír «${fresco.aviso.m.t}»)`);
+        comprobar(tras < 10, `Las cifras de la copia programada llegan en segundos, sin recargar (${tras.toFixed(1)} s)`);
+        comprobar(fresco.listo - fresco.aviso.llegada < 3_000, "Las cifras ya estaban al llegar el aviso (sin esperar a ningún sondeo)");
+      } finally {
+        oyente.cerrar();
+      }
+    }
 
     // -----------------------------------------------------------------------
     paso("6a. Notificaciones por correo: aviso de una copia fallida y «Volvió a funcionar»");

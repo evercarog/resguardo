@@ -143,6 +143,10 @@ RESGUARDO_NOMBRES=consola.ejemplo.com
 - Los agentes van directos al 8443 (ábrelo en el cortafuegos) con la
   dirección de `RESGUARDO_URL_AGENTES`.
 - Sin Caddy, `--dominio` hace todo esto solo y basta con los puertos 80 y 443.
+- La consola se mantiene al día con un WebSocket propio (`/api/clientes/{c}/vivo`,
+  en la misma dirección que la consola). Caddy lo pasa sin configurar nada; con
+  otro proxy (nginx…), deja pasar `Upgrade` y `Connection` como para cualquier
+  WebSocket. Si no pasa, la consola sigue funcionando y pregunta cada pocos segundos.
 
 ## Paso a paso (lo común)
 

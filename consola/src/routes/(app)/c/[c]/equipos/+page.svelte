@@ -4,6 +4,8 @@
   import AccionesEnBloque from "$lib/componentes/AccionesEnBloque.svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
+  import { untrack } from "svelte";
+  import { seguirCambios } from "$lib/vivo.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { lista as lista_, plural } from "$lib/formato";
   import type { Preparado } from "$lib/tipos";
@@ -53,8 +55,7 @@
     if (!c || !puede.administrar(actual.cliente?.rol)) return;
     const cargar = () => api.preparados(c).then((x) => (preparados = x), () => {});
     void cargar();
-    const t = setInterval(() => document.visibilityState === "visible" && enFondo(cargar), 10_000);
-    return () => clearInterval(t);
+    return untrack(() => seguirCambios(() => enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "equipo" }));
   });
   // --- Acciones en bloque (solo inofensivas: copiar ahora y verificar) -------
   let seleccionando = $state(false);
