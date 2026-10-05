@@ -3,6 +3,8 @@
 // (src/lib/copiasCliente.ts). `npm run test:vectores`.
 import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
+import { lineaEnDisco } from "../src/lib/repo";
+import { bytes } from "../src/lib/formato";
 import { esFallo, pasaFiltro, sucesosDe } from "../src/lib/historial";
 import { altoCalendario, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
 
@@ -116,6 +118,16 @@ const hoyL = new Date(2026, 9, 5, 12).getTime();
 igual("intervalo del mismo mes", nombreIntervalo(new Date(2026, 8, 21).getTime(), new Date(2026, 8, 27).getTime(), hoyL), "Del 21 al 27 sept");
 igual("intervalo entre meses", nombreIntervalo(new Date(2026, 8, 28).getTime(), new Date(2026, 9, 4).getTime(), hoyL), "Del 28 sept al 4 oct");
 igual("un solo día: su nombre", nombreIntervalo(new Date(2026, 9, 4).getTime(), new Date(2026, 9, 4).getTime(), hoyL), "Ayer");
+
+console.log("\n· «En disco» junto a «Protegido» (lib/repo.ts)");
+{
+  const gb = 1e9;
+  const tres = [{ total_bytes: 24 * gb }, { total_bytes: 24 * gb }, { total_bytes: 22 * gb }];
+  igual("con todas las versiones: lo que sumarían y cuántas veces menos ocupan", lineaEnDisco(3, tres, 20 * gb), `las 3 versiones sumarían ${bytes(70 * gb)}; ocupan 3,5× menos`);
+  igual("si faltan versiones en el informe, sin cifra que no cuadre", lineaEnDisco(623, tres, 20 * gb), "las 623 versiones juntas, comprimidas y sin duplicados");
+  igual("recortado, igual", lineaEnDisco(3, tres, 20 * gb, true), "las 3 versiones juntas, comprimidas y sin duplicados");
+  igual("una sola", lineaEnDisco(1, tres.slice(0, 1), 20 * gb), "la única versión, comprimida y sin duplicados");
+}
 
 console.log("\n· Copias del cliente (lib/copiasCliente.ts)");
 const base = { so: "Windows 11", version_agente: "0.7.17", box_pub: "", sign_pub: "", sal_equipo: "", etiqueta: null, modo: "gestionado" as const, confirmado: true, conectado: true, ultimo_contacto: h(0.1), estado_servicio: "en_marcha" as const, siguiente_seq: 1, rol: "agente" as const };

@@ -24,7 +24,7 @@
     nVersiones,
     proteccion,
     pruebaRestauracion,
-    ratioTexto,
+    lineaEnDisco,
     TEXTO_RESULTADO,
     TEXTO_TAREA,
     TONO_RESULTADO,
@@ -217,12 +217,12 @@
       <button class="cifra pulsable-bloque" use:tip={"Ver de dónde sale el espacio"} onclick={abrirEspacio}>
         <span class="k">Protegido</span>
         <strong class="num">{bytes(bytesRepo(repo, inf) ?? inf?.espacio?.sin_comprimir)}</strong>
-        <span class="faint">lo que ocupan tus archivos</span>
+        <span class="faint">tus archivos en la última versión</span>
       </button>
       <button class="cifra pulsable-bloque" use:tip={"Ver de dónde sale el espacio"} onclick={abrirEspacio}>
         <span class="k">En disco</span>
         <strong class="num">{bytes(inf?.espacio?.en_disco_bytes)}</strong>
-        <span class="faint">{inf?.espacio?.ratio ? `${ratioTexto(inf.espacio.ratio)} menos: comprimido y sin duplicados` : "comprimido y sin duplicados"}</span>
+        <span class="faint">{lineaEnDisco(nVersiones(repo, inf), versiones, inf?.espacio?.en_disco_bytes, !!inf?.recortado)}</span>
       </button>
       <div class="cifra">
         <span class="k">Duración media</span>
