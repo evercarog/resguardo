@@ -93,13 +93,14 @@ Decidido después de 3, 4 y 5 (4e se descartó) porque el almacén sigue sin ten
 - [ ] **7a. Destinos de primera clase en la consola.** Crear un destino **sin crear un repositorio** (Dropbox, B2, S3, SFTP, NAS, una zona de un almacén), ponerle **nombre** («Almacén · Disco D», «Dropbox Oficina») y cambiarlo cuando quieras. Hoy el destino de un almacén lleva al equipo y no se renombra; en la app el modelo ya existe (`docs/destinos.md`, `places.json` con `name` editable). Al crear un repositorio se elige un destino de la lista.
 - [ ] **7b. Varias zonas en un almacén.** Un rest-server sirve **una sola carpeta** (`--path`, `crates/agente/src/server.rs`) y el agente no admite enlaces dentro (seguridad), así que `E:\Backups` necesita **otra instancia de rest-server con su puerto** (mismo certificado de la CA del almacén, solo añadir y `--private-repos`, usuarios propios). La consola lo enseña como zonas del mismo almacén: «Almacén · Disco D» (:8000), «Almacén · Disco E» (:8002), cada una un destino de 7a. Espacio libre por zona, firewall por puerto, todo con la clave de administración.
 - [ ] **7c. Copias ordenadas y en cadena.** En «Cambiar las copias», las copias se pueden **ordenar** y una copia puede empezar **«después de la anterior»** (la de arriba): cuando termina bien, empieza la siguiente; si falla, la cadena se para y avisa. Sin horas fijas y sin choques. El horario de siempre sigue disponible para cualquiera de ellas.
-- [ ] **7d. Qué hace cada paso de la cadena.** Al crear una copia, elegir:
+- [ ] **7d. Qué hace cada paso de la cadena** (acordado; tres opciones al añadir una copia debajo de otra):
   1. **Copia nueva**: de carpetas del equipo, como ahora.
-  2. **Copia independiente de la anterior**: las versiones del repositorio de arriba a otro destino, con **su contraseña, su retención y sus filtros** (etiquetas, rutas, antigüedad; tarea 4). La hace el equipo dueño (`restic copy`) y, gracias a 7b, puede ir a otra zona del almacén.
-  3. **Espejo de la anterior, con la retención del original**: copia de archivos del repositorio de arriba; lo que la retención quita en el original se quita en el espejo pasados N días (borrado diferido de 3b).
-  4. **Espejo sin retención**: copia de archivos que nunca borra (como el espejo de hoy).
-
-  Los espejos (3 y 4) no necesitan contraseña. Si origen y destino son zonas del mismo almacén, o una nube conectada en él, los hace **el almacén en local**: sin red y sin contraseñas. Para encadenarlos tras una copia de otro equipo, el almacén detecta la versión nueva en `snapshots/` de ese repositorio (3a).
+  2. **Espejo**: el mismo repositorio en otro destino (mismos archivos, misma contraseña). Dos variantes: **con la retención del original** (lo que se poda en el original se quita del espejo pasados N días, 3b) o **sin retención** (nunca borra).
+  3. **Repositorio nuevo a partir del anterior**: se crea un repositorio en el destino elegido (con `--copy-chunker-params` del anterior, para que deduplique), se le **traen las versiones** del anterior y desde ahí va por su cuenta, con su propia retención y verificación.
+     - **Qué versiones traer**: todas, o filtradas por etiquetas, equipo (host), carpetas y fechas («desde el 1 de enero», «las de los últimos 90 días»). `restic copy` admite `--tag`, `--host`, `--path` e ids; las fechas se resuelven eligiendo los ids.
+     - **Contraseña**: **la misma que el anterior** u **otra** (escrita por la persona o generada). Con la misma, son dos repositorios distintos que se abren con la misma contraseña; con otra, uno no abre el otro. La consola recomienda otra para destinos fuera de la oficina, sin impedir la misma. Siempre al kit.
+     - **Desde entonces**, una de dos: **traer las versiones nuevas** del anterior cada vez (después de la anterior o con horario, con los mismos filtros), o **copiar directamente las carpetas** del equipo (una copia nueva que apunta a este repositorio).
+  Los espejos (opción 2) no necesitan contraseña. Si origen y destino son zonas del mismo almacén, o una nube conectada en él, los hace **el almacén en local**: sin red y sin contraseñas. Para encadenarlos tras una copia de otro equipo, el almacén detecta la versión nueva en `snapshots/` de ese repositorio (3a).
   Ejemplo: «Contabilidad» → Almacén · Disco D; **después** → Almacén · Disco E (espejo con retención o copia independiente); **después** → Dropbox (espejo o copia independiente).
 - [ ] **7f. Crear una copia: destino primero, repositorio después.** El flujo de «Añadir una copia»:
   1. **Qué**: carpetas del equipo (copia nueva) o el repositorio de otra copia (paso de una cadena, 7d).
@@ -107,8 +108,9 @@ Decidido después de 3, 4 y 5 (4e se descartó) porque el almacén sigue sin ten
   3. **Destino**: de la lista de destinos (7a), o crear uno ahí mismo.
   4. **Repositorio en ese destino**:
      - **Espejo**: no se elige ni se crea nada; el repositorio de destino es el **mismo** (mismos archivos, misma contraseña) en `<destino>/<usuario>/<repo>`.
-     - **Copia nueva o copia independiente**: uno **que ya existe** en ese destino (lista) o **uno nuevo** ahí mismo (nombre y contraseña, al kit).
-  5. **Repositorio nuevo: «Traer las versiones de otro repositorio» antes de la primera copia** (opcional): reutilizar `copiar_historial` / «Traer el historial», que ya existe; crear el nuevo con `--copy-chunker-params` del origen para que deduplique. Así queda otro repositorio con las mismas versiones y otra clave, retención o configuración.
+     - **Copia nueva**: uno **que ya existe** en ese destino (lista) o **uno nuevo** ahí mismo (nombre y contraseña escrita o generada, al kit).
+     - **Repositorio nuevo a partir del anterior**: nombre, contraseña (la misma u otra) y qué versiones traer (7d, opción 3).
+  5. **Traer versiones** reutiliza `copiar_historial` / «Traer el historial», que ya existe, añadiéndole los filtros.
   6. Resumen con el camino completo (4d) y la clave de administración.
 - **Seguridad de 7 (para no perderla al implementar):**
   - Los espejos los hace el almacén en local (sin contraseñas). Los equipos **no** necesitan acceso a la zona de un espejo; si se les da (copias independientes a esa zona), es en **solo añadir** como la zona principal.
