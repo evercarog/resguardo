@@ -3,7 +3,7 @@
 // (src/lib/copiasCliente.ts). `npm run test:vectores`.
 import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
-import { pasaFiltro, sucesosDe } from "../src/lib/historial";
+import { esFallo, pasaFiltro, sucesosDe } from "../src/lib/historial";
 import { calendario } from "../src/lib/lineaTiempo";
 
 let fallos = 0;
@@ -75,7 +75,23 @@ igual("un equipo: también el espejo", eq.sucesos.filter((s) => s.tipo === "espe
 igual("…y los títulos dicen de qué repositorio", eq.sucesos.find((s) => s.tipo === "verificacion")?.titulo, "Verificación · «Documentos»");
 igual("…y las versiones de cada repositorio casan con su vuelta", eq.notas.has("bbbb0001"), true);
 
-igual("filtro «Fallos»: lo que fue mal o con avisos", r.sucesos.filter((s) => pasaFiltro(s, "fallos")).map((s) => s.tipo), ["externa", "fallo"]);
+igual("filtro «Fallos»: solo lo que falló", r.sucesos.filter((s) => pasaFiltro(s, "fallos")).map((s) => s.tipo), ["externa", "fallo"]);
+{
+  // Un aviso del equipo (otra consola, intentos fallidos…) es un aviso, nunca un fallo; una copia con avisos, también.
+  const conAvisos = sucesosDe({
+    fuentes: [{ repo, inf: { ...inf, versiones: [], ejecuciones: [{ hora: h(6), copia: "k1", resultado: "aviso", mensaje_corto: "Un archivo estaba en uso." }], externa: null, verificacion: null } }],
+    copias,
+    historial: [
+      { id: "a1", hora: h(1), tipo: "aviso", mensaje: "Este equipo se conectó también a otra consola." },
+      { id: "a2", hora: h(24 * 400), tipo: "resumen_dia", repo: "r1", copia: "k1", ok: 3, fallidas: 1 },
+    ],
+    conEquipo: true,
+  }).sucesos;
+  igual("clases: aviso del equipo, copia con avisos y día con una fallida", conAvisos.map((s) => `${s.tipo}:${s.clase}`), ["aviso:aviso", "copia:aviso", "resumen:fallo"]);
+  igual("«Fallos» no enseña los avisos", conAvisos.filter((s) => pasaFiltro(s, "fallos")).map((s) => s.tipo), ["resumen"]);
+  igual("«Avisos» los enseña", conAvisos.filter((s) => pasaFiltro(s, "avisos")).map((s) => s.tipo), ["aviso", "copia"]);
+  igual("la marca roja del calendario, solo los fallos", conAvisos.filter(esFallo).map((s) => s.tipo), ["resumen"]);
+}
 igual("filtro «Comprobaciones»", r.sucesos.filter((s) => pasaFiltro(s, "comprobaciones")).map((s) => s.tipo), ["verificacion", "prueba"]);
 igual("filtro «Subidas»", eq.sucesos.filter((s) => pasaFiltro(s, "subidas")).map((s) => s.tipo), ["espejo", "externa"]);
 igual("filtro «Versiones»: ningún suceso", r.sucesos.filter((s) => pasaFiltro(s, "versiones")).length, 0);

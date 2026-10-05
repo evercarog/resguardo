@@ -16,12 +16,21 @@ import type { Tono } from "./salud";
 /** Qué clase de suceso es (cada una con su icono en la pantalla). */
 export type TipoSuceso = "copia" | "sin_cambios" | "fallo" | "gancho" | "resumen" | "verificacion" | "prueba" | "externa" | "espejo" | "aviso";
 
-/** Los filtros de arriba: «Todo · Versiones · Fallos · Comprobaciones · Subidas». */
-export type FiltroHistorial = "todo" | "versiones" | "fallos" | "comprobaciones" | "subidas";
+/**
+ * Qué fue, para los filtros y la marca del calendario: un fallo de verdad (una
+ * copia, comprobación, prueba o subida que falló), un aviso (algo que mirar
+ * que no es un fallo: una copia con avisos, un paso previo con avisos, que el
+ * equipo se conectó a otra consola, un cambio inusual…) o algo que fue bien.
+ */
+export type ClaseSuceso = "fallo" | "aviso" | "ok";
+
+/** Los filtros de arriba: «Todo · Versiones · Fallos · Avisos · Comprobaciones · Subidas». */
+export type FiltroHistorial = "todo" | "versiones" | "fallos" | "avisos" | "comprobaciones" | "subidas";
 export const FILTROS_HISTORIAL: { id: FiltroHistorial; texto: string }[] = [
   { id: "todo", texto: "Todo" },
   { id: "versiones", texto: "Versiones" },
   { id: "fallos", texto: "Fallos" },
+  { id: "avisos", texto: "Avisos" },
   { id: "comprobaciones", texto: "Comprobaciones" },
   { id: "subidas", texto: "Subidas" },
 ];
@@ -33,6 +42,8 @@ export interface Suceso {
   t: number;
   tipo: TipoSuceso;
   tono: Tono;
+  /** Fallo, aviso o bien (`claseDe`): «Fallos» y la marca del calendario son solo los fallos. */
+  clase: ClaseSuceso;
   /** «Copia «Documentos»», «Verificación», «Subida a la nube»… */
   titulo: string;
   /** El estado en una palabra, para el chip (siempre con su icono). */
@@ -89,7 +100,7 @@ const misma = (a: number, b: number) => Math.abs(a - b) <= 60_000;
  * en ella.
  */
 export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<string, NotaVersion> } {
-  const out: Suceso[] = [];
+  const out: (Omit<Suceso, "clase"> & { fallidas?: number })[] = [];
   const notas = new Map<string, NotaVersion>();
   const deCopia = (id: string | null | undefined) => e.copias.find((k) => k.id === id)?.nombre;
   const pasa = (copia: string | null | undefined) => !e.soloCopia || copia === e.soloCopia;
@@ -185,6 +196,7 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
           t: ms(h.hora),
           tipo: "resumen",
           tono: mal && !ok && !igual ? "bad" : mal ? "warn" : "ok",
+          fallidas: mal,
           titulo: `${nombreCopia(h.copia)}: el día entero`,
           chip: mal ? "Con fallos" : "Correctas",
           detalle: mal && h.ultimo_error ? `Último error: ${h.ultimo_error}` : null,
@@ -236,20 +248,36 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
       else if (h.tipo === "aviso" && h.mensaje)
         out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo: "aviso", tono: "warn", titulo: "Aviso del equipo", chip: "Aviso", detalle: h.mensaje, meta: null, repo: null, copia: null, vuelta: null });
     }
-  return { sucesos: out.filter((x) => Number.isFinite(x.t)).sort((a, b) => b.t - a.t), notas };
+  const sucesos = out
+    .filter((x) => Number.isFinite(x.t))
+    .sort((a, b) => b.t - a.t)
+    .map(({ fallidas, ...x }): Suceso => ({ ...x, clase: claseDe({ ...x, fallidas }) }));
+  return { sucesos, notas };
+}
+
+/**
+ * La clase de un suceso: un aviso del equipo nunca es un fallo (es
+ * informativo o algo que mirar); un día resumido con alguna copia fallida sí
+ * lo es; lo demás, por su tono (en rojo, fallo; en ámbar, aviso).
+ */
+export function claseDe(s: Pick<Suceso, "tipo" | "tono"> & { fallidas?: number }): ClaseSuceso {
+  if (s.tipo === "aviso") return "aviso";
+  if (s.tipo === "resumen" && s.fallidas) return "fallo";
+  return s.tono === "bad" ? "fallo" : s.tono === "warn" ? "aviso" : "ok";
 }
 
 /** ¿Entra en el filtro de arriba? (las versiones, aparte: solo en «Todo» y «Versiones»). */
-export function pasaFiltro(s: Pick<Suceso, "tipo" | "tono">, f: FiltroHistorial): boolean {
+export function pasaFiltro(s: Pick<Suceso, "tipo" | "clase">, f: FiltroHistorial): boolean {
   if (f === "todo") return true;
   if (f === "versiones") return false;
-  if (f === "fallos") return s.tono === "bad" || s.tono === "warn";
+  if (f === "fallos") return s.clase === "fallo";
+  if (f === "avisos") return s.clase === "aviso";
   if (f === "comprobaciones") return s.tipo === "verificacion" || s.tipo === "prueba";
   return s.tipo === "externa" || s.tipo === "espejo";
 }
 
-/** Lo que cuenta como «hubo fallos» en el calendario (una marca en la casilla). */
-export const esFallo = (s: Pick<Suceso, "tono">) => s.tono === "bad";
+/** Lo que cuenta como «hubo fallos» en el calendario (una marca en la casilla): solo los fallos, nunca un aviso. */
+export const esFallo = (s: Pick<Suceso, "clase">) => s.clase === "fallo";
 
 /** Las versiones con su repositorio (un equipo: ids de varios repositorios a la vez). */
 export function versionesDeFuentes(fuentes: FuenteHistorial[], soloCopia?: string | null) {

@@ -237,7 +237,8 @@
   const VACIO: Record<FiltroHistorial, string> = {
     todo: "Nada en ese momento.",
     versiones: "Ninguna versión en ese momento.",
-    fallos: "Ningún fallo ni aviso en ese momento.",
+    fallos: "Ningún fallo en ese momento.",
+    avisos: "Ningún aviso en ese momento.",
     comprobaciones: "Ninguna comprobación ni prueba de restauración en ese momento.",
     subidas: "Ninguna subida a la nube ni espejo en ese momento.",
   };
@@ -289,7 +290,7 @@
       <div class="bit-cab">
         <h3 class="bit-titulo" id="{id}-bit">
           {#if filtro}<span class="first">{filtro.texto}</span>{:else}{conSucesos ? "Lo más reciente" : "Las últimas"}{/if}
-          <span class="faint num">· {plural(vsTramo.length, "versión", "versiones")}{conSucesos && cuenta.fallos ? ` · ${cuenta.fallos === 1 ? "1 fallo o aviso" : `${numero(cuenta.fallos)} fallos o avisos`}` : ""}</span>
+          <span class="faint num">· {plural(vsTramo.length, "versión", "versiones")}{conSucesos && cuenta.fallos ? ` · ${cuenta.fallos === 1 ? "1 fallo" : `${numero(cuenta.fallos)} fallos`}` : ""}{conSucesos && cuenta.avisos ? ` · ${plural(cuenta.avisos, "aviso", "avisos")}` : ""}</span>
         </h3>
         {#if filtro}
           <button type="button" class="btn btn-sm btn-ghost" onclick={quitarFiltro}><X size={14} />Ver todo</button>
