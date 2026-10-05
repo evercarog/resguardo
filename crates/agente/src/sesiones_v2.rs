@@ -244,13 +244,28 @@ fn carpetas(ruta: &str) -> Result<Vec<Value>, String> {
             || nombre.starts_with('.')
             || ["System Volume Information", "Windows", "ProgramData", "Recovery", "proc", "sys", "dev", "run"].contains(&nombre.as_str());
         let modificado = m.modified().ok().map(|t| chrono::DateTime::<chrono::Local>::from(t).to_rfc3339());
-        out.push((dir, nombre.to_lowercase(), json!({ "nombre": nombre, "tipo": if dir { "dir" } else { "archivo" }, "bytes": (!dir).then_some(m.len()), "modificado": modificado, "sistema": sistema })));
+        let mut v = json!({ "nombre": nombre, "tipo": if dir { "dir" } else { "archivo" }, "bytes": (!dir).then_some(m.len()), "modificado": modificado, "sistema": sistema });
+        // Una pista para «Usar uno que ya existe»: la carpeta parece un repositorio
+        // de copias (solo se mira si existen sus piezas; no se abre nada). Los
+        // navegadores que no la conocen la ignoran.
+        if dir && parece_repositorio(&e.path()) {
+            v["repositorio"] = json!(true);
+        }
+        out.push((dir, nombre.to_lowercase(), v));
         if out.len() >= MAX_ENTRADAS {
             break;
         }
     }
     out.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     Ok(out.into_iter().map(|x| x.2).collect())
+}
+
+/// ¿Parece `dir` un repositorio de restic? Tiene el archivo `config` y las
+/// carpetas `data`, `index`, `keys` y `snapshots` (sin seguir enlaces). Primero
+/// `config`: en una carpeta normal es una sola consulta al disco.
+fn parece_repositorio(dir: &std::path::Path) -> bool {
+    let es = |n: &str, carpeta: bool| std::fs::symlink_metadata(dir.join(n)).is_ok_and(|m| if carpeta { m.is_dir() } else { m.is_file() });
+    es("config", false) && ["data", "index", "keys", "snapshots"].iter().all(|n| es(n, true))
 }
 
 /// ¿Vale `nombre` como nombre de una carpeta nueva? (una sola parte, sin
@@ -1383,5 +1398,29 @@ mod tests {
         assert_eq!(b, "dos");
         assert!(z.by_name("a.txt").is_ok());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn marca_las_carpetas_que_parecen_un_repositorio() {
+        let base = std::env::temp_dir().join(format!("resguardo-marca-repo-{}", uuid::Uuid::new_v4().simple()));
+        let repo = base.join("Contabilidad");
+        for d in ["data", "index", "keys", "snapshots", "locks"] {
+            std::fs::create_dir_all(repo.join(d)).unwrap();
+        }
+        std::fs::write(repo.join("config"), b"x").unwrap();
+        // Le falta `keys`: no es un repositorio.
+        let medio = base.join("Medio");
+        for d in ["data", "index", "snapshots"] {
+            std::fs::create_dir_all(medio.join(d)).unwrap();
+        }
+        std::fs::write(medio.join("config"), b"x").unwrap();
+        std::fs::create_dir_all(base.join("Fotos")).unwrap();
+        let l = carpetas(&base.display().to_string()).unwrap();
+        let marca = |n: &str| l.iter().find(|e| e["nombre"] == n).map(|e| e["repositorio"] == true).unwrap();
+        assert!(marca("Contabilidad"));
+        assert!(!marca("Medio"));
+        assert!(!marca("Fotos"));
+        assert!(l.iter().find(|e| e["nombre"] == "Fotos").unwrap().get("repositorio").is_none(), "sin la pista, el campo no va");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

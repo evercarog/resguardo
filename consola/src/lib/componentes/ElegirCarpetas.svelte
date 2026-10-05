@@ -7,8 +7,13 @@
   // Con `unica`, se elige una sola carpeta (p. ej. dónde guardar un destino
   // local o las copias que recibe un equipo de almacenamiento) y, si el
   // agente lo admite (v1.15, `crear_carpeta`), se puede crear una nueva.
+  // Las carpetas que parecen un repositorio de restic (con `config`, `data`,
+  // `index`, `keys` y `snapshots`) llevan su marca: el agente lo dice al
+  // listar (`repositorio`, los agentes posteriores a 0.7.21); con uno anterior, se sabe al abrir
+  // la carpeta. Con `buscarRepos` («Usar uno que ya existe», «Traer
+  // historial»), además, una línea lo explica.
   import { onDestroy, onMount, tick } from "svelte";
-  import { ChevronRight, Folder, FolderOpen, FolderPlus, HardDrive, Info, LoaderCircle, Sparkles, TriangleAlert, X } from "@lucide/svelte";
+  import { ChevronRight, Database, Folder, FolderOpen, FolderPlus, HardDrive, Info, LoaderCircle, Sparkles, TriangleAlert, X } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { Sesion, type MensajeEquipo } from "$lib/sesion";
   import { errorNombreCarpeta } from "$lib/ganchos";
@@ -19,6 +24,8 @@
     nombre: string;
     tipo: "dir" | "archivo";
     sistema?: boolean;
+    /** La carpeta parece un repositorio de restic (agentes posteriores a 0.7.21). */
+    repositorio?: boolean;
   }
   interface Sugerencia {
     id: string;
@@ -33,6 +40,7 @@
     prueba,
     claveAdmin,
     unica = false,
+    buscarRepos = false,
     validar,
     titulo,
     iniciales = [],
@@ -45,6 +53,8 @@
     prueba?: Uint8Array;
     claveAdmin?: string;
     unica?: boolean;
+    /** Se busca un repositorio que ya existe: se explica la marca «Repositorio de restic». */
+    buscarRepos?: boolean;
     /** Con `unica`: por qué no vale la carpeta elegida (o null), para avisar antes de usarla. */
     validar?: (ruta: string) => string | null;
     titulo?: string;
@@ -57,6 +67,10 @@
   let error = $state("");
   let paso = $state("");
   let hijos = $state<Record<string, Entrada[] | "cargando">>({});
+  /** Las carpetas abiertas que resultaron ser un repositorio (con un agente que no da la pista). */
+  let sonRepo = $state<Record<string, boolean>>({});
+  const PIEZAS = ["data", "index", "keys", "snapshots"];
+  const pareceRepo = (es: Entrada[]) => es.some((e) => e.nombre === "config" && e.tipo === "archivo") && PIEZAS.every((p) => es.some((e) => e.nombre === p && e.tipo === "dir"));
   let abiertas = $state<Record<string, boolean>>({});
   // Las carpetas que ya tenía la copia (solo al abrir: después manda lo que se marque aquí).
   const inicio = () => new Set(iniciales);
@@ -78,7 +92,9 @@
     hijos[ruta] = "cargando";
     try {
       const r = await sesion.pedir<MensajeEquipo & { entradas: Entrada[] }>("carpetas", { ruta });
-      hijos[ruta] = (r.entradas ?? []).filter((e) => e.tipo === "dir");
+      const todas = r.entradas ?? [];
+      if (ruta && pareceRepo(todas)) sonRepo[ruta] = true;
+      hijos[ruta] = todas.filter((e) => e.tipo === "dir");
     } catch (e) {
       delete hijos[ruta];
       error = (e as Error).message;
@@ -195,6 +211,7 @@
     <div>
       <h2 id="t-carpetas">{titulo ?? (unica ? `Elegir una carpeta en ${equipo.nombre}` : `Elegir carpetas en ${equipo.nombre}`)}</h2>
       <p>Lo que ves llega cifrado desde el equipo: el servidor no ve las rutas.</p>
+      {#if buscarRepos}<p class="pista-repos"><Database size={13} />Elige la carpeta del repositorio: las que lo parecen llevan la marca «Repositorio de restic».</p>{/if}
     </div>
   </div>
 
@@ -228,7 +245,7 @@
       {@render nivel("")}
     </div>
     {#if error}<p class="error-campo">{error}</p>{/if}
-    {#if unica}
+    {#if unica && !buscarRepos}
       {#if creando}
         <form class="crear" onsubmit={crearCarpeta}>
           <label class="field-label" for="nueva-carpeta">Carpeta nueva dentro de <span class="pastilla mono ajusta">{dondeCrear}</span></label>
@@ -277,6 +294,7 @@
             {/if}
             {#if ruta === ""}<HardDrive size={15} />{:else if abiertas[r]}<FolderOpen size={15} />{:else}<Folder size={15} />{/if}
             <span class="nombre">{e.nombre}</span>
+            {#if e.repositorio || sonRepo[r]}<span class="marca-repo"><Database size={12} />Repositorio de restic</span>{/if}
             {#if e.sistema}<span class="faint sis">del sistema</span>{/if}
           </div>
           {#if abiertas[r]}{@render nivel(r)}{/if}
@@ -371,6 +389,31 @@
   }
   .sis {
     font-size: var(--fs-xs);
+  }
+  /* Una carpeta que parece un repositorio: pastilla neutra (no es un estado). */
+  .marca-repo {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 7px;
+    font-size: 11.5px;
+    color: var(--text-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+  .nodo .marca-repo :global(svg) {
+    color: var(--text-2);
+  }
+  .pista-repos {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: var(--fs-xs);
+    color: var(--text-3);
   }
   .cargando {
     display: flex;

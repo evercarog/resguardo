@@ -16,6 +16,7 @@
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import CampoClave from "./CampoClave.svelte";
   import FormRepoExistente from "./FormRepoExistente.svelte";
+  import ElegirCarpetas from "./ElegirCarpetas.svelte";
 
   let { cliente, equipo, repo, onclose }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; onclose: () => void } = $props();
 
@@ -26,6 +27,8 @@
   const recordado = untrack(() => origenRecordado(cliente.id, equipo.id, repo.id));
   let origen = $state(recordado ?? repoExistenteVacio());
   let claveAdmin = $state("");
+  /** «Explorar…»: elegir en el equipo la carpeta del repositorio de origen. */
+  let explorar = $state(false);
   let ocupado = $state(false);
   let pasoTxt = $state("");
   let error = $state("");
@@ -172,7 +175,7 @@
           </select>
         </div>
       {:else}
-        <FormRepoExistente bind:repo={origen} id="h" nombreEquipo={equipo.nombre} />
+        <FormRepoExistente bind:repo={origen} id="h" nombreEquipo={equipo.nombre} alExplorar={() => (explorar = true)} />
       {/if}
 
       <CampoClave requerido id="h-admin" etiqueta="Clave de administración" bind:value={claveAdmin} error={error && error.includes("clave de administración") ? error : ""}>
@@ -216,6 +219,23 @@
     </form>
   {/if}
 </Modal>
+
+{#if explorar}
+  <ElegirCarpetas
+    {cliente}
+    {equipo}
+    claveAdmin={claveAdmin || undefined}
+    unica
+    buscarRepos
+    titulo="La carpeta del repositorio de origen en {equipo.nombre}"
+    iniciales={origen.direccion.trim() ? [origen.direccion.trim()] : []}
+    onclose={() => (explorar = false)}
+    alElegir={(rutas) => {
+      if (rutas[0]) origen.direccion = rutas[0];
+      explorar = false;
+    }}
+  />
+{/if}
 
 <style>
   .pequeno {

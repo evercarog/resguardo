@@ -944,7 +944,7 @@ function versiones(repo: string, equipo?: string) {
   return out;
 }
 
-type Entrada = { nombre: string; tipo: "dir" | "archivo"; bytes?: number; modificado?: string; sistema?: boolean };
+type Entrada = { nombre: string; tipo: "dir" | "archivo"; bytes?: number; modificado?: string; sistema?: boolean; repositorio?: boolean };
 
 /** Un árbol de mentira, igual para todas las versiones (basta para la interfaz). */
 function arbol(ruta: string, version: boolean): Entrada[] {
@@ -967,7 +967,23 @@ function arbol(ruta: string, version: boolean): Entrada[] {
       { nombre: "Downloads", tipo: "dir" },
       { nombre: "AppData", tipo: "dir", sistema: true },
     ];
-  if (r === "D:") return [{ nombre: "Escaneos", tipo: "dir" }, { nombre: "Contratos", tipo: "dir" }];
+  if (r === "D:") return [{ nombre: "Escaneos", tipo: "dir" }, { nombre: "Contratos", tipo: "dir" }, ...(version ? [] : [{ nombre: "Copias", tipo: "dir" as const }])];
+  // Repositorios de restic (p. ej. de la app de escritorio): el agente los marca al listar (`repositorio`).
+  if (!version && r === "D:\\Copias")
+    return [
+      { nombre: "Contabilidad", tipo: "dir", repositorio: true },
+      { nombre: "Nomina", tipo: "dir", repositorio: true },
+      { nombre: "Viejas", tipo: "dir" },
+    ];
+  if (!version && /^D:\\Copias\\(Contabilidad|Nomina)$/i.test(r))
+    return [
+      { nombre: "data", tipo: "dir" },
+      { nombre: "index", tipo: "dir" },
+      { nombre: "keys", tipo: "dir" },
+      { nombre: "locks", tipo: "dir" },
+      { nombre: "snapshots", tipo: "dir" },
+      { nombre: "config", tipo: "archivo", bytes: 155, modificado: fecha(400) },
+    ];
   return [
     { nombre: "Clientes 2026", tipo: "dir" },
     { nombre: "Facturas", tipo: "dir" },

@@ -5,7 +5,7 @@
   // «prueba» (el equipo lo abre con esa contraseña y dice qué tiene); la
   // respuesta llega sellada solo para este navegador.
   import { onDestroy, untrack } from "svelte";
-  import { ArrowLeft, CircleCheck, Database, FlaskConical, KeyRound, LoaderCircle, TriangleAlert } from "@lucide/svelte";
+  import { ArrowLeft, CircleCheck, Database, FlaskConical, FolderOpen, KeyRound, LoaderCircle, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import {
     destinoCuerpo,
@@ -30,6 +30,7 @@
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import CampoClave from "./CampoClave.svelte";
   import FormRepoExistente from "./FormRepoExistente.svelte";
+  import ElegirCarpetas from "./ElegirCarpetas.svelte";
 
   let { cliente, equipos, equipoInicial, onclose, onvolver }: { cliente: Cliente; equipos: Equipo[]; equipoInicial?: string; onclose: () => void; onvolver?: () => void } = $props();
 
@@ -68,6 +69,23 @@
     return lista.filter((r) => r !== "." && !suyos.has(r));
   });
   const rutaLimpia = $derived(ruta.trim().replace(/^\/+|\/+$/g, ""));
+
+  // «Explorar…»: la carpeta en el propio equipo, en «otro sitio» (Disco o
+  // carpeta) o dentro de un destino local suyo (entonces se escribe la parte
+  // de dentro del destino).
+  let explorar = $state<"otro" | "destino" | null>(null);
+  const win = $derived(/windows/i.test(equipo?.so ?? ""));
+  const raizLocal = $derived(destinoSel?.tipo === "local" && destinoSel.donde ? destinoSel.donde.replace(/[\\/]+$/, "") : null);
+  /** La parte de `r` dentro del destino local (con «/»), o null si no está dentro. */
+  function dentroDelDestino(r: string): string | null {
+    if (!raizLocal) return null;
+    const norm = (x: string) => (win ? x.replace(/\//g, "\\").toLowerCase() : x);
+    const sep = win ? "\\" : "/";
+    if (!norm(r).startsWith(norm(raizLocal) + sep)) return null;
+    return r.slice(raizLocal.length + 1).replace(/[\\/]+/g, "/").replace(/\/+$/, "") || null;
+  }
+  /** Lo que se ve marcado al abrir: la carpeta escrita dentro del destino, o el destino. */
+  const inicialDestino = $derived(raizLocal ? (rutaLimpia ? [raizLocal, ...rutaLimpia.split("/")].join(win ? "\\" : "/") : raizLocal) : null);
   // Al cambiar de equipo: su almacén, si copia en alguno; si no, «otro sitio».
   let equipoVisto = "";
   $effect(() => {
@@ -209,7 +227,14 @@
       {#if destinoSel}
         <div class="field">
           <label class="field-label" for="a-ruta">Carpeta del repositorio en {almacen ? almacen.nombre : destinoSel.nombre}</label>
-          <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="siigo" />
+          {#if raizLocal && !almacen}
+            <div class="con-boton">
+              <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="siigo" />
+              <button type="button" class="btn" onclick={() => (explorar = "destino")}><FolderOpen size={15} />Explorar…</button>
+            </div>
+          {:else}
+            <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="siigo" />
+          {/if}
           {#if almacen}
             <span class="field-hint">
               {#if carpetaAlmacen && usuarioAlmacen}
@@ -236,7 +261,7 @@
         <CampoClave requerido id="a-contrasena" etiqueta="Contraseña del repositorio" ayuda="La que abre las copias: la del kit de recuperación o la que guardaba la app de escritorio." bind:value={repo.contrasena} />
         <p class="faint nota">Se usa el acceso que {equipo?.nombre ?? "el equipo"} ya tiene a ese destino. La contraseña va sellada solo para el equipo: el servidor no la ve ni la guarda.</p>
       {:else}
-        <FormRepoExistente bind:repo id="a" nombreEquipo={equipo?.nombre} etiquetaTipo="Tipo" />
+        <FormRepoExistente bind:repo id="a" nombreEquipo={equipo?.nombre} etiquetaTipo="Tipo" alExplorar={equipo ? () => (explorar = "otro") : undefined} />
       {/if}
 
       <CampoClave requerido id="a-admin" etiqueta="Clave de administración" bind:value={claveAdmin} error={error && error.includes("clave de administración") ? error : ""}>
@@ -273,6 +298,26 @@
     </form>
   {/if}
 </Modal>
+
+{#if explorar && equipo}
+  <ElegirCarpetas
+    {cliente}
+    {equipo}
+    claveAdmin={claveAdmin || undefined}
+    unica
+    buscarRepos
+    titulo="La carpeta del repositorio en {equipo.nombre}"
+    iniciales={explorar === "destino" ? (inicialDestino ? [inicialDestino] : []) : repo.direccion.trim() ? [repo.direccion.trim()] : []}
+    validar={explorar === "destino" ? (r) => (dentroDelDestino(r) ? null : `Tiene que estar dentro de ${raizLocal}, la carpeta de «${destinoSel?.nombre}».`) : undefined}
+    onclose={() => (explorar = null)}
+    alElegir={(rutas) => {
+      const r = rutas[0];
+      if (r && explorar === "destino") ruta = dentroDelDestino(r) ?? ruta;
+      else if (r) repo.direccion = r;
+      explorar = null;
+    }}
+  />
+{/if}
 
 <style>
   .encontrados {
