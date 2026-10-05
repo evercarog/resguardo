@@ -569,6 +569,61 @@ async function principal() {
     await consola.ok("POST", `/api/clientes/${c.id}/notas/comentarios`, { tipo: "repositorio", objeto: `${eqB.id}/${repoId}`, texto: "Verificación con horario puesta." });
 
     // -----------------------------------------------------------------------
+    paso("6b2. Copia externa a un repositorio que ya existe (como la subida a la nube de la app de escritorio), con bloqueo");
+    {
+      comprobar(eqBAhora.resumen?.admite?.includes("externa_existente"), "B admite la copia externa a uno que ya existe");
+      // «La nube»: un repositorio con el troceado del de B y sus versiones de hasta ahora (lo que subió la app antigua), con otra contraseña.
+      const nube = dir("nube-copias");
+      const claveNube = Buffer.from(aleatorio(24)).toString("base64url");
+      const envNube = { ...envRestic, RESTIC_REPOSITORY: path.join(nube, "siigo"), RESTIC_PASSWORD: claveNube, RESTIC_FROM_REPOSITORY: repoUrl, RESTIC_FROM_PASSWORD: contrasenaRepo };
+      for (const args of [["init", "--copy-chunker-params"], ["copy"]]) {
+        const r = ejecutar(resticBin, args, { env: envNube, plazo: 300_000 });
+        comprobar(r.codigo === 0, `restic ${args[0]} de «la nube» falló`, r.salida);
+      }
+      const enNube = () => (JSON.parse(ejecutar(resticBin, ["snapshots", "--json", "--no-lock"], { env: envNube }).salida) as Snap[]).length;
+      const yaSubidas = enNube();
+      // Algo nuevo en B (lo que falta allí).
+      fs.writeFileSync(path.join(datosB, "notas.md"), `# Notas\nantes de la copia externa ${randomBytes(4).toString("hex")}\n`);
+      const nueva = await copiarAhora(consola, c);
+      igual(nueva.estado, "ok", `Una copia más en B (${nueva.mensaje ?? ""})`);
+      const externa = {
+        repo: repoId,
+        destino: { id: `externa-${randomBytes(3).toString("hex")}`, tipo: "local", donde: nube },
+        ruta: "siigo",
+        existente: true,
+        contrasena_destino: claveNube,
+        hora: "03:00",
+        retencion: reglaParaOrden({ diarias: 7, semanales: 4, mensuales: 12, anuales: 2 }),
+        bloqueo_dias: 30,
+      };
+      // «Probar»: dice lo que hay y no guarda nada.
+      const prueba = await consola.hecha(c, eqB.id, "cambiar_copia_externa", { ...externa, solo_probar: true }, secretosRepo);
+      comprobar(/se abre con esa contraseña \(\d+ versiones?\)/.test(prueba.mensaje ?? "") && /Trocea igual/.test(prueba.mensaje ?? ""), `«Probar»: ${prueba.mensaje}`);
+      comprobar(!(prueba.mensaje ?? "").includes(nube) && !(prueba.mensaje ?? "").includes(claveNube), "«Probar» no dice rutas ni contraseñas", prueba.mensaje);
+      comprobar(!(await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.externa, "Probar no guardó la copia externa");
+      // Con otra contraseña de «la nube»: no se abre y no se guarda nada.
+      const mala = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "cambiar_copia_externa", { ...externa, contrasena_destino: "no es esta" }, secretosRepo), { plazo: 120_000 });
+      comprobar(mala.estado === "fallida" && /contraseña no abre/.test(mala.mensaje ?? ""), `Con otra contraseña, fallida: ${mala.mensaje}`);
+      // Guardarla y subir ahora: solo lo nuevo.
+      const guardada = await consola.hecha(c, eqB.id, "cambiar_copia_externa", externa, secretosRepo, {}, 120_000);
+      log(`Copia externa: ${guardada.mensaje}`);
+      const ext = await esperar("la copia externa en el resumen de B", async () => (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.externa, { plazo: 20_000 });
+      comprobar(ext.existente === true && ext.bloqueo_dias === 30 && ext.con_retencion === true, "El resumen dice: a uno que ya existía, bloqueo de 30 días, con retención", ext);
+      const antesSubir = Date.now();
+      await consola.hecha(c, eqB.id, "subir_ahora", { repo: repoId });
+      const subida = await esperar("el resultado de la copia externa en el informe", async () => {
+        const inf = informeDe((await consola.equipo(c, eqB.id)).ultimo_informe as any, repoId);
+        return inf?.externa?.ultima && new Date(inf.externa.ultima).getTime() >= antesSubir - 2_000 ? inf.externa : null;
+      }, { plazo: 180_000, cada: 1000 });
+      igual(subida.resultado, "ok", `Copia externa (${subida.mensaje_corto ?? ""})`);
+      comprobar(/copias? subidas? \(\d+ ya estaba/.test(subida.mensaje_corto ?? ""), "Solo subió lo que faltaba (lo demás ya estaba en el destino)", subida.mensaje_corto);
+      const total = enNube();
+      comprobar(total > yaSubidas, `«La nube» tiene lo nuevo (${yaSubidas} → ${total} versiones)`);
+      // Sin repetir ninguna: las mismas que en el almacén.
+      igual(total, snapshots().length, "Ni una versión repetida en «la nube»");
+    }
+
+    // -----------------------------------------------------------------------
     paso("6c. Copia de la consola, restaurarla en otra carpeta y que los equipos vuelvan solos");
     const sal = salRespaldo();
     await consola.ok("PUT", "/api/servidor/respaldo", { activo: true, publica: await publicaRespaldo(argon2, CLAVE_RESPALDO, sal), sal });
