@@ -157,14 +157,62 @@ pub const MAX_CONEXIONES_IP: usize = 1_000;
 pub const ESPERA_CABECERAS: Duration = Duration::from_secs(20);
 const ESPERA_TLS: Duration = Duration::from_secs(10);
 
-/// Sirve hasta que se pare el proceso. Con TLS o sin él, el mismo bucle: cada
-/// conexión con su límite de tiempo para las cabeceras y un tope de conexiones.
+/// Lo que se espera, como mucho, a que quede libre el puerto al arrancar.
+pub const ESPERA_PUERTO: Duration = Duration::from_secs(10);
+
+/// Escucha en `direccion`. Si el puerto está ocupado (al reiniciar el servicio, el
+/// proceso anterior puede tardar un momento en soltarlo), lo reintenta con esperas
+/// crecientes (0,1 s… 1 s) hasta `plazo`; `aviso` dice que espera y cuando lo logra.
+pub async fn escuchar(direccion: SocketAddr, plazo: Duration, aviso: &(dyn Fn(&str) + Send + Sync)) -> Result<tokio::net::TcpListener, String> {
+    let inicio = std::time::Instant::now();
+    let mut espera = Duration::from_millis(100);
+    let mut avisado = false;
+    loop {
+        match tokio::net::TcpListener::bind(direccion).await {
+            Ok(l) => {
+                if avisado {
+                    aviso(&format!("El puerto {} ya está libre: escuchando (tras {:.1} s).", direccion.port(), inicio.elapsed().as_secs_f32()));
+                }
+                return Ok(l);
+            }
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied) && inicio.elapsed() + espera <= plazo => {
+                if !avisado {
+                    aviso(&format!(
+                        "El puerto {} está ocupado ({e}); se reintenta durante {} s por si es el proceso anterior, que aún termina.",
+                        direccion.port(),
+                        plazo.as_secs()
+                    ));
+                    avisado = true;
+                }
+                tokio::time::sleep(espera).await;
+                espera = (espera * 2).min(Duration::from_secs(1));
+            }
+            Err(e) => return Err(format!("No se pudo escuchar en {direccion}: {e}")),
+        }
+    }
+}
+
+static PARADA: std::sync::OnceLock<tokio::sync::Notify> = std::sync::OnceLock::new();
+
+/// Pide que `servir` termine (el servicio de Windows al pararlo): deja de aceptar
+/// conexiones y vuelve. Si aún no estaba sirviendo, termina en cuanto empiece.
+pub fn pedir_parada() {
+    PARADA.get_or_init(tokio::sync::Notify::new).notify_one();
+}
+
+/// Sirve hasta que se pare el proceso (o `pedir_parada`). Con TLS o sin él, el mismo
+/// bucle: cada conexión con su límite de tiempo para las cabeceras y un tope de conexiones.
 pub async fn servir(st: St, direccion: SocketAddr, tls: Tls) -> Result<(), String> {
     let app = api::router(st.clone());
     let proxy = st.opciones.proxy;
     let datos = st.datos.clone();
     tareas(st);
-    let listener = tokio::net::TcpListener::bind(direccion).await.map_err(|e| format!("No se pudo escuchar en {direccion}: {e}"))?;
+    let d2 = datos.clone();
+    let aviso = move |l: &str| {
+        println!("{l}");
+        registro::al_archivo(&d2, l);
+    };
+    let listener = escuchar(direccion, ESPERA_PUERTO, &aviso).await?;
     let acceptor = match tls {
         Tls::Propio { cert, clave } => Some(tokio_rustls::TlsAcceptor::from(identidad::config_rustls(&cert, &clave)?)),
         Tls::Publico { cert, clave, acme: cfg, http } => {
@@ -181,7 +229,10 @@ pub async fn servir(st: St, direccion: SocketAddr, tls: Tls) -> Result<(), Strin
         }
         Tls::Ninguno => None,
     };
-    bucle(listener, acceptor, app, proxy).await;
+    tokio::select! {
+        _ = bucle(listener, acceptor, app, proxy) => {}
+        _ = PARADA.get_or_init(tokio::sync::Notify::new).notified() => {}
+    }
     Ok(())
 }
 
@@ -276,6 +327,33 @@ where
 #[cfg(test)]
 mod pruebas_red {
     use super::*;
+
+    /// Al reiniciar el servicio, el proceso anterior aún tiene el puerto un momento:
+    /// el nuevo espera a que lo suelte en vez de fallar (y lo dice).
+    #[tokio::test]
+    async fn espera_a_que_el_puerto_quede_libre() {
+        let ocupado = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let dir = ocupado.local_addr().unwrap();
+        let soltar = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(600));
+            drop(ocupado);
+        });
+        let avisos = Arc::new(Mutex::new(Vec::<String>::new()));
+        let a2 = avisos.clone();
+        let aviso = move |l: &str| a2.lock().unwrap().push(l.to_string());
+        let l = escuchar(dir, Duration::from_secs(10), &aviso).await.expect("tenía que poder escuchar en cuanto quedó libre");
+        assert_eq!(l.local_addr().unwrap(), dir);
+        soltar.join().unwrap();
+        let avisos = avisos.lock().unwrap().clone();
+        assert_eq!(avisos.len(), 2, "{avisos:?}");
+        assert!(avisos[0].contains("ocupado") && avisos[1].contains("libre"), "{avisos:?}");
+        // Ocupado de verdad (otro programa): se rinde pasado el plazo, con el motivo.
+        let otro = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let inicio = std::time::Instant::now();
+        let e = escuchar(otro.local_addr().unwrap(), Duration::from_millis(500), &|_: &str| {}).await.unwrap_err();
+        assert!(e.contains("No se pudo escuchar"), "{e}");
+        assert!(inicio.elapsed() < Duration::from_secs(3));
+    }
 
     #[test]
     fn la_ip_de_detras_del_proxy_solo_si_viene_del_proxy() {
