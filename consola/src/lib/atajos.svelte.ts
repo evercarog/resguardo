@@ -19,6 +19,7 @@ export const IR_A: { tecla: string; texto: string; ruta: string }[] = [
   { tecla: "c", texto: "Copias", ruta: "/copias" },
   { tecla: "r", texto: "Repositorios y destinos", ruta: "/repositorios" },
   { tecla: "t", texto: "Restaurar", ruta: "/restaurar" },
+  { tecla: "b", texto: "Buscar archivos", ruta: "/buscar" },
   { tecla: "o", texto: "Órdenes", ruta: "/ordenes" },
   { tecla: "a", texto: "Avisos", ruta: "/avisos" },
   { tecla: "i", texto: "Informes", ruta: "/informes" },
