@@ -569,7 +569,9 @@ fn buscar(acc: &restic::Access, version: &str, texto: &str) -> Result<Vec<Value>
 /// `//equipo/recurso` (SYSTEM se autenticaría en un equipo ajeno) ni `\` o `:`
 /// dentro de un nombre (otra raíz o un flujo alternativo), ni nombres hechos
 /// solo de puntos o que acaban en punto o espacio (Windows los recorta: `...`
-/// o `a.` no serían lo que parecen). En los dos, absoluta, sin `.`, `..` ni NUL.
+/// o `a.` no serían lo que parecen) ni nombres de dispositivo (`CON`, `NUL`,
+/// `COM1.txt`…: se escribiría en el dispositivo, no en un archivo). En los dos,
+/// absoluta, sin `.`, `..` ni NUL.
 pub fn ruta_local(ruta_version: &str) -> Result<String, String> {
     let no_valida = || format!("Ruta no válida en este equipo: {ruta_version}");
     if ruta_version.contains('\0') {
@@ -581,7 +583,7 @@ pub fn ruta_local(ruta_version: &str) -> Result<String, String> {
         if unidad.len() != 1 || !unidad.chars().all(|c| c.is_ascii_alphabetic()) {
             return Err(no_valida());
         }
-        let nombre_malo = |c: &str| c.is_empty() || c.contains(['\\', ':']) || c.ends_with(['.', ' ']);
+        let nombre_malo = |c: &str| c.is_empty() || c.contains(['\\', ':']) || c.ends_with(['.', ' ']) || dispositivo_de_windows(c);
         if !r.is_empty() && r.split('/').any(nombre_malo) {
             return Err(no_valida());
         }
@@ -592,6 +594,21 @@ pub fn ruta_local(ruta_version: &str) -> Result<String, String> {
         }
         Ok(ruta_version.to_string())
     }
+}
+
+/// ¿Es un nombre que Windows convierte en un dispositivo? `CON`, `PRN`, `AUX`,
+/// `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9` (también con los dígitos ¹²³),
+/// `CONIN$` y `CONOUT$`, sin distinguir mayúsculas y aunque lleven extensión
+/// o espacios antes de ella (`nul.txt`, `CON .log`).
+fn dispositivo_de_windows(nombre: &str) -> bool {
+    let base = nombre.split('.').next().unwrap_or("").trim_end_matches(' ').to_uppercase();
+    if matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") {
+        return true;
+    }
+    let mut c = base.chars();
+    let prefijo: String = c.by_ref().take(3).collect();
+    let resto: Vec<char> = c.collect();
+    (prefijo == "COM" || prefijo == "LPT") && resto.len() == 1 && (resto[0].is_ascii_digit() || matches!(resto[0], '¹' | '²' | '³'))
 }
 
 /// ¿Está `ruta` (local) dentro de alguna carpeta de las copias de `repo` en este equipo?
@@ -649,9 +666,14 @@ fn carpeta_destino(d: &str) -> Result<std::path::PathBuf, String> {
         }
         let resto = d[3..].trim_end_matches('\\');
         if !resto.is_empty()
-            && resto
-                .split('\\')
-                .any(|c| c.is_empty() || c == "." || c == ".." || c.ends_with(['.', ' ']) || c.contains(['/', ':', '*', '?', '"', '<', '>', '|']))
+            && resto.split('\\').any(|c| {
+                c.is_empty()
+                    || c == "."
+                    || c == ".."
+                    || c.ends_with(['.', ' '])
+                    || c.contains(['/', ':', '*', '?', '"', '<', '>', '|'])
+                    || dispositivo_de_windows(c)
+            })
         {
             return Err(mal());
         }
@@ -1361,6 +1383,16 @@ mod tests {
     }
 
     #[test]
+    fn nombres_de_dispositivo_de_windows() {
+        for d in ["CON", "con", "Nul.txt", "AUX .log", "com1", "LPT9.tar.gz", "COM¹", "conin$", "CONOUT$"] {
+            assert!(dispositivo_de_windows(d), "{d}");
+        }
+        for n in ["CONSOLA", "nulo.txt", "COM", "COM10", "LPTX", "com1a", "a.CON", "PRNT", ""] {
+            assert!(!dispositivo_de_windows(n), "{n}");
+        }
+    }
+
+    #[test]
     fn rutas_de_version_a_rutas_del_equipo() {
         if cfg!(windows) {
             assert_eq!(ruta_local("/C/Users/Ana").unwrap(), r"C:\Users\Ana");
@@ -1373,6 +1405,11 @@ mod tests {
             for mala in ["/C/.../x", "/C/a./b", "/C/a /b", "/C/x\0y"] {
                 assert!(ruta_local(mala).is_err(), "{mala}");
             }
+            // Nombres de dispositivo: se escribiría en el dispositivo, no en un archivo.
+            for mala in ["/C/x/CON", "/C/nul.txt", "/C/x/com1/y", "/C/LPT9.log"] {
+                assert!(ruta_local(mala).is_err(), "{mala}");
+            }
+            assert!(ruta_local("/C/x/CONSOLA.txt").is_ok());
         } else {
             assert_eq!(ruta_local("/home/ana").unwrap(), "/home/ana");
             for mala in ["home/ana", "/home/../etc", "/home/./ana", "/x\0y", ""] {
