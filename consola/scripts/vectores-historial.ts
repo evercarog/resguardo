@@ -3,10 +3,12 @@
 // (src/lib/copiasCliente.ts). `npm run test:vectores`.
 import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
-import { pasaFiltro, sucesoHistorial, sucesosDe } from "../src/lib/historial";
+import { lineaEnDisco } from "../src/lib/repo";
+import { bytes } from "../src/lib/formato";
+import { esFallo, pasaFiltro, sucesoHistorial, sucesosDe } from "../src/lib/historial";
 import { moviendoDe, textoPasoCopias } from "../src/lib/mover";
 import { textoCorto, textoMover } from "../src/lib/textoProgreso";
-import { calendario } from "../src/lib/lineaTiempo";
+import { altoCalendario, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
 
 let fallos = 0;
 let total = 0;
@@ -77,7 +79,23 @@ igual("un equipo: también el espejo", eq.sucesos.filter((s) => s.tipo === "espe
 igual("…y los títulos dicen de qué repositorio", eq.sucesos.find((s) => s.tipo === "verificacion")?.titulo, "Verificación · «Documentos»");
 igual("…y las versiones de cada repositorio casan con su vuelta", eq.notas.has("bbbb0001"), true);
 
-igual("filtro «Fallos»: lo que fue mal o con avisos", r.sucesos.filter((s) => pasaFiltro(s, "fallos")).map((s) => s.tipo), ["externa", "fallo"]);
+igual("filtro «Fallos»: solo lo que falló", r.sucesos.filter((s) => pasaFiltro(s, "fallos")).map((s) => s.tipo), ["externa", "fallo"]);
+{
+  // Un aviso del equipo (otra consola, intentos fallidos…) es un aviso, nunca un fallo; una copia con avisos, también.
+  const conAvisos = sucesosDe({
+    fuentes: [{ repo, inf: { ...inf, versiones: [], ejecuciones: [{ hora: h(6), copia: "k1", resultado: "aviso", mensaje_corto: "Un archivo estaba en uso." }], externa: null, verificacion: null } }],
+    copias,
+    historial: [
+      { id: "a1", hora: h(1), tipo: "aviso", mensaje: "Este equipo se conectó también a otra consola." },
+      { id: "a2", hora: h(24 * 400), tipo: "resumen_dia", repo: "r1", copia: "k1", ok: 3, fallidas: 1 },
+    ],
+    conEquipo: true,
+  }).sucesos;
+  igual("clases: aviso del equipo, copia con avisos y día con una fallida", conAvisos.map((s) => `${s.tipo}:${s.clase}`), ["aviso:aviso", "copia:aviso", "resumen:fallo"]);
+  igual("«Fallos» no enseña los avisos", conAvisos.filter((s) => pasaFiltro(s, "fallos")).map((s) => s.tipo), ["resumen"]);
+  igual("«Avisos» los enseña", conAvisos.filter((s) => pasaFiltro(s, "avisos")).map((s) => s.tipo), ["aviso", "copia"]);
+  igual("la marca roja del calendario, solo los fallos", conAvisos.filter(esFallo).map((s) => s.tipo), ["resumen"]);
+}
 igual("filtro «Comprobaciones»", r.sucesos.filter((s) => pasaFiltro(s, "comprobaciones")).map((s) => s.tipo), ["verificacion", "prueba"]);
 igual("filtro «Subidas»", eq.sucesos.filter((s) => pasaFiltro(s, "subidas")).map((s) => s.tipo), ["espejo", "externa"]);
 igual("filtro «Versiones»: ningún suceso", r.sucesos.filter((s) => pasaFiltro(s, "versiones")).length, 0);
@@ -90,6 +108,28 @@ igual("…y en la cabecera de su día", cal.columnas.reduce((n, c) => n + (c.dia
 igual("…sin cambiar la intensidad (las versiones)", cal.total, 1);
 const tira = calendario(vs, null, ahora, 30, true, [Date.parse(h(14))]);
 igual("en la tira del móvil, también", tira.celdas[0].reduce((n, x) => n + x.fallos, 0), 1);
+
+console.log("\n· Un marco estable y las fechas (lib/lineaTiempo.ts)");
+const fijas = { desde: 8, paso: 1, n: 12 };
+igual("con las filas fijas, el mismo número de filas en 7, 30 y 60 días", [7, 30, 60].map((d) => calendario(vs, null, ahora, d as 7 | 30 | 60, false, [], fijas).filas.length), [12, 12, 12]);
+igual("el marco: el más alto de sus vistas (aquí, por horas)", altoCalendario(12, false), 52 + 15 * 12);
+igual("…con pocas filas, el del año", altoCalendario(2, false), altoCalendario(0, true));
+igual("un día de la URL", diaDeClave("2026-09-29") === new Date(2026, 8, 29).getTime(), true);
+igual("un día mal formado", diaDeClave("29/09/2026"), null);
+const hoyL = new Date(2026, 9, 5, 12).getTime();
+igual("intervalo del mismo mes", nombreIntervalo(new Date(2026, 8, 21).getTime(), new Date(2026, 8, 27).getTime(), hoyL), "Del 21 al 27 sept");
+igual("intervalo entre meses", nombreIntervalo(new Date(2026, 8, 28).getTime(), new Date(2026, 9, 4).getTime(), hoyL), "Del 28 sept al 4 oct");
+igual("un solo día: su nombre", nombreIntervalo(new Date(2026, 9, 4).getTime(), new Date(2026, 9, 4).getTime(), hoyL), "Ayer");
+
+console.log("\n· «En disco» junto a «Protegido» (lib/repo.ts)");
+{
+  const gb = 1e9;
+  const tres = [{ total_bytes: 24 * gb }, { total_bytes: 24 * gb }, { total_bytes: 22 * gb }];
+  igual("con todas las versiones: lo que sumarían y cuántas veces menos ocupan", lineaEnDisco(3, tres, 20 * gb), `las 3 versiones sumarían ${bytes(70 * gb)}; ocupan 3,5× menos`);
+  igual("si faltan versiones en el informe, sin cifra que no cuadre", lineaEnDisco(623, tres, 20 * gb), "las 623 versiones juntas, comprimidas y sin duplicados");
+  igual("recortado, igual", lineaEnDisco(3, tres, 20 * gb, true), "las 3 versiones juntas, comprimidas y sin duplicados");
+  igual("una sola", lineaEnDisco(1, tres.slice(0, 1), 20 * gb), "la única versión, comprimida y sin duplicados");
+}
 
 console.log("\n· Copias del cliente (lib/copiasCliente.ts)");
 const base = { so: "Windows 11", version_agente: "0.7.17", box_pub: "", sign_pub: "", sal_equipo: "", etiqueta: null, modo: "gestionado" as const, confirmado: true, conectado: true, ultimo_contacto: h(0.1), estado_servicio: "en_marcha" as const, siguiente_seq: 1, rol: "agente" as const };

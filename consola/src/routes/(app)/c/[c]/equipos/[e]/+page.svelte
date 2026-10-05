@@ -9,7 +9,7 @@
   import { ultimas24h } from "$lib/panel";
   import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
-  import { abrirVersion, abrirVuelta, elegirDia } from "$lib/componentes/detalle/navegar";
+  import { abrirVersion, abrirVuelta, elegirDia, elegirFechas } from "$lib/componentes/detalle/navegar";
   import { leerSeleccion } from "$lib/detalle";
   import { usarHistorialEquipo } from "$lib/historialEquipo.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
@@ -884,6 +884,8 @@
           elegida={sel.version}
           dia={sel.dia}
           alDia={elegirDia}
+          fechas={sel.desde && sel.hasta ? { desde: sel.desde, hasta: sel.hasta } : null}
+          alFechas={elegirFechas}
           hayMas={historia.hayMas}
           cargandoMas={historia.cargando}
           alCargarMas={historia.cargarMas}

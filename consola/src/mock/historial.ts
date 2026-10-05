@@ -196,5 +196,8 @@ export function historialMock(eq: { id: string; resumen: T.Equipo["resumen"] }):
       });
     }
   }
+  // Un aviso del equipo (como el agente, bitacora.rs `aviso`): informativo, no es un fallo.
+  if (eq.resumen?.repositorios?.length)
+    out.push({ id: `${eq.id}-aviso-consola`, hora: new Date(ahora - 2 * 86_400_000 - 5 * 3600_000).toISOString(), tipo: "aviso", mensaje: "Este equipo se conectó también a otra consola (copias.ejemplo.net)." });
   return out.sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
 }

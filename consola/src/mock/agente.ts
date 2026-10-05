@@ -19,6 +19,7 @@ import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } fro
 import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
+import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Claves del almacén que algún equipo dueño ya añadió a su repositorio (clave_almacen). */
@@ -827,7 +828,7 @@ function abrirSesion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     : plana.tipo === "elegir_carpetas"
       ? ["carpetas", "sugerencias", "crear_carpeta"]
       : plana.tipo === "explorar"
-        ? ["versiones", "listar", "buscar", ...(versionAlMenos(e.version_agente, VERSION_DETALLE) ? OPS_DETALLE : [])]
+        ? ["versiones", "listar", "buscar", ...(versionAlMenos(e.version_agente, VERSION_DETALLE) ? OPS_DETALLE : []), ...(versionAlMenos(e.version_agente, VERSION_BUSCAR) ? [OP_BUSCAR] : [])]
         : [];
   enviarDesdeEquipo(s, { i: 0, op: "lista", tipo: plana.tipo, ...(ops ? { ops } : {}) });
 }
@@ -908,6 +909,12 @@ export async function mensajeDeConsola(s: SesionMock, cifrado: string) {
     case "cerrar":
       estado.sesionesInteractivas.delete(s.id);
       return;
+    case "buscar_todas": {
+      // «Buscar archivos» en todas las versiones (mock/buscar.ts): solo en `explorar` y si el agente lo anuncia.
+      const eq = estado.equipos.find((x) => x.id === s.equipo);
+      if (s.tipo !== "explorar" || !eq || !versionAlMenos(eq.version_agente, VERSION_BUSCAR)) return enviar(s, { op: m.op, error: `Operación no disponible en esta sesión: «${m.op}».` });
+      return enviar(s, { op: m.op, ...(await buscarTodas(m, s, () => enviarDesdeEquipo(s, { op: "trabajando", sobre: re }))) });
+    }
     case "diferencias":
     case "ocupa":
     case "historial_archivo": {
@@ -940,7 +947,7 @@ function versiones(repo: string, equipo?: string) {
   return out;
 }
 
-type Entrada = { nombre: string; tipo: "dir" | "archivo"; bytes?: number; modificado?: string; sistema?: boolean };
+type Entrada = { nombre: string; tipo: "dir" | "archivo"; bytes?: number; modificado?: string; sistema?: boolean; repositorio?: boolean };
 
 /** Un árbol de mentira, igual para todas las versiones (basta para la interfaz). */
 function arbol(ruta: string, version: boolean): Entrada[] {
@@ -963,7 +970,23 @@ function arbol(ruta: string, version: boolean): Entrada[] {
       { nombre: "Downloads", tipo: "dir" },
       { nombre: "AppData", tipo: "dir", sistema: true },
     ];
-  if (r === "D:") return [{ nombre: "Escaneos", tipo: "dir" }, { nombre: "Contratos", tipo: "dir" }];
+  if (r === "D:") return [{ nombre: "Escaneos", tipo: "dir" }, { nombre: "Contratos", tipo: "dir" }, ...(version ? [] : [{ nombre: "Copias", tipo: "dir" as const }])];
+  // Repositorios de restic (p. ej. de la app de escritorio): el agente los marca al listar (`repositorio`).
+  if (!version && r === "D:\\Copias")
+    return [
+      { nombre: "Contabilidad", tipo: "dir", repositorio: true },
+      { nombre: "Nomina", tipo: "dir", repositorio: true },
+      { nombre: "Viejas", tipo: "dir" },
+    ];
+  if (!version && /^D:\\Copias\\(Contabilidad|Nomina)$/i.test(r))
+    return [
+      { nombre: "data", tipo: "dir" },
+      { nombre: "index", tipo: "dir" },
+      { nombre: "keys", tipo: "dir" },
+      { nombre: "locks", tipo: "dir" },
+      { nombre: "snapshots", tipo: "dir" },
+      { nombre: "config", tipo: "archivo", bytes: 155, modificado: fecha(400) },
+    ];
   return [
     { nombre: "Clientes 2026", tipo: "dir" },
     { nombre: "Facturas", tipo: "dir" },

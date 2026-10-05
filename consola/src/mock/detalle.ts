@@ -13,7 +13,7 @@ export const OPS_DETALLE = ["diferencias", "ocupa", "historial_archivo"];
 const PAGINA = 400;
 
 /** Generador pseudoaleatorio con semilla (mulberry32 sobre un hash del texto). */
-function azar(semilla: string) {
+export function azar(semilla: string) {
   let h = 2166136261;
   for (let i = 0; i < semilla.length; i++) h = Math.imul(h ^ semilla.charCodeAt(i), 16777619);
   let a = h >>> 0;
@@ -50,14 +50,14 @@ const NOMBRES: Record<string, string[]> = {
 const TAM_BASE: Record<string, number> = { pdf: 240_000, xlsx: 90_000, docx: 60_000, txt: 3_000, jpg: 1_800_000, png: 900_000, DAT: 48_000_000, IDX: 6_000_000, bak: 1_400_000_000 };
 
 /** Todos los archivos «del equipo» con un tamaño base. */
-const ARCHIVOS = CARPETAS.flatMap((c) => (NOMBRES[c.split("/").pop()!] ?? []).map((n) => `${c}/${n}`));
-function tamano(ruta: string, semilla: string) {
+export const ARCHIVOS = CARPETAS.flatMap((c) => (NOMBRES[c.split("/").pop()!] ?? []).map((n) => `${c}/${n}`));
+export function tamano(ruta: string, semilla: string) {
   const ext = ruta.split(".").pop() ?? "";
   const r = azar(`${ruta}|${semilla}`);
   return Math.round((TAM_BASE[ext] ?? 50_000) * (0.4 + r() * 1.2));
 }
 
-interface VersionMock {
+export interface VersionMock {
   id: string;
   hora: string;
   copia: string | null;
@@ -65,7 +65,7 @@ interface VersionMock {
   cambiados: number;
 }
 
-function versionesDe(equipo: string, repo: string | null): VersionMock[] {
+export function versionesDe(equipo: string, repo: string | null): VersionMock[] {
   const inf = estado.equipos.find((x) => x.id === equipo)?.informes[0]?.datos.repos?.find((x: T.RepoInforme) => x.id === repo);
   return (inf?.versiones ?? []).map((v: T.VersionInforme) => ({ id: v.id, hora: v.hora, copia: v.copia, nuevos: v.archivos_nuevos ?? 0, cambiados: v.archivos_cambiados ?? 0 }));
 }
@@ -176,20 +176,42 @@ export async function operarDetalle(
     if (!ruta.startsWith("/") || ruta.endsWith("/") || ruta.split("/").slice(1).some((p) => !p || p === "." || p === "..")) return { error: "Ruta no válida dentro de la versión." };
     trabajando();
     await new Promise((r) => setTimeout(r, 500));
-    const r = azar(ruta);
-    const nace = Math.floor(r() * Math.max(1, versiones.length - 2));
-    let bytes = tamano(ruta, "inicio");
-    let modificado = new Date(Date.parse(versiones.at(-1)?.hora ?? new Date().toISOString()) - 86_400_000).toISOString();
-    const out = [];
-    // De la más antigua a la más reciente: a veces cambia.
-    for (const v of [...versiones].reverse().slice(nace)) {
-      if (r() < 0.25) {
-        bytes = Math.round(bytes * (0.95 + r() * 0.2));
-        modificado = new Date(Date.parse(v.hora) - 3600_000).toISOString();
-      }
-      out.push({ version: v.id, cuando: v.hora, bytes, modificado });
-    }
-    return { ruta, versiones: out.reverse() };
+    return { ruta, versiones: historialDe(ruta, versiones) };
   }
   return null;
+}
+
+/**
+ * Las versiones en las que está un archivo (la más reciente primero): nace en
+ * una versión al azar (por su ruta) y a veces cambia. Lo usan también
+ * `buscar_todas` (mock/buscar.ts), así que cuadran.
+ */
+export function historialDe(ruta: string, versiones: VersionMock[]): { version: string; cuando: string; bytes: number; modificado: string }[] {
+  const h = historialCompleto(ruta, versiones);
+  // Los borrados ya no están en las últimas versiones.
+  return BORRADOS.includes(ruta) ? h.slice(Math.min(h.length - 1, 3 + (ruta.length % 5))) : h;
+}
+
+/** Archivos que se borraron: están en las versiones antiguas y ya no en las últimas (para «Buscar archivos»). */
+export const BORRADOS = [
+  "/C/Users/recepcion/Desktop/Copia de Pendientes.docx",
+  "/C/Users/recepcion/Documents/Facturas 2026/Septiembre/FV-10099 anulada.pdf",
+  "/C/Users/recepcion/Documents/Clientes/Contratos/Contrato soporte 2025.pdf",
+];
+
+function historialCompleto(ruta: string, versiones: VersionMock[]): { version: string; cuando: string; bytes: number; modificado: string }[] {
+  const r = azar(ruta);
+  const nace = Math.floor(r() * Math.max(1, versiones.length - 2));
+  let bytes = tamano(ruta, "inicio");
+  let modificado = new Date(Date.parse(versiones.at(-1)?.hora ?? new Date().toISOString()) - 86_400_000).toISOString();
+  const out = [];
+  // De la más antigua a la más reciente: a veces cambia.
+  for (const v of [...versiones].reverse().slice(nace)) {
+    if (r() < 0.25) {
+      bytes = Math.round(bytes * (0.95 + r() * 0.2));
+      modificado = new Date(Date.parse(v.hora) - 3600_000).toISOString();
+    }
+    out.push({ version: v.id, cuando: v.hora, bytes, modificado });
+  }
+  return out.reverse();
 }

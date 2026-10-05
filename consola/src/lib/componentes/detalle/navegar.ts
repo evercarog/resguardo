@@ -41,5 +41,7 @@ export function abrirVersion(id: string, filtro?: "nuevos" | "cambiados" | "borr
 export const abrirVuelta = (hora: string) => ir({ vista: "vuelta", vuelta: hora, version: null, con: null, filtro: "todos" });
 export const abrirEspacio = () => ir({ vista: "espacio", version: null, con: null, vuelta: null, filtro: "todos" });
 export const abrirEstado = () => ir({ vista: "estado", version: null, con: null, vuelta: null, filtro: "todos" });
-/** Filtrar las listas a un día (o a todos, con `null`). */
-export const elegirDia = (dia: string | null) => ir({ dia });
+/** Filtrar las listas a un día (o a todos, con `null`); quita el intervalo. */
+export const elegirDia = (dia: string | null) => ir({ dia, desde: null, hasta: null });
+/** Filtrar «Historial y versiones» a un intervalo de días (`?desde=&hasta=`), o quitarlo con `null`. */
+export const elegirFechas = (f: { desde: string; hasta: string } | null) => ir({ dia: null, desde: f?.desde ?? null, hasta: f?.hasta ?? null });

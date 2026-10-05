@@ -261,10 +261,11 @@
   .m-dias .desliza {
     padding-bottom: 4px;
   }
+  /* En vertical, siempre 3 (el alto no cambia con el periodo); en horizontal, `--hueco`. */
   .dentro {
     display: flex;
     flex-direction: column;
-    gap: var(--hueco);
+    gap: 3px;
     min-width: max-content;
   }
   .m-horas .dentro {
@@ -274,12 +275,12 @@
   .cf {
     display: grid;
     grid-template-columns: var(--etq-ancho) repeat(var(--n), var(--col));
-    gap: var(--hueco);
+    column-gap: var(--hueco);
   }
   .rejilla {
     display: flex;
     flex-direction: column;
-    gap: var(--hueco);
+    gap: 3px;
   }
   .rejilla:focus-within .c:focus-visible,
   .cab:focus-visible {

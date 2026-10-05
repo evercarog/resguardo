@@ -10,7 +10,7 @@
   //    recuperación y viajan sellados solo para B.
   // Después se restaura en B desde ese repositorio, como cualquier otro.
   import { onDestroy } from "svelte";
-  import { ArrowRight, KeyRound, LoaderCircle, MonitorSmartphone, TriangleAlert } from "@lucide/svelte";
+  import { ArrowRight, FolderOpen, KeyRound, LoaderCircle, MonitorSmartphone, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { borrar } from "$lib/cripto/bytes";
@@ -20,6 +20,7 @@
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import CampoClave from "./CampoClave.svelte";
+  import ElegirCarpetas from "./ElegirCarpetas.svelte";
 
   let {
     cliente,
@@ -46,6 +47,8 @@
   let kitSecreto = $state("");
   let kitCa = $state("");
   let kitRepo = $state("");
+  /** «Explorar…» de la carpeta del kit, en el equipo donde se restaura. */
+  let explorar = $state(false);
 
   let ocupado = $state(false);
   let pasoTxt = $state("");
@@ -218,7 +221,15 @@
         </div>
         <div class="field">
           <label class="field-label" for="k-donde">{kitTipo === "rest" ? "Dirección (https://servidor:puerto/…)" : kitTipo === "local" ? "Carpeta" : kitTipo === "sftp" ? "Servidor y ruta" : "Bucket"}</label>
-          <input id="k-donde" class="input mono" bind:value={kitDonde} spellcheck="false" />
+          {#if kitTipo === "local"}
+            <div class="con-boton">
+              <input id="k-donde" class="input mono" bind:value={kitDonde} spellcheck="false" />
+              <button type="button" class="btn" disabled={!destino} onclick={() => (explorar = true)}><FolderOpen size={15} />Explorar…</button>
+            </div>
+            <span class="field-hint">{destino ? `La carpeta en ${destino.nombre}, el equipo donde se restaura.` : "Elige antes el equipo donde restaurar: la carpeta se busca en él."}</span>
+          {:else}
+            <input id="k-donde" class="input mono" bind:value={kitDonde} spellcheck="false" />
+          {/if}
         </div>
         {#if kitTipo !== "local"}
           <div class="dos">
@@ -273,6 +284,23 @@
     </form>
   {/if}
 </Modal>
+
+{#if explorar && destino}
+  <ElegirCarpetas
+    {cliente}
+    equipo={destino}
+    claveAdmin={claveAdmin || undefined}
+    unica
+    buscarRepos
+    titulo="La carpeta del kit en {destino.nombre}"
+    iniciales={kitDonde.trim() ? [kitDonde.trim()] : []}
+    onclose={() => (explorar = false)}
+    alElegir={(rutas) => {
+      if (rutas[0]) kitDonde = rutas[0];
+      explorar = false;
+    }}
+  />
+{/if}
 
 <style>
   .segmented {

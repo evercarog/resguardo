@@ -209,6 +209,24 @@ export function fraseRepo(r: RepositorioResumen, inf: RepoInforme | null, copias
 
 export const ratioTexto = (x: number | null | undefined) => (x ? `${numero(Math.round(x * 10) / 10)}×` : "—");
 
+/**
+ * La línea de «En disco» junto a «Protegido» (que es la última versión): lo
+ * que ocupan todas las versiones juntas. Si el informe trae todas con su
+ * tamaño, cuánto sumarían por separado y cuántas veces menos ocupan (con lo
+ * mismo que se ve: sumadas contra lo que hay en disco); si no, solo cuántas
+ * son. Nunca la compresión sola de restic, que no se compara con la última.
+ */
+export function lineaEnDisco(total: number, versiones: { total_bytes?: number | null }[], enDisco: number | null | undefined, recortado = false): string {
+  const todas = `${total === 1 ? "la versión" : `las ${numero(total)} versiones`}`;
+  const completas = !recortado && total > 1 && versiones.length === total && versiones.every((v) => v.total_bytes != null);
+  if (completas && enDisco) {
+    const suma = versiones.reduce((n, v) => n + (v.total_bytes ?? 0), 0);
+    const r = suma / enDisco;
+    if (r >= 1.1) return `${todas} sumarían ${bytes(suma)}; ocupan ${ratioTexto(r)} menos`;
+  }
+  return total === 1 ? "la única versión, comprimida y sin duplicados" : `${todas} juntas, comprimidas y sin duplicados`;
+}
+
 /** Los cuadros de una sola copia (sus versiones y sus vueltas). */
 export function diasCopia(inf: RepoInforme | null, copia: string, cuantos = 14, ahora = Date.now()): Dia[] {
   if (!inf) return [];

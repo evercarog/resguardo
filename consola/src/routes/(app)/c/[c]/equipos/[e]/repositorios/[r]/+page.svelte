@@ -24,7 +24,7 @@
     nVersiones,
     proteccion,
     pruebaRestauracion,
-    ratioTexto,
+    lineaEnDisco,
     TEXTO_RESULTADO,
     TEXTO_TAREA,
     TONO_RESULTADO,
@@ -53,7 +53,7 @@
   import { reglaEfectiva } from "$lib/lineaTiempo";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
-  import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia, ir } from "$lib/componentes/detalle/navegar";
+  import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia, elegirFechas, ir } from "$lib/componentes/detalle/navegar";
   import { leerSeleccion } from "$lib/detalle";
   import "$lib/componentes/detalle/pulsable.css";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
@@ -233,12 +233,12 @@
       <button class="cifra pulsable-bloque" use:tip={"Ver de dónde sale el espacio"} onclick={abrirEspacio}>
         <span class="k">Protegido</span>
         <strong class="num">{bytes(bytesRepo(repo, inf) ?? inf?.espacio?.sin_comprimir)}</strong>
-        <span class="faint">lo que ocupan tus archivos</span>
+        <span class="faint">tus archivos en la última versión</span>
       </button>
       <button class="cifra pulsable-bloque" use:tip={"Ver de dónde sale el espacio"} onclick={abrirEspacio}>
         <span class="k">En disco</span>
         <strong class="num">{bytes(inf?.espacio?.en_disco_bytes)}</strong>
-        <span class="faint">{inf?.espacio?.ratio ? `${ratioTexto(inf.espacio.ratio)} menos: comprimido y sin duplicados` : "comprimido y sin duplicados"}</span>
+        <span class="faint">{lineaEnDisco(nVersiones(repo, inf), versiones, inf?.espacio?.en_disco_bytes, !!inf?.recortado)}</span>
       </button>
       <div class="cifra">
         <span class="k">Duración media</span>
@@ -363,6 +363,8 @@
       elegida={sel.version}
       dia={sel.dia}
       alDia={elegirDia}
+      fechas={sel.desde && sel.hasta ? { desde: sel.desde, hasta: sel.hasta } : null}
+      alFechas={elegirFechas}
       hayMas={historia.hayMas}
       cargandoMas={historia.cargando}
       alCargarMas={historia.cargarMas}

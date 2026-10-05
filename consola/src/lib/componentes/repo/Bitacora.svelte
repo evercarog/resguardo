@@ -17,7 +17,7 @@
   import { dur } from "$ui/movimiento";
   import { bytes, plural } from "$lib/formato";
   import { NOMBRE_MOTIVO, nombreDia, type VersionLinea } from "$lib/lineaTiempo";
-  import type { NotaVersion, Suceso, TipoSuceso } from "$lib/historial";
+  import { esFallo, type NotaVersion, type Suceso, type TipoSuceso } from "$lib/historial";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import type { Periodo } from "$lib/retencion";
   import type { Tono } from "$lib/salud";
@@ -100,13 +100,15 @@
   function cuentaDia(filas: FilaBitacora[]): string {
     const vs = filas.filter((f) => f.k === "v") as { v: V }[];
     const ss = filas.filter((f) => f.k === "s") as { s: Suceso }[];
-    const mal = ss.filter((f) => f.s.tono === "bad").length;
+    const mal = ss.filter((f) => esFallo(f.s)).length;
+    const avisos = ss.filter((f) => f.s.clase === "aviso").length;
     const quitan = vs.filter((f) => quita(f.v.id)).length;
-    const otros = ss.length - mal;
+    const otros = ss.length - mal - avisos;
     return [
       vs.length ? plural(vs.length, "versión", "versiones") : null,
       mal ? (mal === 1 ? "1 fallo" : `${mal} fallos`) : null,
-      otros && !vs.length && !mal ? plural(otros, "suceso", "sucesos") : null,
+      avisos ? plural(avisos, "aviso", "avisos") : null,
+      otros && !vs.length && !mal && !avisos ? plural(otros, "suceso", "sucesos") : null,
       quitan ? `la retención quitará ${quitan}` : null,
     ]
       .filter(Boolean)

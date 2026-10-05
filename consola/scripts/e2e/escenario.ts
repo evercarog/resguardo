@@ -39,6 +39,7 @@ import { publicaRespaldo, salRespaldo } from "../../src/lib/cripto/respaldo";
 import { almacenDe, nuevaClave, reglaParaOrden, seQuedan } from "../../src/lib/retencion";
 import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../src/lib/repo";
 import { proximaDe } from "../../src/lib/copia";
+import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import type { Cliente, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
 import { OyenteVivo } from "./vivo";
@@ -410,6 +411,60 @@ async function principal() {
       return r && nVersiones(r, inf) === despues.length && JSON.stringify(ids) === JSON.stringify(cortas) ? r : null;
     }, { plazo: 45_000, cada: 1000 });
     log(`B cuenta ${despues.length} versiones ${((Date.now() - trasAlmacen) / 1000).toFixed(1)} s después del resultado del almacén`);
+
+    // -----------------------------------------------------------------------
+    paso("5a. «Buscar archivos» en todas las versiones (buscar_todas), por la sesión cifrada");
+    {
+      const sb = new SesionE2E(consola, c);
+      await sb.abrir(eqB.id, "explorar", { repo: repoId }, secretosRepo);
+      comprobar(sb.ops?.includes("buscar_todas"), "El agente anuncia «buscar_todas» en lista.ops", sb.ops);
+      // Todas las páginas de una búsqueda, unidas como en la consola.
+      const buscarTodo = async (args: Record<string, unknown>) => {
+        const paginas: PaginaBusqueda[] = [];
+        let indice: number | null = 0;
+        while (indice != null) {
+          const p = (await sb.pedir("buscar_todas", { ...args, indice })) as PaginaBusqueda;
+          paginas.push(p);
+          indice = typeof p.siguiente === "number" && p.siguiente > indice ? p.siguiente : null;
+        }
+        return unirBusqueda(repoId, paginas);
+      };
+      // «notas.md» cambió en cada versión del paso 5: está en todas las que quedan, con tamaños distintos.
+      const r = await buscarTodo({ texto: "NOTAS" });
+      const notas = r.archivos.find((a) => a.ruta === `${rutaRestic(datosB)}/notas.md`);
+      comprobar(notas, "Encuentra notas.md (sin distinguir mayúsculas)", r.archivos.map((a) => a.ruta));
+      igual(r.versionesBuscadas, despues.length, "Busca en todas las versiones del repositorio");
+      igual(notas!.versiones.map((v) => v.version).sort(), cortas, "notas.md está en todas las versiones que quedan");
+      comprobar(notas!.versiones.every((v, i, xs) => i === 0 || Date.parse(xs[i - 1].cuando) >= Date.parse(v.cuando)), "Sus versiones, la más reciente primero", notas!.versiones);
+      comprobar(notas!.cambios >= 1 && notas!.ultimoCambio, "Sabe cuándo cambió por última vez", notas);
+      comprobar(!r.recortado && r.motivo === null, "Sin recortes", r);
+      const hist = (await sb.pedir("historial_archivo", { ruta: notas!.ruta })).versiones as { version: string; bytes: number }[];
+      igual(notas!.versiones.map((v) => [v.version, v.bytes]), hist.map((v) => [v.version, v.bytes]), "Cuadra con «historial_archivo»");
+      comprobar(!r.archivos.some((a) => a.nombre === "Facturas" || a.ruta.includes("/cache/")), "Solo archivos (ni carpetas ni lo excluido)", r.archivos.map((a) => a.ruta));
+      // La factura, dentro de una carpeta: por una parte del nombre y con un rango de fechas.
+      const ordenadas = [...despues].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+      const desde = ordenadas[1].time;
+      const hasta = ordenadas[ordenadas.length - 2].time;
+      const enRango = ordenadas.filter((s) => Date.parse(s.time) >= Date.parse(desde) && Date.parse(s.time) <= Date.parse(hasta));
+      comprobar(ordenadas.length >= 3, "Hay versiones para acotar por fechas", ordenadas.length);
+      const rf = await buscarTodo({ texto: "factura-0", desde, hasta });
+      // (También la restaurada en el paso 4, en «Facturas/Restaurado …», que entró en las copias del paso 5.)
+      const factura = rf.archivos.find((a) => a.ruta === `${rutaRestic(path.join(datosB, "Facturas"))}/factura-001.txt`);
+      comprobar(factura && rf.archivos.every((a) => a.nombre === "factura-001.txt"), "Encuentra la factura por una parte del nombre", rf.archivos.map((a) => a.ruta));
+      igual(rf.versionesBuscadas, enRango.length, "Con fechas, solo las versiones de esas fechas");
+      igual(factura!.versiones.length, enRango.length, "La factura, en todas las de esas fechas");
+      // Caracteres de los patrones: ni rompen restic ni encuentran de más.
+      const rc = await buscarTodo({ texto: "otas[1]*" });
+      igual(rc.archivos.length, 0, "«[», «]» y «*» se buscan como texto (nada se llama así)");
+      const rmax = await buscarTodo({ texto: "notas", max: 1 });
+      igual([rmax.coincidencias, rmax.recortado, rmax.motivo], [1, true, "limite"], "Con «max», recorta y dice por qué");
+      const mal = await sb.pedir("buscar_todas", { texto: "x" }, true);
+      comprobar(/de 2 a 100/.test(mal.error ?? ""), "Valida el texto", mal);
+      const malFecha = await sb.pedir("buscar_todas", { texto: "notas", desde: "ayer" }, true);
+      comprobar(/Fecha no válida/.test(malFecha.error ?? ""), "Valida las fechas", malFecha);
+      await sb.cerrar();
+      log(`Buscar archivos: notas.md en ${notas!.versiones.length} versiones (${notas!.cambios} cambios); la factura en ${factura!.versiones.length} de ${enRango.length} en el rango`);
+    }
 
     // -----------------------------------------------------------------------
     paso("5b. Consola en vivo: la copia programada se ve empezar y sus cifras llegan sin recargar (canal en vivo)");
