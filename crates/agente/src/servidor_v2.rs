@@ -1568,11 +1568,11 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                     return Err("El servidor dejó de responder.".into());
                 }
             }
-            Err(e) => return Err(format!("Canal cerrado: {e}")),
+            Err(e) => return Err(canal_cerrado(&e)),
         }
         // Progreso de lo que está en marcha (v1.25): cada 5 s mientras dura y uno vacío al terminar.
         if let Some(tareas) = progreso.toca(crate::progreso_v2::CADA_CANAL, std::time::Instant::now(), || crate::progreso_v2::tareas(Some(&v))) {
-            ws.send(Message::Text(json!({ "t": "progreso", "tareas": tareas }).to_string().into())).map_err(|e| format!("Canal cerrado: {e}"))?;
+            ws.send(Message::Text(json!({ "t": "progreso", "tareas": tareas }).to_string().into())).map_err(|e| canal_cerrado(&e))?;
         }
         // Cada 5 min o en cuanto termine (o empiece) una copia, con 15 s entre uno y otro como
         // poco; v1.30: el de cuando termina una copia, sin esperar a esos 15 s (una copia corta
@@ -1611,6 +1611,25 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     }
 }
 
+/// Por qué se cerró el canal, en palabras (en el registro del equipo). Lo normal es que el
+/// servidor se reinicie o se corte la red: el texto de rustls («peer closed connection
+/// without sending TLS close_notify: https://docs.rs/…») no le dice nada a nadie.
+fn canal_cerrado(e: &tungstenite::Error) -> String {
+    use std::io::ErrorKind as K;
+    let corte = match e {
+        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => true,
+        tungstenite::Error::Io(io) => {
+            matches!(io.kind(), K::UnexpectedEof | K::ConnectionReset | K::ConnectionAborted | K::BrokenPipe) || io.to_string().contains("close_notify")
+        }
+        _ => false,
+    };
+    if corte {
+        "El servidor cerró la conexión (se reinició, se actualizó o se cortó la red).".into()
+    } else {
+        format!("Canal cerrado: {e}")
+    }
+}
+
 /// El hilo del servicio: WebSocket mientras se pueda; si no, sondeo (cada
 /// 60 s, o cada 2 s si el servidor pide atención) y reintento del canal cada 5 min.
 /// Para no repetir en el registro el mismo error una y otra vez: se anota si
@@ -1636,23 +1655,37 @@ impl AvisoRepetido {
 }
 
 /// Sin canal, el equipo consulta cada minuto y vuelve a probar el canal a los 5 min.
-/// Pero si en ese rato una consulta falló (servidor apagado, reiniciándose o sin red)
-/// y la siguiente funciona, el servidor ha vuelto: se reabre el canal enseguida. Antes,
-/// tras una caída de más de 15 s la consola veía el equipo «sin conexión» hasta 5 min
-/// (prueba de resistencia, docs/estabilidad.md). Solo tras un fallo: si el servidor
+/// Pero si el servidor estuvo caído o sin red (falló una consulta, o el propio canal se
+/// cortó por la red) y ahora contesta, ha vuelto: se reabre el canal en la consulta
+/// siguiente, sin esperar a los 5 min. Antes, tras una caída de más de 15 s (o si el
+/// reintento coincidía con el final del corte) la consola veía el equipo «sin conexión»
+/// hasta 5 min (prueba de resistencia, docs/estabilidad.md). Nunca en la primera
+/// consulta (como mucho un intento por minuto) ni sin un fallo de red: si el servidor
 /// contesta pero el canal no abre (un proxy sin WebSocket), sigue cada 5 min.
-#[derive(Default)]
 struct VueltaDelServidor {
     fallo: bool,
+    consultas: u32,
 }
 
 impl VueltaDelServidor {
+    /// `canal_por_la_red`: el canal se cortó o no abrió por la red (no porque el servidor lo rechazara).
+    fn nueva(canal_por_la_red: bool) -> Self {
+        Self { fallo: canal_por_la_red, consultas: 0 }
+    }
+
     fn reabrir_ya(&mut self, consulta_ok: bool) -> bool {
+        self.consultas += 1;
         if !consulta_ok {
             self.fallo = true;
         }
-        consulta_ok && self.fallo
+        consulta_ok && self.fallo && self.consultas > 1
     }
+}
+
+/// ¿El canal se cortó (o no abrió) por la red o porque el servidor no estaba? (No: lo
+/// rechazó el servidor o algo en medio, como un proxy sin WebSocket.)
+fn fallo_de_red(e: &str) -> bool {
+    e.starts_with(ERROR_SIN_RESPUESTA) || e.contains("IO error") || e.contains("dejó de responder") || e.starts_with("El servidor cerró la conexión")
 }
 
 /// Dónde deja Resguardo Server, en su misma máquina, los datos para vincular
@@ -1809,6 +1842,7 @@ fn hilo_enlace(id: &str) {
         }
         // Un canal que estuvo abierto y se cortó (p. ej. el servidor se actualizó) se reintenta enseguida.
         let estuvo_abierto = inicio.elapsed() >= Duration::from_secs(30);
+        let por_la_red = resultado.as_ref().err().is_some_and(|e| fallo_de_red(e));
         match resultado {
             // Con el servidor apagado, el mismo error cada 5 minutos llenaría el registro: una vez por hora basta.
             Err(e) if aviso.toca(&e, std::time::Instant::now()) => {
@@ -1822,7 +1856,7 @@ fn hilo_enlace(id: &str) {
         let fin = std::time::Instant::now() + Duration::from_secs(if estuvo_abierto { 15 } else { 300 });
         let _ = enviar_informe(id);
         let mut progreso = crate::progreso_v2::Emisor::default();
-        let mut vuelta = VueltaDelServidor::default();
+        let mut vuelta = VueltaDelServidor::nueva(por_la_red);
         while std::time::Instant::now() < fin && crate::consolas_v2::vista(id).is_some() {
             let ronda = ronda_enlace(id);
             // El servidor estuvo caído (o sin red) y ya contesta: el canal, ya (no a los 5 min).
@@ -1884,16 +1918,33 @@ mod tests {
     }
 
     #[test]
+    fn canal_cerrado_en_palabras() {
+        let io = |k, m: &str| tungstenite::Error::Io(std::io::Error::new(k, m));
+        let corte = "El servidor cerró la conexión (se reinició, se actualizó o se cortó la red).";
+        assert_eq!(canal_cerrado(&io(std::io::ErrorKind::UnexpectedEof, "peer closed connection without sending TLS close_notify: https://docs.rs/x")), corte);
+        assert_eq!(canal_cerrado(&io(std::io::ErrorKind::ConnectionReset, "reset")), corte);
+        assert_eq!(canal_cerrado(&tungstenite::Error::ConnectionClosed), corte);
+        assert!(canal_cerrado(&io(std::io::ErrorKind::Other, "otra cosa")).starts_with("Canal cerrado: "));
+    }
+
+    #[test]
     fn el_canal_vuelve_en_cuanto_vuelve_el_servidor() {
         // Servidor caído: la consulta falla; cuando vuelve a contestar, el canal enseguida.
-        let mut v = VueltaDelServidor::default();
+        let mut v = VueltaDelServidor::nueva(false);
         assert!(!v.reabrir_ya(false));
         assert!(!v.reabrir_ya(false));
         assert!(v.reabrir_ya(true));
+        // El canal se cortó por la red y el servidor ya contesta: en la consulta siguiente, no en la primera.
+        let mut v = VueltaDelServidor::nueva(true);
+        assert!(!v.reabrir_ya(true));
+        assert!(v.reabrir_ya(true));
         // Contesta pero el canal no abre (proxy sin WebSocket): nada de reabrir en bucle.
-        let mut v = VueltaDelServidor::default();
+        let mut v = VueltaDelServidor::nueva(false);
         assert!(!v.reabrir_ya(true));
         assert!(!v.reabrir_ya(true));
+        assert!(fallo_de_red("No se pudo abrir el canal: IO error: unexpected end of file"));
+        assert!(fallo_de_red(&format!("{ERROR_SIN_RESPUESTA} (os error 10061)")));
+        assert!(!fallo_de_red("No se pudo abrir el canal: HTTP error: 400 Bad Request"));
     }
 
     #[test]
