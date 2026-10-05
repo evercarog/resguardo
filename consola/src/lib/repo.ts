@@ -60,9 +60,16 @@ export interface Proteccion {
 
 export const TONO_COMPROBACION: Record<EstadoComprobacion, Tono> = { ok: "ok", aviso: "warn", fallo: "bad", desconocido: "neutral" };
 
-export function proteccion(inf: RepoInforme | null | undefined): Proteccion | null {
-  const p = inf?.proteccion;
-  if (!p?.items?.length) return null;
+/**
+ * La salud de la protección que manda el agente. `extra` (v1.41): una
+ * comprobación de la consola que el agente no hace (p. ej. «Fuera de este
+ * equipo», de lib/dondeGuarda.ts): se suma si el agente no manda ya una con
+ * ese id.
+ */
+export function proteccion(inf: RepoInforme | null | undefined, extra?: ComprobacionProteccion | null): Proteccion | null {
+  const p0 = inf?.proteccion;
+  if (!p0?.items?.length) return null;
+  const p = extra && !p0.items.some((i) => i.id === extra.id) ? { puntuacion: p0.puntuacion + (extra.estado === "ok" ? 1 : 0), total: p0.total + 1, items: [...p0.items, extra] } : p0;
   const pendientes = p.items.filter((i) => i.estado !== "ok").length;
   return {
     puntuacion: p.puntuacion,
@@ -178,7 +185,7 @@ export const TEXTO_RESULTADO: Record<EjecucionInforme["resultado"], string> = { 
  * Una frase que lo resume todo, como en la app de escritorio: cuánto guarda,
  * cuándo fue la última y cómo está la protección.
  */
-export function fraseRepo(r: RepositorioResumen, inf: RepoInforme | null, copias: CopiaResumen[], ahora = Date.now()): string {
+export function fraseRepo(r: RepositorioResumen, inf: RepoInforme | null, copias: CopiaResumen[], ahora = Date.now(), extra?: ComprobacionProteccion | null): string {
   const n = nVersiones(r, inf);
   const suyas = copias.filter((k) => k.repo === r.id);
   if (!n) {
@@ -195,7 +202,7 @@ export function fraseRepo(r: RepositorioResumen, inf: RepoInforme | null, copias
   if (ult) partes.push(`la última, ${relativo(ult, ahora)}`);
   const ej = ultimaEjecucion(inf);
   if (ej?.resultado === "fallo") partes.push(`pero la última copia falló${ej.mensaje_corto ? ` (${ej.mensaje_corto.replace(/\.$/, "")})` : ""}`);
-  const p = proteccion(inf);
+  const p = proteccion(inf, extra);
   const fin = p ? (p.pendientes ? `Protección ${p.puntuacion} de ${p.total}: ${p.pendientes === 1 ? "falta una cosa" : `faltan ${p.pendientes} cosas`}.` : "Protegido por todos los frentes.") : "";
   return `${partes.join("; ")}.${fin ? ` ${fin}` : ""}`;
 }

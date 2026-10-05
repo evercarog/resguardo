@@ -88,6 +88,11 @@
   import Modal from "$ui/componentes/Modal.svelte";
   import { comprobarLlaves, fijadaEl, type EstadoLlaves } from "$lib/fijadas";
   import { ErrorEtiqueta, kcfgComprobada } from "$lib/ordenar";
+  // v1.41: dónde se guarda cada copia y repositorio, el aviso «copias en el mismo equipo» y «Mover a otro sitio…».
+  import { comprobacionLugar, lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
+  import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
+  import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
   import { borrar } from "$lib/cripto/bytes";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
@@ -206,7 +211,6 @@
   });
   const nombreConsola = (x: { nombre: string; url: string }) => (x.nombre && x.nombre !== hostDe(x.url) ? `${x.nombre} (${hostDe(x.url)})` : hostDe(x.url));
   const Icono = $derived(equipo?.rol === "almacenamiento" ? Server : /portatil|laptop/i.test(equipo?.nombre ?? "") ? Laptop : /linux|debian|ubuntu/i.test(equipo?.so ?? "") ? HardDrive : Monitor);
-  const nombreDestino = (d: string) => destinos.find((x) => x.id === d)?.nombre ?? d;
   // Órdenes en camino de este equipo, en la sección donde se verá su resultado.
   const pendCopias = $derived(pendientesDe("copias", id));
   const pendRepos = $derived(pendientesDe("repositorios", id));
@@ -248,6 +252,15 @@
     if (guardarPedido || page.url.searchParams.get("guardar") !== "1" || !equipo || equipo.resumen?.guarda_copias?.activo || !puede.administrar(rol)) return;
     guardarPedido = true;
     abrirGuardar();
+  });
+  // v1.41: desde el aviso «copias en el mismo equipo» (?externa=<repo>): «Copia externa» de ese repositorio, una vez.
+  let externaPedida = false;
+  $effect(() => {
+    const r = page.url.searchParams.get("externa");
+    const repo = r ? equipo?.resumen?.repositorios?.find((x) => x.id === r) : undefined;
+    if (externaPedida || !repo || !puede.ordenar(rol)) return;
+    externaPedida = true;
+    untrack(() => abrirExterna(repo));
   });
 
   // --- Espejo del Servidor de copias (v1.9) ------------------------------
@@ -391,6 +404,8 @@
             },
           ]),
       ...(conCopias ? [{ texto: r.externa ? "Cambiar la copia externa" : "Copia externa…", onclick: () => abrirExterna(r) }] : []),
+      // v1.41: con todo su historial, a otro destino (p. ej. el almacén de otro equipo).
+      ...(!r.solo_lectura && puede.administrar(rol) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
     ];
     const peligro: AccionMenu[] = [
       // En un servidor de solo añadir, desde el equipo no se puede (403).
@@ -405,6 +420,9 @@
     ];
     return [proteccion, peligro];
   }
+
+  /** «Mover a otro sitio…» de un repositorio. */
+  let mover = $state<RepositorioResumen | null>(null);
 
   /** Elegir una carpeta del equipo (sesión elegir_carpetas) para un campo «donde». */
   let elegirCarpeta = $state<((ruta: string) => void) | null>(null);
@@ -725,10 +743,12 @@
               {@const vuelta = ultimaVuelta(k, equipo.ultimo_informe)}
               {@const est = estadoCopia(k, vuelta, pausado, reloj.ahora)}
               {@const prox = proximaDe(k, equipo.ultimo_informe, reloj.ahora)}
+              {@const rk = repos.find((r) => r.id === k.repo)}
               <div class="fila">
                 <span class="fila-texto">
                   <a class="fila-titulo enlace-copia" href="/c/{c}/equipos/{equipo.id}/copias/{encodeURIComponent(k.id)}" use:tip={`Ver el detalle de «${k.nombre}»`}>{k.nombre}<ContadorNotas tipo="copia" objeto={objetoDe(equipo.id, k.id)} /><ChevronRight size={14} /></a>
-                  <span class="fila-sub">{horarioEnFrase(k.horario)}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {repos.find((r) => r.id === k.repo)?.nombre ?? k.repo}</span>
+                  <span class="fila-sub">{horarioEnFrase(k.horario)}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {rk?.nombre ?? k.repo}</span>
+                  {#if rk}<span class="fila-sub"><SeGuardaEn pequeno lugar={lugarRepo(rk, equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(rk, equipo, actual.equipos)} /></span>{/if}
                   {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo">{vuelta.mensaje}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
                   {#each equipo.ultimo_informe?.datos.copias?.find((x) => x.id === k.id)?.ganchos ?? [] as g, gi (gi)}
@@ -774,14 +794,15 @@
           <div class="rejilla repos">
             {#each repos as r (r.id)}
               {@const inf = informeDe(equipo.ultimo_informe, r.id)}
-              {@const prot = proteccion(inf)}
+              {@const prot = proteccion(inf, comprobacionLugar(r, equipo, actual.equipos))}
               {@const ej = ultimaEjecucion(inf)}
+              {@const riesgo = riesgoMismoEquipo(r, equipo, actual.equipos)}
               <article class="card repo">
                 <a class="repo-cab enlace" href="/c/{c}/equipos/{equipo.id}/repositorios/{encodeURIComponent(r.id)}" use:tip={`Ver el detalle de «${r.nombre}»`}>
                   <span class="card-icon on"><Database size={18} /></span>
                   <div class="repo-nombre">
                     <h3>{r.nombre} <ContadorNotas tipo="repositorio" objeto={objetoDe(equipo.id, r.id)} />{#if r.solo_lectura} <span class="badge badge-sm tone-neutral" use:tip={"Importado de otro equipo: se puede explorar y restaurar, pero ninguna copia escribe en él."}>Solo lectura</span>{/if}</h3>
-                    <p class="faint">en {nombreDestino(r.destino)}</p>
+                    <p class="donde"><SeGuardaEn pequeno lugar={lugarRepo(r, equipo, actual.equipos)} riesgo={!!riesgo} /></p>
                   </div>
                   {#if ej}<Chip pequeno tono={TONO_RESULTADO[ej.resultado]} texto={ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado]} />{/if}
                   <ChevronRight size={16} />
@@ -807,6 +828,7 @@
                   <p class="sin-versiones"><Clock size={14} />{sinVersiones(r)}</p>
                 {/if}
                 <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion"]} />
+                {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
                 {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino}» cada día a las {r.externa.hora} <Ayuda id="copia-externa" /></p>{/if}
                 {#if puede.ordenar(rol)}
@@ -1153,6 +1175,9 @@
   <CopiarEnAlmacen cliente={actual.cliente} {equipo} almacen={copiarEn} onclose={() => ((copiarEn = null), void cargar())} />
 {/if}
 
+{#if mover && equipo && actual.cliente}
+  <MoverRepositorio cliente={actual.cliente} {equipo} repo={mover} equipos={actual.equipos} onclose={() => (mover = null)} />
+{/if}
 {#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 {#if comprobar && equipo}
@@ -1557,6 +1582,9 @@
   .repo-nombre {
     flex: 1;
     min-width: 0;
+  }
+  .repo-nombre .donde {
+    margin: 2px 0 0;
   }
   .prot {
     display: inline-flex;

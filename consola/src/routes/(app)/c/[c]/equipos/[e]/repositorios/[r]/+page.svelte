@@ -9,7 +9,7 @@
   import { page } from "$app/state";
   import { untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
-  import { Cloud, Database, HardDrive, History, Play, Server, ShieldCheck } from "@lucide/svelte";
+  import { ArrowRightLeft, Database, History, Play, ShieldCheck } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero, relativo } from "$lib/formato";
@@ -59,6 +59,11 @@
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
   import { objetoDe } from "$lib/notas.svelte";
+  // v1.41: dónde se guarda, el aviso «copias en el mismo equipo» y «Mover a otro sitio…».
+  import { comprobacionLugar, lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
+  import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
+  import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -95,14 +100,15 @@
   const suyas = $derived(copias.filter((k) => k.repo === rid));
   const destinos = $derived(equipo?.resumen?.destinos ?? []);
   const destino = $derived(destinoDe(destinos, repo));
-  const prot = $derived(proteccion(inf));
+  const lugar = $derived(equipo && repo ? lugarRepo(repo, equipo, actual.equipos) : null);
+  const riesgo = $derived(equipo && repo ? riesgoMismoEquipo(repo, equipo, actual.equipos) : null);
+  const prot = $derived(proteccion(inf, equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null));
   const ej = $derived(ultimaEjecucion(inf));
   const verif = $derived(repo ? verificacion(repo, inf) : null);
   const prueba = $derived(repo ? pruebaRestauracion(repo, inf) : null);
   const media = $derived(duracionMedia(inf));
   const versiones = $derived(versionesDe(inf));
   const rol = $derived(equipo?.modo === "trasladado" ? "lectura" : actual.cliente?.rol);
-  const Icono = $derived(destino?.tipo === "local" ? HardDrive : destino?.tipo === "rest" ? Server : Cloud);
   const estado = $derived(
     ej ? { tono: TONO_RESULTADO[ej.resultado], texto: ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado] } : repo && nVersiones(repo, inf) ? { tono: "ok" as const, texto: "Con versiones" } : { tono: "neutral" as const, texto: "Sin versiones todavía" },
   );
@@ -138,6 +144,8 @@
   }
   // «?traer=1»: al terminar «Copiar en …» para traer el historial de otro repositorio.
   let traer = $state(page.url.searchParams.get("traer") === "1");
+  // «?mover=1»: desde el aviso de Estado («Mover a un almacén…»).
+  let mover = $state(page.url.searchParams.get("mover") === "1");
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -162,7 +170,7 @@
           <button class="pulsable-bloque chip-pulsable" use:tip={"¿Por qué? Ver detalle"} onclick={abrirEstado}><Chip tono={estado.tono} texto={estado.texto} /></button>
           {#if repo.solo_lectura}<span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}
         </div>
-        <p class="sub"><Icono size={14} />{destino?.nombre ?? repo.destino} · {equipo.nombre}</p>
+        <p class="sub">{#if lugar}<SeGuardaEn {lugar} riesgo={!!riesgo} />{/if}<span class="faint">{" · copias de "}{equipo.nombre}</span></p>
       </div>
       {#if puede.ordenar(rol)}
         <div class="page-actions">
@@ -177,10 +185,14 @@
           {/if}
           {#if !repo.solo_lectura && puede.administrar(rol)}
             <button class="btn btn-ghost" use:tip={"Copiar aquí las versiones de otro repositorio, p. ej. el de la app de escritorio"} onclick={() => (traer = true)}><History size={16} />Traer historial</button>
+            <button class="btn btn-ghost" use:tip={"Llevar este repositorio, con todo su historial, a otro destino (p. ej. el almacén de otro equipo)"} onclick={() => (mover = true)}><ArrowRightLeft size={16} />Mover a otro sitio…</button>
           {/if}
         </div>
       {/if}
     </header>
+    {#if riesgo}
+      <AvisoMismoEquipo {riesgo} onmover={!repo.solo_lectura && puede.administrar(rol) ? () => (mover = true) : undefined} hrefExterna={puede.ordenar(rol) && suyas.length ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(rid)}` : undefined} />
+    {/if}
     <Observaciones tipo="repositorio" objeto={objetoDe(e, rid)} />
 
     <IndicePagina
@@ -193,7 +205,7 @@
       ]}
     />
 
-    <p class="frase" id="sec-resumen">{fraseRepo(repo, inf, copias, reloj.ahora)}</p>
+    <p class="frase" id="sec-resumen">{fraseRepo(repo, inf, copias, reloj.ahora, comprobacionLugar(repo, equipo, actual.equipos))}</p>
 
     <div class="cifras">
       <div class="cifra">
@@ -363,6 +375,10 @@
   <PanelDetalle cliente={actual.cliente} {equipo} {repo} {inf} {copias} historial={historia.entradas} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
 {/if}
 
+{#if mover && equipo && repo && actual.cliente}
+  <MoverRepositorio cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} onclose={() => (mover = false)} />
+{/if}
+
 {#if traer && equipo && repo && actual.cliente}
   <TraerHistorial cliente={actual.cliente} {equipo} {repo} onclose={() => (traer = false)} />
 {/if}
@@ -397,8 +413,9 @@
   }
   .sub {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 2px 6px;
     margin: 4px 0 0;
     font-size: var(--fs-sm);
     color: var(--text-2);

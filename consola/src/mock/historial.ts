@@ -30,6 +30,8 @@ export interface OpcionesHistorial {
   recortado?: boolean;
   /** El equipo dejó de informar hace estas horas (nada más reciente). */
   silencioHoras?: number;
+  /** v1.41: en una carpeta del propio equipo (esa unidad): «Fuera de este equipo» en aviso, como el agente. */
+  local?: { unidad: string | null };
 }
 
 /** El `RepoInforme` de un repositorio a partir de sus copias y su horario. */
@@ -111,6 +113,18 @@ export function informeRepo(r: T.RepositorioResumen, copias: T.CopiaResumen[], o
     { id: "restauracion", estado: "ok", etiqueta: "Prueba de restauración", detalle: "Correcta hace 9 días." },
     { id: "kit", estado: "ok", etiqueta: "Kit de recuperación", detalle: "Guardado al crear el repositorio." },
     { id: "retencion", estado: "ok", etiqueta: "Retención", detalle: "7 diarias, 4 semanales y 12 mensuales." },
+    ...(o.local
+      ? [
+          {
+            id: "lugar",
+            estado: o.externa ? ("ok" as const) : ("aviso" as const),
+            etiqueta: "Fuera de este equipo",
+            detalle: o.externa
+              ? `En este mismo equipo${o.local.unidad ? ` (${o.local.unidad})` : ""}, pero con copia externa.`
+              : `En este mismo equipo${o.local.unidad ? ` (${o.local.unidad})` : ""}: si se daña o lo cifra un ransomware, se pierden los archivos y las copias. Guárdalas en un almacén de otro equipo o añade una copia externa.`,
+          },
+        ]
+      : []),
   ];
   return {
     id: r.id,
