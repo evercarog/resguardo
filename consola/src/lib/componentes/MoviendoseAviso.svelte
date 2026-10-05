@@ -35,7 +35,8 @@
           Lo lleva otro navegador de esta consola.
         {/if}
       </p>
-      <ProgresoCopia {tarea} {equipo} grafica={false} />
+      <!-- La barra, con lo que hace en corto (el título ya dice que se mueve y desde dónde). -->
+      <ProgresoCopia tarea={{ ...tarea, etapa: tarea.paso === "ultimo" ? "Trayendo lo copiado mientras tanto" : "Trayendo el historial" }} {equipo} grafica={false} />
       {#if onseguir && !tarea.otra_consola}<button type="button" class="btn btn-sm" onclick={onseguir}>Ver los pasos</button>{/if}
     </div>
   </div>
