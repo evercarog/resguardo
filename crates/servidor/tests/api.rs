@@ -1023,6 +1023,98 @@ async fn sin_instalador_del_agente() {
     assert_eq!(pedir(&p.app, "GET", &format!("/api/clientes/{c}/emparejamientos"), None, Some(&cookie), &[]).await.json, json!([]));
 }
 
+/// Códigos para añadir equipos (v1.41): volver a pedirlo con uno abierto da el mismo (no
+/// gasta), el límite va por cuenta (30/h) y por cliente (100/h), y el 429 dice cuánto esperar.
+#[tokio::test]
+async fn codigos_de_emparejar_se_reutilizan_y_limite_por_cuenta() {
+    let dir = tempfile::tempdir().unwrap();
+    // La huella de la autoridad TLS, para los preparados (aquí no hay TLS).
+    std::fs::create_dir_all(dir.path().join("tls")).unwrap();
+    std::fs::write(dir.path().join("tls").join("ca.huella"), vec!["5A"; 32].join(":")).unwrap();
+    let st = preparar(dir.path(), Opciones { https: false, ..Default::default() }).unwrap();
+    let p = Prueba { _dir: dir, st: st.clone(), app: api::router(st) };
+    let cookie = propietario(&p).await;
+    let r = pedir(&p.app, "POST", "/api/clientes", Some(json!({ "nombre": "Ferretería Altamar", "espera_min_horas": 24 })), Some(&cookie), &[]).await;
+    let c = r.json["id"].as_str().unwrap().to_string();
+    let ruta = format!("/api/clientes/{c}/emparejamientos");
+    let abierto = format!("/api/clientes/{c}/codigo-abierto");
+
+    // Sin código pedido: nada que enseñar.
+    assert_eq!(pedir(&p.app, "GET", &abierto, None, Some(&cookie), &[]).await.json, Value::Null);
+    let a = pedir(&p.app, "POST", &ruta, None, Some(&cookie), &[]).await;
+    assert_eq!((a.estado, a.json["reutilizado"].as_bool()), (StatusCode::OK, Some(false)), "{}", a.json);
+    // Recargar la página / pulsar otra vez: el mismo código, sin gastar otro.
+    for _ in 0..40 {
+        let otra = pedir(&p.app, "POST", &ruta, None, Some(&cookie), &[]).await;
+        assert_eq!(
+            (otra.json["id"].clone(), otra.json["codigo"].clone(), otra.json["reutilizado"].as_bool()),
+            (a.json["id"].clone(), a.json["codigo"].clone(), Some(true))
+        );
+    }
+    let v = pedir(&p.app, "GET", &abierto, None, Some(&cookie), &[]).await.json;
+    assert_eq!((v["id"].clone(), v["codigo"].clone(), v["estado"].as_str()), (a.json["id"].clone(), a.json["codigo"].clone(), Some("abierto")));
+    // Solo administradores; y cada cuenta ve el suyo.
+    let tecnico = invitado(&p, &cookie, &c, "tecnico").await;
+    assert_eq!(pedir(&p.app, "GET", &abierto, None, Some(&tecnico), &[]).await.estado, StatusCode::FORBIDDEN);
+    let admin = invitado(&p, &cookie, &c, "administrador").await;
+    assert_eq!(pedir(&p.app, "GET", &abierto, None, Some(&admin), &[]).await.json, Value::Null);
+
+    // Al unirse sigue ahí («unido»), para comprobar el número tras recargar; ya no se reutiliza.
+    let ag = Agente::nuevo();
+    let unirse = json!({ "codigo_hash": mensajes::code_hash(a.json["codigo"].as_str().unwrap()), "nombre": "CAJA", "so": "windows", "version": "0.7.18", "box_pub": ag.box_pub, "sign_pub": ag.sign_pub(), "sal_equipo": B64.encode([3u8; 16]) });
+    assert_eq!(pedir(&p.app, "POST", "/api/agente/unirse", Some(unirse), None, &[]).await.estado, StatusCode::OK);
+    assert_eq!(pedir(&p.app, "GET", &abierto, None, Some(&cookie), &[]).await.json["estado"], "unido");
+    let b = pedir(&p.app, "POST", &ruta, None, Some(&cookie), &[]).await;
+    assert_eq!(b.json["reutilizado"], false);
+    assert_ne!(b.json["codigo"], a.json["codigo"]);
+
+    // Códigos nuevos de verdad (anulando el anterior): 30 por cuenta y hora (a y b ya cuentan).
+    let mut ultimo = b.json["id"].as_str().unwrap().to_string();
+    for _ in 0..28 {
+        assert_eq!(pedir(&p.app, "DELETE", &format!("{ruta}/{ultimo}"), None, Some(&cookie), &[]).await.estado, StatusCode::NO_CONTENT);
+        let r = pedir(&p.app, "POST", &ruta, None, Some(&cookie), &[]).await;
+        assert_eq!((r.estado, r.json["reutilizado"].as_bool()), (StatusCode::OK, Some(false)), "{}", r.json);
+        ultimo = r.json["id"].as_str().unwrap().to_string();
+    }
+    pedir(&p.app, "DELETE", &format!("{ruta}/{ultimo}"), None, Some(&cookie), &[]).await;
+    let res = pedir_crudo(&p.app, "POST", &ruta, Vec::new(), &[("cookie", cookie.as_str()), ("x-resguardo", "1")]).await;
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    let cabecera: u64 = res.headers().get("retry-after").unwrap().to_str().unwrap().parse().unwrap();
+    let cuerpo: Value = serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let espera = cuerpo["retry_after"].as_u64().unwrap();
+    assert_eq!((cuerpo["error"].as_str(), espera), (Some("demasiados_intentos"), cabecera));
+    assert!((3500..=3600).contains(&espera), "{espera}");
+    assert!(cuerpo["mensaje"].as_str().unwrap().contains("Podrás pedir otro en 60 min"), "{cuerpo}");
+    // Tampoco con un preparado (el mismo límite)…
+    let linux = |n: &str| json!({ "nombre": n, "so": "linux", "servidor": "https://192.168.1.20:8443" });
+    let r = pedir(&p.app, "POST", &format!("/api/clientes/{c}/instaladores"), Some(linux("srv-datos")), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::TOO_MANY_REQUESTS);
+    // …pero otra cuenta del mismo cliente sí puede: el límite es por cuenta.
+    let r = pedir(&p.app, "POST", &ruta, None, Some(&admin), &[]).await;
+    assert_eq!((r.estado, r.json["reutilizado"].as_bool()), (StatusCode::OK, Some(false)), "{}", r.json);
+
+    // Preparados: el mismo equipo otra vez da el mismo código (no cuenta); otro nombre, otro código.
+    let inst = format!("/api/clientes/{c}/instaladores");
+    let x = pedir(&p.app, "POST", &inst, Some(linux("srv-datos")), Some(&admin), &[]).await;
+    assert_eq!((x.estado, x.json["reutilizado"].as_bool()), (StatusCode::OK, Some(false)), "{}", x.json);
+    let y = pedir(&p.app, "POST", &inst, Some(linux("SRV-DATOS")), Some(&admin), &[]).await;
+    assert_eq!((y.json["id"].clone(), y.json["codigo"].clone(), y.json["reutilizado"].as_bool()), (x.json["id"].clone(), x.json["codigo"].clone(), Some(true)));
+    let z = pedir(&p.app, "POST", &inst, Some(linux("srv-web")), Some(&admin), &[]).await;
+    assert_ne!(z.json["codigo"], x.json["codigo"]);
+    assert_eq!(pedir(&p.app, "GET", &format!("/api/clientes/{c}/emparejamientos"), None, Some(&cookie), &[]).await.json.as_array().unwrap().len(), 2);
+
+    // El tope del cliente (100/h entre todas sus cuentas) también para.
+    for _ in 0..100 {
+        p.st.limites.intento(&format!("emparejar:{c}"), u32::MAX, std::time::Duration::from_secs(3600));
+    }
+    let r = pedir(&p.app, "POST", &inst, Some(linux("srv-otro")), Some(&admin), &[]).await;
+    assert_eq!(r.estado, StatusCode::TOO_MANY_REQUESTS);
+    assert!(r.json["retry_after"].as_u64().unwrap() > 0);
+    // Volver a pedir uno que aún sirve no cuenta, ni siquiera pasado el límite.
+    let y = pedir(&p.app, "POST", &inst, Some(linux("srv-datos")), Some(&admin), &[]).await;
+    assert_eq!((y.estado, y.json["codigo"].clone()), (StatusCode::OK, x.json["codigo"].clone()));
+}
+
 /// Etiquetas de los equipos (v1.18): técnicos o más, limpias y auditadas; las ven todos.
 #[tokio::test]
 async fn etiquetas_de_equipos() {

@@ -600,11 +600,11 @@ impl Almacen for Sqlite {
     }
 
     // ---------- Equipos y emparejamientos ----------
-    fn crear_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts) -> R<()> {
+    fn crear_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts, codigo: &str) -> R<()> {
         self.con(c, |db| {
             db.execute(
-                "INSERT INTO emparejamientos (id, estado, caduca, creado_por, creado) VALUES (?1, 'abierto', ?2, ?3, ?4)",
-                params![id, caduca, por, ahora()],
+                "INSERT INTO emparejamientos (id, estado, caduca, creado_por, creado, codigo) VALUES (?1, 'abierto', ?2, ?3, ?4, ?5)",
+                params![id, caduca, por, ahora(), codigo],
             )
             .map_err(s)?;
             Ok(())
@@ -631,6 +631,17 @@ impl Almacen for Sqlite {
                 ))
                 .map_err(s)?;
             let filas = st.query_map([ahora], fila_emparejamiento).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
+    fn emparejamientos_vigentes_de(&self, c: &ClienteCtx, por: &str, ahora: Ts) -> R<Vec<Emparejamiento>> {
+        self.con(c, |db| {
+            let mut st = db
+                .prepare(&format!(
+                    "SELECT {COLS_EMP} FROM emparejamientos WHERE creado_por = ?1 AND codigo IS NOT NULL AND estado IN ('abierto', 'unido') AND caduca > ?2 ORDER BY creado DESC"
+                ))
+                .map_err(s)?;
+            let filas = st.query_map(params![por, ahora], fila_emparejamiento).map_err(s)?;
             filas.collect::<Result<Vec<_>, _>>().map_err(s)
         })
     }

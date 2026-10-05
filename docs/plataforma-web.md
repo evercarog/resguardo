@@ -258,7 +258,7 @@ Mitigaciones:
 
 ### 4.1 Alta de un equipo (emparejamiento, fase 5)
 
-1. En la web, **Añadir equipo** muestra un código de un solo uso (10 caracteres). Caduca a los 15 min. La web guarda solo su hash.
+1. En la web, **Añadir equipo** muestra un código de un solo uso (10 caracteres). Caduca a los 15 min. Para buscarlo, el servidor usa su hash; el código en claro solo se guarda mientras sirve, para volver a enseñárselo a quien lo pidió (v1.41).
 2. Se instala el agente:
    - en Windows, el instalador tiene la página del código (ya hecha) o `/S /CODE=`;
    - en Linux, `resguardo-agente vincular CÓDIGO` o el instalador de una línea;

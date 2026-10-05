@@ -49,6 +49,12 @@ impl ErrorApi {
     pub fn demasiados() -> Self {
         Self::nuevo(StatusCode::TOO_MANY_REQUESTS, "demasiados_intentos", "Demasiados intentos. Espera unos minutos.")
     }
+    /// 429 con el mensaje que se da y cuánto esperar: `retry_after` (segundos)
+    /// en el cuerpo y la cabecera `Retry-After`.
+    pub fn demasiados_esperar(mensaje: impl Into<String>, espera: std::time::Duration) -> Self {
+        let s = espera.as_secs() + u64::from(espera.subsec_nanos() > 0);
+        Self::nuevo(StatusCode::TOO_MANY_REQUESTS, "demasiados_intentos", mensaje).con(json!({ "retry_after": s.max(1) }))
+    }
     pub fn interno(detalle: impl std::fmt::Display) -> Self {
         // El detalle va al registro del servidor, no al cliente.
         eprintln!("ERROR interno: {detalle}");
@@ -68,6 +74,7 @@ impl ErrorApi {
 impl IntoResponse for ErrorApi {
     fn into_response(self) -> Response {
         let mut cuerpo = json!({ "error": self.codigo, "mensaje": self.mensaje });
+        let reintentar = self.extra.as_ref().and_then(|e| e.get("retry_after")).and_then(|v| v.as_u64());
         if let (Some(extra), Some(obj)) = (self.extra, cuerpo.as_object_mut()) {
             if let Some(e) = extra.as_object() {
                 for (k, v) in e {
@@ -76,6 +83,9 @@ impl IntoResponse for ErrorApi {
             }
         }
         let mut r = (self.estado, Json(cuerpo)).into_response();
+        if let Some(s) = reintentar {
+            r.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(s));
+        }
         if let Some(que) = self.acceso_fallido {
             r.extensions_mut().insert(AccesoFallido(que));
         }

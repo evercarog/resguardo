@@ -156,8 +156,9 @@ pub struct Emparejamiento {
     pub nombre: Option<String>,
     /// «windows» o «linux» (preparados).
     pub so: Option<String>,
-    /// El código, solo en los preparados y mientras sirve (abierto o unido): la consola lo
-    /// necesita para la orden `alta`. Se borra al confirmar, anular o caducar.
+    /// El código mientras sirve (abierto o unido): la consola lo necesita para la orden
+    /// `alta` y para volver a enseñarlo. Se borra al confirmar, anular o caducar. Los códigos
+    /// de 15 min lo guardan desde v1.41 (antes, solo los preparados).
     pub codigo: Option<String>,
     pub creado: Ts,
     /// Versión del código de comprobación que anunció el equipo al unirse (v1.26): 3 si
@@ -385,13 +386,18 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn usar_ficha(&self, hash: &str, ahora: Ts) -> R<Option<String>>;
 
     // ---------- Equipos y emparejamientos (de un cliente) ----------
-    fn crear_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts) -> R<()>;
+    /// Código de 15 min: se guarda el código, como en los preparados, para que la consola
+    /// pueda volver a enseñárselo a quien lo pidió mientras sirve (no crear otro al recargar).
+    fn crear_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts, codigo: &str) -> R<()>;
     /// Emparejamiento preparado (v1.17): con nombre del equipo, sistema y el código (24 h).
     #[allow(clippy::too_many_arguments)]
     fn preparar_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts, nombre: &str, so: &str, codigo: &str) -> R<()>;
     fn emparejamiento(&self, c: &ClienteCtx, id: &str) -> R<Option<Emparejamiento>>;
     /// Los preparados que aún sirven (abiertos o unidos y sin caducar), del más reciente al más antiguo.
     fn emparejamientos_preparados(&self, c: &ClienteCtx, ahora: Ts) -> R<Vec<Emparejamiento>>;
+    /// Los que pidió la cuenta `por` y aún sirven (abiertos o unidos, sin caducar y con su
+    /// código guardado), códigos de 15 min y preparados, del más reciente al más antiguo.
+    fn emparejamientos_vigentes_de(&self, c: &ClienteCtx, por: &str, ahora: Ts) -> R<Vec<Emparejamiento>>;
     fn poner_estado_emparejamiento(&self, c: &ClienteCtx, id: &str, estado: &str, equipo: Option<&str>) -> R<()>;
     /// La versión del SAS que anunció el equipo al unirse (v1.26).
     fn poner_sas_emparejamiento(&self, c: &ClienteCtx, id: &str, version: i64) -> R<()>;

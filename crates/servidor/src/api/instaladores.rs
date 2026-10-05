@@ -5,7 +5,7 @@
 
 use super::cuentas::MIEMBRO;
 use super::fecha;
-use crate::almacen::{ahora, Emparejamiento, Rol};
+use crate::almacen::{ahora, ClienteCtx, Emparejamiento, Rol};
 use crate::auth::Usuario;
 use crate::error::{ErrorApi, Res};
 use crate::estado::St;
@@ -21,6 +21,66 @@ use std::time::Duration;
 
 /// Lo que dura un código preparado.
 pub const CADUCA_S: i64 = 24 * 3600;
+
+/// Códigos nuevos para añadir equipos (de 15 min, preparados y «Vincular este
+/// servidor») por cuenta y hora en cada cliente…
+pub const MAX_CODIGOS_CUENTA_H: u32 = 30;
+/// …y entre todas las cuentas del cliente. Volver a pedir uno que aún sirve
+/// (la consola al recargar, el mismo instalador otra vez) no cuenta.
+pub const MAX_CODIGOS_CLIENTE_H: u32 = 100;
+
+/// Cuenta un código nuevo de la cuenta `cuenta` en el cliente `c`. Pasado el
+/// límite, 429 con `retry_after` (segundos hasta que se pueda pedir otro).
+/// No es la protección contra probar códigos (esa va por IP al usarlos, en
+/// `POST /api/agente/unirse`): esto evita que una cuenta (o una sesión robada)
+/// llene el servidor de códigos válidos.
+pub fn limite_codigos(st: &St, c: &str, cuenta: &str) -> Res<()> {
+    let hora = Duration::from_secs(3600);
+    st.limites
+        .intento_o_espera(&format!("emparejar:{c}:{cuenta}"), MAX_CODIGOS_CUENTA_H, hora)
+        .and_then(|()| st.limites.intento_o_espera(&format!("emparejar:{c}"), MAX_CODIGOS_CLIENTE_H, hora))
+        .map_err(|espera| {
+            let min = espera.as_secs().div_ceil(60).max(1);
+            ErrorApi::demasiados_esperar(
+                format!(
+                    "Se han pedido muchos códigos para añadir equipos en poco tiempo. Por seguridad hay un máximo por hora (cada código deja entrar a un equipo nuevo). Podrás pedir otro en {min} min; mientras tanto, usa o anula los que ya tienes."
+                ),
+                espera,
+            )
+        })
+}
+
+/// Un emparejamiento de esta cuenta que aún sirve y se puede volver a dar en vez de
+/// crear otro: abierto, con su código y al menos `margen_s` segundos por delante.
+/// `nombre_so`: `None` para los códigos de 15 min; `Some((nombre, so))` para un preparado
+/// con ese nombre (sin distinguir mayúsculas) y sistema.
+pub async fn reutilizable(st: &St, ctx: &ClienteCtx, cuenta: &str, nombre_so: Option<(&str, &str)>, margen_s: i64) -> Res<Option<Emparejamiento>> {
+    let (ctx, cuenta) = (ctx.clone(), cuenta.to_string());
+    let l = st.db(move |db| db.emparejamientos_vigentes_de(&ctx, &cuenta, ahora())).await?;
+    let limite = ahora() + margen_s;
+    Ok(l.into_iter().find(|e| {
+        e.estado == "abierto"
+            && e.caduca > limite
+            && e.codigo.is_some()
+            && match nombre_so {
+                None => e.nombre.is_none(),
+                Some((n, so)) => e.nombre.as_deref().is_some_and(|x| x.to_lowercase() == n.to_lowercase()) && e.so.as_deref() == Some(so),
+            }
+    }))
+}
+
+/// `GET /api/clientes/{c}/codigo-abierto` (administrador): el código de 15 min que pidió
+/// esta cuenta y aún sirve (abierto o ya unido), o `null`. La consola lo vuelve a
+/// enseñar al recargar «Añadir equipo» en vez de pedir otro.
+pub async fn codigo_abierto(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+    let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
+    let cuenta = u.id().to_string();
+    let l = st.db(move |db| db.emparejamientos_vigentes_de(&ctx, &cuenta, ahora())).await?;
+    Ok(Json(match l.iter().find(|e| e.nombre.is_none()) {
+        Some(e) => json!({ "id": e.id, "codigo": e.codigo, "caduca": fecha(e.caduca), "estado": e.estado }),
+        None => Value::Null,
+    }))
+}
 
 #[derive(Deserialize)]
 pub struct Preparar {
@@ -57,7 +117,14 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
     } else {
         None
     };
-    let codigo = resguardo_protocolo::mensajes::pairing_code();
+    // Si esta cuenta ya preparó este equipo y su código aún sirve (le quedan más de 2 h),
+    // se vuelve a dar el mismo: descargar otra vez no gasta códigos ni cuenta en el límite.
+    let previo = reutilizable(&st, &ctx, u.id(), Some((&nombre, &so)), 2 * 3600).await?;
+    let reutilizado = previo.is_some();
+    let (id, codigo, caduca) = match previo {
+        Some(e) => (e.id, e.codigo.unwrap_or_default(), e.caduca),
+        None => (uuid::Uuid::new_v4().to_string(), resguardo_protocolo::mensajes::pairing_code(), ahora() + CADUCA_S),
+    };
     let datos = DatosInstalador {
         v: 1,
         servidor: servidor.clone(),
@@ -67,25 +134,23 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
         codigo: codigo.clone(),
     };
     datos.validar().map_err(ErrorApi::datos)?;
-    // Un código cada vez, y no más de 20 por hora y cliente (como los códigos de 15 min).
-    if !st.limites.intento(&format!("emparejar:{c}"), 20, Duration::from_secs(3600)) {
-        return Err(ErrorApi::demasiados());
+    if !reutilizado {
+        limite_codigos(&st, &c, u.id())?;
+        let hash = resguardo_protocolo::mensajes::code_hash(&codigo);
+        let (id2, por, actor, n2, so2, cod2) =
+            (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo), nombre.clone(), so.clone(), codigo.clone());
+        st.db(move |db| {
+            db.preparar_emparejamiento(&ctx, &id2, &por, caduca, &n2, &so2, &cod2)?;
+            db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
+            db.auditar(&ctx, &actor, "preparar_equipo", &id2, &json!({ "nombre": n2, "so": so2 }).to_string())
+        })
+        .await?;
     }
-    let hash = resguardo_protocolo::mensajes::code_hash(&codigo);
-    let id = uuid::Uuid::new_v4().to_string();
-    let caduca = ahora() + CADUCA_S;
-    let (id2, por, actor, n2, so2, cod2) =
-        (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo), nombre.clone(), so.clone(), codigo.clone());
-    st.db(move |db| {
-        db.preparar_emparejamiento(&ctx, &id2, &por, caduca, &n2, &so2, &cod2)?;
-        db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
-        db.auditar(&ctx, &actor, "preparar_equipo", &id2, &json!({ "nombre": n2, "so": so2 }).to_string())
-    })
-    .await?;
     match instalador {
-        None => Ok(Json(
-            json!({ "id": id, "nombre": nombre, "so": so, "codigo": codigo, "caduca": fecha(caduca), "servidor": servidor, "huella_ca": st.huella_ca }),
-        )
+        None => Ok(Json(json!({
+            "id": id, "nombre": nombre, "so": so, "codigo": codigo, "caduca": fecha(caduca), "servidor": servidor, "huella_ca": st.huella_ca,
+            "reutilizado": reutilizado,
+        }))
         .into_response()),
         Some(mut exe) => {
             exe.extend(cola(&datos).map_err(ErrorApi::datos)?);
@@ -101,6 +166,9 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
             }
             if let Ok(v) = HeaderValue::from_str(&fecha(caduca)) {
                 h.insert("x-resguardo-caduca", v);
+            }
+            if reutilizado {
+                h.insert("x-resguardo-reutilizado", HeaderValue::from_static("1"));
             }
             Ok(r)
         }
@@ -170,9 +238,6 @@ pub async fn vincular_local(State(st): State<St>, u: Usuario, Path(c): Path<Stri
         ErrorApi::nuevo(StatusCode::NOT_FOUND, "sin_agente_local", "En esta máquina no está instalado Resguardo Agente (o el servidor no usa su propio TLS).")
     })?;
     super::cabe_otro_equipo(&st, &ctx).await?;
-    if !st.limites.intento(&format!("emparejar:{c}"), 20, Duration::from_secs(3600)) {
-        return Err(ErrorApi::demasiados());
-    }
     let nombre: String = crate::identidad::nombre_equipo()
         .unwrap_or_else(|| "servidor".into())
         .to_uppercase()
@@ -181,7 +246,16 @@ pub async fn vincular_local(State(st): State<St>, u: Usuario, Path(c): Path<Stri
         .take(80)
         .collect();
     let so = if cfg!(windows) { "windows" } else { "linux" };
-    let codigo = resguardo_protocolo::mensajes::pairing_code();
+    // El mismo que antes si aún sirve (más de 5 min): pulsar otra vez no gasta códigos.
+    let previo = reutilizable(&st, &ctx, u.id(), Some((&nombre, so)), 5 * 60).await?;
+    let reutilizado = previo.is_some();
+    let (id, codigo, caduca, creado) = match previo {
+        Some(e) => (e.id, e.codigo.unwrap_or_default(), e.caduca, e.creado),
+        None => {
+            limite_codigos(&st, &c, u.id())?;
+            (uuid::Uuid::new_v4().to_string(), resguardo_protocolo::mensajes::pairing_code(), ahora() + 30 * 60, ahora())
+        }
+    };
     let datos = DatosInstalador {
         v: 1,
         servidor: format!("https://127.0.0.1:{puerto}"),
@@ -191,23 +265,25 @@ pub async fn vincular_local(State(st): State<St>, u: Usuario, Path(c): Path<Stri
         codigo: codigo.clone(),
     };
     datos.validar().map_err(ErrorApi::datos)?;
-    let hash = resguardo_protocolo::mensajes::code_hash(&codigo);
-    let id = uuid::Uuid::new_v4().to_string();
-    let caduca = ahora() + 30 * 60;
-    let (id2, por, actor, n2) = (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo), nombre.clone());
-    st.db(move |db| {
-        db.preparar_emparejamiento(&ctx, &id2, &por, caduca, &n2, so, &codigo)?;
-        db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
-        db.auditar(&ctx, &actor, "vincular_servidor_local", &id2, &json!({ "nombre": n2 }).to_string())
-    })
-    .await?;
+    if !reutilizado {
+        let hash = resguardo_protocolo::mensajes::code_hash(&codigo);
+        let (id2, por, actor, n2) = (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo), nombre.clone());
+        st.db(move |db| {
+            db.preparar_emparejamiento(&ctx, &id2, &por, caduca, &n2, so, &codigo)?;
+            db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
+            db.auditar(&ctx, &actor, "vincular_servidor_local", &id2, &json!({ "nombre": n2 }).to_string())
+        })
+        .await?;
+    }
     // Se escribe aparte y se renombra: el agente nunca lee un archivo a medias.
     let destino = st.datos.join("vincular-local.json");
     let tmp = st.datos.join("vincular-local.json.tmp");
     let texto = serde_json::to_vec(&datos).map_err(ErrorApi::interno)?;
     tokio::fs::write(&tmp, &texto).await.map_err(ErrorApi::interno)?;
     tokio::fs::rename(&tmp, &destino).await.map_err(ErrorApi::interno)?;
-    Ok(Json(json!({ "id": id, "nombre": nombre, "so": so, "estado": "abierto", "caduca": fecha(caduca), "creado": fecha(ahora()), "equipo": null })))
+    Ok(Json(
+        json!({ "id": id, "nombre": nombre, "so": so, "estado": "abierto", "caduca": fecha(caduca), "creado": fecha(creado), "equipo": null, "reutilizado": reutilizado }),
+    ))
 }
 
 /// `GET /api/clientes/{c}/emparejamientos` (administrador): los preparados que aún sirven.
