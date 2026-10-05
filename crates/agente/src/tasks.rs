@@ -1157,6 +1157,18 @@ pub fn verify_args(verify: &Verify, part: u32) -> Vec<String> {
     args
 }
 
+/// Lo que dice una verificación que encontró datos dañados. Antes: «Revisa el registro y
+/// ejecuta «restic check» en el servidor», que no le dice qué hacer a quien mira la consola
+/// (prueba de resistencia con un archivo del almacén estropeado, docs/estabilidad.md).
+pub const DATOS_DANADOS: &str = "Hay datos dañados en el destino de este repositorio: la verificación no pudo leer bien algún archivo de las copias. \
+     Las copias nuevas se siguen guardando, pero alguna versión anterior podría no restaurarse entera. Revisa el disco del destino \
+     (o el del Servidor de copias) y pide a tu soporte que lo repare («restic repair packs»); el detalle está en el registro del equipo.";
+
+/// ¿La salida de `restic check` (en minúsculas) habla de datos dañados (no de conexión, contraseña…)?
+fn datos_danados(text: &str) -> bool {
+    text.contains("error") && (text.contains("pack") || text.contains("blob") || text.contains("tree"))
+}
+
 /// `part`: la parte de la verificación rotativa que toca (1 a `rotate_parts`).
 /// `access`: el destino (o su copia externa) que se verifica.
 fn verify_repo(mut access: Access, verify: &Verify, part: u32, report: &mut dyn FnMut(&TaskProgress)) -> RunRecord {
@@ -1200,11 +1212,7 @@ fn verify_repo(mut access: Access, verify: &Verify, part: u32, report: &mut dyn 
         Ok(out) => {
             let text = String::from_utf8_lossy(&out.stdout).to_lowercase() + &out.stderr.to_lowercase();
             record.result = "error".into();
-            record.message = if text.contains("error") && (text.contains("pack") || text.contains("blob") || text.contains("tree")) {
-                "Se encontraron errores en el repositorio. Revisa el registro y ejecuta «restic check» en el servidor.".into()
-            } else {
-                restic::exit_error(out.code, &out.stderr)
-            };
+            record.message = if datos_danados(&text) { DATOS_DANADOS.into() } else { restic::exit_error(out.code, &out.stderr) };
         }
         Err(e) => {
             record.result = "error".into();
@@ -1404,6 +1412,18 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verificacion_con_datos_danados() {
+        // Lo que dice restic 0.18 con un archivo de datos estropeado (`check --read-data-subset`).
+        let salida = "check snapshots, trees and blobs\nread 10.0% of data packs\nPack ID does not match, want 6751b1e7, got 3a2c91d0\n\
+                      pack 6751b1e7 contains 1 errors: [blob 9f: decrypting blob 9f failed: ciphertext verification failed]\nFatal: repository contains errors";
+        assert!(datos_danados(&salida.to_lowercase()));
+        assert!(DATOS_DANADOS.contains("Revisa el disco") && !DATOS_DANADOS.contains("ejecuta"));
+        // Un fallo de conexión o de contraseña no es «datos dañados».
+        assert!(!datos_danados("fatal: wrong password or no key found"));
+        assert!(!datos_danados("fatal: unable to open repository: dial tcp: connection refused"));
+    }
 
     #[test]
     fn credenciales_segun_destino() {
