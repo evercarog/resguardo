@@ -7,10 +7,11 @@
   // su icono y texto en la tarjeta y en el rótulo) si algo falla, y moviéndose
   // mientras algo está en marcha (quietos con movimiento reducido). En
   // estrecho (o con «Ver como lista»), un árbol en vertical con lo mismo.
-  import { tick } from "svelte";
-  import { ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, Cloud, Database, HardDrive, Layers, List, LoaderCircle, Monitor, Server, TriangleAlert, Waypoints } from "@lucide/svelte";
+  import { tick, type Snippet } from "svelte";
+  import { ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, Cloud, Database, HardDrive, Layers, List, LoaderCircle, Monitor, Server, TriangleAlert, Waypoints } from "@lucide/svelte";
   import type { Equipo, Informe } from "$lib/tipos";
-  import { construirMapa, raices, type AristaMapa, type IconoNodo, type NodoMapa, type Perspectiva } from "$lib/mapa";
+  import { construirMapa, raices, type AristaMapa, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva } from "$lib/mapa";
+  import MarcaCliente from "../MarcaCliente.svelte";
   import { pctVisible, tareasDe } from "$lib/progreso.svelte";
   import { fechaLarga, relativo } from "$lib/formato";
   import { tip } from "$lib/tooltip";
@@ -26,8 +27,30 @@
     /** En la página de un equipo: solo lo suyo, sin pestañas ni selector. */
     equipo?: string;
     titulo?: string;
+    /** Un mapa ya hecho (el de todos los clientes, lib/global.ts): sin pestañas ni selector; van `herramientas`. */
+    dado?: Mapa;
+    herramientas?: Snippet;
+    /** Plegar o desplegar un cliente (tarjetas `cliente`). */
+    alPlegar?: (cliente: string) => void;
+    /** Por debajo de este ancho, en lista. */
+    listaDesde?: number;
+    /** Lo que se dice si no hay nada que dibujar. */
+    vacio?: string;
   }
-  let { equipos, todos, informes, cliente, ahora, equipo, titulo = "Mapa de la protección" }: Props = $props();
+  let {
+    equipos,
+    todos,
+    informes,
+    cliente,
+    ahora,
+    equipo,
+    titulo = "Mapa de la protección",
+    dado,
+    herramientas,
+    alPlegar,
+    listaDesde = 640,
+    vacio = "Todavía no hay copias que dibujar: cuando un equipo tenga un repositorio, aparecerá aquí con su camino.",
+  }: Props = $props();
 
   // La perspectiva y la raíz elegidas se recuerdan por cliente (en este navegador).
   const CLAVE = $derived(`resguardo.mapa.${cliente}`);
@@ -51,7 +74,7 @@
       /* sin almacenamiento */
     }
   }
-  const opciones = $derived(equipo ? [] : raices(equipos, perspectiva, todos));
+  const opciones = $derived(equipo || dado ? [] : raices(equipos, perspectiva, todos));
   // Una raíz que ya no existe (otro cliente, un equipo que se fue): todos.
   const raizValida = $derived(opciones.some((o) => o.id === raiz) ? raiz : "");
 
@@ -62,9 +85,10 @@
     return `${tipo === "copia" ? "Copiando" : "Subiendo"}${p != null ? ` ${p} %` : "…"}`;
   }
   const mapa = $derived(
+    dado ??
     construirMapa(equipo ? (todos ?? equipos) : equipos, informes, { cliente, ahora, enVivo, todos, raiz: equipo ? { perspectiva: "equipos", id: equipo } : { perspectiva, id: raizValida } }),
   );
-  const columnas = $derived([0, 1, 2, 3].map((c) => mapa.nodos.filter((n) => n.col === c)).filter((c) => c.length));
+  const columnas = $derived([0, 1, 2, 3, 4].map((c) => mapa.nodos.filter((n) => n.col === c)).filter((c) => c.length));
   const porId = $derived(new Map(mapa.nodos.map((n) => [n.id, n])));
 
   // Geometría: se mide dónde quedó cada tarjeta y se trazan las curvas detrás.
@@ -72,7 +96,7 @@
   let ancho = $state(0);
   let alto = $state(0);
   let pos = $state<Record<string, { x: number; y: number; w: number; h: number }>>({});
-  const estrecho = $derived(ancho > 0 && ancho < 640);
+  const estrecho = $derived(ancho > 0 && ancho < listaDesde);
   const enLista = $derived(comoLista || estrecho);
   function medir() {
     if (!lienzo) return;
@@ -174,11 +198,12 @@
     lienzo?.querySelector<HTMLElement>(`[data-nodo="${CSS.escape(destino)}"]`)?.focus();
   }
 
-  const ICONO: Record<IconoNodo, typeof Monitor> = { equipo: Monitor, grupo: Layers, almacen: Server, disco: HardDrive, nube: Cloud, dropbox: Cloud, servidor: Server, repo: Database };
+  const ICONO: Record<IconoNodo, typeof Monitor> = { cliente: Layers, equipo: Monitor, grupo: Layers, almacen: Server, disco: HardDrive, nube: Cloud, dropbox: Cloud, servidor: Server, repo: Database };
   const ESTADO = { ok: CircleCheck, warn: TriangleAlert, bad: CircleAlert, info: LoaderCircle, paused: CirclePause, neutral: CircleDashed };
   const tonoTrazo = (t: Tono) => (t === "bad" || t === "warn" || t === "info" ? t : "calma");
   const cuando = (n: NodoMapa) => (n.ultima ? relativo(n.ultima, ahora) : null);
-  const hijos = (id: string) => mapa.aristas.filter((x) => x.de === id).map((x) => ({ a: x, n: porId.get(x.a)! }));
+  const hijos = (id: string) => mapa.aristas.filter((x) => x.de === id && porId.has(x.a)).map((x) => ({ a: x, n: porId.get(x.a)! }));
+  const idCliente = (n: NodoMapa) => n.id.replace(/^cl:/, "");
   const PERSPECTIVAS: { id: Perspectiva; texto: string }[] = [
     { id: "equipos", texto: "Equipos" },
     { id: "repositorios", texto: "Repositorios" },
@@ -223,6 +248,37 @@
       {#if n.cifra}<span class="cifra num">{n.cifra}</span>{/if}
       <span class="sr-only">{n.tono === "ok" ? `, ${n.estado}` : ""}, {n.sub}</span>
     </a>
+  {:else if n.tipo === "cliente"}
+    <!-- Un cliente (mapa de todos): su marca, su estado y, al lado, plegar o desplegar sus equipos. -->
+    <div class="cli" class:apagado={cadena && !cadena.has(n.id)}>
+      <a
+        class="nodo nodo-cli"
+        href={n.href}
+        data-nodo={n.id}
+        onmouseenter={() => (foco = n.id)}
+        onmouseleave={() => (foco = null)}
+        onfocus={() => (foco = n.id)}
+        onblur={() => (foco = null)}
+      >
+        <span class="n-txt">
+          <span class="n-nombre cli-nombre"><MarcaCliente nombre={n.nombre} marca={n.marca} tam={20} />{n.nombre}</span>
+          <span class="n-sub">{n.sub}</span>
+          {@render estado(n, !n.vivo)}
+        </span>
+      </a>
+      {#if alPlegar}
+        <button
+          type="button"
+          class="icon-btn plegar"
+          aria-expanded={!n.plegado}
+          aria-label={n.plegado ? `Desplegar ${n.nombre}` : `Plegar ${n.nombre}`}
+          use:tip={n.plegado ? "Ver sus equipos" : "Plegar"}
+          onclick={() => alPlegar(idCliente(n))}
+        >
+          {#if n.plegado}<ChevronRight size={15} />{:else}<ChevronDown size={15} />{/if}
+        </button>
+      {/if}
+    </div>
   {:else}
     <a
       class="nodo"
@@ -244,11 +300,36 @@
   {/if}
 {/snippet}
 
-<section class="card mapa" class:compacto={!!equipo} aria-labelledby="t-mapa-{equipo ?? 'cliente'}">
+<!-- Una rama del árbol (en lista): la tarjeta y lo que le llega; lo que sale de un repositorio, en líneas. -->
+{#snippet rama(n: NodoMapa)}
+  {@render tarjeta(n)}
+  {#if n.tipo === "repo"}
+    <ul class="hojas">
+      {#each hijos(n.id) as d (d.n.id)}
+        {@const Ic = ICONO[d.n.icono]}
+        <li class="hoja">
+          <span class="flecha" aria-hidden="true">→</span>
+          <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia externa" ? "Copia externa a " : ""}{d.n.nombre}</a>
+          {@render estado(d.n, d.n.icono !== "almacen")}
+        </li>
+      {/each}
+    </ul>
+  {:else if hijos(n.id).length}
+    <ul>
+      {#each hijos(n.id) as h (h.n.id)}
+        <li>{@render rama(h.n)}</li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
+<section class="card mapa" class:compacto={!!equipo} aria-labelledby="t-mapa-{equipo ?? (dado ? 'todos' : 'cliente')}">
   <header class="m-cab">
-    <h2 class="section-title" id="t-mapa-{equipo ?? 'cliente'}"><Waypoints size={16} />{titulo}</h2>
+    <h2 class="section-title" id="t-mapa-{equipo ?? (dado ? 'todos' : 'cliente')}"><Waypoints size={16} />{titulo}</h2>
     <div class="m-herr">
-      {#if !equipo}
+      {#if herramientas}
+        {@render herramientas()}
+      {:else if !equipo}
         <div class="segmentos" role="group" aria-label="Ver por">
           {#each PERSPECTIVAS as p (p.id)}
             <button type="button" aria-pressed={perspectiva === p.id} onclick={() => ((perspectiva = p.id), (raiz = ""), recordar())}>{p.texto}</button>
@@ -272,7 +353,7 @@
   </header>
 
   {#if !mapa.nodos.length}
-    <p class="faint vacio">Todavía no hay copias que dibujar: cuando un equipo tenga un repositorio, aparecerá aquí con su camino.</p>
+    <p class="faint vacio">{vacio}</p>
   {:else}
     <!-- La alternativa en texto (siempre): lo mismo en frases. -->
     <div class="sr-only">
@@ -284,26 +365,7 @@
       {#if enLista}
         <ul class="arbol">
           {#each mapa.nodos.filter((n) => n.col === 0) as n (n.id)}
-            <li>
-              {@render tarjeta(n)}
-              <ul>
-                {#each hijos(n.id) as h (h.n.id)}
-                  <li>
-                    {@render tarjeta(h.n)}
-                    <ul class="hojas">
-                      {#each hijos(h.n.id) as d (d.n.id)}
-                        {@const Ic = ICONO[d.n.icono]}
-                        <li class="hoja">
-                          <span class="flecha" aria-hidden="true">→</span>
-                          <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia externa" ? "Copia externa a " : ""}{d.n.nombre}</a>
-                          {@render estado(d.n, d.n.icono !== "almacen")}
-                        </li>
-                      {/each}
-                    </ul>
-                  </li>
-                {/each}
-              </ul>
-            </li>
+            <li>{@render rama(n)}</li>
           {/each}
           {#each mapa.nodos.filter((n) => n.tipo === "destino" && hijos(n.id).length) as n (n.id)}
             <li>
@@ -331,9 +393,9 @@
             {#if p}<circle class="puerto" cx={p.x + p.w} cy={p.y + p.h / 2} r="3" />{/if}
           {/each}
         </svg>
-        <div class="columnas" style:grid-template-columns={columnas.map((c) => (c[0].col === 1 ? "minmax(0, 1.2fr)" : "minmax(0, 1fr)")).join(" ")}>
+        <div class="columnas" class:cinco={columnas.length >= 5} style:grid-template-columns={columnas.map((c) => (c[0].tipo === "repo" ? "minmax(0, 1.2fr)" : "minmax(0, 1fr)")).join(" ")}>
           {#each columnas as col, i (i)}
-            <div class="col" class:pildoras={col[0].col === 1}>
+            <div class="col" class:pildoras={col[0].tipo === "repo"}>
               {#each col as n (n.id)}{@render tarjeta(n)}{/each}
             </div>
           {/each}
@@ -542,6 +604,37 @@
     color: var(--text-3);
   }
 
+  /* Un cliente (mapa de todos): su marca en la caja del icono y el botón de plegar al lado. */
+  .cli {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .cli .nodo-cli {
+    flex: 1;
+    padding-right: 34px;
+  }
+  .cli-nombre {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    overflow-wrap: break-word;
+  }
+  .cli-nombre :global(.mc) {
+    margin-top: -1px;
+  }
+  .plegar {
+    position: absolute;
+    top: 6px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+  }
+  .arbol .cli {
+    max-width: 420px;
+  }
+
   /* Píldoras (los repositorios): el enlace entre el equipo y su destino. */
   .pildora {
     display: flex;
@@ -719,5 +812,9 @@
     .columnas {
       column-gap: 40px;
     }
+  }
+  /* Con los clientes delante (cinco columnas), menos aire entre ellas. */
+  .columnas.cinco {
+    column-gap: 30px;
   }
 </style>
