@@ -6,6 +6,7 @@
   import { Clock, X } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
+  import { seguirCambios } from "$lib/vivo.svelte";
   import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { cuentaAtras, fechaLarga } from "$lib/formato";
@@ -27,8 +28,8 @@
   }
   onMount(() => {
     void cargar();
-    const t = setInterval(() => enFondo(cargar), 20_000);
-    return () => clearInterval(t);
+    // Con el canal en vivo, cuando cambia una orden; sin él, cada 20 s.
+    return seguirCambios(() => enFondo(cargar), { ms: 20_000, toca: (x) => x.t === "orden" });
   });
   // Al cambiar los pendientes del resumen (otra persona canceló o pidió algo), se recarga.
   $effect(() => {

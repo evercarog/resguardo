@@ -214,7 +214,7 @@ En la ficha del equipo → **Cambiar las copias** → **clave de administración
    - **Cada cierto tiempo**: cada 5, 10, 15, 20 o 30 minutos, o cada 1, 2, 3, 4, 6, 8 o 12 horas, en una franja (**de … a …**).
    - **Cada N días** (desde un día) y **Un día de cada mes** (o el último).
    - **Añadir otra regla** para combinarlas. Debajo, el resumen en frase y cuántas copias salen al día.
-5. **Solo guardar si hay cambios:** encendido, una vuelta sin cambios no guarda versión nueva. Imprescindible con horarios de cada pocos minutos u horas.
+5. **Solo guardar si hay cambios:** encendido, una copia sin cambios no guarda versión nueva. Imprescindible con horarios de cada pocos minutos u horas.
 6. **Repositorio:** el del paso 6.
 7. **Antes de copiar (opcional):**
    - **Volcar bases de datos de SQL Server antes de copiar**: bases (una por línea), instancia (`.` es la predeterminada) y carpeta para los volcados. Cada base se vuelca con `COPY_ONLY`, entra en la copia y se borra. La cuenta del equipo (`NT AUTHORITY\SYSTEM`) necesita el rol **db_backupoperator** en cada base.
@@ -239,7 +239,7 @@ En el menú de cada copia, **Guardar como plantilla…** guarda la configuració
 
 > **Si algo falla**
 > - «No se pudo llegar al destino»: el almacén está apagado, sin red o con el puerto cerrado.
-> - «Algunos archivos no se pudieron leer»: estaban abiertos; entran en la próxima vuelta.
+> - «Algunos archivos no se pudieron leer»: estaban abiertos; entran en la próxima copia.
 > - «Repositorio bloqueado»: **Detalles → Quitar bloqueos antiguos**.
 
 ---
@@ -292,7 +292,7 @@ Dropbox **no es inmutable**: quien tenga la cuenta o el permiso puede borrar. Ac
 - **Verificar** (en cada repositorio): comprueba ahora una parte de lo guardado. No pide claves.
 - **Más… → Probar la restauración**: restaura unos archivos al azar a una carpeta temporal y los compara.
 - **Salud de la protección** (página del repositorio): siete comprobaciones (copias automáticas, protección contra borrado, copia externa, verificación, prueba de restauración, kit y retención) con lo que falta.
-- **Verificación automática** (agente posterior a la 0.7.10; **Cambiar las copias → Verificación automática**, o **Verificar automáticamente…** en la página del repositorio): cada N días, un porcentaje de los datos que va rotando (con 10 %, todo en 10 vueltas); la primera, a las 03:00 siguientes. En un almacén con retención, el almacén además comprueba la estructura tras cada poda; la página del repositorio enseña las dos.
+- **Verificación automática** (agente posterior a la 0.7.10; **Cambiar las copias → Verificación automática**, o **Verificar automáticamente…** en la página del repositorio): cada N días, un porcentaje de los datos que va rotando (con 10 %, todo en 10 comprobaciones); la primera, a las 03:00 siguientes. En un almacén con retención, el almacén además comprueba la estructura tras cada poda; la página del repositorio enseña las dos.
 - **Copia externa** (**Más… → Copia externa…**): cada día, el equipo dueño copia las versiones del repositorio a otro destino (otro disco, servidor de copias, SFTP, S3 o B2), con su retención y, si quieres, otra contraseña (apúntala en el kit). Pide la contraseña del repositorio. Si el repositorio está en un almacén con espejo, el espejo suele bastar.
 
 ---

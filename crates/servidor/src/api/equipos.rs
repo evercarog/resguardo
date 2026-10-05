@@ -65,6 +65,7 @@ pub async fn renombrar(State(st): State<St>, u: Usuario, Path((c, e)): Path<(Str
     if !existe {
         return Err(ErrorApi::no_existe());
     }
+    st.vivo.avisar(&c, crate::vivo::Cambio::Equipo(&e));
     ver(State(st), u, Path((c, e))).await
 }
 
@@ -122,6 +123,7 @@ pub async fn poner_etiquetas(State(st): State<St>, u: Usuario, Path((c, e)): Pat
     if !existe {
         return Err(ErrorApi::no_existe());
     }
+    st.vivo.avisar(&c, crate::vivo::Cambio::Equipo(&e));
     ver(State(st), u, Path((c, e))).await
 }
 
@@ -295,7 +297,10 @@ pub async fn confirmar_emparejamiento(State(st): State<St>, u: Usuario, Path((c,
         })
         .await?;
     match r {
-        Ok(Some(e)) => Ok(Json(equipo_json(&e, st.conectado(&e.id)))),
+        Ok(Some(e)) => {
+            st.vivo.avisar(&c, crate::vivo::Cambio::Equipo(&e.id));
+            Ok(Json(equipo_json(&e, st.conectado(&e.id))))
+        }
         Ok(None) => Err(ErrorApi::no_existe()),
         Err(e) if e == "no_existe" => Err(ErrorApi::no_existe()),
         Err(e) => Err(ErrorApi::datos(e)),
@@ -305,22 +310,26 @@ pub async fn confirmar_emparejamiento(State(st): State<St>, u: Usuario, Path((c,
 pub async fn cancelar_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): Path<(String, String)>) -> Res<StatusCode> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    let cliente = ctx.id().to_string();
     let existe = st
         .db(move |db| {
-            let Some(emp) = db.emparejamiento(&ctx, &p)? else { return Ok(false) };
+            let Some(emp) = db.emparejamiento(&ctx, &p)? else { return Ok(None) };
+            let mut quitado = None;
             if emp.estado != "confirmado" {
                 if let Some(eq) = emp.equipo_id.as_deref() {
                     db.borrar_equipo(&ctx, eq)?;
                     db.desindexar_equipo(eq)?;
+                    quitado = Some(eq.to_string());
                 }
                 db.poner_estado_emparejamiento(&ctx, &p, "cancelado", None)?;
                 db.auditar(&ctx, &actor, "cancelar_emparejamiento", &p, "{}")?;
             }
-            Ok(true)
+            Ok(Some(quitado))
         })
         .await?;
-    if !existe {
-        return Err(ErrorApi::no_existe());
+    let Some(quitado) = existe else { return Err(ErrorApi::no_existe()) };
+    if let Some(eq) = quitado {
+        st.vivo.avisar(&cliente, crate::vivo::Cambio::Equipo(&eq));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -353,6 +362,7 @@ pub async fn aviso_visto(State(st): State<St>, u: Usuario, Path((c, a)): Path<(S
         db.auditar(&ctx, &actor, "aviso_visto", &a, "{}")
     })
     .await?;
+    st.vivo.avisar(&c, crate::vivo::Cambio::Avisos(None));
     Ok(StatusCode::NO_CONTENT)
 }
 

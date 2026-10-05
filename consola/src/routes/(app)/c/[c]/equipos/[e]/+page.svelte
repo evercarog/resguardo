@@ -7,7 +7,8 @@
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
   import { diasEquipo, ultimas24h } from "$lib/panel";
-  import { onMount } from "svelte";
+  import { untrack } from "svelte";
+  import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import {
@@ -131,9 +132,17 @@
   $effect(() => {
     if (tab === "informes" && id) void cargarInformes();
   });
-  onMount(() => {
-    const t = setInterval(() => document.visibilityState === "visible" && enFondo(cargar), 8000);
-    return () => clearInterval(t);
+  // Al día sin recargar: con el canal en vivo, cuando cambia algo de este equipo; sin él, cada 8 s.
+  $effect(() => {
+    const eq = id;
+    return untrack(() => {
+      const dejar = seguirCambios(() => enFondo(cargar), { ms: 8000, toca: (x) => x.t !== "historial" && (x.t !== "progreso" || x.estado === "termina") && tocaEquipo(x, eq) });
+      const dejarInformes = seguirCambios(() => tab === "informes" && cargarInformes(), { ms: 0, toca: (x) => x.t === "informe" && tocaEquipo(x, eq) });
+      return () => {
+        dejar();
+        dejarInformes();
+      };
+    });
   });
 
   const salud = $derived(equipo ? saludEquipo(equipo, reloj.ahora) : null);
@@ -648,7 +657,7 @@
           <div class="stat">
             <span class="stat-label">Última copia</span>
             <span class="stat-value">{ultimaDeTodas ? relativo(ultimaDeTodas, reloj.ahora) : "Todavía no"}</span>
-            <span class="stat-sub">{ultimaDeTodas ? fechaLarga(ultimaDeTodas) : "sin vueltas todavía"}</span>
+            <span class="stat-sub">{ultimaDeTodas ? fechaLarga(ultimaDeTodas) : "sin copias todavía"}</span>
           </div>
           <div class="stat">
             <span class="stat-label">Próxima</span>
@@ -663,7 +672,7 @@
           <div class="stat">
             <span class="stat-label">Versiones en 24 h</span>
             <span class="stat-value">{numero(recientesEquipo.versiones)}</span>
-            <span class="stat-sub">{recientesEquipo.fallos ? plural(recientesEquipo.fallos, "vuelta fallida", "vueltas fallidas") : "sin vueltas fallidas"}</span>
+            <span class="stat-sub">{recientesEquipo.fallos ? plural(recientesEquipo.fallos, "copia fallida", "copias fallidas") : "sin copias fallidas"}</span>
           </div>
         </div>
         {#if dias60.length}
@@ -832,7 +841,7 @@
           {#if g.espejo}
             <div class="espejo">
               <p class="externa">
-                <HardDrive size={14} /><span>Espejo cada noche a las {g.espejo.hora}{#if g.espejo.limite_kib}{" · "}subida limitada a {numero(g.espejo.limite_kib)} KiB/s{/if}{#if g.espejo.ultima}{" · "}la última vuelta <Tiempo iso={g.espejo.ultima} />{/if}</span>
+                <HardDrive size={14} /><span>Espejo cada noche a las {g.espejo.hora}{#if g.espejo.limite_kib}{" · "}subida limitada a {numero(g.espejo.limite_kib)} KiB/s{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
                 <Ayuda id="espejo" />
               </p>
               {#if g.espejo.destinos?.length}

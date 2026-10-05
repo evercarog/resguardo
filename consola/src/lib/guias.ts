@@ -64,7 +64,7 @@ export const GUIAS: Guia[] = [
     pasos: [
       "Para la nube: en la ficha del equipo, «Conectar Dropbox», da permiso en Dropbox y pega aquí el código que te muestra (con la clave de administración).",
       "En su ficha, «Añadir destino del espejo»: otra carpeta (eliges la carpeta en el propio equipo) o la nube conectada, con su carpeta y, si quieres, un límite de subida.",
-      "Cada destino muestra su última vuelta. Quitar uno espera unas horas y se puede cancelar.",
+      "Cada destino muestra su última subida. Quitar uno espera unas horas y se puede cancelar.",
     ],
     ver: ["espejo", "nube"],
   },
@@ -131,8 +131,8 @@ export const PREGUNTAS: Pregunta[] = [
     id: "si-copia-falla",
     si: "Una copia falla o sale con avisos",
     respuesta: [
-      "Abre la copia (Equipos → el equipo → la copia): arriba dice qué pasó en palabras sencillas y, más abajo, el historial de sus vueltas. Lo ya copiado sigue a salvo y la siguiente vuelta lo vuelve a intentar sola.",
-      "«No se pudo llegar al destino»: comprueba que el equipo, el NAS o el que guarda copias está encendido y con red. «Algunos archivos no se pudieron leer»: estaban abiertos por otro programa; entran en la próxima vuelta. «Repositorio bloqueado»: en la ficha del equipo, «Detalles → Quitar bloqueos antiguos». «Sin sitio»: libera espacio en el destino o guarda menos versiones.",
+      "Abre la copia (Equipos → el equipo → la copia): arriba dice qué pasó en palabras sencillas y, más abajo, el historial de cada copia. Lo ya copiado sigue a salvo y la próxima copia lo vuelve a intentar sola.",
+      "«No se pudo llegar al destino»: comprueba que el equipo, el NAS o el que guarda copias está encendido y con red. «Algunos archivos no se pudieron leer»: estaban abiertos por otro programa; entran en la próxima copia. «Repositorio bloqueado»: en la ficha del equipo, «Detalles → Quitar bloqueos antiguos». «Sin sitio»: libera espacio en el destino o guarda menos versiones.",
       "Cuando lo hayas arreglado, «Copiar ahora» en la propia copia confirma que vuelve a ir bien. Si sigue fallando, el registro del equipo tiene el detalle.",
     ],
     comando: "resguardo-agente estado",

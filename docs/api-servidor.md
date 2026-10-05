@@ -137,9 +137,12 @@ Sin sesión.
   "inicializado": true,
   "dropbox_app_key": "beobf3c13cvlrup",
   "url_agentes": "https://agentes.consola.ejemplo.com",
-  "publico": true
+  "publico": true,
+  "vivo": true
 }
 ```
+
+`vivo` (v1.39, pendiente de numerar al unir): el servidor tiene el canal en vivo de la consola (§3, «Canal en vivo»). Sin el campo (servidor anterior), la consola no lo intenta y sigue preguntando cada pocos segundos.
 
 `url_agentes` (v1.34): la dirección que la consola da a los agentes y a las otras consolas cuando no es la suya; `null` si es la misma. En una consola en internet (`--dominio`) es `https://agentes.<dominio>`: ahí el servidor sirve el certificado de su autoridad propia (la que fijan al vincularse), mientras que el dominio lleva el certificado público de Let's Encrypt (ver [consola-en-linea.md](consola-en-linea.md)). `publico` (v1.34): consola en internet (`--dominio` o `--publico`); cambia las cuotas predeterminadas (§3).
 
@@ -295,6 +298,31 @@ Cambiar el autenticador (otro móvil):
 `PanelCliente` = `{ id, nombre, rol, marca, equipos: [Equipo], avisos_abiertos, pendientes, informes: [{ equipo, recibido, datos }], informes_completos }`: lo mismo que `GET /api/clientes/{c}`, `…/resumen` y `…/informes` juntos, con el **informe resumido**: de `datos`, solo `version`, `proximas`, `disco`, `copias` (sin `ganchos`; `mensaje` de 200 caracteres como mucho) y `repos` con sus campos de siempre salvo que `versiones` son las 60 más recientes (solo `id`, `hora`, `copia`, `total_bytes`, `anadido`, `anadido_empaquetado`; `etiquetas` vacías) y `ejecuciones`, las de los últimos 15 días (60 como mucho; sin `archivos_*` ni `reintento`); `recortado: true` si se quitó algo. Acotado: 100 clientes como mucho (por nombre; los demás, en `omitidos`) y 4 MiB de informes en total (lo que no cabe se queda fuera y el cliente lleva `informes_completos: false`). Lo de cada cliente se guarda 5 s en memoria (lo comparten sus miembros); la pertenencia se comprueba en cada petición. La prueba `crates/servidor/tests/panel.rs` comprueba que cada cuenta ve solo sus clientes.
 
 **Restablecer la verificación en dos pasos de otro** (v1.27): para quien perdió el móvil y sus códigos de recuperación. Lo hace el **propietario del cliente** con miembros de ese cliente que no son propietarios (de ningún cliente) y que solo están en clientes de los que él es propietario; el **propietario del servidor** (`superusuario`, miembro del cliente), con cualquiera de ese cliente. Nadie con su propia cuenta (422) ni con la del propietario del servidor (403). Primero se comprueba el permiso (403 con el motivo; 404 si no es miembro) y después el código TOTP de quien lo hace (401 `codigo`; un código gastado no vale otra vez). Al otro se le quitan el autenticador, los códigos de recuperación, un cambio de autenticador a medias y **todas las sesiones**; la próxima vez que entre, `POST /api/sesion` contesta `necesita: "restablecimiento"` y hace falta el código. Queda en la auditoría del cliente y en la del servidor (`restablecer_totp`, objetivo: la cuenta; `datos`: correo y nombre). El servidor solo guarda el hash del código.
+
+### Canal en vivo (v1.39, pendiente de numerar al unir)
+
+`GET /api/clientes/{c}/vivo` abre un **WebSocket** (mensajes JSON de texto, solo del servidor a la consola) por el que el servidor avisa de lo que cambió en ese cliente. Son **pistas de invalidación**: tipo, ids y un estado; nunca nombres, rutas, cifras ni nada del cliente. La consola vuelve a pedir lo que le toca por la API de siempre (con sus permisos), sin recargar la página ni esperar al siguiente sondeo.
+
+- **Quién**: sesión completa (cookie, como cualquier ruta de `/api/clientes/{c}`; pasa por la guardia de cliente: si no es miembro, 404) y cualquier rol. El `Origin` es **obligatorio** y tiene que ser el propio servidor (`https://<Host>` o `http://<Host>`; con `Sec-Fetch-Site`, `same-origin`): un WebSocket no pasa por CORS y sin esto otra web abierta en el mismo navegador podría escuchar. Si no: 403 `csrf`.
+- **Topes**: 12 conexiones por cuenta, 100 por cliente y 5000 en el servidor (429 `demasiados_intentos` al abrir). Cada cliente tiene una cola de 64 mensajes; una consola que se queda atrás recibe `resync`. Mensajes de la consola de hasta 4 KiB (no se procesan).
+- **Revisión**: cada minuto se comprueba que la sesión sigue valiendo y que la cuenta sigue en el cliente; si no, el servidor cierra con el código **4401** (sesión) o **4403** (ya no es miembro).
+- **Latido**: `{"t":"latido"}` y un ping de WebSocket cada 25 s (pasa por los proxies que cortan lo que está callado). Sin nada de la consola (el pong lo responde el navegador solo) en 75 s, el servidor cierra. La consola da el canal por caído si no oye nada en 70 s.
+- **Proxies**: es un WebSocket normal en el mismo origen que la consola (Caddy lo pasa sin configurar nada; nginx necesita `proxy_set_header Upgrade`/`Connection` como para cualquier WebSocket). Si no pasa, la consola sigue preguntando como antes.
+
+| Mensaje | Cuándo |
+|---|---|
+| `{ "t": "hola", "v": 1, "latido_s": 25 }` | Primero |
+| `{ "t": "informe", "equipo" }` | Llegó un informe del equipo (ya guardado) |
+| `{ "t": "progreso", "equipo", "estado": "empieza" \| "cambia" \| "termina" }` | Lo que está en marcha en el equipo (§8, `progreso`) empezó (u otra tarea), cambió o terminó (también si dejó de contarse: 90 s sin noticias) |
+| `{ "t": "orden", "equipo", "orden", "estado" }` | Una orden se creó (`pendiente`), se entregó (`entregada`), se canceló o el equipo mandó su resultado (`en_marcha`, `hecha`…) |
+| `{ "t": "avisos", "equipo" \| null }` | Avisos nuevos (del equipo, de su historial o de las notificaciones) o marcados como vistos |
+| `{ "t": "historial", "equipo" }` | El equipo subió entradas nuevas a su historial |
+| `{ "t": "config", "equipo" }` | El equipo subió su configuración (el `resumen`) |
+| `{ "t": "equipo", "equipo" }` | El equipo se conectó o desconectó, se renombró, cambió de etiquetas, de modo o de espera, se unió o se confirmó |
+| `{ "t": "resync" }` | La consola se quedó atrás: que vuelva a pedirlo todo |
+| `{ "t": "latido" }` | Cada 25 s |
+
+Un tipo desconocido se ignora (la lista puede crecer). Tras volver a conectar, la consola lo vuelve a pedir todo (lo que pasó mientras tanto no llegó).
 
 La espera mínima (`espera_min_horas`, 1–168) **la guarda cada equipo**. Cambiarla es la orden `cambiar_espera`, con la clave de administración; **nunca** se cambia desde la consola directamente.
 - El equipo confirma la nueva en el `detalle` firmado de su resultado: `{"espera_min_horas": h}`.
@@ -1109,3 +1137,5 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
 - v1.38 («Todos los clientes»). Compatible hacia atrás:
   - **`GET /api/panel`** y **`GET /api/panel/progreso`** (§3): lo de todos los clientes de la cuenta (solo de los que es miembro) en una petición, con el informe resumido y lo que está en marcha. Con un servidor anterior (404), la consola lo pide cliente a cliente (`…/resumen`, `…/informes` y `…/progreso`).
   - **Consola**: página «Todos los clientes» (`/todos`; la de inicio con más de un cliente), con lo que necesita atención de todos, las cifras, lo que está en marcha, la salud de cada cliente, el mapa de la protección con un nivel más (clientes) y «¿Cuándo se llena?» de todos.
+- v1.39 (la consola en vivo). Todo es compatible hacia atrás:
+  - **Canal en vivo** (§3): `GET /api/clientes/{c}/vivo` (WebSocket con sesión, miembro del cliente y `Origin` del propio servidor) con pistas de lo que cambió (`informe`, `progreso`, `orden`, `avisos`, `historial`, `config`, `equipo`, `resync`) y `GET /api/servidor` con `vivo: true`. La consola refresca solo lo que cambió (el equipo, sus copias y repositorios, «Estado», las gráficas, el contador de avisos, las órdenes) sin recargar la página. Con un servidor anterior (sin `vivo`) o si el WebSocket no pasa, la consola sigue preguntando como antes (resumen e informes cada 15 s, el progreso cada 3–12 s); cuando algo termina, vuelve a pedir el resumen y los informes al momento y otra vez a los 5 y 15 s (el informe del final llega un momento después). Una consola anterior no abre el canal. Los agentes no cambian.

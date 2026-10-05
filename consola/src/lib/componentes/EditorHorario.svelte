@@ -187,7 +187,7 @@
   {#if sinCombinar}<p class="error-campo" role="alert">{ACTUALIZA}: este agente solo guarda reglas con los mismos días y hasta {MAX_HORAS} horas al día.</p>{/if}
 
   <p class="resumen-horario" aria-live="polite"><CalendarClock size={14} /><span>{resumenReglas(reglas)}</span></p>
-  {#if muchas}<p class="faint pista">Muchas vueltas al día: con «Solo guardar si hay cambios», solo se guarda una versión cuando algo cambió.</p>{/if}
+  {#if muchas}<p class="faint pista">Muchas copias al día: con «Solo guardar si hay cambios», solo se guarda una versión cuando algo cambió.</p>{/if}
 </div>
 
 <style>

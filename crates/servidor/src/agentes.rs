@@ -7,6 +7,7 @@ use crate::api::orden_agente;
 use crate::auth;
 use crate::error::{ErrorApi, Res};
 use crate::estado::{IpCliente, St};
+use crate::vivo::Cambio;
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, Query, State};
@@ -141,6 +142,7 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
         .await?;
     let cliente = cliente.ok_or_else(|| ErrorApi::nuevo(StatusCode::NOT_FOUND, "codigo", "Código no válido o caducado.").acceso("codigo_equipo"))?;
     let cliente = cliente.map_err(error_cuota)?;
+    st.vivo.avisar(&cliente, Cambio::Equipo(&equipo.id));
     Ok(Json(json!({
         "equipo_id": equipo.id,
         "secreto": secreto,
@@ -259,6 +261,8 @@ async fn recibir(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p)
             None => ErrorApi::interno(e),
         })?;
     let (cliente, id) = r.ok_or_else(|| ErrorApi::nuevo(StatusCode::NOT_FOUND, "ficha", "Ficha no válida, caducada o ya gastada.").acceso("ficha"))?;
+    st.vivo.avisar(&cliente, Cambio::Equipo(&id));
+    st.vivo.avisar(&cliente, Cambio::Avisos(Some(&id)));
     Ok(Json(json!({
         "equipo_id": id,
         "secreto": secreto,
@@ -337,6 +341,7 @@ pub async fn empujar(st: &St, ctx: &ClienteCtx, equipo: &str) {
     };
     for o in &ordenes {
         st.al_agente(equipo, &json!({ "t": "orden", "orden": orden_agente(o) }));
+        st.vivo.avisar(ctx.id(), Cambio::Orden { equipo, orden: &o.id, estado: "entregada" });
     }
     for id in canceladas {
         st.al_agente(equipo, &json!({ "t": "cancelada", "orden": id }));
@@ -391,6 +396,7 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         .flatten()
         .and_then(|d| d["espera_min_horas"].as_i64())
         .filter(|h| (1..=168).contains(h));
+    let (orden_id, estado) = (r.orden.clone(), r.estado.clone());
     let res = crate::almacen::ResultadoOrden { orden: r.orden, estado: r.estado, mensaje, detalle: r.detalle, firma: r.firma };
     st.db(move |db| {
         db.resultado_orden(&ctx, &equipo, &res)?;
@@ -422,6 +428,13 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
     if destructiva_terminada {
         st.notif.despertar.notify_one();
     }
+    st.vivo.avisar(a.ctx.id(), Cambio::Orden { equipo: &a.equipo, orden: &orden_id, estado: &estado });
+    if trasladado || deja_el_servidor || nueva_espera.is_some() {
+        st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
+    }
+    if clave_cambiada {
+        st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
+    }
     Ok(())
 }
 
@@ -434,11 +447,13 @@ async fn registrar_informe(st: &St, a: &Agente, datos: Value) -> Res<()> {
         return Err(ErrorApi::demasiados());
     }
     // Lo que está en marcha viaja también en el informe (v1.25): si el canal no pasa, llega así.
-    if let Some(t) = datos.get("progreso").filter(|t| t.is_array()) {
-        st.progreso.poner(a.ctx.id(), &a.equipo, crate::progreso::limpiar(t).unwrap_or_default());
+    let paso = if let Some(t) = datos.get("progreso").filter(|t| t.is_array()) {
+        st.progreso.poner(a.ctx.id(), &a.equipo, crate::progreso::limpiar(t).unwrap_or_default())
     } else if datos.get("version").is_some() {
-        st.progreso.poner(a.ctx.id(), &a.equipo, Vec::new());
-    }
+        st.progreso.poner(a.ctx.id(), &a.equipo, Vec::new())
+    } else {
+        None
+    };
     let servicio = datos.get("servicio").and_then(Value::as_str).map(|s| texto_corto(s, 40));
     // El último número de orden que aceptó el equipo: tras restaurar una copia de la
     // consola (o de la base de datos), el servidor recuerda uno anterior y el equipo
@@ -463,6 +478,11 @@ async fn registrar_informe(st: &St, a: &Agente, datos: Value) -> Res<()> {
     .await?;
     if hay_evento {
         st.notif.despertar.notify_one();
+    }
+    // A las consolas en vivo: primero el informe (las cifras ya están guardadas) y después el progreso.
+    st.vivo.avisar(a.ctx.id(), Cambio::Informe(&a.equipo));
+    if let Some(p) = paso {
+        st.vivo.avisar(a.ctx.id(), Cambio::Progreso(&a.equipo, p));
     }
     Ok(())
 }
@@ -498,6 +518,7 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
     let clave_desde_otra = (c.resumen["cambio_config"]["tipo"] == "cambiar_clave_admin"
         && c.resumen["cambio_config"]["consola"]["identidad"].as_str().is_some_and(|i| i != st.identidad_pub))
     .then(|| texto_corto(c.resumen["cambio_config"]["consola"]["nombre"].as_str().unwrap_or("otra consola"), 80));
+    let aviso_otra = clave_desde_otra.is_some();
     let pistas = st
         .db(move |db| {
             // v1.30: el almacén aplicó la retención en el repositorio de otro equipo: pista a su dueño.
@@ -539,6 +560,10 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
     for (e, repo) in pistas {
         st.al_agente(&e, &json!({ "t": "refrescar", "repo": repo }));
     }
+    st.vivo.avisar(a.ctx.id(), Cambio::Config(&a.equipo));
+    if aviso_otra {
+        st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
+    }
     Ok(())
 }
 
@@ -560,6 +585,7 @@ async fn registrar_aviso(st: &St, a: &Agente, av: Aviso) -> Res<()> {
     let (ctx, equipo, mensaje) = (a.ctx.clone(), a.equipo.clone(), texto_corto(&av.mensaje, 500));
     st.db(move |db| crate::notificaciones::aviso(db, &ctx, Some(&equipo), &av.tipo, &mensaje)).await?;
     st.notif.despertar.notify_one();
+    st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
     Ok(())
 }
 
@@ -631,6 +657,7 @@ async fn registrar_historial(st: &St, a: &Agente, h: Historial) -> Res<Value> {
             e.aviso = None;
         }
     }
+    let con_avisos = entradas.iter().any(|e| e.aviso.is_some());
     let (ctx, equipo, publico) = (a.ctx.clone(), a.equipo.clone(), st.opciones.publico);
     let (nuevas, ultima) = st
         .db(move |db| {
@@ -639,6 +666,12 @@ async fn registrar_historial(st: &St, a: &Agente, h: Historial) -> Res<Value> {
             Ok((nuevas, db.ultima_historial(&ctx, &equipo)?))
         })
         .await?;
+    if nuevas > 0 {
+        st.vivo.avisar(a.ctx.id(), Cambio::Historial(&a.equipo));
+        if con_avisos {
+            st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
+        }
+    }
     Ok(json!({ "nuevas": nuevas, "ultima": crate::api::fecha_opt(ultima) }))
 }
 
@@ -652,7 +685,9 @@ fn registrar_progreso(st: &St, a: &Agente, tareas: &Value) -> Res<()> {
     if !st.limites.intento(&format!("progreso:{}", a.equipo), 60, Duration::from_secs(60)) {
         return Err(ErrorApi::demasiados());
     }
-    st.progreso.poner(a.ctx.id(), &a.equipo, crate::progreso::limpiar(tareas)?);
+    if let Some(p) = st.progreso.poner(a.ctx.id(), &a.equipo, crate::progreso::limpiar(tareas)?) {
+        st.vivo.avisar(a.ctx.id(), Cambio::Progreso(&a.equipo, p));
+    }
     Ok(())
 }
 
@@ -711,6 +746,9 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
             Ok((ordenes, canceladas, atencion, sesiones, ultima))
         })
         .await?;
+    for o in &ordenes {
+        st.vivo.avisar(a.ctx.id(), Cambio::Orden { equipo: &a.equipo, orden: &o.id, estado: "entregada" });
+    }
     Ok(Json(json!({
         "firma": firma,
         "ordenes": ordenes.iter().map(orden_agente).collect::<Vec<_>>(),
@@ -878,6 +916,7 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     // Uno por equipo: una conexión nueva sustituye a la anterior.
     st.conectados.lock().unwrap_or_else(|e| e.into_inner()).insert(a.equipo.clone(), tx.clone());
+    st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
     let (ctx, e2) = (a.ctx.clone(), a.equipo.clone());
     let (atencion, ultima) = st
         .db(move |db| {
@@ -923,9 +962,12 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
             }
         }
     }
-    let mut mapa = st.conectados.lock().unwrap_or_else(|e| e.into_inner());
-    if mapa.get(&a.equipo).is_some_and(|t| t.same_channel(&tx)) {
-        mapa.remove(&a.equipo);
+    let quitado = {
+        let mut mapa = st.conectados.lock().unwrap_or_else(|e| e.into_inner());
+        mapa.get(&a.equipo).is_some_and(|t| t.same_channel(&tx)) && mapa.remove(&a.equipo).is_some()
+    };
+    if quitado {
+        st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
     }
 }
 

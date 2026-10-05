@@ -1,10 +1,14 @@
 <script lang="ts">
-  // Todo lo de un cliente: se carga al entrar y se refresca cada 15 s mientras
-  // la pestaña está visible (sin recargar la pantalla).
-  import { onMount, untrack, type Snippet } from "svelte";
+  // Todo lo de un cliente: se carga al entrar y se mantiene al día sin recargar
+  // la pantalla. Con el canal en vivo (v1.39, $lib/vivo.svelte), en cuanto el
+  // servidor dice que algo cambió (y de respaldo cada minuto); sin él, cada
+  // 15 s mientras la pestaña está visible.
+  import { untrack, type Snippet } from "svelte";
   import { page } from "$app/state";
   import { actual, cargarCliente } from "$lib/estado.svelte";
+  import { recargarInformes } from "$lib/informes.svelte";
   import { vigilarProgreso } from "$lib/progreso.svelte";
+  import { conectarVivo, seguirCambios, type Cambio } from "$lib/vivo.svelte";
   import PantallaError from "$lib/componentes/PantallaError.svelte";
 
   let { children }: { children: Snippet } = $props();
@@ -20,17 +24,34 @@
     }
   });
 
+  // El canal en vivo del cliente (antes que el progreso: este se apunta a sus cambios).
+  $effect(() => {
+    const c = id;
+    return c ? untrack(() => conectarVivo(c)) : undefined;
+  });
+
   // Lo que está en marcha en sus equipos (progreso de las copias), casi en vivo.
   $effect(() => {
     const c = id;
     return c ? untrack(() => vigilarProgreso(c)) : undefined;
   });
 
-  onMount(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible" && actual.id) void cargarCliente(actual.id, { silencioso: true });
-    }, 15_000);
-    return () => clearInterval(t);
+  /** ¿Cambia el resumen («Estado», equipos, avisos abiertos, órdenes con espera)? El progreso, solo al terminar. */
+  const tocaResumen = (c: Cambio) => (c.t === "progreso" ? c.estado === "termina" : c.t !== "historial");
+  /** ¿Cambian las cifras de los informes (espacio, versiones, últimas copias)? */
+  const tocaInformes = (c: Cambio) => c.t === "informe" || c.t === "config" || (c.t === "progreso" && c.estado === "termina");
+
+  $effect(() => {
+    const c = id;
+    if (!c) return;
+    return untrack(() => {
+      const dejarResumen = seguirCambios(() => actual.id === c && cargarCliente(c, { silencioso: true }), { ms: 15_000, toca: tocaResumen });
+      const dejarInformes = seguirCambios(() => actual.id === c && recargarInformes(c), { ms: 15_000, toca: tocaInformes });
+      return () => {
+        dejarResumen();
+        dejarInformes();
+      };
+    });
   });
 </script>
 

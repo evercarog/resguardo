@@ -5,6 +5,7 @@
   import { ClipboardList, RefreshCw } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
+  import { seguirCambios } from "$lib/vivo.svelte";
   import { actual } from "$lib/estado.svelte";
   import { fallo } from "$lib/avisos.svelte";
   import type { Orden } from "$lib/tipos";
@@ -43,10 +44,8 @@
     void equipo;
     void cargar();
   });
-  onMount(() => {
-    const t = setInterval(() => document.visibilityState === "visible" && !siguiente && enFondo(cargar), 10_000);
-    return () => clearInterval(t);
-  });
+  // Al día: con el canal en vivo, cuando cambia una orden; sin él, cada 10 s (sin «Cargar más» abierto).
+  onMount(() => seguirCambios(() => !siguiente && enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "orden" }));
 </script>
 
 <svelte:head><title>Órdenes · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>

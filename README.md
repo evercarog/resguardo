@@ -53,7 +53,7 @@ Consola web de Resguardo Server con el servidor simulado (`npm run dev:mock`); l
 
 **Una copia:** progreso, resumen, los 60 días y su historial.
 
-<img src="docs/capturas/copia-claro.webp" alt="Detalle de la copia «Documentos»: progreso en directo, última y próxima vuelta, vueltas correctas y los 60 días." width="1280">
+<img src="docs/capturas/copia-claro.webp" alt="Detalle de la copia «Documentos»: progreso en directo, última y próxima copia, copias correctas y los 60 días." width="1280">
 
 **Un repositorio:** cómo se protegen los datos, salud de la protección, verificación, prueba de restauración y retención; gráficas por versión y las versiones guardadas.
 

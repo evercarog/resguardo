@@ -181,6 +181,10 @@ pub async fn enviar(State(st): State<St>, u: Usuario, Path((c, e)): Path<(String
         Some(siguiente) => ErrorApi::conflicto("Otra orden se envió a la vez: vuelve a intentarlo.").con(json!({ "siguiente_seq": siguiente })),
         None => ErrorApi::datos(e),
     })?;
+    st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Orden { equipo: &e, orden: &orden.id, estado: &orden.estado });
+    if destructiva {
+        st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Avisos(Some(&e)));
+    }
     crate::agentes::empujar(&st, &ctx, &e).await;
     Ok(Json(orden_json(&orden, u.nombre())))
 }
@@ -262,6 +266,7 @@ pub async fn cancelar(State(st): State<St>, u: Usuario, Path((c, o)): Path<(Stri
         return Err(ErrorApi::conflicto("Esa orden ya no se puede cancelar (se entregó o ya terminó)."));
     }
     let equipo = orden.equipo_id.clone();
+    st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Orden { equipo: &equipo, orden: &orden.id, estado: &orden.estado });
     // v1.30: si era destructiva, su «Orden destructiva pendiente» se cierra ya.
     if ordenes::tipo(&orden.tipo).is_some_and(|t| t.destructiva) {
         st.notif.despertar.notify_one();

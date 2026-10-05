@@ -120,7 +120,7 @@
 
 <section class="card historia" aria-labelledby="t-historial-copia">
   <div class="cab">
-    <h2 class="section-title" id="t-historial-copia">Historial <span class="count">· {diaElegido ? `${numero(delDia.length)} el ${fmtDia.format(new Date(`${diaElegido}T12:00:00`))}` : `${numero(ejecuciones.length)} vueltas en 60 días`}</span></h2>
+    <h2 class="section-title" id="t-historial-copia">Historial <span class="count">· {diaElegido ? `${numero(delDia.length)} el ${fmtDia.format(new Date(`${diaElegido}T12:00:00`))}` : `${numero(ejecuciones.length)} copias en 60 días`}</span></h2>
     {#if diaElegido && alDia}<button class="btn btn-sm btn-ghost" onclick={() => alDia(null)}>Ver todos los días</button>{/if}
     <div class="segmented inline" role="group" aria-label="Qué mostrar">
       <button class:on={!soloProblemas} aria-pressed={!soloProblemas} onclick={() => ((soloProblemas = false), (limite = PASO))}>Todo</button>
@@ -131,7 +131,7 @@
   {#if !vistos.length}
     <div class="empty-state">
       <History size={28} strokeWidth={1.5} />
-      <p>{soloProblemas ? "Sin fallos ni avisos en estos 60 días." : "Todavía no hay vueltas que contar: aparecerán aquí en cuanto se haga la primera."}</p>
+      <p>{soloProblemas ? "Sin fallos ni avisos en estos 60 días." : "Todavía no hay copias que contar: aparecerán aquí en cuanto se haga la primera."}</p>
     </div>
   {:else}
     {#each grupos as g (g.dia)}

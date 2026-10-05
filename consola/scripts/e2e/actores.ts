@@ -133,6 +133,11 @@ export class Consola {
   private fijadas = new Map<string, string>();
   constructor(public srv: Servidor) {}
 
+  /** La cookie de la sesión (para abrir el canal en vivo como el navegador, e2e/vivo.ts). */
+  get cookieSesion(): string {
+    return this.cookie;
+  }
+
   async pedir(metodo: string, ruta: string, cuerpo?: unknown): Promise<Respuesta> {
     const r = await pedirHttps(this.srv.url + ruta, {
       metodo,

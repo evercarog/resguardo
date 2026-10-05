@@ -108,7 +108,7 @@
   <section aria-labelledby="t-vueltas">
     <h3 id="t-vueltas">Cómo se hizo</h3>
     {#if !vueltas.length}
-      <p class="faint">El informe no trae la vuelta que la guardó (puede ser anterior a estos 60 días o de un agente anterior).</p>
+      <p class="faint">El informe no trae la copia que la guardó (puede ser anterior a estos 60 días o de un agente anterior).</p>
     {:else}
       {#if errores.length}<p class="aviso"><TriangleAlert size={14} />{plural(errores.length, "intento con problemas", "intentos con problemas")} antes de guardarla.</p>{/if}
       <ul class="vueltas">
