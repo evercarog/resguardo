@@ -42,6 +42,7 @@ pub fn limite_codigos(st: &St, c: &str, cuenta: &str) -> Res<()> {
         .map_err(|espera| {
             let min = espera.as_secs().div_ceil(60).max(1);
             ErrorApi::demasiados_esperar(
+                "codigos",
                 format!(
                     "Se han pedido muchos códigos para añadir equipos en poco tiempo. Por seguridad hay un máximo por hora (cada código deja entrar a un equipo nuevo). Podrás pedir otro en {min} min; mientras tanto, usa o anula los que ya tienes."
                 ),

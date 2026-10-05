@@ -1082,7 +1082,7 @@ async fn codigos_de_emparejar_se_reutilizan_y_limite_por_cuenta() {
     let cabecera: u64 = res.headers().get("retry-after").unwrap().to_str().unwrap().parse().unwrap();
     let cuerpo: Value = serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
     let espera = cuerpo["retry_after"].as_u64().unwrap();
-    assert_eq!((cuerpo["error"].as_str(), espera), (Some("demasiados_intentos"), cabecera));
+    assert_eq!((cuerpo["error"].as_str(), cuerpo["limite"].as_str(), espera), (Some("demasiados_intentos"), Some("codigos"), cabecera));
     assert!((3500..=3600).contains(&espera), "{espera}");
     assert!(cuerpo["mensaje"].as_str().unwrap().contains("Podrás pedir otro en 60 min"), "{cuerpo}");
     // Tampoco con un preparado (el mismo límite)…
@@ -1113,6 +1113,25 @@ async fn codigos_de_emparejar_se_reutilizan_y_limite_por_cuenta() {
     // Volver a pedir uno que aún sirve no cuenta, ni siquiera pasado el límite.
     let y = pedir(&p.app, "POST", &inst, Some(linux("srv-datos")), Some(&admin), &[]).await;
     assert_eq!((y.estado, y.json["codigo"].clone()), (StatusCode::OK, x.json["codigo"].clone()));
+}
+
+/// El 429 del límite de peticiones por cuenta dice cuál saltó y cuánto esperar (la consola
+/// deja de preguntar de fondo ese tiempo); a otra cuenta no le afecta.
+#[tokio::test]
+async fn limite_por_cuenta_dice_cual_y_cuanto() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let r = pedir(&p.app, "POST", "/api/clientes", Some(json!({ "nombre": "Ferretería Altamar", "espera_min_horas": 24 })), Some(&cookie), &[]).await;
+    let c = r.json["id"].as_str().unwrap().to_string();
+    let otra = invitado(&p, &cookie, &c, "lectura").await;
+    let id = pedir(&p.app, "GET", "/api/cuenta", None, Some(&cookie), &[]).await.json["id"].as_str().unwrap().to_string();
+    for _ in 0..resguardo_servidor::auth::MAX_PETICIONES_CUENTA_MIN {
+        p.st.limites.intento(&format!("cuenta-min:{id}"), u32::MAX, std::time::Duration::from_secs(60));
+    }
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/equipos"), None, Some(&cookie), &[]).await;
+    assert_eq!((r.estado, r.json["limite"].as_str()), (StatusCode::TOO_MANY_REQUESTS, Some("cuenta")), "{}", r.json);
+    assert!((1..=60).contains(&r.json["retry_after"].as_u64().unwrap()), "{}", r.json);
+    assert_eq!(pedir(&p.app, "GET", &format!("/api/clientes/{c}/equipos"), None, Some(&otra), &[]).await.estado, StatusCode::OK);
 }
 
 /// Etiquetas de los equipos (v1.18): técnicos o más, limpias y auditadas; las ven todos.

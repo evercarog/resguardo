@@ -243,8 +243,13 @@ impl FromRequestParts<St> for Usuario {
         }
         // Peticiones por cuenta y minuto (v1.34): una consola abierta en varias
         // pestañas cabe de sobra; una sesión robada que barre la API, no.
-        if !st.limites.intento(&format!("cuenta-min:{}", s.cuenta.id), MAX_PETICIONES_CUENTA_MIN, std::time::Duration::from_secs(60)) {
-            return Err(ErrorApi::demasiados());
+        if let Err(espera) = st.limites.intento_o_espera(&format!("cuenta-min:{}", s.cuenta.id), MAX_PETICIONES_CUENTA_MIN, std::time::Duration::from_secs(60))
+        {
+            return Err(ErrorApi::demasiados_esperar(
+                "cuenta",
+                "Demasiadas peticiones de tu cuenta en el último minuto (por seguridad hay un máximo). Si tienes muchas pestañas de la consola abiertas, cierra alguna; vuelve a intentarlo en un momento.",
+                espera,
+            ));
         }
         // Se renueva con el uso.
         let th = s.token_hash.clone();
