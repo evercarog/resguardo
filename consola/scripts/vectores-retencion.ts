@@ -78,7 +78,7 @@ console.log("\n· Las vueltas que anota el equipo");
     quitadas: 4,
     liberado: 2048,
     sospechosas: 2,
-    grupos: [{ copia: null, ref: "aaaa0001", quedan: 5 }],
+    grupos: [{ copia: null, refs: ["ffff0001", "aaaa0001"], quedan: 5 }],
     motivos: ["cupo:diarias", "repe:diarias"],
     versiones: [
       ["bbbb0001", t, 0, 1000, 0],

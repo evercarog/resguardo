@@ -12,7 +12,7 @@
 //!   que liberó `prune` (si lo dice) y, en el almacén, las sospechosas que no
 //!   se tocaron;
 //! - **las versiones quitadas**: id corto (8), hora, grupo (la copia, o una
-//!   versión que queda en ese grupo para que la consola sepa cuál es), lo que
+//!   versiones que quedan en ese grupo para que la consola sepa cuál es), lo que
 //!   ocupaban sus archivos y qué regla las habría guardado y por qué no
 //!   (`cupo:diarias`, `plazo:horarias`, `repe:horarias`).
 //!
@@ -34,6 +34,8 @@ pub const MAX_IDS: usize = 2000;
 pub const DETALLADAS: usize = 50;
 /// Tamaño máximo de una entrada (en JSON). El servidor admite hasta esto en las de tipo `retencion`.
 pub const MAX_BYTES: usize = 96 * 1024;
+/// Versiones que quedan en cada grupo que se anotan (para saber su copia en la consola).
+const REFS: usize = 5;
 /// Lo que se quita al compactar una entrada antigua.
 const CAMPOS_DETALLE: [&str; 3] = ["versiones", "grupos", "motivos"];
 
@@ -225,9 +227,11 @@ pub fn entrada(v: &Vuelta) -> Value {
                 }
             }
             let copia = cuenta.into_iter().max_by_key(|(_, n)| *n).map(|(k, _)| k);
-            let quedan: Vec<&Snapshot> = v.despues.unwrap_or_default().iter().filter(|s| grupo_de(s) == *g).collect();
-            let referencia = quedan.iter().max_by(|a, b| a.time.cmp(&b.time)).map(|s| corto(&s.id));
-            json!({ "copia": copia, "ref": referencia, "quedan": quedan.len() })
+            let mut quedan: Vec<&Snapshot> = v.despues.unwrap_or_default().iter().filter(|s| grupo_de(s) == *g).collect();
+            quedan.sort_by(|a, b| b.time.cmp(&a.time));
+            // Unas versiones que quedan en el grupo: la consola sabe de qué copia es alguna (su informe).
+            let refs: Vec<String> = quedan.iter().take(REFS).map(|s| corto(&s.id)).collect();
+            json!({ "copia": copia, "refs": Some(refs).filter(|r| !r.is_empty()), "quedan": quedan.len() })
         })
         .collect();
     let mut motivos: Vec<String> = Vec::new();
@@ -458,8 +462,8 @@ mod tests {
         // Dos grupos: «docs» (en CAJA, con la versión que queda como referencia) y el de OTRO (sin copia ni referencia).
         let g = &e["grupos"];
         assert_eq!(g[vs[0][2].as_u64().unwrap() as usize]["copia"], "docs");
-        assert_eq!(g[vs[0][2].as_u64().unwrap() as usize]["ref"], "b5000000");
-        assert_eq!(g[vs[2][2].as_u64().unwrap() as usize]["ref"], Value::Null);
+        assert_eq!(g[vs[0][2].as_u64().unwrap() as usize]["refs"], json!(["b5000000", "b4000000", "b3000000"]));
+        assert_eq!(g[vs[2][2].as_u64().unwrap() as usize].get("refs"), None);
         assert_eq!(e["motivos"][vs[0][4].as_u64().unwrap() as usize], "cupo:diarias");
         assert!(!e.to_string().contains("Users"), "sin rutas: {e}");
         // Si no se pudo leer cómo quedó: las cifras de antes, sin lista.

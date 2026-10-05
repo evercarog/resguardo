@@ -37,6 +37,7 @@ import { ClaveNueva } from "../../src/lib/cambioClave";
 import { crearCodigo, cuerpoAnadir, leerCodigo } from "../../src/lib/conexion";
 import { publicaRespaldo, salRespaldo } from "../../src/lib/cripto/respaldo";
 import { almacenDe, nuevaClave, reglaParaOrden, seQuedan } from "../../src/lib/retencion";
+import { vueltasDelRepo, type EntradaRetencion } from "../../src/lib/retencionDetalle";
 import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../src/lib/repo";
 import { proximaDe } from "../../src/lib/copia";
 import type { Cliente, Regla } from "../../src/lib/tipos";
@@ -410,6 +411,27 @@ async function principal() {
       return r && nVersiones(r, inf) === despues.length && JSON.stringify(ids) === JSON.stringify(cortas) ? r : null;
     }, { plazo: 45_000, cada: 1000 });
     log(`B cuenta ${despues.length} versiones ${((Date.now() - trasAlmacen) / 1000).toFixed(1)} s después del resultado del almacén`);
+
+    // v1.4x: «Retención en detalle»: lo que anotó el almacén en su historial es lo que quitó de verdad,
+    // y la consola (retencionDetalle.ts, como la página) lo enseña con el repositorio de B.
+    const quitadasDeVerdad = todas.filter((s) => !despues.some((d) => d.id === s.id)).map((s) => s.id.slice(0, 8)).sort();
+    const infB = informeDe((await consola.equipo(c, eqB.id)).ultimo_informe as any, repoId);
+    const deA = await esperar("lo que quitó la retención, en el historial del almacén", async () => {
+      const l = (await consola.ok("GET", `/api/clientes/${c.id}/equipos/${eqA.id}/historial?tipo=retencion`)) as EntradaRetencion[];
+      return l.some((x) => x.usuario === en.usuario && x.repo === en.carpeta) ? l : null;
+    }, { plazo: 90_000, cada: 1000 });
+    const vueltas = vueltasDelRepo({ propias: [], delAlmacen: deA, repo: repoId, enAlmacen: { usuario: en.usuario, carpeta: en.carpeta }, copiaDe: (id) => infB?.versiones.find((v) => v.id === id)?.copia ?? null });
+    comprobar(vueltas.length === 1, "Una vez aplicada en el almacén (las de antes del paso 5 no hay)", vueltas);
+    const vr = vueltas[0];
+    igual(vr.versiones.map((x) => x.id).sort(), quitadasDeVerdad, "La retención en detalle enseña las versiones que quitó el almacén");
+    igual([vr.origen, vr.por, vr.ok, vr.quitadas, vr.quedan, vr.antes, vr.sospechosas], ["almacen", "orden", true, quitadasDeVerdad.length, despues.length, todas.length, 2], "Quién, cuántas y las sospechosas");
+    comprobar(vr.versiones.every((x) => x.motivo && x.motivo.tipo !== "restic" && x.hora), "Cada una con su hora y por qué no la guardó la regla (lo mismo que decidió el almacén)", vr.versiones);
+    comprobar(vr.liberado !== null && vr.liberado > 0, "Con lo que liberó prune", vr);
+    comprobar([datosB, almacen].every((p) => !JSON.stringify(deA).includes(JSON.stringify(p).slice(1, -1))), "Sin rutas", deA);
+    // Sin `tipo`, el historial de siempre: una consola anterior no ve las de la retención.
+    const sinTipo = (await consola.ok("GET", `/api/clientes/${c.id}/equipos/${eqA.id}/historial`)) as { tipo: string }[];
+    comprobar(!sinTipo.some((x) => x.tipo === "retencion"), "Sin `tipo`, el historial no trae las de la retención", sinTipo.map((x) => x.tipo));
+    log(`Retención en detalle: ${vr.versiones.length} versiones quitadas (${vr.versiones.map((x) => `${x.id} ${x.motivo?.tipo}:${x.motivo?.periodo} ${x.copia ?? "?"}`).join(", ")}), ${vr.liberado} bytes liberados`);
 
     // -----------------------------------------------------------------------
     paso("5b. Consola en vivo: la copia programada se ve empezar y sus cifras llegan sin recargar (canal en vivo)");

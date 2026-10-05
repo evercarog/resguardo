@@ -39,8 +39,8 @@ export interface EntradaRetencion {
   /** Bytes que liberó `prune`. */
   liberado?: number;
   sospechosas?: number;
-  /** Cada grupo de restic (equipo y carpetas): su copia o, si no se sabe (almacén), una versión que queda en él. */
-  grupos?: { copia?: string | null; ref?: string | null; quedan?: number }[];
+  /** Cada grupo de restic (equipo y carpetas): su copia o, si no se sabe (almacén), unas versiones que quedan en él (la más reciente primero). */
+  grupos?: { copia?: string | null; refs?: string[]; quedan?: number }[];
   motivos?: string[];
   /** [id corto, hora (s), grupo, bytes de sus archivos, motivo]. */
   versiones?: [string, number | null, number | null, number | null, number | null][];
@@ -105,7 +105,7 @@ export function leerVuelta(e: EntradaRetencion, copiaDe: (id: string) => string 
   if (e?.tipo !== "retencion" || typeof e.hora !== "string") return null;
   const origen: Origen = e.origen === "almacen" || e.origen === "externa" ? e.origen : "equipo";
   const por: Por = e.por === "ventana" || e.por === "automatica" ? e.por : "orden";
-  const grupos = (e.grupos ?? []).map((g) => g?.copia ?? (g?.ref ? copiaDe(g.ref) : null) ?? null);
+  const grupos = (e.grupos ?? []).map((g) => g?.copia ?? (Array.isArray(g?.refs) ? g.refs.map((r) => copiaDe(r)).find((x) => !!x) : null) ?? null);
   const versiones: VersionQuitada[] = (Array.isArray(e.versiones) ? e.versiones : [])
     .filter((v) => Array.isArray(v) && typeof v[0] === "string")
     .map(([id, t, g, b, m]) => ({
