@@ -915,7 +915,15 @@ fn seq_valido(n: u64) -> bool {
 async fn adelantar_seq_de(st: &St, a: &Agente, ultimo_seq: Option<u64>) -> Res<()> {
     let Some(n) = ultimo_seq.filter(|n| *n > 0 && seq_valido(*n)) else { return Ok(()) };
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
-    st.db(move |db| db.adelantar_seq(&ctx, &equipo, n + 1)).await
+    // Y lo que se le entregó por un canal que ya estaba muerto (red caída sin aviso) y
+    // nunca le llegó: se le vuelve a entregar ahora. Antes se quedaba «entregada» para
+    // siempre (prueba de resistencia, docs/estabilidad.md).
+    st.db(move |db| {
+        db.adelantar_seq(&ctx, &equipo, n + 1)?;
+        db.reponer_no_recibidas(&ctx, &equipo, n, ahora())?;
+        Ok(())
+    })
+    .await
 }
 
 async fn canal(State(st): State<St>, a: Agente, Query(q): Query<Reto>, ws: WebSocketUpgrade) -> Res<Response> {

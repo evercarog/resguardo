@@ -755,6 +755,16 @@ impl Almacen for Sqlite {
             Ok(())
         })
     }
+    fn reponer_no_recibidas(&self, c: &ClienteCtx, equipo: &str, ultimo_seq: u64, ahora: Ts) -> R<usize> {
+        let ultimo = i64::try_from(ultimo_seq).unwrap_or(i64::MAX);
+        self.con(c, |db| {
+            db.execute(
+                "UPDATE ordenes SET estado = 'pendiente', actualizada = ?3 WHERE equipo_id = ?1 AND estado = 'entregada' AND seq > ?2 AND caduca > ?3",
+                params![equipo, ultimo, ahora],
+            )
+            .map_err(s)
+        })
+    }
     fn adelantar_seq(&self, c: &ClienteCtx, id: &str, minimo: u64) -> R<()> {
         let minimo = i64::try_from(minimo).unwrap_or(i64::MAX);
         self.con(c, |db| {
@@ -906,9 +916,10 @@ impl Almacen for Sqlite {
         let con = self.conexion(c)?;
         let mut db = con.lock().unwrap_or_else(|e| e.into_inner());
         let tx = db.transaction().map_err(s)?;
-        // Las caducadas sin entregar, se marcan.
+        // Las caducadas sin entregar, se marcan; y las entregadas sin respuesta del equipo
+        // pasada su caducidad (el equipo ya no las aceptaría: si no contestó, no va a hacerlo).
         tx.execute(
-            "UPDATE ordenes SET estado = 'caducada', actualizada = ?2 WHERE equipo_id = ?1 AND estado = 'pendiente' AND caduca <= ?2",
+            "UPDATE ordenes SET estado = 'caducada', actualizada = ?2 WHERE equipo_id = ?1 AND estado IN ('pendiente', 'entregada') AND caduca <= ?2",
             params![equipo, ahora],
         )
         .map_err(s)?;
@@ -1497,6 +1508,10 @@ impl Almacen for Sqlite {
                 filas.collect::<Result<Vec<_>, _>>().map_err(s)?
             };
             db.execute("DELETE FROM relevos WHERE caduca <= ?1", [ahora]).map_err(s)?;
+            // Órdenes que caducaron sin que el equipo las recogiera o contestara (también con el
+            // equipo apagado: así la consola no las enseña «pendientes» o «entregadas» para siempre).
+            db.execute("UPDATE ordenes SET estado = 'caducada', actualizada = ?1 WHERE estado IN ('pendiente', 'entregada') AND caduca <= ?1", [ahora])
+                .map_err(s)?;
             // Informes: se guardan 90 días.
             db.execute("DELETE FROM informes WHERE recibido <= ?1", [ahora - 90 * 86_400]).map_err(s)?;
             Ok(caducados)
@@ -1644,5 +1659,52 @@ mod tests {
         assert_eq!(a.ordenes_con_espera(&c, ahora()).unwrap().len(), 1);
         assert!(a.cancelar_orden(&c, &espera.id, "ana", ahora()).unwrap());
         assert!(a.entregar_ordenes(&c, "e1", ahora() + 7200).unwrap().is_empty());
+    }
+
+    /// Lo entregado por una conexión muerta vuelve a entregarse; lo que caduca sin
+    /// respuesta del equipo (también con el equipo apagado) deja de estar «entregada».
+    #[test]
+    fn entregadas_perdidas_y_caducadas() {
+        let (_d, a) = almacen();
+        let c = ClienteCtx::autorizado(&a.crear_cliente("Uno", "s", 24).unwrap().id);
+        let e = EquipoNuevo {
+            id: "e1".into(),
+            nombre: "PC".into(),
+            so: "w".into(),
+            version: "1".into(),
+            box_pub: "b".into(),
+            sign_pub: "s".into(),
+            sal_equipo: "sal".into(),
+            secreto_hash: "h".into(),
+        };
+        a.crear_equipo(&c, &e).unwrap();
+        let t = ahora();
+        let nueva = |seq: u64, caduca: Ts| OrdenNueva {
+            id: format!("o{seq}"),
+            equipo_id: "e1".into(),
+            tipo: "copiar_ahora".into(),
+            seq,
+            sellado: "x".into(),
+            emitida_por: "ana".into(),
+            not_before: None,
+            caduca,
+            sesion: None,
+            relevo: None,
+        };
+        for seq in 1..=3 {
+            a.insertar_orden(&c, &nueva(seq, t + 3600)).unwrap();
+        }
+        assert_eq!(a.entregar_ordenes(&c, "e1", t).unwrap().len(), 3);
+        // El equipo aceptó la 1 y luego la conexión murió: la 2 y la 3 se le vuelven a dar.
+        assert_eq!(a.reponer_no_recibidas(&c, "e1", 1, t).unwrap(), 2);
+        assert_eq!(a.entregar_ordenes(&c, "e1", t).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2, 3]);
+        // Las que ya aceptó (o caducadas) no.
+        assert_eq!(a.reponer_no_recibidas(&c, "e1", 3, t).unwrap(), 0);
+        assert_eq!(a.reponer_no_recibidas(&c, "e1", 1, t + 7200).unwrap(), 0);
+        // Sin respuesta pasada su caducidad: «caducada», también sin que el equipo vuelva (limpieza).
+        a.insertar_orden(&c, &nueva(4, t + 60)).unwrap();
+        a.limpiar(&c, t + 7200).unwrap();
+        let estados: Vec<String> = a.ordenes_equipo(&c, "e1", 10).unwrap().into_iter().map(|o| o.estado).collect();
+        assert!(estados.iter().all(|e| e == "caducada"), "{estados:?}");
     }
 }

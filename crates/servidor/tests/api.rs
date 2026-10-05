@@ -1281,6 +1281,47 @@ async fn el_canal_y_el_sondeo_adelantan_el_numero_de_orden() {
     assert_eq!(seq().await, Some(13));
 }
 
+/// Una orden entregada por un canal que ya estaba muerto (red caída sin aviso) no le
+/// llegó al equipo: cuando vuelve y dice cuál fue la última que aceptó, se le entrega
+/// otra vez. Antes se quedaba «entregada» para siempre.
+#[tokio::test]
+async fn lo_entregado_que_no_llego_se_entrega_otra_vez() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let ordenes = format!("/api/clientes/{c}/equipos/{}/ordenes", ag.id);
+    let tomar = |ultimo: Option<u64>| {
+        let (app, auth) = (p.app.clone(), ag.auth());
+        async move {
+            let mut cuerpo = json!({ "reto": B64.encode([5u8; 32]) });
+            if let Some(n) = ultimo {
+                cuerpo["ultimo_seq"] = json!(n);
+            }
+            let r = pedir(&app, "POST", "/api/agente/tomar", Some(cuerpo), None, &[("authorization", &auth)]).await;
+            assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+            r.json["ordenes"].as_array().unwrap().iter().map(|o| o["seq"].as_u64().unwrap()).collect::<Vec<_>>()
+        }
+    };
+    for seq in 1..=2 {
+        let r = pedir(
+            &p.app,
+            "POST",
+            &ordenes,
+            Some(json!({ "tipo": "copiar_ahora", "seq": seq, "sellado": sobre(&ag), "caduca": caduca(1) })),
+            Some(&cookie),
+            &[],
+        )
+        .await;
+        assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    }
+    assert_eq!(tomar(None).await, [1, 2]);
+    // Se perdieron por el camino; el equipo solo había aceptado la 1 (de antes).
+    assert_eq!(tomar(Some(1)).await, [2]);
+    // Ya la tiene: no se repite. Y un agente anterior (sin `ultimo_seq`) tampoco las recibe dos veces.
+    assert!(tomar(Some(2)).await.is_empty());
+    assert!(tomar(None).await.is_empty());
+}
+
 /// Un equipo que deja de contestar sin cerrar la conexión (red caída sin aviso, un
 /// portátil que se duerme) deja de contar como conectado: antes seguía «conectado»
 /// para siempre y su último contacto se renovaba cada 30 s. Uno que contesta, sigue.

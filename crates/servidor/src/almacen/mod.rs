@@ -448,6 +448,10 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn ordenes_cliente(&self, c: &ClienteCtx, equipo: Option<&str>, estado: Option<&str>, antes: Option<(Ts, String)>, limite: i64) -> R<Vec<Orden>>;
     /// Órdenes que el agente aún no tiene (pendientes y sin caducar). Las marca como entregadas.
     fn entregar_ordenes(&self, c: &ClienteCtx, equipo: &str, ahora: Ts) -> R<Vec<Orden>>;
+    /// Las entregadas que el equipo no llegó a recibir (con un número mayor que el último
+    /// que aceptó de este servidor: se perdieron en una conexión que ya estaba muerta)
+    /// vuelven a pendientes, para entregarlas otra vez. Sin caducar. Devuelve cuántas.
+    fn reponer_no_recibidas(&self, c: &ClienteCtx, equipo: &str, ultimo_seq: u64, ahora: Ts) -> R<usize>;
     /// Canceladas desde la última entrega (para avisar al agente) y las marca como avisadas.
     fn canceladas_sin_avisar(&self, c: &ClienteCtx, equipo: &str) -> R<Vec<String>>;
     fn resultado_orden(&self, c: &ClienteCtx, equipo: &str, r: &ResultadoOrden) -> R<bool>;
