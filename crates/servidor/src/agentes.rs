@@ -886,6 +886,14 @@ async fn fin_relevo(State(st): State<St>, a: Agente, Path(r): Path<String>, Json
 
 // ---------- WebSocket ----------
 
+/// Cada cuánto se le manda `ping` al equipo (contesta `pong`).
+pub const LATIDO_AGENTE: Duration = Duration::from_secs(30);
+/// Sin nada del equipo en este tiempo, el canal se da por muerto (y el equipo, sin
+/// conexión). Holgado: el agente puede tardar en leer mientras prepara un informe.
+pub const SIN_RESPUESTA_AGENTE: Duration = Duration::from_secs(150);
+/// Plazo para mandarle un mensaje (un equipo que no lee no retiene la tarea).
+const PLAZO_ENVIO_AGENTE: Duration = Duration::from_secs(30);
+
 #[derive(Deserialize)]
 pub struct Reto {
     reto: String,
@@ -937,33 +945,46 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
     // Lo que estaba esperando (y lo que se entregó y quizá no llegó).
     empujar(&st, &a.ctx, &a.equipo).await;
 
-    let mut ping = tokio::time::interval(Duration::from_secs(30));
+    let mut ping = tokio::time::interval(LATIDO_AGENTE);
     ping.tick().await;
+    // Lo último que llegó del equipo (su «pong», un informe…). Sin esto, con la red caída
+    // sin aviso (sin RST: un cable quitado, un portátil que se duerme, un router que
+    // descarta) la conexión seguía «abierta» para siempre: la consola veía el equipo
+    // conectado, con su «último contacto» al día, y la tarea se quedaba (prueba de
+    // resistencia, docs/estabilidad.md).
+    let mut visto = tokio::time::Instant::now();
     loop {
         tokio::select! {
             salida = rx.recv() => {
                 let Some(texto) = salida else { break };
-                if envio.send(Message::Text(texto.into())).await.is_err() {
+                if !matches!(tokio::time::timeout(PLAZO_ENVIO_AGENTE, envio.send(Message::Text(texto.into()))).await, Ok(Ok(()))) {
                     break;
                 }
             }
             entrada = recepcion.next() => {
                 match entrada {
                     Some(Ok(Message::Text(t))) => {
+                        visto = tokio::time::Instant::now();
                         if let Err(e) = procesar(&st, &a, &t).await {
                             let _ = tx.send(json!({ "t": "error", "error": e.codigo, "mensaje": e.mensaje }).to_string());
                         }
                     }
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
-                    Some(Ok(_)) => {}
+                    Some(Ok(_)) => visto = tokio::time::Instant::now(),
                 }
             }
             _ = ping.tick() => {
+                if visto.elapsed() > SIN_RESPUESTA_AGENTE {
+                    break;
+                }
                 if tx.send(json!({ "t": "ping" }).to_string()).is_err() {
                     break;
                 }
-                let (ctx, e) = (a.ctx.clone(), a.equipo.clone());
-                let _ = st.db(move |db| db.contacto_equipo(&ctx, &e, ahora())).await;
+                // El último contacto, solo si de verdad contesta.
+                if visto.elapsed() <= LATIDO_AGENTE * 2 {
+                    let (ctx, e) = (a.ctx.clone(), a.equipo.clone());
+                    let _ = st.db(move |db| db.contacto_equipo(&ctx, &e, ahora())).await;
+                }
             }
         }
     }

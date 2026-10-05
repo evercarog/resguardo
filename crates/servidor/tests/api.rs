@@ -1281,6 +1281,57 @@ async fn el_canal_y_el_sondeo_adelantan_el_numero_de_orden() {
     assert_eq!(seq().await, Some(13));
 }
 
+/// Un equipo que deja de contestar sin cerrar la conexión (red caída sin aviso, un
+/// portátil que se duerme) deja de contar como conectado: antes seguía «conectado»
+/// para siempre y su último contacto se renovaba cada 30 s. Uno que contesta, sigue.
+#[tokio::test(start_paused = true)]
+async fn el_canal_de_un_equipo_callado_se_cierra() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let ruta = format!("/api/clientes/{c}/equipos/{}", ag.id);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = p.app.clone();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let abrir = |n: u8| {
+        let auth = ag.auth();
+        async move {
+            let mut req = format!("ws://{addr}/api/agente/canal?reto={}", urlenc(&B64.encode([n; 32]))).into_client_request().unwrap();
+            req.headers_mut().insert("authorization", auth.parse().unwrap());
+            let (mut ws, _) = tokio_tungstenite::connect_async(req).await.expect("conecta");
+            let hola: Value = serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            assert_eq!(hola["t"], "hola");
+            ws
+        }
+    };
+    let conectado = || async { pedir(&p.app, "GET", &ruta, None, Some(&cookie), &[]).await.json["conectado"].as_bool() };
+
+    // Contesta a cada ping: sigue conectado pasados los 150 s.
+    let mut ws = abrir(1).await;
+    let hasta = tokio::time::Instant::now() + std::time::Duration::from_secs(200);
+    while tokio::time::Instant::now() < hasta {
+        match tokio::time::timeout(std::time::Duration::from_secs(40), ws.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) if t.contains("\"ping\"") => ws.send(Message::Text(r#"{"t":"pong"}"#.into())).await.unwrap(),
+            Ok(Some(Ok(_))) | Err(_) => {}
+            Ok(x) => panic!("el canal de un equipo que contesta se cerró: {x:?}"),
+        }
+    }
+    assert_eq!(conectado().await, Some(true));
+    drop(ws);
+
+    // Callado (no contesta ni cierra): a los 150 s, el servidor lo cierra.
+    let mut ws = abrir(2).await;
+    assert_eq!(conectado().await, Some(true));
+    // Los ping llegan, sin contestar, hasta que el servidor cierra.
+    let fin = tokio::time::timeout(std::time::Duration::from_secs(300), async { while let Some(Ok(Message::Text(_))) = ws.next().await {} }).await;
+    assert!(fin.is_ok(), "el servidor no cerró el canal del equipo callado");
+    assert_eq!(conectado().await, Some(false));
+}
+
 /// Plantillas de copia (v1.20): el servidor guarda bytes opacos de la consola; solo administradores.
 #[tokio::test]
 async fn plantillas_cifradas() {
