@@ -146,7 +146,7 @@ async fn observaciones_y_comentarios_con_papeles() {
     assert_eq!(coms[0]["texto"], "Cambié el disco el 3/10");
     assert_eq!(coms[0]["autor"]["nombre"], "tomas");
     assert!(coms.iter().all(|k| k["editable"] == false && k["borrable"] == false), "la de lectura no toca nada");
-    assert_eq!(j["minutos_edicion"], 15);
+    assert_eq!(j["minutos_cambio"], 15);
 
     // Solo su autor lo cambia; otra técnica no; un propietario lo borra.
     let (e, _, _) = pedir(&p.app, "PATCH", &ruta(&format!("/comentarios/{id1}")), Some(json!({ "texto": "otro" })), Some(&tecnica2)).await;

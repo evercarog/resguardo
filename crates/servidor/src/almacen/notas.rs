@@ -146,7 +146,7 @@ impl AlmacenNotas for super::sqlite::Sqlite {
         self.con(c, |db| {
             let mut st = db
                 .prepare(&format!(
-                    "SELECT * FROM (SELECT {COLS_COM} FROM comentarios WHERE tipo = ?1 AND objeto = ?2 ORDER BY creado DESC, id DESC LIMIT ?3) ORDER BY creado, id"
+                    "SELECT {COLS_COM} FROM (SELECT rowid AS orden_alta, {COLS_COM} FROM comentarios WHERE tipo = ?1 AND objeto = ?2 ORDER BY creado DESC, orden_alta DESC LIMIT ?3) ORDER BY creado, orden_alta"
                 ))
                 .map_err(s)?;
             let filas = st.query_map(params![tipo, objeto, limite], fila_com).map_err(s)?;
@@ -201,7 +201,7 @@ impl AlmacenNotas for super::sqlite::Sqlite {
         self.con(c, |db| {
             let mut st = db.prepare("SELECT tipo, objeto, texto, actualizada, por_id, por FROM observaciones ORDER BY tipo, objeto").map_err(s)?;
             let obs = st.query_map([], fila_obs).map_err(s)?.collect::<Result<Vec<_>, _>>().map_err(s)?;
-            let mut st = db.prepare(&format!("SELECT {COLS_COM} FROM comentarios ORDER BY creado, id")).map_err(s)?;
+            let mut st = db.prepare(&format!("SELECT {COLS_COM} FROM comentarios ORDER BY creado, rowid")).map_err(s)?;
             let coms = st.query_map([], fila_com).map_err(s)?.collect::<Result<Vec<_>, _>>().map_err(s)?;
             Ok((obs, coms))
         })

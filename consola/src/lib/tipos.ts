@@ -949,7 +949,7 @@ export interface NotasObjeto {
   objeto: string;
   observacion: ObservacionNota | null;
   comentarios: ComentarioNota[];
-  minutos_edicion: number;
+  minutos_cambio: number;
 }
 
 /** Para el paquete de exportación. */

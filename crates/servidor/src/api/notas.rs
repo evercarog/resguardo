@@ -25,7 +25,7 @@ pub const MAX_COMENTARIOS_CLIENTE: i64 = 50_000;
 /// Comentarios que se devuelven de un objeto (los más recientes).
 pub const COMENTARIOS_VISIBLES: i64 = 200;
 /// Quien escribió un comentario lo puede cambiar o borrar durante este tiempo.
-pub const MINUTOS_EDICION: i64 = 15;
+pub const MINUTOS_CAMBIO: i64 = 15;
 /// Lo que se enseña de una observación en la lista (contadores y búsqueda).
 const MAX_TITULO: usize = 80;
 
@@ -104,7 +104,7 @@ pub fn titulo(texto: &str) -> String {
 
 fn comentario_json(k: &Comentario, yo: &str, rol: Rol, ahora: i64) -> Value {
     let mio = k.autor_id == yo;
-    let a_tiempo = ahora - k.creado < MINUTOS_EDICION * 60;
+    let a_tiempo = ahora - k.creado < MINUTOS_CAMBIO * 60;
     json!({
         "id": k.id, "texto": k.texto, "autor": { "id": k.autor_id, "nombre": k.autor },
         "creado": fecha(k.creado), "editado": k.editado.map(fecha),
@@ -150,7 +150,7 @@ pub async fn ver(State(st): State<St>, u: Usuario, Path(c): Path<String>, Query(
         "tipo": q.tipo, "objeto": q.objeto,
         "observacion": obs.map(|o| json!({ "texto": o.texto, "actualizada": fecha(o.actualizada), "por": o.por })),
         "comentarios": coms.iter().map(|k| comentario_json(k, &yo, rol, ahora)).collect::<Vec<_>>(),
-        "minutos_edicion": MINUTOS_EDICION,
+        "minutos_cambio": MINUTOS_CAMBIO,
     })))
 }
 
@@ -245,13 +245,13 @@ async fn tocable(st: &St, u: &Usuario, c: &str, id: &str, borrar: bool) -> Res<(
     let (ctx, rol) = u.miembro(st, c, Rol::Tecnico).await?;
     let (ctx2, id2) = (ctx.clone(), id.to_string());
     let k = st.db(move |db| db.comentario(&ctx2, &id2)).await?.ok_or_else(ErrorApi::no_existe)?;
-    let mio = k.autor_id == u.id() && ahora() - k.creado < MINUTOS_EDICION * 60;
+    let mio = k.autor_id == u.id() && ahora() - k.creado < MINUTOS_CAMBIO * 60;
     if !(mio || (borrar && rol >= Rol::Propietario)) {
         return Err(ErrorApi::nuevo(
             StatusCode::FORBIDDEN,
             "prohibido",
             if k.autor_id == u.id() {
-                format!("Solo se puede cambiar o borrar durante {MINUTOS_EDICION} minutos. Añade otro comentario.")
+                format!("Solo se puede cambiar o borrar durante {MINUTOS_CAMBIO} minutos. Añade otro comentario.")
             } else {
                 "Solo quien lo escribió (o una persona propietaria, para borrarlo).".to_string()
             },

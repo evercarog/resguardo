@@ -102,7 +102,7 @@ export function rutasNotas<C extends Ctx>(h: Ayudas<C>): [string, RegExp, (ctx: 
             .filter((k) => k.tipo === tipo && k.objeto === objeto)
             .slice(-200)
             .map((k) => json(k, cuenta.id, rol)),
-          minutos_edicion: MINUTOS,
+          minutos_cambio: MINUTOS,
         };
       },
     ],

@@ -113,7 +113,7 @@
                 <span class="faint"><Tiempo iso={k.creado} />{#if k.editado}<span use:tip={"Cambiado después de escribirlo"}> · editado</span>{/if}</span>
                 {#if (k.editable || k.borrable) && editandoId !== k.id && borrandoId !== k.id}
                   <span class="acc">
-                    {#if k.editable}<button type="button" class="icon-btn" aria-label="Cambiar este comentario" use:tip={`Cambiar (durante ${d?.minutos_edicion ?? 15} minutos)`} onclick={() => ((editandoId = k.id), (textoEdicion = k.texto))}><Pencil size={14} /></button>{/if}
+                    {#if k.editable}<button type="button" class="icon-btn" aria-label="Cambiar este comentario" use:tip={`Cambiar (durante ${d?.minutos_cambio ?? 15} minutos)`} onclick={() => ((editandoId = k.id), (textoEdicion = k.texto))}><Pencil size={14} /></button>{/if}
                     {#if k.borrable}<button type="button" class="icon-btn" aria-label="Borrar este comentario" use:tip={"Borrar"} onclick={() => (borrandoId = k.id)}><Trash2 size={14} /></button>{/if}
                   </span>
                 {/if}

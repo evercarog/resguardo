@@ -653,7 +653,7 @@ Notas que escriben las personas sobre un objeto del cliente, para quien venga de
 | Ruta | Rol | Qué |
 |---|---|---|
 | `GET /api/clientes/{c}/notas` | lectura | `{ objetos: [{ tipo, objeto, titulo, observacion, comentarios, actualizada }] }`: cada objeto con algo. `titulo`: la primera línea de la observación, sin marcas, hasta 80 caracteres (para los contadores y la búsqueda de la consola; `null` sin observación) |
-| `GET /api/clientes/{c}/notas/objeto?tipo=&objeto=` | lectura | `{ tipo, objeto, observacion: { texto, actualizada, por } \| null, comentarios: [{ id, texto, autor: { id, nombre }, creado, editado, editable, borrable }], minutos_edicion: 15 }` (comentarios del más antiguo al más reciente; `editable`/`borrable`: para quien pregunta) |
+| `GET /api/clientes/{c}/notas/objeto?tipo=&objeto=` | lectura | `{ tipo, objeto, observacion: { texto, actualizada, por } \| null, comentarios: [{ id, texto, autor: { id, nombre }, creado, editado, editable, borrable }], minutos_cambio: 15 }` (comentarios del más antiguo al más reciente; `editable`/`borrable`: para quien pregunta) |
 | `PUT /api/clientes/{c}/notas/observacion` | técnico | `{ tipo, objeto, texto }` → `{ texto, actualizada, por }`, o `null` si `texto` está vacío (se quita). Si no cambia, no se audita |
 | `POST /api/clientes/{c}/notas/comentarios` | técnico | `{ tipo, objeto, texto }` → el comentario |
 | `PATCH /api/clientes/{c}/notas/comentarios/{id}` | su autor (15 min) | `{ texto }` → el comentario (`editado` puesto) |
