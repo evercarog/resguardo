@@ -170,7 +170,7 @@
           <button class="pulsable-bloque chip-pulsable" use:tip={"¿Por qué? Ver detalle"} onclick={abrirEstado}><Chip tono={estado.tono} texto={estado.texto} /></button>
           {#if repo.solo_lectura}<span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}
         </div>
-        <p class="sub">{#if lugar}<SeGuardaEn {lugar} riesgo={!!riesgo} />{/if}<span class="faint">{" · copias de "}{equipo.nombre}</span></p>
+        <p class="sub">Copias de <a class="link-suave" href="/c/{c}/equipos/{e}">{equipo.nombre}</a></p>
       </div>
       {#if puede.ordenar(rol)}
         <div class="page-actions">
@@ -190,6 +190,7 @@
         </div>
       {/if}
     </header>
+    {#if lugar}<p class="donde"><SeGuardaEn {lugar} riesgo={!!riesgo} /></p>{/if}
     {#if riesgo}
       <AvisoMismoEquipo {riesgo} onmover={!repo.solo_lectura && puede.administrar(rol) ? () => (mover = true) : undefined} hrefExterna={puede.ordenar(rol) && suyas.length ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(rid)}` : undefined} />
     {/if}
@@ -230,7 +231,7 @@
       </div>
     </div>
 
-    <FlujoRepo {repo} {inf} {copias} {destinos} equipos={actual.equipos} ahora={reloj.ahora} />
+    <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} />
 
     <div class="dos" id="sec-proteccion">
       {#if prot}
@@ -419,6 +420,9 @@
     margin: 4px 0 0;
     font-size: var(--fs-sm);
     color: var(--text-2);
+  }
+  .donde {
+    margin: calc(-1 * var(--sp-2)) 0 0;
   }
   .frase {
     margin: 0;

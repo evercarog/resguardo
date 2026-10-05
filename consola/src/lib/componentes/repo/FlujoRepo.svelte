@@ -2,7 +2,9 @@
   // El camino de los datos, como en la app de escritorio: tus archivos → el
   // repositorio (en su destino) → la copia externa o el espejo. Cada paso con
   // su estado en icono y palabra, y el horario en la flecha.
-  import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, Cloud, CloudOff, FolderOpen, HardDrive, Server, ShieldAlert, ShieldCheck, TriangleAlert } from "@lucide/svelte";
+  import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, Cloud, CloudOff, FolderOpen, ShieldAlert, ShieldCheck, TriangleAlert } from "@lucide/svelte";
+  import { lugarDe } from "$lib/dondeGuarda";
+  import { ICONO_LUGAR } from "../SeGuardaEn.svelte";
   import type { CopiaResumen, DestinoResumen, Equipo, RepoInforme, RepositorioResumen } from "$lib/tipos";
   import { horarioEnFrase, numero, relativo } from "$lib/formato";
   import { resultadoConError } from "$lib/salud";
@@ -16,7 +18,8 @@
     destinos,
     equipos,
     ahora,
-  }: { repo: RepositorioResumen; inf: RepoInforme | null; copias: CopiaResumen[]; destinos: DestinoResumen[]; equipos: Equipo[]; ahora: number } = $props();
+    equipo,
+  }: { repo: RepositorioResumen; inf: RepoInforme | null; copias: CopiaResumen[]; destinos: DestinoResumen[]; equipos: Equipo[]; ahora: number; /** v1.41: el equipo que copia (para decir «en este mismo equipo»). */ equipo?: Equipo } = $props();
 
   const suyas = $derived(copias.filter((k) => k.repo === repo.id));
   const destino = $derived(destinoDe(destinos, repo));
@@ -29,7 +32,10 @@
   const tonoOrigen = $derived(
     ej?.resultado === "fallo" || suyas.some((k) => k.ultima?.estado === "fallo") ? "bad" : ej?.resultado === "aviso" ? "warn" : ult ? "ok" : "neutral",
   );
-  const Icono = $derived(destino?.tipo === "local" ? HardDrive : destino?.tipo === "rest" ? Server : Cloud);
+  // v1.41: dónde está el repositorio, en palabras (y si es en el mismo equipo).
+  const lugar = $derived(lugarDe(destino, equipo ?? { id: "", nombre: "" }, equipos));
+  const Icono = $derived(ICONO_LUGAR[lugar.clase]);
+  const mismo = $derived(!!equipo && (lugar.clase === "carpeta" || lugar.clase === "almacen_propio"));
   const tercero = $derived(
     repo.externa
       ? {
@@ -82,7 +88,8 @@
       <div class="cuerpo">
         <span class="k">Repositorio <Ayuda id="repositorio" /></span>
         <strong>{repo.nombre}</strong>
-        <span class="faint sub">{destino?.nombre ?? repo.destino}{nVersiones(repo, inf) ? ` · ${numero(nVersiones(repo, inf))} versiones` : ""}</span>
+        <span class="faint sub">{lugar.texto}{lugar.detalle ? ` · ${lugar.detalle}` : ""}{nVersiones(repo, inf) ? ` · ${numero(nVersiones(repo, inf))} versiones` : ""}</span>
+        {#if mismo && !tercero}<span class="st aviso-mismo"><TriangleAlert size={13} /> En el mismo equipo que protege</span>{/if}
         <span class="st">
           {#if borrado?.estado === "ok" || destino?.inmutable}<ShieldCheck size={13} /> Protegido contra borrado
           {:else if borrado?.estado === "aviso" || borrado?.estado === "fallo"}<ShieldAlert size={13} /> Se puede borrar desde el equipo
@@ -187,6 +194,10 @@
   .tone-neutral .st {
     font-weight: 400;
     color: var(--text-3);
+  }
+  .st.aviso-mismo {
+    font-weight: 500;
+    color: var(--warn);
   }
   .flecha {
     display: flex;

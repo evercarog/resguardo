@@ -37,8 +37,11 @@
   import CampoClave from "./CampoClave.svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
   import SeGuardaEn from "./SeGuardaEn.svelte";
+  import { tip } from "$lib/tooltip";
 
-  let { cliente, equipo, repo, equipos, onclose }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; equipos: Equipo[]; onclose: () => void } = $props();
+  let { cliente, equipo: equipo0, repo, equipos, onclose }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; equipos: Equipo[]; onclose: () => void } = $props();
+  // El equipo como lo tiene ahora la lista del cliente (se recarga al terminar cada orden): sus destinos y repositorios al día.
+  const equipo = $derived(actual.equipos.find((x) => x.id === equipo0.id) ?? equipo0);
 
   // ---------------------------------------------------------------------------
   // A dónde
@@ -56,6 +59,7 @@
   const destinos = $derived(equipo.resumen?.destinos ?? []);
   const actualD = $derived(destinoDe(destinos, repo));
   const lugarActual = $derived(lugarDe(actualD, equipo, equipos));
+  const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
   const opciones = $derived.by((): Opcion[] => {
     const almacenes = equipos.filter((a) => a.id !== equipo.id && a.confirmado && a.modo !== "trasladado" && a.resumen?.guarda_copias?.activo);
     const deAlmacen = almacenes.map((a): Opcion => {
@@ -107,8 +111,6 @@
     }
   }
   let plan = $state<Plan | null>(untrack(leerPlan));
-  // Un plan ya creado cuyo repositorio nuevo ya no está (se quitó): se olvida.
-  if (untrack(() => plan && plan.fase !== "creando" && plan.fase !== "listo" && !(equipo.resumen?.repositorios ?? []).some((r) => r.id === plan!.nuevo))) untrack(() => guardarPlan(null));
 
   // ---------------------------------------------------------------------------
   // Pasos
@@ -460,7 +462,7 @@
     tipo="quitar_repositorio"
     cuerpo={{ repo: repo.id }}
     titulo="Dejar de usar el repositorio anterior"
-    descripcion={`${equipo.nombre} olvidará «${repo.nombre}» (${lugarActual.texto.toLowerCase()}). Lo guardado sigue en su carpeta: bórrala a mano cuando hayas comprobado que el nuevo tiene todo.`}
+    descripcion={`${equipo.nombre} olvidará «${repo.nombre}» (${minus(lugarActual.texto)}). Lo guardado sigue en su carpeta: bórrala a mano cuando hayas comprobado que el nuevo tiene todo.`}
     repo={{ id: repo.id, nombre: repo.nombre }}
     onclose={() => ((quitar = false), onclose())}
   />
@@ -564,7 +566,7 @@
           <CircleCheck size={16} />
           <div>
             <p><strong>Hecho.</strong> Las copias de {equipo.nombre} ya guardan en «{plan?.nombre ?? nombre}» ({plan?.donde}), con todo el historial de antes.</p>
-            <p class="pequeno">Cuando compruebes que el nuevo tiene todas las versiones (en su página), deja de usar el anterior. Su carpeta ({lugarActual.texto.toLowerCase()}{lugarActual.detalle ? `, «${lugarActual.detalle}»` : ""}) no se borra sola: bórrala a mano después, si quieres recuperar el espacio.</p>
+            <p class="pequeno">Cuando compruebes que el nuevo tiene todas las versiones (en su página), deja de usar el anterior. Su carpeta ({minus(lugarActual.texto)}{lugarActual.detalle ? `, «${lugarActual.detalle}»` : ""}) no se borra sola: bórrala a mano después, si quieres recuperar el espacio.</p>
           </div>
         </div>
         <footer>
@@ -583,6 +585,7 @@
               </CampoClave>
             {/if}
             <footer>
+              {#if plan}<button type="button" class="btn btn-ghost hueco" use:tip={"Olvida lo hecho aquí (el repositorio nuevo, si se creó, se queda en el equipo)"} onclick={empezarDeNuevo}>Empezar de nuevo</button>{/if}
               <button type="button" class="btn btn-ghost" onclick={onclose}>Cerrar</button>
               {#if plan}
                 <button class="btn btn-primary" disabled={!claveAdmin}><KeyRound size={15} />Seguir</button>

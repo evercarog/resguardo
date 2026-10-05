@@ -103,6 +103,8 @@ export interface RiesgoMismoEquipo {
  */
 export function riesgoMismoEquipo(repo: RepositorioResumen, equipo: Equipo, equipos: Equipo[]): RiesgoMismoEquipo | null {
   if (repo.solo_lectura) return null;
+  // Ninguna copia guarda ya en él (p. ej. tras «Mover a otro sitio…»): no hay nada que avisar.
+  if (equipo.resumen?.copias && !equipo.resumen.copias.some((k) => k.repo === repo.id && k.activa !== false)) return null;
   const lugar = lugarRepo(repo, equipo, equipos);
   if (lugar.clase !== "carpeta" && lugar.clase !== "almacen_propio") return null;
   if (repo.externa) return null;
@@ -128,8 +130,6 @@ export function riesgosDelCliente(equipos: Equipo[], todos: Equipo[] = equipos):
     .filter((e) => e.modo !== "trasladado" && e.confirmado)
     .flatMap((e) =>
       (e.resumen?.repositorios ?? [])
-        // Solo los que reciben copias de verdad (no uno olvidado sin copias).
-        .filter((r) => (e.resumen?.copias ?? []).some((k) => k.repo === r.id && k.activa !== false))
         .flatMap((r) => {
           const riesgo = riesgoMismoEquipo(r, e, todos);
           return riesgo ? [{ equipo: e, repo: r, riesgo }] : [];
