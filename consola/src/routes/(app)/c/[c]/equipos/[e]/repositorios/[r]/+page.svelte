@@ -64,6 +64,11 @@
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
+  // v1.4x: lo que está en marcha en él (también un «Mover a otro sitio…» que empezó otra consola).
+  import EnMarcha from "$lib/componentes/EnMarcha.svelte";
+  import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
+  import { tareasDe } from "$lib/progreso.svelte";
+  import { hayPlanMover, moviendoDe } from "$lib/mover";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -146,6 +151,10 @@
   let traer = $state(page.url.searchParams.get("traer") === "1");
   // «?mover=1»: desde el aviso de Estado («Mover a un almacén…»).
   let mover = $state(page.url.searchParams.get("mover") === "1");
+  // Moviéndose ya (desde otra consola u otro navegador): aquí no se puede empezar otro ni llevar sus pasos.
+  const moviendo = $derived(moviendoDe(tareasDe(e), rid));
+  const planAqui = $derived(!!moviendo && hayPlanMover(c, e, moviendo.origen ?? rid));
+  const moverBloqueado = $derived(!!moviendo && (moviendo.otra_consola || !planAqui));
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -185,14 +194,21 @@
           {/if}
           {#if !repo.solo_lectura && puede.administrar(rol)}
             <button class="btn btn-ghost" use:tip={"Copiar aquí las versiones de otro repositorio, p. ej. el de la app de escritorio"} onclick={() => (traer = true)}><History size={16} />Traer historial</button>
-            <button class="btn btn-ghost" use:tip={"Llevar este repositorio, con todo su historial, a otro destino (p. ej. el almacén de otro equipo)"} onclick={() => (mover = true)}><ArrowRightLeft size={16} />Mover a otro sitio…</button>
+            <button
+              class="btn btn-ghost"
+              disabled={moverBloqueado}
+              use:tip={moverBloqueado ? "Ya se está moviendo: los pasos los lleva quien lo empezó" : "Llevar este repositorio, con todo su historial, a otro destino (p. ej. el almacén de otro equipo)"}
+              onclick={() => (mover = true)}><ArrowRightLeft size={16} />Mover a otro sitio…</button
+            >
           {/if}
         </div>
       {/if}
     </header>
     {#if lugar}<p class="donde"><SeGuardaEn {lugar} riesgo={!!riesgo} /></p>{/if}
+    <MoviendoseAviso equipo={e} repo={rid} onseguir={planAqui && moviendo?.origen === rid ? () => (mover = true) : undefined} />
+    <EnMarcha equipo={e} repo={rid} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover marco />
     {#if riesgo}
-      <AvisoMismoEquipo {riesgo} onmover={!repo.solo_lectura && puede.administrar(rol) ? () => (mover = true) : undefined} hrefExterna={puede.ordenar(rol) && suyas.length ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(rid)}` : undefined} />
+      <AvisoMismoEquipo {riesgo} onmover={!repo.solo_lectura && puede.administrar(rol) && !moverBloqueado ? () => (mover = true) : undefined} hrefExterna={puede.ordenar(rol) && suyas.length ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(rid)}` : undefined} />
     {/if}
     <Observaciones tipo="repositorio" objeto={objetoDe(e, rid)} />
 

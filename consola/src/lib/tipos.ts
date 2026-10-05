@@ -559,7 +559,8 @@ export interface Informe {
 
 /** Fase de una tarea en marcha (v1.25): las de una copia y `en_marcha` (las demás tareas). */
 export type FaseTarea = "antes_de_copiar" | "preparando" | "escaneando" | "subiendo" | "terminando" | "en_marcha";
-export type TipoTarea = "copia" | "verificar" | "verificar_externa" | "copia_externa" | "prueba_restauracion";
+/** v1.4x: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`. */
+export type TipoTarea = "copia" | "verificar" | "verificar_externa" | "copia_externa" | "prueba_restauracion" | "historial" | "retencion" | "restauracion";
 
 /** Algo que está en marcha en un equipo, con su progreso (v1.25, `GET …/progreso`). Sin rutas. */
 export interface TareaEnMarcha {
@@ -588,6 +589,16 @@ export interface TareaEnMarcha {
   versiones_total?: number | null;
   empezo?: string | null;
   actualizado?: string | null;
+  /** v1.4x (`historial`): el repositorio de este equipo del que se trae (al mover, el que se mueve) y su nombre. */
+  origen?: string | null;
+  nombre_origen?: string | null;
+  /** Un paso de «Mover a otro sitio…»: `historial` (todo) o `ultimo` (lo copiado mientras tanto). */
+  mover?: boolean | null;
+  paso?: "historial" | "ultimo" | null;
+  /** La empezó otra consola del equipo: aquí solo se ve (no se puede llevar ni cancelar). */
+  otra_consola?: boolean | null;
+  /** El nombre, en el equipo, de esa consola (si tiene uno; nunca su dirección). */
+  consola?: string | null;
 }
 
 export interface ProgresoEquipo {
@@ -623,8 +634,17 @@ export type TipoAviso =
 export interface EntradaHistorial {
   id: string;
   hora: string;
-  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso";
+  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial";
   repo?: string;
+  /** v1.4x, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
+  origen?: string;
+  nombre?: string;
+  nombre_origen?: string;
+  /** Un paso de «Mover a otro sitio…»: `historial` (todo) o `ultimo` (lo copiado mientras tanto). */
+  mover?: boolean;
+  paso?: "historial" | "ultimo";
+  /** El nombre, en el equipo, de la consola que lo empezó (si tiene uno). */
+  consola?: string;
   /** Id de la copia (solo «copia»). */
   copia?: string;
   resultado?: "ok" | "aviso" | "fallo" | "sin_cambios";

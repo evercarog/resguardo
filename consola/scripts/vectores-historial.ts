@@ -3,7 +3,9 @@
 // (src/lib/copiasCliente.ts). `npm run test:vectores`.
 import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
-import { pasaFiltro, sucesosDe } from "../src/lib/historial";
+import { pasaFiltro, sucesoHistorial, sucesosDe } from "../src/lib/historial";
+import { moviendoDe, textoPasoCopias } from "../src/lib/mover";
+import { textoCorto, textoMover } from "../src/lib/textoProgreso";
 import { calendario } from "../src/lib/lineaTiempo";
 
 let fallos = 0;
@@ -110,6 +112,26 @@ igual("filtro «En pausa o desactivadas»", filtrarCopias(filas, { estado: "para
 igual("filtro por equipo y por repositorio", [filtrarCopias(filas, { equipo: "e1" }).length, filtrarCopias(filas, { repo: "e2|r1" }).length], [1, 2]);
 igual("orden por estado: primero lo que falla", ordenarCopias(filas, "estado").map((x) => x.clave), ["e1|k3", "e2|k1", "e2|k2"]);
 igual("orden por lo que protege: lo que no se sabe, al final", ordenarCopias(filas, "protegido").map((x) => x.clave)[0], "e2|k1");
+
+console.log("\n· Mover a otro sitio, visto desde cualquier consola (lib/mover.ts, lib/textoProgreso.ts, lib/historial.ts)");
+igual("0 copias: «No hay copias que cambiar» (no hace falta)", textoPasoCopias([]), { texto: "No hay copias que cambiar", sinCopias: true });
+igual("1 copia: en singular", textoPasoCopias(["Siigo"]).texto, "Cambiar la copia «Siigo» para que guarde en el nuevo");
+igual("N copias: cuántas y cuáles", textoPasoCopias(["Siigo", "Escritorio", "Facturas"]).texto, "Cambiar las 3 copias («Siigo», «Escritorio» y «Facturas») para que guarden en el nuevo");
+igual("nunca «Cambiar ninguna copia…»", [[], ["a"], ["a", "b"]].map((x) => /ninguna/i.test(textoPasoCopias(x).texto)), [false, false, false]);
+const tm = { tipo: "historial" as const, repo: "nuevo", origen: "r2", nombre: "Contabilidad (almacén)", nombre_origen: "Contabilidad", mover: true, paso: "historial" as const, fase: "en_marcha" as const, versiones: 56, versiones_total: 255 };
+igual("desde otra consola, con su nombre", textoMover({ ...tm, otra_consola: true, consola: "Oficina" }), "Moviéndose a otro sitio (iniciado desde «Oficina»): trayendo el historial, 56 de 255 versiones");
+igual("desde otra consola sin nombre", textoMover({ ...tm, otra_consola: true }), "Moviéndose a otro sitio (iniciado desde otra consola): trayendo el historial, 56 de 255 versiones");
+igual("desde esta consola, el último paso", textoMover({ ...tm, otra_consola: false, paso: "ultimo", versiones: 1, versiones_total: 1 }), "Moviéndose a otro sitio: trayendo lo copiado mientras tanto, 1 de 1 versión");
+igual("preparando, sin cifras", textoMover({ ...tm, fase: "preparando", versiones: null, versiones_total: null }), "Moviéndose a otro sitio: trayendo el historial, preparando…");
+igual("traer el historial sin mover: no es un movimiento", textoMover({ ...tm, mover: false }), null);
+igual("el movimiento se ve en el repositorio que se mueve y en el nuevo", [moviendoDe([tm], "r2")?.repo, moviendoDe([tm], "nuevo")?.repo, moviendoDe([tm], "otro")], ["nuevo", "nuevo", null]);
+igual("el chip dice «Moviendo…»", textoCorto(tm, 22), "Moviendo… 22 %");
+const hm: EntradaHistorial = { id: "m1", hora: h(1), tipo: "historial", repo: "nuevo", origen: "r2", nombre: "Contabilidad (almacén)", nombre_origen: "Contabilidad", mover: true, paso: "ultimo", consola: "Oficina", resultado: "ok", mensaje: "Historial traído: 3 versiones nuevas." };
+igual("al terminar, en el repositorio que se movió", [sucesoHistorial(hm, "r2").titulo, sucesoHistorial(hm, "r2").meta], ["Movido a otro sitio a «Contabilidad (almacén)»", "desde la consola «Oficina»"]);
+igual("y en el nuevo", sucesoHistorial(hm, "nuevo").titulo, "Movido aquí desde «Contabilidad»");
+igual("un paso que falló", [sucesoHistorial({ ...hm, paso: "historial", resultado: "fallo" }, "r2").titulo, sucesoHistorial({ ...hm, resultado: "fallo" }, "r2").tono], ["Mover a otro sitio: falló", "bad"]);
+const conMover = sucesosDe({ fuentes: [{ repo: repo2, inf: null }, { repo: { id: "nuevo", nombre: "Contabilidad (almacén)", destino: "d" }, inf: null }], copias, historial: [hm], conRepo: true }).sucesos;
+igual("en un equipo (los dos repositorios a la vez), una sola vez", conMover.filter((x) => x.tipo === "historial").length, 1);
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

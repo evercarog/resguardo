@@ -93,6 +93,10 @@
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
+  // v1.4x: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
+  import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
+  import { tareasDe } from "$lib/progreso.svelte";
+  import { hayPlanMover, moviendoDe } from "$lib/mover";
   import { borrar } from "$lib/cripto/bytes";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
@@ -409,7 +413,8 @@
           ]),
       ...(conCopias ? [{ texto: r.externa ? "Cambiar la copia externa" : "Copia externa…", onclick: () => abrirExterna(r) }] : []),
       // v1.41: con todo su historial, a otro destino (p. ej. el almacén de otro equipo).
-      ...(!r.solo_lectura && puede.administrar(rol) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
+      // Si ya se está moviendo (desde otra consola u otro navegador), aquí no se puede empezar otro.
+      ...(!r.solo_lectura && puede.administrar(rol) && !moverBloqueado(r.id) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
     ];
     const peligro: AccionMenu[] = [
       // En un servidor de solo añadir, desde el equipo no se puede (403).
@@ -427,6 +432,18 @@
 
   /** «Mover a otro sitio…» de un repositorio. */
   let mover = $state<RepositorioResumen | null>(null);
+  /** v1.4x: ¿se está moviendo y no lo lleva este navegador? (Lo lleva otra consola u otro navegador: solo se ve.) */
+  function moverBloqueado(repo: string): boolean {
+    if (!equipo) return false;
+    const m = moviendoDe(tareasDe(equipo.id), repo);
+    return !!m && (!!m.otra_consola || !hayPlanMover(c, equipo.id, m.origen ?? repo));
+  }
+  /** «Ver los pasos» del movimiento de `r`, si lo lleva este navegador. */
+  function seguirMover(r: RepositorioResumen): (() => void) | undefined {
+    if (!equipo) return undefined;
+    const m = moviendoDe(tareasDe(equipo.id), r.id);
+    return m && !m.otra_consola && m.origen === r.id && hayPlanMover(c, equipo.id, r.id) ? () => (mover = r) : undefined;
+  }
 
   /** Elegir una carpeta del equipo (sesión elegir_carpetas) para un campo «donde». */
   let elegirCarpeta = $state<((ruta: string) => void) | null>(null);
@@ -831,8 +848,9 @@
                 {:else}
                   <p class="sin-versiones"><Clock size={14} />{sinVersiones(r)}</p>
                 {/if}
-                <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion"]} />
-                {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
+                <MoviendoseAviso equipo={equipo.id} repo={r.id} onseguir={seguirMover(r)} />
+                <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover />
+                {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) && !moverBloqueado(r.id) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
                 {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino}» cada día a las {r.externa.hora} <Ayuda id="copia-externa" /></p>{/if}
                 {#if puede.ordenar(rol)}
