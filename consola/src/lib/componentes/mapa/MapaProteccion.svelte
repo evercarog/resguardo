@@ -584,7 +584,7 @@
   /* v1.41: «En el mismo equipo que protege» (color de aviso, con icono y texto). */
   .aviso-nodo {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 4px;
     margin-top: 2px;
     padding: 1px 6px;
@@ -595,7 +595,11 @@
     font-weight: 500;
     color: var(--warn);
     background: var(--warn-soft);
-    border-radius: 999px;
+    border-radius: 6px;
+  }
+  .aviso-nodo :global(svg) {
+    flex: none;
+    margin-top: 2px;
   }
   .n-sub {
     overflow: hidden;

@@ -81,7 +81,7 @@ igual("fuera del equipo: nada que sumar", comprobacionLugar(conExterna, servidor
 console.log("\n· El mapa y «Todos los clientes»");
 const mapa = construirMapa([servidor, almacen], {}, { cliente: "c" });
 const dest = mapa.nodos.find((n) => n.tipo === "destino");
-igual("el disco del propio equipo dice de quién es y lo avisa", [dest?.sub, dest?.aviso], ["Disco de SERVIDOR (D:)", "En el mismo equipo que protege"]);
+igual("el disco del propio equipo dice de quién es y lo avisa", [dest?.sub, dest?.aviso], ["Disco de SERVIDOR (D:)", "En el mismo equipo"]);
 cierto("…y la alternativa en texto también", mapa.frases.some((f) => f.includes("en el mismo equipo que protege")));
 const otro = equipo("o", "OTRO", local());
 const m2 = construirMapa([servidor, otro], {}, { cliente: "c" });

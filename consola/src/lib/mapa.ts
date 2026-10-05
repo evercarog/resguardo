@@ -227,8 +227,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     // v1.41: las copias se quedan en el mismo equipo que protegen (su disco o su propio almacén).
     const riesgo = riesgoMismoEquipo(x.r, e, todos);
     if (riesgo) {
-      if (riesgo.lugar.clase === "almacen_propio") pildora.aviso = "En su propio almacén: el mismo equipo";
-      else dest.aviso = "En el mismo equipo que protege";
+      if (riesgo.lugar.clase === "almacen_propio") pildora.aviso = "Su propio almacén: mismo equipo";
+      else dest.aviso = "En el mismo equipo";
     }
     // El destino recuerda la versión más reciente que le llegó (y, si no es un almacén, si llegan copias).
     if (pildora.ultima && (!dest.ultima || pildora.ultima > dest.ultima)) dest.ultima = pildora.ultima;
