@@ -757,20 +757,152 @@ fn en_segundo_plano(
     f: impl FnOnce(&Vinculo) -> Result<Resultado, String> + Send + 'static,
 ) -> Resultado {
     let (v, orden) = (v.clone(), orden.to_string());
+    largas::empieza(&v.id_enlace(), &orden, seq, tipo);
     std::thread::spawn(move || {
         let r = match f(&v) {
             Ok(r) => r,
             Err(e) => fallida(e),
         };
         crate::agent::log(&format!("Orden «{tipo}» del servidor: {} ({}).", estado_legible(r.estado), r.mensaje));
-        for intento in 0..5 {
+        // Si el servidor no está (se reinicia, sin red), el resultado se queda guardado y
+        // el servicio lo manda cuando vuelva (`largas::reintentar`), aunque sea horas después.
+        for intento in 0..3 {
             if enviar_resultado(&v, &orden, seq, &r).is_ok() {
-                break;
+                largas::termina(&orden, None);
+                return;
             }
-            std::thread::sleep(Duration::from_secs(30 << intento));
+            std::thread::sleep(Duration::from_secs(5 << (2 * intento)));
         }
+        largas::termina(&orden, Some(&r));
     });
     en_marcha(aviso)
+}
+
+/// Las órdenes largas (`en_segundo_plano`) en disco, para que ninguna se quede «en
+/// marcha» para siempre en la consola: si el agente se reinicia (o se para el servicio,
+/// o se apaga el equipo) mientras una se hace, al volver se da por fallida con el motivo;
+/// si su resultado no se pudo mandar, se manda cuando vuelva el servidor.
+pub(crate) mod largas {
+    use super::{enviar_resultado, Resultado};
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
+    pub const CORTADA: &str = "Se cortó: el agente o el equipo se reinició mientras se hacía. Vuelve a mandarla desde la consola.";
+
+    #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+    pub struct Larga {
+        pub enlace: String,
+        pub orden: String,
+        pub seq: u64,
+        pub tipo: String,
+        /// El resultado, si ya terminó pero no se pudo mandar: (estado, mensaje, detalle).
+        #[serde(default)]
+        pub resultado: Option<(String, String, Option<String>)>,
+    }
+
+    /// Las de este proceso que siguen haciéndose (las demás del archivo son de antes de un reinicio).
+    static AQUI: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    static ARCHIVO: Mutex<()> = Mutex::new(());
+
+    fn ruta() -> std::path::PathBuf {
+        crate::agent::private_dir().join("ordenes-largas.json")
+    }
+
+    fn leer() -> Vec<Larga> {
+        std::fs::read(ruta()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    fn escribir(l: &[Larga]) {
+        if l.is_empty() {
+            let _ = std::fs::remove_file(ruta());
+        } else if let Ok(t) = serde_json::to_vec(l) {
+            let tmp = ruta().with_extension("tmp");
+            if std::fs::write(&tmp, t).is_ok() {
+                let _ = std::fs::rename(&tmp, ruta());
+            }
+        }
+    }
+
+    fn con<T>(f: impl FnOnce(&mut Vec<Larga>) -> T) -> T {
+        let _g = ARCHIVO.lock().unwrap_or_else(|e| e.into_inner());
+        let mut l = leer();
+        let antes = l.clone();
+        let r = f(&mut l);
+        if l != antes {
+            escribir(&l);
+        }
+        r
+    }
+
+    // `AQUI` y el archivo cambian juntos, con `ARCHIVO` cogido: `reintentar` nunca ve una
+    // a medio empezar o a medio terminar (y la daría por cortada).
+    pub fn empieza(enlace: &str, orden: &str, seq: u64, tipo: &str) {
+        con(|l| {
+            AQUI.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashSet::new).insert(orden.to_string());
+            l.retain(|x| x.orden != orden);
+            l.push(Larga { enlace: enlace.into(), orden: orden.into(), seq, tipo: tipo.into(), resultado: None });
+        });
+    }
+
+    /// Terminó: sin `r`, ya se mandó; con `r`, queda para mandarlo después.
+    pub fn termina(orden: &str, r: Option<&Resultado>) {
+        con(|l| {
+            match r {
+                None => l.retain(|x| x.orden != orden),
+                Some(r) => {
+                    if let Some(x) = l.iter_mut().find(|x| x.orden == orden) {
+                        x.resultado = Some((r.estado.to_string(), r.mensaje.clone(), r.detalle.clone()));
+                    }
+                }
+            }
+            AQUI.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashSet::new).remove(orden);
+        });
+    }
+
+    fn estado(e: &str) -> &'static str {
+        match e {
+            "hecha" => "hecha",
+            "rechazada" => "rechazada",
+            _ => "fallida",
+        }
+    }
+
+    /// Lo que hay que mandar ahora: las terminadas sin mandar y las cortadas (de antes de
+    /// un reinicio: no están en marcha en este proceso). No toca las que siguen haciéndose.
+    pub fn pendientes(l: &[Larga], aqui: &HashSet<String>) -> Vec<(Larga, Resultado)> {
+        l.iter()
+            .filter(|x| x.resultado.is_some() || !aqui.contains(&x.orden))
+            .map(|x| {
+                let r = match &x.resultado {
+                    Some((e, m, d)) => Resultado { estado: estado(e), mensaje: m.clone(), detalle: d.clone() },
+                    None => Resultado { estado: "fallida", mensaje: format!("«{}»: {CORTADA}", x.tipo), detalle: None },
+                };
+                (x.clone(), r)
+            })
+            .collect()
+    }
+
+    /// En cada vuelta del servicio: manda lo pendiente (si la consola sigue y contesta).
+    pub fn reintentar() {
+        if !ruta().is_file() {
+            return;
+        }
+        let lista = con(|l| pendientes(l, &AQUI.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()));
+        for (x, r) in lista {
+            let hecho = match crate::consolas_v2::vista(&x.enlace) {
+                // Esa consola ya no está: no hay a quién decírselo.
+                None => true,
+                Some(v) => enviar_resultado(&v, &x.orden, x.seq, &r).is_ok(),
+            };
+            if hecho {
+                if x.resultado.is_none() {
+                    crate::agent::log(&format!("Orden «{}» del servidor: fallida ({CORTADA}).", x.tipo));
+                }
+                con(|l| l.retain(|y| y.orden != x.orden));
+            }
+        }
+    }
 }
 
 fn fecha(ts: i64) -> String {
@@ -1503,6 +1635,26 @@ impl AvisoRepetido {
     }
 }
 
+/// Sin canal, el equipo consulta cada minuto y vuelve a probar el canal a los 5 min.
+/// Pero si en ese rato una consulta falló (servidor apagado, reiniciándose o sin red)
+/// y la siguiente funciona, el servidor ha vuelto: se reabre el canal enseguida. Antes,
+/// tras una caída de más de 15 s la consola veía el equipo «sin conexión» hasta 5 min
+/// (prueba de resistencia, docs/estabilidad.md). Solo tras un fallo: si el servidor
+/// contesta pero el canal no abre (un proxy sin WebSocket), sigue cada 5 min.
+#[derive(Default)]
+struct VueltaDelServidor {
+    fallo: bool,
+}
+
+impl VueltaDelServidor {
+    fn reabrir_ya(&mut self, consulta_ok: bool) -> bool {
+        if !consulta_ok {
+            self.fallo = true;
+        }
+        consulta_ok && self.fallo
+    }
+}
+
 /// Dónde deja Resguardo Server, en su misma máquina, los datos para vincular
 /// el agente local (v1.19, «Vincular este servidor»).
 pub fn archivo_vincular_local() -> std::path::PathBuf {
@@ -1601,6 +1753,8 @@ pub fn hilo() {
     std::thread::spawn(move || {
         let mut hilos: HashMap<String, Arc<std::sync::atomic::AtomicBool>> = HashMap::new();
         loop {
+            // Los resultados de órdenes largas que no se pudieron mandar, y las que cortó un reinicio.
+            largas::reintentar();
             // Pendiente del alta en un servidor nuevo: el alta llega por sondeo.
             if cargar().is_some_and(|v| v.adopcion.is_some()) {
                 crate::traslado_v2::ronda_adopcion();
@@ -1668,8 +1822,14 @@ fn hilo_enlace(id: &str) {
         let fin = std::time::Instant::now() + Duration::from_secs(if estuvo_abierto { 15 } else { 300 });
         let _ = enviar_informe(id);
         let mut progreso = crate::progreso_v2::Emisor::default();
+        let mut vuelta = VueltaDelServidor::default();
         while std::time::Instant::now() < fin && crate::consolas_v2::vista(id).is_some() {
-            let atencion = ronda_enlace(id).unwrap_or(false);
+            let ronda = ronda_enlace(id);
+            // El servidor estuvo caído (o sin red) y ya contesta: el canal, ya (no a los 5 min).
+            if vuelta.reabrir_ya(ronda.is_ok()) {
+                break;
+            }
+            let atencion = ronda.unwrap_or(false);
             let pausa = Duration::from_secs(if atencion { 2 } else { 60 });
             let hasta = (std::time::Instant::now() + pausa).min(fin);
             // Entre vuelta y vuelta, el progreso de lo que esté en marcha (cada 10 s).
@@ -1700,6 +1860,40 @@ mod tests {
         let mut con_otra = pendiente.clone();
         con_otra.otras.push(crate::consolas_v2::Enlace { id: "b".into(), ..Default::default() });
         assert!(!a_medias(&con_otra), "con otras consolas, tampoco");
+    }
+
+    #[test]
+    fn ordenes_largas_cortadas_o_sin_mandar() {
+        use largas::{pendientes, Larga, CORTADA};
+        let l = |orden: &str, resultado: Option<(&str, &str)>| Larga {
+            enlace: "e".into(),
+            orden: orden.into(),
+            seq: 7,
+            tipo: "restaurar".into(),
+            resultado: resultado.map(|(e, m)| (e.to_string(), m.to_string(), None)),
+        };
+        let lista = [l("haciendose", None), l("cortada", None), l("sin-mandar", Some(("hecha", "Restaurado.")))];
+        let aqui: std::collections::HashSet<String> = ["haciendose".to_string()].into();
+        let p = pendientes(&lista, &aqui);
+        // La que sigue en marcha en este proceso, no; la de antes de reiniciar, fallida con el motivo.
+        assert_eq!(p.len(), 2);
+        assert_eq!((p[0].0.orden.as_str(), p[0].1.estado), ("cortada", "fallida"));
+        assert!(p[0].1.mensaje.contains(CORTADA) && p[0].1.mensaje.contains("restaurar"), "{}", p[0].1.mensaje);
+        // La terminada sin mandar, con su resultado de verdad.
+        assert_eq!((p[1].1.estado, p[1].1.mensaje.as_str()), ("hecha", "Restaurado."));
+    }
+
+    #[test]
+    fn el_canal_vuelve_en_cuanto_vuelve_el_servidor() {
+        // Servidor caído: la consulta falla; cuando vuelve a contestar, el canal enseguida.
+        let mut v = VueltaDelServidor::default();
+        assert!(!v.reabrir_ya(false));
+        assert!(!v.reabrir_ya(false));
+        assert!(v.reabrir_ya(true));
+        // Contesta pero el canal no abre (proxy sin WebSocket): nada de reabrir en bucle.
+        let mut v = VueltaDelServidor::default();
+        assert!(!v.reabrir_ya(true));
+        assert!(!v.reabrir_ya(true));
     }
 
     #[test]
@@ -2347,6 +2541,11 @@ mod tests {
             let mut z = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).unwrap();
             let nombres: Vec<String> = z.file_names().map(str::to_string).collect();
             assert!(nombres.iter().any(|n| n.ends_with("hola.txt")) && nombres.iter().any(|n| n.ends_with("adios.txt")), "{nombres:?}");
+            // Lo elegido, sin la ruta del equipo por encima (ni sus carpetas con sus permisos: con
+            // la carpeta temporal en C:\Users\…, restaurarlas sin ser administrador daba «acceso denegado»).
+            let mut solo = nombres.clone();
+            solo.sort();
+            assert_eq!(solo, ["adios.txt", "hola.txt"]);
             let mut contenido = String::new();
             let n_adios = nombres.iter().find(|n| n.ends_with("adios.txt")).unwrap().clone();
             std::io::Read::read_to_string(&mut z.by_name(&n_adios).unwrap(), &mut contenido).unwrap();
