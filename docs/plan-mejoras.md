@@ -2,6 +2,12 @@
 
 Lista de trabajo acordada con el responsable del proyecto el 2026-10-05 (sesión de Claude Code en la nube, ver `docs/registro-ia.md`). **Para el asistente que lo retome:** lee antes `AGENTS.md`; haz las tareas en orden, cada una en su rama `ia/<tema>`, con sus pruebas, y marca aquí su estado (`[ ]` pendiente, `[~]` en curso, `[x]` hecha, con la rama). Lo que cambie mensajes entre agente y consola va en `docs/api-servidor.md` → «Cambios». Antes de empezar una tarea de diseño grande (1, 4, 5), escribe la propuesta concreta en su documento de `docs/` y pide el visto bueno.
 
+## Decisiones del responsable (2026-10-05)
+
+- **Congeladas:** la **app de escritorio antigua** (`src/`, `src-tauri/`) y la **web antigua** (repositorio `resguardo-web`, Supabase). No se sigue trabajando en ellas: ni funciones nuevas ni arreglos, salvo que el responsable pida uno concreto.
+- **Agente para Mac:** no por ahora. Primero se pule todo lo demás.
+- **Se hace todo lo de este plan**, empezando al día siguiente. Orden sugerido: 0 → 10a → 9a → 1 → 2 → 9d–9h → 3 → 7 (con 4) → 8 → 6 → 9b → 10c. Antes de las tareas grandes (1, 7, 8), propuesta escrita y visto bueno.
+
 ---
 
 ## 0. Revisar y unir lo de la sesión en la nube
@@ -154,7 +160,7 @@ Lo pendiente de `docs/plataforma.md` §7.3.1 que se acordó hacer, más lo que s
 ## 10. Mantenimiento
 
 - [ ] **10a. Pruebas de Windows en cada rama:** el trabajo «App completa (Windows)» de `.github/workflows/ci.yml` solo corre en `main`, en PR a `main` o a mano. Lo más delicado (servicio como SYSTEM, tuberías, permisos) es lo que menos se prueba: que corra también en cada push a ramas `ia/*` y `claude/*` (o, si cuesta demasiado tiempo de CI, un trabajo de Windows reducido con `clippy` y `cargo test -p resguardo-agente`).
-- [ ] **10b. Decidir el futuro de la app de escritorio antigua** (`src/`, `src-tauri/`, unas 40 000 líneas): proponer al responsable congelarla (solo arreglos de seguridad) y retirarla cuando el agente con su ventana la sustituya, con lo que falta para eso. Es una propuesta: no se borra nada sin su visto bueno.
+- [x] **10b. App de escritorio antigua: congelada** (decisión del responsable, ver «Decisiones»). Más adelante, proponer cómo retirarla cuando el agente con su ventana la sustituya; no se borra nada sin su visto bueno.
 - [ ] **10c. Versiones desalineadas** (agente y servidor 0.7.x, app 0.6.x, consola 0.1.0, y el `package.json` raíz con la descripción antigua): **no tocar** (regla 6 de `AGENTS.md`); dejarlo anotado para quien publica.
 
 Fuera del plan por ahora (decisión del responsable): agente para Mac, instaladores firmados (de pago), «antes de copiar» para otras bases de datos (MySQL, PostgreSQL) y la actualización automática de los agentes (la revisa él).
