@@ -565,7 +565,8 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             "cambiar_espera" => c["horas"].as_i64().is_some_and(|h| h < v.espera_min_horas),
             "restaurar" => c["destino"] == "original" && c["reemplazar"] == true,
             // Igual que al ejecutarla: sin una hora en texto, se quita la copia externa.
-            "cambiar_copia_externa" => !c["hora"].is_string(),
+            // Solo probar (v1.4x) no cambia nada.
+            "cambiar_copia_externa" => !c["hora"].is_string() && c["solo_probar"] != true,
             // Desconectar una nube que usa el espejo deja de proteger fuera.
             "quitar_nube" => crate::nube::usa_espejo(c["nombre"].as_str().unwrap_or("").trim()),
             // Vaciar o desactivar todas las copias que había: el equipo deja de copiar solo.
