@@ -2,7 +2,7 @@
 //
 // El navegador junta lo que el servidor sabe del cliente (equipos con sus
 // llaves públicas y etiquetas, configuraciones cifradas, informes, avisos y
-// la auditoría entera con su cadena de hashes; v1.3x: también las
+// la auditoría entera con su cadena de hashes; v1.40: también las
 // observaciones y los comentarios), lo cifra con
 // K_exp = HKDF(Argon2id(clave_admin, sal_cliente), "resguardo-kexp-v1") y
 // solo entonces lo descarga o lo sube. En el servidor nuevo (que recibió el
@@ -25,7 +25,7 @@ export interface ContenidoPaquete {
   informes: { equipo: string; recibido: string; datos: Informe["datos"] }[];
   avisos: { equipo: string | null; tipo: string; mensaje: string; creado: string }[];
   auditoria: EntradaAuditoria[];
-  /** v1.3x: observaciones y comentarios (un paquete anterior no los trae). */
+  /** v1.40: observaciones y comentarios (un paquete anterior no los trae). */
   notas?: NotasExportadas;
 }
 

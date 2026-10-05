@@ -706,13 +706,13 @@ impl TasksState {
 // ---------- Qué toca ----------
 
 /// Cuándo toca la próxima verificación automática de la consola («cada N
-/// horas» o, v1.3x, con reglas); `None` con otros horarios.
+/// horas» o, v1.40, con reglas); `None` con otros horarios.
 pub fn next_verify(repo: &AgentRepo, state: &TasksState) -> Option<DateTime<Local>> {
     let v = repo.verify.as_ref()?;
     let desde = since(state, &key("verify", &repo.id), &v.enabled_at);
     match &v.schedule {
         Schedule::Hours { every } => Some(desde + chrono::Duration::hours(i64::from(*every))),
-        // v1.3x: con reglas, la siguiente después de la última (si ya pasó, toca en cuanto pueda).
+        // v1.40: con reglas, la siguiente después de la última (si ya pasó, toca en cuanto pueda).
         Schedule::Rules { rules } => crate::plans::PlanSchedule::from_rules(rules.clone()).next_slot(desde),
         _ => None,
     }

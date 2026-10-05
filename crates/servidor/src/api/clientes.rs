@@ -364,7 +364,7 @@ pub struct Importar {
     informes: Vec<InformeImportado>,
     #[serde(default)]
     avisos: Vec<AvisoImportado>,
-    /// v1.3x: observaciones y comentarios del cliente (opcional).
+    /// v1.40: observaciones y comentarios del cliente (opcional).
     #[serde(default)]
     notas: Option<super::notas::NotasImportadas>,
 }

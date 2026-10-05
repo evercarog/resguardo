@@ -1,4 +1,4 @@
-//! Observaciones y comentarios (v1.3x): quién lee y quién escribe, los 15
+//! Observaciones y comentarios (v1.40): quién lee y quién escribe, los 15
 //! minutos para cambiar un comentario propio, que un propietario puede borrar
 //! cualquiera, la auditoría (sin el texto) y que viajan con el paquete de
 //! exportación (`POST …/importar`, campo `notas`).

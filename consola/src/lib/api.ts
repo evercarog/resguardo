@@ -229,7 +229,7 @@ export const cancelarEmparejamiento = (c: string, p: string) => pedir<void>("DEL
 export const plantillas = (c: string) => pedir<{ id: string; cifrado: string; actualizada: string; por: string }[]>("GET", `${cli(c)}/plantillas`);
 export const ponerPlantilla = (c: string, id: string, cifrado: string) => pedir<void>("PUT", `${cli(c)}/plantillas/${enc(id)}`, { cifrado });
 export const borrarPlantilla = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/plantillas/${enc(id)}`);
-// v1.3x: observaciones y comentarios (en claro en el servidor; lib/notas.svelte.ts).
+// v1.40: observaciones y comentarios (en claro en el servidor; lib/notas.svelte.ts).
 export const indiceNotas = (c: string) => pedir<{ objetos: T.IndiceNota[] }>("GET", `${cli(c)}/notas`, undefined, { invisible: true });
 export const notasDe = (c: string, tipo: T.TipoNota, objeto: string) =>
   pedir<T.NotasObjeto>("GET", `${cli(c)}/notas/objeto?tipo=${enc(tipo)}&objeto=${enc(objeto)}`, undefined, { invisible: true });

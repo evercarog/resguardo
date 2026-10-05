@@ -552,7 +552,7 @@ async function principal() {
       return inf?.verificacion?.ultima && new Date(inf.verificacion.ultima).getTime() >= antesVerificar - 2_000 ? inf.verificacion : null;
     }, { plazo: 180_000, cada: 1000 });
     igual(ver.resultado, "ok", `Verificación (${ver.mensaje_corto ?? ""})`);
-    // v1.3x: con un horario de reglas (como el de las copias); `cada_dias` sigue para un agente anterior.
+    // v1.40: con un horario de reglas (como el de las copias); `cada_dias` sigue para un agente anterior.
     comprobar(eqBAhora.resumen?.admite?.includes("verificacion_horario"), "B admite la verificación con horario");
     const horarioVerif = { dias: [], horas: [], reglas: [{ tipo: "mensual", dia: 1, hora: "04:00" }, { tipo: "horas", dias: [6, 7], horas: ["02:30"] }] };
     await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia], verificaciones: { [repoId]: { cada_dias: 7, porcentaje: 25, horario: horarioVerif } } } }, { claveAdmin: CLAVE_ADMIN });
@@ -564,7 +564,7 @@ async function principal() {
     const enProx = new Date(vh.proxima);
     comprobar((enProx.getDate() === 1 && enProx.getHours() === 4) || ([0, 6].includes(enProx.getDay()) && enProx.getHours() === 2 && enProx.getMinutes() === 30), "La próxima, en una de sus reglas", vh.proxima);
 
-    // v1.3x: observaciones y comentarios (en el servidor, sin la clave); se comprueban tras restaurar la copia de la consola.
+    // v1.40: observaciones y comentarios (en el servidor, sin la clave); se comprueban tras restaurar la copia de la consola.
     await consola.ok("PUT", `/api/clientes/${c.id}/notas/observacion`, { tipo: "equipo", objeto: eqB.id, texto: "**Caja**: llamar a Luis si falla" });
     await consola.ok("POST", `/api/clientes/${c.id}/notas/comentarios`, { tipo: "repositorio", objeto: `${eqB.id}/${repoId}`, texto: "Verificación con horario puesta." });
 

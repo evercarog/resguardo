@@ -84,7 +84,7 @@
       for (const e of actual.equipos)
         for (const k of e.resumen?.copias ?? [])
           out.push({ grupo: "Copias", texto: k.nombre, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/copias/${encodeURIComponent(k.id)}`, icono: RefreshCw, claves: sinTildes(`${k.nombre} ${e.nombre}`) });
-      // v1.3x: observaciones, por su primera línea (nunca el texto entero ni los comentarios).
+      // v1.40: observaciones, por su primera línea (nunca el texto entero ni los comentarios).
       if (notas.cliente === c)
         for (const n of Object.values(notas.porClave)) {
           if (!n.titulo) continue;

@@ -566,7 +566,7 @@ pub struct Configuracion {
 /// la parte siguiente, así en 100/porcentaje verificaciones se lee todo).
 /// 0 %: solo la estructura; 100 %: todo cada vez.
 ///
-/// v1.3x (`admite: "verificacion_horario"`): con `horario` (el mismo que el de
+/// v1.40 (`admite: "verificacion_horario"`): con `horario` (el mismo que el de
 /// las copias, con sus reglas), se verifica cuando toca cualquiera de ellas y
 /// `cada_dias` no cuenta (la consola lo manda igual, para un agente anterior).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -814,7 +814,7 @@ fn estado_de(result: &str) -> &'static str {
 /// en la retención (también la del almacén), `config.verificaciones` y
 /// `guarda_copias { anadir, local: true }` (un repositorio en su propio almacén).
 /// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
-/// v1.3x: `verificacion_horario` (la verificación automática con un horario de reglas) y
+/// v1.40: `verificacion_horario` (la verificación automática con un horario de reglas) y
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
 pub const ADMITE: [&str; 7] =
     ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario"];
@@ -844,7 +844,7 @@ pub fn resumen(v: &Vinculo) -> Value {
         let va = VerificacionAuto::de(r.verify.as_ref()?)?;
         Some(json!({
             "cada_dias": va.cada_dias, "porcentaje": va.porcentaje,
-            // v1.3x: con horario, sus reglas (como las de las copias).
+            // v1.40: con horario, sus reglas (como las de las copias).
             "horario": va.horario,
             "proxima": crate::tasks::next_verify(r, &tareas).map(|t| t.to_rfc3339()),
             "todo_leido": tareas.rotation.get(&crate::tasks::rotation_key("verify", id)).and_then(|x| x.last_full_at.clone()),
@@ -1509,7 +1509,7 @@ mod tests {
         VerificacionAuto { cada_dias, porcentaje, horario: None }.verify(chrono::Local::now())
     }
 
-    /// v1.3x: la verificación con un horario de reglas (como el de las copias).
+    /// v1.40: la verificación con un horario de reglas (como el de las copias).
     #[test]
     fn verificacion_con_horario() {
         use chrono::TimeZone;

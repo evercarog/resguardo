@@ -1,4 +1,4 @@
-// Observaciones y comentarios (v1.3x, api-servidor.md §6, «Observaciones y comentarios»).
+// Observaciones y comentarios (v1.40, api-servidor.md §6, «Observaciones y comentarios»).
 //
 // Lo que escriben las personas sobre un equipo, un repositorio, una copia, un
 // destino o el cliente: una observación (texto libre con Markdown ligero,
@@ -28,7 +28,7 @@ export const notas = $state({
   cliente: "",
   porClave: {} as Record<string, IndiceNota>,
   cargando: false,
-  /** Si el servidor no las tiene (anterior a v1.3x), nada de notas en la consola. */
+  /** Si el servidor no las tiene (anterior a v1.40), nada de notas en la consola. */
   disponible: true,
 });
 

@@ -147,7 +147,7 @@ pub enum Schedule {
     },
     /// Cuando toque cualquiera de estas reglas (las de los horarios de copia:
     /// a estas horas, cada N minutos u horas en una franja, cada N días, un
-    /// día de cada mes). La verificación automática con horario (v1.3x).
+    /// día de cada mes). La verificación automática con horario (v1.40).
     Rules { rules: Vec<crate::plans::ScheduleRule> },
 }
 

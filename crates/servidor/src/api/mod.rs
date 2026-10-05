@@ -255,7 +255,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/avisos/{a}/visto", post(equipos::aviso_visto))
         .route("/api/clientes/{c}/auditoria", get(equipos::auditoria))
         .route("/api/clientes/{c}/auditoria/verificar", get(equipos::verificar_auditoria))
-        // v1.3x: observaciones y comentarios
+        // v1.40: observaciones y comentarios
         .route("/api/clientes/{c}/notas", get(notas::indice))
         .route("/api/clientes/{c}/notas/objeto", get(notas::ver))
         .route("/api/clientes/{c}/notas/todas", get(notas::todas))

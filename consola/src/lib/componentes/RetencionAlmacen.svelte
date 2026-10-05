@@ -41,7 +41,7 @@
   let dias = $state<number[]>(inicio().dias);
   let hora = $state(inicio().hora);
   let verificar = $state(inicio().verificar);
-  // v1.3x (almacén con `admite: "retencion_almacen_horario"`): o con un horario de
+  // v1.40 (almacén con `admite: "retencion_almacen_horario"`): o con un horario de
   // reglas, como el de las copias. `dias` y `hora` siguen para un almacén anterior.
   const admiteReglasAlm = $derived(!!en.almacen.resumen?.admite?.includes("retencion_almacen_horario"));
   const reglasIniciales = () => en.retencion?.horario.reglas ?? [];

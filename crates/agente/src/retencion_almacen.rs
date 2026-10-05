@@ -42,7 +42,7 @@ const ARCHIVO: &str = "almacen-retencion.bin";
 const LIMITE: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
 
 /// Cuándo se aplica: días de la semana (1 = lunes … 7 = domingo) y hora local.
-/// v1.3x (`admite: "retencion_almacen_horario"`): o, con `reglas`, cuando toque
+/// v1.40 (`admite: "retencion_almacen_horario"`): o, con `reglas`, cuando toque
 /// cualquiera de ellas (las de los horarios de copia); `dias` y `hora` siguen
 /// para un agente anterior (que no conoce `reglas` y las ignora).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

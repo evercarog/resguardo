@@ -258,7 +258,7 @@
   // Por repositorio: cada N días, un porcentaje rotativo. Solo con un agente que
   // la entiende (`admite`); con uno anterior no se manda el campo.
   const admiteVerif = $derived(admiteVerificacion(equipo));
-  /** v1.3x: con un horario de reglas (si no, solo «cada N días»). */
+  /** v1.40: con un horario de reglas (si no, solo «cada N días»). */
   const admiteVerifHorario = $derived(admiteVerificacionHorario(equipo));
   /** v1.36: la ventana y los avisos del equipo (docs/agente-ventana.md). */
   const admiteEscritorio = $derived(!!equipo?.resumen?.admite?.includes("escritorio"));
@@ -342,7 +342,7 @@
         // v1.36: con `escritorio`, `bandeja.avisos` dice lo mismo para un agente anterior.
         bandeja: c0.escritorio ? { visible: c0.bandeja?.visible ?? true, avisos: c0.escritorio.avisos !== "off" } : (c0.bandeja ?? null),
         // v1.28: solo a un agente que la entiende, y solo si se ha tocado alguna vez.
-        // v1.3x: `horario` solo a un agente que lo entiende (con él, `cada_dias` es para uno anterior).
+        // v1.40: `horario` solo a un agente que lo entiende (con él, `cada_dias` es para uno anterior).
         ...(admiteVerif && c0.verificaciones
           ? { verificaciones: Object.fromEntries(Object.entries(c0.verificaciones).map(([r, v]) => [r, admiteVerifHorario && v.horario ? v : { cada_dias: v.cada_dias, porcentaje: v.porcentaje }])) }
           : {}),
@@ -441,7 +441,7 @@
           />
         </div>
         <p class="frase">{frase(k)}</p>
-        <!-- v1.3x: van aparte (en el servidor, sin la clave): se guardan al momento, no con «Enviar». -->
+        <!-- v1.40: van aparte (en el servidor, sin la clave): se guardan al momento, no con «Enviar». -->
         {#if guardadas.has(k.id)}<Observaciones tipo="copia" objeto={objetoDe(equipo.id, k.id)} compacto />{/if}
         {#if usadas[k.id]}
           <div class="notice notice-info usada">

@@ -310,7 +310,7 @@ export interface Regla {
 export interface HorarioRetencion {
   dias: number[];
   hora: string;
-  /** v1.3x (almacén con `admite: "retencion_almacen_horario"`): si hay, mandan ellas. */
+  /** v1.40 (almacén con `admite: "retencion_almacen_horario"`): si hay, mandan ellas. */
   reglas?: ReglaHorario[];
 }
 
@@ -743,7 +743,7 @@ export interface VerificacionAuto {
   cada_dias: number;
   porcentaje: number;
   /**
-   * v1.3x (agente con `admite: "verificacion_horario"`): el mismo horario que
+   * v1.40 (agente con `admite: "verificacion_horario"`): el mismo horario que
    * el de las copias; entonces manda él y `cada_dias` es para un agente anterior.
    */
   horario?: Horario | null;
@@ -912,7 +912,7 @@ export interface MisNotif {
   clientes: { id: string; nombre: string; rol: Rol; correo: boolean; preferencias: PrefsNotif }[];
 }
 
-// --- v1.3x: observaciones y comentarios (lib/notas.svelte.ts) -----------------
+// --- v1.40: observaciones y comentarios (lib/notas.svelte.ts) -----------------
 
 /** De qué es una nota. `repositorio` y `copia`: «<equipo>/<id>»; `destino`: su id; `cliente`: el id del cliente. */
 export type TipoNota = "cliente" | "equipo" | "repositorio" | "copia" | "destino";

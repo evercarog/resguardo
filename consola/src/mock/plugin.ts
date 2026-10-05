@@ -1232,7 +1232,7 @@ const rutas: Ruta[] = [
   ],
   // v1.29: notificaciones (canales, prueba, registro y preferencias).
   ...rutasNotificaciones<Ctx>({ err, cuenta: (ctx) => sesionDe(ctx), miembro }),
-  // v1.3x: observaciones y comentarios.
+  // v1.40: observaciones y comentarios.
   ...rutasNotas<Ctx>({ err, miembro }),
   [
     "POST",

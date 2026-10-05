@@ -36,7 +36,7 @@
     destino: destinos[0]?.id ?? "nuevo",
   });
   let equipoId = $state(inicial().equipo);
-  /** v1.3x: observaciones del repositorio (se guardan en el servidor al crearlo). */
+  /** v1.40: observaciones del repositorio (se guardan en el servidor al crearlo). */
   let observaciones = $state("");
   let nombre = $state("");
   let destinoId = $state<string>(inicial().destino);

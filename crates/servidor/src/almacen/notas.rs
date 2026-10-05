@@ -1,4 +1,4 @@
-//! Observaciones y comentarios (v1.3x): notas que escriben las personas sobre
+//! Observaciones y comentarios (v1.40): notas que escriben las personas sobre
 //! un equipo, un repositorio, una copia, un destino o el propio cliente.
 //!
 //! Se guardan **en claro** en el archivo del cliente (`clientes/<id>.db`), así

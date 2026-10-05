@@ -1,4 +1,4 @@
-//! Observaciones y comentarios (v1.3x, docs/api-servidor.md §6, «Observaciones
+//! Observaciones y comentarios (v1.40, docs/api-servidor.md §6, «Observaciones
 //! y comentarios»). Texto que escriben las personas sobre un equipo, un
 //! repositorio, una copia, un destino o el cliente: se guarda en claro en el
 //! archivo del cliente (`almacen::notas`). Leer, cualquier miembro; escribir,

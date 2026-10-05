@@ -117,7 +117,7 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       ...(previo.admite?.includes("verificacion_auto")
         ? (() => {
             const v0 = cfg.verificaciones?.[r.id];
-            // v1.3x: el horario, solo si el agente lo entiende (uno anterior lo ignora).
+            // v1.40: el horario, solo si el agente lo entiende (uno anterior lo ignora).
             const v = v0 && !previo.admite?.includes("verificacion_horario") ? { cada_dias: v0.cada_dias, porcentaje: v0.porcentaje } : v0;
             const antes = previo.repositorios?.find((p) => p.id === r.id)?.verificacion_auto;
             const igual = antes && v && antes.cada_dias === v.cada_dias && antes.porcentaje === v.porcentaje && JSON.stringify(antes.horario ?? null) === JSON.stringify(v.horario ?? null);
@@ -668,7 +668,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (!plana.not_before) return resultado(e, o, "rechazada", "Poner la retención borra versiones: falta la espera (not_before).");
       const r = c.retencion as T.Regla;
       const h0 = c.horario as T.HorarioRetencion;
-      // v1.3x: las reglas, solo un almacén que las entiende (uno anterior las ignora).
+      // v1.40: las reglas, solo un almacén que las entiende (uno anterior las ignora).
       const h = h0.reglas?.length && e.resumen?.admite?.includes("retencion_almacen_horario") ? h0 : { dias: h0.dias, hora: h0.hora };
       const err = errorRegla(r, !!g && !!e.resumen?.admite?.includes("retencion_plazos")) ?? errorHorario(h) ?? (h.reglas?.length ? errorReglas(h.reglas) : null);
       if (err) return resultado(e, o, "fallida", err);

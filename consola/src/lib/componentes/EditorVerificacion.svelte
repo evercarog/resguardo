@@ -1,5 +1,5 @@
 <script lang="ts">
-  // La verificación automática de un repositorio (v1.28): cada N días o (v1.3x,
+  // La verificación automática de un repositorio (v1.28): cada N días o (v1.40,
   // agente con `admite: "verificacion_horario"`) con un horario de reglas, el
   // mismo editor que el de las copias; y qué parte de los datos lee cada vez
   // (rotando). Con un horario, `cada_dias` se queda como estaba: es lo que usa

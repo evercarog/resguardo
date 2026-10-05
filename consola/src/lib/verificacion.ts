@@ -1,6 +1,6 @@
 // Verificación automática de un repositorio (v1.28, `config.verificaciones`):
 // cada N días, `restic check` leyendo un porcentaje de los datos, rotativo
-// (como `VerificacionAuto` del agente, gestion_v2.rs). v1.3x: o con un
+// (como `VerificacionAuto` del agente, gestion_v2.rs). v1.40: o con un
 // horario de reglas, el mismo editor que el de las copias (`horario`).
 import { horarioEnFrase } from "./formato";
 import { errorReglas, reglasDe } from "./horario";
@@ -9,7 +9,7 @@ import type { Equipo, Horario, VerificacionAuto } from "./tipos";
 /** Lo que dice el agente que entiende (v1.28). */
 export const ADMITE_VERIFICACION = "verificacion_auto";
 export const admiteVerificacion = (e: Equipo | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_VERIFICACION);
-/** v1.3x: el agente entiende `horario` en la verificación (si no, solo `cada_dias`). */
+/** v1.40: el agente entiende `horario` en la verificación (si no, solo `cada_dias`). */
 export const ADMITE_VERIFICACION_HORARIO = "verificacion_horario";
 export const admiteVerificacionHorario = (e: Equipo | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_VERIFICACION_HORARIO);
 

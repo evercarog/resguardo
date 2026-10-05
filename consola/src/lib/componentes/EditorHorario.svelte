@@ -39,7 +39,7 @@
     horario: Horario;
     admiteReglas: boolean;
     version?: string | null;
-    /** v1.3x: también el horario de la verificación automática (sin «copias al día»). */
+    /** v1.40: también el horario de la verificación automática (sin «copias al día»). */
     para?: "copias" | "verificacion";
   } = $props();
 

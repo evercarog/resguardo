@@ -1,7 +1,7 @@
 // Pruebas del Markdown ligero de las observaciones y los comentarios
 // (src/lib/markdown.ts): que nada de HTML escrito llegue a la página, que
 // solo se enlacen http, https y mailto, y las marcas que sí admite. También
-// la verificación automática con horario (src/lib/verificacion.ts, v1.3x).
+// la verificación automática con horario (src/lib/verificacion.ts, v1.40).
 //
 //   npm run test:vectores
 import { enlaceSeguro, escapar, markdown, primeraLinea } from "../src/lib/markdown";
@@ -52,7 +52,7 @@ igual("primera línea: enlace y lista", primeraLinea("- llamar a [Luis](https://
 igual("primera línea: fecha al principio", primeraLinea("3/10 cambié el disco"), "3/10 cambié el disco");
 igual("primera línea, recortada", primeraLinea("a".repeat(100)).length, 80);
 
-console.log("\n— Verificación automática con horario (v1.3x) —");
+console.log("\n— Verificación automática con horario (v1.40) —");
 const domingos = { cada_dias: 7, porcentaje: 10, horario: { dias: [7], horas: ["03:00"] } };
 cierto("con horario", conHorario(domingos) && !conHorario({ cada_dias: 7, porcentaje: 10 }) && !conHorario({ cada_dias: 7, porcentaje: 10, horario: { dias: [], horas: [] } }));
 igual("frase con horario", fraseVerificacion(domingos), "A las 3:00, los domingos: el 10 % de los datos cada vez, todo el repositorio en 10 verificaciones.");

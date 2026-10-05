@@ -1,4 +1,4 @@
-// Observaciones y comentarios simulados (v1.3x, api-servidor.md §6). Como el
+// Observaciones y comentarios simulados (v1.40, api-servidor.md §6). Como el
 // servidor: leer, cualquier miembro; escribir, técnico o más; un comentario se
 // cambia o borra en sus 15 minutos y un propietario borra cualquiera; hasta
 // 2000 caracteres; la auditoría lo anota sin el texto.
