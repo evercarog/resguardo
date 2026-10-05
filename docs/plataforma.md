@@ -8,6 +8,7 @@ Documentos relacionados:
 - [destinos.md](destinos.md): destinos y repositorios.
 - [diseno.md](diseno.md): sistema de diseño.
 - [consolas-multiples.md](consolas-multiples.md): un equipo gestionado desde varias consolas a la vez.
+- [capacidad.md](capacidad.md): cuánto pide una consola abierta y un equipo, los límites por cuenta e IP y lo que aguanta el servidor (medido).
 
 ---
 
