@@ -407,8 +407,14 @@ fn la_orden_destructiva_se_cierra_al_terminar_sin_volvio_a_funcionar() {
     // Se aplicó: se cierra, sin «Volvió a funcionar».
     let hecha = crate::almacen::ResultadoOrden { orden: o1.id.clone(), estado: "hecha".into(), mensaje: None, detalle: None, firma: "f".into() };
     assert!(p.st.db.resultado_orden(&p.ctx, "e1", &hecha).unwrap());
+    // El aviso de la consola («puedes cancelarla…») sigue abierto mientras está pendiente…
+    let pendientes = || p.st.db.avisos(&p.ctx, true).unwrap().into_iter().filter(|a| a.tipo == "orden_destructiva").count();
+    assert_eq!(pendientes(), 1);
     p.pasada(T0 + 120);
     assert!(!abierto());
+    // … y se cierra solo al aplicarse (queda en la lista, como visto por Resguardo).
+    assert_eq!(pendientes(), 0);
+    assert!(p.st.db.avisos(&p.ctx, false).unwrap().iter().any(|a| a.tipo == "orden_destructiva" && a.visto_por.as_deref() == Some(super::AVISO_RESUELTO)));
     assert_eq!(p.enviados().len(), 3, "los dos correos y el webhook del aviso, nada más");
     // Otra destructiva después: se avisa de nuevo (no es «lo mismo otra vez»).
     let o2 = orden(2);

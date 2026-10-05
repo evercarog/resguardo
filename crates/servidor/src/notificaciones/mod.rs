@@ -331,8 +331,9 @@ pub fn pasada(db: &Arc<dyn Almacen>, motor: &Motor, ahora: Ts) -> R<()> {
     let _una = motor.en_pasada.lock().unwrap_or_else(|e| e.into_inner());
     let db = db.as_ref();
     // Antes que los eventos: una orden destructiva nueva tras cerrarse la anterior vuelve a avisar.
-    ordenes_destructivas_terminadas(db, ahora)?;
-    let tocados = procesar_eventos(db, ahora)?;
+    let resueltos = ordenes_destructivas_terminadas(db, ahora)?;
+    let mut tocados = procesar_eventos(db, ahora)?;
+    tocados.extend(resueltos);
     motor.tocados.lock().unwrap_or_else(|e| e.into_inner()).extend(tocados);
     reconectados(db, ahora)?;
     resumen::si_toca(db, ahora)?;
@@ -352,10 +353,14 @@ pub fn destructiva_pendiente(ordenes: &[crate::almacen::Orden], ahora: Ts) -> bo
     })
 }
 
+/// Quién «vio» un aviso que se cerró solo (lo que enseña la consola en su lista).
+pub const AVISO_RESUELTO: &str = "Resguardo (ya no está pendiente)";
+
 /// v1.30: «Orden destructiva pendiente» se cierra en cuanto el equipo ya no tiene
 /// ninguna por aplicar (se aplicó, falló, se rechazó, se canceló o caducó). Sin
 /// «Volvió a funcionar»: no era un fallo. Lo que aún no había salido se descarta.
-fn ordenes_destructivas_terminadas(db: &dyn Almacen, ahora: Ts) -> R<()> {
+fn ordenes_destructivas_terminadas(db: &dyn Almacen, ahora: Ts) -> R<Vec<String>> {
+    let mut tocados = Vec::new();
     for inc in db.notif_incidentes_abiertos(None)? {
         if inc.tipo != "orden_destructiva" {
             continue;
@@ -363,10 +368,17 @@ fn ordenes_destructivas_terminadas(db: &dyn Almacen, ahora: Ts) -> R<()> {
         let Some(equipo) = inc.equipo.clone() else { continue };
         let ctx = ClienteCtx::autorizado(&inc.cliente);
         if !destructiva_pendiente(&db.ordenes_equipo(&ctx, &equipo, 200)?, ahora) {
+            // Y su aviso en la consola («Pendiente en …: puedes cancelarla antes de que se
+            // aplique») deja de estar abierto: ya no hay nada que cancelar. Antes se quedaba
+            // así para siempre (prueba de resistencia, docs/estabilidad.md).
+            for a in db.avisos(&ctx, true)?.into_iter().filter(|a| a.tipo == "orden_destructiva" && a.equipo.as_deref() == Some(equipo.as_str())) {
+                db.marcar_aviso(&ctx, &a.id, AVISO_RESUELTO)?;
+                tocados.push(inc.cliente.clone());
+            }
             cerrar(db, inc, false, "", "", None, ahora)?;
         }
     }
-    Ok(())
+    Ok(tocados)
 }
 
 // ---------- Eventos → incidentes → cola ----------
