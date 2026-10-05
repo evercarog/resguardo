@@ -86,6 +86,9 @@ pub fn main() -> i32 {
         return report(service::uninstall());
     }
     if has("--service") {
+        // Como en `--agent-run`: el servicio también lanza restic (explorar,
+        // restaurar, órdenes de la consola), solo el incluido y con el PATH del sistema.
+        resguardo_motor::restic::require_bundled();
         return report(service::run());
     }
     if has("--tray") {
@@ -98,6 +101,7 @@ pub fn main() -> i32 {
     // En primer plano, sin servicio (pruebas o Linux sin systemd): el canal con
     // el servidor y una vuelta del agente cada `--cada` segundos (300 por defecto).
     if has("--primer-plano") {
+        resguardo_motor::restic::require_bundled();
         let cada = value("--cada").and_then(|s| s.parse::<u64>().ok()).unwrap_or(300).max(10);
         crate::servidor_v2::hilo();
         crate::ipc_local::hilo();
