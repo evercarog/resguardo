@@ -12,7 +12,9 @@
     nombreEquipo = "el equipo",
     etiquetaTipo = "Dónde está",
     local = false,
-  }: { repo: RepoExistente; id?: string; nombreEquipo?: string; etiquetaTipo?: string; local?: boolean } = $props();
+    etiquetaContrasena = "Contraseña del repositorio",
+    ayudaContrasena = "La que abre las copias: la del kit de recuperación o la que guardaba la app de escritorio.",
+  }: { repo: RepoExistente; id?: string; nombreEquipo?: string; etiquetaTipo?: string; local?: boolean; etiquetaContrasena?: string; ayudaContrasena?: string } = $props();
 
   const EJEMPLO: Record<TipoExistente, string> = {
     rest: "http://192.168.1.20:8000/Contabilidad",
@@ -59,7 +61,7 @@
       </div>
     </details>
   {/if}
-  <CampoClave requerido id="{id}-contrasena" etiqueta="Contraseña del repositorio" ayuda="La que abre las copias: la del kit de recuperación o la que guardaba la app de escritorio." bind:value={repo.contrasena} />
+  <CampoClave requerido id="{id}-contrasena" etiqueta={etiquetaContrasena} ayuda={ayudaContrasena} bind:value={repo.contrasena} />
   {#if local}
     <p class="faint nota">La dirección, las credenciales y la contraseña van al servicio de este equipo por su canal local: no salen de él.</p>
   {:else}

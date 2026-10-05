@@ -398,7 +398,7 @@ export async function sembrar(vacio = false) {
       version_agente: "0.7.18",
       so: "Windows Server 2022",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente"],
         destinos: [{ id: "carpeta-d", nombre: "Copias en el disco D", tipo: "local", donde: undefined, unidad: "D:", extraible: false, red: false }],
         repositorios: [{ ...repo("compartido", "Carpetas compartidas", "carpeta-d", 84, 142_000_000_000), retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 } }],
         copias: [copia("compartidas", "Carpetas compartidas", "compartido", ["12:00", "20:00"], 3)],
@@ -456,7 +456,8 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario"],
+        // v1.4x: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente"],
         // v1.36: también la gestiona una consola en línea (y el último cambio vino de allí).
         consolas: [
           { id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true },

@@ -134,7 +134,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   "copia-externa": {
     title: "Copia externa",
     text: "Cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",
-    todo: "Usa la misma contraseña que el repositorio salvo que pongas otra; en ese caso, apúntala en el kit.",
+    todo: "Usa la misma contraseña que el repositorio salvo que pongas otra; en ese caso, apúntala en el kit. También puede ir a un repositorio que ya existe (p. ej. el de la nube de la app de escritorio): solo sube lo que le falte. Si el destino tiene bloqueo de objetos, márcalo: allí no se libera espacio.",
   },
   espejo: {
     title: "Espejo en otro disco",
