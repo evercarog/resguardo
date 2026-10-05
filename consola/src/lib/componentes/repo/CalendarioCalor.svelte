@@ -55,6 +55,7 @@
     if (x.futura) return `${cuando}: todavía no`;
     const n = x.ids.length;
     const partes = [n ? plural(n, "versión", "versiones") : "sin versiones"];
+    if (x.fallos) partes.push(x.fallos === 1 ? "hubo un fallo" : `hubo ${x.fallos} fallos`);
     if (n && x.quitan) partes.push(x.quitan === n ? (n === 1 ? "la quitaría la próxima retención" : "las quitaría todas la próxima retención") : `${x.quitan} las quitaría la próxima retención`);
     if (cabecera) partes.push("ver el día entero");
     return `${cuando}: ${partes.join(", ")}`;
@@ -175,6 +176,7 @@
                 class:hoy={col.hoy}
                 class:finde={col.finde}
                 class:en-filtro={!!col.dia && enFiltro(col.dia)}
+                class:falla={!!col.dia?.fallos}
                 role="columnheader"
                 tabindex={enfocable === k ? 0 : -1}
                 data-k={k}
@@ -196,6 +198,7 @@
                 class:ahora={x.ahora}
                 class:en-filtro={enFiltro(x)}
                 class:elegida={conElegida(x)}
+                class:falla={x.fallos > 0}
                 role="gridcell"
                 tabindex={enfocable === k ? 0 : -1}
                 aria-selected={enFiltro(x)}
@@ -246,7 +249,10 @@
   .apretado {
     --hueco: 2px;
   }
+  /* Un poco de aire alrededor para que el aro, el brillo y la marca de fallos no se recorten. */
   .desliza {
+    margin: -5px;
+    padding: 5px;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
@@ -324,6 +330,7 @@
 
   /* La cabecera de cada día (vista por horas): su inicial; «Hoy» en una píldora del acento. Se pulsa. */
   .cab {
+    position: relative;
     display: grid;
     place-items: center;
     height: 18px;
@@ -351,13 +358,39 @@
     color: var(--text-1);
   }
 
-  /* Las casillas. */
+  /* Las casillas: nítidas, con un radio sutil y aire entre ellas. */
   .c {
+    position: relative;
     display: block;
     height: var(--alto);
     border-radius: 3px;
     background: var(--calor-0);
     cursor: pointer;
+  }
+  /* Hubo fallos en el tramo: una marca pequeña en la esquina, en el color del estado
+   * (con su icono y su palabra en la leyenda, el globo y el nombre de la casilla). */
+  .c.falla::after,
+  .cab.falla::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--bad);
+    box-shadow: 0 0 0 1.5px var(--surface);
+    pointer-events: none;
+  }
+  .m-tira .c.falla::after {
+    top: 3px;
+    right: 3px;
+  }
+  .cab.falla::after {
+    top: 1px;
+    right: 1px;
+    width: 5px;
+    height: 5px;
   }
   .m-dias .c {
     height: auto;
@@ -393,16 +426,29 @@
   .c.ahora {
     box-shadow: inset 0 0 0 1.5px var(--text-2);
   }
+  /* Al pasar: un aro del acento (con un brillo suave en oscuro). */
   .c:not(.futura):not(.fuera):hover {
-    box-shadow: inset 0 0 0 1.5px var(--text-1);
+    z-index: 2;
+    box-shadow:
+      0 0 0 1.5px var(--surface),
+      0 0 0 3px color-mix(in srgb, var(--accent) 60%, transparent),
+      var(--cal-brillo, 0 0 0 transparent);
   }
-  /* Lo que filtra la bitácora: un recuadro del acento. */
+  /* Lo que filtra la bitácora: el aro del acento entero (y el brillo en oscuro). */
   .c.en-filtro {
     box-shadow:
       0 0 0 1.5px var(--surface),
-      0 0 0 3px var(--accent);
-    position: relative;
+      0 0 0 3px var(--accent),
+      var(--cal-brillo, 0 0 0 transparent);
     z-index: 1;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .c,
+    .cab {
+      transition:
+        box-shadow var(--dur-fast) var(--ease),
+        background-color var(--dur-fast) var(--ease);
+    }
   }
   /* La de la versión elegida: un punto en el centro. */
   .c.elegida {

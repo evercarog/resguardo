@@ -33,22 +33,20 @@
     verificacion,
     versionesDe,
   } from "$lib/repo";
-  import type { EntradaHistorial, Equipo, EquipoDetalle, VersionInforme } from "$lib/tipos";
+  import type { Equipo, EquipoDetalle, VersionInforme } from "$lib/tipos";
   import { almacenDe, textoHorario, textoRegla } from "$lib/retencion";
   import { admiteVerificacion, fraseVerificacion } from "$lib/verificacion";
   import RetencionAlmacen from "$lib/componentes/RetencionAlmacen.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
-  import BotonCargando from "$lib/componentes/BotonCargando.svelte";
-  import { avisar } from "$lib/avisos.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import FlujoRepo from "$lib/componentes/repo/FlujoRepo.svelte";
   import GraficaBarras from "$lib/componentes/repo/GraficaBarras.svelte";
-  import HistoriaRepo from "$lib/componentes/repo/HistoriaRepo.svelte";
-  import ListaVersiones from "$lib/componentes/repo/ListaVersiones.svelte";
+  import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
+  import { usarHistorialEquipo } from "$lib/historialEquipo.svelte";
   import SaludProteccion from "$lib/componentes/repo/SaludProteccion.svelte";
   import MenuAcciones from "$lib/componentes/MenuAcciones.svelte";
   import TraerHistorial from "$lib/componentes/TraerHistorial.svelte";
@@ -78,67 +76,18 @@
       .catch((x) => (error = (x as Error).message));
   });
 
-  // v1.23: el historial que guarda el propio equipo (para la Historia; vacío con un servidor anterior).
-  // v1.26: por páginas, lo más reciente primero; «Cargar más» pide la siguiente.
-  let historial = $state<EntradaHistorial[]>([]);
-  let hayMas = $state(false);
-  let cargandoMas = $state(false);
+  // v1.23: el historial que guarda el propio equipo (lo de antes, verificaciones, subidas…), por páginas y en vivo.
+  const historia = usarHistorialEquipo(() => c, () => e);
+  // Al día sin recargar: el equipo (versiones, espacio…).
   $effect(() => {
     const [cc, ee] = [c, e];
-    historial = [];
-    hayMas = false;
-    api
-      .historialEquipo(cc, ee)
-      .then((h) => {
-        if (cc !== c || ee !== e) return;
-        historial = h;
-        hayMas = h.length >= api.HISTORIAL_POR_PAGINA;
-      })
-      .catch(() => {});
-  });
-  // Al día sin recargar: el equipo (versiones, espacio…) y lo nuevo de su historia, arriba
-  // (sin perder las páginas ya cargadas con «Cargar más»).
-  $effect(() => {
-    const [cc, ee] = [c, e];
-    return untrack(() => {
-      const dejarEquipo = seguirCambios(() => api.equipo(cc, ee).then((x) => ee === e && (equipo = x), () => {}), {
+    return untrack(() =>
+      seguirCambios(() => api.equipo(cc, ee).then((x) => ee === e && (equipo = x), () => {}), {
         ms: 0,
         toca: (x) => (x.t === "informe" || x.t === "config" || x.t === "equipo" || (x.t === "progreso" && x.estado === "termina")) && tocaEquipo(x, ee),
-      });
-      const dejarHistoria = seguirCambios(
-        () =>
-          api.historialEquipo(cc, ee).then((h) => {
-            if (cc !== c || ee !== e) return;
-            const ya = new Set(historial.map((x) => x.id));
-            const nuevas = h.filter((x) => !ya.has(x.id));
-            if (nuevas.length) historial = [...nuevas, ...historial].sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
-          }, () => {}),
-        { ms: 0, toca: (x) => x.t === "historial" && tocaEquipo(x, ee) },
-      );
-      return () => {
-        dejarEquipo();
-        dejarHistoria();
-      };
-    });
+      }),
+    );
   });
-  async function cargarMas() {
-    const [cc, ee, ultima] = [c, e, historial.at(-1)];
-    if (!ultima) return;
-    cargandoMas = true;
-    try {
-      const h = await api.historialEquipo(cc, ee, { antes: ultima.id });
-      if (cc !== c || ee !== e) return;
-      // Sin repetir (un servidor anterior a v1.26 no entiende «antes» y da otra vez lo mismo).
-      const ya = new Set(historial.map((x) => x.id));
-      const nuevas = h.filter((x) => !ya.has(x.id));
-      historial = [...historial, ...nuevas];
-      hayMas = nuevas.length > 0 && h.length >= api.HISTORIAL_POR_PAGINA;
-    } catch (x) {
-      avisar((x as Error).message, "bad");
-    } finally {
-      cargandoMas = false;
-    }
-  }
 
   const repo = $derived(equipo?.resumen?.repositorios?.find((r) => r.id === rid));
   const inf = $derived(informeDe(equipo?.ultimo_informe, rid));
@@ -159,7 +108,7 @@
   );
   // La retención que se le aplica (las versiones guardadas la simulan).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
-  const enlace = (v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: rid, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
 
   // Órdenes desde aquí (con su diálogo de siempre). `para`: a otro equipo (el almacén).
   let dialogo = $state<{ tipo: string; cuerpo: Record<string, unknown>; descripcion: string; accion?: string; titulo?: string; para?: Equipo } | null>(null);
@@ -240,8 +189,7 @@
         { id: "t-flujo", texto: "Cómo se protege" },
         { id: "sec-proteccion", texto: "Protección" },
         ...(versiones.length >= 2 ? [{ id: "sec-graficas", texto: "Gráficas" }] : []),
-        { id: "t-versiones", texto: "Versiones" },
-        ...(inf ? [{ id: "t-historia", texto: "Historia" }] : []),
+        { id: "t-historial", texto: "Historial y versiones" },
       ]}
     />
 
@@ -372,30 +320,26 @@
       </section>
     {/if}
 
-    <ListaVersiones
-      {repo}
-      {inf}
+    <HistorialVersiones
+      fuentes={[{ repo, inf, regla: retencionLinea?.regla ?? null, quien: retencionLinea?.quien ?? null }]}
       {copias}
+      historial={historia.entradas}
+      ultimas={equipo.ultimo_informe?.datos.copias ?? []}
       {enlace}
       ahora={reloj.ahora}
       puedeRestaurar={puede.ordenar(rol)}
       vacio={suyas.length ? "Cada vez que se haga una copia se guardará aquí una versión que podrás explorar y restaurar." : "Ninguna copia de este equipo guarda en este repositorio."}
-      alAbrir={(v, f) => abrirVersion(v.id, f)}
+      alAbrir={(v, _r, f) => abrirVersion(v.id, f)}
+      alAbrirVuelta={(h) => abrirVuelta(h)}
       elegida={sel.version}
       dia={sel.dia}
       alDia={elegirDia}
-      regla={retencionLinea?.regla ?? null}
-      quien={retencionLinea?.quien ?? null}
+      hayMas={historia.hayMas}
+      cargandoMas={historia.cargando}
+      alCargarMas={historia.cargarMas}
     />
 
     {#if inf}
-      <HistoriaRepo {repo} {inf} {copias} ultimas={equipo.ultimo_informe?.datos.copias ?? []} {historial} alAbrirVersion={(id) => abrirVersion(id)} alAbrirVuelta={abrirVuelta} dia={sel.dia} />
-      {#if hayMas}
-        <p class="faint pie">
-          Se ha leído lo más reciente del historial del equipo ({numero(historial.length)} entradas).
-          <BotonCargando class="btn btn-ghost btn-sm" cargando={cargandoMas} textoCargando="Cargando…" onclick={cargarMas}>Cargar más</BotonCargando>
-        </p>
-      {/if}
       <p class="faint pie">
         Datos del informe de {equipo.nombre} {relativo(equipo.ultimo_informe?.recibido, reloj.ahora)}{inf.versiones_leidas ? ` · versiones leídas ${relativo(inf.versiones_leidas, reloj.ahora)}` : ""}{inf.espacio?.leido ? ` · espacio medido ${relativo(inf.espacio.leido, reloj.ahora)}` : ""}.
         <span use:tip={fechaLarga(equipo.ultimo_informe?.recibido)}>Sin rutas ni nombres de archivos.</span>
@@ -416,7 +360,7 @@
 {/if}
 
 {#if equipo && repo && actual.cliente}
-  <PanelDetalle cliente={actual.cliente} {equipo} {repo} {inf} {copias} {historial} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
+  <PanelDetalle cliente={actual.cliente} {equipo} {repo} {inf} {copias} historial={historia.entradas} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
 {/if}
 
 {#if traer && equipo && repo && actual.cliente}
