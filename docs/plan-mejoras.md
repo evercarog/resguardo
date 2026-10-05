@@ -61,10 +61,7 @@ Hoy cada repositorio tiene **una** copia externa (`tasks::Offsite`: `restic copy
 - [ ] **4c. Filtros** en cada copia derivada: etiquetas, rutas o carpetas y antigüedad («solo las versiones de los últimos 30 días», «solo una al mes»). `restic copy` ya admite `--tag`, `--path` y los ids de versión que se elijan.
 - [ ] **4d. En la consola**, el flujo de cada copia de principio a fin: «Documentos (RECEPCION) → almacén D: → espejo E: y Dropbox; copia externa a B2».
 
-- [ ] **4e. (Solo si 7b no basta) Copias derivadas que hace el almacén, en local.** Problema: el equipo dueño solo llega al almacén por su rest-server (una carpeta, p. ej. `D:\Backups`); no puede escribir en otro disco del almacén (`E:\Backups`) ni usar sus nubes. Solución, con el mismo modelo que la **retención en el almacén** (`docs/compartir.md`): el dueño añade al repositorio una clave del almacén (con la clave de administración y espera) y el almacén hace la copia derivada **él mismo, en local**: origen `<carpeta>/<usuario>/<repo>`, destino cualquier carpeta de sus discos o cualquier destino que él alcance (B2, NAS, Dropbox conectado en él), con filtros (4c), contraseña de destino, retención y horario (incluido «después de cada copia»). Así se puede:
-  - **juntar** varios repositorios (p. ej. los de dos programas de contabilidad) en **un solo repositorio** en `E:` (`restic copy` de cada uno, destino creado con `--copy-chunker-params` del primero para deduplicar);
-  - **repartir** uno en varios por etiqueta de la versión (p. ej. `semanal` → un repositorio, `diaria` → otro).
-  La contrapartida es la de la retención en el almacén: quien controle el almacén puede **leer** esos repositorios. Opcional por repositorio, dicho claro en la consola, y se reutiliza la misma clave del almacén si ya está.
+- **4e. Descartada** (decisión del responsable): que el almacén haga copias con su propia clave del repositorio. Se usa 7 en su lugar: el almacén nunca tiene contraseñas de los repositorios.
 - [ ] **4f. Más de una carpeta servida por el almacén** (opcional, si 4e no basta): que el Servidor de copias ofrezca varias zonas (`D:`, `E:`), cada una como destino elegible para las copias de los equipos (otro rest-server en otro puerto o rutas por zona), para que un equipo pueda copiar directamente a «Almacén · disco E».
 
 ## 5. «Un repositorio para todos y dividirlo después»: lo que se decidió
@@ -91,7 +88,7 @@ Hoy (`consola/src/lib/etiquetas.svelte.ts`) las etiquetas de los equipos tienen 
 
 ## 7. Destinos independientes, zonas del almacén y copias en cadena
 
-Decidido después de 3, 4 y 5, y **preferido a 4e** porque el almacén sigue sin tener contraseñas. Es el modelo que une el espejo y las copias derivadas en algo que se configura en un solo sitio, la copia.
+Decidido después de 3, 4 y 5 (4e se descartó) porque el almacén sigue sin tener contraseñas. Es el modelo que une el espejo y las copias derivadas en algo que se configura en un solo sitio, la copia.
 
 - [ ] **7a. Destinos de primera clase en la consola.** Crear un destino **sin crear un repositorio** (Dropbox, B2, S3, SFTP, NAS, una zona de un almacén), ponerle **nombre** («Almacén · Disco D», «Dropbox Oficina») y cambiarlo cuando quieras. Hoy el destino de un almacén lleva al equipo y no se renombra; en la app el modelo ya existe (`docs/destinos.md`, `places.json` con `name` editable). Al crear un repositorio se elige un destino de la lista.
 - [ ] **7b. Varias zonas en un almacén.** Un rest-server sirve **una sola carpeta** (`--path`, `crates/agente/src/server.rs`) y el agente no admite enlaces dentro (seguridad), así que `E:\Backups` necesita **otra instancia de rest-server con su puerto** (mismo certificado de la CA del almacén, solo añadir y `--private-repos`, usuarios propios). La consola lo enseña como zonas del mismo almacén: «Almacén · Disco D» (:8000), «Almacén · Disco E» (:8002), cada una un destino de 7a. Espacio libre por zona, firewall por puerto, todo con la clave de administración.
@@ -104,6 +101,20 @@ Decidido después de 3, 4 y 5, y **preferido a 4e** porque el almacén sigue sin
 
   Los espejos (3 y 4) no necesitan contraseña. Si origen y destino son zonas del mismo almacén, o una nube conectada en él, los hace **el almacén en local**: sin red y sin contraseñas. Para encadenarlos tras una copia de otro equipo, el almacén detecta la versión nueva en `snapshots/` de ese repositorio (3a).
   Ejemplo: «Contabilidad» → Almacén · Disco D; **después** → Almacén · Disco E (espejo con retención o copia independiente); **después** → Dropbox (espejo o copia independiente).
+- [ ] **7f. Crear una copia: destino primero, repositorio después.** El flujo de «Añadir una copia»:
+  1. **Qué**: carpetas del equipo (copia nueva) o el repositorio de otra copia (paso de una cadena, 7d).
+  2. **Cuándo**: horario o «después de la anterior».
+  3. **Destino**: de la lista de destinos (7a), o crear uno ahí mismo.
+  4. **Repositorio en ese destino**:
+     - **Espejo**: no se elige ni se crea nada; el repositorio de destino es el **mismo** (mismos archivos, misma contraseña) en `<destino>/<usuario>/<repo>`.
+     - **Copia nueva o copia independiente**: uno **que ya existe** en ese destino (lista) o **uno nuevo** ahí mismo (nombre y contraseña, al kit).
+  5. **Repositorio nuevo: «Traer las versiones de otro repositorio» antes de la primera copia** (opcional): reutilizar `copiar_historial` / «Traer el historial», que ya existe; crear el nuevo con `--copy-chunker-params` del origen para que deduplique. Así queda otro repositorio con las mismas versiones y otra clave, retención o configuración.
+  6. Resumen con el camino completo (4d) y la clave de administración.
+- **Seguridad de 7 (para no perderla al implementar):**
+  - Los espejos los hace el almacén en local (sin contraseñas). Los equipos **no** necesitan acceso a la zona de un espejo; si se les da (copias independientes a esa zona), es en **solo añadir** como la zona principal.
+  - El espejo **con retención** sigue a la retención del original con retraso y freno (3b). Recomendar en la consola que al menos un destino de la cadena quede **fuera del alcance** de esa retención: un espejo sin retención, una copia independiente con su propia retención o una nube con Object Lock. Si no, un equipo comprometido que llene el repositorio de versiones basura (lo que la retención del almacén ya limita con su margen de 48 h, `docs/compartir.md`) acabaría desplazando las buenas en todos los destinos.
+  - «Traer las versiones» lo hace el equipo dueño, que ya tiene las dos contraseñas; el almacén no ve ninguna.
+  - Dropbox no es inmutable: decirlo al elegirlo (como hoy en el espejo).
 - [ ] **7e. Convivencia con el espejo de hoy.** El espejo global del almacén («todo lo que guarda») sigue funcionando; la consola explica que los espejos por copia (7d) son la forma nueva y ofrece pasar uno a otro.
 
 ## Mientras tanto (sin código)
