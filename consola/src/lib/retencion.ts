@@ -160,7 +160,7 @@ export function resumenRegla(r: Regla): string {
 // grupo y sin la desconfianza del almacén): para estimar cuántas quedan.
 // ---------------------------------------------------------------------------
 
-const HUECOS: ((d: Date) => number)[] = [
+export const HUECOS: ((d: Date) => number)[] = [
   (d) => ((d.getFullYear() * 100 + d.getMonth() + 1) * 100 + d.getDate()) * 100 + d.getHours(),
   (d) => (d.getFullYear() * 100 + d.getMonth() + 1) * 100 + d.getDate(),
   (d) => {
