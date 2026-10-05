@@ -771,14 +771,25 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
     let r = (|| {
         let datos = tmp.join("datos");
         std::fs::create_dir_all(&datos).map_err(|e| e.to_string())?;
-        let mut args: Vec<String> = vec!["restore".into(), format!("{version}:/"), "--target".into(), datos.display().to_string()];
-        for ruta in &rutas {
-            args.extend(["--include".into(), ruta.clone()]);
-        }
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let out = restic::run_raw(acc, &refs, Duration::from_secs(24 * 3600))?;
-        if out.code != Some(0) {
-            return Err(restic::exit_error(out.code, &out.stderr));
+        // Por carpeta de origen, `version:carpeta` con `--include /nombre` (como «restaurar»):
+        // nunca `version:/`, que restauraba también las carpetas de arriba (C:\, C:\Users…)
+        // con sus permisos de Windows; sin ser administrador, la carpeta temporal quedaba
+        // sin permiso de escritura y restic fallaba con «acceso denegado». Y el zip lleva
+        // lo elegido, no la ruta entera del equipo.
+        let grupos = por_carpeta(&rutas)?;
+        let mut usados: Vec<String> = Vec::new();
+        for (padre, nombres) in &grupos {
+            let destino = if grupos.len() == 1 { datos.clone() } else { datos.join(nombre_de_grupo(padre, &mut usados)) };
+            std::fs::create_dir_all(&destino).map_err(|e| e.to_string())?;
+            let mut args: Vec<String> = vec!["restore".into(), format!("{version}:{padre}"), "--target".into(), destino.display().to_string()];
+            for n in nombres {
+                args.extend(["--include".into(), format!("/{n}")]);
+            }
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            let out = restic::run_raw(acc, &refs, Duration::from_secs(24 * 3600))?;
+            if out.code != Some(0) {
+                return Err(restic::exit_error(out.code, &out.stderr));
+            }
         }
         let archivo = tmp.join("descarga.zip");
         comprimir(&datos, &archivo)?;
@@ -787,6 +798,33 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
     })();
     let _ = std::fs::remove_dir_all(&tmp);
     r
+}
+
+/// Las rutas de una descarga, juntas por su carpeta (en el orden en que llegan).
+fn por_carpeta(rutas: &[String]) -> Result<Vec<(String, Vec<String>)>, String> {
+    let mut grupos: Vec<(String, Vec<String>)> = Vec::new();
+    for ruta in rutas {
+        let (padre, nombre) = partes(ruta)?;
+        match grupos.iter_mut().find(|(p, _)| *p == padre) {
+            Some((_, n)) => n.push(nombre),
+            None => grupos.push((padre, vec![nombre])),
+        }
+    }
+    Ok(grupos)
+}
+
+/// La carpeta del zip para lo de `padre` cuando vienen de varias: su último nombre
+/// (sin caracteres que Windows no admite), sin repetir.
+fn nombre_de_grupo(padre: &str, usados: &mut Vec<String>) -> String {
+    let base: String = padre.rsplit('/').find(|s| !s.is_empty()).unwrap_or("carpeta").chars().map(|c| if "<>:\"|?*\\".contains(c) { '_' } else { c }).collect();
+    let mut nombre = base.clone();
+    let mut n = 2;
+    while usados.iter().any(|u| u.eq_ignore_ascii_case(&nombre)) {
+        nombre = format!("{base} ({n})");
+        n += 1;
+    }
+    usados.push(nombre.clone());
+    nombre
 }
 
 /// Un zip con todo lo de `dir` (rutas relativas, con `/`).
@@ -861,6 +899,22 @@ mod tests {
         assert!(!dentro(r"D:\WO\DatosOtros\x", &carpetas));
         assert!(!dentro(r"D:\WO\Datos\..\..\Windows\x", &carpetas));
         assert!(!dentro(r"D:\WO\Datos\x", &[]));
+    }
+
+    #[test]
+    fn descarga_de_varios_por_carpeta() {
+        let rutas: Vec<String> = ["/C/Datos/a.txt", "/C/Datos/b.txt", "/D/Otra/Datos/c.txt", "/E/x/y"].iter().map(|s| s.to_string()).collect();
+        let g = por_carpeta(&rutas).unwrap();
+        assert_eq!(g[0], ("/C/Datos".to_string(), vec!["a.txt".to_string(), "b.txt".to_string()]));
+        assert_eq!(g[1].0, "/D/Otra/Datos");
+        assert_eq!(g.len(), 3);
+        // Dos carpetas «Datos»: la segunda, «Datos (2)», en el zip.
+        let mut usados = Vec::new();
+        assert_eq!(nombre_de_grupo(&g[0].0, &mut usados), "Datos");
+        assert_eq!(nombre_de_grupo(&g[1].0, &mut usados), "Datos (2)");
+        assert_eq!(nombre_de_grupo("/C/a:b", &mut usados), "a_b");
+        // Una unidad entera no se descarga así (como al restaurar).
+        assert!(por_carpeta(&["/C".to_string()]).is_err());
     }
 
     #[test]

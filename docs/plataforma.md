@@ -9,6 +9,7 @@ Documentos relacionados:
 - [diseno.md](diseno.md): sistema de diseño.
 - [consolas-multiples.md](consolas-multiples.md): un equipo gestionado desde varias consolas a la vez.
 - [capacidad.md](capacidad.md): cuánto pide una consola abierta y un equipo, los límites por cuenta e IP y lo que aguanta el servidor (medido).
+- [estabilidad.md](estabilidad.md): la prueba de resistencia (horas con averías), lo que se midió, lo que ve la consola en cada avería y los límites.
 
 ---
 

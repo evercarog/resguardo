@@ -1281,6 +1281,98 @@ async fn el_canal_y_el_sondeo_adelantan_el_numero_de_orden() {
     assert_eq!(seq().await, Some(13));
 }
 
+/// Una orden entregada por un canal que ya estaba muerto (red caída sin aviso) no le
+/// llegó al equipo: cuando vuelve y dice cuál fue la última que aceptó, se le entrega
+/// otra vez. Antes se quedaba «entregada» para siempre.
+#[tokio::test]
+async fn lo_entregado_que_no_llego_se_entrega_otra_vez() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let ordenes = format!("/api/clientes/{c}/equipos/{}/ordenes", ag.id);
+    let tomar = |ultimo: Option<u64>| {
+        let (app, auth) = (p.app.clone(), ag.auth());
+        async move {
+            let mut cuerpo = json!({ "reto": B64.encode([5u8; 32]) });
+            if let Some(n) = ultimo {
+                cuerpo["ultimo_seq"] = json!(n);
+            }
+            let r = pedir(&app, "POST", "/api/agente/tomar", Some(cuerpo), None, &[("authorization", &auth)]).await;
+            assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+            r.json["ordenes"].as_array().unwrap().iter().map(|o| o["seq"].as_u64().unwrap()).collect::<Vec<_>>()
+        }
+    };
+    for seq in 1..=2 {
+        let r = pedir(
+            &p.app,
+            "POST",
+            &ordenes,
+            Some(json!({ "tipo": "copiar_ahora", "seq": seq, "sellado": sobre(&ag), "caduca": caduca(1) })),
+            Some(&cookie),
+            &[],
+        )
+        .await;
+        assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    }
+    assert_eq!(tomar(None).await, [1, 2]);
+    // Se perdieron por el camino; el equipo solo había aceptado la 1 (de antes).
+    assert_eq!(tomar(Some(1)).await, [2]);
+    // Ya la tiene: no se repite. Y un agente anterior (sin `ultimo_seq`) tampoco las recibe dos veces.
+    assert!(tomar(Some(2)).await.is_empty());
+    assert!(tomar(None).await.is_empty());
+}
+
+/// Un equipo que deja de contestar sin cerrar la conexión (red caída sin aviso, un
+/// portátil que se duerme) deja de contar como conectado: antes seguía «conectado»
+/// para siempre y su último contacto se renovaba cada 30 s. Uno que contesta, sigue.
+#[tokio::test(start_paused = true)]
+async fn el_canal_de_un_equipo_callado_se_cierra() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let ruta = format!("/api/clientes/{c}/equipos/{}", ag.id);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = p.app.clone();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let abrir = |n: u8| {
+        let auth = ag.auth();
+        async move {
+            let mut req = format!("ws://{addr}/api/agente/canal?reto={}", urlenc(&B64.encode([n; 32]))).into_client_request().unwrap();
+            req.headers_mut().insert("authorization", auth.parse().unwrap());
+            let (mut ws, _) = tokio_tungstenite::connect_async(req).await.expect("conecta");
+            let hola: Value = serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            assert_eq!(hola["t"], "hola");
+            ws
+        }
+    };
+    let conectado = || async { pedir(&p.app, "GET", &ruta, None, Some(&cookie), &[]).await.json["conectado"].as_bool() };
+
+    // Contesta a cada ping: sigue conectado pasados los 150 s.
+    let mut ws = abrir(1).await;
+    let hasta = tokio::time::Instant::now() + std::time::Duration::from_secs(200);
+    while tokio::time::Instant::now() < hasta {
+        match tokio::time::timeout(std::time::Duration::from_secs(40), ws.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) if t.contains("\"ping\"") => ws.send(Message::Text(r#"{"t":"pong"}"#.into())).await.unwrap(),
+            Ok(Some(Ok(_))) | Err(_) => {}
+            Ok(x) => panic!("el canal de un equipo que contesta se cerró: {x:?}"),
+        }
+    }
+    assert_eq!(conectado().await, Some(true));
+    drop(ws);
+
+    // Callado (no contesta ni cierra): a los 150 s, el servidor lo cierra.
+    let mut ws = abrir(2).await;
+    assert_eq!(conectado().await, Some(true));
+    // Los ping llegan, sin contestar, hasta que el servidor cierra.
+    let fin = tokio::time::timeout(std::time::Duration::from_secs(300), async { while let Some(Ok(Message::Text(_))) = ws.next().await {} }).await;
+    assert!(fin.is_ok(), "el servidor no cerró el canal del equipo callado");
+    assert_eq!(conectado().await, Some(false));
+}
+
 /// Plantillas de copia (v1.20): el servidor guarda bytes opacos de la consola; solo administradores.
 #[tokio::test]
 async fn plantillas_cifradas() {

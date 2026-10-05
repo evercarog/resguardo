@@ -159,6 +159,19 @@ fn repo_command(access: &Access) -> Command {
     cmd
 }
 
+/// ¿Es un «disco lleno»? (en minúsculas): el del sistema (también en el Windows en
+/// español, que traduce sus mensajes) o el «507 Insufficient Storage» de rest-server.
+pub fn sin_espacio(s: &str) -> bool {
+    s.contains("no space left on device")
+        || s.contains("not enough space")
+        || s.contains("disk is full")
+        || s.contains("insufficient storage")
+        || s.contains("http response (507)")
+        || s.contains("espacio suficiente en el disco")
+        || s.contains("espacio en disco insuficiente")
+        || s.contains("os error 112")
+}
+
 /// Explica en español los errores de conexión más comunes, si los reconoce.
 fn explain(stderr: &str) -> Option<String> {
     let s = stderr.to_lowercase();
@@ -190,6 +203,14 @@ fn explain(stderr: &str) -> Option<String> {
         "El servicio en la nube rechazó la escritura: se alcanzó el límite de la cuenta (por ejemplo, el límite \
          diario de almacenamiento de Backblaze, en «Caps & Alerts»). Súbelo o añade un método de pago y vuelve a \
          intentarlo."
+    } else if sin_espacio(&s) {
+        // Disco lleno en el destino: una carpeta o disco de este equipo, o el del
+        // Servidor de copias (rest-server contesta «507 Insufficient Storage»).
+        "No queda espacio en el destino de las copias. Libera espacio en su disco o quita versiones antiguas (pestaña «Retención») y vuelve a copiar."
+    } else if s.contains("ciphertext verification failed") || s.contains("pack id does not match") || s.contains("does not match, want") {
+        // Un archivo de datos del repositorio dañado (en la prueba de resistencia: la retención
+        // del almacén lo encontró al podar y salía el texto de restic tal cual).
+        "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare («restic repair packs»)."
     } else if s.contains("401 unauthorized") || s.contains("(401)") {
         "El servidor rechazó el usuario o la contraseña de acceso (401). Comprueba en el servidor que ese usuario sigue \
          existiendo y tiene esa contraseña."
@@ -210,9 +231,6 @@ fn explain(stderr: &str) -> Option<String> {
         || s.contains("no route to host")
     {
         "No se pudo conectar con el servidor. Revisa la dirección, el puerto y que esté encendido."
-    } else if s.contains("no space left on device") || s.contains("not enough space") || s.contains("disk is full") {
-        "No queda espacio en el disco del destino. Libera espacio en él o borra versiones antiguas (pestaña «Retención» del \
-         repositorio) y vuelve a copiar."
     } else if s.contains("repository is already locked") || s.contains("unable to create lock") {
         BUSY
     } else if s.contains("unknown flag") || s.contains("unknown shorthand flag") {
@@ -806,6 +824,17 @@ pub mod tests {
             e("dial tcp 10.0.0.1:8000: connectex: No connection could be made because the target machine actively refused it.").contains("No se pudo conectar")
         );
         assert!(e("Fatal: unable to save snapshot: write D:\\x: There is not enough space on the disk.").contains("espacio"));
+        // Lo que dice restic (0.18) cuando el rest-server del almacén se queda sin disco
+        // (medido con `rest-server --max-size`): antes salía el texto en inglés.
+        let lleno = e("Save(<data/7402b399a8>) failed: unexpected HTTP response (507): 507 Insufficient Storage\nFatal: unable to save snapshot: error flushing repository: unexpected HTTP response (507): 507 Insufficient Storage");
+        assert!(lleno.starts_with("No queda espacio") && lleno.contains("Retención"), "{lleno}");
+        // Los mensajes que pueden ir en el `mensaje_corto` del informe (160) caben enteros.
+        assert!(lleno.chars().count() <= 160);
+        // Windows en español: los errores del sistema vienen traducidos.
+        assert!(e("Fatal: write D:\\x: No hay espacio suficiente en el disco.").starts_with("No queda espacio"));
+        assert!(e("write /mnt/x: no space left on device").starts_with("No queda espacio"));
+        // Un archivo dañado en el destino (la retención del almacén al podar, restic 0.18).
+        assert!(e("Fatal: decrypting blob <data/1e0392d8> from pack 6751b1e7 failed: ciphertext verification failed").starts_with("Hay datos dañados"));
         assert!(e("unable to create lock in backend: repository is already locked by PID 12").contains("ocupado"));
         assert!(e("Fatal: unable to open config file: stat E:\\Backups\\config: The system cannot find the path specified.\nIs there a repository at the following location?")
             .contains("¿Está conectado el disco?"));
