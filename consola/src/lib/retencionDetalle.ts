@@ -226,7 +226,7 @@ const plazoDe = (r: Regla, k: Periodo) => r.plazos?.[k] || null;
 
 /** Por qué se va (o se fue): «Era la diaria del 3 oct, pero ya había 7 diarias más recientes». */
 export function textoSeVa(m: Motivo | null, hora: Date | null, regla: Regla | null): string {
-  if (!m) return "Sin motivo anotado (vuelta de un agente anterior o regla que la consola no conoce).";
+  if (!m) return "Sin motivo anotado (de un agente anterior o con una regla que la consola no conoce).";
   if (m.tipo === "restic" || !m.periodo) return "La quitó restic, aunque la simulación no lo esperaba (otra agrupación, o la regla cambió).";
   const p = m.periodo;
   if (m.tipo === "repe") return `Ya había otra versión más reciente ${EN_ESE[p]}.`;
@@ -437,3 +437,15 @@ export function marcasPorDia(vueltas: VueltaRetencion[], p: Prevision | null, ah
 }
 
 export { DIA };
+
+/** Una fila de las listas de versiones de la página. */
+export interface FilaVersion {
+  id: string;
+  hora: string | null;
+  /** El nombre de su copia. */
+  copia: string | null;
+  bytes: number | null;
+  porque: string;
+  /** «va»: se fue o se irá; «queda»: se queda. */
+  tono?: "va" | "queda";
+}

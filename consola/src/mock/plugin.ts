@@ -18,6 +18,7 @@ import { ABRE_SESION, esDestructiva, NIVEL, SOLO_ADMIN_ROL } from "../lib/cripto
 import type * as T from "../lib/tipos";
 import { auditar, DEMO, estado, sembrar, verificarCadena, type EmparejamientoMock, type EquipoMock, type OrdenMock } from "./estado";
 import { historialMock } from "./historial";
+import { retencionesMock } from "./retencion";
 import { progresoDe } from "./progreso";
 import { rutasNotificaciones } from "./notificaciones";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
@@ -992,8 +993,9 @@ const rutas: Ruta[] = [
       const q = ctx.url.searchParams;
       const [desde, hasta, tipos] = [q.get("desde"), q.get("hasta"), (q.get("tipo") ?? "").split(",").filter(Boolean)];
       const limite = Math.min(Math.max(Number(q.get("limite") ?? 500) || 500, 1), 2000);
-      let l = historialMock(equipoDe(c, e))
-        .filter((h) => (!desde || Date.parse(h.hora) > Date.parse(desde)) && (!hasta || Date.parse(h.hora) <= Date.parse(hasta)) && (!tipos.length || tipos.includes(h.tipo)))
+      // v1.4x: las vueltas de la retención, solo pedidas con `tipo` (como el servidor).
+      let l = [...historialMock(equipoDe(c, e)), ...(retencionesMock(equipoDe(c, e)) as unknown as T.EntradaHistorial[])]
+        .filter((h) => (!desde || Date.parse(h.hora) > Date.parse(desde)) && (!hasta || Date.parse(h.hora) <= Date.parse(hasta)) && (tipos.length ? tipos.includes(h.tipo) : (h.tipo as string) !== "retencion"))
         .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const antes = q.get("antes");
       if (antes) {

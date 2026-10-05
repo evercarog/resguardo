@@ -317,9 +317,10 @@
                     {/if}
                   </span>
                 {/if}
+                <span class="msg"><a class="btn btn-sm btn-ghost" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(rid)}/retencion">Ver en detalle</a></span>
               </dd>
             </div>
-          {:else if repo.retencion}<div><dt>Retención</dt><dd>{repo.retencion}{#if repo.solo_anadir}<span class="faint msg">Se aplica en el servidor (es de solo añadir).</span>{/if}</dd></div>
+          {:else if repo.retencion}<div><dt>Retención</dt><dd>{repo.retencion}{#if repo.solo_anadir}<span class="faint msg">Se aplica en el servidor (es de solo añadir).</span>{/if}<span class="msg"><a class="btn btn-sm btn-ghost" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(rid)}/retencion">Ver en detalle</a></span></dd></div>
           {:else if repo.solo_anadir}<div><dt>Retención</dt><dd><span class="faint">En el servidor: es de solo añadir y desde aquí no se borra nada.</span></dd></div>{/if}
         </dl>
         {#if prot}<p class="faint pequeno"><AnilloProteccion proteccion={prot} tamano={14} /> Protección {prot.puntuacion} de {prot.total}</p>{/if}
