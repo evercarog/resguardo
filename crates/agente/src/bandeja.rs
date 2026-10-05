@@ -220,7 +220,7 @@ pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
         en_curso,
         pedir: f.solicitudes,
         escrito: Some(ahora.to_rfc3339()),
-        actividades: crate::escritorio::actividades_de(f.config, f.estado, f.tareas),
+        actividades: crate::escritorio::actividades_de(f.config, f.estado, f.tareas, ahora.with_timezone(&chrono::Local)),
         hechas: crate::escritorio::hechas_de(f.config, f.estado, f.tareas),
         ..Default::default()
     };
