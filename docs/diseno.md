@@ -181,6 +181,7 @@ Los colores de las series (`--onda-1…3`) son los de «Colores por copia» (§4
   - Con foco, borde de acento y anillo `--focus`. Con error, borde `--bad` y el mensaje debajo en `--fs-sm` y `--bad`.
   - La etiqueta va encima, en `--fs-sm` con peso 500 y color `--text-1`, y la ayuda debajo en `--fs-xs` y `--text-3`.
   - El *select* es igual que un campo, con un chevron de 16 px.
+  - Todo campo que pide una carpeta **del equipo** lleva al lado «Explorar…» (`.con-boton`), que abre `ElegirCarpetas` en ese equipo con las reglas de siempre (la clave de administración ya escrita en el formulario o, si no, la pide): destinos locales, la carpeta del almacén, la del espejo, la de los volcados, «Usar uno que ya existe» (en «Disco o carpeta», o dentro de un destino local del equipo), «Traer historial» y el kit de «Restaurar en otro equipo» (en el equipo donde se restaura). Al buscar un repositorio que ya existe, las carpetas que lo parecen (`config`, `data`, `index`, `keys`, `snapshots`) llevan la pastilla neutra «Repositorio de restic» (la pista `repositorio` del agente al listar; con un agente anterior, al abrir la carpeta): es la única vez que la interfaz dice «restic», porque es el nombre con el que el usuario lo reconoce en su disco.
 - **Casilla e interruptor:**
   - Casilla de 16 px con radio 4; marcada, en color de acento.
   - Interruptor (`.switch`) de 32×18 con pomo de 14; apagado, con contorno `--border-input`; encendido, en color de acento. Se usa para ajustes que se aplican al momento; la casilla, dentro de formularios.
