@@ -132,6 +132,11 @@ Decidido: orientar la configuración a que cada copia cumpla la regla. Se usa la
   - un aviso (no urgente) cuando una copia que cumplía deja de cumplir (p. ej. el espejo en la nube lleva 3 días fallando).
 - [ ] **8d. Plantilla «3-2-1 recomendada»** al añadir una copia: copia al almacén (zona D) → espejo a otro disco (zona E) → repositorio a partir del anterior en la nube (B2 con Object Lock o Dropbox), cada uno «después de la anterior», con verificación automática y prueba de restauración mensual.
 
+- [ ] **8e. Inmutabilidad local y el almacén recomendado.**
+  - **Guía** (`docs/servidor-linux.md` o una nueva `docs/almacen-inmutable.md`): almacén en un contenedor o máquina virtual Debian sobre **Proxmox con ZFS**, con **instantáneas del anfitrión** (cada hora o cada día, con su retención; p. ej. `sanoid` o `zfs-auto-snapshot`) que el almacén no ve ni puede borrar, anfitrión fuera de la red de la oficina y con otras credenciales, ZFS en espejo y `scrub` periódico. Alternativas: Linux endurecido (sin acceso remoto, `chattr +i` con plazo) y discos USB rotados (desconectados). Para un almacén en Windows: fuera del dominio, cuenta de administrador propia, sin escritorio remoto expuesto, y una copia fuera de su alcance (las instantáneas de Windows las borra cualquier administrador).
+  - **En la consola:** cada destino puede marcarse como «con instantáneas inmutables fuera de su alcance» o «desconectado» (lo dice la persona; el almacén no puede comprobar lo que hace el anfitrión) y la regla 3-2-1-1-0 (8b) lo cuenta como inmutable, avisando de que es local (no protege de un incendio o un robo de la oficina).
+  - **Detectar lo que se pueda:** el agente dice en su resumen si su carpeta está en ZFS o Btrfs y si corre en un contenedor o máquina virtual (solo para sugerir la guía, nunca para dar por cumplido el «1 inmutable»).
+
 ## Mientras tanto (sin código)
 
 - Cancelar las órdenes en espera que no se esperaban **desde la consola que las mandó**.
