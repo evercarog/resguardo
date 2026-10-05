@@ -258,13 +258,15 @@ pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): 
     let emp = emp.ok_or_else(ErrorApi::no_existe)?;
     let estado = if matches!(emp.estado.as_str(), "abierto" | "unido") && emp.caduca <= ahora() { "caducado".to_string() } else { emp.estado.clone() };
     let mut v = json!({ "estado": estado, "caduca": fecha(emp.caduca) });
-    // Preparados (v1.17): su nombre y sistema y, mientras sirve, el código (la orden `alta` lo necesita).
+    // Preparados (v1.17): su nombre y sistema.
     if emp.nombre.is_some() {
         v["nombre"] = json!(emp.nombre);
         v["so"] = json!(emp.so);
-        if matches!(estado.as_str(), "abierto" | "unido") {
-            v["codigo"] = json!(emp.codigo);
-        }
+    }
+    // Mientras sirve, el código (la orden `alta` lo necesita; v1.41: también el de 15 min y,
+    // confirmado sin el alta del equipo, para terminarla después).
+    if matches!(estado.as_str(), "abierto" | "unido" | "confirmado") && emp.codigo.is_some() {
+        v["codigo"] = json!(emp.codigo);
     }
     if let Some(e) = equipo {
         v["equipo"] = json!({ "id": e.id, "nombre": e.nombre, "so": e.so, "box_pub": e.box_pub, "sign_pub": e.sign_pub, "sal_equipo": e.sal_equipo });
@@ -319,7 +321,9 @@ pub async fn cancelar_emparejamiento(State(st): State<St>, u: Usuario, Path((c, 
         .db(move |db| {
             let Some(emp) = db.emparejamiento(&ctx, &p)? else { return Ok(None) };
             let mut quitado = None;
-            if emp.estado != "confirmado" {
+            // Confirmado pero sin el alta del equipo (aún con su código): también se puede anular;
+            // el equipo nunca recibió la clave de administración, no se pierde nada.
+            if emp.estado != "confirmado" || emp.codigo.is_some() {
                 if let Some(eq) = emp.equipo_id.as_deref() {
                     db.borrar_equipo(&ctx, eq)?;
                     db.desindexar_equipo(eq)?;

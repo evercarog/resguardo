@@ -391,6 +391,16 @@ export interface EstadoDeEmparejamiento {
   codigo?: string;
 }
 
+/** v1.41: un equipo que se unió y se quedó sin terminar (sin comparar el número o sin el alta). */
+export interface AMedias {
+  id: string;
+  estado: "unido" | "confirmado";
+  caduca: string;
+  creado: string;
+  nombre: string;
+  equipo: { id: string; nombre: string; so: string };
+}
+
 /** Un equipo preparado (v1.17): instalador listo o línea de Linux, con su código de 24 h. */
 export interface Preparado {
   id: string;

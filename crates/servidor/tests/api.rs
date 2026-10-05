@@ -972,8 +972,16 @@ async fn equipos_preparados_instalador_y_linux() {
     let r =
         pedir(&p.app, "POST", &format!("/api/clientes/{c}/emparejamientos/{emp}/confirmar"), Some(json!({ "etiqueta": "ETIQUETA" })), Some(&cookie), &[]).await;
     assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    // v1.41: confirmado, el código sigue hasta que el equipo hace el alta (para terminarla si se
+    // quedó a medias); sale en «a medias» y desaparece con el alta (almacen::sqlite, alta_hecha).
     let v = pedir(&p.app, "GET", &format!("/api/clientes/{c}/emparejamientos/{emp}"), None, Some(&cookie), &[]).await.json;
-    assert_eq!((v["estado"].as_str(), v.get("codigo")), (Some("confirmado"), None));
+    assert_eq!((v["estado"].as_str(), v["codigo"].as_str()), (Some("confirmado"), Some(d.codigo.as_str())));
+    let medias = pedir(&p.app, "GET", &format!("/api/clientes/{c}/a-medias"), None, Some(&cookie), &[]).await.json;
+    assert_eq!(
+        (medias[0]["id"].as_str(), medias[0]["estado"].as_str(), medias[0]["equipo"]["id"].as_str()),
+        (Some(emp.as_str()), Some("confirmado"), Some(eq.as_str()))
+    );
+    assert_eq!(pedir(&p.app, "GET", &format!("/api/clientes/{c}/a-medias"), None, Some(&tecnico), &[]).await.estado, StatusCode::FORBIDDEN);
 
     // Linux: la línea con el código; anulado, ya no sirve.
     let r =

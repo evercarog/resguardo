@@ -1543,10 +1543,20 @@ pub fn leer_vincular_local(texto: &[u8]) -> Result<resguardo_protocolo::instalad
     Ok(d)
 }
 
-/// Sin vincular nunca (ni local ni gestionado) y con el archivo del servidor
-/// local: se vincula a él (el SAS y la clave de administración siguen en la consola).
+/// ¿Un vínculo que se quedó a medias? Unido a un servidor pero sin el alta (nunca recibió
+/// la clave de administración), sin otras consolas ni un cambio de servidor pendiente.
+/// No tiene nada que perder: un «Vincular este servidor» nuevo lo sustituye.
+pub fn a_medias(v: &Vinculo) -> bool {
+    v.verificador.is_none() && v.codigo.is_some() && v.otras.is_empty() && v.adopcion.is_none()
+}
+
+/// Sin vincular nunca (ni local ni gestionado), o con un vínculo a medias, y con el
+/// archivo del servidor local: se vincula a él (el SAS y la clave de administración
+/// siguen en la consola). Así, si el alta se quedó sin hacer (y la consola anuló ese
+/// emparejamiento), volver a pulsar «Vincular este servidor» basta: no hay que borrar
+/// nada a mano en el equipo.
 fn vincular_local_si_toca() {
-    if cargar().is_some() {
+    if cargar().is_some_and(|v| !a_medias(&v)) {
         return;
     }
     let p = archivo_vincular_local();
@@ -1598,6 +1608,9 @@ pub fn hilo() {
             match cargar().filter(|v| v.modo == "gestionado" && !v.secreto.is_empty()) {
                 None => vincular_local_si_toca(),
                 Some(v) => {
+                    if a_medias(&v) {
+                        vincular_local_si_toca();
+                    }
                     hilos.retain(|_, vivo| vivo.load(std::sync::atomic::Ordering::Relaxed));
                     for id in v.ids_enlaces() {
                         if !hilos.contains_key(&id) {
@@ -1676,6 +1689,18 @@ fn hilo_enlace(id: &str) {
 mod tests {
     use super::*;
     use resguardo_protocolo::orden_v2::{Autorizacion, OrdenV2};
+
+    /// Solo un vínculo a medias (unido, sin el alta) se sustituye al volver a vincular este servidor.
+    #[test]
+    fn solo_se_sustituye_un_vinculo_a_medias() {
+        let pendiente = Vinculo { modo: "gestionado".into(), secreto: "s".into(), codigo: Some("ABCD-EFGH-JK".into()), ..Default::default() };
+        assert!(a_medias(&pendiente));
+        let dado_de_alta = Vinculo { verificador: Some("v".into()), codigo: None, ..pendiente.clone() };
+        assert!(!a_medias(&dado_de_alta), "con la clave de administración, nunca");
+        let mut con_otra = pendiente.clone();
+        con_otra.otras.push(crate::consolas_v2::Enlace { id: "b".into(), ..Default::default() });
+        assert!(!a_medias(&con_otra), "con otras consolas, tampoco");
+    }
 
     #[test]
     fn reabrir_el_canal_nunca_en_bucle() {

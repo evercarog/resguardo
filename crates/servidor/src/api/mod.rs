@@ -247,6 +247,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/instaladores", post(instaladores::preparar))
         .route("/api/clientes/{c}/preparados", get(instaladores::contar))
         .route("/api/clientes/{c}/codigo-abierto", get(instaladores::codigo_abierto))
+        .route("/api/clientes/{c}/a-medias", get(instaladores::a_medias))
         .route("/api/clientes/{c}/equipo-local", post(instaladores::vincular_local))
         .route("/api/clientes/{c}/plantillas", get(plantillas::listar))
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))

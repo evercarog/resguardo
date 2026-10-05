@@ -662,6 +662,17 @@ const rutas: Ruta[] = [
     },
   ],
   [
+    // v1.41: los que se unieron y se quedaron a medias (unidos sin confirmar).
+    "GET",
+    new RegExp(`^${C}/a-medias$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      return estado.emparejamientos
+        .filter((p) => p.cliente === c && p.estado === "unido" && p.equipo && Date.parse(p.caduca) > Date.now())
+        .map((p) => ({ id: p.id, estado: p.estado, caduca: p.caduca, creado: new Date(p.creado).toISOString(), nombre: p.nombre ?? p.equipo!.nombre, equipo: { id: p.equipo!.id, nombre: p.equipo!.nombre, so: p.equipo!.so } }));
+    },
+  ],
+  [
     // v1.41: el código de 15 min de esta cuenta que aún sirve (o null).
     "GET",
     new RegExp(`^${C}/codigo-abierto$`),
@@ -786,7 +797,9 @@ const rutas: Ruta[] = [
         sas: e ? (agenteConSasV3(e.version_agente) ? sasV3(estado.servidor.identidad, e.box_pub, e.sign_pub, HUELLA_CA) : sasV2(estado.servidor.identidad, e.box_pub, e.sign_pub)) : undefined,
         sas_version: e ? (agenteConSasV3(e.version_agente) ? 3 : undefined) : undefined,
         // v1.17: preparados, con su nombre y (mientras sirve) el código para el alta.
-        ...(p.nombre ? { nombre: p.nombre, so: p.so, ...(p.estado === "abierto" || p.estado === "unido" ? { codigo: p.codigo } : {}) } : {}),
+        ...(p.nombre ? { nombre: p.nombre, so: p.so } : {}),
+        // v1.41: el código mientras sirve, también el de 15 min.
+        ...(p.estado === "abierto" || p.estado === "unido" ? { codigo: p.codigo } : {}),
       };
     },
   ],

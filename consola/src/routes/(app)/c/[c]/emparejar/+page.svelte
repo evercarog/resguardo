@@ -6,7 +6,7 @@
   // cuenta con la identidad del servidor (y, en v3, la huella de su autoridad
   // TLS); si no coincide con el que da el servidor, no se sigue.
   import Migas from "$lib/componentes/Migas.svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { Apple, Ban, Check, CircleCheck, Copy, Download, KeyRound, LoaderCircle, Monitor, RefreshCw, Server, Shuffle, Terminal, TriangleAlert, X } from "@lucide/svelte";
@@ -19,7 +19,7 @@
   import { etiquetaEquipo, etiquetaValida, kCfg, materialCliente, sasV2, sasV3 } from "$lib/cripto/claves";
   import { mandarOrden } from "$lib/ordenar";
   import { cuentaAtras } from "$lib/formato";
-  import type { Emparejamiento, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux } from "$lib/tipos";
+  import type { AMedias, Emparejamiento, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux } from "$lib/tipos";
   import { guardar } from "$lib/descarga";
   import { Preparados } from "$lib/preparados.svelte";
   import { codigoAlCargar, esperaDe, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "$lib/emparejar";
@@ -183,13 +183,15 @@
       if (otros.length && !otros.some((x) => etiquetaValida(kcfg!, x)))
         throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
       paso2 = "Confirmando el equipo…";
-      await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
+      // A medias (v1.41): ya confirmado y sin el alta; solo falta mandarla.
+      if (estadoEmp.estado !== "confirmado") await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
       parar();
       const equipo = await api.equipo(c, eq.id);
       equipoNuevo = equipo;
       alta = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "alta", alta: { codigo: emp.codigo }, secretos: { claveAdmin: clave }, alPaso: (t) => (paso2 = t) });
       clave = repetir = "";
       paso = "listo";
+      void cargarMedias(c);
       void cargarCliente(c, { silencioso: true });
       seguirAlta(equipo.id, alta.id);
     } catch (err) {
@@ -307,14 +309,49 @@
       if (!est.codigo) throw new Error("Ese emparejamiento ya no se puede confirmar desde aquí. Prepara otro.");
       emp = { id, codigo: est.codigo, caduca: est.caduca };
       estadoEmp = est;
-      paso = est.estado === "unido" ? "sas" : "codigo";
+      // Confirmado sin el alta (a medias): directo a la clave para mandarla.
+      paso = est.estado === "unido" ? "sas" : est.estado === "confirmado" ? "clave" : "codigo";
       parar();
-      sondeo = setInterval(() => enFondo(consultar), 2000);
+      if (est.estado !== "confirmado") sondeo = setInterval(() => enFondo(consultar), 2000);
       window.scrollTo({ top: 0 });
     } catch (e) {
       error = (e as Error).message;
     }
   }
+  // --- A medias (v1.41) ------------------------------------------------------
+  // Equipos que se unieron y se quedaron sin terminar (sin comparar el número o sin el
+  // alta: p. ej. la página se cerró o el servidor dijo «Demasiados intentos»). Se sigue
+  // desde aquí en vez de empezar de nuevo; o se anula (el equipo se quita y se puede
+  // volver a vincular).
+  let medias = $state<AMedias[]>([]);
+  let anularMedias = $state<string | null>(null);
+  const cargarMedias = (cc: string) =>
+    api.aMedias(cc).then(
+      (x) => cc === c && (medias = x),
+      () => {},
+    );
+  $effect(() => {
+    const cc = c;
+    if (!cc) return;
+    untrack(() => void cargarMedias(cc));
+    const t = setInterval(() => document.visibilityState === "visible" && void enFondo(() => cargarMedias(cc)), 30_000);
+    return () => clearInterval(t);
+  });
+  /** Los de la lista de preparados ya salen allí (con su botón). */
+  const mediasSueltas = $derived(medias.filter((m) => m.estado === "confirmado" || !(lista ?? []).some((p) => p.id === m.id)));
+  async function anularAMedias(id: string) {
+    try {
+      await api.cancelarEmparejamiento(c, id);
+      avisar("Anulado: el equipo se quitó. Puedes volver a vincularlo desde el principio.");
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      anularMedias = null;
+      void cargarMedias(c);
+      void cargarLista();
+    }
+  }
+
   // --- «Vincular este servidor» (v1.19) ------------------------------------
   // El agente instalado en la máquina del servidor («Este equipo también guarda
   // copias» al instalarlo) se une solo; aquí se compara el número y se da de
@@ -495,6 +532,28 @@
       </section>
     {/if}
 
+    {#if mediasSueltas.length}
+      <section>
+        <div class="section-head"><h2>A medias <span class="count">· {mediasSueltas.length}</span></h2></div>
+        <div class="card p-0 lista">
+          {#each mediasSueltas as m (m.id)}
+            <div class="fila">
+              <span class="ic-so"><TriangleAlert size={16} /></span>
+              <span class="fila-texto">
+                <span class="fila-titulo">{m.equipo.nombre}</span>
+                <span class="fila-sub">{m.estado === "unido" ? `Se unió y falta comparar el número y darlo de alta · caduca en ${cuentaAtras(m.caduca, reloj.ahora)}` : "Confirmado, pero falta el alta con la clave de administración"}</span>
+              </span>
+              <button class="btn btn-sm btn-primary" onclick={() => seguirPreparado(m.id)}><Check size={14} />{m.estado === "unido" ? "Continuar: comparar el número y dar de alta" : "Continuar: dar de alta"}</button>
+              {#if anularMedias === m.id}
+                <span class="confirmar-anular">¿Anular? Se quita el equipo. <button class="btn btn-sm btn-danger" onclick={() => anularAMedias(m.id)}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = null)}>No</button></span>
+              {:else}
+                <button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = m.id)} use:tip={"El equipo se quita y se puede volver a vincular desde el principio"}><Ban size={14} />Anular y empezar de nuevo</button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
     {#if lista?.length}
       <section>
         <div class="section-head"><h2>Preparados <span class="count">· {lista.length}</span></h2></div>

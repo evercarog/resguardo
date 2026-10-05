@@ -294,6 +294,35 @@ pub async fn listar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> 
     Ok(Json(json!(l.iter().map(preparado_json).collect::<Vec<_>>())))
 }
 
+/// `GET /api/clientes/{c}/a-medias` (administrador, v1.41): los equipos que se unieron y se
+/// quedaron sin terminar (sin comparar el número o sin el alta), de cualquier cuenta, para
+/// seguir desde «Añadir equipo» en vez de empezar de nuevo: `[{ id, estado: "unido" |
+/// "confirmado", caduca, creado, nombre, equipo: { id, nombre, so } }]` (el código, en
+/// `GET …/emparejamientos/{p}`).
+pub async fn a_medias(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+    let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
+    let l = st
+        .db(move |db| {
+            let mut out = Vec::new();
+            for e in db.a_medias(&ctx, ahora())? {
+                let Some(eq) = e.equipo_id.as_deref() else { continue };
+                if let Some(equipo) = db.equipo(&ctx, eq)? {
+                    out.push((e, equipo));
+                }
+            }
+            Ok(out)
+        })
+        .await?;
+    Ok(Json(json!(l
+        .iter()
+        .map(|(e, q)| json!({
+            "id": e.id, "estado": e.estado, "caduca": fecha(e.caduca), "creado": fecha(e.creado),
+            "nombre": e.nombre.clone().unwrap_or_else(|| q.nombre.clone()),
+            "equipo": { "id": q.id, "nombre": q.nombre, "so": q.so },
+        }))
+        .collect::<Vec<_>>())))
+}
+
 /// Cuántos preparados hay (para el aviso de «Equipos»): cualquier miembro.
 pub async fn contar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, MIEMBRO).await?;

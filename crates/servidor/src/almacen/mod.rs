@@ -146,6 +146,9 @@ pub struct Equipo {
     pub etiquetas: Vec<String>,
 }
 
+/// Al unirse un equipo, lo mínimo que queda para comparar el número y dar de alta.
+pub const PLAZO_UNIDO_S: Ts = 24 * 3600;
+
 #[derive(Clone, Debug)]
 pub struct Emparejamiento {
     pub id: String,
@@ -399,6 +402,10 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// código guardado), códigos de 15 min y preparados, del más reciente al más antiguo.
     fn emparejamientos_vigentes_de(&self, c: &ClienteCtx, por: &str, ahora: Ts) -> R<Vec<Emparejamiento>>;
     fn poner_estado_emparejamiento(&self, c: &ClienteCtx, id: &str, estado: &str, equipo: Option<&str>) -> R<()>;
+    /// Los que se quedaron a medias: unidos (sin caducar) o confirmados sin el alta del equipo.
+    fn a_medias(&self, c: &ClienteCtx, ahora: Ts) -> R<Vec<Emparejamiento>>;
+    /// El equipo hizo el alta: su código ya no hace falta.
+    fn alta_hecha(&self, c: &ClienteCtx, equipo: &str) -> R<()>;
     /// La versión del SAS que anunció el equipo al unirse (v1.26).
     fn poner_sas_emparejamiento(&self, c: &ClienteCtx, id: &str, version: i64) -> R<()>;
     fn crear_equipo(&self, c: &ClienteCtx, e: &EquipoNuevo) -> R<()>;
