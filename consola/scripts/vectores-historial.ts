@@ -4,7 +4,7 @@
 import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
 import { esFallo, pasaFiltro, sucesosDe } from "../src/lib/historial";
-import { calendario } from "../src/lib/lineaTiempo";
+import { altoCalendario, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
 
 let fallos = 0;
 let total = 0;
@@ -104,6 +104,18 @@ igual("…y en la cabecera de su día", cal.columnas.reduce((n, c) => n + (c.dia
 igual("…sin cambiar la intensidad (las versiones)", cal.total, 1);
 const tira = calendario(vs, null, ahora, 30, true, [Date.parse(h(14))]);
 igual("en la tira del móvil, también", tira.celdas[0].reduce((n, x) => n + x.fallos, 0), 1);
+
+console.log("\n· Un marco estable y las fechas (lib/lineaTiempo.ts)");
+const fijas = { desde: 8, paso: 1, n: 12 };
+igual("con las filas fijas, el mismo número de filas en 7, 30 y 60 días", [7, 30, 60].map((d) => calendario(vs, null, ahora, d as 7 | 30 | 60, false, [], fijas).filas.length), [12, 12, 12]);
+igual("el marco: el más alto de sus vistas (aquí, por horas)", altoCalendario(12, false), 52 + 15 * 12);
+igual("…con pocas filas, el del año", altoCalendario(2, false), altoCalendario(0, true));
+igual("un día de la URL", diaDeClave("2026-09-29") === new Date(2026, 8, 29).getTime(), true);
+igual("un día mal formado", diaDeClave("29/09/2026"), null);
+const hoyL = new Date(2026, 9, 5, 12).getTime();
+igual("intervalo del mismo mes", nombreIntervalo(new Date(2026, 8, 21).getTime(), new Date(2026, 8, 27).getTime(), hoyL), "Del 21 al 27 sept");
+igual("intervalo entre meses", nombreIntervalo(new Date(2026, 8, 28).getTime(), new Date(2026, 9, 4).getTime(), hoyL), "Del 28 sept al 4 oct");
+igual("un solo día: su nombre", nombreIntervalo(new Date(2026, 9, 4).getTime(), new Date(2026, 9, 4).getTime(), hoyL), "Ayer");
 
 console.log("\n· Copias del cliente (lib/copiasCliente.ts)");
 const base = { so: "Windows 11", version_agente: "0.7.17", box_pub: "", sign_pub: "", sal_equipo: "", etiqueta: null, modo: "gestionado" as const, confirmado: true, conectado: true, ultimo_contacto: h(0.1), estado_servicio: "en_marcha" as const, siguiente_seq: 1, rol: "agente" as const };
