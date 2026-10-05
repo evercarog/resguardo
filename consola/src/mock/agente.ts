@@ -19,6 +19,7 @@ import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } fro
 import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
+import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Claves del almacén que algún equipo dueño ya añadió a su repositorio (clave_almacen). */
@@ -824,7 +825,7 @@ function abrirSesion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     : plana.tipo === "elegir_carpetas"
       ? ["carpetas", "sugerencias", "crear_carpeta"]
       : plana.tipo === "explorar"
-        ? ["versiones", "listar", "buscar", ...(versionAlMenos(e.version_agente, VERSION_DETALLE) ? OPS_DETALLE : [])]
+        ? ["versiones", "listar", "buscar", ...(versionAlMenos(e.version_agente, VERSION_DETALLE) ? OPS_DETALLE : []), ...(versionAlMenos(e.version_agente, VERSION_BUSCAR) ? [OP_BUSCAR] : [])]
         : [];
   enviarDesdeEquipo(s, { i: 0, op: "lista", tipo: plana.tipo, ...(ops ? { ops } : {}) });
 }
@@ -905,6 +906,12 @@ export async function mensajeDeConsola(s: SesionMock, cifrado: string) {
     case "cerrar":
       estado.sesionesInteractivas.delete(s.id);
       return;
+    case "buscar_todas": {
+      // «Buscar archivos» en todas las versiones (mock/buscar.ts): solo en `explorar` y si el agente lo anuncia.
+      const eq = estado.equipos.find((x) => x.id === s.equipo);
+      if (s.tipo !== "explorar" || !eq || !versionAlMenos(eq.version_agente, VERSION_BUSCAR)) return enviar(s, { op: m.op, error: `Operación no disponible en esta sesión: «${m.op}».` });
+      return enviar(s, { op: m.op, ...(await buscarTodas(m, s, () => enviarDesdeEquipo(s, { op: "trabajando", sobre: re }))) });
+    }
     case "diferencias":
     case "ocupa":
     case "historial_archivo": {
