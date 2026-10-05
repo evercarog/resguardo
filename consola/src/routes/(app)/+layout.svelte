@@ -9,6 +9,9 @@
   import { dur } from "$ui/movimiento";
   import BarraLateral from "$lib/componentes/BarraLateral.svelte";
   import SinConexion from "$lib/componentes/SinConexion.svelte";
+  import VersionNueva from "$lib/componentes/VersionNueva.svelte";
+  import { vigilarVersion } from "$lib/version.svelte";
+  import * as api from "$lib/api";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
   import Paleta from "$lib/componentes/Paleta.svelte";
   import AyudaAtajos from "$lib/componentes/AyudaAtajos.svelte";
@@ -27,6 +30,14 @@
   onMount(() => {
     void cargarClientes();
   });
+  // ¿Se actualizó el servidor con esta pestaña abierta? Entonces, «Recargar».
+  let versionCargada: string | undefined;
+  onMount(() =>
+    vigilarVersion(
+      () => (versionCargada ??= app.servidor?.version),
+      async () => (await api.servidor()).version,
+    ),
+  );
   // El icono de la pestaña: punto rojo con avisos sin revisar, azul con algo en marcha.
   $effect(() => {
     const avisos = actual.id ? actual.avisosAbiertos > 0 : app.clientes.some((x) => x.avisos);
@@ -94,6 +105,7 @@
 
     <main id="contenido" class="contenido" bind:this={principal} tabindex="-1">
       <SinConexion />
+      <VersionNueva />
       {@render children()}
     </main>
   </div>

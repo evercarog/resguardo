@@ -114,6 +114,12 @@ impl Limites {
     }
 
     pub fn intento(&self, clave: &str, max: u32, ventana: Duration) -> bool {
+        self.intento_o_espera(clave, max, ventana).is_ok()
+    }
+
+    /// Como [`Limites::intento`], pero si ya se pasó dice cuánto falta para que
+    /// se abra la ventana siguiente (para `retry_after`).
+    pub fn intento_o_espera(&self, clave: &str, max: u32, ventana: Duration) -> Result<(), Duration> {
         let mut m = self.mapa.lock().unwrap_or_else(|e| e.into_inner());
         let ahora = Instant::now();
         if m.len() > 100_000 {
@@ -123,8 +129,12 @@ impl Limites {
         if ahora.duration_since(e.1) >= ventana {
             *e = (0, ahora);
         }
-        e.0 += 1;
-        e.0 <= max
+        e.0 = e.0.saturating_add(1);
+        if e.0 <= max {
+            Ok(())
+        } else {
+            Err(ventana.saturating_sub(ahora.duration_since(e.1)))
+        }
     }
 
     /// Olvida los intentos (tras un acierto).
@@ -158,6 +168,22 @@ pub fn clave_ip(ip: Option<IpAddr>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn limite_dice_cuanto_esperar() {
+        let l = Limites::default();
+        let hora = Duration::from_secs(3600);
+        for _ in 0..3 {
+            assert_eq!(l.intento_o_espera("k", 3, hora), Ok(()));
+        }
+        let espera = l.intento_o_espera("k", 3, hora).unwrap_err();
+        assert!(espera <= hora && espera > Duration::from_secs(3590), "{espera:?}");
+        assert!(!l.intento("k", 3, hora));
+        // Otra clave no se entera; y al olvidar, se empieza de cero.
+        assert!(l.intento("otra", 3, hora));
+        l.olvidar("k");
+        assert!(l.intento("k", 3, hora));
+    }
 
     #[test]
     fn ipv6_por_prefijo_de_64() {

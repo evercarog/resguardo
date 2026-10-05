@@ -16,7 +16,8 @@
 
   $effect(() => {
     if (!id) return;
-    void cargarCliente(id);
+    // Sin seguir lo que lee cargarCliente (actual.cliente…), que también escribe.
+    untrack(() => void cargarCliente(id));
     try {
       localStorage.setItem("resguardo.cliente", id);
     } catch {

@@ -16,7 +16,14 @@ pub struct ErrorApi {
     /// Un intento de acceso fallido (contraseña, código, secreto de un equipo…):
     /// va al registro con la IP, para fail2ban (`crate::registro`).
     pub acceso_fallido: Option<&'static str>,
+    /// Un 429: qué límite saltó («cuenta», «ip», «codigos», «intentos»…). Va en el cuerpo
+    /// (`limite`) y en la respuesta (`LimiteSuperado`, para el registro).
+    pub limite: Option<&'static str>,
 }
+
+/// En la respuesta: qué límite saltó (lo anota el registro, también en servidor.log).
+#[derive(Clone, Copy, Debug)]
+pub struct LimiteSuperado(pub &'static str);
 
 /// En la respuesta: qué acceso falló (lo anota el registro con la IP).
 #[derive(Clone, Copy, Debug)]
@@ -26,7 +33,7 @@ pub type Res<T> = Result<T, ErrorApi>;
 
 impl ErrorApi {
     pub fn nuevo(estado: StatusCode, codigo: &'static str, mensaje: impl Into<String>) -> Self {
-        Self { estado, codigo, mensaje: mensaje.into(), extra: None, acceso_fallido: None }
+        Self { estado, codigo, mensaje: mensaje.into(), extra: None, acceso_fallido: None, limite: None }
     }
     pub fn sin_sesion() -> Self {
         Self::nuevo(StatusCode::UNAUTHORIZED, "sin_sesion", "Inicia sesión para continuar.")
@@ -46,8 +53,19 @@ impl ErrorApi {
     pub fn conflicto(mensaje: impl Into<String>) -> Self {
         Self::nuevo(StatusCode::CONFLICT, "conflicto", mensaje)
     }
+    /// 429 de un límite de intentos de una ruta (contraseña, TOTP, códigos de equipos…).
     pub fn demasiados() -> Self {
-        Self::nuevo(StatusCode::TOO_MANY_REQUESTS, "demasiados_intentos", "Demasiados intentos. Espera unos minutos.")
+        let mut e = Self::nuevo(StatusCode::TOO_MANY_REQUESTS, "demasiados_intentos", "Demasiados intentos. Espera unos minutos.");
+        e.limite = Some("intentos");
+        e
+    }
+    /// 429 con el límite que saltó, el mensaje y cuánto esperar: `retry_after`
+    /// (segundos) en el cuerpo y la cabecera `Retry-After`.
+    pub fn demasiados_esperar(limite: &'static str, mensaje: impl Into<String>, espera: std::time::Duration) -> Self {
+        let s = espera.as_secs() + u64::from(espera.subsec_nanos() > 0);
+        let mut e = Self::nuevo(StatusCode::TOO_MANY_REQUESTS, "demasiados_intentos", mensaje).con(json!({ "retry_after": s.max(1) }));
+        e.limite = Some(limite);
+        e
     }
     pub fn interno(detalle: impl std::fmt::Display) -> Self {
         // El detalle va al registro del servidor, no al cliente.
@@ -68,6 +86,10 @@ impl ErrorApi {
 impl IntoResponse for ErrorApi {
     fn into_response(self) -> Response {
         let mut cuerpo = json!({ "error": self.codigo, "mensaje": self.mensaje });
+        let reintentar = self.extra.as_ref().and_then(|e| e.get("retry_after")).and_then(|v| v.as_u64());
+        if let (Some(l), Some(obj)) = (self.limite, cuerpo.as_object_mut()) {
+            obj.insert("limite".into(), json!(l));
+        }
         if let (Some(extra), Some(obj)) = (self.extra, cuerpo.as_object_mut()) {
             if let Some(e) = extra.as_object() {
                 for (k, v) in e {
@@ -76,8 +98,14 @@ impl IntoResponse for ErrorApi {
             }
         }
         let mut r = (self.estado, Json(cuerpo)).into_response();
+        if let Some(s) = reintentar {
+            r.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(s));
+        }
         if let Some(que) = self.acceso_fallido {
             r.extensions_mut().insert(AccesoFallido(que));
+        }
+        if let Some(l) = self.limite {
+            r.extensions_mut().insert(LimiteSuperado(l));
         }
         r
     }

@@ -385,6 +385,8 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         && r.detalle.as_deref().and_then(|d| serde_json::from_str::<Value>(d).ok()).is_some_and(|d| d["deja_esta_consola"] == true);
     let deja_el_servidor = (r.estado == "hecha" && matches!(orden.tipo.as_str(), "desvincular" | "baja_equipo")) || deja_esta_consola;
     let trasladado = r.estado == "hecha" && orden.tipo == "cambiar_servidor";
+    // El alta hecha: el emparejamiento ya no está a medias (se olvida su código).
+    let alta_hecha = r.estado == "hecha" && orden.tipo == "alta";
     // La clave de administración cambió (lo confirma el equipo): se avisa a los propietarios.
     let clave_cambiada = r.estado == "hecha" && orden.tipo == "cambiar_clave_admin";
     // v1.30: una destructiva que termina cierra su «Orden destructiva pendiente» (en la próxima pasada: ya).
@@ -400,6 +402,9 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
     let res = crate::almacen::ResultadoOrden { orden: r.orden, estado: r.estado, mensaje, detalle: r.detalle, firma: r.firma };
     st.db(move |db| {
         db.resultado_orden(&ctx, &equipo, &res)?;
+        if alta_hecha {
+            db.alta_hecha(&ctx, &equipo)?;
+        }
         if let Some(h) = nueva_espera {
             db.poner_espera_equipo(&ctx, &equipo, h)?;
             db.auditar(&ctx, &format!("equipo:{equipo}"), "espera_confirmada", &equipo, &json!({ "espera_min_horas": h }).to_string())?;

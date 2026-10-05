@@ -219,24 +219,28 @@ pub async fn ultimos_informes(State(st): State<St>, u: Usuario, Path(c): Path<St
 
 // ---------- Emparejamiento ----------
 
+/// Código de 15 min. Si esta cuenta ya tiene uno abierto al que le quedan más de
+/// 2 min, se devuelve ese (`reutilizado: true`) en vez de gastar otro: recargar la
+/// página o pulsar dos veces no acerca al límite de códigos por hora.
 pub async fn abrir_emparejamiento(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
-    super::cabe_otro_equipo(&st, &ctx).await?;
-    if !st.limites.intento(&format!("emparejar:{c}"), 20, std::time::Duration::from_secs(3600)) {
-        return Err(ErrorApi::demasiados());
+    if let Some(e) = super::instaladores::reutilizable(&st, &ctx, u.id(), None, 2 * 60).await? {
+        return Ok(Json(json!({ "id": e.id, "codigo": e.codigo, "caduca": fecha(e.caduca), "reutilizado": true })));
     }
+    super::cabe_otro_equipo(&st, &ctx).await?;
+    super::instaladores::limite_codigos(&st, &c, u.id())?;
     let codigo = resguardo_protocolo::mensajes::pairing_code();
     let hash = resguardo_protocolo::mensajes::code_hash(&codigo);
     let id = uuid::Uuid::new_v4().to_string();
     let caduca = ahora() + 15 * 60;
-    let (id2, por, actor) = (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo));
+    let (id2, por, actor, cod2) = (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo), codigo.clone());
     st.db(move |db| {
-        db.crear_emparejamiento(&ctx, &id2, &por, caduca)?;
+        db.crear_emparejamiento(&ctx, &id2, &por, caduca, &cod2)?;
         db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
         db.auditar(&ctx, &actor, "abrir_emparejamiento", &id2, "{}")
     })
     .await?;
-    Ok(Json(json!({ "id": id, "codigo": codigo, "caduca": fecha(caduca) })))
+    Ok(Json(json!({ "id": id, "codigo": codigo, "caduca": fecha(caduca), "reutilizado": false })))
 }
 
 pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): Path<(String, String)>) -> Res<Json<Value>> {
@@ -254,13 +258,15 @@ pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): 
     let emp = emp.ok_or_else(ErrorApi::no_existe)?;
     let estado = if matches!(emp.estado.as_str(), "abierto" | "unido") && emp.caduca <= ahora() { "caducado".to_string() } else { emp.estado.clone() };
     let mut v = json!({ "estado": estado, "caduca": fecha(emp.caduca) });
-    // Preparados (v1.17): su nombre y sistema y, mientras sirve, el código (la orden `alta` lo necesita).
+    // Preparados (v1.17): su nombre y sistema.
     if emp.nombre.is_some() {
         v["nombre"] = json!(emp.nombre);
         v["so"] = json!(emp.so);
-        if matches!(estado.as_str(), "abierto" | "unido") {
-            v["codigo"] = json!(emp.codigo);
-        }
+    }
+    // Mientras sirve, el código (la orden `alta` lo necesita; v1.42: también el de 15 min y,
+    // confirmado sin el alta del equipo, para terminarla después).
+    if matches!(estado.as_str(), "abierto" | "unido" | "confirmado") && emp.codigo.is_some() {
+        v["codigo"] = json!(emp.codigo);
     }
     if let Some(e) = equipo {
         v["equipo"] = json!({ "id": e.id, "nombre": e.nombre, "so": e.so, "box_pub": e.box_pub, "sign_pub": e.sign_pub, "sal_equipo": e.sal_equipo });
@@ -315,7 +321,9 @@ pub async fn cancelar_emparejamiento(State(st): State<St>, u: Usuario, Path((c, 
         .db(move |db| {
             let Some(emp) = db.emparejamiento(&ctx, &p)? else { return Ok(None) };
             let mut quitado = None;
-            if emp.estado != "confirmado" {
+            // Confirmado pero sin el alta del equipo (aún con su código): también se puede anular;
+            // el equipo nunca recibió la clave de administración, no se pierde nada.
+            if emp.estado != "confirmado" || emp.codigo.is_some() {
                 if let Some(eq) = emp.equipo_id.as_deref() {
                     db.borrar_equipo(&ctx, eq)?;
                     db.desindexar_equipo(eq)?;

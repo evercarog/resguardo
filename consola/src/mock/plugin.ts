@@ -648,14 +648,38 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}/emparejamientos$`),
     (ctx, [c]) => {
       const { cuenta } = miembro(ctx, c, "administrador");
+      // v1.42: el abierto de esta cuenta (más de 2 min por delante), en vez de otro.
+      const ya = codigoDe(c, cuenta.id);
+      if (ya && ya.estado === "abierto" && Date.parse(ya.caduca) > Date.now() + 120_000) return { id: ya.id, codigo: ya.codigo, caduca: ya.caduca, reutilizado: true };
       const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       const crudo = Array.from(randomBytes(10), (b) => letras[b % letras.length]).join("");
-      const p: EmparejamientoMock = { id: randomUUID(), cliente: c, codigo: `${crudo.slice(0, 4)}-${crudo.slice(4, 8)}-${crudo.slice(8)}`, caduca: new Date(Date.now() + 15 * 60_000).toISOString(), estado: "abierto", creado: Date.now() };
+      const p: EmparejamientoMock = { id: randomUUID(), cliente: c, codigo: `${crudo.slice(0, 4)}-${crudo.slice(4, 8)}-${crudo.slice(8)}`, caduca: new Date(Date.now() + 15 * 60_000).toISOString(), estado: "abierto", creado: Date.now(), por: cuenta.id };
       estado.emparejamientos.push(p);
       auditar(c, cuenta.id, "emparejamiento.abrir", null);
       // El «equipo» se une solo a los 6 s, como si alguien escribiera el código en el instalador.
       unirSolo(p, "ALMACEN-BODEGA", "Windows 11 Pro", 6000);
-      return { id: p.id, codigo: p.codigo, caduca: p.caduca };
+      return { id: p.id, codigo: p.codigo, caduca: p.caduca, reutilizado: false };
+    },
+  ],
+  [
+    // v1.42: los que se unieron y se quedaron a medias (unidos sin confirmar).
+    "GET",
+    new RegExp(`^${C}/a-medias$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      return estado.emparejamientos
+        .filter((p) => p.cliente === c && p.estado === "unido" && p.equipo && Date.parse(p.caduca) > Date.now())
+        .map((p) => ({ id: p.id, estado: p.estado, caduca: p.caduca, creado: new Date(p.creado).toISOString(), nombre: p.nombre ?? p.equipo!.nombre, equipo: { id: p.equipo!.id, nombre: p.equipo!.nombre, so: p.equipo!.so } }));
+    },
+  ],
+  [
+    // v1.42: el código de 15 min de esta cuenta que aún sirve (o null).
+    "GET",
+    new RegExp(`^${C}/codigo-abierto$`),
+    (ctx, [c]) => {
+      const { cuenta } = miembro(ctx, c, "administrador");
+      const p = codigoDe(c, cuenta.id);
+      return p ? { id: p.id, codigo: p.codigo, caduca: p.caduca, estado: p.estado } : null;
     },
   ],
   [
@@ -773,7 +797,9 @@ const rutas: Ruta[] = [
         sas: e ? (agenteConSasV3(e.version_agente) ? sasV3(estado.servidor.identidad, e.box_pub, e.sign_pub, HUELLA_CA) : sasV2(estado.servidor.identidad, e.box_pub, e.sign_pub)) : undefined,
         sas_version: e ? (agenteConSasV3(e.version_agente) ? 3 : undefined) : undefined,
         // v1.17: preparados, con su nombre y (mientras sirve) el código para el alta.
-        ...(p.nombre ? { nombre: p.nombre, so: p.so, ...(p.estado === "abierto" || p.estado === "unido" ? { codigo: p.codigo } : {}) } : {}),
+        ...(p.nombre ? { nombre: p.nombre, so: p.so } : {}),
+        // v1.42: el código mientras sirve, también el de 15 min.
+        ...(p.estado === "abierto" || p.estado === "unido" ? { codigo: p.codigo } : {}),
       };
     },
   ],
@@ -1367,6 +1393,13 @@ function agenteConSasV3(v: string | null | undefined): boolean {
 }
 
 /** El «equipo» de un emparejamiento se une solo al cabo de `ms` (como si alguien instalara el agente). */
+/** El código de 15 min de esa cuenta que aún sirve (abierto o unido), el más reciente. */
+function codigoDe(c: string, cuenta: string): EmparejamientoMock | undefined {
+  return estado.emparejamientos
+    .filter((p) => p.cliente === c && p.por === cuenta && !p.nombre && (p.estado === "abierto" || p.estado === "unido") && Date.parse(p.caduca) > Date.now())
+    .sort((a, b) => b.creado - a.creado)[0];
+}
+
 function unirSolo(p: EmparejamientoMock, nombre: string, so: string, ms: number) {
       setTimeout(() => {
         if (p.estado !== "abierto" || Date.parse(p.caduca) < Date.now()) return;

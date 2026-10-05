@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Repositorios y destinos del cliente: dónde se guardan las copias y cómo de
   // protegidas están. Los datos salen de lo que informa cada equipo (sin rutas).
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
@@ -44,7 +45,11 @@
       }
     return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
   });
-  $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
   // Con lo que diga el último informe de cada equipo si el resumen no lo trae (agentes anteriores a 0.7.4).
   const repos = $derived(
     actual.equipos.flatMap((e) =>

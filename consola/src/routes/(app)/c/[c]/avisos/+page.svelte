@@ -7,7 +7,7 @@
   import * as api from "$lib/api";
   import { dur } from "$ui/movimiento";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { enFondo } from "$lib/actividad.svelte";
   import { seguirCambios } from "$lib/vivo.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
@@ -43,11 +43,15 @@
   $effect(() => {
     void solo;
     void actual.id;
-    void cargar();
+    untrack(() => void cargar());
   });
   // Los avisos nuevos (o vistos desde otra consola) aparecen solos.
   onMount(() => seguirCambios(() => enFondo(cargar), { ms: 0, toca: (x) => x.t === "avisos" }));
-  $effect(() => void cargarInformes(actual.id, actual.equipos.map((e) => e.id)));
+  $effect(() => {
+    // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
+    const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
+    untrack(() => void cargarInformes(cc, ids));
+  });
   /** La vuelta (o el repositorio) que explica un aviso, en el último informe de su equipo. */
   function relacionado(a: Aviso): { href: string; texto: string } | null {
     if (!a.equipo) return null;

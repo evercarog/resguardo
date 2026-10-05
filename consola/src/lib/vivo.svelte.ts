@@ -14,6 +14,7 @@
 // - Tras reconectar (o si el servidor dice `resync`), se refresca todo: lo que
 //   pasó mientras tanto no llegó.
 import { app } from "./estado.svelte";
+import { frenar } from "./freno";
 
 export type TipoCambio = "informe" | "progreso" | "orden" | "avisos" | "historial" | "config" | "equipo" | "resync";
 
@@ -44,6 +45,8 @@ const JUNTAR = 250;
 const ESPERA_MAX = 30_000;
 /** Con el canal abierto, las pantallas preguntan solo de respaldo, cada tanto. */
 export const RESPALDO_CON_VIVO = 60_000;
+/** Lo mínimo entre dos cargas de una misma pantalla por cambios del canal. */
+export const MIN_ENTRE_CARGAS = 2_000;
 
 const oyentes = new Set<(cs: Cambio[]) => void>();
 let ws: WebSocket | null = null;
@@ -232,23 +235,23 @@ export const tocaEquipo = (c: Cambio, equipo: string) => c.t === "resync" || !c.
  * con la pestaña visible. `ms: 0`: sin respaldo (solo los cambios). Devuelve
  * cómo parar (para `onMount` o `$effect`).
  */
-export function seguirCambios(cargar: () => unknown, opciones: { ms: number; toca: (c: Cambio) => boolean }): () => void {
-  let ultima = Date.now();
-  const hacer = () => {
-    ultima = Date.now();
-    void cargar();
-  };
+export function seguirCambios(cargar: () => unknown, opciones: { ms: number; toca: (c: Cambio) => boolean; minEntre?: number }): () => void {
+  // Como mucho una carga cada `minEntre` y nunca dos a la vez (lib/freno.ts): los cambios
+  // que llegan seguidos (un equipo que se conecta y se cae en bucle, muchas órdenes) se
+  // juntan en una carga más al final, no en una por cambio.
+  const freno = frenar(cargar, opciones.minEntre ?? MIN_ENTRE_CARGAS);
   const dejar = alCambiar((cs) => {
-    if (cs.some((c) => c.t === "resync" || opciones.toca(c))) hacer();
+    if (cs.some((c) => c.t === "resync" || opciones.toca(c))) freno.pedir();
   });
   const t = opciones.ms
     ? setInterval(() => {
         if (!visible()) return;
         const cada = vivo.conectado ? Math.max(opciones.ms, RESPALDO_CON_VIVO) : opciones.ms;
-        if (Date.now() - ultima >= cada - 500) hacer();
+        if (Date.now() - freno.ultima() >= cada - 500) freno.pedir();
       }, opciones.ms)
     : null;
   return () => {
+    freno.parar();
     dejar();
     if (t) clearInterval(t);
   };

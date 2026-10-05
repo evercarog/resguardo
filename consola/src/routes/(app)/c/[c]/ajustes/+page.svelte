@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Personas y ajustes del cliente (solo propietarios): nombre, papeles,
   // invitaciones por enlace, la espera de lo destructivo y (v1.29) qué avisos
   // recibe cada persona y los canales de notificación propios del cliente.
@@ -108,7 +109,7 @@
   }
   // Al entrar directamente, el cliente se carga después: se pide cuando ya se sabe cuál es.
   $effect(() => {
-    if (actual.cliente?.id && puede.propietario(actual.cliente.rol)) void cargar();
+    if (actual.cliente?.id && puede.propietario(actual.cliente.rol)) untrack(() => void cargar());
   });
 
   const ROLES: Rol[] = ["propietario", "administrador", "tecnico", "lectura"];

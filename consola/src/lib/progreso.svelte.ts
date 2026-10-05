@@ -135,7 +135,12 @@ async function preguntar(cliente: string, n: number, siempre = false) {
   } catch {
     /* sin conexión o sin sesión: se reintenta despacio */
   }
-  if (n === vuelta) temporizador = setTimeout(() => void preguntar(cliente, n), siguiente);
+  // Una sola cadena de preguntas: si otra pregunta («ya», por el canal) programó la
+  // suya mientras esta estaba en marcha, se sustituye (antes se sumaban y el ritmo crecía).
+  if (n === vuelta) {
+    if (temporizador) clearTimeout(temporizador);
+    temporizador = setTimeout(() => void preguntar(cliente, n), siguiente);
+  }
 }
 
 /**
@@ -155,9 +160,21 @@ function refrescarTrasTerminar(cliente: string) {
 }
 
 /** Pregunta ya (lo pide el canal en vivo). */
+/** Cuándo se preguntó «ya» por última vez (por un aviso del canal). */
+let ultimaYa = 0;
+/** Entre dos preguntas «ya» seguidas, al menos esto: muchos equipos con copias en marcha
+ *  avisan a menudo, y una pregunta por aviso eran cientos por minuto. */
+const MIN_ENTRE_YA = 2_000;
 function preguntarYa(cliente: string, n: number) {
   if (n !== vuelta) return;
   if (temporizador) clearTimeout(temporizador);
+  const falta = ultimaYa + MIN_ENTRE_YA - Date.now();
+  if (falta > 0) {
+    // Una sola, al acabar el intervalo (la siguiente vuelta del sondeo la sustituye).
+    temporizador = setTimeout(() => preguntarYa(cliente, n), falta);
+    return;
+  }
+  ultimaYa = Date.now();
   void preguntar(cliente, n);
 }
 

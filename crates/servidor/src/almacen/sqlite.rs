@@ -600,11 +600,11 @@ impl Almacen for Sqlite {
     }
 
     // ---------- Equipos y emparejamientos ----------
-    fn crear_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts) -> R<()> {
+    fn crear_emparejamiento(&self, c: &ClienteCtx, id: &str, por: &str, caduca: Ts, codigo: &str) -> R<()> {
         self.con(c, |db| {
             db.execute(
-                "INSERT INTO emparejamientos (id, estado, caduca, creado_por, creado) VALUES (?1, 'abierto', ?2, ?3, ?4)",
-                params![id, caduca, por, ahora()],
+                "INSERT INTO emparejamientos (id, estado, caduca, creado_por, creado, codigo) VALUES (?1, 'abierto', ?2, ?3, ?4, ?5)",
+                params![id, caduca, por, ahora(), codigo],
             )
             .map_err(s)?;
             Ok(())
@@ -634,6 +634,35 @@ impl Almacen for Sqlite {
             filas.collect::<Result<Vec<_>, _>>().map_err(s)
         })
     }
+    fn emparejamientos_vigentes_de(&self, c: &ClienteCtx, por: &str, ahora: Ts) -> R<Vec<Emparejamiento>> {
+        self.con(c, |db| {
+            let mut st = db
+                .prepare(&format!(
+                    "SELECT {COLS_EMP} FROM emparejamientos WHERE creado_por = ?1 AND codigo IS NOT NULL AND estado IN ('abierto', 'unido') AND caduca > ?2 ORDER BY creado DESC"
+                ))
+                .map_err(s)?;
+            let filas = st.query_map(params![por, ahora], fila_emparejamiento).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
+    fn a_medias(&self, c: &ClienteCtx, ahora: Ts) -> R<Vec<Emparejamiento>> {
+        self.con(c, |db| {
+            let mut st = db
+                .prepare(&format!(
+                    "SELECT {COLS_EMP} FROM emparejamientos WHERE equipo_id IS NOT NULL AND \
+                     ((estado = 'unido' AND caduca > ?1) OR (estado = 'confirmado' AND codigo IS NOT NULL)) ORDER BY creado DESC"
+                ))
+                .map_err(s)?;
+            let filas = st.query_map([ahora], fila_emparejamiento).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
+    fn alta_hecha(&self, c: &ClienteCtx, equipo: &str) -> R<()> {
+        self.con(c, |db| {
+            db.execute("UPDATE emparejamientos SET codigo = NULL WHERE equipo_id = ?1 AND estado = 'confirmado'", [equipo]).map_err(s)?;
+            Ok(())
+        })
+    }
     fn poner_sas_emparejamiento(&self, c: &ClienteCtx, id: &str, version: i64) -> R<()> {
         self.con(c, |db| {
             db.execute("UPDATE emparejamientos SET sas_version = ?2 WHERE id = ?1", params![id, version]).map_err(s)?;
@@ -642,10 +671,15 @@ impl Almacen for Sqlite {
     }
     fn poner_estado_emparejamiento(&self, c: &ClienteCtx, id: &str, estado: &str, equipo: Option<&str>) -> R<()> {
         self.con(c, |db| {
-            // Fuera de «abierto» y «unido» el código ya no sirve: no se guarda más.
+            // El código se guarda mientras hace falta: abierto, unido y confirmado hasta que el
+            // equipo hace el alta (`alta_hecha`; la consola lo necesita para mandarla). Al unirse,
+            // hay al menos `PLAZO_UNIDO_S` para comparar el número y dar de alta (un equipo que
+            // se unió no se queda a medias porque el código era de 15 o 30 min).
             db.execute(
-                "UPDATE emparejamientos SET estado = ?2, equipo_id = COALESCE(?3, equipo_id), codigo = CASE WHEN ?2 IN ('abierto', 'unido') THEN codigo ELSE NULL END WHERE id = ?1",
-                params![id, estado, equipo],
+                "UPDATE emparejamientos SET estado = ?2, equipo_id = COALESCE(?3, equipo_id), \
+                 codigo = CASE WHEN ?2 IN ('abierto', 'unido', 'confirmado') THEN codigo ELSE NULL END, \
+                 caduca = CASE WHEN ?2 = 'unido' THEN MAX(caduca, ?4) ELSE caduca END WHERE id = ?1",
+                params![id, estado, equipo, ahora() + super::PLAZO_UNIDO_S],
             )
             .map_err(s)?;
             Ok(())
@@ -1454,6 +1488,9 @@ impl Almacen for Sqlite {
             db.execute("DELETE FROM sesiones_i WHERE expira <= ?1", [ahora]).map_err(s)?;
             db.execute("UPDATE emparejamientos SET estado = 'caducado', codigo = NULL WHERE estado IN ('abierto', 'unido') AND caduca <= ?1", [ahora])
                 .map_err(s)?;
+            // Confirmado sin alta: el código, como mucho 7 días.
+            db.execute("UPDATE emparejamientos SET codigo = NULL WHERE estado = 'confirmado' AND codigo IS NOT NULL AND creado <= ?1", [ahora - 7 * 86_400])
+                .map_err(s)?;
             let caducados = {
                 let mut st = db.prepare("SELECT id FROM relevos WHERE caduca <= ?1").map_err(s)?;
                 let filas = st.query_map([ahora], |r| r.get::<_, String>(0)).map_err(s)?;
@@ -1520,9 +1557,17 @@ mod tests {
         assert_eq!((viejo.estado.as_str(), viejo.codigo), ("caducado", None));
         a.poner_estado_emparejamiento(&c, "vivo", "unido", Some("eq1")).unwrap();
         assert!(a.emparejamiento(&c, "vivo").unwrap().unwrap().codigo.is_some(), "unido: aún hace falta para el alta");
+        // Al unirse, al menos 24 h para comparar el número y dar de alta.
+        assert!(a.emparejamiento(&c, "vivo").unwrap().unwrap().caduca >= t + crate::almacen::PLAZO_UNIDO_S);
+        assert_eq!(a.a_medias(&c, t).unwrap().iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["vivo"], "unido: a medias");
+        // Confirmado sin el alta: aún a medias (la consola necesita el código para mandarla).
         a.poner_estado_emparejamiento(&c, "vivo", "confirmado", None).unwrap();
+        assert!(a.emparejamiento(&c, "vivo").unwrap().unwrap().codigo.is_some(), "confirmado: hasta el alta");
+        assert_eq!(a.a_medias(&c, t).unwrap().len(), 1);
+        a.alta_hecha(&c, "eq1").unwrap();
         let vivo = a.emparejamiento(&c, "vivo").unwrap().unwrap();
         assert_eq!((vivo.codigo, vivo.equipo_id.as_deref(), vivo.nombre.as_deref()), (None, Some("eq1"), Some("SERVIDOR-01")));
+        assert!(a.a_medias(&c, t).unwrap().is_empty(), "con el alta, nada a medias");
     }
 
     #[test]

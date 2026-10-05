@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Comentarios de un objeto: una bitácora («cambié el disco el 3/10», «si
   // falla, llamar a…»). Cualquiera del cliente los lee; técnicos o más
   // escriben. Cada cual cambia o borra los suyos durante 15 minutos; después
@@ -38,7 +39,7 @@
     const [t, o] = [tipo, objeto];
     if (!c) return;
     error = "";
-    void asegurarIndice(c).then(() => cargarNotas(c, t, o).catch((e) => (error = (e as Error).message)));
+    untrack(() => void asegurarIndice(c).then(() => cargarNotas(c, t, o).catch((e) => (error = (e as Error).message))));
   });
 
   function poner(cambio: (l: ComentarioNota[]) => ComentarioNota[]) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   // Observaciones de un objeto (equipo, repositorio, copia, destino o cliente),
   // arriba en su página: el texto, quién lo cambió y cuándo, y «Editar» para
   // técnicos o más. Sin observaciones, solo un botón discreto para añadirlas
@@ -28,7 +29,7 @@
     const c = actual.id;
     const [t, o] = [tipo, objeto];
     if (!c) return;
-    void asegurarIndice(c).then(() => cargarNotas(c, t, o).catch(() => {}));
+    untrack(() => void asegurarIndice(c).then(() => cargarNotas(c, t, o).catch(() => {})));
   });
 
   function editar() {

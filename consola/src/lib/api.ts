@@ -7,6 +7,8 @@
 //   un texto en español para la persona (el del servidor o uno propio).
 // - Las sesiones interactivas usan espera larga (hasta 25 s por petición).
 import type * as T from "./tipos";
+import type { CodigoAbierto } from "./emparejar";
+import { mensajePausa, pausaTras } from "./pausa429";
 import { conexionOk, conexionPerdida, empezar } from "./actividad.svelte";
 
 export class ApiError extends Error {
@@ -51,7 +53,14 @@ async function pedir<R>(metodo: Metodo, ruta: string, cuerpo?: unknown, opciones
   }
 }
 
+/** Tras un 429 de los límites generales: hasta cuándo no se hacen GET (lib/pausa429.ts). */
+let pausaHasta = 0;
+
 async function pedirSinContar<R>(metodo: Metodo, ruta: string, cuerpo: unknown, opciones: { signal?: AbortSignal; sinRedirigir?: boolean }): Promise<R> {
+  if (metodo === "GET" && Date.now() < pausaHasta) {
+    // Sin ir al servidor: volver a preguntar ahora solo alargaría el bloqueo.
+    throw new ApiError("demasiados_intentos", mensajePausa(pausaHasta), 429, { error: "demasiados_intentos", retry_after: Math.ceil((pausaHasta - Date.now()) / 1000) });
+  }
   const headers: Record<string, string> = { Accept: "application/json" };
   if (metodo !== "GET") headers["X-Resguardo"] = "1";
   if (cuerpo !== undefined) headers["Content-Type"] = "application/json";
@@ -85,6 +94,8 @@ async function pedirSinContar<R>(metodo: Metodo, ruta: string, cuerpo: unknown, 
     const d = (datos ?? {}) as { error?: string; mensaje?: string };
     const codigo = d.error ?? (res.status === 401 ? "sin_sesion" : res.status === 403 ? "prohibido" : res.status === 404 ? "no_existe" : res.status === 429 ? "demasiados_intentos" : "interno");
     const err = new ApiError(codigo, d.mensaje || mensajeDe(codigo), res.status, datos as Record<string, unknown>);
+    const pausa = pausaTras(res.status, metodo, datos as Record<string, unknown> | undefined);
+    if (pausa) pausaHasta = Math.max(pausaHasta, pausa);
     if (res.status === 401 && !opciones.sinRedirigir) alPerderSesion?.(codigo);
     throw err;
   }
@@ -223,6 +234,14 @@ export const abrirEmparejamiento = (c: string) => pedir<T.Emparejamiento>("POST"
 export const emparejamiento = (c: string, p: string) => pedir<T.EstadoDeEmparejamiento>("GET", `${cli(c)}/emparejamientos/${enc(p)}`);
 export const confirmarEmparejamiento = (c: string, p: string, etiqueta: string) => pedir<void>("POST", `${cli(c)}/emparejamientos/${enc(p)}/confirmar`, { etiqueta });
 export const cancelarEmparejamiento = (c: string, p: string) => pedir<void>("DELETE", `${cli(c)}/emparejamientos/${enc(p)}`);
+/** v1.42: los equipos que se unieron y se quedaron a medias (con un servidor anterior, 404: ninguno). */
+export const aMedias = (c: string) =>
+  pedir<T.AMedias[]>("GET", `${cli(c)}/a-medias`, undefined, { invisible: true }).catch((e) => {
+    if (e instanceof ApiError && e.estado === 404) return [] as T.AMedias[];
+    throw e;
+  });
+/** v1.42: el código de 15 min de esta cuenta que aún sirve (o `null`); con un servidor anterior, 404. */
+export const codigoAbierto = (c: string) => pedir<CodigoAbierto | null>("GET", `${cli(c)}/codigo-abierto`, undefined, { invisible: true });
 
 // v1.17: equipos preparados (instalador listo o línea de Linux, código de 24 h).
 // v1.20: plantillas de copia (cifradas en el navegador; el servidor guarda bytes).
@@ -244,7 +263,7 @@ export const vincularLocal = (c: string) => pedir<T.Preparado>("POST", `${cli(c)
 export const preparados = (c: string) => pedir<T.Preparado[]>("GET", `${cli(c)}/emparejamientos`);
 export const prepararLinux = (c: string, nombre: string, servidor: string) => pedir<T.PreparadoLinux>("POST", `${cli(c)}/instaladores`, { nombre, so: "linux", servidor });
 /** El instalador del agente con la cola para vincular: el archivo, su nombre y el emparejamiento. */
-export async function prepararInstalador(c: string, nombre: string, servidor: string): Promise<{ datos: Blob; archivo: string; id: string; caduca: string }> {
+export async function prepararInstalador(c: string, nombre: string, servidor: string): Promise<{ datos: Blob; archivo: string; id: string; caduca: string; reutilizado: boolean }> {
   const fin = empezar();
   let res: Response;
   try {
@@ -263,18 +282,24 @@ export async function prepararInstalador(c: string, nombre: string, servidor: st
   try {
     conexionOk();
     if (!res.ok) {
-      let d: { error?: string; mensaje?: string } = {};
+      let d: { error?: string; mensaje?: string } & Record<string, unknown> = {};
       try {
         d = await res.json();
       } catch {
         /* sin cuerpo */
       }
-      const codigo = d.error ?? "interno";
+      const codigo = d.error ?? (res.status === 429 ? "demasiados_intentos" : "interno");
       if (res.status === 401) alPerderSesion?.(codigo);
-      throw new ApiError(codigo, d.mensaje || mensajeDe(codigo), res.status);
+      throw new ApiError(codigo, d.mensaje || mensajeDe(codigo), res.status, d);
     }
     const archivo = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "Resguardo-Agente.exe";
-    return { datos: await res.blob(), archivo, id: res.headers.get("x-resguardo-emparejamiento") ?? "", caduca: res.headers.get("x-resguardo-caduca") ?? "" };
+    return {
+      datos: await res.blob(),
+      archivo,
+      id: res.headers.get("x-resguardo-emparejamiento") ?? "",
+      caduca: res.headers.get("x-resguardo-caduca") ?? "",
+      reutilizado: res.headers.get("x-resguardo-reutilizado") === "1",
+    };
   } finally {
     fin();
   }

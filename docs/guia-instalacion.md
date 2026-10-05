@@ -45,7 +45,7 @@ Más detalle para Linux: [servidor-linux.md](servidor-linux.md) y [agente-linux.
 3. La página **Listo** muestra la dirección (`https://ALMACEN:8443/`) y el **código de primer arranque**, que sirve una vez. Mientras no se use, también está en `C:\ProgramData\Resguardo Server\codigo-arranque.txt` (solo administradores).
 4. En **Servicios** (`services.msc`): **Resguardo Server** (y, si lo marcaste, **Resguardo Agente**) en ejecución y con inicio automático.
 
-Los datos de la consola están en `C:\ProgramData\Resguardo Server` y su registro en `servidor.log`.
+Los datos de la consola están en `C:\ProgramData\Resguardo Server` y su registro en `servidor.log`. Ahí queda también, como mucho una vez por minuto, cada límite de peticiones que salta («Límite de intentos superado desde IP: cuenta…», ver [capacidad](capacidad.md)) y, al arrancar, si el puerto aún estaba ocupado por el proceso anterior (se espera hasta 10 s a que lo suelte). `Restart-Service ResguardoServer` para el servicio ordenadamente (deja de escuchar y termina) antes de volver a arrancarlo.
 
 ### 1.B En un CT de Proxmox (Debian o Ubuntu)
 

@@ -1543,10 +1543,20 @@ pub fn leer_vincular_local(texto: &[u8]) -> Result<resguardo_protocolo::instalad
     Ok(d)
 }
 
-/// Sin vincular nunca (ni local ni gestionado) y con el archivo del servidor
-/// local: se vincula a él (el SAS y la clave de administración siguen en la consola).
+/// ¿Un vínculo que se quedó a medias? Unido a un servidor pero sin el alta (nunca recibió
+/// la clave de administración), sin otras consolas ni un cambio de servidor pendiente.
+/// No tiene nada que perder: un «Vincular este servidor» nuevo lo sustituye.
+pub fn a_medias(v: &Vinculo) -> bool {
+    v.verificador.is_none() && v.codigo.is_some() && v.otras.is_empty() && v.adopcion.is_none()
+}
+
+/// Sin vincular nunca (ni local ni gestionado), o con un vínculo a medias, y con el
+/// archivo del servidor local: se vincula a él (el SAS y la clave de administración
+/// siguen en la consola). Así, si el alta se quedó sin hacer (y la consola anuló ese
+/// emparejamiento), volver a pulsar «Vincular este servidor» basta: no hay que borrar
+/// nada a mano en el equipo.
 fn vincular_local_si_toca() {
-    if cargar().is_some() {
+    if cargar().is_some_and(|v| !a_medias(&v)) {
         return;
     }
     let p = archivo_vincular_local();
@@ -1577,6 +1587,13 @@ fn vincular_local_si_toca() {
     }
 }
 
+/// Antes de reabrir un canal que se cerró porque cambió el vínculo: 1 s la primera vez;
+/// si se repite con canales cortos, el doble cada vez (hasta 60 s) con un poco de azar.
+fn espera_reabrir(rapidas: u32, azar: u8) -> Duration {
+    let base = 1u64 << rapidas.min(6);
+    Duration::from_millis((base.min(60) * 1000) + u64::from(azar) * 4)
+}
+
 /// El servicio: un hilo por consola (`hilo_enlace`) y este, que vigila la lista
 /// (arranca el de una consola nueva), el alta pendiente de un servidor nuevo y
 /// «Vincular este servidor».
@@ -1591,6 +1608,9 @@ pub fn hilo() {
             match cargar().filter(|v| v.modo == "gestionado" && !v.secreto.is_empty()) {
                 None => vincular_local_si_toca(),
                 Some(v) => {
+                    if a_medias(&v) {
+                        vincular_local_si_toca();
+                    }
                     hilos.retain(|_, vivo| vivo.load(std::sync::atomic::Ordering::Relaxed));
                     for id in v.ids_enlaces() {
                         if !hilos.contains_key(&id) {
@@ -1614,6 +1634,10 @@ pub fn hilo() {
 /// cuando esa consola ya no está.
 fn hilo_enlace(id: &str) {
     let mut aviso = AvisoRepetido::default();
+    // Reaperturas seguidas «porque cambió el vínculo» con canales que duran nada: si algo
+    // lo cambiara una y otra vez, cada apertura y cierre avisa a las consolas abiertas
+    // (y vuelven a pedir). Se espera cada vez más (hasta 1 min), nunca en bucle.
+    let mut rapidas = 0u32;
     while crate::consolas_v2::vista(id).is_some() {
         let inicio = std::time::Instant::now();
         let antes = crate::consolas_v2::vista(id);
@@ -1623,7 +1647,8 @@ fn hilo_enlace(id: &str) {
         if resultado.is_ok() {
             if let (Some(a), Some(d)) = (antes.as_ref(), crate::consolas_v2::vista(id)) {
                 if cambiado_fuera(a, &d) {
-                    std::thread::sleep(Duration::from_secs(1));
+                    rapidas = if inicio.elapsed() < Duration::from_secs(10) { rapidas.saturating_add(1) } else { 0 };
+                    std::thread::sleep(espera_reabrir(rapidas, aleatorio::<1>()[0]));
                     continue;
                 }
             }
@@ -1664,6 +1689,26 @@ fn hilo_enlace(id: &str) {
 mod tests {
     use super::*;
     use resguardo_protocolo::orden_v2::{Autorizacion, OrdenV2};
+
+    /// Solo un vínculo a medias (unido, sin el alta) se sustituye al volver a vincular este servidor.
+    #[test]
+    fn solo_se_sustituye_un_vinculo_a_medias() {
+        let pendiente = Vinculo { modo: "gestionado".into(), secreto: "s".into(), codigo: Some("ABCD-EFGH-JK".into()), ..Default::default() };
+        assert!(a_medias(&pendiente));
+        let dado_de_alta = Vinculo { verificador: Some("v".into()), codigo: None, ..pendiente.clone() };
+        assert!(!a_medias(&dado_de_alta), "con la clave de administración, nunca");
+        let mut con_otra = pendiente.clone();
+        con_otra.otras.push(crate::consolas_v2::Enlace { id: "b".into(), ..Default::default() });
+        assert!(!a_medias(&con_otra), "con otras consolas, tampoco");
+    }
+
+    #[test]
+    fn reabrir_el_canal_nunca_en_bucle() {
+        assert!(espera_reabrir(0, 0) >= Duration::from_secs(1));
+        assert!(espera_reabrir(3, 0) >= Duration::from_secs(8));
+        assert!(espera_reabrir(30, 255) <= Duration::from_secs(62));
+        assert!(espera_reabrir(30, 0) >= Duration::from_secs(60));
+    }
 
     #[test]
     fn vincular_local_solo_con_este_equipo() {

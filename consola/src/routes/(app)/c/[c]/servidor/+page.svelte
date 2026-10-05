@@ -3,7 +3,7 @@
   // seguir cada equipo), servidores de respaldo, exportar o importar el
   // historial y dar fichas de este servidor. Al propietario del servidor,
   // también la copia de la consola (v1.23) y las notificaciones (v1.29).
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { Archive, ArrowRightLeft, BellRing, Download, FileUp, LifeBuoy, Monitor, Ticket, Trash2 } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
@@ -101,7 +101,7 @@
   const clienteListo = $derived(actual.cliente ? actual.id : "");
   $effect(() => {
     if (!clienteListo) return;
-    void cargar();
+    untrack(() => void cargar());
     void api
       .auditoriaImportada(actual.id, 0, 1)
       .then((x) => (importadas = x.length))

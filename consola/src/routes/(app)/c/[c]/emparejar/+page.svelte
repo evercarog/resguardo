@@ -19,8 +19,10 @@
   import { etiquetaEquipo, etiquetaValida, kCfg, materialCliente, sasV2, sasV3 } from "$lib/cripto/claves";
   import { mandarOrden } from "$lib/ordenar";
   import { cuentaAtras } from "$lib/formato";
-  import type { Emparejamiento, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux } from "$lib/tipos";
+  import type { AMedias, Emparejamiento, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux } from "$lib/tipos";
   import { guardar } from "$lib/descarga";
+  import { Preparados } from "$lib/preparados.svelte";
+  import { codigoAlCargar, esperaDe, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "$lib/emparejar";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -58,18 +60,51 @@
   const sasCoincide = $derived(!!sasLocal && sasLocal === estadoEmp?.sas);
   const claveValida = $derived(primero ? clave.length >= 16 && clave === repetir && guardada : clave.length > 0);
 
+  // Códigos: abrir la página, recargarla o cambiar de opción NO crea ninguno (lib/emparejar.ts).
+  // Si esta cuenta ya tiene uno que sirve, se enseña con su caducidad y «Anular».
+  let pendiente = $state<CodigoAbierto | null>(null);
+  /** Hasta cuándo el servidor no da más códigos (429 con `retry_after`). */
+  let esperarHasta = $state(0);
+  const bloqueado = $derived(esperarHasta > reloj.ahora);
+  const apiCodigos = (cc: string) => ({ codigoAbierto: () => api.codigoAbierto(cc), abrir: () => api.abrirEmparejamiento(cc) });
+  $effect(() => {
+    const cc = c;
+    if (!cc) return;
+    let vivo = true;
+    void codigoAlCargar(apiCodigos(cc)).then((p) => vivo && (pendiente = p));
+    return () => (vivo = false);
+  });
+  /** Un error al pedir un código: el del límite dice cuándo se podrá y por qué. */
+  function fallo(e: unknown) {
+    const s = esperaDe(e);
+    if (s) {
+      esperarHasta = Date.now() + s * 1000;
+      reloj.ahora = Date.now();
+    }
+    error = mensajeAlPedir(e);
+  }
+
   async function abrir() {
     error = "";
     ocupado = true;
     try {
-      emp = await api.abrirEmparejamiento(c);
-      paso = "codigo";
-      sondeo = setInterval(() => enFondo(consultar), 2000);
+      const r = await pedirCodigo(apiCodigos(c), pendiente);
+      seguirCodigo(r);
     } catch (e) {
-      error = (e as Error).message;
+      fallo(e);
     } finally {
       ocupado = false;
     }
+  }
+  /** Sigue con un código (nuevo o el que ya había): a «Código» o, si ya se unió, a «Comprobar». */
+  function seguirCodigo(p: CodigoAbierto) {
+    emp = { id: p.id, codigo: p.codigo, caduca: p.caduca };
+    pendiente = p;
+    estadoEmp = null;
+    paso = "codigo";
+    parar();
+    sondeo = setInterval(() => enFondo(consultar), 2000);
+    void consultar();
   }
 
   async function consultar() {
@@ -100,10 +135,25 @@
         /* ya no existía */
       }
     }
+    if (emp && pendiente?.id === emp.id) pendiente = null;
     emp = null;
     estadoEmp = null;
     clave = repetir = "";
     paso = "sistema";
+  }
+  /** «Anular» el código pendiente desde la primera pantalla. */
+  let anularCodigo = $state(false);
+  async function anularPendiente() {
+    if (!pendiente) return;
+    try {
+      await api.cancelarEmparejamiento(c, pendiente.id);
+      avisar("Anulado: ese código ya no sirve.");
+      pendiente = null;
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      anularCodigo = false;
+    }
   }
 
   /** Clave fuerte para el primer equipo: 5 grupos de 5 (≈ 125 bits), sin letras que se confundan. */
@@ -133,13 +183,15 @@
       if (otros.length && !otros.some((x) => etiquetaValida(kcfg!, x)))
         throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
       paso2 = "Confirmando el equipo…";
-      await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
+      // A medias (v1.42): ya confirmado y sin el alta; solo falta mandarla.
+      if (estadoEmp.estado !== "confirmado") await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
       parar();
       const equipo = await api.equipo(c, eq.id);
       equipoNuevo = equipo;
       alta = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "alta", alta: { codigo: emp.codigo }, secretos: { claveAdmin: clave }, alPaso: (t) => (paso2 = t) });
       clave = repetir = "";
       paso = "listo";
+      void cargarMedias(c);
       void cargarCliente(c, { silencioso: true });
       seguirAlta(equipo.id, alta.id);
     } catch (err) {
@@ -176,9 +228,10 @@
   let servidorUrl = $state(app.servidor?.url_agentes || (origenHttps ? location.origin : ""));
   let editarServidor = $state(false);
   let preparando = $state(false);
-  let descargado = $state<{ archivo: string; caduca: string; nombre: string } | null>(null);
+  let descargado = $state<{ archivo: string; caduca: string; nombre: string; reutilizado: boolean } | null>(null);
   let linux = $state<PreparadoLinux | null>(null);
-  let lista = $state<Preparado[] | null>(null);
+  const prep = new Preparados();
+  const lista = $derived(prep.lista);
   let anular = $state<string | null>(null);
   const puedeListo = $derived(app.servidor?.instalador_agente === true);
   const errorNombreEq = $derived.by(() => {
@@ -193,24 +246,19 @@
   const errorServidor = $derived(servidorValido || !servidorUrl.trim() ? null : "Escribe la dirección con https:// y el puerto, sin ruta (p. ej. https://192.168.1.20:8443).");
   const listoParaPreparar = $derived(!!nombreEq.trim() && !errorNombreEq && servidorValido);
 
-  async function cargarLista() {
-    try {
-      const antes = new Map((lista ?? []).map((p) => [p.id, p.estado]));
-      const nueva = await api.preparados(c);
-      // Aviso en cuanto un preparado se une: es lo que se está esperando.
-      for (const p of nueva) if (p.estado === "unido" && antes.get(p.id) && antes.get(p.id) !== "unido") avisar(`«${p.nombre}» se ha unido. Compruébalo y dale de alta.`, "info");
-      lista = nueva;
-    } catch {
-      lista ??= [];
-    }
-  }
+  // La lista de preparados, cada 5 s. El efecto depende SOLO del cliente: antes también
+  // de la lista que él mismo cambiaba, y pedía sin parar (lib/preparados.svelte.ts).
+  const opcionesLista = (cc: string) => ({
+    pedir: () => api.preparados(cc),
+    // Aviso en cuanto un preparado se une: es lo que se está esperando.
+    alUnirse: (p: Preparado) => avisar(`«${p.nombre}» se ha unido. Compruébalo y dale de alta.`, "info"),
+    fondo: enFondo,
+  });
+  const cargarLista = () => prep.cargar(opcionesLista(c));
   $effect(() => {
-    if (!c) return;
-    // Sin seguir lo que lee cargarLista (lee `lista`): si no, cada respuesta volvía a
-    // lanzar el efecto y la página pedía la lista en bucle (cientos de veces por minuto).
-    untrack(() => void cargarLista());
-    const t = setInterval(() => document.visibilityState === "visible" && enFondo(cargarLista), 5000);
-    return () => clearInterval(t);
+    const cc = c;
+    if (!cc) return;
+    return prep.seguir(opcionesLista(cc));
   });
 
   async function descargarListo() {
@@ -219,11 +267,11 @@
     try {
       const r = await api.prepararInstalador(c, nombreEq.trim(), servidorUrl.trim().replace(/\/+$/, ""));
       await guardar(r.datos, r.archivo);
-      descargado = { archivo: r.archivo, caduca: r.caduca, nombre: nombreEq.trim() };
+      descargado = { archivo: r.archivo, caduca: r.caduca, nombre: nombreEq.trim(), reutilizado: r.reutilizado };
       nombreEq = "";
       void cargarLista();
     } catch (e) {
-      error = (e as Error).message;
+      fallo(e);
     } finally {
       preparando = false;
     }
@@ -236,7 +284,7 @@
       nombreEq = "";
       void cargarLista();
     } catch (e) {
-      error = (e as Error).message;
+      fallo(e);
     } finally {
       preparando = false;
     }
@@ -261,14 +309,49 @@
       if (!est.codigo) throw new Error("Ese emparejamiento ya no se puede confirmar desde aquí. Prepara otro.");
       emp = { id, codigo: est.codigo, caduca: est.caduca };
       estadoEmp = est;
-      paso = est.estado === "unido" ? "sas" : "codigo";
+      // Confirmado sin el alta (a medias): directo a la clave para mandarla.
+      paso = est.estado === "unido" ? "sas" : est.estado === "confirmado" ? "clave" : "codigo";
       parar();
-      sondeo = setInterval(() => enFondo(consultar), 2000);
+      if (est.estado !== "confirmado") sondeo = setInterval(() => enFondo(consultar), 2000);
       window.scrollTo({ top: 0 });
     } catch (e) {
       error = (e as Error).message;
     }
   }
+  // --- A medias (v1.42) ------------------------------------------------------
+  // Equipos que se unieron y se quedaron sin terminar (sin comparar el número o sin el
+  // alta: p. ej. la página se cerró o el servidor dijo «Demasiados intentos»). Se sigue
+  // desde aquí en vez de empezar de nuevo; o se anula (el equipo se quita y se puede
+  // volver a vincular).
+  let medias = $state<AMedias[]>([]);
+  let anularMedias = $state<string | null>(null);
+  const cargarMedias = (cc: string) =>
+    api.aMedias(cc).then(
+      (x) => cc === c && (medias = x),
+      () => {},
+    );
+  $effect(() => {
+    const cc = c;
+    if (!cc) return;
+    untrack(() => void cargarMedias(cc));
+    const t = setInterval(() => document.visibilityState === "visible" && void enFondo(() => cargarMedias(cc)), 30_000);
+    return () => clearInterval(t);
+  });
+  /** Los de la lista de preparados ya salen allí (con su botón). */
+  const mediasSueltas = $derived(medias.filter((m) => m.estado === "confirmado" || !(lista ?? []).some((p) => p.id === m.id)));
+  async function anularAMedias(id: string) {
+    try {
+      await api.cancelarEmparejamiento(c, id);
+      avisar("Anulado: el equipo se quitó. Puedes volver a vincularlo desde el principio.");
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      anularMedias = null;
+      void cargarMedias(c);
+      void cargarLista();
+    }
+  }
+
   // --- «Vincular este servidor» (v1.19) ------------------------------------
   // El agente instalado en la máquina del servidor («Este equipo también guarda
   // copias» al instalarlo) se une solo; aquí se compara el número y se da de
@@ -284,7 +367,7 @@
       local = true;
       await seguirPreparado(p.id);
     } catch (e) {
-      error = (e as Error).message;
+      fallo(e);
     } finally {
       vinculandoLocal = false;
     }
@@ -330,7 +413,26 @@
           <h2 class="section-title">Este servidor también puede guardar copias</h2>
           <p class="faint">Resguardo Agente está instalado en la máquina del servidor. Vincúlalo aquí (se une solo), compara su número, dalo de alta con la clave de administración y elige la carpeta donde guardará las copias de los demás.</p>
           {#if error && pideLocal}<p class="error-campo" role="alert">{error}</p>{/if}
-          <BotonCargando class="btn {pideLocal ? 'btn-primary' : ''}" cargando={vinculandoLocal} textoCargando="Preparando…" onclick={vincularEsteServidor}><Server size={15} />Vincular este servidor</BotonCargando>
+          <BotonCargando class="btn {pideLocal ? 'btn-primary' : ''}" disabled={bloqueado} cargando={vinculandoLocal} textoCargando="Preparando…" onclick={vincularEsteServidor}><Server size={15} />Vincular este servidor</BotonCargando>
+        </div>
+      </section>
+    {/if}
+    {#if sirve(pendiente, reloj.ahora)}
+      <section class="card p pendiente" role="status">
+        <div>
+          <h2 class="section-title">{pendiente.estado === "unido" ? "Un equipo se ha unido con tu código" : "Tienes un código activo"}</h2>
+          <p>
+            <span class="pastilla mono">{pendiente.codigo}</span>
+            {pendiente.estado === "unido" ? "Falta comprobar su número y darlo de alta." : "Sirve una sola vez."} Caduca en {cuentaAtras(pendiente.caduca, reloj.ahora)}.
+          </p>
+        </div>
+        <div class="acciones-pendiente">
+          <button class="btn btn-sm btn-primary" onclick={() => seguirCodigo(pendiente!)}>{#if pendiente.estado === "unido"}<Check size={14} />Comprobar y dar de alta{:else}Seguir con este código{/if}</button>
+          {#if anularCodigo}
+            <span class="confirmar-anular">¿Anular? <button class="btn btn-sm btn-danger" onclick={anularPendiente}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anularCodigo = false)}>No</button></span>
+          {:else}
+            <button class="btn btn-sm btn-ghost" onclick={() => (anularCodigo = true)} use:tip={"El código deja de servir (y, si ya se unió, el equipo se quita)"}><Ban size={14} />Anular</button>
+          {/if}
         </div>
       </section>
     {/if}
@@ -381,16 +483,24 @@
           {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
           <div class="fin">
             {#if so === "windows"}
-              <BotonCargando class="btn btn-primary" disabled={!listoParaPreparar} cargando={preparando} textoCargando="Preparando el instalador…" onclick={descargarListo}><Download size={16} />Descargar instalador listo</BotonCargando>
+              <BotonCargando class="btn btn-primary" disabled={!listoParaPreparar || bloqueado} cargando={preparando} textoCargando="Preparando el instalador…" onclick={descargarListo}><Download size={16} />Descargar instalador listo</BotonCargando>
             {:else}
-              <BotonCargando class="btn btn-primary" disabled={!listoParaPreparar} cargando={preparando} textoCargando="Preparando…" onclick={prepararLinea}><Terminal size={16} />Preparar la línea</BotonCargando>
+              <BotonCargando class="btn btn-primary" disabled={!listoParaPreparar || bloqueado} cargando={preparando} textoCargando="Preparando…" onclick={prepararLinea}><Terminal size={16} />Preparar la línea</BotonCargando>
             {/if}
           </div>
+          {#if bloqueado}<p class="faint pequeno-izq" role="status">{podrasPedirEn((esperarHasta - reloj.ahora) / 1000)}</p>{/if}
           <p class="faint pequeno-izq">El código sirve una sola vez y caduca en 24 h. Viaja dentro del {so === "windows" ? "instalador" : "comando"}: trátalo como una llave temporal (y anúlalo abajo si no lo vas a usar).</p>
         {/if}
       {:else}
         {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
-        <div class="fin"><BotonCargando class="btn btn-primary" cargando={ocupado} textoCargando="Generando…" onclick={abrir}>Generar el código</BotonCargando></div>
+        <div class="fin">
+          {#if sirve(pendiente, reloj.ahora)}
+            <button class="btn btn-primary" onclick={() => seguirCodigo(pendiente!)}>Seguir con el código activo</button>
+          {:else}
+            <BotonCargando class="btn btn-primary" disabled={bloqueado} cargando={ocupado} textoCargando="Generando…" onclick={abrir}>Generar el código</BotonCargando>
+          {/if}
+        </div>
+        {#if bloqueado}<p class="faint pequeno-izq" role="status">{podrasPedirEn((esperarHasta - reloj.ahora) / 1000)}</p>{:else}<p class="faint pequeno-izq">El código se crea al pulsar el botón (no al abrir esta página) y sirve 15 min; si recargas, se vuelve a enseñar el mismo.</p>{/if}
       {/if}
     </section>
 
@@ -399,6 +509,7 @@
         <span class="ok-icono"><CircleCheck size={22} /></span>
         <div>
           <h2 class="section-title">Instalador de «{descargado.nombre}» descargado</h2>
+          {#if descargado.reutilizado}<p class="faint">Es el mismo código que el del instalador anterior de «{descargado.nombre}» (aún servía): no se ha gastado otro.</p>{/if}
           <p>Llévalo al equipo y ábrelo como administrador (<span class="pastilla mono ajusta">{descargado.archivo}</span>). Se vinculará solo; después, aquí abajo, comprueba su número y dale de alta. Caduca <Tiempo iso={descargado.caduca} />.</p>
         </div>
       </section>
@@ -421,6 +532,28 @@
       </section>
     {/if}
 
+    {#if mediasSueltas.length}
+      <section>
+        <div class="section-head"><h2>A medias <span class="count">· {mediasSueltas.length}</span></h2></div>
+        <div class="card p-0 lista">
+          {#each mediasSueltas as m (m.id)}
+            <div class="fila">
+              <span class="ic-so"><TriangleAlert size={16} /></span>
+              <span class="fila-texto">
+                <span class="fila-titulo">{m.equipo.nombre}</span>
+                <span class="fila-sub">{m.estado === "unido" ? `Se unió y falta comparar el número y darlo de alta · caduca en ${cuentaAtras(m.caduca, reloj.ahora)}` : "Confirmado, pero falta el alta con la clave de administración"}</span>
+              </span>
+              <button class="btn btn-sm btn-primary" onclick={() => seguirPreparado(m.id)}><Check size={14} />{m.estado === "unido" ? "Continuar: comparar el número y dar de alta" : "Continuar: dar de alta"}</button>
+              {#if anularMedias === m.id}
+                <span class="confirmar-anular">¿Anular? Se quita el equipo. <button class="btn btn-sm btn-danger" onclick={() => anularAMedias(m.id)}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = null)}>No</button></span>
+              {:else}
+                <button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = m.id)} use:tip={"El equipo se quita y se puede volver a vincular desde el principio"}><Ban size={14} />Anular y empezar de nuevo</button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
     {#if lista?.length}
       <section>
         <div class="section-head"><h2>Preparados <span class="count">· {lista.length}</span></h2></div>
@@ -467,10 +600,13 @@
       {/if}
       {#if estadoEmp?.estado === "caducado" || estadoEmp?.estado === "cancelado"}
         <div class="notice notice-warn"><p>El código caducó. Genera otro.</p></div>
-        <button class="btn" onclick={() => ((paso = "sistema"), (emp = null), (estadoEmp = null))}><RefreshCw size={14} />Empezar de nuevo</button>
+        <button class="btn" onclick={() => ((paso = "sistema"), (emp = null), (estadoEmp = null), (pendiente = null))}><RefreshCw size={14} />Empezar de nuevo</button>
       {:else}
         <p class="espera" role="status"><LoaderCircle size={15} class="spin" />Esperando al equipo… caduca en {cuentaAtras(emp.caduca, reloj.ahora)}</p>
-        <button class="btn btn-ghost btn-sm" onclick={cancelar}>Cancelar</button>
+        <div class="acciones">
+          <button class="btn btn-ghost btn-sm" onclick={() => (parar(), (paso = "sistema"))} use:tip={"El código sigue valiendo: lo verás arriba al volver"}>Volver</button>
+          <button class="btn btn-ghost btn-sm" onclick={cancelar} use:tip={"El código deja de servir"}><Ban size={14} />Anular el código</button>
+        </div>
       {/if}
     </section>
   {:else if paso === "sas" && estadoEmp?.equipo}
@@ -638,6 +774,23 @@
   }
   .generar {
     align-self: flex-start;
+  }
+  .pendiente {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  }
+  .pendiente p {
+    margin: 4px 0 0;
+  }
+  .acciones-pendiente {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
   .local {
     display: flex;

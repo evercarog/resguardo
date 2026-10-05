@@ -107,6 +107,22 @@ fn parado(codigo: u32) -> ServiceStatus {
     }
 }
 
+/// Lo que tiene el servidor para parar ordenadamente antes de salir igualmente.
+const PLAZO_PARADA: Duration = Duration::from_secs(8);
+
+/// «Parándose», con el plazo que se dice al administrador de servicios (más que `PLAZO_PARADA`).
+fn parandose() -> ServiceStatus {
+    ServiceStatus {
+        service_type: ServiceType::OWN_PROCESS,
+        current_state: ServiceState::StopPending,
+        controls_accepted: ServiceControlAccept::empty(),
+        exit_code: ServiceExitCode::Win32(0),
+        checkpoint: 1,
+        wait_hint: PLAZO_PARADA + Duration::from_secs(4),
+        process_id: None,
+    }
+}
+
 define_windows_service!(ffi_principal, principal_servicio);
 
 pub fn ejecutar(c: Config) -> Result<(), String> {
@@ -124,13 +140,27 @@ fn principal_servicio(_args: Vec<OsString>) {
         return;
     };
     let datos = c.datos.clone();
+    let datos_parada = c.datos.clone();
     let manejador = move |control| match control {
         ServiceControl::Stop | ServiceControl::Shutdown => {
-            // Parado a petición (no es un fallo); SQLite en WAL: salir así es seguro.
+            // Antes, «Parado» y exit(0) aquí mismo, desde el hilo del manejador: el
+            // administrador de servicios podía ver el proceso aún vivo con el servicio ya
+            // «parado» y `Restart-Service` fallaba (había que pulsar «Iniciar»). Ahora:
+            // «parándose» con su plazo, el servidor deja de escuchar y `principal_servicio`
+            // dice «Parado» y vuelve. Si en `PLAZO_PARADA` no lo ha hecho, se sale igual.
             if let Some(e) = ESTADO.get() {
-                let _ = e.set_service_status(parado(0));
+                let _ = e.set_service_status(parandose());
             }
-            std::process::exit(0);
+            registro(&datos_parada, "Parando el servicio…");
+            resguardo_servidor::pedir_parada();
+            std::thread::spawn(|| {
+                std::thread::sleep(PLAZO_PARADA);
+                if let Some(e) = ESTADO.get() {
+                    let _ = e.set_service_status(parado(0));
+                }
+                std::process::exit(0);
+            });
+            ServiceControlHandlerResult::NoError
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
@@ -147,8 +177,9 @@ fn principal_servicio(_args: Vec<OsString>) {
         process_id: None,
     });
     let r = arrancar(c, &|l| registro(&datos, l));
-    if let Err(e) = &r {
-        registro(&datos, &format!("ERROR: {e}"));
+    match &r {
+        Err(e) => registro(&datos, &format!("ERROR: {e}")),
+        Ok(()) => registro(&datos, "Servicio parado."),
     }
     let _ = estado.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,

@@ -49,6 +49,11 @@ pub const SIN_RESPUESTA: Duration = Duration::from_secs(75);
 pub const REVISAR: Duration = Duration::from_secs(60);
 /// Plazo para mandar un mensaje (un cliente que no lee no retiene la tarea).
 const PLAZO_ENVIO: Duration = Duration::from_secs(10);
+/// El mismo aviso a un cliente, como mucho una vez en este tiempo: los que se repiten
+/// dentro (un equipo cuyo canal se cae y vuelve en bucle, órdenes entregadas seguidas…)
+/// se juntan en uno que sale al final. Cada aviso hace que cada consola abierta vuelva
+/// a pedir: sin esto, un equipo que parpadea multiplicaba las peticiones de todas.
+pub const JUNTAR: Duration = Duration::from_secs(2);
 
 /// Qué hace lo que está en marcha en un equipo (para `progreso`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +112,8 @@ struct Mapa {
     por_cuenta: HashMap<String, usize>,
     por_cliente: HashMap<String, usize>,
     total: usize,
+    /// (cliente, aviso) → cuándo salió el último y si hay otro esperando a que pase `JUNTAR`.
+    recientes: HashMap<(String, Arc<str>), (tokio::time::Instant, bool)>,
 }
 
 /// Las consolas que escuchan, por cliente.
@@ -141,12 +148,47 @@ impl Drop for Hueco {
 
 impl Vivo {
     /// Avisa a las consolas de ese cliente. Sin nadie escuchando no hace nada.
+    /// El mismo aviso repetido en menos de `JUNTAR` sale una sola vez más, al final.
     pub fn avisar(&self, cliente: &str, cambio: Cambio<'_>) {
-        let m = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(tx) = m.canales.get(cliente) {
-            // Error = nadie escucha ya: da igual.
-            let _ = tx.send(Arc::from(cambio.json().to_string()));
+        let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(tx) = m.canales.get(cliente).cloned() else { return };
+        let texto: Arc<str> = Arc::from(cambio.json().to_string());
+        let ahora = tokio::time::Instant::now();
+        if m.recientes.len() > 10_000 {
+            m.recientes.retain(|_, (t, pendiente)| *pendiente || ahora.duration_since(*t) < JUNTAR);
         }
+        let clave = (cliente.to_string(), texto.clone());
+        if let Some((t, pendiente)) = m.recientes.get_mut(&clave) {
+            if ahora.duration_since(*t) < JUNTAR {
+                if !*pendiente {
+                    // Sin tokio (no debería pasar), sale ya.
+                    let Ok(rt) = tokio::runtime::Handle::try_current() else {
+                        *t = ahora;
+                        let _ = tx.send(texto);
+                        return;
+                    };
+                    *pendiente = true;
+                    let (mapa, espera) = (self.0.clone(), JUNTAR - ahora.duration_since(*t));
+                    rt.spawn(async move {
+                        tokio::time::sleep(espera).await;
+                        let mut m = mapa.lock().unwrap_or_else(|e| e.into_inner());
+                        let tx = m.canales.get(&clave.0).cloned();
+                        if let Some(r) = m.recientes.get_mut(&clave) {
+                            *r = (tokio::time::Instant::now(), false);
+                        }
+                        drop(m);
+                        if let Some(tx) = tx {
+                            let _ = tx.send(clave.1);
+                        }
+                    });
+                }
+                return;
+            }
+        }
+        m.recientes.insert(clave, (ahora, false));
+        drop(m);
+        // Error = nadie escucha ya: da igual.
+        let _ = tx.send(texto);
     }
 
     /// Ocupa un hueco para una conexión de `cuenta` a `cliente`, si cabe.
@@ -300,13 +342,37 @@ mod tests {
         let m: Value = serde_json::from_str(&r1.try_recv().unwrap()).unwrap();
         assert_eq!(m, json!({ "t": "informe", "equipo": "e1" }));
         assert!(r2.try_recv().is_err(), "nada de otro cliente");
-        for _ in 0..COLA + 5 {
-            v.avisar("c1", Cambio::Progreso("e1", Paso::Cambia));
+        for i in 0..COLA + 5 {
+            v.avisar("c1", Cambio::Progreso(&format!("e{i}"), Paso::Cambia));
         }
         assert!(matches!(r1.try_recv(), Err(broadcast::error::TryRecvError::Lagged(_))));
         drop(r1);
         drop(h1);
         assert!(!v.0.lock().unwrap().canales.contains_key("c1"), "sin nadie, el canal se quita");
+    }
+
+    /// Un equipo que parpadea (conecta y se cae en bucle): un aviso enseguida y otro al final.
+    #[tokio::test(start_paused = true)]
+    async fn avisos_repetidos_se_juntan() {
+        let v = Vivo::default();
+        let h = v.ocupar("ana", "c1").unwrap();
+        let mut r = v.escuchar(&h);
+        for _ in 0..500 {
+            v.avisar("c1", Cambio::Equipo("e1"));
+        }
+        v.avisar("c1", Cambio::Equipo("e2"));
+        let primero = |r: &mut broadcast::Receiver<Arc<str>>| r.try_recv().ok().map(|m| serde_json::from_str::<Value>(&m).unwrap()["equipo"].clone());
+        assert_eq!(primero(&mut r), Some(json!("e1")));
+        assert_eq!(primero(&mut r), Some(json!("e2")), "otro equipo no espera");
+        assert_eq!(primero(&mut r), None, "los 499 repetidos, juntos y aún no");
+        tokio::time::sleep(JUNTAR + Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(primero(&mut r), Some(json!("e1")), "uno al final, por si lo último cambió");
+        assert_eq!(primero(&mut r), None);
+        // Pasado el tiempo, sale enseguida.
+        tokio::time::sleep(JUNTAR).await;
+        v.avisar("c1", Cambio::Equipo("e1"));
+        assert_eq!(primero(&mut r), Some(json!("e1")));
     }
 
     #[test]

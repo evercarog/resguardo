@@ -246,6 +246,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/emparejamientos", post(equipos::abrir_emparejamiento).get(instaladores::listar))
         .route("/api/clientes/{c}/instaladores", post(instaladores::preparar))
         .route("/api/clientes/{c}/preparados", get(instaladores::contar))
+        .route("/api/clientes/{c}/codigo-abierto", get(instaladores::codigo_abierto))
+        .route("/api/clientes/{c}/a-medias", get(instaladores::a_medias))
         .route("/api/clientes/{c}/equipo-local", post(instaladores::vincular_local))
         .route("/api/clientes/{c}/plantillas", get(plantillas::listar))
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
@@ -309,16 +311,27 @@ async fn limite_y_registro(State(st): State<St>, req: Request, next: Next) -> Re
     use std::time::Duration;
     let ip = req.extensions().get::<crate::estado::IpCliente>().and_then(|i| i.0);
     let (metodo, ruta) = (req.method().to_string(), req.uri().path().to_string());
-    let anotar_limite = |ip: std::net::IpAddr| {
-        if st.limites.intento(&format!("registro-limite:{}", crate::estado::clave_ip(Some(ip))), 1, Duration::from_secs(60)) {
-            println!("{}", crate::registro::linea_limite(ip, &metodo, &ruta));
+    // Un límite superado: una línea por minuto, IP y límite, en la salida (fail2ban, journald) y
+    // en servidor.log de la carpeta de datos (el servicio de Windows no tiene otra salida).
+    let anotar_limite = |ip: std::net::IpAddr, limite: &str| {
+        if st.limites.intento(&format!("registro-limite:{limite}:{}", crate::estado::clave_ip(Some(ip))), 1, Duration::from_secs(60)) {
+            let linea = crate::registro::linea_limite(ip, limite, &metodo, &ruta);
+            println!("{linea}");
+            crate::registro::al_archivo(&st.datos, &linea);
         }
     };
     if let Some(ip) = ip.filter(|ip| !ip.is_loopback()) {
         let clave = format!("api-ip:{}", crate::estado::clave_ip(Some(ip)));
-        if ruta.starts_with("/api/") && !st.limites.intento(&clave, MAX_PETICIONES_IP_MIN, Duration::from_secs(60)) {
-            anotar_limite(ip);
-            return crate::error::ErrorApi::demasiados().into_response();
+        if ruta.starts_with("/api/") {
+            if let Err(espera) = st.limites.intento_o_espera(&clave, MAX_PETICIONES_IP_MIN, Duration::from_secs(60)) {
+                anotar_limite(ip, "ip");
+                return crate::error::ErrorApi::demasiados_esperar(
+                    "ip",
+                    "Demasiadas peticiones desde tu red en el último minuto. Vuelve a intentarlo en un momento.",
+                    espera,
+                )
+                .into_response();
+            }
         }
     }
     let res = next.run(req).await;
@@ -326,7 +339,7 @@ async fn limite_y_registro(State(st): State<St>, req: Request, next: Next) -> Re
         if let Some(crate::error::AccesoFallido(que)) = res.extensions().get::<crate::error::AccesoFallido>() {
             println!("{}", crate::registro::linea_acceso_fallido(ip, que, &metodo, &ruta));
         } else if res.status() == StatusCode::TOO_MANY_REQUESTS {
-            anotar_limite(ip);
+            anotar_limite(ip, res.extensions().get::<crate::error::LimiteSuperado>().map_or("intentos", |l| l.0));
         }
     }
     res
