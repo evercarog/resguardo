@@ -1265,9 +1265,15 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
     if !id_valido(&destino_id) {
         return Err("Id de destino no válido.".into());
     }
-    let existente = c["existente"] == true;
+    // Cambiar la hora, la retención o el bloqueo de la misma copia externa
+    // (`destino: {id}` al que ya va, sin `existente` ni `ruta`): se queda su
+    // carpeta (la de uno que ya existía), su contraseña y, si no se dice, su bloqueo.
+    let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).filter(|e| e["destino"] == destino_id.as_str());
+    let misma = actual.is_some() && dest.get("tipo").is_none() && c.get("existente").is_none() && c.get("ruta").is_none();
+    let actual = actual.filter(|_| misma).unwrap_or(Value::Null);
+    let existente = c["existente"] == true || actual["existente"] == true;
     // La carpeta del repositorio en el destino: la suya (si ya existe) o su id.
-    let ruta = match c["ruta"].as_str().map(|r| r.trim().trim_matches('/').to_string()) {
+    let ruta = match c["ruta"].as_str().or(actual["ruta"].as_str()).map(|r| r.trim().trim_matches('/').to_string()) {
         Some(r) if existente || !r.is_empty() => r,
         _ if existente => return Err("Falta la carpeta del repositorio que ya existe.".into()),
         _ => repo.to_string(),
@@ -1275,7 +1281,7 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
     if !crate::adoptar_v2::ruta_valida(&ruta) {
         return Err("La carpeta del repositorio no es válida (sin «..», «\\» ni «:»).".into());
     }
-    let bloqueo = match c.get("bloqueo_dias") {
+    let bloqueo = match c.get("bloqueo_dias").or(actual.get("bloqueo_dias")) {
         None | Some(Value::Null) => None,
         Some(x) => match x.as_u64() {
             Some(0) => None,
@@ -1328,7 +1334,11 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
     }
     // Lo que se va a usar, comprobado antes de guardar nada.
     let src = acceso(v, repo)?;
-    let contrasena_destino = c["contrasena_destino"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+    let contrasena_destino = c["contrasena_destino"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| misma.then(|| crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.offsite_password.clone()))).flatten());
     // Sin certificado propio: la subida usa el del origen (`tasks::dest_access`).
     let d_sin_ca = Destino { ca_pem: None, ..d.clone() };
     let dest_acc = acceso_destino(&d_sin_ca, &ruta, contrasena_destino.as_deref().unwrap_or(&src.password))?;
@@ -1372,6 +1382,10 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         let mut e = json!({ "destino": d.id, "hora": hora });
         if existente {
             e["existente"] = json!(true);
+        }
+        // Su carpeta (solo en el equipo: el resumen no la lleva), para cambiar luego la hora sin repetirla.
+        if existente || ruta != repo {
+            e["ruta"] = json!(ruta);
         }
         if let Some(b) = bloqueo {
             e["bloqueo_dias"] = json!(b);
@@ -1992,6 +2006,20 @@ mod tests {
         );
         assert!(efecto_retencion(false, Some(30), false).contains("allí no se borra nada"));
         assert_eq!(efecto_retencion(true, None, false), "");
+        // Cambiar solo la hora de una que va a uno que ya existía (`destino: {id}`):
+        // sigue en su carpeta y con su bloqueo, sin crear nada en la carpeta del id.
+        v.destinos.push(Destino {
+            id: "nube-ex".into(),
+            nombre: "Nube".into(),
+            tipo: "local".into(),
+            donde: b.join("nube").display().to_string(),
+            ..Default::default()
+        });
+        v.repos_v2[0].externa = Some(json!({ "destino": "nube-ex", "hora": "21:00", "existente": true, "ruta": "copias/siigo", "bloqueo_dias": 30 }));
+        let hora = json!({ "repo": "siigo", "hora": "22:00", "solo_probar": true, "contrasena_destino": "clave de la nube", "destino": { "id": "nube-ex" },
+                           "retencion": { "diarias": 7, "semanales": 4, "mensuales": 12, "anuales": 2 } });
+        let m = cambiar_copia_externa(&mut v, &hora, "siigo").unwrap();
+        assert!(m.contains("que ya existe se abre") && m.contains("(1 versión)") && m.contains("Con bloqueo de 30 días"), "{m}");
         let _ = std::fs::remove_dir_all(&b);
     }
 }
