@@ -206,13 +206,11 @@ fn explain(stderr: &str) -> Option<String> {
     } else if sin_espacio(&s) {
         // Disco lleno en el destino: una carpeta o disco de este equipo, o el del
         // Servidor de copias (rest-server contesta «507 Insufficient Storage»).
-        "No queda espacio en el destino de las copias. Libera espacio en ese disco (o en el del Servidor de copias) o \
-         quita versiones antiguas (pestaña «Retención» del repositorio) y vuelve a copiar: lo ya guardado no se pierde."
+        "No queda espacio en el destino de las copias. Libera espacio en su disco o quita versiones antiguas (pestaña «Retención») y vuelve a copiar."
     } else if s.contains("ciphertext verification failed") || s.contains("pack id does not match") || s.contains("does not match, want") {
         // Un archivo de datos del repositorio dañado (en la prueba de resistencia: la retención
         // del almacén lo encontró al podar y salía el texto de restic tal cual).
-        "Hay datos dañados en el destino: restic no pudo leer bien algún archivo de las copias. Revisa el disco del destino \
-         (o el del Servidor de copias) y pide a tu soporte que lo repare («restic repair packs»)."
+        "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare («restic repair packs»)."
     } else if s.contains("401 unauthorized") || s.contains("(401)") {
         "El servidor rechazó el usuario o la contraseña de acceso (401). Comprueba en el servidor que ese usuario sigue \
          existiendo y tiene esa contraseña."
@@ -830,6 +828,8 @@ pub mod tests {
         // (medido con `rest-server --max-size`): antes salía el texto en inglés.
         let lleno = e("Save(<data/7402b399a8>) failed: unexpected HTTP response (507): 507 Insufficient Storage\nFatal: unable to save snapshot: error flushing repository: unexpected HTTP response (507): 507 Insufficient Storage");
         assert!(lleno.starts_with("No queda espacio") && lleno.contains("Retención"), "{lleno}");
+        // Los mensajes que pueden ir en el `mensaje_corto` del informe (160) caben enteros.
+        assert!(lleno.chars().count() <= 160);
         // Windows en español: los errores del sistema vienen traducidos.
         assert!(e("Fatal: write D:\\x: No hay espacio suficiente en el disco.").starts_with("No queda espacio"));
         assert!(e("write /mnt/x: no space left on device").starts_with("No queda espacio"));

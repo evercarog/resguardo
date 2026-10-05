@@ -1160,9 +1160,8 @@ pub fn verify_args(verify: &Verify, part: u32) -> Vec<String> {
 /// Lo que dice una verificación que encontró datos dañados. Antes: «Revisa el registro y
 /// ejecuta «restic check» en el servidor», que no le dice qué hacer a quien mira la consola
 /// (prueba de resistencia con un archivo del almacén estropeado, docs/estabilidad.md).
-pub const DATOS_DANADOS: &str = "Hay datos dañados en el destino de este repositorio: la verificación no pudo leer bien algún archivo de las copias. \
-     Las copias nuevas se siguen guardando, pero alguna versión anterior podría no restaurarse entera. Revisa el disco del destino \
-     (o el del Servidor de copias) y pide a tu soporte que lo repare («restic repair packs»); el detalle está en el registro del equipo.";
+pub const DATOS_DANADOS: &str =
+    "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare («restic repair packs»).";
 
 /// ¿La salida de `restic check` (en minúsculas) habla de datos dañados (no de conexión, contraseña…)?
 fn datos_danados(text: &str) -> bool {
@@ -1419,7 +1418,9 @@ mod tests {
         let salida = "check snapshots, trees and blobs\nread 10.0% of data packs\nPack ID does not match, want 6751b1e7, got 3a2c91d0\n\
                       pack 6751b1e7 contains 1 errors: [blob 9f: decrypting blob 9f failed: ciphertext verification failed]\nFatal: repository contains errors";
         assert!(datos_danados(&salida.to_lowercase()));
-        assert!(DATOS_DANADOS.contains("Revisa el disco") && !DATOS_DANADOS.contains("ejecuta"));
+        assert!(DATOS_DANADOS.contains("Revisa su disco") && !DATOS_DANADOS.contains("ejecuta"));
+        // Cabe entero en el `mensaje_corto` del informe (160): en la prueba de resistencia salía cortado.
+        assert!(DATOS_DANADOS.chars().count() <= 160, "{}", DATOS_DANADOS.chars().count());
         // Un fallo de conexión o de contraseña no es «datos dañados».
         assert!(!datos_danados("fatal: wrong password or no key found"));
         assert!(!datos_danados("fatal: unable to open repository: dial tcp: connection refused"));
