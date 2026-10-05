@@ -183,7 +183,7 @@
       if (otros.length && !otros.some((x) => etiquetaValida(kcfg!, x)))
         throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
       paso2 = "Confirmando el equipo…";
-      // A medias (v1.41): ya confirmado y sin el alta; solo falta mandarla.
+      // A medias (v1.42): ya confirmado y sin el alta; solo falta mandarla.
       if (estadoEmp.estado !== "confirmado") await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
       parar();
       const equipo = await api.equipo(c, eq.id);
@@ -318,7 +318,7 @@
       error = (e as Error).message;
     }
   }
-  // --- A medias (v1.41) ------------------------------------------------------
+  // --- A medias (v1.42) ------------------------------------------------------
   // Equipos que se unieron y se quedaron sin terminar (sin comparar el número o sin el
   // alta: p. ej. la página se cerró o el servidor dijo «Demasiados intentos»). Se sigue
   // desde aquí en vez de empezar de nuevo; o se anula (el equipo se quita y se puede

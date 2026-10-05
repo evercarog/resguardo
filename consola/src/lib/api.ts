@@ -234,13 +234,13 @@ export const abrirEmparejamiento = (c: string) => pedir<T.Emparejamiento>("POST"
 export const emparejamiento = (c: string, p: string) => pedir<T.EstadoDeEmparejamiento>("GET", `${cli(c)}/emparejamientos/${enc(p)}`);
 export const confirmarEmparejamiento = (c: string, p: string, etiqueta: string) => pedir<void>("POST", `${cli(c)}/emparejamientos/${enc(p)}/confirmar`, { etiqueta });
 export const cancelarEmparejamiento = (c: string, p: string) => pedir<void>("DELETE", `${cli(c)}/emparejamientos/${enc(p)}`);
-/** v1.41: los equipos que se unieron y se quedaron a medias (con un servidor anterior, 404: ninguno). */
+/** v1.42: los equipos que se unieron y se quedaron a medias (con un servidor anterior, 404: ninguno). */
 export const aMedias = (c: string) =>
   pedir<T.AMedias[]>("GET", `${cli(c)}/a-medias`, undefined, { invisible: true }).catch((e) => {
     if (e instanceof ApiError && e.estado === 404) return [] as T.AMedias[];
     throw e;
   });
-/** v1.41: el código de 15 min de esta cuenta que aún sirve (o `null`); con un servidor anterior, 404. */
+/** v1.42: el código de 15 min de esta cuenta que aún sirve (o `null`); con un servidor anterior, 404. */
 export const codigoAbierto = (c: string) => pedir<CodigoAbierto | null>("GET", `${cli(c)}/codigo-abierto`, undefined, { invisible: true });
 
 // v1.17: equipos preparados (instalador listo o línea de Linux, código de 24 h).

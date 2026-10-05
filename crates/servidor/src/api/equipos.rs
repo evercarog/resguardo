@@ -263,7 +263,7 @@ pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): 
         v["nombre"] = json!(emp.nombre);
         v["so"] = json!(emp.so);
     }
-    // Mientras sirve, el código (la orden `alta` lo necesita; v1.41: también el de 15 min y,
+    // Mientras sirve, el código (la orden `alta` lo necesita; v1.42: también el de 15 min y,
     // confirmado sin el alta del equipo, para terminarla después).
     if matches!(estado.as_str(), "abierto" | "unido" | "confirmado") && emp.codigo.is_some() {
         v["codigo"] = json!(emp.codigo);

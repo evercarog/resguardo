@@ -648,7 +648,7 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}/emparejamientos$`),
     (ctx, [c]) => {
       const { cuenta } = miembro(ctx, c, "administrador");
-      // v1.41: el abierto de esta cuenta (más de 2 min por delante), en vez de otro.
+      // v1.42: el abierto de esta cuenta (más de 2 min por delante), en vez de otro.
       const ya = codigoDe(c, cuenta.id);
       if (ya && ya.estado === "abierto" && Date.parse(ya.caduca) > Date.now() + 120_000) return { id: ya.id, codigo: ya.codigo, caduca: ya.caduca, reutilizado: true };
       const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -662,7 +662,7 @@ const rutas: Ruta[] = [
     },
   ],
   [
-    // v1.41: los que se unieron y se quedaron a medias (unidos sin confirmar).
+    // v1.42: los que se unieron y se quedaron a medias (unidos sin confirmar).
     "GET",
     new RegExp(`^${C}/a-medias$`),
     (ctx, [c]) => {
@@ -673,7 +673,7 @@ const rutas: Ruta[] = [
     },
   ],
   [
-    // v1.41: el código de 15 min de esta cuenta que aún sirve (o null).
+    // v1.42: el código de 15 min de esta cuenta que aún sirve (o null).
     "GET",
     new RegExp(`^${C}/codigo-abierto$`),
     (ctx, [c]) => {
@@ -798,7 +798,7 @@ const rutas: Ruta[] = [
         sas_version: e ? (agenteConSasV3(e.version_agente) ? 3 : undefined) : undefined,
         // v1.17: preparados, con su nombre y (mientras sirve) el código para el alta.
         ...(p.nombre ? { nombre: p.nombre, so: p.so } : {}),
-        // v1.41: el código mientras sirve, también el de 15 min.
+        // v1.42: el código mientras sirve, también el de 15 min.
         ...(p.estado === "abierto" || p.estado === "unido" ? { codigo: p.codigo } : {}),
       };
     },

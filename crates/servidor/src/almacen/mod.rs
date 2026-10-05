@@ -161,7 +161,7 @@ pub struct Emparejamiento {
     pub so: Option<String>,
     /// El código mientras sirve (abierto o unido): la consola lo necesita para la orden
     /// `alta` y para volver a enseñarlo. Se borra al confirmar, anular o caducar. Los códigos
-    /// de 15 min lo guardan desde v1.41 (antes, solo los preparados).
+    /// de 15 min lo guardan desde v1.42 (antes, solo los preparados).
     pub codigo: Option<String>,
     pub creado: Ts,
     /// Versión del código de comprobación que anunció el equipo al unirse (v1.26): 3 si

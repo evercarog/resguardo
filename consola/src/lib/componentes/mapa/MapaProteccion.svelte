@@ -244,6 +244,7 @@
       <span class="p-txt">
         <span class="p-nombre">{n.nombre}</span>
         <span class="p-sub">{n.tono === "ok" ? (cuando(n) ? `última ${cuando(n)}` : n.sub) : n.estado}</span>
+        {#if n.aviso}<span class="aviso-nodo"><TriangleAlert size={11} aria-hidden="true" />{n.aviso}</span>{/if}
       </span>
       {#if n.cifra}<span class="nodo-cifra num">{n.cifra}</span>{/if}
       <span class="sr-only">{n.tono === "ok" ? `, ${n.estado}` : ""}, {n.sub}</span>
@@ -295,6 +296,7 @@
         <span class="n-nombre">{n.nombre}</span>
         <span class="n-sub">{n.sub}</span>
         {@render estado(n, n.icono !== "almacen")}
+        {#if n.aviso}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{n.aviso}</span>{/if}
       </span>
     </a>
   {/if}
@@ -311,6 +313,7 @@
           <span class="flecha" aria-hidden="true">→</span>
           <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia externa" ? "Copia externa a " : ""}{d.n.nombre}</a>
           {@render estado(d.n, d.n.icono !== "almacen")}
+          {#if d.n.aviso}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{d.n.aviso}</span>{/if}
         </li>
       {/each}
     </ul>
@@ -577,6 +580,26 @@
     font-size: var(--fs-sm);
     font-weight: 600;
     overflow-wrap: anywhere;
+  }
+  /* v1.41: «En el mismo equipo que protege» (color de aviso, con icono y texto). */
+  .aviso-nodo {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 4px;
+    margin-top: 2px;
+    padding: 1px 6px;
+    width: fit-content;
+    max-width: 100%;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-xs);
+    font-weight: 500;
+    color: var(--warn);
+    background: var(--warn-soft);
+    border-radius: 6px;
+  }
+  .aviso-nodo :global(svg) {
+    flex: none;
+    margin-top: 2px;
   }
   .n-sub {
     overflow: hidden;

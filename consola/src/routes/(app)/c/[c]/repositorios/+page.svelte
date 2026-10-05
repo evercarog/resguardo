@@ -8,7 +8,7 @@
   import { tip } from "$lib/tooltip";
   import { bytesRepo, destinoDe, estadoRepo, informeDe, nVersiones, pruebaRestauracion, verificacion } from "$lib/repo";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
-  import { ChevronRight, Cloud, Database, FlaskConical, HardDrive, Lock, Monitor, Plus, Server, ShieldCheck } from "@lucide/svelte";
+  import { ChevronRight, Cloud, Database, FlaskConical, HardDrive, Lock, Monitor, Network, Plus, Server, ShieldCheck, TriangleAlert, Usb } from "@lucide/svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, numero, plural } from "$lib/formato";
   import type { DestinoResumen, Equipo, RepositorioResumen } from "$lib/tipos";
@@ -22,6 +22,9 @@
   import NuevoRepositorio from "$lib/componentes/NuevoRepositorio.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
+  // v1.41: dónde se guarda cada repositorio, en palabras, y si se queda en el mismo equipo.
+  import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
 
   let nuevo = $state(false);
   /** Las notas de un destino (no tiene página propia). */
@@ -71,7 +74,6 @@
   // Un agente que no dice `equipo_almacen` nombra el destino como el equipo que guarda copias: ese ya tiene su tarjeta.
   const otros = $derived(destinos.filter((d) => !almacenes.some((a) => a.id === d.equipo_almacen || (!d.equipo_almacen && d.tipo === "rest" && d.nombre === a.nombre))));
   const total = $derived(repos.reduce((n, r) => n + (r.bytes ?? 0), 0));
-  const nombreDestino = (id: string) => destinos.find((d) => d.id === id)?.nombre ?? id;
   /** Los repositorios que guardan en un destino (o en un almacén, por cualquiera de sus destinos). */
   const reposEn = (ids: string[]) => repos.filter((r) => ids.includes(r.destino));
   const idsAlmacen = (a: Equipo) => destinos.filter((d) => d.equipo_almacen === a.id || (!d.equipo_almacen && d.tipo === "rest" && d.nombre === a.nombre)).map((d) => d.id);
@@ -148,13 +150,18 @@
             <div class="card tile destino">
               <span class="tile-cab">
                 <span class="tile-ic"><Icono size={16} /></span>
-                <span class="tile-nombre"><strong>{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></strong><span>{TIPO[d.tipo] ?? d.tipo}{#if d.donde && d.donde !== d.nombre}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}</span></span>
+                <span class="tile-nombre"><strong>{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></strong><span>{#if d.tipo === "local"}{d.red ? "Carpeta de otra máquina de la red" : d.extraible ? "Disco extraíble" : "Carpeta"} de {[...d.equipos].join(", ")}{d.unidad ? ` (${d.unidad})` : ""}{:else}{TIPO[d.tipo] ?? d.tipo}{/if}{#if d.donde && d.donde !== d.nombre}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}</span></span>
               </span>
               <p class="tile-linea num">
                 {#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else}Sin repositorios todavía{/if} · lo usa{d.equipos.size > 1 ? "n" : ""} {[...d.equipos].join(", ")}
               </p>
               <span class="tile-chips">
                 {#if d.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
+                {#if d.tipo === "local"}
+                  {#if d.red}<span class="badge badge-sm tone-neutral"><Network size={11} />En otra máquina</span>
+                  {:else if d.extraible}<span class="badge badge-sm tone-neutral"><Usb size={11} />Extraíble</span>
+                  {:else}<span class="badge badge-sm tone-warn" use:tip={"Las copias se quedan en el mismo equipo que protegen: si se daña o lo cifra un ransomware, se pierden las dos."}><TriangleAlert size={11} />En el mismo equipo</span>{/if}
+                {/if}
                 <button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
               </span>
             </div>
@@ -179,7 +186,7 @@
         <div class="card p-0 desplazable solo-ancho-tabla">
           <table class="tabla">
             <caption class="sr-only">Repositorios</caption>
-            <thead><tr><th scope="col">Repositorio</th><th scope="col">Estado</th><th scope="col">Equipo · destino</th><th scope="col" class="der">Versiones</th><th scope="col" class="der">Tamaño</th><th scope="col">Verificado</th><th scope="col">Restauración probada</th></tr></thead>
+            <thead><tr><th scope="col">Repositorio</th><th scope="col">Estado</th><th scope="col">Equipo · dónde se guarda</th><th scope="col" class="der">Versiones</th><th scope="col" class="der">Tamaño</th><th scope="col">Verificado</th><th scope="col">Restauración probada</th></tr></thead>
             <tbody>
               {#each repos as r (r.equipo.id + r.id)}
                 <tr>
@@ -188,7 +195,7 @@
                     {#if r.retencion}<span class="faint pequeno bloque">{r.retencion}</span>{/if}
                   </td>
                   <td><Chip pequeno tono={r.estado.tono} texto={r.estado.texto} /></td>
-                  <td><a class="enlace-eq" href="/c/{actual.id}/equipos/{r.equipo.id}">{r.equipo.nombre}</a><span class="faint pequeno bloque">{nombreDestino(r.destino)}</span></td>
+                  <td><a class="enlace-eq" href="/c/{actual.id}/equipos/{r.equipo.id}">{r.equipo.nombre}</a><span class="bloque"><SeGuardaEn pequeno etiqueta="" lugar={lugarRepo(r, r.equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(r, r.equipo, actual.equipos)} /></span></td>
                   <td class="num der">{numero(nVersiones(r))}</td>
                   <td class="num der">{bytes(r.bytes)}</td>
                   <td class:faint={!reciente(r.verificado, 8)}><Tiempo iso={r.verificado} nada="nunca" /></td>
@@ -204,7 +211,8 @@
             <a class="fila" href="/c/{actual.id}/equipos/{r.equipo.id}/repositorios/{encodeURIComponent(r.id)}">
               <span class="fila-texto">
                 <span class="fila-titulo">{r.nombre} <ContadorNotas tipo="repositorio" objeto={objetoDe(r.equipo.id, r.id)} />{#if r.solo_lectura} <span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}</span>
-                <span class="fila-sub">{r.equipo.nombre} · {nombreDestino(r.destino)}</span>
+                <span class="fila-sub">{r.equipo.nombre}</span>
+                <span class="fila-sub"><SeGuardaEn pequeno lugar={lugarRepo(r, r.equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(r, r.equipo, actual.equipos)} /></span>
                 <span class="fila-sub num">{numero(nVersiones(r))} versiones · {bytes(r.bytes)} · verificado <Tiempo iso={r.verificado} nada="nunca" /></span>
               </span>
               <Chip pequeno tono={r.estado.tono} texto={r.estado.texto} />

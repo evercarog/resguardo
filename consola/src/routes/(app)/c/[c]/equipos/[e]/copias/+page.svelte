@@ -27,7 +27,10 @@
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import { objetoDe } from "$lib/notas.svelte";
-  import type { Configuracion, CopiaConfig, EquipoDetalle, Escritorio, Gancho, VerificacionAuto } from "$lib/tipos";
+  import type { Configuracion, CopiaConfig, DestinoResumen, EquipoDetalle, Escritorio, Gancho, VerificacionAuto } from "$lib/tipos";
+  // v1.41: dónde guarda cada repositorio (con la carpeta, que aquí se ve: la configuración está descifrada en este navegador).
+  import { lugarDe, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import { admiteVerificacion, admiteVerificacionHorario, errorVerificacion, VERIFICACION_POR_DEFECTO } from "$lib/verificacion";
   import EditorVerificacion from "$lib/componentes/EditorVerificacion.svelte";
   import { errorGancho, fraseGancho, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "$lib/ganchos";
@@ -224,6 +227,16 @@
   const admiteSoloCambios = $derived(versionAlMenos(versionAgente, VERSION_SOLO_CAMBIOS));
   // Los importados de otro equipo (§10) son solo de lectura: ninguna copia escribe en ellos.
   const repos = $derived((cfg?.repositorios ?? []).filter((r) => !r.solo_lectura));
+  /** Dónde guarda un repositorio: lo del resumen (unidad, extraíble…) y, de la configuración, la carpeta. */
+  function lugarDeRepo(id: string) {
+    const r = cfg?.repositorios.find((x) => x.id === id);
+    if (!r || !equipo) return null;
+    const dr = equipo.resumen?.destinos?.find((d) => d.id === r.destino || d.nombre === r.destino);
+    const dc = cfg?.destinos.find((d) => d.id === r.destino);
+    const l = lugarDe(dr || dc ? ({ ...dr, ...dc } as DestinoResumen) : undefined, equipo, actual.equipos);
+    const rr = equipo.resumen?.repositorios?.find((x) => x.id === id);
+    return { lugar: dc?.tipo === "local" && dc.donde ? { ...l, detalle: dc.donde } : l, riesgo: !!rr && !!riesgoMismoEquipo(rr, equipo, actual.equipos) };
+  }
 
   function nueva() {
     if (!cfg) return;
@@ -492,6 +505,7 @@
             <select id="repo-{k.id}" class="input" bind:value={k.repo}>
               {#each repos as r (r.id)}<option value={r.id}>{r.nombre}</option>{/each}
             </select>
+            {#if lugarDeRepo(k.repo)}{@const x = lugarDeRepo(k.repo)!}<span class="field-hint"><SeGuardaEn pequeno lugar={x.lugar} riesgo={x.riesgo} /></span>{/if}
           </div>
         </div>
         <EditorGanchos id={k.id} bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admiteGanchos} version={versionAgente} cliente={actual.cliente ?? undefined} {equipo} prueba={prueba ?? undefined} />

@@ -26,6 +26,9 @@
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
+  // v1.41: dónde se guarda cada copia (y si se queda en el mismo equipo).
+  import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
 
   // Los informes (la última vuelta de cada copia, lo que protege, «sin cambios»).
   $effect(() => {
@@ -210,8 +213,9 @@
               </a>
               <ContadorNotas tipo="copia" objeto={objetoDe(x.equipo.id, x.copia.id)} />
               <span class="sub">
-                <a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>{" · "}{#if x.repo}<a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}/repositorios/{encodeURIComponent(x.repo.id)}">{x.repo.nombre}</a>{:else}{x.copia.repo}{/if}{#if x.destino}<span class="faint">{" → "}{x.destino.nombre}</span>{/if}
+                <a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>{" · "}{#if x.repo}<a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}/repositorios/{encodeURIComponent(x.repo.id)}">{x.repo.nombre}</a>{:else}{x.copia.repo}{/if}
               </span>
+              {#if x.repo}<span class="sub"><SeGuardaEn pequeno lugar={lugarRepo(x.repo, x.equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(x.repo, x.equipo, actual.equipos)} /></span>{/if}
               <span class="sub faint">{horarioEnFrase(x.copia.horario)}</span>
               {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub msg-fallo">{x.vuelta.mensaje}</span>{/if}
               <span class="vivo"><EnMarcha equipo={x.equipo.id} copia={x.copia.id} compacto /></span>

@@ -99,7 +99,7 @@ export interface EmparejamientoMock {
   /** Preparado (v1.17): instalador listo o línea de Linux. */
   nombre?: string;
   so?: "windows" | "linux";
-  /** La cuenta que lo pidió (v1.41: se le vuelve a dar el suyo si aún sirve). */
+  /** La cuenta que lo pidió (v1.42: se le vuelve a dar el suyo si aún sirve). */
   por?: string;
 }
 
@@ -254,6 +254,7 @@ export const ID = {
   almacen: "0a0e1b2c-0000-4000-8000-0000000000e5",
   caja: "0a0e1b2c-0000-4000-8000-0000000000e6",
   estudio: "0a0e1b2c-0000-4000-8000-0000000000e7",
+  archivos: "0a0e1b2c-0000-4000-8000-0000000000e8",
 };
 
 export async function sembrar(vacio = false) {
@@ -331,7 +332,7 @@ export async function sembrar(vacio = false) {
       so: "Debian 12 (CT de Proxmox)",
       rol: "almacenamiento",
       resumen: {
-        guarda_copias: { activo: true, puerto: 8000, solo_red_local: true, usuarios: 3, espacio: { libre: 640_000_000_000, total: 4_000_000_000_000, leido: hace(5) } },
+        guarda_copias: { activo: true, puerto: 8000, solo_red_local: true, usuarios: 3, carpeta: "/srv/resguardo/copias", espacio: { libre: 640_000_000_000, total: 4_000_000_000_000, leido: hace(5) } },
         destinos: [destinoNube],
         repositorios: [repo("copia-externa", "Copia externa de la oficina", "b2-altamar", 210, 412_000_000_000)],
         copias: [copia("subida-nube", "Subida a la nube", "copia-externa", ["23:00"], 1)],
@@ -386,6 +387,24 @@ export async function sembrar(vacio = false) {
       },
     },
     { claveAdmin: DEMO.claveAdmin, kcfg: kAltamar, contrasenas: { gerencia: DEMO.contrasenaRepo }, semilla: 6, id: ID.portatil },
+  );
+  // v1.41: «copias en el mismo equipo». El servidor de archivos se copia en una
+  // carpeta de su propio disco D: (se eligió «Carpeta de este equipo» al crear
+  // el repositorio), aunque la oficina tiene un almacén en otro equipo.
+  const archivos = await crearEquipo(
+    altamar,
+    {
+      nombre: "SERVIDOR-ARCHIVOS",
+      version_agente: "0.7.18",
+      so: "Windows Server 2022",
+      resumen: {
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario"],
+        destinos: [{ id: "carpeta-d", nombre: "Copias en el disco D", tipo: "local", donde: undefined, unidad: "D:", extraible: false, red: false }],
+        repositorios: [{ ...repo("compartido", "Carpetas compartidas", "carpeta-d", 84, 142_000_000_000), retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 } }],
+        copias: [copia("compartidas", "Carpetas compartidas", "compartido", ["12:00", "20:00"], 3)],
+      },
+    },
+    { claveAdmin: DEMO.claveAdmin, kcfg: kAltamar, contrasenas: { compartido: DEMO.contrasenaRepo }, semilla: 7, id: ID.archivos },
   );
   const surAlmacen = await crearEquipo(
     sur,
@@ -471,7 +490,7 @@ export async function sembrar(vacio = false) {
     },
     { claveAdmin: DEMO.claveAdmin, kcfg: kPropio, contrasenas: { proyectos: DEMO.contrasenaRepo }, semilla: 5, id: ID.estudio },
   );
-  for (const e of [recepcion, contabilidad, portatil, servidorAltamar, surAlmacen, surCaja, estudio]) {
+  for (const e of [recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, estudio]) {
     e.ultimoSeqAceptado = 17;
     e.siguiente_seq = 18;
   }
@@ -504,7 +523,10 @@ export async function sembrar(vacio = false) {
   enriquecer(portatil, { soloAnadir: null, sinCambios: 0.3, medioAnadido: 40_000_000, silencioHoras: 54 });
   enriquecer(servidorAltamar, { externa: true, medioAnadido: 900_000_000, recortado: true });
   enriquecer(surCaja, { externa: true, medioAnadido: 25_000_000 });
-  estado.equipos.push(recepcion, contabilidad, portatil, servidorAltamar, surAlmacen, surCaja, estudio);
+  enriquecer(archivos, { externa: false, soloAnadir: false, medioAnadido: 650_000_000, local: { unidad: "D:" } });
+  if (archivos.informes[0]) archivos.informes[0].datos.version = archivos.version_agente;
+  archivos.etiquetas = ["Servidores"];
+  estado.equipos.push(recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, estudio);
 
   const aviso = (cliente: string, equipo: string | null, tipo: T.TipoAviso, mensaje: string, minutos: number) =>
     estado.avisos.push({ id: randomUUID(), cliente, equipo, tipo, mensaje, creado: hace(minutos), visto_por: null, abierto: true });

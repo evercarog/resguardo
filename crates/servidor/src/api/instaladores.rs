@@ -294,7 +294,7 @@ pub async fn listar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> 
     Ok(Json(json!(l.iter().map(preparado_json).collect::<Vec<_>>())))
 }
 
-/// `GET /api/clientes/{c}/a-medias` (administrador, v1.41): los equipos que se unieron y se
+/// `GET /api/clientes/{c}/a-medias` (administrador, v1.42): los equipos que se unieron y se
 /// quedaron sin terminar (sin comparar el número o sin el alta), de cualquier cuenta, para
 /// seguir desde «Añadir equipo» en vez de empezar de nuevo: `[{ id, estado: "unido" |
 /// "confirmado", caduca, creado, nombre, equipo: { id, nombre, so } }]` (el código, en

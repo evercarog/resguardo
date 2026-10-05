@@ -16,6 +16,7 @@ import { copiaAtrasada, PESO, saludEquipo, type Tono } from "./salud";
 import { proximaDeTodos, ultimas24h } from "./panel";
 import { previsiones, type Prevision } from "./llenado";
 import { plural } from "./formato";
+import { riesgosDelCliente } from "./dondeGuarda";
 
 /** Lo de un cliente en `GET /api/panel`. */
 export interface PanelCliente {
@@ -154,6 +155,16 @@ export function atencion(clientes: PanelCliente[], ahora = Date.now()): Atencion
         orden: e.nombre,
       });
     }
+    // v1.41: copias que se quedan en el mismo equipo que protegen.
+    for (const { equipo: e, repo: r, riesgo } of riesgosDelCliente(activos(c), c.equipos))
+      out.push({
+        cliente: c,
+        tono: "warn",
+        titulo: `${e.nombre} · copias en el mismo equipo`,
+        detalle: `«${r.nombre}»: ${riesgo.texto}`,
+        accion: { texto: "Ver el repositorio", href: `/c/${c.id}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}` },
+        orden: e.nombre,
+      });
     if (c.avisos_abiertos)
       out.push({ cliente: c, tono: "warn", titulo: plural(c.avisos_abiertos, "aviso sin revisar", "avisos sin revisar"), detalle: "Revísalos y márcalos como vistos.", accion: { texto: "Ver avisos", href: `/c/${c.id}/avisos` }, orden: "~" });
     if (c.pendientes)

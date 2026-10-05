@@ -11,6 +11,7 @@
   import { onDestroy, untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
+  import { goto } from "$app/navigation";
   import {
     CalendarClock,
     CircleHelp,
@@ -36,6 +37,10 @@
   import { enPausa } from "$lib/salud";
   import { fraseGancho, ganchosDe, NOMBRE_GANCHO } from "$lib/ganchos";
   import { anadidoDe, destinoDe, duracion, informeDe } from "$lib/repo";
+  // v1.41: dónde se guarda y el aviso «copias en el mismo equipo».
+  import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
+  import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
+  import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
   import { atrasada, cifrasCopia, estadoCopia, explicarError, filaInforme, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "$lib/copia";
   import type { Configuracion, CopiaConfig, EquipoDetalle, VersionInforme } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -89,6 +94,8 @@
   const informe = $derived(equipo?.ultimo_informe ?? null);
   const repo = $derived(equipo?.resumen?.repositorios?.find((r) => r.id === k?.repo));
   const destino = $derived(destinoDe(equipo?.resumen?.destinos, repo));
+  const lugar = $derived(equipo && repo ? lugarRepo(repo, equipo, actual.equipos) : null);
+  const riesgo = $derived(equipo && repo ? riesgoMismoEquipo(repo, equipo, actual.equipos) : null);
   const infRepo = $derived(k ? informeDe(informe, k.repo) : null);
   const inf = $derived(k ? infCopia(infRepo, k.id) : null);
   const fila = $derived(k ? filaInforme(informe, k) : null);
@@ -219,6 +226,14 @@
         </div>
       {/if}
     </header>
+    {#if lugar}<p class="donde"><SeGuardaEn {lugar} riesgo={!!riesgo} /></p>{/if}
+    {#if riesgo && repo}
+      <AvisoMismoEquipo
+        {riesgo}
+        onmover={puede.administrar(rol) ? () => goto(`/c/${c}/equipos/${e}/repositorios/${encodeURIComponent(repo!.id)}?mover=1`) : undefined}
+        hrefExterna={puede.ordenar(rol) ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(repo.id)}` : undefined}
+      />
+    {/if}
     <Observaciones tipo="copia" objeto={objetoDe(e, kid)} />
 
     <EnMarcha equipo={e} copia={kid} marco alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
@@ -380,7 +395,7 @@
             <dt>Repositorio</dt>
             <dd>
               {#if repo}<a class="link" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(repo.id)}">{repo.nombre}</a>{:else}{k.repo}{/if}
-              {#if destino}<span class="faint">en {destino.nombre}{destino.inmutable ? " (solo añadir)" : ""}</span>{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
+              {#if lugar}<SeGuardaEn pequeno etiqueta="en" {lugar} riesgo={!!riesgo} />{#if destino?.inmutable}<span class="faint">(solo añadir)</span>{/if}{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
             </dd>
           </div>
           <div>
@@ -487,6 +502,9 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--sp-4);
+  }
+  .donde {
+    margin: calc(-1 * var(--sp-2)) 0 0;
   }
   .cab-texto {
     flex: 1;

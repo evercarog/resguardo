@@ -972,7 +972,7 @@ async fn equipos_preparados_instalador_y_linux() {
     let r =
         pedir(&p.app, "POST", &format!("/api/clientes/{c}/emparejamientos/{emp}/confirmar"), Some(json!({ "etiqueta": "ETIQUETA" })), Some(&cookie), &[]).await;
     assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
-    // v1.41: confirmado, el código sigue hasta que el equipo hace el alta (para terminarla si se
+    // v1.42: confirmado, el código sigue hasta que el equipo hace el alta (para terminarla si se
     // quedó a medias); sale en «a medias» y desaparece con el alta (almacen::sqlite, alta_hecha).
     let v = pedir(&p.app, "GET", &format!("/api/clientes/{c}/emparejamientos/{emp}"), None, Some(&cookie), &[]).await.json;
     assert_eq!((v["estado"].as_str(), v["codigo"].as_str()), (Some("confirmado"), Some(d.codigo.as_str())));
@@ -1031,7 +1031,7 @@ async fn sin_instalador_del_agente() {
     assert_eq!(pedir(&p.app, "GET", &format!("/api/clientes/{c}/emparejamientos"), None, Some(&cookie), &[]).await.json, json!([]));
 }
 
-/// Códigos para añadir equipos (v1.41): volver a pedirlo con uno abierto da el mismo (no
+/// Códigos para añadir equipos (v1.42): volver a pedirlo con uno abierto da el mismo (no
 /// gasta), el límite va por cuenta (30/h) y por cliente (100/h), y el 429 dice cuánto esperar.
 #[tokio::test]
 async fn codigos_de_emparejar_se_reutilizan_y_limite_por_cuenta() {
