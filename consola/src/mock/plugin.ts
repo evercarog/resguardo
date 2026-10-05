@@ -343,7 +343,7 @@ const rutas: Ruta[] = [
     },
   ],
 
-  // --- Todos los clientes (v1.3x): solo los clientes de los que la cuenta es miembro ---
+  // --- Todos los clientes (v1.38): solo los clientes de los que la cuenta es miembro ---
   [
     "GET",
     /^\/api\/panel$/,

@@ -1,4 +1,4 @@
-// «Todos los clientes» (v1.3x): lo de cada cliente del que la cuenta es
+// «Todos los clientes» (v1.38): lo de cada cliente del que la cuenta es
 // miembro, junto. Todo sale de `GET /api/panel` (o, con un servidor anterior,
 // de las rutas de cada cliente); aquí solo se calcula, sin runas, para
 // probarlo en scripts/vectores-panel.ts:

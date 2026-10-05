@@ -1,4 +1,4 @@
-//! «Todos los clientes» (v1.3x): lo de cada cliente del que la cuenta es
+//! «Todos los clientes» (v1.38): lo de cada cliente del que la cuenta es
 //! **miembro**, junto y en una sola petición, para el panel de la consola que
 //! los enseña a la vez (en vez de N peticiones por cliente y equipo).
 //!

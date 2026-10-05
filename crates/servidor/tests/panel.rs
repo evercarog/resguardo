@@ -1,4 +1,4 @@
-//! «Todos los clientes» (`GET /api/panel` y `GET /api/panel/progreso`, v1.3x):
+//! «Todos los clientes» (`GET /api/panel` y `GET /api/panel/progreso`, v1.38):
 //! cada cuenta ve juntos solo los clientes de los que es miembro.
 //!
 //! - Ana, propietaria del servidor y miembro de A y C: ve A y C; nunca B (de

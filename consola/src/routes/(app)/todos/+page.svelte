@@ -1,5 +1,5 @@
 <script lang="ts">
-  // «Todos los clientes» (v1.3x): el Estado de todos los clientes de la
+  // «Todos los clientes» (v1.38): el Estado de todos los clientes de la
   // cuenta a la vez, como el de cada uno. Arriba, lo que necesita atención en
   // cualquiera (lo más grave primero, con su cliente y su acción); las
   // cifras de todos; lo que está en marcha con sus ondas; la salud de cada

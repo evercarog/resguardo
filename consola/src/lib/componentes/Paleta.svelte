@@ -86,7 +86,7 @@
     }
     for (const x of app.clientes)
       if (x.id !== c) out.push({ grupo: "Clientes", texto: x.nombre, sub: `${x.equipos} ${x.equipos === 1 ? "equipo" : "equipos"}`, href: `/c/${x.id}`, icono: Building2, claves: sinTildes(x.nombre) });
-    // v1.3x: el Estado de todos los clientes juntos (con más de uno), y la lista para gestionarlos.
+    // v1.38: el Estado de todos los clientes juntos (con más de uno), y la lista para gestionarlos.
     // (el primero de «Ir a», para que se vea sin escribir nada)
     if (app.clientes.length > 1) {
       const i = out.findIndex((x) => x.grupo === "Ir a");

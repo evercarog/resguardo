@@ -1,4 +1,4 @@
-// «Todos los clientes» (v1.3x): lo que se enseña de todos los clientes de la
+// «Todos los clientes» (v1.38): lo que se enseña de todos los clientes de la
 // cuenta, y lo que está en marcha en ellos casi en vivo.
 //
 // - Todo, con `GET /api/panel` (una petición): al entrar, cada 30 s con la
@@ -23,7 +23,7 @@ export const todos = $state({
   cargado: 0,
   error: "",
   errorCodigo: "",
-  /** ¿Lo da el servidor de una vez (v1.3x)? Si no, cliente a cliente. */
+  /** ¿Lo da el servidor de una vez (v1.38)? Si no, cliente a cliente. */
   agregado: true,
 });
 

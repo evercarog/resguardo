@@ -42,7 +42,7 @@
   const plegada = $derived(plegable && barra.plegada);
 
   const c = $derived(actual.id);
-  /** v1.3x: en «Todos los clientes» no se enseñan las secciones del último cliente abierto. */
+  /** v1.38: en «Todos los clientes» no se enseñan las secciones del último cliente abierto. */
   const enTodos = $derived(page.url.pathname === "/todos");
   const variosClientes = $derived(app.clientes.length > 1);
   const rol = $derived(actual.cliente?.rol);

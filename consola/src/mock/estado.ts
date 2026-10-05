@@ -546,6 +546,6 @@ export async function sembrar(vacio = false) {
   auditar(sur.id, marta.id, "cliente.crear", "Café del Sur", null, t(60 * 24 * 40));
   auditar(sur.id, null, "equipo.intentos_fallidos", "CAJA-1", { intentos: 3 }, t(60 * 5));
   auditar(propio.id, ana.id, "cliente.crear", "Propio", null, t(60 * 24 * 12));
-  // v1.3x: dos clientes más (uno de Ana y otro que no es suyo), para «Todos los clientes».
+  // v1.38: dos clientes más (uno de Ana y otro que no es suyo), para «Todos los clientes».
   await sembrarOtrosClientes({ estado, crearEquipo, kcfgDe, ana, marta, sal, claveAdmin: DEMO.claveAdmin, contrasenaRepo: DEMO.contrasenaRepo });
 }

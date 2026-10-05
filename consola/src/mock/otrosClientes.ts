@@ -1,4 +1,4 @@
-// Más clientes ficticios del simulador, para «Todos los clientes» (v1.3x):
+// Más clientes ficticios del simulador, para «Todos los clientes» (v1.38):
 //
 // - «Clínica Los Arrayanes» (Ana, propietaria): un almacén con espejo en la
 //   nube, un equipo que copia en él (con una copia en marcha, en progreso.ts),

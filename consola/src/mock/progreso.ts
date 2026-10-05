@@ -65,7 +65,7 @@ function sembrar() {
   // Ya va por un tercio, para que se vea moverse con cifras desde el principio.
   s.empezo = Date.now() - (s.preparar + s.escanear + s.subir * 0.35);
   sims.push(s);
-  // v1.3x: otra copia larga en otro cliente (HISTORIAS, de la clínica), para «Todos los clientes».
+  // v1.38: otra copia larga en otro cliente (HISTORIAS, de la clínica), para «Todos los clientes».
   const historias = estado.equipos.find((e) => e.id === ID_OTROS.historias);
   const kh = historias?.resumen?.copias?.[0];
   if (historias && kh) {
