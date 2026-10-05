@@ -307,6 +307,9 @@ export interface Seleccion {
   filtro: FiltroCambios;
   vuelta: string | null;
   dia: string | null;
+  /** Un intervalo de días («Historial y versiones»: `?desde=…&hasta=…`), si no hay un día. */
+  desde: string | null;
+  hasta: string | null;
 }
 
 const ID = /^[0-9a-f]{8,64}$/;
@@ -331,7 +334,13 @@ export function leerSeleccion(q: URLSearchParams): Seleccion {
   if (vista === "vuelta" && !vueltaOk) vista = null;
   const f = q.get("filtro");
   const dia = q.get("dia");
-  return { vista, version, con: id("con"), filtro: esFiltro(f) ? f : "todos", vuelta: vueltaOk, dia: dia && DIA.test(dia) ? dia : null };
+  const diaOk = dia && DIA.test(dia) ? dia : null;
+  // El intervalo, solo entero y en orden (y sin día: el día manda).
+  let desde = q.get("desde");
+  let hasta = q.get("hasta");
+  if (!desde || !DIA.test(desde) || !hasta || !DIA.test(hasta) || diaOk) desde = hasta = null;
+  else if (desde > hasta) [desde, hasta] = [hasta, desde];
+  return { vista, version, con: id("con"), filtro: esFiltro(f) ? f : "todos", vuelta: vueltaOk, dia: diaOk, desde, hasta };
 }
 
 const CLAVES = ["v", "vista", "con", "filtro", "vuelta"] as const;
@@ -350,6 +359,8 @@ export function conSeleccion(q: URLSearchParams, s: Partial<Seleccion> & { cerra
   if ("filtro" in s) poner("filtro", s.filtro === "todos" ? null : s.filtro);
   if ("vuelta" in s) poner("vuelta", s.vuelta);
   if ("dia" in s) poner("dia", s.dia);
+  if ("desde" in s) poner("desde", s.desde);
+  if ("hasta" in s) poner("hasta", s.hasta);
   const t = n.toString();
   return t ? `?${t}` : "?";
 }

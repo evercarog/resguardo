@@ -3,6 +3,9 @@
   // programa o hecho a mano) y su contraseña: lo usan «Usar uno que ya existe»
   // y «Traer historial». Todo viaja sellado solo para el equipo. También la
   // ventana del equipo en modo local (por eso de direccion.ts: sin la API).
+  // Con `alExplorar`, una carpeta del equipo («Disco o carpeta») se busca con
+  // «Explorar…» (quien lo usa abre ElegirCarpetas y escribe la ruta elegida).
+  import { FolderOpen } from "@lucide/svelte";
   import { ETIQUETA_TIPO_EXISTENTE, partirDireccion, type RepoExistente, type TipoExistente } from "$lib/direccion";
   import CampoClave from "./CampoClave.svelte";
 
@@ -12,7 +15,8 @@
     nombreEquipo = "el equipo",
     etiquetaTipo = "Dónde está",
     local = false,
-  }: { repo: RepoExistente; id?: string; nombreEquipo?: string; etiquetaTipo?: string; local?: boolean } = $props();
+    alExplorar,
+  }: { repo: RepoExistente; id?: string; nombreEquipo?: string; etiquetaTipo?: string; local?: boolean; alExplorar?: () => void } = $props();
 
   const EJEMPLO: Record<TipoExistente, string> = {
     rest: "http://192.168.1.20:8000/Contabilidad",
@@ -34,7 +38,14 @@
   </div>
   <div class="field">
     <label class="field-label" for="{id}-dir">Dirección del repositorio</label>
-    <input id="{id}-dir" class="input mono" bind:value={repo.direccion} spellcheck="false" autocomplete="off" placeholder={EJEMPLO[repo.tipo]} />
+    {#if repo.tipo === "local" && alExplorar}
+      <div class="con-boton">
+        <input id="{id}-dir" class="input mono" bind:value={repo.direccion} spellcheck="false" autocomplete="off" placeholder={EJEMPLO[repo.tipo]} />
+        <button type="button" class="btn" onclick={alExplorar}><FolderOpen size={15} />Explorar…</button>
+      </div>
+    {:else}
+      <input id="{id}-dir" class="input mono" bind:value={repo.direccion} spellcheck="false" autocomplete="off" placeholder={EJEMPLO[repo.tipo]} />
+    {/if}
     <span class="field-hint">
       La misma que usaba la app de escritorio, con la carpeta del repositorio al final.
       {#if partes?.ruta}Se usará la carpeta «{partes.ruta}».{:else if partes}Sin carpeta: el repositorio es todo el destino.{/if}

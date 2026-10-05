@@ -11,6 +11,7 @@
     ClipboardList,
     Database,
     FileBarChart,
+    FileSearch,
     Gauge,
     History,
     LayoutDashboard,
@@ -64,6 +65,7 @@
         titulo: "Operación",
         items: [
           { href: `/c/${c}/restaurar`, texto: "Restaurar", icono: History },
+          { href: `/c/${c}/buscar`, texto: "Buscar archivos", icono: FileSearch },
           { href: `/c/${c}/ordenes`, texto: "Órdenes", icono: ClipboardList, cuenta: actual.pendientes || undefined, tono: actual.pendientes ? "warn" : undefined },
           { href: `/c/${c}/avisos`, texto: "Avisos", icono: BellRing, cuenta: actual.avisosAbiertos || undefined, tono: actual.avisosAbiertos ? "bad" : undefined },
         ],

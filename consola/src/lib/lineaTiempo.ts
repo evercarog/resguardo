@@ -45,6 +45,39 @@ export const claveDia = (t: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+/**
+ * El alto (px) del marco del calendario: el mayor de sus vistas (por horas
+ * con `filas` filas, el año de 7 filas o la tira del móvil), para que cambiar
+ * de periodo no mueva lo de debajo. Las medidas son las de CalendarioCalor:
+ * rótulos de 14, cabecera de días de 18, casillas de 12 (26 la tira, 15 como
+ * mucho las del año) y 3 de separación vertical.
+ */
+export function altoCalendario(filas: number, movil: boolean): number {
+  const ano = 14 + 3 + 7 * 15 + 6 * 3 + 4;
+  if (movil) return Math.max(14 + 3 + 26 + 3 + 14 + 4, ano);
+  return Math.max(14 + 3 + 18 + 3 + filas * 12 + (filas - 1) * 3 + 3 + 14, ano);
+}
+
+/** Un día en la URL («2026-09-29», hora local) como su inicio; null si no vale. */
+export function diaDeClave(k: string | null | undefined): number | null {
+  if (!k || !/^\d{4}-\d{2}-\d{2}$/.test(k)) return null;
+  const t = Date.parse(`${k}T00:00:00`);
+  return Number.isFinite(t) ? t : null;
+}
+
+const fmtCorto = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
+const fmtCortoAno = new Intl.DateTimeFormat("es", { day: "numeric", month: "short", year: "numeric" });
+/** «Del 3 al 10 oct», «Del 28 sept al 4 oct», con el año si no es este; un solo día, con `nombreDia`. */
+export function nombreIntervalo(desde: number, hasta: number, ahora: number): string {
+  if (inicioDia(desde) === inicioDia(hasta)) return nombreDia(desde, ahora);
+  const a = new Date(desde);
+  const b = new Date(hasta);
+  const esteAno = a.getFullYear() === new Date(ahora).getFullYear() && b.getFullYear() === a.getFullYear();
+  const f = esteAno ? fmtCorto : fmtCortoAno;
+  if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) return `Del ${a.getDate()} al ${f.format(b)}`;
+  return `Del ${(esteAno ? fmtCorto : fmtCortoAno).format(a)} al ${f.format(b)}`;
+}
+
 /** El rango inicial: el menor en el que cae al menos la mitad de las versiones. */
 export function rangoInicial(horas: number[], ahora: number): Rango {
   if (!horas.length) return 30;
@@ -178,8 +211,19 @@ export function filasHoras(horas: number[]): { desde: number; paso: number; n: n
 /**
  * El calendario de las versiones de los últimos `dias` días. `tira`: una sola
  * fila de días (el móvil); con 365 días, siempre semanas × días de la semana.
+ * `filas`: las filas de horas ya elegidas (las mismas en 7, 30 y 60 días, para
+ * que el calendario no cambie de alto al cambiar de periodo); sin ellas, las
+ * de lo que hay en el rango.
  */
-export function calendario(versiones: { id: string; t: number }[], motivos: Map<string, Periodo | null> | null, ahora: number, dias: Rango, tira = false, fallos: number[] = []): Calendario {
+export function calendario(
+  versiones: { id: string; t: number }[],
+  motivos: Map<string, Periodo | null> | null,
+  ahora: number,
+  dias: Rango,
+  tira = false,
+  fallos: number[] = [],
+  filas_?: { desde: number; paso: number; n: number },
+): Calendario {
   const hoy = inicioDia(ahora);
   const inicio = inicioDia(ahora, 1 - dias);
   const enRango = versiones.filter((v) => v.t >= inicio && v.t <= ahora).sort((a, b) => b.t - a.t);
@@ -246,7 +290,7 @@ export function calendario(versiones: { id: string; t: number }[], motivos: Map<
   } else {
     // Días en columnas; en la tira, una fila; si no, las horas en filas.
     modo = tira ? "tira" : "horas";
-    const fh = tira ? { desde: 0, paso: 24, n: 1 } : filasHoras([...enRango.map((v) => v.t), ...fallosEnRango]);
+    const fh = tira ? { desde: 0, paso: 24, n: 1 } : (filas_ ?? filasHoras([...enRango.map((v) => v.t), ...fallosEnRango]));
     paso = fh.paso;
     filas = Array.from({ length: fh.n }, (_, i) => {
       const h = fh.desde + i * fh.paso;

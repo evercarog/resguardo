@@ -56,6 +56,8 @@
   let error = $state("");
   /** Elegir la carpeta del destino local en el propio equipo. */
   let explorar = $state(false);
+  /** «Explorar…» del repositorio de origen (traer su historial al crearlo). */
+  let explorarOrigen = $state(false);
   let existente = $state(false);
   let paraHistorial = $state(false);
   let origen = $state(repoExistenteVacio());
@@ -278,7 +280,7 @@
       <details class="avanzado" bind:open={paraHistorial}>
         <summary>Para traer el historial de otro repositorio (avanzado)</summary>
         <p class="faint nota">{TEXTO_TROCEADO} Después, en la página del repositorio, «Traer historial» ya tendrá puesto este origen: solo faltará su contraseña.</p>
-        {#if paraHistorial}<FormRepoExistente bind:repo={origen} id="p" nombreEquipo={equipo?.nombre} />{/if}
+        {#if paraHistorial}<FormRepoExistente bind:repo={origen} id="p" nombreEquipo={equipo?.nombre} alExplorar={equipo ? () => (explorarOrigen = true) : undefined} />{/if}
       </details>
       <footer>
         <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
@@ -327,6 +329,22 @@
 {:else if equipo}
   <!-- Un almacén del cliente: lo mismo que «Copiar en …» de la ficha del equipo. -->
   <CopiarEnAlmacen {cliente} {equipo} almacen={copiarEn} nombreInicial={nombre.trim()} origen={paraHistorial ? $state.snapshot(origen) : undefined} {onclose} />
+{/if}
+
+{#if explorarOrigen && equipo}
+  <ElegirCarpetas
+    {cliente}
+    {equipo}
+    unica
+    buscarRepos
+    titulo="La carpeta del repositorio de origen en {equipo.nombre}"
+    iniciales={origen.direccion.trim() ? [origen.direccion.trim()] : []}
+    onclose={() => (explorarOrigen = false)}
+    alElegir={(rutas) => {
+      if (rutas[0]) origen.direccion = rutas[0];
+      explorarOrigen = false;
+    }}
+  />
 {/if}
 
 {#if explorar && equipo}

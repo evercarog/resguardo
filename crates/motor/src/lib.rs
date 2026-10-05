@@ -7,9 +7,11 @@
 //! - [`retention`]: políticas de retención (`forget`).
 //! - [`sizes`]: lo que más ocupa de una versión.
 //! - [`diferencias`]: qué cambió entre dos versiones, archivo por archivo.
+//! - [`buscar`]: buscar archivos por su nombre en todas las versiones.
 //! - [`proceso`]: prioridad baja de los procesos y herramientas del sistema.
 //! - [`tls`]: autoridad propia y certificados de servidor.
 
+pub mod buscar;
 pub mod diferencias;
 pub mod ganchos;
 pub mod plans;
