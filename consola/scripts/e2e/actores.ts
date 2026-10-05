@@ -208,7 +208,8 @@ export class Consola {
     cuerpo: Record<string, unknown> = {},
     secretos: Secretos = {},
     /** `sinComprobar`: sin mirar antes la etiqueta (para ver que el propio equipo rechaza una clave que no es). */
-    extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean; sinComprobar?: boolean } = {},
+    /** `relevo`: para «descargar» (el relé del servidor por donde sube el equipo). */
+    extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean; sinComprobar?: boolean; relevo?: { id: string; max_bytes: number } } = {},
   ): Promise<Orden> {
     const e = await this.equipo(c, equipoId);
     const autorizacion: Autorizacion = { prueba_admin: null, clave_repo: null };
@@ -254,7 +255,7 @@ export class Consola {
       caduca: p.meta.caduca,
       not_before: p.meta.not_before,
       sesion: extra.sesion ?? null,
-      relevo: null,
+      relevo: extra.relevo ?? null,
     });
     comprobar(r.estado === 200, `El servidor no aceptó la orden «${tipo}» (${r.estado})`, r.texto);
     return r.cuerpo as Orden;

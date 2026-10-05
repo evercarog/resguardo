@@ -34,7 +34,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import https from "node:https";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
@@ -134,14 +134,20 @@ class Cable {
     const par = { a, b: null as net.Socket | null };
     this.pares.add(par);
     a.on("close", () => {
+      // Cortado, el otro lado no se entera (como con un cable quitado): se cierra al volver la red.
+      if (this.cortado) return;
       par.b?.destroy();
       this.pares.delete(par);
     });
     if (this.cortado) return; // aceptada, pero no va a ningún sitio
     const b = net.connect({ host: "127.0.0.1", port: this.destino() });
     par.b = b;
-    b.on("error", () => a.destroy());
-    b.on("close", () => a.destroy());
+    b.on("error", () => {
+      if (!this.cortado) a.destroy();
+    });
+    b.on("close", () => {
+      if (!this.cortado) a.destroy();
+    });
     a.on("data", (d) => {
       if (this.cortado) return;
       this.bytes += d.length;
@@ -741,6 +747,29 @@ async function principal() {
     cable.reanudar();
     reconexiones[`red cortada ${s} s @${Math.round(minuto())}`] = await vueltaDe(`Red cortada ${s} s`, equiposIds);
   };
+  /**
+   * Un equipo que desaparece sin cerrar (se va la luz con la red ya cortada): el servidor
+   * tiene que dejar de enseñarlo «conectado» solo (antes, nunca hasta que volvía).
+   */
+  const desaparece = async (ag: AgenteR, id: string) => {
+    apuntar(`AVERÍA: red cortada y ${ag.nombre} apagado sin cerrar nada`);
+    cable.cortar();
+    await ag.parar();
+    const t = Date.now();
+    let visto: number | null = null;
+    while (Date.now() - t < 5 * MIN) {
+      if (!(await consola.equipo(c, id)).conectado) {
+        visto = Math.round((Date.now() - t) / 1000);
+        break;
+      }
+      await dormir(2000);
+    }
+    if (visto === null) incidencia(`${ag.nombre} desapareció y la consola lo sigue viendo conectado tras 5 min`);
+    else apuntar(`${ag.nombre} desaparecido: la consola lo ve «sin conexión» a los ${visto} s`);
+    cable.reanudar();
+    ag.arrancar();
+    reconexiones[`${ag.nombre} desaparecido @${Math.round(minuto())}`] = await vueltaDe(`${ag.nombre} vuelve`, [id]);
+  };
   const reiniciarAgente = async (ag: AgenteR, id: string, caidaS = 3) => {
     apuntar(`AVERÍA: ${ag.nombre} matado (y arrancado ${caidaS} s después)`);
     await ag.parar();
@@ -820,8 +849,24 @@ async function principal() {
     try {
       await s.abrir(eq2.id, "explorar", { repo: sec.repo.repo }, sec);
       const vs = (await s.pedir("versiones")).versiones as { id: string }[];
-      await s.pedir("listar", { version: vs[0].id, ruta: WIN ? `/${r2.datos[0].toUpperCase()}${r2.datos.slice(2).replace(/\\/g, "/")}` : r2.datos });
+      const raiz = WIN ? `/${r2.datos[0].toUpperCase()}${r2.datos.slice(2).replace(/\\/g, "/")}` : r2.datos;
+      await s.pedir("listar", { version: vs[0].id, ruta: raiz });
       apuntar(`SESIÓN explorar en EQUIPO-2: ${vs.length} versiones`);
+      await s.cerrar();
+      // Descargar dos archivos (zip) por el relé, como «Descargar» en la consola.
+      const relevo = randomUUID();
+      const o = await consola.mandar(
+        c,
+        eq2.id,
+        "descargar",
+        { repo: sec.repo.repo, version: vs[0].id, rutas: [`${raiz}/Documentos/factura-001.txt`, `${raiz}/Documentos/nota-0.txt`], formato: "zip", relevo: { id: relevo, clave: aB64(aleatorio(32)) } },
+        sec,
+        { sesion: randomUUID(), relevo: { id: relevo, max_bytes: 50_000_000 } },
+      );
+      const r = await consola.resultado(c, eq2.id, o, { plazo: 5 * MIN });
+      const trozo = r.estado === "hecha" ? await consola.pedir("GET", `/api/clientes/${c.id}/relevos/${relevo}/trozos/0`) : null;
+      if (r.estado !== "hecha" || trozo?.estado !== 200) incidencia("Descargar por el relé", { estado: r.estado, mensaje: r.mensaje, trozo: trozo?.estado });
+      else apuntar(`DESCARGA por el relé: ${r.mensaje} (${trozo.texto.length} B)`);
     } catch (e) {
       incidencia("Sesión «explorar» en EQUIPO-2", (e as Error).message.split("\n")[0]);
     } finally {
@@ -904,6 +949,7 @@ async function principal() {
       else apuntar(`ORDEN larga cortada: ${r.estado} — ${r.mensaje}`);
     },
   });
+  plan.push({ min: 89, que: "EQUIPO-3 desaparece sin cerrar", f: () => desaparece(E3, eq3.id) });
   // Luego, en bucle hasta el final: lo de siempre (reinicios y cortes) para ver si algo crece.
   for (let m = 90; m < MINUTOS - 20; m += 15) {
     plan.push({ min: m, que: "servidor: reinicio rápido", f: () => reiniciarServidor(3) });
