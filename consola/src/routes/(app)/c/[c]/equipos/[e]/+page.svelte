@@ -518,7 +518,9 @@
       tipo: "cambiar_copia_externa",
       cuerpo: {},
       titulo: r.externa ? "Cambiar la copia externa" : "Copia externa",
-      descripcion: `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino (la primera vez crea allí el repositorio, en una carpeta con su id). Si algo le pasa al destino principal, queda esta.`,
+      descripcion: admiteExternaExistente(equipo)
+        ? `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino: a un repositorio nuevo (lo crea allí, en una carpeta con su id) o a uno que ya existe. Si algo le pasa al destino principal, queda esta.`
+        : `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino (la primera vez crea allí el repositorio, en una carpeta con su id). Si algo le pasa al destino principal, queda esta.`,
       repo: { id: r.id, nombre: r.nombre },
       campos: "externa",
     });
