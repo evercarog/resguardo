@@ -119,6 +119,19 @@ Decidido después de 3, 4 y 5 (4e se descartó) porque el almacén sigue sin ten
   - Dropbox no es inmutable: decirlo al elegirlo (como hoy en el espejo).
 - [ ] **7e. Convivencia con el espejo de hoy.** El espejo global del almacén («todo lo que guarda») sigue funcionando; la consola explica que los espejos por copia (7d) son la forma nueva y ofrece pasar uno a otro.
 
+## 8. La regla 3-2-1 como guía de la consola (3-2-1-1-0)
+
+Decidido: orientar la configuración a que cada copia cumpla la regla. Se usa la forma moderna **3-2-1-1-0**: **3** copias de los datos (contando los originales), en **2** soportes distintos, **1** fuera de la oficina, **1** inmutable o fuera del alcance de los equipos, y **0** errores al verificar y probar la restauración. Guía y recomendación, **nunca obligación**: se puede guardar una configuración que no cumple.
+
+- [ ] **8a. Datos que faltan en los destinos (7a):** cada destino dice **dónde está** (este equipo, otro equipo de la oficina, otra sede, nube) y **si es inmutable** (rest-server en solo añadir desde el punto de vista del equipo, Object Lock, o no: carpeta local, Dropbox). Valores por defecto deducidos del tipo (nube → fuera; carpeta del propio equipo → mismo equipo), editables. **Soporte** = equipo + disco: dos discos del mismo almacén cuentan como 2 soportes, pero la consola avisa de que un fallo del equipo, un robo o un incendio se los lleva a la vez.
+- [ ] **8b. Cálculo por copia** (lo que llega a cada carpeta protegida siguiendo la cadena de 7: copia, espejos, repositorios a partir del anterior, copia externa): nº de copias, soportes distintos, fuera de la oficina, inmutable, y verificación + prueba de restauración recientes y correctas. Solo cuentan los destinos **al día** (su último paso correcto dentro de su horario más un margen). Reglas en un solo sitio con pruebas (como `crates/agente/src/protection.rs`, que ya evalúa la «Salud de la protección» de 7 comprobaciones; la 3-2-1-1-0 se integra ahí, no al lado).
+- [ ] **8c. En la consola:**
+  - en cada copia, una tira «3 · 2 · 1 · 1 · 0» con cada parte cumplida o no y **qué hacer** para cumplirla («Añade un destino fuera de la oficina: Dropbox o B2 → Añadir paso»);
+  - al crear o cambiar una copia (7f), el resumen dice cómo queda y propone el paso que falta;
+  - en Estado y en Informes, por cliente: cuántas copias cumplen la regla entera y cuáles no (útil para enseñarlo al cliente);
+  - un aviso (no urgente) cuando una copia que cumplía deja de cumplir (p. ej. el espejo en la nube lleva 3 días fallando).
+- [ ] **8d. Plantilla «3-2-1 recomendada»** al añadir una copia: copia al almacén (zona D) → espejo a otro disco (zona E) → repositorio a partir del anterior en la nube (B2 con Object Lock o Dropbox), cada uno «después de la anterior», con verificación automática y prueba de restauración mensual.
+
 ## Mientras tanto (sin código)
 
 - Cancelar las órdenes en espera que no se esperaban **desde la consola que las mandó**.
