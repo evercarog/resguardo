@@ -55,7 +55,7 @@ Dos vueltas en Windows 11 (16 núcleos, el mismo equipo para todo, con las prueb
 | EQUIPO-2 / EQUIPO-3 | 5,1 → 6,2 / 5,8 → 5,7 MB | 205 → 188 / 205 → 186 | 8 → 8 | — |
 
 - **Agentes**: planos (menos de 1,5 MB en 2 h, ±0,5 MB/h en la segunda mitad; handles e hilos sin crecer).
-- **Servidor**: handles e hilos planos. La memoria sube unos MB después de cada arranque y con la base de datos (la caché de páginas de SQLite, como mucho 2 MB por conexión, y el índice del WAL); el servidor 2, sin reinicios, 1,9 MB en 2 h 16 min. La medida aparte bajo carga constante (abajo) no crece.
+- **Servidor**: handles e hilos planos. La memoria sube unos MB después de cada arranque (la caché de páginas de SQLite, como mucho 2 MB por conexión, el índice del WAL, las cachés de TLS…); el servidor 2, sin reinicios y con un solo equipo, 1,9 MB en 2 h 16 min. Bajo carga constante (abajo) se queda en 20–21 MB.
 - **Base de datos**: `control.db` 156 KB y la del cliente 1,2 MB al final (informes de 4 equipos copiando cada 5 min); el **WAL llega a ~4 MB por base de datos y se queda ahí** (punto de control automático de SQLite).
 - **Temporales**: 0 en todo momento (cada agente con su propio `TEMP`); ni restos del espejo (`.tmp-espejo`) ni de descargas (`descarga-…`). Las carpetas del relé del servidor: como mucho 4 (las de la última hora; caducan y se borran).
 - **Procesos sueltos**: como mucho 3 restic/rest-server vivos (los dos rest-server y una copia); al final, solo los dos rest-server. Ningún restic huérfano tras matar agentes (también en mitad de una copia).
@@ -75,7 +75,7 @@ Dos vueltas en Windows 11 (16 núcleos, el mismo equipo para todo, con las prueb
 | Agente reiniciado | 2 | 2 | 2 |
 | Equipo que desaparece sin cerrar | **nunca** (seguía «conectado») | — | «sin conexión» a los 138 s |
 
-**Carga constante sin averías** (`carga.ts`, 50 pestañas de 10 cuentas, 790 peticiones por minuto, 1 h): CARGA
+**Carga constante sin averías** (`carga.ts` con `FASES=1,1,…` de 5 min: 50 pestañas de 10 cuentas, 788 peticiones por minuto, 1 h, el mismo servidor): el servidor pasa de 19 a 21 MB en la primera media hora y ahí se queda (20–21 MB hasta el final); latencia p50 1–2 ms, p99 3–4 ms; 47 900 peticiones, todas 200; 1 % de un núcleo. Bajo esta carga no crece. En la prueba de resistencia, con más variedad (informes, notificaciones, sesiones, relé), sube unos 3–5 MB en la media hora que hay entre reinicios y no da tiempo a ver dónde se para (ver «Límites»).
 
 ## Lo que se encontró y se arregló
 
@@ -122,5 +122,5 @@ Dos vueltas en Windows 11 (16 núcleos, el mismo equipo para todo, con las prueb
 - **Un archivo dañado no se arregla solo**: la verificación lo dice, pero repararlo (`restic repair packs`, `repair snapshots`) es a mano en el destino.
 - **Informes**: el servidor guarda los 1000 últimos de cada equipo (con copias cada 5 min, unos 2 días; ~7 KB cada uno: ~7 MB por equipo como mucho); historial y auditoría crecen con el uso (pocos KB al día por equipo).
 - El WAL de SQLite llega a ~4 MB por base de datos y se queda ahí (punto de control automático); no crece más.
-- La prueba es de **2 h largas**, no de semanas: lo que crece despacio (p. ej. la caché de páginas de SQLite con la base de datos) no se ve entero.
+- La prueba es de **2 h largas**, no de semanas: lo que crece despacio no se ve entero. En concreto, la memoria del servidor 1 subió de 6–11 MB tras cada arranque a 12–15 MB en 30 min (sin reinicios no se midió más de 30 min con averías); con carga constante se para en 20–21 MB, y el servidor 2 sube 0,6 MB/h. Una vuelta de un día entero sin reinicios lo aclararía.
 - El disco lleno se simula con la cuota de rest-server (lo mismo que contesta con el disco lleno, 507); el disco del propio equipo lleno, y el de la carpeta del espejo, solo con pruebas unitarias (crear un disco pequeño pide administrador).
