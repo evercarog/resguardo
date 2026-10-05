@@ -1279,6 +1279,15 @@ impl Almacen for Sqlite {
                     }
                 }
             }
+            // v1.4x: las vueltas de la retención llevan las versiones que quitaron; solo las
+            // más recientes las conservan (las demás, sus cifras), así que no crecen sin límite.
+            if nuevas > 0 && entradas.iter().any(|e| e.tipo == "retencion") {
+                tx.execute(
+                    "UPDATE historial SET datos = json_set(json_remove(datos, '$.versiones', '$.grupos', '$.motivos'), '$.compactada', json('true'))                      WHERE equipo_id = ?1 AND tipo = 'retencion' AND json_valid(datos) AND json_type(datos, '$.versiones') IS NOT NULL                      AND id NOT IN (SELECT id FROM historial WHERE equipo_id = ?1 AND tipo = 'retencion' ORDER BY hora DESC, id LIMIT ?2)",
+                    params![equipo, crate::agentes::RETENCIONES_CON_DETALLE],
+                )
+                .map_err(s)?;
+            }
             // Como mucho las más recientes de cada equipo: el disco no crece sin límite.
             tx.execute(
                 "DELETE FROM historial WHERE equipo_id = ?1 AND id NOT IN (SELECT id FROM historial WHERE equipo_id = ?1 ORDER BY hora DESC, id LIMIT ?2)",

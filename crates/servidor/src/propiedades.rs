@@ -105,7 +105,8 @@ proptest! {
             prop_assert!(!e.id.is_empty() && e.id.len() <= 64 && e.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
             prop_assert!(e.hora >= 946_684_800 && e.hora <= ahora + 86_400);
             prop_assert!(crate::agentes::TIPOS_HISTORIAL.contains(&e.tipo.as_str()));
-            prop_assert!(e.datos.len() <= 4 * 1024);
+            let tope = if e.tipo == "retencion" { crate::agentes::MAX_ENTRADA_RETENCION } else { 4 * 1024 };
+            prop_assert!(e.datos.len() <= tope);
             if let Some((tipo, mensaje)) = &e.aviso {
                 prop_assert_eq!(e.tipo.as_str(), "aviso");
                 prop_assert!(!tipo.is_empty());
