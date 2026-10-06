@@ -999,7 +999,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 20] = [
+pub const ADMITE: [&str; 21] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1039,6 +1039,9 @@ pub const ADMITE: [&str; 20] = [
     "datos_equipo",
     // (pendiente de numerar) `quitar_destino` (un destino sin uso) y `quitar_repositorio { quitar_destino }`.
     "quitar_destino",
+    // (pendiente de numerar) actualización automática: `informe.actualizacion`, `{"t":"actualizacion"}`
+    // por el canal y `GET /api/agente/actualizacion` (docs/actualizaciones.md).
+    "actualizaciones",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1255,6 +1258,8 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
     if let Some(v) = v.filter(|v| v.ultimo_seq > 0) {
         inf["ultimo_seq"] = json!(v.ultimo_seq);
     }
+    // (pendiente de numerar) la actualización automática: versión disponible, estado y motivo.
+    inf["actualizacion"] = crate::actualizacion::informe();
     // Lo que está en marcha (v1.25): también aquí, por si el canal no pasa.
     let progreso = crate::progreso_v2::tareas(v);
     if !progreso.is_empty() {

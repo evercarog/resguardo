@@ -43,9 +43,14 @@ fn arrancar(nombre: &str) -> (Srv, String) {
 
 /// Un Resguardo Server real (TLS propio) con sus datos en `dir`, y su código de arranque.
 pub(crate) fn arrancar_en(dir: std::path::PathBuf) -> (Srv, String) {
+    arrancar_con(dir, resguardo_servidor::estado::Opciones::default())
+}
+
+/// Lo mismo con otras opciones (p. ej. la llave de publicación de pruebas).
+pub(crate) fn arrancar_con(dir: std::path::PathBuf, opciones: resguardo_servidor::estado::Opciones) -> (Srv, String) {
     let _ = std::fs::remove_dir_all(&dir);
     resguardo_servidor::identidad::preparar_tls(&dir, &[]).unwrap();
-    let st = resguardo_servidor::preparar(&dir, resguardo_servidor::estado::Opciones::default()).unwrap();
+    let st = resguardo_servidor::preparar(&dir, opciones).unwrap();
     let codigo = resguardo_servidor::api::preparar_codigo_arranque(&st).unwrap().unwrap();
     let puerto = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     (servir_en(st, dir, puerto), codigo)
