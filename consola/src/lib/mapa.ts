@@ -13,7 +13,9 @@ import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
 import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
-import { zonasDe } from "./destinos";
+import { claveNube, claveZona, PRINCIPAL, zonaDeDestino, zonasDe } from "./destinos";
+// Las páginas de los destinos (como las de los repositorios): cada tarjeta de destino lleva a la suya.
+import { hrefDestino } from "./fichaDestino";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
 /**
@@ -183,6 +185,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   const nodoDestino = (p: Paquete, x: Paquete["repos"][number]): NodoMapa => {
     if (x.almacen) {
       const s = saludEquipo(x.almacen, ahora);
+      // La tarjeta es el almacén entero; lleva a la página de la zona del primer repositorio que llega (o la principal).
+      const zona = zonaDeDestino(destinoDe(p.equipo.resumen?.destinos, x.r), todos)?.id ?? PRINCIPAL;
       return poner({
         id: x.destino,
         tipo: "destino",
@@ -192,7 +196,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         tono: s.tono,
         estado: s.texto,
         ultima: null,
-        href: `/c/${c}/equipos/${x.almacen.id}`,
+        href: hrefDestino(c, claveZona(x.almacen.id, zona)),
         icono: "almacen",
       });
     }
@@ -200,7 +204,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     // v1.56: el almacén de otra consola: su nombre (el del destino en el equipo, igual en todas)
     // y, después, una tarjeta que dice que lo suyo no se ve aquí.
     if (x.fuera) {
-      const n = poner({ id: x.destino, tipo: "destino", col: 2, nombre: d?.nombre ?? x.r.destino, sub: "Almacén de otra consola", tono: "ok", estado: "Recibe copias", ultima: null, icono: "servidor" });
+      const n = poner({ id: x.destino, tipo: "destino", col: 2, nombre: d?.nombre ?? x.r.destino, sub: "Almacén de otra consola", tono: "ok", estado: "Recibe copias", ultima: null, href: d ? hrefDestino(c, d.id) : undefined, icono: "servidor" });
       const consolas = otrasConsolasDe(p.equipo);
       const f = poner({
         id: `fu:${x.destino}`,
@@ -233,6 +237,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       tono: "ok",
       estado: "Recibe copias",
       ultima: null,
+      href: d ? hrefDestino(c, d.id) : undefined,
       icono: d?.tipo === "local" ? "disco" : d?.tipo === "rest" || d?.tipo === "sftp" ? "servidor" : "nube",
     });
   };
@@ -286,7 +291,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         tono: subiendo ? "info" : tono,
         estado: subiendo ?? (ext ? (tono === "bad" ? "Falló" : tono === "warn" ? (ext.resultado === "aviso" ? "Con avisos" : "Atrasada") : "Al día") : "Todavía sin ninguna"),
         ultima: ext?.ultima ?? null,
-        href: pildora.href,
+        // Su destino tiene página si el agente dice cuál es (`destino_id`); si no, el repositorio.
+        href: x.r.externa?.destino_id ? hrefDestino(c, x.r.externa.destino_id) : pildora.href,
         icono: /disco|disk|[a-z]:\\/i.test(x.r.externa?.destino ?? "") ? "disco" : "nube",
         vivo: subiendo,
       });
@@ -375,7 +381,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         tono,
         estado: mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado",
         ultima: d.ultima ?? null,
-        href: `/c/${c}/equipos/${alm.id}`,
+        // Una nube o una zona tienen su página; una carpeta del espejo, no (está en la ficha del almacén).
+        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : `/c/${c}/equipos/${alm.id}`,
         icono: nube ? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "nube") : "disco",
       });
       unir({ id: `${n.id}>${e.id}`, de: n.id, a: e.id, tipo: "espejo", tono, vivo: false, etiqueta: frescura(tono, e.ultima, ahora) });

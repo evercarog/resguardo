@@ -126,7 +126,8 @@ console.log("\n· El almacén de otra consola en el mapa y en «Se guarda en»")
 }
 
 console.log("\n· Las órdenes nuevas, como en protocolo/ordenes.rs");
-igual("inofensivas", ["nombre_equipo", "etiquetas_equipo", "observacion_equipo", "quitar_destino"].map((t) => NIVEL[t]), ["sesion", "sesion", "sesion", "sesion"]);
+igual("inofensivas", ["nombre_equipo", "etiquetas_equipo", "observacion_equipo"].map((t) => NIVEL[t]), ["sesion", "sesion", "sesion"]);
+igual("quitar un destino pide la clave de administración (como protocolo/ordenes.rs)", NIVEL.quitar_destino, "admin");
 igual("el nombre y quitar destinos: solo administradores", ["nombre_equipo", "etiquetas_equipo", "observacion_equipo", "quitar_destino"].map((t) => SOLO_ADMIN_ROL.has(t)), [true, false, false, true]);
 
 console.log(`\n${total - fallos} de ${total} bien`);

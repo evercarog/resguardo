@@ -1496,6 +1496,7 @@
     {equipo}
     repo={pasoEspejoPara}
     equipos={actual.equipos}
+    destinoInicial={page.url.searchParams.get("destino")}
     onclose={() => {
       pasoEspejoPara = null;
       void cargar();
@@ -1511,6 +1512,7 @@
       {equipo}
       repo={derivadaPara.repo}
       derivada={derivadaPara.derivada}
+      destinoInicial={derivadaPara.derivada ? null : page.url.searchParams.get("destino")}
       onclose={() => {
         derivadaPara = null;
         void cargar();

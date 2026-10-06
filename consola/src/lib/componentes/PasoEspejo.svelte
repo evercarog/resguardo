@@ -25,8 +25,10 @@
     repo: RepositorioResumen;
     equipos: Equipo[];
     onclose: () => void;
+    /** Desde la página de un destino («Usar en una copia»): su clave, ya elegida si sirve. */
+    destinoInicial?: string | null;
   }
-  let { cliente, equipo, repo, equipos, onclose }: Props = $props();
+  let { cliente, equipo, repo, equipos, onclose, destinoInicial = null }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   const en = repoEnAlmacen(equipo, repo, equipos);
@@ -75,6 +77,12 @@
     return l.sort((a, b) => Number(b.uso.ok) - Number(a.uso.ok));
   });
   let conectar = $state<{ equipo: Equipo; nube: string; tipo: string } | null>(null);
+  // El destino de la página desde la que se llegó, una vez (si sirve para el espejo).
+  // svelte-ignore state_referenced_locally
+  if (destinoInicial) {
+    const v = destinosParaPasos(equipos, catalogoDe(cliente.id)).find((x) => x.clave === destinoInicial);
+    if (v && usosPosibles(v, equipo, repo, equipos).espejo.ok) f.destino = v.zona ? `zona:${v.zona.id}` : v.nube ? `nube:${v.nube.nombre}` : f.destino;
+  }
   const tipoNube = $derived(f.destino.startsWith("nube:") ? nubes.find((n) => `nube:${n.nombre}` === f.destino)?.tipo : undefined);
 </script>
 

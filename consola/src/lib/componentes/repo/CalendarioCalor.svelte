@@ -4,13 +4,15 @@
   // cuantas más versiones (cuatro escalones de un solo tono, de claro a
   // oscuro); rayada si la próxima retención las quitaría todas. En 7, 30 y 60
   // días, columnas = días y filas = horas (la cabecera de cada día se pulsa
-  // para ver el día entero); en un año, semanas × días de la semana; en el
-  // móvil, una tira de días que se desliza. Es una rejilla (`grid`) con un
+  // para ver el día entero); en un año, un mes por fila y los días del mes en
+  // columnas (cada mes empieza y acaba en su fila; las filas crecen hasta
+  // llenar el marco, así que la sección tiene el mismo alto y ancho en todos
+  // los periodos); en el móvil, una tira de días que se desliza. Es una rejilla (`grid`) con un
   // solo punto de parada: flechas, Inicio y Fin, Re Pág y Av Pág (una
   // semana), Intro o espacio filtran la bitácora a esa casilla.
   import { tick } from "svelte";
   import { plural } from "$lib/formato";
-  import type { Calendario, Celda } from "$lib/lineaTiempo";
+  import { altoFila, type Calendario, type Celda } from "$lib/lineaTiempo";
 
   interface Props {
     cal: Calendario;
@@ -22,8 +24,10 @@
     etiqueta: string;
     /** El id del resumen en texto (aria-describedby). */
     descrito?: string;
+    /** El alto del marco (px): las filas crecen hasta llenarlo (`altoFila`). */
+    marco?: number;
   }
-  let { cal, filtro, elegida, alFiltrar, etiqueta, descrito }: Props = $props();
+  let { cal, filtro, elegida, alFiltrar, etiqueta, descrito, marco = 0 }: Props = $props();
 
   const horas = $derived(cal.modo === "horas");
   const F = $derived(cal.filas.length);
@@ -126,15 +130,38 @@
   }
   const encima = (ev: PointerEvent) => mostrar((ev.target as HTMLElement).closest<HTMLElement>("[data-k]"));
 
-  // En la tira y en el año, lo más reciente a la vista (a la derecha).
+  // Lo más reciente a la vista: en la tira, a la derecha; en el año, la
+  // columna de hoy (si no cabe todo, en el móvil estrecho).
   $effect(() => {
     void cal;
-    if (desliza) desliza.scrollLeft = desliza.scrollWidth;
+    void ancho;
+    if (!desliza) return;
+    const hoyEl = cal.modo === "meses" ? desliza.querySelector<HTMLElement>(".c.ahora") : null;
+    if (hoyEl) {
+      const a = desliza.getBoundingClientRect();
+      const b = hoyEl.getBoundingClientRect();
+      desliza.scrollLeft += b.left - a.left - a.width / 2;
+    } else desliza.scrollLeft = desliza.scrollWidth;
+    // Si no cabe, se dice (en el móvil estrecho): «Desliza…».
+    desborda = desliza.scrollWidth > desliza.clientWidth + 1;
   });
+  let desborda = $state(false);
 
   // Rótulos de abajo (el día del mes): todos si caben; si no, los lunes y el 1.
   let ancho = $state(0);
-  const colPx = $derived(N ? (ancho - (horas ? 44 : cal.modo === "dias" ? 22 : 0)) / N : 0);
+  /** El año en un móvil estrecho: rótulos más cortos («oct ’25»). */
+  const estrecho = $derived(cal.modo === "meses" && ancho > 0 && ancho < 520);
+  const etqPx = $derived(horas ? 44 : cal.modo === "meses" ? (estrecho ? 42 : 56) : 0);
+  const colPx = $derived(N ? (ancho - etqPx) / N : 0);
+  /** El rótulo de un mes: «oct 2025»; en estrecho, «oct ’25». */
+  const corto = (t: string | null) => (t && estrecho ? t.replace(/\s\d{2}(\d{2})$/, " ’$1") : t);
+  /** En el año, la cabecera: el día del mes; todos si caben, si no el 1, 5, 10… y hoy. */
+  const cabDias = $derived.by(() => {
+    if (colPx >= 16) return cal.columnas.map((c) => c.pie);
+    const h = cal.columnas.findIndex((c) => c.hoy);
+    // Hoy manda: el rótulo de al lado se quita para que no se pisen.
+    return cal.columnas.map((c, i) => (c.hoy || ((i === 0 || (i + 1) % 5 === 0) && Math.abs(i - h) > 1) ? c.pie : null));
+  });
   // Si no caben todos: los lunes, el 1 (si no queda pegado a un lunes) y hoy.
   const pies = $derived.by(() => {
     if (colPx >= 15) return cal.columnas.map((c) => (c.hoy && colPx >= 30 ? "Hoy" : c.pie));
@@ -155,14 +182,22 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="cal m-{cal.modo}" class:apretado={N >= 45} bind:this={caja} style:--n={N} onpointerleave={() => (sobre = null)}>
+<div class="cal m-{cal.modo}" class:apretado={N >= 45} class:estrecho bind:this={caja} style:--n={N} style:--alto={marco ? `${altoFila(cal.modo, F, marco, desborda)}px` : undefined} onpointerleave={() => (sobre = null)}>
   <div class="desliza" bind:this={desliza} bind:clientWidth={ancho}>
     <div class="dentro">
-      <!-- Los meses, arriba. -->
-      <div class="pista meses" aria-hidden="true">
-        <span></span>
-        {#each cal.columnas as col, c (col.desde)}<span class="mes" style:grid-column={c + 2}>{col.mes ?? ""}</span>{/each}
-      </div>
+      {#if cal.modo === "meses"}
+        <!-- En el año, el día del mes, arriba (hoy en una píldora). -->
+        <div class="pista meses" aria-hidden="true">
+          <span></span>
+          {#each cal.columnas as col, c (col.desde)}<span class="pie" class:hoy={col.hoy} style:grid-column={c + 2}>{cabDias[c] ?? ""}</span>{/each}
+        </div>
+      {:else}
+        <!-- Los meses, arriba. -->
+        <div class="pista meses" aria-hidden="true">
+          <span></span>
+          {#each cal.columnas as col, c (col.desde)}<span class="mes" style:grid-column={c + 2}>{col.mes ?? ""}</span>{/each}
+        </div>
+      {/if}
       <!-- El foco va a las casillas (roving tabindex), no a la rejilla. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
       <div class="rejilla" role="grid" aria-label={etiqueta} aria-describedby={descrito} aria-rowcount={F + (horas ? 1 : 0)} aria-colcount={N + 1} bind:this={rejilla} onkeydown={tecla} onclick={pulsar} onpointerover={encima} onfocusin={(e) => (e.target as HTMLElement).matches(":focus-visible") && mostrar(e.target as HTMLElement)} onfocusout={() => (sobre = null)}>
@@ -186,8 +221,8 @@
           </div>
         {/if}
         {#each cal.filas as fila, f (f)}
-          <div class="cf" role="row">
-            <span class="etq" role="rowheader"><span aria-hidden="true">{fila.corto ?? ""}</span><span class="sr-only">{fila.texto}</span></span>
+          <div class="cf" class:ano={fila.ano} role="row">
+            <span class="etq" role="rowheader"><span aria-hidden="true">{corto(fila.corto) ?? ""}</span><span class="sr-only">{fila.texto}</span></span>
             {#each cal.celdas[f] as x, c (x.k)}
               {@const k = clave(f, c)}
               <span
@@ -210,7 +245,7 @@
           </div>
         {/each}
       </div>
-      {#if cal.modo !== "dias"}
+      {#if cal.modo !== "meses"}
         <!-- El día del mes, abajo. -->
         <div class="pista pies" aria-hidden="true">
           <span></span>
@@ -221,6 +256,9 @@
       {/if}
     </div>
   </div>
+  {#if desborda}
+    <p class="pista-desliza" aria-hidden="true">Desliza a los lados para ver {cal.modo === "meses" ? "todo el mes" : "más días"}.</p>
+  {/if}
   {#if sobre}
     <div class="graf-tip globo" style:left="{sobre.x}px" style:top="{sobre.y}px" aria-hidden="true">{sobre.texto}</div>
   {/if}
@@ -237,9 +275,47 @@
     position: relative;
     min-width: 0;
   }
-  .m-dias {
-    --etq-ancho: 18px;
-    --col: minmax(9px, 15px);
+  /* El año: un mes por fila (las filas, como las de las horas, crecen hasta llenar el marco: `altoFila`). */
+  .m-meses {
+    --etq-ancho: 56px;
+    --col: minmax(9px, 1fr);
+  }
+  /* En el móvil no caben 31 días cómodos: casillas de 9 px como poco y se desliza (con el mes fijo a la izquierda). */
+  .m-meses.estrecho {
+    --etq-ancho: 42px;
+    --hueco: 2px;
+  }
+  .m-meses .dentro {
+    min-width: calc(var(--etq-ancho) + 31 * 9px + 30 * var(--hueco));
+  }
+  /* El cambio de año (enero): una raya fina encima, de lado a lado de las casillas. */
+  .m-meses .cf.ano {
+    position: relative;
+    margin-top: 3px;
+  }
+  .m-meses .cf.ano::before {
+    content: "";
+    position: absolute;
+    top: -4.5px;
+    left: var(--etq-ancho);
+    right: 0;
+    border-top: 1px solid var(--border-strong);
+  }
+  .m-meses .cf.ano .etq {
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  /* Al deslizar en el móvil, el mes se queda a la vista. */
+  .m-meses .etq {
+    position: sticky;
+    left: -5px;
+    z-index: 3;
+    background: var(--surface);
+  }
+  .pista-desliza {
+    margin: 4px 0 0;
+    font-size: var(--fs-xs);
+    color: var(--text-3);
   }
   .m-tira {
     --etq-ancho: 0px;
@@ -258,7 +334,7 @@
     scrollbar-width: thin;
   }
   .m-tira .desliza,
-  .m-dias .desliza {
+  .m-meses .desliza {
     padding-bottom: 4px;
   }
   /* En vertical, siempre 3 (el alto no cambia con el periodo); en horizontal, `--hueco`. */
@@ -393,11 +469,6 @@
     right: 1px;
     width: 5px;
     height: 5px;
-  }
-  .m-dias .c {
-    height: auto;
-    aspect-ratio: 1;
-    border-radius: 2px;
   }
   .n1 {
     background: var(--calor-1);

@@ -1281,8 +1281,8 @@ async function principal() {
       const contrasena = Buffer.from(aleatorio(24)).toString("base64url");
       await consola2.hecha(c2, eqB2.id, "crear_repositorio", { id: idRepo, nombre: "En el mismo disco", destino: { id: idDestino, nombre: "Disco o carpeta del equipo", tipo: "local", donde: carpeta }, contrasena }, { claveAdmin: claveB }, {}, 120_000);
       await esperar("el destino nuevo en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).resumen?.destinos?.some((d) => d.id === idDestino) || null, { plazo: 60_000, cada: 1000 });
-      // Con un repositorio dentro no se puede quitar.
-      const enUso = await consola3.resultado(c3, eqB2.id, await consola3.mandar(c3, eqB2.id, "quitar_destino", { destino: idDestino }));
+      // Con un repositorio dentro no se puede quitar (v1.4x: con la clave de administración).
+      const enUso = await consola3.resultado(c3, eqB2.id, await consola3.mandar(c3, eqB2.id, "quitar_destino", { destino: idDestino }, { claveAdmin: claveB }));
       comprobar(enUso.estado === "fallida" && /En el mismo disco/.test(enUso.mensaje ?? ""), "Un destino con un repositorio no se quita", enUso);
       const quitado = await consola2.hecha(c2, eqB2.id, "quitar_repositorio", { repo: idRepo, quitar_destino: true }, { claveAdmin: claveB, repo: { repo: idRepo, contrasena } }, {}, 120_000);
       comprobar(/aún tiene copias guardadas/.test(quitado.mensaje ?? ""), `Quitar el repositorio y su destino: ${quitado.mensaje}`);

@@ -335,7 +335,8 @@
           elegida={elegida?.t ?? null}
           alFiltrar={filtrar}
           descrito="{id}-resumen"
-          etiqueta="{etiqueta}: calendario de {nombreRango}{cal.modo === 'horas' ? ', un día por columna y las horas en filas' : cal.modo === 'dias' ? ', una semana por columna' : ', un cuadro por día'}. Flechas para moverse; Intro muestra abajo lo de ese momento."
+          marco={altoMarco}
+          etiqueta="{etiqueta}: calendario de {nombreRango}{cal.modo === 'horas' ? ', un día por columna y las horas en filas' : cal.modo === 'meses' ? ', un mes por fila y los días del mes en columnas' : ', un cuadro por día'}. Flechas para moverse; Intro muestra abajo lo de ese momento."
         />
         </div>
         <div class="pie-cal">
@@ -541,7 +542,8 @@
   .marco {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    /* Centrado, pero si algo no cabe, que sobre por abajo (nunca se corte la cabecera). */
+    justify-content: safe center;
     min-width: 0;
   }
   /* Los filtros de la bitácora: píldoras con su cuenta. */

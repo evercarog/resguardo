@@ -166,13 +166,25 @@
   .fila :global(.flecha) {
     color: var(--text-3);
   }
+  /* En el móvil: el nombre arriba (con la flecha), la tira y lo que falta debajo. */
   @media (max-width: 640px) {
     .fila {
-      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "nombre flecha" "tira flecha" "frase frase";
+      gap: 6px var(--sp-2);
+    }
+    .f-nombre {
+      grid-area: nombre;
+    }
+    .fila > :global(.tira-mini) {
+      grid-area: tira;
+      justify-self: start;
     }
     .f-frase {
-      grid-column: 1 / -1;
-      grid-row: 2;
+      grid-area: frase;
+    }
+    .fila :global(.flecha) {
+      grid-area: flecha;
     }
   }
 </style>

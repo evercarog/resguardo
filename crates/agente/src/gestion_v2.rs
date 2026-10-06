@@ -1504,7 +1504,8 @@ pub fn repositorios_en_carpeta(carpeta: &std::path::Path) -> usize {
     hijos(carpeta).iter().map(|h| if es_repo(h) { 1 } else { hijos(h).iter().filter(|n| es_repo(n)).count() }).sum()
 }
 
-/// `quitar_destino { destino }` (v1.56, inofensiva, solo administradores): olvida un destino
+/// `quitar_destino { destino }` (v1.56; desde la v1.4x, con la clave de administración y solo
+/// administradores): olvida un destino
 /// que ya no usa nada (ni repositorios, ni copia externa, ni derivadas), con sus credenciales.
 /// **Nunca borra nada de lo que hay en él**; si es una carpeta del equipo y aún tiene copias
 /// guardadas, lo dice.

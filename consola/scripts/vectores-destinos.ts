@@ -22,6 +22,7 @@ import {
   zonasNuevasPara,
 } from "../src/lib/destinos";
 import { lugarDe } from "../src/lib/dondeGuarda";
+import { actividadDestino, claveDeDestino, hrefDestino, reposEnDestino, usarEnCopia, usosDeDestino, vistaPorClave } from "../src/lib/fichaDestino";
 import { esDestructiva } from "../src/lib/cripto/ordenes";
 
 let fallos = 0;
@@ -138,6 +139,81 @@ cierto("quitar_zona es destructiva", esDestructiva("guarda_copias", { quitar_zon
 cierto("quitar un equipo de una zona también", esDestructiva("guarda_copias", { quitar: "caja", zona: "z1a2b3c" }));
 cierto("crear o renombrar una zona, no", !esDestructiva("guarda_copias", { zona: { carpeta: "E:\\Resguardo", puerto: 8002 } }) && !esDestructiva("guarda_copias", { zona: { id: "z1a2b3c", nombre: "Disco E" } }));
 cierto("añadir un equipo a una zona, no", !esDestructiva("guarda_copias", { anadir: "e-caja", zona: "z1a2b3c" }));
+
+console.log("\n· La página de un destino (lib/fichaDestino.ts)");
+{
+  const hace = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const repo = (id: string, destino: string, extra: object = {}) => ({ id, nombre: id, destino, versiones: 3, ...extra }) as never;
+  const alm2: Equipo = {
+    ...almacen,
+    resumen: {
+      ...almacen.resumen,
+      admite: ["zonas_almacen", "espejo_zonas"],
+      guarda_copias: {
+        ...almacen.resumen!.guarda_copias!,
+        espejo: { hora: "23:00", destinos: [{ tipo: "nube", nube: "Dropbox Oficina", ultima: hace(5), resultado: "ok" }, { tipo: "zona", carpeta: "z1a2b3c", ultima: hace(30), resultado: "fallo" }] },
+      },
+    },
+  };
+  const rec2 = {
+    ...recepcion,
+    resumen: {
+      admite: ["derivadas", "nube_equipo"],
+      destinos: [enD, enE, b2],
+      repositorios: [repo("documentos", enD.id, { externa: { destino: "B2 de la oficina", destino_id: b2.id, hora: "23:00" } }), repo("contabilidad", enE.id)],
+      copias: [
+        { id: "k1", nombre: "Documentos", repo: "documentos", activa: true, ultima: { cuando: hace(2), estado: "ok" } },
+        { id: "k2", nombre: "Contabilidad", repo: "contabilidad", activa: true, ultima: { cuando: hace(1), estado: "fallo", mensaje: "sin red" } },
+      ],
+      nubes: [],
+    },
+  } as unknown as Equipo;
+  const eqs = [alm2, rec2, caja];
+  const vs = destinosDelCliente(eqs);
+  const porClave = (k: string) => vistaPorClave(k, eqs, [])!;
+  const vD2 = porClave(claveZona(almacen.id, "principal"));
+  const vE2 = porClave(claveZona(almacen.id, "z1a2b3c"));
+  const vNube = porClave(claveNube(almacen.id, "Dropbox Oficina"));
+  const vB2 = porClave(b2.id);
+  igual("la dirección de su página (la clave, codificada)", hrefDestino("c1", claveZona(almacen.id, "principal")), `/c/c1/destinos/zona%3A${almacen.id}%3Aprincipal`);
+  igual("la clave de un destino de un equipo: su zona o su id", [claveDeDestino(enE, eqs), claveDeDestino(b2, eqs)], [claveZona(almacen.id, "z1a2b3c"), b2.id]);
+  igual("todos los destinos tienen página", vs.every((v) => vistaPorClave(v.clave, eqs, [])?.clave === v.clave), true);
+  igual("una clave que ya no está: ninguna", vistaPorClave("zona:otro:principal", eqs, []), null);
+  igual("los repositorios de cada zona", [reposEnDestino(vD2, eqs).map((x) => x.repo.id), reposEnDestino(vE2, eqs).map((x) => x.repo.id)], [["documentos"], ["contabilidad"]]);
+  igual("lo que usa el B2: la copia externa de «documentos»", usosDeDestino(vB2, eqs, "c1").map((u) => [u.tipo, u.texto]), [["externa", "Copia externa de «documentos» (RECEPCION)"]]);
+  igual("la nube del almacén: le llega el espejo de la principal", usosDeDestino(vNube, eqs, "c1").map((u) => [u.tipo, u.resultado]), [["espejo_entra", "ok"]]);
+  igual(
+    "la zona principal sale a la nube y a la E; a la E le llega",
+    [usosDeDestino(vD2, eqs, "c1").map((u) => u.tipo), usosDeDestino(vE2, eqs, "c1").map((u) => u.tipo)],
+    [["espejo_sale", "espejo_sale"], ["espejo_entra"]],
+  );
+  igual("lo que sale lleva a la página del otro destino", usosDeDestino(vD2, eqs, "c1")[0].href, hrefDestino("c1", claveNube(almacen.id, "Dropbox Oficina")));
+  const act = actividadDestino(vE2, eqs, "c1");
+  igual("lo último de la zona E: la copia que falló y el espejo que llega, lo más reciente primero", act.map((x) => [x.tono, x.texto]), [
+    ["bad", "Copia «Contabilidad» de RECEPCION"],
+    ["bad", "Espejo de Disco D del almacén ALMACEN-01"],
+  ]);
+  igual("…con el motivo", act[0].detalle, "sin red");
+  const usar = usarEnCopia(vNube, eqs, "c1");
+  const q = (v: { clave: string }) => `destino=${encodeURIComponent(v.clave)}`;
+  igual(
+    "usar la nube del almacén: el espejo de cada repositorio del almacén o una copia a partir de él",
+    usar.map((u) => u.href),
+    ["paso_espejo=documentos", "derivada=documentos", "paso_espejo=contabilidad", "derivada=contabilidad"].map((x) => `/c/c1/equipos/e-recepcion?${x}&${q(vNube)}`),
+  );
+  cierto("…y dice que hay que conectar la nube en el equipo dueño si no la tiene", usar[1].detalle.includes("conectar «Dropbox Oficina» también"));
+  igual(
+    "usar una zona: una copia nueva de cada equipo (no del propio almacén) y, de lo que está en otra zona, espejo o repositorio a partir de él (no lo que ya está aquí)",
+    usarEnCopia(vE2, eqs, "c1").map((u) => u.texto),
+    ["Copia nueva de RECEPCION", "Copia nueva de CAJA", "Espejo de «documentos» (RECEPCION)", "Repositorio nuevo a partir de «documentos» (RECEPCION)"],
+  );
+  igual(
+    "usar un destino de un equipo: copia nueva desde quien lo tiene y repositorios a partir de los suyos",
+    usarEnCopia(vB2, eqs, "c1").map((u) => u.href),
+    [`/c/c1/equipos/e-recepcion/copias?nueva=1&${q(vB2)}`, `/c/c1/equipos/e-recepcion?derivada=documentos&${q(vB2)}`, `/c/c1/equipos/e-recepcion?derivada=contabilidad&${q(vB2)}`],
+  );
+  cierto("un agente sin copias derivadas: no se ofrecen", usarEnCopia(vB2, [alm2, { ...rec2, resumen: { ...rec2.resumen!, admite: [] } }, caja], "c1").every((u) => !u.href.includes("derivada=")));
+}
 
 console.log(`\n${fallos ? "MAL" : "ok"}: ${total - fallos}/${total} (destinos y zonas)`);
 if (fallos) process.exit(1);
