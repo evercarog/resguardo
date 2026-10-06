@@ -87,7 +87,7 @@ pub fn sas_de(st: &St, version: Option<i64>, box_pub: &str, sign_pub: &str) -> (
 
 /// Intentos fallidos de `unirse` (código que no vale) por IP y hora: frena probar códigos.
 pub const MAX_FALLOS_UNIRSE_H: u32 = 20;
-/// Intentos de `unirse` por IP y hora, buenos o malos (v1.4x). Antes había un solo límite de 20
+/// Intentos de `unirse` por IP y hora, buenos o malos (v1.48). Antes había un solo límite de 20
 /// que contaba también los que salían bien: una oficina tras una sola IP pública (consola en
 /// internet) no podía vincular más de 20 equipos en una hora y daba «Demasiados intentos».
 /// Los buenos ya los limita la creación de códigos (por cuenta y por cliente).
@@ -347,7 +347,7 @@ fn firma_identidad(st: &St, reto: &str, equipo: &str) -> Res<String> {
     Ok(B64.encode(st.identidad.sign(derivaciones::texto_identidad_servidor(reto, equipo).as_bytes()).to_bytes()))
 }
 
-/// v1.4x (consolas-multiples.md §5): ¿el agente de este equipo guarda en espera las
+/// v1.49 (consolas-multiples.md §5): ¿el agente de este equipo guarda en espera las
 /// órdenes que aún no tocan? Lo dice su resumen (`admite: ["ordenes_en_espera"]`).
 pub(crate) fn admite_espera(db: &dyn crate::almacen::Almacen, ctx: &ClienteCtx, equipo: &str) -> crate::almacen::R<bool> {
     Ok(db
@@ -430,7 +430,7 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         .flatten()
         .and_then(|d| d["espera_min_horas"].as_i64())
         .filter(|h| (1..=168).contains(h));
-    // v1.4x (consolas-multiples.md §5.7): si otra consola la canceló en el equipo mientras
+    // v1.49 (consolas-multiples.md §5.7): si otra consola la canceló en el equipo mientras
     // esperaba, llega `rechazada` con `detalle.cancelada`, y así se guarda: la firma del equipo
     // es sobre ese estado (la consola la comprueba), así que no se cambia por «cancelada».
     let aplicada_pese = orden.estado == "cancelada" && matches!(r.estado.as_str(), "en_marcha" | "hecha" | "fallida");
@@ -621,7 +621,7 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
     Ok(())
 }
 
-/// v1.4x: `orden_en_espera` (otra consola mandó una orden que el equipo tiene en espera).
+/// v1.49: `orden_en_espera` (otra consola mandó una orden que el equipo tiene en espera).
 const TIPOS_AVISO: &[&str] = &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual", "orden_en_espera"];
 
 #[derive(Deserialize)]
@@ -652,11 +652,11 @@ const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
 /// v1.45: una vuelta de la retención lleva las versiones que quitó (como mucho 2000; el agente la recorta a 96 KiB).
 pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
 /// v1.47: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
-/// v1.4x: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
-/// v1.4x (9b): `auditoria_rehecha` (una consola del equipo rehízo la cadena de su auditoría).
+/// v1.49: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
+/// v1.50 (9b): `auditoria_rehecha` (una consola del equipo rehízo la cadena de su auditoría).
 pub const TIPOS_HISTORIAL: &[&str] =
     &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial", "orden", "auditoria_rehecha"];
-/// Los que solo se dan si se piden con `tipo` (v1.45; `orden`, v1.4x): una consola anterior no
+/// Los que solo se dan si se piden con `tipo` (v1.45; `orden`, v1.49): una consola anterior no
 /// los conoce (o son grandes). Sin `tipo`, el historial es el de siempre.
 pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion", "orden"];
 /// Vueltas de la retención con la lista de versiones por equipo; las anteriores, solo con sus cifras.
@@ -713,7 +713,7 @@ fn cabeza_vista(v: &Value) -> Option<(u64, String)> {
     (hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())).then(|| (n, hash.to_ascii_lowercase()))
 }
 
-/// El texto del aviso de una entrada `auditoria_rehecha` (v1.4x, 9b), escrito aquí con
+/// El texto del aviso de una entrada `auditoria_rehecha` (v1.50, 9b), escrito aquí con
 /// sus cifras (no se usa un texto del equipo). `None` si la entrada no tiene su forma.
 /// Con `identidad` (la de este servidor) se dice «este servidor» si la consola es esta.
 pub(crate) fn mensaje_auditoria_rehecha(v: &Value, identidad: Option<&str>) -> Option<String> {
@@ -760,7 +760,7 @@ async fn registrar_historial(st: &St, a: &Agente, h: Historial) -> Res<Value> {
             e.aviso = None;
         }
     }
-    // v1.4x (9b): «una consola rehízo su auditoría», si es reciente, avisa como un aviso
+    // v1.50 (9b): «una consola rehízo su auditoría», si es reciente, avisa como un aviso
     // nuevo (una sola vez: solo si la entrada no estaba ya guardada).
     let mut rehechas = Vec::new();
     for e in entradas.iter_mut().filter(|e| e.tipo == "auditoria_rehecha" && e.hora > ahora - AUDITORIA_REHECHA_RECIENTE_S) {
@@ -882,9 +882,9 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
         "atencion": atencion,
         "sesiones": sesiones,
         "historial": { "ultima": crate::api::fecha_opt(ultima) },
-        // v1.4x: la hora del servidor, para las órdenes en espera (el equipo la usa además de la suya).
+        // v1.49: la hora del servidor, para las órdenes en espera (el equipo la usa además de la suya).
         "ahora": crate::api::fecha(ahora()),
-        // v1.4x (9b): la cabeza de la auditoría del cliente, firmada; un agente anterior la ignora.
+        // v1.50 (9b): la cabeza de la auditoría del cliente, firmada; un agente anterior la ignora.
         "ancla": ancla,
     })))
 }
@@ -1067,8 +1067,8 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
         .await
         .unwrap_or((false, None, Value::Null));
     // v1.23: hasta dónde tiene el historial del equipo (el agente sube lo que falte).
-    // v1.4x: `ahora`, la hora del servidor (para las órdenes en espera; también en cada latido).
-    // v1.4x (9b): y la cabeza de la auditoría del cliente, firmada.
+    // v1.49: `ahora`, la hora del servidor (para las órdenes en espera; también en cada latido).
+    // v1.50 (9b): y la cabeza de la auditoría del cliente, firmada.
     let _ = tx.send(
         json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) }, "ahora": crate::api::fecha(ahora()), "ancla": ancla })
             .to_string(),
@@ -1078,7 +1078,7 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
 
     let mut ping = tokio::time::interval(LATIDO_AGENTE);
     ping.tick().await;
-    // v1.4x (9b): el ancla de la auditoría también con el canal abierto días seguidos.
+    // v1.50 (9b): el ancla de la auditoría también con el canal abierto días seguidos.
     let mut ancla = tokio::time::interval(crate::ancla::CADA);
     ancla.tick().await;
     // Lo último que llegó del equipo (su «pong», un informe…). Sin esto, con la red caída

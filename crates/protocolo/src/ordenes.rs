@@ -45,7 +45,7 @@ pub const TIPOS: &[Tipo] = &[
     t("reanudar", Inofensiva, false, false, false),
     t("actualizar_agente", Inofensiva, false, false, false),
     t("abrir_sesion", Inofensiva, false, true, false),
-    // v1.4x: cancelar una orden en espera en el equipo (de cualquiera de sus consolas).
+    // v1.49: cancelar una orden en espera en el equipo (de cualquiera de sus consolas).
     // Inofensiva: cancelar solo aumenta la protección (docs/consolas-multiples.md §5.7).
     t("cancelar_espera", Inofensiva, false, false, false),
     // Contraseña del repositorio
@@ -171,7 +171,7 @@ mod tests {
             let t = tipo(t).unwrap();
             assert!(t.nivel == Nivel::Administracion && t.solo_administradores && !t.destructiva);
         }
-        // v1.4x: cancelar una orden en espera, desde cualquier consola y sin clave.
+        // v1.49: cancelar una orden en espera, desde cualquier consola y sin clave.
         let c = tipo("cancelar_espera").unwrap();
         assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !c.solo_administradores);
         // Ninguna inofensiva es destructiva.

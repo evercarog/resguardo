@@ -1,4 +1,4 @@
-//! Ajustes de las etiquetas de los equipos (v1.4x, tarea 6 del plan): el color
+//! Ajustes de las etiquetas de los equipos (v1.52, tarea 6 del plan): el color
 //! elegido (de la paleta de la consola), la plantilla de copia que se propone a
 //! un equipo nuevo con esa etiqueta y cómo se avisa de sus equipos. Se guardan
 //! por cliente, en claro, como las etiquetas (son metadatos para organizar; la

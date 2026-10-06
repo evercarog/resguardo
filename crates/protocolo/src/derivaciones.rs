@@ -115,7 +115,7 @@ pub fn texto_identidad_servidor(reto_b64: &str, equipo: &str) -> String {
     format!("resguardo-servidor-v1|{reto_b64}|{equipo}")
 }
 
-/// Texto que firma el servidor con el ancla de la auditoría de un cliente (v1.4x,
+/// Texto que firma el servidor con el ancla de la auditoría de un cliente (v1.50,
 /// plan-mejoras 9b): la entrada `n` de su cadena, de `creado` (segundos Unix), tiene la
 /// huella `hash`. El agente la comprueba con la identidad que fijó al vincular.
 pub fn texto_ancla_auditoria(cliente: &str, n: u64, creado: i64, hash: &str) -> String {

@@ -55,7 +55,7 @@ export const NIVEL: Record<string, Nivel> = {
   // v1.35: varias consolas a la vez (docs/consolas-multiples.md).
   anadir_consola: "admin",
   quitar_consola: "admin",
-  // v1.4x: cancelar una orden en espera en el equipo, de cualquiera de sus consolas
+  // v1.49: cancelar una orden en espera en el equipo, de cualquiera de sus consolas
   // (inofensiva: cancelar solo aumenta la protección; docs/consolas-multiples.md §5.7).
   cancelar_espera: "sesion",
 };
@@ -231,7 +231,7 @@ export interface OrdenPlana {
   cuerpo: Record<string, unknown>;
   autorizacion: Autorizacion;
   responder_a: string | null;
-  /** v1.4x: quién la manda (su nombre en esta consola): el equipo lo enseña en sus órdenes en espera y en su historial. */
+  /** v1.49: quién la manda (su nombre en esta consola): el equipo lo enseña en sus órdenes en espera y en su historial. */
   por?: string;
 }
 
@@ -260,7 +260,7 @@ export function sellarOrden(
     esperaHoras: number;
     /** Lo que ya tiene el equipo (p. ej. los destinos del espejo), para decidir si es destructiva. */
     contexto?: ContextoOrden;
-    /** v1.4x: el nombre de quien la manda (informativo; un agente anterior lo ignora). */
+    /** v1.49: el nombre de quien la manda (informativo; un agente anterior lo ignora). */
     por?: string | null;
   },
   ahora = new Date(),

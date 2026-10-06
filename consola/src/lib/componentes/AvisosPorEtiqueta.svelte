@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Avisos por etiqueta de una persona (v1.4x, tarea 6): para los equipos con
+  // Avisos por etiqueta de una persona (v1.52, tarea 6): para los equipos con
   // una etiqueta, otra cosa que lo general («de los de Servidores, todo»; «de
   // los de Pruebas, nada»). Si un equipo tiene varias con preferencia, vale lo
   // que pida cualquiera de ellas.

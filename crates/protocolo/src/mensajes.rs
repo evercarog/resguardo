@@ -41,7 +41,7 @@ pub const ALFABETO_CODIGO: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /// Código de emparejamiento: 10 caracteres sin ambigüedades (~49,5 bits), como «ABCD-EFGH-JK».
 ///
-/// Desde v1.4x la consola genera los suyos (consola/src/lib/codigo.ts) y este solo lo usan las
+/// Desde v1.48 la consola genera los suyos (consola/src/lib/codigo.ts) y este solo lo usan las
 /// consolas anteriores y «Vincular este servidor». Antes tomaba los 10 primeros bytes de un
 /// UUID v4 con `% 31`: el byte 6 (versión) y el 8 (variante) no son aleatorios del todo y el
 /// módulo favorece unas letras. Ahora: solo bytes aleatorios y rechazo (sin sesgo).

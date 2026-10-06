@@ -244,7 +244,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const ver = String(c.verificador);
       const prueba = plana.autorizacion.prueba_admin;
       if (!prueba || !iguales(sha256(deB64(prueba)), deB64(ver))) return resultado(e, o, "rechazada", "La prueba de administración no corresponde al verificador.");
-      // v1.4x: con el código generado en el navegador, este «equipo» simulado solo conoce su hash
+      // v1.48: con el código generado en el navegador, este «equipo» simulado solo conoce su hash
       // (el de verdad lo tiene: se lo escribieron o venía en el instalador): solo mira que haya prueba.
       const sinCodigo = e.codigoEmparejamiento === "" && /^[A-Za-z0-9+/]{43}=$/.test(String(plana.autorizacion.prueba_codigo ?? ""));
       if (!sinCodigo && (!e.codigoEmparejamiento || plana.autorizacion.prueba_codigo !== pruebaCodigo(e.codigoEmparejamiento, e.id, ver)))
@@ -579,7 +579,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       return resultado(e, o, "hecha", `Quitada la consola ${x.nombre} (${x.url}): ya no gestiona este equipo.`);
     }
-    // v1.4x: cancelar una orden en espera (de cualquiera de las consolas del equipo).
+    // v1.49: cancelar una orden en espera (de cualquiera de las consolas del equipo).
     case "cancelar_espera": {
       const lista = e.resumen?.en_espera ?? [];
       const x = lista.find((y) => y.id === c.id);

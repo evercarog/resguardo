@@ -650,7 +650,7 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}/emparejamientos$`),
     (ctx, [c]) => {
       const { cuenta } = miembro(ctx, c, "administrador");
-      // v1.4x: el código lo generó el navegador: solo llega su hash y no se devuelve código.
+      // v1.48: el código lo generó el navegador: solo llega su hash y no se devuelve código.
       const hash = hashDelCuerpo(ctx.cuerpo);
       if (hash) {
         if (estado.emparejamientos.some((x) => x.codigo_hash === hash)) throw err(409, "codigo_repetido", "Ese código ya existe. Genera otro.");
@@ -707,7 +707,7 @@ const rutas: Ruta[] = [
       if (b.so !== "windows" && b.so !== "linux") throw err(422, "datos", "Sistema no válido («windows» o «linux»).");
       if (!nombre || nombre.length > 80 || /["\u0000-\u001f]/.test(nombre)) throw err(422, "datos", "Nombre del equipo no válido.");
       if (!/^https:\/\/[A-Za-z0-9.\-:[\]]+$/.test(servidor)) throw err(422, "datos", "Dirección del servidor no válida (https://servidor:puerto, sin ruta).");
-      // v1.4x: con el hash del código del navegador, JSON (sin código): la consola arma la cola o la línea.
+      // v1.48: con el hash del código del navegador, JSON (sin código): la consola arma la cola o la línea.
       const hash = hashDelCuerpo(ctx.cuerpo);
       if (hash) {
         if (estado.emparejamientos.some((x) => x.codigo_hash === hash)) throw err(409, "codigo_repetido", "Ese código ya existe. Genera otro.");
@@ -742,7 +742,7 @@ const rutas: Ruta[] = [
     },
   ],
   [
-    // v1.4x: el instalador genérico (sin cola: la añade la consola).
+    // v1.48: el instalador genérico (sin cola: la añade la consola).
     "GET",
     new RegExp(`^${C}/instalador-agente$`),
     (ctx, [c]) => {
@@ -888,7 +888,7 @@ const rutas: Ruta[] = [
         sas_version: e ? (agenteConSasV3(e.version_agente) ? 3 : undefined) : undefined,
         // v1.17: preparados, con su nombre y (mientras sirve) el código para el alta.
         ...(p.nombre ? { nombre: p.nombre, so: p.so } : {}),
-        // v1.42: el código mientras sirve, también el de 15 min (v1.4x: del navegador, solo su hash).
+        // v1.42: el código mientras sirve, también el de 15 min (v1.48: del navegador, solo su hash).
         ...(p.estado === "abierto" || p.estado === "unido" ? (p.codigo_hash ? { codigo_hash: p.codigo_hash, codigo_navegador: true } : { codigo: p.codigo }) : {}),
       };
     },
@@ -1066,7 +1066,7 @@ const rutas: Ruta[] = [
     },
   ],
   [
-    // v1.4x: ajustes de las etiquetas (color, plantilla por defecto, avisos).
+    // v1.52: ajustes de las etiquetas (color, plantilla por defecto, avisos).
     "GET",
     new RegExp(`^${C}/etiquetas$`),
     (ctx, [c]) => (miembro(ctx, c), ajustesEtiquetasDe(c)),
@@ -1508,7 +1508,7 @@ function marcaJson(c: string) {
 const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>();
 /** Plantillas de copia (v1.20) por cliente: solo bytes cifrados por la consola. */
 const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizada: string; por: string }>>();
-/** v1.4x: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */
+/** v1.52: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */
 const ajustesEtiquetasMock = new Map<string, T.AjusteEtiqueta[]>();
 function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
   if (!ajustesEtiquetasMock.has(c))
@@ -1522,7 +1522,7 @@ function agenteConSasV3(v: string | null | undefined): boolean {
   return a > 0 || b > 7 || (b === 7 && c >= 10);
 }
 
-/** v1.4x: el `codigo_hash` del cuerpo (64 hex, en minúsculas) o `null`; con otra forma, 422. */
+/** v1.48: el `codigo_hash` del cuerpo (64 hex, en minúsculas) o `null`; con otra forma, 422. */
 function hashDelCuerpo(cuerpo: unknown): string | null {
   const h = (cuerpo as { codigo_hash?: unknown } | null)?.codigo_hash;
   if (h === undefined || h === null) return null;

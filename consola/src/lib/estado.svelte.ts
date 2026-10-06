@@ -21,7 +21,7 @@ export const actual = $state({
   equipos: [] as T.Equipo[],
   avisosAbiertos: 0,
   pendientes: 0,
-  /** v1.4x: los ajustes de las etiquetas de sus equipos (color, plantilla por defecto, avisos). */
+  /** v1.52: los ajustes de las etiquetas de sus equipos (color, plantilla por defecto, avisos). */
   etiquetas: [] as T.AjusteEtiqueta[],
   cargando: false,
   error: "" as string,

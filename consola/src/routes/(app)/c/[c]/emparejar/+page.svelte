@@ -38,7 +38,7 @@
   let so = $state<"windows" | "linux" | "mac">("windows");
   /** El emparejamiento en curso. `codigo` vacío: lo generó otro navegador (se escribe a mano; `codigoHash` lo comprueba). */
   let emp = $state<{ id: string; codigo: string; caduca: string; codigoHash?: string } | null>(null);
-  /** El código escrito a mano cuando este navegador no lo tiene (v1.4x). */
+  /** El código escrito a mano cuando este navegador no lo tiene (v1.48). */
   let codigoEscrito = $state("");
   let estadoEmp = $state<EstadoDeEmparejamiento | null>(null);
   let sondeo: ReturnType<typeof setInterval> | null = null;
@@ -72,7 +72,7 @@
   /** Hasta cuándo el servidor no da más códigos (429 con `retry_after`). */
   let esperarHasta = $state(0);
   const bloqueado = $derived(esperarHasta > reloj.ahora);
-  // v1.4x: con un servidor que lo admite, el código lo genera este navegador y al servidor solo
+  // v1.48: con un servidor que lo admite, el código lo genera este navegador y al servidor solo
   // le llega su hash; el código se guarda aquí hasta el alta (lib/codigo.ts).
   const codigos = new Codigos();
   const delNavegador = $derived(app.servidor?.codigo_navegador === true);
@@ -189,7 +189,7 @@
     e.preventDefault();
     if (!emp || !estadoEmp?.equipo || !actual.cliente) return;
     error = "";
-    // v1.4x: el código lo generó otro navegador: se escribe aquí y se comprueba con su hash.
+    // v1.48: el código lo generó otro navegador: se escribe aquí y se comprueba con su hash.
     if (!emp.codigo) {
       if (!codigoDeHash(codigoEscrito, emp.codigoHash)) {
         error = "Ese no es el código de este equipo. Escríbelo tal cual (da igual mayúsculas, espacios y guiones), o termínalo en el navegador donde lo preparaste.";
@@ -300,7 +300,7 @@
   const servidorLimpio = () => servidorUrl.trim().replace(/\/+$/, "");
 
   /**
-   * v1.4x: un preparado con el código de este navegador. Si este navegador ya preparó ese equipo
+   * v1.48: un preparado con el código de este navegador. Si este navegador ya preparó ese equipo
    * (mismo nombre y sistema) y su código sigue abierto con más de 2 h por delante, se usa el mismo
    * (no gasta otro). Si no, genera uno de 16 caracteres y manda solo su hash.
    */
@@ -392,7 +392,7 @@
     error = "";
     try {
       const est = await api.emparejamiento(c, id);
-      // v1.4x: el código lo generó un navegador; si no es este, se escribe a mano al dar el alta.
+      // v1.48: el código lo generó un navegador; si no es este, se escribe a mano al dar el alta.
       const codigo = est.codigo ?? (est.codigo_navegador ? codigos.de(id, est.codigo_hash) : null);
       if (!codigo && !est.codigo_navegador) throw new Error("Ese emparejamiento ya no se puede confirmar desde aquí. Prepara otro.");
       emp = { id, codigo: codigo ?? "", caduca: est.caduca, codigoHash: est.codigo_hash };

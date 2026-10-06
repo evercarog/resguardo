@@ -37,7 +37,7 @@ pub fn severidad(tipo: &str) -> Severidad {
     }
 }
 
-/// v1.4x: la gravedad de un aviso de un equipo cuyas etiquetas piden más importancia.
+/// v1.52: la gravedad de un aviso de un equipo cuyas etiquetas piden más importancia.
 /// Sube hasta la más alta que pidan, pero solo lo que ya es importante o crítico de por sí
 /// (lo informativo no se vuelve urgente). Nunca baja.
 pub fn severidad_con_etiquetas(base: Severidad, pedidas: &[Severidad]) -> Severidad {

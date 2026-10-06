@@ -1,5 +1,5 @@
 <script lang="ts">
-  // «Aplicar una plantilla» a varios equipos a la vez (v1.4x, tarea 6; p. ej. a
+  // «Aplicar una plantilla» a varios equipos a la vez (v1.52, tarea 6; p. ej. a
   // todos los de «Servidores»). Las plantillas y las copias van cifradas con la
   // clave de administración, así que todo pasa en este navegador:
   //   1. la clave (K_cfg se calcula una vez) y qué plantilla;

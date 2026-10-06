@@ -219,7 +219,7 @@ export class Consola {
     secretos: Secretos = {},
     /** `sinComprobar`: sin mirar antes la etiqueta (para ver que el propio equipo rechaza una clave que no es). */
     /** `relevo`: para «descargar» (el relé del servidor por donde sube el equipo). */
-    /** `esperaS` (v1.4x): una destructiva que espera de verdad esos segundos (se queda en el equipo hasta entonces). */
+    /** `esperaS` (v1.49): una destructiva que espera de verdad esos segundos (se queda en el equipo hasta entonces). */
     extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean; esperaS?: number; sinComprobar?: boolean; relevo?: { id: string; max_bytes: number } } = {},
   ): Promise<Orden> {
     const e = await this.equipo(c, equipoId);
@@ -311,7 +311,7 @@ export class Consola {
 
   /**
    * «Añadir equipo»: código, `vincular` en el equipo, número de comprobación (SAS v3), confirmar con la etiqueta y `alta`.
-   * `forma` (v1.4x): «navegador» (por defecto: el código de 15 min lo genera la consola y al servidor solo le
+   * `forma` (v1.48): «navegador» (por defecto: el código de 15 min lo genera la consola y al servidor solo le
    * llega su hash), «instalador» (instalador listo: la cola la arma la consola con su código, lib/cola.ts, y el
    * equipo se vincula con `vincular --instalador`) o «servidor» (la forma de antes: el servidor genera el código).
    */

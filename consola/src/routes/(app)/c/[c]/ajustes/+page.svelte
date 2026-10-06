@@ -88,7 +88,7 @@
   let editarAvisos = $state<PersonaNotif | null>(null);
   let inmediatos = $state<Severidad[]>([]);
   let conResumen = $state(false);
-  /** v1.4x: lo que recibe de los equipos con ciertas etiquetas. */
+  /** v1.52: lo que recibe de los equipos con ciertas etiquetas. */
   let avisosEtiqueta = $state<PrefEtiqueta[]>([]);
   const etiquetasCliente = $derived([...new Set([...etiquetasDe(actual.equipos).map((t) => t.nombre), ...avisosEtiqueta.map((x) => x.etiqueta)])]);
   let guardandoAvisos = $state(false);

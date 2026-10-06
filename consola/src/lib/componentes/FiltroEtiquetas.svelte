@@ -1,7 +1,7 @@
 <script lang="ts">
   // Filtrar por etiqueta (Equipos, Avisos, Estado). El filtro se recuerda al
   // pasar de una pantalla a otra del mismo cliente. Sin etiquetas, no se ve.
-  // v1.4x: «Ajustar» (administradores) abre sus colores, plantillas y avisos.
+  // v1.52: «Ajustar» (administradores) abre sus colores, plantillas y avisos.
   import { Settings2, Tag } from "@lucide/svelte";
   import { actual, puede } from "$lib/estado.svelte";
   import { etiquetasDe, filtroEtiqueta } from "$lib/etiquetas.svelte";

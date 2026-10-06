@@ -184,7 +184,7 @@ Lo que se acordó en el plan, y cómo se cumple:
 
 ## Contrato (parte A)
 
-En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.4x (pendiente de numerar al unir)»:
+En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.53»:
 
 - `guarda_copias { zona: { nombre?, carpeta, puerto } }`, `{ zona: { id, nombre } }`, `{ quitar_zona }`*, `{ anadir, zona }`, `{ quitar, zona }`*; `admite: "zonas_almacen"`; resumen `guarda_copias.zonas[]`.
 - `GET/PUT/DELETE /api/clientes/{c}/destinos[/{id}]` (el catálogo).
@@ -204,7 +204,7 @@ Para la sesión que lo retome, en este orden (cada punto con sus pruebas, como e
 
 ## Parte B: lo que se hizo (rama `ia/copias-en-cadena`)
 
-Contrato en [api-servidor.md](api-servidor.md) → «Cambios», v1.4x (copias en cadena). Lo dudoso y lo que no se pudo probar, en [registro-ia.md](registro-ia.md).
+Contrato en [api-servidor.md](api-servidor.md) → «Cambios», v1.55 (copias en cadena). Lo dudoso y lo que no se pudo probar, en [registro-ia.md](registro-ia.md).
 
 1. **Pasos «espejo» por zona** (7d.2): hecho. `Destino.zona` del espejo (de qué zona copia) y el tipo `zona` (a otra zona del almacén, carpeta a carpeta). El almacén lo hace en local con `espejo_motor::vuelta`; cada origen lleva su archivo de estado. `poner_espejo` rechaza copiar una zona en sí misma y `quitar_zona` se niega si el espejo la usa. «Después de cada copia» mira solo los repositorios del destino en su zona. `admite: "espejo_zonas"`. Un destino «zona» o «carpeta» con `repos` de un solo repositorio, `zona` y `tras_copia` es el paso «espejo» de una copia (la consola lo crea con «Añadir un paso «espejo»…»).
 2. **Cadenas** (7c): hecho. `config.copias[].tras`; el plan del agente lleva `after` (`<repo>#<copia>`); en una misma vuelta, hasta 8 pasos seguidos. Si la anterior falla: no empieza, se anota una vez por fallo (`state.chains`, historial `chain`) y el informe lleva `cadenas[]` → aviso `cadena_parada`. «Bien» incluye «sin cambios» y «con algún archivo sin leer» (`warning`). `admite: "cadenas"`.

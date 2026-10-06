@@ -340,7 +340,7 @@ console.log("\n— Línea de Linux (lib/emparejar.ts) —");
   for (const [c, s, h] of malos) igual(`sin línea: ${JSON.stringify([c, s, h])}`, lineaVincular(c, s, h), "");
 }
 
-// --- v1.4x: el código lo genera el navegador ---------------------------------
+// --- v1.48: el código lo genera el navegador ---------------------------------
 console.log("\n— Códigos generados en el navegador (lib/codigo.ts) —");
 {
   const a = generarCodigo();

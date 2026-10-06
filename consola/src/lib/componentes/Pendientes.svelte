@@ -2,7 +2,7 @@
   import { tip } from "$lib/tooltip";
   // Órdenes destructivas esperando su turno: «Pendiente: … · Cancelar».
   // Cualquiera del cliente (salvo «solo lectura») puede cancelarlas.
-  // v1.4x (docs/consolas-multiples.md §5): también las que mandó otra consola y el
+  // v1.49 (docs/consolas-multiples.md §5): también las que mandó otra consola y el
   // equipo tiene en espera (de su resumen), diciendo desde cuál; esas se cancelan con
   // la orden `cancelar_espera`, inofensiva (sin clave).
   import { onMount, untrack } from "svelte";

@@ -1,4 +1,4 @@
-// La cola del instalador «listo» armada en el navegador (v1.4x). Mismo formato y mismas
+// La cola del instalador «listo» armada en el navegador (v1.48). Mismo formato y mismas
 // comprobaciones que crates/protocolo/src/instalador.rs (`cola`, `DatosInstalador::validar`):
 //
 //   "RESGUARDO-COLA-1" ‖ u32 BE n ‖ JSON (n bytes) ‖ u32 BE n ‖ "RESGUARDO-FIN-01"

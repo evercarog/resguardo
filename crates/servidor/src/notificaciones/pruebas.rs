@@ -318,7 +318,7 @@ fn resumen_semanal_por_persona() {
         )
         .unwrap();
     p.st.db.contacto_equipo(&p.ctx, "e1", ahora - 60).unwrap();
-    // v1.4x (9b): la cabeza de la auditoría del cliente va en el resumen («ancla»).
+    // v1.50 (9b): la cabeza de la auditoría del cliente va en el resumen («ancla»).
     p.st.db.auditar(&p.ctx, "cuenta:ana@ejemplo.com", "renombrar_cliente", "", "{}").unwrap();
     let cabeza = crate::ancla::de_cliente(p.st.db.as_ref(), &p.ctx).unwrap().expect("con auditoría");
     let a = ajustes::ajustes(p.st.db.as_ref()).unwrap();
@@ -361,7 +361,7 @@ fn el_arreglo_no_llega_a_quien_ya_no_esta() {
     assert_eq!(para, vec!["ana@ejemplo.com".to_string()]);
 }
 
-/// v1.4x: avisos por etiqueta. Los de «Servidores» cuentan como críticos (les llegan
+/// v1.52: avisos por etiqueta. Los de «Servidores» cuentan como críticos (les llegan
 /// también al técnico y al webhook de críticos), un canal puede recibirlos siempre y cada
 /// persona puede pedir otra cosa para los equipos con una etiqueta.
 #[test]

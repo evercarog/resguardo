@@ -231,7 +231,7 @@ export const ponerEtiquetas = (c: string, e: string, etiquetas: string[]) => ped
 export const pedirAtencion =(c: string, e: string) => pedir<void>("POST", `${cli(c)}/equipos/${enc(e)}/atencion`);
 
 /**
- * Un código de 15 min. v1.4x: con `codigoHash` (servidores con `codigo_navegador`), el código lo
+ * Un código de 15 min. v1.48: con `codigoHash` (servidores con `codigo_navegador`), el código lo
  * generó este navegador y solo se manda su hash: la respuesta no lo trae (`codigo_navegador: true`).
  */
 export const abrirEmparejamiento = (c: string, codigoHash?: string) =>
@@ -250,7 +250,7 @@ export const aMedias = (c: string) =>
     throw e;
   });
 /** v1.42: el código de 15 min de esta cuenta que aún sirve (o `null`); con un servidor anterior, 404. */
-/** v1.4x: con `navegador`, también uno generado en un navegador (sin el código, con `codigo_hash`). */
+/** v1.48: con `navegador`, también uno generado en un navegador (sin el código, con `codigo_hash`). */
 export const codigoAbierto = (c: string, navegador = false) =>
   pedir<CodigoAbierto | null>("GET", `${cli(c)}/codigo-abierto${navegador ? "?navegador=1" : ""}`, undefined, { invisible: true });
 
@@ -264,7 +264,7 @@ export const destinosCatalogo = (c: string) => pedir<T.DestinoCatalogo[]>("GET",
 export const ponerDestino = (c: string, id: string, d: { nombre: string; tipo: T.DestinoCatalogo["tipo"]; donde?: string | null; atributos?: T.AtributosDestino | null }) =>
   pedir<void>("PUT", `${cli(c)}/destinos/${enc(id)}`, d);
 export const borrarDestino = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/destinos/${enc(id)}`);
-// v1.4x: ajustes de las etiquetas (color, plantilla por defecto y avisos). Sin nada, vuelve a lo de siempre.
+// v1.52: ajustes de las etiquetas (color, plantilla por defecto y avisos). Sin nada, vuelve a lo de siempre.
 export const ajustesEtiquetas = (c: string) => pedir<T.AjusteEtiqueta[]>("GET", `${cli(c)}/etiquetas`, undefined, { invisible: true });
 export const ponerAjusteEtiqueta = (c: string, a: { nombre: string; color: number | null; plantilla: string | null; avisos: T.AvisosEtiqueta | null }) =>
   pedir<T.AjusteEtiqueta[]>("PUT", `${cli(c)}/etiquetas`, a);
@@ -283,12 +283,12 @@ export const vincularLocal = (c: string) => pedir<T.Preparado>("POST", `${cli(c)
 export const preparados = (c: string) => pedir<T.Preparado[]>("GET", `${cli(c)}/emparejamientos`);
 export const prepararLinux = (c: string, nombre: string, servidor: string) => pedir<T.PreparadoLinux>("POST", `${cli(c)}/instaladores`, { nombre, so: "linux", servidor });
 /**
- * v1.4x: un preparado con el código generado en este navegador (solo va su hash). La respuesta es
+ * v1.48: un preparado con el código generado en este navegador (solo va su hash). La respuesta es
  * JSON también en Windows: la consola baja el instalador genérico y le añade la cola (lib/cola.ts).
  */
 export const prepararConHash = (c: string, b: { nombre: string; so: "windows" | "linux"; servidor: string; codigo_hash: string }) =>
   pedir<T.PreparadoNavegador>("POST", `${cli(c)}/instaladores`, b);
-/** v1.4x: el instalador genérico del agente (sin cola). 404 `sin_instalador` si el servidor no lo tiene. */
+/** v1.48: el instalador genérico del agente (sin cola). 404 `sin_instalador` si el servidor no lo tiene. */
 export async function instaladorGenerico(c: string): Promise<Blob> {
   const fin = empezar();
   let res: Response;
@@ -317,7 +317,7 @@ export async function instaladorGenerico(c: string): Promise<Blob> {
     fin();
   }
 }
-/** El instalador del agente con la cola para vincular: el archivo, su nombre y el emparejamiento (servidores anteriores a v1.4x). */
+/** El instalador del agente con la cola para vincular: el archivo, su nombre y el emparejamiento (servidores anteriores a v1.48). */
 export async function prepararInstalador(c: string, nombre: string, servidor: string): Promise<{ datos: Blob; archivo: string; id: string; caduca: string; reutilizado: boolean }> {
   const fin = empezar();
   let res: Response;
@@ -443,7 +443,7 @@ export const probarCanal = (a: AmbitoNotif, k: string) => pedir<{ ok: boolean; m
 /** Los últimos 100 envíos (del servidor entero, o de un cliente). */
 export const registroNotif = (a: AmbitoNotif) => pedir<T.EnvioNotif[]>("GET", `${baseNotif(a)}/registro`, undefined, { invisible: true });
 export const personasNotif = (c: string) => o404(pedir<T.PersonaNotif[]>("GET", `${cli(c)}/notificaciones/personas`, undefined, { invisible: true }));
-/** `etiquetas` (v1.4x): sin el campo, el servidor conserva las que hubiera. */
+/** `etiquetas` (v1.52): sin el campo, el servidor conserva las que hubiera. */
 export const ponerPrefsNotif = (c: string, cuenta: string, b: { inmediatos: T.Severidad[]; resumen: boolean; etiquetas?: T.PrefEtiqueta[] }) =>
   pedir<T.PrefsNotif>("PUT", `${cli(c)}/notificaciones/personas/${enc(cuenta)}`, b);
 export const misNotif = () => o404(pedir<T.MisNotif>("GET", "/api/cuenta/notificaciones", undefined, { invisible: true }));

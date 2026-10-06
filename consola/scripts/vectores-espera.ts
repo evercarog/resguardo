@@ -1,4 +1,4 @@
-// Pruebas de las órdenes en espera de todas las consolas (src/lib/espera.ts, v1.4x,
+// Pruebas de las órdenes en espera de todas las consolas (src/lib/espera.ts, v1.49,
 // docs/consolas-multiples.md §5): juntar las de esta consola y las que el equipo tiene
 // de otras, sin repetir ni enseñar direcciones, y el historial «Desde otras consolas».
 // `npm run test:vectores` (con las demás).

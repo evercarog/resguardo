@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tip } from "$lib/tooltip";
-  // «Desde otras consolas» en Órdenes (v1.4x, docs/consolas-multiples.md §5.8): lo que
+  // «Desde otras consolas» en Órdenes (v1.49, docs/consolas-multiples.md §5.8): lo que
   // los equipos con más de una consola cuentan en su historial de las órdenes que les
   // mandaron las demás (qué, desde cuál, quién y cómo acabó). Solo se lee: cada orden
   // se lleva desde su consola. Sin la dirección de ninguna consola.

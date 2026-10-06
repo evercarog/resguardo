@@ -394,7 +394,7 @@ fn fila_equipo(r: &rusqlite::Row) -> rusqlite::Result<Equipo> {
     })
 }
 
-/// v1.4x: ¿se puede entregar antes de su hora a un agente que admite `ordenes_en_espera`?
+/// v1.49: ¿se puede entregar antes de su hora a un agente que admite `ordenes_en_espera`?
 /// Solo las que piden autorización (el equipo la comprueba al recibirlas).
 fn adelantable(tipo: &str) -> bool {
     resguardo_protocolo::ordenes::tipo(tipo).is_some_and(|t| t.nivel != resguardo_protocolo::ordenes::Nivel::Inofensiva)
@@ -983,7 +983,7 @@ impl Almacen for Sqlite {
         self.con(c, |db| {
             let mut st = db
                 .prepare(&format!(
-                    // v1.4x: también las entregadas antes de su hora (el equipo las tiene en espera).
+                    // v1.49: también las entregadas antes de su hora (el equipo las tiene en espera).
                     "SELECT {COLS_ORDEN} FROM ordenes WHERE estado IN ('pendiente', 'entregada') AND not_before IS NOT NULL AND not_before > ?1 ORDER BY not_before"
                 ))
                 .map_err(s)?;
@@ -1322,7 +1322,7 @@ impl Almacen for Sqlite {
         self.con(c, |db| Ok(db.execute("DELETE FROM plantillas WHERE id = ?1", [id]).map_err(s)? > 0))
     }
 
-    // ---------- Ajustes de las etiquetas (v1.4x) ----------
+    // ---------- Ajustes de las etiquetas (v1.52) ----------
     fn ajustes_etiquetas(&self, c: &ClienteCtx) -> R<Vec<AjusteEtiqueta>> {
         self.con(c, |db| {
             let mut st = db.prepare("SELECT datos, actualizada, por FROM etiquetas_ajustes ORDER BY clave").map_err(s)?;
@@ -1923,7 +1923,7 @@ mod tests {
         assert!(a.entregar_ordenes(&c, "e1", ahora() + 7200, false).unwrap().is_empty());
     }
 
-    /// v1.4x (consolas-multiples.md §5): a un agente que admite `ordenes_en_espera` se le
+    /// v1.49 (consolas-multiples.md §5): a un agente que admite `ordenes_en_espera` se le
     /// entregan al momento las que piden autorización y esperan su hora (las inofensivas
     /// no); siguen saliendo «esperando su turno», se pueden cancelar (y el equipo se entera)
     /// y, si el equipo dice que la aplicó igualmente, su resultado firmado manda.

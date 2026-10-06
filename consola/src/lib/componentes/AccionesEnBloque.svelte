@@ -1,6 +1,6 @@
 <script lang="ts">
   // Acciones en bloque sobre varios equipos: «Copiar ahora», «Verificar» y
-  // (v1.4x, tarea 6) «Pausar» y «Reanudar». Con `copias` («equipo|copia»,
+  // (v1.52, tarea 6) «Pausar» y «Reanudar». Con `copias` («equipo|copia»,
   // desde la lista de Copias), solo esas copias. Cada equipo recibe sus propias
   // órdenes, selladas para él como siempre. Copiar, verificar y reanudar son
   // inofensivas (no piden clave). Pausar pide la clave de administración (se

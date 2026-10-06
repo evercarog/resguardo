@@ -120,7 +120,7 @@ pub struct Vinculo {
     /// ventana, ipc_local): el canal abierto los ve como «cambiado fuera».
     #[serde(default, skip_serializing_if = "es_cero")]
     pub cambio_local: u64,
-    /// v1.4x: órdenes con espera ya recibidas, de cualquiera de las consolas (con su sobre
+    /// v1.49: órdenes con espera ya recibidas, de cualquiera de las consolas (con su sobre
     /// sellado; espera_v2.rs, docs/consolas-multiples.md §5). Del equipo, no de un vínculo.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub en_espera: Vec<crate::espera_v2::EnEspera>,
@@ -704,7 +704,7 @@ fn repo_ok(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
 }
 
 /// Abre, comprueba y ejecuta una orden. Devuelve el resultado y, si hay, un aviso para el servidor.
-/// v1.4x: una que pide autorización y aún no toca se guarda en espera (espera_v2.rs) y
+/// v1.49: una que pide autorización y aún no toca se guarda en espera (espera_v2.rs) y
 /// devuelve `estado: espera_v2::EN_ESPERA` (no se contesta nada al servidor).
 pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
     let tipo_meta = meta["tipo"].as_str().unwrap_or("");
@@ -727,7 +727,7 @@ pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
 
     let Some(tipo) = ordenes::tipo(&o.tipo) else { return (rechazada("Tipo de orden desconocido."), None) };
     let orden_id = meta["id"].as_str().unwrap_or("").to_string();
-    // v1.4x: aún no toca (con el reloj del equipo y el de esta consola): en espera. Las
+    // v1.49: aún no toca (con el reloj del equipo y el de esta consola): en espera. Las
     // inofensivas no se guardan: como siempre, solo cuenta el reloj del equipo (con su holgura).
     let nb = o.not_before.as_deref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp());
     if let Some(nb) = nb.filter(|nb| !crate::espera_v2::toca(*nb, t, crate::espera_v2::hora_servidor(&v.id_enlace()))) {
@@ -739,7 +739,7 @@ pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
         }
     }
     let (r, aviso) = autorizar_y_ejecutar(v, &o, tipo, &orden_id);
-    // v1.4x: al historial que reciben todas las consolas.
+    // v1.49: al historial que reciben todas las consolas.
     crate::espera_v2::anotar_procesada(v, &o, &orden_id, &r);
     (r, aviso)
 }
@@ -912,7 +912,7 @@ pub(crate) mod largas {
         });
     }
 
-    /// v1.4x: un resultado para la consola `enlace` que se manda en la próxima vuelta del
+    /// v1.49: un resultado para la consola `enlace` que se manda en la próxima vuelta del
     /// servicio (y, si esa consola no responde, cuando vuelva). P. ej. «cancelada desde otra
     /// consola» para la que mandó una orden en espera.
     pub fn guardar_resultado(enlace: &str, orden: &str, seq: u64, tipo: &str, r: &Resultado) {
@@ -1044,7 +1044,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(Resultado { detalle: Some(detalle), ..hecha("Acceso sellado para el otro equipo.") })
         }
         "desbloquear" => g::desbloquear(v, c).map(hecha),
-        // v1.4x: cancelar una orden en espera (de cualquiera de las consolas).
+        // v1.49: cancelar una orden en espera (de cualquiera de las consolas).
         "cancelar_espera" => crate::espera_v2::cancelar(v, c, o.por.as_deref()).map(hecha),
         "actualizar_agente" => Ok(rechazada("Próximamente: las actualizaciones firmadas llegarán con la llave de publicación del proyecto.")),
         "guarda_copias" => {
@@ -1360,7 +1360,7 @@ fn orden_de(id: &str, o: &Value) -> Option<(Resultado, Option<String>, Vinculo)>
     })
 }
 
-/// v1.4x: las órdenes en espera de la consola `id` que ya tocan, justo después de hablar
+/// v1.49: las órdenes en espera de la consola `id` que ya tocan, justo después de hablar
 /// con ella (sus cancelaciones ya llegaron). Contesta a esa consola por HTTP (también
 /// con el canal abierto); si no responde, el resultado se guarda para cuando vuelva.
 /// Devuelve si aplicó alguna.
@@ -1427,10 +1427,10 @@ fn ronda_de(id: &str) -> Result<bool, String> {
     comprueba_identidad(&v, &reto, r["firma"].as_str().unwrap_or(""))?;
     // Responde: se anota (para los servidores de respaldo y el «último contacto»).
     anotar_contacto(id);
-    // v1.4x: su hora (para las órdenes en espera) y las que canceló.
+    // v1.49: su hora (para las órdenes en espera) y las que canceló.
     crate::espera_v2::anotar_hora(id, &r);
     crate::espera_v2::canceladas_por_su_consola(id, &ids_de(&r["canceladas"]));
-    // v1.4x (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
+    // v1.50 (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
     crate::ancla::recibir(&v, &r["ancla"]);
     for o in r["ordenes"].as_array().cloned().unwrap_or_default() {
         // Con las credenciales de antes: una orden (desvincular) puede borrarlas.
@@ -1445,7 +1445,7 @@ fn ronda_de(id: &str) -> Result<bool, String> {
         if let Some(a) = aviso {
             let _ = llamar_ok(&credenciales, "/api/agente/aviso", &json!({ "tipo": "intentos_fallidos", "mensaje": a }));
         }
-        // v1.4x: guardada en espera: no se contesta (en el servidor sigue «entregada»).
+        // v1.49: guardada en espera: no se contesta (en el servidor sigue «entregada»).
         if res.estado != crate::espera_v2::EN_ESPERA {
             let _ = enviar_resultado(&credenciales, o["id"].as_str().unwrap_or(""), o["seq"].as_u64().unwrap_or(0), &res);
         }
@@ -1453,7 +1453,7 @@ fn ronda_de(id: &str) -> Result<bool, String> {
             break; // se desvinculó (o cambió de servidor) con esta orden
         }
     }
-    // v1.4x: las suyas en espera que ya tocan (después de sus cancelaciones).
+    // v1.49: las suyas en espera que ya tocan (después de sus cancelaciones).
     if crate::consolas_v2::vista(id).is_some_and(|w| !cambiado_fuera(&v, &w)) {
         aplicar_en_espera(id);
     }
@@ -1598,10 +1598,10 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     };
     comprueba_identidad(&v, &reto, hola["firma"].as_str().unwrap_or(""))?;
     crate::agent::log(&format!("Canal con Resguardo Server abierto ({quien})."));
-    // v1.4x (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
+    // v1.50 (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
     crate::ancla::recibir(&v, &hola["ancla"]);
     anotar_contacto(id);
-    // v1.4x: su hora, para las órdenes en espera (también en cada latido).
+    // v1.49: su hora, para las órdenes en espera (también en cada latido).
     crate::espera_v2::anotar_hora(id, &hola);
     let _ = ws.send(Message::Text(json!({ "t": "informe", "datos": informe_de(id) }).to_string().into()));
     // v1.23: el servidor dice hasta dónde tiene el historial del equipo; si es una
@@ -1653,7 +1653,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                         crate::espera_v2::anotar_hora(id, &m);
                         let _ = ws.send(Message::Text(r#"{"t":"pong"}"#.into()));
                     }
-                    // v1.4x: esta consola canceló una orden suya que el equipo tiene en espera.
+                    // v1.49: esta consola canceló una orden suya que el equipo tiene en espera.
                     "cancelada" => crate::espera_v2::canceladas_por_su_consola(id, &ids_de(&json!([m["orden"]]))),
                     // v1.30: el almacén aplicó la retención en un repositorio de este equipo.
                     // Solo una pista: se releen sus versiones (nada más; ver `pista_refrescar`).
@@ -1662,7 +1662,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                             crate::informe_v2::pista_refrescar(&v, repo);
                         }
                     }
-                    // v1.4x (9b): el ancla de la auditoría, cada hora con el canal abierto.
+                    // v1.50 (9b): el ancla de la auditoría, cada hora con el canal abierto.
                     "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
@@ -1681,7 +1681,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                         if let Some(a) = aviso {
                             let _ = ws.send(Message::Text(json!({ "t": "aviso", "tipo": "intentos_fallidos", "mensaje": a }).to_string().into()));
                         }
-                        // v1.4x: guardada en espera: no se contesta (en el servidor sigue «entregada»).
+                        // v1.49: guardada en espera: no se contesta (en el servidor sigue «entregada»).
                         if res.estado != crate::espera_v2::EN_ESPERA {
                             let mut cuerpo = cuerpo_resultado(&credenciales, o["id"].as_str().unwrap_or(""), o["seq"].as_u64().unwrap_or(0), &res)?;
                             cuerpo["t"] = json!("resultado");
@@ -1712,7 +1712,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
             }
             Err(e) => return Err(canal_cerrado(&e)),
         }
-        // v1.4x: las órdenes en espera de esta consola que ya tocan (con el canal abierto:
+        // v1.49: las órdenes en espera de esta consola que ya tocan (con el canal abierto:
         // sus cancelaciones llegan por aquí).
         if aplicar_en_espera(id) {
             visto = escrito();

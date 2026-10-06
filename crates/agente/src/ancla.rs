@@ -1,4 +1,4 @@
-//! Anclas de la auditoría de cada consola (v1.4x, plan-mejoras 9b; docs/plataforma.md
+//! Anclas de la auditoría de cada consola (v1.50, plan-mejoras 9b; docs/plataforma.md
 //! §7.3.1 y docs/api-servidor.md, «Cambios»).
 //!
 //! Cada consola manda, firmada con su identidad (la que el equipo fijó al vincular),

@@ -47,7 +47,7 @@
     const inmediatos = si ? [...c.preferencias.inmediatos, sev] : c.preferencias.inmediatos.filter((x) => x !== sev);
     await prefs(c, inmediatos, c.preferencias.resumen);
   }
-  // v1.4x: por etiqueta de los equipos de un cliente.
+  // v1.52: por etiqueta de los equipos de un cliente.
   let porEtiqueta = $state<{ c: MisNotif["clientes"][number]; valor: PrefEtiqueta[] } | null>(null);
   let guardandoEt = $state(false);
   async function guardarPorEtiqueta(e: SubmitEvent) {

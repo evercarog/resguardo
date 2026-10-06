@@ -1208,7 +1208,7 @@ async fn etiquetas_de_equipos() {
     assert_eq!(pedir(&p.app, "PUT", &otro, Some(json!({ "etiquetas": [] })), Some(&cookie), &[]).await.estado, StatusCode::NOT_FOUND);
 }
 
-/// v1.4x: ajustes de las etiquetas (color, plantilla por defecto y avisos). Los ven todos;
+/// v1.52: ajustes de las etiquetas (color, plantilla por defecto y avisos). Los ven todos;
 /// los cambian administradores y propietarios; los avisos, solo el propietario.
 #[tokio::test]
 async fn ajustes_de_las_etiquetas() {

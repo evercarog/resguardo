@@ -1,4 +1,4 @@
-//! Órdenes en espera en el equipo (v1.4x, docs/consolas-multiples.md §5).
+//! Órdenes en espera en el equipo (v1.49, docs/consolas-multiples.md §5).
 //!
 //! Un servidor nuevo entrega al momento las órdenes con espera (`not_before`) que
 //! piden autorización. El equipo las comprueba como siempre (salvo la hora), anota

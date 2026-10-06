@@ -193,7 +193,7 @@ pub struct PrefsCliente {
     pub inmediatos: Vec<Severidad>,
     /// ¿Entra este cliente en sus resúmenes?
     pub resumen: bool,
-    /// v1.4x: lo que quiere de los equipos con ciertas etiquetas, en lugar de `inmediatos`
+    /// v1.52: lo que quiere de los equipos con ciertas etiquetas, en lugar de `inmediatos`
     /// (p. ej. de los de «Servidores», todo; de los de «Pruebas», nada).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub etiquetas: Vec<PrefEtiqueta>,

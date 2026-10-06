@@ -13,7 +13,7 @@
 
   const o = $derived(p.orden);
   const conectado = $derived(actual.equipos.find((e) => e.id === p.equipo)?.conectado ?? true);
-  // v1.4x: también «entregada» antes de su hora (el equipo la tiene en espera).
+  // v1.49: también «entregada» antes de su hora (el equipo la tiene en espera).
   const esperaSeguridad = $derived((o.estado === "pendiente" || o.estado === "entregada") && !!o.not_before && Date.parse(o.not_before) > reloj.ahora);
   const mal = $derived(conError(o));
   const estado = $derived<"espera" | "sin_conexion" | "camino" | "marcha" | "hecha" | "mal">(

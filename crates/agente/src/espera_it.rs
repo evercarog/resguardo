@@ -1,4 +1,4 @@
-//! Prueba de integración de las órdenes en espera (v1.4x, docs/consolas-multiples.md §5)
+//! Prueba de integración de las órdenes en espera (v1.49, docs/consolas-multiples.md §5)
 //! con **dos Resguardo Server reales** (TLS) en el mismo proceso: la consola local
 //! (A) y una «en línea» (B). El equipo recibe al momento una orden destructiva de A
 //! (sin aplicarla), B la ve en el resumen, recibe el aviso, la cancela y nunca se

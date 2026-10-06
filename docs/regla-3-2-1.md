@@ -143,7 +143,7 @@ Los pasos 3 y 4 se enseñan como una lista con su estado («Ya lo tiene», «Haz
 
 ## Contrato (compatible hacia atrás)
 
-En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.4x (pendiente de numerar al unir)»:
+En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.54»:
 
 - Catálogo de destinos: `atributos?: { lugar?, inmutable?, soporte? }` en `GET` y `PUT`. Un `PUT` **sin** `atributos` deja los que había (una consola anterior que solo renombra no los borra); con `atributos: null` o `{}` se quitan. El nombre puede ir vacío solo si van `atributos` (marcar un destino sin ponerle nombre propio): el destino sigue con su nombre de siempre.
 - Resumen del agente: `sistema_archivos?` en `destinos[]` (locales), en `guarda_copias` (la principal), en `guarda_copias.zonas[]` y en `guarda_copias.espejo.destinos[]` (carpetas); y `entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra", contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" }` en la raíz del resumen. Solo nombres: nada de rutas. Una consola anterior los ignora.

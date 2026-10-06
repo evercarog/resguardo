@@ -183,7 +183,7 @@ mod pruebas {
         assert!(leer_cola(&x).is_err());
     }
 
-    /// `vectors/instalador.json`: la consola arma la cola en el navegador (v1.4x,
+    /// `vectors/instalador.json`: la consola arma la cola en el navegador (v1.48,
     /// consola/src/lib/cola.ts) y `npm run test:vectores` comprueba que da estos mismos
     /// bytes. Para regenerarlo: `RESGUARDO_GENERAR_VECTORES=1 cargo test -p resguardo-protocolo instalador`.
     #[test]

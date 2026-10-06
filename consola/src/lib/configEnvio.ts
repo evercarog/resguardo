@@ -1,6 +1,6 @@
 // La configuración que se envía a un equipo (orden `config`, §6), como la
 // prepara «Cambiar las copias», y el plan de «Aplicar una plantilla» a varios
-// equipos a la vez (v1.4x, tarea 6). Sin estado ni red: se prueba en
+// equipos a la vez (v1.52, tarea 6). Sin estado ni red: se prueba en
 // scripts/vectores-etiquetas.ts.
 import { ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "./ganchos";
 import { errorReglas, normalizar, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "./horario";

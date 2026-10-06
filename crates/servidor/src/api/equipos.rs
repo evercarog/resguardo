@@ -23,13 +23,13 @@ pub async fn resumen(State(st): State<St>, u: Usuario, Path(c): Path<String>) ->
     let (equipos, avisos, pendientes, etiquetas) = st
         .db(move |db| Ok((db.equipos(&ctx)?, db.avisos(&ctx, true)?.len(), db.ordenes_con_espera(&ctx, ahora())?.len(), db.ajustes_etiquetas(&ctx)?)))
         .await?;
-    // v1.4x: también las que mandó otra consola y el equipo tiene en espera.
+    // v1.49: también las que mandó otra consola y el equipo tiene en espera.
     let pendientes = pendientes + super::en_espera_de_otras(&equipos, ahora());
     Ok(Json(json!({
         "equipos": equipos.iter().map(|e| equipo_json(e, st.conectado(&e.id))).collect::<Vec<_>>(),
         "avisos_abiertos": avisos,
         "pendientes": pendientes,
-        // v1.4x: los ajustes de las etiquetas (color, plantilla por defecto, avisos).
+        // v1.52: los ajustes de las etiquetas (color, plantilla por defecto, avisos).
         "etiquetas": etiquetas.iter().map(super::etiquetas::vista).collect::<Vec<_>>(),
     })))
 }
@@ -230,7 +230,7 @@ pub async fn ultimos_informes(State(st): State<St>, u: Usuario, Path(c): Path<St
 
 #[derive(Deserialize)]
 pub struct AbrirCuerpo {
-    /// v1.4x: el código lo generó el navegador; solo llega su hash.
+    /// v1.48: el código lo generó el navegador; solo llega su hash.
     codigo_hash: Option<String>,
 }
 
@@ -238,7 +238,7 @@ pub struct AbrirCuerpo {
 /// 2 min, se devuelve ese (`reutilizado: true`) en vez de gastar otro: recargar la
 /// página o pulsar dos veces no acerca al límite de códigos por hora.
 ///
-/// v1.4x: con `{ "codigo_hash": "<hex>" }` en el cuerpo, el código lo generó el navegador
+/// v1.48: con `{ "codigo_hash": "<hex>" }` en el cuerpo, el código lo generó el navegador
 /// (`crypto.getRandomValues`) y el servidor solo guarda su hash (como el que manda el
 /// equipo al unirse): `{ id, caduca, reutilizado: false, codigo_navegador: true }`, sin
 /// código. Sin cuerpo (consolas anteriores), como antes.
@@ -313,7 +313,7 @@ pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): 
         v["so"] = json!(emp.so);
     }
     // Mientras sirve, el código (la orden `alta` lo necesita; v1.42: también el de 15 min y,
-    // confirmado sin el alta del equipo, para terminarla después). v1.4x: si lo generó el
+    // confirmado sin el alta del equipo, para terminarla después). v1.48: si lo generó el
     // navegador, el servidor no lo tiene: da su hash (la consola comprueba con él el código
     // que guardó o que le escriben) y `codigo_navegador: true`.
     if matches!(estado.as_str(), "abierto" | "unido" | "confirmado") {
@@ -348,7 +348,7 @@ pub async fn confirmar_emparejamiento(State(st): State<St>, u: Usuario, Path((c,
     let r = st
         .db_crudo(move |db| {
             let emp = db.emparejamiento(&ctx, &p)?.ok_or("no_existe")?;
-            // v1.4x: también uno ya confirmado al que le falta el alta del equipo (aún con su código):
+            // v1.48: también uno ya confirmado al que le falta el alta del equipo (aún con su código):
             // si la consola confirmó y el alta no salió (sin red, página cerrada), al reintentar
             // confirmaba otra vez y recibía este error, sin forma de seguir.
             let a_medias = emp.estado == "confirmado" && emp.codigo.is_some();

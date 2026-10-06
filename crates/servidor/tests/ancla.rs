@@ -1,4 +1,4 @@
-//! v1.4x: ancla externa de la auditoría (docs/plan-mejoras.md, 9b; docs/plataforma.md
+//! v1.50: ancla externa de la auditoría (docs/plan-mejoras.md, 9b; docs/plataforma.md
 //! §7.3.1). El servidor manda la cabeza de la cadena de cada cliente, firmada, a sus
 //! equipos; si alguien rehace la cadena entera (la comprobación de siempre dice que
 //! está bien), la cabeza de antes ya no cuadra. Y un equipo que lo nota lo cuenta en

@@ -4,7 +4,7 @@
 //
 // Color: de una paleta de 7 pensada para distinguirse también con daltonismo
 // (Okabe-Ito, con su versión para el tema oscuro en app.css: --et-0 … --et-6).
-// Sin elegir, cada etiqueta tiene siempre el mismo (por su nombre); v1.4x: el
+// Sin elegir, cada etiqueta tiene siempre el mismo (por su nombre); v1.52: el
 // propietario o un administrador puede elegir otro de la misma paleta. El
 // color va solo en el punto: el texto, en tinta neutra, es lo que se lee.
 import type { AjusteEtiqueta, AvisosEtiqueta, Equipo } from "./tipos";
