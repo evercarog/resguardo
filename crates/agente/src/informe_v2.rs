@@ -146,7 +146,7 @@ pub fn version_de(s: &resguardo_motor::restic::Snapshot, copia: Option<&str>) ->
 }
 
 /// Copia (plan) de cada versión, por el historial del agente.
-fn copias_por_version() -> HashMap<String, String> {
+pub(crate) fn copias_por_version() -> HashMap<String, String> {
     crate::history::read(&crate::history::agent_file()).into_iter().filter(|e| e.kind == "backup").filter_map(|e| Some((e.snapshot_id?, e.plan_id?))).collect()
 }
 

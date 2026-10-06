@@ -1574,6 +1574,65 @@ async fn historial_del_equipo_sin_repetir() {
     assert_eq!(r.estado, StatusCode::UNAUTHORIZED);
 }
 
+/// v1.4x: las vueltas de la retención (`retencion`) llevan las versiones que
+/// quitaron: entran hasta 96 KiB, solo se dan si se piden con `tipo` (una
+/// consola anterior no las conoce) y solo las 50 más recientes de cada equipo
+/// conservan la lista (las demás, sus cifras).
+#[tokio::test]
+async fn historial_con_las_vueltas_de_la_retencion() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let auth = ag.auth();
+    let cab = [("authorization", auth.as_str())];
+    let hace = |m: i64| (chrono::Local::now() - chrono::Duration::minutes(m)).to_rfc3339();
+    let versiones: Vec<Value> = (0..2000).map(|i| json!([format!("{i:08x}"), 1_759_000_000 + i, 0, 123_456, 0])).collect();
+    let vuelta = |id: &str, m: i64| {
+        json!({ "id": id, "hora": hace(m), "tipo": "retencion", "origen": "equipo", "por": "orden", "repo": "r1", "resultado": "ok",
+                "antes": 2010, "quedan": 10, "quitadas": 2000, "liberado": 1_000_000, "grupos": [{ "copia": "docs" }], "motivos": ["cupo:diarias"], "versiones": versiones })
+    };
+    let grande = vuelta("ret-0", 100);
+    assert!(grande.to_string().len() > 4 * 1024 && grande.to_string().len() <= 96 * 1024);
+    let r = pedir(
+        &p.app,
+        "POST",
+        "/api/agente/historial",
+        Some(json!({ "entradas": [grande, { "id": "c1", "hora": hace(90), "tipo": "copia", "repo": "r1", "resultado": "ok" }] })),
+        None,
+        &cab,
+    )
+    .await;
+    assert_eq!(r.json["nuevas"], 2, "{}", r.json);
+    // Una de más de 96 KiB no entra.
+    let mut enorme = vuelta("ret-x", 99);
+    enorme["relleno"] = json!("x".repeat(96 * 1024));
+    let r = pedir(&p.app, "POST", "/api/agente/historial", Some(json!({ "entradas": [enorme] })), None, &cab).await;
+    assert_eq!(r.json["nuevas"], 0, "{}", r.json);
+    let ruta = format!("/api/clientes/{c}/equipos/{}/historial", ag.id);
+    // Sin `tipo`, lo de siempre (sin las de la retención).
+    let r = pedir(&p.app, "GET", &ruta, None, Some(&cookie), &[]).await;
+    assert_eq!(r.json.as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect::<Vec<_>>(), ["c1"]);
+    // Pedidas, enteras.
+    let r = pedir(&p.app, "GET", &format!("{ruta}?tipo=retencion"), None, Some(&cookie), &[]).await;
+    let l = r.json.as_array().unwrap();
+    assert_eq!((l.len(), l[0]["versiones"].as_array().unwrap().len(), l[0]["versiones"][5][0].as_str()), (1, 2000, Some("00000005")));
+    // 55 vueltas más (pequeñas, de una en una): las 50 más recientes con su lista; la grande, ya solo con sus cifras.
+    for i in 1..=55 {
+        let mut v = vuelta(&format!("ret-{i}"), 100 - i);
+        v["versiones"] = json!([["a1b2c3d4", 1_759_000_000, 0, null, 0]]);
+        let r = pedir(&p.app, "POST", "/api/agente/historial", Some(json!({ "entradas": [v] })), None, &cab).await;
+        assert_eq!(r.json["nuevas"], 1, "{}", r.json);
+    }
+    let r = pedir(&p.app, "GET", &format!("{ruta}?tipo=retencion&limite=100"), None, Some(&cookie), &[]).await;
+    let l = r.json.as_array().unwrap();
+    assert_eq!(l.len(), 56);
+    assert_eq!(l.iter().filter(|e| e.get("versiones").is_some()).count(), 50);
+    let vieja = l.iter().find(|e| e["id"] == "ret-0").unwrap();
+    assert_eq!((vieja.get("versiones"), vieja.get("grupos"), vieja["compactada"].as_bool(), vieja["quitadas"].as_u64()), (None, None, Some(true), Some(2000)));
+    assert_eq!(l[0]["id"], "ret-55");
+    assert!(l[0]["versiones"].is_array());
+}
+
 /// Los avisos que llegan con el historial tienen su propio tope por día (el de
 /// `/api/agente/aviso` es de 60 por hora: el historial no debe saltárselo) y
 /// nunca quedan con fecha futura (encima de los demás en la lista).

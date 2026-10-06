@@ -599,8 +599,15 @@ async fn registrar_aviso(st: &St, a: &Agente, av: Aviso) -> Res<()> {
 /// Entradas por petición y tamaño de cada una (en JSON).
 pub const MAX_ENTRADAS_HISTORIAL: usize = 500;
 const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
+/// v1.4x: una vuelta de la retención lleva las versiones que quitó (como mucho 2000; el agente la recorta a 96 KiB).
+pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
 /// v1.4x: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
-pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "historial"];
+pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial"];
+/// Los que solo se dan si se piden con `tipo` (v1.4x): una consola anterior no los conoce
+/// y son grandes. Sin `tipo`, el historial es el de siempre.
+pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion"];
+/// Vueltas de la retención con la lista de versiones por equipo; las anteriores, solo con sus cifras.
+pub const RETENCIONES_CON_DETALLE: i64 = 50;
 /// 2000-01-01: nada de antes (ni de más de un día en el futuro, por los relojes).
 const HISTORIAL_DESDE: crate::almacen::Ts = 946_684_800;
 /// Avisos que un equipo puede pasar a la lista de avisos con su historial, por día
@@ -629,7 +636,7 @@ pub(crate) fn entrada_historial(v: &Value, ahora: crate::almacen::Ts) -> Option<
         return None;
     }
     let datos = v.to_string();
-    if datos.len() > MAX_ENTRADA_HISTORIAL {
+    if datos.len() > if tipo == "retencion" { MAX_ENTRADA_RETENCION } else { MAX_ENTRADA_HISTORIAL } {
         return None;
     }
     let aviso = if tipo == "aviso" {
