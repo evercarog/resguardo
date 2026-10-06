@@ -119,6 +119,33 @@ Mover copias entre repositorios ya existe («Cambiar destino») y no cambia.
 - Las contraseñas de los repositorios nunca salen de este equipo. «Usar este» exige escribirla.
 - La contraseña generada se guarda en el almacén de credenciales y solo se muestra en el kit.
 
+## Copia externa a un repositorio que ya existe
+
+En la consola, «Copia externa…» de un repositorio tiene dos caminos (`cambiar_copia_externa`, [api-servidor.md](api-servidor.md) §5, v1.4x):
+
+- **Crear uno nuevo** (como siempre): en un destino del equipo o en uno nuevo, en una carpeta con el id del repositorio. Al guardarla, el agente lo crea allí con los parámetros de troceado del origen (`init --from-repo … --copy-chunker-params`) o, si ya hay uno que la contraseña abre, sigue con él.
+- **Usar uno que ya existe**: la dirección completa (bucket y carpeta en B2/S3, servidor y carpeta en un rest-server, carpeta, SFTP), sus credenciales y **la contraseña de ese repositorio**. Es el caso de la subida a la nube de la app de escritorio: el repositorio antiguo se movió a un almacén (uno nuevo con su troceado y todo su historial traído, `copiar_historial`) y la copia externa del nuevo sigue yendo al repositorio de la nube de siempre. «Probar» (`solo_probar`) lo abre (`restic cat config`), cuenta sus versiones y compara su troceado con el del origen. El agente nunca lo crea: si un día no aparece, la subida falla y lo dice, en vez de crear uno vacío que obligaría a subirlo todo otra vez.
+
+**Qué sube `restic copy`** (comprobado con restic 0.19.1; pruebas `copia_externa_a_un_repositorio_que_ya_existe` y `retencion_con_bloqueo_de_objetos` de `tasks.rs`):
+
+- Los bloques se identifican por el hash de su contenido, no por la clave del repositorio: `restic copy` solo lee del origen y sube al destino los bloques que el destino aún no tiene. Para que un mismo archivo dé los mismos bloques, los dos repositorios tienen que trocear igual (mismo `chunker_polynomial`): por eso el nuevo se crea con `--copy-chunker-params` y «Probar» avisa si no es así («este repositorio trocea distinto: la primera subida ocupará como una copia completa»; se puede usar igual).
+- Una versión que ya está en el destino no se copia otra vez: restic busca en el destino una versión con el mismo `original` (la versión de la que es copia) y los mismos datos (hora, equipo, carpetas, árbol). Una versión traída al almacén desde el repositorio antiguo conserva su `original`, así que las que la app de escritorio ya subió desde el antiguo cuentan como subidas. El agente las descuenta igual antes de empezar: el progreso y el mensaje («1 copia subida (213 ya estaban en el destino).») hablan solo de lo que falta.
+- En la prueba: un repositorio con 3 MiB ya subido a «la nube» y movido a un almacén con su historial; tras 1 MiB nuevo, la copia externa del almacén a la misma «nube» añadió ≈1 MiB (y una sola versión), no los 4 MiB.
+- `restic copy` no tiene `--dry-run` (0.19.1): no hay una cifra exacta de lo que falta antes de empezar. El agente estima los bytes con lo que añadió cada versión pendiente (`data_added_packed`, restic ≥ 0.17) y la consola enseña el ritmo real de subida del proceso de restic (como hasta ahora).
+
+### Bloqueo de objetos (Object Lock) en el destino
+
+Con un bucket con bloqueo de objetos (B2 u otro S3 compatible), nada de lo subido se puede borrar ni sobrescribir durante N días: es lo que protege la copia de alguien que tenga la clave (un ransomware). Para restic significa:
+
+- **`prune` no sirve y sale caro**: reescribe y sube paquetes nuevos para quitar los viejos, que no se pueden borrar (con la API S3 se ocultan con una marca de borrado pero se siguen guardando y cobrando hasta que vence el bloqueo; con la API nativa de B2 el borrado falla). Se pagaría dos veces sin liberar nada.
+- **`forget` sí** para versiones más antiguas que el bloqueo (sus archivos de versión ya no están bloqueados).
+
+Por eso, con «El destino tiene bloqueo de objetos: N días» (`bloqueo_dias`), la retención propia de la copia externa solo hace `forget` (nunca `--prune`) y siempre guarda lo de los últimos N+1 días (`--keep-within`), aunque la regla diga menos. Si restic no puede quitar alguna versión porque aún está bloqueada (p. ej. versiones antiguas subidas hace poco), lo dice en el resultado («… siguen bloqueadas: se quitarán cuando venza su bloqueo») y vuelve a intentarlo en la siguiente subida. Sin retención propia, allí no se borra nada. **El espacio no se libera solo**: el bucket guarda todo lo subido. Si hace falta liberarlo, hay que hacerlo a mano y a sabiendas (un `restic prune` desde un equipo con la clave, cuando lo que se quiere quitar ya no esté bloqueado; y en B2, una regla de ciclo de vida que borre las versiones ocultas cuando venza su bloqueo).
+
+**Gobernanza o cumplimiento.** En modo *cumplimiento* (compliance) nadie, ni la cuenta dueña, puede borrar ni acortar el bloqueo. En modo *gobernanza* (governance) una clave con permiso para saltarse el bloqueo puede borrar; restic nunca lo pide, así que para Resguardo los dos se comportan igual, pero en gobernanza el dueño de la cuenta puede arreglar un error (p. ej. un periodo demasiado largo) y en cumplimiento no. Para copias, gobernanza con una clave de aplicación sin ese permiso suele bastar; cumplimiento solo si un tercero lo exige. Los archivos de bloqueo de restic (`locks/`) también quedan bloqueados: si no se pueden borrar al terminar, restic los da por viejos a los 30 minutos y no estorban.
+
+Un **rest-server de solo añadir** como destino de la copia externa se detecta al guardarla (`solo_anadir`): allí no se aplica la retención desde el equipo (la aplica el propio servidor).
+
 ## Espejo en Dropbox: conectar desde la consola y renovar el token
 
 **Conectar.** La consola hace OAuth 2 con PKCE contra la app «Resguardo» de Dropbox (app key pública `beobf3c13cvlrup`, la que da `GET /api/servidor`; permiso «App folder»; sin app secret, que ni se pide ni se guarda), cambia el código por el token en el navegador y lo manda sellado al equipo en `conectar_nube` (ver [api-servidor.md](api-servidor.md) §12). El agente guarda el refresh token protegido (DPAPI) junto con la app key, en el formato de token de rclone: `{ access_token, token_type: "bearer", refresh_token, expiry }`.

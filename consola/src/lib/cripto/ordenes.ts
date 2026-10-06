@@ -124,8 +124,9 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
     case "desvincular":
       return cuerpo.modo === "dejar_de_copiar";
     // Quitar la copia externa (hora: null) deja de proteger fuera de la oficina.
+    // (v1.4x: «Probar», `solo_probar`, no cambia nada.)
     case "cambiar_copia_externa":
-      return cuerpo.hora === null;
+      return cuerpo.hora === null && cuerpo.solo_probar !== true;
     // Desconectar una nube que usa el espejo deja de proteger fuera.
     case "quitar_nube":
       return !!contexto?.espejo && (!Array.isArray(contexto.espejo.destinos) || contexto.espejo.destinos.some((d) => d.tipo === "nube" && (d.nube ?? "").trim() === String(cuerpo.nombre ?? "").trim()));

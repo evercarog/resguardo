@@ -20,6 +20,7 @@ import { esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN } from "../src/lib/cripto/orde
 import { almacenDe, errorHorario, errorRegla, estimarVersiones, leerPlazo, leerRegla, nuevaClave, plazoEnPalabras, presetDe, PRESETS, REGLA_POR_DEFECTO, reglaParaOrden, restarPlazo, resumenRegla, textoHorario, textoRegla } from "../src/lib/retencion";
 import { errorVerificacion, fraseVerificacion, partesVerificacion } from "../src/lib/verificacion";
 import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnAlmacen } from "../src/lib/direccion";
+import { cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
 import { resultadoConError } from "../src/lib/salud";
 import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
 import { bytesRepo, destinoDe, versionDeVuelta } from "../src/lib/repo";
@@ -582,6 +583,32 @@ igual("ruta en un almacén de Windows", rutaEnAlmacen("E:\\Resguardo", "servidor
   igual("origen", origenCuerpo({ ...r, tipo: "local", direccion: "D:\\Copias\\Siigo" }), { destino: { tipo: "local", donde: "D:\\Copias" }, ruta: "Siigo", contrasena: "clave" });
 }
 igual("nivel de las órdenes nuevas", [NIVEL.adoptar_repositorio, NIVEL.copiar_historial], ["admin", "admin"]);
+
+// ---------------------------------------------------------------------------
+console.log("\n· Copia externa a un repositorio que ya existe (v1.4x)");
+{
+  const x = { ...externaExtraVacia(), modo: "existente" as const };
+  x.existente = { ...x.existente, direccion: "b2:cubo-copias:clientes/siigo", usuario: "0041a2b3", secreto: "K004secreto", contrasena: "clave de la nube" };
+  igual("B2: destino, carpeta, existente y su contraseña", cuerpoExistente(x, "externa-1a2b"), {
+    destino: { id: "externa-1a2b", tipo: "b2", donde: "cubo-copias:clientes", usuario: "0041a2b3", secreto: "K004secreto" },
+    ruta: "siigo",
+    existente: true,
+    contrasena_destino: "clave de la nube",
+  });
+  const s3 = { ...x, nombreExistente: " Nube ", existente: { ...x.existente, tipo: "s3" as const, direccion: "s3:https://s3.us-west-004.backblazeb2.com/cubo-copias/siigo" } };
+  igual("S3 de B2, con nombre", cuerpoExistente(s3, "e1").destino, { id: "e1", nombre: "Nube", tipo: "s3", donde: "https://s3.us-west-004.backblazeb2.com/cubo-copias", usuario: "0041a2b3", secreto: "K004secreto" });
+  const rest = { ...x, existente: { ...x.existente, tipo: "rest" as const, direccion: "https://nas:8000/Siigo", ca: "-----BEGIN CERTIFICATE-----x" } };
+  cierto("rest: sin certificado propio (la subida usa el del origen)", !("ca_pem" in cuerpoExistente(rest, "e1").destino));
+  cierto("incompleto sin contraseña", !existenteCompleto({ ...x, existente: { ...x.existente, contrasena: "" } }) && existenteCompleto(x));
+  igual("días de bloqueo", [diasBloqueo(30), diasBloqueo("30"), diasBloqueo(""), diasBloqueo(0), diasBloqueo(3651), diasBloqueo("1.5")], [30, 30, null, null, null, null]);
+  igual("bloqueo en la orden", [cuerpoBloqueo({ ...x, conBloqueo: true }), cuerpoBloqueo(x)], [{ bloqueo_dias: 30 }, {}]);
+  cierto("bloqueo sin días: error", !!errorBloqueo({ ...x, conBloqueo: true, bloqueoDias: "" }) && !errorBloqueo({ ...x, bloqueoDias: "" }));
+  cierto("con bloqueo y retención: sin prune, no libera", textoRetencionDestino(true, 30).includes("sin prune") && textoRetencionDestino(true, 30).includes("no libera espacio"));
+  cierto("con bloqueo sin retención: no se borra nada", textoRetencionDestino(false, 30).includes("no se borra nada"));
+  igual("sin nada", textoRetencionDestino(false, null), "");
+  igual("detalles en la ficha", detallesExterna({ existente: true, bloqueo_dias: 30 }), ["a un repositorio que ya existía", "bloqueo de 30 días (sin prune)"]);
+  igual("probar no espera; quitar sí", [esDestructiva("cambiar_copia_externa", { repo: "r", hora: null, solo_probar: true }), esDestructiva("cambiar_copia_externa", { repo: "r", hora: null })], [false, true]);
+}
 
 // ---------------------------------------------------------------------------
 console.log("\n· Retención en el almacén (v1.22)");

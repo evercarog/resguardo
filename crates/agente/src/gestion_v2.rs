@@ -816,8 +816,17 @@ fn estado_de(result: &str) -> &'static str {
 /// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
 /// v1.40: `verificacion_horario` (la verificación automática con un horario de reglas) y
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
-pub const ADMITE: [&str; 7] =
-    ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario"];
+pub const ADMITE: [&str; 8] = [
+    "retencion_plazos",
+    "verificacion_auto",
+    "almacen_propio",
+    "consolas_multiples",
+    "escritorio",
+    "verificacion_horario",
+    "retencion_almacen_horario",
+    // v1.4x: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
+    "externa_existente",
+];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
 const PUERTOS_PROPUESTOS: [u16; 6] = [8000, 8002, 8004, 8080, 8888, 9000];
@@ -881,6 +890,11 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "destino": v.destinos.iter().find(|d| Some(d.id.as_str()) == e["destino"].as_str()).map(|d| d.nombre.clone()),
                 "destino_id": e["destino"],
                 "hora": e["hora"],
+                // v1.4x: a un repositorio que ya existía, con bloqueo de objetos o de solo añadir.
+                "existente": e.get("existente"),
+                "bloqueo_dias": e.get("bloqueo_dias"),
+                "solo_anadir": e.get("solo_anadir"),
+                "con_retencion": config.repos.iter().find(|x| x.id == r.id).and_then(|x| x.offsite.as_ref()).map(|o| o.retention.as_ref().is_some_and(|p| !p.is_empty())),
             })),
         })).collect::<Vec<_>>(),
         // Sin la carpeta de un destino local (es una ruta del equipo).
@@ -1248,32 +1262,73 @@ pub fn cambiar_destino(v: &mut Vinculo, c: &Value) -> Result<String, String> {
     Ok(format!("Destino actualizado ({} repositorios comprobados).", repos.len()))
 }
 
-/// `cambiar_copia_externa {repo, destino: {id} | {id, nombre, tipo, donde, usuario?, secreto?, ca_pem?}, hora: "HH:MM" | null, retencion?, contrasena_destino?}`
-/// (contraseña del repositorio): cada día a `hora`, `restic copy` del
-/// repositorio a otro destino (otro disco, otro servidor o la nube); el agente
-/// crea allí el repositorio la primera vez. `hora: null` la quita (destructiva:
+/// `cambiar_copia_externa {repo, destino: {id} | {id, nombre, tipo, donde, usuario?, secreto?, ca_pem?}, hora: "HH:MM" | null, retencion?, contrasena_destino?,
+///  existente?, ruta?, bloqueo_dias?, solo_probar?}` (contraseña del repositorio): cada día a `hora`, `restic copy` del
+/// repositorio a otro destino (otro disco, otro servidor o la nube). `hora: null` la quita (destructiva:
 /// el servidor se fía del `not_before`, el agente exige la espera).
+///
+/// - Sin `existente`, el repositorio va en el destino en una carpeta con su id
+///   (o en `ruta`) y el agente lo crea allí al guardarla (con los parámetros de
+///   troceado del origen), o usa el que ya haya si la contraseña lo abre.
+/// - `existente: true` (v1.4x): un repositorio que **ya existe** en `ruta`
+///   dentro del destino (p. ej. la subida a la nube de la app de escritorio):
+///   se abre (`restic cat config`), se cuentan sus versiones y se compara su
+///   troceado con el del origen. Nunca se crea: si no se abre, no se guarda nada.
+///   La primera subida solo sube lo que falta.
+/// - `bloqueo_dias` (v1.4x, 1–3650): el destino tiene bloqueo de objetos: la
+///   retención de allí solo quita versiones (`forget`, sin `prune`) y nunca de
+///   los últimos días bloqueados.
+/// - `solo_probar` (v1.4x): solo se comprueba (el «Probar» de la consola).
 pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String, String> {
     if !v.repos_v2.iter().any(|r| r.id == repo && !r.solo_lectura) {
         return Err("Ese repositorio no lo gestiona este servidor.".into());
     }
-    if !crate::agent::load_config().repos.iter().any(|r| r.id == repo) {
+    let solo_probar = c["solo_probar"] == true;
+    if !solo_probar && !crate::agent::load_config().repos.iter().any(|r| r.id == repo) {
         return Err("Ese repositorio aún no tiene copias activas en este equipo: aplica antes una configuración con alguna copia.".into());
     }
-    let Some(hora) = c["hora"].as_str() else {
-        crate::agent::set_offsite(repo, None, None)?;
-        return Ok("Copia externa quitada (lo ya copiado sigue en su destino).".into());
+    let hora = match c["hora"].as_str() {
+        Some(h) => h.to_string(),
+        None if solo_probar => String::new(),
+        None => {
+            crate::agent::set_offsite(repo, None, None)?;
+            return Ok("Copia externa quitada (lo ya copiado sigue en su destino).".into());
+        }
     };
     let dest = &c["destino"];
     let destino_id = texto(dest, "id");
     if !id_valido(&destino_id) {
         return Err("Id de destino no válido.".into());
     }
-    if dest.get("tipo").is_some() {
-        if v.destinos.iter().any(|d| d.id == destino_id) {
+    // Cambiar la hora, la retención o el bloqueo de la misma copia externa
+    // (`destino: {id}` al que ya va, sin `existente` ni `ruta`): se queda su
+    // carpeta (la de uno que ya existía), su contraseña y, si no se dice, su bloqueo.
+    let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).filter(|e| e["destino"] == destino_id.as_str());
+    let misma = actual.is_some() && dest.get("tipo").is_none() && c.get("existente").is_none() && c.get("ruta").is_none();
+    let actual = actual.filter(|_| misma).unwrap_or(Value::Null);
+    let existente = c["existente"] == true || actual["existente"] == true;
+    // La carpeta del repositorio en el destino: la suya (si ya existe) o su id.
+    let ruta = match c["ruta"].as_str().or(actual["ruta"].as_str()).map(|r| r.trim().trim_matches('/').to_string()) {
+        Some(r) if existente || !r.is_empty() => r,
+        _ if existente => return Err("Falta la carpeta del repositorio que ya existe.".into()),
+        _ => repo.to_string(),
+    };
+    if !crate::adoptar_v2::ruta_valida(&ruta) {
+        return Err("La carpeta del repositorio no es válida (sin «..», «\\» ni «:»).".into());
+    }
+    let bloqueo = match c.get("bloqueo_dias").or(actual.get("bloqueo_dias")) {
+        None | Some(Value::Null) => None,
+        Some(x) => match x.as_u64() {
+            Some(0) => None,
+            Some(n) if n <= u64::from(crate::tasks::MAX_LOCK_DAYS) => Some(n as u32),
+            _ => return Err(format!("Días de bloqueo no válidos (de 1 a {}).", crate::tasks::MAX_LOCK_DAYS)),
+        },
+    };
+    let nuevo = if dest.get("tipo").is_some() {
+        if v.destinos.iter().any(|d| d.id == destino_id) && !solo_probar {
             return Err(format!("Ya hay un destino «{destino_id}»."));
         }
-        let d = Destino {
+        let mut d = Destino {
             id: destino_id.clone(),
             nombre: texto(dest, "nombre"),
             tipo: texto(dest, "tipo"),
@@ -1283,45 +1338,157 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
             ca_pem: None,
             equipo_almacen: equipo_almacen_de(dest),
         };
+        if existente {
+            // Como al adoptar: con un nombre por defecto si no trae (B2, S3…).
+            d.nombre = crate::adoptar_v2::destino_de(dest, &destino_id)?.nombre;
+        }
         if !texto_valido(&d.nombre, 80) {
             return Err("Escribe un nombre para el destino.".into());
         }
-        ubicacion(&d, repo)?;
-        v.destinos.push(d);
-    }
-    let d = v.destinos.iter().find(|d| d.id == destino_id).ok_or_else(|| format!("No hay ningún destino «{destino_id}» en este equipo."))?.clone();
+        ubicacion(&d, &ruta)?;
+        Some(d)
+    } else {
+        None
+    };
+    let d = match &nuevo {
+        Some(d) => d.clone(),
+        None => v.destinos.iter().find(|d| d.id == destino_id).ok_or_else(|| format!("No hay ningún destino «{destino_id}» en este equipo."))?.clone(),
+    };
     let origen = v.repos_v2.iter().find(|r| r.id == repo).map(|r| r.destino.clone()).unwrap_or_default();
     if origen == d.id {
         return Err("La copia externa tiene que ir a otro destino (otro disco, otro servidor o la nube).".into());
     }
-    let location = ubicacion(&d, repo)?;
-    let auth = (d.tipo == "rest").then(|| d.usuario.clone().map(|u| (u, d.secreto.clone().unwrap_or_default()))).flatten();
-    let env =
-        if matches!(d.tipo.as_str(), "s3" | "b2") { crate::tasks::cloud_env(&location, None, d.usuario.as_deref(), d.secreto.as_deref()) } else { Vec::new() };
     let retention = c
         .get("retencion")
         .filter(|r| r.is_object())
         .map(|r| serde_json::from_value::<Retencion>(r.clone()))
         .transpose()
         .map_err(|e| format!("Retención no válida: {e}"))?;
-    let offsite: crate::tasks::Offsite = serde_json::from_value(json!({
-        "location": location, "provider": format!("destino:{}", d.id), "schedule": { "kind": "daily", "time": hora },
+    if let Some(r) = &retention {
+        r.valida()?;
+    }
+    // Lo que se va a usar, comprobado antes de guardar nada.
+    let src = acceso(v, repo)?;
+    let contrasena_destino = c["contrasena_destino"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| misma.then(|| crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.offsite_password.clone()))).flatten());
+    // Sin certificado propio: la subida usa el del origen (`tasks::dest_access`).
+    let d_sin_ca = Destino { ca_pem: None, ..d.clone() };
+    let dest_acc = acceso_destino(&d_sin_ca, &ruta, contrasena_destino.as_deref().unwrap_or(&src.password))?;
+    if dest_acc.location.trim_end_matches(['/', '\\']).eq_ignore_ascii_case(src.location.trim_end_matches(['/', '\\'])) {
+        return Err("Ese es el mismo repositorio de origen: la copia externa tiene que ir a otro.".into());
+    }
+    // Como lo abrirá cada subida: el usuario del servidor dentro de la dirección.
+    let con_auth = crate::tasks::location_with_auth(&dest_acc.location, dest_acc.rest_auth.as_ref());
+    let dest_run = resguardo_motor::restic::Access {
+        location: con_auth.clone(),
+        password: dest_acc.password.clone(),
+        rest_auth: None,
+        cacert: None,
+        env: dest_acc.env.clone(),
+    };
+    let probado = probar_externa(&src, &dest_run, existente, solo_probar)?;
+    let solo_anadir = (d.tipo == "rest")
+        .then(|| crate::protection::probe_append_only(&dest_acc.location, dest_acc.rest_auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), None))
+        .flatten()
+        == Some(true);
+    let efecto = efecto_retencion(retention.is_some(), bloqueo, solo_anadir);
+    if solo_probar {
+        return Ok(format!("{probado}{efecto}"));
+    }
+    if !(hora.len() == 5 && chrono::NaiveTime::parse_from_str(&hora, "%H:%M").is_ok()) {
+        return Err("La hora no es válida (HH:MM).".into());
+    }
+    let mut offsite: crate::tasks::Offsite = serde_json::from_value(json!({
+        "location": dest_acc.location, "provider": format!("destino:{}", d.id), "schedule": { "kind": "daily", "time": hora },
         "retention": retention.as_ref().map(Retencion::politica), "target_name": d.nombre, "enabled_at": chrono::Local::now().to_rfc3339(),
     }))
     .map_err(|e| e.to_string())?;
-    let creds = crate::agent::OffsiteSecrets {
-        password: c["contrasena_destino"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
-        key_id: None,
-        key_secret: None,
-        location: Some(crate::tasks::location_with_auth(&location, auth.as_ref())),
-        env,
-    };
+    offsite.dest = crate::tasks::DestinoExterno { existing: existente, object_lock_days: bloqueo, append_only: solo_anadir };
+    let creds =
+        crate::agent::OffsiteSecrets { password: contrasena_destino, key_id: None, key_secret: None, location: Some(con_auth), env: dest_acc.env.clone() };
     crate::agent::set_offsite(repo, Some(offsite), Some(creds))?;
+    if let Some(d) = nuevo {
+        v.destinos.push(d.clone());
+    }
     if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
-        r.externa = Some(json!({ "destino": d.id, "hora": hora }));
+        let mut e = json!({ "destino": d.id, "hora": hora });
+        if existente {
+            e["existente"] = json!(true);
+        }
+        // Su carpeta (solo en el equipo: el resumen no la lleva), para cambiar luego la hora sin repetirla.
+        if existente || ruta != repo {
+            e["ruta"] = json!(ruta);
+        }
+        if let Some(b) = bloqueo {
+            e["bloqueo_dias"] = json!(b);
+        }
+        if solo_anadir {
+            e["solo_anadir"] = json!(true);
+        }
+        r.externa = Some(e);
     }
     let _ = subir_config(v);
-    Ok(format!("Copia externa a «{}» cada día a las {hora}.", d.nombre))
+    Ok(format!("Copia externa a «{}» cada día a las {hora}. {probado}{efecto}", d.nombre))
+}
+
+/// Mensaje de [`probar_externa`] si el destino trocea distinto que el origen.
+pub const TROCEA_DISTINTO: &str = "Atención: este repositorio trocea distinto: la primera subida ocupará como una copia completa.";
+
+/// Abre el destino de una copia externa y dice qué pasará (sin rutas ni secretos):
+/// - uno que ya existe: se abre con su contraseña, cuántas versiones tiene y
+///   si trocea como el origen (si no, la primera subida ocupa como una completa);
+/// - uno nuevo: si ya hay un repositorio allí se usa (si la contraseña lo
+///   abre); si no, se crea ahora (salvo al solo probar).
+pub fn probar_externa(
+    src: &resguardo_motor::restic::Access,
+    dest: &resguardo_motor::restic::Access,
+    existente: bool,
+    solo_probar: bool,
+) -> Result<String, String> {
+    use resguardo_motor::restic;
+    if !existente {
+        let probe = restic::run_raw(dest, &["cat", "config", "--no-lock"], restic::CHECK_TIMEOUT)?;
+        return match probe.code {
+            Some(0) => Ok(format!("Allí ya hay un repositorio y la contraseña lo abre: se seguirá con él. {}", troceado(src, dest)?)),
+            Some(10) if solo_probar => {
+                Ok("El destino responde y allí aún no hay ningún repositorio: se creará al guardar, con el mismo troceado que el origen.".into())
+            }
+            Some(10) => {
+                crate::tasks::prepare_destination(src, dest).map_err(|e| format!("No se pudo crear el repositorio en el destino: {e}"))?;
+                Ok("Repositorio creado en el destino, con el mismo troceado que el origen.".into())
+            }
+            code => Err(restic::exit_error(code, &probe.stderr)),
+        };
+    }
+    let info = crate::adoptar_v2::abrir(dest)?;
+    let versiones = match info.versiones {
+        0 => "todavía sin versiones".to_string(),
+        1 => "1 versión".to_string(),
+        n => format!("{n} versiones"),
+    };
+    Ok(format!("El repositorio que ya existe se abre con esa contraseña ({versiones}). {}", troceado(src, dest)?))
+}
+
+/// «Trocea igual…» o el aviso de que no.
+fn troceado(src: &resguardo_motor::restic::Access, dest: &resguardo_motor::restic::Access) -> Result<String, String> {
+    let a = crate::tasks::chunker_polynomial(src).map_err(|e| format!("Repositorio de origen: {e}"))?;
+    let b = crate::tasks::chunker_polynomial(dest)?;
+    Ok(if a == b { "Trocea igual que el origen: cada subida solo sube lo que falte allí.".into() } else { TROCEA_DISTINTO.into() })
+}
+
+/// Qué pasa con la retención en el destino (para el mensaje y la consola).
+pub fn efecto_retencion(con_retencion: bool, bloqueo: Option<u32>, solo_anadir: bool) -> String {
+    match (con_retencion, bloqueo, solo_anadir) {
+        (_, _, true) => " El destino es de solo añadir: desde aquí no se borra nada allí (la retención la aplica el propio servidor).".into(),
+        (true, Some(d), _) => {
+            format!(" Con bloqueo de {d} días: la retención de allí solo quita versiones de más de {d} días (forget, sin prune) y no libera espacio.")
+        }
+        (false, Some(d), _) => format!(" Con bloqueo de {d} días: allí no se borra nada (sin retención propia)."),
+        _ => String::new(),
+    }
 }
 
 /// `desbloquear {repo?}`: quita los bloqueos antiguos (`restic unlock`, que
@@ -1746,5 +1913,148 @@ mod tests {
             json!({"id": "d", "nombre": "D", "repo": "r1", "carpetas": [], "horario": {"reglas": [{"tipo": "cada_luna", "hora": "23:00"}]}}),
         );
         assert!(raro.is_err());
+    }
+
+    /// La subida a la nube de la app de escritorio, en B2 o por su S3: la
+    /// dirección que escribe la persona (partida en destino + carpeta por la
+    /// consola) llega a la misma ubicación de restic, con las credenciales
+    /// solo en variables del proceso.
+    #[test]
+    fn repositorio_que_ya_existe_en_b2_o_s3() {
+        let b2 = |donde: &str| Destino {
+            id: "externa-1".into(),
+            nombre: "Backblaze B2".into(),
+            tipo: "b2".into(),
+            donde: donde.into(),
+            usuario: Some("0041a2b3c4d5".into()),
+            secreto: Some("K004secreto".into()),
+            ..Default::default()
+        };
+        assert_eq!(ubicacion(&b2("cubo-copias"), "siigo").unwrap(), "b2:cubo-copias:siigo");
+        assert_eq!(ubicacion(&b2("cubo-copias:copias"), "siigo").unwrap(), "b2:cubo-copias:copias/siigo");
+        assert_eq!(ubicacion(&b2("cubo-copias"), "").unwrap(), "b2:cubo-copias:");
+        let acc = acceso_destino(&b2("cubo-copias"), "siigo", "clave de la nube").unwrap();
+        assert!(acc.env.contains(&("B2_ACCOUNT_ID".into(), "0041a2b3c4d5".into())) && acc.env.contains(&("B2_ACCOUNT_KEY".into(), "K004secreto".into())));
+        assert!(!acc.location.contains("K004") && acc.rest_auth.is_none());
+        let s3 = Destino { tipo: "s3".into(), donde: "https://s3.us-west-004.backblazeb2.com/cubo-copias".into(), ..b2("") };
+        let acc = acceso_destino(&s3, "siigo", "clave de la nube").unwrap();
+        assert_eq!(acc.location, "s3:https://s3.us-west-004.backblazeb2.com/cubo-copias/siigo");
+        assert!(acc.env.contains(&("AWS_ACCESS_KEY_ID".into(), "0041a2b3c4d5".into())));
+        // Una contraseña dentro de la dirección no se acepta.
+        assert!(ubicacion(&Destino { tipo: "rest".into(), donde: "https://ana:clave@nas:8000".into(), ..b2("") }, "siigo").is_err());
+    }
+
+    /// «Copia externa → Usar uno que ya existe» y su «Probar»: se abre con su
+    /// contraseña, se cuentan sus versiones y se compara su troceado con el del
+    /// origen. Nada cambia en el equipo y los mensajes no llevan rutas ni claves.
+    #[test]
+    fn probar_copia_externa_a_un_repositorio_que_ya_existe() {
+        if resguardo_motor::restic::version().is_err() {
+            return; // sin restic
+        }
+        use resguardo_motor::restic::{run_raw, Access};
+        let b = std::env::temp_dir().join(format!("resguardo-externa-probar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&b);
+        std::fs::create_dir_all(b.join("datos")).unwrap();
+        std::fs::write(b.join("datos").join("factura.txt"), "factura 1").unwrap();
+        let ok = |acc: &Access, args: &[&str]| {
+            let out = run_raw(acc, args, std::time::Duration::from_secs(300)).unwrap();
+            assert_eq!(out.code, Some(0), "{args:?}: {}", out.stderr);
+        };
+        // El origen, gestionado («siigo» en un disco).
+        let origen = Access::new(b.join("almacen").join("siigo").display().to_string(), "clave del origen");
+        ok(&origen, &["init"]);
+        ok(&origen, &["backup", "--host", "PC-CONTABLE", &b.join("datos").display().to_string()]);
+        // La «nube»: uno con el troceado del origen y una versión, y otro que trocea distinto.
+        let nube = Access::new(b.join("nube").join("copias").join("siigo").display().to_string(), "clave de la nube");
+        let mut desde = nube.clone();
+        desde.env.push(("RESTIC_FROM_PASSWORD".into(), origen.password.clone()));
+        ok(&desde, &["init", "--copy-chunker-params", "--from-repo", &origen.location]);
+        ok(&desde, &["copy", "--from-repo", &origen.location]);
+        ok(&Access::new(b.join("nube").join("otro").display().to_string(), "clave de la nube"), &["init"]);
+
+        let mut v = Vinculo { equipo_id: uuid::Uuid::new_v4().to_string(), modo: "local".into(), ..Default::default() };
+        v.destinos.push(Destino {
+            id: "almacen".into(),
+            nombre: "Disco".into(),
+            tipo: "local".into(),
+            donde: b.join("almacen").display().to_string(),
+            ..Default::default()
+        });
+        v.repos_v2.push(RepoV2 {
+            id: "siigo".into(),
+            nombre: "Siigo".into(),
+            destino: "almacen".into(),
+            contrasena: origen.password.clone(),
+            ..Default::default()
+        });
+        let antes = serde_json::to_string(&(&v.destinos, &v.repos_v2.iter().map(|r| &r.externa).collect::<Vec<_>>())).unwrap();
+        let pedir = |ruta: Option<&str>, clave: &str| {
+            let mut c = json!({ "repo": "siigo", "hora": "21:00", "solo_probar": true, "existente": true, "contrasena_destino": clave, "bloqueo_dias": 30,
+                                "retencion": { "diarias": 7, "semanales": 4, "mensuales": 12, "anuales": 2 },
+                                "destino": { "id": "externa-1a2b", "tipo": "local", "donde": b.join("nube").display().to_string() } });
+            if let Some(r) = ruta {
+                c["ruta"] = json!(r);
+            }
+            c
+        };
+        let sin_secretos = |m: &str| {
+            assert!(!m.contains("clave") && !m.contains(&b.display().to_string()), "sin rutas ni claves: {m}");
+        };
+        let m = cambiar_copia_externa(&mut v, &pedir(Some("copias/siigo"), "clave de la nube"), "siigo").unwrap();
+        assert!(m.contains("se abre con esa contraseña (1 versión)") && m.contains("Trocea igual"), "{m}");
+        assert!(m.contains("Con bloqueo de 30 días") && m.contains("sin prune"), "{m}");
+        sin_secretos(&m);
+        // Trocea distinto: se avisa, pero se puede usar.
+        let m = cambiar_copia_externa(&mut v, &pedir(Some("otro"), "clave de la nube"), "siigo").unwrap();
+        assert!(m.contains(TROCEA_DISTINTO) && m.contains("todavía sin versiones"), "{m}");
+        // Lo que no vale.
+        let mut mucho_bloqueo = pedir(Some("copias/siigo"), "clave de la nube");
+        mucho_bloqueo["bloqueo_dias"] = json!(9999);
+        for (c, error) in [
+            (pedir(Some("copias/siigo"), "otra clave"), "La contraseña no abre"),
+            (pedir(Some("copias/no-esta"), "clave de la nube"), "No hay ningún repositorio"),
+            (pedir(None, "clave de la nube"), "Falta la carpeta"),
+            (pedir(Some("../siigo"), "clave de la nube"), "no es válida"),
+            (mucho_bloqueo, "Días de bloqueo"),
+        ] {
+            let e = cambiar_copia_externa(&mut v, &c, "siigo").unwrap_err();
+            assert!(e.contains(error), "{error}: {e}");
+            sin_secretos(&e);
+        }
+        // El mismo repositorio de origen, no.
+        let mut mismo = pedir(Some("siigo"), "clave del origen");
+        mismo["destino"]["donde"] = json!(b.join("almacen").display().to_string());
+        assert!(cambiar_copia_externa(&mut v, &mismo, "siigo").unwrap_err().contains("mismo repositorio"));
+        // Uno nuevo donde aún no hay nada: se creará al guardar (al probar, no).
+        let mut nuevo = pedir(None, "clave de la nube");
+        nuevo["existente"] = json!(false);
+        nuevo["destino"]["nombre"] = json!("Nube");
+        let m = cambiar_copia_externa(&mut v, &nuevo, "siigo").unwrap();
+        assert!(m.contains("se creará al guardar"), "{m}");
+        assert!(!b.join("nube").join("siigo").exists(), "probar no crea nada");
+        // Nada cambió en el equipo.
+        assert_eq!(serde_json::to_string(&(&v.destinos, &v.repos_v2.iter().map(|r| &r.externa).collect::<Vec<_>>())).unwrap(), antes);
+        assert_eq!(
+            efecto_retencion(true, None, true),
+            " El destino es de solo añadir: desde aquí no se borra nada allí (la retención la aplica el propio servidor)."
+        );
+        assert!(efecto_retencion(false, Some(30), false).contains("allí no se borra nada"));
+        assert_eq!(efecto_retencion(true, None, false), "");
+        // Cambiar solo la hora de una que va a uno que ya existía (`destino: {id}`):
+        // sigue en su carpeta y con su bloqueo, sin crear nada en la carpeta del id.
+        v.destinos.push(Destino {
+            id: "nube-ex".into(),
+            nombre: "Nube".into(),
+            tipo: "local".into(),
+            donde: b.join("nube").display().to_string(),
+            ..Default::default()
+        });
+        v.repos_v2[0].externa = Some(json!({ "destino": "nube-ex", "hora": "21:00", "existente": true, "ruta": "copias/siigo", "bloqueo_dias": 30 }));
+        let hora = json!({ "repo": "siigo", "hora": "22:00", "solo_probar": true, "contrasena_destino": "clave de la nube", "destino": { "id": "nube-ex" },
+                           "retencion": { "diarias": 7, "semanales": 4, "mensuales": 12, "anuales": 2 } });
+        let m = cambiar_copia_externa(&mut v, &hora, "siigo").unwrap();
+        assert!(m.contains("que ya existe se abre") && m.contains("(1 versión)") && m.contains("Con bloqueo de 30 días"), "{m}");
+        let _ = std::fs::remove_dir_all(&b);
     }
 }

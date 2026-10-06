@@ -13,6 +13,7 @@
   import { enFondo } from "$lib/actividad.svelte";
   import { ErrorEtiqueta, ErrorFaltaAdmin, ErrorLlavesCambiadas, mandarOrden, necesitaAdmin, necesitaRepo } from "$lib/ordenar";
   import { comprobarLlaves } from "$lib/fijadas";
+  import { esperarRespuesta } from "$lib/adoptar";
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import { esDestructiva } from "$lib/cripto/ordenes";
   import { resultadoFirmado } from "$lib/cripto/claves";
@@ -51,8 +52,14 @@
     alEnviar?: (o: Orden) => void;
     /** Cuando el equipo responde (hecha, fallida…): para refrescar lo que cambió (p. ej. el espejo tras quitar una nube). */
     alTerminar?: (o: Orden) => void;
+    /**
+     * «Probar» (opcional): manda la misma orden con estos campos de más (p. ej.
+     * `{ solo_probar: true }`), espera la respuesta del equipo y la enseña aquí,
+     * sin cerrar el diálogo ni olvidar las claves (luego se confirma como siempre).
+     */
+    probar?: { cuerpo: Record<string, unknown>; texto?: string } | null;
   }
-  let { cliente, equipo, tipo, cuerpo = {}, titulo, descripcion, repo, accion, campos, valido = true, onclose, alEnviar, alTerminar }: Props = $props();
+  let { cliente, equipo, tipo, cuerpo = {}, titulo, descripcion, repo, accion, campos, valido = true, onclose, alEnviar, alTerminar, probar = null }: Props = $props();
 
   let claveAdmin = $state("");
   let contrasenaRepo = $state("");
@@ -97,6 +104,39 @@
     contrasenaRepo = "";
   }
 
+  // Los campos vacíos (p. ej. «repo» = todos) no se mandan.
+  const cuerpoLimpio = (extra: Record<string, unknown> = {}) =>
+    Object.fromEntries(Object.entries({ ...($state.snapshot(cuerpo) as Record<string, unknown>), ...extra }).filter(([, v]) => v !== ""));
+  const secretos = () => ({ claveAdmin: pideAdmin ? claveAdmin : undefined, repo: pideRepo && repo ? { repo: repo.id, contrasena: contrasenaRepo } : undefined });
+
+  /** Lo que respondió el equipo a «Probar» (la misma orden, sin guardar nada). */
+  let prueba = $state<{ ok: boolean; mensaje: string } | null>(null);
+  let probando = $state(false);
+  async function probarAhora() {
+    if (!probar) return;
+    error = errorAdmin = "";
+    prueba = null;
+    probando = true;
+    try {
+      const o = await mandarOrden({ cliente, equipo, tipo, cuerpo: cuerpoLimpio(probar.cuerpo), secretos: secretos(), alPaso: (t) => (paso = t) });
+      paso = `Esperando a ${equipo.nombre}…`;
+      const r = await esperarRespuesta(cliente.id, equipo, o, 240);
+      prueba = { ok: r.estado === "hecha", mensaje: r.mensaje ?? (r.estado === "hecha" ? "Todo en orden." : "No se pudo comprobar.") };
+    } catch (err) {
+      if (err instanceof ErrorLlavesCambiadas) {
+        olvidar();
+        llavesCambiadas = true;
+      } else if (err instanceof ErrorFaltaAdmin) {
+        fijarPrimero = true;
+        errorAdmin = err.message;
+      } else if (err instanceof ErrorEtiqueta) errorAdmin = err.message;
+      else error = (err as Error).message;
+    } finally {
+      probando = false;
+      paso = "";
+    }
+  }
+
   async function enviar(e: SubmitEvent) {
     e.preventDefault();
     error = errorAdmin = "";
@@ -106,9 +146,8 @@
         cliente,
         equipo,
         tipo,
-        // Los campos vacíos (p. ej. «repo» = todos) no se mandan.
-        cuerpo: Object.fromEntries(Object.entries($state.snapshot(cuerpo) as Record<string, unknown>).filter(([, v]) => v !== "")),
-        secretos: { claveAdmin: pideAdmin ? claveAdmin : undefined, repo: pideRepo && repo ? { repo: repo.id, contrasena: contrasenaRepo } : undefined },
+        cuerpo: cuerpoLimpio(),
+        secretos: secretos(),
         alPaso: (t) => (paso = t),
       });
       olvidar();
@@ -264,13 +303,22 @@
       {/if}
 
       {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
+      {#if prueba}
+        <div class="notice {prueba.ok ? 'notice-success' : 'notice-danger'}" role="status">
+          {#if prueba.ok}<ShieldCheck size={16} />{:else}<TriangleAlert size={16} />{/if}
+          <p><strong>{prueba.ok ? "Prueba superada." : "La prueba falló."}</strong> {prueba.mensaje}</p>
+        </div>
+      {/if}
 
       <footer>
-        {#if fase === "enviando"}
+        {#if fase === "enviando" || probando}
           <span class="paso" role="status"><LoaderCircle size={15} class="spin" />{paso}</span>
         {/if}
-        <button type="button" class="btn btn-ghost" onclick={cerrar} disabled={fase === "enviando"}>Cancelar</button>
-        <BotonCargando class="btn {destructiva ? 'btn-danger' : 'btn-primary'}" disabled={!listo} cargando={fase === "enviando"} textoCargando="Enviando…">{textoBoton}</BotonCargando>
+        <button type="button" class="btn btn-ghost" onclick={cerrar} disabled={fase === "enviando" || probando}>Cancelar</button>
+        {#if probar}
+          <BotonCargando type="button" class="btn" disabled={!listo || fase === "enviando"} cargando={probando} textoCargando="Probando…" onclick={probarAhora}>{probar.texto ?? "Probar"}</BotonCargando>
+        {/if}
+        <BotonCargando class="btn {destructiva ? 'btn-danger' : 'btn-primary'}" disabled={!listo || probando} cargando={fase === "enviando"} textoCargando="Enviando…">{textoBoton}</BotonCargando>
       </footer>
     {:else if orden}
       <div class="resultado">

@@ -275,8 +275,20 @@ export interface RepositorioResumen {
   solo_lectura?: boolean;
   /** v1.14: en un rest-server de solo añadir (adoptado o comprobado): la retención la aplica el servidor. */
   solo_anadir?: boolean | null;
-  /** Copia externa diaria (restic copy) a otro destino: su nombre y la hora. */
-  externa?: { destino: string; destino_id?: string; hora: string } | null;
+  /**
+   * Copia externa diaria (restic copy) a otro destino: su nombre y la hora.
+   * v1.4x: a un repositorio que ya existía, con bloqueo de objetos (días), de
+   * solo añadir y si tiene retención propia.
+   */
+  externa?: {
+    destino: string;
+    destino_id?: string;
+    hora: string;
+    existente?: boolean | null;
+    bloqueo_dias?: number | null;
+    solo_anadir?: boolean | null;
+    con_retencion?: boolean | null;
+  } | null;
   /** v1.22: su carpeta en el servidor rest, si no es su id (uno adoptado). */
   ruta?: string | null;
 }

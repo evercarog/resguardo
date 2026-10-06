@@ -93,6 +93,8 @@
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
+  import FormRepoExistente from "$lib/componentes/FormRepoExistente.svelte";
+  import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   import { borrar } from "$lib/cripto/bytes";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
@@ -458,32 +460,44 @@
     contrasenaDestino: "",
   });
   let ext = $state(extVacia());
+  /** v1.4x (agente con `externa_existente`): «Usar uno que ya existe», bloqueo de objetos y «Probar». */
+  let extX = $state(externaExtraVacia());
+  const extNueva = $derived(admiteExternaExistente(equipo));
   /** Destinos a los que puede ir la copia externa: cualquiera menos el del propio repositorio. */
   const destinosExt = $derived(destinos.filter((d) => d.id !== ext.destinoRepo));
   const cuerpoExterna = $derived({
     repo: ext.repo,
-    destino:
-      ext.destino === "nuevo"
-        ? {
-            id: ext.idNuevo,
-            nombre: ext.nombre.trim(),
-            tipo: ext.tipo,
-            donde: ext.donde.trim(),
-            ...(ext.tipo !== "local" && ext.usuario ? { usuario: ext.usuario } : {}),
-            ...(ext.tipo !== "local" && ext.secreto ? { secreto: ext.secreto } : {}),
-          }
-        : { id: ext.destino },
+    ...(extNueva && extX.modo === "existente"
+      ? cuerpoExistente(extX, ext.idNuevo)
+      : {
+          destino:
+            ext.destino === "nuevo"
+              ? {
+                  id: ext.idNuevo,
+                  nombre: ext.nombre.trim(),
+                  tipo: ext.tipo,
+                  donde: ext.donde.trim(),
+                  ...(ext.tipo !== "local" && ext.usuario ? { usuario: ext.usuario } : {}),
+                  ...(ext.tipo !== "local" && ext.secreto ? { secreto: ext.secreto } : {}),
+                }
+              : { id: ext.destino },
+          ...(ext.otraContrasena && ext.contrasenaDestino ? { contrasena_destino: ext.contrasenaDestino } : {}),
+        }),
     hora: ext.hora,
     ...(ext.conRetencion ? { retencion: reglaParaOrden(ext.retencion) } : {}),
-    ...(ext.otraContrasena && ext.contrasenaDestino ? { contrasena_destino: ext.contrasenaDestino } : {}),
+    // Con un agente que lo entiende, siempre (0: sin bloqueo); si no, nada.
+    ...(extNueva ? { bloqueo_dias: 0, ...cuerpoBloqueo(extX) } : {}),
   });
   const externaValida = $derived(
-    !!ext.destino &&
-      (!ext.conRetencion || !errorRegla(ext.retencion, admitePlazos(equipo))) &&
+    (!ext.conRetencion || !errorRegla(ext.retencion, admitePlazos(equipo))) &&
       /^([01]\d|2[0-3]):[0-5]\d$/.test(ext.hora) &&
-      (ext.destino !== "nuevo" || (!!ext.nombre.trim() && !!ext.donde.trim())) &&
-      (!ext.otraContrasena || ext.contrasenaDestino.length >= 8),
+      (extNueva && extX.modo === "existente"
+        ? existenteCompleto(extX)
+        : !!ext.destino && (ext.destino !== "nuevo" || (!!ext.nombre.trim() && !!ext.donde.trim())) && (!ext.otraContrasena || ext.contrasenaDestino.length >= 8)) &&
+      !errorBloqueo(extX),
   );
+  /** Qué pasa con la retención allí (lo mismo que dirá el equipo al guardarla). */
+  const efectoExterna = $derived(textoRetencionDestino(ext.conRetencion, extX.conBloqueo ? diasBloqueo(extX.bloqueoDias) : null));
   /** Dónde quedará el repositorio en un destino local: «donde» + separador + id del repositorio. */
   const rutaExterna = $derived(ext.donde.trim().replace(/[\\/]+$/, "") + (/windows/i.test(equipo?.so ?? "") ? "\\" : "/") + ext.repo);
   const idDestinoExterna = (r: RepositorioResumen) => (r.externa ? (r.externa.destino_id ?? destinos.find((d) => d.nombre === r.externa!.destino)?.id) : undefined);
@@ -498,11 +512,15 @@
       idNuevo: `externa-${crypto.randomUUID().slice(0, 8)}`,
       hora: r.externa?.hora ?? "21:00",
     };
+    // El bloqueo que ya tiene (si lo tiene), para no quitarlo al cambiar la hora.
+    extX = { ...externaExtraVacia(), conBloqueo: !!r.externa?.bloqueo_dias, bloqueoDias: r.externa?.bloqueo_dias ?? 30 };
     abrir({
       tipo: "cambiar_copia_externa",
       cuerpo: {},
       titulo: r.externa ? "Cambiar la copia externa" : "Copia externa",
-      descripcion: `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino (la primera vez crea allí el repositorio, en una carpeta con su id). Si algo le pasa al destino principal, queda esta.`,
+      descripcion: admiteExternaExistente(equipo)
+        ? `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino: a un repositorio nuevo (lo crea allí, en una carpeta con su id) o a uno que ya existe. Si algo le pasa al destino principal, queda esta.`
+        : `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino (la primera vez crea allí el repositorio, en una carpeta con su id). Si algo le pasa al destino principal, queda esta.`,
       repo: { id: r.id, nombre: r.nombre },
       campos: "externa",
     });
@@ -834,7 +852,7 @@
                 <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion"]} />
                 {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
-                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino}» cada día a las {r.externa.hora} <Ayuda id="copia-externa" /></p>{/if}
+                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>{/if}
                 {#if puede.ordenar(rol)}
                   <div class="acciones">
                     {#if nVersiones(r, inf) || r.solo_lectura}<a class="btn btn-sm btn-primary" href="/c/{c}/restaurar?equipo={equipo.id}&repo={r.id}"><History size={14} />Restaurar</a>{/if}
@@ -1142,9 +1160,11 @@
     accion={dialogo.accion}
     campos={dialogo.campos ? camposOrden : undefined}
     valido={dialogo.campos === "quitar" ? !!String(dialogo.cuerpo.quitar ?? "").trim() : dialogo.campos === "guardar" ? !!String(dialogo.cuerpo.carpeta ?? "").trim() && !errorGuardar : dialogo.campos === "externa" ? externaValida : dialogo.campos === "espejo" ? espejoValido : dialogo.campos === "retencion" ? !errorRegla(reg, admitePlazos(equipo)) : true}
+    probar={dialogo.campos === "externa" && extNueva ? { cuerpo: { solo_probar: true }, texto: "Probar" } : null}
     onclose={() => {
       dialogo = null;
       ext.secreto = ext.contrasenaDestino = "";
+      extX.existente.secreto = extX.existente.contrasena = "";
       // Lo que haya cambiado el equipo (p. ej. el espejo) se ve al cerrar.
       void cargar();
     }}
@@ -1230,6 +1250,26 @@
   {:else if dialogo?.campos === "retencion"}
     <EditorRetencion id="ret" bind:regla={reg} admite={admitePlazos(equipo)} {...horarioDeCopias(copias, String(dialogo.cuerpo.repo ?? ""))} />
   {:else if dialogo?.campos === "externa"}
+    {#if extNueva}
+      <div class="segmented" role="group" aria-label="Repositorio de la copia externa">
+        <button type="button" class:on={extX.modo === "nuevo"} aria-pressed={extX.modo === "nuevo"} onclick={() => (extX.modo = "nuevo")}><Plus size={14} />Crear uno nuevo</button>
+        <button type="button" class:on={extX.modo === "existente"} aria-pressed={extX.modo === "existente"} onclick={() => (extX.modo = "existente")}><Database size={14} />Usar uno que ya existe</button>
+      </div>
+    {/if}
+    {#if extNueva && extX.modo === "existente"}
+      <p class="faint nota-esp">Por ejemplo, el de la nube al que subía la app de escritorio. Solo se sube lo que le falte: lo que ya tiene no se repite (si trocea igual que este repositorio; «Probar» lo comprueba). Nunca se crea otro allí.</p>
+      <div class="field">
+        <label class="field-label" for="xe-nombre">Nombre del destino <span class="faint">(opcional)</span></label>
+        <input id="xe-nombre" class="input" bind:value={extX.nombreExistente} placeholder={extX.existente.tipo === "b2" ? "Backblaze B2" : extX.existente.tipo === "s3" ? "S3" : ""} />
+      </div>
+      <FormRepoExistente
+        bind:repo={extX.existente}
+        id="xe"
+        nombreEquipo={equipo?.nombre}
+        etiquetaContrasena="Contraseña de ese repositorio"
+        ayudaContrasena="La que abre ese repositorio (p. ej. la que usaba la app de escritorio para la nube). Puede ser distinta de la del repositorio de origen."
+      />
+    {:else}
     <div class="field">
       <label class="field-label" for="x-destino">Copiar a</label>
       <select id="x-destino" class="input" bind:value={ext.destino}>
@@ -1276,6 +1316,7 @@
         {/if}
       </div>
     {/if}
+    {/if}
     <div class="field">
       <label class="field-label" for="x-hora">Cada día a las</label>
       <input id="x-hora" class="input num corto" type="time" bind:value={ext.hora} />
@@ -1284,9 +1325,22 @@
     {#if ext.conRetencion}
       <EditorRetencion id="xr" bind:regla={ext.retencion} admite={admitePlazos(equipo)} {...horarioDeCopias(copias, ext.repo)} />
     {/if}
+    {#if extNueva}
+      <label class="switch-row"><input type="checkbox" bind:checked={extX.conBloqueo} /><span>El destino tiene bloqueo de objetos (Object Lock)<span class="faint">Lo subido no se puede borrar durante unos días (p. ej. un bucket de B2 o S3 con bloqueo). Así no se intenta borrar lo que aún está bloqueado.</span></span></label>
+      {#if extX.conBloqueo}
+        <div class="field">
+          <label class="field-label" for="x-bloqueo">Días de bloqueo</label>
+          <input id="x-bloqueo" class="input num corto" type="number" min="1" max={MAX_BLOQUEO} step="1" bind:value={extX.bloqueoDias} />
+          {#if errorBloqueo(extX)}<p class="error-campo">{errorBloqueo(extX)}</p>{:else}<span class="field-hint">Los del bucket (en B2: «Object Lock», periodo de retención por defecto).</span>{/if}
+        </div>
+      {/if}
+      {#if efectoExterna}<p class="faint nota-esp">{efectoExterna}</p>{/if}
+    {/if}
+    {#if !(extNueva && extX.modo === "existente")}
     <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia externa<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
     {#if ext.otraContrasena}
       <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia externa" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia externa." />
+    {/if}
     {/if}
   {:else if dialogo?.campos === "espejo"}
     {#if destinosActuales.length}

@@ -636,17 +636,37 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const d = c.destino as { id: string; nombre?: string; tipo?: T.DestinoResumen["tipo"]; donde?: string };
       if (!d?.id) return resultado(e, o, "fallida", "Falta el destino.");
       if (d.id === repo.destino) return resultado(e, o, "fallida", "La copia externa tiene que ir a otro destino.");
+      // v1.4x: a uno que ya existe (con su contraseña), con bloqueo de objetos, o solo probar.
+      const existente = c.existente === true;
+      const bloqueo = Number(c.bloqueo_dias ?? 0) || null;
+      if (existente && typeof c.ruta !== "string") return resultado(e, o, "fallida", "Falta la carpeta del repositorio que ya existe.");
+      if (existente && !String(c.contrasena_destino ?? "")) return resultado(e, o, "fallida", "La contraseña no abre ese repositorio: revisa que sea la suya.");
+      const efecto = bloqueo
+        ? c.retencion
+          ? ` Con bloqueo de ${bloqueo} días: la retención de allí solo quita versiones de más de ${bloqueo} días (forget, sin prune) y no libera espacio.`
+          : ` Con bloqueo de ${bloqueo} días: allí no se borra nada (sin retención propia).`
+        : "";
+      const probado = existente ? "El repositorio que ya existe se abre con esa contraseña (213 versiones). Trocea igual que el origen: cada subida solo sube lo que falte allí." : "";
+      if (c.solo_probar === true) return resultado(e, o, "hecha", `${probado || "El destino responde y allí aún no hay ningún repositorio: se creará al guardar, con el mismo troceado que el origen."}${efecto}`);
       let destino = e.resumen!.destinos?.find((x) => x.id === d.id);
       if (!destino) {
-        if (!d.nombre || !d.tipo || !d.donde) return resultado(e, o, "fallida", "Ese destino no existe en este equipo.");
-        destino = { id: d.id, nombre: d.nombre, tipo: d.tipo, donde: d.donde };
+        if (!d.tipo || !d.donde || (!d.nombre && !existente)) return resultado(e, o, "fallida", "Ese destino no existe en este equipo.");
+        destino = { id: d.id, nombre: d.nombre || (d.tipo === "b2" ? "Backblaze B2" : d.tipo === "s3" ? "S3" : "Destino"), tipo: d.tipo, donde: d.donde };
         e.resumen!.destinos = [...(e.resumen!.destinos ?? []), destino];
       }
-      repo.externa = { destino: destino.nombre, destino_id: destino.id, hora: String(c.hora) };
+      const antes = repo.externa?.destino_id === destino.id ? repo.externa : null;
+      repo.externa = {
+        destino: destino.nombre,
+        destino_id: destino.id,
+        hora: String(c.hora),
+        existente: existente || !!antes?.existente || null,
+        bloqueo_dias: "bloqueo_dias" in c ? bloqueo : (antes?.bloqueo_dias ?? null),
+        con_retencion: !!c.retencion,
+      };
       guardarConfig(e, configInicial(e), plana.seq);
       const sep = /windows/i.test(e.so) ? "\\" : "/";
-      const ruta = destino.tipo === "local" && destino.donde ? ` (${destino.donde.replace(/[\\/]+$/, "")}${sep}${repo.id})` : "";
-      return resultado(e, o, "hecha", `Copia externa a «${destino.nombre}»${ruta} cada día a las ${c.hora}.`);
+      const ruta = !existente && destino.tipo === "local" && destino.donde ? ` (${destino.donde.replace(/[\\/]+$/, "")}${sep}${repo.id})` : "";
+      return resultado(e, o, "hecha", `Copia externa a «${destino.nombre}»${ruta} cada día a las ${c.hora}.${probado ? ` ${probado}` : ""}${efecto}`);
     }
     case "cambiar_destino": {
       const d = e.resumen?.destinos?.find((x) => x.id === c.destino);
