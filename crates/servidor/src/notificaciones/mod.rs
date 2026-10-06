@@ -423,6 +423,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "servicio_detenido" => format!("El servicio de Resguardo está detenido en {e}"),
         "orden_destructiva" => format!("Orden destructiva pendiente en {e}"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
+        "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
         _ => format!("Aviso de {e}"),
     };
     let ok = match tipo {
@@ -435,6 +436,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
 /// La página de la consola que lo enseña.
 fn ruta(cliente: &str, equipo: Option<&str>, tipo: &str) -> String {
     match equipo {
+        _ if tipo == "auditoria_rehecha" => format!("/c/{cliente}/auditoria"),
         Some(e) if !matches!(tipo, "orden_destructiva") => format!("/c/{cliente}/equipos/{e}"),
         _ => format!("/c/{cliente}/avisos"),
     }

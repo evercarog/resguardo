@@ -318,6 +318,9 @@ fn resumen_semanal_por_persona() {
         )
         .unwrap();
     p.st.db.contacto_equipo(&p.ctx, "e1", ahora - 60).unwrap();
+    // v1.4x (9b): la cabeza de la auditoría del cliente va en el resumen («ancla»).
+    p.st.db.auditar(&p.ctx, "cuenta:ana@ejemplo.com", "renombrar_cliente", "", "{}").unwrap();
+    let cabeza = crate::ancla::de_cliente(p.st.db.as_ref(), &p.ctx).unwrap().expect("con auditoría");
     let a = ajustes::ajustes(p.st.db.as_ref()).unwrap();
     let n = resumen::generar(p.st.db.as_ref(), &a, resumen::Periodo::Semanal, ahora).unwrap();
     assert_eq!(n, 1, "solo la propietaria (el técnico y el de lectura no tienen resumen por defecto)");
@@ -328,6 +331,7 @@ fn resumen_semanal_por_persona() {
     let t = &c[0].1;
     assert!(t.contains("Resumen semanal de copias"), "{t}");
     assert!(t.contains("PC-Contabilidad") && t.contains("1 fallo") && t.contains("2,5"), "{t}");
+    assert!(t.contains(&cabeza.linea()) && t.contains("Comprobar con un ancla"), "{t}");
     // No cuenta para el tope ni se agrupa con avisos: sale suelto.
     let correo = a.canales.iter().find(|c| c.tipo == TipoCanal::Correo).unwrap().id.clone();
     assert!(p.st.db.notif_entregas_desde(&correo, "ana@ejemplo.com", 0).unwrap().is_empty());

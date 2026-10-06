@@ -11,6 +11,9 @@ Necesita atención:
   · Falló la copia «SQL» en «Servidor» (2 veces)
   · «Portátil de Ana» no conecta con el servidor
 Ver en la consola: https://copias.ejemplo.com:8443/c/cl
+Ancla de la actividad (n.º 1234, 4 oct, 09:00): resguardo-ancla:1:cl:1234:1791097200:5be1c0a7f3d2e4b6a8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5
+
+Guarda este correo: con su «ancla de la actividad» (la línea resguardo-ancla:…) puedes comprobar más adelante, en Actividad → «Comprobar con un ancla», que nadie ha rehecho el registro de actividad desde hoy.
 
 —
 Resguardo Server. Este mensaje solo cuenta el estado de las copias: nunca lleva contraseñas, claves ni nombres de archivos.

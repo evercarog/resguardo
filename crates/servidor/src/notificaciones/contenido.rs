@@ -638,16 +638,26 @@ fn resumen(r: &Resumen, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
         if let Some(u) = super::contenido::enlace(f, &format!("/c/{}", c.id)) {
             let _ = writeln!(texto, "Ver en la consola: {u}");
         }
+        if let Some(a) = &c.ancla {
+            let _ = writeln!(texto, "Ancla de la actividad (n.º {}, {}): {}", a.n, fecha_corta(a.creado, z), a.linea());
+        }
         texto.push('\n');
     }
     if let Some(u) = &enlace {
         cuerpo.push_str(&boton(u, "Abrir la consola"));
+    }
+    if r.clientes.iter().any(|c| c.ancla.is_some()) {
+        let _ = write!(cuerpo, "<p class=\"t3\" style=\"margin:18px 0 0;font-size:12px;line-height:18px;color:#666670\">{}</p>", esc(EXPLICA_ANCLA));
+        let _ = writeln!(texto, "{EXPLICA_ANCLA}\n");
     }
     texto.push_str(PIE_TEXTO.trim_start_matches('\n'));
     let previo = format!("{} · {} · {}", plural(equipos as u64, "equipo", "equipos"), plural(fallos as u64, "fallo", "fallos"), tamano(bytes));
     let html = pagina(f, m, &asunto, &previo, &cuerpo);
     Salida { evento: "resumen", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m) }
 }
+
+/// Por qué el resumen lleva el «ancla de la actividad» (plan-mejoras 9b).
+const EXPLICA_ANCLA: &str = "Guarda este correo: con su «ancla de la actividad» (la línea resguardo-ancla:…) puedes comprobar más adelante, en Actividad → «Comprobar con un ancla», que nadie ha rehecho el registro de actividad desde hoy.";
 
 fn bloque_cliente(c: &ResumenCliente, f: &Formato) -> String {
     let mut s = format!(
@@ -689,6 +699,16 @@ fn bloque_cliente(c: &ResumenCliente, f: &Formato) -> String {
             "<div style=\"margin-top:8px;font-size:13px\"><a href=\"{}\" style=\"color:#0f766e\">Ver {} en la consola</a></div>",
             esc(&u),
             esc(&c.nombre)
+        );
+    }
+    if let Some(a) = &c.ancla {
+        let _ = write!(
+            s,
+            "<div class=\"t3\" style=\"margin-top:10px;font-size:12px;line-height:18px;color:#666670\">Ancla de la actividad: entrada n.º {} · {}</div>\
+             <div class=\"suave t2\" style=\"margin-top:4px;padding:8px 10px;background:#f4f4f5;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:16px;color:#52525b;word-break:break-all\">{}</div>",
+            a.n,
+            esc(&fecha_corta(a.creado, f.zona)),
+            esc(&a.linea())
         );
     }
     s
@@ -809,6 +829,7 @@ pub fn webhook(ms: &[Mensaje], s: &Salida, f: &Formato, id: &str, ahora: Ts) -> 
             "periodo": r.periodo, "desde": fecha(r.desde), "hasta": fecha(r.hasta),
             "clientes": r.clientes.iter().map(|c| json!({
                 "id": c.id, "nombre": c.nombre, "copias_ok": c.copias_ok, "fallos": c.fallos, "bytes": c.bytes, "atencion": c.atencion,
+                "ancla": c.ancla.as_ref().map(|a| json!({ "n": a.n, "creado": fecha(a.creado), "hash": a.hash, "linea": a.linea() })),
                 "equipos": c.equipos.iter().map(|e| json!({
                     "id": e.id, "nombre": e.nombre, "estado": e.estado, "ultima_ok": e.ultima_ok.map(fecha),
                     "ultimo_contacto": e.ultimo_contacto.map(fecha), "copias_ok": e.copias_ok, "fallos": e.fallos, "bytes": e.bytes,
