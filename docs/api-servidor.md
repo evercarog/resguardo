@@ -95,7 +95,7 @@ El servidor no ve nada de esto. Solo recibe el sobre y unos **metadatos en claro
 
 | Nivel | Tipos |
 |---|---|
-| Inofensiva (sesión) | `copiar_ahora`, `verificar_ahora`, `probar_restauracion`, `subir_ahora`, `desbloquear`, `reanudar`, `actualizar_agente`, `abrir_sesion` (para el progreso) |
+| Inofensiva (sesión) | `copiar_ahora`, `verificar_ahora`, `probar_restauracion`, `subir_ahora`, `desbloquear`, `reanudar`, `actualizar_agente`, `abrir_sesion` (para el progreso), `cancelar_espera` (v1.4x) |
 | Contraseña del repositorio | `explorar` (abre sesión), `restaurar`, `descargar` (relé), `cambiar_retencion`*, `aplicar_retencion`*, `quitar_repositorio`* (+ clave), `dejar_de_copiar`*, `cambiar_copia_externa`, `rotar_contrasena_repo`, `compartir_acceso` (+ clave), `clave_almacen` (+ clave, v1.22) |
 | Clave de administración | `alta` (verificador, `K_cfg`, espera mínima), `config` (configuración declarativa), `elegir_carpetas` (abre sesión), `pausar`*, `baja_equipo`*, `desvincular` (`*` si es «dejar de copiar»), `cambiar_servidor`, `cambiar_espera`, `cambiar_clave_admin`, `guarda_copias`* (si se desactiva), `retencion_almacen`* (salvo `quitar`, v1.22), `aplicar_retencion_almacen`* (v1.22), `crear_repositorio`, `adoptar_repositorio`, `copiar_historial`, `conectar_nube`, `quitar_nube` (`*` si el espejo usa esa nube), `anadir_consola`, `quitar_consola` (v1.35) |
 
@@ -111,6 +111,8 @@ El servidor no ve nada de esto. Solo recibe el sobre y unos **metadatos en claro
 - `retencion_almacen` salvo con `quitar: true` (v1.22).
 
 La consola debe poner el `not_before` en estas (si no, el agente la rechaza y se pierde el `seq`).
+
+**Órdenes en espera en el equipo** (v1.4x, [consolas-multiples.md](consolas-multiples.md) §5). A un agente que anuncia `admite: ["ordenes_en_espera"]`, el servidor le entrega **al momento** las órdenes con `not_before` futuro que piden autorización (no las inofensivas). El agente las comprueba como siempre salvo la hora (también la autorización, con sus intentos fallidos), anota su `seq` y su `nonce`, guarda el sobre sellado tal cual y **no contesta** (en el servidor siguen `entregada`). Las aplica cuando su `not_before` llega en el reloj del equipo (con 5 min de holgura) **y** en el del servidor que la mandó (`ahora` de `hola`, `ping` y `tomar`), solo justo después de hablar con ese servidor, volviendo a comprobar la autorización, la espera y la caducidad; entonces manda el resultado firmado de siempre. Más de 20 en espera por consola, o una inofensiva con espera: `rechazada`. A un agente anterior, como antes: en su `not_before`.
 
 ### Modelo de amenazas: claves de los equipos
 
@@ -402,6 +404,8 @@ v1.35 (varias consolas, [consolas-multiples.md](consolas-multiples.md)): el resu
 
 v1.36: `admite` incluye `"escritorio"` y el resumen lleva `escritorio: { ventana, avisos }` (lo que tiene el equipo, también deducido de `bandeja`) y `escritorio_cambiado_en_equipo` (RFC 3339 o `null`): la consola enseña «En el equipo» sin descifrar la configuración.
 
+v1.4x (órdenes en espera, [consolas-multiples.md](consolas-multiples.md) §5.5): `admite` incluye `"ordenes_en_espera"` y el resumen lleva `en_espera: [{ id, tipo, descripcion | null, consola: { nombre | null, identidad, esta }, por | null, emitida, aplica, caduca }]`: las órdenes con espera que el equipo ya tiene, de cualquiera de sus consolas (`consola.nombre`, el que tiene en el equipo, nunca su dirección; `esta: true` si la mandó la consola que recibe el resumen). Se cancelan con `cancelar_espera` (§5). Un agente anterior no lo manda.
+
 v1.28: el resumen lleva `admite: ["retencion_plazos", "verificacion_auto", "almacen_propio"]` (lo nuevo que entiende el agente: la consola no ofrece lo que no) y, por repositorio, `repositorios[].retencion_regla` (la `Retencion` tal cual, §5; `retencion` sigue siendo su texto) y `repositorios[].verificacion_auto: { cada_dias, porcentaje, proxima, todo_leido } | null` (la verificación automática, §6; `todo_leido`: cuándo terminó la última vuelta completa de la rotativa). v1.40: `admite` con `"verificacion_horario"` (y `verificacion_auto.horario`, §6) y `"retencion_almacen_horario"` (§5, `retencion_almacen`).
 
 En un equipo que guarda copias, `guarda_copias.retenciones` (v1.22) es la retención que aplica ese almacén: `[{ usuario, repo, retencion: Retencion, texto, horario: { dias, hora }, horario_texto, verificar, clave: "ok" | "pendiente" | "sin_probar", ultima, resultado: "ok" | "fallo" | null, mensaje, versiones, proxima }]`. Nunca lleva la clave (§5, `retencion_almacen`).
@@ -464,6 +468,7 @@ Anónima, con límite por IP.
   "id", "tipo", "seq", "emitida", "emitida_por": { "id", "nombre" },
   "not_before", "caduca",
   "estado": "pendiente" | "entregada" | "en_marcha" | "hecha" | "fallida" | "rechazada" | "cancelada" | "caducada",
+  // v1.4x: «entregada» con `not_before` futuro = el equipo la tiene en espera (aún se puede cancelar).
   "mensaje": "texto corto sin rutas" | null,
   "detalle": "<JSON en texto>" | null,
   "firma_agente": "<b64>" | null,
@@ -476,9 +481,9 @@ Anónima, con límite por IP.
 | Método y ruta | Qué hace |
 |---|---|
 | `GET /api/clientes/{c}/equipos/{e}/ordenes?limite=50` | Las últimas órdenes del equipo |
-| `GET /api/clientes/{c}/ordenes?pendientes=1` | Órdenes con espera de todo el cliente (tarjetas «Pendiente: … · Cancelar»): `[Orden]` |
+| `GET /api/clientes/{c}/ordenes?pendientes=1` | Órdenes con espera de todo el cliente (tarjetas «Pendiente: … · Cancelar»): `[Orden]`. v1.4x: también las `entregada` cuyo `not_before` no ha llegado (el equipo las tiene en espera). Las que mandaron **otras** consolas están en `resumen.en_espera` de cada equipo; `pendientes` de `GET …/resumen` y del panel las cuenta también |
 | `GET /api/clientes/{c}/ordenes?limite=50&antes=<cursor>&equipo=<id>&estado=<estado>` | Las últimas de todo el cliente, de la más reciente a la más antigua (`limite` hasta 200; filtros opcionales): `{ ordenes: [Orden], siguiente: "<cursor>" \| null }`. Para la página siguiente, `antes=<siguiente>` |
-| `POST /api/clientes/{c}/ordenes/{o}/cancelar` | Cualquier miembro salvo `lectura`. Solo si aún no se entregó, o si es destructiva y no ha llegado su `not_before`; el servidor la marca y el agente también la recibe como cancelada |
+| `POST /api/clientes/{c}/ordenes/{o}/cancelar` | Cualquier miembro salvo `lectura`. Solo si aún no se entregó, o si es destructiva y no ha llegado su `not_before`; el servidor la marca y el agente también la recibe como cancelada (v1.4x: si la tenía en espera, la quita y lo anota en su historial) |
 
 **`firma_agente`:** Ed25519 del equipo sobre `"resguardo-resultado-v1|" + orden_id + "|" + seq + "|" + estado + "|" + (mensaje ?? "") + "|" + (detalle ?? "")`.
 
@@ -486,6 +491,7 @@ Anónima, con límite por IP.
 - En claro, lo que el servidor puede leer: `cambiar_espera` → `{"espera_min_horas": h}`; `descargar` → `{"trozos": n}`.
 - Si la orden trae `responder_a` (X25519 efímera de la consola), el detalle privado va sellado para ella: `{"sellado": "<crypto_box_seal b64>"}`. Solo lo abre la consola. (Hoy ninguna orden lo usa; lo usará «restaurar en otro equipo», §10.)
 - Las órdenes largas (`restaurar`, `descargar`, `aplicar_retencion`) contestan primero `en_marcha` y luego el resultado final, firmado igual.
+- v1.4x: una orden en espera que **otra** consola canceló (`cancelar_espera`) llega como `rechazada` con `detalle: {"cancelada": true, "consola": "<nombre>"}`: el servidor la guarda así (la firma del equipo es sobre `rechazada`; la consola la enseña con el mensaje «Cancelada desde otra consola…»). Y si el equipo la aplicó antes de recibir una cancelación de este servidor, su resultado firmado sustituye a `cancelada` y se crea un aviso `cambio_inusual`.
 
 ### Cuerpos de las órdenes
 
@@ -499,6 +505,7 @@ Formatos finales (v1.2). Los ids de repositorio, destino y copia: letras, cifras
 | `copiar_historial` | v1.14. `{ repo, origen: { repo: "<id de este equipo>" } \| { destino: { tipo, donde, usuario?, secreto?, ca_pem? }, ruta, contrasena }, filtro?: { equipos?: [<host>], etiquetas?: [<tag>] }, mover?: { paso: "historial" \| "ultimo" } }` (clave de administración; `mover`, v1.47: es un paso de «Mover a otro sitio…»; un agente anterior lo ignora). Mientras dura, el equipo lo cuenta en el progreso a **todas** sus consolas (tarea `historial`, §8) y al terminar deja una entrada `historial` en su historial. `restic copy` al repositorio gestionado `repo` (no uno de solo lectura) de las versiones del origen que falten, en segundo plano: contesta `en_marcha` y manda `en_marcha` con el progreso («Trayendo el historial: 12 de 140 versiones…») como mucho cada minuto, y al final `hecha` («Historial traído: N versiones nuevas. M ya estaban.») o `fallida`. Solo añade (vale con destinos de solo añadir) y no repite lo ya traído; una por repositorio a la vez. El origen va al proceso en variables (`RESTIC_FROM_REPOSITORY`, `RESTIC_FROM_PASSWORD`), nunca en los argumentos. Origen y destino en dos cuentas distintas del mismo tipo de nube → `fallida`. Si el agente se reinicia a medias, la orden se queda `en_marcha`: se vuelve a pedir y sigue donde se quedó |
 | `config` | `{ config: Configuracion }` (§6) |
 | `copiar_ahora` | `{ copia }` (el repositorio sale de la configuración; `{ repo, copia }` también vale) |
+| `cancelar_espera` | v1.4x. `{ id }`: el id (en su servidor) de una orden que el equipo tiene en espera, de cualquiera de sus consolas (`resumen.en_espera[].id`). Inofensiva: cancelar solo aumenta la protección. El equipo la quita, lo anota en su historial y contesta `hecha` («Cancelada: … (la mandó «Oficina»). No se aplicará.»), o `fallida` si ya no está esperando. A la consola que la mandó le manda el resultado de esa orden (ver `detalle`). Un agente anterior contesta «aún no admite» (la consola solo la ofrece con `admite: "ordenes_en_espera"`) |
 | `verificar_ahora`, `probar_restauracion`, `subir_ahora` | `{ repo }` |
 | `pausar` | `{ horas, repo? }` (`0` = hasta reanudar; sin `repo`, todos) |
 | `reanudar` | `{ repo? }` |
@@ -665,7 +672,7 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
 **Historial del equipo** (v1.23, `EntradaHistorial`). Cada equipo guarda **para siempre** lo que cuenta a la consola (`crates/agente/src/bitacora.rs`) y se lo da a cada consola nueva (otro servidor, uno restaurado o tras volver a vincular): así ve la Historia, los avisos y lo de antes de llegar. Sin rutas ni secretos (los mensajes, como `public_message`).
 
 ```json
-{ "id", "hora", "tipo": "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "retencion" | "historial",
+{ "id", "hora", "tipo": "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "retencion" | "historial" | "orden",
   "repo"?, "copia"?, "origen"?, "nombre"?, "nombre_origen"?, "mover"?, "paso"?, "consola"?, "resultado"?: "ok" | "aviso" | "fallo" | "sin_cambios", "mensaje"?,
   "duracion_s"?, "anadido"?, "archivos_nuevos"?, "archivos_cambiados"?, "reintento"?, "ganchos"?: [{ tipo, estado, mensaje }],
   "aviso"?: "<tipo de aviso>",
@@ -687,6 +694,16 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
 
   `quedan`/`quitadas`: sin ellos no se pudo leer cómo quedó el repositorio. `liberado`: bytes de «total prune» de restic (si lo dijo). `sospechosas`: las del almacén con una hora que no cuadra con su subida (no se tocan). `grupos`: los de restic (equipo y carpetas) de las quitadas, con su copia (si el equipo la sabe) o unas versiones que quedan en él (hasta 5, la más reciente primero: la consola busca su copia en el informe del dueño). `motivos`: por qué la regla no la guardó (`cupo:<tipo>`: era la última de su hora/día/… pero ya había tantas de ese tipo; `plazo:<tipo>`: fuera del plazo; `repe:<tipo>`: otra más reciente en el mismo hueco; `restic`: no cuadra con la simulación del agente). Sin rutas ni nombres de archivos. Como mucho 2000 versiones (las demás, en `mas`) y 96 KiB por entrada; el equipo deja la lista solo en sus 50 entradas `retencion` más recientes y el servidor, en las 50 más recientes de cada equipo (las anteriores quedan con sus cifras y `compactada: true`). Solo se dan pedidas con `tipo=retencion`.
 
+- **`orden`** (v1.4x, [consolas-multiples.md](consolas-multiples.md) §5.8): lo que el equipo hizo con cada orden que recibe de cualquiera de sus consolas (salvo las que abren una sesión y `cancelar_espera`), para que todas lo vean. Solo se da si se pide (`tipo=orden`):
+
+  ```json
+  { "id", "hora", "tipo": "orden", "orden": "<tipo>", "orden_id": "<id en su servidor>", "descripcion"?, "consola"?: "<nombre en el equipo>",
+    "identidad": "<de la consola que la mandó>", "por"?, "aplica"?, "cancelada_desde"?,
+    "resultado": "en_espera" | "hecha" | "en_marcha" | "fallida" | "rechazada" | "cancelada" | "caducada", "mensaje"? }
+  ```
+
+  Nunca la dirección de una consola; `mensaje` sin rutas, como los resultados. `en_marcha`: las largas no anotan después su final.
+
 **Tipos de aviso:**
 - `intentos_fallidos`;
 - `bloqueo`;
@@ -696,6 +713,7 @@ Exportar la auditoría (cuando exista) será solo para administradores y propiet
 - `copia_atrasada`;
 - `servicio_detenido`;
 - `cambio_inusual`;
+- `orden_en_espera` (v1.4x): otra consola mandó una orden que el equipo tiene en espera (crítico; lleva a «Órdenes»);
 - (v1.29; los crea el servidor, ver §13) `verificacion_fallida`, `externa_fallida`, `prueba_fallida`, `espejo_fallido` y `cambio_clave`; (v1.43) `retencion_fallida`. `copia_fallida` también la crea el servidor a partir de los informes.
 
 ---
@@ -771,13 +789,13 @@ Con la cabecera `Authorization: Equipo …`. Mensajes JSON de texto.
 
 | Mensaje | Cuándo |
 |---|---|
-| `{ "t": "hola", "firma": "<prueba de identidad>", "atencion": false, "historial": { "ultima": "<RFC 3339>" \| null } }` | Primero. El agente comprueba la firma con la identidad fijada; si falla, cierra. `historial` (v1.23): hasta dónde tiene el historial de ese equipo (`null`: nada) |
+| `{ "t": "hola", "firma": "<prueba de identidad>", "atencion": false, "historial": { "ultima": "<RFC 3339>" \| null } }` | Primero. El agente comprueba la firma con la identidad fijada; si falla, cierra. `historial` (v1.23): hasta dónde tiene el historial de ese equipo (`null`: nada). `ahora` (v1.4x, RFC 3339): la hora del servidor (para las órdenes en espera; un servidor anterior no la manda) |
 | `{ "t": "orden", "orden": { id, tipo, seq, sellado, not_before, caduca } }` | Orden nueva |
-| `{ "t": "cancelada", "orden": "<id>" }` | Se canceló una orden |
+| `{ "t": "cancelada", "orden": "<id>" }` | Se canceló una orden (v1.4x: el agente la quita de sus órdenes en espera, solo si es de este servidor) |
 | `{ "t": "sesion", "sesion": "<id>", "n", "cifrado" }` | Mensaje de la consola |
 | `{ "t": "sesion_cerrada", "sesion": "<id>" }` | La consola cerró una sesión |
 | `{ "t": "error", "error", "mensaje" }` | Un mensaje del agente no se pudo procesar |
-| `{ "t": "ping" }` | Cada 30 s |
+| `{ "t": "ping", "ahora"? }` | Cada 30 s. v1.4x: `ahora` (RFC 3339), la hora del servidor, como en `hola` |
 | `{ "t": "refrescar", "repo": "<id>" }` (v1.30) | Al equipo **dueño** de un repositorio en un almacén, cuando el resumen del almacén trae un resultado nuevo de su retención (`guarda_copias.retenciones[]`: otra `ultima` u otras `versiones`). El servidor busca el dueño entre los equipos del cliente por su destino (`equipo_almacen`, o el id/nombre del almacén), el usuario de `donde` y la carpeta (`ruta` o el id). Es solo una pista: el agente relee las versiones y el espacio de ese repositorio (si es suyo, como mucho una vez por minuto) y su informe sale con lo nuevo; no hace nada más. Solo por el WebSocket; un agente anterior la ignora |
 
 **Del agente al servidor:**
@@ -796,7 +814,7 @@ Con la cabecera `Authorization: Equipo …`. Mensajes JSON de texto.
 
 | Método y ruta | Hace |
 |---|---|
-| `POST /api/agente/tomar` | `{ reto, ultimo_seq? }` (`ultimo_seq`, v1.35: como en el canal, §8) → `{ firma, ordenes: [Orden en bruto], canceladas: [ids], atencion: bool, sesiones: [ids de sesiones abiertas], historial: { ultima } }` (`historial`, v1.23). Marca las órdenes como entregadas. Los mensajes de cada sesión se leen con `GET /api/agente/sesiones/{s}/mensajes` |
+| `POST /api/agente/tomar` | `{ reto, ultimo_seq? }` (`ultimo_seq`, v1.35: como en el canal, §8) → `{ firma, ordenes: [Orden en bruto], canceladas: [ids], atencion: bool, sesiones: [ids de sesiones abiertas], historial: { ultima }, ahora }` (`historial`, v1.23; `ahora`, v1.4x: la hora del servidor). Marca las órdenes como entregadas (v1.4x: también las que esperan su hora, si el agente las admite; las `canceladas` que tenía en espera, el agente las quita). Los mensajes de cada sesión se leen con `GET /api/agente/sesiones/{s}/mensajes` |
 | `POST /api/agente/resultado` | Igual que el mensaje `resultado` |
 | `POST /api/agente/informe` | Igual que `informe` |
 | `POST /api/agente/config` | Igual que `config` |
@@ -1232,3 +1250,12 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
   - `POST /api/agente/unirse`: el límite por IP cuenta los fallos (20 por hora) y no los equipos que se unen bien (300 intentos por hora en total); antes, 20 en total.
   - `protocolo::mensajes::pairing_code` (la forma de antes) sin sesgo: ya no usa los bytes de versión y variante del UUID ni `% 31` sin rechazo.
   - Consola: genera el código, lo guarda en el navegador hasta el alta y arma el instalador listo (cola en `lib/cola.ts`) y la línea de Linux; con un servidor anterior, la forma de antes. Riesgo que queda: [plataforma.md §7.3.1](plataforma.md).
+- v1.4x (pendiente de numerar al unir; órdenes en espera a la vista de todas las consolas, [consolas-multiples.md](consolas-multiples.md) §5, tareas 1 y 9c del plan). Compatible hacia atrás:
+  - **Entrega antes de su hora** (§1, §5): a un agente con `admite: "ordenes_en_espera"`, el servidor entrega al momento las órdenes con `not_before` futuro que piden autorización; el agente las guarda en espera (sobre sellado en `servidor.bin`) y las aplica cuando su hora llega en su reloj **y** en el del servidor (`ahora` nuevo en `hola`, `ping` y `tomar`), justo después de hablar con él. A un agente anterior, como antes. El servidor sigue exigiendo la espera al crearlas. Las `entregada` con `not_before` futuro siguen en `?pendientes=1`, en `pendientes` del resumen y en «Orden destructiva pendiente», y se pueden cancelar como antes (el agente usa ya `cancelada`/`canceladas`).
+  - **`resumen.en_espera`** (§4) y `admite: "ordenes_en_espera"`. `pendientes` (resumen del cliente y panel) cuenta también las de otras consolas.
+  - **Orden nueva `cancelar_espera { id }`** (§5), inofensiva: cualquier consola cancela una orden en espera de cualquiera. A la consola que la mandó le llega `rechazada` con `detalle.cancelada` (se guarda así: la firma del equipo es sobre ese estado). Un servidor anterior la rechaza al crearla (tipo desconocido); un agente anterior, «aún no admite».
+  - Un resultado firmado de una orden ya `cancelada` (el equipo la aplicó antes de saberlo) sustituye a `cancelada` y crea un aviso `cambio_inusual`.
+  - **Aviso nuevo `orden_en_espera`** (§6, crítico): el equipo lo manda a las **demás** consolas al guardar una orden en espera; con un servidor anterior (422), como `cambio_inusual`.
+  - **Historial del equipo**: tipo `orden` (§6), solo si se pide (`tipo=orden`). La consola enseña «Desde otras consolas» en Órdenes.
+  - **Sobre de la orden** (§1): campo opcional `por` (el nombre de quien la manda; un agente anterior lo ignora).
+  - Arregla de paso, con agente y servidor nuevos, que una orden con espera llegara al equipo después de otra posterior y se rechazara por «antigua» (`seq` menor que el último aceptado): ahora llegan en orden. Con un agente anterior sigue pasando.
