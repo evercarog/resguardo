@@ -70,6 +70,44 @@ export function mover<T>(lista: T[], i: number, paso: -1 | 1): T[] {
   return l;
 }
 
+/** Lleva el elemento de la posición `de` a la posición `a` (arrastrar). Devuelve una lista nueva. */
+export function moverA<T>(lista: T[], de: number, a: number): T[] {
+  if (de === a || de < 0 || a < 0 || de >= lista.length || a >= lista.length) return lista;
+  const l = [...lista];
+  const [x] = l.splice(de, 1);
+  l.splice(a, 0, x);
+  return l;
+}
+
+/** ¿Va `copias[i]` «después de la anterior» (la que tiene justo encima)? */
+export const despuesDeLaAnterior = (copias: CopiaCadena[], i: number) => i > 0 && !!copias[i].tras && copias[i].tras === copias[i - 1]?.id;
+
+/**
+ * Después de ordenar (editor de copias, docs/editor-de-copias.md): «después
+ * de la anterior» sigue a la de encima.
+ * - La que iba después de la que tenía justo encima pasa a ir después de la
+ *   que tiene encima ahora.
+ * - La primera no puede ir después de otra: pierde `tras` (la página le pone
+ *   horario y lo dice). Van en `aHorario`.
+ * - Una que iba después de otra que no era la de encima (configuraciones
+ *   anteriores) se queda igual.
+ */
+export function reenlazar<T extends CopiaCadena>(antes: T[], despues: T[]): { copias: T[]; aHorario: string[] } {
+  const encimaAntes = new Map(antes.map((k, i) => [k.id, i > 0 ? antes[i - 1].id : null]));
+  const aHorario: string[] = [];
+  const copias = despues.map((k, i) => {
+    if (!k.tras) return k;
+    if (i === 0) {
+      aHorario.push(k.id);
+      return { ...k, tras: null };
+    }
+    const encima = despues[i - 1].id;
+    if (k.tras === encimaAntes.get(k.id) && k.tras !== encima) return { ...k, tras: encima };
+    return k;
+  });
+  return { copias, aHorario };
+}
+
 /** «Después de cada copia», «Cada día a las 21:00» o el horario en frase. */
 export function cuandoEnFrase(c: CuandoDerivada | null | undefined): string {
   if (!c) return "";
@@ -264,6 +302,34 @@ export function lineaCadena(e: Equipo, copiaId: string, equipos: Equipo[]): Paso
   };
   visitar(k0, false, 0);
   return pasos;
+}
+
+/**
+ * Lo que cuelga de un repositorio, para la tarjeta de una copia (editor de
+ * copias): su destino («copia») y, debajo (nivel 1), los espejos de su almacén,
+ * la copia externa y las derivadas. Vale también para una copia aún sin enviar
+ * (el repositorio ya existe en el resumen del equipo).
+ */
+export function pasosDelRepo(e: Equipo, repoId: string, equipos: Equipo[]): PasoCadena[] {
+  const r = e.resumen?.repositorios?.find((x) => x.id === repoId);
+  if (!r) return [];
+  const d = destinoDe(e.resumen?.destinos, r);
+  const z = zonaDeDestino(d, equipos);
+  return [
+    {
+      clase: "copia",
+      texto: z ? nombreZonaPorDefecto(z) : (d?.nombre ?? r.destino ?? "su destino"),
+      detalle: `repositorio «${r.nombre}»`,
+      despues: false,
+      nivel: 0,
+      destinoId: z ? `zona:${z.almacen.id}:${z.id}` : d?.id,
+      tipoDestino: z ? "zona" : d?.tipo,
+      inmutable: r.solo_anadir ? true : null,
+      fueraRetencion: false,
+    },
+    ...pasosEspejo(e, r, equipos, 1),
+    ...pasosDerivadas(e, r, 1),
+  ];
 }
 
 /** La cadena en una línea: «Documentos (RECEPCION) → Almacén · Disco D → después → espejo …». */

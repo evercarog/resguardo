@@ -8,6 +8,8 @@
     disabled?: boolean;
     /** Icono de 14 a la izquierda (el mismo que en el resto de la consola). */
     icono?: typeof Ellipsis;
+    /** Una línea pequeña debajo (p. ej. por qué está desactivada). */
+    detalle?: string;
   }
 </script>
 
@@ -18,7 +20,26 @@
   import { tick } from "svelte";
   import { ChevronDown } from "@lucide/svelte";
 
-  let { grupos, texto = "Más…", etiqueta, primario = false }: { grupos: AccionMenu[][]; texto?: string; etiqueta?: string; primario?: boolean } = $props();
+  let {
+    grupos,
+    texto = "Más…",
+    etiqueta,
+    primario = false,
+    icono,
+    clase,
+    izquierda = false,
+  }: {
+    grupos: AccionMenu[][];
+    texto?: string;
+    etiqueta?: string;
+    primario?: boolean;
+    /** Icono del botón (por defecto, «…»). */
+    icono?: typeof Ellipsis;
+    /** Clases del botón (por defecto, «btn btn-sm btn-ghost»). */
+    clase?: string;
+    /** La lista se abre hacia la derecha (botones a la izquierda de una tarjeta). */
+    izquierda?: boolean;
+  } = $props();
 
   let abierto = $state(false);
   let raiz = $state<HTMLDivElement>();
@@ -77,18 +98,18 @@
     <button
       bind:this={boton}
       type="button"
-      class={primario ? "btn btn-primary" : "btn btn-sm btn-ghost"}
+      class={clase ?? (primario ? "btn btn-primary" : "btn btn-sm btn-ghost")}
       aria-haspopup="menu"
       aria-expanded={abierto}
       aria-label={etiqueta}
-      onclick={() => (abierto ? cerrar() : abrir())}>{#if !primario}<Ellipsis size={14} />{/if}{texto}<ChevronDown size={13} /></button
+      onclick={() => (abierto ? cerrar() : abrir())}>{#if icono}{@const I = icono}<I size={14} />{:else if !primario}<Ellipsis size={14} />{/if}{texto}<ChevronDown size={13} /></button
     >
     {#if abierto}
-      <div class="lista card" role="menu">
+      <div class="lista card" class:izquierda role="menu">
         {#each visibles as g, i (i)}
           {#if i > 0}<div class="sep" role="separator"></div>{/if}
           {#each g as a (a.texto)}
-            <button type="button" role="menuitem" class:peligro={a.peligro} disabled={a.disabled} onclick={() => elegir(a)}>{#if a.icono}<a.icono size={14} />{/if}{a.texto}</button>
+            <button type="button" role="menuitem" class:peligro={a.peligro} disabled={a.disabled} onclick={() => elegir(a)}>{#if a.icono}<a.icono size={14} />{/if}{#if a.detalle}<span class="con-detalle"><span>{a.texto}</span><span class="detalle">{a.detalle}</span></span>{:else}{a.texto}{/if}</button>
           {/each}
         {/each}
       </div>
@@ -108,6 +129,7 @@
     /* Hacia la izquierda desde el botón: no se sale de la tarjeta ni de la página. */
     right: 0;
     min-width: 220px;
+    max-width: min(320px, calc(100vw - 32px));
     padding: 4px;
     box-shadow: var(--shadow-lg, 0 10px 30px rgb(0 0 0 / 0.18));
   }
@@ -148,6 +170,26 @@
   }
   .peligro {
     color: var(--bad, #c62828);
+  }
+  .lista.izquierda {
+    right: auto;
+    left: 0;
+  }
+  .con-detalle {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .detalle {
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  [role="menuitem"]:has(.detalle) {
+    align-items: flex-start;
+  }
+  [role="menuitem"]:has(.detalle) :global(svg) {
+    margin-top: 3px;
   }
   .sep {
     height: 1px;

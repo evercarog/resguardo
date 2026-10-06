@@ -10,8 +10,12 @@ import {
   idDerivadaNueva,
   lineaCadena,
   lineaEnTexto,
+  despuesDeLaAnterior,
   mover,
+  moverA,
   pasoDeEspejo,
+  pasosDelRepo,
+  reenlazar,
   posiblesAnteriores,
   recomendarFueraRetencion,
 } from "../src/lib/cadenas";
@@ -41,6 +45,22 @@ igual(
   ["otra"],
 );
 igual("ordenar: subir y bajar", [mover(["a", "b", "c"], 2, -1), mover(["a", "b", "c"], 0, -1), mover(["a", "b", "c"], 0, 1)], [["a", "c", "b"], ["a", "b", "c"], ["b", "a", "c"]]);
+
+console.log("\n· Ordenar en el editor de copias (docs/editor-de-copias.md)");
+igual("arrastrar: de la 3.ª a la 1.ª y de la 1.ª a la última", [moverA(["a", "b", "c"], 2, 0), moverA(["a", "b", "c"], 0, 2), moverA(["a", "b"], 0, 5)], [["c", "a", "b"], ["b", "c", "a"], ["a", "b"]]);
+{
+  const antes = [k("docs"), k("disco-e", "docs"), k("nube", "disco-e")];
+  const tras = (l: { id: string; tras: string | null }[]) => l.map((x) => `${x.id}${x.tras ? `<${x.tras}` : ""}`);
+  const r1 = reenlazar(antes, moverA(antes, 1, 0));
+  igual("la que sube al primer puesto pierde «después» (y se avisa)", [tras(r1.copias), r1.aHorario], [["disco-e", "docs", "nube<docs"], ["disco-e"]]);
+  const r2 = reenlazar(antes, moverA(antes, 2, 1));
+  igual("«después de la anterior» sigue a la de encima", tras(r2.copias), ["docs", "nube<docs", "disco-e<nube"]);
+  const r3 = reenlazar(antes, moverA(antes, 0, 2));
+  igual("la primera baja al final: las demás se reenlazan y ninguna queda primera con «después»", [tras(r3.copias), r3.aHorario, errorCadenas(r3.copias)], [["disco-e", "nube<disco-e", "docs"], ["disco-e"], null]);
+  const viejas = [k("a"), k("b"), k("c", "a")];
+  igual("una que iba después de otra que no era la de encima, igual", tras(reenlazar(viejas, moverA(viejas, 1, 2)).copias), ["a", "c<a", "b"]);
+  cierto("«después de la anterior»: solo con la de justo encima", despuesDeLaAnterior(antes, 1) && !despuesDeLaAnterior(antes, 0) && !despuesDeLaAnterior(viejas, 2));
+}
 
 console.log("\n· Filtros de versiones (4c)");
 igual("filtro para la orden", filtroParaOrden({ etiquetas: "diaria, semanal", carpetas: "C:\\Datos\n\n", ultimos_dias: "90", desde: "" }), { etiquetas: ["diaria", "semanal"], carpetas: ["C:\\Datos"], ultimos_dias: 90 });
@@ -133,6 +153,19 @@ const soloEspejos = lineaCadena({ ...recepcion, resumen: { ...recepcion.resumen,
   { ...almacen, resumen: { ...almacen.resumen, guarda_copias: { ...almacen.resumen!.guarda_copias!, espejo: { hora: "02:00", destinos: [{ tipo: "zona", carpeta: "z1a2b3c", retencion_dias: 30 }] } } } },
 ]);
 cierto("si todos los espejos siguen a la retención, se recomienda otro", recomendarFueraRetencion(soloEspejos));
+igual(
+  "lo que cuelga del repositorio de una copia (su tarjeta en el editor)",
+  pasosDelRepo(recepcion, "documentos", equipos).map((p) => [p.clase, p.texto, p.nivel]),
+  [
+    ["copia", "Almacén ALMACEN-01 · Disco D", 0],
+    ["espejo", "Almacén ALMACEN-01 · Disco E", 1],
+    ["espejo", "Dropbox Oficina", 1],
+    ["espejo", "Almacén ALMACEN-01 · Disco F:", 1],
+    ["derivada", "B2 de la oficina", 1],
+    ["derivada", "Dropbox de RECEPCION", 1],
+  ],
+);
+igual("…de un repositorio que no está, nada", pasosDelRepo(recepcion, "otro", equipos), []);
 igual("una derivada nueva toma un id libre", idDerivadaNueva(recepcion.resumen!.repositorios![0]), "d2");
 igual("la externa de siempre va primero", derivadasDe(recepcion.resumen!.repositorios![0]).map((d) => d.id), ["externa", "d1"]);
 
