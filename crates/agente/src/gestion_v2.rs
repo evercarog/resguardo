@@ -919,11 +919,15 @@ pub fn resumen(v: &Vinculo) -> Value {
                 for k in ["unidad", "extraible", "red"] {
                     x[k] = disco[k].clone();
                 }
+                // Tarea 8e: el sistema de archivos (solo su nombre; nunca resta en la regla 3-2-1).
+                x["sistema_archivos"] = crate::espacio::json_fs(&d.donde);
             }
             x
         }).collect::<Vec<_>>(),
         "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
         "guarda_copias": resumen_guarda_copias(),
+        // Tarea 8e: si corre en una máquina virtual o un contenedor (solo un dato para la consola).
+        "entorno": crate::espacio::entorno(),
         // v1.19: un puerto libre para «Este equipo guarda copias» (la consola lo propone).
         "puerto_libre": puerto_libre(),
         "servidores_respaldo": v.respaldo.iter().map(|r| json!({ "url": r.url, "identidad_corta": r.identidad.chars().take(8).collect::<String>() })).collect::<Vec<_>>(),
@@ -1644,6 +1648,8 @@ pub fn resumen_guarda_copias() -> Value {
         // v1.31 («¿Cuándo se llena?»): libre y total del volumen de la carpeta
         // (solo los números y cuándo se leyeron; `null` si no se puede leer).
         "espacio": crate::espacio::json_de(&c.path),
+        // Tarea 8e: el sistema de archivos de la carpeta (NTFS, ReFS, ext4, zfs…).
+        "sistema_archivos": crate::espacio::json_fs(&c.path),
         "repositorios": crate::server::repos_by_user(&c).into_iter().map(|(usuario, repos)| json!({ "usuario": usuario, "repos": repos })).collect::<Vec<_>>(),
         "espejo": c.espejo.as_ref().map(crate::espejo::Espejo::resumen),
         // v1.22: la retención que aplica este almacén (regla, horario y
@@ -1684,6 +1690,20 @@ mod tests {
         assert_eq!((d["red"].as_bool(), d["extraible"].as_bool(), d["donde"].is_null()), (Some(true), Some(false), true));
         assert!(!r.to_string().contains("carpeta-reservada"), "nunca la ruta: {r}");
         assert!(r["destinos"][1].get("unidad").is_none(), "solo en los locales");
+        // Tarea 8e: una carpeta de la red no se consulta; el entorno, solo nombres (o nada).
+        assert!(d["sistema_archivos"].is_null());
+        assert!(r["destinos"][1].get("sistema_archivos").is_none(), "solo en los locales");
+        assert!(r["entorno"].is_null() || r["entorno"].is_object());
+        let tmp = std::env::temp_dir().to_string_lossy().to_string();
+        let v = Vinculo {
+            destinos: vec![Destino { id: "d".into(), nombre: "D".into(), tipo: "local".into(), donde: tmp.clone(), ..Default::default() }],
+            ..Default::default()
+        };
+        let r = resumen(&v);
+        if cfg!(any(windows, target_os = "linux")) {
+            assert!(r["destinos"][0]["sistema_archivos"].is_string(), "{r}");
+        }
+        assert!(!r["destinos"][0].to_string().contains(&tmp), "sin la ruta");
     }
 
     #[test]

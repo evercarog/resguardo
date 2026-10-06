@@ -1405,6 +1405,7 @@ pub fn resumen_zonas(c: &ServerConfig) -> Vec<serde_json::Value> {
                 "id": z.id, "nombre": z.nombre, "carpeta": z.path, "puerto": z.port, "usuarios": z.users.len(),
                 "escucha": c.enabled && listening(z.port),
                 "espacio": crate::espacio::json_de(&z.path),
+                "sistema_archivos": crate::espacio::json_fs(&z.path),
                 "repositorios": repos_de_usuarios(&z.path, &z.users).into_iter().map(|(usuario, repos)| serde_json::json!({ "usuario": usuario, "repos": repos })).collect::<Vec<_>>(),
             })
         })
