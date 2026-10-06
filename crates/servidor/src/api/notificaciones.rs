@@ -388,7 +388,12 @@ fn vista_prefs(p: &PrefsCliente, propias: bool) -> Value {
     // De más a menos grave.
     let mut inmediatos = p.inmediatos.clone();
     inmediatos.sort_by(|a, b| b.cmp(a));
-    json!({ "inmediatos": inmediatos, "resumen": p.resumen, "propias": propias, "etiquetas": p.etiquetas })
+    let mut v = json!({ "inmediatos": inmediatos, "resumen": p.resumen, "propias": propias });
+    // v1.4x: solo si tiene alguna (sin ellas, lo de siempre).
+    if !p.etiquetas.is_empty() {
+        v["etiquetas"] = json!(p.etiquetas);
+    }
+    v
 }
 
 /// `GET /api/clientes/{c}/notificaciones/personas` (propietario): qué recibe cada persona por correo.

@@ -32,7 +32,7 @@
 {#if etiquetas.length}
   <fieldset class="grupo-et">
     <legend><Tag size={14} />Por etiqueta</legend>
-    <p class="faint pequeno">De los equipos con estas etiquetas, en lugar de lo de arriba.</p>
+    <p class="faint pequeno">De los equipos con estas etiquetas, en lugar de lo general.</p>
     {#each etiquetas as t, i (t)}
       <div class="fila-et">
         <label for="{id}-{i}">{t}</label>
