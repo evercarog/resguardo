@@ -909,7 +909,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 16] = [
+pub const ADMITE: [&str; 17] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -938,6 +938,9 @@ pub const ADMITE: [&str; 16] = [
     // (pendiente de numerar) tarea 4a: `conectar_nube` también fuera de un almacén y destinos
     // `{ tipo: "nube", nube, donde }` en las copias derivadas (por rclone).
     "nube_equipo",
+    // (pendiente de numerar) tarea 7d.2: destinos del espejo con `zona` (de qué zona copia) y
+    // `{ tipo: "zona", carpeta: "<id>" | "principal" }` (a otra zona del almacén).
+    "espejo_zonas",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

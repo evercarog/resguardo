@@ -33,9 +33,13 @@ pub use crate::espejo_motor::RECIENTE;
 /// Un destino del espejo.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Destino {
-    /// "carpeta" (ruta local completa) o "nube" (carpeta dentro de la nube `nube`).
+    /// "carpeta" (ruta local completa), "nube" (carpeta dentro de la nube `nube`) o,
+    /// tarea 7d.2, "zona" (otra zona de este almacén: `carpeta` es su id o "principal").
     pub tipo: String,
     pub carpeta: String,
+    /// Tarea 7d.2 (docs/copias-en-cadena.md): de qué zona se copia (su id); sin él, la principal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zona: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nube: Option<String>,
     #[serde(default)]
@@ -129,7 +133,7 @@ impl Destino {
 
     /// §3d: el % que se comprueba cada día.
     pub fn pct_verificar(&self) -> u8 {
-        self.verificar_pct.unwrap_or(if self.tipo == "carpeta" { VERIFICAR_CARPETA } else { 0 }).min(100)
+        self.verificar_pct.unwrap_or(if self.tipo == "carpeta" || self.tipo == "zona" { VERIFICAR_CARPETA } else { 0 }).min(100)
     }
 
     /// El horario de este destino: el suyo o, sin él, cada día a `hora`.
@@ -163,12 +167,17 @@ impl Destino {
     }
 
     pub fn mismo(&self, o: &Destino) -> bool {
-        self.tipo == o.tipo && self.carpeta == o.carpeta && self.nube == o.nube
+        self.tipo == o.tipo && self.carpeta == o.carpeta && self.nube == o.nube && self.zona == o.zona
     }
     pub fn texto(&self) -> String {
-        match &self.nube {
+        let t = match &self.nube {
             Some(n) => format!("{n}:{}", self.carpeta),
+            None if self.tipo == "zona" => format!("zona {}", self.carpeta),
             None => self.carpeta.clone(),
+        };
+        match &self.zona {
+            Some(z) => format!("{t} (desde la zona {z})"),
+            None => t,
         }
     }
 }
@@ -249,10 +258,15 @@ impl Espejo {
                 // v1.31: libre y total (carpeta: su volumen, ahora; nube: la cuenta, tras el último espejo).
                 let espacio = match (&d.tipo[..], &d.cuota) {
                     ("carpeta", _) => crate::espacio::json_de(&d.carpeta),
+                    ("zona", _) => crate::server::load().carpeta_zona(Some(&d.carpeta)).map(crate::espacio::json_de).unwrap_or_default(),
                     (_, Some((e, leido))) => e.json(leido),
                     _ => serde_json::Value::Null,
                 };
                 let mut v = serde_json::json!({ "tipo": d.tipo, "carpeta": d.carpeta, "nube": d.nube, "ultima": d.ultima, "resultado": d.resultado, "espacio": espacio });
+                // Tarea 7d.2: la zona de origen (sin ella, la principal).
+                if let Some(z) = &d.zona {
+                    v["zona"] = z.clone().into();
+                }
                 // §3a: su horario (si tiene uno propio), «después de cada copia» y la próxima vuelta por horario.
                 if let Some(h) = &d.horario {
                     v["horario"] = serde_json::to_value(h).unwrap_or_default();
@@ -310,7 +324,12 @@ pub fn pedido(v: &serde_json::Value) -> Result<Option<Espejo>, String> {
                     let nube = d["nube"].as_str().ok_or("A un destino en la nube le falta el nombre de la nube.")?.to_string();
                     Destino { tipo: "nube".into(), carpeta, nube: Some(nube), ..Default::default() }
                 }
-                _ => return Err("Tipo de destino del espejo no válido (carpeta o nube).".into()),
+                // Tarea 7d.2: otra zona del almacén (su id, o «principal»).
+                Some("zona") if carpeta == "principal" || crate::server::zona_id_valido(&carpeta) => {
+                    Destino { tipo: "zona".into(), carpeta, ..Default::default() }
+                }
+                Some("zona") => return Err("Zona del espejo no válida.".into()),
+                _ => return Err("Tipo de destino del espejo no válido (carpeta, nube o zona).".into()),
             };
             leer_opciones(d, &mut nuevo)?;
             destinos.push(nuevo);
@@ -348,6 +367,13 @@ pub fn fijar_vistos(nuevo: &mut Espejo, anterior: Option<&Espejo>, hay: &[String
 
 /// Las opciones de un destino (docs/espejo.md), ya comprobadas.
 fn leer_opciones(d: &serde_json::Value, nuevo: &mut Destino) -> Result<(), String> {
+    // Tarea 7d.2: la zona de origen («principal» o nada: la principal).
+    nuevo.zona = match &d["zona"] {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(z) if z == "principal" => None,
+        serde_json::Value::String(z) if crate::server::zona_id_valido(z) => Some(z.clone()),
+        _ => return Err("Zona de origen del espejo no válida.".into()),
+    };
     if let Some(h) = d.get("horario").filter(|h| !h.is_null()) {
         let h: crate::gestion_v2::Horario = serde_json::from_value(h.clone()).map_err(|_| "Horario del espejo no válido.".to_string())?;
         h.plan_schedule()?.validate()?;
@@ -510,6 +536,7 @@ pub fn aceptar_freno(v: &serde_json::Value) -> Result<String, String> {
         tipo: v["tipo"].as_str().unwrap_or_default().to_string(),
         carpeta: v["carpeta"].as_str().unwrap_or_default().trim().to_string(),
         nube: v["nube"].as_str().map(|n| n.trim().to_string()),
+        zona: v["zona"].as_str().filter(|z| *z != "principal").map(str::to_string),
         ..Default::default()
     };
     let c = crate::server::load();
@@ -537,6 +564,13 @@ fn copiar_a(
     let alcance = Alcance::de(d.repos.as_deref());
     let trabajo = crate::agent::private_dir();
     let nube;
+    // Tarea 7d.2: a otra zona de este almacén, su carpeta (como un destino «carpeta»).
+    let carpeta_zona = (d.tipo == "zona").then(|| crate::server::load().carpeta_zona(Some(&d.carpeta)).map(str::to_string));
+    let carpeta_destino = match carpeta_zona {
+        Some(Some(p)) => p,
+        Some(None) => return Err("esa zona ya no está en este almacén.".into()),
+        None => d.carpeta.clone(),
+    };
     let lado = if d.tipo == "nube" {
         let nombre = d.nube.as_deref().unwrap_or_default();
         nube = crate::nube::buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
@@ -546,8 +580,8 @@ fn copiar_a(
         Lado::Nube { nube: &nube, carpeta: d.carpeta.trim().trim_matches('/'), trabajo: &trabajo, limite_kib }
     } else {
         // La carpeta de destino: local, sin enlaces en el camino y de Administradores.
-        crate::platform::carpeta_local_valida(&d.carpeta)?;
-        let destino = Path::new(&d.carpeta);
+        crate::platform::carpeta_local_valida(&carpeta_destino)?;
+        let destino = Path::new(&carpeta_destino);
         // En pruebas (RESGUARDO_AGENT_DIR, sin administrador) la carpeta es de quien
         // corre la prueba, como en `carpeta_privada`.
         if destino.exists() && !crate::agent::test_mode() && !crate::platform::owned_by_admins(destino) {
@@ -567,7 +601,9 @@ fn copiar_a(
 /// un usuario no puede tocarlo).
 fn archivo_estado(d: &Destino) -> PathBuf {
     use sha2::{Digest, Sha256};
-    let h = Sha256::digest(format!("{}|{}|{}", d.tipo, d.nube.as_deref().unwrap_or_default(), d.carpeta.trim()).as_bytes());
+    // Con zona de origen, otro archivo (sin ella, el de siempre).
+    let zona = d.zona.as_deref().map(|z| format!("|{z}")).unwrap_or_default();
+    let h = Sha256::digest(format!("{}|{}|{}{zona}", d.tipo, d.nube.as_deref().unwrap_or_default(), d.carpeta.trim()).as_bytes());
     let id: String = h.iter().take(8).map(|b| format!("{b:02x}")).collect();
     crate::agent::private_dir().join(format!("espejo-{id}.json"))
 }
@@ -674,7 +710,8 @@ pub fn si_toca() {
     let c = crate::server::load();
     let Some(e) = c.espejo.clone().filter(|_| c.enabled) else { return };
     let ahora = chrono::Local::now();
-    let origen = PathBuf::from(&c.path);
+    // Tarea 7d.2: cada destino copia desde su zona (sin ella, la principal).
+    let origen_de = |d: &Destino| c.carpeta_zona(d.zona.as_deref()).map(PathBuf::from);
     // «Después de cada copia»: mirar `snapshots/` como mucho una vez por minuto.
     let mirar = e.destinos().iter().any(|d| d.tras_copia) && {
         let mut u = ULTIMA_MIRADA.lock().unwrap_or_else(|p| p.into_inner());
@@ -684,13 +721,19 @@ pub fn si_toca() {
         }
         !ya
     };
-    let todos = if mirar { repos_en(&origen) } else { Vec::new() };
-    let toca_ya: Vec<(Destino, Motivo)> = e
+    let toca_ya: Vec<(Destino, Motivo, PathBuf)> = e
         .destinos()
         .into_iter()
         .filter_map(|d| {
-            let nuevas = if mirar && d.tras_copia { novedades(&origen, &todos, d.desde().map(SystemTime::from)) } else { None };
-            toca(&e, &d, ahora, nuevas).map(|m| (d, m))
+            let origen = origen_de(&d)?;
+            let nuevas = if mirar && d.tras_copia {
+                // Solo los repositorios de ese destino (o todos los de su zona).
+                let repos = d.repos.clone().unwrap_or_else(|| repos_en(&origen));
+                novedades(&origen, &repos, d.desde().map(SystemTime::from))
+            } else {
+                None
+            };
+            toca(&e, &d, ahora, nuevas).map(|m| (d, m, origen))
         })
         .collect();
     if toca_ya.is_empty() || EN_MARCHA.swap(true, std::sync::atomic::Ordering::SeqCst) {
@@ -698,7 +741,7 @@ pub fn si_toca() {
     }
     let limite_kib = e.limite_kib;
     std::thread::spawn(move || {
-        for (i, (d, motivo)) in toca_ya.into_iter().enumerate() {
+        for (i, (d, motivo, origen)) in toca_ya.into_iter().enumerate() {
             // El comienzo, antes de empezar: si el servicio se para a medias, no se repite en bucle.
             let inicio = chrono::Local::now().to_rfc3339();
             anotar(&d, |x| x.inicio = Some(inicio.clone()));
@@ -1029,6 +1072,69 @@ mod tests {
         let r = x.resumen();
         assert_eq!((r["destinos"][0]["retencion_dias"].as_u64(), r["destinos"][0]["por_borrar"]["archivos"].as_u64()), (Some(30), Some(3)));
         assert_eq!(r["destinos"][0]["freno"], "falta de golpe…");
+    }
+
+    /// Tarea 7d.2: un paso «espejo» de un repositorio desde una zona (la E) a otra
+    /// zona (la principal, D) y a una carpeta: el pedido, el origen por zona y la vuelta.
+    #[test]
+    fn espejo_de_un_repositorio_entre_zonas() {
+        use serde_json::json;
+        let e = pedido(&json!({ "hora": "02:00", "destinos": [
+            { "tipo": "zona", "carpeta": "principal", "zona": "z0e0e0e", "repos": ["ana-2/conta"], "tras_copia": true },
+            { "tipo": "carpeta", "carpeta": "F:\\espejo", "zona": "z0e0e0e", "repos": ["ana-2/conta"], "retencion_dias": 30 },
+            { "tipo": "carpeta", "carpeta": "F:\\espejo", "repos": ["ana/conta"] },
+        ] }))
+        .unwrap()
+        .unwrap();
+        let (a_d, a_f, de_d) = (&e.destinos[0], &e.destinos[1], &e.destinos[2]);
+        assert_eq!((a_d.tipo.as_str(), a_d.carpeta.as_str(), a_d.zona.as_deref()), ("zona", "principal", Some("z0e0e0e")));
+        assert!(!a_f.mismo(de_d), "la misma carpeta desde otra zona es otro destino");
+        assert_eq!(a_d.texto(), "zona principal (desde la zona z0e0e0e)");
+        assert_eq!(a_d.pct_verificar(), VERIFICAR_CARPETA, "otra zona es una carpeta del equipo");
+        assert_ne!(archivo_estado(a_f), archivo_estado(de_d), "cada origen lleva su cuenta");
+        assert_eq!(e.resumen()["destinos"][0]["zona"], "z0e0e0e");
+        assert!(e.resumen()["destinos"][2].get("zona").is_none());
+        // «principal» como zona de origen es lo mismo que no decir nada.
+        let p = pedido(&json!({ "destinos": [{ "tipo": "carpeta", "carpeta": "F:\\x", "zona": "principal" }] })).unwrap().unwrap();
+        assert_eq!(p.destinos[0].zona, None);
+        for mal in [json!({ "tipo": "zona", "carpeta": "../x" }), json!({ "tipo": "carpeta", "carpeta": "F:\\x", "zona": "Z1" })] {
+            assert!(pedido(&json!({ "destinos": [mal] })).is_err(), "{mal}");
+        }
+        // La carpeta de cada zona en la configuración del almacén.
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-zonas-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (zona_d, zona_e) = (base.join("D"), base.join("E"));
+        let mut c = crate::server::ServerConfig { path: zona_d.display().to_string(), ..Default::default() };
+        c.zonas.push(crate::server::Zona {
+            id: "z0e0e0e".into(),
+            nombre: "Disco E".into(),
+            path: zona_e.display().to_string(),
+            port: 8002,
+            users: vec![],
+            creada: String::new(),
+        });
+        assert_eq!(c.carpeta_zona(None), Some(c.path.as_str()));
+        assert_eq!(c.carpeta_zona(Some("principal")), Some(c.path.as_str()));
+        assert_eq!(c.carpeta_zona(Some("z0e0e0e")).map(PathBuf::from), Some(zona_e.clone()));
+        assert_eq!(c.carpeta_zona(Some("z999999")), None);
+        // La vuelta: solo ese repositorio de la zona E, a la D; sin retención, nunca borra.
+        let viejo = SystemTime::now() - Duration::from_secs(3600);
+        for f in ["ana-2/conta/config", "ana-2/conta/data/ab/abcd", "ana-2/otro/config"] {
+            let p = zona_e.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+            std::fs::File::options().write(true).open(&p).unwrap().set_modified(viejo).unwrap();
+        }
+        let origen = PathBuf::from(c.carpeta_zona(a_d.zona.as_deref()).unwrap());
+        let alcance = crate::espejo_motor::Alcance::de(a_d.repos.as_deref());
+        let r = vuelta(&origen, &Lado::Carpeta(&zona_d), &alcance, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
+        assert_eq!(r.copiados, 2);
+        assert!(zona_d.join("ana-2/conta/data/ab/abcd").is_file() && !zona_d.join("ana-2/otro").exists());
+        std::fs::remove_file(zona_e.join("ana-2/conta/data/ab/abcd")).unwrap();
+        let r = vuelta(&origen, &Lado::Carpeta(&zona_d), &alcance, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
+        assert_eq!(r.borrados, 0);
+        assert!(zona_d.join("ana-2/conta/data/ab/abcd").is_file(), "sin retención no se borra nada");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
