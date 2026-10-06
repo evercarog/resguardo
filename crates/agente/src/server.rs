@@ -896,7 +896,7 @@ pub fn firewall(ports: &[u16], local_only: bool) -> Result<(), String> {
         return Ok(());
     }
     let reglas = reglas_nft(ports, &redes_internas(redes_locales()));
-    let archivo = private("servidor.nft");
+    let archivo = crate::agent::private_dir().join("servidor.nft");
     std::fs::write(&archivo, reglas).map_err(|e| format!("No se pudieron preparar las reglas del cortafuegos: {e}"))?;
     let (ok, out) = crate::platform::tool(nft, &["-f", &archivo.to_string_lossy()])?;
     if ok {

@@ -91,12 +91,12 @@ impl UsoRelevos {
     /// cuelan los dos por el mismo hueco). `false` si no caben.
     pub fn reservar(&self, n: u64, tope: u64) -> bool {
         use std::sync::atomic::Ordering::SeqCst;
-        self.0.fetch_update(SeqCst, SeqCst, |u| u.checked_add(n).filter(|t| *t <= tope)).is_ok()
+        self.0.try_update(SeqCst, SeqCst, |u| u.checked_add(n).filter(|t| *t <= tope)).is_ok()
     }
     /// Devuelve `n` (un trozo que no se llegó a escribir, un relé borrado).
     pub fn soltar(&self, n: u64) {
         use std::sync::atomic::Ordering::SeqCst;
-        let _ = self.0.fetch_update(SeqCst, SeqCst, |u| Some(u.saturating_sub(n)));
+        let _ = self.0.try_update(SeqCst, SeqCst, |u| Some(u.saturating_sub(n)));
     }
     /// Lo medido en disco ([`medir_relevos`]).
     pub fn poner(&self, n: u64) {
