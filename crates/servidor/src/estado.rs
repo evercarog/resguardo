@@ -26,8 +26,11 @@ pub struct Opciones {
     /// Puerto en el que escucha (v1.19: para vincular el agente de esta misma máquina).
     pub puerto: Option<u16>,
     /// Hay un proxy con HTTPS en este mismo equipo (`--detras-de-proxy`): la IP de
-    /// quien pide es la de `X-Forwarded-For` (solo si la conexión viene de 127.0.0.1).
+    /// quien pide es la de `X-Forwarded-For` (solo si la conexión viene de 127.0.0.1
+    /// o de `proxy_redes`; ver `crate::ip_real`).
     pub proxy: bool,
+    /// Redes de los proxies de confianza en otra máquina o contenedor (`--proxy-red`).
+    pub proxy_redes: Vec<crate::RedIp>,
     /// v1.34: la dirección que se da a los agentes y a las otras consolas cuando no
     /// es la de la consola (consola en internet: `https://agentes.<dominio>`).
     pub url_agentes: Option<String>,
@@ -46,6 +49,7 @@ impl Default for Opciones {
             instalador_agente: None,
             puerto: None,
             proxy: false,
+            proxy_redes: Vec::new(),
             url_agentes: None,
             publico: false,
         }

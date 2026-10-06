@@ -26,6 +26,10 @@ Uso: resguardo-server [opciones]
   --detras-de-proxy    Hay un proxy con HTTPS delante en este mismo equipo (Caddy, nginx): la
                        cookie sigue siendo Secure y la IP de quien pide es la última de
                        X-Forwarded-For (solo en conexiones desde 127.0.0.1)
+  --proxy-red RED      El proxy está en otra máquina o contenedor (Docker, Proxmox): su red
+                       en CIDR (p. ej. 172.18.0.0/16; se puede repetir o separar con comas).
+                       Implica --detras-de-proxy; de esas redes se cree X-Forwarded-For
+                       (la IP más a la derecha que no es de un proxy de confianza)
   --consola DIR        Carpeta con la consola web compilada (tiene prioridad sobre la que
                        lleva dentro el binario compilado con la feature consola-integrada)
   --max-descarga MB    Tamaño máximo de una descarga al navegador (por defecto 500)
@@ -91,6 +95,7 @@ las lee de /etc/resguardo-server/servidor.env):
                        Como las opciones del mismo nombre
   RESGUARDO_ACME_PRUEBAS=1, RESGUARDO_DETRAS_DE_PROXY=1, RESGUARDO_PUBLICO=1
                        Como --acme-pruebas, --detras-de-proxy y --publico
+  RESGUARDO_PROXY_RED  Como --proxy-red: varias, separadas por comas o espacios
 
 Registro: la salida estándar (en Linux, journalctl -u resguardo-server).
 
@@ -112,6 +117,8 @@ pub struct Config {
     pub clave: Option<PathBuf>,
     pub sin_tls: bool,
     pub proxy: bool,
+    /// `--proxy-red`: las redes de los proxies de confianza en otra máquina.
+    pub proxy_redes: Vec<resguardo_servidor::RedIp>,
     pub consola: Option<PathBuf>,
     pub max_mb: u64,
     /// Instalador genérico del agente (v1.17); por defecto, agente/Resguardo-Agente-setup.exe junto al programa.
@@ -178,6 +185,11 @@ fn entorno_si(nombre: &str) -> bool {
     entorno(nombre).is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "si" | "sí" | "true" | "yes"))
 }
 
+/// Una o varias redes CIDR separadas por comas o espacios (`--proxy-red`).
+fn redes(texto: &str) -> Result<Vec<resguardo_servidor::RedIp>, String> {
+    texto.split([',', ' ']).filter(|r| !r.trim().is_empty()).map(resguardo_servidor::RedIp::leer).collect()
+}
+
 fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
     // Por defecto, lo del entorno (la unidad de systemd); las opciones mandan.
     let escuchar = match entorno("RESGUARDO_ESCUCHAR") {
@@ -193,6 +205,10 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
         clave: None,
         sin_tls: false,
         proxy: false,
+        proxy_redes: match entorno("RESGUARDO_PROXY_RED") {
+            Some(v) => redes(&v).map_err(|e| format!("RESGUARDO_PROXY_RED: {e}"))?,
+            None => Vec::new(),
+        },
         consola: None,
         max_mb: match entorno("RESGUARDO_MAX_DESCARGA") {
             Some(v) => v.parse().map_err(|_| format!("RESGUARDO_MAX_DESCARGA no es un número de MB: {v}."))?,
@@ -227,6 +243,7 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
             "--clave" => c.clave = Some(PathBuf::from(valor(&mut i)?)),
             "--sin-tls" => c.sin_tls = true,
             "--detras-de-proxy" => c.proxy = true,
+            "--proxy-red" => c.proxy_redes.extend(redes(&valor(&mut i)?)?),
             "--consola" => c.consola = Some(PathBuf::from(valor(&mut i)?)),
             "--max-descarga" => c.max_mb = valor(&mut i)?.parse().map_err(|_| "Tamaño no válido.")?,
             "--instalador-agente" => c.instalador_agente = Some(PathBuf::from(valor(&mut i)?)),
@@ -266,6 +283,10 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
         modo = Modo::PonerInstaladorAgente { archivo, sha256 };
     } else if sha256.is_some() {
         return Err("--sha256 va con poner-instalador-agente.".into());
+    }
+    // Si el proxy está en otra máquina, está delante: lo mismo que --detras-de-proxy.
+    if !c.proxy_redes.is_empty() {
+        c.proxy = true;
     }
     if c.sin_tls && !c.proxy && !c.escuchar.ip().is_loopback() {
         return Err("Sin TLS solo se permite escuchando en 127.0.0.1 o con --detras-de-proxy.".into());
@@ -593,6 +614,7 @@ pub fn arrancar(c: Config, salida: &dyn Fn(&str)) -> Result<(), String> {
         instalador_agente,
         puerto: Some(c.escuchar.port()),
         proxy: c.proxy,
+        proxy_redes: c.proxy_redes.clone(),
         url_agentes: c.url_agentes.clone(),
         publico: c.publico,
         ..Default::default()
@@ -648,8 +670,14 @@ pub fn arrancar(c: Config, salida: &dyn Fn(&str)) -> Result<(), String> {
         }
         (None, false) => Tls::Propio { cert: c.cert.unwrap_or_else(|| dir.join("servidor.crt")), clave: c.clave.unwrap_or_else(|| dir.join("servidor.key")) },
     };
-    if c.proxy {
+    if c.proxy && c.proxy_redes.is_empty() {
         salida("Detrás de un proxy: la IP de cada petición desde 127.0.0.1 es la última de X-Forwarded-For.");
+    } else if c.proxy {
+        let r: Vec<String> = c.proxy_redes.iter().map(ToString::to_string).collect();
+        salida(&format!(
+            "Detrás de un proxy: la IP de cada petición desde 127.0.0.1 o desde {} es la de X-Forwarded-For (la más a la derecha que no es de un proxy).",
+            r.join(", ")
+        ));
     }
     salida(&format!("Escuchando en {}://{}", if c.sin_tls { "http" } else { "https" }, c.escuchar));
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?;
@@ -734,6 +762,22 @@ mod pruebas {
         assert!(c.proxy && c.publico && c.dominio.is_none());
         assert_eq!(c.url_agentes.as_deref(), Some("https://consola.ejemplo.com:8443"));
         assert_eq!(identidad_legible("AAECAw=="), "0001 0203");
+    }
+
+    #[test]
+    fn proxy_en_otra_maquina() {
+        // Sin --proxy-red, como antes.
+        let (c, _) = leer_args(&args(&[])).unwrap().unwrap();
+        assert!(!c.proxy && c.proxy_redes.is_empty());
+        // Con ella (repetida o con comas): implica --detras-de-proxy y deja --sin-tls fuera de 127.0.0.1.
+        let a = args(&["--sin-tls", "--escuchar", "0.0.0.0:8080", "--proxy-red", "172.18.0.0/16,fd00::/8", "--proxy-red", "10.9.8.7"]);
+        let (c, _) = leer_args(&a).unwrap().unwrap();
+        assert!(c.proxy);
+        let r: Vec<String> = c.proxy_redes.iter().map(ToString::to_string).collect();
+        assert_eq!(r, ["172.18.0.0/16", "fd00::/8", "10.9.8.7/32"]);
+        assert!(leer_args(&args(&["--proxy-red", "0.0.0.0/0"])).is_err());
+        assert!(leer_args(&args(&["--proxy-red", "proxy.ejemplo.com"])).is_err());
+        assert!(leer_args(&args(&["--proxy-red"])).is_err());
     }
 
     #[test]
