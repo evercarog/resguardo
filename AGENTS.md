@@ -11,7 +11,8 @@ Resguardo es una plataforma de copias de seguridad sobre **restic**:
 - **Consola en línea**: el mismo servidor en modo multi‑cliente (`docs/consola-en-linea.md`).
 - Un agente puede estar vinculado a **varias consolas a la vez** (`docs/consolas-multiples.md`).
 - `crates/motor`: restic, planes, retención. `crates/protocolo`: sobres sellados y firmas (con vectores).
-- `src/` + `src-tauri/`: la app de escritorio antigua. `ui/`: sistema de diseño común.
+- `src/` + `src-tauri/`: la app de escritorio antigua, **congelada** (no se trabaja en ella; tampoco en la web antigua `resguardo-web`). `ui/`: sistema de diseño común.
+- Trabajo pendiente acordado: `docs/plan-mejoras.md`.
 
 Documentos clave: `docs/plataforma.md` (arquitectura), `docs/api-servidor.md` (contrato agente ↔ consola, con la sección «Cambios»), `docs/diseno.md` (diseño y voz de la interfaz), `docs/estabilidad.md`.
 

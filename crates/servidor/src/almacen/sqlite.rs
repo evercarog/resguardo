@@ -1526,6 +1526,19 @@ impl Almacen for Sqlite {
             Ok(caducados)
         })
     }
+    fn equipos_sin_alta(&self, c: &ClienteCtx) -> R<Vec<String>> {
+        self.con(c, |db| {
+            let mut st = db
+                .prepare(
+                    "SELECT DISTINCT e.id FROM equipos e JOIN emparejamientos p ON p.equipo_id = e.id \
+                     WHERE e.confirmado = 0 AND p.estado IN ('caducado', 'cancelado') \
+                     AND NOT EXISTS (SELECT 1 FROM emparejamientos q WHERE q.equipo_id = e.id AND q.estado NOT IN ('caducado', 'cancelado'))",
+                )
+                .map_err(s)?;
+            let filas = st.query_map([], |r| r.get::<_, String>(0)).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
     fn limpiar_servidor(&self, ahora: Ts) -> R<()> {
         let c = self.ctl();
         c.execute("DELETE FROM sesiones WHERE expira <= ?1", [ahora]).map_err(s)?;
@@ -1608,6 +1621,39 @@ mod tests {
         let db = con.lock().unwrap();
         assert!(db.execute("UPDATE auditoria SET actor = 'otro' WHERE n = 2", []).is_err());
         assert!(db.execute("DELETE FROM auditoria WHERE n = 2", []).is_err());
+    }
+
+    #[test]
+    fn equipos_que_nunca_se_confirmaron() {
+        let (_d, a) = almacen();
+        let c = ClienteCtx::autorizado(&a.crear_cliente("Uno", "s", 24).unwrap().id);
+        let equipo = |id: &str| EquipoNuevo {
+            id: id.into(),
+            nombre: "PC".into(),
+            so: "windows".into(),
+            version: "1".into(),
+            box_pub: "b".into(),
+            sign_pub: "s".into(),
+            sal_equipo: "sal".into(),
+            secreto_hash: "h".into(),
+        };
+        let t = ahora();
+        for (emp, eq) in [("p1", "fantasma"), ("p2", "bueno")] {
+            a.preparar_emparejamiento(&c, emp, "ana", t + 900, "PC", "windows", "AAAA-BBBB-CC").unwrap();
+            a.crear_equipo(&c, &equipo(eq)).unwrap();
+            a.poner_estado_emparejamiento(&c, emp, "unido", Some(eq)).unwrap();
+        }
+        // «bueno»: se comparó el número y se dio de alta.
+        a.poner_estado_emparejamiento(&c, "p2", "confirmado", None).unwrap();
+        a.confirmar_equipo(&c, "bueno", "etiqueta").unwrap();
+        // Mientras el código sirve, nada que quitar.
+        assert!(a.equipos_sin_alta(&c).unwrap().is_empty());
+        // Caducado sin confirmar: «fantasma» sobra; «bueno» no.
+        a.limpiar(&c, t + 3 * 86_400).unwrap();
+        assert_eq!(a.equipos_sin_alta(&c).unwrap(), vec!["fantasma".to_string()]);
+        // Y uno sin emparejamiento (p. ej. recibido de otra consola) nunca.
+        a.crear_equipo(&c, &equipo("sin-codigo")).unwrap();
+        assert_eq!(a.equipos_sin_alta(&c).unwrap(), vec!["fantasma".to_string()]);
     }
 
     #[test]

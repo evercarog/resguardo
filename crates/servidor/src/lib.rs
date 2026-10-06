@@ -104,6 +104,7 @@ pub fn tareas(st: St) {
                             }
                         }
                     }
+                    quitar_sin_alta(&st2, &ctx);
                     avisar_sin_contacto(&st2, &ctx, ahora);
                 }
                 drop(datos);
@@ -111,6 +112,18 @@ pub fn tareas(st: St) {
             .await;
         }
     });
+}
+
+/// Quita los equipos que se unieron con un código que caducó o se anuló sin
+/// comparar el número de comprobación (un intento fallido de «Añadir equipo»):
+/// nunca recibieron la clave de administración, no se pierde nada.
+fn quitar_sin_alta(st: &St, ctx: &almacen::ClienteCtx) {
+    for eq in st.db.equipos_sin_alta(ctx).unwrap_or_default() {
+        if st.db.borrar_equipo(ctx, &eq).and_then(|_| st.db.desindexar_equipo(&eq)).is_ok() {
+            let _ = st.db.auditar(ctx, "servidor", "quitar_equipo_sin_alta", &eq, "{}");
+            st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Equipo(&eq));
+        }
+    }
 }
 
 /// Aviso si un equipo lleva más de 24 h sin conectar (uno por equipo mientras siga abierto).

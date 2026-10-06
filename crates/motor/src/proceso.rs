@@ -109,6 +109,23 @@ pub fn system_tool(exe: &str) -> String {
     }
 }
 
+/// Un `PATH` hecho solo de carpetas del sistema (de los administradores o de
+/// root), para los programas que el agente lanza como servicio: el `PATH` del
+/// sistema puede llevar carpetas que algún usuario puede escribir, y restic
+/// busca en él `ssh` (repositorios `sftp:`) y `rclone`.
+pub fn path_del_sistema() -> String {
+    #[cfg(windows)]
+    {
+        let sys = system_dir();
+        let windows = std::path::Path::new(&sys).parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| r"C:\Windows".into());
+        format!(r"{sys};{windows};{sys}\OpenSSH")
+    }
+    #[cfg(not(windows))]
+    {
+        "/usr/sbin:/usr/bin:/sbin:/bin".to_string()
+    }
+}
+
 /// ¿Sigue en marcha el proceso con este PID? Si no se puede saber (p. ej.
 /// sin permiso para consultarlo), se supone que sí.
 pub fn process_alive(pid: u32) -> bool {
@@ -291,6 +308,16 @@ mod tests {
         // En Windows, los nombres sin distinguir mayúsculas.
         assert_eq!(variable_permitida(std::ffi::OsStr::new("SystemRoot")), cfg!(windows));
         assert!(variable_permitida(std::ffi::OsStr::new("SYSTEMROOT")));
+    }
+
+    #[test]
+    fn path_solo_del_sistema() {
+        let p = path_del_sistema();
+        if cfg!(windows) {
+            assert!(p.to_ascii_lowercase().contains(r"\system32"), "{p}");
+        } else {
+            assert_eq!(p, "/usr/sbin:/usr/bin:/sbin:/bin");
+        }
     }
 
     #[test]
