@@ -2,6 +2,7 @@
 // cada copia nueva» y lo que se manda al equipo. Sin dependencias de Svelte,
 // para las pruebas (scripts/vectores-espejo.ts).
 import { horarioEnFrase } from "./formato";
+import { usuarioEnAlmacen } from "./direccion";
 import type { Equipo, Horario } from "./tipos";
 
 /** El agente entiende el espejo por destino (horario, selección, retención y verificación). */
@@ -22,6 +23,10 @@ export interface DestinoEspejoResumen {
   tras_copia?: boolean | null;
   /** La próxima vuelta por horario. */
   proxima?: string | null;
+  /** §3f: solo estos repositorios (`<usuario>` o `<usuario>/<repo>`); sin ellos, todos. */
+  repos?: string[] | null;
+  /** §3f: los repositorios que había al elegir la selección (los demás son nuevos). */
+  vistos?: string[] | null;
 }
 
 /** Lo que se manda de un destino en `guarda_copias.espejo.destinos` (sin sus resultados). */
@@ -31,6 +36,8 @@ export interface DestinoEspejoOrden {
   nube?: string;
   horario?: Horario;
   tras_copia?: boolean;
+  repos?: string[];
+  vistos?: string[];
 }
 
 /** Un destino del resumen en la forma de la orden: lo que ya tiene, para reenviarlo sin cambios. */
@@ -38,7 +45,53 @@ export function destinoParaOrden(d: DestinoEspejoResumen): DestinoEspejoOrden {
   const o: DestinoEspejoOrden = d.tipo === "nube" ? { tipo: "nube", nube: d.nube ?? "", carpeta: d.carpeta ?? "" } : { tipo: "carpeta", carpeta: d.carpeta ?? "" };
   if (d.horario && (d.horario.reglas?.length || d.horario.horas?.length)) o.horario = d.horario;
   if (d.tras_copia) o.tras_copia = true;
+  if (Array.isArray(d.repos)) {
+    o.repos = [...d.repos];
+    o.vistos = [...(d.vistos ?? [])];
+  }
   return o;
+}
+
+/** Los repositorios que guarda un almacén, con el nombre que usa el espejo: `<usuario>` o `<usuario>/<repo>`. */
+export function nombresRepos(repositorios: { usuario: string; repos: string[] }[] | null | undefined): string[] {
+  const v = (repositorios ?? []).flatMap((u) => u.repos.map((r) => (r === "." || r === "" ? u.usuario : `${u.usuario}/${r}`)));
+  return [...new Set(v.filter((n) => n.split("/").length <= 2))].sort();
+}
+
+/** Repositorios nuevos del almacén que no entran en un destino con selección (ni se vieron al elegirla). */
+export function nuevosEn(d: Pick<DestinoEspejoResumen, "repos" | "vistos">, todos: string[]): string[] {
+  if (!Array.isArray(d.repos)) return [];
+  const conocidos = new Set([...(d.vistos ?? []), ...d.repos]);
+  return todos.filter((r) => !conocidos.has(r));
+}
+
+/** «Todos los repositorios» o «2 repositorios: a, b». */
+export function textoRepos(d: Pick<DestinoEspejoResumen, "repos">, nombre: (r: string) => string = (r) => r): string {
+  if (!Array.isArray(d.repos)) return "Todos los repositorios";
+  const n = d.repos.map(nombre);
+  return n.length === 1 ? `Solo ${n[0]}` : `${n.length} repositorios: ${n.join(", ")}`;
+}
+
+/** El nombre de un repositorio en el espejo de su almacén (`<usuario>/<repo>`), o null. */
+export function nombreEnAlmacen(donde: string | null | undefined, repo: { id: string; ruta?: string | null }): string | null {
+  const u = usuarioEnAlmacen(donde);
+  if (!u) return null;
+  const r = repo.ruta || repo.id;
+  return r === "." || !r ? u : `${u}/${r}`;
+}
+
+/** El espejo de un almacén visto desde uno de sus repositorios: solo los destinos a los que va (o null). */
+export function espejoDelRepo<E extends { destinos?: Pick<DestinoEspejoResumen, "repos">[] | null }>(espejo: E | null, nombre: string | null): E | null {
+  if (!espejo) return null;
+  if (!espejo.destinos?.length) return espejo;
+  const destinos = espejo.destinos.filter((d) => !Array.isArray(d.repos) || (!!nombre && d.repos.includes(nombre)));
+  return destinos.length ? { ...espejo, destinos } : null;
+}
+
+/** El destino con estos repositorios añadidos a su selección (y lo de ahora como visto). */
+export function conRepos(d: DestinoEspejoOrden, anadir: string[], todos: string[]): DestinoEspejoOrden {
+  if (!d.repos) return d;
+  return { ...d, repos: [...new Set([...d.repos, ...anadir])], vistos: [...todos] };
 }
 
 /** El horario «cada día a esa hora» de antes, como horario de las copias. */

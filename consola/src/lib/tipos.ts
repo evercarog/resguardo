@@ -237,6 +237,10 @@ export interface ResumenEquipo {
         tras_copia?: boolean | null;
         /** La próxima vuelta por horario. */
         proxima?: string | null;
+        /** Solo estos repositorios (`<usuario>` o `<usuario>/<repo>`); sin ellos, todos. */
+        repos?: string[] | null;
+        /** Los repositorios que había al elegir la selección (los demás son nuevos). */
+        vistos?: string[] | null;
       }[];
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */

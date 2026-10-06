@@ -28,8 +28,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-/// Lo que se ha modificado hace menos de esto se deja para la próxima vuelta.
-const RECIENTE: Duration = Duration::from_secs(10 * 60);
+pub use crate::espejo_motor::RECIENTE;
 
 /// Un destino del espejo.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -57,6 +56,14 @@ pub struct Destino {
     /// cuenta el horario y lo que es «una copia nueva».
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inicio: Option<String>,
+    /// §3f: solo estos repositorios (`<usuario>` o `<usuario>/<repo>`); sin
+    /// ellos, todo lo que guarda el almacén (también lo que llegue después).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repos: Option<Vec<String>>,
+    /// §3f: los repositorios del almacén que había cuando se eligió la
+    /// selección: los demás son nuevos y la consola pregunta si entran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vistos: Vec<String>,
 }
 
 /// Lo que se espera desde la última versión nueva antes de empezar el espejo
@@ -152,10 +159,18 @@ impl Espejo {
         self.carpeta.clear();
     }
 
-    /// ¿Quita `nuevo` alguno de los destinos de este espejo? (orden destructiva)
+    /// ¿Reduce `nuevo` la protección? (orden destructiva, docs/espejo.md): quita
+    /// un destino (o el espejo entero) o deja fuera repositorios que iban a uno.
     pub fn quita_destinos(&self, nuevo: Option<&Espejo>) -> bool {
         let nuevos = nuevo.map(Espejo::destinos).unwrap_or_default();
-        self.destinos().iter().any(|d| !nuevos.iter().any(|n| n.mismo(d)))
+        self.destinos().iter().any(|d| match nuevos.iter().find(|n| n.mismo(d)) {
+            None => true,
+            Some(n) => match (&d.repos, &n.repos) {
+                (_, None) => false,
+                (None, Some(_)) => true,
+                (Some(antes), Some(ahora)) => antes.iter().any(|r| !ahora.contains(r)),
+            },
+        })
     }
 
     /// Lo que se ve en el resumen de la consola (sin secretos).
@@ -176,6 +191,11 @@ impl Espejo {
                     v["horario"] = serde_json::to_value(h).unwrap_or_default();
                 }
                 v["tras_copia"] = d.tras_copia.into();
+                // §3f: la selección (sin ella, todos) y lo que había al elegirla.
+                if let Some(r) = &d.repos {
+                    v["repos"] = r.clone().into();
+                    v["vistos"] = d.vistos.clone().into();
+                }
                 v["proxima"] = d.plan(&self.hora).and_then(|p| p.next_slot(chrono::Local::now())).map(|t| t.to_rfc3339()).into();
                 v
             })
@@ -226,6 +246,30 @@ pub fn pedido(v: &serde_json::Value) -> Result<Option<Espejo>, String> {
     Ok(Some(Espejo { hora, destinos, limite_kib, ..Default::default() }))
 }
 
+/// §3f: lo que había en el almacén al elegir la selección de cada destino.
+/// Lo dice la consola (lo que enseñó); si no, el de antes con la misma
+/// selección o, si cambió, lo que hay ahora (`hay`). Los elegidos, siempre.
+pub fn fijar_vistos(nuevo: &mut Espejo, anterior: Option<&Espejo>, hay: &[String]) {
+    for d in nuevo.destinos.iter_mut() {
+        let Some(repos) = d.repos.clone() else {
+            d.vistos.clear();
+            continue;
+        };
+        if d.vistos.is_empty() {
+            d.vistos = match anterior.and_then(|a| a.destinos.iter().find(|x| x.mismo(d) && x.repos.as_ref() == Some(&repos))) {
+                Some(x) => x.vistos.clone(),
+                None => hay.to_vec(),
+            };
+        }
+        for r in repos {
+            if !d.vistos.contains(&r) {
+                d.vistos.push(r);
+            }
+        }
+        d.vistos.sort();
+    }
+}
+
 /// Las opciones de un destino (docs/espejo.md), ya comprobadas.
 fn leer_opciones(d: &serde_json::Value, nuevo: &mut Destino) -> Result<(), String> {
     if let Some(h) = d.get("horario").filter(|h| !h.is_null()) {
@@ -237,104 +281,32 @@ fn leer_opciones(d: &serde_json::Value, nuevo: &mut Destino) -> Result<(), Strin
         serde_json::Value::Null => false,
         t => t.as_bool().ok_or("«tras_copia» tiene que ser verdadero o falso.")?,
     };
-    Ok(())
-}
-
-#[derive(Debug, Default, PartialEq)]
-pub struct Resumen {
-    pub copiados: u64,
-    pub bytes: u64,
-    pub iguales: u64,
-    pub recientes: u64,
-    /// Ya estaban en el espejo con otro tamaño: no se reemplazan.
-    pub distintos: u64,
-}
-
-/// Copia `origen` en `destino` con las reglas de arriba.
-pub fn copiar(origen: &Path, destino: &Path) -> Result<Resumen, String> {
-    copiar_con(origen, destino, &mut |_| {})
-}
-
-/// Lo mismo, diciendo los bytes copiados hasta ahora tras cada archivo
-/// (la ventana del equipo saca de ahí el ritmo).
-pub fn copiar_con(origen: &Path, destino: &Path, avance: &mut dyn FnMut(u64)) -> Result<Resumen, String> {
-    let mut r = Resumen::default();
-    let ahora = SystemTime::now();
-    let mut pendientes: Vec<PathBuf> = vec![PathBuf::new()];
-    while let Some(rel) = pendientes.pop() {
-        let dir = origen.join(&rel);
-        for e in std::fs::read_dir(&dir).map_err(|e| format!("No se pudo leer {}: {e}", dir.display()))?.flatten() {
-            let nombre = e.file_name();
-            if nombre == "locks" || nombre.to_string_lossy().ends_with(".tmp-espejo") {
-                continue;
-            }
-            let Ok(m) = std::fs::symlink_metadata(e.path()) else { continue };
-            let rel_e = rel.join(&nombre);
-            if m.file_type().is_symlink() || crate::platform::is_reparse_point(&e.path()) {
-                continue;
-            }
-            if m.is_dir() {
-                // En el destino, nunca a través de un enlace (desviaría lo que escribe SYSTEM).
-                if crate::platform::is_reparse_point(&destino.join(&rel_e)) {
-                    return Err(format!("{} es un enlace: el espejo no escribe a través de enlaces.", destino.join(&rel_e).display()));
+    let lista = |k: &str| -> Result<Option<Vec<String>>, String> {
+        match &d[k] {
+            serde_json::Value::Null => Ok(None),
+            serde_json::Value::Array(l) => {
+                let mut v = Vec::new();
+                for r in l {
+                    let r =
+                        r.as_str().filter(|r| crate::espejo_motor::repo_valido(r)).ok_or("Nombre de repositorio del espejo no válido (<usuario>/<repo>).")?;
+                    if !v.iter().any(|x| x == r) {
+                        v.push(r.to_string());
+                    }
                 }
-                pendientes.push(rel_e);
-                continue;
-            }
-            if m.modified().ok().and_then(|t| ahora.duration_since(t).ok()).is_none_or(|d| d < RECIENTE) {
-                r.recientes += 1;
-                continue;
-            }
-            let dest = destino.join(&rel_e);
-            if let Ok(d) = std::fs::symlink_metadata(&dest) {
-                // Nunca se reescribe lo que ya está: los archivos de restic no
-                // cambian, así que otro tamaño es un daño (en el origen o aquí).
-                if d.len() == m.len() && d.is_file() {
-                    r.iguales += 1;
-                } else {
-                    r.distintos += 1;
+                if v.len() > 500 {
+                    return Err("Demasiados repositorios en un destino del espejo.".into());
                 }
-                continue;
+                Ok(Some(v))
             }
-            if let Some(p) = dest.parent() {
-                std::fs::create_dir_all(p).map_err(|e| format!("No se pudo crear {}: {e}", p.display()))?;
-            }
-            if crate::platform::is_reparse_point(&dest) {
-                return Err(format!("{} es un enlace: el espejo no escribe a través de enlaces.", dest.display()));
-            }
-            let tmp = dest.with_file_name(format!("{}.tmp-espejo", nombre.to_string_lossy()));
-            // Un temporal que ya estuviera (o un enlace con su nombre) se quita antes.
-            if std::fs::symlink_metadata(&tmp).is_ok() {
-                std::fs::remove_file(&tmp).map_err(|e| format!("No se pudo quitar {}: {e}", tmp.display()))?;
-            }
-            if let Err(err) = std::fs::copy(e.path(), &tmp) {
-                // Lo copiado a medias no se queda (en un disco lleno, ocuparía lo poco que queda).
-                let _ = std::fs::remove_file(&tmp);
-                return Err(error_al_copiar(&err, destino));
-            }
-            std::fs::rename(&tmp, &dest).map_err(|e| format!("No se pudo terminar {}: {e}", dest.display()))?;
-            r.copiados += 1;
-            r.bytes += m.len();
-            avance(r.bytes);
+            _ => Err(format!("«{k}» tiene que ser una lista de repositorios.")),
         }
+    };
+    nuevo.repos = lista("repos")?;
+    if nuevo.repos.as_ref().is_some_and(Vec::is_empty) {
+        return Err("Elige al menos un repositorio para ese destino del espejo (o todos).".into());
     }
-    Ok(r)
-}
-
-/// El motivo de un archivo que no se pudo copiar al espejo, con qué hacer.
-fn error_al_copiar(e: &std::io::Error, destino: &Path) -> String {
-    let lleno = e.kind() == std::io::ErrorKind::StorageFull
-        || e.raw_os_error() == Some(if cfg!(windows) { 112 } else { 28 })
-        || resguardo_motor::restic::sin_espacio(&e.to_string().to_lowercase());
-    if lleno {
-        format!(
-            "no queda espacio en el disco del espejo ({}). Libera espacio en él o elige otra carpeta con más sitio; \
-             lo que ya está en el espejo se conserva y lo que falta se copiará en la próxima vuelta.",
-            destino.display()
-        )
-    } else {
-        format!("no se pudo copiar a {}: {e}", destino.display())
-    }
+    nuevo.vistos = lista("vistos")?.unwrap_or_default();
+    Ok(())
 }
 
 /// « · con su horario», « · después de cada copia nueva»… (para la línea de órdenes).
@@ -430,26 +402,44 @@ pub fn novedades(origen: &Path, repos: &[String], desde: Option<SystemTime>) -> 
     r
 }
 
-// Copia a un destino, contando cómo va en `guarda` (la ventana del equipo: los
-/// bytes copiados a una carpeta; lo que lee y sube rclone a una nube). Devuelve
-/// el texto del resultado.
+/// Una vuelta a un destino (espejo_motor.rs), contando cómo va en `guarda`
+/// (la ventana del equipo: los bytes copiados a una carpeta; lo que lee y
+/// sube rclone a una nube). Devuelve el texto del resultado.
 fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate::escritorio::en_marcha::Guarda) -> Result<String, String> {
-    if d.tipo == "nube" {
+    use crate::espejo_motor::{vuelta, Alcance, Lado};
+    let alcance = Alcance::de(d.repos.as_deref());
+    let trabajo = crate::agent::private_dir();
+    let nube;
+    let lado = if d.tipo == "nube" {
         let nombre = d.nube.as_deref().unwrap_or_default();
-        let n = crate::nube::buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
-        return crate::nube::copiar(&n, origen, &d.carpeta, limite_kib, &mut |l, s| guarda.ritmos(l, s));
-    }
-    // La carpeta de destino: local, sin enlaces en el camino y de Administradores.
-    crate::platform::carpeta_local_valida(&d.carpeta)?;
-    let destino = Path::new(&d.carpeta);
-    // En pruebas (RESGUARDO_AGENT_DIR, sin administrador) la carpeta es de quien
-    // corre la prueba, como en `carpeta_privada`.
-    if destino.exists() && !crate::agent::test_mode() && !crate::platform::owned_by_admins(destino) {
-        return Err("la carpeta del espejo no es de Administradores (vuelve a poner el espejo para corregirla).".into());
-    }
-    let r = copiar_con(origen, destino, &mut |b| guarda.progreso(Some(b), None))?;
-    let texto =
+        nube = crate::nube::buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
+        if !crate::nube::carpeta_remota_valida(&d.carpeta) {
+            return Err("Carpeta de la nube no válida.".into());
+        }
+        Lado::Nube { nube: &nube, carpeta: d.carpeta.trim().trim_matches('/'), trabajo: &trabajo, limite_kib }
+    } else {
+        // La carpeta de destino: local, sin enlaces en el camino y de Administradores.
+        crate::platform::carpeta_local_valida(&d.carpeta)?;
+        let destino = Path::new(&d.carpeta);
+        // En pruebas (RESGUARDO_AGENT_DIR, sin administrador) la carpeta es de quien
+        // corre la prueba, como en `carpeta_privada`.
+        if destino.exists() && !crate::agent::test_mode() && !crate::platform::owned_by_admins(destino) {
+            return Err("la carpeta del espejo no es de Administradores (vuelve a poner el espejo para corregirla).".into());
+        }
+        Lado::Carpeta(destino)
+    };
+    let carpeta = d.tipo != "nube";
+    let r = vuelta(origen, &lado, &alcance, &mut |l, s| if carpeta { guarda.progreso(l, None) } else { guarda.ritmos(l, s) })?;
+    texto_de(&r)
+}
+
+/// El resultado de una vuelta en una frase (error si algo no cuadra).
+pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
+    let mut texto =
         format!("{} archivos nuevos ({} MB), {} ya estaban, {} se dejan para la próxima vez.", r.copiados, r.bytes / (1024 * 1024), r.iguales, r.recientes);
+    if !r.faltan_repos.is_empty() {
+        texto += &format!(" Ya no están en el almacén: {}.", r.faltan_repos.join(", "));
+    }
     if r.distintos > 0 {
         return Err(format!(
             "{texto} Pero {} ya estaban en el espejo con otro tamaño y no se han reemplazado: alguien ha cambiado copias ya escritas (en el Servidor de copias o en el espejo). Revísalo.",
@@ -568,6 +558,15 @@ pub fn si_toca() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::espejo_motor::{vuelta, Alcance, Lado, Resumen};
+
+    /// Una vuelta de todo el almacén a una carpeta.
+    fn copiar(origen: &Path, destino: &Path) -> Result<Resumen, String> {
+        vuelta(origen, &Lado::Carpeta(destino), &Alcance::Todos, &mut |_, _| {})
+    }
+    fn copiar_con(origen: &Path, destino: &Path, avance: &mut dyn FnMut(u64)) -> Result<Resumen, String> {
+        vuelta(origen, &Lado::Carpeta(destino), &Alcance::Todos, &mut |l, _| avance(l.unwrap_or(0)))
+    }
 
     #[test]
     fn copia_sin_locks_ni_recientes_y_sin_borrar() {
@@ -727,6 +726,60 @@ mod tests {
         assert_eq!(novedades(&base, &["ana/contabilidad".to_string()], Some(hace(1800))), None);
         assert_eq!(novedades(&base, &todos, Some(SystemTime::now())), None);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// §3f: la selección de repositorios de cada destino.
+    #[test]
+    fn seleccion_de_repositorios() {
+        use serde_json::json;
+        let pide = |d: serde_json::Value| pedido(&json!({ "destinos": [d] }));
+        let e = pide(json!({ "tipo": "carpeta", "carpeta": "E:\\x", "repos": ["ana/conta", "srv", "ana/conta"] })).unwrap().unwrap();
+        assert_eq!(e.destinos[0].repos.as_deref(), Some(&["ana/conta".to_string(), "srv".to_string()][..]), "sin repetir");
+        assert!(pide(json!({ "tipo": "carpeta", "carpeta": "E:\\x", "repos": null })).unwrap().unwrap().destinos[0].repos.is_none(), "null: todos");
+        for mal in [json!([]), json!(["../x"]), json!(["a/b/c"]), json!([5]), json!("ana")] {
+            assert!(pide(json!({ "tipo": "carpeta", "carpeta": "E:\\x", "repos": mal })).is_err(), "{mal}");
+        }
+        // Qué reduce la protección: quitar un repositorio de la selección, o pasar de todos a algunos.
+        let con = |r: Option<Vec<&str>>| Espejo {
+            hora: "02:00".into(),
+            destinos: vec![Destino {
+                tipo: "carpeta".into(),
+                carpeta: "E:\\x".into(),
+                repos: r.map(|l| l.into_iter().map(String::from).collect()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(con(None).quita_destinos(Some(&con(Some(vec!["a"])))));
+        assert!(con(Some(vec!["a", "b"])).quita_destinos(Some(&con(Some(vec!["a"])))));
+        assert!(!con(Some(vec!["a"])).quita_destinos(Some(&con(Some(vec!["a", "b"])))), "añadir no");
+        assert!(!con(Some(vec!["a"])).quita_destinos(Some(&con(None))), "pasar a todos no");
+        assert!(!con(None).quita_destinos(Some(&con(None))));
+        // Lo que había al elegir: lo que dice la consola, lo de antes si la selección no cambia, o lo de ahora.
+        let hay = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut n = con(Some(vec!["a"]));
+        fijar_vistos(&mut n, None, &hay);
+        assert_eq!(n.destinos[0].vistos, hay);
+        let mut antes = n.clone();
+        antes.destinos[0].vistos = vec!["a".into(), "b".into()];
+        let mut otra = con(Some(vec!["a"]));
+        fijar_vistos(&mut otra, Some(&antes), &hay);
+        assert_eq!(otra.destinos[0].vistos, vec!["a", "b"], "misma selección: lo de antes (c sigue siendo nuevo)");
+        let mut cambia = con(Some(vec!["a", "b"]));
+        fijar_vistos(&mut cambia, Some(&antes), &hay);
+        assert_eq!(cambia.destinos[0].vistos, hay, "otra selección: lo de ahora");
+        let mut dicho = con(Some(vec!["a"]));
+        dicho.destinos[0].vistos = vec!["c".into()];
+        fijar_vistos(&mut dicho, Some(&antes), &hay);
+        assert_eq!(dicho.destinos[0].vistos, vec!["a", "c"], "lo que dice la consola, y los elegidos");
+        let mut todos = con(None);
+        todos.destinos[0].vistos = vec!["x".into()];
+        fijar_vistos(&mut todos, None, &hay);
+        assert!(todos.destinos[0].vistos.is_empty());
+        // En el resumen, solo con selección.
+        let r = cambia.resumen();
+        assert_eq!((r["destinos"][0]["repos"][1].as_str(), r["destinos"][0]["vistos"][2].as_str()), (Some("b"), Some("c")));
+        assert!(con(None).resumen()["destinos"][0].get("repos").is_none());
     }
 
     #[test]

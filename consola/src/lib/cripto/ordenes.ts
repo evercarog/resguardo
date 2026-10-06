@@ -73,6 +73,8 @@ export interface DestinoEspejo {
   tipo: "carpeta" | "nube";
   carpeta?: string | null;
   nube?: string | null;
+  /** (espejo por destino, docs/espejo.md) solo estos repositorios; sin ellos, todos. */
+  repos?: string[] | null;
 }
 /** Lo que ya tiene el equipo, para saber si una orden quita algo (v1.9: quitar un destino del espejo es destructiva). */
 export interface ContextoOrden {
@@ -104,8 +106,15 @@ function quitaDestinoEspejo(nuevo: unknown, actual: ContextoOrden["espejo"]): bo
   if (!actual) return false;
   // Espejo antiguo sin lista de destinos: no se sabe qué hay; mejor esperar.
   if (!Array.isArray(actual.destinos)) return true;
-  const quedan = new Set(destinosDeCuerpo(nuevo).map(claveEspejo));
-  return actual.destinos.some((d) => !quedan.has(claveEspejo(d)));
+  const nuevos = new Map(destinosDeCuerpo(nuevo).map((d) => [claveEspejo(d), d]));
+  return actual.destinos.some((d) => {
+    const n = nuevos.get(claveEspejo(d));
+    if (!n) return true;
+    // Dejar fuera repositorios que iban a ese destino (o pasar de todos a algunos) también.
+    if (!Array.isArray(n.repos)) return false;
+    if (!Array.isArray(d.repos)) return true;
+    return d.repos.some((r) => !n.repos!.includes(r));
+  });
 }
 
 export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}, esperaActualHoras?: number, contexto?: ContextoOrden): boolean {

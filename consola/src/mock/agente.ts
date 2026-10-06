@@ -10,7 +10,7 @@ import { aB64, deB64, deUtf8, iguales, utf8 } from "../lib/cripto/bytes";
 import { abrir, sellar } from "../lib/cripto/sobre";
 import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/claves";
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
-import { claveEspejo, destinosDeCuerpo, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
+import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
 import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
@@ -379,8 +379,8 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           const malCarpeta = d.tipo === "carpeta" ? errorCarpetaEspejo(d.carpeta, /windows/i.test(e.so)) : null;
           if (malCarpeta) return resultado(e, o, "fallida", malCarpeta);
         }
-        const nuevas = new Set(destinos.map(claveEspejo));
-        if (actuales.some((d) => !nuevas.has(claveEspejo(d))) && !plana.not_before) return resultado(e, o, "rechazada", "Quitar un destino del espejo es destructivo: falta la espera (not_before).");
+        // Como el agente: quitar un destino, o repositorios de su selección, exige la espera.
+        if (esDestructiva("guarda_copias", c, undefined, { espejo: g.espejo }) && !plana.not_before) return resultado(e, o, "rechazada", "Quitar un destino del espejo (o repositorios de él) es destructivo: falta la espera (not_before).");
         const previos = new Map(actuales.map((d) => [claveEspejo(d), d]));
         g.espejo = {
           hora,

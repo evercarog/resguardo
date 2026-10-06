@@ -180,6 +180,7 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
             (d.ultima, d.resultado, d.inicio, d.cuota) = (x.ultima.clone(), x.resultado.clone(), x.inicio.clone(), x.cuota.clone());
         }
     }
+    crate::espejo::fijar_vistos(&mut nuevo, anterior.as_ref(), &crate::espejo::repos_en(Path::new(&c.path)));
     if let Some(a) = anterior {
         nuevo.ultima = a.ultima;
     }

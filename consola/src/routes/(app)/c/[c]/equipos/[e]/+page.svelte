@@ -55,13 +55,13 @@
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
-  import { admiteEspejoFlexible, cuandoEspejo, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
+  import { admiteEspejoFlexible, conRepos, cuandoEspejo, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
   import { errorReglas, reglasDe } from "$lib/horario";
   import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
   import { errorCarpetaDestino, errorCarpetaEspejo } from "$lib/ganchos";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import { estadoCopia, proximaDe, ultimaVuelta } from "$lib/copia";
-  import type { Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen } from "$lib/tipos";
+  import type { Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen, RetencionAlmacen } from "$lib/tipos";
   import { admiteAlmacenPropio, admitePlazos, almacenDe, copiaRegla, errorRegla, esDeAlmacen, horarioDeCopias, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden, repoDeRetencion, TEXTO_ALMACEN_PROPIO, textoHorario } from "$lib/retencion";
   import EditorRetencion from "$lib/componentes/EditorRetencion.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -297,6 +297,9 @@
     limite: "" as number | string,
     horario: horarioDiario("02:00") as Horario,
     trasCopia: false,
+    /** §3f: todos los repositorios o solo `elegidos`. */
+    todos: true,
+    elegidos: [] as string[],
     /** Clave (claveEspejo) del destino que se cambia; null: uno nuevo. */
     editando: null as string | null,
   });
@@ -304,8 +307,36 @@
   const nuevoDestino = $derived.by<DestinoEspejoUI>(() => {
     const d: DestinoEspejoUI = esp.tipo === "nube" ? { tipo: "nube", nube: esp.nube, carpeta: esp.carpetaNube.trim() } : { tipo: "carpeta", carpeta: esp.carpeta.trim() };
     if (!flexible) return d;
-    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}) };
+    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}), ...(esp.todos ? {} : { repos: [...esp.elegidos].sort(), vistos: reposAlmacen }) };
   });
+  /** §3f: los repositorios del almacén, como los nombra el espejo. */
+  const reposAlmacen = $derived(nombresRepos(equipo?.resumen?.guarda_copias?.repositorios));
+  /** «Contabilidad, de RECEPCION» para `usuario/repo` (si se sabe de qué equipo es). */
+  function nombreRepoAlmacen(r: string): string {
+    if (!equipo) return r;
+    const [usuario, repo] = r.includes("/") ? r.split("/") : [r, "."];
+    const de = repoDeRetencion({ usuario, repo } as RetencionAlmacen, equipo, actual.equipos);
+    return de ? `${de.repo.nombre}, de ${de.equipo.nombre}` : r;
+  }
+  /** Repositorios nuevos que no entran en algún destino con selección (la consola pregunta). */
+  const nuevosEspejo = $derived([...new Set((espejoActual?.destinos ?? []).flatMap((d) => nuevosEn(d, reposAlmacen)))]);
+  const conSeleccion = $derived((espejoActual?.destinos ?? []).filter((d) => nuevosEn(d, reposAlmacen).length));
+  /** El espejo con un cambio en cada destino (los demás, tal cual). */
+  const espejoCon = (f: (d: DestinoEspejoUI) => DestinoEspejoUI) => {
+    const destinos = destinosActuales.map(conHorario).map(f);
+    return { destinos, hora: horaParaConsolasAnteriores(destinos, espejoActual?.hora ?? "02:00"), ...(espejoActual?.limite_kib ? { limite_kib: espejoActual.limite_kib } : {}) };
+  };
+  function preguntarNuevos(anadir: boolean) {
+    const nombres = nuevosEspejo.map(nombreRepoAlmacen).join(", ");
+    abrir({
+      tipo: "guarda_copias",
+      cuerpo: { espejo: espejoCon((d) => (d.repos ? (anadir ? conRepos(d, nuevosEn(d, reposAlmacen), reposAlmacen) : { ...d, vistos: reposAlmacen }) : d)) },
+      titulo: anadir ? "Añadir los repositorios nuevos al espejo" : "Dejar fuera los repositorios nuevos",
+      descripcion: anadir
+        ? `${nombres} se copiarán también a los destinos del espejo que tienen una selección.`
+        : `${nombres} no irán a los destinos del espejo con una selección (sí a los de «todos»). No se volverá a preguntar por ellos.`,
+    });
+  }
   const repetido = $derived(!esp.editando && destinosActuales.some((d) => claveEspejo(d) === claveEspejo(nuevoDestino)));
   /** Con un agente que lo admite, cada destino con su horario explícito (el de antes, `hora`, pasa a «cada día a esa hora»). */
   const conHorario = (d: DestinoEspejoUI): DestinoEspejoUI => (flexible && !d.horario ? { ...d, horario: horarioDiario(espejoActual?.hora ?? "02:00") } : d);
@@ -346,6 +377,7 @@
     !errorCarpetaNube &&
     (flexible ? !!(esp.horario.reglas?.length || esp.horario.horas?.length) && !errorReglas(reglasDe(esp.horario)) : /^([01]\d|2[0-3]):[0-5]\d$/.test(esp.hora)) &&
       !repetido &&
+      (!flexible || esp.todos || esp.elegidos.length > 0) &&
       (esp.tipo === "carpeta" ? !!esp.carpeta.trim() : !!esp.nube && !!esp.carpetaNube.trim()) &&
       (!limiteTxt || Number(limiteTxt) > 0),
   );
@@ -364,6 +396,8 @@
       limite: "",
       horario: de?.horario ?? horarioDiario(hora),
       trasCopia: !!de?.tras_copia,
+      todos: !Array.isArray(de?.repos),
+      elegidos: de?.repos ?? [],
       editando: de ? claveEspejo(de) : null,
     };
     abrir({
@@ -371,7 +405,7 @@
       cuerpo: {},
       titulo: de ? `Cambiar el espejo en ${de.tipo === "nube" ? `«${de.nube}»` : de.carpeta}` : espejoActual ? "Añadir destino del espejo" : "Espejo de lo que guarda",
       descripcion: de
-        ? "Cuándo se copia a este destino. Lo que ya está allí no cambia."
+        ? "Cuándo y qué se copia a este destino. Lo que ya está allí no cambia."
         : flexible
           ? "Lo que guarda este equipo se copia a otro sitio: otra carpeta (mejor en otro disco) o una nube conectada en el equipo, cuando tú elijas. Solo añade: nunca borra allí, y deja fuera lo que se esté escribiendo."
           : "Cada noche se copia todo lo que guarda este equipo a otro sitio: otra carpeta (mejor en otro disco) o una nube conectada en el equipo. Solo añade: nunca borra allí, y deja fuera lo que se esté escribiendo.",
@@ -1008,7 +1042,8 @@
                       <span class="d-texto">
                         <strong>{d.tipo === "nube" ? d.nube : d.carpeta}</strong>
                         <span class="faint">{d.tipo === "nube" ? `en la carpeta ${d.carpeta}` : "otra carpeta"}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
-                        {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>{/if}
+                        {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>
+                          <span class="faint">{textoRepos(d, nombreRepoAlmacen)}</span>{/if}
                         {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
@@ -1019,6 +1054,17 @@
                     </li>
                   {/each}
                 </ul>
+              {#if flexible && nuevosEspejo.length}
+                <div class="notice notice-info nuevos-espejo">
+                  <p>{nuevosEspejo.length === 1 ? "Hay un repositorio nuevo" : `Hay ${nuevosEspejo.length} repositorios nuevos`} ({nuevosEspejo.map(nombreRepoAlmacen).join(", ")}) que no {nuevosEspejo.length === 1 ? "entra" : "entran"} en {conSeleccion.length === 1 ? "un destino del espejo con selección" : `${conSeleccion.length} destinos del espejo con selección`}. Los de «todos» ya {nuevosEspejo.length === 1 ? "lo copian" : "los copian"}.</p>
+                  {#if puede.administrar(rol)}
+                    <div class="acciones-nuevos">
+                      <button class="btn btn-sm btn-primary" onclick={() => preguntarNuevos(true)}>Añadir{nuevosEspejo.length === 1 ? "lo" : "los"}</button>
+                      <button class="btn btn-sm btn-ghost" onclick={() => preguntarNuevos(false)}>Dejar{nuevosEspejo.length === 1 ? "lo" : "los"} fuera</button>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
               {:else if g.espejo.resultado}
                 <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo">{g.espejo.resultado}</span>{:else}{g.espejo.resultado}{/if}</p>
               {/if}
@@ -1459,7 +1505,7 @@
     {#if repetido}<p class="error-campo">Ese destino ya está en el espejo.</p>{/if}
     {/if}
     {#if flexible}
-      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} />
+      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} bind:todos={esp.todos} bind:elegidos={esp.elegidos} repositorios={reposAlmacen} nombre={nombreRepoAlmacen} />
     {:else}
     <div class="field">
       <label class="field-label" for="e-hora">Cada noche a las{destinosActuales.length ? " (para todos los destinos)" : ""}</label>
@@ -1728,6 +1774,16 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .nuevos-espejo {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+  .acciones-nuevos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .destinos-espejo {
     display: flex;

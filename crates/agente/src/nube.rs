@@ -271,38 +271,6 @@ pub fn carpeta_remota_valida(c: &str) -> bool {
     !c.is_empty() && c.len() <= 200 && !c.chars().any(char::is_control) && !c.contains(':') && !c.split('/').any(|p| p == ".." || p == "." || p.is_empty())
 }
 
-/// Argumentos de `rclone copy` del espejo: solo añade, nunca borra.
-pub fn argumentos_copia(origen: &Path, carpeta: &str, limite_kib: Option<u32>) -> Vec<String> {
-    let mut a = vec![
-        "copy".to_string(),
-        origen.display().to_string(),
-        format!("{REMOTO}:{}", carpeta.trim().trim_matches('/')),
-        // Los bloqueos de restic no se copian; ni lo escrito en los últimos 10 minutos.
-        "--exclude".into(),
-        "locks/**".into(),
-        "--exclude".into(),
-        "*.tmp-espejo".into(),
-        "--min-age".into(),
-        "10m".into(),
-        // Un archivo que ya está en la nube nunca se reescribe (los de restic no cambian).
-        "--immutable".into(),
-        // Registro en JSON: al final, una línea con las estadísticas («stats»).
-        "--use-json-log".into(),
-        "--stats".into(),
-        "24h".into(),
-        "--stats-one-line".into(),
-        "--stats-log-level".into(),
-        "NOTICE".into(),
-        "--retries".into(),
-        "3".into(),
-    ];
-    if let Some(k) = limite_kib.filter(|k| *k > 0) {
-        a.push("--bwlimit".into());
-        a.push(format!("{k}K"));
-    }
-    a
-}
-
 /// El token del remoto en un rclone.conf (si rclone lo renovó y lo escribió).
 fn token_de_conf(t: &str) -> Option<String> {
     let mut en_remoto = false;
@@ -337,14 +305,40 @@ fn resumen_de_rclone(err: &str) -> (String, Option<String>) {
     (texto, error)
 }
 
-/// Copia `origen` a la nube. Devuelve el resumen de rclone.
-pub fn copiar(n: &Nube, origen: &Path, carpeta: &str, limite_kib: Option<u32>, ritmos: &mut dyn FnMut(Option<u64>, Option<u64>)) -> Result<String, String> {
-    if !carpeta_remota_valida(carpeta) {
-        return Err("Carpeta de la nube no válida.".into());
+// ---------- Operaciones del espejo (espejo_motor.rs) ----------
+
+/// `rnube:<carpeta>[/<sub>]` (sin barras sobrantes).
+fn remoto(carpeta: &str, sub: &str) -> String {
+    let c = carpeta.trim().trim_end_matches('/');
+    match (c.is_empty(), sub.is_empty()) {
+        (_, true) => format!("{REMOTO}:{c}"),
+        (true, false) => format!("{REMOTO}:{sub}"),
+        (false, false) => format!("{REMOTO}:{c}/{sub}"),
     }
+}
+
+/// Un nombre de archivo nuevo en la carpeta de trabajo (para las listas de rclone).
+fn archivo_de_trabajo(trabajo: &Path, que: &str) -> PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    trabajo.join(format!("espejo-{que}-{}-{n}.txt", std::process::id()))
+}
+
+/// rclone con la nube al día (token renovado si hace falta) y lo que renueve
+/// rclone guardado después. `con` añade los argumentos.
+fn rclone(
+    n: &Nube,
+    trabajo: &Path,
+    con: &dyn Fn(&mut std::process::Command),
+    ritmos: &mut dyn FnMut(Option<u64>, Option<u64>),
+) -> Result<std::process::Output, String> {
     let n = &al_dia(n, &renovar_dropbox)?;
-    let conf = crate::agent::private_dir().join("rclone-vacio.conf");
-    let out = comando(n, &conf).and_then(|mut c| salida_midiendo(c.args(argumentos_copia(origen, carpeta, limite_kib)), ritmos));
+    std::fs::create_dir_all(trabajo).map_err(|e| format!("No se pudo crear {}: {e}", trabajo.display()))?;
+    let conf = archivo_de_trabajo(trabajo, "rclone-vacio");
+    let out = comando(n, &conf).and_then(|mut c| {
+        con(&mut c);
+        salida_midiendo(&mut c, ritmos)
+    });
     // Si rclone renovó el token, lo deja en ese archivo (carpeta privada): se
     // guarda protegido con los demás y el archivo se borra.
     if let Some(nuevo) = std::fs::read_to_string(&conf).ok().and_then(|t| token_de_conf(&t)).filter(|t| *t != n.token) {
@@ -355,14 +349,98 @@ pub fn copiar(n: &Nube, origen: &Path, carpeta: &str, limite_kib: Option<u32>, r
         }
     }
     let _ = std::fs::remove_file(&conf);
+    out
+}
+
+/// El error de rclone, en una frase (sin rutas locales ni tokens).
+fn error_de_rclone(out: &std::process::Output) -> String {
+    let err = String::from_utf8_lossy(&out.stderr);
+    let (_, error) = resumen_de_rclone(&err);
+    error.unwrap_or_else(|| "rclone terminó con error.".into())
+}
+
+/// Lo que hay en la nube bajo `<carpeta>/<sub>`: ruta relativa a `<carpeta>` → tamaño.
+/// Si esa carpeta aún no existe, nada.
+pub fn listar(n: &Nube, carpeta: &str, sub: &str, trabajo: &Path) -> Result<Vec<(String, u64)>, String> {
+    let destino = remoto(carpeta, sub);
+    let out = rclone(
+        n,
+        trabajo,
+        &|c| {
+            c.args(["lsjson", "-R", "--files-only", "--no-mimetype", "--no-modtime", "--use-json-log"]).arg(&destino);
+        },
+        &mut |_, _| {},
+    )?;
+    if !out.status.success() {
+        // 3: la carpeta no existe (aún no se ha subido nada a ella).
+        if out.status.code() == Some(3) || String::from_utf8_lossy(&out.stderr).contains("directory not found") {
+            return Ok(Vec::new());
+        }
+        return Err(format!("no se pudo listar la nube: {}", error_de_rclone(&out)));
+    }
+    let lista: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).map_err(|_| "rclone no dio una lista que se entienda.".to_string())?;
+    Ok(lista
+        .iter()
+        .filter_map(|e| {
+            let p = e["Path"].as_str()?;
+            let rel = if sub.is_empty() { p.to_string() } else { format!("{sub}/{p}") };
+            Some((rel, e["Size"].as_u64().unwrap_or(0)))
+        })
+        .collect())
+}
+
+/// Sube a la nube solo estos archivos (rutas relativas a `origen`), sin
+/// reescribir lo que ya esté (`--immutable`). Devuelve los subidos y sus bytes.
+pub fn copiar_lista(
+    n: &Nube,
+    origen: &Path,
+    carpeta: &str,
+    rels: &[&str],
+    limite_kib: Option<u32>,
+    trabajo: &Path,
+    ritmos: &mut dyn FnMut(Option<u64>, Option<u64>),
+) -> Result<(u64, u64), String> {
+    if rels.is_empty() {
+        return Ok((0, 0));
+    }
+    std::fs::create_dir_all(trabajo).map_err(|e| format!("No se pudo crear {}: {e}", trabajo.display()))?;
+    let lista = archivo_de_trabajo(trabajo, "subir");
+    std::fs::write(&lista, rels.join("\n")).map_err(|e| format!("No se pudo preparar la lista para la nube: {e}"))?;
+    let destino = remoto(carpeta, "");
+    let out = rclone(
+        n,
+        trabajo,
+        &|c| {
+            c.arg("copy").arg(origen).arg(&destino).arg("--files-from-raw").arg(&lista).args([
+                "--no-traverse",
+                // Un archivo que ya está en la nube nunca se reescribe (los de restic no cambian).
+                "--immutable",
+                "--use-json-log",
+                "--stats",
+                "24h",
+                "--stats-one-line",
+                "--stats-log-level",
+                "NOTICE",
+                "--retries",
+                "3",
+            ]);
+            if let Some(k) = limite_kib.filter(|k| *k > 0) {
+                c.arg("--bwlimit").arg(format!("{k}K"));
+            }
+        },
+        ritmos,
+    );
+    let _ = std::fs::remove_file(&lista);
     let out = out?;
     let err = String::from_utf8_lossy(&out.stderr);
-    let (texto, error) = resumen_de_rclone(&err);
-    if out.status.success() {
-        Ok(texto)
-    } else {
-        Err(format!("{} {texto}", error.unwrap_or_else(|| "rclone terminó con error.".into())))
+    let lineas: Vec<serde_json::Value> = err.lines().filter_map(|l| serde_json::from_str(l.trim()).ok()).collect();
+    let stats = lineas.iter().rev().find_map(|l| l.get("stats"));
+    let n = |k: &str| stats.and_then(|s| s[k].as_u64()).unwrap_or(0);
+    if !out.status.success() {
+        let (texto, error) = resumen_de_rclone(&err);
+        return Err(format!("{} {texto}", error.unwrap_or_else(|| "rclone terminó con error.".into())));
     }
+    Ok((n("transfers"), n("bytes")))
 }
 
 /// Como `Command::output`, pero mientras rclone trabaja dice cada 2 s lo que lee
@@ -832,10 +910,9 @@ mod tests {
         for mal in ["", "../x", "a//b", "c:\\x", "a/./b"] {
             assert!(!carpeta_remota_valida(mal), "{mal}");
         }
-        let a = argumentos_copia(Path::new("D:/almacen"), "/Resguardo/Sur/", Some(512));
-        assert_eq!(a[0], "copy", "nunca sync");
-        assert!(a.contains(&"rnube:Resguardo/Sur".to_string()) && a.contains(&"--immutable".to_string()) && a.contains(&"512K".to_string()));
-        assert!(!a.iter().any(|x| x == "sync" || x.contains("delete")));
+        assert_eq!(remoto("Resguardo/Sur/", ""), "rnube:Resguardo/Sur");
+        assert_eq!(remoto("Resguardo/Sur", "ana/conta"), "rnube:Resguardo/Sur/ana/conta");
+        assert_eq!(remoto("", "ana"), "rnube:ana");
         let conf = "[otro]\ntoken = no\n\n[rnube]\ntype = dropbox\ntoken = {\"access_token\":\"nuevo\"}\n";
         assert_eq!(token_de_conf(conf).as_deref(), Some("{\"access_token\":\"nuevo\"}"));
         assert_eq!(token_de_conf("[otro]\ntoken = x\n"), None);
@@ -856,50 +933,54 @@ mod tests {
     /// Con el rclone de verdad y un remoto «local» (sin cuenta de nube): copia, sin locks ni recientes, y nunca borra.
     #[test]
     fn espejo_con_rclone_y_remoto_local() {
+        use crate::espejo_motor::{vuelta, Alcance, Lado};
         if comprobar_binario().is_err() {
             eprintln!("Sin rclone en src-tauri/binaries: se salta la prueba.");
             return;
         }
         let base = std::env::temp_dir().join(format!("resguardo-rclone-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        let (o, d) = (base.join("origen"), base.join("nube"));
+        let (o, d, trabajo) = (base.join("origen"), base.join("nube"), base.join("privado"));
         std::fs::create_dir_all(o.join("ana/repo/data/ab")).unwrap();
         std::fs::create_dir_all(o.join("ana/repo/locks")).unwrap();
+        std::fs::create_dir_all(o.join("ana/otro")).unwrap();
         std::fs::create_dir_all(&d).unwrap();
         let viejo = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
-        for (f, contenido) in [("ana/repo/config", "c"), ("ana/repo/data/ab/abcdef", "datos"), ("ana/repo/locks/l1", "lock")] {
+        for (f, contenido) in [("ana/repo/config", "c"), ("ana/repo/data/ab/abcdef", "datos"), ("ana/repo/locks/l1", "lock"), ("ana/otro/config", "o")] {
             std::fs::write(o.join(f), contenido).unwrap();
             std::fs::File::options().write(true).open(o.join(f)).unwrap().set_modified(viejo).unwrap();
         }
         std::fs::write(o.join("ana/repo/data/ab/reciente"), "nuevo").unwrap();
         // Remoto «local» con la ruta del destino como «carpeta»: el mismo camino que Dropbox, sin cuenta.
         let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), app_key: None };
-        let conf = base.join("vacio.conf");
-        let destino = d.display().to_string().replace('\\', "/");
-        let args = argumentos_copia(&o, "x", None);
-        let mut args: Vec<String> = args.into_iter().map(|a| if a == "rnube:x" { format!("rnube:{destino}") } else { a }).collect();
-        args.push("--local-no-check-updated".into());
-        let out = comando(&n, &conf).unwrap().args(&args).output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        assert_eq!(resumen_de_rclone(&String::from_utf8_lossy(&out.stderr)).0, "2 archivos subidos (0 MB), 0 ya estaban.");
+        let carpeta = d.display().to_string().replace('\\', "/");
+        let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: Some(100_000) };
+        let solo = Alcance::Repos(vec!["ana/repo".into()]);
+        let r = vuelta(&o, &lado, &solo, &mut |_, _| {}).unwrap();
+        assert_eq!((r.copiados, r.bytes, r.recientes), (2, 6, 1));
         assert_eq!(std::fs::read_to_string(d.join("ana/repo/data/ab/abcdef")).unwrap(), "datos");
         assert!(d.join("ana/repo/config").is_file());
         assert!(!d.join("ana/repo/locks").exists(), "sin bloqueos");
         assert!(!d.join("ana/repo/data/ab/reciente").exists(), "lo reciente espera");
-        assert!(!conf.exists(), "rclone no escribe configuración");
+        assert!(!d.join("ana/otro").exists(), "solo lo elegido");
+        assert_eq!(std::fs::read_dir(&trabajo).unwrap().count(), 0, "ni listas ni configuración de rclone se quedan");
+        // Con todos: lo que faltaba. Otra vuelta: nada nuevo.
+        assert_eq!(vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap().copiados, 1);
+        let r = vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap();
+        assert_eq!((r.copiados, r.iguales), (0, 3));
         // Lo borrado en el origen sigue en la nube.
         std::fs::remove_file(o.join("ana/repo/config")).unwrap();
-        let out = comando(&n, &conf).unwrap().args(&args).output().unwrap();
-        assert!(out.status.success());
-        assert!(d.join("ana/repo/config").is_file(), "copy nunca borra");
-        // Un archivo que cambia en el origen no se reescribe en la nube (--immutable): error, y la copia sigue intacta.
+        vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap();
+        assert!(d.join("ana/repo/config").is_file(), "nunca borra");
+        // Un archivo que cambia en el origen (otro tamaño) no se reescribe en la nube.
         let f = o.join("ana/repo/data/ab/abcdef");
         std::fs::write(&f, "otra cosa").unwrap();
         std::fs::File::options().write(true).open(&f).unwrap().set_modified(viejo).unwrap();
-        let out = comando(&n, &conf).unwrap().args(&args).output().unwrap();
-        let (_, error) = resumen_de_rclone(&String::from_utf8_lossy(&out.stderr));
-        assert!(!out.status.success() && error.is_some());
+        let r = vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap();
+        assert_eq!(r.distintos, 1);
         assert_eq!(std::fs::read_to_string(d.join("ana/repo/data/ab/abcdef")).unwrap(), "datos");
+        // Una carpeta de la nube que aún no existe se lista vacía.
+        assert!(listar(&n, &carpeta, "no/existe", &trabajo).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -4,7 +4,7 @@
   // su estado en icono y palabra, y el horario en la flecha.
   import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, Cloud, CloudOff, FolderOpen, ShieldAlert, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import { lugarDe } from "$lib/dondeGuarda";
-  import { cuandoCortoEspejo } from "$lib/espejo";
+  import { cuandoCortoEspejo, espejoDelRepo, nombreEnAlmacen } from "$lib/espejo";
   import { ICONO_LUGAR } from "../SeGuardaEn.svelte";
   import type { CopiaResumen, DestinoResumen, Equipo, RepoInforme, RepositorioResumen } from "$lib/tipos";
   import { horarioEnFrase, numero, relativo } from "$lib/formato";
@@ -25,7 +25,8 @@
   const suyas = $derived(copias.filter((k) => k.repo === repo.id));
   const destino = $derived(destinoDe(destinos, repo));
   const almacen = $derived(destino?.equipo_almacen ? equipos.find((e) => e.id === destino.equipo_almacen) : undefined);
-  const espejo = $derived(almacen?.resumen?.guarda_copias?.espejo ?? null);
+  // Solo los destinos del espejo a los que va este repositorio (docs/espejo.md §3f).
+  const espejo = $derived(espejoDelRepo(almacen?.resumen?.guarda_copias?.espejo ?? null, nombreEnAlmacen(destino?.donde, repo)));
   const borrado = $derived(proteccion(inf)?.items.find((i) => i.id === "borrado") ?? null);
   const ej = $derived(ultimaEjecucion(inf));
   const ult = $derived(ultimaVersion(repo, inf) ?? suyas.map((k) => k.ultima?.cuando).filter(Boolean).sort().at(-1) ?? null);

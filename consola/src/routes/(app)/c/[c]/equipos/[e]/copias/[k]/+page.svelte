@@ -8,7 +8,7 @@
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
-  import { cuandoCortoEspejo } from "$lib/espejo";
+  import { cuandoCortoEspejo, espejoDelRepo, nombreEnAlmacen } from "$lib/espejo";
   import { onDestroy, untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
@@ -111,7 +111,7 @@
   const ganchosRes = $derived(fila?.ganchos ?? []);
   const rol = $derived(equipo?.modo === "trasladado" ? "lectura" : actual.cliente?.rol);
   const almacen = $derived(destino?.equipo_almacen ? actual.equipos.find((x) => x.id === destino.equipo_almacen) : null);
-  const espejo = $derived(almacen?.resumen?.guarda_copias?.espejo ?? null);
+  const espejo = $derived(espejoDelRepo(almacen?.resumen?.guarda_copias?.espejo ?? null, repo ? nombreEnAlmacen(destino?.donde, repo) : null));
   const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
   // La retención que se le aplica a su repositorio (simulada con todas sus versiones, como en su página).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
