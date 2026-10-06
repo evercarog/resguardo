@@ -471,6 +471,7 @@ Anónima, con límite por IP.
   - el sobre ocupa como mucho 64 KiB.
 
 - Responde: `Orden`.
+- v1.4x: una orden con `not_before` futuro también puede llevar `seq = seq_espera` del equipo (el número reservado para un agente que no guarda las órdenes con espera; ver «Cambios»). El 409 lleva `{ siguiente_seq, seq_espera }`.
 
 **Orden:**
 
@@ -480,6 +481,7 @@ Anónima, con límite por IP.
   "not_before", "caduca",
   "estado": "pendiente" | "entregada" | "en_marcha" | "hecha" | "fallida" | "rechazada" | "cancelada" | "caducada",
   // v1.49: «entregada» con `not_before` futuro = el equipo la tiene en espera (aún se puede cancelar).
+  "motivo": "sin_entregar" | "sin_respuesta" | null, // v1.4x: por qué caducó (solo en las «caducada»)
   "mensaje": "texto corto sin rutas" | null,
   "detalle": "<JSON en texto>" | null,
   "firma_agente": "<b64>" | null,
@@ -1367,3 +1369,10 @@ La política y los anillos se guardan en la tabla de valores del servidor (`act:
   - **Cliente:** `GET`/`PUT /api/clientes/{c}/actualizaciones`, `POST …/actualizaciones/ahora` y `PUT …/equipos/{e}/anillo` (política automática por anillos, solo cuando apruebe o en pausa; ventana; «Actualizar ahora»).
   - **Agentes:** `GET /api/agente/actualizacion` y `…/archivos/{versión}/{nombre}`; `{"t":"actualizacion"}` por el canal; `informe.actualizacion`; aviso `actualizacion_fallida` (y su entrada en el historial común); `admite: "actualizaciones"`. Un servidor anterior no tiene las rutas (404): el agente no cuenta su política y busca en GitHub si se le permite. Una consola anterior no enseña nada de esto.
   - Con un informe que dice `vuelta_atras`, el servidor retiene esa versión para el resto del cliente.
+- v1.4x (pendiente de numerar al unir; órdenes con espera que «desaparecían» con agentes anteriores). Compatible hacia atrás: campos opcionales y un tipo de aviso nuevo.
+  - **El problema.** A un agente sin `admite: "ordenes_en_espera"` (p. ej. 0.7.18), el servidor le da la orden con espera a su hora. Si mientras tanto se mandaba otra orden al mismo equipo (abrir una sesión para ver versiones, copiar ahora…), esa salía al momento con un `seq` mayor; al llegar la hora, el equipo rechazaba la que esperaba («Orden repetida o antigua (n.º N ≤ M)»): salía de «Órdenes esperando su turno» sin que nadie la cancelara y lo destructivo (p. ej. quitar la copia externa) no se aplicaba. Con el reloj del equipo atrasado más de 5 min pasaba lo mismo («Todavía no es la hora de esta orden»).
+  - **Número reservado.** El equipo (`GET …/equipos`, `GET …/equipos/{e}`) lleva `seq_espera`: el número para una orden con espera a un agente que no las guarda, `max(siguiente_seq − 1, mayor seq de sus órdenes) + 1000`. `POST …/ordenes` acepta `seq = siguiente_seq` (como siempre) o, si lleva `not_before` futuro, `seq = seq_espera` (no mueve `siguiente_seq`). El 409 `conflicto` lleva también `seq_espera`. La consola lo usa solo con agentes sin `ordenes_en_espera`; una consola anterior manda el siguiente, como siempre.
+  - **Entrega en orden.** A un agente sin `ordenes_en_espera`, las órdenes pendientes se entregan por `seq` **sin saltarse ninguna**: la primera que aún no toca (su `not_before`, o un reintento) retiene a las de número mayor. Al entregar una con `seq ≥ siguiente_seq`, este sube por encima (también `ultimo_seq` del informe o del canal salta los números de órdenes que ya existen). Si una reservada termina sin entregarse (cancelada, caducada), `siguiente_seq` salta por encima de su número (el agente admite huecos).
+  - **Reloj atrasado.** Si un agente sin `ordenes_en_espera` contesta `rechazada` «Todavía no es la hora de esta orden.» a una orden con `not_before`, el servidor no guarda ese resultado: la orden vuelve a `pendiente` y se le da otra vez a los 10 min, hasta 12 veces (auditoría `orden_reintentada`). Ese agente no anota el número de una orden que rechaza así.
+  - **Nunca en silencio.** `Orden.motivo` (solo en las `caducada`): `sin_entregar` (no llegó al equipo) o `sin_respuesta` (llegó y no contestó). Una orden con `not_before` que caduca, se rechaza o falla crea el aviso nuevo **`orden_no_aplicada`** (importante; lleva a «Órdenes»), salvo la cancelada en el equipo desde otra consola (`detalle.cancelada`). Una consola anterior lo enseña como aviso genérico.
+  - **Consola.** Margen de 72 h (antes 24 h) para entregar una orden con espera desde su `not_before`, sin pasar de 7 días desde `emitida`. «Órdenes» dice por qué no se aplicó cada una («Caducó sin aplicarse: …», «Rechazada: el equipo ya había aceptado una orden posterior…») y ofrece «Volver a mandar» (va sellada para el equipo: se vuelve a pedir desde su ficha).

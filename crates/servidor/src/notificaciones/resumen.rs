@@ -305,6 +305,7 @@ pub(crate) mod tests {
             ultimo_contacto: contacto,
             estado_servicio: None,
             siguiente_seq: 1,
+            seq_espera: 1000,
             atencion_hasta: None,
             resumen: None,
             espera_min_horas: None,

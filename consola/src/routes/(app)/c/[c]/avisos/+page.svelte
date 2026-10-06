@@ -79,6 +79,8 @@
     retencion_fallida: { texto: "Retención del almacén fallida", tono: "warn", icono: TriangleAlert, que: "No se quitaron versiones antiguas: el almacén sigue llenándose. Mira qué dijo y aplícala otra vez.", accion: (e) => (e ? { texto: "Ver el almacén", href: `/c/${c}/equipos/${e}` } : null) },
     cadena_parada: { texto: "Cadena parada", tono: "warn", icono: TriangleAlert, que: "La copia anterior de la cadena falló y esta no se hizo. Arregla la anterior: al salir bien, la cadena sigue sola.", accion: (e) => (e ? { texto: "Ver sus copias", href: `/c/${c}/equipos/${e}` } : null) },
     // v1.49: otra consola mandó una orden que el equipo tiene en espera (se puede cancelar desde aquí).
+    // v1.4x: una orden con espera que caducó, se rechazó o falló: en «Órdenes» se ve por qué y se puede volver a mandar.
+    orden_no_aplicada: { texto: "Orden sin aplicar", tono: "warn", icono: TriangleAlert, que: "Mira en Órdenes por qué no se aplicó y, si aún hace falta, vuelve a mandarla.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
     orden_en_espera: { texto: "Orden en espera desde otra consola", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes (desde cualquier consola) y cambia la clave de administración.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
     auditoria_rehecha: { texto: "Actividad rehecha", tono: "bad", icono: ShieldAlert, que: "Abre esa consola y, en Actividad, usa «Comprobar con un ancla» con un resumen por correo anterior.", accion: () => ({ texto: "Actividad de esta consola", href: `/c/${c}/auditoria` }) },
     // v1.4x: una versión nueva del agente no estuvo sana y el equipo volvió solo a la anterior.

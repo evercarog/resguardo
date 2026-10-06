@@ -38,6 +38,8 @@ export interface Secretos {
 
 export const necesitaAdmin = (tipo: string) => NIVEL[tipo] === "admin" || PIDE_TAMBIEN_ADMIN.has(tipo);
 export const necesitaRepo = (tipo: string) => NIVEL[tipo] === "repo";
+/** v1.49: ¿guarda el equipo las órdenes con espera (las recibe al momento)? */
+const admiteEspera = (e: T.Equipo) => !!e.resumen?.admite?.includes("ordenes_en_espera");
 
 export class ErrorEtiqueta extends Error {}
 export class ErrorFaltaAdmin extends Error {
@@ -183,6 +185,9 @@ export async function mandarOrden(opts: {
         contexto: { espejo: equipo.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length },
         // v1.49: quién la manda (lo ven las demás consolas en sus órdenes en espera y en el historial).
         por: app.cuenta?.nombre ?? null,
+        // v1.4x: a un agente que no guarda las órdenes con espera, con el número reservado: así
+        // las que se manden mientras espera no la dejan «antigua» al llegar su hora.
+        seqEspera: admiteEspera(equipo) ? null : (equipo.seq_espera ?? null),
       });
       opts.alPaso?.("Enviando…");
       try {
@@ -211,7 +216,10 @@ export async function mandarOrden(opts: {
         // Otra orden se adelantó: se vuelve a sellar con el número que diga el servidor.
         if (e instanceof ApiError && e.codigo === "conflicto" && intento < 3) {
           const siguiente = Number(e.cuerpo?.siguiente_seq);
-          equipo = { ...equipo, siguiente_seq: Number.isFinite(siguiente) ? siguiente : (await api.equipo(cliente.id, equipo.id)).siguiente_seq };
+          const reservado = Number(e.cuerpo?.seq_espera);
+          equipo = Number.isFinite(siguiente)
+            ? { ...equipo, siguiente_seq: siguiente, ...(Number.isFinite(reservado) ? { seq_espera: reservado } : {}) }
+            : await api.equipo(cliente.id, equipo.id);
           continue;
         }
         throw e;

@@ -110,3 +110,48 @@ export const RESULTADO_ORDEN: Record<string, { texto: string; tono: "ok" | "warn
   cancelada: { texto: "Cancelada", tono: "info" },
   caducada: { texto: "Caducada", tono: "neutral" },
 };
+
+/**
+ * v1.4x: por qué una orden no se aplicó, en palabras (para «Órdenes»), o `null` si se
+ * aplicó, sigue en camino o se canceló. Nunca desaparece sin decir nada: «Caducó sin
+ * aplicarse» o «Rechazada: …» con el motivo.
+ */
+export function porQueNoSeAplico(o: Pick<T.Orden, "estado" | "mensaje" | "detalle" | "motivo">): string | null {
+  const m = (o.mensaje ?? "").trim();
+  switch (o.estado) {
+    case "caducada":
+      return o.motivo === "sin_respuesta"
+        ? "Caducó sin aplicarse: el equipo la recibió, pero no contestó a tiempo."
+        : "Caducó sin aplicarse: no llegó al equipo a tiempo (estaba sin conexión, o esperando detrás de otra orden con espera).";
+    case "rechazada":
+      if (canceladaEnElEquipo(o)) return null;
+      if (m.startsWith("Orden repetida o antigua"))
+        return "Rechazada: el equipo ya había aceptado una orden posterior y descartó esta. Con agentes anteriores pasaba si se mandaba otra orden mientras esta esperaba su hora.";
+      if (m.startsWith("Todavía no es la hora")) return "Rechazada: el reloj del equipo va atrasado y para él aún no era la hora. Pon el equipo en hora y vuelve a mandarla.";
+      return m ? `Rechazada: ${m}` : "Rechazada por el equipo.";
+    case "fallida":
+      return m ? `No se pudo aplicar: ${m}` : "No se pudo aplicar.";
+    default:
+      return null;
+  }
+}
+
+/** La que otra consola canceló en el equipo (v1.49): llega `rechazada` con `detalle.cancelada`. */
+export function canceladaEnElEquipo(o: Pick<T.Orden, "estado" | "detalle">): boolean {
+  if (o.estado !== "rechazada" || !o.detalle) return false;
+  try {
+    return (JSON.parse(o.detalle) as { cancelada?: unknown }).cancelada === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ¿Ofrecer «Volver a mandar»? Las que no se aplicaron (caducada, rechazada, fallida), salvo
+ * las que abren una sesión (se vuelven a abrir solas al usarlas) y las canceladas en el
+ * equipo. Va sellada para el equipo, así que no se reenvía tal cual: se vuelve a pedir
+ * desde el equipo, con su clave si hace falta.
+ */
+export function sePuedeVolverAMandar(o: Pick<T.Orden, "estado" | "tipo" | "detalle">): boolean {
+  return ["caducada", "rechazada", "fallida"].includes(o.estado) && !["abrir_sesion", "explorar", "elegir_carpetas", "descargar", "cancelar_espera"].includes(o.tipo) && !canceladaEnElEquipo(o);
+}

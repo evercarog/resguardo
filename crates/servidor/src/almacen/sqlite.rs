@@ -227,6 +227,16 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     if !tiene("destinos", "atributos")? {
         db.execute_batch("ALTER TABLE destinos ADD COLUMN atributos TEXT").map_err(s)?;
     }
+    // v1.4x (órdenes con espera que no se aplicaban): por qué caducó (`sin_entregar` o
+    // `sin_respuesta`), si falta avisar de que no se aplicó, desde cuándo se puede volver a
+    // entregar (reloj del equipo atrasado) y cuántas veces se volvió a intentar.
+    for (col, def) in
+        [("motivo", "TEXT"), ("fin_avisado", "INTEGER NOT NULL DEFAULT 1"), ("entregar_desde", "INTEGER"), ("reintentos", "INTEGER NOT NULL DEFAULT 0")]
+    {
+        if !tiene("ordenes", col)? {
+            db.execute_batch(&format!("ALTER TABLE ordenes ADD COLUMN {col} {def}")).map_err(s)?;
+        }
+    }
     Ok(())
 }
 
@@ -369,9 +379,11 @@ fn fila_cliente(r: &rusqlite::Row) -> rusqlite::Result<Cliente> {
 }
 
 const COLS_EQUIPO: &str = "e.id, e.nombre, e.so, e.version_agente, e.box_pub, e.sign_pub, e.sal_equipo, e.etiqueta, e.rol, e.modo, e.confirmado, \
-                           e.ultimo_contacto, e.estado_servicio, e.siguiente_seq, e.atencion_hasta, c.resumen, e.espera_min_horas, e.etiquetas";
+                           e.ultimo_contacto, e.estado_servicio, e.siguiente_seq, e.atencion_hasta, c.resumen, e.espera_min_horas, e.etiquetas,                            (SELECT MAX(o.seq) FROM ordenes o WHERE o.equipo_id = e.id),                            EXISTS (SELECT 1 FROM ordenes o WHERE o.equipo_id = e.id AND o.seq >= e.siguiente_seq AND o.estado IN ('pendiente', 'entregada', 'en_marcha'))";
 fn fila_equipo(r: &rusqlite::Row) -> rusqlite::Result<Equipo> {
     let resumen: Option<String> = r.get(15)?;
+    let (siguiente_seq, seq_espera) =
+        super::numeros_orden(r.get::<_, i64>(13)? as u64, r.get::<_, Option<i64>>(18)?.map(|n| n as u64), r.get::<_, i64>(19)? != 0);
     Ok(Equipo {
         id: r.get(0)?,
         nombre: r.get(1)?,
@@ -386,12 +398,53 @@ fn fila_equipo(r: &rusqlite::Row) -> rusqlite::Result<Equipo> {
         confirmado: r.get::<_, i64>(10)? != 0,
         ultimo_contacto: r.get(11)?,
         estado_servicio: r.get(12)?,
-        siguiente_seq: r.get::<_, i64>(13)? as u64,
+        siguiente_seq,
         atencion_hasta: r.get(14)?,
         resumen: resumen.and_then(|t| serde_json::from_str(&t).ok()),
         espera_min_horas: r.get(16)?,
         etiquetas: r.get::<_, Option<String>>(17)?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default(),
+        seq_espera,
     })
+}
+
+/// Los números de orden de un equipo (ver `numeros_orden`), dentro de una transacción.
+fn numeros_equipo(db: &Connection, equipo: &str) -> R<Option<(u64, u64)>> {
+    let fila = db
+        .query_row(
+            "SELECT e.siguiente_seq, (SELECT MAX(o.seq) FROM ordenes o WHERE o.equipo_id = e.id),
+                    EXISTS (SELECT 1 FROM ordenes o WHERE o.equipo_id = e.id AND o.seq >= e.siguiente_seq AND o.estado IN ('pendiente', 'entregada', 'en_marcha'))
+             FROM equipos e WHERE e.id = ?1",
+            [equipo],
+            |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, Option<i64>>(1)?.map(|n| n as u64), r.get::<_, i64>(2)? != 0)),
+        )
+        .optional()
+        .map_err(s)?;
+    Ok(fila.map(|(sig, max, vivas)| super::numeros_orden(sig, max, vivas)))
+}
+
+/// Deja `siguiente_seq` en `desde` (si es mayor) y, si ese número ya lo tiene otra orden
+/// (una con espera para un agente anterior), en el primero libre por encima.
+fn poner_siguiente(db: &Connection, equipo: &str, desde: u64) -> R<()> {
+    let mut n = i64::try_from(desde).unwrap_or(i64::MAX);
+    while db.query_row("SELECT EXISTS (SELECT 1 FROM ordenes WHERE equipo_id = ?1 AND seq = ?2)", params![equipo, n], |r| r.get::<_, i64>(0)).map_err(s)? != 0 {
+        n += 1;
+    }
+    db.execute("UPDATE equipos SET siguiente_seq = ?2 WHERE id = ?1 AND siguiente_seq < ?2", params![equipo, n]).map_err(s)?;
+    Ok(())
+}
+
+/// Marca «caducada» lo que caducó sin aplicarse (de un equipo o de todos), con su motivo; las
+/// que tenían espera quedan por avisar («No se aplicó…»).
+fn caducar(db: &Connection, equipo: Option<&str>, ahora: Ts) -> R<()> {
+    db.execute(
+        "UPDATE ordenes SET estado = 'caducada', actualizada = ?2,
+           motivo = CASE estado WHEN 'pendiente' THEN 'sin_entregar' ELSE 'sin_respuesta' END,
+           fin_avisado = CASE WHEN not_before IS NULL THEN 1 ELSE 0 END
+         WHERE (?1 IS NULL OR equipo_id = ?1) AND estado IN ('pendiente', 'entregada') AND caduca <= ?2",
+        params![equipo, ahora],
+    )
+    .map_err(s)?;
+    Ok(())
 }
 
 /// v1.49: ¿se puede entregar antes de su hora a un agente que admite `ordenes_en_espera`?
@@ -400,7 +453,8 @@ fn adelantable(tipo: &str) -> bool {
     resguardo_protocolo::ordenes::tipo(tipo).is_some_and(|t| t.nivel != resguardo_protocolo::ordenes::Nivel::Inofensiva)
 }
 
-const COLS_ORDEN: &str = "id, equipo_id, tipo, seq, sellado, emitida, emitida_por, not_before, caduca, estado, mensaje, detalle, firma_agente, actualizada";
+const COLS_ORDEN: &str =
+    "id, equipo_id, tipo, seq, sellado, emitida, emitida_por, not_before, caduca, estado, mensaje, detalle, firma_agente, actualizada, motivo";
 fn fila_orden(r: &rusqlite::Row) -> rusqlite::Result<Orden> {
     Ok(Orden {
         id: r.get(0)?,
@@ -417,6 +471,7 @@ fn fila_orden(r: &rusqlite::Row) -> rusqlite::Result<Orden> {
         detalle: r.get(11)?,
         firma_agente: r.get(12)?,
         actualizada: r.get(13)?,
+        motivo: r.get(14)?,
     })
 }
 
@@ -854,11 +909,8 @@ impl Almacen for Sqlite {
         })
     }
     fn adelantar_seq(&self, c: &ClienteCtx, id: &str, minimo: u64) -> R<()> {
-        let minimo = i64::try_from(minimo).unwrap_or(i64::MAX);
-        self.con(c, |db| {
-            db.execute("UPDATE equipos SET siguiente_seq = ?2 WHERE id = ?1 AND siguiente_seq < ?2", params![id, minimo]).map_err(s)?;
-            Ok(())
-        })
+        // v1.4x: sin caer en el número de una orden con espera reservada.
+        self.con(c, |db| poner_siguiente(db, id, minimo))
     }
     fn poner_modo(&self, c: &ClienteCtx, id: &str, modo: &str) -> R<()> {
         self.con(c, |db| {
@@ -942,22 +994,23 @@ impl Almacen for Sqlite {
         let con = self.conexion(c)?;
         let mut db = con.lock().unwrap_or_else(|e| e.into_inner());
         let tx = db.transaction().map_err(s)?;
-        let siguiente: i64 = tx
-            .query_row("SELECT siguiente_seq FROM equipos WHERE id = ?1", [&o.equipo_id], |r| r.get(0))
-            .optional()
-            .map_err(s)?
-            .ok_or("Equipo no encontrado.")?;
-        if o.seq as i64 != siguiente {
-            return Err(format!("seq:{siguiente}"));
-        }
+        let (siguiente, espera) = numeros_equipo(&tx, &o.equipo_id)?.ok_or("Equipo no encontrado.")?;
         let ahora = ahora();
+        // v1.4x: una orden con espera puede llevar el número reservado (`seq_espera`), por
+        // encima de las que se manden mientras espera; las demás, el siguiente.
+        let reservada = o.seq == espera && o.not_before.is_some_and(|nb| nb > ahora);
+        if o.seq != siguiente && !reservada {
+            return Err(format!("seq:{siguiente}:{espera}"));
+        }
         tx.execute(
             "INSERT INTO ordenes (id, equipo_id, tipo, seq, sellado, emitida, emitida_por, not_before, caduca, estado, actualizada, sesion, relevo)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pendiente', ?6, ?10, ?11)",
             params![o.id, o.equipo_id, o.tipo, o.seq as i64, o.sellado, ahora, o.emitida_por, o.not_before, o.caduca, o.sesion, o.relevo],
         )
         .map_err(s)?;
-        tx.execute("UPDATE equipos SET siguiente_seq = ?2 WHERE id = ?1", params![o.equipo_id, siguiente + 1]).map_err(s)?;
+        // La reservada no mueve el siguiente (solo se deja al día si saltó por encima de
+        // órdenes con espera que ya terminaron).
+        poner_siguiente(&tx, &o.equipo_id, if reservada { siguiente } else { siguiente + 1 })?;
         let orden = tx.query_row(&format!("SELECT {COLS_ORDEN} FROM ordenes WHERE id = ?1"), [&o.id], fila_orden).map_err(s)?;
         tx.commit().map_err(s)?;
         Ok(orden)
@@ -1007,21 +1060,35 @@ impl Almacen for Sqlite {
         let tx = db.transaction().map_err(s)?;
         // Las caducadas sin entregar, se marcan; y las entregadas sin respuesta del equipo
         // pasada su caducidad (el equipo ya no las aceptaría: si no contestó, no va a hacerlo).
-        tx.execute(
-            "UPDATE ordenes SET estado = 'caducada', actualizada = ?2 WHERE equipo_id = ?1 AND estado IN ('pendiente', 'entregada') AND caduca <= ?2",
-            params![equipo, ahora],
-        )
-        .map_err(s)?;
+        caducar(&tx, Some(equipo), ahora)?;
         let ordenes = {
-            let mut st = tx.prepare(&format!("SELECT {COLS_ORDEN} FROM ordenes WHERE equipo_id = ?1 AND estado = 'pendiente' ORDER BY seq")).map_err(s)?;
-            let filas = st.query_map(params![equipo], fila_orden).map_err(s)?;
+            let mut st = tx
+                .prepare(&format!("SELECT {COLS_ORDEN}, entregar_desde FROM ordenes WHERE equipo_id = ?1 AND estado = 'pendiente' ORDER BY seq"))
+                .map_err(s)?;
+            let filas = st.query_map(params![equipo], |r| Ok((fila_orden(r)?, r.get::<_, Option<Ts>>(15)?))).map_err(s)?;
             let todas = filas.collect::<Result<Vec<_>, _>>().map_err(s)?;
             // Las que ya tocan; con `adelantar`, también las que esperan su hora y piden
             // autorización (las inofensivas con espera, como siempre, a su hora).
-            todas.into_iter().filter(|o| o.not_before.is_none_or(|nb| nb <= ahora) || (adelantar && adelantable(&o.tipo))).collect::<Vec<_>>()
+            let toca = |o: &Orden, desde: Option<Ts>| {
+                desde.is_none_or(|d| d <= ahora) && (o.not_before.is_none_or(|nb| nb <= ahora) || (adelantar && adelantable(&o.tipo)))
+            };
+            if adelantar {
+                todas.into_iter().filter(|(o, d)| toca(o, *d)).map(|(o, _)| o).collect::<Vec<_>>()
+            } else {
+                // v1.4x: a un agente que no guarda las órdenes con espera, en orden y sin saltarse
+                // ninguna: la primera que aún no toca retiene a las siguientes. Si no, recibiría
+                // antes una orden posterior y, al llegar la hora de la que esperaba, la rechazaría
+                // por «antigua» (número menor que el último que aceptó). Al que las guarda se le
+                // dan al momento, así que eso no le pasa (como en v1.49).
+                todas.into_iter().take_while(|(o, d)| toca(o, *d)).map(|(o, _)| o).collect::<Vec<_>>()
+            }
         };
         for o in &ordenes {
-            tx.execute("UPDATE ordenes SET estado = 'entregada', actualizada = ?2 WHERE id = ?1", params![o.id, ahora]).map_err(s)?;
+            tx.execute("UPDATE ordenes SET estado = 'entregada', actualizada = ?2, entregar_desde = NULL WHERE id = ?1", params![o.id, ahora]).map_err(s)?;
+        }
+        // Una con el número reservado ya está en el equipo: las siguientes, por encima de ella.
+        if let Some(max) = ordenes.iter().map(|o| o.seq).max() {
+            poner_siguiente(&tx, equipo, max + 1)?;
         }
         tx.commit().map_err(s)?;
         Ok(ordenes.into_iter().map(|o| Orden { estado: "entregada".into(), ..o }).collect())
@@ -1061,6 +1128,30 @@ impl Almacen for Sqlite {
                 )
                 .map_err(s)?;
             Ok(n == 1)
+        })
+    }
+
+    fn reintentar_orden(&self, c: &ClienteCtx, id: &str, desde: Ts, max: i64) -> R<bool> {
+        self.con(c, |db| {
+            let n = db
+                .execute(
+                    "UPDATE ordenes SET estado = 'pendiente', entregar_desde = ?2, reintentos = reintentos + 1, actualizada = ?3
+                     WHERE id = ?1 AND estado = 'entregada' AND not_before IS NOT NULL AND reintentos < ?4 AND caduca > ?2",
+                    params![id, desde, ahora(), max],
+                )
+                .map_err(s)?;
+            Ok(n == 1)
+        })
+    }
+    fn caducadas_por_avisar(&self, c: &ClienteCtx) -> R<Vec<Orden>> {
+        self.con(c, |db| {
+            let ordenes = {
+                let mut st = db.prepare(&format!("SELECT {COLS_ORDEN} FROM ordenes WHERE estado = 'caducada' AND fin_avisado = 0 ORDER BY seq")).map_err(s)?;
+                let filas = st.query_map([], fila_orden).map_err(s)?;
+                filas.collect::<Result<Vec<_>, _>>().map_err(s)?
+            };
+            db.execute("UPDATE ordenes SET fin_avisado = 1 WHERE estado = 'caducada' AND fin_avisado = 0", []).map_err(s)?;
+            Ok(ordenes)
         })
     }
 
@@ -1686,8 +1777,7 @@ impl Almacen for Sqlite {
             db.execute("DELETE FROM relevos WHERE caduca <= ?1", [ahora]).map_err(s)?;
             // Órdenes que caducaron sin que el equipo las recogiera o contestara (también con el
             // equipo apagado: así la consola no las enseña «pendientes» o «entregadas» para siempre).
-            db.execute("UPDATE ordenes SET estado = 'caducada', actualizada = ?1 WHERE estado IN ('pendiente', 'entregada') AND caduca <= ?1", [ahora])
-                .map_err(s)?;
+            caducar(db, None, ahora)?;
             // Informes: se guardan 90 días.
             db.execute("DELETE FROM informes WHERE recibido <= ?1", [ahora - 90 * 86_400]).map_err(s)?;
             Ok(caducados)
@@ -1977,7 +2067,7 @@ mod tests {
             relevo: None,
         };
         a.insertar_orden(&c, &nueva(1, None)).unwrap();
-        assert_eq!(a.insertar_orden(&c, &nueva(1, None)).unwrap_err(), "seq:2");
+        assert_eq!(a.insertar_orden(&c, &nueva(1, None)).unwrap_err(), "seq:2:1001");
         let espera = a.insertar_orden(&c, &nueva(2, Some(ahora() + 3600))).unwrap();
         // Se entrega la 1; la 2 espera a su hora.
         let entregadas = a.entregar_ordenes(&c, "e1", ahora(), false).unwrap();
@@ -2085,5 +2175,173 @@ mod tests {
         a.limpiar(&c, t + 7200).unwrap();
         let estados: Vec<String> = a.ordenes_equipo(&c, "e1", 10).unwrap().into_iter().map(|o| o.estado).collect();
         assert!(estados.iter().all(|e| e == "caducada"), "{estados:?}");
+        // Sin espera: no hay que avisar de nada (se ven en «Órdenes» con su motivo).
+        assert!(a.caducadas_por_avisar(&c).unwrap().is_empty());
+        let motivos: Vec<Option<String>> = a.ordenes_equipo(&c, "e1", 10).unwrap().into_iter().map(|o| o.motivo).collect();
+        assert_eq!(motivos, [Some("sin_entregar"), Some("sin_respuesta"), Some("sin_respuesta"), Some("sin_respuesta")].map(|m| m.map(String::from)));
+    }
+
+    /// Lo que hace un agente anterior a v1.49 (sin `ordenes_en_espera`) con lo que se le
+    /// entrega: acepta solo números mayores que el último que aceptó; si no, «Orden repetida o
+    /// antigua». Devuelve las que rechazó.
+    fn agente_anterior(ultimo: &mut u64, entregadas: &[Orden]) -> Vec<u64> {
+        let mut rechazadas = Vec::new();
+        for o in entregadas {
+            if o.seq > *ultimo {
+                *ultimo = o.seq;
+            } else {
+                rechazadas.push(o.seq);
+            }
+        }
+        rechazadas
+    }
+
+    fn equipo_de_prueba(a: &Sqlite) -> ClienteCtx {
+        let c = ClienteCtx::autorizado(&a.crear_cliente("Uno", "s", 24).unwrap().id);
+        let e = EquipoNuevo {
+            id: "e1".into(),
+            nombre: "PC".into(),
+            so: "w".into(),
+            version: "0.7.18".into(),
+            box_pub: "b".into(),
+            sign_pub: "s".into(),
+            sal_equipo: "sal".into(),
+            secreto_hash: "h".into(),
+        };
+        a.crear_equipo(&c, &e).unwrap();
+        c
+    }
+
+    fn orden_nueva(id: &str, tipo: &str, seq: u64, nb: Option<Ts>, caduca: Ts) -> OrdenNueva {
+        OrdenNueva {
+            id: id.into(),
+            equipo_id: "e1".into(),
+            tipo: tipo.into(),
+            seq,
+            sellado: "x".into(),
+            emitida_por: "ana".into(),
+            not_before: nb,
+            caduca,
+            sesion: None,
+            relevo: None,
+        }
+    }
+
+    /// El caso que se veía en la consola en línea: «Quitar la copia externa» (con 24 h de
+    /// espera) a un agente 0.7.18 y, mientras esperaba, otras órdenes al mismo equipo (abrir
+    /// una sesión, copiar ahora…). Antes, esas salían al momento y, a su hora, el equipo
+    /// rechazaba la que esperaba por «antigua»: desaparecía de «esperando su turno» y la copia
+    /// externa seguía ahí. Ahora la consola le pone el número reservado (`seq_espera`), por
+    /// encima de las que vengan, y todas se aplican en su orden.
+    #[test]
+    fn orden_con_espera_a_un_agente_anterior_no_se_queda_antigua() {
+        let (_d, a) = almacen();
+        let c = equipo_de_prueba(&a);
+        let t = ahora();
+        let nb = t + 24 * 3600;
+        a.insertar_orden(&c, &orden_nueva("o1", "copiar_ahora", 1, None, t + 3600)).unwrap();
+        let eq = a.equipo(&c, "e1").unwrap().unwrap();
+        assert_eq!((eq.siguiente_seq, eq.seq_espera), (2, 1001));
+        // La que espera, con el número reservado; no mueve el siguiente.
+        a.insertar_orden(&c, &orden_nueva("externa", "cambiar_copia_externa", 1001, Some(nb), nb + 72 * 3600)).unwrap();
+        let eq = a.equipo(&c, "e1").unwrap().unwrap();
+        assert_eq!((eq.siguiente_seq, eq.seq_espera), (2, 2001));
+        // El número reservado solo vale con espera.
+        assert_eq!(a.insertar_orden(&c, &orden_nueva("x", "copiar_ahora", 2001, None, t + 3600)).unwrap_err(), "seq:2:2001");
+        // Mientras espera, otras órdenes (normales) salen al momento.
+        for seq in 2..=4 {
+            a.insertar_orden(&c, &orden_nueva(&format!("o{seq}"), "abrir_sesion", seq, None, t + 3600)).unwrap();
+        }
+        let mut ultimo = 0;
+        let ya = a.entregar_ordenes(&c, "e1", t, false).unwrap();
+        assert_eq!(ya.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+        assert!(agente_anterior(&mut ultimo, &ya).is_empty());
+        // A su hora: llega con un número mayor que todo lo anterior y el equipo la acepta.
+        let ya = a.entregar_ordenes(&c, "e1", nb, false).unwrap();
+        assert_eq!(ya.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), vec!["externa"]);
+        assert!(agente_anterior(&mut ultimo, &ya).is_empty(), "no se rechaza por antigua");
+        // Y las siguientes, por encima de ella.
+        assert_eq!(a.equipo(&c, "e1").unwrap().unwrap().siguiente_seq, 1002);
+        a.insertar_orden(&c, &orden_nueva("o5", "copiar_ahora", 1002, None, nb + 3600)).unwrap();
+        let ya = a.entregar_ordenes(&c, "e1", nb, false).unwrap();
+        assert_eq!(ya.len(), 1);
+        assert!(agente_anterior(&mut ultimo, &ya).is_empty());
+    }
+
+    /// Una orden con espera mandada con el número de siempre (consola anterior, o las que ya
+    /// estaban al actualizar el servidor): las posteriores esperan detrás de ella en vez de
+    /// adelantarla. Antes: la 3 salía al momento y la 2 se rechazaba por antigua a su hora.
+    #[test]
+    fn las_posteriores_esperan_detras_de_la_que_espera() {
+        let (_d, a) = almacen();
+        let c = equipo_de_prueba(&a);
+        let t = ahora();
+        let nb = t + 24 * 3600;
+        a.insertar_orden(&c, &orden_nueva("o1", "copiar_ahora", 1, None, t + 3600)).unwrap();
+        a.insertar_orden(&c, &orden_nueva("o2", "cambiar_copia_externa", 2, Some(nb), nb + 24 * 3600)).unwrap();
+        a.insertar_orden(&c, &orden_nueva("o3", "copiar_ahora", 3, None, nb + 3600)).unwrap();
+        let mut ultimo = 0;
+        let ya = a.entregar_ordenes(&c, "e1", t, false).unwrap();
+        assert_eq!(ya.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1]);
+        agente_anterior(&mut ultimo, &ya);
+        let ya = a.entregar_ordenes(&c, "e1", nb, false).unwrap();
+        assert_eq!(ya.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2, 3]);
+        assert!(agente_anterior(&mut ultimo, &ya).is_empty());
+        // Cancelar la que espera libera a las de detrás.
+        a.insertar_orden(&c, &orden_nueva("o4", "pausar", 4, Some(nb + 86_400), nb + 2 * 86_400)).unwrap();
+        a.insertar_orden(&c, &orden_nueva("o5", "copiar_ahora", 5, None, nb + 3600)).unwrap();
+        assert!(a.entregar_ordenes(&c, "e1", nb, false).unwrap().is_empty());
+        assert!(a.cancelar_orden(&c, "o4", "ana", nb).unwrap());
+        assert_eq!(a.entregar_ordenes(&c, "e1", nb, false).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![5]);
+    }
+
+    /// Una reservada que se cancela (o caduca) no deja su número en medio: el siguiente salta
+    /// por encima (el equipo admite huecos) y la próxima reservada va por encima de todo. Y si
+    /// las normales llegan a una reservada viva, la saltan y esperan detrás de ella.
+    #[test]
+    fn numeros_tras_una_reservada() {
+        let (_d, a) = almacen();
+        let c = equipo_de_prueba(&a);
+        let t = ahora();
+        a.insertar_orden(&c, &orden_nueva("w", "pausar", 1000, Some(t + 86_400), t + 2 * 86_400)).unwrap();
+        assert_eq!(a.equipo(&c, "e1").unwrap().unwrap().siguiente_seq, 1);
+        assert!(a.cancelar_orden(&c, "w", "ana", t).unwrap());
+        let eq = a.equipo(&c, "e1").unwrap().unwrap();
+        assert_eq!((eq.siguiente_seq, eq.seq_espera), (1001, 2000));
+        // El número que tenía la consola ya no vale (409 con los nuevos) y el nuevo, sí.
+        assert_eq!(a.insertar_orden(&c, &orden_nueva("x", "copiar_ahora", 1, None, t + 3600)).unwrap_err(), "seq:1001:2000");
+        a.insertar_orden(&c, &orden_nueva("x", "copiar_ahora", 1001, None, t + 3600)).unwrap();
+        a.insertar_orden(&c, &orden_nueva("w2", "pausar", 2001, Some(t + 86_400), t + 2 * 86_400)).unwrap();
+        // El equipo dice que ya aceptó hasta la 2000 (p. ej. tras restaurar la consola): el
+        // siguiente no cae en el número de la reservada.
+        a.adelantar_seq(&c, "e1", 2001).unwrap();
+        assert_eq!(a.equipo(&c, "e1").unwrap().unwrap().siguiente_seq, 2002);
+        a.insertar_orden(&c, &orden_nueva("y", "copiar_ahora", 2002, None, t + 2 * 86_400)).unwrap();
+        assert_eq!(a.entregar_ordenes(&c, "e1", t, false).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1001]);
+        assert_eq!(a.entregar_ordenes(&c, "e1", t + 86_400, false).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2001, 2002]);
+    }
+
+    /// Un agente anterior con el reloj atrasado rechaza la orden a su hora («Todavía no es la
+    /// hora»): vuelve a pendientes y se le da otra vez pasados unos minutos. Y lo que tenía
+    /// espera y caducó sin aplicarse queda por avisar, una vez.
+    #[test]
+    fn reloj_atrasado_y_caducadas_con_espera() {
+        let (_d, a) = almacen();
+        let c = equipo_de_prueba(&a);
+        let t = ahora();
+        let nb = t + 3600;
+        a.insertar_orden(&c, &orden_nueva("w", "cambiar_copia_externa", 1, Some(nb), nb + 86_400)).unwrap();
+        assert_eq!(a.entregar_ordenes(&c, "e1", nb, false).unwrap().len(), 1);
+        assert!(a.reintentar_orden(&c, "w", nb + 600, 2).unwrap());
+        assert!(a.entregar_ordenes(&c, "e1", nb + 60, false).unwrap().is_empty(), "aún no");
+        assert_eq!(a.entregar_ordenes(&c, "e1", nb + 600, false).unwrap().len(), 1);
+        assert!(a.reintentar_orden(&c, "w", nb + 1200, 2).unwrap());
+        assert_eq!(a.entregar_ordenes(&c, "e1", nb + 1200, false).unwrap().len(), 1);
+        assert!(!a.reintentar_orden(&c, "w", nb + 1800, 2).unwrap(), "como mucho 2 veces");
+        // Caducó sin respuesta: por avisar, una sola vez y con su motivo.
+        a.limpiar(&c, nb + 86_400).unwrap();
+        let por_avisar = a.caducadas_por_avisar(&c).unwrap();
+        assert_eq!(por_avisar.iter().map(|o| (o.id.as_str(), o.motivo.as_deref())).collect::<Vec<_>>(), vec![("w", Some("sin_respuesta"))]);
+        assert!(a.caducadas_por_avisar(&c).unwrap().is_empty());
     }
 }
