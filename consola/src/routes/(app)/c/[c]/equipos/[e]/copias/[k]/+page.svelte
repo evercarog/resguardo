@@ -8,6 +8,8 @@
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
+  import { lineaCadena } from "$lib/cadenas";
+  import { hrefDestino } from "$lib/fichaDestino";
   import { cuandoCortoEspejo, espejoDelRepo, nombreEnAlmacen } from "$lib/espejo";
   import { onDestroy, untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
@@ -97,6 +99,8 @@
 
   const copias = $derived(equipo?.resumen?.copias ?? []);
   const k = $derived(copias.find((x) => x.id === kid));
+  // La cadena de la copia (copias-en-cadena.md): sus destinos en orden, cada uno con su página.
+  const camino = $derived(equipo && k ? lineaCadena(equipo, k.id, actual.equipos) : []);
   const informe = $derived(equipo?.ultimo_informe ?? null);
   const repo = $derived(equipo?.resumen?.repositorios?.find((r) => r.id === k?.repo));
   const destino = $derived(destinoDe(equipo?.resumen?.destinos, repo));
@@ -240,7 +244,7 @@
         </div>
       {/if}
     </header>
-    {#if lugar}<p class="donde"><SeGuardaEn {lugar} riesgo={!!riesgo} /></p>{/if}
+    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
     {#if riesgo && repo}
       <AvisoMismoEquipo
         {riesgo}
@@ -410,9 +414,20 @@
             <dt>Repositorio</dt>
             <dd>
               {#if repo}<a class="link" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(repo.id)}">{repo.nombre}</a>{:else}{k.repo}{/if}
-              {#if lugar}<SeGuardaEn pequeno etiqueta="en" {lugar} riesgo={!!riesgo} />{#if destino?.inmutable}<span class="faint">(solo añadir)</span>{/if}{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
+              {#if lugar}<SeGuardaEn enlace pequeno etiqueta="en" {lugar} riesgo={!!riesgo} />{#if destino?.inmutable}<span class="faint">(solo añadir)</span>{/if}{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
             </dd>
           </div>
+          {#if camino.length > 2}
+            <!-- La cadena de la copia, con cada destino enlazado a su página. -->
+            <div>
+              <dt>Camino</dt>
+              <dd class="camino">
+                {#each camino.slice(1) as p, i (i)}
+                  {#if i}<span class="faint" aria-hidden="true">{p.despues ? " → después → " : " → "}</span>{/if}{#if p.destinoId}<a class="link-suave" href={hrefDestino(c, p.destinoId)}>{p.texto}</a>{:else}{p.texto}{/if}{#if p.clase === "espejo"}<span class="faint"> (espejo)</span>{:else if p.clase === "derivada"}<span class="faint"> (copia derivada)</span>{/if}
+                {/each}
+              </dd>
+            </div>
+          {/if}
           <div>
             <dt>Copia externa <Ayuda id="copia-externa" /></dt>
             <dd>
@@ -436,7 +451,7 @@
 
     {#if regla}
       <div id="sec-regla">
-        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
+        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} enlaceDestino={(p) => (p.clave && !p.clave.startsWith("espejo:") ? hrefDestino(c, p.clave) : null)} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
       </div>
       {#if marcar}<AtributosDestino cliente={c} destino={marcar} onclose={() => (marcar = null)} />{/if}
     {/if}

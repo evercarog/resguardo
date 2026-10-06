@@ -204,7 +204,7 @@
         </div>
       {/if}
     </header>
-    {#if lugar}<p class="donde"><SeGuardaEn {lugar} riesgo={!!riesgo} /></p>{/if}
+    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
     <MoviendoseAviso equipo={e} repo={rid} onseguir={planAqui && moviendo?.origen === rid ? () => (mover = true) : undefined} />
     <EnMarcha equipo={e} repo={rid} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover marco />
     {#if riesgo}
