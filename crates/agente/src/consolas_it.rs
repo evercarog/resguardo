@@ -273,6 +273,25 @@ fn dos_consolas_a_la_vez() {
     // 10. Y al revés: B otra vez, y desde B se quita A (la principal). B pasa a ser la principal.
     enviar(&ca, &ea, &orden(&ea, 15, "anadir_consola", anadir(&b, &ficha_b, &sal_b, &sal_a)));
     llega(&ca, &ea, 15, "hecha");
+    // Repetirla con B ya conectada (lo que hace «Conectar también…» con un resumen atrasado)
+    // es inofensivo: «ya gestiona este equipo» y nada cambia (ni el vínculo con B ni el equipo allí).
+    let antes = cargar().unwrap();
+    let equipos_b = cb.pedir("GET", &format!("/api/clientes/{c_b}/equipos"), None).1.to_string();
+    enviar(&ca, &ea, &orden(&ea, 16, "anadir_consola", anadir(&b, &ficha_b, &sal_b, &sal_a)));
+    llega(&ca, &ea, 16, "fallida");
+    let o16 = estado(&ca, &ea, 16);
+    assert!(o16["mensaje"].as_str().unwrap().contains("ya gestiona este equipo"), "{o16}");
+    let v = cargar().unwrap();
+    assert_eq!(v.otras.len(), 1);
+    assert_eq!(
+        (v.otras[0].id.as_str(), v.otras[0].secreto.as_str(), v.otras[0].equipo_id.as_str()),
+        (antes.otras[0].id.as_str(), antes.otras[0].secreto.as_str(), antes.otras[0].equipo_id.as_str())
+    );
+    assert_eq!((v.url.as_str(), v.secreto.as_str()), (antes.url.as_str(), antes.secreto.as_str()));
+    assert_eq!(
+        cb.pedir("GET", &format!("/api/clientes/{c_b}/equipos"), None).1.to_string().matches(id.as_str()).count(),
+        equipos_b.matches(id.as_str()).count()
+    );
     ronda().unwrap();
     let siguiente_b = cb.pedir("GET", &format!("/api/clientes/{c_b}/equipos/{id}"), None).1["siguiente_seq"].as_u64().unwrap();
     let ident_a = a.identidad.clone();
@@ -286,9 +305,9 @@ fn dos_consolas_a_la_vez() {
     esperar_estado(&cb, &eb, siguiente_b + 1, "hecha");
     assert_eq!(cargar().unwrap().espera_min_horas, 36);
     // A ya no recibe nada de él: sus órdenes se quedan sin entregar.
-    enviar(&ca, &ea, &orden(&ea, 16, "cambiar_espera", json!({ "horas": 40 })));
+    enviar(&ca, &ea, &orden(&ea, 17, "cambiar_espera", json!({ "horas": 40 })));
     ronda().unwrap();
-    assert_eq!(estado(&ca, &ea, 16)["estado"], "pendiente");
+    assert_eq!(estado(&ca, &ea, 17)["estado"], "pendiente");
 
     // 11. En el equipo: `consolas quitar` de una que ya no existe (vuelve A y se quita a mano).
     let (_, fa) = ca.pedir("POST", &format!("/api/clientes/{c_a}/fichas"), Some(json!({ "usos": 1, "dias": 1 })));
