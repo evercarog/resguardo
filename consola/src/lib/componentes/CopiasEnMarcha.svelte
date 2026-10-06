@@ -22,10 +22,13 @@
   const una = $derived(lista.length === 1 ? lista[0] : null);
   const pct = $derived(pctConjunto(lista, pulso.ahora));
   const nombreEquipo = (id: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
-  const queEs = (t: TareaEnMarcha) => (t.nombre ? t.nombre : textoFase(t));
+  // v1.4x: un «Mover a otro sitio…» (de esta consola o de otra), por el repositorio que se mueve.
+  const queEs = (t: TareaEnMarcha) => (t.mover ? `Mover «${t.nombre_origen ?? t.nombre ?? t.repo}»` : t.nombre ? t.nombre : textoFase(t));
   function hrefDe(x: { equipo: string; tarea: TareaEnMarcha }) {
     const base = `/c/${actual.id}/equipos/${encodeURIComponent(x.equipo)}`;
-    return x.tarea.tipo === "copia" && x.tarea.copia ? `${base}/copias/${encodeURIComponent(x.tarea.copia)}` : base;
+    if (x.tarea.tipo === "copia" && x.tarea.copia) return `${base}/copias/${encodeURIComponent(x.tarea.copia)}`;
+    if (x.tarea.tipo === "historial" || x.tarea.tipo === "retencion") return `${base}/repositorios/${encodeURIComponent(x.tarea.origen ?? x.tarea.repo)}`;
+    return base;
   }
   /** Con una, a ella; con varias del mismo equipo, a ese equipo; si no, a la lista de equipos (cada uno con su chip). */
   const href = $derived.by(() => {

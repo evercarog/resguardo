@@ -13,7 +13,23 @@ export const NOMBRE_TAREA: Record<TipoTarea, string> = {
   verificar_externa: "Verificando la copia externa",
   copia_externa: "Subiendo la copia externa",
   prueba_restauracion: "Probando a restaurar",
+  historial: "Trayendo el historial",
+  retencion: "Aplicando la retención",
+  restauracion: "Restaurando",
 };
+
+/**
+ * v1.4x: «Mover a otro sitio…» en marcha, como se dice en cualquier consola del
+ * equipo: «Moviéndose a otro sitio (iniciado desde «Oficina»): trayendo el
+ * historial, 56 de 255 versiones». `null` si la tarea no es un paso de un movimiento.
+ */
+export function textoMover(t: TareaEnMarcha): string | null {
+  if (t.tipo !== "historial" || !t.mover) return null;
+  const quien = t.otra_consola ? (t.consola ? ` (iniciado desde «${t.consola}»)` : " (iniciado desde otra consola)") : "";
+  const que = t.paso === "ultimo" ? "trayendo lo copiado mientras tanto" : "trayendo el historial";
+  const cuantas = t.versiones != null && t.versiones_total ? `, ${numero(t.versiones)} de ${numero(t.versiones_total)} ${t.versiones_total === 1 ? "versión" : "versiones"}` : t.fase === "preparando" ? ", preparando…" : "";
+  return `Moviéndose a otro sitio${quien}: ${que}${cuantas}`;
+}
 
 /** Qué está haciendo ahora (encabezado de la barra). */
 export function textoFase(t: TareaEnMarcha): string {
@@ -73,6 +89,13 @@ export function cifrasTarea(t: TareaEnMarcha): string[] {
 /** Texto corto: «Copiando… 42 %», «Preparando…», «Verificando… 10 %». */
 export function textoCorto(t: TareaEnMarcha, pct?: number | null): string {
   const p = pct === undefined ? porcentaje(t) : pct;
-  const que = t.tipo === "copia" && (t.fase === "preparando" || t.fase === "antes_de_copiar") ? "Preparando" : t.tipo === "copia" ? "Copiando" : NOMBRE_TAREA[t.tipo].split(" ")[0];
+  const que =
+    t.tipo === "copia" && (t.fase === "preparando" || t.fase === "antes_de_copiar")
+      ? "Preparando"
+      : t.tipo === "copia"
+        ? "Copiando"
+        : t.mover
+          ? "Moviendo"
+          : (NOMBRE_TAREA[t.tipo] ?? "En marcha").split(" ")[0];
   return p == null ? `${que}…` : `${que}… ${p}${NBSP}%`;
 }

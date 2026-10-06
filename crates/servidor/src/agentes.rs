@@ -601,7 +601,8 @@ pub const MAX_ENTRADAS_HISTORIAL: usize = 500;
 const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
 /// v1.4x: una vuelta de la retención lleva las versiones que quitó (como mucho 2000; el agente la recorta a 96 KiB).
 pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
-pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion"];
+/// v1.4x: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
+pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial"];
 /// Los que solo se dan si se piden con `tipo` (v1.4x): una consola anterior no los conoce
 /// y son grandes. Sin `tipo`, el historial es el de siempre.
 pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion"];

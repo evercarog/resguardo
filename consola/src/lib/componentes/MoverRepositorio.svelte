@@ -27,7 +27,7 @@
   import { ErrorEtiqueta, ErrorLlavesCambiadas, kcfgComprobada, mandarOrden } from "$lib/ordenar";
   import { actual, cargarCliente } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
-  import { fechaLarga, lista } from "$lib/formato";
+  import { fechaLarga } from "$lib/formato";
   import { destinoDe } from "$lib/repo";
   import { esDeAlmacen, reglaParaOrden } from "$lib/retencion";
   import { lineaLugar, lugarDe, type Lugar } from "$lib/dondeGuarda";
@@ -38,6 +38,7 @@
   import OrdenDialog from "./OrdenDialog.svelte";
   import SeGuardaEn from "./SeGuardaEn.svelte";
   import { tip } from "$lib/tooltip";
+  import { claveMover, textoPasoCopias, textoSinCopias } from "$lib/mover";
 
   let { cliente, equipo: equipo0, repo, equipos, onclose }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; equipos: Equipo[]; onclose: () => void } = $props();
   // El equipo como lo tiene ahora la lista del cliente (se recarga al terminar cada orden): sus destinos y repositorios al día.
@@ -93,7 +94,7 @@
     fase: Fase;
     ordenes: Partial<Record<"crear" | "historial" | "copias" | "ultimo", string>>;
   }
-  const CLAVE = $derived(`resguardo.mover.${cliente.id}.${equipo.id}.${repo.id}`);
+  const CLAVE = $derived(claveMover(cliente.id, equipo.id, repo.id));
   function leerPlan(): Plan | null {
     try {
       return JSON.parse(localStorage.getItem(CLAVE) ?? "null") as Plan | null;
@@ -124,14 +125,15 @@
     estado: EstadoPaso;
     detalle?: string;
   }
-  const textoCopias = $derived(copiasSuyas.length ? lista(copiasSuyas.map((k) => `«${k.nombre}»`)) : "ninguna copia");
+  // 0, 1 o varias copias: «No hay copias que cambiar» (no hace falta), «Cambiar la copia «X»…», «Cambiar las N copias…».
+  const pasoCopias = $derived(textoPasoCopias(copiasSuyas.map((k) => k.nombre)));
   function pasosIniciales(conAcceso: boolean, alm?: string): Paso[] {
     return [
       ...(conAcceso ? [{ id: "acceso" as const, texto: `${alm ?? "El almacén"} da acceso a ${equipo.nombre}`, estado: "espera" as const }] : []),
       { id: "kit", texto: "Guardar el kit de recuperación del repositorio nuevo", estado: "espera" },
       { id: "crear", texto: `${equipo.nombre} crea el repositorio nuevo (con el mismo troceado)`, estado: "espera" },
       { id: "historial", texto: `Traer todo el historial de «${repo.nombre}»`, estado: "espera" },
-      { id: "copias", texto: `Cambiar ${textoCopias} para que guarden en el nuevo`, estado: "espera" },
+      { id: "copias", texto: pasoCopias.texto, estado: pasoCopias.sinCopias ? "omitido" : "espera" },
       { id: "ultimo", texto: "Traer lo copiado mientras tanto", estado: "espera" },
     ];
   }
@@ -145,7 +147,7 @@
     const orden: Fase[] = ["creando", "creado", "historial", "copias", "ultimo", "listo"];
     const hecho = (f: Fase) => orden.indexOf(p.fase) >= orden.indexOf(f);
     const de: Partial<Record<IdPaso, Fase>> = { crear: "creado", historial: "historial", copias: "copias", ultimo: "ultimo" };
-    pasos = untrack(() => pasosIniciales(false)).map((x) => ({ ...x, estado: x.id === "kit" || hecho(de[x.id] ?? "listo") ? "hecho" : "espera" }));
+    pasos = untrack(() => pasosIniciales(false)).map((x) => ({ ...x, estado: x.id === "kit" || hecho(de[x.id] ?? "listo") ? "hecho" : x.estado }));
   }
 
   // ---------------------------------------------------------------------------
@@ -364,7 +366,8 @@
         cliente,
         equipo,
         tipo: "copiar_historial",
-        cuerpo: { repo: p.nuevo, origen: { repo: repo.id } },
+        // v1.4x: `mover`, para que el equipo lo cuente así a todas sus consolas (las demás solo lo ven).
+        cuerpo: { repo: p.nuevo, origen: { repo: repo.id }, mover: { paso } },
         secretos: { prueba: prueba! },
         alPaso: (t) => ponerPaso(paso, "en_marcha", t),
       });
@@ -396,7 +399,7 @@
       }
       const cambia = cfg.copias.filter((k) => k.repo === repo.id);
       if (!cambia.length) {
-        ponerPaso("copias", "omitido", `Ninguna copia de ${equipo.nombre} guardaba en «${repo.nombre}».`);
+        ponerPaso("copias", "omitido", textoSinCopias(equipo.nombre, repo.nombre));
         return;
       }
       for (const k of cambia) k.repo = p.nuevo;
@@ -565,7 +568,11 @@
         <div class="notice notice-success" role="status">
           <CircleCheck size={16} />
           <div>
-            <p><strong>Hecho.</strong> Las copias de {equipo.nombre} ya guardan en «{plan?.nombre ?? nombre}» ({plan?.donde}), con todo el historial de antes.</p>
+            {#if pasos.find((p) => p.id === "copias")?.estado === "omitido"}
+              <p><strong>Hecho.</strong> «{plan?.nombre ?? nombre}» ({plan?.donde}) ya tiene todo el historial de «{repo.nombre}». Ninguna copia de {equipo.nombre} guardaba en el anterior: elige este en las copias que quieras que guarden ahí.</p>
+            {:else}
+              <p><strong>Hecho.</strong> Las copias de {equipo.nombre} ya guardan en «{plan?.nombre ?? nombre}» ({plan?.donde}), con todo el historial de antes.</p>
+            {/if}
             <p class="pequeno">Cuando compruebes que el nuevo tiene todas las versiones (en su página), deja de usar el anterior. Su carpeta ({minus(lugarActual.texto)}{lugarActual.detalle ? `, «${lugarActual.detalle}»` : ""}) no se borra sola: bórrala a mano después, si quieres recuperar el espacio.</p>
           </div>
         </div>

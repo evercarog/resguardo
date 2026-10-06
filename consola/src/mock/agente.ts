@@ -17,7 +17,7 @@ import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/reten
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
-import { empezarCopia, empezarTarea } from "./progreso";
+import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 
@@ -607,6 +607,9 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const faltan = total - ya;
       let hechas = 0;
       resultado(e, o, "en_marcha", `Trayendo el historial: 0 de ${faltan} versiones…`);
+      // v1.4x: a la vista de todas las consolas (progreso `historial`; con `mover`, un paso de «Mover a otro sitio…»).
+      const paso = (c.mover as { paso?: string } | undefined)?.paso;
+      empezarHistorial(e.cliente, e.id, repo.id, repo.nombre, faltan, Math.max(1, Math.ceil(faltan / Math.max(8, Math.ceil(faltan / 6)))) * 2000, { origen: deAqui?.id ?? null, nombre_origen: deAqui?.nombre ?? null, mover: !!paso, paso: paso === "ultimo" ? "ultimo" : paso ? "historial" : null, otra_consola: false });
       const t = setInterval(() => {
         hechas = Math.min(faltan, hechas + Math.max(8, Math.ceil(faltan / 6)));
         if (hechas < faltan) return resultado(e, o, "en_marcha", `Trayendo el historial: ${hechas} de ${faltan} versiones…`);

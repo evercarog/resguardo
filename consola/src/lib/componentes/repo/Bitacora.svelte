@@ -13,7 +13,7 @@
   // (Tab) y las flechas ↑↓ van de una a otra.
   import type { Snippet } from "svelte";
   import { fade } from "svelte/transition";
-  import { ArchiveRestore, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CloudUpload, Copy, HardDrive, Info, RefreshCw, ShieldCheck, TriangleAlert, Wrench } from "@lucide/svelte";
+  import { ArchiveRestore, ArrowRightLeft, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CloudUpload, Copy, HardDrive, Info, RefreshCw, ShieldCheck, TriangleAlert, Wrench } from "@lucide/svelte";
   import { dur } from "$ui/movimiento";
   import { bytes, plural } from "$lib/formato";
   import { NOMBRE_MOTIVO, nombreDia, type VersionLinea } from "$lib/lineaTiempo";
@@ -91,6 +91,7 @@
     externa: CloudUpload,
     espejo: HardDrive,
     aviso: Info,
+    historial: ArrowRightLeft,
   };
   const ICONO_TONO: Record<Tono, typeof RefreshCw> = { ok: CircleCheck, warn: TriangleAlert, bad: CircleAlert, info: Info, paused: CircleDashed, neutral: CircleDashed };
   /** Lo que fue bien va en tinta tranquila (icono del estado y palabra); lo que no, en chip. */

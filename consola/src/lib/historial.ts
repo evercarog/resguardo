@@ -14,7 +14,7 @@ import { bytes, numero } from "./formato";
 import type { Tono } from "./salud";
 
 /** Qué clase de suceso es (cada una con su icono en la pantalla). */
-export type TipoSuceso = "copia" | "sin_cambios" | "fallo" | "gancho" | "resumen" | "verificacion" | "prueba" | "externa" | "espejo" | "aviso";
+export type TipoSuceso = "copia" | "sin_cambios" | "fallo" | "gancho" | "resumen" | "verificacion" | "prueba" | "externa" | "espejo" | "aviso" | "historial";
 
 /**
  * Qué fue, para los filtros y la marca del calendario: un fallo de verdad (una
@@ -105,6 +105,8 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
   const deCopia = (id: string | null | undefined) => e.copias.find((k) => k.id === id)?.nombre;
   const pasa = (copia: string | null | undefined) => !e.soloCopia || copia === e.soloCopia;
   const historial = e.historial ?? [];
+  /** Las entradas `historial` ya contadas (salen en el repositorio de origen y en el nuevo). */
+  const yaHistorial = new Set<string>();
 
   for (const { repo, inf } of e.fuentes) {
     const deRepo = e.conRepo ? ` · «${repo.nombre}»` : "";
@@ -181,6 +183,14 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
       espejo: ["espejo", "Espejo"],
     };
     for (const h of historial) {
+      // v1.4x: se trajo el historial (o un paso de «Mover a otro sitio…»): en los dos repositorios, una vez.
+      if (h.tipo === "historial" && h.resultado && (h.repo === repo.id || h.origen === repo.id)) {
+        if (!yaHistorial.has(h.id)) {
+          yaHistorial.add(h.id);
+          out.push(sucesoHistorial(h, repo.id, deRepo));
+        }
+        continue;
+      }
       if (h.repo !== repo.id) continue;
       if (h.tipo === "copia" && h.resultado) {
         if (!pasa(h.copia) || vistas.has(`c|${h.copia ?? ""}|${Math.round(ms(h.hora) / 60_000)}`)) continue;
@@ -264,6 +274,41 @@ export function claseDe(s: Pick<Suceso, "tipo" | "tono"> & { fallidas?: number }
   if (s.tipo === "aviso") return "aviso";
   if (s.tipo === "resumen" && s.fallidas) return "fallo";
   return s.tono === "bad" ? "fallo" : s.tono === "warn" ? "aviso" : "ok";
+}
+
+/**
+ * v1.4x: una entrada `historial` (se trajo el historial de otro repositorio) vista
+ * desde el repositorio `desde` (el que lo recibió o, si se movió, el de origen).
+ * Un movimiento termina con su paso `ultimo`: «Movido a otro sitio».
+ */
+export function sucesoHistorial(h: EntradaHistorial, desde: string, deRepo = ""): Suceso {
+  const resultado = h.resultado === "sin_cambios" ? "ok" : (h.resultado ?? "ok");
+  const ok = resultado !== "fallo";
+  const esOrigen = !!h.origen && h.origen === desde && h.repo !== desde;
+  let titulo: string;
+  if (h.mover) {
+    const fin = h.paso === "ultimo";
+    const a = h.nombre ? ` a «${h.nombre}»` : "";
+    const de = h.nombre_origen ? ` desde «${h.nombre_origen}»` : "";
+    titulo = !ok ? "Mover a otro sitio: falló" : fin ? (esOrigen ? `Movido a otro sitio${a}` : `Movido aquí${de}`) : `Mover a otro sitio: historial traído${esOrigen ? a : de}`;
+  } else {
+    titulo = esOrigen ? `Historial copiado${h.nombre ? ` a «${h.nombre}»` : ""}` : `Historial traído${h.nombre_origen ? ` de «${h.nombre_origen}»` : ""}`;
+  }
+  return {
+    clave: `h|${h.id}`,
+    hora: h.hora,
+    t: ms(h.hora),
+    tipo: "historial",
+    tono: TONO_TAREA[resultado],
+    clase: claseDe({ tipo: "historial", tono: TONO_TAREA[resultado] }),
+    titulo: `${titulo}${deRepo}`,
+    chip: TEXTO_TAREA[resultado],
+    detalle: h.mensaje ?? null,
+    meta: h.consola ? `desde la consola «${h.consola}»` : null,
+    repo: desde,
+    copia: null,
+    vuelta: null,
+  };
 }
 
 /** ¿Entra en el filtro de arriba? (las versiones, aparte: solo en «Todo» y «Versiones»). */

@@ -3,6 +3,7 @@
   // (`copia`), en la tarjeta de un repositorio (`repo`) o, en las listas de
   // equipos, como chip (`compacto`). No pinta nada si no hay nada en marcha.
   // `alTerminar`: cuando termina lo que se estaba enseñando. `marco`: en una tarjeta.
+  // `sinMover`: sin los pasos de «Mover a otro sitio…» (los cuenta MoviendoseAviso).
   import { LoaderCircle } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import { alTerminarTarea, pctConjunto, tareasDe } from "$lib/progreso.svelte";
@@ -18,9 +19,10 @@
     compacto = false,
     marco = false,
     alTerminar,
-  }: { equipo: string; copia?: string; repo?: string; tipos?: TipoTarea[]; compacto?: boolean; marco?: boolean; alTerminar?: (t: TareaEnMarcha) => void } = $props();
+    sinMover = false,
+  }: { equipo: string; copia?: string; repo?: string; tipos?: TipoTarea[]; compacto?: boolean; marco?: boolean; alTerminar?: (t: TareaEnMarcha) => void; sinMover?: boolean } = $props();
 
-  const tareas = $derived(tareasDe(equipo, { copia, repo, tipos }));
+  const tareas = $derived(tareasDe(equipo, { copia, repo, tipos }).filter((t) => !sinMover || !t.mover));
   /** Varias a la vez en el mismo equipo (chip): «2 en marcha · 35 %», con el detalle en el título. */
   const conjunto = $derived(tareas.length > 1 ? pctConjunto(tareas.map((tarea) => ({ equipo, tarea }))) : null);
 

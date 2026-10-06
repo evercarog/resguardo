@@ -996,7 +996,11 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "cambiar_retencion" => g::cambiar_retencion(v, c, repo.unwrap_or("")).map(hecha),
         "aplicar_retencion" => {
             let r = repo.unwrap_or("").to_string();
-            Ok(en_segundo_plano(v, orden_id, seq, "aplicar_retencion", "Aplicando la retención…", move |v| g::aplicar_retencion(v, &r).map(hecha)))
+            Ok(en_segundo_plano(v, orden_id, seq, "aplicar_retencion", "Aplicando la retención…", move |v| {
+                // v1.4x: en marcha, a la vista de todas las consolas del equipo.
+                let _op = crate::progreso_v2::ops::empezar(crate::progreso_v2::ops::Operacion::de_consola(v, "retencion", &r, "Aplicando la retención"));
+                g::aplicar_retencion(v, &r).map(hecha)
+            }))
         }
         // v1.22: retención en el almacén (retencion_almacen.rs).
         "clave_almacen" => crate::retencion_almacen::anadir_clave(v, repo.unwrap_or(""), c).map(hecha),

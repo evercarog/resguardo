@@ -475,22 +475,83 @@ pub fn historial_local(repo: &str) -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// v1.4x: `mover: { paso: "historial" | "ultimo" }` en `copiar_historial`: es un
+/// paso de «Mover a otro sitio…» (la consola que lo lleva lo dice; las demás lo
+/// enseñan sin poder tocarlo). Otro valor o ninguno: traer el historial sin más.
+pub fn paso_mover(c: &Value) -> Option<&'static str> {
+    match c.get("mover")? {
+        Value::Bool(true) => Some("historial"),
+        m => match m["paso"].as_str()? {
+            "historial" => Some("historial"),
+            "ultimo" => Some("ultimo"),
+            _ => None,
+        },
+    }
+}
+
+/// Lo que se cuenta a todas las consolas mientras se trae el historial (progreso) y al terminar (historial del equipo).
+pub fn operacion_historial(v: &Vinculo, c: &Value, repo: &str, nombre: &str) -> crate::progreso_v2::ops::Operacion {
+    let paso = paso_mover(c);
+    let origen = c["origen"]["repo"].as_str().and_then(|r| v.repos_v2.iter().find(|x| x.id == r));
+    let etapa = if paso.is_some() { "Moviéndose a otro sitio: preparando…" } else { "Preparando…" };
+    crate::progreso_v2::ops::Operacion {
+        nombre: Some(nombre.to_string()),
+        origen: origen.map(|x| x.id.clone()),
+        nombre_origen: origen.map(|x| x.nombre.clone()),
+        mover: paso.is_some(),
+        paso: paso.map(str::to_string),
+        ..crate::progreso_v2::ops::Operacion::de_consola(v, "historial", repo, etapa)
+    }
+}
+
+/// Lo que se está haciendo, en palabras (para el progreso).
+pub fn etapa_historial(mover: bool) -> &'static str {
+    if mover {
+        "Moviéndose a otro sitio: trayendo el historial"
+    } else {
+        "Trayendo el historial"
+    }
+}
+
+/// La entrada del historial del equipo al terminar de traer un historial (o un paso de un movimiento).
+pub fn entrada_historial(o: &crate::progreso_v2::ops::Operacion, r: &Result<String, String>) -> Value {
+    json!({
+        "nombre": o.nombre,
+        "nombre_origen": o.nombre_origen,
+        "repo": o.repo,
+        "origen": o.origen,
+        "mover": o.mover.then_some(true),
+        "paso": o.paso,
+        "consola": o.consola,
+        "resultado": if r.is_ok() { "ok" } else { "fallo" },
+        "mensaje": crate::web::public_message(match r { Ok(m) | Err(m) => m }).chars().take(240).collect::<String>(),
+    })
+}
+
 pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result<String, String> {
     let (repo, nombre, src, filtro) = preparar_historial(v, c)?;
+    let op = operacion_historial(v, c, &repo, &nombre);
     let (v, orden) = (v.clone(), orden.to_string());
     let m = format!("Trayendo el historial a «{nombre}»… Puede tardar: depende de cuánto haya que copiar.");
     std::thread::spawn(move || {
+        let guarda = crate::progreso_v2::ops::empezar(op.clone());
         let mut ultimo = std::time::Instant::now();
-        let mut aviso = |hechas: usize, total: usize| {
+        let r = traer(&v, &repo, &src, &filtro, &mut |hechas: usize, total: usize| {
+            // A todas las consolas (progreso, cada pocos segundos)…
+            guarda.avance(etapa_historial(op.mover), Some(hechas as u64), Some(total as u64));
+            // … y a la que la mandó, también en la orden (como siempre).
             if ultimo.elapsed() >= AVISO_CADA || hechas == 0 {
                 ultimo = std::time::Instant::now();
                 let m = format!("Trayendo el historial: {hechas} de {total} versiones…");
                 let _ = s::enviar_resultado(&v, &orden, seq, &Resultado { estado: "en_marcha", mensaje: m, detalle: None });
             }
-        };
-        let r = traer(&v, &repo, &src, &filtro, &mut aviso);
+        });
         // La lista de versiones y el espacio, al día en el próximo informe.
         terminar_historial(&repo, &src);
+        // Fuera del progreso y, en el historial del equipo (que llega a todas las consolas), cómo acabó.
+        // (Primero la entrada: al soltar la operación cambia la huella del informe y se sube enseguida.)
+        crate::bitacora::anotar("historial", entrada_historial(&op, &r));
+        drop(guarda);
         let res = match r {
             Ok(m) => Resultado { estado: "hecha", mensaje: m, detalle: None },
             Err(e) => Resultado { estado: "fallida", mensaje: e, detalle: None },
@@ -535,6 +596,40 @@ mod tests {
 
     fn local(b: &std::path::Path) -> Value {
         json!({ "tipo": "local", "donde": b.display().to_string() })
+    }
+
+    /// v1.4x: los pasos de «Mover a otro sitio…» se reconocen y lo que se cuenta a todas
+    /// las consolas (progreso e historial) dice de qué repositorio a cuál, quién lo empezó
+    /// (por su nombre) y cómo acabó, sin rutas.
+    #[test]
+    fn pasos_de_mover_y_su_historial() {
+        assert_eq!(paso_mover(&json!({ "mover": { "paso": "historial" } })), Some("historial"));
+        assert_eq!(paso_mover(&json!({ "mover": { "paso": "ultimo" } })), Some("ultimo"));
+        assert_eq!(paso_mover(&json!({ "mover": true })), Some("historial"));
+        assert_eq!(paso_mover(&json!({ "mover": { "paso": "otro" } })), None);
+        assert_eq!(paso_mover(&json!({ "repo": "x" })), None);
+        let mut v = Vinculo { nombre_consola: "Oficina".into(), url: "https://192.168.1.20:8443".into(), ..Default::default() };
+        v.repos_v2.push(RepoV2 { id: "viejo".into(), nombre: "Contabilidad".into(), ..Default::default() });
+        v.repos_v2.push(RepoV2 { id: "nuevo".into(), nombre: "Contabilidad (almacén)".into(), ..Default::default() });
+        let c = json!({ "repo": "nuevo", "origen": { "repo": "viejo" }, "mover": { "paso": "ultimo" } });
+        let o = operacion_historial(&v, &c, "nuevo", "Contabilidad (almacén)");
+        assert_eq!(
+            (o.tipo, o.origen.as_deref(), o.nombre_origen.as_deref(), o.mover, o.paso.as_deref()),
+            ("historial", Some("viejo"), Some("Contabilidad"), true, Some("ultimo"))
+        );
+        assert_eq!(o.consola.as_deref(), Some("Oficina"));
+        let e = entrada_historial(&o, &Err(r"Falló al leer C:\Users\Ana\clave.txt".into()));
+        assert_eq!(
+            (e["resultado"].as_str(), e["mover"].as_bool(), e["origen"].as_str(), e["consola"].as_str()),
+            (Some("fallo"), Some(true), Some("viejo"), Some("Oficina"))
+        );
+        assert!(!e.to_string().contains("Ana") && !e.to_string().contains("192.168"), "sin rutas ni direcciones: {e}");
+        // Traer el historial de fuera (no un repositorio de este equipo): sin origen ni mover.
+        let o = operacion_historial(&v, &json!({ "repo": "nuevo", "origen": { "destino": {}, "ruta": "x" } }), "nuevo", "N");
+        assert_eq!((o.origen.as_deref(), o.mover, o.paso.as_deref()), (None, false, None));
+        let e = entrada_historial(&o, &Ok("Historial traído: 3 versiones nuevas.".into()));
+        assert_eq!(e["resultado"], "ok");
+        assert!(e["mover"].is_null());
     }
 
     #[test]
