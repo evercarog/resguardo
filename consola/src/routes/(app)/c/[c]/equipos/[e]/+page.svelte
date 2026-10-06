@@ -87,6 +87,7 @@
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import ConectarNube from "$lib/componentes/ConectarNube.svelte";
   import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
+  import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -340,7 +341,7 @@
       tipo: "guarda_copias",
       cuerpo: { espejo_freno: { tipo: de.tipo, carpeta: de.carpeta, ...(de.nube ? { nube: de.nube } : {}) } },
       titulo: "Confirmar lo que falta en el almacén",
-      descripcion: `Hazlo solo si sabes por qué falta (una poda grande o un repositorio que quitaste). En la próxima vuelta se anotará y se borrará de ${de.tipo === "nube" ? `«${de.nube}»` : de.carpeta} pasados ${d.retencion_dias ?? RETENCION_ESPEJO.defecto} días. Si no lo sabes, revisa antes el almacén: podría estar dañado.`,
+      descripcion: `Hazlo solo si sabes por qué falta (una poda grande o un repositorio que quitaste). La próxima vez que se copie al espejo se anotará y se borrará de ${de.tipo === "nube" ? `«${de.nube}»` : de.carpeta} pasados ${d.retencion_dias ?? RETENCION_ESPEJO.defecto} días. Si no lo sabes, revisa antes el almacén: podría estar dañado.`,
     });
   }
   function preguntarNuevos(anadir: boolean) {
@@ -451,6 +452,8 @@
   let conectarNube = $state(false);
   /** §3c: «Conectar otro destino» (B2, S3, SFTP, SMB, WebDAV). */
   let conectarDestino = $state(false);
+  /** §3e: «Restaurar desde el espejo…». */
+  let desdeEspejo = $state(false);
   /** Desconectar una nube: espera si el espejo la usa (lo decide esDestructiva con el contexto). */
   function quitarNube(nombre: string) {
     const usada = destinosActuales.some((d) => d.tipo === "nube" && d.nube === nombre);
@@ -468,6 +471,7 @@
     return [
       [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, ...(admiteMasDestinos(equipo) ? [{ texto: "Conectar otro destino (B2, S3, SFTP, NAS, WebDAV)…", onclick: () => (conectarDestino = true) }] : []), { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
       [
+        ...(conEspejo ? [{ texto: "Restaurar desde el espejo…", onclick: () => (desdeEspejo = true) }] : []),
         ...(conEspejo ? [{ texto: "Quitar todo el espejo", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { espejo: null }, titulo: "Quitar el espejo", descripcion: "Dejará de copiarse cada noche a todos sus destinos. Lo que ya está en ellos se queda." }) }] : []),
         { texto: "Dejar de guardar copias", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { activo: false }, titulo: "Dejar de guardar copias", descripcion: `${equipo!.nombre} dejará de recibir copias de los demás equipos. Lo ya guardado se queda en su disco.` }) },
       ],
@@ -1318,6 +1322,9 @@
 
 {#if conectarNube && equipo && actual.cliente}
   <ConectarNube cliente={actual.cliente} {equipo} onclose={() => ((conectarNube = false), void cargar())} />
+{/if}
+{#if desdeEspejo && equipo && actual.cliente}
+  <RestaurarDesdeEspejo cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} nombre={nombreRepoAlmacen} onclose={() => (desdeEspejo = false)} />
 {/if}
 {#if conectarDestino && equipo && actual.cliente}
   <ConectarDestino cliente={actual.cliente} {equipo} onclose={() => ((conectarDestino = false), void cargar())} />

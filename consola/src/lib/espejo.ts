@@ -263,5 +263,64 @@ export function horaParaConsolasAnteriores(destinos: DestinoEspejoOrden[], porDe
   return porDefecto;
 }
 
+/** §3e: los datos del kit para abrir un repositorio desde un destino del espejo («Restaurar en otro equipo» con el kit). */
+export interface KitDesdeEspejo {
+  /** Tipo de destino del kit: carpeta del equipo, B2 o S3. */
+  tipo: "local" | "b2" | "s3";
+  donde: string;
+  /** `<usuario>/<repo>` dentro de `donde`. */
+  repo: string;
+  nombreDestino: string;
+  /** Qué hacer antes (conectar el disco, descargar la carpeta, escribir la clave…). */
+  nota: string;
+  /** Hay que descargarlo antes a un disco (la nube no la abre el equipo directamente). */
+  descargar: boolean;
+}
+
+/** §3e: dónde está `repo` en un destino del espejo y cómo abrirlo con el kit. */
+export function kitDesdeEspejo(d: Pick<DestinoEspejoResumen, "tipo" | "carpeta" | "nube">, tipoNube: string | null | undefined, repo: string): KitDesdeEspejo {
+  const carpeta = (d.carpeta ?? "").trim();
+  if (d.tipo === "carpeta") {
+    return {
+      tipo: "local",
+      donde: carpeta,
+      repo,
+      nombreDestino: `Espejo · ${etiquetaCarpeta(carpeta)}`,
+      descargar: false,
+      nota: `Conecta el disco del espejo al equipo donde vas a restaurar (o copia allí la carpeta ${carpeta}). Si en ese equipo el disco tiene otra letra, cámbiala abajo.`,
+    };
+  }
+  const limpia = carpeta.replace(/^\/+|\/+$/g, "");
+  if (tipoNube === "b2") {
+    const [bucket, ...resto] = limpia.split("/");
+    return {
+      tipo: "b2",
+      donde: resto.length ? `${bucket}:${resto.join("/")}` : bucket,
+      repo,
+      nombreDestino: `Espejo · ${d.nube ?? "B2"}`,
+      descargar: false,
+      nota: "Escribe una clave de aplicación de B2 con permiso para leer ese bucket (keyID y clave). La del almacén solo la tiene el almacén.",
+    };
+  }
+  if (tipoNube === "s3") {
+    return {
+      tipo: "s3",
+      donde: limpia,
+      repo,
+      nombreDestino: `Espejo · ${d.nube ?? "S3"}`,
+      descargar: false,
+      nota: `Delante del bucket, la dirección del servicio: por ejemplo «https://s3.ejemplo.com/${limpia}». Y una clave con permiso para leerlo.`,
+    };
+  }
+  return {
+    tipo: "local",
+    donde: "",
+    repo,
+    nombreDestino: `Espejo · ${d.nube ?? "nube"}`,
+    descargar: true,
+    nota: `Primero descarga la carpeta «${limpia}» de ${d.nube ? `«${d.nube}» (${nombreTipoNube(tipoNube ?? "")})` : "la nube"} a un disco del equipo donde vas a restaurar, entera. Después elige abajo esa carpeta descargada: dentro tiene que estar «${repo}».`,
+  };
+}
+
 /** «1 de noviembre de 2026» para un día AAAA-MM-DD (a mediodía: sin saltos de zona horaria). */
 export const diaLegible = (d: string) => new Intl.DateTimeFormat("es", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${d}T12:00:00`));

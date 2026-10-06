@@ -17,6 +17,7 @@
   import { ErrorLlavesCambiadas, kcfgComprobada, mandarOrden } from "$lib/ordenar";
   import { cargarCliente } from "$lib/estado.svelte";
   import type { Cliente, Equipo, Orden } from "$lib/tipos";
+  import type { KitDesdeEspejo } from "$lib/espejo";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import CampoClave from "./CampoClave.svelte";
@@ -26,27 +27,36 @@
     cliente,
     equipos,
     origenInicial,
+    kitInicial,
     onclose,
-  }: { cliente: Cliente; equipos: Equipo[]; origenInicial?: { equipo: string; repo: string }; onclose: () => void } = $props();
+  }: {
+    cliente: Cliente;
+    equipos: Equipo[];
+    origenInicial?: { equipo: string; repo: string };
+    /** §3e (docs/espejo.md): desde un destino del espejo, con los datos del kit ya puestos. */
+    kitInicial?: KitDesdeEspejo;
+    onclose: () => void;
+  } = $props();
 
   const activos = $derived(equipos.filter((e) => e.confirmado && e.modo !== "trasladado"));
   const opciones = $derived(activos.flatMap((e) => (e.resumen?.repositorios ?? []).filter((r) => !r.solo_lectura).map((r) => ({ equipo: e, repo: r }))));
 
   const inicial = () => origenInicial;
-  let modo = $state<"vivo" | "kit">("vivo");
+  const kit0 = () => kitInicial;
+  let modo = $state<"vivo" | "kit">(kit0() ? "kit" : "vivo");
   let origen = $state(inicial() ? `${inicial()!.equipo}|${inicial()!.repo}` : "");
   let destinoId = $state("");
-  let nombre = $state("");
+  let nombre = $state(kit0() ? `${kit0()!.repo} (del espejo)` : "");
   let contrasena = $state("");
   let claveAdmin = $state("");
   // Kit
-  let kitTipo = $state<"local" | "rest" | "sftp" | "s3" | "b2">("rest");
-  let kitNombreDestino = $state("");
-  let kitDonde = $state("");
+  let kitTipo = $state<"local" | "rest" | "sftp" | "s3" | "b2">(kit0()?.tipo ?? "rest");
+  let kitNombreDestino = $state(kit0()?.nombreDestino ?? "");
+  let kitDonde = $state(kit0()?.donde ?? "");
   let kitUsuario = $state("");
   let kitSecreto = $state("");
   let kitCa = $state("");
-  let kitRepo = $state("");
+  let kitRepo = $state(kit0()?.repo ?? "");
   /** «Explorar…» de la carpeta del kit, en el equipo donde se restaura. */
   let explorar = $state(false);
 
@@ -171,7 +181,7 @@
   <div class="dlg-title">
     <span class="ticon"><MonitorSmartphone size={18} /></span>
     <div>
-      <h2 id="t-otro">Restaurar en otro equipo</h2>
+      <h2 id="t-otro">{kitInicial ? "Restaurar desde el espejo" : "Restaurar en otro equipo"}</h2>
       <p>El otro equipo añade el repositorio <strong>solo de lectura</strong> <Ayuda id="solo-lectura" />: podrá explorarlo y restaurar, pero ninguna copia escribirá en él.</p>
     </div>
   </div>
@@ -187,10 +197,14 @@
     </div>
   {:else}
     <form class="form" onsubmit={importar}>
+      {#if kitInicial}
+        <div class="notice notice-info"><p>{kitInicial.nota}</p></div>
+      {:else}
       <div class="segmented" role="group" aria-label="Equipo original">
         <button type="button" class:on={modo === "vivo"} aria-pressed={modo === "vivo"} onclick={() => (modo = "vivo")}>El equipo original sigue aquí</button>
         <button type="button" class:on={modo === "kit"} aria-pressed={modo === "kit"} onclick={() => (modo = "kit")}>El equipo original ya no existe</button>
       </div>
+      {/if}
 
       {#if modo === "vivo"}
         <div class="field">
@@ -202,7 +216,7 @@
           {#if elegido && !elegido.equipo.conectado}<span class="field-hint">{elegido.equipo.nombre} no está conectado: compartirá el acceso cuando vuelva.</span>{/if}
         </div>
       {:else}
-        <p class="faint pequeno">Escribe los datos del kit de recuperación del repositorio. Viajan sellados solo para el equipo que lo importa.</p>
+        <p class="faint pequeno">{kitInicial ? "Los datos del destino del espejo y la contraseña del kit de recuperación del repositorio (es la misma: el espejo copia el repositorio tal cual). Viajan sellados solo para el equipo que lo abre." : "Escribe los datos del kit de recuperación del repositorio. Viajan sellados solo para el equipo que lo importa."}</p>
         <div class="dos">
           <div class="field">
             <label class="field-label" for="k-tipo">Tipo de destino</label>
@@ -247,9 +261,9 @@
           </div>
         {/if}
         <div class="field">
-          <label class="field-label" for="k-repo">Id del repositorio</label>
+          <label class="field-label" for="k-repo">{kitInicial ? "Repositorio dentro del espejo" : "Id del repositorio"}</label>
           <input id="k-repo" class="input mono" bind:value={kitRepo} spellcheck="false" placeholder="documentos-recepcion-1a2b" />
-          <span class="field-hint">Está en el kit, junto al nombre del repositorio.</span>
+          <span class="field-hint">{kitInicial ? "Su carpeta dentro del espejo (<equipo>/<repositorio>)." : "Está en el kit, junto al nombre del repositorio."}</span>
         </div>
       {/if}
 

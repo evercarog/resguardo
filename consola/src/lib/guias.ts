@@ -55,9 +55,12 @@ export const GUIAS: Guia[] = [
   {
     id: "guia-espejo",
     titulo: "Espejo del equipo que guarda copias (otro disco o la nube)",
-    resumen: "Cada noche, todo lo que guarda se copia a otros sitios. Solo añade: nunca borra allí.",
+    resumen: "Lo que guarda se copia a otros sitios, cuando tú elijas. Nunca borra allí, salvo que le pongas retención.",
     texto: [
-      "Puede ir a otra carpeta (mejor en otro disco físico) o a una nube conectada en ese equipo (Dropbox o Google Drive). Lo que se sube son paquetes ya cifrados: la nube no puede leerlos ni hace falta ninguna contraseña de repositorio.",
+      "Puede ir a otra carpeta (mejor en otro disco físico) o a una nube conectada en ese equipo (Dropbox, Google Drive, Backblaze B2, S3, SFTP, una carpeta de red por SMB o WebDAV). Lo que se sube son paquetes ya cifrados: la nube no puede leerlos ni hace falta ninguna contraseña de repositorio.",
+      "Cada destino tiene su horario (el mismo editor que las copias) y, si quieres, también «después de cada copia nueva». Puede llevar todos los repositorios o solo algunos; si llega uno nuevo, la consola te pregunta si entra.",
+      "Antes de copiar, cada archivo se comprueba con su huella: uno dañado en el almacén no se copia y se avisa. Cada día se comprueba además una parte de lo que ya está en el destino.",
+      "Sin retención, el espejo nunca borra y crece sin fin. Con retención, lo que el almacén ya no tiene se borra del espejo pasados unos días; si de golpe falta mucho, no borra nada y te avisa. Conviene que al menos un destino no borre nunca.",
       "Dropbox y Google Drive no son inmutables: quien tenga la cuenta, o el permiso que se dio al equipo, puede borrar lo subido. El historial de versiones de la nube ayuda a recuperarlo durante un tiempo, pero no es lo mismo que un destino con bloqueo de objetos (Backblaze B2 u otro S3 con Object Lock), que es lo recomendable cuando se pueda.",
       "Dropbox se conecta desde esta consola, con «Conectar Dropbox» en la ficha del equipo: das permiso en Dropbox (solo a la carpeta Aplicaciones/Resguardo) y el permiso viaja cifrado solo para ese equipo, que lo guarda protegido. El servidor no lo ve.",
     ],
@@ -67,6 +70,21 @@ export const GUIAS: Guia[] = [
       "Cada destino muestra su última subida. Quitar uno espera unas horas y se puede cancelar.",
     ],
     ver: ["espejo", "nube"],
+  },
+  {
+    id: "guia-restaurar-espejo",
+    titulo: "Si se pierde el equipo que guarda copias: restaurar desde el espejo",
+    resumen: "Cada repositorio está entero en el espejo y se abre con la contraseña de su kit.",
+    texto: [
+      "El espejo copia los repositorios tal cual, cada uno en su carpeta (<destino>/<equipo>/<repositorio>), así que se abren con la misma contraseña: la del kit de recuperación de cada repositorio.",
+      "Lo que se copió en el almacén después de la última copia al espejo no está en él.",
+    ],
+    pasos: [
+      "En la ficha del equipo que guardaba copias, «Más… → Restaurar desde el espejo…».",
+      "Elige el destino del espejo y el repositorio. Si es una carpeta, conecta ese disco al equipo donde vas a restaurar; si es Dropbox, Drive, SFTP, SMB o WebDAV, descarga antes esa carpeta a un disco de ese equipo.",
+      "Elige el equipo donde restaurar y escribe la contraseña del kit: el equipo lo abre solo de lectura y desde ahí restauras como siempre.",
+    ],
+    ver: ["espejo"],
   },
   {
     id: "guia-copia-externa",

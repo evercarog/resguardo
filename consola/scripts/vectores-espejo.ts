@@ -1,5 +1,6 @@
 // Pruebas del espejo por destino (src/lib/espejo.ts, docs/espejo.md).
 // `npm run test:vectores` (con las demás).
+import { kitDesdeEspejo } from "../src/lib/espejo";
 import { diaLegible, errorCampoDestino, errorDiasRetencion, etiquetaCarpeta, nombreTipoNube, textoRetencion, textoVerificacion } from "../src/lib/espejo";
 import { admiteEspejoFlexible, conRepos, cuandoEspejo, destinoParaOrden, espejoDelRepo, horaParaConsolasAnteriores, horarioDiario, nombreEnAlmacen, nombresRepos, nuevosEn, textoRepos } from "../src/lib/espejo";
 import { esDestructiva } from "../src/lib/cripto/ordenes";
@@ -82,6 +83,17 @@ igual("S3: endpoint con https o un servidor a secas", [ok("s3", "endpoint", "htt
 igual("SFTP: la clave del servidor", [ok("sftp", "clave_host", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"), ok("sftp", "clave_host", "nas ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"), ok("sftp", "clave_host", "hola")], [true, true, false]);
 igual("puertos y servidores", [ok("sftp", "puerto", "2222"), ok("sftp", "puerto", "70000"), ok("smb", "host", "nas.oficina.lan"), ok("smb", "host", "nas;rm")], [true, false, true, false]);
 igual("obligatorios y opcionales", [ok("b2", "cuenta", ""), ok("smb", "dominio", ""), ok("b2", "clave", "con espacios vale")], [false, true, true]);
+
+console.log("\n· Espejo: restaurar desde él (3e)");
+const k1 = kitDesdeEspejo({ tipo: "carpeta", carpeta: "E:\\Resguardo-espejo" }, null, "recepcion/contabilidad");
+igual("carpeta: el kit con la carpeta del espejo", [k1.tipo, k1.donde, k1.repo, k1.descargar], ["local", "E:\\Resguardo-espejo", "recepcion/contabilidad", false]);
+const k2 = kitDesdeEspejo({ tipo: "nube", nube: "B2 Oficina", carpeta: "copias-sur/espejo/" }, "b2", "srv");
+igual("B2: bucket:ruta (como lo arma el agente con b2:<bucket>:<ruta>/<repo>)", [k2.tipo, k2.donde], ["b2", "copias-sur:espejo"]);
+igual("B2 sin ruta: solo el bucket", kitDesdeEspejo({ tipo: "nube", nube: "B2", carpeta: "copias-sur" }, "b2", "srv").donde, "copias-sur");
+igual("S3: el bucket y la ruta (falta la dirección del servicio)", [kitDesdeEspejo({ tipo: "nube", nube: "S3", carpeta: "/b/r/" }, "s3", "srv").donde, kitDesdeEspejo({ tipo: "nube", nube: "S3", carpeta: "b" }, "s3", "srv").nota.includes("https://")], ["b/r", true]);
+const k3 = kitDesdeEspejo({ tipo: "nube", nube: "Dropbox Oficina", carpeta: "Sur" }, "dropbox", "srv");
+igual("Dropbox: descargar antes a un disco", [k3.tipo, k3.donde, k3.descargar, k3.nota.includes("«Sur»")], ["local", "", true, true]);
+igual("SFTP, SMB y WebDAV también se descargan", ["sftp", "smb", "webdav"].map((t) => kitDesdeEspejo({ tipo: "nube", nube: "N", carpeta: "x" }, t, "r").descargar), [true, true, true]);
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

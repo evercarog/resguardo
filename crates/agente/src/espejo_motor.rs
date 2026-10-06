@@ -848,4 +848,81 @@ mod tests {
         assert_eq!((r.copiados, r.iguales), (1, 4));
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    /// §3e: el almacén se pierde y se restaura desde el espejo (una carpeta y
+    /// una «nube» por rclone, remoto local), con la contraseña del repositorio
+    /// del kit y la misma dirección que arma «Restaurar en otro equipo» con el kit
+    /// (`gestion_v2::ubicacion` de un destino local y `<usuario>/<repo>`).
+    #[test]
+    fn restaurar_desde_el_espejo() {
+        if crate::restic::version().is_err() {
+            eprintln!("Sin restic: se salta la prueba.");
+            return;
+        }
+        let _l = crate::restic::tests::real_repo_lock();
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-restaurar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (datos, almacen, espejo, nube, trabajo) = (base.join("datos"), base.join("almacen"), base.join("espejo"), base.join("nube"), base.join("privado"));
+        std::fs::create_dir_all(datos.join("facturas")).unwrap();
+        std::fs::write(datos.join("facturas/enero.txt"), "factura de enero\n".repeat(2000)).unwrap();
+        std::fs::write(datos.join("clientes.csv"), "nombre;ciudad\nTienda Ejemplo;Villanueva\n").unwrap();
+        std::fs::create_dir_all(&nube).unwrap();
+        // La copia del equipo, en su repositorio del almacén.
+        let contrasena = "contraseña del kit de prueba";
+        let acc = crate::restic::Access::new(almacen.join("recepcion/contabilidad").display().to_string(), contrasena);
+        for args in [vec!["init"], vec!["backup", "--host", "RECEPCION", datos.to_str().unwrap()]] {
+            let out = crate::restic::run_raw(&acc, &args, Duration::from_secs(120)).unwrap();
+            assert_eq!(out.code, Some(0), "{}", out.stderr);
+        }
+        // Lo recién escrito espera 10 min: aquí se da por antiguo.
+        let viejo = SystemTime::now() - Duration::from_secs(3600);
+        for a in listar_carpeta(&almacen, &Alcance::Todos).unwrap() {
+            std::fs::File::options().write(true).open(almacen.join(&a.rel)).unwrap().set_modified(viejo).unwrap();
+        }
+        // El espejo: a otra carpeta y a una «nube» (rclone, remoto local), solo ese repositorio.
+        let alcance = Alcance::Repos(vec!["recepcion/contabilidad".into()]);
+        let op = Opciones { verificar_pct: 100, ..Default::default() };
+        let r = vuelta(&almacen, &Lado::Carpeta(&espejo), &alcance, &op, &mut Estado::default(), &mut |_, _| {}).unwrap();
+        assert!(r.copiados > 5 && r.danados_origen.is_empty(), "{r:?}");
+        let n = crate::nube::Nube { nombre: "Prueba".into(), tipo: "local".into(), ..Default::default() };
+        let carpeta_nube = nube.display().to_string().replace('\\', "/");
+        let hay_rclone = crate::nube::comprobar_binario().is_ok();
+        if hay_rclone {
+            let lado = Lado::Nube { nube: &n, carpeta: &carpeta_nube, trabajo: &trabajo, limite_kib: None };
+            let r = vuelta(&almacen, &lado, &alcance, &op, &mut Estado::default(), &mut |_, _| {}).unwrap();
+            assert!(r.copiados > 5);
+        }
+        // Se pierde el almacén.
+        std::fs::remove_dir_all(&almacen).unwrap();
+        // Se restaura desde cada espejo, como haría el equipo con los datos del kit.
+        let mut sitios = vec![espejo.clone()];
+        if hay_rclone {
+            sitios.push(nube.clone());
+        }
+        for (i, sitio) in sitios.iter().enumerate() {
+            let destino = crate::gestion_v2::Destino {
+                id: "importado-x".into(),
+                nombre: "Espejo".into(),
+                tipo: "local".into(),
+                donde: sitio.display().to_string(),
+                usuario: None,
+                secreto: None,
+                ca_pem: None,
+                equipo_almacen: None,
+            };
+            let ubicacion = crate::gestion_v2::ubicacion(&destino, "recepcion/contabilidad").unwrap();
+            let acc = crate::restic::Access::new(ubicacion, contrasena);
+            assert_eq!(crate::restic::snapshots(&acc).unwrap().len(), 1, "se abre con la contraseña del kit");
+            let fuera = base.join(format!("restaurado-{i}"));
+            let out = crate::restic::run_raw(&acc, &["restore", "latest", "--target", fuera.to_str().unwrap()], Duration::from_secs(120)).unwrap();
+            assert_eq!(out.code, Some(0), "{}", out.stderr);
+            let encontrado = listar_carpeta(&fuera, &Alcance::Todos).unwrap().into_iter().find(|a| a.rel.ends_with("facturas/enero.txt")).expect("restaurado");
+            assert_eq!(std::fs::read(fuera.join(&encontrado.rel)).unwrap(), std::fs::read(datos.join("facturas/enero.txt")).unwrap());
+            let out = crate::restic::run_raw(&acc, &["check", "--read-data"], Duration::from_secs(120)).unwrap();
+            assert_eq!(out.code, Some(0), "el espejo está entero: {}", out.stderr);
+            // Con otra contraseña, no.
+            assert!(crate::restic::snapshots(&crate::restic::Access::new(acc.location.clone(), "otra")).is_err());
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

@@ -518,7 +518,10 @@ pub fn aceptar_freno(v: &serde_json::Value) -> Result<String, String> {
     let mut e = leer_estado(&d);
     e.aceptar_freno = true;
     guardar_estado(&d, &e);
-    Ok(format!("Confirmado: en la próxima vuelta se anota lo que ya no está en el almacén y se borrará de «{}» pasados {dias} días.", d.texto()))
+    Ok(format!(
+        "Confirmado: la próxima vez que se copie al espejo se anota lo que ya no está en el almacén y se borrará de «{}» pasados {dias} días.",
+        d.texto()
+    ))
 }
 
 /// Una vuelta a un destino (espejo_motor.rs), contando cómo va en `guarda`

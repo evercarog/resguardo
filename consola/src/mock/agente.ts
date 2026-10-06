@@ -363,7 +363,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         const d = e.resumen.guarda_copias?.espejo?.destinos?.find((x) => claveEspejo(x) === claveEspejo(f));
         if (!d) return resultado(e, o, "fallida", "Ese destino ya no está en el espejo.");
         d.freno = null;
-        return resultado(e, o, "hecha", "Confirmado: en la próxima vuelta se anota lo que ya no está en el almacén y se borrará pasados sus días.");
+        return resultado(e, o, "hecha", "Confirmado: la próxima vez que se copie al espejo se anota lo que ya no está en el almacén y se borrará pasados sus días.");
       }
       if ("espejo" in c) {
         // v1.9: { destinos: [carpeta | nube], hora?, limite_kib? } con la lista
