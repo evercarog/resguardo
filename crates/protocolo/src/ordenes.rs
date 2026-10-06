@@ -56,6 +56,10 @@ pub const TIPOS: &[Tipo] = &[
     t("aplicar_retencion", Repositorio, true, false, false),
     t("dejar_de_copiar", Repositorio, true, false, false),
     t("cambiar_copia_externa", Repositorio, false, false, false),
+    // Tarea 4b: otras copias derivadas de un repositorio (docs/copias-en-cadena.md).
+    // Cambiar una puede reducir la protección (según el cuerpo); quitarla, siempre.
+    t("cambiar_derivada", Repositorio, false, false, false),
+    t("quitar_derivada", Repositorio, true, false, false),
     t("rotar_contrasena_repo", Repositorio, false, false, false),
     t("quitar_repositorio", RepositorioYAdministracion, true, false, false),
     // Restaurar en otro equipo: el equipo de origen sella su acceso para el de destino.
@@ -123,7 +127,7 @@ pub fn segundos_de_espera(horas: i64) -> i64 {
 /// `quitar_nube` lo es si el espejo usa esa nube (lo sabe el equipo).
 /// `retencion_almacen` lo es salvo con `quitar: true` (deja de podar).
 pub const DESTRUCTIVAS_SEGUN_CUERPO: &[&str] =
-    &["desvincular", "guarda_copias", "cambiar_espera", "restaurar", "cambiar_copia_externa", "quitar_nube", "retencion_almacen"];
+    &["desvincular", "guarda_copias", "cambiar_espera", "restaurar", "cambiar_copia_externa", "quitar_nube", "retencion_almacen", "cambiar_derivada"];
 /// Tamaño máximo de un sobre de orden (base64).
 pub const MAX_SOBRE_BYTES: usize = 64 * 1024;
 

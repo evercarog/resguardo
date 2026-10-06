@@ -90,6 +90,8 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "cambiar_destino",
     "cambiar_retencion",
     "cambiar_copia_externa",
+    "cambiar_derivada",
+    "quitar_derivada",
     "pausar",
     "reanudar",
     "dejar_de_copiar",

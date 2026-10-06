@@ -146,6 +146,68 @@ pub struct Offsite {
     /// objetos o de solo añadir (v1.46; sin nada, como siempre).
     #[serde(default, skip_serializing_if = "DestinoExterno::normal")]
     pub dest: DestinoExterno,
+    /// Tarea 4c: solo las versiones que pasan este filtro (equipos, etiquetas,
+    /// carpetas, fechas). Sin él, todas (como siempre).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filtro: Option<crate::adoptar_v2::Filtro>,
+}
+
+/// Tarea 4b (docs/copias-en-cadena.md): otra copia derivada de un repositorio,
+/// además de la copia externa de siempre (`AgentRepo::offsite`, que es la
+/// primera). Cada una con su destino, su contraseña (en `Secret::derived`), su
+/// retención, su horario (también «después de cada copia») y su verificación.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Derived {
+    /// `[a-z0-9_-]`, único en el repositorio (no «externa», que es la de siempre).
+    pub id: String,
+    pub offsite: Offsite,
+}
+
+/// Las tareas de una copia derivada (las de la externa de siempre son `offsite` y `verify_offsite`).
+pub const DERIVADA: &str = "derivada";
+pub const VERIFY_DERIVADA: &str = "verify_derivada";
+
+/// La clave de una tarea en `tasks.json` (`runs`, solicitudes y rotación): la de
+/// siempre (`<tipo>:<repo>`) o, en una derivada, `<tipo>:<repo>:<derivada>`.
+/// `repo` es el que da [`due`]: en las de una derivada, con ella sola en `derived`.
+pub fn task_key(kind: &str, repo: &AgentRepo) -> String {
+    match repo.derived.first().filter(|_| kind == DERIVADA || kind == VERIFY_DERIVADA) {
+        Some(d) => format!("{kind}:{}:{}", repo.id, d.id),
+        None => key(kind, &repo.id),
+    }
+}
+
+/// La clave de la última vuelta de una derivada, sin el repositorio virtual.
+pub fn derived_key(kind: &str, repo_id: &str, derived_id: &str) -> String {
+    format!("{kind}:{repo_id}:{derived_id}")
+}
+
+/// El nombre del archivo de la solicitud «ahora» de una derivada (`<repo>.derivada-<id>`).
+pub fn derived_request(kind: &str, derived_id: &str) -> String {
+    format!("{kind}-{derived_id}")
+}
+
+/// Las credenciales de una derivada en lugar de las de la copia externa de
+/// siempre (así `dest_access` y `offsite_repo` sirven igual para las dos).
+pub fn derived_secret(secret: &Secret, derived_id: &str) -> Secret {
+    let d = secret.derived.get(derived_id).cloned().unwrap_or_default();
+    Secret {
+        password: secret.password.clone(),
+        rest_password: secret.rest_password.clone(),
+        env: secret.env.clone(),
+        offsite_password: d.password,
+        offsite_key_id: None,
+        offsite_secret: None,
+        offsite_location: d.location,
+        offsite_env: d.env,
+        derived: std::collections::HashMap::new(),
+    }
+}
+
+/// El repositorio tal como lo ve una tarea de una derivada: con ella como su
+/// copia externa (y sola en `derived`, para [`task_key`]).
+pub fn derived_view(repo: &AgentRepo, d: &Derived) -> AgentRepo {
+    AgentRepo { offsite: Some(d.offsite.clone()), derived: vec![d.clone()], ..repo.clone() }
 }
 
 /// Lo que se sabe del destino de una copia externa (`cambiar_copia_externa`).
@@ -220,7 +282,7 @@ fn approx_days(s: &str) -> Option<u64> {
 pub fn task_verify<'a>(repo: &'a AgentRepo, kind: &str) -> Option<&'a Verify> {
     match kind {
         "verify" => repo.verify.as_ref(),
-        "verify_offsite" => repo.offsite.as_ref().and_then(|o| o.verify.as_ref()),
+        "verify_offsite" | VERIFY_DERIVADA => repo.offsite.as_ref().and_then(|o| o.verify.as_ref()),
         _ => None,
     }
 }
@@ -232,6 +294,14 @@ pub fn rotation_key(kind: &str, repo_id: &str) -> String {
         format!("offsite:{repo_id}")
     } else {
         repo_id.to_string()
+    }
+}
+
+/// La de la verificación de una tarea (con las derivadas: `derivada:<repo>:<id>`).
+pub fn task_rotation_key(kind: &str, repo: &AgentRepo) -> String {
+    match repo.derived.first().filter(|_| kind == VERIFY_DERIVADA) {
+        Some(d) => format!("{DERIVADA}:{}:{}", repo.id, d.id),
+        None => rotation_key(kind, &repo.id),
     }
 }
 
@@ -355,12 +425,10 @@ fn manual_note_path(repo_id: &str) -> std::path::PathBuf {
 /// Anota una copia a mano con versión nueva (la app, sin administrador), para
 /// que la copia externa «después de cada copia» y el freno la tengan en cuenta.
 pub fn note_manual_backup(repo_id: &str, plan_name: &str, snapshot_id: &str, data_added: u64, files: (u64, u64)) {
-    let wanted = agent::load_config()
-        .repos
-        .iter()
-        .find(|r| r.id == repo_id)
-        .and_then(|r| r.offsite.as_ref())
-        .is_some_and(|o| o.guard.is_some() || matches!(o.schedule, Schedule::AfterBackup { .. }));
+    let wanted = agent::load_config().repos.iter().find(|r| r.id == repo_id).is_some_and(|r| {
+        let after = |o: &Offsite| o.guard.is_some() || matches!(o.schedule, Schedule::AfterBackup { .. });
+        r.offsite.as_ref().is_some_and(after) || r.derived.iter().any(|d| after(&d.offsite))
+    });
     if !wanted || !agent::requests_dir().is_dir() {
         return;
     }
@@ -523,13 +591,14 @@ pub struct DueContext {
 
 impl DueContext {
     fn load(config: &AgentConfig, now: DateTime<Local>) -> Self {
-        let needs = config.repos.iter().any(|r| r.offsite.as_ref().is_some_and(|o| o.guard.is_some() || matches!(o.schedule, Schedule::AfterBackup { .. })));
+        let after = |o: &Offsite| o.guard.is_some() || matches!(o.schedule, Schedule::AfterBackup { .. });
+        let needs = config.repos.iter().any(|r| r.offsite.as_ref().is_some_and(after) || r.derived.iter().any(|d| after(&d.offsite)));
         let mut ctx = DueContext { holds: load_guard().holds.into_keys().collect(), ..Default::default() };
         if needs {
             let state = agent::load_state();
             let history = crate::history::read(&crate::history::agent_file());
             for r in &config.repos {
-                if r.offsite.is_some() {
+                if r.offsite.is_some() || !r.derived.is_empty() {
                     ctx.events.insert(r.id.clone(), backup_events(r, &state, &history, now));
                 }
             }
@@ -840,6 +909,20 @@ fn due_at(config: &AgentConfig, state: &mut TasksState, ctx: &DueContext, consum
                 out.push(("offsite", repo.clone()));
             }
         }
+        // Tarea 4b: las demás copias derivadas, cada una con su horario.
+        for d in &repo.derived {
+            let asked = requested(state, &repo.id, &derived_request(DERIVADA, &d.id), consume);
+            let paused = repo.active_pause(now).is_some();
+            let held = ctx.holds.contains(&repo.id);
+            let last = since(state, &derived_key(DERIVADA, &repo.id, &d.id), &d.offsite.enabled_at);
+            let scheduled = match &d.offsite.schedule {
+                Schedule::AfterBackup { min_minutes } => after_backup_due(ctx.events.get(&repo.id).map(Vec::as_slice).unwrap_or(&[]), last, *min_minutes, now),
+                s => s.is_due(last, now),
+            };
+            if asked || (!paused && !held && scheduled) {
+                out.push((DERIVADA, derived_view(repo, d)));
+            }
+        }
     }
     for repo in &config.repos {
         if let Some(v) = &repo.verify {
@@ -874,6 +957,14 @@ fn due_at(config: &AgentConfig, state: &mut TasksState, ctx: &DueContext, consum
                 out.push(("verify_offsite", repo.clone()));
             }
         }
+        for d in &repo.derived {
+            let Some(v) = d.offsite.verify.as_ref() else { continue };
+            let asked = requested(state, &repo.id, &derived_request(VERIFY_DERIVADA, &d.id), consume);
+            let paused = repo.active_pause(now).is_some();
+            if asked || (!paused && v.schedule.is_due(since(state, &derived_key(VERIFY_DERIVADA, &repo.id, &d.id), &v.enabled_at), now)) {
+                out.push((VERIFY_DERIVADA, derived_view(repo, d)));
+            }
+        }
     }
     out
 }
@@ -887,7 +978,11 @@ pub fn request_now(repo_id: &str, kind: &str) -> Result<(), String> {
         "offsite" => repo.offsite.is_some(),
         "verify_offsite" => repo.offsite.as_ref().is_some_and(|o| o.verify.is_some()),
         "restore_test" => repo.restore_test.is_some(),
-        _ => false,
+        k => match k.split_once('-') {
+            Some((DERIVADA, id)) => repo.derived.iter().any(|d| d.id == id),
+            Some((VERIFY_DERIVADA, id)) => repo.derived.iter().any(|d| d.id == id && d.offsite.verify.is_some()),
+            _ => false,
+        },
     };
     if !configured {
         return Err("Esa tarea no está programada en este repositorio.".into());
@@ -992,11 +1087,18 @@ pub fn run() -> i32 {
             agent::log(&format!("ERROR: «{}» no tiene contraseña guardada en el agente.", repo.name));
             continue;
         };
+        // Tarea 4b: una derivada usa sus credenciales como si fuera la copia externa.
+        let derivada = repo.derived.first().filter(|_| kind == DERIVADA || kind == VERIFY_DERIVADA).cloned();
+        let secret_derivada = derivada.as_ref().map(|d| derived_secret(secret, &d.id));
+        let secret = secret_derivada.as_ref().unwrap_or(secret);
+        let destino = repo.offsite.as_ref().and_then(|o| o.target_name.clone()).unwrap_or_default();
         let what = match kind {
-            "verify" => "Verificación",
-            "verify_offsite" => "Verificación de la copia en la nube",
-            "restore_test" => "Prueba de restauración",
-            _ => "Copia externa",
+            "verify" => "Verificación".to_string(),
+            "verify_offsite" => "Verificación de la copia en la nube".to_string(),
+            "restore_test" => "Prueba de restauración".to_string(),
+            VERIFY_DERIVADA => format!("Verificación de la copia derivada a «{destino}»"),
+            DERIVADA => format!("Copia derivada a «{destino}»"),
+            _ => "Copia externa".to_string(),
         };
         let quiet = if agent::apply_discreet(&config) { " (modo discreto: prioridad baja)" } else { "" };
         agent::log(&format!("{what} de «{}»…{quiet}", repo.name));
@@ -1012,7 +1114,7 @@ pub fn run() -> i32 {
         save_state(&mut state);
 
         // Verificación rotativa: la parte que toca.
-        let rot_key = rotation_key(kind, &repo.id);
+        let rot_key = task_rotation_key(kind, &repo);
         let parts = task_verify(&repo, kind).map_or(0, |v| v.rotate_parts);
         let part = current_part(state.rotation.get(&rot_key), parts);
         let mut last_write = std::time::Instant::now();
@@ -1054,8 +1156,8 @@ pub fn run() -> i32 {
                 };
                 crate::restore_test::run(&source_access(&repo, secret), repo.restore_test.as_ref().unwrap(), &mut stage_report)
             }
-            "verify_offsite" => {
-                // El destino de la copia externa, con las credenciales de la subida.
+            "verify_offsite" | VERIFY_DERIVADA => {
+                // El destino de la copia externa (o de la derivada), con las credenciales de la subida.
                 let o = repo.offsite.as_ref().unwrap();
                 verify_repo(dest_access(o, secret), o.verify.as_ref().unwrap(), part, &mut report)
             }
@@ -1072,7 +1174,7 @@ pub fn run() -> i32 {
         }
         state.running = None;
         // Solo avanza si salió bien: una verificación fallida o cortada repite la parte.
-        if kind == "verify" || kind == "verify_offsite" {
+        if kind == "verify" || kind == "verify_offsite" || kind == VERIFY_DERIVADA {
             if let Some(next) = rotation_after(state.rotation.get(&rot_key), parts, part, &record) {
                 state.rotation.insert(rot_key.clone(), next);
             }
@@ -1090,12 +1192,13 @@ pub fn run() -> i32 {
                 started: record.started.clone(),
                 finished: record.finished.clone(),
                 result: record.result.clone(),
-                message: record.message.clone(),
+                // Tarea 4b: de qué derivada es (en el historial no hay otro campo para decirlo).
+                message: if derivada.is_some() { format!("«{destino}»: {}", record.message) } else { record.message.clone() },
                 files_new: record.files_new,
                 ..Default::default()
             },
         );
-        state.runs.insert(key(kind, &repo.id), record);
+        state.runs.insert(task_key(kind, &repo), record);
         save_state(&mut state);
     }
     if failures > 0 {
@@ -1418,6 +1521,10 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
         Ok(list) => list
             .into_iter()
             .filter(|s| {
+                // Tarea 4c: solo las que pasan el filtro (las demás, ni se cuentan).
+                if offsite.filtro.as_ref().is_some_and(|f| !f.deja_en(s, Local::now())) {
+                    return false;
+                }
                 let ya = already_in(&present, s);
                 skipped += usize::from(ya);
                 !ya && wanted.as_ref().is_none_or(|w| w.contains(&s.id))
@@ -1671,6 +1778,7 @@ mod tests {
             guard: None,
             verify: None,
             dest: Default::default(),
+            filtro: None,
         });
         let now = at("2026-09-30 10:30");
         let mut config = AgentConfig { repos: vec![repo], ..Default::default() };
@@ -1722,6 +1830,7 @@ mod tests {
             guard: None,
             verify: None,
             dest: Default::default(),
+            filtro: None,
         });
         let entry = |finished: &str, snap: Option<&str>, unchanged: bool, result: &str| crate::history::Entry {
             kind: "backup".into(),
@@ -1867,6 +1976,7 @@ mod tests {
             guard: None,
             verify: Some(Verify { schedule: Schedule::Hours { every: 1 }, subset_percent: 0, enabled_at: hace_rato, rotate_parts: 3 }),
             dest: Default::default(),
+            filtro: None,
         });
         let now = t("2026-10-01 10:30");
         let mut config = AgentConfig { repos: vec![repo], ..Default::default() };
@@ -1930,6 +2040,7 @@ mod tests {
             guard: None,
             verify: None,
             dest: Default::default(),
+            filtro: None,
         });
         config.repos.push(origen);
         assert!(!kinds(&config, &mut state).contains(&"restore_test"));
@@ -2101,6 +2212,7 @@ mod tests {
             guard: None,
             verify: None,
             dest: DestinoExterno { existing, object_lock_days: lock, append_only: false },
+            filtro: None,
         }
     }
 
@@ -2175,6 +2287,101 @@ mod tests {
         let rec = offsite_repo(&repo, &secret, &externa(&nube_dir, false, None, None), false, &mut |_| {});
         assert_eq!(rec.result, "ok", "{}", rec.message);
         assert_eq!(chunker_polynomial(&nube).unwrap(), chunker_polynomial(&nuevo).unwrap());
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    /// Tarea 4b: cada copia derivada toca con su horario, con su clave en
+    /// `tasks.json` (no pisa la de la copia externa) y con sus credenciales.
+    #[test]
+    fn copias_derivadas_cuando_tocan() {
+        let mut repo = crate::agent::tests::repo_cada_hora();
+        let o = |schedule: Schedule| Offsite {
+            schedule,
+            enabled_at: t("2026-10-01 06:00").to_rfc3339(),
+            ..externa(std::path::Path::new("E:\\x"), false, None, None)
+        };
+        repo.offsite = Some(o(Schedule::Daily { time: "21:00".into() }));
+        let mut nube = o(Schedule::AfterBackup { min_minutes: 0 });
+        nube.verify =
+            Some(Verify { schedule: Schedule::Hours { every: 24 }, subset_percent: 0, enabled_at: t("2026-10-01 06:00").to_rfc3339(), rotate_parts: 0 });
+        repo.derived =
+            vec![Derived { id: "nube".into(), offsite: nube }, Derived { id: "disco-e".into(), offsite: o(Schedule::Daily { time: "23:00".into() }) }];
+        let config = AgentConfig { repos: vec![repo.clone()], ..Default::default() };
+        let mut state = TasksState::default();
+        let now = t("2026-10-01 22:00");
+        // Una copia con versión nueva a las 21:30: la de «después de cada copia» toca; la de las 23:00, aún no;
+        // la externa de las 21:00, sí (nunca se hizo). Y la verificación de la derivada (cada 24 h, desde las 06:00), no.
+        let ctx = DueContext { events: [(repo.id.clone(), vec![ev("2026-10-01 21:30", "a1", 10, 1)])].into(), ..Default::default() };
+        let todo = due_at(&config, &mut state, &ctx, false, now);
+        let claves: Vec<String> = todo.iter().map(|(k, r)| task_key(k, r)).collect();
+        assert_eq!(claves, ["offsite:r", "derivada:r:nube"]);
+        // La tarea de la derivada ve su destino como la copia externa (y sabe de cuál es).
+        let (_, vista) = &todo[1];
+        assert!(matches!(vista.offsite.as_ref().unwrap().schedule, Schedule::AfterBackup { .. }));
+        assert_eq!(task_rotation_key(VERIFY_DERIVADA, vista), "derivada:r:nube");
+        // Ya hecha después de esa copia: no repite. La de las 23:00, a su hora.
+        state.runs.insert(derived_key(DERIVADA, "r", "nube"), RunRecord { started: t("2026-10-01 21:35").to_rfc3339(), ..Default::default() });
+        state.runs.insert(key("offsite", "r"), RunRecord { started: t("2026-10-01 21:00").to_rfc3339(), ..Default::default() });
+        let todo = due_at(&config, &mut state, &ctx, false, t("2026-10-01 23:01"));
+        assert_eq!(todo.iter().map(|(k, r)| task_key(k, r)).collect::<Vec<_>>(), ["derivada:r:disco-e"]);
+        let todo = due_at(&config, &mut state, &ctx, false, t("2026-10-02 06:30"));
+        assert!(todo.iter().any(|(k, r)| task_key(k, r) == "verify_derivada:r:nube"));
+        // Con la subida frenada por un cambio inusual, tampoco las derivadas.
+        let frenado = DueContext { holds: ["r".to_string()].into(), ..DueContext { events: ctx.events.clone(), ..Default::default() } };
+        let mut limpio = TasksState::default();
+        assert!(!due_at(&config, &mut limpio, &frenado, false, now).iter().any(|(k, _)| *k == DERIVADA));
+        // Sus credenciales en lugar de las de la copia externa.
+        let mut secret = Secret { password: "origen".into(), offsite_password: Some("de la externa".into()), ..Default::default() };
+        secret
+            .derived
+            .insert("nube".into(), agent::DerivedSecret { password: Some("de la nube".into()), location: Some("rest:https://x/r".into()), env: vec![] });
+        let s = derived_secret(&secret, "nube");
+        assert_eq!(
+            (s.password.as_str(), s.offsite_password.as_deref(), s.offsite_location.as_deref()),
+            ("origen", Some("de la nube"), Some("rest:https://x/r"))
+        );
+        let s = derived_secret(&secret, "otra");
+        assert_eq!(s.offsite_password, None, "sin la suya, la del origen (nunca la de la externa)");
+    }
+
+    /// Tarea 4b y 4c: una copia derivada con otra contraseña y un filtro (solo
+    /// las de los últimos 30 días con la etiqueta «diaria»), con restic de verdad.
+    #[test]
+    fn copia_derivada_con_filtro_y_otra_contrasena() {
+        if restic::version().is_err() {
+            return;
+        }
+        let b = base_prueba("derivada");
+        let datos = b.join("datos");
+        fs::write(datos.join("factura.txt"), b"factura 1").unwrap();
+        let d = datos.display().to_string();
+        let origen = Access::new(b.join("origen").display().to_string(), "clave del origen");
+        ok(&origen, &["init"]);
+        let hace = |dias: i64| (Local::now() - chrono::Duration::days(dias)).format("%Y-%m-%d %H:%M:%S").to_string();
+        ok(&origen, &["backup", "--host", "PC-ANA", "--tag", "diaria", "--time", &hace(200), &d]);
+        ok(&origen, &["backup", "--host", "PC-ANA", "--tag", "semanal", "--time", &hace(10), &d]);
+        ok(&origen, &["backup", "--host", "PC-ANA", "--tag", "diaria", "--time", &hace(2), &d]);
+        let repo = AgentRepo { location: origen.location.clone(), ..crate::agent::tests::repo_cada_hora() };
+        let destino = b.join("derivada");
+        let mut o = externa(&destino, false, None, None);
+        o.filtro = Some(crate::adoptar_v2::Filtro::de(&serde_json::json!({ "etiquetas": ["diaria"], "ultimos_dias": 30 })).unwrap());
+        let d1 = Derived { id: "d1".into(), offsite: o };
+        let mut secret = Secret { password: origen.password.clone(), ..Default::default() };
+        secret
+            .derived
+            .insert("d1".into(), agent::DerivedSecret { password: Some("otra clave".into()), location: Some(destino.display().to_string()), env: vec![] });
+        let vista = derived_view(&repo, &d1);
+        let rec = offsite_repo(&vista, &derived_secret(&secret, "d1"), vista.offsite.as_ref().unwrap(), false, &mut |_| {});
+        assert_eq!(rec.result, "ok", "{}", rec.message);
+        assert_eq!(rec.message, "1 copia subida.");
+        // Se abre con su contraseña (no con la del origen) y solo tiene la que pasa el filtro.
+        let dest = Access::new(destino.display().to_string(), "otra clave");
+        let v = restic::snapshots(&dest).unwrap();
+        assert_eq!((v.len(), v[0].tags.as_slice()), (1, &["diaria".to_string()][..]));
+        assert!(restic::snapshots(&Access::new(destino.display().to_string(), "clave del origen")).is_err());
+        // Otra vuelta: nada nuevo (las que no pasan el filtro ni se cuentan).
+        let rec = offsite_repo(&vista, &derived_secret(&secret, "d1"), vista.offsite.as_ref().unwrap(), false, &mut |_| {});
+        assert_eq!(rec.message, "Nada nuevo que subir: el repositorio ya estaba al día.");
         let _ = fs::remove_dir_all(&b);
     }
 

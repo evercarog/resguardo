@@ -254,6 +254,9 @@ pub struct AgentRepo {
     /// Copia externa programada (`restic copy` a otro repositorio).
     #[serde(default)]
     pub offsite: Option<crate::tasks::Offsite>,
+    /// Tarea 4b: las demás copias derivadas (la primera es `offsite`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub derived: Vec<crate::tasks::Derived>,
     /// Copias automáticas en pausa (p. ej. durante un mantenimiento del servidor).
     #[serde(default)]
     pub pause: Option<Pause>,
@@ -437,6 +440,29 @@ pub struct Secret {
     pub offsite_location: Option<String>,
     #[serde(default)]
     pub offsite_env: Vec<(String, String)>,
+    /// Tarea 4b: las credenciales de cada copia derivada (por su id).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub derived: HashMap<String, DerivedSecret>,
+}
+
+/// Tarea 4b: las credenciales de una copia derivada (solo en `secrets`, protegido).
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct DerivedSecret {
+    /// Su contraseña, si es otra (sin ella, la del origen).
+    #[serde(default)]
+    pub password: Option<String>,
+    /// Su ubicación con el usuario del servidor, si lo tiene.
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub env: Vec<(String, String)>,
+}
+
+/// Sin las credenciales (para que nunca acaben en un registro).
+impl std::fmt::Debug for DerivedSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DerivedSecret").finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1129,7 +1155,7 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
         } else {
             Vec::new()
         };
-        let keeps_tasks = previous.as_ref().is_some_and(|p| p.verify.is_some() || p.offsite.is_some() || p.restore_test.is_some());
+        let keeps_tasks = previous.as_ref().is_some_and(|p| p.verify.is_some() || p.offsite.is_some() || !p.derived.is_empty() || p.restore_test.is_some());
         if matches!(schedule, Schedule::Plans) && plans.is_empty() && !keeps_tasks {
             return Err("Ningún plan tiene horario: añade días y horas a algún plan.".into());
         }
@@ -1151,6 +1177,7 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
             verify: previous.as_ref().and_then(|p| p.verify.clone()),
             restore_test: previous.as_ref().and_then(|p| p.restore_test.clone()),
             offsite: previous.as_ref().and_then(|p| p.offsite.clone()),
+            derived: previous.as_ref().map(|p| p.derived.clone()).unwrap_or_default(),
             // Cambiar las copias no quita una pausa.
             pause: previous.as_ref().and_then(|p| p.pause.clone()),
             kit: repo.kit.clone().or_else(|| previous.as_ref().and_then(|p| p.kit.clone())),
@@ -1171,6 +1198,7 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
                 env: access.env.clone(),
                 offsite_location: old.offsite_location,
                 offsite_env: old.offsite_env,
+                derived: old.derived,
             },
         );
     }
@@ -1222,6 +1250,55 @@ pub struct OffsiteSecrets {
     /// Destino de la app: ubicación con credenciales y variables de nube.
     pub location: Option<String>,
     pub env: Vec<(String, String)>,
+}
+
+/// Tarea 4b: pone, cambia o quita (`None`) la copia derivada `id` de un
+/// repositorio del agente. Sin credenciales nuevas (`creds: None`), se quedan
+/// las que tenía.
+pub fn set_derived(repo_id: &str, id: &str, derived: Option<crate::tasks::Derived>, creds: Option<OffsiteSecrets>) -> Result<(), String> {
+    require_admin()?;
+    let mut config = load_config();
+    let mut secrets = load_secrets()?;
+    let entry = config.repos.iter_mut().find(|r| r.id == repo_id).ok_or("Activa primero las copias automáticas en este repositorio.")?;
+    if let Some(d) = &derived {
+        let o = &d.offsite;
+        if d.id != id {
+            return Err("Id de copia derivada no válido.".into());
+        }
+        o.schedule.validate_offsite()?;
+        if let Some(v) = &o.verify {
+            v.validate()?;
+        }
+        if let Some(p) = &o.retention {
+            p.validate()?;
+        }
+        if o.location.trim().is_empty() {
+            return Err("Falta la ubicación del repositorio.".into());
+        }
+        if crate::restic::has_embedded_password(&o.location) {
+            return Err("No pongas la contraseña dentro de la ubicación: usa los campos de credenciales.".into());
+        }
+    }
+    let secret = secrets.get_mut(repo_id).ok_or("Este repositorio no tiene contraseña guardada en el agente.")?;
+    match (&derived, creds) {
+        (Some(_), Some(c)) => {
+            let ds = DerivedSecret { password: c.password.filter(|p| !p.is_empty()), location: c.location.filter(|p| !p.is_empty()), env: c.env };
+            secret.derived.insert(id.to_string(), ds);
+        }
+        (Some(_), None) => {}
+        (None, _) => {
+            secret.derived.remove(id);
+        }
+    }
+    entry.derived.retain(|d| d.id != id);
+    if let Some(d) = derived {
+        entry.derived.push(d);
+    }
+    let name = entry.name.clone();
+    save_secrets(&secrets)?;
+    write_json("agent.json", &config)?;
+    log(&format!("Copia derivada de «{name}» actualizada."));
+    Ok(())
 }
 
 /// Activa, cambia o quita la copia externa de un repositorio del agente.
@@ -2385,6 +2462,7 @@ pub mod tests {
                 plans: vec![],
                 verify: None,
                 offsite: None,
+                derived: vec![],
                 pause: None,
                 kit: None,
                 restore_test: None,
@@ -2448,6 +2526,7 @@ pub mod tests {
             }],
             verify: None,
             offsite: None,
+            derived: vec![],
             pause: None,
             kit: None,
             restore_test: None,
@@ -2756,6 +2835,7 @@ pub mod tests {
                 // También se verifica la copia externa (parte 1 de 2, con las credenciales de la subida).
                 verify: Some(crate::tasks::Verify { schedule: Schedule::Hours { every: 1 }, subset_percent: 0, enabled_at: hace_2h.clone(), rotate_parts: 2 }),
                 dest: Default::default(),
+                filtro: None,
             }),
             None,
         )

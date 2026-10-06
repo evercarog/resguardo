@@ -168,7 +168,7 @@ pub struct Hecha {
 /// Tipo de una tarea de `tasks.rs`.
 pub fn tipo_tarea(kind: &str) -> &'static str {
     match kind {
-        "offsite" => "copia_externa",
+        "offsite" | crate::tasks::DERIVADA => "copia_externa",
         // verify, verify_offsite, restore_test: comprobar que las copias están bien.
         _ => "verificacion",
     }

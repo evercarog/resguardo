@@ -146,6 +146,8 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "cambiar_retencion" => format!("Cambiar la retención de «{}»", r()),
         "aplicar_retencion" => format!("Aplicar la retención en «{}»", r()),
         "cambiar_copia_externa" => format!("Quitar la copia externa de «{}»", r()),
+        "cambiar_derivada" => format!("Cambiar la retención o el destino de una copia derivada de «{}»", r()),
+        "quitar_derivada" => format!("Quitar una copia derivada de «{}»", r()),
         "restaurar" => format!("Restaurar «{}» reemplazando los archivos originales", r()),
         "pausar" => "Pausar las copias".to_string(),
         "baja_equipo" => "Dar de baja el equipo".to_string(),

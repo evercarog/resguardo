@@ -88,7 +88,7 @@ pub fn tarea_copia(r: &RunningCopy, nombre: Option<&str>, ahora: DateTime<Local>
 fn tipo_tarea(kind: &str) -> &'static str {
     match kind {
         "verify" => "verificar",
-        "verify_offsite" => "verificar_externa",
+        "verify_offsite" | crate::tasks::VERIFY_DERIVADA => "verificar_externa",
         "restore_test" => "prueba_restauracion",
         _ => "copia_externa",
     }

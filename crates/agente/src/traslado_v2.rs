@@ -498,6 +498,7 @@ pub fn importar_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String
         ubicacion_origen: repo_origen,
         externa: None,
         solo_anadir: None,
+        derivadas: Vec::new(),
     });
     let acc = g::acceso(&prueba, &id)?;
     let n = resguardo_motor::restic::snapshots(&acc).map_err(|e| format!("No se pudo abrir el repositorio: {e}"))?.len();

@@ -543,6 +543,7 @@ mod tests {
             schedule: None,
             skip_unchanged: false,
             ganchos: vec![],
+            after: None,
         };
         assert!(plan.validate().is_err(), "etiqueta con espacio");
     }
