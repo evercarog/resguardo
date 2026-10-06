@@ -141,6 +141,16 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",
     todo: "Usa la misma contraseña que el repositorio salvo que pongas otra; en ese caso, apúntala en el kit. También puede ir a un repositorio que ya existe (p. ej. el de la nube de la app de escritorio): solo sube lo que le falte. Si el destino tiene bloqueo de objetos, márcalo: allí no se libera espacio.",
   },
+  "copia-derivada": {
+    title: "Copia derivada",
+    text: "Otra copia de un repositorio en otro destino, además de la copia externa: el equipo crea allí un repositorio con el mismo troceado (deduplica con el original) y le sube las versiones, todas o las que pasen un filtro (etiquetas, equipo, carpetas, fechas). Puede ir después de cada copia o a una hora, con su propia contraseña, su retención y su verificación.",
+    todo: "Si le pones otra contraseña, guárdala en el kit. Para Dropbox o Google Drive, conecta antes la nube en este mismo equipo.",
+  },
+  cadena: {
+    title: "Copias en cadena",
+    text: "Una copia puede empezar «después de la anterior»: cuando aquella termina bien, empieza esta. Si la anterior falla, la cadena se para y avisa («Cadena parada»); al arreglarse, sigue sola. Los espejos y las copias derivadas de cada repositorio se ven en la misma línea.",
+    todo: "Recomendado: al menos un destino fuera del alcance de la retención del original (un espejo sin retención, una copia derivada con la suya o una nube con bloqueo de objetos).",
+  },
   espejo: {
     title: "Espejo en otro disco",
     text: "El equipo que guarda copias copia lo que recibe a otros destinos: otra carpeta (mejor en otro disco) o una nube conectada en ese equipo (Dropbox, Google Drive, B2, S3, SFTP, un NAS o WebDAV), con el horario de cada destino. Comprueba cada archivo antes de copiarlo y, si no le pones retención, nunca borra allí. Si falla el disco principal, las copias siguen en el espejo y se abren con la contraseña del kit.",

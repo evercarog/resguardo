@@ -242,9 +242,12 @@ export interface ResumenEquipo {
       resultado?: string | null;
       limite_kib?: number | null;
       destinos?: {
-        tipo: "carpeta" | "nube";
+        /** Tarea 7d.2: «zona», otra zona de este almacén (`carpeta` es su id o «principal»). */
+        tipo: "carpeta" | "nube" | "zona";
         carpeta?: string | null;
         nube?: string | null;
+        /** Tarea 7d.2: de qué zona copia (sin ella, la principal). */
+        zona?: string | null;
         ultima?: string | null;
         resultado?: string | null;
         espacio?: EspacioVolumen | null;
@@ -290,6 +293,8 @@ export interface ResumenEquipo {
     zonas?: ZonaAlmacen[] | null;
   } | null;
   pausado_hasta?: string | null;
+  /** Tarea 4a: las nubes conectadas en el equipo (también si no guarda copias). */
+  nubes?: { nombre: string; tipo: string }[];
 }
 
 /** Tarea 7b: una zona más de un almacén. */
@@ -338,6 +343,44 @@ export interface CopiaResumen {
   activa?: boolean;
   /** v1.16 (agente ≥ 0.7.7): si guarda versión solo cuando algo cambió. */
   solo_si_cambios?: boolean;
+  /** Tarea 7c (`admite: "cadenas"`): va «después de la anterior», el id de esa copia. */
+  tras?: string | null;
+}
+
+/** Tarea 4c: qué versiones sube una copia derivada (o trae «Traer el historial»). */
+export interface FiltroVersiones {
+  equipos?: string[];
+  etiquetas?: string[];
+  /** En el documento cifrado, las carpetas; en el resumen (en claro), cuántas. */
+  carpetas?: string[] | number;
+  /** AAAA-MM-DD. */
+  desde?: string;
+  ultimos_dias?: number;
+}
+
+/** Tarea 4b: cuándo se hace una copia derivada. */
+export interface CuandoDerivada {
+  hora?: string;
+  horario?: Horario;
+  /** «Después de cada copia» del repositorio (como mucho cada `min_minutos`). */
+  tras_copia?: boolean;
+  min_minutos?: number;
+}
+
+/** Tarea 4b (`admite: "derivadas"`): otra copia derivada de un repositorio (la externa de siempre va aparte). */
+export interface DerivadaResumen {
+  id: string;
+  destino?: string | null;
+  destino_id?: string | null;
+  cuando?: CuandoDerivada | null;
+  existente?: boolean | null;
+  bloqueo_dias?: number | null;
+  solo_anadir?: boolean | null;
+  filtro?: FiltroVersiones | null;
+  verificacion?: VerificacionAuto | null;
+  /** Si el agente la tiene (un repositorio sin copias activas la pierde). */
+  activa?: boolean;
+  con_retencion?: boolean | null;
 }
 
 export interface RepositorioResumen {
@@ -374,6 +417,8 @@ export interface RepositorioResumen {
   } | null;
   /** v1.22: su carpeta en el servidor rest, si no es su id (uno adoptado). */
   ruta?: string | null;
+  /** Tarea 4b: las demás copias derivadas. */
+  derivadas?: DerivadaResumen[];
 }
 
 /**
@@ -430,7 +475,9 @@ export interface RetencionAlmacen {
 export interface DestinoResumen {
   id: string;
   nombre: string;
-  tipo: "local" | "rest" | "s3" | "b2" | "sftp" | "otro";
+  /** Tarea 4a: «nube», una nube conectada en el equipo (`nube` su nombre, `donde` la carpeta dentro). */
+  tipo: "local" | "rest" | "s3" | "b2" | "sftp" | "nube" | "otro";
+  nube?: string | null;
   /** Servidor o bucket, sin credenciales. */
   donde?: string;
   inmutable?: boolean;
@@ -676,6 +723,8 @@ export interface RepoInforme {
   verificacion: TareaInforme | null;
   prueba_restauracion: TareaInforme | null;
   externa: TareaInforme | null;
+  /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
+  derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
   proteccion: { puntuacion: number; total: number; items: ComprobacionProteccion[] } | null;
   /** Se quitaron las entradas más antiguas para que el informe quepa (~200 KiB). */
   recortado?: boolean;
@@ -913,6 +962,8 @@ export interface CopiaConfig {
   gancho?: Gancho | Gancho[] | null;
   /** «Solo guardar si hay cambios» (v1.16, agente ≥ 0.7.7). Sin el campo: encendido. */
   solo_si_cambios?: boolean;
+  /** Tarea 7c (`admite: "cadenas"`): «después de la anterior», el id de otra copia de esta configuración. */
+  tras?: string | null;
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */

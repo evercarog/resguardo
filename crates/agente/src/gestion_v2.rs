@@ -1036,6 +1036,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         }).collect::<Vec<_>>(),
         "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
         "guarda_copias": resumen_guarda_copias(),
+        // Tarea 4a: las nubes conectadas en este equipo (solo nombre y tipo), también si no guarda copias.
+        "nubes": crate::nube::lista(),
         // v1.19: un puerto libre para «Este equipo guarda copias» (la consola lo propone).
         "puerto_libre": puerto_libre(),
         "servidores_respaldo": v.respaldo.iter().map(|r| json!({ "url": r.url, "identidad_corta": r.identidad.chars().take(8).collect::<String>() })).collect::<Vec<_>>(),

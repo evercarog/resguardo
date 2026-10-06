@@ -16,6 +16,8 @@ export interface Admite {
   verif: boolean;
   verifHorario: boolean;
   escritorio: boolean;
+  /** Tarea 7c: «después de la anterior» (`config.copias[].tras`). */
+  cadenas?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -26,6 +28,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     verif: admiteVerificacion(equipo),
     verifHorario: admiteVerificacionHorario(equipo),
     escritorio: !!equipo.resumen?.admite?.includes("escritorio"),
+    cadenas: !!equipo.resumen?.admite?.includes("cadenas"),
   };
 }
 
@@ -43,7 +46,8 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
   // Horas ordenadas y sin repetir; «solo si hay cambios» solo a agentes que lo entienden (≥ 0.7.7; los anteriores lo hacen siempre).
   // Las reglas del horario, solo a agentes ≥ 0.7.9 (con uno anterior no se llega aquí con reglas: «Antes de enviar» lo impide).
   const copias = c0.copias.map((k) => {
-    const { solo_si_cambios, ...resto } = k;
+    // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
+    const { solo_si_cambios, tras, ...resto } = k;
     return {
       ...resto,
       horario: {
@@ -53,6 +57,7 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       },
       gancho: a.ganchos ? paraConfig(ganchosDe(k.gancho as Gancho | Gancho[] | null)) : null,
       ...(a.soloCambios ? { solo_si_cambios: solo_si_cambios !== false } : {}),
+      ...(a.cadenas && tras ? { tras } : {}),
     };
   });
   return {

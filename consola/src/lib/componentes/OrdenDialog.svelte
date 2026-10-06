@@ -84,7 +84,11 @@
   const pideRepo = $derived(necesitaRepo(tipo));
   const espera = $derived(equipo.espera_min_horas ?? cliente.espera_min_horas);
   const destructiva = $derived(
-    esDestructiva(tipo, cuerpo, espera, { espejo: equipo.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length }),
+    esDestructiva(tipo, cuerpo, espera, {
+      espejo: equipo.resumen?.guarda_copias?.espejo ?? null,
+      copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length,
+      derivadas: (equipo.resumen?.repositorios ?? []).flatMap((r) => (r.derivadas ?? []).map((d) => ({ repo: r.id, id: d.id, destino_id: d.destino_id }))),
+    }),
   );
   const cuando = $derived(new Date(Date.now() + espera * 3600_000));
   const listo = $derived(valido && (!pideAdmin || claveAdmin.length > 0) && (!pideRepo || contrasenaRepo.length > 0));

@@ -104,9 +104,12 @@ export const admiteEspejoFlexible = (e: Pick<Equipo, "resumen"> | null | undefin
 
 /** Un destino del espejo como lo da el resumen del equipo. */
 export interface DestinoEspejoResumen {
-  tipo: "carpeta" | "nube";
+  /** Tarea 7d.2: «zona», otra zona del mismo almacén (`carpeta`: su id o «principal»). */
+  tipo: "carpeta" | "nube" | "zona";
   carpeta?: string | null;
   nube?: string | null;
+  /** Tarea 7d.2: de qué zona copia (sin ella, la principal). */
+  zona?: string | null;
   ultima?: string | null;
   resultado?: string | null;
   /** Su horario propio (sin él, cada día a `espejo.hora`). */
@@ -137,9 +140,11 @@ export interface DestinoEspejoResumen {
 
 /** Lo que se manda de un destino en `guarda_copias.espejo.destinos` (sin sus resultados). */
 export interface DestinoEspejoOrden {
-  tipo: "carpeta" | "nube";
+  tipo: "carpeta" | "nube" | "zona";
   carpeta: string;
   nube?: string;
+  /** Tarea 7d.2 (agente con `espejo_zonas`): de qué zona copia. */
+  zona?: string;
   horario?: Horario;
   tras_copia?: boolean;
   repos?: string[];
@@ -166,7 +171,9 @@ export function errorDiasRetencion(n: number): string | null {
 
 /** Un destino del resumen en la forma de la orden: lo que ya tiene, para reenviarlo sin cambios. */
 export function destinoParaOrden(d: DestinoEspejoResumen): DestinoEspejoOrden {
-  const o: DestinoEspejoOrden = d.tipo === "nube" ? { tipo: "nube", nube: d.nube ?? "", carpeta: d.carpeta ?? "" } : { tipo: "carpeta", carpeta: d.carpeta ?? "" };
+  const o: DestinoEspejoOrden = d.tipo === "nube" ? { tipo: "nube", nube: d.nube ?? "", carpeta: d.carpeta ?? "" } : { tipo: d.tipo === "zona" ? "zona" : "carpeta", carpeta: d.carpeta ?? "" };
+  // Tarea 7d.2: la zona de origen se reenvía tal cual (sin ella, otro destino: el agente lo quitaría).
+  if (d.zona && d.zona !== "principal") o.zona = d.zona;
   if (d.horario && (d.horario.reglas?.length || d.horario.horas?.length)) o.horario = d.horario;
   if (d.tras_copia) o.tras_copia = true;
   if (Array.isArray(d.repos)) {

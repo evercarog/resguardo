@@ -88,6 +88,8 @@ const ORDEN: Record<string, Icono> = {
   conectar_nube: CloudUpload,
   quitar_nube: CloudUpload,
   cambiar_copia_externa: CloudUpload,
+  cambiar_derivada: CloudUpload,
+  quitar_derivada: CloudUpload,
 };
 
 /** El icono de un tipo de orden (o uno genérico). */

@@ -11,7 +11,8 @@
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { CalendarClock, FolderOpen, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, CalendarClock, FolderOpen, KeyRound, LayoutTemplate, Link2, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
+  import { ADMITE, admite, errorCadenas, lineaCadena, lineaEnTexto, mover, posiblesAnteriores, recomendarFueraRetencion, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
   import * as api from "$lib/api";
   import { ApiError } from "$lib/api";
   import { argon2Navegador } from "$lib/cripto/argon2";
@@ -133,7 +134,8 @@
   /** Lo que falla en el horario de una copia, en frase para «Antes de enviar», o null. Sin horario solo importa si está activa. */
   function problemaHorario(k: CopiaConfig): string | null {
     const reglas = reglasDe(k.horario, admiteReglas);
-    if (!reglas.length) return k.activa ? `«${k.nombre}» no tiene horario.` : null;
+    // Tarea 7c: «después de la anterior» no necesita horario propio.
+    if (!reglas.length) return k.activa && !k.tras ? `«${k.nombre}» no tiene horario.` : null;
     const e = errorReglas(reglas, admiteReglas);
     return e ? `«${k.nombre}»: ${e.replace(/^./, (x) => x.toLowerCase()).replace(/\.$/, "")}` : null;
   }
@@ -278,8 +280,31 @@
     const r = repos.find((x) => x.id === k.repo)?.nombre ?? "sin repositorio";
     if (!k.activa) return "Desactivada: no se hará hasta que la actives.";
     const antes = ganchosDe(k.gancho).map(fraseGancho);
-    return `${horarioEnFrase(k.horario)} se ${k.carpetas.length === 1 ? "copiará 1 carpeta" : `copiarán ${k.carpetas.length} carpetas`} de ${equipo?.nombre} en «${r}»${antes.length ? `; antes, ${lista(antes)}` : ""}.`;
+    // Tarea 7c: «después de la anterior» (y, si tiene, también con su horario).
+    const anterior = k.tras ? cfg?.copias.find((x) => x.id === k.tras) : undefined;
+    const cuando = anterior
+      ? `Cuando «${anterior.nombre}» termine bien${reglasDe(k.horario, admiteReglas).length ? ` (y además ${horarioEnFrase(k.horario).toLowerCase()})` : ""}`
+      : horarioEnFrase(k.horario);
+    return `${cuando} se ${k.carpetas.length === 1 ? "copiará 1 carpeta" : `copiarán ${k.carpetas.length} carpetas`} de ${equipo?.nombre} en «${r}»${antes.length ? `; antes, ${lista(antes)}` : ""}.`;
   }
+
+  // --- Copias en cadena (tarea 7c, docs/copias-en-cadena.md) -------------------
+  /** El agente entiende «después de la anterior» (`config.copias[].tras`). */
+  const admiteCadenas = $derived(admite(equipo, ADMITE.cadenas));
+  /** «Después de» otra copia: sin horario propio (se puede añadir) o sin cadena. */
+  function ponerTras(k: CopiaConfig, tras: string) {
+    k.tras = tras || null;
+    if (!k.tras && !reglasDe(k.horario, admiteReglas).length) k.horario = { dias: [1, 2, 3, 4, 5], horas: ["13:00"] };
+  }
+  /** «Además, con su horario» en una que va «después de»: sin él, su horario se vacía. */
+  function conHorarioPropio(k: CopiaConfig, si: boolean) {
+    k.horario = si ? { dias: [1, 2, 3, 4, 5], horas: ["13:00"] } : { dias: [], horas: [] };
+  }
+  function moverCopia(i: number, paso: -1 | 1) {
+    if (cfg) cfg.copias = mover(cfg.copias, i, paso);
+  }
+  /** La línea de una copia ya enviada (lo que tiene el equipo ahora, de su resumen). */
+  const lineaDe = (id: string) => (equipo ? lineaCadena(equipo, id, actual.equipos) : []);
 
   // --- Verificación automática (v1.28, `config.verificaciones`) ------------------
   // Por repositorio: cada N días, un porcentaje rotativo. Solo con un agente que
@@ -331,10 +356,11 @@
     (cfg?.copias ?? []).flatMap((k) => [
       ...(k.activa && !k.carpetas.length ? [`«${k.nombre}» no tiene carpetas.`] : []),
       ...(k.activa && !k.repo ? [`«${k.nombre}» no tiene repositorio.`] : []),
+      ...(k.tras && !admiteCadenas ? [`«${k.nombre}» va «después de» otra copia y el agente de este equipo aún no lo admite`] : []),
       ...(problemaHorario(k) ? [problemaHorario(k)!] : []),
       ...(ganchosDe(k.gancho).length && !admiteGanchos ? [`«${k.nombre}» tiene pasos «Antes de copiar» que este agente aún no admite`] : []),
       ...(ganchosDe(k.gancho).some((g) => errorGancho(g)) ? [`«${k.nombre}» tiene un paso «Antes de copiar» por completar`] : []),
-    ])),
+    ])).concat(cfg && errorCadenas(cfg.copias) ? [errorCadenas(cfg.copias)!.replace(/\.$/, "")] : []),
   );
 
   async function guardar() {
@@ -438,6 +464,12 @@
       <section class="card p copia" aria-labelledby="t-{k.id}">
         <div class="cab">
           <input id="t-{k.id}" class="input titulo" bind:value={k.nombre} aria-label="Nombre de la copia" />
+          {#if cfg.copias.length > 1}
+            <span class="orden">
+              <button type="button" class="icon-btn" aria-label="Subir «{k.nombre}»" use:tip={"Subir"} disabled={i === 0} onclick={() => moverCopia(i, -1)}><ArrowUp size={14} /></button>
+              <button type="button" class="icon-btn" aria-label="Bajar «{k.nombre}»" use:tip={"Bajar"} disabled={i === cfg.copias.length - 1} onclick={() => moverCopia(i, 1)}><ArrowDown size={14} /></button>
+            </span>
+          {/if}
           <label class="switch-row"><input type="checkbox" class="switch" bind:checked={k.activa} /><span>Activa</span></label>
           <button
             type="button"
@@ -454,6 +486,11 @@
           />
         </div>
         <p class="frase">{frase(k)}</p>
+        {#if guardadas.has(k.id) && lineaDe(k.id).length > 2}
+          {@const pasos = lineaDe(k.id)}
+          <p class="linea-cadena"><Link2 size={13} /><span>{lineaEnTexto(pasos)}</span></p>
+          {#if recomendarFueraRetencion(pasos)}<p class="faint nota">{TEXTO_FUERA_RETENCION}</p>{/if}
+        {/if}
         <!-- v1.40: van aparte (en el servidor, sin la clave): se guardan al momento, no con «Enviar». -->
         {#if guardadas.has(k.id)}<Observaciones tipo="copia" objeto={objetoDe(equipo.id, k.id)} compacto />{/if}
         {#if usadas[k.id]}
@@ -483,7 +520,22 @@
 
         <div class="field">
           <span class="field-label">Cuándo</span>
-          <EditorHorario id={k.id} bind:horario={k.horario} {admiteReglas} version={versionAgente} />
+          {#if admiteCadenas && cfg.copias.length > 1}
+            <div class="cuando-cadena">
+              <label class="field-label sub" for="tras-{k.id}">Empieza</label>
+              <select id="tras-{k.id}" class="input" value={k.tras ?? ""} onchange={(e) => ponerTras(k, e.currentTarget.value)}>
+                <option value="">Con su horario</option>
+                {#each posiblesAnteriores(cfg.copias, k) as a (a.id)}<option value={a.id}>Después de «{a.nombre}»</option>{/each}
+              </select>
+            </div>
+            {#if k.tras}
+              <p class="faint nota">Empieza cuando «{cfg.copias.find((x) => x.id === k.tras)?.nombre}» termina bien. Si falla, esta no se hace y se avisa («Cadena parada»).</p>
+              <label class="switch-row"><input type="checkbox" class="switch" checked={reglasDe(k.horario, admiteReglas).length > 0} onchange={(e) => conHorarioPropio(k, e.currentTarget.checked)} /><span>Además, con su horario</span></label>
+            {/if}
+          {/if}
+          {#if !k.tras || reglasDe(k.horario, admiteReglas).length > 0}
+            <EditorHorario id={k.id} bind:horario={k.horario} {admiteReglas} version={versionAgente} />
+          {/if}
         </div>
         {#if admiteSoloCambios}
           <label class="switch-row"
@@ -716,6 +768,38 @@
   }
   .quitar {
     margin-left: auto;
+  }
+  .orden {
+    display: inline-flex;
+    gap: 2px;
+  }
+  .cuando-cadena {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .cuando-cadena .sub {
+    margin: 0;
+  }
+  .cuando-cadena select {
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .linea-cadena {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: -8px 0 0;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .linea-cadena :global(svg) {
+    flex: none;
+    margin-top: 3px;
   }
   .usada {
     margin-top: -6px;

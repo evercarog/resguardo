@@ -25,6 +25,9 @@ export const NIVEL: Record<string, Nivel> = {
   quitar_repositorio: "repo",
   dejar_de_copiar: "repo",
   cambiar_copia_externa: "repo",
+  // Tarea 4b: las demás copias derivadas de un repositorio.
+  cambiar_derivada: "repo",
+  quitar_derivada: "repo",
   rotar_contrasena_repo: "repo",
   alta: "admin",
   config: "admin",
@@ -73,9 +76,12 @@ export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_se
  */
 /** Un destino del espejo del Servidor de copias (v1.9): otra carpeta o una nube conectada en el equipo. */
 export interface DestinoEspejo {
-  tipo: "carpeta" | "nube";
+  /** Tarea 7d.2: «zona», otra zona del almacén (`carpeta`: su id o «principal»). */
+  tipo: "carpeta" | "nube" | "zona";
   carpeta?: string | null;
   nube?: string | null;
+  /** Tarea 7d.2: de qué zona copia (sin ella, la principal). */
+  zona?: string | null;
   /** (espejo por destino, docs/espejo.md) solo estos repositorios; sin ellos, todos. */
   repos?: string[] | null;
   /** Borra lo que ya no está en el almacén pasados estos días. */
@@ -88,6 +94,8 @@ export interface ContextoOrden {
   espejo?: { destinos?: DestinoEspejo[] | null } | null;
   /** Cuántas copias activas tiene ahora (resumen del equipo): `config` sin ninguna activa las para todas. */
   copiasActivas?: number;
+  /** Tarea 4b: las copias derivadas que tiene (de qué repositorio, su id y su destino). */
+  derivadas?: { repo: string; id: string; destino_id?: string | null }[];
 }
 
 /** ¿Una configuración deja sin ninguna copia activa (vacía o todas desactivadas)? */
@@ -98,7 +106,7 @@ export function configSinCopiasActivas(config: unknown): boolean {
 
 const sinBarraFinal = (x: string) => x.trim().replace(/[\\/]+$/, "");
 /** Clave de un destino del espejo: tipo + carpeta + nube, como compara el agente. */
-export const claveEspejo = (d: DestinoEspejo) => `${d.tipo}|${sinBarraFinal(d.carpeta ?? "")}|${(d.nube ?? "").trim()}`;
+export const claveEspejo = (d: DestinoEspejo) => `${d.tipo}|${sinBarraFinal(d.carpeta ?? "")}|${(d.nube ?? "").trim()}${d.zona && d.zona !== "principal" ? `|${d.zona}` : ""}`;
 
 /** Destinos de un cuerpo `espejo` (la forma nueva `{ destinos }` o la antigua `{ carpeta }`). */
 export function destinosDeCuerpo(espejo: unknown): DestinoEspejo[] {
@@ -147,6 +155,17 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
     // (v1.46: «Probar», `solo_probar`, no cambia nada.)
     case "cambiar_copia_externa":
       return cuerpo.hora === null && cuerpo.solo_probar !== true;
+    // Tarea 4b: quitar una copia derivada, siempre; cambiar la retención o el destino de una que ya existe, también
+    // (lo mismo que comprueba el agente, `derivada_reduce`). Crear una nueva o cambiar su horario, no.
+    case "quitar_derivada":
+      return true;
+    case "cambiar_derivada": {
+      if (cuerpo.solo_probar === true) return false;
+      const actual = contexto?.derivadas?.find((d) => d.id === cuerpo.id && d.repo === cuerpo.repo);
+      if (!actual) return false;
+      const destino = (cuerpo.destino as { id?: string } | undefined)?.id;
+      return (!!cuerpo.retencion && typeof cuerpo.retencion === "object") || destino !== actual.destino_id;
+    }
     // Desconectar una nube que usa el espejo deja de proteger fuera.
     case "quitar_nube":
       return !!contexto?.espejo && (!Array.isArray(contexto.espejo.destinos) || contexto.espejo.destinos.some((d) => d.tipo === "nube" && (d.nube ?? "").trim() === String(cuerpo.nombre ?? "").trim()));
