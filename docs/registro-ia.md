@@ -49,6 +49,28 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/consolas-sincronizadas`
+
+Lo que contó el usuario con un equipo vinculado a dos consolas (la de la oficina y la en línea). Diseño y tabla de qué es de cada consola en `docs/consolas-multiples.md` §6; contrato en `docs/api-servidor.md` «Cambios», v1.4x (lo que comparten las consolas de un equipo).
+
+- **Pedido:** (1) renombrar un equipo en una consola no lo cambiaba en la otra: que el nombre (y etiquetas y observación) los guarde el equipo con una orden inofensiva, en el historial común, sin pisar lo de cada consola al actualizar; (2) los destinos de repositorios quitados se quedaban («Sin repositorios todavía · lo usa …»): «Quitar este destino», ofrecerlo al quitar el repositorio, y marcar las copias externas o derivadas a un destino quitado o del mismo equipo; (3) el mapa de la consola en línea no enseñaba el espejo del almacén que solo está en la otra: tarjeta «… no está en esta consola» con «Conectar también…», y «Se guarda en» igual en todas; (4) revisar qué más es distinto entre consolas y documentarlo.
+- **Cambios:**
+  - Agente: `datos_equipo.rs` (órdenes `nombre_equipo`, `etiquetas_equipo`, `observacion_equipo`; `Vinculo::datos_equipo`, del equipo; `resumen.datos_equipo`; descripción en el historial común). `quitar_destino` y `quitar_repositorio { quitar_destino }` en `gestion_v2.rs` (`usos_destino`, `repositorios_en_carpeta`: solo mira, nunca borra). `admite`: `datos_equipo`, `quitar_destino`. Las cuatro órdenes en `CAMBIAN_CONFIG` (las demás consolas reciben la configuración al momento y ven «Cambiado desde otra consola»).
+  - Protocolo: los cuatro tipos (inofensivos; `nombre_equipo` y `quitar_destino`, solo administradores).
+  - Servidor: `datos_equipo.rs` copia del resumen el nombre, las etiquetas y la observación del equipo (auditado con el equipo como actor, `desde_equipo: true`).
+  - Consola: `lib/datosEquipo.ts` y `lib/pedirAlEquipo.ts`; renombrar, etiquetas y observación del equipo con la orden si el agente lo admite (si no, como siempre, y lo dice); «Quitar este destino» en la ficha del equipo y en «Repositorios y destinos»; «Quitar también el destino» al quitar un repositorio; avisos de copias externas y derivadas con un destino que no protege; en el mapa, el almacén de otra consola y la tarjeta «no está en esta consola» con `AlmacenEnOtraConsola.svelte` (da el código de conexión de esta consola y explica qué hacer en la otra); «Se guarda en» con el nombre del destino del equipo y el del catálogo de esta consola delante. Simulador (ESTUDIO con un almacén de otra consola; CAJA-1 con un destino vacío y la copia externa a «Disco 2») y `scripts/vectores-datos-equipo.ts`.
+  - Pruebas: unitarias del agente (`datos_equipo.rs`) y del servidor (`datos_equipo.rs`), `datos_equipo_it.rs` con dos servidores reales, y el paso 8a3 del e2e (renombrar en la local y verlo en la en línea, etiquetas y observación al revés, quitar un repositorio con su destino vacío).
+- **Comprobado:** ver «Comprobaciones» al final de esta entrada.
+- **Sin probar / dudas (decididas sin preguntar, como pidió el usuario):**
+  - `quitar_destino` es **inofensiva** (no pide la clave): olvidar una configuración que no usa nada no borra datos; sí exige el papel de administrador. El agente nunca borra la carpeta; si tiene copias, lo dice.
+  - «Quitar también el destino» sale **marcado** al quitar un repositorio cuyo destino se queda vacío (el usuario se quejó de los que quedan). Se aplica con la espera del repositorio y el agente lo vuelve a comprobar entonces.
+  - La **observación del equipo** también se comparte (el usuario dijo «si son por equipo»); los **comentarios** no (son una bitácora con las cuentas de cada servidor), ni las notas de repositorios, copias y destinos.
+  - Un cambio local (`PATCH`) de una consola anterior con el equipo ya con nombre propio dura hasta el siguiente resumen: manda el del equipo. Se documenta en vez de prohibirlo en el servidor (una consola anterior no sabría qué hacer con el error).
+  - «Conectar también…» en la tarjeta del almacén de otra consola no puede usar `ConectarConsola` tal cual (esa manda `anadir_consola` a equipos de **esta** consola, y el almacén no está aquí): da el código de conexión de esta consola (`DarCodigoConexion`) y explica el paso en la otra, que es el `AvisoConsolas`/`ConectarConsola` de siempre visto desde allí.
+  - El nombre del catálogo de destinos sigue siendo de cada consola (está en la tabla de §6.4): «Se guarda en» enseña el de esta consola delante y, si no hay, el del destino que guarda el equipo, que es el mismo en todas.
+  - Un commit subido llevaba en un vector de prueba un nombre de equipo real que la comprobación de nombres prohibidos detectó después de subirlo: lo cambié por uno inventado y reescribí ese commit de la rama (`--force-with-lease`, solo en esta rama, antes de que nadie la usara).
+  - Sin probar en un equipo real: el aviso de copias externas a «una carpeta del mismo equipo» depende de que el agente diga `extraible` (v1.41); con uno anterior, un disco local sin ese dato cuenta como del mismo equipo.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/copias-en-cadena`
 
 Tarea 7 de `docs/plan-mejoras.md`, **parte B** (con la 4 dentro), con el usuario ausente y la propuesta ya escrita en `docs/copias-en-cadena.md` (adelante sin esperar, como pidió). Otra sesión hacía a la vez la tarea 8 (3-2-1-1-0): no se tocó `protection.rs`; lo que necesita de aquí está descrito en `copias-en-cadena.md` («Para la tarea 8»).

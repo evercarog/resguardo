@@ -1179,6 +1179,57 @@ async function principal() {
     log("Órdenes en espera entre consolas: bien");
 
     // -----------------------------------------------------------------------
+    paso("8a3. Lo que comparten las consolas: nombre, etiquetas y observación del equipo; quitar un destino que se queda vacío");
+    {
+      // Convivencia: cada consola con su nombre (como antes de actualizar) y nada se pisa
+      // mientras nadie lo cambie con la orden.
+      await consola3.ok("PATCH", `/api/clientes/${c3.id}/equipos/${eqB2.id}`, { nombre: "B (en línea)" });
+      const antes2 = (await consola2.equipo(c2, eqB2.id)).nombre;
+      comprobar((await consola2.equipo(c2, eqB2.id)).resumen?.admite?.includes("datos_equipo"), "B admite los datos compartidos");
+      comprobar(!(await consola3.equipo(c3, eqB2.id)).resumen?.datos_equipo, "Nadie ha puesto aún los datos del equipo");
+      // Renombrar en la local: lo ve la en línea (el servidor lo copia del resumen).
+      const nombre = await consola2.hecha(c2, eqB2.id, "nombre_equipo", { nombre: "B Recepción" });
+      log(`nombre_equipo: ${nombre.mensaje}`);
+      comprobar(antes2 !== "B Recepción", "El nombre de antes era otro", antes2);
+      await esperar("el nombre nuevo en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).nombre === "B Recepción", { plazo: 60_000, cada: 1000 });
+      igual((await consola2.equipo(c2, eqB2.id)).nombre, "B Recepción", "Y en la local");
+      const quien = (await consola3.equipo(c3, eqB2.id)).resumen?.datos_equipo?.nombre;
+      comprobar(quien?.esta === false, "La en línea sabe que lo cambió otra consola", quien);
+      await esperar("el cambio de nombre en el historial común de la en línea", async () => {
+        const h = (await consola3.ok("GET", `/api/clientes/${c3.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
+        return h.some((x) => x.orden === "nombre_equipo" && x.resultado === "hecha" && x.identidad !== srv3.identidad) || null;
+      }, { plazo: 60_000, cada: 1000 });
+      // Etiquetas y observación desde la en línea: llegan a la local.
+      await consola3.hecha(c3, eqB2.id, "etiquetas_equipo", { etiquetas: ["Recepción", "Sede norte"] });
+      await consola3.hecha(c3, eqB2.id, "observacion_equipo", { texto: "Disco cambiado el 3/10" });
+      await esperar("las etiquetas de la en línea en la local", async () => JSON.stringify((await consola2.equipo(c2, eqB2.id)).etiquetas) === JSON.stringify(["Recepción", "Sede norte"]), { plazo: 60_000, cada: 1000 });
+      await esperar("la observación de la en línea en la local", async () => {
+        const n = await consola2.ok("GET", `/api/clientes/${c2.id}/notas/objeto?tipo=equipo&objeto=${eqB2.id}`);
+        return n.observacion?.texto === "Disco cambiado el 3/10" || null;
+      }, { plazo: 60_000, cada: 1000 });
+      log("Nombre, etiquetas y observación iguales en las dos consolas");
+
+      // Quitar un repositorio de un disco del propio equipo con «Quitar también el destino»: el
+      // destino se va del equipo (en las dos consolas) y lo guardado en su carpeta se queda.
+      const carpeta = dir("disco-del-equipo");
+      fs.mkdirSync(carpeta, { recursive: true });
+      const idDestino = `local-${randomBytes(3).toString("hex")}`;
+      const idRepo = `prueba-${randomBytes(2).toString("hex")}`;
+      const contrasena = Buffer.from(aleatorio(24)).toString("base64url");
+      await consola2.hecha(c2, eqB2.id, "crear_repositorio", { id: idRepo, nombre: "En el mismo disco", destino: { id: idDestino, nombre: "Disco o carpeta del equipo", tipo: "local", donde: carpeta }, contrasena }, { claveAdmin: claveB }, {}, 120_000);
+      await esperar("el destino nuevo en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).resumen?.destinos?.some((d) => d.id === idDestino) || null, { plazo: 60_000, cada: 1000 });
+      // Con un repositorio dentro no se puede quitar.
+      const enUso = await consola3.resultado(c3, eqB2.id, await consola3.mandar(c3, eqB2.id, "quitar_destino", { destino: idDestino }));
+      comprobar(enUso.estado === "fallida" && /En el mismo disco/.test(enUso.mensaje ?? ""), "Un destino con un repositorio no se quita", enUso);
+      const quitado = await consola2.hecha(c2, eqB2.id, "quitar_repositorio", { repo: idRepo, quitar_destino: true }, { claveAdmin: claveB, repo: { repo: idRepo, contrasena } }, {}, 120_000);
+      comprobar(/aún tiene copias guardadas/.test(quitado.mensaje ?? ""), `Quitar el repositorio y su destino: ${quitado.mensaje}`);
+      comprobar(!(quitado.mensaje ?? "").includes(carpeta), "Sin la ruta de la carpeta", quitado.mensaje);
+      comprobar(fs.existsSync(path.join(carpeta, idRepo, "config")), "Lo guardado en la carpeta se queda");
+      await esperar("el destino quitado también en la en línea", async () => !(await consola3.equipo(c3, eqB2.id)).resumen?.destinos?.some((d) => d.id === idDestino) || null, { plazo: 60_000, cada: 1000 });
+      log("Destino vacío quitado; su carpeta sigue con sus copias");
+    }
+
+    // -----------------------------------------------------------------------
     paso("8b. Cambiar la clave de administración desde la consola local, con la en línea conectada");
     // Como CambiarClaveAdmin.svelte: verificador del equipo y K_cfg de cada consola (la otra, con su sal).
     const nueva = new ClaveNueva(argon2, CLAVE_NUEVA, c2.sal_cliente);
