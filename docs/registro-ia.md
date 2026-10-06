@@ -17,7 +17,7 @@ Plantilla:
 
 - **Pedido:** tarea 2 de `docs/plan-mejoras.md` («Equipos que no están en todas las consolas»), con el usuario fuera y otra sesión haciendo a la vez la tarea 1.
 - **Cambios:** consola: `lib/consolasCliente.ts` (las otras consolas del cliente, deducidas de `resumen.consolas` de sus equipos, y qué equipos faltan en cada una), `AvisoConsolas.svelte` (en Estado, en la ficha del equipo y al terminar el alta), `ConectarConsola.svelte` (consola esperada y equipos ya elegidos; «ya gestiona este equipo» se enseña como «Ya estaba conectado»; un equipo sin resumen dice «aún no ha informado» en vez de «actualiza el agente»), datos simulados (ALMACEN-SUR no está en la consola en línea), `scripts/vectores-consolas.ts`. Agente: solo una prueba más en `consolas_it.rs` (repetir `anadir_consola` con B ya conectada). e2e: paso 8. Docs: `consolas-multiples.md` §2.5, plan marcado. **Sin cambios de contrato.**
-- **Comprobado:** RESULTADOS
+- **Comprobado** (antes y después de unir `origin/main`): `cargo fmt --check`, clippy del espacio de trabajo y con `consola-integrada`, `cargo test --workspace`, consola `check`, `build` y `test:vectores` (con la comprobación de `$effect`), `test:sin-referencias` y `npm run e2e` completo (paso 8 con lo nuevo). En el simulador: Estado, ficha del equipo y fin del alta (tras unir el 9a), a 375 px y escritorio, claro y oscuro; «Conectar también…» completo con un código fabricado de la consola en línea simulada (preelige el equipo, reconoce la identidad, «Hecho» y el aviso desaparece).
 - **Decisiones dudosas:**
   - No se sugieren consolas «abandonadas»: sin contacto de ningún equipo en 30 días, o añadidas hace más de 7 y nunca contactadas. Los plazos son a ojo.
   - Aunque el código pegado tenga la misma identidad que ya fijaron los demás equipos (lo que prueba que es esa consola), se sigue pidiendo marcar «He comprobado las huellas»: se enseña un aviso verde, pero no se quita el paso (lo más seguro). Si el código es de otra identidad, solo se avisa (no se bloquea: conectar a otra consola es legítimo).
@@ -25,7 +25,7 @@ Plantilla:
   - Los equipos en modo local, trasladados o sin confirmar no cuentan. Un equipo con agente anterior cuenta («necesita actualizar el agente») y en Estado no tiene botón si todos los que faltan son así.
   - No hay forma de «no avisar más» de un equipo que se quitó a propósito de una consola: el aviso se queda mientras los demás sigan allí.
   - El aviso de Estado usa todos los equipos del cliente, no el filtro de etiquetas.
-- **Sin probar / dudas:** el flujo completo con un código real de otra consola solo se probó en el simulador (código fabricado con la identidad de la consola en línea simulada) y en el e2e por API (el e2e no pasa por la interfaz). El aviso al terminar el alta, en el simulador, no se vio con un equipo recién emparejado de verdad.
+- **Sin probar / dudas:** el flujo completo con un código real de otra consola solo se probó en el simulador (código fabricado con la identidad de la consola en línea simulada) y en el e2e por API (el e2e no pasa por la interfaz). El aviso al terminar el alta se vio en el simulador (con «Vincular este servidor»), no con un agente real.
 
 ## 2026-10-06 · Claude Code · rama `ia/codigo-desde-el-navegador`
 
