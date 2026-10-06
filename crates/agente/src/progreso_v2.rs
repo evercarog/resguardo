@@ -271,9 +271,18 @@ pub mod ops {
         }
     }
 
+    /// Cuántas han terminado en este proceso (para la huella del informe: al terminar
+    /// una, el informe y el historial del equipo salen enseguida hacia todas las consolas).
+    static TERMINADAS: AtomicU64 = AtomicU64::new(0);
+
+    pub fn terminadas() -> u64 {
+        TERMINADAS.load(Ordering::Relaxed)
+    }
+
     impl Drop for Op {
         fn drop(&mut self) {
             OPS.lock().unwrap_or_else(|e| e.into_inner()).retain(|o| o.id != self.0);
+            TERMINADAS.fetch_add(1, Ordering::Relaxed);
         }
     }
 

@@ -950,9 +950,12 @@ mod tests {
             }]
         }))
         .unwrap();
+        // La copia en marcha, con noticias de hace un momento según el reloj de verdad: lo que
+        // está en marcha (`escritorio::actividades_de`) mira la hora real, no la de `ahora()`.
+        let hace_un_minuto = (chrono::Local::now() - chrono::Duration::minutes(1)).to_rfc3339();
         let estado: crate::agent::AgentState = serde_json::from_value(serde_json::json!({
             "runs": { "r1#p1": { "started": "2026-10-05T14:00:00+02:00", "finished": "2026-10-05T14:08:00+02:00", "result": "ok", "message": "C:\\Datos: 3 archivos" } },
-            "running": { "repo_id": "r1", "plan_id": "p1", "started": "2026-10-05T14:15:00+02:00", "percent": 0.5, "updated": "2026-10-05T14:19:00+02:00" }
+            "running": { "repo_id": "r1", "plan_id": "p1", "started": "2026-10-05T14:15:00+02:00", "percent": 0.5, "updated": hace_un_minuto }
         }))
         .unwrap();
         let vinculo = crate::servidor_v2::Vinculo {
@@ -977,7 +980,7 @@ mod tests {
         let json = serde_json::to_string(&e).unwrap();
         assert!(!json.contains("Datos"), "{json}");
         // Una copia «en curso» sin noticias desde hace mucho no se cree.
-        let viejo = ahora() + chrono::Duration::hours(2);
+        let viejo = DateTime::parse_from_rfc3339(&hace_un_minuto).unwrap() + chrono::Duration::hours(2);
         assert!(componer(&f, &viejo).en_curso.is_none());
         // v1.36: con otra consola, salen las dos.
         let dos = crate::servidor_v2::Vinculo {

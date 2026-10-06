@@ -549,8 +549,9 @@ pub fn copiar_historial(v: &Vinculo, c: &Value, orden: &str, seq: u64) -> Result
         // La lista de versiones y el espacio, al día en el próximo informe.
         terminar_historial(&repo, &src);
         // Fuera del progreso y, en el historial del equipo (que llega a todas las consolas), cómo acabó.
-        drop(guarda);
+        // (Primero la entrada: al soltar la operación cambia la huella del informe y se sube enseguida.)
         crate::bitacora::anotar("historial", entrada_historial(&op, &r));
+        drop(guarda);
         let res = match r {
             Ok(m) => Resultado { estado: "hecha", mensaje: m, detalle: None },
             Err(e) => Resultado { estado: "fallida", mensaje: e, detalle: None },
