@@ -933,6 +933,31 @@ mod tests {
         assert!(Manifiesto::leer(v.to_string().as_bytes()).is_ok());
     }
 
+    /// Las firmas que hizo la implementación de JavaScript (scripts/lib/minisign.mjs) con las
+    /// llaves de pruebas: las dos implementaciones dicen lo mismo.
+    #[test]
+    fn vectores_de_firmas_de_otra_implementacion() {
+        let v = vectores();
+        let llaves = llaves_a();
+        for c in v["firmas"].as_array().unwrap() {
+            let nombre = c["nombre"].as_str().unwrap();
+            let revocadas: Vec<String> = serde_json::from_value(c.get("revocadas").cloned().unwrap_or(Value::Array(vec![]))).unwrap();
+            let datos = c["manifiesto"].as_str().unwrap().as_bytes();
+            let r = comprobar_firma(datos, c["firma"].as_str().unwrap(), &llaves, &revocadas);
+            assert_eq!(r.is_ok(), c["valida"].as_bool().unwrap(), "{nombre}: {r:?}");
+            if let Some(id) = c["llave"].as_str() {
+                assert_eq!(r.as_deref(), Ok(id), "{nombre}");
+            }
+            if c["valida"] == true {
+                let producto_ok = c["producto_valido"].as_bool().unwrap_or(true);
+                assert_eq!(verificar(datos, c["firma"].as_str().unwrap(), &llaves, &revocadas, PRODUCTO_AGENTE).is_ok(), producto_ok, "{nombre}");
+            }
+        }
+        let real = &v["firma_minisign_real"];
+        let l = Llaves::leer(real["llave_pub"].as_str().unwrap()).unwrap();
+        assert_eq!(comprobar_firma(real["datos"].as_str().unwrap().as_bytes(), real["firma"].as_str().unwrap(), &l, &[]).as_deref(), Ok(real["llave"].as_str().unwrap()));
+    }
+
     #[test]
     fn vectores_de_versiones() {
         let v = vectores();

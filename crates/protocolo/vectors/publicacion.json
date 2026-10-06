@@ -217,5 +217,51 @@
       "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
       "decision": { "estado": "instalar" }
     }
-  ]
+  ],
+  "_firmas": "Firmas hechas con las llaves de PRUEBAS (tests/fixtures) por scripts/lib/minisign.mjs; las comprueban el protocolo (Rust) y la consola (JS).",
+  "firmas": [
+    {
+      "nombre": "buena, de la llave A",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "valida": true,
+      "llave": "C57E2BA1129956D5"
+    },
+    {
+      "nombre": "de la llave B, que no está fijada",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRURvlHX7ckQehfFVSaQZtOF4arqBA9MWZdy52ML5Pz53DyNh6LIsexPQj2vjeS4S+x7mdRx62eQRMkeZRYqFi91U2X2OwnMXlQE=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\n1M0WWAEfh1xHxdpxIPGS0jHcFQT+3Rh2CYQKh3+0qlVAcU8MOnwE3LOydT8AdsYA7M4XkR0ZuoRIfwhhdp3qAQ==\n",
+      "valida": false
+    },
+    {
+      "nombre": "manifiesto cambiado después de firmar",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.26\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "valida": false
+    },
+    {
+      "nombre": "comentario de confianza cambiado",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: otro comentario\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "valida": false
+    },
+    {
+      "nombre": "llave A revocada",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "revocadas": [
+        "C57E2BA1129956D5"
+      ],
+      "valida": false
+    },
+    {
+      "nombre": "otro producto, bien firmado (la firma vale; el manifiesto no es del agente)",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-servidor\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xTWjN1arZNYFcso+eyChGbIeHHXCEwISe2hYcHTFiiicl6Ou6z9ikGwYs7CjtNAzBE3448HXa1HbqYC5/ZSeRg8=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\nODDcPXcaMHe3RPTAk9h0GxJnRUCoLcuiLXgtKopJb7RRnUTVsj1gFnjIgFExzWsw5Gyn3Iuv31pAHOjn9nCMCw==\n",
+      "valida": true,
+      "llave": "C57E2BA1129956D5",
+      "producto_valido": false
+    }
+  ],
+  "firma_minisign_real": {"nombre": "firma de minisign de verdad (de las pruebas de minisign-verify)", "llave_pub": "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3", "datos": "test", "firma": "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==\n", "llave": "E7620F1842B4E81F"}
 }
