@@ -115,9 +115,9 @@
   import { pedirAlEquipo } from "$lib/pedirAlEquipo";
   import AlmacenEnOtraConsola from "$lib/componentes/AlmacenEnOtraConsola.svelte";
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
-  import { ADMITE as ADMITE_B, admite as admiteB, cuandoEnFrase, filtroEnFrase, pasoDeEspejo, repoEnAlmacen } from "$lib/cadenas";
+  import { cuandoEnFrase, filtroEnFrase, pasoDeEspejo } from "$lib/cadenas";
   import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
-  import AnadirCopia from "$lib/componentes/AnadirCopia.svelte";
+  import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
   import type { DerivadaResumen } from "$lib/tipos";
   import { tareasDe } from "$lib/progreso.svelte";
@@ -528,12 +528,6 @@
   let derivadaPara = $state<{ repo: RepositorioResumen; derivada: DerivadaResumen | null } | null>(null);
   /** Tarea 7d.2: un paso «espejo» de un repositorio que está en un almacén (lo hace el almacén). */
   let pasoEspejoPara = $state<RepositorioResumen | null>(null);
-  /** Tarea 7f: «Añadir una copia» (qué primero; después, el diálogo de cada tipo). */
-  let anadirCopia = $state(false);
-  const puedePasoEspejo = (r: RepositorioResumen) => {
-    const x = equipo ? repoEnAlmacen(equipo, r, actual.equipos) : null;
-    return !!x && admiteB(x.almacen, ADMITE_B.espejoZonas);
-  };
   /** El nombre de una zona de este almacén («Almacén X · Disco E»), o el id si ya no está. */
   const nombreZonaAqui = (id: string | null | undefined) => {
     const z = equipo ? zonasDe(equipo).find((x) => x.id === (id ?? "principal")) : undefined;
@@ -560,34 +554,9 @@
     // v1.22: en un almacén (solo añadir) la retención la aplica el almacén, desde la página del repositorio.
     const enAlm = almacenDe(r, destinoDe(destinos, r), actual.equipos);
     const paginaRet = `/c/${c}/equipos/${id}/repositorios/${encodeURIComponent(r.id)}?retencion=1`;
+    // Lo frecuente (retención, verificación, prueba, espejo, derivadas) está a la vista (PasosRepo).
     const proteccion: AccionMenu[] = [
-      ...(conVersiones
-        ? [{ texto: "Probar la restauración", onclick: () => abrir({ tipo: "probar_restauracion", cuerpo: { repo: r.id }, descripcion: `Se restaurarán unos archivos de «${r.nombre}» a una carpeta temporal y se compararán. No toca tus archivos.`, accion: "Probar la restauración" }) }]
-        : []),
-      ...(r.solo_lectura
-        ? []
-        : enAlm?.admite
-          ? [{ texto: `Retención en ${enAlm.almacen.nombre}…`, onclick: () => goto(paginaRet) }]
-          : [
-            {
-              texto: "Cambiar la retención",
-              onclick: () => {
-                // La que ya tiene (v1.28: la regla del resumen; antes, leída de su texto).
-                reg = copiaRegla(reglaDe(r) ?? REGLA_POR_DEFECTO);
-                abrir({
-                  tipo: "cambiar_retencion",
-                  cuerpo: { repo: r.id },
-                  descripcion: `Cambia qué versiones guarda «${r.nombre}». Solo se guarda la regla: las versiones sobrantes se borran al «Aplicar retención».`,
-                  repo: ref,
-                  campos: "retencion",
-                });
-              },
-            },
-          ]),
-      ...(conCopias ? [{ texto: r.externa ? "Cambiar la copia externa" : "Copia externa…", onclick: () => abrirExterna(r) }] : []),
-      // Tarea 4b: más copias derivadas, cada una con su destino, su contraseña y su filtro.
-      ...(conCopias && admiteB(equipo, ADMITE_B.derivadas) ? [{ texto: "Añadir una copia derivada…", onclick: () => (derivadaPara = { repo: r, derivada: null }) }] : []),
-      ...(!r.solo_lectura && puede.administrar(rol) && puedePasoEspejo(r) ? [{ texto: "Añadir un paso «espejo»…", onclick: () => (pasoEspejoPara = r) }] : []),
+      ...(r.externa && !r.solo_lectura ? [{ texto: "Cambiar la copia externa", onclick: () => abrirExterna(r) }] : []),
       // v1.41: con todo su historial, a otro destino (p. ej. el almacén de otro equipo).
       // Si ya se está moviendo (desde otra consola u otro navegador), aquí no se puede empezar otro.
       ...(!r.solo_lectura && puede.administrar(rol) && !moverBloqueado(r.id) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
@@ -1002,13 +971,10 @@
         </div>
       {/if}
 
-      <!-- El camino de sus datos (y, si guarda copias, lo de los demás que guarda). -->
-      <MapaProteccion equipos={actual.equipos} informes={{ ...(ultimos.cliente === c ? ultimos.porEquipo : {}), [equipo.id]: equipo.ultimo_informe ?? null }} cliente={c} ahora={reloj.ahora} equipo={equipo.id} titulo="Camino de sus copias" alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
-
       <section>
         <div class="section-head">
           <h2>Copias <span class="count">· {copias.length}</span></h2>
-          {#if puede.administrar(rol)}<span class="botones-copias"><button class="btn btn-sm" onclick={() => (anadirCopia = true)}><Plus size={14} />Añadir una copia</button><a class="btn btn-sm btn-ghost" href="/c/{c}/equipos/{equipo.id}/copias"><Pencil size={14} />Cambiar las copias</a></span>{/if}
+          {#if puede.administrar(rol)}<a class="btn btn-primary" href="/c/{c}/equipos/{equipo.id}/copias"><Pencil size={16} />Añadir o cambiar copias</a>{/if}
         </div>
         {#each pendCopias as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
         {#if copias.length}
@@ -1055,11 +1021,15 @@
         {:else if !pendCopias.length}
           <div class="card">
             <Vacio icono={FolderSync} titulo="Este equipo aún no copia nada" texto="Elige qué carpetas copiar, dónde y cuándo.">
-              {#if puede.administrar(rol)}<a class="btn btn-primary" href="/c/{c}/equipos/{equipo.id}/copias">Crear la primera copia</a>{/if}
+              {#if puede.administrar(rol)}<a class="btn btn-primary" href="/c/{c}/equipos/{equipo.id}/copias?nueva=1"><Plus size={16} />Crear la primera copia</a>{/if}
             </Vacio>
           </div>
         {/if}
       </section>
+
+
+      <!-- El camino de sus datos (y, si guarda copias, lo de los demás que guarda). -->
+      <MapaProteccion equipos={actual.equipos} informes={{ ...(ultimos.cliente === c ? ultimos.porEquipo : {}), [equipo.id]: equipo.ultimo_informe ?? null }} cliente={c} ahora={reloj.ahora} equipo={equipo.id} titulo="Camino de sus copias" alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
 
       {#if repos.length || pendRepos.length}
         <section>
@@ -1136,9 +1106,7 @@
                 {#if puede.ordenar(rol)}
                   <div class="acciones">
                     {#if nVersiones(r, inf) || r.solo_lectura}<a class="btn btn-sm btn-primary" href="/c/{c}/restaurar?equipo={equipo.id}&repo={r.id}"><History size={14} />Restaurar</a>{/if}
-                    {#if nVersiones(r, inf)}
-                      <button class="btn btn-sm" onclick={() => abrir({ tipo: "verificar_ahora", cuerpo: { repo: r.id }, descripcion: `Se comprobará ahora una parte de «${r.nombre}» para confirmar que las copias se pueden leer.`, accion: "Verificar ahora" })}><ShieldCheck size={14} />Verificar</button>
-                    {/if}
+                    {#if actual.cliente}<PasosRepo cliente={actual.cliente} {equipo} repo={r} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} alCambiar={() => void cargar()} />{/if}
                     <MenuAcciones etiqueta="Más acciones de «{r.nombre}»" grupos={masRepo(r)} />
                   </div>
                 {/if}
@@ -1506,20 +1474,6 @@
     alElegir={(rutas) => {
       elegirCarpeta?.(rutas[0] ?? "");
       elegirCarpeta = null;
-    }}
-  />
-{/if}
-
-{#if anadirCopia && equipo}
-  <AnadirCopia
-    cliente={c}
-    {equipo}
-    equipos={actual.equipos}
-    onclose={() => (anadirCopia = false)}
-    alElegir={(que, r) => {
-      anadirCopia = false;
-      if (que === "espejo") pasoEspejoPara = r;
-      else derivadaPara = { repo: r, derivada: null };
     }}
   />
 {/if}
@@ -2004,6 +1958,10 @@
     flex-wrap: wrap;
     gap: 6px;
   }
+  /* Los botones del repositorio (PasosRepo) en la misma fila que «Restaurar» y «Más…». */
+  .acciones > :global(.pasos-repo) {
+    display: contents;
+  }
   .detalles dl {
     display: grid;
     gap: var(--sp-3);
@@ -2201,11 +2159,6 @@
   }
   .derivada {
     align-items: flex-start;
-  }
-  .botones-copias {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 6px;
   }
   .derivada > span {
     flex: 1;

@@ -205,6 +205,13 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
 
 const HORA = 3600_000;
 
+/**
+ * v1.4x: margen para entregar una orden con espera desde su hora (el equipo puede estar
+ * apagado o sin red justo entonces). Antes, 24 h: una orden de un viernes con un fin de
+ * semana sin el equipo caducaba sin aplicarse. Nunca pasa de 7 días desde que se emite.
+ */
+export const MARGEN_TRAS_ESPERA_H = 72;
+
 /** Caducidad: 1 h lo interactivo, 7 días cambiar la clave o el servidor y conectar otra consola, 24 h lo demás (contado desde que puede ejecutarse). */
 export function caducidad(tipo: string, desde: Date): Date {
   if (ABRE_SESION.has(tipo) || tipo === "descargar") return new Date(desde.getTime() + HORA);
@@ -271,19 +278,26 @@ export function sellarOrden(
     contexto?: ContextoOrden;
     /** v1.49: el nombre de quien la manda (informativo; un agente anterior lo ignora). */
     por?: string | null;
+    /**
+     * v1.4x: el número reservado (`equipo.seq_espera`) para una orden con espera a un agente
+     * que no las guarda. Solo se usa si la orden resulta destructiva (lleva espera).
+     */
+    seqEspera?: number | null;
   },
   ahora = new Date(),
 ): Preparada {
   const destructiva = esDestructiva(args.tipo, args.cuerpo, args.esperaHoras, args.contexto);
   // Un minuto de margen: el reloj del servidor puede ir algo adelantado.
   const notBefore = destructiva ? new Date(ahora.getTime() + args.esperaHoras * HORA + 60_000) : null;
-  // El agente no acepta más de 7 días entre «emitida» y «caduca».
-  const caduca = new Date(Math.min(caducidad(args.tipo, notBefore ?? ahora).getTime(), ahora.getTime() + 7 * 24 * HORA));
+  // Con espera, un margen amplio para entregarla (v1.4x). El agente no acepta más de 7 días entre «emitida» y «caduca».
+  const hasta = notBefore ? Math.max(caducidad(args.tipo, notBefore).getTime(), notBefore.getTime() + MARGEN_TRAS_ESPERA_H * HORA) : caducidad(args.tipo, ahora).getTime();
+  const caduca = new Date(Math.min(hasta, ahora.getTime() + 7 * 24 * HORA));
+  const seq = notBefore && args.seqEspera ? args.seqEspera : args.seq;
   const plana: OrdenPlana = {
     v: 2,
     cliente: args.cliente,
     equipo: args.equipo.id,
-    seq: args.seq,
+    seq,
     nonce: aB64(aleatorio(16)),
     emitida: rfc3339(ahora),
     caduca: rfc3339(caduca),

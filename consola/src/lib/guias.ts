@@ -137,7 +137,7 @@ export const GUIAS: Guia[] = [
       "Solo cuenta lo que está al día. Es una guía: puedes guardar una copia que no la cumple, y la consola te dice qué le falta y dónde se arregla.",
       "Dónde está cada destino y si es inmutable se deduce de su tipo. Si no acierta (un servidor de fuera que en realidad está en la oficina, un almacén con instantáneas en el anfitrión), cámbialo en «Repositorios y destinos» → el destino → «Regla 3-2-1».",
     ],
-    pasos: ["Mira la tira «3 · 2 · 1 · 1 · 0» en la página de cada copia.", "Pulsa lo que falta: te lleva a donde se hace (copia externa, espejo, verificación, prueba de restauración).", "Para una copia nueva, «Con la plantilla 3-2-1» en «Cambiar las copias»."],
+    pasos: ["Mira la tira «3 · 2 · 1 · 1 · 0» en la página de cada copia.", "Pulsa lo que falta: te lleva a donde se hace (copia externa, espejo, verificación, prueba de restauración).", "Para una copia nueva, «Con la plantilla 3-2-1» en «Añadir o cambiar copias»."],
     ver: ["regla-321", "inmutable", "instantaneas"],
   },
   {
@@ -163,7 +163,7 @@ GUIAS.push({
     "La cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita el rol db_backupoperator en cada base que se vuelca (o sysadmin). Se da en SQL Server Management Studio, en Seguridad → Inicios de sesión.",
     "Hace falta el agente 0.7.2 o posterior: con uno anterior, la consola no lo ofrece.",
   ],
-  pasos: ["En la ficha del equipo, «Cambiar las copias».", "En la copia, «Antes de copiar»: elige el paso y rellena sus datos.", "«Enviar al equipo» con la clave de administración."],
+  pasos: ["En la ficha del equipo, «Añadir o cambiar copias».", "En la copia, «Antes de copiar»: elige el paso y rellena sus datos.", "«Enviar al equipo» con la clave de administración."],
   ver: ["ganchos"],
 });
 

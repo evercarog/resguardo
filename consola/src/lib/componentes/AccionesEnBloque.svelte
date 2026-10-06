@@ -114,7 +114,8 @@
           for (const t of p.tareas) {
             const o = await mandarOrden({ cliente, equipo: eq, tipo: t.tipo, cuerpo: t.cuerpo, secretos: prueba ? { prueba } : undefined });
             est.ordenes = [...est.ordenes, o];
-            eq = { ...eq, siguiente_seq: o.seq + 1 };
+            // v1.4x: una con espera puede llevar el número reservado (no mueve el siguiente).
+            eq = o.seq === eq.siguiente_seq ? { ...eq, siguiente_seq: o.seq + 1 } : { ...eq, seq_espera: o.seq + 1000 };
           }
           est.fase = est.ordenes.every(programada) ? "fin" : "esperando";
         } catch (e) {

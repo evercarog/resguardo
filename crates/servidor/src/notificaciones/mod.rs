@@ -260,6 +260,27 @@ pub fn aviso(db: &dyn Almacen, ctx: &ClienteCtx, equipo: Option<&str>, tipo: &st
     aviso_a(db, ctx, equipo, tipo, mensaje, crate::almacen::ahora())
 }
 
+/// v1.4x: el texto del aviso `orden_no_aplicada` (sin rutas: el mensaje del equipo ya llega
+/// sin ellas). `motivo`: el de una caducada (`sin_entregar` | `sin_respuesta`).
+pub fn texto_no_aplicada(tipo: &str, estado: &str, mensaje: Option<&str>, motivo: Option<&str>) -> String {
+    let que = tipo.replace('_', " ");
+    let por_que = match (estado, motivo) {
+        ("caducada", Some("sin_respuesta")) => "caducó: el equipo la recibió pero no contestó a tiempo".to_string(),
+        ("caducada", _) => "caducó sin llegar al equipo (estaba sin conexión, o esperando detrás de otra orden)".to_string(),
+        (_, _) => {
+            let m = mensaje.unwrap_or("").trim();
+            let antigua = m.starts_with("Orden repetida o antigua");
+            let quien = if estado == "fallida" { "falló en el equipo" } else { "el equipo la rechazó" };
+            match (antigua, m.is_empty()) {
+                (true, _) => format!("{quien} porque ya había aceptado una orden posterior ({m})"),
+                (false, true) => quien.to_string(),
+                (false, false) => format!("{quien}: {m}"),
+            }
+        }
+    };
+    format!("No se aplicó «{que}»: {por_que}. Si aún hace falta, vuelve a mandarla.")
+}
+
 /// Igual, con la hora que se diga.
 pub fn aviso_a(db: &dyn Almacen, ctx: &ClienteCtx, equipo: Option<&str>, tipo: &str, mensaje: &str, hora: Ts) -> R<()> {
     db.crear_aviso(ctx, equipo, tipo, mensaje)?;
@@ -426,6 +447,8 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
+        // v1.4x: una orden con espera que caducó, se rechazó o falló sin aplicarse.
+        "orden_no_aplicada" => format!("No se aplicó una orden con espera en {e}"),
         "actualizacion_fallida" => format!("{e} no pudo actualizarse y volvió a la versión anterior"),
         _ => format!("Aviso de {e}"),
     };
@@ -440,7 +463,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
 fn ruta(cliente: &str, equipo: Option<&str>, tipo: &str) -> String {
     match equipo {
         // v1.49: la de otra consola se ve (y se cancela) en «Órdenes».
-        _ if tipo == "orden_en_espera" => format!("/c/{cliente}/ordenes"),
+        _ if tipo == "orden_en_espera" || tipo == "orden_no_aplicada" => format!("/c/{cliente}/ordenes"),
         _ if tipo == "auditoria_rehecha" => format!("/c/{cliente}/auditoria"),
         Some(e) if !matches!(tipo, "orden_destructiva") => format!("/c/{cliente}/equipos/{e}"),
         _ => format!("/c/{cliente}/avisos"),

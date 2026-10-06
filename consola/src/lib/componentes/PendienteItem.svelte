@@ -8,6 +8,7 @@
   import { actual, reloj } from "$lib/estado.svelte";
   import { cuentaAtras } from "$lib/formato";
   import { conError, quitarPendiente, type Pendiente } from "$lib/pendientes.svelte";
+  import { porQueNoSeAplico } from "$lib/espera";
 
   let { p, forma = "fila", conEquipo = false }: { p: Pendiente; forma?: "fila" | "tarjeta"; conEquipo?: boolean } = $props();
 
@@ -24,7 +25,7 @@
     const eq = p.equipoNombre;
     switch (estado) {
       case "mal":
-        return o.mensaje ?? (o.estado === "caducada" ? `${eq} no la recogió a tiempo y caducó.` : `${eq} no la aplicó.`);
+        return porQueNoSeAplico(o) ?? o.mensaje ?? `${eq} no la aplicó.`;
       case "hecha":
         return "Listo.";
       case "espera":

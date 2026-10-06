@@ -66,7 +66,7 @@
       if (!equipos.some((x) => etiquetaValida(kcfg!, x))) throw new Error("La clave de administración no es correcta. No se ha enviado nada.");
       const r = await cargarPlantillas(cliente.id, kcfg);
       plantillas = r.lista;
-      if (!r.lista.length) throw new Error("No hay plantillas que se abran con esta clave: se guardan desde «Cambiar las copias» de un equipo («Guardar como plantilla…»).");
+      if (!r.lista.length) throw new Error("No hay plantillas que se abran con esta clave: se guardan desde «Añadir o cambiar copias» de un equipo («Guardar como plantilla…»).");
       if (!plantillas.some((p) => p.id === elegida)) elegida = plantillas[0].id;
       paso = "elegir";
     } catch (err) {

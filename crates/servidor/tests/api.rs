@@ -2456,3 +2456,105 @@ async fn marca_del_cliente() {
     let a = pedir(&p.app, "GET", &format!("/api/clientes/{c}/auditoria?orden=desc&limite=10"), None, Some(&cookie), &[]).await.json;
     assert_eq!(a.as_array().unwrap().iter().filter(|x| x["accion"] == "cambiar_marca").count(), 3);
 }
+
+/// v1.4x: órdenes con espera a un agente anterior (sin `ordenes_en_espera`, como un 0.7.18):
+/// el número reservado (`seq_espera`) deja pasar las normales mientras espera; un rechazo
+/// por el reloj del equipo atrasado vuelve a pendientes; y una con espera que se rechaza por
+/// otra cosa deja un aviso «No se aplicó…» (antes desaparecía sin más de la consola).
+#[tokio::test]
+async fn ordenes_con_espera_para_un_agente_anterior() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let ordenes = format!("/api/clientes/{c}/equipos/{}/ordenes", ag.id);
+    let equipo = format!("/api/clientes/{c}/equipos/{}", ag.id);
+    let auth = ag.auth();
+    let tomar = || {
+        let (app, auth) = (p.app.clone(), auth.clone());
+        async move {
+            let r = pedir(&app, "POST", "/api/agente/tomar", Some(json!({ "reto": B64.encode([6u8; 32]) })), None, &[("authorization", &auth)]).await;
+            assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+            r.json["ordenes"].as_array().unwrap().iter().map(|o| (o["id"].as_str().unwrap().to_string(), o["seq"].as_u64().unwrap())).collect::<Vec<_>>()
+        }
+    };
+    let r = pedir(&p.app, "GET", &equipo, None, Some(&cookie), &[]).await;
+    assert_eq!((r.json["siguiente_seq"].as_u64(), r.json["seq_espera"].as_u64()), (Some(1), Some(1000)));
+    // «Quitar la copia externa» con su espera y el número reservado.
+    let externa = json!({ "tipo": "cambiar_copia_externa", "seq": 1000, "sellado": sobre(&ag), "caduca": caduca(24 * 4), "not_before": caduca(25) });
+    let r = pedir(&p.app, "POST", &ordenes, Some(externa), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    // El número reservado sin espera no vale: 409 con los dos números.
+    let r =
+        pedir(&p.app, "POST", &ordenes, Some(json!({ "tipo": "copiar_ahora", "seq": 2000, "sellado": sobre(&ag), "caduca": caduca(1) })), Some(&cookie), &[])
+            .await;
+    assert_eq!((r.estado, r.json["siguiente_seq"].as_u64(), r.json["seq_espera"].as_u64()), (StatusCode::CONFLICT, Some(1), Some(2000)));
+    // Mientras espera, una normal sale al momento (con un número menor: el equipo no la verá «antigua» luego).
+    let r = pedir(&p.app, "POST", &ordenes, Some(json!({ "tipo": "copiar_ahora", "seq": 1, "sellado": sobre(&ag), "caduca": caduca(1) })), Some(&cookie), &[])
+        .await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert_eq!(tomar().await.iter().map(|o| o.1).collect::<Vec<_>>(), [1]);
+
+    // Reloj del equipo atrasado: rechaza una que ya tocaba en el servidor; vuelve a pendientes.
+    let pasada = (chrono::Local::now() - chrono::Duration::minutes(1)).to_rfc3339();
+    let r = pedir(
+        &p.app,
+        "POST",
+        &ordenes,
+        Some(json!({ "tipo": "copiar_ahora", "seq": 2, "sellado": sobre(&ag), "caduca": caduca(2), "not_before": pasada })),
+        Some(&cookie),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    let (id, seq) = tomar().await.pop().unwrap();
+    assert_eq!(seq, 2);
+    let mensaje = "Todavía no es la hora de esta orden.";
+    let firma = ag.firmar_resultado(&id, 2, "rechazada", Some(mensaje));
+    let r = pedir(
+        &p.app,
+        "POST",
+        "/api/agente/resultado",
+        Some(json!({ "orden": id, "estado": "rechazada", "mensaje": mensaje, "firma": firma })),
+        None,
+        &[("authorization", &auth)],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    let r = pedir(&p.app, "GET", &ordenes, None, Some(&cookie), &[]).await;
+    let o = r.json.as_array().unwrap().iter().find(|o| o["id"] == id.as_str()).unwrap().clone();
+    assert_eq!((o["estado"].as_str(), o["mensaje"].as_str()), (Some("pendiente"), None), "se le volverá a dar");
+    assert!(tomar().await.is_empty(), "no antes de unos minutos");
+    let r = pedir(&p.app, "POST", &format!("/api/clientes/{c}/ordenes/{id}/cancelar"), None, Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+
+    // Rechazada por otra cosa (el equipo ya aceptó una posterior): aviso «No se aplicó…».
+    let r = pedir(
+        &p.app,
+        "POST",
+        &ordenes,
+        Some(json!({ "tipo": "copiar_ahora", "seq": 3, "sellado": sobre(&ag), "caduca": caduca(2), "not_before": pasada })),
+        Some(&cookie),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    let (id, _) = tomar().await.pop().unwrap();
+    let mensaje = "Orden repetida o antigua (n.º 3 ≤ 9).";
+    let firma = ag.firmar_resultado(&id, 3, "rechazada", Some(mensaje));
+    let r = pedir(
+        &p.app,
+        "POST",
+        "/api/agente/resultado",
+        Some(json!({ "orden": id, "estado": "rechazada", "mensaje": mensaje, "firma": firma })),
+        None,
+        &[("authorization", &auth)],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/avisos?abiertos=1"), None, Some(&cookie), &[]).await;
+    let aviso = r.json.as_array().unwrap().iter().find(|a| a["tipo"] == "orden_no_aplicada").cloned().expect("aviso de que no se aplicó");
+    assert!(aviso["mensaje"].as_str().unwrap().contains("orden posterior"), "{aviso}");
+    // La de la copia externa sigue esperando su turno.
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/ordenes?pendientes=1"), None, Some(&cookie), &[]).await;
+    assert_eq!(r.json.as_array().unwrap().iter().map(|o| o["seq"].as_u64().unwrap()).collect::<Vec<_>>(), [1000]);
+}

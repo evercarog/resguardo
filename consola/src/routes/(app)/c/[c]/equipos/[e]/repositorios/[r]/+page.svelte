@@ -50,6 +50,7 @@
   import SaludProteccion from "$lib/componentes/repo/SaludProteccion.svelte";
   import MenuAcciones from "$lib/componentes/MenuAcciones.svelte";
   import TraerHistorial from "$lib/componentes/TraerHistorial.svelte";
+  import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
@@ -205,6 +206,10 @@
       {/if}
     </header>
     {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
+    <!-- Lo que se ajusta del repositorio, a la vista (docs/editor-de-copias.md). -->
+    {#if actual.cliente && puede.ordenar(rol)}
+      <PasosRepo cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} copia={suyas.length === 1 ? suyas[0].id : null} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
+    {/if}
     <MoviendoseAviso equipo={e} repo={rid} onseguir={planAqui && moviendo?.origen === rid ? () => (mover = true) : undefined} />
     <EnMarcha equipo={e} repo={rid} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover marco />
     {#if riesgo}

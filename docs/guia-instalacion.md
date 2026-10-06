@@ -204,7 +204,7 @@ Otros destinos (**Un destino nuevo…**): un disco o carpeta del equipo (con **E
 
 ## 7. Las copias: carpetas, horario y «Antes de copiar»
 
-En la ficha del equipo → **Cambiar las copias** → **clave de administración** → **Abrir las copias**. Las carpetas viajan y se guardan cifradas: solo se ven con la clave.
+En la ficha del equipo → **Añadir o cambiar copias** → **clave de administración** → **Abrir las copias**. Las carpetas viajan y se guardan cifradas: solo se ven con la clave.
 
 1. **Añadir una copia** y ponle nombre.
 2. **Carpetas:** **Elegir en el equipo** (navega por sus carpetas) o escríbelas, una por línea.

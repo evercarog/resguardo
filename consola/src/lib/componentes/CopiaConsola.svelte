@@ -167,7 +167,7 @@
         <ShieldCheck size={16} />
         <p>
           Las copias se quedan en esta máquina. Para que también salgan de aquí, añade la carpeta de arriba a una copia del agente de este servidor (en su equipo:
-          «Cambiar las copias» → «Añadir una copia», por ejemplo «Consola de Resguardo»). Si esta máquina es también el almacén, esa copia puede ir a un repositorio
+          «Añadir o cambiar copias» → «Añadir una copia», por ejemplo «Consola de Resguardo»). Si esta máquina es también el almacén, esa copia puede ir a un repositorio
           de su propio almacén («Copiar en este mismo almacén»): así la cubren su espejo y la nube.
         </p>
       </div>

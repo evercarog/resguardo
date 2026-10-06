@@ -143,7 +143,7 @@
             {#each plantillas as p (p.id)}<option value={p.id}>{p.nombre}</option>{/each}
             {#if plantilla && !nombrePlantilla}<option value={plantilla}>La que tenía (ya no existe)</option>{/if}
           </select>
-          {#if !plantillas.length}<span class="field-hint">No hay plantillas todavía: se guardan desde «Cambiar las copias» de un equipo («Guardar como plantilla…»).</span>{/if}
+          {#if !plantillas.length}<span class="field-hint">No hay plantillas todavía: se guardan desde «Añadir o cambiar copias» de un equipo («Guardar como plantilla…»).</span>{/if}
         </div>
       {:else if pidiendoClave}
         <!-- Intro aquí abre las plantillas (no guarda los ajustes). -->

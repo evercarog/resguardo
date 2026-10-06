@@ -229,4 +229,6 @@ Contrato en [api-servidor.md](api-servidor.md) → «Cambios», v1.55 (copias en
 7. **e2e**: paso 3c (Documentos → zona D; después → zona E por la cadena; espejo de la zona E a la principal en el almacén; copia derivada de la zona E a una «nube» por rclone —en las pruebas, una carpeta con el tipo `alias`, solo en compilaciones de desarrollo con `RESGUARDO_AGENT_DIR`— con otra contraseña y filtro de fechas).
 8. **Catálogo en el paquete `.resguardo-cliente`**: hecho (lo junta y lo pone la consola; sin cambios en el servidor).
 
+**Después (rama `ia/editor-de-copias`):** «Añadir una copia» (`AnadirCopia.svelte`) se quitó: todo se añade, se cambia y se ordena en el editor de copias, con «Añadir paso» en cada copia. Ver [editor-de-copias.md](editor-de-copias.md).
+
 **Para la tarea 8 (3-2-1-1-0):** `lib/cadenas.ts::lineaCadena(equipo, copia, equipos)` da los pasos de cada copia con `clase` («origen», «copia», «espejo», «derivada»), `destinoId` (o `zona:<almacén>:<zona>`), `tipoDestino`, `inmutable` (bloqueo de objetos o solo añadir; `null` si no se sabe), `fueraRetencion` y `despues`. En el agente, `RepoV2.derivadas` y `AgentRepo.derived` (con `offsite.dest.object_lock_days` y `retention`) y `guarda_copias.espejo.destinos[]` (con `zona`, `repos`, `retencion_dias`, `bloqueo`).

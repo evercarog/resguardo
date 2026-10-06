@@ -177,9 +177,12 @@ pub async fn enviar(State(st): State<St>, u: Usuario, Path((c, e)): Path<(String
             Ok(orden)
         })
         .await?;
-    let orden = r.map_err(|e| match e.strip_prefix("seq:").and_then(|n| n.parse::<u64>().ok()) {
-        Some(siguiente) => ErrorApi::conflicto("Otra orden se envió a la vez: vuelve a intentarlo.").con(json!({ "siguiente_seq": siguiente })),
-        None => ErrorApi::datos(e),
+    let orden = r.map_err(|e| match e.strip_prefix("seq:").map(|n| n.split(':').map(str::parse::<u64>).collect::<Vec<_>>()).as_deref() {
+        // v1.4x: también el número para una orden con espera (`seq_espera`).
+        Some([Ok(siguiente), Ok(espera)]) => {
+            ErrorApi::conflicto("Otra orden se envió a la vez: vuelve a intentarlo.").con(json!({ "siguiente_seq": siguiente, "seq_espera": espera }))
+        }
+        _ => ErrorApi::datos(e),
     })?;
     st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Orden { equipo: &e, orden: &orden.id, estado: &orden.estado });
     if destructiva {
