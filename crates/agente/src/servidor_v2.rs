@@ -587,7 +587,11 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             // Quitar un destino del espejo o repositorios de él, poner o acortar su
             // retención, quitar su bloqueo o confirmar su freno (docs/espejo.md).
             "guarda_copias" => {
-                c["activo"] == false || c.get("quitar").is_some() || c.get("espejo_freno").is_some() || c.get("espejo").is_some_and(quita_destinos_del_espejo)
+                c["activo"] == false
+                    || c.get("quitar").is_some()
+                    || c.get("quitar_zona").is_some()
+                    || c.get("espejo_freno").is_some()
+                    || c.get("espejo").is_some_and(quita_destinos_del_espejo)
             }
             "cambiar_espera" => c["horas"].as_i64().is_some_and(|h| h < v.espera_min_horas),
             "restaurar" => c["destino"] == "original" && c["reemplazar"] == true,
@@ -2224,6 +2228,25 @@ mod tests {
         assert!(!destructiva(&v, &orden(json!({ "v": 1, "copias": [{ "id": "a", "activa": false }, { "id": "c" }] })), tipo), "queda una activa");
         v.config_v1 = Some(json!({ "v": 1, "copias": [] }));
         assert!(!destructiva(&v, &orden(json!({ "v": 1, "copias": [] })), tipo), "no había ninguna activa");
+    }
+
+    /// Tarea 7b: quitar una zona o un equipo de ella espera; crearla, renombrarla o añadir a ella, no.
+    #[test]
+    fn quitar_una_zona_espera() {
+        let tipo = ordenes::tipo("guarda_copias").expect("guarda_copias es un tipo conocido");
+        let orden = |cuerpo: Value| -> OrdenV2 {
+            serde_json::from_value(json!({ "v": 2, "cliente": "c", "equipo": "e", "seq": 1, "nonce": "n", "emitida": "", "caduca": "", "tipo": "guarda_copias", "cuerpo": cuerpo }))
+                .unwrap()
+        };
+        let v = Vinculo::default();
+        assert!(destructiva(&v, &orden(json!({ "quitar_zona": "z1a2b3c" })), tipo));
+        assert!(destructiva(&v, &orden(json!({ "quitar": "recepcion", "zona": "z1a2b3c" })), tipo));
+        assert!(!destructiva(&v, &orden(json!({ "zona": { "carpeta": "E:\\Resguardo", "puerto": 8002 } })), tipo));
+        assert!(!destructiva(&v, &orden(json!({ "zona": { "id": "z1a2b3c", "nombre": "Disco E" } })), tipo));
+        assert!(!destructiva(&v, &orden(json!({ "anadir": "pc", "zona": "z1a2b3c" })), tipo));
+        // Una zona mal escrita no se toma por la principal.
+        assert!(crate::gestion_v2::guarda_copias(&json!({ "anadir": "pc", "zona": "../x" }), true).unwrap_err().contains("Zona no válida"));
+        assert!(crate::gestion_v2::guarda_copias(&json!({ "quitar": "pc", "zona": 3 }), true).unwrap_err().contains("Zona no válida"));
     }
 
     #[test]

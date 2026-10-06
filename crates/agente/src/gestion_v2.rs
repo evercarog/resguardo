@@ -820,7 +820,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 11] = [
+pub const ADMITE: [&str; 12] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -834,6 +834,9 @@ pub const ADMITE: [&str; 11] = [
     "espejo_flexible",
     // (pendiente de numerar) "conectar_nube" también con B2, S3, SFTP, SMB y WebDAV (docs/espejo.md §3c).
     "espejo_destinos",
+    // (pendiente de numerar) varias zonas en el almacén: `guarda_copias { zona }`, `{ quitar_zona }`,
+    // `{ anadir, zona }`, `{ quitar, zona }` y `guarda_copias.zonas` (docs/copias-en-cadena.md, 7b).
+    "zonas_almacen",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1527,6 +1530,10 @@ pub fn desbloquear(v: &Vinculo, c: &Value) -> Result<String, String> {
 ///   ya cubre `localhost`), que no depende de la IP ni del cortafuegos. Ese
 ///   usuario es uno más: solo añadir, solo su carpeta;
 /// - `{quitar: "<usuario>"}` le quita el acceso (destructiva);
+/// - tarea 7b (docs/copias-en-cadena.md): `{zona: {nombre?, carpeta, puerto}}`
+///   crea otra zona (otro disco, su propio rest-server en su puerto),
+///   `{zona: {id, nombre}}` la renombra, `{quitar_zona: "<id>"}` la quita
+///   (destructiva) y `anadir` / `quitar` con `zona: "<id>"` son de esa zona;
 /// - `{espejo: {destinos: [{tipo:"carpeta", carpeta} | {tipo:"nube", nube, carpeta}], hora, limite_kib?}}`
 ///   pone el espejo nocturno (también la forma antigua `{espejo: {carpeta, hora}}`);
 ///   `{espejo: null}` lo quita. Quitar un destino es destructiva.
@@ -1538,18 +1545,51 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         if !responder_a {
             return Err("Para añadir un equipo cliente, la orden tiene que llevar responder_a (la contraseña solo la ve la consola).".into());
         }
-        let (usuario, contrasena, ubicacion) = server::anadir_equipo(nombre)?;
+        // Tarea 7b: en una zona (otro disco del almacén, con su puerto) o en la principal.
+        let zona = zona_de(c)?;
+        let (usuario, contrasena, ubicacion, puerto) = server::anadir_equipo_en(nombre, zona.as_deref())?;
         // Que el rest-server ya lo acepte cuando el equipo cliente cree su repositorio.
-        server::esperar_usuario(&usuario, &contrasena);
+        server::esperar_usuario_de(zona.as_deref(), &usuario, &contrasena);
         let cfg = server::load();
-        let ubicacion = if c["local"] == true { server::ubicacion_local(cfg.port, &usuario) } else { ubicacion };
-        let privado = json!({
+        let ubicacion = if c["local"] == true { server::ubicacion_local(puerto, &usuario) } else { ubicacion };
+        let mut privado = json!({
             "usuario": usuario, "contrasena": contrasena,
             "destino": { "tipo": "rest", "donde": ubicacion.trim_start_matches("rest:"), "usuario": usuario, "secreto": contrasena,
                          "ca_pem": std::fs::read_to_string(server::cert_file()).ok() },
             "huella_tls": cfg.tls_sha256,
         });
-        return Ok((format!("Equipo cliente «{usuario}» añadido."), Some(privado)));
+        // La consola comprueba que la respuesta es de la zona que pidió (un agente
+        // anterior ignoraría `zona` y daría un usuario de la principal).
+        if let Some(z) = &zona {
+            privado["zona"] = json!(z);
+        }
+        let donde = zona.and_then(|z| cfg.zonas.iter().find(|x| x.id == z).map(|x| format!(" en la zona «{}»", x.nombre))).unwrap_or_default();
+        return Ok((format!("Equipo cliente «{usuario}» añadido{donde}."), Some(privado)));
+    }
+    // Tarea 7b: crear una zona (`{ zona: { nombre?, carpeta, puerto } }`) o
+    // cambiar su nombre (`{ zona: { id, nombre } }`).
+    if let Some(z) = c.get("zona").filter(|z| z.is_object()) {
+        if let Some(id) = z["id"].as_str() {
+            let nombre = z["nombre"].as_str().ok_or("Falta el nombre nuevo de la zona.")?;
+            server::renombrar_zona(id, nombre)?;
+            return Ok((format!("Zona renombrada: «{}».", nombre.trim()), None));
+        }
+        let carpeta = z["carpeta"].as_str().ok_or("Falta la carpeta de la zona.")?;
+        let puerto = z["puerto"].as_u64().and_then(|p| u16::try_from(p).ok()).ok_or("Puerto no válido.")?;
+        let zona = server::crear_zona(z["nombre"].as_str(), carpeta, puerto)?;
+        // La pone en marcha la tarea del Servidor de copias: se espera un poco a
+        // que responda, para que el primer equipo que copie allí ya entre.
+        let lista = server::esperar_escucha(zona.port, std::time::Duration::from_secs(20));
+        let m = if lista {
+            format!("Zona «{}» lista en el puerto {} (solo añadir).", zona.nombre, zona.port)
+        } else {
+            format!("Zona «{}» creada en el puerto {}: su servidor se pone en marcha en unos segundos.", zona.nombre, zona.port)
+        };
+        return Ok((m, Some(json!({ "zona": zona.id }))));
+    }
+    if let Some(id) = c["quitar_zona"].as_str() {
+        let z = server::quitar_zona(id)?;
+        return Ok((format!("Zona «{}» quitada: sus equipos ya no pueden copiar allí (lo guardado se queda en su carpeta).", z.nombre), None));
     }
     // §3b (docs/espejo.md): confirmar lo que falta de golpe en el almacén (espera).
     if let Some(d) = c.get("espejo_freno") {
@@ -1560,7 +1600,7 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         return Ok((m, None));
     }
     if let Some(usuario) = c["quitar"].as_str() {
-        server::quitar_equipo(usuario)?;
+        server::quitar_equipo_en(usuario, zona_de(c)?.as_deref())?;
         return Ok((format!("«{usuario}» ya no puede guardar copias aquí (lo guardado se queda)."), None));
     }
     match c["activo"].as_bool() {
@@ -1576,6 +1616,15 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
             Ok(("Servidor de copias desactivado (las copias guardadas se quedan).".into(), None))
         }
         None => Err("Falta «activo», «anadir» o «quitar».".into()),
+    }
+}
+
+/// Tarea 7b: la zona de `anadir` o `quitar` (`"zona": "<id>"`); sin ella, la principal.
+fn zona_de(c: &Value) -> Result<Option<String>, String> {
+    match c.get("zona") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(id)) if crate::server::zona_id_valido(id) => Ok(Some(id.clone())),
+        Some(_) => Err("Zona no válida.".into()),
     }
 }
 
@@ -1602,6 +1651,8 @@ pub fn resumen_guarda_copias() -> Value {
         "retenciones": crate::retencion_almacen::resumen(),
         // Nubes conectadas en este equipo para el espejo (nunca sus tokens).
         "nubes": crate::nube::lista(),
+        // Tarea 7b: las otras zonas (otros discos), cada una con su puerto; solo si hay.
+        "zonas": (!c.zonas.is_empty()).then(|| crate::server::resumen_zonas(&c)),
     })
 }
 

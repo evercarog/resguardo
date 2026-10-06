@@ -154,6 +154,15 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Dónde se guardan los repositorios: un almacén (un equipo de la oficina que guarda las copias de los demás), un disco o carpeta del propio equipo, o la nube (Backblaze B2, S3, SFTP).",
     todo: "Lo ideal: una copia cerca, en un almacén, para restaurar rápido, y otra fuera, en la nube e inmutable.",
   },
+  zona: {
+    title: "Zona del almacén",
+    text: "Otra carpeta (normalmente otro disco) que sirve el mismo almacén, con su propio puerto: «Almacén · Disco D», «Almacén · Disco E». Cada zona es un destino: los equipos que copian en ella tienen allí su propio usuario y tampoco pueden borrar lo ya copiado. Dos discos del mismo almacén protegen de que falle uno, pero no de un robo o un incendio del equipo.",
+    todo: "Añádela en la ficha del almacén («Añadir una zona…») con la clave de administración. Abre su puerto en el cortafuegos del router solo si hace falta copiar desde otra sede.",
+  },
+  "catalogo-destinos": {
+    title: "Destinos sin repositorio",
+    text: "Un destino se puede crear antes que sus repositorios y ponerle el nombre que quieras. El servidor solo guarda el nombre, el tipo y el servidor o bucket: las credenciales van selladas para cada equipo cuando crea un repositorio allí.",
+  },
   "dias-actividad": {
     title: "Cuadros de actividad",
     text: "Un cuadro por día, el más reciente a la derecha. Verde: se guardó una versión; verde claro: se hizo la copia sin cambios; ámbar: con avisos; rojo: falló; gris: no hubo copia.",

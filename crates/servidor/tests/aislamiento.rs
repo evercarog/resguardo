@@ -281,6 +281,7 @@ async fn nadie_de_fuera_llega_a_otro_cliente() {
             .replace("{n}", "0")
             .replace("{a}", &uuid::Uuid::new_v4().to_string())
             .replace("{k}", "canal-b")
+            .replace("{d}", "destino-b")
             .replace("{cuenta}", &bea_id)
     };
 

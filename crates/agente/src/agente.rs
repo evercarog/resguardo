@@ -109,7 +109,7 @@ pub fn main() -> i32 {
         hilo_bandeja();
         // En pruebas, el Servidor de copias corre dentro de este proceso.
         if crate::agent::test_mode() && crate::server::load().enabled {
-            std::thread::spawn(crate::server::run_forever);
+            crate::server::arrancar_en_pruebas();
         }
         loop {
             one_tick();

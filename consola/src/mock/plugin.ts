@@ -22,6 +22,7 @@ import { retencionesMock } from "./retencion";
 import { progresoDe } from "./progreso";
 import { rutasNotificaciones } from "./notificaciones";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
+import { errorDondeCatalogo } from "../lib/destinos";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
 
 class HttpError extends Error {
@@ -752,6 +753,50 @@ const rutas: Ruta[] = [
     },
   ],
   [
+    // Tarea 7a: catálogo de destinos (en claro, sin secretos; como crates/servidor/src/api/destinos.rs).
+    "GET",
+    new RegExp(`^${C}/destinos$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "lectura");
+      return [...(destinosMock.get(c) ?? new Map()).values()].sort((x, y) => x.nombre.localeCompare(y.nombre));
+    },
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/destinos/([^/]+)$`),
+    (ctx, [c, id]) => {
+      const { cuenta } = miembro(ctx, c, "administrador");
+      const d = ctx.cuerpo as Record<string, unknown>;
+      if (!/^[a-z0-9:_.-]{1,120}$/.test(id) || id.split(":").some((x) => !x || x === "." || x === "..")) throw err(422, "datos", "Id de destino no válido.");
+      if (Object.keys(d).some((k) => !["nombre", "tipo", "donde"].includes(k))) throw err(422, "datos", "Destino no válido: solo nombre, tipo y dirección (las credenciales nunca van al servidor).");
+      const nombre = String(d.nombre ?? "").trim();
+      const tipo = String(d.tipo ?? "");
+      if (!nombre || nombre.length > 80) throw err(422, "datos", "Escribe un nombre para el destino (hasta 80 caracteres).");
+      if (!["zona", "rest", "s3", "b2", "sftp", "nube", "local"].includes(tipo)) throw err(422, "datos", "Tipo de destino no válido.");
+      const donde = typeof d.donde === "string" && d.donde.trim() ? d.donde.trim() : null;
+      if (donde && ["rest", "s3", "b2", "sftp"].includes(tipo)) {
+        const e = errorDondeCatalogo(tipo as "rest" | "s3" | "b2" | "sftp", donde);
+        if (e) throw err(422, "datos", e);
+      } else if (donde) throw err(422, "datos", "Solo los destinos de red llevan dirección.");
+      const m = destinosMock.get(c) ?? new Map();
+      if (!m.has(id) && m.size >= 200) throw err(422, "datos", "Como mucho 200 destinos en el catálogo: quita alguno.");
+      m.set(id, { id, nombre, tipo: tipo as T.DestinoCatalogo["tipo"], donde, actualizado: new Date().toISOString(), por: cuenta.nombre });
+      destinosMock.set(c, m);
+      auditar(c, cuenta.id, "guardar_destino", id, { nombre, tipo });
+      return undefined;
+    },
+  ],
+  [
+    "DELETE",
+    new RegExp(`^${C}/destinos/([^/]+)$`),
+    (ctx, [c, id]) => {
+      const { cuenta } = miembro(ctx, c, "administrador");
+      if (!destinosMock.get(c)?.delete(id)) throw err(404, "no_existe", "Ese destino ya no está en el catálogo.");
+      auditar(c, cuenta.id, "borrar_destino", id, {});
+      return undefined;
+    },
+  ],
+  [
     // v1.20: plantillas de copia (bytes cifrados por la consola; aquí no se leen).
     "GET",
     new RegExp(`^${C}/plantillas$`),
@@ -1447,6 +1492,8 @@ function marcaJson(c: string) {
   const m = marcasMock.get(c);
   return { acento: m?.acento ?? null, logo: m?.logo ? `/api/clientes/${c}/marca/logo?v=${m.huella}` : null, actualizada: m?.actualizada ?? null, por: m?.por ?? null };
 }
+/** Tarea 7a: el catálogo de destinos de cada cliente. */
+const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>();
 /** Plantillas de copia (v1.20) por cliente: solo bytes cifrados por la consola. */
 const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizada: string; por: string }>>();
 /** v1.4x: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */

@@ -259,6 +259,11 @@ export const codigoAbierto = (c: string, navegador = false) =>
 export const plantillas = (c: string) => pedir<{ id: string; cifrado: string; actualizada: string; por: string }[]>("GET", `${cli(c)}/plantillas`);
 export const ponerPlantilla = (c: string, id: string, cifrado: string) => pedir<void>("PUT", `${cli(c)}/plantillas/${enc(id)}`, { cifrado });
 export const borrarPlantilla = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/plantillas/${enc(id)}`);
+// Tarea 7a: el catálogo de destinos (en claro y sin secretos; un servidor anterior da 404).
+export const destinosCatalogo = (c: string) => pedir<T.DestinoCatalogo[]>("GET", `${cli(c)}/destinos`, undefined, { invisible: true });
+export const ponerDestino = (c: string, id: string, d: { nombre: string; tipo: T.DestinoCatalogo["tipo"]; donde?: string | null }) =>
+  pedir<void>("PUT", `${cli(c)}/destinos/${enc(id)}`, d);
+export const borrarDestino = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/destinos/${enc(id)}`);
 // v1.4x: ajustes de las etiquetas (color, plantilla por defecto y avisos). Sin nada, vuelve a lo de siempre.
 export const ajustesEtiquetas = (c: string) => pedir<T.AjusteEtiqueta[]>("GET", `${cli(c)}/etiquetas`, undefined, { invisible: true });
 export const ponerAjusteEtiqueta = (c: string, a: { nombre: string; color: number | null; plantilla: string | null; avisos: T.AvisosEtiqueta | null }) =>

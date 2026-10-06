@@ -195,7 +195,7 @@ fn servidor_de_copias_real() {
     crate::server::save(&crate::server::ServerConfig {
         enabled: true,
         path: data.display().to_string(),
-        users: vec![crate::server::ServerUser { name: "ana".into(), created_at: String::new() }],
+        users: vec![crate::server::ServerUser { name: "ana".into(), created_at: String::new(), ..Default::default() }],
         ..Default::default()
     })
     .unwrap();
@@ -238,7 +238,7 @@ fn servidor_de_copias_real() {
     let clave = "clave-propia-del-almacen-para-si-mismo";
     crate::retencion_almacen::anadir_clave(&v, "consola", &serde_json::json!({ "clave": clave })).expect("su clave, por localhost");
     let mut cfg = crate::server::load();
-    cfg.users.push(crate::server::ServerUser { name: "beto".into(), created_at: String::new() });
+    cfg.users.push(crate::server::ServerUser { name: "beto".into(), created_at: String::new(), ..Default::default() });
     crate::server::save(&cfg).unwrap();
     let regla = serde_json::json!({ "usuario": "beto", "repo": "consola", "clave": clave, "verificar": false,
         "retencion": { "plazos": { "horarias": "1h" } }, "horario": { "dias": [7], "hora": "03:00" } });
@@ -253,4 +253,108 @@ fn servidor_de_copias_real() {
     std::thread::sleep(Duration::from_millis(300));
     assert!(std::net::TcpStream::connect_timeout(&std::net::SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_millis(500)).is_err());
     assert!(!dir.exists(), "quedó la carpeta temporal");
+}
+
+/// El rest-server para las pruebas: `RESGUARDO_TEST_REST_SERVER` o, en
+/// Windows, el de `src-tauri/binaries` (el que acompaña a la versión).
+fn rest_server_de_pruebas() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("RESGUARDO_TEST_REST_SERVER") {
+        return Some(PathBuf::from(p));
+    }
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src-tauri/binaries/rest-server-x86_64-pc-windows-msvc.exe");
+    (cfg!(windows) && p.is_file()).then_some(p)
+}
+
+fn esperar(que: &str, plazo: Duration, mut f: impl FnMut() -> bool) {
+    let inicio = Instant::now();
+    while !f() {
+        assert!(inicio.elapsed() < plazo, "no pasó a tiempo: {que}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// Tarea 7b (docs/copias-en-cadena.md): una zona más en el almacén, de verdad.
+/// El agente (en modo de pruebas, el Servidor de copias corre en este proceso)
+/// arranca la principal y la zona con el rest-server real, cada una en su
+/// puerto y con sus usuarios; un equipo copia en la zona (solo añadir, en la
+/// carpeta de la zona), su usuario no entra en la principal, y al quitar la
+/// zona su rest-server se para y lo guardado se queda.
+#[test]
+fn zonas_del_almacen_real() {
+    let Some(bin) = rest_server_de_pruebas() else {
+        eprintln!("omitido: sin rest-server (RESGUARDO_TEST_REST_SERVER o src-tauri/binaries)");
+        return;
+    };
+    binary_check_at(&bin).expect("la huella del rest-server incluido no coincide");
+    let _real = crate::restic::tests::real_repo_lock();
+    let base = std::env::temp_dir().join(format!("resguardo-zonas-{}", uuid::Uuid::new_v4()));
+    let guard = Cleanup { child: None, dir: base.clone() };
+    std::fs::create_dir_all(&base).unwrap();
+    std::env::set_var("RESGUARDO_AGENT_DIR", base.join("agente"));
+    std::env::set_var("RESGUARDO_REST_SERVER_BIN", &bin);
+    let (d, e) = (base.join("disco-d"), base.join("disco-e"));
+    let (p_d, p_e) = (free_port(), free_port());
+    let s = crate::server::activar(&d.display().to_string(), p_d, true).expect("activar el almacén");
+    assert!(s.zonas.is_empty());
+    esperar("la principal escucha", Duration::from_secs(20), || crate::server::listening(p_d));
+
+    // Una zona en otro «disco»: no puede ir dentro de la principal ni usar su puerto.
+    assert!(crate::server::crear_zona(None, &d.join("dentro").display().to_string(), free_port()).unwrap_err().contains("dentro"));
+    assert!(crate::server::crear_zona(None, &e.display().to_string(), p_d).is_err());
+    let z = crate::server::crear_zona(Some("Disco E"), &e.display().to_string(), p_e).expect("crear la zona");
+    assert!(crate::server::zona_id_valido(&z.id) && z.nombre == "Disco E");
+    assert!(crate::server::esperar_escucha(p_e, Duration::from_secs(20)), "la zona escucha en su puerto");
+    // Su puerto ya es del almacén: otra zona en él, no.
+    assert!(crate::server::crear_zona(None, &base.join("disco-f").display().to_string(), p_e).is_err());
+
+    // El mismo equipo, en la zona y en la principal: dos usuarios (únicos en el almacén).
+    let (u_e, pass_e, loc_e, puerto) = crate::server::anadir_equipo_en("PC Recepcion", Some(&z.id)).expect("añadir en la zona");
+    assert_eq!((u_e.as_str(), puerto), ("pc-recepcion", p_e));
+    assert!(loc_e.ends_with(&format!(":{p_e}/pc-recepcion/")), "{loc_e}");
+    assert!(crate::server::anadir_equipo_en("PC Recepcion", Some(&z.id)).unwrap_err().contains("esa zona"), "una vez por zona");
+    let (u_d, pass_d, _, _) = crate::server::anadir_equipo_en("PC Recepcion", None).expect("añadir en la principal");
+    assert_eq!(u_d, "pc-recepcion-2");
+    crate::server::esperar_usuario_de(Some(&z.id), &u_e, &pass_e);
+    crate::server::esperar_usuario_de(None, &u_d, &pass_d);
+    let ca = crate::server::cert_file();
+
+    // Copiar en la zona (si hay restic): va a su carpeta, de solo añadir.
+    let origen = base.join("origen");
+    std::fs::create_dir_all(&origen).unwrap();
+    std::fs::write(origen.join("factura.txt"), "Factura de prueba\n".repeat(100)).unwrap();
+    let mut a = access(p_e, &u_e, &u_e, &pass_e, Some(&ca));
+    a.location = format!("rest:https://localhost:{p_e}/{u_e}/documentos");
+    if restic::run_raw(&a, &["version"], Duration::from_secs(30)).is_ok_and(|o| o.code == Some(0)) {
+        assert_eq!(run(&a, &["init"]).code, Some(0), "init en la zona");
+        assert_eq!(run(&a, &["backup", &origen.display().to_string()]).code, Some(0), "copia en la zona");
+        assert!(e.join(&u_e).join("documentos").join("config").is_file(), "en la carpeta de la zona");
+        assert!(!d.join(&u_e).exists(), "nada en la principal");
+        let snaps = restic::snapshots(&a).unwrap();
+        assert_ne!(run(&a, &["forget", &snaps[0].id]).code, Some(0), "la zona es de solo añadir");
+        // El usuario de la zona no entra en la principal (cada rest-server, sus usuarios).
+        let mut en_d = access(p_d, &u_e, &u_e, &pass_e, Some(&ca));
+        en_d.location = format!("rest:https://localhost:{p_d}/{u_e}/documentos");
+        let out = run(&en_d, &["init"]);
+        assert_ne!(out.code, Some(0));
+        assert!(out.stderr.contains("401"), "{}", out.stderr);
+        // El resumen de la zona ve el repositorio (solo nombres).
+        let r = crate::server::resumen_zonas(&crate::server::load());
+        assert_eq!(r[0]["repositorios"], serde_json::json!([{ "usuario": "pc-recepcion", "repos": ["documentos"] }]), "{r:?}");
+        assert_eq!((r[0]["puerto"].as_u64(), r[0]["escucha"].as_bool()), (Some(u64::from(p_e)), Some(true)));
+    } else {
+        eprintln!("sin restic: no se copia en la zona");
+    }
+
+    // Quitar la zona: su rest-server se para; lo guardado se queda.
+    crate::server::quitar_zona(&z.id).expect("quitar la zona");
+    esperar("la zona deja de escuchar", Duration::from_secs(20), || !crate::server::listening(p_e));
+    assert!(crate::server::load().zonas.is_empty());
+    assert!(crate::server::listening(p_d), "la principal sigue");
+    assert!(e.is_dir(), "la carpeta de la zona no se borra");
+
+    crate::server::desactivar().expect("desactivar");
+    esperar("la principal deja de escuchar", Duration::from_secs(20), || !crate::server::listening(p_d));
+    std::env::remove_var("RESGUARDO_REST_SERVER_BIN");
+    std::env::remove_var("RESGUARDO_AGENT_DIR");
+    drop(guard);
 }

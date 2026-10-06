@@ -11,6 +11,8 @@ mod notificaciones;
 mod ordenes;
 mod panel;
 mod plantillas;
+// Tarea 7a: el catálogo de destinos del cliente (en claro, sin secretos).
+mod destinos;
 mod respaldo;
 mod servidor_clientes;
 mod sesiones;
@@ -268,6 +270,8 @@ pub fn router(st: St) -> Router {
         // v1.4x: color, plantilla por defecto y avisos de cada etiqueta de los equipos.
         .route("/api/clientes/{c}/etiquetas", get(etiquetas::listar).put(etiquetas::poner))
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
+        .route("/api/clientes/{c}/destinos", get(destinos::listar))
+        .route("/api/clientes/{c}/destinos/{d}", put(destinos::guardar).delete(destinos::borrar))
         .route("/api/clientes/{c}/emparejamientos/{p}", get(equipos::ver_emparejamiento).delete(equipos::cancelar_emparejamiento))
         .route("/api/clientes/{c}/emparejamientos/{p}/confirmar", post(equipos::confirmar_emparejamiento))
         .route("/api/clientes/{c}/avisos", get(equipos::avisos))

@@ -89,6 +89,7 @@
   import ConectarNube from "$lib/componentes/ConectarNube.svelte";
   import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
   import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
+  import ZonasAlmacen from "$lib/componentes/ZonasAlmacen.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -1075,6 +1076,8 @@
             </div>
           </div>
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
+          <!-- Tarea 7b: las zonas (otros discos que sirve, cada uno con su puerto). -->
+          {#if actual.cliente}<ZonasAlmacen cliente={actual.cliente} {equipo} equipos={actual.equipos} administra={puede.administrar(rol)} alCambiar={() => void cargar()} />{/if}
           {#if g.espejo}
             <div class="espejo">
               <p class="externa">
