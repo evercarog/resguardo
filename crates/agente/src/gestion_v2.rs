@@ -590,7 +590,7 @@ pub fn validar_cadenas(copias: &[Copia]) -> Result<(), String> {
         let mut actual = t.clone();
         for _ in 0..=copias.len() {
             match copias.iter().find(|x| x.id == actual).and_then(|x| x.tras.clone()) {
-                Some(sig) if sig == k.id => return Err(format!("La cadena de «{}» da la vuelta sobre sí misma.", k.nombre)),
+                Some(sig) if sig == k.id => return Err(format!("La cadena de «{}» se cierra en un círculo: alguna copia tiene que empezar con su horario.", k.nombre)),
                 Some(sig) => actual = sig,
                 None => break,
             }

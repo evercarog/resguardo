@@ -40,7 +40,7 @@ export function errorCadenas(copias: CopiaCadena[]): string | null {
     let actual: string | null | undefined = k.tras;
     for (let i = 0; i <= copias.length && actual; i++) {
       const sig: string | null | undefined = copias.find((x) => x.id === actual)?.tras;
-      if (sig === k.id) return `La cadena de «${k.nombre}» da la vuelta sobre sí misma.`;
+      if (sig === k.id) return `La cadena de «${k.nombre}» se cierra en un círculo: alguna copia tiene que empezar con su horario.`;
       actual = sig;
     }
   }

@@ -33,7 +33,7 @@ const k = (id: string, tras?: string) => ({ id, nombre: id.toUpperCase(), tras: 
 igual("una cadena que vale", errorCadenas([k("docs"), k("disco-e", "docs"), k("nube", "disco-e")]), null);
 cierto("ella misma, no", !!errorCadenas([k("a", "a")]));
 cierto("una que no está, no", !!errorCadenas([k("a", "zz")]));
-cierto("una vuelta, no", errorCadenas([k("a", "c"), k("b", "a"), k("c", "b")])?.includes("vuelta") === true);
+cierto("una vuelta, no", errorCadenas([k("a", "c"), k("b", "a"), k("c", "b")])?.includes("círculo") === true);
 igual(
   "antes de «docs» no puede ir ninguna que vaya detrás de ella",
   posiblesAnteriores([k("docs"), k("disco-e", "docs"), k("nube", "disco-e"), k("otra")], k("docs")).map((x) => x.id),

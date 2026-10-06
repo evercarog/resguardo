@@ -155,14 +155,15 @@ fn repo_command(access: &Access) -> Command {
         cmd.env(k, v);
     }
     if BUNDLED_ONLY.load(Ordering::Relaxed) {
-        // El agente (servicio): `PATH` solo con carpetas del sistema y, con
-        // `rclone:`, el rclone que va junto a Resguardo (no el primero del PATH).
+        // El agente (servicio): `PATH` solo con carpetas del sistema.
         cmd.env("PATH", crate::proceso::path_del_sistema());
-        // (También si el origen de un `copy` es `rclone:`.)
-        let usa_rclone = access.location.starts_with("rclone:") || access.env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
-        if let Some(rclone) = rclone_incluido().filter(|_| usa_rclone) {
-            cmd.arg("-o").arg(format!("rclone.program={}", rclone.display()));
-        }
+    }
+    // Con `rclone:` (también si es el origen de un `copy`), el rclone que va
+    // junto a Resguardo si está (no el primero del PATH). En una compilación de
+    // desarrollo sin él junto al ejecutable, el del PATH, como antes.
+    let usa_rclone = access.location.starts_with("rclone:") || access.env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
+    if let Some(rclone) = rclone_incluido().filter(|_| usa_rclone) {
+        cmd.arg("-o").arg(format!("rclone.program={}", rclone.display()));
     }
     // Opción global: puede ir antes del subcomando.
     if let Some(cacert) = &access.cacert {
