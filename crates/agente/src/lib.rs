@@ -41,6 +41,9 @@ pub mod endpoint;
 pub mod escritorio;
 pub mod espacio;
 pub mod espejo;
+#[cfg(test)]
+mod espera_it;
+pub mod espera_v2;
 pub mod ganchos;
 pub mod gestion_v2;
 pub mod history;

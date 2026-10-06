@@ -66,6 +66,18 @@ pub fn orden_json(o: &Orden, nombre_emisor: &str) -> Value {
     })
 }
 
+/// v1.4x (consolas-multiples.md §5): las órdenes que los equipos tienen en espera y que
+/// mandó **otra** consola (las de esta ya cuentan en `ordenes_con_espera`). Del resumen
+/// que sube cada equipo; las que ya pasaron su hora no cuentan.
+pub fn en_espera_de_otras(equipos: &[crate::almacen::Equipo], ahora: Ts) -> usize {
+    equipos
+        .iter()
+        .filter_map(|e| e.resumen.as_ref()?.get("en_espera")?.as_array())
+        .flatten()
+        .filter(|x| x["consola"]["esta"] != true && x["caduca"].as_str().and_then(de_fecha).is_some_and(|c| c > ahora))
+        .count()
+}
+
 /// La orden como la recibe el agente.
 pub fn orden_agente(o: &Orden) -> Value {
     json!({ "id": o.id, "tipo": o.tipo, "seq": o.seq, "sellado": o.sellado, "not_before": fecha_opt(o.not_before), "caduca": fecha(o.caduca) })

@@ -2,6 +2,39 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## Resumen de la noche del 2026-10-06 (trabajo autónomo, Claude Code en el equipo de desarrollo)
+
+*Se actualiza a medida que avanza; el detalle de cada tarea está en su entrada más abajo.*
+
+**Hecho y unido a `main`** (cada unión con fmt, los dos clippy, `cargo test --workspace`, consola check/build/test:vectores, `test:sin-referencias` y el e2e completo en Windows):
+
+- Copia externa a un repositorio que ya existe (B2/S3/rest…), con «Probar» y bloqueo de objetos (Object Lock): contrato v1.46.
+- Lo largo a la vista de todas las consolas («Moviéndose a otro sitio», traer historial, retención, restaurar): v1.47. Y «Retención en detalle» (v1.45) y «Buscar archivos» (v1.44), de la tarde.
+- Tarea 0: rama de la sesión en la nube unida. Arreglo: `restaurar-respaldo` protege la carpeta solo si es la de por defecto o como administrador (si no, el e2e fallaba con «Acceso denegado»).
+- e2e: se niega a arrancar con binarios más viejos que el código (un fallo del paso 5 era un agente sin recompilar).
+- **0.7.22** (en el commit `90b34f4`): versión subida, instaladores compilados y **publicación en borrador** en GitHub (`v0.7.22`, 10 archivos con `SHA256SUMS`). **No es pública**: revísala y publícala tú. Los instaladores también están en `instalar\` (los de la 0.7.21 en `instalar\anteriores`).
+- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola).
+
+**En marcha:** 3 (espejo flexible), 9b (ancla de la auditoría), 6 (etiquetas). Pendientes: 7 (con 4), 8, 10c.
+
+**Decisiones tomadas sin ti, para revisar** (detalle en cada entrada):
+
+- 0.7.22 lleva solo lo terminado antes del plan de mejoras; 9a, 9d–9h, 1, 2… van en la siguiente, para no meter el cambio del emparejamiento sin probarlo en una máquina real.
+- 9a: el código vive en el `localStorage` del navegador hasta el alta (hasta 8 días); el de 15 min sigue con 10 caracteres.
+- 9d: los avisos (webhook, ntfy) de un cliente ya no usan el proxy del entorno (no se podría comprobar la IP de destino).
+- 1: cancelar una orden en espera no pide clave (cualquier consola puede); queda en el historial de todas. Una orden en espera solo se aplica justo después de hablar con la consola que la mandó.
+- 2: una consola sin contacto en 30 días no se sugiere.
+- Se borraron carpetas de compilación y copias de trabajo de ramas ya unidas (`.claude/worktrees`, `target` sueltos) para liberar disco; en C: también cachés temporales (npm, restic de pruebas, perfiles de Edge de capturas).
+
+**Probar a mano o en una máquina virtual:**
+
+- Instalador NSIS «listo» con la cola que añade el navegador (9a) y un equipo nuevo de verdad.
+- `restaurar-respaldo` como administrador.
+- Copia externa a un B2 real con Object Lock (el borrado bloqueado solo se probó con lo que dice el código de restic).
+- Reiniciar el servicio del agente con órdenes en espera; cambiar la hora del equipo.
+
+**Nada se instaló en el equipo de desarrollo** ni se tocó ninguna consola, equipo o dato real.
+
 Plantilla:
 
 ```md
@@ -12,6 +45,30 @@ Plantilla:
 - **Comprobado:** qué comprobaciones pasaron.
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
+
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ordenes-entre-consolas`
+
+- **Pedido:** tareas 1 («Órdenes visibles y cancelables desde cualquier consola») y 9c («Reloj del equipo en las esperas») del plan. El responsable estaba fuera: propuesta escrita en `docs/consolas-multiples.md` §5 y hecha sin esperar su visto bueno (lo pidió así), compatible con los agentes ya instalados.
+- **Cambios:**
+  - `protocolo`: orden `cancelar_espera` (inofensiva), campo opcional `por` en el sobre, `validar_con_espera`/`abrir_con_espera`.
+  - `servidor`: entrega al momento las órdenes con espera que piden autorización a los agentes con `admite: "ordenes_en_espera"` (lo mira en el resumen guardado); `ahora` en `hola`, `ping` y `tomar`; las `entregada` que esperan siguen en «pendientes»; un resultado firmado de una orden ya cancelada la sustituye y avisa (`cambio_inusual`); aviso nuevo `orden_en_espera`; historial `orden` (solo pedido); `pendientes` cuenta las de otras consolas.
+  - `agente`: `espera_v2.rs` (guardar con el sobre sellado en `servidor.bin`, aplicar con los dos relojes en el canal de la consola que la mandó, `resumen.en_espera`, cancelar desde cualquiera o desde su servidor, aviso a las demás, historial común `orden` de todas las órdenes); `procesar` partido en `comprobar` / `autorizar_y_ejecutar`; `largas::guardar_resultado`; prueba de integración `espera_it.rs` con dos servidores reales.
+  - `consola`: `lib/espera.ts` (+ `vectores-espera.ts`), «Órdenes esperando su turno» con las de otras consolas y su «Cancelar», «Desde otras consolas» en Órdenes, aviso nuevo, `por` en el sobre, mock, paso 8a2 del e2e.
+  - Docs: `consolas-multiples.md` §5, `api-servidor.md` (§1, §4, §5, §6, §8 y «Cambios» v1.4x), `plataforma.md` §7.3.1, `plan-mejoras.md`.
+- **Encontrado de paso:** con el flujo anterior, una orden con espera que el servidor entregaba a su hora llegaba **después** de las posteriores (`seq` mayor) y el agente la rechazaba por «antigua». Con agente y servidor nuevos ya no pasa (se entregan en orden); con un agente anterior sigue igual.
+- **Decisiones dudosas (a revisar):**
+  - La espera la cuentan los dos relojes: el del equipo (con la holgura de 5 min de siempre) **y** el del servidor que la mandó (su `ahora` + reloj monotónico, 2 s de margen por redondeo). Sin `ahora` (servidor anterior) solo el del equipo: ese servidor nunca entrega antes de tiempo. No hay referencia de tiempo firmada independiente (sigue en §7.3.1).
+  - Solo se aplica en el canal de la consola que la mandó, justo después de hablar con ella. Si esa consola no vuelve, la orden caduca sin aplicarse (lo seguro, como antes, pero puede sorprender).
+  - Autorización comprobada al recibirla (los fallos cuentan para los bloqueos) **y** al aplicarla (si cambió la clave, se rechaza). Inofensivas con espera: no se adelantan ni se guardan. Como mucho 20 por consola.
+  - `cancelar_espera` es inofensiva: un técnico (o una consola maliciosa) puede cancelar lo que mandó un administrador desde otra consola. Es reversible y queda en el historial de todas (ver §5.9).
+  - A la consola que la mandó, la cancelación llega como `rechazada` con `detalle.cancelada` (un servidor anterior la enseña como rechazada), por `largas` (en la siguiente vuelta del servicio, ≤ 10 s, o cuando vuelva).
+  - Nombre de la consola, nunca su dirección (como el progreso de «Mover a otro sitio»); sí su identidad (ya estaba en `resumen.consolas`). La consola no enseña un nombre que parezca una dirección (`nombreConsola`).
+  - El aviso `orden_en_espera` va solo a las **demás** consolas (la que la manda ya tiene «Orden destructiva pendiente»); una consola apagada en ese momento no lo recibe por correo/push.
+  - Historial `orden`: todas las órdenes salvo las de sesión y `cancelar_espera`, también las rechazadas por clave; de las largas solo se anota `en_marcha`. `por` lo pone la consola (no se puede comprobar).
+  - El servidor decide si adelantar por el `admite` del último resumen: si se instala un agente anterior encima de uno nuevo, hasta su primer resumen rechazaría por «todavía no es la hora» las que le lleguen antes.
+  - Quitar la consola que la mandó (o desvincular) cancela sus órdenes en espera.
+- **Comprobado** (Windows, tras unir `origin/main` 0.7.22): `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` y con `--features consola-integrada`, `cargo test --workspace` (con `espera_it`: dos servidores reales, recibir, ver desde la otra, cancelar desde la otra, aplicar a su hora, cancelar desde la propia, inofensiva no adelantada, clave mal, quitar la consola), consola `check`, `build`, `test:vectores` (con `vectores-espera.ts`), `test:sin-referencias` y `npm run e2e` completo con el paso 8a2 (la en línea ve la destructiva de la local, recibe el aviso, la cancela, nunca se aplica; otra con 25 s de espera no se aplica antes y sí a su hora). El primer e2e encontró que guardar la cancelación como `cancelada` rompía la firma comprobada por la consola: ahora queda `rechazada` con `detalle.cancelada`.
+- **Sin probar / dudas:** el reinicio del servicio con órdenes en espera (solo que se guardan y se leen de `servidor.bin`); cambiar de verdad el reloj del equipo o del servidor; Linux; la prueba de integración de Rust va por sondeo (el canal WebSocket lo cubre el e2e); la ventana del equipo no enseña ni cancela las órdenes en espera; `cambiar_servidor` de una consola con órdenes en espera (se cancelan por identidad distinta, sin probar).
 
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/equipos-en-todas-las-consolas`
 

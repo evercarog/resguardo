@@ -184,6 +184,21 @@ export interface ConsolaDelEquipo {
   esta: boolean;
 }
 
+/** v1.4x (docs/consolas-multiples.md §5.5): una orden que el equipo tiene en espera. */
+export interface OrdenEnEspera {
+  /** El id de la orden en el servidor de la consola que la mandó. */
+  id: string;
+  tipo: string;
+  descripcion?: string | null;
+  /** Desde qué consola: su nombre en el equipo (nunca su dirección) y su identidad; `esta`, si fue esta. */
+  consola: { nombre?: string | null; identidad: string; esta: boolean };
+  /** Quién la mandó, según esa consola. */
+  por?: string | null;
+  emitida: string;
+  aplica: string;
+  caduca: string;
+}
+
 export interface ResumenEquipo {
   /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.36 «escritorio»). */
   admite?: string[];
@@ -201,6 +216,8 @@ export interface ResumenEquipo {
   consolas?: ConsolaDelEquipo[];
   /** v1.36: el último cambio (configuración, repositorios…) y desde qué consola llegó. */
   cambio_config?: { tipo: string; cuando: string; consola: { nombre: string; url: string; identidad: string } } | null;
+  /** v1.4x: las órdenes con espera que el equipo ya tiene (de cualquiera de sus consolas). */
+  en_espera?: OrdenEnEspera[];
   copias?: CopiaResumen[];
   repositorios?: RepositorioResumen[];
   destinos?: DestinoResumen[];
@@ -681,7 +698,9 @@ export type TipoAviso =
   | "espejo_fallido"
   // v1.43: la retención del almacén que falló (la que se aplica sola a su hora).
   | "retencion_fallida"
-  | "cambio_clave";
+  | "cambio_clave"
+  // v1.4x: otra consola mandó una orden que el equipo tiene en espera.
+  | "orden_en_espera";
 
 /**
  * v1.23: una entrada del historial que guarda el propio equipo (para siempre:
@@ -692,7 +711,7 @@ export type TipoAviso =
 export interface EntradaHistorial {
   id: string;
   hora: string;
-  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial";
+  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial" | "orden";
   repo?: string;
   /** v1.47, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
   origen?: string;
@@ -705,6 +724,8 @@ export interface EntradaHistorial {
   consola?: string;
   /** Id de la copia (solo «copia»). */
   copia?: string;
+  /** En «orden» (v1.4x) es otro: lo que pasó con ella (en_espera, hecha, en_marcha, fallida,
+   * rechazada, cancelada o caducada); se lee con `resultadoOrden` (lib/espera.ts). */
   resultado?: "ok" | "aviso" | "fallo" | "sin_cambios";
   mensaje?: string;
   duracion_s?: number;
@@ -715,6 +736,14 @@ export interface EntradaHistorial {
   ganchos?: ResultadoGancho[];
   /** Tipo de aviso (solo «aviso»). */
   aviso?: TipoAviso;
+  /** v1.4x, solo «orden» (§5.8): qué orden, su id en su servidor, la identidad de la consola que la mandó y quién. */
+  orden?: string;
+  orden_id?: string;
+  descripcion?: string;
+  identidad?: string;
+  por?: string;
+  aplica?: string;
+  cancelada_desde?: string;
   /** Solo «resumen_dia» (vueltas de una copia de un día de hace más de un año). */
   dia?: string;
   ok?: number;

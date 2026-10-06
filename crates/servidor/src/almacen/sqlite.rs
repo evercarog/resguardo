@@ -389,6 +389,12 @@ fn fila_equipo(r: &rusqlite::Row) -> rusqlite::Result<Equipo> {
     })
 }
 
+/// v1.4x: ¿se puede entregar antes de su hora a un agente que admite `ordenes_en_espera`?
+/// Solo las que piden autorización (el equipo la comprueba al recibirlas).
+fn adelantable(tipo: &str) -> bool {
+    resguardo_protocolo::ordenes::tipo(tipo).is_some_and(|t| t.nivel != resguardo_protocolo::ordenes::Nivel::Inofensiva)
+}
+
 const COLS_ORDEN: &str = "id, equipo_id, tipo, seq, sellado, emitida, emitida_por, not_before, caduca, estado, mensaje, detalle, firma_agente, actualizada";
 fn fila_orden(r: &rusqlite::Row) -> rusqlite::Result<Orden> {
     Ok(Orden {
@@ -972,14 +978,15 @@ impl Almacen for Sqlite {
         self.con(c, |db| {
             let mut st = db
                 .prepare(&format!(
-                    "SELECT {COLS_ORDEN} FROM ordenes WHERE estado = 'pendiente' AND not_before IS NOT NULL AND not_before > ?1 ORDER BY not_before"
+                    // v1.4x: también las entregadas antes de su hora (el equipo las tiene en espera).
+                    "SELECT {COLS_ORDEN} FROM ordenes WHERE estado IN ('pendiente', 'entregada') AND not_before IS NOT NULL AND not_before > ?1 ORDER BY not_before"
                 ))
                 .map_err(s)?;
             let filas = st.query_map([ahora], fila_orden).map_err(s)?;
             filas.collect::<Result<Vec<_>, _>>().map_err(s)
         })
     }
-    fn entregar_ordenes(&self, c: &ClienteCtx, equipo: &str, ahora: Ts) -> R<Vec<Orden>> {
+    fn entregar_ordenes(&self, c: &ClienteCtx, equipo: &str, ahora: Ts, adelantar: bool) -> R<Vec<Orden>> {
         let con = self.conexion(c)?;
         let mut db = con.lock().unwrap_or_else(|e| e.into_inner());
         let tx = db.transaction().map_err(s)?;
@@ -991,13 +998,12 @@ impl Almacen for Sqlite {
         )
         .map_err(s)?;
         let ordenes = {
-            let mut st = tx
-                .prepare(&format!(
-                    "SELECT {COLS_ORDEN} FROM ordenes WHERE equipo_id = ?1 AND estado = 'pendiente' AND (not_before IS NULL OR not_before <= ?2) ORDER BY seq"
-                ))
-                .map_err(s)?;
-            let filas = st.query_map(params![equipo, ahora], fila_orden).map_err(s)?;
-            filas.collect::<Result<Vec<_>, _>>().map_err(s)?
+            let mut st = tx.prepare(&format!("SELECT {COLS_ORDEN} FROM ordenes WHERE equipo_id = ?1 AND estado = 'pendiente' ORDER BY seq")).map_err(s)?;
+            let filas = st.query_map(params![equipo], fila_orden).map_err(s)?;
+            let todas = filas.collect::<Result<Vec<_>, _>>().map_err(s)?;
+            // Las que ya tocan; con `adelantar`, también las que esperan su hora y piden
+            // autorización (las inofensivas con espera, como siempre, a su hora).
+            todas.into_iter().filter(|o| o.not_before.is_none_or(|nb| nb <= ahora) || (adelantar && adelantable(&o.tipo))).collect::<Vec<_>>()
         };
         for o in &ordenes {
             tx.execute("UPDATE ordenes SET estado = 'entregada', actualizada = ?2 WHERE id = ?1", params![o.id, ahora]).map_err(s)?;
@@ -1021,8 +1027,8 @@ impl Almacen for Sqlite {
             let n = db
                 .execute(
                     "UPDATE ordenes SET estado = ?3, mensaje = ?4, detalle = ?5, firma_agente = ?6, actualizada = ?7
-                     WHERE id = ?1 AND equipo_id = ?2 AND estado IN ('pendiente', 'entregada', 'en_marcha')",
-                    params![r.orden, equipo, r.estado, r.mensaje, r.detalle, r.firma, ahora()],
+                     WHERE id = ?1 AND equipo_id = ?2 AND (estado IN ('pendiente', 'entregada', 'en_marcha') OR (?8 AND estado = 'cancelada'))",
+                    params![r.orden, equipo, r.estado, r.mensaje, r.detalle, r.firma, ahora(), r.pisar_cancelada],
                 )
                 .map_err(s)?;
             Ok(n == 1)
@@ -1850,11 +1856,64 @@ mod tests {
         assert_eq!(a.insertar_orden(&c, &nueva(1, None)).unwrap_err(), "seq:2");
         let espera = a.insertar_orden(&c, &nueva(2, Some(ahora() + 3600))).unwrap();
         // Se entrega la 1; la 2 espera a su hora.
-        let entregadas = a.entregar_ordenes(&c, "e1", ahora()).unwrap();
+        let entregadas = a.entregar_ordenes(&c, "e1", ahora(), false).unwrap();
         assert_eq!(entregadas.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1]);
         assert_eq!(a.ordenes_con_espera(&c, ahora()).unwrap().len(), 1);
         assert!(a.cancelar_orden(&c, &espera.id, "ana", ahora()).unwrap());
-        assert!(a.entregar_ordenes(&c, "e1", ahora() + 7200).unwrap().is_empty());
+        assert!(a.entregar_ordenes(&c, "e1", ahora() + 7200, false).unwrap().is_empty());
+    }
+
+    /// v1.4x (consolas-multiples.md §5): a un agente que admite `ordenes_en_espera` se le
+    /// entregan al momento las que piden autorización y esperan su hora (las inofensivas
+    /// no); siguen saliendo «esperando su turno», se pueden cancelar (y el equipo se entera)
+    /// y, si el equipo dice que la aplicó igualmente, su resultado firmado manda.
+    #[test]
+    fn ordenes_con_espera_entregadas_antes() {
+        let (_d, a) = almacen();
+        let c = ClienteCtx::autorizado(&a.crear_cliente("Uno", "s", 24).unwrap().id);
+        let e = EquipoNuevo {
+            id: "e1".into(),
+            nombre: "PC".into(),
+            so: "w".into(),
+            version: "1".into(),
+            box_pub: "b".into(),
+            sign_pub: "s".into(),
+            sal_equipo: "sal".into(),
+            secreto_hash: "h".into(),
+        };
+        a.crear_equipo(&c, &e).unwrap();
+        let t = ahora();
+        let nueva = |seq: u64, tipo: &str, nb: Option<Ts>| OrdenNueva {
+            id: format!("o{seq}"),
+            equipo_id: "e1".into(),
+            tipo: tipo.into(),
+            seq,
+            sellado: "x".into(),
+            emitida_por: "ana".into(),
+            not_before: nb,
+            caduca: t + 2 * 86_400,
+            sesion: None,
+            relevo: None,
+        };
+        a.insertar_orden(&c, &nueva(1, "pausar", Some(t + 86_400))).unwrap();
+        a.insertar_orden(&c, &nueva(2, "copiar_ahora", Some(t + 3600))).unwrap();
+        a.insertar_orden(&c, &nueva(3, "quitar_repositorio", Some(t + 86_400))).unwrap();
+        // Un agente anterior: nada todavía.
+        assert!(a.entregar_ordenes(&c, "e1", t, false).unwrap().is_empty());
+        // Uno nuevo: las dos que piden autorización, en orden; la inofensiva, a su hora.
+        let ya = a.entregar_ordenes(&c, "e1", t, true).unwrap();
+        assert_eq!(ya.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1, 3]);
+        assert_eq!(a.ordenes_con_espera(&c, t).unwrap().len(), 3, "entregadas o no, siguen esperando su turno");
+        // Cancelar una entregada que espera: el equipo se entera en la próxima entrega.
+        assert!(a.cancelar_orden(&c, "o1", "ana", t).unwrap());
+        assert_eq!(a.canceladas_sin_avisar(&c, "e1").unwrap(), vec!["o1".to_string()]);
+        // El equipo dice (firmado) que la aplicó igualmente: sin `pisar_cancelada` no cambia; con él, sí.
+        let mut r = ResultadoOrden { orden: "o1".into(), estado: "hecha".into(), mensaje: None, detalle: None, firma: "f".into(), pisar_cancelada: false };
+        assert!(!a.resultado_orden(&c, "e1", &r).unwrap());
+        r.pisar_cancelada = true;
+        assert!(a.resultado_orden(&c, "e1", &r).unwrap());
+        assert_eq!(a.orden(&c, "o1").unwrap().unwrap().estado, "hecha");
+        assert_eq!(a.entregar_ordenes(&c, "e1", t + 3600, true).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2]);
     }
 
     /// Lo entregado por una conexión muerta vuelve a entregarse; lo que caduca sin
@@ -1890,10 +1949,10 @@ mod tests {
         for seq in 1..=3 {
             a.insertar_orden(&c, &nueva(seq, t + 3600)).unwrap();
         }
-        assert_eq!(a.entregar_ordenes(&c, "e1", t).unwrap().len(), 3);
+        assert_eq!(a.entregar_ordenes(&c, "e1", t, false).unwrap().len(), 3);
         // El equipo aceptó la 1 y luego la conexión murió: la 2 y la 3 se le vuelven a dar.
         assert_eq!(a.reponer_no_recibidas(&c, "e1", 1, t).unwrap(), 2);
-        assert_eq!(a.entregar_ordenes(&c, "e1", t).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2, 3]);
+        assert_eq!(a.entregar_ordenes(&c, "e1", t, false).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2, 3]);
         // Las que ya aceptó (o caducadas) no.
         assert_eq!(a.reponer_no_recibidas(&c, "e1", 3, t).unwrap(), 0);
         assert_eq!(a.reponer_no_recibidas(&c, "e1", 1, t + 7200).unwrap(), 0);

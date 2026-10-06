@@ -422,6 +422,8 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "copia_atrasada" => format!("Hay una copia atrasada en {e}"),
         "servicio_detenido" => format!("El servicio de Resguardo está detenido en {e}"),
         "orden_destructiva" => format!("Orden destructiva pendiente en {e}"),
+        // v1.4x: la mandó otra consola y el equipo la tiene en espera (consolas-multiples.md §5.6).
+        "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         _ => format!("Aviso de {e}"),
     };
@@ -435,6 +437,8 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
 /// La página de la consola que lo enseña.
 fn ruta(cliente: &str, equipo: Option<&str>, tipo: &str) -> String {
     match equipo {
+        // v1.4x: la de otra consola se ve (y se cancela) en «Órdenes».
+        _ if tipo == "orden_en_espera" => format!("/c/{cliente}/ordenes"),
         Some(e) if !matches!(tipo, "orden_destructiva") => format!("/c/{cliente}/equipos/{e}"),
         _ => format!("/c/{cliente}/avisos"),
     }

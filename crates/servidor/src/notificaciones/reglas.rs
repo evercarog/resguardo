@@ -27,6 +27,7 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "cambio_inusual"
         | "servicio_detenido"
         | "orden_destructiva"
+        | "orden_en_espera"
         | "cambio_clave" => Severidad::Critico,
         "equipo_sin_contacto" | "copia_atrasada" | "espejo_fallido" | "retencion_fallida" | "externa_fallida" | "prueba_fallida" => Severidad::Importante,
         _ => Severidad::Informativo,
@@ -234,6 +235,7 @@ mod tests {
     #[test]
     fn gravedades() {
         assert_eq!(severidad("copia_fallida"), Severidad::Critico);
+        assert_eq!(severidad("orden_en_espera"), Severidad::Critico);
         assert_eq!(severidad("equipo_sin_contacto"), Severidad::Importante);
         assert_eq!(severidad("lo_que_sea"), Severidad::Informativo);
     }
