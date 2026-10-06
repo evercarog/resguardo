@@ -149,7 +149,7 @@ async function procesar(o: Bruta) {
       // v1.5: copia externa diaria a otro destino (aquí solo se guarda en la configuración).
       const repo = e.config?.repositorios.find((r) => r.id === cuerpo.repo);
       if (!repo || !e.config) return resultado(o, "fallida", "Ese repositorio no existe en este equipo.");
-      // v1.4x: «Probar» no guarda nada.
+      // v1.46: «Probar» no guarda nada.
       if (cuerpo.solo_probar === true) return resultado(o, "hecha", cuerpo.existente === true ? "El repositorio que ya existe se abre con esa contraseña." : "El destino responde.");
       if (cuerpo.hora === null) {
         repo.externa = null;

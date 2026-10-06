@@ -1,4 +1,4 @@
-// Copia externa (cambiar_copia_externa, api-servidor.md §5, v1.4x): «Usar uno
+// Copia externa (cambiar_copia_externa, api-servidor.md §5, v1.46): «Usar uno
 // que ya existe» y el bloqueo de objetos del destino. Lo que no es pantalla, sin
 // dependencias del navegador (lo prueban los vectores, scripts/vectores.ts).
 import { destinoCuerpo, partirDireccion, repoExistenteCompleto, repoExistenteVacio, type RepoExistente } from "./direccion";

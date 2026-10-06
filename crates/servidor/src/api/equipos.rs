@@ -190,7 +190,7 @@ pub async fn historial(State(st): State<St>, u: Usuario, Path((c, e)): Path<(Str
             tipos.push(t.to_string());
         }
     }
-    // Sin `tipo`, todos menos los que solo se dan pedidos (v1.4x: `retencion`).
+    // Sin `tipo`, todos menos los que solo se dan pedidos (v1.45: `retencion`).
     if tipos.is_empty() {
         tipos = crate::agentes::TIPOS_HISTORIAL.iter().filter(|t| !crate::agentes::TIPOS_SOLO_PEDIDOS.contains(t)).map(|t| t.to_string()).collect();
     }
@@ -223,13 +223,53 @@ pub async fn ultimos_informes(State(st): State<St>, u: Usuario, Path(c): Path<St
 
 // ---------- Emparejamiento ----------
 
+#[derive(Deserialize)]
+pub struct AbrirCuerpo {
+    /// v1.4x: el código lo generó el navegador; solo llega su hash.
+    codigo_hash: Option<String>,
+}
+
 /// Código de 15 min. Si esta cuenta ya tiene uno abierto al que le quedan más de
 /// 2 min, se devuelve ese (`reutilizado: true`) en vez de gastar otro: recargar la
 /// página o pulsar dos veces no acerca al límite de códigos por hora.
-pub async fn abrir_emparejamiento(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+///
+/// v1.4x: con `{ "codigo_hash": "<hex>" }` en el cuerpo, el código lo generó el navegador
+/// (`crypto.getRandomValues`) y el servidor solo guarda su hash (como el que manda el
+/// equipo al unirse): `{ id, caduca, reutilizado: false, codigo_navegador: true }`, sin
+/// código. Sin cuerpo (consolas anteriores), como antes.
+pub async fn abrir_emparejamiento(State(st): State<St>, u: Usuario, Path(c): Path<String>, cuerpo: axum::body::Bytes) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
+    let pedido: Option<String> = if cuerpo.iter().all(u8::is_ascii_whitespace) {
+        None
+    } else {
+        serde_json::from_slice::<AbrirCuerpo>(&cuerpo).map_err(|_| ErrorApi::datos("Cuerpo no válido."))?.codigo_hash
+    };
+    if let Some(h) = pedido {
+        let hash = super::instaladores::hash_valido(&h).ok_or_else(|| ErrorApi::datos("Código no válido."))?;
+        super::cabe_otro_equipo(&st, &ctx).await?;
+        super::instaladores::limite_codigos(&st, &c, u.id())?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let caduca = ahora() + 15 * 60;
+        let (id2, por, actor) = (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo));
+        let marca = format!("{}{hash}", super::instaladores::PREFIJO_NAVEGADOR);
+        let nuevo = st
+            .db(move |db| {
+                if db.codigo_indexado(&hash)? {
+                    return Ok(false);
+                }
+                db.crear_emparejamiento(&ctx, &id2, &por, caduca, &marca)?;
+                db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
+                db.auditar(&ctx, &actor, "abrir_emparejamiento", &id2, &json!({ "codigo_navegador": true }).to_string())?;
+                Ok(true)
+            })
+            .await?;
+        if !nuevo {
+            return Err(super::instaladores::codigo_repetido());
+        }
+        return Ok(Json(json!({ "id": id, "caduca": fecha(caduca), "reutilizado": false, "codigo_navegador": true })));
+    }
     if let Some(e) = super::instaladores::reutilizable(&st, &ctx, u.id(), None, 2 * 60).await? {
-        return Ok(Json(json!({ "id": e.id, "codigo": e.codigo, "caduca": fecha(e.caduca), "reutilizado": true })));
+        return Ok(Json(json!({ "id": e.id, "codigo": super::instaladores::codigo_en_claro(&e), "caduca": fecha(e.caduca), "reutilizado": true })));
     }
     super::cabe_otro_equipo(&st, &ctx).await?;
     super::instaladores::limite_codigos(&st, &c, u.id())?;
@@ -268,9 +308,16 @@ pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): 
         v["so"] = json!(emp.so);
     }
     // Mientras sirve, el código (la orden `alta` lo necesita; v1.42: también el de 15 min y,
-    // confirmado sin el alta del equipo, para terminarla después).
-    if matches!(estado.as_str(), "abierto" | "unido" | "confirmado") && emp.codigo.is_some() {
-        v["codigo"] = json!(emp.codigo);
+    // confirmado sin el alta del equipo, para terminarla después). v1.4x: si lo generó el
+    // navegador, el servidor no lo tiene: da su hash (la consola comprueba con él el código
+    // que guardó o que le escriben) y `codigo_navegador: true`.
+    if matches!(estado.as_str(), "abierto" | "unido" | "confirmado") {
+        if let Some(h) = super::instaladores::hash_del_navegador(&emp) {
+            v["codigo_hash"] = json!(h);
+            v["codigo_navegador"] = json!(true);
+        } else if let Some(cod) = super::instaladores::codigo_en_claro(&emp) {
+            v["codigo"] = json!(cod);
+        }
     }
     if let Some(e) = equipo {
         v["equipo"] = json!({ "id": e.id, "nombre": e.nombre, "so": e.so, "box_pub": e.box_pub, "sign_pub": e.sign_pub, "sal_equipo": e.sal_equipo });
@@ -296,7 +343,11 @@ pub async fn confirmar_emparejamiento(State(st): State<St>, u: Usuario, Path((c,
     let r = st
         .db_crudo(move |db| {
             let emp = db.emparejamiento(&ctx, &p)?.ok_or("no_existe")?;
-            if emp.estado != "unido" || emp.caduca <= ahora() {
+            // v1.4x: también uno ya confirmado al que le falta el alta del equipo (aún con su código):
+            // si la consola confirmó y el alta no salió (sin red, página cerrada), al reintentar
+            // confirmaba otra vez y recibía este error, sin forma de seguir.
+            let a_medias = emp.estado == "confirmado" && emp.codigo.is_some();
+            if !((emp.estado == "unido" && emp.caduca > ahora()) || a_medias) {
                 return Err("El equipo aún no se ha unido o el emparejamiento ha caducado.".into());
             }
             let equipo = emp.equipo_id.ok_or("no_existe")?;

@@ -14,6 +14,8 @@ export interface Servidor {
   dropbox_app_key?: string | null;
   /** v1.17: ¿puede dar el instalador del agente «listo para vincular»? (sin el campo: no). */
   instalador_agente?: boolean;
+  /** v1.4x: acepta códigos de emparejamiento generados en el navegador (solo su hash) y da el instalador genérico. */
+  codigo_navegador?: boolean;
   /** v1.19: ¿hay un Resguardo Agente en la máquina del servidor? («Vincular este servidor»). */
   agente_local?: boolean;
   /** v1.34: la dirección para los agentes y las otras consolas si no es la de esta consola
@@ -277,7 +279,7 @@ export interface RepositorioResumen {
   solo_anadir?: boolean | null;
   /**
    * Copia externa diaria (restic copy) a otro destino: su nombre y la hora.
-   * v1.4x: a un repositorio que ya existía, con bloqueo de objetos (días), de
+   * v1.46: a un repositorio que ya existía, con bloqueo de objetos (días), de
    * solo añadir y si tiene retención propia.
    */
   externa?: {
@@ -405,6 +407,9 @@ export interface EstadoDeEmparejamiento {
   nombre?: string;
   so?: "windows" | "linux";
   codigo?: string;
+  /** v1.4x: el código lo generó un navegador; el servidor solo tiene su hash (lib/codigo.ts). */
+  codigo_hash?: string;
+  codigo_navegador?: boolean;
 }
 
 /** v1.42: un equipo que se unió y se quedó sin terminar (sin comparar el número o sin el alta). */
@@ -426,6 +431,19 @@ export interface Preparado {
   caduca: string;
   creado: string;
   equipo: string | null;
+}
+
+/** v1.4x: lo que devuelve preparar un equipo con el código del navegador (sin el código). */
+export interface PreparadoNavegador {
+  id: string;
+  nombre: string;
+  so: "windows" | "linux";
+  caduca: string;
+  servidor: string;
+  huella_ca: string;
+  cliente: string;
+  codigo_navegador: true;
+  reutilizado: false;
 }
 
 /** Lo que devuelve preparar la línea de Linux. */
@@ -571,7 +589,7 @@ export interface Informe {
 
 /** Fase de una tarea en marcha (v1.25): las de una copia y `en_marcha` (las demás tareas). */
 export type FaseTarea = "antes_de_copiar" | "preparando" | "escaneando" | "subiendo" | "terminando" | "en_marcha";
-/** v1.4x: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`. */
+/** v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`. */
 export type TipoTarea = "copia" | "verificar" | "verificar_externa" | "copia_externa" | "prueba_restauracion" | "historial" | "retencion" | "restauracion";
 
 /** Algo que está en marcha en un equipo, con su progreso (v1.25, `GET …/progreso`). Sin rutas. */
@@ -601,7 +619,7 @@ export interface TareaEnMarcha {
   versiones_total?: number | null;
   empezo?: string | null;
   actualizado?: string | null;
-  /** v1.4x (`historial`): el repositorio de este equipo del que se trae (al mover, el que se mueve) y su nombre. */
+  /** v1.47 (`historial`): el repositorio de este equipo del que se trae (al mover, el que se mueve) y su nombre. */
   origen?: string | null;
   nombre_origen?: string | null;
   /** Un paso de «Mover a otro sitio…»: `historial` (todo) o `ultimo` (lo copiado mientras tanto). */
@@ -648,7 +666,7 @@ export interface EntradaHistorial {
   hora: string;
   tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial";
   repo?: string;
-  /** v1.4x, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
+  /** v1.47, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
   origen?: string;
   nombre?: string;
   nombre_origen?: string;

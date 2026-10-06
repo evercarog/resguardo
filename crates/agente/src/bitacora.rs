@@ -7,7 +7,7 @@
 //! - Una línea JSON por cosa que pasa: cada vuelta de una copia (con sus
 //!   cifras y el resultado de sus ganchos), cada verificación, prueba de
 //!   restauración o copia externa, cada vuelta del espejo, los avisos que
-//!   levantó el equipo y (v1.4x) cada vuelta de la retención con las versiones
+//!   levantó el equipo y (v1.45) cada vuelta de la retención con las versiones
 //!   que quitó (`retencion_registro.rs`; con la lista, solo las 50 últimas).
 //! - Solo lo que ya se enseña en la consola: sin rutas (los mensajes pasan por
 //!   `web::public_message`), sin nombres de archivos y sin secretos.

@@ -52,6 +52,11 @@ pub fn preparar(datos: &Path, opciones: Opciones) -> Result<St, String> {
         progreso: Default::default(),
         vivo: Default::default(),
         notif: notificaciones::Motor::nuevo(notificaciones::cifrado::Clave::de_identidad(&identidad)),
+        uso_relevos: {
+            let u = estado::UsoRelevos::default();
+            u.poner(estado::medir_relevos(&datos.join("relevos")));
+            u
+        },
     }))
 }
 
@@ -107,7 +112,8 @@ pub fn tareas(st: St) {
                     quitar_sin_alta(&st2, &ctx);
                     avisar_sin_contacto(&st2, &ctx, ahora);
                 }
-                drop(datos);
+                // Lo que ocupan los relés, medido de nuevo (corrige cualquier desvío de la cuenta).
+                st2.uso_relevos.poner(estado::medir_relevos(&datos.join("relevos")));
             })
             .await;
         }
@@ -217,7 +223,7 @@ pub fn pedir_parada() {
 /// bucle: cada conexión con su límite de tiempo para las cabeceras y un tope de conexiones.
 pub async fn servir(st: St, direccion: SocketAddr, tls: Tls) -> Result<(), String> {
     let app = api::router(st.clone());
-    let proxy = st.opciones.proxy;
+    let proxies = Arc::new(Proxies { activo: st.opciones.proxy, redes: st.opciones.proxy_redes.clone() });
     let datos = st.datos.clone();
     tareas(st);
     let d2 = datos.clone();
@@ -236,14 +242,14 @@ pub async fn servir(st: St, direccion: SocketAddr, tls: Tls) -> Result<(), Strin
             let oyente80 = tokio::net::TcpListener::bind(http)
                 .await
                 .map_err(|e| format!("No se pudo escuchar en {http} (lo necesita el certificado público, reto HTTP-01): {e}"))?;
-            tokio::spawn(bucle(oyente80, None, acme::app_http(retos.clone(), cfg.dominio.clone(), direccion.port()), false));
+            tokio::spawn(bucle(oyente80, None, acme::app_http(retos.clone(), cfg.dominio.clone(), direccion.port()), Default::default()));
             acme::arrancar(cfg, acme::carpeta(&datos), retos, certs.clone());
             Some(tokio_rustls::TlsAcceptor::from(acme::config_rustls(certs)?))
         }
         Tls::Ninguno => None,
     };
     tokio::select! {
-        _ = bucle(listener, acceptor, app, proxy) => {}
+        _ = bucle(listener, acceptor, app, proxies) => {}
         _ = PARADA.get_or_init(tokio::sync::Notify::new).notified() => {}
     }
     Ok(())
@@ -265,8 +271,9 @@ impl Drop for ConexionIp {
 }
 
 /// Una conexión más de esa IP, si cabe (las de este mismo equipo no cuentan).
-fn contar_conexion(por_ip: &Arc<Mutex<HashMap<IpAddr, usize>>>, ip: IpAddr, maximo: usize) -> Result<Option<ConexionIp>, ()> {
-    if ip.is_loopback() {
+/// `exenta`: un proxy de confianza (`--proxy-red`), por el que llega todo: como este equipo.
+fn contar_conexion(por_ip: &Arc<Mutex<HashMap<IpAddr, usize>>>, ip: IpAddr, maximo: usize, exenta: bool) -> Result<Option<ConexionIp>, ()> {
+    if ip.is_loopback() || exenta {
         return Ok(None);
     }
     let mut m = por_ip.lock().unwrap_or_else(|e| e.into_inner());
@@ -279,7 +286,7 @@ fn contar_conexion(por_ip: &Arc<Mutex<HashMap<IpAddr, usize>>>, ip: IpAddr, maxi
 }
 
 /// El bucle que acepta conexiones (con TLS o sin él) y las atiende.
-async fn bucle(listener: tokio::net::TcpListener, acceptor: Option<tokio_rustls::TlsAcceptor>, app: axum::Router, proxy: bool) {
+async fn bucle(listener: tokio::net::TcpListener, acceptor: Option<tokio_rustls::TlsAcceptor>, app: axum::Router, proxies: Arc<Proxies>) {
     let cupo = Arc::new(tokio::sync::Semaphore::new(MAX_CONEXIONES));
     let por_ip: Arc<Mutex<HashMap<IpAddr, usize>>> = Default::default();
     loop {
@@ -292,39 +299,125 @@ async fn bucle(listener: tokio::net::TcpListener, acceptor: Option<tokio_rustls:
             }
         };
         let Ok(permiso) = cupo.clone().try_acquire_owned() else { continue };
-        let Ok(de_ip) = contar_conexion(&por_ip, ip.ip(), MAX_CONEXIONES_IP) else { continue };
-        let (acceptor, app) = (acceptor.clone(), app.clone());
+        let Ok(de_ip) = contar_conexion(&por_ip, ip.ip(), MAX_CONEXIONES_IP, proxies.de_confianza(ip.ip())) else { continue };
+        let (acceptor, app, proxies) = (acceptor.clone(), app.clone(), proxies.clone());
         tokio::spawn(async move {
             let (_permiso, _de_ip) = (permiso, de_ip);
             match acceptor {
                 Some(a) => {
                     let Ok(Ok(tls)) = tokio::time::timeout(ESPERA_TLS, a.accept(tcp)).await else { return };
-                    atender_conexion(hyper_util::rt::TokioIo::new(tls), app, ip, proxy).await;
+                    atender_conexion(hyper_util::rt::TokioIo::new(tls), app, ip, proxies).await;
                 }
-                None => atender_conexion(hyper_util::rt::TokioIo::new(tcp), app, ip, proxy).await,
+                None => atender_conexion(hyper_util::rt::TokioIo::new(tcp), app, ip, proxies).await,
             }
         });
     }
 }
 
-/// La IP de quien pide: la del otro lado de la conexión o, detrás de un proxy en
-/// este mismo equipo (`--detras-de-proxy`), la última de `X-Forwarded-For` (la
-/// que añadió el proxy; las anteriores las pudo poner cualquiera).
-pub fn ip_real(conexion: IpAddr, proxy: bool, xff: Option<&str>) -> IpAddr {
-    if !proxy || !conexion.is_loopback() {
+/// Una red en notación CIDR (`10.0.0.0/8`, `fd00::/8`; una IP sola vale por `/32` o `/128`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RedIp {
+    base: IpAddr,
+    prefijo: u8,
+}
+
+impl RedIp {
+    /// Lee `IP/PREFIJO` (o una IP sola). No admite `/0`: sería fiarse de cualquiera.
+    pub fn leer(texto: &str) -> Result<Self, String> {
+        let t = texto.trim();
+        let mal = || format!("Red no válida: «{t}» (p. ej. 172.18.0.0/16 o fd00::/8).");
+        let (ip, prefijo) = match t.split_once('/') {
+            Some((ip, p)) => (ip, Some(p.parse::<u8>().map_err(|_| mal())?)),
+            None => (t, None),
+        };
+        let ip = ip.parse::<IpAddr>().map_err(|_| mal())?.to_canonical();
+        let maximo = if ip.is_ipv4() { 32 } else { 128 };
+        let prefijo = prefijo.unwrap_or(maximo);
+        if prefijo > maximo {
+            return Err(mal());
+        }
+        if prefijo == 0 {
+            return Err(format!("«{t}» son todas las direcciones: cualquiera podría poner su IP en X-Forwarded-For. Pon solo la red de los proxies."));
+        }
+        Ok(Self { base: Self::cortar(ip, prefijo), prefijo })
+    }
+
+    fn cortar(ip: IpAddr, prefijo: u8) -> IpAddr {
+        match ip {
+            IpAddr::V4(v) => IpAddr::V4((u32::from(v) & (u32::MAX.checked_shl(32 - u32::from(prefijo)).unwrap_or(0))).into()),
+            IpAddr::V6(v) => IpAddr::V6((u128::from(v) & (u128::MAX.checked_shl(128 - u32::from(prefijo)).unwrap_or(0))).into()),
+        }
+    }
+
+    pub fn contiene(&self, ip: IpAddr) -> bool {
+        let ip = ip.to_canonical();
+        ip.is_ipv4() == self.base.is_ipv4() && Self::cortar(ip, self.prefijo) == self.base
+    }
+}
+
+impl std::fmt::Display for RedIp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.base, self.prefijo)
+    }
+}
+
+/// Los proxies de los que se cree `X-Forwarded-For`: con `--detras-de-proxy`, este
+/// mismo equipo y las redes de `--proxy-red` (un proxy en otro contenedor o máquina).
+#[derive(Clone, Debug, Default)]
+pub struct Proxies {
+    pub activo: bool,
+    pub redes: Vec<RedIp>,
+}
+
+impl Proxies {
+    pub fn de_confianza(&self, ip: IpAddr) -> bool {
+        self.activo && (ip.to_canonical().is_loopback() || self.redes.iter().any(|r| r.contiene(ip)))
+    }
+}
+
+/// Un salto de `X-Forwarded-For`: la IP, con o sin puerto (algunos proxies lo ponen).
+fn ip_de_salto(s: &str) -> Option<IpAddr> {
+    let s = s.trim();
+    s.parse::<IpAddr>().ok().or_else(|| s.parse::<SocketAddr>().ok().map(|d| d.ip())).map(|ip| ip.to_canonical())
+}
+
+/// La IP de quien pide: la del otro lado de la conexión o, si la conexión viene de un
+/// proxy de confianza ([`Proxies`]), la de `X-Forwarded-For` empezando por la derecha
+/// (lo que añadió cada proxy): la primera que no es de un proxy de confianza. Lo de su
+/// izquierda lo pudo poner cualquiera. Si un salto no es una IP, la del último proxy.
+pub fn ip_real(conexion: IpAddr, proxies: &Proxies, xff: Option<&str>) -> IpAddr {
+    if !proxies.de_confianza(conexion) {
         return conexion;
     }
-    xff.and_then(|v| v.rsplit(',').next()).and_then(|s| s.trim().parse::<IpAddr>().ok()).unwrap_or(conexion)
+    let mut ultima = conexion;
+    for salto in xff.unwrap_or_default().rsplit(',') {
+        let Some(ip) = ip_de_salto(salto) else { return ultima };
+        if !proxies.de_confianza(ip) {
+            return ip;
+        }
+        ultima = ip;
+    }
+    ultima
+}
+
+/// Todas las cabeceras `X-Forwarded-For`, juntas y en orden (un proxy puede añadir la
+/// suya en otra línea en vez de al final de la que trajo el cliente). Si alguna no es
+/// texto, ninguna.
+fn xff_de(cabeceras: &hyper::HeaderMap) -> Option<String> {
+    let mut partes = Vec::new();
+    for v in cabeceras.get_all("x-forwarded-for") {
+        partes.push(v.to_str().ok()?);
+    }
+    (!partes.is_empty()).then(|| partes.join(","))
 }
 
 /// HTTP/1.1 en una conexión ya aceptada, con la IP de quien pide para los límites.
-async fn atender_conexion<I>(io: I, app: axum::Router, ip: SocketAddr, proxy: bool)
+async fn atender_conexion<I>(io: I, app: axum::Router, ip: SocketAddr, proxies: Arc<Proxies>)
 where
     I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
 {
     let servicio = hyper::service::service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
-        let xff = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok());
-        let real = ip_real(ip.ip(), proxy, xff);
+        let real = ip_real(ip.ip(), &proxies, xff_de(req.headers()).as_deref());
         req.extensions_mut().insert(IpCliente(Some(real)));
         let mut app = app.clone();
         async move { tower::Service::call(&mut app, req.map(axum::body::Body::new)).await }
@@ -371,31 +464,85 @@ mod pruebas_red {
     #[test]
     fn la_ip_de_detras_del_proxy_solo_si_viene_del_proxy() {
         let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let sin = Proxies::default();
+        let local = Proxies { activo: true, redes: vec![] };
         // Sin --detras-de-proxy, X-Forwarded-For no cuenta.
-        assert_eq!(ip_real(ip("127.0.0.1"), false, Some("203.0.113.5")), ip("127.0.0.1"));
+        assert_eq!(ip_real(ip("127.0.0.1"), &sin, Some("203.0.113.5")), ip("127.0.0.1"));
         // Con él: la última (la que puso el proxy), no las que pudo inventar el cliente.
-        assert_eq!(ip_real(ip("127.0.0.1"), true, Some("10.0.0.1, 203.0.113.5")), ip("203.0.113.5"));
-        assert_eq!(ip_real(ip("::1"), true, Some("2001:db8::7")), ip("2001:db8::7"));
+        assert_eq!(ip_real(ip("127.0.0.1"), &local, Some("10.0.0.1, 203.0.113.5")), ip("203.0.113.5"));
+        assert_eq!(ip_real(ip("::1"), &local, Some("2001:db8::7")), ip("2001:db8::7"));
         // Una conexión que no viene de este equipo no puede fingir su IP.
-        assert_eq!(ip_real(ip("198.51.100.9"), true, Some("203.0.113.5")), ip("198.51.100.9"));
-        assert_eq!(ip_real(ip("127.0.0.1"), true, Some("basura")), ip("127.0.0.1"));
-        assert_eq!(ip_real(ip("127.0.0.1"), true, None), ip("127.0.0.1"));
+        assert_eq!(ip_real(ip("198.51.100.9"), &local, Some("203.0.113.5")), ip("198.51.100.9"));
+        assert_eq!(ip_real(ip("127.0.0.1"), &local, Some("basura")), ip("127.0.0.1"));
+        assert_eq!(ip_real(ip("127.0.0.1"), &local, None), ip("127.0.0.1"));
+    }
+
+    /// `--proxy-red` (docs/plan-mejoras.md, 9e): el proxy en otro contenedor o máquina.
+    #[test]
+    fn proxies_de_confianza_en_otras_redes() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let red = |s: &str| RedIp::leer(s).unwrap();
+        let p = Proxies { activo: true, redes: vec![red("172.18.0.0/16"), red("fd00:1::/32"), red("10.9.8.7")] };
+        // Sin --proxy-red, una conexión del contenedor del proxy no cuenta (como antes).
+        assert_eq!(ip_real(ip("172.18.0.2"), &Proxies { activo: true, redes: vec![] }, Some("203.0.113.5")), ip("172.18.0.2"));
+        // Con ella, sí: la IP del cliente, no la del proxy.
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("203.0.113.5")), ip("203.0.113.5"));
+        assert_eq!(ip_real(ip("::ffff:172.18.0.2"), &p, Some("203.0.113.5")), ip("203.0.113.5"));
+        assert_eq!(ip_real(ip("fd00:1::5"), &p, Some("2001:db8::9")), ip("2001:db8::9"));
+        // Varios proxies seguidos: la de más a la derecha que no es de confianza.
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("198.51.100.1, 203.0.113.5, 10.9.8.7, 172.18.0.3")), ip("203.0.113.5"));
+        // Lo que inventa el cliente a la izquierda no cuenta, aunque sea de una red de confianza.
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("172.18.0.9, 203.0.113.5")), ip("203.0.113.5"));
+        // Con puerto o IPv6 entre corchetes.
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("203.0.113.5:4711")), ip("203.0.113.5"));
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("[2001:db8::9]:4711")), ip("2001:db8::9"));
+        // Todo de confianza: la de más a la izquierda. Basura: la del último proxy.
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("10.9.8.7")), ip("10.9.8.7"));
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, Some("basura, 10.9.8.7")), ip("10.9.8.7"));
+        assert_eq!(ip_real(ip("172.18.0.2"), &p, None), ip("172.18.0.2"));
+        // Fuera de las redes, X-Forwarded-For no cuenta.
+        assert_eq!(ip_real(ip("172.19.0.2"), &p, Some("203.0.113.5")), ip("172.19.0.2"));
+        assert_eq!(ip_real(ip("10.9.8.6"), &p, Some("203.0.113.5")), ip("10.9.8.6"));
+        // Inactivo (sin --detras-de-proxy), nada.
+        assert_eq!(ip_real(ip("172.18.0.2"), &Proxies { activo: false, ..p.clone() }, Some("203.0.113.5")), ip("172.18.0.2"));
+        // Las redes.
+        assert_eq!(red("172.18.5.4/16").to_string(), "172.18.0.0/16");
+        assert_eq!(red("::ffff:10.0.0.1").to_string(), "10.0.0.1/32");
+        assert!(red("0.0.0.0/1").contiene(ip("127.0.0.1")) && !red("0.0.0.0/1").contiene(ip("128.0.0.1")));
+        assert!(red("fd00::/8").contiene(ip("fd12::1")) && !red("fd00::/8").contiene(ip("10.0.0.1")));
+        for malo in ["", "10.0.0.0/33", "fd00::/129", "10.0.0/8", "0.0.0.0/0", "::/0", "10.0.0.0/x", "nombre.ejemplo.com"] {
+            assert!(RedIp::leer(malo).is_err(), "{malo}");
+        }
+    }
+
+    #[test]
+    fn varias_cabeceras_x_forwarded_for_en_orden() {
+        let mut h = hyper::HeaderMap::new();
+        assert_eq!(xff_de(&h), None);
+        h.append("x-forwarded-for", "198.51.100.1".parse().unwrap());
+        h.append("x-forwarded-for", "203.0.113.5".parse().unwrap());
+        assert_eq!(xff_de(&h).as_deref(), Some("198.51.100.1,203.0.113.5"));
+        let local = Proxies { activo: true, redes: vec![] };
+        assert_eq!(ip_real("127.0.0.1".parse().unwrap(), &local, xff_de(&h).as_deref()), "203.0.113.5".parse::<IpAddr>().unwrap());
+        h.append("x-forwarded-for", hyper::header::HeaderValue::from_bytes(b"\xff").unwrap());
+        assert_eq!(xff_de(&h), None);
     }
 
     #[test]
     fn tope_de_conexiones_por_ip() {
         let por_ip: Arc<Mutex<HashMap<IpAddr, usize>>> = Default::default();
         let ip: IpAddr = "203.0.113.5".parse().unwrap();
-        let a = contar_conexion(&por_ip, ip, 2).unwrap();
-        let b = contar_conexion(&por_ip, ip, 2).unwrap();
-        assert!(contar_conexion(&por_ip, ip, 2).is_err(), "la tercera no cabe");
-        assert!(contar_conexion(&por_ip, "203.0.113.6".parse().unwrap(), 2).is_ok(), "otra IP, sí");
+        let a = contar_conexion(&por_ip, ip, 2, false).unwrap();
+        let b = contar_conexion(&por_ip, ip, 2, false).unwrap();
+        assert!(contar_conexion(&por_ip, ip, 2, false).is_err(), "la tercera no cabe");
+        assert!(contar_conexion(&por_ip, ip, 2, true).unwrap().is_none(), "un proxy de confianza, sin tope");
+        assert!(contar_conexion(&por_ip, "203.0.113.6".parse().unwrap(), 2, false).is_ok(), "otra IP, sí");
         drop(a);
-        assert!(contar_conexion(&por_ip, ip, 2).is_ok(), "al cerrarse una, cabe otra");
+        assert!(contar_conexion(&por_ip, ip, 2, false).is_ok(), "al cerrarse una, cabe otra");
         drop(b);
         // Este mismo equipo (el proxy) no tiene tope.
         for _ in 0..5 {
-            assert!(contar_conexion(&por_ip, "127.0.0.1".parse().unwrap(), 2).unwrap().is_none());
+            assert!(contar_conexion(&por_ip, "127.0.0.1".parse().unwrap(), 2, false).unwrap().is_none());
         }
     }
 }

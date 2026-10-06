@@ -27,10 +27,10 @@ pub const MAX_BYTES: usize = 16 * 1024;
 /// agente lo manda cada 5 s por el canal, o cada 10 s por sondeo).
 pub const CADUCA: Duration = Duration::from_secs(90);
 
-// v1.4x: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`.
+// v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`.
 const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"];
 const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha"];
-// v1.4x: `origen` (el repositorio del que se trae), `nombre_origen`, `paso` y `consola` (el
+// v1.47: `origen` (el repositorio del que se trae), `nombre_origen`, `paso` y `consola` (el
 // nombre, en el equipo, de la consola que la empezó; nunca su dirección).
 const TEXTOS: &[(&str, usize)] = &[
     ("repo", 64),
@@ -44,7 +44,7 @@ const TEXTOS: &[(&str, usize)] = &[
     ("paso", 16),
     ("consola", 60),
 ];
-/// v1.4x: `mover` (un paso de «Mover a otro sitio…») y `otra_consola` (la empezó otra
+/// v1.47: `mover` (un paso de «Mover a otro sitio…») y `otra_consola` (la empezó otra
 /// consola del equipo: aquí solo se enseña).
 const SINO: &[&str] = &["mover", "otra_consola"];
 // v1.36: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
@@ -202,7 +202,7 @@ mod tests {
         assert!(limpiar(&json!([{ "tipo": "copia", "fase": "subiendo", "repo": "r", "nombre": "x".repeat(MAX_BYTES) }])).is_err());
     }
 
-    /// v1.4x: traer el historial (y los pasos de «Mover a otro sitio…») llega a cada consola
+    /// v1.47: traer el historial (y los pasos de «Mover a otro sitio…») llega a cada consola
     /// con quién lo empezó (solo el nombre, acotado) y de qué repositorio.
     #[test]
     fn historial_y_mover() {

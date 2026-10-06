@@ -863,6 +863,35 @@ mod tests {
         assert!(unidad_servidor("/x", "/a\"b", "/y").contains(r#"ReadWritePaths="/a\"b" "/y""#));
     }
 
+    /// 9h (docs/plan-mejoras.md): una unión de NTFS (`mklink /J`) cuenta como enlace,
+    /// tanto ella misma como cualquier ruta que pase por ella. `is_symlink()` de la
+    /// biblioteca estándar es cierto para los puntos de reanálisis «sustitutos de
+    /// nombre» (enlaces simbólicos y uniones); los de OneDrive no lo son.
+    #[cfg(windows)]
+    #[test]
+    fn una_union_de_ntfs_cuenta_como_enlace() {
+        let base = std::env::temp_dir().join(format!("resguardo-union-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (real, union) = (base.join("real"), base.join("union"));
+        std::fs::create_dir_all(real.join("dentro")).unwrap();
+        let ok = std::process::Command::new(system_tool("cmd.exe")).args(["/c", "mklink", "/J"]).arg(&union).arg(&real).output().unwrap().status.success();
+        assert!(ok, "mklink /J");
+        let tipo = std::fs::symlink_metadata(&union).unwrap().file_type();
+        let resultado = (
+            tipo.is_symlink(),
+            hay_enlace_en_el_camino(&union),
+            hay_enlace_en_el_camino(&union.join("dentro")),
+            hay_enlace_en_el_camino(&union.join("no-existe").join("x.txt")),
+            hay_enlace_en_el_camino(&real.join("dentro")),
+            is_reparse_point(&union),
+        );
+        // Primero quitar la unión (solo ella, no lo que hay detrás), luego lo demás.
+        std::fs::remove_dir(&union).unwrap();
+        assert!(real.join("dentro").exists(), "quitar la unión no toca la carpeta real");
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(resultado, (true, true, true, true, false, true));
+    }
+
     /// Un enlace dentro de la carpeta del agente se quita y no se sigue.
     #[cfg(windows)]
     #[test]

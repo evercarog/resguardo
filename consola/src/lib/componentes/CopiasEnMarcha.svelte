@@ -22,7 +22,7 @@
   const una = $derived(lista.length === 1 ? lista[0] : null);
   const pct = $derived(pctConjunto(lista, pulso.ahora));
   const nombreEquipo = (id: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
-  // v1.4x: un «Mover a otro sitio…» (de esta consola o de otra), por el repositorio que se mueve.
+  // v1.47: un «Mover a otro sitio…» (de esta consola o de otra), por el repositorio que se mueve.
   const queEs = (t: TareaEnMarcha) => (t.mover ? `Mover «${t.nombre_origen ?? t.nombre ?? t.repo}»` : t.nombre ? t.nombre : textoFase(t));
   function hrefDe(x: { equipo: string; tarea: TareaEnMarcha }) {
     const base = `/c/${actual.id}/equipos/${encodeURIComponent(x.equipo)}`;

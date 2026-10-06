@@ -16,13 +16,15 @@
   import { avisar } from "$lib/avisos.svelte";
   import { argon2Navegador } from "$lib/cripto/argon2";
   import { aleatorio, borrar } from "$lib/cripto/bytes";
-  import { etiquetaEquipo, etiquetaValida, kCfg, materialCliente, sasV2, sasV3 } from "$lib/cripto/claves";
+  import { etiquetaEquipo, etiquetaValida, hashCodigo, kCfg, materialCliente, normalizarCodigo, sasV2, sasV3 } from "$lib/cripto/claves";
+  import { Codigos, codigoDeHash, generarCodigo, LARGO_PREPARADO } from "$lib/codigo";
+  import { cola, nombreArchivo, validarDatos } from "$lib/cola";
   import { mandarOrden } from "$lib/ordenar";
   import { cuentaAtras } from "$lib/formato";
-  import type { AMedias, Emparejamiento, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux } from "$lib/tipos";
+  import type { AMedias, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux, PreparadoNavegador } from "$lib/tipos";
   import { guardar } from "$lib/descarga";
   import { Preparados } from "$lib/preparados.svelte";
-  import { codigoAlCargar, esperaDe, lineaVincular, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "$lib/emparejar";
+  import { codigoAlCargar, esperaDe, lineaVincular, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoConocido } from "$lib/emparejar";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -34,7 +36,10 @@
   type Paso = "sistema" | "codigo" | "sas" | "clave" | "listo";
   let paso = $state<Paso>("sistema");
   let so = $state<"windows" | "linux" | "mac">("windows");
-  let emp = $state<Emparejamiento | null>(null);
+  /** El emparejamiento en curso. `codigo` vacío: lo generó otro navegador (se escribe a mano; `codigoHash` lo comprueba). */
+  let emp = $state<{ id: string; codigo: string; caduca: string; codigoHash?: string } | null>(null);
+  /** El código escrito a mano cuando este navegador no lo tiene (v1.4x). */
+  let codigoEscrito = $state("");
   let estadoEmp = $state<EstadoDeEmparejamiento | null>(null);
   let sondeo: ReturnType<typeof setInterval> | null = null;
   let ocupado = $state(false);
@@ -63,16 +68,27 @@
 
   // Códigos: abrir la página, recargarla o cambiar de opción NO crea ninguno (lib/emparejar.ts).
   // Si esta cuenta ya tiene uno que sirve, se enseña con su caducidad y «Anular».
-  let pendiente = $state<CodigoAbierto | null>(null);
+  let pendiente = $state<CodigoConocido | null>(null);
   /** Hasta cuándo el servidor no da más códigos (429 con `retry_after`). */
   let esperarHasta = $state(0);
   const bloqueado = $derived(esperarHasta > reloj.ahora);
-  const apiCodigos = (cc: string) => ({ codigoAbierto: () => api.codigoAbierto(cc), abrir: () => api.abrirEmparejamiento(cc) });
+  // v1.4x: con un servidor que lo admite, el código lo genera este navegador y al servidor solo
+  // le llega su hash; el código se guarda aquí hasta el alta (lib/codigo.ts).
+  const codigos = new Codigos();
+  const delNavegador = $derived(app.servidor?.codigo_navegador === true);
+  const apiCodigos = (cc: string, nav: boolean) => ({
+    codigoAbierto: () => api.codigoAbierto(cc, nav),
+    abrir: (h?: string) => api.abrirEmparejamiento(cc, h),
+    navegador: nav
+      ? { generar: () => generarCodigo(), hash: hashCodigo, de: (id: string, h?: string | null) => codigos.de(id, h), guardar: (id: string, codigo: string) => codigos.guardar({ id, cliente: cc, codigo }) }
+      : undefined,
+  });
   $effect(() => {
     const cc = c;
+    const nav = delNavegador;
     if (!cc) return;
     let vivo = true;
-    void codigoAlCargar(apiCodigos(cc)).then((p) => vivo && (pendiente = p));
+    void untrack(() => codigoAlCargar(apiCodigos(cc, nav))).then((p) => vivo && (pendiente = p));
     return () => (vivo = false);
   });
   /** Un error al pedir un código: el del límite dice cuándo se podrá y por qué. */
@@ -89,7 +105,7 @@
     error = "";
     ocupado = true;
     try {
-      const r = await pedirCodigo(apiCodigos(c), pendiente);
+      const r = await pedirCodigo(apiCodigos(c, delNavegador), pendiente);
       seguirCodigo(r);
     } catch (e) {
       fallo(e);
@@ -98,7 +114,7 @@
     }
   }
   /** Sigue con un código (nuevo o el que ya había): a «Código» o, si ya se unió, a «Comprobar». */
-  function seguirCodigo(p: CodigoAbierto) {
+  function seguirCodigo(p: CodigoConocido) {
     emp = { id: p.id, codigo: p.codigo, caduca: p.caduca };
     pendiente = p;
     estadoEmp = null;
@@ -132,10 +148,12 @@
     if (emp) {
       try {
         await api.cancelarEmparejamiento(c, emp.id);
+        codigos.olvidar(emp.id);
       } catch {
         /* ya no existía */
       }
     }
+    codigoEscrito = "";
     if (emp && pendiente?.id === emp.id) pendiente = null;
     emp = null;
     estadoEmp = null;
@@ -148,6 +166,7 @@
     if (!pendiente) return;
     try {
       await api.cancelarEmparejamiento(c, pendiente.id);
+      codigos.olvidar(pendiente.id);
       avisar("Anulado: ese código ya no sirve.");
       pendiente = null;
     } catch (e) {
@@ -170,6 +189,14 @@
     e.preventDefault();
     if (!emp || !estadoEmp?.equipo || !actual.cliente) return;
     error = "";
+    // v1.4x: el código lo generó otro navegador: se escribe aquí y se comprueba con su hash.
+    if (!emp.codigo) {
+      if (!codigoDeHash(codigoEscrito, emp.codigoHash)) {
+        error = "Ese no es el código de este equipo. Escríbelo tal cual (da igual mayúsculas, espacios y guiones), o termínalo en el navegador donde lo preparaste.";
+        return;
+      }
+      emp.codigo = normalizarCodigo(codigoEscrito);
+    }
     ocupado = true;
     const eq = estadoEmp.equipo;
     let kcfg: Uint8Array | null = null;
@@ -185,16 +212,22 @@
         throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
       paso2 = "Confirmando el equipo…";
       // A medias (v1.42): ya confirmado y sin el alta; solo falta mandarla.
-      if (estadoEmp.estado !== "confirmado") await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
+      if (estadoEmp.estado !== "confirmado") {
+        await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
+        // Si el alta falla (p. ej. sin red), reintentar no vuelve a confirmar: el servidor ya
+        // no lo acepta («aún no se ha unido») y la persona se quedaba atascada.
+        estadoEmp = { ...estadoEmp, estado: "confirmado" };
+      }
       parar();
       const equipo = await api.equipo(c, eq.id);
       equipoNuevo = equipo;
       alta = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "alta", alta: { codigo: emp.codigo }, secretos: { claveAdmin: clave }, alPaso: (t) => (paso2 = t) });
       clave = repetir = "";
+      codigoEscrito = "";
       paso = "listo";
       void cargarMedias(c);
       void cargarCliente(c, { silencioso: true });
-      seguirAlta(equipo.id, alta.id);
+      seguirAlta(equipo.id, alta.id, emp.id);
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -204,11 +237,13 @@
     }
   }
 
-  function seguirAlta(equipoId: string, ordenId: string) {
+  function seguirAlta(equipoId: string, ordenId: string, empId: string) {
     const t = setInterval(async () => {
       try {
         const o = (await enFondo(() => api.ordenesEquipo(c, equipoId, 5))).find((x) => x.id === ordenId);
         if (o) alta = o;
+        // Con el alta hecha, el código ya no sirve para nada: se olvida aquí también.
+        if (o?.estado === "hecha") codigos.olvidar(empId);
         if (o && !["pendiente", "entregada", "en_marcha"].includes(o.estado)) clearInterval(t);
       } catch {
         /* se reintenta */
@@ -262,13 +297,57 @@
     return prep.seguir(opcionesLista(cc));
   });
 
+  const servidorLimpio = () => servidorUrl.trim().replace(/\/+$/, "");
+
+  /**
+   * v1.4x: un preparado con el código de este navegador. Si este navegador ya preparó ese equipo
+   * (mismo nombre y sistema) y su código sigue abierto con más de 2 h por delante, se usa el mismo
+   * (no gasta otro). Si no, genera uno de 16 caracteres y manda solo su hash.
+   */
+  async function prepararDelNavegador(so: "windows" | "linux", nombre: string): Promise<{ id: string; codigo: string; caduca: string; servidor: string; huella_ca: string; cliente: string; nombre: string; reutilizado: boolean }> {
+    const previo = codigos.preparado(c, nombre, so);
+    if (previo) {
+      const p = (await api.preparados(c)).find((x) => x.id === previo.id);
+      if (p && p.estado === "abierto" && Date.parse(p.caduca) - Date.now() > 2 * 3600_000 && app.servidor)
+        return { id: p.id, codigo: previo.codigo, caduca: p.caduca, servidor: servidorLimpio(), huella_ca: app.servidor.huella_ca, cliente: c, nombre: p.nombre, reutilizado: true };
+    }
+    for (let intento = 0; ; intento++) {
+      const codigo = generarCodigo(LARGO_PREPARADO);
+      try {
+        const r: PreparadoNavegador = await api.prepararConHash(c, { nombre, so, servidor: servidorLimpio(), codigo_hash: hashCodigo(codigo) });
+        codigos.guardar({ id: r.id, cliente: c, codigo, nombre: r.nombre, so });
+        return { ...r, codigo, reutilizado: false };
+      } catch (e) {
+        // Un hash repetido (rarísimo): otro código, una vez.
+        if ((e as { estado?: number }).estado !== 409 || intento > 0) throw e;
+      }
+    }
+  }
+
   async function descargarListo() {
     error = "";
     preparando = true;
     try {
-      const r = await api.prepararInstalador(c, nombreEq.trim(), servidorUrl.trim().replace(/\/+$/, ""));
-      await guardar(r.datos, r.archivo);
-      descargado = { archivo: r.archivo, caduca: r.caduca, nombre: nombreEq.trim(), reutilizado: r.reutilizado };
+      if (delNavegador) {
+        // Primero el instalador genérico (si el servidor no lo tiene, no se gasta ningún código).
+        const exe = await api.instaladorGenerico(c);
+        const r = await prepararDelNavegador("windows", nombreEq.trim());
+        const datos = { v: 1 as const, servidor: r.servidor, huella_ca: r.huella_ca, cliente: r.cliente, nombre: r.nombre, codigo: r.codigo };
+        const mal = validarDatos(datos);
+        if (mal) {
+          // No se deja un código vivo que no se va a usar.
+          if (!r.reutilizado) await api.cancelarEmparejamiento(c, r.id).catch(() => {});
+          codigos.olvidar(r.id);
+          throw new Error(`No se pudo preparar el instalador: ${mal}`);
+        }
+        const archivo = nombreArchivo(actual.cliente?.nombre ?? "", r.nombre);
+        await guardar(new Blob([exe, cola(datos) as BlobPart], { type: "application/vnd.microsoft.portable-executable" }), archivo);
+        descargado = { archivo, caduca: r.caduca, nombre: r.nombre, reutilizado: r.reutilizado };
+      } else {
+        const r = await api.prepararInstalador(c, nombreEq.trim(), servidorLimpio());
+        await guardar(r.datos, r.archivo);
+        descargado = { archivo: r.archivo, caduca: r.caduca, nombre: nombreEq.trim(), reutilizado: r.reutilizado };
+      }
       nombreEq = "";
       void cargarLista();
     } catch (e) {
@@ -281,7 +360,12 @@
     error = "";
     preparando = true;
     try {
-      linux = await api.prepararLinux(c, nombreEq.trim(), servidorUrl.trim().replace(/\/+$/, ""));
+      if (delNavegador) {
+        const r = await prepararDelNavegador("linux", nombreEq.trim());
+        linux = { id: r.id, nombre: r.nombre, so: "linux", codigo: r.codigo, caduca: r.caduca, servidor: r.servidor, huella_ca: r.huella_ca };
+      } else {
+        linux = await api.prepararLinux(c, nombreEq.trim(), servidorLimpio());
+      }
       nombreEq = "";
       void cargarLista();
     } catch (e) {
@@ -293,6 +377,7 @@
   async function anularPreparado(id: string) {
     try {
       await api.cancelarEmparejamiento(c, id);
+      codigos.olvidar(id);
       avisar("Anulado: ese código ya no sirve.");
       if (linux?.id === id) linux = null;
     } catch (e) {
@@ -307,8 +392,11 @@
     error = "";
     try {
       const est = await api.emparejamiento(c, id);
-      if (!est.codigo) throw new Error("Ese emparejamiento ya no se puede confirmar desde aquí. Prepara otro.");
-      emp = { id, codigo: est.codigo, caduca: est.caduca };
+      // v1.4x: el código lo generó un navegador; si no es este, se escribe a mano al dar el alta.
+      const codigo = est.codigo ?? (est.codigo_navegador ? codigos.de(id, est.codigo_hash) : null);
+      if (!codigo && !est.codigo_navegador) throw new Error("Ese emparejamiento ya no se puede confirmar desde aquí. Prepara otro.");
+      emp = { id, codigo: codigo ?? "", caduca: est.caduca, codigoHash: est.codigo_hash };
+      codigoEscrito = "";
       estadoEmp = est;
       // Confirmado sin el alta (a medias): directo a la clave para mandarla.
       paso = est.estado === "unido" ? "sas" : est.estado === "confirmado" ? "clave" : "codigo";
@@ -343,6 +431,7 @@
   async function anularAMedias(id: string) {
     try {
       await api.cancelarEmparejamiento(c, id);
+      codigos.olvidar(id);
       avisar("Anulado: el equipo se quitó. Puedes volver a vincularlo desde el principio.");
     } catch (e) {
       error = (e as Error).message;
@@ -663,6 +752,13 @@
         <CampoClave requerido id="clave-admin" etiqueta="Clave de administración" bind:value={clave} autofocus ayuda={primero ? "Al menos 16 caracteres. Mejor una generada." : undefined}>
           {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
         </CampoClave>
+        {#if emp && !emp.codigo}
+          <div class="field">
+            <label class="field-label" for="codigo-escrito">Código de este equipo</label>
+            <input id="codigo-escrito" class="input mono" bind:value={codigoEscrito} autocomplete="off" spellcheck="false" maxlength="40" placeholder="ABCD-EFGH-JKMN-PQRS" />
+            <span class="field-hint">Este equipo se preparó en otro navegador y el código solo lo guarda ese navegador (el servidor no lo conoce). Escríbelo (está en la línea de Linux o en el equipo) o termina allí. Si no lo tienes, anúlalo y prepara otro.</span>
+          </div>
+        {/if}
         {#if primero}
           <CampoClave requerido id="clave-repetir" etiqueta="Repite la clave" bind:value={repetir} error={repetir && repetir !== clave ? "No coincide." : ""} />
           <button type="button" class="btn btn-sm generar" onclick={generar}><Shuffle size={14} />Generar una clave segura</button>
@@ -676,7 +772,7 @@
         <footer class="pie">
           {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{paso2}</span>{/if}
           <button type="button" class="btn btn-ghost" onclick={cancelar} disabled={ocupado}>Cancelar</button>
-          <button class="btn btn-primary" disabled={!claveValida || ocupado}>Dar de alta {estadoEmp.equipo.nombre}</button>
+          <button class="btn btn-primary" disabled={!claveValida || ocupado || (!!emp && !emp.codigo && !codigoEscrito.trim())}>Dar de alta {estadoEmp.equipo.nombre}</button>
         </footer>
       </form>
     </section>

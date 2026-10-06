@@ -40,6 +40,10 @@ pub struct PeticionHttp {
     pub url: String,
     pub cabeceras: Vec<(String, String)>,
     pub cuerpo: Vec<u8>,
+    /// Puede llegar a este equipo o a la red local (solo los canales del servidor, que pone
+    /// su propietario). Si no, cada IP a la que resuelve el nombre se comprueba antes de
+    /// conectar ([`ResolutorPublico`]).
+    pub red_local: bool,
 }
 
 /// Un correo listo para salir.
@@ -51,6 +55,8 @@ pub struct Correo {
     pub usuario: Option<String>,
     pub contrasena: Option<String>,
     pub mensaje: lettre::Message,
+    /// Como en [`PeticionHttp::red_local`].
+    pub red_local: bool,
     /// Lo mismo que va dentro de `mensaje`, sin codificar (para las pruebas).
     pub asunto: String,
     pub texto: String,
@@ -100,7 +106,7 @@ pub fn peticion(
             if let Some(sec) = secretos.get("secreto") {
                 cabeceras.push(("X-Resguardo-Firma".into(), firma_webhook(sec, ahora, &cuerpo)));
             }
-            Ok(PeticionHttp { url, cabeceras, cuerpo })
+            Ok(PeticionHttp { url, cabeceras, cuerpo, red_local: false })
         }
         TipoCanal::Ntfy => {
             let url = secretos.get("url").ok_or_else(falta)?;
@@ -122,14 +128,14 @@ pub fn peticion(
             if let Some(t) = secretos.get("token") {
                 cabeceras.push(("Authorization".into(), format!("Bearer {t}")));
             }
-            Ok(PeticionHttp { url: format!("{}://{host}{prefijo}", if https { "https" } else { "http" }), cabeceras, cuerpo: json(&v) })
+            Ok(PeticionHttp { url: format!("{}://{host}{prefijo}", if https { "https" } else { "http" }), cabeceras, cuerpo: json(&v), red_local: false })
         }
         TipoCanal::Telegram => {
             let token = secretos.get("token").ok_or_else(falta)?;
             let chat = canal.config.chat_id.clone().ok_or_else(falta)?;
             let chat_v = chat.parse::<i64>().map(serde_json::Value::from).unwrap_or_else(|_| serde_json::Value::from(chat));
             let v = serde_json::json!({ "chat_id": chat_v, "text": contenido::telegram(s), "parse_mode": "HTML", "disable_web_page_preview": true });
-            Ok(PeticionHttp { url: format!("https://api.telegram.org/bot{token}/sendMessage"), cabeceras, cuerpo: json(&v) })
+            Ok(PeticionHttp { url: format!("https://api.telegram.org/bot{token}/sendMessage"), cabeceras, cuerpo: json(&v), red_local: false })
         }
         TipoCanal::Correo => Err(Fallo::definitivo("Un canal de correo no va por HTTP.")),
     }
@@ -173,6 +179,7 @@ pub fn correo(canal: &Canal, secretos: &BTreeMap<String, String>, para: &str, s:
         usuario: canal.config.usuario.clone(),
         contrasena: secretos.get("contrasena").cloned(),
         mensaje,
+        red_local: false,
         asunto: s.asunto.clone(),
         texto: s.texto.clone(),
         html: s.html.clone(),
@@ -180,9 +187,11 @@ pub fn correo(canal: &Canal, secretos: &BTreeMap<String, String>, para: &str, s:
 }
 
 /// Escribe y manda uno o varios mensajes (agrupados) por un canal a un destino.
+/// `ambito`: «servidor» (sus canales pueden llegar a la red local) o «cliente:…» (no).
 #[allow(clippy::too_many_arguments)]
 pub fn enviar(
     t: &dyn Transporte,
+    ambito: &str,
     canal: &Canal,
     secretos: &BTreeMap<String, String>,
     destino: &str,
@@ -192,9 +201,10 @@ pub fn enviar(
     ahora: Ts,
 ) -> Result<(), Fallo> {
     let s = contenido::componer(ms, f);
+    let red_local = ambito == "servidor";
     let r = match canal.tipo {
-        TipoCanal::Correo => t.correo(&correo(canal, secretos, destino, &s)?),
-        _ => t.http(&peticion(canal, secretos, ms, &s, f, id, ahora)?),
+        TipoCanal::Correo => t.correo(&Correo { red_local, ..correo(canal, secretos, destino, &s)? }),
+        _ => t.http(&PeticionHttp { red_local, ..peticion(canal, secretos, ms, &s, f, id, ahora)? }),
     };
     // Por si algún texto de error repitiera un secreto: fuera.
     r.map_err(|mut e| {
@@ -221,8 +231,90 @@ fn http_estado(estado: u16, servicio: &str) -> Result<(), Fallo> {
     }
 }
 
+/// Lo que ve quien envía cuando el nombre lleva a la red local.
+const A_RED_LOCAL: &str = "La dirección lleva a este equipo o a la red local, y los canales de un cliente no pueden mandar ahí.";
+
+/// El error que deja [`ResolutorPublico`] dentro del `io::Error` (para reconocerlo luego).
+#[derive(Debug)]
+struct ARedLocal;
+
+impl std::fmt::Display for ARedLocal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(A_RED_LOCAL)
+    }
+}
+
+impl std::error::Error for ARedLocal {}
+
+fn error_red_local() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::PermissionDenied, ARedLocal)
+}
+
+fn es_error_red_local(e: &std::io::Error) -> bool {
+    e.get_ref().is_some_and(|x| x.is::<ARedLocal>())
+}
+
+/// Resuelve como el de ureq (una sola vez, con el límite de tiempo) y rechaza el nombre
+/// si alguna de sus IP es de este equipo o de la red local ([`ip_de_red_local`]). ureq
+/// conecta luego a estas mismas IP: no hay una segunda consulta al DNS que pueda dar otra
+/// (*DNS rebinding*).
+///
+/// [`ip_de_red_local`]: super::ajustes::ip_de_red_local
+#[derive(Debug, Default)]
+pub struct ResolutorPublico;
+
+impl ureq::unversioned::resolver::Resolver for ResolutorPublico {
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
+        let dirs = ureq::unversioned::resolver::DefaultResolver::default().resolve(uri, config, timeout)?;
+        if dirs.iter().any(|d| super::ajustes::ip_de_red_local(d.ip())) {
+            return Err(ureq::Error::Io(error_red_local()));
+        }
+        Ok(dirs)
+    }
+}
+
+/// El agente de ureq para una petición. Sin `red_local`: con [`ResolutorPublico`] y sin
+/// proxy (con un proxy, el nombre lo resolvería él y no se podría comprobar la IP).
+fn agente_http(red_local: bool) -> ureq::Agent {
+    use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+    let tls = TlsConfig::builder().provider(TlsProvider::Rustls).root_certs(RootCerts::WebPki).build();
+    let config = ureq::Agent::config_builder().timeout_global(Some(ESPERA)).http_status_as_error(false).max_redirects(0).tls_config(tls);
+    if red_local {
+        config.build().new_agent()
+    } else {
+        ureq::Agent::with_parts(config.proxy(None).build(), ureq::unversioned::transport::DefaultConnector::default(), ResolutorPublico)
+    }
+}
+
+/// El servidor de correo de un canal de un cliente: el nombre se resuelve aquí una vez,
+/// se comprueban sus IP y se conecta a una de ellas (el nombre sigue sirviendo para el
+/// certificado). Primero IPv4, que es lo que suele funcionar.
+fn ip_de_correo(host: &str, puerto: u16) -> Result<String, Fallo> {
+    use std::net::ToSocketAddrs;
+    let no_esta = || Fallo::temporal("No se encuentra el servidor de correo (DNS).");
+    let mut dirs: Vec<std::net::SocketAddr> = (host, puerto).to_socket_addrs().map_err(|_| no_esta())?.collect();
+    if dirs.is_empty() {
+        return Err(no_esta());
+    }
+    if dirs.iter().any(|d| super::ajustes::ip_de_red_local(d.ip())) {
+        return Err(Fallo::definitivo(A_RED_LOCAL));
+    }
+    dirs.sort_by_key(|d| d.is_ipv6());
+    Ok(dirs[0].ip().to_string())
+}
+
 fn http_error(e: &ureq::Error) -> Fallo {
     use ureq::Error as E;
+    if let E::Io(io) = e {
+        if es_error_red_local(io) {
+            return Fallo::definitivo(A_RED_LOCAL);
+        }
+    }
     // Nunca el texto de ureq: puede llevar la dirección (y en Telegram, el token).
     Fallo::temporal(match e {
         E::HostNotFound => "No se encuentra el servidor (DNS).",
@@ -235,11 +327,7 @@ fn http_error(e: &ureq::Error) -> Fallo {
 
 impl Transporte for Real {
     fn http(&self, p: &PeticionHttp) -> Result<(), Fallo> {
-        use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
-        let tls = TlsConfig::builder().provider(TlsProvider::Rustls).root_certs(RootCerts::WebPki).build();
-        let agente =
-            ureq::Agent::config_builder().timeout_global(Some(ESPERA)).http_status_as_error(false).max_redirects(0).tls_config(tls).build().new_agent();
-        let mut r = agente.post(&p.url);
+        let mut r = agente_http(p.red_local).post(&p.url);
         for (k, v) in &p.cabeceras {
             r = r.header(k, v);
         }
@@ -258,7 +346,9 @@ impl Transporte for Real {
             "ninguna" => Tls::None,
             _ => Tls::Required(parametros()?),
         };
-        let mut b = SmtpTransport::builder_dangerous(c.host.clone()).port(c.puerto).tls(tls).timeout(Some(ESPERA));
+        // A la IP comprobada; el certificado se mira contra el nombre (`TlsParameters`).
+        let servidor = if c.red_local { c.host.clone() } else { ip_de_correo(&c.host, c.puerto)? };
+        let mut b = SmtpTransport::builder_dangerous(servidor).port(c.puerto).tls(tls).timeout(Some(ESPERA));
         if let (Some(u), Some(p)) = (&c.usuario, &c.contrasena) {
             b = b.credentials(Credentials::new(u.clone(), p.clone()));
         }
@@ -422,12 +512,92 @@ mod tests {
         }
         let c = canal(TipoCanal::Telegram, ConfigCanal { chat_id: Some("5".into()), ..Default::default() });
         let sec = BTreeMap::from([("token".to_string(), "123:TOKENSECRETO".to_string())]);
-        let e = enviar(&Chivato, &c, &sec, "", &prueba(), &formato(), "i", 1).unwrap_err();
+        let e = enviar(&Chivato, "servidor", &c, &sec, "", &prueba(), &formato(), "i", 1).unwrap_err();
         assert!(!e.texto.contains("TOKENSECRETO"), "{}", e.texto);
         assert_eq!(http_estado(204, "x"), Ok(()));
         assert!(!http_estado(429, "x").unwrap_err().permanente);
         assert!(http_estado(401, "x").unwrap_err().permanente);
         assert!(!http_estado(503, "x").unwrap_err().permanente);
+    }
+
+    /// Un servidor HTTP mínimo en 127.0.0.1 que contesta 204 a lo que le llegue.
+    fn servidor_local() -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let puerto = l.local_addr().unwrap().port();
+        let llegaron = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let n = llegaron.clone();
+        std::thread::spawn(move || {
+            for mut c in l.incoming().flatten() {
+                n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let _ = c.set_read_timeout(Some(Duration::from_secs(2)));
+                // Hasta el final de la petición (las cabeceras y el cuerpo, `{}`).
+                let (mut todo, mut b) = (Vec::new(), [0u8; 4096]);
+                while !todo.ends_with(
+                    b"
+
+{}",
+                ) {
+                    match c.read(&mut b) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => todo.extend_from_slice(&b[..n]),
+                    }
+                }
+                let _ = c.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            }
+        });
+        (puerto, llegaron)
+    }
+
+    fn post(url: &str, red_local: bool) -> Result<(), Fallo> {
+        Real.http(&PeticionHttp { url: url.into(), cabeceras: vec![], cuerpo: b"{}".to_vec(), red_local })
+    }
+
+    /// SSRF por DNS (docs/plan-mejoras.md, 9d): un nombre que resuelve a 127.0.0.1 no
+    /// llega a conectar desde un canal de un cliente; desde uno del servidor, sí.
+    #[test]
+    fn un_nombre_que_lleva_a_la_red_local_no_conecta() {
+        let (puerto, llegaron) = servidor_local();
+        for url in [format!("http://localhost:{puerto}/x"), format!("http://127.0.0.1:{puerto}/x"), format!("http://[::ffff:127.0.0.1]:{puerto}/x")] {
+            let e = post(&url, false).unwrap_err();
+            assert!(e.permanente && e.texto == A_RED_LOCAL, "{url}: {e:?}");
+        }
+        assert_eq!(llegaron.load(std::sync::atomic::Ordering::SeqCst), 0, "no debió conectar");
+        // El canal del servidor sí puede (p. ej. un ntfy en la misma red).
+        post(&format!("http://127.0.0.1:{puerto}/x"), true).unwrap();
+        assert_eq!(llegaron.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // El resolutor, solo: el nombre se rechaza al resolverlo (una sola vez).
+        use ureq::unversioned::resolver::Resolver;
+        let config = ureq::config::Config::default();
+        let uri: ureq::http::Uri = format!("http://localhost:{puerto}/").parse().unwrap();
+        let espera =
+            ureq::unversioned::transport::NextTimeout { after: ureq::unversioned::transport::time::Duration::from_secs(5), reason: ureq::Timeout::Resolve };
+        match ResolutorPublico.resolve(&uri, &config, espera) {
+            Err(ureq::Error::Io(e)) => assert!(es_error_red_local(&e)),
+            otro => panic!("{otro:?}"),
+        }
+        // Y el correo de un cliente, igual.
+        assert_eq!(ip_de_correo("localhost", 25).unwrap_err(), Fallo::definitivo(A_RED_LOCAL));
+        assert_eq!(ip_de_correo("10.1.2.3", 25).unwrap_err(), Fallo::definitivo(A_RED_LOCAL));
+        assert_eq!(ip_de_correo("8.8.8.8", 25).unwrap(), "8.8.8.8");
+    }
+
+    #[test]
+    fn enviar_marca_si_puede_ir_a_la_red_local() {
+        let c = canal(TipoCanal::Webhook, ConfigCanal::default());
+        let sec = BTreeMap::from([("url".to_string(), "https://hooks.ejemplo.com/x".to_string())]);
+        let t = Falso::default();
+        enviar(&t, "cliente:c1", &c, &sec, "", &prueba(), &formato(), "i", 1).unwrap();
+        enviar(&t, "servidor", &c, &sec, "", &prueba(), &formato(), "i", 1).unwrap();
+        let marcas: Vec<bool> = t
+            .enviados()
+            .into_iter()
+            .map(|e| match e {
+                Enviado::Http(p) => p.red_local,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(marcas, [false, true]);
     }
 
     #[test]

@@ -59,6 +59,9 @@ pub async fn servidor(State(st): State<St>) -> Res<Json<Value>> {
         "publico": st.opciones.publico,
         // v1.39: canal en vivo de la consola (`GET /api/clientes/{c}/vivo`).
         "vivo": true,
+        // v1.4x: acepta códigos de emparejamiento generados en el navegador (`codigo_hash`) y
+        // da el instalador genérico (`GET /api/clientes/{c}/instalador-agente`).
+        "codigo_navegador": true,
     });
     if let Some(k) = dropbox_app_key() {
         v["dropbox_app_key"] = json!(k);

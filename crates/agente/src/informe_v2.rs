@@ -117,7 +117,7 @@ fn huella_otras() -> String {
         .collect();
     retenciones.sort();
     let espejo = crate::server::load().espejo.map(|e| format!("{:?}{:?}", e.ultima, e.resultado)).unwrap_or_default();
-    // v1.4x: terminó una operación del servicio (traer el historial, aplicar la retención): su
+    // v1.47: terminó una operación del servicio (traer el historial, aplicar la retención): su
     // entrada del historial del equipo va con el próximo informe, a todas las consolas, ya.
     let ops = crate::progreso_v2::ops::terminadas();
     format!("{}|{:?}|{}|{espejo}|{ops}", terminadas.join(";"), tareas.running.is_some(), retenciones.join(";"))

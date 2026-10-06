@@ -19,7 +19,7 @@ export const NOMBRE_TAREA: Record<TipoTarea, string> = {
 };
 
 /**
- * v1.4x: «Mover a otro sitio…» en marcha, como se dice en cualquier consola del
+ * v1.47: «Mover a otro sitio…» en marcha, como se dice en cualquier consola del
  * equipo: «Moviéndose a otro sitio (iniciado desde «Oficina»): trayendo el
  * historial, 56 de 255 versiones». `null` si la tarea no es un paso de un movimiento.
  */

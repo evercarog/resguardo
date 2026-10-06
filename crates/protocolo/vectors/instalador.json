@@ -1,0 +1,125 @@
+{
+  "casos": [
+    {
+      "cola": "UkVTR1VBUkRPLUNPTEEtMQAAAPx7InYiOjEsInNlcnZpZG9yIjoiaHR0cHM6Ly8xOTIuMTY4LjEuMjA6ODQ0MyIsImh1ZWxsYV9jYSI6IkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCIiwiY2xpZW50ZSI6IjBhMGUxYjJjLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDBhMSIsIm5vbWJyZSI6IlNFUlZJRE9SLTAxIiwiY29kaWdvIjoiQUJDRC1FRkdILUpLIn0AAAD8UkVTR1VBUkRPLUZJTi0wMQ==",
+      "datos": {
+        "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+        "codigo": "ABCD-EFGH-JK",
+        "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+        "nombre": "SERVIDOR-01",
+        "servidor": "https://192.168.1.20:8443",
+        "v": 1
+      }
+    },
+    {
+      "cola": "UkVTR1VBUkRPLUNPTEEtMQAAARN7InYiOjEsInNlcnZpZG9yIjoiaHR0cHM6Ly9bZmQwMDo6MV06ODQ0MyIsImh1ZWxsYV9jYSI6IkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCOkFCIiwiY2xpZW50ZSI6IjBhMGUxYjJjLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDBhMSIsIm5vbWJyZSI6IlJlY2VwY2nDs24gXFwgMiDCtyDDsWFuZMO6L+KCrCIsImNvZGlnbyI6IldYWVotMjM0NS02Nzg5LUFCQ0QifQAAARNSRVNHVUFSRE8tRklOLTAx",
+      "datos": {
+        "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+        "codigo": "WXYZ-2345-6789-ABCD",
+        "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+        "nombre": "Recepción \\ 2 · ñandú/€",
+        "servidor": "https://[fd00::1]:8443",
+        "v": 1
+      }
+    }
+  ],
+  "malos": [
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "AB",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JKMN-PQRS-T",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD_EFGH",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "con \"comillas\"",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": " espacio",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "control",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "ñññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññññ",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://srv/ruta",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://srv:",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "http://srv:8443",
+      "v": 1
+    },
+    {
+      "cliente": "0a0e1b2c-0000-4000-8000-0000000000a1",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:CD",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    },
+    {
+      "cliente": "../x",
+      "codigo": "ABCD-EFGH-JK",
+      "huella_ca": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "nombre": "SERVIDOR-01",
+      "servidor": "https://192.168.1.20:8443",
+      "v": 1
+    }
+  ],
+  "nota": "Cola del instalador listo (crates/protocolo/src/instalador.rs). La consola la arma igual (consola/src/lib/cola.ts)."
+}

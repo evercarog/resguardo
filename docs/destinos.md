@@ -121,7 +121,7 @@ Mover copias entre repositorios ya existe («Cambiar destino») y no cambia.
 
 ## Copia externa a un repositorio que ya existe
 
-En la consola, «Copia externa…» de un repositorio tiene dos caminos (`cambiar_copia_externa`, [api-servidor.md](api-servidor.md) §5, v1.4x):
+En la consola, «Copia externa…» de un repositorio tiene dos caminos (`cambiar_copia_externa`, [api-servidor.md](api-servidor.md) §5, v1.46):
 
 - **Crear uno nuevo** (como siempre): en un destino del equipo o en uno nuevo, en una carpeta con el id del repositorio. Al guardarla, el agente lo crea allí con los parámetros de troceado del origen (`init --from-repo … --copy-chunker-params`) o, si ya hay uno que la contraseña abre, sigue con él.
 - **Usar uno que ya existe**: la dirección completa (bucket y carpeta en B2/S3, servidor y carpeta en un rest-server, carpeta, SFTP), sus credenciales y **la contraseña de ese repositorio**. Es el caso de la subida a la nube de la app de escritorio: el repositorio antiguo se movió a un almacén (uno nuevo con su troceado y todo su historial traído, `copiar_historial`) y la copia externa del nuevo sigue yendo al repositorio de la nube de siempre. «Probar» (`solo_probar`) lo abre (`restic cat config`), cuenta sus versiones y compara su troceado con el del origen. El agente nunca lo crea: si un día no aparece, la subida falla y lo dice, en vez de crear uno vacío que obligaría a subirlo todo otra vez.

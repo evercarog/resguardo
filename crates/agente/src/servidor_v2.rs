@@ -164,10 +164,28 @@ fn cambiado_fuera(canal: &Vinculo, disco: &Vinculo) -> bool {
 pub fn guardar(v: &Vinculo) -> Result<(), String> {
     crate::agent::prepare_dir()?;
     let enc = crate::platform::protect(&serde_json::to_vec(v).map_err(|e| e.to_string())?)?;
-    let tmp = crate::agent::private_dir().join(format!("{ARCHIVO}.tmp"));
+    // Un temporal por proceso: el servicio y `resguardo-agente vincular` (el instalador lo lanza
+    // con el servicio ya en marcha) guardaban en el mismo y uno podía quitárselo al otro entre
+    // escribirlo y renombrarlo. Si `vincular` fallaba ahí, el equipo ya estaba unido en el
+    // servidor y el segundo intento del instalador gastaba el código otra vez («no válido»).
+    let tmp = crate::agent::private_dir().join(format!("{ARCHIVO}.{}.tmp", std::process::id()));
     let _ = std::fs::remove_file(&tmp);
     std::fs::write(&tmp, enc).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, ruta()).map_err(|e| e.to_string())
+    // Windows puede negar el cambio un instante si otro proceso lee el archivo: unos reintentos.
+    let mut intento = 0;
+    loop {
+        match std::fs::rename(&tmp, ruta()) {
+            Ok(()) => return Ok(()),
+            Err(_) if intento < 5 => {
+                intento += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100 * intento));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e.to_string());
+            }
+        }
+    }
 }
 
 fn ahora() -> i64 {
@@ -565,7 +583,7 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             "cambiar_espera" => c["horas"].as_i64().is_some_and(|h| h < v.espera_min_horas),
             "restaurar" => c["destino"] == "original" && c["reemplazar"] == true,
             // Igual que al ejecutarla: sin una hora en texto, se quita la copia externa.
-            // Solo probar (v1.4x) no cambia nada.
+            // Solo probar (v1.46) no cambia nada.
             "cambiar_copia_externa" => !c["hora"].is_string() && c["solo_probar"] != true,
             // Desconectar una nube que usa el espejo deja de proteger fuera.
             "quitar_nube" => crate::nube::usa_espejo(c["nombre"].as_str().unwrap_or("").trim()),
@@ -997,7 +1015,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "aplicar_retencion" => {
             let r = repo.unwrap_or("").to_string();
             Ok(en_segundo_plano(v, orden_id, seq, "aplicar_retencion", "Aplicando la retención…", move |v| {
-                // v1.4x: en marcha, a la vista de todas las consolas del equipo.
+                // v1.47: en marcha, a la vista de todas las consolas del equipo.
                 let _op = crate::progreso_v2::ops::empezar(crate::progreso_v2::ops::Operacion::de_consola(v, "retencion", &r, "Aplicando la retención"));
                 g::aplicar_retencion(v, &r).map(hecha)
             }))

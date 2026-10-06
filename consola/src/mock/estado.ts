@@ -101,6 +101,8 @@ export interface EmparejamientoMock {
   so?: "windows" | "linux";
   /** La cuenta que lo pidió (v1.42: se le vuelve a dar el suyo si aún sirve). */
   por?: string;
+  /** v1.4x: el código lo generó el navegador; aquí solo su hash (y `codigo` vacío). */
+  codigo_hash?: string;
 }
 
 export interface Estado {
@@ -459,7 +461,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
-        // v1.4x: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
+        // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente"],
         // v1.36: también la gestiona una consola en línea (y el último cambio vino de allí).
         consolas: [

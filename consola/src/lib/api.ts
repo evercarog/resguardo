@@ -230,7 +230,16 @@ export const renombrarEquipo = (c: string, e: string, nombre: string) => pedir<T
 export const ponerEtiquetas = (c: string, e: string, etiquetas: string[]) => pedir<T.EquipoDetalle>("PUT", `${cli(c)}/equipos/${enc(e)}/etiquetas`, { etiquetas });
 export const pedirAtencion =(c: string, e: string) => pedir<void>("POST", `${cli(c)}/equipos/${enc(e)}/atencion`);
 
-export const abrirEmparejamiento = (c: string) => pedir<T.Emparejamiento>("POST", `${cli(c)}/emparejamientos`);
+/**
+ * Un código de 15 min. v1.4x: con `codigoHash` (servidores con `codigo_navegador`), el código lo
+ * generó este navegador y solo se manda su hash: la respuesta no lo trae (`codigo_navegador: true`).
+ */
+export const abrirEmparejamiento = (c: string, codigoHash?: string) =>
+  pedir<{ id: string; codigo?: string | null; caduca: string; reutilizado?: boolean; codigo_navegador?: boolean }>(
+    "POST",
+    `${cli(c)}/emparejamientos`,
+    codigoHash ? { codigo_hash: codigoHash } : undefined,
+  );
 export const emparejamiento = (c: string, p: string) => pedir<T.EstadoDeEmparejamiento>("GET", `${cli(c)}/emparejamientos/${enc(p)}`);
 export const confirmarEmparejamiento = (c: string, p: string, etiqueta: string) => pedir<void>("POST", `${cli(c)}/emparejamientos/${enc(p)}/confirmar`, { etiqueta });
 export const cancelarEmparejamiento = (c: string, p: string) => pedir<void>("DELETE", `${cli(c)}/emparejamientos/${enc(p)}`);
@@ -241,7 +250,9 @@ export const aMedias = (c: string) =>
     throw e;
   });
 /** v1.42: el código de 15 min de esta cuenta que aún sirve (o `null`); con un servidor anterior, 404. */
-export const codigoAbierto = (c: string) => pedir<CodigoAbierto | null>("GET", `${cli(c)}/codigo-abierto`, undefined, { invisible: true });
+/** v1.4x: con `navegador`, también uno generado en un navegador (sin el código, con `codigo_hash`). */
+export const codigoAbierto = (c: string, navegador = false) =>
+  pedir<CodigoAbierto | null>("GET", `${cli(c)}/codigo-abierto${navegador ? "?navegador=1" : ""}`, undefined, { invisible: true });
 
 // v1.17: equipos preparados (instalador listo o línea de Linux, código de 24 h).
 // v1.20: plantillas de copia (cifradas en el navegador; el servidor guarda bytes).
@@ -262,7 +273,42 @@ export const notasTodas = (c: string) => pedir<T.NotasExportadas>("GET", `${cli(
 export const vincularLocal = (c: string) => pedir<T.Preparado>("POST", `${cli(c)}/equipo-local`);
 export const preparados = (c: string) => pedir<T.Preparado[]>("GET", `${cli(c)}/emparejamientos`);
 export const prepararLinux = (c: string, nombre: string, servidor: string) => pedir<T.PreparadoLinux>("POST", `${cli(c)}/instaladores`, { nombre, so: "linux", servidor });
-/** El instalador del agente con la cola para vincular: el archivo, su nombre y el emparejamiento. */
+/**
+ * v1.4x: un preparado con el código generado en este navegador (solo va su hash). La respuesta es
+ * JSON también en Windows: la consola baja el instalador genérico y le añade la cola (lib/cola.ts).
+ */
+export const prepararConHash = (c: string, b: { nombre: string; so: "windows" | "linux"; servidor: string; codigo_hash: string }) =>
+  pedir<T.PreparadoNavegador>("POST", `${cli(c)}/instaladores`, b);
+/** v1.4x: el instalador genérico del agente (sin cola). 404 `sin_instalador` si el servidor no lo tiene. */
+export async function instaladorGenerico(c: string): Promise<Blob> {
+  const fin = empezar();
+  let res: Response;
+  try {
+    res = await fetch(`${cli(c)}/instalador-agente`, { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/octet-stream, application/json" } });
+  } catch {
+    fin();
+    conexionPerdida();
+    throw new ApiError("red", mensajeDe("red"), 0);
+  }
+  try {
+    conexionOk();
+    if (!res.ok) {
+      let d: { error?: string; mensaje?: string } & Record<string, unknown> = {};
+      try {
+        d = await res.json();
+      } catch {
+        /* sin cuerpo */
+      }
+      const codigo = d.error ?? (res.status === 429 ? "demasiados_intentos" : "interno");
+      if (res.status === 401) alPerderSesion?.(codigo);
+      throw new ApiError(codigo, d.mensaje || mensajeDe(codigo), res.status, d);
+    }
+    return await res.blob();
+  } finally {
+    fin();
+  }
+}
+/** El instalador del agente con la cola para vincular: el archivo, su nombre y el emparejamiento (servidores anteriores a v1.4x). */
 export async function prepararInstalador(c: string, nombre: string, servidor: string): Promise<{ datos: Blob; archivo: string; id: string; caduca: string; reutilizado: boolean }> {
   const fin = empezar();
   let res: Response;

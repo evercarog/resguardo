@@ -183,6 +183,53 @@ mod pruebas {
         assert!(leer_cola(&x).is_err());
     }
 
+    /// `vectors/instalador.json`: la consola arma la cola en el navegador (v1.4x,
+    /// consola/src/lib/cola.ts) y `npm run test:vectores` comprueba que da estos mismos
+    /// bytes. Para regenerarlo: `RESGUARDO_GENERAR_VECTORES=1 cargo test -p resguardo-protocolo instalador`.
+    #[test]
+    fn vector_compartido_con_la_consola() {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let casos = [
+            datos(),
+            DatosInstalador {
+                servidor: "https://[fd00::1]:8443".into(),
+                nombre: "Recepción \\ 2 · ñandú/€".into(),
+                codigo: "WXYZ-2345-6789-ABCD".into(),
+                ..datos()
+            },
+        ];
+        let malos = [
+            DatosInstalador { codigo: "AB".into(), ..datos() },
+            DatosInstalador { codigo: "ABCD-EFGH-JKMN-PQRS-T".into(), ..datos() },
+            DatosInstalador { codigo: "ABCD_EFGH".into(), ..datos() },
+            DatosInstalador { nombre: "con \"comillas\"".into(), ..datos() },
+            DatosInstalador { nombre: " espacio".into(), ..datos() },
+            DatosInstalador { nombre: "control\u{85}".into(), ..datos() },
+            DatosInstalador { nombre: "ñ".repeat(81), ..datos() },
+            DatosInstalador { servidor: "https://srv/ruta".into(), ..datos() },
+            DatosInstalador { servidor: "https://srv:".into(), ..datos() },
+            DatosInstalador { servidor: "http://srv:8443".into(), ..datos() },
+            DatosInstalador { huella_ca: "AB:CD".into(), ..datos() },
+            DatosInstalador { cliente: "../x".into(), ..datos() },
+        ];
+        for m in &malos {
+            assert!(m.validar().is_err(), "{m:?}");
+        }
+        let v = serde_json::json!({
+            "nota": "Cola del instalador listo (crates/protocolo/src/instalador.rs). La consola la arma igual (consola/src/lib/cola.ts).",
+            "casos": casos.iter().map(|d| serde_json::json!({ "datos": d, "cola": b64.encode(cola(d).unwrap()) })).collect::<Vec<_>>(),
+            "malos": malos,
+        });
+        let ruta = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/instalador.json");
+        let texto = serde_json::to_string_pretty(&v).unwrap() + "\n";
+        if std::env::var("RESGUARDO_GENERAR_VECTORES").is_ok() {
+            std::fs::write(ruta, &texto).unwrap();
+        }
+        let guardado = std::fs::read_to_string(ruta).expect("falta vectors/instalador.json");
+        assert_eq!(guardado.replace("\r\n", "\n"), texto, "vectors/instalador.json no coincide: regenéralo solo si el formato cambió a propósito");
+    }
+
     #[test]
     fn campos_que_no_valen() {
         let malos = [

@@ -366,7 +366,7 @@
         cliente,
         equipo,
         tipo: "copiar_historial",
-        // v1.4x: `mover`, para que el equipo lo cuente así a todas sus consolas (las demás solo lo ven).
+        // v1.47: `mover`, para que el equipo lo cuente así a todas sus consolas (las demás solo lo ven).
         cuerpo: { repo: p.nuevo, origen: { repo: repo.id }, mover: { paso } },
         secretos: { prueba: prueba! },
         alPaso: (t) => ponerPaso(paso, "en_marcha", t),

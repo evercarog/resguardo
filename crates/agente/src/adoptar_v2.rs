@@ -475,7 +475,7 @@ pub fn historial_local(repo: &str) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// v1.4x: `mover: { paso: "historial" | "ultimo" }` en `copiar_historial`: es un
+/// v1.47: `mover: { paso: "historial" | "ultimo" }` en `copiar_historial`: es un
 /// paso de «Mover a otro sitio…» (la consola que lo lleva lo dice; las demás lo
 /// enseñan sin poder tocarlo). Otro valor o ninguno: traer el historial sin más.
 pub fn paso_mover(c: &Value) -> Option<&'static str> {
@@ -598,7 +598,7 @@ mod tests {
         json!({ "tipo": "local", "donde": b.display().to_string() })
     }
 
-    /// v1.4x: los pasos de «Mover a otro sitio…» se reconocen y lo que se cuenta a todas
+    /// v1.47: los pasos de «Mover a otro sitio…» se reconocen y lo que se cuenta a todas
     /// las consolas (progreso e historial) dice de qué repositorio a cuál, quién lo empezó
     /// (por su nombre) y cómo acabó, sin rutas.
     #[test]

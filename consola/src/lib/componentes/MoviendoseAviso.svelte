@@ -1,5 +1,5 @@
 <script lang="ts">
-  // v1.4x: «Mover a otro sitio…» en marcha en este repositorio (el que se
+  // v1.47: «Mover a otro sitio…» en marcha en este repositorio (el que se
   // mueve o el nuevo), lo empezara esta consola u otra del equipo. El equipo lo
   // cuenta a todas sus consolas con el progreso de siempre; aquí solo se
   // enseña. Los pasos (y cancelarlos o seguir) los lleva el navegador que lo

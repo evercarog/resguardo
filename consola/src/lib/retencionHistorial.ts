@@ -5,7 +5,7 @@ import * as api from "./api";
 import type { EntradaRetencion } from "./retencionDetalle";
 
 /**
- * Las entradas `retencion` del historial de un equipo (v1.4x: solo se dan
+ * Las entradas `retencion` del historial de un equipo (v1.45: solo se dan
  * pedidas con `tipo`). Un servidor que no las conoce contesta 422 (tipo no
  * válido) o 404 (sin historial): ninguna.
  */

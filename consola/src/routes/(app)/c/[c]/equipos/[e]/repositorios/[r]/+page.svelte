@@ -64,7 +64,7 @@
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
-  // v1.4x: lo que está en marcha en él (también un «Mover a otro sitio…» que empezó otra consola).
+  // v1.47: lo que está en marcha en él (también un «Mover a otro sitio…» que empezó otra consola).
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   import { tareasDe } from "$lib/progreso.svelte";
