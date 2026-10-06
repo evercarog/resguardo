@@ -7,7 +7,7 @@
   // hora, con su contraseña (la misma u otra, al kit), su retención y su
   // verificación. Los secretos solo viven en este diálogo.
   import { onDestroy } from "svelte";
-  import { CalendarClock, Cloud, KeyRound, Printer, RefreshCw, TriangleAlert } from "@lucide/svelte";
+  import { Cloud, KeyRound, Printer, RefreshCw, TriangleAlert } from "@lucide/svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
   import CampoClave from "./CampoClave.svelte";
   import EditorRetencion from "./EditorRetencion.svelte";
@@ -198,7 +198,7 @@
     {/if}
 
     <div class="field">
-      <span class="field-label con-icono" id="dv-l-cuando"><CalendarClock size={14} />Cuándo</span>
+      <span class="field-label" id="dv-l-cuando">Cuándo</span>
       <div class="segmented" role="radiogroup" aria-labelledby="dv-l-cuando">
         <button type="button" role="radio" aria-checked={f.cuando === "tras"} class:on={f.cuando === "tras"} onclick={() => (f.cuando = "tras")}>Después de cada copia</button>
         <button type="button" role="radio" aria-checked={f.cuando === "hora"} class:on={f.cuando === "hora"} onclick={() => (f.cuando = "hora")}>Cada día a una hora</button>
@@ -351,11 +351,6 @@
   }
   .segmented {
     flex-wrap: wrap;
-  }
-  .con-icono {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
   }
   .corto {
     max-width: 140px;

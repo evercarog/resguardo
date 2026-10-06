@@ -205,6 +205,13 @@ button.fila {
   gap: var(--sp-3);
 }
 
+/* Diálogos con el título fuera del formulario: el mismo aire bajo el título
+ * que en los que lo llevan dentro (el `gap` de `.form`). Los márgenes se
+ * funden con el del bloque siguiente, así que no se suman. */
+.dialog > .dlg-title {
+  margin-bottom: var(--sp-4);
+}
+
 /* Formularios. */
 .form {
   display: flex;

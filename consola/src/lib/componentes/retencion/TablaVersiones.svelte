@@ -12,6 +12,8 @@
 {#if filas.length}
   <table class="tabla">
     <caption class="sr-only">{titulo}</caption>
+    <!-- Columnas fijas: las tablas de cada día quedan alineadas entre sí. -->
+    <colgroup><col class="c-version" /><col class="c-fecha" /><col class="c-copia" /><col class="c-tamano" /><col /></colgroup>
     <thead>
       <tr><th scope="col">Versión</th><th scope="col">Fecha</th><th scope="col">Copia</th><th scope="col" class="der">Tamaño</th><th scope="col">Por qué</th></tr>
     </thead>
@@ -20,7 +22,7 @@
         <tr class:queda={f.tono === "queda"}>
           <td data-k="Versión"><code>{f.id}</code></td>
           <td data-k="Fecha">{#if f.hora}<span title={fechaLarga(f.hora)}>{fmt.format(new Date(f.hora))}</span>{:else}<span class="faint">—</span>{/if}</td>
-          <td data-k="Copia">{f.copia ?? "—"}</td>
+          <td data-k="Copia" class="copia" title={f.copia ?? undefined}>{f.copia ?? "—"}</td>
           <td data-k="Tamaño" class="der num">{f.bytes != null ? bytes(f.bytes) : "—"}</td>
           <td data-k="Por qué" class="porque">{f.porque}</td>
         </tr>
@@ -35,7 +37,25 @@
   .tabla {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
     font-size: var(--fs-sm);
+  }
+  .c-version {
+    width: 11ch;
+  }
+  .c-fecha {
+    width: 17ch;
+  }
+  .c-copia {
+    width: 18%;
+  }
+  .c-tamano {
+    width: 10ch;
+  }
+  .copia {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   th {
     text-align: left;
@@ -112,6 +132,9 @@
     }
     .der {
       text-align: left;
+    }
+    .copia {
+      white-space: normal;
     }
   }
 </style>
