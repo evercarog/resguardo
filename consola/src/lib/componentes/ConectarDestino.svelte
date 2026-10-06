@@ -25,7 +25,9 @@
   const existentes = $derived((equipo.resumen?.guarda_copias?.nubes ?? []).map((n) => n.nombre.toLowerCase()));
   let tipo = $state<Tipo>("b2");
   let nombre = $state("");
-  let valores = $state<Record<string, string>>({});
+  /** Todos los campos del tipo, vacíos (CampoClave no admite `bind:value` a algo sin definir). */
+  const vacios = (t: Tipo) => Object.fromEntries(CAMPOS_DESTINO[t].map((c) => [c.clave, ""])) as Record<string, string>;
+  let valores = $state<Record<string, string>>(vacios("b2"));
   let carpeta = $state("");
   let claveAdmin = $state("");
   let ocupado = $state(false);
@@ -51,7 +53,7 @@
   function cambiarTipo(t: Tipo) {
     tipo = t;
     // Los datos de un tipo no pasan a otro (sobre todo las contraseñas).
-    valores = {};
+    valores = vacios(t);
     error = "";
   }
 
@@ -87,7 +89,7 @@
       const r = await respuesta(o);
       if (r.estado !== "hecha") throw new Error(r.mensaje ?? `${equipo.nombre} no pudo conectar ese destino.`);
       claveAdmin = "";
-      valores = {};
+      valores = vacios(tipo);
       hecho = true;
       avisar(`«${nombreFinal}» conectado en ${equipo.nombre}.`);
       void cargarCliente(cliente.id, { silencioso: true });
