@@ -48,6 +48,17 @@ pub const TIPOS: &[Tipo] = &[
     // v1.49: cancelar una orden en espera en el equipo (de cualquiera de sus consolas).
     // Inofensiva: cancelar solo aumenta la protección (docs/consolas-multiples.md §5.7).
     t("cancelar_espera", Inofensiva, false, false, false),
+    // v1.4x: el nombre, las etiquetas y la observación del equipo los guarda el equipo y
+    // los ven todas sus consolas (docs/consolas-multiples.md §6). Son metadatos: no
+    // revelan nada ni reducen la protección. El nombre, como `PATCH …/equipos/{e}`,
+    // solo administradores; etiquetas y observación, como sus rutas, también técnicos.
+    t("nombre_equipo", Inofensiva, false, false, true),
+    t("etiquetas_equipo", Inofensiva, false, false, false),
+    t("observacion_equipo", Inofensiva, false, false, false),
+    // v1.4x: olvidar un destino que ya no usa nada (sin repositorios, copia externa ni
+    // derivadas). No borra nada de lo que hay en él: inofensiva, pero solo administradores
+    // (crear un destino pide la clave de administración; quitarlo, al menos el papel).
+    t("quitar_destino", Inofensiva, false, false, true),
     // Contraseña del repositorio
     t("explorar", Repositorio, false, true, false),
     t("restaurar", Repositorio, false, false, false),
@@ -174,6 +185,12 @@ mod tests {
         // v1.49: cancelar una orden en espera, desde cualquier consola y sin clave.
         let c = tipo("cancelar_espera").unwrap();
         assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !c.solo_administradores);
+        // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false), ("quitar_destino", true)] {
+            let x = tipo(t).unwrap();
+            assert!(x.nivel == Nivel::Inofensiva && !x.destructiva && x.solo_administradores == solo_admin, "{t}");
+            assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&t), "{t}");
+        }
         // Ninguna inofensiva es destructiva.
         assert!(TIPOS.iter().filter(|t| t.nivel == Nivel::Inofensiva).all(|t| !t.destructiva));
     }

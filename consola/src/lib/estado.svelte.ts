@@ -4,6 +4,7 @@
 import { goto } from "$app/navigation";
 import * as api from "./api";
 import { enFondo } from "./actividad.svelte";
+import { conDatosDelEquipo } from "./datosEquipo";
 import type * as T from "./tipos";
 
 export const app = $state({
@@ -74,7 +75,8 @@ export async function cargarCliente(id: string, opciones: { silencioso?: boolean
     const [cliente, resumen] = await (opciones.silencioso && !cambia ? enFondo(pedirlo) : pedirlo());
     if (actual.id !== id) return;
     actual.cliente = cliente;
-    actual.equipos = resumen.equipos;
+    // v1.4x: el nombre y las etiquetas que tiene puestos el equipo mandan (un servidor anterior no los copia).
+    actual.equipos = resumen.equipos.map(conDatosDelEquipo);
     actual.avisosAbiertos = resumen.avisos_abiertos;
     actual.pendientes = resumen.pendientes;
     actual.etiquetas = resumen.etiquetas ?? [];

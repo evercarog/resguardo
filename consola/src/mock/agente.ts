@@ -21,6 +21,7 @@ import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
+import { observacionDelEquipo } from "./notas";
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Claves del almacén que algún equipo dueño ya añadió a su repositorio (clave_almacen). */
@@ -579,6 +580,46 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       return resultado(e, o, "hecha", `Quitada la consola ${x.nombre} (${x.url}): ya no gestiona este equipo.`);
     }
+    // v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
+    // (lo guarda el equipo y el servidor lo copia de su resumen) y olvidar un destino sin uso.
+    case "nombre_equipo":
+    case "etiquetas_equipo":
+    case "observacion_equipo": {
+      if (!e.resumen?.admite?.includes("datos_equipo")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      const campo = { cuando: ahora(), consola: "Consola de pruebas", esta: true, por: plana.por ?? null };
+      e.resumen.datos_equipo ??= {};
+      if (plana.tipo === "nombre_equipo") {
+        const n = String(c.nombre ?? "").trim();
+        if (!n || n.length > 80) return resultado(e, o, "fallida", "Escribe un nombre (hasta 80 caracteres, sin caracteres de control).");
+        e.resumen.datos_equipo.nombre = { valor: n, ...campo };
+        e.nombre = n;
+        return resultado(e, o, "hecha", `Nombre del equipo: «${n}». Lo verán así todas sus consolas.`);
+      }
+      if (plana.tipo === "etiquetas_equipo") {
+        const xs = Array.isArray(c.etiquetas) ? (c.etiquetas as unknown[]).map((x) => String(x).trim()).filter(Boolean) : null;
+        if (!xs || xs.length > 10 || xs.some((x) => x.length > 32 || x.includes(","))) return resultado(e, o, "fallida", "Etiqueta no válida (hasta 32 caracteres, sin comas).");
+        e.resumen.datos_equipo.etiquetas = { valor: xs, ...campo };
+        e.etiquetas = xs;
+        return resultado(e, o, "hecha", xs.length ? `Etiquetas: ${xs.join(", ")}. Las verán así todas sus consolas.` : "Etiquetas quitadas en todas sus consolas.");
+      }
+      const t = String(c.texto ?? "").replace(/\r\n?/g, "\n").trim();
+      if (t.length > 2000) return resultado(e, o, "fallida", "Como mucho 2000 caracteres.");
+      e.resumen.datos_equipo.observacion = { valor: t, ...campo };
+      observacionDelEquipo(e.cliente, e.id, t, `${plana.por ?? "El equipo"} (desde la consola «Consola de pruebas»)`);
+      return resultado(e, o, "hecha", t ? "Observación guardada: la verán todas sus consolas." : "Observación quitada en todas sus consolas.");
+    }
+    case "quitar_destino": {
+      const d = e.resumen?.destinos?.find((x) => x.id === c.destino);
+      if (!d || !e.resumen) return resultado(e, o, "fallida", "Ese destino ya no está en este equipo.");
+      const usos = (e.resumen.repositorios ?? []).flatMap((r) => [
+        ...(r.destino === d.id || r.destino === d.nombre ? [`el repositorio «${r.nombre}»`] : []),
+        ...(r.externa?.destino_id === d.id ? [`la copia externa de «${r.nombre}»`] : []),
+        ...((r.derivadas ?? []).some((x) => x.destino_id === d.id) ? [`una copia derivada de «${r.nombre}»`] : []),
+      ]);
+      if (usos.length) return resultado(e, o, "fallida", `No se puede quitar: lo usa ${usos.join(", ")}. Quita eso antes.`);
+      e.resumen.destinos = e.resumen.destinos!.filter((x) => x !== d);
+      return resultado(e, o, "hecha", d.tipo === "local" ? `Destino «${d.nombre}» quitado del equipo. Su carpeta aún tiene copias guardadas (1 repositorio): no se ha borrado nada; si ya no las quieres, bórralas a mano.` : `Destino «${d.nombre}» quitado del equipo, con sus credenciales. Lo guardado allí se queda.`);
+    }
     // v1.49: cancelar una orden en espera (de cualquiera de las consolas del equipo).
     case "cancelar_espera": {
       const lista = e.resumen?.en_espera ?? [];
@@ -936,6 +977,13 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       e.resumen.repositorios = (e.resumen.repositorios ?? []).filter((x) => x.id !== r.id);
       e.resumen.copias = (e.resumen.copias ?? []).filter((k) => k.repo !== r.id);
       guardarConfig(e, configInicial(e), plana.seq);
+      // v1.4x: `quitar_destino: true`, también su destino si se queda sin uso.
+      const d = e.resumen.destinos?.find((x) => x.id === r.destino || x.nombre === r.destino);
+      const enUso = (e.resumen.repositorios ?? []).some((x) => x.destino === d?.id || x.destino === d?.nombre || x.externa?.destino_id === d?.id || (x.derivadas ?? []).some((y) => y.destino_id === d?.id));
+      if (c.quitar_destino === true && d && !enUso && e.resumen.admite?.includes("quitar_destino")) {
+        e.resumen.destinos = e.resumen.destinos!.filter((x) => x !== d);
+        return resultado(e, o, "hecha", `Repositorio «${r.nombre}» quitado de este equipo. Lo guardado sigue en su destino. Destino «${d.nombre}» quitado del equipo.`);
+      }
       return resultado(e, o, "hecha", `Repositorio «${r.nombre}» quitado de este equipo. Lo guardado sigue en su destino.`);
     }
     default:

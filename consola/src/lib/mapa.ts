@@ -16,8 +16,12 @@ import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
 import { zonasDe } from "./destinos";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
-export type TipoNodo = "cliente" | "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa";
-export type IconoNodo = "cliente" | "equipo" | "grupo" | "almacen" | "disco" | "nube" | "dropbox" | "servidor" | "repo";
+/**
+ * «fuera» (v1.4x): un paso que depende de un equipo que no está en esta consola (el
+ * almacén donde guarda, que se gestiona desde otra): sus espejos no se ven aquí.
+ */
+export type TipoNodo = "cliente" | "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa" | "fuera";
+export type IconoNodo = "cliente" | "equipo" | "grupo" | "almacen" | "disco" | "nube" | "dropbox" | "servidor" | "repo" | "otra_consola";
 export type Perspectiva = "equipos" | "repositorios" | "destinos";
 
 export interface NodoMapa {
@@ -41,6 +45,8 @@ export interface NodoMapa {
   vivo?: string | null;
   /** v1.41: un aviso que se ve en la tarjeta (con icono): «En el mismo equipo que protege». */
   aviso?: string;
+  /** «fuera»: el nombre del almacén (el de su destino en el equipo) y las otras consolas del equipo que copia ahí (por su nombre). */
+  fuera?: { almacen: string; consolas: string[] };
   /** Un cliente (mapa de todos los clientes): su marca y si está plegado. */
   marca?: MarcaCliente | null;
   plegado?: boolean;
@@ -87,14 +93,23 @@ const DIA = 86_400_000;
 const TIPO_DESTINO: Record<string, string> = { rest: "Servidor de copias", local: "Disco", s3: "S3", b2: "Backblaze B2", sftp: "SFTP", otro: "Destino" };
 const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
-/** Clave estable de un destino del cliente (un almacén cuenta una vez). */
-export function claveDestino(e: Equipo, r: RepositorioResumen, equipos: Equipo[]): { clave: string; almacen?: Equipo } {
+/**
+ * Clave estable de un destino del cliente (un almacén cuenta una vez). `fuera`
+ * (v1.4x): es el almacén de un equipo que no está en esta consola (se gestiona
+ * desde otra): lo que hace ese almacén (su espejo) no se ve aquí.
+ */
+export function claveDestino(e: Equipo, r: RepositorioResumen, equipos: Equipo[]): { clave: string; almacen?: Equipo; fuera?: boolean } {
   const d = destinoDe(e.resumen?.destinos, r);
   const almacen = d?.equipo_almacen ? equipos.find((x) => x.id === d.equipo_almacen) : undefined;
   // Un disco o carpeta local es de su equipo: dos equipos con un «Disco D» no son el mismo sitio.
   if (!almacen && d?.tipo === "local") return { clave: `de:local|${e.id}|${d.id}` };
+  // Lo dio un almacén del cliente («Copiar en …»), pero ese almacén no está aquí.
+  if (!almacen && d?.tipo === "rest" && d.equipo_almacen) return { clave: `al:${d.equipo_almacen}`, fuera: true };
   return { clave: almacen ? `al:${almacen.id}` : d ? `de:${d.tipo}|${d.donde ?? d.nombre}` : `de:?|${r.destino}`, almacen };
 }
+
+/** Las otras consolas del equipo (por su nombre, sin direcciones), para decir dónde mirar. */
+const otrasConsolasDe = (e: Equipo) => (e.resumen?.consolas ?? []).filter((c) => !c.esta).map((c) => c.nombre?.trim() || "otra consola");
 
 /** Lo que pasa con un trazo en palabras cortas: «hace 3 h», «falló hace 2 h». */
 function frescura(tono: Tono, cuando: string | null, ahora: number): string | undefined {
@@ -113,7 +128,7 @@ function enFrase(n: NodoMapa, ahora: number): string {
 
 interface Paquete {
   equipo: Equipo;
-  repos: { r: RepositorioResumen; destino: string; almacen?: Equipo }[];
+  repos: { r: RepositorioResumen; destino: string; almacen?: Equipo; fuera?: boolean }[];
 }
 
 /** El mapa del cliente, con la raíz elegida (todos, un equipo, un repositorio o un destino). */
@@ -138,7 +153,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const ajeno = raiz.perspectiva === "equipos" && !!raiz.id && raiz.id !== e.id;
     const repos = (e.resumen?.repositorios ?? [])
       .map((r) => ({ r, ...claveDestino(e, r, todos) }))
-      .map(({ r, clave, almacen }) => ({ r, destino: clave, almacen }))
+      .map(({ r, clave, almacen, fuera }) => ({ r, destino: clave, almacen, fuera }))
       .filter((x) => !ajeno || x.destino === `al:${raiz.id}`)
       .filter((x) => (raiz.perspectiva === "repositorios" && raiz.id ? `${e.id}:${x.r.id}` === raiz.id : true))
       .filter((x) => (raiz.perspectiva === "destinos" && raiz.id ? x.destino === raiz.id : true));
@@ -182,6 +197,26 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       });
     }
     const d = destinoDe(p.equipo.resumen?.destinos, x.r);
+    // v1.4x: el almacén de otra consola: su nombre (el del destino en el equipo, igual en todas)
+    // y, después, una tarjeta que dice que lo suyo no se ve aquí.
+    if (x.fuera) {
+      const n = poner({ id: x.destino, tipo: "destino", col: 2, nombre: d?.nombre ?? x.r.destino, sub: "Almacén de otra consola", tono: "ok", estado: "Recibe copias", ultima: null, icono: "servidor" });
+      const consolas = otrasConsolasDe(p.equipo);
+      const f = poner({
+        id: `fu:${x.destino}`,
+        tipo: "fuera",
+        col: 3,
+        nombre: `«${n.nombre}» no está en esta consola`,
+        sub: "Sus espejos no se ven aquí",
+        tono: "neutral",
+        estado: consolas.length ? `Se gestiona desde ${lista(consolas.map((c) => `«${c}»`))}` : "Se gestiona desde otra consola",
+        ultima: null,
+        icono: "otra_consola",
+        fuera: { almacen: n.nombre, consolas },
+      });
+      unir({ id: `${n.id}>${f.id}`, de: n.id, a: f.id, tipo: "espejo", tono: "neutral", vivo: false });
+      return n;
+    }
     // v1.41: un disco local dice de qué equipo es (y si es extraíble o de la red).
     const l = d?.tipo === "local" ? lugarDe(d, p.equipo, todos) : null;
     const sub = l
@@ -366,7 +401,10 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   }
   for (const n of lista_.filter((x) => x.tipo === "destino")) {
     const esp = aristas.filter((a) => a.de === n.id && a.tipo === "espejo").map((a) => por(a.a));
-    if (esp.length) frases.push(`${n.nombre} se refleja en ${lista(esp.map((x) => `${x.nombre} (${enFrase(x, ahora)})`))}.`);
+    const fuera = esp.filter((x) => x.tipo === "fuera");
+    const reales = esp.filter((x) => x.tipo !== "fuera");
+    if (reales.length) frases.push(`${n.nombre} se refleja en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)})`))}.`);
+    if (fuera.length) frases.push(`${n.nombre} es un almacén que no está en esta consola: sus espejos no se ven aquí (${minus(fuera[0].estado)}).`);
   }
 
   return { nodos: ordenarMapa(lista_, aristas), aristas, frases };

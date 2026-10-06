@@ -14,6 +14,8 @@
   import BotonCargando from "../BotonCargando.svelte";
   import CampoObservaciones from "./CampoObservaciones.svelte";
   import TextoNota from "./TextoNota.svelte";
+  import { admiteDatosEquipo, alcanceDatos, variasConsolas } from "$lib/datosEquipo";
+  import { pedirAlEquipo } from "$lib/pedirAlEquipo";
 
   let { tipo, objeto, compacto = false }: { tipo: TipoNota; objeto: string; compacto?: boolean } = $props();
 
@@ -24,6 +26,8 @@
   let texto = $state("");
   let guardando = $state(false);
   const idCampo = $derived(`obs-${tipo}-${objeto.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+  /** v1.4x: la observación de un equipo que la guarda él (igual en todas sus consolas). */
+  const delEquipo = $derived(tipo === "equipo" ? (actual.equipos.find((e) => e.id === objeto && admiteDatosEquipo(e)) ?? null) : null);
 
   $effect(() => {
     const c = actual.id;
@@ -41,8 +45,18 @@
     if (errorTextoNota(texto)) return;
     guardando = true;
     try {
-      const cambio = await guardarObservacion(actual.id, tipo, objeto, texto);
-      if (cambio) avisar(texto.trim() ? "Observaciones guardadas." : "Observaciones quitadas.");
+      if (delEquipo && actual.cliente) {
+        // v1.4x: la del equipo la guarda el equipo y la ven igual todas sus consolas.
+        const limpio = texto.replace(/\r\n?/g, "\n").trim();
+        if (limpio !== (obs?.texto ?? "")) {
+          const r = await pedirAlEquipo(actual.cliente, delEquipo, "observacion_equipo", { texto: limpio });
+          avisar(r.hecha ? (limpio ? "Observaciones guardadas en el equipo." : "Observaciones quitadas en el equipo.") + (variasConsolas(delEquipo) ? " Las verán igual todas sus consolas." : "") : r.texto);
+          await cargarNotas(actual.id, tipo, objeto);
+        }
+      } else {
+        const cambio = await guardarObservacion(actual.id, tipo, objeto, texto);
+        if (cambio) avisar(texto.trim() ? "Observaciones guardadas." : "Observaciones quitadas.");
+      }
       editando = false;
     } catch (err) {
       fallo(err);
@@ -62,6 +76,7 @@
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <form class="obs editando" onsubmit={guardar} onkeydown={teclas}>
       <CampoObservaciones id={idCampo} bind:valor={texto} filas={4} />
+      {#if tipo === "equipo"}{@const eq = actual.equipos.find((e) => e.id === objeto)}{#if eq && alcanceDatos(eq)}<p class="alcance faint">{alcanceDatos(eq)}</p>{/if}{/if}
       <div class="acciones">
         <button type="button" class="btn btn-sm btn-ghost" onclick={() => (editando = false)}>Cancelar</button>
         <BotonCargando type="submit" class="btn btn-sm btn-primary" cargando={guardando} disabled={!!errorTextoNota(texto)}>Guardar</BotonCargando>
@@ -112,6 +127,10 @@
     min-width: 0;
     max-height: 14em;
     overflow: auto;
+  }
+  .alcance {
+    margin: 0;
+    font-size: var(--fs-xs);
   }
   .meta {
     margin: 4px 0 0;

@@ -8,7 +8,7 @@
   // mientras algo está en marcha (quietos con movimiento reducido). En
   // estrecho (o con «Ver como lista»), un árbol en vertical con lo mismo.
   import { tick, type Snippet } from "svelte";
-  import { ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, Cloud, Database, HardDrive, Layers, List, LoaderCircle, Monitor, Server, TriangleAlert, Waypoints } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, Cloud, Database, HardDrive, Layers, Link2, List, LoaderCircle, Monitor, Server, TriangleAlert, Waypoints } from "@lucide/svelte";
   import type { Equipo, Informe } from "$lib/tipos";
   import { construirMapa, raices, type AristaMapa, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva } from "$lib/mapa";
   import MarcaCliente from "../MarcaCliente.svelte";
@@ -36,6 +36,11 @@
     listaDesde?: number;
     /** Lo que se dice si no hay nada que dibujar. */
     vacio?: string;
+    /**
+     * v1.4x: «Conectar también…» en una tarjeta de un paso que depende de un equipo que no
+     * está en esta consola (p. ej. el almacén, gestionado desde otra). Sin ella, solo el aviso.
+     */
+    alConectarFuera?: (n: NodoMapa) => void;
   }
   let {
     equipos,
@@ -50,6 +55,7 @@
     alPlegar,
     listaDesde = 640,
     vacio = "Todavía no hay copias que dibujar: cuando un equipo tenga un repositorio, aparecerá aquí con su camino.",
+    alConectarFuera,
   }: Props = $props();
 
   // La perspectiva y la raíz elegidas se recuerdan por cliente (en este navegador).
@@ -198,7 +204,7 @@
     lienzo?.querySelector<HTMLElement>(`[data-nodo="${CSS.escape(destino)}"]`)?.focus();
   }
 
-  const ICONO: Record<IconoNodo, typeof Monitor> = { cliente: Layers, equipo: Monitor, grupo: Layers, almacen: Server, disco: HardDrive, nube: Cloud, dropbox: Cloud, servidor: Server, repo: Database };
+  const ICONO: Record<IconoNodo, typeof Monitor> = { cliente: Layers, equipo: Monitor, grupo: Layers, almacen: Server, disco: HardDrive, nube: Cloud, dropbox: Cloud, servidor: Server, repo: Database, otra_consola: Link2 };
   const ESTADO = { ok: CircleCheck, warn: TriangleAlert, bad: CircleAlert, info: LoaderCircle, paused: CirclePause, neutral: CircleDashed };
   const tonoTrazo = (t: Tono) => (t === "bad" || t === "warn" || t === "info" ? t : "calma");
   const cuando = (n: NodoMapa) => (n.ultima ? relativo(n.ultima, ahora) : null);
@@ -249,6 +255,25 @@
       {#if n.cifra}<span class="nodo-cifra num">{n.cifra}</span>{/if}
       <span class="sr-only">{n.tono === "ok" ? `, ${n.estado}` : ""}, {n.sub}</span>
     </a>
+  {:else if n.tipo === "fuera"}
+    <!-- v1.4x: lo que hace un equipo que no está en esta consola (su espejo) no se ve aquí. -->
+    <div
+      class="nodo nodo-fuera"
+      class:apagado={cadena && !cadena.has(n.id)}
+      data-nodo={n.id}
+      role="group"
+      aria-label={n.nombre}
+      onmouseenter={() => (foco = n.id)}
+      onmouseleave={() => (foco = null)}
+    >
+      <span class="n-ic" aria-hidden="true"><Ic size={16} /></span>
+      <span class="n-txt">
+        <span class="n-nombre">{n.nombre}</span>
+        <span class="n-sub">{n.sub}</span>
+        <span class="st"><span class="st-ic tone-neutral" aria-hidden="true"><CircleDashed size={12} /></span><span>{n.estado}</span></span>
+        {#if alConectarFuera}<button type="button" class="btn btn-sm conectar-fuera" onclick={() => alConectarFuera(n)}><Link2 size={13} />Conectar también…</button>{/if}
+      </span>
+    </div>
   {:else if n.tipo === "cliente"}
     <!-- Un cliente (mapa de todos): su marca, su estado y, al lado, plegar o desplegar sus equipos. -->
     <div class="cli" class:apagado={cadena && !cadena.has(n.id)}>
@@ -378,8 +403,15 @@
                   {@const Ic = ICONO[d.n.icono]}
                   <li class="hoja">
                     <span class="flecha" aria-hidden="true">→</span>
-                    <a href={d.n.href}><Ic size={14} aria-hidden="true" />Espejo en {d.n.nombre}</a>
-                    {@render estado(d.n)}
+                    {#if d.n.tipo === "fuera"}
+                      <!-- v1.4x: el almacén de otra consola: lo suyo no se ve aquí. -->
+                      <span class="hoja-fuera"><Ic size={14} aria-hidden="true" />{d.n.nombre}: {d.n.sub.toLowerCase()}</span>
+                      {@render estado(d.n)}
+                      {#if alConectarFuera}<button type="button" class="btn btn-sm conectar-fuera" onclick={() => alConectarFuera(d.n)}><Link2 size={13} />Conectar también…</button>{/if}
+                    {:else}
+                      <a href={d.n.href}><Ic size={14} aria-hidden="true" />Espejo en {d.n.nombre}</a>
+                      {@render estado(d.n)}
+                    {/if}
                   </li>
                 {/each}
               </ul>
@@ -558,6 +590,24 @@
   }
   .nodo:hover {
     border-color: var(--border-input);
+  }
+  /* v1.4x: un paso de otra consola: borde discontinuo y sin sombra (no es un sitio de aquí). */
+  .nodo-fuera {
+    background: var(--surface-2, var(--surface));
+    border-style: dashed;
+    box-shadow: none;
+  }
+  .nodo-fuera .n-sub {
+    white-space: normal;
+  }
+  .conectar-fuera {
+    align-self: flex-start;
+    max-width: 100%;
+    height: auto;
+    min-height: 28px;
+    margin-top: 6px;
+    white-space: normal;
+    text-align: left;
   }
   /* La caja del icono: no se llama `.tile` (la tarjeta tranquila global, con su
    * padding de 16, empujaba el icono fuera de la caja). */
@@ -829,6 +879,16 @@
   }
   .hoja .st {
     margin: 0;
+  }
+  .hoja-fuera {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-2);
+  }
+  .hoja-fuera :global(svg) {
+    flex: none;
+    color: var(--text-3);
   }
   .flecha {
     color: var(--text-3);

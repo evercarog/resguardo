@@ -37,6 +37,7 @@
     Info,
     LayoutTemplate,
     Laptop,
+    LoaderCircle,
     Monitor,
     Pencil,
     Play,
@@ -44,6 +45,7 @@
     Server,
     ShieldCheck,
     Tag,
+    TriangleAlert,
     Unlink,
     X,
   } from "@lucide/svelte";
@@ -107,6 +109,10 @@
   import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
+  // v1.4x: nombre, etiquetas y observación del equipo iguales en todas sus consolas; quitar destinos sin uso.
+  import { admiteDatosEquipo, alcanceDatos, cambiadoDesde, conDatosDelEquipo, destinoQueQuedaVacio, destinoQuitable, problemaDestinoPaso, TEXTO_PROBLEMA_PASO, usosDestino, variasConsolas } from "$lib/datosEquipo";
+  import { pedirAlEquipo } from "$lib/pedirAlEquipo";
+  import AlmacenEnOtraConsola from "$lib/componentes/AlmacenEnOtraConsola.svelte";
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
   import { ADMITE as ADMITE_B, admite as admiteB, cuandoEnFrase, filtroEnFrase, pasoDeEspejo, repoEnAlmacen } from "$lib/cadenas";
   import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
@@ -151,7 +157,7 @@
   async function cargar() {
     try {
       const [e, o] = await Promise.all([api.equipo(c, id), api.ordenesEquipo(c, id, 30)]);
-      equipo = e;
+      equipo = conDatosDelEquipo(e);
       ordenes = o;
       llaves = await comprobarLlaves(c, e);
       fijadaFecha = await fijadaEl(c, e.id);
@@ -251,7 +257,9 @@
     descripcion: string;
     repo?: { id: string; nombre: string };
     accion?: string;
-    campos?: "pausar" | "retencion" | "desvincular" | "repo" | "guardar" | "quitar" | "destino" | "externa" | "espejo";
+    campos?: "pausar" | "retencion" | "desvincular" | "repo" | "guardar" | "quitar" | "destino" | "externa" | "espejo" | "quitarRepo";
+    /** «Quitar el repositorio»: el destino que se queda sin uso (para ofrecer quitarlo también). */
+    destinoVacio?: { id: string; nombre: string; tipo: string };
   };
   let dialogo = $state<Dialogo | null>(null);
   /** Equipos del cliente que guardan copias (para «Copiar en …»). */
@@ -590,7 +598,7 @@
       ...(conCopias
         ? [{ texto: "Dejar de copiar", peligro: true, onclick: () => abrir({ tipo: "dejar_de_copiar", cuerpo: { repo: r.id }, descripcion: `${equipo!.nombre} dejará de copiar en «${r.nombre}». Lo ya guardado sigue en su destino.`, repo: ref }) }]
         : []),
-      { texto: "Quitar el repositorio", peligro: true, onclick: () => abrir({ tipo: "quitar_repositorio", cuerpo: { repo: r.id }, descripcion: `${equipo!.nombre} dejará de copiar en «${r.nombre}» y lo olvidará. Lo guardado sigue en su destino.`, repo: ref }) },
+      { texto: "Quitar el repositorio", peligro: true, onclick: () => quitarRepositorio(r) },
     ];
     return [proteccion, peligro];
   }
@@ -705,6 +713,31 @@
       campos: "externa",
     });
   }
+  /** «Quitar el repositorio» y, si su destino se queda sin uso, ofrecer quitarlo también (v1.4x). */
+  function quitarRepositorio(r: RepositorioResumen) {
+    const vacio = destinoQueQuedaVacio(equipo!, r);
+    abrir({
+      tipo: "quitar_repositorio",
+      cuerpo: { repo: r.id, ...(vacio ? { quitar_destino: true } : {}) },
+      descripcion: `${equipo!.nombre} dejará de copiar en «${r.nombre}» y lo olvidará. Lo guardado sigue en su destino.`,
+      repo: { id: r.id, nombre: r.nombre },
+      campos: vacio ? "quitarRepo" : undefined,
+      destinoVacio: vacio ? { id: vacio.id, nombre: vacio.nombre, tipo: vacio.tipo } : undefined,
+    });
+  }
+  /** v1.4x: olvidar en el equipo un destino que ya no usa nada (nunca borra lo que hay en él). */
+  function quitarDestino(d: { id: string; nombre: string; tipo: string }) {
+    abrir({
+      tipo: "quitar_destino",
+      cuerpo: { destino: d.id },
+      titulo: "Quitar este destino",
+      descripcion:
+        d.tipo === "local"
+          ? `${equipo!.nombre} olvidará «${d.nombre}». No se borra nada de su carpeta: si aún tiene copias guardadas, te lo dirá y seguirán ahí.`
+          : `${equipo!.nombre} olvidará «${d.nombre}» y sus credenciales. Lo guardado allí se queda.`,
+      accion: "Quitar el destino",
+    });
+  }
   function quitarExterna(r: RepositorioResumen) {
     const id = idDestinoExterna(r);
     abrir({
@@ -718,16 +751,31 @@
 
 
 
+  let guardandoNombre = $state(false);
+  /** v1.4x: el almacén de otra consola que sale en «Camino de sus copias» («Conectar también…»). */
+  let fuera = $state<{ almacen: string; consolas: string[] } | null>(null);
   async function renombrar(e: SubmitEvent) {
     e.preventDefault();
     if (!equipo || !nuevoNombre.trim()) return;
+    const nombre = nuevoNombre.trim();
+    if (nombre === equipo.nombre) return void (renombrando = false);
+    guardandoNombre = true;
     try {
-      await api.renombrarEquipo(c, equipo.id, nuevoNombre.trim());
+      if (admiteDatosEquipo(equipo) && actual.cliente) {
+        // v1.4x: lo guarda el equipo y lo ven igual todas sus consolas (no solo esta).
+        const r = await pedirAlEquipo(actual.cliente, equipo, "nombre_equipo", { nombre });
+        avisar(r.hecha ? (variasConsolas(equipo) ? "Nombre cambiado en el equipo: lo verán igual todas sus consolas." : "Nombre cambiado.") : r.texto);
+      } else {
+        // Un agente anterior: como siempre, solo en esta consola.
+        await api.renombrarEquipo(c, equipo.id, nombre);
+        avisar(variasConsolas(equipo) ? "Nombre cambiado en esta consola (su agente aún no lo guarda para las demás)." : "Nombre cambiado.");
+      }
       renombrando = false;
-      avisar("Nombre cambiado.");
       await Promise.all([cargar(), cargarCliente(c, { silencioso: true })]);
     } catch (e) {
       fallo(e);
+    } finally {
+      guardandoNombre = false;
     }
   }
 
@@ -785,10 +833,11 @@
         {#if renombrando}
           <form class="renombrar" onsubmit={renombrar}>
             <!-- svelte-ignore a11y_autofocus -->
-            <input class="input" bind:value={nuevoNombre} aria-label="Nombre del equipo" autofocus />
-            <button class="icon-btn" aria-label="Guardar"><Check size={16} /></button>
+            <input class="input" bind:value={nuevoNombre} aria-label="Nombre del equipo" aria-describedby="renombrar-alcance" maxlength={80} autofocus disabled={guardandoNombre} />
+            <button class="icon-btn" aria-label="Guardar" disabled={guardandoNombre}>{#if guardandoNombre}<LoaderCircle size={16} class="spin" />{:else}<Check size={16} />{/if}</button>
             <button type="button" class="icon-btn" aria-label="Cancelar" onclick={() => (renombrando = false)}><X size={16} /></button>
           </form>
+          {#if alcanceDatos(equipo)}<p class="alcance faint" id="renombrar-alcance">{alcanceDatos(equipo)}{#if cambiadoDesde(equipo.resumen?.datos_equipo?.nombre)}{" "}{cambiadoDesde(equipo.resumen?.datos_equipo?.nombre)}.{/if}</p>{/if}
         {:else}
           <div class="page-title-line">
             <h1 class="page-title">{equipo.nombre}</h1>
@@ -947,7 +996,7 @@
       {/if}
 
       <!-- El camino de sus datos (y, si guarda copias, lo de los demás que guarda). -->
-      <MapaProteccion equipos={actual.equipos} informes={{ ...(ultimos.cliente === c ? ultimos.porEquipo : {}), [equipo.id]: equipo.ultimo_informe ?? null }} cliente={c} ahora={reloj.ahora} equipo={equipo.id} titulo="Camino de sus copias" />
+      <MapaProteccion equipos={actual.equipos} informes={{ ...(ultimos.cliente === c ? ultimos.porEquipo : {}), [equipo.id]: equipo.ultimo_informe ?? null }} cliente={c} ahora={reloj.ahora} equipo={equipo.id} titulo="Camino de sus copias" alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
 
       <section>
         <div class="section-head">
@@ -1049,7 +1098,10 @@
                 <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover />
                 {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) && !moverBloqueado(r.id) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
-                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>{/if}
+                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
+                  {@const raro = problemaDestinoPaso(equipo, r.externa.destino_id, r.externa.destino)}
+                  {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia externa</button>{/if}</p>{/if}
+                {/if}
                 {#each r.derivadas ?? [] as dv (dv.id)}
                   {@const ult = ultimaDerivada(r, dv.id)}
                   <div class="externa derivada">
@@ -1057,6 +1109,7 @@
                     <span>
                       Copia derivada a «{dv.destino ?? "otro destino"}» · {cuandoEnFrase(dv.cuando).toLowerCase()}{#if filtroEnFrase(dv.filtro)}{" · "}solo las versiones {filtroEnFrase(dv.filtro)}{/if}{#each detallesExterna(dv) as d (d)}{" · "}{d}{/each}
                       {#if dv.activa === false}<span class="faint">{" · "}sin copias activas en el repositorio: no se hace</span>{/if}
+                      {#if problemaDestinoPaso(equipo, dv.destino_id, dv.destino)}{@const raro = problemaDestinoPaso(equipo, dv.destino_id, dv.destino)!}<span class="paso-raro en-linea" role="note"><TriangleAlert size={13} /><span class="txt">{TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarDerivada(r, dv)}>Quitar la copia derivada</button>{/if}</span>{/if}
                       {#if ult?.resultado}{" · "}<Chip pequeno tono={ult.resultado === "fallo" ? "bad" : "ok"} texto={ult.resultado === "fallo" ? "Falló" : "Hecha"} />{/if}
                     </span>
                     {#if puede.ordenar(rol)}
@@ -1122,8 +1175,12 @@
                 <span class="fila-texto">
                   <span class="fila-titulo">{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></span>
                   <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · solo añadir" : ""}</span>
+                  {#if !usosDestino(equipo, d.id).length}<span class="fila-sub sin-uso">Sin repositorios ni copias que lo usen{#if d.tipo === "local"}{" · "}lo que haya en su carpeta se queda{/if}</span>{/if}
                 </span>
                 <button class="btn btn-sm btn-ghost" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
+                {#if puede.administrar(rol) && destinoQuitable(equipo, d.id)}
+                  <button class="btn btn-sm btn-ghost quitar-dest" onclick={() => quitarDestino(d)}><Trash2 size={13} />Quitar este destino</button>
+                {/if}
                 {#if puede.administrar(rol) && d.tipo !== "local"}
                   <button
                     class="btn btn-sm btn-ghost"
@@ -1415,6 +1472,8 @@
   {/key}
 {/if}
 
+{#if fuera && actual.cliente}<AlmacenEnOtraConsola cliente={actual.cliente} almacen={fuera.almacen} consolas={fuera.consolas} onclose={() => (fuera = null)} />{/if}
+
 {#if editarEtiquetas && equipo}
   <EditorEtiquetas {equipo} onclose={() => (editarEtiquetas = false)} alGuardar={(e) => equipo && (equipo.etiquetas = e.etiquetas)} />
 {/if}
@@ -1526,7 +1585,15 @@
       </select>
     </div>
   {/if}
-  {#if dialogo?.campos === "pausar"}
+  {#if dialogo?.campos === "quitarRepo" && dialogo.destinoVacio}
+    <label class="check quitar-destino">
+      <input type="checkbox" checked={dialogo.cuerpo.quitar_destino === true} onchange={(e) => (dialogo!.cuerpo.quitar_destino = e.currentTarget.checked)} />
+      <span>
+        Quitar también el destino «{dialogo.destinoVacio.nombre}»: se queda sin repositorios.
+        <span class="faint bloque">{dialogo.destinoVacio.tipo === "local" ? "No se borra nada de su carpeta (ni este repositorio): solo deja de estar en la lista del equipo." : "Se olvidan sus credenciales en el equipo; lo guardado allí se queda."}</span>
+      </span>
+    </label>
+  {:else if dialogo?.campos === "pausar"}
     <div class="field">
       <label class="field-label" for="horas">Durante</label>
       <select id="horas" class="input" bind:value={dialogo.cuerpo.horas}>
@@ -1839,6 +1906,55 @@
     align-items: center;
     gap: 4px;
     max-width: 420px;
+  }
+  .alcance {
+    margin: 4px 0 0;
+    font-size: var(--fs-xs);
+  }
+  /* v1.4x: quitar un destino sin uso y avisos de pasos con un destino que no protege. */
+  .quitar-dest {
+    color: var(--bad);
+  }
+  .sin-uso {
+    color: var(--text-3);
+  }
+  .quitar-destino {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: var(--fs-sm);
+  }
+  .quitar-destino input {
+    margin-top: 3px;
+  }
+  .quitar-destino .bloque {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--fs-xs);
+  }
+  .paso-raro {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0;
+    padding: 6px 10px;
+    font-size: var(--fs-xs);
+    color: var(--text-1);
+    background: color-mix(in srgb, var(--warn) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+    border-radius: var(--radius-sm);
+  }
+  .paso-raro :global(svg) {
+    flex: none;
+    color: var(--warn);
+  }
+  .paso-raro.en-linea {
+    margin-top: 4px;
+  }
+  .paso-raro .txt {
+    flex: 1 1 200px;
+    min-width: 0;
   }
   .punto {
     display: inline-block;

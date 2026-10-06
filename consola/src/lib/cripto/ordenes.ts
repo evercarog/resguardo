@@ -58,6 +58,12 @@ export const NIVEL: Record<string, Nivel> = {
   // v1.49: cancelar una orden en espera en el equipo, de cualquiera de sus consolas
   // (inofensiva: cancelar solo aumenta la protección; docs/consolas-multiples.md §5.7).
   cancelar_espera: "sesion",
+  // v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
+  // (docs/consolas-multiples.md §6), y olvidar un destino que ya no usa nada. Inofensivas.
+  nombre_equipo: "sesion",
+  etiquetas_equipo: "sesion",
+  observacion_equipo: "sesion",
+  quitar_destino: "sesion",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */
@@ -68,7 +74,7 @@ export const PIDE_TAMBIEN_ADMIN = new Set(["quitar_repositorio", "compartir_acce
 export const ABRE_SESION = new Set(["abrir_sesion", "explorar", "elegir_carpetas"]);
 
 /** Los técnicos no pueden mandarlas. */
-export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola"]);
+export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "quitar_destino"]);
 
 /**
  * ¿Es destructiva? Algunas solo lo son con cierto cuerpo: desvincular con

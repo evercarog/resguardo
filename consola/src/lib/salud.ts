@@ -153,6 +153,11 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   anadir_consola: "Conectar también a otra consola",
   quitar_consola: "Quitar una consola",
   cancelar_espera: "Cancelar una orden en espera",
+  // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+  nombre_equipo: "Cambiar el nombre del equipo",
+  etiquetas_equipo: "Cambiar las etiquetas del equipo",
+  observacion_equipo: "Cambiar la observación del equipo",
+  quitar_destino: "Quitar un destino",
 };
 
 export const nombreOrden = (t: string) => NOMBRE_ORDEN[t] ?? t.replaceAll("_", " ");

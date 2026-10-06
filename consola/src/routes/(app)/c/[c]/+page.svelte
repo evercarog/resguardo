@@ -29,6 +29,7 @@
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
+  import AlmacenEnOtraConsola from "$lib/componentes/AlmacenEnOtraConsola.svelte";
   import CuandoSeLlena from "$lib/componentes/llenado/CuandoSeLlena.svelte";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
@@ -158,6 +159,8 @@
       .sort((a, b) => a.peso - b.peso || a.repo.nombre.localeCompare(b.repo.nombre)),
   );
 
+  /** v1.4x: el almacén de otra consola que sale en el mapa («Conectar también…»). */
+  let fuera = $state<{ almacen: string; consolas: string[] } | null>(null);
   let copiar = $state<{ equipo: Equipo; repo: string; copia: string; nombre: string } | null>(null);
 </script>
 
@@ -250,7 +253,7 @@
     <FiltroEtiquetas />
 
     {#if delFiltro.length}
-      <MapaProteccion equipos={delFiltro} todos={actual.equipos} {informes} cliente={c} ahora={reloj.ahora} />
+      <MapaProteccion equipos={delFiltro} todos={actual.equipos} {informes} cliente={c} ahora={reloj.ahora} alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
 
       <section>
         <div class="section-head">
@@ -334,6 +337,8 @@
     <p class="privacidad"><LockKeyhole size={12} />El servidor no puede leer tus archivos ni tus contraseñas: van cifrados entre este navegador y cada equipo.</p>
   {/if}
 </div>
+
+{#if fuera && actual.cliente}<AlmacenEnOtraConsola cliente={actual.cliente} almacen={fuera.almacen} consolas={fuera.consolas} onclose={() => (fuera = null)} />{/if}
 
 {#if copiar && actual.cliente}
   {#key copiar}

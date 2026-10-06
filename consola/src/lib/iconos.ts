@@ -23,9 +23,12 @@ import {
   Lock,
   Monitor,
   Pause,
+  Pencil,
   Play,
   Server,
   Settings2,
+  StickyNote,
+  Tag,
   ShieldCheck,
   Trash2,
   Unlock,
@@ -90,6 +93,11 @@ const ORDEN: Record<string, Icono> = {
   cambiar_copia_externa: CloudUpload,
   cambiar_derivada: CloudUpload,
   quitar_derivada: CloudUpload,
+  // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+  nombre_equipo: Pencil,
+  etiquetas_equipo: Tag,
+  observacion_equipo: StickyNote,
+  quitar_destino: Trash2,
 };
 
 /** El icono de un tipo de orden (o uno genérico). */

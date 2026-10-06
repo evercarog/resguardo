@@ -474,7 +474,9 @@ export async function sembrar(vacio = false) {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
         // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "datos_equipo", "quitar_destino"],
+        // v1.4x: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
+        datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
         // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
         en_espera: [
@@ -498,6 +500,8 @@ export async function sembrar(vacio = false) {
           { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/caja-1/", equipo_almacen: ID.almacen },
           { id: "disco-2", nombre: "Disco 2", tipo: "local", donde: "E:\\Resguardo-externa" },
           { id: "nube-dropbox-caja", nombre: "Dropbox Caja", tipo: "nube", nube: "Dropbox Caja", donde: "Resguardo" },
+          // v1.4x: un destino que se quedó sin repositorios (se quitaron): «Quitar este destino».
+          { id: "disco-viejo", nombre: "Disco o carpeta del equipo", tipo: "local", unidad: "C:", extraible: false, red: false },
         ],
       },
     },
@@ -510,9 +514,22 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         // Recién emparejado: copia programada, ninguna hecha todavía.
-        repositorios: [{ ...repo("proyectos", "Proyectos", "b2-propio", 0, 0), ultima_version: null, verificado: null, prueba_restauracion: null }],
-        copias: [{ ...copia("proyectos", "Proyectos de diseño", "proyectos", ["13:00"], 4), ultima: null, proxima: proximaA(13) }],
-        destinos: [{ id: "b2-propio", nombre: "Backblaze B2", tipo: "b2", donde: "estudio-copias", inmutable: true }],
+        // v1.4x: también copia en el almacén de la oficina, que se gestiona desde otra consola
+        // (no está en esta): el mapa dice que sus espejos no se ven aquí.
+        admite: ["consolas_multiples", "datos_equipo", "quitar_destino"],
+        consolas: [
+          { id: "principal", nombre: "Consola en línea", url: "https://consola.ejemplo.com", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true },
+          { id: "oficina", nombre: "Oficina del estudio", url: "https://oficina.ejemplo:8443", identidad: "b2ZpY2luYS1lc3R1ZGlvLTAwMDAwMDAwMDAwMDAwMDA=", sal_cliente: "c2FsLWRlbC1lc3R1ZGlvLTE2", ultimo_contacto: hace(10), desde: hace(60 * 24 * 30), esta: false },
+        ],
+        repositorios: [
+          { ...repo("proyectos", "Proyectos", "b2-propio", 0, 0), ultima_version: null, verificado: null, prueba_restauracion: null },
+          repo("facturas", "Facturas", "almacen-oficina", 40, 2_300_000_000),
+        ],
+        copias: [{ ...copia("proyectos", "Proyectos de diseño", "proyectos", ["13:00"], 4), ultima: null, proxima: proximaA(13) }, copia("facturas", "Facturas", "facturas", ["18:00"], 2)],
+        destinos: [
+          { id: "b2-propio", nombre: "Backblaze B2", tipo: "b2", donde: "estudio-copias", inmutable: true },
+          { id: "almacen-oficina", nombre: "ALMACEN-ESTUDIO · Disco 1", tipo: "rest", donde: "https://almacen-estudio.ejemplo:8000/estudio/", equipo_almacen: "0f0e0d0c-0000-4000-8000-0000000000aa" },
+        ],
       },
     },
     { claveAdmin: DEMO.claveAdmin, kcfg: kPropio, contrasenas: { proyectos: DEMO.contrasenaRepo }, semilla: 5, id: ID.estudio },

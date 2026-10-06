@@ -999,7 +999,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 18] = [
+pub const ADMITE: [&str; 20] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1033,6 +1033,12 @@ pub const ADMITE: [&str; 18] = [
     "espejo_zonas",
     // (pendiente de numerar) tarea 8: `config.pruebas_restauracion` y `repositorios[].prueba_auto`.
     "prueba_auto",
+    // (pendiente de numerar) el nombre, las etiquetas y la observación del equipo, iguales en todas
+    // sus consolas: `nombre_equipo`, `etiquetas_equipo`, `observacion_equipo` y `resumen.datos_equipo`
+    // (docs/consolas-multiples.md §6).
+    "datos_equipo",
+    // (pendiente de numerar) `quitar_destino` (un destino sin uso) y `quitar_repositorio { quitar_destino }`.
+    "quitar_destino",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1072,7 +1078,7 @@ pub fn resumen(v: &Vinculo) -> Value {
         let p = PruebaAuto::de(r.restore_test.as_ref()?)?;
         Some(json!({ "cada_dias": p.cada_dias, "proxima": crate::tasks::next_restore_test(r, &tareas).map(|t| t.to_rfc3339()) }))
     };
-    json!({
+    let mut r = json!({
         // v1.28: lo que este agente sabe hacer de lo nuevo (la consola no ofrece lo que no).
         "admite": ADMITE,
         // v1.36: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
@@ -1155,7 +1161,14 @@ pub fn resumen(v: &Vinculo) -> Value {
         "cambio_config": crate::consolas_v2::resumen_cambio(v),
         // v1.49: las órdenes con espera que tiene el equipo (de cualquiera de sus consolas).
         "en_espera": crate::espera_v2::resumen(v),
-    })
+    });
+    // v1.4x: el nombre, las etiquetas y la observación que tiene el equipo (solo lo puesto con
+    // sus órdenes; cada consola enseña esto en vez de lo suyo). Sin nada puesto, no va.
+    let datos = crate::datos_equipo::resumen(v);
+    if !datos.is_null() {
+        r["datos_equipo"] = datos;
+    }
+    r
 }
 
 /// El último resumen subido a cada consola (en memoria: al arrancar se sube una vez).
@@ -1438,7 +1451,70 @@ pub fn aplicar_retencion_por(v: &Vinculo, repo: &str, por: &'static str) -> Resu
 }
 
 /// `dejar_de_copiar {repo}` y `quitar_repositorio {repo}` (este, además, lo olvida con su contraseña).
-pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool) -> Result<String, String> {
+/// Lo que usa un destino del equipo: sus repositorios, las copias externas y las
+/// derivadas que van a él (los nombres de los repositorios, para decirlo).
+pub fn usos_destino(v: &Vinculo, id: &str) -> Vec<String> {
+    let mut usos = Vec::new();
+    for r in &v.repos_v2 {
+        if r.destino == id {
+            usos.push(format!("el repositorio «{}»", r.nombre));
+        }
+        if r.externa.as_ref().is_some_and(|e| e["destino"] == id) {
+            usos.push(format!("la copia externa de «{}»", r.nombre));
+        }
+        if r.derivadas.iter().any(|e| e["destino"] == id) {
+            usos.push(format!("una copia derivada de «{}»", r.nombre));
+        }
+    }
+    usos
+}
+
+/// ¿Cuántos repositorios de restic hay en una carpeta (ella misma o una carpeta suya,
+/// o dos niveles más abajo, como `<usuario>/<repo>`)? Solo mira: nunca toca nada.
+pub fn repositorios_en_carpeta(carpeta: &std::path::Path) -> usize {
+    fn es_repo(p: &std::path::Path) -> bool {
+        p.join("config").is_file() && p.join("data").is_dir() && p.join("keys").is_dir()
+    }
+    if es_repo(carpeta) {
+        return 1;
+    }
+    let hijos = |p: &std::path::Path| -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(p).map(|l| l.flatten().map(|e| e.path()).filter(|p| p.is_dir()).take(2000).collect()).unwrap_or_default()
+    };
+    hijos(carpeta).iter().map(|h| if es_repo(h) { 1 } else { hijos(h).iter().filter(|n| es_repo(n)).count() }).sum()
+}
+
+/// `quitar_destino { destino }` (v1.4x, inofensiva, solo administradores): olvida un destino
+/// que ya no usa nada (ni repositorios, ni copia externa, ni derivadas), con sus credenciales.
+/// **Nunca borra nada de lo que hay en él**; si es una carpeta del equipo y aún tiene copias
+/// guardadas, lo dice.
+pub fn quitar_destino(v: &mut Vinculo, c: &Value) -> Result<String, String> {
+    let id = texto(c, "destino");
+    let pos = v.destinos.iter().position(|d| d.id == id).ok_or_else(|| "Ese destino ya no está en este equipo.".to_string())?;
+    let usos = usos_destino(v, &id);
+    if !usos.is_empty() {
+        return Err(format!("No se puede quitar: lo usa {}. Quita eso antes.", usos.join(", ")));
+    }
+    let d = v.destinos.remove(pos);
+    Ok(texto_destino_quitado(&d))
+}
+
+/// Lo que se dice al quitar un destino (también tras `quitar_repositorio { quitar_destino }`).
+fn texto_destino_quitado(d: &Destino) -> String {
+    let nombre = crate::web::public_message(&d.nombre);
+    if d.tipo == "local" {
+        return match repositorios_en_carpeta(std::path::Path::new(d.donde.trim())) {
+            0 => format!("Destino «{nombre}» quitado del equipo. No se ha borrado nada de su carpeta."),
+            n => format!(
+                "Destino «{nombre}» quitado del equipo. Su carpeta aún tiene copias guardadas ({n} {}): no se ha borrado nada; si ya no las quieres, bórralas a mano.",
+                if n == 1 { "repositorio" } else { "repositorios" }
+            ),
+        };
+    }
+    format!("Destino «{nombre}» quitado del equipo, con sus credenciales. Lo guardado allí se queda.")
+}
+
+pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool, quitar_destino_vacio: bool) -> Result<String, String> {
     if !v.repos_v2.iter().any(|r| r.id == repo) {
         return Err("Ese repositorio no lo gestiona este servidor.".into());
     }
@@ -1450,6 +1526,7 @@ pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool) -> Result<Str
             }
         }
     }
+    let destino = v.repos_v2.iter().find(|r| r.id == repo).map(|r| r.destino.clone()).unwrap_or_default();
     if olvidar {
         v.repos_v2.retain(|r| r.id != repo);
         if let Some(cfg) = v.config_v1.as_mut() {
@@ -1458,13 +1535,22 @@ pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool) -> Result<Str
             }
         }
     }
-    let _ = subir_config(v);
-    Ok(if olvidar {
+    // v1.4x: `quitar_repositorio { quitar_destino: true }`: si su destino se queda sin uso,
+    // también se olvida (nunca se borra nada de lo que hay en él). Un agente anterior lo ignora.
+    let mut m: String = if olvidar {
         "Repositorio quitado del equipo (lo guardado sigue en su destino)."
     } else {
         "Ya no se copia en ese repositorio (lo guardado sigue ahí)."
     }
-    .into())
+    .into();
+    if olvidar && quitar_destino_vacio && usos_destino(v, &destino).is_empty() {
+        if let Some(pos) = v.destinos.iter().position(|d| d.id == destino) {
+            let d = v.destinos.remove(pos);
+            m = format!("{m} {}", texto_destino_quitado(&d));
+        }
+    }
+    let _ = subir_config(v);
+    Ok(m)
 }
 
 /// `desvincular {modo: "dejar_de_copiar"}` y `baja_equipo`: deja de copiar en todos.

@@ -124,6 +124,10 @@ pub struct Vinculo {
     /// sellado; espera_v2.rs, docs/consolas-multiples.md §5). Del equipo, no de un vínculo.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub en_espera: Vec<crate::espera_v2::EnEspera>,
+    /// v1.4x: el nombre, las etiquetas y la observación del equipo puestos con sus órdenes
+    /// (`nombre_equipo`…), iguales en todas sus consolas (datos_equipo.rs). Del equipo.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub datos_equipo: crate::datos_equipo::Datos,
 }
 
 fn es_cero(n: &u64) -> bool {
@@ -1046,6 +1050,23 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "desbloquear" => g::desbloquear(v, c).map(hecha),
         // v1.49: cancelar una orden en espera (de cualquiera de las consolas).
         "cancelar_espera" => crate::espera_v2::cancelar(v, c, o.por.as_deref()).map(hecha),
+        // v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas sus
+        // consolas (datos_equipo.rs). Se suben al momento a todas (el resumen los lleva).
+        "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => {
+            let m = match o.tipo.as_str() {
+                "nombre_equipo" => crate::datos_equipo::nombre(v, c, o.por.as_deref())?,
+                "etiquetas_equipo" => crate::datos_equipo::etiquetas(v, c, o.por.as_deref())?,
+                _ => crate::datos_equipo::observacion(v, c, o.por.as_deref())?,
+            };
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        // v1.4x: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
+        "quitar_destino" => {
+            let m = g::quitar_destino(v, c)?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
         "actualizar_agente" => Ok(rechazada("Próximamente: las actualizaciones firmadas llegarán con la llave de publicación del proyecto.")),
         "guarda_copias" => {
             let (m, privado) = g::guarda_copias(c, o.responder_a.is_some())?;
@@ -1107,8 +1128,9 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
                 crate::retencion_almacen::aplicar(&u, &r).map(hecha)
             }))
         }
-        "dejar_de_copiar" => g::dejar_de_copiar(v, repo.unwrap_or(""), false).map(hecha),
-        "quitar_repositorio" => g::dejar_de_copiar(v, repo.unwrap_or(""), true).map(hecha),
+        "dejar_de_copiar" => g::dejar_de_copiar(v, repo.unwrap_or(""), false, false).map(hecha),
+        // v1.4x: con `quitar_destino: true`, también su destino si se queda sin uso.
+        "quitar_repositorio" => g::dejar_de_copiar(v, repo.unwrap_or(""), true, c["quitar_destino"] == true).map(hecha),
         "cambiar_espera" => {
             let h = c["horas"].as_i64().unwrap_or(0);
             if !(1..=168).contains(&h) {
@@ -1640,6 +1662,9 @@ pub fn canal_de(id: &str) -> Result<(), String> {
         // v1.36: la configuración que cambió otra consola, a esta.
         if v.config_pendiente {
             subir_pendiente(id);
+            // v1.4x: y lo que se anotó en el historial común con ese cambio (p. ej. «Cambiar el
+            // nombre del equipo», desde la otra consola), sin esperar al siguiente informe.
+            historial = subir_bitacora(&v, historial);
         }
         let leido = ws.read();
         if leido.is_ok() {
@@ -2568,7 +2593,7 @@ mod tests {
             use resguardo_protocolo::simetrico::{self, Lado};
             let base = std::env::temp_dir().join(format!("resguardo-v2-datos-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&base);
-            let datos = base.join("datos");
+            let datos = base.join("carpeta-protegida");
             std::fs::create_dir_all(&datos).unwrap();
             std::fs::write(datos.join("hola.txt"), b"hola").unwrap();
             std::fs::write(datos.join("adios.txt"), b"adios").unwrap();
@@ -2605,7 +2630,7 @@ mod tests {
             assert_eq!(doc["destinos"][0]["tipo"], "local");
             assert!(!String::from_utf8_lossy(&plano).contains("contraseña del repo"));
             assert_eq!(cf["resumen"]["copias"][0]["carpetas"], 1);
-            assert!(!cf["resumen"].to_string().contains("hola") && !cf["resumen"].to_string().contains("datos"));
+            assert!(!cf["resumen"].to_string().contains("hola") && !cf["resumen"].to_string().contains("carpeta-protegida"));
 
             // Una versión para explorar.
             let acc = crate::gestion_v2::acceso(&cargar().unwrap(), "r1").unwrap();

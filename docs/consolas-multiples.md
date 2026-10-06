@@ -365,3 +365,59 @@ Se anotan todas las órdenes que el equipo recibe salvo las que abren una sesió
 - Una cancelación desde otra consola llega al equipo por el canal de esa otra consola: si el equipo no habla con ella, no se puede cancelar desde allí (desde la que la mandó, sí).
 - `por` lo pone la consola que manda la orden: una consola maliciosa puede poner cualquier nombre.
 - La ventana del propio equipo todavía no enseña ni cancela las órdenes en espera (lo hace cualquier consola).
+
+---
+
+## 6. Lo que comparten las consolas de un equipo y lo que es de cada una (v1.4x)
+
+Contrato «v1.4x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+
+**Problema.** Con un equipo en dos consolas (p. ej. la de la oficina y la en línea), cambiarle el nombre en una no lo cambiaba en la otra: cada servidor guardaba el suyo. Pasaba lo mismo con sus etiquetas y su observación. Además, el mapa «Camino de sus copias» de una consola no enseñaba lo que hace un almacén que solo está en la otra (su espejo a otro disco o a Dropbox), y al quitar un repositorio de un disco del propio equipo su destino se quedaba en la lista para siempre.
+
+### 6.1 Nombre, etiquetas y observación del equipo
+
+- **El equipo guarda el valor canónico.** Tres órdenes inofensivas nuevas, desde cualquiera de sus consolas: `nombre_equipo { nombre }`, `etiquetas_equipo { etiquetas }` y `observacion_equipo { texto }`. Son metadatos (como los ve hoy cualquier servidor): no piden la clave de administración. El nombre, como `PATCH …/equipos/{e}`, solo lo cambian administradores y propietarios; etiquetas y observación, también los técnicos (como sus rutas).
+- El equipo valida como el servidor, guarda el valor con **la consola que lo cambió** (su nombre en el equipo, nunca su dirección) y **quién** lo pidió (`por`, lo que dice esa consola), lo anota en su **historial común** (entrada `orden`, la que reciben todas, con la descripción «Cambiar el nombre del equipo a «Recepción»»; nunca el texto de la observación) y sube el resumen al momento a todas sus consolas.
+- El resumen lleva `datos_equipo` y **cada servidor lo copia a lo suyo** al recibirlo (nombre, etiquetas y la observación del equipo en sus notas, con «Ana (desde la consola «Oficina»)»), auditado con el equipo como actor (`desde_equipo: true`). Así todo lo de ese servidor usa el mismo nombre: las pantallas, los avisos, los correos y los informes.
+- **La consola** manda la orden cuando el agente lo admite (`admite: "datos_equipo"`) y espera unos segundos a que conteste; si no contesta (sin conexión), queda pedida y se aplica al volver. Con un agente anterior, como siempre: solo en esta consola, y si el equipo tiene más de una lo dice («su agente aún no guarda estos datos para todas: actualízalo»). Con un servidor anterior (que no copia nada), la consola nueva enseña igual el nombre y las etiquetas del resumen.
+
+**Convivencia al actualizar.** Mientras nadie ponga un dato con su orden, el equipo no dice nada de él y **cada consola sigue con el suyo**: actualizar el agente no pisa el nombre que tenía cada una (si eran distintos, siguen distintos). En cuanto alguien lo cambia con la orden desde cualquier consola, ese valor pasa a ser el de todas. Un cambio local hecho después por una consola anterior (`PATCH`) dura hasta el siguiente resumen: manda el del equipo.
+
+**Seguridad.** Una consola maliciosa (o comprometida) puede cambiar el nombre, las etiquetas o la observación en todas: es lo mismo que ya podía hacer en la suya, ahora visible en todas, anotado en el historial común con su nombre y reversible desde cualquier otra. No da acceso a nada (no hay secretos ni rutas). La observación se guarda también en el equipo (en el vínculo, protegido como el resto): «No pongas contraseñas aquí» sigue valiendo.
+
+**Por qué los ajustes de las etiquetas siguen siendo de cada consola.** El **color**, la **plantilla por defecto** y los **avisos** de una etiqueta (`GET/PUT /api/clientes/{c}/etiquetas`) no son del equipo sino de cómo trabaja cada consola: los avisos apuntan a los canales de ese servidor (su webhook, su ntfy, su Telegram) y a sus personas, y la plantilla es una de las plantillas de ese servidor (cifradas con su `K_cfg`). Compartirlos obligaría a que los servidores se pusieran de acuerdo entre ellos, que es justo lo que el diseño evita (§4.4: el equipo es el punto de encuentro, no hay federación). El nombre de la etiqueta sí es del equipo: una etiqueta «Contabilidad» puesta desde la en línea sale en la oficina con el color que la oficina le dé.
+
+### 6.2 Quitar un destino que ya no se usa
+
+- `quitar_destino { destino }`: el equipo olvida un destino (y sus credenciales) **solo si ya no lo usa nada**: ni un repositorio, ni la copia externa, ni una copia derivada; si no, contesta qué lo usa. **Nunca borra lo que hay en el destino.** Si es una carpeta del equipo y aún tiene repositorios dentro, lo dice («Su carpeta aún tiene copias guardadas (1 repositorio): no se ha borrado nada; si ya no las quieres, bórralas a mano»), sin la ruta.
+- **Inofensiva** (decisión: olvidar una configuración sin uso no borra datos ni reduce la protección de nada que se esté copiando), pero **solo administradores** (crear un destino pide la clave de administración; quitarlo, al menos ese papel). Un destino quitado por error se vuelve a crear con «Nuevo repositorio» o «Copia externa» (pide otra vez sus credenciales).
+- En la consola: «Quitar este destino» en la lista de destinos del equipo y en la tarjeta del destino de «Repositorios y destinos» cuando no tiene repositorios ni copias que lo usen. Una tarjeta sin repositorios dice si la usa una copia externa o derivada.
+- «Quitar el repositorio» ofrece, si su destino se queda vacío, **«Quitar también el destino»** (marcado; `quitar_repositorio { quitar_destino: true }`). Va con la espera de `quitar_repositorio` y el equipo lo comprueba al aplicarla (si para entonces el destino lo usa otra cosa, se queda). Un agente anterior ignora el campo.
+- Una **copia externa o derivada** cuyo destino ya no está en el equipo, o que va a una carpeta del propio equipo (ni extraíble ni de la red), sale con un aviso y «Quitar la copia externa» / «Quitar la copia derivada».
+
+### 6.3 Un paso que depende de un equipo que no está en esta consola
+
+Un equipo puede copiar en un almacén (`destinos[].equipo_almacen`) que solo está en otra de sus consolas (lo normal en una en línea que recibió los equipos de la oficina pero no su almacén). Esta consola ve el repositorio y su destino, pero no lo que hace el almacén (su espejo).
+
+- El mapa enseña el destino con su nombre (el del destino en el equipo, el mismo en todas las consolas) como «Almacén de otra consola» y, detrás, una tarjeta **«… no está en esta consola: sus espejos no se ven aquí»**, con la consola desde la que se gestiona (por el resumen del equipo) y **«Conectar también…»**.
+- «Conectar también…» explica el camino: es el mismo «Conectar también a otra consola…» de §2.5 visto desde el otro lado. Esta consola no puede mandar nada a ese almacén (no está aquí), así que da **su código de conexión** («Dar un código de conexión…») y dice que en la otra consola se conecte el almacén con él (y la clave de administración). En cuanto el almacén informa aquí, el mapa enseña todo su camino.
+- «Se guarda en» de un repositorio en ese almacén dice «Almacén <nombre del destino> (otro equipo) · se gestiona desde otra consola» en vez de «Servidor de copias externo». En todas las consolas, si al destino se le puso un nombre en **esta** consola (catálogo, tarea 7a), va delante.
+
+### 6.4 Qué es de cada consola y qué comparten
+
+| Dato | Dónde vive | En varias consolas |
+|---|---|---|
+| Configuración (copias, horarios, repositorios, destinos con su nombre, retención, verificación, ganchos, ventana del equipo) | El equipo | **Igual en todas** (cada una la recibe cifrada con su `K_cfg`) |
+| Espera mínima, clave de administración (verificador) | El equipo | **Igual en todas** (§4.2) |
+| Lista de consolas, órdenes en espera, progreso en vivo, historial (bitácora) | El equipo | **Igual en todas** (§5) |
+| **Nombre, etiquetas y observación del equipo** (v1.4x) | El equipo, cuando se ponen con su orden | **Igual en todas** (§6.1); antes de ponerlos, cada consola el suyo |
+| Nombre del cliente, su marca, su espera por defecto | Cada servidor | Cada consola el suyo (el cliente puede llamarse distinto en cada sitio) |
+| Personas, papeles, cuentas, notificaciones y canales, auditoría | Cada servidor | Cada consola los suyos (la autoridad sobre el equipo es la clave de administración, no la cuenta) |
+| Ajustes de las etiquetas (color, plantilla, avisos) | Cada servidor | Cada consola los suyos (§6.1) |
+| Plantillas de copia | Cada servidor (cifradas con su `K_cfg`) | Cada consola las suyas; se pueden pasar con el paquete `.resguardo-cliente` |
+| Catálogo de destinos (nombres puestos en «Repositorios y destinos», atributos de la regla 3-2-1) | Cada servidor | Cada consola los suyos. **El nombre del destino que guarda el equipo** (el de «Nuevo repositorio» o «Copiar en …») es el mismo en todas y es el que enseña una consola que no tiene nombre propio para él. Pasarlos al equipo pediría una orden por destino y por equipo, y los destinos sueltos (sin equipo) no tienen a quién mandárselos: se deja así y se documenta |
+| Observaciones y comentarios de repositorios, copias, destinos y del cliente; comentarios del equipo | Cada servidor | Cada consola los suyos (los comentarios son una bitácora con los autores de las cuentas de cada servidor; solo la observación del equipo se comparte) |
+| Órdenes de cada consola (su `seq`), sus avisos y sus informes | Cada servidor | Cada una las suyas; lo que hace el equipo con ellas se ve en todas por el historial común (§5.8) |
+| Servidores de respaldo, cambio de servidor en curso | El vínculo con cada consola (§1.4) | De cada consola |
+
+Arreglado en esta tarea (lo barato): nombre, etiquetas y observación del equipo; «Se guarda en» de un almacén de otra consola con el nombre del destino del equipo (y el del catálogo de esta consola delante). Lo demás de la tabla es así a propósito: cada servidor funciona solo (§4.4).
