@@ -86,6 +86,11 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     title: "Registro de actividad",
     text: "Todo lo que se hace en el cliente, en orden y encadenado: cada entrada lleva la huella de la anterior. Si alguien borra o cambia una, la cadena se rompe y «Verificar la cadena» lo detecta.",
   },
+  ancla: {
+    title: "Ancla de la actividad",
+    text: "La huella de la última entrada en un momento dado. El servidor la manda en el resumen por correo y a los equipos del cliente, que avisan si una consola la rehace. Si alguien rehiciera toda la cadena, «Verificar la cadena» no lo vería, pero un ancla de antes ya no cuadraría.",
+    todo: "Guarda los correos del resumen y, de vez en cuando, usa «Comprobar con un ancla».",
+  },
   rol: {
     title: "Papeles",
     text: "Propietario: todo, también las personas y los ajustes. Administrador: todo menos personas y ajustes. Técnico: ver y mandar órdenes, salvo dar de baja, desvincular, cambiar de servidor o la clave. Lectura: solo ver.",

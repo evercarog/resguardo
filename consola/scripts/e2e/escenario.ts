@@ -35,6 +35,7 @@ import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
 import { etiquetaValida, kCfg, materialCliente } from "../../src/lib/cripto/claves";
 import { ClaveNueva } from "../../src/lib/cambioClave";
 import { crearCodigo, cuerpoAnadir, leerCodigo } from "../../src/lib/conexion";
+import { anclaDe, comprobarAncla, leerAncla, lineaAncla } from "../../src/lib/auditoria";
 import { fraseEquipo, otrasConsolas } from "../../src/lib/consolasCliente";
 import { publicaRespaldo, salRespaldo } from "../../src/lib/cripto/respaldo";
 import { almacenDe, nuevaClave, reglaParaOrden, seQuedan } from "../../src/lib/retencion";
@@ -42,7 +43,7 @@ import { vueltasDelRepo, type EntradaRetencion } from "../../src/lib/retencionDe
 import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../src/lib/repo";
 import { proximaDe } from "../../src/lib/copia";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
-import type { Cliente, Equipo, Regla } from "../../src/lib/tipos";
+import type { Cliente, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
 import { OyenteVivo } from "./vivo";
 import { borrarCarpeta, BuzonSmtp, comprobar, dormir, EXE, ejecutar, esperar, Fallo, igual, log, paso, pasoEnCurso, pararTodo, puertoLibre, WIN } from "./entorno";
@@ -740,6 +741,8 @@ async function principal() {
 
     // -----------------------------------------------------------------------
     paso("6c. Copia de la consola, restaurarla en otra carpeta y que los equipos vuelvan solos");
+    // v1.4x (9b): un ancla de antes de la copia (como la de un resumen por correo).
+    const anclaAntes = anclaDe(c.id, ((await consola.ok("GET", `/api/clientes/${c.id}/auditoria?orden=desc&limite=1`)) as EntradaAuditoria[])[0]);
     const sal = salRespaldo();
     await consola.ok("PUT", "/api/servidor/respaldo", { activo: true, publica: await publicaRespaldo(argon2, CLAVE_RESPALDO, sal), sal });
     const hecho = await consola.ok("POST", "/api/servidor/respaldo/ahora");
@@ -750,6 +753,19 @@ async function principal() {
     // Después de la copia, una orden más: el equipo va por delante de lo que recuerda la copia.
     const trasCopia = await copiarAhora(consola, c);
     igual(trasCopia.estado, "ok", "Copia después de la copia de la consola");
+    // v1.4x (9b): el ancla de la auditoría. La de la copia de la consola y la de ahora (más entradas).
+    const cabeza = async (k: Consola) => ((await k.ok("GET", `/api/clientes/${c.id}/auditoria?orden=desc&limite=1`)) as EntradaAuditoria[])[0];
+    const anclaAhora = anclaDe(c.id, await cabeza(consola));
+    comprobar(anclaAhora.n > anclaAntes.n, "Hay actividad después de la copia de la consola", [anclaAntes, anclaAhora]);
+    // B vuelve a conectar y guarda el ancla de ahora (llega firmada en el saludo del canal).
+    const anclasB = path.join(B.dir, "privado", "anclas-auditoria.json");
+    await B.parar();
+    B.arrancar();
+    await esperar("que B guarde el ancla de ahora", async () => {
+      if (!fs.existsSync(anclasB)) return null;
+      const l = (JSON.parse(fs.readFileSync(anclasB, "utf8")).consolas?.[`${identidad}|${c.id}`] ?? []) as { n: number; hash: string }[];
+      return l.at(-1)?.n === anclaAhora.n && l.at(-1)?.hash === anclaAhora.hash ? l : null;
+    }, { plazo: 60_000, cada: 500 });
     await s1.parar();
     const datosRestaurados = dir("servidor-1-restaurado");
     const rest1 = ejecutar(servidorBin, ["restaurar-respaldo", archivo, "--datos", datosRestaurados, "--confiar-en", identidad], { env: { RESGUARDO_CLAVE_RESPALDO: CLAVE_RESPALDO } });
@@ -769,6 +785,25 @@ async function principal() {
     // Una orden desde el servidor restaurado (que recuerda un número de orden anterior).
     const tras = await copiarAhora(consolaR, c);
     igual(tras.estado, "ok", "Copia pedida desde el servidor restaurado");
+    // 9b: la actividad del servidor restaurado vuelve atrás. B lo nota con el ancla que guardó y
+    // lo cuenta en su historial: aviso «auditoria_rehecha» («Este servidor…»).
+    await esperar("el aviso «auditoria_rehecha» de B en el servidor restaurado", async () => {
+      const av = (await consolaR.ok("GET", `/api/clientes/${c.id}/avisos`)) as any[];
+      return av.find((a) => a.tipo === "auditoria_rehecha" && a.equipo === eqB.id && /^Este servidor rehízo/.test(a.mensaje)) ?? null;
+    }, { plazo: 90_000, cada: 1000 });
+    const rehechaB = ((await consolaR.ok("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/historial?tipo=auditoria_rehecha`)) as any[])[0];
+    comprobar(rehechaB?.antes?.n === anclaAhora.n && rehechaB?.antes?.hash === anclaAhora.hash && !JSON.stringify(rehechaB).includes("http"), "B cuenta qué ancla no cuadró (sin la dirección de la consola)", rehechaB);
+    // «Comprobar con un ancla» (lo mismo que hace la consola, lib/auditoria.ts) con la actividad del restaurado.
+    const actividadR: EntradaAuditoria[] = [];
+    for (let desde = 0; ; ) {
+      const p = (await consolaR.ok("GET", `/api/clientes/${c.id}/auditoria?desde=${desde}&limite=1000`)) as EntradaAuditoria[];
+      actividadR.push(...p);
+      if (p.length < 1000) break;
+      desde = p[p.length - 1].n;
+    }
+    igual(comprobarAncla(actividadR, anclaAntes).estado, "bien", "El ancla de antes de la copia cuadra con el servidor restaurado");
+    comprobar(comprobarAncla(actividadR, anclaAhora).estado !== "bien", "El ancla de después no cuadra (la actividad volvió atrás)", comprobarAncla(actividadR, anclaAhora));
+    comprobar(leerAncla(`Ancla: ${lineaAncla(anclaAntes)}`)?.hash === anclaAntes.hash, "La línea del ancla se lee", lineaAncla(anclaAntes));
 
     // -----------------------------------------------------------------------
     paso("7. Volver a vincular B con otro servidor (misma clave de administración): sube su historial");

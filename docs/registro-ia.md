@@ -46,6 +46,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ancla-auditoria`
+
+- **Pedido:** tarea 9b del plan («Ancla externa de la auditoría»), con el usuario fuera y otras sesiones haciendo a la vez las tareas 1 y 3.
+- **Cambios:**
+  - `crates/protocolo`: `derivaciones::texto_ancla_auditoria` (lo que firma el servidor) y `linea_ancla` (`resguardo-ancla:1:<cliente>:<n>:<creado>:<huella>`).
+  - `crates/servidor`: `ancla.rs` (la cabeza de la cadena de un cliente, firmada con la identidad); `ancla` en `hola`, en `tomar` y en un mensaje `{ t: "ancla" }` cada hora por el canal; el resumen diario y semanal lleva el ancla de cada cliente (correo, texto y webhook) con una explicación; historial `auditoria_rehecha` → aviso crítico `auditoria_rehecha` (una vez, si es de los últimos 7 días; si no, ya visto), con el texto escrito por el servidor. Pruebas: `tests/ancla.rs` (una cadena rehecha a mano en el SQLite pasa la verificación de siempre pero el ancla de antes ya no cuadra; aviso una vez, «Este servidor», antiguo ya visto, mal formada descartada), el resumen con el ancla y las huellas comunes con la consola.
+  - `crates/agente`: `ancla.rs` (guarda las anclas de cada consola en `privado/anclas-auditoria.json` si las firma la identidad fijada y son de su cliente; la misma entrada con otra huella o un número menor que el mayor visto → bitácora `auditoria_rehecha`, sin la dirección de la consola, y sigue con la cadena nueva). Pruebas de veredictos, firma, persistencia y archivo dañado.
+  - Consola: «Comprobar con un ancla» en Actividad (`ComprobarAncla.svelte`; el navegador baja toda la actividad y la recalcula desde la primera entrada), «Ancla de hoy» copiable, aviso y entrada en la Historia del equipo, glosario, simulador; `lib/auditoria.ts` (`leerAncla`, `comprobarAncla`…) con `scripts/vectores-auditoria.ts`. e2e, paso 6c: B guarda el ancla de después de la copia de la consola y, al restaurarla, avisa (`auditoria_rehecha`, «Este servidor…»); «Comprobar con un ancla» con la actividad real del restaurado.
+  - Docs: contrato en `api-servidor.md` (§8 y «Cambios», v1.4x), modelo de amenazas y límites en `plataforma.md` §7.3.1, plan marcado.
+- **Comprobado** (después de unir `main` con las tareas 1 y 2): `cargo fmt --check`, clippy del espacio de trabajo y con `consola-integrada`, `cargo test --workspace`, consola `check`, `build` y `test:vectores`, `test:sin-referencias` y `npm run e2e` (ver abajo). En el simulador: Actividad («Ancla de hoy», «Comprobar con un ancla» con un ancla buena, otra huella, un número mayor, texto sin ancla y de otro cliente; a 375 px y escritorio), Avisos y la Historia de CAJA-1.
+- **Decisiones dudosas:**
+  - **Correo:** el ancla va en el resumen diario y semanal (a quien lo recibe, no solo a los propietarios); no hay un correo semanal aparte para los propietarios que lo desactivaron (el semanal está activado por defecto). Si hiciera falta, es otro `Mensaje`.
+  - **El equipo solo compara cabezas** (lo que pedía la tarea): una cadena rehecha y alargada antes de que el equipo vea otra ancla no la nota él; lo cubre «Comprobar con un ancla» con un correo. Comprobar el tramo de en medio en el equipo exigiría mandarle las entradas (correos de las personas…): no se hizo. Por eso el ancla va cada hora por el canal (y en cada sondeo).
+  - **«Rechazar» la regresión** = avisar una vez a todas las consolas y seguir con la cadena nueva. No se bloquean las órdenes de esa consola: una copia de la consola restaurada a propósito también hace retroceder la cadena (el aviso lo dice) y dejaría el equipo sin gestión.
+  - **Restaurar una copia de la consola dispara el aviso** en los equipos que vieron un ancla posterior (crítico, con correo). No se distingue de un servidor que miente, a propósito; el texto dice «Si nadie restauró una copia anterior…».
+  - El aviso solo se crea si la entrada es de los últimos 7 días (al subir la bitácora entera a una consola nueva, las antiguas entran vistas). `auditoria_rehecha` va en `GET …/historial` sin `tipo` (una consola anterior la ignora en la Historia), al contrario que `orden` (tarea 1), que solo va pedida.
+  - «Comprobar con un ancla» baja toda la actividad (páginas de 1000): con decenas de miles de entradas tarda; no se hizo por tramos.
+  - En la unión con `main`, `EntradaHistorial.identidad` (consola) la comparten `orden` y `auditoria_rehecha`; `ahora` (tarea 1) en `hola`/`tomar` es la hora del servidor y no tiene que ver con el `ahora` de una entrada `auditoria_rehecha` (otra cabeza).
+- **Sin probar / dudas:** el correo real (solo las muestras y el transporte falso de las pruebas); el mensaje `{ t: "ancla" }` de cada hora por el canal (solo el del `hola` y el de `tomar`, que usan la misma función); un equipo con varias consolas donde solo una rehace la cadena (probado en unidades del agente, no en el e2e).
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ordenes-entre-consolas`
 
 - **Pedido:** tareas 1 («Órdenes visibles y cancelables desde cualquier consola») y 9c («Reloj del equipo en las esperas») del plan. El responsable estaba fuera: propuesta escrita en `docs/consolas-multiples.md` §5 y hecha sin esperar su visto bueno (lo pidió así), compatible con los agentes ya instalados.

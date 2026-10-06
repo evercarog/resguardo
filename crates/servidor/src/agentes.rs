@@ -653,8 +653,9 @@ const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
 pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
 /// v1.47: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
 /// v1.4x: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
+/// v1.4x (9b): `auditoria_rehecha` (una consola del equipo rehízo la cadena de su auditoría).
 pub const TIPOS_HISTORIAL: &[&str] =
-    &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial", "orden"];
+    &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial", "orden", "auditoria_rehecha"];
 /// Los que solo se dan si se piden con `tipo` (v1.45; `orden`, v1.4x): una consola anterior no
 /// los conoce (o son grandes). Sin `tipo`, el historial es el de siempre.
 pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion", "orden"];
@@ -697,11 +698,48 @@ pub(crate) fn entrada_historial(v: &Value, ahora: crate::almacen::Ts) -> Option<
             return None;
         }
         Some((t.to_string(), texto_corto(v.get("mensaje").and_then(Value::as_str).unwrap_or(""), 500)))
+    } else if tipo == "auditoria_rehecha" {
+        Some(("auditoria_rehecha".to_string(), mensaje_auditoria_rehecha(v, None)?))
     } else {
         None
     };
     Some(crate::almacen::EntradaHistorial { id: id.to_string(), hora, tipo: tipo.to_string(), datos, aviso })
 }
+
+/// Una cabeza de la auditoría en una entrada `auditoria_rehecha`: `{ n, creado, hash }`.
+fn cabeza_vista(v: &Value) -> Option<(u64, String)> {
+    let n = v.get("n")?.as_u64()?;
+    let hash = v.get("hash")?.as_str()?;
+    (hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())).then(|| (n, hash.to_ascii_lowercase()))
+}
+
+/// El texto del aviso de una entrada `auditoria_rehecha` (v1.4x, 9b), escrito aquí con
+/// sus cifras (no se usa un texto del equipo). `None` si la entrada no tiene su forma.
+/// Con `identidad` (la de este servidor) se dice «este servidor» si la consola es esta.
+pub(crate) fn mensaje_auditoria_rehecha(v: &Value, identidad: Option<&str>) -> Option<String> {
+    let (n_antes, h_antes) = cabeza_vista(v.get("antes")?)?;
+    let (n_ahora, h_ahora) = cabeza_vista(v.get("ahora")?)?;
+    let nombre = texto_corto(v.get("consola").and_then(Value::as_str).unwrap_or(""), 80);
+    let quien = if identidad.is_some_and(|i| v.get("identidad").and_then(Value::as_str) == Some(i)) {
+        "Este servidor".to_string()
+    } else if nombre.trim().is_empty() {
+        "Una de sus consolas".to_string()
+    } else {
+        format!("La consola «{}»", nombre.trim())
+    };
+    let como = if n_ahora < n_antes {
+        format!("antes llegaba a la entrada n.º {n_antes} y ahora solo a la {n_ahora}")
+    } else {
+        format!("la entrada n.º {n_antes} tenía la huella {}… y ahora tiene {}…", &h_antes[..12], &h_ahora[..12])
+    };
+    Some(format!(
+        "{quien} rehízo su registro de actividad: {como}. Si nadie restauró una copia anterior de esa consola, alguien la ha cambiado entera; compruébala con un ancla de un correo anterior."
+    ))
+}
+
+/// Las `auditoria_rehecha` de hace como mucho tanto avisan de verdad (correo, push…);
+/// las anteriores (una consola nueva recibe la bitácora entera) quedan como vistas.
+const AUDITORIA_REHECHA_RECIENTE_S: crate::almacen::Ts = 7 * 86_400;
 
 /// Guarda lo que el equipo cuenta de su historial (idempotente: cada entrada, una vez).
 /// Las entradas que no valen se ignoran (las demás entran).
@@ -722,15 +760,35 @@ async fn registrar_historial(st: &St, a: &Agente, h: Historial) -> Res<Value> {
             e.aviso = None;
         }
     }
-    let con_avisos = entradas.iter().any(|e| e.aviso.is_some());
+    // v1.4x (9b): «una consola rehízo su auditoría», si es reciente, avisa como un aviso
+    // nuevo (una sola vez: solo si la entrada no estaba ya guardada).
+    let mut rehechas = Vec::new();
+    for e in entradas.iter_mut().filter(|e| e.tipo == "auditoria_rehecha" && e.hora > ahora - AUDITORIA_REHECHA_RECIENTE_S) {
+        let v: Value = serde_json::from_str(&e.datos).unwrap_or(Value::Null);
+        if let Some(m) = mensaje_auditoria_rehecha(&v, Some(&st.identidad_pub)) {
+            e.aviso = None;
+            rehechas.push((e.clone(), m));
+        }
+    }
+    entradas.retain(|e| !(e.tipo == "auditoria_rehecha" && e.aviso.is_none()));
+    let con_avisos = entradas.iter().any(|e| e.aviso.is_some()) || !rehechas.is_empty();
     let (ctx, equipo, publico) = (a.ctx.clone(), a.equipo.clone(), st.opciones.publico);
     let (nuevas, ultima) = st
         .db(move |db| {
             let tope = crate::cuotas::tope_historial(db, publico, ctx.id())?;
-            let nuevas = if entradas.is_empty() { 0 } else { db.guardar_historial_tope(&ctx, &equipo, &entradas, tope)? };
+            let mut nuevas = if entradas.is_empty() { 0 } else { db.guardar_historial_tope(&ctx, &equipo, &entradas, tope)? };
+            for (e, mensaje) in rehechas {
+                if db.guardar_historial_tope(&ctx, &equipo, std::slice::from_ref(&e), tope)? > 0 {
+                    nuevas += 1;
+                    crate::notificaciones::aviso(db, &ctx, Some(&equipo), "auditoria_rehecha", &mensaje)?;
+                }
+            }
             Ok((nuevas, db.ultima_historial(&ctx, &equipo)?))
         })
         .await?;
+    if con_avisos {
+        st.notif.despertar.notify_one();
+    }
     if nuevas > 0 {
         st.vivo.avisar(a.ctx.id(), Cambio::Historial(&a.equipo));
         if con_avisos {
@@ -800,7 +858,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
     let firma = firma_identidad(&st, &p.reto, &a.equipo)?;
     adelantar_seq_de(&st, &a, p.ultimo_seq).await?;
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
-    let (ordenes, canceladas, atencion, sesiones, ultima) = st
+    let identidad = st.identidad.clone();
+    let (ordenes, canceladas, atencion, sesiones, ultima, ancla) = st
         .db(move |db| {
             let ahora = ahora();
             let adelantar = admite_espera(db, &ctx, &equipo)?;
@@ -809,7 +868,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
             let sesiones = db.sesiones_abiertas(&ctx, &equipo, ahora)?;
             let atencion = db.equipo(&ctx, &equipo)?.and_then(|e| e.atencion_hasta).is_some_and(|t| t > ahora) || !sesiones.is_empty();
             let ultima = db.ultima_historial(&ctx, &equipo)?;
-            Ok((ordenes, canceladas, atencion, sesiones, ultima))
+            let ancla = crate::ancla::firmada_de(db, &ctx, &identidad);
+            Ok((ordenes, canceladas, atencion, sesiones, ultima, ancla))
         })
         .await?;
     for o in &ordenes {
@@ -824,6 +884,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
         "historial": { "ultima": crate::api::fecha_opt(ultima) },
         // v1.4x: la hora del servidor, para las órdenes en espera (el equipo la usa además de la suya).
         "ahora": crate::api::fecha(ahora()),
+        // v1.4x (9b): la cabeza de la auditoría del cliente, firmada; un agente anterior la ignora.
+        "ancla": ancla,
     })))
 }
 
@@ -994,20 +1056,21 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
     // Uno por equipo: una conexión nueva sustituye a la anterior.
     st.conectados.lock().unwrap_or_else(|e| e.into_inner()).insert(a.equipo.clone(), tx.clone());
     st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
-    let (ctx, e2) = (a.ctx.clone(), a.equipo.clone());
-    let (atencion, ultima) = st
+    let (ctx, e2, identidad) = (a.ctx.clone(), a.equipo.clone(), st.identidad.clone());
+    let (atencion, ultima, ancla) = st
         .db(move |db| {
             let ahora = ahora();
             let atencion =
                 db.equipo(&ctx, &e2)?.and_then(|e| e.atencion_hasta).is_some_and(|t| t > ahora) || !db.sesiones_abiertas(&ctx, &e2, ahora)?.is_empty();
-            Ok((atencion, db.ultima_historial(&ctx, &e2)?))
+            Ok((atencion, db.ultima_historial(&ctx, &e2)?, crate::ancla::firmada_de(db, &ctx, &identidad)))
         })
         .await
-        .unwrap_or((false, None));
+        .unwrap_or((false, None, Value::Null));
     // v1.23: hasta dónde tiene el historial del equipo (el agente sube lo que falte).
     // v1.4x: `ahora`, la hora del servidor (para las órdenes en espera; también en cada latido).
+    // v1.4x (9b): y la cabeza de la auditoría del cliente, firmada.
     let _ = tx.send(
-        json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) }, "ahora": crate::api::fecha(ahora()) })
+        json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) }, "ahora": crate::api::fecha(ahora()), "ancla": ancla })
             .to_string(),
     );
     // Lo que estaba esperando (y lo que se entregó y quizá no llegó).
@@ -1015,6 +1078,9 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
 
     let mut ping = tokio::time::interval(LATIDO_AGENTE);
     ping.tick().await;
+    // v1.4x (9b): el ancla de la auditoría también con el canal abierto días seguidos.
+    let mut ancla = tokio::time::interval(crate::ancla::CADA);
+    ancla.tick().await;
     // Lo último que llegó del equipo (su «pong», un informe…). Sin esto, con la red caída
     // sin aviso (sin RST: un cable quitado, un portátil que se duerme, un router que
     // descarta) la conexión seguía «abierta» para siempre: la consola veía el equipo
@@ -1039,6 +1105,14 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
                     }
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     Some(Ok(_)) => visto = tokio::time::Instant::now(),
+                }
+            }
+            _ = ancla.tick() => {
+                let (ctx, identidad) = (a.ctx.clone(), st.identidad.clone());
+                if let Ok(v) = st.db(move |db| Ok(crate::ancla::firmada_de(db, &ctx, &identidad))).await {
+                    if !v.is_null() && tx.send(json!({ "t": "ancla", "ancla": v }).to_string()).is_err() {
+                        break;
+                    }
                 }
             }
             _ = ping.tick() => {
