@@ -1332,6 +1332,8 @@ fn ronda_de(id: &str) -> Result<bool, String> {
     comprueba_identidad(&v, &reto, r["firma"].as_str().unwrap_or(""))?;
     // Responde: se anota (para los servidores de respaldo y el «último contacto»).
     anotar_contacto(id);
+    // v1.4x (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
+    crate::ancla::recibir(&v, &r["ancla"]);
     for o in r["ordenes"].as_array().cloned().unwrap_or_default() {
         // Con las credenciales de antes: una orden (desvincular) puede borrarlas.
         let Some((res, aviso, credenciales)) = orden_de(id, &o) else { break };
@@ -1491,6 +1493,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     };
     comprueba_identidad(&v, &reto, hola["firma"].as_str().unwrap_or(""))?;
     crate::agent::log(&format!("Canal con Resguardo Server abierto ({quien})."));
+    // v1.4x (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
+    crate::ancla::recibir(&v, &hola["ancla"]);
     anotar_contacto(id);
     let _ = ws.send(Message::Text(json!({ "t": "informe", "datos": informe_de(id) }).to_string().into()));
     // v1.23: el servidor dice hasta dónde tiene el historial del equipo; si es una
@@ -1548,6 +1552,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                             crate::informe_v2::pista_refrescar(&v, repo);
                         }
                     }
+                    // v1.4x (9b): el ancla de la auditoría, cada pocas horas con el canal abierto.
+                    "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
                     "orden" => {
