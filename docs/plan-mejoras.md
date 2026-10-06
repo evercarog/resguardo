@@ -188,3 +188,9 @@ Fuera del plan por ahora (decisión del responsable): agente para Mac, instalado
 - Cancelar las órdenes en espera que no se esperaban **desde la consola que las mandó**.
 - Conectar el equipo que falta a la consola en línea: en la consola local, el cliente → Servidor → «Conectar también a otra consola…».
 - Poner la hora del espejo **después** de la copia que quieres subir (p. ej. copia 21:00, espejo 23:00).
+
+## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
+
+- **Copia del sistema operativo.** Windows: imagen del sistema con `wbadmin` (ya sale en VHDX) como paso «antes de copiar», guardada en el repositorio (restic deduplica entre imágenes) y restauración guiada con el entorno de recuperación de Windows. Linux: integrar ReaR (Relax-and-Recover) para el medio de rescate. Más adelante, un USB de rescate propio. Las máquinas virtuales, mejor desde el anfitrión (Proxmox Backup Server o `vzdump`, Hyper-V), con Resguardo guardando esas copias.
+- **Discos virtuales (VHD/VHDX).** Copiar VHDX de máquinas apagadas ya funciona como archivos; los de máquinas encendidas necesitan instantánea (VSS o punto de control de Hyper-V). Y restaurar **a** un VHDX: crear el disco virtual, montarlo y restaurar dentro, para abrir una versión como una unidad más o arrancarla en una máquina virtual.
+
