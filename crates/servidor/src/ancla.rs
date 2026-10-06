@@ -9,7 +9,7 @@
 //!   una línea `resguardo-ancla:1:…` que la consola sabe comprobar («Comprobar con
 //!   un ancla», en Actividad);
 //! - en los equipos del cliente, firmada con la identidad del servidor: en el `hola`
-//!   del canal, en cada `tomar` y cada pocas horas por el canal. El agente guarda las
+//!   del canal, en cada `tomar` y cada hora por el canal. El agente guarda las
 //!   últimas y avisa a todas sus consolas si una retrocede (`agente/src/ancla.rs`).
 
 use crate::almacen::{Almacen, ClienteCtx, Ts, R};
@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
 /// Cada cuánto se manda por el canal abierto (además de al abrirlo y en cada sondeo).
-pub const CADA: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+pub const CADA: std::time::Duration = std::time::Duration::from_secs(3600);
 
 /// La cabeza de la cadena de un cliente.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

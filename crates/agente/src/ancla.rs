@@ -3,7 +3,7 @@
 //!
 //! Cada consola manda, firmada con su identidad (la que el equipo fijó al vincular),
 //! la cabeza de la cadena de la auditoría de su cliente: número de la última entrada,
-//! su hora y su huella (en el `hola` del canal, en cada `tomar` y cada pocas horas por
+//! su hora y su huella (en el `hola` del canal, en cada `tomar` y cada hora por
 //! el canal). El equipo guarda las últimas de cada consola
 //! (`privado/anclas-auditoria.json`) y, si una retrocede, lo anota en su bitácora
 //! (`auditoria_rehecha`), que llega a **todas** sus consolas:

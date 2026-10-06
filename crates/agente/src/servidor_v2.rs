@@ -1552,7 +1552,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                             crate::informe_v2::pista_refrescar(&v, repo);
                         }
                     }
-                    // v1.4x (9b): el ancla de la auditoría, cada pocas horas con el canal abierto.
+                    // v1.4x (9b): el ancla de la auditoría, cada hora con el canal abierto.
                     "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
