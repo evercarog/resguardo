@@ -190,6 +190,10 @@ pub async fn historial(State(st): State<St>, u: Usuario, Path((c, e)): Path<(Str
             tipos.push(t.to_string());
         }
     }
+    // Sin `tipo`, todos menos los que solo se dan pedidos (v1.4x: `retencion`).
+    if tipos.is_empty() {
+        tipos = crate::agentes::TIPOS_HISTORIAL.iter().filter(|t| !crate::agentes::TIPOS_SOLO_PEDIDOS.contains(t)).map(|t| t.to_string()).collect();
+    }
     let antes = q.antes.filter(|a| !a.is_empty());
     if antes.as_ref().is_some_and(|a| a.len() > 200) {
         return Err(ErrorApi::datos("Cursor no válido."));

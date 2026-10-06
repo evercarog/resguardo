@@ -1550,33 +1550,61 @@ fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool
         args.extend(["--retry-lock".into(), "30m".into()]);
         args.extend(policy.args());
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        match (restic::run_raw(&dest, &refs, TASK_TIMEOUT), lock) {
-            (Ok(out), None) if out.code == Some(0) => record.message.push_str(" Retención aplicada en el repositorio."),
+        // Lo que había y lo que queda, para «Retención en detalle» (bitácora).
+        let inicio = Local::now();
+        let antes = restic::snapshots(&dest).ok();
+        let salida = restic::run_raw(&dest, &refs, TASK_TIMEOUT);
+        let resultado = match (&salida, lock) {
+            (Ok(out), None) if out.code == Some(0) => Ok("Retención aplicada en el repositorio.".to_string()),
             (Ok(out), Some(days)) if out.code == Some(0) => {
-                record.message.push_str(&format!(
-                    " Retención aplicada sin liberar espacio (el destino tiene bloqueo de {days} días: se quitan versiones antiguas, sus datos se quedan)."
-                ));
+                let mut m = format!(
+                    "Retención aplicada sin liberar espacio (el destino tiene bloqueo de {days} días: se quitan versiones antiguas, sus datos se quedan)."
+                );
                 match forget_blocked(&out.stderr) {
                     0 => {}
-                    1 => record.message.push_str(" 1 versión antigua sigue bloqueada: se quitará cuando venza su bloqueo."),
-                    n => record.message.push_str(&format!(" {n} versiones antiguas siguen bloqueadas: se quitarán cuando venza su bloqueo.")),
+                    1 => m.push_str(" 1 versión antigua sigue bloqueada: se quitará cuando venza su bloqueo."),
+                    n => m.push_str(&format!(" {n} versiones antiguas siguen bloqueadas: se quitarán cuando venza su bloqueo.")),
                 }
+                Ok(m)
             }
-            (Ok(out), Some(days)) => {
+            (Ok(out), Some(days)) => Err(format!(
+                "La retención en el destino no se pudo aplicar (tiene bloqueo de {days} días; lo subido está a salvo): {}",
+                restic::exit_error(out.code, &out.stderr)
+            )),
+            (Ok(out), None) => Err(format!("La retención en el repositorio falló: {}", restic::exit_error(out.code, &out.stderr))),
+            (Err(e), _) => Err(format!("La retención en el repositorio falló: {e}")),
+        };
+        match &resultado {
+            Ok(m) => record.message.push_str(&format!(" {m}")),
+            Err(m) => {
                 record.result = "warning".into();
-                record.message.push_str(&format!(
-                    " La retención en el destino no se pudo aplicar (tiene bloqueo de {days} días; lo subido está a salvo): {}",
-                    restic::exit_error(out.code, &out.stderr)
-                ));
+                record.message.push_str(&format!(" {m}"));
             }
-            (Ok(out), None) => {
-                record.result = "warning".into();
-                record.message.push_str(&format!(" La retención en el repositorio falló: {}", restic::exit_error(out.code, &out.stderr)));
-            }
-            (Err(e), _) => {
-                record.result = "warning".into();
-                record.message.push_str(&format!(" La retención en el repositorio falló: {e}"));
-            }
+        }
+        if let Some(antes) = &antes {
+            use crate::retencion_registro as rr;
+            let despues = restic::snapshots(&dest).ok();
+            let regla = rr::retencion_de_politica(policy);
+            let motivos = regla.as_ref().map(|r| rr::motivos(&rr::candidatas(antes), r)).unwrap_or_default();
+            let texto = salida.as_ref().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            rr::anotar(&rr::Vuelta {
+                origen: "externa",
+                por: "automatica",
+                repo: &repo.id,
+                usuario: None,
+                regla: regla.as_ref(),
+                inicio,
+                antes,
+                despues: despues.as_deref(),
+                motivos: &motivos,
+                copias: &crate::informe_v2::copias_por_version(),
+                liberado: rr::liberado(&texto).or(despues.as_ref().filter(|d| d.len() == antes.len()).map(|_| 0)),
+                sospechosas: None,
+                resultado: match &resultado {
+                    Ok(m) => Ok(m.as_str()),
+                    Err(m) => Err(m.as_str()),
+                },
+            });
         }
     }
     record.finished = Local::now().to_rfc3339();
