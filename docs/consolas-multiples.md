@@ -368,9 +368,9 @@ Se anotan todas las órdenes que el equipo recibe salvo las que abren una sesió
 
 ---
 
-## 6. Lo que comparten las consolas de un equipo y lo que es de cada una (v1.4x)
+## 6. Lo que comparten las consolas de un equipo y lo que es de cada una (v1.56)
 
-Contrato «v1.4x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+Contrato «v1.56, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
 
 **Problema.** Con un equipo en dos consolas (p. ej. la de la oficina y la en línea), cambiarle el nombre en una no lo cambiaba en la otra: cada servidor guardaba el suyo. Pasaba lo mismo con sus etiquetas y su observación. Además, el mapa «Camino de sus copias» de una consola no enseñaba lo que hace un almacén que solo está en la otra (su espejo a otro disco o a Dropbox), y al quitar un repositorio de un disco del propio equipo su destino se quedaba en la lista para siempre.
 
@@ -410,7 +410,7 @@ Un equipo puede copiar en un almacén (`destinos[].equipo_almacen`) que solo est
 | Configuración (copias, horarios, repositorios, destinos con su nombre, retención, verificación, ganchos, ventana del equipo) | El equipo | **Igual en todas** (cada una la recibe cifrada con su `K_cfg`) |
 | Espera mínima, clave de administración (verificador) | El equipo | **Igual en todas** (§4.2) |
 | Lista de consolas, órdenes en espera, progreso en vivo, historial (bitácora) | El equipo | **Igual en todas** (§5) |
-| **Nombre, etiquetas y observación del equipo** (v1.4x) | El equipo, cuando se ponen con su orden | **Igual en todas** (§6.1); antes de ponerlos, cada consola el suyo |
+| **Nombre, etiquetas y observación del equipo** (v1.56) | El equipo, cuando se ponen con su orden | **Igual en todas** (§6.1); antes de ponerlos, cada consola el suyo |
 | Nombre del cliente, su marca, su espera por defecto | Cada servidor | Cada consola el suyo (el cliente puede llamarse distinto en cada sitio) |
 | Personas, papeles, cuentas, notificaciones y canales, auditoría | Cada servidor | Cada consola los suyos (la autoridad sobre el equipo es la clave de administración, no la cuenta) |
 | Ajustes de las etiquetas (color, plantilla, avisos) | Cada servidor | Cada consola los suyos (§6.1) |

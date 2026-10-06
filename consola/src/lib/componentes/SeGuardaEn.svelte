@@ -39,7 +39,7 @@
   } = $props();
 
   const Icono = $derived(riesgo ? TriangleAlert : ICONO_LUGAR[lugar.clase]);
-  // v1.4x: el nombre que se le puso al destino en esta consola (catálogo, tarea 7a) va
+  // v1.56: el nombre que se le puso al destino en esta consola (catálogo, tarea 7a) va
   // delante; lo de siempre, detrás. Así se reconoce igual aquí que en «Repositorios y destinos».
   $effect(() => {
     const c = actual.id;

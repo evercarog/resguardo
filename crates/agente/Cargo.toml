@@ -1,6 +1,6 @@
 [package]
 name = "resguardo-agente"
-version = "0.7.23"
+version = "0.7.24"
 description = "Agente de Resguardo: copias programadas, Servidor de copias, equipos gestionados y agente v2 de Resguardo Server"
 edition.workspace = true
 license.workspace = true
@@ -79,6 +79,6 @@ libc = "0.2"
 [dev-dependencies]
 # Pruebas de propiedades (docs/plataforma.md, §7.3).
 proptest = { version = "1", default-features = false, features = ["std"] }
-resguardo-servidor = { path = "../servidor", version = "0.7.23" }
+resguardo-servidor = { path = "../servidor", version = "0.7.24" }
 resguardo-motor = { path = "../motor", version = "0.1.0", features = ["testing"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

@@ -124,7 +124,7 @@ pub struct Vinculo {
     /// sellado; espera_v2.rs, docs/consolas-multiples.md §5). Del equipo, no de un vínculo.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub en_espera: Vec<crate::espera_v2::EnEspera>,
-    /// v1.4x: el nombre, las etiquetas y la observación del equipo puestos con sus órdenes
+    /// v1.56: el nombre, las etiquetas y la observación del equipo puestos con sus órdenes
     /// (`nombre_equipo`…), iguales en todas sus consolas (datos_equipo.rs). Del equipo.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub datos_equipo: crate::datos_equipo::Datos,
@@ -1050,7 +1050,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "desbloquear" => g::desbloquear(v, c).map(hecha),
         // v1.49: cancelar una orden en espera (de cualquiera de las consolas).
         "cancelar_espera" => crate::espera_v2::cancelar(v, c, o.por.as_deref()).map(hecha),
-        // v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas sus
+        // v1.56: el nombre, las etiquetas y la observación del equipo, iguales en todas sus
         // consolas (datos_equipo.rs). Se suben al momento a todas (el resumen los lleva).
         "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => {
             let m = match o.tipo.as_str() {
@@ -1061,7 +1061,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
-        // v1.4x: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
+        // v1.56: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
         "quitar_destino" => {
             let m = g::quitar_destino(v, c)?;
             let _ = g::subir_config(v);
@@ -1129,7 +1129,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             }))
         }
         "dejar_de_copiar" => g::dejar_de_copiar(v, repo.unwrap_or(""), false, false).map(hecha),
-        // v1.4x: con `quitar_destino: true`, también su destino si se queda sin uso.
+        // v1.56: con `quitar_destino: true`, también su destino si se queda sin uso.
         "quitar_repositorio" => g::dejar_de_copiar(v, repo.unwrap_or(""), true, c["quitar_destino"] == true).map(hecha),
         "cambiar_espera" => {
             let h = c["horas"].as_i64().unwrap_or(0);
@@ -1662,7 +1662,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
         // v1.36: la configuración que cambió otra consola, a esta.
         if v.config_pendiente {
             subir_pendiente(id);
-            // v1.4x: y lo que se anotó en el historial común con ese cambio (p. ej. «Cambiar el
+            // v1.56: y lo que se anotó en el historial común con ese cambio (p. ej. «Cambiar el
             // nombre del equipo», desde la otra consola), sin esperar al siguiente informe.
             historial = subir_bitacora(&v, historial);
         }

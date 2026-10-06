@@ -58,7 +58,7 @@ export const NIVEL: Record<string, Nivel> = {
   // v1.49: cancelar una orden en espera en el equipo, de cualquiera de sus consolas
   // (inofensiva: cancelar solo aumenta la protección; docs/consolas-multiples.md §5.7).
   cancelar_espera: "sesion",
-  // v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
+  // v1.56: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
   // (docs/consolas-multiples.md §6), y olvidar un destino que ya no usa nada. Inofensivas.
   nombre_equipo: "sesion",
   etiquetas_equipo: "sesion",

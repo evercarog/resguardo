@@ -1,4 +1,4 @@
-//! v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas
+//! v1.56: el nombre, las etiquetas y la observación del equipo, iguales en todas
 //! sus consolas (docs/consolas-multiples.md §6).
 //!
 //! Cada consola (cada Resguardo Server) guarda lo suyo: si se cambiaba el nombre

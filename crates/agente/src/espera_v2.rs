@@ -162,7 +162,7 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "quitar_nube" => format!("Desconectar la nube «{}»", corto(c["nombre"].as_str().unwrap_or(""), 60)),
         "retencion_almacen" => format!("Cambiar la retención del almacén en {}", almacen()),
         "aplicar_retencion_almacen" => format!("Aplicar la retención del almacén en {}", almacen()),
-        // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+        // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
         "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => crate::datos_equipo::descripcion(&o.tipo, c)?,
         "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
         _ => return None,

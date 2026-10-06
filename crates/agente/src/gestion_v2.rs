@@ -1162,7 +1162,7 @@ pub fn resumen(v: &Vinculo) -> Value {
         // v1.49: las órdenes con espera que tiene el equipo (de cualquiera de sus consolas).
         "en_espera": crate::espera_v2::resumen(v),
     });
-    // v1.4x: el nombre, las etiquetas y la observación que tiene el equipo (solo lo puesto con
+    // v1.56: el nombre, las etiquetas y la observación que tiene el equipo (solo lo puesto con
     // sus órdenes; cada consola enseña esto en vez de lo suyo). Sin nada puesto, no va.
     let datos = crate::datos_equipo::resumen(v);
     if !datos.is_null() {
@@ -1484,7 +1484,7 @@ pub fn repositorios_en_carpeta(carpeta: &std::path::Path) -> usize {
     hijos(carpeta).iter().map(|h| if es_repo(h) { 1 } else { hijos(h).iter().filter(|n| es_repo(n)).count() }).sum()
 }
 
-/// `quitar_destino { destino }` (v1.4x, inofensiva, solo administradores): olvida un destino
+/// `quitar_destino { destino }` (v1.56, inofensiva, solo administradores): olvida un destino
 /// que ya no usa nada (ni repositorios, ni copia externa, ni derivadas), con sus credenciales.
 /// **Nunca borra nada de lo que hay en él**; si es una carpeta del equipo y aún tiene copias
 /// guardadas, lo dice.
@@ -1535,7 +1535,7 @@ pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool, quitar_destin
             }
         }
     }
-    // v1.4x: `quitar_repositorio { quitar_destino: true }`: si su destino se queda sin uso,
+    // v1.56: `quitar_repositorio { quitar_destino: true }`: si su destino se queda sin uso,
     // también se olvida (nunca se borra nada de lo que hay en él). Un agente anterior lo ignora.
     let mut m: String = if olvidar {
         "Repositorio quitado del equipo (lo guardado sigue en su destino)."

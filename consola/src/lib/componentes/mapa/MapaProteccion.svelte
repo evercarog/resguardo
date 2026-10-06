@@ -37,7 +37,7 @@
     /** Lo que se dice si no hay nada que dibujar. */
     vacio?: string;
     /**
-     * v1.4x: «Conectar también…» en una tarjeta de un paso que depende de un equipo que no
+     * v1.56: «Conectar también…» en una tarjeta de un paso que depende de un equipo que no
      * está en esta consola (p. ej. el almacén, gestionado desde otra). Sin ella, solo el aviso.
      */
     alConectarFuera?: (n: NodoMapa) => void;
@@ -256,7 +256,7 @@
       <span class="sr-only">{n.tono === "ok" ? `, ${n.estado}` : ""}, {n.sub}</span>
     </a>
   {:else if n.tipo === "fuera"}
-    <!-- v1.4x: lo que hace un equipo que no está en esta consola (su espejo) no se ve aquí. -->
+    <!-- v1.56: lo que hace un equipo que no está en esta consola (su espejo) no se ve aquí. -->
     <div
       class="nodo nodo-fuera"
       class:apagado={cadena && !cadena.has(n.id)}
@@ -404,7 +404,7 @@
                   <li class="hoja">
                     <span class="flecha" aria-hidden="true">→</span>
                     {#if d.n.tipo === "fuera"}
-                      <!-- v1.4x: el almacén de otra consola: lo suyo no se ve aquí. -->
+                      <!-- v1.56: el almacén de otra consola: lo suyo no se ve aquí. -->
                       <span class="hoja-fuera"><Ic size={14} aria-hidden="true" />{d.n.nombre}: {d.n.sub.toLowerCase()}</span>
                       {@render estado(d.n)}
                       {#if alConectarFuera}<button type="button" class="btn btn-sm conectar-fuera" onclick={() => alConectarFuera(d.n)}><Link2 size={13} />Conectar también…</button>{/if}
@@ -591,7 +591,7 @@
   .nodo:hover {
     border-color: var(--border-input);
   }
-  /* v1.4x: un paso de otra consola: borde discontinuo y sin sombra (no es un sitio de aquí). */
+  /* v1.56: un paso de otra consola: borde discontinuo y sin sombra (no es un sitio de aquí). */
   .nodo-fuera {
     background: var(--surface-2, var(--surface));
     border-style: dashed;

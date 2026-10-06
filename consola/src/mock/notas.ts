@@ -48,7 +48,7 @@ export function sembrarNotas() {
 }
 sembrarNotas();
 /**
- * v1.4x: la observación de un equipo que la guarda él (orden `observacion_equipo`): el
+ * v1.56: la observación de un equipo que la guarda él (orden `observacion_equipo`): el
  * servidor la copia de su resumen, como si llegara de cualquiera de sus consolas.
  */
 export function observacionDelEquipo(cliente: string, equipo: string, texto: string, por: string) {

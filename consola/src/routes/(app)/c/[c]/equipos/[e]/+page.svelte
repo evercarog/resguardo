@@ -109,7 +109,7 @@
   import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
-  // v1.4x: nombre, etiquetas y observación del equipo iguales en todas sus consolas; quitar destinos sin uso.
+  // v1.56: nombre, etiquetas y observación del equipo iguales en todas sus consolas; quitar destinos sin uso.
   import { admiteDatosEquipo, alcanceDatos, cambiadoDesde, conDatosDelEquipo, destinoQueQuedaVacio, destinoQuitable, problemaDestinoPaso, TEXTO_PROBLEMA_PASO, usosDestino, variasConsolas } from "$lib/datosEquipo";
   import { pedirAlEquipo } from "$lib/pedirAlEquipo";
   import AlmacenEnOtraConsola from "$lib/componentes/AlmacenEnOtraConsola.svelte";
@@ -713,7 +713,7 @@
       campos: "externa",
     });
   }
-  /** «Quitar el repositorio» y, si su destino se queda sin uso, ofrecer quitarlo también (v1.4x). */
+  /** «Quitar el repositorio» y, si su destino se queda sin uso, ofrecer quitarlo también (v1.56). */
   function quitarRepositorio(r: RepositorioResumen) {
     const vacio = destinoQueQuedaVacio(equipo!, r);
     abrir({
@@ -725,7 +725,7 @@
       destinoVacio: vacio ? { id: vacio.id, nombre: vacio.nombre, tipo: vacio.tipo } : undefined,
     });
   }
-  /** v1.4x: olvidar en el equipo un destino que ya no usa nada (nunca borra lo que hay en él). */
+  /** v1.56: olvidar en el equipo un destino que ya no usa nada (nunca borra lo que hay en él). */
   function quitarDestino(d: { id: string; nombre: string; tipo: string }) {
     abrir({
       tipo: "quitar_destino",
@@ -752,7 +752,7 @@
 
 
   let guardandoNombre = $state(false);
-  /** v1.4x: el almacén de otra consola que sale en «Camino de sus copias» («Conectar también…»). */
+  /** v1.56: el almacén de otra consola que sale en «Camino de sus copias» («Conectar también…»). */
   let fuera = $state<{ almacen: string; consolas: string[] } | null>(null);
   async function renombrar(e: SubmitEvent) {
     e.preventDefault();
@@ -762,7 +762,7 @@
     guardandoNombre = true;
     try {
       if (admiteDatosEquipo(equipo) && actual.cliente) {
-        // v1.4x: lo guarda el equipo y lo ven igual todas sus consolas (no solo esta).
+        // v1.56: lo guarda el equipo y lo ven igual todas sus consolas (no solo esta).
         const r = await pedirAlEquipo(actual.cliente, equipo, "nombre_equipo", { nombre });
         avisar(r.hecha ? (variasConsolas(equipo) ? "Nombre cambiado en el equipo: lo verán igual todas sus consolas." : "Nombre cambiado.") : r.texto);
       } else {
@@ -1911,7 +1911,7 @@
     margin: 4px 0 0;
     font-size: var(--fs-xs);
   }
-  /* v1.4x: quitar un destino sin uso y avisos de pasos con un destino que no protege. */
+  /* v1.56: quitar un destino sin uso y avisos de pasos con un destino que no protege. */
   .quitar-dest {
     color: var(--bad);
   }

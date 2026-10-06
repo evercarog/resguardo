@@ -1,5 +1,5 @@
 <script lang="ts">
-  // v1.4x: un almacén que guarda copias de equipos de aquí, pero que no está en esta
+  // v1.56: un almacén que guarda copias de equipos de aquí, pero que no está en esta
   // consola (se gestiona desde otra): el mapa no puede enseñar lo que hace (su espejo a
   // otro disco o a la nube). Para verlo, ese almacén tiene que conectarse también a
   // esta consola: aquí se da el código de conexión y allí se pega en «Conectar también

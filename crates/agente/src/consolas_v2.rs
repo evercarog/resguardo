@@ -104,7 +104,7 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "quitar_nube",
     "anadir_consola",
     "quitar_consola",
-    // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+    // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
     "nombre_equipo",
     "etiquetas_equipo",
     "observacion_equipo",

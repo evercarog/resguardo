@@ -53,7 +53,7 @@
     try {
       let nuevo: Equipo;
       if (admiteDatosEquipo(equipo) && actual.cliente) {
-        // v1.4x: las guarda el equipo y las ven igual todas sus consolas.
+        // v1.56: las guarda el equipo y las ven igual todas sus consolas.
         const r = await pedirAlEquipo(actual.cliente, equipo, "etiquetas_equipo", { etiquetas: lista });
         avisar(r.hecha ? (lista.length ? "Etiquetas guardadas en el equipo." : "Etiquetas quitadas en el equipo.") + (variasConsolas(equipo) ? " Las verán igual todas sus consolas." : "") : r.texto);
         nuevo = r.hecha ? { ...equipo, etiquetas: lista } : equipo;

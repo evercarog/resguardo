@@ -75,7 +75,7 @@ export async function cargarCliente(id: string, opciones: { silencioso?: boolean
     const [cliente, resumen] = await (opciones.silencioso && !cambia ? enFondo(pedirlo) : pedirlo());
     if (actual.id !== id) return;
     actual.cliente = cliente;
-    // v1.4x: el nombre y las etiquetas que tiene puestos el equipo mandan (un servidor anterior no los copia).
+    // v1.56: el nombre y las etiquetas que tiene puestos el equipo mandan (un servidor anterior no los copia).
     actual.equipos = resumen.equipos.map(conDatosDelEquipo);
     actual.avisosAbiertos = resumen.avisos_abiertos;
     actual.pendientes = resumen.pendientes;

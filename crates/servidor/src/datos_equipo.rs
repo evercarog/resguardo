@@ -1,4 +1,4 @@
-//! v1.4x: el nombre, las etiquetas y la observación que tiene el propio equipo
+//! v1.56: el nombre, las etiquetas y la observación que tiene el propio equipo
 //! (docs/consolas-multiples.md §6).
 //!
 //! Un agente que lo admite (`admite: "datos_equipo"`) guarda el valor canónico de

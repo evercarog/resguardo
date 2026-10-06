@@ -47,14 +47,14 @@
     if (!a) return null;
     return [a.lugar ? TEXTO_LUGAR[a.lugar] : null, a.inmutable ? TEXTO_INMUTABLE[a.inmutable].replace(/ \(.*\)$/, "") : null, a.soporte ? `soporte «${a.soporte}»` : null].filter(Boolean).join(" · ");
   }
-  /** v1.4x: «Quitar este destino» (sin repositorios ni copias que lo usen) en un equipo. */
+  /** v1.56: «Quitar este destino» (sin repositorios ni copias que lo usen) en un equipo. */
   let quitar = $state<{ equipo: Equipo; destino: DestinoResumen } | null>(null);
   function quitablesEn(v: DestinoVista): { equipo: Equipo; destino: DestinoResumen }[] {
     return actual.equipos.flatMap((e) =>
       (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id) && destinoQuitable(e, d.id)).map((d) => ({ equipo: e, destino: d })),
     );
   }
-  /** v1.4x: lo que usa un destino sin repositorios (una copia externa o derivada), con su equipo. */
+  /** v1.56: lo que usa un destino sin repositorios (una copia externa o derivada), con su equipo. */
   function otrosUsos(v: DestinoVista): string[] {
     return actual.equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id)).flatMap((d) => usosDestino(e, d.id).map((u) => `${u} (${e.nombre})`)));
   }
@@ -204,7 +204,7 @@
                   {#if d}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
                   {#if administra && v.clase !== "suelto"}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}
-                  <!-- v1.4x: sin repositorios ni copias que lo usen, se puede quitar del equipo (nada de lo guardado se borra). -->
+                  <!-- v1.56: sin repositorios ni copias que lo usen, se puede quitar del equipo (nada de lo guardado se borra). -->
                   {#if administra && v.clase === "equipo" && !suyos.length}
                     {#each quitablesEn(v) as q (q.equipo.id)}<button class="btn btn-sm btn-ghost quitar-dest" onclick={() => (quitar = q)}><Trash2 size={12} />{quitablesEn(v).length > 1 ? `Quitar de ${q.equipo.nombre}` : "Quitar este destino"}</button>{/each}
                   {/if}

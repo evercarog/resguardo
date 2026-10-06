@@ -580,7 +580,7 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
             let previo = if papel == "almacenamiento" { actual.clone() } else { None };
             db.guardar_config(&ctx, &equipo, c.seq, &c.cifrado, &c.resumen)?;
             db.poner_papel(&ctx, &equipo, papel)?;
-            // v1.4x: el nombre, las etiquetas y la observación que tiene el equipo (puestos con sus
+            // v1.56: el nombre, las etiquetas y la observación que tiene el equipo (puestos con sus
             // órdenes desde cualquiera de sus consolas) mandan sobre los de aquí (consolas-multiples.md §6).
             let mut datos = false;
             if let Some(e) = actual.as_ref().filter(|e| e.confirmado) {

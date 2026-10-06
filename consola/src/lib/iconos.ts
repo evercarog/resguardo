@@ -93,7 +93,7 @@ const ORDEN: Record<string, Icono> = {
   cambiar_copia_externa: CloudUpload,
   cambiar_derivada: CloudUpload,
   quitar_derivada: CloudUpload,
-  // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+  // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
   nombre_equipo: Pencil,
   etiquetas_equipo: Tag,
   observacion_equipo: StickyNote,

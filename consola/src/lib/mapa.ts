@@ -17,7 +17,7 @@ import { zonasDe } from "./destinos";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
 /**
- * «fuera» (v1.4x): un paso que depende de un equipo que no está en esta consola (el
+ * «fuera» (v1.56): un paso que depende de un equipo que no está en esta consola (el
  * almacén donde guarda, que se gestiona desde otra): sus espejos no se ven aquí.
  */
 export type TipoNodo = "cliente" | "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa" | "fuera";
@@ -95,7 +95,7 @@ const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
 /**
  * Clave estable de un destino del cliente (un almacén cuenta una vez). `fuera`
- * (v1.4x): es el almacén de un equipo que no está en esta consola (se gestiona
+ * (v1.56): es el almacén de un equipo que no está en esta consola (se gestiona
  * desde otra): lo que hace ese almacén (su espejo) no se ve aquí.
  */
 export function claveDestino(e: Equipo, r: RepositorioResumen, equipos: Equipo[]): { clave: string; almacen?: Equipo; fuera?: boolean } {
@@ -197,7 +197,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       });
     }
     const d = destinoDe(p.equipo.resumen?.destinos, x.r);
-    // v1.4x: el almacén de otra consola: su nombre (el del destino en el equipo, igual en todas)
+    // v1.56: el almacén de otra consola: su nombre (el del destino en el equipo, igual en todas)
     // y, después, una tarjeta que dice que lo suyo no se ve aquí.
     if (x.fuera) {
       const n = poner({ id: x.destino, tipo: "destino", col: 2, nombre: d?.nombre ?? x.r.destino, sub: "Almacén de otra consola", tono: "ok", estado: "Recibe copias", ultima: null, icono: "servidor" });

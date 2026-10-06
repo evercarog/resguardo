@@ -26,7 +26,7 @@
   let texto = $state("");
   let guardando = $state(false);
   const idCampo = $derived(`obs-${tipo}-${objeto.replace(/[^A-Za-z0-9_-]/g, "_")}`);
-  /** v1.4x: la observación de un equipo que la guarda él (igual en todas sus consolas). */
+  /** v1.56: la observación de un equipo que la guarda él (igual en todas sus consolas). */
   const delEquipo = $derived(tipo === "equipo" ? (actual.equipos.find((e) => e.id === objeto && admiteDatosEquipo(e)) ?? null) : null);
 
   $effect(() => {
@@ -46,7 +46,7 @@
     guardando = true;
     try {
       if (delEquipo && actual.cliente) {
-        // v1.4x: la del equipo la guarda el equipo y la ven igual todas sus consolas.
+        // v1.56: la del equipo la guarda el equipo y la ven igual todas sus consolas.
         const limpio = texto.replace(/\r\n?/g, "\n").trim();
         if (limpio !== (obs?.texto ?? "")) {
           const r = await pedirAlEquipo(actual.cliente, delEquipo, "observacion_equipo", { texto: limpio });

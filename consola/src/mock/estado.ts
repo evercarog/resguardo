@@ -475,7 +475,7 @@ export async function sembrar(vacio = false) {
         // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "datos_equipo", "quitar_destino"],
-        // v1.4x: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
+        // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
         // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
@@ -500,7 +500,7 @@ export async function sembrar(vacio = false) {
           { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/caja-1/", equipo_almacen: ID.almacen },
           { id: "disco-2", nombre: "Disco 2", tipo: "local", donde: "E:\\Resguardo-externa" },
           { id: "nube-dropbox-caja", nombre: "Dropbox Caja", tipo: "nube", nube: "Dropbox Caja", donde: "Resguardo" },
-          // v1.4x: un destino que se quedó sin repositorios (se quitaron): «Quitar este destino».
+          // v1.56: un destino que se quedó sin repositorios (se quitaron): «Quitar este destino».
           { id: "disco-viejo", nombre: "Disco o carpeta del equipo", tipo: "local", unidad: "C:", extraible: false, red: false },
         ],
       },
@@ -514,7 +514,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         // Recién emparejado: copia programada, ninguna hecha todavía.
-        // v1.4x: también copia en el almacén de la oficina, que se gestiona desde otra consola
+        // v1.56: también copia en el almacén de la oficina, que se gestiona desde otra consola
         // (no está en esta): el mapa dice que sus espejos no se ven aquí.
         admite: ["consolas_multiples", "datos_equipo", "quitar_destino"],
         consolas: [

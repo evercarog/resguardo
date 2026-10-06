@@ -1,4 +1,4 @@
-// v1.4x: lo que el equipo comparte con todas sus consolas y lo que es de cada una
+// v1.56: lo que el equipo comparte con todas sus consolas y lo que es de cada una
 // (docs/consolas-multiples.md §6), y lo que hace falta para quitar un destino que
 // ya no se usa. Sin runas: se prueba en scripts/vectores-datos-equipo.ts.
 //

@@ -159,7 +159,7 @@
       .sort((a, b) => a.peso - b.peso || a.repo.nombre.localeCompare(b.repo.nombre)),
   );
 
-  /** v1.4x: el almacén de otra consola que sale en el mapa («Conectar también…»). */
+  /** v1.56: el almacén de otra consola que sale en el mapa («Conectar también…»). */
   let fuera = $state<{ almacen: string; consolas: string[] } | null>(null);
   let copiar = $state<{ equipo: Equipo; repo: string; copia: string; nombre: string } | null>(null);
 </script>

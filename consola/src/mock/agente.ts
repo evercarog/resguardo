@@ -580,7 +580,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       return resultado(e, o, "hecha", `Quitada la consola ${x.nombre} (${x.url}): ya no gestiona este equipo.`);
     }
-    // v1.4x: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
+    // v1.56: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
     // (lo guarda el equipo y el servidor lo copia de su resumen) y olvidar un destino sin uso.
     case "nombre_equipo":
     case "etiquetas_equipo":
@@ -977,7 +977,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       e.resumen.repositorios = (e.resumen.repositorios ?? []).filter((x) => x.id !== r.id);
       e.resumen.copias = (e.resumen.copias ?? []).filter((k) => k.repo !== r.id);
       guardarConfig(e, configInicial(e), plana.seq);
-      // v1.4x: `quitar_destino: true`, también su destino si se queda sin uso.
+      // v1.56: `quitar_destino: true`, también su destino si se queda sin uso.
       const d = e.resumen.destinos?.find((x) => x.id === r.destino || x.nombre === r.destino);
       const enUso = (e.resumen.repositorios ?? []).some((x) => x.destino === d?.id || x.destino === d?.nombre || x.externa?.destino_id === d?.id || (x.derivadas ?? []).some((y) => y.destino_id === d?.id));
       if (c.quitar_destino === true && d && !enUso && e.resumen.admite?.includes("quitar_destino")) {
