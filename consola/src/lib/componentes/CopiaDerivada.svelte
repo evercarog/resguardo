@@ -31,8 +31,10 @@
     /** La que se cambia (sin ella, una nueva). */
     derivada?: DerivadaResumen | null;
     onclose: () => void;
+    /** Desde la página de un destino («Usar en una copia»): su clave, ya elegida. */
+    destinoInicial?: string | null;
   }
-  let { cliente, equipo, repo, derivada = null, onclose }: Props = $props();
+  let { cliente, equipo, repo, derivada = null, onclose, destinoInicial = null }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   const id = derivada?.id ?? idDerivadaNueva(repo);
@@ -92,20 +94,26 @@
     const l: OpcionDestino[] = [];
     /** Un destino del catálogo (B2, S3, servidor) que este equipo aún no tiene: se crea aquí con sus credenciales. */
     const delCatalogo: Record<string, { tipo: TipoNuevo; nombre: string; donde: string }> = {};
+    /** El valor de cada destino por su clave (para elegir el de la página de la que se llegó). */
+    const porClave: Record<string, string> = {};
     for (const v of destinosParaPasos(equipos, catalogoDe(cliente.id))) {
       const uso = usosPosibles(v, equipo, repo, equipos).derivada;
       const id = v.ids.find((x) => propios.has(x));
       const nubeAqui = v.nube && (v.nube.equipo.id === equipo.id || nubes.some((n) => n.nombre === v.nube!.nombre));
       const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clave}`;
       if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: v.donde ?? "" };
+      porClave[v.clave] = valor;
       if (!l.some((o) => o.valor === valor)) l.push({ valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso });
     }
     l.sort((a, b) => Number(b.uso.ok) - Number(a.uso.ok));
     l.push({ valor: "nuevo", nombre: "Un destino nuevo…", clase: "nuevo", uso: { ok: true } });
-    return { opciones: l, delCatalogo };
+    return { opciones: l, delCatalogo, porClave };
   });
   const opciones = $derived(lista.opciones);
   let conectar = $state<{ nube: string } | null>(null);
+  // El destino de la página desde la que se llegó, una vez, si sirve desde este equipo (si no, el selector dice por qué).
+  // svelte-ignore state_referenced_locally
+  if (destinoInicial && !derivada && lista.porClave[destinoInicial] && !lista.porClave[destinoInicial].startsWith("no:")) elegir(lista.porClave[destinoInicial]);
   /** Al elegir uno del catálogo, sus datos (sin secretos) ya puestos. */
   function elegir(v: string) {
     f.destino = v;

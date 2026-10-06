@@ -19,7 +19,7 @@
   import { TEXTO_TIPO } from "$lib/destinos";
   import { nombreTipoNube } from "$lib/espejo";
   import { destinoQuitable } from "$lib/datosEquipo";
-  import { actividadDestino, reposEnDestino, usosDeDestino, usosPosibles, vistaPorClave } from "$lib/fichaDestino";
+  import { actividadDestino, reposEnDestino, usarEnCopia, usosDeDestino, vistaPorClave } from "$lib/fichaDestino";
   import { marcarDesdeVista, TEXTO_INMUTABLE, TEXTO_LUGAR, textoEntorno, type MarcarDestino } from "$lib/regla321";
   import type { DestinoResumen, Equipo } from "$lib/tipos";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
@@ -60,7 +60,7 @@
   );
   const protegido = $derived(filas.reduce((n, x) => n + (x.tam ?? 0), 0));
   const usos = $derived(v ? usosDeDestino(v, actual.equipos, c) : []);
-  const posibles = $derived(v ? usosPosibles(v, actual.equipos, c) : []);
+  const posibles = $derived(v ? usarEnCopia(v, actual.equipos, c) : []);
   const actividad = $derived(v ? actividadDestino(v, actual.equipos, c) : []);
   const marca = $derived<MarcarDestino | null>(v ? marcarDesdeVista(v, actual.equipos) : null);
   const atrib = $derived(v?.catalogo?.atributos ?? null);

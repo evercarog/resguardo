@@ -1,11 +1,13 @@
 // La página de un destino (`/c/[c]/destinos/[d]`, docs/copias-en-cadena.md «La
 // página de un destino»): lo que no es pantalla. Qué repositorios guarda, qué
 // lo usa (copias externas y derivadas, el espejo del almacén que llega o sale),
-// lo último que pasó y dónde se puede usar en una copia. Todo sale de los
+// lo último que pasó y dónde se puede usar en una copia (con `usosPosibles` de
+// lib/cadenas.ts, el mismo que «Añadir paso» del editor de copias). Todo sale de los
 // resúmenes de los equipos y del catálogo (sin rutas de los equipos ni secretos).
 import type { DestinoCatalogo, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
-import { claveNube, claveZona, destinosDelCliente, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
+import { claveNube, claveZona, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
 import { destinoDe } from "./repo";
+import { destinosParaPasos, usosPosibles } from "./cadenas";
 
 /** La dirección de la página de un destino (la clave del catálogo, codificada). */
 export const hrefDestino = (cliente: string, clave: string) => `/c/${cliente}/destinos/${encodeURIComponent(clave)}`;
@@ -18,7 +20,8 @@ export function claveDeDestino(d: DestinoResumen, equipos: Equipo[]): string {
 
 /** El destino de una clave (null si ya no está: una zona quitada, una nube desconectada…). */
 export function vistaPorClave(clave: string, equipos: Equipo[], catalogo: DestinoCatalogo[]): DestinoVista | null {
-  return destinosDelCliente(equipos, catalogo).find((v) => v.clave === clave) ?? null;
+  // Los del cliente y las nubes conectadas en los equipos (las de «Añadir paso»).
+  return destinosParaPasos(equipos, catalogo).find((v) => v.clave === clave) ?? null;
 }
 
 export interface RepoEnDestino {
@@ -117,53 +120,53 @@ export function actividadDestino(v: DestinoVista, equipos: Equipo[], cliente: st
 
 export interface UsoPosible {
   texto: string;
-  /** Una línea: qué hace y quién lo hace. */
+  /** Una línea: qué hace y quién lo hace (o qué falta antes). */
   detalle: string;
   href: string;
 }
 
 /**
- * Dónde se puede usar un destino en una copia («Usar en una copia»), con un
- * enlace que abre el paso ya elegido:
- * - una nube conectada en un almacén: el **espejo** de un repositorio que está
- *   en ese almacén (lo hace el almacén, sin contraseñas) o un **repositorio
- *   nuevo a partir de** él en su equipo (que tendrá que tener la nube conectada
- *   también);
- * - una zona o un destino de los equipos: una **copia nueva** de las carpetas
- *   de un equipo que ya lo tiene (o de cualquiera, en una zona);
- * - un destino suelto del catálogo: «Nuevo repositorio» (pide sus credenciales).
- *
- * Hoy los enlaces llevan a los diálogos que ya existen (`?paso_espejo=`,
- * `?derivada=` en la ficha del equipo; `?nueva=1` en «Cambiar las copias»).
- * TODO (al unir con `ia/editor-de-copias`): usar su `usosPosibles(destino,
- * contexto)` y abrir el paso en el editor de copias (docs/registro-ia.md).
+ * «Usar en una copia» de la página de un destino: con qué copias se puede usar
+ * y un enlace que abre el paso con este destino ya elegido. Lo que se puede o
+ * no hacer lo decide `usosPosibles` de `lib/cadenas.ts` (el mismo que «Añadir
+ * paso» del editor de copias); aquí solo se recorren los equipos y sus
+ * repositorios y se arma el enlace:
+ * - **espejo** de un repositorio (lo hace su almacén, sin contraseñas):
+ *   `?paso_espejo=<repo>&destino=<clave>` en la ficha del equipo dueño;
+ * - **repositorio nuevo a partir de** él (el equipo dueño):
+ *   `?derivada=<repo>&destino=<clave>`; también si antes hay que conectar la
+ *   nube en ese equipo (lo dice, y el diálogo lo ofrece);
+ * - **copia nueva** de carpetas: `?nueva=1&destino=<clave>` en el editor de
+ *   copias (elige un repositorio del equipo en este destino, si tiene);
+ * - un destino suelto del catálogo: «Nuevo repositorio» (`?nuevo=1`).
  */
-export function usosPosibles(v: DestinoVista, equipos: Equipo[], cliente: string): UsoPosible[] {
-  const activos = equipos.filter((e) => e.confirmado && e.modo !== "trasladado" && e.rol !== "almacenamiento");
-  const copias = (e: Equipo) => `/c/${cliente}/equipos/${e.id}/copias?nueva=1&destino=${encodeURIComponent(v.clave)}`;
-  if (v.clase === "nube" && v.nube) {
-    const a = v.nube.equipo;
-    const nombre = v.nube.nombre;
-    const enAlmacen = zonasDe(a).flatMap((z) => {
-      const zv = destinosDelCliente(equipos).find((x) => x.clave === claveZona(a.id, z.id));
-      return zv ? reposEnDestino(zv, equipos) : [];
-    });
-    return enAlmacen.flatMap(({ equipo: e, repo: r }) => {
-      const conectada = (e.resumen?.nubes ?? []).some((n) => n.nombre === nombre);
-      return [
-        { texto: `Espejo de «${r.nombre}» (${e.nombre})`, detalle: `Lo hace el almacén ${a.nombre}, sin contraseñas: los mismos archivos en «${nombre}».`, href: `/c/${cliente}/equipos/${e.id}?paso_espejo=${encodeURIComponent(r.id)}` },
-        {
-          texto: `Repositorio nuevo a partir de «${r.nombre}» (${e.nombre})`,
-          detalle: conectada ? `Lo hace ${e.nombre}, con su propia contraseña y retención.` : `Lo hace ${e.nombre}: antes hay que conectar «${nombre}» también en ese equipo (te lo pide el diálogo).`,
-          href: `/c/${cliente}/equipos/${e.id}?derivada=${encodeURIComponent(r.id)}`,
-        },
-      ];
-    });
-  }
-  if (v.clase === "zona" && v.zona) {
-    const alm = v.zona.almacen.id;
-    return activos.filter((e) => e.id !== alm).map((e) => ({ texto: `Copia nueva de ${e.nombre}`, detalle: `Sus carpetas a ${v.nombre}, en solo añadir.`, href: copias(e) }));
-  }
+export function usarEnCopia(v: DestinoVista, equipos: Equipo[], cliente: string): UsoPosible[] {
   if (v.clase === "suelto") return [{ texto: "Nuevo repositorio aquí", detalle: "Elige el equipo; pide las credenciales del destino una vez.", href: `/c/${cliente}/repositorios?nuevo=1` }];
-  return activos.filter((e) => v.equipos.includes(e.nombre)).map((e) => ({ texto: `Copia nueva de ${e.nombre}`, detalle: `Sus carpetas a ${v.nombre}.`, href: copias(e) }));
+  const q = `destino=${encodeURIComponent(v.clave)}`;
+  const activos = equipos.filter((e) => e.confirmado && e.modo !== "trasladado");
+  const out: UsoPosible[] = [];
+  // Copias nuevas de carpetas: a una zona, desde cualquier equipo (no el propio almacén); a otro destino, desde quien lo tiene.
+  for (const e of activos) {
+    if (e.rol === "almacenamiento" || !usosPosibles(v, e, null, equipos).copia.ok) continue;
+    const puede = v.zona ? v.zona.almacen.id !== e.id : v.ids.some((id) => e.resumen?.destinos?.some((d) => d.id === id));
+    if (puede) out.push({ texto: `Copia nueva de ${e.nombre}`, detalle: `Sus carpetas a ${v.nombre}${v.zona ? ", en solo añadir" : ""}.`, href: `/c/${cliente}/equipos/${e.id}/copias?nueva=1&${q}` });
+  }
+  // Pasos a partir de un repositorio que ya existe.
+  for (const e of activos)
+    for (const r of e.resumen?.repositorios ?? []) {
+      if (r.solo_lectura) continue;
+      const u = usosPosibles(v, e, r, equipos);
+      if (u.espejo.ok) {
+        const alm = v.zona?.almacen.nombre ?? v.nube?.equipo.nombre ?? "su almacén";
+        out.push({ texto: `Espejo de «${r.nombre}» (${e.nombre})`, detalle: `Lo hace el almacén ${alm}, sin contraseñas: los mismos archivos en «${v.nombre}».`, href: `/c/${cliente}/equipos/${e.id}?paso_espejo=${encodeURIComponent(r.id)}&${q}` });
+      }
+      const d = u.derivada;
+      if (d.ok || d.accion?.tipo === "conectar_nube")
+        out.push({
+          texto: `Repositorio nuevo a partir de «${r.nombre}» (${e.nombre})`,
+          detalle: d.ok ? `Lo hace ${e.nombre}, con su propia contraseña y retención${d.motivo ? ` (${d.motivo.toLowerCase()})` : ""}.` : `Lo hace ${e.nombre}: antes hay que conectar «${v.nube?.nombre ?? v.nombre}» también en ese equipo (te lo ofrece el diálogo).`,
+          href: `/c/${cliente}/equipos/${e.id}?derivada=${encodeURIComponent(r.id)}&${q}`,
+        });
+    }
+  return out;
 }
