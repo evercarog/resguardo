@@ -2,6 +2,39 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## Resumen de la noche del 2026-10-06 (trabajo autónomo, Claude Code en el equipo de desarrollo)
+
+*Se actualiza a medida que avanza; el detalle de cada tarea está en su entrada más abajo.*
+
+**Hecho y unido a `main`** (cada unión con fmt, los dos clippy, `cargo test --workspace`, consola check/build/test:vectores, `test:sin-referencias` y el e2e completo en Windows):
+
+- Copia externa a un repositorio que ya existe (B2/S3/rest…), con «Probar» y bloqueo de objetos (Object Lock): contrato v1.46.
+- Lo largo a la vista de todas las consolas («Moviéndose a otro sitio», traer historial, retención, restaurar): v1.47. Y «Retención en detalle» (v1.45) y «Buscar archivos» (v1.44), de la tarde.
+- Tarea 0: rama de la sesión en la nube unida. Arreglo: `restaurar-respaldo` protege la carpeta solo si es la de por defecto o como administrador (si no, el e2e fallaba con «Acceso denegado»).
+- e2e: se niega a arrancar con binarios más viejos que el código (un fallo del paso 5 era un agente sin recompilar).
+- **0.7.22** (en el commit `90b34f4`): versión subida, instaladores compilados y **publicación en borrador** en GitHub (`v0.7.22`, 10 archivos con `SHA256SUMS`). **No es pública**: revísala y publícala tú. Los instaladores también están en `instalar\` (los de la 0.7.21 en `instalar\anteriores`).
+- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola).
+
+**En marcha:** 3 (espejo flexible), 9b (ancla de la auditoría), 6 (etiquetas). Pendientes: 7 (con 4), 8, 10c.
+
+**Decisiones tomadas sin ti, para revisar** (detalle en cada entrada):
+
+- 0.7.22 lleva solo lo terminado antes del plan de mejoras; 9a, 9d–9h, 1, 2… van en la siguiente, para no meter el cambio del emparejamiento sin probarlo en una máquina real.
+- 9a: el código vive en el `localStorage` del navegador hasta el alta (hasta 8 días); el de 15 min sigue con 10 caracteres.
+- 9d: los avisos (webhook, ntfy) de un cliente ya no usan el proxy del entorno (no se podría comprobar la IP de destino).
+- 1: cancelar una orden en espera no pide clave (cualquier consola puede); queda en el historial de todas. Una orden en espera solo se aplica justo después de hablar con la consola que la mandó.
+- 2: una consola sin contacto en 30 días no se sugiere.
+- Se borraron carpetas de compilación y copias de trabajo de ramas ya unidas (`.claude/worktrees`, `target` sueltos) para liberar disco; en C: también cachés temporales (npm, restic de pruebas, perfiles de Edge de capturas).
+
+**Probar a mano o en una máquina virtual:**
+
+- Instalador NSIS «listo» con la cola que añade el navegador (9a) y un equipo nuevo de verdad.
+- `restaurar-respaldo` como administrador.
+- Copia externa a un B2 real con Object Lock (el borrado bloqueado solo se probó con lo que dice el código de restic).
+- Reiniciar el servicio del agente con órdenes en espera; cambiar la hora del equipo.
+
+**Nada se instaló en el equipo de desarrollo** ni se tocó ninguna consola, equipo o dato real.
+
 Plantilla:
 
 ```md
