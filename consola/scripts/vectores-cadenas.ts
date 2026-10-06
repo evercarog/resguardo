@@ -11,6 +11,8 @@ import {
   lineaCadena,
   lineaEnTexto,
   despuesDeLaAnterior,
+  destinosParaPasos,
+  usosPosibles,
   mover,
   moverA,
   pasoDeEspejo,
@@ -168,6 +170,27 @@ igual(
 igual("…de un repositorio que no está, nada", pasosDelRepo(recepcion, "otro", equipos), []);
 igual("una derivada nueva toma un id libre", idDerivadaNueva(recepcion.resumen!.repositorios![0]), "d2");
 igual("la externa de siempre va primero", derivadasDe(recepcion.resumen!.repositorios![0]).map((d) => d.id), ["externa", "d1"]);
+
+console.log("\n· Para qué sirve cada destino desde una copia («Añadir paso»)");
+{
+  const lista = destinosParaPasos(equipos);
+  const d = (nombre: string) => lista.find((x) => x.nombre === nombre)!;
+  const r = recepcion.resumen!.repositorios![0];
+  cierto("están todos: zonas, destinos de los equipos y nubes (la del equipo, una sola vez)", ["Almacén ALMACEN-01 · Disco D", "Almacén ALMACEN-01 · Disco E", "B2 de la oficina", "Dropbox Oficina", "Dropbox de RECEPCION"].every((n) => lista.some((x) => x.nombre === n)));
+  const oficina = usosPosibles(d("Dropbox Oficina"), recepcion, r, equipos);
+  igual("Dropbox del almacén: espejo sí; copia directa no (se propone la derivada)", [oficina.espejo.ok, oficina.copia.ok, oficina.copia.accion?.tipo === "otro_paso"], [true, false, true]);
+  igual("…derivada: el agente aún no usa nubes → actualizarlo", [oficina.derivada.ok, oficina.derivada.accion?.tipo, oficina.derivada.motivo], [false, "actualizar", "Actualiza el agente de RECEPCION para usar nubes"]);
+  const nuevo = { ...recepcion, resumen: { ...recepcion.resumen, admite: [...recepcion.resumen!.admite!, "nube_equipo"] } };
+  const conNubes = usosPosibles(d("Dropbox Oficina"), nuevo, r, [almacen, nuevo]);
+  igual("…con un agente que sí: conectarla también en el equipo dueño", [conNubes.derivada.ok, conNubes.derivada.accion?.tipo, conNubes.derivada.accion && "equipo" in conNubes.derivada.accion ? conNubes.derivada.accion.equipo.nombre : null], [false, "conectar_nube", "RECEPCION"]);
+  const propia = usosPosibles(d("Dropbox de RECEPCION"), recepcion, r, equipos);
+  igual("la nube conectada en el propio equipo: derivada sí, espejo no (no está en el almacén)", [propia.derivada.ok, propia.espejo.ok, lista.filter((x) => x.nombre.startsWith("Dropbox") && x.nombre.toLowerCase().includes("recepcion")).length], [true, false, 1]);
+  igual("su propia zona: «ya guarda aquí»", usosPosibles(d("Almacén ALMACEN-01 · Disco D"), recepcion, r, equipos).espejo.motivo, "Ya guarda aquí");
+  const zonaE = usosPosibles(d("Almacén ALMACEN-01 · Disco E"), recepcion, r, equipos);
+  igual("otra zona del almacén: espejo sí, derivada no (mejor un espejo)", [zonaE.espejo.ok, zonaE.derivada.ok], [true, false]);
+  const b2u = usosPosibles(d("B2 de la oficina"), recepcion, r, equipos);
+  igual("B2 del equipo: derivada sí, espejo no", [b2u.derivada.ok, b2u.espejo.ok], [true, false]);
+}
 
 console.log("\n· La regla 3-2-1-1-0 con los pasos de la cadena (tarea 8)");
 {

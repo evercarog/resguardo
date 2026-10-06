@@ -12,7 +12,7 @@
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CloudUpload, CornerDownRight, Database, FlaskConical, FolderOpen, GitBranch, GripVertical, HardDrive, KeyRound, LayoutTemplate, Link2, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2 } from "@lucide/svelte";
-  import { ADMITE, admite, despuesDeLaAnterior, errorCadenas, moverA, pasosDelRepo, recomendarFueraRetencion, reenlazar, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
+  import { ADMITE, admite, despuesDeLaAnterior, destinosParaPasos, errorCadenas, moverA, pasosDelRepo, recomendarFueraRetencion, reenlazar, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import * as api from "$lib/api";
   import { ApiError } from "$lib/api";
@@ -427,6 +427,8 @@
   const repoResumen = (id: string) => equipo?.resumen?.repositorios?.find((r) => r.id === id) ?? null;
   /** Otras copias que guardan en el mismo repositorio (comparten retención, verificación y prueba). */
   const tambien = (k: CopiaConfig) => (cfg?.copias ?? []).filter((x) => x.id !== k.id && x.repo === k.repo);
+  /** Las nubes del cliente (para decir en el repositorio de una copia que directo todavía no). */
+  const nubesCliente = $derived(destinosParaPasos(actual.equipos, catalogo).filter((v) => v.clase === "nube"));
   /** Repositorios que no usa ninguna copia (su verificación y su prueba van al final). */
   const reposSinCopias = $derived(repos.filter((r) => !cfg?.copias.some((k) => k.repo === r.id)));
 
@@ -787,6 +789,12 @@
                     <label class="field-label" for="repo-{k.id}">Repositorio</label>
                     <select id="repo-{k.id}" class="input" bind:value={k.repo}>
                       {#each repos as r (r.id)}<option value={r.id}>{r.nombre}</option>{/each}
+                      {#if nubesCliente.length}
+                        <!-- 4a pendiente: carpetas directas a una nube, todavía no. Se ven, desactivadas, con el camino que sí. -->
+                        <optgroup label="Nubes: copia aquí y después «Repositorio nuevo a partir de esta»">
+                          {#each nubesCliente as n (n.clave)}<option disabled value="">{n.nombre} · directo, todavía no</option>{/each}
+                        </optgroup>
+                      {/if}
                     </select>
                     {#if lugarDeRepo(k.repo)}{@const x = lugarDeRepo(k.repo)!}<span class="field-hint"><SeGuardaEn pequeno lugar={x.lugar} riesgo={x.riesgo} /></span>{/if}
                     {#if tambien(k).length}<span class="field-hint">También guarda{tambien(k).length === 1 ? "" : "n"} aquí {lista(tambien(k).map((x) => `«${x.nombre}»`))}: la verificación y la prueba son del repositorio.</span>{/if}

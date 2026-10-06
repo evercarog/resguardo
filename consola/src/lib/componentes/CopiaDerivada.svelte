@@ -13,7 +13,11 @@
   import EditorRetencion from "./EditorRetencion.svelte";
   import Ayuda from "./Ayuda.svelte";
   import { aleatorio } from "$lib/cripto/bytes";
-  import { ADMITE, admite, cuandoEnFrase, destinosParaDerivada, errorFiltro, filtroEnFrase, filtroParaOrden, idDerivadaNueva, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
+  import { ADMITE, admite, cuandoEnFrase, destinosParaDerivada, destinosParaPasos, detalleDestino, errorFiltro, filtroEnFrase, filtroParaOrden, idDerivadaNueva, TEXTO_FUERA_RETENCION, usosPosibles } from "$lib/cadenas";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import { actual } from "$lib/estado.svelte";
+  import ElegirDestinoPaso, { type OpcionDestino } from "./ElegirDestinoPaso.svelte";
+  import ConectarNube from "./ConectarNube.svelte";
   import { diasBloqueo, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   import { TIPOS_NUBE, nombreTipoNube } from "$lib/espejo";
   import { admitePlazos, copiaRegla, errorRegla, horarioDeCopias, REGLA_POR_DEFECTO, reglaParaOrden } from "$lib/retencion";
@@ -79,6 +83,36 @@
     f.contrasena = f.secreto = "";
   });
 
+  // Todos los destinos del cliente (docs/editor-de-copias.md), con si sirven desde este equipo y por qué no.
+  // svelte-ignore state_referenced_locally
+  void cargarCatalogo(cliente.id);
+  const equipos = $derived(actual.equipos.map((x) => (x.id === equipo.id ? equipo : x)));
+  const lista = $derived.by(() => {
+    const propios = new Set(destinos.map((d) => d.id));
+    const l: OpcionDestino[] = [];
+    /** Un destino del catálogo (B2, S3, servidor) que este equipo aún no tiene: se crea aquí con sus credenciales. */
+    const delCatalogo: Record<string, { tipo: TipoNuevo; nombre: string; donde: string }> = {};
+    for (const v of destinosParaPasos(equipos, catalogoDe(cliente.id))) {
+      const uso = usosPosibles(v, equipo, repo, equipos).derivada;
+      const id = v.ids.find((x) => propios.has(x));
+      const nubeAqui = v.nube && (v.nube.equipo.id === equipo.id || nubes.some((n) => n.nombre === v.nube!.nombre));
+      const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clave}`;
+      if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: v.donde ?? "" };
+      if (!l.some((o) => o.valor === valor)) l.push({ valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso });
+    }
+    l.sort((a, b) => Number(b.uso.ok) - Number(a.uso.ok));
+    l.push({ valor: "nuevo", nombre: "Un destino nuevo…", clase: "nuevo", uso: { ok: true } });
+    return { opciones: l, delCatalogo };
+  });
+  const opciones = $derived(lista.opciones);
+  let conectar = $state<{ nube: string } | null>(null);
+  /** Al elegir uno del catálogo, sus datos (sin secretos) ya puestos. */
+  function elegir(v: string) {
+    f.destino = v;
+    const x = lista.delCatalogo[v];
+    if (x) Object.assign(f, { tipo: x.tipo, nombre: x.nombre, donde: x.donde });
+  }
+  const esNuevo = $derived(f.destino === "nuevo" || f.destino.startsWith("cat:"));
   const nubeElegida = $derived(f.destino.startsWith("nube:") ? f.destino.slice(5) : null);
   const tipoNube = $derived(nubeElegida ? nubes.find((n) => n.nombre === nubeElegida)?.tipo : equipo.resumen?.destinos?.find((d) => d.id === f.destino && d.tipo === "nube")?.nube ? nubes.find((n) => n.nombre === equipo.resumen?.destinos?.find((d) => d.id === f.destino)?.nube)?.tipo : undefined);
   /** Fuera de la oficina (la nube, otro servidor): ahí se recomienda otra contraseña. */
@@ -90,9 +124,10 @@
       const ya = equipo.resumen?.destinos?.find((d) => d.tipo === "nube" && d.nube === nubeElegida && (d.donde ?? "") === f.carpetaNube.trim());
       return ya ? { id: ya.id } : { id: `${idNube(nubeElegida)}-${crypto.randomUUID().slice(0, 4)}`, nombre: nubeElegida, tipo: "nube", nube: nubeElegida, donde: f.carpetaNube.trim() };
     }
-    if (f.destino === "nuevo")
+    if (esNuevo)
       return {
-        id: `derivada-${crypto.randomUUID().slice(0, 8)}`,
+        // Uno del catálogo se crea en el equipo con su mismo id (así se agrupa con los demás).
+        id: f.destino.startsWith("cat:") ? f.destino.slice(4) : `derivada-${crypto.randomUUID().slice(0, 8)}`,
         nombre: f.nombre.trim(),
         tipo: f.tipo,
         donde: f.donde.trim(),
@@ -117,7 +152,8 @@
   const valido = $derived(
     !!f.destino &&
       (!nubeElegida || !!f.carpetaNube.trim()) &&
-      (f.destino !== "nuevo" || (!!f.nombre.trim() && !!f.donde.trim())) &&
+      !f.destino.startsWith("no:") &&
+      (!esNuevo || (!!f.nombre.trim() && !!f.donde.trim())) &&
       (f.cuando !== "hora" || /^([01]\d|2[0-3]):[0-5]\d$/.test(f.hora)) &&
       (!f.otra || (f.contrasena.length >= 8 && f.impreso)) &&
       (!f.conRetencion || !errorRegla(f.retencion, admitePlazos(equipo))) &&
@@ -125,7 +161,7 @@
       !errorF,
   );
   const efecto = $derived(textoRetencionDestino(f.conRetencion, f.conBloqueo ? diasBloqueo(f.bloqueoDias) : null));
-  const nombreDestino = $derived(nubeElegida ?? (f.destino === "nuevo" ? f.nombre : (destinos.find((d) => d.id === f.destino)?.nombre ?? "")));
+  const nombreDestino = $derived(nubeElegida ?? (esNuevo ? f.nombre : (destinos.find((d) => d.id === f.destino)?.nombre ?? "")));
   const resumen = $derived(
     `«${repo.nombre}» → ${nombreDestino || "otro destino"} (${[cuandoEnFrase(f.cuando === "tras" ? { tras_copia: true } : f.cuando === "horario" ? derivada?.cuando : { hora: f.hora }).toLowerCase(), filtro ? `solo las versiones ${filtroEnFrase(filtro)}` : "todas las versiones", f.otra ? "con otra contraseña" : "con la misma contraseña", f.conRetencion ? "con su propia retención" : "sin retención propia"].join(", ")}).`,
   );
@@ -144,16 +180,15 @@
   {onclose}
 >
   {#snippet campos()}
-    <div class="field">
-      <label class="field-label" for="dv-destino">Copiar a</label>
-      <select id="dv-destino" class="input" bind:value={f.destino} disabled={!!derivada}>
-        {#each destinos as d (d.id)}<option value={d.id}>{d.nombre}{d.tipo === "nube" ? ` · nube ${d.nube ?? ""}` : d.donde ? ` · ${d.donde}` : ""}</option>{/each}
-        {#if conNubes}{#each nubes as n (n.nombre)}<option value="nube:{n.nombre}">{n.nombre} · {nombreTipoNube(n.tipo)} (conectada en {equipo.nombre})</option>{/each}{/if}
-        <option value="nuevo">Un destino nuevo…</option>
-      </select>
-      {#if derivada}<span class="field-hint">Para llevarla a otro destino, quítala y añade otra (lo de allí se queda).</span>{/if}
-      {#if conNubes && !nubes.length}<span class="field-hint">Para Dropbox, Google Drive u otras nubes, conéctalas antes en este equipo («Conectar Dropbox» o «Conectar otro destino»).</span>{/if}
-    </div>
+    {#if derivada}
+      <div class="field">
+        <span class="field-label">Copiar a</span>
+        <p class="nota-dest">{nombreDestino || derivada.destino}</p>
+        <span class="field-hint">Para llevarla a otro destino, quítala y añade otra (lo de allí se queda).</span>
+      </div>
+    {:else}
+      <ElegirDestinoPaso id="dv-destino" etiqueta="Copiar a" {opciones} bind:value={() => f.destino, elegir} alConectar={(_e, nube) => (conectar = { nube })} />
+    {/if}
     {#if nubeElegida}
       <div class="field">
         <label class="field-label" for="dv-carpeta">Carpeta dentro de la nube</label>
@@ -164,7 +199,7 @@
     {#if tipoNube && TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable}
       <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: alguien con acceso a la cuenta (o un ransomware en un equipo con ella abierta) podría borrar lo de allí. Mejor como un destino más, no el único fuera de la oficina.</p></div>
     {/if}
-    {#if f.destino === "nuevo"}
+    {#if esNuevo}
       <div class="nuevo-destino">
         <div class="fila-campos">
           <div class="field">
@@ -285,7 +320,13 @@
   {/snippet}
 </OrdenDialog>
 
+{#if conectar}<ConectarNube {cliente} {equipo} nombreInicial={conectar.nube} onclose={() => (conectar = null)} />{/if}
+
 <style>
+  .nota-dest {
+    margin: 0;
+    font-size: var(--fs-sm);
+  }
   .kit {
     padding: var(--sp-4);
     border: 1px dashed var(--border-strong);

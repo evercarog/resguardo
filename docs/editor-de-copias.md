@@ -120,3 +120,13 @@ Regla: **cada acción se alcanza desde donde se está mirando esa cosa.**
 - El contrato con los agentes: la configuración sigue siendo `config.copias[]` con `tras` (v1.55). Solo cambia cómo la consola la edita. La comprobación de cadenas (`errorCadenas`) sigue igual.
 - La clave de administración: el editor se abre con ella y «Enviar al equipo» firma la orden `config`, como siempre.
 - La tira 3·2·1·1·0 y la página de los destinos (las lleva otra rama).
+
+## Elegir el destino de un paso
+
+Lo pidió el responsable con un caso real: una Dropbox conectada en el almacén (para su espejo) no aparecía al añadir un paso desde el equipo que copia.
+
+- «Espejo de esta copia» y «Repositorio nuevo a partir de esta» enseñan **todos los destinos del cliente** (zonas, destinos de los equipos, catálogo y nubes conectadas en cualquier equipo), los que sirven primero. Los que no, desactivados y con el porqué en pocas palabras:
+  - **Espejo:** lo hace el almacén donde está el repositorio, así que sirven sus otras zonas y sus nubes. Una nube conectada en otro equipo: «Hace falta también en …» con «Conectar en …».
+  - **Repositorio nuevo a partir de esta:** lo hace el equipo dueño. Una Dropbox conectada solo en el almacén: «Conectar en …» (el flujo de siempre, `conectar_nube`, en el equipo dueño; 4a). Con un agente sin `nube_equipo`: «Actualiza el agente de …». Un B2 o S3 del catálogo que el equipo aún no tiene: se elige y pide solo sus credenciales.
+  - **Copia nueva (carpetas):** directo a una nube todavía no (4a pendiente). En el repositorio de la copia, las nubes salen desactivadas con el camino que sí: copiar al almacén y después «Repositorio nuevo a partir de esta» (también es lo que pide la regla 3-2-1).
+- La lógica está en `lib/cadenas.ts` (`destinosParaPasos`, `usosPosibles`, `detalleDestino`, con vectores) para que la página de cada destino pueda ofrecer «Usar en una copia» con lo mismo.

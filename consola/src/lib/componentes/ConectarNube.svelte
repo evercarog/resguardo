@@ -18,12 +18,15 @@
   import Ayuda from "./Ayuda.svelte";
   import CampoClave from "./CampoClave.svelte";
 
-  let { cliente, equipo, onclose }: { cliente: Cliente; equipo: Equipo; onclose: () => void } = $props();
+  let { cliente, equipo, onclose, nombreInicial }: { cliente: Cliente; equipo: Equipo; onclose: () => void; /** El nombre que ya tiene en otro equipo («Dropbox Oficina»). */ nombreInicial?: string } = $props();
 
-  const existentes = $derived((equipo.resumen?.guarda_copias?.nubes ?? []).map((n) => n.nombre.toLowerCase()));
+  /** En un almacén, para su espejo; en otro equipo (4a), para sus copias derivadas. */
+  const enAlmacen = $derived(!!equipo.resumen?.guarda_copias?.activo);
+  const existentes = $derived([...(equipo.resumen?.guarda_copias?.nubes ?? []), ...(equipo.resumen?.nubes ?? [])].map((n) => n.nombre.toLowerCase()));
   let paso = $state<1 | 2 | 3>(1);
   const propuesto = () => `Dropbox ${cliente.nombre}`;
-  let nombre = $state(propuesto());
+  // svelte-ignore state_referenced_locally
+  let nombre = $state(nombreInicial ?? propuesto());
   let codigo = $state("");
   let claveAdmin = $state("");
   let ocupado = $state(false);
@@ -114,13 +117,13 @@
     <span class="ticon"><Cloud size={18} /></span>
     <div>
       <h2 id="t-nube">Conectar Dropbox en {equipo.nombre}</h2>
-      <p>Para el espejo de lo que guarda este equipo. El permiso se guarda protegido solo en el equipo: ni el servidor ni esta consola lo conservan.</p>
+      <p>{enAlmacen ? "Para el espejo de lo que guarda este equipo." : `Para las copias de ${equipo.nombre} a esta nube.`} El permiso se guarda protegido solo en el equipo: ni el servidor ni esta consola lo conservan.</p>
     </div>
   </div>
 
   {#if hecho}
     <div class="form">
-      <div class="notice notice-success" role="status"><Check size={16} /><p>«{nombre.trim()}» está conectada. Ya puedes añadirla como destino del espejo.</p></div>
+      <div class="notice notice-success" role="status"><Check size={16} /><p>«{nombre.trim()}» está conectada. {enAlmacen ? "Ya puedes añadirla como destino del espejo." : "Ya puedes elegirla al añadir un paso."}</p></div>
       <footer><button class="btn btn-primary" onclick={onclose}>Hecho</button></footer>
     </div>
   {:else}
@@ -138,7 +141,7 @@
         <div class="field">
           <label class="field-label" for="n-nombre">Nombre de la nube</label>
           <input id="n-nombre" class="input" bind:value={nombre} />
-          {#if nombreError}<p class="error-campo">{nombreError}</p>{:else}<span class="field-hint">Así la verás al elegir los destinos del espejo.</span>{/if}
+          {#if nombreError}<p class="error-campo">{nombreError}</p>{:else}<span class="field-hint">Así la verás al elegir los destinos{enAlmacen ? " del espejo" : ""}.</span>{/if}
         </div>
         <div class="notice notice-info">
           <p>

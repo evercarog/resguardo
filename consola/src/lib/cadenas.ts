@@ -7,11 +7,11 @@
 // que se sabe de cada uno (`clase`, `destinoId`, `tipoDestino`, `inmutable`,
 // `fueraRetencion`, `despues`). Sin dependencias de Svelte: lo prueban los
 // vectores (scripts/vectores-cadenas.ts).
-import type { CopiaConfig, CuandoDerivada, DerivadaResumen, Equipo, FiltroVersiones, RepositorioResumen } from "./tipos";
+import type { CopiaConfig, CuandoDerivada, DerivadaResumen, DestinoCatalogo, Equipo, FiltroVersiones, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { almacenDe } from "./retencion";
-import { almacenesDe, nombreZonaPorDefecto, PRINCIPAL, zonaDeDestino, zonasDe } from "./destinos";
-import { etiquetaCarpeta, TIPOS_NUBE } from "./espejo";
+import { almacenesDe, claveNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
+import { etiquetaCarpeta, nombreTipoNube, TIPOS_NUBE } from "./espejo";
 import { horarioEnFrase } from "./formato";
 
 /** Lo nuevo de la parte B que anuncia el agente en `resumen.admite`. */
@@ -389,4 +389,96 @@ export function derivadasDe(r: RepositorioResumen): (DerivadaResumen & { externa
   const l: (DerivadaResumen & { externa?: boolean })[] = [];
   if (r.externa) l.push({ id: "externa", externa: true, destino: r.externa.destino, destino_id: r.externa.destino_id, cuando: { hora: r.externa.hora }, bloqueo_dias: r.externa.bloqueo_dias, solo_anadir: r.externa.solo_anadir, con_retencion: r.externa.con_retencion });
   return l.concat(r.derivadas ?? []);
+}
+
+// --- ¿Para qué sirve cada destino desde una copia? (docs/editor-de-copias.md) ---
+// «Añadir paso» enseña todos los destinos del cliente con lo que se puede hacer
+// con cada uno desde esta copia, y por qué no cuando no se puede. La página de
+// un destino puede usar lo mismo para «Usar en una copia».
+
+/** Lo que se puede hacer con un destino desde una copia. */
+export type UsoPaso = "copia" | "espejo" | "derivada";
+export interface Uso {
+  ok: boolean;
+  /** Por qué no (o una nota corta si sí). */
+  motivo?: string;
+  /** Lo que lo haría posible: conectar la nube en un equipo, actualizar su agente o usar otro tipo de paso. */
+  accion?: { tipo: "conectar_nube"; equipo: Equipo; nube: string; tipoNube: string } | { tipo: "actualizar"; equipo: Equipo } | { tipo: "otro_paso"; uso: UsoPaso };
+}
+
+/** Todos los destinos del cliente, más las nubes conectadas en equipos que no son almacenes (para las derivadas). */
+export function destinosParaPasos(equipos: Equipo[], catalogo: DestinoCatalogo[] = []): DestinoVista[] {
+  const l = destinosDelCliente(equipos, catalogo);
+  const almacenes = new Set(almacenesDe(equipos).map((a) => a.id));
+  for (const e of equipos) {
+    if (almacenes.has(e.id)) continue;
+    for (const n of e.resumen?.nubes ?? []) {
+      // Si ya la usa un destino del equipo, basta con ese (no dos veces la misma nube).
+      if (e.resumen?.destinos?.some((x) => x.tipo === "nube" && x.nube === n.nombre)) continue;
+      const clave = claveNube(e.id, n.nombre);
+      if (!l.some((x) => x.clave === clave)) l.push({ clave, nombre: n.nombre, nombrePorDefecto: n.nombre, renombrado: false, clase: "nube", tipo: "nube", donde: null, nube: { equipo: e, nombre: n.nombre, tipo: n.tipo }, ids: [], equipos: [e.nombre] });
+    }
+  }
+  return l;
+}
+
+/** «Dropbox · conectada en ALMACEN-SUR», «Backblaze B2 · copias-sur», «Zona de un almacén». */
+export function detalleDestino(d: DestinoVista): string {
+  if (d.nube) return `${nombreTipoNube(d.nube.tipo)} · conectada en ${d.nube.equipo.nombre}`;
+  if (d.zona) return d.zona.principal ? `Almacén ${d.zona.almacen.nombre}` : `Otra zona de ${d.zona.almacen.nombre}`;
+  return [TEXTO_TIPO[d.tipo] ?? d.tipo, d.donde].filter(Boolean).join(" · ");
+}
+
+const NUBE_DIRECTA = "Directo a una nube, todavía no: haz la copia a un almacén y después «Repositorio nuevo a partir de esta».";
+
+/**
+ * Qué se puede hacer con el destino `d` desde el repositorio `repo` de `equipo`:
+ * - «copia» (carpetas directas): a una nube todavía no (el token caduca en la vuelta del agente: 4a pendiente).
+ * - «espejo»: lo hace el almacén donde está el repositorio, a otra de sus zonas o a una nube conectada en él.
+ * - «derivada»: lo hace el equipo dueño, que necesita el destino (o la nube conectada) en él.
+ */
+export function usosPosibles(d: DestinoVista, equipo: Equipo, repo: RepositorioResumen | null, equipos: Equipo[]): Record<UsoPaso, Uso> {
+  const propio = repo ? destinoDe(equipo.resumen?.destinos, repo) : undefined;
+  const zonaPropia = propio ? zonaDeDestino(propio, equipos) : null;
+  const esElSuyo = !!repo && ((!!zonaPropia && d.zona?.almacen.id === zonaPropia.almacen.id && d.zona.id === zonaPropia.id) || (!!propio && d.ids.includes(propio.id)));
+  const yaEsta: Uso = { ok: false, motivo: "Ya guarda aquí" };
+
+  // Copia nueva de carpetas.
+  const copia: Uso = d.clase === "nube" ? { ok: false, motivo: NUBE_DIRECTA, accion: { tipo: "otro_paso", uso: "derivada" } } : { ok: true };
+
+  // Espejo: el almacén donde está el repositorio.
+  let espejo: Uso;
+  const en = repo ? repoEnAlmacen(equipo, repo, equipos) : null;
+  if (esElSuyo) espejo = yaEsta;
+  else if (!en) espejo = { ok: false, motivo: "Solo si la copia guarda en un almacén" };
+  else if (!admite(en.almacen, ADMITE.espejoZonas)) espejo = { ok: false, motivo: `Actualiza el agente de ${en.almacen.nombre}`, accion: { tipo: "actualizar", equipo: en.almacen } };
+  else if (d.zona) espejo = d.zona.almacen.id === en.almacen.id ? { ok: true } : { ok: false, motivo: `Es de ${d.zona.almacen.nombre}; el espejo lo hace ${en.almacen.nombre}` };
+  else if (d.nube)
+    espejo =
+      d.nube.equipo.id === en.almacen.id
+        ? { ok: true }
+        : { ok: false, motivo: `Hace falta también en ${en.almacen.nombre}`, accion: { tipo: "conectar_nube", equipo: en.almacen, nube: d.nube.nombre, tipoNube: d.nube.tipo } };
+  else espejo = { ok: false, motivo: `El espejo va a otra zona o a una nube de ${en.almacen.nombre}` };
+
+  // Repositorio nuevo a partir de esta: el equipo dueño.
+  let derivada: Uso;
+  const tiene = d.ids.some((id) => equipo.resumen?.destinos?.some((x) => x.id === id));
+  if (esElSuyo) derivada = yaEsta;
+  else if (!admite(equipo, ADMITE.derivadas)) derivada = { ok: false, motivo: `Actualiza el agente de ${equipo.nombre}`, accion: { tipo: "actualizar", equipo } };
+  else if (d.nube) {
+    const aqui = d.nube.equipo.id === equipo.id || (equipo.resumen?.nubes ?? []).some((n) => n.nombre === d.nube!.nombre);
+    derivada = aqui
+      ? { ok: true }
+      : !admite(equipo, ADMITE.nubeEquipo)
+        ? { ok: false, motivo: `Actualiza el agente de ${equipo.nombre} para usar nubes`, accion: { tipo: "actualizar", equipo } }
+        : d.nube.tipo === "dropbox"
+          ? { ok: false, motivo: `Hace falta también en ${equipo.nombre}`, accion: { tipo: "conectar_nube", equipo, nube: d.nube.nombre, tipoNube: d.nube.tipo } }
+          : // B2, S3, SFTP… conectadas por rclone en el almacén: desde el equipo, como un destino nuevo con sus datos.
+            { ok: false, motivo: `Desde ${equipo.nombre}: «Un destino nuevo…» con sus datos` };
+  } else if (tiene) derivada = { ok: true };
+  else if (d.zona) derivada = { ok: false, motivo: `${equipo.nombre} aún no entra en esta zona: mejor un espejo` };
+  else if (["b2", "s3", "rest"].includes(d.tipo)) derivada = { ok: true, motivo: "Pide sus credenciales" };
+  else derivada = { ok: false, motivo: `No es de ${equipo.nombre}` };
+
+  return { copia, espejo, derivada };
 }
