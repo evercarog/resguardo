@@ -47,6 +47,8 @@ import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos"
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
+// @ts-expect-error: módulo de Node en JavaScript, sin tipos.
+import { firmarPruebas, semillaPruebas } from "../../../scripts/lib/minisign.mjs";
 import { OyenteVivo } from "./vivo";
 import { borrarCarpeta, BuzonSmtp, comprobar, dormir, EXE, ejecutar, esperar, Fallo, igual, log, paso, pasoEnCurso, pararTodo, puertoLibre, WIN } from "./entorno";
 
@@ -567,6 +569,67 @@ async function principal() {
     igual(fs.readFileSync(path.join(datosB, "Facturas", restaurado, "factura-001.txt"), "utf8"), contenido, "El archivo restaurado es el de la versión");
     igual(fs.readFileSync(original, "utf8"), "cambiada después de la copia\n", "El original no se tocó");
     log(`Restaurado en «Facturas/${restaurado}»`);
+
+    // -----------------------------------------------------------------------
+    paso("4a. Actualización automática: la consola sirve una versión firmada (llave de PRUEBAS) y B «se actualiza»");
+    {
+      // docs/actualizaciones.md: la sustitución real del programa se prueba en máquinas virtuales
+      // (§11); aquí el agente de desarrollo la simula (simular-actualizacion.txt) y todo lo demás
+      // es de verdad: firma, servidor espejo, política, anillo, descarga con su SHA-256 e informe.
+      const cargo = fs.readFileSync(path.join(RAIZ, "crates", "agente", "Cargo.toml"), "utf8");
+      const actualV = /^version\s*=\s*"([^"]+)"/m.exec(cargo)![1].split("-")[0];
+      const [ma, mi, pa] = actualV.split(".").map(Number);
+      const nueva = `${ma}.${mi}.${pa + 1}`;
+      const plataforma = WIN ? "windows-x86_64" : process.arch === "arm64" ? "linux-aarch64" : "linux-x86_64";
+      const nombre = WIN ? `Resguardo-Agente_${nueva}_x64-setup.exe` : `resguardo-agente-${process.arch === "arm64" ? "aarch64" : "x86_64"}-linux-musl.tar.gz`;
+      const paquete = randomBytes(200_000);
+      const { createHash } = await import("node:crypto");
+      const manifiesto = {
+        formato: 1,
+        producto: "resguardo-agente",
+        version: nueva,
+        fecha: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        canal: "estable",
+        archivos: [{ plataforma, tipo: WIN ? "instalador-nsis" : "tar.gz", nombre, sha256: createHash("sha256").update(paquete).digest("hex"), tamano: paquete.length }],
+      };
+      const texto = JSON.stringify(manifiesto, null, 2) + "\n";
+      const fixtures = fs.readFileSync(path.join(RAIZ, "crates", "protocolo", "tests", "fixtures", "LLAVES-DE-PRUEBAS-LEEME.txt"), "utf8");
+      const firmaA = firmarPruebas(Buffer.from(texto), semillaPruebas(fixtures, "C57E2BA1129956D5"), "C57E2BA1129956D5");
+      const firmaB = firmarPruebas(Buffer.from(texto), semillaPruebas(fixtures, "851E4472FB75946F"), "851E4472FB75946F");
+      // El servidor no acepta nada que no firme la llave fijada (la B no lo está), ni un manifiesto cambiado.
+      igual((await consola.pedir("PUT", "/api/servidor/publicacion", { manifiesto: texto, firma: firmaB })).estado, 422, "Firmada con otra llave: no se acepta");
+      igual((await consola.pedir("PUT", "/api/servidor/publicacion", { manifiesto: texto.replace(nueva, `${nueva}9`), firma: firmaA })).estado, 422, "Manifiesto cambiado: no se acepta");
+      await consola.ok("PUT", "/api/servidor/publicacion", { manifiesto: texto, firma: firmaA });
+      const cambiado = Buffer.from(paquete);
+      cambiado[0] ^= 1;
+      igual((await consola.pedir("PUT", `/api/servidor/publicacion/${nueva}/${nombre}`, cambiado)).estado, 422, "Un archivo que no es el firmado: no se acepta");
+      const pub = await consola.ok<{ vigente: { version: string } | null }>("PUT", `/api/servidor/publicacion/${nueva}/${nombre}`, paquete);
+      igual(pub.vigente?.version, nueva, "El servidor da la versión firmada");
+      const disponible = await consola.ok<{ disponible: { version: string } | null; equipos: Record<string, { anillo: string }> }>("GET", `/api/clientes/${c.id}/actualizaciones`);
+      igual([disponible.disponible?.version, disponible.equipos[eqB.id]?.anillo], [nueva, "general"], "La consola del cliente la ve; B está en el anillo general");
+      // B, en el anillo de prueba (le llega un toque por el canal): la busca, la comprueba, la baja y se «instala».
+      fs.writeFileSync(path.join(B.dir, "simular-actualizacion.txt"), "ok");
+      await consola.ok("PUT", `/api/clientes/${c.id}/equipos/${eqB.id}/anillo`, { anillo: "prueba" });
+      const informeB = async () =>
+        (await consola.ok<{ equipo: string; datos: any }[]>("GET", `/api/clientes/${c.id}/informes`)).find((x) => x.equipo === eqB.id)?.datos?.actualizacion;
+      let visto: any = null;
+      await esperar(
+        "que B diga que se actualizó",
+        async () => {
+          visto = await informeB();
+          return visto?.estado === "actualizada" && visto?.version_objetivo === nueva;
+        },
+        { plazo: 240_000, cada: 2_000 },
+      ).catch((e) => {
+        console.log(`Lo último de B: ${JSON.stringify(visto)}\n${B.ultimasLineas(30)}`);
+        throw e;
+      });
+      const simulada = JSON.parse(fs.readFileSync(path.join(B.dir, "privado", "actualizacion", "simulada.json"), "utf8"));
+      igual(simulada.sha256, manifiesto.archivos[0].sha256, "B bajó de la consola justo el archivo firmado");
+      igual(visto.anillo, "prueba", "B dice su anillo");
+      fs.rmSync(path.join(B.dir, "simular-actualizacion.txt"), { force: true });
+      log(`B «se actualizó» a la ${nueva} (simulada) desde ${visto.origen}`);
+    }
 
     // -----------------------------------------------------------------------
     paso("5. Retención en el almacén con plazos, sin fiarse de las horas que pone el equipo");

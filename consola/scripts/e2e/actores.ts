@@ -3,6 +3,7 @@
 // programa de verdad, en primer plano y en modo de pruebas) y «la consola»: lo
 // que hace el navegador, con la criptografía de la consola (src/lib/cripto,
 // src/lib/retencion…), contra la API real.
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -35,6 +36,9 @@ export const FINALES = ["hecha", "fallida", "rechazada", "cancelada", "caducada"
 // Resguardo Server
 // ---------------------------------------------------------------------------
 
+/** La llave pública de publicación de PRUEBAS (crates/protocolo/tests/fixtures), docs/actualizaciones.md. */
+export const LLAVE_PRUEBAS_PUB = fileURLToPath(new URL("../../../crates/protocolo/tests/fixtures/llave-pruebas-a.pub", import.meta.url));
+
 export class Servidor {
   proceso: Proceso | null = null;
   ca = "";
@@ -50,7 +54,7 @@ export class Servidor {
   }
   async arrancar() {
     this.proceso = new Proceso(this.nombre, this.binario, ["--datos", this.datos, "--escuchar", `127.0.0.1:${this.puerto}`], {
-      env: { RESGUARDO_PRUEBA_SIN_ESPERA: "1" },
+      env: { RESGUARDO_PRUEBA_SIN_ESPERA: "1", RESGUARDO_LLAVES_PRUEBAS: LLAVE_PRUEBAS_PUB },
       registro: this.registro,
     });
     await esperar(`que ${this.nombre} escuche en ${this.puerto}`, async () => {
@@ -85,7 +89,8 @@ export class Agente {
     fs.mkdirSync(dir, { recursive: true });
   }
   get env() {
-    return { RESGUARDO_AGENT_DIR: this.dir, RESGUARDO_PRUEBA_SIN_ESPERA: "1" };
+    // La llave de publicación de PRUEBAS (solo la aceptan las compilaciones de desarrollo): paso 4a.
+    return { RESGUARDO_AGENT_DIR: this.dir, RESGUARDO_PRUEBA_SIN_ESPERA: "1", RESGUARDO_LLAVES_PRUEBAS: LLAVE_PRUEBAS_PUB };
   }
   /** `resguardo-agente <args>` (la línea de órdenes, como un administrador en el equipo). */
   cli(args: string[]) {
