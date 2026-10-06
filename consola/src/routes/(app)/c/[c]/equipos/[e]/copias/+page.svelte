@@ -114,6 +114,16 @@
       original = JSON.stringify(c0);
       cfg = c0;
       void recargarPlantillas();
+      // Tarea 7f: desde «Añadir una copia» (?nueva=1, y ?tras=<copia> si va después de otra).
+      if (page.url.searchParams.get("nueva") === "1") {
+        nueva();
+        const tras = page.url.searchParams.get("tras");
+        const k = cfg.copias.at(-1);
+        if (k && tras && cfg.copias.some((x) => x.id === tras)) {
+          k.tras = tras;
+          k.horario = { dias: [], horas: [] };
+        }
+      }
     } catch (err) {
       borrar(kcfg, prueba);
       kcfg = prueba = null;

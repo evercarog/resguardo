@@ -13,6 +13,7 @@ import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
 import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
+import { zonasDe } from "./destinos";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
 export type TipoNodo = "cliente" | "equipo" | "grupo" | "repo" | "destino" | "espejo" | "externa";
@@ -333,7 +334,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         id: `es:${alm.id}:${i}`,
         tipo: "espejo",
         col: 3,
-        nombre: (nube ? d.nube : d.carpeta) ?? "Espejo",
+        // Tarea 7d.2: a otra zona del almacén, con el nombre de la zona.
+        nombre: (nube ? d.nube : d.tipo === "zona" ? (zonasDe(alm).find((z) => z.id === d.carpeta)?.nombre ?? d.carpeta) : d.carpeta) ?? "Espejo",
         sub: `Espejo · ${cuandoCorto(d, esp.hora)}`,
         tono,
         estado: mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado",
