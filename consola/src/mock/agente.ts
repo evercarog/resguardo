@@ -15,6 +15,7 @@ import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMens
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
+import { errorCadenas } from "../lib/cadenas";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
@@ -67,6 +68,7 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       exclusiones: ["*.tmp", "~$*", "Thumbs.db"],
       horario: typeof c.horario === "object" && c.horario ? c.horario : { dias: [1, 2, 3, 4, 5], horas: ["13:00"] },
       activa: c.activa !== false,
+      ...(c.tras ? { tras: c.tras } : {}),
       // CONTABILIDAD (agente 0.7.2) vuelca su base de SQL Server antes de copiar «Siigo».
       gancho: c.id === "siigo" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["SIIGO_ALTAMAR"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
@@ -140,6 +142,7 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       horario: c.horario,
       carpetas: c.carpetas.length,
       activa: c.activa,
+      tras: c.tras ?? null,
       // v1.16: como el agente 0.7.7 (los anteriores ni lo leen: siempre encendido).
       ...(versionAlMenos(e.version_agente, "0.7.7") ? { solo_si_cambios: c.solo_si_cambios !== false } : {}),
     })),
@@ -279,8 +282,13 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           if (err) return resultado(e, o, "fallida", err);
         }
       }
+      // Tarea 7c: «después de la anterior», como el agente con `admite: "cadenas"` (uno anterior lo ignora).
+      if (!e.resumen?.admite?.includes("cadenas")) for (const k of cfg.copias) delete k.tras;
+      const errCadena = errorCadenas(cfg.copias);
+      if (errCadena) return resultado(e, o, "fallida", errCadena);
       // Horario (v1.24): un agente ≥ 0.7.9 usa las reglas si las hay; uno anterior no las lee y usa la lista de horas.
       for (const k of cfg.copias) {
+        if (k.tras && !k.horario.reglas?.length && !k.horario.horas.length) continue;
         if (k.horario.reglas?.length && !versionAlMenos(e.version_agente, VERSION_REGLAS)) delete k.horario.reglas;
         if (k.horario.reglas?.length) {
           const err = errorReglas(k.horario.reglas);
@@ -755,6 +763,49 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const sep = /windows/i.test(e.so) ? "\\" : "/";
       const ruta = !existente && destino.tipo === "local" && destino.donde ? ` (${destino.donde.replace(/[\\/]+$/, "")}${sep}${repo.id})` : "";
       return resultado(e, o, "hecha", `Copia externa a «${destino.nombre}»${ruta} cada día a las ${c.hora}.${probado ? ` ${probado}` : ""}${efecto}`);
+    }
+    // Tarea 4b: las demás copias derivadas (como el agente con `admite: "derivadas"`).
+    case "cambiar_derivada": {
+      const repo = e.resumen?.repositorios?.find((x) => x.id === c.repo);
+      if (!repo) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      if (!e.resumen?.admite?.includes("derivadas")) return resultado(e, o, "fallida", "Tipo de orden desconocido.");
+      const id = String(c.id ?? "");
+      if (!/^[a-z0-9_-]{1,40}$/.test(id) || id === "externa") return resultado(e, o, "fallida", "Id de copia derivada no válido.");
+      const d = c.destino as { id: string; nombre?: string; tipo?: T.DestinoResumen["tipo"]; donde?: string; nube?: string };
+      if (!d?.id) return resultado(e, o, "fallida", "Falta el destino.");
+      if (d.id === repo.destino || e.resumen?.destinos?.find((x) => x.id === d.id)?.nombre === repo.destino) return resultado(e, o, "fallida", "La copia tiene que ir a otro destino (otro disco, otro servidor o la nube).");
+      if (d.tipo === "nube" && !(e.resumen?.nubes ?? []).some((n) => n.nombre === d.nube)) return resultado(e, o, "fallida", `La nube «${d.nube}» no está conectada en este equipo: conéctala antes.`);
+      if (c.solo_probar === true) return resultado(e, o, "hecha", "El destino responde y allí aún no hay ningún repositorio: se creará al guardar, con el mismo troceado que el origen.");
+      if (!(e.resumen?.copias ?? []).some((k) => k.repo === repo.id && k.activa !== false)) return resultado(e, o, "fallida", "Ese repositorio aún no tiene copias activas en este equipo: aplica antes una configuración con alguna copia.");
+      let destino = e.resumen!.destinos?.find((x) => x.id === d.id);
+      if (!destino) {
+        if (!d.tipo || (!d.donde && d.tipo !== "nube")) return resultado(e, o, "fallida", `No hay ningún destino «${d.id}» en este equipo.`);
+        destino = { id: d.id, nombre: d.nombre || "Destino", tipo: d.tipo, donde: d.donde, ...(d.nube ? { nube: d.nube } : {}) };
+        e.resumen!.destinos = [...(e.resumen!.destinos ?? []), destino];
+      }
+      const cuando = c.tras_copia === true ? { tras_copia: true } : c.horario ? { horario: c.horario as T.Horario } : { hora: String(c.hora ?? "") };
+      const filtro = c.filtro as T.FiltroVersiones | undefined;
+      const nueva: T.DerivadaResumen = {
+        id,
+        destino: destino.nombre,
+        destino_id: destino.id,
+        cuando,
+        bloqueo_dias: Number(c.bloqueo_dias ?? 0) || null,
+        filtro: filtro ? { ...filtro, ...(Array.isArray(filtro.carpetas) ? { carpetas: filtro.carpetas.length } : {}) } : null,
+        verificacion: (c.verificacion as T.VerificacionAuto | undefined) ?? null,
+        activa: true,
+        con_retencion: !!c.retencion,
+      };
+      repo.derivadas = [...(repo.derivadas ?? []).filter((x) => x.id !== id), nueva];
+      guardarConfig(e, configInicial(e), plana.seq);
+      return resultado(e, o, "hecha", `Copia derivada a «${destino.nombre}» guardada. Repositorio creado en el destino, con el mismo troceado que el origen.`);
+    }
+    case "quitar_derivada": {
+      const repo = e.resumen?.repositorios?.find((x) => x.id === c.repo);
+      if (!repo?.derivadas?.some((x) => x.id === c.id)) return resultado(e, o, "fallida", "Esa copia derivada ya no está.");
+      repo.derivadas = repo.derivadas.filter((x) => x.id !== c.id);
+      guardarConfig(e, configInicial(e), plana.seq);
+      return resultado(e, o, "hecha", "Copia derivada quitada (lo ya copiado sigue en su destino).");
     }
     case "cambiar_destino": {
       const d = e.resumen?.destinos?.find((x) => x.id === c.destino);

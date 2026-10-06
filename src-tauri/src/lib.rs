@@ -1468,6 +1468,7 @@ async fn agent_set_offsite(
                     guard: o.guard,
                     verify: o.verify.map(VerifyInput::into_verify),
                     dest: Default::default(),
+                    filtro: None,
                 }),
                 Some(agent::OffsiteSecrets {
                     password: Some(acc.password.clone()),
@@ -1490,6 +1491,7 @@ async fn agent_set_offsite(
                     guard: o.guard,
                     verify: o.verify.map(VerifyInput::into_verify),
                     dest: Default::default(),
+                    filtro: None,
                 }),
                 creds.map(|c| agent::OffsiteSecrets { password: c.password, key_id: c.key_id, key_secret: c.key_secret, location: None, env: Vec::new() }),
             ),

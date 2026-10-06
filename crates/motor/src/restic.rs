@@ -145,6 +145,17 @@ fn rclone_incluido() -> Option<std::path::PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// `-o rclone.program=…` tal como lo lee restic: la opción entera es un campo
+/// CSV y el programa se parte como una línea de órdenes (las comillas agrupan y
+/// la barra invertida escapa). Así que el programa entre comillas (por los
+/// espacios de «Program Files»), con barras normales (Windows las acepta), y la
+/// opción entera entre comillas con las de dentro dobladas. Comprobado con
+/// restic 0.19 y una ruta con espacios.
+fn opcion_rclone(p: &std::path::Path) -> String {
+    let programa = p.display().to_string().replace('\\', "/").replace('"', "");
+    format!("\"rclone.program=\"\"{programa}\"\"\"")
+}
+
 fn repo_command(access: &Access) -> Command {
     let mut cmd = base_command();
     cmd.env("RESTIC_REPOSITORY", &access.location).env("RESTIC_PASSWORD", &access.password);
@@ -155,14 +166,15 @@ fn repo_command(access: &Access) -> Command {
         cmd.env(k, v);
     }
     if BUNDLED_ONLY.load(Ordering::Relaxed) {
-        // El agente (servicio): `PATH` solo con carpetas del sistema y, con
-        // `rclone:`, el rclone que va junto a Resguardo (no el primero del PATH).
+        // El agente (servicio): `PATH` solo con carpetas del sistema.
         cmd.env("PATH", crate::proceso::path_del_sistema());
-        // (También si el origen de un `copy` es `rclone:`.)
-        let usa_rclone = access.location.starts_with("rclone:") || access.env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
-        if let Some(rclone) = rclone_incluido().filter(|_| usa_rclone) {
-            cmd.arg("-o").arg(format!("rclone.program={}", rclone.display()));
-        }
+    }
+    // Con `rclone:` (también si es el origen de un `copy`), el rclone que va
+    // junto a Resguardo si está (no el primero del PATH). En una compilación de
+    // desarrollo sin él junto al ejecutable, el del PATH, como antes.
+    let usa_rclone = access.location.starts_with("rclone:") || access.env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
+    if let Some(rclone) = rclone_incluido().filter(|_| usa_rclone) {
+        cmd.arg("-o").arg(opcion_rclone(&rclone));
     }
     // Opción global: puede ir antes del subcomando.
     if let Some(cacert) = &access.cacert {
@@ -894,6 +906,15 @@ pub mod tests {
             eprintln!("omitido: no hay restic (ni junto a la prueba ni en el PATH)");
         }
         falta
+    }
+
+    /// `-o rclone.program=` con una ruta con espacios (la de «Program Files»): campo CSV y comillas para restic.
+    #[test]
+    fn opcion_rclone_con_espacios() {
+        assert_eq!(
+            opcion_rclone(std::path::Path::new(r"C:\Program Files\Resguardo\rclone.exe")),
+            "\"rclone.program=\"\"C:/Program Files/Resguardo/rclone.exe\"\"\""
+        );
     }
 
     #[test]

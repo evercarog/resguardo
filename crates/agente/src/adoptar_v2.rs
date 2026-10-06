@@ -79,6 +79,7 @@ pub fn destino_de(d: &Value, id: &str) -> Result<Destino, String> {
         secreto: d["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
         ca_pem,
         equipo_almacen: crate::gestion_v2::equipo_almacen_de(d),
+        nube: None,
     })
 }
 
@@ -304,27 +305,84 @@ pub fn init_como(v: &Vinculo, dest: &Access, o: &Value) -> Result<restic::RawOut
 
 // ---------- Traer el historial ----------
 
-/// Qué versiones traer: de qué equipos (`--host`) y con qué etiquetas (`--tag`).
-#[derive(Debug, Default, Clone)]
+/// Qué versiones traer (`copiar_historial`) o subir (una copia derivada, tarea 4c):
+/// de qué equipos (host), con qué etiquetas, de qué carpetas y desde cuándo.
+/// Todo lo que se pide tiene que cumplirse; dentro de cada lista, basta uno.
+/// Se resuelve a los ids de las versiones (`restic snapshots --json`), así
+/// las fechas y las carpetas valen igual que las etiquetas.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Filtro {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub equipos: Vec<String>,
+    /// Cada una puede ser «a,b» (las dos a la vez), como `--tag` de restic.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub etiquetas: Vec<String>,
+    /// Tarea 4c: versiones que guardan alguna de estas carpetas (o algo dentro de ellas).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub carpetas: Vec<String>,
+    /// Tarea 4c: desde este día (AAAA-MM-DD, hora del equipo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desde: Option<String>,
+    /// Tarea 4c: solo las de los últimos N días (1 a 3650).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ultimos_dias: Option<u32>,
 }
 
 impl Filtro {
-    fn de(c: &Value) -> Result<Self, String> {
-        let lista = |k: &str| -> Result<Vec<String>, String> {
+    /// El filtro de una orden (`null` o sin campos: todas), comprobado.
+    pub fn de(c: &Value) -> Result<Self, String> {
+        if !c.is_null() && !c.is_object() {
+            return Err("Filtro no válido.".into());
+        }
+        let lista = |k: &str, max: usize| -> Result<Vec<String>, String> {
             let l: Vec<String> = c[k]
                 .as_array()
                 .map(|a| a.iter().filter_map(Value::as_str).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
                 .unwrap_or_default();
-            if l.len() > 50 || l.iter().any(|s| s.chars().count() > 200 || s.starts_with('-') || s.chars().any(char::is_control)) {
+            if l.len() > 50 || l.iter().any(|s| s.chars().count() > max || s.starts_with('-') || s.chars().any(char::is_control)) {
                 return Err("Filtro no válido.".into());
             }
             Ok(l)
         };
-        Ok(Filtro { equipos: lista("equipos")?, etiquetas: lista("etiquetas")? })
+        let desde = match &c["desde"] {
+            Value::Null => None,
+            Value::String(d) if chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok() => Some(d.clone()),
+            _ => return Err("La fecha «desde» del filtro no es válida (AAAA-MM-DD).".into()),
+        };
+        let ultimos_dias = match &c["ultimos_dias"] {
+            Value::Null => None,
+            n => Some(n.as_u64().filter(|n| (1..=3650).contains(n)).ok_or("«Los últimos días» del filtro van de 1 a 3650.")? as u32),
+        };
+        Ok(Filtro { equipos: lista("equipos", 200)?, etiquetas: lista("etiquetas", 200)?, carpetas: lista("carpetas", 1000)?, desde, ultimos_dias })
     }
+
+    /// ¿Deja pasar todas?
+    pub fn todas(&self) -> bool {
+        *self == Filtro::default()
+    }
+
+    /// En palabras, para los mensajes («de PC-ANA, con la etiqueta diaria, de los últimos 90 días»).
+    pub fn texto(&self) -> String {
+        let mut p = Vec::new();
+        if !self.equipos.is_empty() {
+            p.push(format!("de {}", self.equipos.join(", ")));
+        }
+        if !self.etiquetas.is_empty() {
+            p.push(format!("con la etiqueta {}", self.etiquetas.join(" o ")));
+        }
+        if !self.carpetas.is_empty() {
+            p.push(if self.carpetas.len() == 1 { "de 1 carpeta".to_string() } else { format!("de {} carpetas", self.carpetas.len()) });
+        }
+        if let Some(d) = &self.desde {
+            p.push(format!("desde el {d}"));
+        }
+        if let Some(n) = self.ultimos_dias {
+            p.push(format!("de los últimos {n} días"));
+        }
+        p.join(", ")
+    }
+
+    #[cfg(test)]
     fn args(&self) -> Vec<String> {
         let mut a = Vec::new();
         for h in &self.equipos {
@@ -335,10 +393,43 @@ impl Filtro {
         }
         a
     }
-    fn deja(&self, s: &restic::Snapshot) -> bool {
-        (self.equipos.is_empty() || self.equipos.contains(&s.hostname))
+    /// ¿Pasa esta versión? (`ahora`: para «los últimos N días».)
+    pub fn deja_en(&self, s: &restic::Snapshot, ahora: chrono::DateTime<chrono::Local>) -> bool {
+        let cuando = chrono::DateTime::parse_from_rfc3339(&s.time).ok().map(|t| t.with_timezone(&chrono::Local));
+        let desde_ok = match self.desde.as_deref().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+            None => true,
+            Some(d) => cuando.is_some_and(|t| t.date_naive() >= d),
+        };
+        let dias_ok = match self.ultimos_dias {
+            None => true,
+            Some(n) => cuando.is_some_and(|t| ahora.signed_duration_since(t) <= chrono::Duration::days(i64::from(n))),
+        };
+        (self.equipos.is_empty() || self.equipos.iter().any(|h| h.eq_ignore_ascii_case(&s.hostname)))
             && (self.etiquetas.is_empty() || self.etiquetas.iter().any(|t| t.split(',').all(|x| s.tags.iter().any(|y| y == x))))
+            && (self.carpetas.is_empty() || s.paths.iter().any(|p| self.carpetas.iter().any(|c| carpeta_dentro(p, c))))
+            && desde_ok
+            && dias_ok
     }
+
+    fn deja(&self, s: &restic::Snapshot) -> bool {
+        self.deja_en(s, chrono::Local::now())
+    }
+}
+
+/// ¿`ruta` es `carpeta` o está dentro? Sin distinguir mayúsculas ni el tipo de barra
+/// (las versiones de Windows guardan «C:\Datos» o «/C/Datos» según el restic).
+fn carpeta_dentro(ruta: &str, carpeta: &str) -> bool {
+    let norma = |x: &str| {
+        let t = x.replace('\\', "/").to_lowercase();
+        let t = t.trim_end_matches('/').to_string();
+        // «c:/datos» y «/c/datos» son lo mismo.
+        match t.as_bytes() {
+            [l, b':', ..] if l.is_ascii_alphabetic() => format!("/{}{}", *l as char, &t[2..]),
+            _ => t,
+        }
+    };
+    let (r, c) = (norma(ruta), norma(carpeta));
+    !c.is_empty() && (r == c || r.starts_with(&format!("{c}/")))
 }
 
 /// Copia las versiones del origen que falten en el repositorio gestionado `repo`.
@@ -363,25 +454,32 @@ pub fn traer(v: &Vinculo, repo: &str, src: &Access, filtro: &Filtro, progreso: &
         });
     }
     progreso(0, total);
-    let mut args: Vec<String> = vec!["copy".into(), "--retry-lock".into(), "30m".into()];
-    args.extend(extra);
-    args.extend(filtro.args());
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Tarea 4c: el filtro ya está resuelto a ids (las que faltan, de la más antigua a la
+    // más reciente); por tandas, por el límite de longitud de la línea de órdenes de Windows.
+    let mut pendientes: Vec<&restic::Snapshot> =
+        candidatas.iter().filter(|s| !(presentes.contains(&s.id) || s.original.as_ref().is_some_and(|o| presentes.contains(o)))).collect();
+    pendientes.sort_by(|a, b| a.time.cmp(&b.time));
     let mut hechas = 0usize;
-    let out = restic::run_raw_lines(&both, &refs, COPIAR, &mut |linea| {
-        let l = linea.trim().to_lowercase();
-        if l.starts_with("snapshot ") && l.contains(" saved") {
-            hechas += 1;
-            progreso(hechas, total);
+    for tanda in pendientes.chunks(100) {
+        let mut args: Vec<String> = vec!["copy".into(), "--retry-lock".into(), "30m".into()];
+        args.extend(extra.iter().cloned());
+        args.extend(tanda.iter().map(|s| s.id.clone()));
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = restic::run_raw_lines(&both, &refs, COPIAR, &mut |linea| {
+            let l = linea.trim().to_lowercase();
+            if l.starts_with("snapshot ") && l.contains(" saved") {
+                hechas += 1;
+                progreso(hechas, total);
+            }
+        })?;
+        if out.code != Some(0) {
+            let e = restic::exit_error(out.code, &out.stderr);
+            return Err(if hechas > 0 {
+                format!("Se trajeron {hechas} de {total} versiones y después falló: {e} Puedes volver a pedirlo: sigue donde se quedó.")
+            } else {
+                e
+            });
         }
-    })?;
-    if out.code != Some(0) {
-        let e = restic::exit_error(out.code, &out.stderr);
-        return Err(if hechas > 0 {
-            format!("Se trajeron {hechas} de {total} versiones y después falló: {e} Puedes volver a pedirlo: sigue donde se quedó.")
-        } else {
-            e
-        });
     }
     let mut m = match hechas.max(total) {
         1 => "Historial traído: 1 versión nueva.".to_string(),
@@ -643,9 +741,44 @@ mod tests {
         assert!(destino_de(&json!({ "tipo": "ftp", "donde": "x" }), "d").is_err());
         assert!(destino_de(&json!({ "tipo": "rest", "donde": "https://x", "ca_pem": "hola" }), "d").is_err());
         assert_eq!(destino_de(&json!({ "tipo": "rest", "donde": "http://192.168.1.30:8001" }), "d").unwrap().nombre, "192.168.1.30:8001");
-        let f = Filtro { equipos: vec!["A".into()], etiquetas: vec!["x,y".into()] };
+        let f = Filtro { equipos: vec!["A".into()], etiquetas: vec!["x,y".into()], ..Default::default() };
         assert_eq!(f.args(), ["--host", "A", "--tag", "x,y"]);
         assert!(Filtro::de(&json!({ "equipos": ["--borrar"] })).is_err());
+    }
+
+    /// Tarea 4c: el filtro de versiones con carpetas y fechas (se resuelve a ids).
+    #[test]
+    fn filtro_por_carpetas_y_fechas() {
+        let ahora = chrono::Local::now();
+        let snap = |host: &str, tags: &[&str], paths: &[&str], hace_dias: i64| -> restic::Snapshot {
+            serde_json::from_value(json!({ "id": format!("{host}{hace_dias}"), "short_id": "x", "hostname": host, "tags": tags, "paths": paths,
+                "time": (ahora - chrono::Duration::days(hace_dias)).to_rfc3339() }))
+            .unwrap()
+        };
+        let vieja = snap("PC-ANA", &["diaria"], &[r"C:\Users\Ana\Documentos"], 200);
+        let nueva = snap("pc-ana", &["semanal"], &["/C/Users/Ana/Documentos/Facturas"], 3);
+        let otra = snap("SRV", &["diaria"], &[r"D:\Contabilidad"], 1);
+        let f = Filtro::de(&json!({ "carpetas": [r"c:\users\ana\documentos\"], "ultimos_dias": 90 })).unwrap();
+        assert!(!f.deja_en(&vieja, ahora), "más de 90 días");
+        assert!(f.deja_en(&nueva, ahora), "dentro de la carpeta, aunque la barra y las mayúsculas cambien");
+        assert!(!f.deja_en(&otra, ahora), "otra carpeta");
+        let f = Filtro::de(&json!({ "equipos": ["PC-ANA"], "etiquetas": ["diaria", "semanal"] })).unwrap();
+        assert!(f.deja_en(&vieja, ahora) && f.deja_en(&nueva, ahora) && !f.deja_en(&otra, ahora));
+        let desde = (ahora - chrono::Duration::days(10)).format("%Y-%m-%d").to_string();
+        let f = Filtro::de(&json!({ "desde": desde })).unwrap();
+        assert!(!f.deja_en(&vieja, ahora) && f.deja_en(&nueva, ahora) && f.deja_en(&otra, ahora));
+        assert!(f.texto().starts_with("desde el "));
+        assert!(Filtro::de(&Value::Null).unwrap().todas());
+        // Lo que no vale.
+        for mal in
+            [json!({ "desde": "1 de enero" }), json!({ "ultimos_dias": 0 }), json!({ "ultimos_dias": 4000 }), json!({ "carpetas": ["-x"] }), json!("todo")]
+        {
+            assert!(Filtro::de(&mal).is_err(), "{mal}");
+        }
+        // Va y vuelve igual (se guarda en la copia derivada).
+        let f = Filtro::de(&json!({ "etiquetas": ["diaria"], "ultimos_dias": 30 })).unwrap();
+        assert_eq!(serde_json::from_value::<Filtro>(serde_json::to_value(&f).unwrap()).unwrap(), f);
+        assert_eq!(serde_json::to_value(&f).unwrap(), json!({ "etiquetas": ["diaria"], "ultimos_dias": 30 }));
     }
 
     /// Adoptar en un almacén («Copiar en …»): el destino ya lleva el prefijo

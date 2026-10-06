@@ -669,7 +669,11 @@ fn parametros_de(tipo: &str) -> Option<&'static [Parametro]> {
         p("usuario", "user", true, Forma::Texto),
         contrasena("contrasena", "pass"),
     ];
+    // Solo en las pruebas (compilación de desarrollo y RESGUARDO_AGENT_DIR): una carpeta
+    // del equipo por rclone («alias»), para probar las copias por rclone sin una nube de verdad.
+    const ALIAS: &[Parametro] = &[p("carpeta", "remote", true, Forma::Texto)];
     match tipo {
+        "alias" if cfg!(debug_assertions) && crate::agent::test_mode() => Some(ALIAS),
         "b2" => Some(B2),
         "s3" => Some(S3),
         "sftp" => Some(SFTP),
@@ -819,9 +823,7 @@ const CLAVE_HOST: &str = "_clave_host";
 /// lista) y se guarda protegido. El mensaje nunca lleva las claves.
 pub fn conectar_rclone(c: &serde_json::Value) -> Result<String, String> {
     let p = leer_conectar_rclone(c)?;
-    if !crate::server::load().enabled {
-        return Err("Este equipo no guarda copias: activa antes el Servidor de copias.".into());
-    }
+    // Tarea 4a: también en un equipo que no guarda copias (para sus copias derivadas).
     conectar_rclone_con(&p, &ofuscar, &|n, carpeta| probar(n, carpeta, &crate::agent::private_dir()))
 }
 
@@ -842,7 +844,7 @@ fn conectar_rclone_con(
     guardar(&nubes)?;
     let etiqueta = TIPOS_CON_DATOS.iter().find(|(t, _)| *t == p.tipo).map_or(p.tipo.as_str(), |(_, e)| e);
     crate::agent::log(&format!("Destino «{}» ({etiqueta}) {} desde la consola.", p.nombre, if cambiada { "cambiado" } else { "conectado" }));
-    Ok(format!("{etiqueta} «{}» {}: entra y ya se puede usar como destino del espejo.", p.nombre, if cambiada { "cambiado" } else { "conectado" }))
+    Ok(format!("{etiqueta} «{}» {}: entra y ya se puede usar como destino.", p.nombre, if cambiada { "cambiado" } else { "conectado" }))
 }
 
 /// ¿Entra rclone en ese destino? (lista la raíz o la carpeta de prueba)
@@ -1028,9 +1030,7 @@ pub fn conectar_desde_orden(c: &serde_json::Value) -> Result<String, String> {
         return conectar_rclone(c);
     }
     let p = leer_conectar(c)?;
-    if !crate::server::load().enabled {
-        return Err("Este equipo no guarda copias: activa antes el Servidor de copias.".into());
-    }
+    // Tarea 4a: también en un equipo que no guarda copias (para sus copias derivadas).
     conectar_con(p, &renovar_dropbox)
 }
 
@@ -1067,6 +1067,52 @@ fn conectar_con(p: PedidoConectar, renovar: Renovar) -> Result<String, String> {
     Ok(m)
 }
 
+/// Tarea 4a: ¿la usa alguna copia derivada (o la externa) de este equipo?
+pub fn usa_copias(nombre: &str) -> bool {
+    crate::agent::load_config()
+        .repos
+        .iter()
+        .any(|r| r.offsite.iter().chain(r.derived.iter().map(|d| &d.offsite)).any(|o| o.dest.nube.as_deref() == Some(nombre)))
+}
+
+/// Tarea 4a: las variables con las que restic usa la nube `nombre` por su
+/// backend `rclone:` (`rclone:rnube:<carpeta>`): el remoto `rnube` como en el
+/// espejo, con el token al día, y un archivo de configuración vacío en la carpeta
+/// privada (rclone no escribe el token en otro sitio). Se calculan en cada uso:
+/// nunca se guardan con la copia. SFTP no (su clave del servidor va en un archivo
+/// aparte): para eso, un destino SFTP de los de siempre.
+pub fn entorno_restic(nombre: &str) -> Result<Vec<(String, String)>, String> {
+    let n = buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
+    if n.parametros.contains_key(CLAVE_HOST) {
+        return Err("Un destino SFTP conectado por rclone no sirve para las copias derivadas: usa un destino SFTP.".into());
+    }
+    comprobar_binario()?;
+    let n = al_dia(&n, &renovar_dropbox)?;
+    let m = REMOTO.to_uppercase();
+    let mut env = vec![(format!("RCLONE_CONFIG_{m}_TYPE"), n.tipo.clone())];
+    if !n.token.is_empty() {
+        env.push((format!("RCLONE_CONFIG_{m}_TOKEN"), n.token.clone()));
+    }
+    for (k, v) in &n.parametros {
+        env.push((format!("RCLONE_CONFIG_{m}_{}", k.to_uppercase()), v.clone()));
+    }
+    if let Some(k) = &n.app_key {
+        env.push((format!("RCLONE_CONFIG_{m}_CLIENT_ID"), k.clone()));
+    }
+    crate::agent::prepare_dir()?;
+    let conf = crate::agent::private_dir().join("rclone-restic.conf");
+    if !conf.is_file() {
+        crate::agent::write_new(&conf, b"").map_err(|e| format!("No se pudo preparar rclone: {e}"))?;
+    }
+    env.push(("RCLONE_CONFIG".into(), conf.display().to_string()));
+    Ok(env)
+}
+
+/// La ubicación de restic de `<carpeta>/<repo>` en una nube conectada (`rclone:rnube:…`).
+pub fn ubicacion_restic(carpeta: &str, repo: &str) -> String {
+    format!("rclone:{}", remoto(carpeta, repo))
+}
+
 /// ¿Usa el espejo la nube `nombre`? (quitarla entonces es destructivo).
 pub fn usa_espejo(nombre: &str) -> bool {
     crate::server::load().espejo.as_ref().is_some_and(|e| e.destinos().iter().any(|d| d.tipo == "nube" && d.nube.as_deref() == Some(nombre)))
@@ -1079,6 +1125,10 @@ pub fn quitar_desde_orden(c: &serde_json::Value) -> Result<String, String> {
     let mut nubes = cargar();
     if !nubes.iter().any(|n| n.nombre == nombre) {
         return Err(format!("No hay ninguna nube «{nombre}» en este equipo."));
+    }
+    // Tarea 4a: una copia derivada que va a ella dejaría de poder subir sin decirlo.
+    if usa_copias(&nombre) {
+        return Err(format!("«{nombre}» la usa una copia derivada de este equipo: quita antes esa copia."));
     }
     let mut aviso = "";
     let mut conf = crate::server::load();

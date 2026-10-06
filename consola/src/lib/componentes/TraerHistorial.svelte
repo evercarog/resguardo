@@ -17,6 +17,7 @@
   import CampoClave from "./CampoClave.svelte";
   import FormRepoExistente from "./FormRepoExistente.svelte";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
+  import { ADMITE, admite, errorFiltro, filtroParaOrden } from "$lib/cadenas";
 
   let { cliente, equipo, repo, onclose }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; onclose: () => void } = $props();
 
@@ -37,6 +38,15 @@
   /** Equipos elegidos (de los que copiaron en el origen); vacío: todos. */
   let elegidos = $state<string[]>([]);
   let orden = $state<Orden | null>(null);
+  /** Tarea 4c (agente con `admite: "filtros"`): qué versiones traer, por etiqueta y fecha. */
+  const conFiltros = $derived(admite(equipo, ADMITE.filtros));
+  let filtroTxt = $state({ etiquetas: "", desde: "", ultimos_dias: "" as number | string });
+  const filtro = $derived.by(() => {
+    const f = conFiltros ? filtroParaOrden(filtroTxt) : null;
+    const eq = modo === "otro" && elegidos.length ? { equipos: elegidos } : {};
+    return f || Object.keys(eq).length ? { ...(f ?? {}), ...eq } : null;
+  });
+  const errorF = $derived(conFiltros ? errorFiltro(filtroTxt) : null);
 
   let prueba: { clave: string; bytes: Uint8Array } | null = null;
   let vivo = true;
@@ -55,7 +65,7 @@
     }
   });
 
-  const listo = $derived(!!claveAdmin && (modo === "equipo" ? !!origenId : !!probado));
+  const listo = $derived(!!claveAdmin && !errorF && (modo === "equipo" ? !!origenId : !!probado));
 
   async function laPrueba(): Promise<Uint8Array> {
     if (prueba && prueba.clave === claveAdmin) return prueba.bytes;
@@ -110,7 +120,7 @@
         cuerpo: {
           repo: repo.id,
           origen: modo === "equipo" ? { repo: origenId } : origenCuerpo(origen),
-          ...(modo === "otro" && elegidos.length ? { filtro: { equipos: elegidos } } : {}),
+          ...(filtro ? { filtro } : {}),
         },
         secretos: { prueba: p },
         alPaso: (t) => (pasoTxt = t),
@@ -200,6 +210,25 @@
         {/if}
       {/if}
 
+      {#if conFiltros}
+        <details class="filtro-versiones">
+          <summary class="faint">Solo algunas versiones</summary>
+          <div class="field">
+            <label class="field-label" for="h-etiquetas">Con la etiqueta</label>
+            <input id="h-etiquetas" class="input" bind:value={filtroTxt.etiquetas} placeholder="diaria, semanal" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="h-dias">De los últimos (días)</label>
+            <input id="h-dias" class="input num" type="number" min="1" max="3650" bind:value={filtroTxt.ultimos_dias} />
+          </div>
+          <div class="field">
+            <label class="field-label" for="h-desde">Desde el</label>
+            <input id="h-desde" class="input" type="date" bind:value={filtroTxt.desde} />
+          </div>
+          {#if errorF}<p class="error-campo">{errorF}</p>{/if}
+        </details>
+      {/if}
+
       {#if recordado && modo === "otro"}
         <p class="faint nota">Este repositorio se creó para traer el historial de <code>{recordado.direccion}</code>: {TEXTO_TROCEADO} Escribe la contraseña de ese repositorio y pulsa «Probar».</p>
       {:else}
@@ -245,6 +274,14 @@
   .nota {
     margin: 0;
     font-size: var(--fs-xs);
+  }
+  .filtro-versiones[open] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .filtro-versiones summary {
+    cursor: pointer;
   }
   .equipos {
     display: flex;

@@ -137,6 +137,14 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
+    /// Tarea 7d.2: la carpeta de una zona (`None` o `"principal"`: la principal).
+    pub fn carpeta_zona(&self, zona: Option<&str>) -> Option<&str> {
+        match zona {
+            None | Some("principal") => Some(self.path.as_str()),
+            Some(id) => self.zonas.iter().find(|z| z.id == id).map(|z| z.path.as_str()),
+        }
+    }
+
     /// Los puertos de todo el almacén: el de la principal y el de cada zona.
     pub fn puertos(&self) -> Vec<u16> {
         std::iter::once(self.port).chain(self.zonas.iter().map(|z| z.port)).collect()
@@ -235,6 +243,15 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
                     return Err("La carpeta del espejo no puede estar en la carpeta de Windows, de los programas o de Resguardo.".into());
                 }
             }
+            // Tarea 7d.2: otra zona de este almacén, carpeta a carpeta (sin rest-server de por medio).
+            "zona" => {
+                if c.carpeta_zona(Some(&d.carpeta)).is_none() {
+                    return Err("Esa zona ya no está en este almacén.".into());
+                }
+                if d.carpeta == d.zona.as_deref().unwrap_or("principal") {
+                    return Err("Un espejo no puede copiar una zona en sí misma: elige otra zona.".into());
+                }
+            }
             "nube" => {
                 let nombre = d.nube.as_deref().unwrap_or_default();
                 if !nubes.iter().any(|n| n.nombre == nombre) {
@@ -247,6 +264,10 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
             }
             _ => return Err("Tipo de destino del espejo no válido (carpeta o nube).".into()),
         }
+    }
+    // Tarea 7d.2: el origen de cada destino (sin él, la principal) tiene que ser una zona de aquí.
+    if let Some(d) = nuevo.destinos.iter().find(|d| c.carpeta_zona(d.zona.as_deref()).is_none()) {
+        return Err(format!("La zona de origen de «{}» ya no está en este almacén.", d.texto()));
     }
     let n = nuevo.destinos.len();
     if (0..n).any(|i| (0..i).any(|j| nuevo.destinos[i].mismo(&nuevo.destinos[j]))) {
@@ -1369,6 +1390,10 @@ pub fn quitar_zona(id: &str) -> Result<Zona, String> {
     crate::agent::require_admin()?;
     let mut c = load();
     let pos = c.zonas.iter().position(|z| z.id == id).ok_or("Esa zona ya no está en este almacén.")?;
+    // Tarea 7d.2: un espejo que copia desde ella o hacia ella dejaría de hacerse sin decirlo.
+    if c.espejo.as_ref().is_some_and(|e| e.destinos().iter().any(|d| d.zona.as_deref() == Some(id) || (d.tipo == "zona" && d.carpeta == id))) {
+        return Err("El espejo copia desde esa zona o hacia ella: quita antes esos destinos del espejo.".into());
+    }
     let z = c.zonas.remove(pos);
     save(&c)?;
     let f = Files::agent();

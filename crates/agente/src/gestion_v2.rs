@@ -26,7 +26,8 @@ const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STA
 pub struct Destino {
     pub id: String,
     pub nombre: String,
-    /// "local", "rest", "s3", "b2" o "sftp".
+    /// "local", "rest", "s3", "b2", "sftp" o (tarea 4a) "nube": una nube conectada en
+    /// este equipo (`nube.rs`), con `nube` su nombre y `donde` la carpeta dentro de ella.
     pub tipo: String,
     /// Carpeta, URL del servidor o bucket (sin credenciales).
     pub donde: String,
@@ -41,6 +42,9 @@ pub struct Destino {
     /// si lo dijo la consola al crearlo. Solo un id: va en el resumen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipo_almacen: Option<String>,
+    /// Tarea 4a: en un destino "nube", el nombre de la nube conectada en este equipo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nube: Option<String>,
 }
 
 /// v1.30: `destino.equipo_almacen` de una orden (el id del equipo que guarda
@@ -252,6 +256,11 @@ pub struct RepoV2 {
     /// retención no se aplica desde aquí, sino en el propio servidor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solo_anadir: Option<bool>,
+    /// Tarea 4b: las demás copias derivadas, `[{ id, destino, cuando, existente?, ruta?,
+    /// bloqueo_dias?, solo_anadir?, filtro?, verificacion? }]` (las credenciales, en los
+    /// secretos del agente; ver [`cambiar_derivada`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub derivadas: Vec<Value>,
 }
 
 /// ¿Su servidor es de solo añadir? Lo que vio la comprobación diaria del
@@ -274,6 +283,17 @@ fn texto(c: &Value, k: &str) -> String {
 
 /// Ubicación restic del repositorio `repo` en el destino `d`.
 pub fn ubicacion(d: &Destino, repo: &str) -> Result<String, String> {
+    // Tarea 4a: una nube conectada en este equipo, por rclone (`rclone:rnube:<carpeta>/<repo>`).
+    if d.tipo == "nube" {
+        let carpeta = d.donde.trim().trim_matches('/');
+        if (!carpeta.is_empty() && !crate::nube::carpeta_remota_valida(carpeta)) || d.nube.as_deref().is_none_or(|n| n.trim().is_empty()) {
+            return Err("Destino en la nube no válido (la nube conectada y una carpeta dentro de ella).".into());
+        }
+        if repo.is_empty() {
+            return Err("En una nube, el repositorio va en una carpeta: di cuál.".into());
+        }
+        return Ok(crate::nube::ubicacion_restic(carpeta, repo));
+    }
     let donde = d.donde.trim();
     if !texto_valido(donde, 500) || resguardo_motor::restic::has_embedded_password(donde) || donde.starts_with('-') {
         return Err("Destino no válido (escribe la carpeta, servidor o bucket, sin contraseñas).".into());
@@ -345,6 +365,8 @@ pub fn acceso_destino(d: &Destino, ruta: &str, contrasena: &str) -> Result<resgu
     let (rest_auth, env) = match d.tipo.as_str() {
         "rest" => (d.usuario.clone().map(|u| (u, d.secreto.clone().unwrap_or_default())), Vec::new()),
         "s3" | "b2" => (None, crate::tasks::cloud_env(&location, None, d.usuario.as_deref(), d.secreto.as_deref())),
+        // Tarea 4a: las credenciales de la nube, de ahora (con el token al día).
+        "nube" => (None, crate::nube::entorno_restic(d.nube.as_deref().unwrap_or_default())?),
         _ => (None, Vec::new()),
     };
     let cacert = match &d.ca_pem {
@@ -382,6 +404,11 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
     if !id_valido(&destino_id) {
         return Err("Id de destino no válido.".into());
     }
+    // Tarea 4a: por ahora una nube solo sirve para las copias derivadas (la copia de cada
+    // vuelta del agente aún no pone las credenciales de la nube al día).
+    if dest["tipo"] == "nube" || v.destinos.iter().any(|d| d.id == destino_id && d.tipo == "nube") {
+        return Err("Una nube conectada en el equipo sirve, por ahora, para las copias derivadas, no para copiar las carpetas directamente.".into());
+    }
     let nuevo = if dest.get("tipo").is_some() {
         if v.destinos.iter().any(|d| d.id == destino_id) {
             return Err(format!("Ya hay un destino «{destino_id}»."));
@@ -395,6 +422,7 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
             secreto: dest["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
             ca_pem: dest["ca_pem"].as_str().filter(|s| s.contains("BEGIN CERTIFICATE")).map(str::to_string),
             equipo_almacen: equipo_almacen_de(dest),
+            nube: None,
         };
         if !texto_valido(&d.nombre, 80) {
             return Err("Escribe un nombre para el destino.".into());
@@ -532,6 +560,45 @@ pub struct Copia {
     /// encendido (como siempre en el modo gestionado).
     #[serde(default = "si")]
     pub solo_si_cambios: bool,
+    /// Tarea 7c (`admite: "cadenas"`): «después de la anterior», el id de otra
+    /// copia de esta configuración. Empieza cuando aquella termina bien; si
+    /// falla, esta no se hace y se avisa (`cadena_parada`). Puede tener además
+    /// su horario, o ninguno (`horario` vacío). Un agente anterior lo ignora.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tras: Option<String>,
+}
+
+impl Copia {
+    /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior».)
+    pub fn con_horario(&self) -> bool {
+        !self.horario.reglas.is_empty() || !self.horario.horas.is_empty()
+    }
+}
+
+/// Tarea 7c: comprueba las cadenas de una configuración: cada `tras` es otra
+/// copia de la lista (no ella misma) y no hay vueltas (A tras B tras A).
+pub fn validar_cadenas(copias: &[Copia]) -> Result<(), String> {
+    for k in copias {
+        let Some(t) = &k.tras else { continue };
+        if t == &k.id {
+            return Err(format!("La copia «{}» no puede ir después de sí misma.", k.nombre));
+        }
+        if !copias.iter().any(|x| &x.id == t) {
+            return Err(format!("La copia «{}» va después de otra que no está en la configuración.", k.nombre));
+        }
+        // Siguiendo la cadena hacia atrás no se puede volver a ella.
+        let mut actual = t.clone();
+        for _ in 0..=copias.len() {
+            match copias.iter().find(|x| x.id == actual).and_then(|x| x.tras.clone()) {
+                Some(sig) if sig == k.id => {
+                    return Err(format!("La cadena de «{}» se cierra en un círculo: alguna copia tiene que empezar con su horario.", k.nombre))
+                }
+                Some(sig) => actual = sig,
+                None => break,
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -777,7 +844,11 @@ pub(crate) fn aplicar_verificaciones(v: &Vinculo, cfg: &Configuracion) -> Result
 }
 
 fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
-    let schedule = c.horario.plan_schedule().map_err(|e| format!("Copia «{}»: {e}", c.nombre))?;
+    // Tarea 7c: «después de la anterior» sin horario propio: el plan va sin horario.
+    let schedule = match (&c.tras, c.con_horario()) {
+        (Some(_), false) => None,
+        _ => Some(c.horario.plan_schedule().map_err(|e| format!("Copia «{}»: {e}", c.nombre))?),
+    };
     let plan: crate::plans::Plan = serde_json::from_value(json!({
         "id": c.id, "name": c.nombre, "paths": c.carpetas, "excludes": c.exclusiones,
         "schedule": schedule,
@@ -790,6 +861,14 @@ fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
         ..plan
     };
     plan.validate()?;
+    Ok(plan)
+}
+
+/// El plan de una copia con su cadena: `after` es la clave (`<repo>#<copia>`)
+/// de la copia tras la que va, según la configuración entera.
+fn plan_en(c: &Copia, copias: &[Copia]) -> Result<crate::plans::Plan, String> {
+    let mut plan = plan_de(c)?;
+    plan.after = c.tras.as_ref().and_then(|t| copias.iter().find(|x| &x.id == t)).map(|x| crate::plans::plan_key(&x.repo, &x.id));
     Ok(plan)
 }
 
@@ -829,6 +908,7 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         }
         plan_de(k)?;
     }
+    validar_cadenas(&cfg.copias)?;
     for (repo, va) in cfg.verificaciones.iter().flatten() {
         if !v.repos_v2.iter().any(|r| r.id == *repo && !r.solo_lectura) {
             return Err(format!("La verificación automática es de un repositorio que este equipo no tiene: «{repo}»."));
@@ -842,7 +922,8 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         p.valida()?;
     }
     for r in v.repos_v2.clone() {
-        let planes: Vec<crate::plans::Plan> = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(plan_de).collect::<Result<_, _>>()?;
+        let planes: Vec<crate::plans::Plan> =
+            cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(|k| plan_en(k, &cfg.copias)).collect::<Result<_, _>>()?;
         if planes.is_empty() {
             let _ = crate::agent::set_schedule_by_id(&r.id, None);
             continue;
@@ -884,8 +965,18 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
 /// última `config` y los repositorios y destinos que tiene el equipo.
 pub fn documento(v: &Vinculo) -> Value {
     let mut doc = v.config_v1.clone().unwrap_or_else(|| json!({ "v": 1, "copias": [] }));
-    doc["repositorios"] =
-        json!(v.repos_v2.iter().map(|r| json!({ "id": r.id, "nombre": r.nombre, "destino": r.destino, "retencion": r.retencion })).collect::<Vec<_>>());
+    // Tarea 4b: con sus copias derivadas enteras (este documento va cifrado: el filtro con sus carpetas, para editarlo).
+    doc["repositorios"] = json!(v
+        .repos_v2
+        .iter()
+        .map(|r| {
+            let mut x = json!({ "id": r.id, "nombre": r.nombre, "destino": r.destino, "retencion": r.retencion });
+            if !r.derivadas.is_empty() {
+                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion") })).collect::<Vec<_>>());
+            }
+            x
+        })
+        .collect::<Vec<_>>());
     doc["destinos"] = json!(v.destinos.iter().map(|d| json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde })).collect::<Vec<_>>());
     doc
 }
@@ -908,7 +999,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 13] = [
+pub const ADMITE: [&str; 18] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -925,6 +1016,21 @@ pub const ADMITE: [&str; 13] = [
     // (pendiente de numerar) varias zonas en el almacén: `guarda_copias { zona }`, `{ quitar_zona }`,
     // `{ anadir, zona }`, `{ quitar, zona }` y `guarda_copias.zonas` (docs/copias-en-cadena.md, 7b).
     "zonas_almacen",
+    // (pendiente de numerar) tarea 7c: `config.copias[].tras` («después de la anterior») e
+    // `informe.cadenas[]` (aviso `cadena_parada`) (docs/copias-en-cadena.md).
+    "cadenas",
+    // (pendiente de numerar) tarea 4b: `cambiar_derivada` / `quitar_derivada`, `repositorios[].derivadas`,
+    // `informe.repos[].derivadas` y `subir_ahora { derivada }`.
+    "derivadas",
+    // (pendiente de numerar) tarea 4c: `filtro` con `carpetas`, `desde` y `ultimos_dias` en `copiar_historial`
+    // y en las copias derivadas (un agente anterior solo entiende `equipos` y `etiquetas`).
+    "filtros",
+    // (pendiente de numerar) tarea 4a: `conectar_nube` también fuera de un almacén y destinos
+    // `{ tipo: "nube", nube, donde }` en las copias derivadas (por rclone).
+    "nube_equipo",
+    // (pendiente de numerar) tarea 7d.2: destinos del espejo con `zona` (de qué zona copia) y
+    // `{ tipo: "zona", carpeta: "<id>" | "principal" }` (a otra zona del almacén).
+    "espejo_zonas",
     // (pendiente de numerar) tarea 8: `config.pruebas_restauracion` y `repositorios[].prueba_auto`.
     "prueba_auto",
 ];
@@ -976,6 +1082,8 @@ pub fn resumen(v: &Vinculo) -> Value {
             let run = estado.runs.get(&crate::plans::plan_key(&k.repo, &k.id));
             json!({
                 "id": k.id, "nombre": k.nombre, "repo": k.repo, "horario": k.horario, "carpetas": k.carpetas.len(), "activa": k.activa, "solo_si_cambios": k.solo_si_cambios,
+                // Tarea 7c: «después de la anterior» (el id de la otra copia).
+                "tras": k.tras,
                 "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added })),
                 "proxima": proximas.get(&k.id),
             })
@@ -1004,6 +1112,8 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "solo_anadir": e.get("solo_anadir"),
                 "con_retencion": config.repos.iter().find(|x| x.id == r.id).and_then(|x| x.offsite.as_ref()).map(|o| o.retention.as_ref().is_some_and(|p| !p.is_empty())),
             })),
+            // Tarea 4b: las demás copias derivadas (sin rutas ni secretos).
+            "derivadas": r.derivadas.iter().map(|e| derivada_resumen(v, &r.id, e, config.repos.iter().find(|x| x.id == r.id))).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         // Sin la carpeta de un destino local (es una ruta del equipo).
         // v1.30: `equipo_almacen`, el equipo que guarda copias del destino (si se sabe).
@@ -1011,6 +1121,10 @@ pub fn resumen(v: &Vinculo) -> Value {
         // consola avisa si las copias se quedan en el mismo equipo que protegen.
         "destinos": v.destinos.iter().map(|d| {
             let mut x = json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": (d.tipo != "local").then(|| d.donde.clone()), "equipo_almacen": d.equipo_almacen });
+            // Tarea 4a: la nube conectada en el equipo a la que va (su nombre).
+            if let Some(n) = d.nube.as_ref().filter(|_| d.tipo == "nube") {
+                x["nube"] = json!(n);
+            }
             if d.tipo == "local" {
                 let disco = crate::espacio::disco_de(&d.donde).json();
                 for k in ["unidad", "extraible", "red"] {
@@ -1023,6 +1137,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         }).collect::<Vec<_>>(),
         "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
         "guarda_copias": resumen_guarda_copias(),
+        // Tarea 4a: las nubes conectadas en este equipo (solo nombre y tipo), también si no guarda copias.
+        "nubes": crate::nube::lista(),
         // Tarea 8e: si corre en una máquina virtual o un contenedor (solo un dato para la consola).
         "entorno": crate::espacio::entorno(),
         // v1.19: un puerto libre para «Este equipo guarda copias» (la consola lo propone).
@@ -1117,6 +1233,11 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
         })
         .collect();
     let mut inf = json!({ "version": crate::version_programa(), "servicio": "en_marcha", "so": crate::web::os_label(), "copias": filas, "proximas": proximas(&copias, chrono::Local::now()) });
+    // Tarea 7c: cómo quedó cada copia «después de la anterior» (de ahí el aviso `cadena_parada`).
+    let cadenas = cadenas_informe(&estado, &copias);
+    if !cadenas.is_empty() {
+        inf["cadenas"] = json!(cadenas);
+    }
     // El último número de orden aceptado: el servidor no vuelve por debajo (p. ej. tras restaurar la copia de la consola).
     if let Some(v) = v.filter(|v| v.ultimo_seq > 0) {
         inf["ultimo_seq"] = json!(v.ultimo_seq);
@@ -1132,6 +1253,24 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
         crate::informe_v2::acotar(&mut inf);
     }
     inf
+}
+
+/// Tarea 7c: `informe.cadenas[]`: `{ id, repo, nombre, estado: "parada" | "ok", cuando, anterior, mensaje }`
+/// de las copias de la configuración que van «después de la anterior».
+pub fn cadenas_informe(estado: &crate::agent::AgentState, copias: &[Copia]) -> Vec<Value> {
+    copias
+        .iter()
+        .filter(|k| k.tras.is_some())
+        .filter_map(|k| {
+            let c = estado.chains.get(&crate::plans::plan_key(&k.repo, &k.id))?;
+            let anterior = c.previous.split_once('#').map(|(_, id)| id.to_string()).unwrap_or_default();
+            Some(json!({
+                "id": k.id, "repo": k.repo, "nombre": k.nombre, "estado": c.state, "cuando": c.at, "anterior": anterior,
+                "anterior_nombre": copias.iter().find(|x| x.id == anterior).map(|x| x.nombre.clone()),
+                "mensaje": c.message,
+            }))
+        })
+        .collect()
 }
 
 /// v1.12: la próxima vez que toca cada copia, `{id: RFC 3339 | null}`. Null si
@@ -1409,23 +1548,97 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
             return Ok("Copia externa quitada (lo ya copiado sigue en su destino).".into());
         }
     };
+    let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).unwrap_or(Value::Null);
+    let guardada = || crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.offsite_password.clone()));
+    let p = preparar_derivada(v, c, repo, &actual, repo, &guardada, solo_probar)?;
+    if solo_probar {
+        return Ok(p.texto);
+    }
+    if !(hora.len() == 5 && chrono::NaiveTime::parse_from_str(&hora, "%H:%M").is_ok()) {
+        return Err("La hora no es válida (HH:MM).".into());
+    }
+    let offsite = p.offsite(crate::agent::Schedule::Daily { time: hora.clone() }, None, None)?;
+    crate::agent::set_offsite(repo, Some(offsite), Some(p.creds))?;
+    if let Some(d) = p.nuevo.clone() {
+        v.destinos.push(d);
+    }
+    if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
+        let mut e = p.entrada.clone();
+        e["hora"] = json!(hora);
+        r.externa = Some(e);
+    }
+    let _ = subir_config(v);
+    Ok(format!("Copia externa a «{}» cada día a las {hora}. {}", p.destino.nombre, p.texto))
+}
+
+/// Lo que se comprueba y prepara antes de guardar una copia externa o
+/// derivada (nada se guarda hasta tenerlo todo).
+pub(crate) struct Preparada {
+    /// La ubicación de restic del repositorio de destino (sin credenciales).
+    location: String,
+    retencion: Option<Retencion>,
+    /// El destino (el que ya tenía el equipo o `nuevo`).
+    destino: Destino,
+    /// Un destino que aún no tenía el equipo (se guarda al final).
+    nuevo: Option<Destino>,
+    dest: crate::tasks::DestinoExterno,
+    creds: crate::agent::OffsiteSecrets,
+    /// Lo que se guarda en `RepoV2` (sin secretos): `{ destino, existente?, ruta?, bloqueo_dias?, solo_anadir? }`.
+    entrada: Value,
+    /// Lo que dijo la comprobación y lo que pasa con la retención.
+    texto: String,
+}
+
+impl Preparada {
+    /// La tarea del agente con este destino y este horario.
+    fn offsite(
+        &self,
+        schedule: crate::agent::Schedule,
+        filtro: Option<crate::adoptar_v2::Filtro>,
+        verify: Option<crate::tasks::Verify>,
+    ) -> Result<crate::tasks::Offsite, String> {
+        let mut o: crate::tasks::Offsite = serde_json::from_value(json!({
+            "location": self.location, "provider": format!("destino:{}", self.destino.id), "schedule": schedule,
+            "retention": self.retencion.as_ref().map(Retencion::politica), "target_name": self.destino.nombre, "enabled_at": chrono::Local::now().to_rfc3339(),
+        }))
+        .map_err(|e| e.to_string())?;
+        o.dest = self.dest.clone();
+        o.filtro = filtro;
+        o.verify = verify;
+        Ok(o)
+    }
+}
+
+/// Lo común de `cambiar_copia_externa` y `cambiar_derivada`: el destino (uno del
+/// equipo o uno nuevo), la carpeta del repositorio allí (`ruta`, o `ruta_defecto`),
+/// el bloqueo, la retención y la contraseña (la escrita, la guardada si es el
+/// mismo destino, o la del origen); abre o crea el repositorio de destino.
+/// `actual`: lo guardado de esa misma copia (o `null`).
+fn preparar_derivada(
+    v: &Vinculo,
+    c: &Value,
+    repo: &str,
+    actual: &Value,
+    ruta_defecto: &str,
+    guardada: &dyn Fn() -> Option<String>,
+    solo_probar: bool,
+) -> Result<Preparada, String> {
     let dest = &c["destino"];
     let destino_id = texto(dest, "id");
     if !id_valido(&destino_id) {
         return Err("Id de destino no válido.".into());
     }
-    // Cambiar la hora, la retención o el bloqueo de la misma copia externa
-    // (`destino: {id}` al que ya va, sin `existente` ni `ruta`): se queda su
-    // carpeta (la de uno que ya existía), su contraseña y, si no se dice, su bloqueo.
-    let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).filter(|e| e["destino"] == destino_id.as_str());
-    let misma = actual.is_some() && dest.get("tipo").is_none() && c.get("existente").is_none() && c.get("ruta").is_none();
-    let actual = actual.filter(|_| misma).unwrap_or(Value::Null);
+    // Cambiar la hora, la retención o el bloqueo de la misma copia (`destino: {id}` al
+    // que ya va, sin `existente` ni `ruta`): se queda su carpeta (la de uno que ya
+    // existía), su contraseña y, si no se dice, su bloqueo.
+    let misma = actual["destino"] == destino_id.as_str() && dest.get("tipo").is_none() && c.get("existente").is_none() && c.get("ruta").is_none();
+    let actual = if misma { actual.clone() } else { Value::Null };
     let existente = c["existente"] == true || actual["existente"] == true;
-    // La carpeta del repositorio en el destino: la suya (si ya existe) o su id.
+    // La carpeta del repositorio en el destino: la suya (si ya existe) o la de por defecto.
     let ruta = match c["ruta"].as_str().or(actual["ruta"].as_str()).map(|r| r.trim().trim_matches('/').to_string()) {
         Some(r) if existente || !r.is_empty() => r,
         _ if existente => return Err("Falta la carpeta del repositorio que ya existe.".into()),
-        _ => repo.to_string(),
+        _ => ruta_defecto.to_string(),
     };
     if !crate::adoptar_v2::ruta_valida(&ruta) {
         return Err("La carpeta del repositorio no es válida (sin «..», «\\» ni «:»).".into());
@@ -1451,7 +1664,12 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
             secreto: dest["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
             ca_pem: None,
             equipo_almacen: equipo_almacen_de(dest),
+            // Tarea 4a: el nombre de la nube conectada en este equipo.
+            nube: (dest["tipo"] == "nube").then(|| texto(dest, "nube").trim().to_string()),
         };
+        if d.tipo == "nube" && crate::nube::buscar(d.nube.as_deref().unwrap_or_default()).is_none() {
+            return Err(format!("La nube «{}» no está conectada en este equipo: conéctala antes.", d.nube.as_deref().unwrap_or_default()));
+        }
         if existente {
             // Como al adoptar: con un nombre por defecto si no trae (B2, S3…).
             d.nombre = crate::adoptar_v2::destino_de(dest, &destino_id)?.nombre;
@@ -1470,29 +1688,25 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
     };
     let origen = v.repos_v2.iter().find(|r| r.id == repo).map(|r| r.destino.clone()).unwrap_or_default();
     if origen == d.id {
-        return Err("La copia externa tiene que ir a otro destino (otro disco, otro servidor o la nube).".into());
+        return Err("La copia tiene que ir a otro destino (otro disco, otro servidor o la nube).".into());
     }
-    let retention = c
+    let retencion = c
         .get("retencion")
         .filter(|r| r.is_object())
         .map(|r| serde_json::from_value::<Retencion>(r.clone()))
         .transpose()
         .map_err(|e| format!("Retención no válida: {e}"))?;
-    if let Some(r) = &retention {
+    if let Some(r) = &retencion {
         r.valida()?;
     }
     // Lo que se va a usar, comprobado antes de guardar nada.
     let src = acceso(v, repo)?;
-    let contrasena_destino = c["contrasena_destino"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .or_else(|| misma.then(|| crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.offsite_password.clone()))).flatten());
+    let contrasena_destino = c["contrasena_destino"].as_str().filter(|s| !s.is_empty()).map(str::to_string).or_else(|| misma.then(guardada).flatten());
     // Sin certificado propio: la subida usa el del origen (`tasks::dest_access`).
     let d_sin_ca = Destino { ca_pem: None, ..d.clone() };
     let dest_acc = acceso_destino(&d_sin_ca, &ruta, contrasena_destino.as_deref().unwrap_or(&src.password))?;
     if dest_acc.location.trim_end_matches(['/', '\\']).eq_ignore_ascii_case(src.location.trim_end_matches(['/', '\\'])) {
-        return Err("Ese es el mismo repositorio de origen: la copia externa tiene que ir a otro.".into());
+        return Err("Ese es el mismo repositorio de origen: la copia tiene que ir a otro.".into());
     }
     // Como lo abrirá cada subida: el usuario del servidor dentro de la dirección.
     let con_auth = crate::tasks::location_with_auth(&dest_acc.location, dest_acc.rest_auth.as_ref());
@@ -1508,44 +1722,214 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         .then(|| crate::protection::probe_append_only(&dest_acc.location, dest_acc.rest_auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), None))
         .flatten()
         == Some(true);
-    let efecto = efecto_retencion(retention.is_some(), bloqueo, solo_anadir);
+    let efecto = efecto_retencion(retencion.is_some(), bloqueo, solo_anadir);
+    let mut entrada = json!({ "destino": d.id });
+    if existente {
+        entrada["existente"] = json!(true);
+    }
+    // Su carpeta (solo en el equipo: el resumen no la lleva), para cambiar luego la hora sin repetirla.
+    if existente || ruta != ruta_defecto {
+        entrada["ruta"] = json!(ruta);
+    }
+    if let Some(b) = bloqueo {
+        entrada["bloqueo_dias"] = json!(b);
+    }
+    if solo_anadir {
+        entrada["solo_anadir"] = json!(true);
+    }
+    let nube = d.nube.clone().filter(|_| d.tipo == "nube");
+    Ok(Preparada {
+        location: dest_acc.location.clone(),
+        retencion,
+        destino: d,
+        nuevo,
+        dest: crate::tasks::DestinoExterno { existing: existente, object_lock_days: bloqueo, append_only: solo_anadir, nube: nube.clone() },
+        // Las credenciales de una nube no se guardan con la copia: se ponen al día en cada uso.
+        creds: crate::agent::OffsiteSecrets {
+            password: contrasena_destino,
+            key_id: None,
+            key_secret: None,
+            location: Some(con_auth),
+            env: if nube.is_some() { Vec::new() } else { dest_acc.env.clone() },
+        },
+        entrada,
+        texto: format!("{probado}{efecto}"),
+    })
+}
+
+// ---------- Copias derivadas (tarea 4b, docs/copias-en-cadena.md) ----------
+
+/// Como mucho, copias derivadas por repositorio (además de la externa de siempre).
+pub const MAX_DERIVADAS: usize = 8;
+
+/// Id de una copia derivada: `[a-z0-9_-]`, de 1 a 40, y no «externa» (que es la de siempre).
+pub fn id_derivada_valido(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 40 && id != "externa" && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+/// Cuándo se hace una copia derivada: `tras_copia: true` («después de cada
+/// copia» del repositorio, como mucho cada `min_minutos`), `horario` (el de las
+/// copias, con sus reglas) o `hora` («HH:MM», cada día). Devuelve el horario
+/// del agente y lo que se guarda (`cuando`).
+pub fn cuando_derivada(c: &Value) -> Result<(crate::agent::Schedule, Value), String> {
+    if c["tras_copia"] == true {
+        let min = match &c["min_minutos"] {
+            Value::Null => 0,
+            m => m.as_u64().filter(|m| *m <= 1440).ok_or("Los minutos entre dos subidas van de 0 a 1440.")? as u32,
+        };
+        return Ok((crate::agent::Schedule::AfterBackup { min_minutes: min }, json!({ "tras_copia": true, "min_minutos": min })));
+    }
+    if let Some(h) = c.get("horario").filter(|h| h.is_object()) {
+        let horario: Horario = serde_json::from_value(h.clone()).map_err(|_| "Horario no válido.".to_string())?;
+        let plan = horario.plan_schedule()?;
+        plan.validate()?;
+        return Ok((crate::agent::Schedule::Rules { rules: plan.effective_rules() }, json!({ "horario": horario })));
+    }
+    match c["hora"].as_str() {
+        Some(h) if h.len() == 5 && chrono::NaiveTime::parse_from_str(h, "%H:%M").is_ok() => {
+            Ok((crate::agent::Schedule::Daily { time: h.to_string() }, json!({ "hora": h })))
+        }
+        Some(_) => Err("La hora no es válida (HH:MM).".into()),
+        None => Err("Di cuándo: a una hora, con un horario o después de cada copia.".into()),
+    }
+}
+
+/// ¿Reduce la protección este `cambiar_derivada`? Si cambia una que ya existe
+/// y le pone (o cambia) la retención, o la lleva a otro destino (lo de allí deja
+/// de recibir copias). Crear una nueva o cambiar solo su horario, no.
+pub fn derivada_reduce(v: &Vinculo, c: &Value, repo: &str) -> bool {
+    let id = c["id"].as_str().unwrap_or_default();
+    let Some(actual) = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.derivadas.iter().find(|d| d["id"] == id)) else { return false };
+    c.get("retencion").is_some_and(Value::is_object) || c["destino"]["id"] != actual["destino"]
+}
+
+/// `cambiar_derivada { repo, id, destino: {id} | {id, nombre, tipo, donde, usuario?, secreto?}, hora? | horario? | tras_copia? (min_minutos?),
+///  retencion?, contrasena_destino?, existente?, ruta?, bloqueo_dias?, filtro?, verificacion?, solo_probar? }` (contraseña del
+/// repositorio; tarea 4b): otra copia derivada del repositorio, además de la externa de siempre. Lo mismo que
+/// `cambiar_copia_externa` (crear el repositorio en el destino con el troceado del origen, uno que ya existe,
+/// bloqueo de objetos, «Probar»), con:
+/// - `id`: el de la derivada (`[a-z0-9_-]`, no «externa»); si ya existe, se cambia;
+/// - cuándo: `hora`, `horario` (el de las copias) o `tras_copia` («después de cada copia», [`cuando_derivada`]);
+/// - `contrasena_destino`: otra contraseña (sin ella, la del origen o la que ya tenía); la consola la lleva al kit;
+/// - `filtro` (tarea 4c): `{ equipos?, etiquetas?, carpetas?, desde?, ultimos_dias? }`, qué versiones se suben;
+/// - `verificacion`: `{ cada_dias, porcentaje, horario? }`, la del repositorio de destino.
+///
+/// Por defecto el repositorio va en `<destino>/<repo>-<id>`. Reduce la protección
+/// (espera) solo si cambia la retención o el destino de una que ya existía ([`derivada_reduce`]).
+pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String, String> {
+    if !v.repos_v2.iter().any(|r| r.id == repo && !r.solo_lectura) {
+        return Err("Ese repositorio no lo gestiona este servidor.".into());
+    }
+    let id = texto(c, "id");
+    if !id_derivada_valido(&id) {
+        return Err("Id de copia derivada no válido.".into());
+    }
+    let solo_probar = c["solo_probar"] == true;
+    if !solo_probar && !crate::agent::load_config().repos.iter().any(|r| r.id == repo) {
+        return Err("Ese repositorio aún no tiene copias activas en este equipo: aplica antes una configuración con alguna copia.".into());
+    }
+    let r = v.repos_v2.iter().find(|r| r.id == repo).ok_or("Ese repositorio no lo gestiona este servidor.")?;
+    let actual = r.derivadas.iter().find(|d| d["id"] == id.as_str()).cloned().unwrap_or(Value::Null);
+    if actual.is_null() && r.derivadas.len() >= MAX_DERIVADAS {
+        return Err(format!("Como mucho {MAX_DERIVADAS} copias derivadas por repositorio (además de la copia externa)."));
+    }
+    let guardada = || crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.derived.get(&id).and_then(|d| d.password.clone())));
+    let ruta_defecto = format!("{repo}-{id}");
+    let p = preparar_derivada(v, c, repo, &actual, &ruta_defecto, &guardada, solo_probar)?;
+    // Dos copias del mismo repositorio no pueden ir al mismo repositorio de destino.
+    let misma_carpeta = |e: &Value, defecto: &str| {
+        e["destino"] == p.destino.id.as_str() && e["ruta"].as_str().unwrap_or(defecto) == p.entrada["ruta"].as_str().unwrap_or(&ruta_defecto)
+    };
+    let otras_derivadas =
+        r.derivadas.iter().filter(|e| e["id"] != id.as_str()).any(|e| misma_carpeta(e, &format!("{repo}-{}", e["id"].as_str().unwrap_or_default())));
+    if otras_derivadas || r.externa.as_ref().is_some_and(|e| misma_carpeta(e, repo)) {
+        return Err("Otra copia de este repositorio ya va a esa carpeta de ese destino: elige otra carpeta u otro destino.".into());
+    }
     if solo_probar {
-        return Ok(format!("{probado}{efecto}"));
+        return Ok(p.texto);
     }
-    if !(hora.len() == 5 && chrono::NaiveTime::parse_from_str(&hora, "%H:%M").is_ok()) {
-        return Err("La hora no es válida (HH:MM).".into());
+    let (schedule, cuando) = cuando_derivada(c)?;
+    let filtro = match c.get("filtro") {
+        None | Some(Value::Null) => None,
+        Some(f) => Some(crate::adoptar_v2::Filtro::de(f)?).filter(|f| !f.todas()),
+    };
+    let verificacion: Option<VerificacionAuto> = c
+        .get("verificacion")
+        .filter(|x| x.is_object())
+        .map(|x| serde_json::from_value(x.clone()))
+        .transpose()
+        .map_err(|e| format!("Verificación no válida: {e}"))?;
+    if let Some(va) = &verificacion {
+        va.valida()?;
     }
-    let mut offsite: crate::tasks::Offsite = serde_json::from_value(json!({
-        "location": dest_acc.location, "provider": format!("destino:{}", d.id), "schedule": { "kind": "daily", "time": hora },
-        "retention": retention.as_ref().map(Retencion::politica), "target_name": d.nombre, "enabled_at": chrono::Local::now().to_rfc3339(),
-    }))
-    .map_err(|e| e.to_string())?;
-    offsite.dest = crate::tasks::DestinoExterno { existing: existente, object_lock_days: bloqueo, append_only: solo_anadir };
-    let creds =
-        crate::agent::OffsiteSecrets { password: contrasena_destino, key_id: None, key_secret: None, location: Some(con_auth), env: dest_acc.env.clone() };
-    crate::agent::set_offsite(repo, Some(offsite), Some(creds))?;
-    if let Some(d) = nuevo {
-        v.destinos.push(d.clone());
+    let offsite = p.offsite(schedule, filtro.clone(), verificacion.as_ref().map(|va| va.verify(chrono::Local::now())))?;
+    crate::agent::set_derived(repo, &id, Some(crate::tasks::Derived { id: id.clone(), offsite }), Some(p.creds))?;
+    if let Some(d) = p.nuevo.clone() {
+        v.destinos.push(d);
+    }
+    let mut e = p.entrada.clone();
+    e["id"] = json!(id);
+    e["cuando"] = cuando;
+    if let Some(f) = &filtro {
+        e["filtro"] = json!(f);
+    }
+    if let Some(va) = &verificacion {
+        e["verificacion"] = json!(va);
     }
     if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
-        let mut e = json!({ "destino": d.id, "hora": hora });
-        if existente {
-            e["existente"] = json!(true);
-        }
-        // Su carpeta (solo en el equipo: el resumen no la lleva), para cambiar luego la hora sin repetirla.
-        if existente || ruta != repo {
-            e["ruta"] = json!(ruta);
-        }
-        if let Some(b) = bloqueo {
-            e["bloqueo_dias"] = json!(b);
-        }
-        if solo_anadir {
-            e["solo_anadir"] = json!(true);
-        }
-        r.externa = Some(e);
+        r.derivadas.retain(|x| x["id"] != id.as_str());
+        r.derivadas.push(e);
     }
     let _ = subir_config(v);
-    Ok(format!("Copia externa a «{}» cada día a las {hora}. {probado}{efecto}", d.nombre))
+    let que = match &filtro {
+        Some(f) => format!(" (solo las versiones {})", f.texto()),
+        None => String::new(),
+    };
+    Ok(format!("Copia derivada a «{}»{que} guardada. {}", p.destino.nombre, p.texto))
+}
+
+/// `quitar_derivada { repo, id }` (contraseña del repositorio; reduce la
+/// protección: espera): deja de hacerla. Lo ya copiado sigue en su destino.
+pub fn quitar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String, String> {
+    let id = texto(c, "id");
+    let r = v.repos_v2.iter().find(|r| r.id == repo && !r.solo_lectura).ok_or("Ese repositorio no lo gestiona este servidor.")?;
+    if !r.derivadas.iter().any(|d| d["id"] == id.as_str()) {
+        return Err("Esa copia derivada ya no está.".into());
+    }
+    // Si el agente ya no la tiene (el repositorio no tiene copias activas), basta con olvidarla.
+    if crate::agent::load_config().repos.iter().any(|x| x.id == repo) {
+        crate::agent::set_derived(repo, &id, None, None)?;
+    }
+    if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
+        r.derivadas.retain(|x| x["id"] != id.as_str());
+    }
+    let _ = subir_config(v);
+    Ok("Copia derivada quitada (lo ya copiado sigue en su destino).".into())
+}
+
+/// Lo que va al resumen de una derivada (sin rutas: del filtro, solo cuántas carpetas).
+fn derivada_resumen(v: &Vinculo, repo: &str, e: &Value, agente: Option<&crate::agent::AgentRepo>) -> Value {
+    let id = e["id"].as_str().unwrap_or_default();
+    let tarea = agente.and_then(|a| a.derived.iter().find(|d| d.id == id));
+    let mut filtro = e["filtro"].clone();
+    if let Some(n) = filtro.get("carpetas").and_then(Value::as_array).map(Vec::len) {
+        filtro["carpetas"] = json!(n);
+    }
+    json!({
+        "id": id,
+        "destino": v.destinos.iter().find(|d| Some(d.id.as_str()) == e["destino"].as_str()).map(|d| d.nombre.clone()),
+        "destino_id": e["destino"],
+        "cuando": e["cuando"],
+        "existente": e.get("existente"),
+        "bloqueo_dias": e.get("bloqueo_dias"),
+        "solo_anadir": e.get("solo_anadir"),
+        "filtro": Some(filtro).filter(|f| f.is_object()),
+        "verificacion": e.get("verificacion"),
+        // Si el agente la tiene (un repositorio sin copias activas la pierde) y si aplica retención allí.
+        "activa": tarea.is_some(),
+        "con_retencion": tarea.map(|t| t.offsite.retention.as_ref().is_some_and(|p| !p.is_empty())),
+        "repo": repo,
+    })
 }
 
 /// Mensaje de [`probar_externa`] si el destino trocea distinto que el origen.
@@ -1995,6 +2379,37 @@ mod tests {
         assert_eq!(ubicacion(&destino("local", raiz), "Siigo").unwrap(), std::path::Path::new(raiz).join("Siigo").display().to_string());
     }
 
+    /// Tarea 7c: `tras` (con o sin horario propio) y las cadenas que no valen.
+    #[test]
+    fn copias_en_cadena() {
+        let copia = |id: &str, repo: &str, tras: Option<&str>, horas: &[&str]| -> Copia {
+            serde_json::from_value(json!({"id": id, "nombre": id.to_uppercase(), "repo": repo, "carpetas": [r"C:\Datos"],
+                "horario": {"dias": if horas.is_empty() { json!([]) } else { json!([1, 2, 3, 4, 5]) }, "horas": horas}, "tras": tras}))
+            .unwrap()
+        };
+        let lista = vec![copia("docs", "r1", None, &["13:00"]), copia("disco-e", "r2", Some("docs"), &[]), copia("nube", "r2", Some("disco-e"), &["23:00"])];
+        validar_cadenas(&lista).unwrap();
+        // Sin horario propio: el plan va sin horario y con la clave de la anterior (de otro repositorio).
+        let p = plan_en(&lista[1], &lista).unwrap();
+        assert!(p.schedule.is_none());
+        assert_eq!(p.after.as_deref(), Some("r1#docs"));
+        // Con horario y además «después de la anterior».
+        let p = plan_en(&lista[2], &lista).unwrap();
+        assert!(p.schedule.is_some());
+        assert_eq!(p.after.as_deref(), Some("r2#disco-e"));
+        assert_eq!(plan_en(&lista[0], &lista).unwrap().after, None);
+        // Sin horario y sin anterior no vale (como siempre).
+        assert!(plan_de(&copia("suelta", "r1", None, &[])).is_err());
+        // Ella misma, una que no está o una vuelta: no.
+        assert!(validar_cadenas(&[copia("a", "r1", Some("a"), &["10:00"])]).is_err());
+        assert!(validar_cadenas(&[copia("a", "r1", Some("zz"), &["10:00"])]).is_err());
+        assert!(validar_cadenas(&[copia("a", "r1", Some("b"), &[]), copia("b", "r1", Some("c"), &[]), copia("c", "r1", Some("a"), &[])]).is_err());
+        // El resumen y el documento llevan `tras`; sin él, ni aparece.
+        assert_eq!(serde_json::to_value(&lista[1]).unwrap()["tras"], "docs");
+        assert!(serde_json::to_value(&lista[0]).unwrap().get("tras").is_none());
+        assert!(ADMITE.contains(&"cadenas"));
+    }
+
     #[test]
     fn copia_a_plan() {
         let k = Copia {
@@ -2007,6 +2422,7 @@ mod tests {
             activa: true,
             gancho: None,
             solo_si_cambios: true,
+            tras: None,
         };
         let p = plan_de(&k).unwrap();
         assert!(p.skip_unchanged, "encendido por defecto");
@@ -2038,6 +2454,7 @@ mod tests {
             activa: true,
             gancho: None,
             solo_si_cambios: true,
+            tras: None,
         };
         // Viernes 2 de octubre de 2026, 14:00: la siguiente, a las 19:00; después, el lunes.
         let vie = chrono::Local.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();
@@ -2237,6 +2654,93 @@ mod tests {
                            "retencion": { "diarias": 7, "semanales": 4, "mensuales": 12, "anuales": 2 } });
         let m = cambiar_copia_externa(&mut v, &hora, "siigo").unwrap();
         assert!(m.contains("que ya existe se abre") && m.contains("(1 versión)") && m.contains("Con bloqueo de 30 días"), "{m}");
+
+        // Tarea 4b: «Probar» una copia derivada: lo mismo, con su id y su carpeta por defecto
+        // (`<repo>-<id>`, para no chocar con la externa en el mismo destino).
+        let derivada = |id: &str, destino: &str| json!({ "repo": "siigo", "id": id, "solo_probar": true, "tras_copia": true, "destino": { "id": destino } });
+        let m = cambiar_derivada(&mut v, &derivada("nube-2", "nube-ex"), "siigo").unwrap();
+        assert!(m.contains("se creará al guardar"), "{m}");
+        assert!(!b.join("nube").join("siigo-nube-2").exists(), "probar no crea nada");
+        for (c, error) in
+            [(derivada("externa", "nube-ex"), "no válido"), (derivada("Mal Id", "nube-ex"), "no válido"), (derivada("d1", "almacen"), "otro destino")]
+        {
+            let e = cambiar_derivada(&mut v, &c, "siigo").unwrap_err();
+            assert!(e.contains(error), "{error}: {e}");
+        }
+        // A la misma carpeta que la externa (o que otra derivada) del mismo destino, no.
+        let mut choca = derivada("d1", "nube-ex");
+        choca["ruta"] = json!("copias/siigo");
+        choca["existente"] = json!(true);
+        choca["contrasena_destino"] = json!("clave de la nube");
+        assert!(cambiar_derivada(&mut v, &choca, "siigo").unwrap_err().contains("ya va a esa carpeta"));
+        v.repos_v2[0].derivadas = vec![json!({ "id": "d2", "destino": "nube-ex" })];
+        assert!(cambiar_derivada(&mut v, &derivada("d3", "nube-ex"), "siigo").is_ok(), "otra carpeta por defecto");
+        let mut misma = derivada("d3", "nube-ex");
+        misma["ruta"] = json!("siigo-d2");
+        assert!(cambiar_derivada(&mut v, &misma, "siigo").unwrap_err().contains("ya va a esa carpeta"));
+        // Qué reduce la protección: cambiar la retención o el destino de una que ya existe.
+        let con = |extra: Value| {
+            let mut c = json!({ "id": "d2", "destino": { "id": "nube-ex" }, "hora": "21:00" });
+            c.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            c
+        };
+        assert!(!derivada_reduce(&v, &con(json!({})), "siigo"), "cambiar la hora no");
+        assert!(derivada_reduce(&v, &con(json!({ "retencion": { "diarias": 7 } })), "siigo"));
+        assert!(derivada_reduce(&v, &con(json!({ "destino": { "id": "otro" } })), "siigo"));
+        assert!(!derivada_reduce(&v, &json!({ "id": "nueva", "destino": { "id": "x" }, "retencion": { "diarias": 7 } }), "siigo"), "una nueva no");
         let _ = std::fs::remove_dir_all(&b);
+    }
+
+    /// Tarea 4b: cuándo se hace una copia derivada y lo que va al resumen (sin rutas).
+    #[test]
+    fn cuando_y_resumen_de_una_derivada() {
+        use crate::agent::Schedule;
+        assert_eq!(cuando_derivada(&json!({ "tras_copia": true })).unwrap().0, Schedule::AfterBackup { min_minutes: 0 });
+        assert_eq!(cuando_derivada(&json!({ "tras_copia": true, "min_minutos": 30 })).unwrap().1, json!({ "tras_copia": true, "min_minutos": 30 }));
+        assert_eq!(cuando_derivada(&json!({ "hora": "23:00" })).unwrap().0, Schedule::Daily { time: "23:00".into() });
+        let (s, cuando) = cuando_derivada(&json!({ "horario": { "reglas": [{ "tipo": "mensual", "dia": 1, "hora": "03:00" }] } })).unwrap();
+        assert!(matches!(s, Schedule::Rules { ref rules } if rules.len() == 1));
+        assert_eq!(cuando["horario"]["reglas"][0]["dia"], 1);
+        for mal in [
+            json!({}),
+            json!({ "hora": "25:00" }),
+            json!({ "tras_copia": true, "min_minutos": 9999 }),
+            json!({ "horario": { "dias": [9], "horas": ["01:00"] } }),
+        ] {
+            assert!(cuando_derivada(&mal).is_err(), "{mal}");
+        }
+        let mut v = Vinculo::default();
+        v.destinos.push(Destino { id: "b2".into(), nombre: "B2 Sur".into(), tipo: "b2".into(), donde: "copias-sur".into(), ..Default::default() });
+        let e = json!({ "id": "d1", "destino": "b2", "ruta": "privada/siigo", "cuando": { "tras_copia": true },
+                        "filtro": { "carpetas": [r"C:\Datos\Contabilidad"], "etiquetas": ["diaria"] } });
+        let r = derivada_resumen(&v, "siigo", &e, None);
+        assert_eq!((r["destino"].as_str(), r["filtro"]["carpetas"].as_u64(), r["activa"].as_bool()), (Some("B2 Sur"), Some(1), Some(false)));
+        assert!(!r.to_string().contains("Contabilidad") && !r.to_string().contains("privada"), "sin rutas: {r}");
+        assert!(id_derivada_valido("nube-2") && !id_derivada_valido("externa") && !id_derivada_valido("") && !id_derivada_valido("a/b"));
+        assert!(ADMITE.contains(&"derivadas") && ADMITE.contains(&"filtros"));
+    }
+
+    /// Tarea 4a: un destino «nube» (conectada en el equipo) va por rclone.
+    #[test]
+    fn ubicacion_en_una_nube_del_equipo() {
+        let d = |donde: &str, nube: Option<&str>| Destino {
+            id: "n".into(),
+            nombre: "Dropbox".into(),
+            tipo: "nube".into(),
+            donde: donde.into(),
+            nube: nube.map(String::from),
+            ..Default::default()
+        };
+        assert_eq!(ubicacion(&d("Resguardo/Sur", Some("Dropbox Sur")), "siigo-d1").unwrap(), "rclone:rnube:Resguardo/Sur/siigo-d1");
+        assert_eq!(ubicacion(&d("", Some("Dropbox Sur")), "siigo-d1").unwrap(), "rclone:rnube:siigo-d1");
+        for (donde, nube) in [("../x", Some("D")), ("a:b", Some("D")), ("Resguardo", None), ("Resguardo", Some(" "))] {
+            assert!(ubicacion(&d(donde, nube), "r").is_err(), "{donde:?} {nube:?}");
+        }
+        assert!(ubicacion(&d("Resguardo", Some("D")), "").is_err());
+        // Una nube no sirve (todavía) para copiar las carpetas directamente.
+        let mut v = Vinculo::default();
+        let c = json!({ "id": "r1", "nombre": "Docs", "contrasena": "una clave larga", "destino": { "id": "n1", "tipo": "nube", "nube": "Dropbox", "nombre": "Dropbox" } });
+        assert!(crear_repositorio(&mut v, &c).unwrap_err().contains("copias derivadas"));
+        assert!(ADMITE.contains(&"nube_equipo"));
     }
 }

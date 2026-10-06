@@ -5,14 +5,15 @@
 // la auditoría entera con su cadena de hashes; v1.40: también las
 // observaciones y los comentarios), lo cifra con
 // K_exp = HKDF(Argon2id(clave_admin, sal_cliente), "resguardo-kexp-v1") y
-// solo entonces lo descarga o lo sube. En el servidor nuevo (que recibió el
+// solo entonces lo descarga o lo sube. Tarea 7 (parte B): también el
+// catálogo de destinos (solo nombres, tipos y direcciones, nunca credenciales). En el servidor nuevo (que recibió el
 // cliente con la misma sal) se descifra aquí y se importa el historial.
 import * as api from "./api";
 import { argon2Navegador } from "./cripto/argon2";
 import { borrar, deUtf8, utf8 } from "./cripto/bytes";
 import { kExp, materialCliente } from "./cripto/claves";
 import { cabeceraPaquete, cifrarPaquete, descifrarPaquete } from "./cripto/paquete";
-import type { Aviso, Cliente, EntradaAuditoria, Equipo, Informe, NotasExportadas } from "./tipos";
+import type { Aviso, Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Informe, NotasExportadas } from "./tipos";
 
 export interface ContenidoPaquete {
   formato: "resguardo-cliente";
@@ -27,6 +28,8 @@ export interface ContenidoPaquete {
   auditoria: EntradaAuditoria[];
   /** v1.40: observaciones y comentarios (un paquete anterior no los trae). */
   notas?: NotasExportadas;
+  /** Tarea 7 (parte B): el catálogo de destinos, sin secretos (un paquete anterior no lo trae). */
+  destinos?: Pick<DestinoCatalogo, "id" | "nombre" | "tipo" | "donde">[];
 }
 
 /** Junta el contenido (en claro, solo en memoria). */
@@ -61,6 +64,12 @@ export async function juntar(cliente: Cliente, alPaso: (t: string) => void = () 
     if (err instanceof api.ApiError && err.codigo === "no_existe") return undefined;
     throw err;
   });
+  alPaso("Leyendo los destinos…");
+  // Un servidor anterior no tiene catálogo (404): el paquete va sin él.
+  const destinos = await api.destinosCatalogo(cliente.id).catch((err) => {
+    if (err instanceof api.ApiError && err.codigo === "no_existe") return [] as DestinoCatalogo[];
+    throw err;
+  });
   return {
     formato: "resguardo-cliente",
     v: 1,
@@ -73,6 +82,7 @@ export async function juntar(cliente: Cliente, alPaso: (t: string) => void = () 
     avisos,
     auditoria,
     ...(notas && (notas.observaciones.length || notas.comentarios.length) ? { notas } : {}),
+    ...(destinos.length ? { destinos: destinos.map((d) => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, donde: d.donde ?? null })) } : {}),
   };
 }
 
@@ -116,9 +126,26 @@ export async function abrir(claveAdmin: string, cliente: Cliente, paquete: Uint8
   return c;
 }
 
-/** Sube al servidor nuevo el historial (la auditoría, solo si su cadena está entera; una sola vez). */
-export const importar = (c: string, x: ContenidoPaquete) =>
-  api.importarHistorial(c, { origen: x.origen, auditoria: x.auditoria, informes: x.informes, avisos: x.avisos, ...(x.notas ? { notas: x.notas } : {}) });
+/** Sube al servidor nuevo el historial (la auditoría, solo si su cadena está entera; una sola vez)
+ *  y, después, los destinos del catálogo que aún no tenga (el servidor valida cada uno como
+ *  siempre: nada de secretos ni rutas). Devuelve cuántos destinos se pusieron. */
+export async function importar(c: string, x: ContenidoPaquete): Promise<number> {
+  await api.importarHistorial(c, { origen: x.origen, auditoria: x.auditoria, informes: x.informes, avisos: x.avisos, ...(x.notas ? { notas: x.notas } : {}) });
+  return importarDestinos(c, x.destinos ?? []);
+}
+
+/** Los destinos del paquete que este cliente aún no tiene en su catálogo (uno que ya tiene no se toca). */
+export async function importarDestinos(c: string, destinos: NonNullable<ContenidoPaquete["destinos"]>): Promise<number> {
+  if (!destinos.length) return 0;
+  const ya = new Set((await api.destinosCatalogo(c).catch(() => [] as DestinoCatalogo[])).map((d) => d.id));
+  let n = 0;
+  for (const d of destinos.slice(0, 200)) {
+    if (ya.has(d.id)) continue;
+    await api.ponerDestino(c, d.id, { nombre: d.nombre, tipo: d.tipo, ...(d.donde ? { donde: d.donde } : {}) });
+    n++;
+  }
+  return n;
+}
 
 export const nombreArchivo = (cliente: Cliente) =>
   `${cliente.nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "cliente"}-${new Date().toISOString().slice(0, 10)}.resguardo-cliente`;

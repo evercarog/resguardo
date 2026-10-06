@@ -6,13 +6,16 @@
   //
   // Hoy se hace lo que se puede (la copia, la verificación y la prueba, que se
   // envían con «Enviar al equipo») y se dice dónde se hace el resto: el espejo
-  // del almacén (con «después de cada copia nueva») y la copia externa. Los
-  // pasos por copia en cadena son de la tarea 7, parte B (pendiente).
+  // del almacén (con «después de cada copia nueva») y la copia externa. Con
+  // agentes que admiten las cadenas (tarea 7, parte B), los dos últimos pasos se
+  // crean desde la ficha del equipo: el paso «espejo» (lo hace el almacén) y la
+  // copia derivada a la nube (lo hace el equipo, con la contraseña del repositorio).
   import { Check, CircleDashed, Hourglass, LayoutTemplate, X } from "@lucide/svelte";
   import { espejoDelRepo, nombreEnAlmacen } from "$lib/espejo";
   import { destinoDe } from "$lib/repo";
   import { unidadDe, zonaDeDestino, zonasDe } from "$lib/destinos";
   import type { Equipo } from "$lib/tipos";
+  import { ADMITE, admite, repoEnAlmacen } from "$lib/cadenas";
 
   let {
     equipo,
@@ -35,6 +38,19 @@
     (espejo?.destinos ?? []).find((x) => x.tipo === "carpeta" && unidadDe(x.carpeta) && unidadDe(x.carpeta) !== unidadDe(zona?.carpeta ?? "")) ?? null,
   );
   const otraZona = $derived(almacen ? zonasDe(almacen).find((z) => !z.principal) : null);
+  // Tarea 7d.2: un paso «espejo» de este repositorio (desde su zona, a otra zona o a otro disco).
+  const enAlmacen = $derived(r ? repoEnAlmacen(equipo, r, equipos) : null);
+  const pasoEspejo = $derived(
+    enAlmacen
+      ? ((almacen?.resumen?.guarda_copias?.espejo?.destinos ?? []).find(
+          (x) => x.tras_copia && (x.zona ?? "principal") === enAlmacen.zona && Array.isArray(x.repos) && x.repos.includes(enAlmacen.nombre) && (x.tipo === "zona" || x.tipo === "carpeta"),
+        ) ?? null)
+      : null,
+  );
+  const conPasoEspejo = $derived(!!almacen && admite(almacen, ADMITE.espejoZonas));
+  const conDerivadas = $derived(admite(equipo, ADMITE.derivadas));
+  const derivada = $derived(r?.derivadas?.[0] ?? null);
+  const ficha = $derived(`/c/${cliente}/equipos/${equipo.id}`);
 
   type Estado = "hecho" | "al_enviar" | "pendiente" | "falta";
   interface Paso {
@@ -54,8 +70,17 @@
       estado: prueba ? "al_enviar" : "falta",
       texto: prueba ? "Se envía con la copia." : admitePrueba ? "Actívala abajo, en «Prueba de restauración automática»." : `Actualiza el agente para programarla; mientras, «Probar la restauración» en ${equipo.nombre} cada mes.`,
     },
-    otroDisco && otroDisco.tras_copia
+    pasoEspejo
+      ? { titulo: "Espejo a otro disco, después de la anterior", estado: "hecho", texto: "El almacén ya lo copia a otro disco después de cada copia nueva (un paso de su cadena)." }
+      : otroDisco && otroDisco.tras_copia
       ? { titulo: "Espejo a otro disco, después de la anterior", estado: "hecho", texto: `El almacén ya lo copia a ${unidadDe(otroDisco.carpeta)} después de cada copia nueva.` }
+      : conPasoEspejo
+      ? {
+          titulo: "Espejo a otro disco, después de la anterior",
+          estado: "pendiente",
+          texto: `Después de enviar: en la ficha de ${equipo.nombre}, el paso «espejo» del repositorio${otraZona ? ` (por ejemplo, a ${otraZona.nombre ?? "otra zona"})` : ""}. Lo hace ${almacen?.nombre}, sin contraseñas.`,
+          enlace: { texto: "Añadir el paso «espejo»", href: `${ficha}?paso_espejo=${encodeURIComponent(repo)}` },
+        }
       : {
           titulo: "Espejo a otro disco, después de la anterior",
           estado: "pendiente",
@@ -67,6 +92,15 @@
         },
     r?.externa
       ? { titulo: "En la nube, después de la anterior", estado: "hecho", texto: `Copia externa a «${r.externa.destino}»${r.externa.bloqueo_dias ? ` con bloqueo de ${r.externa.bloqueo_dias} días` : ""}.` }
+      : derivada
+      ? { titulo: "En la nube, después de la anterior", estado: "hecho", texto: `Copia derivada a «${derivada.destino ?? "otro destino"}»${derivada.bloqueo_dias ? ` con bloqueo de ${derivada.bloqueo_dias} días` : ""}.` }
+      : conDerivadas
+      ? {
+          titulo: "En la nube, después de la anterior",
+          estado: "pendiente",
+          texto: "Después de enviar: una copia derivada a Backblaze B2 con bloqueo de objetos (o a Dropbox, sin bloqueo), «después de cada copia», con otra contraseña.",
+          enlace: { texto: "Copia derivada", href: `${ficha}?derivada=${encodeURIComponent(repo)}` },
+        }
       : {
           titulo: "En la nube, después de la anterior",
           estado: "pendiente",

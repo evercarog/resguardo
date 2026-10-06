@@ -413,6 +413,11 @@ pub struct Plan {
     /// Ganchos de plantilla (ganchos.rs). Solo los usa el agente gestionado.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ganchos: Vec<crate::ganchos::Gancho>,
+    /// Tarea 7c (docs/copias-en-cadena.md): «después de la anterior». La clave
+    /// (`<repo>#<plan>`, [`plan_key`]) del plan tras el que empieza este cuando
+    /// termina bien. Puede tener además su horario (o ninguno). Solo el agente gestionado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
 }
 
 /// Id del plan creado a partir de la configuración de versiones anteriores.
@@ -538,6 +543,7 @@ mod tests {
             schedule: None,
             skip_unchanged: false,
             ganchos: vec![],
+            after: None,
         };
         assert!(plan.validate().is_err(), "etiqueta con espacio");
     }

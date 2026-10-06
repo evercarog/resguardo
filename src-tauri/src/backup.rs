@@ -180,7 +180,17 @@ mod tests {
     }
 
     fn plan(paths: Vec<String>, tags: Vec<String>) -> Plan {
-        Plan { id: "p".into(), name: "Plan".into(), paths, excludes: vec!["*.tmp".into()], tags, schedule: None, skip_unchanged: false, ganchos: vec![] }
+        Plan {
+            id: "p".into(),
+            name: "Plan".into(),
+            paths,
+            excludes: vec!["*.tmp".into()],
+            tags,
+            schedule: None,
+            skip_unchanged: false,
+            ganchos: vec![],
+            after: None,
+        }
     }
 
     /// Copia real. Requiere RESGUARDO_TEST_REPO, RESGUARDO_TEST_PASSWORD y

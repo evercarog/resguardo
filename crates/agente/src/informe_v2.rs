@@ -413,6 +413,21 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                 "verificacion": tarea(&t, "verify", &r.id),
                 "prueba_restauracion": tarea(&t, "restore_test", &r.id),
                 "externa": tarea(&t, "offsite", &r.id),
+                // Tarea 4b: la última vuelta de cada copia derivada (de ahí el aviso `externa_fallida`).
+                "derivadas": r.derivadas.iter().filter_map(|d| {
+                    let id = d["id"].as_str()?;
+                    let destino = v.destinos.iter().find(|x| Some(x.id.as_str()) == d["destino"].as_str()).map(|x| x.nombre.clone());
+                    let mut x = match t.runs.get(&crate::tasks::derived_key(crate::tasks::DERIVADA, &r.id, id)) {
+                        Some(run) => json!({ "ultima": run.finished, "resultado": resultado(&run.result), "mensaje_corto": corto(&run.message) }),
+                        None => json!({}),
+                    };
+                    x["id"] = json!(id);
+                    x["destino"] = json!(destino);
+                    if let Some(run) = t.runs.get(&crate::tasks::derived_key(crate::tasks::VERIFY_DERIVADA, &r.id, id)) {
+                        x["verificacion"] = json!({ "ultima": run.finished, "resultado": resultado(&run.result), "mensaje_corto": corto(&run.message) });
+                    }
+                    Some(x)
+                }).collect::<Vec<_>>(),
                 "proteccion": proteccion(v, r, &cfg, &st, &t, ahora),
             })
         })

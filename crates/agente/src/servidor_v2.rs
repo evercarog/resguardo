@@ -598,6 +598,11 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             // Igual que al ejecutarla: sin una hora en texto, se quita la copia externa.
             // Solo probar (v1.46) no cambia nada.
             "cambiar_copia_externa" => !c["hora"].is_string() && c["solo_probar"] != true,
+            // Tarea 4b: cambiar la retención o el destino de una copia derivada que ya existía.
+            "cambiar_derivada" => {
+                c["solo_probar"] != true
+                    && crate::gestion_v2::derivada_reduce(v, c, o.autorizacion.clave_repo.as_ref().map(|k| k.repo.as_str()).unwrap_or_default())
+            }
             // Desconectar una nube que usa el espejo deja de proteger fuera.
             "quitar_nube" => crate::nube::usa_espejo(c["nombre"].as_str().unwrap_or("").trim()),
             // Vaciar o desactivar todas las copias que había: el equipo deja de copiar solo.
@@ -1010,6 +1015,9 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "crear_repositorio" => g::crear_repositorio(v, c).map(hecha),
         "cambiar_destino" => g::cambiar_destino(v, c).map(hecha),
         "cambiar_copia_externa" => g::cambiar_copia_externa(v, c, repo.unwrap_or("")).map(hecha),
+        // Tarea 4b: las demás copias derivadas de un repositorio.
+        "cambiar_derivada" => g::cambiar_derivada(v, c, repo.unwrap_or("")).map(hecha),
+        "quitar_derivada" => g::quitar_derivada(v, c, repo.unwrap_or("")).map(hecha),
         "cambiar_servidor" => crate::traslado_v2::cambiar_servidor(v, c, orden_id, seq).map(en_marcha),
         "servidores_respaldo" => crate::traslado_v2::servidores_respaldo(v, c).map(hecha),
         // El permiso de Dropbox llega sellado; el resultado nunca lo repite.
@@ -1062,12 +1070,16 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "verificar_ahora" | "subir_ahora" | "probar_restauracion" => {
             let r = texto(c, "repo");
             repo_gestionado(v, &r)?;
-            let tarea = match o.tipo.as_str() {
-                "verificar_ahora" => "verify",
-                "subir_ahora" => "offsite",
-                _ => "restore_test",
+            // Tarea 4b: `derivada: "<id>"` sube (o verifica) esa copia derivada.
+            let derivada = c["derivada"].as_str().filter(|d| crate::gestion_v2::id_derivada_valido(d));
+            let tarea = match (o.tipo.as_str(), derivada) {
+                ("verificar_ahora", None) => "verify".to_string(),
+                ("subir_ahora", None) => "offsite".to_string(),
+                ("verificar_ahora", Some(d)) => crate::tasks::derived_request(crate::tasks::VERIFY_DERIVADA, d),
+                ("subir_ahora", Some(d)) => crate::tasks::derived_request(crate::tasks::DERIVADA, d),
+                _ => "restore_test".to_string(),
             };
-            crate::tasks::request_now(&r, tarea)?;
+            crate::tasks::request_now(&r, &tarea)?;
             Ok(hecha("Tarea pedida: empieza en unos segundos."))
         }
         "pausar" => g::pausar(v, c).map(hecha),
@@ -2537,12 +2549,13 @@ mod tests {
         let r = estado_orden(&consola, 13);
         assert_eq!(r["estado"], "fallida");
         assert!(r["mensaje"].as_str().unwrap().contains("no está configurada"), "{r}");
-        // Un equipo que no guarda copias no conecta nubes; el token no sale en el resultado.
+        // Tarea 4a: también un equipo que no guarda copias conecta nubes (para sus copias
+        // derivadas); aquí Dropbox no acepta el permiso inventado. El token no sale en el resultado.
         enviar(&consola, &orden(&c, &equipo, 14, "conectar_nube", nube("abc123def456ghi"), admin()));
         ronda().unwrap();
         let r = estado_orden(&consola, 14);
         assert_eq!(r["estado"], "fallida");
-        assert!(r["mensaje"].as_str().unwrap().contains("no guarda copias") && !r.to_string().contains(rt), "{r}");
+        assert!(!r["mensaje"].as_str().unwrap().contains("no guarda copias") && !r.to_string().contains(rt), "{r}");
         // Quitar una que no hay: fallida (no la usa el espejo: sin espera).
         enviar(&consola, &orden(&c, &equipo, 15, "quitar_nube", json!({ "nombre": "Dropbox Prueba" }), admin()));
         ronda().unwrap();

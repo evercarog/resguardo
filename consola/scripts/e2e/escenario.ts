@@ -166,6 +166,14 @@ async function principal() {
   fs.copyFileSync(bins.restic, binario(binDir, "restic"));
   fs.copyFileSync(bins.restServer, binario(binDir, "rest-server"));
   if (!WIN) for (const b of ["resguardo-agente", "restic", "rest-server"]) fs.chmodSync(binario(binDir, b), 0o755);
+  // Tarea 4a (paso 3c): el rclone que acompaña al agente, para una copia derivada por rclone.
+  const rclone = [path.dirname(bins.restic), path.join(RAIZ, "src-tauri", "binaries")]
+    .flatMap((d) => [path.join(d, `rclone${EXE}`), path.join(d, "rclone-x86_64-pc-windows-msvc.exe"), path.join(d, "rclone-x86_64-unknown-linux-gnu")])
+    .find((p) => fs.existsSync(p));
+  if (rclone) {
+    fs.copyFileSync(rclone, binario(binDir, "rclone"));
+    if (!WIN) fs.chmodSync(binario(binDir, "rclone"), 0o755);
+  }
   const agenteBin = binario(binDir, "resguardo-agente");
   const resticBin = binario(binDir, "restic");
   const servidorBin = binario(TARGET, "resguardo-server");
@@ -369,6 +377,7 @@ async function principal() {
       igual(errorRespuestaZona(accesoE, vista), null, "La respuesta es de la zona pedida y por su puerto");
       comprobar(accesoE.usuario !== acceso.usuario, "En la zona, B tiene otro usuario (únicos en todo el almacén)", [accesoE.usuario, acceso.usuario]);
       const repoE = `disco-e-${randomBytes(2).toString("hex")}`;
+      const contrasenaE = Buffer.from(aleatorio(32)).toString("base64url");
       await consola.hecha(
         c,
         eqB.id,
@@ -376,7 +385,7 @@ async function principal() {
         {
           id: repoE,
           nombre: "Copias en ALMACEN-A · Disco E",
-          contrasena: Buffer.from(aleatorio(32)).toString("base64url"),
+          contrasena: contrasenaE,
           // Como CopiarEnAlmacen.svelte con una zona.
           destino: { id: idDestinoZona(eqA.id, zona.id), nombre: `${eqA.nombre} · Disco E`, tipo: "rest", donde: accesoE.destino.donde, usuario: accesoE.destino.usuario, secreto: accesoE.destino.secreto, ca_pem: accesoE.destino.ca_pem, equipo_almacen: eqA.id },
         },
@@ -427,9 +436,100 @@ async function principal() {
         "La regla ve la copia de B en la zona E: otro equipo de la oficina, al día y con lo marcado",
       );
       igual(rcE?.regla.avisos, ["inmutable_local"], "…y avisa de que lo inmutable es local");
-      // Vuelve la configuración de antes (los pasos siguientes cuentan con una sola copia).
-      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });
       log(`B copia también en «Disco E» (puerto ${puertoE}, usuario ${accesoE.usuario})`);
+
+      // ---------------------------------------------------------------------
+      paso("3c. Copias en cadena (tarea 7, parte B): Documentos → zona D; después → zona E; espejo E → D; copia derivada por rclone con otra contraseña");
+      const eqBVer = await consola.equipo(c, eqB.id);
+      comprobar(["cadenas", "derivadas", "filtros", "nube_equipo"].every((x) => eqBVer.resumen?.admite?.includes(x)), "B admite cadenas, derivadas, filtros y nubes en el equipo", eqBVer.resumen?.admite);
+      comprobar(eqAAhora.resumen?.admite?.includes("espejo_zonas"), "A admite el espejo por zonas", eqAAhora.resumen?.admite);
+      // 1. «Después de la anterior»: la copia a la zona E empieza cuando termina bien la de la zona D.
+      // (Una copia aparte al mismo repositorio: «Documentos» sigue con su última vez, que el paso 5b cuenta.)
+      const copiaD = { ...copia, id: "cadena-d", nombre: "Cadena: Documentos a Disco D" };
+      const copiaTras = { ...copiaE, horario: { dias: [], horas: [] }, tras: "cadena-d" };
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, copiaD, copiaTras] } }, { claveAdmin: CLAVE_ADMIN });
+      const antesE = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "documentos-e")?.ultima?.cuando;
+      const desdeD = Date.now();
+      await consola.hecha(c, eqB.id, "copiar_ahora", { copia: "cadena-d", repo: repoId });
+      const ultimaD = await esperar("que termine la primera de la cadena", async () => {
+        const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "cadena-d");
+        return k?.ultima && new Date(k.ultima.cuando).getTime() >= desdeD - 1_000 ? k.ultima : null;
+      }, { plazo: 180_000, cada: 1000 });
+      igual(ultimaD.estado, "ok", "La primera de la cadena terminó bien");
+      const ultimaTras = await esperar("que la cadena lance la copia a la zona E", async () => {
+        const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "documentos-e");
+        return k?.ultima && k.ultima.cuando !== antesE ? k : null;
+      }, { plazo: 180_000, cada: 1000 });
+      igual([ultimaTras.ultima!.estado, ultimaTras.tras], ["ok", "cadena-d"], "La segunda se hizo sola, después de la primera");
+      // 2. Paso «espejo»: el almacén copia ese repositorio de la zona E a la principal, en local (sin contraseñas).
+      const nombreEnA = `${accesoE.usuario}/${repoE}`;
+      // El espejo deja para la vuelta siguiente lo escrito en los últimos 10 minutos (una subida a medias):
+      // aquí, como si la copia hubiera sido hace una hora.
+      const haceUnaHora = new Date(Date.now() - 3600_000);
+      const envejecer = (d: string) => {
+        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+          const p = path.join(d, e.name);
+          if (e.isDirectory()) envejecer(p);
+          else fs.utimesSync(p, haceUnaHora, haceUnaHora);
+        }
+      };
+      envejecer(path.join(carpetaE, accesoE.usuario, repoE));
+      await consola.hecha(
+        c,
+        eqA.id,
+        "guarda_copias",
+        { espejo: { hora: "02:00", destinos: [{ tipo: "zona", carpeta: "principal", zona: zona.id, repos: [nombreEnA], vistos: [nombreEnA], tras_copia: true }] } },
+        { claveAdmin: CLAVE_ADMIN },
+      );
+      await esperar("el espejo de la zona E en la principal", async () => (fs.existsSync(path.join(almacen, accesoE.usuario, repoE, "config")) ? true : null), { plazo: 120_000, cada: 1000 });
+      const dEsp = (await consola.equipo(c, eqA.id)).resumen?.guarda_copias?.espejo?.destinos?.[0];
+      igual([dEsp?.tipo, dEsp?.zona], ["zona", zona.id], "El resumen de A dice el destino «zona» y su zona de origen");
+      comprobar(!fs.existsSync(path.join(almacen, accesoE.usuario, "documentos")), "Solo ese repositorio");
+      if (rclone) {
+        // 3. Una nube en B (por rclone; en las pruebas, una carpeta) y una copia derivada a ella: otra contraseña y un filtro de fechas.
+        const carpetaNube = dir("nube-b");
+        fs.mkdirSync(carpetaNube, { recursive: true });
+        await consola.hecha(c, eqB.id, "conectar_nube", { tipo: "alias", nombre: "Nube de pruebas", parametros: { carpeta: carpetaNube } }, { claveAdmin: CLAVE_ADMIN }, {}, 60_000);
+        const otraClave = Buffer.from(aleatorio(24)).toString("base64url");
+        const secretosE = { repo: { repo: repoE, contrasena: contrasenaE } };
+        await consola.hecha(
+          c,
+          eqB.id,
+          "cambiar_derivada",
+          {
+            repo: repoE,
+            id: "d1",
+            destino: { id: "nube-pruebas", nombre: "Nube de pruebas", tipo: "nube", nube: "Nube de pruebas", donde: "Resguardo" },
+            tras_copia: true,
+            contrasena_destino: otraClave,
+            filtro: { ultimos_dias: 30 },
+            verificacion: { cada_dias: 7, porcentaje: 5 },
+          },
+          secretosE,
+          {},
+          120_000,
+        );
+        await consola.hecha(c, eqB.id, "subir_ahora", { repo: repoE, derivada: "d1" });
+        const dv = await esperar("la copia derivada hecha (informe de B)", async () => {
+          const inf = informeDe((await consola.equipo(c, eqB.id)).ultimo_informe as any, repoE) as any;
+          const x = inf?.derivadas?.find((d: { id: string }) => d.id === "d1");
+          return x?.resultado === "ok" ? x : x?.resultado === "fallo" ? Promise.reject(new Error(x.mensaje_corto)) : null;
+        }, { plazo: 180_000, cada: 1500 });
+        log(`Derivada: ${dv.mensaje_corto}`);
+        const derivada = { ...{ RESTIC_REPOSITORY: path.join(carpetaNube, "Resguardo", `${repoE}-d1`), RESTIC_PASSWORD: otraClave } };
+        const vistas = JSON.parse(ejecutar(resticBin, ["snapshots", "--json", "--no-lock"], { env: derivada }).salida || "[]") as unknown[];
+        const enE = JSON.parse(ejecutar(resticBin, ["snapshots", "--json", "--no-lock"], { env: { RESTIC_REPOSITORY: path.join(carpetaE, accesoE.usuario, repoE), RESTIC_PASSWORD: contrasenaE } }).salida || "[]") as unknown[];
+        comprobar(vistas.length > 0 && vistas.length === enE.length, "La derivada tiene las versiones de los últimos 30 días (todas) y se abre con SU contraseña", [vistas.length, enE.length]);
+        const conLaDelOrigen = ejecutar(resticBin, ["snapshots", "--json", "--no-lock"], { env: { ...derivada, RESTIC_PASSWORD: contrasenaE } });
+        comprobar(conLaDelOrigen.codigo !== 0, "La contraseña del origen no la abre");
+        const rB = (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((x) => x.id === repoE);
+        igual([rB?.derivadas?.[0]?.id, rB?.derivadas?.[0]?.cuando?.tras_copia, rB?.derivadas?.[0]?.filtro?.ultimos_dias], ["d1", true, 30], "El resumen de B lleva la derivada (sin rutas ni secretos)");
+        comprobar(!JSON.stringify(rB).includes(otraClave) && !JSON.stringify(rB).includes(carpetaNube), "Ni la contraseña ni la carpeta en el resumen");
+        // Quitar la derivada (espera; aquí de 0 s) y la nube; vuelve la configuración de antes (los pasos siguientes cuentan con una sola copia).
+        await consola.hecha(c, eqB.id, "quitar_derivada", { repo: repoE, id: "d1" }, secretosE);
+      } else log("Sin rclone junto a restic: se salta la copia derivada por rclone.");
+      await consola.hecha(c, eqA.id, "guarda_copias", { espejo: null }, { claveAdmin: CLAVE_ADMIN });
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });
     }
 
     // -----------------------------------------------------------------------

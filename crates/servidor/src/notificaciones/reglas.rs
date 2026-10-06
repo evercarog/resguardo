@@ -30,7 +30,9 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "orden_en_espera"
         | "cambio_clave"
         | "auditoria_rehecha" => Severidad::Critico,
-        "equipo_sin_contacto" | "copia_atrasada" | "espejo_fallido" | "retencion_fallida" | "externa_fallida" | "prueba_fallida" => Severidad::Importante,
+        "equipo_sin_contacto" | "copia_atrasada" | "espejo_fallido" | "retencion_fallida" | "externa_fallida" | "prueba_fallida" | "cadena_parada" => {
+            Severidad::Importante
+        }
         _ => Severidad::Informativo,
     }
 }

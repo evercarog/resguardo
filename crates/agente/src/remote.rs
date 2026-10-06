@@ -116,6 +116,7 @@ mod tests {
             enabled_at: "2026-10-01T09:00:00-05:00".into(),
             skip_unchanged: false,
             ganchos: vec![],
+            after: None,
         };
         let repo: AgentRepo = serde_json::from_value(serde_json::json!({
             "id": "r1",

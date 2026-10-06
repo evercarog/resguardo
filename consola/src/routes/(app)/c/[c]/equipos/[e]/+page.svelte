@@ -106,6 +106,12 @@
   import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
+  import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
+  import { ADMITE as ADMITE_B, admite as admiteB, cuandoEnFrase, filtroEnFrase, pasoDeEspejo, repoEnAlmacen } from "$lib/cadenas";
+  import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
+  import AnadirCopia from "$lib/componentes/AnadirCopia.svelte";
+  import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
+  import type { DerivadaResumen } from "$lib/tipos";
   import { tareasDe } from "$lib/progreso.svelte";
   import { hayPlanMover, moviendoDe } from "$lib/mover";
   import { borrar } from "$lib/cripto/bytes";
@@ -274,6 +280,19 @@
   });
   // v1.41: desde el aviso «copias en el mismo equipo» (?externa=<repo>): «Copia externa» de ese repositorio, una vez.
   let externaPedida = false;
+  // Tarea 7 (parte B), desde la plantilla 3-2-1: ?paso_espejo=<repo> o ?derivada=<repo>, una vez.
+  let cadenaPedida = false;
+  $effect(() => {
+    const pe = page.url.searchParams.get("paso_espejo");
+    const dv = page.url.searchParams.get("derivada");
+    const r = equipo?.resumen?.repositorios?.find((x) => x.id === (pe ?? dv));
+    if (cadenaPedida || !r) return;
+    cadenaPedida = true;
+    untrack(() => {
+      if (pe && puede.administrar(rol)) pasoEspejoPara = r;
+      else if (dv && puede.ordenar(rol)) derivadaPara = { repo: r, derivada: null };
+    });
+  });
   $effect(() => {
     const r = page.url.searchParams.get("externa");
     const repo = r ? equipo?.resumen?.repositorios?.find((x) => x.id === r) : undefined;
@@ -409,7 +428,8 @@
     const hora = espejoActual?.hora ?? "02:00";
     const de = editar ? conHorario(destinoParaOrden(editar)) : null;
     esp = {
-      tipo: de?.tipo ?? tipo,
+      // (Un destino «zona» no se cambia aquí: solo se quita o se cambia desde su paso.)
+      tipo: de ? (de.tipo === "nube" ? "nube" : "carpeta") : tipo,
       carpeta: de?.tipo === "carpeta" ? de.carpeta : "",
       nube: de?.nube ?? nubes[0]?.nombre ?? "",
       // Con el permiso «App folder», la raíz ya es Aplicaciones/Resguardo.
@@ -481,7 +501,7 @@
     ];
   }
 
-  const TIPO_DESTINO: Record<string, string> = { local: "Disco o carpeta del equipo", rest: "Servidor de copias", s3: "S3 compatible", b2: "Backblaze B2", sftp: "SFTP", otro: "Otro" };
+  const TIPO_DESTINO: Record<string, string> = { local: "Disco o carpeta del equipo", rest: "Servidor de copias", s3: "S3 compatible", b2: "Backblaze B2", sftp: "SFTP", nube: "Nube conectada en el equipo", otro: "Otro" };
 
   /** Una línea en vez de cuatro cifras vacías: cuándo llegará la primera versión. */
   function sinVersiones(r: RepositorioResumen) {
@@ -491,6 +511,34 @@
     const p = proximaCopia(suyas, reloj.ahora);
     return p ? `Todavía sin versiones: la primera copia será ${cuandoFrase(p, reloj.ahora)}.` : "Todavía sin versiones: pulsa «Copiar ahora» para hacer la primera.";
   }
+
+  // --- Copias derivadas (tarea 4b) ----------------------------------------
+  let derivadaPara = $state<{ repo: RepositorioResumen; derivada: DerivadaResumen | null } | null>(null);
+  /** Tarea 7d.2: un paso «espejo» de un repositorio que está en un almacén (lo hace el almacén). */
+  let pasoEspejoPara = $state<RepositorioResumen | null>(null);
+  /** Tarea 7f: «Añadir una copia» (qué primero; después, el diálogo de cada tipo). */
+  let anadirCopia = $state(false);
+  const puedePasoEspejo = (r: RepositorioResumen) => {
+    const x = equipo ? repoEnAlmacen(equipo, r, actual.equipos) : null;
+    return !!x && admiteB(x.almacen, ADMITE_B.espejoZonas);
+  };
+  /** El nombre de una zona de este almacén («Almacén X · Disco E»), o el id si ya no está. */
+  const nombreZonaAqui = (id: string | null | undefined) => {
+    const z = equipo ? zonasDe(equipo).find((x) => x.id === (id ?? "principal")) : undefined;
+    return z ? nombreZonaPorDefecto(z) : (id ?? "");
+  };
+  /** Quitar una copia derivada (espera: deja de proteger fuera). */
+  function quitarDerivada(r: RepositorioResumen, d: DerivadaResumen) {
+    abrir({
+      tipo: "quitar_derivada",
+      cuerpo: { repo: r.id, id: d.id },
+      titulo: "Quitar la copia derivada",
+      descripcion: `«${r.nombre}» dejará de copiarse a «${d.destino ?? "su destino"}». Lo ya copiado allí se queda.`,
+      repo: { id: r.id, nombre: r.nombre },
+    });
+  }
+  /** Lo último que dijo el informe de una derivada. */
+  const ultimaDerivada = (r: RepositorioResumen, id: string) => informeDe(equipo?.ultimo_informe, r.id)?.derivadas?.find((x) => x.id === id);
 
   /** «Más…» de un repositorio: protección, y aparte (en rojo) lo que deja de proteger. */
   function masRepo(r: RepositorioResumen): AccionMenu[][] {
@@ -525,6 +573,9 @@
             },
           ]),
       ...(conCopias ? [{ texto: r.externa ? "Cambiar la copia externa" : "Copia externa…", onclick: () => abrirExterna(r) }] : []),
+      // Tarea 4b: más copias derivadas, cada una con su destino, su contraseña y su filtro.
+      ...(conCopias && admiteB(equipo, ADMITE_B.derivadas) ? [{ texto: "Añadir una copia derivada…", onclick: () => (derivadaPara = { repo: r, derivada: null }) }] : []),
+      ...(!r.solo_lectura && puede.administrar(rol) && puedePasoEspejo(r) ? [{ texto: "Añadir un paso «espejo»…", onclick: () => (pasoEspejoPara = r) }] : []),
       // v1.41: con todo su historial, a otro destino (p. ej. el almacén de otro equipo).
       // Si ya se está moviendo (desde otra consola u otro navegador), aquí no se puede empezar otro.
       ...(!r.solo_lectura && puede.administrar(rol) && !moverBloqueado(r.id) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
@@ -897,7 +948,7 @@
       <section>
         <div class="section-head">
           <h2>Copias <span class="count">· {copias.length}</span></h2>
-          {#if puede.administrar(rol)}<a class="btn btn-sm btn-ghost" href="/c/{c}/equipos/{equipo.id}/copias"><Pencil size={14} />Cambiar las copias</a>{/if}
+          {#if puede.administrar(rol)}<span class="botones-copias"><button class="btn btn-sm" onclick={() => (anadirCopia = true)}><Plus size={14} />Añadir una copia</button><a class="btn btn-sm btn-ghost" href="/c/{c}/equipos/{equipo.id}/copias"><Pencil size={14} />Cambiar las copias</a></span>{/if}
         </div>
         {#each pendCopias as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
         {#if copias.length}
@@ -910,7 +961,7 @@
               <div class="fila">
                 <span class="fila-texto">
                   <a class="fila-titulo enlace-copia" href="/c/{c}/equipos/{equipo.id}/copias/{encodeURIComponent(k.id)}" use:tip={`Ver el detalle de «${k.nombre}»`}>{k.nombre}<ContadorNotas tipo="copia" objeto={objetoDe(equipo.id, k.id)} /><ChevronRight size={14} /></a>
-                  <span class="fila-sub">{horarioEnFrase(k.horario)}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {rk?.nombre ?? k.repo}</span>
+                  <span class="fila-sub">{#if k.tras}Después de «{copias.find((x) => x.id === k.tras)?.nombre ?? k.tras}»{#if typeof k.horario === "object" && (k.horario?.horas?.length || k.horario?.reglas?.length)}{" y "}{horarioEnFrase(k.horario).toLowerCase()}{/if}{:else}{horarioEnFrase(k.horario)}{/if}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {rk?.nombre ?? k.repo}</span>
                   {#if rk}<span class="fila-sub"><SeGuardaEn pequeno lugar={lugarRepo(rk, equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(rk, equipo, actual.equipos)} /></span>{/if}
                   {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo">{vuelta.mensaje}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
@@ -995,6 +1046,29 @@
                 {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) && !moverBloqueado(r.id) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
                 {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>{/if}
+                {#each r.derivadas ?? [] as dv (dv.id)}
+                  {@const ult = ultimaDerivada(r, dv.id)}
+                  <div class="externa derivada">
+                    <CloudUpload size={14} />
+                    <span>
+                      Copia derivada a «{dv.destino ?? "otro destino"}» · {cuandoEnFrase(dv.cuando).toLowerCase()}{#if filtroEnFrase(dv.filtro)}{" · "}solo las versiones {filtroEnFrase(dv.filtro)}{/if}{#each detallesExterna(dv) as d (d)}{" · "}{d}{/each}
+                      {#if dv.activa === false}<span class="faint">{" · "}sin copias activas en el repositorio: no se hace</span>{/if}
+                      {#if ult?.resultado}{" · "}<Chip pequeno tono={ult.resultado === "fallo" ? "bad" : "ok"} texto={ult.resultado === "fallo" ? "Falló" : "Hecha"} />{/if}
+                    </span>
+                    {#if puede.ordenar(rol)}
+                      <MenuAcciones
+                        etiqueta="Copia derivada a «{dv.destino ?? ""}»"
+                        grupos={[
+                          [
+                            { texto: "Cambiar", onclick: () => (derivadaPara = { repo: r, derivada: dv }) },
+                            { texto: "Subir ahora", onclick: () => abrir({ tipo: "subir_ahora", cuerpo: { repo: r.id, derivada: dv.id }, descripcion: `Se subirán ahora las versiones nuevas de «${r.nombre}» a «${dv.destino ?? "su destino"}».`, accion: "Subir ahora" }) },
+                          ],
+                          [{ texto: "Quitar la copia derivada", peligro: true, onclick: () => quitarDerivada(r, dv) }],
+                        ]}
+                      />
+                    {/if}
+                  </div>
+                {/each}
                 {#if puede.ordenar(rol)}
                   <div class="acciones">
                     {#if nVersiones(r, inf) || r.solo_lectura}<a class="btn btn-sm btn-primary" href="/c/{c}/restaurar?equipo={equipo.id}&repo={r.id}"><History size={14} />Restaurar</a>{/if}
@@ -1086,12 +1160,15 @@
               </p>
               {#if g.espejo.destinos?.length}
                 <ul class="destinos-espejo">
-                  {#each g.espejo.destinos as d (d.tipo + (d.nube ?? "") + (d.carpeta ?? ""))}
+                  {#each g.espejo.destinos as d (d.tipo + (d.nube ?? "") + (d.carpeta ?? "") + (d.zona ?? ""))}
+                    {@const paso = pasoDeEspejo(d, equipo, actual.equipos)}
                     <li>
                       <span class="ic-d">{#if d.tipo === "nube"}<Cloud size={14} />{:else}<HardDrive size={14} />{/if}</span>
                       <span class="d-texto">
-                        <strong>{d.tipo === "nube" ? d.nube : d.carpeta}</strong>
-                        <span class="faint">{d.tipo === "nube" ? `${nombreTipoNube(nubes.find((n) => n.nombre === d.nube)?.tipo ?? "")} · en la carpeta ${d.carpeta}` : etiquetaCarpeta(d.carpeta)}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
+                        <strong>{d.tipo === "nube" ? d.nube : d.tipo === "zona" ? nombreZonaAqui(d.carpeta) : d.carpeta}</strong>
+                        <span class="faint">{d.tipo === "nube" ? `${nombreTipoNube(nubes.find((n) => n.nombre === d.nube)?.tipo ?? "")} · en la carpeta ${d.carpeta}` : d.tipo === "zona" ? "Otra zona de este almacén" : etiquetaCarpeta(d.carpeta)}{#if d.zona}{" · desde "}{nombreZonaAqui(d.zona)}{/if}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
+                        <!-- Tarea 7e: un destino de un solo repositorio es un paso de la cadena de su copia (no se mueve nada). -->
+                        {#if paso}<span class="faint">Paso de la cadena de «{paso.repo.nombre}» en <a href="/c/{c}/equipos/{paso.equipo.id}">{paso.equipo.nombre}</a></span>{/if}
                         {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>
                           <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
                           <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
@@ -1100,7 +1177,7 @@
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
                       {#if puede.administrar(rol)}
-                        {#if flexible}<button class="btn btn-sm btn-ghost" onclick={() => abrirEspejo(d.tipo, d)}>Cambiar</button>{/if}
+                        {#if flexible && d.tipo !== "zona"}<button class="btn btn-sm btn-ghost" onclick={() => abrirEspejo(d.tipo === "nube" ? "nube" : "carpeta", d)}>Cambiar</button>{/if}
                         <button class="icon-btn" use:tip={"Quitar este destino"} aria-label="Quitar este destino del espejo" onclick={() => quitarDestinoEspejo(destinoParaOrden(d))}><Trash2 size={14} /></button>
                       {/if}
                     </li>
@@ -1361,6 +1438,49 @@
       elegirCarpeta = null;
     }}
   />
+{/if}
+
+{#if anadirCopia && equipo}
+  <AnadirCopia
+    cliente={c}
+    {equipo}
+    equipos={actual.equipos}
+    onclose={() => (anadirCopia = false)}
+    alElegir={(que, r) => {
+      anadirCopia = false;
+      if (que === "espejo") pasoEspejoPara = r;
+      else derivadaPara = { repo: r, derivada: null };
+    }}
+  />
+{/if}
+
+{#if pasoEspejoPara && equipo && actual.cliente}
+  <PasoEspejo
+    cliente={actual.cliente}
+    {equipo}
+    repo={pasoEspejoPara}
+    equipos={actual.equipos}
+    onclose={() => {
+      pasoEspejoPara = null;
+      void cargar();
+      void cargarCliente(c, { silencioso: true });
+    }}
+  />
+{/if}
+
+{#if derivadaPara && equipo && actual.cliente}
+  {#key derivadaPara}
+    <CopiaDerivada
+      cliente={actual.cliente}
+      {equipo}
+      repo={derivadaPara.repo}
+      derivada={derivadaPara.derivada}
+      onclose={() => {
+        derivadaPara = null;
+        void cargar();
+      }}
+    />
+  {/key}
 {/if}
 
 {#if copiarEn && equipo && actual.cliente}
@@ -1951,6 +2071,23 @@
     margin: 0;
     font-size: var(--fs-sm);
     color: var(--text-2);
+  }
+  .derivada {
+    align-items: flex-start;
+  }
+  .botones-copias {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .derivada > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .derivada :global(svg:first-child) {
+    flex: none;
+    margin-top: 3px;
   }
   .con-boton {
     display: flex;
