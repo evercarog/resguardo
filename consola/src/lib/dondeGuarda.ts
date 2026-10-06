@@ -10,7 +10,7 @@
 import type { ComprobacionProteccion, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { esDeAlmacen } from "./retencion";
-import { zonaDeDestino } from "./destinos";
+import { claveZona, zonaDeDestino } from "./destinos";
 
 export type ClaseLugar = "almacen" | "almacen_propio" | "carpeta" | "usb" | "red" | "nube" | "servidor" | "desconocido";
 
@@ -26,6 +26,14 @@ export interface Lugar {
   almacen?: Equipo;
   /** Un destino local sin saber si es un disco USB: el agente aún no lo dice (anterior a v1.41) o no pudo saberlo. */
   discoDesconocido?: "agente" | "no_se_sabe";
+  /**
+   * v1.4x: la clave del destino en el catálogo de esta consola (`zona:<almacén>:<zona>` o el id
+   * del destino), para enseñar el nombre que se le puso aquí (SeGuardaEn). Los nombres del
+   * catálogo son de cada consola (docs/consolas-multiples.md §6).
+   */
+  clave?: string;
+  /** v1.4x: un almacén que no está en esta consola (se gestiona desde otra). */
+  deOtraConsola?: boolean;
 }
 
 const NUBE: Record<string, string> = { s3: "S3", b2: "Backblaze B2" };
@@ -57,9 +65,9 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
   switch (d.tipo) {
     case "local": {
       const u = d.unidad ? ` (${d.unidad})` : "";
-      if (d.red) return { clase: "red", texto: "Carpeta de otra máquina de la red", detalle: d.nombre, mismoEquipo: false };
-      if (d.extraible) return { clase: "usb", texto: `Disco extraíble${u} de este equipo`, detalle: d.nombre, mismoEquipo: true };
-      return { clase: "carpeta", texto: `En este mismo equipo${u}`, detalle: d.nombre, mismoEquipo: true, discoDesconocido: !("extraible" in d) ? "agente" : d.extraible == null ? "no_se_sabe" : undefined };
+      if (d.red) return { clase: "red", texto: "Carpeta de otra máquina de la red", detalle: d.nombre, mismoEquipo: false, clave: d.id };
+      if (d.extraible) return { clase: "usb", texto: `Disco extraíble${u} de este equipo`, detalle: d.nombre, mismoEquipo: true, clave: d.id };
+      return { clase: "carpeta", texto: `En este mismo equipo${u}`, detalle: d.nombre, mismoEquipo: true, discoDesconocido: !("extraible" in d) ? "agente" : d.extraible == null ? "no_se_sabe" : undefined, clave: d.id };
     }
     case "rest": {
       const a = almacenDeDestino(d, equipos);
@@ -68,17 +76,21 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
       const zona = z && !z.principal && z.almacen.id === a?.id ? z : null;
       const carpeta = zona ? zona.carpeta : (a?.resumen?.guarda_copias?.carpeta ?? null);
       const enZona = zona?.nombre ? ` · ${zona.nombre}` : "";
-      if (a && a.id === equipo.id) return { clase: "almacen_propio", texto: `Su propio almacén${enZona} (este mismo equipo)`, detalle: carpeta, mismoEquipo: true, almacen: a };
-      if (a) return { clase: "almacen", texto: `Almacén ${a.nombre}${enZona} (otro equipo)`, detalle: carpeta, mismoEquipo: false, almacen: a };
-      return { clase: "servidor", texto: "Servidor de copias externo", detalle: [d.nombre, servidorDe(d.donde)].filter(Boolean).join(" · ") || null, mismoEquipo: false };
+      const clave = z ? claveZona(z.almacen.id, z.id) : d.id;
+      if (a && a.id === equipo.id) return { clase: "almacen_propio", texto: `Su propio almacén${enZona} (este mismo equipo)`, detalle: carpeta, mismoEquipo: true, almacen: a, clave };
+      if (a) return { clase: "almacen", texto: `Almacén ${a.nombre}${enZona} (otro equipo)`, detalle: carpeta, mismoEquipo: false, almacen: a, clave };
+      // v1.4x: lo dio un almacén del cliente («Copiar en …») que no está en esta consola: el
+      // nombre del destino (el mismo en todas las consolas: lo guarda el equipo), no «externo».
+      if (d.equipo_almacen) return { clase: "almacen", texto: `Almacén ${d.nombre} (otro equipo)`, detalle: "se gestiona desde otra consola", mismoEquipo: false, clave, deOtraConsola: true };
+      return { clase: "servidor", texto: "Servidor de copias externo", detalle: [d.nombre, servidorDe(d.donde)].filter(Boolean).join(" · ") || null, mismoEquipo: false, clave: d.id };
     }
     case "s3":
     case "b2":
-      return { clase: "nube", texto: `Nube (${NUBE[d.tipo]})`, detalle: d.donde ? `bucket ${d.donde}` : d.nombre, mismoEquipo: false };
+      return { clase: "nube", texto: `Nube (${NUBE[d.tipo]})`, detalle: d.donde ? `bucket ${d.donde}` : d.nombre, mismoEquipo: false, clave: d.id };
     case "sftp":
-      return { clase: "servidor", texto: "Servidor externo (SFTP)", detalle: servidorDe(d.donde) ?? d.nombre, mismoEquipo: false };
+      return { clase: "servidor", texto: "Servidor externo (SFTP)", detalle: servidorDe(d.donde) ?? d.nombre, mismoEquipo: false, clave: d.id };
     default:
-      return { clase: "desconocido", texto: `Destino «${d.nombre}»`, detalle: d.donde ?? null, mismoEquipo: false };
+      return { clase: "desconocido", texto: `Destino «${d.nombre}»`, detalle: d.donde ?? null, mismoEquipo: false, clave: d.id };
   }
 }
 

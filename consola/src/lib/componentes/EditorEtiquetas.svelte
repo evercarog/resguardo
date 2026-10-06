@@ -10,6 +10,8 @@
   import type { Equipo } from "$lib/tipos";
   import EtiquetaChip from "./EtiquetaChip.svelte";
   import BotonCargando from "./BotonCargando.svelte";
+  import { admiteDatosEquipo, alcanceDatos, cambiadoDesde, variasConsolas } from "$lib/datosEquipo";
+  import { pedirAlEquipo } from "$lib/pedirAlEquipo";
 
   let { equipo, onclose, alGuardar }: { equipo: Equipo; onclose: () => void; alGuardar?: (e: Equipo) => void } = $props();
 
@@ -49,8 +51,16 @@
     if (error) return;
     guardando = true;
     try {
-      const nuevo = await api.ponerEtiquetas(actual.id, equipo.id, lista);
-      avisar(lista.length ? "Etiquetas guardadas." : "Etiquetas quitadas.");
+      let nuevo: Equipo;
+      if (admiteDatosEquipo(equipo) && actual.cliente) {
+        // v1.4x: las guarda el equipo y las ven igual todas sus consolas.
+        const r = await pedirAlEquipo(actual.cliente, equipo, "etiquetas_equipo", { etiquetas: lista });
+        avisar(r.hecha ? (lista.length ? "Etiquetas guardadas en el equipo." : "Etiquetas quitadas en el equipo.") + (variasConsolas(equipo) ? " Las verán igual todas sus consolas." : "") : r.texto);
+        nuevo = r.hecha ? { ...equipo, etiquetas: lista } : equipo;
+      } else {
+        nuevo = await api.ponerEtiquetas(actual.id, equipo.id, lista);
+        avisar(lista.length ? "Etiquetas guardadas." : "Etiquetas quitadas.");
+      }
       alGuardar?.(nuevo);
       void cargarCliente(actual.id, { silencioso: true });
       onclose();
@@ -87,7 +97,7 @@
         {#each sugeridas.slice(0, 12) as t (t.nombre)}<EtiquetaChip nombre={t.nombre} n={t.n} onclick={() => anadir(t.nombre)} />{/each}
       </div>
     {/if}
-    <p class="faint nota">Se guardan en el servidor sin cifrar, como el nombre del equipo: úsalas para organizar, no para datos privados.</p>
+    <p class="faint nota">Se guardan sin cifrar, como el nombre del equipo: úsalas para organizar, no para datos privados.{#if alcanceDatos(equipo)}{" "}{alcanceDatos(equipo)}{/if}{#if cambiadoDesde(equipo.resumen?.datos_equipo?.etiquetas)}{" "}{cambiadoDesde(equipo.resumen?.datos_equipo?.etiquetas)}.{/if} El color, la plantilla y los avisos de cada etiqueta son de esta consola.</p>
     <footer>
       <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
       <BotonCargando class="btn btn-primary" disabled={!cambiado} cargando={guardando} textoCargando="Guardando…">Guardar</BotonCargando>

@@ -47,6 +47,16 @@ export function sembrarNotas() {
   ]);
 }
 sembrarNotas();
+/**
+ * v1.4x: la observación de un equipo que la guarda él (orden `observacion_equipo`): el
+ * servidor la copia de su resumen, como si llegara de cualquiera de sus consolas.
+ */
+export function observacionDelEquipo(cliente: string, equipo: string, texto: string, por: string) {
+  const lista = (obs.get(cliente) ?? []).filter((o) => !(o.tipo === "equipo" && o.objeto === equipo));
+  if (texto) lista.push({ tipo: "equipo", objeto: equipo, texto, actualizada: new Date().toISOString(), por });
+  obs.set(cliente, lista);
+}
+
 
 const limpio = (h: Err, t: unknown) => {
   const s = String(t ?? "").replace(/\r\n?/g, "\n").trim();

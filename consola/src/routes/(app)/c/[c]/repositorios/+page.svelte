@@ -8,7 +8,7 @@
   import { tip } from "$lib/tooltip";
   import { bytesRepo, destinoDe, estadoRepo, informeDe, nVersiones, pruebaRestauracion, verificacion } from "$lib/repo";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
-  import { ChevronRight, Cloud, Database, FlaskConical, HardDrive, Lock, Monitor, Network, Pencil, Plus, Server, ShieldCheck, TriangleAlert, Usb } from "@lucide/svelte";
+  import { ChevronRight, Cloud, Database, FlaskConical, HardDrive, Lock, Monitor, Network, Pencil, Plus, Server, ShieldCheck, Trash2, TriangleAlert, Usb } from "@lucide/svelte";
   import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { bytes, numero, plural } from "$lib/formato";
   import type { DestinoResumen, Equipo, RepositorioResumen } from "$lib/tipos";
@@ -26,6 +26,8 @@
   import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import NuevoDestino from "$lib/componentes/NuevoDestino.svelte";
+  import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
+  import { destinoQuitable, usosDestino } from "$lib/datosEquipo";
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
   import { destinosDelCliente, TEXTO_TIPO, type DestinoVista } from "$lib/destinos";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
@@ -44,6 +46,17 @@
     const a = v.catalogo?.atributos;
     if (!a) return null;
     return [a.lugar ? TEXTO_LUGAR[a.lugar] : null, a.inmutable ? TEXTO_INMUTABLE[a.inmutable].replace(/ \(.*\)$/, "") : null, a.soporte ? `soporte «${a.soporte}»` : null].filter(Boolean).join(" · ");
+  }
+  /** v1.4x: «Quitar este destino» (sin repositorios ni copias que lo usen) en un equipo. */
+  let quitar = $state<{ equipo: Equipo; destino: DestinoResumen } | null>(null);
+  function quitablesEn(v: DestinoVista): { equipo: Equipo; destino: DestinoResumen }[] {
+    return actual.equipos.flatMap((e) =>
+      (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id) && destinoQuitable(e, d.id)).map((d) => ({ equipo: e, destino: d })),
+    );
+  }
+  /** v1.4x: lo que usa un destino sin repositorios (una copia externa o derivada), con su equipo. */
+  function otrosUsos(v: DestinoVista): string[] {
+    return actual.equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id)).flatMap((d) => usosDestino(e, d.id).map((u) => `${u} (${e.nombre})`)));
   }
   /** Las notas de un destino (no tiene página propia). */
   let notasDestino = $state<{ id: string; nombre: string } | null>(null);
@@ -178,7 +191,7 @@
                   <span class="tile-nombre"><strong>{v.nombre}{#if d} <ContadorNotas tipo="destino" objeto={d.id} />{/if}</strong><span>{#if v.clase === "nube" && v.nube}{nombreTipoNube(v.nube.tipo)} · conectada en {v.nube.equipo.nombre}{:else if d && d.tipo === "local"}{d.red ? "Carpeta de otra máquina de la red" : d.extraible ? "Disco extraíble" : "Carpeta"} de {v.equipos.join(", ")}{d.unidad ? ` (${d.unidad})` : ""}{:else}{TEXTO_TIPO[v.tipo] ?? v.tipo}{/if}{#if v.donde && v.donde !== v.nombre}{" · "}<span class="pastilla mono">{v.donde}</span>{/if}</span></span>
                 </span>
                 <p class="tile-linea num">
-                  {#if v.clase === "nube"}Para el espejo del almacén{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else}Sin repositorios todavía{/if} · lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}
+                  {#if v.clase === "nube"}Para el espejo del almacén{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
                 </p>
                 <span class="tile-chips">
                   {#if d?.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
@@ -191,6 +204,10 @@
                   {#if d}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
                   {#if administra && v.clase !== "suelto"}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}
+                  <!-- v1.4x: sin repositorios ni copias que lo usen, se puede quitar del equipo (nada de lo guardado se borra). -->
+                  {#if administra && v.clase === "equipo" && !suyos.length}
+                    {#each quitablesEn(v) as q (q.equipo.id)}<button class="btn btn-sm btn-ghost quitar-dest" onclick={() => (quitar = q)}><Trash2 size={12} />{quitablesEn(v).length > 1 ? `Quitar de ${q.equipo.nombre}` : "Quitar este destino"}</button>{/each}
+                  {/if}
                 </span>
                 {#if d?.sistema_archivos}<p class="tile-dato faint"><span class="pastilla mono">{d.sistema_archivos}</span> solo un dato</p>{/if}
                 {#if marcado(v)}<p class="tile-dato"><ShieldCheck size={12} />{marcado(v)}</p>{/if}
@@ -268,6 +285,21 @@
 {#if nuevoDestino && actual.cliente}<NuevoDestino cliente={actual.cliente} equipos={actual.equipos} onclose={() => (nuevoDestino = false)} alCambiar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })} />{/if}
 {#if renombrar && actual.id}<RenombrarDestino cliente={actual.id} destino={renombrar} onclose={() => (renombrar = null)} />{/if}
 {#if marcar && actual.id}<AtributosDestino cliente={actual.id} destino={marcar} onclose={() => (marcar = null)} />{/if}
+{#if quitar && actual.cliente}
+  <OrdenDialog
+    cliente={actual.cliente}
+    equipo={quitar.equipo}
+    tipo="quitar_destino"
+    cuerpo={{ destino: quitar.destino.id }}
+    titulo="Quitar este destino"
+    descripcion={quitar.destino.tipo === "local"
+      ? `${quitar.equipo.nombre} olvidará «${quitar.destino.nombre}». No se borra nada de su carpeta: si aún tiene copias guardadas, te lo dirá y seguirán ahí.`
+      : `${quitar.equipo.nombre} olvidará «${quitar.destino.nombre}» y sus credenciales. Lo guardado allí se queda.`}
+    accion="Quitar el destino"
+    onclose={() => ((quitar = null), actual.id && void cargarCliente(actual.id, { silencioso: true }))}
+    alTerminar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })}
+  />
+{/if}
 {#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 <style>
@@ -287,6 +319,9 @@
     .solo-ancho-tabla {
       display: none;
     }
+  }
+  .quitar-dest {
+    color: var(--bad);
   }
   .rejilla.destinos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));

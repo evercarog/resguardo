@@ -199,6 +199,23 @@ export interface OrdenEnEspera {
   caduca: string;
 }
 
+/** Un dato del equipo que comparten sus consolas y quién lo cambió (v1.4x). */
+export interface CampoEquipo<T> {
+  valor: T;
+  cuando: string;
+  /** El nombre que esa consola tiene en el equipo (nunca su dirección). */
+  consola?: string | null;
+  /** Lo cambió la consola que recibe el resumen. */
+  esta?: boolean;
+  por?: string | null;
+}
+export interface DatosEquipo {
+  nombre?: CampoEquipo<string>;
+  etiquetas?: CampoEquipo<string[]>;
+  /** `""`: sin observación. */
+  observacion?: CampoEquipo<string>;
+}
+
 export interface ResumenEquipo {
   /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.36 «escritorio»). */
   admite?: string[];
@@ -218,6 +235,12 @@ export interface ResumenEquipo {
   cambio_config?: { tipo: string; cuando: string; consola: { nombre: string; url: string; identidad: string } } | null;
   /** v1.4x: las órdenes con espera que el equipo ya tiene (de cualquiera de sus consolas). */
   en_espera?: OrdenEnEspera[];
+  /**
+   * v1.4x (`admite: "datos_equipo"`, docs/consolas-multiples.md §6): el nombre, las etiquetas y la
+   * observación que tiene el propio equipo, puestos con sus órdenes desde cualquiera de sus
+   * consolas. Solo lo puesto: lo que falta, cada consola lo tiene a su manera.
+   */
+  datos_equipo?: DatosEquipo | null;
   copias?: CopiaResumen[];
   repositorios?: RepositorioResumen[];
   destinos?: DestinoResumen[];
