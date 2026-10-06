@@ -58,7 +58,10 @@
   } = $props();
 
   let paso = $state<"clave" | "kit" | "listo">("clave");
-  const enZona = $derived(zona && !zona.principal ? zona : undefined);
+  // La zona de cuando se abrió: después el equipo ya copia en ella y quien
+  // abrió el diálogo deja de ofrecerla (y dejaría de pasarla).
+  const zonaAlAbrir = () => (zona && !zona.principal ? zona : undefined);
+  const enZona = $state.raw(zonaAlAbrir());
   /** «ALMACEN-01» o, en otra zona, «ALMACEN-01 · Disco E». */
   const nombreAlmacen = $derived(enZona ? `${almacen.nombre} · ${enZona.nombre ?? enZona.id}` : almacen.nombre);
   /** v1.28: el equipo copia en su propio almacén. */

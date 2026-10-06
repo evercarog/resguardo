@@ -26,7 +26,8 @@
   // Lo que se ofrece primero (después manda lo que se elija aquí).
   const claseInicial = (): Clase => (almacenesDe(equipos).some(admiteZonas) ? "zona" : "red");
   let clase = $state<Clase>(claseInicial());
-  let almacenId = $state("");
+  const almacenInicial = () => almacenesDe(equipos).find(admiteZonas)?.id ?? "";
+  let almacenId = $state(almacenInicial());
   const almacen = $derived(conZonas.find((a) => a.id === almacenId) ?? conZonas[0]);
   let zonaEn = $state<Equipo | null>(null);
 
