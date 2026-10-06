@@ -46,6 +46,29 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/espejo-flexible`
+
+Tarea 3 de `docs/plan-mejoras.md` («Espejo más flexible»), entera, con el usuario ausente (propuesta en `docs/espejo.md` y adelante sin esperar el visto bueno, como pidió).
+
+- **Pedido:** 3a horario como las copias y «después de cada copia nueva»; 3f selección de repositorios por destino; 3d verificación sin contraseñas; 3b borrado diferido con freno y respeto del bloqueo de objetos; 3c B2, S3, SFTP, SMB y WebDAV por rclone con credenciales selladas; 3e restaurar desde el espejo. Pensado para que el «espejo» por copia de la tarea 7 reutilice el motor.
+- **Cambios:**
+  - `crates/agente/src/espejo_motor.rs` (nuevo): una vuelta a un destino (carpeta o nube por rclone) con alcance (todos o algunos repositorios), comprobación por SHA-256 del nombre antes de copiar, rotación diaria en el destino con reparación en carpetas, retención diferida con freno. Estado por destino en `privado/espejo-<id>.json`.
+  - `espejo.rs`: opciones por destino (`horario`, `tras_copia`, `repos`/`vistos`, `verificar_pct`, `retencion_dias`, `bloqueo`), qué toca y cuándo, resultado global, `espejo_freno`. `server.rs::poner_espejo` conserva el estado y olvida lo anotado de un destino nuevo. `nube.rs`: listar, subir solo lo que falta (`--files-from-raw --immutable`), `hashsum`, `delete` de una lista, y los tipos b2/s3/sftp/smb/webdav (validación, `rclone obscure -` por la entrada estándar, `known_hosts` temporal, `Debug` sin secretos). `servidor_v2.rs`: qué espera. `ADMITE`: `espejo_flexible` y `espejo_destinos`.
+  - Consola: `lib/espejo.ts`, `EspejoOpciones`, `ConectarDestino`, `RestaurarDesdeEspejo`, `RestaurarEnOtro` con datos del kit ya puestos, ficha del almacén, mapa/flujo/ficha de la copia, `esDestructiva`, simulador, ayuda y glosario; `scripts/vectores-espejo.ts`.
+  - Docs: `espejo.md` (nuevo), `destinos.md`, `api-servidor.md` «Cambios» (v1.4x), plan 3 marcado.
+- **Comprobado (Windows):** `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` (ver abajo), consola `check`, `build`, `test:vectores`, raíz `test:sin-referencias`, `cargo clippy -p resguardo-servidor --features consola-integrada`, y el `npm run e2e` completo con la rama ya unida a `main` (tareas 1 y 2). Pruebas con binarios de verdad y sin cuentas de nube: restic (los nombres son el SHA-256 del contenido; restaurar desde el espejo en carpeta y en remoto local de rclone con `check --read-data`), rclone local, `rclone serve sftp` con clave de servidor de `ssh-keygen` (y con otra clave no entra), `rclone serve webdav` y `rclone serve s3`. La consola en el simulador (`dev:mock`).
+- **Sin probar / dudas:**
+  - Ninguna nube real (Dropbox, B2, S3, SMB): solo servidores de rclone en 127.0.0.1. SMB no tiene prueba con servidor (solo de datos y entorno). B2 con bloqueo de objetos real, tampoco.
+  - El e2e no tiene un paso propio del espejo nuevo (las órdenes son las de siempre con campos más); el servicio de verdad haciendo vueltas por horario y «tras copia» no se ha visto correr fuera de las pruebas unitarias de `toca`.
+  - **Decisión a revisar:** freno con X = 10 % de los archivos del destino y al menos 20 archivos (o un repositorio entero). En almacenes pequeños una poda normal puede hacerlo saltar y pedir «Confirmar lo que falta» a menudo.
+  - **Decisión a revisar:** la verificación por rotación se hace una vez al día (≥ 20 h), no en cada vuelta; por defecto 5 % en carpetas y 0 % en nubes (comprobar es descargar; B2/S3 cobran la bajada).
+  - **Decisión a revisar:** lo reparado en el espejo (un archivo dañado vuelto a copiar del almacén) cuenta como `ERROR` (aviso `espejo_fallido`): el disco del espejo puede estar fallando.
+  - **Decisión a revisar:** confirmar el freno (`espejo_freno`), poner o acortar la retención y quitar el bloqueo esperan como lo destructivo; cambiar horario o % no.
+  - **Decisión a revisar:** SFTP exige la clave pública del servidor (más pasos, pero sin ella rclone no comprueba con quién habla). WebDAV y el endpoint de S3 solo por https.
+  - Un destino nuevo sin horario propio corre ya (antes, «hoy, pasada la hora»).
+  - En B2 sin bloqueo, `rclone delete` oculta las versiones (no las borra del todo): ocupan hasta que una regla de ciclo de vida las quite.
+  - Restaurar desde Dropbox/Drive/SFTP/SMB/WebDAV pide descargar antes la carpeta: el equipo no abre esas nubes directamente (eso sería 4a).
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ancla-auditoria`
 
 - **Pedido:** tarea 9b del plan («Ancla externa de la auditoría»), con el usuario fuera y otras sesiones haciendo a la vez las tareas 1 y 3.

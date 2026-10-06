@@ -78,7 +78,7 @@ fn preparar(s1: &Srv, c1: &Consola, base: &Path) -> (Alta, String, PathBuf) {
         ..Default::default()
     };
     std::fs::write(crate::agent::agent_dir().join("servidor.json"), serde_json::to_vec(&sc).unwrap()).unwrap();
-    let nubes = vec![crate::nube::Nube { nombre: "Dropbox prueba".into(), tipo: "dropbox".into(), token: "{}".into(), app_key: None }];
+    let nubes = vec![crate::nube::Nube { nombre: "Dropbox prueba".into(), tipo: "dropbox".into(), token: "{}".into(), ..Default::default() }];
     std::fs::write(crate::agent::private_dir().join("nubes.bin"), crate::platform::protect(&serde_json::to_vec(&nubes).unwrap()).unwrap()).unwrap();
 
     let (c, sal) = cliente(c1, "Café del Sur");

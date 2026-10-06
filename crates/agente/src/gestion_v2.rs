@@ -818,7 +818,9 @@ fn estado_de(result: &str) -> &'static str {
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
 /// v1.4x: `ordenes_en_espera` (guarda las órdenes con espera y las aplica a su hora,
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
-pub const ADMITE: [&str; 9] = [
+/// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
+/// retención y verificación por destino (docs/espejo.md).
+pub const ADMITE: [&str; 11] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -829,6 +831,9 @@ pub const ADMITE: [&str; 9] = [
     // v1.46: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
     "externa_existente",
     "ordenes_en_espera",
+    "espejo_flexible",
+    // (pendiente de numerar) "conectar_nube" también con B2, S3, SFTP, SMB y WebDAV (docs/espejo.md §3c).
+    "espejo_destinos",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1545,6 +1550,10 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
             "huella_tls": cfg.tls_sha256,
         });
         return Ok((format!("Equipo cliente «{usuario}» añadido."), Some(privado)));
+    }
+    // §3b (docs/espejo.md): confirmar lo que falta de golpe en el almacén (espera).
+    if let Some(d) = c.get("espejo_freno") {
+        return Ok((crate::espejo::aceptar_freno(d)?, None));
     }
     if let Some(espejo) = c.get("espejo") {
         let m = server::poner_espejo(crate::espejo::pedido(espejo)?)?;

@@ -55,10 +55,14 @@
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
+  import { admiteMasDestinos, etiquetaCarpeta, nombreTipoNube, TIPOS_NUBE } from "$lib/espejo";
+  import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, textoRetencion, errorDiasRetencion, diaLegible, RETENCION_ESPEJO, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
+  import { errorReglas, reglasDe } from "$lib/horario";
+  import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
   import { errorCarpetaDestino, errorCarpetaEspejo } from "$lib/ganchos";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import { estadoCopia, proximaDe, ultimaVuelta } from "$lib/copia";
-  import type { Equipo, EquipoDetalle, Informe, Orden, Regla, RepositorioResumen } from "$lib/tipos";
+  import type { Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen, RetencionAlmacen } from "$lib/tipos";
   import { admiteAlmacenPropio, admitePlazos, almacenDe, copiaRegla, errorRegla, esDeAlmacen, horarioDeCopias, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden, repoDeRetencion, TEXTO_ALMACEN_PROPIO, textoHorario } from "$lib/retencion";
   import EditorRetencion from "$lib/componentes/EditorRetencion.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -82,6 +86,8 @@
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import ConectarNube from "$lib/componentes/ConectarNube.svelte";
+  import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
+  import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -276,26 +282,102 @@
 
   // --- Espejo del Servidor de copias (v1.9) ------------------------------
   // La orden lleva la lista ENTERA de destinos: al añadir uno se reenvían los
-  // que ya hay; quitar uno (o todo el espejo) es destructiva y espera.
-  type DestinoEspejoUI = { tipo: "carpeta" | "nube"; carpeta?: string | null; nube?: string | null };
+  // que ya hay (con sus opciones); quitar uno (o todo el espejo) es
+  // destructiva y espera. Con `admite: "espejo_flexible"` (docs/espejo.md),
+  // cada destino lleva su horario y sus opciones.
+  type DestinoEspejoUI = DestinoEspejoOrden;
   const espejoActual = $derived(equipo?.resumen?.guarda_copias?.espejo ?? null);
   const nubes = $derived(equipo?.resumen?.guarda_copias?.nubes ?? []);
-  /** Destinos actuales, en la forma de la orden (sin sus resultados). */
-  const destinosActuales = $derived<DestinoEspejoUI[]>(
-    (espejoActual?.destinos ?? []).map((d) => (d.tipo === "nube" ? { tipo: "nube" as const, nube: d.nube ?? "", carpeta: d.carpeta ?? "" } : { tipo: "carpeta" as const, carpeta: d.carpeta ?? "" })),
-  );
+  const flexible = $derived(admiteEspejoFlexible(equipo));
+  /** Destinos actuales, en la forma de la orden (sin sus resultados, con sus opciones). */
+  const destinosActuales = $derived<DestinoEspejoUI[]>((espejoActual?.destinos ?? []).map(destinoParaOrden));
   // `limite`: el campo es numérico (bind:value da número, o "" si se vacía).
-  let esp = $state({ tipo: "carpeta" as "carpeta" | "nube", carpeta: "", nube: "", carpetaNube: "", hora: "02:00", limite: "" as number | string });
+  let esp = $state({
+    tipo: "carpeta" as "carpeta" | "nube",
+    carpeta: "",
+    nube: "",
+    carpetaNube: "",
+    hora: "02:00",
+    limite: "" as number | string,
+    horario: horarioDiario("02:00") as Horario,
+    trasCopia: false,
+    /** §3f: todos los repositorios o solo `elegidos`. */
+    todos: true,
+    elegidos: [] as string[],
+    /** §3d: % que se comprueba cada día. */
+    verificarPct: 5,
+    /** §3b: qué hacer con lo que ya no está en el almacén. */
+    borrar: "nunca" as "nunca" | "retencion" | "bloqueo",
+    dias: RETENCION_ESPEJO.defecto as number,
+    /** Clave (claveEspejo) del destino que se cambia; null: uno nuevo. */
+    editando: null as string | null,
+  });
   const limiteTxt = $derived(String(esp.limite ?? "").trim());
-  const nuevoDestino = $derived<DestinoEspejoUI>(esp.tipo === "nube" ? { tipo: "nube", nube: esp.nube, carpeta: esp.carpetaNube.trim() } : { tipo: "carpeta", carpeta: esp.carpeta.trim() });
-  const repetido = $derived(destinosActuales.some((d) => claveEspejo(d) === claveEspejo(nuevoDestino)));
+  const nuevoDestino = $derived.by<DestinoEspejoUI>(() => {
+    const d: DestinoEspejoUI = esp.tipo === "nube" ? { tipo: "nube", nube: esp.nube, carpeta: esp.carpetaNube.trim() } : { tipo: "carpeta", carpeta: esp.carpeta.trim() };
+    if (!flexible) return d;
+    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}), ...(esp.todos ? {} : { repos: [...esp.elegidos].sort(), vistos: reposAlmacen }), verificar_pct: Number(esp.verificarPct), ...(esp.borrar === "bloqueo" ? { bloqueo: true } : esp.borrar === "retencion" ? { retencion_dias: Number(esp.dias) } : {}) };
+  });
+  /** §3f: los repositorios del almacén, como los nombra el espejo. */
+  const reposAlmacen = $derived(nombresRepos(equipo?.resumen?.guarda_copias?.repositorios));
+  /** «Contabilidad, de RECEPCION» para `usuario/repo` (si se sabe de qué equipo es). */
+  function nombreRepoAlmacen(r: string): string {
+    if (!equipo) return r;
+    const [usuario, repo] = r.includes("/") ? r.split("/") : [r, "."];
+    const de = repoDeRetencion({ usuario, repo } as RetencionAlmacen, equipo, actual.equipos);
+    return de ? `${de.repo.nombre}, de ${de.equipo.nombre}` : r;
+  }
+  /** Repositorios nuevos que no entran en algún destino con selección (la consola pregunta). */
+  const nuevosEspejo = $derived([...new Set((espejoActual?.destinos ?? []).flatMap((d) => nuevosEn(d, reposAlmacen)))]);
+  const conSeleccion = $derived((espejoActual?.destinos ?? []).filter((d) => nuevosEn(d, reposAlmacen).length));
+  /** El espejo con un cambio en cada destino (los demás, tal cual). */
+  const espejoCon = (f: (d: DestinoEspejoUI) => DestinoEspejoUI) => {
+    const destinos = destinosActuales.map(conHorario).map(f);
+    return { destinos, hora: horaParaConsolasAnteriores(destinos, espejoActual?.hora ?? "02:00"), ...(espejoActual?.limite_kib ? { limite_kib: espejoActual.limite_kib } : {}) };
+  };
+  /** §3b: el freno saltó en un destino; confirmarlo (espera) hace que se anote y se borre pasados sus días. */
+  function confirmarFreno(d: DestinoEspejoResumen) {
+    const de = destinoParaOrden(d);
+    abrir({
+      tipo: "guarda_copias",
+      cuerpo: { espejo_freno: { tipo: de.tipo, carpeta: de.carpeta, ...(de.nube ? { nube: de.nube } : {}) } },
+      titulo: "Confirmar lo que falta en el almacén",
+      descripcion: `Hazlo solo si sabes por qué falta (una poda grande o un repositorio que quitaste). La próxima vez que se copie al espejo se anotará y se borrará de ${de.tipo === "nube" ? `«${de.nube}»` : de.carpeta} pasados ${d.retencion_dias ?? RETENCION_ESPEJO.defecto} días. Si no lo sabes, revisa antes el almacén: podría estar dañado.`,
+    });
+  }
+  function preguntarNuevos(anadir: boolean) {
+    const nombres = nuevosEspejo.map(nombreRepoAlmacen).join(", ");
+    abrir({
+      tipo: "guarda_copias",
+      cuerpo: { espejo: espejoCon((d) => (d.repos ? (anadir ? conRepos(d, nuevosEn(d, reposAlmacen), reposAlmacen) : { ...d, vistos: reposAlmacen }) : d)) },
+      titulo: anadir ? "Añadir los repositorios nuevos al espejo" : "Dejar fuera los repositorios nuevos",
+      descripcion: anadir
+        ? `${nombres} se copiarán también a los destinos del espejo que tienen una selección.`
+        : `${nombres} no irán a los destinos del espejo con una selección (sí a los de «todos»). No se volverá a preguntar por ellos.`,
+    });
+  }
+  const repetido = $derived(!esp.editando && destinosActuales.some((d) => claveEspejo(d) === claveEspejo(nuevoDestino)));
+  /** Con un agente que lo admite, cada destino con su horario explícito (el de antes, `hora`, pasa a «cada día a esa hora»). */
+  const conHorario = (d: DestinoEspejoUI): DestinoEspejoUI => (flexible && !d.horario ? { ...d, horario: horarioDiario(espejoActual?.hora ?? "02:00") } : d);
+  const destinosEspejo = $derived.by(() => {
+    const otros = destinosActuales.map(conHorario);
+    if (!esp.editando) return [...otros, nuevoDestino];
+    return otros.map((d) => (claveEspejo(d) === esp.editando ? nuevoDestino : d));
+  });
   const cuerpoEspejo = $derived({
     espejo: {
-      destinos: [...destinosActuales, nuevoDestino],
-      hora: esp.hora,
+      destinos: destinosEspejo,
+      hora: flexible ? horaParaConsolasAnteriores(destinosEspejo, espejoActual?.hora ?? "02:00") : esp.hora,
       ...(limiteTxt ? { limite_kib: Math.max(1, Math.round(Number(limiteTxt))) } : espejoActual?.limite_kib ? { limite_kib: espejoActual.limite_kib } : {}),
     },
   });
+  /** El espejo sin `quitar` (o `null` si era el último): con los demás destinos tal cual. */
+  const espejoSin = (quitar: (d: DestinoEspejoUI) => boolean) => {
+    const quedan = destinosActuales.filter((d) => !quitar(d)).map(conHorario);
+    return quedan.length
+      ? { destinos: quedan, hora: espejoActual?.hora ?? "02:00", ...(espejoActual?.limite_kib ? { limite_kib: espejoActual.limite_kib } : {}) }
+      : null;
+  };
   const win = $derived(/windows/i.test(equipo?.so ?? ""));
   const errorEspejo = $derived(esp.tipo === "carpeta" && esp.carpeta.trim() ? errorCarpetaEspejo(esp.carpeta, win) : null);
   const errorGuardar = $derived(dialogo?.campos === "guardar" && String(dialogo.cuerpo.carpeta ?? "").trim() ? errorCarpetaDestino(String(dialogo.cuerpo.carpeta), win) : null);
@@ -312,42 +394,67 @@
   const espejoValido = $derived(
     !errorEspejo &&
     !errorCarpetaNube &&
-    /^([01]\d|2[0-3]):[0-5]\d$/.test(esp.hora) &&
+    (flexible ? !!(esp.horario.reglas?.length || esp.horario.horas?.length) && !errorReglas(reglasDe(esp.horario)) : /^([01]\d|2[0-3]):[0-5]\d$/.test(esp.hora)) &&
       !repetido &&
+      (!flexible || esp.todos || esp.elegidos.length > 0) &&
+      (!flexible || esp.borrar !== "retencion" || !errorDiasRetencion(Number(esp.dias))) &&
       (esp.tipo === "carpeta" ? !!esp.carpeta.trim() : !!esp.nube && !!esp.carpetaNube.trim()) &&
       (!limiteTxt || Number(limiteTxt) > 0),
   );
 
-  function abrirEspejo(tipo: "carpeta" | "nube" = "carpeta") {
+  /** Añadir un destino al espejo o, con `editar`, cambiar las opciones de uno que ya tiene. */
+  function abrirEspejo(tipo: "carpeta" | "nube" = "carpeta", editar?: DestinoEspejoResumen) {
+    const hora = espejoActual?.hora ?? "02:00";
+    const de = editar ? conHorario(destinoParaOrden(editar)) : null;
     esp = {
-      tipo,
-      carpeta: "",
-      nube: nubes[0]?.nombre ?? "",
+      tipo: de?.tipo ?? tipo,
+      carpeta: de?.tipo === "carpeta" ? de.carpeta : "",
+      nube: de?.nube ?? nubes[0]?.nombre ?? "",
       // Con el permiso «App folder», la raíz ya es Aplicaciones/Resguardo.
-      carpetaNube: (equipo?.nombre ?? "copias").replace(/[\\/:*?"<>|]+/g, "-"),
-      hora: espejoActual?.hora ?? "02:00",
+      carpetaNube: de?.tipo === "nube" ? de.carpeta : (equipo?.nombre ?? "copias").replace(/[\\/:*?"<>|]+/g, "-"),
+      hora,
       limite: "",
+      horario: de?.horario ?? horarioDiario(hora),
+      trasCopia: !!de?.tras_copia,
+      todos: !Array.isArray(de?.repos),
+      elegidos: de?.repos ?? [],
+      verificarPct: de?.verificar_pct ?? (( de?.tipo ?? tipo) === "nube" ? 0 : 5),
+      borrar: de?.bloqueo ? "bloqueo" : de?.retencion_dias ? "retencion" : "nunca",
+      dias: de?.retencion_dias ?? RETENCION_ESPEJO.defecto,
+      editando: de ? claveEspejo(de) : null,
     };
     abrir({
       tipo: "guarda_copias",
       cuerpo: {},
-      titulo: espejoActual ? "Añadir destino del espejo" : "Espejo de lo que guarda",
-      descripcion: "Cada noche se copia todo lo que guarda este equipo a otro sitio: otra carpeta (mejor en otro disco) o una nube conectada en el equipo. Solo añade: nunca borra allí, y deja fuera lo que se esté escribiendo.",
+      titulo: de ? `Cambiar el espejo en ${de.tipo === "nube" ? `«${de.nube}»` : de.carpeta}` : espejoActual ? "Añadir destino del espejo" : "Espejo de lo que guarda",
+      descripcion: de
+        ? "Cuándo y qué se copia a este destino. Lo que ya está allí no cambia."
+        : flexible
+          ? "Lo que guarda este equipo se copia a otro sitio: otra carpeta (mejor en otro disco) o una nube conectada en el equipo, cuando tú elijas. Solo añade: nunca borra allí, y deja fuera lo que se esté escribiendo."
+          : "Cada noche se copia todo lo que guarda este equipo a otro sitio: otra carpeta (mejor en otro disco) o una nube conectada en el equipo. Solo añade: nunca borra allí, y deja fuera lo que se esté escribiendo.",
       campos: "espejo",
     });
   }
   /** Quitar un destino: se reenvía la lista sin él (o `espejo: null` si era el último). */
   function quitarDestinoEspejo(d: DestinoEspejoUI) {
-    const quedan = destinosActuales.filter((x) => claveEspejo(x) !== claveEspejo(d));
     const nombre = d.tipo === "nube" ? `«${d.nube}» (${d.carpeta})` : `la carpeta ${d.carpeta}`;
     abrir({
       tipo: "guarda_copias",
-      cuerpo: quedan.length ? { espejo: { destinos: quedan, hora: espejoActual?.hora ?? "02:00", ...(espejoActual?.limite_kib ? { limite_kib: espejoActual.limite_kib } : {}) } } : { espejo: null },
+      cuerpo: { espejo: espejoSin((x) => claveEspejo(x) === claveEspejo(d)) },
       titulo: "Quitar un destino del espejo",
-      descripcion: `Dejará de copiarse cada noche a ${nombre}. Lo que ya está allí se queda.`,
+      descripcion: `Dejará de copiarse a ${nombre}. Lo que ya está allí se queda.`,
     });
   }
+  /** Qué hacer además al desconectar: retirar el permiso o la clave en su web. */
+  const revocar = (nombre: string) => {
+    const t = nubes.find((n) => n.nombre === nombre)?.tipo ?? "dropbox";
+    return t === "dropbox" ? "Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»)." : t === "drive" ? "Revoca también el permiso en tu cuenta de Google." : "Si ya no la usa nadie, borra también esa clave o ese usuario en el servicio.";
+  };
   let conectarNube = $state(false);
+  /** §3c: «Conectar otro destino» (B2, S3, SFTP, SMB, WebDAV). */
+  let conectarDestino = $state(false);
+  /** §3e: «Restaurar desde el espejo…». */
+  let desdeEspejo = $state(false);
   /** Desconectar una nube: espera si el espejo la usa (lo decide esDestructiva con el contexto). */
   function quitarNube(nombre: string) {
     const usada = destinosActuales.some((d) => d.tipo === "nube" && d.nube === nombre);
@@ -356,15 +463,16 @@
       cuerpo: { nombre },
       titulo: `Desconectar «${nombre}»`,
       descripcion: usada
-        ? `El espejo dejará de subir a «${nombre}» y el equipo olvidará su permiso. Lo ya subido se queda en Dropbox. Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»).`
-        : `${equipo!.nombre} olvidará el permiso de «${nombre}». Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»).`,
+        ? `El espejo dejará de subir a «${nombre}» y el equipo olvidará su permiso. Lo ya subido se queda allí. ${revocar(nombre)}`
+        : `${equipo!.nombre} olvidará el permiso de «${nombre}». ${revocar(nombre)}`,
     });
   }
 
   function masAlmacen(conEspejo: boolean): AccionMenu[][] {
     return [
-      [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
+      [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, ...(admiteMasDestinos(equipo) ? [{ texto: "Conectar otro destino (B2, S3, SFTP, NAS, WebDAV)…", onclick: () => (conectarDestino = true) }] : []), { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
       [
+        ...(conEspejo ? [{ texto: "Restaurar desde el espejo…", onclick: () => (desdeEspejo = true) }] : []),
         ...(conEspejo ? [{ texto: "Quitar todo el espejo", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { espejo: null }, titulo: "Quitar el espejo", descripcion: "Dejará de copiarse cada noche a todos sus destinos. Lo que ya está en ellos se queda." }) }] : []),
         { texto: "Dejar de guardar copias", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { activo: false }, titulo: "Dejar de guardar copias", descripcion: `${equipo!.nombre} dejará de recibir copias de los demás equipos. Lo ya guardado se queda en su disco.` }) },
       ],
@@ -957,7 +1065,7 @@
           {#if g.espejo}
             <div class="espejo">
               <p class="externa">
-                <HardDrive size={14} /><span>Espejo cada noche a las {g.espejo.hora}{#if g.espejo.limite_kib}{" · "}subida limitada a {numero(g.espejo.limite_kib)} KiB/s{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
+                <HardDrive size={14} /><span>{flexible ? "Espejo de lo que guarda" : `Espejo cada noche a las ${g.espejo.hora}`}{#if g.espejo.limite_kib}{" · "}subida limitada a {numero(g.espejo.limite_kib)} KiB/s{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
                 <Ayuda id="espejo" />
               </p>
               {#if g.espejo.destinos?.length}
@@ -967,16 +1075,32 @@
                       <span class="ic-d">{#if d.tipo === "nube"}<Cloud size={14} />{:else}<HardDrive size={14} />{/if}</span>
                       <span class="d-texto">
                         <strong>{d.tipo === "nube" ? d.nube : d.carpeta}</strong>
-                        <span class="faint">{d.tipo === "nube" ? `en la carpeta ${d.carpeta}` : "otra carpeta"}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
+                        <span class="faint">{d.tipo === "nube" ? `${nombreTipoNube(nubes.find((n) => n.nombre === d.nube)?.tipo ?? "")} · en la carpeta ${d.carpeta}` : etiquetaCarpeta(d.carpeta)}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
+                        {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>
+                          <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
+                          <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
+                          {#if d.freno && puede.administrar(rol)}<span class="freno"><button class="btn btn-sm" onclick={() => confirmarFreno(d)}>Confirmar lo que falta…</button></span>{/if}{/if}
                         {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
                       {#if puede.administrar(rol)}
-                        <button class="icon-btn" use:tip={"Quitar este destino"} aria-label="Quitar este destino del espejo" onclick={() => quitarDestinoEspejo(d.tipo === "nube" ? { tipo: "nube", nube: d.nube, carpeta: d.carpeta } : { tipo: "carpeta", carpeta: d.carpeta })}><Trash2 size={14} /></button>
+                        {#if flexible}<button class="btn btn-sm btn-ghost" onclick={() => abrirEspejo(d.tipo, d)}>Cambiar</button>{/if}
+                        <button class="icon-btn" use:tip={"Quitar este destino"} aria-label="Quitar este destino del espejo" onclick={() => quitarDestinoEspejo(destinoParaOrden(d))}><Trash2 size={14} /></button>
                       {/if}
                     </li>
                   {/each}
                 </ul>
+              {#if flexible && nuevosEspejo.length}
+                <div class="notice notice-info nuevos-espejo">
+                  <p>{nuevosEspejo.length === 1 ? "Hay un repositorio nuevo" : `Hay ${nuevosEspejo.length} repositorios nuevos`} ({nuevosEspejo.map(nombreRepoAlmacen).join(", ")}) que no {nuevosEspejo.length === 1 ? "entra" : "entran"} en {conSeleccion.length === 1 ? "un destino del espejo con selección" : `${conSeleccion.length} destinos del espejo con selección`}. Los de «todos» ya {nuevosEspejo.length === 1 ? "lo copian" : "los copian"}.</p>
+                  {#if puede.administrar(rol)}
+                    <div class="acciones-nuevos">
+                      <button class="btn btn-sm btn-primary" onclick={() => preguntarNuevos(true)}>Añadir{nuevosEspejo.length === 1 ? "lo" : "los"}</button>
+                      <button class="btn btn-sm btn-ghost" onclick={() => preguntarNuevos(false)}>Dejar{nuevosEspejo.length === 1 ? "lo" : "los"} fuera</button>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
               {:else if g.espejo.resultado}
                 <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo">{g.espejo.resultado}</span>{:else}{g.espejo.resultado}{/if}</p>
               {/if}
@@ -1201,6 +1325,12 @@
 {#if conectarNube && equipo && actual.cliente}
   <ConectarNube cliente={actual.cliente} {equipo} onclose={() => ((conectarNube = false), void cargar())} />
 {/if}
+{#if desdeEspejo && equipo && actual.cliente}
+  <RestaurarDesdeEspejo cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} nombre={nombreRepoAlmacen} onclose={() => (desdeEspejo = false)} />
+{/if}
+{#if conectarDestino && equipo && actual.cliente}
+  <ConectarDestino cliente={actual.cliente} {equipo} onclose={() => ((conectarDestino = false), void cargar())} />
+{/if}
 
 {#if elegirCarpeta && equipo && actual.cliente}
   <ElegirCarpetas
@@ -1363,6 +1493,9 @@
     {/if}
     {/if}
   {:else if dialogo?.campos === "espejo"}
+    {#if esp.editando}
+      <p class="faint nota-esp">Destino: <strong>{esp.tipo === "nube" ? `«${esp.nube}», carpeta ${esp.carpetaNube}` : esp.carpeta}</strong></p>
+    {:else}
     {#if destinosActuales.length}
       <p class="faint nota-esp">Ya copia a {destinosActuales.map((d) => (d.tipo === "nube" ? `«${d.nube}»` : d.carpeta)).join(", ")}: se mantiene{destinosActuales.length === 1 ? "" : "n"} y se añade el nuevo.</p>
     {/if}
@@ -1392,7 +1525,7 @@
         <div class="field">
           <label class="field-label" for="e-nube">Nube</label>
           <select id="e-nube" class="input" bind:value={esp.nube}>
-            {#each nubes as n (n.nombre)}<option value={n.nombre}>{n.nombre} ({n.tipo === "drive" ? "Google Drive" : "Dropbox"})</option>{/each}
+            {#each nubes as n (n.nombre)}<option value={n.nombre}>{n.nombre} ({nombreTipoNube(n.tipo)})</option>{/each}
           </select>
         </div>
         <div class="field">
@@ -1409,13 +1542,23 @@
         </div>
         <span class="field-hint">Para no saturar la conexión de la oficina por la noche.</span>
       </div>
-      <p class="faint nota-esp">Dropbox y Google Drive no son inmutables: quien tenga la cuenta puede borrar lo subido (el historial de versiones de la nube ayuda a recuperarlo).</p>
+      {#if TIPOS_NUBE[nubes.find((n) => n.nombre === esp.nube)?.tipo ?? "dropbox"]?.inmutable}
+        <p class="faint nota-esp">Si el bucket tiene bloqueo de objetos (Object Lock), elige abajo «Este destino tiene bloqueo de objetos»: así el espejo nunca intenta borrar allí.</p>
+      {:else}
+        <p class="faint nota-esp">{nombreTipoNube(nubes.find((n) => n.nombre === esp.nube)?.tipo ?? "dropbox")} no es inmutable: quien tenga la cuenta puede borrar lo subido{nubes.find((n) => n.nombre === esp.nube)?.tipo === "dropbox" || nubes.find((n) => n.nombre === esp.nube)?.tipo === "drive" ? " (el historial de versiones de la nube ayuda a recuperarlo)" : ""}.</p>
+      {/if}
     {/if}
     {#if repetido}<p class="error-campo">Ese destino ya está en el espejo.</p>{/if}
+    {/if}
+    {#if flexible}
+      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} bind:todos={esp.todos} bind:elegidos={esp.elegidos} repositorios={reposAlmacen} nombre={nombreRepoAlmacen} bind:verificarPct={esp.verificarPct} nube={esp.tipo === "nube"} bind:borrar={esp.borrar} bind:dias={esp.dias} />
+    {:else}
     <div class="field">
       <label class="field-label" for="e-hora">Cada noche a las{destinosActuales.length ? " (para todos los destinos)" : ""}</label>
       <input id="e-hora" class="input num corto" type="time" bind:value={esp.hora} />
     </div>
+    {/if}
+
   {:else if dialogo?.campos === "guardar"}
     <div class="field">
       <label class="field-label" for="g-carpeta">Carpeta o disco donde guardar</label>
@@ -1677,6 +1820,20 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .freno {
+    display: block;
+    margin-top: 0.35rem;
+  }
+  .nuevos-espejo {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+  .acciones-nuevos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .destinos-espejo {
     display: flex;

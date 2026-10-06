@@ -241,10 +241,41 @@ export interface ResumenEquipo {
       ultima?: string | null;
       resultado?: string | null;
       limite_kib?: number | null;
-      destinos?: { tipo: "carpeta" | "nube"; carpeta?: string | null; nube?: string | null; ultima?: string | null; resultado?: string | null; espacio?: EspacioVolumen | null }[];
+      destinos?: {
+        tipo: "carpeta" | "nube";
+        carpeta?: string | null;
+        nube?: string | null;
+        ultima?: string | null;
+        resultado?: string | null;
+        espacio?: EspacioVolumen | null;
+        /** (agente con `admite: "espejo_flexible"`, docs/espejo.md) su horario propio; sin él, cada día a `hora`. */
+        horario?: Horario | null;
+        /** También después de cada copia nueva. */
+        tras_copia?: boolean | null;
+        /** La próxima vuelta por horario. */
+        proxima?: string | null;
+        /** Solo estos repositorios (`<usuario>` o `<usuario>/<repo>`); sin ellos, todos. */
+        repos?: string[] | null;
+        /** Los repositorios que había al elegir la selección (los demás son nuevos). */
+        vistos?: string[] | null;
+        /** % de lo que hay en el destino que se comprueba cada día. */
+        verificar_pct?: number | null;
+        /** La última comprobación del destino (por rotación). */
+        verificacion?: { ultima: string; archivos: number; mal: number } | null;
+        /** Archivos dañados del almacén que no se copiaron en la última vuelta. */
+        danados_origen?: number | null;
+        /** Borra lo que ya no está en el almacén pasados estos días (sin ello, nunca). */
+        retencion_dias?: number | null;
+        /** Bloqueo de objetos: nunca borra. */
+        bloqueo?: boolean | null;
+        /** Lo que espera para borrarse. */
+        por_borrar?: { archivos: number; bytes: number; primero?: string | null } | null;
+        /** El freno de la última vuelta (no se anotó ni se borró nada). */
+        freno?: string | null;
+      }[];
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */
-    nubes?: { nombre: string; tipo: "dropbox" | "drive" }[];
+    nubes?: { nombre: string; tipo: "dropbox" | "drive" | "b2" | "s3" | "sftp" | "smb" | "webdav" | string }[];
     /**
      * v1.22: la retención que aplica este almacén en local, por repositorio
      * (`<carpeta>/<usuario>/<repo>`). Un agente anterior no manda la lista:
