@@ -192,7 +192,7 @@ fn hilo_bandeja() {
                 std::thread::sleep(Duration::from_secs(2));
                 // Con las mismas reglas de «viva» (un estado que dejó un proceso cortado no cuenta).
                 let (config, estado, tareas) = (crate::agent::load_config(), crate::agent::load_state(), crate::tasks::load_state());
-                if !crate::escritorio::actividades_de(&config, &estado, &tareas).is_empty() {
+                if !crate::escritorio::actividades_de(&config, &estado, &tareas, chrono::Local::now()).is_empty() {
                     break;
                 }
             }
