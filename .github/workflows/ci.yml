@@ -148,6 +148,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Herramientas de musl
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+      - name: Llave de publicación (sin ella, agente sin actualización automática)
+        run: |
+          # docs/actualizaciones.md: con el marcador de posición, el agente se compila y se
+          # empaqueta a sabiendas sin actualización automática; con la llave de verdad, con ella.
+          if ! grep -Eq '^RW[A-Za-z0-9+/=]{50,}' packaging/llave-publicacion.pub; then echo "RESGUARDO_SIN_ACTUALIZACIONES=1" >> "$GITHUB_ENV"; fi
       - name: Compilar (estático)
         run: cargo build --release -p resguardo-agente --bin resguardo-agente --target x86_64-unknown-linux-musl
       - name: .tar.gz y .deb (sin firmar)
@@ -352,6 +357,11 @@ jobs:
           python3 -m pip install --user --quiet cargo-zigbuild
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static file
+      - name: Llave de publicación (sin ella, agente sin actualización automática)
+        run: |
+          # docs/actualizaciones.md: con el marcador de posición, el agente se compila y se
+          # empaqueta a sabiendas sin actualización automática; con la llave de verdad, con ella.
+          if ! grep -Eq '^RW[A-Za-z0-9+/=]{50,}' packaging/llave-publicacion.pub; then echo "RESGUARDO_SIN_ACTUALIZACIONES=1" >> "$GITHUB_ENV"; fi
       - name: Compilar (estático, el servidor con la consola dentro)
         run: |
           cargo zigbuild --release -p resguardo-servidor --features consola-integrada --bin resguardo-server --target aarch64-unknown-linux-musl

@@ -263,3 +263,37 @@ proptest! {
         prop_assert!(e.contains("demasiado grande") || e.contains("incompleta"), "{}", e);
     }
 }
+
+// ---------- Publicaciones (docs/actualizaciones.md) ----------
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// Un manifiesto y una firma cualesquiera: un error, nunca un `panic` (y nunca válidos).
+    #[test]
+    fn publicacion_cualquiera(datos in prop::collection::vec(any::<u8>(), 0..4096), firma in ".{0,400}", lineas in prop::collection::vec("[A-Za-z0-9+/=]{0,120}", 0..5)) {
+        use resguardo_protocolo::publicacion as p;
+        let llaves = p::Llaves::leer(include_str!("fixtures/llave-pruebas-a.pub")).unwrap();
+        prop_assert!(p::verificar(&datos, &firma, &llaves, &[], p::PRODUCTO_AGENTE).is_err());
+        let con_forma = format!("untrusted comment: x\n{}\ntrusted comment: y\n{}", lineas.first().cloned().unwrap_or_default(), lineas.get(1).cloned().unwrap_or_default());
+        prop_assert!(p::verificar(&datos, &con_forma, &llaves, &[], p::PRODUCTO_AGENTE).is_err());
+        let _ = p::Manifiesto::leer(&datos);
+        let _ = p::Llaves::leer(&String::from_utf8_lossy(&datos));
+        let _ = p::id_de_firma(&firma);
+    }
+
+    /// Una política cualquiera (lo que manda una consola) y cualquier hora: la decisión nunca falla.
+    #[test]
+    fn politica_y_decision_cualesquiera(politicas in prop::collection::vec(json(), 0..4), actual in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}", nueva in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}", t in 0i64..4_000_000_000, d in 0i64..4_000_000_000, desfase in -50_400i32..50_400, en_marcha in any::<bool>(), almacen in any::<bool>()) {
+        use resguardo_protocolo::publicacion as p;
+        let ps: Vec<p::Politica> = politicas.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect();
+        let efectiva = p::combinar(&ps);
+        let zona = chrono::FixedOffset::east_opt(desfase).unwrap();
+        let fecha = |s: i64| chrono::DateTime::from_timestamp(s, 0).unwrap().with_timezone(&zona);
+        let m = p::Manifiesto {
+            formato: 1, producto: p::PRODUCTO_AGENTE.into(), version: nueva, fecha: "2026-10-20T10:00:00Z".into(), canal: None, minimo_desde: None, notas: None, revocadas: vec![],
+            archivos: vec![p::Archivo { plataforma: "linux-x86_64".into(), tipo: "tar.gz".into(), nombre: "a.tar.gz".into(), sha256: "0".repeat(64), tamano: 1, url: None }],
+        };
+        let _ = p::decidir(&p::Entrada { actual: &actual, manifiesto: &m, plataforma: "linux-x86_64", politica: &efectiva, disponible_desde: fecha(d), ahora: fecha(t), en_marcha, fallidas: &[], almacen });
+    }
+}

@@ -23,6 +23,23 @@ const version = /^version\s*=\s*"([^"]+)"/m.exec(cargoAgente)[1];
 const sha256 = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", ...opts });
 
+// 0. La llave de publicación (docs/actualizaciones.md): sin ella, el agente no se actualiza
+// solo. Con el marcador de posición no se compila, salvo con RESGUARDO_SIN_ACTUALIZACIONES=1
+// (un agente sin actualización automática, que lo dice en la consola).
+const llaves = fs.readFileSync(path.join(root, "packaging", "llave-publicacion.pub"), "utf8");
+const sinLlave = !llaves.split(/\r?\n/).some((l) => /^RW[A-Za-z0-9+/=]{50,}$/.test(l.trim()));
+if (sinLlave && process.env.RESGUARDO_SIN_ACTUALIZACIONES !== "1") {
+  console.error(
+    "\nNo se compila: packaging/llave-publicacion.pub no tiene ninguna llave pública (es aún el marcador de posición).\n" +
+      "Pon la llave pública de verdad (docs/publicar.md) o, para un agente SIN actualización automática,\n" +
+      "repite con RESGUARDO_SIN_ACTUALIZACIONES=1.\n",
+  );
+  process.exit(1);
+}
+if (process.env.RESGUARDO_SIN_ACTUALIZACIONES === "1") {
+  console.warn("AVISO: se compila un agente SIN actualización automática (RESGUARDO_SIN_ACTUALIZACIONES=1).");
+}
+
 // 1. El programa.
 run("cargo", ["build", "--release", "-p", "resguardo-agente", "--bin", "resguardo-agente"], { cwd: tauri });
 const agentExe = path.join(tauri, "target", "release", "resguardo-agente.exe");

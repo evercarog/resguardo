@@ -20,7 +20,7 @@ path = "src/main.rs"
 resguardo-protocolo = { path = "../protocolo", version = "0.1.0" }
 resguardo-motor = { path = "../motor", version = "0.1.0" }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "ws", "macros"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs", "io-util"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 hyper = { version = "1", features = ["http1", "server"] }
@@ -63,6 +63,8 @@ windows-service = "0.7"
 consola-integrada = ["dep:rust-embed"]
 
 [dev-dependencies]
+# Firmar publicaciones con la llave de pruebas (docs/actualizaciones.md).
+resguardo-protocolo = { path = "../protocolo", version = "0.1.0", features = ["pruebas"] }
 # Pruebas de propiedades (docs/plataforma.md, §7.3).
 proptest = { version = "1", default-features = false, features = ["std"] }
 # Tiempo en pausa en las pruebas (los límites de tiempo, sin esperarlos de verdad).

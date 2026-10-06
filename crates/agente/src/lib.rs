@@ -25,6 +25,9 @@ pub fn version_programa() -> &'static str {
     VERSION_APP.get().copied().unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
+pub mod actualizacion;
+#[cfg(test)]
+mod actualizacion_it;
 pub mod adoptar_v2;
 pub mod agent;
 pub mod agente;

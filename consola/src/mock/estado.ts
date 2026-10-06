@@ -550,6 +550,10 @@ export async function sembrar(vacio = false) {
     if (e.informes[0]) e.informes[0] = { ...e.informes[0], recibido: new Date(Date.now() - ((o.silencioHoras ?? 0) * 60 + 4) * 60_000).toISOString(), datos: { ...e.informes[0].datos, repos, proximas: Object.fromEntries((e.resumen?.copias ?? []).map((k) => [k.id, k.activa === false ? null : (k.proxima ?? null)])) } };
   };
   enriquecer(recepcion, { externa: true });
+  // Actualización automática (docs/actualizaciones.md): uno espera su turno (anillo general).
+  if (recepcion.informes[0]) {
+    recepcion.informes[0].datos.actualizacion = { estado: "pendiente", motivo: "espera_anillo", version_disponible: "0.7.25", hasta: new Date(Date.now() + 86_400_000).toISOString(), anillo: "general", modo: "auto", origen: "consola «Oficina»", ultima_busqueda: new Date(Date.now() - 3_600_000).toISOString() };
+  }
   enriquecer(contabilidad, { ultimaFalla: true, fallos: 0.08, soloAnadir: true, medioAnadido: 420_000_000 });
   // Su informe dice su versión y el resultado del volcado de SQL Server (v1.10).
   if (contabilidad.informes[0]) {

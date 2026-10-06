@@ -1,0 +1,23 @@
+############################################################################
+#                                                                          #
+#   SOLO PARA PRUEBAS. ESTAS LLAVES SON PÚBLICAS (ESTÁN EN EL REPOSITORIO) #
+#   Y NO PROTEGEN NADA. NUNCA SE USAN PARA FIRMAR UNA PUBLICACIÓN.         #
+#                                                                          #
+############################################################################
+#
+# Llaves de publicación de pruebas (docs/actualizaciones.md §3). Las usan:
+# - las pruebas de crates/protocolo (feature «pruebas»), del agente y del
+#   servidor, para firmar manifiestos de mentira;
+# - el escenario e2e de la consola (consola/scripts/e2e), que firma una
+#   publicación de prueba con la llave A.
+#
+# Solo las aceptan las compilaciones de DESARROLLO (debug_assertions) con
+# RESGUARDO_LLAVES_PRUEBAS=<ruta de llave-pruebas-a.pub>. Una compilación de
+# publicación nunca lee esa variable: solo confía en
+# packaging/llave-publicacion.pub.
+#
+# Formato: id de la llave (el «key id» de minisign) = semilla Ed25519 en hex.
+# Las públicas, en formato minisign: llave-pruebas-a.pub y llave-pruebas-b.pub.
+
+C57E2BA1129956D5=c6ba8634aac2dd052a36788aca66b3df18f9da77cf285b4d1ec758d97f8186af
+851E4472FB75946F=05c5c67fb88fce948b3e8475c56f72c77554585d3ed92c4b52209395905470a2

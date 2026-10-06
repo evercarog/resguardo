@@ -19,6 +19,7 @@
     LogOut,
     Monitor,
     FolderSync,
+    PackageCheck,
     Settings,
     UserRound,
     Users,
@@ -75,6 +76,8 @@
         titulo: "Gestión",
         items: [
           { href: `/c/${c}/informes`, texto: "Informes", icono: FileBarChart },
+          // La actualización automática de los agentes (docs/actualizaciones.md).
+          { href: `/c/${c}/versiones`, texto: "Versiones", icono: PackageCheck },
           // Los técnicos también leen la actividad (exportarla, solo administradores).
           ...(puede.ordenar(rol) ? [{ href: `/c/${c}/auditoria`, texto: "Actividad", icono: Activity }] : []),
           ...(puede.administrar(rol) ? [{ href: `/c/${c}/servidor`, texto: "Servidor", icono: ArrowRightLeft }] : []),
