@@ -48,7 +48,7 @@
         </label>
         {#if !o.uso.ok && o.uso.accion?.tipo === "conectar_nube" && alConectar}
           {@const a = o.uso.accion}
-          <button type="button" class="btn btn-sm" onclick={() => alConectar(a.equipo, a.nube, a.tipoNube)}><Cloud size={13} />Conectar en {a.equipo.nombre}</button>
+          <button type="button" class="btn btn-sm" onclick={() => alConectar(a.equipo, a.nube, a.tipoNube)}><Cloud size={13} />{a.texto ?? `Conectar en ${a.equipo.nombre}`}</button>
         {:else if !o.uso.ok && o.uso.accion?.tipo === "otro_paso" && alOtroPaso}
           {@const a = o.uso.accion}
           <button type="button" class="btn btn-sm btn-ghost" onclick={() => alOtroPaso(a.uso)}>{a.uso === "derivada" ? "Repositorio nuevo a partir de esta" : a.uso === "espejo" ? "Espejo" : "Copia nueva"}</button>

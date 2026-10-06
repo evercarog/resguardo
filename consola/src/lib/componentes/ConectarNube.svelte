@@ -18,7 +18,21 @@
   import Ayuda from "./Ayuda.svelte";
   import CampoClave from "./CampoClave.svelte";
 
-  let { cliente, equipo, onclose, nombreInicial }: { cliente: Cliente; equipo: Equipo; onclose: () => void; /** El nombre que ya tiene en otro equipo («Dropbox Oficina»). */ nombreInicial?: string } = $props();
+  let {
+    cliente,
+    equipo,
+    onclose,
+    nombreInicial,
+    alConectar,
+  }: {
+    cliente: Cliente;
+    equipo: Equipo;
+    onclose: () => void;
+    /** El nombre que ya tiene en otro equipo («Dropbox Oficina»). */
+    nombreInicial?: string;
+    /** Cuando el equipo la ha guardado (para elegirla ya, p. ej. en «Nuevo repositorio»). */
+    alConectar?: (nombre: string) => void;
+  } = $props();
 
   /** En un almacén, para su espejo; en otro equipo (4a), para sus copias derivadas. */
   const enAlmacen = $derived(!!equipo.resumen?.guarda_copias?.activo);
@@ -98,6 +112,7 @@
       hecho = true;
       avisar(`«${nombre.trim()}» conectada en ${equipo.nombre}.`);
       void cargarCliente(cliente.id, { silencioso: true });
+      alConectar?.(nombre.trim());
     } catch (err) {
       token = null;
       if (err instanceof ErrorLlavesCambiadas) cambiadas = true;
@@ -117,13 +132,13 @@
     <span class="ticon"><Cloud size={18} /></span>
     <div>
       <h2 id="t-nube">Conectar Dropbox en {equipo.nombre}</h2>
-      <p>{enAlmacen ? "Para el espejo de lo que guarda este equipo." : `Para las copias de ${equipo.nombre} a esta nube.`} El permiso se guarda protegido solo en el equipo: ni el servidor ni esta consola lo conservan.</p>
+      <p>{enAlmacen ? "Para el espejo de lo que guarda este equipo (y sus propias copias)." : `Para las copias de ${equipo.nombre} a esta nube.`} El permiso se guarda protegido solo en el equipo: ni el servidor ni esta consola lo conservan.</p>
     </div>
   </div>
 
   {#if hecho}
     <div class="form">
-      <div class="notice notice-success" role="status"><Check size={16} /><p>«{nombre.trim()}» está conectada. {enAlmacen ? "Ya puedes añadirla como destino del espejo." : "Ya puedes elegirla al añadir un paso."}</p></div>
+      <div class="notice notice-success" role="status"><Check size={16} /><p>«{nombre.trim()}» está conectada. {alConectar ? "Ya puedes elegirla como destino." : enAlmacen ? "Ya puedes añadirla como destino del espejo." : "Ya puedes elegirla como destino de un repositorio o al añadir un paso."}</p></div>
       <footer><button class="btn btn-primary" onclick={onclose}>Hecho</button></footer>
     </div>
   {:else}

@@ -43,6 +43,7 @@
     nombreInicial,
     origen,
     zona,
+    alCreado,
     onclose,
   }: {
     cliente: Cliente;
@@ -54,6 +55,8 @@
     origen?: RepoExistente;
     /** Tarea 7b: una zona del almacén que no es la principal (sin ella, la principal). */
     zona?: ZonaVista;
+    /** Desde el editor de copias: el repositorio ya creado (para elegirlo en la copia). */
+    alCreado?: (r: { id: string; nombre: string; destino: string }) => void;
     onclose: () => void;
   } = $props();
 
@@ -184,6 +187,7 @@
       claveAdmin = contrasena = "";
       acceso = null;
       paso = "listo";
+      alCreado?.({ id, nombre: nombre.trim(), destino: idDestinoZona(almacen.id, enZona?.id ?? PRINCIPAL) });
       avisar(`${equipo.nombre} ya copia en ${nombreAlmacen}.`);
       void cargarCliente(cliente.id, { silencioso: true });
     } catch (err) {

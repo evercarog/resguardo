@@ -364,11 +364,21 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       await espera(7500);
       const repoId = String(c.id);
       if (String(c.contrasena ?? "").length < 8) return resultado(e, o, "fallida", "La contraseña del repositorio necesita al menos 8 caracteres.");
-      const d = c.destino as { id: string; nombre?: string; tipo?: T.DestinoResumen["tipo"]; donde?: string; equipo_almacen?: string };
+      const d = c.destino as { id: string; nombre?: string; tipo?: T.DestinoResumen["tipo"]; donde?: string; equipo_almacen?: string; nube?: string };
+      // Tarea 4a: en una nube conectada en el equipo (agente con `repo_en_nube`), como el agente.
+      const destinoNube = d.tipo === "nube" ? d : (e.resumen?.destinos ?? []).find((x) => x.id === d.id && x.tipo === "nube");
+      if (destinoNube) {
+        if (!e.resumen?.admite?.includes("repo_en_nube")) return resultado(e, o, "fallida", "Una nube conectada en el equipo sirve, por ahora, para las copias derivadas, no para copiar las carpetas directamente.");
+        const nube = String(destinoNube.nube ?? "");
+        if (![...(e.resumen?.nubes ?? []), ...(e.resumen?.guarda_copias?.nubes ?? [])].some((n) => n.nombre === nube)) return resultado(e, o, "fallida", `La nube «${nube}» no está conectada en este equipo: conéctala antes.`);
+      }
       e.contrasenas[repoId] = String(c.contrasena);
       e.resumen ??= {};
       if (d.nombre && !(e.resumen.destinos ?? []).some((x) => x.id === d.id))
-        e.resumen.destinos = [...(e.resumen.destinos ?? []), { id: d.id, nombre: d.nombre, tipo: d.tipo ?? "otro", donde: d.tipo === "local" ? undefined : d.donde, equipo_almacen: d.tipo === "rest" ? (d.equipo_almacen ?? null) : null }];
+        e.resumen.destinos = [
+          ...(e.resumen.destinos ?? []),
+          { id: d.id, nombre: d.nombre, tipo: d.tipo ?? "otro", donde: d.tipo === "local" ? undefined : d.donde, equipo_almacen: d.tipo === "rest" ? (d.equipo_almacen ?? null) : null, ...(d.tipo === "nube" ? { nube: d.nube ?? null } : {}) },
+        ];
       e.resumen.repositorios = [...(e.resumen.repositorios ?? []), { id: repoId, nombre: String(c.nombre), destino: d.id, versiones: 0, bytes: 0 }];
       guardarConfig(e, configInicial(e), plana.seq);
       return resultado(e, o, "hecha", "Repositorio creado (restic init).");

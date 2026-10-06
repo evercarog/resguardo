@@ -26,6 +26,8 @@ export const ADMITE = {
   nubeEquipo: "nube_equipo",
   /** Destinos del espejo con `zona` y de tipo «zona». */
   espejoZonas: "espejo_zonas",
+  /** Tarea 4a completa: `crear_repositorio` en una nube conectada en el equipo (copiar las carpetas directamente). */
+  repoEnNube: "repo_en_nube",
 } as const;
 export const admite = (e: Pick<Equipo, "resumen"> | null | undefined, que: string) => !!e?.resumen?.admite?.includes(que);
 
@@ -403,7 +405,7 @@ export interface Uso {
   /** Por qué no (o una nota corta si sí). */
   motivo?: string;
   /** Lo que lo haría posible: conectar la nube en un equipo, actualizar su agente o usar otro tipo de paso. */
-  accion?: { tipo: "conectar_nube"; equipo: Equipo; nube: string; tipoNube: string } | { tipo: "actualizar"; equipo: Equipo } | { tipo: "otro_paso"; uso: UsoPaso };
+  accion?: { tipo: "conectar_nube"; equipo: Equipo; nube: string; tipoNube: string; texto?: string } | { tipo: "actualizar"; equipo: Equipo } | { tipo: "otro_paso"; uso: UsoPaso };
 }
 
 /** Todos los destinos del cliente, más las nubes conectadas en equipos que no son almacenes (para las derivadas). */
@@ -429,11 +431,28 @@ export function detalleDestino(d: DestinoVista): string {
   return [TEXTO_TIPO[d.tipo] ?? d.tipo, d.donde].filter(Boolean).join(" · ");
 }
 
-const NUBE_DIRECTA = "Directo a una nube, todavía no: haz la copia a un almacén y después «Repositorio nuevo a partir de esta».";
+/** ¿Está la nube `nombre` conectada en `equipo`? (para sus copias o, si es un almacén, para su espejo) */
+export const nubeEn = (equipo: Equipo, nombre: string) => [...(equipo.resumen?.nubes ?? []), ...(equipo.resumen?.guarda_copias?.nubes ?? [])].some((n) => n.nombre === nombre);
+
+/**
+ * Tarea 4a: ¿puede `equipo` copiar sus carpetas directamente a la nube `n`
+ * (un repositorio allí)? Si no, por qué y qué hacer: actualizar su agente,
+ * conectarla también en él (Dropbox, desde la consola) o, para B2 y S3, usarlos
+ * como un destino de siempre (con sus datos).
+ */
+export function usoNubeDirecta(n: { equipo: Equipo; nombre: string; tipo: string }, equipo: Equipo): Uso {
+  if (!admite(equipo, ADMITE.repoEnNube)) return { ok: false, motivo: `Actualiza el agente de ${equipo.nombre} para copiar directo a una nube`, accion: { tipo: "actualizar", equipo } };
+  if (n.equipo.id === equipo.id || nubeEn(equipo, n.nombre)) return { ok: true, motivo: TIPOS_NUBE[n.tipo] && !TIPOS_NUBE[n.tipo].inmutable ? "No es inmutable" : undefined };
+  const tipo = nombreTipoNube(n.tipo);
+  if (n.tipo === "dropbox") return { ok: false, motivo: `Hace falta también en ${equipo.nombre}`, accion: { tipo: "conectar_nube", equipo, nube: n.nombre, tipoNube: n.tipo, texto: `Conectar ${tipo} también en ${equipo.nombre}` } };
+  if (n.tipo === "drive") return { ok: false, motivo: `Conéctala en ${equipo.nombre} desde el propio equipo («resguardo-agente nube conectar drive»)` };
+  if (n.tipo === "b2" || n.tipo === "s3") return { ok: false, motivo: `Desde ${equipo.nombre}: «Un destino nuevo…» de tipo ${tipo}, con sus datos` };
+  return { ok: false, motivo: `En ${equipo.nombre}, todavía no se conecta desde la consola` };
+}
 
 /**
  * Qué se puede hacer con el destino `d` desde el repositorio `repo` de `equipo`:
- * - «copia» (carpetas directas): a una nube todavía no (el token caduca en la vuelta del agente: 4a pendiente).
+ * - «copia» (carpetas directas): a una nube, si está conectada en el equipo y su agente lo admite (4a, `usoNubeDirecta`).
  * - «espejo»: lo hace el almacén donde está el repositorio, a otra de sus zonas o a una nube conectada en él.
  * - «derivada»: lo hace el equipo dueño, que necesita el destino (o la nube conectada) en él.
  */
@@ -444,7 +463,14 @@ export function usosPosibles(d: DestinoVista, equipo: Equipo, repo: RepositorioR
   const yaEsta: Uso = { ok: false, motivo: "Ya guarda aquí" };
 
   // Copia nueva de carpetas.
-  const copia: Uso = d.clase === "nube" ? { ok: false, motivo: NUBE_DIRECTA, accion: { tipo: "otro_paso", uso: "derivada" } } : { ok: true };
+  // Una nube: la conectada en un equipo o la de un destino «nube» de un equipo (el suyo primero).
+  let nube = d.nube;
+  if (!nube && d.tipo === "nube") {
+    const nombre = d.destino?.nube ?? d.nombre;
+    const duenio = [equipo, ...equipos].find((e) => e.resumen?.destinos?.some((x) => d.ids.includes(x.id)));
+    if (duenio) nube = { equipo: duenio, nombre, tipo: tipoNube(duenio, nombre) ?? "" };
+  }
+  const copia: Uso = nube ? usoNubeDirecta(nube, equipo) : { ok: true };
 
   // Espejo: el almacén donde está el repositorio.
   let espejo: Uso;
