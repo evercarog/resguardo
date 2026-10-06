@@ -95,7 +95,7 @@
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
   import FormRepoExistente from "$lib/componentes/FormRepoExistente.svelte";
   import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
-  // v1.4x: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
+  // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   import { tareasDe } from "$lib/progreso.svelte";
   import { hayPlanMover, moviendoDe } from "$lib/mover";
@@ -434,7 +434,7 @@
 
   /** «Mover a otro sitio…» de un repositorio. */
   let mover = $state<RepositorioResumen | null>(null);
-  /** v1.4x: ¿se está moviendo y no lo lleva este navegador? (Lo lleva otra consola u otro navegador: solo se ve.) */
+  /** v1.47: ¿se está moviendo y no lo lleva este navegador? (Lo lleva otra consola u otro navegador: solo se ve.) */
   function moverBloqueado(repo: string): boolean {
     if (!equipo) return false;
     const m = moviendoDe(tareasDe(equipo.id), repo);
@@ -477,7 +477,7 @@
     contrasenaDestino: "",
   });
   let ext = $state(extVacia());
-  /** v1.4x (agente con `externa_existente`): «Usar uno que ya existe», bloqueo de objetos y «Probar». */
+  /** v1.46 (agente con `externa_existente`): «Usar uno que ya existe», bloqueo de objetos y «Probar». */
   let extX = $state(externaExtraVacia());
   const extNueva = $derived(admiteExternaExistente(equipo));
   /** Destinos a los que puede ir la copia externa: cualquiera menos el del propio repositorio. */

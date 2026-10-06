@@ -447,7 +447,7 @@ async function principal() {
     }, { plazo: 45_000, cada: 1000 });
     log(`B cuenta ${despues.length} versiones ${((Date.now() - trasAlmacen) / 1000).toFixed(1)} s después del resultado del almacén`);
 
-    // v1.4x: «Retención en detalle»: lo que anotó el almacén en su historial es lo que quitó de verdad,
+    // v1.45: «Retención en detalle»: lo que anotó el almacén en su historial es lo que quitó de verdad,
     // y la consola (retencionDetalle.ts, como la página) lo enseña con el repositorio de B.
     const quitadasDeVerdad = todas.filter((s) => !despues.some((d) => d.id === s.id)).map((s) => s.id.slice(0, 8)).sort();
     const infB = informeDe((await consola.equipo(c, eqB.id)).ultimo_informe as any, repoId);

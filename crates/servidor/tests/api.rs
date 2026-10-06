@@ -1203,7 +1203,7 @@ async fn progreso_en_vivo() {
     let r = pedir(&p.app, "POST", "/api/agente/progreso", Some(json!({ "tareas": [] })), None, &agente).await;
     assert_eq!(r.estado, StatusCode::NO_CONTENT);
     assert_eq!(pedir(&p.app, "GET", &ruta, None, Some(&cookie), &[]).await.json, json!([]));
-    // v1.4x: un «Mover a otro sitio…» que empezó otra consola del equipo se ve aquí también (solo verlo).
+    // v1.47: un «Mover a otro sitio…» que empezó otra consola del equipo se ve aquí también (solo verlo).
     let mover = json!({ "tipo": "historial", "repo": "nuevo", "origen": "r1", "mover": true, "paso": "historial", "fase": "en_marcha",
         "otra_consola": true, "consola": "Oficina", "versiones": 56, "versiones_total": 255, "etapa": "Moviéndose a otro sitio: trayendo el historial" });
     let r = pedir(&p.app, "POST", "/api/agente/progreso", Some(json!({ "tareas": [mover] })), None, &agente).await;
@@ -1574,7 +1574,7 @@ async fn historial_del_equipo_sin_repetir() {
     assert_eq!(r.estado, StatusCode::UNAUTHORIZED);
 }
 
-/// v1.4x: las vueltas de la retención (`retencion`) llevan las versiones que
+/// v1.45: las vueltas de la retención (`retencion`) llevan las versiones que
 /// quitaron: entran hasta 96 KiB, solo se dan si se piden con `tipo` (una
 /// consola anterior no las conoce) y solo las 50 más recientes de cada equipo
 /// conservan la lista (las demás, sus cifras).

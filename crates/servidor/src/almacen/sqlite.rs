@@ -1279,7 +1279,7 @@ impl Almacen for Sqlite {
                     }
                 }
             }
-            // v1.4x: las vueltas de la retención llevan las versiones que quitaron; solo las
+            // v1.45: las vueltas de la retención llevan las versiones que quitaron; solo las
             // más recientes las conservan (las demás, sus cifras), así que no crecen sin límite.
             if nuevas > 0 && entradas.iter().any(|e| e.tipo == "retencion") {
                 tx.execute(

@@ -277,7 +277,7 @@ export interface RepositorioResumen {
   solo_anadir?: boolean | null;
   /**
    * Copia externa diaria (restic copy) a otro destino: su nombre y la hora.
-   * v1.4x: a un repositorio que ya existía, con bloqueo de objetos (días), de
+   * v1.46: a un repositorio que ya existía, con bloqueo de objetos (días), de
    * solo añadir y si tiene retención propia.
    */
   externa?: {
@@ -571,7 +571,7 @@ export interface Informe {
 
 /** Fase de una tarea en marcha (v1.25): las de una copia y `en_marcha` (las demás tareas). */
 export type FaseTarea = "antes_de_copiar" | "preparando" | "escaneando" | "subiendo" | "terminando" | "en_marcha";
-/** v1.4x: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`. */
+/** v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`. */
 export type TipoTarea = "copia" | "verificar" | "verificar_externa" | "copia_externa" | "prueba_restauracion" | "historial" | "retencion" | "restauracion";
 
 /** Algo que está en marcha en un equipo, con su progreso (v1.25, `GET …/progreso`). Sin rutas. */
@@ -601,7 +601,7 @@ export interface TareaEnMarcha {
   versiones_total?: number | null;
   empezo?: string | null;
   actualizado?: string | null;
-  /** v1.4x (`historial`): el repositorio de este equipo del que se trae (al mover, el que se mueve) y su nombre. */
+  /** v1.47 (`historial`): el repositorio de este equipo del que se trae (al mover, el que se mueve) y su nombre. */
   origen?: string | null;
   nombre_origen?: string | null;
   /** Un paso de «Mover a otro sitio…»: `historial` (todo) o `ultimo` (lo copiado mientras tanto). */
@@ -648,7 +648,7 @@ export interface EntradaHistorial {
   hora: string;
   tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial";
   repo?: string;
-  /** v1.4x, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
+  /** v1.47, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
   origen?: string;
   nombre?: string;
   nombre_origen?: string;

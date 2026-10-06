@@ -993,7 +993,7 @@ const rutas: Ruta[] = [
       const q = ctx.url.searchParams;
       const [desde, hasta, tipos] = [q.get("desde"), q.get("hasta"), (q.get("tipo") ?? "").split(",").filter(Boolean)];
       const limite = Math.min(Math.max(Number(q.get("limite") ?? 500) || 500, 1), 2000);
-      // v1.4x: las vueltas de la retención, solo pedidas con `tipo` (como el servidor).
+      // v1.45: las vueltas de la retención, solo pedidas con `tipo` (como el servidor).
       let l = [...historialMock(equipoDe(c, e)), ...(retencionesMock(equipoDe(c, e)) as unknown as T.EntradaHistorial[])]
         .filter((h) => (!desde || Date.parse(h.hora) > Date.parse(desde)) && (!hasta || Date.parse(h.hora) <= Date.parse(hasta)) && (tipos.length ? tipos.includes(h.tipo) : (h.tipo as string) !== "retencion"))
         .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

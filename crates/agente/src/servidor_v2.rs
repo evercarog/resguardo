@@ -565,7 +565,7 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             "cambiar_espera" => c["horas"].as_i64().is_some_and(|h| h < v.espera_min_horas),
             "restaurar" => c["destino"] == "original" && c["reemplazar"] == true,
             // Igual que al ejecutarla: sin una hora en texto, se quita la copia externa.
-            // Solo probar (v1.4x) no cambia nada.
+            // Solo probar (v1.46) no cambia nada.
             "cambiar_copia_externa" => !c["hora"].is_string() && c["solo_probar"] != true,
             // Desconectar una nube que usa el espejo deja de proteger fuera.
             "quitar_nube" => crate::nube::usa_espejo(c["nombre"].as_str().unwrap_or("").trim()),
@@ -997,7 +997,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "aplicar_retencion" => {
             let r = repo.unwrap_or("").to_string();
             Ok(en_segundo_plano(v, orden_id, seq, "aplicar_retencion", "Aplicando la retención…", move |v| {
-                // v1.4x: en marcha, a la vista de todas las consolas del equipo.
+                // v1.47: en marcha, a la vista de todas las consolas del equipo.
                 let _op = crate::progreso_v2::ops::empezar(crate::progreso_v2::ops::Operacion::de_consola(v, "retencion", &r, "Aplicando la retención"));
                 g::aplicar_retencion(v, &r).map(hecha)
             }))

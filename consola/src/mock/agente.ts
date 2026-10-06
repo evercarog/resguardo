@@ -607,7 +607,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const faltan = total - ya;
       let hechas = 0;
       resultado(e, o, "en_marcha", `Trayendo el historial: 0 de ${faltan} versiones…`);
-      // v1.4x: a la vista de todas las consolas (progreso `historial`; con `mover`, un paso de «Mover a otro sitio…»).
+      // v1.47: a la vista de todas las consolas (progreso `historial`; con `mover`, un paso de «Mover a otro sitio…»).
       const paso = (c.mover as { paso?: string } | undefined)?.paso;
       empezarHistorial(e.cliente, e.id, repo.id, repo.nombre, faltan, Math.max(1, Math.ceil(faltan / Math.max(8, Math.ceil(faltan / 6)))) * 2000, { origen: deAqui?.id ?? null, nombre_origen: deAqui?.nombre ?? null, mover: !!paso, paso: paso === "ultimo" ? "ultimo" : paso ? "historial" : null, otra_consola: false });
       const t = setInterval(() => {
@@ -639,7 +639,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const d = c.destino as { id: string; nombre?: string; tipo?: T.DestinoResumen["tipo"]; donde?: string };
       if (!d?.id) return resultado(e, o, "fallida", "Falta el destino.");
       if (d.id === repo.destino) return resultado(e, o, "fallida", "La copia externa tiene que ir a otro destino.");
-      // v1.4x: a uno que ya existe (con su contraseña), con bloqueo de objetos, o solo probar.
+      // v1.46: a uno que ya existe (con su contraseña), con bloqueo de objetos, o solo probar.
       const existente = c.existente === true;
       const bloqueo = Number(c.bloqueo_dias ?? 0) || null;
       if (existente && typeof c.ruta !== "string") return resultado(e, o, "fallida", "Falta la carpeta del repositorio que ya existe.");
