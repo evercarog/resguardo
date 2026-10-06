@@ -64,7 +64,7 @@ Plantilla:
   - Sin plantillas guardadas, una clave equivocada en «Elegir…» no se puede distinguir (no hay nada que descifrar); con «Aplicar plantilla» sí se comprueba con la etiqueta de los equipos.
   - Los ajustes de las etiquetas no van en el paquete de «Mover a otro servidor» (tampoco las plantillas, que dependen de la clave).
   - La pausa en bloque calcula `K_cfg` una vez y la prueba de cada equipo (Argon2) uno a uno: con muchos equipos tarda unos segundos por equipo.
-- **Sin probar:** avisos por etiqueta con un correo, webhook o ntfy de verdad (solo la prueba de punta a punta con el transporte falso); «Aplicar plantilla» y «Usarla» con una plantilla real (en el simulador no hay plantillas guardadas: se probaron el plan y la configuración en los vectores); el diálogo «Avisos de …» del propietario (Ajustes → Personas) solo con `npm run check`; «Mis notificaciones» → «Por etiqueta» sí, en el simulador.
+- **Sin probar:** avisos por etiqueta con un correo, webhook o ntfy de verdad (solo la prueba de punta a punta con el transporte falso); «Aplicar plantilla» y «Usarla» con una plantilla real (en el simulador no hay plantillas guardadas: se probaron el plan y la configuración en los vectores); el diálogo «Avisos de …» del propietario y «Mis notificaciones» → «Por etiqueta» solo se abrieron y guardaron en el simulador (sin correo de verdad).
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ancla-auditoria`
 
 - **Pedido:** tarea 9b del plan («Ancla externa de la auditoría»), con el usuario fuera y otras sesiones haciendo a la vez las tareas 1 y 3.
