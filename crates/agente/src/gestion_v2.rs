@@ -816,7 +816,9 @@ fn estado_de(result: &str) -> &'static str {
 /// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
 /// v1.40: `verificacion_horario` (la verificación automática con un horario de reglas) y
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
-pub const ADMITE: [&str; 8] = [
+/// v1.4x: `ordenes_en_espera` (guarda las órdenes con espera y las aplica a su hora,
+/// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
+pub const ADMITE: [&str; 9] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -826,6 +828,7 @@ pub const ADMITE: [&str; 8] = [
     "retencion_almacen_horario",
     // v1.4x: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
     "externa_existente",
+    "ordenes_en_espera",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -925,6 +928,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         // v1.36: las consolas que gestionan el equipo (esta, `esta: true`) y de cuál vino el último cambio.
         "consolas": crate::consolas_v2::resumen(v),
         "cambio_config": crate::consolas_v2::resumen_cambio(v),
+        // v1.4x: las órdenes con espera que tiene el equipo (de cualquiera de sus consolas).
+        "en_espera": crate::espera_v2::resumen(v),
     })
 }
 

@@ -160,6 +160,7 @@ pub(crate) fn orden(e: &Equipo, seq: u64, tipo: &str, cuerpo: Value) -> OrdenV2 
         cuerpo,
         autorizacion: Autorizacion { prueba_admin: Some(B64.encode(e.prueba)), ..Default::default() },
         responder_a: None,
+        por: None,
     }
 }
 

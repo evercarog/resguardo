@@ -120,6 +120,10 @@ pub struct Vinculo {
     /// ventana, ipc_local): el canal abierto los ve como «cambiado fuera».
     #[serde(default, skip_serializing_if = "es_cero")]
     pub cambio_local: u64,
+    /// v1.4x: órdenes con espera ya recibidas, de cualquiera de las consolas (con su sobre
+    /// sellado; espera_v2.rs, docs/consolas-multiples.md §5). Del equipo, no de un vínculo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub en_espera: Vec<crate::espera_v2::EnEspera>,
 }
 
 fn es_cero(n: &u64) -> bool {
@@ -517,8 +521,9 @@ pub fn desvincular_local() -> Result<(), String> {
     let mut v = cargar().ok_or("Este equipo no está vinculado a ningún servidor.")?;
     v.modo = "local".into();
     v.secreto.clear();
-    // Todas las consolas: el equipo entero pasa a funcionar solo.
+    // Todas las consolas: el equipo entero pasa a funcionar solo (y sin órdenes de ninguna).
     v.otras.clear();
+    v.en_espera.clear();
     guardar(&v)?;
     crate::agent::log("Desvinculado del servidor: el equipo sigue con sus copias en modo local.");
     Ok(())
@@ -535,7 +540,7 @@ pub struct Resultado {
     pub detalle: Option<String>,
 }
 
-fn rechazada(m: impl Into<String>) -> Resultado {
+pub(crate) fn rechazada(m: impl Into<String>) -> Resultado {
     Resultado { estado: "rechazada", mensaje: m.into(), detalle: None }
 }
 fn hecha(m: impl Into<String>) -> Resultado {
@@ -668,11 +673,14 @@ fn repo_ok(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
 }
 
 /// Abre, comprueba y ejecuta una orden. Devuelve el resultado y, si hay, un aviso para el servidor.
+/// v1.4x: una que pide autorización y aún no toca se guarda en espera (espera_v2.rs) y
+/// devuelve `estado: espera_v2::EN_ESPERA` (no se contesta nada al servidor).
 pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
     let tipo_meta = meta["tipo"].as_str().unwrap_or("");
     let seq_meta = meta["seq"].as_u64().unwrap_or(0);
     let cx = orden_v2::Contexto { cliente: &v.cliente_id, equipo: &v.equipo_id, ultimo_seq: v.ultimo_seq, ahora: ahora(), tipo_meta, seq_meta };
-    let o = match orden_v2::abrir(meta["sellado"].as_str().unwrap_or(""), &v.box_secret, &cx) {
+    let sellado = meta["sellado"].as_str().unwrap_or("");
+    let o = match orden_v2::abrir_con_espera(sellado, &v.box_secret, &cx, true) {
         Ok(o) => o,
         Err(e) => return (rechazada(e), None),
     };
@@ -687,64 +695,85 @@ pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
     let _ = guardar(v);
 
     let Some(tipo) = ordenes::tipo(&o.tipo) else { return (rechazada("Tipo de orden desconocido."), None) };
-    // La espera mínima del cliente, también aquí (no solo en el servidor).
-    if destructiva(v, &o, tipo) {
+    let orden_id = meta["id"].as_str().unwrap_or("").to_string();
+    // v1.4x: aún no toca (con el reloj del equipo y el de esta consola): en espera.
+    let nb = o.not_before.as_deref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp());
+    if nb.is_some_and(|nb| !crate::espera_v2::toca(nb, t, crate::espera_v2::hora_servidor(&v.id_enlace()))) {
+        return crate::espera_v2::recibir(v, &o, tipo, &orden_id, sellado);
+    }
+    let (r, aviso) = autorizar_y_ejecutar(v, &o, tipo, &orden_id);
+    // v1.4x: al historial que reciben todas las consolas.
+    crate::espera_v2::anotar_procesada(v, &o, &orden_id, &r);
+    (r, aviso)
+}
+
+/// La espera mínima del cliente (también aquí, no solo en el servidor) y la autorización
+/// según el tipo. Devuelve el repositorio autorizado (si la orden lo pide) o el rechazo
+/// con el aviso de intentos fallidos. Al recibir una orden en espera y otra vez al aplicarla.
+pub(crate) fn comprobar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> Result<Option<String>, (Resultado, Option<String>)> {
+    let t = ahora();
+    if destructiva(v, o, tipo) {
         let emitida = chrono::DateTime::parse_from_rfc3339(&o.emitida).map(|d| d.timestamp()).unwrap_or(t);
         let nb = o.not_before.as_deref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp()).unwrap_or(0);
         if nb < emitida + ordenes::segundos_de_espera(v.espera_min_horas) - orden_v2::HOLGURA_S {
-            return (rechazada(format!("Esta orden reduce la protección y tenía que esperar {} h.", v.espera_min_horas)), None);
+            return Err((rechazada(format!("Esta orden reduce la protección y tenía que esperar {} h.", v.espera_min_horas)), None));
         }
     }
-    // Autorización según el tipo.
-    let mut aviso = None;
     let necesita_admin = matches!(tipo.nivel, ordenes::Nivel::Administracion | ordenes::Nivel::RepositorioYAdministracion) && o.tipo != "alta";
     let necesita_repo = matches!(tipo.nivel, ordenes::Nivel::Repositorio | ordenes::Nivel::RepositorioYAdministracion);
     if necesita_admin {
         if let Some(h) = bloqueada(v, "admin") {
-            return (rechazada(format!("Bloqueado por intentos fallidos hasta {}.", fecha(h))), None);
+            return Err((rechazada(format!("Bloqueado por intentos fallidos hasta {}.", fecha(h))), None));
         }
-        if !admin_ok(v, &o) {
-            aviso = anotar_fallo(v, "admin");
+        if !admin_ok(v, o) {
+            let aviso = anotar_fallo(v, "admin");
             let _ = guardar(v);
-            return (rechazada("La clave de administración no es correcta."), aviso);
+            return Err((rechazada("La clave de administración no es correcta."), aviso));
         }
         acierto(v, "admin");
     }
-    let repo_autorizado = if necesita_repo {
-        let clave = format!("repo:{}", o.autorizacion.clave_repo.as_ref().map(|c| c.repo.as_str()).unwrap_or("?"));
-        if let Some(h) = bloqueada(v, &clave) {
-            return (rechazada(format!("Bloqueado por intentos fallidos hasta {}.", fecha(h))), None);
+    if !necesita_repo {
+        return Ok(None);
+    }
+    let clave = format!("repo:{}", o.autorizacion.clave_repo.as_ref().map(|c| c.repo.as_str()).unwrap_or("?"));
+    if let Some(h) = bloqueada(v, &clave) {
+        return Err((rechazada(format!("Bloqueado por intentos fallidos hasta {}.", fecha(h))), None));
+    }
+    match repo_ok(v, o) {
+        Some(r) => {
+            acierto(v, &clave);
+            Ok(Some(r))
         }
-        match repo_ok(v, &o) {
-            Some(r) => {
-                acierto(v, &clave);
-                Some(r)
+        None => {
+            // Solo cuentan los fallos de repositorios que existen: con ids
+            // inventados no se llena el estado (ni se escribe en disco).
+            let mut aviso = None;
+            if repo_existe(v, &clave["repo:".len()..]) {
+                aviso = anotar_fallo(v, &clave);
+                let _ = guardar(v);
             }
-            None => {
-                // Solo cuentan los fallos de repositorios que existen: con ids
-                // inventados no se llena el estado (ni se escribe en disco).
-                if repo_existe(v, &clave["repo:".len()..]) {
-                    aviso = anotar_fallo(v, &clave);
-                    let _ = guardar(v);
-                }
-                return (rechazada("La contraseña del repositorio no es correcta."), aviso);
-            }
+            Err((rechazada("La contraseña del repositorio no es correcta."), aviso))
         }
-    } else {
-        None
+    }
+}
+
+/// Comprueba (espera y autorización) y ejecuta una orden ya abierta.
+pub(crate) fn autorizar_y_ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo, orden_id: &str) -> (Resultado, Option<String>) {
+    let repo_autorizado = match comprobar(v, o, tipo) {
+        Ok(r) => r,
+        Err(e) => return e,
     };
-    let orden_id = meta["id"].as_str().unwrap_or("").to_string();
     // v1.36: de qué consola viene el cambio (las demás enseñan «Cambiado desde otra
     // consola»). Antes de ejecutarla, para que ya vaya en el resumen que sube; si no se
     // hace, se deja como estaba.
     let antes = v.ultimo_cambio.clone();
     crate::consolas_v2::anotar_cambio(v, &o.tipo);
-    let r = ejecutar(v, &o, repo_autorizado.as_deref(), &orden_id);
+    let r = ejecutar(v, o, repo_autorizado.as_deref(), orden_id);
     if !matches!(r.estado, "hecha" | "en_marcha") {
         v.ultimo_cambio = antes;
     }
     let _ = guardar(v);
-    (r, aviso)
+    (r, None)
 }
 
 /// Las órdenes largas (restaurar, descargar, aplicar la retención): se
@@ -843,6 +872,22 @@ pub(crate) mod largas {
             AQUI.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashSet::new).insert(orden.to_string());
             l.retain(|x| x.orden != orden);
             l.push(Larga { enlace: enlace.into(), orden: orden.into(), seq, tipo: tipo.into(), resultado: None });
+        });
+    }
+
+    /// v1.4x: un resultado para la consola `enlace` que se manda en la próxima vuelta del
+    /// servicio (y, si esa consola no responde, cuando vuelva). P. ej. «cancelada desde otra
+    /// consola» para la que mandó una orden en espera.
+    pub fn guardar_resultado(enlace: &str, orden: &str, seq: u64, tipo: &str, r: &Resultado) {
+        con(|l| {
+            l.retain(|x| x.orden != orden);
+            l.push(Larga {
+                enlace: enlace.into(),
+                orden: orden.into(),
+                seq,
+                tipo: tipo.into(),
+                resultado: Some((r.estado.to_string(), r.mensaje.clone(), r.detalle.clone())),
+            });
         });
     }
 
@@ -959,6 +1004,8 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(Resultado { detalle: Some(detalle), ..hecha("Acceso sellado para el otro equipo.") })
         }
         "desbloquear" => g::desbloquear(v, c).map(hecha),
+        // v1.4x: cancelar una orden en espera (de cualquiera de las consolas).
+        "cancelar_espera" => crate::espera_v2::cancelar(v, c, o.por.as_deref()).map(hecha),
         "actualizar_agente" => Ok(rechazada("Próximamente: las actualizaciones firmadas llegarán con la llave de publicación del proyecto.")),
         "guarda_copias" => {
             let (m, privado) = g::guarda_copias(c, o.responder_a.is_some())?;
@@ -1269,6 +1316,28 @@ fn orden_de(id: &str, o: &Value) -> Option<(Resultado, Option<String>, Vinculo)>
     })
 }
 
+/// v1.4x: las órdenes en espera de la consola `id` que ya tocan, justo después de hablar
+/// con ella (sus cancelaciones ya llegaron). Contesta a esa consola por HTTP (también
+/// con el canal abierto); si no responde, el resultado se guarda para cuando vuelva.
+/// Devuelve si aplicó alguna.
+fn aplicar_en_espera(id: &str) -> bool {
+    let hechas = crate::espera_v2::aplicar_las_que_tocan(id);
+    for a in &hechas {
+        if let Some(av) = &a.aviso {
+            let _ = llamar_ok(&a.credenciales, "/api/agente/aviso", &json!({ "tipo": "intentos_fallidos", "mensaje": av }));
+        }
+        if enviar_resultado(&a.credenciales, &a.orden, a.seq, &a.resultado).is_err() {
+            largas::guardar_resultado(&a.credenciales.id_enlace(), &a.orden, a.seq, &a.tipo, &a.resultado);
+        }
+    }
+    !hechas.is_empty()
+}
+
+/// La lista de ids de `canceladas` (de `tomar`), con tope.
+fn ids_de(v: &Value) -> Vec<String> {
+    v.as_array().map(|l| l.iter().filter_map(Value::as_str).take(500).map(str::to_string).collect()).unwrap_or_default()
+}
+
 // ---------- Sondeo ----------
 
 /// Una vuelta de sondeo: recoge las órdenes, las ejecuta y envía los resultados.
@@ -1314,6 +1383,9 @@ fn ronda_de(id: &str) -> Result<bool, String> {
     comprueba_identidad(&v, &reto, r["firma"].as_str().unwrap_or(""))?;
     // Responde: se anota (para los servidores de respaldo y el «último contacto»).
     anotar_contacto(id);
+    // v1.4x: su hora (para las órdenes en espera) y las que canceló.
+    crate::espera_v2::anotar_hora(id, &r);
+    crate::espera_v2::canceladas_por_su_consola(id, &ids_de(&r["canceladas"]));
     for o in r["ordenes"].as_array().cloned().unwrap_or_default() {
         // Con las credenciales de antes: una orden (desvincular) puede borrarlas.
         let Some((res, aviso, credenciales)) = orden_de(id, &o) else { break };
@@ -1327,10 +1399,17 @@ fn ronda_de(id: &str) -> Result<bool, String> {
         if let Some(a) = aviso {
             let _ = llamar_ok(&credenciales, "/api/agente/aviso", &json!({ "tipo": "intentos_fallidos", "mensaje": a }));
         }
-        let _ = enviar_resultado(&credenciales, o["id"].as_str().unwrap_or(""), o["seq"].as_u64().unwrap_or(0), &res);
+        // v1.4x: guardada en espera: no se contesta (en el servidor sigue «entregada»).
+        if res.estado != crate::espera_v2::EN_ESPERA {
+            let _ = enviar_resultado(&credenciales, o["id"].as_str().unwrap_or(""), o["seq"].as_u64().unwrap_or(0), &res);
+        }
         if crate::consolas_v2::vista(id).is_none_or(|w| cambiado_fuera(&v, &w)) {
             break; // se desvinculó (o cambió de servidor) con esta orden
         }
+    }
+    // v1.4x: las suyas en espera que ya tocan (después de sus cancelaciones).
+    if crate::consolas_v2::vista(id).is_some_and(|w| !cambiado_fuera(&v, &w)) {
+        aplicar_en_espera(id);
     }
     let Some(v) = crate::consolas_v2::vista(id) else { return Ok(false) };
     // v1.23: lo que falte del historial del equipo en este servidor.
@@ -1474,6 +1553,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     comprueba_identidad(&v, &reto, hola["firma"].as_str().unwrap_or(""))?;
     crate::agent::log(&format!("Canal con Resguardo Server abierto ({quien})."));
     anotar_contacto(id);
+    // v1.4x: su hora, para las órdenes en espera (también en cada latido).
+    crate::espera_v2::anotar_hora(id, &hola);
     let _ = ws.send(Message::Text(json!({ "t": "informe", "datos": informe_de(id) }).to_string().into()));
     // v1.23: el servidor dice hasta dónde tiene el historial del equipo; si es una
     // consola nueva (nada), se sube todo lo de los últimos 90 días.
@@ -1521,8 +1602,11 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                 let m: Value = serde_json::from_str(&t).unwrap_or(Value::Null);
                 match m["t"].as_str().unwrap_or("") {
                     "ping" => {
+                        crate::espera_v2::anotar_hora(id, &m);
                         let _ = ws.send(Message::Text(r#"{"t":"pong"}"#.into()));
                     }
+                    // v1.4x: esta consola canceló una orden suya que el equipo tiene en espera.
+                    "cancelada" => crate::espera_v2::canceladas_por_su_consola(id, &ids_de(&json!([m["orden"]]))),
                     // v1.30: el almacén aplicó la retención en un repositorio de este equipo.
                     // Solo una pista: se releen sus versiones (nada más; ver `pista_refrescar`).
                     "refrescar" => {
@@ -1547,9 +1631,12 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                         if let Some(a) = aviso {
                             let _ = ws.send(Message::Text(json!({ "t": "aviso", "tipo": "intentos_fallidos", "mensaje": a }).to_string().into()));
                         }
-                        let mut cuerpo = cuerpo_resultado(&credenciales, o["id"].as_str().unwrap_or(""), o["seq"].as_u64().unwrap_or(0), &res)?;
-                        cuerpo["t"] = json!("resultado");
-                        ws.send(Message::Text(cuerpo.to_string().into())).map_err(|e| e.to_string())?;
+                        // v1.4x: guardada en espera: no se contesta (en el servidor sigue «entregada»).
+                        if res.estado != crate::espera_v2::EN_ESPERA {
+                            let mut cuerpo = cuerpo_resultado(&credenciales, o["id"].as_str().unwrap_or(""), o["seq"].as_u64().unwrap_or(0), &res)?;
+                            cuerpo["t"] = json!("resultado");
+                            ws.send(Message::Text(cuerpo.to_string().into())).map_err(|e| e.to_string())?;
+                        }
                         visto = escrito();
                         if !sigue(&mut v) {
                             let _ = ws.close(None);
@@ -1574,6 +1661,15 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                 }
             }
             Err(e) => return Err(canal_cerrado(&e)),
+        }
+        // v1.4x: las órdenes en espera de esta consola que ya tocan (con el canal abierto:
+        // sus cancelaciones llegan por aquí).
+        if aplicar_en_espera(id) {
+            visto = escrito();
+            if !sigue(&mut v) {
+                let _ = ws.close(None);
+                return Ok(());
+            }
         }
         // Progreso de lo que está en marcha (v1.25): cada 5 s mientras dura y uno vacío al terminar.
         if let Some(tareas) = progreso.toca(crate::progreso_v2::CADA_CANAL, std::time::Instant::now(), || crate::progreso_v2::tareas(Some(&v))) {
@@ -2175,6 +2271,7 @@ mod tests {
             cuerpo,
             autorizacion,
             responder_a: None,
+            por: None,
         }
     }
 
