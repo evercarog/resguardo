@@ -129,7 +129,7 @@ Regla321 {
 En «Cambiar las copias», junto a «Añadir una copia»: **«Añadir con la plantilla 3-2-1 recomendada»**. Hace lo que se puede hoy y deja escrito lo que falta:
 
 1. **La copia** al almacén (la zona principal, «Disco D»), con un repositorio que ya esté en un almacén del cliente si lo hay.
-2. **Verificación automática** semanal (10 %) en ese repositorio, y la propuesta de **prueba de restauración mensual** (enlace a la página del repositorio, donde se programa).
+2. **Verificación automática** semanal (10 %) y **prueba de restauración automática** cada 30 días en ese repositorio (se envían con la copia; con un agente anterior, se dice que se haga a mano cada mes).
 3. **Espejo a otro disco** (zona E) **después de la anterior**: hoy, con el espejo flexible del almacén (un destino de carpeta en otro disco con «después de cada copia nueva»); el paso por copia es de la parte B.
 4. **Repositorio a partir del anterior en la nube** (B2 con bloqueo de objetos, o Dropbox) **después de la anterior**: hoy, la **copia externa** del repositorio (a B2 con bloqueo de objetos); la copia derivada «después de la anterior» es de la parte B.
 
@@ -147,7 +147,8 @@ En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.4x (pendiente d
 
 - Catálogo de destinos: `atributos?: { lugar?, inmutable?, soporte? }` en `GET` y `PUT`. Un `PUT` **sin** `atributos` deja los que había (una consola anterior que solo renombra no los borra); con `atributos: null` o `{}` se quitan. El nombre puede ir vacío solo si van `atributos` (marcar un destino sin ponerle nombre propio): el destino sigue con su nombre de siempre.
 - Resumen del agente: `sistema_archivos?` en `destinos[]` (locales), en `guarda_copias` (la principal), en `guarda_copias.zonas[]` y en `guarda_copias.espejo.destinos[]` (carpetas); y `entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra", contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" }` en la raíz del resumen. Solo nombres: nada de rutas. Una consola anterior los ignora.
-- Ninguna orden nueva y ningún cambio en los agentes instalados: la regla la calcula la consola con lo que ya mandan; los datos nuevos solo se enseñan.
+- Prueba de restauración automática desde la consola (para que el «0» se pueda cumplir en un equipo gestionado: hasta ahora solo la programaba la app de escritorio): `config.pruebas_restauracion: { "<repo>": { cada_dias } }` (1 a 31), como `verificaciones`; el resumen da `repositorios[].prueba_auto` y `admite: "prueba_auto"`. Un agente anterior ignora el campo y la consola no lo ofrece.
+- Ninguna orden nueva: la regla la calcula la consola con lo que ya mandan los equipos; los datos nuevos (sistema de archivos, entorno) solo se enseñan.
 
 ## Seguridad
 
@@ -155,3 +156,9 @@ En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.4x (pendiente d
 - La clave de las carpetas del espejo es un resumen (no la ruta).
 - Lo que dice la persona («instantáneas», «desconectado») solo cambia la guía: no cambia ninguna orden, ninguna espera ni lo que comprueba el agente.
 - Detectar contenedor o máquina virtual lee archivos del sistema (`/proc`, `/sys`, el registro de Windows) sin ejecutar programas.
+
+## Lo que queda
+
+- **Pasos de la cadena** (tarea 7, parte B): cuando estén en `main`, cada espejo por repositorio, copia derivada o copia «después de la anterior» entra en `reglaDeCopia` (`consola/src/lib/regla321.ts`, punto 4) como un paso más, con su lugar, su inmutabilidad, su soporte y su última vez bien; y la plantilla «3-2-1 recomendada» crea la cadena entera en vez de decir dónde hacer cada paso.
+- **Avisos por correo y canales** cuando una copia deja de cumplir: hace falta la regla en el servidor (hoy en el agente y la consola), junto al catálogo y a los resúmenes de todos los equipos. Hoy el aviso es solo en la consola (Estado), sin urgencia.
+- **La ventana del agente** podría enseñar la regla de sus copias con lo que sabe el equipo (`Facts.regla`); no se ha hecho.
