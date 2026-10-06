@@ -405,7 +405,14 @@ fn la_orden_destructiva_se_cierra_al_terminar_sin_volvio_a_funcionar() {
     p.pasada(T0 + 60);
     assert!(abierto());
     // Se aplicó: se cierra, sin «Volvió a funcionar».
-    let hecha = crate::almacen::ResultadoOrden { orden: o1.id.clone(), estado: "hecha".into(), mensaje: None, detalle: None, firma: "f".into() };
+    let hecha = crate::almacen::ResultadoOrden {
+        orden: o1.id.clone(),
+        estado: "hecha".into(),
+        mensaje: None,
+        detalle: None,
+        firma: "f".into(),
+        pisar_cancelada: false,
+    };
     assert!(p.st.db.resultado_orden(&p.ctx, "e1", &hecha).unwrap());
     // El aviso de la consola («puedes cancelarla…») sigue abierto mientras está pendiente…
     let pendientes = || p.st.db.avisos(&p.ctx, true).unwrap().into_iter().filter(|a| a.tipo == "orden_destructiva").count();

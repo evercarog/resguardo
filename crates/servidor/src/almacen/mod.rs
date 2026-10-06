@@ -209,6 +209,9 @@ pub struct ResultadoOrden {
     pub mensaje: Option<String>,
     pub detalle: Option<String>,
     pub firma: String,
+    /// v1.4x: también si ya estaba `cancelada` (el equipo la aplicó antes de saber que
+    /// se había cancelado: su resultado firmado manda).
+    pub pisar_cancelada: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -447,7 +450,9 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// filtros opcionales y cursor `antes` = (emitida, id) de la última recibida.
     fn ordenes_cliente(&self, c: &ClienteCtx, equipo: Option<&str>, estado: Option<&str>, antes: Option<(Ts, String)>, limite: i64) -> R<Vec<Orden>>;
     /// Órdenes que el agente aún no tiene (pendientes y sin caducar). Las marca como entregadas.
-    fn entregar_ordenes(&self, c: &ClienteCtx, equipo: &str, ahora: Ts) -> R<Vec<Orden>>;
+    /// Con `adelantar` (v1.4x, el agente admite `ordenes_en_espera`), también las que
+    /// piden autorización y aún esperan su `not_before`: el equipo las guarda en espera.
+    fn entregar_ordenes(&self, c: &ClienteCtx, equipo: &str, ahora: Ts, adelantar: bool) -> R<Vec<Orden>>;
     /// Las entregadas que el equipo no llegó a recibir (con un número mayor que el último
     /// que aceptó de este servidor: se perdieron en una conexión que ya estaba muerta)
     /// vuelven a pendientes, para entregarlas otra vez. Sin caducar. Devuelve cuántas.

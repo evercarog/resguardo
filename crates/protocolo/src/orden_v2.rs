@@ -51,6 +51,11 @@ pub struct OrdenV2 {
     /// X25519 pública efímera de la consola, para cifrarle el detalle del resultado.
     #[serde(default)]
     pub responder_a: Option<String>,
+    /// v1.4x: el nombre de quien la manda, como lo dice la consola (informativo:
+    /// el equipo lo enseña en sus órdenes en espera y en su historial). Un agente
+    /// anterior lo ignora.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub por: Option<String>,
 }
 
 /// Sella una orden para la clave pública X25519 del equipo (lo hace la consola).
@@ -83,6 +88,25 @@ pub fn abrir(sellado: &str, box_secret: &str, cx: &Contexto) -> Result<OrdenV2, 
 
 /// La parte de [`abrir`] después de descifrar (también para el fuzzing).
 pub fn validar(plano: &[u8], cx: &Contexto) -> Result<OrdenV2, String> {
+    validar_con_espera(plano, cx, false)
+}
+
+/// v1.4x (docs/consolas-multiples.md §5): como [`abrir`], pero, con `admite_espera`,
+/// una orden cuyo `not_before` aún no llegó no se rechaza (el equipo la guarda en
+/// espera y la aplica a su hora). Todo lo demás se comprueba igual; además, su
+/// `not_before` tiene que ser anterior a su caducidad.
+pub fn abrir_con_espera(sellado: &str, box_secret: &str, cx: &Contexto, admite_espera: bool) -> Result<OrdenV2, String> {
+    let plano = claves::open_bytes(box_secret, sellado)?;
+    validar_con_espera(&plano, cx, admite_espera)
+}
+
+/// ¿Hay que guardarla en espera? Su `not_before` está más allá de la holgura de relojes.
+pub fn espera_aun(o: &OrdenV2, ahora: i64) -> bool {
+    o.not_before.as_deref().and_then(|s| ts(s).ok()).is_some_and(|nb| nb > ahora + HOLGURA_S)
+}
+
+/// [`validar`] con la opción de admitir una orden cuya hora aún no llegó.
+pub fn validar_con_espera(plano: &[u8], cx: &Contexto, admite_espera: bool) -> Result<OrdenV2, String> {
     let o: OrdenV2 = serde_json::from_slice(plano).map_err(|_| "Orden no válida.".to_string())?;
     if o.v != 2 {
         return Err("Versión de orden no admitida.".into());
@@ -110,8 +134,11 @@ pub fn validar(plano: &[u8], cx: &Contexto) -> Result<OrdenV2, String> {
         return Err("Orden caducada.".into());
     }
     let nb = o.not_before.as_deref().map(ts).transpose()?;
-    if nb.is_some_and(|nb| nb > cx.ahora + HOLGURA_S) {
+    if nb.is_some_and(|nb| nb > cx.ahora + HOLGURA_S) && !admite_espera {
         return Err("Todavía no es la hora de esta orden.".into());
+    }
+    if nb.is_some_and(|nb| nb >= caduca) {
+        return Err("La orden caducaría antes de poder aplicarse.".into());
     }
     if tipo.destructiva && nb.is_none() {
         return Err("Una orden que reduce la protección tiene que llevar su espera (not_before).".into());
@@ -151,6 +178,7 @@ mod tests {
             cuerpo: serde_json::Value::Null,
             autorizacion: Autorizacion::default(),
             responder_a: None,
+            por: None,
         }
     }
 
@@ -177,6 +205,31 @@ mod tests {
         let mut caducada = orden(8, "copiar_ahora");
         caducada.caduca = (chrono::Local::now() - chrono::Duration::minutes(1)).to_rfc3339();
         assert!(validar(&serde_json::to_vec(&caducada).unwrap(), &cx(4, "copiar_ahora", 8)).unwrap_err().contains("caducada"));
+    }
+
+    /// v1.4x: con espera admitida, una orden cuya hora no llegó se abre (sin ella, se rechaza
+    /// como siempre); lo demás se comprueba igual, y su hora tiene que ser antes de caducar.
+    #[test]
+    fn orden_con_espera() {
+        let ahora = chrono::Local::now();
+        let mut o = orden(5, "pausar");
+        o.not_before = Some((ahora + chrono::Duration::hours(2)).to_rfc3339());
+        o.caduca = (ahora + chrono::Duration::hours(26)).to_rfc3339();
+        o.por = Some("Ana".into());
+        let plano = serde_json::to_vec(&o).unwrap();
+        assert!(validar(&plano, &cx(4, "pausar", 5)).unwrap_err().contains("hora"));
+        let abierta = validar_con_espera(&plano, &cx(4, "pausar", 5), true).unwrap();
+        assert!(espera_aun(&abierta, chrono::Utc::now().timestamp()));
+        assert_eq!(abierta.por.as_deref(), Some("Ana"));
+        // El seq sigue contando, y una que caducaría antes de su hora no vale.
+        assert!(validar_con_espera(&plano, &cx(5, "pausar", 5), true).is_err());
+        let mut tarde = o.clone();
+        tarde.caduca = (ahora + chrono::Duration::hours(1)).to_rfc3339();
+        assert!(validar_con_espera(&serde_json::to_vec(&tarde).unwrap(), &cx(4, "pausar", 5), true).unwrap_err().contains("caducaría"));
+        // Sin `por` (una consola anterior): se lee igual.
+        let mut sin = serde_json::to_value(&o).unwrap();
+        sin.as_object_mut().unwrap().remove("por");
+        assert!(validar_con_espera(&serde_json::to_vec(&sin).unwrap(), &cx(4, "pausar", 5), true).unwrap().por.is_none());
     }
 
     #[test]

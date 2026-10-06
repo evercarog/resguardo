@@ -330,13 +330,28 @@ fn firma_identidad(st: &St, reto: &str, equipo: &str) -> Res<String> {
     Ok(B64.encode(st.identidad.sign(derivaciones::texto_identidad_servidor(reto, equipo).as_bytes()).to_bytes()))
 }
 
+/// v1.4x (consolas-multiples.md §5): ¿el agente de este equipo guarda en espera las
+/// órdenes que aún no tocan? Lo dice su resumen (`admite: ["ordenes_en_espera"]`).
+pub(crate) fn admite_espera(db: &dyn crate::almacen::Almacen, ctx: &ClienteCtx, equipo: &str) -> crate::almacen::R<bool> {
+    Ok(db
+        .equipo(ctx, equipo)?
+        .and_then(|e| e.resumen)
+        .is_some_and(|r| r.get("admite").and_then(Value::as_array).is_some_and(|l| l.iter().any(|x| x.as_str() == Some("ordenes_en_espera")))))
+}
+
 /// Manda al agente conectado las órdenes que ya tocan y las cancelaciones.
 pub async fn empujar(st: &St, ctx: &ClienteCtx, equipo: &str) {
     if !st.conectado(equipo) {
         return;
     }
     let (ctx2, e2) = (ctx.clone(), equipo.to_string());
-    let Ok((ordenes, canceladas)) = st.db(move |db| Ok((db.entregar_ordenes(&ctx2, &e2, ahora())?, db.canceladas_sin_avisar(&ctx2, &e2)?))).await else {
+    let Ok((ordenes, canceladas)) = st
+        .db(move |db| {
+            let adelantar = admite_espera(db, &ctx2, &e2)?;
+            Ok((db.entregar_ordenes(&ctx2, &e2, ahora(), adelantar)?, db.canceladas_sin_avisar(&ctx2, &e2)?))
+        })
+        .await
+    else {
         return;
     };
     for o in &ordenes {
@@ -398,10 +413,29 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         .flatten()
         .and_then(|d| d["espera_min_horas"].as_i64())
         .filter(|h| (1..=168).contains(h));
-    let (orden_id, estado) = (r.orden.clone(), r.estado.clone());
-    let res = crate::almacen::ResultadoOrden { orden: r.orden, estado: r.estado, mensaje, detalle: r.detalle, firma: r.firma };
+    // v1.4x (consolas-multiples.md §5.7): otra consola la canceló en el equipo mientras esperaba.
+    // El equipo lo dice firmado (`rechazada` con `detalle.cancelada`): aquí queda «cancelada».
+    let cancelada_en_equipo =
+        r.estado == "rechazada" && r.detalle.as_deref().and_then(|d| serde_json::from_str::<Value>(d).ok()).is_some_and(|d| d["cancelada"] == true);
+    // Y al revés: se canceló aquí, pero el equipo ya la había aplicado (no le llegó a tiempo).
+    // Su resultado firmado manda, y se avisa: nunca «cancelada» algo que se aplicó.
+    let aplicada_pese = orden.estado == "cancelada" && matches!(r.estado.as_str(), "en_marcha" | "hecha" | "fallida");
+    let estado_guardado = if cancelada_en_equipo { "cancelada".to_string() } else { r.estado.clone() };
+    let (orden_id, estado) = (r.orden.clone(), estado_guardado.clone());
+    let tipo_orden = orden.tipo.clone();
+    let res =
+        crate::almacen::ResultadoOrden { orden: r.orden, estado: estado_guardado, mensaje, detalle: r.detalle, firma: r.firma, pisar_cancelada: aplicada_pese };
     st.db(move |db| {
         db.resultado_orden(&ctx, &equipo, &res)?;
+        if aplicada_pese {
+            crate::notificaciones::aviso(
+                db,
+                &ctx,
+                Some(&equipo),
+                "cambio_inusual",
+                &format!("Se aplicó una orden que se había cancelado («{tipo_orden}»): el equipo no recibió la cancelación a tiempo."),
+            )?;
+        }
         if alta_hecha {
             db.alta_hecha(&ctx, &equipo)?;
         }
@@ -430,8 +464,11 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         Ok(())
     })
     .await?;
-    if destructiva_terminada {
+    if destructiva_terminada || aplicada_pese {
         st.notif.despertar.notify_one();
+    }
+    if aplicada_pese {
+        st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
     }
     st.vivo.avisar(a.ctx.id(), Cambio::Orden { equipo: &a.equipo, orden: &orden_id, estado: &estado });
     if trasladado || deja_el_servidor || nueva_espera.is_some() {
@@ -572,7 +609,8 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
     Ok(())
 }
 
-const TIPOS_AVISO: &[&str] = &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual"];
+/// v1.4x: `orden_en_espera` (otra consola mandó una orden que el equipo tiene en espera).
+const TIPOS_AVISO: &[&str] = &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual", "orden_en_espera"];
 
 #[derive(Deserialize)]
 pub struct Aviso {
@@ -602,10 +640,12 @@ const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
 /// v1.4x: una vuelta de la retención lleva las versiones que quitó (como mucho 2000; el agente la recorta a 96 KiB).
 pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
 /// v1.4x: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
-pub const TIPOS_HISTORIAL: &[&str] = &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial"];
+/// v1.4x: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
+pub const TIPOS_HISTORIAL: &[&str] =
+    &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial", "orden"];
 /// Los que solo se dan si se piden con `tipo` (v1.4x): una consola anterior no los conoce
-/// y son grandes. Sin `tipo`, el historial es el de siempre.
-pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion"];
+/// (o son grandes). Sin `tipo`, el historial es el de siempre.
+pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion", "orden"];
 /// Vueltas de la retención con la lista de versiones por equipo; las anteriores, solo con sus cifras.
 pub const RETENCIONES_CON_DETALLE: i64 = 50;
 /// 2000-01-01: nada de antes (ni de más de un día en el futuro, por los relojes).
@@ -751,7 +791,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
     let (ordenes, canceladas, atencion, sesiones, ultima) = st
         .db(move |db| {
             let ahora = ahora();
-            let ordenes = db.entregar_ordenes(&ctx, &equipo, ahora)?;
+            let adelantar = admite_espera(db, &ctx, &equipo)?;
+            let ordenes = db.entregar_ordenes(&ctx, &equipo, ahora, adelantar)?;
             let canceladas = db.canceladas_sin_avisar(&ctx, &equipo)?;
             let sesiones = db.sesiones_abiertas(&ctx, &equipo, ahora)?;
             let atencion = db.equipo(&ctx, &equipo)?.and_then(|e| e.atencion_hasta).is_some_and(|t| t > ahora) || !sesiones.is_empty();
@@ -769,6 +810,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
         "atencion": atencion,
         "sesiones": sesiones,
         "historial": { "ultima": crate::api::fecha_opt(ultima) },
+        // v1.4x: la hora del servidor, para las órdenes en espera (el equipo la usa además de la suya).
+        "ahora": crate::api::fecha(ahora()),
     })))
 }
 
@@ -957,7 +1000,11 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
         .await
         .unwrap_or((false, None));
     // v1.23: hasta dónde tiene el historial del equipo (el agente sube lo que falte).
-    let _ = tx.send(json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) } }).to_string());
+    // v1.4x: `ahora`, la hora del servidor (para las órdenes en espera; también en cada latido).
+    let _ = tx.send(
+        json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) }, "ahora": crate::api::fecha(ahora()) })
+            .to_string(),
+    );
     // Lo que estaba esperando (y lo que se entregó y quizá no llegó).
     empujar(&st, &a.ctx, &a.equipo).await;
 
@@ -993,7 +1040,7 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
                 if visto.elapsed() > SIN_RESPUESTA_AGENTE {
                     break;
                 }
-                if tx.send(json!({ "t": "ping" }).to_string()).is_err() {
+                if tx.send(json!({ "t": "ping", "ahora": crate::api::fecha(ahora()) }).to_string()).is_err() {
                     break;
                 }
                 // El último contacto, solo si de verdad contesta.
