@@ -816,9 +816,11 @@ fn estado_de(result: &str) -> &'static str {
 /// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
 /// v1.40: `verificacion_horario` (la verificación automática con un horario de reglas) y
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
+/// v1.4x: `ordenes_en_espera` (guarda las órdenes con espera y las aplica a su hora,
+/// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 10] = [
+pub const ADMITE: [&str; 11] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -828,6 +830,7 @@ pub const ADMITE: [&str; 10] = [
     "retencion_almacen_horario",
     // v1.46: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
     "externa_existente",
+    "ordenes_en_espera",
     "espejo_flexible",
     // (pendiente de numerar) "conectar_nube" también con B2, S3, SFTP, SMB y WebDAV (docs/espejo.md §3c).
     "espejo_destinos",
@@ -930,6 +933,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         // v1.36: las consolas que gestionan el equipo (esta, `esta: true`) y de cuál vino el último cambio.
         "consolas": crate::consolas_v2::resumen(v),
         "cambio_config": crate::consolas_v2::resumen_cambio(v),
+        // v1.4x: las órdenes con espera que tiene el equipo (de cualquiera de sus consolas).
+        "en_espera": crate::espera_v2::resumen(v),
     })
 }
 

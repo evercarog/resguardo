@@ -8,6 +8,9 @@
   //    consola (con SU sal) y se manda `anadir_consola`, sellada, a cada equipo:
   //    la ficha nunca pasa en claro por este servidor.
   // 3) Una lista enseña cómo va cada equipo hasta que todos terminan.
+  // Desde el aviso «Equipos que no están en todas las consolas»
+  // (AvisoConsolas.svelte) llega con la consola esperada (la que ya tienen los
+  // demás equipos) y los equipos que le faltan ya elegidos.
   import { onDestroy } from "svelte";
   import { CircleCheck, CircleX, KeyRound, LoaderCircle, Monitor, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
@@ -25,7 +28,23 @@
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import CampoClave from "./CampoClave.svelte";
 
-  let { cliente, equipos, onclose, alTerminar }: { cliente: Cliente; equipos: Equipo[]; onclose: () => void; alTerminar?: () => void } = $props();
+  let {
+    cliente,
+    equipos,
+    onclose,
+    alTerminar,
+    esperada,
+    soloEquipos,
+  }: {
+    cliente: Cliente;
+    equipos: Equipo[];
+    onclose: () => void;
+    alTerminar?: () => void;
+    /** La consola a la que se quiere conectar (la que ya tienen otros equipos del cliente). */
+    esperada?: { identidad: string; nombre: string; url: string };
+    /** Los equipos que se eligen de entrada (si no, todos los que se puede). */
+    soloEquipos?: string[];
+  } = $props();
 
   let paso = $state<"codigo" | "equipos" | "progreso">("codigo");
   let pegado = $state("");
@@ -43,17 +62,22 @@
   const codigo = $derived(pegado.trim() ? leerCodigo(pegado, new Date(), [location.origin, urlAgentes()]) : null);
   const datos = $derived(codigo && typeof codigo !== "string" ? (codigo as CodigoConexion) : null);
   const activos = $derived(equipos.filter((e) => e.confirmado && e.modo === "gestionado"));
+  /** ¿El código es de la consola esperada? (la identidad es lo que fijan los equipos) */
+  const coincide = $derived(!!(esperada && datos && datos.identidad === esperada.identidad));
   /** Por qué un equipo no puede (o no hace falta): su agente es anterior, o ya está conectado. */
   const motivo = (e: Equipo) => {
     if (datos && e.resumen?.consolas?.some((x) => x.identidad === datos.identidad)) return "ya la tiene";
-    if (!e.resumen?.admite?.includes("consolas_multiples")) return "actualiza el agente";
+    if (!e.resumen) return "aún no ha informado: espera a que se conecte";
+    if (!e.resumen.admite?.includes("consolas_multiples")) return "actualiza el agente";
     return null;
   };
   $effect(() => {
-    for (const e of activos) if (!(e.id in elegidos)) elegidos[e.id] = !motivo(e);
+    for (const e of activos) if (!(e.id in elegidos)) elegidos[e.id] = !motivo(e) && (!soloEquipos || soloEquipos.includes(e.id));
   });
   const aConectar = $derived(activos.filter((e) => elegidos[e.id] && !motivo(e)));
   const terminadas = $derived(enviadas.filter((x) => x.error || (x.orden && ["hecha", "fallida", "rechazada", "cancelada", "caducada"].includes(x.orden.estado))).length);
+  /** Repetirla en un equipo que ya la tiene es inofensivo: el equipo contesta «ya gestiona este equipo» y no cambia nada. */
+  const yaEstaba = (o: Orden | null) => !!o && o.estado === "fallida" && /ya gestiona este equipo/i.test(o.mensaje ?? "");
 
   onDestroy(() => {
     claveAdmin = pegado = "";
@@ -134,7 +158,7 @@
   <div class="dlg-title">
     <span class="ticon"><Monitor size={18} /></span>
     <div>
-      <h2 id="t-conectar">Conectar también a otra consola</h2>
+      <h2 id="t-conectar">{esperada ? `Conectar también a «${esperada.nombre}»` : "Conectar también a otra consola"}</h2>
       <p>Los equipos de «{cliente.nombre}» seguirán aquí y, además, se podrán gestionar desde la otra consola. Cada una funciona sola: si quitas una, la otra sigue igual.</p>
     </div>
   </div>
@@ -142,6 +166,7 @@
   {#if paso === "codigo"}
     <div class="form">
       <ol class="guia">
+        {#if esperada}<li>Los demás equipos ya están en <strong>{esperada.nombre}</strong> ({hostDe(esperada.url)}). Pide allí un código de conexión para este cliente.</li>{/if}
         <li>En la <strong>otra consola</strong>: <strong>Clientes → Recibir un cliente → «Gestionarlo también desde aquí»</strong> (o, si el cliente ya existe allí, en su página <strong>Servidor → «Dar un código de conexión»</strong>).</li>
         <li>Te dará un <strong>código de conexión</strong> (empieza por «RGC1.»). Pégalo aquí.</li>
       </ol>
@@ -159,6 +184,17 @@
           {#if datos.cliente}<div><span class="faint">Cliente allí</span><span>{datos.cliente}</span></div>{/if}
           <div><span class="faint">Vale hasta</span><span>{fechaLarga(datos.caduca)}</span></div>
         </div>
+        {#if esperada && coincide}
+          <div class="notice notice-success">
+            <CircleCheck size={16} />
+            <p>Es <strong>{esperada.nombre}</strong>: la misma identidad que ya tienen fijada los demás equipos de este cliente.</p>
+          </div>
+        {:else if esperada}
+          <div class="notice notice-warn" role="alert">
+            <TriangleAlert size={16} />
+            <p>Este código <strong>no es de {esperada.nombre}</strong>: es de otra consola (otra identidad). Si no esperabas conectar los equipos a otra, no sigas.</p>
+          </div>
+        {/if}
         <div class="notice notice-warn">
           <ShieldCheck size={16} />
           <p>Compara de palabra (por teléfono, en persona) la <strong>identidad</strong> y la <strong>autoridad TLS</strong> con quien administra la otra consola. Esa consola verá los nombres y el estado de los equipos, como esta; nunca las contraseñas ni los archivos.</p>
@@ -203,7 +239,7 @@
     <div class="form">
       <ul class="progreso" aria-live="polite">
         {#each enviadas as x (x.equipo.id)}
-          {@const est = x.error ? "fallida" : (x.orden?.estado ?? "enviando")}
+          {@const est = x.error ? "fallida" : yaEstaba(x.orden) ? "hecha" : (x.orden?.estado ?? "enviando")}
           <li>
             <span class="icono">
               {#if est === "hecha"}<CircleCheck size={16} class="ok" />
@@ -211,7 +247,7 @@
               {:else}<LoaderCircle size={16} class="spin" />{/if}
             </span>
             <span class="nombre">{x.equipo.nombre}</span>
-            <span class="faint">{x.error ?? (x.orden ? (ESTADO[x.orden.estado] ?? x.orden.estado) + (x.orden.mensaje && x.orden.estado !== "hecha" ? ` · ${x.orden.mensaje}` : "") : "Enviando…")}</span>
+            <span class="faint">{x.error ?? (yaEstaba(x.orden) ? "Ya estaba conectado: no hacía falta nada" : x.orden ? (ESTADO[x.orden.estado] ?? x.orden.estado) + (x.orden.mensaje && x.orden.estado !== "hecha" ? ` · ${x.orden.mensaje}` : "") : "Enviando…")}</span>
           </li>
         {/each}
       </ul>

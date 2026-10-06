@@ -35,13 +35,14 @@ import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
 import { etiquetaValida, kCfg, materialCliente } from "../../src/lib/cripto/claves";
 import { ClaveNueva } from "../../src/lib/cambioClave";
 import { crearCodigo, cuerpoAnadir, leerCodigo } from "../../src/lib/conexion";
+import { fraseEquipo, otrasConsolas } from "../../src/lib/consolasCliente";
 import { publicaRespaldo, salRespaldo } from "../../src/lib/cripto/respaldo";
 import { almacenDe, nuevaClave, reglaParaOrden, seQuedan } from "../../src/lib/retencion";
 import { vueltasDelRepo, type EntradaRetencion } from "../../src/lib/retencionDetalle";
 import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../src/lib/repo";
 import { proximaDe } from "../../src/lib/copia";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
-import type { Cliente, Regla } from "../../src/lib/tipos";
+import type { Cliente, Equipo, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
 import { OyenteVivo } from "./vivo";
 import { borrarCarpeta, BuzonSmtp, comprobar, dormir, EXE, ejecutar, esperar, Fallo, igual, log, paso, pasoEnCurso, pararTodo, puertoLibre, WIN } from "./entorno";
@@ -834,6 +835,27 @@ async function principal() {
     await consola2.hecha(c2, eqB2.id, "cambiar_espera", { horas: 3 }, { claveAdmin: claveB });
     await esperar("la espera de la consola local en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).espera_min_horas === 3, { plazo: 60_000, cada: 1000 });
 
+    // Tarea 2 («Equipos que no están en todas las consolas»): la consola local sabe, por el
+    // resumen de B, que el cliente también está en la en línea (lib/consolasCliente.ts).
+    const eB8 = await consola2.equipo(c2, eqB2.id);
+    const otras8 = otrasConsolas([eB8], Date.now());
+    comprobar(otras8.length === 1 && otras8[0].identidad === srv3.identidad && otras8[0].nombre === "Consola en línea" && !otras8[0].sin.length, "La local sabe que el cliente está también en la en línea (y B no falta)", otras8);
+    // Un equipo nuevo del cliente que solo estuviera aquí faltaría allí, con la frase del alta.
+    const soloAqui: Equipo = { ...eB8, id: "equipo-nuevo", nombre: "PORTATIL-NUEVO", resumen: { admite: ["consolas_multiples"], consolas: eB8.resumen!.consolas!.filter((x) => x.esta) } };
+    const conNuevo = otrasConsolas([eB8, soloAqui], Date.now());
+    igual(conNuevo[0].sin.map((e) => e.id), ["equipo-nuevo"], "El equipo que solo está aquí falta en la en línea");
+    igual(fraseEquipo(soloAqui, conNuevo[0], [eB8, soloAqui]), "Este equipo solo está en esta consola; los demás también están en «Consola en línea».", "La frase del alta");
+    // Repetir «Conectar también» con un equipo que ya está allí es inofensivo: el equipo
+    // contesta «ya gestiona este equipo» y nada cambia (ni allí ni aquí).
+    const equipos3 = ((await consola3.ok("GET", `/api/clientes/${c3.id}/equipos`)) as Equipo[]).length;
+    const repetida = await consola2.resultado(c2, eqB2.id, await consola2.mandar(c2, eqB2.id, "anadir_consola", await anadir(), { claveAdmin: claveB }));
+    comprobar(repetida.estado === "fallida" && /ya gestiona este equipo/.test(repetida.mensaje ?? ""), "Repetir anadir_consola: «ya gestiona este equipo»", repetida);
+    igual(((await consola3.ok("GET", `/api/clientes/${c3.id}/equipos`)) as Equipo[]).length, equipos3, "La en línea sigue con los mismos equipos");
+    const eB8b = await consola3.equipo(c3, eqB2.id);
+    comprobar(eB8b.conectado && eB8b.resumen?.consolas?.length === 2, "B sigue conectado a las dos", eB8b.resumen?.consolas);
+    await consola3.hecha(c3, eqB2.id, "cambiar_espera", { horas: 3 }, { claveAdmin: claveB });
+    log("Repetir «Conectar también» no cambia nada; la en línea sigue mandando");
+
     // -----------------------------------------------------------------------
     paso("8a. «Mover a otro sitio…» desde la consola local: la en línea lo ve (progreso y, al terminar, en el historial)");
     // Como MoverRepositorio.svelte: el repositorio nuevo con el mismo troceado y luego el historial, con `mover`.
@@ -882,6 +904,50 @@ async function principal() {
       const p = (await consola3.ok("GET", `/api/clientes/${c3.id}/progreso`)) as any[];
       return !p.flatMap((x) => x.tareas ?? []).some((t: any) => t.tipo === "historial") || null;
     }, { plazo: 30_000, cada: 1000 });
+
+    // -----------------------------------------------------------------------
+    paso("8a2. Órdenes en espera: la en línea ve una destructiva de la local, la cancela y nunca se aplica; otra se aplica a su hora");
+    // v1.4x (docs/consolas-multiples.md §5). Con su espera de verdad (3 h): el equipo la recibe ya y la guarda.
+    const srv2Id = (await consola2.ok("GET", "/api/servidor")).identidad;
+    const pausa = await consola2.mandar(c2, eqB2.id, "pausar", {}, { claveAdmin: claveB }, { esperar: true });
+    const enEspera3 = (await esperar("la orden en espera de la local en el resumen de la en línea", async () => {
+      const e = await consola3.equipo(c3, eqB2.id);
+      return (e.resumen?.en_espera ?? []).find((x: any) => x.id === pausa.id) ?? null;
+    }, { plazo: 60_000, cada: 1000 })) as any;
+    comprobar(enEspera3.consola.esta === false && enEspera3.consola.identidad === srv2Id && enEspera3.por === "Ana", "La en línea sabe desde qué consola vino y quién la pidió", enEspera3);
+    comprobar(!JSON.stringify(enEspera3).includes(s2.url), "Sin la dirección de la otra consola", enEspera3);
+    igual((await consola2.resultado(c2, eqB2.id, pausa, { estados: ["entregada"], plazo: 30_000 })).estado, "entregada", "En la local, entregada (el equipo la tiene en espera)");
+    await esperar("el aviso «Orden en espera desde otra consola» en la en línea", async () => {
+      const av = (await consola3.ok("GET", `/api/clientes/${c3.id}/avisos?abiertos=1`)) as any[];
+      return av.some((a) => a.tipo === "orden_en_espera") || null;
+    }, { plazo: 60_000, cada: 1000 });
+    log("La consola en línea ve la orden de la local y recibió el aviso");
+    // La en línea la cancela (inofensiva, sin clave) y la local se entera.
+    const cancelada = await consola3.hecha(c3, eqB2.id, "cancelar_espera", { id: pausa.id });
+    log(`cancelar_espera: ${cancelada.mensaje}`);
+    // `rechazada` firmada por el equipo, con `detalle.cancelada` (la firma comprobada como en la consola).
+    const enLocal = await consola2.resultado(c2, eqB2.id, pausa, { estados: ["rechazada"], plazo: 60_000 });
+    comprobar(/otra consola/.test(enLocal.mensaje ?? "") && /"cancelada":true/.test(enLocal.detalle ?? ""), "La local la ve cancelada desde otra consola", enLocal);
+    await esperar("la cancelación en el historial común (en la local)", async () => {
+      const h = (await consola2.ok("GET", `/api/clientes/${c2.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
+      return h.find((x) => x.orden_id === pausa.id && x.resultado === "cancelada" && x.cancelada_desde) ?? null;
+    }, { plazo: 60_000, cada: 1000 });
+    comprobar(!((await consola2.equipo(c2, eqB2.id)).resumen?.pausado_hasta), "La pausa nunca se aplicó");
+    // Otra destructiva con una espera corta (pausar 1 h): no se aplica antes de tiempo, y sí a su hora.
+    const pausaCorta = await consola2.mandar(c2, eqB2.id, "pausar", { horas: 1 }, { claveAdmin: claveB }, { esperaS: 25 });
+    await dormir(8_000);
+    igual((await consola2.resultado(c2, eqB2.id, pausaCorta, { estados: ["entregada"], plazo: 10_000 })).estado, "entregada", "Antes de su hora sigue en espera");
+    comprobar(!((await consola2.equipo(c2, eqB2.id)).resumen?.pausado_hasta), "…y no se aplicó");
+    const aplicada = await consola2.resultado(c2, eqB2.id, pausaCorta, { plazo: 90_000 });
+    igual(aplicada.estado, "hecha", `A su hora se aplica (${aplicada.mensaje})`);
+    await esperar("la pausa en la en línea", async () => !!(await consola3.equipo(c3, eqB2.id)).resumen?.pausado_hasta || null, { plazo: 60_000, cada: 1000 });
+    await esperar("la orden aplicada en el historial común (en la en línea)", async () => {
+      const h = (await consola3.ok("GET", `/api/clientes/${c3.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
+      return h.find((x) => x.orden_id === pausaCorta.id && x.resultado === "hecha" && x.identidad === srv2Id) ?? null;
+    }, { plazo: 60_000, cada: 1000 });
+    // Y se reanuda (inofensiva: al momento) para lo que sigue.
+    await consola2.hecha(c2, eqB2.id, "reanudar", {});
+    log("Órdenes en espera entre consolas: bien");
 
     // -----------------------------------------------------------------------
     paso("8b. Cambiar la clave de administración desde la consola local, con la en línea conectada");

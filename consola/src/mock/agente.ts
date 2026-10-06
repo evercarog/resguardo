@@ -516,6 +516,14 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       return resultado(e, o, "hecha", `Quitada la consola ${x.nombre} (${x.url}): ya no gestiona este equipo.`);
     }
+    // v1.4x: cancelar una orden en espera (de cualquiera de las consolas del equipo).
+    case "cancelar_espera": {
+      const lista = e.resumen?.en_espera ?? [];
+      const x = lista.find((y) => y.id === c.id);
+      if (!x) return resultado(e, o, "fallida", "Esa orden ya no está esperando: se aplicó, se canceló o caducó.");
+      e.resumen!.en_espera = lista.filter((y) => y !== x);
+      return resultado(e, o, "hecha", `Cancelada: ${x.descripcion ?? x.tipo} (la mandó «${x.consola.nombre ?? "otra consola"}»). No se aplicará.`);
+    }
     case "servidores_respaldo": {
       const lista = (c.servidores ?? []) as { url?: string; identidad?: string; ficha?: string }[];
       const dias = Number(c.dias ?? 3);

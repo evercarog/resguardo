@@ -135,6 +135,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   aplicar_retencion_almacen: "Aplicar la retención en el almacén",
   anadir_consola: "Conectar también a otra consola",
   quitar_consola: "Quitar una consola",
+  cancelar_espera: "Cancelar una orden en espera",
 };
 
 export const nombreOrden = (t: string) => NOMBRE_ORDEN[t] ?? t.replaceAll("_", " ");

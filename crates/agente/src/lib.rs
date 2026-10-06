@@ -42,6 +42,9 @@ pub mod escritorio;
 pub mod espacio;
 pub mod espejo;
 pub mod espejo_motor;
+#[cfg(test)]
+mod espera_it;
+pub mod espera_v2;
 pub mod ganchos;
 pub mod gestion_v2;
 pub mod history;

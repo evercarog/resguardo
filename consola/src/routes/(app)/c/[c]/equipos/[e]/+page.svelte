@@ -98,6 +98,7 @@
   import { comprobacionLugar, lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
+  import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
   import FormRepoExistente from "$lib/componentes/FormRepoExistente.svelte";
   import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
@@ -834,6 +835,7 @@
         </div>
       </section>
     {/if}
+    {#if !trasladado && actual.cliente}<AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} {equipo} ahora={reloj.ahora} />{/if}
 
     {#if llaves === "cambiada"}
       <AlertaLlaves {equipo} cliente={c} />
