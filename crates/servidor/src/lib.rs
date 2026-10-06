@@ -8,6 +8,7 @@
 pub mod acme;
 pub mod agentes;
 pub mod almacen;
+pub mod ancla;
 pub mod api;
 pub mod auth;
 #[cfg(feature = "consola-integrada")]

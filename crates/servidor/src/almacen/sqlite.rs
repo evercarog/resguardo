@@ -1770,6 +1770,20 @@ mod tests {
         assert!(db.execute("DELETE FROM auditoria WHERE n = 2", []).is_err());
     }
 
+    /// Las mismas huellas que calcula la consola (`consola/scripts/vectores-auditoria.ts`),
+    /// que con ellas comprueba la cadena contra un ancla (plan-mejoras 9b).
+    #[test]
+    fn huellas_de_la_auditoria_como_en_la_consola() {
+        let h1 = hash_entrada(GENESIS, 1, 1_790_000_000, "cuenta:ana@ejemplo.com", "crear_cliente", "cl-norte", r#"{"nombre":"Ferretería Rambla"}"#);
+        assert_eq!(h1, "e891152ddde045e2a42c97dce84ab501d4420a91c33548482f6b7d3b85675cde");
+        let h2 = hash_entrada(&h1, 2, 1_790_000_060, "cuenta:ana@ejemplo.com", "renombrar_cliente", "cl-norte", "{}");
+        assert_eq!(h2, "db30da97f801c28f8d8b60a40f0d77fe5f3588fbe03e42f2ebd991d7f9d4bc3e");
+        assert_eq!(
+            resguardo_protocolo::derivaciones::linea_ancla("cl-norte", 2, 1_790_000_060, &h2),
+            "resguardo-ancla:1:cl-norte:2:1790000060:db30da97f801c28f8d8b60a40f0d77fe5f3588fbe03e42f2ebd991d7f9d4bc3e"
+        );
+    }
+
     #[test]
     fn equipos_que_nunca_se_confirmaron() {
         let (_d, a) = almacen();

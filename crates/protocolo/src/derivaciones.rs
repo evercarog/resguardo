@@ -115,6 +115,19 @@ pub fn texto_identidad_servidor(reto_b64: &str, equipo: &str) -> String {
     format!("resguardo-servidor-v1|{reto_b64}|{equipo}")
 }
 
+/// Texto que firma el servidor con el ancla de la auditoría de un cliente (v1.4x,
+/// plan-mejoras 9b): la entrada `n` de su cadena, de `creado` (segundos Unix), tiene la
+/// huella `hash`. El agente la comprueba con la identidad que fijó al vincular.
+pub fn texto_ancla_auditoria(cliente: &str, n: u64, creado: i64, hash: &str) -> String {
+    format!("resguardo-ancla-auditoria-v1|{cliente}|{n}|{creado}|{hash}")
+}
+
+/// El ancla en una línea, para el correo y para pegarla en «Comprobar con un ancla»
+/// (la consola la lee en `lib/auditoria.ts`, `leerAncla`).
+pub fn linea_ancla(cliente: &str, n: u64, creado: i64, hash: &str) -> String {
+    format!("resguardo-ancla:1:{cliente}:{n}:{creado}:{hash}")
+}
+
 /// Texto que firma el agente con el resultado de una orden.
 pub fn texto_resultado(orden: &str, seq: u64, estado: &str, mensaje: Option<&str>, detalle: Option<&str>) -> String {
     format!("resguardo-resultado-v1|{orden}|{seq}|{estado}|{}|{}", mensaje.unwrap_or(""), detalle.unwrap_or(""))

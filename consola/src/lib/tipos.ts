@@ -700,7 +700,9 @@ export type TipoAviso =
   | "retencion_fallida"
   | "cambio_clave"
   // v1.4x: otra consola mandó una orden que el equipo tiene en espera.
-  | "orden_en_espera";
+  | "orden_en_espera"
+  // v1.4x (9b): un equipo vio que una de sus consolas rehízo su actividad.
+  | "auditoria_rehecha";
 
 /**
  * v1.23: una entrada del historial que guarda el propio equipo (para siempre:
@@ -711,7 +713,7 @@ export type TipoAviso =
 export interface EntradaHistorial {
   id: string;
   hora: string;
-  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial" | "orden";
+  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial" | "orden" | "auditoria_rehecha";
   repo?: string;
   /** v1.47, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
   origen?: string;
@@ -740,10 +742,19 @@ export interface EntradaHistorial {
   orden?: string;
   orden_id?: string;
   descripcion?: string;
+  /** «orden»: la identidad de la consola que la mandó; «auditoria_rehecha»: la de la consola que rehízo su actividad. */
   identidad?: string;
   por?: string;
   aplica?: string;
   cancelada_desde?: string;
+  /**
+   * v1.4x (9b), solo «auditoria_rehecha»: una consola del equipo rehízo la cadena de su
+   * actividad. `consola` es su nombre en el equipo; `antes` y `ahora`, las dos cabezas
+   * que no cuadran.
+   */
+  antes?: { n: number; creado: number; hash: string };
+  ahora?: { n: number; creado: number; hash: string };
+  motivo?: "retrocede" | "otra_huella";
   /** Solo «resumen_dia» (vueltas de una copia de un día de hace más de un año). */
   dia?: string;
   ok?: number;
