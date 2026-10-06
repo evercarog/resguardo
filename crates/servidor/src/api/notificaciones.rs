@@ -336,7 +336,7 @@ pub async fn ver_cliente(State(st): State<St>, u: Usuario, Path(c): Path<String>
                 .filter(|k| {
                     k.tipo != ajustes::TipoCanal::Correo && k.activo && ajustes::completo(k) && k.reglas.clientes.as_ref().is_none_or(|l| l.contains(&c))
                 })
-                .map(|k| json!({ "nombre": k.nombre, "tipo": k.tipo, "severidades": k.reglas.severidades }))
+                .map(|k| json!({ "id": k.id, "nombre": k.nombre, "tipo": k.tipo, "severidades": k.reglas.severidades }))
                 .collect();
             Ok(json!({
                 "canales": propios.canales.iter().map(ajustes::vista_canal).collect::<Vec<_>>(),
@@ -388,7 +388,7 @@ fn vista_prefs(p: &PrefsCliente, propias: bool) -> Value {
     // De más a menos grave.
     let mut inmediatos = p.inmediatos.clone();
     inmediatos.sort_by(|a, b| b.cmp(a));
-    json!({ "inmediatos": inmediatos, "resumen": p.resumen, "propias": propias })
+    json!({ "inmediatos": inmediatos, "resumen": p.resumen, "propias": propias, "etiquetas": p.etiquetas })
 }
 
 /// `GET /api/clientes/{c}/notificaciones/personas` (propietario): qué recibe cada persona por correo.
@@ -416,6 +416,10 @@ pub async fn personas(State(st): State<St>, u: Usuario, Path(c): Path<String>) -
 pub struct CambioPrefs {
     inmediatos: Vec<Severidad>,
     resumen: bool,
+    /// v1.4x: lo que quiere de los equipos con ciertas etiquetas. Sin el campo (una consola
+    /// anterior), se conservan las que tuviera.
+    #[serde(default)]
+    etiquetas: Option<Vec<ajustes::PrefEtiqueta>>,
 }
 
 /// `PUT /api/clientes/{c}/notificaciones/personas/{cuenta}`: el propietario del cliente, o la propia persona.
@@ -425,15 +429,26 @@ pub async fn poner_prefs(State(st): State<St>, u: Usuario, Path((c, cuenta)): Pa
     let mut inmediatos = p.inmediatos;
     inmediatos.sort();
     inmediatos.dedup();
-    let prefs = PrefsCliente { inmediatos, resumen: p.resumen };
+    let etiquetas = p.etiquetas.as_deref().map(ajustes::valida_prefs_etiquetas).transpose().map_err(ErrorApi::datos)?;
     let actor = actor(&u);
     let r = st
         .db_crudo(move |db| {
-            if !db.miembros(&c)?.iter().any(|m| m.cuenta == cuenta) {
+            let Some(m) = db.miembros(&c)?.into_iter().find(|m| m.cuenta == cuenta) else {
                 return Err("no_existe".into());
-            }
+            };
+            let etiquetas = match etiquetas {
+                Some(e) => e,
+                None => ajustes::prefs_cliente(db, &c, &cuenta, m.rol)?.0.etiquetas,
+            };
+            let prefs = PrefsCliente { inmediatos, resumen: p.resumen, etiquetas };
             ajustes::guardar_prefs_cliente(db, &c, &cuenta, &prefs)?;
-            db.auditar(&ctx, &actor, "notificaciones_preferencias", &cuenta, &json!({ "inmediatos": prefs.inmediatos, "resumen": prefs.resumen }).to_string())?;
+            db.auditar(
+                &ctx,
+                &actor,
+                "notificaciones_preferencias",
+                &cuenta,
+                &json!({ "inmediatos": prefs.inmediatos, "resumen": prefs.resumen, "etiquetas": prefs.etiquetas }).to_string(),
+            )?;
             Ok(prefs)
         })
         .await?
@@ -455,7 +470,19 @@ pub async fn mias(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
                 let (p, propias) = ajustes::prefs_cliente(db, &cl.id, &id, rol)?;
                 let propios = ajustes::ajustes_cliente(db, &cl.id)?;
                 let correo = notif::correo_de(&a, &propios, &cl.id).is_some();
-                clientes.push(json!({ "id": cl.id, "nombre": cl.nombre, "rol": rol.texto(), "correo": correo, "preferencias": vista_prefs(&p, propias) }));
+                // v1.4x: las etiquetas que usan sus equipos (para elegir avisos por etiqueta).
+                let mut etiquetas: Vec<String> = Vec::new();
+                for e in db.equipos(&crate::almacen::ClienteCtx::autorizado(&cl.id))? {
+                    for t in e.etiquetas {
+                        if !etiquetas.iter().any(|x| x.to_lowercase() == t.to_lowercase()) {
+                            etiquetas.push(t);
+                        }
+                    }
+                }
+                etiquetas.sort_by_key(|t| t.to_lowercase());
+                clientes.push(json!({
+                    "id": cl.id, "nombre": cl.nombre, "rol": rol.texto(), "correo": correo, "preferencias": vista_prefs(&p, propias), "etiquetas": etiquetas,
+                }));
             }
             Ok(json!({
                 "silencio": persona.silencio, "resumen_diario": persona.resumen_diario, "resumen_semanal": persona.resumen_semanal,

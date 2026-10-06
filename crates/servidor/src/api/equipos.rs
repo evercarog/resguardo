@@ -20,12 +20,15 @@ pub async fn listar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> 
 
 pub async fn resumen(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, MIEMBRO).await?;
-    let (equipos, avisos, pendientes) =
-        st.db(move |db| Ok((db.equipos(&ctx)?, db.avisos(&ctx, true)?.len(), db.ordenes_con_espera(&ctx, ahora())?.len()))).await?;
+    let (equipos, avisos, pendientes, etiquetas) = st
+        .db(move |db| Ok((db.equipos(&ctx)?, db.avisos(&ctx, true)?.len(), db.ordenes_con_espera(&ctx, ahora())?.len(), db.ajustes_etiquetas(&ctx)?)))
+        .await?;
     Ok(Json(json!({
         "equipos": equipos.iter().map(|e| equipo_json(e, st.conectado(&e.id))).collect::<Vec<_>>(),
         "avisos_abiertos": avisos,
         "pendientes": pendientes,
+        // v1.4x: los ajustes de las etiquetas (color, plantilla por defecto, avisos).
+        "etiquetas": etiquetas.iter().map(super::etiquetas::vista).collect::<Vec<_>>(),
     })))
 }
 

@@ -193,17 +193,62 @@ pub struct PrefsCliente {
     pub inmediatos: Vec<Severidad>,
     /// ¿Entra este cliente en sus resúmenes?
     pub resumen: bool,
+    /// v1.4x: lo que quiere de los equipos con ciertas etiquetas, en lugar de `inmediatos`
+    /// (p. ej. de los de «Servidores», todo; de los de «Pruebas», nada).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub etiquetas: Vec<PrefEtiqueta>,
 }
+
+/// Las gravedades que una persona quiere al momento de los equipos con una etiqueta.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PrefEtiqueta {
+    pub etiqueta: String,
+    pub inmediatos: Vec<Severidad>,
+}
+
+/// Como mucho, preferencias por etiqueta de una persona en un cliente.
+pub const MAX_PREFS_ETIQUETA: usize = 50;
 
 impl PrefsCliente {
     /// Si la persona no ha dicho nada: según su papel.
     pub fn por_defecto(rol: Rol) -> Self {
         match rol {
-            Rol::Propietario | Rol::Administrador => Self { inmediatos: vec![Severidad::Critico, Severidad::Importante], resumen: true },
-            Rol::Tecnico => Self { inmediatos: vec![Severidad::Critico], resumen: false },
-            Rol::Lectura => Self { inmediatos: vec![], resumen: false },
+            Rol::Propietario | Rol::Administrador => Self { inmediatos: vec![Severidad::Critico, Severidad::Importante], resumen: true, etiquetas: vec![] },
+            Rol::Tecnico => Self { inmediatos: vec![Severidad::Critico], resumen: false, etiquetas: vec![] },
+            Rol::Lectura => Self { inmediatos: vec![], resumen: false, etiquetas: vec![] },
         }
     }
+
+    /// Lo que quiere al momento de un equipo con estas etiquetas: si alguna tiene
+    /// preferencia propia, lo que pida cualquiera de ellas (la unión); si no, lo general.
+    pub fn inmediatos_para(&self, etiquetas: &[String]) -> Vec<Severidad> {
+        let propias: Vec<&PrefEtiqueta> = self.etiquetas.iter().filter(|p| etiquetas.iter().any(|e| e.to_lowercase() == p.etiqueta.to_lowercase())).collect();
+        if propias.is_empty() {
+            return self.inmediatos.clone();
+        }
+        let mut out: Vec<Severidad> = propias.iter().flat_map(|p| p.inmediatos.iter().copied()).collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
+/// Limpia las preferencias por etiqueta: nombres válidos, sin repetir (la última manda),
+/// gravedades ordenadas y sin repetir.
+pub fn valida_prefs_etiquetas(xs: &[PrefEtiqueta]) -> Result<Vec<PrefEtiqueta>, String> {
+    if xs.len() > MAX_PREFS_ETIQUETA {
+        return Err(format!("Como mucho {MAX_PREFS_ETIQUETA} etiquetas con avisos propios."));
+    }
+    let mut out: Vec<PrefEtiqueta> = Vec::new();
+    for p in xs {
+        let nombre = crate::api::normalizar_etiqueta(&p.etiqueta)?;
+        let mut inmediatos = p.inmediatos.clone();
+        inmediatos.sort();
+        inmediatos.dedup();
+        out.retain(|o| o.etiqueta.to_lowercase() != nombre.to_lowercase());
+        out.push(PrefEtiqueta { etiqueta: nombre, inmediatos });
+    }
+    Ok(out)
 }
 
 // ---------- Leer y guardar ----------
@@ -610,6 +655,32 @@ pub fn abrir_secretos(c: &Canal, clave: &Clave, ambito: &str) -> BTreeMap<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preferencias_por_etiqueta() {
+        let pe = |e: &str, s: Vec<Severidad>| PrefEtiqueta { etiqueta: e.into(), inmediatos: s };
+        let p = PrefsCliente {
+            inmediatos: vec![Severidad::Critico],
+            resumen: false,
+            etiquetas: vec![pe("Servidores", vec![Severidad::Importante, Severidad::Critico]), pe("Pruebas", vec![])],
+        };
+        let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(p.inmediatos_para(&[]), vec![Severidad::Critico], "sin etiquetas: lo general");
+        assert_eq!(p.inmediatos_para(&v(&["Sede norte"])), vec![Severidad::Critico]);
+        assert_eq!(p.inmediatos_para(&v(&["servidores"])), vec![Severidad::Importante, Severidad::Critico], "sin distinguir mayúsculas");
+        assert!(p.inmediatos_para(&v(&["Pruebas"])).is_empty(), "nada de los de pruebas");
+        assert_eq!(p.inmediatos_para(&v(&["Pruebas", "Servidores"])), vec![Severidad::Importante, Severidad::Critico], "la unión");
+        // Limpiar: nombres válidos, sin repetir (la última manda), gravedades sin repetir.
+        let l =
+            valida_prefs_etiquetas(&[pe(" Servidores ", vec![Severidad::Critico, Severidad::Critico]), pe("servidores", vec![Severidad::Importante])]).unwrap();
+        assert_eq!(l, vec![pe("servidores", vec![Severidad::Importante])]);
+        assert!(valida_prefs_etiquetas(&[pe("a,b", vec![])]).is_err());
+        assert!(valida_prefs_etiquetas(&vec![pe("x", vec![]); MAX_PREFS_ETIQUETA + 1]).is_err());
+        // Una preferencia guardada por una versión anterior (sin `etiquetas`) se sigue leyendo.
+        let vieja: PrefsCliente = serde_json::from_str(r#"{"inmediatos":["critico"],"resumen":true}"#).unwrap();
+        assert!(vieja.etiquetas.is_empty());
+        assert!(!serde_json::to_string(&vieja).unwrap().contains("etiquetas"), "sin etiquetas, el JSON de siempre");
+    }
 
     fn clave() -> Clave {
         Clave::fija([3; 32])

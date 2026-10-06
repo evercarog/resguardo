@@ -529,9 +529,43 @@ struct Ocurre<'a> {
     crear_aviso: bool,
 }
 
+/// Lo que dicen las etiquetas de un equipo para sus avisos (v1.4x): sus etiquetas (para las
+/// preferencias de cada persona), la importancia que piden y los canales que avisan siempre.
+#[derive(Clone, Debug, Default)]
+pub struct DeEtiquetas {
+    pub etiquetas: Vec<String>,
+    pub importancia: Vec<Severidad>,
+    pub canales: Vec<crate::almacen::CanalRef>,
+}
+
+/// Lo de las etiquetas del equipo (vacío si no hay equipo o no tiene).
+pub fn de_etiquetas(db: &dyn Almacen, cliente: &str, equipo: Option<&str>) -> R<DeEtiquetas> {
+    let Some(eq) = equipo else { return Ok(DeEtiquetas::default()) };
+    let ctx = ClienteCtx::autorizado(cliente);
+    let etiquetas = db.equipo(&ctx, eq)?.map(|e| e.etiquetas).unwrap_or_default();
+    if etiquetas.is_empty() {
+        return Ok(DeEtiquetas::default());
+    }
+    let mut out = DeEtiquetas { etiquetas, ..Default::default() };
+    for a in db.ajustes_etiquetas(&ctx)? {
+        let Some(av) = a.avisos else { continue };
+        if !out.etiquetas.iter().any(|e| e.to_lowercase() == a.nombre.to_lowercase()) {
+            continue;
+        }
+        out.importancia.extend(av.importancia);
+        for c in av.canales {
+            if !out.canales.contains(&c) {
+                out.canales.push(c);
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn ocurre(db: &dyn Almacen, o: Ocurre<'_>, ahora: Ts) -> R<()> {
     let prev = db.notif_incidente(&o.clave)?;
-    let sev = reglas::severidad(o.tipo);
+    let de = de_etiquetas(db, o.cliente, o.equipo)?;
+    let sev = reglas::severidad_con_etiquetas(reglas::severidad(o.tipo), &de.importancia);
     let hora = o.cuando.unwrap_or(ahora).min(ahora);
     let paso = reglas::al_ocurrir(prev.as_ref(), ahora, o.marca, o.cuando);
     let (mut inc, avisar) = match paso {
@@ -585,7 +619,7 @@ fn ocurre(db: &dyn Almacen, o: Ocurre<'_>, ahora: Ts) -> R<()> {
             hora,
             ruta: ruta(o.cliente, o.equipo, o.tipo),
         };
-        let n = encolar_aviso(db, o.cliente, sev, Some(&inc.clave), &Mensaje::Aviso(alerta), ahora)?;
+        let n = encolar_aviso(db, o.cliente, sev, &de, Some(&inc.clave), &Mensaje::Aviso(alerta), ahora)?;
         if n > 0 {
             inc.notificado = Some(ahora);
         }
@@ -634,7 +668,7 @@ fn cerrar(db: &dyn Almacen, mut inc: Incidente, avisar: bool, titulo_ok: &str, n
             ruta: ruta(&inc.cliente, inc.equipo.as_deref(), &inc.tipo),
         };
         let ajustes = ajustes::ajustes(db)?;
-        let todos = destinos(db, &ajustes, &inc.cliente, None)?;
+        let todos = destinos(db, &ajustes, &inc.cliente, None, &DeEtiquetas::default())?;
         for (ambito, canal, destino) in recibieron {
             // Solo a quien aún puede recibirlo (sigue en el cliente y el canal sigue ahí).
             let Some(d) = todos.iter().find(|d| d.ambito == ambito && d.canal.id == canal && d.destino == destino) else { continue };
@@ -699,32 +733,37 @@ pub fn correo_de(ajustes: &Ajustes, cliente: &ajustes::AjustesCliente, id_client
 }
 
 /// Los destinos de un cliente para una gravedad (`None`: todos los posibles, sin mirar la gravedad).
-pub fn destinos(db: &dyn Almacen, ajustes: &Ajustes, cliente: &str, sev: Option<Severidad>) -> R<Vec<Destino>> {
+/// `de`: lo de las etiquetas del equipo (v1.4x): las preferencias de cada persona para ellas
+/// y los canales que reciben siempre sus avisos.
+pub fn destinos(db: &dyn Almacen, ajustes: &Ajustes, cliente: &str, sev: Option<Severidad>, de: &DeEtiquetas) -> R<Vec<Destino>> {
     let propios = ajustes::ajustes_cliente(db, cliente)?;
     let mut out = Vec::new();
     if let Some((ambito, canal)) = correo_de(ajustes, &propios, cliente) {
         for m in db.miembros(cliente)? {
             let (p, _) = ajustes::prefs_cliente(db, cliente, &m.cuenta, m.rol)?;
-            if sev.is_none_or(|s| p.inmediatos.contains(&s)) {
+            if sev.is_none_or(|s| p.inmediatos_para(&de.etiquetas).contains(&s)) {
                 let persona = ajustes::prefs_persona(db, &m.cuenta)?;
                 out.push(Destino { ambito: ambito.clone(), canal: canal.clone(), destino: m.correo.clone(), silencio: persona.silencio });
             }
         }
     }
-    let compartido = |c: &Canal| c.tipo != TipoCanal::Correo && c.activo && ajustes::completo(c) && sev.is_none_or(|s| c.reglas.severidades.contains(&s));
-    for c in ajustes.canales.iter().filter(|c| compartido(c) && c.reglas.clientes.as_ref().is_none_or(|l| l.iter().any(|x| x == cliente))) {
+    let siempre = |ambito: &str, c: &Canal| de.canales.iter().any(|r| r.ambito == ambito && r.id == c.id);
+    let compartido = |ambito: &str, c: &Canal| {
+        c.tipo != TipoCanal::Correo && c.activo && ajustes::completo(c) && (sev.is_none_or(|s| c.reglas.severidades.contains(&s)) || siempre(ambito, c))
+    };
+    for c in ajustes.canales.iter().filter(|c| compartido("servidor", c) && c.reglas.clientes.as_ref().is_none_or(|l| l.iter().any(|x| x == cliente))) {
         out.push(Destino { ambito: "servidor".into(), canal: c.clone(), destino: String::new(), silencio: c.reglas.silencio.clone() });
     }
-    for c in propios.canales.iter().filter(|c| compartido(c)) {
+    for c in propios.canales.iter().filter(|c| compartido("cliente", c)) {
         out.push(Destino { ambito: ambito_cliente(cliente), canal: c.clone(), destino: String::new(), silencio: c.reglas.silencio.clone() });
     }
     Ok(out)
 }
 
 /// Pone en la cola un aviso para todos los que lo quieren. Devuelve cuántos envíos.
-fn encolar_aviso(db: &dyn Almacen, cliente: &str, sev: Severidad, incidente: Option<&str>, m: &Mensaje, ahora: Ts) -> R<usize> {
+fn encolar_aviso(db: &dyn Almacen, cliente: &str, sev: Severidad, de: &DeEtiquetas, incidente: Option<&str>, m: &Mensaje, ahora: Ts) -> R<usize> {
     let ajustes = ajustes::ajustes(db)?;
-    let ds = destinos(db, &ajustes, cliente, Some(sev))?;
+    let ds = destinos(db, &ajustes, cliente, Some(sev), de)?;
     for d in &ds {
         encolar_uno(db, &d.ambito, Some(cliente), &d.canal.id, &d.destino, d.silencio.as_ref(), sev, incidente, m, ahora)?;
     }
