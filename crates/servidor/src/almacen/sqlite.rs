@@ -223,6 +223,10 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     if !tiene("emparejamientos", "sas_version")? {
         db.execute_batch("ALTER TABLE emparejamientos ADD COLUMN sas_version INTEGER").map_err(s)?;
     }
+    // Tarea 8: lo que dice la persona de cada destino para la regla 3-2-1-1-0 (JSON).
+    if !tiene("destinos", "atributos")? {
+        db.execute_batch("ALTER TABLE destinos ADD COLUMN atributos TEXT").map_err(s)?;
+    }
     Ok(())
 }
 
@@ -1359,27 +1363,37 @@ impl Almacen for Sqlite {
     // ---------- Catálogo de destinos (tarea 7a) ----------
     fn destinos_catalogo(&self, c: &ClienteCtx) -> R<Vec<DestinoCatalogo>> {
         self.con(c, |db| {
-            let mut st = db.prepare("SELECT id, nombre, tipo, donde, actualizado, por FROM destinos ORDER BY nombre COLLATE NOCASE, id").map_err(s)?;
+            let mut st =
+                db.prepare("SELECT id, nombre, tipo, donde, actualizado, por, atributos FROM destinos ORDER BY nombre COLLATE NOCASE, id").map_err(s)?;
             let filas = st
                 .query_map([], |r| {
-                    Ok(DestinoCatalogo { id: r.get(0)?, nombre: r.get(1)?, tipo: r.get(2)?, donde: r.get(3)?, actualizado: r.get(4)?, por: r.get(5)? })
+                    Ok(DestinoCatalogo {
+                        id: r.get(0)?,
+                        nombre: r.get(1)?,
+                        tipo: r.get(2)?,
+                        donde: r.get(3)?,
+                        actualizado: r.get(4)?,
+                        por: r.get(5)?,
+                        atributos: r.get(6)?,
+                    })
                 })
                 .map_err(s)?;
             filas.collect::<Result<Vec<_>, _>>().map_err(s)
         })
     }
-    fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize) -> R<bool> {
+    fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize, mantener_atributos: bool) -> R<bool> {
         self.con(c, |db| {
             let existe: bool = db.query_row("SELECT 1 FROM destinos WHERE id = ?1", [&d.id], |_| Ok(true)).optional().map_err(s)?.unwrap_or(false);
             let n: i64 = db.query_row("SELECT COUNT(*) FROM destinos", [], |r| r.get(0)).map_err(s)?;
             if !existe && n as usize >= maximo {
                 return Ok(false);
             }
-            db.execute(
-                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6",
-                params![d.id, d.nombre, d.tipo, d.donde, d.actualizado, d.por],
-            )
-            .map_err(s)?;
+            let sql = if mantener_atributos {
+                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por, atributos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6"
+            } else {
+                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por, atributos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6, atributos = ?7"
+            };
+            db.execute(sql, params![d.id, d.nombre, d.tipo, d.donde, d.actualizado, d.por, d.atributos]).map_err(s)?;
             Ok(true)
         })
     }
