@@ -35,6 +35,7 @@
     HardDrive,
     History,
     Info,
+    LayoutTemplate,
     Laptop,
     Monitor,
     Pencil,
@@ -71,7 +72,7 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import EditorEtiquetas from "$lib/componentes/EditorEtiquetas.svelte";
-  import { filtroEtiqueta } from "$lib/etiquetas.svelte";
+  import { filtroEtiqueta, plantillasPropuestas } from "$lib/etiquetas.svelte";
   import PendienteItem from "$lib/componentes/PendienteItem.svelte";
   import { pendientesDe, terminada } from "$lib/pendientes.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
@@ -836,6 +837,18 @@
       </section>
     {/if}
     {#if !trasladado && actual.cliente}<AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} {equipo} ahora={reloj.ahora} />{/if}
+    {#if !trasladado && puede.administrar(rol)}
+      <!-- v1.4x: la plantilla de sus etiquetas, para un equipo aún sin copias (nunca se aplica sola). -->
+      {#each plantillasPropuestas(equipo, actual.etiquetas) as pp (pp.plantilla)}
+        <div class="notice notice-info">
+          <LayoutTemplate size={16} />
+          <p>
+            {pp.etiquetas.length === 1 ? `La etiqueta «${pp.etiquetas[0]}» tiene` : `Las etiquetas ${pp.etiquetas.map((t) => `«${t}»`).join(" y ")} tienen`} una plantilla para los equipos nuevos y {equipo.nombre} aún no tiene copias.
+            <a class="notice-action" href="/c/{c}/equipos/{equipo.id}/copias?plantilla={encodeURIComponent(pp.plantilla)}">Usarla (pide la clave)</a>
+          </p>
+        </div>
+      {/each}
+    {/if}
 
     {#if llaves === "cambiada"}
       <AlertaLlaves {equipo} cliente={c} />

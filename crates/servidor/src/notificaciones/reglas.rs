@@ -35,6 +35,16 @@ pub fn severidad(tipo: &str) -> Severidad {
     }
 }
 
+/// v1.4x: la gravedad de un aviso de un equipo cuyas etiquetas piden más importancia.
+/// Sube hasta la más alta que pidan, pero solo lo que ya es importante o crítico de por sí
+/// (lo informativo no se vuelve urgente). Nunca baja.
+pub fn severidad_con_etiquetas(base: Severidad, pedidas: &[Severidad]) -> Severidad {
+    if base == Severidad::Informativo {
+        return base;
+    }
+    pedidas.iter().copied().fold(base, Severidad::max)
+}
+
 /// Qué hacer cuando vuelve a pasar algo (por la clave del incidente).
 #[derive(Debug, PartialEq, Eq)]
 pub enum Paso {
@@ -211,6 +221,16 @@ mod tests {
         assert_eq!(espera_reintento(40), 3600);
         assert_eq!(cupo(3, 10), 7);
         assert_eq!(cupo(12, 10), 0);
+    }
+
+    #[test]
+    fn gravedad_por_etiquetas() {
+        use Severidad::*;
+        assert_eq!(severidad_con_etiquetas(Importante, &[Critico]), Critico);
+        assert_eq!(severidad_con_etiquetas(Critico, &[Importante]), Critico, "nunca baja");
+        assert_eq!(severidad_con_etiquetas(Importante, &[]), Importante);
+        assert_eq!(severidad_con_etiquetas(Informativo, &[Critico]), Informativo, "lo informativo no sube");
+        assert_eq!(severidad_con_etiquetas(Importante, &[Importante, Critico]), Critico);
     }
 
     #[test]

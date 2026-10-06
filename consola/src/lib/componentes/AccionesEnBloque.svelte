@@ -1,21 +1,27 @@
 <script lang="ts">
-  // Acciones en bloque sobre varios equipos: «Copiar ahora» y «Verificar».
-  // Con `copias` («equipo|copia», desde la lista de Copias), solo esas copias.
-  // Cada equipo recibe sus propias órdenes, selladas para él como siempre
-  // (inofensivas: no piden clave). Primero se dice qué va a pasar; después,
-  // la lista de equipos con lo que contesta cada uno. Nada destructivo se
-  // ofrece en bloque.
-  import { Check, CircleAlert, LoaderCircle, Play, ShieldCheck, WifiOff, X } from "@lucide/svelte";
+  // Acciones en bloque sobre varios equipos: «Copiar ahora», «Verificar» y
+  // (v1.4x, tarea 6) «Pausar» y «Reanudar». Con `copias` («equipo|copia»,
+  // desde la lista de Copias), solo esas copias. Cada equipo recibe sus propias
+  // órdenes, selladas para él como siempre. Copiar, verificar y reanudar son
+  // inofensivas (no piden clave). Pausar pide la clave de administración (se
+  // calcula una vez para el cliente y se comprueba equipo a equipo) y, como en
+  // la ficha, espera la espera mínima: se puede cancelar en «Órdenes». Primero
+  // se dice qué va a pasar; después, la lista de equipos con lo que contesta
+  // cada uno. Nada que borre se ofrece en bloque.
+  import { Check, CircleAlert, CirclePause, CirclePlay, LoaderCircle, Play, ShieldCheck, WifiOff, X } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
-  import { mandarOrden } from "$lib/ordenar";
-  import { plural } from "$lib/formato";
+  import { borrar } from "$lib/cripto/bytes";
+  import { etiquetaValida } from "$lib/cripto/claves";
+  import { kcfgDelCliente, mandarOrden, pruebaParaEquipo } from "$lib/ordenar";
+  import { plural, relativo } from "$lib/formato";
   import { cargarCliente } from "$lib/estado.svelte";
   import type { Cliente, Equipo, Orden } from "$lib/tipos";
   import BotonCargando from "./BotonCargando.svelte";
+  import CampoClave from "./CampoClave.svelte";
 
-  type Accion = "copiar" | "verificar";
+  type Accion = "copiar" | "verificar" | "pausar" | "reanudar";
   let { cliente, equipos, accion, copias = null, onclose }: { cliente: Cliente; equipos: Equipo[]; accion: Accion; copias?: Set<string> | null; onclose: () => void } = $props();
 
   interface Tarea {
@@ -23,20 +29,46 @@
     cuerpo: Record<string, unknown>;
     que: string;
   }
+  /** Pausar: cuántas horas (0 = hasta reanudar), como en la ficha del equipo. */
+  let horas = $state(24);
+  let clave = $state("");
+  let errorClave = $state("");
+  let preparando = $state(false);
+  const HORAS: [number, string][] = [
+    [4, "4 horas"],
+    [24, "1 día"],
+    [72, "3 días"],
+    [168, "1 semana"],
+    [0, "Hasta que las reanude"],
+  ];
+  const activas = (e: Equipo) => (e.resumen?.copias ?? []).filter((k) => k.activa !== false);
   /** Lo que se pedirá a cada equipo (vacío: no tiene nada que hacer). */
   const plan = $derived(
     equipos.map((e) => {
-      const tareas: Tarea[] =
-        accion === "copiar"
-          ? (e.resumen?.copias ?? []).filter((k) => k.activa !== false && (!copias || copias.has(`${e.id}|${k.id}`))).map((k) => ({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, que: k.nombre }))
-          : (e.resumen?.repositorios ?? []).filter((r) => !r.solo_lectura && (r.versiones ?? 0) > 0).map((r) => ({ tipo: "verificar_ahora", cuerpo: { repo: r.id }, que: r.nombre }));
+      let tareas: Tarea[] = [];
+      if (accion === "copiar") tareas = activas(e).filter((k) => !copias || copias.has(`${e.id}|${k.id}`)).map((k) => ({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, que: k.nombre }));
+      else if (accion === "verificar") tareas = (e.resumen?.repositorios ?? []).filter((r) => !r.solo_lectura && (r.versiones ?? 0) > 0).map((r) => ({ tipo: "verificar_ahora", cuerpo: { repo: r.id }, que: r.nombre }));
+      else if (accion === "pausar") tareas = activas(e).length ? [{ tipo: "pausar", cuerpo: { repo: "", horas }, que: plural(activas(e).length, "copia automática", "copias automáticas") }] : [];
+      else tareas = e.resumen?.pausado_hasta ? [{ tipo: "reanudar", cuerpo: { repo: "" }, que: e.resumen.pausado_hasta === "indefinido" ? "en pausa hasta que alguien la reanude" : `en pausa hasta ${relativo(e.resumen.pausado_hasta)}` }] : [];
       return { equipo: e, tareas };
     }),
   );
   const conTareas = $derived(plan.filter((p) => p.tareas.length));
   const sinTareas = $derived(plan.filter((p) => !p.tareas.length));
   const total = $derived(conTareas.reduce((n, p) => n + p.tareas.length, 0));
-  const TITULO = $derived(copias ? { copiar: "Copiar ahora las copias elegidas", verificar: "Verificar varios equipos" } : { copiar: "Copiar ahora en varios equipos", verificar: "Verificar varios equipos" });
+  const TITULO = $derived(
+    copias
+      ? { copiar: "Copiar ahora las copias elegidas", verificar: "Verificar varios equipos", pausar: "Pausar varios equipos", reanudar: "Reanudar varios equipos" }
+      : { copiar: "Copiar ahora en varios equipos", verificar: "Verificar varios equipos", pausar: "Pausar las copias de varios equipos", reanudar: "Reanudar las copias de varios equipos" },
+  );
+  const BOTON: Record<Accion, string> = { copiar: "Copiar ahora", verificar: "Verificar", pausar: "Pausar", reanudar: "Reanudar" };
+  const SALTA: Record<Accion, string> = {
+    copiar: "Sin copias activas: se salta",
+    verificar: "Sin versiones que verificar: se salta",
+    pausar: "Sin copias automáticas: se salta",
+    reanudar: "No está en pausa: se salta",
+  };
+  const NINGUNO: Record<Accion, string> = { copiar: "copias activas", verificar: "repositorios con versiones", pausar: "copias automáticas", reanudar: "copias en pausa" };
 
   type Estado = { fase: "cola" | "enviando" | "esperando" | "fin"; ordenes: Orden[]; error?: string };
   let estados = $state<Record<string, Estado>>({});
@@ -44,8 +76,28 @@
   let terminado = $state(false);
 
   const FINAL = ["hecha", "fallida", "rechazada", "cancelada", "caducada"];
+  /** Una orden con espera (pausar) se queda en el servidor hasta su hora: no se espera aquí. */
+  const programada = (o: Orden) => !!o.not_before && Date.parse(o.not_before) > Date.now() && !FINAL.includes(o.estado);
 
   async function ejecutar() {
+    errorClave = "";
+    let kcfg: Uint8Array | null = null;
+    if (accion === "pausar") {
+      if (!clave) return void (errorClave = "Escribe la clave de administración.");
+      preparando = true;
+      try {
+        kcfg = await kcfgDelCliente(cliente, clave);
+      } catch (e) {
+        return void (errorClave = (e as Error).message);
+      } finally {
+        preparando = false;
+      }
+      // Si no abre ninguno de los equipos, la clave no es la del cliente: no se empieza.
+      if (!conTareas.some((p) => etiquetaValida(kcfg!, p.equipo))) {
+        borrar(kcfg);
+        return void (errorClave = "La clave de administración no es correcta. No se ha enviado nada.");
+      }
+    }
     enMarcha = true;
     for (const p of conTareas) estados[p.equipo.id] = { fase: "cola", ordenes: [] };
     // Hasta 3 equipos a la vez; dentro de cada equipo, una orden tras otra (su número crece).
@@ -56,20 +108,29 @@
         const est = estados[p.equipo.id];
         est.fase = "enviando";
         let eq = p.equipo;
+        let prueba: Uint8Array | null = null;
         try {
+          if (kcfg) prueba = await pruebaParaEquipo(cliente, eq, clave, kcfg);
           for (const t of p.tareas) {
-            const o = await mandarOrden({ cliente, equipo: eq, tipo: t.tipo, cuerpo: t.cuerpo });
+            const o = await mandarOrden({ cliente, equipo: eq, tipo: t.tipo, cuerpo: t.cuerpo, secretos: prueba ? { prueba } : undefined });
             est.ordenes = [...est.ordenes, o];
             eq = { ...eq, siguiente_seq: o.seq + 1 };
           }
-          est.fase = "esperando";
+          est.fase = est.ordenes.every(programada) ? "fin" : "esperando";
         } catch (e) {
           est.error = (e as Error).message;
           est.fase = est.ordenes.length ? "esperando" : "fin";
+        } finally {
+          borrar(prueba);
         }
       }
     };
-    await Promise.all([trabajador(), trabajador(), trabajador()]);
+    try {
+      await Promise.all([trabajador(), trabajador(), trabajador()]);
+    } finally {
+      borrar(kcfg);
+      clave = "";
+    }
     void cargarCliente(cliente.id, { silencioso: true });
     seguir();
   }
@@ -89,7 +150,7 @@
           try {
             const l = await enFondo(() => api.ordenesEquipo(cliente.id, id, 30));
             s.ordenes = s.ordenes.map((o) => l.find((x) => x.id === o.id) ?? o);
-            if (s.ordenes.every((o) => FINAL.includes(o.estado))) s.fase = "fin";
+            if (s.ordenes.every((o) => FINAL.includes(o.estado) || programada(o))) s.fase = "fin";
           } catch {
             /* se reintenta */
           }
@@ -106,7 +167,19 @@
     const malas = s.ordenes.filter((o) => ["fallida", "rechazada", "caducada"].includes(o.estado));
     if (s.error && !s.ordenes.length) return { tono: "bad", texto: s.error };
     if (malas.length) return { tono: "bad", texto: malas[0].mensaje ?? `${malas.length} sin hacer` };
-    if (s.fase === "fin") return { tono: "ok", texto: accion === "copiar" ? `${plural(hechas, "copia pedida", "copias pedidas")}: el equipo la${hechas === 1 ? "" : "s"} está haciendo` : `${plural(hechas, "verificación pedida", "verificaciones pedidas")}` };
+    const prog = s.ordenes.find(programada);
+    if (prog) return { tono: "ok", texto: `Pausa programada: empieza ${relativo(prog.not_before)}. Hasta entonces se puede cancelar en «Órdenes».` };
+    if (s.fase === "fin") {
+      const texto =
+        accion === "copiar"
+          ? `${plural(hechas, "copia pedida", "copias pedidas")}: el equipo la${hechas === 1 ? "" : "s"} está haciendo`
+          : accion === "verificar"
+            ? plural(hechas, "verificación pedida", "verificaciones pedidas")
+            : accion === "pausar"
+              ? "Copias en pausa"
+              : "Copias reanudadas";
+      return { tono: "ok", texto };
+    }
     if (!e.conectado) return { tono: "neutral", texto: "Sin conexión: lo hará cuando vuelva" };
     return { tono: "info", texto: `${hechas} de ${s.ordenes.length} recibidas…` };
   }
@@ -114,31 +187,44 @@
 
 <Modal labelledby="t-bloque" {onclose} width={600} dismissible={!enMarcha || terminado}>
   <div class="dlg-title">
-    <span class="ticon">{#if accion === "copiar"}<Play size={18} />{:else}<ShieldCheck size={18} />{/if}</span>
+    <span class="ticon">
+      {#if accion === "copiar"}<Play size={18} />{:else if accion === "verificar"}<ShieldCheck size={18} />{:else if accion === "pausar"}<CirclePause size={18} />{:else}<CirclePlay size={18} />{/if}
+    </span>
     <div>
       <h2 id="t-bloque">{TITULO[accion]}</h2>
       <p>
         {#if accion === "copiar"}{copias ? "Cada equipo hace ahora las copias elegidas, sin esperar a su hora." : "Cada equipo hace ahora sus copias activas, sin esperar a su hora."} No borra nada.
-        {:else}Cada equipo comprueba una parte de sus repositorios para confirmar que las copias se pueden leer.{/if}
+        {:else if accion === "verificar"}Cada equipo comprueba una parte de sus repositorios para confirmar que las copias se pueden leer.
+        {:else if accion === "pausar"}Las copias automáticas de cada equipo se detienen el tiempo que elijas. «Copiar ahora» sigue funcionando. Como en la ficha de cada equipo, empieza pasada la espera de seguridad y hasta entonces se puede cancelar.
+        {:else}Las copias automáticas de cada equipo vuelven a su horario a partir de ahora.{/if}
       </p>
     </div>
   </div>
 
   {#if !enMarcha}
     <p>
-      {#if total}Se {total === 1 ? "pedirá" : "pedirán"} {plural(total, accion === "copiar" ? "copia" : "verificación", accion === "copiar" ? "copias" : "verificaciones")} en {plural(conTareas.length, "equipo", "equipos")}.{:else}Ninguno de los equipos elegidos tiene {accion === "copiar" ? "copias activas" : "repositorios con versiones"}.{/if}
+      {#if total && accion === "pausar"}Se pausarán las copias automáticas de {plural(conTareas.length, "equipo", "equipos")}.{:else if total && accion === "reanudar"}Se reanudarán las copias automáticas de {plural(conTareas.length, "equipo", "equipos")}.{:else if total}Se {total === 1 ? "pedirá" : "pedirán"} {accion === "copiar" ? plural(total, "copia", "copias") : plural(total, "verificación", "verificaciones")} en {plural(conTareas.length, "equipo", "equipos")}.{:else}Ninguno de los equipos elegidos tiene {NINGUNO[accion]}.{/if}
     </p>
     <ul class="lista-b">
       {#each conTareas as p (p.equipo.id)}
         <li><span class="nombre">{p.equipo.nombre}{#if !p.equipo.conectado}<span class="faint sin"><WifiOff size={12} />sin conexión</span>{/if}</span><span class="faint que">{p.tareas.map((t) => t.que).join(", ")}</span></li>
       {/each}
       {#each sinTareas as p (p.equipo.id)}
-        <li class="apagado"><span class="nombre">{p.equipo.nombre}</span><span class="faint que">{accion === "copiar" ? "Sin copias activas: se salta" : "Sin versiones que verificar: se salta"}</span></li>
+        <li class="apagado"><span class="nombre">{p.equipo.nombre}</span><span class="faint que">{SALTA[accion]}</span></li>
       {/each}
     </ul>
+    {#if accion === "pausar" && total}
+      <div class="field">
+        <label class="field-label" for="bloque-horas">Durante</label>
+        <select id="bloque-horas" class="input" bind:value={horas}>
+          {#each HORAS as [h, t] (h)}<option value={h}>{t}</option>{/each}
+        </select>
+      </div>
+      <CampoClave requerido id="bloque-clave" etiqueta="Clave de administración" bind:value={clave} error={errorClave} ayuda="Se comprueba con cada equipo antes de enviarle nada." />
+    {/if}
     <footer>
       <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-      <BotonCargando class="btn btn-primary" disabled={!total} onclick={ejecutar}>{accion === "copiar" ? "Copiar ahora" : "Verificar"} · {plural(conTareas.length, "equipo", "equipos")}</BotonCargando>
+      <BotonCargando class="btn btn-primary" disabled={!total} cargando={preparando} textoCargando="Comprobando la clave…" onclick={ejecutar}>{BOTON[accion]} · {plural(conTareas.length, "equipo", "equipos")}</BotonCargando>
     </footer>
   {:else}
     <ul class="lista-b" aria-live="polite">

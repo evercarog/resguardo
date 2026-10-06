@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EtiquetaVersion from "$lib/componentes/EtiquetaVersion.svelte";
   // Una versión en detalle: cuándo, de qué copia, cuánto duró y añadió, los
   // archivos nuevos, cambiados y sin cambios (cada recuento abre «Qué cambió»
   // con ese filtro), las vueltas que la dejaron (con reintentos y errores), los
@@ -63,7 +64,7 @@
   <p class="sub">
     {#if copia}<a class="link" href={enlaceCopia(copia.id)}>{copia.nombre}</a>{:else}<span>Copia</span>{/if}
     · <span class="id-wrap"><code class="selectable">{v.id}</code><button class="icon-btn mini" use:tip={"Copiar el id"} aria-label="Copiar el id de la versión" onclick={copiarId}>{#if copiado}<Check size={12} />{:else}<Copy size={12} />{/if}</button></span>
-    {#each v.etiquetas ?? [] as t (t)}<span class="badge badge-sm tone-info">{t}</span>{/each}
+    {#each v.etiquetas ?? [] as t (t)}<EtiquetaVersion nombre={t} />{/each}
   </p>
 
   <dl class="cifras">

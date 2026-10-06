@@ -7,8 +7,11 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { app, NOMBRE_ROL } from "$lib/estado.svelte";
   import { DIAS_SEMANA, SEVERIDAD, SEVERIDADES } from "$lib/notificaciones";
-  import type { MisNotif, Severidad } from "$lib/tipos";
+  import type { MisNotif, PrefEtiqueta, Severidad } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
+  import Modal from "$ui/componentes/Modal.svelte";
+  import AvisosPorEtiqueta from "./AvisosPorEtiqueta.svelte";
+  import BotonCargando from "./BotonCargando.svelte";
 
   /** null: servidor anterior (sin notificaciones); undefined: cargando. */
   let m = $state<MisNotif | null | undefined>(undefined);
@@ -44,9 +47,21 @@
     const inmediatos = si ? [...c.preferencias.inmediatos, sev] : c.preferencias.inmediatos.filter((x) => x !== sev);
     await prefs(c, inmediatos, c.preferencias.resumen);
   }
-  async function prefs(c: MisNotif["clientes"][number], inmediatos: Severidad[], resumen: boolean) {
+  // v1.4x: por etiqueta de los equipos de un cliente.
+  let porEtiqueta = $state<{ c: MisNotif["clientes"][number]; valor: PrefEtiqueta[] } | null>(null);
+  let guardandoEt = $state(false);
+  async function guardarPorEtiqueta(e: SubmitEvent) {
+    e.preventDefault();
+    if (!porEtiqueta) return;
+    guardandoEt = true;
+    const { c, valor } = porEtiqueta;
+    await prefs(c, c.preferencias.inmediatos, c.preferencias.resumen, valor);
+    guardandoEt = false;
+    porEtiqueta = null;
+  }
+  async function prefs(c: MisNotif["clientes"][number], inmediatos: Severidad[], resumen: boolean, etiquetas?: PrefEtiqueta[]) {
     try {
-      const p = await api.ponerPrefsNotif(c.id, app.cuenta!.id, { inmediatos, resumen });
+      const p = await api.ponerPrefsNotif(c.id, app.cuenta!.id, { inmediatos, resumen, ...(etiquetas ? { etiquetas } : {}) });
       if (m) m.clientes = m.clientes.map((x) => (x.id === c.id ? { ...x, preferencias: p } : x));
       avisar(`Guardado para ${c.nombre}.`);
     } catch (e) {
@@ -54,6 +69,25 @@
     }
   }
 </script>
+
+{#if porEtiqueta}
+  <Modal labelledby="t-mis-et" onclose={() => (porEtiqueta = null)} width={480}>
+    <form class="form" onsubmit={guardarPorEtiqueta}>
+      <div class="dlg-title">
+        <span class="ticon"><BellRing size={18} /></span>
+        <div>
+          <h2 id="t-mis-et">Avisos por etiqueta · {porEtiqueta.c.nombre}</h2>
+          <p>Lo que te llega al momento de los equipos con cada etiqueta, en lugar de lo general de este cliente.</p>
+        </div>
+      </div>
+      <AvisosPorEtiqueta id="mis-et" etiquetas={[...new Set([...(porEtiqueta.c.etiquetas ?? []), ...porEtiqueta.valor.map((x) => x.etiqueta)])]} bind:valor={porEtiqueta.valor} />
+      <footer>
+        <button type="button" class="btn btn-ghost" onclick={() => (porEtiqueta = null)}>Cancelar</button>
+        <BotonCargando class="btn btn-primary" type="submit" cargando={guardandoEt}>Guardar</BotonCargando>
+      </footer>
+    </form>
+  </Modal>
+{/if}
 
 {#if m}
   <section class="card p" id="mis-notificaciones">
@@ -92,7 +126,12 @@
         </div>
         {#each m.clientes as c (c.id)}
           <div class="tr" role="row">
-            <span role="cell" class="cli">{c.nombre}<span class="faint">{NOMBRE_ROL[c.rol]}{c.correo ? "" : " · sin correo"}</span></span>
+            <span role="cell" class="cli"
+              >{c.nombre}<span class="faint">{NOMBRE_ROL[c.rol]}{c.correo ? "" : " · sin correo"}</span>
+              {#if c.etiquetas?.length}<button type="button" class="link por-et" onclick={() => (porEtiqueta = { c, valor: [...(c.preferencias.etiquetas ?? [])] })}
+                  >Por etiqueta{c.preferencias.etiquetas?.length ? ` (${c.preferencias.etiquetas.length})` : "…"}</button
+                >{/if}</span
+            >
             {#each SEVERIDADES as s (s)}
               <span role="cell" class="c"><input type="checkbox" aria-label="{SEVERIDAD[s].texto} de {c.nombre}" checked={c.preferencias.inmediatos.includes(s)} onchange={(e) => marcar(c, s, e.currentTarget.checked)} /></span>
             {/each}
@@ -108,6 +147,10 @@
 {/if}
 
 <style>
+  .por-et {
+    align-self: flex-start;
+    font-size: var(--fs-xs);
+  }
   .intro {
     margin: 4px 0 var(--sp-3);
     font-size: var(--fs-sm);

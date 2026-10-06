@@ -259,6 +259,10 @@ export const codigoAbierto = (c: string, navegador = false) =>
 export const plantillas = (c: string) => pedir<{ id: string; cifrado: string; actualizada: string; por: string }[]>("GET", `${cli(c)}/plantillas`);
 export const ponerPlantilla = (c: string, id: string, cifrado: string) => pedir<void>("PUT", `${cli(c)}/plantillas/${enc(id)}`, { cifrado });
 export const borrarPlantilla = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/plantillas/${enc(id)}`);
+// v1.4x: ajustes de las etiquetas (color, plantilla por defecto y avisos). Sin nada, vuelve a lo de siempre.
+export const ajustesEtiquetas = (c: string) => pedir<T.AjusteEtiqueta[]>("GET", `${cli(c)}/etiquetas`, undefined, { invisible: true });
+export const ponerAjusteEtiqueta = (c: string, a: { nombre: string; color: number | null; plantilla: string | null; avisos: T.AvisosEtiqueta | null }) =>
+  pedir<T.AjusteEtiqueta[]>("PUT", `${cli(c)}/etiquetas`, a);
 // v1.40: observaciones y comentarios (en claro en el servidor; lib/notas.svelte.ts).
 export const indiceNotas = (c: string) => pedir<{ objetos: T.IndiceNota[] }>("GET", `${cli(c)}/notas`, undefined, { invisible: true });
 export const notasDe = (c: string, tipo: T.TipoNota, objeto: string) =>
@@ -434,7 +438,8 @@ export const probarCanal = (a: AmbitoNotif, k: string) => pedir<{ ok: boolean; m
 /** Los últimos 100 envíos (del servidor entero, o de un cliente). */
 export const registroNotif = (a: AmbitoNotif) => pedir<T.EnvioNotif[]>("GET", `${baseNotif(a)}/registro`, undefined, { invisible: true });
 export const personasNotif = (c: string) => o404(pedir<T.PersonaNotif[]>("GET", `${cli(c)}/notificaciones/personas`, undefined, { invisible: true }));
-export const ponerPrefsNotif = (c: string, cuenta: string, b: { inmediatos: T.Severidad[]; resumen: boolean }) =>
+/** `etiquetas` (v1.4x): sin el campo, el servidor conserva las que hubiera. */
+export const ponerPrefsNotif = (c: string, cuenta: string, b: { inmediatos: T.Severidad[]; resumen: boolean; etiquetas?: T.PrefEtiqueta[] }) =>
   pedir<T.PrefsNotif>("PUT", `${cli(c)}/notificaciones/personas/${enc(cuenta)}`, b);
 export const misNotif = () => o404(pedir<T.MisNotif>("GET", "/api/cuenta/notificaciones", undefined, { invisible: true }));
 export const cambiarMisNotif = (b: { silencio?: T.Silencio | null; resumen_diario?: boolean; resumen_semanal?: boolean }) =>

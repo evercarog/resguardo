@@ -10,7 +10,9 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { fechaLarga, plural } from "$lib/formato";
   import { mandarOrden } from "$lib/ordenar";
-  import type { CodigoRestablecimiento, Invitacion, Miembro, PersonaNotif, Rol, Severidad } from "$lib/tipos";
+  import type { CodigoRestablecimiento, Invitacion, Miembro, PersonaNotif, PrefEtiqueta, Rol, Severidad } from "$lib/tipos";
+  import { etiquetasDe } from "$lib/etiquetasGrupos";
+  import AvisosPorEtiqueta from "$lib/componentes/AvisosPorEtiqueta.svelte";
   import { SEVERIDAD, SEVERIDADES, textoSeveridades } from "$lib/notificaciones";
   import NotificacionesCliente from "$lib/componentes/NotificacionesCliente.svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
@@ -86,18 +88,22 @@
   let editarAvisos = $state<PersonaNotif | null>(null);
   let inmediatos = $state<Severidad[]>([]);
   let conResumen = $state(false);
+  /** v1.4x: lo que recibe de los equipos con ciertas etiquetas. */
+  let avisosEtiqueta = $state<PrefEtiqueta[]>([]);
+  const etiquetasCliente = $derived([...new Set([...etiquetasDe(actual.equipos).map((t) => t.nombre), ...avisosEtiqueta.map((x) => x.etiqueta)])]);
   let guardandoAvisos = $state(false);
   function abrirAvisos(p: PersonaNotif) {
     editarAvisos = p;
     inmediatos = [...p.preferencias.inmediatos];
     conResumen = p.preferencias.resumen;
+    avisosEtiqueta = [...(p.preferencias.etiquetas ?? [])];
   }
   async function guardarAvisos(e: SubmitEvent) {
     e.preventDefault();
     if (!editarAvisos) return;
     guardandoAvisos = true;
     try {
-      const pr = await api.ponerPrefsNotif(actual.id, editarAvisos.cuenta, { inmediatos, resumen: conResumen });
+      const pr = await api.ponerPrefsNotif(actual.id, editarAvisos.cuenta, { inmediatos, resumen: conResumen, etiquetas: avisosEtiqueta });
       notif = (notif ?? []).map((p) => (p.cuenta === editarAvisos!.cuenta ? { ...p, preferencias: pr } : p));
       avisar(`Avisos de ${editarAvisos.nombre} guardados.`);
       editarAvisos = null;
@@ -306,7 +312,7 @@
               {#if notifDe(m.cuenta)}
                 {@const pn = notifDe(m.cuenta)!}
                 <button class="btn btn-sm btn-ghost avisos" onclick={() => abrirAvisos(pn)} aria-label="Qué avisos recibe {m.nombre}">
-                  <BellRing size={14} />{textoSeveridades(pn.preferencias.inmediatos)}{pn.preferencias.resumen ? " · resumen" : ""}
+                  <BellRing size={14} />{textoSeveridades(pn.preferencias.inmediatos)}{pn.preferencias.resumen ? " · resumen" : ""}{pn.preferencias.etiquetas?.length ? ` · ${pn.preferencias.etiquetas.length} por etiqueta` : ""}
                 </button>
               {/if}
               <select class="input rol" value={m.rol} aria-label="Papel de {m.nombre}" onchange={(e) => cambiarRol(m, e.currentTarget.value as Rol)} disabled={m.cuenta === app.cuenta?.id}>
@@ -384,6 +390,7 @@
           </label>
         {/each}
       </fieldset>
+      <AvisosPorEtiqueta id="avisos-persona-et" etiquetas={etiquetasCliente} bind:valor={avisosEtiqueta} />
       <label class="switch-row">
         <input class="switch" type="checkbox" bind:checked={conResumen} />
         <span><strong>En sus resúmenes</strong><span class="faint">El «Resumen semanal de copias» (y el diario, si lo quiere) incluye este cliente.</span></span>
