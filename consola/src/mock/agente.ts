@@ -237,7 +237,10 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const ver = String(c.verificador);
       const prueba = plana.autorizacion.prueba_admin;
       if (!prueba || !iguales(sha256(deB64(prueba)), deB64(ver))) return resultado(e, o, "rechazada", "La prueba de administración no corresponde al verificador.");
-      if (!e.codigoEmparejamiento || plana.autorizacion.prueba_codigo !== pruebaCodigo(e.codigoEmparejamiento, e.id, ver))
+      // v1.4x: con el código generado en el navegador, este «equipo» simulado solo conoce su hash
+      // (el de verdad lo tiene: se lo escribieron o venía en el instalador): solo mira que haya prueba.
+      const sinCodigo = e.codigoEmparejamiento === "" && /^[A-Za-z0-9+/]{43}=$/.test(String(plana.autorizacion.prueba_codigo ?? ""));
+      if (!sinCodigo && (!e.codigoEmparejamiento || plana.autorizacion.prueba_codigo !== pruebaCodigo(e.codigoEmparejamiento, e.id, ver)))
         return resultado(e, o, "rechazada", "El alta no viene de quien tiene el código de emparejamiento.");
       e.codigoEmparejamiento = null;
       e.verificador = deB64(ver);

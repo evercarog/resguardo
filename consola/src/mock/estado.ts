@@ -101,6 +101,8 @@ export interface EmparejamientoMock {
   so?: "windows" | "linux";
   /** La cuenta que lo pidió (v1.42: se le vuelve a dar el suyo si aún sirve). */
   por?: string;
+  /** v1.4x: el código lo generó el navegador; aquí solo su hash (y `codigo` vacío). */
+  codigo_hash?: string;
 }
 
 export interface Estado {

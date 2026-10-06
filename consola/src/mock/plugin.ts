@@ -167,7 +167,7 @@ function respaldoDe(ctx: Ctx): T.RespaldoConsola {
 }
 
 const rutas: Ruta[] = [
-  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: true, agente_local: true })],
+  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: true, agente_local: true, codigo_navegador: true })],
 
   ["GET", /^\/api\/servidor\/respaldo$/, (ctx) => respaldoDe(ctx)],
   [
@@ -649,9 +649,19 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}/emparejamientos$`),
     (ctx, [c]) => {
       const { cuenta } = miembro(ctx, c, "administrador");
+      // v1.4x: el código lo generó el navegador: solo llega su hash y no se devuelve código.
+      const hash = hashDelCuerpo(ctx.cuerpo);
+      if (hash) {
+        if (estado.emparejamientos.some((x) => x.codigo_hash === hash)) throw err(409, "codigo_repetido", "Ese código ya existe. Genera otro.");
+        const p: EmparejamientoMock = { id: randomUUID(), cliente: c, codigo: "", codigo_hash: hash, caduca: new Date(Date.now() + 15 * 60_000).toISOString(), estado: "abierto", creado: Date.now(), por: cuenta.id };
+        estado.emparejamientos.push(p);
+        auditar(c, cuenta.id, "emparejamiento.abrir", null);
+        unirSolo(p, "ALMACEN-BODEGA", "Windows 11 Pro", 6000);
+        return { id: p.id, caduca: p.caduca, reutilizado: false, codigo_navegador: true };
+      }
       // v1.42: el abierto de esta cuenta (más de 2 min por delante), en vez de otro.
       const ya = codigoDe(c, cuenta.id);
-      if (ya && ya.estado === "abierto" && Date.parse(ya.caduca) > Date.now() + 120_000) return { id: ya.id, codigo: ya.codigo, caduca: ya.caduca, reutilizado: true };
+      if (ya && ya.codigo && ya.estado === "abierto" && Date.parse(ya.caduca) > Date.now() + 120_000) return { id: ya.id, codigo: ya.codigo, caduca: ya.caduca, reutilizado: true };
       const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       const crudo = Array.from(randomBytes(10), (b) => letras[b % letras.length]).join("");
       const p: EmparejamientoMock = { id: randomUUID(), cliente: c, codigo: `${crudo.slice(0, 4)}-${crudo.slice(4, 8)}-${crudo.slice(8)}`, caduca: new Date(Date.now() + 15 * 60_000).toISOString(), estado: "abierto", creado: Date.now(), por: cuenta.id };
@@ -679,7 +689,8 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}/codigo-abierto$`),
     (ctx, [c]) => {
       const { cuenta } = miembro(ctx, c, "administrador");
-      const p = codigoDe(c, cuenta.id);
+      const p = codigoDe(c, cuenta.id, ctx.url.searchParams.get("navegador") === "1");
+      if (p?.codigo_hash) return { id: p.id, codigo: null, codigo_hash: p.codigo_hash, codigo_navegador: true, caduca: p.caduca, estado: p.estado };
       return p ? { id: p.id, codigo: p.codigo, caduca: p.caduca, estado: p.estado } : null;
     },
   ],
@@ -695,6 +706,16 @@ const rutas: Ruta[] = [
       if (b.so !== "windows" && b.so !== "linux") throw err(422, "datos", "Sistema no válido («windows» o «linux»).");
       if (!nombre || nombre.length > 80 || /["\u0000-\u001f]/.test(nombre)) throw err(422, "datos", "Nombre del equipo no válido.");
       if (!/^https:\/\/[A-Za-z0-9.\-:[\]]+$/.test(servidor)) throw err(422, "datos", "Dirección del servidor no válida (https://servidor:puerto, sin ruta).");
+      // v1.4x: con el hash del código del navegador, JSON (sin código): la consola arma la cola o la línea.
+      const hash = hashDelCuerpo(ctx.cuerpo);
+      if (hash) {
+        if (estado.emparejamientos.some((x) => x.codigo_hash === hash)) throw err(409, "codigo_repetido", "Ese código ya existe. Genera otro.");
+        const p: EmparejamientoMock = { id: randomUUID(), cliente: c, codigo: "", codigo_hash: hash, caduca: new Date(Date.now() + 24 * 3600_000).toISOString(), estado: "abierto", creado: Date.now(), nombre, so: b.so, por: cuenta.id };
+        estado.emparejamientos.push(p);
+        auditar(c, cuenta.id, "preparar_equipo", nombre, { so: b.so });
+        unirSolo(p, nombre, b.so === "linux" ? "Debian 12" : "Windows 11 Pro", 25_000);
+        return { id: p.id, nombre, so: b.so, caduca: p.caduca, servidor, huella_ca: HUELLA_CA, cliente: c, codigo_navegador: true, reutilizado: false };
+      }
       const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       const crudo = Array.from(randomBytes(10), (x) => letras[x % letras.length]).join("");
       const p: EmparejamientoMock = { id: randomUUID(), cliente: c, codigo: `${crudo.slice(0, 4)}-${crudo.slice(4, 8)}-${crudo.slice(8)}`, caduca: new Date(Date.now() + 24 * 3600_000).toISOString(), estado: "abierto", creado: Date.now(), nombre, so: b.so };
@@ -716,6 +737,17 @@ const rutas: Ruta[] = [
       ctx.res.setHeader("X-Resguardo-Emparejamiento", p.id);
       ctx.res.setHeader("X-Resguardo-Caduca", p.caduca);
       ctx.res.end(exe);
+      return SIN_CUERPO;
+    },
+  ],
+  [
+    // v1.4x: el instalador genérico (sin cola: la añade la consola).
+    "GET",
+    new RegExp(`^${C}/instalador-agente$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      ctx.res.setHeader("Content-Type", "application/vnd.microsoft.portable-executable");
+      ctx.res.end(Buffer.from("MZ Resguardo Agente (instalador simulado)\n"));
       return SIN_CUERPO;
     },
   ],
@@ -799,8 +831,8 @@ const rutas: Ruta[] = [
         sas_version: e ? (agenteConSasV3(e.version_agente) ? 3 : undefined) : undefined,
         // v1.17: preparados, con su nombre y (mientras sirve) el código para el alta.
         ...(p.nombre ? { nombre: p.nombre, so: p.so } : {}),
-        // v1.42: el código mientras sirve, también el de 15 min.
-        ...(p.estado === "abierto" || p.estado === "unido" ? { codigo: p.codigo } : {}),
+        // v1.42: el código mientras sirve, también el de 15 min (v1.4x: del navegador, solo su hash).
+        ...(p.estado === "abierto" || p.estado === "unido" ? (p.codigo_hash ? { codigo_hash: p.codigo_hash, codigo_navegador: true } : { codigo: p.codigo }) : {}),
       };
     },
   ],
@@ -1394,11 +1426,19 @@ function agenteConSasV3(v: string | null | undefined): boolean {
   return a > 0 || b > 7 || (b === 7 && c >= 10);
 }
 
+/** v1.4x: el `codigo_hash` del cuerpo (64 hex, en minúsculas) o `null`; con otra forma, 422. */
+function hashDelCuerpo(cuerpo: unknown): string | null {
+  const h = (cuerpo as { codigo_hash?: unknown } | null)?.codigo_hash;
+  if (h === undefined || h === null) return null;
+  if (typeof h !== "string" || !/^[0-9a-fA-F]{64}$/.test(h)) throw err(422, "datos", "Código no válido.");
+  return h.toLowerCase();
+}
+
 /** El «equipo» de un emparejamiento se une solo al cabo de `ms` (como si alguien instalara el agente). */
 /** El código de 15 min de esa cuenta que aún sirve (abierto o unido), el más reciente. */
-function codigoDe(c: string, cuenta: string): EmparejamientoMock | undefined {
+function codigoDe(c: string, cuenta: string, navegador = false): EmparejamientoMock | undefined {
   return estado.emparejamientos
-    .filter((p) => p.cliente === c && p.por === cuenta && !p.nombre && (p.estado === "abierto" || p.estado === "unido") && Date.parse(p.caduca) > Date.now())
+    .filter((p) => p.cliente === c && p.por === cuenta && !p.nombre && (navegador || !p.codigo_hash) && (p.estado === "abierto" || p.estado === "unido") && Date.parse(p.caduca) > Date.now())
     .sort((a, b) => b.creado - a.creado)[0];
 }
 
