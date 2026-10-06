@@ -60,6 +60,8 @@ Tarea 7 de `docs/plan-mejoras.md`, **parte B** (con la 4 dentro), con el usuario
   - Servidor: avisos `cadena_parada` y `externa_fallida` de las derivadas (sujeto `<repo>--<id>`).
   - Consola: `lib/cadenas.ts` (+ `scripts/vectores-cadenas.ts`), «Cambiar las copias» (orden y «después de»), `CopiaDerivada`, `PasoEspejo`, `AnadirCopia`, derivadas en la ficha, destinos «zona» del espejo con nombre y su paso (7e), el mapa con el nombre de la zona, avisos, nombres e iconos de las órdenes nuevas, glosario («copia-derivada», «cadena»), paquete con el catálogo, simulador.
   - Arreglos de compilación en `src-tauri` (campos nuevos en `Offsite` y `Plan`).
+  - Con la tarea 8 ya en `main` (unida aquí): `regla321.ts::reglaDeCopia` cuenta los pasos «espejo» de cualquier zona (también a otra zona) y las copias derivadas (una nube del equipo, como «nube» no inmutable); la plantilla «3-2-1 recomendada» marca esos pasos como hechos o lleva a su diálogo en la ficha (`?paso_espejo=`, `?derivada=`). La regla del agente (`protection.rs`) aún no cuenta las derivadas (no se tocó: era de la otra sesión).
+  - Motor: con un repositorio `rclone:` se pasa `-o rclone.program=` con el rclone junto a Resguardo siempre que esté (antes solo en el servicio de una versión publicada).
   - Docs: `api-servidor.md` (§1, §5, §11 y «Cambios», v1.4x), `copias-en-cadena.md` («Parte B: lo que se hizo»), plan (7c, 7d, 7e, 4b, 4c, 4d hechas; 7f y 4a a medias).
 - **Comprobado:** ver «Comprobaciones finales» abajo (se completa al terminar).
 - **Sin probar / dudas (para revisar):**

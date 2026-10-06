@@ -17,6 +17,7 @@ import {
 } from "../src/lib/cadenas";
 import { claveEspejo, esDestructiva } from "../src/lib/cripto/ordenes";
 import { destinoParaOrden } from "../src/lib/espejo";
+import { reglaDeCopia } from "../src/lib/regla321";
 
 let fallos = 0;
 let total = 0;
@@ -134,6 +135,24 @@ const soloEspejos = lineaCadena({ ...recepcion, resumen: { ...recepcion.resumen,
 cierto("si todos los espejos siguen a la retención, se recomienda otro", recomendarFueraRetencion(soloEspejos));
 igual("una derivada nueva toma un id libre", idDerivadaNueva(recepcion.resumen!.repositorios![0]), "d2");
 igual("la externa de siempre va primero", derivadasDe(recepcion.resumen!.repositorios![0]).map((d) => d.id), ["externa", "d1"]);
+
+console.log("\n· La regla 3-2-1-1-0 con los pasos de la cadena (tarea 8)");
+{
+  const rc = reglaDeCopia(recepcion, recepcion.resumen!.copias![0], equipos, null, [], Date.now());
+  igual(
+    "el espejo a la zona E, la nube del almacén, la externa y la derivada a la Dropbox del equipo",
+    rc?.pasos.map((p) => [p.id, p.tipo, p.lugar, p.inmutable]),
+    [
+      ["destino", "copia", "oficina", "solo_anadir"],
+      ["espejo-1", "espejo", "oficina", "no"],
+      ["espejo-2", "espejo", "nube", "no"],
+      ["espejo-3", "espejo", "oficina", "no"],
+      ["externa", "externa", "nube", "object_lock"],
+      ["derivada-d1", "derivada", "nube", "no"],
+    ],
+  );
+  cierto("la zona E es otro soporte que la D", rc!.pasos[0].soporte !== rc!.pasos[1].soporte);
+}
 
 console.log("\n· Pasar un destino del espejo a un paso de la cadena (7e)");
 igual("uno de un solo repositorio es de la copia de ese repositorio", pasoDeEspejo({ repos: ["recepcion/documentos"] }, almacen, equipos)?.repo.id, "documentos");

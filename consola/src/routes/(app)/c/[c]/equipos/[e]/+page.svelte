@@ -280,6 +280,19 @@
   });
   // v1.41: desde el aviso «copias en el mismo equipo» (?externa=<repo>): «Copia externa» de ese repositorio, una vez.
   let externaPedida = false;
+  // Tarea 7 (parte B), desde la plantilla 3-2-1: ?paso_espejo=<repo> o ?derivada=<repo>, una vez.
+  let cadenaPedida = false;
+  $effect(() => {
+    const pe = page.url.searchParams.get("paso_espejo");
+    const dv = page.url.searchParams.get("derivada");
+    const r = equipo?.resumen?.repositorios?.find((x) => x.id === (pe ?? dv));
+    if (cadenaPedida || !r) return;
+    cadenaPedida = true;
+    untrack(() => {
+      if (pe && puede.administrar(rol)) pasoEspejoPara = r;
+      else if (dv && puede.ordenar(rol)) derivadaPara = { repo: r, derivada: null };
+    });
+  });
   $effect(() => {
     const r = page.url.searchParams.get("externa");
     const repo = r ? equipo?.resumen?.repositorios?.find((x) => x.id === r) : undefined;

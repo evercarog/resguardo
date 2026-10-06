@@ -16,7 +16,7 @@
 // sistema operativo ni el sistema de archivos (8e): solo lo que dice la persona.
 // Sin dependencias de Svelte (lo prueban los vectores).
 import type { AtributosDestino, CopiaResumen, DestinoCatalogo, DestinoResumen, Equipo, Informe, InmutableDestino, LugarDestino, RepositorioResumen } from "./tipos";
-import { claveNube, claveZona, nombreDestino, unidadDe, zonaDeDestino, type DestinoVista, type ZonaVista } from "./destinos";
+import { claveNube, claveZona, nombreDestino, nombreZonaPorDefecto, unidadDe, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { espejoDelRepo, nombreEnAlmacen } from "./espejo";
 import { destinoDe, informeDe } from "./repo";
 import { resultadoConError } from "./salud";
@@ -214,7 +214,7 @@ export interface MarcarDestino {
 
 /** El tipo del catálogo de un destino de un equipo. */
 const tipoCatalogoDe = (d: DestinoResumen | undefined, zona: boolean): DestinoCatalogo["tipo"] =>
-  zona ? "zona" : d && (["rest", "s3", "b2", "sftp"] as const).includes(d.tipo as "rest") ? (d.tipo as DestinoCatalogo["tipo"]) : "local";
+  zona ? "zona" : d && (["rest", "s3", "b2", "sftp", "nube"] as const).includes(d.tipo as "rest") ? (d.tipo as DestinoCatalogo["tipo"]) : "local";
 
 export interface ReglaCopia {
   equipo: Equipo;
@@ -269,6 +269,9 @@ function deducirDestino(
       return { lugar: "nube", inmutable: d.inmutable ? "object_lock" : "no", soporte: `nube:${d.tipo}:${d.donde ?? d.id}`, equipo: null, zona: null, fs: null };
     case "sftp":
       return { lugar: "otra_sede", inmutable: "no", soporte: `servidor:${servidorDe(d.donde) ?? d.id}`, equipo: null, zona: null, fs: null };
+    // Tarea 4a: una nube conectada en el propio equipo (Dropbox, Drive… por rclone): fuera y no inmutable.
+    case "nube":
+      return { lugar: "nube", inmutable: "no", soporte: `nube:${d.nube ?? d.id}`, equipo: null, zona: null, fs: null };
     case "local":
       if (d.red) return { lugar: "oficina", inmutable: "no", soporte: `red:${d.id}`, equipo: null, zona: null, fs: null };
       // Una carpeta del propio equipo: el mismo soporte que los originales (no se sabe en qué disco están).
@@ -341,13 +344,44 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
     ),
   );
 
-  // 2. El espejo del almacén (copia la zona principal), si lo incluye.
-  if (x.zona?.principal) {
+  // 2. El espejo del almacén que lo incluye. Tarea 7d.2: cada destino copia desde su
+  //    zona (sin ella, la principal) y puede ir a otra zona del almacén.
+  if (x.zona) {
     const a = x.zona.almacen;
     const g = a.resumen?.guarda_copias;
+    const zonaId = x.zona.id;
     const esp = espejoDelRepo(g?.espejo ?? null, nombreEnAlmacen(d?.donde, r));
     (esp?.destinos ?? []).forEach((dd, i) => {
+      if ((dd.zona ?? "principal") !== zonaId) return;
       const nube = dd.tipo === "nube";
+      // A otra zona del mismo almacén: su disco, con el nombre de la zona.
+      const zonaDestino = dd.tipo === "zona" ? zonasDe(a).find((z) => z.id === dd.carpeta) : undefined;
+      if (zonaDestino) {
+        pasos.push(
+          conMarcado(
+            {
+              id: `espejo-${i + 1}`,
+              nombre: catalogo.find((c) => c.id === claveZona(a.id, zonaDestino.id))?.nombre.trim() || nombreZonaPorDefecto(zonaDestino),
+              tipo: "espejo",
+              lugar: x.lugar,
+              inmutable: "no",
+              soporte: `equipo:${a.id}:${unidadDe(zonaDestino.carpeta) ?? `zona-${zonaDestino.id}`}`,
+              equipo: a.id,
+              ultima_ok: resultadoConError(dd.resultado) ? null : (dd.ultima ?? null),
+              cada_horas: dd.tras_copia ? cadaCopia : dd.horario ? horasEntre(dd.horario, ahora) : 24,
+              verificacion_mal: (dd.verificacion?.mal ?? 0) > 0,
+              clave: claveZona(a.id, zonaDestino.id),
+              equipoNombre: a.nombre,
+              equipoId: a.id,
+              sistemaArchivos: null,
+              tipoCatalogo: "zona",
+              donde: null,
+            },
+            catalogo,
+          ),
+        );
+        return;
+      }
       const tipoNube = nube ? (g?.nubes?.find((n) => n.nombre === dd.nube)?.tipo ?? "") : "";
       const lugar: LugarDestino = nube ? (tipoNube === "smb" ? "oficina" : tipoNube === "sftp" ? "otra_sede" : "nube") : x.lugar;
       const carpeta = dd.carpeta ?? "";
@@ -407,8 +441,38 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
       ),
     );
   }
-  // 4. (Tarea 7, parte B) Los pasos de la cadena (espejos por repositorio, copias
-  //    derivadas): más pasos aquí, con su `tras` y su última vez bien.
+  // 4. Tarea 4b: las demás copias derivadas del repositorio (como la externa, cada
+  //    una con su destino, su bloqueo y su última vuelta del informe).
+  for (const dv of r.derivadas ?? []) {
+    if (dv.activa === false) continue;
+    const de = e.resumen?.destinos?.find((y) => y.id === dv.destino_id);
+    const xd = deducirDestino(de, e, equipos, !!dv.solo_anadir);
+    const inmutable: InmutableDestino = dv.bloqueo_dias ? "object_lock" : dv.solo_anadir ? "solo_anadir" : xd.inmutable;
+    const ult = informeDe(informe, r.id)?.derivadas?.find((y) => y.id === dv.id) ?? null;
+    pasos.push(
+      conMarcado(
+        {
+          id: `derivada-${dv.id}`,
+          nombre: nombreDestino(de, equipos, catalogo) ?? dv.destino ?? "Copia derivada",
+          tipo: "derivada",
+          lugar: de ? xd.lugar : "otra_sede",
+          inmutable,
+          soporte: de ? xd.soporte : `destino:${dv.destino_id ?? dv.id}`,
+          equipo: xd.equipo,
+          ultima_ok: ult && ult.resultado !== "fallo" ? (ult.ultima ?? null) : null,
+          cada_horas: dv.cuando?.tras_copia ? cadaCopia : dv.cuando?.horario ? horasEntre(dv.cuando.horario, ahora) : 24,
+          verificacion_mal: ult?.verificacion?.resultado === "fallo",
+          clave: xd.zona ? claveZona(xd.zona.almacen.id, xd.zona.id) : (de?.id ?? null),
+          equipoNombre: e.nombre,
+          equipoId: e.id,
+          sistemaArchivos: xd.fs,
+          tipoCatalogo: tipoCatalogoDe(de, !!xd.zona),
+          donde: !xd.zona && de && de.tipo !== "local" && de.tipo !== "nube" ? (de.donde ?? null) : null,
+        },
+        catalogo,
+      ),
+    );
+  }
 
   // Verificación y prueba de restauración del repositorio.
   const inf = informeDe(informe, r.id);
