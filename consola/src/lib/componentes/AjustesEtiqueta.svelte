@@ -120,7 +120,7 @@
       <div class="colores">
         <label class="op" style:--et="var(--et-{automatico})">
           <input type="radio" name="color-et" value={-1} bind:group={color} />
-          <span class="punto" aria-hidden="true"></span>Automático <span class="faint">({NOMBRES_COLOR[automatico].toLowerCase()})</span>
+          <span class="punto" aria-hidden="true"></span>Automático<span class="faint">({NOMBRES_COLOR[automatico].toLowerCase()})</span>
         </label>
         {#each Array.from({ length: N_COLORES }, (_, i) => i) as i (i)}
           <label class="op" style:--et="var(--et-{i})">

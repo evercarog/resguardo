@@ -262,7 +262,7 @@
             <div class="cab-grupo">
               {#if g.etiqueta}<button type="button" class="sin-boton" onclick={() => filtroEtiqueta.poner(g.etiqueta!)} use:tip={`Ver solo los de «${g.etiqueta}»`}><EtiquetaChip nombre={g.etiqueta} /></button>{:else}<span class="sin-et">Sin etiqueta</span>{/if}
               <span class="faint">
-                {plural(g.equipos.length, "equipo", "equipos")}{#if n.mal}{" · "}<span class="g-mal"><CircleAlert size={12} />{plural(n.mal, "con fallos", "con fallos")}</span>{/if}{#if n.atencion}{" · "}<span class="g-aviso"><TriangleAlert size={12} />{plural(n.atencion, "necesita atención", "necesitan atención")}</span>{/if}{#if n.bien === g.equipos.length}{" · "}<span class="g-ok"><CircleCheck size={12} />todos bien</span>{/if}
+                {plural(g.equipos.length, "equipo", "equipos")}{#if n.mal}{" · "}<span class="g-mal"><CircleAlert size={12} />{plural(n.mal, "con problemas", "con problemas")}</span>{/if}{#if n.atencion}{" · "}<span class="g-aviso"><TriangleAlert size={12} />{plural(n.atencion, "necesita atención", "necesitan atención")}</span>{/if}{#if n.bien === g.equipos.length}{" · "}<span class="g-ok"><CircleCheck size={12} />todos bien</span>{/if}
               </span>
             </div>
             <div class="rejilla equipos">

@@ -86,8 +86,8 @@ Pregunta: copiar todos los equipos a **un solo** repositorio del almacén y repa
 
 Hoy (`consola/src/lib/etiquetas.svelte.ts`) las etiquetas de los equipos tienen un color automático (hash del nombre, paleta Okabe-Ito de 7 apta para daltonismo, solo en el punto) y sirven para filtrar.
 
-- [ ] **6a. Elegir el color** de cada etiqueta (de la misma paleta, para que siga siendo accesible), guardado en el servidor por cliente; sin elegir, el de ahora.
-- [ ] **6b. Que tenga efecto:**
+- [x] **6a. Elegir el color** de cada etiqueta (de la misma paleta, para que siga siendo accesible), guardado en el servidor por cliente; sin elegir, el de ahora. (Rama `ia/etiquetas`: `GET/PUT /api/clientes/{c}/etiquetas`, «Ajustar» en el filtro de etiquetas; cada color con su nombre escrito.)
+- [x] **6b. Que tenga efecto** (rama `ia/etiquetas`; contrato en `docs/api-servidor.md` «Cambios», v1.4x; lo no probado y lo dudoso, en `docs/registro-ia.md`). También las etiquetas de las versiones con un punto de color:
   - agrupar por etiqueta en Estado, Equipos e Informes (un informe por etiqueta, p. ej. «Contabilidad»);
   - **acciones por etiqueta** en «Varios a la vez» (copiar ahora, pausar, aplicar una plantilla de copias a todos los de «Servidores»);
   - **avisos por etiqueta**: a quién se avisa y con qué importancia (p. ej. los de «Servidores», siempre por push);

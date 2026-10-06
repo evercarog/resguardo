@@ -192,7 +192,7 @@
                 <input type="checkbox" aria-label="Elegir los de {g.etiqueta ?? 'sin etiqueta'}" disabled={!eg.length} checked={eg.length > 0 && eg.every((e) => elegidos.has(e.id))} onchange={(ev) => alternarGrupo(g.equipos, ev.currentTarget.checked)} />
               {/if}
               {#if g.etiqueta}<EtiquetaChip nombre={g.etiqueta} />{:else}<span class="sin-et">Sin etiqueta</span>{/if}
-              <span class="faint resumen-g">{plural(g.equipos.length, "equipo", "equipos")}{#if g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length} · {plural(g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length, "necesita atención", "necesitan atención")}{/if}</span>
+              <span class="faint resumen-g">{plural(g.equipos.length, "equipo", "equipos")}{#if g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length}{" · "}{plural(g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length, "necesita atención", "necesitan atención")}{/if}</span>
             </div>
             {#each g.equipos as e (e.id)}
               {#if seleccionando}

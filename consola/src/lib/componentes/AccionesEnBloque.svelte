@@ -203,7 +203,7 @@
 
   {#if !enMarcha}
     <p>
-      {#if total}Se {total === 1 ? "pedirá" : "pedirán"} {accion === "copiar" ? plural(total, "copia", "copias") : accion === "verificar" ? plural(total, "verificación", "verificaciones") : "a"} en {plural(conTareas.length, "equipo", "equipos")}.{:else}Ninguno de los equipos elegidos tiene {NINGUNO[accion]}.{/if}
+      {#if total && accion === "pausar"}Se pausarán las copias automáticas de {plural(conTareas.length, "equipo", "equipos")}.{:else if total && accion === "reanudar"}Se reanudarán las copias automáticas de {plural(conTareas.length, "equipo", "equipos")}.{:else if total}Se {total === 1 ? "pedirá" : "pedirán"} {accion === "copiar" ? plural(total, "copia", "copias") : plural(total, "verificación", "verificaciones")} en {plural(conTareas.length, "equipo", "equipos")}.{:else}Ninguno de los equipos elegidos tiene {NINGUNO[accion]}.{/if}
     </p>
     <ul class="lista-b">
       {#each conTareas as p (p.equipo.id)}
