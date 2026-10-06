@@ -816,7 +816,9 @@ fn estado_de(result: &str) -> &'static str {
 /// v1.36: `consolas_multiples` (`anadir_consola`, `quitar_consola`, `resumen.consolas`) y `escritorio` (la ventana del agente).
 /// v1.40: `verificacion_horario` (la verificación automática con un horario de reglas) y
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
-pub const ADMITE: [&str; 8] = [
+/// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
+/// retención y verificación por destino (docs/espejo.md).
+pub const ADMITE: [&str; 9] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -826,6 +828,7 @@ pub const ADMITE: [&str; 8] = [
     "retencion_almacen_horario",
     // v1.46: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
     "externa_existente",
+    "espejo_flexible",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

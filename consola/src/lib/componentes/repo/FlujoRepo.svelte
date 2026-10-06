@@ -4,6 +4,7 @@
   // su estado en icono y palabra, y el horario en la flecha.
   import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, Cloud, CloudOff, FolderOpen, ShieldAlert, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import { lugarDe } from "$lib/dondeGuarda";
+  import { cuandoCortoEspejo } from "$lib/espejo";
   import { ICONO_LUGAR } from "../SeGuardaEn.svelte";
   import type { CopiaResumen, DestinoResumen, Equipo, RepoInforme, RepositorioResumen } from "$lib/tipos";
   import { horarioEnFrase, numero, relativo } from "$lib/formato";
@@ -59,7 +60,7 @@
             tono: resultadoConError(espejo.resultado) || espejo.destinos?.some((d) => resultadoConError(d.resultado)) ? "bad" : espejo.ultima ? "ok" : "warn",
             nombre: espejo.destinos?.length ? espejo.destinos.map((d) => (d.tipo === "nube" ? d.nube : d.carpeta)).join(", ") : `Espejo de ${almacen?.nombre}`,
             sub: espejo.ultima ? `Último ${relativo(espejo.ultima, ahora)}` : "Todavía sin ninguno",
-            flecha: `cada noche a las ${espejo.hora}`,
+            flecha: cuandoCortoEspejo(espejo),
             texto: resultadoConError(espejo.resultado) ? espejo.resultado!.replace(/^\s*ERROR:\s*/i, "") : espejo.destinos?.some((d) => resultadoConError(d.resultado)) ? "Algún destino falló" : espejo.ultima ? "Al día" : "Programado",
           }
         : null,

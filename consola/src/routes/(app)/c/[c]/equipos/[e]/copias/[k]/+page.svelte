@@ -8,6 +8,7 @@
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
+  import { cuandoCortoEspejo } from "$lib/espejo";
   import { onDestroy, untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
@@ -408,7 +409,7 @@
           {#if espejo && almacen}
             <div>
               <dt>Espejo <Ayuda id="espejo" /></dt>
-              <dd>{almacen.nombre} lo copia cada noche a las {espejo.hora}{#if espejo.ultima}<span class="faint">, la última {relativo(espejo.ultima, reloj.ahora)}</span>{/if}</dd>
+              <dd>{almacen.nombre} lo copia {cuandoCortoEspejo(espejo)}{#if espejo.ultima}<span class="faint">, la última {relativo(espejo.ultima, reloj.ahora)}</span>{/if}</dd>
             </div>
           {/if}
           <div>

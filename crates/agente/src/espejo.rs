@@ -1,8 +1,9 @@
-//! Espejo del Servidor de copias (copia externa): cada noche, lo que guarda
-//! el rest-server de este equipo se copia, archivo a archivo, a uno o varios
+//! Espejo del Servidor de copias (copia externa): lo que guarda el
+//! rest-server de este equipo se copia, archivo a archivo, a uno o varios
 //! destinos: otra carpeta (p. ej. el segundo disco del almacén) o una nube
 //! conectada con rclone (Dropbox, Google Drive; nube.rs, que sube con
 //! `rclone copy --immutable`: nunca `sync`, nunca reescribe ni borra).
+//! Diseño completo en docs/espejo.md.
 //!
 //! Es seguro con repositorios de restic en «solo añadir»: sus archivos no
 //! cambian una vez escritos (su nombre es su hash). Así que:
@@ -15,6 +16,10 @@
 //!   está con otro tamaño, tampoco se reemplaza (igual que en la nube con
 //!   `--immutable`): alguien ha cambiado una copia ya escrita, y el espejo
 //!   termina con error para que se revise.
+//!
+//! Cuándo (docs/espejo.md §3a): cada destino con su horario (el de las
+//! copias, `gestion_v2::Horario`) o, sin él, cada día a `hora`; y, si se
+//! pide, «después de cada copia nueva» (una versión nueva en `snapshots/`).
 //!
 //! No necesita las contraseñas de los repositorios: no abre nada, solo copia
 //! archivos cifrados.
@@ -42,9 +47,56 @@ pub struct Destino {
     /// ella, y cuándo se leyó. Las carpetas se miden al hacer el resumen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cuota: Option<(crate::espacio::Espacio, String)>,
+    /// §3a: cuándo, con el horario de las copias. Sin él, cada día a `Espejo::hora`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horario: Option<crate::gestion_v2::Horario>,
+    /// §3a: también «después de cada copia nueva» (una versión nueva en `snapshots/`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tras_copia: bool,
+    /// Cuándo empezó la última vuelta a este destino (RFC 3339): desde ahí se
+    /// cuenta el horario y lo que es «una copia nueva».
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inicio: Option<String>,
 }
 
+/// Lo que se espera desde la última versión nueva antes de empezar el espejo
+/// «después de cada copia» (agrupa varias copias seguidas; más que [`RECIENTE`],
+/// para que la última ya se copie).
+pub const ESPERA_TRAS_COPIA: Duration = Duration::from_secs(12 * 60);
+/// Como mucho, lo que se espera desde la primera versión sin copiar aunque sigan llegando.
+pub const ESPERA_MAXIMA_TRAS_COPIA: Duration = Duration::from_secs(60 * 60);
+
 impl Destino {
+    /// El horario de este destino: el suyo o, sin él, cada día a `hora`.
+    pub fn plan(&self, hora: &str) -> Option<crate::plans::PlanSchedule> {
+        match &self.horario {
+            Some(h) => h.plan_schedule().ok(),
+            None => {
+                chrono::NaiveTime::parse_from_str(hora, "%H:%M").ok()?;
+                Some(crate::plans::PlanSchedule {
+                    days: (0..7).collect(),
+                    mode: "at".into(),
+                    times: vec![hora.to_string()],
+                    every_hours: 1,
+                    from: String::new(),
+                    to: String::new(),
+                    rules: vec![],
+                })
+            }
+        }
+    }
+
+    /// Desde cuándo se cuenta: el comienzo de la última vuelta o, en las de
+    /// antes (sin `inicio`), cuándo terminó (RFC 3339, o solo AAAA-MM-DD).
+    pub fn desde(&self) -> Option<chrono::DateTime<chrono::Local>> {
+        let t = self.inicio.as_deref().or(self.ultima.as_deref())?;
+        if let Ok(d) = chrono::DateTime::parse_from_rfc3339(t) {
+            return Some(d.with_timezone(&chrono::Local));
+        }
+        let dia = chrono::NaiveDate::parse_from_str(t.get(..10)?, "%Y-%m-%d").ok()?;
+        chrono::TimeZone::from_local_datetime(&chrono::Local, &dia.and_hms_opt(0, 0, 0)?).earliest()
+    }
+
     pub fn mismo(&self, o: &Destino) -> bool {
         self.tipo == o.tipo && self.carpeta == o.carpeta && self.nube == o.nube
     }
@@ -86,7 +138,7 @@ impl Espejo {
                 nube: None,
                 ultima: self.ultima.clone(),
                 resultado: self.resultado.clone(),
-                cuota: None,
+                ..Default::default()
             });
         }
         d
@@ -118,7 +170,14 @@ impl Espejo {
                     (_, Some((e, leido))) => e.json(leido),
                     _ => serde_json::Value::Null,
                 };
-                serde_json::json!({ "tipo": d.tipo, "carpeta": d.carpeta, "nube": d.nube, "ultima": d.ultima, "resultado": d.resultado, "espacio": espacio })
+                let mut v = serde_json::json!({ "tipo": d.tipo, "carpeta": d.carpeta, "nube": d.nube, "ultima": d.ultima, "resultado": d.resultado, "espacio": espacio });
+                // §3a: su horario (si tiene uno propio), «después de cada copia» y la próxima vuelta por horario.
+                if let Some(h) = &d.horario {
+                    v["horario"] = serde_json::to_value(h).unwrap_or_default();
+                }
+                v["tras_copia"] = d.tras_copia.into();
+                v["proxima"] = d.plan(&self.hora).and_then(|p| p.next_slot(chrono::Local::now())).map(|t| t.to_rfc3339()).into();
+                v
             })
             .collect();
         serde_json::json!({
@@ -130,7 +189,8 @@ impl Espejo {
 /// El espejo pedido en una orden `guarda_copias {espejo: …}`:
 /// - `null` (o sin carpeta ni destinos): quitarlo;
 /// - `{carpeta, hora}`: la forma de 0.7.0, una carpeta;
-/// - `{destinos: [{tipo:"carpeta", carpeta} | {tipo:"nube", nube, carpeta}], hora, limite_kib?}`.
+/// - `{destinos: [{tipo:"carpeta", carpeta} | {tipo:"nube", nube, carpeta}], hora, limite_kib?}`;
+/// - cada destino, además (docs/espejo.md): `horario?` (el de las copias) y `tras_copia?`.
 pub fn pedido(v: &serde_json::Value) -> Result<Option<Espejo>, String> {
     if v.is_null() {
         return Ok(None);
@@ -148,20 +208,36 @@ pub fn pedido(v: &serde_json::Value) -> Result<Option<Espejo>, String> {
     if let Some(lista) = v.get("destinos").filter(|l| !l.is_null()) {
         for d in lista.as_array().ok_or("«destinos» tiene que ser una lista.")? {
             let carpeta = d["carpeta"].as_str().ok_or("A un destino del espejo le falta la carpeta.")?.to_string();
-            match d["tipo"].as_str() {
-                Some("carpeta") => destinos.push(Destino { tipo: "carpeta".into(), carpeta, ..Default::default() }),
+            let mut nuevo = match d["tipo"].as_str() {
+                Some("carpeta") => Destino { tipo: "carpeta".into(), carpeta, ..Default::default() },
                 Some("nube") => {
                     let nube = d["nube"].as_str().ok_or("A un destino en la nube le falta el nombre de la nube.")?.to_string();
-                    destinos.push(Destino { tipo: "nube".into(), carpeta, nube: Some(nube), ..Default::default() });
+                    Destino { tipo: "nube".into(), carpeta, nube: Some(nube), ..Default::default() }
                 }
                 _ => return Err("Tipo de destino del espejo no válido (carpeta o nube).".into()),
-            }
+            };
+            leer_opciones(d, &mut nuevo)?;
+            destinos.push(nuevo);
         }
     }
     if destinos.is_empty() {
         return Ok(None);
     }
     Ok(Some(Espejo { hora, destinos, limite_kib, ..Default::default() }))
+}
+
+/// Las opciones de un destino (docs/espejo.md), ya comprobadas.
+fn leer_opciones(d: &serde_json::Value, nuevo: &mut Destino) -> Result<(), String> {
+    if let Some(h) = d.get("horario").filter(|h| !h.is_null()) {
+        let h: crate::gestion_v2::Horario = serde_json::from_value(h.clone()).map_err(|_| "Horario del espejo no válido.".to_string())?;
+        h.plan_schedule()?.validate()?;
+        nuevo.horario = Some(h);
+    }
+    nuevo.tras_copia = match &d["tras_copia"] {
+        serde_json::Value::Null => false,
+        t => t.as_bool().ok_or("«tras_copia» tiene que ser verdadero o falso.")?,
+    };
+    Ok(())
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -261,14 +337,100 @@ fn error_al_copiar(e: &std::io::Error, destino: &Path) -> String {
     }
 }
 
-/// ¿Toca hoy? (pasada la hora y aún sin hacer hoy).
-pub fn toca(e: &Espejo, ahora: chrono::DateTime<chrono::Local>) -> bool {
-    let hoy = ahora.format("%Y-%m-%d").to_string();
-    let Ok(h) = chrono::NaiveTime::parse_from_str(&e.hora, "%H:%M") else { return false };
-    ahora.time() >= h && !e.ultima.as_deref().is_some_and(|u| u.starts_with(&hoy))
+/// « · con su horario», « · después de cada copia nueva»… (para la línea de órdenes).
+pub fn cuando_texto(d: &Destino) -> String {
+    let mut t = String::new();
+    if d.horario.is_some() {
+        t += " · con su horario";
+    }
+    if d.tras_copia {
+        t += " · después de cada copia nueva";
+    }
+    t
 }
 
-/// Copia a un destino, contando cómo va en `guarda` (la ventana del equipo: los
+/// Por qué toca una vuelta a un destino.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Motivo {
+    Horario,
+    TrasCopia,
+}
+
+/// ¿Toca una vuelta a `d`? `novedades`: la primera y la última versión nueva
+/// (archivos de `snapshots/`) posteriores a su última vuelta, si las hay.
+/// - Por horario: si pasó un hueco desde la última vuelta (o nunca la hubo);
+///   si el equipo estaba apagado, una sola vez al encenderse.
+/// - «Después de cada copia»: cuando lleva [`ESPERA_TRAS_COPIA`] sin llegar
+///   otra versión, o a las [`ESPERA_MAXIMA_TRAS_COPIA`] de la primera.
+/// - Entre dos vueltas del mismo destino, al menos `MIN_GAP_MIN` minutos.
+pub fn toca(e: &Espejo, d: &Destino, ahora: chrono::DateTime<chrono::Local>, novedades: Option<(SystemTime, SystemTime)>) -> Option<Motivo> {
+    let desde = d.desde();
+    if let Some(plan) = d.plan(&e.hora) {
+        let por_horario = match desde {
+            Some(s) => plan.is_due(s, ahora),
+            None => plan.latest_slot(ahora).is_some(),
+        };
+        if por_horario {
+            return Some(Motivo::Horario);
+        }
+    }
+    let (primera, ultima) = novedades.filter(|_| d.tras_copia)?;
+    let hueco = desde.is_none_or(|s| ahora.signed_duration_since(s) >= chrono::Duration::minutes(crate::plans::MIN_GAP_MIN));
+    let ahora_s: SystemTime = ahora.into();
+    let pasado = |t: SystemTime| ahora_s.duration_since(t).unwrap_or_default();
+    (hueco && (pasado(ultima) >= ESPERA_TRAS_COPIA || pasado(primera) >= ESPERA_MAXIMA_TRAS_COPIA)).then_some(Motivo::TrasCopia)
+}
+
+/// Los repositorios que guarda el almacén: `<usuario>` (repositorio en la
+/// carpeta del usuario) o `<usuario>/<repo>`, sin seguir enlaces.
+pub fn repos_en(origen: &Path) -> Vec<String> {
+    let es_repo = |p: &Path| p.join("config").is_file() && p.join("snapshots").is_dir();
+    let subdirs = |d: &Path| -> Vec<(String, PathBuf)> {
+        let Ok(rd) = std::fs::read_dir(d) else { return Vec::new() };
+        let mut v: Vec<(String, PathBuf)> = rd
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()) && !crate::platform::is_reparse_point(&e.path()))
+            .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
+            .collect();
+        v.sort();
+        v
+    };
+    let mut out = Vec::new();
+    for (u, du) in subdirs(origen) {
+        if es_repo(&du) {
+            out.push(u);
+            continue;
+        }
+        for (r, dr) in subdirs(&du) {
+            if es_repo(&dr) {
+                out.push(format!("{u}/{r}"));
+            }
+        }
+    }
+    out
+}
+
+/// La primera y la última versión nueva (fecha de los archivos de
+/// `snapshots/`) posteriores a `desde`, en los repositorios `repos`.
+pub fn novedades(origen: &Path, repos: &[String], desde: Option<SystemTime>) -> Option<(SystemTime, SystemTime)> {
+    let mut r: Option<(SystemTime, SystemTime)> = None;
+    for repo in repos {
+        let Ok(rd) = std::fs::read_dir(origen.join(repo).join("snapshots")) else { continue };
+        for e in rd.flatten() {
+            let Some(t) = e.metadata().ok().filter(|m| m.is_file()).and_then(|m| m.modified().ok()) else { continue };
+            if desde.is_some_and(|d| t <= d) {
+                continue;
+            }
+            r = Some(match r {
+                None => (t, t),
+                Some((a, b)) => (a.min(t), b.max(t)),
+            });
+        }
+    }
+    r
+}
+
+// Copia a un destino, contando cómo va en `guarda` (la ventana del equipo: los
 /// bytes copiados a una carpeta; lo que lee y sube rclone a una nube). Devuelve
 /// el texto del resultado.
 fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate::escritorio::en_marcha::Guarda) -> Result<String, String> {
@@ -297,70 +459,108 @@ fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate:
     Ok(texto)
 }
 
-/// Lo llama el servicio en cada vuelta: si toca, hace el espejo (en otro hilo) y anota el resultado.
+/// El resultado de todo el espejo (para las consolas anteriores y el aviso
+/// `espejo_fallido`): el del único destino, o cuántos fallan en su última vuelta.
+pub(crate) fn resultado_global(destinos: &[Destino]) -> Option<String> {
+    let hechos: Vec<&String> = destinos.iter().filter_map(|d| d.resultado.as_ref()).collect();
+    let errores = hechos.iter().filter(|r| r.starts_with("ERROR")).count();
+    match (destinos.len(), hechos.len(), errores) {
+        (_, 0, _) => None,
+        (1, _, _) => Some(hechos[0].clone()),
+        (n, _, 0) => Some(format!("Espejo hecho en los {n} destinos.")),
+        (n, _, f) => Some(format!("ERROR: espejo del Servidor de copias: {f} de {n} destinos con error.")),
+    }
+}
+
+/// Anota en la configuración algo de un destino (se vuelve a leer: pudo cambiar mientras se copiaba).
+fn anotar(d: &Destino, f: impl FnOnce(&mut Destino)) {
+    let mut c = crate::server::load();
+    if let Some(esp) = c.espejo.as_mut() {
+        esp.normalizar();
+        if let Some(x) = esp.destinos.iter_mut().find(|x| x.mismo(d)) {
+            f(x);
+        }
+        let _ = crate::server::save(&c);
+    }
+}
+
+/// Lo llama el servicio en cada vuelta: los destinos a los que toca, uno
+/// detrás de otro en otro hilo, anotando el resultado de cada uno.
 pub fn si_toca() {
+    static EN_MARCHA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static ULTIMA_MIRADA: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    if EN_MARCHA.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let c = crate::server::load();
     let Some(e) = c.espejo.clone().filter(|_| c.enabled) else { return };
     let ahora = chrono::Local::now();
-    if !toca(&e, ahora) {
+    let origen = PathBuf::from(&c.path);
+    // «Después de cada copia»: mirar `snapshots/` como mucho una vez por minuto.
+    let mirar = e.destinos().iter().any(|d| d.tras_copia) && {
+        let mut u = ULTIMA_MIRADA.lock().unwrap_or_else(|p| p.into_inner());
+        let ya = u.is_some_and(|t| t.elapsed() < Duration::from_secs(60));
+        if !ya {
+            *u = Some(std::time::Instant::now());
+        }
+        !ya
+    };
+    let todos = if mirar { repos_en(&origen) } else { Vec::new() };
+    let toca_ya: Vec<(Destino, Motivo)> = e
+        .destinos()
+        .into_iter()
+        .filter_map(|d| {
+            let nuevas = if mirar && d.tras_copia { novedades(&origen, &todos, d.desde().map(SystemTime::from)) } else { None };
+            toca(&e, &d, ahora, nuevas).map(|m| (d, m))
+        })
+        .collect();
+    if toca_ya.is_empty() || EN_MARCHA.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    static EN_MARCHA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if EN_MARCHA.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        return;
-    }
+    let limite_kib = e.limite_kib;
     std::thread::spawn(move || {
-        let mut hechos: Vec<(Destino, String, Option<crate::espacio::Espacio>)> = Vec::new();
-        let mut errores = 0;
-        for (i, d) in e.destinos().into_iter().enumerate() {
+        for (i, (d, motivo)) in toca_ya.into_iter().enumerate() {
+            // El comienzo, antes de empezar: si el servicio se para a medias, no se repite en bucle.
+            let inicio = chrono::Local::now().to_rfc3339();
+            anotar(&d, |x| x.inicio = Some(inicio.clone()));
             // Para la ventana y los avisos del escritorio: sin la carpeta (es una ruta).
             let (tipo, nombre) = match d.nube.as_deref().filter(|_| d.tipo == "nube") {
                 Some(n) => ("nube", n.to_string()),
                 None => ("espejo", "Disco o carpeta del equipo".to_string()),
             };
             let guarda = crate::escritorio::en_marcha::empezar(tipo, &i.to_string(), &nombre);
-            let texto = match copiar_a(Path::new(&c.path), &d, e.limite_kib, &guarda) {
+            let por = if motivo == Motivo::TrasCopia { " (después de una copia nueva)" } else { "" };
+            let texto = match copiar_a(&origen, &d, limite_kib, &guarda) {
                 Ok(t) => {
                     guarda.terminar("ok");
-                    format!("Espejo hecho en {}: {t}", d.texto())
+                    format!("Espejo hecho en {}{por}: {t}", d.texto())
                 }
                 Err(m) => {
-                    errores += 1;
                     drop(guarda);
                     format!("ERROR: espejo del Servidor de copias en {}: {m}", d.texto())
                 }
             };
             crate::agent::log(&texto);
-            // v1.31: el espacio de la nube, una vez por noche (para «¿Cuándo se llena?»).
+            // v1.31: el espacio de la nube tras cada vuelta (para «¿Cuándo se llena?»).
             let cuota = if d.tipo == "nube" { d.nube.as_deref().and_then(crate::nube::buscar).and_then(|n| crate::nube::cuota(&n)) } else { None };
-            hechos.push((d, texto, cuota));
-        }
-        // Se vuelve a leer: la configuración pudo cambiar mientras se copiaba.
-        let mut c = crate::server::load();
-        if let Some(esp) = c.espejo.as_mut() {
-            esp.normalizar();
             let fin = chrono::Local::now().to_rfc3339();
-            for (d, texto, cuota) in &hechos {
-                if let Some(x) = esp.destinos.iter_mut().find(|x| x.mismo(d)) {
+            let mut c = crate::server::load();
+            if let Some(esp) = c.espejo.as_mut() {
+                esp.normalizar();
+                if let Some(x) = esp.destinos.iter_mut().find(|x| x.mismo(&d)) {
                     x.ultima = Some(fin.clone());
                     x.resultado = Some(texto.clone());
                     if let Some(q) = cuota {
-                        x.cuota = Some((*q, fin.clone()));
+                        x.cuota = Some((q, fin.clone()));
                     }
                 }
+                esp.ultima = Some(fin.clone());
+                esp.resultado = resultado_global(&esp.destinos);
+                // También en la bitácora del equipo (para una consola nueva), sin rutas.
+                crate::bitacora::espejo(&fin, &texto);
             }
-            esp.ultima = Some(fin);
-            esp.resultado = Some(match (hechos.len(), errores) {
-                (1, _) => hechos[0].1.clone(),
-                (n, 0) => format!("Espejo hecho en los {n} destinos."),
-                (n, f) => format!("ERROR: espejo del Servidor de copias: {f} de {n} destinos con error."),
-            });
-            // También en la bitácora del equipo (para una consola nueva), sin rutas.
-            if let (Some(u), Some(r)) = (&esp.ultima, &esp.resultado) {
-                crate::bitacora::espejo(u, r);
-            }
+            let _ = crate::server::save(&c);
         }
-        let _ = crate::server::save(&c);
         EN_MARCHA.store(false, std::sync::atomic::Ordering::SeqCst);
     });
 }
@@ -442,14 +642,101 @@ mod tests {
         use chrono::TimeZone;
         let e = Espejo { carpeta: "x".into(), hora: "02:00".into(), ..Default::default() };
         assert_eq!(e.destinos().len(), 1, "forma de 0.7.0");
-        let t = chrono::Local.with_ymd_and_hms(2026, 10, 2, 1, 59, 0).unwrap();
-        assert!(!toca(&e, t));
+        let d = |ultima: Option<&str>| Destino { ultima: ultima.map(String::from), ..e.destinos()[0].clone() };
         let t = chrono::Local.with_ymd_and_hms(2026, 10, 2, 2, 0, 0).unwrap();
-        assert!(toca(&e, t));
-        let hecha = Espejo { ultima: Some("2026-10-02T02:03:00-05:00".into()), ..e };
-        assert!(!toca(&hecha, t));
+        // Nunca hecho: toca ya (con el hueco de las 02:00 que ya pasó).
+        assert_eq!(toca(&e, &d(None), t, None), Some(Motivo::Horario));
+        // Hecho ayer (forma antigua: solo la fecha, o RFC 3339): a las 02:00 de hoy, sí; antes, no.
+        assert_eq!(toca(&e, &d(Some("2026-10-01")), t, None), Some(Motivo::Horario));
+        let ayer = chrono::Local.with_ymd_and_hms(2026, 10, 1, 2, 3, 0).unwrap().to_rfc3339();
+        assert_eq!(toca(&e, &d(Some(&ayer)), t, None), Some(Motivo::Horario));
+        let antes = chrono::Local.with_ymd_and_hms(2026, 10, 2, 1, 59, 0).unwrap();
+        assert_eq!(toca(&e, &d(Some(&ayer)), antes, None), None);
+        // Hecho hoy después de las 02:00: no vuelve a tocar hasta mañana.
+        let hoy = chrono::Local.with_ymd_and_hms(2026, 10, 2, 2, 3, 0).unwrap().to_rfc3339();
+        assert_eq!(toca(&e, &d(Some(&hoy)), t + chrono::Duration::hours(20), None), None);
+        assert_eq!(toca(&e, &d(Some(&hoy)), t + chrono::Duration::hours(24), None), Some(Motivo::Horario));
     }
 
+    /// §3a: el horario de las copias en cada destino, y «después de cada copia».
+    #[test]
+    fn horario_por_destino_y_tras_copia() {
+        use chrono::TimeZone;
+        use serde_json::json;
+        let e = pedido(&json!({ "hora": "02:00", "destinos": [
+            { "tipo": "carpeta", "carpeta": "E:\\espejo", "horario": { "dias": [], "horas": [], "reglas": [
+                { "tipo": "intervalo", "dias": [1, 2, 3, 4, 5], "cada_min": 60, "desde": "08:00", "hasta": "18:00" } ] } },
+            { "tipo": "nube", "nube": "Dropbox Altamar", "carpeta": "Sur", "tras_copia": true },
+        ] }))
+        .unwrap()
+        .unwrap();
+        let (disco, nube) = (e.destinos[0].clone(), e.destinos[1].clone());
+        assert!(disco.horario.is_some() && !disco.tras_copia && nube.horario.is_none() && nube.tras_copia);
+        // Disco: cada hora de 8 a 18 de lunes a viernes. Viernes 2 de octubre de 2026.
+        let hecho = |h: u32, m: u32| Destino { inicio: Some(chrono::Local.with_ymd_and_hms(2026, 10, 2, h, m, 0).unwrap().to_rfc3339()), ..disco.clone() };
+        let a = |h: u32, m: u32| chrono::Local.with_ymd_and_hms(2026, 10, 2, h, m, 0).unwrap();
+        assert_eq!(toca(&e, &hecho(9, 0), a(9, 30), None), None);
+        assert_eq!(toca(&e, &hecho(9, 0), a(10, 0), None), Some(Motivo::Horario));
+        assert_eq!(toca(&e, &hecho(18, 0), a(23, 0), None), None, "de noche, no");
+        // Nube: cada día a las 02:00 (la `hora` de siempre) y después de cada copia.
+        let n = Destino { inicio: Some(a(2, 0).to_rfc3339()), ..nube.clone() };
+        assert_eq!(toca(&e, &n, a(12, 0), None), None);
+        let ts = |dt: chrono::DateTime<chrono::Local>| SystemTime::from(dt);
+        // Una versión a las 11:55: a las 12:00 aún no (agrupa); a las 12:07, sí.
+        assert_eq!(toca(&e, &n, a(12, 0), Some((ts(a(11, 55)), ts(a(11, 55))))), None);
+        assert_eq!(toca(&e, &n, a(12, 7), Some((ts(a(11, 55)), ts(a(11, 55))))), Some(Motivo::TrasCopia));
+        // Siguen llegando: a la hora de la primera, aunque la última sea de hace 2 min.
+        assert_eq!(toca(&e, &n, a(12, 50), Some((ts(a(11, 55)), ts(a(12, 48))))), None);
+        assert_eq!(toca(&e, &n, a(12, 56), Some((ts(a(11, 55)), ts(a(12, 54))))), Some(Motivo::TrasCopia));
+        // Sin «tras_copia», las versiones nuevas no cuentan.
+        assert_eq!(toca(&e, &Destino { tras_copia: false, ..n.clone() }, a(12, 7), Some((ts(a(11, 55)), ts(a(11, 55))))), None);
+        // El resumen lleva el horario, «tras_copia» y la próxima vuelta.
+        let r = e.resumen();
+        assert_eq!(r["destinos"][0]["horario"]["reglas"][0]["cada_min"], 60);
+        assert_eq!((r["destinos"][1]["tras_copia"].as_bool(), r["destinos"][1].get("horario")), (Some(true), None));
+        assert!(r["destinos"][1]["proxima"].as_str().is_some_and(|p| p.contains("T02:00:00")));
+        // Un horario que no vale se rechaza.
+        for mal in [json!({ "dias": [9], "horas": ["02:00"] }), json!({ "reglas": [{ "tipo": "mensual", "dia": 31, "hora": "02:00" }] }), json!("cada día")] {
+            assert!(pedido(&json!({ "destinos": [{ "tipo": "carpeta", "carpeta": "E:\\x", "horario": mal }] })).is_err(), "{mal}");
+        }
+        assert!(pedido(&json!({ "destinos": [{ "tipo": "carpeta", "carpeta": "E:\\x", "tras_copia": "sí" }] })).is_err());
+    }
+
+    /// Las versiones nuevas de `snapshots/`, en los repositorios del almacén.
+    #[test]
+    fn versiones_nuevas_del_almacen() {
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-nuevas-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for r in ["ana/contabilidad", "ana/fotos", "srv"] {
+            std::fs::create_dir_all(base.join(r).join("snapshots")).unwrap();
+            std::fs::write(base.join(r).join("config"), b"c").unwrap();
+        }
+        std::fs::create_dir_all(base.join("ana/no-es-repo")).unwrap();
+        assert_eq!(repos_en(&base), vec!["ana/contabilidad", "ana/fotos", "srv"]);
+        let hace = |s: u64| SystemTime::now() - Duration::from_secs(s);
+        for (f, t) in [("ana/contabilidad/snapshots/a1", 3600), ("ana/fotos/snapshots/b2", 600), ("srv/snapshots/c3", 60)] {
+            std::fs::write(base.join(f), b"s").unwrap();
+            std::fs::File::options().write(true).open(base.join(f)).unwrap().set_modified(hace(t)).unwrap();
+        }
+        let todos = repos_en(&base);
+        let (primera, ultima) = novedades(&base, &todos, None).unwrap();
+        assert!(primera <= hace(3500) && ultima >= hace(120));
+        // Solo lo posterior a la última vuelta, y solo en los repositorios pedidos.
+        let (p, _) = novedades(&base, &todos, Some(hace(1800))).unwrap();
+        assert!(p >= hace(700));
+        assert_eq!(novedades(&base, &["ana/contabilidad".to_string()], Some(hace(1800))), None);
+        assert_eq!(novedades(&base, &todos, Some(SystemTime::now())), None);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resultado_de_todo_el_espejo() {
+        let d = |r: Option<&str>| Destino { resultado: r.map(String::from), ..Default::default() };
+        assert_eq!(resultado_global(&[d(None), d(None)]), None);
+        assert_eq!(resultado_global(&[d(Some("Espejo hecho en E: 3 archivos"))]).as_deref(), Some("Espejo hecho en E: 3 archivos"));
+        assert_eq!(resultado_global(&[d(Some("bien")), d(None)]).as_deref(), Some("Espejo hecho en los 2 destinos."));
+        assert!(resultado_global(&[d(Some("bien")), d(Some("ERROR: x"))]).unwrap().starts_with("ERROR: espejo del Servidor de copias: 1 de 2"));
+    }
     #[test]
     fn pedidos_y_destinos_quitados() {
         use serde_json::json;

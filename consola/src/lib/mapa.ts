@@ -10,6 +10,7 @@
 import type { Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
+import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
 import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
 
@@ -323,7 +324,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const esp = alm?.resumen?.guarda_copias?.espejo;
     if (!alm || !esp) continue;
     const destinos = esp.destinos?.length ? esp.destinos : [{ tipo: "carpeta" as const, carpeta: "Espejo", ultima: esp.ultima, resultado: esp.resultado }];
-    n.sub = `Almacén · se refleja cada noche`;
+    n.sub = cuandoCortoEspejo(esp).startsWith("cada noche") ? `Almacén · se refleja cada noche` : `Almacén · con espejo`;
     destinos.forEach((d, i) => {
       const mal = resultadoConError(d.resultado);
       const tono: Tono = mal ? "bad" : d.ultima ? (Date.parse(d.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
@@ -333,7 +334,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         tipo: "espejo",
         col: 3,
         nombre: (nube ? d.nube : d.carpeta) ?? "Espejo",
-        sub: `Espejo · cada noche a las ${esp.hora}`,
+        sub: `Espejo · ${cuandoCorto(d, esp.hora)}`,
         tono,
         estado: mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado",
         ultima: d.ultima ?? null,

@@ -389,7 +389,9 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           limite_kib: es.limite_kib ?? null,
           destinos: destinos.map((d) => ({ ...d, ultima: previos.get(claveEspejo(d))?.ultima ?? null, resultado: previos.get(claveEspejo(d))?.resultado ?? null })),
         };
+        if (destinos.some((d) => (d as { horario?: unknown }).horario)) return resultado(e, o, "hecha", `Espejo a ${destinos.length === 1 ? "1 destino" : `${destinos.length} destinos`} con su horario (solo añade).`);
         return resultado(e, o, "hecha", `Espejo a ${destinos.length === 1 ? "1 destino" : `${destinos.length} destinos`} cada noche a las ${hora} (solo añade).`);
+
       }
       if (c.activo === true) {
         const malCarpeta = errorCarpetaLocal(String(c.carpeta ?? ""), /windows/i.test(e.so));

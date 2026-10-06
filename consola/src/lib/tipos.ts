@@ -224,7 +224,20 @@ export interface ResumenEquipo {
       ultima?: string | null;
       resultado?: string | null;
       limite_kib?: number | null;
-      destinos?: { tipo: "carpeta" | "nube"; carpeta?: string | null; nube?: string | null; ultima?: string | null; resultado?: string | null; espacio?: EspacioVolumen | null }[];
+      destinos?: {
+        tipo: "carpeta" | "nube";
+        carpeta?: string | null;
+        nube?: string | null;
+        ultima?: string | null;
+        resultado?: string | null;
+        espacio?: EspacioVolumen | null;
+        /** (agente con `admite: "espejo_flexible"`, docs/espejo.md) su horario propio; sin él, cada día a `hora`. */
+        horario?: Horario | null;
+        /** También después de cada copia nueva. */
+        tras_copia?: boolean | null;
+        /** La próxima vuelta por horario. */
+        proxima?: string | null;
+      }[];
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */
     nubes?: { nombre: string; tipo: "dropbox" | "drive" }[];

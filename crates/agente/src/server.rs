@@ -169,26 +169,27 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
     for d in nuevo.destinos.iter().filter(|d| d.tipo == "carpeta") {
         crate::platform::carpeta_privada(Path::new(&d.carpeta))?;
     }
-    // Lo ya hecho en los destinos que siguen se conserva; uno nuevo hace que toque hoy.
+    // Lo ya hecho en los destinos que siguen se conserva (su última vuelta
+    // cuenta para el horario); uno nuevo hace que toque ya.
     let anterior = c.espejo.take().map(|mut e| {
         e.normalizar();
         e
     });
-    let mut algun_nuevo = false;
     for d in nuevo.destinos.iter_mut() {
-        match anterior.as_ref().and_then(|a| a.destinos.iter().find(|x| x.mismo(d))) {
-            Some(x) => (d.ultima, d.resultado) = (x.ultima.clone(), x.resultado.clone()),
-            None => algun_nuevo = true,
+        if let Some(x) = anterior.as_ref().and_then(|a| a.destinos.iter().find(|x| x.mismo(d))) {
+            (d.ultima, d.resultado, d.inicio, d.cuota) = (x.ultima.clone(), x.resultado.clone(), x.inicio.clone(), x.cuota.clone());
         }
     }
-    if let Some(a) = anterior.filter(|a| !algun_nuevo && a.hora == nuevo.hora) {
-        (nuevo.ultima, nuevo.resultado) = (a.ultima, a.resultado);
+    if let Some(a) = anterior {
+        nuevo.ultima = a.ultima;
     }
+    nuevo.resultado = crate::espejo::resultado_global(&nuevo.destinos);
     let texto = nuevo.destinos.iter().map(|d| format!("«{}»", d.texto())).collect::<Vec<_>>().join(" y ");
-    let hora = nuevo.hora.clone();
+    let cuando =
+        if nuevo.destinos.iter().all(|d| d.horario.is_none() && !d.tras_copia) { format!("cada día a las {}", nuevo.hora) } else { "con su horario".into() };
     c.espejo = Some(nuevo);
     save(&c)?;
-    Ok(format!("Espejo cada día a las {hora} en {texto}."))
+    Ok(format!("Espejo {cuando} en {texto}."))
 }
 
 /// Dónde están los archivos del servidor: en producción, la carpeta del
