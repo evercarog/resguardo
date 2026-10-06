@@ -49,6 +49,33 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/actualizacion-automatica`
+
+Tarea 11 del plan: la actualización automática de los agentes. Diseño en `docs/actualizaciones.md` (escrito y subido primero), pasos para publicar en `docs/publicar.md`, contrato en `docs/api-servidor.md` §14 y «Cambios» (v1.4x).
+
+- **Pedido:** que los agentes (Windows y Linux) se actualicen solos y de forma segura: manifiesto firmado con minisign (llave **fuera de línea**, solo la tiene el responsable; aquí solo una llave de **pruebas**), llaves públicas fijadas al compilar con rotación, script para firmar sin tocar la llave, distribución desde las consolas (espejo que solo acepta lo firmado) y GitHub, instalar con salud en 10 min y vuelta atrás automática, anillos «prueba» y «general» con política por cliente y despliegue automático, la consola con versiones y estado, modelo de amenazas, pruebas y e2e.
+- **Cambios:**
+  - Protocolo: `publicacion.rs` (llaves, firma con `minisign-verify` —MIT, sin dependencias, ya en la lista de cargo-deny—, solo prehash; manifiesto y sus reglas; versiones; combinar políticas; `decidir`), vectores `vectors/publicacion.json` (versiones, políticas, decisiones y firmas hechas por la implementación de JavaScript), llaves de pruebas en `tests/fixtures` (públicas a propósito), propiedades.
+  - Servidor: `publicaciones.rs` (espejo, política en la tabla de valores, retenidas desde los informes), rutas nuevas, aviso `actualizacion_fallida`, CLI `poner-publicacion`, `Opciones::llaves_pruebas` (solo en compilaciones de desarrollo).
+  - Agente: `actualizacion.rs` (hilo del servicio, búsqueda en consolas y GitHub, decisión, descarga con SHA-256, actualizador fuera del servicio tras el trait `Plataforma`, salud, vuelta atrás, avisos), `--actualizar-agente`, `informe.actualizacion`, `admite: "actualizaciones"`, `{"t":"actualizacion"}`, `resguardo-agente actualizaciones [github si|no]`. Prueba de integración con un servidor real (`actualizacion_it.rs`).
+  - Empaquetado y publicación: `packaging/llave-publicacion.pub` (marcador de posición), `scripts/firmar-publicacion.mjs` y `scripts/lib/minisign.mjs`, `build-agente.mjs` y `construir-paquetes.sh` se niegan sin llave salvo `RESGUARDO_SIN_ACTUALIZACIONES=1` (la CI la pone solo mientras sea el marcador), `agente.nsi` con `/ACTUALIZACION=1`.
+  - Consola: «Versiones» (nuevo en la barra, en «Gestión»), estado en la ficha del equipo, aviso, «Actualizaciones de los agentes» en Servidor para el propietario, simulador y `scripts/vectores-actualizaciones.ts`; e2e paso 4a.
+- **Comprobado:** `cargo fmt --all --check`, los dos `cargo clippy … -D warnings` (también con `consola-integrada`), `cargo test --workspace` (con `actualizacion_it`, las pruebas del servidor `tests/actualizaciones.rs` y las propiedades), consola `check`, `build` y `test:vectores` (57 de las actualizaciones), `test:sin-referencias` y el e2e completo en Windows («Escenario completo», con el paso 4a), todo tras unir `origin/main`. Revisado en el simulador «Versiones» a 1280 y 375 px (oscuro) y la tarjeta del servidor.
+- **Sin probar (lista para máquinas virtuales en `docs/actualizaciones.md` §11):** la sustitución real del programa: el instalador NSIS lanzado por el actualizador como SYSTEM (fuera del job del servicio, `TEMP` privado, archivo abierto sin escritura), `systemd-run` + renombrar en `/opt/resguardo-agente` + `systemctl restart`, la vuelta atrás real en los dos sistemas, el icono de la bandeja tras actualizar, un `.deb` actualizado así, y `scripts/firmar-publicacion.mjs` con un minisign de verdad (aquí no hay minisign instalado: se probó hasta llamar a minisign, y la comprobación de firmas con vectores cruzados Rust/JavaScript y con una firma real de minisign).
+- **Decisiones tomadas sin preguntar (para revisar):**
+  - Sin ninguna consola que diga nada (modo local o consolas anteriores): automática, anillo general, 2 días, sin ventana, y GitHub permitido por defecto (`resguardo-agente actualizaciones github no` lo apaga). Así un equipo suelto también recibe arreglos.
+  - Con varias consolas, lo más prudente: pausa > manual > automática; general si alguna lo dice; los días, los más; **todas** las ventanas a la vez (si no coinciden nunca, no se actualiza solo y lo dice); la aprobación de cualquiera vale salvo si otra lo pausa.
+  - Un **almacén** («guarda copias») sin ventana no se actualiza solo (`almacen_sin_ventana`): en Windows el instalador para su servidor de copias y cortaría las copias de los demás. Necesita ventana o «Actualizar ahora».
+  - «Disponible desde» = la más tardía entre la fecha firmada y la primera vez que **ese equipo** la vio (para que los días del anillo general cuenten desde que la ven).
+  - Una versión que volvió atrás en un equipo no se reintenta sola en él y la consola la **retiene** para el resto del cliente; «Actualizar ahora» la libera.
+  - Si hay consolas y ninguna responde en esa búsqueda, no se instala (la salud no se podría comprobar).
+  - Linux: binarios reemplazados con renombrar encima también si se instaló con el `.deb` (dpkg verá esos archivos cambiados hasta el siguiente `apt install`); la unidad de systemd no se toca.
+  - Windows: rollback devolviendo los programas guardados en `privado/actualizacion/anterior/` (no con el instalador anterior, que no siempre está), y `DisplayVersion` de vuelta con `reg add`.
+  - La política y los anillos van en la tabla de valores del servidor (sin tablas nuevas en SQLite/PostgreSQL) y no viajan al exportar un cliente.
+  - La consola enseña el estado que dice el agente; no recalcula la decisión.
+  - El servidor no se actualiza solo todavía (tarea 11g): la consola enseña su versión y los pasos a mano.
+- **Lo que tiene que hacer el responsable:** crear la llave fuera de línea y ponerla en el repositorio (`docs/publicar.md` §1–2), instalar a mano una vez en cada equipo la primera versión con la llave y, desde ahí, publicar con `scripts/firmar-publicacion.mjs` (§3).
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/consolas-sincronizadas`
 
 Lo que contó el usuario con un equipo vinculado a dos consolas (la de la oficina y la en línea). Diseño y tabla de qué es de cada consola en `docs/consolas-multiples.md` §6; contrato en `docs/api-servidor.md` «Cambios», v1.4x (lo que comparten las consolas de un equipo).

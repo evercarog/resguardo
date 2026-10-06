@@ -169,7 +169,19 @@ Lo pendiente de `docs/plataforma.md` §7.3.1 que se acordó hacer, más lo que s
 - [x] **10b. App de escritorio antigua: congelada** (decisión del responsable, ver «Decisiones»). Más adelante, proponer cómo retirarla cuando el agente con su ventana la sustituya; no se borra nada sin su visto bueno.
 - [x] **10c. Versiones desalineadas** (anotado el 2026-10-06 para quien publica, sin tocar nada: agente y servidor 0.7.22; app de escritorio 0.6.8 congelada; consola `0.1.0` en `consola/package.json` y el `package.json` raíz con `0.6.8` y la descripción antigua «Interfaz gráfica sencilla y segura para restic». Propuesta: al publicar la siguiente, poner la consola en la versión del servidor que la lleva dentro y dejar la raíz como está mientras la app siga congelada) (agente y servidor 0.7.x, app 0.6.x, consola 0.1.0, y el `package.json` raíz con la descripción antigua): **no tocar** (regla 6 de `AGENTS.md`); dejarlo anotado para quien publica.
 
-Fuera del plan por ahora (decisión del responsable): agente para Mac, instaladores firmados (de pago), «antes de copiar» para otras bases de datos (MySQL, PostgreSQL) y la actualización automática de los agentes (la revisa él).
+## 11. Actualización automática de los agentes
+
+Aprobada por el responsable el 2026-10-06: llave de publicación **fuera de línea** (minisign, la tiene él; al repositorio solo llega la pública), despliegue **por anillos** automático y **vuelta atrás** automática. Diseño: [actualizaciones.md](actualizaciones.md); pasos para publicar: [publicar.md](publicar.md); contrato en `api-servidor.md` §14 y «Cambios» (v1.4x).
+
+- [x] **11a. Manifiesto firmado y llaves fijadas** (rama `ia/actualizacion-automatica`): `crates/protocolo/src/publicacion.rs` (minisign-verify, solo prehash; varias llaves para rotar; revocación), vectores compartidos con la consola, llave de pruebas en `tests/fixtures`. `packaging/llave-publicacion.pub` es el **marcador de posición** hasta que el responsable ponga la suya.
+- [x] **11b. Firmar fuera de línea**: `scripts/firmar-publicacion.mjs` (llama a `minisign -S`, nunca ve la llave ni la contraseña). `build-agente.mjs` y `construir-paquetes.sh` se niegan sin llave salvo `RESGUARDO_SIN_ACTUALIZACIONES=1`.
+- [x] **11c. El servidor como espejo**: acepta solo lo firmado, lo sirve tal cual; política por cliente, anillo por equipo, retenidas automáticas, «Actualizar ahora», `poner-publicacion`.
+- [x] **11d. El agente**: busca en sus consolas y en GitHub, decide con la política combinada, baja con SHA-256, actualizador fuera del servicio (Windows: NSIS `/S /ACTUALIZACION=1`; Linux: renombrar encima y `systemctl restart`), salud en 10 min y vuelta atrás con aviso a todas las consolas.
+- [x] **11e. En la consola**: «Versiones» del cliente, estado en la ficha del equipo, aviso, «Actualizaciones de los agentes» para el propietario del servidor.
+- [ ] **11f. Probar en máquinas virtuales** la sustitución real (lista en [actualizaciones.md](actualizaciones.md) §11), con una llave de pruebas propia. **Antes**: el responsable crea la llave de verdad y la pone en el repositorio (publicar.md §2).
+- [ ] **11g. Más adelante:** que el servidor baje solo las versiones de GitHub (con la misma comprobación) y que **Resguardo Server se actualice solo** con el mismo mecanismo (otro `producto` en el manifiesto). Hoy la consola enseña la versión y los pasos a mano.
+
+Fuera del plan por ahora (decisión del responsable): agente para Mac, instaladores firmados (de pago) y «antes de copiar» para otras bases de datos (MySQL, PostgreSQL).
 
 ## Mientras tanto (sin código)
 

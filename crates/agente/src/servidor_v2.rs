@@ -227,8 +227,12 @@ pub(crate) fn es_local(url: &str) -> bool {
 }
 
 fn agente_http(url: &str, ca_pem: Option<&str>) -> Result<ureq::Agent, String> {
+    agente_http_con(url, ca_pem, Duration::from_secs(60))
+}
+
+fn agente_http_con(url: &str, ca_pem: Option<&str>, plazo: Duration) -> Result<ureq::Agent, String> {
     use ureq::tls::{Certificate, RootCerts, TlsConfig, TlsProvider};
-    let base = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(60))).http_status_as_error(false);
+    let base = ureq::Agent::config_builder().timeout_global(Some(plazo)).http_status_as_error(false);
     if url.starts_with("http://") {
         if !es_local(url) {
             return Err("El servidor tiene que usar https:// (http:// solo en este mismo equipo).".into());
@@ -294,6 +298,11 @@ fn explicar_rechazo_vincular(estado: u16, resp: &Value) -> String {
 /// Cliente HTTP con la autoridad TLS fijada del servidor.
 pub fn agente_de(v: &Vinculo) -> Result<ureq::Agent, String> {
     agente_http(&v.url, Some(&v.ca_pem))
+}
+
+/// Lo mismo para bajar un archivo grande (una versión nueva del agente): hasta 2 horas.
+pub fn agente_descarga(v: &Vinculo) -> Result<ureq::Agent, String> {
+    agente_http_con(&v.url, Some(&v.ca_pem), Duration::from_secs(2 * 3600))
 }
 
 pub fn llamar(v: &Vinculo, metodo: &str, ruta: &str, cuerpo: Option<&Value>) -> Result<(u16, Value), String> {
@@ -1620,6 +1629,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     };
     comprueba_identidad(&v, &reto, hola["firma"].as_str().unwrap_or(""))?;
     crate::agent::log(&format!("Canal con Resguardo Server abierto ({quien})."));
+    // Si esta versión acaba de instalarse, está sana: habla con una consola que demostró quién es.
+    crate::actualizacion::canal_abierto();
     // v1.50 (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
     crate::ancla::recibir(&v, &hola["ancla"]);
     anotar_contacto(id);
@@ -1689,6 +1700,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                     }
                     // v1.50 (9b): el ancla de la auditoría, cada hora con el canal abierto.
                     "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
+                    // v1.4x: «Actualizar ahora» o un cambio de la política: buscar la versión ya.
+                    "actualizacion" => crate::actualizacion::toque(),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
                     "orden" => {

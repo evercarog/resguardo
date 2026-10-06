@@ -1068,15 +1068,20 @@ impl Almacen for Sqlite {
             let filas = st.query_map(params![equipo], |r| Ok((fila_orden(r)?, r.get::<_, Option<Ts>>(15)?))).map_err(s)?;
             let todas = filas.collect::<Result<Vec<_>, _>>().map_err(s)?;
             // Las que ya tocan; con `adelantar`, también las que esperan su hora y piden
-            // autorización (las inofensivas con espera, como siempre, a su hora). v1.4x: en orden
-            // y sin saltarse ninguna: la primera que aún no toca retiene a las siguientes. Si no,
-            // un agente anterior recibiría antes una orden posterior y, al llegar la hora de la
-            // que esperaba, la rechazaría por «antigua» (número menor que el último que aceptó).
-            todas
-                .into_iter()
-                .take_while(|(o, desde)| desde.is_none_or(|d| d <= ahora) && (o.not_before.is_none_or(|nb| nb <= ahora) || (adelantar && adelantable(&o.tipo))))
-                .map(|(o, _)| o)
-                .collect::<Vec<_>>()
+            // autorización (las inofensivas con espera, como siempre, a su hora).
+            let toca = |o: &Orden, desde: Option<Ts>| {
+                desde.is_none_or(|d| d <= ahora) && (o.not_before.is_none_or(|nb| nb <= ahora) || (adelantar && adelantable(&o.tipo)))
+            };
+            if adelantar {
+                todas.into_iter().filter(|(o, d)| toca(o, *d)).map(|(o, _)| o).collect::<Vec<_>>()
+            } else {
+                // v1.4x: a un agente que no guarda las órdenes con espera, en orden y sin saltarse
+                // ninguna: la primera que aún no toca retiene a las siguientes. Si no, recibiría
+                // antes una orden posterior y, al llegar la hora de la que esperaba, la rechazaría
+                // por «antigua» (número menor que el último que aceptó). Al que las guarda se le
+                // dan al momento, así que eso no le pasa (como en v1.49).
+                todas.into_iter().take_while(|(o, d)| toca(o, *d)).map(|(o, _)| o).collect::<Vec<_>>()
+            }
         };
         for o in &ordenes {
             tx.execute("UPDATE ordenes SET estado = 'entregada', actualizada = ?2, entregar_desde = NULL WHERE id = ?1", params![o.id, ahora]).map_err(s)?;
@@ -2109,10 +2114,9 @@ mod tests {
         a.insertar_orden(&c, &nueva(3, "quitar_repositorio", Some(t + 86_400))).unwrap();
         // Un agente anterior: nada todavía.
         assert!(a.entregar_ordenes(&c, "e1", t, false).unwrap().is_empty());
-        // Uno nuevo: la que pide autorización; la inofensiva, a su hora, y la 3 detrás de ella
-        // (v1.4x: sin saltarse ninguna, para que ninguna llegue después de otra posterior).
+        // Uno nuevo: las dos que piden autorización, en orden; la inofensiva, a su hora.
         let ya = a.entregar_ordenes(&c, "e1", t, true).unwrap();
-        assert_eq!(ya.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1]);
+        assert_eq!(ya.iter().map(|o| o.seq).collect::<Vec<_>>(), vec![1, 3]);
         assert_eq!(a.ordenes_con_espera(&c, t).unwrap().len(), 3, "entregadas o no, siguen esperando su turno");
         // Cancelar una entregada que espera: el equipo se entera en la próxima entrega.
         assert!(a.cancelar_orden(&c, "o1", "ana", t).unwrap());
@@ -2123,7 +2127,7 @@ mod tests {
         r.pisar_cancelada = true;
         assert!(a.resultado_orden(&c, "e1", &r).unwrap());
         assert_eq!(a.orden(&c, "o1").unwrap().unwrap().estado, "hecha");
-        assert_eq!(a.entregar_ordenes(&c, "e1", t + 3600, true).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2, 3]);
+        assert_eq!(a.entregar_ordenes(&c, "e1", t + 3600, true).unwrap().iter().map(|o| o.seq).collect::<Vec<_>>(), vec![2]);
     }
 
     /// Lo entregado por una conexión muerta vuelve a entregarse; lo que caduca sin

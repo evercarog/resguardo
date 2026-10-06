@@ -178,7 +178,9 @@ export interface Respuesta<T = any> {
 export function pedirHttps(url: string, opciones: { metodo?: string; cuerpo?: unknown; cabeceras?: Record<string, string>; ca?: string; plazo?: number } = {}): Promise<Respuesta> {
   return new Promise((ok, mal) => {
     const u = new URL(url);
-    const datos = opciones.cuerpo === undefined ? undefined : Buffer.from(JSON.stringify(opciones.cuerpo));
+    // Un Buffer va tal cual (p. ej. un archivo de una publicación); lo demás, como JSON.
+    const crudo = Buffer.isBuffer(opciones.cuerpo);
+    const datos = opciones.cuerpo === undefined ? undefined : crudo ? (opciones.cuerpo as Buffer) : Buffer.from(JSON.stringify(opciones.cuerpo));
     const r = https.request(
       {
         host: u.hostname,
@@ -188,7 +190,7 @@ export function pedirHttps(url: string, opciones: { metodo?: string; cuerpo?: un
         ca: opciones.ca,
         // Sin autoridad (la primera vez, para descargarla): como el agente al vincularse.
         rejectUnauthorized: !!opciones.ca,
-        headers: { Accept: "application/json", ...(datos ? { "Content-Type": "application/json", "Content-Length": String(datos.length) } : {}), ...opciones.cabeceras },
+        headers: { Accept: "application/json", ...(datos ? { "Content-Type": crudo ? "application/octet-stream" : "application/json", "Content-Length": String(datos.length) } : {}), ...opciones.cabeceras },
         timeout: opciones.plazo ?? 60_000,
       },
       (res) => {

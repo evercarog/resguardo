@@ -15,6 +15,7 @@ Uso: resguardo-server [opciones]
      resguardo-server hacer-respaldo [--datos DIR]
      resguardo-server restaurar-respaldo ARCHIVO [--datos DIR] [--reemplazar] [--confiar-en HUELLA]
      resguardo-server poner-instalador-agente ARCHIVO.exe [--datos DIR] [--sha256 HEX]
+     resguardo-server poner-publicacion CARPETA [--datos DIR]
 
   --datos DIR          Carpeta de datos (por defecto /var/lib/resguardo-server; en Windows,
                        C:\\ProgramData\\Resguardo Server)
@@ -83,6 +84,14 @@ Uso: resguardo-server [opciones]
                        su SHA-256 y, con --sha256 HEX, se niega si no es ese. Queda solo para
                        el usuario del servidor (0600); vale al momento, sin reiniciar. Como
                        root (sudo). Para cambiarlo, se repite con el nuevo.
+
+  poner-publicacion CARPETA
+                       Pone una versión del agente para que este servidor la dé a sus
+                       equipos (actualización automática, docs/actualizaciones.md): la
+                       carpeta con manifiesto-agente.json, su firma (.minisig) y los
+                       archivos. Solo la acepta si la firma es de la llave de publicación
+                       de Resguardo y cada archivo coincide con su SHA-256. El servidor
+                       nunca firma nada. Como root (sudo); vale al momento, sin reiniciar.
 
 Variables de entorno (las opciones tienen prioridad; en Linux, el servicio de systemd
 las lee de /etc/resguardo-server/servidor.env):
@@ -172,6 +181,9 @@ enum Modo {
         archivo: PathBuf,
         /// `--sha256`: el que tiene que tener (el publicado).
         sha256: Option<String>,
+    },
+    PonerPublicacion {
+        carpeta: PathBuf,
     },
 }
 
@@ -263,6 +275,7 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
             "hacer-respaldo" => modo = Modo::HacerRespaldo,
             "restaurar-respaldo" => modo = Modo::RestaurarRespaldo { archivo: PathBuf::from(valor(&mut i)?), reemplazar: false, confiar_en: None },
             "poner-instalador-agente" => modo = Modo::PonerInstaladorAgente { archivo: PathBuf::from(valor(&mut i)?), sha256: None },
+            "poner-publicacion" => modo = Modo::PonerPublicacion { carpeta: PathBuf::from(valor(&mut i)?) },
             "--sha256" => sha256 = Some(valor(&mut i)?),
             "--reemplazar" => reemplazar = true,
             "--confiar-en" => confiar_en = Some(valor(&mut i)?),
@@ -358,6 +371,7 @@ fn principal() -> Result<(), String> {
         Modo::HacerRespaldo => hacer_respaldo(&c),
         Modo::RestaurarRespaldo { archivo, reemplazar, confiar_en } => restaurar_respaldo(&c, &archivo, reemplazar, confiar_en.as_deref()),
         Modo::PonerInstaladorAgente { archivo, sha256 } => poner_instalador_agente(&c, &archivo, sha256.as_deref()),
+        Modo::PonerPublicacion { carpeta } => poner_publicacion(&c, &carpeta),
         #[cfg(windows)]
         Modo::Servicio => servicio::ejecutar(c),
         #[cfg(windows)]
@@ -584,6 +598,43 @@ fn poner_instalador_agente(c: &Config, archivo: &std::path::Path, sha256: Option
     Ok(())
 }
 
+/// Las llaves de publicación de **pruebas** (`RESGUARDO_LLAVES_PRUEBAS`, un `.pub` de
+/// minisign): solo en una compilación de desarrollo (en la de publicación ni se lee).
+fn llaves_pruebas() -> Option<String> {
+    if cfg!(debug_assertions) {
+        entorno("RESGUARDO_LLAVES_PRUEBAS").and_then(|r| std::fs::read_to_string(r).ok())
+    } else {
+        None
+    }
+}
+
+/// `poner-publicacion`: una versión firmada del agente en la carpeta de datos.
+fn poner_publicacion(c: &Config, carpeta: &std::path::Path) -> Result<(), String> {
+    use resguardo_servidor::publicaciones as pb;
+    let opciones = Opciones { llaves_pruebas: llaves_pruebas(), ..Default::default() };
+    let llaves = pb::llaves(&opciones);
+    if llaves.vacia() {
+        return Err("Este servidor se compiló sin llave de publicación: no acepta versiones del agente.".into());
+    }
+    let g = pb::poner_carpeta(&c.datos, &llaves, carpeta).map_err(|e| {
+        if cfg!(unix) && e.contains("os error 13") {
+            format!("{e}: ejecútalo con sudo.")
+        } else {
+            e
+        }
+    })?;
+    println!("Versión {} del agente puesta en {} (firma comprobada).", g.manifiesto.version, g.dir.display());
+    for a in &g.manifiesto.archivos {
+        let ok = !g.faltan.contains(&a.nombre);
+        let nota = if ok { "" } else { ": súbelo desde la consola o repite con él en la carpeta" };
+        println!("  {} {} ({}, {} KB){nota}", if ok { "bien " } else { "FALTA" }, a.nombre, a.plataforma, a.tamano / 1024);
+    }
+    if g.completa() {
+        println!("Los equipos la verán en su próxima búsqueda (o al pulsar «Actualizar ahora» en la consola).");
+    }
+    Ok(())
+}
+
 /// El nombre o la IP con que abrir la consola desde otro equipo.
 fn host_consola(c: &Config) -> String {
     if !c.escuchar.ip().is_unspecified() {
@@ -621,6 +672,7 @@ pub fn arrancar(c: Config, salida: &dyn Fn(&str)) -> Result<(), String> {
         proxy_redes: c.proxy_redes.clone(),
         url_agentes: c.url_agentes.clone(),
         publico: c.publico,
+        llaves_pruebas: llaves_pruebas(),
         ..Default::default()
     };
     let st = preparar(&c.datos, opciones)?;

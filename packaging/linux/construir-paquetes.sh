@@ -38,6 +38,18 @@ case "$ARQ" in
   aarch64) ARQ_DEB="arm64" ;;
   *) echo "Arquitectura no soportada: $ARQ" >&2; exit 2 ;;
 esac
+# La llave de publicación (docs/actualizaciones.md): con el marcador de posición, el agente
+# no se actualiza solo. Sus paquetes solo se hacen si el binario se compiló a sabiendas sin
+# actualización automática (RESGUARDO_SIN_ACTUALIZACIONES=1, también al compilarlo).
+if [ "$QUE" = "agente" ] && ! grep -Eq '^RW[A-Za-z0-9+/=]{50,}' "$AQUI/../llave-publicacion.pub"; then
+  if [ "${RESGUARDO_SIN_ACTUALIZACIONES:-}" != "1" ]; then
+    echo "No se empaqueta: packaging/llave-publicacion.pub no tiene ninguna llave pública (es aún el marcador de posición)." >&2
+    echo "Pon la llave pública de verdad (docs/publicar.md) o, para un agente SIN actualización automática," >&2
+    echo "compílalo y empaquétalo con RESGUARDO_SIN_ACTUALIZACIONES=1." >&2
+    exit 3
+  fi
+  echo "AVISO: paquetes de un agente SIN actualización automática (RESGUARDO_SIN_ACTUALIZACIONES=1)."
+fi
 mkdir -p "$SALIDA"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

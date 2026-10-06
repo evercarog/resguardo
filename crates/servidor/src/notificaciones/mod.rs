@@ -449,6 +449,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
         // v1.4x: una orden con espera que caducó, se rechazó o falló sin aplicarse.
         "orden_no_aplicada" => format!("No se aplicó una orden con espera en {e}"),
+        "actualizacion_fallida" => format!("{e} no pudo actualizarse y volvió a la versión anterior"),
         _ => format!("Aviso de {e}"),
     };
     let ok = match tipo {

@@ -37,6 +37,7 @@ pub const ORDENES: &[&str] = &[
     "repositorio",
     "ayuda",
     "version",
+    "actualizaciones",
 ];
 
 /// Otras formas de pedir la ayuda o la versión (`--help`, `-h`, `--version`…).
@@ -54,6 +55,8 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
   estado                                  Resumen: servidor, copias (última y próxima), Servidor de copias,
                                           espejo, nubes y últimos errores
   version                                 La versión del agente
+  actualizaciones                         La actualización automática: versión disponible, estado y motivo
+  actualizaciones github si|no            Buscar también en las publicaciones de GitHub (por defecto, sí)
   copias                                  Repositorios y copias que hace este equipo
   copiar-ahora <repo> <copia>             Lanza una copia ya
   versiones <repo>                        Versiones guardadas en un repositorio
@@ -103,6 +106,74 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
                                           Crea un repositorio (solo en modo local). Pide la contraseña
                                           (y el secreto del destino, si hay usuario) por la entrada estándar
 ";
+
+/// `actualizaciones [github si|no]` (docs/actualizaciones.md).
+fn actualizaciones(args: &[String]) -> Result<(), String> {
+    use crate::actualizacion as a;
+    if args.get(1).map(String::as_str) == Some("github") {
+        crate::agent::require_admin()?;
+        let github = match args.get(2).map(String::as_str) {
+            Some("si" | "sí") => true,
+            Some("no") => false,
+            _ => return Err("Usa «actualizaciones github si» o «actualizaciones github no».".into()),
+        };
+        a::poner_ajustes(&a::Ajustes { github })?;
+        println!("{}", if github { "Buscará también en GitHub." } else { "Solo buscará en sus consolas." });
+        return Ok(());
+    }
+    print!("{}", texto_actualizaciones(&a::informe(), crate::version_programa(), a::ajustes().github));
+    Ok(())
+}
+
+/// El estado de la actualización automática, en palabras.
+pub fn texto_actualizaciones(i: &serde_json::Value, version: &str, github: bool) -> String {
+    let t = |k: &str| i[k].as_str().unwrap_or("").to_string();
+    let mut s = format!("Versión instalada: {version}\n");
+    let estado = match t("estado").as_str() {
+        "desactivada" if t("motivo") == "sin_actualizaciones" => "Sin actualización automática (este programa se compiló así).".to_string(),
+        "desactivada" => "Sin actualización automática (este programa no tiene llave de publicación).".to_string(),
+        "al_dia" => "Al día.".to_string(),
+        "pausada" => format!("En pausa desde la consola (disponible: {}).", t("version_disponible")),
+        "pendiente" => format!(
+            "Pendiente: la {} ({}{}).",
+            t("version_disponible"),
+            motivo_actualizacion(&t("motivo")),
+            if t("hasta").is_empty() { String::new() } else { format!(", hasta {}", t("hasta")) }
+        ),
+        "descargando" => format!("Descargando la {}.", t("version_objetivo")),
+        "actualizando" => format!("Actualizando a la {}.", t("version_objetivo")),
+        "actualizada" => format!("Actualizada a la {}.", t("version_objetivo")),
+        "vuelta_atras" => format!("La {} no estuvo sana y volvió a la anterior. {}", t("version_fallida"), t("mensaje")),
+        "fallida" => format!("No se pudo actualizar a la {}. {}", t("version_objetivo"), t("mensaje")),
+        otro => otro.to_string(),
+    };
+    s.push_str(&format!("Estado: {}\n", estado.trim()));
+    if !t("anillo").is_empty() {
+        s.push_str(&format!("Anillo: {} · modo: {}\n", t("anillo"), t("modo")));
+    }
+    if !t("ultima_busqueda").is_empty() {
+        s.push_str(&format!("Última búsqueda: {} ({})\n", t("ultima_busqueda"), t("origen")));
+    }
+    s.push_str(&format!("GitHub: {}\n", if github { "sí (si las consolas no la tienen)" } else { "no" }));
+    s
+}
+
+/// Por qué espera, en palabras (lo mismo que dice la consola).
+pub fn motivo_actualizacion(m: &str) -> &'static str {
+    match m {
+        "sin_paquete" => "no hay paquete para este sistema",
+        "necesita_intermedia" => "antes hay que instalar una versión intermedia",
+        "espera_aprobacion" => "esperando a que la apruebes en la consola",
+        "retenida" => "retenida: falló en algún equipo",
+        "espera_anillo" => "espera su turno (anillo general)",
+        "espera_ventana" => "fuera de la ventana de mantenimiento",
+        "ventanas_sin_coincidir" => "las ventanas de sus consolas no coinciden nunca",
+        "en_marcha" => "hay una copia o una restauración en marcha",
+        "almacen_sin_ventana" => "es un almacén: necesita una ventana de mantenimiento o «Actualizar ahora»",
+        "sin_consola" => "ninguna consola respondió",
+        _ => "esperando",
+    }
+}
 
 /// Las ventanas de Windows sin consola: la de la terminal desde la que se lanza.
 fn adjuntar_consola() {
@@ -207,6 +278,7 @@ fn orden(args: &[String]) -> Result<(), String> {
             println!("Resguardo Agente {}", crate::version_programa());
             Ok(())
         }
+        "actualizaciones" => actualizaciones(args),
         "copias" => {
             for r in crate::agent::load_config().repos {
                 println!("{} ({}) · {}", r.name, r.id, r.location);

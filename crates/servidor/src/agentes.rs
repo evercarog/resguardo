@@ -44,6 +44,9 @@ pub fn router() -> Router<St> {
         .route("/api/agente/sesiones/{s}/mensajes", get(leer_sesion).post(escribir_sesion))
         .route("/api/agente/relevos/{r}/trozos/{n}", put(subir_trozo).layer(DefaultBodyLimit::max(MAX_TROZO)))
         .route("/api/agente/relevos/{r}/fin", post(fin_relevo))
+        // Actualización automática (docs/actualizaciones.md): política y publicación firmada.
+        .route("/api/agente/actualizacion", get(crate::publicaciones::para_agente))
+        .route("/api/agente/actualizacion/archivos/{v}/{n}", get(crate::publicaciones::archivo_para_agente))
         .layer(DefaultBodyLimit::max(1024 * 1024))
 }
 
@@ -550,6 +553,8 @@ async fn registrar_informe(st: &St, a: &Agente, datos: Value) -> Res<()> {
     // rechazaría por «repetidas» las órdenes nuevas hasta alcanzarlo. Solo se sube.
     let ultimo_seq = datos.get("ultimo_seq").and_then(Value::as_u64).filter(|n| seq_valido(*n));
     let version = datos.get("version").and_then(Value::as_str).map(|s| texto_corto(s, 40));
+    // v1.4x: una versión que falló en este equipo se retiene para el resto del cliente.
+    let fallida = crate::publicaciones::fallida_del_informe(&datos);
     // Copias, verificaciones… que fallan o vuelven a ir bien: para las notificaciones (solo si cambió algo).
     let evento = crate::notificaciones::evento_estado(&st.notif, &a.ctx, &a.equipo, crate::notificaciones::problemas::Fuente::Informe, &datos);
     let hay_evento = evento.is_some();
@@ -559,6 +564,11 @@ async fn registrar_informe(st: &St, a: &Agente, datos: Value) -> Res<()> {
         db.poner_estado_servicio(&ctx, &equipo, servicio.as_deref(), version.as_deref())?;
         if let Some(n) = ultimo_seq {
             db.adelantar_seq(&ctx, &equipo, n + 1)?;
+        }
+        if let Some(v) = &fallida {
+            if crate::publicaciones::retener(db, ctx.id(), v)? {
+                db.auditar(&ctx, &format!("equipo:{equipo}"), "retener_version", ctx.id(), &json!({ "version": v }).to_string())?;
+            }
         }
         match &evento {
             Some(e) => crate::notificaciones::apuntar(db, e),
@@ -667,7 +677,9 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
 }
 
 /// v1.49: `orden_en_espera` (otra consola mandó una orden que el equipo tiene en espera).
-const TIPOS_AVISO: &[&str] = &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual", "orden_en_espera"];
+/// v1.4x: `actualizacion_fallida` (una versión nueva no estuvo sana y el equipo volvió a la anterior).
+const TIPOS_AVISO: &[&str] =
+    &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual", "orden_en_espera", "actualizacion_fallida"];
 
 #[derive(Deserialize)]
 pub struct Aviso {

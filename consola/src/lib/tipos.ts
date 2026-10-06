@@ -875,7 +875,52 @@ export type TipoAviso =
   // v1.50 (9b): un equipo vio que una de sus consolas rehízo su actividad.
   | "auditoria_rehecha"
   // v1.4x: una orden con espera que caducó, se rechazó o falló sin aplicarse.
-  | "orden_no_aplicada";
+  | "orden_no_aplicada"
+  // v1.4x: una versión nueva del agente no estuvo sana y el equipo volvió a la anterior.
+  | "actualizacion_fallida";
+
+/** v1.4x (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
+export interface PublicacionAgente {
+  version: string;
+  fecha: string;
+  notas?: string | null;
+  minimo_desde?: string | null;
+  /** Con todos sus archivos (si no, aún no se da a los equipos). */
+  completa: boolean;
+  archivos: { plataforma: string; nombre: string; tamano: number; sha256: string; presente: boolean }[];
+}
+
+export interface VentanaMantenimiento {
+  desde: string;
+  hasta: string;
+}
+
+/** La política de actualización de un cliente en esta consola. */
+export interface PoliticaActualizaciones {
+  modo: "auto" | "manual" | "pausada";
+  dias_general: number;
+  ventana: VentanaMantenimiento | null;
+  aprobada?: string | null;
+  retenidas: string[];
+}
+
+/** `GET /api/clientes/{c}/actualizaciones`. */
+export interface ActualizacionesCliente {
+  /** Este servidor se compiló sin llave de publicación: no acepta versiones. */
+  sin_llave: boolean;
+  disponible: PublicacionAgente | null;
+  politica: PoliticaActualizaciones;
+  equipos: Record<string, { anillo: "prueba" | "general"; aprobada?: string | null }>;
+}
+
+/** `GET /api/servidor/publicacion` (propietario del servidor). */
+export interface PublicacionServidor {
+  sin_llave: boolean;
+  llaves: string[];
+  vigente: PublicacionAgente | null;
+  guardadas: PublicacionAgente[];
+  version_servidor: string;
+}
 
 /**
  * v1.23: una entrada del historial que guarda el propio equipo (para siempre:
