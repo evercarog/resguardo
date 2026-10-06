@@ -418,9 +418,10 @@ fn avisos_por_etiqueta() {
     assert_eq!(w.last().unwrap()["severidad"], "importante", "sin subir la importancia");
     // Otro equipo sin la etiqueta: lo de siempre (Tom recibe sus críticos, Leo nada, el webhook sus críticos).
     equipo(&p.st, &p.ctx, "e2", "PC-Recepcion", T0);
+    let antes = p.correos().len();
     aviso_a(db, &p.ctx, Some("e2"), "intentos_fallidos", "5 intentos con la clave mal", T0 + 3 * 24 * 3600 + 60).unwrap();
     p.pasada(T0 + 3 * 24 * 3600 + 60);
-    assert_eq!(correos_desde(n_correos + 2), vec!["ana@ejemplo.com".to_string(), "tom@ejemplo.com".to_string()]);
+    assert_eq!(correos_desde(antes), vec!["ana@ejemplo.com".to_string(), "tom@ejemplo.com".to_string()]);
 }
 
 #[test]
