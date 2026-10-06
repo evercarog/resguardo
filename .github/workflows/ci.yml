@@ -4,7 +4,8 @@
 # - en cada push y PR: Linux (crates compartidos y agente, formato, cargo-deny,
 #   interfaz, paquetes del agente y del servidor en x86_64 y arm64, y el kit de
 #   la consola en internet);
-# - la app completa en Windows: en PR hacia main, en main y a mano.
+# - la app completa en Windows: en PR hacia main, en main, en las ramas de
+#   trabajo de los asistentes (ia/*, claude/*) y a mano.
 name: CI
 
 on:
@@ -503,7 +504,7 @@ jobs:
 
   app-windows:
     name: App completa (Windows)
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ia/') || startsWith(github.ref, 'refs/heads/claude/') || (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
