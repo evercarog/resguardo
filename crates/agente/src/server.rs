@@ -51,10 +51,49 @@ pub const PINNED_SHA256: Option<&str> = match option_env!("RESGUARDO_REST_SERVER
 /// Nombre del binario de rest-server en este sistema.
 const BINARIO: &str = if cfg!(windows) { "rest-server.exe" } else { "rest-server" };
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct ServerUser {
     pub name: String,
     pub created_at: String,
+    /// Tarea 7b: para qué equipo se creó (el nombre pedido, normalizado). Con
+    /// zonas, un mismo equipo puede tener un usuario en cada una («ana»,
+    /// «ana-2»): así se sabe si ya lo tiene en esta. Sin él, `name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub para: Option<String>,
+}
+
+impl ServerUser {
+    fn es_para(&self, base: &str) -> bool {
+        self.name == base || self.para.as_deref() == Some(base)
+    }
+}
+
+/// Tarea 7b (docs/copias-en-cadena.md): otra carpeta que sirve este almacén,
+/// con su propio rest-server en su puerto (la misma autoridad y el mismo
+/// certificado, siempre `--append-only --private-repos`) y sus propios
+/// usuarios (`servidor-zona-<id>.htpasswd`). La «principal» es la de siempre
+/// (`ServerConfig::path`, `port` y `users`).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Zona {
+    /// `z` y 6 cifras hexadecimales (lo pone el agente).
+    pub id: String,
+    /// Lo que se ve («Disco E»).
+    #[serde(default)]
+    pub nombre: String,
+    pub path: String,
+    pub port: u16,
+    #[serde(default)]
+    pub users: Vec<ServerUser>,
+    #[serde(default)]
+    pub creada: String,
+}
+
+/// Como mucho, zonas además de la principal.
+pub const ZONAS_MAX: usize = 8;
+
+/// Id de una zona: `z` y 6 cifras hexadecimales en minúscula.
+pub fn zona_id_valido(id: &str) -> bool {
+    id.len() == 7 && id.starts_with('z') && id[1..].chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -76,6 +115,9 @@ pub struct ServerConfig {
     /// Copia nocturna de todo lo guardado a otra carpeta (otro disco): espejo.rs.
     #[serde(default)]
     pub espejo: Option<crate::espejo::Espejo>,
+    /// Tarea 7b: otras carpetas (otros discos) que sirve, cada una en su puerto.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub zonas: Vec<Zona>,
 }
 
 impl Default for ServerConfig {
@@ -89,7 +131,50 @@ impl Default for ServerConfig {
             tls_sha256: None,
             cert_names: Vec::new(),
             espejo: None,
+            zonas: Vec::new(),
         }
+    }
+}
+
+impl ServerConfig {
+    /// Los puertos de todo el almacén: el de la principal y el de cada zona.
+    pub fn puertos(&self) -> Vec<u16> {
+        std::iter::once(self.port).chain(self.zonas.iter().map(|z| z.port)).collect()
+    }
+
+    /// Los usuarios de una zona (`None`: la principal).
+    pub fn usuarios(&self, zona: Option<&str>) -> Option<&Vec<ServerUser>> {
+        match zona {
+            None => Some(&self.users),
+            Some(id) => self.zonas.iter().find(|z| z.id == id).map(|z| &z.users),
+        }
+    }
+
+    fn usuarios_mut(&mut self, zona: Option<&str>) -> Option<&mut Vec<ServerUser>> {
+        match zona {
+            None => Some(&mut self.users),
+            Some(id) => self.zonas.iter_mut().find(|z| z.id == id).map(|z| &mut z.users),
+        }
+    }
+
+    /// ¿Hay ya un usuario con ese nombre en alguna zona (o en la principal)?
+    /// Son únicos en todo el almacén: así la retención en el almacén
+    /// (`{ usuario, repo }`) sabe siempre en qué carpeta está.
+    pub fn usuario_existe(&self, nombre: &str) -> bool {
+        self.users.iter().chain(self.zonas.iter().flat_map(|z| z.users.iter())).any(|u| u.name == nombre)
+    }
+
+    /// La carpeta de la zona donde está el usuario (la principal o una zona).
+    pub fn carpeta_de_usuario(&self, nombre: &str) -> Option<(&str, Vec<String>)> {
+        if self.users.iter().any(|u| u.name == nombre) {
+            return Some((self.path.as_str(), self.users.iter().map(|u| u.name.clone()).collect()));
+        }
+        self.zonas.iter().find(|z| z.users.iter().any(|u| u.name == nombre)).map(|z| (z.path.as_str(), z.users.iter().map(|u| u.name.clone()).collect()))
+    }
+
+    /// Todas las carpetas que sirve (la principal y las zonas).
+    pub fn carpetas(&self) -> Vec<&str> {
+        std::iter::once(self.path.as_str()).chain(self.zonas.iter().map(|z| z.path.as_str())).collect()
     }
 }
 
@@ -142,6 +227,9 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
                 crate::platform::carpeta_local_valida(&d.carpeta)?;
                 if se_solapan(&d.carpeta, &c.path) {
                     return Err("La carpeta del espejo no puede estar dentro de la del Servidor de copias (ni al revés).".into());
+                }
+                if c.zonas.iter().any(|z| se_solapan(&d.carpeta, &z.path)) {
+                    return Err("La carpeta del espejo no puede estar dentro de una zona del Servidor de copias (ni al revés).".into());
                 }
                 if carpeta_del_sistema(Path::new(&d.carpeta)) {
                     return Err("La carpeta del espejo no puede estar en la carpeta de Windows, de los programas o de Resguardo.".into());
@@ -224,6 +312,20 @@ impl Files {
     pub fn htpasswd(&self) -> PathBuf {
         self.private("servidor.htpasswd")
     }
+    /// Los usuarios de una zona (7b) o, sin ella, los de la principal.
+    pub fn htpasswd_de(&self, zona: Option<&str>) -> PathBuf {
+        match zona {
+            None => self.htpasswd(),
+            Some(id) => self.private(&format!("servidor-zona-{id}.htpasswd")),
+        }
+    }
+    /// El PID del rest-server de una zona (o de la principal).
+    pub fn pid_de(&self, zona: Option<&str>) -> PathBuf {
+        match zona {
+            None => self.private("servidor.pid"),
+            Some(id) => self.private(&format!("servidor-zona-{id}.pid")),
+        }
+    }
 
     fn write_private(&self, name: &str, content: &str) -> Result<(), String> {
         let tmp = self.private(&format!("{name}.tmp"));
@@ -255,6 +357,11 @@ impl Files {
 
     /// Argumentos del rest-server (siempre append-only y repos privados).
     pub fn args(&self, path: &str, listen: &str) -> Vec<String> {
+        self.args_de(path, listen, None)
+    }
+
+    /// Igual, para una zona (7b): sus usuarios; el mismo certificado.
+    pub fn args_de(&self, path: &str, listen: &str, zona: Option<&str>) -> Vec<String> {
         vec![
             "--path".into(),
             path.to_string(),
@@ -268,21 +375,27 @@ impl Files {
             "--tls-key".into(),
             self.private("servidor-tls.key").display().to_string(),
             "--htpasswd-file".into(),
-            self.htpasswd().display().to_string(),
+            self.htpasswd_de(zona).display().to_string(),
         ]
     }
 
     /// Reescribe `.htpasswd` con estas líneas (archivo nuevo en la carpeta privada).
     pub fn write_htpasswd(&self, lines: &[String]) -> Result<(), String> {
-        let tmp = self.private("servidor.htpasswd.tmp");
+        self.write_htpasswd_de(None, lines)
+    }
+
+    /// Igual, el de una zona (7b) o el de la principal.
+    pub fn write_htpasswd_de(&self, zona: Option<&str>, lines: &[String]) -> Result<(), String> {
+        let destino = self.htpasswd_de(zona);
+        let tmp = destino.with_extension("htpasswd.tmp");
         let _ = std::fs::remove_file(&tmp);
         std::fs::write(&tmp, lines.join("\n") + "\n").map_err(|e| format!("No se pudieron guardar los usuarios del servidor: {e}"))?;
-        std::fs::rename(&tmp, self.htpasswd()).map_err(|e| e.to_string())
+        std::fs::rename(&tmp, destino).map_err(|e| e.to_string())
     }
-}
 
-fn private(name: &str) -> PathBuf {
-    crate::agent::private_dir().join(name)
+    pub fn read_htpasswd_de(&self, zona: Option<&str>) -> Vec<String> {
+        std::fs::read_to_string(self.htpasswd_de(zona)).map(|s| s.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect()).unwrap_or_default()
+    }
 }
 
 /// Autoridad propia del servidor: lo que fijan los equipos (`--cacert`).
@@ -305,6 +418,13 @@ pub fn save(c: &ServerConfig) -> Result<(), String> {
 
 /// El rest-server que acompaña a Resguardo (junto al ejecutable).
 pub fn binary() -> PathBuf {
+    // Solo en pruebas (compilación de desarrollo con RESGUARDO_AGENT_DIR): otro
+    // rest-server (el de src-tauri/binaries). Su huella se comprueba igual.
+    if crate::agent::test_mode() {
+        if let Some(p) = std::env::var_os("RESGUARDO_REST_SERVER_BIN").filter(|p| !p.is_empty()) {
+            return PathBuf::from(p);
+        }
+    }
     std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(BINARIO))).unwrap_or_else(|| BINARIO.into())
 }
 
@@ -380,22 +500,34 @@ pub fn user_name(raw: &str) -> String {
 /// Crea un usuario del servidor (nombre normalizado y único) con contraseña
 /// aleatoria y lo escribe en `.htpasswd`. Devuelve (usuario, contraseña).
 pub fn create_user(c: &mut ServerConfig, raw: &str) -> Result<(String, String), String> {
+    create_user_en(&Files::agent(), c, None, raw)
+}
+
+/// Igual, en una zona (7b) o en la principal. El nombre es único en todo el
+/// almacén (si ya lo tiene otra zona, «ana-2»).
+pub fn create_user_en(f: &Files, c: &mut ServerConfig, zona: Option<&str>, raw: &str) -> Result<(String, String), String> {
     let base = user_name(raw);
     if base.is_empty() {
         return Err("Escribe un nombre para el equipo (letras, cifras o guiones).".into());
     }
+    if c.usuarios(zona).is_none() {
+        return Err("Esa zona ya no está en este almacén.".into());
+    }
     let mut user = base.clone();
     for i in 2.. {
-        if !c.users.iter().any(|u| u.name == user) {
+        if !c.usuario_existe(&user) {
             break;
         }
         user = format!("{base}-{i}");
     }
     let password = new_password();
-    let mut lines: Vec<String> = read_htpasswd().into_iter().filter(|l| !l.starts_with(&format!("{user}:"))).collect();
+    let mut lines: Vec<String> = f.read_htpasswd_de(zona).into_iter().filter(|l| !l.starts_with(&format!("{user}:"))).collect();
     lines.push(htpasswd_line(&user, &password)?);
-    write_htpasswd(&lines)?;
-    c.users.push(ServerUser { name: user.clone(), created_at: chrono::Local::now().to_rfc3339() });
+    f.write_htpasswd_de(zona, &lines)?;
+    let para = (user != base).then_some(base);
+    if let Some(l) = c.usuarios_mut(zona) {
+        l.push(ServerUser { name: user.clone(), created_at: chrono::Local::now().to_rfc3339(), para });
+    }
     Ok((user, password))
 }
 
@@ -469,17 +601,36 @@ fn generate_leaf(ca_key_pem: &str, names: &[String]) -> Result<(String, String),
 
 /// Argumentos del rest-server (siempre append-only y repos privados).
 pub fn args(c: &ServerConfig) -> Vec<String> {
-    // En pruebas, solo en este equipo (sin que el cortafuegos pregunte nada).
-    let escuchar = if crate::agent::test_mode() { format!("127.0.0.1:{}", c.port) } else { format!(":{}", c.port) };
-    Files::agent().args(&c.path, &escuchar)
+    Files::agent().args(&c.path, &escuchar(c.port))
+}
+
+/// Dónde escucha un rest-server del almacén. En pruebas, solo en este equipo
+/// (sin que el cortafuegos pregunte nada).
+fn escuchar(port: u16) -> String {
+    if crate::agent::test_mode() {
+        format!("127.0.0.1:{port}")
+    } else {
+        format!(":{port}")
+    }
+}
+
+/// Argumentos del rest-server de una zona (7b): su carpeta, su puerto y sus
+/// usuarios; siempre append-only y repos privados, con el mismo certificado.
+pub fn args_zona(z: &Zona) -> Vec<String> {
+    Files::agent().args_de(&z.path, &escuchar(z.port), Some(&z.id))
 }
 
 /// Repositorios de cada usuario (`/<usuario>/<repo>/` con `config`): solo nombres.
 pub fn repos_by_user(c: &ServerConfig) -> Vec<(String, Vec<String>)> {
-    c.users
+    repos_de_usuarios(&c.path, &c.users)
+}
+
+/// Igual, en una carpeta cualquiera del almacén (la principal o una zona).
+pub fn repos_de_usuarios(carpeta: &str, usuarios: &[ServerUser]) -> Vec<(String, Vec<String>)> {
+    usuarios
         .iter()
         .map(|u| {
-            let base = Path::new(&c.path).join(&u.name);
+            let base = Path::new(carpeta).join(&u.name);
             let mut repos: Vec<String> = crate::discover::scan_local(&base)
                 .iter()
                 .filter_map(|p| p.strip_prefix(&base).ok().map(|r| r.display().to_string().replace('\\', "/")))
@@ -515,75 +666,175 @@ pub fn listening(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(&std::net::SocketAddr::from(([127, 0, 0, 1], port)), std::time::Duration::from_millis(400)).is_ok()
 }
 
-/// `resguardo.exe --server-run`: comprueba el binario y lo mantiene en marcha.
+/// Un rest-server que debe estar en marcha: el de la principal (`None`) o el
+/// de una zona, con sus argumentos y dónde guarda su PID.
+struct Querido {
+    zona: Option<String>,
+    args: Vec<String>,
+}
+
+/// Los rest-server que tiene que haber ahora (la principal y una por zona).
+fn queridos(c: &ServerConfig) -> Vec<Querido> {
+    std::iter::once(Querido { zona: None, args: args(c) }).chain(c.zonas.iter().map(|z| Querido { zona: Some(z.id.clone()), args: args_zona(z) })).collect()
+}
+
+/// Uno en marcha.
+struct Vivo {
+    hijo: std::process::Child,
+    args: Vec<String>,
+    desde: std::time::Instant,
+}
+
+/// Cuándo se puede volver a arrancar uno que se cayó, y cuánto se esperó la última vez.
+struct Espera {
+    hasta: std::time::Instant,
+    segundos: u64,
+}
+
+fn nombre_instancia(zona: &Option<String>) -> String {
+    zona.as_ref().map_or_else(|| "rest-server".to_string(), |z| format!("rest-server de la zona {z}"))
+}
+
+/// Para uno de los que lanzó este proceso y borra su PID.
+fn parar_vivo(zona: &Option<String>, mut v: Vivo) {
+    let _ = v.hijo.kill();
+    let _ = v.hijo.wait();
+    let _ = std::fs::remove_file(Files::agent().pid_de(zona.as_deref()));
+}
+
+fn parar_vivos(vivos: &mut std::collections::HashMap<Option<String>, Vivo>) {
+    for (z, v) in vivos.drain() {
+        parar_vivo(&z, v);
+    }
+}
+
+/// `resguardo.exe --server-run`: comprueba el binario y mantiene en marcha el
+/// rest-server de la principal y el de cada zona (7b). Cada pocos segundos
+/// vuelve a leer `servidor.json`: arranca las zonas nuevas, para las quitadas
+/// (o cambiadas) y relanza la que se caiga, esperando cada vez más si se cae
+/// enseguida. Antes de cada arranque comprueba la huella del binario: si no
+/// cuadra, para todo y termina.
 pub fn run_forever() -> i32 {
-    let mut backoff = 5;
+    use std::time::{Duration, Instant};
+    let mut vivos: std::collections::HashMap<Option<String>, Vivo> = std::collections::HashMap::new();
+    let mut esperas: std::collections::HashMap<Option<String>, Espera> = std::collections::HashMap::new();
+    // El certificado se mira al empezar y después cada 5 minutos.
+    let mut cert_mirado: Option<Instant> = None;
+    #[cfg(unix)]
+    let mut puertos_fw: Option<(Vec<u16>, bool)> = None;
+    let pausa = if crate::agent::test_mode() { Duration::from_millis(500) } else { Duration::from_secs(5) };
     loop {
-        let c = load();
+        let mut c = load();
         if !c.enabled {
+            parar_vivos(&mut vivos);
             return 0;
         }
-        if let Err(e) = binary_check() {
-            crate::agent::log(&format!("ERROR: Servidor de copias: {e}"));
-            return 1;
+        if cert_mirado.is_none_or(|t| t.elapsed() > Duration::from_secs(300)) {
+            let primera = cert_mirado.is_none();
+            cert_mirado = Some(Instant::now());
+            // Al arrancar (p. ej. tras reiniciar con otra IP) y mientras funciona: si
+            // cambia la IP del equipo, se renueva el certificado y se reinician todos con él.
+            match refresh_leaf_if_needed(&mut c) {
+                Ok(true) if !primera => parar_vivos(&mut vivos),
+                Ok(_) => {}
+                Err(e) => crate::agent::log(&format!("ERROR: Servidor de copias: no se pudo renovar el certificado: {e}")),
+            }
         }
-        // Linux: las reglas de nftables no sobreviven a un reinicio; se ponen al arrancar.
+        // Linux: las reglas de nftables no sobreviven a un reinicio; se ponen al
+        // arrancar y cada vez que cambian los puertos (una zona nueva o quitada).
         #[cfg(unix)]
         {
-            if let Err(e) = firewall(c.port, c.local_subnet_only) {
+            let ahora = (c.puertos(), c.local_subnet_only);
+            if puertos_fw.as_ref() != Some(&ahora) {
+                if let Err(e) = firewall(&ahora.0, ahora.1) {
+                    crate::agent::log(&format!("ERROR: Servidor de copias: {e}"));
+                }
+                puertos_fw = Some(ahora);
+            }
+        }
+        let quiero = queridos(&c);
+        // Los que sobran (una zona quitada) o cambiaron (otro puerto o carpeta).
+        let sobran: Vec<Option<String>> =
+            vivos.iter().filter(|(z, v)| !quiero.iter().any(|q| &q.zona == *z && q.args == v.args)).map(|(z, _)| z.clone()).collect();
+        for z in sobran {
+            if let Some(v) = vivos.remove(&z) {
+                crate::agent::log(&format!("Servidor de copias: se para el {} (ya no está o cambió).", nombre_instancia(&z)));
+                parar_vivo(&z, v);
+            }
+        }
+        // Los que terminaron solos.
+        let caidos: Vec<Option<String>> = vivos.iter_mut().filter_map(|(z, v)| matches!(v.hijo.try_wait(), Ok(Some(_)) | Err(_)).then(|| z.clone())).collect();
+        for z in caidos {
+            if let Some(mut v) = vivos.remove(&z) {
+                let estado = v.hijo.try_wait().ok().flatten().map(|s| s.to_string()).unwrap_or_default();
+                crate::agent::log(&format!("Servidor de copias: {} terminó ({estado}).", nombre_instancia(&z)));
+                // Si duró poco, se espera cada vez más (sin pasar de 5 minutos).
+                let antes = esperas.get(&z).map_or(5, |e| e.segundos);
+                let segundos = if v.desde.elapsed().as_secs() > 300 { 5 } else { (antes * 2).min(300) };
+                esperas.insert(z, Espera { hasta: Instant::now() + Duration::from_secs(segundos), segundos });
+            }
+        }
+        // Los que faltan.
+        for q in quiero {
+            if vivos.contains_key(&q.zona) || esperas.get(&q.zona).is_some_and(|e| Instant::now() < e.hasta) {
+                continue;
+            }
+            if let Err(e) = binary_check() {
                 crate::agent::log(&format!("ERROR: Servidor de copias: {e}"));
+                parar_vivos(&mut vivos);
+                return 1;
+            }
+            let mut orden = std::process::Command::new(binary());
+            resguardo_motor::proceso::entorno_minimo(&mut orden);
+            match orden.args(&q.args).stdin(std::process::Stdio::null()).spawn() {
+                Ok(hijo) => {
+                    // Para poder pararlo al desactivar el servidor o quitar la zona.
+                    let _ = std::fs::write(Files::agent().pid_de(q.zona.as_deref()), hijo.id().to_string());
+                    vivos.insert(q.zona.clone(), Vivo { hijo, args: q.args, desde: Instant::now() });
+                }
+                Err(e) => {
+                    crate::agent::log(&format!("ERROR: Servidor de copias: no se pudo arrancar el {}: {e}", nombre_instancia(&q.zona)));
+                    let segundos = (esperas.get(&q.zona).map_or(5, |e| e.segundos) * 2).min(300);
+                    esperas.insert(q.zona, Espera { hasta: Instant::now() + Duration::from_secs(segundos), segundos });
+                }
             }
         }
-        // Al arrancar (p. ej. tras reiniciar con otra IP), el certificado al día.
-        let c = {
-            let mut c = c;
-            if let Err(e) = refresh_leaf_if_needed(&mut c) {
-                crate::agent::log(&format!("ERROR: Servidor de copias: no se pudo renovar el certificado: {e}"));
-            }
-            c
-        };
-        let started = std::time::Instant::now();
-        let mut orden = std::process::Command::new(binary());
-        resguardo_motor::proceso::entorno_minimo(&mut orden);
-        let status = orden.args(args(&c)).stdin(std::process::Stdio::null()).spawn().and_then(|mut child| {
-            // Para poder pararlo al desactivar el servidor.
-            let _ = std::fs::write(private("servidor.pid"), child.id().to_string());
-            // Mientras funciona: si cambia la IP del equipo, se renueva su
-            // certificado y se reinicia con él.
-            let mut checked = std::time::Instant::now();
-            loop {
-                if let Some(s) = child.try_wait()? {
-                    return Ok(s);
-                }
-                if checked.elapsed() > std::time::Duration::from_secs(300) {
-                    checked = std::time::Instant::now();
-                    let mut current = load();
-                    match refresh_leaf_if_needed(&mut current) {
-                        Ok(true) => {
-                            let _ = child.kill();
-                            return child.wait();
-                        }
-                        Ok(false) => {}
-                        Err(e) => crate::agent::log(&format!("ERROR: Servidor de copias: no se pudo renovar el certificado: {e}")),
-                    }
-                }
-                std::thread::sleep(std::time::Duration::from_secs(5));
-            }
-        });
-        match status {
-            Ok(s) => crate::agent::log(&format!("Servidor de copias: rest-server terminó ({s}).")),
-            Err(e) => crate::agent::log(&format!("ERROR: Servidor de copias: no se pudo arrancar rest-server: {e}")),
-        }
-        // Si duró poco, se espera cada vez más (sin pasar de 5 minutos).
-        backoff = if started.elapsed().as_secs() > 300 { 5 } else { (backoff * 2).min(300) };
-        std::thread::sleep(std::time::Duration::from_secs(backoff));
+        // Lo de zonas que ya no están no se guarda para siempre.
+        esperas.retain(|z, _| z.is_none() || c.zonas.iter().any(|x| Some(&x.id) == z.as_ref()));
+        std::thread::sleep(pausa);
+    }
+}
+
+/// En pruebas (compilación de desarrollo con RESGUARDO_AGENT_DIR), el
+/// Servidor de copias corre dentro del proceso del agente: un solo hilo que
+/// lo vigila (activarlo dos veces no lanza otro). Devuelve si lo lanzó.
+pub fn arrancar_en_pruebas() -> bool {
+    let mut h = HILO_PRUEBAS.lock().unwrap_or_else(|p| p.into_inner());
+    if h.as_ref().is_some_and(|x| !x.is_finished()) {
+        return false;
+    }
+    *h = Some(std::thread::spawn(run_forever));
+    true
+}
+
+static HILO_PRUEBAS: std::sync::Mutex<Option<std::thread::JoinHandle<i32>>> = std::sync::Mutex::new(None);
+
+/// En pruebas, tras desactivarlo: espera a que el hilo que lo vigila termine
+/// (si no, seguiría leyendo `servidor.json` de la carpeta del agente de la
+/// prueba siguiente).
+fn esperar_fin_en_pruebas() {
+    let h = HILO_PRUEBAS.lock().unwrap_or_else(|p| p.into_inner()).take();
+    if let Some(h) = h {
+        let _ = h.join();
     }
 }
 
 /// Regla del firewall solo para el puerto del servidor.
 #[cfg(windows)]
-pub fn firewall(port: u16, local_only: bool) -> Result<(), String> {
+pub fn firewall(ports: &[u16], local_only: bool) -> Result<(), String> {
     let _ = crate::platform::tool("netsh.exe", &["advfirewall", "firewall", "delete", "rule", &format!("name={}", regla_firewall())]);
+    // Una sola regla con todos los puertos del almacén (la principal y sus zonas, 7b).
+    let puertos = ports.iter().map(u16::to_string).collect::<Vec<_>>().join(",");
     let (ok, out) = crate::platform::tool(
         "netsh.exe",
         &[
@@ -595,7 +846,7 @@ pub fn firewall(port: u16, local_only: bool) -> Result<(), String> {
             "dir=in",
             "action=allow",
             "protocol=TCP",
-            &format!("localport={port}"),
+            &format!("localport={puertos}"),
             if local_only { REMOTEIP_INTERNAS } else { "remoteip=any" },
         ],
     )?;
@@ -617,13 +868,13 @@ pub fn firewall(port: u16, local_only: bool) -> Result<(), String> {
 const REMOTEIP_INTERNAS: &str = "remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
 
 #[cfg(unix)]
-pub fn firewall(port: u16, local_only: bool) -> Result<(), String> {
+pub fn firewall(ports: &[u16], local_only: bool) -> Result<(), String> {
     let nft = nft().ok_or("Falta nftables (el programa nft): instálalo con «apt install nftables».")?;
     if !local_only {
         firewall_remove();
         return Ok(());
     }
-    let reglas = reglas_nft(port, &redes_internas(redes_locales()));
+    let reglas = reglas_nft(ports, &redes_internas(redes_locales()));
     let archivo = private("servidor.nft");
     std::fs::write(&archivo, reglas).map_err(|e| format!("No se pudieron preparar las reglas del cortafuegos: {e}"))?;
     let (ok, out) = crate::platform::tool(nft, &["-f", &archivo.to_string_lossy()])?;
@@ -639,10 +890,15 @@ fn nft() -> Option<&'static str> {
     ["/usr/sbin/nft", "/sbin/nft"].into_iter().find(|p| Path::new(p).is_file())
 }
 
-/// Reglas de nftables para el puerto del servidor (se aplican de una vez:
-/// la tabla se crea, se vacía y se vuelve a llenar).
-pub fn reglas_nft(port: u16, redes: &[String]) -> String {
+/// Reglas de nftables para los puertos del servidor (la principal y sus
+/// zonas; se aplican de una vez: la tabla se crea, se vacía y se vuelve a llenar).
+pub fn reglas_nft(ports: &[u16], redes: &[String]) -> String {
     let redes = if redes.is_empty() { REDES_PRIVADAS.iter().map(|r| r.to_string()).collect::<Vec<_>>() } else { redes.to_vec() };
+    // «8000» o, con zonas, «{ 8000, 8002 }».
+    let port = match ports {
+        [p] => p.to_string(),
+        _ => format!("{{ {} }}", ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")),
+    };
     format!(
         "# Resguardo: Servidor de copias (lo genera el agente; no lo edites).
 table inet resguardo
@@ -735,10 +991,10 @@ fn pid_es_rest_server(pid: u32) -> bool {
     }
 }
 
-/// Para el rest-server que lanzó la tarea (por su PID, nunca por nombre), si
-/// ese PID sigue siendo el rest-server.
-pub fn stop() {
-    if let Some(pid) = std::fs::read_to_string(private("servidor.pid")).ok().and_then(|s| s.trim().parse::<u32>().ok()).filter(|p| pid_es_rest_server(*p)) {
+/// Para un rest-server por el PID que guardó la tarea (nunca por nombre), si
+/// ese PID sigue siendo el rest-server, y borra el archivo del PID.
+fn parar_por_pid(archivo: &Path) {
+    if let Some(pid) = std::fs::read_to_string(archivo).ok().and_then(|s| s.trim().parse::<u32>().ok()).filter(|p| pid_es_rest_server(*p)) {
         #[cfg(windows)]
         {
             let _ = crate::platform::tool("taskkill.exe", &["/PID", &pid.to_string(), "/T", "/F"]);
@@ -753,7 +1009,22 @@ pub fn stop() {
             }
         }
     }
-    let _ = std::fs::remove_file(private("servidor.pid"));
+    let _ = std::fs::remove_file(archivo);
+}
+
+/// Para los rest-server que lanzó la tarea: el de la principal y el de cada
+/// zona (los PID que haya en la carpeta privada, también de zonas ya quitadas).
+pub fn stop() {
+    let f = Files::agent();
+    parar_por_pid(&f.pid_de(None));
+    if let Ok(l) = std::fs::read_dir(&f.private) {
+        for e in l.flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.strip_prefix("servidor-zona-").and_then(|x| x.strip_suffix(".pid")).is_some_and(zona_id_valido) {
+                parar_por_pid(&e.path());
+            }
+        }
+    }
 }
 
 /// Reescribe `.htpasswd` con estas líneas (archivo nuevo en la carpeta privada).
@@ -762,7 +1033,7 @@ pub fn write_htpasswd(lines: &[String]) -> Result<(), String> {
 }
 
 pub fn read_htpasswd() -> Vec<String> {
-    std::fs::read_to_string(private("servidor.htpasswd")).map(|s| s.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect()).unwrap_or_default()
+    Files::agent().read_htpasswd_de(None)
 }
 
 pub fn firewall_remove() {
@@ -778,6 +1049,17 @@ pub fn firewall_remove() {
     }
 }
 
+/// ¿Está libre ese puerto ahora en este equipo? (lo intenta unos segundos).
+fn puerto_libre_ahora(port: u16) -> bool {
+    (0..20).any(|_| {
+        let ok = std::net::TcpListener::bind((if crate::agent::test_mode() { "127.0.0.1" } else { "0.0.0.0" }, port)).is_ok();
+        if !ok {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        ok
+    })
+}
+
 /// Activa (o cambia) el Servidor de copias: carpeta, puerto y si solo se
 /// acepta la red local. Genera el certificado, la regla del firewall y la
 /// tarea (o el servicio) que lo arranca. Requiere administrador.
@@ -791,10 +1073,17 @@ pub fn activar(path: &str, port: u16, local_subnet_only: bool) -> Result<ServerC
     // solo para SYSTEM y Administradores: si los usuarios pudieran escribir
     // en ella, podrían borrar las copias (y el «solo añadir» no serviría).
     crate::platform::carpeta_local_valida(&path)?;
+    let mut c = load();
+    // 7b: ni dentro de una zona ni con su puerto.
+    if c.zonas.iter().any(|z| se_solapan(&path, &z.path)) {
+        return Err("Esa carpeta se solapa con una zona de este almacén: elige otra.".into());
+    }
+    if c.zonas.iter().any(|z| z.port == port) {
+        return Err(format!("El puerto {port} ya es el de una zona de este almacén: elige otro."));
+    }
     binary_check()?;
     crate::platform::carpeta_privada(Path::new(&path))?;
     crate::agent::prepare_dir()?;
-    let mut c = load();
     let names = current_names();
     if c.tls_sha256.is_none() || !cert_file().is_file() || !leaf_file().is_file() {
         c.tls_sha256 = Some(make_cert(&names)?);
@@ -803,31 +1092,25 @@ pub fn activar(path: &str, port: u16, local_subnet_only: bool) -> Result<ServerC
     if read_htpasswd().is_empty() {
         write_htpasswd(&[])?;
     }
+    // El puerto tiene que estar libre (otro programa, o Resguardo Server en el
+    // mismo equipo), salvo que ya sea el suyo y esté activado. Se mira antes de
+    // guardar nada: si no se puede, el almacén sigue como estaba.
+    if !(c.enabled && c.port == port) && !puerto_libre_ahora(port) {
+        return Err(format!("El puerto {port} ya está en uso en este equipo: elige otro."));
+    }
     c.enabled = true;
     c.path = path;
     c.port = port;
     c.local_subnet_only = local_subnet_only;
     save(&c)?;
     stop();
-    // El puerto tiene que estar libre (otro programa, o Resguardo Server en el mismo equipo).
-    let libre = (0..20).any(|_| {
-        let ok = std::net::TcpListener::bind((if crate::agent::test_mode() { "127.0.0.1" } else { "0.0.0.0" }, port)).is_ok();
-        if !ok {
-            std::thread::sleep(std::time::Duration::from_millis(250));
-        }
-        ok
-    });
-    if !libre {
-        c.enabled = false;
-        let _ = save(&c);
-        return Err(format!("El puerto {port} ya está en uso en este equipo: elige otro."));
-    }
     if crate::agent::test_mode() {
         // Pruebas (compilación de desarrollo con RESGUARDO_AGENT_DIR): sin
-        // cortafuegos ni tarea de SYSTEM; el servidor corre en este proceso.
-        std::thread::spawn(run_forever);
+        // cortafuegos ni tarea de SYSTEM; el servidor corre en este proceso
+        // (un solo hilo que lo vigila: si ya estaba, relanza solo lo que cambió).
+        arrancar_en_pruebas();
     } else {
-        firewall(port, local_subnet_only)?;
+        firewall(&c.puertos(), local_subnet_only)?;
         crate::platform::install_server_task(&crate::agent::private_dir())?;
     }
     crate::agent::log(&format!("Servidor de copias activado en el puerto {port}."));
@@ -841,7 +1124,9 @@ pub fn desactivar() -> Result<(), String> {
     c.enabled = false;
     save(&c)?;
     stop();
-    if !crate::agent::test_mode() {
+    if crate::agent::test_mode() {
+        esperar_fin_en_pruebas();
+    } else {
         crate::platform::uninstall_server_task();
         firewall_remove();
     }
@@ -852,21 +1137,34 @@ pub fn desactivar() -> Result<(), String> {
 /// Añade un equipo cliente: su usuario, su contraseña (128 bits) y la
 /// ubicación del repositorio que le toca (`rest:https://<ip>:<puerto>/<usuario>/`).
 pub fn anadir_equipo(name: &str) -> Result<(String, String, String), String> {
+    anadir_equipo_en(name, None).map(|(u, p, l, _)| (u, p, l))
+}
+
+/// Igual, en una zona (7b) o en la principal. Devuelve también el puerto.
+pub fn anadir_equipo_en(name: &str, zona: Option<&str>) -> Result<(String, String, String, u16), String> {
     crate::agent::require_admin()?;
     let mut c = load();
     if !c.enabled {
         return Err("Activa antes el Servidor de copias.".into());
     }
-    if c.users.iter().any(|u| u.name == user_name(name)) {
-        return Err(format!("Ya hay un equipo «{}» en este servidor.", user_name(name)));
+    let base = user_name(name);
+    let (lista, port) = match zona {
+        None => (&c.users, c.port),
+        Some(id) => c.zonas.iter().find(|z| z.id == id).map(|z| (&z.users, z.port)).ok_or("Esa zona ya no está en este almacén.")?,
+    };
+    if lista.iter().any(|u| u.es_para(&base)) {
+        return Err(match zona {
+            None => format!("Ya hay un equipo «{base}» en este servidor."),
+            Some(_) => format!("Ya hay un equipo «{base}» en esa zona."),
+        });
     }
-    let (user, password) = create_user(&mut c, name)?;
+    let (user, password) = create_user_en(&Files::agent(), &mut c, zona, name)?;
     save(&c)?;
     // En pruebas el rest-server solo escucha en 127.0.0.1 (ver `args`): `localhost`, que el certificado cubre.
     let ip = if crate::agent::test_mode() { None } else { lan_addresses().into_iter().next() }.unwrap_or_else(|| "localhost".into());
-    let location = format!("rest:https://{ip}:{}/{user}/", c.port);
-    crate::agent::log(&format!("Servidor de copias: nuevo equipo cliente «{user}»."));
-    Ok((user, password, location))
+    let location = format!("rest:https://{ip}:{port}/{user}/");
+    crate::agent::log(&format!("Servidor de copias: nuevo equipo cliente «{user}»{}.", zona.map(|z| format!(" en la zona {z}")).unwrap_or_default()));
+    Ok((user, password, location, port))
 }
 
 /// Cuánto se espera, como mucho, a que el rest-server acepte un usuario nuevo.
@@ -881,24 +1179,33 @@ const ESPERA_USUARIO_NUEVO: std::time::Duration = std::time::Duration::from_secs
 /// servidor no está en marcha, no se espera (lo leerá al arrancar). Nunca
 /// falla: el usuario ya está creado y su contraseña tiene que llegar a la consola.
 pub fn esperar_usuario(user: &str, password: &str) {
-    if let Err(e) = esperar_usuario_o_error(user, password) {
+    esperar_usuario_de(None, user, password)
+}
+
+/// Igual, en el rest-server de una zona (7b) o en el de la principal.
+pub fn esperar_usuario_de(zona: Option<&str>, user: &str, password: &str) {
+    if let Err(e) = esperar_usuario_o_error(zona, user, password) {
         crate::agent::log(&format!("Servidor de copias: {e}"));
     }
 }
 
-fn esperar_usuario_o_error(user: &str, password: &str) -> Result<(), String> {
+fn esperar_usuario_o_error(zona: Option<&str>, user: &str, password: &str) -> Result<(), String> {
     let c = load();
-    if !c.enabled || !listening(c.port) {
+    let port = match zona {
+        None => c.port,
+        Some(id) => c.zonas.iter().find(|z| z.id == id).map_or(0, |z| z.port),
+    };
+    if !c.enabled || port == 0 || !listening(port) {
         return Ok(());
     }
     #[cfg(unix)]
-    if let Some(pid) = std::fs::read_to_string(private("servidor.pid")).ok().and_then(|s| s.trim().parse::<libc::pid_t>().ok()).filter(|p| *p > 1) {
+    if let Some(pid) = std::fs::read_to_string(Files::agent().pid_de(zona)).ok().and_then(|s| s.trim().parse::<libc::pid_t>().ok()).filter(|p| *p > 1) {
         if pid_es_rest_server(pid as u32) {
             // SAFETY: solo envía una señal al rest-server que lanzó run_forever (rest-server relee .htpasswd con SIGHUP).
             unsafe { libc::kill(pid, libc::SIGHUP) };
         }
     }
-    esperar_usuario_en(c.port, &cert_file(), user, password)
+    esperar_usuario_en(port, &cert_file(), user, password)
 }
 
 /// Espera a que el rest-server de `port` (con la autoridad propia `ca`) acepte a
@@ -933,12 +1240,175 @@ pub fn ubicacion_local(port: u16, user: &str) -> String {
 
 /// Quita un equipo cliente: ya no puede entrar. Sus copias se quedan en la carpeta.
 pub fn quitar_equipo(name: &str) -> Result<(), String> {
+    quitar_equipo_en(name, None)
+}
+
+/// Igual, de una zona (7b) o de la principal.
+pub fn quitar_equipo_en(name: &str, zona: Option<&str>) -> Result<(), String> {
     crate::agent::require_admin()?;
     let mut c = load();
-    c.users.retain(|u| u.name != name);
+    let l = c.usuarios_mut(zona).ok_or("Esa zona ya no está en este almacén.")?;
+    l.retain(|u| u.name != name);
     save(&c)?;
-    let lines: Vec<String> = read_htpasswd().into_iter().filter(|l| !l.starts_with(&format!("{name}:"))).collect();
-    write_htpasswd(&lines)
+    let f = Files::agent();
+    let lines: Vec<String> = f.read_htpasswd_de(zona).into_iter().filter(|l| !l.starts_with(&format!("{name}:"))).collect();
+    f.write_htpasswd_de(zona, &lines)
+}
+
+// ---------- Zonas (tarea 7b, docs/copias-en-cadena.md) ----------
+
+/// El nombre que se propone para una zona: «Disco E» (Windows) o el nombre de su carpeta.
+pub fn nombre_por_defecto(carpeta: &str) -> String {
+    let t = carpeta.trim();
+    let b = t.as_bytes();
+    if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
+        return format!("Disco {}", (b[0] as char).to_ascii_uppercase());
+    }
+    Path::new(t).file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Otra zona".into())
+}
+
+/// Nombre de una zona: 1 a 60 caracteres, sin caracteres de control.
+fn nombre_zona_valido(n: &str) -> bool {
+    let n = n.trim();
+    !n.is_empty() && n.chars().count() <= 60 && !n.chars().any(char::is_control)
+}
+
+/// Comprueba una zona nueva contra el almacén (sin tocar nada): carpeta sin
+/// solaparse con la principal, otra zona o el espejo; puerto distinto de los
+/// del almacén. No mira el disco ni si el puerto está libre.
+pub fn validar_zona_nueva(c: &ServerConfig, carpeta: &str, port: u16) -> Result<(), String> {
+    if !c.enabled {
+        return Err("Activa antes el Servidor de copias.".into());
+    }
+    if c.zonas.len() >= ZONAS_MAX {
+        return Err(format!("Como mucho {ZONAS_MAX} zonas además de la principal."));
+    }
+    if port < 1024 {
+        return Err("Elige un puerto entre 1024 y 65535 (por ejemplo, 8002).".into());
+    }
+    if c.puertos().contains(&port) {
+        // De dos en dos, como los que propone el agente (8000, 8002, 8004…).
+        let otro = (port..=u16::MAX).step_by(2).find(|p| !c.puertos().contains(p)).unwrap_or(8002);
+        return Err(format!("El puerto {port} ya es de este almacén: elige otro (por ejemplo, {otro})."));
+    }
+    let carpeta = carpeta.trim();
+    if carpeta.is_empty() {
+        return Err("Falta la carpeta de la zona.".into());
+    }
+    if se_solapan(carpeta, &c.path) {
+        return Err("La carpeta de la zona no puede estar dentro de la del almacén (ni al revés): elige otro disco u otra carpeta.".into());
+    }
+    if c.zonas.iter().any(|z| se_solapan(carpeta, &z.path)) {
+        return Err("La carpeta de la zona se solapa con otra zona de este almacén.".into());
+    }
+    if c.espejo.as_ref().is_some_and(|e| e.destinos().iter().any(|d| d.tipo == "carpeta" && se_solapan(carpeta, &d.carpeta))) {
+        return Err("La carpeta de la zona se solapa con una carpeta del espejo: elige otra.".into());
+    }
+    if carpeta_del_sistema(Path::new(carpeta)) {
+        return Err("La carpeta de la zona no puede estar en la carpeta de Windows, de los programas o de Resguardo.".into());
+    }
+    Ok(())
+}
+
+/// Un id nuevo para una zona (`z` y 6 cifras hexadecimales), que no esté ya.
+fn id_zona_nuevo(c: &ServerConfig) -> String {
+    loop {
+        let id = format!("z{}", &uuid::Uuid::new_v4().simple().to_string()[..6]);
+        if !c.zonas.iter().any(|z| z.id == id) {
+            return id;
+        }
+    }
+}
+
+/// Crea una zona: otra carpeta (otro disco) servida por su propio rest-server
+/// en `port`, con el mismo certificado y sin usuarios todavía. La pone en
+/// marcha la tarea del Servidor de copias (la vigila igual que la principal).
+pub fn crear_zona(nombre: Option<&str>, carpeta: &str, port: u16) -> Result<Zona, String> {
+    crate::agent::require_admin()?;
+    let mut c = load();
+    let carpeta = carpeta.trim().to_string();
+    validar_zona_nueva(&c, &carpeta, port)?;
+    let nombre = nombre.map(str::trim).filter(|n| !n.is_empty()).map_or_else(|| nombre_por_defecto(&carpeta), str::to_string);
+    if !nombre_zona_valido(&nombre) {
+        return Err("Escribe un nombre para la zona (hasta 60 caracteres).".into());
+    }
+    // Como la principal: un disco del equipo, no la raíz ni de red, sin
+    // enlaces, solo para SYSTEM y Administradores.
+    crate::platform::carpeta_local_valida(&carpeta)?;
+    binary_check()?;
+    if !puerto_libre_ahora(port) {
+        return Err(format!("El puerto {port} ya está en uso en este equipo: elige otro."));
+    }
+    crate::platform::carpeta_privada(Path::new(&carpeta))?;
+    let z = Zona { id: id_zona_nuevo(&c), nombre, path: carpeta, port, users: Vec::new(), creada: chrono::Local::now().to_rfc3339() };
+    Files::agent().write_htpasswd_de(Some(&z.id), &[])?;
+    c.zonas.push(z.clone());
+    save(&c)?;
+    if !crate::agent::test_mode() {
+        firewall(&c.puertos(), c.local_subnet_only)?;
+    }
+    crate::agent::log(&format!("Servidor de copias: zona nueva «{}» en el puerto {port}.", z.nombre));
+    Ok(z)
+}
+
+/// Cambia el nombre de una zona (solo lo que se ve).
+pub fn renombrar_zona(id: &str, nombre: &str) -> Result<(), String> {
+    crate::agent::require_admin()?;
+    if !nombre_zona_valido(nombre) {
+        return Err("Escribe un nombre para la zona (hasta 60 caracteres).".into());
+    }
+    let mut c = load();
+    let z = c.zonas.iter_mut().find(|z| z.id == id).ok_or("Esa zona ya no está en este almacén.")?;
+    z.nombre = nombre.trim().to_string();
+    save(&c)
+}
+
+/// Quita una zona: su rest-server se para y sus usuarios ya no entran. Lo
+/// guardado se queda en su carpeta (reduce la protección: la orden espera).
+pub fn quitar_zona(id: &str) -> Result<Zona, String> {
+    crate::agent::require_admin()?;
+    let mut c = load();
+    let pos = c.zonas.iter().position(|z| z.id == id).ok_or("Esa zona ya no está en este almacén.")?;
+    let z = c.zonas.remove(pos);
+    save(&c)?;
+    let f = Files::agent();
+    parar_por_pid(&f.pid_de(Some(id)));
+    let _ = std::fs::remove_file(f.htpasswd_de(Some(id)));
+    if !crate::agent::test_mode() && c.enabled {
+        firewall(&c.puertos(), c.local_subnet_only)?;
+    }
+    crate::agent::log(&format!("Servidor de copias: zona «{}» quitada (lo guardado se queda en su carpeta).", z.nombre));
+    Ok(z)
+}
+
+/// Espera (unos segundos) a que el rest-server de un puerto responda.
+pub fn esperar_escucha(port: u16, plazo: std::time::Duration) -> bool {
+    let inicio = std::time::Instant::now();
+    loop {
+        if listening(port) {
+            return true;
+        }
+        if inicio.elapsed() > plazo {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+}
+
+/// Lo que se ve de las zonas en el resumen (`guarda_copias.zonas`): sin
+/// secretos; la carpeta, como la de la principal (v1.21).
+pub fn resumen_zonas(c: &ServerConfig) -> Vec<serde_json::Value> {
+    c.zonas
+        .iter()
+        .map(|z| {
+            serde_json::json!({
+                "id": z.id, "nombre": z.nombre, "carpeta": z.path, "puerto": z.port, "usuarios": z.users.len(),
+                "escucha": c.enabled && listening(z.port),
+                "espacio": crate::espacio::json_de(&z.path),
+                "repositorios": repos_de_usuarios(&z.path, &z.users).into_iter().map(|(usuario, repos)| serde_json::json!({ "usuario": usuario, "repos": repos })).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -993,6 +1463,122 @@ mod tests {
         assert!(bcrypt::verify(&p, hash).unwrap());
     }
 
+    /// Tarea 7b: cada zona es otro rest-server con sus usuarios, pero siempre
+    /// de solo añadir, con repos privados y el mismo certificado.
+    #[test]
+    fn cada_zona_es_de_solo_anadir() {
+        let f = Files { public: PathBuf::from("pub"), private: PathBuf::from("priv") };
+        let a = f.args_de(r"E:\Resguardo", "127.0.0.1:8002", Some("z1a2b3c"));
+        for x in ["--append-only", "--private-repos", "--tls"] {
+            assert!(a.contains(&x.to_string()), "{x} en {a:?}");
+        }
+        let valor = |k: &str| a.iter().position(|x| x == k).map(|i| a[i + 1].clone()).unwrap();
+        assert!(valor("--htpasswd-file").ends_with("servidor-zona-z1a2b3c.htpasswd"), "sus propios usuarios");
+        assert_eq!(valor("--tls-cert"), f.args("x", "y")[f.args("x", "y").iter().position(|x| x == "--tls-cert").unwrap() + 1], "el mismo certificado");
+        assert_eq!(valor("--path"), r"E:\Resguardo");
+        assert!(f.pid_de(Some("z1a2b3c")).ends_with("servidor-zona-z1a2b3c.pid") && f.pid_de(None).ends_with("servidor.pid"));
+        assert!(zona_id_valido("z1a2b3c") && !zona_id_valido("z1A2b3c") && !zona_id_valido("../x") && !zona_id_valido("z12345"));
+    }
+
+    fn almacen() -> ServerConfig {
+        let (d, e) = if cfg!(windows) { (r"D:\Resguardo", r"E:\Resguardo") } else { ("/srv/d", "/srv/e") };
+        ServerConfig {
+            enabled: true,
+            path: d.into(),
+            port: 8000,
+            users: vec![ServerUser { name: "recepcion".into(), ..Default::default() }],
+            zonas: vec![Zona {
+                id: "z0a0b0c".into(),
+                nombre: "Disco E".into(),
+                path: e.into(),
+                port: 8002,
+                users: vec![ServerUser { name: "caja".into(), ..Default::default() }],
+                creada: String::new(),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn zonas_sin_solapes_ni_puertos_repetidos() {
+        let c = almacen();
+        let (f, dentro_d, dentro_e) =
+            if cfg!(windows) { (r"F:\Resguardo", r"D:\Resguardo\zona", r"e:\resguardo\otra") } else { ("/srv/f", "/srv/d/zona", "/srv/e/otra") };
+        assert!(validar_zona_nueva(&c, f, 8004).is_ok());
+        assert!(validar_zona_nueva(&c, f, 8000).unwrap_err().contains("8000"), "el de la principal");
+        assert!(validar_zona_nueva(&c, f, 8002).unwrap_err().contains("8004"), "el de otra zona; propone uno libre");
+        assert!(validar_zona_nueva(&c, f, 80).is_err());
+        assert!(validar_zona_nueva(&c, dentro_d, 8004).unwrap_err().contains("almacén"));
+        if cfg!(windows) {
+            assert!(validar_zona_nueva(&c, dentro_e, 8004).unwrap_err().contains("otra zona"), "sin distinguir mayúsculas");
+        } else {
+            assert!(validar_zona_nueva(&c, dentro_e, 8004).unwrap_err().contains("otra zona"));
+        }
+        assert!(validar_zona_nueva(&c, "  ", 8004).is_err());
+        let mut lleno = almacen();
+        for i in 0..ZONAS_MAX {
+            lleno.zonas.push(Zona { id: format!("z00000{i}"), path: format!("/z{i}"), port: 9000 + i as u16, ..Default::default() });
+        }
+        assert!(validar_zona_nueva(&lleno, f, 8004).unwrap_err().contains("Como mucho"));
+        let apagado = ServerConfig { enabled: false, ..almacen() };
+        assert!(validar_zona_nueva(&apagado, f, 8004).is_err());
+        assert_eq!(c.puertos(), vec![8000, 8002]);
+    }
+
+    #[test]
+    fn el_espejo_no_va_dentro_de_una_zona() {
+        let mut c = almacen();
+        let e = if cfg!(windows) { r"E:\Resguardo\espejo" } else { "/srv/e/espejo" };
+        c.espejo = Some(crate::espejo::Espejo {
+            destinos: vec![crate::espejo::Destino { tipo: "carpeta".into(), carpeta: e.into(), ..Default::default() }],
+            ..Default::default()
+        });
+        c.zonas.clear();
+        let zona = if cfg!(windows) { r"E:\Resguardo" } else { "/srv/e" };
+        assert!(validar_zona_nueva(&c, zona, 8002).unwrap_err().contains("espejo"));
+    }
+
+    #[test]
+    fn usuarios_unicos_en_todo_el_almacen() {
+        let dir = std::env::temp_dir().join(format!("resguardo-zonas-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = Files { public: dir.clone(), private: dir.clone() };
+        let mut c = almacen();
+        // «caja» ya está en la zona E: en la principal es «caja-2», para el mismo equipo.
+        let (u, p) = create_user_en(&f, &mut c, None, "Caja").unwrap();
+        assert_eq!(u, "caja-2");
+        assert!(c.users.iter().any(|x| x.name == "caja-2" && x.es_para("caja")));
+        let lineas = f.read_htpasswd_de(None);
+        assert!(lineas.iter().any(|l| l.starts_with("caja-2:")) && f.read_htpasswd_de(Some("z0a0b0c")).is_empty(), "en el archivo de su zona");
+        assert!(bcrypt::verify(&p, lineas[0].split_once(':').unwrap().1).unwrap());
+        // Y uno nuevo en la zona, en su propio archivo.
+        let (u, _) = create_user_en(&f, &mut c, Some("z0a0b0c"), "Recepcion").unwrap();
+        assert_eq!(u, "recepcion-2");
+        assert!(f.read_htpasswd_de(Some("z0a0b0c"))[0].starts_with("recepcion-2:"));
+        assert!(create_user_en(&f, &mut c, Some("z9999ff"), "x").is_err(), "una zona que no está");
+        // La retención en el almacén encuentra la carpeta del usuario, esté donde esté.
+        assert_eq!(c.carpeta_de_usuario("recepcion-2").map(|(p, _)| p.to_string()), Some(c.zonas[0].path.clone()));
+        assert_eq!(c.carpeta_de_usuario("caja-2").map(|(p, _)| p.to_string()), Some(c.path.clone()));
+        assert!(c.carpeta_de_usuario("nadie").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nombres_de_zona_y_lo_que_se_guarda() {
+        assert_eq!(nombre_por_defecto(r"E:\Resguardo"), "Disco E");
+        assert_eq!(nombre_por_defecto(r"e:\copias"), "Disco E");
+        assert_eq!(nombre_por_defecto("/mnt/disco2/resguardo"), "resguardo");
+        assert!(nombre_zona_valido("Disco E") && !nombre_zona_valido("  ") && !nombre_zona_valido(&"x".repeat(61)) && !nombre_zona_valido("a\nb"));
+        // Un servidor.json de antes (sin zonas) se lee igual y no gana el campo al guardarse.
+        let viejo: ServerConfig =
+            serde_json::from_str(r#"{"enabled":true,"path":"/srv/d","port":8000,"local_subnet_only":true,"users":[{"name":"ana","created_at":""}]}"#).unwrap();
+        assert!(viejo.zonas.is_empty() && viejo.users[0].para.is_none());
+        let texto = serde_json::to_string(&viejo).unwrap();
+        assert!(!texto.contains("zonas") && !texto.contains("para"), "{texto}");
+        let nuevo = serde_json::to_value(almacen()).unwrap();
+        assert_eq!(nuevo["zonas"][0]["port"], 8002);
+    }
+
     #[test]
     fn siempre_append_only_y_privado() {
         let c = ServerConfig { path: r"D:\Copias".into(), port: 8443, ..Default::default() };
@@ -1024,11 +1610,14 @@ mod tests {
 4: wg0    inet 10.4.200.1/16 scope global wg0
 5: rara    inet 1.2.3.4/99 scope global rara";
         assert_eq!(redes_de_ip_addr(salida), vec!["192.168.1.0/24".to_string(), "10.4.0.0/16".to_string()]);
-        let r = reglas_nft(8000, &redes_de_ip_addr(salida));
+        let r = reglas_nft(&[8000], &redes_de_ip_addr(salida));
         assert!(r.contains("tcp dport 8000 ip saddr { 192.168.1.0/24, 10.4.0.0/16 } accept") && r.contains("tcp dport 8000 drop"));
         assert!(r.starts_with("# Resguardo") && r.contains("delete table inet resguardo"));
         // Sin redes conocidas: las privadas.
-        assert!(reglas_nft(8000, &[]).contains("{ 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }"));
+        assert!(reglas_nft(&[8000], &[]).contains("{ 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }"));
+        // 7b: con zonas, todos los puertos del almacén en las mismas reglas.
+        let r = reglas_nft(&[8000, 8002], &["192.168.1.0/24".into()]);
+        assert!(r.contains("tcp dport { 8000, 8002 } ip saddr { 192.168.1.0/24 } accept") && r.contains("tcp dport { 8000, 8002 } drop"), "{r}");
     }
 
     #[test]

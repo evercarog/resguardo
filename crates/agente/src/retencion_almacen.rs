@@ -261,8 +261,15 @@ fn carpeta_en_este_almacen(usuario: &str, repo: &str) -> Result<PathBuf, String>
     if !c.enabled {
         return Err("Este equipo no guarda copias.".into());
     }
-    let usuarios: Vec<String> = c.users.iter().map(|u| u.name.clone()).collect();
-    carpeta_repo(Path::new(&c.path), &usuarios, usuario, repo)
+    // Tarea 7b: el usuario puede ser de una zona (los nombres son únicos en
+    // todo el almacén); si no es de ninguna, el error de siempre.
+    match c.carpeta_de_usuario(usuario) {
+        Some((carpeta, usuarios)) => carpeta_repo(Path::new(carpeta), &usuarios, usuario, repo),
+        None => {
+            let usuarios: Vec<String> = c.users.iter().map(|u| u.name.clone()).collect();
+            carpeta_repo(Path::new(&c.path), &usuarios, usuario, repo)
+        }
+    }
 }
 
 // ---------- restic en local, con la clave del almacén ----------
