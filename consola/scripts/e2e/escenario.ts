@@ -44,6 +44,7 @@ import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../s
 import { proximaDe } from "../../src/lib/copia";
 import { claveZona, destinosDelCliente, errorRespuestaZona, idDestinoZona, zonaDeDestino, zonasDe } from "../../src/lib/destinos";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
+import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
 import { OyenteVivo } from "./vivo";
@@ -409,6 +410,23 @@ async function principal() {
       await consola.ok("PUT", `/api/clientes/${c.id}/destinos/${encodeURIComponent(claveZona(eqA.id, zona.id))}`, { nombre: "Almacén · Disco E", tipo: "zona" });
       const catalogo = await consola.ok<DestinoCatalogo[]>("GET", `/api/clientes/${c.id}/destinos`);
       igual(destinosDelCliente([eqAAhora, eqBAhora], catalogo).find((v) => v.clave === claveZona(eqA.id, zona.id))?.nombre, "Almacén · Disco E", "El nombre del catálogo se ve en la zona");
+      // Tarea 8: el sistema de archivos de la zona (solo un dato) y la regla 3-2-1-1-0 de la copia de B en ella.
+      const zE = eqAAhora.resumen?.guarda_copias?.zonas?.find((x) => x.id === zona.id);
+      comprobar(typeof zE?.sistema_archivos === "string" && zE.sistema_archivos.length > 0, "El almacén dice el sistema de archivos de la zona", zE);
+      const urlZona = `/api/clientes/${c.id}/destinos/${encodeURIComponent(claveZona(eqA.id, zona.id))}`;
+      await consola.ok("PUT", urlZona, { nombre: "Almacén · Disco E", tipo: "zona", atributos: { inmutable: "instantaneas" } });
+      // Renombrar sin `atributos` (como una consola anterior) no los borra.
+      await consola.ok("PUT", urlZona, { nombre: "Almacén · Disco E (zona)", tipo: "zona" });
+      const catalogo8 = await consola.ok<DestinoCatalogo[]>("GET", `/api/clientes/${c.id}/destinos`);
+      igual(catalogo8.find((x) => x.id === claveZona(eqA.id, zona.id))?.atributos, { inmutable: "instantaneas" }, "Lo marcado para la regla 3-2-1 se queda al renombrar");
+      const kE = eqBAhora.resumen?.copias?.find((x) => x.id === "documentos-e");
+      const rcE = kE ? reglaDeCopia(eqBAhora, kE, [eqAAhora, eqBAhora], null, catalogo8, Date.now()) : null;
+      igual(
+        rcE?.pasos.map((p) => [p.lugar, p.inmutable, p.porDefecto.inmutable, pasoAlDia(p, Date.now())]),
+        [["oficina", "instantaneas", "solo_anadir", true]],
+        "La regla ve la copia de B en la zona E: otro equipo de la oficina, al día y con lo marcado",
+      );
+      igual(rcE?.regla.avisos, ["inmutable_local"], "…y avisa de que lo inmutable es local");
       // Vuelve la configuración de antes (los pasos siguientes cuentan con una sola copia).
       await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });
       log(`B copia también en «Disco E» (puerto ${puertoE}, usuario ${accesoE.usuario})`);

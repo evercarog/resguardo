@@ -33,6 +33,8 @@
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
   import { riesgosDelCliente } from "$lib/dondeGuarda";
+  // Tarea 8: cuántas copias cumplen la regla 3-2-1-1-0 (y las que dejaron de cumplir, sin urgencia).
+  import ReglaCliente from "$lib/componentes/regla/ReglaCliente.svelte";
 
   interface Urgente {
     tono: Tono;
@@ -238,6 +240,7 @@
     {/if}
 
     <PrimerosPasos cliente={actual.cliente} equipos={actual.equipos} {informes} />
+    {#if delFiltro.length}<ReglaCliente cliente={c} equipos={delFiltro} todos={actual.equipos} {informes} ahora={reloj.ahora} />{/if}
 
     <Pendientes />
 

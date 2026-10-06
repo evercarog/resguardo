@@ -549,6 +549,12 @@ pub struct Configuracion {
     /// repositorios que no están se quedan sin verificación automática.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verificaciones: Option<std::collections::BTreeMap<String, VerificacionAuto>>,
+    /// Tarea 8 (docs/regla-3-2-1.md, el «0» de la regla 3-2-1-1-0): prueba de
+    /// restauración automática de cada repositorio, `{ "<repo>": { cada_dias } }`.
+    /// Como `verificaciones`: sin el campo (una consola anterior) no se toca la que
+    /// haya; con él, los repositorios que no están se quedan sin prueba automática.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pruebas_restauracion: Option<std::collections::BTreeMap<String, PruebaAuto>>,
     /// v1.36: la ventana y los avisos del escritorio (docs/agente-ventana.md §2):
     /// `{ ventana: off|siempre_disponible|al_trabajar, avisos: off|errores|todo }`.
     /// Sin el campo (una consola anterior), se queda el que hubiera.
@@ -665,6 +671,81 @@ impl VerificacionAuto {
     }
 }
 
+/// Tarea 8: «probar a restaurar cada `cada_dias` días»: unos archivos al azar de
+/// la última versión a una carpeta temporal, comparados con lo guardado (la
+/// prueba de siempre, `restore_test.rs`, con sus límites por defecto).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PruebaAuto {
+    pub cada_dias: u32,
+}
+
+/// La primera prueba automática, de madrugada (después de la verificación).
+const HORA_PRUEBA: u32 = 4;
+
+impl PruebaAuto {
+    pub fn valida(&self) -> Result<(), String> {
+        if !(1..=31).contains(&self.cada_dias) {
+            return Err("La prueba de restauración automática va de cada día a cada 31 días.".into());
+        }
+        Ok(())
+    }
+
+    fn schedule(&self) -> crate::agent::Schedule {
+        crate::agent::Schedule::Hours { every: self.cada_dias.clamp(1, 31) * 24 }
+    }
+
+    /// La de una prueba del agente (lo que enseña el resumen); con otro horario (el de la app), nada.
+    pub fn de(t: &crate::restore_test::RestoreTest) -> Option<PruebaAuto> {
+        match &t.schedule {
+            crate::agent::Schedule::Hours { every } => Some(PruebaAuto { cada_dias: (every / 24).max(1) }),
+            _ => None,
+        }
+    }
+
+    /// La prueba del agente: la primera a las 04:00 siguientes; después, cada `cada_dias` días desde la anterior.
+    pub fn prueba(&self, ahora: chrono::DateTime<chrono::Local>) -> crate::restore_test::RestoreTest {
+        use chrono::TimeZone;
+        let every = self.cada_dias.clamp(1, 31) * 24;
+        let hoy = ahora.date_naive().and_hms_opt(HORA_PRUEBA, 0, 0).and_then(|t| chrono::Local.from_local_datetime(&t).earliest());
+        let primera = match hoy {
+            Some(t) if t > ahora + chrono::Duration::hours(1) => t,
+            Some(t) => t + chrono::Duration::days(1),
+            None => ahora + chrono::Duration::hours(1),
+        };
+        crate::restore_test::RestoreTest {
+            schedule: self.schedule(),
+            files: 20,
+            max_mb: 200,
+            enabled_at: (primera - chrono::Duration::hours(i64::from(every))).to_rfc3339(),
+        }
+    }
+
+    /// ¿Hace lo mismo que `t`? (Entonces se deja como está: no vuelve a empezar.)
+    pub fn igual_que(&self, t: &crate::restore_test::RestoreTest) -> bool {
+        t.schedule == self.schedule()
+    }
+}
+
+/// Aplica `pruebas_restauracion` (si la configuración las trae) a los repositorios
+/// con copias en el agente. Devuelve los que la tienen.
+pub(crate) fn aplicar_pruebas(v: &Vinculo, cfg: &Configuracion) -> Result<usize, String> {
+    let Some(mapa) = &cfg.pruebas_restauracion else { return Ok(0) };
+    let ahora = chrono::Local::now();
+    let mut n = 0;
+    for r in crate::agent::load_config().repos.iter().filter(|r| v.repos_v2.iter().any(|x| x.id == r.id)) {
+        let quiere = mapa.get(&r.id);
+        n += usize::from(quiere.is_some());
+        match (quiere, &r.restore_test) {
+            (Some(q), Some(actual)) if q.igual_que(actual) => {}
+            (None, None) => {}
+            // Una prueba con otro horario (la puso la app de escritorio, no la consola): se deja.
+            (None, Some(actual)) if PruebaAuto::de(actual).is_none() => {}
+            (q, _) => crate::agent::set_restore_test(&r.id, q.map(|q| q.prueba(ahora)))?,
+        }
+    }
+    Ok(n)
+}
+
 /// Una regla del motor (días 0 = lunes) como la de la consola (1 = lunes).
 fn regla_de_motor(r: &crate::plans::ScheduleRule) -> Regla {
     use crate::plans::ScheduleRule as S;
@@ -754,6 +835,12 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         }
         va.valida()?;
     }
+    for (repo, p) in cfg.pruebas_restauracion.iter().flatten() {
+        if !v.repos_v2.iter().any(|r| r.id == *repo && !r.solo_lectura) {
+            return Err(format!("La prueba de restauración automática es de un repositorio que este equipo no tiene: «{repo}»."));
+        }
+        p.valida()?;
+    }
     for r in v.repos_v2.clone() {
         let planes: Vec<crate::plans::Plan> = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(plan_de).collect::<Result<_, _>>()?;
         if planes.is_empty() {
@@ -769,6 +856,7 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         crate::agent::set_schedule(&repo, Some(&acc), Some(crate::agent::Schedule::Plans))?;
     }
     let verificados = aplicar_verificaciones(v, &cfg)?;
+    aplicar_pruebas(v, &cfg)?;
     v.config_v1 = Some(serde_json::to_value(&cfg).map_err(|e| e.to_string())?);
     let _ = subir_config(v);
     let activas = cfg.copias.iter().filter(|k| k.activa).count();
@@ -820,7 +908,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 12] = [
+pub const ADMITE: [&str; 13] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -837,6 +925,8 @@ pub const ADMITE: [&str; 12] = [
     // (pendiente de numerar) varias zonas en el almacén: `guarda_copias { zona }`, `{ quitar_zona }`,
     // `{ anadir, zona }`, `{ quitar, zona }` y `guarda_copias.zonas` (docs/copias-en-cadena.md, 7b).
     "zonas_almacen",
+    // (pendiente de numerar) tarea 8: `config.pruebas_restauracion` y `repositorios[].prueba_auto`.
+    "prueba_auto",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -870,6 +960,12 @@ pub fn resumen(v: &Vinculo) -> Value {
             "todo_leido": tareas.rotation.get(&crate::tasks::rotation_key("verify", id)).and_then(|x| x.last_full_at.clone()),
         }))
     };
+    // Tarea 8: la prueba de restauración automática y cuándo toca.
+    let prueba_auto = |id: &str| {
+        let r = config.repos.iter().find(|r| r.id == id)?;
+        let p = PruebaAuto::de(r.restore_test.as_ref()?)?;
+        Some(json!({ "cada_dias": p.cada_dias, "proxima": crate::tasks::next_restore_test(r, &tareas).map(|t| t.to_rfc3339()) }))
+    };
     json!({
         // v1.28: lo que este agente sabe hacer de lo nuevo (la consola no ofrece lo que no).
         "admite": ADMITE,
@@ -892,6 +988,7 @@ pub fn resumen(v: &Vinculo) -> Value {
             // v1.28: la regla tal cual (para editarla), además del texto.
             "retencion_regla": r.retencion,
             "verificacion_auto": verificacion_auto(&r.id),
+            "prueba_auto": prueba_auto(&r.id),
             // v1.14: solo si se sabe (rest-server de solo añadir: la retención la aplica el servidor).
             "solo_anadir": solo_anadir(r),
             // v1.22: su carpeta en un servidor rest si no es su id (adoptado): la
@@ -919,11 +1016,15 @@ pub fn resumen(v: &Vinculo) -> Value {
                 for k in ["unidad", "extraible", "red"] {
                     x[k] = disco[k].clone();
                 }
+                // Tarea 8e: el sistema de archivos (solo su nombre; nunca resta en la regla 3-2-1).
+                x["sistema_archivos"] = crate::espacio::json_fs(&d.donde);
             }
             x
         }).collect::<Vec<_>>(),
         "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
         "guarda_copias": resumen_guarda_copias(),
+        // Tarea 8e: si corre en una máquina virtual o un contenedor (solo un dato para la consola).
+        "entorno": crate::espacio::entorno(),
         // v1.19: un puerto libre para «Este equipo guarda copias» (la consola lo propone).
         "puerto_libre": puerto_libre(),
         "servidores_respaldo": v.respaldo.iter().map(|r| json!({ "url": r.url, "identidad_corta": r.identidad.chars().take(8).collect::<String>() })).collect::<Vec<_>>(),
@@ -1644,6 +1745,8 @@ pub fn resumen_guarda_copias() -> Value {
         // v1.31 («¿Cuándo se llena?»): libre y total del volumen de la carpeta
         // (solo los números y cuándo se leyeron; `null` si no se puede leer).
         "espacio": crate::espacio::json_de(&c.path),
+        // Tarea 8e: el sistema de archivos de la carpeta (NTFS, ReFS, ext4, zfs…).
+        "sistema_archivos": crate::espacio::json_fs(&c.path),
         "repositorios": crate::server::repos_by_user(&c).into_iter().map(|(usuario, repos)| json!({ "usuario": usuario, "repos": repos })).collect::<Vec<_>>(),
         "espejo": c.espejo.as_ref().map(crate::espejo::Espejo::resumen),
         // v1.22: la retención que aplica este almacén (regla, horario y
@@ -1684,6 +1787,20 @@ mod tests {
         assert_eq!((d["red"].as_bool(), d["extraible"].as_bool(), d["donde"].is_null()), (Some(true), Some(false), true));
         assert!(!r.to_string().contains("carpeta-reservada"), "nunca la ruta: {r}");
         assert!(r["destinos"][1].get("unidad").is_none(), "solo en los locales");
+        // Tarea 8e: una carpeta de la red no se consulta; el entorno, solo nombres (o nada).
+        assert!(d["sistema_archivos"].is_null());
+        assert!(r["destinos"][1].get("sistema_archivos").is_none(), "solo en los locales");
+        assert!(r["entorno"].is_null() || r["entorno"].is_object());
+        let tmp = std::env::temp_dir().to_string_lossy().to_string();
+        let v = Vinculo {
+            destinos: vec![Destino { id: "d".into(), nombre: "D".into(), tipo: "local".into(), donde: tmp.clone(), ..Default::default() }],
+            ..Default::default()
+        };
+        let r = resumen(&v);
+        if cfg!(any(windows, target_os = "linux")) {
+            assert!(r["destinos"][0]["sistema_archivos"].is_string(), "{r}");
+        }
+        assert!(!r["destinos"][0].to_string().contains(&tmp), "sin la ruta");
     }
 
     #[test]

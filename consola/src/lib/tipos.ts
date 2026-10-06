@@ -230,6 +230,8 @@ export interface ResumenEquipo {
     carpeta?: string;
     /** v1.31: libre y total del volumen de esa carpeta. */
     espacio?: EspacioVolumen | null;
+    /** Tarea 8e: el sistema de archivos de esa carpeta. Solo un dato. */
+    sistema_archivos?: string | null;
     /** v1.21: los repositorios de cada equipo cliente (`<carpeta>/<usuario>/<repo>`), solo nombres. */
     repositorios?: { usuario: string; repos: string[] }[];
     /**
@@ -248,6 +250,8 @@ export interface ResumenEquipo {
         ultima?: string | null;
         resultado?: string | null;
         espacio?: EspacioVolumen | null;
+        /** Tarea 8e: el sistema de archivos de una carpeta. Solo un dato. */
+        sistema_archivos?: string | null;
         /** (agente con `admite: "espejo_flexible"`, docs/espejo.md) su horario propio; sin él, cada día a `hora`. */
         horario?: Horario | null;
         /** También después de cada copia nueva. */
@@ -290,6 +294,8 @@ export interface ResumenEquipo {
     zonas?: ZonaAlmacen[] | null;
   } | null;
   pausado_hasta?: string | null;
+  /** Tarea 8e: si el agente corre en una máquina virtual o un contenedor. Solo un dato (nunca resta). */
+  entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra" | string; contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" | string } | null;
 }
 
 /** Tarea 7b: una zona más de un almacén. */
@@ -304,6 +310,8 @@ export interface ZonaAlmacen {
   /** Si su rest-server responde ahora. */
   escucha?: boolean;
   espacio?: EspacioVolumen | null;
+  /** Tarea 8e: el sistema de archivos de su carpeta. Solo un dato. */
+  sistema_archivos?: string | null;
   repositorios?: { usuario: string; repos: string[] }[];
 }
 
@@ -315,8 +323,20 @@ export interface DestinoCatalogo {
   tipo: "zona" | "rest" | "s3" | "b2" | "sftp" | "nube" | "local";
   /** Servidor o bucket (solo en los de red). */
   donde?: string | null;
+  /** Tarea 8: lo que dice la persona para la regla 3-2-1-1-0 (sin ello, lo deducido del tipo). */
+  atributos?: AtributosDestino | null;
   actualizado?: string;
   por?: string;
+}
+
+/** Tarea 8 (docs/regla-3-2-1.md): dónde está un destino y si es inmutable. */
+export type LugarDestino = "este_equipo" | "oficina" | "otra_sede" | "nube";
+export type InmutableDestino = "solo_anadir" | "object_lock" | "instantaneas" | "desconectado" | "no";
+export interface AtributosDestino {
+  lugar?: LugarDestino;
+  inmutable?: InmutableDestino;
+  /** Un nombre para el soporte: dos destinos con el mismo cuentan como uno. */
+  soporte?: string;
 }
 
 /** v1.31: bytes libres y totales de un volumen o de una nube, y cuándo se leyeron. */
@@ -354,6 +374,8 @@ export interface RepositorioResumen {
   retencion_regla?: Regla | null;
   /** v1.28: la verificación automática (cada N días, porcentaje rotativo) y cuándo toca. */
   verificacion_auto?: { cada_dias: number; porcentaje: number; horario?: Horario | null; proxima?: string | null; todo_leido?: string | null } | null;
+  /** Tarea 8 (agente con `admite: "prueba_auto"`): la prueba de restauración automática y cuándo toca. */
+  prueba_auto?: { cada_dias: number; proxima?: string | null } | null;
   /** Importado de otro equipo (§10): se puede explorar y restaurar, no copiar en él. */
   solo_lectura?: boolean;
   /** v1.14: en un rest-server de solo añadir (adoptado o comprobado): la retención la aplica el servidor. */
@@ -439,6 +461,8 @@ export interface DestinoResumen {
   unidad?: string | null;
   extraible?: boolean | null;
   red?: boolean;
+  /** Tarea 8e, solo un destino local: el sistema de archivos de su carpeta («NTFS», «zfs»…). Solo un dato. */
+  sistema_archivos?: string | null;
 }
 
 export interface Equipo {
@@ -956,6 +980,8 @@ export interface Configuracion {
   verificacion?: { cada_dias: number; porcentaje: number } | null;
   /** v1.28: verificación automática por repositorio. Sin el campo, el agente no toca la que haya. */
   verificaciones?: Record<string, VerificacionAuto>;
+  /** Tarea 8 (agente con `admite: "prueba_auto"`): prueba de restauración automática por repositorio, cada N días (1 a 31). Sin el campo, el agente no toca la que haya. */
+  pruebas_restauracion?: Record<string, { cada_dias: number }>;
   bandeja?: { visible: boolean; avisos: boolean };
   /** v1.36: la ventana y los avisos en el equipo (docs/agente-ventana.md). */
   escritorio?: Escritorio;

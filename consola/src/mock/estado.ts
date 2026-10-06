@@ -334,7 +334,9 @@ export async function sembrar(vacio = false) {
       so: "Debian 12 (CT de Proxmox)",
       rol: "almacenamiento",
       resumen: {
-        guarda_copias: { activo: true, puerto: 8000, solo_red_local: true, usuarios: 3, carpeta: "/srv/resguardo/copias", espacio: { libre: 640_000_000_000, total: 4_000_000_000_000, leido: hace(5) } },
+        guarda_copias: { activo: true, puerto: 8000, solo_red_local: true, usuarios: 3, carpeta: "/srv/resguardo/copias", sistema_archivos: "zfs", espacio: { libre: 640_000_000_000, total: 4_000_000_000_000, leido: hace(5) } },
+        // Tarea 8e: un contenedor de Proxmox (solo un dato en la consola).
+        entorno: { contenedor: "lxc" },
         destinos: [destinoNube],
         repositorios: [repo("copia-externa", "Copia externa de la oficina", "b2-altamar", 210, 412_000_000_000)],
         copias: [copia("subida-nube", "Subida a la nube", "copia-externa", ["23:00"], 1)],
@@ -354,7 +356,9 @@ export async function sembrar(vacio = false) {
         servidores_respaldo: [{ url: "https://respaldo.ejemplo.co", identidad_corta: "7Q2kLm9x" }],
         respaldo_dias: 3,
         destinos: [destinoServidor, destinoNube],
-        repositorios: [repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000)],
+        // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
+        admite: ["prueba_auto"],
+        repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },
     },
@@ -419,11 +423,12 @@ export async function sembrar(vacio = false) {
       resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen"],
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
-        guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias",
+        entorno: { virtual: "hyperv" },
+        guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
           espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "caja-1", repos: ["caja", "siigo"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
-          zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 0, escucha: true, espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [] }],
+          zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 0, escucha: true, sistema_archivos: "ReFS", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [] }],
           espejo: {
             hora: "02:00",
             ultima: hace(60 * 13),
@@ -519,7 +524,7 @@ export async function sembrar(vacio = false) {
     }
     if (e.informes[0]) e.informes[0] = { ...e.informes[0], recibido: new Date(Date.now() - ((o.silencioHoras ?? 0) * 60 + 4) * 60_000).toISOString(), datos: { ...e.informes[0].datos, repos, proximas: Object.fromEntries((e.resumen?.copias ?? []).map((k) => [k.id, k.activa === false ? null : (k.proxima ?? null)])) } };
   };
-  enriquecer(recepcion, { externa: false });
+  enriquecer(recepcion, { externa: true });
   enriquecer(contabilidad, { ultimaFalla: true, fallos: 0.08, soloAnadir: true, medioAnadido: 420_000_000 });
   // Su informe dice su versión y el resultado del volcado de SQL Server (v1.10).
   if (contabilidad.informes[0]) {

@@ -8,6 +8,12 @@ import type { Plantilla } from "./plantillas";
 import type { Configuracion, CopiaConfig, Equipo, Gancho, Horario } from "./tipos";
 import { admiteVerificacion, admiteVerificacionHorario } from "./verificacion";
 
+/** Tarea 8: el agente programa la prueba de restauración desde la consola (`config.pruebas_restauracion`). */
+export const ADMITE_PRUEBA_AUTO = "prueba_auto";
+export const admitePruebaAuto = (e: Equipo | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_PRUEBA_AUTO);
+/** La prueba de restauración que propone la consola: cada mes (cada 30 días). */
+export const PRUEBA_POR_DEFECTO = { cada_dias: 30 } as const;
+
 /** Lo que entiende el agente de un equipo (según su versión y lo que anuncia). */
 export interface Admite {
   reglas: boolean;
@@ -16,6 +22,8 @@ export interface Admite {
   verif: boolean;
   verifHorario: boolean;
   escritorio: boolean;
+  /** Tarea 8: `config.pruebas_restauracion` (agente con `admite: "prueba_auto"`). */
+  pruebas?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -26,6 +34,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     verif: admiteVerificacion(equipo),
     verifHorario: admiteVerificacionHorario(equipo),
     escritorio: !!equipo.resumen?.admite?.includes("escritorio"),
+    pruebas: admitePruebaAuto(equipo),
   };
 }
 
@@ -70,6 +79,8 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       : {}),
     // v1.36: la ventana y los avisos (si el agente lo entiende y lo tiene o se ha tocado).
     ...(a.escritorio && c0.escritorio ? { escritorio: c0.escritorio } : {}),
+    // Tarea 8: la prueba de restauración automática, como la verificación (solo a un agente que la entiende).
+    ...(a.pruebas && c0.pruebas_restauracion ? { pruebas_restauracion: c0.pruebas_restauracion } : {}),
   };
 }
 

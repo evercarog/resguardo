@@ -128,6 +128,29 @@ export const GUIAS: Guia[] = [
     pasos: ["En «Restaurar», «Restaurar en otro equipo».", "Elige el repositorio y el equipo donde lo quieres, o los datos del kit.", "Confirma con la contraseña del repositorio y la clave de administración.", "Después, restaura en ese equipo como en cualquier otro."],
     ver: ["solo-lectura", "contrasena-repo"],
   },
+  {
+    id: "guia-regla-321",
+    titulo: "La regla 3-2-1-1-0",
+    resumen: "Cómo saber si cada copia aguanta un ransomware, un robo o un incendio, y qué le falta.",
+    texto: [
+      "3 copias de los datos (contando los originales), en 2 soportes distintos (otro equipo u otro disco), 1 fuera de la oficina, 1 que no se pueda borrar desde los equipos (solo añadir, bloqueo de objetos, instantáneas del anfitrión o un disco desconectado) y 0 errores al verificar y al probar la restauración.",
+      "Solo cuenta lo que está al día. Es una guía: puedes guardar una copia que no la cumple, y la consola te dice qué le falta y dónde se arregla.",
+      "Dónde está cada destino y si es inmutable se deduce de su tipo. Si no acierta (un servidor de fuera que en realidad está en la oficina, un almacén con instantáneas en el anfitrión), cámbialo en «Repositorios y destinos» → el destino → «Regla 3-2-1».",
+    ],
+    pasos: ["Mira la tira «3 · 2 · 1 · 1 · 0» en la página de cada copia.", "Pulsa lo que falta: te lleva a donde se hace (copia externa, espejo, verificación, prueba de restauración).", "Para una copia nueva, «Con la plantilla 3-2-1» en «Cambiar las copias»."],
+    ver: ["regla-321", "inmutable", "instantaneas"],
+  },
+  {
+    id: "guia-almacen-inmutable",
+    titulo: "Instantáneas que el almacén no pueda borrar",
+    resumen: "Para que un ransomware con control del almacén tampoco pueda borrar lo guardado.",
+    texto: [
+      "Lo recomendado: el almacén en un contenedor o máquina virtual Debian sobre Proxmox con ZFS, con instantáneas del anfitrión cada hora o cada día (sanoid o zfs-auto-snapshot). El almacén no las ve ni las puede borrar. El anfitrión, fuera de la red de la oficina y con otras credenciales; ZFS en espejo y un scrub periódico.",
+      "Otras formas: un Linux endurecido (sin acceso remoto) o discos USB que se rotan y se guardan desconectados. En un almacén con Windows, las instantáneas de Windows las borra cualquier administrador: déjalo fuera del dominio, con su propia cuenta de administrador, sin escritorio remoto expuesto, y con una copia fuera de su alcance.",
+      "El almacén no puede comprobar lo que hace su anfitrión: márcalo tú en el destino («Con instantáneas inmutables fuera de su alcance» o «Desconectado»). La regla 3-2-1 lo cuenta como inmutable, pero recuerda que es local: no protege de un incendio o un robo de la oficina.",
+    ],
+    ver: ["instantaneas", "regla-321"],
+  },
 ];
 
 GUIAS.push({

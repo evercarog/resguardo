@@ -253,6 +253,10 @@ impl Espejo {
                     _ => serde_json::Value::Null,
                 };
                 let mut v = serde_json::json!({ "tipo": d.tipo, "carpeta": d.carpeta, "nube": d.nube, "ultima": d.ultima, "resultado": d.resultado, "espacio": espacio });
+                // Tarea 8e: el sistema de archivos de una carpeta (solo un dato).
+                if d.tipo == "carpeta" {
+                    v["sistema_archivos"] = crate::espacio::json_fs(&d.carpeta);
+                }
                 // §3a: su horario (si tiene uno propio), «después de cada copia» y la próxima vuelta por horario.
                 if let Some(h) = &d.horario {
                     v["horario"] = serde_json::to_value(h).unwrap_or_default();

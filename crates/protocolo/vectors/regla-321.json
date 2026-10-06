@@ -1,0 +1,1318 @@
+{
+  "descripcion": "Regla 3-2-1-1-0 (tarea 8, docs/regla-3-2-1.md). Los usan crates/agente/src/protection.rs (regla_321) y consola/src/lib/regla321.ts (scripts/vectores-regla.ts). No se compara `detalle`: cada lado lo escribe con sus palabras.",
+  "ahora": "2026-10-01T12:00:00-05:00",
+  "vectores": [
+    {
+      "nombre": "solo_originales",
+      "que": "Sin destinos ni pruebas: solo cuentan los originales.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [],
+        "verificacion": {
+          "configurada": false
+        },
+        "prueba_restauracion": {
+          "configurada": false
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "otro_soporte"
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "programar_verificacion"
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "almacen_zona_d",
+      "que": "La copia en el almacén (solo añadir): 2 copias, 2 soportes, inmutable pero local.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "inmutable_local"
+        ]
+      }
+    },
+    {
+      "nombre": "cumple_entera",
+      "que": "Almacén y copia externa a B2 con bloqueo, todo al día y probado.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": true,
+        "cumple_config": true,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "dejo_de_cumplir",
+      "que": "La copia externa lleva 3 días sin subir: deja de cumplir (la configuración sigue bien).",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-09-28T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [
+          "externa"
+        ],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "dos_zonas_del_mismo_almacen",
+      "que": "Dos discos del mismo almacén: 2 soportes, pero con aviso (un incendio se los lleva a la vez).",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "zona-e",
+            "nombre": "Almacén ALMACEN-01 · Disco E",
+            "tipo": "espejo",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:E:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "mismo_equipo",
+          "inmutable_local"
+        ]
+      }
+    },
+    {
+      "nombre": "carpeta_del_mismo_equipo",
+      "que": "Una carpeta del propio equipo cuenta como copia, no como otro soporte.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "carpeta",
+            "nombre": "Disco D de RECEPCION",
+            "tipo": "copia",
+            "lugar": "este_equipo",
+            "inmutable": "no",
+            "soporte": "equipo:e-recepcion:origen",
+            "equipo": "e-recepcion",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "otro_soporte"
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "usb_desconectado",
+      "que": "Un disco USB que se desconecta: otro soporte e inmutable, pero en el mismo equipo y local.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "usb",
+            "nombre": "Disco USB",
+            "tipo": "copia",
+            "lugar": "este_equipo",
+            "inmutable": "desconectado",
+            "soporte": "equipo:e-recepcion:usb:E:",
+            "equipo": "e-recepcion",
+            "ultima_ok": "2026-09-30T20:00:00-05:00",
+            "cada_horas": 168
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "mismo_equipo",
+          "inmutable_local"
+        ]
+      }
+    },
+    {
+      "nombre": "verificacion_fallida",
+      "que": "La última verificación falló: el «0» no se cumple y deja de cumplir.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T03:00:00-05:00",
+          "fallo": true
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 1,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "revisar_verificacion"
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "prueba_antigua",
+      "que": "La última prueba de restauración correcta es de hace más de 45 días.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-08-01T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 1,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "revisar_prueba"
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "programar_antes_que_revisar",
+      "que": "Sin prueba programada y la verificación falló: primero, programar la prueba.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00",
+          "fallo": true
+        },
+        "prueba_restauracion": {
+          "configurada": false
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 2,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "programar_prueba"
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "espejo_con_datos_danados",
+      "que": "El espejo encontró archivos dañados al comprobarse: el «0» no se cumple.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "espejo-1",
+            "nombre": "Espejo en el disco F",
+            "tipo": "espejo",
+            "lugar": "oficina",
+            "inmutable": "no",
+            "soporte": "equipo:e-almacen:F:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "verificacion_mal": true
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 4,
+            "valor_config": 4,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 4,
+            "valor_config": 4,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 1,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "revisar_destino"
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "mismo_equipo"
+        ]
+      }
+    },
+    {
+      "nombre": "margen_cada_hora",
+      "que": "Cada hora: al día hasta 13,5 h después de la última vez bien.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "a",
+            "nombre": "S3",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:s3:a",
+            "ultima_ok": "2026-09-30T23:00:00-05:00",
+            "cada_horas": 1
+          },
+          {
+            "id": "b",
+            "nombre": "Servidor de fuera",
+            "tipo": "paso",
+            "lugar": "otra_sede",
+            "inmutable": "no",
+            "soporte": "servidor:b",
+            "ultima_ok": "2026-09-30T22:00:00-05:00",
+            "cada_horas": 1
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [
+          "b"
+        ],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "sin_horario_y_nunca_hecho",
+      "que": "Sin horario cuenta como cada día (48 h); un paso que nunca se hizo no está al día.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "a",
+            "nombre": "Nube",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:a",
+            "ultima_ok": "2026-09-29T13:00:00-05:00"
+          },
+          {
+            "id": "b",
+            "nombre": "Almacén X",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:x:D:",
+            "equipo": "x",
+            "ultima_ok": "2026-09-29T11:00:00-05:00"
+          },
+          {
+            "id": "c",
+            "nombre": "Almacén Y",
+            "tipo": "derivada",
+            "lugar": "oficina",
+            "inmutable": "no",
+            "soporte": "equipo:y:D:",
+            "equipo": "y"
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 4,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 4,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [
+          "b",
+          "c"
+        ],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "reloj_adelantado",
+      "que": "Una hora en el futuro (el reloj de otro equipo adelantado) cuenta como al día.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T13:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "externa",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": true,
+        "cumple_config": true,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    }
+  ]
+}
