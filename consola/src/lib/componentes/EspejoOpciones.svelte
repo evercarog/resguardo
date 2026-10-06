@@ -13,6 +13,8 @@
     elegidos = $bindable(),
     repositorios,
     nombre = (r: string) => r,
+    verificarPct = $bindable(),
+    nube = false,
   }: {
     id: string;
     horario: Horario;
@@ -25,7 +27,12 @@
     repositorios: string[];
     /** Cómo se llama un repositorio en la consola («Contabilidad, de RECEPCION»). */
     nombre?: (r: string) => string;
+    /** §3d: % de lo que hay en el destino que se comprueba cada día. */
+    verificarPct: number;
+    /** Es una nube (comprobar es descargar). */
+    nube?: boolean;
   } = $props();
+  const PORCENTAJES = [0, 1, 2, 5, 10, 25, 50, 100];
 
   // Los elegidos que ya no están en el almacén también se ven (para poder quitarlos).
   const lista = $derived([...new Set([...repositorios, ...elegidos])].sort());
@@ -66,6 +73,20 @@
     </ul>
     {#if !elegidos.length}<p class="error-campo">Elige al menos uno (o todos).</p>{:else}<p class="faint">Los repositorios que lleguen después no entran solos: la consola te preguntará.</p>{/if}
   {/if}
+</fieldset>
+
+<fieldset class="grupo">
+  <legend class="field-label">Comprobar el espejo</legend>
+  <div class="field">
+    <label class="field-label" for="{id}-verif">Cada día, comprobar</label>
+    <select id="{id}-verif" class="input" bind:value={verificarPct}>
+      {#each PORCENTAJES as p (p)}<option value={p}>{p === 0 ? "Nada" : p === 100 ? "Todo lo que hay en él" : `El ${p} % de lo que hay en él`}</option>{/each}
+    </select>
+    <span class="field-hint">
+      {#if nube}Para comprobarlo hay que descargarlo: en una nube cuenta como bajada.{:else}Se lee y se compara con su huella; lo que esté mal se vuelve a copiar del almacén.{/if}
+      Antes de copiar, cada archivo del almacén se comprueba siempre: uno dañado no se copia y se avisa.
+    </span>
+  </div>
 </fieldset>
 
 <style>

@@ -1,5 +1,6 @@
 // Pruebas del espejo por destino (src/lib/espejo.ts, docs/espejo.md).
 // `npm run test:vectores` (con las demás).
+import { textoVerificacion } from "../src/lib/espejo";
 import { admiteEspejoFlexible, conRepos, cuandoEspejo, destinoParaOrden, espejoDelRepo, horaParaConsolasAnteriores, horarioDiario, nombreEnAlmacen, nombresRepos, nuevosEn, textoRepos } from "../src/lib/espejo";
 import { esDestructiva } from "../src/lib/cripto/ordenes";
 
@@ -49,6 +50,13 @@ const esp = { hora: "02:00", destinos: [{ tipo: "carpeta" as const, carpeta: "E:
 igual("desde un repositorio, solo los destinos a los que va", espejoDelRepo(esp, "caja-1/caja")?.destinos?.length, 1);
 igual("…y los dos si entra en la selección", espejoDelRepo(esp, "caja-1/siigo")?.destinos?.length, 2);
 igual("…y ninguno si no va a ninguno", espejoDelRepo({ hora: "02:00", destinos: [esp.destinos[1]] }, "caja-1/caja"), null);
+
+console.log("\n· Espejo: comprobar (3d)");
+igual("sin comprobar, nada", textoVerificacion({ verificar_pct: 0 }), null);
+igual("sin hacerla aún", textoVerificacion({ verificar_pct: 5 }), "Comprueba el 5 % cada día");
+igual("hecha y bien", textoVerificacion({ verificar_pct: 100, verificacion: { ultima: "x", archivos: 1, mal: 0 } }), "Lo comprueba todo cada día · 1 archivo la última vez, bien");
+igual("con alguno mal", textoVerificacion({ verificar_pct: 5, verificacion: { ultima: "x", archivos: 40, mal: 2 } }), "Comprueba el 5 % cada día · 40 archivos la última vez, 2 mal");
+igual("el % se reenvía", destinoParaOrden({ tipo: "carpeta", carpeta: "E:\\x", verificar_pct: 10, verificacion: { ultima: "x", archivos: 1, mal: 0 } }), { tipo: "carpeta", carpeta: "E:\\x", verificar_pct: 10 });
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

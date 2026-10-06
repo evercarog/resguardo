@@ -27,6 +27,12 @@ export interface DestinoEspejoResumen {
   repos?: string[] | null;
   /** §3f: los repositorios que había al elegir la selección (los demás son nuevos). */
   vistos?: string[] | null;
+  /** §3d: % de lo que hay en el destino que se comprueba cada día. */
+  verificar_pct?: number | null;
+  /** §3d: la última comprobación del destino. */
+  verificacion?: { ultima: string; archivos: number; mal: number } | null;
+  /** §3d: archivos dañados del almacén que no se copiaron en la última vuelta. */
+  danados_origen?: number | null;
 }
 
 /** Lo que se manda de un destino en `guarda_copias.espejo.destinos` (sin sus resultados). */
@@ -38,6 +44,7 @@ export interface DestinoEspejoOrden {
   tras_copia?: boolean;
   repos?: string[];
   vistos?: string[];
+  verificar_pct?: number;
 }
 
 /** Un destino del resumen en la forma de la orden: lo que ya tiene, para reenviarlo sin cambios. */
@@ -49,7 +56,18 @@ export function destinoParaOrden(d: DestinoEspejoResumen): DestinoEspejoOrden {
     o.repos = [...d.repos];
     o.vistos = [...(d.vistos ?? [])];
   }
+  if (typeof d.verificar_pct === "number") o.verificar_pct = d.verificar_pct;
   return o;
+}
+
+/** §3d: «Comprueba el 5 % cada día · 120 archivos bien» (o null si no comprueba nada). */
+export function textoVerificacion(d: Pick<DestinoEspejoResumen, "verificar_pct" | "verificacion">): string | null {
+  const pct = d.verificar_pct ?? 0;
+  if (!pct) return null;
+  const base = pct === 100 ? "Lo comprueba todo cada día" : `Comprueba el ${pct} % cada día`;
+  const v = d.verificacion;
+  if (!v) return base;
+  return `${base} · ${v.archivos} ${v.archivos === 1 ? "archivo" : "archivos"} la última vez${v.mal ? `, ${v.mal} mal` : ", bien"}`;
 }
 
 /** Los repositorios que guarda un almacén, con el nombre que usa el espejo: `<usuario>` o `<usuario>/<repo>`. */

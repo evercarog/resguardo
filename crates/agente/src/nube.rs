@@ -389,6 +389,40 @@ pub fn listar(n: &Nube, carpeta: &str, sub: &str, trabajo: &Path) -> Result<Vec<
         .collect())
 }
 
+/// El SHA-256 de estos archivos de la nube (rutas relativas a `carpeta`), bajándolos
+/// (`rclone hashsum --download`: Dropbox y otras no lo guardan). Los que no se
+/// pudieron leer no salen.
+pub fn hashes(n: &Nube, carpeta: &str, rels: &[&str], trabajo: &Path) -> Result<std::collections::HashMap<String, String>, String> {
+    if rels.is_empty() {
+        return Ok(Default::default());
+    }
+    std::fs::create_dir_all(trabajo).map_err(|e| format!("No se pudo crear {}: {e}", trabajo.display()))?;
+    let lista = archivo_de_trabajo(trabajo, "comprobar");
+    std::fs::write(&lista, rels.join("\n")).map_err(|e| format!("No se pudo preparar la lista para la nube: {e}"))?;
+    let destino = remoto(carpeta, "");
+    let out = rclone(
+        n,
+        trabajo,
+        &|c| {
+            c.args(["hashsum", "sha256", "--download", "--use-json-log"]).arg(&destino).arg("--files-from-raw").arg(&lista);
+        },
+        &mut |_, _| {},
+    );
+    let _ = std::fs::remove_file(&lista);
+    let out = out?;
+    let m: std::collections::HashMap<String, String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let (h, p) = l.split_once("  ")?;
+            Some((p.trim().to_string(), h.trim().to_ascii_lowercase()))
+        })
+        .collect();
+    if !out.status.success() && m.is_empty() {
+        return Err(format!("no se pudo comprobar la nube: {}", error_de_rclone(&out)));
+    }
+    Ok(m)
+}
+
 /// Sube a la nube solo estos archivos (rutas relativas a `origen`), sin
 /// reescribir lo que ya esté (`--immutable`). Devuelve los subidos y sus bytes.
 pub fn copiar_lista(
@@ -930,10 +964,50 @@ mod tests {
         assert_eq!(resumen_de_rclone("").0, "Nada nuevo que subir.");
     }
 
+    /// §3d en una nube (rclone de verdad, remoto «local»): no sube lo dañado y encuentra lo dañado en la nube.
+    #[test]
+    fn espejo_en_la_nube_comprueba_los_hashes() {
+        use crate::espejo_motor::{vuelta, Alcance, Estado, Lado, Opciones};
+        if comprobar_binario().is_err() {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("resguardo-rclone-hash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (o, d, trabajo) = (base.join("origen"), base.join("nube"), base.join("privado"));
+        std::fs::create_dir_all(&d).unwrap();
+        let viejo = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        let escribir = |contenido: &[u8]| -> String {
+            let h: String = Sha256::digest(contenido).iter().map(|x| format!("{x:02x}")).collect();
+            let rel = format!("ana/r/data/{}/{h}", &h[..2]);
+            std::fs::create_dir_all(o.join(&rel).parent().unwrap()).unwrap();
+            std::fs::write(o.join(&rel), contenido).unwrap();
+            std::fs::File::options().write(true).open(o.join(&rel)).unwrap().set_modified(viejo).unwrap();
+            rel
+        };
+        let (bueno, malo) = (escribir(b"bueno"), escribir(b"se estropea"));
+        std::fs::write(o.join(&malo), b"Se estropea").unwrap();
+        std::fs::File::options().write(true).open(o.join(&malo)).unwrap().set_modified(viejo).unwrap();
+        let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), app_key: None };
+        let carpeta = d.display().to_string().replace('\\', "/");
+        let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: None };
+        let op = Opciones { verificar_pct: 100 };
+        let r = vuelta(&o, &lado, &Alcance::Todos, &op, &mut Estado::default(), &mut |_, _| {}).unwrap();
+        assert_eq!((r.copiados, r.danados_origen.clone()), (1, vec![malo.clone()]));
+        assert!(d.join(&bueno).is_file() && !d.join(&malo).exists());
+        // En la nube algo se estropea: la comprobación (bajándolo) lo encuentra.
+        std::fs::write(d.join(&bueno), b"buenO").unwrap();
+        std::fs::remove_file(o.join(&malo)).unwrap();
+        let mut est = Estado::default();
+        let r = vuelta(&o, &lado, &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();
+        assert_eq!((r.verificados, r.mal_destino.clone()), (1, vec![bueno.clone()]));
+        assert_eq!(std::fs::read_dir(&trabajo).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     /// Con el rclone de verdad y un remoto «local» (sin cuenta de nube): copia, sin locks ni recientes, y nunca borra.
     #[test]
     fn espejo_con_rclone_y_remoto_local() {
-        use crate::espejo_motor::{vuelta, Alcance, Lado};
+        use crate::espejo_motor::{vuelta, Alcance, Estado, Lado, Opciones};
         if comprobar_binario().is_err() {
             eprintln!("Sin rclone en src-tauri/binaries: se salta la prueba.");
             return;
@@ -956,7 +1030,7 @@ mod tests {
         let carpeta = d.display().to_string().replace('\\', "/");
         let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: Some(100_000) };
         let solo = Alcance::Repos(vec!["ana/repo".into()]);
-        let r = vuelta(&o, &lado, &solo, &mut |_, _| {}).unwrap();
+        let r = vuelta(&o, &lado, &solo, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.bytes, r.recientes), (2, 6, 1));
         assert_eq!(std::fs::read_to_string(d.join("ana/repo/data/ab/abcdef")).unwrap(), "datos");
         assert!(d.join("ana/repo/config").is_file());
@@ -965,18 +1039,18 @@ mod tests {
         assert!(!d.join("ana/otro").exists(), "solo lo elegido");
         assert_eq!(std::fs::read_dir(&trabajo).unwrap().count(), 0, "ni listas ni configuración de rclone se quedan");
         // Con todos: lo que faltaba. Otra vuelta: nada nuevo.
-        assert_eq!(vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap().copiados, 1);
-        let r = vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap();
+        assert_eq!(vuelta(&o, &lado, &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap().copiados, 1);
+        let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.iguales), (0, 3));
         // Lo borrado en el origen sigue en la nube.
         std::fs::remove_file(o.join("ana/repo/config")).unwrap();
-        vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap();
+        vuelta(&o, &lado, &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert!(d.join("ana/repo/config").is_file(), "nunca borra");
         // Un archivo que cambia en el origen (otro tamaño) no se reescribe en la nube.
         let f = o.join("ana/repo/data/ab/abcdef");
         std::fs::write(&f, "otra cosa").unwrap();
         std::fs::File::options().write(true).open(&f).unwrap().set_modified(viejo).unwrap();
-        let r = vuelta(&o, &lado, &Alcance::Todos, &mut |_, _| {}).unwrap();
+        let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!(r.distintos, 1);
         assert_eq!(std::fs::read_to_string(d.join("ana/repo/data/ab/abcdef")).unwrap(), "datos");
         // Una carpeta de la nube que aún no existe se lista vacía.

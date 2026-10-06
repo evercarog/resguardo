@@ -64,7 +64,33 @@ pub struct Destino {
     /// selección: los demás son nuevos y la consola pregunta si entran.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vistos: Vec<String>,
+    /// §3d: % de los archivos del destino que se comprueban cada día. Sin él,
+    /// 5 en una carpeta y 0 en una nube (comprobar allí es descargar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verificar_pct: Option<u8>,
+    /// §3d: la última comprobación del destino.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verificacion: Option<Verificacion>,
+    /// §3d: archivos dañados del almacén que no se copiaron en la última vuelta.
+    #[serde(default, skip_serializing_if = "is_cero")]
+    pub danados_origen: u64,
 }
+
+fn is_cero(n: &u64) -> bool {
+    *n == 0
+}
+
+/// §3d: lo que se comprobó del destino la última vez.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Verificacion {
+    pub ultima: String,
+    pub archivos: u64,
+    /// Los que no cuadraban (reparados o no).
+    pub mal: u64,
+}
+
+/// % de verificación por defecto en una carpeta del equipo.
+pub const VERIFICAR_CARPETA: u8 = 5;
 
 /// Lo que se espera desde la última versión nueva antes de empezar el espejo
 /// «después de cada copia» (agrupa varias copias seguidas; más que [`RECIENTE`],
@@ -74,6 +100,11 @@ pub const ESPERA_TRAS_COPIA: Duration = Duration::from_secs(12 * 60);
 pub const ESPERA_MAXIMA_TRAS_COPIA: Duration = Duration::from_secs(60 * 60);
 
 impl Destino {
+    /// §3d: el % que se comprueba cada día.
+    pub fn pct_verificar(&self) -> u8 {
+        self.verificar_pct.unwrap_or(if self.tipo == "carpeta" { VERIFICAR_CARPETA } else { 0 }).min(100)
+    }
+
     /// El horario de este destino: el suyo o, sin él, cada día a `hora`.
     pub fn plan(&self, hora: &str) -> Option<crate::plans::PlanSchedule> {
         match &self.horario {
@@ -191,6 +222,10 @@ impl Espejo {
                     v["horario"] = serde_json::to_value(h).unwrap_or_default();
                 }
                 v["tras_copia"] = d.tras_copia.into();
+                // §3d: cuánto se comprueba y la última comprobación; lo dañado en el almacén.
+                v["verificar_pct"] = d.pct_verificar().into();
+                v["verificacion"] = serde_json::to_value(&d.verificacion).unwrap_or_default();
+                v["danados_origen"] = d.danados_origen.into();
                 // §3f: la selección (sin ella, todos) y lo que había al elegirla.
                 if let Some(r) = &d.repos {
                     v["repos"] = r.clone().into();
@@ -306,6 +341,10 @@ fn leer_opciones(d: &serde_json::Value, nuevo: &mut Destino) -> Result<(), Strin
         return Err("Elige al menos un repositorio para ese destino del espejo (o todos).".into());
     }
     nuevo.vistos = lista("vistos")?.unwrap_or_default();
+    nuevo.verificar_pct = match &d["verificar_pct"] {
+        serde_json::Value::Null => None,
+        p => Some(p.as_u64().filter(|p| *p <= 100).ok_or("El % de verificación del espejo tiene que ir de 0 a 100.")? as u8),
+    };
     Ok(())
 }
 
@@ -405,8 +444,13 @@ pub fn novedades(origen: &Path, repos: &[String], desde: Option<SystemTime>) -> 
 /// Una vuelta a un destino (espejo_motor.rs), contando cómo va en `guarda`
 /// (la ventana del equipo: los bytes copiados a una carpeta; lo que lee y
 /// sube rclone a una nube). Devuelve el texto del resultado.
-fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate::escritorio::en_marcha::Guarda) -> Result<String, String> {
-    use crate::espejo_motor::{vuelta, Alcance, Lado};
+fn copiar_a(
+    origen: &Path,
+    d: &Destino,
+    limite_kib: Option<u32>,
+    guarda: &crate::escritorio::en_marcha::Guarda,
+) -> Result<crate::espejo_motor::Resumen, String> {
+    use crate::espejo_motor::{vuelta, Alcance, Lado, Opciones};
     let alcance = Alcance::de(d.repos.as_deref());
     let trabajo = crate::agent::private_dir();
     let nube;
@@ -429,8 +473,34 @@ fn copiar_a(origen: &Path, d: &Destino, limite_kib: Option<u32>, guarda: &crate:
         Lado::Carpeta(destino)
     };
     let carpeta = d.tipo != "nube";
-    let r = vuelta(origen, &lado, &alcance, &mut |l, s| if carpeta { guarda.progreso(l, None) } else { guarda.ritmos(l, s) })?;
-    texto_de(&r)
+    let op = Opciones { verificar_pct: d.pct_verificar() };
+    let mut estado = leer_estado(d);
+    let r = vuelta(origen, &lado, &alcance, &op, &mut estado, &mut |l, s| if carpeta { guarda.progreso(l, None) } else { guarda.ritmos(l, s) });
+    guardar_estado(d, &estado);
+    r
+}
+
+/// El archivo con lo que recuerda un destino entre vueltas (en la carpeta privada:
+/// un usuario no puede tocarlo).
+fn archivo_estado(d: &Destino) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(format!("{}|{}|{}", d.tipo, d.nube.as_deref().unwrap_or_default(), d.carpeta.trim()).as_bytes());
+    let id: String = h.iter().take(8).map(|b| format!("{b:02x}")).collect();
+    crate::agent::private_dir().join(format!("espejo-{id}.json"))
+}
+
+fn leer_estado(d: &Destino) -> crate::espejo_motor::Estado {
+    std::fs::read(archivo_estado(d)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+fn guardar_estado(d: &Destino, e: &crate::espejo_motor::Estado) {
+    let p = archivo_estado(d);
+    let tmp = p.with_extension("json.tmp");
+    if let Ok(b) = serde_json::to_vec(e) {
+        if crate::agent::write_new(&tmp, &b).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
+    }
 }
 
 /// El resultado de una vuelta en una frase (error si algo no cuadra).
@@ -440,11 +510,36 @@ pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     if !r.faltan_repos.is_empty() {
         texto += &format!(" Ya no están en el almacén: {}.", r.faltan_repos.join(", "));
     }
+    if r.verificados > 0 {
+        texto += &format!(" Comprobados {} archivos del espejo.", r.verificados);
+    }
+    // §3d: lo que no cuadra con su nombre. Todo es un error (aviso `espejo_fallido`).
+    let mut problemas = Vec::new();
+    if !r.danados_origen.is_empty() {
+        problemas.push(format!(
+            "{} archivos dañados en el almacén no se han copiado (su contenido no cuadra con su nombre; p. ej. {}): revisa el disco del almacén y comprueba esos repositorios",
+            r.danados_origen.len(),
+            r.danados_origen[0]
+        ));
+    }
+    if !r.mal_destino.is_empty() {
+        problemas.push(format!(
+            "{} archivos del espejo están dañados y no se han podido reparar (p. ej. {}): revisa ese destino",
+            r.mal_destino.len(),
+            r.mal_destino[0]
+        ));
+    }
+    if r.reparados > 0 {
+        problemas.push(format!("{} archivos dañados del espejo se han vuelto a copiar bien del almacén: revisa el disco del espejo", r.reparados));
+    }
     if r.distintos > 0 {
-        return Err(format!(
-            "{texto} Pero {} ya estaban en el espejo con otro tamaño y no se han reemplazado: alguien ha cambiado copias ya escritas (en el Servidor de copias o en el espejo). Revísalo.",
+        problemas.push(format!(
+            "{} ya estaban en el espejo con otro tamaño y no se han reemplazado: alguien ha cambiado copias ya escritas (en el Servidor de copias o en el espejo). Revísalo",
             r.distintos
         ));
+    }
+    if !problemas.is_empty() {
+        return Err(format!("{texto} Pero {}.", problemas.join(". Además, ")));
     }
     Ok(texto)
 }
@@ -520,7 +615,14 @@ pub fn si_toca() {
             };
             let guarda = crate::escritorio::en_marcha::empezar(tipo, &i.to_string(), &nombre);
             let por = if motivo == Motivo::TrasCopia { " (después de una copia nueva)" } else { "" };
-            let texto = match copiar_a(&origen, &d, limite_kib, &guarda) {
+            let hecho = copiar_a(&origen, &d, limite_kib, &guarda);
+            let verificacion = hecho.as_ref().ok().filter(|r| r.verificados > 0).map(|r| Verificacion {
+                ultima: chrono::Local::now().to_rfc3339(),
+                archivos: r.verificados,
+                mal: (r.mal_destino.len() as u64) + r.reparados,
+            });
+            let danados = hecho.as_ref().map(|r| r.danados_origen.len() as u64).ok();
+            let texto = match hecho.and_then(|r| texto_de(&r)) {
                 Ok(t) => {
                     guarda.terminar("ok");
                     format!("Espejo hecho en {}{por}: {t}", d.texto())
@@ -540,6 +642,12 @@ pub fn si_toca() {
                 if let Some(x) = esp.destinos.iter_mut().find(|x| x.mismo(&d)) {
                     x.ultima = Some(fin.clone());
                     x.resultado = Some(texto.clone());
+                    if let Some(v) = &verificacion {
+                        x.verificacion = Some(v.clone());
+                    }
+                    if let Some(n) = danados {
+                        x.danados_origen = n;
+                    }
                     if let Some(q) = cuota {
                         x.cuota = Some((q, fin.clone()));
                     }
@@ -558,14 +666,14 @@ pub fn si_toca() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::espejo_motor::{vuelta, Alcance, Lado, Resumen};
+    use crate::espejo_motor::{vuelta, Alcance, Estado, Lado, Opciones, Resumen};
 
     /// Una vuelta de todo el almacén a una carpeta.
     fn copiar(origen: &Path, destino: &Path) -> Result<Resumen, String> {
-        vuelta(origen, &Lado::Carpeta(destino), &Alcance::Todos, &mut |_, _| {})
+        vuelta(origen, &Lado::Carpeta(destino), &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {})
     }
     fn copiar_con(origen: &Path, destino: &Path, avance: &mut dyn FnMut(u64)) -> Result<Resumen, String> {
-        vuelta(origen, &Lado::Carpeta(destino), &Alcance::Todos, &mut |l, _| avance(l.unwrap_or(0)))
+        vuelta(origen, &Lado::Carpeta(destino), &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |l, _| avance(l.unwrap_or(0)))
     }
 
     #[test]

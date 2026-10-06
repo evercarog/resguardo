@@ -178,6 +178,7 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
     for d in nuevo.destinos.iter_mut() {
         if let Some(x) = anterior.as_ref().and_then(|a| a.destinos.iter().find(|x| x.mismo(d))) {
             (d.ultima, d.resultado, d.inicio, d.cuota) = (x.ultima.clone(), x.resultado.clone(), x.inicio.clone(), x.cuota.clone());
+            (d.verificacion, d.danados_origen) = (x.verificacion.clone(), x.danados_origen);
         }
     }
     crate::espejo::fijar_vistos(&mut nuevo, anterior.as_ref(), &crate::espejo::repos_en(Path::new(&c.path)));

@@ -241,6 +241,12 @@ export interface ResumenEquipo {
         repos?: string[] | null;
         /** Los repositorios que había al elegir la selección (los demás son nuevos). */
         vistos?: string[] | null;
+        /** % de lo que hay en el destino que se comprueba cada día. */
+        verificar_pct?: number | null;
+        /** La última comprobación del destino (por rotación). */
+        verificacion?: { ultima: string; archivos: number; mal: number } | null;
+        /** Archivos dañados del almacén que no se copiaron en la última vuelta. */
+        danados_origen?: number | null;
       }[];
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */

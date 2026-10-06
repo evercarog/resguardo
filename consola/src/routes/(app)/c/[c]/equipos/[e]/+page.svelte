@@ -55,7 +55,7 @@
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
-  import { admiteEspejoFlexible, conRepos, cuandoEspejo, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
+  import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
   import { errorReglas, reglasDe } from "$lib/horario";
   import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
   import { errorCarpetaDestino, errorCarpetaEspejo } from "$lib/ganchos";
@@ -300,6 +300,8 @@
     /** §3f: todos los repositorios o solo `elegidos`. */
     todos: true,
     elegidos: [] as string[],
+    /** §3d: % que se comprueba cada día. */
+    verificarPct: 5,
     /** Clave (claveEspejo) del destino que se cambia; null: uno nuevo. */
     editando: null as string | null,
   });
@@ -307,7 +309,7 @@
   const nuevoDestino = $derived.by<DestinoEspejoUI>(() => {
     const d: DestinoEspejoUI = esp.tipo === "nube" ? { tipo: "nube", nube: esp.nube, carpeta: esp.carpetaNube.trim() } : { tipo: "carpeta", carpeta: esp.carpeta.trim() };
     if (!flexible) return d;
-    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}), ...(esp.todos ? {} : { repos: [...esp.elegidos].sort(), vistos: reposAlmacen }) };
+    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}), ...(esp.todos ? {} : { repos: [...esp.elegidos].sort(), vistos: reposAlmacen }), verificar_pct: Number(esp.verificarPct) };
   });
   /** §3f: los repositorios del almacén, como los nombra el espejo. */
   const reposAlmacen = $derived(nombresRepos(equipo?.resumen?.guarda_copias?.repositorios));
@@ -398,6 +400,7 @@
       trasCopia: !!de?.tras_copia,
       todos: !Array.isArray(de?.repos),
       elegidos: de?.repos ?? [],
+      verificarPct: de?.verificar_pct ?? (( de?.tipo ?? tipo) === "nube" ? 0 : 5),
       editando: de ? claveEspejo(de) : null,
     };
     abrir({
@@ -1043,7 +1046,7 @@
                         <strong>{d.tipo === "nube" ? d.nube : d.carpeta}</strong>
                         <span class="faint">{d.tipo === "nube" ? `en la carpeta ${d.carpeta}` : "otra carpeta"}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
                         {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>
-                          <span class="faint">{textoRepos(d, nombreRepoAlmacen)}</span>{/if}
+                          <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>{/if}
                         {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
@@ -1505,7 +1508,7 @@
     {#if repetido}<p class="error-campo">Ese destino ya está en el espejo.</p>{/if}
     {/if}
     {#if flexible}
-      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} bind:todos={esp.todos} bind:elegidos={esp.elegidos} repositorios={reposAlmacen} nombre={nombreRepoAlmacen} />
+      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} bind:todos={esp.todos} bind:elegidos={esp.elegidos} repositorios={reposAlmacen} nombre={nombreRepoAlmacen} bind:verificarPct={esp.verificarPct} nube={esp.tipo === "nube"} />
     {:else}
     <div class="field">
       <label class="field-label" for="e-hora">Cada noche a las{destinosActuales.length ? " (para todos los destinos)" : ""}</label>
