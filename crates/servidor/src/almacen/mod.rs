@@ -249,6 +249,23 @@ pub struct PlantillaCifrada {
     pub por: String,
 }
 
+/// Tarea 7a (docs/copias-en-cadena.md): un destino del catálogo del cliente.
+/// Solo lo que lo describe, en claro (lo mismo que ya dicen los resúmenes de
+/// los equipos, más un nombre): **nunca** credenciales ni rutas locales.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DestinoCatalogo {
+    /// `zona:<equipo>:<zona>`, `nube:<equipo>:<nombre>` o el id de un destino.
+    pub id: String,
+    pub nombre: String,
+    /// `zona`, `rest`, `s3`, `b2`, `sftp`, `nube` o `local`.
+    pub tipo: String,
+    /// Servidor o bucket (solo `rest`, `s3`, `b2` y `sftp`).
+    pub donde: Option<String>,
+    pub actualizado: Ts,
+    /// Nombre de quien lo guardó.
+    pub por: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Relevo {
     pub id: String,
@@ -503,6 +520,12 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// Crea o sustituye; `false` si es nueva y ya hay `maximo`.
     fn guardar_plantilla(&self, c: &ClienteCtx, id: &str, cifrado: &str, por: &str, maximo: usize) -> R<bool>;
     fn borrar_plantilla(&self, c: &ClienteCtx, id: &str) -> R<bool>;
+
+    // ---------- Catálogo de destinos (tarea 7a, en claro y sin secretos) ----------
+    fn destinos_catalogo(&self, c: &ClienteCtx) -> R<Vec<DestinoCatalogo>>;
+    /// Crea o sustituye; `false` si es nuevo y ya hay `maximo`.
+    fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize) -> R<bool>;
+    fn borrar_destino(&self, c: &ClienteCtx, id: &str) -> R<bool>;
 
     // ---------- Historial de los equipos (v1.23) ----------
     /// Guarda las entradas que no estuvieran ya (por id); devuelve cuántas son nuevas.

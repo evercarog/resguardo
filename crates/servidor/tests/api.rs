@@ -1456,6 +1456,66 @@ async fn plantillas_cifradas() {
     assert!(a.as_array().unwrap().iter().any(|x| x["accion"] == "borrar_plantilla"));
 }
 
+/// Tarea 7a: el catálogo de destinos del cliente. En claro, solo nombre, tipo y
+/// dirección de red: nunca credenciales ni carpetas locales. Lo leen todos los
+/// miembros; lo cambian los administradores; queda en la auditoría.
+#[tokio::test]
+async fn catalogo_de_destinos_sin_secretos() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, _ag) = cliente_con_equipo(&p, &cookie).await;
+    let tecnico = invitado(&p, &cookie, &c, "tecnico").await;
+    let lista = format!("/api/clientes/{c}/destinos");
+    assert_eq!(pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json, json!([]));
+    let b2 = format!("/api/clientes/{c}/destinos/destino-1a2b3c4d");
+    let r = pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Backblaze B2 · copias-sur", "tipo": "b2", "donde": "copias-sur" })), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    // Un nombre para la zona E de un almacén (sin dirección: la dice el almacén).
+    let zona = format!("/api/clientes/{c}/destinos/zona:0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f:z1a2b3c");
+    assert_eq!(
+        pedir(&p.app, "PUT", &zona, Some(json!({ "nombre": "Almacén · Disco E", "tipo": "zona" })), Some(&cookie), &[]).await.estado,
+        StatusCode::NO_CONTENT
+    );
+    // Renombrar: el mismo id.
+    assert_eq!(
+        pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Nube de la oficina", "tipo": "b2", "donde": "copias-sur" })), Some(&cookie), &[]).await.estado,
+        StatusCode::NO_CONTENT
+    );
+    // Un técnico lo lee (lo enseña la consola) pero no lo cambia.
+    let l = pedir(&p.app, "GET", &lista, None, Some(&tecnico), &[]).await;
+    assert_eq!(l.estado, StatusCode::OK);
+    let l = l.json;
+    assert_eq!(l.as_array().unwrap().len(), 2, "{l}");
+    let nube = l.as_array().unwrap().iter().find(|d| d["id"] == "destino-1a2b3c4d").unwrap();
+    assert_eq!((nube["nombre"].as_str(), nube["tipo"].as_str(), nube["donde"].as_str()), (Some("Nube de la oficina"), Some("b2"), Some("copias-sur")));
+    assert!(nube["actualizado"].is_string() && nube["por"].is_string());
+    assert_eq!(pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "x", "tipo": "b2", "donde": "y" })), Some(&tecnico), &[]).await.estado, StatusCode::FORBIDDEN);
+    assert_eq!(pedir(&p.app, "DELETE", &b2, None, Some(&tecnico), &[]).await.estado, StatusCode::FORBIDDEN);
+    // Nada de secretos ni rutas locales, ni por error.
+    for (id, cuerpo) in [
+        ("destino-2", json!({ "nombre": "B2", "tipo": "b2", "donde": "cubo", "secreto": "K001abc" })),
+        ("destino-2", json!({ "nombre": "B2", "tipo": "b2", "donde": "cubo", "usuario": "0012ab" })),
+        ("destino-2", json!({ "nombre": "Rest", "tipo": "rest", "donde": "https://ana:clave@almacen.ejemplo.com:8000" })),
+        ("destino-2", json!({ "nombre": "Disco", "tipo": "local", "donde": "D:\\Copias" })),
+        ("destino-2", json!({ "nombre": "Disco", "tipo": "rest", "donde": "\\\\nas\\copias" })),
+        ("destino-2", json!({ "nombre": "", "tipo": "b2", "donde": "cubo" })),
+        ("destino-2", json!({ "nombre": "Raro", "tipo": "ftp", "donde": "x" })),
+        ("Mayusculas", json!({ "nombre": "B2", "tipo": "b2", "donde": "cubo" })),
+        ("a..b:..", json!({ "nombre": "B2", "tipo": "b2", "donde": "cubo" })),
+    ] {
+        let r = pedir(&p.app, "PUT", &format!("/api/clientes/{c}/destinos/{id}"), Some(cuerpo.clone()), Some(&cookie), &[]).await;
+        assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY, "{id} {cuerpo}: {}", r.json);
+    }
+    let todo = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json.to_string();
+    assert!(!todo.contains("K001abc") && !todo.contains("clave@") && !todo.contains("Copias"), "{todo}");
+    // Quitarlo del catálogo (no toca ningún equipo); dos veces, no existe.
+    assert_eq!(pedir(&p.app, "DELETE", &zona, None, Some(&cookie), &[]).await.estado, StatusCode::NO_CONTENT);
+    assert_eq!(pedir(&p.app, "DELETE", &zona, None, Some(&cookie), &[]).await.estado, StatusCode::NOT_FOUND);
+    let a = pedir(&p.app, "GET", &format!("/api/clientes/{c}/auditoria?orden=desc&limite=10"), None, Some(&cookie), &[]).await.json;
+    let acciones: Vec<&str> = a.as_array().unwrap().iter().filter_map(|x| x["accion"].as_str()).collect();
+    assert!(acciones.contains(&"guardar_destino") && acciones.contains(&"borrar_destino"), "{acciones:?}");
+}
+
 /// v1.23: «Copia de la consola». El propietario del servidor pone la clave pública
 /// (la clave de respaldo no llega nunca al servidor), la hace al momento y ve cómo
 /// fue; nadie más puede, y no hay forma de descargarla por la API.
