@@ -55,10 +55,6 @@ pub const TIPOS: &[Tipo] = &[
     t("nombre_equipo", Inofensiva, false, false, true),
     t("etiquetas_equipo", Inofensiva, false, false, false),
     t("observacion_equipo", Inofensiva, false, false, false),
-    // v1.56: olvidar un destino que ya no usa nada (sin repositorios, copia externa ni
-    // derivadas). No borra nada de lo que hay en él: inofensiva, pero solo administradores
-    // (crear un destino pide la clave de administración; quitarlo, al menos el papel).
-    t("quitar_destino", Inofensiva, false, false, true),
     // Contraseña del repositorio
     t("explorar", Repositorio, false, true, false),
     t("restaurar", Repositorio, false, false, false),
@@ -108,6 +104,12 @@ pub const TIPOS: &[Tipo] = &[
     // protección, pero son sensibles: solo administradores, y el equipo avisa a todas.
     t("anadir_consola", Administracion, false, false, true),
     t("quitar_consola", Administracion, false, false, true),
+    // v1.56: olvidar un destino que ya no usa nada (sin repositorios, copia externa ni
+    // derivadas). No borra nada de lo que hay en él, pero olvida sus credenciales: como
+    // crearlo, pide la clave de administración (v1.4x; en la v1.56 era inofensiva) y solo
+    // administradores. Un agente anterior la sigue tratando como inofensiva (no mira la
+    // prueba que le llega de más).
+    t("quitar_destino", Administracion, false, false, true),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).
@@ -186,11 +188,15 @@ mod tests {
         let c = tipo("cancelar_espera").unwrap();
         assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !c.solo_administradores);
         // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
-        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false), ("quitar_destino", true)] {
+        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false)] {
             let x = tipo(t).unwrap();
             assert!(x.nivel == Nivel::Inofensiva && !x.destructiva && x.solo_administradores == solo_admin, "{t}");
             assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&t), "{t}");
         }
+        // v1.4x: quitar un destino pide la clave de administración (no reduce la protección: sin espera).
+        let q = tipo("quitar_destino").unwrap();
+        assert!(q.nivel == Nivel::Administracion && !q.destructiva && q.solo_administradores);
+        assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&"quitar_destino"));
         // Ninguna inofensiva es destructiva.
         assert!(TIPOS.iter().filter(|t| t.nivel == Nivel::Inofensiva).all(|t| !t.destructiva));
     }

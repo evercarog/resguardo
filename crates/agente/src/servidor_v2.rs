@@ -772,6 +772,11 @@ pub(crate) fn comprobar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::
     let necesita_admin = matches!(tipo.nivel, ordenes::Nivel::Administracion | ordenes::Nivel::RepositorioYAdministracion) && o.tipo != "alta";
     let necesita_repo = matches!(tipo.nivel, ordenes::Nivel::Repositorio | ordenes::Nivel::RepositorioYAdministracion);
     if necesita_admin {
+        // v1.4x: `quitar_destino` era inofensiva (v1.56). Una consola anterior la manda sin
+        // la clave: se dice qué hacer y no cuenta como intento fallido (no prueba ninguna clave).
+        if o.tipo == "quitar_destino" && o.autorizacion.prueba_admin.is_none() {
+            return Err((rechazada("Quitar un destino pide ahora la clave de administración: actualiza la consola y vuelve a intentarlo."), None));
+        }
         if let Some(h) = bloqueada(v, "admin") {
             return Err((rechazada(format!("Bloqueado por intentos fallidos hasta {}.", fecha(h))), None));
         }

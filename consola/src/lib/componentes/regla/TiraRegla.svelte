@@ -1,13 +1,18 @@
 <script lang="ts">
-  // La tira «3 · 2 · 1 · 1 · 0» de una copia (tarea 8c, docs/regla-3-2-1.md):
-  // cada parte de la regla 3-2-1-1-0, cumplida o no, con qué hacer para
-  // cumplirla y adónde ir. Guía, nunca obligación: no bloquea nada.
-  // `compacta`: solo las cinco cifras (listas, «Cambiar las copias»).
+  // La tira «3 · 2 · 1 · 1 · 0» de una copia (tarea 8c, docs/regla-3-2-1.md;
+  // diseño en docs/diseno.md §4): cinco segmentos iguales, cada uno con su
+  // cifra grande, su nombre corto debajo («copias», «soportes», «fuera»,
+  // «inmutable», «errores») y su estado con icono, color y palabra («Cumple»,
+  // «Atrasado», «Falta 1»); el globo dice qué pide, cómo está y qué hacer.
+  // Debajo, una línea corta con lo que falta y adónde ir. Guía, nunca
+  // obligación: no bloquea nada.
+  // `compacta`: la misma tira en una píldora de cinco segmentos (listas,
+  // «Cambiar las copias», Estado): cifra e icono de estado en cada uno.
   import { Check, CircleDashed, Clock, Info, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import Ayuda from "../Ayuda.svelte";
   import { relativo } from "$lib/formato";
-  import { cifraParte, fraseParte, fraseRegla, pasoAlDia, PARTES, queHacer, TEXTO_AVISO, TEXTO_INMUTABLE, TEXTO_LUGAR, type PasoVista, type ReglaCopia } from "$lib/regla321";
+  import { cifraParte, estadoParte, fraseRegla, globoParte, lineaFalta, pasoAlDia, PARTES, queHacer, TEXTO_AVISO, TEXTO_INMUTABLE, TEXTO_LUGAR, type PasoVista, type ReglaCopia } from "$lib/regla321";
   import { guardar, leer } from "$lib/recordar";
 
   let {
@@ -17,12 +22,25 @@
     compacta = false,
     titulo = true,
     onmarcar,
-  }: { rc: ReglaCopia; cliente: string; ahora: number; compacta?: boolean; titulo?: boolean; onmarcar?: (p: PasoVista) => void } = $props();
+    enlaceDestino,
+  }: {
+    rc: ReglaCopia;
+    cliente: string;
+    ahora: number;
+    compacta?: boolean;
+    titulo?: boolean;
+    onmarcar?: (p: PasoVista) => void;
+    /** La página de un destino de la lista «Dónde llegan los datos» (si la tiene). */
+    enlaceDestino?: (p: PasoVista) => string | null;
+  } = $props();
 
   const r = $derived(rc.regla);
-  const tono = (cumple: boolean, config: boolean) => (cumple ? "ok" : config ? "warn" : "neutral");
   const estado = $derived(r.cumple ? { tono: "ok", texto: "Cumple" } : r.dejo_de_cumplir ? { tono: "warn", texto: "Dejó de cumplir" } : { tono: "neutral", texto: "No la cumple" });
+  // Lo que falta, con su enlace (la línea corta de debajo); el texto largo, en el globo de cada parte.
   const pendientes = $derived(r.partes.filter((p) => !p.cumple).map((p) => ({ p, que: queHacer(p, rc, cliente, ahora) })));
+  const falta = $derived(lineaFalta(r));
+  // Un enlace por sitio (dos partes que se arreglan en el mismo sitio, una vez).
+  const enlaces = $derived([...new Map(pendientes.flatMap(({ que }) => (que?.enlace ? [[que.enlace.href, que.enlace] as const] : []))).values()]);
   const hayLocal = $derived(rc.pasos.some((p) => p.inmutable === "instantaneas" || p.inmutable === "desconectado"));
   // El enlace discreto a la guía del almacén inmutable (8e), que se puede ocultar (en este navegador).
   let guiaOculta = $state(leer("regla321.guia", ["oculta", ""] as const, "") === "oculta");
@@ -32,10 +50,15 @@
   }
 </script>
 
+{#snippet icono(i: "cumple" | "atrasado" | "falta", t: number)}
+  {#if i === "cumple"}<Check size={t} aria-hidden="true" />{:else if i === "atrasado"}<Clock size={t} aria-hidden="true" />{:else}<X size={t} aria-hidden="true" />{/if}
+{/snippet}
+
 {#if compacta}
   <span class="tira-mini" role="img" aria-label="Regla 3-2-1-1-0: {fraseRegla(r)}" use:tip={fraseRegla(r)}>
     {#each r.partes as p (p.id)}
-      <span class="mini tone-{tono(p.cumple, p.cumple_config)}" class:cumple={p.cumple}>{PARTES[p.id].cifra}</span>
+      {@const e = estadoParte(p)}
+      <span class="mini tone-{e.tono} e-{e.icono}"><span class="m-cifra">{PARTES[p.id].cifra}</span>{@render icono(e.icono, 10)}</span>
     {/each}
   </span>
 {:else}
@@ -48,34 +71,27 @@
     {/if}
     <ol class="tira" aria-label="Las cinco partes de la regla">
       {#each r.partes as p (p.id)}
-        {@const t = tono(p.cumple, p.cumple_config)}
-        <li class="parte tone-{t}" class:cumple={p.cumple}>
-          <span class="num-parte">{PARTES[p.id].cifra}</span>
-          <span class="nombre">{PARTES[p.id].titulo.replace(/^\d+ /, "")}</span>
-          <span class="valor">
-            {#if p.cumple}<Check size={12} aria-hidden="true" />{:else if p.cumple_config}<Clock size={12} aria-hidden="true" />{:else}<X size={12} aria-hidden="true" />{/if}
-            {cifraParte(p)}<span class="sr-only">{p.cumple ? ": cumple" : p.cumple_config ? ": no está al día" : ": falta"}</span>
-          </span>
-          <span class="frase">{fraseParte(p, rc, ahora)}</span>
+        {@const e = estadoParte(p)}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <li class="parte tone-{e.tono} e-{e.icono}" tabindex="0" use:tip={globoParte(p, rc, cliente, ahora)}>
+          <span class="r-cifra" aria-hidden="true">{PARTES[p.id].cifra}</span>
+          <span class="nombre">{PARTES[p.id].corto}</span>
+          <span class="estado">{@render icono(e.icono, 12)}<span>{e.texto}</span></span>
+          <span class="sr-only">: {PARTES[p.id].titulo}, {cifraParte(p)}.</span>
         </li>
       {/each}
     </ol>
 
-    {#if pendientes.length}
-      <ul class="hacer">
-        {#each pendientes as { p, que } (p.id)}
-          {#if que}
-            <li>
-              <span class="qh-parte tone-{tono(p.cumple, p.cumple_config)}">{PARTES[p.id].titulo}</span>
-              <span>{que.texto}{#if que.enlace}{" "}<a class="link" href={que.enlace.href}>{que.enlace.texto} →</a>{/if}</span>
-            </li>
-          {/if}
+    {#if falta}
+      <p class="falta">
+        <span>{falta}</span>
+        {#each enlaces as e (e.href)}
+          <a class="link" href={e.href}>{e.texto} →</a>
         {/each}
-      </ul>
-      <p class="faint guia">Es una guía, no una obligación: la copia funciona igual aunque no la cumpla.</p>
+      </p>
+      <p class="faint guia">Es una guía, no una obligación. Pasa el ratón o toca cada parte para ver qué pide y qué hacer.</p>
     {/if}
-
-    {#each r.avisos as a (a)}
+{#each r.avisos as a (a)}
       <p class="aviso"><TriangleAlert size={14} />{TEXTO_AVISO[a] ?? a}</p>
     {/each}
 
@@ -86,8 +102,9 @@
           <li class="paso"><span class="p-nombre">Los originales</span><span class="faint">en {rc.equipo.nombre}</span></li>
           {#each rc.pasos as p (p.id)}
             {@const al = pasoAlDia(p, ahora)}
+            {@const href = enlaceDestino?.(p)}
             <li class="paso">
-              <span class="p-nombre">{p.nombre}</span>
+              {#if href}<a class="p-nombre link-suave" {href}>{p.nombre}</a>{:else}<span class="p-nombre">{p.nombre}</span>{/if}
               <span class="faint">{TEXTO_LUGAR[p.lugar]} · {TEXTO_INMUTABLE[p.inmutable].replace(/ \(.*\)$/, "")}{#if p.marcado}{" "}<span class="badge badge-sm tone-neutral" use:tip={"Lo marcó una persona en el destino (no se deduce del tipo)."}>Marcado</span>{/if}{#if p.sistemaArchivos}{" · "}<span class="pastilla mono">{p.sistemaArchivos}</span>{/if}</span>
               <span class="badge badge-sm tone-{al ? 'ok' : 'warn'}">{al ? "Al día" : p.ultima_ok ? `Atrasado · ${relativo(p.ultima_ok, ahora)}` : "No está al día"}</span>
               {#if onmarcar && p.clave}<button class="btn btn-sm btn-ghost" onclick={() => onmarcar(p)}>Cambiar</button>{/if}
@@ -125,74 +142,97 @@
     gap: 6px;
     margin: 0;
   }
+  /* Cinco segmentos iguales en una sola pieza: la cifra grande, el nombre corto y el estado. */
   .tira {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface);
   }
   .parte {
+    position: relative;
     display: grid;
+    justify-items: center;
+    align-content: center;
     gap: 2px;
-    align-content: start;
-    padding: var(--sp-2) var(--sp-3);
-    border: 1px solid var(--border);
-    border-top: 3px solid var(--tone);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
     min-width: 0;
+    padding: var(--sp-3) var(--sp-1) 14px;
+    text-align: center;
+    cursor: default;
   }
-  .parte.cumple {
-    background: color-mix(in oklab, var(--ok) 6%, var(--surface));
+  .parte + .parte {
+    border-left: 1px solid var(--border);
   }
-  .num-parte {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
+  /* El estado, en una raya abajo (además del icono y la palabra). */
+  .parte::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: var(--tone);
+    opacity: 0.85;
+  }
+  .parte.e-falta::after {
+    background: repeating-linear-gradient(90deg, var(--border-strong) 0 6px, transparent 6px 10px);
+    opacity: 1;
+  }
+  .parte.e-cumple {
+    background: color-mix(in srgb, var(--ok) var(--soft), var(--surface));
+  }
+  .parte.e-atrasado {
+    background: color-mix(in srgb, var(--warn) var(--soft), var(--surface));
+  }
+  .parte:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .r-cifra {
+    font-size: var(--fs-display);
     line-height: 1;
     font-weight: 650;
-    color: var(--tone);
+    letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
+    color: var(--tone);
+  }
+  .e-falta .r-cifra {
+    color: var(--text-3);
   }
   .nombre {
-    font-weight: 600;
     font-size: var(--fs-sm);
+    font-weight: 600;
     color: var(--text-1);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .valor {
+  .estado {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--tone);
+    white-space: nowrap;
+  }
+  .e-falta .estado {
     color: var(--text-2);
   }
-  .valor :global(svg) {
-    color: var(--tone);
-  }
-  .frase {
-    font-size: var(--fs-xs);
-    color: var(--text-3);
-    overflow-wrap: anywhere;
-  }
-  .hacer {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 6px;
-  }
-  .hacer li {
+  .falta {
     display: flex;
-    gap: var(--sp-2);
+    flex-wrap: wrap;
     align-items: baseline;
+    gap: 4px var(--sp-3);
+    margin: 0;
     font-size: var(--fs-sm);
-  }
-  .qh-parte {
-    flex: none;
-    font-weight: 600;
-    color: var(--tone);
-    min-width: 9.5em;
+    color: var(--text-2);
   }
   .guia,
   .guia-almacen {
@@ -245,57 +285,62 @@
   .p-nombre {
     font-weight: 600;
   }
+
+  /* La compacta: una píldora de cinco segmentos iguales, cifra e icono de estado. */
   .tira-mini {
-    display: inline-flex;
-    gap: 2px;
+    display: inline-grid;
+    grid-template-columns: repeat(5, 26px);
+    height: 22px;
+    flex: none;
     vertical-align: middle;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--surface);
   }
   .mini {
-    display: inline-grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    font-size: 11.5px;
+    font-weight: 650;
     font-variant-numeric: tabular-nums;
     color: var(--tone);
-    border: 1px solid color-mix(in oklab, var(--tone) 45%, transparent);
-    background: transparent;
   }
-  .mini.cumple {
-    color: var(--accent-contrast, #fff);
-    background: var(--tone);
-    border-color: var(--tone);
+  .mini + .mini {
+    border-left: 1px solid var(--border);
   }
-  @media (max-width: 720px) {
-    .tira {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
+  .mini.e-cumple {
+    background: color-mix(in srgb, var(--ok) var(--soft), transparent);
   }
+  .mini.e-atrasado {
+    background: color-mix(in srgb, var(--warn) var(--soft), transparent);
+  }
+  .mini.e-falta {
+    color: var(--text-3);
+  }
+  .mini :global(svg) {
+    flex: none;
+  }
+
   @media (max-width: 480px) {
-    /* En el móvil, una fila por parte: la cifra a la izquierda y lo demás al lado. */
-    .tira {
-      grid-template-columns: 1fr;
-      gap: 6px;
-    }
+    /* En el móvil, las cinco siguen en fila (alineadas): cifra algo menor y sin aire de más. */
     .parte {
-      grid-template-columns: 2.2rem minmax(0, 1fr);
-      column-gap: var(--sp-2);
-      border-top-width: 1px;
-      border-left: 3px solid var(--tone);
+      padding: var(--sp-2) 2px 12px;
     }
-    .num-parte {
-      grid-row: span 3;
-      align-self: center;
-      font-size: 1.5rem;
+    .r-cifra {
+      font-size: var(--fs-title);
     }
-    .hacer li {
+    .nombre {
+      font-size: 10.5px;
+      letter-spacing: -0.01em;
+    }
+    /* El icono encima de la palabra: «Atrasado» cabe en un quinto de la pantalla. */
+    .estado {
       flex-direction: column;
-      gap: 2px;
-    }
-    .qh-parte {
-      min-width: 0;
+      gap: 1px;
+      font-size: 11px;
     }
   }
 </style>

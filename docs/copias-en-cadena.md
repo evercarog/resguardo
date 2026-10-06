@@ -63,6 +63,20 @@ La consola junta tres fuentes (`consola/src/lib/destinos.ts`, con vectores):
 - Como mucho 200 por cliente. Cada cambio va a la auditoría (`guardar_destino`, `borrar_destino`) con el id.
 - Se guarda en la base de datos del cliente (tabla `destinos` de `clientes/<id>.db`), así que entra en la **copia de la consola**. El paquete de exportación `.resguardo-cliente` (mover un cliente a otro servidor) **aún no** lo lleva: queda para la parte B (punto 8); sin él, en el servidor nuevo los destinos vuelven a sus nombres de siempre y los sueltos hay que crearlos otra vez.
 
+### La página de un destino
+
+Cada destino tiene su página, como los repositorios: `/c/<cliente>/destinos/<clave>` (la clave del catálogo, codificada: `zona:<almacén>:<zona>`, `nube:<almacén>:<nombre>` o el id del destino). Vale para las zonas de los almacenes, las carpetas y discos de los equipos, los servidores y nubes de los repositorios, las nubes conectadas en un almacén y los destinos sueltos del catálogo (`lib/fichaDestino.ts`, con vectores en `scripts/vectores-destinos.ts`).
+
+- **Cabecera**: el nombre (el del catálogo si lo tiene; «antes «…»» si se renombró), qué es y dónde está, y las acciones: «Usar en una copia», «Nombre», «Regla 3-2-1» y «Notas».
+- **Cifras**: repositorios, lo protegido, el espacio libre (el de la zona, o el que midió el espejo en esa nube; «el proveedor no dice un límite» en B2/S3) y lo último que pasó.
+- **Dónde está**: el almacén y su puerto, los equipos que lo tienen, el sistema de archivos y el entorno (solo un dato) y los chips de siempre (solo añadir, solo red local, en el mismo equipo, extraíble, no inmutable).
+- **Para la regla 3-2-1-1-0**: dónde está, si es inmutable y el soporte, diciendo si es lo marcado o lo deducido del tipo.
+- **Repositorios aquí**, **Espejos y copias que lo usan** (copias externas y derivadas que llegan, el espejo de un almacén que llega o, en una zona, lo que sale de ella hacia otra zona o una nube, con enlace a la página de ese otro destino), **Usar en una copia** y **Lo último que pasó** (la última vez de cada copia que guarda aquí y del espejo que llega o sale).
+- **Usar en una copia** (`usarEnCopia`, que decide con `usosPosibles` de `lib/cadenas.ts`, el mismo que «Añadir paso» del editor de copias): copias nuevas (a una zona, desde cualquier equipo; a otro destino, desde quien lo tiene), el **espejo** de un repositorio que está en el almacén de este destino (lo hace el almacén, sin contraseñas) y un **repositorio nuevo a partir de** otro en su equipo (también cuando antes hay que conectar la nube en él: lo dice y el diálogo lo ofrece); en uno suelto, «Nuevo repositorio». Los enlaces llevan `destino=<clave>`: el paso «espejo» (`?paso_espejo=`) y la copia derivada (`?derivada=`) abren con ese destino ya elegido, y una copia nueva del editor (`?nueva=1`) toma un repositorio del equipo en ese destino si lo tiene.
+- **Quitar este destino** (si no lo usa nada), con la clave de administración.
+
+Llevan a ella: el nombre de cada tarjeta de «Repositorios y destinos» (y su «Usar en una copia»), las tarjetas de destino, copia externa y espejo (nube o zona) del mapa de la protección, «Se guarda en» de la página de la copia y del repositorio, el «Camino» de la copia y la lista «Dónde llegan los datos» de su tira 3·2·1·1·0. Una clave que ya no está (una zona quitada, una nube desconectada) enseña «Este destino ya no está».
+
 ### Crear un destino sin repositorio
 
 «Nuevo destino» en «Repositorios y destinos» (administrador):
