@@ -347,6 +347,14 @@ fn firma_identidad(st: &St, reto: &str, equipo: &str) -> Res<String> {
     Ok(B64.encode(st.identidad.sign(derivaciones::texto_identidad_servidor(reto, equipo).as_bytes()).to_bytes()))
 }
 
+/// Lo que contesta un agente cuando recibe una orden cuyo `not_before` aún no llegó en su reloj
+/// (más de 5 min): así lo dicen todos los agentes, también los anteriores a v1.49.
+pub(crate) const MENSAJE_AUN_NO_ES_LA_HORA: &str = "Todavía no es la hora de esta orden.";
+/// v1.4x: tras ese rechazo de un agente anterior, la orden se le vuelve a dar a los 10 min…
+const REINTENTO_RELOJ_S: i64 = 600;
+/// …como mucho tantas veces (2 h): con el reloj más atrasado que eso, se queda rechazada.
+const MAX_REINTENTOS_RELOJ: i64 = 12;
+
 /// v1.49 (consolas-multiples.md §5): ¿el agente de este equipo guarda en espera las
 /// órdenes que aún no tocan? Lo dice su resumen (`admite: ["ordenes_en_espera"]`).
 pub(crate) fn admite_espera(db: &dyn crate::almacen::Almacen, ctx: &ClienteCtx, equipo: &str) -> crate::almacen::R<bool> {
@@ -409,7 +417,31 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
     if vk.verify(texto.as_bytes(), &ed25519_dalek::Signature::from_bytes(&firma)).is_err() {
         return Err(ErrorApi::datos("La firma del resultado no es de este equipo."));
     }
+    // v1.4x: un agente anterior (sin `ordenes_en_espera`) con el reloj atrasado rechaza una
+    // orden con espera que el servidor le da a su hora («Todavía no es la hora»), sin anotar
+    // su número. En vez de perderla, se le vuelve a dar en unos minutos (unas cuantas veces).
+    if r.estado == "rechazada" && orden.not_before.is_some() && mensaje.as_deref() == Some(MENSAJE_AUN_NO_ES_LA_HORA) {
+        let (ctx, equipo, id) = (a.ctx.clone(), a.equipo.clone(), orden.id.clone());
+        let otra_vez = st
+            .db(move |db| {
+                if admite_espera(db, &ctx, &equipo)? || !db.reintentar_orden(&ctx, &id, ahora() + REINTENTO_RELOJ_S, MAX_REINTENTOS_RELOJ)? {
+                    return Ok(false);
+                }
+                db.auditar(&ctx, &format!("equipo:{equipo}"), "orden_reintentada", &id, &json!({ "motivo": "reloj_atrasado" }).to_string())?;
+                Ok(true)
+            })
+            .await?;
+        if otra_vez {
+            st.vivo.avisar(a.ctx.id(), Cambio::Orden { equipo: &a.equipo, orden: &orden.id, estado: "pendiente" });
+            return Ok(());
+        }
+    }
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
+    // v1.4x: una orden con espera que no se aplica (rechazada o fallida) no puede pasar
+    // desapercibida: se avisa («No se aplicó…»), salvo si la canceló otra consola en el equipo.
+    let cancelada_en_equipo = r.detalle.as_deref().and_then(|d| serde_json::from_str::<Value>(d).ok()).is_some_and(|d| d["cancelada"] == true);
+    let no_aplicada = (orden.not_before.is_some() && matches!(r.estado.as_str(), "rechazada" | "fallida") && !cancelada_en_equipo)
+        .then(|| crate::notificaciones::texto_no_aplicada(&orden.tipo, &r.estado, mensaje.as_deref(), None));
     // v1.36: `quitar_consola` de esta misma consola («Dejar esta consola»): el equipo lo dice en el
     // detalle firmado (sigue gestionado desde otras, pero ya no desde aquí).
     let deja_esta_consola = r.estado == "hecha"
@@ -437,8 +469,12 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
     let (orden_id, estado) = (r.orden.clone(), r.estado.clone());
     let tipo_orden = orden.tipo.clone();
     let res = crate::almacen::ResultadoOrden { orden: r.orden, estado: r.estado, mensaje, detalle: r.detalle, firma: r.firma, pisar_cancelada: aplicada_pese };
+    let avisa_no_aplicada = no_aplicada.is_some();
     st.db(move |db| {
         db.resultado_orden(&ctx, &equipo, &res)?;
+        if let Some(texto) = &no_aplicada {
+            crate::notificaciones::aviso(db, &ctx, Some(&equipo), "orden_no_aplicada", texto)?;
+        }
         if aplicada_pese {
             crate::notificaciones::aviso(
                 db,
@@ -476,10 +512,10 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         Ok(())
     })
     .await?;
-    if destructiva_terminada || aplicada_pese {
+    if destructiva_terminada || aplicada_pese || avisa_no_aplicada {
         st.notif.despertar.notify_one();
     }
-    if aplicada_pese {
+    if aplicada_pese || avisa_no_aplicada {
         st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
     }
     st.vivo.avisar(a.ctx.id(), Cambio::Orden { equipo: &a.equipo, orden: &orden_id, estado: &estado });

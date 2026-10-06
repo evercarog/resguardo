@@ -111,6 +111,7 @@ pub fn tareas(st: St) {
                             }
                         }
                     }
+                    avisar_no_aplicadas(&st2, &ctx);
                     quitar_sin_alta(&st2, &ctx);
                     avisar_sin_contacto(&st2, &ctx, ahora);
                 }
@@ -120,6 +121,19 @@ pub fn tareas(st: St) {
             .await;
         }
     });
+}
+
+/// v1.4x: las órdenes con espera que caducaron sin aplicarse no desaparecen sin más: un aviso
+/// («No se aplicó…», que lleva a «Órdenes», donde se ve por qué y se puede volver a mandar).
+pub fn avisar_no_aplicadas(st: &St, ctx: &almacen::ClienteCtx) {
+    for o in st.db.caducadas_por_avisar(ctx).unwrap_or_default() {
+        let texto = notificaciones::texto_no_aplicada(&o.tipo, &o.estado, None, o.motivo.as_deref());
+        if notificaciones::aviso(st.db.as_ref(), ctx, Some(&o.equipo_id), "orden_no_aplicada", &texto).is_ok() {
+            st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Avisos(Some(&o.equipo_id)));
+            st.vivo.avisar(ctx.id(), crate::vivo::Cambio::Orden { equipo: &o.equipo_id, orden: &o.id, estado: &o.estado });
+        }
+    }
+    st.notif.despertar.notify_one();
 }
 
 /// Quita los equipos que se unieron con un código que caducó o se anuló sin
