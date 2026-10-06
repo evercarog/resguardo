@@ -444,16 +444,23 @@ async function principal() {
       comprobar(["cadenas", "derivadas", "filtros", "nube_equipo"].every((x) => eqBVer.resumen?.admite?.includes(x)), "B admite cadenas, derivadas, filtros y nubes en el equipo", eqBVer.resumen?.admite);
       comprobar(eqAAhora.resumen?.admite?.includes("espejo_zonas"), "A admite el espejo por zonas", eqAAhora.resumen?.admite);
       // 1. «Después de la anterior»: la copia a la zona E empieza cuando termina bien la de la zona D.
-      const copiaTras = { ...copiaE, horario: { dias: [], horas: [] }, tras: "documentos" };
-      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, copiaTras] } }, { claveAdmin: CLAVE_ADMIN });
+      // (Una copia aparte al mismo repositorio: «Documentos» sigue con su última vez, que el paso 5b cuenta.)
+      const copiaD = { ...copia, id: "cadena-d", nombre: "Cadena: Documentos a Disco D" };
+      const copiaTras = { ...copiaE, horario: { dias: [], horas: [] }, tras: "cadena-d" };
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, copiaD, copiaTras] } }, { claveAdmin: CLAVE_ADMIN });
       const antesE = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "documentos-e")?.ultima?.cuando;
-      const ultimaD = await copiarAhora(consola, c);
+      const desdeD = Date.now();
+      await consola.hecha(c, eqB.id, "copiar_ahora", { copia: "cadena-d", repo: repoId });
+      const ultimaD = await esperar("que termine la primera de la cadena", async () => {
+        const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "cadena-d");
+        return k?.ultima && new Date(k.ultima.cuando).getTime() >= desdeD - 1_000 ? k.ultima : null;
+      }, { plazo: 180_000, cada: 1000 });
       igual(ultimaD.estado, "ok", "La primera de la cadena terminó bien");
       const ultimaTras = await esperar("que la cadena lance la copia a la zona E", async () => {
         const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "documentos-e");
         return k?.ultima && k.ultima.cuando !== antesE ? k : null;
       }, { plazo: 180_000, cada: 1000 });
-      igual([ultimaTras.ultima!.estado, ultimaTras.tras], ["ok", "documentos"], "La segunda se hizo sola, después de la primera");
+      igual([ultimaTras.ultima!.estado, ultimaTras.tras], ["ok", "cadena-d"], "La segunda se hizo sola, después de la primera");
       // 2. Paso «espejo»: el almacén copia ese repositorio de la zona E a la principal, en local (sin contraseñas).
       const nombreEnA = `${accesoE.usuario}/${repoE}`;
       // El espejo deja para la vuelta siguiente lo escrito en los últimos 10 minutos (una subida a medias):
