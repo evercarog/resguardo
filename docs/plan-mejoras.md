@@ -12,14 +12,14 @@ Lista de trabajo acordada con el responsable del proyecto el 2026-10-05 (sesión
 
 ## 0. Revisar y unir lo de la sesión en la nube
 
-- [ ] Revisar la rama `claude/analizar-repo-resguardo-d780qd` (7 commits sobre `main`) y unirla si está bien. Lo que hace y lo que no se pudo probar está en `docs/registro-ia.md` (entrada del 2026-10-05). Resumen:
+- [x] Revisar la rama `claude/analizar-repo-resguardo-d780qd` (7 commits sobre `main`) y unirla si está bien (unida el 2026-10-06; `restaurar-respaldo` protege la carpeta solo como administrador o si es la de por defecto, rama `ia/arreglo-e2e-retencion`). Lo que hace y lo que no se pudo probar está en `docs/registro-ia.md` (entrada del 2026-10-05). Resumen:
   - clippy 1.97 (`manual_option_zip`) en `agent.rs`;
   - restic del agente con `PATH` del sistema y `-o rclone.program=`; el proceso del servicio (`--service`, `--primer-plano`) usa solo el restic incluido;
   - restaurar rechaza nombres de dispositivo de Windows (`CON`, `NUL`, `COM1`…);
   - `restaurar-respaldo` protege la carpeta en Windows (ahora pide administrador);
   - la consola valida la línea de Linux antes de enseñarla;
   - **el servidor quita los equipos «Sin confirmar» cuyo código caducó** (un equipo duplicado «Sin confirmar» tras varios intentos de añadirlo).
-- [ ] Probar en Windows: compilar todo (`cargo clippy --workspace`, `cargo test --workspace`), `restaurar-respaldo` como administrador, una copia con repositorio `rclone:` o `sftp:` si hay alguna, y que el equipo duplicado desaparece unos 10 min después de arrancar el servidor actualizado.
+- [~] Probar en Windows (2026-10-06: clippy, `cargo test --workspace` y el e2e completo en Windows, bien; falta `restaurar-respaldo` como administrador y una copia `rclone:`/`sftp:` real): compilar todo (`cargo clippy --workspace`, `cargo test --workspace`), `restaurar-respaldo` como administrador, una copia con repositorio `rclone:` o `sftp:` si hay alguna, y que el equipo duplicado desaparece unos 10 min después de arrancar el servidor actualizado.
 
 ---
 
@@ -159,7 +159,7 @@ Lo pendiente de `docs/plataforma.md` §7.3.1 que se acordó hacer, más lo que s
 
 ## 10. Mantenimiento
 
-- [ ] **10a. Pruebas de Windows en cada rama:** el trabajo «App completa (Windows)» de `.github/workflows/ci.yml` solo corre en `main`, en PR a `main` o a mano. Lo más delicado (servicio como SYSTEM, tuberías, permisos) es lo que menos se prueba: que corra también en cada push a ramas `ia/*` y `claude/*` (o, si cuesta demasiado tiempo de CI, un trabajo de Windows reducido con `clippy` y `cargo test -p resguardo-agente`).
+- [x] **10a. Pruebas de Windows en cada rama** (rama `ia/ci-windows-ramas`: el trabajo de Windows corre también en `ia/*` y `claude/*`): el trabajo «App completa (Windows)» de `.github/workflows/ci.yml` solo corre en `main`, en PR a `main` o a mano. Lo más delicado (servicio como SYSTEM, tuberías, permisos) es lo que menos se prueba: que corra también en cada push a ramas `ia/*` y `claude/*` (o, si cuesta demasiado tiempo de CI, un trabajo de Windows reducido con `clippy` y `cargo test -p resguardo-agente`).
 - [x] **10b. App de escritorio antigua: congelada** (decisión del responsable, ver «Decisiones»). Más adelante, proponer cómo retirarla cuando el agente con su ventana la sustituya; no se borra nada sin su visto bueno.
 - [ ] **10c. Versiones desalineadas** (agente y servidor 0.7.x, app 0.6.x, consola 0.1.0, y el `package.json` raíz con la descripción antigua): **no tocar** (regla 6 de `AGENTS.md`); dejarlo anotado para quien publica.
 
