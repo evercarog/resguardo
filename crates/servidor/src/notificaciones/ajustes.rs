@@ -280,29 +280,66 @@ pub fn es_local(host: &str) -> bool {
 /// Este equipo o la red local (IP privadas, de enlace local o de CGNAT, y nombres sin
 /// dominio o de dominios locales). Los canales de un cliente no pueden mandar ahí: su
 /// propietario no debe poder usar el servidor para llegar a lo que hay en su red.
+///
+/// Esto solo mira el texto (al guardar el canal). Un nombre público puede resolver a una
+/// IP privada: al enviar, `transporte` resuelve el nombre una vez, comprueba cada IP con
+/// [`ip_de_red_local`] y conecta a esa misma IP (sin volver a preguntar al DNS).
 pub fn es_red_local(host: &str) -> bool {
-    use std::net::IpAddr;
     let h = solo_host(host);
-    match h.parse::<IpAddr>() {
-        Ok(IpAddr::V4(v)) => {
+    match h.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip_de_red_local(ip),
+        Err(_) => !h.contains('.') || [".localhost", ".local", ".lan", ".internal", ".home.arpa", ".corp"].iter().any(|d| h.ends_with(d)),
+    }
+}
+
+/// Una IP a la que un canal de un cliente no puede llegar: este equipo, redes privadas,
+/// enlace local (con la de metadatos de las nubes, `169.254.169.254`), CGNAT, reservadas,
+/// multidifusión, ULA de IPv6 (`fd00:ec2::254`, la de metadatos en IPv6, está ahí), y
+/// las IPv6 que llevan dentro una IPv4 (mapeadas, compatibles, NAT64 y 6to4), que se
+/// miran por la IPv4 que llevan. Teredo (`2001::/32`) también: esconde la IPv4.
+pub fn ip_de_red_local(ip: std::net::IpAddr) -> bool {
+    use std::net::{IpAddr, Ipv4Addr};
+    match ip {
+        IpAddr::V4(v) => {
             let o = v.octets();
             v.is_private()
                 || v.is_loopback()
                 || v.is_link_local()
                 || v.is_unspecified()
                 || v.is_broadcast()
+                || v.is_multicast()
                 || o[0] == 0
+                // CGNAT, 100.64.0.0/10 (también la de metadatos de algunas nubes).
                 || (o[0] == 100 && (o[1] & 0xc0) == 64)
+                // Asignaciones del IETF, 192.0.0.0/24.
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+                // Pruebas de rendimiento, 198.18.0.0/15.
+                || (o[0] == 198 && (o[1] & 0xfe) == 18)
+                // Reservadas, 240.0.0.0/4.
+                || o[0] >= 240
         }
-        Ok(IpAddr::V6(v)) => {
-            let s = v.segments()[0];
+        IpAddr::V6(v) => {
+            let s = v.segments();
+            let v4 = |a: u16, b: u16| Ipv4Addr::new((a >> 8) as u8, a as u8, (b >> 8) as u8, b as u8);
             v.is_loopback()
                 || v.is_unspecified()
-                || (s & 0xfe00) == 0xfc00
-                || (s & 0xffc0) == 0xfe80
-                || v.to_ipv4_mapped().is_some_and(|m| es_red_local(&m.to_string()))
+                || v.is_multicast()
+                // ULA, fc00::/7.
+                || (s[0] & 0xfe00) == 0xfc00
+                // Enlace local, fe80::/10, y la antigua de sitio, fec0::/10.
+                || (s[0] & 0xffc0) == 0xfe80
+                || (s[0] & 0xffc0) == 0xfec0
+                // Mapeadas (::ffff:a.b.c.d) y compatibles (::a.b.c.d).
+                || v.to_ipv4_mapped().is_some_and(|m| ip_de_red_local(IpAddr::V4(m)))
+                || (s[..6].iter().all(|x| *x == 0) && ip_de_red_local(IpAddr::V4(v4(s[6], s[7]))))
+                // NAT64, 64:ff9b::/96 y 64:ff9b:1::/48.
+                || (s[0] == 0x64 && s[1] == 0xff9b && (s[2..6].iter().all(|x| *x == 0) && ip_de_red_local(IpAddr::V4(v4(s[6], s[7])))))
+                || (s[0] == 0x64 && s[1] == 0xff9b && s[2] == 1)
+                // 6to4, 2002::/16: la IPv4 va en los segmentos 1 y 2.
+                || (s[0] == 0x2002 && ip_de_red_local(IpAddr::V4(v4(s[1], s[2]))))
+                // Teredo, 2001::/32.
+                || (s[0] == 0x2001 && s[1] == 0)
         }
-        Err(_) => !h.contains('.') || [".localhost", ".local", ".lan", ".internal", ".home.arpa", ".corp"].iter().any(|d| h.ends_with(d)),
     }
 }
 
@@ -711,6 +748,31 @@ mod tests {
         }
         for publico in ["hooks.ejemplo.com", "8.8.8.8", "[2001:db8::1]", "ntfy.sh:443"] {
             assert!(!es_red_local(publico), "{publico}");
+        }
+        // Las IP de dentro, también escondidas en IPv6.
+        for ip in [
+            "169.254.169.254",
+            "100.100.100.200",
+            "0.0.0.0",
+            "224.0.0.1",
+            "198.18.0.1",
+            "255.255.255.255",
+            "::ffff:127.0.0.1",
+            "::ffff:169.254.169.254",
+            "::127.0.0.1",
+            "::",
+            "fd00:ec2::254",
+            "fe80::1",
+            "fec0::1",
+            "ff02::1",
+            "64:ff9b::a00:1",
+            "2002:c0a8:0101::1",
+            "2001:0:4136:e378::1",
+        ] {
+            assert!(ip_de_red_local(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111", "::ffff:8.8.8.8", "64:ff9b::808:808", "2002:0808:0808::1"] {
+            assert!(!ip_de_red_local(ip.parse().unwrap()), "{ip}");
         }
         let mut c = correo();
         c.config.as_mut().unwrap().host = Some("192.168.1.10".into());
