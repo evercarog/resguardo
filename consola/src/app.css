@@ -771,3 +771,14 @@ button.fila {
     position: static;
   }
 }
+
+/* La línea de debajo de cada cifra («6 de octubre de 2026 a las 9:20», «lo que copian,
+   según su última versión») se parte en hasta dos líneas en vez de cortarse con «…»:
+   en el móvil las cifras van de dos en dos y no cabía. */
+.stat-sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}

@@ -68,7 +68,7 @@
             {@const p = pctVisible(x.equipo, x.tarea, pulso.ahora)}
             <li>
               <a href={hrefDe(x)} onclick={alNavegar}>
-                <span class="item-texto">{queEs(x.tarea)}<span class="faint"> · {nombreEquipo(x.equipo)}</span></span>
+                <span class="item-texto">{queEs(x.tarea)}<span class="faint">{" · "}{nombreEquipo(x.equipo)}</span></span>
                 <span class="num item-pct">{p != null ? `${p} %` : "…"}</span>
               </a>
             </li>
@@ -83,6 +83,9 @@
 <style>
   .en-marcha {
     display: grid;
+    /* Una sola columna que no crece con los textos largos (se cortan con «…»). */
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     background: var(--info-soft);
     border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
     border-radius: var(--radius);
@@ -154,6 +157,7 @@
   }
   .items {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     margin: 0;
     padding: 0 4px 4px;
     list-style: none;
