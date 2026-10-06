@@ -42,8 +42,9 @@ import { almacenDe, nuevaClave, reglaParaOrden, seQuedan } from "../../src/lib/r
 import { vueltasDelRepo, type EntradaRetencion } from "../../src/lib/retencionDetalle";
 import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../src/lib/repo";
 import { proximaDe } from "../../src/lib/copia";
+import { claveZona, destinosDelCliente, errorRespuestaZona, idDestinoZona, zonaDeDestino, zonasDe } from "../../src/lib/destinos";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
-import type { Cliente, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
+import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
 import { OyenteVivo } from "./vivo";
 import { borrarCarpeta, BuzonSmtp, comprobar, dormir, EXE, ejecutar, esperar, Fallo, igual, log, paso, pasoEnCurso, pararTodo, puertoLibre, WIN } from "./entorno";
@@ -337,6 +338,81 @@ async function principal() {
       }, { plazo, cada: 1000 });
     };
     const secretosRepo = { repo: { repo: repoId, contrasena: contrasenaRepo } };
+
+    // -----------------------------------------------------------------------
+    paso("3b. Otra zona en el almacén de A (tarea 7b): «Disco E» con su puerto; B copia también allí");
+    {
+      const resumenA = (await consola.equipo(c, eqA.id)).resumen;
+      comprobar(resumenA?.admite?.includes("zonas_almacen"), "El almacén dice que admite zonas", resumenA?.admite);
+      const carpetaE = dir("almacen-a-disco-e");
+      const puertoE = await puertoLibre();
+      // Dentro de la carpeta del almacén, no: el agente lo rechaza.
+      const mal = await consola.resultado(c, eqA.id, await consola.mandar(c, eqA.id, "guarda_copias", { zona: { carpeta: path.join(almacen, "dentro"), puerto: puertoE } }, { claveAdmin: CLAVE_ADMIN }));
+      igual(mal.estado, "fallida", `Una zona dentro de la carpeta del almacén se rechaza (${mal.mensaje ?? ""})`);
+      const r = await consola.hecha(c, eqA.id, "guarda_copias", { zona: { nombre: "Disco E", carpeta: carpetaE, puerto: puertoE } }, { claveAdmin: CLAVE_ADMIN }, {}, 60_000);
+      log(`Zona: ${r.mensaje}`);
+      const zona = await esperar("la zona en el resumen de A, en marcha", async () => {
+        const z = (await consola.equipo(c, eqA.id)).resumen?.guarda_copias?.zonas?.find((x) => x.puerto === puertoE);
+        return z?.escucha ? z : null;
+      }, { plazo: 30_000 });
+      igual([zona.nombre, zona.carpeta, zona.usuarios], ["Disco E", carpetaE, 0], "La zona con su nombre, su carpeta y sin equipos todavía");
+      // El acceso de B en esa zona: su propio usuario, por el puerto de la zona (lo comprueba la consola).
+      const accesoE = await consola.hechaSellada<{ usuario: string; zona?: string; destino: { donde: string; usuario: string; secreto: string; ca_pem: string } }>(
+        c,
+        eqA.id,
+        "guarda_copias",
+        { anadir: eqB.id, zona: zona.id },
+        { claveAdmin: CLAVE_ADMIN },
+      );
+      const vista = zonasDe(await consola.equipo(c, eqA.id)).find((z) => z.id === zona.id)!;
+      igual(errorRespuestaZona(accesoE, vista), null, "La respuesta es de la zona pedida y por su puerto");
+      comprobar(accesoE.usuario !== acceso.usuario, "En la zona, B tiene otro usuario (únicos en todo el almacén)", [accesoE.usuario, acceso.usuario]);
+      const repoE = `disco-e-${randomBytes(2).toString("hex")}`;
+      await consola.hecha(
+        c,
+        eqB.id,
+        "crear_repositorio",
+        {
+          id: repoE,
+          nombre: "Copias en ALMACEN-A · Disco E",
+          contrasena: Buffer.from(aleatorio(32)).toString("base64url"),
+          // Como CopiarEnAlmacen.svelte con una zona.
+          destino: { id: idDestinoZona(eqA.id, zona.id), nombre: `${eqA.nombre} · Disco E`, tipo: "rest", donde: accesoE.destino.donde, usuario: accesoE.destino.usuario, secreto: accesoE.destino.secreto, ca_pem: accesoE.destino.ca_pem, equipo_almacen: eqA.id },
+        },
+        { claveAdmin: CLAVE_ADMIN },
+        {},
+        120_000,
+      );
+      const copiaE = { ...copia, id: "documentos-e", nombre: "Documentos a Disco E", repo: repoE };
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, copiaE] } }, { claveAdmin: CLAVE_ADMIN });
+      const desde = Date.now();
+      await consola.hecha(c, eqB.id, "copiar_ahora", { copia: "documentos-e", repo: repoE });
+      const ultimaE = await esperar("que termine la copia de B en la zona", async () => {
+        const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "documentos-e");
+        return k?.ultima && new Date(k.ultima.cuando).getTime() >= desde - 5_000 ? k.ultima : null;
+      }, { plazo: 180_000, cada: 1000 });
+      igual(ultimaE.estado, "ok", `La copia en la zona terminó bien (${ultimaE.mensaje ?? ""})`);
+      comprobar(fs.existsSync(path.join(carpetaE, accesoE.usuario, repoE, "config")), "El repositorio está en la carpeta de la zona");
+      comprobar(!fs.existsSync(path.join(almacen, accesoE.usuario)), "Y no en la carpeta principal del almacén");
+      // El resumen de A dice que un equipo copia en la zona (sale tras la orden `anadir`; la lista de
+      // repositorios de cada zona llega con su informe periódico, como la de la principal).
+      await esperar("un equipo en la zona, en el resumen de A", async () => {
+        const z = (await consola.equipo(c, eqA.id)).resumen?.guarda_copias?.zonas?.find((x) => x.id === zona.id);
+        return z?.usuarios === 1 ? z : null;
+      }, { plazo: 30_000 });
+      // «Se guarda en» y el destino de la consola: dentro de esa zona.
+      const eqBAhora = await consola.equipo(c, eqB.id);
+      const eqAAhora = await consola.equipo(c, eqA.id);
+      const dE = destinoDe(eqBAhora.resumen?.destinos, eqBAhora.resumen?.repositorios?.find((x) => x.id === repoE));
+      igual(zonaDeDestino(dE, [eqAAhora, eqBAhora])?.id, zona.id, "La consola reconoce el destino de B como la zona E de A");
+      // El catálogo de destinos (7a): un nombre para la zona, en claro y sin secretos.
+      await consola.ok("PUT", `/api/clientes/${c.id}/destinos/${encodeURIComponent(claveZona(eqA.id, zona.id))}`, { nombre: "Almacén · Disco E", tipo: "zona" });
+      const catalogo = await consola.ok<DestinoCatalogo[]>("GET", `/api/clientes/${c.id}/destinos`);
+      igual(destinosDelCliente([eqAAhora, eqBAhora], catalogo).find((v) => v.clave === claveZona(eqA.id, zona.id))?.nombre, "Almacén · Disco E", "El nombre del catálogo se ve en la zona");
+      // Vuelve la configuración de antes (los pasos siguientes cuentan con una sola copia).
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });
+      log(`B copia también en «Disco E» (puerto ${puertoE}, usuario ${accesoE.usuario})`);
+    }
 
     // -----------------------------------------------------------------------
     paso("4. Restaurar un archivo desde la consola, «junto al original»");

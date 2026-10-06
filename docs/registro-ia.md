@@ -46,6 +46,31 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/destinos-y-zonas`
+
+Tarea 7 de `docs/plan-mejoras.md` (con la 4 dentro), **parte A**, con el usuario ausente (propuesta escrita en `docs/copias-en-cadena.md` y adelante sin esperar el visto bueno, como pidió para las tareas grandes). Otra sesión hacía a la vez la tarea 6 (etiquetas): no se tocó nada de lo suyo.
+
+- **Pedido:** diseño completo de la tarea 7 (destinos, zonas, cadenas, los tres tipos de paso, 7f, seguridad, 7e y cómo encajan 4a–4f) y, de eso, la parte A: 7a (destinos de primera clase en la consola) y 7b = 4f (varias zonas en un almacén). La parte B, descrita con detalle para la siguiente sesión.
+- **Cambios:**
+  - `docs/copias-en-cadena.md` (nuevo): todo el diseño, el contrato de la parte A y «Lo que queda para la parte B».
+  - Agente (`server.rs`): zonas (`ServerConfig.zonas`), un rest-server por zona con el mismo certificado, siempre de solo añadir y repos privados, usuarios propios (`servidor-zona-<id>.htpasswd`) y únicos en todo el almacén (`ServerUser.para` para saber de qué equipo es cada uno); validación de solapes (principal, zonas, espejo) y puertos; `run_forever` vigila varias instancias (arranca, para las que sobran o cambian, relanza con espera creciente, huella antes de cada arranque); cortafuegos con todos los puertos (Windows y nftables); `stop()` para todas por su PID. `activar` mira el puerto **antes** de guardar (antes, si estaba ocupado, dejaba el almacén desactivado). En pruebas, un solo hilo vigila (`arrancar_en_pruebas`; antes activar dos veces lanzaba dos). `gestion_v2.rs`: `guarda_copias { zona }`, `{ quitar_zona }`, `{ anadir, zona }`, `{ quitar, zona }`, resumen `zonas`, `admite: "zonas_almacen"`. `servidor_v2.rs`: `quitar_zona` espera. `retencion_almacen.rs`: encuentra la zona del usuario.
+  - Servidor: catálogo de destinos (`api/destinos.rs`, tabla `destinos` del cliente), en claro y sin secretos, que rechaza cualquier campo de más, direcciones con contraseña y rutas locales.
+  - Consola: `lib/destinos.ts` (junta zonas, destinos de los equipos, nubes de los almacenes y catálogo), `lib/catalogoDestinos.svelte.ts`, `ZonasAlmacen`, `NuevaZona`, `NuevoDestino`, `RenombrarDestino`; «Repositorios y destinos» con una tarjeta por destino; «Nuevo repositorio» con las otras zonas y los destinos del catálogo; «Copiar en …» en una zona (comprueba que la respuesta es de esa zona); «Se guarda en» dice la zona; simulador; vectores `vectores-destinos.ts`; ayuda «zona».
+  - e2e: paso 3b (otra zona en A, una zona dentro de la principal se rechaza, B copia en la zona, el repositorio está en la carpeta de la zona y no en la principal, el catálogo le pone nombre).
+  - Docs: `api-servidor.md` (§1, §4, §5 y «Cambios», v1.4x), plan 7a, 7b y 4f marcados.
+- **Comprobado (Windows):** ver la línea de comprobaciones finales más abajo (se rellena al terminar).
+- **Sin probar / dudas (para revisar):**
+  - **El catálogo no guarda secretos, ni cifrados.** Se pudo cifrar con una clave derivada de `K_cfg` (como las plantillas) y guardar ahí las credenciales para no volver a escribirlas en cada equipo; se descartó: hoy ni con la clave de administración se pueden sacar las credenciales de una nube de los equipos, y guardarlas cifradas con ella daría acceso directo a la nube a quien adivine la clave. Consecuencia: usar un destino del catálogo en otro equipo pide su clave otra vez.
+  - **El catálogo va en claro** (como las notas, no como las plantillas) para que lo vea cualquier miembro sin la clave; solo lleva lo que ya dicen los resúmenes de los equipos (nombre, tipo, servidor o bucket) y nunca rutas locales.
+  - **Renombrar un destino no pide la clave de administración** (solo el rol de administrador): no cambia nada en los equipos. El nombre que tiene el agente de una zona (`zona.nombre`) solo se pone al crearla; el que se ve sale del catálogo.
+  - **Usuarios únicos en todo el almacén**: el mismo equipo en la principal y en la zona E es «ana» y «ana-2». Así no cambia el contrato de la retención en el almacén; a cambio, el nombre de la carpeta en la zona no es el id del equipo tal cual.
+  - **Una sola regla «solo redes internas» para todo el almacén** (todas las zonas la comparten).
+  - **Linux sin compilar aquí** (no hay destino de Linux instalado): el código `#[cfg(unix)]` cambiado (cortafuegos con varios puertos, `SIGHUP` por zona) solo se probó con la prueba de las reglas de nftables; lo compilará la CI.
+  - Sin probar de verdad: el cortafuegos de Windows con varios puertos (`netsh … localport=8000,8002`) y la tarea de SYSTEM vigilando zonas (en las pruebas el servidor corre dentro del agente). Probar en una máquina virtual: crear una zona, reiniciar el equipo, que las dos zonas vuelvan.
+  - SFTP: el catálogo lo admite, pero la consola no lo ofrece en «Nuevo destino» ni en «Nuevo repositorio» (un repositorio SFTP usa la llave SSH del equipo).
+  - El paquete `.resguardo-cliente` aún no lleva el catálogo (parte B, punto 8).
+  - En la consola, al pasar de un diálogo a otro (p. ej. «Nuevo destino» → «Añadir una zona») el anterior se ve un momento detrás mientras se cierra: es lo mismo que ya pasaba con «Nuevo repositorio» → «Copiar en …».
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/espejo-flexible`
 
 Tarea 3 de `docs/plan-mejoras.md` («Espejo más flexible»), entera, con el usuario ausente (propuesta en `docs/espejo.md` y adelante sin esperar el visto bueno, como pidió).

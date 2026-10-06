@@ -61,14 +61,14 @@ La consola junta tres fuentes (`consola/src/lib/destinos.ts`, con vectores):
 - `id`: `[a-z0-9:_.-]`, hasta 120. `nombre`: 1–80 caracteres, sin controles. `tipo`: `zona`, `rest`, `s3`, `b2`, `sftp`, `nube`, `local`. `donde`: hasta 300, solo en `rest`, `s3`, `b2`, `sftp`; se rechaza con credenciales (`usuario:clave@`) o con forma de ruta local (`C:\…`, `\\nas\…`, `/srv/…`).
 - Se rechaza cualquier campo de más (`secreto`, `contrasena`, `clave`…): el catálogo no admite secretos ni por error.
 - Como mucho 200 por cliente. Cada cambio va a la auditoría (`guardar_destino`, `borrar_destino`) con el id.
-- Va en la copia de la consola y en el paquete de exportación como el resto de lo del cliente (tabla `destinos` de SQLite). *Pendiente: comprobado que la copia de la consola la lleva (está en la base de datos); el paquete `.resguardo-cliente` aún no la exporta (ver parte B).*
+- Se guarda en la base de datos del cliente (tabla `destinos` de `clientes/<id>.db`), así que entra en la **copia de la consola**. El paquete de exportación `.resguardo-cliente` (mover un cliente a otro servidor) **aún no** lo lleva: queda para la parte B (punto 8); sin él, en el servidor nuevo los destinos vuelven a sus nombres de siempre y los sueltos hay que crearlos otra vez.
 
 ### Crear un destino sin repositorio
 
 «Nuevo destino» en «Repositorios y destinos» (administrador):
 
 - **Otra zona de un almacén** (otro disco): ver 7b. Es una orden al almacén con la clave de administración.
-- **Nube o servidor para los repositorios** (Backblaze B2, S3, un rest-server de otra sede, SFTP): nombre y dirección (bucket, servidor). Solo va al catálogo; las credenciales se piden al crear el primer repositorio en él, selladas para ese equipo.
+- **Nube o servidor para los repositorios** (Backblaze B2, S3, un rest-server de otra sede): nombre y dirección (bucket, servidor). SFTP se admite en el catálogo, pero la consola aún no lo ofrece aquí: un repositorio SFTP usa la llave SSH del equipo, que la consola no sabe preparar todavía. Solo va al catálogo; las credenciales se piden al crear el primer repositorio en él, selladas para ese equipo.
 - **Dropbox, Google Drive, NAS (SMB), WebDAV** (y B2/S3/SFTP para el espejo): se conectan **en un almacén** con «Conectar Dropbox» / «Conectar otro destino», que ya existen (`conectar_nube`, sellada para el almacén). Desde la parte A sirven para el espejo; en la parte B, también para los pasos de una cadena (4a: conectarlas en el equipo dueño).
 
 ### Elegir un destino al crear un repositorio
@@ -77,7 +77,7 @@ La consola junta tres fuentes (`consola/src/lib/destinos.ts`, con vectores):
 
 1. las zonas de los almacenes del cliente a las que aún no copia («Almacén ALMACEN-01 · Disco E»): hace lo de «Copiar en …» en esa zona (`guarda_copias { anadir, zona }`), sin escribir nada;
 2. sus propios destinos (con el nombre del catálogo si lo tiene);
-3. los destinos del catálogo que aún no tiene (B2, S3, rest, SFTP): con el tipo y la dirección ya puestos, pide solo las credenciales; el destino se crea en el equipo con el **mismo id** que en el catálogo, así se agrupa con los demás equipos que lo usan;
+3. los destinos del catálogo que aún no tiene (B2, S3, rest-server): con el tipo y la dirección ya puestos, pide solo las credenciales; el destino se crea en el equipo con el **mismo id** que en el catálogo, así se agrupa con los demás equipos que lo usan;
 4. «Un destino nuevo…», como hasta ahora (y queda en la lista con el nombre que se le dé).
 
 ## 7b. Varias zonas en un almacén (= 4f)
