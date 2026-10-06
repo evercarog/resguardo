@@ -14,6 +14,8 @@ export interface Servidor {
   dropbox_app_key?: string | null;
   /** v1.17: ¿puede dar el instalador del agente «listo para vincular»? (sin el campo: no). */
   instalador_agente?: boolean;
+  /** v1.4x: acepta códigos de emparejamiento generados en el navegador (solo su hash) y da el instalador genérico. */
+  codigo_navegador?: boolean;
   /** v1.19: ¿hay un Resguardo Agente en la máquina del servidor? («Vincular este servidor»). */
   agente_local?: boolean;
   /** v1.34: la dirección para los agentes y las otras consolas si no es la de esta consola
@@ -405,6 +407,9 @@ export interface EstadoDeEmparejamiento {
   nombre?: string;
   so?: "windows" | "linux";
   codigo?: string;
+  /** v1.4x: el código lo generó un navegador; el servidor solo tiene su hash (lib/codigo.ts). */
+  codigo_hash?: string;
+  codigo_navegador?: boolean;
 }
 
 /** v1.42: un equipo que se unió y se quedó sin terminar (sin comparar el número o sin el alta). */
@@ -426,6 +431,19 @@ export interface Preparado {
   caduca: string;
   creado: string;
   equipo: string | null;
+}
+
+/** v1.4x: lo que devuelve preparar un equipo con el código del navegador (sin el código). */
+export interface PreparadoNavegador {
+  id: string;
+  nombre: string;
+  so: "windows" | "linux";
+  caduca: string;
+  servidor: string;
+  huella_ca: string;
+  cliente: string;
+  codigo_navegador: true;
+  reutilizado: false;
 }
 
 /** Lo que devuelve preparar la línea de Linux. */

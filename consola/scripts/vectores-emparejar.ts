@@ -15,6 +15,10 @@ import { frenar } from "../src/lib/freno";
 import { mensajePausa, pausaTras } from "../src/lib/pausa429";
 import { codigoAlCargar, esperaDe, lineaVincular, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "../src/lib/emparejar";
 import type { Preparado } from "../src/lib/tipos";
+import { ALFABETO, Codigos, CLAVE_ALMACEN, codigoDeHash, generarCodigo, LARGO_PREPARADO, PLAZO_GUARDADO_MS, type Almacen } from "../src/lib/codigo";
+import { cola, nombreArchivo, validarDatos, type DatosInstalador } from "../src/lib/cola";
+import { hashCodigo } from "../src/lib/cripto/claves";
+import { aB64 } from "../src/lib/cripto/bytes";
 
 let total = 0;
 let fallos = 0;
@@ -334,6 +338,114 @@ console.log("\n— Línea de Linux (lib/emparejar.ts) —");
     ["ABC", "https://s:8443", undefined],
   ];
   for (const [c, s, h] of malos) igual(`sin línea: ${JSON.stringify([c, s, h])}`, lineaVincular(c, s, h), "");
+}
+
+// --- v1.4x: el código lo genera el navegador ---------------------------------
+console.log("\n— Códigos generados en el navegador (lib/codigo.ts) —");
+{
+  const a = generarCodigo();
+  cierto(`a mano: «ABCD-EFGH-JK» (${a})`, new RegExp(`^[${ALFABETO}]{4}-[${ALFABETO}]{4}-[${ALFABETO}]{2}$`).test(a));
+  const b = generarCodigo(LARGO_PREPARADO);
+  cierto(`preparado: 16 en 4 grupos (${b})`, new RegExp(`^([${ALFABETO}]{4}-){3}[${ALFABETO}]{4}$`).test(b));
+  cierto("cabe en la cola y en la línea (8–20 con guiones)", b.length <= 20 && lineaVincular(b, "https://s:8443") !== "");
+  cierto("dos seguidos no se repiten", generarCodigo() !== generarCodigo());
+  // Sin sesgo: los bytes ≥ 248 se descartan (aquí, todos los 255 y luego 0 → «A»).
+  let llamadas = 0;
+  const azar = (n: number) => (llamadas++ === 0 ? new Uint8Array(n).fill(255) : new Uint8Array(n).fill(31 + 1));
+  igual("descarta los bytes de más (sin sesgo)", generarCodigo(10, azar), "BBBB-BBBB-BB");
+  igual("…y pide más azar", llamadas, 2);
+  // Reparto: con 31 000 letras, cada una entre 700 y 1300 veces.
+  const cuenta = new Map<string, number>();
+  for (let i = 0; i < 1000; i++) for (const ch of generarCodigo(32).replace(/-/g, "")) cuenta.set(ch, (cuenta.get(ch) ?? 0) + 1);
+  cierto("todas las letras salen, más o menos igual", cuenta.size === 31 && [...cuenta.values()].every((n) => n > 700 && n < 1400));
+  igual("el hash es el del agente (code_hash)", hashCodigo("abcd efgh-jk"), hashCodigo("ABCD-EFGH-JK"));
+  cierto("el código escrito a mano vale con su hash", codigoDeHash(" abcd efgh jk ", hashCodigo("ABCD-EFGH-JK")));
+  cierto("…otro no", !codigoDeHash("ABCD-EFGH-JL", hashCodigo("ABCD-EFGH-JK")));
+  cierto("…ni sin hash", !codigoDeHash("ABCD-EFGH-JK", undefined));
+  cierto("…ni con cosas raras", !codigoDeHash("ABCD;EFGH-JK", hashCodigo("ABCDEFGHJK")));
+}
+{
+  // Dónde se guardan: por emparejamiento, comprobados con su hash, y se olvidan.
+  const datos = new Map<string, string>();
+  const almacen: Almacen = { getItem: (k) => datos.get(k) ?? null, setItem: (k, v) => void datos.set(k, v), removeItem: (k) => void datos.delete(k) };
+  let t = ahora;
+  const cs = new Codigos(almacen, () => t);
+  cs.guardar({ id: "e1", cliente: "c1", codigo: "ABCD-EFGH-JK" });
+  cs.guardar({ id: "p1", cliente: "c1", codigo: "WXYZ-2345-6789-ABCD", nombre: "Recepción", so: "windows" });
+  igual("se recupera por su id", cs.de("e1"), "ABCD-EFGH-JK");
+  igual("…comprobado con su hash", cs.de("e1", hashCodigo("ABCD-EFGH-JK").toUpperCase()), "ABCD-EFGH-JK");
+  igual("…con otro hash, no", cs.de("e1", hashCodigo("OTRO-CODI-GO")), null);
+  igual("otro id, nada", cs.de("e9"), null);
+  igual("el preparado por nombre (sin mayúsculas) y sistema", cs.preparado("c1", " RECEPCIÓN ", "windows")?.id, "p1");
+  igual("…de otro sistema, no", cs.preparado("c1", "Recepción", "linux"), null);
+  igual("…de otro cliente, no", cs.preparado("c2", "Recepción", "windows"), null);
+  cs.olvidar("e1");
+  igual("olvidado (alta hecha o anulado)", cs.de("e1"), null);
+  t += PLAZO_GUARDADO_MS + 1;
+  igual("a los 8 días, fuera", cs.de("p1"), null);
+  datos.set(CLAVE_ALMACEN, "{no es json");
+  igual("si lo guardado está roto, nada (sin romperse)", new Codigos(almacen, () => t).de("p1"), null);
+  const lleno: Almacen = { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); }, removeItem: () => {} };
+  const cm = new Codigos(lleno, () => ahora);
+  cm.guardar({ id: "m1", cliente: "c1", codigo: "MMMM-NNNN-PP" });
+  igual("sin sitio en el navegador: en memoria (esta pestaña)", cm.de("m1"), "MMMM-NNNN-PP");
+}
+{
+  // El servidor solo ve el hash: pedirCodigo con `navegador`.
+  const guardados = new Map<string, string>();
+  const vistos: unknown[] = [];
+  let abierto: CodigoAbierto | null = null;
+  let repetir = 1;
+  const api = {
+    codigoAbierto: async () => abierto,
+    abrir: async (h?: string) => {
+      vistos.push(h);
+      if (repetir-- > 0) throw Object.assign(new Error("Ese código ya existe."), { estado: 409 });
+      abierto = { id: "n1", codigo: null, codigo_hash: h, codigo_navegador: true, caduca: en(15), estado: "abierto" };
+      return { id: "n1", caduca: en(15), reutilizado: false, codigo_navegador: true };
+    },
+    navegador: { generar: () => generarCodigo(), hash: hashCodigo, de: (id: string, h?: string | null) => (guardados.has(id) && (!h || hashCodigo(guardados.get(id)!) === h) ? guardados.get(id)! : null), guardar: (id: string, c: string) => void guardados.set(id, c) },
+  };
+  const r = await pedirCodigo(api, null, ahora);
+  igual("409 (hash repetido): otro código, una vez", vistos.length, 2);
+  cierto("al servidor solo le llega el hash (64 hex), nunca el código", vistos.every((v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v)) && !vistos.includes(r.codigo));
+  igual("el código queda en este navegador", guardados.get("n1"), r.codigo);
+  igual("…y su hash es el que tiene el servidor", hashCodigo(r.codigo), vistos[1]);
+  igual("al recargar, este navegador lo vuelve a enseñar", (await codigoAlCargar(api, ahora + 60_000))?.codigo, r.codigo);
+  guardados.clear();
+  igual("en otro navegador (sin el código): no se enseña", await codigoAlCargar(api, ahora + 60_000), null);
+  const otra = { ...api, abrir: async (h?: string) => (vistos.push(h), { id: "n2", caduca: en(15), reutilizado: false, codigo_navegador: true }) };
+  const r2 = await pedirCodigo(otra, null, ahora + 60_000);
+  igual("…y «Generar» da otro, suyo", [r2.id, guardados.get("n2") === r2.codigo], ["n2", true]);
+  // Un servidor que no entendiera el hash y diera su propio código: se usa ese.
+  const viejo = { ...api, codigoAbierto: async () => null, abrir: async () => ({ id: "v1", codigo: "VVVV-WWWW-XX", caduca: en(15), reutilizado: false }) };
+  igual("servidor que ignora el hash: su código", (await pedirCodigo(viejo, null, ahora)).codigo, "VVVV-WWWW-XX");
+  // Hay que tener el código para seguir.
+  igual("sin el código no «sirve»", sirve({ id: "x", codigo: null, caduca: en(10), estado: "abierto" }, ahora), false);
+}
+
+console.log("\n— Cola del instalador en el navegador (lib/cola.ts ↔ crates/protocolo/vectors/instalador.json) —");
+{
+  const v = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "crates", "protocolo", "vectors", "instalador.json"), "utf8")) as {
+    casos: { datos: DatosInstalador; cola: string }[];
+    malos: DatosInstalador[];
+  };
+  for (const c of v.casos) igual(`los mismos bytes que Rust: «${c.datos.nombre}»`, aB64(cola(c.datos)), c.cola);
+  for (const m of v.malos) cierto(`no vale (como en Rust): ${JSON.stringify(m).slice(0, 90)}`, validarDatos(m) !== null);
+  igual("los buenos valen", v.casos.map((c) => validarDatos(c.datos)), v.casos.map(() => null));
+  let lanzo = false;
+  try {
+    cola({ ...v.casos[0].datos, codigo: "AB;rm" });
+  } catch {
+    lanzo = true;
+  }
+  cierto("una cola con datos que no valen no se arma", lanzo);
+  // Como `nombre_archivo` (api/instaladores.rs).
+  igual("archivo", nombreArchivo("Altamar", "SERVIDOR-01"), "Resguardo-Agente_Altamar_SERVIDOR-01.exe");
+  igual("archivo con tildes", nombreArchivo("Clínica Señora", "Recepción 2"), "Resguardo-Agente_Clinica-Senora_Recepcion-2.exe");
+  igual("archivo sin trucos", nombreArchivo('a"b/../c', "x\r\ny"), "Resguardo-Agente_a-b-c_x-y.exe");
+  igual("archivo sin cliente", nombreArchivo("", "PC"), "Resguardo-Agente_PC.exe");
+  igual("archivo sin nada", nombreArchivo("", "///"), "Resguardo-Agente.exe");
 }
 
 console.log(`\n${total - fallos}/${total} bien`);
