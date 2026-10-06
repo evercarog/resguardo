@@ -59,11 +59,14 @@ export const NIVEL: Record<string, Nivel> = {
   // (inofensiva: cancelar solo aumenta la protección; docs/consolas-multiples.md §5.7).
   cancelar_espera: "sesion",
   // v1.56: el nombre, las etiquetas y la observación del equipo, iguales en todas sus consolas
-  // (docs/consolas-multiples.md §6), y olvidar un destino que ya no usa nada. Inofensivas.
+  // (docs/consolas-multiples.md §6). Inofensivas.
   nombre_equipo: "sesion",
   etiquetas_equipo: "sesion",
   observacion_equipo: "sesion",
-  quitar_destino: "sesion",
+  // Olvidar un destino que ya no usa nada (v1.56): desde la v1.4x pide la clave de
+  // administración, como crearlo (olvida sus credenciales). Un agente anterior, que la
+  // tenía por inofensiva, no mira la prueba que le llega de más.
+  quitar_destino: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */
