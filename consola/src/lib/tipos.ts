@@ -14,7 +14,7 @@ export interface Servidor {
   dropbox_app_key?: string | null;
   /** v1.17: ¿puede dar el instalador del agente «listo para vincular»? (sin el campo: no). */
   instalador_agente?: boolean;
-  /** v1.4x: acepta códigos de emparejamiento generados en el navegador (solo su hash) y da el instalador genérico. */
+  /** v1.48: acepta códigos de emparejamiento generados en el navegador (solo su hash) y da el instalador genérico. */
   codigo_navegador?: boolean;
   /** v1.19: ¿hay un Resguardo Agente en la máquina del servidor? («Vincular este servidor»). */
   agente_local?: boolean;
@@ -184,7 +184,7 @@ export interface ConsolaDelEquipo {
   esta: boolean;
 }
 
-/** v1.4x (docs/consolas-multiples.md §5.5): una orden que el equipo tiene en espera. */
+/** v1.49 (docs/consolas-multiples.md §5.5): una orden que el equipo tiene en espera. */
 export interface OrdenEnEspera {
   /** El id de la orden en el servidor de la consola que la mandó. */
   id: string;
@@ -233,7 +233,7 @@ export interface ResumenEquipo {
   consolas?: ConsolaDelEquipo[];
   /** v1.36: el último cambio (configuración, repositorios…) y desde qué consola llegó. */
   cambio_config?: { tipo: string; cuando: string; consola: { nombre: string; url: string; identidad: string } } | null;
-  /** v1.4x: las órdenes con espera que el equipo ya tiene (de cualquiera de sus consolas). */
+  /** v1.49: las órdenes con espera que el equipo ya tiene (de cualquiera de sus consolas). */
   en_espera?: OrdenEnEspera[];
   /**
    * v1.4x (`admite: "datos_equipo"`, docs/consolas-multiples.md §6): el nombre, las etiquetas y la
@@ -582,7 +582,7 @@ export interface EstadoDeEmparejamiento {
   nombre?: string;
   so?: "windows" | "linux";
   codigo?: string;
-  /** v1.4x: el código lo generó un navegador; el servidor solo tiene su hash (lib/codigo.ts). */
+  /** v1.48: el código lo generó un navegador; el servidor solo tiene su hash (lib/codigo.ts). */
   codigo_hash?: string;
   codigo_navegador?: boolean;
 }
@@ -608,7 +608,7 @@ export interface Preparado {
   equipo: string | null;
 }
 
-/** v1.4x: lo que devuelve preparar un equipo con el código del navegador (sin el código). */
+/** v1.48: lo que devuelve preparar un equipo con el código del navegador (sin el código). */
 export interface PreparadoNavegador {
   id: string;
   nombre: string;
@@ -679,17 +679,17 @@ export interface Resumen {
   equipos: Equipo[];
   avisos_abiertos: number;
   pendientes: number;
-  /** v1.4x: los ajustes de las etiquetas (sin el campo, un servidor anterior: ninguno). */
+  /** v1.52: los ajustes de las etiquetas (sin el campo, un servidor anterior: ninguno). */
   etiquetas?: AjusteEtiqueta[];
 }
 
-/** v1.4x: un canal de notificación (del servidor o del propio cliente). */
+/** v1.52: un canal de notificación (del servidor o del propio cliente). */
 export interface CanalRef {
   ambito: "servidor" | "cliente";
   id: string;
 }
 
-/** v1.4x: cómo se avisa de los equipos con una etiqueta (lo pone el propietario). */
+/** v1.52: cómo se avisa de los equipos con una etiqueta (lo pone el propietario). */
 export interface AvisosEtiqueta {
   /** Sus avisos importantes o críticos cuentan como mínimo con esta gravedad. */
   importancia?: Severidad | null;
@@ -697,7 +697,7 @@ export interface AvisosEtiqueta {
   canales?: CanalRef[];
 }
 
-/** v1.4x: lo que se ajusta de una etiqueta de equipos. */
+/** v1.52: lo que se ajusta de una etiqueta de equipos. */
 export interface AjusteEtiqueta {
   nombre: string;
   /** Índice de la paleta (0–6); sin él, el que sale del nombre. */
@@ -861,9 +861,9 @@ export type TipoAviso =
   // Tarea 7c: una copia «después de la anterior» que no se hizo porque la anterior falló.
   | "cadena_parada"
   | "cambio_clave"
-  // v1.4x: otra consola mandó una orden que el equipo tiene en espera.
+  // v1.49: otra consola mandó una orden que el equipo tiene en espera.
   | "orden_en_espera"
-  // v1.4x (9b): un equipo vio que una de sus consolas rehízo su actividad.
+  // v1.50 (9b): un equipo vio que una de sus consolas rehízo su actividad.
   | "auditoria_rehecha";
 
 /**
@@ -888,7 +888,7 @@ export interface EntradaHistorial {
   consola?: string;
   /** Id de la copia (solo «copia»). */
   copia?: string;
-  /** En «orden» (v1.4x) es otro: lo que pasó con ella (en_espera, hecha, en_marcha, fallida,
+  /** En «orden» (v1.49) es otro: lo que pasó con ella (en_espera, hecha, en_marcha, fallida,
    * rechazada, cancelada o caducada); se lee con `resultadoOrden` (lib/espera.ts). */
   resultado?: "ok" | "aviso" | "fallo" | "sin_cambios";
   mensaje?: string;
@@ -900,7 +900,7 @@ export interface EntradaHistorial {
   ganchos?: ResultadoGancho[];
   /** Tipo de aviso (solo «aviso»). */
   aviso?: TipoAviso;
-  /** v1.4x, solo «orden» (§5.8): qué orden, su id en su servidor, la identidad de la consola que la mandó y quién. */
+  /** v1.49, solo «orden» (§5.8): qué orden, su id en su servidor, la identidad de la consola que la mandó y quién. */
   orden?: string;
   orden_id?: string;
   descripcion?: string;
@@ -910,7 +910,7 @@ export interface EntradaHistorial {
   aplica?: string;
   cancelada_desde?: string;
   /**
-   * v1.4x (9b), solo «auditoria_rehecha»: una consola del equipo rehízo la cadena de su
+   * v1.50 (9b), solo «auditoria_rehecha»: una consola del equipo rehízo la cadena de su
    * actividad. `consola` es su nombre en el equipo; `antes` y `ahora`, las dos cabezas
    * que no cuadran.
    */
@@ -1164,7 +1164,7 @@ export interface NotifCliente {
   canales: CanalNotif[];
   /** El correo que vale para las personas de este cliente (null: ninguno). */
   correo: { de: "servidor" | "cliente"; nombre: string } | null;
-  /** `id`: v1.4x (para elegirlos en los avisos de una etiqueta). */
+  /** `id`: v1.52 (para elegirlos en los avisos de una etiqueta). */
   servidor: { canales: { id?: string; nombre: string; tipo: TipoCanal; severidades: Severidad[] }[]; url_consola: string | null };
 }
 
@@ -1191,11 +1191,11 @@ export interface PrefsNotif {
   resumen: boolean;
   /** false: las de su papel (no las ha cambiado nadie). */
   propias: boolean;
-  /** v1.4x: lo que quiere de los equipos con ciertas etiquetas, en lugar de `inmediatos`. */
+  /** v1.52: lo que quiere de los equipos con ciertas etiquetas, en lugar de `inmediatos`. */
   etiquetas?: PrefEtiqueta[];
 }
 
-/** v1.4x: lo que una persona quiere al momento de los equipos con una etiqueta. */
+/** v1.52: lo que una persona quiere al momento de los equipos con una etiqueta. */
 export interface PrefEtiqueta {
   etiqueta: string;
   inmediatos: Severidad[];
@@ -1218,7 +1218,7 @@ export interface MisNotif {
   resumen_semanal: boolean;
   hora_resumen: string;
   dia_semanal: number;
-  /** `etiquetas` (v1.4x): las que usan los equipos de ese cliente. */
+  /** `etiquetas` (v1.52): las que usan los equipos de ese cliente. */
   clientes: { id: string; nombre: string; rol: Rol; correo: boolean; preferencias: PrefsNotif; etiquetas?: string[] }[];
 }
 

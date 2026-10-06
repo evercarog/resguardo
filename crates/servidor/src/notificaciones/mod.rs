@@ -422,7 +422,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "copia_atrasada" => format!("Hay una copia atrasada en {e}"),
         "servicio_detenido" => format!("El servicio de Resguardo está detenido en {e}"),
         "orden_destructiva" => format!("Orden destructiva pendiente en {e}"),
-        // v1.4x: la mandó otra consola y el equipo la tiene en espera (consolas-multiples.md §5.6).
+        // v1.49: la mandó otra consola y el equipo la tiene en espera (consolas-multiples.md §5.6).
         "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
@@ -438,7 +438,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
 /// La página de la consola que lo enseña.
 fn ruta(cliente: &str, equipo: Option<&str>, tipo: &str) -> String {
     match equipo {
-        // v1.4x: la de otra consola se ve (y se cancela) en «Órdenes».
+        // v1.49: la de otra consola se ve (y se cancela) en «Órdenes».
         _ if tipo == "orden_en_espera" => format!("/c/{cliente}/ordenes"),
         _ if tipo == "auditoria_rehecha" => format!("/c/{cliente}/auditoria"),
         Some(e) if !matches!(tipo, "orden_destructiva") => format!("/c/{cliente}/equipos/{e}"),
@@ -535,7 +535,7 @@ struct Ocurre<'a> {
     crear_aviso: bool,
 }
 
-/// Lo que dicen las etiquetas de un equipo para sus avisos (v1.4x): sus etiquetas (para las
+/// Lo que dicen las etiquetas de un equipo para sus avisos (v1.52): sus etiquetas (para las
 /// preferencias de cada persona), la importancia que piden y los canales que avisan siempre.
 #[derive(Clone, Debug, Default)]
 pub struct DeEtiquetas {
@@ -739,7 +739,7 @@ pub fn correo_de(ajustes: &Ajustes, cliente: &ajustes::AjustesCliente, id_client
 }
 
 /// Los destinos de un cliente para una gravedad (`None`: todos los posibles, sin mirar la gravedad).
-/// `de`: lo de las etiquetas del equipo (v1.4x): las preferencias de cada persona para ellas
+/// `de`: lo de las etiquetas del equipo (v1.52): las preferencias de cada persona para ellas
 /// y los canales que reciben siempre sus avisos.
 pub fn destinos(db: &dyn Almacen, ajustes: &Ajustes, cliente: &str, sev: Option<Severidad>, de: &DeEtiquetas) -> R<Vec<Destino>> {
     let propios = ajustes::ajustes_cliente(db, cliente)?;

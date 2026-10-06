@@ -389,7 +389,7 @@ fn vista_prefs(p: &PrefsCliente, propias: bool) -> Value {
     let mut inmediatos = p.inmediatos.clone();
     inmediatos.sort_by(|a, b| b.cmp(a));
     let mut v = json!({ "inmediatos": inmediatos, "resumen": p.resumen, "propias": propias });
-    // v1.4x: solo si tiene alguna (sin ellas, lo de siempre).
+    // v1.52: solo si tiene alguna (sin ellas, lo de siempre).
     if !p.etiquetas.is_empty() {
         v["etiquetas"] = json!(p.etiquetas);
     }
@@ -421,7 +421,7 @@ pub async fn personas(State(st): State<St>, u: Usuario, Path(c): Path<String>) -
 pub struct CambioPrefs {
     inmediatos: Vec<Severidad>,
     resumen: bool,
-    /// v1.4x: lo que quiere de los equipos con ciertas etiquetas. Sin el campo (una consola
+    /// v1.52: lo que quiere de los equipos con ciertas etiquetas. Sin el campo (una consola
     /// anterior), se conservan las que tuviera.
     #[serde(default)]
     etiquetas: Option<Vec<ajustes::PrefEtiqueta>>,
@@ -475,7 +475,7 @@ pub async fn mias(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
                 let (p, propias) = ajustes::prefs_cliente(db, &cl.id, &id, rol)?;
                 let propios = ajustes::ajustes_cliente(db, &cl.id)?;
                 let correo = notif::correo_de(&a, &propios, &cl.id).is_some();
-                // v1.4x: las etiquetas que usan sus equipos (para elegir avisos por etiqueta).
+                // v1.52: las etiquetas que usan sus equipos (para elegir avisos por etiqueta).
                 let mut etiquetas: Vec<String> = Vec::new();
                 for e in db.equipos(&crate::almacen::ClienteCtx::autorizado(&cl.id))? {
                     for t in e.etiquetas {

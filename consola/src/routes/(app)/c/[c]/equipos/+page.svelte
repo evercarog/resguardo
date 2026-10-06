@@ -63,12 +63,12 @@
     untrack(() => void cargar());
     return untrack(() => seguirCambios(() => enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "equipo" }));
   });
-  // v1.4x: agrupados por etiqueta (un equipo con dos sale en las dos).
+  // v1.52: agrupados por etiqueta (un equipo con dos sale en las dos).
   const grupos = $derived(agruparPorEtiqueta.valor && !filtroEtiqueta.valor ? gruposPorEtiqueta(lista) : null);
   const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
 
   // --- Acciones en bloque: copiar ahora, verificar, reanudar (inofensivas), pausar
-  // (con la clave, y espera) y aplicar una plantilla (con la clave; v1.4x) -------
+  // (con la clave, y espera) y aplicar una plantilla (con la clave; v1.52) -------
   let seleccionando = $state(false);
   let elegidos = $state<Set<string>>(new Set());
   let enBloque = $state<"copiar" | "verificar" | "pausar" | "reanudar" | null>(null);

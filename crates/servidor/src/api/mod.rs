@@ -68,7 +68,7 @@ pub fn orden_json(o: &Orden, nombre_emisor: &str) -> Value {
     })
 }
 
-/// v1.4x (consolas-multiples.md §5): las órdenes que los equipos tienen en espera y que
+/// v1.49 (consolas-multiples.md §5): las órdenes que los equipos tienen en espera y que
 /// mandó **otra** consola (las de esta ya cuentan en `ordenes_con_espera`). Del resumen
 /// que sube cada equipo; las que ya pasaron su hora no cuentan.
 pub fn en_espera_de_otras(equipos: &[crate::almacen::Equipo], ahora: Ts) -> usize {
@@ -267,7 +267,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/a-medias", get(instaladores::a_medias))
         .route("/api/clientes/{c}/equipo-local", post(instaladores::vincular_local))
         .route("/api/clientes/{c}/plantillas", get(plantillas::listar))
-        // v1.4x: color, plantilla por defecto y avisos de cada etiqueta de los equipos.
+        // v1.52: color, plantilla por defecto y avisos de cada etiqueta de los equipos.
         .route("/api/clientes/{c}/etiquetas", get(etiquetas::listar).put(etiquetas::poner))
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
         .route("/api/clientes/{c}/destinos", get(destinos::listar))

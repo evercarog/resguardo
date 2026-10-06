@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Las etiquetas del cliente con sus ajustes (v1.4x, tarea 6): color,
+  // Las etiquetas del cliente con sus ajustes (v1.52, tarea 6): color,
   // plantilla para los equipos nuevos y avisos. Cada una se cambia en su
   // diálogo (AjustesEtiqueta). Se abre desde el filtro de etiquetas.
   import { BellRing, LayoutTemplate, Settings2, Tags } from "@lucide/svelte";

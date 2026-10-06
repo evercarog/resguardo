@@ -51,7 +51,7 @@
   const delFiltro = $derived(actual.equipos.filter((e) => pasaFiltro(e, filtroEtiqueta.valor)));
   const equipos = $derived([...delFiltro].sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)));
   const saludes = $derived(delFiltro.map((e) => saludEquipo(e, reloj.ahora)));
-  // v1.4x: agrupados por etiqueta (como en Equipos; la misma preferencia).
+  // v1.52: agrupados por etiqueta (como en Equipos; la misma preferencia).
   const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
   const grupos = $derived(agruparPorEtiqueta.valor && hayEtiquetas && !filtroEtiqueta.valor ? gruposPorEtiqueta(equipos) : null);
   /** Cuántos de un grupo están bien, necesitan atención o fallan (con texto, no solo color). */

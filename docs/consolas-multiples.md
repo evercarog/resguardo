@@ -256,9 +256,9 @@ El verificador es **del equipo** (uno), así que tras `cambiar_clave_admin` desd
 
 ---
 
-## 5. Órdenes en espera a la vista de todas las consolas (v1.4x)
+## 5. Órdenes en espera a la vista de todas las consolas (v1.49)
 
-Tareas 1 y 9c de [plan-mejoras.md](plan-mejoras.md). Contrato «v1.4x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+Tareas 1 y 9c de [plan-mejoras.md](plan-mejoras.md). Contrato «v1.49, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
 
 **Problema.** Hasta ahora la consola que mandaba una orden con espera (las destructivas, con `not_before`) la guardaba ella y solo la entregaba al equipo al llegar su hora. El equipo no sabía que existía: **las demás consolas no la veían ni podían cancelarla**, y tampoco veían las órdenes que habían mandado las otras. Alguien con la clave de administración en una consola podía mandar algo destructivo sin que quien vigila desde la otra se enterase hasta que se aplicaba.
 
@@ -312,7 +312,7 @@ Al aplicarla se vuelve a abrir el sobre y se comprueba otra vez: que no ha caduc
 ```
 
 - `consola.nombre` es el que esa consola tiene en el equipo, **nunca su dirección** (como el progreso de «Mover a otro sitio»); si no tiene, `null`, y la consola la busca por `identidad` en `resumen.consolas`. `esta: true` si la mandó la consola que recibe el resumen.
-- `por`: el nombre de quien la mandó, si la consola lo pone en la orden sellada (campo opcional `por` del sobre, v1.4x). Es lo que dice esa consola: informativo.
+- `por`: el nombre de quien la mandó, si la consola lo pone en la orden sellada (campo opcional `por` del sobre, v1.49). Es lo que dice esa consola: informativo.
 - Las caducadas no salen.
 
 ### 5.6 Avisos

@@ -51,7 +51,7 @@ pub struct OrdenV2 {
     /// X25519 pública efímera de la consola, para cifrarle el detalle del resultado.
     #[serde(default)]
     pub responder_a: Option<String>,
-    /// v1.4x: el nombre de quien la manda, como lo dice la consola (informativo:
+    /// v1.49: el nombre de quien la manda, como lo dice la consola (informativo:
     /// el equipo lo enseña en sus órdenes en espera y en su historial). Un agente
     /// anterior lo ignora.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -91,7 +91,7 @@ pub fn validar(plano: &[u8], cx: &Contexto) -> Result<OrdenV2, String> {
     validar_con_espera(plano, cx, false)
 }
 
-/// v1.4x (docs/consolas-multiples.md §5): como [`abrir`], pero, con `admite_espera`,
+/// v1.49 (docs/consolas-multiples.md §5): como [`abrir`], pero, con `admite_espera`,
 /// una orden cuyo `not_before` aún no llegó no se rechaza (el equipo la guarda en
 /// espera y la aplica a su hora). Todo lo demás se comprueba igual; además, su
 /// `not_before` tiene que ser anterior a su caducidad.
@@ -207,7 +207,7 @@ mod tests {
         assert!(validar(&serde_json::to_vec(&caducada).unwrap(), &cx(4, "copiar_ahora", 8)).unwrap_err().contains("caducada"));
     }
 
-    /// v1.4x: con espera admitida, una orden cuya hora no llegó se abre (sin ella, se rechaza
+    /// v1.49: con espera admitida, una orden cuya hora no llegó se abre (sin ella, se rechaza
     /// como siempre); lo demás se comprueba igual, y su hora tiene que ser antes de caducar.
     #[test]
     fn orden_con_espera() {

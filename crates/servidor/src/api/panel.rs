@@ -173,7 +173,7 @@ async fn fotos(st: &St, clientes: Vec<String>) -> Res<HashMap<String, Arc<Foto>>
                     }
                 }
                 let avisos = db.avisos(&ctx, true)?.len();
-                // v1.4x: también las que mandó otra consola y el equipo tiene en espera.
+                // v1.49: también las que mandó otra consola y el equipo tiene en espera.
                 let pendientes = db.ordenes_con_espera(&ctx, t)?.len() + super::en_espera_de_otras(&equipos, t);
                 let marca = super::marca::json(&c, &super::marca::leer(db, &c)?);
                 v.push((c, equipos, avisos, pendientes, informes, marca));

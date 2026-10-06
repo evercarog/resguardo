@@ -199,7 +199,7 @@ export function historialMock(eq: { id: string; nombre?: string; resumen: T.Equi
   // Un aviso del equipo (como el agente, bitacora.rs `aviso`): informativo, no es un fallo.
   if (eq.resumen?.repositorios?.length)
     out.push({ id: `${eq.id}-aviso-consola`, hora: new Date(ahora - 2 * 86_400_000 - 5 * 3600_000).toISOString(), tipo: "aviso", mensaje: "Este equipo se conectó también a otra consola (copias.ejemplo.net)." });
-  // v1.4x (9b): el equipo vio que una de sus consolas rehízo su actividad (agente, ancla.rs).
+  // v1.50 (9b): el equipo vio que una de sus consolas rehízo su actividad (agente, ancla.rs).
   if (eq.nombre === "CAJA-1")
     out.push({
       id: `${eq.id}-auditoria-rehecha`,

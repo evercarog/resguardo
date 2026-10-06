@@ -120,7 +120,7 @@ fn huella_otras() -> String {
     // v1.47: terminó una operación del servicio (traer el historial, aplicar la retención): su
     // entrada del historial del equipo va con el próximo informe, a todas las consolas, ya.
     let ops = crate::progreso_v2::ops::terminadas();
-    // v1.4x: cambió la lista de órdenes en espera: el resumen va ya a todas las consolas.
+    // v1.49: cambió la lista de órdenes en espera: el resumen va ya a todas las consolas.
     let espera = crate::espera_v2::cambios();
     format!("{}|{:?}|{}|{espejo}|{ops}|{espera}", terminadas.join(";"), tareas.running.is_some(), retenciones.join(";"))
 }

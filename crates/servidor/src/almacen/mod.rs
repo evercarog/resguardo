@@ -161,7 +161,7 @@ pub struct Emparejamiento {
     pub so: Option<String>,
     /// El código mientras sirve (abierto o unido): la consola lo necesita para la orden
     /// `alta` y para volver a enseñarlo. Se borra al confirmar, anular o caducar. Los códigos
-    /// de 15 min lo guardan desde v1.42 (antes, solo los preparados). v1.4x: si el código lo
+    /// de 15 min lo guardan desde v1.42 (antes, solo los preparados). v1.48: si el código lo
     /// generó el navegador, aquí solo va `sha256:<hash>` (el servidor nunca lo ve; ver
     /// `api::instaladores::codigo_en_claro`): marca igual que el emparejamiento sigue a medias.
     pub codigo: Option<String>,
@@ -211,7 +211,7 @@ pub struct ResultadoOrden {
     pub mensaje: Option<String>,
     pub detalle: Option<String>,
     pub firma: String,
-    /// v1.4x: también si ya estaba `cancelada` (el equipo la aplicó antes de saber que
+    /// v1.49: también si ya estaba `cancelada` (el equipo la aplicó antes de saber que
     /// se había cancelado: su resultado firmado manda).
     pub pisar_cancelada: bool,
 }
@@ -270,7 +270,7 @@ pub struct DestinoCatalogo {
     pub por: String,
 }
 
-/// Lo que se ajusta de una etiqueta de equipos (v1.4x): su color, la plantilla de
+/// Lo que se ajusta de una etiqueta de equipos (v1.52): su color, la plantilla de
 /// copia que se propone a un equipo nuevo con ella y cómo se avisa de sus equipos.
 /// En claro, como las etiquetas: son metadatos (la plantilla es un id opaco; su nombre
 /// y sus carpetas siguen cifrados).
@@ -455,7 +455,7 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// Gasta el código: (cliente, emparejamiento) si existe y no ha caducado.
     fn tomar_codigo(&self, codigo_hash: &str) -> R<Option<(String, String)>>;
     /// ¿Hay ya un código con ese hash en el índice (aunque haya caducado y aún no se haya
-    /// limpiado)? v1.4x: el hash lo manda el navegador y no puede pisar el de otro.
+    /// limpiado)? v1.48: el hash lo manda el navegador y no puede pisar el de otro.
     fn codigo_indexado(&self, codigo_hash: &str) -> R<bool>;
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()>;
     fn cliente_de_equipo(&self, equipo: &str) -> R<Option<ClienteCtx>>;
@@ -524,7 +524,7 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// filtros opcionales y cursor `antes` = (emitida, id) de la última recibida.
     fn ordenes_cliente(&self, c: &ClienteCtx, equipo: Option<&str>, estado: Option<&str>, antes: Option<(Ts, String)>, limite: i64) -> R<Vec<Orden>>;
     /// Órdenes que el agente aún no tiene (pendientes y sin caducar). Las marca como entregadas.
-    /// Con `adelantar` (v1.4x, el agente admite `ordenes_en_espera`), también las que
+    /// Con `adelantar` (v1.49, el agente admite `ordenes_en_espera`), también las que
     /// piden autorización y aún esperan su `not_before`: el equipo las guarda en espera.
     fn entregar_ordenes(&self, c: &ClienteCtx, equipo: &str, ahora: Ts, adelantar: bool) -> R<Vec<Orden>>;
     /// Las entregadas que el equipo no llegó a recibir (con un número mayor que el último
@@ -579,7 +579,7 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// los `atributos` que ya tuviera se quedan (una consola anterior que solo renombra).
     fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize, mantener_atributos: bool) -> R<bool>;
     fn borrar_destino(&self, c: &ClienteCtx, id: &str) -> R<bool>;
-    // ---------- Ajustes de las etiquetas de los equipos (v1.4x) ----------
+    // ---------- Ajustes de las etiquetas de los equipos (v1.52) ----------
     fn ajustes_etiquetas(&self, c: &ClienteCtx) -> R<Vec<AjusteEtiqueta>>;
     /// Crea o sustituye (por el nombre, sin distinguir mayúsculas); `false` si es nueva y ya hay `maximo`.
     fn poner_ajuste_etiqueta(&self, c: &ClienteCtx, a: &AjusteEtiqueta, maximo: usize) -> R<bool>;

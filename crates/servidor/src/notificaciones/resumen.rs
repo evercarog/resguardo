@@ -35,7 +35,7 @@ pub struct ResumenCliente {
     pub copias_ok: u32,
     pub fallos: u32,
     pub bytes: u64,
-    /// v1.4x (9b): la cabeza de la auditoría del cliente al preparar el resumen (el
+    /// v1.50 (9b): la cabeza de la auditoría del cliente al preparar el resumen (el
     /// «ancla» que se queda en el correo; ver `crate::ancla`). Los de la cola de antes, sin ella.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ancla: Option<crate::ancla::Ancla>,

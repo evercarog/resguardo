@@ -11,7 +11,7 @@
 /** Lo que da `GET …/codigo-abierto`: el código de 15 min de esta cuenta que aún sirve. */
 export interface CodigoAbierto {
   id: string;
-  /** v1.4x: `null` si lo generó un navegador (el servidor solo tiene `codigo_hash`). */
+  /** v1.48: `null` si lo generó un navegador (el servidor solo tiene `codigo_hash`). */
   codigo: string | null;
   caduca: string;
   estado: "abierto" | "unido";
@@ -25,10 +25,10 @@ export type CodigoConocido = CodigoAbierto & { codigo: string };
 export interface ApiCodigos {
   /** `GET /api/clientes/{c}/codigo-abierto` (o `null`; con `?navegador=1` si `navegador`). */
   codigoAbierto: () => Promise<CodigoAbierto | null>;
-  /** `POST /api/clientes/{c}/emparejamientos` (v1.4x: con el hash del código si `navegador`). */
+  /** `POST /api/clientes/{c}/emparejamientos` (v1.48: con el hash del código si `navegador`). */
   abrir: (codigoHash?: string) => Promise<{ id: string; codigo?: string | null; caduca: string; reutilizado?: boolean; codigo_navegador?: boolean }>;
   /**
-   * v1.4x: el servidor acepta códigos del navegador (`codigo_navegador` en `GET /api/servidor`).
+   * v1.48: el servidor acepta códigos del navegador (`codigo_navegador` en `GET /api/servidor`).
    * Entonces el código se genera aquí y se guarda en `codigos` hasta el alta.
    */
   navegador?: {
@@ -53,7 +53,7 @@ export function sirve(p: CodigoAbierto | null | undefined, ahora = Date.now()): 
 /**
  * Al abrir (o recargar) la página: solo PREGUNTA si ya hay un código; nunca lo crea.
  * Con un servidor anterior (sin la ruta: 404) o sin red, `null` (la página sigue igual).
- * v1.4x: si el código lo generó un navegador, solo vale si es este (lo tiene guardado y
+ * v1.48: si el código lo generó un navegador, solo vale si es este (lo tiene guardado y
  * coincide con su hash); si se pidió en otro, `null` (se puede pedir otro).
  */
 export async function codigoAlCargar(api: Pick<ApiCodigos, "codigoAbierto" | "navegador">, ahora = Date.now()): Promise<CodigoConocido | null> {
@@ -72,7 +72,7 @@ const repetido = (e: unknown) => (e as { estado?: number })?.estado === 409;
 /**
  * «Generar el código» (acción explícita): el que ya hay si aún sirve; si no, uno nuevo.
  * (El servidor también devuelve el abierto en vez de crear otro: esto ahorra la petición
- * y vale con servidores anteriores, que no lo hacían.) v1.4x: con `navegador`, el código
+ * y vale con servidores anteriores, que no lo hacían.) v1.48: con `navegador`, el código
  * nuevo lo genera esta consola y al servidor solo le llega su hash.
  */
 export async function pedirCodigo(api: ApiCodigos, yaTengo: CodigoAbierto | null, ahora = Date.now()): Promise<CodigoConocido & { nuevo: boolean }> {

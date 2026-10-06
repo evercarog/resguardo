@@ -29,17 +29,17 @@ pub const MAX_CODIGOS_CUENTA_H: u32 = 30;
 /// (la consola al recargar, el mismo instalador otra vez) no cuenta.
 pub const MAX_CODIGOS_CLIENTE_H: u32 = 100;
 
-/// v1.4x: lo que se guarda en `emparejamientos.codigo` cuando el código lo generó el
+/// v1.48: lo que se guarda en `emparejamientos.codigo` cuando el código lo generó el
 /// navegador: `sha256:<hash>`. El servidor nunca tiene el código; esto solo marca, como
 /// el código en claro de antes, que el emparejamiento sigue vivo (hasta el alta del equipo).
 pub const PREFIJO_NAVEGADOR: &str = "sha256:";
 
-/// El código en claro, si lo generó el servidor (forma de antes de v1.4x).
+/// El código en claro, si lo generó el servidor (forma de antes de v1.48).
 pub fn codigo_en_claro(e: &Emparejamiento) -> Option<&str> {
     e.codigo.as_deref().filter(|c| !c.starts_with(PREFIJO_NAVEGADOR))
 }
 
-/// El hash del código, si lo generó el navegador (v1.4x).
+/// El hash del código, si lo generó el navegador (v1.48).
 pub fn hash_del_navegador(e: &Emparejamiento) -> Option<&str> {
     e.codigo.as_deref().and_then(|c| c.strip_prefix(PREFIJO_NAVEGADOR))
 }
@@ -99,14 +99,14 @@ pub async fn reutilizable(st: &St, ctx: &ClienteCtx, cuenta: &str, nombre_so: Op
 
 #[derive(Deserialize)]
 pub struct Navegador {
-    /// v1.4x: `1` si la consola sabe guardar sus propios códigos: entonces también se dan
+    /// v1.48: `1` si la consola sabe guardar sus propios códigos: entonces también se dan
     /// los generados en el navegador (sin el código, con su hash).
     navegador: Option<String>,
 }
 
 /// `GET /api/clientes/{c}/codigo-abierto` (administrador): el código de 15 min que pidió
 /// esta cuenta y aún sirve (abierto o ya unido), o `null`. La consola lo vuelve a
-/// enseñar al recargar «Añadir equipo» en vez de pedir otro. v1.4x: con `?navegador=1`,
+/// enseñar al recargar «Añadir equipo» en vez de pedir otro. v1.48: con `?navegador=1`,
 /// también uno generado en el navegador: `{ id, codigo: null, codigo_hash, codigo_navegador:
 /// true, caduca, estado }` (el código lo tiene ese navegador); sin él, como antes.
 pub async fn codigo_abierto(State(st): State<St>, u: Usuario, Path(c): Path<String>, Query(q): Query<Navegador>) -> Res<Json<Value>> {
@@ -130,7 +130,7 @@ pub struct Preparar {
     so: String,
     /// La dirección con la que los equipos llegan a este servidor (`https://…`).
     servidor: String,
-    /// v1.4x: el código lo generó el navegador y solo manda su hash. Entonces la respuesta es
+    /// v1.48: el código lo generó el navegador y solo manda su hash. Entonces la respuesta es
     /// siempre JSON, sin código ni instalador: la consola arma la línea de Linux o la cola del
     /// instalador (que baja aparte con `GET …/instalador-agente`).
     #[serde(default)]
@@ -229,7 +229,7 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
 /// cola cuando el código lo tiene el navegador: el resto de campos se comprueba igual.
 const CODIGO_DE_FORMA: &str = "AAAA-AAAA-AAAA-AAAA";
 
-/// `POST …/instaladores` con `codigo_hash` (v1.4x): el código lo generó el navegador. Se
+/// `POST …/instaladores` con `codigo_hash` (v1.48): el código lo generó el navegador. Se
 /// guarda solo su hash (para `POST /api/agente/unirse`) y se devuelve lo que la consola
 /// necesita para armar la línea de Linux o la cola del instalador: nunca el código. No se
 /// reutiliza un preparado anterior (el servidor no podría dar su código).
@@ -274,7 +274,7 @@ async fn preparar_del_navegador(st: &St, u: &Usuario, c: &str, ctx: ClienteCtx, 
     .into_response())
 }
 
-/// `GET /api/clientes/{c}/instalador-agente` (administrador, v1.4x): el instalador genérico
+/// `GET /api/clientes/{c}/instalador-agente` (administrador, v1.48): el instalador genérico
 /// del agente, sin cola. La consola le añade la cola con el código que generó ella
 /// (crates/protocolo/src/instalador.rs): el servidor no la ve. 404 `sin_instalador`.
 pub async fn instalador_generico(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Response> {

@@ -1,4 +1,4 @@
-// Códigos de «Añadir equipo» generados en el navegador (v1.4x, docs/api-servidor.md §4).
+// Códigos de «Añadir equipo» generados en el navegador (v1.48, docs/api-servidor.md §4).
 //
 // Antes los generaba el servidor y los guardaba en claro mientras servían (hasta 24 h en el
 // instalador listo): un servidor malicioso los veía y podía calcular la `prueba_codigo` del

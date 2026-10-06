@@ -1,4 +1,4 @@
-// Órdenes esperando su turno, de todas las consolas (v1.4x, docs/consolas-multiples.md §5).
+// Órdenes esperando su turno, de todas las consolas (v1.49, docs/consolas-multiples.md §5).
 //
 // Las de esta consola las da su servidor (`GET /ordenes?pendientes=1`, se cancelan
 // con `POST …/cancelar`). Las de las otras consolas del equipo llegan en su resumen

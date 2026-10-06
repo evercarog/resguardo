@@ -179,7 +179,7 @@
       /* sin plantillas (servidor anterior): no se ofrecen */
     }
   }
-  // v1.4x: «?plantilla=<id>» (la de una etiqueta del equipo, desde su ficha): al abrir
+  // v1.52: «?plantilla=<id>» (la de una etiqueta del equipo, desde su ficha): al abrir
   // con la clave se añade una copia rellena con ella, para revisarla y enviarla.
   // Nunca se envía sola.
   let plantillaPedida = $state<{ nombre: string } | { falta: true } | null>(null);

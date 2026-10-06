@@ -128,7 +128,7 @@
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
 
-  // v1.4x: un informe por etiqueta («Contabilidad»): solo sus equipos.
+  // v1.52: un informe por etiqueta («Contabilidad»): solo sus equipos.
   let deEtiqueta = $state("");
   const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos));
   const cuentaR = $derived(cuentaRegla(reglas));

@@ -1,4 +1,4 @@
-//! v1.4x: el código de «Añadir equipo» lo genera el navegador y al servidor solo le llega su
+//! v1.48: el código de «Añadir equipo» lo genera el navegador y al servidor solo le llega su
 //! hash (docs/plan-mejoras.md, 9a). Convive con la forma de antes (el servidor lo genera).
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

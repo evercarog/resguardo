@@ -2,7 +2,7 @@
 // («Contabilidad», «Servidores»…). Se guardan en el servidor en claro: son
 // metadatos, como el nombre del equipo. No confundir con la `etiqueta` (HMAC).
 //
-// v1.4x (tarea 6): cada etiqueta puede tener sus ajustes en el servidor (color
+// v1.52 (tarea 6): cada etiqueta puede tener sus ajustes en el servidor (color
 // elegido, plantilla por defecto y avisos), que llegan con el resumen del
 // cliente (`actual.etiquetas`). Lo que no depende de la pantalla está en
 // etiquetasGrupos.ts (con sus pruebas).

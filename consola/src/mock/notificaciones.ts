@@ -368,7 +368,7 @@ export function rutasNotificaciones<C extends Ctx>(h: Ayudas<C>): [string, RegEx
         const m = (estado.miembros.get(c) ?? []).find((x) => x.cuenta === cuenta);
         if (!m) throw h.err(404, "no_existe", "No existe.");
         const b = ctx.cuerpo as { inmediatos?: T.Severidad[]; resumen?: boolean; etiquetas?: T.PrefEtiqueta[] };
-        // v1.4x: sin `etiquetas`, se conservan las que hubiera (como el servidor).
+        // v1.52: sin `etiquetas`, se conservan las que hubiera (como el servidor).
         const etiquetas = b.etiquetas ?? datos().prefs.get(`${c}:${cuenta}`)?.etiquetas ?? [];
         if (etiquetas.some((x) => !x.etiqueta.trim() || x.etiqueta.includes(","))) throw h.err(422, "datos", "Etiqueta no válida.");
         datos().prefs.set(`${c}:${cuenta}`, { inmediatos: [...new Set(b.inmediatos ?? [])], resumen: !!b.resumen, etiquetas: etiquetas.map((x) => ({ etiqueta: x.etiqueta.trim(), inmediatos: [...new Set(x.inmediatos)] })) });

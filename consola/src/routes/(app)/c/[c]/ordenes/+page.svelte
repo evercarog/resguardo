@@ -99,7 +99,7 @@
     {/if}
   </section>
 
-  <!-- v1.4x: las que mandaron las otras consolas de los equipos (de su historial). -->
+  <!-- v1.49: las que mandaron las otras consolas de los equipos (de su historial). -->
   <OrdenesOtrasConsolas {equipo} />
 </div>
 

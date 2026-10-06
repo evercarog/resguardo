@@ -202,7 +202,7 @@ async function principal() {
 
     // -----------------------------------------------------------------------
     paso("2. Dos agentes: A guarda copias, B es un equipo normal (emparejados con SAS v3)");
-    // A con el instalador listo armado en el navegador (v1.4x); B con el código de la forma de antes
+    // A con el instalador listo armado en el navegador (v1.48); B con el código de la forma de antes
     // (lo genera el servidor: consolas anteriores). B se vuelve a vincular en el paso 7 con el código
     // de 15 min generado en el navegador.
     const eqA = await consola.emparejar(c, A, CLAVE_ADMIN, "instalador");
@@ -935,7 +935,7 @@ async function principal() {
 
     // -----------------------------------------------------------------------
     paso("6c. Copia de la consola, restaurarla en otra carpeta y que los equipos vuelvan solos");
-    // v1.4x (9b): un ancla de antes de la copia (como la de un resumen por correo).
+    // v1.50 (9b): un ancla de antes de la copia (como la de un resumen por correo).
     const anclaAntes = anclaDe(c.id, ((await consola.ok("GET", `/api/clientes/${c.id}/auditoria?orden=desc&limite=1`)) as EntradaAuditoria[])[0]);
     const sal = salRespaldo();
     await consola.ok("PUT", "/api/servidor/respaldo", { activo: true, publica: await publicaRespaldo(argon2, CLAVE_RESPALDO, sal), sal });
@@ -947,7 +947,7 @@ async function principal() {
     // Después de la copia, una orden más: el equipo va por delante de lo que recuerda la copia.
     const trasCopia = await copiarAhora(consola, c);
     igual(trasCopia.estado, "ok", "Copia después de la copia de la consola");
-    // v1.4x (9b): el ancla de la auditoría. La de la copia de la consola y la de ahora (más entradas).
+    // v1.50 (9b): el ancla de la auditoría. La de la copia de la consola y la de ahora (más entradas).
     const cabeza = async (k: Consola) => ((await k.ok("GET", `/api/clientes/${c.id}/auditoria?orden=desc&limite=1`)) as EntradaAuditoria[])[0];
     const anclaAhora = anclaDe(c.id, await cabeza(consola));
     comprobar(anclaAhora.n > anclaAntes.n, "Hay actividad después de la copia de la consola", [anclaAntes, anclaAhora]);
@@ -1136,7 +1136,7 @@ async function principal() {
 
     // -----------------------------------------------------------------------
     paso("8a2. Órdenes en espera: la en línea ve una destructiva de la local, la cancela y nunca se aplica; otra se aplica a su hora");
-    // v1.4x (docs/consolas-multiples.md §5). Con su espera de verdad (3 h): el equipo la recibe ya y la guarda.
+    // v1.49 (docs/consolas-multiples.md §5). Con su espera de verdad (3 h): el equipo la recibe ya y la guarda.
     const srv2Id = (await consola2.ok("GET", "/api/servidor")).identidad;
     const pausa = await consola2.mandar(c2, eqB2.id, "pausar", {}, { claveAdmin: claveB }, { esperar: true });
     const enEspera3 = (await esperar("la orden en espera de la local en el resumen de la en línea", async () => {

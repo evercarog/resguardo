@@ -939,7 +939,7 @@
     {/if}
     {#if !trasladado && actual.cliente}<AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} {equipo} ahora={reloj.ahora} />{/if}
     {#if !trasladado && puede.administrar(rol)}
-      <!-- v1.4x: la plantilla de sus etiquetas, para un equipo aún sin copias (nunca se aplica sola). -->
+      <!-- v1.52: la plantilla de sus etiquetas, para un equipo aún sin copias (nunca se aplica sola). -->
       {#each plantillasPropuestas(equipo, actual.etiquetas) as pp (pp.plantilla)}
         <div class="notice notice-info">
           <LayoutTemplate size={16} />

@@ -101,7 +101,7 @@ export interface EmparejamientoMock {
   so?: "windows" | "linux";
   /** La cuenta que lo pidió (v1.42: se le vuelve a dar el suyo si aún sirve). */
   por?: string;
-  /** v1.4x: el código lo generó el navegador; aquí solo su hash (y `codigo` vacío). */
+  /** v1.48: el código lo generó el navegador; aquí solo su hash (y `codigo` vacío). */
   codigo_hash?: string;
 }
 
@@ -478,7 +478,7 @@ export async function sembrar(vacio = false) {
         // v1.4x: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
-        // v1.4x: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
+        // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
         en_espera: [
           { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Siigo»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46) },
         ],

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Ajustes de una etiqueta (v1.4x, tarea 6): su color (de la misma paleta,
+  // Ajustes de una etiqueta (v1.52, tarea 6): su color (de la misma paleta,
   // siempre con su nombre escrito), la plantilla de copia que se propone a un
   // equipo nuevo con ella y cómo se avisa de sus equipos. Los cambian
   // administradores y propietarios; los avisos, solo el propietario (como el
