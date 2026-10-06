@@ -41,6 +41,21 @@ export function primeraCopiaFrase(copias: CopiaResumen[], ahora = Date.now()): s
   return p ? `La primera copia está programada para ${cuandoFrase(p, ahora)}. También puedes pulsar «Copiar ahora».` : "Pulsa «Copiar ahora» para hacer la primera.";
 }
 
+/**
+ * Un equipo sin confirmar que es la misma máquina que otro ya dado de alta (mismo nombre,
+ * sin distinguir mayúsculas, o la misma clave de firma): el resto de un intento anterior
+ * de vincularla. Devuelve el que sí está dado de alta, o null. El servidor lo quita solo al
+ * confirmar el bueno (`almacen::quitar_duplicados_sin_confirmar`); los de antes, a mano.
+ */
+export function duplicadoDe(e: Pick<Equipo, "id" | "nombre" | "sign_pub" | "confirmado" | "modo">, equipos: readonly Equipo[]): Equipo | null {
+  if (e.confirmado || e.modo === "trasladado") return null;
+  const nombre = e.nombre.trim().toLowerCase();
+  return equipos.find((o) => o.id !== e.id && o.confirmado && o.modo !== "trasladado" && ((!!nombre && o.nombre.trim().toLowerCase() === nombre) || (!!e.sign_pub && o.sign_pub === e.sign_pub))) ?? null;
+}
+
+/** Los equipos sin los duplicados sin confirmar (para contar: la misma máquina, una vez). */
+export const sinDuplicados = <E extends Equipo>(equipos: readonly E[]): E[] => equipos.filter((e) => !duplicadoDe(e, equipos));
+
 export function saludEquipo(e: Equipo, ahora = Date.now()): Salud {
   if (e.modo === "trasladado") return { tono: "neutral", texto: "Trasladado", detalle: "Se fue a otro servidor: desde aquí ya no recibe órdenes." };
   if (!e.confirmado) return { tono: "neutral", texto: "Sin confirmar", detalle: "Falta confirmar el número de comprobación." };

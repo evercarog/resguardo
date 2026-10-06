@@ -79,11 +79,18 @@
   .lista-et li:first-child {
     border-top: none;
   }
+  /* Ancho fijo: el color y los avisos de cada fila empiezan en la misma columna. */
   .nombre {
     display: inline-flex;
+    flex: 0 1 13rem;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
     min-width: 0;
+  }
+  .nombre .faint {
+    flex: none;
+    font-variant-numeric: tabular-nums;
   }
   .que {
     display: inline-flex;

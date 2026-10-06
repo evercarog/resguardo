@@ -163,7 +163,7 @@
       <div class="cifra">
         <span class="k">Espacio liberado</span>
         <strong class="num">{leidas ? bytes(cifras.liberado) : "…"}</strong>
-        <span class="faint">{cifras.liberadoIncompleto ? "al menos (alguna vez no lo dijo)" : "lo que dijo restic al podar"}</span>
+        <span class="faint">{cifras.liberadoIncompleto ? "al menos (alguna vez no lo dijo)" : "lo que dijo el equipo al podar"}</span>
       </div>
       <div class="cifra">
         <span class="k">La próxima vez</span>

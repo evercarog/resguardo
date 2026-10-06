@@ -322,7 +322,7 @@
     if (!plan) return;
     // 3. (Al volver) el repositorio nuevo, si aún se estaba creando.
     if (plan.fase === "creando") {
-      const r = await esperar(equipo, plan.ordenes.crear ?? "", "crear", "Creando el repositorio (restic init)…");
+      const r = await esperar(equipo, plan.ordenes.crear ?? "", "crear", "Creando el repositorio…");
       if (r.estado !== "hecha") {
         const m = r.mensaje ?? "El equipo no pudo crear el repositorio.";
         guardarPlan(null);
@@ -551,7 +551,7 @@
                     <dt>Contraseña</dt><dd><code class="selectable pw">{contrasena}</code></dd>
                     <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>
                   </dl>
-                  <p class="faint">Guárdalo fuera del equipo. Con esta contraseña y el destino se pueden restaurar las copias con restic, incluso sin Resguardo.</p>
+                  <p class="faint">Guárdalo fuera del equipo. Con esta contraseña y el destino se pueden restaurar las copias incluso sin Resguardo: el formato es abierto.</p>
                 </article>
                 <div class="kit-acc">
                   <button type="button" class="btn btn-sm" onclick={() => window.print()}><Printer size={14} />Imprimir o guardar en PDF</button>

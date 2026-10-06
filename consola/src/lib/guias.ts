@@ -42,7 +42,7 @@ export const GUIAS: Guia[] = [
     titulo: "«Este equipo guarda copias»",
     resumen: "Un equipo de la oficina recibe las copias de los demás, sin que nadie pueda borrarlas desde el equipo que copia.",
     texto: [
-      "Se instala en ese equipo un servidor de copias de solo añadir (rest-server) con su propio certificado y su regla del cortafuegos. Cada equipo que copia en él tiene su usuario y no puede borrar lo ya copiado, ni siquiera un ransomware que se cuele en él.",
+      "Se instala en ese equipo un servidor de copias de solo añadir con su propio certificado y su regla del cortafuegos. Cada equipo que copia en él tiene su usuario y no puede borrar lo ya copiado, ni siquiera un ransomware que se cuele en él.",
       "Es rápido para restaurar y no hace falta tocar el router. Lo recomendado es tener además una copia fuera de la oficina: el espejo en otro disco o en la nube, o una copia externa.",
     ],
     pasos: [

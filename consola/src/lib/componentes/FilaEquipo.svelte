@@ -7,7 +7,7 @@
   import { goto } from "$app/navigation";
   import { ClipboardList, HardDrive, History, Laptop, Monitor, Play, Server } from "@lucide/svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
-  import { proximaCopia, saludEquipo } from "$lib/salud";
+  import { duplicadoDe, proximaCopia, saludEquipo } from "$lib/salud";
   import { cuandoFrase, relativo } from "$lib/formato";
   import { diasEquipo } from "$lib/panel";
   import type { Equipo, Informe } from "$lib/tipos";
@@ -19,9 +19,13 @@
   import OrdenDialog from "./OrdenDialog.svelte";
   import EnMarcha from "./EnMarcha.svelte";
   import ContadorNotas from "./notas/ContadorNotas.svelte";
+  import SinConfirmar from "./SinConfirmar.svelte";
 
   let { equipo, cliente, informe, acciones = false }: { equipo: Equipo; cliente: string; informe?: Informe | null; acciones?: boolean } = $props();
-  const salud = $derived(saludEquipo(equipo, reloj.ahora));
+  /** La misma máquina ya dada de alta con otra entrada (un intento anterior sin confirmar). */
+  const duplicado = $derived(duplicadoDe(equipo, actual.equipos));
+  const salud = $derived(duplicado ? { tono: "neutral" as const, texto: "Duplicado", detalle: "" } : saludEquipo(equipo, reloj.ahora));
+  const sinConfirmar = $derived(!equipo.confirmado && equipo.modo !== "trasladado");
   const copias = $derived(equipo.resumen?.copias ?? []);
   const ultima = $derived(
     copias
@@ -60,25 +64,28 @@
     <span class="fila-texto">
       <span class="fila-titulo">{equipo.nombre} <ContadorNotas tipo="equipo" objeto={equipo.id} /></span>
       <span class="solo-movil est-movil"><EnMarcha equipo={equipo.id} compacto /><Chip pequeno tono={salud.tono} texto={salud.texto} /></span>
+      {#if sinConfirmar}<span class="fila-sub">{#if duplicado}Duplicado: este equipo ya está dado de alta como «{duplicado.nombre}»{:else}Falta confirmar el número de comprobación{/if}</span>{/if}
       <span class="fila-sub">
         {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{equipo.so}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
         {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado</span>{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}
       </span>
       <!-- En móvil, la última copia va aquí (la columna de la derecha no cabe). -->
-      <span class="fila-sub solo-movil">{#if ultima}Última copia {relativo(ultima, reloj.ahora)}{:else if proxima}Primera copia {cuandoFrase(proxima, reloj.ahora)}{:else}Sin copias todavía{/if}</span>
+      <span class="fila-sub solo-movil">{#if sinConfirmar}{:else if ultima}Última copia {relativo(ultima, reloj.ahora)}{:else if proxima}Primera copia {cuandoFrase(proxima, reloj.ahora)}{:else}Sin copias todavía{/if}</span>
       {#if equipo.etiquetas?.length}<span class="etiq">{#each equipo.etiquetas as t (t)}<EtiquetaChip nombre={t} />{/each}</span>{/if}
     </span>
     {#if cuadros.length}
       <span class="dias solo-ancho"><DiasCuadros dias={cuadros} tamano="mini" etiqueta="Copias de {equipo.nombre} en los últimos 14 días" /></span>
     {/if}
     <span class="fila-meta cuando solo-ancho num">
-      {#if ultima}<span>Última <Tiempo iso={ultima} /></span>{:else}<span>Sin copias todavía</span>{/if}
+      {#if sinConfirmar}{:else if ultima}<span>Última <Tiempo iso={ultima} /></span>{:else}<span>Sin copias todavía</span>{/if}
       {#if proxima}<span class="faint" use:tip={`Próxima copia ${cuandoFrase(proxima, reloj.ahora)}`}>Próxima {relativo(proxima, reloj.ahora)}</span>{/if}
     </span>
     <span class="estado solo-ancho"><EnMarcha equipo={equipo.id} compacto /><Chip tono={salud.tono} texto={salud.texto} /></span>
   </a>
   {#if acciones && activo}
     <span class="acc"><MenuAcciones etiqueta="Acciones rápidas de {equipo.nombre}" texto="" grupos={menu} /></span>
+  {:else if acciones && sinConfirmar}
+    <span class="acc acc-confirmar"><SinConfirmar {cliente} {equipo} compacto /></span>
   {/if}
 </div>
 

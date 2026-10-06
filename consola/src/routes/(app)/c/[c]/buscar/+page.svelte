@@ -306,6 +306,7 @@
         <label class="campo">
           <span class="etq"><Database size={14} />Repositorio</span>
           <select class="input" value={eleccion ?? ""} disabled={!equipo || repos.length < 2} onchange={(e) => poner({ repo: e.currentTarget.value || null })}>
+            {#if !equipo}<option value="">Elige antes un equipo</option>{/if}
             {#if repos.length > 1}<option value="todos">Todos los repositorios del equipo ({repos.length})</option>{/if}
             {#each repos as r (r.id)}<option value={r.id}>{r.nombre}</option>{/each}
           </select>

@@ -342,8 +342,9 @@
     cursor: pointer;
     user-select: none;
   }
+  /* El fin de semana, más fino y no más claro: con transparencia bajaba a 3:1 (AA pide 4,5). */
   .cab.finde {
-    color: color-mix(in srgb, var(--text-3) 70%, transparent);
+    font-weight: 400;
   }
   .cab:hover {
     background: var(--surface-2);

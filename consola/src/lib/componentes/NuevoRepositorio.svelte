@@ -119,7 +119,7 @@
     destinoId = untrack(() => (otro ? `almacen:${otro.id}` : (destinosEquipo[0]?.id ?? "nuevo")));
   });
   const ubicacion = $derived(destino ? `${destino.nombre}${destino.donde ? ` (${destino.donde})` : ""}` : `${nombreDestino} (${donde})`);
-  const ETIQUETA_TIPO = { rest: "Servidor de copias (rest-server)", b2: "Backblaze B2", s3: "S3 compatible", local: "Carpeta de este equipo (o un disco USB)" };
+  const ETIQUETA_TIPO = { rest: "Servidor de copias", b2: "Backblaze B2", s3: "S3 compatible", local: "Carpeta de este equipo (o un disco USB)" };
 
   // v1.41: «Se guarda en: …» de lo elegido, y si se queda en el mismo equipo que protege.
   const letra = (r: string) => /^[a-z]:/i.test(r.trim()) ? `${r.trim()[0].toUpperCase()}:` : null;
@@ -335,7 +335,7 @@
           <dt>Contraseña</dt><dd><code class="selectable pw">{contrasena}</code></dd>
           <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>
         </dl>
-        <p class="faint">Guárdalo fuera del equipo. Con esta contraseña y el destino se pueden restaurar las copias con restic, incluso sin Resguardo.</p>
+        <p class="faint">Guárdalo fuera del equipo. Con esta contraseña y el destino se pueden restaurar las copias incluso sin Resguardo: el formato es abierto.</p>
       </article>
       <div class="acciones">
         <button type="button" class="btn" onclick={() => window.print()}><Printer size={15} />Imprimir o guardar en PDF</button>

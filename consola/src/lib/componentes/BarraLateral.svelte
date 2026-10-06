@@ -35,6 +35,7 @@
   import Logo from "$ui/componentes/Logo.svelte";
   import * as api from "$lib/api";
   import { actual, app, puede } from "$lib/estado.svelte";
+  import { sinDuplicados } from "$lib/salud";
   import CopiasEnMarcha from "./CopiasEnMarcha.svelte";
   import MarcaCliente from "./MarcaCliente.svelte";
 
@@ -56,7 +57,7 @@
         titulo: "Protección",
         items: [
           { href: `/c/${c}`, texto: "Estado", icono: LayoutDashboard, exacto: true },
-          { href: `/c/${c}/equipos`, texto: "Equipos", icono: Monitor, cuenta: actual.equipos.length || undefined },
+          { href: `/c/${c}/equipos`, texto: "Equipos", icono: Monitor, cuenta: sinDuplicados(actual.equipos).length || undefined },
           { href: `/c/${c}/copias`, texto: "Copias", icono: FolderSync },
           { href: `/c/${c}/repositorios`, texto: "Repositorios y destinos", icono: Database },
         ],

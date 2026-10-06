@@ -735,6 +735,16 @@ impl Almacen for Sqlite {
             filas.collect::<Result<Vec<_>, _>>().map_err(s)
         })
     }
+    fn anular_emparejamientos_equipo(&self, c: &ClienteCtx, equipo: &str) -> R<()> {
+        self.con(c, |db| {
+            db.execute(
+                "UPDATE emparejamientos SET estado = 'cancelado', codigo = NULL WHERE equipo_id = ?1 AND estado IN ('abierto', 'unido', 'confirmado')",
+                [equipo],
+            )
+            .map_err(s)?;
+            Ok(())
+        })
+    }
     fn alta_hecha(&self, c: &ClienteCtx, equipo: &str) -> R<()> {
         self.con(c, |db| {
             db.execute("UPDATE emparejamientos SET codigo = NULL WHERE equipo_id = ?1 AND estado = 'confirmado'", [equipo]).map_err(s)?;
@@ -1828,6 +1838,60 @@ mod tests {
             resguardo_protocolo::derivaciones::linea_ancla("cl-norte", 2, 1_790_000_060, &h2),
             "resguardo-ancla:1:cl-norte:2:1790000060:db30da97f801c28f8d8b60a40f0d77fe5f3588fbe03e42f2ebd991d7f9d4bc3e"
         );
+    }
+
+    /// Bug de un cliente: la misma máquina salía dos veces porque un intento anterior de
+    /// vincularla se quedó en «Falta confirmar el número de comprobación». Al confirmar la
+    /// buena, el resto sin confirmar de esa máquina se quita (y se anula su código).
+    #[test]
+    fn al_confirmar_se_quita_el_duplicado_sin_confirmar() {
+        let (_d, a) = almacen();
+        let c = ClienteCtx::autorizado(&a.crear_cliente("Uno", "s", 24).unwrap().id);
+        let equipo = |id: &str, nombre: &str, firma: &str| EquipoNuevo {
+            id: id.into(),
+            nombre: nombre.into(),
+            so: "windows".into(),
+            version: "1".into(),
+            box_pub: "b".into(),
+            sign_pub: firma.into(),
+            sal_equipo: "sal".into(),
+            secreto_hash: "h".into(),
+        };
+        let t = ahora();
+        // Dos intentos con la misma máquina («CAJA-1»), uno con otro nombre pero la misma
+        // clave de firma, otro equipo distinto sin confirmar y otro ya confirmado.
+        for (emp, eq, nombre, firma) in
+            [("p1", "viejo", "caja-1", "f1"), ("p2", "nuevo", "CAJA-1", "f2"), ("p3", "misma-firma", "Caja renombrada", "f2"), ("p4", "otro", "ALMACEN", "f3")]
+        {
+            a.preparar_emparejamiento(&c, emp, "ana", t + 900, nombre, "windows", "AAAA-BBBB-CC").unwrap();
+            a.crear_equipo(&c, &equipo(eq, nombre, firma)).unwrap();
+            a.poner_estado_emparejamiento(&c, emp, "unido", Some(eq)).unwrap();
+        }
+        a.crear_equipo(&c, &equipo("confirmado", "CAJA-1", "f9")).unwrap();
+        a.confirmar_equipo(&c, "confirmado", "etiqueta-vieja").unwrap();
+        // Se confirma «nuevo».
+        a.poner_estado_emparejamiento(&c, "p2", "confirmado", None).unwrap();
+        a.confirmar_equipo(&c, "nuevo", "etiqueta").unwrap();
+        let alta = a.equipo(&c, "nuevo").unwrap().unwrap();
+        let mut quitados = super::super::quitar_duplicados_sin_confirmar(&a, &c, &alta).unwrap();
+        quitados.sort();
+        assert_eq!(quitados, vec!["misma-firma".to_string(), "viejo".to_string()]);
+        let quedan: Vec<String> = a.equipos(&c).unwrap().into_iter().map(|e| e.id).collect();
+        assert!(quedan.contains(&"nuevo".to_string()) && quedan.contains(&"otro".to_string()), "lo demás sigue");
+        assert!(quedan.contains(&"confirmado".to_string()), "nunca quita uno confirmado");
+        assert!(!quedan.contains(&"viejo".to_string()) && !quedan.contains(&"misma-firma".to_string()));
+        // Sus códigos, anulados: no salen «a medias» ni se pueden confirmar ya.
+        assert_eq!(a.emparejamiento(&c, "p1").unwrap().unwrap().estado, "cancelado");
+        assert!(a.emparejamiento(&c, "p1").unwrap().unwrap().codigo.is_none());
+        assert!(a.a_medias(&c, t).unwrap().iter().all(|e| e.id != "p1" && e.id != "p3"));
+        assert_eq!(a.emparejamiento(&c, "p4").unwrap().unwrap().estado, "unido", "el de otro equipo, intacto");
+        // Y queda en la auditoría, con el equipo que se quedó.
+        let aud = a.auditoria(&c, 0, 100).unwrap();
+        let dup: Vec<_> = aud.iter().filter(|x| x.accion == "quitar_equipo_duplicado").collect();
+        assert_eq!(dup.len(), 2);
+        assert!(dup.iter().all(|x| x.actor == "servidor" && x.datos.contains("\"queda\":\"nuevo\"")));
+        // Una segunda pasada no encuentra nada.
+        assert!(super::super::quitar_duplicados_sin_confirmar(&a, &c, &alta).unwrap().is_empty());
     }
 
     #[test]

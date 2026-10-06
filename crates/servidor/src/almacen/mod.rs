@@ -146,6 +146,37 @@ pub struct Equipo {
     pub etiquetas: Vec<String>,
 }
 
+/// Los equipos sin confirmar que son la misma máquina que `alta` (mismo nombre, sin
+/// distinguir mayúsculas, o la misma clave de firma): restos de un intento anterior de
+/// vincularla que se quedó en «Falta confirmar el número de comprobación». Nunca
+/// recibieron la clave de administración ni guardaron nada: al confirmar `alta` sobran.
+pub fn duplicados_sin_confirmar<'a>(alta: &Equipo, equipos: &'a [Equipo]) -> Vec<&'a Equipo> {
+    let nombre = alta.nombre.trim().to_lowercase();
+    equipos
+        .iter()
+        .filter(|e| e.id != alta.id && !e.confirmado)
+        .filter(|e| (!nombre.is_empty() && e.nombre.trim().to_lowercase() == nombre) || (!alta.sign_pub.is_empty() && e.sign_pub == alta.sign_pub))
+        .collect()
+}
+
+/// Al confirmar `alta`, quita los equipos sin confirmar que son la misma máquina (un intento
+/// anterior de vincularla que se quedó en «Falta confirmar el número de comprobación»): si
+/// no, la consola la enseñaba dos veces. Nunca recibieron la clave de administración ni
+/// guardaron nada. Queda en la auditoría como `quitar_equipo_duplicado` (detalle: el equipo
+/// que se quedó). Devuelve los quitados.
+pub fn quitar_duplicados_sin_confirmar(db: &dyn Almacen, ctx: &ClienteCtx, alta: &Equipo) -> R<Vec<String>> {
+    let equipos = db.equipos(ctx)?;
+    let mut quitados = Vec::new();
+    for d in duplicados_sin_confirmar(alta, &equipos) {
+        db.anular_emparejamientos_equipo(ctx, &d.id)?;
+        db.borrar_equipo(ctx, &d.id)?;
+        db.desindexar_equipo(&d.id)?;
+        db.auditar(ctx, "servidor", "quitar_equipo_duplicado", &d.id, &serde_json::json!({ "queda": alta.id }).to_string())?;
+        quitados.push(d.id.clone());
+    }
+    Ok(quitados)
+}
+
 /// Al unirse un equipo, lo mínimo que queda para comparar el número y dar de alta.
 pub const PLAZO_UNIDO_S: Ts = 24 * 3600;
 
@@ -481,6 +512,9 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn poner_estado_emparejamiento(&self, c: &ClienteCtx, id: &str, estado: &str, equipo: Option<&str>) -> R<()>;
     /// Los que se quedaron a medias: unidos (sin caducar) o confirmados sin el alta del equipo.
     fn a_medias(&self, c: &ClienteCtx, ahora: Ts) -> R<Vec<Emparejamiento>>;
+    /// Anula los emparejamientos aún vivos de un equipo (abiertos, unidos o confirmados sin el
+    /// alta), sin tocar el equipo: al quitar un duplicado sin confirmar.
+    fn anular_emparejamientos_equipo(&self, c: &ClienteCtx, equipo: &str) -> R<()>;
     /// El equipo hizo el alta: su código ya no hace falta.
     fn alta_hecha(&self, c: &ClienteCtx, equipo: &str) -> R<()>;
     /// La versión del SAS que anunció el equipo al unirse (v1.26).

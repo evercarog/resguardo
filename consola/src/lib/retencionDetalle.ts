@@ -227,7 +227,7 @@ const plazoDe = (r: Regla, k: Periodo) => r.plazos?.[k] || null;
 /** Por qué se va (o se fue): «Era la diaria del 3 oct, pero ya había 7 diarias más recientes». */
 export function textoSeVa(m: Motivo | null, hora: Date | null, regla: Regla | null): string {
   if (!m) return "Sin motivo anotado (de un agente anterior o con una regla que la consola no conoce).";
-  if (m.tipo === "restic" || !m.periodo) return "La quitó restic, aunque la simulación no lo esperaba (otra agrupación, o la regla cambió).";
+  if (m.tipo === "restic" || !m.periodo) return "La quitó la retención al aplicarse, aunque la simulación no lo esperaba (otra agrupación, o la regla cambió).";
   const p = m.periodo;
   if (m.tipo === "repe") return `Ya había otra versión más reciente ${EN_ESE[p]}.`;
   const era = hora ? `Era la ${SINGULAR[p]} ${etiquetaHueco(p, hora)}` : `Era la última ${SINGULAR[p]} de su ${p === "horarias" ? "hora" : "periodo"}`;

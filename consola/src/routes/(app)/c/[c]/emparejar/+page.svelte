@@ -449,6 +449,15 @@
   let local = $state(false);
   let vinculandoLocal = $state(false);
   const pideLocal = $derived(page.url.searchParams.get("local") === "1");
+  // «Confirmar» desde un equipo «Sin confirmar» (Equipos o su ficha): sigue ese emparejamiento.
+  const pideSeguir = $derived(page.url.searchParams.get("seguir"));
+  let seguido = "";
+  $effect(() => {
+    const id = pideSeguir;
+    if (!id || !c || seguido === id) return;
+    seguido = id;
+    untrack(() => void seguirPreparado(id));
+  });
   async function vincularEsteServidor() {
     error = "";
     vinculandoLocal = true;

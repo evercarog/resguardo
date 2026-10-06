@@ -211,7 +211,7 @@
     <div>
       <h2 id="t-carpetas">{titulo ?? (unica ? `Elegir una carpeta en ${equipo.nombre}` : `Elegir carpetas en ${equipo.nombre}`)}</h2>
       <p>Lo que ves llega cifrado desde el equipo: el servidor no ve las rutas.</p>
-      {#if buscarRepos}<p class="pista-repos"><Database size={13} />Elige la carpeta del repositorio: las que lo parecen llevan la marca «Repositorio de restic».</p>{/if}
+      {#if buscarRepos}<p class="pista-repos"><Database size={13} />Elige la carpeta del repositorio: las que lo parecen llevan la marca «Repositorio».</p>{/if}
     </div>
   </div>
 
@@ -294,7 +294,7 @@
             {/if}
             {#if ruta === ""}<HardDrive size={15} />{:else if abiertas[r]}<FolderOpen size={15} />{:else}<Folder size={15} />{/if}
             <span class="nombre">{e.nombre}</span>
-            {#if e.repositorio || sonRepo[r]}<span class="marca-repo"><Database size={12} />Repositorio de restic</span>{/if}
+            {#if e.repositorio || sonRepo[r]}<span class="marca-repo"><Database size={12} />Repositorio</span>{/if}
             {#if e.sistema}<span class="faint sis">del sistema</span>{/if}
           </div>
           {#if abiertas[r]}{@render nivel(r)}{/if}

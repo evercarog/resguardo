@@ -96,6 +96,10 @@
   .zonas {
     margin-top: var(--sp-3);
   }
+  /* Aire también debajo: lo siguiente (el espejo) es otra parte del almacén. */
+  .zonas:not(:last-child) {
+    margin-bottom: var(--sp-5);
+  }
   .cab {
     display: flex;
     align-items: center;

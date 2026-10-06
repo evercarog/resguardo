@@ -133,7 +133,7 @@
     dialogo = {
       tipo: "aplicar_retencion_almacen",
       cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta },
-      descripcion: `${enAlm.almacen.nombre} borrará ahora de «${repo.nombre}» las versiones que ya no entren en su retención (restic forget --prune, en local) en cuanto pase la espera, sin aguardar a su próxima hora.`,
+      descripcion: `${enAlm.almacen.nombre} borrará ahora de «${repo.nombre}» las versiones que ya no entren en su retención (lo hace él, en local) en cuanto pase la espera, sin aguardar a su próxima hora.`,
       para: enAlm.almacen,
     };
   }
