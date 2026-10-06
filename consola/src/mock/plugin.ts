@@ -167,7 +167,73 @@ function respaldoDe(ctx: Ctx): T.RespaldoConsola {
   return { ...respaldoMock, identidad: estado.servidor.identidad, proxima: respaldoMock.activo ? manana.toISOString() : null };
 }
 
+/** Actualización automática de los agentes (docs/actualizaciones.md), simulada. */
+const publicacionMock: T.PublicacionAgente = {
+  version: "0.7.25",
+  fecha: new Date(Date.now() - 86_400_000).toISOString(),
+  notas: "Arreglos de las copias externas.",
+  completa: true,
+  archivos: [
+    { plataforma: "windows-x86_64", nombre: "Resguardo-Agente_0.7.25_x64-setup.exe", tamano: 24_500_000, sha256: "a".repeat(64), presente: true },
+    { plataforma: "linux-x86_64", nombre: "resguardo-agente-x86_64-linux-musl.tar.gz", tamano: 31_200_000, sha256: "b".repeat(64), presente: true },
+  ],
+};
+const politicasMock = new Map<string, T.PoliticaActualizaciones>();
+const anillosMock = new Map<string, "prueba" | "general">();
+const politicaDe = (c: string): T.PoliticaActualizaciones => politicasMock.get(c) ?? { modo: "auto", dias_general: 2, ventana: null, aprobada: null, retenidas: [] };
+
 const rutas: Ruta[] = [
+  [
+    "GET",
+    /^\/api\/servidor\/publicacion$/,
+    (ctx) => {
+      if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      return { sin_llave: false, llaves: ["C57E2BA1129956D5"], vigente: publicacionMock, guardadas: [publicacionMock], version_servidor: "0.1.0 (simulado)" } satisfies T.PublicacionServidor;
+    },
+  ],
+  [
+    "GET",
+    new RegExp(`^${C}/actualizaciones$`),
+    (ctx, [c]) => {
+      miembro(ctx, c);
+      const equipos = Object.fromEntries(estado.equipos.filter((e) => e.cliente === c).map((e) => [e.id, { anillo: anillosMock.get(e.id) ?? "general", aprobada: null }]));
+      return { sin_llave: false, disponible: publicacionMock, politica: politicaDe(c), equipos } satisfies T.ActualizacionesCliente;
+    },
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/actualizaciones$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      const b = ctx.cuerpo as { modo?: T.PoliticaActualizaciones["modo"]; dias_general?: number; ventana?: T.VentanaMantenimiento | null };
+      if (!b.modo || !["auto", "manual", "pausada"].includes(b.modo)) throw err(422, "datos", "Modo no válido (auto, manual o pausada).");
+      const politica = { ...politicaDe(c), modo: b.modo, dias_general: b.dias_general ?? 2, ventana: b.ventana ?? null };
+      politicasMock.set(c, politica);
+      return { politica };
+    },
+  ],
+  [
+    "POST",
+    new RegExp(`^${C}/actualizaciones/ahora$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      const p = politicaDe(c);
+      politicasMock.set(c, { ...p, aprobada: publicacionMock.version, retenidas: p.retenidas.filter((v) => v !== publicacionMock.version) });
+      return { version: publicacionMock.version, avisados: estado.equipos.filter((e) => e.cliente === c && e.conectado).length };
+    },
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/equipos/([^/]+)/anillo$`),
+    (ctx, [c, e]) => {
+      miembro(ctx, c, "administrador");
+      equipoDe(c, e);
+      const a = (ctx.cuerpo as { anillo?: string }).anillo;
+      if (a !== "prueba" && a !== "general") throw err(422, "datos", "Anillo no válido (prueba o general).");
+      anillosMock.set(e, a);
+      return { anillo: a };
+    },
+  ],
   ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: true, agente_local: true, codigo_navegador: true })],
 
   ["GET", /^\/api\/servidor\/respaldo$/, (ctx) => respaldoDe(ctx)],
