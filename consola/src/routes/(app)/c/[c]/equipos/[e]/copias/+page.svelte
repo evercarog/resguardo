@@ -139,6 +139,11 @@
         }) : undefined;
         const k = i >= 0 ? cfg.copias[i + 1] : cfg.copias.at(-1);
         if (k && enDestino) k.repo = enDestino.id;
+        // Aún sin repositorio en ese destino (p. ej. una nube): «+ Repositorio nuevo…» con él ya elegido.
+        else if (k && dest) {
+          destinoPedido = dest;
+          repoNuevoPara = k.id;
+        }
       }
       // ?copia=<id>: desde la página de la copia, con su tarjeta abierta.
       const pedida = page.url.searchParams.get("copia");
@@ -450,6 +455,8 @@
   const REPO_NUEVO = "__repo_nuevo__";
   /** La copia que pidió el repositorio nuevo (o `""`: ninguna en concreto). */
   let repoNuevoPara = $state<string | null>(null);
+  /** «Usar en una copia» desde la página de un destino sin repositorio de este equipo: ese destino. */
+  let destinoPedido = $state<string | undefined>(undefined);
   let avisoRepo = $state("");
   function repoCreado(r: { id: string; nombre: string; destino: string }) {
     if (!cfg || !equipo) return;
@@ -1049,7 +1056,8 @@
     equipoInicial={equipo.id}
     {prueba}
     alCreado={repoCreado}
-    onclose={() => (repoNuevoPara = null)}
+    destinoClave={destinoPedido}
+    onclose={() => ((repoNuevoPara = null), (destinoPedido = undefined))}
   />
 {/if}
 

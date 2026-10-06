@@ -2,7 +2,9 @@
 // también las nubes (tarea 4a), con si sirven desde el equipo y qué hacer si no.
 // `npm run test:vectores` (con las demás).
 import type { DestinoCatalogo, DestinoResumen, Equipo } from "../src/lib/tipos";
-import { destinoNubeCuerpo, errorCarpetaNube, idDestinoNube, nubeNoInmutable, opcionesRepoNuevo, opcionInicial, type OpcionRepo } from "../src/lib/repoNuevo";
+import { destinosParaPasos } from "../src/lib/cadenas";
+import { usarEnCopia } from "../src/lib/fichaDestino";
+import { destinoNubeCuerpo, errorCarpetaNube, idDestinoNube, nubeNoInmutable, opcionDeClave, opcionesRepoNuevo, opcionInicial, type OpcionRepo } from "../src/lib/repoNuevo";
 
 let fallos = 0;
 let total = 0;
@@ -112,6 +114,24 @@ console.log("\n· Otros tipos de nube conectados en el almacén");
     ],
   );
   cierto("…y sin Dropbox en el cliente, también «Conectar Dropbox»", l.some((o) => o.valor === "conectar:dropbox"));
+}
+
+console.log("\n· «Usar en una copia» desde la página de un destino");
+{
+  const e = apps();
+  const l = opcionesRepoNuevo(e, [almacen, e], catalogo);
+  igual("la zona principal, la otra zona, la nube del almacén y el catálogo", [
+    opcionDeClave(l, `zona:${almacen.id}:principal`, [almacen, e]),
+    opcionDeClave(l, `zona:${almacen.id}:z1a2b3c`, [almacen, e]),
+    opcionDeClave(l, `nube:${almacen.id}:dropbox-oficina`, [almacen, e]),
+    opcionDeClave(l, "destino-b2b2b2b2", [almacen, e], catalogo),
+    opcionDeClave(l, "no-existe", [almacen, e]),
+  ], [`almacen:${almacen.id}`, `zona:${almacen.id}:z1a2b3c`, "no:nube:Dropbox Oficina", "catalogo:destino-b2b2b2b2", undefined]);
+  const vista = destinosParaPasos([almacen, e]).find((v) => v.nombre === "Dropbox Oficina")!;
+  const usos = usarEnCopia(vista, [almacen, e], "c1");
+  igual("la página de la Dropbox ofrece «Copia nueva» al equipo con el agente nuevo (con su destino)", usos.filter((u) => u.texto.startsWith("Copia nueva")).map((u) => [u.texto, u.href]), [["Copia nueva de SERVIDOR-APPS", `/c/c1/equipos/e-apps/copias?nueva=1&destino=${encodeURIComponent(vista.clave)}`]]);
+  const viejo = apps(["cadenas"]);
+  igual("…y no a uno con un agente anterior", usarEnCopia(vista, [almacen, viejo], "c1").filter((u) => u.texto.startsWith("Copia nueva")).length, 0);
 }
 
 console.log("\n· El destino de la orden y la carpeta");

@@ -530,7 +530,7 @@ export async function sembrar(vacio = false) {
       so: "Windows Server 2022",
       version_agente: "0.7.25",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto"],
+        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "escritorio", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto"],
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         repositorios: [],
         copias: [],

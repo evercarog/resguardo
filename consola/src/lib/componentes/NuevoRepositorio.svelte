@@ -32,7 +32,7 @@
   import { type ZonaVista } from "$lib/destinos";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   // Tarea 4a: todos los destinos (también las nubes) con si sirven desde el equipo y, si no, qué hacer.
-  import { almacenesPara, destinoNubeCuerpo, errorCarpetaNube, nubeNoInmutable, opcionesRepoNuevo, opcionInicial } from "$lib/repoNuevo";
+  import { almacenesPara, destinoNubeCuerpo, errorCarpetaNube, nubeNoInmutable, opcionDeClave, opcionesRepoNuevo, opcionInicial } from "$lib/repoNuevo";
   import { esDeAlmacen } from "$lib/retencion";
   import { TIPOS_NUBE } from "$lib/espejo";
   import ElegirDestinoPaso from "./ElegirDestinoPaso.svelte";
@@ -45,6 +45,7 @@
     equipoInicial,
     onclose,
     prueba = null,
+    destinoClave,
     alCreado,
   }: {
     cliente: Cliente;
@@ -56,6 +57,8 @@
     prueba?: Uint8Array | null;
     /** Desde el editor de copias: el repositorio pedido (para elegirlo ya en la copia). */
     alCreado?: (r: { id: string; nombre: string; destino: string }) => void;
+    /** «Usar en una copia» desde la página de un destino: ese destino ya elegido (su clave). */
+    destinoClave?: string;
   } = $props();
 
   type Paso = "datos" | "kit" | "clave";
@@ -147,7 +150,7 @@
   $effect(() => {
     if (equipoId === equipoVisto) return;
     equipoVisto = equipoId;
-    destinoId = untrack(() => opcionInicial(opciones));
+    destinoId = untrack(() => (destinoClave && opcionDeClave(opciones, destinoClave, equipos, catalogoDe(cliente.id))) || opcionInicial(opciones));
   });
   const ubicacion = $derived(
     nubeElegida

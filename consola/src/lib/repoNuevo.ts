@@ -172,6 +172,23 @@ export function opcionInicial(opciones: OpcionRepo[]): string {
   return (opciones.find((o) => o.recomendado) ?? opciones.find((o) => o.uso.ok && o.clase !== "nuevo") ?? opciones.find((o) => o.uso.ok))?.valor ?? "nuevo";
 }
 
+/**
+ * La opción de la lista que corresponde a un destino de la página de destinos
+ * (`clave` de `destinosDelCliente`: `zona:<almacén>:<zona>`, `nube:<equipo>:<nombre>`
+ * o el id del destino), para abrir «Nuevo repositorio» con él ya elegido
+ * («Usar en una copia»). Si no está, `undefined`.
+ */
+export function opcionDeClave(opciones: OpcionRepo[], clave: string, equipos: Equipo[], catalogo: DestinoCatalogo[] = []): string | undefined {
+  const z = /^zona:([^:]+):(.+)$/.exec(clave);
+  if (z) return opciones.find((o) => o.que.tipo === "almacen" && o.que.almacen.id === z[1] && (o.que.zona?.id ?? PRINCIPAL) === z[2])?.valor;
+  if (clave.startsWith("nube:")) {
+    const nombre = destinosParaPasos(equipos, catalogo).find((v) => v.clave === clave)?.nube?.nombre;
+    if (!nombre) return undefined;
+    return opciones.find((o) => o.clase === "nube" && o.nombre === nombre)?.valor ?? opciones.find((o) => o.que.tipo === "propio" && o.que.destino.nube === nombre)?.valor;
+  }
+  return opciones.find((o) => o.valor === clave || o.valor === `catalogo:${clave}` || o.valor === `no:${clave}`)?.valor;
+}
+
 /** ¿No es inmutable (Dropbox, Drive, SMB…)? Para avisar al elegirla. */
 export const nubeNoInmutable = (tipoNube: string | undefined) => !!tipoNube && !!TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable;
 

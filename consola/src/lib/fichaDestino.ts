@@ -147,7 +147,19 @@ export function usarEnCopia(v: DestinoVista, equipos: Equipo[], cliente: string)
   const out: UsoPosible[] = [];
   // Copias nuevas de carpetas: a una zona, desde cualquier equipo (no el propio almacén); a otro destino, desde quien lo tiene.
   for (const e of activos) {
-    if (e.rol === "almacenamiento" || !usosPosibles(v, e, null, equipos).copia.ok) continue;
+    if (e.rol === "almacenamiento") continue;
+    const uc = usosPosibles(v, e, null, equipos).copia;
+    // Tarea 4a: una nube, directamente (un repositorio nuevo allí); si aún no está en ese equipo, el diálogo ofrece conectarla.
+    if (v.nube || v.tipo === "nube") {
+      if (uc.ok || uc.accion?.tipo === "conectar_nube")
+        out.push({
+          texto: `Copia nueva de ${e.nombre}`,
+          detalle: uc.ok ? `Sus carpetas directamente a ${v.nombre}, en un repositorio nuevo allí.` : `Sus carpetas directamente a ${v.nombre}: antes hay que conectarla también en ${e.nombre} (te lo ofrece el diálogo).`,
+          href: `/c/${cliente}/equipos/${e.id}/copias?nueva=1&${q}`,
+        });
+      continue;
+    }
+    if (!uc.ok) continue;
     const puede = v.zona ? v.zona.almacen.id !== e.id : v.ids.some((id) => e.resumen?.destinos?.some((d) => d.id === id));
     if (puede) out.push({ texto: `Copia nueva de ${e.nombre}`, detalle: `Sus carpetas a ${v.nombre}${v.zona ? ", en solo añadir" : ""}.`, href: `/c/${cliente}/equipos/${e.id}/copias?nueva=1&${q}` });
   }
