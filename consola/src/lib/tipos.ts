@@ -653,7 +653,9 @@ export type TipoAviso =
   | "espejo_fallido"
   // v1.43: la retención del almacén que falló (la que se aplica sola a su hora).
   | "retencion_fallida"
-  | "cambio_clave";
+  | "cambio_clave"
+  // v1.4x (9b): un equipo vio que una de sus consolas rehízo su actividad.
+  | "auditoria_rehecha";
 
 /**
  * v1.23: una entrada del historial que guarda el propio equipo (para siempre:
@@ -664,7 +666,7 @@ export type TipoAviso =
 export interface EntradaHistorial {
   id: string;
   hora: string;
-  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial";
+  tipo: "copia" | "resumen_dia" | "verificacion" | "prueba_restauracion" | "externa" | "espejo" | "aviso" | "historial" | "auditoria_rehecha";
   repo?: string;
   /** v1.47, solo «historial» (se trajo el historial a `repo`): el repositorio de este equipo del que vino y su nombre. */
   origen?: string;
@@ -687,6 +689,15 @@ export interface EntradaHistorial {
   ganchos?: ResultadoGancho[];
   /** Tipo de aviso (solo «aviso»). */
   aviso?: TipoAviso;
+  /**
+   * v1.4x (9b), solo «auditoria_rehecha»: una consola del equipo rehízo la cadena de su
+   * actividad. `consola` (arriba) es su nombre en el equipo; `identidad`, la suya;
+   * `antes` y `ahora`, las dos cabezas que no cuadran.
+   */
+  identidad?: string;
+  antes?: { n: number; creado: number; hash: string };
+  ahora?: { n: number; creado: number; hash: string };
+  motivo?: "retrocede" | "otra_huella";
   /** Solo «resumen_dia» (vueltas de una copia de un día de hace más de un año). */
   dia?: string;
   ok?: number;

@@ -148,7 +148,7 @@ export function informeRepo(r: T.RepositorioResumen, copias: T.CopiaResumen[], o
  * el informe las traiga) con sus ganchos y, de hace más de un año, resúmenes
  * por día. De la más reciente a la más antigua.
  */
-export function historialMock(eq: { id: string; resumen: T.Equipo["resumen"] }): T.EntradaHistorial[] {
+export function historialMock(eq: { id: string; nombre?: string; resumen: T.Equipo["resumen"] }): T.EntradaHistorial[] {
   const out: T.EntradaHistorial[] = [];
   const rnd = aleatorio(`historial-${eq.id}`);
   const ahora = Date.now();
@@ -199,5 +199,17 @@ export function historialMock(eq: { id: string; resumen: T.Equipo["resumen"] }):
   // Un aviso del equipo (como el agente, bitacora.rs `aviso`): informativo, no es un fallo.
   if (eq.resumen?.repositorios?.length)
     out.push({ id: `${eq.id}-aviso-consola`, hora: new Date(ahora - 2 * 86_400_000 - 5 * 3600_000).toISOString(), tipo: "aviso", mensaje: "Este equipo se conectó también a otra consola (copias.ejemplo.net)." });
+  // v1.4x (9b): el equipo vio que una de sus consolas rehízo su actividad (agente, ancla.rs).
+  if (eq.nombre === "CAJA-1")
+    out.push({
+      id: `${eq.id}-auditoria-rehecha`,
+      hora: new Date(ahora - 3 * 3600_000).toISOString(),
+      tipo: "auditoria_rehecha",
+      consola: "Consola en línea",
+      identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVh",
+      antes: { n: 412, creado: Math.floor((ahora - 2 * 86_400_000) / 1000), hash: "7c1e9a04b2d35f6e8a9b0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5e6f7" },
+      ahora: { n: 388, creado: Math.floor((ahora - 4 * 3600_000) / 1000), hash: "0d4f7a2b9c8e1f3a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2" },
+      motivo: "retrocede",
+    });
   return out.sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
 }

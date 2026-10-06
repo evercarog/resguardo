@@ -539,6 +539,7 @@ export async function sembrar(vacio = false) {
   aviso(altamar.id, contabilidad.id, "copia_fallida", "La copia «Siigo» de CONTABILIDAD falló: no se pudo conectar con el servidor de copias.", 175);
   aviso(altamar.id, portatil.id, "equipo_sin_contacto", "PORTATIL-GERENCIA no se conecta desde hace 2 días.", 60 * 28);
   aviso(sur.id, surCaja.id, "intentos_fallidos", "Hubo 3 intentos fallidos con la clave de administración en CAJA-1.", 60 * 5);
+  aviso(sur.id, surCaja.id, "auditoria_rehecha", "La consola «Consola en línea» rehízo su registro de actividad: antes llegaba a la entrada n.º 412 y ahora solo a la 388. Si nadie restauró una copia anterior de esa consola, alguien la ha cambiado entera; compruébala con un ancla de un correo anterior.", 60 * 3);
 
   // Una orden destructiva esperando su turno, para la tarjeta «Pendiente».
   estado.ordenes.push({
