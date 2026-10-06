@@ -31,6 +31,7 @@
   import Chip from "$lib/componentes/Chip.svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Pasos from "$lib/componentes/Pasos.svelte";
+  import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
 
   type Paso = "sistema" | "codigo" | "sas" | "clave" | "listo";
   let paso = $state<Paso>("sistema");
@@ -783,6 +784,13 @@
         <Chip tono={alta.estado === "hecha" ? "ok" : alta.estado === "rechazada" || alta.estado === "fallida" ? "bad" : "info"} texto={alta.estado === "hecha" ? "Alta hecha" : alta.estado === "rechazada" || alta.estado === "fallida" ? "El equipo rechazó el alta" : "Dando de alta…"} girando={["pendiente", "entregada", "en_marcha"].includes(alta.estado)} />
         {#if alta.mensaje}<p class="faint">{alta.mensaje}</p>{/if}
       {/if}
+      {#if alta?.estado === "hecha" && actual.cliente}
+        <!-- Tarea 2: si los demás equipos del cliente también están en otra consola, este aún no. -->
+        {@const vivo = actual.equipos.find((x) => x.id === equipoNuevo!.id)}
+        <div class="otras-consolas">
+          <AvisoConsolas cliente={actual.cliente} equipos={vivo ? actual.equipos : [...actual.equipos, equipoNuevo]} equipo={vivo ?? equipoNuevo} nuevo ahora={reloj.ahora} />
+        </div>
+      {/if}
       <div class="acciones">
         <button
           class="btn btn-ghost"
@@ -811,6 +819,13 @@
 <style>
   .estrecha {
     max-width: 720px;
+  }
+  .otras-consolas {
+    align-self: stretch;
+    text-align: left;
+  }
+  .otras-consolas:empty {
+    display: none;
   }
   .centro {
     display: flex;

@@ -47,6 +47,8 @@ A decidir: el reloj del equipo pasa a contar la espera (ver el pendiente «Reloj
 - En Estado, un aviso «N equipos no están en todas tus consolas» con el mismo botón.
 - Repetir `anadir_consola` en equipos que ya la tienen ya es inofensivo («ya gestiona este equipo»).
 
+- [x] **Hecha** (rama `ia/equipos-en-todas-las-consolas`; diseño en `docs/consolas-multiples.md` §2.5, sin cambios de contrato): aviso en Estado, en la ficha del equipo y al terminar el alta, con «Conectar también…» que abre el flujo de siempre con los equipos elegidos y la consola esperada. Repetir `anadir_consola` comprobado inofensivo (prueba en `consolas_it.rs` y en el e2e, paso 8).
+
 ## 3. Espejo más flexible
 
 Hoy (`crates/agente/src/espejo.rs`, `nube.rs`): una vez al día a una hora; copia archivo a archivo **todo** el almacén a carpetas de discos del equipo o a Dropbox/Drive con `rclone copy --immutable`; nunca borra; nadie lo verifica.

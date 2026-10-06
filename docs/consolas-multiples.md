@@ -171,6 +171,20 @@ Los equipos con un agente anterior (sin `admite: consolas_multiples`) no pueden 
   resguardo-agente consolas quitar <n.º | dirección | huella>
   ```
 
+### 2.5 Equipos que no están en todas las consolas
+
+Un equipo que se añade en una consola **solo llega a esa**: las demás no lo conocen hasta que se conecta también a ellas (es lo seguro: hace falta la clave de administración y un código de conexión de la otra consola). Para que no se quede uno fuera sin darse cuenta (`docs/plan-mejoras.md`, tarea 2), cada consola lo deduce de lo que ya sabe:
+
+- **Qué otras consolas tiene el cliente**: la unión de las `consolas` del resumen de sus equipos (nombre, dirección e identidad; nada secreto), agrupadas **por identidad**. No se sugieren las abandonadas: sin contacto de ningún equipo en 30 días, o añadidas hace más de 7 y nunca contactadas. Código: `consola/src/lib/consolasCliente.ts`.
+- **Qué equipos faltan en cada una**: los gestionados desde aquí y confirmados que no la tienen en su lista. Un equipo sin resumen todavía no cuenta (no se sabe), salvo el que se acaba de dar de alta. Uno con un agente anterior (sin `consolas_multiples`) cuenta, con «necesita actualizar el agente».
+- **Dónde se ve**:
+  - al terminar de dar de alta un equipo y en su ficha: «Este equipo solo está en esta consola; los demás también están en «X»» → **Conectar también…**;
+  - en Estado: «N equipos no están en todas tus consolas», por consola y con los equipos que faltan → **Conectar también…** con todos ellos a la vez.
+- **El botón abre el flujo de siempre** (§2.1) con los equipos ya elegidos y la consola esperada: al pegar el código, dice si es de esa consola (misma identidad que ya tienen fijada los demás equipos) o avisa si es de otra. La comprobación de las huellas de palabra no se quita.
+- **Repetirlo no hace daño**: si un equipo ya tiene esa consola (el resumen iba atrasado), el agente contesta `fallida` con «Esa consola ya gestiona este equipo.» antes de tocar nada (ni la ficha ni el vínculo), y la consola lo enseña como «Ya estaba conectado».
+
+Sin cambios en el contrato: todo sale del resumen que ya mandan los agentes (v1.36).
+
 ---
 
 ## 3. El servidor
