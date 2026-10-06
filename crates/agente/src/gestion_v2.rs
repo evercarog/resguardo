@@ -532,6 +532,43 @@ pub struct Copia {
     /// encendido (como siempre en el modo gestionado).
     #[serde(default = "si")]
     pub solo_si_cambios: bool,
+    /// Tarea 7c (`admite: "cadenas"`): «después de la anterior», el id de otra
+    /// copia de esta configuración. Empieza cuando aquella termina bien; si
+    /// falla, esta no se hace y se avisa (`cadena_parada`). Puede tener además
+    /// su horario, o ninguno (`horario` vacío). Un agente anterior lo ignora.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tras: Option<String>,
+}
+
+impl Copia {
+    /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior».)
+    pub fn con_horario(&self) -> bool {
+        !self.horario.reglas.is_empty() || !self.horario.horas.is_empty()
+    }
+}
+
+/// Tarea 7c: comprueba las cadenas de una configuración: cada `tras` es otra
+/// copia de la lista (no ella misma) y no hay vueltas (A tras B tras A).
+pub fn validar_cadenas(copias: &[Copia]) -> Result<(), String> {
+    for k in copias {
+        let Some(t) = &k.tras else { continue };
+        if t == &k.id {
+            return Err(format!("La copia «{}» no puede ir después de sí misma.", k.nombre));
+        }
+        if !copias.iter().any(|x| &x.id == t) {
+            return Err(format!("La copia «{}» va después de otra que no está en la configuración.", k.nombre));
+        }
+        // Siguiendo la cadena hacia atrás no se puede volver a ella.
+        let mut actual = t.clone();
+        for _ in 0..=copias.len() {
+            match copias.iter().find(|x| x.id == actual).and_then(|x| x.tras.clone()) {
+                Some(sig) if sig == k.id => return Err(format!("La cadena de «{}» da la vuelta sobre sí misma.", k.nombre)),
+                Some(sig) => actual = sig,
+                None => break,
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -696,7 +733,11 @@ pub(crate) fn aplicar_verificaciones(v: &Vinculo, cfg: &Configuracion) -> Result
 }
 
 fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
-    let schedule = c.horario.plan_schedule().map_err(|e| format!("Copia «{}»: {e}", c.nombre))?;
+    // Tarea 7c: «después de la anterior» sin horario propio: el plan va sin horario.
+    let schedule = match (&c.tras, c.con_horario()) {
+        (Some(_), false) => None,
+        _ => Some(c.horario.plan_schedule().map_err(|e| format!("Copia «{}»: {e}", c.nombre))?),
+    };
     let plan: crate::plans::Plan = serde_json::from_value(json!({
         "id": c.id, "name": c.nombre, "paths": c.carpetas, "excludes": c.exclusiones,
         "schedule": schedule,
@@ -709,6 +750,14 @@ fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
         ..plan
     };
     plan.validate()?;
+    Ok(plan)
+}
+
+/// El plan de una copia con su cadena: `after` es la clave (`<repo>#<copia>`)
+/// de la copia tras la que va, según la configuración entera.
+fn plan_en(c: &Copia, copias: &[Copia]) -> Result<crate::plans::Plan, String> {
+    let mut plan = plan_de(c)?;
+    plan.after = c.tras.as_ref().and_then(|t| copias.iter().find(|x| &x.id == t)).map(|x| crate::plans::plan_key(&x.repo, &x.id));
     Ok(plan)
 }
 
@@ -748,6 +797,7 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         }
         plan_de(k)?;
     }
+    validar_cadenas(&cfg.copias)?;
     for (repo, va) in cfg.verificaciones.iter().flatten() {
         if !v.repos_v2.iter().any(|r| r.id == *repo && !r.solo_lectura) {
             return Err(format!("La verificación automática es de un repositorio que este equipo no tiene: «{repo}»."));
@@ -755,7 +805,8 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         va.valida()?;
     }
     for r in v.repos_v2.clone() {
-        let planes: Vec<crate::plans::Plan> = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(plan_de).collect::<Result<_, _>>()?;
+        let planes: Vec<crate::plans::Plan> =
+            cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(|k| plan_en(k, &cfg.copias)).collect::<Result<_, _>>()?;
         if planes.is_empty() {
             let _ = crate::agent::set_schedule_by_id(&r.id, None);
             continue;
@@ -820,7 +871,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 12] = [
+pub const ADMITE: [&str; 13] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -837,6 +888,9 @@ pub const ADMITE: [&str; 12] = [
     // (pendiente de numerar) varias zonas en el almacén: `guarda_copias { zona }`, `{ quitar_zona }`,
     // `{ anadir, zona }`, `{ quitar, zona }` y `guarda_copias.zonas` (docs/copias-en-cadena.md, 7b).
     "zonas_almacen",
+    // (pendiente de numerar) tarea 7c: `config.copias[].tras` («después de la anterior») e
+    // `informe.cadenas[]` (aviso `cadena_parada`) (docs/copias-en-cadena.md).
+    "cadenas",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -880,6 +934,8 @@ pub fn resumen(v: &Vinculo) -> Value {
             let run = estado.runs.get(&crate::plans::plan_key(&k.repo, &k.id));
             json!({
                 "id": k.id, "nombre": k.nombre, "repo": k.repo, "horario": k.horario, "carpetas": k.carpetas.len(), "activa": k.activa, "solo_si_cambios": k.solo_si_cambios,
+                // Tarea 7c: «después de la anterior» (el id de la otra copia).
+                "tras": k.tras,
                 "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added })),
                 "proxima": proximas.get(&k.id),
             })
@@ -1016,6 +1072,11 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
         })
         .collect();
     let mut inf = json!({ "version": crate::version_programa(), "servicio": "en_marcha", "so": crate::web::os_label(), "copias": filas, "proximas": proximas(&copias, chrono::Local::now()) });
+    // Tarea 7c: cómo quedó cada copia «después de la anterior» (de ahí el aviso `cadena_parada`).
+    let cadenas = cadenas_informe(&estado, &copias);
+    if !cadenas.is_empty() {
+        inf["cadenas"] = json!(cadenas);
+    }
     // El último número de orden aceptado: el servidor no vuelve por debajo (p. ej. tras restaurar la copia de la consola).
     if let Some(v) = v.filter(|v| v.ultimo_seq > 0) {
         inf["ultimo_seq"] = json!(v.ultimo_seq);
@@ -1031,6 +1092,24 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
         crate::informe_v2::acotar(&mut inf);
     }
     inf
+}
+
+/// Tarea 7c: `informe.cadenas[]`: `{ id, repo, nombre, estado: "parada" | "ok", cuando, anterior, mensaje }`
+/// de las copias de la configuración que van «después de la anterior».
+pub fn cadenas_informe(estado: &crate::agent::AgentState, copias: &[Copia]) -> Vec<Value> {
+    copias
+        .iter()
+        .filter(|k| k.tras.is_some())
+        .filter_map(|k| {
+            let c = estado.chains.get(&crate::plans::plan_key(&k.repo, &k.id))?;
+            let anterior = c.previous.split_once('#').map(|(_, id)| id.to_string()).unwrap_or_default();
+            Some(json!({
+                "id": k.id, "repo": k.repo, "nombre": k.nombre, "estado": c.state, "cuando": c.at, "anterior": anterior,
+                "anterior_nombre": copias.iter().find(|x| x.id == anterior).map(|x| x.nombre.clone()),
+                "mensaje": c.message,
+            }))
+        })
+        .collect()
 }
 
 /// v1.12: la próxima vez que toca cada copia, `{id: RFC 3339 | null}`. Null si
@@ -1878,6 +1957,37 @@ mod tests {
         assert_eq!(ubicacion(&destino("local", raiz), "Siigo").unwrap(), std::path::Path::new(raiz).join("Siigo").display().to_string());
     }
 
+    /// Tarea 7c: `tras` (con o sin horario propio) y las cadenas que no valen.
+    #[test]
+    fn copias_en_cadena() {
+        let copia = |id: &str, repo: &str, tras: Option<&str>, horas: &[&str]| -> Copia {
+            serde_json::from_value(json!({"id": id, "nombre": id.to_uppercase(), "repo": repo, "carpetas": [r"C:\Datos"],
+                "horario": {"dias": if horas.is_empty() { json!([]) } else { json!([1, 2, 3, 4, 5]) }, "horas": horas}, "tras": tras}))
+            .unwrap()
+        };
+        let lista = vec![copia("docs", "r1", None, &["13:00"]), copia("disco-e", "r2", Some("docs"), &[]), copia("nube", "r2", Some("disco-e"), &["23:00"])];
+        validar_cadenas(&lista).unwrap();
+        // Sin horario propio: el plan va sin horario y con la clave de la anterior (de otro repositorio).
+        let p = plan_en(&lista[1], &lista).unwrap();
+        assert!(p.schedule.is_none());
+        assert_eq!(p.after.as_deref(), Some("r1#docs"));
+        // Con horario y además «después de la anterior».
+        let p = plan_en(&lista[2], &lista).unwrap();
+        assert!(p.schedule.is_some());
+        assert_eq!(p.after.as_deref(), Some("r2#disco-e"));
+        assert_eq!(plan_en(&lista[0], &lista).unwrap().after, None);
+        // Sin horario y sin anterior no vale (como siempre).
+        assert!(plan_de(&copia("suelta", "r1", None, &[])).is_err());
+        // Ella misma, una que no está o una vuelta: no.
+        assert!(validar_cadenas(&[copia("a", "r1", Some("a"), &["10:00"])]).is_err());
+        assert!(validar_cadenas(&[copia("a", "r1", Some("zz"), &["10:00"])]).is_err());
+        assert!(validar_cadenas(&[copia("a", "r1", Some("b"), &[]), copia("b", "r1", Some("c"), &[]), copia("c", "r1", Some("a"), &[])]).is_err());
+        // El resumen y el documento llevan `tras`; sin él, ni aparece.
+        assert_eq!(serde_json::to_value(&lista[1]).unwrap()["tras"], "docs");
+        assert!(serde_json::to_value(&lista[0]).unwrap().get("tras").is_none());
+        assert!(ADMITE.contains(&"cadenas"));
+    }
+
     #[test]
     fn copia_a_plan() {
         let k = Copia {
@@ -1890,6 +2000,7 @@ mod tests {
             activa: true,
             gancho: None,
             solo_si_cambios: true,
+            tras: None,
         };
         let p = plan_de(&k).unwrap();
         assert!(p.skip_unchanged, "encendido por defecto");
@@ -1921,6 +2032,7 @@ mod tests {
             activa: true,
             gancho: None,
             solo_si_cambios: true,
+            tras: None,
         };
         // Viernes 2 de octubre de 2026, 14:00: la siguiente, a las 19:00; después, el lunes.
         let vie = chrono::Local.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();

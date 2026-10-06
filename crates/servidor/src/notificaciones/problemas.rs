@@ -30,7 +30,7 @@ pub struct Problema {
 /// Los tipos que salen de cada fuente (los que esa fuente puede dar por arreglados).
 pub fn tipos(f: Fuente) -> &'static [&'static str] {
     match f {
-        Fuente::Informe => &["copia_fallida", "verificacion_fallida", "externa_fallida", "prueba_fallida"],
+        Fuente::Informe => &["copia_fallida", "verificacion_fallida", "externa_fallida", "prueba_fallida", "cadena_parada"],
         Fuente::Resumen => &["espejo_fallido", "retencion_fallida"],
     }
 }
@@ -81,6 +81,33 @@ pub fn de_informe(datos: &Value) -> (Vec<Problema>, Vec<String>) {
                 mirar(tipo, &id, nombre.clone(), &r[campo], "ultima", "mensaje_corto");
             }
         }
+        // Tarea 4b: las otras copias derivadas (la primera es `externa`), cada una con su sujeto
+        // `<repo>--<derivada>` y el aviso de siempre (`externa_fallida`).
+        for d in r["derivadas"].as_array().into_iter().flatten().take(16) {
+            let did = corto(&d["id"], 64);
+            let sujeto = format!("{id}--{did}");
+            if id_ok(&did) && sujeto.len() <= 64 {
+                let destino = Some(corto(&d["destino"], 80)).filter(|n| !n.is_empty()).unwrap_or_else(|| did.clone());
+                mirar("externa_fallida", &sujeto, format!("{nombre} → {destino}"), d, "ultima", "mensaje_corto");
+            }
+        }
+    }
+    // Tarea 7c: una copia «después de la anterior» que no se hizo porque la anterior falló.
+    for c in datos["cadenas"].as_array().into_iter().flatten().take(MAX_PROBLEMAS) {
+        let id = corto(&c["id"], 64);
+        let nombre = Some(corto(&c["nombre"], 80)).filter(|n| !n.is_empty()).unwrap_or_else(|| id.clone());
+        let anterior = corto(&c["anterior_nombre"], 80);
+        let estado = match c["estado"].as_str() {
+            Some("parada") => "fallo",
+            Some("ok") => "ok",
+            _ => continue,
+        };
+        let mensaje = if anterior.is_empty() {
+            "No se hizo porque la copia anterior de la cadena falló.".to_string()
+        } else {
+            format!("No se hizo porque la copia anterior de la cadena («{anterior}») falló.")
+        };
+        mirar("cadena_parada", &id, nombre, &serde_json::json!({ "estado": estado, "cuando": c["cuando"], "mensaje": mensaje }), "cuando", "mensaje");
     }
     (p, sanos)
 }
@@ -154,6 +181,7 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
         "prueba_fallida" => format!("la prueba de restauración de «{nombre}» en «{equipo}»"),
         "espejo_fallido" => format!("el espejo de «{equipo}»"),
         "retencion_fallida" => format!("la retención de «{nombre}» en el almacén «{equipo}»"),
+        "cadena_parada" => format!("la cadena de la copia «{nombre}» en «{equipo}»"),
         _ => format!("algo en «{equipo}»"),
     }
 }
@@ -232,5 +260,32 @@ mod tests {
         assert_eq!(t, "Falló la retención de «r-oficina» en el almacén «ALMACEN»");
         assert_eq!(titulo_ok(&t), ok);
         assert!(tipos(Fuente::Resumen).contains(&"retencion_fallida"));
+    }
+
+    /// Tarea 7c: `cadena_parada` sale de `informe.cadenas[]`; y 4b: las derivadas, como `externa_fallida`.
+    #[test]
+    fn cadenas_y_derivadas() {
+        let informe = json!({
+            "cadenas": [
+                { "id": "disco-e", "repo": "r1", "nombre": "Disco E", "estado": "parada", "cuando": "2026-10-04T10:05:00+02:00", "anterior": "docs", "anterior_nombre": "Documentos" },
+                { "id": "nube", "repo": "r1", "nombre": "Nube", "estado": "ok", "cuando": "2026-10-04T10:05:00+02:00" },
+                { "id": "../x", "estado": "parada" }
+            ],
+            "repos": [{ "id": "r1", "nombre": "Oficina", "derivadas": [
+                { "id": "d2", "destino": "Dropbox Sur", "ultima": "2026-10-04T03:00:00+02:00", "resultado": "fallo", "mensaje_corto": "sin red" },
+                { "id": "d3", "ultima": "2026-10-04T03:00:00+02:00", "resultado": "ok" }
+            ] }]
+        });
+        let (p, sanos) = de_informe(&informe);
+        assert_eq!(p.len(), 2);
+        assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str(), p[0].nombre.as_str()), ("externa_fallida", "r1--d2", "Oficina → Dropbox Sur"));
+        assert_eq!((p[1].tipo.as_str(), p[1].sujeto.as_str()), ("cadena_parada", "disco-e"));
+        assert!(p[1].mensaje.contains("«Documentos»"));
+        assert_eq!(p[1].marca, "2026-10-04T10:05:00+02:00");
+        assert_eq!(sanos, vec!["externa_fallida|r1--d3".to_string(), "cadena_parada|nube".to_string()]);
+        let (t, ok) = titulos(&p[1], "PC-Ana");
+        assert_eq!(t, "Falló la cadena de la copia «Disco E» en «PC-Ana»");
+        assert_eq!(titulo_ok(&t), ok);
+        assert!(tipos(Fuente::Informe).contains(&"cadena_parada"));
     }
 }

@@ -219,6 +219,7 @@ mod tests {
             schedule: None,
             skip_unchanged: true,
             ganchos: vec![],
+            after: None,
         }
     }
 

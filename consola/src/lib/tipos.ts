@@ -762,6 +762,8 @@ export type TipoAviso =
   | "espejo_fallido"
   // v1.43: la retención del almacén que falló (la que se aplica sola a su hora).
   | "retencion_fallida"
+  // Tarea 7c: una copia «después de la anterior» que no se hizo porque la anterior falló.
+  | "cadena_parada"
   | "cambio_clave"
   // v1.4x: otra consola mandó una orden que el equipo tiene en espera.
   | "orden_en_espera"

@@ -359,6 +359,10 @@ pub struct AgentPlan {
     /// Ganchos de plantilla (antes y después de la copia; ganchos.rs).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ganchos: Vec<crate::ganchos::Gancho>,
+    /// Tarea 7c: «después de la anterior» (la clave `<repo>#<plan>` del plan tras
+    /// el que empieza cuando termina bien; ver [`chain_turn`]). Con o sin horario propio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -489,6 +493,9 @@ pub struct AgentState {
     /// Servidores REST: ¿de solo añadir? (se comprueba como mucho una vez al día).
     #[serde(default)]
     pub append_only: HashMap<String, crate::protection::AppendOnlyCheck>,
+    /// Tarea 7c: cómo quedó cada plan «después de la anterior» (`<repo>#<plan>`).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub chains: HashMap<String, ChainState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -921,6 +928,7 @@ pub fn migrate_legacy(config: &mut AgentConfig, state: &mut AgentState) -> bool 
             enabled_at: repo.enabled_at.clone(),
             skip_unchanged: false,
             ganchos: vec![],
+            after: None,
         });
         repo.schedule = Schedule::Plans;
         if let Some(run) = state.runs.remove(&repo.id) {
@@ -1092,12 +1100,17 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
             repo.plans
                 .iter()
                 .filter_map(|p| {
-                    let s = p.schedule.clone()?;
+                    // Tarea 7c: un plan «después de la anterior» puede no tener horario propio.
+                    let s = match (&p.schedule, &p.after) {
+                        (Some(s), _) => s.clone(),
+                        (None, Some(_)) => crate::plans::PlanSchedule::from_rules(vec![]),
+                        (None, None) => return None,
+                    };
                     // Si el plan ya estaba igual, conserva su fecha de activación.
                     let same = previous
                         .as_ref()
                         .and_then(|prev| prev.plans.iter().find(|q| q.id == p.id))
-                        .filter(|q| q.schedule == s && q.paths == p.paths)
+                        .filter(|q| q.schedule == s && q.paths == p.paths && q.after == p.after)
                         .map(|q| q.enabled_at.clone());
                     Some(AgentPlan {
                         id: p.id.clone(),
@@ -1109,6 +1122,7 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
                         enabled_at: same.unwrap_or_else(|| now.clone()),
                         skip_unchanged: p.skip_unchanged,
                         ganchos: p.ganchos.clone(),
+                        after: p.after.clone(),
                     })
                 })
                 .collect()
@@ -1452,6 +1466,92 @@ fn retry_due(last: Option<&RunRecord>, attempts: u32, now: DateTime<Local>) -> b
     })
 }
 
+/// Tarea 7c: como mucho, pasos de una cadena seguidos en una misma vuelta del agente.
+const MAX_CHAIN: usize = 8;
+
+/// Tarea 7c: cómo quedó la cadena de un plan «después de la anterior» (en
+/// `state.json`; va al informe como `cadenas[]` y de ahí el aviso `cadena_parada`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChainState {
+    /// "parada" (la anterior falló y este no se hizo) u "ok" (la anterior lo lanzó).
+    pub state: String,
+    /// Cuándo terminó la anterior (la que lo paró o lo lanzó), RFC 3339.
+    pub at: String,
+    /// La clave (`<repo>#<plan>`) de la anterior.
+    pub previous: String,
+    /// Por qué se paró (sin rutas).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+}
+
+/// Qué toca a un plan «después de la anterior» según cómo terminó la anterior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainTurn {
+    /// La anterior no ha terminado desde la última vez de este (o no tiene anterior).
+    Wait,
+    /// Terminó bien (o con algún archivo sin leer): empieza este.
+    Go,
+    /// Falló: este no empieza y la cadena se para.
+    Stopped,
+}
+
+/// Desde cuándo cuenta un plan: su último comienzo o, si nunca se hizo, cuándo se activó.
+pub fn plan_since(plan: &AgentPlan, key: &str, state: &AgentState) -> DateTime<Local> {
+    let since = state.runs.get(key).map(|r| r.started.as_str()).unwrap_or(&plan.enabled_at);
+    DateTime::parse_from_rfc3339(since).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now())
+}
+
+/// Tarea 7c: ¿la anterior de `plan` terminó después de `since`, y cómo? «Bien»
+/// es una copia correcta, sin cambios o con algún archivo sin leer (`warning`):
+/// hay una versión (o no hacía falta); solo un error para la cadena.
+pub fn chain_turn(plan: &AgentPlan, state: &AgentState, since: DateTime<Local>) -> ChainTurn {
+    let Some(prev) = plan.after.as_ref().and_then(|a| state.runs.get(a)) else { return ChainTurn::Wait };
+    let Ok(finished) = DateTime::parse_from_rfc3339(&prev.finished) else { return ChainTurn::Wait };
+    if finished.with_timezone(&Local) <= since {
+        return ChainTurn::Wait;
+    }
+    if prev.result == "error" {
+        ChainTurn::Stopped
+    } else {
+        ChainTurn::Go
+    }
+}
+
+/// Tarea 7c: si la anterior de `plan` falló después de su última vez, este no
+/// se hace: se anota una sola vez por cada fallo de la anterior (registro,
+/// historial y `state.chains`, que va al informe y avisa con `cadena_parada`).
+fn note_chain_stop(repo: &AgentRepo, plan: &AgentPlan, key: &str, state: &mut AgentState) {
+    let Some(previous) = plan.after.clone() else { return };
+    if chain_turn(plan, state, plan_since(plan, key, state)) != ChainTurn::Stopped {
+        return;
+    }
+    let Some(prev) = state.runs.get(&previous) else { return };
+    let at = prev.finished.clone();
+    if state.chains.get(key).is_some_and(|c| c.state == "parada" && c.at == at) {
+        return;
+    }
+    let message = "No se hizo porque la copia anterior de la cadena falló.".to_string();
+    log(&format!("AVISO: «{}» (plan «{}»): {message}", repo.name, plan.name));
+    let now = Local::now().to_rfc3339();
+    crate::history::append(
+        &crate::history::agent_file(),
+        &crate::history::Entry {
+            kind: "chain".into(),
+            origin: "agent".into(),
+            repo_id: repo.id.clone(),
+            repo_name: repo.name.clone(),
+            plan_id: Some(plan.id.clone()),
+            plan_name: Some(plan.name.clone()),
+            started: now.clone(),
+            finished: now,
+            result: "error".into(),
+            message: message.clone(),
+            ..Default::default()
+        },
+    );
+    state.chains.insert(key.to_string(), ChainState { state: "parada".into(), at, previous, message });
+}
+
 /// ¿Toca copiar este plan en esta vuelta? `None`: no; `Some(false)`: copia
 /// (programada o pedida); `Some(true)`: reintento tras un fallo. En pausa solo
 /// se atienden las copias pedidas (p. ej. una copia a mano que la app pasa al
@@ -1465,8 +1565,11 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
         return None;
     }
     let key = crate::plans::plan_key(&repo.id, &plan.id);
-    let since = state.runs.get(&key).map(|r| r.started.as_str()).unwrap_or(&plan.enabled_at);
-    let since = DateTime::parse_from_rfc3339(since).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now());
+    let since = plan_since(plan, &key, state);
+    // Tarea 7c: la anterior terminó bien después de la última vez de este.
+    if plan.after.is_some() && chain_turn(plan, state, since) == ChainTurn::Go {
+        return Some(false);
+    }
     if plan.schedule.is_due(since, now) {
         return Some(false);
     }
@@ -1820,167 +1923,194 @@ pub fn run() -> i32 {
 
     let mut failures = 0;
     let mut ran: Vec<String> = Vec::new();
-    for repo in &config.repos {
-        // La verificación bloquea el repositorio: las copias se hacen al terminar.
-        if crate::tasks::running_on(&repo.id, "verify") {
-            continue;
-        }
-        for plan in &repo.plans {
-            let key = crate::plans::plan_key(&repo.id, &plan.id);
-            let asked = requested.contains(&key);
-            let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()) else { continue };
-            let attempts = state.retries.get(&key).copied().unwrap_or(0);
-            if retry {
-                log(&format!("Reintento {} de {MAX_RETRIES} de «{}» (plan «{}»).", attempts + 1, repo.name, plan.name));
-            }
-            let Some(secret) = secrets.get(&repo.id) else {
-                log(&format!("ERROR: «{}» no tiene contraseña guardada en el agente.", repo.name));
+    // Tarea 7c: varias pasadas. Un plan «después de la anterior» empieza en la misma
+    // vuelta en que termina bien la suya (como mucho `MAX_CHAIN` pasos seguidos).
+    let mut done_keys: Vec<String> = Vec::new();
+    for pass in 0..MAX_CHAIN {
+        let before = done_keys.len();
+        for repo in &config.repos {
+            // La verificación bloquea el repositorio: las copias se hacen al terminar.
+            if crate::tasks::running_on(&repo.id, "verify") {
                 continue;
-            };
-            let from_remote = remote.get(&key);
-            let quiet = if apply_discreet(&config) { " (modo discreto: prioridad baja)" } else { "" };
-            match from_remote {
-                Some(cmd) => log(&format!("Copia de «{}» (plan «{}»), pedida a distancia desde {}…{quiet}", repo.name, plan.name, cmd.origin_label())),
-                None => log(&format!("Copia de «{}» (plan «{}»)…{quiet}", repo.name, plan.name)),
             }
-            state.running = Some(RunningCopy {
-                repo_id: repo.id.clone(),
-                plan_id: Some(plan.id.clone()),
-                started: Local::now().to_rfc3339(),
-                percent: None,
-                files_done: 0,
-                total_files: 0,
-                bytes_done: 0,
-                total_bytes: 0,
-                seconds_remaining: None,
-                updated: None,
-                phase: None,
-                bytes_per_s: None,
-                read_bps: None,
-                upload_bps: None,
-                files_per_s: None,
-            });
-            let _ = write_json("state.json", &state);
-            // Lo que restic ha leído y escrito (para la lectura y la subida reales).
-            let mut io_antes: Option<(u32, (u64, u64))> = None;
-            // La web muestra «Copiando…» mientras dura.
-            crate::web::report_started(&config, &secrets, &mut state);
-            let mut last_write = std::time::Instant::now();
-            let record = backup(repo, plan, secret, &mut |v| {
-                // Cambio de fase (ganchos «Antes de copiar»): se guarda enseguida.
-                if v["message_type"] == "phase" {
-                    if let Some(r) = state.running.as_mut() {
-                        r.phase = v["phase"].as_str().map(str::to_string);
-                        r.updated = Some(Local::now().to_rfc3339());
+            for plan in &repo.plans {
+                let key = crate::plans::plan_key(&repo.id, &plan.id);
+                // En las pasadas siguientes, solo los «después de la anterior» que aún no se hicieron.
+                if pass > 0 && (plan.after.is_none() || done_keys.contains(&key)) {
+                    continue;
+                }
+                // Si la anterior falló, la cadena se para aquí (y se anota una vez).
+                note_chain_stop(repo, plan, &key, &mut state);
+                let asked = pass == 0 && requested.contains(&key);
+                let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()) else { continue };
+                let by_chain = plan.after.is_some() && chain_turn(plan, &state, plan_since(plan, &key, &state)) == ChainTurn::Go;
+                let attempts = state.retries.get(&key).copied().unwrap_or(0);
+                if retry {
+                    log(&format!("Reintento {} de {MAX_RETRIES} de «{}» (plan «{}»).", attempts + 1, repo.name, plan.name));
+                }
+                let Some(secret) = secrets.get(&repo.id) else {
+                    log(&format!("ERROR: «{}» no tiene contraseña guardada en el agente.", repo.name));
+                    continue;
+                };
+                let from_remote = remote.get(&key);
+                let quiet = if apply_discreet(&config) { " (modo discreto: prioridad baja)" } else { "" };
+                match from_remote {
+                    Some(cmd) => log(&format!("Copia de «{}» (plan «{}»), pedida a distancia desde {}…{quiet}", repo.name, plan.name, cmd.origin_label())),
+                    None => log(&format!("Copia de «{}» (plan «{}»)…{quiet}", repo.name, plan.name)),
+                }
+                state.running = Some(RunningCopy {
+                    repo_id: repo.id.clone(),
+                    plan_id: Some(plan.id.clone()),
+                    started: Local::now().to_rfc3339(),
+                    percent: None,
+                    files_done: 0,
+                    total_files: 0,
+                    bytes_done: 0,
+                    total_bytes: 0,
+                    seconds_remaining: None,
+                    updated: None,
+                    phase: None,
+                    bytes_per_s: None,
+                    read_bps: None,
+                    upload_bps: None,
+                    files_per_s: None,
+                });
+                let _ = write_json("state.json", &state);
+                // Lo que restic ha leído y escrito (para la lectura y la subida reales).
+                let mut io_antes: Option<(u32, (u64, u64))> = None;
+                // La web muestra «Copiando…» mientras dura.
+                crate::web::report_started(&config, &secrets, &mut state);
+                let mut last_write = std::time::Instant::now();
+                let record = backup(repo, plan, secret, &mut |v| {
+                    // Cambio de fase (ganchos «Antes de copiar»): se guarda enseguida.
+                    if v["message_type"] == "phase" {
+                        if let Some(r) = state.running.as_mut() {
+                            r.phase = v["phase"].as_str().map(str::to_string);
+                            r.updated = Some(Local::now().to_rfc3339());
+                        }
+                        let _ = write_json("state.json", &state);
+                        return;
                     }
-                    let _ = write_json("state.json", &state);
-                    return;
-                }
-                if last_write.elapsed() < PROGRESS_EVERY {
-                    return;
-                }
-                let seconds = last_write.elapsed().as_secs_f64();
-                last_write = std::time::Instant::now();
-                let now = Local::now().to_rfc3339();
-                let io = restic::pid_en_marcha().and_then(|pid| crate::platform::io_proceso(pid).map(|x| (pid, x)));
-                if let Some(r) = state.running.as_mut() {
-                    let bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
-                    let files_done = v["files_done"].as_u64().unwrap_or(0);
-                    if r.updated.is_some() && r.phase.is_none() {
-                        r.bytes_per_s = smoothed_rate(r.bytes_per_s, bytes_done.saturating_sub(r.bytes_done), seconds);
-                        r.files_per_s = smoothed_rate(r.files_per_s, files_done.saturating_sub(r.files_done), seconds);
-                        // Del mismo restic que la muestra anterior.
-                        if let (Some((p0, (l0, e0))), Some((p1, (l1, e1)))) = (io_antes, io) {
-                            if p0 == p1 {
-                                r.read_bps = smoothed_rate(r.read_bps, l1.saturating_sub(l0), seconds);
-                                r.upload_bps = smoothed_rate(r.upload_bps, e1.saturating_sub(e0), seconds);
+                    if last_write.elapsed() < PROGRESS_EVERY {
+                        return;
+                    }
+                    let seconds = last_write.elapsed().as_secs_f64();
+                    last_write = std::time::Instant::now();
+                    let now = Local::now().to_rfc3339();
+                    let io = restic::pid_en_marcha().and_then(|pid| crate::platform::io_proceso(pid).map(|x| (pid, x)));
+                    if let Some(r) = state.running.as_mut() {
+                        let bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
+                        let files_done = v["files_done"].as_u64().unwrap_or(0);
+                        if r.updated.is_some() && r.phase.is_none() {
+                            r.bytes_per_s = smoothed_rate(r.bytes_per_s, bytes_done.saturating_sub(r.bytes_done), seconds);
+                            r.files_per_s = smoothed_rate(r.files_per_s, files_done.saturating_sub(r.files_done), seconds);
+                            // Del mismo restic que la muestra anterior.
+                            if let (Some((p0, (l0, e0))), Some((p1, (l1, e1)))) = (io_antes, io) {
+                                if p0 == p1 {
+                                    r.read_bps = smoothed_rate(r.read_bps, l1.saturating_sub(l0), seconds);
+                                    r.upload_bps = smoothed_rate(r.upload_bps, e1.saturating_sub(e0), seconds);
+                                }
                             }
                         }
+                        r.phase = None;
+                        r.percent = v["percent_done"].as_f64();
+                        r.files_done = v["files_done"].as_u64().unwrap_or(0);
+                        r.total_files = v["total_files"].as_u64().unwrap_or(0);
+                        r.bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
+                        r.total_bytes = v["total_bytes"].as_u64().unwrap_or(0);
+                        r.seconds_remaining = v["seconds_remaining"].as_u64();
+                        r.updated = Some(now.clone());
                     }
-                    r.phase = None;
-                    r.percent = v["percent_done"].as_f64();
-                    r.files_done = v["files_done"].as_u64().unwrap_or(0);
-                    r.total_files = v["total_files"].as_u64().unwrap_or(0);
-                    r.bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
-                    r.total_bytes = v["total_bytes"].as_u64().unwrap_or(0);
-                    r.seconds_remaining = v["seconds_remaining"].as_u64();
-                    r.updated = Some(now.clone());
-                }
-                io_antes = io;
-                // El agente sigue vivo aunque la copia sea larga.
-                state.last_tick = Some(now);
-                let _ = write_json("state.json", &state);
-            });
-            state.running = None;
-            let tag = match record.result.as_str() {
-                "ok" => "",
-                "warning" => "AVISO: ",
-                _ => "ERROR: ",
-            };
-            log(&format!("{tag}«{}» (plan «{}»): {}", repo.name, plan.name, record.message));
-            if record.result == "error" {
-                failures += 1;
-            }
-            if !ran.contains(&repo.id) {
-                ran.push(repo.id.clone());
-            }
-            // Reintentos: se cuentan solo los que siguen a un fallo. Una copia
-            // pedida a distancia que falla no se reintenta sola.
-            if record.result == "error" {
-                let next = if from_remote.is_some() {
-                    MAX_RETRIES
-                } else if retry {
-                    attempts + 1
-                } else if asked {
-                    attempts
-                } else {
-                    0
+                    io_antes = io;
+                    // El agente sigue vivo aunque la copia sea larga.
+                    state.last_tick = Some(now);
+                    let _ = write_json("state.json", &state);
+                });
+                state.running = None;
+                let tag = match record.result.as_str() {
+                    "ok" => "",
+                    "warning" => "AVISO: ",
+                    _ => "ERROR: ",
                 };
-                state.retries.insert(key.clone(), next);
-            } else {
-                state.retries.remove(&key);
-            }
-            // El estado y el historial los leen todos los usuarios: sin rutas.
-            let mut record = record;
-            record.message = crate::web::local_message(&record.message);
-            crate::history::append(
-                &crate::history::agent_file(),
-                &crate::history::Entry {
-                    kind: "backup".into(),
-                    origin: if from_remote.is_some() {
-                        "remote"
+                log(&format!("{tag}«{}» (plan «{}»): {}", repo.name, plan.name, record.message));
+                if record.result == "error" {
+                    failures += 1;
+                }
+                if !ran.contains(&repo.id) {
+                    ran.push(repo.id.clone());
+                }
+                // Reintentos: se cuentan solo los que siguen a un fallo. Una copia
+                // pedida a distancia que falla no se reintenta sola.
+                if record.result == "error" {
+                    let next = if from_remote.is_some() {
+                        MAX_RETRIES
                     } else if retry {
-                        "retry"
+                        attempts + 1
+                    } else if asked {
+                        attempts
                     } else {
-                        "agent"
+                        0
+                    };
+                    state.retries.insert(key.clone(), next);
+                } else {
+                    state.retries.remove(&key);
+                }
+                // El estado y el historial los leen todos los usuarios: sin rutas.
+                let mut record = record;
+                record.message = crate::web::local_message(&record.message);
+                crate::history::append(
+                    &crate::history::agent_file(),
+                    &crate::history::Entry {
+                        kind: "backup".into(),
+                        origin: if from_remote.is_some() {
+                            "remote"
+                        } else if retry {
+                            "retry"
+                        } else {
+                            "agent"
+                        }
+                        .into(),
+                        requested_from: from_remote.map(|c| c.origin_label()),
+                        repo_id: repo.id.clone(),
+                        repo_name: repo.name.clone(),
+                        plan_id: Some(plan.id.clone()),
+                        plan_name: Some(plan.name.clone()),
+                        started: record.started.clone(),
+                        finished: record.finished.clone(),
+                        result: record.result.clone(),
+                        message: record.message.clone(),
+                        snapshot_id: record.snapshot_id.clone(),
+                        data_added: record.data_added,
+                        files_new: record.files_new,
+                        files_changed: record.files_changed,
+                        unchanged: record.unchanged,
+                        user: None,
+                        ganchos: record.ganchos.clone(),
+                    },
+                );
+                if let (Some(cmd), Some((link, secret))) = (from_remote, &web_access) {
+                    let status = if record.result == "error" { "failed" } else { "done" };
+                    crate::remote::finish(&link.url, &link.key, &link.device_id, secret, &cmd.id, status, &record.message);
+                    remote_done.push(key.clone());
+                }
+                // Tarea 7c: la cadena siguió hasta aquí (el resultado de esta copia es el suyo).
+                if by_chain {
+                    if let Some(prev) = plan.after.as_ref().and_then(|a| state.runs.get(a)) {
+                        let at = prev.finished.clone();
+                        state.chains.insert(
+                            key.clone(),
+                            ChainState { state: "ok".into(), at, previous: plan.after.clone().unwrap_or_default(), message: String::new() },
+                        );
                     }
-                    .into(),
-                    requested_from: from_remote.map(|c| c.origin_label()),
-                    repo_id: repo.id.clone(),
-                    repo_name: repo.name.clone(),
-                    plan_id: Some(plan.id.clone()),
-                    plan_name: Some(plan.name.clone()),
-                    started: record.started.clone(),
-                    finished: record.finished.clone(),
-                    result: record.result.clone(),
-                    message: record.message.clone(),
-                    snapshot_id: record.snapshot_id.clone(),
-                    data_added: record.data_added,
-                    files_new: record.files_new,
-                    files_changed: record.files_changed,
-                    unchanged: record.unchanged,
-                    user: None,
-                    ganchos: record.ganchos.clone(),
-                },
-            );
-            if let (Some(cmd), Some((link, secret))) = (from_remote, &web_access) {
-                let status = if record.result == "error" { "failed" } else { "done" };
-                crate::remote::finish(&link.url, &link.key, &link.device_id, secret, &cmd.id, status, &record.message);
-                remote_done.push(key.clone());
+                }
+                done_keys.push(key.clone());
+                state.runs.insert(key, record);
+                // Se guarda tras cada copia: si algo se corta, lo hecho queda anotado.
+                let _ = write_json("state.json", &state);
             }
-            state.runs.insert(key, record);
-            // Se guarda tras cada copia: si algo se corta, lo hecho queda anotado.
-            let _ = write_json("state.json", &state);
+        }
+        if done_keys.len() == before {
+            break;
         }
     }
     // Peticiones a distancia que no se pudieron empezar (p. ej. una verificación
@@ -2314,6 +2444,7 @@ pub mod tests {
                 enabled_at: at("2026-09-30 08:10").to_rfc3339(),
                 skip_unchanged: false,
                 ganchos: vec![],
+                after: None,
             }],
             verify: None,
             offsite: None,
@@ -2363,6 +2494,47 @@ pub mod tests {
         // Una fecha de fin ilegible no deja las copias paradas para siempre.
         repo.pause = Some(Pause { since: "x".into(), until: Some("mañana".into()) });
         assert!(repo.active_pause(now).is_none());
+    }
+
+    /// Tarea 7c: un plan «después de la anterior» empieza cuando la anterior
+    /// termina bien después de su última vez; si la anterior falla, no.
+    #[test]
+    fn cadena_despues_de_la_anterior() {
+        let repo = repo_cada_hora();
+        let mut plan = repo.plans[0].clone();
+        plan.id = "disco-e".into();
+        plan.schedule = crate::plans::PlanSchedule::from_rules(vec![]);
+        plan.after = Some("r#p".into());
+        let mut state = AgentState::default();
+        let now = at("2026-09-30 10:30");
+        let fin = |h: &str, result: &str| RunRecord { started: at(h).to_rfc3339(), finished: at(h).to_rfc3339(), result: result.into(), ..Default::default() };
+        // Sin horario propio y sin que la anterior haya terminado: nada.
+        assert_eq!(plan_turn(&repo, &plan, &state, false, now), None);
+        // La anterior terminó antes de que se activara este: tampoco (no se repite lo de antes).
+        state.runs.insert("r#p".into(), fin("2026-09-30 08:00", "ok"));
+        assert_eq!(plan_turn(&repo, &plan, &state, false, now), None);
+        // Terminó bien después: empieza. Con algún archivo sin leer, también.
+        state.runs.insert("r#p".into(), fin("2026-09-30 10:00", "ok"));
+        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state)), ChainTurn::Go);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, now), Some(false));
+        state.runs.insert("r#p".into(), fin("2026-09-30 10:00", "warning"));
+        assert_eq!(plan_turn(&repo, &plan, &state, false, now), Some(false));
+        // Ya se hizo después de esa: no se repite hasta que la anterior vuelva a terminar.
+        state.runs.insert("r#disco-e".into(), fin("2026-09-30 10:01", "ok"));
+        assert_eq!(plan_turn(&repo, &plan, &state, false, now), None);
+        // La anterior falla: la cadena se para (no empieza).
+        state.runs.insert("r#p".into(), fin("2026-09-30 11:00", "error"));
+        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state)), ChainTurn::Stopped);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 11:05")), None);
+        // Y cuando la anterior se reintenta y sale bien, sigue sola.
+        state.runs.insert("r#p".into(), fin("2026-09-30 11:16", "ok"));
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 11:20")), Some(false));
+        // En pausa, tampoco la cadena.
+        let mut pausado = repo.clone();
+        pausado.pause = Some(Pause { since: at("2026-09-30 11:00").to_rfc3339(), until: None });
+        assert_eq!(plan_turn(&pausado, &plan, &state, false, at("2026-09-30 11:20")), None);
+        // Un plan sin anterior no es de ninguna cadena.
+        assert_eq!(chain_turn(&repo.plans[0], &state, at("2026-09-30 00:00")), ChainTurn::Wait);
     }
 
     #[test]
@@ -2498,6 +2670,7 @@ pub mod tests {
                 schedule: Some(cada_hora),
                 skip_unchanged: false,
                 ganchos: vec![],
+                after: None,
             }],
             retention: None,
             expected_hours: None,

@@ -94,6 +94,7 @@ fn migrate_to_plans(repos: &mut [Repo]) -> bool {
             schedule,
             skip_unchanged: false,
             ganchos: vec![],
+            after: None,
         });
         changed = true;
     }
