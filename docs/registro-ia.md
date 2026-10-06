@@ -13,6 +13,30 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ordenes-entre-consolas`
+
+- **Pedido:** tareas 1 («Órdenes visibles y cancelables desde cualquier consola») y 9c («Reloj del equipo en las esperas») del plan. El responsable estaba fuera: propuesta escrita en `docs/consolas-multiples.md` §5 y hecha sin esperar su visto bueno (lo pidió así), compatible con los agentes ya instalados.
+- **Cambios:**
+  - `protocolo`: orden `cancelar_espera` (inofensiva), campo opcional `por` en el sobre, `validar_con_espera`/`abrir_con_espera`.
+  - `servidor`: entrega al momento las órdenes con espera que piden autorización a los agentes con `admite: "ordenes_en_espera"` (lo mira en el resumen guardado); `ahora` en `hola`, `ping` y `tomar`; las `entregada` que esperan siguen en «pendientes»; `rechazada` + `detalle.cancelada` → `cancelada`; un resultado firmado de una orden ya cancelada la sustituye y avisa (`cambio_inusual`); aviso nuevo `orden_en_espera`; historial `orden` (solo pedido); `pendientes` cuenta las de otras consolas.
+  - `agente`: `espera_v2.rs` (guardar con el sobre sellado en `servidor.bin`, aplicar con los dos relojes en el canal de la consola que la mandó, `resumen.en_espera`, cancelar desde cualquiera o desde su servidor, aviso a las demás, historial común `orden` de todas las órdenes); `procesar` partido en `comprobar` / `autorizar_y_ejecutar`; `largas::guardar_resultado`; prueba de integración `espera_it.rs` con dos servidores reales.
+  - `consola`: `lib/espera.ts` (+ `vectores-espera.ts`), «Órdenes esperando su turno» con las de otras consolas y su «Cancelar», «Desde otras consolas» en Órdenes, aviso nuevo, `por` en el sobre, mock, paso 8a2 del e2e.
+  - Docs: `consolas-multiples.md` §5, `api-servidor.md` (§1, §4, §5, §6, §8 y «Cambios» v1.4x), `plataforma.md` §7.3.1, `plan-mejoras.md`.
+- **Encontrado de paso:** con el flujo anterior, una orden con espera que el servidor entregaba a su hora llegaba **después** de las posteriores (`seq` mayor) y el agente la rechazaba por «antigua». Con agente y servidor nuevos ya no pasa (se entregan en orden); con un agente anterior sigue igual.
+- **Decisiones dudosas (a revisar):**
+  - La espera la cuentan los dos relojes: el del equipo (con la holgura de 5 min de siempre) **y** el del servidor que la mandó (su `ahora` + reloj monotónico, 2 s de margen por redondeo). Sin `ahora` (servidor anterior) solo el del equipo: ese servidor nunca entrega antes de tiempo. No hay referencia de tiempo firmada independiente (sigue en §7.3.1).
+  - Solo se aplica en el canal de la consola que la mandó, justo después de hablar con ella. Si esa consola no vuelve, la orden caduca sin aplicarse (lo seguro, como antes, pero puede sorprender).
+  - Autorización comprobada al recibirla (los fallos cuentan para los bloqueos) **y** al aplicarla (si cambió la clave, se rechaza). Inofensivas con espera: no se adelantan ni se guardan. Como mucho 20 por consola.
+  - `cancelar_espera` es inofensiva: un técnico (o una consola maliciosa) puede cancelar lo que mandó un administrador desde otra consola. Es reversible y queda en el historial de todas (ver §5.9).
+  - A la consola que la mandó, la cancelación llega como `rechazada` con `detalle.cancelada` (un servidor anterior la enseña como rechazada), por `largas` (en la siguiente vuelta del servicio, ≤ 10 s, o cuando vuelva).
+  - Nombre de la consola, nunca su dirección (como el progreso de «Mover a otro sitio»); sí su identidad (ya estaba en `resumen.consolas`). La consola no enseña un nombre que parezca una dirección (`nombreConsola`).
+  - El aviso `orden_en_espera` va solo a las **demás** consolas (la que la manda ya tiene «Orden destructiva pendiente»); una consola apagada en ese momento no lo recibe por correo/push.
+  - Historial `orden`: todas las órdenes salvo las de sesión y `cancelar_espera`, también las rechazadas por clave; de las largas solo se anota `en_marcha`. `por` lo pone la consola (no se puede comprobar).
+  - El servidor decide si adelantar por el `admite` del último resumen: si se instala un agente anterior encima de uno nuevo, hasta su primer resumen rechazaría por «todavía no es la hora» las que le lleguen antes.
+  - Quitar la consola que la mandó (o desvincular) cancela sus órdenes en espera.
+- **Comprobado:** RESULTADOS_PENDIENTES
+- **Sin probar / dudas:** el reinicio del servicio con órdenes en espera (solo que se guardan y se leen de `servidor.bin`); cambiar de verdad el reloj del equipo o del servidor; Linux; la prueba de integración de Rust va por sondeo (el canal WebSocket lo cubre el e2e); la ventana del equipo no enseña ni cancela las órdenes en espera; `cambiar_servidor` de una consola con órdenes en espera (se cancelan por identidad distinta, sin probar).
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/arreglo-e2e-retencion`
 
 - **Pedido:** el e2e de `main` (d73180e) fallaba en el paso 5 esperando la vuelta de la retención en el historial del almacén; buscar la causa y arreglarla.
