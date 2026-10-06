@@ -1662,6 +1662,9 @@ pub fn canal_de(id: &str) -> Result<(), String> {
         // v1.36: la configuración que cambió otra consola, a esta.
         if v.config_pendiente {
             subir_pendiente(id);
+            // v1.4x: y lo que se anotó en el historial común con ese cambio (p. ej. «Cambiar el
+            // nombre del equipo», desde la otra consola), sin esperar al siguiente informe.
+            historial = subir_bitacora(&v, historial);
         }
         let leido = ws.read();
         if leido.is_ok() {
