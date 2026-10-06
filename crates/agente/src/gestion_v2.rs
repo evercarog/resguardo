@@ -738,6 +738,8 @@ pub(crate) fn aplicar_pruebas(v: &Vinculo, cfg: &Configuracion) -> Result<usize,
         match (quiere, &r.restore_test) {
             (Some(q), Some(actual)) if q.igual_que(actual) => {}
             (None, None) => {}
+            // Una prueba con otro horario (la puso la app de escritorio, no la consola): se deja.
+            (None, Some(actual)) if PruebaAuto::de(actual).is_none() => {}
             (q, _) => crate::agent::set_restore_test(&r.id, q.map(|q| q.prueba(ahora)))?,
         }
     }
