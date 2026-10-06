@@ -49,6 +49,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/mapa-zoom`
+
+Desde `ia/integracion-0725`; al final se unió `ia/destinos-y-regla-ux` (las tarjetas de destino llevan a su página), sin conflictos.
+
+- **Pedido:** en el mapa («Camino de sus copias» y los demás) poder acercar, alejar y moverse, y que las líneas no pasen por detrás de otras tarjetas (confunde). Referencias: el mapa de red de NetBird y GlassWire.
+- **Cambios:**
+  - `consola/src/lib/mapaGeometria.ts` (nuevo, sin dependencias): dibujo por capas de izquierda a derecha. Un trazo que salta columnas (la copia externa, por encima de los destinos) reserva un hueco entre dos tarjetas en cada columna que cruza y pasa en recta por él; las curvas solo van por los canales entre columnas, así que **ningún trazo cruza una tarjeta**. Orden de cada columna por baricentros (bajando y subiendo, se queda el de menos cruces; la primera columna no se mueve, lo urgente sigue arriba), altura de cada tarjeta por regresión isotónica (lo más cerca de la media de sus vecinas, sin pisarse ni cambiar el orden). Las marcas de estado van en la recta del hueco o en la mitad de la curva, sin pisarse entre ellas.
+  - `MapaProteccion.svelte`: las tarjetas van colocadas por esa geometría (se mide su alto; el ancho de las columnas sale del sitio que hay, las píldoras algo más anchas) en un plano que se transforma. Arrastrar (también desde una tarjeta; un clic sin moverse la abre), Ctrl/⌘ + rueda y pellizco del panel táctil alrededor del cursor, dos dedos en la pantalla, doble clic (Mayús, aleja), + − 0, flechas con el lienzo enfocado, barra abajo a la derecha (alejar, %, acercar, «Ajustar», pantalla completa con la API del navegador o, si no la hay, sobre toda la ventana con Esc para salir). Vista recordada por mapa en `sessionStorage`. La tarjeta enfocada con el teclado se trae a la vista. En estrecho sigue empezando en lista, pero «Ver el mapa» ya se puede pulsar.
+  - `scripts/vectores-mapa.ts` (en `test:vectores`): un equipo con cadenas, un almacén con zonas, cinco espejos y copias externas, el cliente entero, el mapa de todos los clientes y 60 grafos al azar con semilla: ningún tramo corta una tarjeta que no sea uno de sus extremos, ninguna tarjeta pisa a otra, cada trazo sale y llega a su puerto; más un control (la curva directa de antes sí se detecta).
+  - `docs/diseno.md` §4: «Dónde va cada cosa» y «Acercar y moverse».
+- **Comprobado:** consola `check` (0 errores, 0 avisos), `build`, `test:vectores` (con la comprobación de `$effect`) y `test:sin-referencias` antes de cada commit, también tras unir la otra rama. En el simulador (`dev:mock`, Edge sin ventana por CDP) a 1280 y 375, claro y oscuro: Estado de dos clientes, la ficha de un almacén, de CAJA-1 y de un servidor, y «Todos los clientes» (cinco columnas). Interacción con un guion: Ctrl + rueda acerca alrededor del cursor, la rueda sola mueve la página y enseña la pista, arrastrar desde una tarjeta mueve y no la abre, un clic sí la abre, doble clic, + − 0 y flechas, la vista recordada al volver, pellizco con dos dedos (eventos táctiles simulados), pantalla completa y salir, y «Ver el mapa» a 375. Capturas antes y después en `tmp\capturas\mapa\` del equipo de desarrollo. Rust no se tocó (lo de Rust que trae la otra rama no se volvió a compilar aquí).
+- **Sin probar / dudas (decididas sin preguntar):**
+  - La rueda **sola no acerca** (movería el mapa al bajar por la página): hace falta Ctrl/⌘ (el pellizco del panel táctil ya llega así) y se enseña una pista; en pantalla completa la rueda mueve el mapa.
+  - Con el dedo: un dedo en vertical mueve la página (`touch-action: pan-y`); en horizontal mueve el mapa; dos dedos acercan. Solo con eventos simulados, no en un teléfono o tableta de verdad.
+  - Al abrir, el mapa sale entero a lo ancho y nunca por encima del 100 %; a 375 px eso es ~36 % (por eso sigue empezando en lista). El lienzo mide lo que el dibujo a lo ancho (como antes, la página crece con él) con un tope de 2400 px.
+  - La vista recordada se descarta si cambia el ancho del mapa (no cuadraría).
+  - En la pantalla completa del navegador los globos de ayuda (`tip`) no se ven (viven fuera de la sección); los botones llevan igualmente su nombre.
+  - El orden de la segunda columna en adelante ya no es exactamente el de `ordenarMapa` (se reordena para quitar cruces); la primera sí.
+  - Safari (la pantalla completa alternativa) y un lector de pantalla de verdad, sin probar.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/destinos-y-regla-ux`
 
 Lo que contó el usuario tras la 0.7.24. Otra sesión trabajaba a la vez en `ia/editor-de-copias` («Cambiar las copias», `AnadirCopia`, el orden de la ficha del equipo, el menú «Más…» del repositorio) y otra en la actualización automática: no se tocaron esos archivos (salvo usar `TiraRegla` compacta, que «Cambiar las copias» ya usaba).
