@@ -67,6 +67,32 @@ export async function kcfgComprobada(cliente: T.Cliente, equipo: T.Equipo, clave
   return kcfg;
 }
 
+/**
+ * Para varios equipos a la vez con la clave de administración (v1.4x, «Varios a
+ * la vez»): K_cfg se calcula una sola vez para el cliente. Quien la llama la
+ * borra al terminar.
+ */
+export async function kcfgDelCliente(cliente: T.Cliente, claveAdmin: string): Promise<Uint8Array> {
+  const material = await materialCliente(argon2Navegador, claveAdmin, cliente.sal_cliente);
+  try {
+    return kCfg(material);
+  } finally {
+    borrar(material);
+  }
+}
+
+/**
+ * La prueba de administración para un equipo, con la K_cfg del cliente ya
+ * calculada: comprueba sus llaves (fijadas y etiqueta) como `kcfgComprobada` y,
+ * si no cuadran, no prepara nada. Quien la llama la borra al terminar.
+ */
+export async function pruebaParaEquipo(cliente: T.Cliente, equipo: T.Equipo, claveAdmin: string, kcfg: Uint8Array): Promise<Uint8Array> {
+  if ((await comprobarLlaves(cliente.id, equipo)) === "cambiada") throw new ErrorLlavesCambiadas(equipo.nombre);
+  if (!etiquetaValida(kcfg, equipo)) throw new ErrorEtiqueta("La clave de administración no es correcta, o las llaves de este equipo no son las que se confirmaron al emparejarlo. No se le ha enviado nada.");
+  await fijar(cliente.id, equipo);
+  return pruebaAdmin(argon2Navegador, claveAdmin, equipo.sal_equipo);
+}
+
 /** ¿Hará falta también la clave de administración para una orden con la contraseña del repositorio? */
 export async function repoPideAdmin(cliente: string, equipo: T.Equipo) {
   return (await comprobarLlaves(cliente, equipo)) !== "fijada";

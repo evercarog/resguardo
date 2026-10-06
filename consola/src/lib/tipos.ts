@@ -504,6 +504,34 @@ export interface Resumen {
   equipos: Equipo[];
   avisos_abiertos: number;
   pendientes: number;
+  /** v1.4x: los ajustes de las etiquetas (sin el campo, un servidor anterior: ninguno). */
+  etiquetas?: AjusteEtiqueta[];
+}
+
+/** v1.4x: un canal de notificación (del servidor o del propio cliente). */
+export interface CanalRef {
+  ambito: "servidor" | "cliente";
+  id: string;
+}
+
+/** v1.4x: cómo se avisa de los equipos con una etiqueta (lo pone el propietario). */
+export interface AvisosEtiqueta {
+  /** Sus avisos importantes o críticos cuentan como mínimo con esta gravedad. */
+  importancia?: Severidad | null;
+  /** Canales compartidos que reciben siempre sus avisos. */
+  canales?: CanalRef[];
+}
+
+/** v1.4x: lo que se ajusta de una etiqueta de equipos. */
+export interface AjusteEtiqueta {
+  nombre: string;
+  /** Índice de la paleta (0–6); sin él, el que sale del nombre. */
+  color?: number | null;
+  /** Id de la plantilla de copia que se propone a un equipo nuevo con esta etiqueta. */
+  plantilla?: string | null;
+  avisos?: AvisosEtiqueta | null;
+  actualizada?: string | null;
+  por?: string;
 }
 
 /** El informe del agente (sin rutas). La forma la decide el agente; la consola pinta lo que reconoce. */
@@ -930,7 +958,8 @@ export interface NotifCliente {
   canales: CanalNotif[];
   /** El correo que vale para las personas de este cliente (null: ninguno). */
   correo: { de: "servidor" | "cliente"; nombre: string } | null;
-  servidor: { canales: { nombre: string; tipo: TipoCanal; severidades: Severidad[] }[]; url_consola: string | null };
+  /** `id`: v1.4x (para elegirlos en los avisos de una etiqueta). */
+  servidor: { canales: { id?: string; nombre: string; tipo: TipoCanal; severidades: Severidad[] }[]; url_consola: string | null };
 }
 
 export interface EnvioNotif {
@@ -956,6 +985,14 @@ export interface PrefsNotif {
   resumen: boolean;
   /** false: las de su papel (no las ha cambiado nadie). */
   propias: boolean;
+  /** v1.4x: lo que quiere de los equipos con ciertas etiquetas, en lugar de `inmediatos`. */
+  etiquetas?: PrefEtiqueta[];
+}
+
+/** v1.4x: lo que una persona quiere al momento de los equipos con una etiqueta. */
+export interface PrefEtiqueta {
+  etiqueta: string;
+  inmediatos: Severidad[];
 }
 
 export interface PersonaNotif {
@@ -975,7 +1012,8 @@ export interface MisNotif {
   resumen_semanal: boolean;
   hora_resumen: string;
   dia_semanal: number;
-  clientes: { id: string; nombre: string; rol: Rol; correo: boolean; preferencias: PrefsNotif }[];
+  /** `etiquetas` (v1.4x): las que usan los equipos de ese cliente. */
+  clientes: { id: string; nombre: string; rol: Rol; correo: boolean; preferencias: PrefsNotif; etiquetas?: string[] }[];
 }
 
 // --- v1.40: observaciones y comentarios (lib/notas.svelte.ts) -----------------
