@@ -521,8 +521,12 @@ fn restaurar_respaldo(c: &Config, archivo: &std::path::Path, reemplazar: bool, c
     // En Windows, la carpeta solo para SYSTEM y Administradores antes de poner
     // nada: lo restaurado (`identidad.key`, las bases de datos) hereda sus
     // permisos, y una carpeta nueva en ProgramData los Usuarios la pueden leer.
+    // Con otra carpeta (`--datos`, p. ej. una de pruebas) y sin ser
+    // administrador, se deja como está: es del usuario que la eligió.
     #[cfg(windows)]
-    servicio::proteger_carpeta(&c.datos).map_err(|e| format!("{e} (ejecuta restaurar-respaldo como administrador)"))?;
+    if c.datos == datos_por_defecto() || servicio::es_administrador() {
+        servicio::proteger_carpeta(&c.datos).map_err(|e| format!("{e} (ejecuta restaurar-respaldo como administrador)"))?;
+    }
     println!("Descifrando (tarda unos segundos)…");
     let r = resguardo_servidor::respaldo::restaurar(archivo, &clave, &c.datos, reemplazar, &cab.identidad)?;
     println!("Consola restaurada en {} ({} archivos, copia del {}, Resguardo Server {}).", c.datos.display(), r.archivos, r.creado, r.version);

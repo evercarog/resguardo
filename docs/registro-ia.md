@@ -13,6 +13,15 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/arreglo-e2e-retencion`
+
+- **Pedido:** el e2e de `main` (d73180e) fallaba en el paso 5 esperando la vuelta de la retención en el historial del almacén; buscar la causa y arreglarla.
+- **Causa:** no era el código. El e2e usó un `resguardo-agente.exe` del 4 de octubre (anterior a «Retención en detalle»): solo se había recompilado el servidor. Ese agente no anota nada (en el almacén ni siquiera existía `privado/bitacora`). Con los binarios recompilados, `main` pasa el escenario entero.
+- **Cambios:** `consola/scripts/e2e/escenario.ts` comprueba antes de empezar que `resguardo-server` y `resguardo-agente` no son anteriores a su código (`src/` y `Cargo.toml` de su crate, `motor` y `protocolo`, por la fecha de los archivos, como cargo) y, si lo son, falla en ese momento diciendo cómo compilar (`RESGUARDO_E2E_BINARIOS_VIEJOS=1` para probarlo igual).
+- **Rama de la nube unida** (`claude/analizar-repo-resguardo-d780qd`, como en el `main` local): con ella el paso 5 pasa, pero el 6c fallaba («restaurar-respaldo: Acceso denegado»): `restaurar-respaldo` protegía siempre la carpeta de datos y eso pide administrador, también con `--datos` en una carpeta propia (la del e2e). Ahora protege la de ProgramData (la del servicio) siempre y otra carpeta solo si se ejecuta como administrador (`servicio::es_administrador`).
+- **Comprobado:** el aviso salta con un agente viejo; `npm run e2e` completo con binarios nuevos sobre `origin/main` y otra vez con la rama de la nube unida y el arreglo de `restaurar-respaldo`.
+- **Sin probar / dudas:** al cambiar de rama cambian las fechas de los archivos y el aviso pide recompilar aunque el código sea igual (lo mismo que haría cargo). `restaurar-respaldo` como administrador sobre ProgramData no se ha probado aquí. Dos ejecuciones del e2e cayeron con `read ECONNRESET` (el servidor del escenario dejó de existir sin escribir nada) mientras corrían a la vez otros e2e en la misma máquina; sin otros, pasó entero: parece choque entre escenarios simultáneos (puertos o procesos), sin confirmar.
+
 ## 2026-10-06 · Claude Code · rama `worktree-agent-ae3d01db4ee36f1d3`
 
 - **Pedido:** que un «Mover a otro sitio…» empezado en una consola se vea en todas las consolas del equipo (solo lectura, con quién lo empezó), y corregir «Cambiar ninguna copia…».

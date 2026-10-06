@@ -69,6 +69,27 @@ function buscarBinarios(): { restic: string; restServer: string } | null {
   return restic && restServer ? { restic, restServer } : null;
 }
 
+/** El archivo de código (`src/`, `Cargo.toml`) más reciente de esas carpetas de crates. */
+function codigoMasNuevo(carpetas: string[]): { archivo: string; t: number } | null {
+  let mejor: { archivo: string; t: number } | null = null;
+  const ver = (p: string) => {
+    const t = fs.statSync(p).mtimeMs;
+    if (!mejor || t > mejor.t) mejor = { archivo: p, t };
+  };
+  const recorrer = (d: string) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) recorrer(p);
+      else if (/\.(rs|toml|json|sql)$/.test(e.name)) ver(p);
+    }
+  };
+  for (const c of carpetas) {
+    if (fs.existsSync(path.join(c, "Cargo.toml"))) ver(path.join(c, "Cargo.toml"));
+    if (fs.existsSync(path.join(c, "src"))) recorrer(path.join(c, "src"));
+  }
+  return mejor;
+}
+
 const resticVersion = (restic: string) => ejecutar(restic, ["version"]).salida.trim();
 
 // ---------------------------------------------------------------------------
@@ -113,6 +134,19 @@ async function principal() {
   }
   for (const b of ["resguardo-server", "resguardo-agente"]) {
     comprobar(fs.existsSync(binario(TARGET, b)), `Falta ${binario(TARGET, b)}: compila antes con «cargo build -p resguardo-servidor -p resguardo-agente --bins».`);
+  }
+  // Un binario anterior a su código (p. ej. solo se recompiló el servidor) prueba otra cosa
+  // y falla lejos de la causa: mejor decirlo aquí (como cargo, por la fecha de los archivos).
+  if (process.env.RESGUARDO_E2E_BINARIOS_VIEJOS !== "1") {
+    const fuentes: Record<string, string[]> = { "resguardo-server": ["servidor", "motor", "protocolo"], "resguardo-agente": ["agente", "motor", "protocolo"] };
+    for (const [b, crates] of Object.entries(fuentes)) {
+      const nuevo = codigoMasNuevo(crates.map((k) => path.join(RAIZ, "crates", k)));
+      const t = fs.statSync(binario(TARGET, b)).mtimeMs;
+      comprobar(
+        !nuevo || nuevo.t <= t,
+        `${binario(TARGET, b)} es anterior a su código (${path.relative(RAIZ, nuevo?.archivo ?? "")}): compila antes con «cargo build -p resguardo-servidor -p resguardo-agente --bins» (o RESGUARDO_E2E_BINARIOS_VIEJOS=1 para probarlo igual).`,
+      );
+    }
   }
   const base = fs.mkdtempSync(path.join(process.env.RESGUARDO_E2E_TMP ?? os.tmpdir(), "e2e-"));
   const dir = (...p: string[]) => path.join(base, ...p);
