@@ -275,7 +275,7 @@ Tareas 1 y 9c de [plan-mejoras.md](plan-mejoras.md). Contrato «v1.49, pendiente
 - El agente nuevo anuncia `admite: ["ordenes_en_espera", …]` en su resumen.
 - El servidor nuevo solo entrega antes de su hora las órdenes **que piden autorización** (no las inofensivas) a los equipos que lo anuncian. A los demás, como siempre: en su `not_before`. **Sigue comprobando la espera al crearla** (la del equipo o la del cliente) para todos.
 - Un servidor anterior nunca entrega antes de tiempo: el agente nuevo recibe la orden a su hora y la aplica al momento, como antes.
-- Un agente anterior no recibe nada antes de tiempo (no lo anuncia).
+- Un agente anterior no recibe nada antes de tiempo (no lo anuncia). Para que las órdenes que se le manden mientras espera no la dejen «antigua» (su `seq` sería menor que el último aceptado), la consola le pone el **número reservado** `seq_espera` y el servidor entrega en orden sin saltarse ninguna; si el reloj del equipo va atrasado, se le vuelve a dar a los 10 min (v1.4x, api-servidor.md «Cambios»). Si aun así no se aplica, queda en «Órdenes» con el motivo y el aviso `orden_no_aplicada`.
 - La consola nueva con un servidor o un agente anterior: sin `en_espera` en el resumen, enseña lo de siempre (las de su propio servidor). «Cancelar» de las de otra consola solo aparece si el equipo lo admite.
 
 ### 5.3 En el equipo: recibir una orden con espera
