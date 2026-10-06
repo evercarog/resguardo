@@ -25,7 +25,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   "retencion-almacen": {
     title: "Retención en el almacén",
-    text: "Un almacén («Este equipo guarda copias») es de solo añadir: ningún equipo puede borrar allí, ni siquiera lo suyo antiguo. Por eso la retención la aplica el propio almacén, en su disco y a la hora que elijas, con una clave de restic propia que el equipo añade al repositorio. Con esa clave el almacén también puede leer ese repositorio.",
+    text: "Un almacén («Este equipo guarda copias») es de solo añadir: ningún equipo puede borrar allí, ni siquiera lo suyo antiguo. Por eso la retención la aplica el propio almacén, en su disco y a la hora que elijas, con una clave propia que el equipo añade al repositorio. Con esa clave el almacén también puede leer ese repositorio.",
     todo: "Se autoriza una vez (con la espera de lo que borra) y después se aplica sola. «Dejar de aplicarla» borra la clave del almacén del repositorio.",
   },
   "seq": {
@@ -232,7 +232,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   kit: {
     title: "Kit de recuperación",
-    text: "Una hoja por repositorio con su destino, su id y su contraseña. Con ella se pueden abrir las copias en cualquier equipo, incluso sin Resguardo (con restic).",
+    text: "Una hoja por repositorio con su destino, su id y su contraseña. Con ella se pueden abrir las copias en cualquier equipo, incluso sin Resguardo: el formato es abierto.",
     todo: "Imprímelo o guárdalo en PDF fuera del equipo, en un sitio seguro.",
   },
   nube: {

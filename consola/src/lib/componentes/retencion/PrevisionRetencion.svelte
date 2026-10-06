@@ -75,7 +75,7 @@
   <Info size={16} />
   <p>
     <strong>Es una simulación</strong> con la regla de ahora sobre {plural(versiones.length, "versión", "versiones")} que conoce la consola{total && total > versiones.length ? ` (las de los últimos 60 días; el repositorio tiene ${numero(total)})` : ""}.
-    La decisión es de restic al aplicarla{almacen ? `, y el almacén ${almacen} no toca las versiones cuya hora no cuadra con su subida` : ""}. Se cuenta por copia (restic agrupa por equipo y carpetas).
+    La decisión final se toma al aplicarla{almacen ? `, y el almacén ${almacen} no toca las versiones cuya hora no cuadra con su subida` : ""}. Se cuenta por copia (al aplicarla se agrupa por equipo y carpetas).
     {prevision.supuestas ? `Para los próximos días se suponen ${plural(prevision.supuestas, "copia nueva", "copias nuevas")} según su horario.` : ""}
     {prevision.sinHorario.length ? `De ${prevision.sinHorario.map((k) => `«${nombreCopia(k) ?? "otras"}»`).join(", ")} no se conoce el horario: no se suponen versiones nuevas suyas.` : ""}
   </p>

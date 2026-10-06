@@ -221,7 +221,7 @@
           <div class="field">
             <label class="field-label" for="k-tipo">Tipo de destino</label>
             <select id="k-tipo" class="input" bind:value={kitTipo}>
-              <option value="rest">Servidor de copias (rest-server)</option>
+              <option value="rest">Servidor de copias</option>
               <option value="local">Disco o carpeta</option>
               <option value="sftp">SFTP</option>
               <option value="s3">S3 compatible</option>

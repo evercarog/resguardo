@@ -6,7 +6,7 @@
 export type TipoExistente = "rest" | "local" | "b2" | "s3" | "sftp";
 
 export const ETIQUETA_TIPO_EXISTENTE: Record<TipoExistente, string> = {
-  rest: "Servidor de copias (rest-server)",
+  rest: "Servidor de copias",
   local: "Disco o carpeta del equipo",
   b2: "Backblaze B2",
   s3: "S3 compatible",

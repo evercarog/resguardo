@@ -171,7 +171,7 @@
             <label class="field-label" for="dv-tipo">Tipo</label>
             <select id="dv-tipo" class="input" bind:value={f.tipo}>
               <option value="local">Disco o carpeta</option>
-              <option value="rest">Servidor de copias (rest-server)</option>
+              <option value="rest">Servidor de copias</option>
               <option value="s3">S3 compatible</option>
               <option value="b2">Backblaze B2</option>
             </select>

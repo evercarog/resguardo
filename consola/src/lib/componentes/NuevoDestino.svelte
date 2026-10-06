@@ -34,7 +34,7 @@
   const TIPOS: { tipo: Exclude<TipoSuelto, "sftp">; texto: string; donde: string; ejemplo: string }[] = [
     { tipo: "b2", texto: "Backblaze B2", donde: "Bucket", ejemplo: "copias-oficina" },
     { tipo: "s3", texto: "S3 compatible (Wasabi, R2, MinIO…)", donde: "Servidor y bucket", ejemplo: "s3.wasabisys.com/copias-oficina" },
-    { tipo: "rest", texto: "Servidor de copias de fuera (rest-server)", donde: "Dirección", ejemplo: "https://copias.ejemplo.com:8000" },
+    { tipo: "rest", texto: "Servidor de copias de fuera", donde: "Dirección", ejemplo: "https://copias.ejemplo.com:8000" },
   ];
   let tipo = $state<Exclude<TipoSuelto, "sftp">>("b2");
   let nombre = $state("");
@@ -83,7 +83,7 @@
         </label>
         <label class="clase" class:on={clase === "red"}>
           <input type="radio" bind:group={clase} value="red" />
-          <Server size={16} /><span><strong>Nube o servidor</strong><span class="faint">B2, S3 o un rest-server de fuera</span></span>
+          <Server size={16} /><span><strong>Nube o servidor</strong><span class="faint">B2, S3 o un servidor de copias de fuera</span></span>
         </label>
         <label class="clase" class:on={clase === "nube"}>
           <input type="radio" bind:group={clase} value="nube" />
