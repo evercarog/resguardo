@@ -17,6 +17,7 @@ pub mod mensajes;
 pub mod orden_v2;
 pub mod ordenes;
 pub mod paquete;
+pub mod publicacion;
 pub mod respaldo_consola;
 pub mod simetrico;
 

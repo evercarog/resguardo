@@ -120,6 +120,45 @@ export const cambiarRespaldoConsola = (b: { activo?: boolean; publica?: string; 
   pedir<T.RespaldoConsola>("PUT", "/api/servidor/respaldo", b);
 export const respaldoConsolaAhora = () => pedir<T.RespaldoConsola>("POST", "/api/servidor/respaldo/ahora");
 
+// Actualización automática de los agentes (docs/actualizaciones.md, v1.4x). Con un servidor
+// anterior (404), null.
+const sin404 = <R>(p: Promise<R>) =>
+  p.catch((x: unknown) => {
+    if (x instanceof ApiError && x.estado === 404) return null;
+    throw x;
+  });
+export const publicacionServidor = () => sin404(pedir<T.PublicacionServidor>("GET", "/api/servidor/publicacion", undefined, { invisible: true }));
+/** El manifiesto y su firma, el texto exacto de los dos archivos. */
+export const ponerPublicacion = (manifiesto: string, firma: string) => pedir<T.PublicacionServidor>("PUT", "/api/servidor/publicacion", { manifiesto, firma });
+/** Un archivo de la versión, tal cual (el servidor lo comprueba con el manifiesto firmado). */
+export async function subirArchivoPublicacion(version: string, nombre: string, archivo: Blob): Promise<T.PublicacionServidor> {
+  const fin = empezar();
+  try {
+    let res: Response;
+    try {
+      res = await fetch(`/api/servidor/publicacion/${encodeURIComponent(version)}/${encodeURIComponent(nombre)}`, {
+        method: "PUT",
+        headers: { Accept: "application/json", "X-Resguardo": "1", "Content-Type": "application/octet-stream" },
+        body: archivo,
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+    } catch {
+      conexionPerdida();
+      throw new ApiError("red", mensajeDe("red"), 0);
+    }
+    conexionOk();
+    const cuerpo = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const codigo = typeof cuerpo.error === "string" ? cuerpo.error : "interno";
+      throw new ApiError(codigo, typeof cuerpo.mensaje === "string" ? cuerpo.mensaje : mensajeDe(codigo), res.status, cuerpo);
+    }
+    return cuerpo as unknown as T.PublicacionServidor;
+  } finally {
+    fin();
+  }
+}
+
 export const primerArranque = (b: { codigo_arranque: string; correo: string; nombre: string; contrasena: string }) =>
   pedir<{ totp: T.Totp }>("POST", "/api/inicio", b, { sinRedirigir: true });
 
@@ -387,6 +426,12 @@ export const resumen = (c: string) => pedir<T.Resumen>("GET", `${cli(c)}/resumen
 /** v1.25: lo que está en marcha ahora en los equipos del cliente (no cuenta como «cargar»). */
 export const progreso = (c: string) => pedir<T.ProgresoEquipo[]>("GET", `${cli(c)}/progreso`, undefined, { invisible: true });
 export const ultimosInformes = (c: string) => pedir<(T.Informe & { equipo: string })[]>("GET", `${cli(c)}/informes`);
+export const actualizaciones = (c: string) => sin404(pedir<T.ActualizacionesCliente>("GET", `${cli(c)}/actualizaciones`));
+export const cambiarPoliticaActualizaciones = (c: string, b: { modo: T.PoliticaActualizaciones["modo"]; dias_general: number; ventana: T.VentanaMantenimiento | null }) =>
+  pedir<{ politica: T.PoliticaActualizaciones }>("PUT", `${cli(c)}/actualizaciones`, b);
+/** Aprueba la versión que da este servidor (todo el cliente o un equipo) y avisa a los conectados. */
+export const actualizarAhora = (c: string, equipo?: string) => pedir<{ version: string; avisados: number }>("POST", `${cli(c)}/actualizaciones/ahora`, equipo ? { equipo } : {});
+export const ponerAnillo = (c: string, e: string, anillo: "prueba" | "general") => pedir<{ anillo: string }>("PUT", `${cli(c)}/equipos/${enc(e)}/anillo`, { anillo });
 export const informes = (c: string, e: string, limite = 20) => pedir<T.Informe[]>("GET", `${cli(c)}/equipos/${enc(e)}/informes?limite=${limite}`);
 /** v1.26: entradas del historial por página (el servidor da como mucho 2000). */
 export const HISTORIAL_POR_PAGINA = 500;

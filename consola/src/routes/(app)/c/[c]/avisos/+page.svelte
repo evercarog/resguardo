@@ -81,6 +81,8 @@
     // v1.49: otra consola mandó una orden que el equipo tiene en espera (se puede cancelar desde aquí).
     orden_en_espera: { texto: "Orden en espera desde otra consola", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes (desde cualquier consola) y cambia la clave de administración.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
     auditoria_rehecha: { texto: "Actividad rehecha", tono: "bad", icono: ShieldAlert, que: "Abre esa consola y, en Actividad, usa «Comprobar con un ancla» con un resumen por correo anterior.", accion: () => ({ texto: "Actividad de esta consola", href: `/c/${c}/auditoria` }) },
+    // v1.4x: una versión nueva del agente no estuvo sana y el equipo volvió solo a la anterior.
+    actualizacion_fallida: { texto: "Actualización fallida", tono: "warn", icono: TriangleAlert, que: "El equipo volvió solo a la versión anterior y sigue copiando. Esa versión queda retenida para el resto del cliente.", accion: () => ({ texto: "Ver las versiones", href: `/c/${c}/versiones` }) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };

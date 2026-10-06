@@ -1,0 +1,267 @@
+{
+  "_comentario": "Vectores de la actualización automática (docs/actualizaciones.md). Los usan crates/protocolo/src/publicacion.rs y la consola (scripts/vectores-actualizaciones.ts). Las fechas, con la zona del equipo.",
+  "versiones": [
+    ["0.7.24", "0.7.25", -1],
+    ["0.7.25", "0.7.24", 1],
+    ["0.7.25", "0.7.25", 0],
+    ["0.7.9", "0.7.10", -1],
+    ["0.10.0", "0.9.99", 1],
+    ["1.0.0", "0.99.99", 1],
+    ["0.7.25-rc.1", "0.7.25", -1],
+    ["0.7.25-rc.2", "0.7.25-rc.10", -1],
+    ["0.7.25-beta", "0.7.25-rc.1", -1],
+    ["0.7.25-rc.1", "0.7.25-rc", 1],
+    ["0.7.25-1", "0.7.25-rc", -1],
+    ["0.7.24", "0.7.25-rc.1", -1]
+  ],
+  "versiones_no_validas": ["", "0.7", "v0.7.1", "0.7.1.2", "a.b.c", "0.7.1-", "0.07.1", "0.7.1-rc..1", "0.7.1 ", "-0.7.1", "0.7.1-ñ", "1234567890.0.0"],
+  "combinar": [
+    {
+      "nombre": "sin consolas: automática, general, 2 días",
+      "politicas": [],
+      "efectiva": { "modo": "auto", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] }
+    },
+    {
+      "nombre": "una consola con el equipo en prueba",
+      "politicas": [{ "modo": "auto", "anillo": "prueba", "dias_general": 0 }],
+      "efectiva": { "modo": "auto", "anillo": "prueba", "dias_general": 0, "ventanas": [], "aprobadas": [], "retenidas": [] }
+    },
+    {
+      "nombre": "prueba en una y general en otra: general, con los días más largos",
+      "politicas": [{ "anillo": "prueba", "dias_general": 1 }, { "anillo": "general", "dias_general": 5 }],
+      "efectiva": { "modo": "auto", "anillo": "general", "dias_general": 5, "ventanas": [], "aprobadas": [], "retenidas": [] }
+    },
+    {
+      "nombre": "manual gana a automática",
+      "politicas": [{ "modo": "auto" }, { "modo": "manual" }],
+      "efectiva": { "modo": "manual", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] }
+    },
+    {
+      "nombre": "pausada gana a todo, también a una aprobación",
+      "politicas": [{ "modo": "manual", "aprobada": "0.7.25" }, { "modo": "pausada" }],
+      "efectiva": { "modo": "pausada", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": ["0.7.25"], "retenidas": [] }
+    },
+    {
+      "nombre": "ventanas, aprobaciones y retenidas de todas, sin repetir",
+      "politicas": [
+        { "ventana": { "desde": "22:00", "hasta": "06:00" }, "aprobada": "0.7.25", "retenidas": ["0.7.23"] },
+        { "ventana": { "desde": "22:00", "hasta": "06:00" }, "aprobada": "0.7.26", "retenidas": ["0.7.23", "0.7.24"] }
+      ],
+      "efectiva": {
+        "modo": "auto",
+        "anillo": "general",
+        "dias_general": 2,
+        "ventanas": [{ "desde": "22:00", "hasta": "06:00" }],
+        "aprobadas": ["0.7.25", "0.7.26"],
+        "retenidas": ["0.7.23", "0.7.24"]
+      }
+    },
+    {
+      "nombre": "lo desconocido se vuelve prudente",
+      "politicas": [{ "modo": "otro", "anillo": "nuevo", "dias_general": 400, "aprobada": "mañana" }],
+      "efectiva": { "modo": "manual", "anillo": "general", "dias_general": 30, "ventanas": [], "aprobadas": [], "retenidas": [] }
+    }
+  ],
+  "decidir": [
+    {
+      "nombre": "misma versión: al día",
+      "actual": "0.7.25", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "al_dia" }
+    },
+    {
+      "nombre": "una más vieja nunca se instala (sin bajar de versión)",
+      "actual": "0.7.26", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": ["0.7.25"], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "al_dia" }
+    },
+    {
+      "nombre": "sin archivo para esta plataforma",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["linux-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "sin_paquete" }
+    },
+    {
+      "nombre": "necesita pasar antes por una intermedia",
+      "actual": "0.6.9", "nueva": "0.7.25", "minimo_desde": "0.7.0", "plataformas": ["linux-x86_64"], "plataforma": "linux-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": ["0.7.25"], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "necesita_intermedia" }
+    },
+    {
+      "nombre": "en pausa: ni aprobada",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "pausada", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": ["0.7.25"], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "pausada" }
+    },
+    {
+      "nombre": "aprobada: ya, sin mirar anillo, días, ventana ni retenidas",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "manual", "anillo": "general", "dias_general": 5, "ventanas": [{ "desde": "22:00", "hasta": "06:00" }], "aprobadas": ["0.7.25"], "retenidas": ["0.7.25"] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "instalar" }
+    },
+    {
+      "nombre": "aprobada pero con una copia en marcha: espera",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "manual", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": ["0.7.25"], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00", "en_marcha": true,
+      "decision": { "estado": "pendiente", "motivo": "en_marcha" }
+    },
+    {
+      "nombre": "aprobada otra versión: no vale para esta",
+      "actual": "0.7.24", "nueva": "0.7.26", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "manual", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": ["0.7.25"], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "espera_aprobacion" }
+    },
+    {
+      "nombre": "retenida por la consola (falló en otro equipo)",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": ["0.7.25"] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "retenida" }
+    },
+    {
+      "nombre": "ya falló en este equipo: no lo vuelve a intentar sola",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["linux-aarch64"], "plataforma": "linux-aarch64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00", "fallidas": ["0.7.25"],
+      "decision": { "estado": "pendiente", "motivo": "retenida" }
+    },
+    {
+      "nombre": "anillo general: espera sus días",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-21T11:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "espera_anillo", "hasta": "2026-10-22T10:00:00-05:00" }
+    },
+    {
+      "nombre": "anillo general pasados sus días: se instala",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-22T10:00:00-05:00",
+      "decision": { "estado": "instalar" }
+    },
+    {
+      "nombre": "anillo de prueba: en cuanto la ve",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T10:05:00-05:00",
+      "decision": { "estado": "instalar" }
+    },
+    {
+      "nombre": "fuera de la ventana: espera a que abra",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [{ "desde": "22:00", "hasta": "06:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T15:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "espera_ventana", "hasta": "2026-10-20T22:00:00-05:00" }
+    },
+    {
+      "nombre": "dentro de una ventana que cruza la medianoche",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [{ "desde": "22:00", "hasta": "06:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-21T05:59:00-05:00",
+      "decision": { "estado": "instalar" }
+    },
+    {
+      "nombre": "la ventana termina a las 06:00 justas",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [{ "desde": "22:00", "hasta": "06:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-21T06:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "espera_ventana", "hasta": "2026-10-21T22:00:00-05:00" }
+    },
+    {
+      "nombre": "dos consolas con ventanas que se solapan: cuando abren las dos",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [{ "desde": "20:00", "hasta": "23:00" }, { "desde": "22:00", "hasta": "06:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T18:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "espera_ventana", "hasta": "2026-10-20T22:00:00-05:00" }
+    },
+    {
+      "nombre": "ventanas que no coinciden nunca",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [{ "desde": "08:00", "hasta": "10:00" }, { "desde": "20:00", "hasta": "22:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T15:00:00-05:00",
+      "decision": { "estado": "pendiente", "motivo": "ventanas_sin_coincidir" }
+    },
+    {
+      "nombre": "algo en marcha: espera",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["linux-x86_64"], "plataforma": "linux-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00", "en_marcha": true,
+      "decision": { "estado": "pendiente", "motivo": "en_marcha" }
+    },
+    {
+      "nombre": "un almacén sin ventana no se actualiza solo",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["linux-x86_64"], "plataforma": "linux-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00", "almacen": true,
+      "decision": { "estado": "pendiente", "motivo": "almacen_sin_ventana" }
+    },
+    {
+      "nombre": "un almacén con ventana, dentro de ella",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["linux-x86_64"], "plataforma": "linux-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [{ "desde": "10:00", "hasta": "12:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00", "almacen": true,
+      "decision": { "estado": "instalar" }
+    },
+    {
+      "nombre": "de una preversión a la versión",
+      "actual": "0.7.25-rc.1", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "prueba", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-20T11:00:00-05:00",
+      "decision": { "estado": "instalar" }
+    }
+  ],
+  "_firmas": "Firmas hechas con las llaves de PRUEBAS (tests/fixtures) por scripts/lib/minisign.mjs; las comprueban el protocolo (Rust) y la consola (JS).",
+  "firmas": [
+    {
+      "nombre": "buena, de la llave A",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "valida": true,
+      "llave": "C57E2BA1129956D5"
+    },
+    {
+      "nombre": "de la llave B, que no está fijada",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRURvlHX7ckQehfFVSaQZtOF4arqBA9MWZdy52ML5Pz53DyNh6LIsexPQj2vjeS4S+x7mdRx62eQRMkeZRYqFi91U2X2OwnMXlQE=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\n1M0WWAEfh1xHxdpxIPGS0jHcFQT+3Rh2CYQKh3+0qlVAcU8MOnwE3LOydT8AdsYA7M4XkR0ZuoRIfwhhdp3qAQ==\n",
+      "valida": false
+    },
+    {
+      "nombre": "manifiesto cambiado después de firmar",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.26\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "valida": false
+    },
+    {
+      "nombre": "comentario de confianza cambiado",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: otro comentario\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "valida": false
+    },
+    {
+      "nombre": "llave A revocada",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-agente\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xWIdL1ZXi03FqCBVxd/Mz/rbFHFUwhOSucIDjmIHM8SXAIK4ZeHKht/P8QSCDXcp9XOMYMu5GOvZLK1vUdToMgA=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\neW1jsgOJ1RcIy3uDBdvVWkqIXQPiKGyp7jkDrAW+gdjmAJVPMQi5WhfxaBGeFhW45bQTaZt9dAr8R7Ktxdz7Aw==\n",
+      "revocadas": [
+        "C57E2BA1129956D5"
+      ],
+      "valida": false
+    },
+    {
+      "nombre": "otro producto, bien firmado (la firma vale; el manifiesto no es del agente)",
+      "manifiesto": "{\n  \"formato\": 1,\n  \"producto\": \"resguardo-servidor\",\n  \"version\": \"0.7.25\",\n  \"fecha\": \"2026-10-20T10:00:00Z\",\n  \"canal\": \"estable\",\n  \"archivos\": [\n    {\n      \"plataforma\": \"linux-x86_64\",\n      \"tipo\": \"tar.gz\",\n      \"nombre\": \"resguardo-agente-x86_64-linux-musl.tar.gz\",\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"tamano\": 1234\n    }\n  ]\n}\n",
+      "firma": "untrusted comment: signature from minisign secret key\nRUTVVpkSoSt+xTWjN1arZNYFcso+eyChGbIeHHXCEwISe2hYcHTFiiicl6Ou6z9ikGwYs7CjtNAzBE3448HXa1HbqYC5/ZSeRg8=\ntrusted comment: timestamp:1760000000\tfile:manifiesto-agente.json\nODDcPXcaMHe3RPTAk9h0GxJnRUCoLcuiLXgtKopJb7RRnUTVsj1gFnjIgFExzWsw5Gyn3Iuv31pAHOjn9nCMCw==\n",
+      "valida": true,
+      "llave": "C57E2BA1129956D5",
+      "producto_valido": false
+    }
+  ],
+  "firma_minisign_real": {"nombre": "firma de minisign de verdad (de las pruebas de minisign-verify)", "llave_pub": "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3", "datos": "test", "firma": "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==\n", "llave": "E7620F1842B4E81F"}
+}
