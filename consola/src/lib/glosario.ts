@@ -143,7 +143,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   espejo: {
     title: "Espejo en otro disco",
-    text: "Cada noche, el equipo que guarda copias copia todo lo que recibe a otros destinos: otra carpeta (mejor en otro disco) o una nube conectada en ese equipo (Dropbox, Google Drive). Solo añade: nunca borra allí. Si falla el disco principal, las copias siguen en el espejo.",
+    text: "El equipo que guarda copias copia lo que recibe a otros destinos: otra carpeta (mejor en otro disco) o una nube conectada en ese equipo (Dropbox, Google Drive, B2, S3, SFTP, un NAS o WebDAV), con el horario de cada destino. Comprueba cada archivo antes de copiarlo y, si no le pones retención, nunca borra allí. Si falla el disco principal, las copias siguen en el espejo y se abren con la contraseña del kit.",
   },
   repositorio: {
     title: "Repositorio",

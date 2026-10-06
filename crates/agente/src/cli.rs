@@ -583,10 +583,16 @@ fn estado(now: chrono::DateTime<chrono::Local>) -> String {
         let _ = writeln!(s, "  {marcha} en el puerto {} · {equipos} equipo(s) · más detalle: resguardo-agente guardar-copias estado", srv.port);
         match &srv.espejo {
             Some(e) => {
-                let _ = writeln!(s, "  Espejo cada día a las {}", e.hora);
+                let _ = writeln!(s, "  Espejo (sin horario propio, cada día a las {})", e.hora);
                 for d in e.destinos() {
                     let ultima = d.ultima.as_deref().map_or("todavía no".to_string(), |u| cuando_rfc3339(u, now));
-                    let _ = writeln!(s, "    {} · última {ultima}{}", d.texto(), d.resultado.as_deref().map(|r| format!(" · {r}")).unwrap_or_default());
+                    let _ = writeln!(
+                        s,
+                        "    {}{} · última {ultima}{}",
+                        d.texto(),
+                        crate::espejo::cuando_texto(&d),
+                        d.resultado.as_deref().map(|r| format!(" · {r}")).unwrap_or_default()
+                    );
                 }
             }
             None => {
@@ -672,9 +678,15 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
         println!("Certificado para los clientes (--cacert): {}", server::cert_file().display());
         if let Some(e) = &c.espejo {
             let limite = e.limite_kib.map(|k| format!(" · subida a la nube hasta {k} KiB/s")).unwrap_or_default();
-            println!("Espejo cada día a las {}{limite}", e.hora);
+            println!("Espejo (sin horario propio, cada día a las {}){limite}", e.hora);
             for d in e.destinos() {
-                println!("  {} · última: {} · {}", d.texto(), d.ultima.as_deref().unwrap_or("todavía no"), d.resultado.as_deref().unwrap_or(""));
+                println!(
+                    "  {}{} · última: {} · {}",
+                    d.texto(),
+                    crate::espejo::cuando_texto(&d),
+                    d.ultima.as_deref().unwrap_or("todavía no"),
+                    d.resultado.as_deref().unwrap_or("")
+                );
             }
         }
         for (usuario, repos) in server::repos_by_user(&c) {

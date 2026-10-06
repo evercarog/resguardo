@@ -13,9 +13,9 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 - Tarea 0: rama de la sesión en la nube unida. Arreglo: `restaurar-respaldo` protege la carpeta solo si es la de por defecto o como administrador (si no, el e2e fallaba con «Acceso denegado»).
 - e2e: se niega a arrancar con binarios más viejos que el código (un fallo del paso 5 era un agente sin recompilar).
 - **0.7.22** (en el commit `90b34f4`): versión subida, instaladores compilados y **publicación en borrador** en GitHub (`v0.7.22`, 10 archivos con `SHA256SUMS`). **No es pública**: revísala y publícala tú. Los instaladores también están en `instalar\` (los de la 0.7.21 en `instalar\anteriores`).
-- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola).
+- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola), 9b (ancla de la auditoría en el resumen por correo y en los agentes; «Comprobar con un ancla» en Actividad), 3 (espejo flexible: horario propio y «después de cada copia», selección de repositorios por destino, verificación sin contraseñas, borrado diferido con freno, B2/S3/SFTP/SMB/WebDAV, restaurar desde el espejo; diseño en `docs/espejo.md`) y 10c (anotada).
 
-**En marcha:** 3 (espejo flexible), 9b (ancla de la auditoría), 6 (etiquetas). Pendientes: 7 (con 4), 8, 10c.
+**En marcha:** 6 (etiquetas) y 7 parte A (destinos con nombre y zonas del almacén; diseño de toda la 7 en `docs/copias-en-cadena.md`). Pendientes: 7 parte B (copias en cadena, con 4) y 8.
 
 **Decisiones tomadas sin ti, para revisar** (detalle en cada entrada):
 
@@ -24,6 +24,9 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 - 9d: los avisos (webhook, ntfy) de un cliente ya no usan el proxy del entorno (no se podría comprobar la IP de destino).
 - 1: cancelar una orden en espera no pide clave (cualquier consola puede); queda en el historial de todas. Una orden en espera solo se aplica justo después de hablar con la consola que la mandó.
 - 2: una consola sin contacto en 30 días no se sugiere.
+- 9b: restaurar una copia de la consola hace saltar el aviso «rehízo su auditoría» en los agentes (no se distingue de un servidor que miente); el agente avisa una vez y sigue.
+- 3: freno del espejo si de una vez falta ≥10 % (y ≥20 archivos) o un repositorio entero; verificación por rotación 5 % en carpetas y 0 % en nubes (descargar cuesta); SFTP exige la clave pública del servidor.
+- Reemplacé con `--force-with-lease` un commit de `main` subido un minuto antes porque nombraba este equipo (la comprobación de nombres prohibidos lo detectó).
 - Se borraron carpetas de compilación y copias de trabajo de ramas ya unidas (`.claude/worktrees`, `target` sueltos) para liberar disco; en C: también cachés temporales (npm, restic de pruebas, perfiles de Edge de capturas).
 
 **Probar a mano o en una máquina virtual:**
@@ -65,6 +68,29 @@ Plantilla:
   - Los ajustes de las etiquetas no van en el paquete de «Mover a otro servidor» (tampoco las plantillas, que dependen de la clave).
   - La pausa en bloque calcula `K_cfg` una vez y la prueba de cada equipo (Argon2) uno a uno: con muchos equipos tarda unos segundos por equipo.
 - **Sin probar:** avisos por etiqueta con un correo, webhook o ntfy de verdad (solo la prueba de punta a punta con el transporte falso); «Aplicar plantilla» y «Usarla» con una plantilla real (en el simulador no hay plantillas guardadas: se probaron el plan y la configuración en los vectores); el diálogo «Avisos de …» del propietario y «Mis notificaciones» → «Por etiqueta» solo se abrieron y guardaron en el simulador (sin correo de verdad).
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/espejo-flexible`
+
+Tarea 3 de `docs/plan-mejoras.md` («Espejo más flexible»), entera, con el usuario ausente (propuesta en `docs/espejo.md` y adelante sin esperar el visto bueno, como pidió).
+
+- **Pedido:** 3a horario como las copias y «después de cada copia nueva»; 3f selección de repositorios por destino; 3d verificación sin contraseñas; 3b borrado diferido con freno y respeto del bloqueo de objetos; 3c B2, S3, SFTP, SMB y WebDAV por rclone con credenciales selladas; 3e restaurar desde el espejo. Pensado para que el «espejo» por copia de la tarea 7 reutilice el motor.
+- **Cambios:**
+  - `crates/agente/src/espejo_motor.rs` (nuevo): una vuelta a un destino (carpeta o nube por rclone) con alcance (todos o algunos repositorios), comprobación por SHA-256 del nombre antes de copiar, rotación diaria en el destino con reparación en carpetas, retención diferida con freno. Estado por destino en `privado/espejo-<id>.json`.
+  - `espejo.rs`: opciones por destino (`horario`, `tras_copia`, `repos`/`vistos`, `verificar_pct`, `retencion_dias`, `bloqueo`), qué toca y cuándo, resultado global, `espejo_freno`. `server.rs::poner_espejo` conserva el estado y olvida lo anotado de un destino nuevo. `nube.rs`: listar, subir solo lo que falta (`--files-from-raw --immutable`), `hashsum`, `delete` de una lista, y los tipos b2/s3/sftp/smb/webdav (validación, `rclone obscure -` por la entrada estándar, `known_hosts` temporal, `Debug` sin secretos). `servidor_v2.rs`: qué espera. `ADMITE`: `espejo_flexible` y `espejo_destinos`.
+  - Consola: `lib/espejo.ts`, `EspejoOpciones`, `ConectarDestino`, `RestaurarDesdeEspejo`, `RestaurarEnOtro` con datos del kit ya puestos, ficha del almacén, mapa/flujo/ficha de la copia, `esDestructiva`, simulador, ayuda y glosario; `scripts/vectores-espejo.ts`.
+  - Docs: `espejo.md` (nuevo), `destinos.md`, `api-servidor.md` «Cambios» (v1.4x), plan 3 marcado.
+- **Comprobado (Windows):** `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` (ver abajo), consola `check`, `build`, `test:vectores`, raíz `test:sin-referencias`, `cargo clippy -p resguardo-servidor --features consola-integrada`, y el `npm run e2e` completo con la rama ya unida a `main` (tareas 1 y 2). Pruebas con binarios de verdad y sin cuentas de nube: restic (los nombres son el SHA-256 del contenido; restaurar desde el espejo en carpeta y en remoto local de rclone con `check --read-data`), rclone local, `rclone serve sftp` con clave de servidor de `ssh-keygen` (y con otra clave no entra), `rclone serve webdav` y `rclone serve s3`. La consola en el simulador (`dev:mock`).
+- **Sin probar / dudas:**
+  - Ninguna nube real (Dropbox, B2, S3, SMB): solo servidores de rclone en 127.0.0.1. SMB no tiene prueba con servidor (solo de datos y entorno). B2 con bloqueo de objetos real, tampoco.
+  - El e2e no tiene un paso propio del espejo nuevo (las órdenes son las de siempre con campos más); el servicio de verdad haciendo vueltas por horario y «tras copia» no se ha visto correr fuera de las pruebas unitarias de `toca`.
+  - **Decisión a revisar:** freno con X = 10 % de los archivos del destino y al menos 20 archivos (o un repositorio entero). En almacenes pequeños una poda normal puede hacerlo saltar y pedir «Confirmar lo que falta» a menudo.
+  - **Decisión a revisar:** la verificación por rotación se hace una vez al día (≥ 20 h), no en cada vuelta; por defecto 5 % en carpetas y 0 % en nubes (comprobar es descargar; B2/S3 cobran la bajada).
+  - **Decisión a revisar:** lo reparado en el espejo (un archivo dañado vuelto a copiar del almacén) cuenta como `ERROR` (aviso `espejo_fallido`): el disco del espejo puede estar fallando.
+  - **Decisión a revisar:** confirmar el freno (`espejo_freno`), poner o acortar la retención y quitar el bloqueo esperan como lo destructivo; cambiar horario o % no.
+  - **Decisión a revisar:** SFTP exige la clave pública del servidor (más pasos, pero sin ella rclone no comprueba con quién habla). WebDAV y el endpoint de S3 solo por https.
+  - Un destino nuevo sin horario propio corre ya (antes, «hoy, pasada la hora»).
+  - En B2 sin bloqueo, `rclone delete` oculta las versiones (no las borra del todo): ocupan hasta que una regla de ciclo de vida las quite.
+  - Restaurar desde Dropbox/Drive/SFTP/SMB/WebDAV pide descargar antes la carpeta: el equipo no abre esas nubes directamente (eso sería 4a).
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/ancla-auditoria`
 
 - **Pedido:** tarea 9b del plan («Ancla externa de la auditoría»), con el usuario fuera y otras sesiones haciendo a la vez las tareas 1 y 3.

@@ -10,7 +10,7 @@ import { aB64, deB64, deUtf8, iguales, utf8 } from "../lib/cripto/bytes";
 import { abrir, sellar } from "../lib/cripto/sobre";
 import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/claves";
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
-import { claveEspejo, destinosDeCuerpo, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
+import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
 import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
@@ -356,6 +356,15 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     case "guarda_copias": {
       e.resumen ??= {};
       // Espejo nocturno a otra carpeta (otro disco): { carpeta, hora } o null para quitarlo.
+      // §3b: confirmar lo que falta de golpe en el almacén (espera, como el agente).
+      if ("espejo_freno" in c) {
+        if (!plana.not_before) return resultado(e, o, "rechazada", "Confirmar lo que falta en el almacén reduce la protección: falta la espera (not_before).");
+        const f = c.espejo_freno as DestinoEspejo;
+        const d = e.resumen.guarda_copias?.espejo?.destinos?.find((x) => claveEspejo(x) === claveEspejo(f));
+        if (!d) return resultado(e, o, "fallida", "Ese destino ya no está en el espejo.");
+        d.freno = null;
+        return resultado(e, o, "hecha", "Confirmado: la próxima vez que se copie al espejo se anota lo que ya no está en el almacén y se borrará pasados sus días.");
+      }
       if ("espejo" in c) {
         // v1.9: { destinos: [carpeta | nube], hora?, limite_kib? } con la lista
         // entera (o la forma antigua { carpeta, hora }); null lo quita todo.
@@ -379,8 +388,8 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           const malCarpeta = d.tipo === "carpeta" ? errorCarpetaEspejo(d.carpeta, /windows/i.test(e.so)) : null;
           if (malCarpeta) return resultado(e, o, "fallida", malCarpeta);
         }
-        const nuevas = new Set(destinos.map(claveEspejo));
-        if (actuales.some((d) => !nuevas.has(claveEspejo(d))) && !plana.not_before) return resultado(e, o, "rechazada", "Quitar un destino del espejo es destructivo: falta la espera (not_before).");
+        // Como el agente: quitar un destino, o repositorios de su selección, exige la espera.
+        if (esDestructiva("guarda_copias", c, undefined, { espejo: g.espejo }) && !plana.not_before) return resultado(e, o, "rechazada", "Quitar un destino del espejo (o repositorios de él) es destructivo: falta la espera (not_before).");
         const previos = new Map(actuales.map((d) => [claveEspejo(d), d]));
         g.espejo = {
           hora,
@@ -389,7 +398,9 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           limite_kib: es.limite_kib ?? null,
           destinos: destinos.map((d) => ({ ...d, ultima: previos.get(claveEspejo(d))?.ultima ?? null, resultado: previos.get(claveEspejo(d))?.resultado ?? null })),
         };
+        if (destinos.some((d) => (d as { horario?: unknown }).horario)) return resultado(e, o, "hecha", `Espejo a ${destinos.length === 1 ? "1 destino" : `${destinos.length} destinos`} con su horario (solo añade).`);
         return resultado(e, o, "hecha", `Espejo a ${destinos.length === 1 ? "1 destino" : `${destinos.length} destinos`} cada noche a las ${hora} (solo añade).`);
+
       }
       if (c.activo === true) {
         const malCarpeta = errorCarpetaLocal(String(c.carpeta ?? ""), /windows/i.test(e.so));
@@ -428,8 +439,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const g = e.resumen?.guarda_copias;
       if (!g?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias.");
       const nombre = String(c.nombre ?? "").trim();
-      if (c.tipo !== "dropbox") return resultado(e, o, "fallida", "Tipo de nube no admitido.");
       if (!/^[\p{L}\p{N} _.-]{1,40}$/u.test(nombre)) return resultado(e, o, "fallida", "Nombre de nube no válido.");
+      // §3c (agente con `admite: "espejo_destinos"`): B2, S3, SFTP, SMB y WebDAV con sus datos; el agente prueba que entra.
+      if (["b2", "s3", "sftp", "smb", "webdav"].includes(String(c.tipo))) {
+        if (!e.resumen?.admite?.includes("espejo_destinos")) return resultado(e, o, "fallida", "Tipo de nube no admitido.");
+        const p = (c.parametros ?? {}) as Record<string, string>;
+        if (String(p.contrasena ?? p.clave ?? "").includes("mal")) return resultado(e, o, "fallida", "No se pudo entrar en ese destino: acceso denegado.");
+        g.nubes = [...(g.nubes ?? []).filter((n) => n.nombre !== nombre), { nombre, tipo: String(c.tipo) }];
+        return resultado(e, o, "hecha", `«${nombre}» conectado: entra y ya se puede usar como destino del espejo.`);
+      }
+      if (c.tipo !== "dropbox") return resultado(e, o, "fallida", "Tipo de nube no admitido.");
       if (typeof c.refresh_token !== "string" || !c.refresh_token || typeof c.app_key !== "string") return resultado(e, o, "fallida", "Falta el permiso de Dropbox.");
       // Como el agente: el token se guarda protegido en el equipo; el resumen solo lleva nombre y tipo.
       g.nubes = [...(g.nubes ?? []).filter((n) => n.nombre !== nombre), { nombre, tipo: "dropbox" }];

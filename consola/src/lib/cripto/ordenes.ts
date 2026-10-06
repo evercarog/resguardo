@@ -76,6 +76,12 @@ export interface DestinoEspejo {
   tipo: "carpeta" | "nube";
   carpeta?: string | null;
   nube?: string | null;
+  /** (espejo por destino, docs/espejo.md) solo estos repositorios; sin ellos, todos. */
+  repos?: string[] | null;
+  /** Borra lo que ya no está en el almacén pasados estos días. */
+  retencion_dias?: number | null;
+  /** Bloqueo de objetos: nunca borra. */
+  bloqueo?: boolean | null;
 }
 /** Lo que ya tiene el equipo, para saber si una orden quita algo (v1.9: quitar un destino del espejo es destructiva). */
 export interface ContextoOrden {
@@ -107,8 +113,19 @@ function quitaDestinoEspejo(nuevo: unknown, actual: ContextoOrden["espejo"]): bo
   if (!actual) return false;
   // Espejo antiguo sin lista de destinos: no se sabe qué hay; mejor esperar.
   if (!Array.isArray(actual.destinos)) return true;
-  const quedan = new Set(destinosDeCuerpo(nuevo).map(claveEspejo));
-  return actual.destinos.some((d) => !quedan.has(claveEspejo(d)));
+  const nuevos = new Map(destinosDeCuerpo(nuevo).map((d) => [claveEspejo(d), d]));
+  return actual.destinos.some((d) => {
+    const n = nuevos.get(claveEspejo(d));
+    if (!n) return true;
+    // Poner o acortar su retención (borrará), o quitar su bloqueo, también.
+    const ret = (x: DestinoEspejo) => (x.bloqueo ? 0 : Number(x.retencion_dias ?? 0));
+    if (ret(n) > 0 && (ret(d) === 0 || ret(n) < ret(d))) return true;
+    if (d.bloqueo && !n.bloqueo) return true;
+    // Dejar fuera repositorios que iban a ese destino (o pasar de todos a algunos) también.
+    if (!Array.isArray(n.repos)) return false;
+    if (!Array.isArray(d.repos)) return true;
+    return d.repos.some((r) => !n.repos!.includes(r));
+  });
 }
 
 export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}, esperaActualHoras?: number, contexto?: ContextoOrden): boolean {
@@ -138,6 +155,8 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
         cuerpo.activo === false ||
         typeof cuerpo.quitar === "string" ||
         cuerpo.espejo === null ||
+        // Confirmar lo que falta de golpe en el almacén (el espejo lo borrará pasados sus días).
+        "espejo_freno" in cuerpo ||
         ("espejo" in cuerpo && quitaDestinoEspejo(cuerpo.espejo, contexto?.espejo))
       );
     // Vaciar o desactivar todas las copias que había deja el equipo sin copias automáticas.
