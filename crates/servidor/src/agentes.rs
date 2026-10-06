@@ -823,23 +823,6 @@ async fn leer_sesion(State(st): State<St>, a: Agente, Path(s): Path<String>, Que
 
 // ---------- Relé ----------
 
-fn uso_relevos(dir: &std::path::Path) -> u64 {
-    fn suma(d: &std::path::Path) -> u64 {
-        std::fs::read_dir(d)
-            .map(|it| {
-                it.flatten()
-                    .map(|e| match e.file_type() {
-                        Ok(t) if t.is_dir() => suma(&e.path()),
-                        Ok(_) => e.metadata().map(|m| m.len()).unwrap_or(0),
-                        Err(_) => 0,
-                    })
-                    .sum()
-            })
-            .unwrap_or(0)
-    }
-    suma(dir)
-}
-
 async fn subir_trozo(State(st): State<St>, a: Agente, Path((r, n)): Path<(String, u64)>, cuerpo: Bytes) -> Res<StatusCode> {
     if cuerpo.is_empty() || cuerpo.len() > MAX_TROZO {
         return Err(ErrorApi::datos("Trozo vacío o demasiado grande."));
@@ -853,7 +836,7 @@ async fn subir_trozo(State(st): State<St>, a: Agente, Path((r, n)): Path<(String
         return Err(ErrorApi::conflicto("Los trozos van en orden.").con(json!({ "siguiente": rel.trozos })));
     }
     let bytes = rel.bytes + cuerpo.len() as u64;
-    if bytes > rel.max_bytes || uso_relevos(&st.datos.join("relevos")) + cuerpo.len() as u64 > st.opciones.total_relevo {
+    if bytes > rel.max_bytes {
         return Err(ErrorApi::datos("La descarga supera el tamaño permitido."));
     }
     // v1.34: lo que el cliente puede pasar por el relé este mes.
@@ -863,8 +846,18 @@ async fn subir_trozo(State(st): State<St>, a: Agente, Path((r, n)): Path<(String
         return Err(error_cuota("Este cliente ya usó este mes todo el relé de descargas que le permite el servidor. Restaura en el propio equipo o pide más a quien administra el servidor.".into()));
     }
     let dir = crate::api::dir_relevo(&st, a.ctx.id(), &r).ok_or_else(ErrorApi::no_existe)?;
-    tokio::fs::create_dir_all(&dir).await.map_err(ErrorApi::interno)?;
-    tokio::fs::write(dir.join(n.to_string()), &cuerpo).await.map_err(ErrorApi::interno)?;
+    // Lo de todos los relés juntos (en memoria: ver `UsoRelevos`). Se reserva antes de escribir.
+    if !st.uso_relevos.reservar(largo, st.opciones.total_relevo) {
+        return Err(ErrorApi::datos("La descarga supera el tamaño permitido."));
+    }
+    let escrito = async {
+        tokio::fs::create_dir_all(&dir).await?;
+        tokio::fs::write(dir.join(n.to_string()), &cuerpo).await
+    };
+    if let Err(e) = escrito.await {
+        st.uso_relevos.soltar(largo);
+        return Err(ErrorApi::interno(e));
+    }
     let ctx = a.ctx.clone();
     st.db(move |db| {
         db.actualizar_relevo(&ctx, &r, n + 1, bytes, "subiendo", rel.caduca)?;

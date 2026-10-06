@@ -52,6 +52,11 @@ pub fn preparar(datos: &Path, opciones: Opciones) -> Result<St, String> {
         progreso: Default::default(),
         vivo: Default::default(),
         notif: notificaciones::Motor::nuevo(notificaciones::cifrado::Clave::de_identidad(&identidad)),
+        uso_relevos: {
+            let u = estado::UsoRelevos::default();
+            u.poner(estado::medir_relevos(&datos.join("relevos")));
+            u
+        },
     }))
 }
 
@@ -107,7 +112,8 @@ pub fn tareas(st: St) {
                     quitar_sin_alta(&st2, &ctx);
                     avisar_sin_contacto(&st2, &ctx, ahora);
                 }
-                drop(datos);
+                // Lo que ocupan los relés, medido de nuevo (corrige cualquier desvío de la cuenta).
+                st2.uso_relevos.poner(estado::medir_relevos(&datos.join("relevos")));
             })
             .await;
         }

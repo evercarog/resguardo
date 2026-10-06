@@ -127,7 +127,15 @@ pub async fn borrar_relevo(State(st): State<St>, u: Usuario, Path((c, r)): Path<
     let r2 = r.clone();
     st.db(move |db| db.borrar_relevo(&ctx, &r2)).await?;
     if let Some(dir) = dir_relevo(&st, &c, &r) {
-        let _ = tokio::fs::remove_dir_all(dir).await;
+        // Lo que ocupaba, fuera de la cuenta de los relés (medido y borrado fuera de la tarea async).
+        let st2 = st.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let bytes = crate::estado::medir_relevos(&dir);
+            if std::fs::remove_dir_all(&dir).is_ok() {
+                st2.uso_relevos.soltar(bytes);
+            }
+        })
+        .await;
     }
     Ok(StatusCode::NO_CONTENT)
 }

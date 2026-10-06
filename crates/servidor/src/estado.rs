@@ -75,6 +75,52 @@ pub struct Estado {
     pub vivo: crate::vivo::Vivo,
     /// Notificaciones: clave de los secretos, transporte y lo último de cada equipo.
     pub notif: crate::notificaciones::Motor,
+    /// Lo que ocupan los relés en disco (`relevos/`), sin recorrer la carpeta en cada trozo.
+    pub uso_relevos: UsoRelevos,
+}
+
+/// Los bytes de todos los relés (la carpeta `relevos/`), llevados en memoria: se miden
+/// al arrancar y en cada limpieza (que corrige cualquier desvío), se reservan antes de
+/// escribir cada trozo y se descuentan al borrar un relé. Antes se recorría la carpeta
+/// con E/S síncrona en cada trozo, dentro de una tarea async.
+#[derive(Debug, Default)]
+pub struct UsoRelevos(std::sync::atomic::AtomicU64);
+
+impl UsoRelevos {
+    /// Suma `n` si con ellos no se pasa de `tope` (de una vez: dos trozos a la vez no se
+    /// cuelan los dos por el mismo hueco). `false` si no caben.
+    pub fn reservar(&self, n: u64, tope: u64) -> bool {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.0.fetch_update(SeqCst, SeqCst, |u| u.checked_add(n).filter(|t| *t <= tope)).is_ok()
+    }
+    /// Devuelve `n` (un trozo que no se llegó a escribir, un relé borrado).
+    pub fn soltar(&self, n: u64) {
+        use std::sync::atomic::Ordering::SeqCst;
+        let _ = self.0.fetch_update(SeqCst, SeqCst, |u| Some(u.saturating_sub(n)));
+    }
+    /// Lo medido en disco ([`medir_relevos`]).
+    pub fn poner(&self, n: u64) {
+        self.0.store(n, std::sync::atomic::Ordering::SeqCst);
+    }
+    pub fn bytes(&self) -> u64 {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Los bytes de los archivos bajo `dir` (E/S síncrona: al arrancar o en `spawn_blocking`).
+/// No sigue enlaces.
+pub fn medir_relevos(dir: &std::path::Path) -> u64 {
+    std::fs::read_dir(dir)
+        .map(|it| {
+            it.flatten()
+                .map(|e| match e.file_type() {
+                    Ok(t) if t.is_dir() => medir_relevos(&e.path()),
+                    Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
+                    _ => 0,
+                })
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 pub type St = Arc<Estado>;
@@ -198,5 +244,26 @@ mod tests {
         assert_eq!(clave_ip(ip("2001:db8:1:2:bbbb:cccc:dddd:eeee")), clave_ip(ip("2001:db8:1:2::9")));
         assert_ne!(clave_ip(ip("2001:db8:1:3::1")), clave_ip(ip("2001:db8:1:2::1")));
         assert_eq!(clave_ip(None), "?");
+    }
+
+    #[test]
+    fn cuenta_de_los_reles() {
+        let u = UsoRelevos::default();
+        assert!(u.reservar(30, 50) && u.reservar(20, 50));
+        assert!(!u.reservar(1, 50), "no cabe");
+        assert!(!u.reservar(u64::MAX, u64::MAX), "sin desbordar");
+        assert_eq!(u.bytes(), 50);
+        u.soltar(80);
+        assert_eq!(u.bytes(), 0, "nunca por debajo de cero");
+        // Muchos a la vez: nunca se pasa del tope.
+        let u = std::sync::Arc::new(UsoRelevos::default());
+        let hilos: Vec<_> = (0..8)
+            .map(|_| {
+                let u = u.clone();
+                std::thread::spawn(move || (0..1000).filter(|_| u.reservar(7, 10_000)).count())
+            })
+            .collect();
+        let si: usize = hilos.into_iter().map(|h| h.join().unwrap()).sum();
+        assert_eq!((si as u64 * 7, u.bytes()), (9_996, 9_996));
     }
 }
