@@ -22,6 +22,7 @@
   import TarjetaEquipo from "$lib/componentes/TarjetaEquipo.svelte";
   import Sparkline from "$lib/componentes/Sparkline.svelte";
   import Pendientes from "$lib/componentes/Pendientes.svelte";
+  import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
   import PrimerosPasos from "$lib/componentes/PrimerosPasos.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
@@ -230,6 +231,8 @@
     <PrimerosPasos cliente={actual.cliente} equipos={actual.equipos} {informes} />
 
     <Pendientes />
+
+    <AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} ahora={reloj.ahora} />
 
     <FiltroEtiquetas />
 
