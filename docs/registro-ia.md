@@ -49,6 +49,33 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/copias-en-cadena`
+
+Tarea 7 de `docs/plan-mejoras.md`, **parte B** (con la 4 dentro), con el usuario ausente y la propuesta ya escrita en `docs/copias-en-cadena.md` (adelante sin esperar, como pidió). Otra sesión hacía a la vez la tarea 8 (3-2-1-1-0): no se tocó `protection.rs`; lo que necesita de aquí está descrito en `copias-en-cadena.md` («Para la tarea 8»).
+
+- **Pedido:** «Lo que queda para la parte B»: pasos «espejo» por zona y de zona a zona; cadenas («después de la anterior», aviso `cadena_parada`, orden en «Cambiar las copias»); copias derivadas (varias por repositorio, contraseña propia, retención, horario, verificación) sin romper la copia externa; filtros; nubes de rclone en el equipo dueño; consola (7f, línea de la cadena, 7e); paso del e2e; catálogo de destinos en el paquete `.resguardo-cliente`.
+- **Cambios:**
+  - Agente: `config.copias[].tras` y el plan con `after` (motor `Plan.after`, `AgentPlan.after`); varias pasadas por vuelta (hasta 8 pasos); `state.chains` y `informe.cadenas[]`. `cambiar_derivada` / `quitar_derivada` (`gestion_v2.rs`, con la parte común de `cambiar_copia_externa` sacada a `preparar_derivada`, sin cambiar lo que hace la externa), `AgentRepo.derived`, `Secret.derived`, `tasks::Derived` (claves `derivada:<repo>:<id>`), `subir_ahora`/`verificar_ahora` con `derivada`; filtro de versiones resuelto a ids (`adoptar_v2::Filtro`, también en `copiar_historial`); destino `nube` (`rclone:rnube:…`, credenciales al día en cada uso, `nube::entorno_restic`), `conectar_nube` fuera de un almacén, `quitar_nube` se niega si la usa una derivada; espejo con `zona` de origen y destino `zona`. `admite`: `cadenas`, `derivadas`, `filtros`, `nube_equipo`, `espejo_zonas`. Resumen: `nubes` también fuera de `guarda_copias`.
+  - Protocolo: tipos `cambiar_derivada` (destructiva según el cuerpo) y `quitar_derivada` (destructiva).
+  - Servidor: avisos `cadena_parada` y `externa_fallida` de las derivadas (sujeto `<repo>--<id>`).
+  - Consola: `lib/cadenas.ts` (+ `scripts/vectores-cadenas.ts`), «Cambiar las copias» (orden y «después de»), `CopiaDerivada`, `PasoEspejo`, `AnadirCopia`, derivadas en la ficha, destinos «zona» del espejo con nombre y su paso (7e), el mapa con el nombre de la zona, avisos, nombres e iconos de las órdenes nuevas, glosario («copia-derivada», «cadena»), paquete con el catálogo, simulador.
+  - Arreglos de compilación en `src-tauri` (campos nuevos en `Offsite` y `Plan`).
+  - Docs: `api-servidor.md` (§1, §5, §11 y «Cambios», v1.4x), `copias-en-cadena.md` («Parte B: lo que se hizo»), plan (7c, 7d, 7e, 4b, 4c, 4d hechas; 7f y 4a a medias).
+- **Comprobado:** ver «Comprobaciones finales» abajo (se completa al terminar).
+- **Sin probar / dudas (para revisar):**
+  - **La copia externa de siempre no se convirtió en una derivada**: sigue en `externa`/`offsite` y es la primera de la lista. Así un agente o una consola anteriores la siguen viendo y `protection.rs` la cuenta igual. Las demás van aparte (`derivadas[]`). La salud de la protección (7 comprobaciones) todavía no cuenta las derivadas: eso es de la tarea 8, que integra la 3-2-1-1-0 en `protection.rs`.
+  - **«Termina bien» en una cadena** incluye «sin cambios» y «con algún archivo sin leer» (`warning`): hay versión o no hacía falta. Solo un error la para. Una copia «después de» otra que está desactivada no se hace nunca (no se avisa).
+  - **`cambiar_derivada` espera** (destructiva) si cambia la retención o el destino de una que ya existe; crear una o cambiar su horario, no. Más prudente que la copia externa (que no espera al cambiar la retención).
+  - **Repositorio de una derivada por defecto en `<destino>/<repo>-<id>`** (no en `<repo>` como la externa), para que no choque con la externa en el mismo destino; dos copias del mismo repositorio a la misma carpeta se rechazan.
+  - **Una derivada «después de cada copia»** usa `AfterBackup` con 0 minutos entre subidas (la externa usa 30 por defecto).
+  - **Paso «espejo» con `tras_copia`**: el destino sigue teniendo además la vuelta diaria a la `hora` del espejo (como cualquier destino sin horario propio): una vuelta más, no menos.
+  - **Espejo a otra zona**: la carpeta `<zona destino>/<usuario>/<repo>` vive dentro de la carpeta que sirve el rest-server de esa zona; ningún usuario de esa zona se llama igual (los nombres son únicos en todo el almacén), así que nadie entra allí por el rest-server. Si un día se quita ese usuario de la principal y se crea otro con el mismo nombre en la zona, vería esa carpeta (cifrada, y en solo añadir). Revisar si conviene una subcarpeta propia para los espejos.
+  - **Nubes en el equipo dueño solo para derivadas**: «copia nueva» directa a Dropbox queda pendiente (la vuelta del agente usa el entorno guardado y el token caduca). Si rclone renueva el token durante una subida de restic, el nuevo no se guarda (la próxima vez lo renueva el agente).
+  - **`agente_v2_con_servidor_real`**: ahora un equipo que no guarda copias sí intenta conectar Dropbox (la prueba manda un permiso inventado y Dropbox lo rechaza); sin red, la orden la guardaría «sin comprobar» y la prueba podría fallar más adelante.
+  - **Tipo de nube «alias»** (una carpeta del equipo por rclone): solo existe en compilaciones de desarrollo con `RESGUARDO_AGENT_DIR` (para el e2e). Nunca en la versión publicada.
+  - **Linux sin compilar aquí** (nada nuevo con `#[cfg(unix)]`); lo compilará la CI.
+  - **Pendiente** (anotado en el plan y en `copias-en-cadena.md`): la cadena en el mapa de protección, y un asistente 7f de una sola pantalla que cree también el repositorio en el destino.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/destinos-y-zonas`
 
 Tarea 7 de `docs/plan-mejoras.md` (con la 4 dentro), **parte A**, con el usuario ausente (propuesta escrita en `docs/copias-en-cadena.md` y adelante sin esperar el visto bueno, como pidió para las tareas grandes). Otra sesión hacía a la vez la tarea 6 (etiquetas): no se tocó nada de lo suyo.
