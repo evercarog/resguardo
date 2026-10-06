@@ -319,6 +319,8 @@
       flex-basis: calc(100% - 48px);
     }
     .acciones {
+      flex: 1 1 calc(100% - 44px);
+      min-width: 0;
       margin-left: 44px;
     }
   }

@@ -331,6 +331,8 @@
       {#if porEtiqueta.length > 1}
         <section class="bloque" aria-labelledby="t-etiquetas">
           <h3 id="t-etiquetas">Por etiqueta</h3>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div class="desliza" role="region" aria-label="Por etiqueta (se desliza a los lados)" tabindex="0">
           <table class="tabla" aria-labelledby="t-etiquetas">
             <thead><tr><th scope="col">Etiqueta</th><th scope="col" class="der">Equipos</th><th scope="col" class="der">Al día</th><th scope="col" class="der">Copias</th><th scope="col" class="der">Fallidas</th><th scope="col" class="der">Datos nuevos</th></tr></thead>
             <tbody>
@@ -347,13 +349,15 @@
                 </tr>
               {/each}
             </tbody>
-          </table>
+          </table></div>
           <p class="leyenda">Un equipo con varias etiquetas cuenta en cada una.</p>
         </section>
       {/if}
 
       <section class="bloque" aria-labelledby="t-equipos">
         <h3 id="t-equipos">Equipos</h3>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div class="desliza" role="region" aria-label="Equipos (se desliza a los lados)" tabindex="0">
         <table class="tabla t-equipos" aria-labelledby="t-equipos">
           <thead><tr><th scope="col">Equipo</th><th scope="col">Estado hoy</th><th scope="col" class="der">Copias</th><th scope="col" class="der">Fallidas</th><th scope="col" class="der">Datos nuevos</th><th scope="col">Cada día</th></tr></thead>
           <tbody>
@@ -368,7 +372,7 @@
               </tr>
             {/each}
           </tbody>
-        </table>
+        </table></div>
         <p class="leyenda">Cuadros: <span class="m datos"></span>con versión nueva <span class="m igual"></span>sin cambios <span class="m aviso"></span>con avisos <span class="m mal"></span>falló <span class="m nada"></span>sin copia</p>
       </section>
 
@@ -376,6 +380,8 @@
         <!-- Tarea 8: la regla 3-2-1-1-0 por copia (para enseñarla al cliente). -->
         <section class="bloque" aria-labelledby="t-regla">
           <h3 id="t-regla">Regla 3-2-1-1-0 <span class="sub-h">· {cuentaR.cumplen} de {plural(cuentaR.total, "copia la cumple", "copias la cumplen")}</span></h3>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div class="desliza" role="region" aria-label="Regla 3-2-1-1-0 (se desliza a los lados)" tabindex="0">
           <table class="tabla t-regla">
             <caption class="sr-only">Cómo cumple cada copia la regla 3-2-1-1-0</caption>
             <thead>
@@ -396,7 +402,7 @@
                 </tr>
               {/each}
             </tbody>
-          </table>
+          </table></div>
           <p class="leyenda">3 copias (con los originales) · 2 soportes · 1 fuera de la oficina · 1 inmutable · 0 errores al verificar y probar la restauración. ✓ cumple, ◷ configurada pero no está al día, ✗ falta. Es una guía.</p>
         </section>
       {/if}
@@ -408,6 +414,8 @@
           {#if repos.length}
             <div class="por-equipo">
               <h4>{d.equipo.nombre}</h4>
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <div class="desliza" role="region" aria-label="Repositorios de {d.equipo.nombre} (se desliza a los lados)" tabindex="0">
               <table class="tabla">
                 <caption class="sr-only">Repositorios de {d.equipo.nombre}</caption>
                 <thead><tr><th scope="col">Repositorio</th><th scope="col" class="der">Versiones</th><th scope="col" class="der">Tamaño</th><th scope="col">Verificado</th><th scope="col">Restauración probada</th><th scope="col">Protección</th></tr></thead>
@@ -425,7 +433,7 @@
                     </tr>
                   {/each}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           {/if}
         {/each}
@@ -761,9 +769,19 @@
     .t-equipos td:nth-child(6) {
       display: none;
     }
-    .por-equipo {
-      overflow-x: auto;
-    }
+  }
+  /* En pantallas estrechas, las tablas se deslizan dentro de la hoja (la página no). */
+  .desliza {
+    overflow-x: auto;
+    max-width: 100%;
+    border-radius: var(--radius-sm, 6px);
+  }
+  .desliza:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .desliza > .tabla {
+    min-width: 100%;
   }
 
   /* Impresión: solo la hoja, en claro, a toda página y sin cortar tablas ni bloques. */
