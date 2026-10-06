@@ -375,10 +375,17 @@ fn avisos_por_etiqueta() {
         p.pasada(t);
     };
     let correos_desde = |n: usize| {
-        let mut v: Vec<String> = p.correos().into_iter().skip(n).map(|(a, _)| a).collect();
+        // Sin los resúmenes: según la hora del día (y la zona de la máquina)
+        // también puede caer el resumen diario en medio.
+        let mut v: Vec<String> = p.correos().into_iter().skip(n).filter(|(_, t)| !t.contains("Resumen")).map(|(a, _)| a).collect();
         v.sort();
         v
     };
+    // Leo (de lectura) no quiere nada al principio: así no depende de la hora del día
+    // (sus avisos por defecto cambian con las horas tranquilas y la zona de la máquina).
+    let leo0 = db.cuenta_por_correo("leo@ejemplo.com").unwrap().unwrap();
+    let nada = ajustes::PrefsCliente { inmediatos: vec![], ..ajustes::PrefsCliente::por_defecto(Rol::Lectura) };
+    ajustes::guardar_prefs_cliente(db, p.ctx.id(), &leo0.id, &nada).unwrap();
     // 1. «Servidores» pide importancia crítica: un aviso importante sale como crítico.
     let ajuste = |avisos: AvisosEtiqueta| AjusteEtiqueta { nombre: "servidores".into(), avisos: Some(avisos), ..Default::default() };
     db.poner_ajuste_etiqueta(&p.ctx, &ajuste(AvisosEtiqueta { importancia: Some(Severidad::Critico), canales: vec![] }), 10).unwrap();
@@ -400,7 +407,7 @@ fn avisos_por_etiqueta() {
     let leo = db.cuenta_por_correo("leo@ejemplo.com").unwrap().unwrap();
     let tom = db.cuenta_por_correo("tom@ejemplo.com").unwrap().unwrap();
     let pref = |inm: Vec<Severidad>| ajustes::PrefEtiqueta { etiqueta: "SERVIDORES".into(), inmediatos: inm };
-    let base_leo = ajustes::PrefsCliente::por_defecto(Rol::Lectura);
+    let base_leo = ajustes::PrefsCliente { inmediatos: vec![], ..ajustes::PrefsCliente::por_defecto(Rol::Lectura) };
     ajustes::guardar_prefs_cliente(db, p.ctx.id(), &leo.id, &ajustes::PrefsCliente { etiquetas: vec![pref(vec![Severidad::Importante])], ..base_leo }).unwrap();
     let base_tom = ajustes::PrefsCliente::por_defecto(Rol::Tecnico);
     ajustes::guardar_prefs_cliente(db, p.ctx.id(), &tom.id, &ajustes::PrefsCliente { etiquetas: vec![pref(vec![])], ..base_tom }).unwrap();
@@ -411,9 +418,10 @@ fn avisos_por_etiqueta() {
     assert_eq!(w.last().unwrap()["severidad"], "importante", "sin subir la importancia");
     // Otro equipo sin la etiqueta: lo de siempre (Tom recibe sus críticos, Leo nada, el webhook sus críticos).
     equipo(&p.st, &p.ctx, "e2", "PC-Recepcion", T0);
+    let antes = p.correos().len();
     aviso_a(db, &p.ctx, Some("e2"), "intentos_fallidos", "5 intentos con la clave mal", T0 + 3 * 24 * 3600 + 60).unwrap();
     p.pasada(T0 + 3 * 24 * 3600 + 60);
-    assert_eq!(correos_desde(n_correos + 2), vec!["ana@ejemplo.com".to_string(), "tom@ejemplo.com".to_string()]);
+    assert_eq!(correos_desde(antes), vec!["ana@ejemplo.com".to_string(), "tom@ejemplo.com".to_string()]);
 }
 
 #[test]
