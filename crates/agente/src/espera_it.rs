@@ -188,7 +188,9 @@ fn ordenes_en_espera_entre_dos_consolas() {
     assert!(cargar().unwrap().en_espera.is_empty());
     s::largas::reintentar();
     let o4 = estado(&ca, &ea, 4);
-    assert_eq!(o4["estado"], "cancelada", "{o4}");
+    // `rechazada` (lo que firmó el equipo) con `detalle.cancelada`.
+    assert_eq!(o4["estado"], "rechazada", "{o4}");
+    assert!(o4["detalle"].as_str().unwrap_or("").contains("\"cancelada\":true"), "{o4}");
     assert!(o4["mensaje"].as_str().unwrap().contains("Consola en línea") || o4["mensaje"].as_str().unwrap().contains("otra consola"), "{o4}");
     // Cancelar otra vez: ya no está.
     let mut otra_vez = orden(&eb, 2, "cancelar_espera", json!({ "id": orden_4 }));

@@ -88,10 +88,14 @@ pub fn hora_servidor(enlace: &str) -> Option<i64> {
     g.as_ref()?.get(enlace).map(|(t, cuando)| t.saturating_add(i64::try_from(cuando.elapsed().as_secs()).unwrap_or(i64::MAX)))
 }
 
+/// Lo que puede quedarse corta la hora estimada de la consola (su `ahora` y lo que pasó
+/// desde entonces, los dos en segundos enteros).
+const REDONDEO_S: i64 = 2;
+
 /// ¿Toca ya una orden con este `not_before`? Con el reloj del equipo (y la holgura de
 /// siempre) **y** con el de su consola, si se sabe: adelantar uno solo no basta.
 pub fn toca(not_before: i64, equipo: i64, servidor: Option<i64>) -> bool {
-    equipo >= not_before - orden_v2::HOLGURA_S && servidor.is_none_or(|s| s >= not_before)
+    equipo >= not_before - orden_v2::HOLGURA_S && servidor.is_none_or(|s| s + REDONDEO_S >= not_before)
 }
 
 // ---------- Cambios (para mandar el resumen enseguida) ----------
@@ -333,15 +337,42 @@ fn abrir_guardada(v: &Vinculo, e: &EnEspera, t: i64) -> Result<orden_v2::OrdenV2
 /// las caducadas. Devuelve lo que hay que contestar a esa consola.
 pub fn aplicar_las_que_tocan(id: &str) -> Vec<Aplicada> {
     let mut hechas = Vec::new();
-    let visto = CAMBIOS.load(Ordering::SeqCst);
-    if VACIA_EN.load(Ordering::SeqCst) == visto {
-        return hechas;
-    }
-    if s::cargar().is_none_or(|v| v.en_espera.is_empty()) {
-        VACIA_EN.store(visto, Ordering::SeqCst);
-        return hechas;
-    }
     while hechas.len() < MAX_POR_CONSOLA {
+        // Lo que se lee antes de mirar el disco: si `recibir` guarda otra después, este número cambia.
+        let visto = CAMBIOS.load(Ordering::SeqCst);
+        if VACIA_EN.load(Ordering::SeqCst) == visto {
+            break;
+        }
+        let t = ahora();
+        if proxima(id).is_some_and(|(g, hasta)| g == visto && t < hasta) {
+            break;
+        }
+        // Primero sin cerrojo y sin escribir nada (el canal pasa por aquí cada pocos segundos).
+        let Some(v) = s::cargar() else { break };
+        if v.en_espera.is_empty() {
+            VACIA_EN.store(visto, Ordering::SeqCst);
+            break;
+        }
+        let servidor = hora_servidor(id);
+        let toca_alguna = v.en_espera.iter().any(|e| e.enlace == id && ts(&e.aplica).is_some_and(|nb| toca(nb, t, servidor)));
+        let sobra_alguna =
+            v.en_espera.iter().any(|e| ts(&e.caduca).is_none_or(|c| c <= t) || identidad_de(&v, &e.enlace).as_deref() != Some(e.identidad.as_str()));
+        if !toca_alguna && !sobra_alguna {
+            // Hasta cuándo no hay nada que hacer aquí: la primera de esta consola que podría tocar
+            // (con el reloj del equipo) o la primera que caduca.
+            let hasta = v
+                .en_espera
+                .iter()
+                .filter_map(|e| {
+                    let c = ts(&e.caduca)?;
+                    let nb = (e.enlace == id).then(|| ts(&e.aplica)).flatten().map(|nb| nb - orden_v2::HOLGURA_S);
+                    Some(nb.map_or(c, |n| n.min(c)))
+                })
+                .min()
+                .unwrap_or(i64::MAX);
+            poner_proxima(id, visto, hasta);
+            break;
+        }
         let r = crate::consolas_v2::con_enlace(id, |v| {
             let t = ahora();
             descartar(v, t);
@@ -376,6 +407,17 @@ pub fn aplicar_las_que_tocan(id: &str) -> Vec<Aplicada> {
         }
     }
     hechas
+}
+
+/// Para cada consola: (valor de `CAMBIOS` con el que se miró, hasta cuándo no hay nada que hacer).
+static PROXIMA: Mutex<Option<HashMap<String, (u64, i64)>>> = Mutex::new(None);
+
+fn proxima(id: &str) -> Option<(u64, i64)> {
+    PROXIMA.lock().unwrap_or_else(|e| e.into_inner()).as_ref()?.get(id).copied()
+}
+
+fn poner_proxima(id: &str, visto: u64, hasta: i64) {
+    PROXIMA.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(id.to_string(), (visto, hasta));
 }
 
 // ---------- Cancelar ----------
@@ -414,7 +456,7 @@ pub fn cancelar(v: &mut Vinculo, c: &Value, por: Option<&str>) -> Result<String,
     anotar(&e, "cancelada", Some(&mensaje), Some(&desde));
     crate::agent::log(&format!("Orden «{}» en espera: cancelada desde {desde}.", e.tipo));
     // A la consola que la mandó: rechazada, firmada, con `cancelada` (un servidor nuevo la
-    // guarda como «cancelada»). Se manda en la próxima vuelta del servicio, y si esa consola
+    // guarda tal cual: va firmada). Se manda en la próxima vuelta del servicio, y si esa consola
     // no responde, cuando vuelva.
     let r = Resultado { estado: "rechazada", mensaje: mensaje.clone(), detalle: Some(json!({ "cancelada": true, "consola": desde }).to_string()) };
     s::largas::guardar_resultado(&e.enlace, &e.id, e.seq, &e.tipo, &r);
@@ -482,7 +524,8 @@ mod tests {
         assert!(toca(nb, nb - orden_v2::HOLGURA_S, None));
         assert!(!toca(nb, nb - orden_v2::HOLGURA_S - 1, None));
         // Con la hora del servidor: los dos.
-        assert!(!toca(nb, nb + 86_400, Some(nb - 1)), "adelantar el reloj del equipo no basta");
+        assert!(!toca(nb, nb + 86_400, Some(nb - 60)), "adelantar el reloj del equipo no basta");
+        assert!(toca(nb, nb, Some(nb - REDONDEO_S)), "solo el redondeo de la hora estimada");
         assert!(!toca(nb, nb - 3600, Some(nb + 86_400)), "un servidor adelantado tampoco");
         assert!(toca(nb, nb, Some(nb)));
     }

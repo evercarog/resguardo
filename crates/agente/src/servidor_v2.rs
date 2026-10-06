@@ -696,10 +696,16 @@ pub fn procesar(v: &mut Vinculo, meta: &Value) -> (Resultado, Option<String>) {
 
     let Some(tipo) = ordenes::tipo(&o.tipo) else { return (rechazada("Tipo de orden desconocido."), None) };
     let orden_id = meta["id"].as_str().unwrap_or("").to_string();
-    // v1.4x: aún no toca (con el reloj del equipo y el de esta consola): en espera.
+    // v1.4x: aún no toca (con el reloj del equipo y el de esta consola): en espera. Las
+    // inofensivas no se guardan: como siempre, solo cuenta el reloj del equipo (con su holgura).
     let nb = o.not_before.as_deref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp());
-    if nb.is_some_and(|nb| !crate::espera_v2::toca(nb, t, crate::espera_v2::hora_servidor(&v.id_enlace()))) {
-        return crate::espera_v2::recibir(v, &o, tipo, &orden_id, sellado);
+    if let Some(nb) = nb.filter(|nb| !crate::espera_v2::toca(*nb, t, crate::espera_v2::hora_servidor(&v.id_enlace()))) {
+        if tipo.nivel != ordenes::Nivel::Inofensiva {
+            return crate::espera_v2::recibir(v, &o, tipo, &orden_id, sellado);
+        }
+        if nb > t + orden_v2::HOLGURA_S {
+            return (rechazada("Todavía no es la hora de esta orden."), None);
+        }
     }
     let (r, aviso) = autorizar_y_ejecutar(v, &o, tipo, &orden_id);
     // v1.4x: al historial que reciben todas las consolas.

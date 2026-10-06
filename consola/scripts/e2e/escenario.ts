@@ -900,8 +900,9 @@ async function principal() {
     // La en línea la cancela (inofensiva, sin clave) y la local se entera.
     const cancelada = await consola3.hecha(c3, eqB2.id, "cancelar_espera", { id: pausa.id });
     log(`cancelar_espera: ${cancelada.mensaje}`);
-    const enLocal = await consola2.resultado(c2, eqB2.id, pausa, { estados: ["cancelada"], plazo: 60_000 });
-    comprobar(/otra consola/.test(enLocal.mensaje ?? ""), "La local la ve cancelada desde otra consola", enLocal);
+    // `rechazada` firmada por el equipo, con `detalle.cancelada` (la firma comprobada como en la consola).
+    const enLocal = await consola2.resultado(c2, eqB2.id, pausa, { estados: ["rechazada"], plazo: 60_000 });
+    comprobar(/otra consola/.test(enLocal.mensaje ?? "") && /"cancelada":true/.test(enLocal.detalle ?? ""), "La local la ve cancelada desde otra consola", enLocal);
     await esperar("la cancelación en el historial común (en la local)", async () => {
       const h = (await consola2.ok("GET", `/api/clientes/${c2.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
       return h.find((x) => x.orden_id === pausa.id && x.resultado === "cancelada" && x.cancelada_desde) ?? null;

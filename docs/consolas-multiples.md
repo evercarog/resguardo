@@ -311,7 +311,7 @@ Orden **inofensiva** (basta la sesión: técnicos, administradores y propietario
 
 1. busca `id` entre sus órdenes en espera (de cualquier consola); si no está, `fallida` («ya no está esperando: se aplicó, se canceló o caducó»);
 2. la quita, la anota en el historial (`resultado: "cancelada"`, desde qué consola y quién) y contesta `hecha`;
-3. le dice a la consola que la mandó que no se aplicará: un resultado firmado `rechazada` con el mensaje «Cancelada desde otra consola («En línea»)…» y `detalle: {"cancelada": true, "consola": "<nombre>"}`. El servidor nuevo la guarda como `cancelada`; uno anterior, como `rechazada` con ese mensaje. Si esa consola no responde, el resultado se guarda y se manda cuando vuelva (como el de las órdenes largas).
+3. le dice a la consola que la mandó que no se aplicará: un resultado firmado `rechazada` con el mensaje «Cancelada desde otra consola («En línea»)…» y `detalle: {"cancelada": true, "consola": "<nombre>"}`. El servidor la guarda tal cual (no la cambia a `cancelada`: la firma del equipo es sobre `rechazada` y la consola la comprueba). Si esa consola no responde, el resultado se guarda y se manda cuando vuelva (como el de las órdenes largas).
 
 La consola que la mandó la sigue cancelando como siempre (`POST …/ordenes/{o}/cancelar`): su servidor la marca `cancelada` y avisa al equipo (`{ "t": "cancelada" }` en el canal o `canceladas` en `tomar`, que el agente ya recibía y ahora usa). Una cancelación de un servidor solo vale para las órdenes de **ese** vínculo.
 

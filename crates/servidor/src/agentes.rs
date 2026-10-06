@@ -413,18 +413,13 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         .flatten()
         .and_then(|d| d["espera_min_horas"].as_i64())
         .filter(|h| (1..=168).contains(h));
-    // v1.4x (consolas-multiples.md §5.7): otra consola la canceló en el equipo mientras esperaba.
-    // El equipo lo dice firmado (`rechazada` con `detalle.cancelada`): aquí queda «cancelada».
-    let cancelada_en_equipo =
-        r.estado == "rechazada" && r.detalle.as_deref().and_then(|d| serde_json::from_str::<Value>(d).ok()).is_some_and(|d| d["cancelada"] == true);
-    // Y al revés: se canceló aquí, pero el equipo ya la había aplicado (no le llegó a tiempo).
-    // Su resultado firmado manda, y se avisa: nunca «cancelada» algo que se aplicó.
+    // v1.4x (consolas-multiples.md §5.7): si otra consola la canceló en el equipo mientras
+    // esperaba, llega `rechazada` con `detalle.cancelada`, y así se guarda: la firma del equipo
+    // es sobre ese estado (la consola la comprueba), así que no se cambia por «cancelada».
     let aplicada_pese = orden.estado == "cancelada" && matches!(r.estado.as_str(), "en_marcha" | "hecha" | "fallida");
-    let estado_guardado = if cancelada_en_equipo { "cancelada".to_string() } else { r.estado.clone() };
-    let (orden_id, estado) = (r.orden.clone(), estado_guardado.clone());
+    let (orden_id, estado) = (r.orden.clone(), r.estado.clone());
     let tipo_orden = orden.tipo.clone();
-    let res =
-        crate::almacen::ResultadoOrden { orden: r.orden, estado: estado_guardado, mensaje, detalle: r.detalle, firma: r.firma, pisar_cancelada: aplicada_pese };
+    let res = crate::almacen::ResultadoOrden { orden: r.orden, estado: r.estado, mensaje, detalle: r.detalle, firma: r.firma, pisar_cancelada: aplicada_pese };
     st.db(move |db| {
         db.resultado_orden(&ctx, &equipo, &res)?;
         if aplicada_pese {
