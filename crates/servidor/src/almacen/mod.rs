@@ -544,4 +544,7 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// Borra sesiones, códigos, invitaciones y mensajes caducados; devuelve los relevos caducados (para borrar sus archivos).
     fn limpiar(&self, c: &ClienteCtx, ahora: Ts) -> R<Vec<String>>;
     fn limpiar_servidor(&self, ahora: Ts) -> R<()>;
+    /// Equipos que se unieron con un código y nunca se confirmaron, cuyo
+    /// emparejamiento ya caducó o se anuló: quedaban «Sin confirmar» para siempre.
+    fn equipos_sin_alta(&self, c: &ClienteCtx) -> R<Vec<String>>;
 }

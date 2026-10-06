@@ -22,7 +22,7 @@
   import type { AMedias, Emparejamiento, Equipo, EstadoDeEmparejamiento, Orden, Preparado, PreparadoLinux } from "$lib/tipos";
   import { guardar } from "$lib/descarga";
   import { Preparados } from "$lib/preparados.svelte";
-  import { codigoAlCargar, esperaDe, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "$lib/emparejar";
+  import { codigoAlCargar, esperaDe, lineaVincular, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "$lib/emparejar";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -373,9 +373,10 @@
     }
   }
 
-  const lineaPreparada = $derived(linux ? `sudo resguardo-agente vincular ${linux.codigo} --servidor ${linux.servidor} --huella-ca ${linux.huella_ca}` : "");
+  // Con lo que da el servidor: solo si cada parte tiene su forma (ver lib/emparejar.ts).
+  const lineaPreparada = $derived(linux ? lineaVincular(linux.codigo, linux.servidor, linux.huella_ca) : "");
 
-  const lineaLinux = $derived(emp ? `sudo resguardo-agente vincular ${emp.codigo} --servidor ${urlAgentes()}` : "");
+  const lineaLinux = $derived(emp ? lineaVincular(emp.codigo, urlAgentes()) : "");
   async function copiar(t: string, que: string) {
     await navigator.clipboard.writeText(t);
     avisar(`${que} copiado.`);
@@ -521,10 +522,14 @@
           <li>Instala el agente (paquete <code>.deb</code> o <code>.tar.gz</code>): <a class="link" href="https://github.com/evercarog/resguardo/blob/main/docs/agente-linux.md" target="_blank" rel="noopener noreferrer">cómo</a>.</li>
           <li>
             Como root, vincúlalo (comprueba la huella de este servidor antes de enviar nada):
-            <div class="linea">
-              <code class="selectable">{lineaPreparada}</code>
-              <button class="icon-btn" aria-label="Copiar la línea" onclick={() => copiar(lineaPreparada, "Línea")}><Copy size={14} /></button>
-            </div>
+            {#if lineaPreparada}
+              <div class="linea">
+                <code class="selectable">{lineaPreparada}</code>
+                <button class="icon-btn" aria-label="Copiar la línea" onclick={() => copiar(lineaPreparada, "Línea")}><Copy size={14} /></button>
+              </div>
+            {:else}
+              <div class="notice notice-warn"><p>El servidor dio un código, una dirección o una huella que no tienen la forma esperada: no se enseña la línea para no pegar en la terminal algo distinto de lo que parece. Revisa la dirección para los agentes del servidor.</p></div>
+            {/if}
           </li>
           <li>Vuelve aquí: cuando se una, compara su número de comprobación y dale de alta.</li>
         </ol>
@@ -592,11 +597,13 @@
           <button class="btn btn-sm" onclick={() => copiar(emp!.codigo, "Código")}><Copy size={14} />Copiar</button>
         </div>
       {/if}
-      {#if so === "linux" && !local}
+      {#if so === "linux" && !local && lineaLinux}
         <div class="linea">
           <code class="selectable">{lineaLinux}</code>
           <button class="icon-btn" aria-label="Copiar la línea" onclick={() => copiar(lineaLinux, "Línea")}><Copy size={14} /></button>
         </div>
+      {:else if so === "linux" && !local}
+        <div class="notice notice-warn"><p>El servidor dio un código, una dirección o una huella que no tienen la forma esperada: no se enseña la línea para no pegar en la terminal algo distinto de lo que parece. Revisa la dirección para los agentes del servidor.</p></div>
       {/if}
       {#if estadoEmp?.estado === "caducado" || estadoEmp?.estado === "cancelado"}
         <div class="notice notice-warn"><p>El código caducó. Genera otro.</p></div>

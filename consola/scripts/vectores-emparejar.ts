@@ -13,7 +13,7 @@ const { compileModule } = ((compilador as { default?: typeof compilador }).defau
 import ts from "typescript";
 import { frenar } from "../src/lib/freno";
 import { mensajePausa, pausaTras } from "../src/lib/pausa429";
-import { codigoAlCargar, esperaDe, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "../src/lib/emparejar";
+import { codigoAlCargar, esperaDe, lineaVincular, mensajeAlPedir, pedirCodigo, podrasPedirEn, sirve, type CodigoAbierto } from "../src/lib/emparejar";
 import type { Preparado } from "../src/lib/tipos";
 
 let total = 0;
@@ -309,6 +309,31 @@ console.log("\n— Cargas lanzadas desde $effect (sin seguir lo que leen) —");
     }
   }
   igual(`${efectos} efectos: ninguno lanza una carga siguiendo lo que lee`, malos, []);
+}
+
+// --- La línea de Linux: nada que la shell interprete ---------------------------
+console.log("\n— Línea de Linux (lib/emparejar.ts) —");
+{
+  const huella = Array.from({ length: 32 }, (_, i) => (i * 7).toString(16).padStart(2, "0").toUpperCase()).join(":");
+  igual("línea preparada", lineaVincular("ABCD-EFGH-JK", "https://192.168.1.20:8443", huella), `sudo resguardo-agente vincular ABCD-EFGH-JK --servidor https://192.168.1.20:8443 --huella-ca ${huella}`);
+  igual("línea sin huella", lineaVincular("ABCD-EFGH-JK", "https://consola.ejemplo.com"), "sudo resguardo-agente vincular ABCD-EFGH-JK --servidor https://consola.ejemplo.com");
+  igual("detrás de un proxy, con ruta", lineaVincular("ABCD-EFGH-JK", "https://ejemplo.com/resguardo"), "sudo resguardo-agente vincular ABCD-EFGH-JK --servidor https://ejemplo.com/resguardo");
+  igual("http solo a este equipo", lineaVincular("ABCD-EFGH-JK", "http://localhost:5173"), "sudo resguardo-agente vincular ABCD-EFGH-JK --servidor http://localhost:5173");
+  igual("IPv6", lineaVincular("ABCD-EFGH-JK", "https://[fd00::1]:8443"), "sudo resguardo-agente vincular ABCD-EFGH-JK --servidor https://[fd00::1]:8443");
+  const malos: [string, string, string | undefined][] = [
+    ["ABCD;rm -rf /", "https://s:8443", undefined],
+    ["ABCD-EFGH-JK", "https://s:8443;curl x|sh", undefined],
+    ["ABCD-EFGH-JK", "https://s:8443 $(id)", undefined],
+    ["ABCD-EFGH-JK", "https://s:8443\nreboot", undefined],
+    ["ABCD-EFGH-JK", "https://s/`id`", undefined],
+    ["ABCD-EFGH-JK", "http://192.168.1.20:8443", undefined],
+    ["ABCD-EFGH-JK", "http://localhost.otro.com", undefined],
+    ["ABCD-EFGH-JK", "https://", undefined],
+    ["ABCD-EFGH-JK", "https://s:8443", "AB:CD"],
+    ["ABCD-EFGH-JK", "https://s:8443", huella + ";id"],
+    ["ABC", "https://s:8443", undefined],
+  ];
+  for (const [c, s, h] of malos) igual(`sin línea: ${JSON.stringify([c, s, h])}`, lineaVincular(c, s, h), "");
 }
 
 console.log(`\n${total - fallos}/${total} bien`);

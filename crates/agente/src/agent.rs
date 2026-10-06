@@ -1760,7 +1760,7 @@ pub fn run() -> i32 {
         log(&format!("Solicitud de copia recibida para {id}."));
     }
     // Copias pedidas a distancia (si este equipo lo permite y está vinculado).
-    let web_access = crate::web::load_link().filter(|l| !l.revoked).and_then(|l| crate::web::device_secret(&secrets).map(|s| (l, s)));
+    let web_access = crate::web::load_link().filter(|l| !l.revoked).zip(crate::web::device_secret(&secrets));
     let mut remote: HashMap<String, crate::remote::Command> = HashMap::new();
     if config.remote_backup {
         if let Some((link, secret)) = &web_access {

@@ -91,3 +91,39 @@ export function mensajeAlPedir(e: unknown): string {
   const s = esperaDe(e);
   return s ? mensajeLimite(s) : ((e as Error)?.message ?? "Algo salió mal. Vuelve a intentarlo.");
 }
+
+// --- La línea de Linux -------------------------------------------------------
+// La consola compone `sudo resguardo-agente vincular …` con lo que da el servidor
+// (código, dirección y huella) y la persona la pega en una terminal como root. Un
+// servidor malicioso podría colar ahí `;`, `$(…)` o un salto de línea: antes de
+// enseñarla, cada parte tiene que tener su forma (como `DatosInstalador::validar`
+// en crates/protocolo/src/instalador.rs) y nada que la shell interprete.
+
+/** Código de emparejamiento: `ABCD-EFGH-JK` (8–20 letras, cifras y guiones). */
+export function codigoValido(c: string): boolean {
+  return /^[A-Za-z0-9-]{8,20}$/.test(c);
+}
+
+/** Dirección del servidor: `https://servidor:puerto` (con ruta si va detrás de un proxy), o `http://` a este mismo equipo. */
+export function servidorValido(s: string): boolean {
+  const m = /^(https?):\/\/([A-Za-z0-9.\-:[\]]{1,200})(\/[A-Za-z0-9._~\-/]{0,200})?$/.exec(s);
+  if (!m) return false;
+  const [, esquema, host] = m;
+  if (host.startsWith(":") || host.endsWith(":")) return false;
+  return esquema === "https" || /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/.test(host);
+}
+
+/** Huella de la autoridad TLS: 32 pares hexadecimales separados por `:`. */
+export function huellaValida(h: string): boolean {
+  return /^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){31}$/.test(h);
+}
+
+/**
+ * `sudo resguardo-agente vincular <código> --servidor <dirección> [--huella-ca <huella>]`,
+ * o `""` si alguna parte no tiene su forma (la página no enseña la línea y lo dice).
+ */
+export function lineaVincular(codigo: string, servidor: string, huellaCa?: string): string {
+  if (!codigoValido(codigo) || !servidorValido(servidor)) return "";
+  if (huellaCa !== undefined && !huellaValida(huellaCa)) return "";
+  return `sudo resguardo-agente vincular ${codigo} --servidor ${servidor}` + (huellaCa !== undefined ? ` --huella-ca ${huellaCa}` : "");
+}

@@ -138,6 +138,13 @@ fn spawn_error(e: std::io::Error) -> String {
     }
 }
 
+/// El rclone que va junto a Resguardo (lo traen el instalador y los paquetes), si está.
+fn rclone_incluido() -> Option<std::path::PathBuf> {
+    let name = if cfg!(windows) { "rclone.exe" } else { "rclone" };
+    let p = std::env::current_exe().ok()?.parent()?.join(name);
+    p.is_file().then_some(p)
+}
+
 fn repo_command(access: &Access) -> Command {
     let mut cmd = base_command();
     cmd.env("RESTIC_REPOSITORY", &access.location).env("RESTIC_PASSWORD", &access.password);
@@ -146,6 +153,16 @@ fn repo_command(access: &Access) -> Command {
     }
     for (k, v) in &access.env {
         cmd.env(k, v);
+    }
+    if BUNDLED_ONLY.load(Ordering::Relaxed) {
+        // El agente (servicio): `PATH` solo con carpetas del sistema y, con
+        // `rclone:`, el rclone que va junto a Resguardo (no el primero del PATH).
+        cmd.env("PATH", crate::proceso::path_del_sistema());
+        // (También si el origen de un `copy` es `rclone:`.)
+        let usa_rclone = access.location.starts_with("rclone:") || access.env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
+        if let Some(rclone) = rclone_incluido().filter(|_| usa_rclone) {
+            cmd.arg("-o").arg(format!("rclone.program={}", rclone.display()));
+        }
     }
     // Opción global: puede ir antes del subcomando.
     if let Some(cacert) = &access.cacert {
