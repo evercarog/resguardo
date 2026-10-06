@@ -359,11 +359,16 @@ pub async fn confirmar_emparejamiento(State(st): State<St>, u: Usuario, Path((c,
             db.confirmar_equipo(&ctx, &equipo, &b.etiqueta)?;
             db.poner_estado_emparejamiento(&ctx, &p, "confirmado", None)?;
             db.auditar(&ctx, &actor, "confirmar_equipo", &equipo, "{}")?;
-            db.equipo(&ctx, &equipo)
+            let Some(e) = db.equipo(&ctx, &equipo)? else { return Ok(None) };
+            let quitados = crate::almacen::quitar_duplicados_sin_confirmar(db, &ctx, &e)?;
+            Ok(Some((e, quitados)))
         })
         .await?;
     match r {
-        Ok(Some(e)) => {
+        Ok(Some((e, quitados))) => {
+            for q in &quitados {
+                st.vivo.avisar(&c, crate::vivo::Cambio::Equipo(q));
+            }
             st.vivo.avisar(&c, crate::vivo::Cambio::Equipo(&e.id));
             Ok(Json(equipo_json(&e, st.conectado(&e.id))))
         }
