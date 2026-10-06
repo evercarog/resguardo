@@ -383,7 +383,17 @@ pub fn acceso_destino(d: &Destino, ruta: &str, contrasena: &str) -> Result<resgu
     Ok(resguardo_motor::restic::Access { location, password: contrasena.to_string(), rest_auth, cacert, env })
 }
 
-/// `crear_repositorio {id, nombre, destino: {id} | {id, nombre, tipo, donde, usuario?, secreto?, ca_pem?}, contrasena, retencion?, parametros_de?}`.
+/// Tarea 4a: la nube de un destino `nube`, conectada en este equipo.
+fn nube_conectada(d: &Destino) -> Result<(), String> {
+    let n = d.nube.as_deref().unwrap_or_default();
+    if crate::nube::buscar(n).is_none() {
+        return Err(format!("La nube «{n}» no está conectada en este equipo: conéctala antes."));
+    }
+    Ok(())
+}
+
+/// `crear_repositorio {id, nombre, destino: {id} | {id, nombre, tipo, donde, usuario?, secreto?, ca_pem?, nube?}, contrasena, retencion?, parametros_de?}`.
+/// Con `tipo: "nube"` (`repo_en_nube`), `nube` es el nombre de una nube conectada en este equipo y `donde` su carpeta.
 /// Lo inicializa (o, si ya existe, comprueba que la contraseña lo abre).
 pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
     let (id, nombre, contrasena) = (texto(c, "id"), texto(c, "nombre"), texto(c, "contrasena"));
@@ -404,11 +414,8 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
     if !id_valido(&destino_id) {
         return Err("Id de destino no válido.".into());
     }
-    // Tarea 4a: por ahora una nube solo sirve para las copias derivadas (la copia de cada
-    // vuelta del agente aún no pone las credenciales de la nube al día).
-    if dest["tipo"] == "nube" || v.destinos.iter().any(|d| d.id == destino_id && d.tipo == "nube") {
-        return Err("Una nube conectada en el equipo sirve, por ahora, para las copias derivadas, no para copiar las carpetas directamente.".into());
-    }
+    // Tarea 4a: también en una nube conectada en este equipo (`repo_en_nube`): cada
+    // proceso de restic recibe la nube al día (`nube::preparar_vuelta`).
     let nuevo = if dest.get("tipo").is_some() {
         if v.destinos.iter().any(|d| d.id == destino_id) {
             return Err(format!("Ya hay un destino «{destino_id}»."));
@@ -422,16 +429,21 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
             secreto: dest["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
             ca_pem: dest["ca_pem"].as_str().filter(|s| s.contains("BEGIN CERTIFICATE")).map(str::to_string),
             equipo_almacen: equipo_almacen_de(dest),
-            nube: None,
+            // Tarea 4a: el nombre de la nube conectada en este equipo.
+            nube: (dest["tipo"] == "nube").then(|| texto(dest, "nube").trim().to_string()),
         };
         if !texto_valido(&d.nombre, 80) {
             return Err("Escribe un nombre para el destino.".into());
         }
+        if d.tipo == "nube" {
+            nube_conectada(&d)?;
+        }
         ubicacion(&d, &id)?;
         Some(d)
     } else {
-        if !v.destinos.iter().any(|d| d.id == destino_id) {
-            return Err(format!("No hay ningún destino «{destino_id}» en este equipo."));
+        let d = v.destinos.iter().find(|d| d.id == destino_id).ok_or_else(|| format!("No hay ningún destino «{destino_id}» en este equipo."))?;
+        if d.tipo == "nube" {
+            nube_conectada(d)?;
         }
         None
     };
@@ -999,7 +1011,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 21] = [
+pub const ADMITE: [&str; 22] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1028,6 +1040,9 @@ pub const ADMITE: [&str; 21] = [
     // (pendiente de numerar) tarea 4a: `conectar_nube` también fuera de un almacén y destinos
     // `{ tipo: "nube", nube, donde }` en las copias derivadas (por rclone).
     "nube_equipo",
+    // (pendiente de numerar) tarea 4a completa: `crear_repositorio` con un destino `{ tipo: "nube", nube, donde }`
+    // (copiar las carpetas directamente a una nube conectada en el equipo; el token se pone al día en cada proceso).
+    "repo_en_nube",
     // (pendiente de numerar) tarea 7d.2: destinos del espejo con `zona` (de qué zona copia) y
     // `{ tipo: "zona", carpeta: "<id>" | "principal" }` (a otra zona del almacén).
     "espejo_zonas",
@@ -2828,10 +2843,82 @@ mod tests {
             assert!(ubicacion(&d(donde, nube), "r").is_err(), "{donde:?} {nube:?}");
         }
         assert!(ubicacion(&d("Resguardo", Some("D")), "").is_err());
-        // Una nube no sirve (todavía) para copiar las carpetas directamente.
+        // Copiar las carpetas directamente a una nube: solo si está conectada en el equipo.
         let mut v = Vinculo::default();
-        let c = json!({ "id": "r1", "nombre": "Docs", "contrasena": "una clave larga", "destino": { "id": "n1", "tipo": "nube", "nube": "Dropbox", "nombre": "Dropbox" } });
-        assert!(crear_repositorio(&mut v, &c).unwrap_err().contains("copias derivadas"));
-        assert!(ADMITE.contains(&"nube_equipo"));
+        let c = json!({ "id": "r1", "nombre": "Docs", "contrasena": "una clave larga", "destino": { "id": "n1", "tipo": "nube", "nube": "Dropbox que no hay", "nombre": "Dropbox" } });
+        assert!(crear_repositorio(&mut v, &c).unwrap_err().contains("no está conectada en este equipo"));
+        assert!(v.destinos.is_empty() && v.repos_v2.is_empty());
+        assert!(ADMITE.contains(&"nube_equipo") && ADMITE.contains(&"repo_en_nube"));
+    }
+
+    /// Tarea 4a completa: un repositorio directamente en una nube conectada en el
+    /// equipo, con el restic y el rclone de verdad (la «nube» es una carpeta por
+    /// rclone, tipo `alias`, solo en las pruebas): crear, copiar y restaurar.
+    #[test]
+    fn repositorio_directo_en_una_nube_conectada() {
+        use resguardo_motor::restic::{run_raw, snapshots};
+        let _l = crate::restic::tests::real_repo_lock();
+        let Ok(rclone) = crate::nube::comprobar_binario() else {
+            eprintln!("Sin rclone en src-tauri/binaries: se salta la prueba.");
+            return;
+        };
+        if resguardo_motor::restic::version().is_err() {
+            eprintln!("Sin restic: se salta la prueba.");
+            return;
+        }
+        let b = std::env::temp_dir().join(format!("resguardo-repo-nube-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&b);
+        std::env::set_var("RESGUARDO_AGENT_DIR", b.join("agente"));
+        // restic busca «rclone» en el PATH (en las pruebas no hay uno junto al ejecutable).
+        std::fs::create_dir_all(b.join("bin")).unwrap();
+        std::fs::copy(&rclone, b.join("bin").join(if cfg!(windows) { "rclone.exe" } else { "rclone" })).unwrap();
+        let path_antes = std::env::var_os("PATH").unwrap_or_default();
+        std::env::set_var("PATH", std::env::join_paths(std::iter::once(b.join("bin")).chain(std::env::split_paths(&path_antes))).unwrap());
+        crate::nube::registrar();
+        let nube = b.join("nube");
+        std::fs::create_dir_all(&nube).unwrap();
+        crate::nube::conectar_rclone(&json!({ "tipo": "alias", "nombre": "Nube de prueba", "parametros": { "carpeta": nube.display().to_string() } })).unwrap();
+
+        let mut v = Vinculo { equipo_id: uuid::Uuid::new_v4().to_string(), modo: "local".into(), ..Default::default() };
+        let pedir = |n: &str| {
+            json!({ "id": "docs", "nombre": "Documentos", "contrasena": "clave-de-prueba-larga",
+                    "destino": { "id": "nube-prueba", "nombre": "Dropbox Oficina", "tipo": "nube", "nube": n, "donde": "Resguardo/Sur" } })
+        };
+        assert!(crear_repositorio(&mut v, &pedir("Otra")).unwrap_err().contains("no está conectada"));
+        let m = crear_repositorio(&mut v, &pedir("Nube de prueba")).unwrap();
+        assert!(m.contains("creado"), "{m}");
+        assert!(nube.join("Resguardo").join("Sur").join("docs").join("config").is_file(), "el repositorio está en la nube");
+        assert_eq!((v.destinos[0].tipo.as_str(), v.destinos[0].nube.as_deref()), ("nube", Some("Nube de prueba")));
+        // Con la copia se guarda solo la marca de la nube (nada de credenciales).
+        let acc = acceso(&v, "docs").unwrap();
+        assert_eq!(acc.location, "rclone:rnube:Resguardo/Sur/docs");
+        assert_eq!(acc.env, vec![(crate::nube::MARCA.to_string(), "Nube de prueba".to_string())]);
+        // Copiar y restaurar, como lo hará cada vuelta del agente.
+        std::fs::create_dir_all(b.join("datos")).unwrap();
+        std::fs::write(b.join("datos").join("factura.txt"), "factura de prueba").unwrap();
+        let out = run_raw(&acc, &["backup", "--json", &b.join("datos").display().to_string()], std::time::Duration::from_secs(300)).unwrap();
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        assert_eq!(snapshots(&acc).unwrap().len(), 1);
+        let out = run_raw(&acc, &["restore", "latest", "--target", &b.join("restaurado").display().to_string()], std::time::Duration::from_secs(300)).unwrap();
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        fn buscar(d: &std::path::Path) -> Option<std::path::PathBuf> {
+            std::fs::read_dir(d).ok()?.flatten().find_map(|e| {
+                if e.path().is_dir() {
+                    buscar(&e.path())
+                } else {
+                    (e.file_name() == "factura.txt").then(|| e.path())
+                }
+            })
+        }
+        assert_eq!(std::fs::read_to_string(buscar(&b.join("restaurado")).unwrap()).unwrap(), "factura de prueba");
+        // Ni un archivo de rclone se queda en la carpeta privada.
+        let vueltas = crate::agent::private_dir().join("rclone-vueltas");
+        assert_eq!(std::fs::read_dir(&vueltas).map(|d| d.count()).unwrap_or(0), 0);
+        // Mientras un repositorio está en ella, la nube no se puede desconectar.
+        crate::servidor_v2::guardar(&v).unwrap();
+        assert!(crate::nube::quitar_desde_orden(&json!({ "nombre": "Nube de prueba" })).unwrap_err().contains("la usa una copia"));
+        std::env::set_var("PATH", path_antes);
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
+        let _ = std::fs::remove_dir_all(&b);
     }
 }

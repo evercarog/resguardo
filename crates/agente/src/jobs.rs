@@ -20,6 +20,8 @@ pub const MAX_ERRORS: usize = 200;
 
 struct Running {
     child: Child,
+    /// Lo preparado para este proceso (una nube por rclone): se suelta al terminar.
+    _vuelta: Option<restic::Preparado>,
     cancelled: bool,
 }
 
@@ -102,9 +104,9 @@ pub fn run_stream(jobs: &Jobs, key: &str, access: &Access, args: &[String], mut 
         if map.contains_key(key) {
             return Err("Ya hay una operación igual en curso para este repositorio.".into());
         }
-        let mut child = restic::spawn(access, args)?;
+        let (mut child, vuelta) = restic::spawn_vuelta(access, args)?;
         let pipes = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-        map.insert(key.to_string(), Running { child, cancelled: false });
+        map.insert(key.to_string(), Running { child, cancelled: false, _vuelta: vuelta });
         pipes
     };
     let stderr_thread = std::thread::spawn(move || {
@@ -129,7 +131,7 @@ pub fn run_stream(jobs: &Jobs, key: &str, access: &Access, args: &[String], mut 
     }
     drop(stdout);
 
-    let Running { mut child, cancelled } = jobs.0.lock().unwrap().remove(key).expect("el trabajo se registró al empezar");
+    let Running { mut child, cancelled, _vuelta } = jobs.0.lock().unwrap().remove(key).expect("el trabajo se registró al empezar");
     let status = child.wait().map_err(|e| e.to_string())?;
     let stderr = stderr_thread.join().unwrap_or_default();
     Ok(StreamOutput { exit_code: status.code(), stderr, cancelled })
@@ -162,9 +164,9 @@ pub fn run(
                     .into(),
             );
         }
-        let mut child = restic::spawn(access, args)?;
+        let (mut child, vuelta) = restic::spawn_vuelta(access, args)?;
         let pipes = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-        map.insert(key.to_string(), Running { child, cancelled: false });
+        map.insert(key.to_string(), Running { child, cancelled: false, _vuelta: vuelta });
         pipes
     };
 
@@ -213,7 +215,7 @@ pub fn run(
         }
     }
 
-    let Running { mut child, cancelled } = jobs.0.lock().unwrap().remove(key).expect("el trabajo se registró al empezar");
+    let Running { mut child, cancelled, _vuelta } = jobs.0.lock().unwrap().remove(key).expect("el trabajo se registró al empezar");
     let status = child.wait().map_err(|e| e.to_string())?;
     let (errors, error_count, other_stderr) = stderr_thread.join().unwrap_or_default();
 

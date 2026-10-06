@@ -844,7 +844,7 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
             args.extend(["--archive".into(), "zip".into()]);
         }
         args.extend([version.to_string(), rutas[0].clone()]);
-        let mut hijo = restic::spawn(acc, &args)?;
+        let (mut hijo, _vuelta) = restic::spawn_vuelta(acc, &args)?;
         // stderr en otro hilo: si se llenara, restic se pararía.
         let mut stderr = hijo.stderr.take();
         let errores = std::thread::spawn(move || {

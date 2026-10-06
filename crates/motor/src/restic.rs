@@ -156,13 +156,67 @@ fn opcion_rclone(p: &std::path::Path) -> String {
     format!("\"rclone.program=\"\"{programa}\"\"\"")
 }
 
+/// Lo que se prepara para un proceso de restic justo antes de lanzarlo (p. ej.
+/// una nube por rclone: sus credenciales de ahora y un archivo de configuración
+/// propio de esta vuelta). `env` sustituye a `Access::env`. Al soltarlo (con
+/// restic ya terminado) se llama a `al_terminar` (guardar lo que rclone renovó
+/// y borrar el archivo).
+pub struct Preparado {
+    pub env: Vec<(String, String)>,
+    al_terminar: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl Preparado {
+    pub fn new(env: Vec<(String, String)>, al_terminar: impl FnOnce() + Send + 'static) -> Self {
+        Self { env, al_terminar: Some(Box::new(al_terminar)) }
+    }
+}
+
+impl Drop for Preparado {
+    fn drop(&mut self) {
+        if let Some(f) = self.al_terminar.take() {
+            f();
+        }
+    }
+}
+
+/// Sin las variables (llevan credenciales).
+impl std::fmt::Debug for Preparado {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Preparado").finish_non_exhaustive()
+    }
+}
+
+/// Quien prepara cada proceso (lo pone el agente al arrancar). `Ok(None)`: no hace falta nada.
+pub type Preparar = fn(&[(String, String)]) -> Result<Option<Preparado>, String>;
+
+static PREPARAR: std::sync::RwLock<Option<Preparar>> = std::sync::RwLock::new(None);
+
+/// El agente: cómo preparar cada proceso de restic (ver [`Preparado`]).
+pub fn set_preparar(f: Preparar) {
+    *PREPARAR.write().unwrap_or_else(|e| e.into_inner()) = Some(f);
+}
+
+fn preparar(access: &Access) -> Result<Option<Preparado>, String> {
+    let f = *PREPARAR.read().unwrap_or_else(|e| e.into_inner());
+    match f {
+        Some(f) => f(&access.env),
+        None => Ok(None),
+    }
+}
+
+#[cfg(test)]
 fn repo_command(access: &Access) -> Command {
+    repo_command_con(access, &access.env)
+}
+
+fn repo_command_con(access: &Access, env: &[(String, String)]) -> Command {
     let mut cmd = base_command();
     cmd.env("RESTIC_REPOSITORY", &access.location).env("RESTIC_PASSWORD", &access.password);
     if let Some((user, pass)) = &access.rest_auth {
         cmd.env("RESTIC_REST_USERNAME", user).env("RESTIC_REST_PASSWORD", pass);
     }
-    for (k, v) in &access.env {
+    for (k, v) in env {
         cmd.env(k, v);
     }
     if BUNDLED_ONLY.load(Ordering::Relaxed) {
@@ -172,7 +226,7 @@ fn repo_command(access: &Access) -> Command {
     // Con `rclone:` (también si es el origen de un `copy`), el rclone que va
     // junto a Resguardo si está (no el primero del PATH). En una compilación de
     // desarrollo sin él junto al ejecutable, el del PATH, como antes.
-    let usa_rclone = access.location.starts_with("rclone:") || access.env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
+    let usa_rclone = access.location.starts_with("rclone:") || env.iter().any(|(k, v)| k == "RESTIC_FROM_REPOSITORY" && v.starts_with("rclone:"));
     if let Some(rclone) = rclone_incluido().filter(|_| usa_rclone) {
         cmd.arg("-o").arg(opcion_rclone(&rclone));
     }
@@ -485,10 +539,12 @@ fn run_raw_inner(
     cancel: Option<&AtomicBool>,
     on_line: Option<&mut dyn FnMut(&str)>,
 ) -> Result<RawOutput, String> {
-    let mut child = spawn_cmd(repo_command(access).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
+    let (mut child, vuelta) = spawn_vuelta_con(access, args)?;
     PID_EN_MARCHA.with(|p| p.set(Some(child.id())));
     let r = run_child(&mut child, timeout, cancel, on_line);
     PID_EN_MARCHA.with(|p| p.set(None));
+    // Lo preparado se suelta con restic (y su rclone) ya terminado.
+    drop(vuelta);
     r
 }
 
@@ -556,8 +612,28 @@ fn run_child(child: &mut Child, timeout: Duration, cancel: Option<&AtomicBool>, 
 }
 
 /// Lanza restic con stdout y stderr conectados para leerlos mientras se ejecuta.
+/// Si el acceso necesita preparación (una nube por rclone), hay que usar
+/// [`spawn_vuelta`]: aquí no habría dónde guardarla mientras dura el proceso.
 pub fn spawn(access: &Access, args: &[String]) -> Result<Child, String> {
-    spawn_cmd(repo_command(access).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()))
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    if preparar(access)?.is_some() {
+        return Err("Este repositorio prepara su conexión en cada uso: hace falta spawn_vuelta.".into());
+    }
+    spawn_cmd(repo_command_con(access, &access.env).args(&refs).stdout(Stdio::piped()).stderr(Stdio::piped()))
+}
+
+/// Como [`spawn`], con lo preparado para este proceso: hay que soltarlo
+/// (`drop`) después de esperar a que restic termine.
+pub fn spawn_vuelta(access: &Access, args: &[String]) -> Result<(Child, Option<Preparado>), String> {
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    spawn_vuelta_con(access, &refs)
+}
+
+fn spawn_vuelta_con(access: &Access, args: &[&str]) -> Result<(Child, Option<Preparado>), String> {
+    let vuelta = preparar(access)?;
+    let env = vuelta.as_ref().map_or(access.env.as_slice(), |p| p.env.as_slice());
+    let child = spawn_cmd(repo_command_con(access, env).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
+    Ok((child, vuelta))
 }
 
 /// Opción de exclusión: en Windows las rutas no distinguen mayúsculas, así
