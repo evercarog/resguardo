@@ -356,6 +356,15 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     case "guarda_copias": {
       e.resumen ??= {};
       // Espejo nocturno a otra carpeta (otro disco): { carpeta, hora } o null para quitarlo.
+      // §3b: confirmar lo que falta de golpe en el almacén (espera, como el agente).
+      if ("espejo_freno" in c) {
+        if (!plana.not_before) return resultado(e, o, "rechazada", "Confirmar lo que falta en el almacén reduce la protección: falta la espera (not_before).");
+        const f = c.espejo_freno as DestinoEspejo;
+        const d = e.resumen.guarda_copias?.espejo?.destinos?.find((x) => claveEspejo(x) === claveEspejo(f));
+        if (!d) return resultado(e, o, "fallida", "Ese destino ya no está en el espejo.");
+        d.freno = null;
+        return resultado(e, o, "hecha", "Confirmado: en la próxima vuelta se anota lo que ya no está en el almacén y se borrará pasados sus días.");
+      }
       if ("espejo" in c) {
         // v1.9: { destinos: [carpeta | nube], hora?, limite_kib? } con la lista
         // entera (o la forma antigua { carpeta, hora }); null lo quita todo.

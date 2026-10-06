@@ -74,6 +74,28 @@ pub struct Destino {
     /// §3d: archivos dañados del almacén que no se copiaron en la última vuelta.
     #[serde(default, skip_serializing_if = "is_cero")]
     pub danados_origen: u64,
+    /// §3b: borrar del destino lo que ya no está en el almacén pasados estos días
+    /// (7 a 3650). Sin ello, como siempre: nunca se borra nada.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retencion_dias: Option<u32>,
+    /// §3b: destino con bloqueo de objetos (Object Lock) o que no se debe tocar: nunca se borra.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bloqueo: bool,
+    /// §3b: lo que espera para borrarse, tras la última vuelta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub por_borrar: Option<PorBorrar>,
+    /// §3b: el freno de la última vuelta (no se anotó ni borró nada), si saltó.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freno: Option<String>,
+}
+
+/// §3b: lo que espera para borrarse del destino.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct PorBorrar {
+    pub archivos: u64,
+    pub bytes: u64,
+    /// El día en que se borra el primero (AAAA-MM-DD).
+    pub primero: Option<String>,
 }
 
 fn is_cero(n: &u64) -> bool {
@@ -100,6 +122,11 @@ pub const ESPERA_TRAS_COPIA: Duration = Duration::from_secs(12 * 60);
 pub const ESPERA_MAXIMA_TRAS_COPIA: Duration = Duration::from_secs(60 * 60);
 
 impl Destino {
+    /// §3b: los días de retención que cuentan (con bloqueo, ninguno).
+    pub fn retencion(&self) -> Option<u32> {
+        self.retencion_dias.filter(|_| !self.bloqueo)
+    }
+
     /// §3d: el % que se comprueba cada día.
     pub fn pct_verificar(&self) -> u8 {
         self.verificar_pct.unwrap_or(if self.tipo == "carpeta" { VERIFICAR_CARPETA } else { 0 }).min(100)
@@ -196,11 +223,20 @@ impl Espejo {
         let nuevos = nuevo.map(Espejo::destinos).unwrap_or_default();
         self.destinos().iter().any(|d| match nuevos.iter().find(|n| n.mismo(d)) {
             None => true,
-            Some(n) => match (&d.repos, &n.repos) {
-                (_, None) => false,
-                (None, Some(_)) => true,
-                (Some(antes), Some(ahora)) => antes.iter().any(|r| !ahora.contains(r)),
-            },
+            Some(n) => {
+                let menos_repos = match (&d.repos, &n.repos) {
+                    (_, None) => false,
+                    (None, Some(_)) => true,
+                    (Some(antes), Some(ahora)) => antes.iter().any(|r| !ahora.contains(r)),
+                };
+                // §3b: poner o acortar la retención (borrará), o quitar el bloqueo.
+                let borra_antes = match (d.retencion(), n.retencion()) {
+                    (None, Some(_)) => true,
+                    (Some(a), Some(b)) => b < a,
+                    _ => false,
+                };
+                menos_repos || borra_antes || (d.bloqueo && !n.bloqueo)
+            }
         })
     }
 
@@ -226,6 +262,11 @@ impl Espejo {
                 v["verificar_pct"] = d.pct_verificar().into();
                 v["verificacion"] = serde_json::to_value(&d.verificacion).unwrap_or_default();
                 v["danados_origen"] = d.danados_origen.into();
+                // §3b: la retención (o el bloqueo), lo que espera para borrarse y el freno.
+                v["retencion_dias"] = d.retencion_dias.into();
+                v["bloqueo"] = d.bloqueo.into();
+                v["por_borrar"] = serde_json::to_value(&d.por_borrar).unwrap_or_default();
+                v["freno"] = d.freno.clone().into();
                 // §3f: la selección (sin ella, todos) y lo que había al elegirla.
                 if let Some(r) = &d.repos {
                     v["repos"] = r.clone().into();
@@ -341,6 +382,26 @@ fn leer_opciones(d: &serde_json::Value, nuevo: &mut Destino) -> Result<(), Strin
         return Err("Elige al menos un repositorio para ese destino del espejo (o todos).".into());
     }
     nuevo.vistos = lista("vistos")?.unwrap_or_default();
+    nuevo.retencion_dias = match &d["retencion_dias"] {
+        serde_json::Value::Null => None,
+        n => Some(
+            n.as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|n| (crate::espejo_motor::RETENCION_MIN..=crate::espejo_motor::RETENCION_MAX).contains(n))
+                .ok_or(format!(
+                    "Los días de retención del espejo tienen que ir de {} a {}.",
+                    crate::espejo_motor::RETENCION_MIN,
+                    crate::espejo_motor::RETENCION_MAX
+                ))?,
+        ),
+    };
+    nuevo.bloqueo = match &d["bloqueo"] {
+        serde_json::Value::Null => false,
+        b => b.as_bool().ok_or("«bloqueo» tiene que ser verdadero o falso.")?,
+    };
+    if nuevo.bloqueo && nuevo.retencion_dias.is_some() {
+        return Err("Un destino con bloqueo de objetos no puede tener retención: el espejo nunca borra allí.".into());
+    }
     nuevo.verificar_pct = match &d["verificar_pct"] {
         serde_json::Value::Null => None,
         p => Some(p.as_u64().filter(|p| *p <= 100).ok_or("El % de verificación del espejo tiene que ir de 0 a 100.")? as u8),
@@ -441,6 +502,25 @@ pub fn novedades(origen: &Path, repos: &[String], desde: Option<SystemTime>) -> 
     r
 }
 
+/// §3b: `guarda_copias { espejo_freno: { tipo, carpeta, nube? } }` (espera, como
+/// lo que reduce la protección): lo que falta en el almacén de ese destino se
+/// anota en la próxima vuelta sin freno, y se borrará pasados sus días.
+pub fn aceptar_freno(v: &serde_json::Value) -> Result<String, String> {
+    let que = Destino {
+        tipo: v["tipo"].as_str().unwrap_or_default().to_string(),
+        carpeta: v["carpeta"].as_str().unwrap_or_default().trim().to_string(),
+        nube: v["nube"].as_str().map(|n| n.trim().to_string()),
+        ..Default::default()
+    };
+    let c = crate::server::load();
+    let d = c.espejo.as_ref().and_then(|e| e.destinos().into_iter().find(|d| d.mismo(&que))).ok_or("Ese destino ya no está en el espejo.")?;
+    let dias = d.retencion().ok_or("Ese destino del espejo no tiene retención: nunca borra nada.")?;
+    let mut e = leer_estado(&d);
+    e.aceptar_freno = true;
+    guardar_estado(&d, &e);
+    Ok(format!("Confirmado: en la próxima vuelta se anota lo que ya no está en el almacén y se borrará de «{}» pasados {dias} días.", d.texto()))
+}
+
 /// Una vuelta a un destino (espejo_motor.rs), contando cómo va en `guarda`
 /// (la ventana del equipo: los bytes copiados a una carpeta; lo que lee y
 /// sube rclone a una nube). Devuelve el texto del resultado.
@@ -473,7 +553,7 @@ fn copiar_a(
         Lado::Carpeta(destino)
     };
     let carpeta = d.tipo != "nube";
-    let op = Opciones { verificar_pct: d.pct_verificar() };
+    let op = Opciones { verificar_pct: d.pct_verificar(), retencion_dias: d.retencion_dias, bloqueo: d.bloqueo };
     let mut estado = leer_estado(d);
     let r = vuelta(origen, &lado, &alcance, &op, &mut estado, &mut |l, s| if carpeta { guarda.progreso(l, None) } else { guarda.ritmos(l, s) });
     guardar_estado(d, &estado);
@@ -487,6 +567,11 @@ fn archivo_estado(d: &Destino) -> PathBuf {
     let h = Sha256::digest(format!("{}|{}|{}", d.tipo, d.nube.as_deref().unwrap_or_default(), d.carpeta.trim()).as_bytes());
     let id: String = h.iter().take(8).map(|b| format!("{b:02x}")).collect();
     crate::agent::private_dir().join(format!("espejo-{id}.json"))
+}
+
+/// Olvida lo anotado de un destino (uno nuevo, o que se vuelve a poner).
+pub fn olvidar_estado(d: &Destino) {
+    let _ = std::fs::remove_file(archivo_estado(d));
 }
 
 fn leer_estado(d: &Destino) -> crate::espejo_motor::Estado {
@@ -513,6 +598,9 @@ pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     if r.verificados > 0 {
         texto += &format!(" Comprobados {} archivos del espejo.", r.verificados);
     }
+    if r.borrados > 0 {
+        texto += &format!(" Borrados {} archivos que ya no estaban en el almacén.", r.borrados);
+    }
     // §3d: lo que no cuadra con su nombre. Todo es un error (aviso `espejo_fallido`).
     let mut problemas = Vec::new();
     if !r.danados_origen.is_empty() {
@@ -531,6 +619,9 @@ pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     }
     if r.reparados > 0 {
         problemas.push(format!("{} archivos dañados del espejo se han vuelto a copiar bien del almacén: revisa el disco del espejo", r.reparados));
+    }
+    if let Some(f) = &r.freno {
+        problemas.push(f.clone());
     }
     if r.distintos > 0 {
         problemas.push(format!(
@@ -622,6 +713,10 @@ pub fn si_toca() {
                 mal: (r.mal_destino.len() as u64) + r.reparados,
             });
             let danados = hecho.as_ref().map(|r| r.danados_origen.len() as u64).ok();
+            let retencion = hecho.as_ref().ok().map(|r| {
+                let pb = (r.por_borrar > 0).then(|| PorBorrar { archivos: r.por_borrar, bytes: r.por_borrar_bytes, primero: r.primer_borrado.clone() });
+                (pb, r.freno.clone())
+            });
             let texto = match hecho.and_then(|r| texto_de(&r)) {
                 Ok(t) => {
                     guarda.terminar("ok");
@@ -647,6 +742,9 @@ pub fn si_toca() {
                     }
                     if let Some(n) = danados {
                         x.danados_origen = n;
+                    }
+                    if let Some((pb, freno)) = &retencion {
+                        (x.por_borrar, x.freno) = (pb.clone(), freno.clone());
                     }
                     if let Some(q) = cuota {
                         x.cuota = Some((q, fin.clone()));
@@ -888,6 +986,46 @@ mod tests {
         let r = cambia.resumen();
         assert_eq!((r["destinos"][0]["repos"][1].as_str(), r["destinos"][0]["vistos"][2].as_str()), (Some("b"), Some("c")));
         assert!(con(None).resumen()["destinos"][0].get("repos").is_none());
+    }
+
+    /// §3b: la retención de cada destino, el bloqueo y qué reduce la protección.
+    #[test]
+    fn retencion_y_bloqueo_de_un_destino() {
+        use serde_json::json;
+        let pide = |extra: serde_json::Value| {
+            let mut d = json!({ "tipo": "carpeta", "carpeta": "E:\\x" });
+            d.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            pedido(&json!({ "destinos": [d] }))
+        };
+        let e = pide(json!({ "retencion_dias": 30 })).unwrap().unwrap();
+        assert_eq!((e.destinos[0].retencion(), e.destinos[0].bloqueo), (Some(30), false));
+        for mal in [
+            json!({ "retencion_dias": 6 }),
+            json!({ "retencion_dias": 4000 }),
+            json!({ "retencion_dias": "30" }),
+            json!({ "retencion_dias": 30, "bloqueo": true }),
+            json!({ "bloqueo": "sí" }),
+        ] {
+            assert!(pide(mal.clone()).is_err(), "{mal}");
+        }
+        assert!(pide(json!({ "bloqueo": true })).unwrap().unwrap().destinos[0].bloqueo);
+        let con = |ret: Option<u32>, bloqueo: bool| Espejo {
+            hora: "02:00".into(),
+            destinos: vec![Destino { tipo: "carpeta".into(), carpeta: "E:\\x".into(), retencion_dias: ret, bloqueo, ..Default::default() }],
+            ..Default::default()
+        };
+        assert!(con(None, false).quita_destinos(Some(&con(Some(30), false))), "poner retención espera");
+        assert!(con(Some(60), false).quita_destinos(Some(&con(Some(30), false))), "acortarla también");
+        assert!(!con(Some(30), false).quita_destinos(Some(&con(Some(60), false))), "alargarla no");
+        assert!(!con(Some(30), false).quita_destinos(Some(&con(None, false))), "quitarla no (deja de borrar)");
+        assert!(con(None, true).quita_destinos(Some(&con(None, false))), "quitar el bloqueo espera");
+        assert!(!con(None, false).quita_destinos(Some(&con(None, true))));
+        let mut x = con(Some(30), false);
+        x.destinos[0].por_borrar = Some(PorBorrar { archivos: 3, bytes: 10, primero: Some("2026-11-01".into()) });
+        x.destinos[0].freno = Some("falta de golpe…".into());
+        let r = x.resumen();
+        assert_eq!((r["destinos"][0]["retencion_dias"].as_u64(), r["destinos"][0]["por_borrar"]["archivos"].as_u64()), (Some(30), Some(3)));
+        assert_eq!(r["destinos"][0]["freno"], "falta de golpe…");
     }
 
     #[test]

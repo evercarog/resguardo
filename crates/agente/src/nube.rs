@@ -423,6 +423,32 @@ pub fn hashes(n: &Nube, carpeta: &str, rels: &[&str], trabajo: &Path) -> Result<
     Ok(m)
 }
 
+/// §3b: borra de la nube solo estos archivos (rutas relativas a `carpeta`;
+/// `rclone delete --files-from-raw`, nunca carpetas enteras ni `sync`).
+pub fn borrar(n: &Nube, carpeta: &str, rels: &[&str], trabajo: &Path) -> Result<(), String> {
+    if rels.is_empty() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(trabajo).map_err(|e| format!("No se pudo crear {}: {e}", trabajo.display()))?;
+    let lista = archivo_de_trabajo(trabajo, "borrar");
+    std::fs::write(&lista, rels.join("\n")).map_err(|e| format!("No se pudo preparar la lista para la nube: {e}"))?;
+    let destino = remoto(carpeta, "");
+    let out = rclone(
+        n,
+        trabajo,
+        &|c| {
+            c.args(["delete", "--use-json-log", "--retries", "3"]).arg(&destino).arg("--files-from-raw").arg(&lista);
+        },
+        &mut |_, _| {},
+    );
+    let _ = std::fs::remove_file(&lista);
+    let out = out?;
+    if !out.status.success() {
+        return Err(format!("no se pudo borrar de la nube lo que ya no está en el almacén: {}", error_de_rclone(&out)));
+    }
+    Ok(())
+}
+
 /// Sube a la nube solo estos archivos (rutas relativas a `origen`), sin
 /// reescribir lo que ya esté (`--immutable`). Devuelve los subidos y sus bytes.
 pub fn copiar_lista(
@@ -990,7 +1016,7 @@ mod tests {
         let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), app_key: None };
         let carpeta = d.display().to_string().replace('\\', "/");
         let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: None };
-        let op = Opciones { verificar_pct: 100 };
+        let op = Opciones { verificar_pct: 100, ..Default::default() };
         let r = vuelta(&o, &lado, &Alcance::Todos, &op, &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.danados_origen.clone()), (1, vec![malo.clone()]));
         assert!(d.join(&bueno).is_file() && !d.join(&malo).exists());
@@ -1046,6 +1072,14 @@ mod tests {
         std::fs::remove_file(o.join("ana/repo/config")).unwrap();
         vuelta(&o, &lado, &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert!(d.join("ana/repo/config").is_file(), "nunca borra");
+        // §3b: con retención, lo que lleva más de N días sin estar en el almacén se borra de la nube (solo eso).
+        let mut est = Estado::default();
+        est.faltan.insert("ana/repo/config".into(), crate::espejo_motor::Falta { desde: "2020-01-01".into(), bytes: 1 });
+        est.aceptar_freno = true; // el repositorio entero «falta»: confirmado
+        let op = Opciones { retencion_dias: Some(30), ..Default::default() };
+        let r = vuelta(&o, &lado, &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();
+        assert_eq!(r.borrados, 1);
+        assert!(!d.join("ana/repo/config").exists() && d.join("ana/repo/data/ab/abcdef").is_file() && d.join("ana/otro/config").is_file());
         // Un archivo que cambia en el origen (otro tamaño) no se reescribe en la nube.
         let f = o.join("ana/repo/data/ab/abcdef");
         std::fs::write(&f, "otra cosa").unwrap();

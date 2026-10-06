@@ -424,7 +424,7 @@ export async function sembrar(vacio = false) {
             resultado: "Espejo hecho: 1.204 archivos nuevos (38 GB) en 2 destinos.",
             limite_kib: 4096,
             destinos: [
-              { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo", horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true, verificar_pct: 5, verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 }, ultima: hace(60 * 13),
+              { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo", horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true, retencion_dias: 30, por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" }, freno: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén", verificar_pct: 5, verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 }, ultima: hace(60 * 13),
  resultado: "Espejo hecho: 1.204 archivos nuevos (38 GB).", espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
               { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["caja-1/siigo"], vistos: ["caja-1/siigo"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
             ],

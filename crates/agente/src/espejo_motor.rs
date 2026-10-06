@@ -15,6 +15,12 @@
 //! se propaga) y, una vez al día, se comprueba una parte de lo que ya está en
 //! el destino, siguiendo donde se quedó la vez anterior. En una carpeta, lo
 //! dañado del espejo se repara con el del almacén si ese está bien.
+//!
+//! Retención del espejo (§3b): sin ella, nunca se borra nada. Con ella, lo
+//! que falta en el almacén se anota y se borra del destino pasados N días;
+//! si de golpe falta mucho (el [`FRENO_PCT`] % o un repositorio entero), esa
+//! vuelta no anota ni borra nada y avisa, hasta que se confirma. Con bloqueo
+//! de objetos no se borra nunca.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -26,6 +32,14 @@ use std::time::{Duration, SystemTime};
 pub const RECIENTE: Duration = Duration::from_secs(10 * 60);
 /// Sufijo de lo que se está copiando a una carpeta (se renombra al terminar).
 pub const SUFIJO_TEMPORAL: &str = ".tmp-espejo";
+
+/// §3b: si en una vuelta falta de golpe en el almacén este % de lo que hay en
+/// el destino (y al menos [`FRENO_MIN`] archivos), no se anota ni se borra nada.
+pub const FRENO_PCT: usize = 10;
+pub const FRENO_MIN: usize = 20;
+/// §3b: días de retención del espejo: los mínimos y los máximos.
+pub const RETENCION_MIN: u32 = 7;
+pub const RETENCION_MAX: u32 = 3650;
 
 /// Lo que se espera entre dos verificaciones del destino por rotación.
 pub const CADA_VERIFICACION: Duration = Duration::from_secs(20 * 3600);
@@ -75,6 +89,17 @@ fn esta_bien(p: &Path, rel: &str) -> Option<bool> {
 pub struct Opciones {
     /// % de los archivos del destino que se comprueban (0: ninguno).
     pub verificar_pct: u8,
+    /// §3b: borrar del destino lo que falta en el almacén pasados estos días (sin ello, nunca).
+    pub retencion_dias: Option<u32>,
+    /// §3b: destino con bloqueo de objetos: nunca se borra nada.
+    pub bloqueo: bool,
+}
+
+/// §3b: un archivo que ya no está en el almacén: desde cuándo (AAAA-MM-DD) y su tamaño.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Falta {
+    pub desde: String,
+    pub bytes: u64,
 }
 
 /// Lo que una vuelta recuerda para la siguiente (en la carpeta privada del agente).
@@ -86,6 +111,12 @@ pub struct Estado {
     /// Cuándo se comprobó el destino por última vez (RFC 3339).
     #[serde(default)]
     pub verificado: Option<String>,
+    /// §3b: lo que ya no está en el almacén y se borrará del destino.
+    #[serde(default)]
+    pub faltan: BTreeMap<String, Falta>,
+    /// §3b: confirmado (`espejo_freno`): la próxima vuelta anota todo lo que falta, sin freno.
+    #[serde(default)]
+    pub aceptar_freno: bool,
 }
 
 /// Qué repositorios del almacén van a un destino (§3f).
@@ -217,6 +248,14 @@ pub struct Resumen {
     pub verificados: u64,
     /// §3d: archivos del espejo dañados que no se han podido reparar.
     pub mal_destino: Vec<String>,
+    /// §3b: borrados del destino en esta vuelta (llevaban N días sin estar en el almacén).
+    pub borrados: u64,
+    /// §3b: lo que espera para borrarse: archivos, bytes y el día del primero.
+    pub por_borrar: u64,
+    pub por_borrar_bytes: u64,
+    pub primer_borrado: Option<String>,
+    /// §3b: por qué no se ha anotado ni borrado nada (freno).
+    pub freno: Option<String>,
 }
 
 /// Lo que hay en el destino (ruta relativa → tamaño), dentro del alcance.
@@ -250,6 +289,11 @@ pub fn vuelta(
     avance: &mut dyn FnMut(Option<u64>, Option<u64>),
 ) -> Result<Resumen, String> {
     let mut r = Resumen::default();
+    // Sin la carpeta del almacén (un disco que no está) no se hace nada: lo
+    // contrario parecería un almacén vacío.
+    if !origen.is_dir() {
+        return Err(format!("no se encuentra la carpeta del almacén ({}).", origen.display()));
+    }
     if let Alcance::Repos(l) = alcance {
         r.faltan_repos = l.iter().filter(|x| !repo_valido(x) || !origen.join(x.as_str()).join("config").is_file()).cloned().collect();
     }
@@ -297,7 +341,97 @@ pub fn vuelta(
         }
     }
     verificar(origen, lado, &destino, op, estado, &mut r)?;
+    retencion(lado, &origen_l, &destino, op, estado, &mut r, chrono::Local::now().date_naive())?;
     Ok(r)
+}
+
+/// §3b: anota lo que falta en el almacén y borra del destino lo que lleva
+/// `retencion_dias` faltando, con el freno. `hoy` se pasa para las pruebas.
+pub fn retencion(
+    lado: &Lado,
+    origen: &[Archivo],
+    destino: &BTreeMap<String, u64>,
+    op: &Opciones,
+    estado: &mut Estado,
+    r: &mut Resumen,
+    hoy: chrono::NaiveDate,
+) -> Result<(), String> {
+    let Some(dias) = op.retencion_dias.filter(|_| !op.bloqueo) else {
+        // Sin retención (o con bloqueo) no se lleva la cuenta: nunca se borra.
+        estado.faltan.clear();
+        estado.aceptar_freno = false;
+        return Ok(());
+    };
+    let en_origen: HashSet<&str> = origen.iter().map(|a| a.rel.as_str()).collect();
+    let faltan: BTreeMap<&str, u64> = destino.iter().filter(|(k, _)| !en_origen.contains(k.as_str())).map(|(k, v)| (k.as_str(), *v)).collect();
+    // Lo que ha vuelto (o ya no está en el destino) se olvida.
+    estado.faltan.retain(|k, _| faltan.contains_key(k.as_str()));
+    let nuevos: Vec<(&str, u64)> = faltan.iter().filter(|(k, _)| !estado.faltan.contains_key(**k)).map(|(k, v)| (*k, *v)).collect();
+    // Un repositorio entero: su `config` está en el destino y no en el almacén.
+    let enteros: Vec<&str> = nuevos.iter().filter_map(|(k, _)| k.strip_suffix("/config").or((*k == "config").then_some("(raíz)"))).collect();
+    let mucho = nuevos.len() >= FRENO_MIN && nuevos.len() * 100 >= destino.len() * FRENO_PCT;
+    if !estado.aceptar_freno && (mucho || !enteros.is_empty()) {
+        let que = if enteros.is_empty() {
+            format!("el {} % de lo que hay en el espejo ({} archivos)", nuevos.len() * 100 / destino.len().max(1), nuevos.len())
+        } else {
+            format!("el repositorio {} entero", enteros.join(", "))
+        };
+        r.freno = Some(format!(
+            "falta de golpe en el almacén {que}: no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén"
+        ));
+    } else {
+        let desde = hoy.format("%Y-%m-%d").to_string();
+        for (k, v) in nuevos {
+            estado.faltan.insert(k.to_string(), Falta { desde: desde.clone(), bytes: v });
+        }
+        estado.aceptar_freno = false;
+        let vencidos: Vec<String> = estado
+            .faltan
+            .iter()
+            .filter(|(_, f)| chrono::NaiveDate::parse_from_str(&f.desde, "%Y-%m-%d").map_or(true, |d| d + chrono::Duration::days(i64::from(dias)) <= hoy))
+            .map(|(k, _)| k.clone())
+            .collect();
+        if !vencidos.is_empty() {
+            borrar(lado, &vencidos)?;
+            for k in &vencidos {
+                estado.faltan.remove(k);
+            }
+            r.borrados = vencidos.len() as u64;
+        }
+    }
+    r.por_borrar = estado.faltan.len() as u64;
+    r.por_borrar_bytes = estado.faltan.values().map(|f| f.bytes).sum();
+    r.primer_borrado = estado
+        .faltan
+        .values()
+        .filter_map(|f| chrono::NaiveDate::parse_from_str(&f.desde, "%Y-%m-%d").ok())
+        .min()
+        .map(|d| (d + chrono::Duration::days(i64::from(dias))).format("%Y-%m-%d").to_string());
+    Ok(())
+}
+
+/// Borra estos archivos del destino (solo ellos; nunca carpetas enteras ni a través de enlaces).
+fn borrar(lado: &Lado, rels: &[String]) -> Result<(), String> {
+    match lado {
+        Lado::Carpeta(d) => {
+            let mut vistas = HashSet::new();
+            for rel in rels {
+                if let Some(p) = enlace_en_el_camino(d, rel, &mut vistas) {
+                    return Err(format!("{} es un enlace: el espejo no borra a través de enlaces.", p.display()));
+                }
+                match std::fs::remove_file(d.join(rel)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(format!("no se pudo borrar {rel} del espejo: {e}")),
+                }
+            }
+            Ok(())
+        }
+        Lado::Nube { nube, carpeta, trabajo, .. } => {
+            let l: Vec<&str> = rels.iter().map(String::as_str).collect();
+            crate::nube::borrar(nube, carpeta, &l, trabajo)
+        }
+    }
 }
 
 /// Los archivos del destino que tocan esta vez: el `pct` % de los que tienen
@@ -571,7 +705,7 @@ mod tests {
         let malo = escribir(&o, "ana/r/data", b"paquete que se estropea");
         let snap = escribir(&o, "ana/r/snapshots", b"version");
         estropear(&o.join(&malo));
-        let op = Opciones { verificar_pct: 100 };
+        let op = Opciones { verificar_pct: 100, ..Default::default() };
         let mut est = Estado::default();
         let r = vuelta(&o, &Lado::Carpeta(&d), &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.danados_origen.clone()), (2, vec![malo.clone()]));
@@ -602,6 +736,94 @@ mod tests {
         assert_eq!(r.mal_destino, vec![snap.clone()]);
         assert!(crate::espejo::texto_de(&r).unwrap_err().contains("no se han podido reparar"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// §3b: lo que ya no está en el almacén se borra del espejo pasados N días, con freno.
+    #[test]
+    fn retencion_diferida_con_freno() {
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-retencion-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let d = base.join("destino");
+        // 100 archivos en dos repositorios del espejo.
+        let mut origen: Vec<Archivo> = Vec::new();
+        let mut destino = BTreeMap::new();
+        for (repo, n) in [("ana/r", 60), ("srv/s", 40)] {
+            for i in 0..n {
+                let rel = if i == 0 { format!("{repo}/config") } else { format!("{repo}/data/{i:03}") };
+                std::fs::create_dir_all(d.join(&rel).parent().unwrap()).unwrap();
+                std::fs::write(d.join(&rel), b"x").unwrap();
+                destino.insert(rel.clone(), 1u64);
+                origen.push(Archivo { rel, len: 1, reciente: false });
+            }
+        }
+        let lado = Lado::Carpeta(&d);
+        let op = Opciones { retencion_dias: Some(30), ..Default::default() };
+        let dia = |n: i64| chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap() + chrono::Duration::days(n);
+        let quitar = |o: &mut Vec<Archivo>, rels: &[String]| o.retain(|a| !rels.contains(&a.rel));
+        let listar = || -> BTreeMap<String, u64> { listar_carpeta(&d, &Alcance::Todos).unwrap().into_iter().map(|a| (a.rel, a.len)).collect() };
+        let mut est = Estado::default();
+        // La poda quita 3 archivos: se anotan; no se borran hasta pasados 30 días.
+        let podados: Vec<String> = (1..=3).map(|i| format!("ana/r/data/{i:03}")).collect();
+        quitar(&mut origen, &podados);
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(0)).unwrap();
+        assert_eq!((r.por_borrar, r.borrados, r.freno.clone(), r.primer_borrado.as_deref()), (3, 0, None, Some("2026-10-31")));
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(29)).unwrap();
+        assert_eq!((r.por_borrar, r.borrados), (3, 0));
+        assert!(d.join(&podados[0]).is_file());
+        // Uno vuelve al almacén (p. ej. un disco que se reconectó): se olvida.
+        origen.push(Archivo { rel: podados[2].clone(), len: 1, reciente: false });
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(30)).unwrap();
+        assert_eq!((r.por_borrar, r.borrados), (0, 2));
+        assert!(!d.join(&podados[0]).exists() && !d.join(&podados[1]).exists() && d.join(&podados[2]).is_file());
+        // Freno: falta de golpe más del 10 % (y al menos 20): ni se anota ni se borra.
+        let muchos: Vec<String> = (10..40).map(|i| format!("ana/r/data/{i:03}")).collect();
+        quitar(&mut origen, &muchos);
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(31)).unwrap();
+        assert!(r.freno.as_deref().is_some_and(|f| f.contains("falta de golpe")), "{:?}", r.freno);
+        assert_eq!(r.por_borrar, 0);
+        // Sigue frenado en las vueltas siguientes, hasta que se confirma.
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(70)).unwrap();
+        assert!(r.freno.is_some() && muchos.iter().all(|m| d.join(m).is_file()));
+        est.aceptar_freno = true;
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(70)).unwrap();
+        assert_eq!((r.freno.clone(), r.por_borrar, est.aceptar_freno), (None, 30, false));
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(100)).unwrap();
+        assert_eq!(r.borrados, 30);
+        // Un repositorio entero que desaparece (su config): freno aunque sean pocos archivos.
+        let srv: Vec<String> = origen.iter().filter(|a| a.rel.starts_with("srv/s/")).map(|a| a.rel.clone()).collect();
+        let mut sin_srv = origen.clone();
+        quitar(&mut sin_srv, &srv[..5]);
+        quitar(&mut sin_srv, &["srv/s/config".to_string()]);
+        let mut r = Resumen::default();
+        retencion(&lado, &sin_srv, &listar(), &op, &mut est, &mut r, dia(101)).unwrap();
+        assert!(r.freno.as_deref().is_some_and(|f| f.contains("srv/s entero")), "{:?}", r.freno);
+        // Con bloqueo de objetos, nunca se borra (y no se lleva la cuenta).
+        let bloq = Opciones { retencion_dias: Some(30), bloqueo: true, ..Default::default() };
+        est.faltan.insert("ana/r/data/050".into(), Falta { desde: "2020-01-01".into(), bytes: 1 });
+        let mut r = Resumen::default();
+        retencion(&lado, &sin_srv, &listar(), &bloq, &mut est, &mut r, dia(400)).unwrap();
+        assert_eq!((r.borrados, r.por_borrar), (0, 0));
+        assert!(est.faltan.is_empty() && d.join("srv/s/config").is_file());
+        // Sin retención, igual: nunca borra.
+        let mut r = Resumen::default();
+        retencion(&lado, &sin_srv, &listar(), &Opciones::default(), &mut est, &mut r, dia(400)).unwrap();
+        assert_eq!(r.borrados, 0);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Sin la carpeta del almacén no se hace nada (ni se toma por un almacén vacío).
+    #[test]
+    fn sin_almacen_no_hay_vuelta() {
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-sin-{}", std::process::id()));
+        let e = vuelta(&base.join("no-esta"), &Lado::Carpeta(&base.join("d")), &Alcance::Todos, &Opciones::default(), &mut Estado::default(), &mut |_, _| {});
+        assert!(e.unwrap_err().contains("no se encuentra la carpeta del almacén"));
     }
 
     /// §3f: solo los repositorios elegidos, cada uno en su carpeta.

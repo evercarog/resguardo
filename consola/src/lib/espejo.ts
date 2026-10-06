@@ -33,6 +33,14 @@ export interface DestinoEspejoResumen {
   verificacion?: { ultima: string; archivos: number; mal: number } | null;
   /** §3d: archivos dañados del almacén que no se copiaron en la última vuelta. */
   danados_origen?: number | null;
+  /** §3b: borra lo que ya no está en el almacén pasados estos días (sin ello, nunca borra). */
+  retencion_dias?: number | null;
+  /** §3b: bloqueo de objetos: nunca se borra. */
+  bloqueo?: boolean | null;
+  /** §3b: lo que espera para borrarse. */
+  por_borrar?: { archivos: number; bytes: number; primero?: string | null } | null;
+  /** §3b: el freno de la última vuelta (no se anotó ni se borró nada). */
+  freno?: string | null;
 }
 
 /** Lo que se manda de un destino en `guarda_copias.espejo.destinos` (sin sus resultados). */
@@ -45,6 +53,23 @@ export interface DestinoEspejoOrden {
   repos?: string[];
   vistos?: string[];
   verificar_pct?: number;
+  retencion_dias?: number;
+  bloqueo?: boolean;
+}
+
+/** §3b: días de retención del espejo: por defecto, mínimo y máximo (como el agente). */
+export const RETENCION_ESPEJO = { defecto: 30, min: 7, max: 3650 } as const;
+
+/** §3b: «Nunca borra», «Con bloqueo de objetos: nunca borra» o «Borra lo que ya no está en el almacén a los 30 días». */
+export function textoRetencion(d: Pick<DestinoEspejoResumen, "retencion_dias" | "bloqueo">): string {
+  if (d.bloqueo) return "Con bloqueo de objetos: nunca borra";
+  if (!d.retencion_dias) return "Nunca borra";
+  return `Borra lo que ya no está en el almacén a los ${d.retencion_dias} días`;
+}
+
+/** §3b: el error de unos días de retención escritos a mano (o null). */
+export function errorDiasRetencion(n: number): string | null {
+  return Number.isInteger(n) && n >= RETENCION_ESPEJO.min && n <= RETENCION_ESPEJO.max ? null : `Entre ${RETENCION_ESPEJO.min} y ${RETENCION_ESPEJO.max} días.`;
 }
 
 /** Un destino del resumen en la forma de la orden: lo que ya tiene, para reenviarlo sin cambios. */
@@ -57,6 +82,8 @@ export function destinoParaOrden(d: DestinoEspejoResumen): DestinoEspejoOrden {
     o.vistos = [...(d.vistos ?? [])];
   }
   if (typeof d.verificar_pct === "number") o.verificar_pct = d.verificar_pct;
+  if (d.bloqueo) o.bloqueo = true;
+  else if (typeof d.retencion_dias === "number" && d.retencion_dias > 0) o.retencion_dias = d.retencion_dias;
   return o;
 }
 
@@ -143,3 +170,6 @@ export function horaParaConsolasAnteriores(destinos: DestinoEspejoOrden[], porDe
   }
   return porDefecto;
 }
+
+/** «1 de noviembre de 2026» para un día AAAA-MM-DD (a mediodía: sin saltos de zona horaria). */
+export const diaLegible = (d: string) => new Intl.DateTimeFormat("es", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${d}T12:00:00`));

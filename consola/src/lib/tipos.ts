@@ -247,6 +247,14 @@ export interface ResumenEquipo {
         verificacion?: { ultima: string; archivos: number; mal: number } | null;
         /** Archivos dañados del almacén que no se copiaron en la última vuelta. */
         danados_origen?: number | null;
+        /** Borra lo que ya no está en el almacén pasados estos días (sin ello, nunca). */
+        retencion_dias?: number | null;
+        /** Bloqueo de objetos: nunca borra. */
+        bloqueo?: boolean | null;
+        /** Lo que espera para borrarse. */
+        por_borrar?: { archivos: number; bytes: number; primero?: string | null } | null;
+        /** El freno de la última vuelta (no se anotó ni se borró nada). */
+        freno?: string | null;
       }[];
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */

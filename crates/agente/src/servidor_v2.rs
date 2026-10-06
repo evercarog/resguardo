@@ -579,7 +579,11 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
     tipo.destructiva
         || match o.tipo.as_str() {
             "desvincular" => c["modo"] == "dejar_de_copiar",
-            "guarda_copias" => c["activo"] == false || c.get("quitar").is_some() || c.get("espejo").is_some_and(quita_destinos_del_espejo),
+            // Quitar un destino del espejo o repositorios de él, poner o acortar su
+            // retención, quitar su bloqueo o confirmar su freno (docs/espejo.md).
+            "guarda_copias" => {
+                c["activo"] == false || c.get("quitar").is_some() || c.get("espejo_freno").is_some() || c.get("espejo").is_some_and(quita_destinos_del_espejo)
+            }
             "cambiar_espera" => c["horas"].as_i64().is_some_and(|h| h < v.espera_min_horas),
             "restaurar" => c["destino"] == "original" && c["reemplazar"] == true,
             // Igual que al ejecutarla: sin una hora en texto, se quita la copia externa.

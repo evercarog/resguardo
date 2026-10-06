@@ -55,7 +55,7 @@
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
-  import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
+  import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, textoRetencion, errorDiasRetencion, diaLegible, RETENCION_ESPEJO, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
   import { errorReglas, reglasDe } from "$lib/horario";
   import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
   import { errorCarpetaDestino, errorCarpetaEspejo } from "$lib/ganchos";
@@ -302,6 +302,9 @@
     elegidos: [] as string[],
     /** §3d: % que se comprueba cada día. */
     verificarPct: 5,
+    /** §3b: qué hacer con lo que ya no está en el almacén. */
+    borrar: "nunca" as "nunca" | "retencion" | "bloqueo",
+    dias: RETENCION_ESPEJO.defecto as number,
     /** Clave (claveEspejo) del destino que se cambia; null: uno nuevo. */
     editando: null as string | null,
   });
@@ -309,7 +312,7 @@
   const nuevoDestino = $derived.by<DestinoEspejoUI>(() => {
     const d: DestinoEspejoUI = esp.tipo === "nube" ? { tipo: "nube", nube: esp.nube, carpeta: esp.carpetaNube.trim() } : { tipo: "carpeta", carpeta: esp.carpeta.trim() };
     if (!flexible) return d;
-    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}), ...(esp.todos ? {} : { repos: [...esp.elegidos].sort(), vistos: reposAlmacen }), verificar_pct: Number(esp.verificarPct) };
+    return { ...d, horario: esp.horario, ...(esp.trasCopia ? { tras_copia: true } : {}), ...(esp.todos ? {} : { repos: [...esp.elegidos].sort(), vistos: reposAlmacen }), verificar_pct: Number(esp.verificarPct), ...(esp.borrar === "bloqueo" ? { bloqueo: true } : esp.borrar === "retencion" ? { retencion_dias: Number(esp.dias) } : {}) };
   });
   /** §3f: los repositorios del almacén, como los nombra el espejo. */
   const reposAlmacen = $derived(nombresRepos(equipo?.resumen?.guarda_copias?.repositorios));
@@ -328,6 +331,16 @@
     const destinos = destinosActuales.map(conHorario).map(f);
     return { destinos, hora: horaParaConsolasAnteriores(destinos, espejoActual?.hora ?? "02:00"), ...(espejoActual?.limite_kib ? { limite_kib: espejoActual.limite_kib } : {}) };
   };
+  /** §3b: el freno saltó en un destino; confirmarlo (espera) hace que se anote y se borre pasados sus días. */
+  function confirmarFreno(d: DestinoEspejoResumen) {
+    const de = destinoParaOrden(d);
+    abrir({
+      tipo: "guarda_copias",
+      cuerpo: { espejo_freno: { tipo: de.tipo, carpeta: de.carpeta, ...(de.nube ? { nube: de.nube } : {}) } },
+      titulo: "Confirmar lo que falta en el almacén",
+      descripcion: `Hazlo solo si sabes por qué falta (una poda grande o un repositorio que quitaste). En la próxima vuelta se anotará y se borrará de ${de.tipo === "nube" ? `«${de.nube}»` : de.carpeta} pasados ${d.retencion_dias ?? RETENCION_ESPEJO.defecto} días. Si no lo sabes, revisa antes el almacén: podría estar dañado.`,
+    });
+  }
   function preguntarNuevos(anadir: boolean) {
     const nombres = nuevosEspejo.map(nombreRepoAlmacen).join(", ");
     abrir({
@@ -380,6 +393,7 @@
     (flexible ? !!(esp.horario.reglas?.length || esp.horario.horas?.length) && !errorReglas(reglasDe(esp.horario)) : /^([01]\d|2[0-3]):[0-5]\d$/.test(esp.hora)) &&
       !repetido &&
       (!flexible || esp.todos || esp.elegidos.length > 0) &&
+      (!flexible || esp.borrar !== "retencion" || !errorDiasRetencion(Number(esp.dias))) &&
       (esp.tipo === "carpeta" ? !!esp.carpeta.trim() : !!esp.nube && !!esp.carpetaNube.trim()) &&
       (!limiteTxt || Number(limiteTxt) > 0),
   );
@@ -401,6 +415,8 @@
       todos: !Array.isArray(de?.repos),
       elegidos: de?.repos ?? [],
       verificarPct: de?.verificar_pct ?? (( de?.tipo ?? tipo) === "nube" ? 0 : 5),
+      borrar: de?.bloqueo ? "bloqueo" : de?.retencion_dias ? "retencion" : "nunca",
+      dias: de?.retencion_dias ?? RETENCION_ESPEJO.defecto,
       editando: de ? claveEspejo(de) : null,
     };
     abrir({
@@ -1046,7 +1062,9 @@
                         <strong>{d.tipo === "nube" ? d.nube : d.carpeta}</strong>
                         <span class="faint">{d.tipo === "nube" ? `en la carpeta ${d.carpeta}` : "otra carpeta"}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
                         {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>
-                          <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>{/if}
+                          <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
+                          <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
+                          {#if d.freno && puede.administrar(rol)}<span class="freno"><button class="btn btn-sm" onclick={() => confirmarFreno(d)}>Confirmar lo que falta…</button></span>{/if}{/if}
                         {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
@@ -1508,7 +1526,7 @@
     {#if repetido}<p class="error-campo">Ese destino ya está en el espejo.</p>{/if}
     {/if}
     {#if flexible}
-      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} bind:todos={esp.todos} bind:elegidos={esp.elegidos} repositorios={reposAlmacen} nombre={nombreRepoAlmacen} bind:verificarPct={esp.verificarPct} nube={esp.tipo === "nube"} />
+      <EspejoOpciones id="e-op" bind:horario={esp.horario} bind:trasCopia={esp.trasCopia} bind:todos={esp.todos} bind:elegidos={esp.elegidos} repositorios={reposAlmacen} nombre={nombreRepoAlmacen} bind:verificarPct={esp.verificarPct} nube={esp.tipo === "nube"} bind:borrar={esp.borrar} bind:dias={esp.dias} />
     {:else}
     <div class="field">
       <label class="field-label" for="e-hora">Cada noche a las{destinosActuales.length ? " (para todos los destinos)" : ""}</label>
@@ -1777,6 +1795,10 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .freno {
+    display: block;
+    margin-top: 0.35rem;
   }
   .nuevos-espejo {
     display: grid;

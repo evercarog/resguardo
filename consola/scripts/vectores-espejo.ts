@@ -1,6 +1,6 @@
 // Pruebas del espejo por destino (src/lib/espejo.ts, docs/espejo.md).
 // `npm run test:vectores` (con las demás).
-import { textoVerificacion } from "../src/lib/espejo";
+import { diaLegible, errorDiasRetencion, textoRetencion, textoVerificacion } from "../src/lib/espejo";
 import { admiteEspejoFlexible, conRepos, cuandoEspejo, destinoParaOrden, espejoDelRepo, horaParaConsolasAnteriores, horarioDiario, nombreEnAlmacen, nombresRepos, nuevosEn, textoRepos } from "../src/lib/espejo";
 import { esDestructiva } from "../src/lib/cripto/ordenes";
 
@@ -57,6 +57,21 @@ igual("sin hacerla aún", textoVerificacion({ verificar_pct: 5 }), "Comprueba el
 igual("hecha y bien", textoVerificacion({ verificar_pct: 100, verificacion: { ultima: "x", archivos: 1, mal: 0 } }), "Lo comprueba todo cada día · 1 archivo la última vez, bien");
 igual("con alguno mal", textoVerificacion({ verificar_pct: 5, verificacion: { ultima: "x", archivos: 40, mal: 2 } }), "Comprueba el 5 % cada día · 40 archivos la última vez, 2 mal");
 igual("el % se reenvía", destinoParaOrden({ tipo: "carpeta", carpeta: "E:\\x", verificar_pct: 10, verificacion: { ultima: "x", archivos: 1, mal: 0 } }), { tipo: "carpeta", carpeta: "E:\\x", verificar_pct: 10 });
+
+console.log("\n· Espejo: retención (3b)");
+igual("textos", [textoRetencion({}), textoRetencion({ retencion_dias: 30 }), textoRetencion({ bloqueo: true, retencion_dias: 30 })], ["Nunca borra", "Borra lo que ya no está en el almacén a los 30 días", "Con bloqueo de objetos: nunca borra"]);
+igual("días válidos", [errorDiasRetencion(30), errorDiasRetencion(7), errorDiasRetencion(6), errorDiasRetencion(3651), errorDiasRetencion(7.5)].map((x) => x === null), [true, true, false, false, false]);
+igual("un día, sin saltos de zona", diaLegible("2026-11-01"), "1 de noviembre de 2026");
+igual("la retención se reenvía", destinoParaOrden({ tipo: "carpeta", carpeta: "E:\\x", retencion_dias: 30, por_borrar: { archivos: 1, bytes: 1 }, freno: "x" }), { tipo: "carpeta", carpeta: "E:\\x", retencion_dias: 30 });
+igual("…y el bloqueo (sin retención)", destinoParaOrden({ tipo: "carpeta", carpeta: "E:\\x", bloqueo: true, retencion_dias: 30 }), { tipo: "carpeta", carpeta: "E:\\x", bloqueo: true });
+const ctxR = (x: object) => ({ espejo: { destinos: [{ tipo: "carpeta" as const, carpeta: "E:\\x", ...x }] } });
+const ordenR = (x: object) => ({ espejo: { destinos: [{ tipo: "carpeta", carpeta: "E:\\x", ...x }], hora: "02:00" } });
+igual("poner retención espera", esDestructiva("guarda_copias", ordenR({ retencion_dias: 30 }), undefined, ctxR({})), true);
+igual("acortarla espera", esDestructiva("guarda_copias", ordenR({ retencion_dias: 10 }), undefined, ctxR({ retencion_dias: 30 })), true);
+igual("alargarla no", esDestructiva("guarda_copias", ordenR({ retencion_dias: 60 }), undefined, ctxR({ retencion_dias: 30 })), false);
+igual("quitarla no", esDestructiva("guarda_copias", ordenR({}), undefined, ctxR({ retencion_dias: 30 })), false);
+igual("quitar el bloqueo espera", esDestructiva("guarda_copias", ordenR({}), undefined, ctxR({ bloqueo: true })), true);
+igual("confirmar el freno espera", esDestructiva("guarda_copias", { espejo_freno: { tipo: "carpeta", carpeta: "E:\\x" } }, undefined, ctxR({})), true);
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

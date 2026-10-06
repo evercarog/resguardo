@@ -4,6 +4,7 @@
   // «después de cada copia nueva» y qué repositorios van a él.
   import EditorHorario from "./EditorHorario.svelte";
   import type { Horario } from "$lib/tipos";
+  import { errorDiasRetencion, RETENCION_ESPEJO } from "$lib/espejo";
 
   let {
     id,
@@ -15,6 +16,8 @@
     nombre = (r: string) => r,
     verificarPct = $bindable(),
     nube = false,
+    borrar = $bindable(),
+    dias = $bindable(),
   }: {
     id: string;
     horario: Horario;
@@ -31,7 +34,11 @@
     verificarPct: number;
     /** Es una nube (comprobar es descargar). */
     nube?: boolean;
+    /** §3b: nunca borrar, borrar lo que ya no está en el almacén pasados `dias`, o bloqueo de objetos. */
+    borrar: "nunca" | "retencion" | "bloqueo";
+    dias: number;
   } = $props();
+  const errDias = $derived(borrar === "retencion" ? errorDiasRetencion(Number(dias)) : null);
   const PORCENTAJES = [0, 1, 2, 5, 10, 25, 50, 100];
 
   // Los elegidos que ya no están en el almacén también se ven (para poder quitarlos).
@@ -89,7 +96,30 @@
   </div>
 </fieldset>
 
+<fieldset class="grupo">
+  <legend class="field-label">Lo que ya no está en el almacén</legend>
+  <div class="opciones" role="radiogroup" aria-label="Qué hacer en el espejo con lo que se quita del almacén">
+    <label class="check"><input type="radio" bind:group={borrar} value="nunca" /><span>No borrar nunca<span class="faint">El espejo crece sin fin (como hasta ahora).</span></span></label>
+    <label class="check"><input type="radio" bind:group={borrar} value="retencion" /><span>Borrarlo pasados unos días<span class="faint">Lo que quita la retención del almacén se quita también del espejo, con retraso.</span></span></label>
+    <label class="check"><input type="radio" bind:group={borrar} value="bloqueo" /><span>Este destino tiene bloqueo de objetos<span class="faint">Por ejemplo, un bucket de B2 o S3 con Object Lock: el espejo nunca intenta borrar allí.</span></span></label>
+  </div>
+  {#if borrar === "retencion"}
+    <div class="field">
+      <label class="field-label" for="{id}-dias">Días que espera antes de borrar</label>
+      <input id="{id}-dias" class="input num corto" type="number" min={RETENCION_ESPEJO.min} max={RETENCION_ESPEJO.max} step="1" bind:value={dias} />
+      {#if errDias}<p class="error-campo">{errDias}</p>{:else}<span class="field-hint">Si de golpe falta mucho en el almacén (el 10 % o un repositorio entero), no se borra nada y se avisa hasta que lo confirmes. Conviene que otro destino no borre nunca.</span>{/if}
+    </div>
+  {/if}
+</fieldset>
+
 <style>
+  .opciones {
+    display: grid;
+    gap: 0.45rem;
+  }
+  .check span .faint {
+    display: block;
+  }
   .grupo {
     border: 0;
     padding: 0;

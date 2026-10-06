@@ -1544,6 +1544,10 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         });
         return Ok((format!("Equipo cliente «{usuario}» añadido."), Some(privado)));
     }
+    // §3b (docs/espejo.md): confirmar lo que falta de golpe en el almacén (espera).
+    if let Some(d) = c.get("espejo_freno") {
+        return Ok((crate::espejo::aceptar_freno(d)?, None));
+    }
     if let Some(espejo) = c.get("espejo") {
         let m = server::poner_espejo(crate::espejo::pedido(espejo)?)?;
         return Ok((m, None));
