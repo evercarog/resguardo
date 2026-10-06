@@ -1,6 +1,6 @@
 // Pruebas del espejo por destino (src/lib/espejo.ts, docs/espejo.md).
 // `npm run test:vectores` (con las demás).
-import { diaLegible, errorDiasRetencion, textoRetencion, textoVerificacion } from "../src/lib/espejo";
+import { diaLegible, errorCampoDestino, errorDiasRetencion, etiquetaCarpeta, nombreTipoNube, textoRetencion, textoVerificacion } from "../src/lib/espejo";
 import { admiteEspejoFlexible, conRepos, cuandoEspejo, destinoParaOrden, espejoDelRepo, horaParaConsolasAnteriores, horarioDiario, nombreEnAlmacen, nombresRepos, nuevosEn, textoRepos } from "../src/lib/espejo";
 import { esDestructiva } from "../src/lib/cripto/ordenes";
 
@@ -72,6 +72,16 @@ igual("alargarla no", esDestructiva("guarda_copias", ordenR({ retencion_dias: 60
 igual("quitarla no", esDestructiva("guarda_copias", ordenR({}), undefined, ctxR({ retencion_dias: 30 })), false);
 igual("quitar el bloqueo espera", esDestructiva("guarda_copias", ordenR({}), undefined, ctxR({ bloqueo: true })), true);
 igual("confirmar el freno espera", esDestructiva("guarda_copias", { espejo_freno: { tipo: "carpeta", carpeta: "E:\\x" } }, undefined, ctxR({})), true);
+
+console.log("\n· Espejo: más destinos (3c)");
+const ok = (t: Parameters<typeof errorCampoDestino>[0], k: string, v: string) => errorCampoDestino(t, k, v) === null;
+igual("varios discos, cada uno con su letra", [etiquetaCarpeta("E:\\Resguardo-espejo"), etiquetaCarpeta("f:/espejo"), etiquetaCarpeta("/mnt/disco2")], ["Disco E:", "Disco F:", "Otra carpeta"]);
+igual("nombres de los tipos", [nombreTipoNube("b2"), nombreTipoNube("smb"), nombreTipoNube("raro")], ["Backblaze B2", "Carpeta de red (SMB)", "raro"]);
+igual("WebDAV solo por https y sin usuario en la dirección", [ok("webdav", "url", "https://nube.ejemplo.com/dav/"), ok("webdav", "url", "http://nube.ejemplo.com/"), ok("webdav", "url", "https://u:p@nube.ejemplo.com/")], [true, false, false]);
+igual("S3: endpoint con https o un servidor a secas", [ok("s3", "endpoint", "https://s3.ejemplo.com"), ok("s3", "endpoint", "s3.ejemplo.com"), ok("s3", "endpoint", "http://s3.ejemplo.com"), ok("s3", "endpoint", "")], [true, true, false, true]);
+igual("SFTP: la clave del servidor", [ok("sftp", "clave_host", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"), ok("sftp", "clave_host", "nas ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"), ok("sftp", "clave_host", "hola")], [true, true, false]);
+igual("puertos y servidores", [ok("sftp", "puerto", "2222"), ok("sftp", "puerto", "70000"), ok("smb", "host", "nas.oficina.lan"), ok("smb", "host", "nas;rm")], [true, false, true, false]);
+igual("obligatorios y opcionales", [ok("b2", "cuenta", ""), ok("smb", "dominio", ""), ok("b2", "clave", "con espacios vale")], [false, true, true]);
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

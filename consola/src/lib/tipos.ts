@@ -258,7 +258,7 @@ export interface ResumenEquipo {
       }[];
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */
-    nubes?: { nombre: string; tipo: "dropbox" | "drive" }[];
+    nubes?: { nombre: string; tipo: "dropbox" | "drive" | "b2" | "s3" | "sftp" | "smb" | "webdav" | string }[];
     /**
      * v1.22: la retención que aplica este almacén en local, por repositorio
      * (`<carpeta>/<usuario>/<repo>`). Un agente anterior no manda la lista:

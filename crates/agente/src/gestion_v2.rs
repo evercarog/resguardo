@@ -818,7 +818,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 9] = [
+pub const ADMITE: [&str; 10] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -829,6 +829,8 @@ pub const ADMITE: [&str; 9] = [
     // v1.46: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
     "externa_existente",
     "espejo_flexible",
+    // (pendiente de numerar) "conectar_nube" también con B2, S3, SFTP, SMB y WebDAV (docs/espejo.md §3c).
+    "espejo_destinos",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

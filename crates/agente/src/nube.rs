@@ -53,7 +53,7 @@ pub const RCLONE_SHA256: &str = if cfg!(all(windows, target_arch = "x86_64")) {
     "sin huella fijada"
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct Nube {
     pub nombre: String,
     /// "dropbox" o "drive".
@@ -65,6 +65,18 @@ pub struct Nube {
     /// `None` en las conectadas con `rclone authorize` (renueva rclone).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_key: Option<String>,
+    /// §3c (B2, S3, SFTP, SMB, WebDAV): opciones de rclone → valor (las
+    /// contraseñas, ofuscadas como las quiere rclone; la clave del servidor
+    /// SFTP en `_clave_host`). Nunca salen del equipo.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub parametros: std::collections::BTreeMap<String, String>,
+}
+
+/// Sin el token ni los datos del destino (para que nunca acaben en un registro).
+impl std::fmt::Debug for Nube {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Nube").field("nombre", &self.nombre).field("tipo", &self.tipo).finish_non_exhaustive()
+    }
 }
 
 /// Lo que se puede mostrar (sin token).
@@ -137,7 +149,26 @@ pub fn comando(n: &Nube, conf: &Path) -> Result<std::process::Command, String> {
     // `RCLONE_LOG_FILE`… sacarían el token); las del remoto, las pone el agente.
     resguardo_motor::proceso::entorno_minimo(&mut c);
     let m = REMOTO.to_uppercase();
-    c.env(format!("RCLONE_CONFIG_{m}_TYPE"), &n.tipo).env(format!("RCLONE_CONFIG_{m}_TOKEN"), &n.token).arg("--config").arg(conf);
+    c.env(format!("RCLONE_CONFIG_{m}_TYPE"), &n.tipo).arg("--config").arg(conf);
+    if !n.token.is_empty() {
+        c.env(format!("RCLONE_CONFIG_{m}_TOKEN"), &n.token);
+    }
+    // §3c: los datos del destino, también por variables de entorno (nunca en la línea de órdenes).
+    for (k, v) in n.parametros.iter().filter(|(k, _)| k.as_str() != CLAVE_HOST) {
+        c.env(format!("RCLONE_CONFIG_{m}_{}", k.to_uppercase()), v);
+    }
+    // SFTP: la clave del servidor fijada en un known_hosts temporal junto al
+    // archivo de configuración (carpeta privada); sin ella, rclone no comprobaría con quién habla.
+    if let Some(k) = n.parametros.get(CLAVE_HOST) {
+        let host = n.parametros.get("host").cloned().unwrap_or_default();
+        let linea = match n.parametros.get("port").filter(|p| p.as_str() != "22") {
+            Some(p) => format!("[{host}]:{p} {k}\n"),
+            None => format!("{host} {k}\n"),
+        };
+        let kh = conf.with_extension("hosts");
+        crate::agent::write_new(&kh, linea.as_bytes()).map_err(|e| format!("No se pudo preparar la clave del servidor: {e}"))?;
+        c.env(format!("RCLONE_CONFIG_{m}_KNOWN_HOSTS_FILE"), &kh);
+    }
     if let Some(k) = &n.app_key {
         // La app «Resguardo» (sin secreto): si rclone tiene que renovar, lo hace como cliente público.
         c.env(format!("RCLONE_CONFIG_{m}_CLIENT_ID"), k);
@@ -242,7 +273,7 @@ pub fn anadir(tipo: &str, nombre: &str, token: &str) -> Result<String, String> {
     if nubes.iter().any(|n| n.nombre == nombre) {
         return Err(format!("Ya hay una nube «{nombre}»: quítala antes o usa otro nombre."));
     }
-    nubes.push(Nube { nombre: nombre.clone(), tipo: tipo.into(), token: token.into(), app_key: None });
+    nubes.push(Nube { nombre: nombre.clone(), tipo: tipo.into(), token: token.into(), ..Default::default() });
     guardar(&nubes)?;
     crate::agent::log(&format!("Nube «{nombre}» ({tipo}) conectada."));
     Ok(format!("Nube «{nombre}» conectada. Ya se puede usar como destino del espejo."))
@@ -349,6 +380,7 @@ fn rclone(
         }
     }
     let _ = std::fs::remove_file(&conf);
+    let _ = std::fs::remove_file(conf.with_extension("hosts"));
     out
 }
 
@@ -548,6 +580,7 @@ pub fn cuota(n: &Nube) -> Option<crate::espacio::Espacio> {
     let conf = crate::agent::private_dir().join("rclone-vacio.conf");
     let out = comando(n, &conf).ok()?.args(["about", &format!("{REMOTO}:"), "--json"]).output();
     let _ = std::fs::remove_file(&conf);
+    let _ = std::fs::remove_file(conf.with_extension("hosts"));
     let out = out.ok().filter(|o| o.status.success())?;
     cuota_de_about(&String::from_utf8_lossy(&out.stdout))
 }
@@ -558,6 +591,290 @@ fn cuota_de_about(t: &str) -> Option<crate::espacio::Espacio> {
     let total = v["total"].as_u64().filter(|t| *t > 0)?;
     let libre = v["free"].as_u64().or_else(|| v["used"].as_u64().map(|u| total.saturating_sub(u)))?;
     Some(crate::espacio::Espacio { libre: libre.min(total), total })
+}
+
+// ---------- Más destinos por rclone (docs/espejo.md §3c) ----------
+
+/// Un dato de un destino por rclone: cómo llega en `conectar_nube.parametros`
+/// y qué opción de rclone es.
+struct Parametro {
+    clave: &'static str,
+    opcion: &'static str,
+    obligatorio: bool,
+    /// rclone lo quiere «ofuscado» (`rclone obscure`): las contraseñas de SFTP, SMB y WebDAV.
+    ofuscar: bool,
+    forma: Forma,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Forma {
+    /// Texto sin espacios ni controles (usuarios, claves, buckets).
+    Texto,
+    /// Una contraseña: cualquier carácter visible, también espacios.
+    Secreto,
+    /// Un nombre de servidor o una IP.
+    Servidor,
+    Puerto,
+    /// Una dirección `https://` (sin usuario ni contraseña en ella).
+    Https,
+    /// Una dirección `https://` o un servidor a secas (el «endpoint» de S3).
+    Endpoint,
+    /// Una de una lista.
+    Lista(&'static [&'static str]),
+    /// La clave pública del servidor SFTP (`ssh-ed25519 AAAA…`).
+    ClaveHost,
+}
+
+const fn p(clave: &'static str, opcion: &'static str, obligatorio: bool, forma: Forma) -> Parametro {
+    Parametro { clave, opcion, obligatorio, ofuscar: false, forma }
+}
+const fn contrasena(clave: &'static str, opcion: &'static str) -> Parametro {
+    Parametro { clave, opcion, obligatorio: true, ofuscar: true, forma: Forma::Secreto }
+}
+
+/// Proveedores de S3 que se aceptan (los de rclone).
+const PROVEEDORES_S3: &[&str] = &["Other", "AWS", "Wasabi", "Minio", "Cloudflare", "Ceph", "DigitalOcean", "IDrive", "Scaleway", "IONOS", "Storj"];
+const PROVEEDORES_WEBDAV: &[&str] = &["other", "nextcloud", "owncloud"];
+
+/// Los tipos de destino por rclone que se conectan desde la consola con datos (no OAuth).
+pub const TIPOS_CON_DATOS: &[(&str, &str)] =
+    &[("b2", "Backblaze B2"), ("s3", "S3 compatible"), ("sftp", "SFTP"), ("smb", "Carpeta de red (SMB)"), ("webdav", "WebDAV")];
+
+fn parametros_de(tipo: &str) -> Option<&'static [Parametro]> {
+    const B2: &[Parametro] = &[p("cuenta", "account", true, Forma::Texto), p("clave", "key", true, Forma::Texto)];
+    const S3: &[Parametro] = &[
+        p("proveedor", "provider", false, Forma::Lista(PROVEEDORES_S3)),
+        p("endpoint", "endpoint", false, Forma::Endpoint),
+        p("region", "region", false, Forma::Texto),
+        p("id_clave", "access_key_id", true, Forma::Texto),
+        p("clave", "secret_access_key", true, Forma::Texto),
+    ];
+    const SFTP: &[Parametro] = &[
+        p("host", "host", true, Forma::Servidor),
+        p("puerto", "port", false, Forma::Puerto),
+        p("usuario", "user", true, Forma::Texto),
+        contrasena("contrasena", "pass"),
+        p("clave_host", "", true, Forma::ClaveHost),
+    ];
+    const SMB: &[Parametro] = &[
+        p("host", "host", true, Forma::Servidor),
+        p("puerto", "port", false, Forma::Puerto),
+        p("usuario", "user", true, Forma::Texto),
+        contrasena("contrasena", "pass"),
+        p("dominio", "domain", false, Forma::Texto),
+    ];
+    const WEBDAV: &[Parametro] = &[
+        p("url", "url", true, Forma::Https),
+        p("proveedor", "vendor", false, Forma::Lista(PROVEEDORES_WEBDAV)),
+        p("usuario", "user", true, Forma::Texto),
+        contrasena("contrasena", "pass"),
+    ];
+    match tipo {
+        "b2" => Some(B2),
+        "s3" => Some(S3),
+        "sftp" => Some(SFTP),
+        "smb" => Some(SMB),
+        "webdav" => Some(WEBDAV),
+        _ => None,
+    }
+}
+
+fn servidor_valido(h: &str) -> bool {
+    let h = h.trim_start_matches('[').trim_end_matches(']');
+    (1..=253).contains(&h.len()) && h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':')) && !h.starts_with('-')
+}
+
+/// `https://servidor[:puerto][/ruta]`, sin usuario ni contraseña ni espacios.
+fn https_valida(u: &str) -> bool {
+    let Some(resto) = u.strip_prefix("https://") else { return false };
+    let servidor = resto.split('/').next().unwrap_or_default();
+    !resto.contains('@')
+        && !u.chars().any(|c| c.is_whitespace() || c.is_control())
+        && u.len() <= 500
+        && servidor_valido(servidor.rsplit_once(':').map_or(servidor, |(h, p)| if p.chars().all(|c| c.is_ascii_digit()) { h } else { servidor }))
+}
+
+/// `tipo base64 [comentario]` de una clave pública de SSH (de `ssh-keyscan` o del `.pub`).
+fn clave_host_valida(k: &str) -> Option<String> {
+    let mut partes = k.split_whitespace();
+    // Se admite también la línea de known_hosts («servidor tipo base64»).
+    let (mut tipo, mut datos) = (partes.next()?, partes.next()?);
+    if !tipo.starts_with("ssh-") && !tipo.starts_with("ecdsa-") {
+        (tipo, datos) = (datos, partes.next()?);
+    }
+    let tipos = ["ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "ssh-rsa"];
+    (tipos.contains(&tipo) && (16..=2000).contains(&datos.len()) && datos.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=')))
+        .then(|| format!("{tipo} {datos}"))
+}
+
+fn valor_valido(f: Forma, v: &str) -> Option<String> {
+    let sin_raros = !v.chars().any(char::is_control) && (1..=500).contains(&v.len());
+    match f {
+        Forma::Texto => (sin_raros && !v.chars().any(char::is_whitespace)).then(|| v.to_string()),
+        Forma::Secreto => sin_raros.then(|| v.to_string()),
+        Forma::Servidor => servidor_valido(v).then(|| v.to_string()),
+        Forma::Puerto => v.parse::<u16>().ok().filter(|p| *p > 0).map(|p| p.to_string()),
+        Forma::Https => https_valida(v).then(|| v.trim_end_matches('/').to_string()),
+        Forma::Endpoint => (https_valida(v) || servidor_valido(v)).then(|| v.trim_end_matches('/').to_string()),
+        Forma::Lista(l) => l.iter().find(|x| x.eq_ignore_ascii_case(v)).map(|x| x.to_string()),
+        Forma::ClaveHost => clave_host_valida(v),
+    }
+}
+
+/// Ofusca una contraseña como la quiere rclone, pasándola por la entrada
+/// estándar (`rclone obscure -`): nunca en la línea de órdenes.
+pub fn ofuscar(secreto: &str) -> Result<String, String> {
+    use std::io::Write;
+    let mut c = std::process::Command::new(comprobar_binario()?);
+    resguardo_motor::proceso::entorno_minimo(&mut c);
+    c.args(["obscure", "-"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    let mut hijo = c.spawn().map_err(|e| format!("No se pudo ejecutar rclone: {e}"))?;
+    if let Some(mut entrada) = hijo.stdin.take() {
+        entrada.write_all(secreto.as_bytes()).map_err(|e| format!("No se pudo preparar la contraseña: {e}"))?;
+    }
+    let out = hijo.wait_with_output().map_err(|e| format!("No se pudo ejecutar rclone: {e}"))?;
+    let o = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !out.status.success() || o.is_empty() {
+        return Err("rclone no pudo preparar la contraseña.".into());
+    }
+    Ok(o)
+}
+
+/// Lo que trae `conectar_nube` de un destino por rclone con datos, ya comprobado.
+pub struct PedidoRclone {
+    pub nombre: String,
+    pub tipo: String,
+    /// Opción de rclone → valor (las contraseñas, aún sin ofuscar).
+    parametros: Vec<(&'static str, String, bool)>,
+    clave_host: Option<String>,
+    pub carpeta_prueba: String,
+}
+
+/// `conectar_nube { tipo: "b2"|"s3"|"sftp"|"smb"|"webdav", nombre, parametros: {…}, carpeta_prueba? }`.
+pub fn leer_conectar_rclone(c: &serde_json::Value) -> Result<PedidoRclone, String> {
+    let tipo = c["tipo"].as_str().unwrap_or_default().to_string();
+    let lista = parametros_de(&tipo).ok_or_else(|| format!("Tipo de destino no admitido: «{tipo}»."))?;
+    let nombre = c["nombre"].as_str().unwrap_or("").trim().to_string();
+    if !nombre_de_consola_valido(&nombre) {
+        return Err("Nombre de destino no válido: letras, números, espacios, guiones o puntos (hasta 40).".into());
+    }
+    let datos = c["parametros"].as_object().ok_or("Faltan los datos del destino.")?;
+    if let Some(k) = datos.keys().find(|k| !lista.iter().any(|p| p.clave == k.as_str())) {
+        return Err(format!("Dato desconocido para un destino {tipo}: «{k}»."));
+    }
+    let mut parametros = Vec::new();
+    let mut clave_host = None;
+    for p in lista {
+        let v = datos.get(p.clave).and_then(|v| v.as_str().map(str::to_string).or_else(|| v.as_u64().map(|n| n.to_string())));
+        let v = v.map(|v| if p.forma == Forma::Secreto { v } else { v.trim().to_string() }).filter(|v| !v.is_empty());
+        let Some(v) = v else {
+            if p.obligatorio {
+                return Err(format!("Falta «{}» para el destino {tipo}.", p.clave));
+            }
+            continue;
+        };
+        let bien = valor_valido(p.forma, &v).ok_or_else(|| format!("«{}» no es válido para un destino {tipo}.", p.clave))?;
+        if p.forma == Forma::ClaveHost {
+            clave_host = Some(bien);
+        } else {
+            parametros.push((p.opcion, bien, p.ofuscar));
+        }
+    }
+    if tipo == "s3" && !parametros.iter().any(|(o, ..)| *o == "endpoint") && !parametros.iter().any(|(o, v, _)| *o == "provider" && v == "AWS") {
+        return Err("Falta «endpoint» (la dirección del servicio S3).".into());
+    }
+    let carpeta_prueba = c["carpeta_prueba"].as_str().unwrap_or("").trim().trim_matches('/').to_string();
+    if !carpeta_prueba.is_empty() && !carpeta_remota_valida(&carpeta_prueba) {
+        return Err("Carpeta de prueba no válida.".into());
+    }
+    Ok(PedidoRclone { nombre, tipo, parametros, clave_host, carpeta_prueba })
+}
+
+/// La nube que se guarda: las contraseñas, ya ofuscadas.
+fn nube_de(p: &PedidoRclone, ofusca: &dyn Fn(&str) -> Result<String, String>) -> Result<Nube, String> {
+    let mut parametros = std::collections::BTreeMap::new();
+    for (opcion, valor, ofuscar) in &p.parametros {
+        parametros.insert(opcion.to_string(), if *ofuscar { ofusca(valor)? } else { valor.clone() });
+    }
+    if p.tipo == "s3" {
+        parametros.entry("provider".into()).or_insert_with(|| "Other".into());
+        // Nunca las credenciales del entorno del equipo: solo las que se dieron.
+        parametros.insert("env_auth".into(), "false".into());
+    }
+    if let Some(k) = &p.clave_host {
+        parametros.insert(CLAVE_HOST.into(), k.clone());
+    }
+    Ok(Nube { nombre: p.nombre.clone(), tipo: p.tipo.clone(), parametros, ..Default::default() })
+}
+
+/// Dónde se guarda la clave del servidor SFTP en `parametros` (no es una opción de rclone).
+const CLAVE_HOST: &str = "_clave_host";
+
+/// `conectar_nube` de un destino por rclone con datos: se prueba (rclone lo
+/// lista) y se guarda protegido. El mensaje nunca lleva las claves.
+pub fn conectar_rclone(c: &serde_json::Value) -> Result<String, String> {
+    let p = leer_conectar_rclone(c)?;
+    if !crate::server::load().enabled {
+        return Err("Este equipo no guarda copias: activa antes el Servidor de copias.".into());
+    }
+    conectar_rclone_con(&p, &ofuscar, &|n, carpeta| probar(n, carpeta, &crate::agent::private_dir()))
+}
+
+fn conectar_rclone_con(
+    p: &PedidoRclone,
+    ofusca: &dyn Fn(&str) -> Result<String, String>,
+    prueba: &dyn Fn(&Nube, &str) -> Result<(), String>,
+) -> Result<String, String> {
+    let mut nubes = cargar();
+    if nubes.iter().any(|n| n.nombre == p.nombre && n.tipo != p.tipo) {
+        return Err(format!("Ya hay un destino «{}» de otro tipo en este equipo: usa otro nombre.", p.nombre));
+    }
+    let n = nube_de(p, ofusca)?;
+    prueba(&n, &p.carpeta_prueba)?;
+    let cambiada = nubes.iter().any(|x| x.nombre == p.nombre);
+    nubes.retain(|x| x.nombre != p.nombre);
+    nubes.push(n);
+    guardar(&nubes)?;
+    let etiqueta = TIPOS_CON_DATOS.iter().find(|(t, _)| *t == p.tipo).map_or(p.tipo.as_str(), |(_, e)| e);
+    crate::agent::log(&format!("Destino «{}» ({etiqueta}) {} desde la consola.", p.nombre, if cambiada { "cambiado" } else { "conectado" }));
+    Ok(format!("{etiqueta} «{}» {}: entra y ya se puede usar como destino del espejo.", p.nombre, if cambiada { "cambiado" } else { "conectado" }))
+}
+
+/// ¿Entra rclone en ese destino? (lista la raíz o la carpeta de prueba)
+pub fn probar(n: &Nube, carpeta: &str, trabajo: &Path) -> Result<(), String> {
+    let destino = remoto(carpeta, "");
+    let out = rclone(
+        n,
+        trabajo,
+        &|c| {
+            c.args([
+                "lsjson",
+                "--max-depth",
+                "1",
+                "--no-mimetype",
+                "--no-modtime",
+                "--use-json-log",
+                "--retries",
+                "1",
+                "--contimeout",
+                "20s",
+                "--timeout",
+                "60s",
+            ])
+            .arg(&destino);
+        },
+        &mut |_, _| {},
+    )?;
+    // Una carpeta que aún no existe vale (se crea al subir).
+    if out.status.success() || out.status.code() == Some(3) {
+        return Ok(());
+    }
+    Err(format!("No se pudo entrar en ese destino: {}", error_de_rclone(&out)))
 }
 
 // ---------- Dropbox desde la consola (OAuth 2 con PKCE) ----------
@@ -706,6 +1023,10 @@ fn al_dia(n: &Nube, renovar: Renovar) -> Result<Nube, String> {
 /// `conectar_nube`: guarda (o renueva) una Dropbox conectada desde la consola.
 /// El mensaje nunca lleva el token.
 pub fn conectar_desde_orden(c: &serde_json::Value) -> Result<String, String> {
+    // §3c: B2, S3, SFTP, SMB y WebDAV, con sus datos (sellados en la orden).
+    if c["tipo"].as_str().is_some_and(|t| parametros_de(t).is_some()) {
+        return conectar_rclone(c);
+    }
     let p = leer_conectar(c)?;
     if !crate::server::load().enabled {
         return Err("Este equipo no guarda copias: activa antes el Servidor de copias.".into());
@@ -729,7 +1050,13 @@ fn conectar_con(p: PedidoConectar, renovar: Renovar) -> Result<String, String> {
     };
     let reconectada = nubes.iter().any(|n| n.nombre == p.nombre);
     nubes.retain(|n| n.nombre != p.nombre);
-    nubes.push(Nube { nombre: p.nombre.clone(), tipo: "dropbox".into(), token: token_rclone(&access, &p.refresh_token, expira), app_key: Some(p.app_key) });
+    nubes.push(Nube {
+        nombre: p.nombre.clone(),
+        tipo: "dropbox".into(),
+        token: token_rclone(&access, &p.refresh_token, expira),
+        app_key: Some(p.app_key),
+        ..Default::default()
+    });
     guardar(&nubes)?;
     let hecho = if reconectada { "reconectada" } else { "conectada" };
     crate::agent::log(&format!("Nube «{}» (Dropbox) {hecho} desde la consola.", p.nombre));
@@ -905,7 +1232,7 @@ mod tests {
         assert!(e.contains("Dropbox Sur") && !e.contains(RT));
         assert!(al_dia(&vieja, &sin).is_err(), "caducado y sin conexión: no se usa");
         // Las de rclone authorize, tal cual.
-        let rc = Nube { nombre: "R".into(), tipo: "drive".into(), token: "{}".into(), app_key: None };
+        let rc = Nube { nombre: "R".into(), tipo: "drive".into(), token: "{}".into(), ..Default::default() };
         assert_eq!(al_dia(&rc, &|_, _| panic!("no")).unwrap(), rc);
 
         // Quitar: una que no existe, error; la que usa el espejo sale también del espejo.
@@ -941,7 +1268,13 @@ mod tests {
         if comprobar_binario().is_err() {
             return;
         }
-        let n = Nube { nombre: "D".into(), tipo: "dropbox".into(), token: token_rclone(AT, RT, chrono::Utc::now()), app_key: Some(KEY.into()) };
+        let n = Nube {
+            nombre: "D".into(),
+            tipo: "dropbox".into(),
+            token: token_rclone(AT, RT, chrono::Utc::now()),
+            app_key: Some(KEY.into()),
+            ..Default::default()
+        };
         let c = comando(&n, Path::new("vacio.conf")).unwrap();
         let env: Vec<(String, String)> =
             c.get_envs().filter_map(|(k, v)| Some((k.to_string_lossy().into_owned(), v?.to_string_lossy().into_owned()))).collect();
@@ -1013,7 +1346,7 @@ mod tests {
         let (bueno, malo) = (escribir(b"bueno"), escribir(b"se estropea"));
         std::fs::write(o.join(&malo), b"Se estropea").unwrap();
         std::fs::File::options().write(true).open(o.join(&malo)).unwrap().set_modified(viejo).unwrap();
-        let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), app_key: None };
+        let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), ..Default::default() };
         let carpeta = d.display().to_string().replace('\\', "/");
         let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: None };
         let op = Opciones { verificar_pct: 100, ..Default::default() };
@@ -1052,7 +1385,7 @@ mod tests {
         }
         std::fs::write(o.join("ana/repo/data/ab/reciente"), "nuevo").unwrap();
         // Remoto «local» con la ruta del destino como «carpeta»: el mismo camino que Dropbox, sin cuenta.
-        let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), app_key: None };
+        let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), ..Default::default() };
         let carpeta = d.display().to_string().replace('\\', "/");
         let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: Some(100_000) };
         let solo = Alcance::Repos(vec!["ana/repo".into()]);
@@ -1090,5 +1423,302 @@ mod tests {
         // Una carpeta de la nube que aún no existe se lista vacía.
         assert!(listar(&n, &carpeta, "no/existe", &trabajo).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ---------- §3c: más destinos por rclone ----------
+
+    #[test]
+    fn conectar_destinos_con_datos_comprueba_lo_que_llega() {
+        let pide = |v: serde_json::Value| leer_conectar_rclone(&v);
+        let kh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+        // Bien, uno de cada.
+        for v in [
+            json!({ "tipo": "b2", "nombre": "B2 Oficina", "parametros": { "cuenta": "0012ab", "clave": "K001xyz" } }),
+            json!({ "tipo": "s3", "nombre": "S3", "parametros": { "endpoint": "https://s3.eu-central-003.ejemplo.com", "id_clave": "AKIA1", "clave": "secreto", "region": "eu-central-003" } }),
+            json!({ "tipo": "s3", "nombre": "AWS", "parametros": { "proveedor": "aws", "id_clave": "AKIA1", "clave": "secreto" } }),
+            json!({ "tipo": "sftp", "nombre": "NAS sftp", "parametros": { "host": "nas.oficina.lan", "puerto": 2222, "usuario": "copias", "contrasena": "una contraseña con espacios", "clave_host": format!("nas.oficina.lan {kh}") } }),
+            json!({ "tipo": "smb", "nombre": "NAS", "parametros": { "host": "192.0.2.10", "usuario": "copias", "contrasena": "x", "dominio": "OFICINA" } }),
+            json!({ "tipo": "webdav", "nombre": "Nextcloud", "parametros": { "url": "https://nube.ejemplo.com/remote.php/dav/files/copias/", "proveedor": "nextcloud", "usuario": "copias", "contrasena": "x" } }),
+        ] {
+            assert!(pide(v.clone()).is_ok(), "{v}");
+        }
+        let p = pide(json!({ "tipo": "sftp", "nombre": "N", "parametros": { "host": "h", "usuario": "u", "contrasena": "c", "clave_host": kh } })).unwrap();
+        assert_eq!(p.clave_host.as_deref(), Some(kh));
+        // Mal.
+        for v in [
+            json!({ "tipo": "ftp", "nombre": "N", "parametros": {} }),
+            json!({ "tipo": "b2", "nombre": "N", "parametros": { "cuenta": "a" } }),
+            json!({ "tipo": "b2", "nombre": "N/a", "parametros": { "cuenta": "a", "clave": "b" } }),
+            json!({ "tipo": "b2", "nombre": "N", "parametros": { "cuenta": "a b", "clave": "b" } }),
+            json!({ "tipo": "b2", "nombre": "N", "parametros": { "cuenta": "a", "clave": "b", "otro": "x" } }),
+            json!({ "tipo": "s3", "nombre": "N", "parametros": { "id_clave": "a", "clave": "b" } }),
+            json!({ "tipo": "s3", "nombre": "N", "parametros": { "endpoint": "http://sin-tls.ejemplo.com", "id_clave": "a", "clave": "b" } }),
+            json!({ "tipo": "s3", "nombre": "N", "parametros": { "proveedor": "Inventado", "endpoint": "s3.ejemplo.com", "id_clave": "a", "clave": "b" } }),
+            json!({ "tipo": "sftp", "nombre": "N", "parametros": { "host": "h", "usuario": "u", "contrasena": "c" } }),
+            json!({ "tipo": "sftp", "nombre": "N", "parametros": { "host": "h", "usuario": "u", "contrasena": "c", "clave_host": "no es una clave" } }),
+            json!({ "tipo": "sftp", "nombre": "N", "parametros": { "host": "h;rm", "usuario": "u", "contrasena": "c", "clave_host": kh } }),
+            json!({ "tipo": "sftp", "nombre": "N", "parametros": { "host": "h", "puerto": 70000, "usuario": "u", "contrasena": "c", "clave_host": kh } }),
+            json!({ "tipo": "webdav", "nombre": "N", "parametros": { "url": "https://u:p@nube.ejemplo.com/", "usuario": "u", "contrasena": "c" } }),
+            json!({ "tipo": "webdav", "nombre": "N", "parametros": { "url": "http://nube.ejemplo.com/", "usuario": "u", "contrasena": "c" } }),
+            json!({ "tipo": "b2", "nombre": "N", "parametros": { "cuenta": "a", "clave": "b" }, "carpeta_prueba": "../x" }),
+        ] {
+            assert!(pide(v.clone()).is_err(), "{v}");
+        }
+    }
+
+    /// Lo que recibe rclone: todo por variables de entorno (nada en la línea de
+    /// órdenes), las contraseñas ofuscadas y la clave del servidor SFTP en un known_hosts temporal.
+    #[test]
+    fn rclone_recibe_los_datos_del_destino_por_el_entorno() {
+        let base = std::env::temp_dir().join(format!("resguardo-rclone-env-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let kh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+        let p = leer_conectar_rclone(
+            &json!({ "tipo": "sftp", "nombre": "N", "parametros": { "host": "nas.oficina.lan", "puerto": "2222", "usuario": "copias", "contrasena": "CLAVE-NO-SALE", "clave_host": kh } }),
+        )
+        .unwrap();
+        let n = nube_de(&p, &|s| Ok(format!("ofuscada({})", s.len()))).unwrap();
+        assert_eq!(n.parametros.get("pass").map(String::as_str), Some("ofuscada(13)"));
+        assert!(!format!("{n:?}").contains("ofuscada"), "Debug sin secretos");
+        if comprobar_binario().is_err() {
+            return;
+        }
+        let conf = base.join("vacio.conf");
+        let c = comando(&n, &conf).unwrap();
+        let env: Vec<(String, String)> =
+            c.get_envs().filter_map(|(k, v)| Some((k.to_string_lossy().into_owned(), v?.to_string_lossy().into_owned()))).collect();
+        let tiene = |k: &str, v: &str| env.contains(&(k.to_string(), v.to_string()));
+        assert!(
+            tiene("RCLONE_CONFIG_RNUBE_TYPE", "sftp")
+                && tiene("RCLONE_CONFIG_RNUBE_HOST", "nas.oficina.lan")
+                && tiene("RCLONE_CONFIG_RNUBE_PASS", "ofuscada(13)")
+        );
+        assert!(!env.iter().any(|(k, _)| k == "RCLONE_CONFIG_RNUBE_TOKEN" || k.contains("CLAVE_HOST")), "{env:?}");
+        assert!(!c.get_args().any(|a| a.to_string_lossy().contains("ofuscada") || a.to_string_lossy().contains("CLAVE-NO-SALE")));
+        assert_eq!(std::fs::read_to_string(conf.with_extension("hosts")).unwrap(), format!("[nas.oficina.lan]:2222 {kh}\n"));
+        // S3: nunca las credenciales del entorno del equipo.
+        let s3 = nube_de(
+            &leer_conectar_rclone(&json!({ "tipo": "s3", "nombre": "S", "parametros": { "endpoint": "s3.ejemplo.com", "id_clave": "a", "clave": "b" } }))
+                .unwrap(),
+            &|_| panic!("en S3 no se ofusca"),
+        )
+        .unwrap();
+        assert_eq!(
+            (s3.parametros["env_auth"].as_str(), s3.parametros["provider"].as_str(), s3.parametros["secret_access_key"].as_str()),
+            ("false", "Other", "b")
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Un `rclone serve …` de prueba en un puerto libre de 127.0.0.1 (sin cuentas de nube).
+    struct Servidor(std::process::Child);
+    impl Drop for Servidor {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn puerto_libre() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    }
+    fn servir(args: &[&str], puerto: u16) -> Option<Servidor> {
+        let mut c = std::process::Command::new(comprobar_binario().ok()?);
+        resguardo_motor::proceso::entorno_minimo(&mut c);
+        let s = Servidor(c.args(["serve"]).args(args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().ok()?);
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(("127.0.0.1", puerto)).is_ok() {
+                return Some(s);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        None
+    }
+    /// Un almacén de prueba con un archivo de restic (nombre = su SHA-256) y su config.
+    fn almacen(o: &Path) -> String {
+        let h: String = Sha256::digest(b"paquete").iter().map(|x| format!("{x:02x}")).collect();
+        let rel = format!("ana/r/data/{}/{h}", &h[..2]);
+        let viejo = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for (f, c) in [(rel.as_str(), "paquete"), ("ana/r/config", "config")] {
+            std::fs::create_dir_all(o.join(f).parent().unwrap()).unwrap();
+            std::fs::write(o.join(f), c).unwrap();
+            std::fs::File::options().write(true).open(o.join(f)).unwrap().set_modified(viejo).unwrap();
+        }
+        rel
+    }
+
+    #[test]
+    fn ofuscar_como_rclone() {
+        if comprobar_binario().is_err() {
+            return;
+        }
+        let o = ofuscar("una contraseña con espacios y ñ").unwrap();
+        assert!(!o.contains("contraseña"));
+        let mut c = std::process::Command::new(comprobar_binario().unwrap());
+        resguardo_motor::proceso::entorno_minimo(&mut c);
+        let r = c.args(["reveal", &o]).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&r.stdout).trim(), "una contraseña con espacios y ñ");
+    }
+
+    /// SFTP de verdad (`rclone serve sftp` con una clave de servidor hecha con
+    /// ssh-keygen): el espejo entra solo si la clave del servidor es la fijada.
+    #[test]
+    fn espejo_por_sftp_con_la_clave_del_servidor_fijada() {
+        let keygen = if cfg!(windows) { crate::platform::system_tool("OpenSSH\\ssh-keygen.exe") } else { "ssh-keygen".into() };
+        if comprobar_binario().is_err() || !std::process::Command::new(&keygen).arg("-?").output().is_ok() {
+            eprintln!("Sin rclone o sin ssh-keygen: se salta la prueba.");
+            return;
+        }
+        use crate::espejo_motor::{vuelta, Alcance, Estado, Lado, Opciones};
+        let base = std::env::temp_dir().join(format!("resguardo-sftp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (o, d, trabajo) = (base.join("origen"), base.join("servidor"), base.join("privado"));
+        std::fs::create_dir_all(&d).unwrap();
+        let rel = almacen(&o);
+        let clave = base.join("clave_servidor");
+        let ok = std::process::Command::new(&keygen).args(["-q", "-t", "ed25519", "-N", "", "-f"]).arg(&clave).output().is_ok_and(|x| x.status.success());
+        if !ok {
+            eprintln!("ssh-keygen no pudo crear la clave: se salta la prueba.");
+            return;
+        }
+        let publica = std::fs::read_to_string(clave.with_extension("pub")).unwrap();
+        let puerto = puerto_libre();
+        let addr = format!("127.0.0.1:{puerto}");
+        let Some(_s) =
+            servir(&["sftp", d.to_str().unwrap(), "--addr", &addr, "--user", "copias", "--pass", "clave-de-prueba", "--key", clave.to_str().unwrap()], puerto)
+        else {
+            eprintln!("rclone serve sftp no arrancó: se salta la prueba.");
+            return;
+        };
+        let conecta = |clave_host: &str| {
+            let p = leer_conectar_rclone(&json!({ "tipo": "sftp", "nombre": "SFTP prueba", "parametros": {
+                "host": "127.0.0.1", "puerto": puerto, "usuario": "copias", "contrasena": "clave-de-prueba", "clave_host": clave_host } }))
+            .unwrap();
+            nube_de(&p, &ofuscar).unwrap()
+        };
+        let n = conecta(publica.trim());
+        probar(&n, "", &trabajo).unwrap();
+        let lado = Lado::Nube { nube: &n, carpeta: "espejo", trabajo: &trabajo, limite_kib: None };
+        let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
+        assert_eq!((r.copiados, r.danados_origen.len()), (2, 0));
+        assert_eq!(std::fs::read_to_string(d.join("espejo").join(&rel)).unwrap(), "paquete");
+        let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
+        assert_eq!((r.iguales, r.verificados, r.mal_destino.len()), (2, 1, 0));
+        // Con otra clave de servidor (un intermediario), no entra.
+        let otra = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+        assert!(probar(&conecta(otra), "", &trabajo).is_err(), "con otra clave del servidor no debe entrar");
+        assert_eq!(std::fs::read_dir(&trabajo).unwrap().count(), 0, "ni known_hosts ni listas se quedan");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// WebDAV y S3 de verdad (`rclone serve webdav` y `rclone serve s3`). En la
+    /// prueba van por http a 127.0.0.1, así que la nube se arma a mano: al
+    /// conectar desde la consola solo se admite https.
+    #[test]
+    fn espejo_por_webdav_y_s3() {
+        if comprobar_binario().is_err() {
+            return;
+        }
+        use crate::espejo_motor::{vuelta, Alcance, Estado, Lado, Opciones};
+        let base = std::env::temp_dir().join(format!("resguardo-webdav-s3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let o = base.join("origen");
+        let rel = almacen(&o);
+        let trabajo = base.join("privado");
+        // WebDAV.
+        let dav = base.join("dav");
+        std::fs::create_dir_all(&dav).unwrap();
+        let puerto = puerto_libre();
+        let addr = format!("127.0.0.1:{puerto}");
+        if let Some(_s) = servir(&["webdav", dav.to_str().unwrap(), "--addr", &addr, "--user", "copias", "--pass", "clave-dav"], puerto) {
+            let n = Nube {
+                nombre: "DAV".into(),
+                tipo: "webdav".into(),
+                parametros: [("url", format!("http://{addr}")), ("vendor", "other".into()), ("user", "copias".into()), ("pass", ofuscar("clave-dav").unwrap())]
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+                ..Default::default()
+            };
+            let lado = Lado::Nube { nube: &n, carpeta: "Resguardo", trabajo: &trabajo, limite_kib: None };
+            let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
+            assert_eq!(r.copiados, 2);
+            assert_eq!(std::fs::read_to_string(dav.join("Resguardo").join(&rel)).unwrap(), "paquete");
+            let mal = Nube {
+                parametros: [("pass".to_string(), ofuscar("otra").unwrap())]
+                    .into_iter()
+                    .chain(n.parametros.clone().into_iter().filter(|(k, _)| k != "pass"))
+                    .collect(),
+                ..n.clone()
+            };
+            assert!(probar(&mal, "", &trabajo).is_err(), "con otra contraseña no entra");
+        } else {
+            eprintln!("rclone serve webdav no arrancó: se salta esa parte.");
+        }
+        // S3 (un bucket «copias»).
+        let s3 = base.join("s3");
+        std::fs::create_dir_all(s3.join("copias")).unwrap();
+        let puerto = puerto_libre();
+        let addr = format!("127.0.0.1:{puerto}");
+        if let Some(_s) = servir(&["s3", s3.to_str().unwrap(), "--addr", &addr, "--auth-key", "CLAVEID,CLAVESECRETA"], puerto) {
+            let n = Nube {
+                nombre: "S3".into(),
+                tipo: "s3".into(),
+                parametros: [
+                    ("provider", "Other".to_string()),
+                    ("endpoint", format!("http://{addr}")),
+                    ("access_key_id", "CLAVEID".into()),
+                    ("secret_access_key", "CLAVESECRETA".into()),
+                    ("env_auth", "false".into()),
+                ]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+                ..Default::default()
+            };
+            let lado = Lado::Nube { nube: &n, carpeta: "copias/sur", trabajo: &trabajo, limite_kib: None };
+            let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
+            assert_eq!(r.copiados, 2);
+            assert_eq!(std::fs::read_to_string(s3.join("copias/sur").join(&rel)).unwrap(), "paquete");
+            let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
+            assert_eq!((r.iguales, r.verificados, r.mal_destino.len()), (2, 1, 0));
+        } else {
+            eprintln!("rclone serve s3 no arrancó: se salta esa parte.");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Conectar B2/S3/SFTP/SMB/WebDAV: se prueba antes y, si no entra, no se guarda nada.
+    #[test]
+    fn conectar_un_destino_con_datos_y_guardarlo() {
+        let _l = crate::restic::tests::real_repo_lock();
+        let dir = std::env::temp_dir().join(format!("resguardo-nube-datos-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("RESGUARDO_AGENT_DIR", &dir);
+        let p = leer_conectar_rclone(
+            &json!({ "tipo": "b2", "nombre": "B2 Oficina", "parametros": { "cuenta": "0012ab", "clave": "K001-NO-SALE" }, "carpeta_prueba": "copias/sur" }),
+        )
+        .unwrap();
+        assert_eq!(p.carpeta_prueba, "copias/sur");
+        let no = conectar_rclone_con(&p, &|s| Ok(s.into()), &|_, _| Err("No se pudo entrar en ese destino: 401".into())).unwrap_err();
+        assert!(no.contains("401") && buscar("B2 Oficina").is_none());
+        let m = conectar_rclone_con(&p, &|s| Ok(s.into()), &|n, c| {
+            assert_eq!((n.tipo.as_str(), c), ("b2", "copias/sur"));
+            Ok(())
+        })
+        .unwrap();
+        assert!(m.contains("Backblaze B2 «B2 Oficina» conectado") && !m.contains("K001"), "{m}");
+        assert_eq!(buscar("B2 Oficina").unwrap().parametros["key"], "K001-NO-SALE");
+        assert_eq!(serde_json::to_string(&lista()).unwrap(), r#"[{"nombre":"B2 Oficina","tipo":"b2"}]"#);
+        if cfg!(windows) {
+            assert!(!String::from_utf8_lossy(&std::fs::read(ruta()).unwrap()).contains("K001-NO-SALE"), "DPAPI");
+        }
+        // Otra vez con el mismo nombre: se cambia. Con otro tipo, no.
+        assert!(conectar_rclone_con(&p, &|s| Ok(s.into()), &|_, _| Ok(())).unwrap().contains("cambiado"));
+        let otro = leer_conectar_rclone(&json!({ "tipo": "smb", "nombre": "B2 Oficina", "parametros": { "host": "nas", "usuario": "u", "contrasena": "c" } }))
+            .unwrap();
+        assert!(conectar_rclone_con(&otro, &|s| Ok(s.into()), &|_, _| Ok(())).is_err());
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

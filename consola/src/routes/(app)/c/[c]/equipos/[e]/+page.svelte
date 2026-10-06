@@ -55,6 +55,7 @@
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
+  import { admiteMasDestinos, etiquetaCarpeta, nombreTipoNube, TIPOS_NUBE } from "$lib/espejo";
   import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, textoRetencion, errorDiasRetencion, diaLegible, RETENCION_ESPEJO, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
   import { errorReglas, reglasDe } from "$lib/horario";
   import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
@@ -85,6 +86,7 @@
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import ConectarNube from "$lib/componentes/ConectarNube.svelte";
+  import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -441,7 +443,14 @@
       descripcion: `Dejará de copiarse a ${nombre}. Lo que ya está allí se queda.`,
     });
   }
+  /** Qué hacer además al desconectar: retirar el permiso o la clave en su web. */
+  const revocar = (nombre: string) => {
+    const t = nubes.find((n) => n.nombre === nombre)?.tipo ?? "dropbox";
+    return t === "dropbox" ? "Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»)." : t === "drive" ? "Revoca también el permiso en tu cuenta de Google." : "Si ya no la usa nadie, borra también esa clave o ese usuario en el servicio.";
+  };
   let conectarNube = $state(false);
+  /** §3c: «Conectar otro destino» (B2, S3, SFTP, SMB, WebDAV). */
+  let conectarDestino = $state(false);
   /** Desconectar una nube: espera si el espejo la usa (lo decide esDestructiva con el contexto). */
   function quitarNube(nombre: string) {
     const usada = destinosActuales.some((d) => d.tipo === "nube" && d.nube === nombre);
@@ -450,14 +459,14 @@
       cuerpo: { nombre },
       titulo: `Desconectar «${nombre}»`,
       descripcion: usada
-        ? `El espejo dejará de subir a «${nombre}» y el equipo olvidará su permiso. Lo ya subido se queda en Dropbox. Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»).`
-        : `${equipo!.nombre} olvidará el permiso de «${nombre}». Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»).`,
+        ? `El espejo dejará de subir a «${nombre}» y el equipo olvidará su permiso. Lo ya subido se queda allí. ${revocar(nombre)}`
+        : `${equipo!.nombre} olvidará el permiso de «${nombre}». ${revocar(nombre)}`,
     });
   }
 
   function masAlmacen(conEspejo: boolean): AccionMenu[][] {
     return [
-      [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
+      [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, ...(admiteMasDestinos(equipo) ? [{ texto: "Conectar otro destino (B2, S3, SFTP, NAS, WebDAV)…", onclick: () => (conectarDestino = true) }] : []), { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
       [
         ...(conEspejo ? [{ texto: "Quitar todo el espejo", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { espejo: null }, titulo: "Quitar el espejo", descripcion: "Dejará de copiarse cada noche a todos sus destinos. Lo que ya está en ellos se queda." }) }] : []),
         { texto: "Dejar de guardar copias", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { activo: false }, titulo: "Dejar de guardar copias", descripcion: `${equipo!.nombre} dejará de recibir copias de los demás equipos. Lo ya guardado se queda en su disco.` }) },
@@ -1060,7 +1069,7 @@
                       <span class="ic-d">{#if d.tipo === "nube"}<Cloud size={14} />{:else}<HardDrive size={14} />{/if}</span>
                       <span class="d-texto">
                         <strong>{d.tipo === "nube" ? d.nube : d.carpeta}</strong>
-                        <span class="faint">{d.tipo === "nube" ? `en la carpeta ${d.carpeta}` : "otra carpeta"}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
+                        <span class="faint">{d.tipo === "nube" ? `${nombreTipoNube(nubes.find((n) => n.nombre === d.nube)?.tipo ?? "")} · en la carpeta ${d.carpeta}` : etiquetaCarpeta(d.carpeta)}{#if d.ultima}{" · "}<Tiempo iso={d.ultima} />{/if}</span>
                         {#if flexible}<span class="faint">{cuandoEspejo(d, g.espejo.hora)}{#if d.proxima}{" · la próxima "}<Tiempo iso={d.proxima} />{/if}</span>
                           <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
                           <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
@@ -1310,6 +1319,9 @@
 {#if conectarNube && equipo && actual.cliente}
   <ConectarNube cliente={actual.cliente} {equipo} onclose={() => ((conectarNube = false), void cargar())} />
 {/if}
+{#if conectarDestino && equipo && actual.cliente}
+  <ConectarDestino cliente={actual.cliente} {equipo} onclose={() => ((conectarDestino = false), void cargar())} />
+{/if}
 
 {#if elegirCarpeta && equipo && actual.cliente}
   <ElegirCarpetas
@@ -1504,7 +1516,7 @@
         <div class="field">
           <label class="field-label" for="e-nube">Nube</label>
           <select id="e-nube" class="input" bind:value={esp.nube}>
-            {#each nubes as n (n.nombre)}<option value={n.nombre}>{n.nombre} ({n.tipo === "drive" ? "Google Drive" : "Dropbox"})</option>{/each}
+            {#each nubes as n (n.nombre)}<option value={n.nombre}>{n.nombre} ({nombreTipoNube(n.tipo)})</option>{/each}
           </select>
         </div>
         <div class="field">
@@ -1521,7 +1533,11 @@
         </div>
         <span class="field-hint">Para no saturar la conexión de la oficina por la noche.</span>
       </div>
-      <p class="faint nota-esp">Dropbox y Google Drive no son inmutables: quien tenga la cuenta puede borrar lo subido (el historial de versiones de la nube ayuda a recuperarlo).</p>
+      {#if TIPOS_NUBE[nubes.find((n) => n.nombre === esp.nube)?.tipo ?? "dropbox"]?.inmutable}
+        <p class="faint nota-esp">Si el bucket tiene bloqueo de objetos (Object Lock), elige abajo «Este destino tiene bloqueo de objetos»: así el espejo nunca intenta borrar allí.</p>
+      {:else}
+        <p class="faint nota-esp">{nombreTipoNube(nubes.find((n) => n.nombre === esp.nube)?.tipo ?? "dropbox")} no es inmutable: quien tenga la cuenta puede borrar lo subido{nubes.find((n) => n.nombre === esp.nube)?.tipo === "dropbox" || nubes.find((n) => n.nombre === esp.nube)?.tipo === "drive" ? " (el historial de versiones de la nube ayuda a recuperarlo)" : ""}.</p>
+      {/if}
     {/if}
     {#if repetido}<p class="error-campo">Ese destino ya está en el espejo.</p>{/if}
     {/if}

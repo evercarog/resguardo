@@ -7,6 +7,98 @@ import type { Equipo, Horario } from "./tipos";
 
 /** El agente entiende el espejo por destino (horario, selección, retención y verificación). */
 export const ADMITE_FLEXIBLE = "espejo_flexible";
+/** §3c: el agente conecta también B2, S3, SFTP, SMB y WebDAV (`conectar_nube` con datos). */
+export const ADMITE_DESTINOS = "espejo_destinos";
+export const admiteMasDestinos = (e: Pick<Equipo, "resumen"> | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_DESTINOS);
+
+/** §3c: los tipos de nube o destino por rclone, con su nombre y si pueden ser inmutables. */
+export const TIPOS_NUBE: Record<string, { nombre: string; inmutable: boolean }> = {
+  dropbox: { nombre: "Dropbox", inmutable: false },
+  drive: { nombre: "Google Drive", inmutable: false },
+  b2: { nombre: "Backblaze B2", inmutable: true },
+  s3: { nombre: "S3 compatible", inmutable: true },
+  sftp: { nombre: "SFTP", inmutable: false },
+  smb: { nombre: "Carpeta de red (SMB)", inmutable: false },
+  webdav: { nombre: "WebDAV", inmutable: false },
+};
+export const nombreTipoNube = (t: string) => TIPOS_NUBE[t]?.nombre ?? t;
+
+/** §3c: «Disco E:» para una carpeta de Windows (varios discos del almacén, cada uno claro); si no, «Otra carpeta». */
+export function etiquetaCarpeta(carpeta: string | null | undefined): string {
+  const m = /^([A-Za-z]):[\\/]/.exec(carpeta ?? "");
+  return m ? `Disco ${m[1].toUpperCase()}:` : "Otra carpeta";
+}
+
+/** Un campo de un destino por rclone (lo que se pide en «Conectar otro destino»). */
+export interface CampoDestino {
+  clave: string;
+  etiqueta: string;
+  /** Contraseña o clave: con CampoClave y sin guardarlo en ningún sitio. */
+  secreto?: boolean;
+  opcional?: boolean;
+  opciones?: string[];
+  ayuda?: string;
+  ejemplo?: string;
+  largo?: boolean;
+}
+
+/** §3c: lo que pide cada tipo (lo mismo que comprueba el agente). */
+export const CAMPOS_DESTINO: Record<"b2" | "s3" | "sftp" | "smb" | "webdav", CampoDestino[]> = {
+  b2: [
+    { clave: "cuenta", etiqueta: "keyID de la clave de aplicación", ejemplo: "0012ab34cd56ef7000000000a" },
+    { clave: "clave", etiqueta: "Clave de aplicación", secreto: true, ayuda: "Mejor una clave limitada al bucket del espejo y sin permiso para saltarse el bloqueo de objetos." },
+  ],
+  s3: [
+    { clave: "proveedor", etiqueta: "Proveedor", opcional: true, opciones: ["Other", "AWS", "Wasabi", "Minio", "Cloudflare", "Ceph", "DigitalOcean", "IDrive", "Scaleway", "IONOS", "Storj"] },
+    { clave: "endpoint", etiqueta: "Dirección del servicio (endpoint)", opcional: true, ejemplo: "https://s3.eu-central-003.ejemplo.com", ayuda: "Con https. En AWS se puede dejar vacía." },
+    { clave: "region", etiqueta: "Región", opcional: true, ejemplo: "eu-central-003" },
+    { clave: "id_clave", etiqueta: "Id de la clave de acceso" },
+    { clave: "clave", etiqueta: "Clave secreta", secreto: true },
+  ],
+  sftp: [
+    { clave: "host", etiqueta: "Servidor", ejemplo: "nas.oficina.lan" },
+    { clave: "puerto", etiqueta: "Puerto", opcional: true, ejemplo: "22" },
+    { clave: "usuario", etiqueta: "Usuario" },
+    { clave: "contrasena", etiqueta: "Contraseña", secreto: true },
+    {
+      clave: "clave_host",
+      etiqueta: "Clave pública del servidor",
+      largo: true,
+      ejemplo: "ssh-ed25519 AAAA…",
+      ayuda: "La de «ssh-keyscan servidor» o el archivo /etc/ssh/ssh_host_ed25519_key.pub del servidor. Con ella el equipo comprueba que habla con ese servidor y no con otro que se haga pasar por él.",
+    },
+  ],
+  smb: [
+    { clave: "host", etiqueta: "Servidor (NAS)", ejemplo: "nas.oficina.lan" },
+    { clave: "usuario", etiqueta: "Usuario", ayuda: "Mejor uno solo para el espejo, que no use nadie más." },
+    { clave: "contrasena", etiqueta: "Contraseña", secreto: true },
+    { clave: "dominio", etiqueta: "Dominio", opcional: true },
+    { clave: "puerto", etiqueta: "Puerto", opcional: true, ejemplo: "445" },
+  ],
+  webdav: [
+    { clave: "url", etiqueta: "Dirección (https)", ejemplo: "https://nube.ejemplo.com/remote.php/dav/files/copias/" },
+    { clave: "proveedor", etiqueta: "Servicio", opcional: true, opciones: ["other", "nextcloud", "owncloud"] },
+    { clave: "usuario", etiqueta: "Usuario" },
+    { clave: "contrasena", etiqueta: "Contraseña", secreto: true, ayuda: "En Nextcloud, mejor una contraseña de aplicación." },
+  ],
+};
+
+/** El error de un campo (o null): lo mismo que rechazaría el agente, en palabras. */
+export function errorCampoDestino(tipo: keyof typeof CAMPOS_DESTINO, clave: string, valor: string): string | null {
+  const v = valor.trim();
+  const campo = CAMPOS_DESTINO[tipo].find((c) => c.clave === clave);
+  if (!campo) return null;
+  if (!v) return campo.opcional ? null : "Falta.";
+  if (campo.secreto) return valor.length > 500 || /[\u0000-\u001f]/.test(valor) ? "No es válida." : null;
+  if (clave === "puerto") return /^\d{1,5}$/.test(v) && Number(v) > 0 && Number(v) < 65536 ? null : "Un número de 1 a 65535.";
+  if (clave === "host") return /^\[?[A-Za-z0-9.:-]{1,253}\]?$/.test(v) && !v.startsWith("-") ? null : "Solo el nombre o la IP del servidor.";
+  if (clave === "url" || (clave === "endpoint" && v.includes("://"))) {
+    if (!/^https:\/\/[^\s/@]+(\/\S*)?$/.test(v)) return "Tiene que empezar por https:// (sin usuario ni contraseña en ella).";
+    return null;
+  }
+  if (clave === "clave_host") return /^(?:\S+\s+)?(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa)\s+[A-Za-z0-9+/=]{16,2000}(\s.*)?$/.test(v) ? null : "Pega la línea completa: «ssh-ed25519 AAAA…».";
+  return /\s/.test(v) || v.length > 500 ? "Sin espacios." : null;
+}
 
 export const admiteEspejoFlexible = (e: Pick<Equipo, "resumen"> | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_FLEXIBLE);
 

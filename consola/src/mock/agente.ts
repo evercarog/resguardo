@@ -439,8 +439,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const g = e.resumen?.guarda_copias;
       if (!g?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias.");
       const nombre = String(c.nombre ?? "").trim();
-      if (c.tipo !== "dropbox") return resultado(e, o, "fallida", "Tipo de nube no admitido.");
       if (!/^[\p{L}\p{N} _.-]{1,40}$/u.test(nombre)) return resultado(e, o, "fallida", "Nombre de nube no válido.");
+      // §3c (agente con `admite: "espejo_destinos"`): B2, S3, SFTP, SMB y WebDAV con sus datos; el agente prueba que entra.
+      if (["b2", "s3", "sftp", "smb", "webdav"].includes(String(c.tipo))) {
+        if (!e.resumen?.admite?.includes("espejo_destinos")) return resultado(e, o, "fallida", "Tipo de nube no admitido.");
+        const p = (c.parametros ?? {}) as Record<string, string>;
+        if (String(p.contrasena ?? p.clave ?? "").includes("mal")) return resultado(e, o, "fallida", "No se pudo entrar en ese destino: acceso denegado.");
+        g.nubes = [...(g.nubes ?? []).filter((n) => n.nombre !== nombre), { nombre, tipo: String(c.tipo) }];
+        return resultado(e, o, "hecha", `«${nombre}» conectado: entra y ya se puede usar como destino del espejo.`);
+      }
+      if (c.tipo !== "dropbox") return resultado(e, o, "fallida", "Tipo de nube no admitido.");
       if (typeof c.refresh_token !== "string" || !c.refresh_token || typeof c.app_key !== "string") return resultado(e, o, "fallida", "Falta el permiso de Dropbox.");
       // Como el agente: el token se guarda protegido en el equipo; el resumen solo lleva nombre y tipo.
       g.nubes = [...(g.nubes ?? []).filter((n) => n.nombre !== nombre), { nombre, tipo: "dropbox" }];
