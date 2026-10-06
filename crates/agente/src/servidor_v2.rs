@@ -2593,7 +2593,7 @@ mod tests {
             use resguardo_protocolo::simetrico::{self, Lado};
             let base = std::env::temp_dir().join(format!("resguardo-v2-datos-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&base);
-            let datos = base.join("datos");
+            let datos = base.join("carpeta-protegida");
             std::fs::create_dir_all(&datos).unwrap();
             std::fs::write(datos.join("hola.txt"), b"hola").unwrap();
             std::fs::write(datos.join("adios.txt"), b"adios").unwrap();
@@ -2630,7 +2630,7 @@ mod tests {
             assert_eq!(doc["destinos"][0]["tipo"], "local");
             assert!(!String::from_utf8_lossy(&plano).contains("contraseña del repo"));
             assert_eq!(cf["resumen"]["copias"][0]["carpetas"], 1);
-            assert!(!cf["resumen"].to_string().contains("hola") && !cf["resumen"].to_string().contains("datos"));
+            assert!(!cf["resumen"].to_string().contains("hola") && !cf["resumen"].to_string().contains("carpeta-protegida"));
 
             // Una versión para explorar.
             let acc = crate::gestion_v2::acceso(&cargar().unwrap(), "r1").unwrap();

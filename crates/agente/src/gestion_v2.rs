@@ -1078,7 +1078,7 @@ pub fn resumen(v: &Vinculo) -> Value {
         let p = PruebaAuto::de(r.restore_test.as_ref()?)?;
         Some(json!({ "cada_dias": p.cada_dias, "proxima": crate::tasks::next_restore_test(r, &tareas).map(|t| t.to_rfc3339()) }))
     };
-    json!({
+    let mut r = json!({
         // v1.28: lo que este agente sabe hacer de lo nuevo (la consola no ofrece lo que no).
         "admite": ADMITE,
         // v1.36: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
@@ -1161,10 +1161,14 @@ pub fn resumen(v: &Vinculo) -> Value {
         "cambio_config": crate::consolas_v2::resumen_cambio(v),
         // v1.49: las órdenes con espera que tiene el equipo (de cualquiera de sus consolas).
         "en_espera": crate::espera_v2::resumen(v),
-        // v1.4x: el nombre, las etiquetas y la observación que tiene el equipo (solo lo puesto
-        // con sus órdenes; cada consola enseña esto en vez de lo suyo).
-        "datos_equipo": crate::datos_equipo::resumen(v),
-    })
+    });
+    // v1.4x: el nombre, las etiquetas y la observación que tiene el equipo (solo lo puesto con
+    // sus órdenes; cada consola enseña esto en vez de lo suyo). Sin nada puesto, no va.
+    let datos = crate::datos_equipo::resumen(v);
+    if !datos.is_null() {
+        r["datos_equipo"] = datos;
+    }
+    r
 }
 
 /// El último resumen subido a cada consola (en memoria: al arrancar se sube una vez).
