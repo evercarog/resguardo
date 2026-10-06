@@ -92,6 +92,7 @@
   import ZonasAlmacen from "$lib/componentes/ZonasAlmacen.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
+  import SinConfirmar from "$lib/componentes/SinConfirmar.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { comprobarLlaves, fijadaEl, type EstadoLlaves } from "$lib/fijadas";
@@ -264,7 +265,7 @@
       // v1.19: el agente dice un puerto libre (si no lo dice, 8000).
       cuerpo: { activo: true, carpeta: "", puerto: equipo?.resumen?.puerto_libre ?? 8000, solo_red_local: true },
       titulo: "Este equipo guarda copias",
-      descripcion: "Convierte este equipo en un almacén de copias para los demás equipos de su red (rest-server en modo solo añadir, con TLS propio y su regla del cortafuegos). La consola (Resguardo Server) no guarda copias: solo coordina.",
+      descripcion: "Convierte este equipo en un almacén de copias para los demás equipos de su red (en modo solo añadir, con su propio certificado y su regla del cortafuegos). La consola (Resguardo Server) no guarda copias: solo coordina.",
       campos: "guardar",
     });
   }
@@ -583,7 +584,7 @@
     const peligro: AccionMenu[] = [
       // En un servidor de solo añadir, desde el equipo no se puede (403).
       ...(conVersiones && !r.solo_lectura && !r.solo_anadir && !enAlm
-        ? [{ texto: "Aplicar retención (borra versiones)", peligro: true, onclick: () => abrir({ tipo: "aplicar_retencion", cuerpo: { repo: r.id }, descripcion: `Se borrarán de «${r.nombre}» las versiones que ya no entren en su retención (restic forget --prune).`, repo: ref }) }]
+        ? [{ texto: "Aplicar retención (borra versiones)", peligro: true, onclick: () => abrir({ tipo: "aplicar_retencion", cuerpo: { repo: r.id }, descripcion: `Se borrarán de «${r.nombre}» las versiones que ya no entren en su retención.`, repo: ref }) }]
         : []),
       ...(r.externa ? [{ texto: "Quitar la copia externa", peligro: true, onclick: () => quitarExterna(r) }] : []),
       ...(conCopias
@@ -906,7 +907,10 @@
       <AlertaLlaves {equipo} cliente={c} />
     {/if}
 
-    {#if salud.tono !== "ok"}
+    {#if !equipo.confirmado && !trasladado}
+      <!-- Sin confirmar: qué falta y qué hacer (confirmar o quitar); si es un duplicado, lo dice. -->
+      <div class="notice notice-info sin-confirmar"><div><SinConfirmar cliente={c} {equipo} /></div></div>
+    {:else if salud.tono !== "ok"}
       <div class="notice {salud.tono === 'bad' ? 'notice-danger' : salud.tono === 'warn' ? 'notice-warn' : 'notice-info'}"><p>{salud.detalle}</p></div>
     {/if}
 
@@ -1236,7 +1240,7 @@
             <span class="card-icon"><Server size={18} /></span>
             <div>
               <h3>Este equipo puede guardar copias <Ayuda id="guarda-copias" /></h3>
-              <p class="faint">Convierte este equipo en un almacén de copias para los demás equipos de su red (rest-server en modo solo añadir): cada uno con su usuario y sin poder borrar lo ya copiado. La consola (Resguardo Server) no guarda copias: solo coordina. <a class="link" href="/ayuda#consola-y-almacen">¿Qué diferencia hay?</a></p>
+              <p class="faint">Convierte este equipo en un almacén de copias para los demás equipos de su red (en modo solo añadir): cada uno con su usuario y sin poder borrar lo ya copiado. La consola (Resguardo Server) no guarda copias: solo coordina. <a class="link" href="/ayuda#consola-y-almacen">¿Qué diferencia hay?</a></p>
             </div>
           </div>
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
@@ -1570,7 +1574,7 @@
             <label class="field-label" for="x-tipo">Tipo</label>
             <select id="x-tipo" class="input" bind:value={ext.tipo}>
               <option value="local">Disco o carpeta</option>
-              <option value="rest">Servidor de copias (rest-server)</option>
+              <option value="rest">Servidor de copias</option>
               <option value="sftp">SFTP</option>
               <option value="s3">S3 compatible</option>
               <option value="b2">Backblaze B2</option>

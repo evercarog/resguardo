@@ -554,6 +554,27 @@ export async function sembrar(vacio = false) {
   if (archivos.informes[0]) archivos.informes[0].datos.version = archivos.version_agente;
   archivos.etiquetas = ["Servidores"];
   estado.equipos.push(recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, estudio);
+  // Un intento anterior de vincular CAJA-1 que se quedó sin confirmar (el bug de un equipo
+  // que salía dos veces): la consola lo marca como duplicado y ofrece quitarlo.
+  const cajaDuplicada: EquipoMock = {
+    ...surCaja,
+    id: randomUUID(),
+    nombre: "caja-1",
+    etiqueta: null,
+    confirmado: false,
+    conectado: false,
+    ultimo_contacto: hace(60 * 26),
+    resumen: { copias: [], repositorios: [], destinos: [] },
+    etiquetas: [],
+    informes: [],
+    config: null,
+    kcfg: null,
+    contrasenas: {},
+    ultimoSeqAceptado: 0,
+    siguiente_seq: 1,
+  };
+  estado.equipos.push(cajaDuplicada);
+  estado.emparejamientos.push({ id: randomUUID(), cliente: sur.id, codigo: "K7M2-Q9X4-HT", caduca: dentro(60 * 20), estado: "unido", creado: Date.now() - 26 * 3600_000, equipo: cajaDuplicada, por: ana.id });
 
   const aviso = (cliente: string, equipo: string | null, tipo: T.TipoAviso, mensaje: string, minutos: number) =>
     estado.avisos.push({ id: randomUUID(), cliente, equipo, tipo, mensaje, creado: hace(minutos), visto_por: null, abierto: true });

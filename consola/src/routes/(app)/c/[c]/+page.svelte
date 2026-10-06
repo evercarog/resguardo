@@ -11,7 +11,7 @@
   import { bytes, cuandoFrase, numero, plural, relativo } from "$lib/formato";
   import { almacenes as almacenesDe, proximaDeTodos, ultimas24h } from "$lib/panel";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
-  import { copiaAtrasada, PESO, saludEquipo, type Tono } from "$lib/salud";
+  import { copiaAtrasada, PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
   import type { Equipo } from "$lib/tipos";
   import { bytesRepo, informeDe } from "$lib/repo";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -47,7 +47,8 @@
 
   const c = $derived(actual.id);
   // Con una etiqueta elegida (Equipos, Avisos y Estado comparten el filtro), solo sus equipos.
-  const delFiltro = $derived(actual.equipos.filter((e) => pasaFiltro(e, filtroEtiqueta.valor)));
+  // Sin los duplicados sin confirmar (la misma máquina, una vez; se quitan desde Equipos).
+  const delFiltro = $derived(sinDuplicados(actual.equipos).filter((e) => pasaFiltro(e, filtroEtiqueta.valor)));
   const equipos = $derived([...delFiltro].sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)));
   const saludes = $derived(delFiltro.map((e) => saludEquipo(e, reloj.ahora)));
   // v1.52: agrupados por etiqueta (como en Equipos; la misma preferencia).

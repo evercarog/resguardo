@@ -905,7 +905,15 @@ const rutas: Ruta[] = [
       p.estado = "confirmado";
       p.equipo.etiqueta = etiqueta;
       p.equipo.confirmado = true;
-      estado.equipos.push(p.equipo);
+      if (!estado.equipos.includes(p.equipo)) estado.equipos.push(p.equipo);
+      // Como el servidor (`quitar_duplicados_sin_confirmar`): los intentos anteriores sin
+      // confirmar de la misma máquina (mismo nombre o misma clave de firma) sobran.
+      const alta = p.equipo;
+      for (const d of estado.equipos.filter((x) => x.cliente === c && x !== alta && !x.confirmado && (x.nombre.toLowerCase() === alta.nombre.toLowerCase() || x.sign_pub === alta.sign_pub))) {
+        estado.equipos.splice(estado.equipos.indexOf(d), 1);
+        for (const q of estado.emparejamientos) if (q.equipo === d && q.estado !== "confirmado") q.estado = "cancelado";
+        auditar(c, null, "quitar_equipo_duplicado", d.nombre, { queda: alta.id });
+      }
       auditar(c, cuenta.id, "equipo.emparejar", p.equipo.nombre, { so: p.equipo.so });
       return undefined;
     },
@@ -917,6 +925,11 @@ const rutas: Ruta[] = [
       miembro(ctx, c, "administrador");
       const p = estado.emparejamientos.find((x) => x.id === id && x.cliente === c);
       if (p) p.estado = "cancelado";
+      // Como el servidor: el equipo que se unió con ese código (sin el alta) se quita.
+      if (p?.equipo && !p.equipo.confirmado) {
+        const i = estado.equipos.indexOf(p.equipo);
+        if (i >= 0) estado.equipos.splice(i, 1);
+      }
       return undefined;
     },
   ],

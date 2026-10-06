@@ -11,7 +11,7 @@
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { lista as lista_, plural } from "$lib/formato";
   import type { Preparado } from "$lib/tipos";
-  import { PESO, saludEquipo, type Tono } from "$lib/salud";
+  import { PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import FilaEquipo from "$lib/componentes/FilaEquipo.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
@@ -52,7 +52,9 @@
       })
       .sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)),
   );
-  const conectados = $derived(actual.equipos.filter((e) => e.conectado).length);
+  // Las cuentas, sin los duplicados sin confirmar (salen en la lista para quitarlos, pero no cuentan).
+  const contables = $derived(sinDuplicados(actual.equipos));
+  const conectados = $derived(contables.filter((e) => e.conectado).length);
 
   // Equipos preparados (instalador listo o línea de Linux, v1.17): los que esperan o ya se unieron.
   let preparados = $state<Preparado[]>([]);
@@ -127,7 +129,7 @@
   <div class="page-top">
     <div>
       <h1>Equipos</h1>
-      <p>{plural(actual.equipos.length, "equipo", "equipos")} · {plural(conectados, "conectado ahora", "conectados ahora")}</p>
+      <p>{plural(contables.length, "equipo", "equipos")} · {plural(conectados, "conectado ahora", "conectados ahora")}</p>
     </div>
     {#if puede.administrar(actual.cliente?.rol)}
       <a class="btn btn-primary" href="/c/{actual.id}/emparejar"><Plus size={16} />Añadir equipo</a>
@@ -192,7 +194,7 @@
                 <input type="checkbox" aria-label="Elegir los de {g.etiqueta ?? 'sin etiqueta'}" disabled={!eg.length} checked={eg.length > 0 && eg.every((e) => elegidos.has(e.id))} onchange={(ev) => alternarGrupo(g.equipos, ev.currentTarget.checked)} />
               {/if}
               {#if g.etiqueta}<EtiquetaChip nombre={g.etiqueta} />{:else}<span class="sin-et">Sin etiqueta</span>{/if}
-              <span class="faint resumen-g">{plural(g.equipos.length, "equipo", "equipos")}{#if g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length}{" · "}{plural(g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length, "necesita atención", "necesitan atención")}{/if}</span>
+              <span class="faint resumen-g">{plural(g.equipos.filter((e) => contables.includes(e)).length, "equipo", "equipos")}{#if g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length}{" · "}{plural(g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length, "necesita atención", "necesitan atención")}{/if}</span>
             </div>
             {#each g.equipos as e (e.id)}
               {#if seleccionando}
