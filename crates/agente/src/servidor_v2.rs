@@ -2549,12 +2549,13 @@ mod tests {
         let r = estado_orden(&consola, 13);
         assert_eq!(r["estado"], "fallida");
         assert!(r["mensaje"].as_str().unwrap().contains("no está configurada"), "{r}");
-        // Un equipo que no guarda copias no conecta nubes; el token no sale en el resultado.
+        // Tarea 4a: también un equipo que no guarda copias conecta nubes (para sus copias
+        // derivadas); aquí Dropbox no acepta el permiso inventado. El token no sale en el resultado.
         enviar(&consola, &orden(&c, &equipo, 14, "conectar_nube", nube("abc123def456ghi"), admin()));
         ronda().unwrap();
         let r = estado_orden(&consola, 14);
         assert_eq!(r["estado"], "fallida");
-        assert!(r["mensaje"].as_str().unwrap().contains("no guarda copias") && !r.to_string().contains(rt), "{r}");
+        assert!(!r["mensaje"].as_str().unwrap().contains("no guarda copias") && !r.to_string().contains(rt), "{r}");
         // Quitar una que no hay: fallida (no la usa el espejo: sin espera).
         enviar(&consola, &orden(&c, &equipo, 15, "quitar_nube", json!({ "nombre": "Dropbox Prueba" }), admin()));
         ronda().unwrap();

@@ -909,6 +909,7 @@ mod tests {
                 secreto: None,
                 ca_pem: None,
                 equipo_almacen: None,
+                nube: None,
             };
             let ubicacion = crate::gestion_v2::ubicacion(&destino, "recepcion/contabilidad").unwrap();
             let acc = crate::restic::Access::new(ubicacion, contrasena);

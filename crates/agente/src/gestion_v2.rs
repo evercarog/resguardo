@@ -26,7 +26,8 @@ const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STA
 pub struct Destino {
     pub id: String,
     pub nombre: String,
-    /// "local", "rest", "s3", "b2" o "sftp".
+    /// "local", "rest", "s3", "b2", "sftp" o (tarea 4a) "nube": una nube conectada en
+    /// este equipo (`nube.rs`), con `nube` su nombre y `donde` la carpeta dentro de ella.
     pub tipo: String,
     /// Carpeta, URL del servidor o bucket (sin credenciales).
     pub donde: String,
@@ -41,6 +42,9 @@ pub struct Destino {
     /// si lo dijo la consola al crearlo. Solo un id: va en el resumen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipo_almacen: Option<String>,
+    /// Tarea 4a: en un destino "nube", el nombre de la nube conectada en este equipo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nube: Option<String>,
 }
 
 /// v1.30: `destino.equipo_almacen` de una orden (el id del equipo que guarda
@@ -279,6 +283,17 @@ fn texto(c: &Value, k: &str) -> String {
 
 /// Ubicación restic del repositorio `repo` en el destino `d`.
 pub fn ubicacion(d: &Destino, repo: &str) -> Result<String, String> {
+    // Tarea 4a: una nube conectada en este equipo, por rclone (`rclone:rnube:<carpeta>/<repo>`).
+    if d.tipo == "nube" {
+        let carpeta = d.donde.trim().trim_matches('/');
+        if (!carpeta.is_empty() && !crate::nube::carpeta_remota_valida(carpeta)) || d.nube.as_deref().is_none_or(|n| n.trim().is_empty()) {
+            return Err("Destino en la nube no válido (la nube conectada y una carpeta dentro de ella).".into());
+        }
+        if repo.is_empty() {
+            return Err("En una nube, el repositorio va en una carpeta: di cuál.".into());
+        }
+        return Ok(crate::nube::ubicacion_restic(carpeta, repo));
+    }
     let donde = d.donde.trim();
     if !texto_valido(donde, 500) || resguardo_motor::restic::has_embedded_password(donde) || donde.starts_with('-') {
         return Err("Destino no válido (escribe la carpeta, servidor o bucket, sin contraseñas).".into());
@@ -350,6 +365,8 @@ pub fn acceso_destino(d: &Destino, ruta: &str, contrasena: &str) -> Result<resgu
     let (rest_auth, env) = match d.tipo.as_str() {
         "rest" => (d.usuario.clone().map(|u| (u, d.secreto.clone().unwrap_or_default())), Vec::new()),
         "s3" | "b2" => (None, crate::tasks::cloud_env(&location, None, d.usuario.as_deref(), d.secreto.as_deref())),
+        // Tarea 4a: las credenciales de la nube, de ahora (con el token al día).
+        "nube" => (None, crate::nube::entorno_restic(d.nube.as_deref().unwrap_or_default())?),
         _ => (None, Vec::new()),
     };
     let cacert = match &d.ca_pem {
@@ -387,6 +404,11 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
     if !id_valido(&destino_id) {
         return Err("Id de destino no válido.".into());
     }
+    // Tarea 4a: por ahora una nube solo sirve para las copias derivadas (la copia de cada
+    // vuelta del agente aún no pone las credenciales de la nube al día).
+    if dest["tipo"] == "nube" || v.destinos.iter().any(|d| d.id == destino_id && d.tipo == "nube") {
+        return Err("Una nube conectada en el equipo sirve, por ahora, para las copias derivadas, no para copiar las carpetas directamente.".into());
+    }
     let nuevo = if dest.get("tipo").is_some() {
         if v.destinos.iter().any(|d| d.id == destino_id) {
             return Err(format!("Ya hay un destino «{destino_id}»."));
@@ -400,6 +422,7 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
             secreto: dest["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
             ca_pem: dest["ca_pem"].as_str().filter(|s| s.contains("BEGIN CERTIFICATE")).map(str::to_string),
             equipo_almacen: equipo_almacen_de(dest),
+            nube: None,
         };
         if !texto_valido(&d.nombre, 80) {
             return Err("Escribe un nombre para el destino.".into());
@@ -886,7 +909,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 15] = [
+pub const ADMITE: [&str; 16] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -912,6 +935,9 @@ pub const ADMITE: [&str; 15] = [
     // (pendiente de numerar) tarea 4c: `filtro` con `carpetas`, `desde` y `ultimos_dias` en `copiar_historial`
     // y en las copias derivadas (un agente anterior solo entiende `equipos` y `etiquetas`).
     "filtros",
+    // (pendiente de numerar) tarea 4a: `conectar_nube` también fuera de un almacén y destinos
+    // `{ tipo: "nube", nube, donde }` en las copias derivadas (por rclone).
+    "nube_equipo",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -993,6 +1019,10 @@ pub fn resumen(v: &Vinculo) -> Value {
         // consola avisa si las copias se quedan en el mismo equipo que protegen.
         "destinos": v.destinos.iter().map(|d| {
             let mut x = json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": (d.tipo != "local").then(|| d.donde.clone()), "equipo_almacen": d.equipo_almacen });
+            // Tarea 4a: la nube conectada en el equipo a la que va (su nombre).
+            if let Some(n) = d.nube.as_ref().filter(|_| d.tipo == "nube") {
+                x["nube"] = json!(n);
+            }
             if d.tipo == "local" {
                 let disco = crate::espacio::disco_de(&d.donde).json();
                 for k in ["unidad", "extraible", "red"] {
@@ -1526,7 +1556,12 @@ fn preparar_derivada(
             secreto: dest["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
             ca_pem: None,
             equipo_almacen: equipo_almacen_de(dest),
+            // Tarea 4a: el nombre de la nube conectada en este equipo.
+            nube: (dest["tipo"] == "nube").then(|| texto(dest, "nube").trim().to_string()),
         };
+        if d.tipo == "nube" && crate::nube::buscar(d.nube.as_deref().unwrap_or_default()).is_none() {
+            return Err(format!("La nube «{}» no está conectada en este equipo: conéctala antes.", d.nube.as_deref().unwrap_or_default()));
+        }
         if existente {
             // Como al adoptar: con un nombre por defecto si no trae (B2, S3…).
             d.nombre = crate::adoptar_v2::destino_de(dest, &destino_id)?.nombre;
@@ -1594,18 +1629,20 @@ fn preparar_derivada(
     if solo_anadir {
         entrada["solo_anadir"] = json!(true);
     }
+    let nube = d.nube.clone().filter(|_| d.tipo == "nube");
     Ok(Preparada {
         location: dest_acc.location.clone(),
         retencion,
         destino: d,
         nuevo,
-        dest: crate::tasks::DestinoExterno { existing: existente, object_lock_days: bloqueo, append_only: solo_anadir },
+        dest: crate::tasks::DestinoExterno { existing: existente, object_lock_days: bloqueo, append_only: solo_anadir, nube: nube.clone() },
+        // Las credenciales de una nube no se guardan con la copia: se ponen al día en cada uso.
         creds: crate::agent::OffsiteSecrets {
             password: contrasena_destino,
             key_id: None,
             key_secret: None,
             location: Some(con_auth),
-            env: dest_acc.env.clone(),
+            env: if nube.is_some() { Vec::new() } else { dest_acc.env.clone() },
         },
         entrada,
         texto: format!("{probado}{efecto}"),
@@ -2557,5 +2594,29 @@ mod tests {
         assert!(!r.to_string().contains("Contabilidad") && !r.to_string().contains("privada"), "sin rutas: {r}");
         assert!(id_derivada_valido("nube-2") && !id_derivada_valido("externa") && !id_derivada_valido("") && !id_derivada_valido("a/b"));
         assert!(ADMITE.contains(&"derivadas") && ADMITE.contains(&"filtros"));
+    }
+
+    /// Tarea 4a: un destino «nube» (conectada en el equipo) va por rclone.
+    #[test]
+    fn ubicacion_en_una_nube_del_equipo() {
+        let d = |donde: &str, nube: Option<&str>| Destino {
+            id: "n".into(),
+            nombre: "Dropbox".into(),
+            tipo: "nube".into(),
+            donde: donde.into(),
+            nube: nube.map(String::from),
+            ..Default::default()
+        };
+        assert_eq!(ubicacion(&d("Resguardo/Sur", Some("Dropbox Sur")), "siigo-d1").unwrap(), "rclone:rnube:Resguardo/Sur/siigo-d1");
+        assert_eq!(ubicacion(&d("", Some("Dropbox Sur")), "siigo-d1").unwrap(), "rclone:rnube:siigo-d1");
+        for (donde, nube) in [("../x", Some("D")), ("a:b", Some("D")), ("Resguardo", None), ("Resguardo", Some(" "))] {
+            assert!(ubicacion(&d(donde, nube), "r").is_err(), "{donde:?} {nube:?}");
+        }
+        assert!(ubicacion(&d("Resguardo", Some("D")), "").is_err());
+        // Una nube no sirve (todavía) para copiar las carpetas directamente.
+        let mut v = Vinculo::default();
+        let c = json!({ "id": "r1", "nombre": "Docs", "contrasena": "una clave larga", "destino": { "id": "n1", "tipo": "nube", "nube": "Dropbox", "nombre": "Dropbox" } });
+        assert!(crear_repositorio(&mut v, &c).unwrap_err().contains("copias derivadas"));
+        assert!(ADMITE.contains(&"nube_equipo"));
     }
 }

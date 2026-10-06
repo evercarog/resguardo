@@ -79,6 +79,7 @@ pub fn destino_de(d: &Value, id: &str) -> Result<Destino, String> {
         secreto: d["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
         ca_pem,
         equipo_almacen: crate::gestion_v2::equipo_almacen_de(d),
+        nube: None,
     })
 }
 

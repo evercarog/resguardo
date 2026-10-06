@@ -227,6 +227,10 @@ pub struct DestinoExterno {
     /// retención la aplica el propio servidor).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub append_only: bool,
+    /// Tarea 4a: una nube conectada en este equipo (`nube.rs`), por su nombre:
+    /// la ubicación es `rclone:rnube:…` y sus credenciales se ponen al usarla.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nube: Option<String>,
 }
 
 impl DestinoExterno {
@@ -1159,7 +1163,10 @@ pub fn run() -> i32 {
             "verify_offsite" | VERIFY_DERIVADA => {
                 // El destino de la copia externa (o de la derivada), con las credenciales de la subida.
                 let o = repo.offsite.as_ref().unwrap();
-                verify_repo(dest_access(o, secret), o.verify.as_ref().unwrap(), part, &mut report)
+                match dest_access_listo(o, secret) {
+                    Ok(acc) => verify_repo(acc, o.verify.as_ref().unwrap(), part, &mut report),
+                    Err(e) => failed(RunRecord { started: Local::now().to_rfc3339(), ..Default::default() }, e),
+                }
             }
             _ => offsite_repo(&repo, secret, repo.offsite.as_ref().unwrap(), load_guard().holds.contains_key(&repo.id), &mut report),
         };
@@ -1261,6 +1268,16 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
         cacert: None,
         env: cloud_env(&offsite.location, offsite.region.as_deref(), secret.offsite_key_id.as_deref(), secret.offsite_secret.as_deref()),
     }
+}
+
+/// El acceso al destino listo para usar: con una nube (tarea 4a), con sus
+/// credenciales de ahora (el token al día; nunca guardadas con la copia).
+fn dest_access_listo(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {
+    let mut a = dest_access(offsite, secret);
+    if let Some(n) = &offsite.dest.nube {
+        a.env = crate::nube::entorno_restic(n)?;
+    }
+    Ok(a)
 }
 
 /// Ubicación de restic con el usuario y la contraseña del servidor REST
@@ -1479,7 +1496,10 @@ fn failed(mut record: RunRecord, message: String) -> RunRecord {
 fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool, report: &mut dyn FnMut(&TaskProgress)) -> RunRecord {
     let mut record = RunRecord { started: Local::now().to_rfc3339(), ..Default::default() };
     let src = source_access(repo, secret);
-    let dest = dest_access(offsite, secret);
+    let dest = match dest_access_listo(offsite, secret) {
+        Ok(d) => d,
+        Err(e) => return failed(record, e),
+    };
     let mut both = copy_access(&src, &dest);
     both.env.push((RESTIC_FPS.0.into(), RESTIC_FPS.1.into()));
 
@@ -2113,7 +2133,7 @@ mod tests {
         assert!(o.dest.normal() && o.dest.lock_days().is_none());
         assert!(!serde_json::to_string(&o).unwrap().contains(r#""dest":"#), "un agente anterior la lee igual");
         let mut o2 = o.clone();
-        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false };
+        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None };
         let t = serde_json::to_string(&o2).unwrap();
         assert!(t.contains(r#""dest":{"existing":true,"object_lock_days":30}"#), "{t}");
         assert_eq!(serde_json::from_str::<Offsite>(&t).unwrap(), o2);
@@ -2211,7 +2231,7 @@ mod tests {
             enabled_at: Local::now().to_rfc3339(),
             guard: None,
             verify: None,
-            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false },
+            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None },
             filtro: None,
         }
     }
