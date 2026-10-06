@@ -1414,6 +1414,8 @@ fn ronda_de(id: &str) -> Result<bool, String> {
     // v1.4x: su hora (para las órdenes en espera) y las que canceló.
     crate::espera_v2::anotar_hora(id, &r);
     crate::espera_v2::canceladas_por_su_consola(id, &ids_de(&r["canceladas"]));
+    // v1.4x (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
+    crate::ancla::recibir(&v, &r["ancla"]);
     for o in r["ordenes"].as_array().cloned().unwrap_or_default() {
         // Con las credenciales de antes: una orden (desvincular) puede borrarlas.
         let Some((res, aviso, credenciales)) = orden_de(id, &o) else { break };
@@ -1580,6 +1582,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     };
     comprueba_identidad(&v, &reto, hola["firma"].as_str().unwrap_or(""))?;
     crate::agent::log(&format!("Canal con Resguardo Server abierto ({quien})."));
+    // v1.4x (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
+    crate::ancla::recibir(&v, &hola["ancla"]);
     anotar_contacto(id);
     // v1.4x: su hora, para las órdenes en espera (también en cada latido).
     crate::espera_v2::anotar_hora(id, &hola);
@@ -1642,6 +1646,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                             crate::informe_v2::pista_refrescar(&v, repo);
                         }
                     }
+                    // v1.4x (9b): el ancla de la auditoría, cada hora con el canal abierto.
+                    "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
                     "orden" => {

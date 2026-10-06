@@ -4,7 +4,7 @@
   // Actividad del cliente: el registro encadenado de todo lo que se hace, con
   // «Verificar la cadena» (en el servidor y, para lo cargado, también aquí) y
   // exportación a CSV.
-  import { Download, ShieldCheck, ShieldX, LoaderCircle, Search, Activity, CalendarDays, Clock, UsersRound } from "@lucide/svelte";
+  import { Anchor, Download, ShieldCheck, ShieldX, LoaderCircle, Search, Activity, CalendarDays, Clock, UsersRound } from "@lucide/svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
@@ -16,7 +16,8 @@
   import { actual, puede } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero } from "$lib/formato";
   import { nombreOrden } from "$lib/salud";
-  import { primeraRota } from "$lib/auditoria";
+  import { anclaDe, lineaAncla, primeraRota } from "$lib/auditoria";
+  import ComprobarAncla from "$lib/componentes/ComprobarAncla.svelte";
   import type { EntradaAuditoria, VerificacionAuditoria } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
@@ -27,6 +28,8 @@
   let buscar = $state("");
   let verificando = $state(false);
   let resultado = $state<{ servidor: VerificacionAuditoria; local: number | null } | null>(null);
+  /** «Comprobar con un ancla» abierto (plan-mejoras 9b). */
+  let conAncla = $state(false);
 
   /** La del servidor anterior (importada con el paquete del cliente, §11): se ve aparte. */
   let importada = $state(page.url.searchParams.get("importada") === "1");
@@ -218,6 +221,7 @@
       {#if puede.ordenar(actual.cliente?.rol)}
         <!-- Los técnicos pueden leer la actividad, pero no exportarla. -->
         {#if puede.administrar(actual.cliente?.rol)}<button class="btn" onclick={exportar} disabled={!entradas?.length}><Download size={15} />Exportar CSV</button>{/if}
+        {#if !importada}<button class="btn" onclick={() => (conAncla = true)} disabled={!actual.id}><Anchor size={15} />Comprobar con un ancla</button>{/if}
         <button class="btn btn-primary" onclick={verificar} disabled={verificando || !entradas}>
           {#if verificando}<LoaderCircle size={15} class="spin" />Verificando…{:else}<ShieldCheck size={15} />Verificar la cadena{/if}
         </button>
@@ -232,6 +236,16 @@
       <Cifra icono={UsersRound} etiqueta="Personas" valor={numero(personas)} sub="con alguna acción aquí" />
       <Cifra icono={ShieldCheck} etiqueta="La cadena" valor={resultado ? (resultado.servidor.ok && resultado.local === null ? "Completa" : "Rota") : "Sin verificar"} sub={resultado ? (resultado.servidor.ok && resultado.local === null ? plural(resultado.servidor.ok ? resultado.servidor.entradas : 0, "entrada comprobada", "entradas comprobadas") : "revisa el aviso de arriba") : `última acción ${relativo(entradas[0].creado, reloj.ahora)}`} mal={!!resultado && !(resultado.servidor.ok && resultado.local === null)} />
     </div>
+  {/if}
+
+  {#if entradas?.length && !importada && puede.ordenar(actual.cliente?.rol)}
+    <!-- El ancla de hoy: la última entrada, para guardarla fuera del servidor (además del resumen por correo). -->
+    <p class="faint pequeno ancla-hoy">
+      <Anchor size={13} aria-hidden="true" />
+      <span>Ancla de hoy:</span>
+      <Copiable texto={lineaAncla(anclaDe(actual.id, entradas[0]))} mostrar="n.º {entradas[0].n} · {entradas[0].hash.slice(0, 10)}…" que="el ancla de hoy" />
+      <span>Guárdala fuera de este servidor (o usa la del resumen por correo): con ella podrás comprobar más adelante que nadie ha rehecho la actividad. <Ayuda id="ancla" /></span>
+    </p>
   {/if}
 
   {#if hayImportada || importada}
@@ -288,7 +302,18 @@
   {/if}
 </div>
 
+{#if conAncla && actual.id}
+  <ComprobarAncla cliente={actual.id} nombre={actual.cliente?.nombre ?? "el cliente"} onclose={() => (conAncla = false)} />
+{/if}
+
 <style>
+  .ancla-hoy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin: 0;
+  }
   .buscar {
     position: relative;
   }

@@ -35,6 +35,10 @@ pub struct ResumenCliente {
     pub copias_ok: u32,
     pub fallos: u32,
     pub bytes: u64,
+    /// v1.4x (9b): la cabeza de la auditoría del cliente al preparar el resumen (el
+    /// «ancla» que se queda en el correo; ver `crate::ancla`). Los de la cola de antes, sin ella.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ancla: Option<crate::ancla::Ancla>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -64,7 +68,8 @@ pub fn de_cliente(
     desde: Ts,
     hasta: Ts,
 ) -> ResumenCliente {
-    let mut r = ResumenCliente { id: id.into(), nombre: nombre.into(), equipos: Vec::new(), atencion: Vec::new(), copias_ok: 0, fallos: 0, bytes: 0 };
+    let mut r =
+        ResumenCliente { id: id.into(), nombre: nombre.into(), equipos: Vec::new(), atencion: Vec::new(), copias_ok: 0, fallos: 0, bytes: 0, ancla: None };
     for e in equipos.iter().filter(|e| e.confirmado && e.modo == "gestionado") {
         let inf = informes.get(&e.id);
         let mut q = ResumenEquipo {
@@ -172,7 +177,9 @@ fn resumen_de(db: &dyn Almacen, cliente: &str, desde: Ts, hasta: Ts) -> R<Option
         }
     }
     let incidentes = db.notif_incidentes_abiertos(Some(cliente))?;
-    let r = de_cliente(&c.id, &c.nombre, &equipos, &informes, &incidentes, desde, hasta);
+    let mut r = de_cliente(&c.id, &c.nombre, &equipos, &informes, &incidentes, desde, hasta);
+    // Un fallo al leer la auditoría no deja sin resumen.
+    r.ancla = crate::ancla::de_cliente(db, &ctx).ok().flatten();
     Ok((!r.equipos.is_empty()).then_some(r))
 }
 
@@ -350,7 +357,14 @@ pub(crate) mod tests {
             notificado: Some(hasta - 2 * dia),
             cerrado: None,
         }];
-        de_cliente("cl", "Altamar & Asociados", &equipos, &informes, &incidentes, hasta - 7 * dia, hasta)
+        let mut r = de_cliente("cl", "Altamar & Asociados", &equipos, &informes, &incidentes, hasta - 7 * dia, hasta);
+        r.ancla = Some(crate::ancla::Ancla {
+            cliente: "cl".into(),
+            n: 1234,
+            creado: hasta - 3600,
+            hash: "5be1c0a7f3d2e4b6a8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5".into(),
+        });
+        r
     }
 
     #[test]

@@ -92,6 +92,13 @@ const textoGancho = (g: ResultadoGancho) => (g.estado === "ok" ? "Correcto" : g.
 /** La misma vuelta (misma copia, menos de un minuto de diferencia). */
 const misma = (a: number, b: number) => Math.abs(a - b) <= 60_000;
 
+type Cabeza = { n: number; hash: string };
+/** v1.4x (9b): qué no cuadró en la actividad de una consola (`auditoria_rehecha`). */
+export const textoRehecha = (antes: Cabeza, ahora: Cabeza) =>
+  ahora.n < antes.n
+    ? `Antes llegaba a la entrada n.º ${numero(antes.n)} y ahora solo a la ${numero(ahora.n)}. Si nadie restauró una copia de esa consola, compruébala con un ancla de un correo anterior.`
+    : `La entrada n.º ${numero(antes.n)} tenía la huella ${antes.hash.slice(0, 12)}… y ahora tiene ${ahora.hash.slice(0, 12)}…. Compruébala con un ancla de un correo anterior.`;
+
 /**
  * Los sucesos (de lo más reciente a lo más antiguo) y lo que se dice de cada
  * versión (`notas`, por id). Lo que traen a la vez el informe y el historial
@@ -255,6 +262,9 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
       if (h.repo) continue;
       if (h.tipo === "espejo" && h.resultado && h.resultado !== "sin_cambios")
         out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo: "espejo", tono: TONO_TAREA[h.resultado], titulo: "Espejo de lo que guarda", chip: TEXTO_TAREA[h.resultado], detalle: h.mensaje ?? null, meta: null, repo: null, copia: null, vuelta: null });
+      // v1.4x (9b): el equipo vio que una de sus consolas rehízo su actividad.
+      else if (h.tipo === "auditoria_rehecha" && h.antes && h.ahora)
+        out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo: "aviso", tono: "bad", titulo: `${h.consola ? `La consola «${h.consola}»` : "Una de sus consolas"} rehízo su actividad`, chip: "Actividad rehecha", detalle: textoRehecha(h.antes, h.ahora), meta: null, repo: null, copia: null, vuelta: null });
       else if (h.tipo === "aviso" && h.mensaje)
         out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo: "aviso", tono: "warn", titulo: "Aviso del equipo", chip: "Aviso", detalle: h.mensaje, meta: null, repo: null, copia: null, vuelta: null });
     }
