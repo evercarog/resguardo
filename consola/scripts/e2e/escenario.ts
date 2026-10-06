@@ -911,18 +911,20 @@ async function principal() {
       return h.find((x) => x.orden_id === pausa.id && x.resultado === "cancelada" && x.cancelada_desde) ?? null;
     }, { plazo: 60_000, cada: 1000 });
     comprobar(!((await consola2.equipo(c2, eqB2.id)).resumen?.pausado_hasta), "La pausa nunca se aplicó");
-    // Otra destructiva con una espera corta: no se aplica antes de tiempo, y sí a su hora.
-    const acortar = await consola2.mandar(c2, eqB2.id, "cambiar_espera", { horas: 2 }, { claveAdmin: claveB }, { esperaS: 25 });
+    // Otra destructiva con una espera corta (pausar 1 h): no se aplica antes de tiempo, y sí a su hora.
+    const pausaCorta = await consola2.mandar(c2, eqB2.id, "pausar", { horas: 1 }, { claveAdmin: claveB }, { esperaS: 25 });
     await dormir(8_000);
-    igual((await consola2.resultado(c2, eqB2.id, acortar, { estados: ["entregada"], plazo: 10_000 })).estado, "entregada", "Antes de su hora sigue en espera");
-    comprobar((await consola2.equipo(c2, eqB2.id)).espera_min_horas === 3, "…y no se aplicó");
-    const aplicada = await consola2.resultado(c2, eqB2.id, acortar, { plazo: 90_000 });
+    igual((await consola2.resultado(c2, eqB2.id, pausaCorta, { estados: ["entregada"], plazo: 10_000 })).estado, "entregada", "Antes de su hora sigue en espera");
+    comprobar(!((await consola2.equipo(c2, eqB2.id)).resumen?.pausado_hasta), "…y no se aplicó");
+    const aplicada = await consola2.resultado(c2, eqB2.id, pausaCorta, { plazo: 90_000 });
     igual(aplicada.estado, "hecha", `A su hora se aplica (${aplicada.mensaje})`);
-    await esperar("la espera nueva en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).espera_min_horas === 2 || null, { plazo: 60_000, cada: 1000 });
+    await esperar("la pausa en la en línea", async () => !!(await consola3.equipo(c3, eqB2.id)).resumen?.pausado_hasta || null, { plazo: 60_000, cada: 1000 });
     await esperar("la orden aplicada en el historial común (en la en línea)", async () => {
       const h = (await consola3.ok("GET", `/api/clientes/${c3.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
-      return h.find((x) => x.orden_id === acortar.id && x.resultado === "hecha" && x.identidad === srv2Id) ?? null;
+      return h.find((x) => x.orden_id === pausaCorta.id && x.resultado === "hecha" && x.identidad === srv2Id) ?? null;
     }, { plazo: 60_000, cada: 1000 });
+    // Y se reanuda (inofensiva: al momento) para lo que sigue.
+    await consola2.hecha(c2, eqB2.id, "reanudar", {});
     log("Órdenes en espera entre consolas: bien");
 
     // -----------------------------------------------------------------------
