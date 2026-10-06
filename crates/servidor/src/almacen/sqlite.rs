@@ -636,6 +636,9 @@ impl Almacen for Sqlite {
         tx.commit().map_err(s)?;
         Ok(fila)
     }
+    fn codigo_indexado(&self, codigo_hash: &str) -> R<bool> {
+        self.ctl().query_row("SELECT 1 FROM codigos WHERE codigo_hash = ?1", [codigo_hash], |_| Ok(())).optional().map_err(s).map(|x| x.is_some())
+    }
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()> {
         self.ctl().execute("INSERT INTO indice_equipos (equipo_id, cliente_id) VALUES (?1, ?2)", [equipo, cliente]).map_err(s)?;
         Ok(())

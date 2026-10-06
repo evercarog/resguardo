@@ -164,10 +164,28 @@ fn cambiado_fuera(canal: &Vinculo, disco: &Vinculo) -> bool {
 pub fn guardar(v: &Vinculo) -> Result<(), String> {
     crate::agent::prepare_dir()?;
     let enc = crate::platform::protect(&serde_json::to_vec(v).map_err(|e| e.to_string())?)?;
-    let tmp = crate::agent::private_dir().join(format!("{ARCHIVO}.tmp"));
+    // Un temporal por proceso: el servicio y `resguardo-agente vincular` (el instalador lo lanza
+    // con el servicio ya en marcha) guardaban en el mismo y uno podía quitárselo al otro entre
+    // escribirlo y renombrarlo. Si `vincular` fallaba ahí, el equipo ya estaba unido en el
+    // servidor y el segundo intento del instalador gastaba el código otra vez («no válido»).
+    let tmp = crate::agent::private_dir().join(format!("{ARCHIVO}.{}.tmp", std::process::id()));
     let _ = std::fs::remove_file(&tmp);
     std::fs::write(&tmp, enc).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, ruta()).map_err(|e| e.to_string())
+    // Windows puede negar el cambio un instante si otro proceso lee el archivo: unos reintentos.
+    let mut intento = 0;
+    loop {
+        match std::fs::rename(&tmp, ruta()) {
+            Ok(()) => return Ok(()),
+            Err(_) if intento < 5 => {
+                intento += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100 * intento));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e.to_string());
+            }
+        }
+    }
 }
 
 fn ahora() -> i64 {

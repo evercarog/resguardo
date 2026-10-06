@@ -10,7 +10,7 @@ use crate::auth::Usuario;
 use crate::error::{ErrorApi, Res};
 use crate::estado::St;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -28,6 +28,32 @@ pub const MAX_CODIGOS_CUENTA_H: u32 = 30;
 /// …y entre todas las cuentas del cliente. Volver a pedir uno que aún sirve
 /// (la consola al recargar, el mismo instalador otra vez) no cuenta.
 pub const MAX_CODIGOS_CLIENTE_H: u32 = 100;
+
+/// v1.4x: lo que se guarda en `emparejamientos.codigo` cuando el código lo generó el
+/// navegador: `sha256:<hash>`. El servidor nunca tiene el código; esto solo marca, como
+/// el código en claro de antes, que el emparejamiento sigue vivo (hasta el alta del equipo).
+pub const PREFIJO_NAVEGADOR: &str = "sha256:";
+
+/// El código en claro, si lo generó el servidor (forma de antes de v1.4x).
+pub fn codigo_en_claro(e: &Emparejamiento) -> Option<&str> {
+    e.codigo.as_deref().filter(|c| !c.starts_with(PREFIJO_NAVEGADOR))
+}
+
+/// El hash del código, si lo generó el navegador (v1.4x).
+pub fn hash_del_navegador(e: &Emparejamiento) -> Option<&str> {
+    e.codigo.as_deref().and_then(|c| c.strip_prefix(PREFIJO_NAVEGADOR))
+}
+
+/// El `codigo_hash` que manda la consola (SHA-256 en hex del código normalizado, como
+/// `protocolo::mensajes::code_hash`), en minúsculas; `None` si no tiene esa forma.
+pub fn hash_valido(h: &str) -> Option<String> {
+    (h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())).then(|| h.to_ascii_lowercase())
+}
+
+/// 409 si el hash ya está en el índice: el navegador genera otro código y vuelve a pedir.
+pub fn codigo_repetido() -> ErrorApi {
+    ErrorApi::nuevo(StatusCode::CONFLICT, "codigo_repetido", "Ese código ya existe. Genera otro.")
+}
 
 /// Cuenta un código nuevo de la cuenta `cuenta` en el cliente `c`. Pasado el
 /// límite, 429 con `retry_after` (segundos hasta que se pueda pedir otro).
@@ -52,7 +78,8 @@ pub fn limite_codigos(st: &St, c: &str, cuenta: &str) -> Res<()> {
 }
 
 /// Un emparejamiento de esta cuenta que aún sirve y se puede volver a dar en vez de
-/// crear otro: abierto, con su código y al menos `margen_s` segundos por delante.
+/// crear otro: abierto, con su código en claro (los del navegador no: el servidor no
+/// puede volver a darlo) y al menos `margen_s` segundos por delante.
 /// `nombre_so`: `None` para los códigos de 15 min; `Some((nombre, so))` para un preparado
 /// con ese nombre (sin distinguir mayúsculas) y sistema.
 pub async fn reutilizable(st: &St, ctx: &ClienteCtx, cuenta: &str, nombre_so: Option<(&str, &str)>, margen_s: i64) -> Res<Option<Emparejamiento>> {
@@ -62,7 +89,7 @@ pub async fn reutilizable(st: &St, ctx: &ClienteCtx, cuenta: &str, nombre_so: Op
     Ok(l.into_iter().find(|e| {
         e.estado == "abierto"
             && e.caduca > limite
-            && e.codigo.is_some()
+            && codigo_en_claro(e).is_some()
             && match nombre_so {
                 None => e.nombre.is_none(),
                 Some((n, so)) => e.nombre.as_deref().is_some_and(|x| x.to_lowercase() == n.to_lowercase()) && e.so.as_deref() == Some(so),
@@ -70,15 +97,28 @@ pub async fn reutilizable(st: &St, ctx: &ClienteCtx, cuenta: &str, nombre_so: Op
     }))
 }
 
+#[derive(Deserialize)]
+pub struct Navegador {
+    /// v1.4x: `1` si la consola sabe guardar sus propios códigos: entonces también se dan
+    /// los generados en el navegador (sin el código, con su hash).
+    navegador: Option<String>,
+}
+
 /// `GET /api/clientes/{c}/codigo-abierto` (administrador): el código de 15 min que pidió
 /// esta cuenta y aún sirve (abierto o ya unido), o `null`. La consola lo vuelve a
-/// enseñar al recargar «Añadir equipo» en vez de pedir otro.
-pub async fn codigo_abierto(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+/// enseñar al recargar «Añadir equipo» en vez de pedir otro. v1.4x: con `?navegador=1`,
+/// también uno generado en el navegador: `{ id, codigo: null, codigo_hash, codigo_navegador:
+/// true, caduca, estado }` (el código lo tiene ese navegador); sin él, como antes.
+pub async fn codigo_abierto(State(st): State<St>, u: Usuario, Path(c): Path<String>, Query(q): Query<Navegador>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
     let cuenta = u.id().to_string();
+    let con_navegador = q.navegador.as_deref() == Some("1");
     let l = st.db(move |db| db.emparejamientos_vigentes_de(&ctx, &cuenta, ahora())).await?;
-    Ok(Json(match l.iter().find(|e| e.nombre.is_none()) {
-        Some(e) => json!({ "id": e.id, "codigo": e.codigo, "caduca": fecha(e.caduca), "estado": e.estado }),
+    Ok(Json(match l.iter().find(|e| e.nombre.is_none() && (con_navegador || codigo_en_claro(e).is_some())) {
+        Some(e) => match hash_del_navegador(e) {
+            Some(h) => json!({ "id": e.id, "codigo": null, "codigo_hash": h, "codigo_navegador": true, "caduca": fecha(e.caduca), "estado": e.estado }),
+            None => json!({ "id": e.id, "codigo": e.codigo, "caduca": fecha(e.caduca), "estado": e.estado }),
+        },
         None => Value::Null,
     }))
 }
@@ -90,6 +130,11 @@ pub struct Preparar {
     so: String,
     /// La dirección con la que los equipos llegan a este servidor (`https://…`).
     servidor: String,
+    /// v1.4x: el código lo generó el navegador y solo manda su hash. Entonces la respuesta es
+    /// siempre JSON, sin código ni instalador: la consola arma la línea de Linux o la cola del
+    /// instalador (que baja aparte con `GET …/instalador-agente`).
+    #[serde(default)]
+    codigo_hash: Option<String>,
 }
 
 /// Lo que se enseña de un preparado en la consola (sin el código).
@@ -111,6 +156,10 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
         _ => return Err(ErrorApi::datos("Sistema no válido («windows» o «linux»).")),
     };
     let servidor = p.servidor.trim().trim_end_matches('/').to_string();
+    if let Some(h) = p.codigo_hash.as_deref() {
+        let hash = hash_valido(h).ok_or_else(|| ErrorApi::datos("Código no válido."))?;
+        return preparar_del_navegador(&st, &u, &c, ctx, nombre, so, servidor, hash).await;
+    }
     // Antes de gastar nada: ¿hay instalador que servir?
     let instalador = if so == "windows" {
         let ruta = st.opciones.instalador_agente.clone().ok_or_else(sin_instalador)?;
@@ -123,7 +172,7 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
     let previo = reutilizable(&st, &ctx, u.id(), Some((&nombre, &so)), 2 * 3600).await?;
     let reutilizado = previo.is_some();
     let (id, codigo, caduca) = match previo {
-        Some(e) => (e.id, e.codigo.unwrap_or_default(), e.caduca),
+        Some(e) => (e.id.clone(), codigo_en_claro(&e).unwrap_or_default().to_string(), e.caduca),
         None => (uuid::Uuid::new_v4().to_string(), resguardo_protocolo::mensajes::pairing_code(), ahora() + CADUCA_S),
     };
     let datos = DatosInstalador {
@@ -174,6 +223,69 @@ pub async fn preparar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
             Ok(r)
         }
     }
+}
+
+/// Un código de este formato (16 letras y cifras en 4 grupos) para validar los datos de la
+/// cola cuando el código lo tiene el navegador: el resto de campos se comprueba igual.
+const CODIGO_DE_FORMA: &str = "AAAA-AAAA-AAAA-AAAA";
+
+/// `POST …/instaladores` con `codigo_hash` (v1.4x): el código lo generó el navegador. Se
+/// guarda solo su hash (para `POST /api/agente/unirse`) y se devuelve lo que la consola
+/// necesita para armar la línea de Linux o la cola del instalador: nunca el código. No se
+/// reutiliza un preparado anterior (el servidor no podría dar su código).
+#[allow(clippy::too_many_arguments)]
+async fn preparar_del_navegador(st: &St, u: &Usuario, c: &str, ctx: ClienteCtx, nombre: String, so: String, servidor: String, hash: String) -> Res<Response> {
+    // Windows: antes de gastar nada, ¿hay instalador que servir? (la consola lo baja aparte).
+    if so == "windows" && !st.opciones.instalador_agente.as_ref().is_some_and(|r| r.is_file()) {
+        return Err(sin_instalador());
+    }
+    let datos = DatosInstalador {
+        v: 1,
+        servidor: servidor.clone(),
+        huella_ca: st.huella_ca.clone(),
+        cliente: ctx.id().to_string(),
+        nombre: nombre.clone(),
+        codigo: CODIGO_DE_FORMA.into(),
+    };
+    datos.validar().map_err(ErrorApi::datos)?;
+    limite_codigos(st, c, u.id())?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let caduca = ahora() + CADUCA_S;
+    let (id2, por, actor, n2, so2) = (id.clone(), u.id().to_string(), format!("cuenta:{}", u.0.cuenta.correo), nombre.clone(), so.clone());
+    let marca = format!("{PREFIJO_NAVEGADOR}{hash}");
+    let nuevo = st
+        .db(move |db| {
+            if db.codigo_indexado(&hash)? {
+                return Ok(false);
+            }
+            db.preparar_emparejamiento(&ctx, &id2, &por, caduca, &n2, &so2, &marca)?;
+            db.indexar_codigo(&hash, ctx.id(), &id2, caduca)?;
+            db.auditar(&ctx, &actor, "preparar_equipo", &id2, &json!({ "nombre": n2, "so": so2, "codigo_navegador": true }).to_string())?;
+            Ok(true)
+        })
+        .await?;
+    if !nuevo {
+        return Err(codigo_repetido());
+    }
+    Ok(Json(json!({
+        "id": id, "nombre": nombre, "so": so, "caduca": fecha(caduca), "servidor": servidor, "huella_ca": st.huella_ca,
+        "cliente": datos.cliente, "codigo_navegador": true, "reutilizado": false,
+    }))
+    .into_response())
+}
+
+/// `GET /api/clientes/{c}/instalador-agente` (administrador, v1.4x): el instalador genérico
+/// del agente, sin cola. La consola le añade la cola con el código que generó ella
+/// (crates/protocolo/src/instalador.rs): el servidor no la ve. 404 `sin_instalador`.
+pub async fn instalador_generico(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Response> {
+    u.miembro(&st, &c, Rol::Administrador).await?;
+    let ruta = st.opciones.instalador_agente.clone().ok_or_else(sin_instalador)?;
+    let exe = tokio::fs::read(&ruta).await.map_err(|_| sin_instalador())?;
+    let mut r = Response::new(Body::from(exe));
+    let h = r.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/vnd.microsoft.portable-executable"));
+    h.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=\"Resguardo-Agente-setup.exe\""));
+    Ok(r)
 }
 
 fn sin_instalador() -> ErrorApi {
@@ -251,7 +363,7 @@ pub async fn vincular_local(State(st): State<St>, u: Usuario, Path(c): Path<Stri
     let previo = reutilizable(&st, &ctx, u.id(), Some((&nombre, so)), 5 * 60).await?;
     let reutilizado = previo.is_some();
     let (id, codigo, caduca, creado) = match previo {
-        Some(e) => (e.id, e.codigo.unwrap_or_default(), e.caduca, e.creado),
+        Some(e) => (e.id.clone(), codigo_en_claro(&e).unwrap_or_default().to_string(), e.caduca, e.creado),
         None => {
             limite_codigos(&st, &c, u.id())?;
             (uuid::Uuid::new_v4().to_string(), resguardo_protocolo::mensajes::pairing_code(), ahora() + 30 * 60, ahora())
