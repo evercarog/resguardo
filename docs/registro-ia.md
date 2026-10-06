@@ -13,9 +13,9 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 - Tarea 0: rama de la sesión en la nube unida. Arreglo: `restaurar-respaldo` protege la carpeta solo si es la de por defecto o como administrador (si no, el e2e fallaba con «Acceso denegado»).
 - e2e: se niega a arrancar con binarios más viejos que el código (un fallo del paso 5 era un agente sin recompilar).
 - **0.7.22** (en el commit `90b34f4`): versión subida, instaladores compilados y **publicación en borrador** en GitHub (`v0.7.22`, 10 archivos con `SHA256SUMS`). **No es pública**: revísala y publícala tú. Los instaladores también están en `instalar\` (los de la 0.7.21 en `instalar\anteriores`).
-- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola).
+- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola), 9b (ancla de la auditoría en el resumen por correo y en los agentes; «Comprobar con un ancla» en Actividad), 3 (espejo flexible: horario propio y «después de cada copia», selección de repositorios por destino, verificación sin contraseñas, borrado diferido con freno, B2/S3/SFTP/SMB/WebDAV, restaurar desde el espejo; diseño en `docs/espejo.md`) y 10c (anotada).
 
-**En marcha:** 3 (espejo flexible), 9b (ancla de la auditoría), 6 (etiquetas). Pendientes: 7 (con 4), 8, 10c.
+**En marcha:** 6 (etiquetas) y 7 parte A (destinos con nombre y zonas del almacén; diseño de toda la 7 en `docs/copias-en-cadena.md`). Pendientes: 7 parte B (copias en cadena, con 4) y 8.
 
 **Decisiones tomadas sin ti, para revisar** (detalle en cada entrada):
 
@@ -24,6 +24,9 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 - 9d: los avisos (webhook, ntfy) de un cliente ya no usan el proxy del entorno (no se podría comprobar la IP de destino).
 - 1: cancelar una orden en espera no pide clave (cualquier consola puede); queda en el historial de todas. Una orden en espera solo se aplica justo después de hablar con la consola que la mandó.
 - 2: una consola sin contacto en 30 días no se sugiere.
+- 9b: restaurar una copia de la consola hace saltar el aviso «rehízo su auditoría» en los agentes (no se distingue de un servidor que miente); el agente avisa una vez y sigue.
+- 3: freno del espejo si de una vez falta ≥10 % (y ≥20 archivos) o un repositorio entero; verificación por rotación 5 % en carpetas y 0 % en nubes (descargar cuesta); SFTP exige la clave pública del servidor.
+- Reemplacé con `--force-with-lease` un commit de `main` subido un minuto antes porque nombraba este equipo (la comprobación de nombres prohibidos lo detectó).
 - Se borraron carpetas de compilación y copias de trabajo de ramas ya unidas (`.claude/worktrees`, `target` sueltos) para liberar disco; en C: también cachés temporales (npm, restic de pruebas, perfiles de Edge de capturas).
 
 **Probar a mano o en una máquina virtual:**
