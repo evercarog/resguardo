@@ -768,10 +768,22 @@ const rutas: Ruta[] = [
       const { cuenta } = miembro(ctx, c, "administrador");
       const d = ctx.cuerpo as Record<string, unknown>;
       if (!/^[a-z0-9:_.-]{1,120}$/.test(id) || id.split(":").some((x) => !x || x === "." || x === "..")) throw err(422, "datos", "Id de destino no válido.");
-      if (Object.keys(d).some((k) => !["nombre", "tipo", "donde"].includes(k))) throw err(422, "datos", "Destino no válido: solo nombre, tipo y dirección (las credenciales nunca van al servidor).");
+      if (Object.keys(d).some((k) => !["nombre", "tipo", "donde", "atributos"].includes(k))) throw err(422, "datos", "Destino no válido: solo nombre, tipo, dirección y atributos (las credenciales nunca van al servidor).");
+      // Tarea 8: los atributos para la regla 3-2-1-1-0 (sin el campo, se quedan los que había).
+      let atributos: T.AtributosDestino | null = null;
+      if (d.atributos && typeof d.atributos === "object") {
+        const a = d.atributos as Record<string, unknown>;
+        if (Object.keys(a).some((k) => !["lugar", "inmutable", "soporte"].includes(k))) throw err(422, "datos", "Destino no válido.");
+        if (a.lugar != null && !["este_equipo", "oficina", "otra_sede", "nube"].includes(String(a.lugar))) throw err(422, "datos", "Lugar no válido.");
+        if (a.inmutable != null && !["solo_anadir", "object_lock", "instantaneas", "desconectado", "no"].includes(String(a.inmutable))) throw err(422, "datos", "Inmutable no válido.");
+        const soporte = typeof a.soporte === "string" && a.soporte.trim() ? a.soporte.trim().slice(0, 60) : undefined;
+        const limpio = { ...(a.lugar ? { lugar: a.lugar } : {}), ...(a.inmutable ? { inmutable: a.inmutable } : {}), ...(soporte ? { soporte } : {}) } as T.AtributosDestino;
+        atributos = Object.keys(limpio).length ? limpio : null;
+      }
       const nombre = String(d.nombre ?? "").trim();
       const tipo = String(d.tipo ?? "");
-      if (!nombre || nombre.length > 80) throw err(422, "datos", "Escribe un nombre para el destino (hasta 80 caracteres).");
+      if ((!nombre && !atributos) || nombre.length > 80) throw err(422, "datos", "Escribe un nombre para el destino (hasta 80 caracteres).");
+      if (!("atributos" in d)) atributos = destinosMock.get(c)?.get(id)?.atributos ?? null;
       if (!["zona", "rest", "s3", "b2", "sftp", "nube", "local"].includes(tipo)) throw err(422, "datos", "Tipo de destino no válido.");
       const donde = typeof d.donde === "string" && d.donde.trim() ? d.donde.trim() : null;
       if (donde && ["rest", "s3", "b2", "sftp"].includes(tipo)) {
@@ -780,7 +792,7 @@ const rutas: Ruta[] = [
       } else if (donde) throw err(422, "datos", "Solo los destinos de red llevan dirección.");
       const m = destinosMock.get(c) ?? new Map();
       if (!m.has(id) && m.size >= 200) throw err(422, "datos", "Como mucho 200 destinos en el catálogo: quita alguno.");
-      m.set(id, { id, nombre, tipo: tipo as T.DestinoCatalogo["tipo"], donde, actualizado: new Date().toISOString(), por: cuenta.nombre });
+      m.set(id, { id, nombre, tipo: tipo as T.DestinoCatalogo["tipo"], donde, atributos, actualizado: new Date().toISOString(), por: cuenta.nombre });
       destinosMock.set(c, m);
       auditar(c, cuenta.id, "guardar_destino", id, { nombre, tipo });
       return undefined;

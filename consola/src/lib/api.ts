@@ -261,7 +261,7 @@ export const ponerPlantilla = (c: string, id: string, cifrado: string) => pedir<
 export const borrarPlantilla = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/plantillas/${enc(id)}`);
 // Tarea 7a: el catálogo de destinos (en claro y sin secretos; un servidor anterior da 404).
 export const destinosCatalogo = (c: string) => pedir<T.DestinoCatalogo[]>("GET", `${cli(c)}/destinos`, undefined, { invisible: true });
-export const ponerDestino = (c: string, id: string, d: { nombre: string; tipo: T.DestinoCatalogo["tipo"]; donde?: string | null }) =>
+export const ponerDestino = (c: string, id: string, d: { nombre: string; tipo: T.DestinoCatalogo["tipo"]; donde?: string | null; atributos?: T.AtributosDestino | null }) =>
   pedir<void>("PUT", `${cli(c)}/destinos/${enc(id)}`, d);
 export const borrarDestino = (c: string, id: string) => pedir<void>("DELETE", `${cli(c)}/destinos/${enc(id)}`);
 // v1.4x: ajustes de las etiquetas (color, plantilla por defecto y avisos). Sin nada, vuelve a lo de siempre.
