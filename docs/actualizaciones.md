@@ -66,7 +66,7 @@ La firma es la de minisign: se comprueba la firma del archivo (Ed25519 sobre el 
 - **Llave privada:** solo la tiene el responsable del proyecto, fuera de línea, con contraseña (minisign la cifra con scrypt). Copia de seguridad impresa o cifrada en otro sitio. Ningún programa de Resguardo la lee ni la guarda.
 - **Llaves públicas fijadas** en `packaging/llave-publicacion.pub`, dentro del agente y del servidor al compilar (`include_str!`). Puede haber varias (la actual y la siguiente) para rotar sin cortar las actualizaciones. Las líneas que empiezan por `#` y las `untrusted comment:` se ignoran.
 - **Marcador de posición:** mientras el archivo no tenga ninguna llave (lleva la marca `PENDIENTE-SIN-LLAVE`), el agente y el servidor no aceptan ninguna publicación. `npm run build:agente` (y `construir-paquetes.sh`) **se niegan a compilar** así, salvo con `RESGUARDO_SIN_ACTUALIZACIONES=1`, que compila un agente con la actualización automática **apagada** (lo dice en `resguardo-agente estado` y en la consola).
-- **Llave de pruebas:** `crates/protocolo/tests/fixtures/llave-pruebas.txt` (privada y pública, marcada en grande como «SOLO PRUEBAS»). Solo la aceptan las **compilaciones de desarrollo** (`debug_assertions`) con `RESGUARDO_LLAVES_PRUEBAS=<archivo .pub>`; en una compilación de publicación esa variable no existe para el programa (como `RESGUARDO_AGENT_DIR`). Nunca se usa para publicar.
+- **Llave de pruebas:** `crates/protocolo/tests/fixtures/` (`llave-pruebas-a.pub`, `llave-pruebas-b.pub` y sus semillas en `LLAVES-DE-PRUEBAS-LEEME.txt`, marcadas en grande como «SOLO PRUEBAS»; públicas a propósito). Solo la aceptan las **compilaciones de desarrollo** (`debug_assertions`) con `RESGUARDO_LLAVES_PRUEBAS=<archivo .pub>`; en una compilación de publicación esa variable no existe para el programa (como `RESGUARDO_AGENT_DIR`). Nunca se usa para publicar.
 
 ---
 
@@ -136,7 +136,7 @@ En este orden:
 
 - La versión instalada y la nueva se anotan en `privado/actualizacion/plan.json` (carpeta solo para SYSTEM y Administradores en Windows, `0700` de root en Linux; se rehace con esos permisos y se niega si es un enlace).
 - El archivo se descarga a `privado/actualizacion/descarga.part`, sin pasar del `tamano` del manifiesto, calculando el SHA-256 al vuelo; si coincide, se renombra. Si no, se borra y se anota.
-- Si el equipo tiene consolas, solo se actualiza si ha hablado con alguna en los últimos 15 min (si no, la salud del paso siguiente no se podría comprobar y volvería atrás sin motivo).
+- Si el equipo tiene consolas, solo se actualiza si alguna respondió en esa misma búsqueda (si no, la salud del paso siguiente no se podría comprobar y volvería atrás sin motivo): `pendiente` con `sin_consola`.
 - Se copia el programa **actual** a `privado/actualizacion/actualizador(.exe)` y se guarda una copia de lo instalado en `privado/actualizacion/anterior/` (Windows: `resguardo-agente.exe`, `restic.exe`, `rest-server.exe`, `rclone.exe`; Linux: `resguardo-agente`, `restic`, `rest-server`, `rclone`, `VERSION`).
 - Se lanza el actualizador **fuera** del servicio (Windows: proceso separado, sin ventana, fuera del trabajo del servicio; Linux: `systemd-run --unit resguardo-agente-actualizacion`, para que `systemctl restart` no lo mate con el resto del grupo del servicio) y el servicio sigue normal hasta que lo paren.
 

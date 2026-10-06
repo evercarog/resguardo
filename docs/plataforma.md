@@ -338,6 +338,8 @@ Equivalencias por sistema (de [plataforma-web.md](plataforma-web.md) §8):
 
 ## 6. Actualizaciones y publicación
 
+**Hecho en la rama `ia/actualizacion-automatica`** (tarea 11 del plan): diseño en [actualizaciones.md](actualizaciones.md) y pasos en [publicar.md](publicar.md). Los anillos quedan en dos («prueba» y «general»), la consola es espejo de las versiones firmadas y el servidor todavía se actualiza a mano.
+
 Se mantiene de [plataforma-web.md](plataforma-web.md) §10:
 - **Manifiestos firmados con minisign** (Ed25519, llave fuera de línea), SHA-256 de cada binario, anillos (interno, temprano y general) y vuelta atrás automática si la versión nueva no informa sana en 10 min.
 - **Sin Authenticode de pago por ahora.** Hay aviso de SmartScreen en instalaciones a mano, pero no en las instalaciones por script ni en las actualizaciones que descarga el propio agente. Authenticode más adelante (Azure Trusted Signing o un certificado OV).

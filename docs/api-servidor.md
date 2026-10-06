@@ -1076,6 +1076,45 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
 
 ---
 
+## 14. Actualización automática de los agentes (v1.4x, pendiente de numerar al unir)
+
+Diseño completo: [actualizaciones.md](actualizaciones.md). El servidor **nunca firma**: guarda y sirve tal cual lo que viene firmado con una llave de publicación fijada al compilar (`packaging/llave-publicacion.pub`); sin ninguna llave (el marcador de posición), no acepta nada.
+
+### Propietario del servidor
+
+| Ruta | Quién | Qué |
+|---|---|---|
+| `GET /api/servidor/publicacion` | propietario del servidor | `{ sin_llave, llaves: [id], vigente: Publicacion \| null, guardadas: [Publicacion], version_servidor }`. `Publicacion` = `{ version, fecha, notas, minimo_desde, completa, archivos: [{ plataforma, nombre, tamano, sha256, presente }] }`; `vigente` es la más nueva **completa** (la que se da a los equipos). Se guardan las 3 últimas |
+| `PUT /api/servidor/publicacion` | propietario del servidor | `{ manifiesto, firma }`: el texto exacto de `manifiesto-agente.json` y de su `.minisig`. 422 si la firma no es de una llave fijada (o es heredada, sin prehash), si el manifiesto no cumple sus reglas o es de otro producto. Si ya había esa versión con otro manifiesto, lo sustituye y quita los archivos que ya no coinciden. Auditoría del servidor `poner_publicacion` |
+| `PUT /api/servidor/publicacion/{versión}/{nombre}` | propietario del servidor | El archivo tal cual en el cuerpo (`application/octet-stream`, hasta su `tamano` del manifiesto). Se escribe al lado y solo se queda si el tamaño y el SHA-256 coinciden con el manifiesto firmado; si no, 422 y no queda nada. 422 si ese nombre no está en el manifiesto de esa versión (hay que poner antes el manifiesto). Auditoría `subir_publicacion` |
+
+CLI: `resguardo-server poner-publicacion <carpeta>` (lo mismo desde la carpeta de la versión).
+
+### Consola de un cliente
+
+| Ruta | Quién | Qué |
+|---|---|---|
+| `GET /api/clientes/{c}/actualizaciones` | cualquiera del cliente | `{ sin_llave, disponible: Publicacion \| null, politica: { modo, dias_general, ventana: { desde, hasta } \| null, aprobada, retenidas: [versión] }, equipos: { <id>: { anillo, aprobada } } }` |
+| `PUT /api/clientes/{c}/actualizaciones` | administrador | `{ modo: "auto" \| "manual" \| "pausada", dias_general: 0–30, ventana: { desde: "HH:MM", hasta: "HH:MM" } \| null }`. Da un toque a los equipos conectados. Auditoría `politica_actualizaciones` |
+| `POST /api/clientes/{c}/actualizaciones/ahora` | administrador | `{ equipo? }`: aprueba la versión que da este servidor para el cliente (y la quita de las retenidas) o para un equipo, y da un toque a los conectados. 409 si el servidor no tiene ninguna versión. Devuelve `{ version, avisados }`. Inofensiva: solo lleva a una versión firmada y más nueva. Auditoría `actualizar_ahora` |
+| `PUT /api/clientes/{c}/equipos/{e}/anillo` | administrador | `{ anillo: "prueba" \| "general" }` (por defecto `general`). Auditoría `anillo_equipo` |
+
+La política y los anillos se guardan en la tabla de valores del servidor (`act:politica:<cliente>`, `act:equipo:<cliente>:<equipo>`); no viajan en el paquete de exportación del cliente (son de cada consola).
+
+### Agentes
+
+| Ruta | Qué |
+|---|---|
+| `GET /api/agente/actualizacion` | `{ politica: { modo, anillo, dias_general, ventana, aprobada, retenidas }, publicacion: { manifiesto, firma, archivos: "/api/agente/actualizacion/archivos/<versión>/" } \| null }`. `aprobada` es la mayor entre la del cliente y la del equipo; las retenidas, sin la aprobada. 60 por hora y equipo |
+| `GET /api/agente/actualizacion/archivos/{versión}/{nombre}` | El archivo, tal cual (con `Range`). Solo de una versión completa. 12 por hora y equipo |
+
+- **Canal:** `{ "t": "actualizacion" }` (servidor → agente): busca ya (tras «Actualizar ahora», un cambio de política o de anillo). Un agente anterior lo ignora.
+- **Informe:** `actualizacion: { estado, motivo?, mensaje?, version_disponible?, hasta?, version_objetivo?, version_fallida?, anillo?, modo?, origen?, ultima_busqueda?, cuando? }`. `estado`: `al_dia`, `pendiente` (`motivo`: `sin_paquete`, `necesita_intermedia`, `espera_aprobacion`, `retenida`, `espera_anillo` con `hasta`, `espera_ventana` con `hasta`, `ventanas_sin_coincidir`, `en_marcha`, `almacen_sin_ventana`, `sin_consola`), `pausada`, `descargando`, `actualizando`, `actualizada`, `vuelta_atras` (`version_fallida`, `mensaje`), `fallida` o `desactivada` (`motivo`: `sin_actualizaciones` o `sin_llave`). Si `estado` es `vuelta_atras` o `fallida` con `version_fallida`, el servidor la **retiene** para el cliente (auditoría `retener_version`, con el equipo como actor).
+- **Aviso** `actualizacion_fallida` (importante): el agente lo manda a **todas** sus consolas al volver a la anterior (y lo anota en su historial común). Un servidor anterior lo rechaza (422) y el agente manda `cambio_inusual`.
+- `admite: "actualizaciones"` en el resumen.
+
+---
+
 ## Cambios
 
 - v1 (F1): versión inicial.
@@ -1323,3 +1362,8 @@ Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se
   - **El servidor** copia esos datos a lo suyo al recibir el resumen (`POST /api/agente/config`), si el equipo está confirmado y el valor vale (lo que no vale se ignora): el nombre del equipo, sus etiquetas y su observación (notas, `por` = «Ana (desde la consola «Oficina»)»). Lo audita con el equipo como actor (`renombrar_equipo`, `etiquetas_equipo`, `poner_observacion`, con `desde_equipo: true`). Un dato que no está en `datos_equipo` no toca lo de aquí: así, al actualizar el agente, cada consola conserva su nombre hasta que alguien lo cambie con la orden. Con un equipo que ya tiene el dato puesto, un cambio local (`PATCH …/equipos/{e}`, `PUT …/etiquetas`, `PUT …/notas/observacion` de una consola anterior) dura hasta el siguiente resumen: manda el del equipo. Un servidor anterior no copia nada (la consola nueva enseña igual el nombre y las etiquetas del resumen).
   - **`quitar_destino { destino }`** (inofensiva, solo administradores y propietarios; `admite: "quitar_destino"`): el equipo olvida un destino que ya no usa nada (ni un repositorio, ni una copia externa, ni una derivada; si no, `fallida` diciendo qué lo usa), con sus credenciales. **Nunca borra nada de lo que hay en él**; si es una carpeta del equipo y aún tiene repositorios de restic dentro, el mensaje lo dice («Su carpeta aún tiene copias guardadas (1 repositorio): no se ha borrado nada…»), sin la ruta. Se anota en el historial común y se sube a todas las consolas.
   - **`quitar_repositorio { repo, quitar_destino: true }`**: además, si su destino se queda sin uso, lo olvida (como `quitar_destino`). Un agente anterior ignora el campo y el destino se queda (la consola ofrece luego «Quitar este destino» si el agente lo admite).
+- v1.4x (pendiente de numerar al unir; actualización automática de los agentes, [actualizaciones.md](actualizaciones.md), §14). Compatible hacia atrás: rutas nuevas, un mensaje del canal que los agentes anteriores ignoran, un campo nuevo del informe y un tipo de aviso nuevo:
+  - **Servidor (propietario):** `GET`/`PUT /api/servidor/publicacion` y `PUT /api/servidor/publicacion/{versión}/{nombre}`: el espejo de las versiones del agente, que solo acepta lo firmado con una llave fijada al compilar y cada archivo con su SHA-256. CLI `poner-publicacion`.
+  - **Cliente:** `GET`/`PUT /api/clientes/{c}/actualizaciones`, `POST …/actualizaciones/ahora` y `PUT …/equipos/{e}/anillo` (política automática por anillos, solo cuando apruebe o en pausa; ventana; «Actualizar ahora»).
+  - **Agentes:** `GET /api/agente/actualizacion` y `…/archivos/{versión}/{nombre}`; `{"t":"actualizacion"}` por el canal; `informe.actualizacion`; aviso `actualizacion_fallida` (y su entrada en el historial común); `admite: "actualizaciones"`. Un servidor anterior no tiene las rutas (404): el agente no cuenta su política y busca en GitHub si se le permite. Una consola anterior no enseña nada de esto.
+  - Con un informe que dice `vuelta_atras`, el servidor retiene esa versión para el resto del cliente.

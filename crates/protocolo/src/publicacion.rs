@@ -955,7 +955,10 @@ mod tests {
         }
         let real = &v["firma_minisign_real"];
         let l = Llaves::leer(real["llave_pub"].as_str().unwrap()).unwrap();
-        assert_eq!(comprobar_firma(real["datos"].as_str().unwrap().as_bytes(), real["firma"].as_str().unwrap(), &l, &[]).as_deref(), Ok(real["llave"].as_str().unwrap()));
+        assert_eq!(
+            comprobar_firma(real["datos"].as_str().unwrap().as_bytes(), real["firma"].as_str().unwrap(), &l, &[]).as_deref(),
+            Ok(real["llave"].as_str().unwrap())
+        );
     }
 
     #[test]

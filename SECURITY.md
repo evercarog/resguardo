@@ -55,6 +55,7 @@ Resguardo está en **desarrollo activo**. Solo la última versión publicada rec
 - [docs/plataforma.md](docs/plataforma.md): arquitectura, niveles de autorización (sesión, contraseña del repositorio, clave de administración), protocolo y modelo de amenazas (§3).
 - [docs/agente-gestionado.md](docs/agente-gestionado.md): mensajes firmados y sellados, emparejamiento con código de comprobación.
 - [docs/compartir.md](docs/compartir.md): sobres cifrados y Servidor de copias (solo añadir, TLS con autoridad propia).
+- [docs/actualizaciones.md](docs/actualizaciones.md): actualización automática de los agentes (manifiestos firmados con minisign y llave fuera de línea, consolas como espejo que no firman, sin bajar de versión, vuelta atrás) y su modelo de amenazas (§7).
 - Vectores de prueba del protocolo: `crates/protocolo/vectors/`.
 
 ## Diseño de seguridad de la app y el agente (Windows)
