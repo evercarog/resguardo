@@ -37,6 +37,10 @@ pub struct Opciones {
     /// v1.34: consola en internet (`--dominio` o `--publico`): cuotas
     /// predeterminadas más estrictas (ver `crate::cuotas`).
     pub publico: bool,
+    /// Llaves de publicación de **pruebas** (texto de un `.pub` de minisign), además de las
+    /// fijadas al compilar. Solo cuentan en una compilación de desarrollo
+    /// (`RESGUARDO_LLAVES_PRUEBAS`; ver `crate::publicaciones::llaves`).
+    pub llaves_pruebas: Option<String>,
 }
 
 impl Default for Opciones {
@@ -52,6 +56,7 @@ impl Default for Opciones {
             proxy_redes: Vec::new(),
             url_agentes: None,
             publico: false,
+            llaves_pruebas: None,
         }
     }
 }

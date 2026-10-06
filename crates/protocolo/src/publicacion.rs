@@ -391,6 +391,11 @@ impl Manifiesto {
         self.archivos.iter().find(|a| a.plataforma == plataforma)
     }
 
+    /// El archivo con ese nombre.
+    pub fn archivo_por_nombre(&self, nombre: &str) -> Option<&Archivo> {
+        self.archivos.iter().find(|a| a.nombre == nombre)
+    }
+
     /// La versión (ya comprobada al leer).
     pub fn version_leida(&self) -> Option<Version> {
         Version::leer(&self.version)

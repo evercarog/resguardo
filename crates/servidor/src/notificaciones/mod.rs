@@ -426,6 +426,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
+        "actualizacion_fallida" => format!("{e} no pudo actualizarse y volvió a la versión anterior"),
         _ => format!("Aviso de {e}"),
     };
     let ok = match tipo {
