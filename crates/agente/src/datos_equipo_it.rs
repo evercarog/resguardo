@@ -9,7 +9,7 @@
 //!    desde B llegan a A.
 //! 3. Un cambio local en una consola (como hasta ahora) con el equipo ya con nombre
 //!    propio: manda el del equipo.
-//! 4. `quitar_destino`: no quita uno en uso; quita uno vacío sin borrar nada de su
+//! 4. `quitar_destino` (con la clave de administración): no quita uno en uso; quita uno vacío sin borrar nada de su
 //!    carpeta (y lo dice si aún tiene copias). `quitar_repositorio { quitar_destino }`
 //!    olvida también el destino que se queda vacío.
 
@@ -208,23 +208,33 @@ fn datos_del_equipo_en_todas_sus_consolas_y_quitar_destinos() {
         ..Default::default()
     });
     guardar(&v).unwrap();
-    let quitar = |seq: u64, destino: &str| {
-        let mut o = orden(&ea, seq, "quitar_destino", json!({ "destino": destino }));
-        o.autorizacion.prueba_admin = None;
-        o
-    };
-    enviar(&ca, &ea, &quitar(4, "d-usado"));
-    let r = esperar_estado(&ca, &ea, 4, "fallida");
+    // Pide la clave de administración (v1.4x): sin ella (una consola anterior, que la
+    // mandaba como inofensiva) se rechaza con un mensaje claro y no cuenta como intento fallido.
+    let mut sin_clave = orden(&ea, 4, "quitar_destino", json!({ "destino": "d-vacio" }));
+    sin_clave.autorizacion.prueba_admin = None;
+    enviar(&ca, &ea, &sin_clave);
+    let r = esperar_estado(&ca, &ea, 4, "rechazada");
+    assert!(r["mensaje"].as_str().unwrap().contains("clave de administración"), "{r}");
+    assert!(cargar().unwrap().destinos.iter().any(|d| d.id == "d-vacio"), "sin la clave no se quita nada");
+    // Con una clave equivocada, tampoco (y sí cuenta como intento fallido).
+    let mut mala = orden(&ea, 5, "quitar_destino", json!({ "destino": "d-vacio" }));
+    mala.autorizacion.prueba_admin = Some(B64.encode([7u8; 32]));
+    enviar(&ca, &ea, &mala);
+    let r = esperar_estado(&ca, &ea, 5, "rechazada");
+    assert!(r["mensaje"].as_str().unwrap().contains("no es correcta"), "{r}");
+    let quitar = |seq: u64, destino: &str| orden(&ea, seq, "quitar_destino", json!({ "destino": destino }));
+    enviar(&ca, &ea, &quitar(6, "d-usado"));
+    let r = esperar_estado(&ca, &ea, 6, "fallida");
     assert!(r["mensaje"].as_str().unwrap().contains("Documentos"), "{r}");
-    enviar(&ca, &ea, &quitar(5, "d-local"));
-    let r = esperar_estado(&ca, &ea, 5, "hecha");
+    enviar(&ca, &ea, &quitar(7, "d-local"));
+    let r = esperar_estado(&ca, &ea, 7, "hecha");
     assert!(r["mensaje"].as_str().unwrap().contains("aún tiene copias guardadas (1 repositorio)"), "{r}");
     assert!(carpeta.join("repo-viejo/config").is_file(), "nunca se borra nada de la carpeta");
-    enviar(&ca, &ea, &quitar(6, "d-vacio"));
-    let r = esperar_estado(&ca, &ea, 6, "hecha");
+    enviar(&ca, &ea, &quitar(8, "d-vacio"));
+    let r = esperar_estado(&ca, &ea, 8, "hecha");
     assert!(r["mensaje"].as_str().unwrap().contains("No se ha borrado nada"), "{r}");
-    enviar(&ca, &ea, &quitar(7, "d-vacio"));
-    esperar_estado(&ca, &ea, 7, "fallida");
+    enviar(&ca, &ea, &quitar(9, "d-vacio"));
+    esperar_estado(&ca, &ea, 9, "fallida");
     let ids: Vec<String> = cargar().unwrap().destinos.iter().map(|d| d.id.clone()).collect();
     assert_eq!(ids, vec!["d-usado".to_string()]);
     // B lo ve también (sin ese destino en su resumen).

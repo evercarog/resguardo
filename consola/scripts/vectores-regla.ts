@@ -9,6 +9,9 @@ import type { DestinoCatalogo, DestinoResumen, Equipo, Informe, RepoInforme } fr
 import {
   claveEspejoCarpeta,
   cuentaRegla,
+  estadoParte,
+  globoParte,
+  lineaFalta,
   fraseRegla,
   horasEntre,
   margenHoras,
@@ -199,6 +202,24 @@ igual("el entorno, en palabras", [textoEntorno(almacen), textoEntorno(recepcion)
   null,
   "En una máquina virtual Hyper-V",
 ]);
+
+console.log("\n· La tira: estado corto de cada parte y la línea de lo que falta");
+{
+  const parte = (id: "copias" | "errores", valor: number, meta: number, cumple: boolean, cumple_config: boolean) => ({ id, meta, valor, valor_config: valor, cumple, cumple_config, accion: "", detalle: "" });
+  igual("cumple", estadoParte(parte("copias", 3, 3, true, true)), { tono: "ok", icono: "cumple", texto: "Cumple" });
+  igual("la configuración cumple, algo no está al día", estadoParte(parte("copias", 2, 3, false, true)), { tono: "warn", icono: "atrasado", texto: "Atrasado" });
+  igual("falta uno / faltan dos", [estadoParte(parte("copias", 2, 3, false, false)).texto, estadoParte(parte("copias", 1, 3, false, false)).texto], ["Falta 1", "Faltan 2"]);
+  igual("en el «0», lo que hay por resolver", estadoParte(parte("errores", 2, 0, false, false)).texto, "Faltan 2");
+  igual("la línea corta: lo atrasado (el espejo en la nube lleva 70 h fallando)", lineaFalta(mal.regla), "No está al día: 1 fuera de la oficina.");
+  igual(
+    "la línea corta: lo que falta",
+    lineaFalta({ ...mal.regla, partes: mal.regla.partes.map((p) => (p.id === "inmutable" ? { ...p, cumple: false, cumple_config: false } : p)) }),
+    "Falta: 1 inmutable. No está al día: 1 fuera de la oficina.",
+  );
+  igual("si cumple, nada", lineaFalta({ ...mal.regla, cumple: true }), null);
+  const pm = mal.regla.partes.find((p) => !p.cumple)!;
+  cierto("el globo de una parte dice qué pide, cómo está y qué hacer", globoParte(pm, mal, "c1", AHORA).startsWith("1 fuera de la oficina: ") && globoParte(pm, mal, "c1", AHORA).includes("Qué hacer"));
+}
 
 console.log(`\n${total - fallos}/${total} correctos`);
 if (fallos) process.exit(1);

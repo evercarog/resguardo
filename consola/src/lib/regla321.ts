@@ -607,6 +607,34 @@ export function cifraParte(p: ParteRegla): string {
   return p.valor > p.meta ? `${p.valor} (pide ${p.meta})` : `${p.valor} de ${p.meta}`;
 }
 
+/**
+ * El estado de una parte en una o dos palabras (la tira, debajo de su nombre):
+ * «Cumple», «Atrasado» (la configuración cumple, pero algo no está al día) o
+ * «Falta 1» / «Faltan 2» (en el «0», lo que hay por resolver). Con su tono y su icono: el
+ * estado nunca va solo en el color.
+ */
+export function estadoParte(p: ParteRegla): { tono: "ok" | "warn" | "neutral"; icono: "cumple" | "atrasado" | "falta"; texto: string } {
+  if (p.cumple) return { tono: "ok", icono: "cumple", texto: "Cumple" };
+  if (p.cumple_config) return { tono: "warn", icono: "atrasado", texto: "Atrasado" };
+  // En el «0», lo que hay por resolver (verificación, prueba, datos dañados); en las demás, lo que falta.
+  const n = p.id === "errores" ? Math.max(1, p.valor) : Math.max(1, p.meta - p.valor);
+  return { tono: "neutral", icono: "falta", texto: n === 1 ? "Falta 1" : `Faltan ${n}` };
+}
+
+/** El globo de una parte: qué pide, cómo está y, si falta algo, qué hacer. */
+export function globoParte(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: number): string {
+  const que = queHacer(p, rc, cliente, ahora);
+  return [`${PARTES[p.id].titulo}: ${cifraParte(p)}.`, fraseParte(p, rc, ahora), que ? `Qué hacer: ${que.texto}` : ""].filter(Boolean).join(" ");
+}
+
+/** Lo que se ve debajo de la tira: una línea corta, «Falta: 1 fuera de la oficina · 1 inmutable», o null si cumple. */
+export function lineaFalta(r: Regla321): string | null {
+  if (r.cumple) return null;
+  const falta = r.partes.filter((p) => !p.cumple_config).map((p) => PARTES[p.id].titulo);
+  const atrasado = r.partes.filter((p) => !p.cumple && p.cumple_config).map((p) => PARTES[p.id].titulo);
+  return [falta.length ? `Falta: ${falta.join(" · ")}` : "", atrasado.length ? `No está al día: ${atrasado.join(" · ")}` : ""].filter(Boolean).join(". ") + ".";
+}
+
 /** Lo que dice la parte, en una frase, con los nombres de los destinos. */
 export function fraseParte(p: ParteRegla, rc: ReglaCopia, ahora: number): string {
   const al = rc.pasos.filter((x) => pasoAlDia(x, ahora));
@@ -650,7 +678,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
       if (!x) return { texto: "Ponla al día." };
       const desde = x.ultima_ok ? `no se pone al día desde ${relativo(x.ultima_ok, ahora)}` : "no está al día (la última vez falló o aún no se ha hecho)";
       const href = x.tipo === "espejo" && x.equipoId ? `/c/${cliente}/equipos/${x.equipoId}` : x.tipo === "copia" ? `/c/${cliente}/equipos/${e.id}/copias/${encodeURIComponent(rc.copia.id)}` : repo;
-      return { texto: `«${x.nombre}» ${desde}${atrasados.length > 1 ? ` (y ${plural(atrasados.length - 1, "paso más", "pasos más")})` : ""}: revisa por qué.`, enlace: { texto: "Ver", href } };
+      return { texto: `«${x.nombre}» ${desde}${atrasados.length > 1 ? ` (y ${plural(atrasados.length - 1, "paso más", "pasos más")})` : ""}: revisa por qué.`, enlace: { texto: `Revisar «${x.nombre}»`, href } };
     }
     case "anadir_destino":
       return { texto: "Añade otro destino: una copia externa (la nube u otro disco) o un espejo del almacén.", enlace: externa };
@@ -681,7 +709,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
       };
     case "revisar_destino": {
       const x = rc.pasos.find((y) => y.verificacion_mal);
-      return { texto: `${x ? `«${x.nombre}»` : "Un destino"} encontró archivos dañados al comprobarse: revísalo.`, enlace: x?.equipoId ? { texto: "Ver", href: `/c/${cliente}/equipos/${x.equipoId}` } : undefined };
+      return { texto: `${x ? `«${x.nombre}»` : "Un destino"} encontró archivos dañados al comprobarse: revísalo.`, enlace: x?.equipoId ? { texto: `Revisar «${x.nombre}»`, href: `/c/${cliente}/equipos/${x.equipoId}` } : undefined };
     }
     default:
       return null;

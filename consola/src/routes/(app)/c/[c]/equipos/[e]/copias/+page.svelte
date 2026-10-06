@@ -53,6 +53,7 @@
   import { fraseConfig, queHacer, reglaEnEdicion } from "$lib/regla321";
   import { zonaDeDestino } from "$lib/destinos";
   import { destinoDe } from "$lib/repo";
+  import { claveDeDestino } from "$lib/fichaDestino";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
 
   const c = $derived(page.params.c ?? "");
@@ -128,6 +129,14 @@
         const i = tras ? cfg.copias.findIndex((x) => x.id === tras) : -1;
         if (i >= 0) nuevaDespues(i);
         else nueva();
+        // ?destino=<clave> (desde «Usar en una copia» de la página de un destino): un repositorio de este equipo allí.
+        const dest = page.url.searchParams.get("destino");
+        const enDestino = dest ? equipo.resumen?.repositorios?.find((r) => {
+          const d = destinoDe(equipo!.resumen?.destinos, r);
+          return !!d && claveDeDestino(d, actual.equipos) === dest;
+        }) : undefined;
+        const k = i >= 0 ? cfg.copias[i + 1] : cfg.copias.at(-1);
+        if (k && enDestino) k.repo = enDestino.id;
       }
       // ?copia=<id>: desde la página de la copia, con su tarjeta abierta.
       const pedida = page.url.searchParams.get("copia");

@@ -30,6 +30,8 @@
   import { destinoQuitable, usosDestino } from "$lib/datosEquipo";
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
   import { destinosDelCliente, TEXTO_TIPO, type DestinoVista } from "$lib/destinos";
+  import { hrefDestino } from "$lib/fichaDestino";
+  import { page } from "$app/state";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { nombreTipoNube } from "$lib/espejo";
   // Tarea 8: lo que sabe la regla 3-2-1-1-0 de cada destino (dónde está, si es inmutable).
@@ -66,6 +68,13 @@
   const administra = $derived(puede.administrar(actual.cliente?.rol));
   const conEquipos = $derived(actual.equipos.some((e) => e.confirmado && e.modo !== "trasladado"));
 
+  // Desde la página de un destino suelto («Nuevo repositorio aquí»): ?nuevo=1, una vez.
+  let nuevoPedido = false;
+  $effect(() => {
+    if (nuevoPedido || page.url.searchParams.get("nuevo") !== "1" || !administra || !conEquipos) return;
+    nuevoPedido = true;
+    untrack(() => (nuevo = true));
+  });
   const destinos = $derived.by(() => {
     const m = new Map<string, DestinoResumen & { equipos: Set<string> }>();
     for (const e of actual.equipos)
@@ -169,7 +178,7 @@
               {@const mz = marcarDesdeVista(v, actual.equipos)}
               {@const entorno = textoEntorno(z.almacen)}
               <div class="card tile destino">
-                <a class="tile-cab enlace-tile" href="/c/{actual.id}/equipos/{z.almacen.id}">
+                <a class="tile-cab enlace-tile" href={hrefDestino(actual.id ?? "", v.clave)}>
                   <span class="tile-ic"><Server size={16} /></span>
                   <span class="tile-nombre"><strong>{v.nombre} <ContadorNotas tipo="equipo" objeto={z.almacen.id} /></strong><span>{z.principal ? "Almacén" : "Otra zona del almacén"} · puerto <span class="pastilla mono">{z.puerto ?? "—"}</span>{#if z.espacio}{" · "}{bytes(z.espacio.libre)} libres{/if}</span></span>
                   <ChevronRight size={16} class="flecha" />
@@ -180,16 +189,19 @@
                 {#if mz.sistemaArchivos || entorno}<p class="tile-dato faint">{#if mz.sistemaArchivos}<span class="pastilla mono">{mz.sistemaArchivos}</span>{/if}{#if entorno}{" "}{entorno}{/if}</p>{/if}
                 {#if marcado(v)}<p class="tile-dato"><ShieldCheck size={12} />{marcado(v)}</p>{/if}
                 <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<span class="badge badge-sm tone-warn">Sin responder</span>{/if}
-                  {#if administra}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button><button class="btn btn-sm btn-ghost" onclick={() => (marcar = mz)} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}</span>
+                  <span class="corte" aria-hidden="true"></span>
+                  {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
+                  {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button><button class="btn btn-sm btn-ghost" onclick={() => (marcar = mz)} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}</span>
               </div>
             {:else}
               {@const d = v.destino}
               {@const Icono = v.clase === "nube" ? Cloud : (ICONO[v.tipo as keyof typeof ICONO] ?? Database)}
               <div class="card tile destino">
-                <span class="tile-cab">
+                <a class="tile-cab enlace-tile" href={hrefDestino(actual.id ?? "", v.clave)}>
                   <span class="tile-ic"><Icono size={16} /></span>
                   <span class="tile-nombre"><strong>{v.nombre}{#if d} <ContadorNotas tipo="destino" objeto={d.id} />{/if}</strong><span>{#if v.clase === "nube" && v.nube}{nombreTipoNube(v.nube.tipo)} · conectada en {v.nube.equipo.nombre}{:else if d && d.tipo === "local"}{d.red ? "Carpeta de otra máquina de la red" : d.extraible ? "Disco extraíble" : "Carpeta"} de {v.equipos.join(", ")}{d.unidad ? ` (${d.unidad})` : ""}{:else}{TEXTO_TIPO[v.tipo] ?? v.tipo}{/if}{#if v.donde && v.donde !== v.nombre}{" · "}<span class="pastilla mono">{v.donde}</span>{/if}</span></span>
-                </span>
+                  <ChevronRight size={16} class="flecha" />
+                </a>
                 <p class="tile-linea num">
                   {#if v.clase === "nube"}Para el espejo del almacén{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
                 </p>
@@ -201,7 +213,9 @@
                     {:else}<span class="badge badge-sm tone-warn" use:tip={"Las copias se quedan en el mismo equipo que protegen: si se daña o lo cifra un ransomware, se pierden las dos."}><TriangleAlert size={11} />En el mismo equipo</span>{/if}
                   {/if}
                   {#if v.clase === "nube" && v.nube && !["b2", "s3"].includes(v.nube.tipo)}<span class="badge badge-sm tone-neutral" use:tip={"Quien tenga su permiso puede borrar lo copiado: conviene que otro destino sea inmutable."}>No inmutable</span>{/if}
-                  {#if d}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
+                  <span class="corte" aria-hidden="true"></span>
+                  {#if puede.ordenar(actual.cliente?.rol) && v.clase !== "suelto"}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
+                  {#if d}<button class="btn btn-sm btn-ghost" class:notas-destino={v.clase === "suelto"} onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
                   {#if administra && v.clase !== "suelto"}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}
                   <!-- v1.56: sin repositorios ni copias que lo usen, se puede quitar del equipo (nada de lo guardado se borra). -->
@@ -322,6 +336,18 @@
   }
   .quitar-dest {
     color: var(--bad);
+  }
+  /* Los chips de estado en su fila y las acciones (empezando por «Usar en una copia») en la siguiente. */
+  .corte {
+    flex-basis: 100%;
+    height: 0;
+  }
+  .corte:first-child {
+    display: none;
+  }
+  /* La primera acción, alineada con el texto de la tarjeta (el botón fantasma lleva su relleno). */
+  .corte + .usar {
+    margin-left: -10px;
   }
   .rejilla.destinos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));

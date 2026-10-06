@@ -879,9 +879,18 @@ console.log("\n· Progreso en vivo (v1.25)");
   const c7 = calendario(ts, mot, ahora, 7, true);
   igual("la tira del móvil: una fila de días", [c7.modo, c7.filas.length, c7.columnas.length], ["tira", 1, 7]);
   const c365 = calendario(ts, mot, ahora, 365);
-  igual("un año: semanas × días de la semana, un cuadro por día", [c365.modo, c365.filas.length, c365.columnas.length >= 53], ["dias", 7, true]);
-  cierto("un año: el mes rotulado en la semana de su día 1", c365.columnas.filter((c) => c.mes).length >= 12);
+  igual("un año: un mes por fila (13, el primero y el último a medias) y los días del mes en columnas", [c365.modo, c365.filas.length, c365.columnas.length], ["meses", 13, 31]);
+  cierto("un año: cada fila rotulada con su mes; el año en la primera y en enero", c365.filas.every((f) => f.corto) && /\d{4}/.test(c365.filas[0].corto!) && c365.filas.filter((f) => f.ano).every((f) => /\d{4}/.test(f.corto!)));
   igual("un año: todas las versiones dentro", c365.celdas.flat().reduce((s, x) => s + x.ids.length, 0), 40);
+  {
+    // Cada casilla es su día: el mes de su fila y el día de su columna.
+    const bien = c365.celdas.every((fila, f) => fila.every((x, c) => x.fuera || new Date(x.desde).getDate() === c + 1));
+    cierto("un año: cada casilla es el día de su columna", bien);
+    const feb = c365.filas.findIndex((f) => f.texto.startsWith("febrero"));
+    igual("un año: los días que no tiene el mes quedan fuera (30 y 31 de febrero)", [c365.celdas[feb][29].fuera, c365.celdas[feb][30].fuera], [true, true]);
+    igual("un año: la casilla de ahora, en la última fila, en la columna de hoy", c365.celdas.at(-1)!.findIndex((x) => x.ahora), new Date(ahora).getDate() - 1);
+    igual("un año: la cabecera marca hoy", c365.columnas.findIndex((c) => c.hoy), new Date(ahora).getDate() - 1);
+  }
   const dias = porDias(ts);
   cierto("bitácora: por días, del más reciente al más antiguo", dias.length >= 20 && dias.every((d, i) => i === 0 || d.dia < dias[i - 1].dia) && dias.every((d) => d.vs.every((v, j) => j === 0 || v.t <= d.vs[j - 1].t)));
   igual("bitácora: «Hoy» y «Ayer»", [nombreDia(ahora, ahora), nombreDia(ahora - 86_400_000, ahora)], ["Hoy", "Ayer"]);

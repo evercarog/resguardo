@@ -47,15 +47,31 @@ export const claveDia = (t: number) => {
 
 /**
  * El alto (px) del marco del calendario: el mayor de sus vistas (por horas
- * con `filas` filas, el año de 7 filas o la tira del móvil), para que cambiar
+ * con `filas` filas, el año de 13 meses o la tira del móvil), para que cambiar
  * de periodo no mueva lo de debajo. Las medidas son las de CalendarioCalor:
- * rótulos de 14, cabecera de días de 18, casillas de 12 (26 la tira, 15 como
- * mucho las del año) y 3 de separación vertical.
+ * rótulos de 14, cabecera de días de 18, casillas de 12 como poco (26 la tira;
+ * en el año, 10, o 9 en el móvil, con «Desliza…» debajo) y 3 de separación
+ * vertical. Dentro, las filas crecen hasta llenarlo (`altoFila`).
  */
 export function altoCalendario(filas: number, movil: boolean): number {
-  const ano = 14 + 3 + 7 * 15 + 6 * 3 + 4;
+  const ano = 14 + 3 + 13 * (movil ? 9 : 10) + 12 * 3 + 4 + (movil ? 30 : 0);
   if (movil) return Math.max(14 + 3 + 26 + 3 + 14 + 4, ano);
   return Math.max(14 + 3 + 18 + 3 + filas * 12 + (filas - 1) * 3 + 3 + 14, ano);
+}
+
+/**
+ * El alto (px) de cada fila de casillas para llenar el marco de alto `marco`:
+ * así la sección tiene las mismas proporciones en todos los periodos (el año
+ * no se queda pequeño en medio de un marco grande). Por horas, de 12 a 26; en
+ * el año, de 9 a 24 (`pista`: se reserva sitio para «Desliza…» en el móvil);
+ * la tira, siempre 26.
+ */
+export function altoFila(modo: Calendario["modo"], filas: number, marco: number, pista = false): number {
+  if (modo === "tira" || filas <= 0) return 26;
+  const fijo = modo === "horas" ? 14 + 3 + 18 + 3 + 3 + 14 : 14 + 3 + 4 + (pista ? 30 : 0);
+  const [min, max] = modo === "horas" ? [12, 26] : [9, 24];
+  const cabe = Math.floor((marco - fijo - (filas - 1) * 3) / filas);
+  return Math.max(min, Math.min(max, cabe));
 }
 
 /** Un día en la URL («2026-09-29», hora local) como su inicio; null si no vale. */
@@ -163,9 +179,10 @@ export interface Columna {
   dia: Celda | null;
 }
 export interface Calendario {
-  /** «horas»: columnas = días, filas = horas; «dias»: columnas = semanas, filas = días de la semana; «tira»: una fila de días. */
-  modo: "horas" | "dias" | "tira";
-  filas: { texto: string; corto: string | null }[];
+  /** «horas»: columnas = días, filas = horas; «meses» (un año): filas = meses, columnas = días del mes; «tira»: una fila de días. */
+  modo: "horas" | "meses" | "tira";
+  /** `ano`: la fila empieza un año (enero, salvo la primera): lleva una raya encima. */
+  filas: { texto: string; corto: string | null; ano?: boolean }[];
   columnas: Columna[];
   celdas: Celda[][];
   /** Cuántas horas junta cada fila (vista por horas). */
@@ -179,8 +196,8 @@ export interface Calendario {
 
 const fmtMes = new Intl.DateTimeFormat("es", { month: "short" });
 const fmtMesAno = new Intl.DateTimeFormat("es", { month: "short", year: "numeric" });
+const fmtMesLargo = new Intl.DateTimeFormat("es", { month: "long", year: "numeric" });
 const INICIALES = ["D", "L", "M", "X", "J", "V", "S"];
-const DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
 /** Nivel de intensidad (cuatro escalones, como el historial de contribuciones). */
 export function nivelDe(n: number, max: number): 0 | 1 | 2 | 3 | 4 {
@@ -210,7 +227,8 @@ export function filasHoras(horas: number[]): { desde: number; paso: number; n: n
 
 /**
  * El calendario de las versiones de los últimos `dias` días. `tira`: una sola
- * fila de días (el móvil); con 365 días, siempre semanas × días de la semana.
+ * fila de días (el móvil); con 365 días, siempre un mes por fila y los días del
+ * mes en columnas (también en el móvil).
  * `filas`: las filas de horas ya elegidas (las mismas en 7, 30 y 60 días, para
  * que el calendario no cambie de alto al cambiar de periodo); sin ellas, las
  * de lo que hay en el rango.
@@ -251,40 +269,39 @@ export function calendario(
   };
 
   if (dias === 365) {
-    // Semanas (de lunes a domingo) en columnas y los días de la semana en filas.
-    modo = "dias";
-    const lunes = inicioDia(inicio, -((new Date(inicio).getDay() + 6) % 7));
-    const n = Math.round((inicioDia(hoy, 7 - ((new Date(hoy).getDay() + 6) % 7)) - lunes) / DIA / 7);
-    filas = DIAS_SEMANA.map((d, i) => ({ texto: d, corto: i % 2 === 0 && i < 6 ? INICIALES[(i + 1) % 7] : null }));
-    celdas = DIAS_SEMANA.map(() => []);
-    for (let c = 0; c < n; c++) {
-      const desde = inicioDia(lunes, c * 7);
-      columnas.push({ desde, hasta: inicioDia(desde, 7), mes: null, pie: null, inicial: null, hoy: hoy >= desde && hoy < inicioDia(desde, 7), finde: false, dia: null });
-      for (let f = 0; f < 7; f++) {
-        const d = inicioDia(desde, f);
-        celdas[f].push(mk(`${f}-${c}`, d, inicioDia(d, 1), d < inicio));
-      }
-    }
-    // El mes, en la semana que tiene su día 1 (y en la primera, si cabe).
-    let ultima = -9;
-    columnas.forEach((col, c) => {
-      for (let t = Math.max(col.desde, inicio); t < col.hasta; t = inicioDia(t, 1)) {
-        const d = new Date(t);
-        if (d.getDate() === 1 || (c === 0 && d.getDate() < 22)) {
-          col.mes = d.getMonth() === 0 ? fmtMesAno.format(d) : fmtMes.format(d);
-          if (c - ultima < 3 && ultima >= 0) columnas[ultima].mes = null;
-          ultima = c;
-          break;
-        }
-      }
+    // Un mes por fila (del más antiguo arriba a este abajo) y los días del mes
+    // en columnas (del 1 al 31): cada mes empieza y acaba en su fila, así que
+    // se ve de un vistazo dónde está cada uno, y el calendario tiene las mismas
+    // proporciones que la vista por horas (un rótulo a la izquierda, filas de
+    // casillas y la cabecera arriba). Los días que no tiene el mes (el 30 de
+    // febrero) y los de antes del periodo quedan vacíos.
+    modo = "meses";
+    const primero = new Date(inicio);
+    const ultimo = new Date(hoy);
+    const nMeses = (ultimo.getFullYear() - primero.getFullYear()) * 12 + ultimo.getMonth() - primero.getMonth() + 1;
+    const meses = Array.from({ length: nMeses }, (_, i) => new Date(primero.getFullYear(), primero.getMonth() + i, 1));
+    filas = meses.map((m, i) => ({
+      texto: fmtMesLargo.format(m),
+      corto: i === 0 || m.getMonth() === 0 ? fmtMesAno.format(m) : fmtMes.format(m),
+      ano: i > 0 && m.getMonth() === 0,
+    }));
+    const diaHoy = new Date(hoy).getDate();
+    columnas = Array.from({ length: 31 }, (_, c) => ({ desde: c, hasta: c + 1, mes: null, pie: String(c + 1), inicial: null, hoy: c + 1 === diaHoy, finde: false, dia: null }));
+    celdas = meses.map((m, f) => {
+      const largo = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      return columnas.map((_, c) => {
+        const d = new Date(m.getFullYear(), m.getMonth(), c + 1).getTime();
+        return mk(`${f}-${c}`, d, inicioDia(d, 1), c >= largo || d < inicio);
+      });
     });
-    for (const v of enRango) {
-      const c = Math.floor((inicioDia(v.t) - lunes) / DIA / 7 + 1e-6);
-      const f = (new Date(v.t).getDay() + 6) % 7;
-      celdas[f]?.[c]?.ids.push(v.id);
-    }
+    const casilla = (t: number) => {
+      const d = new Date(t);
+      const f = (d.getFullYear() - primero.getFullYear()) * 12 + d.getMonth() - primero.getMonth();
+      return celdas[f]?.[d.getDate() - 1];
+    };
+    for (const v of enRango) casilla(v.t)?.ids.push(v.id);
     for (const t of fallosEnRango) {
-      const x = celdas[(new Date(t).getDay() + 6) % 7]?.[Math.floor((inicioDia(t) - lunes) / DIA / 7 + 1e-6)];
+      const x = casilla(t);
       if (x) x.fallos++;
     }
   } else {
