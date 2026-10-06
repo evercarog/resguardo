@@ -573,13 +573,19 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
         && c.resumen["cambio_config"]["consola"]["identidad"].as_str().is_some_and(|i| i != st.identidad_pub))
     .then(|| texto_corto(c.resumen["cambio_config"]["consola"]["nombre"].as_str().unwrap_or("otra consola"), 80));
     let aviso_otra = clave_desde_otra.is_some();
-    let pistas = st
+    let (pistas, datos_cambiados) = st
         .db(move |db| {
             // v1.30: el almacén aplicó la retención en el repositorio de otro equipo: pista a su dueño.
             let actual = db.equipo(&ctx, &equipo)?;
             let previo = if papel == "almacenamiento" { actual.clone() } else { None };
             db.guardar_config(&ctx, &equipo, c.seq, &c.cifrado, &c.resumen)?;
             db.poner_papel(&ctx, &equipo, papel)?;
+            // v1.4x: el nombre, las etiquetas y la observación que tiene el equipo (puestos con sus
+            // órdenes desde cualquiera de sus consolas) mandan sobre los de aquí (consolas-multiples.md §6).
+            let mut datos = false;
+            if let Some(e) = actual.as_ref().filter(|e| e.confirmado) {
+                datos = crate::datos_equipo::aplicar(db, &ctx, e, &c.resumen)?;
+            }
             // v1.36: lo que pudo cambiar otra consola (la clave o la espera): el equipo lo dice al subir su configuración.
             if let Some(e) = actual.as_ref().filter(|e| e.confirmado) {
                 if let Some(et) = c.etiqueta.as_deref().filter(|et| b64_32(et) && e.etiqueta.as_deref() != Some(*et)) {
@@ -603,14 +609,17 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
             if let Some(e) = &evento {
                 crate::notificaciones::apuntar(db, e)?;
             }
-            let Some(almacen) = previo else { return Ok(Vec::new()) };
+            let Some(almacen) = previo else { return Ok((Vec::new(), datos)) };
             let cambios = crate::pistas::retenciones_nuevas(almacen.resumen.as_ref(), &c.resumen);
             if cambios.is_empty() {
-                return Ok(Vec::new());
+                return Ok((Vec::new(), datos));
             }
-            Ok(crate::pistas::duenos(&almacen, &cambios, &db.equipos(&ctx)?))
+            Ok((crate::pistas::duenos(&almacen, &cambios, &db.equipos(&ctx)?), datos))
         })
         .await?;
+    if datos_cambiados {
+        st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
+    }
     for (e, repo) in pistas {
         st.al_agente(&e, &json!({ "t": "refrescar", "repo": repo }));
     }

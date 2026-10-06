@@ -134,6 +134,10 @@ fn nombre_repo(v: &Vinculo, id: &str) -> String {
     v.repos_v2.iter().find(|r| r.id == id).map(|r| r.nombre.clone()).unwrap_or_else(|| id.to_string())
 }
 
+fn nombre_destino(v: &Vinculo, id: &str) -> String {
+    v.destinos.iter().find(|d| d.id == id).map(|d| d.nombre.clone()).unwrap_or_else(|| id.to_string())
+}
+
 /// Qué hace la orden, en palabras y sin rutas ni secretos (para enseñarla en todas las consolas).
 pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
     let c = &o.cuerpo;
@@ -158,6 +162,9 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "quitar_nube" => format!("Desconectar la nube «{}»", corto(c["nombre"].as_str().unwrap_or(""), 60)),
         "retencion_almacen" => format!("Cambiar la retención del almacén en {}", almacen()),
         "aplicar_retencion_almacen" => format!("Aplicar la retención del almacén en {}", almacen()),
+        // v1.4x: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
+        "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => crate::datos_equipo::descripcion(&o.tipo, c)?,
+        "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
         _ => return None,
     };
     Some(corto(&crate::web::public_message(&d), 160))

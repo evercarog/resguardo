@@ -129,6 +129,8 @@ impl Consola {
         let url = format!("{}{ruta}", self.url);
         let r = match (metodo, cuerpo) {
             ("GET", _) => self.agente.get(&url).header("cookie", &self.cookie).call(),
+            ("PATCH", Some(c)) => self.agente.patch(&url).header("cookie", &self.cookie).header("x-resguardo", "1").send_json(&c),
+            ("PUT", Some(c)) => self.agente.put(&url).header("cookie", &self.cookie).header("x-resguardo", "1").send_json(&c),
             (_, Some(c)) => self.agente.post(&url).header("cookie", &self.cookie).header("x-resguardo", "1").send_json(&c),
             (_, None) => self.agente.post(&url).header("cookie", &self.cookie).header("x-resguardo", "1").send_empty(),
         };

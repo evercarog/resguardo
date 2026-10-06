@@ -14,6 +14,7 @@ pub mod auth;
 #[cfg(feature = "consola-integrada")]
 pub mod consola_integrada;
 pub mod cuotas;
+pub mod datos_equipo;
 pub mod error;
 pub mod estado;
 pub mod identidad;

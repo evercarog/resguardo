@@ -2,11 +2,11 @@
 
 mod clientes;
 mod cuentas;
-mod equipos;
+pub(crate) mod equipos;
 pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
 pub(crate) mod marca;
-mod notas;
+pub(crate) mod notas;
 mod notificaciones;
 mod ordenes;
 mod panel;
