@@ -11,7 +11,7 @@
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { CalendarClock, FolderOpen, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
+  import { CalendarClock, FlaskConical, FolderOpen, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2, X } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { ApiError } from "$lib/api";
   import { argon2Navegador } from "$lib/cripto/argon2";
@@ -20,7 +20,7 @@
   import { descifrarConfig } from "$lib/cripto/simetrico";
   import { ErrorEtiqueta, ErrorLlavesCambiadas, kcfgComprobada, mandarOrden } from "$lib/ordenar";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
-  import { actual, cargarCliente, puede } from "$lib/estado.svelte";
+  import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { horarioEnFrase, lista, plural, relativo, resumenHorario } from "$lib/formato";
   import { errorReglas, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "$lib/horario";
@@ -44,7 +44,14 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { cargarPlantillas, guardarPlantilla, plantillaDe, retencionEnFrase, type Plantilla } from "$lib/plantillas";
-  import { configParaEnviar } from "$lib/configEnvio";
+  import { admitePruebaAuto, configParaEnviar, PRUEBA_POR_DEFECTO } from "$lib/configEnvio";
+  // Tarea 8: cómo queda cada copia en la regla 3-2-1-1-0 y la plantilla «3-2-1 recomendada».
+  import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
+  import Plantilla321 from "$lib/componentes/regla/Plantilla321.svelte";
+  import { fraseConfig, queHacer, reglaEnEdicion } from "$lib/regla321";
+  import { zonaDeDestino } from "$lib/destinos";
+  import { destinoDe } from "$lib/repo";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
 
   const c = $derived(page.params.c ?? "");
   const id = $derived(page.params.e ?? "");
@@ -252,6 +259,34 @@
     return { lugar: dc?.tipo === "local" && dc.donde ? { ...l, detalle: dc.donde } : l, riesgo: !!rr && !!riesgoMismoEquipo(rr, equipo, actual.equipos) };
   }
 
+  // --- Tarea 8: la regla 3-2-1-1-0 de cada copia mientras se edita -----------------
+  $effect(() => {
+    const cc = c;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const catalogo = $derived(catalogoDe(c));
+  /** Cómo queda una copia con lo que se va a enviar (su repositorio, la verificación y la prueba). */
+  function reglaDe(k: CopiaConfig) {
+    if (!equipo || !k.repo) return null;
+    return reglaEnEdicion(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), equipo.ultimo_informe, catalogo, reloj.ahora, {
+      verificacion: !!cfg?.verificaciones?.[k.repo],
+      prueba: !!cfg?.pruebas_restauracion?.[k.repo],
+    });
+  }
+  /** Las copias añadidas con la plantilla «3-2-1 recomendada» (para enseñar sus pasos). */
+  let con321 = $state<string[]>([]);
+  /** Plantilla «3-2-1 recomendada» (8d): una copia al almacén con verificación semanal y prueba mensual. */
+  function nueva321() {
+    if (!cfg || !equipo) return;
+    const enAlmacen = repos.find((r) => zonaDeDestino(destinoDe(equipo!.resumen?.destinos, equipo!.resumen?.repositorios?.find((x) => x.id === r.id) ?? r), actual.equipos)?.principal);
+    const repo = (enAlmacen ?? repos[0])?.id ?? "";
+    const id = `copia-${crypto.randomUUID().slice(0, 8)}`;
+    cfg.copias.push({ id, nombre: "Copia 3-2-1", repo, carpetas: [], exclusiones: ["*.tmp", "~$*", "Thumbs.db"], horario: { dias: [1, 2, 3, 4, 5, 6, 7], horas: ["21:00"] }, activa: true, gancho: [], solo_si_cambios: true });
+    if (repo && admiteVerif && !cfg.verificaciones?.[repo]) ponerVerif(repo, { ...VERIFICACION_POR_DEFECTO, cada_dias: 7, porcentaje: 10 });
+    if (repo && admitePrueba && !cfg.pruebas_restauracion?.[repo]) ponerPrueba(repo, { ...PRUEBA_POR_DEFECTO });
+    con321 = [...con321, id];
+  }
+
   function nueva() {
     if (!cfg) return;
     cfg.copias.push({
@@ -321,12 +356,31 @@
     if (!Object.keys(mapa).length && !(JSON.parse(original || "{}") as Partial<Configuracion>).verificaciones) delete cfg.verificaciones;
     else cfg.verificaciones = mapa;
   }
+  // --- Tarea 8: prueba de restauración automática (`config.pruebas_restauracion`) ---
+  const admitePrueba = $derived(admitePruebaAuto(equipo));
+  /** «?prueba=<repo>»: desde la regla 3-2-1 de una copia. */
+  const pruebaPedida = $derived(page.url.searchParams.get("prueba"));
+  let pruebaVista = false;
+  $effect(() => {
+    if (!cfg || !pruebaPedida || pruebaVista) return;
+    pruebaVista = true;
+    queueMicrotask(() => document.getElementById("prueba-restauracion")?.scrollIntoView({ block: "start" }));
+  });
+  function ponerPrueba(repo: string, p: { cada_dias: number } | null) {
+    if (!cfg) return;
+    const mapa = { ...(cfg.pruebas_restauracion ?? {}) };
+    if (p) mapa[repo] = p;
+    else delete mapa[repo];
+    if (!Object.keys(mapa).length && !(JSON.parse(original || "{}") as Partial<Configuracion>).pruebas_restauracion) delete cfg.pruebas_restauracion;
+    else cfg.pruebas_restauracion = mapa;
+  }
   /** ¿Tiene alguna copia activa? (La verificación automática va con las copias del agente.) */
   const conCopias = (repo: string) => !!cfg?.copias.some((k) => k.repo === repo && k.activa);
 
   const problemas = $derived(
     [
       ...Object.entries(cfg?.verificaciones ?? {}).flatMap(([r, v]) => (errorVerificacion(v, admiteVerifHorario) ? [`la verificación de «${repos.find((x) => x.id === r)?.nombre ?? r}»: ${errorVerificacion(v, admiteVerifHorario)!.toLowerCase()}`] : [])),
+      ...Object.entries(cfg?.pruebas_restauracion ?? {}).flatMap(([r, p]) => (!Number.isInteger(p.cada_dias) || p.cada_dias < 1 || p.cada_dias > 31 ? [`la prueba de restauración de «${repos.find((x) => x.id === r)?.nombre ?? r}»: de cada día a cada 31 días`] : [])),
     ].concat(
     (cfg?.copias ?? []).flatMap((k) => [
       ...(k.activa && !k.carpetas.length ? [`«${k.nombre}» no tiene carpetas.`] : []),
@@ -350,6 +404,7 @@
         verif: admiteVerif,
         verifHorario: admiteVerifHorario,
         escritorio: admiteEscritorio,
+        pruebas: admitePrueba,
       });
       const o = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "config", cuerpo: { config }, secretos: { prueba }, alPaso: (t) => (paso = t) });
       original = JSON.stringify(cfg);
@@ -454,6 +509,20 @@
           />
         </div>
         <p class="frase">{frase(k)}</p>
+        {#if k.activa}
+          {@const rc = reglaDe(k)}
+          {#if rc}
+            {@const falta = rc.regla.partes.find((p) => !p.cumple_config)}
+            {@const que = falta ? queHacer(falta, rc, c, reloj.ahora) : null}
+            <p class="regla-k" class:cumple={rc.regla.cumple_config}>
+              <TiraRegla {rc} cliente={c} ahora={reloj.ahora} compacta />
+              <span>{fraseConfig(rc.regla)}{#if que}{" "}<span class="faint">{que.texto}</span>{#if que.enlace}{" "}<a class="link" href={que.enlace.href}>{que.enlace.texto} →</a>{/if}{/if}</span>
+            </p>
+          {/if}
+        {/if}
+        {#if con321.includes(k.id)}
+          <Plantilla321 {equipo} repo={k.repo} cliente={c} equipos={actual.equipos} verificacion={!!cfg.verificaciones?.[k.repo]} prueba={!!cfg.pruebas_restauracion?.[k.repo]} {admitePrueba} onquitar={() => (con321 = con321.filter((x) => x !== k.id))} />
+        {/if}
         <!-- v1.40: van aparte (en el servidor, sin la clave): se guardan al momento, no con «Enviar». -->
         {#if guardadas.has(k.id)}<Observaciones tipo="copia" objeto={objetoDe(equipo.id, k.id)} compacto />{/if}
         {#if usadas[k.id]}
@@ -519,6 +588,7 @@
 
     <div class="nueva-fila">
       <button class="btn nueva" onclick={nueva} disabled={!repos.length}><Plus size={16} />Añadir una copia</button>
+      <button class="btn btn-ghost" onclick={nueva321} disabled={!repos.length} use:tip={"Una copia cada día al almacén, con verificación semanal y prueba de restauración mensual; y dice dónde añadir el espejo a otro disco y la copia en la nube"}><ShieldCheck size={16} />Con la plantilla 3-2-1</button>
       {#if plantillas.length && repos.length}
         <MenuAcciones texto="Desde una plantilla" etiqueta="Añadir una copia desde una plantilla" grupos={[plantillas.map((p) => ({ texto: p.nombre, onclick: () => nuevaDesde(p) }))]} />
       {/if}
@@ -541,6 +611,28 @@
                 {#if !conCopias(r.id)}<span class="faint frase-verif">Se pondrá cuando el repositorio tenga alguna copia activa.</span>{/if}
               {:else}
                 <span class="faint frase-verif">Sin verificación automática.</span>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      </section>
+
+      <!-- Tarea 8: prueba de restauración automática (el «0» de la regla 3-2-1-1-0). -->
+      <section class="card p verif" id="prueba-restauracion" aria-labelledby="t-prueba">
+        <h2 class="section-title" id="t-prueba"><FlaskConical size={16} />Prueba de restauración automática <Ayuda id="regla-321" /></h2>
+        {#if !admitePrueba}
+          <p class="faint">Actualiza el agente de {equipo.nombre}{versionAgente ? ` (tiene la ${versionAgente})` : ""} para programarla desde aquí. Mientras, «Probar la restauración» en su ficha la hace a mano (conviene cada mes).</p>
+        {:else}
+          <p class="faint">{equipo.nombre} restaura unos archivos al azar de la última versión a una carpeta temporal y los compara con lo guardado. No toca tus archivos. La primera, a las 04:00 siguientes.</p>
+          {#each repos as r (r.id)}
+            {@const pr = cfg.pruebas_restauracion?.[r.id]}
+            <div class="verif-fila" class:resaltada={r.id === pruebaPedida}>
+              <label class="switch-row"><input type="checkbox" class="switch" checked={!!pr} onchange={(e) => ponerPrueba(r.id, e.currentTarget.checked ? { ...PRUEBA_POR_DEFECTO } : null)} /><span>{r.nombre}</span></label>
+              {#if pr}
+                <label class="cada-dias">Cada <input class="input num" type="number" min="1" max="31" value={pr.cada_dias} oninput={(e) => ponerPrueba(r.id, { cada_dias: Number(e.currentTarget.value) })} aria-label="Cada cuántos días, la prueba de «{r.nombre}»" /> días</label>
+                {#if !conCopias(r.id)}<span class="faint frase-verif">Se pondrá cuando el repositorio tenga alguna copia activa.</span>{/if}
+              {:else}
+                <span class="faint frase-verif">Sin prueba automática.</span>
               {/if}
             </div>
           {/each}
@@ -765,6 +857,27 @@
   .frase-verif {
     flex-basis: 100%;
     font-size: var(--fs-sm);
+  }
+  /* Tarea 8: la prueba de restauración (cada N días) y la regla 3-2-1 de cada copia. */
+  .cada-dias {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-sm);
+  }
+  .cada-dias .input {
+    width: 4.5em;
+  }
+  .regla-k {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+  }
+  .regla-k.cumple {
+    color: var(--text-1);
   }
   .lista-pla {
     display: flex;

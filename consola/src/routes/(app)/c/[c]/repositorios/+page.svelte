@@ -30,11 +30,21 @@
   import { destinosDelCliente, TEXTO_TIPO, type DestinoVista } from "$lib/destinos";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { nombreTipoNube } from "$lib/espejo";
+  // Tarea 8: lo que sabe la regla 3-2-1-1-0 de cada destino (dónde está, si es inmutable).
+  import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
+  import { marcarDesdeVista, TEXTO_INMUTABLE, TEXTO_LUGAR, textoEntorno, type MarcarDestino } from "$lib/regla321";
 
   let nuevo = $state(false);
   /** Tarea 7a: crear un destino sin repositorio, y cambiarle el nombre a uno. */
   let nuevoDestino = $state(false);
   let renombrar = $state<DestinoVista | null>(null);
+  let marcar = $state<MarcarDestino | null>(null);
+  /** Lo marcado para la regla 3-2-1, en corto (o null si es lo deducido). */
+  function marcado(v: DestinoVista): string | null {
+    const a = v.catalogo?.atributos;
+    if (!a) return null;
+    return [a.lugar ? TEXTO_LUGAR[a.lugar] : null, a.inmutable ? TEXTO_INMUTABLE[a.inmutable].replace(/ \(.*\)$/, "") : null, a.soporte ? `soporte «${a.soporte}»` : null].filter(Boolean).join(" · ");
+  }
   /** Las notas de un destino (no tiene página propia). */
   let notasDestino = $state<{ id: string; nombre: string } | null>(null);
   /** Repositorios (y destinos nuevos) en camino: se ven en su sitio mientras el equipo los crea. */
@@ -134,7 +144,7 @@
       </div>
     {/if}
 
-    <section>
+    <section id="destinos">
       <div class="section-head"><h2>Destinos <span class="count">· {vistas.length}</span> <Ayuda id="destino" /></h2>{#if administra && conEquipos}<button class="btn btn-sm" onclick={() => (nuevoDestino = true)}><Plus size={14} />Nuevo destino</button>{/if}</div>
       {#if vistas.length || destinosEnCamino.length}
         <div class="rejilla destinos">
@@ -143,6 +153,8 @@
             {@const suyos = reposEn(v.ids)}
             {#if v.clase === "zona" && v.zona}
               {@const z = v.zona}
+              {@const mz = marcarDesdeVista(v, actual.equipos)}
+              {@const entorno = textoEntorno(z.almacen)}
               <div class="card tile destino">
                 <a class="tile-cab enlace-tile" href="/c/{actual.id}/equipos/{z.almacen.id}">
                   <span class="tile-ic"><Server size={16} /></span>
@@ -152,8 +164,10 @@
                 <p class="tile-linea num">
                   {plural(z.usuarios, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}
                 </p>
+                {#if mz.sistemaArchivos || entorno}<p class="tile-dato faint">{#if mz.sistemaArchivos}<span class="pastilla mono">{mz.sistemaArchivos}</span>{/if}{#if entorno}{" "}{entorno}{/if}</p>{/if}
+                {#if marcado(v)}<p class="tile-dato"><ShieldCheck size={12} />{marcado(v)}</p>{/if}
                 <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<span class="badge badge-sm tone-warn">Sin responder</span>{/if}
-                  {#if administra}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}</span>
+                  {#if administra}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button><button class="btn btn-sm btn-ghost" onclick={() => (marcar = mz)} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}</span>
               </div>
             {:else}
               {@const d = v.destino}
@@ -176,7 +190,10 @@
                   {#if v.clase === "nube" && v.nube && !["b2", "s3"].includes(v.nube.tipo)}<span class="badge badge-sm tone-neutral" use:tip={"Quien tenga su permiso puede borrar lo copiado: conviene que otro destino sea inmutable."}>No inmutable</span>{/if}
                   {#if d}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
+                  {#if administra && v.clase !== "suelto"}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}
                 </span>
+                {#if d?.sistema_archivos}<p class="tile-dato faint"><span class="pastilla mono">{d.sistema_archivos}</span> solo un dato</p>{/if}
+                {#if marcado(v)}<p class="tile-dato"><ShieldCheck size={12} />{marcado(v)}</p>{/if}
               </div>
             {/if}
           {/each}
@@ -250,6 +267,7 @@
 {/if}
 {#if nuevoDestino && actual.cliente}<NuevoDestino cliente={actual.cliente} equipos={actual.equipos} onclose={() => (nuevoDestino = false)} alCambiar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })} />{/if}
 {#if renombrar && actual.id}<RenombrarDestino cliente={actual.id} destino={renombrar} onclose={() => (renombrar = null)} />{/if}
+{#if marcar && actual.id}<AtributosDestino cliente={actual.id} destino={marcar} onclose={() => (marcar = null)} />{/if}
 {#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 <style>
@@ -272,6 +290,19 @@
   }
   .rejilla.destinos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  }
+  /* Tarea 8: el sistema de archivos (solo un dato) y lo marcado para la regla 3-2-1. */
+  .tile-dato {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+  }
+  .tile-dato :global(svg) {
+    color: var(--accent-text);
   }
   .enlace-tile {
     color: inherit;

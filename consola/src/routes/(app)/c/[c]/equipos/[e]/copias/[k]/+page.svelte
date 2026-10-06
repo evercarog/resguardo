@@ -63,6 +63,11 @@
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
   import { objetoDe } from "$lib/notas.svelte";
+  // Tarea 8: la regla 3-2-1-1-0 de esta copia (guía, nunca obligación).
+  import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
+  import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
+  import { marcarDesdePaso, reglaDeCopia, type MarcarDestino } from "$lib/regla321";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -113,6 +118,14 @@
   const almacen = $derived(destino?.equipo_almacen ? actual.equipos.find((x) => x.id === destino.equipo_almacen) : null);
   const espejo = $derived(espejoDelRepo(almacen?.resumen?.guarda_copias?.espejo ?? null, repo ? nombreEnAlmacen(destino?.donde, repo) : null));
   const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  // Tarea 8: la regla 3-2-1-1-0, con lo que dice el catálogo de destinos del cliente.
+  $effect(() => {
+    const cc = c;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const catalogo = $derived(catalogoDe(c));
+  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora) : null);
+  let marcar = $state<MarcarDestino | null>(null);
   // La retención que se le aplica a su repositorio (simulada con todas sus versiones, como en su página).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
   // v1.23: el historial que guarda el propio equipo (lo de antes, verificaciones, subidas…), por páginas y en vivo.
@@ -267,6 +280,7 @@
       items={[
         { id: "sec-resumen", texto: "Resumen" },
         { id: "t-que", texto: "Qué y cuándo" },
+        ...(regla ? [{ id: "sec-regla", texto: "Regla 3-2-1" }] : []),
         ...(versiones.length >= 2 || conDuracion.length >= 2 ? [{ id: "sec-graficas", texto: "Gráficas" }] : []),
         ...(problemas.length ? [{ id: "t-errores", texto: "Errores" }] : []),
         { id: "t-historial", texto: "Historial y versiones" },
@@ -419,6 +433,13 @@
         </dl>
       </section>
     </div>
+
+    {#if regla}
+      <div id="sec-regla">
+        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
+      </div>
+      {#if marcar}<AtributosDestino cliente={c} destino={marcar} onclose={() => (marcar = null)} />{/if}
+    {/if}
 
     {#if versiones.length >= 2 || conDuracion.length >= 2}
       <section class="card p graficas" id="sec-graficas" aria-label="Gráficas de la copia">
