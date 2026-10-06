@@ -198,7 +198,7 @@ fn principal_servicio(_args: Vec<OsString>) {
 
 // ---------- Instalar y desinstalar ----------
 
-fn es_administrador() -> bool {
+pub fn es_administrador() -> bool {
     herramienta("net.exe", &["session"]).is_ok()
 }
 
