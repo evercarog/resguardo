@@ -36,11 +36,30 @@ fn verifying_of(b64: &str) -> Result<VerifyingKey, String> {
 
 // ---------- Emparejamiento ----------
 
-/// Código de emparejamiento: 10 caracteres sin ambigüedades (~50 bits), como «ABCD-EFGH-JK».
+/// Letras y cifras de los códigos de emparejamiento: sin las que se confunden (I, L, O, 0, 1).
+pub const ALFABETO_CODIGO: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/// Código de emparejamiento: 10 caracteres sin ambigüedades (~49,5 bits), como «ABCD-EFGH-JK».
+///
+/// Desde v1.4x la consola genera los suyos (consola/src/lib/codigo.ts) y este solo lo usan las
+/// consolas anteriores y «Vincular este servidor». Antes tomaba los 10 primeros bytes de un
+/// UUID v4 con `% 31`: el byte 6 (versión) y el 8 (variante) no son aleatorios del todo y el
+/// módulo favorece unas letras. Ahora: solo bytes aleatorios y rechazo (sin sesgo).
 pub fn pairing_code() -> String {
-    const A: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    let bytes = uuid::Uuid::new_v4();
-    let chars: Vec<char> = bytes.as_bytes().iter().take(10).map(|b| A[*b as usize % A.len()] as char).collect();
+    let a = ALFABETO_CODIGO;
+    // 248 = 8 × 31: lo que quede por encima se descarta para que todas salgan igual.
+    let tope = (256 / a.len() * a.len()) as u8;
+    let mut chars: Vec<char> = Vec::with_capacity(10);
+    while chars.len() < 10 {
+        let u = uuid::Uuid::new_v4();
+        for (i, b) in u.as_bytes().iter().enumerate() {
+            // En un UUID v4, los bytes 6 y 8 llevan la versión y la variante.
+            if i == 6 || i == 8 || *b >= tope || chars.len() == 10 {
+                continue;
+            }
+            chars.push(a[*b as usize % a.len()] as char);
+        }
+    }
     format!("{}-{}-{}", chars[..4].iter().collect::<String>(), chars[4..8].iter().collect::<String>(), chars[8..].iter().collect::<String>())
 }
 
