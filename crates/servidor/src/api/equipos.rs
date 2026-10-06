@@ -343,7 +343,11 @@ pub async fn confirmar_emparejamiento(State(st): State<St>, u: Usuario, Path((c,
     let r = st
         .db_crudo(move |db| {
             let emp = db.emparejamiento(&ctx, &p)?.ok_or("no_existe")?;
-            if emp.estado != "unido" || emp.caduca <= ahora() {
+            // v1.4x: también uno ya confirmado al que le falta el alta del equipo (aún con su código):
+            // si la consola confirmó y el alta no salió (sin red, página cerrada), al reintentar
+            // confirmaba otra vez y recibía este error, sin forma de seguir.
+            let a_medias = emp.estado == "confirmado" && emp.codigo.is_some();
+            if !((emp.estado == "unido" && emp.caduca > ahora()) || a_medias) {
                 return Err("El equipo aún no se ha unido o el emparejamiento ha caducado.".into());
             }
             let equipo = emp.equipo_id.ok_or("no_existe")?;

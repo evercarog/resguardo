@@ -211,7 +211,12 @@
         throw new Error("Esa no es la clave de administración de este cliente (no coincide con la de sus otros equipos).");
       paso2 = "Confirmando el equipo…";
       // A medias (v1.42): ya confirmado y sin el alta; solo falta mandarla.
-      if (estadoEmp.estado !== "confirmado") await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
+      if (estadoEmp.estado !== "confirmado") {
+        await api.confirmarEmparejamiento(c, emp.id, etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub));
+        // Si el alta falla (p. ej. sin red), reintentar no vuelve a confirmar: el servidor ya
+        // no lo acepta («aún no se ha unido») y la persona se quedaba atascada.
+        estadoEmp = { ...estadoEmp, estado: "confirmado" };
+      }
       parar();
       const equipo = await api.equipo(c, eq.id);
       equipoNuevo = equipo;

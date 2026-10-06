@@ -175,6 +175,9 @@ async fn codigo_de_15_min_generado_en_el_navegador() {
     // Confirmado (sin el alta del equipo): sigue a medias y se puede anular.
     let r = p.pedir("POST", &format!("{ruta}/{emp}/confirmar"), Some(json!({ "etiqueta": "ETIQUETA" })), Some(&cookie)).await;
     assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    // Confirmar otra vez (el alta no salió y la consola reintenta): vale mientras falte el alta.
+    let r = p.pedir("POST", &format!("{ruta}/{emp}/confirmar"), Some(json!({ "etiqueta": "ETIQUETA" })), Some(&cookie)).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
     let v = p.pedir("GET", &format!("{ruta}/{emp}"), None, Some(&cookie)).await.json;
     assert_eq!((v["estado"].as_str(), v["codigo_hash"].as_str()), (Some("confirmado"), Some(hash.as_str())));
     let medias = p.pedir("GET", &format!("/api/clientes/{c}/a-medias"), None, Some(&cookie)).await.json;
