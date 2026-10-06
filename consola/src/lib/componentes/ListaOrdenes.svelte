@@ -1,7 +1,8 @@
 <script lang="ts">
   // Órdenes con su estado, quién las pidió, la respuesta del equipo y si esa
   // respuesta está firmada por él. Las que aún se pueden cancelar, con su botón.
-  import { ShieldAlert, ShieldCheck, X } from "@lucide/svelte";
+  import { RotateCcw, ShieldAlert, ShieldCheck, X } from "@lucide/svelte";
+  import { porQueNoSeAplico, sePuedeVolverAMandar } from "$lib/espera";
   import * as api from "$lib/api";
   import { resultadoFirmado } from "$lib/cripto/claves";
   import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
@@ -71,7 +72,8 @@
         N.º {o.seq} · {o.emitida_por.nombre} · <Tiempo iso={o.emitida} />
         {#if o.not_before}{" · "}espera hasta <time datetime={o.not_before}>{fechaLarga(o.not_before)}</time>{/if}
       </p>
-      {#if o.mensaje}<p class="mensaje">{o.mensaje}</p>{/if}
+      <!-- v1.4x: lo que no se aplicó dice por qué (antes, una caducada no decía nada). -->
+      {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje}<p class="mensaje">{o.mensaje}</p>{/if}
       <div class="pie">
         {#if o.firma_agente}
           <span class="firma" class:ok={firmada}>
@@ -79,6 +81,9 @@
           </span>
         {/if}
         {#if detalle(o)}<span class="faint det">{detalle(o)}</span>{/if}
+        {#if sePuedeVolverAMandar(o) && eq && puede.ordenar(actual.cliente?.rol)}
+          <a class="btn btn-sm volver" href="/c/{actual.id}/equipos/{eq.id}" title="Va sellada para el equipo: pídela otra vez desde su ficha."><RotateCcw size={14} />Volver a mandar</a>
+        {/if}
         {#if cancelable(o) && puede.ordenar(actual.cliente?.rol)}
           <button class="btn btn-sm cancelar" disabled={cancelando === o.id} onclick={() => cancelar(o)}><X size={14} />{cancelando === o.id ? "Cancelando…" : "Cancelar"}</button>
         {/if}
@@ -184,7 +189,11 @@
   .firma.ok {
     color: var(--ok);
   }
-  .cancelar {
+  .cancelar,
+  .volver {
     margin-left: auto;
+  }
+  .motivo {
+    color: var(--text-2);
   }
 </style>

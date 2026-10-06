@@ -552,6 +552,13 @@ export interface Equipo {
   ultimo_contacto: string | null;
   estado_servicio: "en_marcha" | "detenido_por_admin" | null;
   siguiente_seq: number;
+  /**
+   * v1.4x: el número para una orden con espera a un agente que no las guarda
+   * (sin `admite: ["ordenes_en_espera"]`): por encima de las que se manden mientras
+   * espera, para que el equipo no la descarte por «antigua» al llegar su hora.
+   * Un servidor anterior no lo manda.
+   */
+  seq_espera?: number;
   /** La espera que confirmó el equipo (null: la del cliente). */
   espera_min_horas?: number | null;
   resumen: ResumenEquipo | null;
@@ -651,6 +658,8 @@ export interface Orden {
   detalle: string | null;
   firma_agente: string | null;
   actualizada: string;
+  /** v1.4x: por qué caducó sin aplicarse (solo en las caducadas; un servidor anterior no lo manda). */
+  motivo?: "sin_entregar" | "sin_respuesta" | null;
   /** En `GET /ordenes?pendientes=1` (de todo el cliente) hace falta saber de qué equipo es. */
   equipo?: string;
 }
@@ -864,7 +873,9 @@ export type TipoAviso =
   // v1.49: otra consola mandó una orden que el equipo tiene en espera.
   | "orden_en_espera"
   // v1.50 (9b): un equipo vio que una de sus consolas rehízo su actividad.
-  | "auditoria_rehecha";
+  | "auditoria_rehecha"
+  // v1.4x: una orden con espera que caducó, se rechazó o falló sin aplicarse.
+  | "orden_no_aplicada";
 
 /**
  * v1.23: una entrada del historial que guarda el propio equipo (para siempre:
