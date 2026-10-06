@@ -8,7 +8,7 @@ import { bytes } from "../src/lib/formato";
 import { esFallo, pasaFiltro, sucesoHistorial, sucesosDe } from "../src/lib/historial";
 import { moviendoDe, textoPasoCopias } from "../src/lib/mover";
 import { textoCorto, textoMover } from "../src/lib/textoProgreso";
-import { altoCalendario, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
+import { altoCalendario, altoFila, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
 
 let fallos = 0;
 let total = 0;
@@ -113,7 +113,26 @@ console.log("\n· Un marco estable y las fechas (lib/lineaTiempo.ts)");
 const fijas = { desde: 8, paso: 1, n: 12 };
 igual("con las filas fijas, el mismo número de filas en 7, 30 y 60 días", [7, 30, 60].map((d) => calendario(vs, null, ahora, d as 7 | 30 | 60, false, [], fijas).filas.length), [12, 12, 12]);
 igual("el marco: el más alto de sus vistas (aquí, por horas)", altoCalendario(12, false), 52 + 15 * 12);
-igual("…con pocas filas, el del año", altoCalendario(2, false), altoCalendario(0, true));
+igual("…con pocas filas, el del año (13 meses de 10 px)", altoCalendario(2, false), 17 + 13 * 10 + 12 * 3 + 4);
+{
+  // Las filas llenan el marco: el año y las horas, del mismo alto en el mismo marco.
+  const m = altoCalendario(13, false);
+  const fh = altoFila("horas", 13, m);
+  const fa = altoFila("meses", 13, m);
+  igual("las filas por horas llenan el marco que marcan", 14 + 3 + 18 + 3 + 13 * fh + 12 * 3 + 3 + 14, m);
+  igual("el año, con las mismas proporciones: sus 13 filas llenan casi todo el marco", 17 + 4 + 13 * fa + 12 * 3 <= m && m - (17 + 4 + 13 * fa + 12 * 3) < 13, true);
+  igual("pocas horas en un marco grande: las filas crecen, como mucho a 26", altoFila("horas", 3, 400), 26);
+  igual("nunca por debajo de 12 (horas) ni de 9 (año)", [altoFila("horas", 30, 100), altoFila("meses", 13, 50)], [12, 9]);
+  igual("la tira, siempre 26", altoFila("tira", 1, 300), 26);
+}
+{
+  // Un año, en cualquier periodo del año: siempre 12 o 13 meses, los días en su sitio.
+  for (const mes of [0, 1, 5, 11]) {
+    const a = new Date(2026, mes, 15, 12).getTime();
+    const c = calendario(vs.map((v) => ({ ...v, t: a - 3_600_000 })), null, a, 365);
+    igual(`un año visto en ${["enero", "febrero", "junio", "diciembre"][[0, 1, 5, 11].indexOf(mes)]}: 13 filas de 31 días`, [c.filas.length, c.columnas.length, c.total], [13, 31, 1]);
+  }
+}
 igual("un día de la URL", diaDeClave("2026-09-29") === new Date(2026, 8, 29).getTime(), true);
 igual("un día mal formado", diaDeClave("29/09/2026"), null);
 const hoyL = new Date(2026, 9, 5, 12).getTime();
