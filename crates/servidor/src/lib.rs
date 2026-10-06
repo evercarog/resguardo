@@ -24,6 +24,7 @@ pub mod pistas;
 pub mod progreso;
 #[cfg(test)]
 mod propiedades;
+pub mod publicaciones;
 pub mod registro;
 pub mod respaldo;
 pub mod vivo;

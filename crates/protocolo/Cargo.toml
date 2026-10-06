@@ -23,7 +23,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
+# Firmas de las publicaciones (docs/actualizaciones.md): solo comprueba, sin dependencias (MIT).
+minisign-verify = "0.3"
+# Solo para firmar publicaciones en las pruebas (feature `pruebas`): el BLAKE2b de minisign.
+blake2 = { version = "0.10", optional = true }
+
+[features]
+# Firmar publicaciones con la llave de pruebas (solo pruebas del agente y del servidor).
+pruebas = ["dep:blake2"]
 
 [dev-dependencies]
+blake2 = "0.10"
 # Pruebas de propiedades (docs/plataforma.md, §7.3).
 proptest = { version = "1", default-features = false, features = ["std"] }

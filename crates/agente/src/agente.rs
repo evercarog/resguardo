@@ -21,6 +21,10 @@ pub fn main() -> i32 {
     if let Some(orden) = args.get(1).and_then(|a| crate::cli::alias(a)) {
         return crate::cli::ejecutar(&[orden.to_string()]);
     }
+    // El actualizador (una copia del programa anterior en la carpeta privada, docs/actualizaciones.md).
+    if let Some(plan) = value("--actualizar-agente") {
+        return crate::actualizacion::actualizador_main(&plan);
+    }
     // El agente de siempre se lanza a sí mismo con estos modos.
     if has("--agent-run") {
         return crate::agent_main();
@@ -105,6 +109,7 @@ pub fn main() -> i32 {
         let cada = value("--cada").and_then(|s| s.parse::<u64>().ok()).unwrap_or(300).max(10);
         crate::servidor_v2::hilo();
         crate::ipc_local::hilo();
+        crate::actualizacion::hilo();
         #[cfg(windows)]
         hilo_bandeja();
         // En pruebas, el Servidor de copias corre dentro de este proceso.
@@ -362,6 +367,8 @@ mod service {
         hilo_bandeja();
         // La ventana del equipo: ajustes y modo local con la clave (docs/agente-ventana.md §4).
         crate::ipc_local::hilo();
+        // La actualización automática (docs/actualizaciones.md).
+        crate::actualizacion::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         loop {
@@ -474,6 +481,8 @@ mod service {
         crate::servidor_v2::hilo();
         // El canal local con la clave de administración (docs/agente-ventana.md §4).
         crate::ipc_local::hilo();
+        // La actualización automática (docs/actualizaciones.md).
+        crate::actualizacion::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         'vueltas: loop {

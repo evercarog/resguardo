@@ -27,6 +27,7 @@
   import MoverAConsola from "$lib/componentes/MoverAConsola.svelte";
   import ServidoresRespaldo from "$lib/componentes/ServidoresRespaldo.svelte";
   import CopiaConsola from "$lib/componentes/CopiaConsola.svelte";
+  import PublicacionesServidor from "$lib/componentes/PublicacionesServidor.svelte";
   import NotificacionesServidor from "$lib/componentes/NotificacionesServidor.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
@@ -167,6 +168,7 @@
         ...(puede.propietario(rol) ? [{ id: "sec-ficha", texto: "Ficha" }] : []),
         ...(app.cuenta?.superusuario ? [{ id: "notificaciones", texto: "Notificaciones" }] : puede.propietario(rol) ? [{ id: "sec-notif", texto: "Notificaciones" }] : []),
         ...(app.cuenta?.superusuario ? [{ id: "copia-consola", texto: "Copia de la consola" }] : []),
+        ...(app.cuenta?.superusuario ? [{ id: "publicaciones", texto: "Actualizaciones de los agentes" }] : []),
       ]}
     />
   {/if}
@@ -331,6 +333,7 @@
     </section>
   {/if}
   {#if app.cuenta?.superusuario}<CopiaConsola />{/if}
+  {#if app.cuenta?.superusuario}<PublicacionesServidor />{/if}
 </div>
 
 {#if mover && actual.cliente}

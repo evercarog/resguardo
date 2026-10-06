@@ -78,6 +78,7 @@
   import PendienteItem from "$lib/componentes/PendienteItem.svelte";
   import { pendientesDe, terminada } from "$lib/pendientes.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
+  import { vistaActualizacion, type EstadoActualizacion } from "$lib/actualizaciones";
   import EstadoEquipo from "$lib/componentes/detalle/EstadoEquipo.svelte";
   import ListaOrdenes from "$lib/componentes/ListaOrdenes.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
@@ -229,6 +230,8 @@
     };
     return repos.find((r) => r.id === repoCajon && de(r)) ?? repos.find(de) ?? null;
   });
+  /** La actualización automática del agente (docs/actualizaciones.md), de su último informe. */
+  const actualizacionEq = $derived(equipo ? vistaActualizacion(equipo.ultimo_informe?.datos.actualizacion as EstadoActualizacion | undefined, equipo.version_agente, null) : null);
   const recientesEquipo = $derived(equipo ? ultimas24h([equipo], { [equipo.id]: equipo.ultimo_informe ?? null }, reloj.ahora) : { versiones: 0, fallos: 0 });
   const rolCliente = $derived(actual.cliente?.rol);
   /** Un equipo trasladado a otro servidor ya no recibe órdenes de este: se ve, pero no se toca. */
@@ -826,6 +829,10 @@
         {/if}
         <p class="sub">
           <span class="junto">{equipo.so} · agente <span class="pastilla mono">{equipo.version_agente}</span></span>
+          <!-- La actualización automática (docs/actualizaciones.md): solo si hay algo que contar. -->
+          {#if actualizacionEq && !["al_dia", "sin_datos"].includes(actualizacionEq.clave)}
+            <a class="junto enlace-version" href="/c/{c}/versiones" use:tip={actualizacionEq.detalle ?? actualizacionEq.texto}><Chip pequeno tono={actualizacionEq.tono} texto={actualizacionEq.texto} /></a>
+          {/if}
           {#if equipo.rol === "almacenamiento"}<span class="junto">· Guarda copias <Ayuda id="guarda-copias" /></span>{/if}
           <span class="junto">·
             {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)"></span>Conectado</span><Ayuda id="conectado" />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}</span

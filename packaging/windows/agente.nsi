@@ -11,6 +11,11 @@
 ;
 ; Sin ventanas (para desplegar en muchos equipos):
 ;   Resguardo-Agente-setup.exe /S /CODE=ABCD-EFGH-JK [/TRAY=0]
+;
+; Actualización automática (docs/actualizaciones.md): el actualizador del
+; agente lo ejecuta con /S /ACTUALIZACION=1. Igual que una actualización a
+; mano, sin tocar la configuración, las claves ni los vínculos; además deja el
+; icono de la bandeja como estaba (sin /TRAY=) y no intenta vincular nada.
 ; El número de comprobación queda en «emparejamiento.txt» junto al programa
 ; (solo administradores). Código de salida 2 si el emparejamiento falla.
 ;
@@ -86,6 +91,8 @@ Var CopyServer
 Var Preparado
 Var NombrePrep
 Var ErrorPrep
+; /ACTUALIZACION=1: lo lanza el actualizador automático del agente.
+Var Actualizacion
 
 ; Texto de la página final (depende de si el equipo quedó vinculado).
 Var FinTexto
@@ -151,6 +158,23 @@ Function .onInit
   ${IfNot} ${Errors}
   ${AndIf} $R1 == "0"
     StrCpy $Tray "0"
+  ${EndIf}
+  ; Actualización automática: la bandeja como estaba (si no estaba en «Ejecutar», no se pone).
+  StrCpy $Actualizacion "0"
+  ClearErrors
+  ${GetOptions} $R0 "/ACTUALIZACION=" $R2
+  ${IfNot} ${Errors}
+  ${AndIf} $R2 == "1"
+    StrCpy $Actualizacion "1"
+    ClearErrors
+    ${GetOptions} $R0 "/TRAY=" $R1
+    ${If} ${Errors}
+      ClearErrors
+      ReadRegStr $R3 HKLM "${RUN_KEY}" "ResguardoAgente"
+      ${If} $R3 == ""
+        StrCpy $Tray "0"
+      ${EndIf}
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
@@ -359,7 +383,10 @@ Section "Resguardo Agente" SecMain
   ${EndIf}
 
   ; Instalador «listo» (descargado de la consola): se vincula aquí, sin preguntar nada.
-  Call PairPreparado
+  ; En una actualización automática no se vincula nada (el equipo ya lo está, o no se toca).
+  ${If} $Actualizacion != "1"
+    Call PairPreparado
+  ${EndIf}
 
   ; Sin ventanas: se empareja aquí con /CODE=.
   Call AlreadyPaired
