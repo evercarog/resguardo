@@ -267,6 +267,10 @@ impl Espejo {
                 if let Some(z) = &d.zona {
                     v["zona"] = z.clone().into();
                 }
+                // Tarea 8e: el sistema de archivos de una carpeta (solo un dato).
+                if d.tipo == "carpeta" {
+                    v["sistema_archivos"] = crate::espacio::json_fs(&d.carpeta);
+                }
                 // §3a: su horario (si tiene uno propio), «después de cada copia» y la próxima vuelta por horario.
                 if let Some(h) = &d.horario {
                     v["horario"] = serde_json::to_value(h).unwrap_or_default();

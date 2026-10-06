@@ -1605,6 +1605,39 @@ async fn catalogo_de_destinos_sin_secretos() {
     }
     let todo = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json.to_string();
     assert!(!todo.contains("K001abc") && !todo.contains("clave@") && !todo.contains("Copias"), "{todo}");
+    // Tarea 8: lo que dice la persona para la regla 3-2-1-1-0.
+    let atributos = |l: &Value, id: &str| l.as_array().unwrap().iter().find(|d| d["id"] == id).unwrap()["atributos"].clone();
+    let r = pedir(
+        &p.app,
+        "PUT",
+        &b2,
+        Some(json!({ "nombre": "Nube de la oficina", "tipo": "b2", "donde": "copias-sur", "atributos": { "inmutable": "object_lock", "lugar": "nube" } })),
+        Some(&cookie),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    let l = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json;
+    assert_eq!(atributos(&l, "destino-1a2b3c4d"), json!({ "lugar": "nube", "inmutable": "object_lock" }));
+    // Una consola anterior que solo renombra (sin `atributos`) no los borra.
+    pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Nube", "tipo": "b2", "donde": "copias-sur" })), Some(&cookie), &[]).await;
+    let l = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json;
+    assert_eq!(atributos(&l, "destino-1a2b3c4d")["inmutable"], "object_lock");
+    // Marcar una zona sin ponerle nombre propio (sigue con el de siempre).
+    let zona_d = format!("/api/clientes/{c}/destinos/zona:0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f:principal");
+    let r =
+        pedir(&p.app, "PUT", &zona_d, Some(json!({ "nombre": "", "tipo": "zona", "atributos": { "inmutable": "instantaneas" } })), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    // Valores fuera de la lista o campos de más: 422.
+    for a in [json!({ "lugar": "luna" }), json!({ "inmutable": "si" }), json!({ "secreto": "x" })] {
+        let r = pedir(&p.app, "PUT", &zona_d, Some(json!({ "nombre": "", "tipo": "zona", "atributos": a })), Some(&cookie), &[]).await;
+        assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY, "{a}");
+    }
+    // `null` los quita.
+    pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Nube", "tipo": "b2", "donde": "copias-sur", "atributos": null })), Some(&cookie), &[]).await;
+    let l = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json;
+    assert!(atributos(&l, "destino-1a2b3c4d").is_null(), "{l}");
+    assert_eq!(atributos(&l, "zona:0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f:principal"), json!({ "inmutable": "instantaneas" }));
     // Quitarlo del catálogo (no toca ningún equipo); dos veces, no existe.
     assert_eq!(pedir(&p.app, "DELETE", &zona, None, Some(&cookie), &[]).await.estado, StatusCode::NO_CONTENT);
     assert_eq!(pedir(&p.app, "DELETE", &zona, None, Some(&cookie), &[]).await.estado, StatusCode::NOT_FOUND);

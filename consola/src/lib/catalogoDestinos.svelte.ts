@@ -2,7 +2,7 @@
 // cliente y vuelto a pedir al cambiarlo. Un servidor anterior no lo tiene
 // (404): entonces está vacío y los destinos salen solo de los equipos.
 import * as api from "./api";
-import type { DestinoCatalogo } from "./tipos";
+import type { AtributosDestino, DestinoCatalogo } from "./tipos";
 
 const porCliente = $state<Record<string, DestinoCatalogo[]>>({});
 const pidiendo = new Map<string, Promise<void>>();
@@ -22,9 +22,13 @@ export function cargarCatalogo(c: string, forzar = false): Promise<void> {
   return p;
 }
 
-/** Pone (o cambia) el nombre de un destino, o crea uno suelto. */
-export async function guardarEnCatalogo(c: string, id: string, d: { nombre: string; tipo: DestinoCatalogo["tipo"]; donde?: string | null }) {
-  await api.ponerDestino(c, id, { nombre: d.nombre.trim(), tipo: d.tipo, ...(d.donde ? { donde: d.donde.trim() } : {}) });
+/**
+ * Pone (o cambia) el nombre de un destino, o crea uno suelto. Tarea 8: con
+ * `atributos` (o `null` para quitarlos) cambia también lo de la regla 3-2-1;
+ * sin el campo, el servidor deja los que había.
+ */
+export async function guardarEnCatalogo(c: string, id: string, d: { nombre: string; tipo: DestinoCatalogo["tipo"]; donde?: string | null; atributos?: AtributosDestino | null }) {
+  await api.ponerDestino(c, id, { nombre: d.nombre.trim(), tipo: d.tipo, ...(d.donde ? { donde: d.donde.trim() } : {}), ...(d.atributos !== undefined ? { atributos: d.atributos } : {}) });
   await cargarCatalogo(c, true);
 }
 

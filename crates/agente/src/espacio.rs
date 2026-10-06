@@ -253,9 +253,226 @@ fn montaje_de(mountinfo: &str, ruta: &str) -> Option<(String, String)> {
         .map(|(_, t, f)| (t, f))
 }
 
+// ---------- Sistema de archivos y entorno (tarea 8e, docs/regla-3-2-1.md) ----------
+//
+// Solo se enseña como dato en la consola («NTFS», «zfs», «en una máquina
+// virtual KVM»): nunca resta en la regla 3-2-1-1-0 ni en la salud de la
+// protección. Nada de rutas: solo el nombre del sistema de archivos.
+
+/// Un nombre de sistema de archivos presentable (letras, cifras, `._-`; hasta 32).
+fn nombre_fs(s: &str) -> Option<String> {
+    let s = s.trim();
+    (!s.is_empty() && s.len() <= 32 && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))).then(|| s.to_string())
+}
+
+/// El sistema de archivos de la carpeta (`NTFS`, `ReFS`, `ext4`, `xfs`, `zfs`, `btrfs`…),
+/// o `None` si no se sabe. Una carpeta de la red (`\\servidor\…`) no se consulta.
+pub fn sistema_archivos(ruta: &str) -> Option<String> {
+    if ruta.trim().is_empty() || ruta_unc(ruta) {
+        return None;
+    }
+    let mut p = Path::new(ruta);
+    while !p.exists() {
+        p = p.parent()?;
+    }
+    fs_sistema(p).and_then(|s| nombre_fs(&s))
+}
+
+#[cfg(windows)]
+fn fs_sistema(p: &Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
+    let ancho: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut raiz = [0u16; 512];
+    // SAFETY: cadena terminada en 0 y búfer propio del tamaño indicado.
+    if unsafe { GetVolumePathNameW(ancho.as_ptr(), raiz.as_mut_ptr(), raiz.len() as u32) } == 0 {
+        return None;
+    }
+    let mut nombre = [0u16; 64];
+    // SAFETY: `raiz` terminada en 0 por el sistema; solo se pide el nombre del sistema de archivos.
+    let ok = unsafe {
+        GetVolumeInformationW(
+            raiz.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            nombre.as_mut_ptr(),
+            nombre.len() as u32,
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
+    let fin = nombre.iter().position(|&c| c == 0).unwrap_or(nombre.len());
+    Some(String::from_utf16_lossy(&nombre[..fin]))
+}
+
+#[cfg(target_os = "linux")]
+fn fs_sistema(p: &Path) -> Option<String> {
+    let real = std::fs::canonicalize(p).ok()?;
+    let info = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
+    montaje_de(&info, &real.to_string_lossy()).map(|(tipo, _)| tipo)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn fs_sistema(_: &Path) -> Option<String> {
+    None
+}
+
+/// `"sistema_archivos"` para el resumen (o `null`).
+pub fn json_fs(ruta: &str) -> serde_json::Value {
+    sistema_archivos(ruta).map_or(serde_json::Value::Null, serde_json::Value::String)
+}
+
+/// La máquina virtual por el fabricante y el modelo del firmware (DMI / BIOS).
+#[cfg_attr(not(any(windows, target_os = "linux", test)), allow(dead_code))]
+fn clasificar_virtual(fabricante: &str, producto: &str) -> Option<&'static str> {
+    let (f, p) = (fabricante.to_lowercase(), producto.to_lowercase());
+    if f.contains("qemu") || p.contains("kvm") || f.contains("proxmox") || p.contains("qemu") {
+        Some("kvm")
+    } else if f.contains("vmware") || p.contains("vmware") {
+        Some("vmware")
+    } else if f.contains("innotek") || p.contains("virtualbox") {
+        Some("virtualbox")
+    } else if f.contains("microsoft") && p.contains("virtual") {
+        Some("hyperv")
+    } else if f.contains("xen") || p.contains("hvm domu") {
+        Some("xen")
+    } else if p.contains("virtual machine") || f.contains("bochs") || f.contains("parallels") {
+        Some("otra")
+    } else {
+        None
+    }
+}
+
+/// El contenedor por lo que dicen systemd (`/run/systemd/container`), el entorno del
+/// primer proceso (`container=…`) y los archivos que dejan Docker y Podman.
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+fn clasificar_contenedor(systemd: Option<&str>, environ_1: Option<&str>, dockerenv: bool, containerenv: bool, osrelease: &str) -> Option<&'static str> {
+    let nombre = systemd
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| environ_1.and_then(|e| e.split('\0').find_map(|v| v.strip_prefix("container=")).map(str::to_string)));
+    match nombre.as_deref().map(str::to_lowercase).as_deref() {
+        Some(n) if n.starts_with("lxc") => return Some("lxc"),
+        Some("docker") => return Some("docker"),
+        Some("podman") => return Some("podman"),
+        Some("wsl") => return Some("wsl"),
+        Some(_) => return Some("otro"),
+        None => {}
+    }
+    if dockerenv {
+        Some("docker")
+    } else if containerenv {
+        Some("podman")
+    } else if osrelease.to_lowercase().contains("microsoft") {
+        Some("wsl")
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn detectar_entorno() -> (Option<&'static str>, Option<&'static str>) {
+    let leer = |p: &str| std::fs::read_to_string(p).ok();
+    let virtual_ = clasificar_virtual(&leer("/sys/class/dmi/id/sys_vendor").unwrap_or_default(), &leer("/sys/class/dmi/id/product_name").unwrap_or_default())
+        .or_else(|| {
+            leer("/proc/cpuinfo").filter(|c| c.lines().any(|l| l.starts_with("flags") && l.split_whitespace().any(|f| f == "hypervisor"))).map(|_| "otra")
+        });
+    let contenedor = clasificar_contenedor(
+        leer("/run/systemd/container").as_deref(),
+        std::fs::read("/proc/1/environ").ok().map(|b| String::from_utf8_lossy(&b).into_owned()).as_deref(),
+        Path::new("/.dockerenv").exists(),
+        Path::new("/run/.containerenv").exists(),
+        &leer("/proc/sys/kernel/osrelease").unwrap_or_default(),
+    );
+    (virtual_, contenedor)
+}
+
+#[cfg(windows)]
+fn detectar_entorno() -> (Option<&'static str>, Option<&'static str>) {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+    let clave: Vec<u16> = "HARDWARE\\DESCRIPTION\\System\\BIOS\0".encode_utf16().collect();
+    let leer = |valor: &str| -> String {
+        let nombre: Vec<u16> = valor.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut buf = [0u16; 256];
+        let mut tam = std::mem::size_of_val(&buf) as u32;
+        // SAFETY: cadenas terminadas en 0 y búfer propio con su tamaño en bytes.
+        let r = unsafe {
+            RegGetValueW(HKEY_LOCAL_MACHINE, clave.as_ptr(), nombre.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut tam)
+        };
+        if r != 0 {
+            return String::new();
+        }
+        let fin = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        String::from_utf16_lossy(&buf[..fin])
+    };
+    (clasificar_virtual(&leer("SystemManufacturer"), &leer("SystemProductName")), None)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn detectar_entorno() -> (Option<&'static str>, Option<&'static str>) {
+    (None, None)
+}
+
+/// `{ virtual?, contenedor? }` para el resumen (o `null` si es una máquina normal o no se sabe).
+/// Se mira una vez por proceso (no cambia mientras corre).
+pub fn entorno() -> serde_json::Value {
+    static ENTORNO: std::sync::OnceLock<(Option<&'static str>, Option<&'static str>)> = std::sync::OnceLock::new();
+    let (v, c) = *ENTORNO.get_or_init(detectar_entorno);
+    if v.is_none() && c.is_none() {
+        return serde_json::Value::Null;
+    }
+    let mut j = serde_json::json!({});
+    if let Some(v) = v {
+        j["virtual"] = v.into();
+    }
+    if let Some(c) = c {
+        j["contenedor"] = c.into();
+    }
+    j
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sistema_de_archivos_y_entorno() {
+        // El del temporal se sabe (NTFS en Windows; ext4, xfs, tmpfs… en Linux) y es solo un nombre.
+        let tmp = std::env::temp_dir();
+        let fs = sistema_archivos(&tmp.join("resguardo-no-existe").to_string_lossy());
+        if cfg!(any(windows, target_os = "linux")) {
+            let fs = fs.expect("el sistema de archivos del temporal");
+            assert!(nombre_fs(&fs).is_some(), "{fs}");
+        }
+        assert_eq!(sistema_archivos(r"\\nas\copias"), None, "la red no se consulta");
+        assert_eq!(sistema_archivos(""), None);
+        assert_eq!(nombre_fs("fuse.rclone").as_deref(), Some("fuse.rclone"));
+        assert_eq!(nombre_fs("raro/../x"), None);
+        // Máquinas virtuales por el firmware.
+        assert_eq!(clasificar_virtual("QEMU", "Standard PC (Q35 + ICH9, 2009)"), Some("kvm"));
+        assert_eq!(clasificar_virtual("VMware, Inc.", "VMware Virtual Platform"), Some("vmware"));
+        assert_eq!(clasificar_virtual("innotek GmbH", "VirtualBox"), Some("virtualbox"));
+        assert_eq!(clasificar_virtual("Microsoft Corporation", "Virtual Machine"), Some("hyperv"));
+        assert_eq!(clasificar_virtual("Xen", "HVM domU"), Some("xen"));
+        assert_eq!(clasificar_virtual("Dell Inc.", "PowerEdge R250"), None);
+        assert_eq!(clasificar_virtual("Microsoft Corporation", "Surface Laptop 5"), None, "un Surface no es virtual");
+        // Contenedores.
+        assert_eq!(clasificar_contenedor(Some("lxc\n"), None, false, false, ""), Some("lxc"));
+        assert_eq!(clasificar_contenedor(None, Some("PATH=/bin\0container=lxc\0"), false, false, ""), Some("lxc"));
+        assert_eq!(clasificar_contenedor(None, None, true, false, ""), Some("docker"));
+        assert_eq!(clasificar_contenedor(None, None, false, true, ""), Some("podman"));
+        assert_eq!(clasificar_contenedor(None, None, false, false, "5.15.153.1-microsoft-standard-WSL2"), Some("wsl"));
+        assert_eq!(clasificar_contenedor(Some("systemd-nspawn"), None, false, false, ""), Some("otro"));
+        assert_eq!(clasificar_contenedor(None, None, false, false, "6.8.12-4-pve"), None);
+        // Lo que se manda: nada o solo esos nombres.
+        let e = entorno();
+        assert!(e.is_null() || e.as_object().is_some_and(|o| o.keys().all(|k| k == "virtual" || k == "contenedor")), "{e}");
+    }
 
     #[test]
     fn letra_de_unidad_y_rutas_de_red() {

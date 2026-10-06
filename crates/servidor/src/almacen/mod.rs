@@ -261,6 +261,10 @@ pub struct DestinoCatalogo {
     pub tipo: String,
     /// Servidor o bucket (solo `rest`, `s3`, `b2` y `sftp`).
     pub donde: Option<String>,
+    /// Tarea 8 (docs/regla-3-2-1.md): para la regla 3-2-1-1-0, lo que dice la persona
+    /// de este destino (`{ lugar?, inmutable?, soporte? }`, JSON ya validado). En claro:
+    /// no son secretos. `None`: lo deducido del tipo.
+    pub atributos: Option<String>,
     pub actualizado: Ts,
     /// Nombre de quien lo guardó.
     pub por: String,
@@ -571,8 +575,9 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
 
     // ---------- Catálogo de destinos (tarea 7a, en claro y sin secretos) ----------
     fn destinos_catalogo(&self, c: &ClienteCtx) -> R<Vec<DestinoCatalogo>>;
-    /// Crea o sustituye; `false` si es nuevo y ya hay `maximo`.
-    fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize) -> R<bool>;
+    /// Crea o sustituye; `false` si es nuevo y ya hay `maximo`. Con `mantener_atributos`,
+    /// los `atributos` que ya tuviera se quedan (una consola anterior que solo renombra).
+    fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize, mantener_atributos: bool) -> R<bool>;
     fn borrar_destino(&self, c: &ClienteCtx, id: &str) -> R<bool>;
     // ---------- Ajustes de las etiquetas de los equipos (v1.4x) ----------
     fn ajustes_etiquetas(&self, c: &ClienteCtx) -> R<Vec<AjusteEtiqueta>>;

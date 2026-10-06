@@ -28,6 +28,8 @@
   import { dataUrlAArchivo, logoAPng } from "$lib/marca";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import { etiquetasDe, gruposPorEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import { cuentaRegla, fraseRegla, PARTES, reglasDelCliente } from "$lib/regla321";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
 
   type Periodo = "mes" | "anterior" | "30";
   // A principios de mes, lo que se quiere enseñar suele ser el mes que acaba de terminar.
@@ -120,8 +122,16 @@
     untrack(() => void cargarInformes(cc, ids));
   });
 
+  // Tarea 8: la regla 3-2-1-1-0 de cada copia (con lo que dice el catálogo de destinos).
+  $effect(() => {
+    const cc = actual.id;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+
   // v1.4x: un informe por etiqueta («Contabilidad»): solo sus equipos.
   let deEtiqueta = $state("");
+  const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos));
+  const cuentaR = $derived(cuentaRegla(reglas));
   const etiquetas = $derived(etiquetasDe(actual.equipos));
   $effect.pre(() => {
     // Una etiqueta que ya nadie lleva (u otro cliente): vuelve al cliente entero.
@@ -362,6 +372,35 @@
         <p class="leyenda">Cuadros: <span class="m datos"></span>con versión nueva <span class="m igual"></span>sin cambios <span class="m aviso"></span>con avisos <span class="m mal"></span>falló <span class="m nada"></span>sin copia</p>
       </section>
 
+      {#if reglas.length}
+        <!-- Tarea 8: la regla 3-2-1-1-0 por copia (para enseñarla al cliente). -->
+        <section class="bloque" aria-labelledby="t-regla">
+          <h3 id="t-regla">Regla 3-2-1-1-0 <span class="sub-h">· {cuentaR.cumplen} de {plural(cuentaR.total, "copia la cumple", "copias la cumplen")}</span></h3>
+          <table class="tabla t-regla">
+            <caption class="sr-only">Cómo cumple cada copia la regla 3-2-1-1-0</caption>
+            <thead>
+              <tr>
+                <th scope="col">Copia</th>
+                {#each reglas[0].regla.partes as p (p.id)}<th scope="col" class="centro" title={PARTES[p.id].titulo}>{PARTES[p.id].cifra}</th>{/each}
+                <th scope="col">Qué le falta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each reglas as r (r.equipo.id + r.copia.id)}
+                <tr>
+                  <td><strong>{r.copia.nombre}</strong><span class="sub">{r.equipo.nombre}</span></td>
+                  {#each r.regla.partes as p (p.id)}
+                    <td class="centro" class:mal={!p.cumple && !p.cumple_config} class:atrasado={!p.cumple && p.cumple_config}>{p.cumple ? "✓" : p.cumple_config ? "◷" : "✗"}<span class="sr-only">{p.cumple ? "cumple" : p.cumple_config ? "no está al día" : "falta"}</span></td>
+                  {/each}
+                  <td>{r.regla.cumple ? "Nada" : fraseRegla(r.regla).replace(/^(Le falta|Dejó de cumplir): /, "")}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="leyenda">3 copias (con los originales) · 2 soportes · 1 fuera de la oficina · 1 inmutable · 0 errores al verificar y probar la restauración. ✓ cumple, ◷ configurada pero no está al día, ✗ falta. Es una guía.</p>
+        </section>
+      {/if}
+
       <section class="bloque" aria-labelledby="t-repos">
         <h3 id="t-repos">Repositorios</h3>
         {#each delPeriodo as d (d.equipo.id)}
@@ -541,6 +580,35 @@
   }
   .mal {
     color: var(--bad);
+  }
+  /* Tarea 8: la tabla de la regla 3-2-1-1-0. */
+  .centro {
+    text-align: center;
+    width: 2.2em;
+    font-weight: 600;
+  }
+  td.centro {
+    color: var(--ok);
+  }
+  td.centro.mal {
+    color: var(--bad);
+  }
+  td.centro.atrasado {
+    color: var(--warn);
+  }
+  .sub-h {
+    font-weight: 400;
+    color: var(--text-3);
+  }
+  @media (max-width: 480px) {
+    .t-regla th,
+    .t-regla td {
+      padding-left: 3px;
+      padding-right: 3px;
+    }
+    .t-regla .centro {
+      width: 1.4em;
+    }
   }
   .eq {
     display: inline-flex;

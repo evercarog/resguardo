@@ -58,6 +58,9 @@ pub struct Facts {
     pub has_retention: bool,
     /// v1.41: un destino local, qué disco es (unidad, extraíble, de la red). `None`: no es local.
     pub disk: Option<crate::espacio::Disco>,
+    /// Tarea 8: por dónde pasan los datos de una copia (la regla 3-2-1-1-0). Quien
+    /// la ve entera (la consola, con todos los equipos) la arma; `None`: no se evalúa.
+    pub regla: Option<EntradaRegla>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,6 +89,10 @@ pub struct Protection {
     pub score: usize,
     pub total: usize,
     pub items: Vec<Item>,
+    /// Tarea 8: la regla 3-2-1-1-0, si los `Facts` traen su entrada. Va aparte de
+    /// `items` (no cambia la puntuación ni la posición de las comprobaciones).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regla: Option<Regla321>,
 }
 
 fn item(id: &str, state: State, label: &str, detail: impl Into<String>) -> Item {
@@ -274,7 +281,249 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
         });
     }
 
-    Protection { score: items.iter().filter(|i| i.state == State::Ok).count(), total: items.len(), items }
+    Protection { score: items.iter().filter(|i| i.state == State::Ok).count(), total: items.len(), items, regla: f.regla.as_ref().map(|e| regla_321(e, now)) }
+}
+
+// ---------- Regla 3-2-1-1-0 (tarea 8, docs/regla-3-2-1.md) ----------
+//
+// Por copia: 3 copias de los datos (contando los originales), en 2 soportes
+// distintos, 1 fuera de la oficina, 1 inmutable o fuera del alcance de los
+// equipos y 0 errores al verificar y probar la restauración. Solo cuentan los
+// destinos al día. Es una guía: nada se bloquea por no cumplirla, y nunca
+// cuenta el sistema operativo ni el sistema de archivos (8e).
+//
+// La consola arma la entrada (ve todos los equipos, el espejo del almacén y el
+// catálogo de destinos) y la evalúa con `consola/src/lib/regla321.ts`; las dos
+// pasan los vectores de `crates/protocolo/vectors/regla-321.json`.
+
+/// Dónde está un destino.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Lugar {
+    #[default]
+    EsteEquipo,
+    /// Otro equipo de la oficina.
+    Oficina,
+    OtraSede,
+    Nube,
+}
+
+/// Si un destino es inmutable (o está fuera del alcance de los equipos).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Inmutable {
+    /// Rest-server de solo añadir: desde el equipo no se puede borrar.
+    SoloAnadir,
+    /// Bloqueo de objetos (Object Lock) en la nube.
+    ObjectLock,
+    /// Instantáneas inmutables fuera de su alcance (las hace el anfitrión; lo dice la persona).
+    Instantaneas,
+    /// Un disco que se desconecta (y se rota); lo dice la persona.
+    Desconectado,
+    #[default]
+    No,
+}
+
+/// Los originales (las carpetas del equipo): cuentan como una copia.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct OrigenRegla {
+    pub equipo: String,
+    /// Equipo + disco (`equipo:<id>:origen`).
+    pub soporte: String,
+}
+
+/// Un destino al que llegan los datos de la copia (un paso del camino o de la cadena).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PasoRegla {
+    pub id: String,
+    #[serde(default)]
+    pub nombre: String,
+    /// `copia`, `espejo`, `externa`, `derivada` o `paso` (parte B de la tarea 7): solo informa.
+    #[serde(default)]
+    pub tipo: String,
+    #[serde(default)]
+    pub lugar: Lugar,
+    #[serde(default)]
+    pub inmutable: Inmutable,
+    pub soporte: String,
+    /// El equipo que lo guarda (sin él: la nube o un servidor de fuera).
+    #[serde(default)]
+    pub equipo: Option<String>,
+    /// RFC 3339: la última vez que se puso al día bien.
+    #[serde(default)]
+    pub ultima_ok: Option<String>,
+    /// Cada cuánto le toca (sin él, cada día).
+    #[serde(default)]
+    pub cada_horas: Option<f64>,
+    /// Su comprobación encontró datos dañados (el espejo verifica sin contraseñas).
+    #[serde(default)]
+    pub verificacion_mal: bool,
+}
+
+/// La verificación o la prueba de restauración del repositorio de la copia.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PruebaRegla {
+    pub configurada: bool,
+    #[serde(default)]
+    pub ultima_ok: Option<String>,
+    /// La última falló.
+    #[serde(default)]
+    pub fallo: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EntradaRegla {
+    pub origen: OrigenRegla,
+    #[serde(default)]
+    pub pasos: Vec<PasoRegla>,
+    #[serde(default)]
+    pub verificacion: PruebaRegla,
+    #[serde(default)]
+    pub prueba_restauracion: PruebaRegla,
+}
+
+/// Una parte de la regla: `copias` (3), `soportes` (2), `fuera` (1), `inmutable` (1), `errores` (0).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParteRegla {
+    pub id: String,
+    pub meta: u32,
+    /// Lo que hay con los destinos al día (en `errores`, los problemas).
+    pub valor: u32,
+    /// Lo que habría si todos estuvieran al día y lo programado hubiera salido bien.
+    pub valor_config: u32,
+    pub cumple: bool,
+    pub cumple_config: bool,
+    /// Qué hacer (código; vacío si cumple): `anadir_destino`, `poner_al_dia`, `otro_soporte`,
+    /// `anadir_fuera`, `anadir_inmutable`, `programar_verificacion`, `programar_prueba`,
+    /// `revisar_verificacion`, `revisar_prueba`, `revisar_destino`.
+    pub accion: String,
+    pub detalle: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Regla321 {
+    pub cumple: bool,
+    pub cumple_config: bool,
+    /// La configuración cumple pero hoy algo no está al día o falló (un aviso no urgente).
+    pub dejo_de_cumplir: bool,
+    pub partes: Vec<ParteRegla>,
+    /// Los pasos que no están al día.
+    pub atrasados: Vec<String>,
+    /// `mismo_equipo` (dos soportes en el mismo equipo: un incendio se los lleva a la vez)
+    /// e `inmutable_local` (lo inmutable está todo en la oficina).
+    pub avisos: Vec<String>,
+}
+
+/// Días como mucho desde la última verificación o prueba correcta.
+pub const DIAS_PRUEBA_REGLA: i64 = 45;
+
+/// Horas que puede pasar un paso sin ponerse al día: su horario y la mitad, más 12 h.
+pub fn margen_horas(cada_horas: Option<f64>) -> f64 {
+    let c = cada_horas.filter(|c| c.is_finite() && *c > 0.0).unwrap_or(24.0);
+    c * 1.5 + 12.0
+}
+
+/// ¿Está al día este paso? (su última vez bien, dentro de su horario más un margen).
+pub fn paso_al_dia(p: &PasoRegla, ahora: DateTime<Local>) -> bool {
+    let Some(t) = p.ultima_ok.as_deref().and_then(parse) else { return false };
+    (ahora - t).num_seconds() as f64 / 3600.0 <= margen_horas(p.cada_horas)
+}
+
+/// ¿Correcta y reciente (45 días)?
+fn prueba_bien(p: &PruebaRegla, ahora: DateTime<Local>) -> bool {
+    p.configurada && !p.fallo && p.ultima_ok.as_deref().and_then(parse).is_some_and(|t| ahora - t <= Duration::days(DIAS_PRUEBA_REGLA))
+}
+
+fn parte(id: &str, meta: u32, valor: u32, valor_config: u32, accion_falta: &str, al_dia: &str, detalle: String) -> ParteRegla {
+    let (cumple, cumple_config) = if id == "errores" { (valor == 0, valor_config == 0) } else { (valor >= meta, valor_config >= meta) };
+    let accion = if cumple {
+        ""
+    } else if cumple_config {
+        al_dia
+    } else {
+        accion_falta
+    };
+    ParteRegla { id: id.into(), meta, valor, valor_config, cumple, cumple_config, accion: accion.into(), detalle }
+}
+
+pub fn regla_321(e: &EntradaRegla, ahora: DateTime<Local>) -> Regla321 {
+    use std::collections::{BTreeMap, BTreeSet};
+    let al_dia: Vec<&PasoRegla> = e.pasos.iter().filter(|p| paso_al_dia(p, ahora)).collect();
+    let todos: Vec<&PasoRegla> = e.pasos.iter().collect();
+    let atrasados: Vec<String> = e.pasos.iter().filter(|p| !paso_al_dia(p, ahora)).map(|p| p.id.clone()).collect();
+    let soportes = |l: &[&PasoRegla]| {
+        let mut s: BTreeSet<&str> = l.iter().map(|p| p.soporte.as_str()).collect();
+        s.insert(e.origen.soporte.as_str());
+        s.len() as u32
+    };
+    let fuera = |l: &[&PasoRegla]| l.iter().filter(|p| matches!(p.lugar, Lugar::OtraSede | Lugar::Nube)).count() as u32;
+    let inmutables = |l: &[&PasoRegla]| l.iter().filter(|p| p.inmutable != Inmutable::No).count() as u32;
+    let n = |x: u32| if x == 1 { "1 destino".to_string() } else { format!("{x} destinos") };
+
+    let (c, cc) = (1 + al_dia.len() as u32, 1 + todos.len() as u32);
+    let (s, sc) = (soportes(&al_dia), soportes(&todos));
+    let (f, fc) = (fuera(&al_dia), fuera(&todos));
+    let (i, ic) = (inmutables(&al_dia), inmutables(&todos));
+
+    // El «0»: lo que falla o falta al verificar y al probar la restauración.
+    let mut problemas: Vec<&str> = Vec::new();
+    let mut estructurales = 0u32;
+    for (p, programar, revisar) in
+        [(&e.verificacion, "programar_verificacion", "revisar_verificacion"), (&e.prueba_restauracion, "programar_prueba", "revisar_prueba")]
+    {
+        if !p.configurada {
+            problemas.push(programar);
+            estructurales += 1;
+        } else if !prueba_bien(p, ahora) {
+            problemas.push(revisar);
+        }
+    }
+    if e.pasos.iter().any(|p| p.verificacion_mal) {
+        problemas.push("revisar_destino");
+    }
+    // Lo que falta programar va antes que lo que hay que revisar.
+    problemas.sort_by_key(|p| !p.starts_with("programar"));
+    let primero = problemas.first().copied().unwrap_or_default();
+    let errores = parte(
+        "errores",
+        0,
+        problemas.len() as u32,
+        estructurales,
+        primero,
+        primero,
+        if problemas.is_empty() {
+            "Verificación y prueba de restauración recientes y sin errores.".into()
+        } else {
+            format!("{} por resolver al verificar o probar la restauración.", problemas.len())
+        },
+    );
+
+    let partes = vec![
+        parte("copias", 3, c, cc, "anadir_destino", "poner_al_dia", format!("{c} de 3: los originales y {} al día.", n(c - 1))),
+        parte("soportes", 2, s, sc, "otro_soporte", "poner_al_dia", format!("{s} de 2 soportes distintos (equipo y disco).")),
+        parte("fuera", 1, f, fc, "anadir_fuera", "poner_al_dia", format!("{} fuera de la oficina.", n(f))),
+        parte("inmutable", 1, i, ic, "anadir_inmutable", "poner_al_dia", format!("{} inmutable o fuera del alcance de los equipos.", n(i))),
+        errores,
+    ];
+    let cumple = partes.iter().all(|p| p.cumple);
+    let cumple_config = partes.iter().all(|p| p.cumple_config);
+
+    // Avisos, con lo configurado (no cambian porque un paso vaya atrasado).
+    let mut avisos = Vec::new();
+    let mut por_equipo: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    por_equipo.entry(e.origen.equipo.as_str()).or_default().insert(e.origen.soporte.as_str());
+    for p in &todos {
+        if let Some(eq) = p.equipo.as_deref().filter(|x| !x.is_empty()) {
+            por_equipo.entry(eq).or_default().insert(p.soporte.as_str());
+        }
+    }
+    if por_equipo.values().any(|s| s.len() >= 2) {
+        avisos.push("mismo_equipo".to_string());
+    }
+    if ic > 0 && !todos.iter().any(|p| p.inmutable != Inmutable::No && matches!(p.lugar, Lugar::OtraSede | Lugar::Nube)) {
+        avisos.push("inmutable_local".to_string());
+    }
+    Regla321 { cumple, cumple_config, dejo_de_cumplir: cumple_config && !cumple, partes, atrasados, avisos }
 }
 
 // ---------- Datos del agente ----------
@@ -541,6 +790,60 @@ mod tests {
         assert_eq!(p.total, 6, "sin prueba de restauración propia");
         assert_eq!(p.score, 6, "{:#?}", p.items);
         assert!(p.items[0].detail.contains("Recibe la copia externa de «Siigo»"));
+    }
+
+    /// Los vectores compartidos con la consola (`consola/scripts/vectores-regla.ts`).
+    #[test]
+    fn regla_321_vectores_compartidos() {
+        let doc: serde_json::Value = serde_json::from_str(include_str!("../../protocolo/vectors/regla-321.json")).unwrap();
+        let ahora = parse(doc["ahora"].as_str().unwrap()).unwrap();
+        let vectores = doc["vectores"].as_array().unwrap();
+        assert!(vectores.len() >= 10);
+        for v in vectores {
+            let nombre = v["nombre"].as_str().unwrap();
+            let e: EntradaRegla = serde_json::from_value(v["entrada"].clone()).unwrap_or_else(|x| panic!("{nombre}: {x}"));
+            let r = regla_321(&e, ahora);
+            let mut obtenido = serde_json::to_value(&r).unwrap();
+            for p in obtenido["partes"].as_array_mut().unwrap() {
+                p.as_object_mut().unwrap().remove("detalle");
+            }
+            assert_eq!(obtenido, v["esperado"], "vector «{nombre}»: {}", v["que"]);
+        }
+    }
+
+    #[test]
+    fn regla_321_dentro_de_la_salud() {
+        // Sin entrada, como siempre (nada nuevo en el informe).
+        let p = evaluate(&completo(), now());
+        assert!(p.regla.is_none());
+        assert!(!serde_json::to_string(&p).unwrap().contains("regla"), "no cambia lo que se manda");
+        // Con entrada: la regla va aparte y no toca la puntuación.
+        let mut f = completo();
+        f.regla = Some(EntradaRegla {
+            origen: OrigenRegla { equipo: "e1".into(), soporte: "equipo:e1:origen".into() },
+            pasos: vec![PasoRegla {
+                id: "zona".into(),
+                lugar: Lugar::Oficina,
+                inmutable: Inmutable::SoloAnadir,
+                soporte: "equipo:a:D:".into(),
+                equipo: Some("a".into()),
+                ultima_ok: Some("2026-10-01T11:00:00-05:00".into()),
+                ..Default::default()
+            }],
+            verificacion: PruebaRegla { configurada: true, ultima_ok: Some("2026-09-28T03:00:00-05:00".into()), fallo: false },
+            prueba_restauracion: PruebaRegla { configurada: false, ..Default::default() },
+        });
+        let p = evaluate(&f, now());
+        assert_eq!((p.score, p.total), (7, 7));
+        let r = p.regla.unwrap();
+        assert!(!r.cumple && !r.cumple_config && !r.dejo_de_cumplir);
+        let accion = |id: &str| r.partes.iter().find(|x| x.id == id).unwrap().accion.clone();
+        assert_eq!((accion("copias"), accion("fuera"), accion("errores")), ("anadir_destino".into(), "anadir_fuera".into(), "programar_prueba".into()));
+        assert_eq!(r.avisos, ["inmutable_local"]);
+        // Nunca cuenta el sistema de archivos ni el sistema operativo: no están en la entrada.
+        assert_eq!(margen_horas(None), 48.0);
+        assert_eq!(margen_horas(Some(1.0)), 13.5);
+        assert_eq!(margen_horas(Some(f64::NAN)), 48.0);
     }
 
     #[test]

@@ -2893,6 +2893,21 @@ pub mod tests {
         assert_eq!(crate::gestion_v2::aplicar_verificaciones(&vin, &cfg(serde_json::json!({ "v": 1, "verificaciones": {} }))).unwrap(), 0);
         assert!(load_config().repos[0].verify.is_none());
 
+        // Tarea 8: la prueba de restauración automática (`config.pruebas_restauracion`), igual.
+        let mensual = cfg(serde_json::json!({ "v": 1, "pruebas_restauracion": { "agente-test": { "cada_dias": 30 } } }));
+        assert_eq!(crate::gestion_v2::aplicar_pruebas(&vin, &mensual).unwrap(), 1);
+        let puesta = load_config().repos[0].restore_test.clone().unwrap();
+        assert_eq!((puesta.schedule.clone(), puesta.files, puesta.max_mb), (Schedule::Hours { every: 720 }, 20, 200));
+        assert!(crate::tasks::next_restore_test(&load_config().repos[0], &crate::tasks::load_state()).is_some());
+        assert_eq!(crate::gestion_v2::PruebaAuto::de(&puesta), Some(crate::gestion_v2::PruebaAuto { cada_dias: 30 }));
+        crate::gestion_v2::aplicar_pruebas(&vin, &mensual).unwrap();
+        assert_eq!(load_config().repos[0].restore_test.as_ref().unwrap().enabled_at, puesta.enabled_at, "la misma no vuelve a empezar");
+        crate::gestion_v2::aplicar_pruebas(&vin, &cfg(serde_json::json!({ "v": 1 }))).unwrap();
+        assert!(load_config().repos[0].restore_test.is_some(), "sin el campo no se toca");
+        assert_eq!(crate::gestion_v2::aplicar_pruebas(&vin, &cfg(serde_json::json!({ "v": 1, "pruebas_restauracion": {} }))).unwrap(), 0);
+        assert!(load_config().repos[0].restore_test.is_none());
+        assert!(crate::gestion_v2::PruebaAuto { cada_dias: 32 }.valida().is_err() && crate::gestion_v2::PruebaAuto { cada_dias: 0 }.valida().is_err());
+
         set_schedule(&repo, None, None).unwrap();
         assert!(load_config().repos.is_empty());
         std::env::remove_var("RESGUARDO_AGENT_DIR");

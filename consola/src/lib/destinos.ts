@@ -197,7 +197,8 @@ export function destinosDelCliente(equipos: Equipo[], catalogo: DestinoCatalogo[
         v.nombre = c.nombre.trim();
         v.renombrado = true;
       }
-    } else if ((TIPOS_SUELTOS as readonly string[]).includes(c.tipo)) {
+    } else if ((TIPOS_SUELTOS as readonly string[]).includes(c.tipo) && c.nombre.trim()) {
+      // (Sin nombre: solo lleva lo marcado para la regla 3-2-1 de un destino que ya no está.)
       poner({ clave: c.id, nombre: c.nombre, nombrePorDefecto: c.nombre, renombrado: false, clase: "suelto", tipo: c.tipo, donde: c.donde ?? null, ids: [], equipos: [], catalogo: c });
     }
     // Lo demás (una zona quitada, una nube desconectada) ya no está: no se enseña.

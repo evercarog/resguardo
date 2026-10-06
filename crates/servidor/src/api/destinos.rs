@@ -17,7 +17,7 @@ use crate::estado::St;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// Como mucho, destinos por cliente en el catálogo.
@@ -70,13 +70,50 @@ pub fn donde_valido(tipo: &str, donde: Option<&str>) -> Result<Option<String>, &
     Ok(Some(d.to_string()))
 }
 
-/// `GET /api/clientes/{c}/destinos` (cualquier miembro): `[{ id, nombre, tipo, donde, actualizado, por }]`.
+/// Tarea 8 (docs/regla-3-2-1.md): dónde está un destino.
+pub const LUGARES: [&str; 4] = ["este_equipo", "oficina", "otra_sede", "nube"];
+/// Tarea 8: si es inmutable (o está fuera del alcance de los equipos).
+pub const INMUTABLES: [&str; 5] = ["solo_anadir", "object_lock", "instantaneas", "desconectado", "no"];
+
+/// Tarea 8: lo que dice la persona de un destino para la regla 3-2-1-1-0. Solo estos campos.
+#[derive(Deserialize, Serialize, Default, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Atributos {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lugar: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    inmutable: Option<String>,
+    /// Un nombre para el soporte («USB rotado»): dos destinos con el mismo cuentan una vez.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    soporte: Option<String>,
+}
+
+/// Los atributos, validados, en JSON (`None` si no dicen nada).
+pub fn atributos_validos(a: Atributos) -> Result<Option<String>, &'static str> {
+    if a.lugar.as_deref().is_some_and(|l| !LUGARES.contains(&l)) {
+        return Err("Lugar no válido: este_equipo, oficina, otra_sede o nube.");
+    }
+    if a.inmutable.as_deref().is_some_and(|i| !INMUTABLES.contains(&i)) {
+        return Err("Inmutable no válido: solo_anadir, object_lock, instantaneas, desconectado o no.");
+    }
+    let soporte = a.soporte.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if soporte.as_deref().is_some_and(|s| s.chars().count() > 60 || s.chars().any(char::is_control)) {
+        return Err("El soporte: hasta 60 caracteres, sin caracteres de control.");
+    }
+    let a = Atributos { soporte, ..a };
+    Ok((a != Atributos::default()).then(|| serde_json::to_string(&a).unwrap_or_default()))
+}
+
+/// `GET /api/clientes/{c}/destinos` (cualquier miembro): `[{ id, nombre, tipo, donde, atributos, actualizado, por }]`.
 pub async fn listar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Lectura).await?;
     let l = st.db(move |db| db.destinos_catalogo(&ctx)).await?;
     Ok(Json(json!(l
         .iter()
-        .map(|d| json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde, "actualizado": fecha(d.actualizado), "por": d.por }))
+        .map(|d| {
+            let atributos = d.atributos.as_deref().and_then(|a| serde_json::from_str::<Value>(a).ok()).unwrap_or(Value::Null);
+            json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde, "atributos": atributos, "actualizado": fecha(d.actualizado), "por": d.por })
+        })
         .collect::<Vec<_>>())))
 }
 
@@ -88,6 +125,9 @@ pub struct Guardar {
     tipo: String,
     #[serde(default)]
     donde: Option<String>,
+    /// Tarea 8. Sin el campo, se quedan los que había; `null` o `{}`, se quitan.
+    #[serde(default)]
+    atributos: Option<Atributos>,
 }
 
 /// `PUT /api/clientes/{c}/destinos/{id}` (administrador): crea o sustituye.
@@ -96,9 +136,16 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
     if !id_valido(&id) {
         return Err(ErrorApi::datos("Id de destino no válido."));
     }
-    let g: Guardar =
-        serde_json::from_value(g).map_err(|_| ErrorApi::datos("Destino no válido: solo nombre, tipo y dirección (las credenciales nunca van al servidor)."))?;
-    if !nombre_valido(&g.nombre) {
+    // Sin `atributos` (una consola anterior), los que ya tuviera se quedan.
+    let mantener = g.get("atributos").is_none();
+    let g: Guardar = serde_json::from_value(g)
+        .map_err(|_| ErrorApi::datos("Destino no válido: solo nombre, tipo, dirección y atributos (las credenciales nunca van al servidor)."))?;
+    let atributos = match g.atributos {
+        Some(a) => atributos_validos(a).map_err(ErrorApi::datos)?,
+        None => None,
+    };
+    // Sin nombre propio solo si se marca algo para la regla (sigue con el de siempre).
+    if !(nombre_valido(&g.nombre) || (g.nombre.trim().is_empty() && atributos.is_some())) {
         return Err(ErrorApi::datos("Escribe un nombre para el destino (hasta 80 caracteres)."));
     }
     if !TIPOS.contains(&g.tipo.as_str()) {
@@ -110,14 +157,19 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
         nombre: g.nombre.trim().to_string(),
         tipo: g.tipo,
         donde,
+        atributos,
         actualizado: crate::almacen::ahora(),
         por: u.0.cuenta.nombre.clone(),
     };
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
-    let datos = json!({ "nombre": d.nombre, "tipo": d.tipo }).to_string();
+    let mut datos = json!({ "nombre": d.nombre, "tipo": d.tipo });
+    if !mantener {
+        datos["atributos"] = d.atributos.as_deref().and_then(|a| serde_json::from_str(a).ok()).unwrap_or(Value::Null);
+    }
+    let datos = datos.to_string();
     let cabe = st
         .db(move |db| {
-            let ok = db.guardar_destino(&ctx, &d, MAX_DESTINOS)?;
+            let ok = db.guardar_destino(&ctx, &d, MAX_DESTINOS, mantener)?;
             if ok {
                 db.auditar(&ctx, &actor, "guardar_destino", &id, &datos)?;
             }
@@ -185,5 +237,20 @@ mod tests {
         assert!(donde_valido("local", Some(r"D:\Copias")).is_err(), "una carpeta local nunca va en el catálogo");
         assert!(donde_valido("b2", Some("dos palabras")).is_err());
         assert!(nombre_valido("Almacén · Disco E") && !nombre_valido(" ") && !nombre_valido("a\u{7}") && !nombre_valido(&"x".repeat(81)));
+    }
+
+    #[test]
+    fn atributos_de_la_regla() {
+        let a = |v: Value| serde_json::from_value::<Atributos>(v);
+        assert_eq!(
+            atributos_validos(a(json!({ "lugar": "oficina", "inmutable": "instantaneas", "soporte": " USB rotado " })).unwrap()).unwrap().as_deref(),
+            Some(r#"{"lugar":"oficina","inmutable":"instantaneas","soporte":"USB rotado"}"#)
+        );
+        assert_eq!(atributos_validos(a(json!({})).unwrap()).unwrap(), None, "vacío: lo deducido");
+        assert_eq!(atributos_validos(a(json!({ "soporte": "  " })).unwrap()).unwrap(), None);
+        assert!(atributos_validos(a(json!({ "lugar": "luna" })).unwrap()).is_err());
+        assert!(atributos_validos(a(json!({ "inmutable": "si" })).unwrap()).is_err());
+        assert!(atributos_validos(a(json!({ "soporte": "x".repeat(61) })).unwrap()).is_err());
+        assert!(a(json!({ "lugar": "nube", "clave": "K001" })).is_err(), "nada de campos de más");
     }
 }

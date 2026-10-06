@@ -88,6 +88,8 @@ export function configInicial(e: EquipoMock): T.Configuracion {
     ...(r.admite?.includes("verificacion_auto")
       ? { verificaciones: Object.fromEntries((r.repositorios ?? []).filter((x) => x.verificacion_auto).map((x) => [x.id, { cada_dias: x.verificacion_auto!.cada_dias, porcentaje: x.verificacion_auto!.porcentaje, ...(x.verificacion_auto!.horario ? { horario: x.verificacion_auto!.horario } : {}) }])) }
       : {}),
+    // Tarea 8: la prueba de restauración automática que ya tiene (solo un agente que la entiende).
+    ...(r.admite?.includes("prueba_auto") ? { pruebas_restauracion: Object.fromEntries((r.repositorios ?? []).filter((x) => x.prueba_auto).map((x) => [x.id, { cada_dias: x.prueba_auto!.cada_dias }])) } : {}),
   };
 }
 
@@ -129,6 +131,8 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
             return { verificacion_auto: v ? (igual ? antes : { ...v, proxima, todo_leido: null }) : null };
           })()
         : {}),
+      // Tarea 8: la prueba de restauración automática (la primera, a las 04:00 siguientes).
+      ...(previo.admite?.includes("prueba_auto") ? { prueba_auto: cfg.pruebas_restauracion?.[r.id] ? { cada_dias: cfg.pruebas_restauracion[r.id].cada_dias, proxima: a3(1) } : null } : {}),
     })),
     copias: cfg.copias.map((c) => ({
       ...(previo.copias?.find((p) => p.id === c.id) ?? {}),
@@ -303,6 +307,13 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       // v1.28: un agente anterior no lee `verificaciones` (y no las guarda).
       if (!e.resumen?.admite?.includes("verificacion_auto")) delete cfg.verificaciones;
       else if (!cfg.verificaciones) cfg.verificaciones = previa.verificaciones;
+      // Tarea 8: igual con la prueba de restauración automática.
+      if (!e.resumen?.admite?.includes("prueba_auto")) delete cfg.pruebas_restauracion;
+      else if (!cfg.pruebas_restauracion) cfg.pruebas_restauracion = previa.pruebas_restauracion;
+      for (const [r, p] of Object.entries(cfg.pruebas_restauracion ?? {})) {
+        if (!conocidos.has(r)) return resultado(e, o, "fallida", `La prueba de restauración automática es de un repositorio que este equipo no tiene: «${r}».`);
+        if (!(p.cada_dias >= 1 && p.cada_dias <= 31)) return resultado(e, o, "fallida", "La prueba de restauración automática va de cada día a cada 31 días.");
+      }
       for (const [r, v] of Object.entries(cfg.verificaciones ?? {})) {
         if (!conocidos.has(r)) return resultado(e, o, "fallida", `La verificación automática es de un repositorio que este equipo no tiene: «${r}».`);
         const conReglas = v.horario && reglasDe(v.horario).length && e.resumen?.admite?.includes("verificacion_horario");

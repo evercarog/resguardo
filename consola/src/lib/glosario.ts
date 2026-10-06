@@ -69,6 +69,16 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "La consola (Resguardo Server) solo coordina: manda órdenes, recibe informes y avisa; no guarda copias. El almacén es un equipo con el agente que «guarda copias» de los demás en su disco. Pueden estar en la misma máquina (lo habitual en una oficina pequeña) o en máquinas distintas. Si la consola se apaga, los equipos siguen copiando a su hora, también en el almacén.",
     todo: "Para tener un almacén, abre el equipo que tiene el disco y pulsa «Este equipo guarda copias».",
   },
+  "regla-321": {
+    title: "Regla 3-2-1-1-0",
+    text: "3 copias de los datos (con los originales), en 2 soportes distintos, 1 fuera de la oficina, 1 que no se pueda borrar desde los equipos y 0 errores al verificar y probar la restauración. Solo cuenta lo que está al día.",
+    todo: "Es una guía, no una obligación: la tira de cada copia dice qué falta y dónde se arregla.",
+  },
+  instantaneas: {
+    title: "Instantáneas fuera de su alcance",
+    text: "Instantáneas que hace el anfitrión del almacén (por ejemplo, ZFS en Proxmox) y que el almacén no ve ni puede borrar. El almacén no puede comprobarlas: lo marcas tú en el destino.",
+    todo: "Son locales: no protegen de un incendio o un robo de la oficina. Mantén también una copia fuera.",
+  },
   inmutable: {
     title: "Inmutable",
     text: "Destino en la nube con bloqueo de objetos (Object Lock): durante el plazo fijado, nadie puede borrar ni cambiar las copias, ni siquiera con la clave de la nube.",
