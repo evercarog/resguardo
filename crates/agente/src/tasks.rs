@@ -790,6 +790,16 @@ pub fn next_verify(repo: &AgentRepo, state: &TasksState) -> Option<DateTime<Loca
     }
 }
 
+/// Tarea 8: cuándo toca la próxima prueba de restauración automática (la de la consola, cada N días).
+pub fn next_restore_test(repo: &AgentRepo, state: &TasksState) -> Option<DateTime<Local>> {
+    let t = repo.restore_test.as_ref()?;
+    let desde = since(state, &key("restore_test", &repo.id), &t.enabled_at);
+    match &t.schedule {
+        Schedule::Hours { every } => Some(desde + chrono::Duration::hours(i64::from(*every))),
+        _ => None,
+    }
+}
+
 fn since(state: &TasksState, k: &str, enabled_at: &str) -> DateTime<Local> {
     let s = state.runs.get(k).map(|r| r.started.as_str()).unwrap_or(enabled_at);
     DateTime::parse_from_rfc3339(s).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now())
