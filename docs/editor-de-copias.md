@@ -110,7 +110,7 @@ Regla: **cada acción se alcanza desde donde se está mirando esa cosa.**
 | Verificación automática | «Verificación» del repositorio | «Verificación» | «Verificación» | en la tarjeta |
 | Prueba de restauración (automática / ahora) | «Prueba» del repositorio | «Prueba» | «Probar ahora» y «Automática…» | en la tarjeta |
 | Copia externa / derivadas (cambiar, subir ahora, quitar) | en la tarjeta del repositorio, como hasta ahora | lista de su cadena | lista de su cadena | — |
-| Traer historial | «Más…» | — | botón | — |
+| Traer historial | — | — | botón | — |
 | Mover, dejar de copiar, quitar | «Más…» | — | «Más…» | «⋯ → Quitar» (la copia) |
 
 **Ficha del equipo:** la sección «Copias» sube justo debajo de las cuatro cifras, antes del mapa, con el botón principal **«Añadir o cambiar copias»**. «Añadir una copia» (el diálogo previo) desaparece: todo empieza en el editor.

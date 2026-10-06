@@ -194,7 +194,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   "prot-copias": {
     title: "Copias automáticas",
     text: "Que las copias se hagan solas a su hora, aunque nadie se acuerde.",
-    todo: "Revisa el horario en «Cambiar las copias» del equipo.",
+    todo: "Revisa el horario en «Añadir o cambiar copias» del equipo.",
   },
   "prot-borrado": {
     title: "Protegida contra borrado",

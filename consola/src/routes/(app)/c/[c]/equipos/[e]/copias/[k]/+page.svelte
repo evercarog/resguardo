@@ -22,6 +22,7 @@
     FolderSync,
     History,
     KeyRound,
+    Link2,
     LoaderCircle,
     LockKeyhole,
     Pencil,
@@ -68,6 +69,8 @@
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
   import { marcarDesdePaso, reglaDeCopia, type MarcarDestino } from "$lib/regla321";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import PasosRepo from "$lib/componentes/PasosRepo.svelte";
+  import { pasosDelRepo } from "$lib/cadenas";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -116,6 +119,8 @@
   const ganchosRes = $derived(fila?.ganchos ?? []);
   const rol = $derived(equipo?.modo === "trasladado" ? "lectura" : actual.cliente?.rol);
   const almacen = $derived(destino?.equipo_almacen ? actual.equipos.find((x) => x.id === destino.equipo_almacen) : null);
+  /** Lo que cuelga de su repositorio (espejos, copia externa, derivadas). */
+  const pasosRepo = $derived(equipo && k ? pasosDelRepo(equipo, k.repo, actual.equipos).slice(1) : []);
   const espejo = $derived(espejoDelRepo(almacen?.resumen?.guarda_copias?.espejo ?? null, repo ? nombreEnAlmacen(destino?.donde, repo) : null));
   const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
   // Tarea 8: la regla 3-2-1-1-0, con lo que dice el catálogo de destinos del cliente.
@@ -235,12 +240,16 @@
       {#if puede.ordenar(rol)}
         <div class="page-actions">
           {#if k.activa !== false}<button class="btn btn-primary" onclick={copiarAhora}><Play size={16} />Copiar ahora</button>{/if}
-          {#if puede.administrar(rol)}<a class="btn" href="/c/{c}/equipos/{e}/copias"><Pencil size={16} />Cambiar</a>{/if}
+          {#if puede.administrar(rol)}<a class="btn" href="/c/{c}/equipos/{e}/copias?copia={encodeURIComponent(kid)}" use:tip={"Carpetas, horario, cuándo empieza y su orden, en el editor de copias"}><Pencil size={16} />Cambiar</a>{/if}
           {#if versiones.length || repo?.versiones}<a class="btn btn-ghost" href="/c/{c}/restaurar?equipo={e}&repo={encodeURIComponent(k.repo)}"><History size={16} />Restaurar</a>{/if}
         </div>
       {/if}
     </header>
     {#if lugar}<p class="donde"><SeGuardaEn {lugar} riesgo={!!riesgo} /></p>{/if}
+    <!-- Lo del repositorio, a la vista (docs/editor-de-copias.md): retención, verificación, prueba y «Añadir paso». -->
+    {#if repo && actual.cliente && puede.ordenar(rol)}
+      <PasosRepo cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} copia={kid} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
+    {/if}
     {#if riesgo && repo}
       <AvisoMismoEquipo
         {riesgo}
@@ -386,8 +395,11 @@
         <h2 class="section-title" id="t-cuando">Cuándo y dónde</h2>
         <dl>
           <div>
-            <dt>Horario</dt>
-            <dd><CalendarClock size={14} />{horarioEnFrase(k.horario)}{k.activa === false ? " (desactivada)" : ""}</dd>
+            <dt>{k.tras ? "Empieza" : "Horario"}</dt>
+            <dd>
+              {#if k.tras}<Link2 size={14} />Después de «{copias.find((x) => x.id === k.tras)?.nombre ?? k.tras}»{#if typeof k.horario === "object" && (k.horario?.horas?.length || k.horario?.reglas?.length)}{" y "}{horarioEnFrase(k.horario).toLowerCase()}{/if}
+              {:else}<CalendarClock size={14} />{horarioEnFrase(k.horario)}{/if}{k.activa === false ? " (desactivada)" : ""}
+            </dd>
           </div>
           <div>
             <dt>Próxima</dt>
@@ -420,6 +432,14 @@
               {:else}<span class="faint">No tiene: todas las versiones están en un solo sitio</span>{/if}
             </dd>
           </div>
+          {#if pasosRepo.length}
+            <div>
+              <dt>Además</dt>
+              <dd class="ramas">
+                {#each pasosRepo as p, i (i)}<span use:tip={p.detalle}>{p.clase === "espejo" ? "Espejo" : p.detalle.startsWith("copia externa") ? "Copia externa" : "Repositorio derivado"} · {p.texto}</span>{/each}
+              </dd>
+            </div>
+          {/if}
           {#if espejo && almacen}
             <div>
               <dt>Espejo <Ayuda id="espejo" /></dt>
@@ -521,6 +541,11 @@
 {/if}
 
 <style>
+  .ramas {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
   .cab {
     display: flex;
     flex-wrap: wrap;
