@@ -9,7 +9,9 @@ import { randomUUID } from "node:crypto";
 import { argon2id } from "hash-wasm";
 import { aB64, aleatorio, deB64, deUtf8 } from "../../src/lib/cripto/bytes";
 import { abrir, parEfimero } from "../../src/lib/cripto/sobre";
-import { etiquetaEquipo, etiquetaValida, kCfg, materialCliente, pruebaAdmin, pruebaCodigo, resultadoFirmado, sasV3, verificador, ARGON2, type Argon2 } from "../../src/lib/cripto/claves";
+import { etiquetaEquipo, etiquetaValida, hashCodigo, kCfg, materialCliente, pruebaAdmin, pruebaCodigo, resultadoFirmado, sasV3, verificador, ARGON2, type Argon2 } from "../../src/lib/cripto/claves";
+import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
+import { cola } from "../../src/lib/cola";
 import { esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, sellarOrden, type Autorizacion } from "../../src/lib/cripto/ordenes";
 import { claveDireccion, cifrarMensaje, descifrarMensaje } from "../../src/lib/cripto/simetrico";
 import type { Cliente, Equipo, Orden } from "../../src/lib/tipos";
@@ -97,6 +99,14 @@ export class Agente {
     comprobar(r.codigo === 0, `${this.nombre}: «vincular» falló`, r.salida);
     const m = /Código de comprobación:\s*(\d{3} \d{3})/.exec(r.salida);
     comprobar(m, `${this.nombre}: «vincular» no enseñó el número de comprobación`, r.salida);
+    return m[1];
+  }
+  /** `vincular --instalador <ruta>` (instalador listo): todo sale de la cola; devuelve el número de comprobación. */
+  vincularInstalador(ruta: string): string {
+    const r = this.cli(["vincular", "--instalador", ruta]);
+    comprobar(r.codigo === 0, `${this.nombre}: «vincular --instalador» falló`, r.salida);
+    const m = /Código de comprobación:\s*(\d{3} \d{3})/.exec(r.salida);
+    comprobar(m, `${this.nombre}: «vincular --instalador» no enseñó el número de comprobación`, r.salida);
     return m[1];
   }
   arrancar() {
@@ -299,26 +309,57 @@ export class Consola {
     return r;
   }
 
-  /** «Añadir equipo»: código, `vincular` en el equipo, número de comprobación (SAS v3), confirmar con la etiqueta y `alta`. */
-  async emparejar(c: Cliente, ag: Agente, claveAdmin: string): Promise<Equipo> {
-    const emp = await this.ok("POST", `/api/clientes/${c.id}/emparejamientos`);
-    const sasEquipo = ag.vincular(emp.codigo, this.srv);
+  /**
+   * «Añadir equipo»: código, `vincular` en el equipo, número de comprobación (SAS v3), confirmar con la etiqueta y `alta`.
+   * `forma` (v1.4x): «navegador» (por defecto: el código de 15 min lo genera la consola y al servidor solo le
+   * llega su hash), «instalador» (instalador listo: la cola la arma la consola con su código, lib/cola.ts, y el
+   * equipo se vincula con `vincular --instalador`) o «servidor» (la forma de antes: el servidor genera el código).
+   */
+  async emparejar(c: Cliente, ag: Agente, claveAdmin: string, forma: "navegador" | "instalador" | "servidor" = "navegador"): Promise<Equipo> {
+    let empId: string;
+    let codigo: string;
+    let sasEquipo: string;
+    if (forma === "servidor") {
+      const emp = await this.ok("POST", `/api/clientes/${c.id}/emparejamientos`);
+      comprobar(typeof emp.codigo === "string" && !emp.codigo_navegador, "Forma de antes: el servidor da su código", emp);
+      [empId, codigo] = [emp.id, emp.codigo];
+      sasEquipo = ag.vincular(codigo, this.srv);
+    } else if (forma === "navegador") {
+      codigo = generarCodigo();
+      const emp = await this.ok("POST", `/api/clientes/${c.id}/emparejamientos`, { codigo_hash: hashCodigo(codigo) });
+      comprobar(emp.codigo === undefined && emp.codigo_navegador === true, "Con el hash, el servidor no da (ni tiene) el código", emp);
+      empId = emp.id;
+      sasEquipo = ag.vincular(codigo, this.srv);
+    } else {
+      // Instalador listo armado en el navegador: el genérico (aquí, unos bytes cualquiera: el agente solo
+      // lee la cola del final) más la cola con el código de la consola.
+      codigo = generarCodigo(LARGO_PREPARADO);
+      const p = await this.ok("POST", `/api/clientes/${c.id}/instaladores`, { nombre: ag.nombre, so: "linux", servidor: this.srv.url, codigo_hash: hashCodigo(codigo) });
+      comprobar(p.codigo === undefined && p.codigo_navegador === true && p.cliente === c.id, "Preparado con el hash: sin el código", p);
+      empId = p.id;
+      const ruta = path.join(ag.dir, "Resguardo-Agente-listo.exe");
+      fs.writeFileSync(ruta, Buffer.concat([Buffer.from("MZ instalador genérico de prueba"), Buffer.from(cola({ v: 1, servidor: p.servidor, huella_ca: p.huella_ca, cliente: p.cliente, nombre: p.nombre, codigo }))]));
+      sasEquipo = ag.vincularInstalador(ruta);
+    }
     const unido = await esperar("que el equipo se una", async () => {
-      const x = await this.ok("GET", `/api/clientes/${c.id}/emparejamientos/${emp.id}`);
+      const x = await this.ok("GET", `/api/clientes/${c.id}/emparejamientos/${empId}`);
       return x.estado === "unido" ? x : null;
     });
+    if (forma === "servidor") igual(unido.codigo, codigo, "Forma de antes: el servidor da el código para el alta");
+    else igual([unido.codigo, unido.codigo_hash, unido.codigo_navegador], [undefined, hashCodigo(codigo), true], "El servidor solo tiene el hash del código");
     const servidor = await this.ok("GET", "/api/servidor");
     igual(unido.sas_version, 3, "El equipo anuncia el SAS v3");
     const eq = unido.equipo;
+    if (forma === "instalador") igual(eq.nombre, ag.nombre, "El equipo entra con el nombre preparado");
     const sasConsola = sasV3(servidor.identidad, eq.box_pub, eq.sign_pub, servidor.huella_ca);
     igual(sasConsola, sasEquipo, `${ag.nombre}: el número de comprobación de la consola y el del equipo`);
     igual(unido.sas, sasEquipo, "El número que da el servidor");
     const kcfg = kCfg(await materialCliente(argon2, claveAdmin, c.sal_cliente));
-    await this.ok("POST", `/api/clientes/${c.id}/emparejamientos/${emp.id}/confirmar`, { etiqueta: etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub) });
+    await this.ok("POST", `/api/clientes/${c.id}/emparejamientos/${empId}/confirmar`, { etiqueta: etiquetaEquipo(kcfg, eq.id, eq.box_pub, eq.sign_pub) });
     ag.id = eq.id;
     ag.arrancar();
-    await this.hecha(c, eq.id, "alta", {}, { claveAdmin }, { alta: { codigo: emp.codigo } });
-    log(`${ag.nombre} emparejado (SAS ${sasEquipo}) y dado de alta: ${eq.id}`);
+    await this.hecha(c, eq.id, "alta", {}, { claveAdmin }, { alta: { codigo } });
+    log(`${ag.nombre} emparejado (${forma}, SAS ${sasEquipo}) y dado de alta: ${eq.id}`);
     return this.equipo(c, eq.id);
   }
 

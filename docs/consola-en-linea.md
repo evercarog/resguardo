@@ -140,6 +140,14 @@ RESGUARDO_NOMBRES=consola.ejemplo.com
   llegan de 127.0.0.1 (Caddy), la IP de quien pide es la última de
   `X-Forwarded-For` (para los límites, la auditoría y fail2ban). Las demás
   conexiones no pueden fingir su IP con esa cabecera.
+- **Proxy en otra máquina o contenedor** (Caddy en Docker, en otro CT…):
+  `RESGUARDO_PROXY_RED=172.18.0.0/16` (`--proxy-red`, varias redes separadas por
+  comas; implica `RESGUARDO_DETRAS_DE_PROXY=1`). De esas redes también se cree
+  `X-Forwarded-For`, empezando por la derecha: la IP de quien pide es la primera
+  que no es de un proxy de confianza. Sin ella, todas las peticiones tendrían la
+  IP del proxy y los límites por IP serían de todos a la vez. Pon la red más
+  pequeña posible (mejor la IP del proxy con `/32`). Ver
+  [servidor-linux.md](servidor-linux.md), «Proxy en otro CT o contenedor».
 - Los agentes van directos al 8443 (ábrelo en el cortafuegos) con la
   dirección de `RESGUARDO_URL_AGENTES`.
 - Sin Caddy, `--dominio` hace todo esto solo y basta con los puertos 80 y 443.
@@ -476,7 +484,7 @@ que A: úsalo solo si no puedes conservar la identidad.
   `resguardo-server --ayuda`): `RESGUARDO_DOMINIO`, `RESGUARDO_ACME_CORREO`,
   `RESGUARDO_DOMINIO_AGENTES`, `RESGUARDO_ACME_PRUEBAS=1`,
   `RESGUARDO_ACME_HTTP` (por defecto `0.0.0.0:80`), `RESGUARDO_URL_AGENTES`,
-  `RESGUARDO_DETRAS_DE_PROXY=1`, `RESGUARDO_PUBLICO=1`.
+  `RESGUARDO_DETRAS_DE_PROXY=1`, `RESGUARDO_PROXY_RED`, `RESGUARDO_PUBLICO=1`.
 
 ## Lo que falta
 

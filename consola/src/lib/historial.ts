@@ -183,7 +183,7 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
       espejo: ["espejo", "Espejo"],
     };
     for (const h of historial) {
-      // v1.4x: se trajo el historial (o un paso de «Mover a otro sitio…»): en los dos repositorios, una vez.
+      // v1.47: se trajo el historial (o un paso de «Mover a otro sitio…»): en los dos repositorios, una vez.
       if (h.tipo === "historial" && h.resultado && (h.repo === repo.id || h.origen === repo.id)) {
         if (!yaHistorial.has(h.id)) {
           yaHistorial.add(h.id);
@@ -277,7 +277,7 @@ export function claseDe(s: Pick<Suceso, "tipo" | "tono"> & { fallidas?: number }
 }
 
 /**
- * v1.4x: una entrada `historial` (se trajo el historial de otro repositorio) vista
+ * v1.47: una entrada `historial` (se trajo el historial de otro repositorio) vista
  * desde el repositorio `desde` (el que lo recibió o, si se movió, el de origen).
  * Un movimiento termina con su paso `ultimo`: «Movido a otro sitio».
  */

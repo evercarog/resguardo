@@ -1,6 +1,6 @@
 // «Mover a otro sitio…» (v1.41): lo que no es pantalla. Los pasos los lleva
 // el navegador que lo empezó (se recuerdan en su almacenamiento local); el
-// equipo cuenta a todas sus consolas cuándo trae el historial (v1.4x,
+// equipo cuenta a todas sus consolas cuándo trae el historial (v1.47,
 // progreso `historial` con `mover`), y las demás solo lo enseñan.
 import { lista } from "./formato";
 import type { TareaEnMarcha } from "./tipos";

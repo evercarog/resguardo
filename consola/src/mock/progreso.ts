@@ -28,7 +28,7 @@ interface Sim {
   bytes: number;
   /** Vuelve a empezar al terminar (la copia larga de RECEPCION). */
   bucle?: boolean;
-  /** v1.4x (`historial`): cuántas versiones trae, y lo demás que dice el equipo (mover, de qué consola…). */
+  /** v1.47 (`historial`): cuántas versiones trae, y lo demás que dice el equipo (mover, de qué consola…). */
   versiones?: number;
   extra?: Partial<T.TareaEnMarcha>;
   alTerminar?: () => void;
@@ -76,7 +76,7 @@ function sembrar() {
     h.empezo = Date.now() - (h.preparar + h.escanear + h.subir * 0.6);
     sims.push(h);
   }
-  // v1.4x: CONTABILIDAD mueve «Siigo y documentos» al almacén, empezado desde OTRA consola
+  // v1.47: CONTABILIDAD mueve «Siigo y documentos» al almacén, empezado desde OTRA consola
   // (la de la oficina): aquí solo se ve (aviso en el repositorio y en el equipo, sin poder llevarlo).
   const conta = estado.equipos.find((e) => e.id === ID.contabilidad);
   const rs = conta?.resumen?.repositorios?.find((r) => r.id === "siigo");
@@ -204,7 +204,7 @@ export function empezarCopia(cliente: string, equipo: string, repo: string, copi
   programar(s);
 }
 
-/** v1.4x: traer el historial (también un paso de «Mover a otro sitio…» desde esta consola). */
+/** v1.47: traer el historial (también un paso de «Mover a otro sitio…» desde esta consola). */
 export function empezarHistorial(cliente: string, equipo: string, repo: string, nombre: string, versiones: number, ms: number, extra: Partial<T.TareaEnMarcha>) {
   sembrar();
   sims = sims.filter((s) => !(s.equipo === equipo && s.repo === repo && s.tipo === "historial"));

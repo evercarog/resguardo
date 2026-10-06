@@ -827,7 +827,7 @@ fn entregar(db: &dyn Almacen, motor: &Motor, ahora: Ts) -> R<()> {
         for e in sueltos {
             let ms = std::slice::from_ref(&e.mensaje);
             let formato = con_marca(db, &formato, ms, None);
-            let r = transporte::enviar(transporte.as_ref(), &canal, &secretos, &destino, ms, &formato, &e.id, ahora);
+            let r = transporte::enviar(transporte.as_ref(), &ambito, &canal, &secretos, &destino, ms, &formato, &e.id, ahora);
             anotar(db, vec![e], r, ahora)?;
         }
         if juntos.is_empty() {
@@ -845,7 +845,7 @@ fn entregar(db: &dyn Almacen, motor: &Motor, ahora: Ts) -> R<()> {
         }
         let mensajes: Vec<Mensaje> = juntos.iter().map(|e| e.mensaje.clone()).collect();
         let formato = con_marca(db, &formato, &mensajes, None);
-        let r = transporte::enviar(transporte.as_ref(), &canal, &secretos, &destino, &mensajes, &formato, &juntos[0].id, ahora);
+        let r = transporte::enviar(transporte.as_ref(), &ambito, &canal, &secretos, &destino, &mensajes, &formato, &juntos[0].id, ahora);
         anotar(db, juntos, r, ahora)?;
     }
     Ok(())
@@ -931,7 +931,7 @@ pub fn probar(
     // La prueba de un canal del cliente sale con su marca.
     let formato = con_marca(db, &formato, std::slice::from_ref(&m), cliente);
     let r = if ajustes::completo(canal) {
-        transporte::enviar(motor.transporte().as_ref(), canal, &secretos, destino, std::slice::from_ref(&m), &formato, &id, ahora)
+        transporte::enviar(motor.transporte().as_ref(), ambito, canal, &secretos, destino, std::slice::from_ref(&m), &formato, &id, ahora)
     } else {
         Err(transporte::Fallo { permanente: true, texto: "Al canal le faltan datos.".into() })
     };

@@ -12,7 +12,53 @@ use std::sync::{Arc, Mutex};
 pub struct Sqlite {
     dir: PathBuf,
     control: Mutex<Connection>,
-    clientes: Mutex<HashMap<String, Arc<Mutex<Connection>>>>,
+    clientes: Mutex<Conexiones>,
+}
+
+/// Conexiones abiertas a la vez con las bases de los clientes, como mucho (las menos
+/// usadas se cierran). En la consola en línea puede haber muchos clientes: sin tope,
+/// cada uno dejaba su archivo abierto para siempre.
+pub const MAX_CONEXIONES_CLIENTES: usize = 128;
+
+/// Caché de conexiones por cliente (LRU acotada). Nunca cierra una que se está usando
+/// (alguien más tiene su `Arc`): si se abriera otra para el mismo cliente, dos
+/// conexiones podrían escribir a la vez (p. ej. dos entradas de auditoría con el mismo
+/// número). Si todas están en uso, se pasa del tope un momento.
+struct Conexiones {
+    tope: usize,
+    /// Cliente → (conexión, último uso).
+    abiertas: HashMap<String, (Arc<Mutex<Connection>>, u64)>,
+    reloj: u64,
+}
+
+impl Conexiones {
+    fn nuevas(tope: usize) -> Self {
+        Self { tope: tope.max(1), abiertas: HashMap::new(), reloj: 0 }
+    }
+
+    fn tomar(&mut self, id: &str) -> Option<Arc<Mutex<Connection>>> {
+        self.reloj += 1;
+        let reloj = self.reloj;
+        self.abiertas.get_mut(id).map(|(con, uso)| {
+            *uso = reloj;
+            con.clone()
+        })
+    }
+
+    /// Guarda una nueva y devuelve las que hay que cerrar (fuera del cerrojo).
+    fn poner(&mut self, id: &str, con: Arc<Mutex<Connection>>) -> Vec<Arc<Mutex<Connection>>> {
+        let mut cerrar = Vec::new();
+        while self.abiertas.len() >= self.tope {
+            let libre = self.abiertas.iter().filter(|(_, (c, _))| Arc::strong_count(c) == 1).min_by_key(|(_, (_, uso))| *uso).map(|(k, _)| k.clone());
+            match libre.and_then(|k| self.abiertas.remove(&k)) {
+                Some((c, _)) => cerrar.push(c),
+                None => break,
+            }
+        }
+        self.reloj += 1;
+        self.abiertas.insert(id.to_string(), (con, self.reloj));
+        cerrar
+    }
 }
 
 const ESQUEMA_CONTROL: &str = r#"
@@ -240,7 +286,15 @@ impl Sqlite {
     pub fn abrir(dir: &Path) -> R<Self> {
         std::fs::create_dir_all(dir.join("clientes")).map_err(s)?;
         let control = abrir(&dir.join("control.db"), ESQUEMA_CONTROL)?;
-        Ok(Self { dir: dir.to_path_buf(), control: Mutex::new(control), clientes: Mutex::new(HashMap::new()) })
+        Ok(Self { dir: dir.to_path_buf(), control: Mutex::new(control), clientes: Mutex::new(Conexiones::nuevas(MAX_CONEXIONES_CLIENTES)) })
+    }
+
+    /// Con otro tope de conexiones por cliente (para las pruebas).
+    #[cfg(test)]
+    fn abrir_con_tope(dir: &Path, tope: usize) -> R<Self> {
+        let a = Self::abrir(dir)?;
+        *a.clientes.lock().unwrap_or_else(|e| e.into_inner()) = Conexiones::nuevas(tope);
+        Ok(a)
     }
 
     fn ctl(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -249,16 +303,25 @@ impl Sqlite {
 
     fn conexion(&self, c: &ClienteCtx) -> R<Arc<Mutex<Connection>>> {
         let mut mapa = self.clientes.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(con) = mapa.get(c.id()) {
-            return Ok(con.clone());
+        if let Some(con) = mapa.tomar(c.id()) {
+            return Ok(con);
         }
         let path = self.dir.join("clientes").join(format!("{}.db", id_seguro(c.id())?));
         let db = abrir(&path, ESQUEMA_CLIENTE)?;
         migrar_cliente(&db)?;
         db.execute_batch(super::notas::ESQUEMA).map_err(s)?;
         let con = Arc::new(Mutex::new(db));
-        mapa.insert(c.id().to_string(), con.clone());
+        let cerrar = mapa.poner(c.id(), con.clone());
+        drop(mapa);
+        // Cerrar una conexión puede pasar el WAL a la base: sin bloquear a los demás.
+        drop(cerrar);
         Ok(con)
+    }
+
+    /// Cuántas conexiones con clientes hay abiertas (para las pruebas).
+    #[cfg(test)]
+    fn abiertas(&self) -> usize {
+        self.clientes.lock().unwrap_or_else(|e| e.into_inner()).abiertas.len()
     }
 
     pub(super) fn con<T>(&self, c: &ClienteCtx, f: impl FnOnce(&Connection) -> R<T>) -> R<T> {
@@ -578,6 +641,9 @@ impl Almacen for Sqlite {
         tx.execute("DELETE FROM codigos WHERE codigo_hash = ?1", [codigo_hash]).map_err(s)?;
         tx.commit().map_err(s)?;
         Ok(fila)
+    }
+    fn codigo_indexado(&self, codigo_hash: &str) -> R<bool> {
+        self.ctl().query_row("SELECT 1 FROM codigos WHERE codigo_hash = ?1", [codigo_hash], |_| Ok(())).optional().map_err(s).map(|x| x.is_some())
     }
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()> {
         self.ctl().execute("INSERT INTO indice_equipos (equipo_id, cliente_id) VALUES (?1, ?2)", [equipo, cliente]).map_err(s)?;
@@ -1285,7 +1351,7 @@ impl Almacen for Sqlite {
                     }
                 }
             }
-            // v1.4x: las vueltas de la retención llevan las versiones que quitaron; solo las
+            // v1.45: las vueltas de la retención llevan las versiones que quitaron; solo las
             // más recientes las conservan (las demás, sus cifras), así que no crecen sin límite.
             if nuevas > 0 && entradas.iter().any(|e| e.tipo == "retencion") {
                 tx.execute(
@@ -1611,6 +1677,42 @@ mod tests {
         let vivo = a.emparejamiento(&c, "vivo").unwrap().unwrap();
         assert_eq!((vivo.codigo, vivo.equipo_id.as_deref(), vivo.nombre.as_deref()), (None, Some("eq1"), Some("SERVIDOR-01")));
         assert!(a.a_medias(&c, t).unwrap().is_empty(), "con el alta, nada a medias");
+    }
+
+    /// 9g: con más clientes que el tope, se cierran las conexiones menos usadas y
+    /// todo sigue bien (al volver, se abre de nuevo con sus datos); la que está en
+    /// uso no se cierra.
+    #[test]
+    fn conexiones_por_cliente_con_tope() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = Sqlite::abrir_con_tope(dir.path(), 4).unwrap();
+        let clientes: Vec<ClienteCtx> = (0..10).map(|i| ClienteCtx::autorizado(&a.crear_cliente(&format!("Cliente {i}"), "s", 24).unwrap().id)).collect();
+        for (i, c) in clientes.iter().enumerate() {
+            a.auditar(c, "ana", "orden", &format!("equipo-{i}"), "{}").unwrap();
+            assert!(a.abiertas() <= 4, "{}", a.abiertas());
+        }
+        // Otra vuelta: cada uno con lo suyo, y la cadena de auditoría sigue entera.
+        for (i, c) in clientes.iter().enumerate() {
+            a.auditar(c, "ana", "orden", &format!("equipo-{i}-b"), "{}").unwrap();
+            assert_eq!(a.verificar_auditoria(c).unwrap(), (2, None));
+        }
+        assert_eq!(a.abiertas(), 4);
+        // La más usada últimamente sigue abierta: es la misma conexión.
+        let ultima = a.conexion(&clientes[9]).unwrap();
+        assert!(Arc::ptr_eq(&ultima, &a.conexion(&clientes[9]).unwrap()));
+        // En uso (alguien tiene su Arc): no se cierra aunque sea la más antigua.
+        let en_uso = a.conexion(&clientes[0]).unwrap();
+        for c in &clientes[1..9] {
+            a.conexion(c).unwrap();
+        }
+        assert!(Arc::ptr_eq(&en_uso, &a.conexion(&clientes[0]).unwrap()), "la que está en uso sigue siendo la misma");
+        drop((en_uso, ultima));
+        // Todas en uso: se pasa del tope en vez de abrir dos para el mismo cliente.
+        let todas: Vec<_> = clientes.iter().map(|c| a.conexion(c).unwrap()).collect();
+        assert_eq!(a.abiertas(), 10);
+        drop(todas);
+        a.conexion(&ClienteCtx::autorizado(&a.crear_cliente("Otro", "s", 24).unwrap().id)).unwrap();
+        assert_eq!(a.abiertas(), 4, "en cuanto quedan libres, vuelve al tope");
     }
 
     #[test]

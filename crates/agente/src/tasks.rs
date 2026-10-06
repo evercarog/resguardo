@@ -143,7 +143,7 @@ pub struct Offsite {
     #[serde(default)]
     pub verify: Option<Verify>,
     /// Cómo es el destino: un repositorio que ya existía, con bloqueo de
-    /// objetos o de solo añadir (v1.4x; sin nada, como siempre).
+    /// objetos o de solo añadir (v1.46; sin nada, como siempre).
     #[serde(default, skip_serializing_if = "DestinoExterno::normal")]
     pub dest: DestinoExterno,
 }

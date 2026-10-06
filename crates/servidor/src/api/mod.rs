@@ -257,6 +257,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/vivo", get(crate::vivo::canal))
         .route("/api/clientes/{c}/emparejamientos", post(equipos::abrir_emparejamiento).get(instaladores::listar))
         .route("/api/clientes/{c}/instaladores", post(instaladores::preparar))
+        .route("/api/clientes/{c}/instalador-agente", get(instaladores::instalador_generico))
         .route("/api/clientes/{c}/preparados", get(instaladores::contar))
         .route("/api/clientes/{c}/codigo-abierto", get(instaladores::codigo_abierto))
         .route("/api/clientes/{c}/a-medias", get(instaladores::a_medias))

@@ -585,7 +585,7 @@ igual("ruta en un almacén de Windows", rutaEnAlmacen("E:\\Resguardo", "servidor
 igual("nivel de las órdenes nuevas", [NIVEL.adoptar_repositorio, NIVEL.copiar_historial], ["admin", "admin"]);
 
 // ---------------------------------------------------------------------------
-console.log("\n· Copia externa a un repositorio que ya existe (v1.4x)");
+console.log("\n· Copia externa a un repositorio que ya existe (v1.46)");
 {
   const x = { ...externaExtraVacia(), modo: "existente" as const };
   x.existente = { ...x.existente, direccion: "b2:cubo-copias:clientes/siigo", usuario: "0041a2b3", secreto: "K004secreto", contrasena: "clave de la nube" };

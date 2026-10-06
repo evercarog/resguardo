@@ -20,7 +20,7 @@
 //! Mientras una operación tarda, el equipo manda `{ op: "trabajando", sobre }`
 //! cada 20 s (sin `re`: una consola anterior lo ignora).
 //!
-//! v1.4x (en `explorar`): `buscar_todas {texto, desde?, hasta?, max?, indice?}`
+//! v1.44 (en `explorar`): `buscar_todas {texto, desde?, hasta?, max?, indice?}`
 //! (un archivo por su nombre en todas las versiones, agrupado por archivo y
 //! por páginas; ver `resguardo_motor::buscar`).
 

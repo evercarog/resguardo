@@ -161,7 +161,9 @@ pub struct Emparejamiento {
     pub so: Option<String>,
     /// El código mientras sirve (abierto o unido): la consola lo necesita para la orden
     /// `alta` y para volver a enseñarlo. Se borra al confirmar, anular o caducar. Los códigos
-    /// de 15 min lo guardan desde v1.42 (antes, solo los preparados).
+    /// de 15 min lo guardan desde v1.42 (antes, solo los preparados). v1.4x: si el código lo
+    /// generó el navegador, aquí solo va `sha256:<hash>` (el servidor nunca lo ve; ver
+    /// `api::instaladores::codigo_en_claro`): marca igual que el emparejamiento sigue a medias.
     pub codigo: Option<String>,
     pub creado: Ts,
     /// Versión del código de comprobación que anunció el equipo al unirse (v1.26): 3 si
@@ -383,6 +385,9 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn indexar_codigo(&self, codigo_hash: &str, cliente: &str, emparejamiento: &str, caduca: Ts) -> R<()>;
     /// Gasta el código: (cliente, emparejamiento) si existe y no ha caducado.
     fn tomar_codigo(&self, codigo_hash: &str) -> R<Option<(String, String)>>;
+    /// ¿Hay ya un código con ese hash en el índice (aunque haya caducado y aún no se haya
+    /// limpiado)? v1.4x: el hash lo manda el navegador y no puede pisar el de otro.
+    fn codigo_indexado(&self, codigo_hash: &str) -> R<bool>;
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()>;
     fn cliente_de_equipo(&self, equipo: &str) -> R<Option<ClienteCtx>>;
     fn desindexar_equipo(&self, equipo: &str) -> R<()>;

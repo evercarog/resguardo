@@ -135,7 +135,7 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
     if let Some(t) = crate::tasks::load_state().live_running() {
         out.push(tarea_larga(t));
     }
-    // v1.4x: lo que corre dentro del servicio por una orden (traer el historial, también
+    // v1.47: lo que corre dentro del servicio por una orden (traer el historial, también
     // al «Mover a otro sitio…»; aplicar la retención) y las restauraciones.
     let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
     out.extend(ops::lista().iter().map(|o| tarea_operacion(o, &enlace)));
@@ -189,7 +189,7 @@ pub fn tarea_operacion(o: &ops::Operacion, enlace: &str) -> Value {
     })
 }
 
-/// v1.4x: las operaciones largas que corren dentro del servicio por una orden
+/// v1.47: las operaciones largas que corren dentro del servicio por una orden
 /// (traer el historial —también los pasos de «Mover a otro sitio…»— y aplicar
 /// la retención). Solo en memoria: si el servicio se reinicia, la operación se
 /// cortó con él (y su orden queda fallida, `largas`). Cada canal las cuenta a
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!((v["lectura"].as_u64(), v["subida"].as_u64()), (Some(5_000), Some(4_000)));
     }
 
-    /// v1.4x: una operación del servicio (traer el historial al mover un repositorio) se
+    /// v1.47: una operación del servicio (traer el historial al mover un repositorio) se
     /// cuenta a TODAS las consolas; las que no la empezaron la ven como de otra consola,
     /// con su nombre (nunca su dirección), y al soltarla deja de contarse.
     #[test]

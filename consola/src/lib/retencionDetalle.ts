@@ -2,7 +2,7 @@
 // es pantalla.
 //
 // - Lo que se eliminó: las vueltas de la retención que anota cada equipo en su
-//   historial (v1.4x, `tipo: "retencion"`; agente: retencion_registro.rs): la
+//   historial (v1.45, `tipo: "retencion"`; agente: retencion_registro.rs): la
 //   del propio equipo, la del almacén (en el historial del almacén, por usuario
 //   y carpeta) y la de la copia externa (en su destino). Con las versiones que
 //   quitó cada una (las 50 vueltas más recientes; de las anteriores, las cifras).

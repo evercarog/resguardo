@@ -85,13 +85,30 @@ pub fn sas_de(st: &St, version: Option<i64>, box_pub: &str, sign_pub: &str) -> (
     }
 }
 
+/// Intentos fallidos de `unirse` (código que no vale) por IP y hora: frena probar códigos.
+pub const MAX_FALLOS_UNIRSE_H: u32 = 20;
+/// Intentos de `unirse` por IP y hora, buenos o malos (v1.4x). Antes había un solo límite de 20
+/// que contaba también los que salían bien: una oficina tras una sola IP pública (consola en
+/// internet) no podía vincular más de 20 equipos en una hora y daba «Demasiados intentos».
+/// Los buenos ya los limita la creación de códigos (por cuenta y por cliente).
+pub const MAX_UNIRSE_H: u32 = 300;
+
 async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p): Json<Unirse>) -> Res<Json<Value>> {
-    if !st.limites.intento(&format!("unirse:{}", ip_de(&ip)), 20, Duration::from_secs(3600)) {
+    let hora = Duration::from_secs(3600);
+    let clave_fallos = format!("unirse-fallo:{}", ip_de(&ip));
+    if st.limites.superado(&clave_fallos, MAX_FALLOS_UNIRSE_H, hora) || !st.limites.intento(&format!("unirse:{}", ip_de(&ip)), MAX_UNIRSE_H, hora) {
         return Err(ErrorApi::demasiados());
     }
+    // Un intento que no vale cuenta para el límite de fallos: pasados 20 en una hora, esa IP espera.
+    let fallo = |e: ErrorApi| {
+        st.limites.intento(&clave_fallos, MAX_FALLOS_UNIRSE_H, hora);
+        e
+    };
     if p.codigo_hash.len() != 64 || !p.codigo_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(ErrorApi::datos("Código no válido."));
+        return Err(fallo(ErrorApi::datos("Código no válido.")));
     }
+    // El índice guarda el hash en minúsculas (el agente y la consola lo dan así).
+    let codigo_hash = p.codigo_hash.to_ascii_lowercase();
     if !b64_32(&p.box_pub) || !b64_32(&p.sign_pub) || !B64.decode(&p.sal_equipo).is_ok_and(|s| (16..=64).contains(&s.len())) {
         return Err(ErrorApi::datos("Claves del equipo no válidas."));
     }
@@ -117,7 +134,7 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
     let publico = st.opciones.publico;
     let cliente = st
         .db(move |db| {
-            let Some((cliente, emp)) = db.tomar_codigo(&p.codigo_hash)? else { return Ok(None) };
+            let Some((cliente, emp)) = db.tomar_codigo(&codigo_hash)? else { return Ok(None) };
             let ctx = ClienteCtx::autorizado(&cliente);
             let Some(e) = db.emparejamiento(&ctx, &emp)? else { return Ok(None) };
             if e.estado != "abierto" || e.caduca <= ahora() {
@@ -140,7 +157,7 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
             Ok(Some(Ok(cliente)))
         })
         .await?;
-    let cliente = cliente.ok_or_else(|| ErrorApi::nuevo(StatusCode::NOT_FOUND, "codigo", "Código no válido o caducado.").acceso("codigo_equipo"))?;
+    let cliente = cliente.ok_or_else(|| fallo(ErrorApi::nuevo(StatusCode::NOT_FOUND, "codigo", "Código no válido o caducado.").acceso("codigo_equipo")))?;
     let cliente = cliente.map_err(error_cuota)?;
     st.vivo.avisar(&cliente, Cambio::Equipo(&equipo.id));
     Ok(Json(json!({
@@ -632,14 +649,14 @@ async fn registrar_aviso(st: &St, a: &Agente, av: Aviso) -> Res<()> {
 /// Entradas por petición y tamaño de cada una (en JSON).
 pub const MAX_ENTRADAS_HISTORIAL: usize = 500;
 const MAX_ENTRADA_HISTORIAL: usize = 4 * 1024;
-/// v1.4x: una vuelta de la retención lleva las versiones que quitó (como mucho 2000; el agente la recorta a 96 KiB).
+/// v1.45: una vuelta de la retención lleva las versiones que quitó (como mucho 2000; el agente la recorta a 96 KiB).
 pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
-/// v1.4x: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
+/// v1.47: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
 /// v1.4x: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
 pub const TIPOS_HISTORIAL: &[&str] =
     &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial", "orden"];
-/// Los que solo se dan si se piden con `tipo` (v1.4x): una consola anterior no los conoce
-/// (o son grandes). Sin `tipo`, el historial es el de siempre.
+/// Los que solo se dan si se piden con `tipo` (v1.45; `orden`, v1.4x): una consola anterior no
+/// los conoce (o son grandes). Sin `tipo`, el historial es el de siempre.
 pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion", "orden"];
 /// Vueltas de la retención con la lista de versiones por equipo; las anteriores, solo con sus cifras.
 pub const RETENCIONES_CON_DETALLE: i64 = 50;
@@ -862,23 +879,6 @@ async fn leer_sesion(State(st): State<St>, a: Agente, Path(s): Path<String>, Que
 
 // ---------- Relé ----------
 
-fn uso_relevos(dir: &std::path::Path) -> u64 {
-    fn suma(d: &std::path::Path) -> u64 {
-        std::fs::read_dir(d)
-            .map(|it| {
-                it.flatten()
-                    .map(|e| match e.file_type() {
-                        Ok(t) if t.is_dir() => suma(&e.path()),
-                        Ok(_) => e.metadata().map(|m| m.len()).unwrap_or(0),
-                        Err(_) => 0,
-                    })
-                    .sum()
-            })
-            .unwrap_or(0)
-    }
-    suma(dir)
-}
-
 async fn subir_trozo(State(st): State<St>, a: Agente, Path((r, n)): Path<(String, u64)>, cuerpo: Bytes) -> Res<StatusCode> {
     if cuerpo.is_empty() || cuerpo.len() > MAX_TROZO {
         return Err(ErrorApi::datos("Trozo vacío o demasiado grande."));
@@ -892,7 +892,7 @@ async fn subir_trozo(State(st): State<St>, a: Agente, Path((r, n)): Path<(String
         return Err(ErrorApi::conflicto("Los trozos van en orden.").con(json!({ "siguiente": rel.trozos })));
     }
     let bytes = rel.bytes + cuerpo.len() as u64;
-    if bytes > rel.max_bytes || uso_relevos(&st.datos.join("relevos")) + cuerpo.len() as u64 > st.opciones.total_relevo {
+    if bytes > rel.max_bytes {
         return Err(ErrorApi::datos("La descarga supera el tamaño permitido."));
     }
     // v1.34: lo que el cliente puede pasar por el relé este mes.
@@ -902,8 +902,18 @@ async fn subir_trozo(State(st): State<St>, a: Agente, Path((r, n)): Path<(String
         return Err(error_cuota("Este cliente ya usó este mes todo el relé de descargas que le permite el servidor. Restaura en el propio equipo o pide más a quien administra el servidor.".into()));
     }
     let dir = crate::api::dir_relevo(&st, a.ctx.id(), &r).ok_or_else(ErrorApi::no_existe)?;
-    tokio::fs::create_dir_all(&dir).await.map_err(ErrorApi::interno)?;
-    tokio::fs::write(dir.join(n.to_string()), &cuerpo).await.map_err(ErrorApi::interno)?;
+    // Lo de todos los relés juntos (en memoria: ver `UsoRelevos`). Se reserva antes de escribir.
+    if !st.uso_relevos.reservar(largo, st.opciones.total_relevo) {
+        return Err(ErrorApi::datos("La descarga supera el tamaño permitido."));
+    }
+    let escrito = async {
+        tokio::fs::create_dir_all(&dir).await?;
+        tokio::fs::write(dir.join(n.to_string()), &cuerpo).await
+    };
+    if let Err(e) = escrito.await {
+        st.uso_relevos.soltar(largo);
+        return Err(ErrorApi::interno(e));
+    }
     let ctx = a.ctx.clone();
     st.db(move |db| {
         db.actualizar_relevo(&ctx, &r, n + 1, bytes, "subiendo", rel.caduca)?;

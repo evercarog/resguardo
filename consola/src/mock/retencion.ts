@@ -1,5 +1,5 @@
 // «Retención en detalle» en el modo de demostración: las vueltas de la
-// retención que anotaría el equipo (v1.4x, `tipo: "retencion"` en su
+// retención que anotaría el equipo (v1.45, `tipo: "retencion"` en su
 // historial): una cada domingo a las 03:00 de las últimas 8 semanas, con las
 // versiones que quitó (ids inventados, de antes de las que trae el informe) y
 // una que falló.

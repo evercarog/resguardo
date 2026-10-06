@@ -288,10 +288,28 @@ en `servidor.env` (o `--instalador-agente`), y `systemctl restart resguardo-serv
 | `RESGUARDO_MAX_DESCARGA` | Tamaño máximo de una descarga al navegador, en MB (por defecto 500). |
 | `RESGUARDO_INSTALADOR_AGENTE` | Otro instalador del agente para «Descargar instalador listo» (por defecto, el de `poner-instalador-agente`: ver arriba). |
 | `RESGUARDO_DOMINIO`, `RESGUARDO_ACME_CORREO`… | Consola en internet con certificado público: ver [consola-en-linea.md](consola-en-linea.md). |
+| `RESGUARDO_DETRAS_DE_PROXY=1` | Hay un proxy con HTTPS (Caddy, nginx) delante **en este mismo CT**: la IP de quien pide es la que el proxy pone en `X-Forwarded-For`. |
+| `RESGUARDO_PROXY_RED` | El proxy está **en otro CT, contenedor o máquina**: su red en CIDR (p. ej. `172.18.0.0/16` o `10.0.5.10/32`; varias, separadas por comas). Implica `RESGUARDO_DETRAS_DE_PROXY=1`. Ver abajo. |
 
 El certificado del servidor se vuelve a emitir en cada arranque (por si
 cambia la IP), siempre con la misma autoridad: la huella que comprobaste no
 cambia y los agentes vinculados siguen confiando en él.
+
+### Proxy en otro CT o contenedor (`RESGUARDO_PROXY_RED`)
+
+Sin decir nada, el servidor solo cree `X-Forwarded-For` en las conexiones
+que llegan del propio equipo (127.0.0.1). Si el proxy está en otro CT de
+Proxmox o en un contenedor de Docker, todas las peticiones llegarían con la
+IP del proxy y los límites por IP (intentos de entrada, fallos de agentes)
+serían de todos a la vez: quien fallara contraseñas bloquearía a todos.
+
+Con `RESGUARDO_PROXY_RED=172.18.0.0/16` (o `--proxy-red 172.18.0.0/16`, que
+se puede repetir), las conexiones que llegan de esa red también son de un
+proxy de confianza. La IP de quien pide es la de `X-Forwarded-For` **más a la
+derecha que no es de un proxy de confianza** (lo que añadió cada proxy; lo de
+su izquierda lo pudo escribir cualquiera). Pon la red más pequeña que cubra
+los proxies (mejor su IP con `/32`): cualquiera que pueda conectar desde esa
+red puede decir que es otra IP. No se admite `/0`.
 
 ## Copia de la consola
 

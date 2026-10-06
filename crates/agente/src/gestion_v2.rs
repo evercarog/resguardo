@@ -826,7 +826,7 @@ pub const ADMITE: [&str; 9] = [
     "escritorio",
     "verificacion_horario",
     "retencion_almacen_horario",
-    // v1.4x: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
+    // v1.46: copia externa a un repositorio que ya existe, con bloqueo de objetos y «Probar».
     "externa_existente",
     "ordenes_en_espera",
 ];
@@ -893,7 +893,7 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "destino": v.destinos.iter().find(|d| Some(d.id.as_str()) == e["destino"].as_str()).map(|d| d.nombre.clone()),
                 "destino_id": e["destino"],
                 "hora": e["hora"],
-                // v1.4x: a un repositorio que ya existía, con bloqueo de objetos o de solo añadir.
+                // v1.46: a un repositorio que ya existía, con bloqueo de objetos o de solo añadir.
                 "existente": e.get("existente"),
                 "bloqueo_dias": e.get("bloqueo_dias"),
                 "solo_anadir": e.get("solo_anadir"),
@@ -1275,15 +1275,15 @@ pub fn cambiar_destino(v: &mut Vinculo, c: &Value) -> Result<String, String> {
 /// - Sin `existente`, el repositorio va en el destino en una carpeta con su id
 ///   (o en `ruta`) y el agente lo crea allí al guardarla (con los parámetros de
 ///   troceado del origen), o usa el que ya haya si la contraseña lo abre.
-/// - `existente: true` (v1.4x): un repositorio que **ya existe** en `ruta`
+/// - `existente: true` (v1.46): un repositorio que **ya existe** en `ruta`
 ///   dentro del destino (p. ej. la subida a la nube de la app de escritorio):
 ///   se abre (`restic cat config`), se cuentan sus versiones y se compara su
 ///   troceado con el del origen. Nunca se crea: si no se abre, no se guarda nada.
 ///   La primera subida solo sube lo que falta.
-/// - `bloqueo_dias` (v1.4x, 1–3650): el destino tiene bloqueo de objetos: la
+/// - `bloqueo_dias` (v1.46, 1–3650): el destino tiene bloqueo de objetos: la
 ///   retención de allí solo quita versiones (`forget`, sin `prune`) y nunca de
 ///   los últimos días bloqueados.
-/// - `solo_probar` (v1.4x): solo se comprueba (el «Probar» de la consola).
+/// - `solo_probar` (v1.46): solo se comprueba (el «Probar» de la consola).
 pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String, String> {
     if !v.repos_v2.iter().any(|r| r.id == repo && !r.solo_lectura) {
         return Err("Ese repositorio no lo gestiona este servidor.".into());

@@ -190,8 +190,11 @@ async function principal() {
 
     // -----------------------------------------------------------------------
     paso("2. Dos agentes: A guarda copias, B es un equipo normal (emparejados con SAS v3)");
-    const eqA = await consola.emparejar(c, A, CLAVE_ADMIN);
-    const eqB = await consola.emparejar(c, B, CLAVE_ADMIN);
+    // A con el instalador listo armado en el navegador (v1.4x); B con el código de la forma de antes
+    // (lo genera el servidor: consolas anteriores). B se vuelve a vincular en el paso 7 con el código
+    // de 15 min generado en el navegador.
+    const eqA = await consola.emparejar(c, A, CLAVE_ADMIN, "instalador");
+    const eqB = await consola.emparejar(c, B, CLAVE_ADMIN, "servidor");
     const puertoAlmacen = await puertoLibre();
     await consola.hecha(c, eqA.id, "guarda_copias", { activo: true, carpeta: almacen, puerto: puertoAlmacen, solo_red_local: true }, { claveAdmin: CLAVE_ADMIN });
     // La consola ofrece «Copiar en ALMACEN-A» cuando su resumen dice que guarda copias.
@@ -447,7 +450,7 @@ async function principal() {
     }, { plazo: 45_000, cada: 1000 });
     log(`B cuenta ${despues.length} versiones ${((Date.now() - trasAlmacen) / 1000).toFixed(1)} s después del resultado del almacén`);
 
-    // v1.4x: «Retención en detalle»: lo que anotó el almacén en su historial es lo que quitó de verdad,
+    // v1.45: «Retención en detalle»: lo que anotó el almacén en su historial es lo que quitó de verdad,
     // y la consola (retencionDetalle.ts, como la página) lo enseña con el repositorio de B.
     const quitadasDeVerdad = todas.filter((s) => !despues.some((d) => d.id === s.id)).map((s) => s.id.slice(0, 8)).sort();
     const infB = informeDe((await consola.equipo(c, eqB.id)).ultimo_informe as any, repoId);
@@ -774,7 +777,7 @@ async function principal() {
     await consola2.primerArranque(CORREO, "Ana", CONTRASENA);
     const c2: Cliente = await consola2.ok("POST", "/api/clientes", { nombre: "Café del Sur", espera_min_horas: 1 });
     Object.assign(c2, await consola2.ok("GET", `/api/clientes/${c2.id}`));
-    const eqB2 = await consola2.emparejar(c2, B, CLAVE_ADMIN);
+    const eqB2 = await consola2.emparejar(c2, B, CLAVE_ADMIN, "navegador");
     const historial = (await esperar("el historial de B en el servidor nuevo", async () => {
       const h = (await consola2.ok("GET", `/api/clientes/${c2.id}/equipos/${eqB2.id}/historial?limite=500`)) as any[];
       return h.filter((x) => x.tipo === "copia").length >= 4 ? h : null;
