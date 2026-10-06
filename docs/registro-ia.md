@@ -49,6 +49,24 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/pulido-2`
+
+Usuario ausente, unos 50 min, sobre `ia/pulido-estetica`. Otra sesión trabajaba en `ia/consolas-sincronizadas`: no se tocaron `ConectarConsola`, `AvisoConsolas`, el mapa ni la tarjeta de los destinos.
+
+- **Pedido:** segunda pasada visual (1280 y 375 px, claro y oscuro) por lo que la primera no vio a fondo: Retención en detalle, Buscar archivos, «Añadir una copia», la copia derivada, la tira 3·2·1·1·0, Órdenes, «Comprobar con un ancla», las zonas del almacén y los diálogos de las etiquetas; y medir el contraste de los tokens.
+- **Cambios (solo consola, sin cambios de comportamiento):**
+  - Contraste: las iniciales del fin de semana en el calendario de «Historial y versiones» iban a 3,0:1 (claro) y 3,7:1 (oscuro) por una transparencia; ahora el mismo color que el resto y más finas.
+  - Retención en detalle: columnas fijas en las tablas de versiones (quedan alineadas entre la próxima vez y cada día); la copia se corta con «…» y título.
+  - Diálogos con el título fuera del formulario: 16 px bajo el título, como los demás (regla en `app.css`, `.dialog > .dlg-title`).
+  - Copia derivada: «Cuándo» sin icono, como las demás etiquetas. Etiquetas del cliente: nombre y cuenta en columna fija. Almacén: aire entre las zonas y el espejo. Buscar archivos: «Elige antes un equipo» en el selector de repositorio vacío.
+  - Capturas en la carpeta de capturas de la sesión (`pulido-2/`, fuera del repositorio): `antes-*` y `despues-*` (retención, etiquetas, «Añadir una copia», zonas), más `antes-*` de las demás páginas.
+- **Contraste medido:** con un guion, los tokens comunes (texto 1-3 sobre los cinco fondos, los cinco estados sobre superficie y su fondo suave, los 7 acentos con su texto, su fondo suave y el foco, y el borde de los campos) en claro, oscuro y negro: todo cumple AA (el peor, 4,62:1, `--bad` sobre su fondo suave en `--surface-2` y el blanco sobre el acento rosa). Y en el navegador, el texto pintado contra su fondo efectivo en 12 páginas en claro y oscuro: solo fallaba el fin de semana del calendario (los demás avisos eran elementos a mitad de su animación de entrada).
+- **Comprobado:** consola `check`, `build` y `test:vectores` (con la comprobación estática de `$effect`); raíz `test:sin-referencias` (código de salida 0).
+- **Sin probar / dudas:**
+  - No se pasó el e2e (solo CSS y un texto de un `<option>`).
+  - Visto y no tocado: en Órdenes, una orden en espera de esta consola sale en «Últimas órdenes» con «Cancelar» en una fila aparte, y las de otra consola en el panel «Órdenes esperando su turno» con otro aspecto; la tira 3·2·1·1·0 mezcla «3 de 3» y «3 (pide 2)» (es a propósito, `regla321.ts`); «Nubes conectadas: X Desconectar , Y» deja un espacio antes de la coma; el diálogo de la copia derivada se abre desplazado hasta el campo de la contraseña (el foco automático), con el título fuera de la vista.
+  - El icono de los diálogos va centrado en vertical con el texto (`ui/`, común): con descripciones largas queda en medio; no se tocó por ser del sistema de diseño compartido.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/pulido-estetica`
 
 Usuario ausente, unos 75 min. Otra sesión trabajaba a la vez en `ia/consolas-sincronizadas` (nombre y etiquetas por el agente, «Quitar este destino», mapa): no se tocaron `ConectarConsola`, `AvisoConsolas`, el mapa de la protección ni la tarjeta de los destinos.
