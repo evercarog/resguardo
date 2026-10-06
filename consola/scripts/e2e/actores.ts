@@ -209,7 +209,8 @@ export class Consola {
     secretos: Secretos = {},
     /** `sinComprobar`: sin mirar antes la etiqueta (para ver que el propio equipo rechaza una clave que no es). */
     /** `relevo`: para «descargar» (el relé del servidor por donde sube el equipo). */
-    extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean; sinComprobar?: boolean; relevo?: { id: string; max_bytes: number } } = {},
+    /** `esperaS` (v1.4x): una destructiva que espera de verdad esos segundos (se queda en el equipo hasta entonces). */
+    extra: { responderA?: string; sesion?: string; alta?: { codigo: string }; esperar?: boolean; esperaS?: number; sinComprobar?: boolean; relevo?: { id: string; max_bytes: number } } = {},
   ): Promise<Orden> {
     const e = await this.equipo(c, equipoId);
     const autorizacion: Autorizacion = { prueba_admin: null, clave_repo: null };
@@ -242,10 +243,24 @@ export class Consola {
     const contexto = { espejo: e.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (e.resumen?.copias ?? []).filter((k) => k.activa !== false).length };
     const destructiva = esDestructiva(tipo, cuerpoFinal, espera, contexto);
     // `esperar`: una destructiva con su espera de verdad (se queda en el equipo hasta su not_before).
-    const sinEspera = destructiva && !extra.esperar;
+    const sinEspera = destructiva && !extra.esperar && extra.esperaS === undefined;
+    // `esperaS`: su not_before, a esos segundos de ahora (sellarOrden suma un minuto de margen).
+    const corta = destructiva && extra.esperaS !== undefined;
     const p = sellarOrden(
-      { cliente: c.id, equipo: e, seq: e.siguiente_seq, tipo, cuerpo: cuerpoFinal, autorizacion, responderA: extra.responderA ?? null, esperaHoras: sinEspera ? 0 : espera, contexto },
-      sinEspera ? new Date(Date.now() - 61_000) : new Date(),
+      {
+        cliente: c.id,
+        equipo: e,
+        seq: e.siguiente_seq,
+        tipo,
+        cuerpo: cuerpoFinal,
+        autorizacion,
+        responderA: extra.responderA ?? null,
+        esperaHoras: sinEspera ? 0 : corta ? extra.esperaS! / 3600 : espera,
+        contexto,
+        // Como ordenar.ts (quién la manda): en este escenario todas las cuentas son de «Ana».
+        por: "Ana",
+      },
+      sinEspera ? new Date(Date.now() - 61_000) : corta ? new Date(Date.now() - 60_000) : new Date(),
     );
     if (destructiva) comprobar(p.meta.not_before, `«${tipo}» es destructiva y tiene que llevar not_before`);
     const r = await this.pedir("POST", `/api/clientes/${c.id}/equipos/${e.id}/ordenes`, {

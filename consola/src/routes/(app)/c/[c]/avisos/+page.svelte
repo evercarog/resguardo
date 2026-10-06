@@ -77,6 +77,8 @@
     prueba_fallida: { texto: "Prueba de restauración fallida", tono: "warn", icono: TriangleAlert, que: "La copia no se pudo restaurar en la prueba: mira qué dijo y pruébala otra vez.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     espejo_fallido: { texto: "Espejo fallido", tono: "warn", icono: TriangleAlert, que: "El espejo del almacén no terminó: revisa su disco o su nube.", accion: (e) => (e ? { texto: "Ver el almacén", href: `/c/${c}/equipos/${e}` } : null) },
     retencion_fallida: { texto: "Retención del almacén fallida", tono: "warn", icono: TriangleAlert, que: "No se quitaron versiones antiguas: el almacén sigue llenándose. Mira qué dijo y aplícala otra vez.", accion: (e) => (e ? { texto: "Ver el almacén", href: `/c/${c}/equipos/${e}` } : null) },
+    // v1.4x: otra consola mandó una orden que el equipo tiene en espera (se puede cancelar desde aquí).
+    orden_en_espera: { texto: "Orden en espera desde otra consola", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes (desde cualquier consola) y cambia la clave de administración.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };

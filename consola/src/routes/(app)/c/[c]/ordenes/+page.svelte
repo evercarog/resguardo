@@ -12,6 +12,7 @@
   import Cargando from "$lib/componentes/Cargando.svelte";
   import ListaOrdenes from "$lib/componentes/ListaOrdenes.svelte";
   import Pendientes from "$lib/componentes/Pendientes.svelte";
+  import OrdenesOtrasConsolas from "$lib/componentes/OrdenesOtrasConsolas.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
@@ -97,6 +98,9 @@
       </div>
     {/if}
   </section>
+
+  <!-- v1.4x: las que mandaron las otras consolas de los equipos (de su historial). -->
+  <OrdenesOtrasConsolas {equipo} />
 </div>
 
 <style>

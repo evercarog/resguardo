@@ -2,6 +2,9 @@
   import { tip } from "$lib/tooltip";
   // Órdenes destructivas esperando su turno: «Pendiente: … · Cancelar».
   // Cualquiera del cliente (salvo «solo lectura») puede cancelarlas.
+  // v1.4x (docs/consolas-multiples.md §5): también las que mandó otra consola y el
+  // equipo tiene en espera (de su resumen), diciendo desde cuál; esas se cancelan con
+  // la orden `cancelar_espera`, inofensiva (sin clave).
   import { onMount, untrack } from "svelte";
   import { Clock, X } from "@lucide/svelte";
   import * as api from "$lib/api";
@@ -11,17 +14,21 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { cuentaAtras, fechaLarga } from "$lib/formato";
   import { nombreOrden } from "$lib/salud";
+  import { admiteCancelarEspera, filasEnEspera, type FilaEspera } from "$lib/espera";
+  import { mandarOrden } from "$lib/ordenar";
   import type { Orden } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
 
-  let ordenes = $state<Orden[]>([]);
+  let propias = $state<Orden[]>([]);
   let cancelando = $state<string | null>(null);
   let confirmar = $state<string | null>(null);
+
+  const ordenes = $derived(filasEnEspera(propias, actual.equipos, reloj.ahora));
 
   async function cargar() {
     if (!actual.id) return;
     try {
-      ordenes = await api.ordenesPendientes(actual.id);
+      propias = await api.ordenesPendientes(actual.id);
     } catch {
       /* se reintenta en la siguiente vuelta */
     }
@@ -37,13 +44,22 @@
     untrack(() => void cargar());
   });
 
-  const equipo = (id?: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
+  const equipoDe = (id: string) => actual.equipos.find((e) => e.id === id);
+  const puedeCancelar = (o: FilaEspera) => o.cancelar === "servidor" || admiteCancelarEspera(equipoDe(o.equipo));
 
-  async function cancelar(o: Orden) {
+  async function cancelar(o: FilaEspera) {
     cancelando = o.id;
     try {
-      await api.cancelarOrden(actual.id, o.id);
-      avisar(`Cancelada: «${nombreOrden(o.tipo)}» en ${equipo(o.equipo)}.`);
+      if (o.cancelar === "servidor") {
+        await api.cancelarOrden(actual.id, o.id);
+        avisar(`Cancelada: «${nombreOrden(o.tipo)}» en ${o.equipoNombre}.`);
+      } else {
+        // De otra consola: se lo pide al equipo (sin clave). La lista se pone al día con su resumen.
+        const equipo = equipoDe(o.equipo);
+        if (!actual.cliente || !equipo) return;
+        await mandarOrden({ cliente: actual.cliente, equipo, tipo: "cancelar_espera", cuerpo: { id: o.id } });
+        avisar(`Pedido a ${o.equipoNombre}: cancelar «${nombreOrden(o.tipo)}» (la mandó ${o.otraConsola}). Se quitará de la lista en cuanto el equipo conteste.`);
+      }
       confirmar = null;
       await Promise.all([cargar(), cargarCliente(actual.id, { silencioso: true })]);
     } catch (e) {
@@ -65,10 +81,13 @@
       {#each ordenes as o (o.id)}
         <li>
           <span class="texto">
-            <span><strong>{nombreOrden(o.tipo)}</strong> en {equipo(o.equipo)}</span>
-            <span class="faint">Pedida por {o.emitida_por.nombre} · se aplica en <time datetime={o.not_before} use:tip={fechaLarga(o.not_before)}>{cuentaAtras(o.not_before!, reloj.ahora)}</time></span>
+            <span><strong>{o.descripcion ?? nombreOrden(o.tipo)}</strong> en {o.equipoNombre}</span>
+            <span class="faint">
+              {#if o.otraConsola}Desde otra consola: <strong class="consola">{o.otraConsola}</strong>{#if o.por}{" · "}pedida por {o.por}{/if}{:else}Pedida por {o.por ?? "?"}{/if}
+              {#if o.aplica}{" · "}se aplica en <time datetime={o.aplica} use:tip={fechaLarga(o.aplica)}>{cuentaAtras(o.aplica, reloj.ahora)}</time>{/if}
+            </span>
           </span>
-          {#if puede.ordenar(actual.cliente?.rol)}
+          {#if puede.ordenar(actual.cliente?.rol) && puedeCancelar(o)}
             {#if confirmar === o.id}
               <span class="conf">
                 <button class="btn btn-sm btn-ghost" onclick={() => (confirmar = null)}>No</button>
@@ -81,7 +100,7 @@
         </li>
       {/each}
     </ul>
-    <p class="faint nota">Si no esperabas alguna, cancélala y cambia la clave de administración.</p>
+    <p class="faint nota">Si no esperabas alguna, cancélala y cambia la clave de administración. Las de otra consola también se pueden cancelar desde aquí.</p>
   </section>
 {/if}
 
@@ -124,6 +143,10 @@
   }
   .texto .faint {
     font-size: var(--fs-sm);
+  }
+  .consola {
+    font-weight: 500;
+    color: var(--text-1);
   }
   .conf {
     display: flex;

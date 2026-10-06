@@ -23,6 +23,7 @@ import { etiquetaValida, kCfg, materialCliente, pruebaAdmin, pruebaCodigo, verif
 import { comprobarLlaves, ErrorLlavesCambiadas, fijar } from "./fijadas";
 import { NIVEL, PIDE_TAMBIEN_ADMIN, sellarOrden, type Autorizacion } from "./cripto/ordenes";
 import { seguirOrden } from "./pendientes.svelte";
+import { app } from "./estado.svelte";
 import type * as T from "./tipos";
 
 export interface Secretos {
@@ -154,6 +155,8 @@ export async function mandarOrden(opts: {
         // La espera que confirmó el equipo manda; si no, la del cliente.
         esperaHoras: esperaServidor ?? equipo.espera_min_horas ?? cliente.espera_min_horas,
         contexto: { espejo: equipo.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length },
+        // v1.4x: quién la manda (lo ven las demás consolas en sus órdenes en espera y en el historial).
+        por: app.cuenta?.nombre ?? null,
       });
       opts.alPaso?.("Enviando…");
       try {

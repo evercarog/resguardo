@@ -881,6 +881,47 @@ async function principal() {
     }, { plazo: 30_000, cada: 1000 });
 
     // -----------------------------------------------------------------------
+    paso("8a2. Órdenes en espera: la en línea ve una destructiva de la local, la cancela y nunca se aplica; otra se aplica a su hora");
+    // v1.4x (docs/consolas-multiples.md §5). Con su espera de verdad (3 h): el equipo la recibe ya y la guarda.
+    const srv2Id = (await consola2.ok("GET", "/api/servidor")).identidad;
+    const pausa = await consola2.mandar(c2, eqB2.id, "pausar", {}, { claveAdmin: claveB }, { esperar: true });
+    const enEspera3 = (await esperar("la orden en espera de la local en el resumen de la en línea", async () => {
+      const e = await consola3.equipo(c3, eqB2.id);
+      return (e.resumen?.en_espera ?? []).find((x: any) => x.id === pausa.id) ?? null;
+    }, { plazo: 60_000, cada: 1000 })) as any;
+    comprobar(enEspera3.consola.esta === false && enEspera3.consola.identidad === srv2Id && enEspera3.por === "Ana", "La en línea sabe desde qué consola vino y quién la pidió", enEspera3);
+    comprobar(!JSON.stringify(enEspera3).includes(s2.url), "Sin la dirección de la otra consola", enEspera3);
+    igual((await consola2.resultado(c2, eqB2.id, pausa, { estados: ["entregada"], plazo: 30_000 })).estado, "entregada", "En la local, entregada (el equipo la tiene en espera)");
+    await esperar("el aviso «Orden en espera desde otra consola» en la en línea", async () => {
+      const av = (await consola3.ok("GET", `/api/clientes/${c3.id}/avisos?abiertos=1`)) as any[];
+      return av.some((a) => a.tipo === "orden_en_espera") || null;
+    }, { plazo: 60_000, cada: 1000 });
+    log("La consola en línea ve la orden de la local y recibió el aviso");
+    // La en línea la cancela (inofensiva, sin clave) y la local se entera.
+    const cancelada = await consola3.hecha(c3, eqB2.id, "cancelar_espera", { id: pausa.id });
+    log(`cancelar_espera: ${cancelada.mensaje}`);
+    const enLocal = await consola2.resultado(c2, eqB2.id, pausa, { estados: ["cancelada"], plazo: 60_000 });
+    comprobar(/otra consola/.test(enLocal.mensaje ?? ""), "La local la ve cancelada desde otra consola", enLocal);
+    await esperar("la cancelación en el historial común (en la local)", async () => {
+      const h = (await consola2.ok("GET", `/api/clientes/${c2.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
+      return h.find((x) => x.orden_id === pausa.id && x.resultado === "cancelada" && x.cancelada_desde) ?? null;
+    }, { plazo: 60_000, cada: 1000 });
+    comprobar(!((await consola2.equipo(c2, eqB2.id)).resumen?.pausado_hasta), "La pausa nunca se aplicó");
+    // Otra destructiva con una espera corta: no se aplica antes de tiempo, y sí a su hora.
+    const acortar = await consola2.mandar(c2, eqB2.id, "cambiar_espera", { horas: 2 }, { claveAdmin: claveB }, { esperaS: 25 });
+    await dormir(8_000);
+    igual((await consola2.resultado(c2, eqB2.id, acortar, { estados: ["entregada"], plazo: 10_000 })).estado, "entregada", "Antes de su hora sigue en espera");
+    comprobar((await consola2.equipo(c2, eqB2.id)).espera_min_horas === 3, "…y no se aplicó");
+    const aplicada = await consola2.resultado(c2, eqB2.id, acortar, { plazo: 90_000 });
+    igual(aplicada.estado, "hecha", `A su hora se aplica (${aplicada.mensaje})`);
+    await esperar("la espera nueva en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).espera_min_horas === 2 || null, { plazo: 60_000, cada: 1000 });
+    await esperar("la orden aplicada en el historial común (en la en línea)", async () => {
+      const h = (await consola3.ok("GET", `/api/clientes/${c3.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
+      return h.find((x) => x.orden_id === acortar.id && x.resultado === "hecha" && x.identidad === srv2Id) ?? null;
+    }, { plazo: 60_000, cada: 1000 });
+    log("Órdenes en espera entre consolas: bien");
+
+    // -----------------------------------------------------------------------
     paso("8b. Cambiar la clave de administración desde la consola local, con la en línea conectada");
     // Como CambiarClaveAdmin.svelte: verificador del equipo y K_cfg de cada consola (la otra, con su sal).
     const nueva = new ClaveNueva(argon2, CLAVE_NUEVA, c2.sal_cliente);
