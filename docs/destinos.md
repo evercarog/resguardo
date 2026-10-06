@@ -146,6 +146,10 @@ Por eso, con «El destino tiene bloqueo de objetos: N días» (`bloqueo_dias`), 
 
 Un **rest-server de solo añadir** como destino de la copia externa se detecta al guardarla (`solo_anadir`): allí no se aplica la retención desde el equipo (la aplica el propio servidor).
 
+## Espejo del almacén
+
+Horario por destino, «después de cada copia nueva», selección de repositorios, verificación sin contraseñas, retención con freno, más destinos por rclone y restaurar desde el espejo: ver [espejo.md](espejo.md).
+
 ## Espejo en Dropbox: conectar desde la consola y renovar el token
 
 **Conectar.** La consola hace OAuth 2 con PKCE contra la app «Resguardo» de Dropbox (app key pública `beobf3c13cvlrup`, la que da `GET /api/servidor`; permiso «App folder»; sin app secret, que ni se pide ni se guarda), cambia el código por el token en el navegador y lo manda sellado al equipo en `conectar_nube` (ver [api-servidor.md](api-servidor.md) §12). El agente guarda el refresh token protegido (DPAPI) junto con la app key, en el formato de token de rclone: `{ access_token, token_type: "bearer", refresh_token, expiry }`.
