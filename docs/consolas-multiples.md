@@ -253,3 +253,115 @@ El verificador es **del equipo** (uno), así que tras `cambiar_clave_admin` desd
 - La consola que no manda un cambio lo ve **después** (en segundos si está conectada; si estaba apagada, al volver).
 - Dos cambios de configuración a la vez desde dos consolas: gana el último en llegar al equipo (1.3).
 - Un servidor de respaldo de una consola que ya es otra de las consolas del equipo no se usa (el equipo ya está allí).
+
+---
+
+## 5. Órdenes en espera a la vista de todas las consolas (v1.4x)
+
+Tareas 1 y 9c de [plan-mejoras.md](plan-mejoras.md). Contrato «v1.4x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+
+**Problema.** Hasta ahora la consola que mandaba una orden con espera (las destructivas, con `not_before`) la guardaba ella y solo la entregaba al equipo al llegar su hora. El equipo no sabía que existía: **las demás consolas no la veían ni podían cancelarla**, y tampoco veían las órdenes que habían mandado las otras. Alguien con la clave de administración en una consola podía mandar algo destructivo sin que quien vigila desde la otra se enterase hasta que se aplicaba.
+
+### 5.1 Resumen
+
+1. **El equipo recibe al momento las órdenes con espera** (si su agente lo admite) y las guarda «en espera». Las aplica cuando llega su `not_before`, contado con **su reloj y el de la consola que la mandó** (5.4).
+2. **El resumen** del equipo lleva `en_espera`, la lista de esas órdenes, y **todas las consolas** la enseñan en «Órdenes esperando su turno», diciendo desde qué consola vino.
+3. **Cualquier consola puede cancelarlas** con la orden `cancelar_espera { id }`, inofensiva (sin clave: cancelar solo aumenta la protección).
+4. **Aviso** en las demás consolas (en la consola, por correo y push, según sus reglas) cuando entra una orden en espera.
+5. **Historial común:** el equipo anota en su historial (el que reciben todas) cada orden que recibe, aplica, cancela o caduca: tipo, consola, quién y resultado. «Órdenes» enseña también las de las otras consolas.
+
+### 5.2 Convivencia con agentes y servidores anteriores
+
+- El agente nuevo anuncia `admite: ["ordenes_en_espera", …]` en su resumen.
+- El servidor nuevo solo entrega antes de su hora las órdenes **que piden autorización** (no las inofensivas) a los equipos que lo anuncian. A los demás, como siempre: en su `not_before`. **Sigue comprobando la espera al crearla** (la del equipo o la del cliente) para todos.
+- Un servidor anterior nunca entrega antes de tiempo: el agente nuevo recibe la orden a su hora y la aplica al momento, como antes.
+- Un agente anterior no recibe nada antes de tiempo (no lo anuncia).
+- La consola nueva con un servidor o un agente anterior: sin `en_espera` en el resumen, enseña lo de siempre (las de su propio servidor). «Cancelar» de las de otra consola solo aparece si el equipo lo admite.
+
+### 5.3 En el equipo: recibir una orden con espera
+
+Cuando llega una orden cuyo `not_before` está más allá de la holgura de relojes (5 min) del reloj del equipo:
+
+1. Se abre y se comprueba **todo como hoy** (destinatario, versión, `seq` creciente de ese vínculo, `nonce` nuevo, metadatos, `emitida` no futura, caducidad de 7 días como mucho, destructiva con `not_before`, espera mínima del equipo desde `emitida`), salvo que la hora aún no ha llegado. Además, `not_before` tiene que ser anterior a `caduca`.
+2. El `seq` y el `nonce` se anotan **al recibirla** (como hoy): la protección contra repeticiones es la misma, y el servidor no la vuelve a entregar.
+3. Solo se guardan las órdenes que piden autorización (clave de administración o contraseña del repositorio), y **la autorización se comprueba ya al recibirla**, con los intentos fallidos y bloqueos de siempre. Una inofensiva con espera, o una con la clave mal, se rechaza al momento: un servidor malicioso no puede llenar la lista (ni avisar a las demás consolas) con órdenes que nunca se aplicarían.
+4. Se guarda **el sobre sellado tal cual** (cifrado para la llave del equipo) dentro del vínculo (`servidor.bin`, protegido con DPAPI en Windows y solo de root en Linux), con lo justo para enseñarla: id de la orden en su servidor, tipo, una descripción sin rutas ni secretos, la consola (vínculo e identidad), quién la mandó (si la consola lo dice), `emitida`, `not_before` y `caduca`. La contraseña o la prueba de la clave no se guardan nunca en claro: al aplicarla se vuelve a abrir el sobre. Sobrevive a reinicios del agente y del equipo.
+5. Como mucho **20 en espera por consola**: la siguiente se rechaza («demasiadas órdenes en espera»).
+6. No contesta nada al servidor (la orden sigue «entregada» allí, que es lo que el servidor ya sabía cancelar), anota la entrada `orden` en el historial (`resultado: "en_espera"`), avisa a las **demás** consolas (5.6) y sube el resumen nuevo a todas enseguida.
+
+### 5.4 Aplicarla a su hora (el reloj, tarea 9c)
+
+La espera ya no la cuenta solo el servidor. Una orden en espera se aplica cuando se cumplen **las dos cosas**:
+
+- el **reloj del equipo** llegó a `not_before` (con la misma holgura de 5 min que ya aceptaba el agente), y
+- el **reloj de la consola que la mandó** también: el servidor nuevo dice su hora (`ahora`) en el saludo del canal, en cada latido (`ping`) y en `tomar`; el equipo le suma lo que pasa en su reloj monotónico (que no se adelanta cambiando la hora del sistema).
+
+Así, **adelantar el reloj del equipo** (alguien con acceso a él, o un servidor de hora falso en la red) **no acorta la espera**, y **un servidor con la hora adelantada tampoco**: hacen falta los dos. Es lo mismo que pasaba hasta ahora (el servidor entregaba a su hora y el agente comprobaba la suya), ahora con el equipo como guardián.
+
+Además, solo se aplica **dentro del canal con la consola que la mandó**, justo después de hablar con ella (con el canal abierto o tras una consulta de sondeo correcta, que es por donde llegan sus cancelaciones). Si esa consola no está (apagada, sin red), la orden **espera** y, si caduca antes de volver a hablar con ella, se descarta: igual que antes, cuando una orden que el servidor no entregaba nunca se aplicaba. Una orden destructiva nunca se aplica sin que su consola haya podido cancelarla.
+
+Al aplicarla se vuelve a abrir el sobre y se comprueba otra vez: que no ha caducado, que esa consola sigue siendo la misma (misma identidad: si se quitó o cambió de servidor, se cancela), la espera mínima y la autorización **de ese momento** (si alguien cambió la clave de administración mientras tanto, se rechaza: «cancélala y cambia la clave» sigue funcionando). Después se ejecuta con el código de siempre y el resultado firmado va a esa consola.
+
+### 5.5 `resumen.en_espera`
+
+```json
+"en_espera": [{ "id": "<id de la orden en su servidor>", "tipo": "quitar_repositorio",
+  "descripcion": "Quitar el repositorio «Documentos»" | null,
+  "consola": { "nombre": "Oficina" | null, "identidad": "<Ed25519 b64>", "esta": false },
+  "por": "Ana" | null, "emitida": "<RFC 3339>", "aplica": "<RFC 3339>", "caduca": "<RFC 3339>" }]
+```
+
+- `consola.nombre` es el que esa consola tiene en el equipo, **nunca su dirección** (como el progreso de «Mover a otro sitio»); si no tiene, `null`, y la consola la busca por `identidad` en `resumen.consolas`. `esta: true` si la mandó la consola que recibe el resumen.
+- `por`: el nombre de quien la mandó, si la consola lo pone en la orden sellada (campo opcional `por` del sobre, v1.4x). Es lo que dice esa consola: informativo.
+- Las caducadas no salen.
+
+### 5.6 Avisos
+
+Al guardar una orden en espera, el equipo avisa a **las demás** consolas con `POST /api/agente/aviso` de un tipo nuevo, `orden_en_espera` («Orden en espera desde la consola «Oficina»: Quitar el repositorio «Documentos» (pedida por Ana). Se aplicará el 07/10 10:30 si nadie la cancela.»). Es crítico, como «Orden destructiva pendiente»: sale por correo y push con las reglas de cada consola. Un servidor anterior no conoce el tipo (422) y el equipo lo manda entonces como `cambio_inusual`. La consola que la mandó ya tiene su «Orden destructiva pendiente». Una consola apagada en ese momento no recibe el aviso, pero ve la orden en «Órdenes esperando su turno» (resumen) y en el historial al volver.
+
+### 5.7 `cancelar_espera { id }`
+
+Orden **inofensiva** (basta la sesión: técnicos, administradores y propietarios), sin espera. El equipo:
+
+1. busca `id` entre sus órdenes en espera (de cualquier consola); si no está, `fallida` («ya no está esperando: se aplicó, se canceló o caducó»);
+2. la quita, la anota en el historial (`resultado: "cancelada"`, desde qué consola y quién) y contesta `hecha`;
+3. le dice a la consola que la mandó que no se aplicará: un resultado firmado `rechazada` con el mensaje «Cancelada desde otra consola («En línea»)…» y `detalle: {"cancelada": true, "consola": "<nombre>"}`. El servidor la guarda tal cual (no la cambia a `cancelada`: la firma del equipo es sobre `rechazada` y la consola la comprueba). Si esa consola no responde, el resultado se guarda y se manda cuando vuelva (como el de las órdenes largas).
+
+La consola que la mandó la sigue cancelando como siempre (`POST …/ordenes/{o}/cancelar`): su servidor la marca `cancelada` y avisa al equipo (`{ "t": "cancelada" }` en el canal o `canceladas` en `tomar`, que el agente ya recibía y ahora usa). Una cancelación de un servidor solo vale para las órdenes de **ese** vínculo.
+
+**Si una cancelación no llega a tiempo** (el servidor la marca `cancelada` justo cuando el equipo la aplica), el resultado firmado del equipo **manda**: el servidor nuevo la pasa a su estado real y crea un aviso `cambio_inusual` («se aplicó una orden que se había cancelado»). Nunca se queda enseñando «cancelada» algo que se aplicó.
+
+### 5.8 Historial común (`orden`)
+
+Tipo nuevo de entrada del historial del equipo (§6 de api-servidor.md), que reciben todas sus consolas:
+
+```json
+{ "id", "hora", "tipo": "orden", "orden": "<tipo>", "orden_id": "<id en su servidor>", "descripcion"?,
+  "consola": "<nombre>"?, "identidad": "<de la consola que la mandó>", "por"?,
+  "resultado": "en_espera" | "hecha" | "en_marcha" | "fallida" | "rechazada" | "cancelada" | "caducada",
+  "mensaje"?, "aplica"?, "cancelada_desde"?: "<nombre de la consola que la canceló>" }
+```
+
+Se anotan todas las órdenes que el equipo recibe salvo las que abren una sesión interactiva (explorar, elegir carpetas) y `cancelar_espera` (ya cuenta en la orden cancelada). Sin rutas ni secretos (el mensaje pasa por el mismo filtro que los resultados). El servidor solo las da si se piden (`tipo=orden`): una consola anterior no las conoce. En «Órdenes», la consola enseña «Desde otras consolas» con las de los equipos que tienen más de una consola, sin las suyas (por `identidad`).
+
+### 5.9 Seguridad
+
+| Riesgo | Qué pasa |
+|---|---|
+| **Una consola maliciosa (o comprometida) cancela lo legítimo de otra** | Puede: cancelar es inofensivo a propósito (que cualquiera pueda frenar algo destructivo vale más). Es **reversible** (se vuelve a mandar), queda en el historial de todas («Cancelada desde la consola X») y la que la mandó lo ve en su orden. Si se repite, se quita esa consola (`quitar_consola`, con la clave de administración) y se cambia la clave si se escribió allí. Es una denegación de servicio de lo destructivo, nunca una pérdida de datos. |
+| **Un servidor malicioso llena la lista o hace saltar avisos** | Solo se guardan órdenes cuya autorización vale al recibirlas (las demás se rechazan y cuentan como intentos fallidos, con sus bloqueos por vínculo), como mucho 20 por consola. Las inofensivas con espera se rechazan. |
+| **Repetir una orden en espera** | `seq` y `nonce` se anotan al recibirla, como siempre: ni la misma consola ni otra pueden repetirla. La orden sale de la lista antes de ejecutarse (bajo el cerrojo del vínculo): se aplica una sola vez. |
+| **Reinicios** | Las órdenes en espera están en `servidor.bin` (cifrado como el resto del vínculo), con el sobre sellado. Al volver, siguen esperando. Una que caducó mientras tanto se descarta y se anota. |
+| **Cambiar el reloj del equipo** | No acorta la espera: hace falta también la hora de la consola que la mandó (5.4). Retrasarlo solo retrasa la orden (como antes). |
+| **Un servidor con la hora adelantada** | No basta: hace falta también el reloj del equipo. Un servidor que diga una hora absurda solo retrasa (o impide) sus propias órdenes. |
+| **Cambiar la clave de administración mientras espera** | La autorización se vuelve a comprobar al aplicarla: con la clave nueva, la orden pendiente se rechaza. |
+| **Quitar la consola que la mandó** | Sus órdenes en espera se cancelan (no se aplicarán) y se anota. |
+| **Privacidad entre consolas** | El resumen y el historial dicen el nombre y la identidad de la consola (que ya estaban en `resumen.consolas`), nunca su dirección. La descripción no lleva rutas ni secretos. |
+
+### 5.10 Límites conocidos
+
+- Si la consola que la mandó deja de responder para siempre, su orden no se aplica (caduca): es lo seguro, igual que antes.
+- Las consolas apagadas cuando entra la orden no reciben el aviso por correo o push: la ven al volver (resumen e historial).
+- Una cancelación desde otra consola llega al equipo por el canal de esa otra consola: si el equipo no habla con ella, no se puede cancelar desde allí (desde la que la mandó, sí).
+- `por` lo pone la consola que manda la orden: una consola maliciosa puede poner cualquier nombre.
+- La ventana del propio equipo todavía no enseña ni cancela las órdenes en espera (lo hace cualquier consola).

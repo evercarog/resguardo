@@ -106,7 +106,7 @@ proptest! {
     ) {
         let ahora = chrono::Utc::now().timestamp();
         let seq = ultimo.wrapping_add(salto);
-        let o = OrdenV2 { v, cliente, equipo, seq, nonce, emitida, caduca, not_before, tipo: tipo.clone(), cuerpo, autorizacion: Autorizacion::default(), responder_a: None };
+        let o = OrdenV2 { v, cliente, equipo, seq, nonce, emitida, caduca, not_before, tipo: tipo.clone(), cuerpo, autorizacion: Autorizacion::default(), responder_a: None, por: None };
         let tipo_meta = if meta_igual { tipo.clone() } else { "copiar_ahora".to_string() };
         let cx = Contexto { cliente: "c", equipo: "e", ultimo_seq: ultimo, ahora, tipo_meta: &tipo_meta, seq_meta: seq };
         let plano = serde_json::to_vec(&o).unwrap();

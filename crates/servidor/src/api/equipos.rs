@@ -22,6 +22,8 @@ pub async fn resumen(State(st): State<St>, u: Usuario, Path(c): Path<String>) ->
     let (ctx, _) = u.miembro(&st, &c, MIEMBRO).await?;
     let (equipos, avisos, pendientes) =
         st.db(move |db| Ok((db.equipos(&ctx)?, db.avisos(&ctx, true)?.len(), db.ordenes_con_espera(&ctx, ahora())?.len()))).await?;
+    // v1.4x: también las que mandó otra consola y el equipo tiene en espera.
+    let pendientes = pendientes + super::en_espera_de_otras(&equipos, ahora());
     Ok(Json(json!({
         "equipos": equipos.iter().map(|e| equipo_json(e, st.conectado(&e.id))).collect::<Vec<_>>(),
         "avisos_abiertos": avisos,
