@@ -334,7 +334,19 @@ export async function sembrar(vacio = false) {
       so: "Debian 12 (CT de Proxmox)",
       rol: "almacenamiento",
       resumen: {
-        guarda_copias: { activo: true, puerto: 8000, solo_red_local: true, usuarios: 3, carpeta: "/srv/resguardo/copias", sistema_archivos: "zfs", espacio: { libre: 640_000_000_000, total: 4_000_000_000_000, leido: hace(5) } },
+        guarda_copias: {
+          activo: true,
+          puerto: 8000,
+          solo_red_local: true,
+          usuarios: 3,
+          carpeta: "/srv/resguardo/copias",
+          sistema_archivos: "zfs",
+          espacio: { libre: 640_000_000_000, total: 4_000_000_000_000, leido: hace(5) },
+          // Una Dropbox conectada solo aquí, para el espejo de todo lo que guarda (los equipos no la tienen).
+          nubes: [{ nombre: "Dropbox Altamar", tipo: "dropbox" }],
+          espejo: { hora: "02:00", ultima: hace(60 * 14), destinos: [{ tipo: "nube", nube: "Dropbox Altamar", carpeta: "Altamar", ultima: hace(60 * 14), resultado: "Espejo hecho: 96 archivos nuevos (2 GB)." }] },
+        },
+        admite: ["espejo_zonas", "espejo_flexible"],
         // Tarea 8e: un contenedor de Proxmox (solo un dato en la consola).
         entorno: { contenedor: "lxc" },
         destinos: [destinoNube],
@@ -355,9 +367,10 @@ export async function sembrar(vacio = false) {
       resumen: {
         servidores_respaldo: [{ url: "https://respaldo.ejemplo.co", identidad_corta: "7Q2kLm9x" }],
         respaldo_dias: 3,
-        destinos: [destinoServidor, destinoNube],
+        // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
+        destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto"],
+        admite: ["prueba_auto", "cadenas", "derivadas"],
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },

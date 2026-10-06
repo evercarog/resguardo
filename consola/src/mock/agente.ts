@@ -500,6 +500,14 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     // --- Nubes del espejo (conectar desde la consola, OAuth con PKCE) --------
     case "conectar_nube": {
+      // 4a: en un equipo que no es almacén, para sus copias derivadas (agente con `nube_equipo`).
+      if (!e.resumen?.guarda_copias?.activo && e.resumen?.admite?.includes("nube_equipo") && c.tipo === "dropbox") {
+        const nombre = String(c.nombre ?? "").trim();
+        if (!/^[\p{L}\p{N} _.-]{1,40}$/u.test(nombre)) return resultado(e, o, "fallida", "Nombre de nube no válido.");
+        if (typeof c.refresh_token !== "string" || !c.refresh_token) return resultado(e, o, "fallida", "Falta el permiso de Dropbox.");
+        e.resumen.nubes = [...(e.resumen.nubes ?? []).filter((n) => n.nombre !== nombre), { nombre, tipo: "dropbox" }];
+        return resultado(e, o, "hecha", `Dropbox «${nombre}» conectada (solo Aplicaciones/Resguardo).`);
+      }
       const g = e.resumen?.guarda_copias;
       if (!g?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias.");
       const nombre = String(c.nombre ?? "").trim();

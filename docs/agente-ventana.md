@@ -65,7 +65,7 @@ En la configuración gestionada (`Configuracion` v1, orden `config`):
   `config` sin el campo no borra el que haya. La consola nueva manda también
   `bandeja.avisos = (avisos != off)` y solo manda `escritorio` si el resumen trae
   `admite: ["escritorio"]`.
-- **Desde la consola**: «Cambiar las copias» → tarjeta «En el equipo»; la ficha
+- **Desde la consola**: «Añadir o cambiar copias» → tarjeta «En el equipo»; la ficha
   del equipo enseña lo que tiene (del resumen en claro) y si se cambió allí.
 - **Desde el equipo**: «Ajustes» en la ventana pide la clave; el servicio pone
   `escritorio`, `cambiado_en_equipo` y sube la configuración como cualquier

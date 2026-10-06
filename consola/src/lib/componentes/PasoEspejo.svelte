@@ -8,7 +8,11 @@
   import { TriangleAlert } from "@lucide/svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
   import Ayuda from "./Ayuda.svelte";
-  import { repoEnAlmacen, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
+  import { destinosParaPasos, detalleDestino, repoEnAlmacen, TEXTO_FUERA_RETENCION, usosPosibles } from "$lib/cadenas";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import ElegirDestinoPaso, { type OpcionDestino } from "./ElegirDestinoPaso.svelte";
+  import ConectarNube from "./ConectarNube.svelte";
+  import ConectarDestino from "./ConectarDestino.svelte";
   import { zonasDe, nombreZonaPorDefecto, PRINCIPAL } from "$lib/destinos";
   import { destinoParaOrden, errorDiasRetencion, horaParaConsolasAnteriores, horarioDiario, nombreTipoNube, RETENCION_ESPEJO, TIPOS_NUBE, type DestinoEspejoOrden } from "$lib/espejo";
   import { errorCarpetaEspejo } from "$lib/ganchos";
@@ -57,6 +61,20 @@
   const valido = $derived(
     !!en && (f.destino !== "carpeta" || (!!f.carpeta.trim() && !errorCarpeta)) && (!f.destino.startsWith("nube:") || !!f.carpetaNube.trim()) && (!f.conRetencion || !errorDiasRetencion(f.dias)),
   );
+  // Todos los destinos del cliente (docs/editor-de-copias.md): los que no sirven para el espejo, con el porqué.
+  // svelte-ignore state_referenced_locally
+  void cargarCatalogo(cliente.id);
+  const opciones = $derived.by<OpcionDestino[]>(() => {
+    const l: OpcionDestino[] = destinosParaPasos(equipos, catalogoDe(cliente.id)).map((v) => {
+      const uso = usosPosibles(v, equipo, repo, equipos).espejo;
+      const valor = uso.ok && v.zona ? `zona:${v.zona.id}` : uso.ok && v.nube ? `nube:${v.nube.nombre}` : `no:${v.clave}`;
+      return { valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso };
+    });
+    if (almacen) l.push({ valor: "carpeta", nombre: `Otra carpeta de ${almacen.nombre}…`, clase: "carpeta", uso: { ok: true } });
+    // Primero los que se pueden usar.
+    return l.sort((a, b) => Number(b.uso.ok) - Number(a.uso.ok));
+  });
+  let conectar = $state<{ equipo: Equipo; nube: string; tipo: string } | null>(null);
   const tipoNube = $derived(f.destino.startsWith("nube:") ? nubes.find((n) => `nube:${n.nombre}` === f.destino)?.tipo : undefined);
 </script>
 
@@ -72,14 +90,7 @@
     {onclose}
   >
     {#snippet campos()}
-      <div class="field">
-        <label class="field-label" for="pe-destino">Copiar a</label>
-        <select id="pe-destino" class="input" bind:value={f.destino}>
-          {#each otrasZonas as z (z.id)}<option value="zona:{z.id}">{nombreZonaPorDefecto(z)} (otra zona del almacén)</option>{/each}
-          {#each nubes as n (n.nombre)}<option value="nube:{n.nombre}">{n.nombre} · {nombreTipoNube(n.tipo)}</option>{/each}
-          <option value="carpeta">Otra carpeta de {almacen.nombre}…</option>
-        </select>
-      </div>
+      <ElegirDestinoPaso id="pe-destino" etiqueta="Copiar a" {opciones} bind:value={f.destino} alConectar={(e, nube, tipo) => (conectar = { equipo: e, nube, tipo })} />
       {#if f.destino === "carpeta"}
         <div class="field">
           <label class="field-label" for="pe-carpeta">Carpeta</label>
@@ -107,6 +118,14 @@
       <p class="faint nota">Desde {zonas.find((z) => z.id === en.zona) ? nombreZonaPorDefecto(zonas.find((z) => z.id === en.zona)!) : almacen.nombre}, carpeta <code>{en.nombre}</code>. Después de cada copia nueva (y, por si acaso, cada noche a las {espejo?.hora ?? "02:00"}). <Ayuda id="espejo" /></p>
     {/snippet}
   </OrdenDialog>
+{/if}
+
+{#if conectar}
+  {#if conectar.tipo === "dropbox"}
+    <ConectarNube {cliente} equipo={conectar.equipo} nombreInicial={conectar.nube} onclose={() => (conectar = null)} />
+  {:else}
+    <ConectarDestino {cliente} equipo={conectar.equipo} onclose={() => (conectar = null)} />
+  {/if}
 {/if}
 
 <style>

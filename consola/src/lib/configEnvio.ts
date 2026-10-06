@@ -1,5 +1,5 @@
 // La configuración que se envía a un equipo (orden `config`, §6), como la
-// prepara «Cambiar las copias», y el plan de «Aplicar una plantilla» a varios
+// prepara «Añadir o cambiar copias», y el plan de «Aplicar una plantilla» a varios
 // equipos a la vez (v1.52, tarea 6). Sin estado ni red: se prueba en
 // scripts/vectores-etiquetas.ts.
 import { ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "./ganchos";
@@ -108,7 +108,7 @@ export function planPlantilla(cfg: Configuracion, p: Plantilla, a: Admite, nuevo
   if (ganchos.length && !a.ganchos) return { ok: false, motivo: "Su agente es anterior a los pasos «Antes de copiar» de la plantilla: actualízalo primero." };
   const horario = JSON.parse(JSON.stringify(p.copia.horario)) as Horario;
   const reglas = reglasDe(horario, a.reglas);
-  if (!reglas.length || errorReglas(reglas, a.reglas)) return { ok: false, motivo: "El horario de la plantilla no vale para su agente: aplícala desde «Cambiar las copias»." };
+  if (!reglas.length || errorReglas(reglas, a.reglas)) return { ok: false, motivo: "El horario de la plantilla no vale para su agente: aplícala desde «Añadir o cambiar copias»." };
   return {
     ok: true,
     repos,
