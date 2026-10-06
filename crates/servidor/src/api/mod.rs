@@ -3,6 +3,7 @@
 mod clientes;
 mod cuentas;
 mod equipos;
+pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
 pub(crate) mod marca;
 mod notas;
@@ -17,6 +18,7 @@ mod servidor_clientes;
 mod sesiones;
 
 pub use cuentas::preparar_codigo_arranque;
+pub(crate) use etiquetas::normalizar_etiqueta;
 pub use sesiones::{dir_relevo, esperar_mensajes, MAX_MENSAJE as MAX_MENSAJE_SESION};
 
 use crate::almacen::{Equipo, Orden, Ts};
@@ -265,6 +267,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/a-medias", get(instaladores::a_medias))
         .route("/api/clientes/{c}/equipo-local", post(instaladores::vincular_local))
         .route("/api/clientes/{c}/plantillas", get(plantillas::listar))
+        // v1.4x: color, plantilla por defecto y avisos de cada etiqueta de los equipos.
+        .route("/api/clientes/{c}/etiquetas", get(etiquetas::listar).put(etiquetas::poner))
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
         .route("/api/clientes/{c}/destinos", get(destinos::listar))
         .route("/api/clientes/{c}/destinos/{d}", put(destinos::guardar).delete(destinos::borrar))

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EtiquetaVersion from "$lib/componentes/EtiquetaVersion.svelte";
   // La «bitácora» (docs/diseno.md §4, «Historial y versiones»): una lista
   // vertical por días con un riel a la izquierda. Cada versión es una fila:
   // su marca (color y forma de su copia, hueca si la próxima retención la
@@ -159,7 +160,7 @@
                   <span class="badge badge-sm tone-{a.tono}" aria-hidden="true"><IconoA size={12} />{a.texto}</span>
                 {/if}
                 {#if v.id === reciente}<span class="badge badge-sm tone-accent" aria-hidden="true">La más reciente</span>{/if}
-                {#each v.etiquetas ?? [] as t (t)}<span class="badge badge-sm tone-info" aria-hidden="true">{t}</span>{/each}
+                {#each v.etiquetas ?? [] as t (t)}<EtiquetaVersion nombre={t} oculta />{/each}
                 <span class="hueco"></span>
                 {#if v.archivos != null}<span class="dato num" aria-hidden="true">{plural(v.archivos, "archivo", "archivos")}</span>{/if}
                 {#if estado(v.id)}<span class="estado" aria-hidden="true">{estado(v.id)}</span>{/if}

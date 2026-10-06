@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS historial (equipo_id TEXT NOT NULL, id TEXT NOT NULL,
 CREATE INDEX IF NOT EXISTS historial_hora ON historial (equipo_id, hora);
 CREATE TABLE IF NOT EXISTS plantillas (id TEXT PRIMARY KEY, cifrado TEXT NOT NULL, actualizada INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS destinos (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, donde TEXT, actualizado INTEGER NOT NULL, por TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS etiquetas_ajustes (clave TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizada INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS auditoria_importada (
   n INTEGER PRIMARY KEY, creado INTEGER NOT NULL, actor TEXT NOT NULL, accion TEXT NOT NULL, objetivo TEXT NOT NULL,
   datos TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL, origen TEXT NOT NULL);
@@ -1317,6 +1318,44 @@ impl Almacen for Sqlite {
         self.con(c, |db| Ok(db.execute("DELETE FROM plantillas WHERE id = ?1", [id]).map_err(s)? > 0))
     }
 
+    // ---------- Ajustes de las etiquetas (v1.4x) ----------
+    fn ajustes_etiquetas(&self, c: &ClienteCtx) -> R<Vec<AjusteEtiqueta>> {
+        self.con(c, |db| {
+            let mut st = db.prepare("SELECT datos, actualizada, por FROM etiquetas_ajustes ORDER BY clave").map_err(s)?;
+            let filas = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Ts>(1)?, r.get::<_, String>(2)?))).map_err(s)?;
+            let mut out = Vec::new();
+            for f in filas {
+                let (datos, actualizada, por) = f.map_err(s)?;
+                // Una fila que no se entiende (de una versión futura) se salta.
+                if let Ok(a) = serde_json::from_str::<AjusteEtiqueta>(&datos) {
+                    out.push(AjusteEtiqueta { actualizada, por, ..a });
+                }
+            }
+            Ok(out)
+        })
+    }
+    fn poner_ajuste_etiqueta(&self, c: &ClienteCtx, a: &AjusteEtiqueta, maximo: usize) -> R<bool> {
+        let clave = a.nombre.to_lowercase();
+        let datos = serde_json::to_string(&AjusteEtiqueta { actualizada: 0, por: String::new(), ..a.clone() }).map_err(s)?;
+        self.con(c, |db| {
+            let existe: bool = db.query_row("SELECT 1 FROM etiquetas_ajustes WHERE clave = ?1", [&clave], |_| Ok(true)).optional().map_err(s)?.unwrap_or(false);
+            let n: i64 = db.query_row("SELECT COUNT(*) FROM etiquetas_ajustes", [], |r| r.get(0)).map_err(s)?;
+            if !existe && n as usize >= maximo {
+                return Ok(false);
+            }
+            db.execute(
+                "INSERT INTO etiquetas_ajustes (clave, datos, actualizada, por) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(clave) DO UPDATE SET datos = ?2, actualizada = ?3, por = ?4",
+                params![clave, datos, ahora(), a.por],
+            )
+            .map_err(s)?;
+            Ok(true)
+        })
+    }
+    fn borrar_ajuste_etiqueta(&self, c: &ClienteCtx, nombre: &str) -> R<bool> {
+        let clave = nombre.to_lowercase();
+        self.con(c, |db| Ok(db.execute("DELETE FROM etiquetas_ajustes WHERE clave = ?1", [clave]).map_err(s)? > 0))
+    }
+
     // ---------- Catálogo de destinos (tarea 7a) ----------
     fn destinos_catalogo(&self, c: &ClienteCtx) -> R<Vec<DestinoCatalogo>> {
         self.con(c, |db| {
@@ -1337,7 +1376,7 @@ impl Almacen for Sqlite {
                 return Ok(false);
             }
             db.execute(
-                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por) VALUES (?1, ?2, ?3, ?4, ?5, ?6)                  ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6",
+                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6",
                 params![d.id, d.nombre, d.tipo, d.donde, d.actualizado, d.por],
             )
             .map_err(s)?;

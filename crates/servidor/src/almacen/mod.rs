@@ -18,8 +18,8 @@ pub mod sqlite;
 
 pub use notas::{AlmacenNotas, Comentario, IndiceNotas, Observacion};
 
-use crate::notificaciones::{Envio, Incidente};
-use serde::Serialize;
+use crate::notificaciones::{Envio, Incidente, Severidad};
+use serde::{Deserialize, Serialize};
 
 /// Unix (segundos).
 pub type Ts = i64;
@@ -264,6 +264,54 @@ pub struct DestinoCatalogo {
     pub actualizado: Ts,
     /// Nombre de quien lo guardó.
     pub por: String,
+}
+
+/// Lo que se ajusta de una etiqueta de equipos (v1.4x): su color, la plantilla de
+/// copia que se propone a un equipo nuevo con ella y cómo se avisa de sus equipos.
+/// En claro, como las etiquetas: son metadatos (la plantilla es un id opaco; su nombre
+/// y sus carpetas siguen cifrados).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AjusteEtiqueta {
+    /// Tal como se escribe (la clave es en minúsculas).
+    pub nombre: String,
+    /// Índice de la paleta de la consola (0–6); sin él, el de siempre (por el nombre).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u8>,
+    /// Id de una plantilla de copia del cliente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plantilla: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avisos: Option<AvisosEtiqueta>,
+    #[serde(default)]
+    pub actualizada: Ts,
+    #[serde(default)]
+    pub por: String,
+}
+
+/// Cómo se avisa de los equipos con una etiqueta (lo pone el propietario del cliente).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvisosEtiqueta {
+    /// Sus avisos (los importantes o críticos de por sí) cuentan como mínimo con esta gravedad.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub importancia: Option<Severidad>,
+    /// Canales compartidos (webhook, ntfy, Telegram) que reciben siempre sus avisos,
+    /// sea cual sea la gravedad que tengan elegida.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub canales: Vec<CanalRef>,
+}
+
+impl AvisosEtiqueta {
+    pub fn vacio(&self) -> bool {
+        self.importancia.is_none() && self.canales.is_empty()
+    }
+}
+
+/// Un canal de notificación: del servidor o del propio cliente.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CanalRef {
+    /// `servidor` o `cliente`.
+    pub ambito: String,
+    pub id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -526,6 +574,12 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// Crea o sustituye; `false` si es nuevo y ya hay `maximo`.
     fn guardar_destino(&self, c: &ClienteCtx, d: &DestinoCatalogo, maximo: usize) -> R<bool>;
     fn borrar_destino(&self, c: &ClienteCtx, id: &str) -> R<bool>;
+    // ---------- Ajustes de las etiquetas de los equipos (v1.4x) ----------
+    fn ajustes_etiquetas(&self, c: &ClienteCtx) -> R<Vec<AjusteEtiqueta>>;
+    /// Crea o sustituye (por el nombre, sin distinguir mayúsculas); `false` si es nueva y ya hay `maximo`.
+    fn poner_ajuste_etiqueta(&self, c: &ClienteCtx, a: &AjusteEtiqueta, maximo: usize) -> R<bool>;
+    /// Vuelve a lo de siempre (color por el nombre, sin plantilla ni avisos propios).
+    fn borrar_ajuste_etiqueta(&self, c: &ClienteCtx, nombre: &str) -> R<bool>;
 
     // ---------- Historial de los equipos (v1.23) ----------
     /// Guarda las entradas que no estuvieran ya (por id); devuelve cuántas son nuevas.

@@ -33,7 +33,7 @@ type Datos = {
   ajustes: Omit<T.AjustesNotif, "canales">;
   canales: Map<string, T.CanalNotif[]>;
   secretos: Map<string, Record<string, string>>;
-  prefs: Map<string, { inmediatos: T.Severidad[]; resumen: boolean }>;
+  prefs: Map<string, { inmediatos: T.Severidad[]; resumen: boolean; etiquetas?: T.PrefEtiqueta[] }>;
   personas: Map<string, { silencio: T.Silencio | null; resumen_diario: boolean; resumen_semanal: boolean }>;
   registro: T.EnvioNotif[];
 };
@@ -308,7 +308,7 @@ export function rutasNotificaciones<C extends Ctx>(h: Ayudas<C>): [string, RegEx
         const correo = correoPropio ? { de: "cliente" as const, nombre: correoPropio.nombre } : correoServidor ? { de: "servidor" as const, nombre: correoServidor.nombre } : null;
         const delServidor = canalesDe("servidor")
           .filter((x) => x.tipo !== "correo" && x.activo && x.completo && (!x.reglas.clientes || x.reglas.clientes.includes(c)))
-          .map((x) => ({ nombre: x.nombre, tipo: x.tipo, severidades: x.reglas.severidades }));
+          .map((x) => ({ id: x.id, nombre: x.nombre, tipo: x.tipo, severidades: x.reglas.severidades }));
         return { canales: propios, correo, servidor: { canales: delServidor, url_consola: datos().ajustes.url_consola } } satisfies T.NotifCliente;
       },
     ],
@@ -367,8 +367,11 @@ export function rutasNotificaciones<C extends Ctx>(h: Ayudas<C>): [string, RegEx
         h.miembro(ctx, c, cuenta === h.cuenta(ctx).id ? "lectura" : "propietario");
         const m = (estado.miembros.get(c) ?? []).find((x) => x.cuenta === cuenta);
         if (!m) throw h.err(404, "no_existe", "No existe.");
-        const b = ctx.cuerpo as { inmediatos?: T.Severidad[]; resumen?: boolean };
-        datos().prefs.set(`${c}:${cuenta}`, { inmediatos: [...new Set(b.inmediatos ?? [])], resumen: !!b.resumen });
+        const b = ctx.cuerpo as { inmediatos?: T.Severidad[]; resumen?: boolean; etiquetas?: T.PrefEtiqueta[] };
+        // v1.4x: sin `etiquetas`, se conservan las que hubiera (como el servidor).
+        const etiquetas = b.etiquetas ?? datos().prefs.get(`${c}:${cuenta}`)?.etiquetas ?? [];
+        if (etiquetas.some((x) => !x.etiqueta.trim() || x.etiqueta.includes(","))) throw h.err(422, "datos", "Etiqueta no válida.");
+        datos().prefs.set(`${c}:${cuenta}`, { inmediatos: [...new Set(b.inmediatos ?? [])], resumen: !!b.resumen, etiquetas: etiquetas.map((x) => ({ etiqueta: x.etiqueta.trim(), inmediatos: [...new Set(x.inmediatos)] })) });
         return prefsDe(c, cuenta, m.rol);
       },
     ],
@@ -404,6 +407,7 @@ export function rutasNotificaciones<C extends Ctx>(h: Ayudas<C>): [string, RegEx
         rol,
         correo: correoServidor || canalesDe(`cliente:${cl.id}`).some((x) => x.tipo === "correo" && x.activo && x.completo),
         preferencias: prefsDe(cl.id, cuenta, rol),
+        etiquetas: [...new Set(estado.equipos.filter((e) => e.cliente === cl.id).flatMap((e) => e.etiquetas ?? []))].sort((a, b) => a.localeCompare(b, "es")),
       }));
     return { ...personaDe(cuenta), hora_resumen: a.hora_resumen, dia_semanal: a.dia_semanal, clientes };
   }

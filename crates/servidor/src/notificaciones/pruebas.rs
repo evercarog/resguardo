@@ -361,6 +361,61 @@ fn el_arreglo_no_llega_a_quien_ya_no_esta() {
     assert_eq!(para, vec!["ana@ejemplo.com".to_string()]);
 }
 
+/// v1.4x: avisos por etiqueta. Los de «Servidores» cuentan como críticos (les llegan
+/// también al técnico y al webhook de críticos), un canal puede recibirlos siempre y cada
+/// persona puede pedir otra cosa para los equipos con una etiqueta.
+#[test]
+fn avisos_por_etiqueta() {
+    use crate::almacen::{AjusteEtiqueta, AvisosEtiqueta, CanalRef};
+    let p = servidor();
+    let db = p.st.db.as_ref();
+    db.poner_etiquetas_equipo(&p.ctx, "e1", &["Servidores".to_string()]).unwrap();
+    let sin_contacto = |t: Ts| {
+        aviso_a(db, &p.ctx, Some("e1"), "equipo_sin_contacto", "«PC-Contabilidad» lleva más de 24 h sin conectar", t).unwrap();
+        p.pasada(t);
+    };
+    let correos_desde = |n: usize| {
+        let mut v: Vec<String> = p.correos().into_iter().skip(n).map(|(a, _)| a).collect();
+        v.sort();
+        v
+    };
+    // 1. «Servidores» pide importancia crítica: un aviso importante sale como crítico.
+    let ajuste = |avisos: AvisosEtiqueta| AjusteEtiqueta { nombre: "servidores".into(), avisos: Some(avisos), ..Default::default() };
+    db.poner_ajuste_etiqueta(&p.ctx, &ajuste(AvisosEtiqueta { importancia: Some(Severidad::Critico), canales: vec![] }), 10).unwrap();
+    sin_contacto(T0 + 60);
+    assert_eq!(correos_desde(0), vec!["ana@ejemplo.com".to_string(), "tom@ejemplo.com".to_string()]);
+    assert_eq!(p.webhooks().len(), 1, "el webhook de críticos también");
+    assert_eq!(p.webhooks()[0]["severidad"], "critico");
+    // Se arregla (vuelve a conectar) para empezar de nuevo.
+    db.contacto_equipo(&p.ctx, "e1", T0 + 3600).unwrap();
+    p.pasada(T0 + 3600 + 10);
+    let (n_correos, n_webhooks) = (p.correos().len(), p.webhooks().len());
+    // 2. Sin importancia, pero el webhook avisa siempre de «Servidores»: un importante le llega.
+    let a = ajustes::ajustes(db).unwrap();
+    let webhook = a.canales.iter().find(|c| c.tipo == TipoCanal::Webhook).unwrap().id.clone();
+    let siempre = AvisosEtiqueta { importancia: None, canales: vec![CanalRef { ambito: "servidor".into(), id: webhook }] };
+    db.poner_ajuste_etiqueta(&p.ctx, &ajuste(siempre), 10).unwrap();
+    // 3. Y cada persona, lo suyo: Leo (de lectura) quiere los importantes de «Servidores»;
+    //    Tom, nada de ellos (ni los críticos).
+    let leo = db.cuenta_por_correo("leo@ejemplo.com").unwrap().unwrap();
+    let tom = db.cuenta_por_correo("tom@ejemplo.com").unwrap().unwrap();
+    let pref = |inm: Vec<Severidad>| ajustes::PrefEtiqueta { etiqueta: "SERVIDORES".into(), inmediatos: inm };
+    let base_leo = ajustes::PrefsCliente::por_defecto(Rol::Lectura);
+    ajustes::guardar_prefs_cliente(db, p.ctx.id(), &leo.id, &ajustes::PrefsCliente { etiquetas: vec![pref(vec![Severidad::Importante])], ..base_leo }).unwrap();
+    let base_tom = ajustes::PrefsCliente::por_defecto(Rol::Tecnico);
+    ajustes::guardar_prefs_cliente(db, p.ctx.id(), &tom.id, &ajustes::PrefsCliente { etiquetas: vec![pref(vec![])], ..base_tom }).unwrap();
+    sin_contacto(T0 + 3 * 24 * 3600);
+    assert_eq!(correos_desde(n_correos), vec!["ana@ejemplo.com".to_string(), "leo@ejemplo.com".to_string()]);
+    let w = p.webhooks();
+    assert_eq!(w.len(), n_webhooks + 1, "el webhook, aunque solo quiera críticos");
+    assert_eq!(w.last().unwrap()["severidad"], "importante", "sin subir la importancia");
+    // Otro equipo sin la etiqueta: lo de siempre (Tom recibe sus críticos, Leo nada, el webhook sus críticos).
+    equipo(&p.st, &p.ctx, "e2", "PC-Recepcion", T0);
+    aviso_a(db, &p.ctx, Some("e2"), "intentos_fallidos", "5 intentos con la clave mal", T0 + 3 * 24 * 3600 + 60).unwrap();
+    p.pasada(T0 + 3 * 24 * 3600 + 60);
+    assert_eq!(correos_desde(n_correos + 2), vec!["ana@ejemplo.com".to_string(), "tom@ejemplo.com".to_string()]);
+}
+
 #[test]
 fn equipo_que_vuelve_a_conectar() {
     let p = servidor();

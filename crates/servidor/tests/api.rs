@@ -1208,6 +1208,103 @@ async fn etiquetas_de_equipos() {
     assert_eq!(pedir(&p.app, "PUT", &otro, Some(json!({ "etiquetas": [] })), Some(&cookie), &[]).await.estado, StatusCode::NOT_FOUND);
 }
 
+/// v1.4x: ajustes de las etiquetas (color, plantilla por defecto y avisos). Los ven todos;
+/// los cambian administradores y propietarios; los avisos, solo el propietario.
+#[tokio::test]
+async fn ajustes_de_las_etiquetas() {
+    let p = servidor();
+    let cookie = propietario(&p).await;
+    let (c, _ag) = cliente_con_equipo(&p, &cookie).await;
+    let admin = invitado(&p, &cookie, &c, "administrador").await;
+    let tecnico = invitado(&p, &cookie, &c, "tecnico").await;
+    let lectura = invitado(&p, &cookie, &c, "lectura").await;
+    let ruta = format!("/api/clientes/{c}/etiquetas");
+    // Sin nada: lista vacía, y el resumen la trae también.
+    assert_eq!(pedir(&p.app, "GET", &ruta, None, Some(&lectura), &[]).await.json, json!([]));
+    // Un administrador elige el color (el nombre se limpia como el de las etiquetas).
+    let r = pedir(&p.app, "PUT", &ruta, Some(json!({ "nombre": "  Servidores ", "color": 4 })), Some(&admin), &[]).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert_eq!((r.json[0]["nombre"].as_str(), r.json[0]["color"].as_u64()), (Some("Servidores"), Some(4)));
+    // La misma con otras mayúsculas sustituye a la anterior.
+    let r = pedir(&p.app, "PUT", &ruta, Some(json!({ "nombre": "servidores", "color": 2 })), Some(&admin), &[]).await;
+    assert_eq!((r.json.as_array().unwrap().len(), r.json[0]["color"].as_u64()), (1, Some(2)));
+    let l = pedir(&p.app, "GET", &format!("/api/clientes/{c}/resumen"), None, Some(&lectura), &[]).await.json;
+    assert_eq!(l["etiquetas"][0]["color"], 2, "{l}");
+    // Técnicos y de lectura no pueden cambiarlos.
+    for quien in [&tecnico, &lectura] {
+        let r = pedir(&p.app, "PUT", &ruta, Some(json!({ "nombre": "Servidores", "color": 1 })), Some(quien), &[]).await;
+        assert_eq!(r.estado, StatusCode::FORBIDDEN);
+    }
+    // Colores fuera de la paleta, nombres raros o plantillas que no existen: no.
+    for cuerpo in [
+        json!({ "nombre": "Servidores", "color": 7 }),
+        json!({ "nombre": "a,b", "color": 1 }),
+        json!({ "nombre": " ", "color": 1 }),
+        json!({ "nombre": "Servidores", "plantilla": "no.vale" }),
+        json!({ "nombre": "Servidores", "plantilla": "pla-no-existe" }),
+    ] {
+        assert_eq!(pedir(&p.app, "PUT", &ruta, Some(cuerpo.clone()), Some(&admin), &[]).await.estado, StatusCode::UNPROCESSABLE_ENTITY, "{cuerpo}");
+    }
+    // Con una plantilla guardada, sí.
+    let cifrado = B64.encode([7u8; 120]);
+    let rp = pedir(&p.app, "PUT", &format!("/api/clientes/{c}/plantillas/pla-1"), Some(json!({ "cifrado": cifrado })), Some(&cookie), &[]).await;
+    assert_eq!(rp.estado, StatusCode::NO_CONTENT);
+    let r = pedir(&p.app, "PUT", &ruta, Some(json!({ "nombre": "Servidores", "color": 2, "plantilla": "pla-1" })), Some(&admin), &[]).await;
+    assert_eq!(r.json[0]["plantilla"], "pla-1", "{}", r.json);
+    // Los avisos, solo el propietario: el administrador no puede ponerlos ni cambiarlos.
+    let avisos = json!({ "nombre": "Servidores", "color": 2, "plantilla": "pla-1", "avisos": { "importancia": "critico" } });
+    assert_eq!(pedir(&p.app, "PUT", &ruta, Some(avisos.clone()), Some(&admin), &[]).await.estado, StatusCode::FORBIDDEN);
+    let r = pedir(&p.app, "PUT", &ruta, Some(avisos), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json[0]["avisos"], json!({ "importancia": "critico" }));
+    // El administrador puede cambiar el color si deja los avisos como están.
+    let r = pedir(
+        &p.app,
+        "PUT",
+        &ruta,
+        Some(json!({ "nombre": "Servidores", "color": 5, "plantilla": "pla-1", "avisos": { "importancia": "critico" } })),
+        Some(&admin),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    // Un canal que no existe: no.
+    let malo = json!({ "nombre": "Servidores", "avisos": { "canales": [{ "ambito": "servidor", "id": "no-existe" }] } });
+    assert_eq!(pedir(&p.app, "PUT", &ruta, Some(malo), Some(&cookie), &[]).await.estado, StatusCode::UNPROCESSABLE_ENTITY);
+    // Sin nada, vuelve a lo de siempre (y desaparece de la lista).
+    let r = pedir(&p.app, "PUT", &ruta, Some(json!({ "nombre": "SERVIDORES" })), Some(&cookie), &[]).await;
+    assert_eq!(r.json, json!([]));
+    let a = pedir(&p.app, "GET", &format!("/api/clientes/{c}/auditoria?orden=desc&limite=10"), None, Some(&cookie), &[]).await.json;
+    assert!(a.as_array().unwrap().iter().filter(|x| x["accion"] == "ajustes_etiqueta").count() >= 3);
+    // Las preferencias de avisos por etiqueta de una persona (y una consola anterior, sin el campo, no las borra).
+    let yo = pedir(&p.app, "GET", "/api/cuenta", None, Some(&cookie), &[]).await.json;
+    let cuenta = yo["id"].as_str().unwrap_or_default().to_string();
+    let rp = format!("/api/clientes/{c}/notificaciones/personas/{cuenta}");
+    let r = pedir(
+        &p.app,
+        "PUT",
+        &rp,
+        Some(json!({ "inmediatos": ["critico"], "resumen": true, "etiquetas": [{ "etiqueta": " Servidores ", "inmediatos": ["importante", "critico"] }] })),
+        Some(&cookie),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json["etiquetas"], json!([{ "etiqueta": "Servidores", "inmediatos": ["importante", "critico"] }]));
+    let r = pedir(&p.app, "PUT", &rp, Some(json!({ "inmediatos": ["critico", "importante"], "resumen": true })), Some(&cookie), &[]).await;
+    assert_eq!(r.json["etiquetas"][0]["etiqueta"], "Servidores", "{}", r.json);
+    let r = pedir(
+        &p.app,
+        "PUT",
+        &rp,
+        Some(json!({ "inmediatos": [], "resumen": true, "etiquetas": [{ "etiqueta": "a,b", "inmediatos": [] }] })),
+        Some(&cookie),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 /// Progreso en vivo (v1.25): del agente a la consola, solo en memoria y limpio.
 #[tokio::test]
 async fn progreso_en_vivo() {

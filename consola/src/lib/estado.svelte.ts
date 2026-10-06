@@ -21,6 +21,8 @@ export const actual = $state({
   equipos: [] as T.Equipo[],
   avisosAbiertos: 0,
   pendientes: 0,
+  /** v1.4x: los ajustes de las etiquetas de sus equipos (color, plantilla por defecto, avisos). */
+  etiquetas: [] as T.AjusteEtiqueta[],
   cargando: false,
   error: "" as string,
   /** Código del último error al cargarlo («prohibido», «no_existe», «red»…), para su ilustración. */
@@ -60,6 +62,7 @@ export async function cargarCliente(id: string, opciones: { silencioso?: boolean
     actual.id = id;
     actual.cliente = null;
     actual.equipos = [];
+    actual.etiquetas = [];
     actual.error = "";
     // 0 = aún sin la primera carga de este cliente: las pantallas enseñan su esqueleto, nunca «no hay…».
     actual.cargado = 0;
@@ -74,6 +77,7 @@ export async function cargarCliente(id: string, opciones: { silencioso?: boolean
     actual.equipos = resumen.equipos;
     actual.avisosAbiertos = resumen.avisos_abiertos;
     actual.pendientes = resumen.pendientes;
+    actual.etiquetas = resumen.etiquetas ?? [];
     actual.cargado = Date.now();
     actual.error = "";
   } catch (e) {

@@ -13,9 +13,9 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 - Tarea 0: rama de la sesión en la nube unida. Arreglo: `restaurar-respaldo` protege la carpeta solo si es la de por defecto o como administrador (si no, el e2e fallaba con «Acceso denegado»).
 - e2e: se niega a arrancar con binarios más viejos que el código (un fallo del paso 5 era un agente sin recompilar).
 - **0.7.22** (en el commit `90b34f4`): versión subida, instaladores compilados y **publicación en borrador** en GitHub (`v0.7.22`, 10 archivos con `SHA256SUMS`). **No es pública**: revísala y publícala tú. Los instaladores también están en `instalar\` (los de la 0.7.21 en `instalar\anteriores`).
-- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola).
+- Después de la 0.7.22 (irán en la siguiente versión): 10a (CI de Windows en ramas `ia/*` y `claude/*`), 9a (código de «Añadir equipo» generado en el navegador; arregla también los «Demasiados intentos»), 9d–9h (SSRF en webhooks, `--proxy-red`, relevos, caché de SQLite, prueba de uniones NTFS), 2 (equipos que no están en todas las consolas), 1 y 9c (órdenes en espera visibles y cancelables desde cualquier consola), 9b (ancla de la auditoría en el resumen por correo y en los agentes; «Comprobar con un ancla» en Actividad), 3 (espejo flexible: horario propio y «después de cada copia», selección de repositorios por destino, verificación sin contraseñas, borrado diferido con freno, B2/S3/SFTP/SMB/WebDAV, restaurar desde el espejo; diseño en `docs/espejo.md`) y 10c (anotada).
 
-**En marcha:** 3 (espejo flexible), 9b (ancla de la auditoría), 6 (etiquetas). Pendientes: 7 (con 4), 8, 10c.
+**En marcha:** 6 (etiquetas) y 7 parte A (destinos con nombre y zonas del almacén; diseño de toda la 7 en `docs/copias-en-cadena.md`). Pendientes: 7 parte B (copias en cadena, con 4) y 8.
 
 **Decisiones tomadas sin ti, para revisar** (detalle en cada entrada):
 
@@ -24,6 +24,9 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 - 9d: los avisos (webhook, ntfy) de un cliente ya no usan el proxy del entorno (no se podría comprobar la IP de destino).
 - 1: cancelar una orden en espera no pide clave (cualquier consola puede); queda en el historial de todas. Una orden en espera solo se aplica justo después de hablar con la consola que la mandó.
 - 2: una consola sin contacto en 30 días no se sugiere.
+- 9b: restaurar una copia de la consola hace saltar el aviso «rehízo su auditoría» en los agentes (no se distingue de un servidor que miente); el agente avisa una vez y sigue.
+- 3: freno del espejo si de una vez falta ≥10 % (y ≥20 archivos) o un repositorio entero; verificación por rotación 5 % en carpetas y 0 % en nubes (descargar cuesta); SFTP exige la clave pública del servidor.
+- Reemplacé con `--force-with-lease` un commit de `main` subido un minuto antes porque nombraba este equipo (la comprobación de nombres prohibidos lo detectó).
 - Se borraron carpetas de compilación y copias de trabajo de ramas ya unidas (`.claude/worktrees`, `target` sueltos) para liberar disco; en C: también cachés temporales (npm, restic de pruebas, perfiles de Edge de capturas).
 
 **Probar a mano o en una máquina virtual:**
@@ -71,6 +74,25 @@ Tarea 7 de `docs/plan-mejoras.md` (con la 4 dentro), **parte A**, con el usuario
   - El paquete `.resguardo-cliente` aún no lleva el catálogo (parte B, punto 8).
   - En la consola, al pasar de un diálogo a otro (p. ej. «Nuevo destino» → «Añadir una zona») el anterior se ve un momento detrás mientras se cierra: es lo mismo que ya pasaba con «Nuevo repositorio» → «Copiar en …».
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/etiquetas`
+
+- **Pedido:** tarea 6 de `docs/plan-mejoras.md` (6a: elegir el color de cada etiqueta; 6b: agrupar, acciones, avisos y plantilla por etiqueta), con el usuario fuera y otras sesiones en las tareas 3 y 9b.
+- **Cambios:**
+  - Servidor: tabla por cliente `etiquetas_ajustes` y `GET/PUT /api/clientes/{c}/etiquetas` (`api/etiquetas.rs`): color 0–6, id de plantilla (debe existir) y avisos (`importancia`, `canales`). Leer, cualquiera; cambiar, administrador; los avisos, solo el propietario (403 si un administrador los cambia). El resumen lleva `etiquetas`. Notificaciones: `reglas::severidad_con_etiquetas` (solo sube lo importante o crítico), canales que avisan siempre (`destinos(…, &DeEtiquetas)`), y `PrefsCliente.etiquetas` (lo de una persona para los equipos con una etiqueta, en lugar de lo general; la unión si hay varias; sin el campo en el PUT se conservan). `mias` lleva las etiquetas de cada cliente; `GET …/notificaciones`, los `id` de los canales del servidor.
+  - Consola: `lib/etiquetasGrupos.ts` (colores, grupos, plantilla propuesta) y `lib/configEnvio.ts` (la configuración que se envía, ahora compartida con «Cambiar las copias», y el plan de aplicar una plantilla). «Ajustar» en el filtro de etiquetas → `GestionarEtiquetas` / `AjustesEtiqueta` (color con su nombre escrito; plantilla, pidiendo la clave para ver las cifradas; avisos). «Agrupar por etiqueta» en Estado y Equipos. «Varios a la vez»: elegir por etiqueta, pausar (clave una vez, comprobada equipo a equipo, con la espera), reanudar y «Aplicar plantilla» (`AplicarPlantillaEnBloque`: clave → plantilla → qué le pasará a cada uno → solo entonces la orden `config`). Informes: «De: los equipos con «X»» y tabla por etiqueta. Ficha del equipo: si no tiene copias y una etiqueta suya tiene plantilla, «Usarla» abre el editor con `?plantilla=` (rellena una copia; no envía nada). Avisos por etiqueta de cada persona en Ajustes → Personas y «Mis notificaciones». Etiquetas de las versiones con un punto de color. Simulador y `scripts/vectores-etiquetas.ts`.
+  - Docs: `api-servidor.md` (tablas y «Cambios» v1.4x), plan marcado.
+- **Comprobado:** `cargo fmt --check`, clippy del espacio de trabajo y con `consola-integrada`, `cargo test --workspace` (nuevas: `ajustes_de_las_etiquetas` en `tests/api.rs`, `avisos_por_etiqueta` de punta a punta, reglas y preferencias), consola `check`, `build`, `test:vectores` (con la comprobación de `$effect`), `test:sin-referencias` y `npm run e2e` (sin paso propio de etiquetas). En el simulador: Equipos agrupado y «Varios a la vez» → elegir «Servidores» → Pausar con la clave (las dos órdenes quedan «Pausa programada»), «Ajustar» y el diálogo de una etiqueta (elegir color, abrir plantillas con la clave), Estado agrupado e Informes por etiqueta; escritorio y 375 px, claro y oscuro.
+- **Decisiones dudosas:**
+  - Los avisos de una etiqueta solo los cambia el propietario (como los canales del cliente); el color y la plantilla, también los administradores. La tarea decía «propietario/administrador» para guardar.
+  - «Importancia» solo sube lo que ya es importante o crítico (lo informativo, como «volvió a funcionar», no se vuelve urgente). En la consola solo se ofrece «tratar como críticos».
+  - Los canales «siempre» solo pueden ser canales compartidos que ya reciben lo de ese cliente (no se puede usar un canal del servidor que lo excluye); no saltan las horas de silencio del canal.
+  - Las preferencias por etiqueta de una persona **sustituyen** a las generales para esos equipos (con varias etiquetas, la unión). Otra opción era sumarlas.
+  - «Aplicar plantilla» en bloque añade la copia en el primer repositorio que admite escritura (se puede cambiar por equipo antes de enviar), salta a los que ya tienen una copia con el mismo nombre, sin repositorio o con un agente que no entiende la plantilla, y nunca toca las copias que ya tienen. Las carpetas de la plantilla tienen que existir en cada equipo (se dice; no se comprueba).
+  - «Plantilla por defecto»: no se aplica nunca sola; se propone en la ficha de un equipo confirmado y **sin copias** que tenga la etiqueta. No se avisa en Estado ni al terminar el alta.
+  - Sin plantillas guardadas, una clave equivocada en «Elegir…» no se puede distinguir (no hay nada que descifrar); con «Aplicar plantilla» sí se comprueba con la etiqueta de los equipos.
+  - Los ajustes de las etiquetas no van en el paquete de «Mover a otro servidor» (tampoco las plantillas, que dependen de la clave).
+  - La pausa en bloque calcula `K_cfg` una vez y la prueba de cada equipo (Argon2) uno a uno: con muchos equipos tarda unos segundos por equipo.
+- **Sin probar:** avisos por etiqueta con un correo, webhook o ntfy de verdad (solo la prueba de punta a punta con el transporte falso); «Aplicar plantilla» y «Usarla» con una plantilla real (en el simulador no hay plantillas guardadas: se probaron el plan y la configuración en los vectores); el diálogo «Avisos de …» del propietario y «Mis notificaciones» → «Por etiqueta» solo se abrieron y guardaron en el simulador (sin correo de verdad).
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/espejo-flexible`
 
 Tarea 3 de `docs/plan-mejoras.md` («Espejo más flexible»), entera, con el usuario ausente (propuesta en `docs/espejo.md` y adelante sin esperar el visto bueno, como pidió).

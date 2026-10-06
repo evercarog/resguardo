@@ -16,7 +16,7 @@ import { cabeceraPaquete } from "../lib/cripto/paquete";
 import { sasV2, sasV3 } from "../lib/cripto/claves";
 import { ABRE_SESION, esDestructiva, NIVEL, SOLO_ADMIN_ROL } from "../lib/cripto/ordenes";
 import type * as T from "../lib/tipos";
-import { auditar, DEMO, estado, sembrar, verificarCadena, type EmparejamientoMock, type EquipoMock, type OrdenMock } from "./estado";
+import { auditar, DEMO, estado, ID, sembrar, verificarCadena, type EmparejamientoMock, type EquipoMock, type OrdenMock } from "./estado";
 import { historialMock } from "./historial";
 import { retencionesMock } from "./retencion";
 import { progresoDe } from "./progreso";
@@ -1049,7 +1049,37 @@ const rutas: Ruta[] = [
         equipos: estado.equipos.filter((e) => e.cliente === c).map(publico),
         avisos_abiertos: estado.avisos.filter((a) => a.cliente === c && a.abierto).length,
         pendientes: estado.ordenes.filter((o) => o.cliente === c && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).length,
+        etiquetas: ajustesEtiquetasDe(c),
       };
+    },
+  ],
+  [
+    // v1.4x: ajustes de las etiquetas (color, plantilla por defecto, avisos).
+    "GET",
+    new RegExp(`^${C}/etiquetas$`),
+    (ctx, [c]) => (miembro(ctx, c), ajustesEtiquetasDe(c)),
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/etiquetas$`),
+    (ctx, [c]) => {
+      const { cuenta, rol } = miembro(ctx, c, "administrador");
+      const b = ctx.cuerpo as { nombre?: string; color?: number | null; plantilla?: string | null; avisos?: T.AvisosEtiqueta | null };
+      const nombre = String(b.nombre ?? "").split(/\s+/).filter(Boolean).join(" ");
+      if (!nombre || [...nombre].length > 32 || /[\u0000-\u001f,]/.test(nombre)) throw err(422, "datos", "Etiqueta no válida (hasta 32 caracteres, sin comas).");
+      if (b.color != null && !(Number.isInteger(b.color) && b.color >= 0 && b.color < 7)) throw err(422, "datos", "Color no válido.");
+      if (b.plantilla && !plantillasMock.get(c)?.has(b.plantilla)) throw err(422, "datos", "Esa plantilla ya no existe.");
+      const l = ajustesEtiquetasDe(c);
+      const previo = l.find((a) => a.nombre.toLowerCase() === nombre.toLowerCase());
+      const avisos = b.avisos && (b.avisos.importancia || b.avisos.canales?.length) ? b.avisos : null;
+      if (rol !== "propietario" && JSON.stringify(avisos ?? null) !== JSON.stringify(previo?.avisos ?? null)) throw err(403, "prohibido", "Tu papel en este cliente no permite hacer esto.");
+      const resto = l.filter((a) => a !== previo);
+      const nuevo: T.AjusteEtiqueta = { nombre, color: b.color ?? null, plantilla: b.plantilla ?? null, avisos, actualizada: new Date().toISOString(), por: cuenta.nombre };
+      const lista = nuevo.color == null && !nuevo.plantilla && !nuevo.avisos ? resto : [...resto, nuevo];
+      lista.sort((a, x) => a.nombre.toLowerCase().localeCompare(x.nombre.toLowerCase()));
+      ajustesEtiquetasMock.set(c, lista);
+      auditar(c, cuenta.id, "ajustes_etiqueta", nombre, { color: nuevo.color, plantilla: nuevo.plantilla, avisos });
+      return lista;
     },
   ],
   [
@@ -1466,6 +1496,13 @@ function marcaJson(c: string) {
 const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>();
 /** Plantillas de copia (v1.20) por cliente: solo bytes cifrados por la consola. */
 const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizada: string; por: string }>>();
+/** v1.4x: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */
+const ajustesEtiquetasMock = new Map<string, T.AjusteEtiqueta[]>();
+function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
+  if (!ajustesEtiquetasMock.has(c))
+    ajustesEtiquetasMock.set(c, c === ID.altamar ? [{ nombre: "Servidores", color: 4, plantilla: null, avisos: { importancia: "critico" }, actualizada: new Date().toISOString(), por: "Ana Restrepo" }] : []);
+  return ajustesEtiquetasMock.get(c)!;
+}
 
 /** El agente anuncia SAS v3 desde 0.7.10. */
 function agenteConSasV3(v: string | null | undefined): boolean {

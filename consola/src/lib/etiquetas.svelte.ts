@@ -2,23 +2,22 @@
 // («Contabilidad», «Servidores»…). Se guardan en el servidor en claro: son
 // metadatos, como el nombre del equipo. No confundir con la `etiqueta` (HMAC).
 //
-// Color: cada etiqueta tiene siempre el mismo, de una paleta de 7 pensada
-// para distinguirse también con daltonismo (Okabe-Ito, con su versión para el
-// tema oscuro en app.css: --et-0 … --et-6). El color va solo en el punto: el
-// texto, en tinta neutra, es lo que se lee.
+// v1.4x (tarea 6): cada etiqueta puede tener sus ajustes en el servidor (color
+// elegido, plantilla por defecto y avisos), que llegan con el resumen del
+// cliente (`actual.etiquetas`). Lo que no depende de la pantalla está en
+// etiquetasGrupos.ts (con sus pruebas).
 import { actual } from "./estado.svelte";
+import { colorDe } from "./etiquetasGrupos";
 import { guardar, leerTexto } from "./recordar";
-import type { Equipo } from "./tipos";
+
+export { ajusteDe, colorPorNombre, etiquetasDe, gruposPorEtiqueta, mismaEtiqueta, N_COLORES, NOMBRES_COLOR, pasaFiltro, plantillasPropuestas } from "./etiquetasGrupos";
 
 export const MAX_ETIQUETAS = 10;
 export const MAX_LARGO = 32;
-export const N_COLORES = 7;
 
-/** El color de una etiqueta (índice de la paleta), igual en todas las pantallas. */
+/** El color de una etiqueta (índice de la paleta), igual en todas las pantallas del cliente. */
 export function colorEtiqueta(nombre: string): number {
-  let h = 0;
-  for (const c of nombre.trim().toLowerCase()) h = (h * 31 + c.codePointAt(0)!) >>> 0;
-  return h % N_COLORES;
+  return colorDe(nombre, actual.etiquetas);
 }
 
 /** Limpia una etiqueta como el servidor: espacios de más fuera; null si no vale. */
@@ -26,19 +25,6 @@ export function limpiarEtiqueta(t: string): string | null {
   const x = t.split(/\s+/).filter(Boolean).join(" ");
   if (!x || [...x].length > MAX_LARGO || /[\u0000-\u001f,]/.test(x)) return null;
   return x;
-}
-
-/** Todas las etiquetas del cliente, ordenadas, con cuántos equipos la llevan. */
-export function etiquetasDe(equipos: Equipo[]): { nombre: string; n: number }[] {
-  const m = new Map<string, { nombre: string; n: number }>();
-  for (const e of equipos)
-    for (const t of e.etiquetas ?? []) {
-      const k = t.toLowerCase();
-      const x = m.get(k) ?? { nombre: t, n: 0 };
-      x.n++;
-      m.set(k, x);
-    }
-  return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 }
 
 /**
@@ -59,8 +45,17 @@ export const filtroEtiqueta = {
   },
 };
 
-/** ¿Pasa el equipo el filtro? (sin filtro, todos). */
-export function pasaFiltro(e: Equipo | undefined, etiqueta: string): boolean {
-  if (!etiqueta) return true;
-  return !!e?.etiquetas?.some((t) => t.toLowerCase() === etiqueta.toLowerCase());
-}
+/** «Agrupar por etiqueta» en Estado y Equipos (por cliente, recordado en este navegador). */
+const agrupar = $state({ cliente: "", si: false });
+
+export const agruparPorEtiqueta = {
+  get valor(): boolean {
+    if (agrupar.cliente !== actual.id) return actual.id ? leerTexto(`agrupar.${actual.id}`) === "si" : false;
+    return agrupar.si;
+  },
+  poner(v: boolean) {
+    agrupar.cliente = actual.id;
+    agrupar.si = v;
+    guardar(`agrupar.${actual.id}`, v ? "si" : "");
+  },
+};
