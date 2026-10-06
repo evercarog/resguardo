@@ -85,13 +85,30 @@ pub fn sas_de(st: &St, version: Option<i64>, box_pub: &str, sign_pub: &str) -> (
     }
 }
 
+/// Intentos fallidos de `unirse` (código que no vale) por IP y hora: frena probar códigos.
+pub const MAX_FALLOS_UNIRSE_H: u32 = 20;
+/// Intentos de `unirse` por IP y hora, buenos o malos (v1.4x). Antes había un solo límite de 20
+/// que contaba también los que salían bien: una oficina tras una sola IP pública (consola en
+/// internet) no podía vincular más de 20 equipos en una hora y daba «Demasiados intentos».
+/// Los buenos ya los limita la creación de códigos (por cuenta y por cliente).
+pub const MAX_UNIRSE_H: u32 = 300;
+
 async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p): Json<Unirse>) -> Res<Json<Value>> {
-    if !st.limites.intento(&format!("unirse:{}", ip_de(&ip)), 20, Duration::from_secs(3600)) {
+    let hora = Duration::from_secs(3600);
+    let clave_fallos = format!("unirse-fallo:{}", ip_de(&ip));
+    if st.limites.superado(&clave_fallos, MAX_FALLOS_UNIRSE_H, hora) || !st.limites.intento(&format!("unirse:{}", ip_de(&ip)), MAX_UNIRSE_H, hora) {
         return Err(ErrorApi::demasiados());
     }
+    // Un intento que no vale cuenta para el límite de fallos: pasados 20 en una hora, esa IP espera.
+    let fallo = |e: ErrorApi| {
+        st.limites.intento(&clave_fallos, MAX_FALLOS_UNIRSE_H, hora);
+        e
+    };
     if p.codigo_hash.len() != 64 || !p.codigo_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(ErrorApi::datos("Código no válido."));
+        return Err(fallo(ErrorApi::datos("Código no válido.")));
     }
+    // El índice guarda el hash en minúsculas (el agente y la consola lo dan así).
+    let codigo_hash = p.codigo_hash.to_ascii_lowercase();
     if !b64_32(&p.box_pub) || !b64_32(&p.sign_pub) || !B64.decode(&p.sal_equipo).is_ok_and(|s| (16..=64).contains(&s.len())) {
         return Err(ErrorApi::datos("Claves del equipo no válidas."));
     }
@@ -117,7 +134,7 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
     let publico = st.opciones.publico;
     let cliente = st
         .db(move |db| {
-            let Some((cliente, emp)) = db.tomar_codigo(&p.codigo_hash)? else { return Ok(None) };
+            let Some((cliente, emp)) = db.tomar_codigo(&codigo_hash)? else { return Ok(None) };
             let ctx = ClienteCtx::autorizado(&cliente);
             let Some(e) = db.emparejamiento(&ctx, &emp)? else { return Ok(None) };
             if e.estado != "abierto" || e.caduca <= ahora() {
@@ -140,7 +157,7 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
             Ok(Some(Ok(cliente)))
         })
         .await?;
-    let cliente = cliente.ok_or_else(|| ErrorApi::nuevo(StatusCode::NOT_FOUND, "codigo", "Código no válido o caducado.").acceso("codigo_equipo"))?;
+    let cliente = cliente.ok_or_else(|| fallo(ErrorApi::nuevo(StatusCode::NOT_FOUND, "codigo", "Código no válido o caducado.").acceso("codigo_equipo")))?;
     let cliente = cliente.map_err(error_cuota)?;
     st.vivo.avisar(&cliente, Cambio::Equipo(&equipo.id));
     Ok(Json(json!({
