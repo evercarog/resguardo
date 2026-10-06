@@ -1,7 +1,9 @@
 <script lang="ts">
   import { tip } from "$lib/tooltip";
-  import { Clock, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { CirclePause, CirclePlay, Clock, LayoutTemplate, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
   import AccionesEnBloque from "$lib/componentes/AccionesEnBloque.svelte";
+  import AplicarPlantillaEnBloque from "$lib/componentes/AplicarPlantillaEnBloque.svelte";
+  import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
   import { untrack } from "svelte";
@@ -13,7 +15,7 @@
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import FilaEquipo from "$lib/componentes/FilaEquipo.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { filtroEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import { agruparPorEtiqueta, ajusteDe, etiquetasDe, filtroEtiqueta, gruposPorEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { guardar, leer } from "$lib/recordar";
@@ -61,10 +63,16 @@
     untrack(() => void cargar());
     return untrack(() => seguirCambios(() => enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "equipo" }));
   });
-  // --- Acciones en bloque (solo inofensivas: copiar ahora y verificar) -------
+  // v1.4x: agrupados por etiqueta (un equipo con dos sale en las dos).
+  const grupos = $derived(agruparPorEtiqueta.valor && !filtroEtiqueta.valor ? gruposPorEtiqueta(lista) : null);
+  const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
+
+  // --- Acciones en bloque: copiar ahora, verificar, reanudar (inofensivas), pausar
+  // (con la clave, y espera) y aplicar una plantilla (con la clave; v1.4x) -------
   let seleccionando = $state(false);
   let elegidos = $state<Set<string>>(new Set());
-  let enBloque = $state<"copiar" | "verificar" | null>(null);
+  let enBloque = $state<"copiar" | "verificar" | "pausar" | "reanudar" | null>(null);
+  let aplicarPlantilla = $state(false);
   /** Los que pueden recibir órdenes de aquí (confirmados y no trasladados). */
   const elegible = (e: { confirmado: boolean; modo: string }) => e.confirmado && e.modo !== "trasladado";
   const elegiblesVisibles = $derived(lista.filter(elegible));
@@ -84,6 +92,26 @@
     }
     elegidos = s;
   }
+  /** Elegir (o dejar) todos los de un grupo o una etiqueta. */
+  function alternarGrupo(es: { id: string; confirmado: boolean; modo: string }[], on: boolean) {
+    const s = new Set(elegidos);
+    for (const e of es.filter(elegible)) {
+      if (on) s.add(e.id);
+      else s.delete(e.id);
+    }
+    elegidos = s;
+  }
+  const etiquetasVisibles = $derived(etiquetasDe(lista));
+  const deEtiqueta = (t: string) => lista.filter((e) => e.etiquetas?.some((x) => mismaEtiqueta(x, t)));
+  /** La plantilla de la etiqueta común a todos los elegidos (si la hay), para proponerla. */
+  const plantillaComun = $derived.by(() => {
+    if (!seleccion.length) return null;
+    for (const t of seleccion[0].etiquetas ?? []) {
+      const p = ajusteDe(t, actual.etiquetas)?.plantilla;
+      if (p && seleccion.every((e) => e.etiquetas?.some((x) => mismaEtiqueta(x, t)))) return p;
+    }
+    return null;
+  });
   function salirDeSeleccion() {
     seleccionando = false;
     elegidos = new Set();
@@ -142,7 +170,44 @@
       {/if}
     </div>
     <FiltroEtiquetas />
-    {#if lista.length}
+    {#if hayEtiquetas && !filtroEtiqueta.valor}
+      <label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>
+    {/if}
+    {#if seleccionando && etiquetasVisibles.length}
+      <div class="por-etiqueta" role="group" aria-label="Elegir los equipos de una etiqueta">
+        <span class="faint">Elegir todos los de:</span>
+        {#each etiquetasVisibles as t (t.nombre)}
+          {@const es = deEtiqueta(t.nombre).filter(elegible)}
+          <EtiquetaChip nombre={t.nombre} n={es.length} activa={es.length > 0 && es.every((e) => elegidos.has(e.id))} onclick={() => alternarGrupo(es, !es.every((e) => elegidos.has(e.id)))} />
+        {/each}
+      </div>
+    {/if}
+    {#if grupos && lista.length}
+      <div class="grupos">
+        {#each grupos as g (g.etiqueta ?? "")}
+          {@const eg = g.equipos.filter(elegible)}
+          <section class="card lista grupo" aria-label={g.etiqueta ? `Equipos con «${g.etiqueta}»` : "Equipos sin etiqueta"}>
+            <div class="fila cab-grupo">
+              {#if seleccionando}
+                <input type="checkbox" aria-label="Elegir los de {g.etiqueta ?? 'sin etiqueta'}" disabled={!eg.length} checked={eg.length > 0 && eg.every((e) => elegidos.has(e.id))} onchange={(ev) => alternarGrupo(g.equipos, ev.currentTarget.checked)} />
+              {/if}
+              {#if g.etiqueta}<EtiquetaChip nombre={g.etiqueta} />{:else}<span class="sin-et">Sin etiqueta</span>{/if}
+              <span class="faint resumen-g">{plural(g.equipos.length, "equipo", "equipos")}{#if g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length} · {plural(g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length, "necesita atención", "necesitan atención")}{/if}</span>
+            </div>
+            {#each g.equipos as e (e.id)}
+              {#if seleccionando}
+                <div class="con-sel" class:on={elegidos.has(e.id)}>
+                  <input type="checkbox" class="sel" aria-label="Elegir {e.nombre}" disabled={!elegible(e)} checked={elegidos.has(e.id)} onchange={(ev) => alternar(e.id, ev.currentTarget.checked)} />
+                  <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} />
+                </div>
+              {:else}
+                <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} acciones />
+              {/if}
+            {/each}
+          </section>
+        {/each}
+      </div>
+    {:else if lista.length}
       <div class="card lista">
         {#if seleccionando}
           <label class="fila sel-todos">
@@ -159,14 +224,6 @@
           {#each lista as e (e.id)}<FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} acciones />{/each}
         {/if}
       </div>
-      {#if seleccionando}
-        <div class="barra-bloque" role="toolbar" aria-label="Acciones con los equipos elegidos">
-          <span class="cuantos">{seleccion.length ? plural(seleccion.length, "equipo elegido", "equipos elegidos") : "Elige equipos"}</span>
-          <button class="btn btn-sm btn-primary" disabled={!seleccion.length} onclick={() => (enBloque = "copiar")}><Play size={14} />Copiar ahora</button>
-          <button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (enBloque = "verificar")}><ShieldCheck size={14} />Verificar</button>
-          <button class="btn btn-sm btn-ghost" onclick={salirDeSeleccion}><X size={14} />Terminar</button>
-        </div>
-      {/if}
     {:else}
       <div class="card">
         <Vacio icono={Search} ilustracion="sin-resultados" titulo="Ningún equipo coincide" texto="Prueba con otro nombre o quita los filtros.">
@@ -181,14 +238,61 @@
         </Vacio>
       </div>
     {/if}
+    {#if seleccionando && lista.length}
+      <div class="barra-bloque" role="toolbar" aria-label="Acciones con los equipos elegidos">
+        <span class="cuantos">{seleccion.length ? plural(seleccion.length, "equipo elegido", "equipos elegidos") : "Elige equipos"}</span>
+        <button class="btn btn-sm btn-primary" disabled={!seleccion.length} onclick={() => (enBloque = "copiar")}><Play size={14} />Copiar ahora</button>
+        <button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (enBloque = "verificar")}><ShieldCheck size={14} />Verificar</button>
+        {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (enBloque = "pausar")}><CirclePause size={14} />Pausar</button>{/if}
+        <button class="btn btn-sm" disabled={!seleccion.some((e) => e.resumen?.pausado_hasta)} onclick={() => (enBloque = "reanudar")}><CirclePlay size={14} />Reanudar</button>
+        {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (aplicarPlantilla = true)}><LayoutTemplate size={14} />Aplicar plantilla</button>{/if}
+        <button class="btn btn-sm btn-ghost" onclick={salirDeSeleccion}><X size={14} />Terminar</button>
+      </div>
+    {/if}
   {/if}
 </div>
+
+{#if aplicarPlantilla && actual.cliente}
+  <AplicarPlantillaEnBloque cliente={actual.cliente} equipos={seleccion} plantillaInicial={plantillaComun} onclose={() => (aplicarPlantilla = false)} />
+{/if}
 
 {#if enBloque && actual.cliente}
   <AccionesEnBloque cliente={actual.cliente} equipos={seleccion} accion={enBloque} onclose={() => (enBloque = null)} />
 {/if}
 
 <style>
+  .agrupar {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .por-etiqueta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-sm);
+  }
+  .grupos {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .cab-grupo {
+    gap: 10px;
+    background: var(--surface-2);
+  }
+  .sin-et {
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .resumen-g {
+    font-size: var(--fs-sm);
+  }
   .sel-todos {
     gap: 10px;
     font-size: var(--fs-sm);

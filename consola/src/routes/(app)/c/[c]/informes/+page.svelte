@@ -26,6 +26,8 @@
   import Vacio from "$lib/componentes/Vacio.svelte";
   import EditorMarca from "$lib/componentes/EditorMarca.svelte";
   import { dataUrlAArchivo, logoAPng } from "$lib/marca";
+  import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
+  import { etiquetasDe, gruposPorEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
 
   type Periodo = "mes" | "anterior" | "30";
   // A principios de mes, lo que se quiere enseñar suele ser el mes que acaba de terminar.
@@ -118,13 +120,24 @@
     untrack(() => void cargarInformes(cc, ids));
   });
 
+  // v1.4x: un informe por etiqueta («Contabilidad»): solo sus equipos.
+  let deEtiqueta = $state("");
+  const etiquetas = $derived(etiquetasDe(actual.equipos));
+  $effect.pre(() => {
+    // Una etiqueta que ya nadie lleva (u otro cliente): vuelve al cliente entero.
+    if (deEtiqueta && actual.cargado && !etiquetas.some((t) => mismaEtiqueta(t.nombre, deEtiqueta))) deEtiqueta = "";
+  });
   const enRango = (v: Vuelta) => v.t >= rango.desde.getTime() && v.t < rango.hasta.getTime();
-  const delPeriodo = $derived((datos ?? []).map((d) => ({ equipo: actual.equipos.find((e) => e.id === d.equipo.id) ?? d.equipo, vueltas: d.vueltas.filter(enRango) })));
+  const delPeriodo = $derived(
+    (datos ?? []).map((d) => ({ equipo: actual.equipos.find((e) => e.id === d.equipo.id) ?? d.equipo, vueltas: d.vueltas.filter(enRango) })).filter((d) => pasaFiltro(d.equipo, deEtiqueta)),
+  );
+  /** Sin etiqueta elegida: una fila por etiqueta (y los que no tienen). */
+  const porEtiqueta = $derived(deEtiqueta || !etiquetas.length ? [] : gruposPorEtiqueta(delPeriodo.map((d) => ({ ...d, etiquetas: d.equipo.etiquetas }))));
   const todas = $derived(delPeriodo.flatMap((d) => d.vueltas));
   const cuenta = (vs: Vuelta[], r: Vuelta["r"] | "bien") => vs.filter((v) => (r === "bien" ? v.r === "ok" || v.r === "sin_cambios" : v.r === r)).length;
   const nuevos = (vs: Vuelta[]) => vs.reduce((n, v) => n + v.bytes, 0);
   const protegido = $derived(
-    actual.equipos.flatMap((e) => (e.resumen?.repositorios ?? []).map((r) => bytesRepo(r, informeDe(ultimos.porEquipo[e.id], r.id)) ?? 0)).reduce((n, b) => n + b, 0),
+    actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)).flatMap((e) => (e.resumen?.repositorios ?? []).map((r) => bytesRepo(r, informeDe(ultimos.porEquipo[e.id], r.id)) ?? 0)).reduce((n, b) => n + b, 0),
   );
   const saludes = $derived(delPeriodo.map((d) => saludEquipo(d.equipo, reloj.ahora)));
   const alDia = $derived(saludes.filter((s) => s.tono === "ok").length);
@@ -240,6 +253,15 @@
       <button class:on={periodo === "anterior"} aria-pressed={periodo === "anterior"} onclick={() => (periodo = "anterior")}>Mes pasado</button>
       <button class:on={periodo === "30"} aria-pressed={periodo === "30"} onclick={() => (periodo = "30")}>Últimos 30 días</button>
     </div>
+    {#if etiquetas.length}
+      <div class="de-etiqueta">
+        <label class="field-label" for="inf-etiqueta">De</label>
+        <select id="inf-etiqueta" class="input" bind:value={deEtiqueta}>
+          <option value="">Todo el cliente</option>
+          {#each etiquetas as t (t.nombre)}<option value={t.nombre}>Los equipos con «{t.nombre}» ({t.n})</option>{/each}
+        </select>
+      </div>
+    {/if}
   </div>
 
   <article class="hoja card" aria-label="Informe de {actual.cliente?.nombre ?? ''}">
@@ -250,6 +272,7 @@
       <div class="titulo">
         <p class="sobre">Informe de copias de seguridad</p>
         <h2>{actual.cliente?.nombre ?? ""}</h2>
+        {#if deEtiqueta}<p class="solo-et">Equipos con <EtiquetaChip nombre={deEtiqueta} /></p>{/if}
         <p class="periodo-txt"><CalendarRange size={14} /><span class="primera-mayuscula">{rango.nombre}</span></p>
       </div>
       <p class="preparado">Preparado {app.cuenta?.nombre ? `por ${app.cuenta.nombre}` : ""}<br />el {fechaLarga(new Date(reloj.ahora).toISOString())}</p>
@@ -294,6 +317,30 @@
         </div>
         <p class="leyenda"><span class="m bien"></span>copias correctas o con avisos <span class="m mal"></span>fallidas</p>
       </section>
+
+      {#if porEtiqueta.length > 1}
+        <section class="bloque" aria-labelledby="t-etiquetas">
+          <h3 id="t-etiquetas">Por etiqueta</h3>
+          <table class="tabla" aria-labelledby="t-etiquetas">
+            <thead><tr><th scope="col">Etiqueta</th><th scope="col" class="der">Equipos</th><th scope="col" class="der">Al día</th><th scope="col" class="der">Copias</th><th scope="col" class="der">Fallidas</th><th scope="col" class="der">Datos nuevos</th></tr></thead>
+            <tbody>
+              {#each porEtiqueta as g (g.etiqueta ?? "")}
+                {@const vs = g.equipos.flatMap((d) => d.vueltas)}
+                {@const ok = g.equipos.filter((d) => saludEquipo(d.equipo, reloj.ahora).tono === "ok").length}
+                <tr>
+                  <td>{#if g.etiqueta}<EtiquetaChip nombre={g.etiqueta} />{:else}<span class="sub">Sin etiqueta</span>{/if}</td>
+                  <td class="num der">{numero(g.equipos.length)}</td>
+                  <td class="num der" class:mal={ok < g.equipos.length}>{numero(ok)}</td>
+                  <td class="num der">{numero(vs.length)}</td>
+                  <td class="num der" class:mal={cuenta(vs, "fallo") > 0}>{numero(cuenta(vs, "fallo"))}</td>
+                  <td class="num der">{bytes(nuevos(vs))}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="leyenda">Un equipo con varias etiquetas cuenta en cada una.</p>
+        </section>
+      {/if}
 
       <section class="bloque" aria-labelledby="t-equipos">
         <h3 id="t-equipos">Equipos</h3>
@@ -367,6 +414,24 @@
   .no-imprimir > :global(nav),
   .no-imprimir > :global(.cabecera-pagina) {
     align-self: stretch;
+  }
+  .de-etiqueta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .de-etiqueta .input {
+    width: auto;
+    max-width: 100%;
+  }
+  .solo-et {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
   }
   .hoja {
     display: flex;

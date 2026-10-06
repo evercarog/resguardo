@@ -18,7 +18,8 @@
   import TarjetaRepo from "$lib/componentes/repo/TarjetaRepo.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { filtroEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import { agruparPorEtiqueta, filtroEtiqueta, gruposPorEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import TarjetaEquipo from "$lib/componentes/TarjetaEquipo.svelte";
   import Sparkline from "$lib/componentes/Sparkline.svelte";
   import Pendientes from "$lib/componentes/Pendientes.svelte";
@@ -47,6 +48,14 @@
   const delFiltro = $derived(actual.equipos.filter((e) => pasaFiltro(e, filtroEtiqueta.valor)));
   const equipos = $derived([...delFiltro].sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)));
   const saludes = $derived(delFiltro.map((e) => saludEquipo(e, reloj.ahora)));
+  // v1.4x: agrupados por etiqueta (como en Equipos; la misma preferencia).
+  const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
+  const grupos = $derived(agruparPorEtiqueta.valor && hayEtiquetas && !filtroEtiqueta.valor ? gruposPorEtiqueta(equipos) : null);
+  /** Cuántos de un grupo están bien, necesitan atención o fallan (con texto, no solo color). */
+  function cuentaGrupo(es: Equipo[]) {
+    const t = es.map((e) => saludEquipo(e, reloj.ahora).tono);
+    return { mal: t.filter((x) => x === "bad").length, atencion: t.filter((x) => x === "warn").length, bien: t.filter((x) => x === "ok").length };
+  }
   const urgentes = $derived.by(() => {
     const out: Urgente[] = [];
     for (const e of delFiltro) {
@@ -242,11 +251,29 @@
       <section>
         <div class="section-head">
           <h2>Equipos <span class="count">· {delFiltro.length}</span></h2>
-          {#if puede.administrar(actual.cliente.rol)}<a class="btn btn-sm btn-ghost" href="/c/{c}/emparejar"><Plus size={14} />Añadir equipo</a>{/if}
+          <span class="acciones-eq">
+            {#if hayEtiquetas && !filtroEtiqueta.valor}<label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>{/if}
+            {#if puede.administrar(actual.cliente.rol)}<a class="btn btn-sm btn-ghost" href="/c/{c}/emparejar"><Plus size={14} />Añadir equipo</a>{/if}
+          </span>
         </div>
-        <div class="rejilla equipos">
-          {#each equipos as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
-        </div>
+        {#if grupos}
+          {#each grupos as g (g.etiqueta ?? "")}
+            {@const n = cuentaGrupo(g.equipos)}
+            <div class="cab-grupo">
+              {#if g.etiqueta}<button type="button" class="sin-boton" onclick={() => filtroEtiqueta.poner(g.etiqueta!)} use:tip={`Ver solo los de «${g.etiqueta}»`}><EtiquetaChip nombre={g.etiqueta} /></button>{:else}<span class="sin-et">Sin etiqueta</span>{/if}
+              <span class="faint">
+                {plural(g.equipos.length, "equipo", "equipos")}{#if n.mal}{" · "}<span class="g-mal"><CircleAlert size={12} />{plural(n.mal, "con fallos", "con fallos")}</span>{/if}{#if n.atencion}{" · "}<span class="g-aviso"><TriangleAlert size={12} />{plural(n.atencion, "necesita atención", "necesitan atención")}</span>{/if}{#if n.bien === g.equipos.length}{" · "}<span class="g-ok"><CircleCheck size={12} />todos bien</span>{/if}
+              </span>
+            </div>
+            <div class="rejilla equipos">
+              {#each g.equipos as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
+            </div>
+          {/each}
+        {:else}
+          <div class="rejilla equipos">
+            {#each equipos as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
+          </div>
+        {/if}
       </section>
 
       {#if tarjetas.length}
@@ -319,6 +346,58 @@
 {/if}
 
 <style>
+  .acciones-eq {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .agrupar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .cab-grupo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: var(--sp-4) 0 var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+  .cab-grupo:first-of-type {
+    margin-top: 0;
+  }
+  .sin-boton {
+    padding: 0;
+    font: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+  .sin-et {
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .g-mal,
+  .g-aviso,
+  .g-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .g-mal {
+    color: var(--bad);
+  }
+  .g-aviso {
+    color: var(--warn);
+  }
+  .g-ok {
+    color: var(--ok);
+  }
   .resumen {
     display: flex;
     flex-direction: column;

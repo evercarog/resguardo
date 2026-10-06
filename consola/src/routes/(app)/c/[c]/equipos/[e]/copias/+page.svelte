@@ -23,7 +23,7 @@
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { horarioEnFrase, lista, plural, relativo, resumenHorario } from "$lib/formato";
-  import { errorReglas, normalizar, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "$lib/horario";
+  import { errorReglas, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "$lib/horario";
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import { objetoDe } from "$lib/notas.svelte";
@@ -33,7 +33,7 @@
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import { admiteVerificacion, admiteVerificacionHorario, errorVerificacion, VERIFICACION_POR_DEFECTO } from "$lib/verificacion";
   import EditorVerificacion from "$lib/componentes/EditorVerificacion.svelte";
-  import { errorGancho, fraseGancho, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "$lib/ganchos";
+  import { errorGancho, fraseGancho, ganchosDe, VERSION_GANCHOS, versionAlMenos } from "$lib/ganchos";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -44,6 +44,7 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { cargarPlantillas, guardarPlantilla, plantillaDe, retencionEnFrase, type Plantilla } from "$lib/plantillas";
+  import { configParaEnviar } from "$lib/configEnvio";
 
   const c = $derived(page.params.c ?? "");
   const id = $derived(page.params.e ?? "");
@@ -154,9 +155,22 @@
       const r = await cargarPlantillas(c, kcfg);
       plantillas = r.lista;
       ilegibles = r.ilegibles;
+      ponerPlantillaPedida();
     } catch {
       /* sin plantillas (servidor anterior): no se ofrecen */
     }
+  }
+  // v1.4x: «?plantilla=<id>» (la de una etiqueta del equipo, desde su ficha): al abrir
+  // con la clave se añade una copia rellena con ella, para revisarla y enviarla.
+  // Nunca se envía sola.
+  let plantillaPedida = $state<{ nombre: string } | { falta: true } | null>(null);
+  function ponerPlantillaPedida() {
+    const id = page.url.searchParams.get("plantilla");
+    if (!id || plantillaPedida || !cfg) return;
+    const p = plantillas.find((x) => x.id === id);
+    if (!p) return void (plantillaPedida = { falta: true });
+    nuevaDesde(p);
+    plantillaPedida = { nombre: p.nombre };
   }
   function aplicarPlantilla(k: CopiaConfig, p: Plantilla) {
     k.carpetas = [...p.copia.carpetas];
@@ -328,40 +342,15 @@
     guardando = true;
     error = "";
     try {
-      // Solo lo que decide la consola: copias (con sus ganchos de plantilla), verificación y bandeja.
-      // Los repositorios y destinos los escribe el equipo (de crear_repositorio).
-      const c0 = $state.snapshot(cfg);
-      // Horas ordenadas y sin repetir; «solo si hay cambios» solo a agentes que lo entienden (≥ 0.7.7; los anteriores lo hacen siempre).
-      // Las reglas del horario, solo a agentes ≥ 0.7.9 (con uno anterior no se llega aquí con reglas: «Antes de enviar» lo impide).
-      const copias = c0.copias.map((k) => {
-        const { solo_si_cambios, ...resto } = k;
-        return {
-          ...resto,
-          horario: {
-            dias: [...new Set(k.horario.dias)].sort(),
-            horas: normalizar(k.horario.horas),
-            ...(admiteReglas && k.horario.reglas?.length ? { reglas: k.horario.reglas } : {}),
-          },
-          gancho: admiteGanchos ? paraConfig(ganchosDe(k.gancho as Gancho | Gancho[] | null)) : null,
-          ...(admiteSoloCambios ? { solo_si_cambios: solo_si_cambios !== false } : {}),
-        };
+      // Solo lo que decide la consola (lib/configEnvio.ts, lo mismo que «Aplicar una plantilla» a varios).
+      const config = configParaEnviar($state.snapshot(cfg) as Configuracion, {
+        reglas: admiteReglas,
+        ganchos: admiteGanchos,
+        soloCambios: admiteSoloCambios,
+        verif: admiteVerif,
+        verifHorario: admiteVerifHorario,
+        escritorio: admiteEscritorio,
       });
-      const config = {
-        v: 1,
-        copias,
-        repositorios: c0.repositorios,
-        destinos: c0.destinos,
-        verificacion: c0.verificacion ?? null,
-        // v1.36: con `escritorio`, `bandeja.avisos` dice lo mismo para un agente anterior.
-        bandeja: c0.escritorio ? { visible: c0.bandeja?.visible ?? true, avisos: c0.escritorio.avisos !== "off" } : (c0.bandeja ?? null),
-        // v1.28: solo a un agente que la entiende, y solo si se ha tocado alguna vez.
-        // v1.40: `horario` solo a un agente que lo entiende (con él, `cada_dias` es para uno anterior).
-        ...(admiteVerif && c0.verificaciones
-          ? { verificaciones: Object.fromEntries(Object.entries(c0.verificaciones).map(([r, v]) => [r, admiteVerifHorario && v.horario ? v : { cada_dias: v.cada_dias, porcentaje: v.porcentaje }])) }
-          : {}),
-        // v1.36: la ventana y los avisos (si el agente lo entiende y lo tiene o se ha tocado).
-        ...(admiteEscritorio && c0.escritorio ? { escritorio: c0.escritorio } : {}),
-      };
       const o = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "config", cuerpo: { config }, secretos: { prueba }, alPaso: (t) => (paso = t) });
       original = JSON.stringify(cfg);
       avisar(
@@ -427,6 +416,17 @@
       </form>
     </section>
   {:else}
+    {#if plantillaPedida && "nombre" in plantillaPedida}
+      <div class="notice notice-info">
+        <LayoutTemplate size={16} />
+        <p>Abajo tienes una copia nueva rellena con la plantilla «{plantillaPedida.nombre}» de su etiqueta. Revisa las carpetas y el repositorio y pulsa «Enviar al equipo»: no se envía nada hasta entonces.</p>
+      </div>
+    {:else if plantillaPedida}
+      <div class="notice notice-warn">
+        <TriangleAlert size={16} />
+        <p>La plantilla de su etiqueta ya no existe o no se abre con esta clave. Elige otra abajo («Desde una plantilla») o cámbiala en los ajustes de la etiqueta.</p>
+      </div>
+    {/if}
     {#if !repos.length}
       <div class="notice notice-warn">
         <TriangleAlert size={16} />
