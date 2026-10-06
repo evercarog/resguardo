@@ -28,6 +28,9 @@
   // v1.41: dónde se guardará, en palabras, y el aviso si se queda en el mismo equipo.
   import { lugarDe } from "$lib/dondeGuarda";
   import SeGuardaEn from "./SeGuardaEn.svelte";
+  // Tareas 7a y 7b: las zonas de los almacenes y los destinos del catálogo (aún sin repositorios).
+  import { destinosDelCliente, zonasNuevasPara, type ZonaVista } from "$lib/destinos";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
 
   let { cliente, equipos, destinos, equipoInicial, onclose }: { cliente: Cliente; equipos: Equipo[]; destinos: DestinoResumen[]; equipoInicial?: string; onclose: () => void } = $props();
 
@@ -76,11 +79,34 @@
   const esDe = (d: DestinoResumen, a: Equipo) => d.equipo_almacen === a.id || d.id === `almacen-${a.id.slice(0, 8)}` || (!d.equipo_almacen && d.tipo === "rest" && d.nombre === a.nombre);
   /** Los almacenes a los que este equipo aún no copia. */
   const almacenesNuevos = $derived(almacenes.filter((a) => !destinosEquipo.some((d) => esDe(d, a))).sort((a, b) => Number(a.id === equipoId) - Number(b.id === equipoId)));
-  const almacenElegido = $derived(destinoId.startsWith("almacen:") ? almacenes.find((a) => `almacen:${a.id}` === destinoId) : undefined);
+  // Tarea 7b: las otras zonas (otros discos) de los almacenes a las que este equipo aún no copia.
+  $effect(() => {
+    const c = cliente.id;
+    untrack(() => void cargarCatalogo(c));
+  });
+  const zonasOtras = $derived(equipo ? zonasNuevasPara(equipo, equipos).filter((z) => !z.principal && (z.almacen.id !== equipoId || admiteAlmacenPropio(z.almacen))) : []);
+  const vistas = $derived(destinosDelCliente(equipos, catalogoDe(cliente.id)));
+  const nombreVista = (clave: string, si: string) => vistas.find((v) => v.clave === clave)?.nombre ?? si;
+  const zonaElegida = $derived<ZonaVista | undefined>(destinoId.startsWith("zona:") ? zonasOtras.find((z) => `zona:${z.almacen.id}:${z.id}` === destinoId) : undefined);
+  // Tarea 7a: destinos del catálogo que este equipo aún no tiene (de red y con contraseña: B2, S3, rest).
+  const sueltos = $derived(vistas.filter((v) => v.clase === "suelto" && ["b2", "s3", "rest"].includes(v.tipo) && !destinosEquipo.some((d) => d.id === v.clave)));
+  const sueltoElegido = $derived(destinoId.startsWith("catalogo:") ? sueltos.find((v) => `catalogo:${v.clave}` === destinoId) : undefined);
+  // Al elegir uno del catálogo: su tipo, nombre y dirección ya puestos (las credenciales se escriben aquí).
+  $effect(() => {
+    const v = sueltoElegido;
+    if (!v) return;
+    tipo = v.tipo as "rest" | "b2" | "s3";
+    donde = v.donde ?? "";
+    nombreDestino = v.nombre;
+  });
+  const conCampos = $derived(destinoId === "nuevo" || !!sueltoElegido);
+  const almacenElegido = $derived(
+    destinoId.startsWith("almacen:") ? almacenes.find((a) => `almacen:${a.id}` === destinoId) : destinoId.startsWith("zona:") ? zonaElegida?.almacen : undefined,
+  );
   let copiarEn = $state<Equipo | null>(null);
   const destino = $derived(destinos.find((d) => d.id === destinoId));
   const datosOk = $derived(
-    !!equipo && nombre.trim().length > 0 && (destinoId !== "nuevo" || (nombreDestino.trim() && donde.trim())) && (!paraHistorial || repoExistenteCompleto(origen)),
+    !!equipo && nombre.trim().length > 0 && (!conCampos || (nombreDestino.trim() && donde.trim())) && (!paraHistorial || repoExistenteCompleto(origen)),
   );
   // Al elegir equipo: el almacén de la oficina al que aún no copia (lo recomendado),
   // o uno de sus destinos. Después manda lo que se elija aquí.
@@ -102,7 +128,7 @@
       ? null
       : almacenElegido
         ? lugarDe({ id: "", nombre: almacenElegido.nombre, tipo: "rest", equipo_almacen: almacenElegido.id }, equipo, equipos)
-        : destinoId === "nuevo"
+        : conCampos
           ? lugarDe({ id: "", nombre: nombreDestino.trim() || "Destino nuevo", tipo, donde: tipo === "local" ? undefined : donde.trim(), unidad: tipo === "local" ? letra(donde) : undefined, red: tipo === "local" && /^(\\\\|\/\/)/.test(donde.trim()), extraible: tipo === "local" ? null : undefined }, equipo, equipos)
           : lugarDe(destino, equipo, equipos),
   );
@@ -151,10 +177,17 @@
         cuerpo: {
           id,
           nombre: nombre.trim(),
-          destino:
-            destinoId === "nuevo"
-              ? { id: `destino-${crypto.randomUUID().slice(0, 8)}`, nombre: nombreDestino.trim(), tipo, donde: donde.trim(), usuario: usuario || null, secreto: secretoDestino || null }
-              : { id: destinoId },
+          destino: conCampos
+            ? {
+                // Uno del catálogo: el mismo id en el equipo (así se agrupa con los demás que lo usan).
+                id: sueltoElegido?.clave ?? `destino-${crypto.randomUUID().slice(0, 8)}`,
+                nombre: nombreDestino.trim(),
+                tipo,
+                donde: donde.trim(),
+                usuario: usuario || null,
+                secreto: secretoDestino || null,
+              }
+            : { id: destinoId },
           contrasena,
           ...(paraHistorial ? { parametros_de: origenCuerpo(origen) } : {}),
         },
@@ -213,15 +246,17 @@
         <label class="field-label" for="r-destino">Destino</label>
         <select id="r-destino" class="input" bind:value={destinoId}>
           {#each almacenesNuevos as a (a.id)}<option value="almacen:{a.id}">{a.id === equipoId ? `Su propio almacén (${a.nombre})` : `Almacén ${a.nombre} (recomendado)`}</option>{/each}
+          {#each zonasOtras as z (z.almacen.id + z.id)}<option value="zona:{z.almacen.id}:{z.id}">{nombreVista(`zona:${z.almacen.id}:${z.id}`, `Almacén ${z.almacen.nombre} · ${z.nombre ?? z.id}`)}{z.almacen.id === equipoId ? " (su propio almacén)" : " · otra zona del almacén"}</option>{/each}
+          {#each sueltos as v (v.clave)}<option value="catalogo:{v.clave}">{v.nombre} · aún sin repositorios</option>{/each}
           {#each destinosEquipo as d (d.id)}<option value={d.id}>{d.nombre}{d.inmutable ? " · inmutable" : ""}{almacenes.some((a) => esDe(d, a)) ? " · almacén de la oficina" : ""}{d.tipo === "local" && !d.red ? (d.extraible ? " · disco extraíble de este equipo" : " · en este mismo equipo") : ""}</option>{/each}
           <option value="nuevo">Un destino nuevo…</option>
         </select>
       </div>
-      {#if destinoId === "nuevo"}
+      {#if conCampos}
         <div class="nuevo">
           <div class="field">
             <label class="field-label" for="d-tipo">Tipo</label>
-            <select id="d-tipo" class="input" bind:value={tipo}>
+            <select id="d-tipo" class="input" bind:value={tipo} disabled={!!sueltoElegido}>
               {#each Object.entries(ETIQUETA_TIPO) as [k, t] (k)}<option value={k}>{t}</option>{/each}
             </select>
           </div>
@@ -238,7 +273,7 @@
               </div>
               <span class="field-hint">Un disco o carpeta de {equipo?.nombre ?? "el equipo"}, o una carpeta compartida de la red (\\servidor\copias).</span>
             {:else}
-              <input id="d-donde" class="input mono" bind:value={donde} spellcheck="false" />
+              <input id="d-donde" class="input mono" bind:value={donde} spellcheck="false" readonly={!!sueltoElegido} />
             {/if}
           </div>
           {#if tipo !== "local"}
@@ -328,7 +363,7 @@
 </Modal>
 {:else if equipo}
   <!-- Un almacén del cliente: lo mismo que «Copiar en …» de la ficha del equipo. -->
-  <CopiarEnAlmacen {cliente} {equipo} almacen={copiarEn} nombreInicial={nombre.trim()} origen={paraHistorial ? $state.snapshot(origen) : undefined} {onclose} />
+  <CopiarEnAlmacen {cliente} {equipo} almacen={copiarEn} zona={zonaElegida} nombreInicial={nombre.trim()} origen={paraHistorial ? $state.snapshot(origen) : undefined} {onclose} />
 {/if}
 
 {#if explorarOrigen && equipo}

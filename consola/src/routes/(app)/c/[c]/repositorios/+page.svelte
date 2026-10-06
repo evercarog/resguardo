@@ -8,8 +8,8 @@
   import { tip } from "$lib/tooltip";
   import { bytesRepo, destinoDe, estadoRepo, informeDe, nVersiones, pruebaRestauracion, verificacion } from "$lib/repo";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
-  import { ChevronRight, Cloud, Database, FlaskConical, HardDrive, Lock, Monitor, Network, Plus, Server, ShieldCheck, TriangleAlert, Usb } from "@lucide/svelte";
-  import { actual, puede, reloj } from "$lib/estado.svelte";
+  import { ChevronRight, Cloud, Database, FlaskConical, HardDrive, Lock, Monitor, Network, Pencil, Plus, Server, ShieldCheck, TriangleAlert, Usb } from "@lucide/svelte";
+  import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { bytes, numero, plural } from "$lib/formato";
   import type { DestinoResumen, Equipo, RepositorioResumen } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -25,8 +25,16 @@
   // v1.41: dónde se guarda cada repositorio, en palabras, y si se queda en el mismo equipo.
   import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
+  import NuevoDestino from "$lib/componentes/NuevoDestino.svelte";
+  import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
+  import { destinosDelCliente, TEXTO_TIPO, type DestinoVista } from "$lib/destinos";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import { nombreTipoNube } from "$lib/espejo";
 
   let nuevo = $state(false);
+  /** Tarea 7a: crear un destino sin repositorio, y cambiarle el nombre a uno. */
+  let nuevoDestino = $state(false);
+  let renombrar = $state<DestinoVista | null>(null);
   /** Las notas de un destino (no tiene página propia). */
   let notasDestino = $state<{ id: string; nombre: string } | null>(null);
   /** Repositorios (y destinos nuevos) en camino: se ven en su sitio mientras el equipo los crea. */
@@ -69,16 +77,17 @@
       }),
     ) as (RepositorioResumen & { equipo: Equipo; estado: ReturnType<typeof estadoRepo> })[],
   );
-  const almacenes = $derived(actual.equipos.filter((e) => e.resumen?.guarda_copias?.activo));
-  /** Los destinos que no son un equipo de este cliente que guarda copias. */
-  // Un agente que no dice `equipo_almacen` nombra el destino como el equipo que guarda copias: ese ya tiene su tarjeta.
-  const otros = $derived(destinos.filter((d) => !almacenes.some((a) => a.id === d.equipo_almacen || (!d.equipo_almacen && d.tipo === "rest" && d.nombre === a.nombre))));
+  // Tareas 7a y 7b: las zonas de los almacenes, los destinos de los equipos, las nubes de los
+  // almacenes y los del catálogo (con su nombre), juntos (lib/destinos.ts).
+  $effect(() => {
+    const cc = actual.id;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const vistas = $derived(destinosDelCliente(actual.equipos, catalogoDe(actual.id)));
   const total = $derived(repos.reduce((n, r) => n + (r.bytes ?? 0), 0));
   /** Los repositorios que guardan en un destino (o en un almacén, por cualquiera de sus destinos). */
   const reposEn = (ids: string[]) => repos.filter((r) => ids.includes(r.destino));
-  const idsAlmacen = (a: Equipo) => destinos.filter((d) => d.equipo_almacen === a.id || (!d.equipo_almacen && d.tipo === "rest" && d.nombre === a.nombre)).map((d) => d.id);
   const ICONO = { rest: Server, local: HardDrive, s3: Cloud, b2: Cloud, sftp: Server, otro: Database };
-  const TIPO = { rest: "Servidor de copias", local: "Disco o carpeta del equipo", s3: "S3", b2: "Backblaze B2", sftp: "SFTP", otro: "Otro" };
 
   const DIA = 86_400_000;
   const reciente = (iso: string | null | undefined, dias: number) => !!iso && reloj.ahora - Date.parse(iso) < dias * DIA;
@@ -95,7 +104,7 @@
     icono={Database}
     migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Repositorios y destinos" }]}
     resumen={actual.cargado
-      ? `${plural(repos.length, "repositorio", "repositorios")} en ${plural(almacenes.length + otros.length, "destino", "destinos")} · ${bytes(total)} protegidos${enCamino.length ? ` · ${plural(enCamino.length, "cambio en camino", "cambios en camino")}` : ""}`
+      ? `${plural(repos.length, "repositorio", "repositorios")} en ${plural(vistas.length, "destino", "destinos")} · ${bytes(total)} protegidos${enCamino.length ? ` · ${plural(enCamino.length, "cambio en camino", "cambios en camino")}` : ""}`
       : "Cargando…"}
   >
     {#snippet acciones()}
@@ -119,52 +128,57 @@
     {#if repos.length}
       <div class="cifras" role="list" aria-label="Cifras de los repositorios">
         <Cifra icono={Database} etiqueta="Repositorios" valor={numero(repos.length)} sub={conProblemas ? plural(conProblemas, "necesita atención", "necesitan atención") : "todos al día"} mal={conProblemas > 0} />
-        <Cifra icono={HardDrive} etiqueta="Protegido" valor={total ? bytes(total) : "—"} sub="en {plural(almacenes.length + otros.length, 'destino', 'destinos')}" />
+        <Cifra icono={HardDrive} etiqueta="Protegido" valor={total ? bytes(total) : "—"} sub="en {plural(vistas.length, 'destino', 'destinos')}" />
         <Cifra icono={ShieldCheck} etiqueta="Verificados" valor={numero(verificados)} de="de {repos.length}" sub="en los últimos 7 días" />
         <Cifra icono={FlaskConical} etiqueta="Restauración probada" valor={numero(probados)} de="de {repos.length}" sub="en el último mes" />
       </div>
     {/if}
 
     <section>
-      <div class="section-head"><h2>Destinos <span class="count">· {almacenes.length + otros.length}</span> <Ayuda id="destino" /></h2></div>
-      {#if destinos.length || almacenes.length || destinosEnCamino.length}
+      <div class="section-head"><h2>Destinos <span class="count">· {vistas.length}</span> <Ayuda id="destino" /></h2>{#if administra && conEquipos}<button class="btn btn-sm" onclick={() => (nuevoDestino = true)}><Plus size={14} />Nuevo destino</button>{/if}</div>
+      {#if vistas.length || destinosEnCamino.length}
         <div class="rejilla destinos">
           {#each destinosEnCamino as p (p.orden.id + "d")}<PendienteItem p={p.destinoNuevo ? { ...p, titulo: `Destino «${p.destinoNuevo}»` } : p} forma="tarjeta" conEquipo />{/each}
-          {#each almacenes as a (a.id)}
-            {@const suyos = reposEn(idsAlmacen(a))}
-            <a class="card tile destino" href="/c/{actual.id}/equipos/{a.id}">
-              <span class="tile-cab">
-                <span class="tile-ic"><Server size={16} /></span>
-                <span class="tile-nombre"><strong>{a.nombre} <ContadorNotas tipo="equipo" objeto={a.id} /></strong><span>Almacén · puerto <span class="pastilla mono">{a.resumen?.guarda_copias?.puerto ?? "—"}</span></span></span>
-                <ChevronRight size={16} class="flecha" />
-              </span>
-              <p class="tile-linea num">
-                {plural(a.resumen?.guarda_copias?.usuarios ?? 0, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}
-              </p>
-              <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if a.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}</span>
-            </a>
-          {/each}
-          {#each otros as d (d.id)}
-            {@const Icono = ICONO[d.tipo] ?? Database}
-            {@const suyos = reposEn([d.id])}
-            <div class="card tile destino">
-              <span class="tile-cab">
-                <span class="tile-ic"><Icono size={16} /></span>
-                <span class="tile-nombre"><strong>{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></strong><span>{#if d.tipo === "local"}{d.red ? "Carpeta de otra máquina de la red" : d.extraible ? "Disco extraíble" : "Carpeta"} de {[...d.equipos].join(", ")}{d.unidad ? ` (${d.unidad})` : ""}{:else}{TIPO[d.tipo] ?? d.tipo}{/if}{#if d.donde && d.donde !== d.nombre}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}</span></span>
-              </span>
-              <p class="tile-linea num">
-                {#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else}Sin repositorios todavía{/if} · lo usa{d.equipos.size > 1 ? "n" : ""} {[...d.equipos].join(", ")}
-              </p>
-              <span class="tile-chips">
-                {#if d.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
-                {#if d.tipo === "local"}
-                  {#if d.red}<span class="badge badge-sm tone-neutral"><Network size={11} />En otra máquina</span>
-                  {:else if d.extraible}<span class="badge badge-sm tone-neutral"><Usb size={11} />Extraíble</span>
-                  {:else}<span class="badge badge-sm tone-warn" use:tip={"Las copias se quedan en el mismo equipo que protegen: si se daña o lo cifra un ransomware, se pierden las dos."}><TriangleAlert size={11} />En el mismo equipo</span>{/if}
-                {/if}
-                <button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
-              </span>
-            </div>
+          {#each vistas as v (v.clave)}
+            {@const suyos = reposEn(v.ids)}
+            {#if v.clase === "zona" && v.zona}
+              {@const z = v.zona}
+              <div class="card tile destino">
+                <a class="tile-cab enlace-tile" href="/c/{actual.id}/equipos/{z.almacen.id}">
+                  <span class="tile-ic"><Server size={16} /></span>
+                  <span class="tile-nombre"><strong>{v.nombre} <ContadorNotas tipo="equipo" objeto={z.almacen.id} /></strong><span>{z.principal ? "Almacén" : "Otra zona del almacén"} · puerto <span class="pastilla mono">{z.puerto ?? "—"}</span>{#if z.espacio}{" · "}{bytes(z.espacio.libre)} libres{/if}</span></span>
+                  <ChevronRight size={16} class="flecha" />
+                </a>
+                <p class="tile-linea num">
+                  {plural(z.usuarios, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}
+                </p>
+                <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<span class="badge badge-sm tone-warn">Sin responder</span>{/if}
+                  {#if administra}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}</span>
+              </div>
+            {:else}
+              {@const d = v.destino}
+              {@const Icono = v.clase === "nube" ? Cloud : (ICONO[v.tipo as keyof typeof ICONO] ?? Database)}
+              <div class="card tile destino">
+                <span class="tile-cab">
+                  <span class="tile-ic"><Icono size={16} /></span>
+                  <span class="tile-nombre"><strong>{v.nombre}{#if d} <ContadorNotas tipo="destino" objeto={d.id} />{/if}</strong><span>{#if v.clase === "nube" && v.nube}{nombreTipoNube(v.nube.tipo)} · conectada en {v.nube.equipo.nombre}{:else if d && d.tipo === "local"}{d.red ? "Carpeta de otra máquina de la red" : d.extraible ? "Disco extraíble" : "Carpeta"} de {v.equipos.join(", ")}{d.unidad ? ` (${d.unidad})` : ""}{:else}{TEXTO_TIPO[v.tipo] ?? v.tipo}{/if}{#if v.donde && v.donde !== v.nombre}{" · "}<span class="pastilla mono">{v.donde}</span>{/if}</span></span>
+                </span>
+                <p class="tile-linea num">
+                  {#if v.clase === "nube"}Para el espejo del almacén{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else}Sin repositorios todavía{/if} · lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}
+                </p>
+                <span class="tile-chips">
+                  {#if d?.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
+                  {#if d?.tipo === "local"}
+                    {#if d.red}<span class="badge badge-sm tone-neutral"><Network size={11} />En otra máquina</span>
+                    {:else if d.extraible}<span class="badge badge-sm tone-neutral"><Usb size={11} />Extraíble</span>
+                    {:else}<span class="badge badge-sm tone-warn" use:tip={"Las copias se quedan en el mismo equipo que protegen: si se daña o lo cifra un ransomware, se pierden las dos."}><TriangleAlert size={11} />En el mismo equipo</span>{/if}
+                  {/if}
+                  {#if v.clase === "nube" && v.nube && !["b2", "s3"].includes(v.nube.tipo)}<span class="badge badge-sm tone-neutral" use:tip={"Quien tenga su permiso puede borrar lo copiado: conviene que otro destino sea inmutable."}>No inmutable</span>{/if}
+                  {#if d}<button class="btn btn-sm btn-ghost notas-destino" onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
+                  {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
+                </span>
+              </div>
+            {/if}
           {/each}
         </div>
       {:else}
@@ -234,6 +248,8 @@
 {#if nuevo && actual.cliente}
   <NuevoRepositorio cliente={actual.cliente} equipos={actual.equipos} destinos={destinos} onclose={() => (nuevo = false)} />
 {/if}
+{#if nuevoDestino && actual.cliente}<NuevoDestino cliente={actual.cliente} equipos={actual.equipos} onclose={() => (nuevoDestino = false)} alCambiar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })} />{/if}
+{#if renombrar && actual.id}<RenombrarDestino cliente={actual.id} destino={renombrar} onclose={() => (renombrar = null)} />{/if}
 {#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 <style>
@@ -257,7 +273,11 @@
   .rejilla.destinos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   }
-  a.destino:hover {
+  .enlace-tile {
+    color: inherit;
+    text-decoration: none;
+  }
+  .destino:has(.enlace-tile:hover) {
     border-color: var(--border-strong);
     box-shadow: var(--shadow-sm);
   }

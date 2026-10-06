@@ -24,12 +24,16 @@
   import Ayuda from "./Ayuda.svelte";
   import CampoClave from "./CampoClave.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  // Tarea 7b: en otra zona del almacén (otro disco, con su puerto).
+  import { errorRespuestaZona, idDestinoZona, PRINCIPAL, type ZonaVista } from "$lib/destinos";
 
   interface Acceso {
     usuario: string;
     contrasena: string;
     destino: { tipo: "rest"; donde: string; usuario: string; secreto: string; ca_pem: string };
     huella_tls: string;
+    /** Tarea 7b: la zona del acceso (si se pidió una). */
+    zona?: string | null;
   }
 
   let {
@@ -38,6 +42,7 @@
     almacen,
     nombreInicial,
     origen,
+    zona,
     onclose,
   }: {
     cliente: Cliente;
@@ -47,10 +52,15 @@
     nombreInicial?: string;
     /** El repositorio del que se traerá el historial (desde «Nuevo repositorio»). */
     origen?: RepoExistente;
+    /** Tarea 7b: una zona del almacén que no es la principal (sin ella, la principal). */
+    zona?: ZonaVista;
     onclose: () => void;
   } = $props();
 
   let paso = $state<"clave" | "kit" | "listo">("clave");
+  const enZona = $derived(zona && !zona.principal ? zona : undefined);
+  /** «ALMACEN-01» o, en otra zona, «ALMACEN-01 · Disco E». */
+  const nombreAlmacen = $derived(enZona ? `${almacen.nombre} · ${enZona.nombre ?? enZona.id}` : almacen.nombre);
   /** v1.28: el equipo copia en su propio almacén. */
   const propio = $derived(equipo.id === almacen.id);
   let claveAdmin = $state("");
@@ -96,7 +106,7 @@
         equipo: almacen,
         tipo: "guarda_copias",
         // v1.28: su propio almacén, por localhost (no depende de su IP ni del cortafuegos).
-        cuerpo: propio ? { anadir: equipo.id, local: true } : { anadir: equipo.id },
+        cuerpo: { anadir: equipo.id, ...(propio ? { local: true } : {}), ...(enZona ? { zona: enZona.id } : {}) },
         secretos: { claveAdmin },
         responderA: aB64(eph.publica),
         alPaso: (t) => (pasoTxt = t),
@@ -107,6 +117,12 @@
       const sellado = (JSON.parse(r.detalle) as { sellado?: string }).sellado;
       if (!sellado) throw new Error("La respuesta no trae el acceso sellado.");
       acceso = JSON.parse(deUtf8(abrir(eph.secreta, deB64(sellado)))) as Acceso;
+      // Un agente anterior ignoraría `zona` y daría un usuario de la principal: entonces no se sigue.
+      const malZona = enZona ? errorRespuestaZona(acceso, enZona) : null;
+      if (malZona) {
+        acceso = null;
+        throw new Error(malZona);
+      }
       huella = acceso.huella_tls;
       donde = acceso.destino.donde;
       const b = aleatorio(32);
@@ -141,8 +157,8 @@
           // v1.30: `equipo_almacen`, para que el equipo diga en su resumen de qué almacén es el destino
           // (un agente anterior lo ignora y la consola lo reconoce por el id o el nombre, como antes).
           destino: {
-            id: `almacen-${almacen.id.slice(0, 8)}`,
-            nombre: almacen.nombre,
+            id: idDestinoZona(almacen.id, enZona?.id ?? PRINCIPAL),
+            nombre: nombreAlmacen,
             tipo: "rest",
             donde: acceso.destino.donde,
             usuario: acceso.destino.usuario,
@@ -165,7 +181,7 @@
       claveAdmin = contrasena = "";
       acceso = null;
       paso = "listo";
-      avisar(`${equipo.nombre} ya copia en ${almacen.nombre}.`);
+      avisar(`${equipo.nombre} ya copia en ${nombreAlmacen}.`);
       void cargarCliente(cliente.id, { silencioso: true });
     } catch (err) {
       if (err instanceof ErrorLlavesCambiadas) cambiadas = equipo;
@@ -181,11 +197,11 @@
   <div class="dlg-title">
     <span class="ticon"><Server size={18} /></span>
     <div>
-      <h2 id="t-almacen">{propio ? "Copiar en este mismo almacén" : `Copiar en ${almacen.nombre}`}</h2>
+      <h2 id="t-almacen">{propio ? `Copiar en este mismo almacén${enZona ? ` · ${enZona.nombre ?? ""}` : ""}` : `Copiar en ${nombreAlmacen}`}</h2>
       {#if propio}
         <p>{TEXTO_ALMACEN_PROPIO} <Ayuda id="guarda-copias" /></p>
       {:else}
-        <p>{equipo.nombre} guardará sus copias en {almacen.nombre}, con su propio usuario y sin poder borrar lo ya copiado. <Ayuda id="guarda-copias" /></p>
+        <p>{equipo.nombre} guardará sus copias en {nombreAlmacen}, con su propio usuario y sin poder borrar lo ya copiado. <Ayuda id="guarda-copias" /></p>
       {/if}
       {#if origen}<p class="faint">Para traer el historial de <code>{origen.direccion}</code>. {TEXTO_TROCEADO}</p>{/if}
     </div>
@@ -219,7 +235,7 @@
           <dt>Cliente</dt><dd>{cliente.nombre}</dd>
           <dt>Equipo</dt><dd>{equipo.nombre}</dd>
           <dt>Repositorio</dt><dd>{nombre} · <span class="pastilla mono selectable">{repoId}</span></dd>
-          <dt>Destino</dt><dd>{almacen.nombre} · <span class="pastilla mono ajusta">{donde}</span></dd>
+          <dt>Destino</dt><dd>{nombreAlmacen} · <span class="pastilla mono ajusta">{donde}</span></dd>
           <dt>Huella TLS</dt><dd><code>{huella}</code></dd>
           <dt>Contraseña</dt><dd><code class="selectable pw">{contrasena}</code></dd>
           <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>
@@ -235,9 +251,9 @@
     </div>
   {:else}
     {#if origen}
-      <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {almacen.nombre}, con la misma forma de trocear que <code>{origen.direccion}</code>. Ahora, en su página, «Traer historial» (ya tiene puesto ese origen: solo falta su contraseña).</p>
+      <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {nombreAlmacen}, con la misma forma de trocear que <code>{origen.direccion}</code>. Ahora, en su página, «Traer historial» (ya tiene puesto ese origen: solo falta su contraseña).</p>
     {:else}
-      <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {almacen.nombre}. Ahora elige qué copiar.</p>
+      <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {nombreAlmacen}. Ahora elige qué copiar.</p>
     {/if}
     <footer>
       <button class="btn btn-ghost" onclick={onclose}>Cerrar</button>

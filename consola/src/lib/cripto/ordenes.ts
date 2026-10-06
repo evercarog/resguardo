@@ -154,6 +154,8 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
       return (
         cuerpo.activo === false ||
         typeof cuerpo.quitar === "string" ||
+        // Tarea 7b: quitar una zona del almacén (sus equipos dejan de poder copiar allí).
+        typeof cuerpo.quitar_zona === "string" ||
         cuerpo.espejo === null ||
         // Confirmar lo que falta de golpe en el almacén (el espejo lo borrará pasados sus días).
         "espejo_freno" in cuerpo ||

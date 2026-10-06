@@ -282,8 +282,41 @@ export interface ResumenEquipo {
      * entonces no puede aplicarla.
      */
     retenciones?: RetencionAlmacen[];
+    /**
+     * Tarea 7b (agente con `admite: "zonas_almacen"`): otras carpetas (otros
+     * discos) que sirve, cada una con su propio rest-server en su puerto. La
+     * principal sigue en `carpeta`, `puerto`, `usuarios`, `espacio` y `repositorios`.
+     */
+    zonas?: ZonaAlmacen[] | null;
   } | null;
   pausado_hasta?: string | null;
+}
+
+/** Tarea 7b: una zona más de un almacén. */
+export interface ZonaAlmacen {
+  /** `z` y 6 cifras hexadecimales. */
+  id: string;
+  /** «Disco E» (lo pone el agente al crearla). */
+  nombre: string;
+  carpeta: string;
+  puerto: number;
+  usuarios: number;
+  /** Si su rest-server responde ahora. */
+  escucha?: boolean;
+  espacio?: EspacioVolumen | null;
+  repositorios?: { usuario: string; repos: string[] }[];
+}
+
+/** Tarea 7a: un destino del catálogo del cliente (en claro, sin secretos). */
+export interface DestinoCatalogo {
+  /** `zona:<equipo>:<zona>`, `nube:<equipo>:<nombre>` o el id de un destino. */
+  id: string;
+  nombre: string;
+  tipo: "zona" | "rest" | "s3" | "b2" | "sftp" | "nube" | "local";
+  /** Servidor o bucket (solo en los de red). */
+  donde?: string | null;
+  actualizado?: string;
+  por?: string;
 }
 
 /** v1.31: bytes libres y totales de un volumen o de una nube, y cuándo se leyeron. */

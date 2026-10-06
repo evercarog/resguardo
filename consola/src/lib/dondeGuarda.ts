@@ -10,6 +10,7 @@
 import type { ComprobacionProteccion, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { esDeAlmacen } from "./retencion";
+import { zonaDeDestino } from "./destinos";
 
 export type ClaseLugar = "almacen" | "almacen_propio" | "carpeta" | "usb" | "red" | "nube" | "servidor" | "desconocido";
 
@@ -62,9 +63,13 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
     }
     case "rest": {
       const a = almacenDeDestino(d, equipos);
-      const carpeta = a?.resumen?.guarda_copias?.carpeta ?? null;
-      if (a && a.id === equipo.id) return { clase: "almacen_propio", texto: "Su propio almacén (este mismo equipo)", detalle: carpeta, mismoEquipo: true, almacen: a };
-      if (a) return { clase: "almacen", texto: `Almacén ${a.nombre} (otro equipo)`, detalle: carpeta, mismoEquipo: false, almacen: a };
+      // Tarea 7b: en otra zona del almacén (otro disco), con su carpeta.
+      const z = a ? zonaDeDestino(d, equipos) : null;
+      const zona = z && !z.principal && z.almacen.id === a?.id ? z : null;
+      const carpeta = zona ? zona.carpeta : (a?.resumen?.guarda_copias?.carpeta ?? null);
+      const enZona = zona?.nombre ? ` · ${zona.nombre}` : "";
+      if (a && a.id === equipo.id) return { clase: "almacen_propio", texto: `Su propio almacén${enZona} (este mismo equipo)`, detalle: carpeta, mismoEquipo: true, almacen: a };
+      if (a) return { clase: "almacen", texto: `Almacén ${a.nombre}${enZona} (otro equipo)`, detalle: carpeta, mismoEquipo: false, almacen: a };
       return { clase: "servidor", texto: "Servidor de copias externo", detalle: [d.nombre, servidorDe(d.donde)].filter(Boolean).join(" · ") || null, mismoEquipo: false };
     }
     case "s3":

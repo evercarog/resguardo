@@ -412,9 +412,53 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         e.resumen.guarda_copias = null;
         return resultado(e, o, "hecha", "Ya no guarda copias de otros equipos.");
       }
+      // Tarea 7b: zonas (otros discos con su puerto), como el agente con `admite: "zonas_almacen"`.
+      const g7 = e.resumen.guarda_copias;
+      const admiteZonasMock = !!e.resumen.admite?.includes("zonas_almacen");
+      if (c.zona && typeof c.zona === "object" && admiteZonasMock && g7?.activo) {
+        const z = c.zona as { id?: string; nombre?: string; carpeta?: string; puerto?: number };
+        if (z.id) {
+          const x = (g7.zonas ?? []).find((y) => y.id === z.id);
+          if (!x) return resultado(e, o, "fallida", "Esa zona ya no está en este almacén.");
+          x.nombre = String(z.nombre ?? "").trim() || x.nombre;
+          return resultado(e, o, "hecha", `Zona renombrada: «${x.nombre}».`);
+        }
+        const carpeta = String(z.carpeta ?? "").trim();
+        const puerto = Number(z.puerto);
+        const malCarpeta = errorCarpetaLocal(carpeta, /windows/i.test(e.so));
+        if (malCarpeta) return resultado(e, o, "fallida", malCarpeta);
+        if (!Number.isInteger(puerto) || puerto < 1024 || puerto === g7.puerto || (g7.zonas ?? []).some((y) => y.puerto === puerto)) return resultado(e, o, "fallida", `El puerto ${puerto} ya es de este almacén o no vale: elige otro.`);
+        const id = `z${[...crypto.getRandomValues(new Uint8Array(3))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+        const nombre = String(z.nombre ?? "").trim() || (/^[a-z]:/i.test(carpeta) ? `Disco ${carpeta[0].toUpperCase()}` : carpeta.split(/[\\/]/).pop() || "Otra zona");
+        g7.zonas = [...(g7.zonas ?? []), { id, nombre, carpeta, puerto, usuarios: 0, escucha: true, espacio: { libre: 900_000_000_000, total: 1_000_000_000_000, leido: new Date().toISOString() }, repositorios: [] }];
+        return resultado(e, o, "hecha", `Zona «${nombre}» lista en el puerto ${puerto} (solo añadir).`, JSON.stringify({ zona: id }));
+      }
+      if (typeof c.quitar_zona === "string" && admiteZonasMock && g7) {
+        if (!plana.not_before) return resultado(e, o, "rechazada", "Quitar una zona reduce la protección: falta la espera (not_before).");
+        const x = (g7.zonas ?? []).find((y) => y.id === c.quitar_zona);
+        if (!x) return resultado(e, o, "fallida", "Esa zona ya no está en este almacén.");
+        g7.zonas = (g7.zonas ?? []).filter((y) => y !== x);
+        return resultado(e, o, "hecha", `Zona «${x.nombre}» quitada: sus equipos ya no pueden copiar allí (lo guardado se queda en su carpeta).`);
+      }
       if (typeof c.anadir === "string") {
         if (!e.resumen.guarda_copias?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias.");
         if (!plana.responder_a) return resultado(e, o, "rechazada", "Falta responder_a para entregar el acceso.");
+        // Tarea 7b: en una zona (un agente anterior la ignoraría: la consola lo comprueba).
+        const zonaPedida = admiteZonasMock && typeof c.zona === "string" ? (e.resumen.guarda_copias.zonas ?? []).find((y) => y.id === c.zona) : undefined;
+        if (admiteZonasMock && typeof c.zona === "string" && !zonaPedida) return resultado(e, o, "fallida", "Esa zona ya no está en este almacén.");
+        if (zonaPedida) {
+          const usuario = `${(estado.equipos.find((x) => x.id === c.anadir)?.nombre ?? "equipo").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-2`;
+          const host = c.local === true ? "localhost" : "192.168.1.20";
+          const acceso = {
+            usuario,
+            contrasena: aB64(crypto.getRandomValues(new Uint8Array(18))),
+            destino: { tipo: "rest", donde: `https://${host}:${zonaPedida.puerto}/${usuario}/`, usuario, secreto: aB64(crypto.getRandomValues(new Uint8Array(18))), ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB(simulado)\n-----END CERTIFICATE-----\n" },
+            huella_tls: "3F:A2:91:0C:7D:44:E8:12:5B:C0:9A:61:2E:F3:88:D7:41:0B:6C:9E:25:73:AA:5D:08:E4:C1:7F:39:B2:66:1A",
+            zona: zonaPedida.id,
+          };
+          zonaPedida.usuarios += 1;
+          return resultado(e, o, "hecha", `Equipo cliente «${usuario}» añadido en la zona «${zonaPedida.nombre}».`, JSON.stringify({ sellado: aB64(sellar(deB64(plana.responder_a), utf8(JSON.stringify(acceso)))) }));
+        }
         const cliente = estado.equipos.find((x) => x.id === c.anadir);
         const usuario = (cliente?.nombre ?? "equipo").toLowerCase().replace(/[^a-z0-9]+/g, "-");
         // v1.28: `local: true`, su propio almacén (por localhost).
