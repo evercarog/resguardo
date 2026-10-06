@@ -89,8 +89,8 @@
     ocupado = true;
     pasoTxt = "Importando…";
     try {
-      await importar(cliente.id, contenido);
-      alTerminar(`Historial de ${contenido.origen} importado.`);
+      const destinos = await importar(cliente.id, contenido);
+      alTerminar(`Historial de ${contenido.origen} importado${destinos ? ` (y ${plural(destinos, "destino", "destinos")} del catálogo)` : ""}.`);
       contenido = null;
       onclose();
     } catch (err) {
@@ -108,7 +108,7 @@
     <div>
       {#if modo === "exportar"}
         <h2 id="t-historial">Exportar el historial <Ayuda id="paquete" /></h2>
-        <p>Equipos, configuraciones cifradas, informes, avisos y toda la actividad con su cadena de huellas, en un archivo que se cifra aquí. Ningún servidor puede leerlo.</p>
+        <p>Equipos, configuraciones cifradas, informes, avisos, los nombres de los destinos y toda la actividad con su cadena de huellas, en un archivo que se cifra aquí. Ningún servidor puede leerlo.</p>
       {:else}
         <h2 id="t-historial">Importar el historial de otro servidor <Ayuda id="paquete" /></h2>
         <p>El paquete que se exportó en el servidor antiguo. Se abre en este navegador con la clave de administración del cliente.</p>
@@ -160,6 +160,7 @@
         <div><dt>Equipos</dt><dd>{contenido.equipos.map((e) => e.nombre).join(", ") || "—"}</dd></div>
         <div><dt>Actividad</dt><dd>{plural(contenido.auditoria.length, "entrada", "entradas")}</dd></div>
         <div><dt>Informes y avisos</dt><dd>{numero(contenido.informes.length)} · {numero(contenido.avisos.length)}</dd></div>
+        {#if contenido.destinos?.length}<div><dt>Destinos</dt><dd>{contenido.destinos.map((d) => d.nombre).join(", ")}</dd></div>{/if}
       </dl>
       <div class="notice notice-info"><p>La actividad del servidor antiguo se guarda aparte, tal cual, y la de aquí la enlaza con su última huella. Solo se puede importar una vez.</p></div>
       {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
