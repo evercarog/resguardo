@@ -517,6 +517,9 @@ async fn rele_de_descarga() {
     assert_eq!(subir(1, b"fuera de orden").await, StatusCode::CONFLICT);
     assert_eq!(subir(0, b"trozo-0").await, StatusCode::NO_CONTENT);
     assert_eq!(subir(1, b"trozo-1").await, StatusCode::NO_CONTENT);
+    // La cuenta en memoria de lo que ocupan los relés (9f), igual a lo que hay en disco.
+    assert_eq!(p.st.uso_relevos.bytes(), 14);
+    assert_eq!(resguardo_servidor::estado::medir_relevos(&p.st.datos.join("relevos")), 14);
     let r =
         pedir(&p.app, "POST", &format!("/api/agente/relevos/{relevo}/fin"), Some(json!({ "trozos": 2, "bytes": 14 })), None, &[("authorization", &ag.auth())])
             .await;
@@ -528,6 +531,47 @@ async fn rele_de_descarga() {
     let r = pedir(&p.app, "DELETE", &format!("/api/clientes/{c}/relevos/{relevo}"), None, Some(&cookie), &[]).await;
     assert_eq!(r.estado, StatusCode::NO_CONTENT);
     assert!(!p.st.datos.join("relevos").join(&c).join(&relevo).exists());
+    assert_eq!(p.st.uso_relevos.bytes(), 0);
+}
+
+/// El tope de todos los relés juntos se lleva en memoria (9f): se mide al arrancar
+/// (lo que quedó de antes cuenta) y un trozo que no cabe no se escribe.
+#[tokio::test]
+async fn tope_de_todos_los_reles_en_memoria() {
+    let dir = tempfile::tempdir().unwrap();
+    // Un relé que quedó de antes de reiniciar: 40 bytes.
+    let viejo = dir.path().join("relevos").join(uuid::Uuid::new_v4().to_string()).join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&viejo).unwrap();
+    std::fs::write(viejo.join("0"), [7u8; 40]).unwrap();
+    let st = preparar(dir.path(), Opciones { https: false, total_relevo: 50, ..Default::default() }).unwrap();
+    assert_eq!(st.uso_relevos.bytes(), 40);
+    let p = Prueba { app: api::router(st.clone()), st, _dir: dir };
+    let cookie = propietario(&p).await;
+    let (c, ag) = cliente_con_equipo(&p, &cookie).await;
+    let ordenes = format!("/api/clientes/{c}/equipos/{}/ordenes", ag.id);
+    let (sesion, relevo) = (uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().to_string());
+    let r = pedir(&p.app, "POST", &ordenes, Some(json!({ "tipo": "descargar", "seq": 1, "sellado": sobre(&ag), "caduca": caduca(1), "sesion": sesion, "relevo": { "id": relevo, "max_bytes": 1000 } })), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    let subir = |n: u64, datos: &'static [u8]| {
+        let (app, auth, relevo) = (p.app.clone(), ag.auth(), relevo.clone());
+        async move {
+            let req = Request::builder()
+                .method("PUT")
+                .uri(format!("/api/agente/relevos/{relevo}/trozos/{n}"))
+                .header("authorization", auth)
+                .body(Body::from(datos))
+                .unwrap();
+            app.oneshot(req).await.unwrap().status()
+        }
+    };
+    assert_eq!(subir(0, b"0123456789").await, StatusCode::NO_CONTENT, "40 + 10 caben en 50");
+    assert_eq!(subir(1, b"x").await, StatusCode::UNPROCESSABLE_ENTITY, "uno más ya no");
+    assert_eq!(p.st.uso_relevos.bytes(), 50);
+    assert!(!p.st.datos.join("relevos").join(&c).join(&relevo).join("1").exists());
+    // Al borrar el relé, su hueco vuelve a estar libre.
+    let r = pedir(&p.app, "DELETE", &format!("/api/clientes/{c}/relevos/{relevo}"), None, Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT);
+    assert_eq!(p.st.uso_relevos.bytes(), 40);
 }
 
 #[tokio::test]
