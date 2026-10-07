@@ -1633,6 +1633,16 @@ async fn catalogo_de_destinos_sin_secretos() {
         let r = pedir(&p.app, "PUT", &zona_d, Some(json!({ "nombre": "", "tipo": "zona", "atributos": a })), Some(&cookie), &[]).await;
         assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY, "{a}");
     }
+    // 0.7.26: tipo y marcas (con lo que entiende una consola anterior al lado).
+    let marcas = json!({ "lugar": "nube", "inmutable": "object_lock", "tipo": "nube", "aislado": true, "bloqueo_dias": 30, "aislado_dias": 14 });
+    let r = pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Nube", "tipo": "b2", "donde": "copias-sur", "atributos": marcas })), Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    let l = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json;
+    assert_eq!(atributos(&l, "destino-1a2b3c4d"), marcas);
+    for a in [json!({ "tipo": "luna" }), json!({ "bloqueo_dias": 0 }), json!({ "aislado_dias": 400 }), json!({ "aislado": "si" })] {
+        let r = pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Nube", "tipo": "b2", "donde": "copias-sur", "atributos": a })), Some(&cookie), &[]).await;
+        assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY, "{a}");
+    }
     // `null` los quita.
     pedir(&p.app, "PUT", &b2, Some(json!({ "nombre": "Nube", "tipo": "b2", "donde": "copias-sur", "atributos": null })), Some(&cookie), &[]).await;
     let l = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json;
