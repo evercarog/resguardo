@@ -153,7 +153,7 @@ fi
 [ "$PURGAR" = 0 ] || fallo "--purgar va con --desinstalar."
 if [ -n "$PUERTO" ]; then
   case "$PUERTO" in *[!0-9]*) fallo "puerto no válido: $PUERTO" ;; esac
-  [ "$PUERTO" -ge 1 ] && [ "$PUERTO" -le 65535 ] || fallo "puerto no válido: $PUERTO"
+  if [ "$PUERTO" -lt 1 ] || [ "$PUERTO" -gt 65535 ]; then fallo "puerto no válido: $PUERTO"; fi
 fi
 
 case "$(uname -m)" in

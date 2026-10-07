@@ -161,7 +161,7 @@ if [ "$DESINSTALAR" = 1 ]; then
 fi
 [ "$PURGAR" = 0 ] || fallo "--purgar va con --desinstalar."
 if [ -n "$SERVIDOR" ] || [ -n "$CODIGO" ]; then
-  [ -n "$SERVIDOR" ] && [ -n "$CODIGO" ] || fallo "para vincular hacen falta --servidor y --codigo."
+  if [ -z "$SERVIDOR" ] || [ -z "$CODIGO" ]; then fallo "para vincular hacen falta --servidor y --codigo."; fi
 fi
 
 case "$(uname -m)" in
