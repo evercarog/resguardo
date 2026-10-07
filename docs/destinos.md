@@ -161,6 +161,30 @@ Horario por destino, «después de cada copia nueva», selección de repositorio
 - Si Dropbox no responde, se usa el access token que haya mientras valga; si ya caducó, ese destino falla en esta vuelta y se reintenta en la siguiente (con `--immutable`, retoma donde quedó). `invalid_grant` (permiso retirado) o `invalid_client` (app key que no es): error claro, «vuelve a conectar la nube desde la consola».
 - Las nubes conectadas con `resguardo-agente nube conectar` (rclone authorize, con la app de rclone) no cambian: renueva rclone como antes.
 
+## Repositorios directamente en una nube (tarea 4a)
+
+Rama `ia/repos-en-la-nube`. Una copia puede guardar sus carpetas **directamente** en una nube conectada en el equipo (Dropbox, Google Drive o los destinos por rclone con datos: B2, S3, SMB, WebDAV, SFTP), sin pasar por un almacén. Contrato: `crear_repositorio` con `destino: { tipo: "nube", nube, donde }` y `admite: "repo_en_nube"` (ver [api-servidor.md](api-servidor.md) «Cambios»).
+
+**Por qué antes no se podía.** La vuelta del agente usa el acceso que se guardó al programar la copia (`Secret::env`). Si allí iba el token de Dropbox, a las 4 h estaba caducado y rclone tenía que renovarlo cada vez, y lo renovado se perdía (iba a un `rclone-restic.conf` compartido que nadie leía y que guardaba el token en claro).
+
+**Cómo es ahora** (`crates/agente/src/nube.rs`, `crates/motor/src/restic.rs`):
+
+1. Con la copia solo se guarda una **marca**: `RESGUARDO_NUBE=<nombre de la nube>` (no es secreto).
+2. El motor tiene un gancho (`restic::set_preparar`) que el agente pone al arrancar. Cada proceso de restic con la marca recibe, justo antes de lanzarse (`nube::preparar_vuelta`): el token renovado si caduca en menos de 30 min (como el espejo), el remoto `rnube` por variables de entorno y un **archivo de configuración vacío y propio de esa vuelta** (`<carpeta privada>/rclone-vueltas/vuelta-<pid>-<n>-<ms>.conf`, `RCLONE_CONFIG`). El `rclone serve restic` que lanza restic hereda las variables.
+3. Si la vuelta dura más que el token, rclone lo renueva él solo (con el `client_id` de la app) y **escribe el nuevo en ese archivo** (comprobado con rclone 1.75.1 y un servidor de tokens de mentira: aunque el remoto venga por variables de entorno, guarda `[rnube] token = …` en `--config`/`RCLONE_CONFIG`).
+4. Al terminar restic (también si falla o se corta), el agente lee el archivo, **vuelve a sellar** el token (DPAPI, `nubes.bin`) y borra el archivo y su known_hosts. Solo guarda el de rclone si es de la misma conexión y más nuevo (`token_a_guardar`): dos vueltas a la vez, o una nube reconectada a mitad, no se pisan; nunca uno sin refresh token si lo había.
+5. Los archivos de vueltas que no terminaron bien se borran a las 48 h (las copias se cortan a las 20 h). El `rclone-restic.conf` de versiones anteriores se borra en la primera vuelta.
+
+**Límites (para revisar):**
+
+- Mientras dura una vuelta, si rclone renovó el token, ese token está **en claro** en el archivo de la vuelta, en la carpeta privada (solo SYSTEM y administradores). Lo mismo que las variables de entorno del proceso; no peor que antes (antes se quedaba para siempre).
+- Origen y destino en **dos nubes distintas** en la misma operación (p. ej. una copia derivada de un repositorio en Dropbox a otra nube): no se puede (rclone usa un solo remoto `rnube`); el agente lo dice. Con la misma nube, sí.
+- Dropbox no rota el refresh token; si una nube lo rotara (OneDrive), se guarda el nuevo con la misma regla.
+- **Sin probar con una cuenta de Dropbox de verdad** (solo con el servidor de tokens de mentira y con un remoto `alias`).
+- `quitar_nube` se niega mientras un repositorio esté en ella.
+
+**En la consola** (`lib/repoNuevo.ts`): «Nuevo repositorio» (en «Repositorios y destinos», en la ficha del equipo y en el editor de copias con «+ Repositorio nuevo…») enseña todos los destinos. Una nube conectada en el equipo se elige (y se pide la carpeta dentro de ella, «Resguardo» por defecto); conectada en otro equipo, «Conectar Dropbox también en …» ahí mismo; en ninguno, «Conectar Dropbox»; con un agente anterior, «Actualiza el agente de …». Siempre con el aviso de que Dropbox no es inmutable.
+
 ## Hecho en la fase 2
 
 - `discover.rs` (`place_scan`, `clone_repo`, `cancel_clone`), `s3list.rs`, `Place.known`.

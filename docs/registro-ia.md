@@ -49,6 +49,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/repos-en-la-nube`
+
+Desde `ia/integracion-0725`; se unió otra vez al final (con `ia/destinos-y-regla-ux` y `ia/mapa-zoom` dentro).
+
+- **Pedido:** autenticar también un servidor de aplicaciones si hace falta y usar Dropbox como destino de una copia. En «Nuevo repositorio», aunque se eligiera ese equipo o el de la contabilidad, Dropbox no salía (solo B2, S3…), ni la Dropbox que ya tiene otro equipo, ni cómo conectarla. Y crear un repositorio fácilmente desde el editor de copias, sin ir a «Repositorios y destinos». Más intuitivo.
+- **Cambios:**
+  - **Agente (4a completa):** `crear_repositorio` acepta un destino `nube` conectado en el equipo; `admite: "repo_en_nube"`. Con la copia solo se guarda la marca `RESGUARDO_NUBE=<nombre>`; un gancho nuevo del motor (`restic::set_preparar`, `spawn_vuelta`) hace que cada proceso de restic reciba la nube al día y un `rclone.conf` vacío propio de esa vuelta; lo que rclone renueve a mitad se recoge y se vuelve a sellar al terminar (`nube::token_a_guardar`: solo de la misma conexión y más nuevo). Se borran los archivos olvidados (48 h) y el `rclone-restic.conf` compartido de antes (podía guardar un token en claro). `quitar_nube` se niega si un repositorio está en ella. Origen y destino en dos nubes distintas: error claro.
+  - **Consola:** `lib/repoNuevo.ts` (con `scripts/vectores-repo-nuevo.ts`): todos los destinos para un repositorio nuevo con si sirven y qué hacer. `NuevoRepositorio` usa la lista con botones (`ElegirDestinoPaso`): nube del equipo → se elige con su carpeta; de otro equipo → «Conectar Dropbox también en …» (ConectarNube ahí mismo, y queda elegida); en ninguno → «Conectar Dropbox»; agente anterior → «Actualiza el agente de …». Contraseña generada o escrita (≥ 12). En el editor de copias, «+ Repositorio nuevo…» en el selector de cada copia y en el aviso sin repositorios (equipo fijo, sin volver a pedir la clave). «Repositorio nuevo…» en la ficha del equipo. `usosPosibles`: «copia nueva» a una nube cuando el agente anuncia `repo_en_nube`; «Usar en una copia» de la página de una nube abre el editor con el repositorio nuevo en ella. Textos de la regla 3-2-1 y de la lista de destinos.
+  - **Simulador:** SERVIDOR-APPS (agente nuevo, sin nubes) en Café del Sur; `crear_repositorio` en una nube como el agente.
+  - **Docs:** destinos.md («Repositorios directamente en una nube», con los límites), copias-en-cadena.md (4a hecho), editor-de-copias.md, plan-mejoras.md (4a), api-servidor.md «Cambios».
+- **Comprobado:** `cargo fmt --check`, clippy (también con `consola-integrada`), `cargo test --workspace`, consola `check`, `build`, `test:vectores`, `test:sin-referencias` (antes de cada commit) y `npm run e2e` entero, con un paso nuevo en 3c: un repositorio directamente en la «nube» (rclone `alias`, una carpeta) creado como lo hace el editor, una copia y una restauración desde ella. Pruebas del agente: el token de rclone que se vuelve a sellar, la vuelta y su limpieza, **renovación de un token caducado con restic + rclone de verdad contra un servidor de tokens de mentira** en 127.0.0.1 (sin red hacia fuera: un proxy cerrado) y crear, copiar y restaurar en una nube `alias`. Capturas en el simulador (Edge sin ventana por CDP) a 1280 y 375, claro y oscuro, en `tmp\capturas\repos-nube\` del equipo de desarrollo: «Nuevo repositorio» con un equipo sin nubes, conectar Dropbox ahí mismo, Dropbox elegida, kit, editor con «+ Repositorio nuevo…» y la ficha del equipo.
+- **Sin probar / dudas (decididas sin preguntar):**
+  - **Sin una cuenta de Dropbox de verdad** (ni Drive, SFTP, SMB, WebDAV por rclone como repositorio). Lo que se probó: que rclone 1.75.1 escribe el token renovado en `--config`/`RCLONE_CONFIG` aunque el remoto venga por variables de entorno, con un servidor de tokens propio.
+  - Mientras dura una vuelta, un token renovado por rclone está en claro en el archivo de esa vuelta (carpeta privada, solo SYSTEM y administradores); antes se quedaba para siempre en `rclone-restic.conf`.
+  - `restic::spawn` (el de siempre) se niega con un acceso que necesita preparación: los cuatro sitios del agente y del motor que lanzan restic a mano usan `spawn_vuelta`. La app de escritorio congelada no pone el gancho: no cambia.
+  - La contraseña escrita a mano pide al menos 12 caracteres (el agente admite 8).
+  - En el editor, el repositorio nuevo se pide al equipo en el momento y la copia se envía después con «Enviar al equipo» (las órdenes se aplican en orden; si la creación fallara, la configuración se rechaza con «créalo antes»).
+  - Un equipo nuevo en el simulador cambia algunos recuentos de Café del Sur en `dev:mock`.
+
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/mapa-zoom`
 
 Desde `ia/integracion-0725`; al final se unió `ia/destinos-y-regla-ux` (las tarjetas de destino llevan a su página), sin conflictos.
