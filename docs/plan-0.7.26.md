@@ -54,9 +54,9 @@ Hecho en la rama `ia/0726-bloque4` (`crates/agente/src/espejo_trabajos.rs`; dise
 
 ## Bloque 7 — Despliegue masivo (para instalar muchos equipos)
 
-- [ ] **7.1 Código de alta para varios equipos:** válido para N altas y caduca en X días (por defecto 10 equipos, 7 días), generado en el navegador como el de 9a (el servidor solo guarda su huella); se puede anular; cada alta queda en la auditoría.
-- [ ] **7.2 Línea de PowerShell** (y la de Linux ya existente, con el mismo código): descarga el instalador desde la consola, comprueba su firma o huella, instala en silencio y vincula con el código. Para pegar en cada equipo o usar en una herramienta de despliegue.
-- [ ] **7.3 «Equipos esperando confirmación»:** lista con el código de comprobación de cada uno y «Confirmar los que coinciden» (uno a uno o en bloque); nada se da de alta sin confirmar.
+- [x] **7.1 Código de alta para varios equipos:** (rama `ia/0726-bloque7`; contrato en `api-servidor.md` §4 y «Cambios», v1.4x; guía en `guia-instalacion.md` 5.5) válido para N altas y caduca en X días (por defecto 10 equipos, 7 días), generado en el navegador como el de 9a (el servidor solo guarda su huella); se puede anular; cada alta queda en la auditoría.
+- [x] **7.2 Línea de PowerShell** (rama `ia/0726-bloque7`; huella SHA-256 fijada en la línea, también codificada para herramientas de despliegue; la de Linux, con la huella y fuera del historial de bash) (y la de Linux ya existente, con el mismo código): descarga el instalador desde la consola, comprueba su firma o huella, instala en silencio y vincula con el código. Para pegar en cada equipo o usar en una herramienta de despliegue.
+- [x] **7.3 «Equipos esperando confirmación»:** (rama `ia/0726-bloque7`) lista con el código de comprobación de cada uno y «Confirmar los que coinciden» (uno a uno o en bloque); nada se da de alta sin confirmar.
 
 ## Bloque 8 — Lo mismo en todas las consolas
 

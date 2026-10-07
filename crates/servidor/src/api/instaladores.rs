@@ -430,6 +430,8 @@ pub async fn a_medias(State(st): State<St>, u: Usuario, Path(c): Path<String>) -
         .map(|(e, q)| json!({
             "id": e.id, "estado": e.estado, "caduca": fecha(e.caduca), "creado": fecha(e.creado),
             "nombre": e.nombre.clone().unwrap_or_else(|| q.nombre.clone()),
+            // Bloque 7: de un código para varios equipos (la consola los enseña en su página).
+            "lote": e.lote,
             "equipo": { "id": q.id, "nombre": q.nombre, "so": q.so },
         }))
         .collect::<Vec<_>>())))

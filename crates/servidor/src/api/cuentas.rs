@@ -62,6 +62,9 @@ pub async fn servidor(State(st): State<St>) -> Res<Json<Value>> {
         // v1.48: acepta códigos de emparejamiento generados en el navegador (`codigo_hash`) y
         // da el instalador genérico (`GET /api/clientes/{c}/instalador-agente`).
         "codigo_navegador": true,
+        // Bloque 7: códigos para varios equipos (`…/codigos-varios`) y la descarga del instalador
+        // para la línea de PowerShell (`GET /api/agente/instalador/{lote}`).
+        "codigo_varios": true,
     });
     if let Some(k) = dropbox_app_key() {
         v["dropbox_app_key"] = json!(k);

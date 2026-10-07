@@ -21,6 +21,7 @@
   import { infCopia, ultimaVuelta, type Vuelta } from "$lib/copia";
   import { anadidoDe, duracion, informeDe, TEXTO_RESULTADO, TONO_RESULTADO, versionDeVuelta } from "$lib/repo";
   import { ESTADO_ORDEN, nombreOrden } from "$lib/salud";
+  import { mensajeOrden } from "$lib/textosEquipo";
   import { cargarCliente } from "$lib/estado.svelte";
   import { seguirEnFondo, vigilarCopiaEnFondo } from "$lib/seguimiento.svelte";
   import { progresoPronto } from "$lib/progreso.svelte";
@@ -337,7 +338,7 @@
               {orden.estado === "pendiente" ? (equipo.conectado ? "Enviada. Esperando a que el equipo la recoja…" : "Enviada. El equipo la recogerá en cuanto se conecte.") : "El equipo está en ello…"}
               <span class="faint">Puedes cerrar: te avisaremos al terminar.</span>
             {:else}
-              {orden.mensaje ?? "Sin mensaje del equipo."}
+              {orden.mensaje ? mensajeOrden(orden.tipo, orden.mensaje) : "Sin mensaje del equipo."}
             {/if}
           </p>
           {#if orden.firma_agente}

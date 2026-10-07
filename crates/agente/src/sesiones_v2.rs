@@ -643,7 +643,8 @@ fn partes(ruta: &str) -> Result<(String, String), String> {
     let r = restic::snapshot_dir(ruta)?;
     let (padre, nombre) = r.rsplit_once('/').ok_or("Ruta no válida.")?;
     if nombre.is_empty() || padre.is_empty() {
-        return Err(format!("No se puede restaurar una unidad o la raíz entera: {r}"));
+        // Sin la ruta: a las consolas les llegaría como «[ruta]» (y ya saben cuál era).
+        return Err("No se puede restaurar una unidad entera de una vez. Elige las carpetas de dentro.".into());
     }
     Ok((padre.to_string(), nombre.to_string()))
 }
@@ -809,6 +810,13 @@ pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result
     guarda.terminar("ok");
     // Rutas entre comillas: así se quitan enteras (con espacios) donde no deben verse.
     Ok(format!("Restaurado ({} elementos) en «{}».", rutas.len(), destinos.join("», «")))
+}
+
+/// El resultado de `restaurar` para las consolas: sin la carpeta (las rutas no
+/// salen del equipo y quedaría «[ruta]»); la consola calcula y enseña dónde quedó.
+pub fn restaurado_sin_rutas(c: &Value) -> String {
+    let n = c["rutas"].as_array().map_or(0, Vec::len);
+    format!("Restaurado ({n} {}).", if n == 1 { "elemento" } else { "elementos" })
 }
 
 // ---------- Descargar por el relé ----------
@@ -1419,6 +1427,15 @@ mod tests {
         assert_eq!(partes("/C/Users/Ana/Doc.txt").unwrap(), ("/C/Users/Ana".to_string(), "Doc.txt".to_string()));
         assert!(partes("/").is_err());
         assert!(partes("/C/../x").is_err());
+        // Una unidad entera: el motivo, sin la ruta (a la consola llegaría «[ruta]»).
+        let e = partes("/C").unwrap_err();
+        assert!(e.contains("unidad entera") && !e.contains("/C") && crate::web::public_message(&e) == e, "{e}");
+    }
+
+    #[test]
+    fn restaurado_para_las_consolas_sin_rutas() {
+        assert_eq!(restaurado_sin_rutas(&json!({ "rutas": ["/C/Datos/a", "/C/Datos/b"] })), "Restaurado (2 elementos).");
+        assert_eq!(restaurado_sin_rutas(&json!({ "rutas": ["/C/Datos/a"] })), "Restaurado (1 elemento).");
     }
 
     #[test]

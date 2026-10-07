@@ -62,6 +62,7 @@
   import RestaurarEnOtro from "$lib/componentes/RestaurarEnOtro.svelte";
   import LineaTiempoVersiones from "$lib/componentes/repo/LineaTiempoVersiones.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
+  import { textoRestaurar } from "$lib/textosEquipo";
 
   interface Version {
     id: string;
@@ -680,7 +681,8 @@
               </li>
             {/each}
           </ol>
-          <p>{orden.mensaje ?? (equipo?.conectado ? "Puedes cerrar esta pantalla: el equipo sigue y lo verás en sus órdenes." : `${equipo?.nombre} lo hará en cuanto se conecte.`)}</p>
+          <!-- Sin «[ruta]» (el equipo quita las rutas): la carpeta, si se sabe, va en el recuadro de abajo. -->
+          <p>{orden.mensaje ? textoRestaurar(orden.mensaje, terminado && orden.estado === "hecha" && destino === "junto" && !!carpetaJunto) : (equipo?.conectado ? "Puedes cerrar esta pantalla: el equipo sigue y lo verás en sus órdenes." : `${equipo?.nombre} lo hará en cuanto se conecte.`)}</p>
           {#if orden.firma_agente && equipo}<p class="faint pequeno firma"><ShieldCheck size={13} />{resultadoFirmado(equipo.sign_pub, orden) ? "Respuesta firmada por el equipo." : "La firma de la respuesta no es válida."}</p>{/if}
           {#if terminado && orden.estado === "hecha"}
             <div class="donde-quedo">
