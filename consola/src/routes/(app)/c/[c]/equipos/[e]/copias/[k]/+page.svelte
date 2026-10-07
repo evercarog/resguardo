@@ -2,7 +2,9 @@
   import { tip } from "$lib/tooltip";
   // Una copia en detalle (como la página de un repositorio): cómo está, qué
   // copia, cuándo y dónde, sus vueltas de 60 días en cuadros y gráficas, los
-  // errores recientes explicados, sus versiones y su historial. Todo sale del
+  // errores recientes explicados, sus versiones y su historial. Orden: cifras,
+  // regla 3-2-1-1-0, «Historial y versiones», qué y cuándo, errores y, al
+  // final, las gráficas («Datos nuevos por versión»). Todo sale del
   // resumen del equipo y de su último informe; las carpetas, que van cifradas,
   // se ven con la clave de administración (y se olvidan al salir).
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
@@ -17,6 +19,7 @@
   import { goto } from "$app/navigation";
   import {
     CalendarClock,
+    ChartColumn,
     CircleHelp,
     Database,
     Eye,
@@ -292,11 +295,11 @@
     <IndicePagina
       items={[
         { id: "sec-resumen", texto: "Resumen" },
-        { id: "t-que", texto: "Qué y cuándo" },
         ...(regla ? [{ id: "sec-regla", texto: "Regla 3-2-1" }] : []),
-        ...(versiones.length >= 2 || conDuracion.length >= 2 ? [{ id: "sec-graficas", texto: "Gráficas" }] : []),
-        ...(problemas.length ? [{ id: "t-errores", texto: "Errores" }] : []),
         { id: "t-historial", texto: "Historial y versiones" },
+        { id: "t-que", texto: "Qué y cuándo" },
+        ...(problemas.length ? [{ id: "t-errores", texto: "Errores" }] : []),
+        ...(versiones.length >= 2 || conDuracion.length >= 2 ? [{ id: "sec-graficas", texto: "Datos nuevos por versión" }] : []),
       ]}
     />
 
@@ -330,6 +333,38 @@
         <span class="faint">{cifras.duracionMedia != null ? `unos ${duracion(cifras.duracionMedia)} por copia` : "según su última versión"}</span>
       </div>
     </div>
+
+    {#if regla}
+      <div id="sec-regla">
+        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} enlaceDestino={(p) => (p.clave && !p.clave.startsWith("espejo:") ? hrefDestino(c, p.clave) : null)} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
+      </div>
+      {#if marcar}<AtributosDestino cliente={c} destino={marcar} onclose={() => (marcar = null)} />{/if}
+    {/if}
+
+    {#if repo}
+      <HistorialVersiones
+        fuentes={[{ repo: { ...repo, versiones: undefined }, inf: infRepo, regla: retencionLinea?.regla ?? null, quien: retencionLinea?.quien ?? null }]}
+        {copias}
+        soloCopia={k.id}
+        historial={historia.entradas}
+        ultimas={informe?.datos.copias ?? []}
+        {enlace}
+        ahora={reloj.ahora}
+        puedeRestaurar={puede.ordenar(rol)}
+        resumen={inf && cifras.vueltas ? `En 60 días: ${resumen60}` : null}
+        vacio={infRepo ? "Cada vez que esta copia encuentre cambios se guardará aquí una versión que podrás explorar y restaurar." : `Llegarán con el próximo informe de ${equipo.nombre}.`}
+        alAbrir={(v, _r, f) => abrirVersion(v.id, f)}
+        alAbrirVuelta={(h) => abrirVuelta(h)}
+        elegida={sel.version}
+        dia={sel.dia}
+        alDia={elegirDia}
+        fechas={sel.desde && sel.hasta ? { desde: sel.desde, hasta: sel.hasta } : null}
+        alFechas={elegirFechas}
+        hayMas={historia.hayMas}
+        cargandoMas={historia.cargando}
+        alCargarMas={historia.cargarMas}
+      />
+    {/if}
 
     <div class="dos">
       <section class="card p que" aria-labelledby="t-que">
@@ -469,28 +504,6 @@
       </section>
     </div>
 
-    {#if regla}
-      <div id="sec-regla">
-        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} enlaceDestino={(p) => (p.clave && !p.clave.startsWith("espejo:") ? hrefDestino(c, p.clave) : null)} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
-      </div>
-      {#if marcar}<AtributosDestino cliente={c} destino={marcar} onclose={() => (marcar = null)} />{/if}
-    {/if}
-
-    {#if versiones.length >= 2 || conDuracion.length >= 2}
-      <section class="card p graficas" id="sec-graficas" aria-label="Gráficas de la copia">
-        {#if versiones.length >= 2}<GraficaBarras titulo="Datos nuevos por versión" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />{/if}
-        {#if conDuracion.length >= 2}
-          <GraficaBarras titulo="Duración de cada copia" datos={conDuracion} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} alElegir={(x) => abrirVuelta(x.hora)} elegido={sel.vuelta} />
-        {:else}
-          <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
-        {/if}
-        {#if versiones.length >= 2}
-          <GraficaBarras titulo="Archivos nuevos y cambiados" datos={versiones} valor={(v) => (v.archivos_nuevos == null && v.archivos_cambiados == null ? null : (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0))} formato={(x) => numero(x)} alElegir={(v) => abrirVersion(v.id, "nuevos")} elegido={sel.version} clave={(v) => v.id} />
-          <GraficaBarras titulo="Tamaño de lo copiado" datos={versiones} valor={(v) => v.total_bytes} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
-        {/if}
-      </section>
-    {/if}
-
     {#if problemas.length}
       <section class="card p errores" aria-labelledby="t-errores">
         <h2 class="section-title" id="t-errores">Errores recientes <span class="count">· 60 días</span></h2>
@@ -510,29 +523,20 @@
       </section>
     {/if}
 
-    {#if repo}
-      <HistorialVersiones
-        fuentes={[{ repo: { ...repo, versiones: undefined }, inf: infRepo, regla: retencionLinea?.regla ?? null, quien: retencionLinea?.quien ?? null }]}
-        {copias}
-        soloCopia={k.id}
-        historial={historia.entradas}
-        ultimas={informe?.datos.copias ?? []}
-        {enlace}
-        ahora={reloj.ahora}
-        puedeRestaurar={puede.ordenar(rol)}
-        resumen={inf && cifras.vueltas ? `En 60 días: ${resumen60}` : null}
-        vacio={infRepo ? "Cada vez que esta copia encuentre cambios se guardará aquí una versión que podrás explorar y restaurar." : `Llegarán con el próximo informe de ${equipo.nombre}.`}
-        alAbrir={(v, _r, f) => abrirVersion(v.id, f)}
-        alAbrirVuelta={(h) => abrirVuelta(h)}
-        elegida={sel.version}
-        dia={sel.dia}
-        alDia={elegirDia}
-        fechas={sel.desde && sel.hasta ? { desde: sel.desde, hasta: sel.hasta } : null}
-        alFechas={elegirFechas}
-        hayMas={historia.hayMas}
-        cargandoMas={historia.cargando}
-        alCargarMas={historia.cargarMas}
-      />
+    {#if versiones.length >= 2 || conDuracion.length >= 2}
+      <section class="card p graficas" id="sec-graficas" aria-labelledby="t-graficas">
+        <h2 class="section-title" id="t-graficas"><ChartColumn size={16} />Datos nuevos por versión</h2>
+        {#if versiones.length >= 2}<GraficaBarras titulo="Datos añadidos" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />{/if}
+        {#if conDuracion.length >= 2}
+          <GraficaBarras titulo="Duración de cada copia" datos={conDuracion} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} alElegir={(x) => abrirVuelta(x.hora)} elegido={sel.vuelta} />
+        {:else}
+          <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+        {/if}
+        {#if versiones.length >= 2}
+          <GraficaBarras titulo="Archivos nuevos y cambiados" datos={versiones} valor={(v) => (v.archivos_nuevos == null && v.archivos_cambiados == null ? null : (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0))} formato={(x) => numero(x)} alElegir={(v) => abrirVersion(v.id, "nuevos")} elegido={sel.version} clave={(v) => v.id} />
+          <GraficaBarras titulo="Tamaño de lo copiado" datos={versiones} valor={(v) => v.total_bytes} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+        {/if}
+      </section>
     {/if}
 
     {#if informe}
@@ -791,6 +795,14 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--sp-6);
+  }
+  /* El título de la sección, a todo lo ancho (las gráficas van en dos columnas). */
+  .graficas > h2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-column: 1 / -1;
+    margin: 0 0 calc(var(--sp-3) - var(--sp-6));
   }
   .errores ul {
     display: flex;

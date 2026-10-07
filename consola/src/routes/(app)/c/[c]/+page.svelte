@@ -2,13 +2,14 @@
   import { untrack } from "svelte";
   import { tip } from "$lib/tooltip";
   // Estado del cliente (docs/diseno.md §5, «Inicio»): el resumen grande con
-  // lo urgente y su acción, cuatro cifras, las órdenes que esperan, la salud
-  // de cada equipo con sus 14 días, los repositorios y cuánto se guarda en
-  // cada destino con su tendencia.
-  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert } from "@lucide/svelte";
+  // lo urgente y su acción, cuatro cifras y una línea si hay órdenes en espera;
+  // después, todo lo de las copias junto (regla 3-2-1-1-0 y mapa), la lista de
+  // las órdenes que esperan, la salud de cada equipo con sus 14 días, los
+  // repositorios y cuánto se guarda en cada destino con su tendencia.
+  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
-  import { bytes, cuandoFrase, numero, plural, relativo } from "$lib/formato";
+  import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
   import { almacenes as almacenesDe, proximaDeTodos, ultimas24h } from "$lib/panel";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { copiaAtrasada, PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
@@ -34,6 +35,7 @@
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
   import Comentarios from "$lib/componentes/notas/Comentarios.svelte";
   import { riesgosDelCliente } from "$lib/dondeGuarda";
+  import type { FilaEspera } from "$lib/espera";
   // Tarea 8: cuántas copias cumplen la regla 3-2-1-1-0 (y las que dejaron de cumplir, sin urgencia).
   import ReglaCliente from "$lib/componentes/regla/ReglaCliente.svelte";
 
@@ -161,6 +163,15 @@
 
   /** v1.56: el almacén de otra consola que sale en el mapa («Conectar también…»). */
   let fuera = $state<{ almacen: string; consolas: string[] } | null>(null);
+  /** Las órdenes que esperan su turno (de `Pendientes`, más abajo): arriba, solo una línea con la próxima. */
+  let enEspera = $state<FilaEspera[]>([]);
+  const proximaEspera = $derived(
+    enEspera
+      .map((o) => o.aplica)
+      .filter((x) => Number.isFinite(Date.parse(x)))
+      .sort()
+      .at(0),
+  );
   let copiar = $state<{ equipo: Equipo; repo: string; copia: string; nombre: string } | null>(null);
 </script>
 
@@ -243,18 +254,31 @@
       </div>
     {/if}
 
+    <!-- Las órdenes en espera, en una línea: la lista entera va después de lo de las copias. -->
+    {#if enEspera.length}
+      <div class="notice notice-warn linea-espera" role="status">
+        <Clock size={16} />
+        <p>
+          <strong>{plural(enEspera.length, "orden esperando su turno", "órdenes esperando su turno")}</strong>{#if proximaEspera}{" · "}la próxima se aplica en <time datetime={proximaEspera} use:tip={fechaLarga(proximaEspera)}>{cuentaAtras(proximaEspera, reloj.ahora)}</time>{/if}
+          <a class="notice-action" href="#t-pend">Ver<ChevronRight size={14} /></a>
+        </p>
+      </div>
+    {/if}
+
     <PrimerosPasos cliente={actual.cliente} equipos={actual.equipos} {informes} />
     {#if delFiltro.length}<ReglaCliente cliente={c} equipos={delFiltro} todos={actual.equipos} {informes} ahora={reloj.ahora} />{/if}
-
-    <Pendientes />
-
-    <AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} ahora={reloj.ahora} />
 
     <FiltroEtiquetas />
 
     {#if delFiltro.length}
       <MapaProteccion equipos={delFiltro} todos={actual.equipos} {informes} cliente={c} ahora={reloj.ahora} alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
+    {/if}
 
+    <Pendientes bind:filas={enEspera} />
+
+    <AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} ahora={reloj.ahora} />
+
+    {#if delFiltro.length}
       <section>
         <div class="section-head">
           <h2>Equipos <span class="count">· {delFiltro.length}</span></h2>
@@ -355,6 +379,12 @@
 {/if}
 
 <style>
+  .linea-espera {
+    align-items: center;
+  }
+  .linea-espera :global(svg) {
+    margin-top: 0;
+  }
   .acciones-eq {
     display: inline-flex;
     flex-wrap: wrap;

@@ -51,6 +51,13 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-orden-paginas`
+
+- **Pedido:** en Estado, que las órdenes en espera no partan lo de las copias (resumen, regla 3-2-1-1-0, mapa) y vayan después, con una línea de aviso arriba que lleve a ellas. En la página de una copia: la tira de la regla justo debajo de las cifras, «Historial y versiones» más arriba, «Datos nuevos por versión» más abajo y con cabecera de sección como las demás.
+- **Cambios:** solo orden y cabeceras, sin tocar lógica. `routes/(app)/c/[c]/+page.svelte`: cifras → línea «N órdenes esperando su turno · la próxima se aplica en … · Ver» (`#t-pend`, solo si hay) → Primeros pasos → regla → filtro de etiquetas → mapa → órdenes en espera → «Equipos que no están en todas las consolas» → Equipos… `Pendientes.svelte`: prop `filas` enlazable para que Estado sepa cuántas hay sin pedirlas dos veces. Página de la copia: cifras → regla → «Historial y versiones» → «Qué copia» / «Cuándo y dónde» → errores → «Datos nuevos por versión» (`h2.section-title` con icono; la primera gráfica pasa a llamarse «Datos añadidos» para no repetir el título); el índice de la página, en el mismo orden. `docs/diseno.md` §5, al día.
+- **Comprobado:** consola `check`, `build`, `test:vectores` (con la comprobación estática de `$effect`) y `test:sin-referencias` en la raíz. `dev:mock` a 1280 y 375, claro y oscuro, capturas antes y después en `tmp/capturas/orden-paginas/`; el enlace «Ver» lleva a la lista (la cabecera queda a 64 px, bajo la barra).
+- **Sin probar / dudas:** «Equipos que no están en todas las consolas» se movió con las órdenes (iba pegado a ellas y también partía lo de las copias). «Dónde se guarda» y «¿Cuándo se llena?» se dejaron donde estaban (después de Equipos y Repositorios) para no mover más de lo pedido.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/repos-en-la-nube`
 
 Desde `ia/integracion-0725`; se unió otra vez al final (con `ia/destinos-y-regla-ux` y `ia/mapa-zoom` dentro).
