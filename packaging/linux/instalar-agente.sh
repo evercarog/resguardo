@@ -25,9 +25,9 @@ set -eu
 
 REPO="evercarog/resguardo"
 VERSION="${RESGUARDO_VERSION:-latest}"
-# Llave pública de publicación de Resguardo (minisign). PENDIENTE: la genera
+# Llave pública de publicación de Resguardo (minisign, id 228B12225693E83D). La generó
 # el responsable del proyecto fuera de línea (ver SECURITY.md y docs/plataforma.md, §6).
-LLAVE_PUBLICA="${RESGUARDO_LLAVE_PUBLICA:-PENDIENTE}"
+LLAVE_PUBLICA="${RESGUARDO_LLAVE_PUBLICA:-RWQ96JNWIhKLIlDv4gLw6jt7qfJ2nMdzzeUwh7bCMwSF9lfbNvqIre6j}"
 PAQUETE_LOCAL="${RESGUARDO_PAQUETE:-}"
 SERVIDOR="${RESGUARDO_SERVIDOR:-}"
 CODIGO="${RESGUARDO_CODIGO:-}"

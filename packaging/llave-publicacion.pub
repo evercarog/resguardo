@@ -1,21 +1,2 @@
-# ==========================================================================
-#  PENDIENTE-SIN-LLAVE
-#
-#  AÚN NO HAY LLAVE DE PUBLICACIÓN. Este archivo es un MARCADOR DE POSICIÓN.
-#
-#  Mientras no tenga ninguna llave, el agente y el servidor NO ACEPTAN
-#  ninguna actualización, y `npm run build:agente` (y
-#  packaging/linux/construir-paquetes.sh) se NIEGAN a compilar, salvo con
-#  RESGUARDO_SIN_ACTUALIZACIONES=1 (agente sin actualización automática).
-#
-#  Cómo poner la llave de verdad (docs/publicar.md):
-#    1. El responsable del proyecto crea la llave FUERA DE LÍNEA:
-#         minisign -G -p llave-publicacion.pub -s <ruta privada fuera del repositorio>
-#    2. Sustituye TODO este archivo por el llave-publicacion.pub que sale
-#       (dos líneas: «untrusted comment: …» y la llave en base64). Puede
-#       llevar varias llaves seguidas (la actual y la siguiente, para rotar).
-#    3. Commit, y desde ahí cada versión lleva esa llave fijada.
-#
-#  NUNCA pongas aquí la llave privada ni ninguna de las llaves de pruebas
-#  (crates/protocolo/tests/fixtures).
-# ==========================================================================
+untrusted comment: minisign public key 228B12225693E83D
+RWQ96JNWIhKLIlDv4gLw6jt7qfJ2nMdzzeUwh7bCMwSF9lfbNvqIre6j
