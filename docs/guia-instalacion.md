@@ -175,6 +175,29 @@ Para muchos equipos, sin ventanas: `Resguardo-Agente-setup.exe /S /CODE=ABCD-EFG
 
 El número lo calculan por separado la consola y el equipo. Con agentes 0.7.7 o posteriores incluye la **huella del certificado del servidor**: si coincide, el equipo habla con tu consola y nadie se ha puesto en medio. Con un agente antiguo, la consola avisa y enseña la huella para compararla también a mano. Si algo no coincide, **No coincide** y revisa la red antes de seguir.
 
+### 5.5 Instalar muchos equipos
+
+Para 10, 30 o 100 equipos a la vez: **Añadir equipo → Instalar muchos equipos**.
+
+1. **Crear el código**: cuántos equipos (10 por defecto, hasta 100), cuántos días (7, hasta 30) y un nombre opcional («Oficina de la planta 2»). El código lo crea tu navegador y se queda en él; el servidor solo guarda su huella. Ábrelo desde el mismo navegador para ver las líneas (o escríbelo si lo tienes).
+2. **Windows**: en cada equipo, **PowerShell como administrador** y pega la línea. Baja el instalador de **este** servidor, comprueba su huella SHA-256 (va escrita en la línea: si no coincide, no instala nada), lo instala sin ventanas y escribe el número de comprobación al terminar:
+
+   ```text
+   Consola: https://192.168.1.20:8443
+   Número de comprobación: 123 456
+   ```
+
+   Para una herramienta de despliegue (GPO, Intune, PDQ…), **Para una herramienta de despliegue** da la misma línea codificada: `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand …`, como administrador o como SYSTEM. El instalador lo da el servidor (viene con Resguardo Server para Windows; en Linux, `poner-instalador-agente`).
+3. **Linux**: instala el agente ([agente-linux.md](agente-linux.md)) y pega la línea como root (`sudo resguardo-agente vincular … --huella-ca …`). Empieza por un espacio: en Debian y Ubuntu, bash no la guarda en el historial.
+4. En la consola, **Equipos esperando confirmación** enseña cada equipo con su nombre, su IP y su número en grande. Compara el número con el de la pantalla de cada equipo y **marca solo los que coinciden**. Después, **Confirmar** uno o **Confirmar los seleccionados** (la clave de administración, una vez para todos; tarda unos segundos por equipo). Uno que no reconoces: **Rechazar** (se quita; su uso no se devuelve). Si el número del servidor no coincide con el que calcula tu navegador, la consola no deja confirmarlo.
+5. Al terminar, **Anular el código**. Los que ya se unieron siguen esperando hasta que los confirmes o rechaces.
+
+**El código es una llave temporal.** Va en la línea, así que queda en el historial de PowerShell y en los registros de la herramienta de despliegue. Con él, un equipo solo puede **pedir** entrar: nada se da de alta sin que compares su número y lo confirmes con la clave. Aun así, anúlalo cuando termines y no lo pegues en sitios públicos. Cada uso, el intento de usarlo anulado o agotado, crear y anular quedan en **Actividad**.
+
+> **Si algo falla**
+> - «El instalador descargado no es el esperado»: el instalador del servidor cambió (se actualizó) después de copiar la línea. Vuelve a copiarla.
+> - «No se pudo vincular (salida 2)»: el equipo no llega al servidor, o el código se anuló, se agotó o caducó. Mira cuántos quedan en la consola.
+
 > **Si algo falla**
 > - «No se pudo vincular con los datos de este instalador»: el equipo no llega al servidor (abre la dirección en su navegador), o el código caducó o ya se usó. Escribe un código nuevo en la misma pantalla del instalador.
 > - «El código no es válido o ha caducado» (Linux): pide uno nuevo.

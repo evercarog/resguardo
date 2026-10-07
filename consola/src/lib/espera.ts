@@ -5,6 +5,7 @@
 // (`en_espera`) y se cancelan con la orden `cancelar_espera` (inofensiva, sin clave).
 // Aquí se juntan en una sola lista, sin repetir y sin la dirección de ninguna consola.
 import type * as T from "./tipos";
+import { mensajeOrden } from "./textosEquipo";
 
 export interface FilaEspera {
   id: string;
@@ -116,8 +117,9 @@ export const RESULTADO_ORDEN: Record<string, { texto: string; tono: "ok" | "warn
  * aplicó, sigue en camino o se canceló. Nunca desaparece sin decir nada: «Caducó sin
  * aplicarse» o «Rechazada: …» con el motivo.
  */
-export function porQueNoSeAplico(o: Pick<T.Orden, "estado" | "mensaje" | "detalle" | "motivo">): string | null {
-  const m = (o.mensaje ?? "").trim();
+export function porQueNoSeAplico(o: Pick<T.Orden, "estado" | "mensaje" | "detalle" | "motivo"> & { tipo?: string }): string | null {
+  // Sin «[ruta]» a la vista (el equipo quita las rutas de lo que manda).
+  const m = mensajeOrden(o.tipo, (o.mensaje ?? "").trim());
   switch (o.estado) {
     case "caducada":
       return o.motivo === "sin_respuesta"

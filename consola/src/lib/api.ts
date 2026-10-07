@@ -9,6 +9,7 @@
 import type * as T from "./tipos";
 import type { CodigoAbierto } from "./emparejar";
 import type { DatosComunesCliente, EntradaOrden } from "./datosComunes";
+import type { Lote, LoteDetalle } from "./despliegue";
 import { mensajePausa, pausaTras } from "./pausa429";
 import { conexionOk, conexionPerdida, empezar } from "./actividad.svelte";
 
@@ -289,6 +290,14 @@ export const aMedias = (c: string) =>
     if (e instanceof ApiError && e.estado === 404) return [] as T.AMedias[];
     throw e;
   });
+// Bloque 7: códigos de alta para varios equipos (el navegador genera el código y solo manda su hash).
+export const crearCodigoVarios = (c: string, b: { codigo_hash: string; usos: number; dias: number; nombre?: string | null }) =>
+  pedir<Lote>("POST", `${cli(c)}/codigos-varios`, b);
+export const codigosVarios = (c: string) => pedir<Lote[]>("GET", `${cli(c)}/codigos-varios`, undefined, { invisible: true });
+export const codigoVarios = (c: string, l: string) => pedir<LoteDetalle>("GET", `${cli(c)}/codigos-varios/${enc(l)}`, undefined, { invisible: true });
+export const anularCodigoVarios = (c: string, l: string) => pedir<void>("DELETE", `${cli(c)}/codigos-varios/${enc(l)}`);
+/** Bloque 7: el SHA-256 del instalador genérico que sirve este servidor (para la línea de PowerShell). */
+export const huellaInstalador = (c: string) => pedir<{ sha256: string; bytes: number }>("GET", `${cli(c)}/instalador-agente/huella`, undefined, { invisible: true });
 /** v1.42: el código de 15 min de esta cuenta que aún sirve (o `null`); con un servidor anterior, 404. */
 /** v1.48: con `navegador`, también uno generado en un navegador (sin el código, con `codigo_hash`). */
 export const codigoAbierto = (c: string, navegador = false) =>

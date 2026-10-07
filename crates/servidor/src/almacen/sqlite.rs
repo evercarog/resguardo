@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS clientes (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS pertenencias (cuenta_id TEXT NOT NULL, cliente_id TEXT NOT NULL, rol TEXT NOT NULL, PRIMARY KEY (cuenta_id, cliente_id));
 CREATE TABLE IF NOT EXISTS invitaciones (token_hash TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, rol TEXT NOT NULL, caduca INTEGER NOT NULL, creada_por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codigos (codigo_hash TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, emparejamiento_id TEXT NOT NULL, caduca INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS codigos_varios (codigo_hash TEXT PRIMARY KEY, lote_id TEXT NOT NULL UNIQUE, cliente_id TEXT NOT NULL, caduca INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS indice_equipos (equipo_id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS fichas (hash TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, usos INTEGER NOT NULL, caduca INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS notif_eventos (n INTEGER PRIMARY KEY, creado INTEGER NOT NULL, datos TEXT NOT NULL);
@@ -166,6 +167,9 @@ CREATE TABLE IF NOT EXISTS equipos (
   secreto_hash TEXT NOT NULL, ultimo_contacto INTEGER, estado_servicio TEXT, siguiente_seq INTEGER NOT NULL DEFAULT 1,
   atencion_hasta INTEGER, creado INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS emparejamientos (id TEXT PRIMARY KEY, estado TEXT NOT NULL, caduca INTEGER NOT NULL, creado_por TEXT NOT NULL, equipo_id TEXT, creado INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS lotes (
+  id TEXT PRIMARY KEY, codigo_hash TEXT NOT NULL, nombre TEXT, usos INTEGER NOT NULL, usados INTEGER NOT NULL DEFAULT 0,
+  caduca INTEGER NOT NULL, creado INTEGER NOT NULL, creado_por TEXT NOT NULL, anulado INTEGER, rechazos INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS configs (equipo_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, cifrado TEXT NOT NULL, resumen TEXT NOT NULL, actualizada INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS informes (id INTEGER PRIMARY KEY, equipo_id TEXT NOT NULL, recibido INTEGER NOT NULL, datos TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS informes_equipo ON informes (equipo_id, recibido);
@@ -224,6 +228,12 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     if !tiene("emparejamientos", "sas_version")? {
         db.execute_batch("ALTER TABLE emparejamientos ADD COLUMN sas_version INTEGER").map_err(s)?;
     }
+    // Bloque 7: el código para varios equipos con el que se unió y desde qué IP.
+    for col in ["lote", "ip"] {
+        if !tiene("emparejamientos", col)? {
+            db.execute_batch(&format!("ALTER TABLE emparejamientos ADD COLUMN {col} TEXT")).map_err(s)?;
+        }
+    }
     // Tarea 8: lo que dice la persona de cada destino para la regla 3-2-1-1-0 (JSON).
     if !tiene("destinos", "atributos")? {
         db.execute_batch("ALTER TABLE destinos ADD COLUMN atributos TEXT").map_err(s)?;
@@ -241,7 +251,7 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     Ok(())
 }
 
-const COLS_EMP: &str = "id, estado, caduca, equipo_id, nombre, so, codigo, creado, sas_version";
+const COLS_EMP: &str = "id, estado, caduca, equipo_id, nombre, so, codigo, creado, sas_version, lote, ip";
 
 fn fila_emparejamiento(r: &rusqlite::Row<'_>) -> rusqlite::Result<Emparejamiento> {
     Ok(Emparejamiento {
@@ -254,6 +264,25 @@ fn fila_emparejamiento(r: &rusqlite::Row<'_>) -> rusqlite::Result<Emparejamiento
         codigo: r.get(6)?,
         creado: r.get(7)?,
         sas_version: r.get(8)?,
+        lote: r.get(9)?,
+        ip: r.get(10)?,
+    })
+}
+
+const COLS_LOTE: &str = "id, codigo_hash, nombre, usos, usados, caduca, creado, creado_por, anulado, rechazos";
+
+fn fila_lote(r: &rusqlite::Row<'_>) -> rusqlite::Result<Lote> {
+    Ok(Lote {
+        id: r.get(0)?,
+        codigo_hash: r.get(1)?,
+        nombre: r.get(2)?,
+        usos: r.get(3)?,
+        usados: r.get(4)?,
+        caduca: r.get(5)?,
+        creado: r.get(6)?,
+        creado_por: r.get(7)?,
+        anulado: r.get(8)?,
+        rechazos: r.get(9)?,
     })
 }
 
@@ -705,7 +734,40 @@ impl Almacen for Sqlite {
         Ok(fila)
     }
     fn codigo_indexado(&self, codigo_hash: &str) -> R<bool> {
-        self.ctl().query_row("SELECT 1 FROM codigos WHERE codigo_hash = ?1", [codigo_hash], |_| Ok(())).optional().map_err(s).map(|x| x.is_some())
+        // Bloque 7: tampoco puede pisar un código para varios equipos (ni al revés).
+        self.ctl()
+            .query_row(
+                "SELECT 1 FROM codigos WHERE codigo_hash = ?1 UNION ALL SELECT 1 FROM codigos_varios WHERE codigo_hash = ?1 LIMIT 1",
+                [codigo_hash],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(s)
+            .map(|x| x.is_some())
+    }
+    fn indexar_codigo_varios(&self, codigo_hash: &str, cliente: &str, lote: &str, caduca: Ts) -> R<()> {
+        self.ctl()
+            .execute(
+                "INSERT INTO codigos_varios (codigo_hash, lote_id, cliente_id, caduca) VALUES (?1, ?2, ?3, ?4)",
+                params![codigo_hash, lote, cliente, caduca],
+            )
+            .map_err(s)?;
+        Ok(())
+    }
+    fn codigo_varios(&self, codigo_hash: &str) -> R<Option<(String, String)>> {
+        let fila: Option<(String, String, String)> = self
+            .ctl()
+            .query_row("SELECT codigo_hash, cliente_id, lote_id FROM codigos_varios WHERE codigo_hash = ?1", [codigo_hash], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .optional()
+            .map_err(s)?;
+        // La búsqueda va por el hash (un SHA-256 de un código de ≈ 79 bits: lo que tarde no dice
+        // nada del código); además se vuelve a comparar entero en tiempo constante.
+        Ok(fila.filter(|(h, _, _)| bool::from(subtle::ConstantTimeEq::ct_eq(h.as_bytes(), codigo_hash.as_bytes()))).map(|(_, c, l)| (c, l)))
+    }
+    fn cliente_de_lote(&self, lote: &str) -> R<Option<String>> {
+        self.ctl().query_row("SELECT cliente_id FROM codigos_varios WHERE lote_id = ?1", [lote], |r| r.get(0)).optional().map_err(s)
     }
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()> {
         self.ctl().execute("INSERT INTO indice_equipos (equipo_id, cliente_id) VALUES (?1, ?2)", [equipo, cliente]).map_err(s)?;
@@ -772,7 +834,7 @@ impl Almacen for Sqlite {
         self.con(c, |db| {
             let mut st = db
                 .prepare(&format!(
-                    "SELECT {COLS_EMP} FROM emparejamientos WHERE creado_por = ?1 AND codigo IS NOT NULL AND estado IN ('abierto', 'unido') AND caduca > ?2 ORDER BY creado DESC"
+                    "SELECT {COLS_EMP} FROM emparejamientos WHERE creado_por = ?1 AND codigo IS NOT NULL AND lote IS NULL AND estado IN ('abierto', 'unido') AND caduca > ?2 ORDER BY creado DESC"
                 ))
                 .map_err(s)?;
             let filas = st.query_map(params![por, ahora], fila_emparejamiento).map_err(s)?;
@@ -811,6 +873,64 @@ impl Almacen for Sqlite {
         self.con(c, |db| {
             db.execute("UPDATE emparejamientos SET sas_version = ?2 WHERE id = ?1", params![id, version]).map_err(s)?;
             Ok(())
+        })
+    }
+    fn crear_lote(&self, c: &ClienteCtx, l: &Lote) -> R<()> {
+        self.con(c, |db| {
+            db.execute(
+                "INSERT INTO lotes (id, codigo_hash, nombre, usos, usados, caduca, creado, creado_por, anulado, rechazos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![l.id, l.codigo_hash, l.nombre, l.usos, l.usados, l.caduca, l.creado, l.creado_por, l.anulado, l.rechazos],
+            )
+            .map_err(s)?;
+            Ok(())
+        })
+    }
+    fn lote(&self, c: &ClienteCtx, id: &str) -> R<Option<Lote>> {
+        self.con(c, |db| db.query_row(&format!("SELECT {COLS_LOTE} FROM lotes WHERE id = ?1"), [id], fila_lote).optional().map_err(s))
+    }
+    fn lotes(&self, c: &ClienteCtx) -> R<Vec<Lote>> {
+        self.con(c, |db| {
+            let mut st = db.prepare(&format!("SELECT {COLS_LOTE} FROM lotes ORDER BY creado DESC, id LIMIT 50")).map_err(s)?;
+            let filas = st.query_map([], fila_lote).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
+    fn usar_lote(&self, c: &ClienteCtx, id: &str, ahora: Ts) -> R<bool> {
+        self.con(c, |db| {
+            // Una sola sentencia: dos equipos a la vez no pueden gastar el último uso los dos.
+            let n = db
+                .execute("UPDATE lotes SET usados = usados + 1 WHERE id = ?1 AND anulado IS NULL AND caduca > ?2 AND usados < usos", params![id, ahora])
+                .map_err(s)?;
+            Ok(n == 1)
+        })
+    }
+    fn rechazo_lote(&self, c: &ClienteCtx, id: &str) -> R<()> {
+        self.con(c, |db| {
+            db.execute("UPDATE lotes SET rechazos = rechazos + 1 WHERE id = ?1", [id]).map_err(s)?;
+            Ok(())
+        })
+    }
+    fn anular_lote(&self, c: &ClienteCtx, id: &str, ahora: Ts) -> R<bool> {
+        self.con(c, |db| {
+            let n = db.execute("UPDATE lotes SET anulado = ?2 WHERE id = ?1 AND anulado IS NULL", params![id, ahora]).map_err(s)?;
+            Ok(n == 1)
+        })
+    }
+    fn emparejamiento_de_lote(&self, c: &ClienteCtx, id: &str, lote: &str, por: &str, caduca: Ts, codigo: &str, equipo: &str, ip: Option<&str>) -> R<()> {
+        self.con(c, |db| {
+            db.execute(
+                "INSERT INTO emparejamientos (id, estado, caduca, creado_por, equipo_id, creado, codigo, lote, ip) VALUES (?1, 'unido', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![id, caduca, por, equipo, ahora(), codigo, lote, ip],
+            )
+            .map_err(s)?;
+            Ok(())
+        })
+    }
+    fn emparejamientos_de_lote(&self, c: &ClienteCtx, lote: &str) -> R<Vec<Emparejamiento>> {
+        self.con(c, |db| {
+            let mut st = db.prepare(&format!("SELECT {COLS_EMP} FROM emparejamientos WHERE lote = ?1 ORDER BY creado DESC, id")).map_err(s)?;
+            let filas = st.query_map([lote], fila_emparejamiento).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
         })
     }
     fn poner_estado_emparejamiento(&self, c: &ClienteCtx, id: &str, estado: &str, equipo: Option<&str>) -> R<()> {
@@ -1820,6 +1940,7 @@ impl Almacen for Sqlite {
         let c = self.ctl();
         c.execute("DELETE FROM sesiones WHERE expira <= ?1", [ahora]).map_err(s)?;
         c.execute("DELETE FROM codigos WHERE caduca <= ?1", [ahora]).map_err(s)?;
+        c.execute("DELETE FROM codigos_varios WHERE caduca <= ?1", [ahora]).map_err(s)?;
         c.execute("DELETE FROM invitaciones WHERE caduca <= ?1", [ahora]).map_err(s)?;
         Ok(())
     }

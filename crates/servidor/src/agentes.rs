@@ -3,6 +3,7 @@
 //! avisos, mensajes de sesión y subida al relé.
 
 use crate::almacen::{ahora, ClienteCtx, EquipoNuevo};
+use crate::api::lotes::Union;
 use crate::api::orden_agente;
 use crate::auth;
 use crate::error::{ErrorApi, Res};
@@ -33,6 +34,8 @@ pub fn router() -> Router<St> {
     Router::new()
         .route("/api/agente/unirse", post(unirse))
         .route("/api/agente/recibir", post(recibir))
+        // Bloque 7: el instalador genérico para la línea de PowerShell (solo con un lote activo).
+        .route("/api/agente/instalador/{lote}", get(crate::api::lotes::instalador_publico))
         .route("/api/agente/canal", get(canal))
         .route("/api/agente/tomar", post(tomar))
         .route("/api/agente/resultado", post(resultado_http))
@@ -135,9 +138,19 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
     let e2 = equipo.clone();
     let (sas_version, sas) = sas_de(&st, p.sas_version, &equipo.box_pub, &equipo.sign_pub);
     let publico = st.opciones.publico;
+    let ip_vista = ip.as_ref().and_then(|Extension(IpCliente(i))| *i).map(crate::api::lotes::ip_legible);
+    let st2 = st.clone();
     let cliente = st
         .db(move |db| {
-            let Some((cliente, emp)) = db.tomar_codigo(&codigo_hash)? else { return Ok(None) };
+            let Some((cliente, emp)) = db.tomar_codigo(&codigo_hash)? else {
+                // Bloque 7: ¿es un código para varios equipos? Cada uso, su propio emparejamiento.
+                return Ok(match crate::api::lotes::unirse_con_lote(&st2, db, &codigo_hash, &e2, sas_version, ip_vista.as_deref())? {
+                    Union::NoEsLote | Union::Rechazado => None,
+                    Union::Demasiados => Some(Err(None)),
+                    Union::Cuota(m) => Some(Err(Some(m))),
+                    Union::Unido(c) => Some(Ok(c)),
+                });
+            };
             let ctx = ClienteCtx::autorizado(&cliente);
             let Some(e) = db.emparejamiento(&ctx, &emp)? else { return Ok(None) };
             if e.estado != "abierto" || e.caduca <= ahora() {
@@ -145,7 +158,7 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
             }
             // v1.34: la cuota de equipos del cliente (la consola ya no da códigos si está llena).
             if let Err(m) = crate::cuotas::cabe_otro_equipo(db, publico, &cliente, db.equipos(&ctx)?.len())? {
-                return Ok(Some(Err(m)));
+                return Ok(Some(Err(Some(m))));
             }
             // Preparado (v1.17): el equipo entra con el nombre que se le dio en la consola.
             let mut e2 = e2;
@@ -161,7 +174,10 @@ async fn unirse(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p):
         })
         .await?;
     let cliente = cliente.ok_or_else(|| fallo(ErrorApi::nuevo(StatusCode::NOT_FOUND, "codigo", "Código no válido o caducado.").acceso("codigo_equipo")))?;
-    let cliente = cliente.map_err(error_cuota)?;
+    let cliente = cliente.map_err(|m| match m {
+        Some(m) => error_cuota(m),
+        None => ErrorApi::demasiados(),
+    })?;
     st.vivo.avisar(&cliente, Cambio::Equipo(&equipo.id));
     Ok(Json(json!({
         "equipo_id": equipo.id,
