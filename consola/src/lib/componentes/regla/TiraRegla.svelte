@@ -12,8 +12,10 @@
   import { tip } from "$lib/tooltip";
   import Ayuda from "../Ayuda.svelte";
   import { relativo } from "$lib/formato";
-  import { cifraParte, estadoParte, fraseRegla, globoParte, lineaFalta, pasoAlDia, PARTES, queHacer, TEXTO_AVISO, TEXTO_INMUTABLE, TEXTO_LUGAR, type PasoVista, type ReglaCopia } from "$lib/regla321";
+  import { cifraParte, estadoParte, fraseRegla, globoParte, lineaFalta, pasoAlDia, PARTES, queHacer, TEXTO_AVISO, type PasoVista, type ReglaCopia } from "$lib/regla321";
   import { guardar, leer } from "$lib/recordar";
+  import { corta, estadoConexion } from "$lib/tipoDestino";
+  import TipoDestino from "../TipoDestino.svelte";
 
   let {
     rc,
@@ -105,7 +107,7 @@
             {@const href = enlaceDestino?.(p)}
             <li class="paso">
               {#if href}<a class="p-nombre link-suave" {href}>{p.nombre}</a>{:else}<span class="p-nombre">{p.nombre}</span>{/if}
-              <span class="faint">{TEXTO_LUGAR[p.lugar]} · {TEXTO_INMUTABLE[p.inmutable].replace(/ \(.*\)$/, "")}{#if p.marcado}{" "}<span class="badge badge-sm tone-neutral" use:tip={"Lo marcó una persona en el destino (no se deduce del tipo)."}>Marcado</span>{/if}{#if p.sistemaArchivos}{" · "}<span class="pastilla mono">{p.sistemaArchivos}</span>{/if}</span>
+              <span class="faint p-tipo"><TipoDestino {...corta(p.clasificacion)} />{#if p.clasificacion.tipoPorPersona || p.clasificacion.marcasPorPersona}<span class="badge badge-sm tone-neutral" use:tip={"Lo marcó una persona en el destino (no se deduce)."}>Marcado por una persona</span>{/if}{#if p.clasificacion.aislado}{@const cx = estadoConexion(p.conexion, p.clasificacion.aisladoDias, ahora)}<span class:tarde={cx.tarde}>{cx.texto}</span>{/if}{#if p.sistemaArchivos}<span class="pastilla mono">{p.sistemaArchivos}</span>{/if}</span>
               <span class="badge badge-sm tone-{al ? 'ok' : 'warn'}">{al ? "Al día" : p.ultima_ok ? `Atrasado · ${relativo(p.ultima_ok, ahora)}` : "No está al día"}</span>
               {#if onmarcar && p.clave}<button class="btn btn-sm btn-ghost" onclick={() => onmarcar(p)}>Cambiar</button>{/if}
             </li>
@@ -284,6 +286,15 @@
   }
   .p-nombre {
     font-weight: 600;
+  }
+  .p-tipo {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+  }
+  .p-tipo .tarde {
+    color: var(--warn);
   }
 
   /* La compacta: una píldora de cinco segmentos iguales, cifra e icono de estado. */

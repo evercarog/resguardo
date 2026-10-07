@@ -839,11 +839,24 @@ const rutas: Ruta[] = [
       let atributos: T.AtributosDestino | null = null;
       if (d.atributos && typeof d.atributos === "object") {
         const a = d.atributos as Record<string, unknown>;
-        if (Object.keys(a).some((k) => !["lugar", "inmutable", "soporte"].includes(k))) throw err(422, "datos", "Destino no válido.");
+        if (Object.keys(a).some((k) => !["lugar", "inmutable", "soporte", "tipo", "aislado", "bloqueo_dias", "aislado_dias"].includes(k))) throw err(422, "datos", "Destino no válido.");
+        // 0.7.26: tipo y marcas.
+        if (a.tipo != null && !["local", "fuera", "nube"].includes(String(a.tipo))) throw err(422, "datos", "Tipo no válido.");
+        if (a.aislado != null && typeof a.aislado !== "boolean") throw err(422, "datos", "Destino no válido.");
+        const dias = (v: unknown, max: number) => v == null || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= max);
+        if (!dias(a.bloqueo_dias, 36500) || !dias(a.aislado_dias, 365)) throw err(422, "datos", "Días no válidos.");
         if (a.lugar != null && !["este_equipo", "oficina", "otra_sede", "nube"].includes(String(a.lugar))) throw err(422, "datos", "Lugar no válido.");
         if (a.inmutable != null && !["solo_anadir", "object_lock", "instantaneas", "desconectado", "no"].includes(String(a.inmutable))) throw err(422, "datos", "Inmutable no válido.");
         const soporte = typeof a.soporte === "string" && a.soporte.trim() ? a.soporte.trim().slice(0, 60) : undefined;
-        const limpio = { ...(a.lugar ? { lugar: a.lugar } : {}), ...(a.inmutable ? { inmutable: a.inmutable } : {}), ...(soporte ? { soporte } : {}) } as T.AtributosDestino;
+        const limpio = {
+          ...(a.lugar ? { lugar: a.lugar } : {}),
+          ...(a.inmutable ? { inmutable: a.inmutable } : {}),
+          ...(soporte ? { soporte } : {}),
+          ...(a.tipo ? { tipo: a.tipo } : {}),
+          ...(a.aislado != null ? { aislado: a.aislado } : {}),
+          ...(a.bloqueo_dias != null ? { bloqueo_dias: a.bloqueo_dias } : {}),
+          ...(a.aislado_dias != null ? { aislado_dias: a.aislado_dias } : {}),
+        } as T.AtributosDestino;
         atributos = Object.keys(limpio).length ? limpio : null;
       }
       const nombre = String(d.nombre ?? "").trim();
@@ -1584,7 +1597,10 @@ function marcaJson(c: string) {
   return { acento: m?.acento ?? null, logo: m?.logo ? `/api/clientes/${c}/marca/logo?v=${m.huella}` : null, actualizada: m?.actualizada ?? null, por: m?.por ?? null };
 }
 /** Tarea 7a: el catálogo de destinos de cada cliente. */
-const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>();
+const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>([
+  // 0.7.26: el «Disco 2» de CAJA-1 son discos USB que se rotan: marcado «Aislado» por una persona.
+  [ID.sur, new Map([["disco-2", { id: "disco-2", nombre: "", tipo: "local", donde: null, atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" }, actualizado: new Date().toISOString(), por: "Ana Restrepo" }]])],
+]);
 /** Plantillas de copia (v1.20) por cliente: solo bytes cifrados por la consola. */
 const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizada: string; por: string }>>();
 /** v1.52: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */

@@ -403,7 +403,7 @@
               {/each}
             </tbody>
           </table></div>
-          <p class="leyenda">3 copias (con los originales) · 2 soportes · 1 fuera de la oficina · 1 inmutable · 0 errores al verificar y probar la restauración. ✓ cumple, ◷ configurada pero no está al día, ✗ falta. Es una guía.</p>
+          <p class="leyenda">3 copias (con los originales) · 2 soportes · 1 fuera del sitio · 1 inmutable o aislado · 0 errores al verificar y probar la restauración. ✓ cumple, ◷ configurada pero no está al día, ✗ falta. Es una guía.</p>
         </section>
       {/if}
 

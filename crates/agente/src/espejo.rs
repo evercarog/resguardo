@@ -270,6 +270,11 @@ impl Espejo {
                 // Tarea 8e: el sistema de archivos de una carpeta (solo un dato).
                 if d.tipo == "carpeta" {
                     v["sistema_archivos"] = crate::espacio::json_fs(&d.carpeta);
+                    // 0.7.26: cuándo se vio conectado su disco (marca «Aislado»; solo un resumen del volumen).
+                    let a = crate::volumenes::resumen(&format!("espejo:{}", crate::volumenes::resumen_id(&d.carpeta)), &d.carpeta);
+                    if !a.is_null() {
+                        v["aislado"] = a;
+                    }
                 }
                 // §3a: su horario (si tiene uno propio), «después de cada copia» y la próxima vuelta por horario.
                 if let Some(h) = &d.horario {

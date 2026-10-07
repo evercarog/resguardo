@@ -1313,6 +1313,595 @@
         "atrasados": [],
         "avisos": []
       }
+    },
+    {
+      "nombre": "tipo_manda_sobre_lugar",
+      "que": "0.7.26: el tipo manda sobre el lugar de antes: un servidor «otra_sede» marcado Local no cuenta fuera; un NAS «oficina» marcado Fuera del sitio, sí.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "sede",
+            "nombre": "Servidor de la sede",
+            "tipo": "copia",
+            "lugar": "otra_sede",
+            "tipo_destino": "local",
+            "inmutable": "no",
+            "soporte": "servidor:sede",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          },
+          {
+            "id": "nas",
+            "nombre": "NAS de la otra sede",
+            "tipo": "externa",
+            "lugar": "oficina",
+            "tipo_destino": "fuera",
+            "inmutable": "solo_anadir",
+            "soporte": "servidor:nas",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": true,
+        "cumple_config": true,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "aislado_rotado",
+      "que": "0.7.26: discos USB aislados (se rotan): cuentan en el otro «1» y están al día con sus 30 días aunque la copia sea diaria; son locales.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "usb",
+            "nombre": "Discos USB rotados",
+            "tipo": "copia",
+            "lugar": "este_equipo",
+            "inmutable": "no",
+            "aislado": true,
+            "soporte": "equipo:e-recepcion:usb:E:",
+            "equipo": "e-recepcion",
+            "cada_horas": 24,
+            "ultima_ok": "2026-09-12T20:00:00-05:00",
+            "conectado": "2026-09-12T20:00:00-05:00"
+          },
+          {
+            "id": "b2",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "no",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": true,
+        "cumple_config": true,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "mismo_equipo",
+          "inmutable_local"
+        ]
+      }
+    },
+    {
+      "nombre": "aislado_sin_conectar",
+      "que": "0.7.26: el medio aislado lleva 42 días sin conectarse (más de 30): no está al día y avisa.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "usb",
+            "nombre": "Discos USB rotados",
+            "tipo": "copia",
+            "lugar": "este_equipo",
+            "inmutable": "no",
+            "aislado": true,
+            "soporte": "equipo:e-recepcion:usb:E:",
+            "equipo": "e-recepcion",
+            "cada_horas": 24,
+            "ultima_ok": "2026-08-20T20:00:00-05:00",
+            "conectado": "2026-08-20T20:00:00-05:00"
+          },
+          {
+            "id": "b2",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "no",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [
+          "usb"
+        ],
+        "avisos": [
+          "mismo_equipo",
+          "inmutable_local",
+          "aislado_sin_conectar"
+        ]
+      }
+    },
+    {
+      "nombre": "aislado_dias_propios",
+      "que": "0.7.26: con 7 días propios, 10 días sin conectarse ya avisan.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "usb",
+            "nombre": "Discos USB rotados",
+            "tipo": "copia",
+            "lugar": "este_equipo",
+            "inmutable": "no",
+            "aislado": true,
+            "soporte": "equipo:e-recepcion:usb:E:",
+            "equipo": "e-recepcion",
+            "cada_horas": 24,
+            "ultima_ok": "2026-09-21T20:00:00-05:00",
+            "conectado": "2026-09-21T20:00:00-05:00",
+            "aislado_dias": 7
+          },
+          {
+            "id": "b2",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "no",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": true,
+        "dejo_de_cumplir": true,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 1,
+            "cumple": false,
+            "cumple_config": true,
+            "accion": "poner_al_dia"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [
+          "usb"
+        ],
+        "avisos": [
+          "mismo_equipo",
+          "inmutable_local",
+          "aislado_sin_conectar"
+        ]
+      }
+    },
+    {
+      "nombre": "aislado_sin_datos",
+      "que": "0.7.26: un agente anterior no dice cuándo se conectó: no avisa (sin datos no es un fallo).",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "usb",
+            "nombre": "Discos USB rotados",
+            "tipo": "copia",
+            "lugar": "este_equipo",
+            "inmutable": "no",
+            "aislado": true,
+            "soporte": "equipo:e-recepcion:usb:E:",
+            "equipo": "e-recepcion",
+            "cada_horas": 24,
+            "ultima_ok": "2026-09-25T20:00:00-05:00"
+          },
+          {
+            "id": "b2",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "no",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": true,
+        "cumple_config": true,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "mismo_equipo",
+          "inmutable_local"
+        ]
+      }
+    },
+    {
+      "nombre": "inmutable_y_aislado",
+      "que": "0.7.26: un destino con las dos marcas cuenta una vez en el otro «1»; en la Nube con bloqueo no hay aviso de local.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "b2",
+            "nombre": "Backblaze B2",
+            "tipo": "externa",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias-sur",
+            "ultima_ok": "2026-10-01T02:00:00-05:00",
+            "cada_horas": 24,
+            "aislado": true,
+            "conectado": "2026-09-30T20:00:00-05:00",
+            "tipo_destino": "nube"
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
     }
   ]
 }

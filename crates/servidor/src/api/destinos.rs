@@ -75,7 +75,11 @@ pub const LUGARES: [&str; 4] = ["este_equipo", "oficina", "otra_sede", "nube"];
 /// Tarea 8: si es inmutable (o está fuera del alcance de los equipos).
 pub const INMUTABLES: [&str; 5] = ["solo_anadir", "object_lock", "instantaneas", "desconectado", "no"];
 
+/// 0.7.26 (bloque 2): el tipo de un destino.
+pub const TIPOS_DESTINO: [&str; 3] = ["local", "fuera", "nube"];
+
 /// Tarea 8: lo que dice la persona de un destino para la regla 3-2-1-1-0. Solo estos campos.
+/// 0.7.26: también `tipo`, `aislado`, `bloqueo_dias` y `aislado_dias` (opcionales).
 #[derive(Deserialize, Serialize, Default, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Atributos {
@@ -86,6 +90,18 @@ pub struct Atributos {
     /// Un nombre para el soporte («USB rotado»): dos destinos con el mismo cuentan una vez.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     soporte: Option<String>,
+    /// 0.7.26: `local`, `fuera` o `nube`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tipo: Option<String>,
+    /// 0.7.26: marca «Aislado» (un medio que se desconecta y se rota).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aislado: Option<bool>,
+    /// 0.7.26: días del bloqueo de objetos (1 a 36 500).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bloqueo_dias: Option<u32>,
+    /// 0.7.26: días sin conectarse tras los que avisa un medio aislado (1 a 365).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aislado_dias: Option<u32>,
 }
 
 /// Los atributos, validados, en JSON (`None` si no dicen nada).
@@ -95,6 +111,15 @@ pub fn atributos_validos(a: Atributos) -> Result<Option<String>, &'static str> {
     }
     if a.inmutable.as_deref().is_some_and(|i| !INMUTABLES.contains(&i)) {
         return Err("Inmutable no válido: solo_anadir, object_lock, instantaneas, desconectado o no.");
+    }
+    if a.tipo.as_deref().is_some_and(|t| !TIPOS_DESTINO.contains(&t)) {
+        return Err("Tipo no válido: local, fuera o nube.");
+    }
+    if a.bloqueo_dias.is_some_and(|d| !(1..=36_500).contains(&d)) {
+        return Err("Días de bloqueo: de 1 a 36 500.");
+    }
+    if a.aislado_dias.is_some_and(|d| !(1..=365).contains(&d)) {
+        return Err("Días sin conectarse: de 1 a 365.");
     }
     let soporte = a.soporte.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     if soporte.as_deref().is_some_and(|s| s.chars().count() > 60 || s.chars().any(char::is_control)) {
@@ -252,5 +277,20 @@ mod tests {
         assert!(atributos_validos(a(json!({ "inmutable": "si" })).unwrap()).is_err());
         assert!(atributos_validos(a(json!({ "soporte": "x".repeat(61) })).unwrap()).is_err());
         assert!(a(json!({ "lugar": "nube", "clave": "K001" })).is_err(), "nada de campos de más");
+        // 0.7.26: tipo y marcas.
+        assert_eq!(
+            atributos_validos(a(json!({ "tipo": "fuera", "lugar": "otra_sede", "inmutable": "desconectado", "aislado": true, "aislado_dias": 14 })).unwrap())
+                .unwrap()
+                .as_deref(),
+            Some(r#"{"lugar":"otra_sede","inmutable":"desconectado","tipo":"fuera","aislado":true,"aislado_dias":14}"#)
+        );
+        assert_eq!(
+            atributos_validos(a(json!({ "inmutable": "object_lock", "bloqueo_dias": 30 })).unwrap()).unwrap().as_deref(),
+            Some(r#"{"inmutable":"object_lock","bloqueo_dias":30}"#)
+        );
+        assert!(atributos_validos(a(json!({ "tipo": "luna" })).unwrap()).is_err());
+        assert!(atributos_validos(a(json!({ "bloqueo_dias": 0 })).unwrap()).is_err());
+        assert!(atributos_validos(a(json!({ "aislado_dias": 366 })).unwrap()).is_err());
+        assert!(a(json!({ "aislado": "si" })).is_err());
     }
 }

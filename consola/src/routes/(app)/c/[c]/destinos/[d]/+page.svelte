@@ -20,7 +20,9 @@
   import { nombreTipoNube } from "$lib/espejo";
   import { destinoQuitable } from "$lib/datosEquipo";
   import { actividadDestino, reposEnDestino, usarEnCopia, usosDeDestino, vistaPorClave } from "$lib/fichaDestino";
-  import { marcarDesdeVista, TEXTO_INMUTABLE, TEXTO_LUGAR, textoEntorno, type MarcarDestino } from "$lib/regla321";
+  import { marcarDesdeVista, textoEntorno, type MarcarDestino } from "$lib/regla321";
+  import { clasificar, estadoConexion, TEXTO_COMO_INMUTABLE, TEXTO_TIPO as TIPO_DESTINO } from "$lib/tipoDestino";
+  import TipoDestino from "$lib/componentes/TipoDestino.svelte";
   import type { DestinoResumen, Equipo } from "$lib/tipos";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
@@ -65,6 +67,12 @@
   const marca = $derived<MarcarDestino | null>(v ? marcarDesdeVista(v, actual.equipos) : null);
   const atrib = $derived(v?.catalogo?.atributos ?? null);
   const entorno = $derived(marca?.equipo ? textoEntorno(marca.equipo) : null);
+  // 0.7.26: tipo y marcas (lo deducido con lo que marcó una persona encima).
+  const clase = $derived(marca ? clasificar(marca.porDefecto, atrib) : null);
+  const conexion = $derived(clase?.aislado ? estadoConexion(marca?.conexion, clase.aisladoDias, reloj.ahora) : null);
+  const deducida = $derived(marca ? clasificar(marca.porDefecto, null) : null);
+  /** Quién dijo cada cosa: lo que se aparta de lo deducido lo marcó una persona. */
+  const quien = (porPersona: boolean) => (porPersona ? "marcado por una persona" : "deducido");
   const d = $derived<DestinoResumen | undefined>(v?.destino);
   // El espacio libre: el de la zona o el que dio el espejo de esa nube.
   const espacio = $derived.by(() => {
@@ -119,7 +127,7 @@
       {#snippet acciones()}
         {#if posibles.length}<a class="btn btn-primary" href="#usar"><Plus size={16} />Usar en una copia</a>{/if}
         {#if administra}<button class="btn" onclick={() => (renombrar = true)}><Pencil size={15} />Nombre</button>{/if}
-        {#if administra && v.clase !== "suelto"}<button class="btn" onclick={() => (marcar = true)} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={15} />Regla 3-2-1</button>{/if}
+        {#if administra}<button class="btn" onclick={() => (marcar = true)} use:tip={"Local, Fuera del sitio o Nube; Inmutable, Aislado (para la regla 3-2-1-1-0)"}><ShieldCheck size={15} />Tipo y marcas</button>{/if}
         {#if d}<button class="btn btn-ghost" onclick={() => (notas = true)}><StickyNote size={15} />Notas <ContadorNotas tipo="destino" objeto={d.id} /></button>{/if}
       {/snippet}
     </CabeceraPagina>
@@ -164,19 +172,28 @@
         </div>
       </section>
 
-      {#if marca && v.clase !== "suelto"}
+      {#if marca && clase}
         <section class="card p" aria-labelledby="t-regla">
           <div class="cab-sec">
-            <h2 class="section-title" id="t-regla"><ShieldCheck size={16} />Para la regla 3-2-1-1-0 <Ayuda id="regla-321" /></h2>
+            <h2 class="section-title" id="t-regla"><ShieldCheck size={16} />Tipo y marcas <Ayuda id="tipo-destino" /></h2>
             {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = true)}>Cambiar</button>{/if}
           </div>
+          <p class="tipo-linea"><TipoDestino variante="completa" tipo={clase.tipo} inmutable={clase.inmutable} aislado={clase.aislado} bloqueoDias={clase.bloqueoDias} porPersona={clase.tipoPorPersona || clase.marcasPorPersona} /></p>
           <dl class="datos">
-            <dt>Dónde está</dt>
-            <dd>{TEXTO_LUGAR[atrib?.lugar ?? marca.porDefecto.lugar]} <span class="faint">· {atrib?.lugar ? "marcado" : "deducido del tipo"}</span></dd>
+            <dt>Tipo</dt>
+            <dd>{TIPO_DESTINO[clase.tipo]} <span class="faint">· {quien(clase.tipo !== deducida?.tipo)}</span></dd>
             <dt>Inmutable</dt>
-            <dd>{TEXTO_INMUTABLE[atrib?.inmutable ?? marca.porDefecto.inmutable]} <span class="faint">· {atrib?.inmutable ? "marcado" : "deducido del tipo"}</span></dd>
+            <dd>{clase.inmutable ? `${TEXTO_COMO_INMUTABLE[clase.como as "solo_anadir"] ?? "Sí"}${clase.bloqueoDias ? ` · ${clase.bloqueoDias} días` : ""}` : "No"} <span class="faint">· {quien(clase.inmutable !== deducida?.inmutable || clase.como !== deducida?.como || clase.bloqueoDias !== deducida?.bloqueoDias)}</span></dd>
+            <dt>Aislado</dt>
+            <dd>
+              {#if clase.aislado && conexion}
+                <span class:tarde={conexion.tarde}>{#if conexion.tarde}<TriangleAlert size={13} />{/if}{conexion.texto}</span>
+                {#if conexion.discos.length}<ul class="discos">{#each conexion.discos as x (x.id)}<li class:tarde={x.tarde}>{x.texto}</li>{/each}</ul>{/if}
+                <span class="faint">Avisa a los {clase.aisladoDias} días · {quien(clase.aislado !== deducida?.aislado)}.</span>
+              {:else}No <span class="faint">· {quien(clase.aislado !== deducida?.aislado)}</span>{/if}
+            </dd>
             <dt>Soporte</dt>
-            <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco (dos destinos con el mismo soporte cuentan una vez)"}</dd>
+            <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
           </dl>
         </section>
       {/if}
@@ -348,6 +365,24 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  .tipo-linea {
+    margin: 0;
+  }
+  .datos dd .tarde,
+  .discos .tarde {
+    color: var(--warn);
+  }
+  .datos dd .tarde {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .discos {
+    margin: 4px 0;
+    padding-left: 18px;
+    font-size: var(--fs-xs);
+    color: var(--text-2);
   }
   section + section {
     margin-top: var(--sp-8);

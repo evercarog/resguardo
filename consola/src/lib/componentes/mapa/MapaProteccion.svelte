@@ -20,6 +20,8 @@
   import { construirMapa, raices, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva } from "$lib/mapa";
   import { disponer } from "$lib/mapaGeometria";
   import MarcaCliente from "../MarcaCliente.svelte";
+  import TipoDestino from "../TipoDestino.svelte";
+  import { catalogoDe } from "$lib/catalogoDestinos.svelte";
   import { pctVisible, tareasDe } from "$lib/progreso.svelte";
   import { fechaLarga, relativo } from "$lib/formato";
   import { tip } from "$lib/tooltip";
@@ -101,7 +103,7 @@
   }
   const mapa = $derived(
     dado ??
-    construirMapa(equipo ? (todos ?? equipos) : equipos, informes, { cliente, ahora, enVivo, todos, raiz: equipo ? { perspectiva: "equipos", id: equipo } : { perspectiva, id: raizValida } }),
+    construirMapa(equipo ? (todos ?? equipos) : equipos, informes, { cliente, ahora, enVivo, todos, catalogo: catalogoDe(cliente), raiz: equipo ? { perspectiva: "equipos", id: equipo } : { perspectiva, id: raizValida } }),
   );
   const porId = $derived(new Map(mapa.nodos.map((n) => [n.id, n])));
   const aristaPorId = $derived(new Map(mapa.aristas.map((a) => [a.id, a])));
@@ -642,6 +644,7 @@
       <span class="n-txt">
         <span class="n-nombre">{n.nombre}</span>
         <span class="n-sub">{n.sub}</span>
+        {#if n.tipoDestino}<span class="n-tipo"><TipoDestino {...n.tipoDestino} /></span>{/if}
         {@render estado(n, n.icono !== "almacen")}
         {#if n.aviso}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{n.aviso}</span>{/if}
       </span>
@@ -1168,6 +1171,10 @@
   }
   .aviso-nodo :global(svg) {
     flex: none;
+    margin-top: 2px;
+  }
+  .n-tipo {
+    display: flex;
     margin-top: 2px;
   }
   .n-sub {

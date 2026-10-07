@@ -69,7 +69,8 @@
   // Tarea 8: la regla 3-2-1-1-0 de esta copia (guía, nunca obligación).
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
-  import { marcarDesdePaso, reglaDeCopia, type MarcarDestino } from "$lib/regla321";
+  import { marcarDesdePaso, reglaDeCopia, tipoDePaso, type MarcarDestino } from "$lib/regla321";
+  import TipoDestino from "$lib/componentes/TipoDestino.svelte";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { pasosDelRepo } from "$lib/cadenas";
@@ -435,7 +436,8 @@
               <dt>Camino</dt>
               <dd class="camino">
                 {#each camino.slice(1) as p, i (i)}
-                  {#if i}<span class="faint" aria-hidden="true">{p.despues ? " → después → " : " → "}</span>{/if}{#if p.destinoId}<a class="link-suave" href={hrefDestino(c, p.destinoId)}>{p.texto}</a>{:else}{p.texto}{/if}{#if p.clase === "espejo"}<span class="faint"> (espejo)</span>{:else if p.clase === "derivada"}<span class="faint"> (copia derivada)</span>{/if}
+                  {@const tp = tipoDePaso(p, actual.equipos, catalogo)}
+                  {#if i}<span class="faint" aria-hidden="true">{p.despues ? " → después → " : " → "}</span>{/if}{#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{#if p.destinoId}<a class="link-suave" href={hrefDestino(c, p.destinoId)}>{p.texto}</a>{:else}{p.texto}{/if}{#if p.clase === "espejo"}<span class="faint"> (espejo)</span>{:else if p.clase === "derivada"}<span class="faint"> (copia derivada)</span>{/if}
                 {/each}
               </dd>
             </div>
@@ -451,7 +453,7 @@
             <div>
               <dt>Además</dt>
               <dd class="ramas">
-                {#each pasosRepo as p, i (i)}<span use:tip={p.detalle}>{p.clase === "espejo" ? "Espejo" : p.detalle.startsWith("copia externa") ? "Copia externa" : "Repositorio derivado"} · {p.texto}</span>{/each}
+                {#each pasosRepo as p, i (i)}{@const tp = tipoDePaso(p, actual.equipos, catalogo)}<span use:tip={p.detalle}>{p.clase === "espejo" ? "Espejo" : p.detalle.startsWith("copia externa") ? "Copia externa" : "Repositorio derivado"} · {#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{p.texto}</span>{/each}
               </dd>
             </div>
           {/if}
