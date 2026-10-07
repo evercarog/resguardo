@@ -26,6 +26,8 @@ export interface Admite {
   cadenas?: boolean;
   /** Tarea 8: `config.pruebas_restauracion` (agente con `admite: "prueba_auto"`). */
   pruebas?: boolean;
+  /** Plan 0.7.26: `inicio: "despues"` y `retraso_min` (agente con `admite: "inicio_despues"`). */
+  despues?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -38,6 +40,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     escritorio: !!equipo.resumen?.admite?.includes("escritorio"),
     cadenas: !!equipo.resumen?.admite?.includes("cadenas"),
     pruebas: admitePruebaAuto(equipo),
+    despues: !!equipo.resumen?.admite?.includes("inicio_despues"),
   };
 }
 
@@ -56,7 +59,9 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
   // Las reglas del horario, solo a agentes ≥ 0.7.9 (con uno anterior no se llega aquí con reglas: «Antes de enviar» lo impide).
   const copias = c0.copias.map((k) => {
     // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
-    const { solo_si_cambios, tras, ...resto } = k;
+    // Plan 0.7.26: `inicio` solo para «despues» (lo demás se deduce de `tras`) y el retraso si hay; los dos, solo a un agente que los entiende.
+    const { solo_si_cambios, tras, inicio, retraso_min, ...resto } = k;
+    const conTras = !!a.cadenas && !!tras;
     return {
       ...resto,
       horario: {
@@ -66,7 +71,9 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       },
       gancho: a.ganchos ? paraConfig(ganchosDe(k.gancho as Gancho | Gancho[] | null)) : null,
       ...(a.soloCambios ? { solo_si_cambios: solo_si_cambios !== false } : {}),
-      ...(a.cadenas && tras ? { tras } : {}),
+      ...(conTras ? { tras } : {}),
+      ...(conTras && a.despues && inicio === "despues" ? { inicio } : {}),
+      ...(conTras && a.despues && retraso_min && retraso_min > 0 ? { retraso_min } : {}),
     };
   });
   return {

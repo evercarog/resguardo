@@ -131,3 +131,43 @@ Lo pidió el responsable con un caso real: una Dropbox conectada en el almacén 
   - **Copia nueva (carpetas):** directo a una nube (4a, rama `ia/repos-en-la-nube`) si su agente anuncia `repo_en_nube` y la nube está conectada en el equipo; si está en otro (el almacén), «Conectar Dropbox también en …». Con un agente anterior, las nubes salen desactivadas en el repositorio de la copia con el camino que sí: actualizar el agente, o copiar al almacén y después «Repositorio nuevo a partir de esta».
 - **«+ Repositorio nuevo…»** en el selector del repositorio de cada copia (y en el aviso de un equipo sin repositorios): el mismo diálogo que «Nuevo repositorio» (`lib/repoNuevo.ts`), con el equipo fijo y la autorización que ya se calculó al abrir el editor (no se vuelve a pedir la clave, salvo para un almacén o al conectar una nube, que son órdenes a otro equipo). El repositorio queda elegido en la copia; el equipo lo crea antes de aplicar la configuración (las órdenes van en orden).
 - La lógica está en `lib/cadenas.ts` (`destinosParaPasos`, `usosPosibles`, `detalleDestino`, con vectores) para que la página de cada destino pueda ofrecer «Usar en una copia» con lo mismo.
+
+## Guiado y avanzado (0.7.26, bloque 3)
+
+Plan en [plan-0.7.26.md](plan-0.7.26.md) («Principio de diseño» y bloque 3). Capturas para el visto bueno del responsable: `lista`, `anadir`, `guiado-1-cuando`, `guiado-1-cuando-despues`, `guiado-2-que`, `guiado-3-donde`, `guiado-3-donde-avanzado`, `guiado-4-resumen`, `derivada-1-versiones`, `derivada-3-donde`, `derivada-4-resumen` y `avanzado`, cada una a 1280 y 375 px, en claro y oscuro (fuera del repositorio).
+
+### La lista
+
+- Cada copia es una **tarjeta cerrada** con su resumen en una línea: `[icono de cuándo] Cada día laborable a las 14:00 · [carpeta] 1 carpeta → [icono del tipo de destino] Caja (Almacén ALMACEN-SUR · Disco D)`. Iconos de `TipoDestino` y lucide, sin emojis. Debajo, sus espejos y copias derivadas **agrupados por quién los hace** (`lib/espejosCopia.ts`, `espejosDeCopia`): el almacén («ALMACEN-SUR espejos: …») y el propio equipo («CAJA-1 copias derivadas: …»).
+- En la cabecera: número, asa ⠿ (arrastrar, flechas, Inicio y Fin, como antes), el nombre (abre la tarjeta), el estado de la última vez («Al día», «Con avisos», «Falló», «Nueva» o «Desactivada»), la tira 3·2·1·1·0 compacta, «Activa», **«+»** (copia nueva después de esta, espejo o copia derivada **de su repositorio**), **«⋯»** (Duplicar, Subir, Bajar, Guardar como plantilla, Rellenar con…, Quitar) y plegar.
+- Entre dos copias encadenadas, la unión dice **«en cadena»** (línea continua) o **«después»** (discontinua), y el retraso si lo hay.
+- Un solo **«+ Añadir»** al final: Copiar carpetas de este equipo · Espejo · Copia derivada; y, aparte, «Con la plantilla 3-2-1», «Desde «plantilla»» y «Plantillas…». Espejo y derivada sin copia preguntan antes **de qué repositorio** (los que no sirven, desactivados con el porqué).
+
+### Cuándo empieza (contrato en api-servidor.md «Cambios»)
+
+| | Qué hace | En la configuración |
+|---|---|---|
+| **Con horario** | A sus horas. | sin `tras` |
+| **En cadena** | Cuando la de encima termina **bien**; si falla, no se hace y avisa (`cadena_parada`). Lo de siempre. | `tras` |
+| **Después de la anterior** | Cuando la de encima termina, **salga bien o mal**. | `tras` + `inicio: "despues"` |
+
+En cadena y después **no hay horario**: «Inmediatamente» o «Con retraso de N min» (`retraso_min`, 5 a 60 en el selector, hasta 1440). La primera solo puede ir con horario (las otras dos, desactivadas con el porqué). Con un agente sin `admite: "inicio_despues"` solo se ofrecen «Con horario» y «En cadena», inmediatamente. Una copia antigua «después de» que además tenía horario lo conserva y la tarjeta avanzada lo dice («Además tenía su horario… Quitarlo»).
+
+### Guiado (por defecto)
+
+Una copia abierta enseña sus pasos, uno abierto cada vez; los hechos quedan como una línea con su resumen y «Cambiar». Intro avanza; Esc cierra la copia (lo hecho se queda, sin enviar).
+
+1. **Cuándo** (`CuandoEmpieza`): los tres modos; con horario, plantillas rápidas «Cada hora», «Cada día a las…», «Laborables a las…» (con la hora en el propio botón) y «Personalizar» (el editor completo de siempre).
+2. **Qué**: nombre y carpetas («Elegir en el equipo» o escribir una ruta). **Más opciones**: «No copiar» (las habituales con un toque y otras reglas), «Solo guardar si hay cambios» y «Antes de copiar».
+3. **Dónde** (`ElegirRepositorio`): los repositorios del equipo **agrupados por destino** con el icono de su tipo («También «X»» si otra copia lo usa); **«Nuevo repositorio»**: vacío o **con las versiones de otro** repositorio del equipo (todas o algunas: etiqueta, últimos días, desde), y después el diálogo de siempre (destino con el almacén arriba, contraseña generada o escrita, kit). Nace con el troceado del origen (`parametros_de: { repo }`) y las versiones se piden **al guardar** con `copiar_historial` (con su filtro), antes que las copias. **Avanzado**: las nubes del propio equipo, con el aviso «Este equipo guardará la credencial de la nube y podrá borrar en ella».
+4. **Resumen**: la línea de la copia con sus espejos, la regla 3-2-1-1-0 (tira compacta y frase) con **sugerencias de un clic** (activar la verificación semanal o la prueba mensual, que van con las copias; añadir un espejo o una copia derivada, que abren sus diálogos), lo pendiente («Traer a «X» todas las versiones de «Y».») y **Guardar** (lo mismo que «Enviar al equipo»: la clave de administración se escribió una vez al abrir el editor y sirve para todo lo pendiente).
+
+La **copia derivada** guiada (`CopiaDerivada` con `guiado`): De qué repositorio → Qué versiones (Todas · Solo algunas) → Cuándo → Dónde (destino y contraseña; retención, bloqueo y verificación en «Más opciones») → Resumen. La contraseña del repositorio y la clave se piden solo en el último paso (`OrdenDialog` con `sinSecretos`). El **espejo** sigue entrando por `PasoEspejo` (mismas propiedades: equipo, repositorio, destino elegido): su interior lo rehace el bloque 4.
+
+### Avanzado
+
+Un interruptor **«Avanzado»** junto a «Enviar al equipo» enseña la tarjeta entera, como antes (con el mismo control «Cuándo empieza»). Se recuerda **por persona en este navegador** (`localStorage`, `rg.copias.avanzado.<id de la cuenta>`, con `try/catch`; no hay preferencias por persona en el servidor). Las dos formas cambian la misma copia con las mismas funciones (`lib/copiaGuiada.ts`) y guardan **la misma configuración**: lo comprueban los vectores de `scripts/vectores-editor-guiado.ts` (cada escenario por los dos caminos, comparando lo que se enviaría).
+
+### Arreglo de paso
+
+Guardar desde el editor quitaba `tras` sin decirlo (`configParaEnviar` recibía las capacidades sin `cadenas`): las cadenas hechas en el editor no llegaban al agente. Ahora se manda.

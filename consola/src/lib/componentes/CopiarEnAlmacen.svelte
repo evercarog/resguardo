@@ -45,6 +45,7 @@
     zona,
     alCreado,
     onclose,
+    parametrosDe,
   }: {
     cliente: Cliente;
     equipo: Equipo;
@@ -58,6 +59,8 @@
     /** Desde el editor de copias: el repositorio ya creado (para elegirlo en la copia). */
     alCreado?: (r: { id: string; nombre: string; destino: string }) => void;
     onclose: () => void;
+    /** Plan 0.7.26: nace con el troceado de otro repositorio de este equipo (`{ repo }`), para traer después sus versiones. */
+    parametrosDe?: { repo: string };
   } = $props();
 
   let paso = $state<"clave" | "kit" | "listo">("clave");
@@ -172,7 +175,7 @@
             ca_pem: acceso.destino.ca_pem,
             equipo_almacen: almacen.id,
           },
-          ...(origen ? { parametros_de: origenCuerpo(origen) } : {}),
+          ...(origen ? { parametros_de: origenCuerpo(origen) } : parametrosDe ? { parametros_de: parametrosDe } : {}),
         },
         secretos: { claveAdmin },
         alPaso: (t) => (pasoTxt = t),

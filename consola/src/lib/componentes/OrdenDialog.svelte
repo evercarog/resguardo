@@ -59,8 +59,10 @@
      * sin cerrar el diálogo ni olvidar las claves (luego se confirma como siempre).
      */
     probar?: { cuerpo: Record<string, unknown>; texto?: string } | null;
+    /** Plan 0.7.26 (pasos guiados): aún no se piden la clave ni la contraseña (se piden en el último paso). */
+    sinSecretos?: boolean;
   }
-  let { cliente, equipo, tipo, cuerpo = {}, titulo, descripcion, repo, accion, campos, valido = true, onclose, alEnviar, alTerminar, probar = null }: Props = $props();
+  let { cliente, equipo, tipo, cuerpo = {}, titulo, descripcion, repo, accion, campos, valido = true, onclose, alEnviar, alTerminar, probar = null, sinSecretos = false }: Props = $props();
 
   let claveAdmin = $state("");
   let contrasenaRepo = $state("");
@@ -293,12 +295,12 @@
         </div>
       {/if}
 
-      {#if pideRepo}
+      {#if pideRepo && !sinSecretos}
         <CampoClave requerido id="clave-repo" etiqueta={repo ? `Contraseña del repositorio «${repo.nombre}»` : "Contraseña del repositorio"} bind:value={contrasenaRepo} autofocus ayuda="Está en el kit de recuperación. Va cifrada solo para el equipo, que la comprueba.">
           {#snippet extra()}<Ayuda id="contrasena-repo" />{/snippet}
         </CampoClave>
       {/if}
-      {#if pideAdmin}
+      {#if pideAdmin && !sinSecretos}
         {#if fijarPrimero && !necesitaAdmin(tipo)}
           <p class="faint nota-fijar">Es la primera vez que este navegador manda una contraseña a {equipo.nombre}: con la clave de administración se comprueba que sus llaves son las auténticas y se recuerdan para las próximas veces.</p>
         {/if}
@@ -320,7 +322,7 @@
           <span class="paso" role="status"><LoaderCircle size={15} class="spin" />{paso}</span>
         {/if}
         <button type="button" class="btn btn-ghost" onclick={cerrar} disabled={fase === "enviando" || probando}>Cancelar</button>
-        {#if probar}
+        {#if probar && !sinSecretos}
           <BotonCargando type="button" class="btn" disabled={!listo || fase === "enviando"} cargando={probando} textoCargando="Probando…" onclick={probarAhora}>{probar.texto ?? "Probar"}</BotonCargando>
         {/if}
         <BotonCargando class="btn {destructiva ? 'btn-danger' : 'btn-primary'}" disabled={!listo || probando} cargando={fase === "enviando"} textoCargando="Enviando…">{textoBoton}</BotonCargando>
