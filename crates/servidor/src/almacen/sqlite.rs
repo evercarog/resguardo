@@ -227,7 +227,7 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     if !tiene("destinos", "atributos")? {
         db.execute_batch("ALTER TABLE destinos ADD COLUMN atributos TEXT").map_err(s)?;
     }
-    // v1.4x (órdenes con espera que no se aplicaban): por qué caducó (`sin_entregar` o
+    // v1.58 (órdenes con espera que no se aplicaban): por qué caducó (`sin_entregar` o
     // `sin_respuesta`), si falta avisar de que no se aplicó, desde cuándo se puede volver a
     // entregar (reloj del equipo atrasado) y cuántas veces se volvió a intentar.
     for (col, def) in
@@ -909,7 +909,7 @@ impl Almacen for Sqlite {
         })
     }
     fn adelantar_seq(&self, c: &ClienteCtx, id: &str, minimo: u64) -> R<()> {
-        // v1.4x: sin caer en el número de una orden con espera reservada.
+        // v1.58: sin caer en el número de una orden con espera reservada.
         self.con(c, |db| poner_siguiente(db, id, minimo))
     }
     fn poner_modo(&self, c: &ClienteCtx, id: &str, modo: &str) -> R<()> {
@@ -996,7 +996,7 @@ impl Almacen for Sqlite {
         let tx = db.transaction().map_err(s)?;
         let (siguiente, espera) = numeros_equipo(&tx, &o.equipo_id)?.ok_or("Equipo no encontrado.")?;
         let ahora = ahora();
-        // v1.4x: una orden con espera puede llevar el número reservado (`seq_espera`), por
+        // v1.58: una orden con espera puede llevar el número reservado (`seq_espera`), por
         // encima de las que se manden mientras espera; las demás, el siguiente.
         let reservada = o.seq == espera && o.not_before.is_some_and(|nb| nb > ahora);
         if o.seq != siguiente && !reservada {
@@ -1075,7 +1075,7 @@ impl Almacen for Sqlite {
             if adelantar {
                 todas.into_iter().filter(|(o, d)| toca(o, *d)).map(|(o, _)| o).collect::<Vec<_>>()
             } else {
-                // v1.4x: a un agente que no guarda las órdenes con espera, en orden y sin saltarse
+                // v1.58: a un agente que no guarda las órdenes con espera, en orden y sin saltarse
                 // ninguna: la primera que aún no toca retiene a las siguientes. Si no, recibiría
                 // antes una orden posterior y, al llegar la hora de la que esperaba, la rechazaría
                 // por «antigua» (número menor que el último que aceptó). Al que las guarda se le

@@ -2457,7 +2457,7 @@ async fn marca_del_cliente() {
     assert_eq!(a.as_array().unwrap().iter().filter(|x| x["accion"] == "cambiar_marca").count(), 3);
 }
 
-/// v1.4x: órdenes con espera a un agente anterior (sin `ordenes_en_espera`, como un 0.7.18):
+/// v1.58: órdenes con espera a un agente anterior (sin `ordenes_en_espera`, como un 0.7.18):
 /// el número reservado (`seq_espera`) deja pasar las normales mientras espera; un rechazo
 /// por el reloj del equipo atrasado vuelve a pendientes; y una con espera que se rechaza por
 /// otra cosa deja un aviso «No se aplicó…» (antes desaparecía sin más de la consola).

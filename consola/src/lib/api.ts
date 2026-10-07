@@ -120,7 +120,7 @@ export const cambiarRespaldoConsola = (b: { activo?: boolean; publica?: string; 
   pedir<T.RespaldoConsola>("PUT", "/api/servidor/respaldo", b);
 export const respaldoConsolaAhora = () => pedir<T.RespaldoConsola>("POST", "/api/servidor/respaldo/ahora");
 
-// Actualización automática de los agentes (docs/actualizaciones.md, v1.4x). Con un servidor
+// Actualización automática de los agentes (docs/actualizaciones.md, v1.57). Con un servidor
 // anterior (404), null.
 const sin404 = <R>(p: Promise<R>) =>
   p.catch((x: unknown) => {

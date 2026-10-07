@@ -353,7 +353,7 @@ fn firma_identidad(st: &St, reto: &str, equipo: &str) -> Res<String> {
 /// Lo que contesta un agente cuando recibe una orden cuyo `not_before` aún no llegó en su reloj
 /// (más de 5 min): así lo dicen todos los agentes, también los anteriores a v1.49.
 pub(crate) const MENSAJE_AUN_NO_ES_LA_HORA: &str = "Todavía no es la hora de esta orden.";
-/// v1.4x: tras ese rechazo de un agente anterior, la orden se le vuelve a dar a los 10 min…
+/// v1.58: tras ese rechazo de un agente anterior, la orden se le vuelve a dar a los 10 min…
 const REINTENTO_RELOJ_S: i64 = 600;
 /// …como mucho tantas veces (2 h): con el reloj más atrasado que eso, se queda rechazada.
 const MAX_REINTENTOS_RELOJ: i64 = 12;
@@ -420,7 +420,7 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
     if vk.verify(texto.as_bytes(), &ed25519_dalek::Signature::from_bytes(&firma)).is_err() {
         return Err(ErrorApi::datos("La firma del resultado no es de este equipo."));
     }
-    // v1.4x: un agente anterior (sin `ordenes_en_espera`) con el reloj atrasado rechaza una
+    // v1.58: un agente anterior (sin `ordenes_en_espera`) con el reloj atrasado rechaza una
     // orden con espera que el servidor le da a su hora («Todavía no es la hora»), sin anotar
     // su número. En vez de perderla, se le vuelve a dar en unos minutos (unas cuantas veces).
     if r.estado == "rechazada" && orden.not_before.is_some() && mensaje.as_deref() == Some(MENSAJE_AUN_NO_ES_LA_HORA) {
@@ -440,7 +440,7 @@ async fn registrar_resultado(st: &St, a: &Agente, r: Resultado) -> Res<()> {
         }
     }
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
-    // v1.4x: una orden con espera que no se aplica (rechazada o fallida) no puede pasar
+    // v1.58: una orden con espera que no se aplica (rechazada o fallida) no puede pasar
     // desapercibida: se avisa («No se aplicó…»), salvo si la canceló otra consola en el equipo.
     let cancelada_en_equipo = r.detalle.as_deref().and_then(|d| serde_json::from_str::<Value>(d).ok()).is_some_and(|d| d["cancelada"] == true);
     let no_aplicada = (orden.not_before.is_some() && matches!(r.estado.as_str(), "rechazada" | "fallida") && !cancelada_en_equipo)
@@ -553,7 +553,7 @@ async fn registrar_informe(st: &St, a: &Agente, datos: Value) -> Res<()> {
     // rechazaría por «repetidas» las órdenes nuevas hasta alcanzarlo. Solo se sube.
     let ultimo_seq = datos.get("ultimo_seq").and_then(Value::as_u64).filter(|n| seq_valido(*n));
     let version = datos.get("version").and_then(Value::as_str).map(|s| texto_corto(s, 40));
-    // v1.4x: una versión que falló en este equipo se retiene para el resto del cliente.
+    // v1.57: una versión que falló en este equipo se retiene para el resto del cliente.
     let fallida = crate::publicaciones::fallida_del_informe(&datos);
     // Copias, verificaciones… que fallan o vuelven a ir bien: para las notificaciones (solo si cambió algo).
     let evento = crate::notificaciones::evento_estado(&st.notif, &a.ctx, &a.equipo, crate::notificaciones::problemas::Fuente::Informe, &datos);
@@ -677,7 +677,7 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
 }
 
 /// v1.49: `orden_en_espera` (otra consola mandó una orden que el equipo tiene en espera).
-/// v1.4x: `actualizacion_fallida` (una versión nueva no estuvo sana y el equipo volvió a la anterior).
+/// v1.57: `actualizacion_fallida` (una versión nueva no estuvo sana y el equipo volvió a la anterior).
 const TIPOS_AVISO: &[&str] =
     &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual", "orden_en_espera", "actualizacion_fallida"];
 

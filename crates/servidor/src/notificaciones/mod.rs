@@ -260,7 +260,7 @@ pub fn aviso(db: &dyn Almacen, ctx: &ClienteCtx, equipo: Option<&str>, tipo: &st
     aviso_a(db, ctx, equipo, tipo, mensaje, crate::almacen::ahora())
 }
 
-/// v1.4x: el texto del aviso `orden_no_aplicada` (sin rutas: el mensaje del equipo ya llega
+/// v1.58: el texto del aviso `orden_no_aplicada` (sin rutas: el mensaje del equipo ya llega
 /// sin ellas). `motivo`: el de una caducada (`sin_entregar` | `sin_respuesta`).
 pub fn texto_no_aplicada(tipo: &str, estado: &str, mensaje: Option<&str>, motivo: Option<&str>) -> String {
     let que = tipo.replace('_', " ");
@@ -447,7 +447,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
-        // v1.4x: una orden con espera que caducó, se rechazó o falló sin aplicarse.
+        // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.
         "orden_no_aplicada" => format!("No se aplicó una orden con espera en {e}"),
         "actualizacion_fallida" => format!("{e} no pudo actualizarse y volvió a la versión anterior"),
         _ => format!("Aviso de {e}"),

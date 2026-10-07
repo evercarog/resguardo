@@ -4,7 +4,7 @@
 // Vectores: scripts/vectores-actualizaciones.ts (con los de crates/protocolo/vectors/publicacion.json).
 import type { Tono } from "./salud";
 
-/** `informe.actualizacion` de un agente (v1.4x). */
+/** `informe.actualizacion` de un agente (v1.57). */
 export interface EstadoActualizacion {
   estado: string;
   motivo?: string | null;

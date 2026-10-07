@@ -185,7 +185,7 @@ export async function mandarOrden(opts: {
         contexto: { espejo: equipo.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length },
         // v1.49: quién la manda (lo ven las demás consolas en sus órdenes en espera y en el historial).
         por: app.cuenta?.nombre ?? null,
-        // v1.4x: a un agente que no guarda las órdenes con espera, con el número reservado: así
+        // v1.58: a un agente que no guarda las órdenes con espera, con el número reservado: así
         // las que se manden mientras espera no la dejan «antigua» al llegar su hora.
         seqEspera: admiteEspera(equipo) ? null : (equipo.seq_espera ?? null),
       });

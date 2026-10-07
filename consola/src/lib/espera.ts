@@ -112,7 +112,7 @@ export const RESULTADO_ORDEN: Record<string, { texto: string; tono: "ok" | "warn
 };
 
 /**
- * v1.4x: por qué una orden no se aplicó, en palabras (para «Órdenes»), o `null` si se
+ * v1.58: por qué una orden no se aplicó, en palabras (para «Órdenes»), o `null` si se
  * aplicó, sigue en camino o se canceló. Nunca desaparece sin decir nada: «Caducó sin
  * aplicarse» o «Rechazada: …» con el motivo.
  */

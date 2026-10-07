@@ -171,7 +171,7 @@ Lo pendiente de `docs/plataforma.md` §7.3.1 que se acordó hacer, más lo que s
 
 ## 11. Actualización automática de los agentes
 
-Aprobada por el responsable el 2026-10-06: llave de publicación **fuera de línea** (minisign, la tiene él; al repositorio solo llega la pública), despliegue **por anillos** automático y **vuelta atrás** automática. Diseño: [actualizaciones.md](actualizaciones.md); pasos para publicar: [publicar.md](publicar.md); contrato en `api-servidor.md` §14 y «Cambios» (v1.4x).
+Aprobada por el responsable el 2026-10-06: llave de publicación **fuera de línea** (minisign, la tiene él; al repositorio solo llega la pública), despliegue **por anillos** automático y **vuelta atrás** automática. Diseño: [actualizaciones.md](actualizaciones.md); pasos para publicar: [publicar.md](publicar.md); contrato en `api-servidor.md` §14 y «Cambios» (v1.57).
 
 - [x] **11a. Manifiesto firmado y llaves fijadas** (rama `ia/actualizacion-automatica`): `crates/protocolo/src/publicacion.rs` (minisign-verify, solo prehash; varias llaves para rotar; revocación), vectores compartidos con la consola, llave de pruebas en `tests/fixtures`. `packaging/llave-publicacion.pub` es el **marcador de posición** hasta que el responsable ponga la suya.
 - [x] **11b. Firmar fuera de línea**: `scripts/firmar-publicacion.mjs` (llama a `minisign -S`, nunca ve la llave ni la contraseña). `build-agente.mjs` y `construir-paquetes.sh` se niegan sin llave salvo `RESGUARDO_SIN_ACTUALIZACIONES=1`.

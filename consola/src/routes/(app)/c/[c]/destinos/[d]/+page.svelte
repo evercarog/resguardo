@@ -86,7 +86,7 @@
   const Icono = $derived(v?.zona ? Server : v?.nube ? Cloud : d?.tipo === "local" ? (d.extraible ? Usb : d.red ? Network : HardDrive) : ["b2", "s3", "nube"].includes(v?.tipo ?? "") ? Cloud : v?.tipo === "rest" || v?.tipo === "sftp" ? Server : Database);
   const mismoEquipo = $derived(d?.tipo === "local" && !d.red && !d.extraible);
 
-  // «Quitar este destino» (v1.56; con la clave de administración desde la v1.4x): en cada equipo que lo tiene y ya no lo usa.
+  // «Quitar este destino» (v1.56; con la clave de administración desde la v1.59): en cada equipo que lo tiene y ya no lo usa.
   const quitables = $derived(v && v.clase === "equipo" && !suyos.length ? actual.equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((x) => v!.ids.includes(x.id) && destinoQuitable(e, x.id)).map((x) => ({ equipo: e, destino: x }))) : []);
   let quitar = $state<{ equipo: Equipo; destino: DestinoResumen } | null>(null);
   let renombrar = $state(false);

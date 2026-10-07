@@ -553,7 +553,7 @@ export interface Equipo {
   estado_servicio: "en_marcha" | "detenido_por_admin" | null;
   siguiente_seq: number;
   /**
-   * v1.4x: el número para una orden con espera a un agente que no las guarda
+   * v1.58: el número para una orden con espera a un agente que no las guarda
    * (sin `admite: ["ordenes_en_espera"]`): por encima de las que se manden mientras
    * espera, para que el equipo no la descarte por «antigua» al llegar su hora.
    * Un servidor anterior no lo manda.
@@ -658,7 +658,7 @@ export interface Orden {
   detalle: string | null;
   firma_agente: string | null;
   actualizada: string;
-  /** v1.4x: por qué caducó sin aplicarse (solo en las caducadas; un servidor anterior no lo manda). */
+  /** v1.58: por qué caducó sin aplicarse (solo en las caducadas; un servidor anterior no lo manda). */
   motivo?: "sin_entregar" | "sin_respuesta" | null;
   /** En `GET /ordenes?pendientes=1` (de todo el cliente) hace falta saber de qué equipo es. */
   equipo?: string;
@@ -874,12 +874,12 @@ export type TipoAviso =
   | "orden_en_espera"
   // v1.50 (9b): un equipo vio que una de sus consolas rehízo su actividad.
   | "auditoria_rehecha"
-  // v1.4x: una orden con espera que caducó, se rechazó o falló sin aplicarse.
+  // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.
   | "orden_no_aplicada"
-  // v1.4x: una versión nueva del agente no estuvo sana y el equipo volvió a la anterior.
+  // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió a la anterior.
   | "actualizacion_fallida";
 
-/** v1.4x (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
+/** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {
   version: string;
   fecha: string;

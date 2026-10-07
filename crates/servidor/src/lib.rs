@@ -124,7 +124,7 @@ pub fn tareas(st: St) {
     });
 }
 
-/// v1.4x: las órdenes con espera que caducaron sin aplicarse no desaparecen sin más: un aviso
+/// v1.58: las órdenes con espera que caducaron sin aplicarse no desaparecen sin más: un aviso
 /// («No se aplicó…», que lleva a «Órdenes», donde se ve por qué y se puede volver a mandar).
 pub fn avisar_no_aplicadas(st: &St, ctx: &almacen::ClienteCtx) {
     for o in st.db.caducadas_por_avisar(ctx).unwrap_or_default() {

@@ -178,7 +178,7 @@ pub async fn enviar(State(st): State<St>, u: Usuario, Path((c, e)): Path<(String
         })
         .await?;
     let orden = r.map_err(|e| match e.strip_prefix("seq:").map(|n| n.split(':').map(str::parse::<u64>).collect::<Vec<_>>()).as_deref() {
-        // v1.4x: también el número para una orden con espera (`seq_espera`).
+        // v1.58: también el número para una orden con espera (`seq_espera`).
         Some([Ok(siguiente), Ok(espera)]) => {
             ErrorApi::conflicto("Otra orden se envió a la vez: vuelve a intentarlo.").con(json!({ "siguiente_seq": siguiente, "seq_espera": espera }))
         }

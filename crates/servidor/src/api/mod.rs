@@ -55,7 +55,7 @@ pub fn equipo_json(e: &Equipo, conectado: bool) -> Value {
         "espera_min_horas": e.espera_min_horas,
         // v1.18: etiquetas libres para agrupar (en claro; no es la `etiqueta` HMAC).
         "etiquetas": e.etiquetas,
-        // v1.4x: el número de una orden con espera para un agente que no las guarda
+        // v1.58: el número de una orden con espera para un agente que no las guarda
         // (sin `admite: ["ordenes_en_espera"]`): por encima de las que se manden mientras.
         "seq_espera": e.seq_espera,
     })
@@ -68,7 +68,7 @@ pub fn orden_json(o: &Orden, nombre_emisor: &str) -> Value {
         "not_before": fecha_opt(o.not_before), "caduca": fecha(o.caduca),
         "estado": o.estado, "mensaje": o.mensaje, "detalle": o.detalle, "firma_agente": o.firma_agente,
         "actualizada": fecha(o.actualizada),
-        // v1.4x: por qué caducó sin aplicarse (`sin_entregar` | `sin_respuesta`), si caducó.
+        // v1.58: por qué caducó sin aplicarse (`sin_entregar` | `sin_respuesta`), si caducó.
         "motivo": o.motivo,
     })
 }

@@ -63,7 +63,7 @@ export const NIVEL: Record<string, Nivel> = {
   nombre_equipo: "sesion",
   etiquetas_equipo: "sesion",
   observacion_equipo: "sesion",
-  // Olvidar un destino que ya no usa nada (v1.56): desde la v1.4x pide la clave de
+  // Olvidar un destino que ya no usa nada (v1.56): desde la v1.59 pide la clave de
   // administración, como crearlo (olvida sus credenciales). Un agente anterior, que la
   // tenía por inofensiva, no mira la prueba que le llega de más.
   quitar_destino: "admin",
@@ -206,7 +206,7 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
 const HORA = 3600_000;
 
 /**
- * v1.4x: margen para entregar una orden con espera desde su hora (el equipo puede estar
+ * v1.58: margen para entregar una orden con espera desde su hora (el equipo puede estar
  * apagado o sin red justo entonces). Antes, 24 h: una orden de un viernes con un fin de
  * semana sin el equipo caducaba sin aplicarse. Nunca pasa de 7 días desde que se emite.
  */
@@ -279,7 +279,7 @@ export function sellarOrden(
     /** v1.49: el nombre de quien la manda (informativo; un agente anterior lo ignora). */
     por?: string | null;
     /**
-     * v1.4x: el número reservado (`equipo.seq_espera`) para una orden con espera a un agente
+     * v1.58: el número reservado (`equipo.seq_espera`) para una orden con espera a un agente
      * que no las guarda. Solo se usa si la orden resulta destructiva (lleva espera).
      */
     seqEspera?: number | null;
@@ -289,7 +289,7 @@ export function sellarOrden(
   const destructiva = esDestructiva(args.tipo, args.cuerpo, args.esperaHoras, args.contexto);
   // Un minuto de margen: el reloj del servidor puede ir algo adelantado.
   const notBefore = destructiva ? new Date(ahora.getTime() + args.esperaHoras * HORA + 60_000) : null;
-  // Con espera, un margen amplio para entregarla (v1.4x). El agente no acepta más de 7 días entre «emitida» y «caduca».
+  // Con espera, un margen amplio para entregarla (v1.58). El agente no acepta más de 7 días entre «emitida» y «caduca».
   const hasta = notBefore ? Math.max(caducidad(args.tipo, notBefore).getTime(), notBefore.getTime() + MARGEN_TRAS_ESPERA_H * HORA) : caducidad(args.tipo, ahora).getTime();
   const caduca = new Date(Math.min(hasta, ahora.getTime() + 7 * 24 * HORA));
   const seq = notBefore && args.seqEspera ? args.seqEspera : args.seq;

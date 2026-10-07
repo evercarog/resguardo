@@ -17,6 +17,8 @@ Cada sesión de un asistente de IA añade una entrada **al principio** (la más 
 
 **Versiones (2026-10-06, a petición del usuario):** publicadas en GitHub la 0.7.22 y la **0.7.23** (todo el plan de mejoras; la CI de Linux pidió tres arreglos antes: una función del cortafuegos de Linux quitada con las zonas, `fetch_update` → `try_update` en el Rust estable y una prueba de avisos que dependía de la hora). La **0.7.24** añade: nombre, etiquetas y observación del equipo comunes a todas las consolas (contrato v1.56), «Quitar este destino», el mapa con el almacén que no está en esta consola, los duplicados «sin confirmar» que se quitan al confirmar el bueno, y dos rondas de pulido visual (móvil, contraste, alineación, textos sin «restic»).
 
+**0.7.25 (2026-10-06/07):** actualización automática firmada de los agentes (apagada hasta poner la llave pública real; `docs/publicar.md`), editor de copias único (asa para ordenar, «después» dibujado, «Añadir paso», ajustes del repositorio a la vista), página propia de cada destino, quitar destino con la clave, tira 3·2·1·1·0 rediseñada, calendario de un año con un mes por fila, mapa con zoom y líneas que rodean las tarjetas, repositorios directamente en Dropbox y otras nubes (token renovado en cada copia), y órdenes con espera que ya no desaparecen con agentes anteriores (contrato v1.57–v1.60).
+
 **Decisiones tomadas sin ti, para revisar** (detalle en cada entrada):
 
 - 0.7.22 lleva solo lo terminado antes del plan de mejoras; 9a, 9d–9h, 1, 2… van en la siguiente, para no meter el cambio del emparejamiento sin probarlo en una máquina real.

@@ -208,7 +208,7 @@ fn datos_del_equipo_en_todas_sus_consolas_y_quitar_destinos() {
         ..Default::default()
     });
     guardar(&v).unwrap();
-    // Pide la clave de administración (v1.4x): sin ella (una consola anterior, que la
+    // Pide la clave de administración (v1.59): sin ella (una consola anterior, que la
     // mandaba como inofensiva) se rechaza con un mensaje claro y no cuenta como intento fallido.
     let mut sin_clave = orden(&ea, 4, "quitar_destino", json!({ "destino": "d-vacio" }));
     sin_clave.autorizacion.prueba_admin = None;

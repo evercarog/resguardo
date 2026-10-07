@@ -144,7 +144,7 @@ pub struct Equipo {
     /// Etiquetas libres para agrupar (v1.18: «Contabilidad», «Servidores»…), en claro.
     /// No confundir con `etiqueta` (el HMAC con `K_cfg`).
     pub etiquetas: Vec<String>,
-    /// v1.4x: el número que debe llevar una orden con espera para un agente que no las
+    /// v1.58: el número que debe llevar una orden con espera para un agente que no las
     /// guarda (`ordenes_en_espera`): por encima de las que se manden mientras espera, para
     /// que el equipo no la descarte por «antigua» al llegar su hora (ver `numeros_orden`).
     pub seq_espera: u64,
@@ -154,7 +154,7 @@ pub struct Equipo {
 /// caben tantas órdenes normales mientras espera sin pasarla.
 pub const HUECO_SEQ_ESPERA: u64 = 1000;
 
-/// v1.4x: los números de orden de un equipo, con lo que ya tiene guardado:
+/// v1.58: los números de orden de un equipo, con lo que ya tiene guardado:
 /// - `siguiente`: el de la próxima orden normal. Si por encima del guardado solo quedan
 ///   órdenes con espera que ya terminaron (canceladas, caducadas…), se salta por encima
 ///   (el equipo admite huecos), para no tropezar con sus números;
@@ -253,7 +253,7 @@ pub struct Orden {
     pub detalle: Option<String>,
     pub firma_agente: Option<String>,
     pub actualizada: Ts,
-    /// v1.4x: por qué caducó sin aplicarse: `sin_entregar` (no llegó al equipo) o
+    /// v1.58: por qué caducó sin aplicarse: `sin_entregar` (no llegó al equipo) o
     /// `sin_respuesta` (llegó y el equipo no contestó). `None` en las demás.
     pub motivo: Option<String>,
 }
@@ -582,7 +582,7 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// filtros opcionales y cursor `antes` = (emitida, id) de la última recibida.
     fn ordenes_cliente(&self, c: &ClienteCtx, equipo: Option<&str>, estado: Option<&str>, antes: Option<(Ts, String)>, limite: i64) -> R<Vec<Orden>>;
     /// Órdenes que el agente aún no tiene (pendientes y sin caducar). Las marca como entregadas.
-    /// v1.4x: en orden de `seq` y sin saltarse ninguna: una que aún no toca retiene a las de
+    /// v1.58: en orden de `seq` y sin saltarse ninguna: una que aún no toca retiene a las de
     /// número mayor (el equipo rechaza por «antigua» la que llega después de otra posterior).
     /// Al entregar una con número ≥ `siguiente_seq`, este sube por encima.
     /// Con `adelantar` (v1.49, el agente admite `ordenes_en_espera`), también las que
@@ -596,11 +596,11 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn canceladas_sin_avisar(&self, c: &ClienteCtx, equipo: &str) -> R<Vec<String>>;
     fn resultado_orden(&self, c: &ClienteCtx, equipo: &str, r: &ResultadoOrden) -> R<bool>;
     fn cancelar_orden(&self, c: &ClienteCtx, id: &str, por: &str, ahora: Ts) -> R<bool>;
-    /// v1.4x: un agente anterior rechazó una orden con espera porque su reloj aún no llegaba
+    /// v1.58: un agente anterior rechazó una orden con espera porque su reloj aún no llegaba
     /// a `not_before` («Todavía no es la hora»; no anotó su número): vuelve a pendientes y no se
     /// entrega antes de `desde`. Como mucho `max` veces; si no, `false` (se queda rechazada).
     fn reintentar_orden(&self, c: &ClienteCtx, id: &str, desde: Ts, max: i64) -> R<bool>;
-    /// v1.4x: las órdenes con espera que caducaron sin aplicarse y aún no se avisaron
+    /// v1.58: las órdenes con espera que caducaron sin aplicarse y aún no se avisaron
     /// («No se aplicó…»). Las marca como avisadas.
     fn caducadas_por_avisar(&self, c: &ClienteCtx) -> R<Vec<Orden>>;
 

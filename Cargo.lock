@@ -3749,7 +3749,7 @@ dependencies = [
 
 [[package]]
 name = "resguardo-agente"
-version = "0.7.24"
+version = "0.7.25"
 dependencies = [
  "base64 0.22.1",
  "bcrypt",
@@ -3818,7 +3818,7 @@ dependencies = [
 
 [[package]]
 name = "resguardo-servidor"
-version = "0.7.24"
+version = "0.7.25"
 dependencies = [
  "argon2",
  "axum",

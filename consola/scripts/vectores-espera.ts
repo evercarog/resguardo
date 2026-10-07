@@ -100,7 +100,7 @@ igual("sin espera, y con `por` dentro del sobre (no en lo que ve el servidor)", 
 const sinPor = JSON.parse(new TextDecoder().decode(abrirB64(caja.secreta, sellarOrden({ cliente: "c", equipo: { id: "e1", box_pub: aB64(caja.publica) }, seq: 4, tipo: "copiar_ahora", cuerpo: {}, autorizacion: { prueba_admin: null, clave_repo: null }, esperaHoras: 24 }, new Date(AHORA)).sellado)));
 cierto("sin nombre, sin `por` (como una consola anterior)", !("por" in sinPor));
 
-console.log("\n· Órdenes con espera a un agente anterior (v1.4x): número reservado y que no desaparezcan");
+console.log("\n· Órdenes con espera a un agente anterior (v1.58): número reservado y que no desaparezcan");
 {
   const sellar = (tipo: string, cuerpo: Record<string, unknown>, seqEspera: number | null, horas = 24) =>
     sellarOrden({ cliente: "c", equipo: { id: "e1", box_pub: aB64(caja.publica) }, seq: 7, tipo, cuerpo, autorizacion: { prueba_admin: null, clave_repo: null }, esperaHoras: horas, seqEspera }, new Date(AHORA));

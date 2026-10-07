@@ -106,7 +106,7 @@ pub const TIPOS: &[Tipo] = &[
     t("quitar_consola", Administracion, false, false, true),
     // v1.56: olvidar un destino que ya no usa nada (sin repositorios, copia externa ni
     // derivadas). No borra nada de lo que hay en él, pero olvida sus credenciales: como
-    // crearlo, pide la clave de administración (v1.4x; en la v1.56 era inofensiva) y solo
+    // crearlo, pide la clave de administración (v1.59; en la v1.56 era inofensiva) y solo
     // administradores. Un agente anterior la sigue tratando como inofensiva (no mira la
     // prueba que le llega de más).
     t("quitar_destino", Administracion, false, false, true),
@@ -193,7 +193,7 @@ mod tests {
             assert!(x.nivel == Nivel::Inofensiva && !x.destructiva && x.solo_administradores == solo_admin, "{t}");
             assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&t), "{t}");
         }
-        // v1.4x: quitar un destino pide la clave de administración (no reduce la protección: sin espera).
+        // v1.59: quitar un destino pide la clave de administración (no reduce la protección: sin espera).
         let q = tipo("quitar_destino").unwrap();
         assert!(q.nivel == Nivel::Administracion && !q.destructiva && q.solo_administradores);
         assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&"quitar_destino"));

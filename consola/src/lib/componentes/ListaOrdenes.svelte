@@ -72,7 +72,7 @@
         N.º {o.seq} · {o.emitida_por.nombre} · <Tiempo iso={o.emitida} />
         {#if o.not_before}{" · "}espera hasta <time datetime={o.not_before}>{fechaLarga(o.not_before)}</time>{/if}
       </p>
-      <!-- v1.4x: lo que no se aplicó dice por qué (antes, una caducada no decía nada). -->
+      <!-- v1.58: lo que no se aplicó dice por qué (antes, una caducada no decía nada). -->
       {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje}<p class="mensaje">{o.mensaje}</p>{/if}
       <div class="pie">
         {#if o.firma_agente}

@@ -135,7 +135,7 @@ fn ahora_rfc() -> String {
     chrono::Local::now().to_rfc3339()
 }
 
-/// `informe.actualizacion` para las consolas (v1.4x).
+/// `informe.actualizacion` para las consolas (v1.57).
 pub fn informe() -> Value {
     if !activada() {
         return json!({ "estado": "desactivada", "motivo": if desactivada_al_compilar() { "sin_actualizaciones" } else { "sin_llave" } });

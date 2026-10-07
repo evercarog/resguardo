@@ -772,7 +772,7 @@ pub(crate) fn comprobar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::
     let necesita_admin = matches!(tipo.nivel, ordenes::Nivel::Administracion | ordenes::Nivel::RepositorioYAdministracion) && o.tipo != "alta";
     let necesita_repo = matches!(tipo.nivel, ordenes::Nivel::Repositorio | ordenes::Nivel::RepositorioYAdministracion);
     if necesita_admin {
-        // v1.4x: `quitar_destino` era inofensiva (v1.56). Una consola anterior la manda sin
+        // v1.59: `quitar_destino` era inofensiva (v1.56). Una consola anterior la manda sin
         // la clave: se dice qué hacer y no cuenta como intento fallido (no prueba ninguna clave).
         if o.tipo == "quitar_destino" && o.autorizacion.prueba_admin.is_none() {
             return Err((rechazada("Quitar un destino pide ahora la clave de administración: actualiza la consola y vuelve a intentarlo."), None));
@@ -1705,7 +1705,7 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                     }
                     // v1.50 (9b): el ancla de la auditoría, cada hora con el canal abierto.
                     "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
-                    // v1.4x: «Actualizar ahora» o un cambio de la política: buscar la versión ya.
+                    // v1.57: «Actualizar ahora» o un cambio de la política: buscar la versión ya.
                     "actualizacion" => crate::actualizacion::toque(),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
