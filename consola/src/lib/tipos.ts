@@ -16,6 +16,8 @@ export interface Servidor {
   instalador_agente?: boolean;
   /** v1.48: acepta códigos de emparejamiento generados en el navegador (solo su hash) y da el instalador genérico. */
   codigo_navegador?: boolean;
+  /** Bloque 7: códigos de alta para varios equipos (`…/codigos-varios`) y la línea de PowerShell. */
+  codigo_varios?: boolean;
   /** v1.19: ¿hay un Resguardo Agente en la máquina del servidor? («Vincular este servidor»). */
   agente_local?: boolean;
   /** v1.34: la dirección para los agentes y las otras consolas si no es la de esta consola
@@ -592,6 +594,9 @@ export interface EstadoDeEmparejamiento {
   /** v1.48: el código lo generó un navegador; el servidor solo tiene su hash (lib/codigo.ts). */
   codigo_hash?: string;
   codigo_navegador?: boolean;
+  /** Bloque 7: se unió con un código para varios equipos (y desde esa IP, como la vio el servidor). */
+  lote?: string;
+  ip?: string | null;
 }
 
 /** v1.42: un equipo que se unió y se quedó sin terminar (sin comparar el número o sin el alta). */
@@ -602,6 +607,8 @@ export interface AMedias {
   creado: string;
   nombre: string;
   equipo: { id: string; nombre: string; so: string };
+  /** Bloque 7: de un código para varios equipos (se sigue en su página). */
+  lote?: string | null;
 }
 
 /** Un equipo preparado (v1.17): instalador listo o línea de Linux, con su código de 24 h. */

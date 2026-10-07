@@ -60,6 +60,12 @@ export interface CodigoGuardado {
   /** Preparados: el nombre del equipo y su sistema (para volver a dar el mismo). */
   nombre?: string;
   so?: "windows" | "linux";
+  /**
+   * Bloque 7: un código para varios equipos (`id` es el del lote). Se guarda hasta `hasta` (ms):
+   * su caducidad más 2 días para confirmar a los últimos que se unan (como mucho `PLAZO_LOTE_MS`).
+   */
+  lote?: boolean;
+  hasta?: number;
 }
 
 /** Lo mínimo de `localStorage` (inyectable en las pruebas). */
@@ -72,6 +78,8 @@ export interface Almacen {
 export const CLAVE_ALMACEN = "resguardo.codigos-emparejar";
 /** Lo más que se guarda un código (ms): 8 días. */
 export const PLAZO_GUARDADO_MS = 8 * 24 * 3600_000;
+/** Lo más que se guarda un código para varios equipos (ms): 30 días que puede servir y 2 más. */
+export const PLAZO_LOTE_MS = 32 * 24 * 3600_000;
 /** Como mucho, tantos (los más antiguos salen primero). */
 export const MAX_GUARDADOS = 200;
 
@@ -97,7 +105,12 @@ function leerTodos(a: Almacen, ahora: number): CodigoGuardado[] {
   if (!Array.isArray(xs)) return [];
   return xs.filter(
     (x): x is CodigoGuardado =>
-      !!x && typeof x.id === "string" && typeof x.cliente === "string" && typeof x.codigo === "string" && typeof x.creado === "number" && ahora - x.creado < PLAZO_GUARDADO_MS,
+      !!x &&
+      typeof x.id === "string" &&
+      typeof x.cliente === "string" &&
+      typeof x.codigo === "string" &&
+      typeof x.creado === "number" &&
+      (ahora - x.creado < PLAZO_GUARDADO_MS || (x.lote === true && typeof x.hasta === "number" && ahora < x.hasta && x.hasta - x.creado <= PLAZO_LOTE_MS)),
   );
 }
 
@@ -136,6 +149,12 @@ export class Codigos {
     if (!x) return null;
     if (hash && hashCodigo(x.codigo) !== hash.toLowerCase()) return null;
     return x.codigo;
+  }
+  /** El código de este cliente con ese hash (bloque 7: el de un lote, para el alta de cada equipo que se unió con él). */
+  porHash(cliente: string, hash: string | null | undefined): string | null {
+    if (!hash) return null;
+    const h = hash.toLowerCase();
+    return this.todos().find((y) => y.cliente === cliente && hashCodigo(y.codigo) === h)?.codigo ?? null;
   }
   /** Un preparado de este cliente con ese nombre (sin distinguir mayúsculas) y sistema. */
   preparado(cliente: string, nombre: string, so: "windows" | "linux"): CodigoGuardado | null {
