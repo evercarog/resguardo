@@ -221,6 +221,48 @@ pub struct Emparejamiento {
     /// Versión del código de comprobación que anunció el equipo al unirse (v1.26): 3 si
     /// incluye la huella de la autoridad TLS (agentes ≥ 0.7.10); `None` o 2, el de antes.
     pub sas_version: Option<i64>,
+    /// Bloque 7: el código para varios equipos con el que se unió (un emparejamiento por uso).
+    pub lote: Option<String>,
+    /// Bloque 7: la IP desde la que se unió, tal como la ve el servidor (solo los de un código
+    /// para varios equipos: la consola la enseña para reconocer cada equipo).
+    pub ip: Option<String>,
+}
+
+/// Código de alta para varios equipos (bloque 7, docs/api-servidor.md §4): lo genera el
+/// navegador y el servidor solo guarda su hash. Cada equipo que se une con él crea su propio
+/// emparejamiento (unido, sin confirmar): nada entra sin comparar su número de comprobación.
+#[derive(Clone, Debug)]
+pub struct Lote {
+    pub id: String,
+    /// SHA-256 en hex del código normalizado (como `protocolo::mensajes::code_hash`).
+    pub codigo_hash: String,
+    /// Un nombre para reconocerlo («Oficina de la planta 2»), opcional.
+    pub nombre: Option<String>,
+    /// Cuántos equipos pueden unirse con él, y cuántos se han unido ya.
+    pub usos: i64,
+    pub usados: i64,
+    pub caduca: Ts,
+    pub creado: Ts,
+    pub creado_por: String,
+    /// Cuándo se anuló (ya no admite más equipos).
+    pub anulado: Option<Ts>,
+    /// Intentos rechazados con él (anulado, agotado o caducado): por si alguien más lo tiene.
+    pub rechazos: i64,
+}
+
+impl Lote {
+    /// «activo», «agotado», «caducado» o «anulado».
+    pub fn estado(&self, ahora: Ts) -> &'static str {
+        if self.anulado.is_some() {
+            "anulado"
+        } else if self.caduca <= ahora {
+            "caducado"
+        } else if self.usados >= self.usos {
+            "agotado"
+        } else {
+            "activo"
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -515,6 +557,14 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()>;
     fn cliente_de_equipo(&self, equipo: &str) -> R<Option<ClienteCtx>>;
     fn desindexar_equipo(&self, equipo: &str) -> R<()>;
+    /// Bloque 7: el código para varios equipos en el índice global (su hash → cliente y lote).
+    fn indexar_codigo_varios(&self, codigo_hash: &str, cliente: &str, lote: &str, caduca: Ts) -> R<()>;
+    /// (cliente, lote) del código para varios equipos con ese hash, si está en el índice (aunque
+    /// esté agotado: el cliente decide; se quita al anularlo y al caducar).
+    fn codigo_varios(&self, codigo_hash: &str) -> R<Option<(String, String)>>;
+    /// El cliente del lote (para la descarga anónima del instalador con el id del lote).
+    fn cliente_de_lote(&self, lote: &str) -> R<Option<String>>;
+    fn desindexar_codigo_varios(&self, lote: &str) -> R<()>;
     /// Ficha de recepción de un cliente («Recibir un cliente», F6): `usos` altas de equipos hasta `caduca`.
     fn crear_ficha(&self, hash: &str, cliente: &str, usos: i64, caduca: Ts) -> R<()>;
     /// Gasta un uso de la ficha si vale: su cliente.
@@ -543,6 +593,22 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn alta_hecha(&self, c: &ClienteCtx, equipo: &str) -> R<()>;
     /// La versión del SAS que anunció el equipo al unirse (v1.26).
     fn poner_sas_emparejamiento(&self, c: &ClienteCtx, id: &str, version: i64) -> R<()>;
+    // ---------- Códigos para varios equipos (bloque 7) ----------
+    fn crear_lote(&self, c: &ClienteCtx, l: &Lote) -> R<()>;
+    fn lote(&self, c: &ClienteCtx, id: &str) -> R<Option<Lote>>;
+    /// Los del cliente, del más reciente al más antiguo (como mucho 50).
+    fn lotes(&self, c: &ClienteCtx) -> R<Vec<Lote>>;
+    /// Gasta un uso si el lote sigue activo (sin anular, sin caducar y con usos): `false` si no.
+    fn usar_lote(&self, c: &ClienteCtx, id: &str, ahora: Ts) -> R<bool>;
+    /// Cuenta un intento rechazado con un lote que ya no admite equipos.
+    fn rechazo_lote(&self, c: &ClienteCtx, id: &str) -> R<()>;
+    /// Lo anula (si no lo estaba): `false` si no existe o ya estaba anulado.
+    fn anular_lote(&self, c: &ClienteCtx, id: &str, ahora: Ts) -> R<bool>;
+    /// Un equipo se unió con un lote: su emparejamiento, ya unido (`codigo`: `sha256:<hash>`).
+    #[allow(clippy::too_many_arguments)]
+    fn emparejamiento_de_lote(&self, c: &ClienteCtx, id: &str, lote: &str, por: &str, caduca: Ts, codigo: &str, equipo: &str, ip: Option<&str>) -> R<()>;
+    /// Los emparejamientos que se unieron con ese lote, del más reciente al más antiguo.
+    fn emparejamientos_de_lote(&self, c: &ClienteCtx, lote: &str) -> R<Vec<Emparejamiento>>;
     fn crear_equipo(&self, c: &ClienteCtx, e: &EquipoNuevo) -> R<()>;
     fn equipos(&self, c: &ClienteCtx) -> R<Vec<Equipo>>;
     fn equipo(&self, c: &ClienteCtx, id: &str) -> R<Option<Equipo>>;
