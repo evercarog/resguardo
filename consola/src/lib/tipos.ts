@@ -409,6 +409,9 @@ export interface CopiaResumen {
   solo_si_cambios?: boolean;
   /** Tarea 7c (`admite: "cadenas"`): va «después de la anterior», el id de esa copia. */
   tras?: string | null;
+  /** Plan 0.7.26: «despues» (aunque la anterior falle) o, sin él, en cadena; y el retraso. */
+  inicio?: "horario" | "cadena" | "despues" | null;
+  retraso_min?: number | null;
 }
 
 /** Tarea 4c: qué versiones sube una copia derivada (o trae «Traer el historial»). */
@@ -1092,6 +1095,13 @@ export interface CopiaConfig {
   solo_si_cambios?: boolean;
   /** Tarea 7c (`admite: "cadenas"`): «después de la anterior», el id de otra copia de esta configuración. */
   tras?: string | null;
+  /**
+   * Plan 0.7.26 (`admite: "inicio_despues"`): con `tras`, «despues» empieza aunque la
+   * anterior falle; sin el campo, «en cadena» (solo si sale bien). Ver lib/copiaGuiada.ts.
+   */
+  inicio?: "horario" | "cadena" | "despues";
+  /** Plan 0.7.26: con `tras`, minutos de espera tras la anterior (sin el campo: enseguida). */
+  retraso_min?: number;
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */
