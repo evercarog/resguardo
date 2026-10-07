@@ -19,11 +19,17 @@
   import type { Orden } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
 
+  // Estado enseña arriba una línea con cuántas hay (la lista va más abajo): se las pasa por aquí.
+  let { filas = $bindable([]) }: { filas?: FilaEspera[] } = $props();
+
   let propias = $state<Orden[]>([]);
   let cancelando = $state<string | null>(null);
   let confirmar = $state<string | null>(null);
 
   const ordenes = $derived(filasEnEspera(propias, actual.equipos, reloj.ahora));
+  $effect(() => {
+    filas = ordenes;
+  });
 
   async function cargar() {
     if (!actual.id) return;
