@@ -981,7 +981,6 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     case "restaurar": {
       await espera(2500);
-      // Como el agente: «junto» crea «Restaurado AAAA-MM-DD HHMM» en la carpeta de cada elemento.
       const rutas = (Array.isArray(c.rutas) ? c.rutas : []).map(String);
       // v1.10: «en su sitio» solo dentro de las carpetas que copia el equipo (como el agente).
       if (c.destino === "original") {
@@ -989,12 +988,12 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         const fuera = rutas.find((r) => !copiadas.some((k) => r.toLowerCase() === k || r.toLowerCase().startsWith(`${k}/`)));
         if (fuera) return resultado(e, o, "fallida", `«${fuera}» no está en las carpetas que copia este equipo: restáuralo junto al original.`);
       }
-      const d = new Date();
-      const p2 = (n: number) => String(n).padStart(2, "0");
-      const sello = `Restaurado ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}${p2(d.getMinutes())}`;
-      const local = (r: string) => r.replace(/^\/([A-Za-z])\//, "$1:/").replaceAll("/", "\\");
-      const destinos = [...new Set(rutas.map((r) => local(r.slice(0, r.lastIndexOf("/"))) + (c.destino === "original" ? "" : `\\${sello}`)))];
-      return resultado(e, o, "hecha", `Restaurado (${rutas.length} elementos) en ${destinos.join(", ")}.`);
+      // Una unidad entera («/C») no se restaura (como el agente).
+      if (rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
+        return resultado(e, o, "fallida", "No se puede restaurar una unidad entera de una vez. Elige las carpetas de dentro.");
+      }
+      // Como el agente: sin la carpeta (no manda rutas; la consola la enseña aparte).
+      return resultado(e, o, "hecha", `Restaurado (${rutas.length} elementos).`);
     }
     case "descargar":
       await prepararDescarga(e, o, plana);

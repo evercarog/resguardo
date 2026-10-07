@@ -13,6 +13,7 @@
   import { bytes, fechaCorta } from "$lib/formato";
   import { mandarOrden } from "$lib/ordenar";
   import { ESTADO_ORDEN } from "$lib/salud";
+  import { textoRestaurar } from "$lib/textosEquipo";
   import type { Orden } from "$lib/tipos";
 
   let { acceso, version, cuando, ruta, tamano }: { acceso: AccesoRepo; version: string; cuando?: string | null; ruta: string; tamano?: number | null } = $props();
@@ -55,8 +56,8 @@
           if (o && ["hecha", "fallida", "rechazada", "cancelada", "caducada"].includes(o.estado)) {
             clearInterval(vigilar);
             ocupado = false;
-            if (o.estado === "hecha") hecho = o.mensaje ?? "Restaurado junto al original.";
-            else error = o.mensaje ?? "El equipo no pudo restaurarlo.";
+            if (o.estado === "hecha") hecho = o.mensaje ? textoRestaurar(o.mensaje) : "Restaurado junto al original.";
+            else error = o.mensaje ? textoRestaurar(o.mensaje) : "El equipo no pudo restaurarlo.";
           }
         } catch {
           /* se reintenta */

@@ -12,6 +12,7 @@
   import { actual, app, reloj } from "$lib/estado.svelte";
   import { fechaLarga, relativo } from "$lib/formato";
   import { nombreOrden } from "$lib/salud";
+  import { mensajeOrden } from "$lib/textosEquipo";
   import { ordenesDeOtras, RESULTADO_ORDEN, resultadoOrden } from "$lib/espera";
   import type { EntradaHistorial, Equipo } from "$lib/tipos";
   import Chip from "./Chip.svelte";
@@ -64,7 +65,7 @@
               <span class="faint">
                 Desde {h.consola ? `«${h.consola}»` : "otra consola"}{#if h.por}{" · "}pedida por {h.por}{/if}
                 {#if h.cancelada_desde}{" · "}cancelada desde «{h.cancelada_desde}»{/if}
-                {#if h.mensaje && resultadoOrden(h) !== "hecha"}{" · "}{h.mensaje}{/if}
+                {#if h.mensaje && resultadoOrden(h) !== "hecha"}{" · "}{mensajeOrden(h.orden, h.mensaje)}{/if}
               </span>
             </span>
             <span class="lado">

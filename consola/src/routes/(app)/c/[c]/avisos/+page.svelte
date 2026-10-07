@@ -23,6 +23,7 @@
   // «Pulsar para ver más»: cada aviso lleva a la vuelta o al repositorio que lo explica.
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { destinoAviso } from "$lib/detalle";
+  import { sinMarcadores } from "$lib/textosEquipo";
   import { tip } from "$lib/tooltip";
   import "$lib/componentes/detalle/pulsable.css";
 
@@ -204,7 +205,7 @@
               <span class="icono tone-{a.visto_por ? 'neutral' : i.tono}"><i.icono size={16} /></span>
               <span class="fila-texto">
                 <span class="fila-titulo">{i.texto}{#if eq && agrupar === "gravedad"}<a class="eq" href="/c/{c}/equipos/{eq.id}"><Monitor size={12} />{eq.nombre}</a>{/if}</span>
-                {#if rel}<a class="mensaje pulsable" href={rel.href} use:tip={"Ver detalle"}>{a.mensaje}</a>{:else}<span class="mensaje">{a.mensaje}</span>{/if}
+                {#if rel}<a class="mensaje pulsable" href={rel.href} use:tip={"Ver detalle"}>{sinMarcadores(a.mensaje)}</a>{:else}<span class="mensaje">{sinMarcadores(a.mensaje)}</span>{/if}
                 {#if i.que && !a.visto_por}<span class="fila-sub">{i.que}</span>{/if}
                 <span class="fila-sub cuando"><Tiempo iso={a.creado} />{#if a.visto_por}<span class="visto-por"><Check size={12} />Visto por {a.visto_por}</span>{/if}</span>
               </span>

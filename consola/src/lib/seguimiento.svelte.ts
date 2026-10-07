@@ -8,6 +8,7 @@ import { avisar } from "./avisos.svelte";
 import { actual, cargarCliente } from "./estado.svelte";
 import { ESTADO_ORDEN, nombreOrden } from "./salud";
 import { ultimaVuelta } from "./copia";
+import { mensajeOrden } from "./textosEquipo";
 import type { CopiaResumen, Orden } from "./tipos";
 
 const FINALES = ["hecha", "fallida", "rechazada", "cancelada", "caducada"];
@@ -30,8 +31,9 @@ export function seguirEnFondo(cliente: string, equipo: { id: string; nombre: str
         if (o.estado === "cancelada") return;
         const bien = o.estado === "hecha";
         const que = `«${nombreOrden(o.tipo)}» en ${equipo.nombre}`;
+        const dijo = o.mensaje ? ` ${mensajeOrden(o.tipo, o.mensaje)}` : "";
         avisar(
-          bien ? `${que}: hecha.${o.mensaje ? ` ${o.mensaje}` : ""}` : `${que}: ${ESTADO_ORDEN[o.estado].texto.toLowerCase()}.${o.mensaje ? ` ${o.mensaje}` : ""}`,
+          bien ? `${que}: hecha.${dijo}` : `${que}: ${ESTADO_ORDEN[o.estado].texto.toLowerCase()}.${dijo}`,
           bien ? "ok" : "bad",
           enlace ?? { texto: "Ver", href: `/c/${cliente}/equipos/${equipo.id}?tab=ordenes` },
         );

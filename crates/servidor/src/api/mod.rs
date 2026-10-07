@@ -5,6 +5,8 @@ mod cuentas;
 pub(crate) mod equipos;
 pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
+// Bloque 7: códigos de alta para varios equipos.
+pub(crate) mod lotes;
 pub(crate) mod marca;
 pub(crate) mod notas;
 mod notificaciones;
@@ -273,6 +275,9 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/emparejamientos", post(equipos::abrir_emparejamiento).get(instaladores::listar))
         .route("/api/clientes/{c}/instaladores", post(instaladores::preparar))
         .route("/api/clientes/{c}/instalador-agente", get(instaladores::instalador_generico))
+        .route("/api/clientes/{c}/instalador-agente/huella", get(lotes::huella))
+        .route("/api/clientes/{c}/codigos-varios", get(lotes::listar).post(lotes::crear))
+        .route("/api/clientes/{c}/codigos-varios/{l}", get(lotes::ver).delete(lotes::anular))
         .route("/api/clientes/{c}/preparados", get(instaladores::contar))
         .route("/api/clientes/{c}/codigo-abierto", get(instaladores::codigo_abierto))
         .route("/api/clientes/{c}/a-medias", get(instaladores::a_medias))

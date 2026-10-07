@@ -307,6 +307,11 @@ pub async fn ver_emparejamiento(State(st): State<St>, u: Usuario, Path((c, p)): 
     let emp = emp.ok_or_else(ErrorApi::no_existe)?;
     let estado = if matches!(emp.estado.as_str(), "abierto" | "unido") && emp.caduca <= ahora() { "caducado".to_string() } else { emp.estado.clone() };
     let mut v = json!({ "estado": estado, "caduca": fecha(emp.caduca) });
+    // Bloque 7: se unió con un código para varios equipos (y desde qué IP lo vio el servidor).
+    if emp.lote.is_some() {
+        v["lote"] = json!(emp.lote);
+        v["ip"] = json!(emp.ip);
+    }
     // Preparados (v1.17): su nombre y sistema.
     if emp.nombre.is_some() {
         v["nombre"] = json!(emp.nombre);

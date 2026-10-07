@@ -9,6 +9,7 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { cuentaAtras, fechaLarga } from "$lib/formato";
   import { ESTADO_ORDEN, nombreOrden } from "$lib/salud";
+  import { mensajeOrden } from "$lib/textosEquipo";
   import type { Equipo, Orden } from "$lib/tipos";
   import Chip from "./Chip.svelte";
   import { iconoOrden } from "$lib/iconos";
@@ -73,7 +74,7 @@
         {#if o.not_before}{" · "}espera hasta <time datetime={o.not_before}>{fechaLarga(o.not_before)}</time>{/if}
       </p>
       <!-- v1.58: lo que no se aplicó dice por qué (antes, una caducada no decía nada). -->
-      {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje}<p class="mensaje">{o.mensaje}</p>{/if}
+      {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje}<p class="mensaje">{mensajeOrden(o.tipo, o.mensaje)}</p>{/if}
       <div class="pie">
         {#if o.firma_agente}
           <span class="firma" class:ok={firmada}>
