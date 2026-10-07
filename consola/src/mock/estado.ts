@@ -488,10 +488,12 @@ export async function sembrar(vacio = false) {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
         // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
+        // Plan 0.7.26 (1.1): una nube desconectada cuyo permiso aún no se pudo anular en Dropbox.
+        nubes_por_anular: [{ nombre: "Dropbox Antigua", tipo: "dropbox", desde: hace(60 * 3), hasta: dentro(60 * 24 * 7 - 60 * 3), intentos: 2 }],
         // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
         en_espera: [
           { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Siigo»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46) },

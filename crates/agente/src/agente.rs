@@ -252,6 +252,8 @@ fn one_tick() {
     crate::espejo::si_toca();
     // v1.22: la retención de los repositorios que guarda este almacén, a su hora.
     crate::retencion_almacen::si_toca();
+    // Plan 0.7.26 (1.1): los permisos de nubes desconectadas que no se pudieron anular aún.
+    crate::nube_anular::reintentar();
     for note in crate::endpoint::tick() {
         crate::agent::log(&note);
         let now = chrono::Local::now().to_rfc3339();

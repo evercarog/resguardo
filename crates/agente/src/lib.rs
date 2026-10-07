@@ -61,6 +61,7 @@ pub mod jobs;
 pub mod kit;
 pub mod managed;
 pub mod nube;
+pub mod nube_anular;
 #[cfg(test)]
 mod perder_consola_it;
 pub mod places;
