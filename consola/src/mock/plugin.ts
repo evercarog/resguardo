@@ -1597,7 +1597,10 @@ function marcaJson(c: string) {
   return { acento: m?.acento ?? null, logo: m?.logo ? `/api/clientes/${c}/marca/logo?v=${m.huella}` : null, actualizada: m?.actualizada ?? null, por: m?.por ?? null };
 }
 /** Tarea 7a: el catálogo de destinos de cada cliente. */
-const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>();
+const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>([
+  // 0.7.26: el «Disco 2» de CAJA-1 son discos USB que se rotan: marcado «Aislado» por una persona.
+  [ID.sur, new Map([["disco-2", { id: "disco-2", nombre: "", tipo: "local", donde: null, atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" }, actualizado: new Date().toISOString(), por: "Ana Restrepo" }]])],
+]);
 /** Plantillas de copia (v1.20) por cliente: solo bytes cifrados por la consola. */
 const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizada: string; por: string }>>();
 /** v1.52: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */

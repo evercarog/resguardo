@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import type { Uso } from "$lib/cadenas";
+  import type { TipoCorto } from "$lib/tipoDestino";
   export interface OpcionDestino {
     valor: string;
     nombre: string;
@@ -7,6 +8,8 @@
     detalle?: string;
     clase: "zona" | "nube" | "equipo" | "suelto" | "carpeta" | "nuevo";
     uso: Uso;
+    /** 0.7.26: tipo y marcas del destino (sin ello no se enseñan). */
+    tipoDestino?: TipoCorto;
   }
 </script>
 
@@ -17,6 +20,7 @@
   // agente u otro tipo de paso). Nunca se esconde uno sin decir por qué.
   import { Cloud, Database, FolderPlus, HardDrive, Plus, Server } from "@lucide/svelte";
   import type { Equipo } from "$lib/tipos";
+  import TipoDestino from "./TipoDestino.svelte";
 
   interface Props {
     id: string;
@@ -43,7 +47,7 @@
           <span class="ic"><I size={15} /></span>
           <span class="txt">
             <span class="nom">{o.nombre}</span>
-            {#if o.detalle || o.uso.motivo}<span class="det">{[o.detalle, o.uso.motivo].filter(Boolean).join(" · ")}</span>{/if}
+            {#if o.detalle || o.uso.motivo || o.tipoDestino}<span class="det">{#if o.tipoDestino}<TipoDestino {...o.tipoDestino} />{#if o.detalle || o.uso.motivo}{" · "}{/if}{/if}{[o.detalle, o.uso.motivo].filter(Boolean).join(" · ")}</span>{/if}
           </span>
         </label>
         {#if !o.uso.ok && o.uso.accion?.tipo === "conectar_nube" && alConectar}

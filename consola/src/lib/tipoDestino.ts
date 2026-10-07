@@ -166,6 +166,15 @@ export function ultimaConexion(c: ConexionVolumen | null | undefined): string | 
   return [c?.ultima_conexion, ...(c?.volumenes ?? []).map((v) => v.visto)].filter((x): x is string => !!x && Number.isFinite(Date.parse(x))).sort().at(-1) ?? null;
 }
 
+/** Lo que se enseña en corto (selectores, cadenas, mapa). */
+export type TipoCorto = Pick<Clasificacion, "tipo" | "inmutable" | "aislado" | "bloqueoDias"> & { porPersona?: boolean };
+
+/** De una clasificación, lo que se enseña en corto. */
+export const corta = (c: Clasificacion): TipoCorto => ({ tipo: c.tipo, inmutable: c.inmutable, aislado: c.aislado, bloqueoDias: c.bloqueoDias, porPersona: c.tipoPorPersona || c.marcasPorPersona });
+
+/** Una nube conectada (Dropbox, Drive, OneDrive…; un NAS por SMB es local, SFTP fuera del sitio): nunca inmutable. */
+export const tipoDeNube = (tipoNube: string): TipoCorto => ({ tipo: tipoNube === "smb" ? "local" : tipoNube === "sftp" ? "fuera" : "nube", inmutable: false, aislado: false, bloqueoDias: null });
+
 /** El nombre accesible del tipo y sus marcas: «Nube, inmutable (bloqueo de 30 días)». */
 export function textoClasificacion(c: Pick<Clasificacion, "tipo" | "inmutable" | "aislado" | "bloqueoDias">): string {
   const marcas = [c.inmutable ? `inmutable${c.bloqueoDias ? ` (bloqueo de ${c.bloqueoDias} días)` : ""}` : null, c.aislado ? "aislado" : null].filter(Boolean);

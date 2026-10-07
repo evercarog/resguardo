@@ -50,7 +50,8 @@
   // Tarea 8: cómo queda cada copia en la regla 3-2-1-1-0 y la plantilla «3-2-1 recomendada».
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
   import Plantilla321 from "$lib/componentes/regla/Plantilla321.svelte";
-  import { fraseConfig, queHacer, reglaEnEdicion } from "$lib/regla321";
+  import { fraseConfig, queHacer, reglaEnEdicion, tipoDePaso } from "$lib/regla321";
+  import TipoDestino from "$lib/componentes/TipoDestino.svelte";
   import { zonaDeDestino } from "$lib/destinos";
   import { destinoDe } from "$lib/repo";
   import { claveDeDestino } from "$lib/fichaDestino";
@@ -754,15 +755,16 @@
             <ol class="camino" aria-label="Camino de «{k.nombre}»">
               <li><FolderOpen size={14} />{plural(k.carpetas.length, "carpeta", "carpetas")}</li>
               <li class="flecha" aria-hidden="true">→</li>
-              <li><Database size={14} /><strong>{repos.find((x) => x.id === k.repo)?.nombre ?? "Sin repositorio"}</strong>{#if pasos[0]}<span class="faint">· {pasos[0].texto}</span>{/if}</li>
+              <li><Database size={14} /><strong>{repos.find((x) => x.id === k.repo)?.nombre ?? "Sin repositorio"}</strong>{#if pasos[0]}{@const t0 = tipoDePaso(pasos[0], actual.equipos, catalogo)}<span class="faint">·</span>{#if t0}<TipoDestino {...t0} soloIcono />{/if}<span class="faint">{pasos[0].texto}</span>{/if}</li>
             </ol>
             {#if pasos.length > 1}
               <ul class="ramas" aria-label="Lo que se copia además desde «{repos.find((x) => x.id === k.repo)?.nombre ?? k.repo}»">
                 {#each pasos.slice(1) as p, pi (pi)}
+                  {@const tp = tipoDePaso(p, actual.equipos, catalogo)}
                   <li use:tip={p.detalle + (p.noInmutable ? ` · ${p.noInmutable}` : "")}>
                     <CornerDownRight size={13} />
                     <span class="rama-t">{#if p.clase === "espejo"}<HardDrive size={13} />Espejo{:else if p.detalle.startsWith("copia externa")}<CloudUpload size={13} />Copia externa{:else}<GitBranch size={13} />Repositorio derivado{/if}</span>
-                    <span class="faint rama-d">{p.texto}{p.despues ? " · después de cada copia" : ""}</span>
+                    <span class="faint rama-d">{#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{p.texto}{p.despues ? " · después de cada copia" : ""}</span>
                   </li>
                 {/each}
               </ul>

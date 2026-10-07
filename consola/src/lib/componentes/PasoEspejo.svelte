@@ -16,6 +16,8 @@
   import { zonasDe, nombreZonaPorDefecto, PRINCIPAL } from "$lib/destinos";
   import { destinoParaOrden, errorDiasRetencion, horaParaConsolasAnteriores, horarioDiario, nombreTipoNube, RETENCION_ESPEJO, TIPOS_NUBE, type DestinoEspejoOrden } from "$lib/espejo";
   import { errorCarpetaEspejo } from "$lib/ganchos";
+  import { clasificacionDeVista } from "$lib/regla321";
+  import { corta } from "$lib/tipoDestino";
   import type { Cliente, Equipo, RepositorioResumen } from "$lib/tipos";
 
   interface Props {
@@ -70,7 +72,7 @@
     const l: OpcionDestino[] = destinosParaPasos(equipos, catalogoDe(cliente.id)).map((v) => {
       const uso = usosPosibles(v, equipo, repo, equipos).espejo;
       const valor = uso.ok && v.zona ? `zona:${v.zona.id}` : uso.ok && v.nube ? `nube:${v.nube.nombre}` : `no:${v.clave}`;
-      return { valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso };
+      return { valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso, tipoDestino: corta(clasificacionDeVista(v, equipos)) };
     });
     if (almacen) l.push({ valor: "carpeta", nombre: `Otra carpeta de ${almacen.nombre}…`, clase: "carpeta", uso: { ok: true } });
     // Primero los que se pueden usar.

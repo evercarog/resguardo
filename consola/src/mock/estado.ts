@@ -512,7 +512,17 @@ export async function sembrar(vacio = false) {
         copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("siigo", "Siigo", "siigo", ["14:00"], 1), tras: "caja" }],
         destinos: [
           { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/caja-1/", equipo_almacen: ID.almacen },
-          { id: "disco-2", nombre: "Disco 2", tipo: "local", donde: "E:\\Resguardo-externa" },
+          // 0.7.26: dos discos USB que se rotan (marcado «Aislado» en el catálogo): el agente dice cuándo vio cada uno.
+          {
+            id: "disco-2",
+            nombre: "Disco 2",
+            tipo: "local",
+            donde: "E:\\Resguardo-externa",
+            unidad: "E:",
+            extraible: true,
+            red: false,
+            aislado: { ultima_conexion: hace(60 * 24 * 34), volumenes: [{ id: "9f3a1c2b7d4e5a60", visto: hace(60 * 24 * 34) }, { id: "1b2c3d4e5f607182", visto: hace(60 * 24 * 41) }] },
+          },
           { id: "nube-dropbox-caja", nombre: "Dropbox Caja", tipo: "nube", nube: "Dropbox Caja", donde: "Resguardo" },
           // v1.56: un destino que se quedó sin repositorios (se quitaron): «Quitar este destino».
           { id: "disco-viejo", nombre: "Disco o carpeta del equipo", tipo: "local", unidad: "C:", extraible: false, red: false },

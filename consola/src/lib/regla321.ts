@@ -16,8 +16,9 @@
 // sistema operativo ni el sistema de archivos (8e): solo lo que dice la persona.
 // Sin dependencias de Svelte (lo prueban los vectores).
 import type { AtributosDestino, ConexionVolumen, CopiaResumen, DestinoCatalogo, DestinoResumen, Equipo, Informe, InmutableDestino, LugarDestino, RepositorioResumen, TipoDestino } from "./tipos";
-import { clasificar, DIAS_AISLADO, tipoDeLugar, ultimaConexion, type Clasificacion, type Deducido } from "./tipoDestino";
-import { claveNube, claveZona, nombreDestino, nombreZonaPorDefecto, unidadDe, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
+import { clasificar, corta, DIAS_AISLADO, tipoDeLugar, ultimaConexion, type Clasificacion, type Deducido, type TipoCorto } from "./tipoDestino";
+import { destinosParaPasos, type PasoCadena } from "./cadenas";
+import { almacenesDe, claveNube, claveZona, nombreDestino, nombreZonaPorDefecto, unidadDe, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { espejoDelRepo, nombreEnAlmacen } from "./espejo";
 import { destinoDe, informeDe } from "./repo";
 import { resultadoConError } from "./salud";
@@ -619,6 +620,33 @@ export function marcarDesdeVista(v: DestinoVista, equipos: Equipo[]): MarcarDest
     equipo: d.tipo === "local" ? (e ?? null) : null,
     conexion: d.tipo === "local" ? (d.aislado ?? null) : null,
   };
+}
+
+/** 0.7.26: tipo y marcas de un destino de la lista (lo deducido con lo marcado encima). */
+export function clasificacionDeVista(v: DestinoVista, equipos: Equipo[]): Clasificacion {
+  const m = marcarDesdeVista(v, equipos);
+  return clasificar(m.porDefecto, m.catalogo?.atributos);
+}
+
+/**
+ * 0.7.26: tipo y marcas de un paso de la cadena de una copia (cabecera del
+ * editor, página de la copia): el destino de la lista que le corresponde, con
+ * lo marcado; si no lo hay (una carpeta del espejo), lo que se sabe del paso.
+ */
+export function tipoDePaso(p: PasoCadena, equipos: Equipo[], catalogo: DestinoCatalogo[]): TipoCorto | null {
+  if (p.clase === "origen") return null;
+  const vistas = destinosParaPasos(equipos, catalogo);
+  const v =
+    (p.destinoId && vistas.find((x) => x.clave === p.destinoId || x.ids.includes(p.destinoId!))) ||
+    (p.tipoDestino === "nube" && p.clase === "espejo" ? vistas.find((x) => x.nube && x.nube.nombre === p.texto && almacenesDe(equipos).some((a) => a.id === x.nube!.equipo.id)) : undefined);
+  if (v) {
+    const c = corta(clasificacionDeVista(v, equipos));
+    // Un bloqueo que dice el paso (copia externa con bloqueo de objetos) cuenta si nadie marcó otra cosa.
+    return p.inmutable && !c.inmutable && !c.porPersona ? { ...c, inmutable: true } : c;
+  }
+  const t = p.tipoDestino ?? "";
+  const tipo: TipoDestino = ["b2", "s3", "nube"].includes(t) ? "nube" : ["rest", "sftp"].includes(t) ? "fuera" : "local";
+  return { tipo, inmutable: !!p.inmutable || t === "zona", aislado: false, bloqueoDias: null };
 }
 
 /** Los días de bloqueo de objetos de la copia externa o derivada que va a un destino (el mayor), si se saben. */

@@ -36,18 +36,20 @@
   import { nombreTipoNube } from "$lib/espejo";
   // Tarea 8: lo que sabe la regla 3-2-1-1-0 de cada destino (dónde está, si es inmutable).
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
-  import { marcarDesdeVista, TEXTO_INMUTABLE, TEXTO_LUGAR, textoEntorno, type MarcarDestino } from "$lib/regla321";
+  import { marcarDesdeVista, textoEntorno, type MarcarDestino } from "$lib/regla321";
+  import { clasificar, estadoConexion } from "$lib/tipoDestino";
+  import TipoDestino from "$lib/componentes/TipoDestino.svelte";
 
   let nuevo = $state(false);
   /** Tarea 7a: crear un destino sin repositorio, y cambiarle el nombre a uno. */
   let nuevoDestino = $state(false);
   let renombrar = $state<DestinoVista | null>(null);
   let marcar = $state<MarcarDestino | null>(null);
-  /** Lo marcado para la regla 3-2-1, en corto (o null si es lo deducido). */
-  function marcado(v: DestinoVista): string | null {
-    const a = v.catalogo?.atributos;
-    if (!a) return null;
-    return [a.lugar ? TEXTO_LUGAR[a.lugar] : null, a.inmutable ? TEXTO_INMUTABLE[a.inmutable].replace(/ \(.*\)$/, "") : null, a.soporte ? `soporte «${a.soporte}»` : null].filter(Boolean).join(" · ");
+  /** 0.7.26: tipo y marcas de un destino (lo deducido con lo marcado) y, si es Aislado, su última conexión. */
+  function claseDe(v: DestinoVista) {
+    const m = marcarDesdeVista(v, actual.equipos);
+    const c = clasificar(m.porDefecto, m.catalogo?.atributos);
+    return { ...c, conexion: c.aislado ? estadoConexion(m.conexion, c.aisladoDias, reloj.ahora) : null, soporte: m.catalogo?.atributos?.soporte ?? null };
   }
   /** v1.56: «Quitar este destino» (sin repositorios ni copias que lo usen) en un equipo. */
   let quitar = $state<{ equipo: Equipo; destino: DestinoResumen } | null>(null);
@@ -173,6 +175,7 @@
           {#each destinosEnCamino as p (p.orden.id + "d")}<PendienteItem p={p.destinoNuevo ? { ...p, titulo: `Destino «${p.destinoNuevo}»` } : p} forma="tarjeta" conEquipo />{/each}
           {#each vistas as v (v.clave)}
             {@const suyos = reposEn(v.ids)}
+            {@const cl = claseDe(v)}
             {#if v.clase === "zona" && v.zona}
               {@const z = v.zona}
               {@const mz = marcarDesdeVista(v, actual.equipos)}
@@ -187,11 +190,12 @@
                   {plural(z.usuarios, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}
                 </p>
                 {#if mz.sistemaArchivos || entorno}<p class="tile-dato faint">{#if mz.sistemaArchivos}<span class="pastilla mono">{mz.sistemaArchivos}</span>{/if}{#if entorno}{" "}{entorno}{/if}</p>{/if}
-                {#if marcado(v)}<p class="tile-dato"><ShieldCheck size={12} />{marcado(v)}</p>{/if}
+                <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
+                {#if cl.conexion}<p class="tile-dato" class:tarde={cl.conexion.tarde}>{#if cl.conexion.tarde}<TriangleAlert size={12} />{/if}<span>{cl.conexion.texto}</span></p>{/if}
                 <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<span class="badge badge-sm tone-warn">Sin responder</span>{/if}
                   <span class="corte" aria-hidden="true"></span>
                   {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
-                  {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button><button class="btn btn-sm btn-ghost" onclick={() => (marcar = mz)} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}</span>
+                  {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button><button class="btn btn-sm btn-ghost" onclick={() => (marcar = mz)} use:tip={"Local, Fuera del sitio o Nube; Inmutable, Aislado"}><ShieldCheck size={12} />Tipo y marcas</button>{/if}</span>
               </div>
             {:else}
               {@const d = v.destino}
@@ -205,6 +209,8 @@
                 <p class="tile-linea num">
                   {#if v.clase === "nube"}Para el espejo del almacén y, conectándola en cada equipo, para sus repositorios{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
                 </p>
+                <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
+                {#if cl.conexion}<p class="tile-dato" class:tarde={cl.conexion.tarde}>{#if cl.conexion.tarde}<TriangleAlert size={12} />{/if}<span>{cl.conexion.texto}</span></p>{/if}
                 <span class="tile-chips">
                   {#if d?.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
                   {#if d?.tipo === "local"}
@@ -217,14 +223,13 @@
                   {#if puede.ordenar(actual.cliente?.rol) && v.clase !== "suelto"}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
                   {#if d}<button class="btn btn-sm btn-ghost" class:notas-destino={v.clase === "suelto"} onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
-                  {#if administra && v.clase !== "suelto"}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Dónde está y si es inmutable, para la regla 3-2-1-1-0"}><ShieldCheck size={12} />Regla 3-2-1</button>{/if}
+                  {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Local, Fuera del sitio o Nube; Inmutable, Aislado"}><ShieldCheck size={12} />Tipo y marcas</button>{/if}
                   <!-- v1.56: sin repositorios ni copias que lo usen, se puede quitar del equipo (nada de lo guardado se borra). -->
                   {#if administra && v.clase === "equipo" && !suyos.length}
                     {#each quitablesEn(v) as q (q.equipo.id)}<button class="btn btn-sm btn-ghost quitar-dest" onclick={() => (quitar = q)}><Trash2 size={12} />{quitablesEn(v).length > 1 ? `Quitar de ${q.equipo.nombre}` : "Quitar este destino"}</button>{/each}
                   {/if}
                 </span>
                 {#if d?.sistema_archivos}<p class="tile-dato faint"><span class="pastilla mono">{d.sistema_archivos}</span> solo un dato</p>{/if}
-                {#if marcado(v)}<p class="tile-dato"><ShieldCheck size={12} />{marcado(v)}</p>{/if}
               </div>
             {/if}
           {/each}
@@ -364,6 +369,24 @@
   }
   .tile-dato :global(svg) {
     color: var(--accent-text);
+  }
+  .tile-tipo {
+    gap: 6px 8px;
+  }
+  .tile-tipo :global(svg) {
+    color: inherit;
+  }
+  .tile-dato.tarde,
+  .tile-dato.tarde :global(svg) {
+    color: var(--warn);
+  }
+  .tile-dato.tarde {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+  .tile-dato.tarde :global(svg) {
+    flex: none;
+    margin-top: 2px;
   }
   .enlace-tile {
     color: inherit;

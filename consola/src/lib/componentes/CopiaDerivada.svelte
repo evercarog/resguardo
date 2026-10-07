@@ -22,6 +22,8 @@
   import { TIPOS_NUBE, nombreTipoNube } from "$lib/espejo";
   import { admitePlazos, copiaRegla, errorRegla, horarioDeCopias, REGLA_POR_DEFECTO, reglaParaOrden } from "$lib/retencion";
   import { fechaLarga } from "$lib/formato";
+  import { clasificacionDeVista } from "$lib/regla321";
+  import { corta } from "$lib/tipoDestino";
   import type { Cliente, DerivadaResumen, EquipoDetalle, RepositorioResumen } from "$lib/tipos";
 
   interface Props {
@@ -103,7 +105,7 @@
       const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clave}`;
       if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: v.donde ?? "" };
       porClave[v.clave] = valor;
-      if (!l.some((o) => o.valor === valor)) l.push({ valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso });
+      if (!l.some((o) => o.valor === valor)) l.push({ valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso, tipoDestino: corta(clasificacionDeVista(v, equipos)) });
     }
     l.sort((a, b) => Number(b.uso.ok) - Number(a.uso.ok));
     l.push({ valor: "nuevo", nombre: "Un destino nuevo…", clase: "nuevo", uso: { ok: true } });

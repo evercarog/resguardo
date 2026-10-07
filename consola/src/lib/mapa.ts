@@ -7,7 +7,7 @@
 // marcha llega como una función (`enVivo`) para que esto sea TypeScript sin
 // runas (se prueba en scripts/vectores.ts). Con muchos equipos, los que están
 // al día y van a los mismos sitios se juntan en un grupo.
-import type { Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
+import type { DestinoCatalogo, Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
@@ -16,6 +16,9 @@ import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
 import { claveNube, claveZona, PRINCIPAL, zonaDeDestino, zonasDe } from "./destinos";
 // Las páginas de los destinos (como las de los repositorios): cada tarjeta de destino lleva a la suya.
 import { hrefDestino } from "./fichaDestino";
+import { destinosParaPasos } from "./cadenas";
+import { clasificacionDeVista } from "./regla321";
+import { corta, tipoDeNube, type TipoCorto } from "./tipoDestino";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
 /**
@@ -52,6 +55,8 @@ export interface NodoMapa {
   /** Un cliente (mapa de todos los clientes): su marca y si está plegado. */
   marca?: MarcaCliente | null;
   plegado?: boolean;
+  /** 0.7.26: tipo y marcas de un destino (Local, Fuera del sitio, Nube; Inmutable, Aislado). */
+  tipoDestino?: TipoCorto;
 }
 
 export interface AristaMapa {
@@ -89,6 +94,8 @@ export interface OpcionesMapa {
   agruparDesde?: number;
   /** Todos los equipos del cliente (para encontrar los almacenes aunque un filtro los deje fuera). */
   todos?: Equipo[];
+  /** 0.7.26: el catálogo de destinos del cliente (lo marcado por una persona en cada destino). */
+  catalogo?: DestinoCatalogo[];
 }
 
 const DIA = 86_400_000;
@@ -146,6 +153,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   const unir = (a: AristaMapa) => {
     if (!aristas.some((x) => x.id === a.id)) aristas.push(a);
   };
+  /** 0.7.26: de qué destino es cada nodo (su clave en la lista de destinos) o, si no tiene, su tipo ya sabido. */
+  const tipoNodo = new Map<string, { clave?: string; si?: TipoCorto }>();
 
   // Qué entra según la raíz.
   const paquetes: Paquete[] = [];
@@ -187,6 +196,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       const s = saludEquipo(x.almacen, ahora);
       // La tarjeta es el almacén entero; lleva a la página de la zona del primer repositorio que llega (o la principal).
       const zona = zonaDeDestino(destinoDe(p.equipo.resumen?.destinos, x.r), todos)?.id ?? PRINCIPAL;
+      tipoNodo.set(x.destino, { clave: claveZona(x.almacen.id, PRINCIPAL), si: { tipo: "local", inmutable: true, aislado: false, bloqueoDias: null } });
       return poner({
         id: x.destino,
         tipo: "destino",
@@ -205,6 +215,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     // y, después, una tarjeta que dice que lo suyo no se ve aquí.
     if (x.fuera) {
       const n = poner({ id: x.destino, tipo: "destino", col: 2, nombre: d?.nombre ?? x.r.destino, sub: "Almacén de otra consola", tono: "ok", estado: "Recibe copias", ultima: null, href: d ? hrefDestino(c, d.id) : undefined, icono: "servidor" });
+      if (d) tipoNodo.set(n.id, { clave: d.id });
       const consolas = otrasConsolasDe(p.equipo);
       const f = poner({
         id: `fu:${x.destino}`,
@@ -228,6 +239,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         ? "Carpeta de la red"
         : `${l.clase === "usb" ? "Disco extraíble" : "Disco"} de ${p.equipo.nombre}${d?.unidad ? ` (${d.unidad})` : ""}`
       : (TIPO_DESTINO[d?.tipo ?? "otro"] ?? "Destino");
+    if (d) tipoNodo.set(x.destino, { clave: d.id });
     return poner({
       id: x.destino,
       tipo: "destino",
@@ -296,6 +308,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         icono: /disco|disk|[a-z]:\\/i.test(x.r.externa?.destino ?? "") ? "disco" : "nube",
         vivo: subiendo,
       });
+      if (x.r.externa?.destino_id) tipoNodo.set(n.id, { clave: x.r.externa.destino_id });
       unir({ id: `${pildora.id}>${n.id}`, de: pildora.id, a: n.id, tipo: "externa", tono: n.tono, vivo: !!subiendo, etiqueta: subiendo ? undefined : frescura(n.tono, n.ultima, ahora) });
     }
     return pildora;
@@ -385,8 +398,26 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : `/c/${c}/equipos/${alm.id}`,
         icono: nube ? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "nube") : "disco",
       });
+      const tipoNube = (alm.resumen?.guarda_copias?.nubes ?? []).find((x) => x.nombre === d.nube)?.tipo ?? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "");
+      tipoNodo.set(
+        e.id,
+        nube && d.nube
+          ? { clave: claveNube(alm.id, d.nube), si: { ...tipoDeNube(tipoNube), inmutable: !!d.bloqueo } }
+          : d.tipo === "zona" && d.carpeta
+            ? { clave: claveZona(alm.id, d.carpeta), si: { tipo: "local", inmutable: true, aislado: false, bloqueoDias: null } }
+            : { si: { tipo: "local", inmutable: !!d.bloqueo, aislado: false, bloqueoDias: null } },
+      );
       unir({ id: `${n.id}>${e.id}`, de: n.id, a: e.id, tipo: "espejo", tono, vivo: false, etiqueta: frescura(tono, e.ultima, ahora) });
     });
+  }
+
+  // 0.7.26: el tipo y las marcas de cada destino (lo deducido con lo que marcó una persona).
+  const vistas = destinosParaPasos(todos, o.catalogo ?? []);
+  for (const n of nodos.values()) {
+    const k = tipoNodo.get(n.id);
+    if (!k) continue;
+    const v = k.clave ? vistas.find((x) => x.clave === k.clave || x.ids.includes(k.clave!)) : undefined;
+    n.tipoDestino = v ? corta(clasificacionDeVista(v, todos)) : k.si;
   }
 
   // La alternativa en texto.

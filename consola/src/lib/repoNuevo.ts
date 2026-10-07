@@ -19,6 +19,8 @@ import { ADMITE, admite, destinosParaPasos, nubeEn, usoNubeDirecta, type Uso } f
 import { claveZona, destinosDelCliente, nombreDestino, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasNuevasPara, type ZonaVista } from "./destinos";
 import { admiteAlmacenPropio, esDeAlmacen } from "./retencion";
 import { nombreTipoNube, TIPOS_NUBE } from "./espejo";
+import { clasificacionDeVista } from "./regla321";
+import { corta, tipoDeNube, type TipoCorto } from "./tipoDestino";
 
 /** Lo que hace elegir cada opción. */
 export type QueDestino =
@@ -43,6 +45,8 @@ export interface OpcionRepo {
   que: QueDestino;
   /** Lo recomendado (un almacén de otro equipo de la oficina). */
   recomendado?: boolean;
+  /** 0.7.26: tipo y marcas del destino. */
+  tipoDestino?: TipoCorto;
 }
 
 /** Los almacenes en los que `equipo` puede tener un repositorio (el suyo, solo si su agente lo admite). */
@@ -58,6 +62,9 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
   const l: OpcionRepo[] = [];
   const vistas = destinosDelCliente(equipos, catalogo);
   const nombreVista = (clave: string, si: string) => vistas.find((v) => v.clave === clave)?.nombre ?? si;
+  /** 0.7.26: tipo y marcas de un destino de la lista (una zona sin vista todavía: Local + Inmutable). */
+  const tipoDe = (v: (typeof vistas)[number] | undefined): TipoCorto =>
+    v ? corta(clasificacionDeVista(v, equipos)) : { tipo: "local", inmutable: true, aislado: false, bloqueoDias: null };
   const propios = equipo.resumen?.destinos ?? [];
   const almacenes = almacenesPara(equipo, equipos);
 
@@ -73,6 +80,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
       uso: { ok: true },
       que: { tipo: "almacen", almacen: a },
       recomendado: !suyo,
+      tipoDestino: tipoDe(vistas.find((v) => v.clave === claveZona(a.id, PRINCIPAL))),
     });
   }
   // 2. Las otras zonas (otros discos) de los almacenes.
@@ -84,6 +92,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
       clase: "zona",
       uso: { ok: true },
       que: { tipo: "almacen", almacen: z.almacen, zona: z },
+      tipoDestino: tipoDe(vistas.find((v) => v.clave === claveZona(z.almacen.id, z.id))),
     });
   }
   // 3. Sus propios destinos.
@@ -92,7 +101,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
       const nombre = d.nube ?? d.nombre;
       const tipo = tipoNubeEn(equipo, nombre);
       const uso: Uso = nubeEn(equipo, nombre) ? usoNubeDirecta({ equipo, nombre, tipo }, equipo) : { ok: false, motivo: `«${nombre}» ya no está conectada en este equipo` };
-      l.push({ valor: uso.ok ? d.id : `no:${d.id}`, nombre: d.nombre, detalle: [nombreTipoNube(tipo || "nube"), "conectada en este equipo", d.donde ? `carpeta ${d.donde}` : ""].filter(Boolean).join(" · "), clase: "nube", uso, que: uso.ok ? { tipo: "propio", destino: d } : { tipo: "ninguno" } });
+      l.push({ valor: uso.ok ? d.id : `no:${d.id}`, nombre: d.nombre, detalle: [nombreTipoNube(tipo || "nube"), "conectada en este equipo", d.donde ? `carpeta ${d.donde}` : ""].filter(Boolean).join(" · "), clase: "nube", uso, que: uso.ok ? { tipo: "propio", destino: d } : { tipo: "ninguno" }, tipoDestino: tipoDeNube(tipo) });
       continue;
     }
     const z = zonaDeDestino(d, equipos);
@@ -113,6 +122,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
       clase: almacen ? "zona" : d.tipo === "local" ? "carpeta" : "equipo",
       uso: { ok: true },
       que: { tipo: "propio", destino: d },
+      tipoDestino: tipoDe(vistas.find((v) => v.ids.includes(d.id) || (z && v.clave === claveZona(z.almacen.id, z.id)))),
     });
   }
   // 4. Los del catálogo que aún no tiene (de red y con credenciales).
@@ -124,6 +134,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
       clase: "suelto",
       uso: { ok: true },
       que: { tipo: "catalogo", clave: v.clave, tipoDestino: v.tipo as "b2" | "s3" | "rest", nombre: v.nombre, donde: v.donde ?? "" },
+      tipoDestino: tipoDe(v),
     });
   }
   // 5. Las nubes conectadas en algún equipo (una vez cada una, por nombre y tipo).
@@ -153,6 +164,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
       clase: "nube",
       uso,
       que: uso.ok ? { tipo: "nube", nube: g.nombre, tipoNube: g.tipo } : { tipo: "ninguno" },
+      tipoDestino: tipoDeNube(g.tipo),
     });
   }
   // Ninguna Dropbox en el cliente: se puede conectar una aquí mismo.
@@ -160,7 +172,7 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
     const uso: Uso = !admite(equipo, ADMITE.repoEnNube)
       ? { ok: false, motivo: `Actualiza el agente de ${equipo.nombre} para copiar directo a una nube`, accion: { tipo: "actualizar", equipo } }
       : { ok: false, motivo: "Sin conectar todavía", accion: { tipo: "conectar_nube", equipo, nube: "", tipoNube: "dropbox", texto: `Conectar Dropbox en ${equipo.nombre}` } };
-    l.push({ valor: "conectar:dropbox", nombre: "Dropbox", detalle: "Directo a la nube, sin almacén de por medio", clase: "nube", uso, que: { tipo: "ninguno" } });
+    l.push({ valor: "conectar:dropbox", nombre: "Dropbox", detalle: "Directo a la nube, sin almacén de por medio", clase: "nube", uso, que: { tipo: "ninguno" }, tipoDestino: tipoDeNube("dropbox") });
   }
   // 6. Uno nuevo.
   l.push({ valor: "nuevo", nombre: "Un destino nuevo…", detalle: "Disco o carpeta, servidor de copias, Backblaze B2 o S3", clase: "nuevo", uso: { ok: true }, que: { tipo: "nuevo" } });

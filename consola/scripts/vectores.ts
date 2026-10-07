@@ -826,6 +826,15 @@ console.log("\n· Progreso en vivo (v1.25)");
   igual("columnas: equipo, repositorio, almacén y los dos espejos", m.nodos.map((n) => `${n.col}:${n.nombre}`), ["0:PC-01", "1:Docs 1", "2:ALMACEN-01", "3:Dropbox", "3:Disco 2"]);
   igual("el espejo que falla, en rojo", m.aristas.filter((a) => a.tipo === "espejo").map((a) => a.tono), ["ok", "bad"]);
   igual("en palabras (espacios finos aparte)", m.frases.map((x) => x.replace(/[  ]/g, " ")), ["PC-01 copia «Docs 1» a ALMACEN-01 (al día, hace 3 h).", "ALMACEN-01 se refleja en Disco 2 (al día, hace 10 h) y Dropbox (falló hace 2 h)."]);
+  igual(
+    "0.7.26: tipo y marcas de cada destino (el almacén: Local + Inmutable; Dropbox: Nube)",
+    m.nodos.filter((n) => n.col >= 2).map((n) => [n.nombre, n.tipoDestino?.tipo, n.tipoDestino?.inmutable]),
+    [
+      ["ALMACEN-01", "local", true],
+      ["Dropbox", "nube", false],
+      ["Disco 2", "local", false],
+    ],
+  );
   const vivo = construirMapa([pc(1), almacen], {}, { cliente: "c", ahora, enVivo: (_e, _r, t) => (t === "copia" ? "Copiando 40 %" : null) });
   cierto("con una copia en marcha, el trazo se mueve", vivo.aristas.filter((a) => a.tipo !== "espejo").every((a) => a.vivo));
   const muchos = [...Array.from({ length: 14 }, (_, i) => pc(i + 1, i !== 4)), almacen];
