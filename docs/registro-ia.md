@@ -51,6 +51,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-bloque1`
+
+Desde `origin/main` (plan de la 0.7.26). En paralelo, otras sesiones con el bloque 2 (tipos de destino y marcas): no se tocaron sus archivos.
+
+- **Pedido:** bloque 1 del plan 0.7.26. 1.1: «Nubes conectadas» en la página de cada equipo con «Desconectar», que anula el permiso en el proveedor, borra los restos y no deja si algo la usa; si no se puede anular en ese momento, borrar igual las credenciales y reintentar la anulación (sellada, 7 días, con aviso si vence). 1.2: guiones de Linux con el minisign oficial si apt no lo tiene, espera a apt ocupado y sin el aviso de «guardar copias» en un almacén.
+- **Cambios:**
+  - **Agente:** `crates/agente/src/nube_anular.rs` (nuevo). `quitar_nube`, `nube quitar` y la ventana pasan por él. Dropbox: `POST /2/auth/token/revoke` con el access token (renovado antes si caducó; 401 `expired_access_token` → renueva y repite; 401 u `invalid_grant` → «ya no era válido»). Sin conexión, 429, 5xx u otro error: se borra todo igual y se apunta en `nubes-por-anular.bin` (sellado, solo refresh/access token y app key), reintento en cada vuelta del servicio (5 min · 2ⁿ, hasta 6 h) durante 7 días; al vencer, aviso `nube_sin_anular` por la bitácora. Restos: los archivos de las vueltas de rclone llevan ahora una huella del nombre de la nube (`vuelta-<huella>-…`) para borrar solo los suyos (sin nubes, la carpeta entera), más `rclone-restic.conf` y `rclone-vacio.conf`. `admite: "nube_revocar"` y `resumen.nubes_por_anular`. `quitar_nube` ya no es destructiva para el agente (se niega en vez de sacar la nube del espejo). En las pruebas, la dirección de Dropbox por defecto es un puerto cerrado de 127.0.0.1.
+  - **Servidor:** acepta el aviso `nube_sin_anular` (importante).
+  - **Consola:** `lib/nubesEquipo.ts` (+ `scripts/vectores-nubes.ts`), tarjeta «Nubes conectadas» en la página de cada equipo (qué la usa, «Desconectar» o por qué no, las pendientes de anular); aviso nuevo en «Avisos»; simulador; e2e (no deja con la derivada puesta, sí sin ella).
+  - **Linux:** `instalar-agente.sh`, `instalar-servidor.sh` (minisign oficial 0.12 con huella fijada en la carpeta temporal; `RESGUARDO_MINISIGN=oficial`), los dos y `preparar-vm.sh` esperan a apt (fuser o pgrep, 10 min, y `DPkg::Lock::Timeout`), `instalar-agente.sh` no repite el aviso de «guardar copias» en un almacén. CI: shellcheck de los tres, el aviso, y una instalación firmada con una llave de pruebas usando el minisign oficial (y el paquete cambiado, que se niega).
+  - **Docs:** `destinos.md` «Desconectar una nube», `api-servidor.md` (§5, §6, §12 y «Cambios», v1.4x pendiente de numerar), `agente-gestionado.md`, `agente-linux.md`, `servidor-linux.md`, `plan-0.7.26.md` (1.1 y 1.2 hechos).
+- **Comprobado:** en Windows, `cargo fmt --all --check`, los dos clippy (también `--features consola-integrada`), `cargo test --workspace` (agente: 342 bien, 1 ignorada), consola `check`, `build` y `test:vectores` (con `vectores-nubes`), `test:sin-referencias` y el e2e completo (la primera vez, un `ECONNRESET` sin explicación en el paso 5; repetido, bien; incluye el paso nuevo de desconectar la nube). CI de la rama en verde (Linux y Windows), con shellcheck y la instalación firmada con el minisign oficial.
+- **Sin probar / dudas:**
+  - **Google Drive no se anula desde el equipo** (decisión): está conectada con la app de rclone y la anulación de Google quita el permiso de la app entera para esa cuenta, así que dejaría sin acceso a todos los equipos (y a cualquier rclone) de esa cuenta; el resultado dice dónde quitarlo. OneDrive no existe en `nube.rs`. B2/S3/SFTP/SMB/WebDAV: se borran las credenciales y se dice que la clave sigue viva.
+  - Dropbox conectada con `rclone authorize` (app de rclone) y caducada: el agente no puede renovarla (no tiene el secreto de esa app); se dice que se quite desde la web, sin apuntarla para reintentar.
+  - Antes, desconectar una nube que usaba el espejo la sacaba del espejo (con espera). Ahora el agente nuevo se niega y la consola no ofrece el botón: hay que quitarla antes del espejo. Una consola anterior con este agente recibe la negativa con el motivo.
+  - **Sin probar contra Dropbox de verdad** (solo con el servidor de mentira): la forma de la petición sigue su documentación (sin argumentos, cuerpo `null`, `Content-Type: application/json`).
+  - La espera a apt en la CI no se prueba (haría falta tener apt ocupado a propósito); el minisign oficial sí (CI de Linux). shellcheck no está en este equipo: lo pasa la CI.
+  - Para poder compilar con el disco F: lleno (0 GB libres), borré dos carpetas de compilación de ramas ya unidas en la carpeta temporal compartida (`tmp/target-regla321` y `tmp/target-cadenas`, de ayer, ~34 GB; se regeneran solas). Quedan otras de ayer (`consolas-sinc`, `target-destinos*`, `target-pulido`) que no toqué.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/repos-en-la-nube`
 
 Desde `ia/integracion-0725`; se unió otra vez al final (con `ia/destinos-y-regla-ux` y `ia/mapa-zoom` dentro).
