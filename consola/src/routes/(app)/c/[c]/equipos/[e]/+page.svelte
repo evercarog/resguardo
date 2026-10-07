@@ -119,7 +119,7 @@
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
   import { cuandoEnFrase, filtroEnFrase, pasoDeEspejo } from "$lib/cadenas";
   import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
-  import { admiteEspejoEquipo, admiteTrabajos, estadoTrabajo, hrefEspejos, textoCuando as textoCuandoTrabajo, textoRetencion as textoRetencionTrabajo, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
+  import { admiteEspejoEquipo, admiteTrabajos, estadoTrabajo, hrefEspejos, opcionesRepos, textoCuando as textoCuandoTrabajo, textoRetencion as textoRetencionTrabajo, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
   import type { DerivadaResumen } from "$lib/tipos";
@@ -1322,7 +1322,7 @@
         </section>
       {/if}
 
-      {#if admiteEspejoEquipo(equipo) && (trabajosPropios.length || puede.administrar(rol))}
+      {#if admiteEspejoEquipo(equipo) && (trabajosPropios.length || (puede.administrar(rol) && opcionesRepos(equipo, "equipo", []).length))}
         <!-- Plan 0.7.26 (bloque 4): espejos que hace el propio equipo con los repositorios de sus discos. -->
         <section class="card p" aria-labelledby="t-espejos-eq">
           <h3 class="section-title" id="t-espejos-eq">Espejos de este equipo</h3>
