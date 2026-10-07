@@ -209,7 +209,7 @@ Apuntado el 2026-10-07, tras la primera restauración real desde la consola. Se 
 - [ ] **13b. Restaurar en un .zip:** «Guardar como .zip en el equipo» (carpeta elegida, sin límite) y «Descargar .zip» al navegador (cifrado de punta a punta, para tamaños pequeños o medianos). **Con contraseña opcional** en AES-256 (no ZipCrypto, que es débil): la contraseña se escribe en el navegador y viaja sellada al equipo, nunca al servidor. Avisar de que el Explorador de Windows no abre .zip con AES (hace falta 7-Zip o similar).
 - [ ] **13c. Detalle en vivo:** gráfico de velocidad, archivos y datos restaurados, tiempo restante y carpeta en curso, con el estilo de las copias.
 - [ ] **13d. Página «Restauraciones»** por cliente y por equipo (quién, cuándo, qué versión, cuánto, cuánto tardó, resultado, con su detalle y gráfico) y **estadísticas** (número, tiempos, éxito), también en Informes.
-- [ ] **13e. A decidir:** que una restauración real correcta cuente como prueba de restauración en la regla 3-2-1-1-0.
+- [ ] **13e. Decidido (2026-10-07):** una restauración real correcta **cuenta como prueba de restauración** en la regla 3-2-1-1-0 para ese repositorio, con su fecha y la marca «Restauración real» (p. ej. «Prueba bien · restauración real, hace 3 días»). Caduca igual que las pruebas programadas (hoy 45 días, configurable): pasado el plazo sin otra restauración real ni prueba programada, la regla vuelve a pedirla. Solo cuenta si terminó bien y restauró algo.
 
 ## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
 
