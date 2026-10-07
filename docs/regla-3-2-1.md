@@ -12,8 +12,8 @@ La forma moderna de la regla 3-2-1, **3-2-1-1-0**, para **cada copia** (las carp
 |---|---|---|
 | **3** | Tres copias de los datos, contando los originales. | Los originales (1) más cada destino **al día** al que llegan esos datos. |
 | **2** | En dos soportes distintos. | Soportes distintos entre los originales y los destinos al día. Soporte = **equipo + disco** (o la nube, o el servidor de fuera). |
-| **1** | Una fuera de la oficina. | Destinos al día en **otra sede** o en la **nube**. |
-| **1** | Una inmutable o fuera del alcance de los equipos. | Destinos al día de **solo añadir** (desde el equipo), con **bloqueo de objetos**, con **instantáneas fuera de su alcance** o **desconectados**. |
+| **1** | Una fuera del sitio. | Destinos al día de tipo **Fuera del sitio** o **Nube** (0.7.26; antes, `lugar` `otra_sede` o `nube`). |
+| **1** | Una inmutable o aislada. | Destinos al día con la marca **Inmutable** (solo añadir desde el equipo, bloqueo de objetos, instantáneas fuera de su alcance) o **Aislado** (un medio que se desconecta y se rota). |
 | **0** | Cero errores al verificar y al probar la restauración. | Verificación y prueba de restauración programadas, la última de cada una correcta y reciente (45 días como mucho), y ningún destino con datos dañados en su comprobación. |
 
 **Guía, nunca obligación.** Se puede guardar cualquier configuración. La consola dice cómo queda cada copia y qué hacer para cumplir; nunca bloquea un botón ni resta en otra parte por no cumplirla.
@@ -54,6 +54,28 @@ Las claves del catálogo son las de la parte A: `zona:<almacén>:<zona>`, el id 
 
 **Sistema de archivos y entorno (8e).** El agente dice en su resumen el **sistema operativo** (ya lo decía), el **sistema de archivos** de la carpeta de cada destino local, de cada zona y de cada carpeta del espejo (`NTFS`, `ReFS`, `ext4`, `xfs`, `zfs`, `btrfs`…) y si corre en un **contenedor** o una **máquina virtual**. La consola lo enseña **como dato** en la ficha del destino. **Nunca** resta en la regla ni en la salud de la protección por usar Windows o un sistema de archivos sin instantáneas.
 
+## Tipo y marcas (0.7.26, bloque 2)
+
+Desde la 0.7.26 cada destino tiene **un tipo** y **marcas combinables** (lo de 8a sigue guardado y se lee igual):
+
+| | Qué es | Icono (lucide) |
+|---|---|---|
+| **Local** (tipo) | Este equipo u otro de la oficina (`lugar` `este_equipo` u `oficina`). | `hard-drive` |
+| **Fuera del sitio** (tipo) | Otra sede, un servidor de fuera (`otra_sede`). | `building-2` |
+| **Nube** (tipo) | Dropbox, Drive, OneDrive, B2, S3… (`nube`). | `cloud` |
+| **Inmutable** (marca) | No se puede borrar desde los equipos: solo añadir, bloqueo de objetos de N días (`bloqueo_dias`), instantáneas fuera de su alcance. | `lock` |
+| **Aislado** (marca) | Un medio que se desconecta y se rota (discos USB). Avisa si no se conecta en N días (`aislado_dias`, 30 por defecto). | `unplug` |
+
+**Deducción** (siempre editable; lo que marca una persona manda y se dice «marcado por una persona»): carpeta del equipo → Local; zona de un almacén → Local + Inmutable (desde el punto de vista del equipo); Dropbox, Drive, OneDrive → Nube; B2 o S3 → Nube y, con bloqueo de objetos, + Inmutable con los días de la copia externa o derivada que va a él; un servidor de fuera → Fuera del sitio (+ Inmutable si es de solo añadir); SMB → Local; SFTP → Fuera del sitio.
+
+**Compatibilidad.** En el catálogo, `atributos` gana `tipo`, `aislado`, `bloqueo_dias` y `aislado_dias`, todos opcionales. La consola sigue escribiendo `lugar` e `inmutable` para una consola anterior (`tipo: "fuera"` → `lugar: "otra_sede"`; Aislado sin Inmutable → `inmutable: "desconectado"`) y lee `inmutable: "desconectado"` de antes como «Aislado». Solo se guarda lo que se aparta de lo deducido.
+
+**La conexión de un medio aislado la ve el agente, no se adivina.** Al hacer el resumen y al terminar una copia en un disco suyo, el agente mira qué volumen tiene la carpeta de cada destino local (y de cada carpeta del espejo): GUID o número de serie del volumen en Windows, UUID del sistema de archivos en Linux. Al resumen va solo un resumen SHA-256 de ese identificador con la hora en que lo vio (`aislado: { ultima_conexion, volumenes: [{ id, visto }] }`), hasta 8 discos por destino para ver la rotación entre A y B. Una carpeta que no existe (el disco no está) no cuenta como vista. La consola dice «Conectado por última vez hace N días» o, pasados sus días, «Conecta el medio aislado para comprobar la rotación (última vez visto hace N días)», y uno por disco si hay varios. Un agente anterior no lo dice: «Sin datos de conexión», que no es un fallo ni un aviso.
+
+**En la regla.** Un paso Aislado está al día si su última vez bien es de sus N días (no de su horario: se conecta de vez en cuando) y avisa (`aislado_sin_conectar`) si el agente lo vio conectado hace más de N días. Un destino con las dos marcas cuenta una vez. El aviso `inmutable_local` sale si todo lo inmutable o aislado es Local.
+
+**Dónde se ve** (un componente, `TipoDestino`: icono y palabra, nunca solo el color): la página del destino (editor de tipo, marcas, días del bloqueo y días del aislado, con la última conexión), las tarjetas de «Repositorios y destinos», los selectores de destino (Nuevo repositorio, paso espejo, copia derivada), la cabecera de cada copia en el editor y en su página (cada paso de la cadena con su icono) y las tarjetas del mapa.
+
 ## 8b. El cálculo, por copia
 
 ### Los caminos de hoy
@@ -80,6 +102,8 @@ PasoRegla {
   id, nombre,
   tipo: "copia" | "espejo" | "externa" | "derivada" | "paso",
   lugar, inmutable, soporte,
+  tipo_destino?: "local" | "fuera" | "nube",  // 0.7.26: sin él, el de `lugar`
+  aislado?: bool, conectado?: RFC 3339, aislado_dias?: número,  // 0.7.26
   equipo?: string,                           // el equipo que lo guarda (nada: nube o servidor de fuera)
   ultima_ok?: RFC 3339,                      // la última vez que se puso al día bien
   cada_horas?: número,                       // cada cuánto le toca (sin él, 24)
@@ -100,13 +124,14 @@ Regla321 {
   partes: [{ id: "copias" | "soportes" | "fuera" | "inmutable" | "errores",
              meta, valor, valor_config, cumple, cumple_config, accion, detalle }],
   atrasados: [id del paso],
-  avisos: ["mismo_equipo" | "inmutable_local"],
+  avisos: ["mismo_equipo" | "inmutable_local" | "aislado_sin_conectar"],
 }
 ```
 
 - `accion` es un código (`anadir_destino`, `poner_al_dia`, `otro_soporte`, `anadir_fuera`, `anadir_inmutable`, `programar_verificacion`, `programar_prueba`, `revisar_verificacion`, `revisar_prueba`, `revisar_destino`, o vacío si cumple): cada lado lo pone en palabras (la consola, con los nombres de los destinos y un enlace).
 - `mismo_equipo`: se llega a 2 soportes solo con discos del mismo equipo (dos zonas del mismo almacén): «un fallo del equipo, un robo o un incendio se los lleva a la vez».
-- `inmutable_local`: lo inmutable está todo en la oficina (instantáneas del anfitrión, un disco desconectado, una zona de solo añadir): no protege de un incendio o un robo de la oficina.
+- `inmutable_local`: lo inmutable o aislado es todo Local (instantáneas del anfitrión, un disco que se rota, una zona de solo añadir): no protege de un incendio o un robo del sitio.
+- `aislado_sin_conectar` (0.7.26): un medio aislado lleva más de sus N días sin que el agente lo vea conectado. Sin datos (un agente anterior) no avisa.
 
 **«Dejó de cumplir» sin guardar historia.** Una copia «deja de cumplir» cuando su **configuración** cumple pero hoy algo no está al día o falló (p. ej. el espejo en la nube lleva 3 días fallando). Es un cálculo, no un recuerdo: no hace falta guardar el estado anterior en ningún sitio.
 

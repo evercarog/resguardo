@@ -51,6 +51,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-bloque2`
+
+- **Pedido:** bloque 2 de `docs/plan-0.7.26.md`: tipos de destino (Local, Fuera del sitio, Nube) y marcas (Inmutable, Aislado), deducidos y editables, y verlos en todas partes; la regla 3-2-1-1-0 con el nuevo modelo. Después, el responsable pidió que la última conexión de un medio aislado la **detecte el agente** (identidad del volumen, varios discos rotados), no que la escriba una persona. Otra sesión hacía el bloque 1 a la vez (sin tocar sus archivos).
+- **Cambios:**
+  - Regla (`protection.rs` y `regla321.ts`, seis vectores nuevos compartidos): campos opcionales `tipo_destino`, `aislado`, `conectado`, `aislado_dias`; «1 fuera» = Fuera del sitio o Nube; el otro «1» = Inmutable o Aislado; un paso aislado está al día con sus N días (30) y avisa `aislado_sin_conectar` si el agente lo vio conectado hace más. Textos «1 fuera del sitio», «1 inmutable o aislado».
+  - `lib/tipoDestino.ts` (deducción, lo marcado encima, atributos compatibles, estado de conexión) y el componente `TipoDestino` (compacto y completo; icono y palabra; lucide `hard-drive`, `building-2`, `cloud`, `lock`, `unplug`).
+  - Catálogo (servidor y simulador): `atributos.tipo`, `aislado`, `bloqueo_dias`, `aislado_dias`.
+  - Agente: `volumenes.rs`. Al hacer el resumen (y al terminar una copia en un disco suyo) apunta qué volumen tiene la carpeta de cada destino local y de cada carpeta del espejo (GUID o número de serie en Windows, UUID en Linux) y cuándo; al resumen solo un SHA-256 corto y la hora, hasta 8 discos por destino (`destinos[].aislado`, `guarda_copias.espejo.destinos[].aislado`).
+  - Consola: editor «Tipo y marcas» (tipo, marcas, días del bloqueo, días del aislado y la última conexión por disco), página del destino, tarjetas de «Repositorios y destinos», selectores (Nuevo repositorio, paso espejo, copia derivada), cabecera de cada copia en el editor y en su página, nodos del mapa y pasos de la tira de la regla. El simulador trae un «Disco 2» de dos USB rotados marcado Aislado.
+  - Documentos: `regla-3-2-1.md` («Tipo y marcas»), `diseno.md`, `api-servidor.md` «Cambios» (v1.4x, pendiente de numerar al unir), `plan-0.7.26.md` (2.1 y 2.2 hechos), glosario y guía.
+- **Comprobado:** ver al final de la entrada (se completa al terminar).
+- **Decisiones tomadas sin el responsable:**
+  - Se conserva `lugar` e `inmutable` en el catálogo y se siguen escribiendo para una consola anterior; «Aislado sin Inmutable» se guarda además como `inmutable: "desconectado"` (lo que ya contaba una consola anterior).
+  - La «última vez conectado» no la escribe nadie (el responsable lo pidió detectado): sin datos de un agente anterior no hay aviso, solo «Sin datos de conexión».
+  - Un paso aislado se da por al día con sus N días aunque la copia sea diaria (un disco que se rota se pierde horarios por naturaleza). El aviso `aislado_sin_conectar` es por tiempo, no por configuración.
+  - Un disco fijo también se apunta (el agente no sabe qué marcó la persona); solo se enseña en los destinos marcados Aislado.
+  - El identificador del volumen se guarda en claro solo resumido (SHA-256 de 16 cifras) en `volumenes.json` del agente; nunca la ruta.
+  - Un servidor anterior rechazaría los atributos nuevos: la consola va dentro de su servidor, así que llegan juntos.
+- **Sin probar:** un disco USB real que se rota en Windows y en Linux (GUID frente a número de serie; `/dev/disk/by-uuid` en un contenedor sin `/dev/disk`); las carpetas del espejo en discos rotados del almacén.
+
 ## 2026-10-06 · Claude Code (Claude Opus 5.5) · rama `ia/repos-en-la-nube`
 
 Desde `ia/integracion-0725`; se unió otra vez al final (con `ia/destinos-y-regla-ux` y `ia/mapa-zoom` dentro).
