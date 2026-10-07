@@ -117,6 +117,8 @@ mod tests {
             skip_unchanged: false,
             ganchos: vec![],
             after: None,
+            after_always: false,
+            after_delay_min: 0,
         };
         let repo: AgentRepo = serde_json::from_value(serde_json::json!({
             "id": "r1",

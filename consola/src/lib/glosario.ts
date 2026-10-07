@@ -250,6 +250,29 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Una cuenta de Dropbox o Google Drive conectada en el equipo que guarda copias, para el espejo. El permiso viaja cifrado solo para ese equipo y se guarda protegido allí; el servidor no lo ve.",
     todo: "Dropbox se conecta desde esta consola: en la ficha del equipo, «Conectar Dropbox». (Sin consola, o Google Drive: en el equipo, como administrador, resguardo-agente nube conectar.)",
   },
+  // Plan 0.7.26, bloque 3: el editor de copias guiado.
+  "inicio-copia": {
+    title: "Cuándo empieza una copia",
+    text: "«Con horario»: a sus horas. «En cadena»: cuando la copia de encima termina bien; si falla, esta no se hace y se avisa. «Después de la anterior»: cuando la de encima termina, salga bien o mal. En las dos últimas, sin horario propio: enseguida o con unos minutos de retraso.",
+    todo: "La primera copia siempre empieza con su horario. «Después de la anterior» y el retraso piden un agente actualizado.",
+  },
+  exclusiones: {
+    title: "No copiar",
+    text: "Archivos o carpetas que se dejan fuera, una regla por línea: «*.tmp» deja fuera todos los .tmp; «node_modules», las carpetas con ese nombre. Las habituales ya vienen puestas.",
+  },
+  "solo-si-cambios": {
+    title: "Solo guardar si hay cambios",
+    text: "Si nada cambió desde la última copia, no se guarda una versión nueva (así la retención no se llena de versiones iguales). Apágalo si quieres una versión cada vez.",
+  },
+  "nube-propia": {
+    title: "Copiar directo a una nube de este equipo",
+    text: "El repositorio va en una nube conectada en este mismo equipo (Dropbox, Google Drive…). Este equipo guardará la credencial de la nube y podrá borrar en ella: si lo atacan, pueden borrar también esa copia.",
+    todo: "Mejor: copia al almacén y añade un espejo o una copia derivada a la nube.",
+  },
+  "modo-avanzado": {
+    title: "Guiado o avanzado",
+    text: "Guiado: cada copia paso a paso (cuándo, qué, dónde y resumen), con lo poco habitual en «Más opciones». Avanzado: la tarjeta entera, todo a la vista. Las dos guardan lo mismo; la consola recuerda lo que elijas.",
+  },
   ganchos: {
     title: "Antes de copiar",
     text: "Dos pasos cerrados que el agente puede hacer antes de cada copia (nunca órdenes libres): volcar bases de datos de SQL Server con COPY_ONLY (el volcado entra en la copia y luego se borra), y avisar si la carpeta de copias propias de una aplicación lleva demasiadas horas sin archivos nuevos. Piden el agente 0.7.2 o posterior.",

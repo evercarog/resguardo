@@ -24,14 +24,14 @@ Acordado con el responsable del proyecto el 2026-10-07. Marca aquí el estado de
 
 ## Bloque 3 — Editor de copias guiado
 
-- [ ] **3.1 Lista de copias.** Cada copia, tarjeta cerrada con resumen («🕐 Cada hora · 📁 1 carpeta → 🖥️ Repositorio (Almacén · Disco D)»), debajo sus espejos y derivadas con iconos agrupados por almacén; estado y tira 3·2·1·1·0 compacta; asa para ordenar, «Activa» y «⋯» (duplicar, quitar). Un solo botón «+ Añadir».
-- [ ] **3.2 Copia de carpetas, guiada.**
+- [x] **3.1 Lista de copias.** (rama `ia/0726-bloque3`; ver [editor-de-copias.md](editor-de-copias.md) «Guiado y avanzado») Cada copia, tarjeta cerrada con resumen («🕐 Cada hora · 📁 1 carpeta → 🖥️ Repositorio (Almacén · Disco D)»), debajo sus espejos y derivadas con iconos agrupados por almacén; estado y tira 3·2·1·1·0 compacta; asa para ordenar, «Activa» y «⋯» (duplicar, quitar). Un solo botón «+ Añadir».
+- [x] **3.2 Copia de carpetas, guiada.** (rama `ia/0726-bloque3`; agente: `inicio`, `retraso_min`, `admite: "inicio_despues"`)
   1. **Cuándo:** «Con horario» (plantillas rápidas «Cada hora», «Cada día a las…», «Laborables a las…» y «Personalizar» = editor completo); «En cadena» (solo si la anterior sale bien); «Después de la anterior» (siempre). En estas dos, sin horario: «Inmediatamente» o «Con retraso de N min». La primera copia no puede ir en cadena ni después.
   2. **Qué:** carpetas («Elegir en el equipo»); «Más opciones»: exclusiones (con las habituales), «Solo guardar si hay cambios», «Antes de copiar».
   3. **Dónde:** repositorios existentes por destino con icono; «+ Nuevo repositorio» (nombre, destino con el almacén recomendado arriba, vacío o trayendo las versiones de otro —todas o filtradas—, contraseña generada o escrita → kit); «Avanzado»: nubes del propio equipo con el aviso «Este equipo guardará la credencial de la nube y podrá borrar en ella».
   4. **Resumen:** pocas líneas con «Cambiar»; cómo queda la regla 3-2-1 con sugerencias de un clic; «Guardar» pide la clave una vez para todo lo pendiente.
   «Avanzado» muestra la tarjeta entera como hoy.
-- [ ] **3.3 «+ Añadir».** Copiar carpetas de este equipo (3.2) · Espejo (bloque 4) · Copia derivada (versiones de un repositorio, todas o filtradas por etiquetas, carpetas o fechas, a otro repositorio de forma continua; pasos: de qué repositorio → qué versiones → cuándo → dónde → resumen). Dentro de una copia, el espejo y la derivada ya saben de qué repositorio parten.
+- [x] **3.3 «+ Añadir».** (rama `ia/0726-bloque3`; el espejo entra por `PasoEspejo`, que rehace el bloque 4) Copiar carpetas de este equipo (3.2) · Espejo (bloque 4) · Copia derivada (versiones de un repositorio, todas o filtradas por etiquetas, carpetas o fechas, a otro repositorio de forma continua; pasos: de qué repositorio → qué versiones → cuándo → dónde → resumen). Dentro de una copia, el espejo y la derivada ya saben de qué repositorio parten.
 
 ## Bloque 4 — Espejos como trabajos
 

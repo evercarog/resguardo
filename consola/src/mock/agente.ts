@@ -71,6 +71,9 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       horario: typeof c.horario === "object" && c.horario ? c.horario : { dias: [1, 2, 3, 4, 5], horas: ["13:00"] },
       activa: c.activa !== false,
       ...(c.tras ? { tras: c.tras } : {}),
+      // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
+      ...(c.inicio ? { inicio: c.inicio } : {}),
+      ...(c.retraso_min ? { retraso_min: c.retraso_min } : {}),
       // CONTABILIDAD (agente 0.7.2) vuelca su base de SQL Server antes de copiar «Siigo».
       gancho: c.id === "siigo" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["SIIGO_ALTAMAR"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
@@ -145,6 +148,8 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       carpetas: c.carpetas.length,
       activa: c.activa,
       tras: c.tras ?? null,
+      inicio: c.inicio ?? null,
+      retraso_min: c.retraso_min ?? null,
       // v1.16: como el agente 0.7.7 (los anteriores ni lo leen: siempre encendido).
       ...(versionAlMenos(e.version_agente, "0.7.7") ? { solo_si_cambios: c.solo_si_cambios !== false } : {}),
     })),
@@ -286,6 +291,12 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       // Tarea 7c: «después de la anterior», como el agente con `admite: "cadenas"` (uno anterior lo ignora).
       if (!e.resumen?.admite?.includes("cadenas")) for (const k of cfg.copias) delete k.tras;
+      // Plan 0.7.26: `inicio` y `retraso_min`, como el agente con `admite: "inicio_despues"` (uno anterior los ignora).
+      if (!e.resumen?.admite?.includes("inicio_despues")) for (const k of cfg.copias) (delete k.inicio, delete k.retraso_min);
+      for (const k of cfg.copias) {
+        if ((k.inicio === "horario" && k.tras) || ((k.inicio === "cadena" || k.inicio === "despues") && !k.tras)) return resultado(e, o, "fallida", `Cómo empieza la copia «${k.nombre}» no cuadra con «tras».`);
+        if (k.retraso_min != null && (k.retraso_min < 0 || k.retraso_min > 1440 || (k.retraso_min > 0 && !k.tras))) return resultado(e, o, "fallida", `El retraso de la copia «${k.nombre}» es de 0 a 1440 minutos, y solo tras otra.`);
+      }
       const errCadena = errorCadenas(cfg.copias);
       if (errCadena) return resultado(e, o, "fallida", errCadena);
       // Horario (v1.24): un agente ≥ 0.7.9 usa las reglas si las hay; uno anterior no las lee y usa la lista de horas.
