@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
-import { etiquetaValida, kCfg, materialCliente } from "../../src/lib/cripto/claves";
+import { etiquetaEquipo, etiquetaValida, hashCodigo, kCfg, materialCliente } from "../../src/lib/cripto/claves";
 import { ClaveNueva } from "../../src/lib/cambioClave";
 import { crearCodigo, cuerpoAnadir, leerCodigo } from "../../src/lib/conexion";
 import { anclaDe, comprobarAncla, leerAncla, lineaAncla } from "../../src/lib/auditoria";
@@ -47,6 +47,8 @@ import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
+import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
+import { aConfirmar, esperando, revisar, type LoteDetalle } from "../../src/lib/despliegue";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
 // @ts-expect-error: módulo de Node en JavaScript, sin tipos.
 import { firmarPruebas, semillaPruebas } from "../../../scripts/lib/minisign.mjs";
@@ -1413,6 +1415,66 @@ async function principal() {
     const solo = B.cli(["consolas"]);
     comprobar(solo.codigo === 0 && solo.salida.includes(s3.url) && !solo.salida.includes(s2.url), "`resguardo-agente consolas`: solo la de destino", solo.salida);
     log("B movido al servidor 3");
+
+    // -----------------------------------------------------------------------
+    paso("10. Despliegue masivo (bloque 7): un código para varios equipos; dos se unen y se confirman en bloque; anulado, el tercero no entra");
+    {
+      // Un cliente nuevo en el servidor 3, para no cambiar las cuentas de los pasos anteriores.
+      const cv: Cliente = await consola3.ok("POST", "/api/clientes", { nombre: "Panadería Norte", espera_min_horas: 1 });
+      Object.assign(cv, await consola3.ok("GET", `/api/clientes/${cv.id}`));
+      const codigoVarios = generarCodigo(LARGO_PREPARADO);
+      const lote = await consola3.ok("POST", `/api/clientes/${cv.id}/codigos-varios`, { codigo_hash: hashCodigo(codigoVarios), usos: 5, dias: 7, nombre: "Planta 2" });
+      igual([lote.usos, lote.usados, lote.estado, lote.codigo], [5, 0, "activo", undefined], "El código para varios equipos: solo su hash en el servidor");
+      const puestos = [1, 2, 3].map((n) => new Agente(`PUESTO-0${n}`, agenteBin, dir(`puesto-${n}`), path.join(registros, `puesto-${n}.log`)));
+      // Dos equipos con el MISMO código: cada uno enseña su número.
+      const sasPuesto = new Map<string, string>();
+      for (const ag of puestos.slice(0, 2)) sasPuesto.set(ag.nombre, ag.vincular(codigoVarios, s3));
+      const srvInfo = await consola3.ok("GET", "/api/servidor");
+      const detalle: LoteDetalle = await esperar("los dos esperando confirmación", async () => {
+        const d: LoteDetalle = await consola3.ok("GET", `/api/clientes/${cv.id}/codigos-varios/${lote.id}`);
+        return esperando(d.equipos).length === 2 ? d : null;
+      });
+      igual([detalle.usados, detalle.quedan, detalle.pendientes], [2, 3, 2], "Dos usos gastados, dos esperando");
+      comprobar(
+        ((await consola3.ok("GET", `/api/clientes/${cv.id}/equipos`)) as Equipo[]).every((e) => !e.confirmado),
+        "Nada entra sin confirmar",
+      );
+      // La consola calcula el número de cada uno y lo compara con el que enseñó el equipo; la persona
+      // marca los que coinciden (aquí, los dos) y «Confirmar los seleccionados».
+      const revisiones = esperando(detalle.equipos).map((e) => revisar(e, srvInfo.identidad, srvInfo.huella_ca));
+      for (const r of revisiones) igual(r.sas, sasPuesto.get(r.e.equipo!.nombre), `${r.e.equipo!.nombre}: el número de la consola y el del equipo`);
+      igual(aConfirmar(revisiones, new Set()).length, 0, "Sin marcar ninguno, no se confirma ninguno");
+      const seleccion = aConfirmar(revisiones, new Set(revisiones.map((r) => r.e.id)));
+      igual(seleccion.length, 2, "Los dos marcados se confirman en bloque");
+      const kcfgV = kCfg(await materialCliente(argon2, CLAVE_ADMIN, cv.sal_cliente));
+      for (const r of seleccion) {
+        const eq = r.e.equipo!;
+        await consola3.ok("POST", `/api/clientes/${cv.id}/emparejamientos/${r.e.id}/confirmar`, { etiqueta: etiquetaEquipo(kcfgV, eq.id, eq.box_pub, eq.sign_pub) });
+        const ag = puestos.find((x) => x.nombre === eq.nombre)!;
+        ag.id = eq.id;
+        ag.arrancar();
+      }
+      // El alta de cada uno, con el mismo código (la `prueba_codigo` es por equipo).
+      for (const r of seleccion) await consola3.hecha(cv, r.e.equipo!.id, "alta", {}, { claveAdmin: CLAVE_ADMIN }, { alta: { codigo: codigoVarios } });
+      const tras = await esperar("los dos dados de alta", async () => {
+        const d: LoteDetalle = await consola3.ok("GET", `/api/clientes/${cv.id}/codigos-varios/${lote.id}`);
+        return d.equipos.filter((e) => e.estado === "dado_de_alta").length === 2 ? d : null;
+      });
+      igual(tras.pendientes, 0, "Ya no espera ninguno");
+      // «Anular el código»: el tercero ya no entra.
+      const anulado = await consola3.pedir("DELETE", `/api/clientes/${cv.id}/codigos-varios/${lote.id}`);
+      igual(anulado.estado, 204, "Anular el código");
+      const tercero = puestos[2].cli(["vincular", codigoVarios, "--servidor", s3.url, "--nombre", puestos[2].nombre]);
+      comprobar(tercero.codigo !== 0, "Con el código anulado, el tercer equipo no se vincula", tercero.salida);
+      const fin: LoteDetalle = await consola3.ok("GET", `/api/clientes/${cv.id}/codigos-varios/${lote.id}`);
+      igual([fin.estado, fin.usados, fin.rechazos, fin.equipos.length], ["anulado", 2, 1, 2], "Anulado, con dos usos y el intento rechazado");
+      const aud = (await consola3.ok("GET", `/api/clientes/${cv.id}/auditoria?limite=1000`)) as EntradaAuditoria[];
+      for (const [accion, n] of [["crear_codigo_varios", 1], ["anular_codigo_varios", 1], ["codigo_varios_rechazado", 1]] as const)
+        igual(aud.filter((e) => e.accion === accion).length, n, `Auditoría: ${accion}`);
+      igual(aud.filter((e) => e.accion === "unirse" && String(e.datos).includes(lote.id)).length, 2, "Auditoría: cada uso, con su código");
+      for (const ag of puestos) await ag.parar();
+      log("Dos equipos con un mismo código, confirmados en bloque; anulado, el tercero no entra");
+    }
 
     ok = true;
   } catch (e) {
