@@ -9,7 +9,7 @@
   import { onDestroy, untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { Apple, Ban, Check, CircleCheck, Copy, Download, KeyRound, LoaderCircle, Monitor, RefreshCw, Server, Shuffle, Terminal, TriangleAlert, X } from "@lucide/svelte";
+  import { Apple, Ban, Check, CircleCheck, Copy, Download, KeyRound, Layers, LoaderCircle, Monitor, RefreshCw, Server, Shuffle, Terminal, TriangleAlert, X } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
   import { actual, app, cargarCliente, reloj, urlAgentes } from "$lib/estado.svelte";
@@ -32,6 +32,7 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Pasos from "$lib/componentes/Pasos.svelte";
   import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
+  import { resumenLote, type Lote } from "$lib/despliegue";
 
   type Paso = "sistema" | "codigo" | "sas" | "clave" | "listo";
   let paso = $state<Paso>("sistema");
@@ -393,7 +394,8 @@
     try {
       const est = await api.emparejamiento(c, id);
       // v1.48: el código lo generó un navegador; si no es este, se escribe a mano al dar el alta.
-      const codigo = est.codigo ?? (est.codigo_navegador ? codigos.de(id, est.codigo_hash) : null);
+      // Bloque 7: uno de un código para varios equipos lo tiene este navegador por el lote (por su hash).
+      const codigo = est.codigo ?? (est.codigo_navegador ? (codigos.de(id, est.codigo_hash) ?? codigos.porHash(c, est.codigo_hash)) : null);
       if (!codigo && !est.codigo_navegador) throw new Error("Ese emparejamiento ya no se puede confirmar desde aquí. Prepara otro.");
       emp = { id, codigo: codigo ?? "", caduca: est.caduca, codigoHash: est.codigo_hash };
       codigoEscrito = "";
@@ -426,8 +428,24 @@
     const t = setInterval(() => document.visibilityState === "visible" && void enFondo(() => cargarMedias(cc)), 30_000);
     return () => clearInterval(t);
   });
-  /** Los de la lista de preparados ya salen allí (con su botón). */
-  const mediasSueltas = $derived(medias.filter((m) => m.estado === "confirmado" || !(lista ?? []).some((p) => p.id === m.id)));
+  /** Los de la lista de preparados ya salen allí (con su botón); los de un código para varios equipos, en su página. */
+  const mediasSueltas = $derived(medias.filter((m) => !m.lote && (m.estado === "confirmado" || !(lista ?? []).some((p) => p.id === m.id))));
+  // Bloque 7: los códigos para varios equipos con alguno esperando confirmación (o aún activos).
+  const conVarios = $derived(app.servidor?.codigo_varios === true);
+  let lotes = $state<Lote[]>([]);
+  const lotesVivos = $derived(lotes.filter((l) => l.pendientes > 0 || l.estado === "activo"));
+  $effect(() => {
+    const cc = c;
+    if (!cc || !conVarios) return;
+    const cargar = () =>
+      api.codigosVarios(cc).then(
+        (x) => cc === c && (lotes = x),
+        () => {},
+      );
+    untrack(() => void cargar());
+    const t = setInterval(() => document.visibilityState === "visible" && void enFondo(cargar), 30_000);
+    return () => clearInterval(t);
+  });
   async function anularAMedias(id: string) {
     try {
       await api.cancelarEmparejamiento(c, id);
@@ -533,6 +551,23 @@
           {:else}
             <button class="btn btn-sm btn-ghost" onclick={() => (anularCodigo = true)} use:tip={"El código deja de servir (y, si ya se unió, el equipo se quita)"}><Ban size={14} />Anular</button>
           {/if}
+        </div>
+      </section>
+    {/if}
+    {#if conVarios}
+      <section class="card p varios">
+        <span class="ic-local"><Layers size={18} /></span>
+        <div>
+          <h2 class="section-title">¿Muchos equipos?</h2>
+          <p class="faint">Un código para varios equipos y una línea para pegar en cada uno. Después comparas el número de cada uno y los confirmas, uno a uno o en bloque.</p>
+          {#each lotesVivos as l (l.id)}
+            <a class="lote-enlace" href="/c/{c}/emparejar/varios?l={l.id}">
+              <strong>{l.nombre ?? "Código para varios equipos"}</strong>
+              <span class="faint">{resumenLote(l)}</span>
+              {#if l.pendientes}<Chip tono="info" texto={`${l.pendientes} esperando confirmación`} />{/if}
+            </a>
+          {/each}
+          <a class="btn btn-sm {lotesVivos.length ? '' : 'btn-primary'}" href="/c/{c}/emparejar/varios"><Layers size={14} />Instalar muchos equipos</a>
         </div>
       </section>
     {/if}
@@ -932,6 +967,32 @@
   }
   .local p {
     margin: 0;
+  }
+  .varios {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: flex-start;
+  }
+  .varios > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    min-width: 0;
+  }
+  .varios p {
+    margin: 0;
+  }
+  .lote-enlace {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .lote-enlace:hover strong {
+    text-decoration: underline;
   }
   .local.destacada {
     border-color: color-mix(in srgb, var(--accent) 55%, var(--border));

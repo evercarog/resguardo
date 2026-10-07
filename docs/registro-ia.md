@@ -51,6 +51,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-bloque7`
+
+Desde `main`; en paralelo con los bloques 1 y 2 (otras sesiones). Al final se unió `ia/0726-bloque1` (sin conflictos de código; en `api-servidor.md` y aquí, las dos entradas). Sin tocar `packaging/` ni el agente.
+
+- **Pedido:** bloque 7 del plan 0.7.26 (despliegue masivo; el responsable va a instalar unos 30 equipos): código de alta para varios equipos, línea de PowerShell (y la de Linux) y «Equipos esperando confirmación», con lo más seguro en cada duda y sin preguntar.
+- **Cambios:**
+  - **Servidor** (`api/lotes.rs` nuevo, `agentes.rs`, `almacen`): lotes por cliente (`lotes`) e índice global de su hash (`codigos_varios`); `POST/GET …/codigos-varios`, `GET/DELETE …/codigos-varios/{l}`, `GET …/instalador-agente/huella` y `GET /api/agente/instalador/{lote}` (sin sesión, solo con el lote activo). `unirse` prueba el lote si el hash no es de un solo uso: **un emparejamiento por equipo**, unido y sin confirmar, con la IP; el agente no cambia (el SAS y la `prueba_codigo` son por equipo). Columnas nuevas `lote` e `ip` en `emparejamientos`.
+  - **Consola:** `lib/despliegue.ts` (líneas, revisión del número de cada equipo, selección), página `emparejar/varios` («Instalar muchos equipos»), enlace y códigos vivos en «Añadir equipo», el código del lote guardado en el navegador hasta su caducidad + 2 días (`lib/codigo.ts`, `porHash`).
+  - **Docs:** `api-servidor.md` §4 y «Cambios» (v1.4x), `guia-instalacion.md` 5.5, `plataforma.md` §7.3.1, `plan-0.7.26.md` (7.1–7.3 hechos).
+- **Comprobado:** `cargo fmt --check`, los dos clippy, `cargo test --workspace` (nuevas `tests/codigo_varios.rs`: N usos, agotado, anulado, caducado, 5 activos como mucho, permisos, bloqueo de la IP tras 20 fallos también con el código bueno, auditoría, y que el código no está en ninguna respuesta ni en la carpeta de datos), consola `check`, `build`, `test:vectores` (nuevos `vectores-despliegue.ts`: la línea exacta, que no se compone con comillas, `;`, `$()`, saltos o http://, la orden codificada, la de Linux, el número de cada equipo, que solo se confirman los marcados, cuánto se guarda el código), `test:sin-referencias` antes de cada commit y el e2e con un paso 10 nuevo (un código, dos agentes de verdad que se unen, confirmados en bloque y dados de alta; anulado, el tercero no se vincula; auditoría).
+- **Sin probar / dudas (decididas sin preguntar):**
+  - **La línea de PowerShell no se ha ejecutado en un Windows de verdad** (solo se comprueba su texto): falta probarla en una máquina virtual con Windows PowerShell 5.1 y con PowerShell 7, contra un servidor con su autoridad propia. Baja el instalador **sin comprobar el certificado** (puede ser de la autoridad propia del servidor) y lo protege la huella SHA-256 de la línea; la comprobación de certificados vuelve a lo normal al terminar la descarga (`try/finally`).
+  - El instalador silencioso (`/S /CODE= /SERVIDOR=`) no fija la huella de la autoridad TLS antes de vincular (lo hace el instalador «listo» o `--huella-ca` en Linux); la protege el número de comprobación (SAS v3), que se compara antes de confirmar. Cambiar eso tocaría `packaging/` (prohibido).
+  - El código va en la línea: queda en el historial de PowerShell y en los registros de las herramientas de despliegue (dicho en la consola y en la guía). Pasarlo por una variable de entorno no lo evita (el instalador lo recibe en su línea de órdenes igual) y los agentes antiguos no lo leerían de otro sitio. En Linux la línea empieza por un espacio (bash con `ignorespace`, lo habitual en Debian y Ubuntu, no la guarda).
+  - La línea de Linux supone el agente ya instalado (no descarga nada de fuera de la consola). Instalar y vincular de una vez usaría el guion de GitHub: se deja como está.
+  - Rechazar un equipo **no devuelve** su uso del código. Anular el código no quita a los que ya esperan (se confirman o rechazan uno a uno). Anulado, su hash sigue en el índice hasta que caduca: así un intento con él se reconoce y queda en la auditoría (lo encontró el e2e: antes salía como un código cualquiera que no vale).
+  - Como mucho 5 códigos activos por cliente, 120 intentos por hora con un mismo código, 30 descargas anónimas del instalador por IP y hora, y los 20 primeros rechazos de cada código en la auditoría. El código mide 16 caracteres (≈ 79 bits; el servidor no puede comprobar el largo, solo ve el hash: lo pone la consola).
+  - La comparación «en tiempo constante» del hash es de más: la búsqueda va por SHA-256 de un código de ≈ 79 bits y su tiempo no dice nada del código.
+  - Confirmar en bloque calcula la clave dos veces por equipo (Argon2id): unos segundos por equipo en el navegador.
+
 ## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-textos-restaurar`
 
 - **Pedido:** en el paso «Listo» de «Restaurar archivos» salía «Restaurado (2 elementos) en [ruta] .» y «No se puede restaurar una unidad o la raíz entera: [ruta]». Que la consola nunca enseñe «[ruta]».
