@@ -69,6 +69,11 @@ export const NIVEL: Record<string, Nivel> = {
   // administración, como crearlo (olvida sus credenciales). Un agente anterior, que la
   // tenía por inofensiva, no mira la prueba que le llega de más.
   quitar_destino: "admin",
+  // 0.7.26 (bloque 8): los datos comunes del cliente (colores de las etiquetas, catálogo de
+  // destinos, plantillas), iguales en todas sus consolas. El tipo y las marcas de un destino
+  // cuentan en la regla 3-2-1: con la clave de administración.
+  datos_cliente: "sesion",
+  datos_cliente_admin: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */
@@ -79,7 +84,7 @@ export const PIDE_TAMBIEN_ADMIN = new Set(["quitar_repositorio", "compartir_acce
 export const ABRE_SESION = new Set(["abrir_sesion", "explorar", "elegir_carpetas"]);
 
 /** Los técnicos no pueden mandarlas. */
-export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "quitar_destino"]);
+export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "quitar_destino", "datos_cliente", "datos_cliente_admin"]);
 
 /**
  * ¿Es destructiva? Algunas solo lo son con cierto cuerpo: desvincular con

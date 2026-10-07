@@ -16,7 +16,7 @@
 import { app } from "./estado.svelte";
 import { frenar } from "./freno";
 
-export type TipoCambio = "informe" | "progreso" | "orden" | "avisos" | "historial" | "config" | "equipo" | "resync";
+export type TipoCambio = "informe" | "progreso" | "orden" | "avisos" | "historial" | "config" | "equipo" | "datos_comunes" | "resync";
 
 export interface Cambio {
   t: TipoCambio;

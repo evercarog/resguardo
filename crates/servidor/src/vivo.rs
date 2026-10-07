@@ -90,6 +90,9 @@ pub enum Cambio<'a> {
     Config(&'a str),
     /// El equipo cambió (conectado, nombre, etiquetas, confirmado, modo…) o es nuevo.
     Equipo(&'a str),
+    /// 0.7.26 (bloque 8): cambiaron los datos comunes del cliente (colores de las etiquetas,
+    /// catálogo de destinos, plantillas) o hay diferencias nuevas entre consolas.
+    DatosComunes,
 }
 
 impl Cambio<'_> {
@@ -102,6 +105,7 @@ impl Cambio<'_> {
             Cambio::Historial(e) => json!({ "t": "historial", "equipo": e }),
             Cambio::Config(e) => json!({ "t": "config", "equipo": e }),
             Cambio::Equipo(e) => json!({ "t": "equipo", "equipo": e }),
+            Cambio::DatosComunes => json!({ "t": "datos_comunes" }),
         }
     }
 }

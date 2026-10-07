@@ -60,9 +60,9 @@ Hecho en la rama `ia/0726-bloque4` (`crates/agente/src/espejo_trabajos.rs`; dise
 
 ## Bloque 8 — Lo mismo en todas las consolas
 
-- [ ] **8.1 Datos comunes del cliente** que se reparten a través de sus equipos (como el nombre, las etiquetas y la observación de cada equipo, v1.56): **colores de las etiquetas**, **catálogo de destinos** (nombre, tipo, marcas y días de bloqueo) y **plantillas de copias**. Cada consola manda los cambios a los equipos del cliente; las demás los leen de sus resúmenes; gana el cambio más reciente por cada dato, diciendo desde qué consola. Las marcas y los tipos de los destinos piden la clave de administración (cuentan en la regla 3-2-1).
-- [ ] **8.2 Lo que sigue siendo de cada consola**, con el porqué en `docs/consolas-multiples.md` §6: personas y accesos, canales de aviso y sus reglas, notas internas.
-- [ ] **8.3 Primera vez:** si dos consolas ya tienen valores distintos, la consola enseña la diferencia y deja elegir cuál vale para todas; nada se pisa sin preguntar.
+- [x] **8.1 Datos comunes del cliente** (rama `ia/0726-bloque8`; diseño en [consolas-multiples.md](consolas-multiples.md) §6.5; órdenes `datos_cliente` y `datos_cliente_admin`, `resumen.datos_cliente`, rutas `…/datos-comunes`; las plantillas viajan cifradas tal cual y se vuelven a cifrar en el navegador) que se reparten a través de sus equipos (como el nombre, las etiquetas y la observación de cada equipo, v1.56): **colores de las etiquetas**, **catálogo de destinos** (nombre, tipo, marcas y días de bloqueo) y **plantillas de copias**. Cada consola manda los cambios a los equipos del cliente; las demás los leen de sus resúmenes; gana el cambio más reciente por cada dato, diciendo desde qué consola. Las marcas y los tipos de los destinos piden la clave de administración (cuentan en la regla 3-2-1).
+- [x] **8.2 Lo que sigue siendo de cada consola** (rama `ia/0726-bloque8`, §6.6; también los avisos de cada etiqueta), con el porqué en `docs/consolas-multiples.md` §6: personas y accesos, canales de aviso y sus reglas, notas internas.
+- [x] **8.3 Primera vez** (rama `ia/0726-bloque8`: aviso «Lo mismo en todas las consolas» y «Usar el de esta» / «Usar el de la otra»; lo de antes de compartir viaja como semilla, que nunca pisa): si dos consolas ya tienen valores distintos, la consola enseña la diferencia y deja elegir cuál vale para todas; nada se pisa sin preguntar.
 
 ## Contrato (compatible hacia atrás)
 

@@ -48,6 +48,7 @@ import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
 import { nubesDelEquipo } from "../../src/lib/nubesEquipo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
+import { diferencia, pendiente, trozos, type DatosComunesCliente, type EntradaOrden } from "../../src/lib/datosComunes";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
 import { aConfirmar, esperando, revisar, type LoteDetalle } from "../../src/lib/despliegue";
@@ -1240,6 +1241,8 @@ async function principal() {
     await consola3.primerArranque(CORREO, "Ana", CONTRASENA);
     // En la consola en línea: «Recibir un cliente → Gestionarlo también desde aquí» (cliente nuevo, sal nueva).
     const recibido = await consola3.ok("POST", "/api/clientes/recibir", { nombre: "Café del Sur", sal_cliente: aB64(aleatorio(16)), usos: 5, dias: 7 });
+    // 0.7.26 (bloque 8, paso 8a4): la en línea ya tenía «Servidor» en rosa antes de tener equipos.
+    await consola3.ok("PUT", `/api/clientes/${recibido.cliente.id}/etiquetas`, { nombre: "Servidor", color: 3 });
     const srv3 = await consola3.ok("GET", "/api/servidor");
     const codigo = crearCodigo({
       url: s3.url, identidad: srv3.identidad, huella_ca: srv3.huella_ca, ficha: recibido.ficha, sal_cliente: recibido.cliente.sal_cliente,
@@ -1436,6 +1439,71 @@ async function principal() {
       comprobar(fs.existsSync(path.join(carpeta, idRepo, "config")), "Lo guardado en la carpeta se queda");
       await esperar("el destino quitado también en la en línea", async () => !(await consola3.equipo(c3, eqB2.id)).resumen?.destinos?.some((d) => d.id === idDestino) || null, { plazo: 60_000, cada: 1000 });
       log("Destino vacío quitado; su carpeta sigue con sus copias");
+    }
+
+    // -----------------------------------------------------------------------
+    paso("8a4. Lo mismo en todas las consolas: colores de las etiquetas, tipo de un destino (con la clave) y una diferencia que se elige");
+    {
+      // Lo que hace el navegador (lib/datosComunes.svelte.ts): lo «por enviar» de esa consola, a sus
+      // equipos con la orden (con la clave si es el tipo o las marcas), y marcarlo enviado.
+      const repartir = async (consola: Consola, c: Cliente, conClave = false) => {
+        const d = (await consola.ok("GET", `/api/clientes/${c.id}/datos-comunes`)) as DatosComunesCliente;
+        const p = pendiente(d);
+        const entradas: EntradaOrden[] = conClave ? p.porEnviarConClave : p.porEnviar;
+        for (const t of trozos(entradas)) await consola.hecha(c, eqB2.id, conClave ? "datos_cliente_admin" : "datos_cliente", { entradas: t }, conClave ? { claveAdmin: claveB } : {});
+        if (entradas.length) await consola.ok("POST", `/api/clientes/${c.id}/datos-comunes/enviadas`, { entradas: entradas.map((x) => ({ clave: x.clave, cambiado: x.cambiado })) });
+        return entradas;
+      };
+      const color = async (consola: Consola, c: Cliente, nombre: string) =>
+        ((await consola.ok("GET", `/api/clientes/${c.id}/etiquetas`)) as { nombre: string; color: number | null }[]).find((x) => x.nombre === nombre)?.color ?? null;
+      comprobar((await consola2.equipo(c2, eqB2.id)).resumen?.admite?.includes("datos_cliente"), "B guarda los datos comunes del cliente");
+      // En la local, con su pantalla de siempre: «Oficina» en azul y «Servidor» en azul.
+      await consola2.ok("PUT", `/api/clientes/${c2.id}/etiquetas`, { nombre: "Oficina", color: 0 });
+      await consola2.ok("PUT", `/api/clientes/${c2.id}/etiquetas`, { nombre: "Servidor", color: 0 });
+      const enviadas = await repartir(consola2, c2);
+      igual(enviadas.map((x) => x.clave).sort(), ["etiqueta.color:oficina", "etiqueta.color:servidor"], "La local reparte los dos colores");
+      // La en línea pone el que no tenía…
+      await esperar("el color de «Oficina» en la en línea", async () => (await color(consola3, c3, "Oficina")) === 0 || null, { plazo: 60_000, cada: 1000 });
+      // …y el que sí tenía (rosa) no lo pisa: lo enseña como diferencia.
+      const dif = (await esperar("la diferencia de «Servidor» en la en línea", async () => {
+        const d = (await consola3.ok("GET", `/api/clientes/${c3.id}/datos-comunes`)) as DatosComunesCliente;
+        return pendiente(d).diferencias.find((f) => f.clave === "etiqueta.color:servidor") ?? null;
+      }, { plazo: 60_000, cada: 1000 })) as DatosComunesCliente["filas"][number];
+      igual(await color(consola3, c3, "Servidor"), 3, "La en línea sigue con su rosa hasta que alguien elija");
+      igual(diferencia(dif).frase, "En esta consola: rosa · En la otra: azul", "La diferencia, en palabras");
+      // Se elige en la en línea el de la otra (azul) para todas.
+      const { entradas } = (await consola3.ok("POST", `/api/clientes/${c3.id}/datos-comunes`, { entradas: [{ clave: dif.clave, valor: diferencia(dif).valorOtra }] })) as { entradas: EntradaOrden[] };
+      await consola3.hecha(c3, eqB2.id, "datos_cliente", { entradas });
+      await consola3.ok("POST", `/api/clientes/${c3.id}/datos-comunes/enviadas`, { entradas: entradas.map((x) => ({ clave: x.clave, cambiado: x.cambiado })) });
+      igual(await color(consola3, c3, "Servidor"), 0, "Elegido: azul también en la en línea");
+      comprobar(pendiente((await consola3.ok("GET", `/api/clientes/${c3.id}/datos-comunes`)) as DatosComunesCliente).diferencias.length === 0, "Sin diferencias");
+      igual(await color(consola2, c2, "Servidor"), 0, "Y la local sigue en azul");
+      // Un cambio después en la en línea llega a la local sin preguntar (ya se juntaron).
+      await consola3.ok("PUT", `/api/clientes/${c3.id}/etiquetas`, { nombre: "Oficina", color: 2 });
+      await repartir(consola3, c3);
+      await esperar("el verde de la en línea en la local", async () => (await color(consola2, c2, "Oficina")) === 2 || null, { plazo: 60_000, cada: 1000 });
+      const et = ((await consola2.ok("GET", `/api/clientes/${c2.id}/etiquetas`)) as { nombre: string; por: string }[]).find((x) => x.nombre === "Oficina");
+      comprobar(/desde la consola «Consola en línea»/.test(et?.por ?? ""), "La local dice desde qué consola", et);
+      log("Colores de las etiquetas iguales en las dos consolas");
+
+      // El tipo de un destino cuenta en la regla 3-2-1: sin la clave, el equipo no lo guarda.
+      const idDest = "destino-b8e2e000";
+      await consola2.ok("PUT", `/api/clientes/${c2.id}/destinos/${idDest}`, { nombre: "Nube del sur", tipo: "b2", donde: "copias-sur", atributos: { tipo: "nube", inmutable: "object_lock", bloqueo_dias: 30 } });
+      const d2 = pendiente((await consola2.ok("GET", `/api/clientes/${c2.id}/datos-comunes`)) as DatosComunesCliente);
+      igual(d2.porEnviarConClave.map((x) => x.clave), [`destino.regla:${idDest}`], "El tipo y las marcas esperan a la clave");
+      const sinClave = await consola2.resultado(c2, eqB2.id, await consola2.mandar(c2, eqB2.id, "datos_cliente", { entradas: d2.porEnviarConClave }));
+      comprobar(sinClave.estado === "fallida" && /clave de administración/.test(sinClave.mensaje ?? ""), "Sin la clave, el equipo no lo guarda", sinClave);
+      await repartir(consola2, c2); // el nombre (no pide clave)
+      await repartir(consola2, c2, true); // el tipo y las marcas, con la clave
+      const cat = (await esperar("el destino con su tipo en la en línea", async () => {
+        const l = (await consola3.ok("GET", `/api/clientes/${c3.id}/destinos`)) as DestinoCatalogo[];
+        return l.find((x) => x.id === idDest && x.atributos?.tipo === "nube") ?? null;
+      }, { plazo: 60_000, cada: 1000 })) as DestinoCatalogo;
+      igual([cat.nombre, cat.donde, cat.atributos?.bloqueo_dias], ["Nube del sur", "copias-sur", 30], "La en línea tiene el destino con su nombre, su dirección y sus marcas");
+      const resumenB = (await consola3.equipo(c3, eqB2.id)).resumen as { datos_cliente?: { n: number } };
+      comprobar((resumenB.datos_cliente?.n ?? 0) >= 4, "El resumen dice cuántos datos comunes guarda B", resumenB.datos_cliente);
+      comprobar(!JSON.stringify(await consola3.ok("GET", `/api/clientes/${c3.id}/datos-comunes`)).includes(s2.url), "Sin la dirección de la otra consola");
+      log("Tipo y marcas de un destino, con la clave, iguales en las dos consolas");
     }
 
     // -----------------------------------------------------------------------

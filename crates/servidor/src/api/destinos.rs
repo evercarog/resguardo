@@ -192,11 +192,21 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
         datos["atributos"] = d.atributos.as_deref().and_then(|a| serde_json::from_str(a).ok()).unwrap_or(Value::Null);
     }
     let datos = datos.to_string();
+    let propia = st.identidad_pub.clone();
     let cabe = st
         .db(move |db| {
+            let previo = db.destinos_catalogo(&ctx)?.into_iter().find(|x| x.id == id);
             let ok = db.guardar_destino(&ctx, &d, MAX_DESTINOS, mantener)?;
             if ok {
                 db.auditar(&ctx, &actor, "guardar_destino", &id, &datos)?;
+                // 0.7.26 (bloque 8): el nombre y, si cambiaron, el tipo y las marcas, para las demás consolas.
+                let antes = previo.as_ref().map(|p| (p.nombre.trim().to_string(), p.tipo.clone(), p.donde.clone()));
+                if antes != Some((d.nombre.clone(), d.tipo.clone(), d.donde.clone())) {
+                    crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("destino:{id}"), &d.por, &propia);
+                }
+                if !mantener && previo.and_then(|p| p.atributos) != d.atributos {
+                    crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("destino.regla:{id}"), &d.por, &propia);
+                }
             }
             Ok(ok)
         })
@@ -212,11 +222,20 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
 pub async fn borrar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(String, String)>) -> Res<StatusCode> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    let (por, propia) = (u.0.cuenta.nombre.clone(), st.identidad_pub.clone());
     let existia = st
         .db(move |db| {
+            let previo = db.destinos_catalogo(&ctx)?.into_iter().find(|x| x.id == id);
             let ok = db.borrar_destino(&ctx, &id)?;
             if ok {
                 db.auditar(&ctx, &actor, "borrar_destino", &id, "{}")?;
+                // 0.7.26 (bloque 8): vuelve a lo de siempre también en las demás consolas.
+                if previo.as_ref().is_some_and(|p| !p.nombre.trim().is_empty()) {
+                    crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("destino:{id}"), &por, &propia);
+                }
+                if previo.is_some_and(|p| p.atributos.is_some()) {
+                    crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("destino.regla:{id}"), &por, &propia);
+                }
             }
             Ok(ok)
         })

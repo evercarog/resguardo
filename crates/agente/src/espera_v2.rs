@@ -167,6 +167,8 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
         "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => crate::datos_equipo::descripcion(&o.tipo, c)?,
         "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
+        // 0.7.26 (bloque 8): datos comunes del cliente (sin los valores).
+        "datos_cliente" | "datos_cliente_admin" => crate::datos_cliente::descripcion(c)?,
         _ => return None,
     };
     Some(corto(&crate::web::public_message(&d), 160))

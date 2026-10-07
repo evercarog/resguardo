@@ -1,0 +1,83 @@
+{
+  "descripcion": "Datos comunes del cliente (0.7.26, bloque 8): orden entre dos cambios del mismo dato y claves válidas. Los pasan crates/protocolo/src/datos_cliente.rs y consola/scripts/vectores-datos-comunes.ts. Cada caso de «fusion» mete sus entradas en orden en un documento vacío; «gana» es el valor que queda.",
+  "fusion": [
+    {
+      "nombre": "gana el más reciente",
+      "entradas": [
+        { "valor": 1, "cambiado": "2026-10-07T10:00:00Z", "identidad": "aaa" },
+        { "valor": 2, "cambiado": "2026-10-07T11:00:00Z", "identidad": "aaa" }
+      ],
+      "gana": 2
+    },
+    {
+      "nombre": "uno más antiguo que llega después no gana",
+      "entradas": [
+        { "valor": 2, "cambiado": "2026-10-07T11:00:00Z", "identidad": "aaa" },
+        { "valor": 1, "cambiado": "2026-10-07T10:00:00Z", "identidad": "zzz" }
+      ],
+      "gana": 2
+    },
+    {
+      "nombre": "la hora se compara con su zona",
+      "entradas": [
+        { "valor": 1, "cambiado": "2026-10-07T11:30:00+02:00", "identidad": "aaa" },
+        { "valor": 2, "cambiado": "2026-10-07T10:00:00Z", "identidad": "aaa" }
+      ],
+      "gana": 2
+    },
+    {
+      "nombre": "a la misma hora, la identidad mayor",
+      "entradas": [
+        { "valor": 1, "cambiado": "2026-10-07T10:00:00Z", "identidad": "bbb" },
+        { "valor": 2, "cambiado": "2026-10-07T10:00:00Z", "identidad": "aaa" }
+      ],
+      "gana": 1
+    },
+    {
+      "nombre": "un cambio gana a una semilla aunque sea anterior",
+      "entradas": [
+        { "valor": 1, "cambiado": "2026-10-08T10:00:00Z", "identidad": "zzz", "semilla": true },
+        { "valor": 2, "cambiado": "2026-10-01T10:00:00Z", "identidad": "aaa" }
+      ],
+      "gana": 2
+    },
+    {
+      "nombre": "una semilla nunca gana a un cambio",
+      "entradas": [
+        { "valor": 2, "cambiado": "2026-10-01T10:00:00Z", "identidad": "aaa" },
+        { "valor": 1, "cambiado": "2026-10-08T10:00:00Z", "identidad": "zzz", "semilla": true }
+      ],
+      "gana": 2
+    },
+    {
+      "nombre": "entre semillas, la más reciente",
+      "entradas": [
+        { "valor": 1, "cambiado": "2026-10-07T10:00:00Z", "identidad": "aaa", "semilla": true },
+        { "valor": 2, "cambiado": "2026-10-07T10:00:01Z", "identidad": "aaa", "semilla": true }
+      ],
+      "gana": 2
+    },
+    {
+      "nombre": "quitar (null) también es un cambio",
+      "entradas": [
+        { "valor": 3, "cambiado": "2026-10-07T10:00:00Z", "identidad": "aaa" },
+        { "valor": null, "cambiado": "2026-10-07T10:00:00.500Z", "identidad": "aaa" }
+      ],
+      "gana": null
+    }
+  ],
+  "claves": [
+    { "clave": "etiqueta.color:servidor", "valida": true, "pide_admin": false },
+    { "clave": "etiqueta.color:sede norte", "valida": true, "pide_admin": false },
+    { "clave": "etiqueta.color:Servidor", "valida": false, "pide_admin": false },
+    { "clave": "etiqueta.color:a,b", "valida": false, "pide_admin": false },
+    { "clave": "etiqueta.plantilla:servidor", "valida": true, "pide_admin": false },
+    { "clave": "destino:zona:e1:principal", "valida": true, "pide_admin": false },
+    { "clave": "destino:destino-1a2b3c4d", "valida": true, "pide_admin": false },
+    { "clave": "destino:../x", "valida": false, "pide_admin": false },
+    { "clave": "destino.regla:zona:e1:principal", "valida": true, "pide_admin": true },
+    { "clave": "plantilla:pla-0a1b2c3d4e5f", "valida": true, "pide_admin": false },
+    { "clave": "plantilla:a/b", "valida": false, "pide_admin": false },
+    { "clave": "otra:cosa", "valida": false, "pide_admin": false }
+  ]
+}

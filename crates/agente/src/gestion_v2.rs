@@ -1049,7 +1049,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 26] = [
+pub const ADMITE: [&str; 27] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1092,6 +1092,9 @@ pub const ADMITE: [&str; 26] = [
     "datos_equipo",
     // (pendiente de numerar) `quitar_destino` (un destino sin uso) y `quitar_repositorio { quitar_destino }`.
     "quitar_destino",
+    // (pendiente de numerar; 0.7.26, bloque 8) los datos comunes del cliente: `datos_cliente`,
+    // `datos_cliente_admin`, `resumen.datos_cliente` y `datos_cliente` al subir la configuración.
+    "datos_cliente",
     // (pendiente de numerar) actualización automática: `informe.actualizacion`, `{"t":"actualizacion"}`
     // por el canal y `GET /api/agente/actualizacion` (docs/actualizaciones.md).
     "actualizaciones",
@@ -1251,6 +1254,12 @@ pub fn resumen(v: &Vinculo) -> Value {
     if !datos.is_null() {
         r["datos_equipo"] = datos;
     }
+    // 0.7.26 (bloque 8): cuántos datos comunes del cliente tiene y su huella (el documento
+    // entero va con la configuración: el resumen no pasa de 64 KiB).
+    let comunes = crate::datos_cliente::resumen(v);
+    if !comunes.is_null() {
+        r["datos_cliente"] = comunes;
+    }
     r
 }
 
@@ -1298,6 +1307,10 @@ pub fn subir_config_enlace(v: &mut Vinculo) -> Result<(), String> {
     let doc = documento(v).to_string();
     let cifrado = simetrico::cifrar_config(&k, &v.equipo_id, v.config_seq, doc.as_bytes(), &simetrico::nonce_aleatorio());
     let mut cuerpo = json!({ "seq": v.config_seq, "cifrado": B64.encode(cifrado), "resumen": resumen(v), "espera_min_horas": v.espera_min_horas });
+    // 0.7.26 (bloque 8): los datos comunes del cliente (un servidor anterior los ignora).
+    if let Some(d) = crate::datos_cliente::documento(v) {
+        cuerpo["datos_cliente"] = d;
+    }
     let box_pub = resguardo_protocolo::claves::public_of(&v.box_secret).ok();
     let sign_pub = B64
         .decode(&v.sign_seed)

@@ -2,6 +2,8 @@
 
 mod clientes;
 mod cuentas;
+// 0.7.26 (bloque 8): los datos comunes del cliente, iguales en todas sus consolas.
+mod datos_comunes;
 pub(crate) mod equipos;
 pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
@@ -12,9 +14,9 @@ pub(crate) mod notas;
 mod notificaciones;
 mod ordenes;
 mod panel;
-mod plantillas;
+pub(crate) mod plantillas;
 // Tarea 7a: el catálogo de destinos del cliente (en claro, sin secretos).
-mod destinos;
+pub(crate) mod destinos;
 mod respaldo;
 mod servidor_clientes;
 mod sesiones;
@@ -288,6 +290,9 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
         .route("/api/clientes/{c}/destinos", get(destinos::listar))
         .route("/api/clientes/{c}/destinos/{d}", put(destinos::guardar).delete(destinos::borrar))
+        .route("/api/clientes/{c}/datos-comunes", get(datos_comunes::ver).post(datos_comunes::poner))
+        .route("/api/clientes/{c}/datos-comunes/enviadas", post(datos_comunes::enviadas))
+        .route("/api/clientes/{c}/datos-comunes/traer", post(datos_comunes::traer))
         .route("/api/clientes/{c}/emparejamientos/{p}", get(equipos::ver_emparejamiento).delete(equipos::cancelar_emparejamiento))
         .route("/api/clientes/{c}/emparejamientos/{p}/confirmar", post(equipos::confirmar_emparejamiento))
         .route("/api/clientes/{c}/avisos", get(equipos::avisos))

@@ -11,6 +11,7 @@
 
 pub mod cifrado;
 pub mod claves;
+pub mod datos_cliente;
 pub mod derivaciones;
 pub mod instalador;
 pub mod mensajes;

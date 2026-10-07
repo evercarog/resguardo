@@ -30,10 +30,17 @@ export function cargarCatalogo(c: string, forzar = false): Promise<void> {
 export async function guardarEnCatalogo(c: string, id: string, d: { nombre: string; tipo: DestinoCatalogo["tipo"]; donde?: string | null; atributos?: AtributosDestino | null }) {
   await api.ponerDestino(c, id, { nombre: d.nombre.trim(), tipo: d.tipo, ...(d.donde ? { donde: d.donde.trim() } : {}), ...(d.atributos !== undefined ? { atributos: d.atributos } : {}) });
   await cargarCatalogo(c, true);
+  repartir();
+}
+
+/** 0.7.26 (bloque 8): el nombre va a las demás consolas (lo que no pide clave se manda solo). */
+function repartir() {
+  void import("./datosComunes.svelte").then((m) => m.sincronizar()).catch(() => {});
 }
 
 /** Lo quita del catálogo (vuelve al nombre de siempre; no toca ningún equipo). */
 export async function quitarDelCatalogo(c: string, id: string) {
   await api.borrarDestino(c, id);
   await cargarCatalogo(c, true);
+  repartir();
 }

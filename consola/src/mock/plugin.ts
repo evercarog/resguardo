@@ -16,6 +16,7 @@ import { cabeceraPaquete } from "../lib/cripto/paquete";
 import { sasV2, sasV3 } from "../lib/cripto/claves";
 import { ABRE_SESION, esDestructiva, NIVEL, SOLO_ADMIN_ROL } from "../lib/cripto/ordenes";
 import type * as T from "../lib/tipos";
+import type { DatosComunesCliente, FilaComun } from "../lib/datosComunes";
 import { auditar, DEMO, estado, ID, sembrar, verificarCadena, type EmparejamientoMock, type EquipoMock, type OrdenMock } from "./estado";
 import { historialMock } from "./historial";
 import { retencionesMock } from "./retencion";
@@ -1187,6 +1188,63 @@ const rutas: Ruta[] = [
     },
   ],
   [
+    // 0.7.26 (bloque 8): los datos comunes del cliente (solo administradores).
+    "GET",
+    new RegExp(`^${C}/datos-comunes$`),
+    (ctx, [c]) => (miembro(ctx, c, "administrador"), datosComunesDe(c)),
+  ],
+  [
+    "POST",
+    new RegExp(`^${C}/datos-comunes$`),
+    (ctx, [c]) => {
+      const { cuenta } = miembro(ctx, c, "administrador");
+      const b = ctx.cuerpo as { entradas?: { clave: string; valor: unknown; semilla?: boolean }[] };
+      const d = datosComunesDe(c);
+      const out = [];
+      for (const x of b.entradas ?? []) {
+        const cambiado = new Date().toISOString();
+        const valor = x.clave.startsWith("plantilla:") && x.valor ? { cifrado: "AAAA", sal: "c2Fs", cliente: c } : (x.valor ?? null);
+        const fila: FilaComun = { clave: x.clave, valor, cambiado, consola: null, esta: true, por: cuenta.nombre, semilla: !!x.semilla, estado: "aplicado", local: null, por_enviar: true };
+        d.filas = [...d.filas.filter((y) => y.clave !== x.clave), fila];
+        // Un color elegido se pone aquí (como el servidor).
+        if (x.clave.startsWith("etiqueta.color:")) {
+          const v = valor as { nombre?: string; color?: number } | null;
+          const nombre = v?.nombre ?? x.clave.slice("etiqueta.color:".length);
+          const l = ajustesEtiquetasDe(c).filter((a) => a.nombre.toLowerCase() !== nombre.toLowerCase());
+          const previo = ajustesEtiquetasDe(c).find((a) => a.nombre.toLowerCase() === nombre.toLowerCase());
+          const nuevo = { ...(previo ?? { nombre, plantilla: null, avisos: null }), color: v?.color ?? null, actualizada: cambiado, por: cuenta.nombre };
+          ajustesEtiquetasMock.set(c, nuevo.color == null && !nuevo.plantilla && !nuevo.avisos ? l : [...l, nuevo]);
+        }
+        auditar(c, cuenta.id, "datos_comunes", x.clave, { semilla: !!x.semilla });
+        out.push({ clave: x.clave, valor, cambiado, semilla: !!x.semilla, por: cuenta.nombre });
+      }
+      return { entradas: out };
+    },
+  ],
+  [
+    "POST",
+    new RegExp(`^${C}/datos-comunes/enviadas$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      const b = ctx.cuerpo as { entradas?: { clave: string; cambiado: string }[] };
+      const d = datosComunesDe(c);
+      let n = 0;
+      d.filas = d.filas.map((f) => (b.entradas ?? []).some((x) => x.clave === f.clave && x.cambiado === f.cambiado) ? (n++, { ...f, por_enviar: false }) : f);
+      return { n };
+    },
+  ],
+  [
+    "POST",
+    new RegExp(`^${C}/datos-comunes/traer$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      const b = ctx.cuerpo as { clave?: string };
+      const d = datosComunesDe(c);
+      d.filas = d.filas.map((f) => (f.clave === b.clave ? { ...f, estado: "aplicado" as const } : f));
+      return { estado: "aplicado" };
+    },
+  ],
+  [
     "GET",
     new RegExp(`^${C}/equipos/([^/]+)/informes$`),
     (ctx, [c, e]) => {
@@ -1606,9 +1664,55 @@ const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizad
 /** v1.52: ajustes de las etiquetas por cliente. Altamar empieza con «Servidores» en bermellón y sus avisos como críticos. */
 const ajustesEtiquetasMock = new Map<string, T.AjusteEtiqueta[]>();
 function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
-  if (!ajustesEtiquetasMock.has(c))
-    ajustesEtiquetasMock.set(c, c === ID.altamar ? [{ nombre: "Servidores", color: 4, plantilla: null, avisos: { importancia: "critico" }, actualizada: new Date().toISOString(), por: "Ana Restrepo" }] : []);
+  if (!ajustesEtiquetasMock.has(c)) {
+    const ahora = new Date().toISOString();
+    ajustesEtiquetasMock.set(
+      c,
+      c === ID.altamar
+        ? [{ nombre: "Servidores", color: 4, plantilla: null, avisos: { importancia: "critico" }, actualizada: ahora, por: "Ana Restrepo" }]
+        : // 0.7.26 (bloque 8): en Café del Sur, «Servidor» en azul y «Contabilidad» en verde (en la otra consola, distintos).
+          c === ID.sur
+          ? [
+              { nombre: "Contabilidad", color: 2, plantilla: null, avisos: null, actualizada: ahora, por: "Ana Restrepo" },
+              { nombre: "Servidor", color: 0, plantilla: null, avisos: null, actualizada: ahora, por: "Ana Restrepo" },
+            ]
+          : [],
+    );
+  }
   return ajustesEtiquetasMock.get(c)!;
+}
+
+/**
+ * 0.7.26 (bloque 8): los datos comunes del cliente. Café del Sur se compartió con la consola en
+ * línea, que ya tenía otros colores y otro tipo para el «Disco 2»: tres diferencias por elegir y
+ * una plantilla suya por traer.
+ */
+const datosComunesMock = new Map<string, DatosComunesCliente>();
+function datosComunesDe(c: string): DatosComunesCliente {
+  if (!datosComunesMock.has(c)) {
+    const hace = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+    const f = (x: Partial<FilaComun> & { clave: string }): FilaComun => ({ valor: null, cambiado: hace(30), consola: "Consola en línea", esta: false, por: "Bruno", semilla: true, estado: "conflicto", local: null, por_enviar: false, ...x });
+    datosComunesMock.set(
+      c,
+      c === ID.sur
+        ? {
+            filas: [
+              f({ clave: "etiqueta.color:servidor", valor: null, local: { nombre: "Servidor", color: 0 } }),
+              f({ clave: "etiqueta.color:contabilidad", valor: { nombre: "Contabilidad", color: 1 }, local: { nombre: "Contabilidad", color: 2 } }),
+              f({
+                clave: "destino.regla:disco-2",
+                valor: { clase: "local", atributos: { tipo: "fuera", aislado: true, aislado_dias: 14 } },
+                local: { clase: "local", atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" } },
+              }),
+              f({ clave: "etiqueta.color:caja", valor: { nombre: "Caja", color: 5 }, estado: "aplicado", semilla: false, cambiado: hace(120) }),
+              f({ clave: "plantilla:pla-demo-sur", valor: { cifrado: "AAAA", sal: "c2FsLWRlLWxhLW90cmE=", cliente: "cliente-en-linea" }, estado: "por_traer", semilla: false }),
+            ],
+            sin_compartir: [],
+          }
+        : { filas: [], sin_compartir: [] },
+    );
+  }
+  return datosComunesMock.get(c)!;
 }
 
 /** El agente anuncia SAS v3 desde 0.7.10. */

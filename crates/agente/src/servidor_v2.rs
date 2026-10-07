@@ -128,6 +128,10 @@ pub struct Vinculo {
     /// (`nombre_equipo`…), iguales en todas sus consolas (datos_equipo.rs). Del equipo.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub datos_equipo: crate::datos_equipo::Datos,
+    /// 0.7.26 (bloque 8): los datos comunes del cliente (colores de las etiquetas, catálogo de
+    /// destinos, plantillas cifradas) que reparten sus consolas (datos_cliente.rs). Del equipo.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub datos_cliente: resguardo_protocolo::datos_cliente::Documento,
 }
 
 fn es_cero(n: &u64) -> bool {
@@ -1089,6 +1093,13 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
                 "etiquetas_equipo" => crate::datos_equipo::etiquetas(v, c, o.por.as_deref())?,
                 _ => crate::datos_equipo::observacion(v, c, o.por.as_deref())?,
             };
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        // 0.7.26 (bloque 8): los datos comunes del cliente, iguales en todas sus consolas
+        // (datos_cliente.rs). El tipo y las marcas de un destino, solo con la clave.
+        "datos_cliente" | "datos_cliente_admin" => {
+            let m = crate::datos_cliente::aplicar(v, c, o.tipo == "datos_cliente_admin", o.por.as_deref())?;
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }

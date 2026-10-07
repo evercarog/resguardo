@@ -119,6 +119,7 @@ pub async fn poner(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json
     }
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
     let por = u.0.cuenta.nombre.clone();
+    let propia = st.identidad_pub.clone();
     let r = st
         .db_crudo(move |db| {
             let previo = db.ajustes_etiquetas(&ctx)?.into_iter().find(|a| a.nombre.to_lowercase() == nombre.to_lowercase());
@@ -132,7 +133,10 @@ pub async fn poner(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json
                     return Err("Esa plantilla ya no existe.".into());
                 }
             }
-            let a = AjusteEtiqueta { nombre: nombre.clone(), color: p.color, plantilla: p.plantilla, avisos, actualizada: 0, por };
+            let a = AjusteEtiqueta { nombre: nombre.clone(), color: p.color, plantilla: p.plantilla, avisos, actualizada: 0, por: por.clone() };
+            // 0.7.26 (bloque 8): el color y la plantilla son comunes a todas las consolas; los avisos, de cada una.
+            let cambia_color = previo.as_ref().and_then(|x| x.color) != a.color;
+            let cambia_plantilla = previo.as_ref().and_then(|x| x.plantilla.clone()) != a.plantilla;
             if a.color.is_none() && a.plantilla.is_none() && a.avisos.is_none() {
                 if db.borrar_ajuste_etiqueta(&ctx, &nombre)? {
                     db.auditar(&ctx, &actor, "ajustes_etiqueta", &nombre, "{}")?;
@@ -143,6 +147,16 @@ pub async fn poner(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json
                 }
                 let datos = json!({ "color": a.color, "plantilla": a.plantilla, "avisos": a.avisos }).to_string();
                 db.auditar(&ctx, &actor, "ajustes_etiqueta", &nombre, &datos)?;
+            }
+            if cambia_color {
+                if let Some(k) = resguardo_protocolo::datos_cliente::clave_color(&nombre) {
+                    crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &k, &por, &propia);
+                }
+            }
+            if cambia_plantilla {
+                if let Some(k) = resguardo_protocolo::datos_cliente::clave_plantilla_etiqueta(&nombre) {
+                    crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &k, &por, &propia);
+                }
             }
             lista(db, &ctx)
         })

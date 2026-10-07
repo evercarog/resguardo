@@ -718,6 +718,11 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn poner_ajuste_etiqueta(&self, c: &ClienteCtx, a: &AjusteEtiqueta, maximo: usize) -> R<bool>;
     /// Vuelve a lo de siempre (color por el nombre, sin plantilla ni avisos propios).
     fn borrar_ajuste_etiqueta(&self, c: &ClienteCtx, nombre: &str) -> R<bool>;
+    // ---------- Datos comunes del cliente (0.7.26, bloque 8; `crate::datos_comunes`) ----------
+    /// Las filas guardadas: (clave, JSON de la fila).
+    fn datos_comunes(&self, c: &ClienteCtx) -> R<Vec<(String, String)>>;
+    /// Crea o sustituye una fila.
+    fn poner_dato_comun(&self, c: &ClienteCtx, clave: &str, datos: &str) -> R<()>;
 
     // ---------- Historial de los equipos (v1.23) ----------
     /// Guarda las entradas que no estuvieran ya (por id); devuelve cuántas son nuevas.
