@@ -289,12 +289,18 @@ pub fn id_legado(d: &crate::espejo::Destino) -> String {
 
 /// El nombre que se pone a un trabajo sin nombre.
 pub fn nombre_por_defecto(a: &Adonde) -> String {
-    match (a.tipo.as_str(), &a.nube) {
+    let n = match (a.tipo.as_str(), &a.nube) {
         ("nube", Some(n)) => format!("Espejo a «{n}»"),
         ("zona", _) if a.carpeta == "principal" => "Espejo a la zona principal".into(),
-        ("zona", _) => format!("Espejo a la zona {}", a.carpeta),
-        _ => format!("Espejo a {}", a.carpeta),
+        ("zona", _) => format!("Espejo a la zona {}", a.carpeta.trim()),
+        _ => format!("Espejo a {}", a.carpeta.trim()),
+    };
+    // Como mucho 80 letras (una carpeta larga): el final, que es lo que la distingue.
+    if n.chars().count() <= 80 {
+        return n;
     }
+    let cola: String = n.chars().rev().take(79).collect::<Vec<_>>().into_iter().rev().collect();
+    format!("…{cola}")
 }
 
 /// El horario «cada día a esa hora» de antes.

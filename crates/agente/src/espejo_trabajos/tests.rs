@@ -103,6 +103,12 @@ fn conversion_de_los_espejos_de_antes() {
         assert_eq!((v.repos.clone(), v.retencion_dias, v.bloqueo, v.tras_copia), (d.repos.clone(), d.retencion_dias, d.bloqueo, d.tras_copia));
         assert!(exacto(t, &ts, e.limite_kib), "{}", t.nombre);
     }
+    // Una carpeta larga: el nombre por defecto se queda en 80 letras (el final) y vale.
+    let larga = format!("E:\\{}\\Espejo", "carpeta-muy-larga\\".repeat(8));
+    let mut t = de_destino(&crate::espejo::Destino { tipo: "carpeta".into(), carpeta: larga.clone(), ..Default::default() }, "02:00", None, 0);
+    assert!(t.nombre.chars().count() == 80 && t.nombre.starts_with('…') && t.nombre.ends_with("\\Espejo"));
+    validar(&mut t, QUIEN_ALMACEN).unwrap();
+    assert!(exacto(&t, &[t.clone()], None));
     // La forma de 0.7.0 (una carpeta) también.
     let viejo = crate::espejo::Espejo { carpeta: "E:\\x".into(), hora: "02:00".into(), ..Default::default() };
     assert_eq!(viejo.trabajos_efectivos()[0].adonde, carpeta("E:\\x"));

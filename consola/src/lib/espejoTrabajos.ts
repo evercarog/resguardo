@@ -139,9 +139,10 @@ export const carpetaRemotaValida = (c: string) => {
 
 /** El nombre que se pone a un trabajo sin nombre (como el agente). */
 export function nombrePorDefecto(a: AdondeEspejo): string {
-  if (a.tipo === "nube" && a.nube) return `Espejo a «${a.nube}»`;
-  if (a.tipo === "zona") return a.carpeta === PRINCIPAL ? "Espejo a la zona principal" : `Espejo a la zona ${a.carpeta}`;
-  return `Espejo a ${a.carpeta.trim()}`;
+  const n = a.tipo === "nube" && a.nube ? `Espejo a «${a.nube}»` : a.tipo === "zona" ? (a.carpeta === PRINCIPAL ? "Espejo a la zona principal" : `Espejo a la zona ${a.carpeta.trim()}`) : `Espejo a ${a.carpeta.trim()}`;
+  // Como mucho 80 letras, como el agente (una carpeta larga: el final).
+  const l = [...n];
+  return l.length <= 80 ? n : `…${l.slice(-79).join("")}`;
 }
 
 /** El error de un trabajo (o null), sin mirar el equipo. `quien`: quién lo va a hacer. */
