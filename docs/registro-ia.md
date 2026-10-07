@@ -51,6 +51,13 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-textos-restaurar`
+
+- **Pedido:** en el paso «Listo» de «Restaurar archivos» salía «Restaurado (2 elementos) en [ruta] .» y «No se puede restaurar una unidad o la raíz entera: [ruta]». Que la consola nunca enseñe «[ruta]».
+- **Cambios:** consola: `lib/textosEquipo.ts` (`sinMarcadores`, `textoRestaurar`, `mensajeOrden`): «Restaurado (N elementos) en la carpeta de abajo.» si se ve el recuadro con la carpeta, «Restaurado (N elementos).» si no; la unidad entera, «No se puede restaurar una unidad entera junto al original. Elige las carpetas de dentro.»; en cualquier otro mensaje, « en [ruta]» y «: [ruta]» al final se quitan y un «[ruta]» en medio pasa a ««…»». Aplicado en Restaurar, «Restaurar este archivo», Órdenes (`ListaOrdenes`, `porQueNoSeAplico`, `OrdenDialog`, pendientes, órdenes de otras consolas), avisos emergentes de órdenes y la página de avisos. La firma se sigue comprobando con el mensaje original. Agente: el resultado de `restaurar` para las consolas ya no lleva la carpeta («Restaurado (N elementos).», `restaurado_sin_rutas`) y el error de la unidad entera no lleva la ruta (la ventana del equipo sigue recibiendo la carpeta). Simulador como el agente nuevo, con el error de la unidad. Vectores en `scripts/vectores-textos-equipo.ts`.
+- **Comprobado:** consola `check`, `build`, `test:vectores`; `cargo fmt --check`, los dos clippy de la CI (agente; protocolo, motor y servidor), `cargo test -p resguardo-agente` (346 bien); el clippy de todo el workspace no arranca en este árbol porque a `src-tauri` le falta el restic incluido (app congelada, no se tocó); `test:sin-referencias`. En `dev:mock`: «Disco C:» entero da el texto nuevo; dos carpetas, «Restaurado (2 elementos) en la carpeta de abajo.» con la ruta en el recuadro; Órdenes sin «[ruta]».
+- **Sin probar / dudas:** sin código estructurado (`codigo: "unidad_entera"`): el mensaje va firmado y añadir un campo tocaba el contrato; la consola reconoce el texto de los agentes viejos y nuevos. No se tocaron los mensajes de las copias fallidas (otras páginas) ni `docs/api-servidor.md` (no cambia ningún campo, solo el texto).
+
 ## 2026-10-07 · Claude Code (Claude Opus 5.5) · rama `ia/0726-orden-paginas`
 
 - **Pedido:** en Estado, que las órdenes en espera no partan lo de las copias (resumen, regla 3-2-1-1-0, mapa) y vayan después, con una línea de aviso arriba que lleve a ellas. En la página de una copia: la tira de la regla justo debajo de las cifras, «Historial y versiones» más arriba, «Datos nuevos por versión» más abajo y con cabecera de sección como las demás.
