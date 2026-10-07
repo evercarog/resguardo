@@ -52,7 +52,24 @@ El script:
    y licencias), con el enlace `/usr/local/bin/resguardo-agente`.
 3. Instala nftables si falta (el cortafuegos de «Este equipo guarda copias»).
 4. Pone el servicio `resguardo-agente` de systemd, lo activa y lo arranca.
-5. Muestra las versiones y el siguiente paso: vincularlo.
+5. Muestra las versiones y el siguiente paso: vincularlo (y cómo hacer que
+   guarde las copias de otros, salvo si ya lo hace).
+
+**La firma y minisign.** Con `.minisig` al lado (o al descargar), el script
+comprueba la firma con `minisign`: el del sistema; si no está, lo instala con
+apt; si apt no lo tiene (Ubuntu 22.04 no trae el paquete), descarga el
+**oficial 0.12** de GitHub (`minisign-0.12-linux.tar.gz`), comprueba que su
+SHA-256 es la fijada en el script
+(`9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73`, la del
+publicado por su autor) y lo usa desde la carpeta temporal: **no se queda
+instalado**. Si la huella no coincide, no usa nada y no instala nada.
+`RESGUARDO_MINISIGN=oficial` fuerza el oficial (p. ej. si el del sistema es
+demasiado antiguo para las firmas actuales).
+
+**apt ocupado.** En una máquina recién arrancada, las actualizaciones
+automáticas del sistema (unattended-upgrades) suelen tener apt ocupado unos
+minutos. El script lo dice («Esperando a que terminen las actualizaciones
+automáticas del sistema…») y espera hasta 10 minutos en vez de fallar.
 
 Para vincularlo en el mismo paso, añade
 `--servidor https://192.168.1.20:8443 --codigo ABCD-1234` (y, si quieres,

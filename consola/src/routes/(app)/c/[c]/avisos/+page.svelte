@@ -3,7 +3,7 @@
   // gravedad (lo urgente arriba) o por equipo; cada uno con su acción directa
   // y «Marcar como visto» (queda anotado quién lo vio).
   import { slide } from "svelte/transition";
-  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, KeyRound, Monitor, Power, ShieldAlert, TriangleAlert, WifiOff } from "@lucide/svelte";
+  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, Cloud, KeyRound, Monitor, Power, ShieldAlert, TriangleAlert, WifiOff } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { dur } from "$ui/movimiento";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
@@ -85,6 +85,8 @@
     auditoria_rehecha: { texto: "Actividad rehecha", tono: "bad", icono: ShieldAlert, que: "Abre esa consola y, en Actividad, usa «Comprobar con un ancla» con un resumen por correo anterior.", accion: () => ({ texto: "Actividad de esta consola", href: `/c/${c}/auditoria` }) },
     // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió solo a la anterior.
     actualizacion_fallida: { texto: "Actualización fallida", tono: "warn", icono: TriangleAlert, que: "El equipo volvió solo a la versión anterior y sigue copiando. Esa versión queda retenida para el resto del cliente.", accion: () => ({ texto: "Ver las versiones", href: `/c/${c}/versiones` }) },
+    // Plan 0.7.26 (1.1): las credenciales ya se borraron del equipo, pero el permiso puede seguir en Dropbox.
+    nube_sin_anular: { texto: "Permiso de nube sin anular", tono: "warn", icono: Cloud, que: "Mira en la web de Dropbox → Configuración → Aplicaciones conectadas si sigue «Resguardo». Quítalo solo si ningún otro equipo la usa.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };

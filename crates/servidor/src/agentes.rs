@@ -694,8 +694,19 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
 
 /// v1.49: `orden_en_espera` (otra consola mandó una orden que el equipo tiene en espera).
 /// v1.57: `actualizacion_fallida` (una versión nueva no estuvo sana y el equipo volvió a la anterior).
-const TIPOS_AVISO: &[&str] =
-    &["intentos_fallidos", "bloqueo", "copia_fallida", "copia_atrasada", "servicio_detenido", "cambio_inusual", "orden_en_espera", "actualizacion_fallida"];
+/// (Pendiente de numerar; plan 0.7.26, 1.1) `nube_sin_anular` (en 7 días no se pudo anular el permiso
+/// de una nube desconectada; sus credenciales ya se borraron del equipo).
+const TIPOS_AVISO: &[&str] = &[
+    "intentos_fallidos",
+    "bloqueo",
+    "copia_fallida",
+    "copia_atrasada",
+    "servicio_detenido",
+    "cambio_inusual",
+    "orden_en_espera",
+    "actualizacion_fallida",
+    "nube_sin_anular",
+];
 
 #[derive(Deserialize)]
 pub struct Aviso {

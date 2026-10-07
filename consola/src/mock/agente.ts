@@ -16,6 +16,7 @@ import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
 import { errorCadenas } from "../lib/cadenas";
+import { usosDeNube } from "../lib/nubesEquipo";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
@@ -539,6 +540,25 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     case "quitar_nube": {
       const g = e.resumen?.guarda_copias;
       const nombre = String(c.nombre ?? "");
+      // Plan 0.7.26 (1.1), como el agente con `admite: "nube_revocar"`: no deja si algo la usa; si no,
+      // borra las credenciales y anula el permiso en Dropbox (aquí siempre sale bien).
+      if (e.resumen?.admite?.includes("nube_revocar")) {
+        const r = e.resumen;
+        if (![...(r.nubes ?? []), ...(g?.nubes ?? [])].some((n) => n.nombre === nombre)) return resultado(e, o, "fallida", `No hay ninguna nube «${nombre}» en este equipo.`);
+        const usos = usosDeNube(e, nombre);
+        if (usos.length) return resultado(e, o, "fallida", `«${nombre}» no se desconecta: la usa ${usos.join(", ")}. Quítala antes de ahí (o elige otro destino) y vuelve a intentarlo.`);
+        const tipo = [...(r.nubes ?? []), ...(g?.nubes ?? [])].find((n) => n.nombre === nombre)?.tipo;
+        r.nubes = (r.nubes ?? []).filter((n) => n.nombre !== nombre);
+        if (g?.nubes) g.nubes = g.nubes.filter((n) => n.nombre !== nombre);
+        return resultado(
+          e,
+          o,
+          "hecha",
+          tipo === "dropbox"
+            ? `«${nombre}» desconectada: credenciales borradas de este equipo y permiso anulado en Dropbox. Lo ya subido sigue en la nube.`
+            : `«${nombre}» desconectada: credenciales borradas de este equipo. La clave sigue valiendo en el proveedor: bórrala o anúlala en su web si ya no la usa nadie. Lo ya subido sigue en la nube.`,
+        );
+      }
       if (!g?.nubes?.some((n) => n.nombre === nombre)) return resultado(e, o, "fallida", `No hay ninguna nube «${nombre}» en este equipo.`);
       const usada = g.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre);
       if (usada && !plana.not_before) return resultado(e, o, "rechazada", "Desconectar una nube que usa el espejo es destructivo: falta la espera (not_before).");

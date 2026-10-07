@@ -98,7 +98,7 @@ pub fn cargar() -> Vec<Nube> {
     std::fs::read(ruta()).ok().and_then(|b| crate::platform::unprotect(&b).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
-fn guardar(nubes: &[Nube]) -> Result<(), String> {
+pub(crate) fn guardar(nubes: &[Nube]) -> Result<(), String> {
     crate::agent::prepare_dir()?;
     let datos = crate::platform::protect(&serde_json::to_vec(nubes).map_err(|e| e.to_string())?)?;
     let tmp = crate::agent::private_dir().join(format!("{ARCHIVO}.tmp"));
@@ -293,21 +293,12 @@ pub fn anadir(tipo: &str, nombre: &str, token: &str) -> Result<String, String> {
     Ok(format!("Nube «{nombre}» conectada. Ya se puede usar como destino del espejo."))
 }
 
-/// `nube quitar <nombre>`: olvida el token (lo ya subido se queda en la nube).
+/// `nube quitar <nombre>` (y la ventana del equipo): borra las credenciales y
+/// los restos y anula el permiso en el proveedor si se puede (ver `nube_anular`).
+/// No deja si algo la usa.
 pub fn quitar(nombre: &str) -> Result<String, String> {
     crate::agent::require_admin()?;
-    let mut nubes = cargar();
-    let antes = nubes.len();
-    nubes.retain(|n| n.nombre != nombre);
-    if nubes.len() == antes {
-        return Err(format!("No hay ninguna nube «{nombre}»."));
-    }
-    if crate::server::load().espejo.as_ref().is_some_and(|e| e.destinos().iter().any(|d| d.nube.as_deref() == Some(nombre))) {
-        return Err(format!("El espejo usa «{nombre}»: quítala antes del espejo."));
-    }
-    guardar(&nubes)?;
-    crate::agent::log(&format!("Nube «{nombre}» quitada del equipo."));
-    Ok(format!("Nube «{nombre}» quitada (lo ya subido sigue en ella; revoca también el permiso en su web)."))
+    crate::nube_anular::desconectar(nombre.trim(), &crate::nube_anular::Urls::dropbox())
 }
 
 /// Ruta remota válida: relativa, sin «..» ni caracteres raros.
@@ -963,7 +954,7 @@ pub fn nombre_de_consola_valido(n: &str) -> bool {
 }
 
 /// Un token de OAuth razonable (sin espacios ni controles, de tamaño acotado).
-fn token_plausible(t: &str) -> bool {
+pub(crate) fn token_plausible(t: &str) -> bool {
     !t.is_empty() && t.len() <= 4096 && !t.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
@@ -1009,6 +1000,11 @@ fn token_rclone(access: &str, refresh: &str, expira: chrono::DateTime<chrono::Ut
 
 /// Pide a Dropbox un access token nuevo, como cliente público (PKCE: `client_id`, sin secreto).
 pub fn renovar_dropbox(app_key: &str, refresh_token: &str) -> Result<Renovado, FalloRenovar> {
+    renovar_dropbox_en(DROPBOX_TOKEN_URL, app_key, refresh_token)
+}
+
+/// Lo mismo contra otra dirección (en las pruebas, un servidor de mentira en 127.0.0.1).
+pub(crate) fn renovar_dropbox_en(url: &str, app_key: &str, refresh_token: &str) -> Result<Renovado, FalloRenovar> {
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(30)))
         .http_status_as_error(false)
@@ -1016,7 +1012,7 @@ pub fn renovar_dropbox(app_key: &str, refresh_token: &str) -> Result<Renovado, F
         .build()
         .new_agent();
     let mut r = agent
-        .post(DROPBOX_TOKEN_URL)
+        .post(url)
         .send_form([("grant_type", "refresh_token"), ("refresh_token", refresh_token), ("client_id", app_key)])
         .map_err(|_| FalloRenovar::SinConexion("No se pudo hablar con Dropbox desde este equipo (¿sin internet?).".into()))?;
     let status = r.status().as_u16();
@@ -1173,7 +1169,7 @@ fn preparar_vuelta(env: &[(String, String)]) -> Result<Option<resguardo_motor::r
     let n = buscar(nombre).ok_or_else(|| format!("La nube «{nombre}» ya no está conectada en este equipo: vuelve a conectarla."))?;
     comprobar_binario()?;
     let n = al_dia(&n, &renovar_dropbox)?;
-    let conf = archivo_de_vuelta()?;
+    let conf = archivo_de_vuelta(&n.nombre)?;
     let mut nuevo: Vec<(String, String)> = env.iter().filter(|(k, _)| k != MARCA && !k.to_ascii_uppercase().starts_with("RCLONE_")).cloned().collect();
     match variables_remoto(&n, &conf) {
         Ok(v) => nuevo.extend(v),
@@ -1190,7 +1186,7 @@ fn preparar_vuelta(env: &[(String, String)]) -> Result<Option<resguardo_motor::r
 /// Un archivo de configuración nuevo y vacío para una vuelta (en la carpeta
 /// privada, que solo leen SYSTEM y los administradores). Antes, se borran los
 /// olvidados y el compartido de versiones anteriores (podían guardar un token).
-fn archivo_de_vuelta() -> Result<PathBuf, String> {
+fn archivo_de_vuelta(nombre: &str) -> Result<PathBuf, String> {
     crate::agent::prepare_dir()?;
     let _ = std::fs::remove_file(crate::agent::private_dir().join("rclone-restic.conf"));
     let dir = crate::agent::private_dir().join(VUELTAS);
@@ -1198,9 +1194,21 @@ fn archivo_de_vuelta() -> Result<PathBuf, String> {
     limpiar_vueltas(&dir, std::time::SystemTime::now());
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let conf = dir.join(format!("vuelta-{}-{n}-{}.conf", std::process::id(), chrono::Utc::now().timestamp_millis()));
+    let conf = dir.join(format!("{}{}-{n}-{}.conf", prefijo_de_vuelta(nombre), std::process::id(), chrono::Utc::now().timestamp_millis()));
     crate::agent::write_new(&conf, b"").map_err(|e| format!("No se pudo preparar rclone: {e}"))?;
     Ok(conf)
+}
+
+/// El principio del nombre de los archivos de las vueltas de una nube: una
+/// huella corta de su nombre (no el nombre), para poder borrar solo los suyos al desconectarla.
+pub(crate) fn prefijo_de_vuelta(nombre: &str) -> String {
+    let h = Sha256::digest(nombre.as_bytes());
+    format!("vuelta-{}-", h.iter().take(6).map(|x| format!("{x:02x}")).collect::<String>())
+}
+
+/// La carpeta con los archivos de las vueltas (dentro de la privada).
+pub(crate) fn carpeta_de_vueltas() -> PathBuf {
+    crate::agent::private_dir().join(VUELTAS)
 }
 
 /// Borra los archivos de vueltas que no terminaron bien (más de 48 h).
@@ -1223,38 +1231,13 @@ pub fn usa_espejo(nombre: &str) -> bool {
     crate::server::load().espejo.as_ref().is_some_and(|e| e.destinos().iter().any(|d| d.tipo == "nube" && d.nube.as_deref() == Some(nombre)))
 }
 
-/// `quitar_nube { nombre }`: olvida el permiso. Si el espejo la usaba (orden
-/// que ya ha esperado), deja de subir a ella; sin más destinos, el espejo se quita.
+/// `quitar_nube { nombre }` (clave de administración): borra las credenciales y
+/// los restos y anula el permiso en el proveedor si se puede (plan 0.7.26, 1.1;
+/// ver `nube_anular`). No deja si un repositorio, una copia externa o derivada
+/// o el espejo la usan: lo dice y no toca nada.
 pub fn quitar_desde_orden(c: &serde_json::Value) -> Result<String, String> {
     let nombre = c["nombre"].as_str().unwrap_or("").trim().to_string();
-    let mut nubes = cargar();
-    if !nubes.iter().any(|n| n.nombre == nombre) {
-        return Err(format!("No hay ninguna nube «{nombre}» en este equipo."));
-    }
-    // Tarea 4a: una copia derivada que va a ella dejaría de poder subir sin decirlo.
-    if usa_copias(&nombre) {
-        return Err(format!("«{nombre}» la usa una copia de este equipo (un repositorio o una copia derivada en ella): quita antes esa copia."));
-    }
-    let mut aviso = "";
-    let mut conf = crate::server::load();
-    if let Some(mut e) = conf.espejo.take() {
-        e.normalizar();
-        let antes = e.destinos.len();
-        e.destinos.retain(|d| !(d.tipo == "nube" && d.nube.as_deref() == Some(nombre.as_str())));
-        if e.destinos.len() != antes {
-            aviso = if e.destinos.is_empty() { " El espejo se quitó: no le quedaban destinos." } else { " El espejo ya no sube a ella." };
-        }
-        conf.espejo = (!e.destinos.is_empty()).then_some(e);
-        if !aviso.is_empty() {
-            crate::server::save(&conf)?;
-        }
-    }
-    nubes.retain(|n| n.nombre != nombre);
-    guardar(&nubes)?;
-    crate::agent::log(&format!("Nube «{nombre}» quitada desde la consola."));
-    Ok(format!(
-        "«{nombre}» desconectada: el equipo olvidó su permiso. Lo ya subido sigue en la nube; puedes retirar también el permiso de la app en su web.{aviso}"
-    ))
+    crate::nube_anular::desconectar(&nombre, &crate::nube_anular::Urls::dropbox())
 }
 
 #[cfg(test)]
@@ -1390,7 +1373,7 @@ mod tests {
         let rc = Nube { nombre: "R".into(), tipo: "drive".into(), token: "{}".into(), ..Default::default() };
         assert_eq!(al_dia(&rc, &|_, _| panic!("no")).unwrap(), rc);
 
-        // Quitar: una que no existe, error; la que usa el espejo sale también del espejo.
+        // Quitar: una que no existe, error; la que usa el espejo, no (plan 0.7.26, 1.1: dice qué la usa).
         assert!(quitar_desde_orden(&json!({ "nombre": "No existe" })).is_err());
         let mut conf = crate::server::load();
         conf.enabled = true;
@@ -1404,15 +1387,13 @@ mod tests {
         });
         crate::server::save(&conf).unwrap();
         assert!(usa_espejo("Dropbox Sur") && !usa_espejo("Otra"));
-        let m = quitar_desde_orden(&json!({ "nombre": "Dropbox Sur" })).unwrap();
-        assert!(m.contains("desconectada") && m.contains("ya no sube"), "{m}");
-        assert!(buscar("Dropbox Sur").is_none() && buscar("Otra").is_some());
-        let e = crate::server::load().espejo.unwrap();
-        assert_eq!(e.destinos.len(), 1);
-        assert_eq!(e.destinos[0].tipo, "carpeta");
+        let e = quitar_desde_orden(&json!({ "nombre": "Dropbox Sur" })).unwrap_err();
+        assert!(e.contains("la usa el espejo"), "{e}");
+        assert!(buscar("Dropbox Sur").is_some() && crate::server::load().espejo.unwrap().destinos.len() == 2, "no se toca nada");
+        // En las pruebas, «Dropbox» es un puerto cerrado de 127.0.0.1: se borra y queda por anular.
         let m = quitar_desde_orden(&json!({ "nombre": "Otra" })).unwrap();
-        assert!(!m.contains("espejo"), "{m}");
-        assert!(cargar().is_empty());
+        assert!(m.contains("Credenciales borradas") && m.contains("se reintentará") && !m.contains(RT) && !m.contains(AT), "{m}");
+        assert!(buscar("Otra").is_none() && buscar("Dropbox Sur").is_some());
 
         std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = std::fs::remove_dir_all(&dir);

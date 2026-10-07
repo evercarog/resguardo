@@ -181,9 +181,29 @@ Rama `ia/repos-en-la-nube`. Una copia puede guardar sus carpetas **directamente*
 - Origen y destino en **dos nubes distintas** en la misma operación (p. ej. una copia derivada de un repositorio en Dropbox a otra nube): no se puede (rclone usa un solo remoto `rnube`); el agente lo dice. Con la misma nube, sí.
 - Dropbox no rota el refresh token; si una nube lo rotara (OneDrive), se guarda el nuevo con la misma regla.
 - **Sin probar con una cuenta de Dropbox de verdad** (solo con el servidor de tokens de mentira y con un remoto `alias`).
-- `quitar_nube` se niega mientras un repositorio esté en ella.
+- `quitar_nube` se niega mientras un repositorio esté en ella (y, desde la 0.7.26, mientras la use una copia o el espejo: ver «Desconectar una nube»).
 
 **En la consola** (`lib/repoNuevo.ts`): «Nuevo repositorio» (en «Repositorios y destinos», en la ficha del equipo y en el editor de copias con «+ Repositorio nuevo…») enseña todos los destinos. Una nube conectada en el equipo se elige (y se pide la carpeta dentro de ella, «Resguardo» por defecto); conectada en otro equipo, «Conectar Dropbox también en …» ahí mismo; en ninguno, «Conectar Dropbox»; con un agente anterior, «Actualiza el agente de …». Siempre con el aviso de que Dropbox no es inmutable.
+
+## Desconectar una nube (plan 0.7.26, 1.1)
+
+`quitar_nube` (consola, clave de administración), `resguardo-agente nube quitar` y la ventana del equipo hacen lo mismo (`crates/agente/src/nube_anular.rs`, `admite: "nube_revocar"`):
+
+1. **Si algo la usa, no.** Un repositorio que está en ella, la copia externa o una copia derivada que sube a ella, o el espejo del almacén: se dice cuál y no se toca nada. Antes, desconectar una nube del espejo la sacaba del espejo (con espera); ahora hay que quitarla antes del espejo, a sabiendas.
+2. **Borra al momento**, pase lo que pase con el proveedor: las credenciales selladas (`nubes.bin`) y los restos en la carpeta privada: los archivos de configuración de rclone de sus vueltas (llevan una huella corta de su nombre, `vuelta-<huella>-…`, para borrar solo los suyos; sin nubes, la carpeta entera), el `rclone-restic.conf` de versiones anteriores y el de `nube conectar`.
+3. **Anula el permiso en el proveedor:**
+
+| Nube | Qué se hace |
+|---|---|
+| Dropbox (desde la consola) | `POST https://api.dropboxapi.com/2/auth/token/revoke` con su access token (renovado antes si caducó). Dropbox anula ese token y su refresh token: **solo este equipo**; los demás con la misma cuenta siguen. 401 = «el permiso ya no era válido» (también si al renovar dice `invalid_grant`). |
+| Dropbox (con `rclone authorize`) | Igual si su access token aún vale. Si caducó, el agente no puede renovarlo (es la app de rclone): se dice que se quite desde la web. |
+| Google Drive | No se anula desde aquí: está conectada con la app de rclone y Google retira el permiso de la app entera para esa cuenta (dejaría sin acceso a todos los equipos y a cualquier rclone de esa cuenta). Se dice dónde quitarlo. |
+| B2, S3, SFTP, SMB, WebDAV | No hay un permiso que anular: la clave o la contraseña sigue valiendo en el proveedor, y se dice. |
+
+4. **Si no se puede anular ahora** (sin internet, Dropbox caído, cualquier error suyo, o caducado sin poder renovar): las credenciales ya se borraron del equipo; la anulación queda apuntada en `nubes-por-anular.bin` (sellado como los demás secretos; solo el refresh token, el access token y la app key) y se reintenta en cada vuelta del servicio con espera creciente (5 min, 10, 20… hasta 6 h) **durante 7 días**. Al lograrlo (o si Dropbox dice que ya no valía) se borra. Si vencen los 7 días, se borra y se manda el aviso `nube_sin_anular` («comprueba en Dropbox → Aplicaciones conectadas»). La consola enseña las pendientes (`resumen.nubes_por_anular`).
+5. Nada de esto escribe un token en el registro ni en el resultado. En las pruebas, «Dropbox» es un servidor de mentira en 127.0.0.1 (y, por si acaso, la dirección por defecto de las pruebas es un puerto cerrado de 127.0.0.1).
+
+Con un agente anterior la consola avisa: el permiso sigue vivo en Dropbox y se quita desde su web → Aplicaciones conectadas, lo que desconecta todos los equipos que la usan.
 
 ## Hecho en la fase 2
 

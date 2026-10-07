@@ -324,6 +324,8 @@ export interface ResumenEquipo {
   pausado_hasta?: string | null;
   /** Tarea 4a: las nubes conectadas en el equipo (también si no guarda copias). */
   nubes?: { nombre: string; tipo: string }[];
+  /** Plan 0.7.26 (1.1, `admite: "nube_revocar"`): nubes desconectadas cuyo permiso aún no se pudo anular en el proveedor (se reintenta 7 días). */
+  nubes_por_anular?: { nombre: string; tipo: string; desde?: string | null; hasta?: string | null; intentos?: number }[];
   /** Tarea 8e: si el agente corre en una máquina virtual o un contenedor. Solo un dato (nunca resta). */
   entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra" | string; contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" | string } | null;
 }
@@ -884,7 +886,9 @@ export type TipoAviso =
   // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.
   | "orden_no_aplicada"
   // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió a la anterior.
-  | "actualizacion_fallida";
+  | "actualizacion_fallida"
+  // Plan 0.7.26 (1.1): en 7 días no se pudo anular el permiso de una nube desconectada.
+  | "nube_sin_anular";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {

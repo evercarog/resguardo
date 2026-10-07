@@ -44,6 +44,7 @@ import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../s
 import { proximaDe } from "../../src/lib/copia";
 import { claveZona, destinosDelCliente, errorRespuestaZona, idDestinoZona, zonaDeDestino, zonasDe } from "../../src/lib/destinos";
 import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
+import { nubesDelEquipo } from "../../src/lib/nubesEquipo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
@@ -574,7 +575,15 @@ async function principal() {
         await consola.hecha(c, eqB.id, "quitar_repositorio", { repo: repoNube, quitar_destino: true }, { claveAdmin: CLAVE_ADMIN, ...secretosNube }, {}, 120_000);
         log(`B copió directamente a la nube («${repoNube}») y restauró desde ella`);
         // Quitar la derivada (espera; aquí de 0 s) y la nube; vuelve la configuración de antes (los pasos siguientes cuentan con una sola copia).
+        // Plan 0.7.26 (1.1): desconectar la nube. Mientras la usa la derivada, el equipo no deja (y dice cuál).
+        comprobar(nubesDelEquipo(await consola.equipo(c, eqB.id)).find((n) => n.nombre === "Nube de pruebas")?.usos.length, "La consola sabe qué usa la nube de B");
+        const usada = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "quitar_nube", { nombre: "Nube de pruebas" }, { claveAdmin: CLAVE_ADMIN }), { plazo: 60_000 });
+        comprobar(usada.estado === "fallida" && /la usa una copia derivada/.test(usada.mensaje ?? ""), "Con la derivada puesta, B no deja desconectar la nube", usada);
         await consola.hecha(c, eqB.id, "quitar_derivada", { repo: repoE, id: "d1" }, secretosE);
+        const fuera = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "quitar_nube", { nombre: "Nube de pruebas" }, { claveAdmin: CLAVE_ADMIN }), { plazo: 60_000 });
+        comprobar(fuera.estado === "hecha" && /credenciales borradas/.test(fuera.mensaje ?? ""), "Sin uso, la nube se desconecta y el equipo borra sus credenciales", fuera);
+        comprobar(!(await consola.equipo(c, eqB.id)).resumen?.nubes?.some((n) => n.nombre === "Nube de pruebas"), "La nube ya no sale en el resumen de B");
+        log(`Nube desconectada: ${fuera.mensaje}`);
       } else log("Sin rclone junto a restic: se salta la copia derivada por rclone.");
       await consola.hecha(c, eqA.id, "guarda_copias", { espejo: null }, { claveAdmin: CLAVE_ADMIN });
       await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });

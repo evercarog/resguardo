@@ -110,10 +110,11 @@ function yaEsta(p: Pendiente): boolean {
     case "crear_repositorio":
     case "importar_repositorio":
       return !!r.repositorios?.some((x) => x.id === p.objetivo);
+    // Tarea 4a: también en un equipo que no es almacén (`resumen.nubes`).
     case "conectar_nube":
-      return !!r.guarda_copias?.nubes?.some((n) => n.nombre === p.objetivo);
+      return [...(r.nubes ?? []), ...(r.guarda_copias?.nubes ?? [])].some((n) => n.nombre === p.objetivo);
     case "quitar_nube":
-      return !r.guarda_copias?.nubes?.some((n) => n.nombre === p.objetivo);
+      return ![...(r.nubes ?? []), ...(r.guarda_copias?.nubes ?? [])].some((n) => n.nombre === p.objetivo);
     default:
       // Lo demás cambia algo que ya estaba: basta con un resumen recibido después.
       return actual.cargado > p.hechaEn;

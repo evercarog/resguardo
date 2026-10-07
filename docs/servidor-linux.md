@@ -87,7 +87,9 @@ sh instalar-servidor.sh --paquete ./resguardo-server-x86_64-linux-musl.tar.gz --
   instales.
 - `--sin-firma`: el paquete de la integración continua no lleva firma
   minisign. Si el paquete trae su `.minisig` al lado y el script tiene la
-  llave pública, se comprueba la firma y no hace falta esta opción.
+  llave pública, se comprueba la firma y no hace falta esta opción (minisign
+  y apt ocupado: como en [agente-linux.md](agente-linux.md), «La firma y
+  minisign»; `preparar-vm.sh` también espera a que apt quede libre).
 - `--puerto 9443`: para escuchar en otro puerto (por defecto, 8443).
 
 El script:
