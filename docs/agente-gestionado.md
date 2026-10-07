@@ -72,7 +72,7 @@ Todo lo que la consola manda va **firmado con Ed25519** y **cifrado para el agen
 - «Conectar Dropbox» en la consola manda `conectar_nube` con la **clave de administración**, sellada solo para el equipo que guarda copias: lleva el refresh token de Dropbox (OAuth 2 con PKCE, sin app secret) y la app key pública. El servidor no lo ve.
 - El agente lo comprueba renovándolo una vez y lo guarda **protegido con DPAPI** en su carpeta privada (`nubes.bin`), como los demás secretos. El resultado firmado dice «conectada» o por qué no, **sin repetir el token**; el resumen solo lleva `guarda_copias.nubes: [{ nombre, tipo }]`.
 - La app de Dropbox tiene permiso «App folder»: aunque el token se filtrara, solo alcanza `Aplicaciones/Resguardo`. Lo subido son paquetes de restic ya cifrados.
-- `quitar_nube` olvida el permiso. Si el espejo usa esa nube, reduce la protección: espera mínima (destructiva) y sale también del espejo.
+- `quitar_nube` olvida el permiso. Con `admite: "nube_revocar"` (plan 0.7.26): no deja si un repositorio, una copia externa o derivada o el espejo la usan (dice cuál); si no, borra credenciales y restos y anula el permiso en Dropbox (o lo reintenta hasta 7 días). Ver [destinos.md](destinos.md) «Desconectar una nube». Un agente anterior: si el espejo usa esa nube, reduce la protección: espera mínima (destructiva) y sale también del espejo.
 - Detalle del contrato: [api-servidor.md](api-servidor.md) §12; cómo se renueva: [destinos.md](destinos.md).
 
 ### Lo que ve la consola (privacidad)

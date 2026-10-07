@@ -1011,7 +1011,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 22] = [
+pub const ADMITE: [&str; 23] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1057,6 +1057,10 @@ pub const ADMITE: [&str; 22] = [
     // (pendiente de numerar) actualización automática: `informe.actualizacion`, `{"t":"actualizacion"}`
     // por el canal y `GET /api/agente/actualizacion` (docs/actualizaciones.md).
     "actualizaciones",
+    // (pendiente de numerar) plan 0.7.26, 1.1: `quitar_nube` anula el permiso en el proveedor
+    // (Dropbox; si no puede ahora, lo reintenta 7 días), borra los restos y no deja si algo la usa;
+    // `resumen.nubes_por_anular` (docs/destinos.md «Desconectar una nube»).
+    "nube_revocar",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1163,6 +1167,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         "guarda_copias": resumen_guarda_copias(),
         // Tarea 4a: las nubes conectadas en este equipo (solo nombre y tipo), también si no guarda copias.
         "nubes": crate::nube::lista(),
+        // Plan 0.7.26 (1.1): nubes desconectadas cuyo permiso aún no se pudo anular (sin tokens).
+        "nubes_por_anular": crate::nube_anular::resumen(),
         // Tarea 8e: si corre en una máquina virtual o un contenedor (solo un dato para la consola).
         "entorno": crate::espacio::entorno(),
         // v1.19: un puerto libre para «Este equipo guarda copias» (la consola lo propone).
@@ -2917,7 +2923,7 @@ mod tests {
         assert_eq!(std::fs::read_dir(&vueltas).map(|d| d.count()).unwrap_or(0), 0);
         // Mientras un repositorio está en ella, la nube no se puede desconectar.
         crate::servidor_v2::guardar(&v).unwrap();
-        assert!(crate::nube::quitar_desde_orden(&json!({ "nombre": "Nube de prueba" })).unwrap_err().contains("la usa una copia"));
+        assert!(crate::nube::quitar_desde_orden(&json!({ "nombre": "Nube de prueba" })).unwrap_err().contains("la usa el repositorio"));
         std::env::set_var("PATH", path_antes);
         std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = std::fs::remove_dir_all(&b);

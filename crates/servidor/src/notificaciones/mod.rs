@@ -450,6 +450,8 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.
         "orden_no_aplicada" => format!("No se aplicó una orden con espera en {e}"),
         "actualizacion_fallida" => format!("{e} no pudo actualizarse y volvió a la versión anterior"),
+        // Plan 0.7.26 (1.1): el permiso de una nube desconectada sigue vivo en Dropbox.
+        "nube_sin_anular" => format!("{e} no pudo anular el permiso de una nube desconectada"),
         _ => format!("Aviso de {e}"),
     };
     let ok = match tipo {

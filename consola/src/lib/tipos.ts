@@ -877,7 +877,9 @@ export type TipoAviso =
   // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.
   | "orden_no_aplicada"
   // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió a la anterior.
-  | "actualizacion_fallida";
+  | "actualizacion_fallida"
+  // Plan 0.7.26 (1.1): en 7 días no se pudo anular el permiso de una nube desconectada.
+  | "nube_sin_anular";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {

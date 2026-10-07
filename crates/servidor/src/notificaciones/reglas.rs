@@ -38,7 +38,8 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "prueba_fallida"
         | "cadena_parada"
         | "orden_no_aplicada"
-        | "actualizacion_fallida" => Severidad::Importante,
+        | "actualizacion_fallida"
+        | "nube_sin_anular" => Severidad::Importante,
         _ => Severidad::Informativo,
     }
 }

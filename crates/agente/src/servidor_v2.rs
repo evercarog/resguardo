@@ -616,8 +616,9 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
                 c["solo_probar"] != true
                     && crate::gestion_v2::derivada_reduce(v, c, o.autorizacion.clave_repo.as_ref().map(|k| k.repo.as_str()).unwrap_or_default())
             }
-            // Desconectar una nube que usa el espejo deja de proteger fuera.
-            "quitar_nube" => crate::nube::usa_espejo(c["nombre"].as_str().unwrap_or("").trim()),
+            // Plan 0.7.26 (1.1): desconectar una nube que usa el espejo (o una copia) ya no
+            // se hace: el equipo lo rechaza al momento y dice qué la usa. Ya no reduce nada.
+            "quitar_nube" => false,
             // Vaciar o desactivar todas las copias que había: el equipo deja de copiar solo.
             "config" => copias_activas(v.config_v1.as_ref()) > 0 && copias_activas(c.get("config")) == 0,
             // v1.22: poner o cambiar la retención del almacén (borrará versiones); quitarla, no.
