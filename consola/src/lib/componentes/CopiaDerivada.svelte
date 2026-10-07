@@ -24,6 +24,8 @@
   import { fechaLarga } from "$lib/formato";
   import { clasificacionDeVista } from "$lib/regla321";
   import { corta } from "$lib/tipoDestino";
+  import PasoGuiado from "./copias/PasoGuiado.svelte";
+  import { PASOS_DERIVADA, TITULO_PASO_DERIVADA, type PasoDerivada } from "$lib/copiaGuiada";
   import type { Cliente, DerivadaResumen, EquipoDetalle, RepositorioResumen } from "$lib/tipos";
 
   interface Props {
@@ -35,8 +37,14 @@
     onclose: () => void;
     /** Desde la página de un destino («Usar en una copia»): su clave, ya elegida. */
     destinoInicial?: string | null;
+    /**
+     * Plan 0.7.26 (bloque 3.3): paso a paso. Qué versiones → Cuándo → Dónde →
+     * Resumen (el repositorio de origen ya viene elegido). Lo mismo que sin
+     * él: solo cambia cómo se enseña.
+     */
+    guiado?: boolean;
   }
-  let { cliente, equipo, repo, derivada = null, onclose, destinoInicial = null }: Props = $props();
+  let { cliente, equipo, repo, derivada = null, onclose, destinoInicial = null, guiado = false }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   const id = derivada?.id ?? idDerivadaNueva(repo);
@@ -170,6 +178,33 @@
       (!f.conBloqueo || diasBloqueo(f.bloqueoDias) !== null) &&
       !errorF,
   );
+  // Plan 0.7.26: el modo guiado (un paso abierto a la vez; el de origen ya está hecho).
+  let paso = $state<PasoDerivada>("versiones");
+  // svelte-ignore state_referenced_locally
+  let algunas = $state(!!derivada?.filtro);
+  const resumenPaso: Record<PasoDerivada, () => string> = {
+    origen: () => repo.nombre,
+    versiones: () => (filtro ? `Solo las versiones ${filtroEnFrase(filtro)}` : "Todas"),
+    cuando: () => cuandoEnFrase(f.cuando === "tras" ? { tras_copia: true } : f.cuando === "horario" ? derivada?.cuando : { hora: f.hora }),
+    donde: () => nombreDestino || "Sin elegir",
+    resumen: () => "",
+  };
+  const pasoValido: Record<PasoDerivada, () => boolean> = {
+    origen: () => true,
+    versiones: () => !errorF,
+    cuando: () => f.cuando !== "hora" || /^([01]\d|2[0-3]):[0-5]\d$/.test(f.hora),
+    donde: () => valido,
+    resumen: () => valido,
+  };
+  const abrible = (x: PasoDerivada) => PASOS_DERIVADA.slice(0, PASOS_DERIVADA.indexOf(x)).every((y) => pasoValido[y]());
+  function siguientePaso() {
+    const sig = PASOS_DERIVADA[PASOS_DERIVADA.indexOf(paso) + 1];
+    if (sig && abrible(sig)) paso = sig;
+  }
+  function soloAlgunas(si: boolean) {
+    algunas = si;
+    if (!si) Object.assign(f, { etiquetas: "", equipos: "", carpetas: "", desde: "", ultimosDias: "" });
+  }
   const efecto = $derived(textoRetencionDestino(f.conRetencion, f.conBloqueo ? diasBloqueo(f.bloqueoDias) : null));
   const nombreDestino = $derived(nubeElegida ?? (esNuevo ? f.nombre : (destinos.find((d) => d.id === f.destino)?.nombre ?? "")));
   const resumen = $derived(
@@ -185,150 +220,210 @@
   titulo={derivada ? "Cambiar la copia derivada" : "Copia derivada"}
   descripcion={`${equipo.nombre} copiará «${repo.nombre}» a otro destino: allí crea un repositorio con el mismo troceado (deduplica con este), le sube las versiones y desde entonces le trae las nuevas. Si algo le pasa al destino principal, queda esta.`}
   repo={{ id: repo.id, nombre: repo.nombre }}
-  {valido}
+  valido={valido && (!guiado || paso === "resumen")}
+  sinSecretos={guiado && paso !== "resumen"}
   probar={{ cuerpo: { solo_probar: true }, texto: "Probar" }}
   {onclose}
 >
   {#snippet campos()}
-    {#if derivada}
-      <div class="field">
-        <span class="field-label">Copiar a</span>
-        <p class="nota-dest">{nombreDestino || derivada.destino}</p>
-        <span class="field-hint">Para llevarla a otro destino, quítala y añade otra (lo de allí se queda).</span>
-      </div>
+    {#if guiado}
+      <ol class="pasos-g">
+        {#each PASOS_DERIVADA as x, j (x)}
+          <PasoGuiado
+            n={j + 1}
+            titulo={TITULO_PASO_DERIVADA[x]}
+            abierto={paso === x}
+            hecho={x === "origen" || (x !== "resumen" && pasoValido[x]() && PASOS_DERIVADA.indexOf(x) < PASOS_DERIVADA.indexOf(paso))}
+            resumen={resumenPaso[x]()}
+            deshabilitado={x === "origen" || !abrible(x)}
+            onabrir={() => (paso = x)}
+          >
+            {#if x === "versiones"}
+              <div class="segmented inline" role="radiogroup" aria-label="Qué versiones">
+                <button type="button" role="radio" aria-checked={!algunas} class:on={!algunas} onclick={() => soloAlgunas(false)}>Todas</button>
+                <button type="button" role="radio" aria-checked={algunas} class:on={algunas} onclick={() => soloAlgunas(true)}>Solo algunas</button>
+              </div>
+              {#if algunas}{@render filtroCampos()}{/if}
+            {:else if x === "cuando"}
+              {@render cuandoCampo()}
+            {:else if x === "donde"}
+              {@render destinoCampos()}
+              {@render contrasenaCampos()}
+              <details class="avanzado">
+                <summary>Más opciones</summary>
+                {@render retencionCampos()}
+                {@render verificarCampo()}
+              </details>
+            {:else if x === "resumen"}
+              {@render resumenCampos()}
+            {/if}
+            {#if x !== "resumen"}
+              <div class="pie-paso"><button type="button" class="btn btn-primary btn-sm" disabled={!pasoValido[x]()} onclick={siguientePaso}>Siguiente</button></div>
+            {/if}
+          </PasoGuiado>
+        {/each}
+      </ol>
     {:else}
-      <ElegirDestinoPaso id="dv-destino" etiqueta="Copiar a" {opciones} bind:value={() => f.destino, elegir} alConectar={(_e, nube) => (conectar = { nube })} />
+      {@render destinoCampos()}
+      {@render cuandoCampo()}
+      {@render contrasenaCampos()}
+      {@render retencionCampos()}
+      <details class="avanzado" open={!!filtro}>
+        <summary>Qué versiones subir</summary>
+        <p class="faint nota">Todas, o solo las que pasen el filtro (se cumple todo lo que escribas).</p>
+        {@render filtroCampos()}
+      </details>
+      {@render verificarCampo()}
+      {@render resumenCampos()}
     {/if}
-    {#if nubeElegida}
-      <div class="field">
-        <label class="field-label" for="dv-carpeta">Carpeta dentro de la nube</label>
-        <input id="dv-carpeta" class="input mono" bind:value={f.carpetaNube} placeholder="Resguardo" spellcheck="false" />
-        <span class="field-hint">El repositorio irá en <code>{f.carpetaNube.trim() || "Resguardo"}/{repo.id}-{id}</code>.</span>
-      </div>
-    {/if}
-    {#if tipoNube && TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable}
-      <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: alguien con acceso a la cuenta (o un ransomware en un equipo con ella abierta) podría borrar lo de allí. Mejor como un destino más, no el único fuera de la oficina.</p></div>
-    {/if}
-    {#if esNuevo}
-      <div class="nuevo-destino">
-        <div class="fila-campos">
-          <div class="field">
-            <label class="field-label" for="dv-tipo">Tipo</label>
-            <select id="dv-tipo" class="input" bind:value={f.tipo}>
-              <option value="local">Disco o carpeta</option>
-              <option value="rest">Servidor de copias</option>
-              <option value="s3">S3 compatible</option>
-              <option value="b2">Backblaze B2</option>
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label" for="dv-nombre">Nombre</label>
-            <input id="dv-nombre" class="input" bind:value={f.nombre} />
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label" for="dv-donde">{f.tipo === "local" ? "Carpeta" : f.tipo === "rest" ? "Dirección (https://servidor:puerto)" : "Bucket"}</label>
-          <input id="dv-donde" class="input mono" bind:value={f.donde} placeholder={f.tipo === "local" ? (win ? "E:\\Resguardo" : "/mnt/disco2/resguardo") : ""} spellcheck="false" />
-        </div>
-        {#if f.tipo !== "local"}
-          <div class="fila-campos">
-            <div class="field">
-              <label class="field-label" for="dv-usuario">{f.tipo === "rest" ? "Usuario" : "Id de la clave"}</label>
-              <input id="dv-usuario" class="input mono" bind:value={f.usuario} autocomplete="off" spellcheck="false" />
-            </div>
-            <CampoClave requerido id="dv-secreto" etiqueta={f.tipo === "rest" ? "Contraseña" : "Clave secreta"} bind:value={f.secreto} />
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    <div class="field">
-      <span class="field-label" id="dv-l-cuando">Cuándo</span>
-      <div class="segmented" role="radiogroup" aria-labelledby="dv-l-cuando">
-        <button type="button" role="radio" aria-checked={f.cuando === "tras"} class:on={f.cuando === "tras"} onclick={() => (f.cuando = "tras")}>Después de cada copia</button>
-        <button type="button" role="radio" aria-checked={f.cuando === "hora"} class:on={f.cuando === "hora"} onclick={() => (f.cuando = "hora")}>Cada día a una hora</button>
-        {#if derivada?.cuando?.horario}<button type="button" role="radio" aria-checked={f.cuando === "horario"} class:on={f.cuando === "horario"} onclick={() => (f.cuando = "horario")}>Su horario</button>{/if}
-      </div>
-      {#if f.cuando === "hora"}<input class="input num corto" type="time" bind:value={f.hora} aria-label="Hora" />{/if}
-      {#if f.cuando === "tras"}<span class="field-hint">En cuanto una copia de «{repo.nombre}» guarde una versión nueva. Si falla, se reintenta en la siguiente.</span>{/if}
-    </div>
-
-    <label class="switch-row"><input type="checkbox" bind:checked={f.otra} onchange={() => f.otra && !f.contrasena && generar()} /><span>{derivada ? "Otra contraseña nueva" : "Otra contraseña"}<span class="faint">{derivada ? "Si no, se queda la que tiene." : "Si no, la misma que el repositorio de origen (la de su kit)."}</span></span></label>
-    {#if !f.otra && fuera && !derivada}<p class="faint nota">Recomendado: otra contraseña para un destino fuera de la oficina (así una contraseña no abre los dos). No es obligatorio.</p>{/if}
-    {#if f.otra}
-      <article class="kit" id="kit-imprimible">
-        <h3>Kit de recuperación · copia derivada</h3>
-        <dl>
-          <dt>Cliente</dt><dd>{cliente.nombre}</dd>
-          <dt>Equipo</dt><dd>{equipo.nombre}</dd>
-          <dt>Copia de</dt><dd>{repo.nombre} · <span class="pastilla mono selectable">{repo.id}-{id}</span></dd>
-          <dt>Destino</dt><dd>{nombreDestino}</dd>
-          <dt>Contraseña</dt><dd><code class="selectable pw">{f.contrasena}</code></dd>
-          <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>
-        </dl>
-      </article>
-      <div class="acciones">
-        <button type="button" class="btn btn-sm" onclick={generar}><RefreshCw size={14} />Otra</button>
-        <button type="button" class="btn btn-sm" onclick={() => window.print()}><Printer size={14} />Imprimir o guardar en PDF</button>
-      </div>
-      <label class="switch-row"><input type="checkbox" bind:checked={f.impreso} /><span>He guardado el kit en un sitio seguro<span class="faint">Sin esta contraseña nadie podrá leer esta copia.</span></span></label>
-    {/if}
-
-    <label class="switch-row"><input type="checkbox" bind:checked={f.conRetencion} /><span>Retención propia<span class="faint">Si no, allí se guardan todas las versiones que suba.</span></span></label>
-    {#if f.conRetencion}
-      <EditorRetencion id="dvr" bind:regla={f.retencion} admite={admitePlazos(equipo)} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
-    {/if}
-    <label class="switch-row"><input type="checkbox" bind:checked={f.conBloqueo} /><span>El destino tiene bloqueo de objetos (Object Lock)<span class="faint">Lo subido no se puede borrar durante unos días: la copia queda fuera del alcance de un ransomware.</span></span></label>
-    {#if f.conBloqueo}
-      <div class="field">
-        <label class="field-label" for="dv-bloqueo">Días de bloqueo</label>
-        <input id="dv-bloqueo" class="input num corto" type="number" min="1" max={MAX_BLOQUEO} bind:value={f.bloqueoDias} />
-      </div>
-    {/if}
-    {#if efecto}<p class="faint nota">{efecto}</p>{/if}
-
-    <details class="avanzado" open={!!filtro}>
-      <summary>Qué versiones subir</summary>
-      <p class="faint nota">Todas, o solo las que pasen el filtro (se cumple todo lo que escribas).</p>
-      <div class="fila-campos">
-        <div class="field">
-          <label class="field-label" for="dv-etiquetas">Con la etiqueta</label>
-          <input id="dv-etiquetas" class="input" bind:value={f.etiquetas} placeholder="diaria, semanal" />
-        </div>
-        <div class="field">
-          <label class="field-label" for="dv-equipos">Del equipo</label>
-          <input id="dv-equipos" class="input" bind:value={f.equipos} placeholder={equipo.nombre} />
-        </div>
-      </div>
-      {#if conFiltros}
-        <div class="fila-campos">
-          <div class="field">
-            <label class="field-label" for="dv-dias">De los últimos (días)</label>
-            <input id="dv-dias" class="input num corto" type="number" min="1" max="3650" bind:value={f.ultimosDias} />
-          </div>
-          <div class="field">
-            <label class="field-label" for="dv-desde">Desde el</label>
-            <input id="dv-desde" class="input" type="date" bind:value={f.desde} />
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label" for="dv-carpetas">De estas carpetas <span class="faint">(una por línea)</span></label>
-          <textarea id="dv-carpetas" class="input mono" rows="2" spellcheck="false" bind:value={f.carpetas}></textarea>
-          {#if carpetasOcultas}<span class="field-hint">Tenía {carpetasOcultas === 1 ? "1 carpeta" : `${carpetasOcultas} carpetas`} en el filtro: al guardar se cambian por las que escribas aquí.</span>{/if}
-        </div>
-        {#if errorF}<p class="error-campo">{errorF}</p>{/if}
-      {:else}
-        <p class="faint nota">Actualiza el agente para filtrar también por carpetas y fechas.</p>
-      {/if}
-    </details>
-
-    <label class="switch-row"><input type="checkbox" bind:checked={f.verificar} /><span>Verificar la copia derivada<span class="faint">Cada semana, el 5 % de sus datos (rotando): en 20 semanas se ha leído todo.</span></span></label>
-
-    <div class="notice notice-info resumen"><Cloud size={16} /><p>{resumen} <Ayuda id="copia-derivada" /></p></div>
-    {#if !f.conRetencion && !f.conBloqueo}{:else}<p class="faint nota">{TEXTO_FUERA_RETENCION.split(".")[0]}: una copia derivada con su propia retención cuenta como fuera del alcance de la retención del original.</p>{/if}
-    <p class="faint nota"><KeyRound size={13} />La contraseña del repositorio de origen la usa solo {equipo.nombre}: el almacén nunca la ve.</p>
   {/snippet}
 </OrdenDialog>
+
+{#snippet destinoCampos()}
+  {#if derivada}
+    <div class="field">
+      <span class="field-label">Copiar a</span>
+      <p class="nota-dest">{nombreDestino || derivada.destino}</p>
+      <span class="field-hint">Para llevarla a otro destino, quítala y añade otra (lo de allí se queda).</span>
+    </div>
+  {:else}
+    <ElegirDestinoPaso id="dv-destino" etiqueta="Copiar a" {opciones} bind:value={() => f.destino, elegir} alConectar={(_e, nube) => (conectar = { nube })} />
+  {/if}
+  {#if nubeElegida}
+    <div class="field">
+      <label class="field-label" for="dv-carpeta">Carpeta dentro de la nube</label>
+      <input id="dv-carpeta" class="input mono" bind:value={f.carpetaNube} placeholder="Resguardo" spellcheck="false" />
+      <span class="field-hint">El repositorio irá en <code>{f.carpetaNube.trim() || "Resguardo"}/{repo.id}-{id}</code>.</span>
+    </div>
+  {/if}
+  {#if tipoNube && TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable}
+    <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: alguien con acceso a la cuenta (o un ransomware en un equipo con ella abierta) podría borrar lo de allí. Mejor como un destino más, no el único fuera de la oficina.</p></div>
+  {/if}
+  {#if esNuevo}
+    <div class="nuevo-destino">
+      <div class="fila-campos">
+        <div class="field">
+          <label class="field-label" for="dv-tipo">Tipo</label>
+          <select id="dv-tipo" class="input" bind:value={f.tipo}>
+            <option value="local">Disco o carpeta</option>
+            <option value="rest">Servidor de copias</option>
+            <option value="s3">S3 compatible</option>
+            <option value="b2">Backblaze B2</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="dv-nombre">Nombre</label>
+          <input id="dv-nombre" class="input" bind:value={f.nombre} />
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="dv-donde">{f.tipo === "local" ? "Carpeta" : f.tipo === "rest" ? "Dirección (https://servidor:puerto)" : "Bucket"}</label>
+        <input id="dv-donde" class="input mono" bind:value={f.donde} placeholder={f.tipo === "local" ? (win ? "E:\\Resguardo" : "/mnt/disco2/resguardo") : ""} spellcheck="false" />
+      </div>
+      {#if f.tipo !== "local"}
+        <div class="fila-campos">
+          <div class="field">
+            <label class="field-label" for="dv-usuario">{f.tipo === "rest" ? "Usuario" : "Id de la clave"}</label>
+            <input id="dv-usuario" class="input mono" bind:value={f.usuario} autocomplete="off" spellcheck="false" />
+          </div>
+          <CampoClave requerido id="dv-secreto" etiqueta={f.tipo === "rest" ? "Contraseña" : "Clave secreta"} bind:value={f.secreto} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+{#snippet cuandoCampo()}
+  <div class="field">
+    <span class="field-label" id="dv-l-cuando">Cuándo</span>
+    <div class="segmented" role="radiogroup" aria-labelledby="dv-l-cuando">
+      <button type="button" role="radio" aria-checked={f.cuando === "tras"} class:on={f.cuando === "tras"} onclick={() => (f.cuando = "tras")}>Después de cada copia</button>
+      <button type="button" role="radio" aria-checked={f.cuando === "hora"} class:on={f.cuando === "hora"} onclick={() => (f.cuando = "hora")}>Cada día a una hora</button>
+      {#if derivada?.cuando?.horario}<button type="button" role="radio" aria-checked={f.cuando === "horario"} class:on={f.cuando === "horario"} onclick={() => (f.cuando = "horario")}>Su horario</button>{/if}
+    </div>
+    {#if f.cuando === "hora"}<input class="input num corto" type="time" bind:value={f.hora} aria-label="Hora" />{/if}
+    {#if f.cuando === "tras"}<span class="field-hint">En cuanto una copia de «{repo.nombre}» guarde una versión nueva. Si falla, se reintenta en la siguiente.</span>{/if}
+  </div>
+{/snippet}
+{#snippet contrasenaCampos()}
+
+  <label class="switch-row"><input type="checkbox" bind:checked={f.otra} onchange={() => f.otra && !f.contrasena && generar()} /><span>{derivada ? "Otra contraseña nueva" : "Otra contraseña"}<span class="faint">{derivada ? "Si no, se queda la que tiene." : "Si no, la misma que el repositorio de origen (la de su kit)."}</span></span></label>
+  {#if !f.otra && fuera && !derivada}<p class="faint nota">Recomendado: otra contraseña para un destino fuera de la oficina (así una contraseña no abre los dos). No es obligatorio.</p>{/if}
+  {#if f.otra}
+    <article class="kit" id="kit-imprimible">
+      <h3>Kit de recuperación · copia derivada</h3>
+      <dl>
+        <dt>Cliente</dt><dd>{cliente.nombre}</dd>
+        <dt>Equipo</dt><dd>{equipo.nombre}</dd>
+        <dt>Copia de</dt><dd>{repo.nombre} · <span class="pastilla mono selectable">{repo.id}-{id}</span></dd>
+        <dt>Destino</dt><dd>{nombreDestino}</dd>
+        <dt>Contraseña</dt><dd><code class="selectable pw">{f.contrasena}</code></dd>
+        <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>
+      </dl>
+    </article>
+    <div class="acciones">
+      <button type="button" class="btn btn-sm" onclick={generar}><RefreshCw size={14} />Otra</button>
+      <button type="button" class="btn btn-sm" onclick={() => window.print()}><Printer size={14} />Imprimir o guardar en PDF</button>
+    </div>
+    <label class="switch-row"><input type="checkbox" bind:checked={f.impreso} /><span>He guardado el kit en un sitio seguro<span class="faint">Sin esta contraseña nadie podrá leer esta copia.</span></span></label>
+  {/if}
+{/snippet}
+{#snippet retencionCampos()}
+
+  <label class="switch-row"><input type="checkbox" bind:checked={f.conRetencion} /><span>Retención propia<span class="faint">Si no, allí se guardan todas las versiones que suba.</span></span></label>
+  {#if f.conRetencion}
+    <EditorRetencion id="dvr" bind:regla={f.retencion} admite={admitePlazos(equipo)} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
+  {/if}
+  <label class="switch-row"><input type="checkbox" bind:checked={f.conBloqueo} /><span>El destino tiene bloqueo de objetos (Object Lock)<span class="faint">Lo subido no se puede borrar durante unos días: la copia queda fuera del alcance de un ransomware.</span></span></label>
+  {#if f.conBloqueo}
+    <div class="field">
+      <label class="field-label" for="dv-bloqueo">Días de bloqueo</label>
+      <input id="dv-bloqueo" class="input num corto" type="number" min="1" max={MAX_BLOQUEO} bind:value={f.bloqueoDias} />
+    </div>
+  {/if}
+  {#if efecto}<p class="faint nota">{efecto}</p>{/if}
+{/snippet}
+{#snippet filtroCampos()}
+    <div class="fila-campos">
+      <div class="field">
+        <label class="field-label" for="dv-etiquetas">Con la etiqueta</label>
+        <input id="dv-etiquetas" class="input" bind:value={f.etiquetas} placeholder="diaria, semanal" />
+      </div>
+      <div class="field">
+        <label class="field-label" for="dv-equipos">Del equipo</label>
+        <input id="dv-equipos" class="input" bind:value={f.equipos} placeholder={equipo.nombre} />
+      </div>
+    </div>
+    {#if conFiltros}
+      <div class="fila-campos">
+        <div class="field">
+          <label class="field-label" for="dv-dias">De los últimos (días)</label>
+          <input id="dv-dias" class="input num corto" type="number" min="1" max="3650" bind:value={f.ultimosDias} />
+        </div>
+        <div class="field">
+          <label class="field-label" for="dv-desde">Desde el</label>
+          <input id="dv-desde" class="input" type="date" bind:value={f.desde} />
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="dv-carpetas">De estas carpetas <span class="faint">(una por línea)</span></label>
+        <textarea id="dv-carpetas" class="input mono" rows="2" spellcheck="false" bind:value={f.carpetas}></textarea>
+        {#if carpetasOcultas}<span class="field-hint">Tenía {carpetasOcultas === 1 ? "1 carpeta" : `${carpetasOcultas} carpetas`} en el filtro: al guardar se cambian por las que escribas aquí.</span>{/if}
+      </div>
+      {#if errorF}<p class="error-campo">{errorF}</p>{/if}
+    {:else}
+      <p class="faint nota">Actualiza el agente para filtrar también por carpetas y fechas.</p>
+    {/if}
+{/snippet}
+{#snippet verificarCampo()}
+  <label class="switch-row"><input type="checkbox" bind:checked={f.verificar} /><span>Verificar la copia derivada<span class="faint">Cada semana, el 5 % de sus datos (rotando): en 20 semanas se ha leído todo.</span></span></label>
+{/snippet}
+{#snippet resumenCampos()}
+
+  <div class="notice notice-info resumen"><Cloud size={16} /><p>{resumen} <Ayuda id="copia-derivada" /></p></div>
+  {#if !f.conRetencion && !f.conBloqueo}{:else}<p class="faint nota">{TEXTO_FUERA_RETENCION.split(".")[0]}: una copia derivada con su propia retención cuenta como fuera del alcance de la retención del original.</p>{/if}
+  <p class="faint nota"><KeyRound size={13} />La contraseña del repositorio de origen la usa solo {equipo.nombre}: el almacén nunca la ve.</p>
+{/snippet}
+
 
 {#if conectar}<ConectarNube {cliente} {equipo} nombreInicial={conectar.nube} onclose={() => (conectar = null)} />{/if}
 
@@ -408,6 +503,17 @@
   }
   .resumen p {
     margin: 0;
+  }
+  .pasos-g {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+  }
+  .pie-paso {
+    display: flex;
+    justify-content: flex-end;
   }
   @media (max-width: 560px) {
     .fila-campos {

@@ -26,6 +26,7 @@ import {
   type TrabajoEspejo,
 } from "../src/lib/espejoTrabajos";
 import { esDestructiva } from "../src/lib/cripto/ordenes";
+import { espejosDeCopia as espejosCopia } from "../src/lib/espejosCopia";
 import type { Equipo } from "../src/lib/tipos";
 
 let fallos = 0;
@@ -140,6 +141,13 @@ igual("agrupados: el almacén y el propio equipo", grupos.map((g) => [g.nombre, 
 const fuera = espejosDeCopia({ ...caja, resumen: { ...caja.resumen!, espejo_equipo: null, consolas: [{ nombre: "Consola en línea", esta: false }] } } as unknown as Equipo, repoCaja, [caja]);
 igual("un almacén que no está en esta consola", fuera.map((g) => [g.nombre, g.fuera, g.consolas, g.espejos.length]), [["Servidor", true, ["Consola en línea"], 0]]);
 igual("el enlace para añadir uno desde la copia", hrefEspejos("c1", "alm", { repo: "caja-1/caja", zona: "principal", quien: "almacen" }), "/c/c1/equipos/alm/espejos?nuevo=1&repo=caja-1%2Fcaja&quien=almacen");
+
+// La lista de copias (bloque 3, lib/espejosCopia.ts) pinta estos trabajos como pasos.
+const g3 = espejosCopia(caja, "caja", [almacen, caja]);
+igual("la lista de copias: los trabajos del almacén y los del equipo, como pasos", g3.map((g) => [g.quien.nombre, g.pasos.map((p) => p.texto)]), [
+  ["Servidor", ["Disco E", "Nube"]],
+  ["Caja", ["USB"]],
+]);
 
 console.log(`\n${total - fallos}/${total} bien`);
 if (fallos) process.exit(1);
