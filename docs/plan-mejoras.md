@@ -189,6 +189,18 @@ Fuera del plan por ahora (decisión del responsable): agente para Mac, instalado
 - Conectar el equipo que falta a la consola en línea: en la consola local, el cliente → Servidor → «Conectar también a otra consola…».
 - Poner la hora del espejo **después** de la copia que quieres subir (p. ej. copia 21:00, espejo 23:00).
 
+## 12. Seguridad de la consola web (después de la 0.7.26)
+
+Apuntado el 2026-10-07. **Antes de empezar, el responsable revisa el plan completo** de esa versión, como se hizo con la 0.7.26 (`docs/plan-0.7.26.md`). Nada de esto se empieza sin ese visto bueno.
+
+Riesgo que queda hoy: si atacan el servidor de una consola, pueden cambiar el JavaScript de la consola que llega al navegador y capturar la clave de administración o una contraseña de repositorio al escribirlas (la CSP no protege de esto: el atacante sería el propio servidor). El resto ya está cubierto: el servidor no puede inventar órdenes delicadas, ni borrar o leer copias, ni instalar nada (actualizaciones firmadas).
+
+- [ ] **12a. Consola verificada:** firmar también la consola web con la llave de publicación y comprobar, antes de escribir la clave de administración, que el JavaScript servido es el publicado (desde la ventana local del agente o una extensión pequeña); si no coincide, avisar y no dejar seguir.
+- [ ] **12b. Lo delicado desde la ventana del agente:** poder hacer las operaciones más sensibles (cambiar la clave, restaurar en otro sitio, quitar repositorios) desde la ventana local del equipo, sin depender del servidor.
+- [ ] **12c. Passkeys (WebAuthn)** para entrar en la consola, además del TOTP.
+- [ ] **12d. Regla de dos personas** (opcional por cliente): lo destructivo necesita la aprobación de una segunda persona o de otra consola.
+- [ ] **12e. Pentest externo** antes de abrir la consola en línea a más clientes.
+
 ## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
 
 - **Copia del sistema operativo.** Windows: imagen del sistema con `wbadmin` (ya sale en VHDX) como paso «antes de copiar», guardada en el repositorio (restic deduplica entre imágenes) y restauración guiada con el entorno de recuperación de Windows. Linux: integrar ReaR (Relax-and-Recover) para el medio de rescate. Más adelante, un USB de rescate propio. Las máquinas virtuales, mejor desde el anfitrión (Proxmox Backup Server o `vzdump`, Hyper-V), con Resguardo guardando esas copias.
