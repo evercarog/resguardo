@@ -50,6 +50,18 @@ Acordado con el responsable del proyecto el 2026-10-07. Marca aquí el estado de
 
 - [ ] Uno o dos equipos de prueba con la 0.7.25 instalada a mano, en el anillo «prueba»; publicar la 0.7.26 firmada por el responsable (GitHub y consolas); comprobar que se actualizan solos, informan sanos y la consola lo muestra; vuelta atrás en una máquina virtual de pruebas (nunca en un equipo de cliente) con una versión que falla a propósito; después, el anillo «general».
 
+## Bloque 7 — Despliegue masivo (para instalar muchos equipos)
+
+- [ ] **7.1 Código de alta para varios equipos:** válido para N altas y caduca en X días (por defecto 10 equipos, 7 días), generado en el navegador como el de 9a (el servidor solo guarda su huella); se puede anular; cada alta queda en la auditoría.
+- [ ] **7.2 Línea de PowerShell** (y la de Linux ya existente, con el mismo código): descarga el instalador desde la consola, comprueba su firma o huella, instala en silencio y vincula con el código. Para pegar en cada equipo o usar en una herramienta de despliegue.
+- [ ] **7.3 «Equipos esperando confirmación»:** lista con el código de comprobación de cada uno y «Confirmar los que coinciden» (uno a uno o en bloque); nada se da de alta sin confirmar.
+
+## Bloque 8 — Lo mismo en todas las consolas
+
+- [ ] **8.1 Datos comunes del cliente** que se reparten a través de sus equipos (como el nombre, las etiquetas y la observación de cada equipo, v1.56): **colores de las etiquetas**, **catálogo de destinos** (nombre, tipo, marcas y días de bloqueo) y **plantillas de copias**. Cada consola manda los cambios a los equipos del cliente; las demás los leen de sus resúmenes; gana el cambio más reciente por cada dato, diciendo desde qué consola. Las marcas y los tipos de los destinos piden la clave de administración (cuentan en la regla 3-2-1).
+- [ ] **8.2 Lo que sigue siendo de cada consola**, con el porqué en `docs/consolas-multiples.md` §6: personas y accesos, canales de aviso y sus reglas, notas internas.
+- [ ] **8.3 Primera vez:** si dos consolas ya tienen valores distintos, la consola enseña la diferencia y deja elegir cuál vale para todas; nada se pisa sin preguntar.
+
 ## Contrato (compatible hacia atrás)
 
 Destinos: `tipo` (local, fuera, nube), marcas `inmutable`, `aislado`, `bloqueo_dias`. Copias: `inicio` = `horario` | `cadena` | `despues` con `retraso_min` (el `tras` actual se lee como «en cadena»). Espejos: `espejo.trabajos[]` (el formato antiguo se convierte solo). `admite`: espejo hecho por el equipo; `quitar_nube` anula el permiso en el proveedor. La preferencia guiado/avanzado vive en la consola, por persona.
@@ -60,7 +72,7 @@ Rust (conversión de espejos, las tres retenciones con fechas simuladas, freno, 
 
 ## Orden
 
-1 → 2 → 3 y 4 en paralelo (coordinados en «Dónde» y en los espejos dentro de la copia) → 5 → integración y pruebas → firma y publicación → 6. Capturas del editor guiado al responsable antes de unirlo.
+1 → 2 (y 7 en paralelo) → 3 y 4 en paralelo, y 8 después de 2 (coordinados en «Dónde» y en los espejos dentro de la copia) → 5 → integración y pruebas → firma y publicación → 6. Capturas del editor guiado al responsable antes de unirlo.
 
 ## Fuera de esta versión
 
