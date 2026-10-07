@@ -306,7 +306,11 @@ export interface ResumenEquipo {
         por_borrar?: { archivos: number; bytes: number; primero?: string | null } | null;
         /** El freno de la última vuelta (no se anotó ni se borró nada). */
         freno?: string | null;
+        /** Plan 0.7.26 (agente con `espejo_trabajos`): de qué trabajo es esta vista. */
+        trabajo?: string | null;
       }[];
+      /** Plan 0.7.26 (agente con `admite: "espejo_trabajos"`): los trabajos de espejo del almacén. */
+      trabajos?: TrabajoEspejoResumen[] | null;
     } | null;
     /** Nubes conectadas en el equipo (solo nombre y tipo: nunca tokens). */
     nubes?: { nombre: string; tipo: "dropbox" | "drive" | "b2" | "s3" | "sftp" | "smb" | "webdav" | string }[];
@@ -324,6 +328,8 @@ export interface ResumenEquipo {
     zonas?: ZonaAlmacen[] | null;
   } | null;
   pausado_hasta?: string | null;
+  /** Plan 0.7.26 (agente con `admite: "espejo_equipo"`): los espejos que hace el propio equipo de los repositorios de sus discos. */
+  espejo_equipo?: { trabajos: TrabajoEspejoResumen[] } | null;
   /** Tarea 4a: las nubes conectadas en el equipo (también si no guarda copias). */
   nubes?: { nombre: string; tipo: string }[];
   /** Plan 0.7.26 (1.1, `admite: "nube_revocar"`): nubes desconectadas cuyo permiso aún no se pudo anular en el proveedor (se reintenta 7 días). */
@@ -1061,6 +1067,70 @@ export interface Relevo {
 // Configuración declarativa (dentro de `config`, cifrada con K_cfg)
 // Propuesta de la consola; el agente es quien manda (ver README, «Preguntas»).
 // ---------------------------------------------------------------------------
+
+// --- Trabajos de espejo (plan 0.7.26, bloque 4; docs/espejo.md «Trabajos de espejo») ---
+
+/** Qué repositorios: todos, los de ciertos equipos (sus usuarios en el almacén) o algunos concretos. */
+export type QueEspejo = { tipo: "todos" } | { tipo: "equipos"; equipos: string[] } | { tipo: "repos"; repos: string[] };
+/** Adónde: otra carpeta, otra zona del almacén (`carpeta`: su id o «principal») o una nube conectada en quien lo hace. */
+export interface AdondeEspejo {
+  tipo: "carpeta" | "zona" | "nube";
+  carpeta: string;
+  nube?: string | null;
+}
+/** Cuándo (se puede combinar el horario con lo demás). */
+export interface CuandoEspejo {
+  horario?: Horario | null;
+  /** Después de cada copia nueva de sus repositorios. */
+  tras_copia?: boolean;
+  /** En cadena: cuando termina bien ese otro trabajo. */
+  cadena?: string | null;
+  /** Después de ese otro trabajo, salga bien o no. */
+  despues?: string | null;
+  retraso_min?: number;
+}
+export type RetencionEspejo = { modo: "nunca" } | { modo: "retraso"; dias: number } | { modo: "igual" };
+export interface FrenoEspejo {
+  pct: number;
+  min_archivos: number;
+  min_faltan: number;
+  accion: "avisar" | "confirmar";
+}
+/** Un trabajo de espejo, como se manda (sin lo que recuerda el equipo). */
+export interface TrabajoEspejo {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  quien: "almacen" | "equipo";
+  que: QueEspejo;
+  /** En el almacén: de qué zona copia (sin ella, la principal). */
+  zona?: string | null;
+  adonde: AdondeEspejo;
+  cuando: CuandoEspejo;
+  retencion: RetencionEspejo;
+  freno: FrenoEspejo;
+  verificar_pct?: number | null;
+  limite_kib?: number | null;
+  orden: number;
+  bloqueo?: boolean;
+  bloqueo_dias?: number | null;
+  vistos?: string[] | null;
+}
+/** Un trabajo como lo da el resumen: con cómo fue su última vuelta. */
+export interface TrabajoEspejoResumen extends TrabajoEspejo {
+  ultima?: string | null;
+  inicio?: string | null;
+  resultado?: string | null;
+  proxima?: string | null;
+  verificacion?: { ultima: string; archivos: number; mal: number } | null;
+  danados_origen?: number | null;
+  por_borrar?: { archivos: number; bytes: number; primero?: string | null } | null;
+  /** El freno de la última vuelta, si saltó. */
+  freno_aviso?: string | null;
+  /** Lo que conserva el freno «avisar». */
+  retenidos?: { archivos: number; bytes: number } | null;
+  espacio?: EspacioVolumen | null;
+}
 
 export interface Horario {
   /** 1 = lunes … 7 = domingo. */

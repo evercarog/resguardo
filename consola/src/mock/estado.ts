@@ -418,8 +418,16 @@ export async function sembrar(vacio = false) {
       version_agente: "0.7.18",
       so: "Windows Server 2022",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo"],
         destinos: [{ id: "carpeta-d", nombre: "Copias en el disco D", tipo: "local", donde: undefined, unidad: "D:", extraible: false, red: false }],
+        // Plan 0.7.26 (bloque 4): el propio equipo hace el espejo de su repositorio del disco D a un USB.
+        espejo_equipo: {
+          trabajos: [
+            { id: "e9f8a7b6c5d", nombre: "USB de la oficina", activo: true, quien: "equipo", que: { tipo: "todos" }, adonde: { tipo: "carpeta", carpeta: "F:\\Espejo-compartidas" },
+              cuando: { tras_copia: true, retraso_min: 30 }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 0,
+              ultima: hace(60 * 5), resultado: "Espejo «USB de la oficina» hecho en F:\\Espejo-compartidas (después de una copia nueva): compartido: 210 archivos nuevos (1 GB)." },
+          ],
+        },
         repositorios: [{ ...repo("compartido", "Carpetas compartidas", "carpeta-d", 84, 142_000_000_000), retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 } }],
         copias: [copia("compartidas", "Carpetas compartidas", "compartido", ["12:00", "20:00"], 3)],
       },
@@ -434,7 +442,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       rol: "almacenamiento",
       // v1.28: agente nuevo (plazos, verificación automática y su propio almacén).
-      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas"],
+      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo"],
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         entorno: { virtual: "hyperv" },
@@ -454,6 +462,24 @@ export async function sembrar(vacio = false) {
               { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["caja-1/siigo"], vistos: ["caja-1/siigo"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
               // Tarea 7d.2: un paso «espejo» de la cadena de «Caja»: a la zona F, después de cada copia, sin retención.
               { tipo: "zona", carpeta: "z3c4d5e", repos: ["caja-1/caja"], vistos: ["caja-1/caja"], tras_copia: true, ultima: hace(60 * 3), resultado: "Espejo hecho en zona z3c4d5e: 12 archivos nuevos (4 MB), 3.120 ya estaban, 0 se dejan para la próxima vez.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
+            ],
+            // Plan 0.7.26 (bloque 4): los mismos espejos como trabajos, más uno a B2 con bloqueo, en pausa.
+            trabajos: [
+              { id: "t0a1b2c3d4e", nombre: "Disco E cada hora", activo: true, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo" },
+                cuando: { horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true },
+                retencion: { modo: "retraso", dias: 30 }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, verificar_pct: 5, orden: 0,
+                ultima: hace(60 * 13), resultado: "Espejo «Disco E cada hora» hecho en E:\\Resguardo-espejo: 1.204 archivos nuevos (38 GB).", proxima: dentro(47), verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 },
+                por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" },
+                freno_aviso: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito, confírmalo en la consola; si no, revisa el almacén",
+                espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
+              { id: "t1b2c3d4e5f", nombre: "Siigo a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/siigo"] }, vistos: ["caja-1/siigo"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
+                cuando: { cadena: "t0a1b2c3d4e", retraso_min: 15 }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, limite_kib: 4096, orden: 1,
+                ultima: hace(60 * 13), resultado: "ERROR: espejo «Siigo a Dropbox» en Dropbox Oficina:CafeDelSur: Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez." },
+              { id: "t2c3d4e5f60", nombre: "Caja a Disco F", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/caja"] }, vistos: ["caja-1/caja"], adonde: { tipo: "zona", carpeta: "z3c4d5e" },
+                cuando: { tras_copia: true }, retencion: { modo: "igual" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "avisar" }, orden: 2,
+                ultima: hace(60 * 3), resultado: "Espejo «Caja a Disco F» hecho en zona z3c4d5e (después de una copia nueva): 12 archivos nuevos (4 MB), 3.120 ya estaban.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
+              { id: "t3d4e5f6071", nombre: "Todo a B2 (bloqueo 30 días)", activo: false, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "nube", nube: "B2 Café del Sur", carpeta: "cafe-espejo/sur" },
+                cuando: { despues: "t0a1b2c3d4e", retraso_min: 60 }, retencion: { modo: "retraso", dias: 45 }, bloqueo_dias: 30, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 3 },
             ],
           },
           nubes: [{ nombre: "Dropbox Oficina", tipo: "dropbox" }, { nombre: "B2 Café del Sur", tipo: "b2" }],

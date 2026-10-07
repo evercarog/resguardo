@@ -89,6 +89,7 @@
   const destructiva = $derived(
     esDestructiva(tipo, cuerpo, espera, {
       espejo: equipo.resumen?.guarda_copias?.espejo ?? null,
+      espejoEquipo: equipo.resumen?.espejo_equipo ?? null,
       copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length,
       derivadas: (equipo.resumen?.repositorios ?? []).flatMap((r) => (r.derivadas ?? []).map((d) => ({ repo: r.id, id: d.id, destino_id: d.destino_id }))),
     }),

@@ -4,6 +4,8 @@
 // con los de dentro.
 import { aB64, aleatorio, utf8 } from "./bytes";
 import { sellarB64 } from "./sobre";
+import { reduceTrabajos } from "../espejoReduce";
+import type { TrabajoEspejo } from "../tipos";
 
 export type Nivel = "sesion" | "repo" | "admin";
 
@@ -100,7 +102,10 @@ export interface DestinoEspejo {
 }
 /** Lo que ya tiene el equipo, para saber si una orden quita algo (v1.9: quitar un destino del espejo es destructiva). */
 export interface ContextoOrden {
-  espejo?: { destinos?: DestinoEspejo[] | null } | null;
+  /** Plan 0.7.26: con `trabajos` (agente con `espejo_trabajos`), se compara trabajo a trabajo. */
+  espejo?: { destinos?: DestinoEspejo[] | null; trabajos?: TrabajoEspejo[] | null } | null;
+  /** Plan 0.7.26: los espejos que hace el propio equipo (`resumen.espejo_equipo`). */
+  espejoEquipo?: { trabajos?: TrabajoEspejo[] | null } | null;
   /** Cuántas copias activas tiene ahora (resumen del equipo): `config` sin ninguna activa las para todas. */
   copiasActivas?: number;
   /** Tarea 4b: las copias derivadas que tiene (de qué repositorio, su id y su destino). */
@@ -128,6 +133,10 @@ export function destinosDeCuerpo(espejo: unknown): DestinoEspejo[] {
 /** ¿El espejo nuevo deja fuera alguno de los destinos que ya tiene el equipo? */
 function quitaDestinoEspejo(nuevo: unknown, actual: ContextoOrden["espejo"]): boolean {
   if (!actual) return false;
+  // Plan 0.7.26: con trabajos, trabajo a trabajo (como el agente).
+  const trabajos = (nuevo as { trabajos?: TrabajoEspejo[] } | null)?.trabajos;
+  if (Array.isArray(trabajos)) return reduceTrabajos(actual.trabajos ?? [], trabajos);
+  if (Array.isArray(actual.trabajos) && actual.trabajos.length && !Array.isArray(actual.destinos)) return true;
   // Espejo antiguo sin lista de destinos: no se sabe qué hay; mejor esperar.
   if (!Array.isArray(actual.destinos)) return true;
   const nuevos = new Map(destinosDeCuerpo(nuevo).map((d) => [claveEspejo(d), d]));
@@ -143,6 +152,13 @@ function quitaDestinoEspejo(nuevo: unknown, actual: ContextoOrden["espejo"]): bo
     if (!Array.isArray(d.repos)) return true;
     return d.repos.some((r) => !n.repos!.includes(r));
   });
+}
+
+/** Plan 0.7.26: ¿los espejos del propio equipo pedidos reducen la protección? (`null`: quitarlos todos). */
+function reduceEspejoEquipo(nuevo: unknown, actual: ContextoOrden["espejoEquipo"]): boolean {
+  const antes = actual?.trabajos ?? [];
+  const trabajos = (nuevo as { trabajos?: TrabajoEspejo[] } | null)?.trabajos;
+  return reduceTrabajos(antes, Array.isArray(trabajos) ? trabajos : []);
 }
 
 export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}, esperaActualHoras?: number, contexto?: ContextoOrden): boolean {
@@ -187,7 +203,9 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
         cuerpo.espejo === null ||
         // Confirmar lo que falta de golpe en el almacén (el espejo lo borrará pasados sus días).
         "espejo_freno" in cuerpo ||
-        ("espejo" in cuerpo && quitaDestinoEspejo(cuerpo.espejo, contexto?.espejo))
+        ("espejo" in cuerpo && quitaDestinoEspejo(cuerpo.espejo, contexto?.espejo)) ||
+        // Plan 0.7.26: los espejos del propio equipo (quitarlos todos, pausar uno, borrar antes…).
+        ("espejo_equipo" in cuerpo && reduceEspejoEquipo(cuerpo.espejo_equipo, contexto?.espejoEquipo))
       );
     // Vaciar o desactivar todas las copias que había deja el equipo sin copias automáticas.
     case "config":

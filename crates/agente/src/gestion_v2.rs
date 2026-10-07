@@ -1049,7 +1049,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 24] = [
+pub const ADMITE: [&str; 26] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1099,6 +1099,12 @@ pub const ADMITE: [&str; 24] = [
     // (Dropbox; si no puede ahora, lo reintenta 7 días), borra los restos y no deja si algo la usa;
     // `resumen.nubes_por_anular` (docs/destinos.md «Desconectar una nube»).
     "nube_revocar",
+    // (pendiente de numerar) plan 0.7.26, bloque 4: trabajos de espejo en el almacén
+    // (`guarda_copias { espejo: { trabajos } }`, `guarda_copias.espejo.trabajos[]`, `espejo_freno { trabajo }`).
+    "espejo_trabajos",
+    // (pendiente de numerar) plan 0.7.26, bloque 4: espejos que hace el propio equipo con los
+    // repositorios de sus discos (`guarda_copias { espejo_equipo }`, `resumen.espejo_equipo`).
+    "espejo_equipo",
     // (pendiente de numerar) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
     // anterior aunque falle) y `retraso_min` (minutos tras la anterior), también en el resumen.
     "inicio_despues",
@@ -1216,6 +1222,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         }).collect::<Vec<_>>(),
         "pausado_hasta": pausa.map(|u| json!(u.unwrap_or_else(|| "indefinido".into()))),
         "guarda_copias": resumen_guarda_copias(),
+        // Plan 0.7.26 (bloque 4): los espejos que hace el propio equipo (`null` si no tiene).
+        "espejo_equipo": crate::espejo_trabajos::resumen_equipo(),
         // Tarea 4a: las nubes conectadas en este equipo (solo nombre y tipo), también si no guarda copias.
         "nubes": crate::nube::lista(),
         // Plan 0.7.26 (1.1): nubes desconectadas cuyo permiso aún no se pudo anular (sin tokens).
@@ -2244,8 +2252,22 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
     if let Some(d) = c.get("espejo_freno") {
         return Ok((crate::espejo::aceptar_freno(d)?, None));
     }
+    // Plan 0.7.26 (bloque 4): «Hacer ahora» un espejo (del almacén o del propio equipo).
+    if let Some(a) = c.get("espejo_ahora") {
+        return Ok((crate::espejo_trabajos::pedir_ahora(a)?, None));
+    }
+    // Plan 0.7.26 (bloque 4): los espejos que hace el propio equipo (no hace falta ser almacén).
+    if let Some(e) = c.get("espejo_equipo") {
+        let t = if e.is_null() { None } else { Some(crate::espejo_trabajos::leer_pedido(e, crate::espejo_trabajos::QUIEN_EQUIPO)?) };
+        return Ok((crate::espejo_trabajos::poner_equipo(t)?, None));
+    }
     if let Some(espejo) = c.get("espejo") {
-        let m = server::poner_espejo(crate::espejo::pedido(espejo)?)?;
+        // Plan 0.7.26: `{ trabajos }`; la forma de antes (`destinos`) sigue valiendo.
+        let m = if espejo.get("trabajos").is_some_and(|t| !t.is_null()) {
+            server::poner_trabajos(Some(crate::espejo_trabajos::leer_pedido(espejo, crate::espejo_trabajos::QUIEN_ALMACEN)?))?
+        } else {
+            server::poner_espejo(crate::espejo::pedido(espejo)?)?
+        };
         return Ok((m, None));
     }
     if let Some(usuario) = c["quitar"].as_str() {

@@ -1,23 +1,16 @@
 <script lang="ts">
-  // Paso «espejo» de una copia (tarea 7d.2, docs/copias-en-cadena.md): el mismo
-  // repositorio (mismos archivos, misma contraseña) en otro destino. Lo hace el
-  // almacén donde está, en local y sin contraseñas, con el motor del espejo: es
-  // un destino de su espejo con solo ese repositorio, desde su zona y «después
-  // de cada copia». La orden va al almacén (`guarda_copias { espejo }`, clave de
-  // administración), con los demás destinos de su espejo tal cual.
-  import { TriangleAlert } from "@lucide/svelte";
+  // Un espejo de un repositorio desde su copia (tarea 7d.2; plan 0.7.26, bloque 4):
+  // el mismo repositorio (mismos archivos, misma contraseña) en otro destino. Lo hace
+  // el almacén donde está, en local y sin contraseñas. Con un almacén que entiende
+  // los trabajos de espejo, abre el editor guiado ya con ese repositorio, su zona y
+  // «después de cada copia nueva»; la orden va al almacén con la lista entera de sus
+  // espejos (clave de administración). Con uno anterior, lo de antes (PasoEspejoDestinos).
+  import EditorEspejo from "./espejos/EditorEspejo.svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
-  import Ayuda from "./Ayuda.svelte";
-  import { destinosParaPasos, detalleDestino, repoEnAlmacen, TEXTO_FUERA_RETENCION, usosPosibles } from "$lib/cadenas";
-  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
-  import ElegirDestinoPaso, { type OpcionDestino } from "./ElegirDestinoPaso.svelte";
-  import ConectarNube from "./ConectarNube.svelte";
-  import ConectarDestino from "./ConectarDestino.svelte";
-  import { zonasDe, nombreZonaPorDefecto, PRINCIPAL } from "$lib/destinos";
-  import { destinoParaOrden, errorDiasRetencion, horaParaConsolasAnteriores, horarioDiario, nombreTipoNube, RETENCION_ESPEJO, TIPOS_NUBE, type DestinoEspejoOrden } from "$lib/espejo";
-  import { errorCarpetaEspejo } from "$lib/ganchos";
-  import { clasificacionDeVista } from "$lib/regla321";
-  import { corta } from "$lib/tipoDestino";
+  import PasoEspejoDestinos from "./PasoEspejoDestinos.svelte";
+  import { repoEnAlmacen } from "$lib/cadenas";
+  import { claveNube, PRINCIPAL, zonasDe } from "$lib/destinos";
+  import { admiteTrabajos, AVISO_IGUAL, conTrabajo, cuerpoAlmacen, nombrePorDefecto, paraOrden, textoRetencion, trabajoNuevo, trabajosDelAlmacen, type TrabajoEspejo } from "$lib/espejoTrabajos";
   import type { Cliente, Equipo, RepositorioResumen } from "$lib/tipos";
 
   interface Props {
@@ -35,115 +28,44 @@
   // svelte-ignore state_referenced_locally
   const en = repoEnAlmacen(equipo, repo, equipos);
   const almacen = $derived(en?.almacen ? (equipos.find((e) => e.id === en.almacen.id) ?? en.almacen) : null);
-  const zonas = $derived(almacen ? zonasDe(almacen) : []);
-  const otrasZonas = $derived(zonas.filter((z) => z.id !== (en?.zona ?? PRINCIPAL)));
-  const nubes = $derived(almacen?.resumen?.guarda_copias?.nubes ?? []);
-  const espejo = $derived(almacen?.resumen?.guarda_copias?.espejo ?? null);
-  const win = $derived(/windows/i.test(almacen?.so ?? ""));
+  const conTrabajos = $derived(admiteTrabajos(almacen));
+  const base = $derived(trabajosDelAlmacen(almacen).map(paraOrden));
 
-  // svelte-ignore state_referenced_locally
-  let f = $state({
-    destino: otrasZonas[0] ? `zona:${otrasZonas[0].id}` : nubes[0] ? `nube:${nubes[0].nombre}` : "carpeta",
-    carpeta: "",
-    carpetaNube: "Resguardo",
-    conRetencion: false,
-    dias: RETENCION_ESPEJO.defecto as number,
-  });
-  const nuevo = $derived.by<DestinoEspejoOrden>(() => {
-    const base = { repos: en ? [en.nombre] : [], vistos: [], tras_copia: true, ...(en && en.zona !== PRINCIPAL ? { zona: en.zona } : {}), ...(f.conRetencion ? { retencion_dias: f.dias } : {}) };
-    if (f.destino.startsWith("zona:")) return { tipo: "zona", carpeta: f.destino.slice(5), ...base };
-    if (f.destino.startsWith("nube:")) return { tipo: "nube", nube: f.destino.slice(5), carpeta: f.carpetaNube.trim(), ...base };
-    return { tipo: "carpeta", carpeta: f.carpeta.trim(), ...base };
-  });
-  /** Los destinos que ya tiene el espejo, tal cual (con el horario de siempre si no tenían), y el nuevo. */
-  const destinos = $derived([...(espejo?.destinos ?? []).map((d) => {
-    const o = destinoParaOrden(d);
-    return o.horario ? o : { ...o, horario: horarioDiario(espejo?.hora ?? "02:00") };
-  }), nuevo]);
-  const cuerpo = $derived({ espejo: { destinos, hora: horaParaConsolasAnteriores(destinos, espejo?.hora ?? "02:00"), ...(espejo?.limite_kib ? { limite_kib: espejo.limite_kib } : {}) } });
-  const errorCarpeta = $derived(f.destino === "carpeta" && f.carpeta.trim() ? errorCarpetaEspejo(f.carpeta, win) : null);
-  const valido = $derived(
-    !!en && (f.destino !== "carpeta" || (!!f.carpeta.trim() && !errorCarpeta)) && (!f.destino.startsWith("nube:") || !!f.carpetaNube.trim()) && (!f.conRetencion || !errorDiasRetencion(f.dias)),
-  );
-  // Todos los destinos del cliente (docs/editor-de-copias.md): los que no sirven para el espejo, con el porqué.
-  // svelte-ignore state_referenced_locally
-  void cargarCatalogo(cliente.id);
-  const opciones = $derived.by<OpcionDestino[]>(() => {
-    const l: OpcionDestino[] = destinosParaPasos(equipos, catalogoDe(cliente.id)).map((v) => {
-      const uso = usosPosibles(v, equipo, repo, equipos).espejo;
-      const valor = uso.ok && v.zona ? `zona:${v.zona.id}` : uso.ok && v.nube ? `nube:${v.nube.nombre}` : `no:${v.clave}`;
-      return { valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso, tipoDestino: corta(clasificacionDeVista(v, equipos)) };
-    });
-    if (almacen) l.push({ valor: "carpeta", nombre: `Otra carpeta de ${almacen.nombre}…`, clase: "carpeta", uso: { ok: true } });
-    // Primero los que se pueden usar.
-    return l.sort((a, b) => Number(b.uso.ok) - Number(a.uso.ok));
-  });
-  let conectar = $state<{ equipo: Equipo; nube: string; tipo: string } | null>(null);
-  // El destino de la página desde la que se llegó, una vez (si sirve para el espejo).
-  // svelte-ignore state_referenced_locally
-  if (destinoInicial) {
-    const v = destinosParaPasos(equipos, catalogoDe(cliente.id)).find((x) => x.clave === destinoInicial);
-    if (v && usosPosibles(v, equipo, repo, equipos).espejo.ok) f.destino = v.zona ? `zona:${v.zona.id}` : v.nube ? `nube:${v.nube.nombre}` : f.destino;
+  /** El espejo nuevo: ese repositorio, desde su zona, después de cada copia nueva; adónde, lo de la página de origen o la primera otra zona o nube. */
+  function inicial(): TrabajoEspejo {
+    const t = trabajoNuevo("almacen", base.length);
+    t.que = { tipo: "repos", repos: en ? [en.nombre] : [] };
+    if (en && en.zona !== PRINCIPAL) t.zona = en.zona;
+    t.cuando = { tras_copia: true };
+    const m = destinoInicial ? /^(zona|nube):([^:]+):(.+)$/.exec(destinoInicial) : null;
+    const otraZona = almacen ? zonasDe(almacen).find((z) => z.id !== (en?.zona ?? PRINCIPAL)) : undefined;
+    const nubes = almacen ? [...(almacen.resumen?.guarda_copias?.nubes ?? []), ...(almacen.resumen?.nubes ?? [])] : [];
+    const nube = nubes[0];
+    const pedida = m && almacen && m[2] === almacen.id && m[1] === "nube" ? nubes.find((n) => claveNube(almacen.id, n.nombre) === destinoInicial) : undefined;
+    if (m && almacen && m[2] === almacen.id && m[1] === "zona") t.adonde = { tipo: "zona", carpeta: m[3] };
+    else if (pedida) t.adonde = { tipo: "nube", nube: pedida.nombre, carpeta: "Resguardo" };
+    else if (otraZona) t.adonde = { tipo: "zona", carpeta: otraZona.id };
+    else if (nube) t.adonde = { tipo: "nube", nube: nube.nombre, carpeta: "Resguardo" };
+    t.nombre = `Espejo de «${repo.nombre}»`;
+    return t;
   }
-  const tipoNube = $derived(f.destino.startsWith("nube:") ? nubes.find((n) => `nube:${n.nombre}` === f.destino)?.tipo : undefined);
+  // svelte-ignore state_referenced_locally
+  const trabajo = conTrabajos ? inicial() : null;
+  let guardado = $state<TrabajoEspejo | null>(null);
 </script>
 
-{#if almacen && en}
+{#if almacen && en && !conTrabajos}
+  <PasoEspejoDestinos {cliente} {equipo} {repo} {equipos} {onclose} {destinoInicial} />
+{:else if almacen && en && trabajo && !guardado}
+  <EditorEspejo {cliente} hace={almacen} quien="almacen" {equipos} {trabajo} todos={base} nuevo={true} onguardar={(t) => (guardado = t)} {onclose} />
+{:else if almacen && guardado}
   <OrdenDialog
     {cliente}
     equipo={almacen}
     tipo="guarda_copias"
-    {cuerpo}
-    titulo="Paso «espejo»"
-    descripcion={`${almacen.nombre} copiará el repositorio «${repo.nombre}» de ${equipo.nombre} a otro destino después de cada copia nueva: los mismos archivos cifrados, sin abrirlos (no necesita la contraseña). Se restaura con la misma contraseña del kit.`}
-    {valido}
+    cuerpo={cuerpoAlmacen(conTrabajo(base, guardado))}
+    titulo="Añadir un espejo"
+    descripcion={`${almacen.nombre} copiará «${repo.nombre}» de ${equipo.nombre} a otro destino (${guardado.nombre || nombrePorDefecto(guardado.adonde)}): los mismos archivos cifrados, sin abrirlos. Se restaura con la misma contraseña del kit. ${textoRetencion(guardado)}.${guardado.retencion.modo === "igual" ? ` ${AVISO_IGUAL}` : ""}`}
     {onclose}
-  >
-    {#snippet campos()}
-      <ElegirDestinoPaso id="pe-destino" etiqueta="Copiar a" {opciones} bind:value={f.destino} alConectar={(e, nube, tipo) => (conectar = { equipo: e, nube, tipo })} />
-      {#if f.destino === "carpeta"}
-        <div class="field">
-          <label class="field-label" for="pe-carpeta">Carpeta</label>
-          <input id="pe-carpeta" class="input mono" bind:value={f.carpeta} placeholder={win ? "E:\\Resguardo-espejo" : "/mnt/disco2/espejo"} spellcheck="false" />
-          {#if errorCarpeta}<p class="error-campo">{errorCarpeta}</p>{/if}
-        </div>
-      {:else if f.destino.startsWith("nube:")}
-        <div class="field">
-          <label class="field-label" for="pe-nube">Carpeta dentro de la nube</label>
-          <input id="pe-nube" class="input mono" bind:value={f.carpetaNube} spellcheck="false" />
-        </div>
-        {#if tipoNube && TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable}
-          <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: alguien con acceso a la cuenta podría borrar lo de allí.</p></div>
-        {/if}
-      {/if}
-      <label class="switch-row"><input type="checkbox" bind:checked={f.conRetencion} /><span>Con la retención del original<span class="faint">Lo que la retención quite del original se borra del espejo pasados unos días (con freno si falta mucho de golpe). Sin ella, nunca borra.</span></span></label>
-      {#if f.conRetencion}
-        <div class="field">
-          <label class="field-label" for="pe-dias">Borrar a los (días)</label>
-          <input id="pe-dias" class="input num corto" type="number" min={RETENCION_ESPEJO.min} max={RETENCION_ESPEJO.max} bind:value={f.dias} />
-          {#if errorDiasRetencion(f.dias)}<p class="error-campo">{errorDiasRetencion(f.dias)}</p>{/if}
-        </div>
-        <p class="faint nota">{TEXTO_FUERA_RETENCION}</p>
-      {/if}
-      <p class="faint nota">Desde {zonas.find((z) => z.id === en.zona) ? nombreZonaPorDefecto(zonas.find((z) => z.id === en.zona)!) : almacen.nombre}, carpeta <code>{en.nombre}</code>. Después de cada copia nueva (y, por si acaso, cada noche a las {espejo?.hora ?? "02:00"}). <Ayuda id="espejo" /></p>
-    {/snippet}
-  </OrdenDialog>
+  />
 {/if}
-
-{#if conectar}
-  {#if conectar.tipo === "dropbox"}
-    <ConectarNube {cliente} equipo={conectar.equipo} nombreInicial={conectar.nube} onclose={() => (conectar = null)} />
-  {:else}
-    <ConectarDestino {cliente} equipo={conectar.equipo} onclose={() => (conectar = null)} />
-  {/if}
-{/if}
-
-<style>
-  .nota {
-    margin: 0;
-    font-size: var(--fs-xs);
-  }
-  .corto {
-    max-width: 140px;
-  }
-</style>

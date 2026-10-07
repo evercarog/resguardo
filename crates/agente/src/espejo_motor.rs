@@ -17,10 +17,12 @@
 //! dañado del espejo se repara con el del almacén si ese está bien.
 //!
 //! Retención del espejo (§3b): sin ella, nunca se borra nada. Con ella, lo
-//! que falta en el almacén se anota y se borra del destino pasados N días;
-//! si de golpe falta mucho (el [`FRENO_PCT`] % o un repositorio entero), esa
-//! vuelta no anota ni borra nada y avisa, hasta que se confirma. Con bloqueo
-//! de objetos no se borra nunca.
+//! que falta en el almacén se anota y se borra del destino pasados N días o,
+//! «igual que el origen» (plan 0.7.26, bloque 4), en la vuelta siguiente; si
+//! de golpe falta mucho (más del [`Freno::pct`] % o un repositorio entero),
+//! salta el freno: o no se anota ni se borra nada hasta que se confirma, o lo
+//! que falta se conserva para siempre y se avisa. Con bloqueo de objetos no
+//! se borra nunca (o, con N días de bloqueo, solo pasados más de N).
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,10 +35,74 @@ pub const RECIENTE: Duration = Duration::from_secs(10 * 60);
 /// Sufijo de lo que se está copiando a una carpeta (se renombra al terminar).
 pub const SUFIJO_TEMPORAL: &str = ".tmp-espejo";
 
-/// §3b: si en una vuelta falta de golpe en el almacén este % de lo que hay en
-/// el destino (y al menos [`FRENO_MIN`] archivos), no se anota ni se borra nada.
-pub const FRENO_PCT: usize = 10;
-pub const FRENO_MIN: usize = 20;
+/// §3b: si en una vuelta falta de golpe en el almacén más de este % de lo que
+/// hay en el destino (y al menos [`FRENO_MIN`] archivos), salta el freno.
+pub const FRENO_PCT: u8 = 10;
+pub const FRENO_MIN: u64 = 20;
+/// Plan 0.7.26 (4.3): el porcentaje solo cuenta si el origen tiene más de estos archivos.
+pub const FRENO_MIN_ARCHIVOS: u64 = 100;
+
+/// Qué hace el freno cuando salta (plan 0.7.26, 4.3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AccionFreno {
+    /// Lo que falta de golpe se conserva en el espejo (no se borra) y se avisa;
+    /// lo demás sigue como siempre. Confirmarlo deja que se borre a su tiempo.
+    Avisar,
+    /// No se anota ni se borra nada más hasta que alguien lo confirma con la
+    /// clave de administración (y la espera de seguridad). Lo de antes de 0.7.26.
+    #[default]
+    Confirmar,
+}
+
+/// El freno de la retención (plan 0.7.26, 4.3). No se puede apagar: el % va de 1 a 50.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Freno {
+    #[serde(default = "freno_pct")]
+    pub pct: u8,
+    #[serde(default = "freno_min_archivos")]
+    pub min_archivos: u64,
+    #[serde(default = "freno_min_faltan")]
+    pub min_faltan: u64,
+    #[serde(default)]
+    pub accion: AccionFreno,
+}
+
+fn freno_pct() -> u8 {
+    FRENO_PCT
+}
+fn freno_min_archivos() -> u64 {
+    FRENO_MIN_ARCHIVOS
+}
+fn freno_min_faltan() -> u64 {
+    FRENO_MIN
+}
+
+impl Default for Freno {
+    fn default() -> Self {
+        Freno { pct: FRENO_PCT, min_archivos: FRENO_MIN_ARCHIVOS, min_faltan: FRENO_MIN, accion: AccionFreno::Confirmar }
+    }
+}
+
+impl Freno {
+    /// Lo que se acepta: % de 1 a 50 (no se puede apagar) y mínimos razonables.
+    pub fn validar(&self) -> Result<(), String> {
+        if !(1..=50).contains(&self.pct) {
+            return Err("El freno del espejo va del 1 al 50 % (no se puede apagar).".into());
+        }
+        if self.min_archivos > 10_000_000 || self.min_faltan > 10_000_000 {
+            return Err("Mínimos del freno demasiado grandes.".into());
+        }
+        Ok(())
+    }
+
+    /// ¿Salta por porcentaje? `nuevos`: lo que falta por primera vez; `en_destino`,
+    /// lo que hay en el espejo; `en_origen`, lo que hay en el almacén. Por debajo
+    /// de los mínimos, nunca (solo frena un repositorio entero, aparte).
+    pub fn salta(&self, nuevos: u64, en_destino: u64, en_origen: u64) -> bool {
+        en_origen > self.min_archivos && nuevos >= self.min_faltan.max(1) && nuevos * 100 > en_destino * u64::from(self.pct)
+    }
+}
 /// §3b: días de retención del espejo: los mínimos y los máximos.
 pub const RETENCION_MIN: u32 = 7;
 pub const RETENCION_MAX: u32 = 3650;
@@ -91,8 +157,38 @@ pub struct Opciones {
     pub verificar_pct: u8,
     /// §3b: borrar del destino lo que falta en el almacén pasados estos días (sin ello, nunca).
     pub retencion_dias: Option<u32>,
+    /// Plan 0.7.26 (4.2): «igual que el origen»: se borra en la vuelta siguiente a
+    /// la que lo vio faltar (con el freno). Manda sobre `retencion_dias`.
+    pub igual: bool,
     /// §3b: destino con bloqueo de objetos: nunca se borra nada.
     pub bloqueo: bool,
+    /// Plan 0.7.26 (4.2): bloqueo de objetos de N días: solo se borra con un retraso
+    /// de más de N días (y nunca «igual que el origen»).
+    pub bloqueo_dias: Option<u32>,
+    /// Plan 0.7.26 (4.3): el freno.
+    pub freno: Freno,
+}
+
+/// Cuándo se borra lo que falta.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Borrado {
+    Dias(u32),
+    Igual,
+}
+
+impl Opciones {
+    /// Cuándo se borra, contando el bloqueo de objetos (con él, nunca o solo pasados más de N días).
+    fn borrado(&self) -> Option<Borrado> {
+        if self.bloqueo {
+            return None;
+        }
+        let b = if self.igual { Borrado::Igual } else { Borrado::Dias(self.retencion_dias?) };
+        match (b, self.bloqueo_dias) {
+            (_, None) => Some(b),
+            (Borrado::Dias(d), Some(n)) if d > n => Some(b),
+            _ => None,
+        }
+    }
 }
 
 /// §3b: un archivo que ya no está en el almacén: desde cuándo (AAAA-MM-DD) y su tamaño.
@@ -100,6 +196,9 @@ pub struct Opciones {
 pub struct Falta {
     pub desde: String,
     pub bytes: u64,
+    /// Plan 0.7.26: en qué vuelta con retención se vio faltar («igual que el origen»).
+    #[serde(default)]
+    pub vuelta: u64,
 }
 
 /// Lo que una vuelta recuerda para la siguiente (en la carpeta privada del agente).
@@ -117,6 +216,13 @@ pub struct Estado {
     /// §3b: confirmado (`espejo_freno`): la próxima vuelta anota todo lo que falta, sin freno.
     #[serde(default)]
     pub aceptar_freno: bool,
+    /// Plan 0.7.26: las vueltas con retención hechas («igual que el origen»).
+    #[serde(default)]
+    pub vueltas: u64,
+    /// Plan 0.7.26 (4.3, freno «avisar»): lo que faltó de golpe y se conserva en
+    /// el espejo (ruta → tamaño); no se borra hasta que se confirma.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retenidos: BTreeMap<String, u64>,
 }
 
 /// Qué repositorios del almacén van a un destino (§3f).
@@ -256,6 +362,9 @@ pub struct Resumen {
     pub primer_borrado: Option<String>,
     /// §3b: por qué no se ha anotado ni borrado nada (freno).
     pub freno: Option<String>,
+    /// Plan 0.7.26 (freno «avisar»): lo que se conserva en el espejo por el freno.
+    pub retenidos: u64,
+    pub retenidos_bytes: u64,
 }
 
 /// Lo que hay en el destino (ruta relativa → tamaño), dentro del alcance.
@@ -356,39 +465,72 @@ pub fn retencion(
     r: &mut Resumen,
     hoy: chrono::NaiveDate,
 ) -> Result<(), String> {
-    let Some(dias) = op.retencion_dias.filter(|_| !op.bloqueo) else {
+    let Some(borrado) = op.borrado() else {
         // Sin retención (o con bloqueo) no se lleva la cuenta: nunca se borra.
         estado.faltan.clear();
+        estado.retenidos.clear();
         estado.aceptar_freno = false;
         return Ok(());
     };
+    estado.vueltas += 1;
+    let vuelta = estado.vueltas;
     let en_origen: HashSet<&str> = origen.iter().map(|a| a.rel.as_str()).collect();
     let faltan: BTreeMap<&str, u64> = destino.iter().filter(|(k, _)| !en_origen.contains(k.as_str())).map(|(k, v)| (k.as_str(), *v)).collect();
     // Lo que ha vuelto (o ya no está en el destino) se olvida.
     estado.faltan.retain(|k, _| faltan.contains_key(k.as_str()));
-    let nuevos: Vec<(&str, u64)> = faltan.iter().filter(|(k, _)| !estado.faltan.contains_key(**k)).map(|(k, v)| (*k, *v)).collect();
+    estado.retenidos.retain(|k, _| faltan.contains_key(k.as_str()));
+    let desde = hoy.format("%Y-%m-%d").to_string();
+    // Confirmado: lo que el freno conservaba también se anota (y se borrará a su tiempo).
+    if estado.aceptar_freno {
+        for (k, v) in std::mem::take(&mut estado.retenidos) {
+            estado.faltan.insert(k, Falta { desde: desde.clone(), bytes: v, vuelta });
+        }
+    }
+    let nuevos: Vec<(&str, u64)> =
+        faltan.iter().filter(|(k, _)| !estado.faltan.contains_key(**k) && !estado.retenidos.contains_key(**k)).map(|(k, v)| (*k, *v)).collect();
     // Un repositorio entero: su `config` está en el destino y no en el almacén.
     let enteros: Vec<&str> = nuevos.iter().filter_map(|(k, _)| k.strip_suffix("/config").or((*k == "config").then_some("(raíz)"))).collect();
-    let mucho = nuevos.len() >= FRENO_MIN && nuevos.len() * 100 >= destino.len() * FRENO_PCT;
+    let mucho = op.freno.salta(nuevos.len() as u64, destino.len() as u64, origen.len() as u64);
+    let mut borrar_ahora = true;
     if !estado.aceptar_freno && (mucho || !enteros.is_empty()) {
         let que = if enteros.is_empty() {
             format!("el {} % de lo que hay en el espejo ({} archivos)", nuevos.len() * 100 / destino.len().max(1), nuevos.len())
         } else {
             format!("el repositorio {} entero", enteros.join(", "))
         };
-        r.freno = Some(format!(
-            "falta de golpe en el almacén {que}: no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén"
-        ));
+        match op.freno.accion {
+            AccionFreno::Confirmar => {
+                r.freno = Some(format!(
+                    "falta de golpe en el almacén {que}: no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén"
+                ));
+                borrar_ahora = false;
+            }
+            AccionFreno::Avisar => {
+                r.freno = Some(format!(
+                    "falta de golpe en el almacén {que}: se conserva en el espejo y no se borrará. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola para que también se borre aquí; si no, revisa el almacén"
+                ));
+                for (k, v) in nuevos {
+                    estado.retenidos.insert(k.to_string(), v);
+                }
+            }
+        }
     } else {
-        let desde = hoy.format("%Y-%m-%d").to_string();
         for (k, v) in nuevos {
-            estado.faltan.insert(k.to_string(), Falta { desde: desde.clone(), bytes: v });
+            estado.faltan.insert(k.to_string(), Falta { desde: desde.clone(), bytes: v, vuelta });
         }
         estado.aceptar_freno = false;
+    }
+    if borrar_ahora {
         let vencidos: Vec<String> = estado
             .faltan
             .iter()
-            .filter(|(_, f)| chrono::NaiveDate::parse_from_str(&f.desde, "%Y-%m-%d").map_or(true, |d| d + chrono::Duration::days(i64::from(dias)) <= hoy))
+            .filter(|(_, f)| match borrado {
+                // «Igual que el origen»: lo que se vio faltar en una vuelta anterior.
+                Borrado::Igual => f.vuelta < vuelta,
+                Borrado::Dias(dias) => {
+                    chrono::NaiveDate::parse_from_str(&f.desde, "%Y-%m-%d").map_or(true, |d| d + chrono::Duration::days(i64::from(dias)) <= hoy)
+                }
+            })
             .map(|(k, _)| k.clone())
             .collect();
         if !vencidos.is_empty() {
@@ -401,12 +543,18 @@ pub fn retencion(
     }
     r.por_borrar = estado.faltan.len() as u64;
     r.por_borrar_bytes = estado.faltan.values().map(|f| f.bytes).sum();
-    r.primer_borrado = estado
-        .faltan
-        .values()
-        .filter_map(|f| chrono::NaiveDate::parse_from_str(&f.desde, "%Y-%m-%d").ok())
-        .min()
-        .map(|d| (d + chrono::Duration::days(i64::from(dias))).format("%Y-%m-%d").to_string());
+    r.retenidos = estado.retenidos.len() as u64;
+    r.retenidos_bytes = estado.retenidos.values().sum();
+    r.primer_borrado = match borrado {
+        Borrado::Dias(dias) => estado
+            .faltan
+            .values()
+            .filter_map(|f| chrono::NaiveDate::parse_from_str(&f.desde, "%Y-%m-%d").ok())
+            .min()
+            .map(|d| (d + chrono::Duration::days(i64::from(dias))).format("%Y-%m-%d").to_string()),
+        // En la próxima vuelta.
+        Borrado::Igual => None,
+    };
     Ok(())
 }
 
@@ -757,7 +905,8 @@ mod tests {
             }
         }
         let lado = Lado::Carpeta(&d);
-        let op = Opciones { retencion_dias: Some(30), ..Default::default() };
+        // Como antes de 0.7.26: el % cuenta aunque el origen sea pequeño.
+        let op = Opciones { retencion_dias: Some(30), freno: Freno { min_archivos: 0, ..Default::default() }, ..Default::default() };
         let dia = |n: i64| chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap() + chrono::Duration::days(n);
         let quitar = |o: &mut Vec<Archivo>, rels: &[String]| o.retain(|a| !rels.contains(&a.rel));
         let listar = || -> BTreeMap<String, u64> { listar_carpeta(&d, &Alcance::Todos).unwrap().into_iter().map(|a| (a.rel, a.len)).collect() };
@@ -806,7 +955,7 @@ mod tests {
         assert!(r.freno.as_deref().is_some_and(|f| f.contains("srv/s entero")), "{:?}", r.freno);
         // Con bloqueo de objetos, nunca se borra (y no se lleva la cuenta).
         let bloq = Opciones { retencion_dias: Some(30), bloqueo: true, ..Default::default() };
-        est.faltan.insert("ana/r/data/050".into(), Falta { desde: "2020-01-01".into(), bytes: 1 });
+        est.faltan.insert("ana/r/data/050".into(), Falta { desde: "2020-01-01".into(), bytes: 1, vuelta: 0 });
         let mut r = Resumen::default();
         retencion(&lado, &sin_srv, &listar(), &bloq, &mut est, &mut r, dia(400)).unwrap();
         assert_eq!((r.borrados, r.por_borrar), (0, 0));

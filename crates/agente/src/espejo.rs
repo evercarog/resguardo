@@ -199,11 +199,57 @@ pub struct Espejo {
     /// Límite de subida a la nube, en KiB/s (no se aplica a las carpetas).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limite_kib: Option<u32>,
+    /// Plan 0.7.26, bloque 4: los trabajos de espejo (espejo_trabajos.rs). Con ellos,
+    /// `destinos` es solo una vista compatible para un agente o una consola anteriores.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trabajos: Vec<crate::espejo_trabajos::Trabajo>,
 }
 
 impl Espejo {
-    /// Los destinos, contando la forma antigua de una sola carpeta.
+    /// Los trabajos: los guardados o, de un espejo de antes, uno por destino (equivalentes).
+    pub fn trabajos_efectivos(&self) -> Vec<crate::espejo_trabajos::Trabajo> {
+        if !self.trabajos.is_empty() {
+            return self.trabajos.clone();
+        }
+        self.destinos().iter().enumerate().map(|(i, d)| crate::espejo_trabajos::de_destino(d, &self.hora, self.limite_kib, i as u32)).collect()
+    }
+
+    /// El espejo con estos trabajos y la vista compatible para un agente o una consola
+    /// anteriores (`destinos`, `hora`, `limite_kib`; solo los activos, sin repetir destino).
+    pub fn de_trabajos(trabajos: Vec<crate::espejo_trabajos::Trabajo>) -> Espejo {
+        let mut destinos: Vec<Destino> = Vec::new();
+        for t in trabajos.iter().filter(|t| t.activo && !t.es_equipo()) {
+            let d = crate::espejo_trabajos::a_destino(t);
+            if !destinos.iter().any(|x| x.mismo(&d)) {
+                destinos.push(d);
+            }
+        }
+        let hora = trabajos
+            .iter()
+            .filter_map(|t| t.cuando.horario.as_ref())
+            .find_map(|h| {
+                h.horas.first().cloned().or_else(|| {
+                    h.reglas.iter().find_map(|r| match r {
+                        crate::gestion_v2::Regla::Horas { horas, .. } => horas.first().cloned(),
+                        crate::gestion_v2::Regla::Intervalo { desde, .. } => Some(desde.clone()),
+                        crate::gestion_v2::Regla::CadaDias { hora, .. } | crate::gestion_v2::Regla::Mensual { hora, .. } => Some(hora.clone()),
+                    })
+                })
+            })
+            .filter(|h| chrono::NaiveTime::parse_from_str(h, "%H:%M").is_ok())
+            .unwrap_or_else(|| "02:00".into());
+        let ultima = trabajos.iter().filter_map(|t| t.estado.ultima.clone()).max();
+        let limite_kib = trabajos.iter().filter(|t| t.adonde.tipo == "nube").find_map(|t| t.limite_kib);
+        let resultado = resultado_global(&destinos);
+        Espejo { carpeta: String::new(), hora, ultima, resultado, destinos, limite_kib, trabajos }
+    }
+
+    /// Los destinos, contando la forma antigua de una sola carpeta. Con trabajos, el de
+    /// cada trabajo del almacén (también los pausados: para saber qué se usa).
     pub fn destinos(&self) -> Vec<Destino> {
+        if !self.trabajos.is_empty() {
+            return self.trabajos.iter().filter(|t| !t.es_equipo()).map(crate::espejo_trabajos::a_destino).collect();
+        }
         let mut d = self.destinos.clone();
         if d.is_empty() && !self.carpeta.is_empty() {
             d.push(Destino {
@@ -227,41 +273,22 @@ impl Espejo {
     }
 
     /// ¿Reduce `nuevo` la protección? (orden destructiva, docs/espejo.md): quita
-    /// un destino (o el espejo entero) o deja fuera repositorios que iban a uno.
+    /// un destino (o el espejo entero), deja fuera repositorios que iban a uno,
+    /// borra antes, quita el bloqueo o afloja el freno.
     pub fn quita_destinos(&self, nuevo: Option<&Espejo>) -> bool {
-        let nuevos = nuevo.map(Espejo::destinos).unwrap_or_default();
-        self.destinos().iter().any(|d| match nuevos.iter().find(|n| n.mismo(d)) {
-            None => true,
-            Some(n) => {
-                let menos_repos = match (&d.repos, &n.repos) {
-                    (_, None) => false,
-                    (None, Some(_)) => true,
-                    (Some(antes), Some(ahora)) => antes.iter().any(|r| !ahora.contains(r)),
-                };
-                // §3b: poner o acortar la retención (borrará), o quitar el bloqueo.
-                let borra_antes = match (d.retencion(), n.retencion()) {
-                    (None, Some(_)) => true,
-                    (Some(a), Some(b)) => b < a,
-                    _ => false,
-                };
-                menos_repos || borra_antes || (d.bloqueo && !n.bloqueo)
-            }
-        })
+        crate::espejo_trabajos::reduce(&self.trabajos_efectivos(), &nuevo.map(Espejo::trabajos_efectivos).unwrap_or_default())
     }
 
-    /// Lo que se ve en el resumen de la consola (sin secretos).
+    /// Lo que se ve en el resumen de la consola (sin secretos): los trabajos y,
+    /// para una consola anterior, cada destino como antes.
     pub fn resumen(&self) -> serde_json::Value {
-        let destinos: Vec<_> = self
-            .destinos()
+        let trabajos = self.trabajos_efectivos();
+        // La vista compatible: la de los trabajos activos (sin repetir destino).
+        let compat = if self.trabajos.is_empty() { self.destinos() } else { Espejo::de_trabajos(trabajos.clone()).destinos };
+        let destinos: Vec<_> = compat
             .iter()
             .map(|d| {
-                // v1.31: libre y total (carpeta: su volumen, ahora; nube: la cuenta, tras el último espejo).
-                let espacio = match (&d.tipo[..], &d.cuota) {
-                    ("carpeta", _) => crate::espacio::json_de(&d.carpeta),
-                    ("zona", _) => crate::server::load().carpeta_zona(Some(&d.carpeta)).map(crate::espacio::json_de).unwrap_or_default(),
-                    (_, Some((e, leido))) => e.json(leido),
-                    _ => serde_json::Value::Null,
-                };
+                let espacio = espacio_de(&d.tipo, &d.carpeta, &d.cuota);
                 let mut v = serde_json::json!({ "tipo": d.tipo, "carpeta": d.carpeta, "nube": d.nube, "ultima": d.ultima, "resultado": d.resultado, "espacio": espacio });
                 // Tarea 7d.2: la zona de origen (sin ella, la principal).
                 if let Some(z) = &d.zona {
@@ -296,13 +323,51 @@ impl Espejo {
                     v["vistos"] = d.vistos.clone().into();
                 }
                 v["proxima"] = d.plan(&self.hora).and_then(|p| p.next_slot(chrono::Local::now())).map(|t| t.to_rfc3339()).into();
+                // Plan 0.7.26: de qué trabajo es esta vista (una consola anterior no lo mira).
+                if !self.trabajos.is_empty() {
+                    if let Some(t) = trabajos.iter().find(|t| t.activo && crate::espejo_trabajos::a_destino(t).mismo(d)) {
+                        v["trabajo"] = t.id.clone().into();
+                    }
+                }
                 v
             })
             .collect();
+        // Plan 0.7.26: los trabajos, con su configuración y cómo fue su última vuelta.
+        let trabajos: Vec<_> =
+            trabajos.iter().map(|t| crate::espejo_trabajos::resumen(t, espacio_de(&t.adonde.tipo, &t.adonde.carpeta, &t.estado.cuota))).collect();
+        let ultima = if self.trabajos.is_empty() { self.ultima.clone() } else { self.trabajos.iter().filter_map(|t| t.estado.ultima.clone()).max() };
+        let resultado = if self.trabajos.is_empty() { self.resultado.clone() } else { resultado_global(&compat) };
         serde_json::json!({
-            "hora": self.hora, "ultima": self.ultima, "resultado": self.resultado, "limite_kib": self.limite_kib, "destinos": destinos,
+            "hora": self.hora, "ultima": ultima, "resultado": resultado, "limite_kib": self.limite_kib, "destinos": destinos, "trabajos": trabajos,
         })
     }
+}
+
+/// v1.31: libre y total de un destino (carpeta: su volumen, ahora; zona: su carpeta;
+/// nube: la cuenta, tras el último espejo).
+fn espacio_de(tipo: &str, carpeta: &str, cuota: &Option<(crate::espacio::Espacio, String)>) -> serde_json::Value {
+    match (tipo, cuota) {
+        ("carpeta", _) => crate::espacio::json_de(carpeta),
+        ("zona", _) => crate::server::load().carpeta_zona(Some(carpeta)).map(crate::espacio::json_de).unwrap_or_default(),
+        (_, Some((e, leido))) => e.json(leido),
+        _ => serde_json::Value::Null,
+    }
+}
+
+/// Los trabajos que pide una orden `guarda_copias { espejo }`: `{ trabajos: […] }`
+/// (plan 0.7.26) o la forma de antes (`destinos`, `carpeta`), convertida. `None`: quitarlo.
+pub fn trabajos_del_pedido(v: &serde_json::Value) -> Result<Option<Vec<crate::espejo_trabajos::Trabajo>>, String> {
+    if v.get("trabajos").is_some_and(|t| !t.is_null()) {
+        let t = crate::espejo_trabajos::leer_pedido(v, crate::espejo_trabajos::QUIEN_ALMACEN)?;
+        return Ok((!t.is_empty()).then_some(t));
+    }
+    let actuales = crate::server::load().espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default();
+    Ok(pedido(v)?.map(|mut e| {
+        e.normalizar();
+        let mut t = e.trabajos_efectivos();
+        crate::espejo_trabajos::mapear_ids(&mut t, &actuales);
+        t
+    }))
 }
 
 /// El espejo pedido en una orden `guarda_copias {espejo: …}`:
@@ -537,10 +602,21 @@ pub fn novedades(origen: &Path, repos: &[String], desde: Option<SystemTime>) -> 
     r
 }
 
-/// §3b: `guarda_copias { espejo_freno: { tipo, carpeta, nube? } }` (espera, como
-/// lo que reduce la protección): lo que falta en el almacén de ese destino se
-/// anota en la próxima vuelta sin freno, y se borrará pasados sus días.
+/// §3b: `guarda_copias { espejo_freno: … }` (espera, como lo que reduce la protección):
+/// lo que falta en el almacén se anota en la próxima vuelta sin freno, y se borrará a su
+/// tiempo. Plan 0.7.26: `{ trabajo: <id>, quien?: "equipo" }` confirma ese trabajo; la forma
+/// de antes (`{ tipo, carpeta, nube?, zona? }`), todos los trabajos del almacén a ese destino.
 pub fn aceptar_freno(v: &serde_json::Value) -> Result<String, String> {
+    use crate::espejo_trabajos as et;
+    if let Some(id) = v["trabajo"].as_str() {
+        let lista = if v["quien"] == et::QUIEN_EQUIPO {
+            et::cargar_equipo().trabajos
+        } else {
+            crate::server::load().espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default()
+        };
+        let t = lista.iter().find(|t| t.id == id).ok_or("Ese espejo ya no está.")?;
+        return et::aceptar_freno(t);
+    }
     let que = Destino {
         tipo: v["tipo"].as_str().unwrap_or_default().to_string(),
         carpeta: v["carpeta"].as_str().unwrap_or_default().trim().to_string(),
@@ -548,92 +624,24 @@ pub fn aceptar_freno(v: &serde_json::Value) -> Result<String, String> {
         zona: v["zona"].as_str().filter(|z| *z != "principal").map(str::to_string),
         ..Default::default()
     };
-    let c = crate::server::load();
-    let d = c.espejo.as_ref().and_then(|e| e.destinos().into_iter().find(|d| d.mismo(&que))).ok_or("Ese destino ya no está en el espejo.")?;
-    let dias = d.retencion().ok_or("Ese destino del espejo no tiene retención: nunca borra nada.")?;
-    let mut e = leer_estado(&d);
-    e.aceptar_freno = true;
-    guardar_estado(&d, &e);
-    Ok(format!(
-        "Confirmado: la próxima vez que se copie al espejo se anota lo que ya no está en el almacén y se borrará de «{}» pasados {dias} días.",
-        d.texto()
-    ))
-}
-
-/// Una vuelta a un destino (espejo_motor.rs), contando cómo va en `guarda`
-/// (la ventana del equipo: los bytes copiados a una carpeta; lo que lee y
-/// sube rclone a una nube). Devuelve el texto del resultado.
-fn copiar_a(
-    origen: &Path,
-    d: &Destino,
-    limite_kib: Option<u32>,
-    guarda: &crate::escritorio::en_marcha::Guarda,
-) -> Result<crate::espejo_motor::Resumen, String> {
-    use crate::espejo_motor::{vuelta, Alcance, Lado, Opciones};
-    let alcance = Alcance::de(d.repos.as_deref());
-    let trabajo = crate::agent::private_dir();
-    let nube;
-    // Tarea 7d.2: a otra zona de este almacén, su carpeta (como un destino «carpeta»).
-    let carpeta_zona = (d.tipo == "zona").then(|| crate::server::load().carpeta_zona(Some(&d.carpeta)).map(str::to_string));
-    let carpeta_destino = match carpeta_zona {
-        Some(Some(p)) => p,
-        Some(None) => return Err("esa zona ya no está en este almacén.".into()),
-        None => d.carpeta.clone(),
-    };
-    let lado = if d.tipo == "nube" {
-        let nombre = d.nube.as_deref().unwrap_or_default();
-        nube = crate::nube::buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
-        if !crate::nube::carpeta_remota_valida(&d.carpeta) {
-            return Err("Carpeta de la nube no válida.".into());
-        }
-        Lado::Nube { nube: &nube, carpeta: d.carpeta.trim().trim_matches('/'), trabajo: &trabajo, limite_kib }
-    } else {
-        // La carpeta de destino: local, sin enlaces en el camino y de Administradores.
-        crate::platform::carpeta_local_valida(&carpeta_destino)?;
-        let destino = Path::new(&carpeta_destino);
-        // En pruebas (RESGUARDO_AGENT_DIR, sin administrador) la carpeta es de quien
-        // corre la prueba, como en `carpeta_privada`.
-        if destino.exists() && !crate::agent::test_mode() && !crate::platform::owned_by_admins(destino) {
-            return Err("la carpeta del espejo no es de Administradores (vuelve a poner el espejo para corregirla).".into());
-        }
-        Lado::Carpeta(destino)
-    };
-    let carpeta = d.tipo != "nube";
-    let op = Opciones { verificar_pct: d.pct_verificar(), retencion_dias: d.retencion_dias, bloqueo: d.bloqueo };
-    let mut estado = leer_estado(d);
-    let r = vuelta(origen, &lado, &alcance, &op, &mut estado, &mut |l, s| if carpeta { guarda.progreso(l, None) } else { guarda.ritmos(l, s) });
-    guardar_estado(d, &estado);
-    r
-}
-
-/// El archivo con lo que recuerda un destino entre vueltas (en la carpeta privada:
-/// un usuario no puede tocarlo).
-fn archivo_estado(d: &Destino) -> PathBuf {
-    use sha2::{Digest, Sha256};
-    // Con zona de origen, otro archivo (sin ella, el de siempre).
-    let zona = d.zona.as_deref().map(|z| format!("|{z}")).unwrap_or_default();
-    let h = Sha256::digest(format!("{}|{}|{}{zona}", d.tipo, d.nube.as_deref().unwrap_or_default(), d.carpeta.trim()).as_bytes());
-    let id: String = h.iter().take(8).map(|b| format!("{b:02x}")).collect();
-    crate::agent::private_dir().join(format!("espejo-{id}.json"))
-}
-
-/// Olvida lo anotado de un destino (uno nuevo, o que se vuelve a poner).
-pub fn olvidar_estado(d: &Destino) {
-    let _ = std::fs::remove_file(archivo_estado(d));
-}
-
-fn leer_estado(d: &Destino) -> crate::espejo_motor::Estado {
-    std::fs::read(archivo_estado(d)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
-}
-
-fn guardar_estado(d: &Destino, e: &crate::espejo_motor::Estado) {
-    let p = archivo_estado(d);
-    let tmp = p.with_extension("json.tmp");
-    if let Ok(b) = serde_json::to_vec(e) {
-        if crate::agent::write_new(&tmp, &b).is_ok() {
-            let _ = std::fs::rename(&tmp, &p);
+    let trabajos: Vec<et::Trabajo> =
+        crate::server::load().espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default().into_iter().filter(|t| et::a_destino(t).mismo(&que)).collect();
+    if trabajos.is_empty() {
+        return Err("Ese destino ya no está en el espejo.".into());
+    }
+    let mut hecho = None;
+    for t in &trabajos {
+        if let Ok(m) = et::aceptar_freno(t) {
+            hecho = Some(m);
         }
     }
+    hecho.ok_or_else(|| "Ese destino del espejo no tiene retención: nunca borra nada.".into())
+}
+
+/// El archivo de estado de un destino de antes (el mismo que el de su trabajo equivalente).
+#[cfg(test)]
+fn archivo_estado(d: &Destino) -> PathBuf {
+    crate::espejo_trabajos::archivo_estado(&crate::espejo_trabajos::de_destino(d, "02:00", None, 0), None)
 }
 
 /// El resultado de una vuelta en una frase (error si algo no cuadra).
@@ -696,21 +704,34 @@ pub(crate) fn resultado_global(destinos: &[Destino]) -> Option<String> {
     }
 }
 
-/// Anota en la configuración algo de un destino (se vuelve a leer: pudo cambiar mientras se copiaba).
-fn anotar(d: &Destino, f: impl FnOnce(&mut Destino)) {
+/// Anota en la configuración algo de un trabajo del almacén (se vuelve a leer: pudo
+/// cambiar mientras se copiaba). Un espejo de antes pasa aquí a guardarse como trabajos.
+fn anotar(id: &str, f: impl FnOnce(&mut crate::espejo_trabajos::Trabajo)) {
     let mut c = crate::server::load();
-    if let Some(esp) = c.espejo.as_mut() {
-        esp.normalizar();
-        if let Some(x) = esp.destinos.iter_mut().find(|x| x.mismo(d)) {
+    if let Some(esp) = c.espejo.as_ref() {
+        let mut ts = esp.trabajos_efectivos();
+        if let Some(x) = ts.iter_mut().find(|x| x.id == id) {
             f(x);
+            c.espejo = Some(Espejo::de_trabajos(ts));
+            let _ = crate::server::save(&c);
         }
-        let _ = crate::server::save(&c);
     }
 }
 
-/// Lo llama el servicio en cada vuelta: los destinos a los que toca, uno
-/// detrás de otro en otro hilo, anotando el resultado de cada uno.
+/// Los repositorios del almacén que mira «después de cada copia nueva» de un trabajo.
+fn repos_del_trabajo(t: &crate::espejo_trabajos::Trabajo, origen: &Path) -> Vec<String> {
+    use crate::espejo_trabajos::Que;
+    match &t.que {
+        Que::Todos => repos_en(origen),
+        Que::Equipos { equipos } => repos_en(origen).into_iter().filter(|r| equipos.iter().any(|u| r == u || r.starts_with(&format!("{u}/")))).collect(),
+        Que::Repos { repos } => repos.clone(),
+    }
+}
+
+/// Lo llama el servicio en cada vuelta: los trabajos del almacén a los que toca, uno
+/// detrás de otro (por su orden) en otro hilo, anotando el resultado de cada uno.
 pub fn si_toca() {
+    use crate::espejo_trabajos::{self as et, Motivo};
     static EN_MARCHA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     static ULTIMA_MIRADA: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     if EN_MARCHA.load(std::sync::atomic::Ordering::SeqCst) {
@@ -718,11 +739,10 @@ pub fn si_toca() {
     }
     let c = crate::server::load();
     let Some(e) = c.espejo.clone().filter(|_| c.enabled) else { return };
+    let trabajos = e.trabajos_efectivos();
     let ahora = chrono::Local::now();
-    // Tarea 7d.2: cada destino copia desde su zona (sin ella, la principal).
-    let origen_de = |d: &Destino| c.carpeta_zona(d.zona.as_deref()).map(PathBuf::from);
     // «Después de cada copia»: mirar `snapshots/` como mucho una vez por minuto.
-    let mirar = e.destinos().iter().any(|d| d.tras_copia) && {
+    let mirar = trabajos.iter().any(|t| t.activo && t.cuando.tras_copia) && {
         let mut u = ULTIMA_MIRADA.lock().unwrap_or_else(|p| p.into_inner());
         let ya = u.is_some_and(|t| t.elapsed() < Duration::from_secs(60));
         if !ya {
@@ -730,90 +750,77 @@ pub fn si_toca() {
         }
         !ya
     };
-    let toca_ya: Vec<(Destino, Motivo, PathBuf)> = e
-        .destinos()
-        .into_iter()
-        .filter_map(|d| {
-            let origen = origen_de(&d)?;
-            let nuevas = if mirar && d.tras_copia {
-                // Solo los repositorios de ese destino (o todos los de su zona).
-                let repos = d.repos.clone().unwrap_or_else(|| repos_en(&origen));
-                novedades(&origen, &repos, d.desde().map(SystemTime::from))
+    let mut toca_ya: Vec<(et::Trabajo, Motivo, PathBuf)> = trabajos
+        .iter()
+        .filter_map(|t| {
+            // Tarea 7d.2: cada trabajo copia desde su zona (sin ella, la principal).
+            let origen = c.carpeta_zona(t.zona.as_deref()).map(PathBuf::from)?;
+            let nuevas = if mirar && t.activo && t.cuando.tras_copia {
+                novedades(&origen, &repos_del_trabajo(t, &origen), t.desde().map(SystemTime::from))
             } else {
                 None
             };
-            toca(&e, &d, ahora, nuevas).map(|m| (d, m, origen))
+            et::toca(t, &trabajos, ahora, nuevas).map(|m| (t.clone(), m, origen))
         })
         .collect();
+    toca_ya.sort_by_key(|(t, _, _)| t.orden);
     if toca_ya.is_empty() || EN_MARCHA.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    let limite_kib = e.limite_kib;
     std::thread::spawn(move || {
-        for (i, (d, motivo, origen)) in toca_ya.into_iter().enumerate() {
-            // El comienzo, antes de empezar: si el servicio se para a medias, no se repite en bucle.
-            let inicio = chrono::Local::now().to_rfc3339();
-            anotar(&d, |x| x.inicio = Some(inicio.clone()));
-            // Para la ventana y los avisos del escritorio: sin la carpeta (es una ruta).
-            let (tipo, nombre) = match d.nube.as_deref().filter(|_| d.tipo == "nube") {
-                Some(n) => ("nube", n.to_string()),
-                None => ("espejo", "Disco o carpeta del equipo".to_string()),
-            };
-            let guarda = crate::escritorio::en_marcha::empezar(tipo, &i.to_string(), &nombre);
-            let por = if motivo == Motivo::TrasCopia { " (después de una copia nueva)" } else { "" };
-            let hecho = copiar_a(&origen, &d, limite_kib, &guarda);
-            let verificacion = hecho.as_ref().ok().filter(|r| r.verificados > 0).map(|r| Verificacion {
-                ultima: chrono::Local::now().to_rfc3339(),
-                archivos: r.verificados,
-                mal: (r.mal_destino.len() as u64) + r.reparados,
-            });
-            let danados = hecho.as_ref().map(|r| r.danados_origen.len() as u64).ok();
-            let retencion = hecho.as_ref().ok().map(|r| {
-                let pb = (r.por_borrar > 0).then(|| PorBorrar { archivos: r.por_borrar, bytes: r.por_borrar_bytes, primero: r.primer_borrado.clone() });
-                (pb, r.freno.clone())
-            });
-            let texto = match hecho.and_then(|r| texto_de(&r)) {
-                Ok(t) => {
-                    guarda.terminar("ok");
-                    format!("Espejo hecho en {}{por}: {t}", d.texto())
-                }
-                Err(m) => {
-                    drop(guarda);
-                    format!("ERROR: espejo del Servidor de copias en {}: {m}", d.texto())
-                }
-            };
-            crate::agent::log(&texto);
-            // v1.31: el espacio de la nube tras cada vuelta (para «¿Cuándo se llena?»).
-            let cuota = if d.tipo == "nube" { d.nube.as_deref().and_then(crate::nube::buscar).and_then(|n| crate::nube::cuota(&n)) } else { None };
-            let fin = chrono::Local::now().to_rfc3339();
-            let mut c = crate::server::load();
-            if let Some(esp) = c.espejo.as_mut() {
-                esp.normalizar();
-                if let Some(x) = esp.destinos.iter_mut().find(|x| x.mismo(&d)) {
-                    x.ultima = Some(fin.clone());
-                    x.resultado = Some(texto.clone());
-                    if let Some(v) = &verificacion {
-                        x.verificacion = Some(v.clone());
-                    }
-                    if let Some(n) = danados {
-                        x.danados_origen = n;
-                    }
-                    if let Some((pb, freno)) = &retencion {
-                        (x.por_borrar, x.freno) = (pb.clone(), freno.clone());
-                    }
-                    if let Some(q) = cuota {
-                        x.cuota = Some((q, fin.clone()));
-                    }
-                }
-                esp.ultima = Some(fin.clone());
-                esp.resultado = resultado_global(&esp.destinos);
-                // También en la bitácora del equipo (para una consola nueva), sin rutas.
-                crate::bitacora::espejo(&fin, &texto);
-            }
-            let _ = crate::server::save(&c);
+        for (t, motivo, origen) in toca_ya {
+            hacer(&t, motivo, &origen);
         }
         EN_MARCHA.store(false, std::sync::atomic::Ordering::SeqCst);
     });
+}
+
+/// Una vuelta de un trabajo del almacén: su origen, su alcance y su destino.
+pub fn hacer(t: &crate::espejo_trabajos::Trabajo, motivo: crate::espejo_trabajos::Motivo, origen: &Path) -> String {
+    use crate::espejo_trabajos as et;
+    // El comienzo, antes de empezar: si el servicio se para a medias, no se repite en bucle.
+    let inicio = chrono::Local::now().to_rfc3339();
+    anotar(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora) = (Some(inicio.clone()), false));
+    // Para la ventana y los avisos del escritorio: sin la carpeta (es una ruta).
+    let (tipo, nombre) = match t.adonde.nube.as_deref().filter(|_| t.adonde.tipo == "nube") {
+        Some(n) => ("nube", n.to_string()),
+        None => ("espejo", "Disco o carpeta del equipo".to_string()),
+    };
+    let guarda = crate::escritorio::en_marcha::empezar(tipo, &t.id, &nombre);
+    let carpeta = t.adonde.tipo != "nube";
+    let zona = |z: &str| crate::server::load().carpeta_zona(Some(z)).map(str::to_string);
+    let hecho = et::vuelta(t, origen, &t.alcance(), None, &zona, &et::archivo_estado(t, None), &mut |l, s| {
+        if carpeta {
+            guarda.progreso(l, None)
+        } else {
+            guarda.ritmos(l, s)
+        }
+    });
+    let mut resumenes = Vec::new();
+    let texto = hecho.and_then(|r| {
+        let x = texto_de(&r);
+        resumenes.push(r);
+        x
+    });
+    let texto = et::texto_de(t, motivo, &[(None, texto)]);
+    if texto.starts_with("ERROR") {
+        drop(guarda);
+    } else {
+        guarda.terminar("ok");
+    }
+    crate::agent::log(&texto);
+    // v1.31: el espacio de la nube tras cada vuelta (para «¿Cuándo se llena?»).
+    let cuota = if t.adonde.tipo == "nube" { t.adonde.nube.as_deref().and_then(crate::nube::buscar).and_then(|n| crate::nube::cuota(&n)) } else { None };
+    let fin = chrono::Local::now().to_rfc3339();
+    anotar(&t.id, |x| {
+        et::anotar_resultado(x, &texto, &fin, &resumenes);
+        if let Some(q) = cuota {
+            x.estado.cuota = Some((q, fin.clone()));
+        }
+    });
+    // También en la bitácora del equipo (para una consola nueva).
+    crate::bitacora::espejo(&fin, &texto);
+    texto
 }
 
 #[cfg(test)]

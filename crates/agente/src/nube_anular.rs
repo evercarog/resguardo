@@ -152,6 +152,10 @@ pub fn quien_la_usa(nombre: &str) -> Option<String> {
     if crate::nube::usa_espejo(nombre) {
         usos.push("el espejo de este almacén".into());
     }
+    // Plan 0.7.26 (bloque 4): un espejo que hace el propio equipo.
+    if let Some(t) = crate::espejo_trabajos::cargar_equipo().trabajos.iter().find(|t| t.adonde.tipo == "nube" && t.adonde.nube.as_deref() == Some(nombre)) {
+        usos.push(format!("el espejo «{}» de este equipo", t.nombre));
+    }
     usos.dedup();
     match usos.len() {
         0 => None,

@@ -1543,7 +1543,7 @@ mod tests {
         assert!(d.join("ana/repo/config").is_file(), "nunca borra");
         // §3b: con retención, lo que lleva más de N días sin estar en el almacén se borra de la nube (solo eso).
         let mut est = Estado::default();
-        est.faltan.insert("ana/repo/config".into(), crate::espejo_motor::Falta { desde: "2020-01-01".into(), bytes: 1 });
+        est.faltan.insert("ana/repo/config".into(), crate::espejo_motor::Falta { desde: "2020-01-01".into(), bytes: 1, vuelta: 0 });
         est.aceptar_freno = true; // el repositorio entero «falta»: confirmado
         let op = Opciones { retencion_dias: Some(30), ..Default::default() };
         let r = vuelta(&o, &lado, &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();

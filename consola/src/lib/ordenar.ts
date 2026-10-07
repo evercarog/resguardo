@@ -182,7 +182,11 @@ export async function mandarOrden(opts: {
         responderA: opts.responderA ?? null,
         // La espera que confirmó el equipo manda; si no, la del cliente.
         esperaHoras: esperaServidor ?? equipo.espera_min_horas ?? cliente.espera_min_horas,
-        contexto: { espejo: equipo.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length },
+        contexto: {
+          espejo: equipo.resumen?.guarda_copias?.espejo ?? null,
+          espejoEquipo: equipo.resumen?.espejo_equipo ?? null,
+          copiasActivas: (equipo.resumen?.copias ?? []).filter((k) => k.activa !== false).length,
+        },
         // v1.49: quién la manda (lo ven las demás consolas en sus órdenes en espera y en el historial).
         por: app.cuenta?.nombre ?? null,
         // v1.58: a un agente que no guarda las órdenes con espera, con el número reservado: así
