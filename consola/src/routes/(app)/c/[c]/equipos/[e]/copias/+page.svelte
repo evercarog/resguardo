@@ -11,8 +11,8 @@
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CloudUpload, CornerDownRight, Database, FlaskConical, FolderOpen, GitBranch, GripVertical, HardDrive, KeyRound, LayoutTemplate, Link2, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2 } from "@lucide/svelte";
-  import { ADMITE, admite, despuesDeLaAnterior, destinosParaPasos, errorCadenas, moverA, pasosDelRepo, recomendarFueraRetencion, reenlazar, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
+  import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CloudUpload, Copy, CornerDownRight, Database, FlaskConical, FolderOpen, FolderPlus, GitBranch, GripVertical, HardDrive, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2 } from "@lucide/svelte";
+  import { ADMITE, admite, destinosParaPasos, errorCadenas, moverA, pasosDelRepo, recomendarFueraRetencion, reenlazar, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import * as api from "$lib/api";
   import { ApiError } from "$lib/api";
@@ -24,7 +24,7 @@
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
-  import { horarioEnFrase, lista, plural, relativo, resumenHorario } from "$lib/formato";
+  import { lista, plural, relativo, resumenHorario } from "$lib/formato";
   import { errorReglas, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "$lib/horario";
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
   import Observaciones from "$lib/componentes/notas/Observaciones.svelte";
@@ -58,6 +58,35 @@
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   // Crear un repositorio sin salir del editor (también en una nube: tarea 4a).
   import NuevoRepositorio from "$lib/componentes/NuevoRepositorio.svelte";
+  // Plan 0.7.26, bloque 3: el editor guiado (docs/editor-de-copias.md «Guiado y avanzado»).
+  import { app } from "$lib/estado.svelte";
+  import Chip from "$lib/componentes/Chip.svelte";
+  import CopiaGuiada from "$lib/componentes/copias/CopiaGuiada.svelte";
+  import CuandoEmpieza from "$lib/componentes/copias/CuandoEmpieza.svelte";
+  import ResumenCopia from "$lib/componentes/copias/ResumenCopia.svelte";
+  import type { PedidoRepoNuevo } from "$lib/componentes/copias/ElegirRepositorio.svelte";
+  import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
+  import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
+  import {
+    ADMITE_INICIO_DESPUES,
+    copiaNueva,
+    duplicarCopia,
+    errorInicio,
+    guardarAvanzado,
+    inicioDe,
+    leerAvanzado,
+    limpiarInicio,
+    ponerInicio,
+    primerPaso,
+    retrasoEnFrase,
+    TEXTO_ANADIR,
+    type PasoCopia,
+    type QueAnadir,
+    type Sugerencia,
+  } from "$lib/copiaGuiada";
+  import { claveNube } from "$lib/destinos";
+  import { filtroEnFrase, repoEnAlmacen } from "$lib/cadenas";
+  import type { FiltroVersiones, RepositorioResumen } from "$lib/tipos";
 
   const c = $derived(page.params.c ?? "");
   const id = $derived(page.params.e ?? "");
@@ -131,7 +160,7 @@
         const tras = page.url.searchParams.get("tras");
         const i = tras ? cfg.copias.findIndex((x) => x.id === tras) : -1;
         if (i >= 0) nuevaDespues(i);
-        else nueva();
+        else anadirCarpetas();
         // ?destino=<clave> (desde «Usar en una copia» de la página de un destino): un repositorio de este equipo allí.
         const dest = page.url.searchParams.get("destino");
         const enDestino = dest ? equipo.resumen?.repositorios?.find((r) => {
@@ -270,7 +299,12 @@
   /** Quitar una copia: si aún no se envió, desaparece; si ya estaba, deja de hacerse al enviar. */
   function quitar(i: number) {
     if (!cfg) return;
-    cfg.copias.splice(i, 1);
+    const antes = $state.snapshot(cfg.copias) as CopiaConfig[];
+    const despues = antes.filter((_, j) => j !== i);
+    // La que iba después de la quitada sigue a la que queda encima (o, arriba del todo, con horario).
+    const r = reenlazar(antes, despues);
+    limpiarInicio(r.copias);
+    cfg.copias = r.copias;
   }
   /** Vuelve a lo que tiene el equipo (descarta todo lo no enviado). */
   function cancelarCambios() {
@@ -320,34 +354,37 @@
     con321 = [...con321, id];
   }
 
-  /** Una copia nueva justo debajo de la `i`, «después de la anterior» si el agente lo admite. */
+  /** Una copia nueva justo debajo de la `i`, «en cadena» tras ella si el agente lo admite. */
   function nuevaDespues(i: number) {
     if (!cfg) return;
-    const anterior = cfg.copias[i];
-    nueva();
-    const k = cfg.copias.pop()!;
-    if (admiteCadenas && anterior) {
-      k.tras = anterior.id;
-      k.horario = { dias: [], horas: [] };
-    }
+    const k = copiaNueva(cfg.copias[i]?.repo ?? repos[0]?.id ?? "");
     cfg.copias.splice(i + 1, 0, k);
-    abiertas[k.id] = true;
-    void tick().then(() => document.getElementById(`copia-${k.id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    if (admiteCadenas && i >= 0) ponerInicio(cfg.copias, i + 1, "cadena");
+    abrirNueva(k.id);
   }
 
   function nueva() {
     if (!cfg) return;
-    cfg.copias.push({
-      id: `copia-${crypto.randomUUID().slice(0, 8)}`,
-      nombre: "Nueva copia",
-      repo: repos[0]?.id ?? "",
-      carpetas: [],
-      exclusiones: ["*.tmp", "~$*", "Thumbs.db"],
-      horario: { dias: [1, 2, 3, 4, 5], horas: ["13:00"] },
-      activa: true,
-      gancho: [],
-      solo_si_cambios: true,
-    });
+    cfg.copias.push(copiaNueva(repos[0]?.id ?? ""));
+  }
+  /** «+ Añadir → Copiar carpetas de este equipo»: al final, abierta en «Cuándo». */
+  function anadirCarpetas() {
+    nueva();
+    const k = cfg?.copias.at(-1);
+    if (k) abrirNueva(k.id);
+  }
+  function abrirNueva(id: string) {
+    abiertas[id] = true;
+    pasos[id] = "cuando";
+    void tick().then(() => document.getElementById(`copia-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  }
+  /** «Duplicar»: justo debajo, con su propio horario. */
+  function duplicar(i: number) {
+    if (!cfg) return;
+    const d = duplicarCopia($state.snapshot(cfg.copias[i]) as CopiaConfig);
+    cfg.copias.splice(i + 1, 0, d);
+    abiertas[d.id] = true;
+    pasos[d.id] = "resumen";
   }
 
   function lineas(t: string) {
@@ -358,17 +395,15 @@
   }
 
   // --- Copias en cadena (tarea 7c, docs/copias-en-cadena.md) -------------------
-  /** El agente entiende «después de la anterior» (`config.copias[].tras`). */
+  /** El agente entiende «en cadena» (`config.copias[].tras`). */
   const admiteCadenas = $derived(admite(equipo, ADMITE.cadenas));
-  /** «Después de» otra copia: sin horario propio (se puede añadir) o sin cadena. */
-  function ponerTras(k: CopiaConfig, tras: string) {
-    k.tras = tras || null;
-    if (!k.tras && !reglasDe(k.horario, admiteReglas).length) k.horario = { dias: [1, 2, 3, 4, 5], horas: ["13:00"] };
-  }
-  /** «Además, con su horario» en una que va «después de»: sin él, su horario se vacía. */
-  function conHorarioPropio(k: CopiaConfig, si: boolean) {
-    k.horario = si ? { dias: [1, 2, 3, 4, 5], horas: ["13:00"] } : { dias: [], horas: [] };
-  }
+  /** Plan 0.7.26: y «Después de la anterior» aunque falle, con retraso (`inicio`, `retraso_min`). */
+  const admiteDespues = $derived(admite(equipo, ADMITE_INICIO_DESPUES));
+  const admiteFiltros = $derived(admite(equipo, ADMITE.filtros));
+  /** Lo que cada control de «Cuándo empieza» puede ofrecer con este agente. */
+  const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues });
+  /** Una copia antigua «después de» que además tenía su horario (ya no se ofrece): se dice y se puede quitar. */
+  const conHorarioDeAntes = (k: CopiaConfig) => !!k.tras && reglasDe(k.horario, admiteReglas).length > 0;
   // --- Ordenar (docs/editor-de-copias.md): asa para arrastrar, flechas y menú ---
   /** Lo que se dice al lector de pantalla al mover. */
   let anuncio = $state("");
@@ -379,7 +414,7 @@
     if (!cfg || de === a || a < 0 || a >= cfg.copias.length) return;
     const antes = $state.snapshot(cfg.copias) as CopiaConfig[];
     const r = reenlazar(antes, moverA(antes, de, a));
-    for (const k of r.copias) if (r.aHorario.includes(k.id) && !reglasDe(k.horario, admiteReglas).length) k.horario = { dias: [1, 2, 3, 4, 5], horas: ["13:00"] };
+    limpiarInicio(r.copias);
     cfg.copias = r.copias;
     const k = r.copias[a];
     avisoOrden = r.aHorario.length ? `«${r.copias.find((x) => x.id === r.aHorario[0])?.nombre}» es ahora la primera: empieza con su horario.` : "";
@@ -429,9 +464,26 @@
   }
 
   // --- Tarjetas plegables ---------------------------------------------------------
-  /** Abiertas o cerradas a mano; sin tocar: abierta si es nueva o es la única. */
+  /** Abiertas o cerradas a mano; sin tocar: cerradas (con su resumen), salvo las nuevas. */
   let abiertas = $state<Record<string, boolean>>({});
-  const abierta = (k: CopiaConfig) => abiertas[k.id] ?? (!guardadas.has(k.id) || (cfg?.copias.length ?? 0) === 1);
+  const abierta = (k: CopiaConfig) => abiertas[k.id] ?? !guardadas.has(k.id);
+  /** Plan 0.7.26: el paso abierto de cada copia en el modo guiado. */
+  let pasos = $state<Record<string, PasoCopia>>({});
+  const pasoDe = (k: CopiaConfig): PasoCopia => pasos[k.id] ?? (guardadas.has(k.id) ? "resumen" : primerPaso(k));
+  /** «Avanzado»: la tarjeta entera, como antes (se recuerda por persona en este navegador). */
+  let avanzado = $state(false);
+  $effect(() => {
+    const quien = app.cuenta?.id;
+    untrack(() => (avanzado = leerAvanzado(quien)));
+  });
+  function ponerAvanzado(si: boolean) {
+    avanzado = si;
+    guardarAvanzado(app.cuenta?.id, si);
+  }
+  /** El estado de la última vez de una copia ya enviada (del resumen del equipo). */
+  const ultimaDe = (k: CopiaConfig) => equipo?.resumen?.copias?.find((x) => x.id === k.id)?.ultima ?? null;
+  const TEXTO_ULTIMA = { ok: "Al día", aviso: "Con avisos", fallo: "Falló" } as const;
+  const TONO_ULTIMA = { ok: "ok", aviso: "warn", fallo: "bad" } as const;
   /** Abre la tarjeta y lleva a sus ajustes del repositorio (verificación, prueba). */
   async function irAAjustes(k: CopiaConfig) {
     abiertas[k.id] = true;
@@ -464,6 +516,9 @@
     if (!cfg.repositorios.some((x) => x.id === r.id)) cfg.repositorios.push({ id: r.id, nombre: r.nombre, destino: r.destino });
     const k = cfg.copias.find((x) => x.id === repoNuevoPara);
     if (k) k.repo = r.id;
+    // «Con las versiones de otro»: se pide al guardar (con las copias, una sola vez la clave).
+    if (pedidoRepo?.origen) historiales = [...historiales, { repo: r.id, nombre: r.nombre, origen: pedidoRepo.origen.repo, nombreOrigen: pedidoRepo.origen.nombre, filtro: pedidoRepo.origen.filtro }];
+    pedidoRepo = null;
     avisoRepo = `«${r.nombre}» pedido a ${equipo.nombre}: lo crea antes de aplicar las copias.${k ? ` Ya está elegido en «${k.nombre}».` : ""} Cuando acabes, pulsa «Enviar al equipo».`;
   }
   /** El selector del repositorio de una copia: «+ Repositorio nuevo…» abre el diálogo (y no cambia la copia). */
@@ -473,6 +528,77 @@
       repoNuevoPara = k.id;
     } else k.repo = sel.value;
   }
+  /** Plan 0.7.26: lo que pidió «Dónde → Nuevo repositorio» (vacío, con versiones de otro o en una nube del equipo). */
+  let pedidoRepo = $state<PedidoRepoNuevo | null>(null);
+  /** «Traer las versiones» de los repositorios nuevos, que se piden al guardar. */
+  let historiales = $state<{ repo: string; nombre: string; origen: string; nombreOrigen: string; filtro: FiltroVersiones | null }[]>([]);
+  function nuevoRepoPara(k: CopiaConfig, p: PedidoRepoNuevo) {
+    pedidoRepo = p;
+    destinoPedido = p.nube && equipo ? claveNube(equipo.id, p.nube) : undefined;
+    repoNuevoPara = k.id;
+  }
+  const pendientesDe = (k: CopiaConfig) => historiales.filter((h) => h.repo === k.repo).map((h) => `Traer a «${h.nombre}» ${h.filtro ? `las versiones ${filtroEnFrase(h.filtro)}` : "todas las versiones"} de «${h.nombreOrigen}».`);
+
+  // --- «+ Añadir» y «+» de cada copia: espejo y copia derivada (sus diálogos de siempre) ---
+  /** El repositorio del que sale el espejo o la derivada (y si la derivada va guiada). */
+  let espejoDe = $state<RepositorioResumen | null>(null);
+  let derivadaDe = $state<RepositorioResumen | null>(null);
+  /** «+ Añadir → Espejo / Copia derivada» sin copia: primero, de qué repositorio. */
+  let elegirOrigen = $state<"espejo" | "derivada" | null>(null);
+  let origenElegido = $state("");
+  const reposResumen = $derived((equipo?.resumen?.repositorios ?? []).filter((r) => !r.solo_lectura));
+  /** Por qué no se puede hacer un espejo o una derivada de un repositorio (o null si se puede). */
+  function porQueNo(que: "espejo" | "derivada", r: RepositorioResumen): string | null {
+    if (!equipo) return "";
+    if (que === "espejo") {
+      const en = repoEnAlmacen(equipo, r, actual.equipos);
+      if (!en) return "Solo si guarda en un almacén";
+      return admite(en.almacen, ADMITE.espejoZonas) ? null : `Actualiza el agente de ${en.almacen.nombre}`;
+    }
+    if (!admite(equipo, ADMITE.derivadas)) return `Actualiza el agente de ${equipo.nombre}`;
+    return equipo.resumen?.copias?.some((k) => k.repo === r.id) ? null : "Primero, una copia que guarde aquí";
+  }
+  function anadir(que: QueAnadir, desde?: CopiaConfig) {
+    if (que === "carpetas") return desde && cfg ? nuevaDespues(cfg.copias.indexOf(desde)) : anadirCarpetas();
+    const r = desde ? repoResumen(desde.repo) : null;
+    if (r) return void (que === "espejo" ? (espejoDe = r) : (derivadaDe = r));
+    origenElegido = reposResumen.find((x) => !porQueNo(que, x))?.id ?? "";
+    elegirOrigen = que;
+  }
+  function seguirOrigen() {
+    const r = reposResumen.find((x) => x.id === origenElegido);
+    if (!r || !elegirOrigen) return;
+    if (elegirOrigen === "espejo") espejoDe = r;
+    else derivadaDe = r;
+    elegirOrigen = null;
+  }
+  /** Las del menú «+» de una copia (con su repositorio ya elegido). */
+  function menuAnadir(k: CopiaConfig) {
+    const r = repoResumen(k.repo);
+    return [
+      [
+        { texto: "Copia nueva después de esta", icono: FolderPlus, onclick: () => anadir("carpetas", k) },
+        { texto: TEXTO_ANADIR.espejo.titulo, icono: HardDrive, detalle: r ? (porQueNo("espejo", r) ?? `De «${r.nombre}»`) : "Primero, guarda la copia", disabled: !r || !!porQueNo("espejo", r), onclick: () => anadir("espejo", k) },
+        { texto: TEXTO_ANADIR.derivada.titulo, icono: GitBranch, detalle: r ? (porQueNo("derivada", r) ?? `De «${r.nombre}»`) : "Primero, guarda la copia", disabled: !r || !!porQueNo("derivada", r), onclick: () => anadir("derivada", k) },
+      ],
+    ];
+  }
+  /** Las sugerencias de un clic del resumen guiado (regla 3-2-1-1-0). */
+  function puedeSugerir(k: CopiaConfig) {
+    const r = repoResumen(k.repo);
+    return {
+      verificacion: admiteVerif && !!k.repo && !cfg?.verificaciones?.[k.repo],
+      prueba: admitePrueba && !!k.repo && !cfg?.pruebas_restauracion?.[k.repo],
+      espejo: !!r && !porQueNo("espejo", r),
+      derivada: !!r && !porQueNo("derivada", r),
+    };
+  }
+  function sugerir(k: CopiaConfig, s: Sugerencia) {
+    if (s === "verificacion") ponerVerif(k.repo, { ...VERIFICACION_POR_DEFECTO, cada_dias: 7, porcentaje: 10 });
+    else if (s === "prueba") ponerPrueba(k.repo, { ...PRUEBA_POR_DEFECTO });
+    else anadir(s, k);
+  }
+
   /** Repositorios que no usa ninguna copia (su verificación y su prueba van al final). */
   const reposSinCopias = $derived(repos.filter((r) => !cfg?.copias.some((k) => k.repo === r.id)));
 
@@ -547,7 +673,7 @@
     (cfg?.copias ?? []).flatMap((k) => [
       ...(k.activa && !k.carpetas.length ? [`«${k.nombre}» no tiene carpetas.`] : []),
       ...(k.activa && !k.repo ? [`«${k.nombre}» no tiene repositorio.`] : []),
-      ...(k.tras && !admiteCadenas ? [`«${k.nombre}» va «después de» otra copia y el agente de este equipo aún no lo admite`] : []),
+      ...(errorInicio(cfg!.copias, cfg!.copias.indexOf(k), admiteInicio) ? [errorInicio(cfg!.copias, cfg!.copias.indexOf(k), admiteInicio)!.replace(/\.$/, "")] : []),
       ...(problemaHorario(k) ? [problemaHorario(k)!] : []),
       ...(ganchosDe(k.gancho).length && !admiteGanchos ? [`«${k.nombre}» tiene pasos «Antes de copiar» que este agente aún no admite`] : []),
       ...(ganchosDe(k.gancho).some((g) => errorGancho(g)) ? [`«${k.nombre}» tiene un paso «Antes de copiar» por completar`] : []),
@@ -568,7 +694,15 @@
         verifHorario: admiteVerifHorario,
         escritorio: admiteEscritorio,
         pruebas: admitePrueba,
+        cadenas: admiteCadenas,
+        despues: admiteDespues,
       });
+      // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
+      for (const h of [...historiales]) {
+        paso = `Pidiendo traer las versiones de «${h.nombreOrigen}»…`;
+        await mandarOrden({ cliente: actual.cliente, equipo, tipo: "copiar_historial", cuerpo: { repo: h.repo, origen: { repo: h.origen }, ...(h.filtro ? { filtro: h.filtro } : {}) }, secretos: { prueba } });
+        historiales = historiales.filter((x) => x !== h);
+      }
       const o = await mandarOrden({ cliente: actual.cliente, equipo, tipo: "config", cuerpo: { config }, secretos: { prueba }, alPaso: (t) => (paso = t) });
       original = JSON.stringify(cfg);
       avisar(
@@ -595,10 +729,12 @@
   <div class="page-top">
     <div>
       <h1>Copias de {equipo?.nombre ?? "…"}</h1>
-      <p>Qué carpetas se copian, dónde y cuándo. Los cambios se envían al equipo firmados con la clave de administración.</p>
+      <p>Qué se copia, cuándo y dónde. Se envía firmado con la clave de administración.</p>
     </div>
     {#if cfg}
       <div class="page-actions">
+        <label class="switch-row modo"><input type="checkbox" class="switch" checked={avanzado} onchange={(e) => ponerAvanzado(e.currentTarget.checked)} /><span>Avanzado</span></label>
+        <Ayuda id="modo-avanzado" />
         {#if cambiado && !guardando}<button class="btn btn-ghost" onclick={cancelarCambios} use:tip={"Vuelve a lo que tiene el equipo ahora"}><Undo2 size={16} />Cancelar cambios</button>{/if}
         <button class="btn btn-primary" disabled={!cambiado || guardando || problemas.length > 0} onclick={guardar}>
           {#if guardando}<LoaderCircle size={16} class="spin" />{paso || "Enviando…"}{:else}<Save size={16} />Enviar al equipo{/if}
@@ -669,22 +805,26 @@
       </div>
     {/if}
 
-    <!-- Las copias como un flujo: numeradas, con asa para ordenar y una flecha «después» entre las encadenadas. -->
+    <!-- Las copias como un flujo (docs/editor-de-copias.md): tarjetas cerradas con su resumen, numeradas, con asa para
+         ordenar y la unión «en cadena» o «después» entre las encadenadas. Abiertas: paso a paso o, con «Avanzado», enteras. -->
     <div class="flujo" bind:this={flujo} class:arrastrando={!!arrastre}>
       {#each cfg.copias as k, i (k.id)}
-        {@const enCadena = despuesDeLaAnterior(cfg.copias, i)}
-        {@const otraAnterior = k.tras && !enCadena ? cfg.copias.find((x) => x.id === k.tras) : undefined}
+        {@const modoK = inicioDe(k)}
+        {@const enCadena = i > 0 && !!k.tras && k.tras === cfg.copias[i - 1]?.id}
         {@const abiertaK = abierta(k)}
-        {@const pasos = pasosDe(k)}
+        {@const pasosK = pasosDe(k)}
         {@const rr = repoResumen(k.repo)}
+        {@const rc = k.activa ? reglaDe(k) : null}
+        {@const ultima = ultimaDe(k)}
         {#if i > 0}
-          <div class="union" class:enlazada={enCadena} aria-hidden="true">
-            {#if enCadena}<span class="union-txt"><ArrowDown size={13} />después</span>{/if}
+          <div class="union" class:enlazada={enCadena} class:siempre={enCadena && modoK === "despues"} aria-hidden="true">
+            {#if enCadena}<span class="union-txt"><ArrowDown size={13} />{modoK === "despues" ? "después" : "en cadena"}{k.retraso_min ? ` · ${retrasoEnFrase(k.retraso_min).replace(/^Con /, "").replace(/ de retraso$/, "")}` : ""}</span>{/if}
           </div>
         {/if}
         <section
           class="card copia"
           class:inactiva={!k.activa}
+          class:abierta={abiertaK}
           class:levantada={arrastre?.de === i}
           class:cae-arriba={arrastre && arrastre.a === i && arrastre.a < arrastre.de}
           class:cae-abajo={arrastre && arrastre.a === i && arrastre.a > arrastre.de}
@@ -713,15 +853,27 @@
 
           <div class="cuerpo">
             <div class="cab">
-              <input id="t-{k.id}" class="input titulo" bind:value={k.nombre} aria-label="Nombre de la copia" />
-              {#if !guardadas.has(k.id)}<span class="badge badge-sm tone-accent">Nueva</span>{/if}
+              {#if avanzado && abiertaK}
+                <input id="t-{k.id}" class="input titulo" bind:value={k.nombre} aria-label="Nombre de la copia" />
+              {:else}
+                <h2 class="titulo-txt" id="t-{k.id}">
+                  <button type="button" class="abrir" aria-expanded={abiertaK} aria-controls="form-{k.id}" onclick={() => (abiertas[k.id] = !abiertaK)}>{k.nombre}</button>
+                </h2>
+              {/if}
+              <span class="estado-k">
+                {#if !guardadas.has(k.id)}<span class="badge badge-sm tone-accent">Nueva</span>
+                {:else if !k.activa}<Chip tono="neutral" texto="Desactivada" pequeno />
+                {:else if ultima}<Chip tono={TONO_ULTIMA[ultima.estado]} texto={TEXTO_ULTIMA[ultima.estado]} pequeno />{/if}
+                {#if rc}<TiraRegla {rc} cliente={c} ahora={reloj.ahora} compacta />{/if}
+              </span>
               <label class="switch-row activa"><input type="checkbox" class="switch" bind:checked={k.activa} /><span>Activa</span></label>
-              <button type="button" class="icon-btn plegar" class:girado={abiertaK} aria-expanded={abiertaK} aria-controls="form-{k.id}" aria-label={abiertaK ? `Cerrar «${k.nombre}»` : `Abrir «${k.nombre}»`} use:tip={abiertaK ? "Cerrar" : "Carpetas, horario y más"} onclick={() => (abiertas[k.id] = !abiertaK)}><ChevronDown size={16} /></button>
+              <MenuAcciones etiqueta="Añadir a «{k.nombre}»" texto="" icono={Plus} grupos={menuAnadir(k)} />
               <MenuAcciones
                 etiqueta="Más de «{k.nombre}»"
                 texto=""
                 grupos={[
                   [
+                    { texto: "Duplicar", icono: Copy, onclick: () => duplicar(i) },
                     { texto: "Subir", icono: ArrowUp, disabled: i === 0, onclick: () => void moverCopiaA(i, i - 1) },
                     { texto: "Bajar", icono: ArrowDown, disabled: i === cfg!.copias.length - 1, onclick: () => void moverCopiaA(i, i + 1) },
                   ],
@@ -729,58 +881,11 @@
                   [{ texto: guardadas.has(k.id) ? "Quitar (deja de hacerse al enviar)" : "Quitar", icono: Trash2, peligro: true, onclick: () => quitar(i) }],
                 ]}
               />
+              <button type="button" class="icon-btn plegar" class:girado={abiertaK} aria-expanded={abiertaK} aria-controls="form-{k.id}" aria-label={abiertaK ? `Cerrar «${k.nombre}»` : `Abrir «${k.nombre}»`} use:tip={abiertaK ? "Cerrar" : "Cambiar"} onclick={() => (abiertas[k.id] = !abiertaK)}><ChevronDown size={16} /></button>
             </div>
 
-            <!-- Cuándo empieza: la primera, siempre con su horario. -->
-            <div class="cuando-k">
-              <div class="segmented inline" role="radiogroup" aria-label="Cuándo empieza «{k.nombre}»">
-                <button type="button" role="radio" aria-checked={!k.tras} class:on={!k.tras} onclick={() => ponerTras(k, "")}><CalendarClock size={14} />Con horario</button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={enCadena}
-                  class:on={enCadena}
-                  disabled={i === 0 || !admiteCadenas}
-                  use:tip={i === 0 ? "La primera empieza con su horario" : !admiteCadenas ? `Actualiza el agente de ${equipo.nombre} para encadenar copias` : "Empieza cuando la de arriba termina bien"}
-                  onclick={() => ponerTras(k, cfg!.copias[i - 1].id)}><Link2 size={14} />Después de la anterior</button
-                >
-                {#if otraAnterior}<button type="button" role="radio" aria-checked="true" class="on">Después de «{otraAnterior.nombre}»</button>{/if}
-              </div>
-              <span class="faint cuando-txt">
-                {#if !k.activa}Desactivada{:else if k.tras}{reglasDe(k.horario, admiteReglas).length ? `y además ${horarioEnFrase(k.horario).toLowerCase()}` : "Si la anterior falla, esta no se hace y se avisa"}{:else}{horarioEnFrase(k.horario)}{/if}
-              </span>
-            </div>
-
-            <!-- Su camino: carpetas → repositorio en su destino, y lo que cuelga de él. -->
-            <ol class="camino" aria-label="Camino de «{k.nombre}»">
-              <li><FolderOpen size={14} />{plural(k.carpetas.length, "carpeta", "carpetas")}</li>
-              <li class="flecha" aria-hidden="true">→</li>
-              <li><Database size={14} /><strong>{repos.find((x) => x.id === k.repo)?.nombre ?? "Sin repositorio"}</strong>{#if pasos[0]}{@const t0 = tipoDePaso(pasos[0], actual.equipos, catalogo)}<span class="faint">·</span>{#if t0}<TipoDestino {...t0} soloIcono />{/if}<span class="faint">{pasos[0].texto}</span>{/if}</li>
-            </ol>
-            {#if pasos.length > 1}
-              <ul class="ramas" aria-label="Lo que se copia además desde «{repos.find((x) => x.id === k.repo)?.nombre ?? k.repo}»">
-                {#each pasos.slice(1) as p, pi (pi)}
-                  {@const tp = tipoDePaso(p, actual.equipos, catalogo)}
-                  <li use:tip={p.detalle + (p.noInmutable ? ` · ${p.noInmutable}` : "")}>
-                    <CornerDownRight size={13} />
-                    <span class="rama-t">{#if p.clase === "espejo"}<HardDrive size={13} />Espejo{:else if p.detalle.startsWith("copia externa")}<CloudUpload size={13} />Copia externa{:else}<GitBranch size={13} />Repositorio derivado{/if}</span>
-                    <span class="faint rama-d">{#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{p.texto}{p.despues ? " · después de cada copia" : ""}</span>
-                  </li>
-                {/each}
-              </ul>
-              {#if recomendarFueraRetencion([{ clase: "origen", texto: "", detalle: "", despues: false, nivel: 0, fueraRetencion: false }, ...pasos])}<p class="faint nota">{TEXTO_FUERA_RETENCION}</p>{/if}
-            {/if}
-
-            {#if k.activa}
-              {@const rc = reglaDe(k)}
-              {#if rc}
-                {@const falta = rc.regla.partes.find((p) => !p.cumple_config)}
-                {@const que = falta ? queHacer(falta, rc, c, reloj.ahora) : null}
-                <p class="regla-k" class:cumple={rc.regla.cumple_config}>
-                  <TiraRegla {rc} cliente={c} ahora={reloj.ahora} compacta />
-                  <span>{fraseConfig(rc.regla)}{#if que}{" "}<span class="faint">{que.texto}</span>{#if que.enlace}{" "}<a class="link" href={que.enlace.href}>{que.enlace.texto} →</a>{/if}{/if}</span>
-                </p>
-              {/if}
+            {#if !abiertaK}
+              <ResumenCopia copias={cfg.copias} {i} {repos} {equipo} equipos={actual.equipos} {catalogo} />
             {/if}
             {#if con321.includes(k.id)}
               <Plantilla321 {equipo} repo={k.repo} cliente={c} equipos={actual.equipos} verificacion={!!cfg.verificaciones?.[k.repo]} prueba={!!cfg.pruebas_restauracion?.[k.repo]} {admitePrueba} onquitar={() => (con321 = con321.filter((x) => x !== k.id))} />
@@ -789,16 +894,81 @@
               <div class="notice notice-info usada">
                 <LayoutTemplate size={16} />
                 <p>
-                  Rellenada con la plantilla «{usadas[k.id].nombre}»: revisa que las carpetas existan en {equipo.nombre} antes de enviar.
-                  {#if retencionDistinta(k)}La plantilla sugiere guardar {retencionDistinta(k)}; la retención es del repositorio: cámbiala con «Retención».{/if}
+                  Rellenada con «{usadas[k.id].nombre}»: revisa que las carpetas existan en {equipo.nombre}.
+                  {#if retencionDistinta(k)}La plantilla sugiere guardar {retencionDistinta(k)} (la retención es del repositorio).{/if}
                 </p>
               </div>
             {/if}
 
-            {#if abiertaK}
+            {#if abiertaK && !avanzado && actual.cliente}
+              <div id="form-{k.id}">
+                <CopiaGuiada
+                  copias={cfg.copias}
+                  {i}
+                  bind:paso={() => pasoDe(k), (v) => (pasos[k.id] = v)}
+                  {equipo}
+                  equipos={actual.equipos}
+                  {catalogo}
+                  {repos}
+                  cliente={actual.cliente}
+                  prueba={prueba ?? undefined}
+                  version={versionAgente}
+                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros }}
+                  regla={rc}
+                  puede={puedeSugerir(k)}
+                  pendientes={pendientesDe(k)}
+                  {problemas}
+                  {cambiado}
+                  {guardando}
+                  textoGuardando={paso}
+                  ahora={reloj.ahora}
+                  onElegirCarpetas={() => (elegirPara = i)}
+                  onNuevoRepo={(p) => nuevoRepoPara(k, p)}
+                  onSugerencia={(s) => sugerir(k, s)}
+                  onGuardar={guardar}
+                  onCerrar={() => {
+                    abiertas[k.id] = false;
+                    void tick().then(() => document.querySelector<HTMLElement>(`#t-${k.id} button`)?.focus());
+                  }}
+                />
+              </div>
+            {:else if abiertaK}
+              <!-- Avanzado: la tarjeta entera, como siempre. -->
+              <ol class="camino" aria-label="Camino de «{k.nombre}»">
+                <li><FolderOpen size={14} />{plural(k.carpetas.length, "carpeta", "carpetas")}</li>
+                <li class="flecha" aria-hidden="true">→</li>
+                <li><Database size={14} /><strong>{repos.find((x) => x.id === k.repo)?.nombre ?? "Sin repositorio"}</strong>{#if pasosK[0]}{@const t0 = tipoDePaso(pasosK[0], actual.equipos, catalogo)}<span class="faint">·</span>{#if t0}<TipoDestino {...t0} soloIcono />{/if}<span class="faint">{pasosK[0].texto}</span>{/if}</li>
+              </ol>
+              {#if pasosK.length > 1}
+                <ul class="ramas" aria-label="Lo que se copia además desde «{repos.find((x) => x.id === k.repo)?.nombre ?? k.repo}»">
+                  {#each pasosK.slice(1) as p, pi (pi)}
+                    {@const tp = tipoDePaso(p, actual.equipos, catalogo)}
+                    <li use:tip={p.detalle + (p.noInmutable ? ` · ${p.noInmutable}` : "")}>
+                      <CornerDownRight size={13} />
+                      <span class="rama-t">{#if p.clase === "espejo"}<HardDrive size={13} />Espejo{:else if p.detalle.startsWith("copia externa")}<CloudUpload size={13} />Copia externa{:else}<GitBranch size={13} />Copia derivada{/if}</span>
+                      <span class="faint rama-d">{#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{p.texto}{p.despues ? " · después de cada copia" : ""}</span>
+                    </li>
+                  {/each}
+                </ul>
+                {#if recomendarFueraRetencion([{ clase: "origen", texto: "", detalle: "", despues: false, nivel: 0, fueraRetencion: false }, ...pasosK])}<p class="faint nota">{TEXTO_FUERA_RETENCION}</p>{/if}
+              {/if}
+              {#if rc}
+                {@const falta = rc.regla.partes.find((p) => !p.cumple_config)}
+                {@const que = falta ? queHacer(falta, rc, c, reloj.ahora) : null}
+                <p class="regla-k" class:cumple={rc.regla.cumple_config}>
+                  <span>{fraseConfig(rc.regla)}{#if que}{" "}<span class="faint">{que.texto}</span>{#if que.enlace}{" "}<a class="link" href={que.enlace.href}>{que.enlace.texto} →</a>{/if}{/if}</span>
+                </p>
+              {/if}
               <div class="form-k" id="form-{k.id}">
                 <!-- v1.40: van aparte (en el servidor, sin la clave): se guardan al momento, no con «Enviar». -->
                 {#if guardadas.has(k.id)}<Observaciones tipo="copia" objeto={objetoDe(equipo.id, k.id)} compacto />{/if}
+                <div class="field">
+                  <span class="field-label">Cuándo empieza <Ayuda id="inicio-copia" /></span>
+                  <CuandoEmpieza copias={cfg.copias} {i} admite={admiteInicio} version={versionAgente} equipo={equipo.nombre} />
+                  {#if conHorarioDeAntes(k)}
+                    <p class="faint nota">Además tenía su horario ({resumenHorario(k.horario)}).<button type="button" class="btn btn-sm btn-ghost" onclick={() => (k.horario = { dias: [], horas: [] })}>Quitarlo</button></p>
+                  {/if}
+                </div>
                 <div class="rejilla-2">
                   <div class="field">
                     <label class="field-label" for="carp-{k.id}">Carpetas</label>
@@ -806,28 +976,13 @@
                     <button type="button" class="btn btn-sm elegir" onclick={() => (elegirPara = i)}><FolderOpen size={14} />Elegir en el equipo</button>
                   </div>
                   <div class="field">
-                    <label class="field-label" for="exc-{k.id}">No copiar</label>
+                    <label class="field-label" for="exc-{k.id}">No copiar <Ayuda id="exclusiones" /></label>
                     <textarea id="exc-{k.id}" class="input mono" rows="4" spellcheck="false" value={k.exclusiones.join("\n")} oninput={(e) => (k.exclusiones = lineas(e.currentTarget.value))}></textarea>
-                    <span class="field-hint">Una regla por línea: <code>*.tmp</code> deja fuera todos los .tmp y <code>node_modules</code>, las carpetas con ese nombre.</span>
                   </div>
                 </div>
-
-                {#if true}
-                  <div class="field">
-                    <span class="field-label">Horario</span>
-                    {#if k.tras}
-                      <label class="switch-row"><input type="checkbox" class="switch" checked={reglasDe(k.horario, admiteReglas).length > 0} onchange={(e) => conHorarioPropio(k, e.currentTarget.checked)} /><span>Además, con su horario</span></label>
-                    {/if}
-                    {#if !k.tras || reglasDe(k.horario, admiteReglas).length > 0}
-                      <EditorHorario id={k.id} bind:horario={k.horario} {admiteReglas} version={versionAgente} />
-                    {/if}
-                  </div>
-                {/if}
                 {#if admiteSoloCambios}
                   <label class="switch-row"
-                    ><input type="checkbox" class="switch" checked={k.solo_si_cambios !== false} onchange={(e) => (k.solo_si_cambios = e.currentTarget.checked)} /><span
-                      >Solo guardar si hay cambios<span class="faint">Si lo apagas, cada copia guarda una versión aunque nada haya cambiado.</span></span
-                    ></label
+                    ><input type="checkbox" class="switch" checked={k.solo_si_cambios !== false} onchange={(e) => (k.solo_si_cambios = e.currentTarget.checked)} /><span>Solo guardar si hay cambios <Ayuda id="solo-si-cambios" /></span></label
                   >
                 {:else}
                   <label class="switch-row apagado"
@@ -846,7 +1001,7 @@
                       <option value={REPO_NUEVO}>+ Repositorio nuevo… (un almacén, una nube o un disco)</option>
                       {#if nubesCliente.length && !admiteRepoEnNube}
                         <!-- Un agente sin `repo_en_nube`: directo a una nube, todavía no. Se ven, desactivadas, con el camino que sí. -->
-                        <optgroup label="Nubes: actualiza el agente o copia aquí y después «Repositorio nuevo a partir de esta»">
+                        <optgroup label="Nubes: actualiza el agente o copia aquí y después «Copia derivada»">
                           {#each nubesCliente as n (n.clave)}<option disabled value="">{n.nombre} · directo, actualiza el agente</option>{/each}
                         </optgroup>
                       {/if}
@@ -864,41 +1019,52 @@
                   <p class="faint nota"><Trash2 size={13} />Para quitarla del todo y dejar de proteger esas carpetas, usa «Dejar de copiar» en el repositorio (espera {actual.cliente?.espera_min_horas} h).</p>
                 {/if}
               </div>
-            {/if}
-
-            <!-- Lo del repositorio, a la vista; y «Añadir paso» debajo de esta copia. -->
-            <div class="pie-k">
+              <!-- Lo del repositorio, a la vista. -->
               {#if rr && actual.cliente}
-                <PasosRepo
-                  cliente={actual.cliente}
-                  {equipo}
-                  repo={rr}
-                  equipos={actual.equipos}
-                  administra
-                  ordena
-                  copia={k.id}
-                  alNuevaCopia={() => nuevaDespues(i)}
-                  alAutomatica={() => void irAAjustes(k)}
-                  alCambiar={() => void api.equipo(c, id).then((e) => (equipo = e), () => {})}
-                />
-              {:else}
-                <button type="button" class="btn btn-sm" onclick={() => nuevaDespues(i)}><Plus size={14} />Añadir paso: copia nueva</button>
+                <div class="pie-k">
+                  <PasosRepo
+                    cliente={actual.cliente}
+                    {equipo}
+                    repo={rr}
+                    equipos={actual.equipos}
+                    administra
+                    ordena
+                    copia={k.id}
+                    alNuevaCopia={() => nuevaDespues(i)}
+                    alAutomatica={() => void irAAjustes(k)}
+                    alCambiar={() => void api.equipo(c, id).then((e) => (equipo = e), () => {})}
+                  />
+                </div>
               {/if}
-            </div>
+            {/if}
           </div>
         </section>
       {:else}
-        <div class="card"><Vacio icono={FolderOpen} titulo="Sin copias todavía" texto="Crea la primera: elige carpetas, el repositorio y el horario." /></div>
+        <div class="card"><Vacio icono={FolderOpen} titulo="Sin copias todavía" texto="Crea la primera: «Añadir → Copiar carpetas de este equipo»." /></div>
       {/each}
     </div>
 
     <div class="nueva-fila">
-      <button class="btn btn-primary nueva" onclick={() => { nueva(); const k = cfg?.copias.at(-1); if (k) abiertas[k.id] = true; }}><Plus size={16} />Añadir una copia</button>
-      <button class="btn btn-ghost" onclick={nueva321} disabled={!repos.length} use:tip={"Una copia cada día al almacén, con verificación semanal y prueba de restauración mensual; y dice dónde añadir el espejo a otro disco y la copia en la nube"}><ShieldCheck size={16} />Con la plantilla 3-2-1</button>
-      {#if plantillas.length && repos.length}
-        <MenuAcciones texto="Desde una plantilla" icono={LayoutTemplate} etiqueta="Añadir una copia desde una plantilla" grupos={[plantillas.map((p) => ({ texto: p.nombre, onclick: () => nuevaDesde(p) }))]} izquierda />
-      {/if}
-      <button class="btn btn-ghost btn-sm" onclick={() => (gestionar = true)}><LayoutTemplate size={14} />Plantillas{plantillas.length ? ` · ${plantillas.length}` : ""}</button>
+      <MenuAcciones
+        primario
+        texto="Añadir"
+        icono={Plus}
+        etiqueta="Añadir una copia, un espejo o una copia derivada"
+        clase="btn btn-primary"
+        izquierda
+        grupos={[
+          [
+            { texto: TEXTO_ANADIR.carpetas.titulo, icono: FolderPlus, detalle: TEXTO_ANADIR.carpetas.detalle, onclick: () => anadir("carpetas") },
+            { texto: TEXTO_ANADIR.espejo.titulo, icono: HardDrive, detalle: reposResumen.some((r) => !porQueNo("espejo", r)) ? TEXTO_ANADIR.espejo.detalle : "Solo si un repositorio guarda en un almacén", disabled: !reposResumen.some((r) => !porQueNo("espejo", r)), onclick: () => anadir("espejo") },
+            { texto: TEXTO_ANADIR.derivada.titulo, icono: GitBranch, detalle: reposResumen.some((r) => !porQueNo("derivada", r)) ? TEXTO_ANADIR.derivada.detalle : "Primero, una copia guardada", disabled: !reposResumen.some((r) => !porQueNo("derivada", r)), onclick: () => anadir("derivada") },
+          ],
+          [
+            { texto: "Con la plantilla 3-2-1", icono: ShieldCheck, detalle: "Al almacén, con verificación y prueba", disabled: !repos.length, onclick: nueva321 },
+            ...(repos.length ? plantillas.map((p) => ({ texto: `Desde «${p.nombre}»`, icono: LayoutTemplate, onclick: () => nuevaDesde(p) })) : []),
+          ],
+          [{ texto: `Plantillas${plantillas.length ? ` · ${plantillas.length}` : ""}…`, icono: LayoutTemplate, onclick: () => (gestionar = true) }],
+        ]}
+      />
     </div>
 
     {#if reposSinCopias.length}
@@ -1050,6 +1216,61 @@
   />
 {/if}
 
+{#if espejoDe && equipo && actual.cliente}
+  <PasoEspejo
+    cliente={actual.cliente}
+    {equipo}
+    repo={espejoDe}
+    equipos={actual.equipos}
+    onclose={() => {
+      espejoDe = null;
+      void cargarCliente(c, { silencioso: true });
+      void api.equipo(c, id).then((e) => (equipo = e), () => {});
+    }}
+  />
+{/if}
+{#if derivadaDe && equipo && actual.cliente}
+  <CopiaDerivada
+    cliente={actual.cliente}
+    {equipo}
+    repo={derivadaDe}
+    guiado={!avanzado}
+    onclose={() => {
+      derivadaDe = null;
+      void api.equipo(c, id).then((e) => (equipo = e), () => {});
+    }}
+  />
+{/if}
+{#if elegirOrigen && equipo}
+  {@const que = elegirOrigen}
+  <Modal labelledby="t-origen" onclose={() => (elegirOrigen = null)} width={480}>
+    <form class="form" onsubmit={(e) => (e.preventDefault(), seguirOrigen())}>
+      <div class="dlg-title">
+        <span class="ticon">{#if que === "espejo"}<HardDrive size={18} />{:else}<GitBranch size={18} />{/if}</span>
+        <div>
+          <h2 id="t-origen">{TEXTO_ANADIR[que].titulo}</h2>
+          <p>¿De qué repositorio?</p>
+        </div>
+      </div>
+      <div class="origenes" role="radiogroup" aria-label="Repositorio de origen">
+        {#each reposResumen as r (r.id)}
+          {@const no = porQueNo(que, r)}
+          <label class="origen" class:on={origenElegido === r.id} class:no={!!no}>
+            <input type="radio" name="origen" value={r.id} checked={origenElegido === r.id} disabled={!!no} onchange={() => (origenElegido = r.id)} />
+            <Database size={15} />
+            <span class="o-nombre">{r.nombre}</span>
+            {#if no}<span class="faint o-no">{no}</span>{/if}
+          </label>
+        {/each}
+      </div>
+      <footer>
+        <button type="button" class="btn btn-ghost" onclick={() => (elegirOrigen = null)}>Cancelar</button>
+        <button class="btn btn-primary" disabled={!origenElegido}>Siguiente</button>
+      </footer>
+    </form>
+  </Modal>
+{/if}
+
 {#if repoNuevoPara !== null && equipo && actual.cliente && prueba && cfg}
   <NuevoRepositorio
     cliente={actual.cliente}
@@ -1059,7 +1280,8 @@
     {prueba}
     alCreado={repoCreado}
     destinoClave={destinoPedido}
-    onclose={() => ((repoNuevoPara = null), (destinoPedido = undefined))}
+    parametrosDe={pedidoRepo?.origen ? { repo: pedidoRepo.origen.repo } : undefined}
+    onclose={() => ((repoNuevoPara = null), (destinoPedido = undefined), (pedidoRepo = null))}
   />
 {/if}
 
@@ -1184,6 +1406,93 @@
     font-weight: 600;
     font-size: var(--fs-h2);
   }
+  /* Plan 0.7.26: cerrada, el nombre es el botón que la abre. */
+  .titulo-txt {
+    flex: 1 1 160px;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--fs-h2);
+    font-weight: 600;
+  }
+  .abrir {
+    max-width: 100%;
+    padding: 2px 0;
+    font: inherit;
+    color: var(--text-1);
+    text-align: left;
+    overflow-wrap: anywhere;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .abrir:hover {
+    color: var(--accent-text);
+  }
+  .abrir:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .estado-k {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .copia:not(.abierta) {
+    padding-bottom: var(--sp-3);
+  }
+  .modo {
+    align-items: center;
+  }
+  /* Con «Avanzado» y «Cancelar cambios», las acciones bajan de línea en el móvil (sin salirse). */
+  .page-actions {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .modo > span {
+    font-weight: 550;
+    color: var(--text-1);
+  }
+  .origenes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .origen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    min-height: 40px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .origen.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .origen.no {
+    cursor: not-allowed;
+    color: var(--text-3);
+  }
+  .origen:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .origen :global(svg) {
+    flex: none;
+    color: var(--text-3);
+  }
+  .o-nombre {
+    font-weight: 550;
+  }
+  .o-no {
+    margin-left: auto;
+    font-size: var(--fs-xs);
+  }
   .activa {
     margin-left: auto;
   }
@@ -1203,6 +1512,10 @@
     margin-left: 30px;
     border-left: 2px solid var(--accent);
   }
+  /* «Después de la anterior» (aunque falle): la línea, discontinua. */
+  .union.siempre {
+    border-left-style: dashed;
+  }
   .union-txt {
     position: absolute;
     top: 50%;
@@ -1214,18 +1527,6 @@
     font-size: var(--fs-xs);
     font-weight: 550;
     color: var(--accent-text);
-  }
-  .cuando-k {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px var(--sp-3);
-  }
-  .cuando-k .segmented {
-    flex-wrap: wrap;
-  }
-  .cuando-txt {
-    font-size: var(--fs-sm);
   }
   .camino {
     display: flex;
@@ -1287,10 +1588,6 @@
   }
   .rama-d {
     min-width: 0;
-  }
-  .cuando-k [role="radio"]:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .form-k {
     display: flex;
@@ -1464,9 +1761,6 @@
   }
   .apagado {
     opacity: 0.85;
-  }
-  .nueva {
-    align-self: flex-start;
   }
   .nota {
     display: flex;

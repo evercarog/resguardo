@@ -47,6 +47,7 @@
     prueba = null,
     destinoClave,
     alCreado,
+    parametrosDe,
   }: {
     cliente: Cliente;
     equipos: Equipo[];
@@ -59,6 +60,12 @@
     alCreado?: (r: { id: string; nombre: string; destino: string }) => void;
     /** «Usar en una copia» desde la página de un destino: ese destino ya elegido (su clave). */
     destinoClave?: string;
+    /**
+     * Plan 0.7.26 (editor guiado, «Nuevo repositorio con las versiones de otro»): nace
+     * con el troceado de ese repositorio de este equipo (deduplica con él). Las
+     * versiones las pide el editor al guardar (`copiar_historial`).
+     */
+    parametrosDe?: { repo: string };
   } = $props();
 
   type Paso = "datos" | "kit" | "clave";
@@ -240,7 +247,7 @@
           nombre: nombre.trim(),
           destino: dest,
           contrasena: clave,
-          ...(paraHistorial ? { parametros_de: origenCuerpo(origen) } : {}),
+          ...(paraHistorial ? { parametros_de: origenCuerpo(origen) } : parametrosDe ? { parametros_de: parametrosDe } : {}),
         },
         // Desde el editor de copias, la autorización que ya se calculó al abrirlo.
         secretos: prueba ? { prueba } : { claveAdmin },
@@ -436,7 +443,7 @@
 </Modal>
 {:else if equipo}
   <!-- Un almacén del cliente: lo mismo que «Copiar en …» de la ficha del equipo. -->
-  <CopiarEnAlmacen {cliente} {equipo} almacen={copiarEn} zona={zonaElegida} nombreInicial={nombre.trim()} origen={paraHistorial ? $state.snapshot(origen) : undefined} {alCreado} {onclose} />
+  <CopiarEnAlmacen {cliente} {equipo} almacen={copiarEn} zona={zonaElegida} nombreInicial={nombre.trim()} origen={paraHistorial ? $state.snapshot(origen) : undefined} {alCreado} {onclose} {parametrosDe} />
 {/if}
 
 {#if conectarEn}
