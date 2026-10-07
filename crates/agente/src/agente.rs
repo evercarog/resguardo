@@ -250,6 +250,8 @@ impl Ventana {
 /// siempre en su propio proceso (copias pendientes, reintentos, informe).
 fn one_tick() {
     crate::espejo::si_toca();
+    // Plan 0.7.26 (bloque 4): los espejos que hace el propio equipo.
+    crate::espejo_trabajos::si_toca_equipo();
     // v1.22: la retención de los repositorios que guarda este almacén, a su hora.
     crate::retencion_almacen::si_toca();
     // Plan 0.7.26 (1.1): los permisos de nubes desconectadas que no se pudieron anular aún.

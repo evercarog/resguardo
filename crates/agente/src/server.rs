@@ -187,7 +187,7 @@ impl ServerConfig {
 }
 
 /// ¿Dentro de la carpeta de Windows, de los programas o de Resguardo?
-fn carpeta_del_sistema(p: &Path) -> bool {
+pub(crate) fn carpeta_del_sistema(p: &Path) -> bool {
     let mut raices = vec![crate::agent::agent_dir()];
     for var in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)"] {
         if let Ok(v) = std::env::var(var) {
@@ -207,19 +207,24 @@ fn se_solapan(a: &str, b: &str) -> bool {
     !a.as_os_str().is_empty() && !b.as_os_str().is_empty() && (a.starts_with(b) || b.starts_with(a))
 }
 
-/// Activa, cambia o quita (con `None`) el espejo nocturno del Servidor de
-/// copias. `nuevo` trae los destinos, la hora y el límite (espejo::pedido).
+/// Activa, cambia o quita (con `None`) el espejo del Servidor de copias en la forma
+/// de antes (`destinos`, de una consola anterior o de la línea de órdenes). Se guarda
+/// como trabajos equivalentes (plan 0.7.26). Si el almacén ya tiene trabajos que esa
+/// forma no sabe decir (en cadena, «igual que el origen», varios al mismo destino…),
+/// se rechaza: así una consola anterior no deshace lo que hizo una nueva.
 pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, String> {
     crate::agent::require_admin()?;
-    let mut c = load();
+    let c = load();
     if !c.enabled {
         return Err("Activa antes el Servidor de copias.".into());
     }
-    let Some(mut nuevo) = nuevo else {
-        c.espejo = None;
-        save(&c)?;
-        return Ok("Espejo quitado (lo ya copiado se queda en su destino).".into());
-    };
+    if let Some(e) = &c.espejo {
+        let actuales = e.trabajos_efectivos();
+        if actuales.iter().any(|t| !crate::espejo_trabajos::exacto(t, &actuales, e.limite_kib)) {
+            return Err("Este almacén tiene espejos que esta consola no sabe cambiar (en cadena, «igual que el origen», pausados…): cámbialos desde una consola actualizada.".into());
+        }
+    }
+    let Some(mut nuevo) = nuevo else { return poner_trabajos(None) };
     nuevo.normalizar();
     if nuevo.destinos.is_empty() {
         return Err("Falta al menos un destino para el espejo.".into());
@@ -227,84 +232,91 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
     if chrono::NaiveTime::parse_from_str(&nuevo.hora, "%H:%M").is_err() {
         return Err("Hora no válida (HH:MM).".into());
     }
-    let nubes = crate::nube::cargar();
     for d in nuevo.destinos.iter_mut() {
         d.carpeta = d.carpeta.trim().to_string();
-        match d.tipo.as_str() {
-            "carpeta" => {
-                crate::platform::carpeta_local_valida(&d.carpeta)?;
-                if se_solapan(&d.carpeta, &c.path) {
-                    return Err("La carpeta del espejo no puede estar dentro de la del Servidor de copias (ni al revés).".into());
-                }
-                if c.zonas.iter().any(|z| se_solapan(&d.carpeta, &z.path)) {
-                    return Err("La carpeta del espejo no puede estar dentro de una zona del Servidor de copias (ni al revés).".into());
-                }
-                if carpeta_del_sistema(Path::new(&d.carpeta)) {
-                    return Err("La carpeta del espejo no puede estar en la carpeta de Windows, de los programas o de Resguardo.".into());
-                }
-            }
-            // Tarea 7d.2: otra zona de este almacén, carpeta a carpeta (sin rest-server de por medio).
-            "zona" => {
-                if c.carpeta_zona(Some(&d.carpeta)).is_none() {
-                    return Err("Esa zona ya no está en este almacén.".into());
-                }
-                if d.carpeta == d.zona.as_deref().unwrap_or("principal") {
-                    return Err("Un espejo no puede copiar una zona en sí misma: elige otra zona.".into());
-                }
-            }
-            "nube" => {
-                let nombre = d.nube.as_deref().unwrap_or_default();
-                if !nubes.iter().any(|n| n.nombre == nombre) {
-                    return Err(format!("No hay ninguna nube «{nombre}» conectada en este equipo: conéctala antes desde la consola («Conectar Dropbox»)."));
-                }
-                if !crate::nube::carpeta_remota_valida(&d.carpeta) {
-                    return Err("Carpeta de la nube no válida (por ejemplo, Resguardo/Sur).".into());
-                }
-                d.carpeta = d.carpeta.trim_matches('/').to_string();
-            }
-            _ => return Err("Tipo de destino del espejo no válido (carpeta o nube).".into()),
+        if !matches!(d.tipo.as_str(), "carpeta" | "zona" | "nube") {
+            return Err("Tipo de destino del espejo no válido (carpeta o nube).".into());
         }
-    }
-    // Tarea 7d.2: el origen de cada destino (sin él, la principal) tiene que ser una zona de aquí.
-    if let Some(d) = nuevo.destinos.iter().find(|d| c.carpeta_zona(d.zona.as_deref()).is_none()) {
-        return Err(format!("La zona de origen de «{}» ya no está en este almacén.", d.texto()));
     }
     let n = nuevo.destinos.len();
     if (0..n).any(|i| (0..i).any(|j| nuevo.destinos[i].mismo(&nuevo.destinos[j]))) {
         return Err("Hay un destino repetido en el espejo.".into());
     }
-    // Las carpetas del espejo, solo para SYSTEM y Administradores: SYSTEM
-    // escribe en ellas cada noche (nada de enlaces puestos por un usuario).
-    for d in nuevo.destinos.iter().filter(|d| d.tipo == "carpeta") {
-        crate::platform::carpeta_privada(Path::new(&d.carpeta))?;
-    }
-    // Lo ya hecho en los destinos que siguen se conserva (su última vuelta
-    // cuenta para el horario); uno nuevo hace que toque ya.
-    let anterior = c.espejo.take().map(|mut e| {
-        e.normalizar();
-        e
-    });
-    for d in nuevo.destinos.iter_mut() {
-        if let Some(x) = anterior.as_ref().and_then(|a| a.destinos.iter().find(|x| x.mismo(d))) {
-            (d.ultima, d.resultado, d.inicio, d.cuota) = (x.ultima.clone(), x.resultado.clone(), x.inicio.clone(), x.cuota.clone());
-            (d.verificacion, d.danados_origen) = (x.verificacion.clone(), x.danados_origen);
-            (d.por_borrar, d.freno) = (x.por_borrar.clone(), x.freno.clone());
-        } else {
-            // Uno nuevo (o que vuelve) empieza sin nada anotado de otra vez (§3b).
-            crate::espejo::olvidar_estado(d);
-        }
-    }
-    crate::espejo::fijar_vistos(&mut nuevo, anterior.as_ref(), &crate::espejo::repos_en(Path::new(&c.path)));
-    if let Some(a) = anterior {
-        nuevo.ultima = a.ultima;
-    }
-    nuevo.resultado = crate::espejo::resultado_global(&nuevo.destinos);
+    let mut trabajos = nuevo.trabajos_efectivos();
+    crate::espejo_trabajos::mapear_ids(&mut trabajos, &c.espejo.as_ref().map(|e| e.trabajos_efectivos()).unwrap_or_default());
     let texto = nuevo.destinos.iter().map(|d| format!("«{}»", d.texto())).collect::<Vec<_>>().join(" y ");
     let cuando =
         if nuevo.destinos.iter().all(|d| d.horario.is_none() && !d.tras_copia) { format!("cada día a las {}", nuevo.hora) } else { "con su horario".into() };
-    c.espejo = Some(nuevo);
-    save(&c)?;
+    poner_trabajos(Some(trabajos))?;
     Ok(format!("Espejo {cuando} en {texto}."))
+}
+
+/// Plan 0.7.26 (bloque 4): guarda los trabajos de espejo del almacén (o los quita
+/// todos, con `None` o una lista vacía). Comprueba cada origen y cada destino aquí.
+pub fn poner_trabajos(nuevos: Option<Vec<crate::espejo_trabajos::Trabajo>>) -> Result<String, String> {
+    use crate::espejo_trabajos as et;
+    crate::agent::require_admin()?;
+    let mut c = load();
+    if !c.enabled {
+        return Err("Activa antes el Servidor de copias.".into());
+    }
+    let anterior = c.espejo.as_ref().map(|e| e.trabajos_efectivos()).unwrap_or_default();
+    let Some(mut nuevos) = nuevos.filter(|n| !n.is_empty()) else {
+        c.espejo = None;
+        save(&c)?;
+        return Ok("Espejo quitado (lo ya copiado se queda en su destino).".into());
+    };
+    let nubes = crate::nube::cargar();
+    for t in nuevos.iter_mut() {
+        et::validar(t, et::QUIEN_ALMACEN)?;
+        match t.adonde.tipo.as_str() {
+            "carpeta" => {
+                let d = &t.adonde.carpeta;
+                crate::platform::carpeta_local_valida(d)?;
+                if se_solapan(d, &c.path) {
+                    return Err("La carpeta del espejo no puede estar dentro de la del Servidor de copias (ni al revés).".into());
+                }
+                if c.zonas.iter().any(|z| se_solapan(d, &z.path)) {
+                    return Err("La carpeta del espejo no puede estar dentro de una zona del Servidor de copias (ni al revés).".into());
+                }
+                if carpeta_del_sistema(Path::new(d)) {
+                    return Err("La carpeta del espejo no puede estar en la carpeta de Windows, de los programas o de Resguardo.".into());
+                }
+            }
+            // Tarea 7d.2: otra zona de este almacén, carpeta a carpeta (sin rest-server de por medio).
+            "zona" => {
+                if c.carpeta_zona(Some(&t.adonde.carpeta)).is_none() {
+                    return Err("Esa zona ya no está en este almacén.".into());
+                }
+            }
+            "nube" => {
+                let nombre = t.adonde.nube.as_deref().unwrap_or_default();
+                if !nubes.iter().any(|n| n.nombre == nombre) {
+                    return Err(format!("No hay ninguna nube «{nombre}» conectada en este equipo: conéctala antes desde la consola («Conectar Dropbox»)."));
+                }
+            }
+            _ => return Err("Adónde no válido (carpeta, zona o nube).".into()),
+        }
+        // Tarea 7d.2: el origen (sin él, la principal) tiene que ser una zona de aquí.
+        if c.carpeta_zona(t.zona.as_deref()).is_none() {
+            return Err(format!("La zona de origen de «{}» ya no está en este almacén.", t.nombre));
+        }
+    }
+    et::validar_conjunto(&nuevos)?;
+    // Las carpetas del espejo, solo para SYSTEM y Administradores: SYSTEM
+    // escribe en ellas (nada de enlaces puestos por un usuario).
+    for t in nuevos.iter().filter(|t| t.adonde.tipo == "carpeta") {
+        crate::platform::carpeta_privada(Path::new(&t.adonde.carpeta))?;
+    }
+    // Lo ya hecho en los que siguen se conserva (su última vuelta cuenta para el
+    // horario); uno nuevo (o a otro destino) empieza sin nada anotado (§3b).
+    et::conservar_estado(&mut nuevos, &anterior, &et::olvidar_estado);
+    et::fijar_vistos(&mut nuevos, &anterior, &|t| crate::espejo::repos_en(Path::new(c.carpeta_zona(t.zona.as_deref()).unwrap_or(&c.path))));
+    nuevos.sort_by_key(|t| t.orden);
+    let n = nuevos.len();
+    c.espejo = Some(crate::espejo::Espejo::de_trabajos(nuevos));
+    save(&c)?;
+    Ok(if n == 1 { "Espejo guardado.".into() } else { format!("{n} espejos guardados.") })
 }
 
 /// Dónde están los archivos del servidor: en producción, la carpeta del

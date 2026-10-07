@@ -605,6 +605,7 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
                     || c.get("quitar_zona").is_some()
                     || c.get("espejo_freno").is_some()
                     || c.get("espejo").is_some_and(quita_destinos_del_espejo)
+                    || c.get("espejo_equipo").is_some_and(reduce_espejo_equipo)
             }
             "cambiar_espera" => c["horas"].as_i64().is_some_and(|h| h < v.espera_min_horas),
             "restaurar" => c["destino"] == "original" && c["reemplazar"] == true,
@@ -635,8 +636,23 @@ fn copias_activas(config: Option<&Value>) -> usize {
 /// ¿El espejo pedido quita algún destino del actual (o el espejo entero)? Un
 /// pedido que no se entiende cuenta como destructivo (y luego se rechaza).
 fn quita_destinos_del_espejo(e: &Value) -> bool {
-    match crate::espejo::pedido(e) {
-        Ok(nuevo) => crate::server::load().espejo.is_some_and(|actual| actual.quita_destinos(nuevo.as_ref())) || nuevo.is_none(),
+    // Plan 0.7.26: con trabajos o en la forma de antes, comparando trabajo a trabajo.
+    match crate::espejo::trabajos_del_pedido(e) {
+        Ok(Some(nuevos)) => crate::espejo_trabajos::reduce(&crate::server::load().espejo.map(|a| a.trabajos_efectivos()).unwrap_or_default(), &nuevos),
+        Ok(None) => true,
+        Err(_) => true,
+    }
+}
+
+/// Plan 0.7.26 (bloque 4): ¿los espejos del propio equipo pedidos reducen la protección?
+/// Quitarlos todos, sí (si había alguno activo); uno que no se entiende, también.
+fn reduce_espejo_equipo(e: &Value) -> bool {
+    let actuales = crate::espejo_trabajos::cargar_equipo().trabajos;
+    if e.is_null() {
+        return actuales.iter().any(|t| t.activo);
+    }
+    match crate::espejo_trabajos::leer_pedido(e, crate::espejo_trabajos::QUIEN_EQUIPO) {
+        Ok(nuevos) => crate::espejo_trabajos::reduce(&actuales, &nuevos),
         Err(_) => true,
     }
 }

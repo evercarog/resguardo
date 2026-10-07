@@ -157,6 +157,8 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "baja_equipo" => "Dar de baja el equipo".to_string(),
         "desvincular" => "Dejar de copiar y desvincular el equipo".to_string(),
         "config" => "Cambiar las copias (quedan sin ninguna activa)".to_string(),
+        "guarda_copias" if c.get("espejo_equipo").is_some() => "Cambiar o quitar los espejos de este equipo".to_string(),
+        "guarda_copias" if c.get("espejo").is_some() || c.get("espejo_freno").is_some() => "Cambiar el espejo del almacén o confirmar su freno".to_string(),
         "guarda_copias" => "Cambiar o quitar el almacén («Guarda copias»)".to_string(),
         "cambiar_espera" => format!("Acortar la espera a {} h", c["horas"].as_i64().unwrap_or(0)),
         "quitar_nube" => format!("Desconectar la nube «{}»", corto(c["nombre"].as_str().unwrap_or(""), 60)),
