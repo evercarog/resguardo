@@ -273,8 +273,10 @@ pub fn recibir(db: &dyn Almacen, ctx: &ClienteCtx, equipo: &str, propia: &str, d
             // La primera vez que se junta este dato: lo de aquí no se pisa sin preguntar.
             (_, true) => distinto,
             // Ya se juntó antes: gana el cambio más reciente, salvo una semilla (lo que otra
-            // consola ya tenía) que no coincide con lo de aquí.
-            (_, false) => e.semilla && distinto,
+            // consola ya tenía) que no coincide con lo de aquí. Si lo que hay es la semilla de
+            // esta consola (lo suyo de antes, que nadie eligió aún para todas), sigue siendo
+            // la primera vez: tampoco se pisa.
+            (_, false) => distinto && (e.semilla || actual.is_some_and(|f| f.entrada.semilla && f.entrada.identidad == propia)),
         };
         let propio = !e.identidad.is_empty() && e.identidad == propia;
         let datos = json!({ "consola": e.consola, "por": e.por, "desde_equipo": true, "conflicto": conflicto });
@@ -354,11 +356,13 @@ pub fn compartiendo(db: &dyn Almacen, ctx: &ClienteCtx) -> R<bool> {
         .any(|e| e.confirmado && e.resumen.as_ref().and_then(|r| r["admite"].as_array()).is_some_and(|a| a.iter().any(|x| x == "datos_cliente"))))
 }
 
-/// Lo que se manda a la consola web: una fila con su clave y si es de esta consola.
+/// Lo que se manda a la consola web: una fila con su clave y si es de esta consola. Una
+/// plantilla solo lleva su cifrado si hace falta (por traer o por enviar): pesan.
 pub fn vista(clave: &str, f: &Fila, propia: &str) -> Value {
+    let pesa = clave.starts_with(Clase::Plantilla.prefijo()) && !f.entrada.valor.is_null() && f.estado != Estado::PorTraer && !f.por_enviar;
     json!({
         "clave": clave,
-        "valor": f.entrada.valor,
+        "valor": if pesa { json!({ "aqui": true }) } else { f.entrada.valor.clone() },
         "cambiado": f.entrada.cambiado,
         "consola": (!f.entrada.consola.is_empty()).then_some(&f.entrada.consola),
         "esta": f.entrada.identidad == propia,
@@ -399,6 +403,8 @@ pub fn sin_compartir(db: &dyn Almacen, ctx: &ClienteCtx, ya: &BTreeMap<String, F
             continue;
         }
         if let Some(v) = valor_para_compartir(db, ctx, &k)?.filter(|v| !v.is_null()) {
+            // Una plantilla, sin su cifrado (al compartirla, el servidor pone la de aquí).
+            let v = if k.starts_with(Clase::Plantilla.prefijo()) { json!({ "aqui": true }) } else { v };
             out.push(json!({ "clave": k, "valor": v }));
         }
     }
@@ -555,6 +561,22 @@ mod tests {
         assert_eq!(filas(&db, &ctx).unwrap()["etiqueta.color:servidor"].estado, Estado::Conflicto);
         // Una semilla solo se registra si no había nada.
         assert!(registrar(&db, &ctx, "etiqueta.color:servidor", &json!({ "nombre": "Servidor", "color": 2 }), true, "Ana", AQUI).unwrap().is_none());
+        // Con la semilla de aquí ya compartida, un cambio de otra consola con otro valor también es
+        // la primera vez: no pisa lo de aquí.
+        poner_color(&db, &ctx, "Caja", 1);
+        registrar(&db, &ctx, "etiqueta.color:caja", &json!({ "nombre": "Caja", "color": 1 }), true, "Ana", AQUI).unwrap().unwrap();
+        let cambio = entrada(json!({ "nombre": "Caja", "color": 5 }), "2099-01-01T00:00:00Z", "id-oficina", "Oficina");
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "etiqueta.color:caja": cambio })).unwrap();
+        assert_eq!(color(&db, &ctx, "Caja"), Some(1));
+        assert_eq!(filas(&db, &ctx).unwrap()["etiqueta.color:caja"].estado, Estado::Conflicto);
+        // Pero una semilla de otra consola que se puso aquí (no había nada) sí la cambia un cambio de verdad.
+        let mut s = entrada(json!({ "nombre": "Sede", "color": 2 }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina");
+        s["semilla"] = json!(true);
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "etiqueta.color:sede": s })).unwrap();
+        assert_eq!(color(&db, &ctx, "Sede"), Some(2));
+        let cambio = entrada(json!({ "nombre": "Sede", "color": 6 }), "2026-10-07T09:00:00Z", "id-tercera", "Sede norte");
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "etiqueta.color:sede": cambio })).unwrap();
+        assert_eq!(color(&db, &ctx, "Sede"), Some(6), "un cambio gana a una semilla aunque sea anterior");
         drop(db);
         drop(dir);
     }
@@ -620,7 +642,8 @@ mod tests {
         let s = sin_compartir(&db, &ctx, &ya).unwrap();
         let claves: Vec<&str> = s.iter().filter_map(|x| x["clave"].as_str()).collect();
         assert_eq!(claves, ["etiqueta.color:servidor", "plantilla:pla-2"]);
-        assert_eq!(s[1]["valor"]["cliente"], ctx.id());
+        assert_eq!(s[1]["valor"], json!({ "aqui": true }), "sin su cifrado: pesa");
+        assert_eq!(valor_para_compartir(&db, &ctx, "plantilla:pla-2").unwrap().unwrap()["cliente"], ctx.id());
         drop(db);
         drop(dir);
     }
