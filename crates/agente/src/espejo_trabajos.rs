@@ -141,6 +141,9 @@ pub struct EstadoTrabajo {
     /// El espacio de la nube tras la última vuelta, y cuándo se leyó.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cuota: Option<(crate::espacio::Espacio, String)>,
+    /// «Hacer ahora» (`espejo_ahora`): toca en cuanto se pueda.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pedido_ahora: bool,
 }
 
 /// Un trabajo de espejo.
@@ -336,6 +339,7 @@ pub fn de_destino(d: &crate::espejo::Destino, hora: &str, limite_kib: Option<u32
             freno: d.freno.clone(),
             retenidos: None,
             cuota: d.cuota.clone(),
+            pedido_ahora: false,
         },
         adonde,
     }
@@ -684,6 +688,8 @@ pub enum Motivo {
     TrasCopia,
     /// En cadena o después de otro espejo.
     TrasOtro,
+    /// «Hacer ahora».
+    Ahora,
 }
 
 /// ¿Toca una vuelta de `t`? `todos`: los trabajos de quien lo hace (para «en cadena» y
@@ -692,6 +698,9 @@ pub enum Motivo {
 pub fn toca(t: &Trabajo, todos: &[Trabajo], ahora: chrono::DateTime<chrono::Local>, novedades: Option<(SystemTime, SystemTime)>) -> Option<Motivo> {
     if !t.activo {
         return None;
+    }
+    if t.estado.pedido_ahora {
+        return Some(Motivo::Ahora);
     }
     let desde = t.desde();
     if let Some(plan) = t.plan() {
@@ -873,6 +882,7 @@ pub fn texto_de(t: &Trabajo, motivo: Motivo, hechos: &[(Option<String>, Result<S
     let por = match motivo {
         Motivo::TrasCopia => " (después de una copia nueva)",
         Motivo::TrasOtro => " (después de otro espejo)",
+        Motivo::Ahora => " (pedido desde la consola)",
         Motivo::Horario => "",
     };
     let partes: Vec<String> = hechos
@@ -1085,7 +1095,7 @@ pub fn si_toca_equipo() {
 /// Una vuelta de un espejo del equipo: cada repositorio a `<destino>/<id>`.
 pub fn hacer_equipo(t: &Trabajo, motivo: Motivo, locales: &[(String, PathBuf)]) -> String {
     let inicio = chrono::Local::now().to_rfc3339();
-    anotar_equipo(&t.id, |x| x.estado.inicio = Some(inicio.clone()));
+    anotar_equipo(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora) = (Some(inicio.clone()), false));
     let nombre_ventana = t.adonde.nube.clone().unwrap_or_else(|| "Disco o carpeta del equipo".into());
     let guarda = crate::escritorio::en_marcha::empezar(if t.adonde.tipo == "nube" { "nube" } else { "espejo" }, &format!("eq-{}", t.id), &nombre_ventana);
     let carpeta = t.adonde.tipo != "nube";
@@ -1126,6 +1136,39 @@ pub fn hacer_equipo(t: &Trabajo, motivo: Motivo, locales: &[(String, PathBuf)]) 
     });
     crate::bitacora::espejo(&fin, &texto);
     texto
+}
+
+/// «Hacer ahora» (`guarda_copias { espejo_ahora: { trabajo, quien? } }`): ese trabajo
+/// toca en cuanto se pueda (no reduce la protección: solo copia).
+pub fn pedir_ahora(v: &Value) -> Result<String, String> {
+    let id = v["trabajo"].as_str().ok_or("Falta el espejo.")?;
+    let nombre;
+    if v["quien"] == QUIEN_EQUIPO {
+        let mut e = cargar_equipo();
+        let t = e.trabajos.iter_mut().find(|t| t.id == id).ok_or("Ese espejo ya no está.")?;
+        if !t.activo {
+            return Err("Ese espejo está en pausa: actívalo antes.".into());
+        }
+        t.estado.pedido_ahora = true;
+        nombre = t.nombre.clone();
+        guardar_equipo(&e)?;
+        #[cfg(not(test))]
+        si_toca_equipo();
+    } else {
+        let mut c = crate::server::load();
+        let mut ts = c.espejo.as_ref().map(|e| e.trabajos_efectivos()).unwrap_or_default();
+        let t = ts.iter_mut().find(|t| t.id == id).ok_or("Ese espejo ya no está.")?;
+        if !t.activo {
+            return Err("Ese espejo está en pausa: actívalo antes.".into());
+        }
+        t.estado.pedido_ahora = true;
+        nombre = t.nombre.clone();
+        c.espejo = Some(crate::espejo::Espejo::de_trabajos(ts));
+        crate::server::save(&c)?;
+        #[cfg(not(test))]
+        crate::espejo::si_toca();
+    }
+    Ok(format!("«{nombre}» empieza en cuanto pueda."))
 }
 
 /// Confirma el freno de un trabajo (`espejo_freno { trabajo, quien? }`): en la próxima

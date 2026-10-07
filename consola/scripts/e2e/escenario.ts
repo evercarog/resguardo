@@ -29,7 +29,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { cuerpoAlmacen, errorTrabajos, FRENO_DEFECTO, trabajosDelAlmacen, type TrabajoEspejo } from "../../src/lib/espejoTrabajos";
 import { spawnSync } from "node:child_process";
 import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
 import { etiquetaValida, kCfg, materialCliente } from "../../src/lib/cripto/claves";
@@ -585,6 +586,96 @@ async function principal() {
       } else log("Sin rclone junto a restic: se salta la copia derivada por rclone.");
       await consola.hecha(c, eqA.id, "guarda_copias", { espejo: null }, { claveAdmin: CLAVE_ADMIN });
       await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });
+
+      // ---------------------------------------------------------------------
+      paso("3d. Espejos como trabajos (plan 0.7.26, bloque 4): zona E → principal «igual que el origen», a una nube simulada «nunca borra», freno y su confirmación");
+      const eqA4 = await consola.equipo(c, eqA.id);
+      comprobar(["espejo_trabajos", "espejo_equipo"].every((x) => eqA4.resumen?.admite?.includes(x)), "A admite los trabajos de espejo y los del propio equipo", eqA4.resumen?.admite);
+      // Un repositorio de mentira en la zona E: el espejo no abre nada, solo copia archivos con nombre de su huella.
+      const usuarioE = accesoE.usuario;
+      const repoFalso = `${usuarioE}/espejo-e2e`;
+      const raizFalsa = path.join(carpetaE, usuarioE, "espejo-e2e");
+      const antiguo = (p: string) => fs.utimesSync(p, new Date(Date.now() - 3600_000), new Date(Date.now() - 3600_000));
+      const paquete = (i: number) => {
+        const contenido = `paquete ${i} ${randomBytes(8).toString("hex")}`;
+        const h = createHash("sha256").update(contenido).digest("hex");
+        const rel = path.join("data", h.slice(0, 2), h);
+        fs.mkdirSync(path.dirname(path.join(raizFalsa, rel)), { recursive: true });
+        fs.writeFileSync(path.join(raizFalsa, rel), contenido);
+        antiguo(path.join(raizFalsa, rel));
+        return rel;
+      };
+      fs.mkdirSync(path.join(raizFalsa, "snapshots"), { recursive: true });
+      fs.writeFileSync(path.join(raizFalsa, "config"), "config de prueba");
+      antiguo(path.join(raizFalsa, "config"));
+      const paquetes = Array.from({ length: 6 }, (_, i) => paquete(i));
+      const carpetaNubeA = dir("nube-a");
+      if (rclone) {
+        fs.mkdirSync(carpetaNubeA, { recursive: true });
+        await consola.hecha(c, eqA.id, "conectar_nube", { tipo: "alias", nombre: "Nube simulada", parametros: { carpeta: carpetaNubeA } }, { claveAdmin: CLAVE_ADMIN }, {}, 60_000);
+      }
+      // «Igual que el origen» con un freno estricto (para que salte con pocos archivos) y «nunca borra» después de él.
+      const igualT: TrabajoEspejo = {
+        id: "e2e-igual", nombre: "Zona E igual", activo: true, quien: "almacen", que: { tipo: "repos", repos: [repoFalso] }, zona: zona.id,
+        adonde: { tipo: "zona", carpeta: "principal" }, cuando: { horario: { dias: [1, 2, 3, 4, 5, 6, 7], horas: ["00:01"] } },
+        retencion: { modo: "igual" }, freno: { pct: 10, min_archivos: 0, min_faltan: 2, accion: "confirmar" }, orden: 0,
+      };
+      const nubeT: TrabajoEspejo = {
+        id: "e2e-nube", nombre: "Nube nunca borra", activo: true, quien: "almacen", que: { tipo: "repos", repos: [repoFalso] }, zona: zona.id,
+        adonde: { tipo: "nube", nube: "Nube simulada", carpeta: "Espejo" }, cuando: { despues: "e2e-igual" }, retencion: { modo: "nunca" }, freno: { ...FRENO_DEFECTO }, orden: 1,
+      };
+      const trabajos = rclone ? [igualT, nubeT] : [igualT];
+      igual(errorTrabajos(trabajos, "almacen"), null, "La consola da por buenos los dos espejos");
+      await consola.hecha(c, eqA.id, "guarda_copias", cuerpoAlmacen(trabajos), { claveAdmin: CLAVE_ADMIN });
+      const enPrincipal = (rel: string) => fs.existsSync(path.join(almacen, usuarioE, "espejo-e2e", rel));
+      const enNube = (rel: string) => fs.existsSync(path.join(carpetaNubeA, "Espejo", usuarioE, "espejo-e2e", rel));
+      const trabajoDeA = async (id: string) => trabajosDelAlmacen(await consola.equipo(c, eqA.id)).find((t) => t.id === id);
+      await esperar("el espejo «igual que el origen» en la zona principal", async () => (paquetes.every(enPrincipal) && enPrincipal("config") ? true : null), { plazo: 120_000, cada: 1000 });
+      if (rclone) await esperar("el espejo a la nube, después del otro", async () => (paquetes.every(enNube) ? true : null), { plazo: 120_000, cada: 1000 });
+      const visto = await esperar("los trabajos en el resumen de A, con su resultado", async () => {
+        const t = await trabajoDeA("e2e-igual");
+        return t?.resultado && !t.resultado.startsWith("ERROR") ? t : null;
+      }, { plazo: 90_000, cada: 1500 });
+      igual([visto.retencion.modo, visto.zona, visto.adonde.tipo], ["igual", zona.id, "zona"], "El resumen dice la retención, de qué zona copia y adónde");
+      comprobar((await consola.equipo(c, eqA.id)).resumen?.guarda_copias?.espejo?.destinos?.some((d) => d.trabajo === "e2e-igual"), "…y la vista para una consola anterior");
+      // Una orden de antes (por destinos) ya no puede cambiar estos espejos: el equipo la rechaza.
+      const vieja = await consola.resultado(c, eqA.id, await consola.mandar(c, eqA.id, "guarda_copias", { espejo: { hora: "02:00", destinos: [{ tipo: "zona", carpeta: "principal", zona: zona.id }] } }, { claveAdmin: CLAVE_ADMIN }), { plazo: 60_000 });
+      comprobar(vieja.estado === "fallida" && /consola actualizada/.test(vieja.mensaje ?? ""), "Una consola anterior no deshace los espejos nuevos", vieja);
+      /** Una vuelta más de «igual que el origen» («Hacer ahora») y su resultado. */
+      const pasada = async (que: string) => {
+        const antes = (await trabajoDeA("e2e-igual"))?.ultima ?? null;
+        await consola.hecha(c, eqA.id, "guarda_copias", { espejo_ahora: { trabajo: "e2e-igual" } }, { claveAdmin: CLAVE_ADMIN });
+        return esperar(que, async () => {
+          const t = await trabajoDeA("e2e-igual");
+          return t?.ultima && t.ultima !== antes ? t : null;
+        }, { plazo: 120_000, cada: 1000 });
+      };
+      // La poda del original quita un paquete: se anota en una vuelta y se borra en la siguiente.
+      fs.rmSync(path.join(raizFalsa, paquetes[0]));
+      const p1 = await pasada("la vuelta que ve faltar un paquete");
+      comprobar(enPrincipal(paquetes[0]) && p1.por_borrar?.archivos === 1, "«Igual que el origen»: primero se anota", p1.por_borrar);
+      const p2 = await pasada("la vuelta que lo borra");
+      comprobar(!enPrincipal(paquetes[0]) && !p2.por_borrar?.archivos, "…y en la vuelta siguiente se borra del espejo", p2);
+      if (rclone) {
+        await dormir(12_000);
+        comprobar(enNube(paquetes[0]), "La nube «nunca borra» lo sigue teniendo");
+      }
+      // Falta de golpe casi todo: salta el freno, no se borra nada y avisa.
+      for (const rel of paquetes.slice(1)) fs.rmSync(path.join(raizFalsa, rel));
+      const f1 = await pasada("la vuelta en la que salta el freno");
+      comprobar(f1.resultado?.startsWith("ERROR") && /falta de golpe/.test(f1.freno_aviso ?? ""), "El freno salta y lo dice", f1);
+      comprobar(paquetes.slice(1).every(enPrincipal), "Con el freno, no se borra nada");
+      // Confirmado con la clave (espera; aquí de 0 s): se anota y se borra en la vuelta siguiente.
+      await consola.hecha(c, eqA.id, "guarda_copias", { espejo_freno: { trabajo: "e2e-igual" } }, { claveAdmin: CLAVE_ADMIN });
+      const f2 = await pasada("la vuelta tras confirmar el freno");
+      comprobar(!f2.freno_aviso && f2.por_borrar?.archivos === 5, "Confirmado: se anota lo que falta", f2);
+      await pasada("la vuelta que borra lo confirmado");
+      comprobar(!paquetes.slice(1).some(enPrincipal) && enPrincipal("config"), "…y se borra (el repositorio sigue)");
+      if (rclone) comprobar(paquetes.every(enNube), "La nube sigue con todo: nunca borra");
+      log(`Espejos como trabajos: «igual que el origen» a la zona principal${rclone ? " y «nunca borra» a la nube simulada" : ""}, con freno confirmado`);
+      await consola.hecha(c, eqA.id, "guarda_copias", { espejo: null }, { claveAdmin: CLAVE_ADMIN });
+      if (rclone) await consola.hecha(c, eqA.id, "quitar_nube", { nombre: "Nube simulada" }, { claveAdmin: CLAVE_ADMIN }, {}, 60_000);
+      for (const d of [raizFalsa, path.join(almacen, usuarioE, "espejo-e2e")]) fs.rmSync(d, { recursive: true, force: true });
     }
 
     // -----------------------------------------------------------------------

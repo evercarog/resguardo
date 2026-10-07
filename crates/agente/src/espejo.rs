@@ -780,7 +780,7 @@ pub fn hacer(t: &crate::espejo_trabajos::Trabajo, motivo: crate::espejo_trabajos
     use crate::espejo_trabajos as et;
     // El comienzo, antes de empezar: si el servicio se para a medias, no se repite en bucle.
     let inicio = chrono::Local::now().to_rfc3339();
-    anotar(&t.id, |x| x.estado.inicio = Some(inicio.clone()));
+    anotar(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora) = (Some(inicio.clone()), false));
     // Para la ventana y los avisos del escritorio: sin la carpeta (es una ruta).
     let (tipo, nombre) = match t.adonde.nube.as_deref().filter(|_| t.adonde.tipo == "nube") {
         Some(n) => ("nube", n.to_string()),

@@ -402,6 +402,15 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         t.retenidos = null;
         return resultado(e, o, "hecha", `Confirmado: la próxima vez que se haga «${t.nombre}» se anota lo que ya no está y se borrará del espejo a su tiempo.`);
       }
+      if ("espejo_ahora" in c && (conTrabajosMock || delEquipoMock)) {
+        const a = c.espejo_ahora as { trabajo?: string; quien?: string };
+        const t = (a.quien === "equipo" ? trabajosDelEquipo(e) : trabajosDelAlmacen(e)).find((x) => x.id === a.trabajo);
+        if (!t) return resultado(e, o, "fallida", "Ese espejo ya no está.");
+        if (!t.activo) return resultado(e, o, "fallida", "Ese espejo está en pausa: actívalo antes.");
+        t.ultima = new Date().toISOString();
+        t.resultado = `Espejo «${t.nombre}» hecho (pedido desde la consola): 0 archivos nuevos, todo estaba ya.`;
+        return resultado(e, o, "hecha", `«${t.nombre}» empieza en cuanto pueda.`);
+      }
       const pideTrabajos = "espejo" in c && !!c.espejo && Array.isArray((c.espejo as { trabajos?: unknown }).trabajos);
       if (("espejo_equipo" in c && delEquipoMock) || (pideTrabajos && conTrabajosMock) || ("espejo" in c && c.espejo === null && conTrabajosMock)) {
         const equipo = "espejo_equipo" in c;

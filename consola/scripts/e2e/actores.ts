@@ -255,7 +255,11 @@ export class Consola {
       autorizacion.clave_repo = secretos.repo;
     }
     const espera = e.espera_min_horas ?? c.espera_min_horas;
-    const contexto = { espejo: e.resumen?.guarda_copias?.espejo ?? null, copiasActivas: (e.resumen?.copias ?? []).filter((k) => k.activa !== false).length };
+    const contexto = {
+      espejo: e.resumen?.guarda_copias?.espejo ?? null,
+      espejoEquipo: e.resumen?.espejo_equipo ?? null,
+      copiasActivas: (e.resumen?.copias ?? []).filter((k) => k.activa !== false).length,
+    };
     const destructiva = esDestructiva(tipo, cuerpoFinal, espera, contexto);
     // `esperar`: una destructiva con su espera de verdad (se queda en el equipo hasta su not_before).
     const sinEspera = destructiva && !extra.esperar && extra.esperaS === undefined;

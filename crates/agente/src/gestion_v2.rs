@@ -2209,6 +2209,10 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
     if let Some(d) = c.get("espejo_freno") {
         return Ok((crate::espejo::aceptar_freno(d)?, None));
     }
+    // Plan 0.7.26 (bloque 4): «Hacer ahora» un espejo (del almacén o del propio equipo).
+    if let Some(a) = c.get("espejo_ahora") {
+        return Ok((crate::espejo_trabajos::pedir_ahora(a)?, None));
+    }
     // Plan 0.7.26 (bloque 4): los espejos que hace el propio equipo (no hace falta ser almacén).
     if let Some(e) = c.get("espejo_equipo") {
         let t = if e.is_null() { None } else { Some(crate::espejo_trabajos::leer_pedido(e, crate::espejo_trabajos::QUIEN_EQUIPO)?) };

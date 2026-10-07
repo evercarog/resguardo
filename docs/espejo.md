@@ -2,6 +2,31 @@
 
 Diseño de la tarea 3 de [plan-mejoras.md](plan-mejoras.md) («Espejo más flexible»). Lo implementa `crates/agente/src/espejo.rs` (el motor) con `nube.rs` (los destinos por rclone); la consola lo enseña en la ficha del equipo que guarda copias. Pensado para que la tarea 7 («espejo» como paso de una cadena, 7d) reutilice el mismo motor.
 
+## Trabajos de espejo (0.7.26, bloque 4)
+
+Desde la 0.7.26 el espejo es una **lista de trabajos** (`espejo.trabajos[]`, `crates/agente/src/espejo_trabajos.rs`; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.4x). Lo de abajo (destinos, §3a–§3f) sigue valiendo: cada destino de antes **es** un trabajo, con el mismo motor (`espejo_motor.rs`) y el mismo archivo de estado.
+
+| Campo | Qué es |
+|---|---|
+| `id`, `nombre`, `activo`, `orden` | Cada uno se pausa sin quitarlo; los que tocan a la vez se hacen por su orden. |
+| `quien` | `almacen` (con lo que guarda en sus zonas) o `equipo` (el propio equipo, con los repositorios de sus discos; funciona solo con el agente, sin consola ni almacén). |
+| `que` | `todos` (también los que lleguen), `equipos` (los de esos usuarios del almacén) o `repos`. |
+| `zona` | De qué zona copia el almacén (sin ella, la principal). |
+| `adonde` | Otra carpeta, otra zona del almacén o una nube conectada en quien lo hace. En el equipo, cada repositorio va a `<destino>/<id>`. |
+| `cuando` | `horario` (el de las copias), `tras_copia` (después de cada copia nueva), `cadena` (después de otro trabajo **si sale bien**) o `despues` (después de otro, **siempre**), con `retraso_min`. Se combinan. |
+| `retencion` | `nunca` · `retraso` (sigue al original con N días de retraso) · `igual` (igual que el origen: lo que falta se borra en la vuelta **siguiente** a la que lo vio faltar). Aviso en la consola: «Si algo borra en el original, aquí también». |
+| `freno` | `pct` (1–50 %, por defecto 10), `min_archivos` (100), `min_faltan` (20), `accion` (`confirmar` o `avisar`). No se apaga. |
+| `bloqueo` / `bloqueo_dias` | Object Lock: sin plazo, nunca borra; con N días, nada de «igual» y un retraso de más de N (y el motor no borra antes aunque le llegue otra cosa). |
+| `verificar_pct`, `limite_kib` | Como antes, ahora por trabajo. |
+
+**Freno.** El porcentaje cuenta solo si el origen tiene más de `min_archivos` archivos y faltan al menos `min_faltan` (así un repositorio pequeño o recién creado no lo hace saltar); un repositorio entero que desaparece (su `config`) frena siempre. Con `confirmar` (lo de antes), no se anota ni se borra nada más hasta `espejo_freno` (clave de administración y espera). Con `avisar`, lo que faltó de golpe se **conserva para siempre** en el espejo (`retenidos`) y se avisa; lo demás sigue al día; confirmarlo deja que se borre a su tiempo.
+
+**Varios trabajos.** Varios por repositorio y por destino (p. ej. «Contabilidad → Disco E cada hora» y «Todo → B2 cada noche»). Cada uno con su estado. Dos al mismo destino tienen que tener la misma retención (si no, uno borraría lo que el otro promete guardar).
+
+**Compatibilidad.** Un espejo de antes se lee como trabajos equivalentes sin tocar nada. Al guardar trabajos, el agente guarda también `destinos` con una vista compatible (los activos; «igual» como 7 días; cadenas como «después de cada copia»), que lee un agente anterior tras una vuelta atrás de la actualización y enseña una consola anterior. Una orden de antes solo vale si todos los trabajos se pueden decir así; si no, el agente la rechaza.
+
+**En la consola.** Página «Espejos» del equipo (almacén y propio equipo), editor guiado (Qué repositorios → Adónde → Cuándo → Retención → Resumen; «Más opciones»: zona de origen, bloqueo, verificación, velocidad y freno; «Avanzado» lo enseña todo), «Hacer ahora», «Confirmar…» el freno, «Usar en un espejo» en la página de un destino y, en cada copia, sus espejos agrupados por almacén (`espejosDeCopia`), editables desde ahí (la orden va al almacén firmada con la clave del cliente; el almacén nunca recibe la contraseña del repositorio). Si el almacén no está en esta consola, se dice y se ofrece «Conectar también…».
+
 ## Hasta ahora
 
 - Una vez al día, a una hora (`espejo.hora`), el almacén copia **todo** lo que guarda (`<carpeta del almacén>/<usuario>/<repo>/…`) a cada destino: carpetas de discos del equipo o Dropbox/Drive (`rclone copy --immutable`).

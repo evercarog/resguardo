@@ -143,6 +143,13 @@
     const c = trabajoNuevo(quien, lista.length);
     editor = { trabajo: { ...paraOrden(t), id: c.id, orden: lista.length, nombre: `${t.nombre} (copia)` }, nuevo: true };
   }
+  function ahora(t: TrabajoEspejo) {
+    orden = {
+      cuerpo: { espejo_ahora: { trabajo: t.id, ...(quien === "equipo" ? { quien: "equipo" } : {}) } },
+      titulo: `Hacer ahora «${t.nombre}»`,
+      descripcion: "Empieza en cuanto pueda, sin esperar a su hora. Solo copia lo que falta: no cambia nada más.",
+    };
+  }
   function confirmarFreno(t: TrabajoEspejoResumen) {
     orden = {
       cuerpo: { espejo_freno: { trabajo: t.id, ...(quien === "equipo" ? { quien: "equipo" } : {}) } },
@@ -171,6 +178,7 @@
               etiqueta="Más acciones de «{t.nombre}»"
               grupos={[
                 [
+                  ...(t.activo ? [{ texto: "Hacer ahora", onclick: () => ahora(t) }] : []),
                   { texto: t.activo ? "Pausar" : "Activar", onclick: () => pausar(t) },
                   { texto: "Duplicar", onclick: () => duplicar(t) },
                 ],

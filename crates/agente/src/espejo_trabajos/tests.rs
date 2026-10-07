@@ -291,6 +291,11 @@ fn tras_cada_copia_con_retraso() {
     t.cuando.retraso_min = 0;
     assert_eq!(toca(&t, &[], hora(2, 12, 0), nueva), None, "como mínimo, 12 min");
     assert_eq!(toca(&t, &[], hora(2, 12, 7), nueva), Some(Motivo::TrasCopia));
+    // «Hacer ahora»: toca ya (salvo en pausa).
+    t.estado.pedido_ahora = true;
+    assert_eq!(toca(&t, &[], hora(2, 12, 0), None), Some(Motivo::Ahora));
+    t.activo = false;
+    assert_eq!(toca(&t, &[], hora(2, 12, 0), None), None);
 }
 
 /// Las tres retenciones con fechas simuladas: nunca borra, con retraso de N días e igual que el origen.
@@ -553,9 +558,14 @@ fn almacen_igual_que_el_origen() {
     let guardado = crate::server::load().espejo.unwrap();
     assert_eq!(guardado.trabajos[0].estado.resultado.as_deref(), Some(texto.as_str()));
     assert_eq!(guardado.destinos.len(), 1, "y la vista para un agente anterior");
+    // «Hacer ahora»: queda pedido hasta que empieza la vuelta siguiente.
+    assert!(pedir_ahora(&json!({ "trabajo": "t1" })).unwrap().contains("Disco E"));
+    assert!(pedir_ahora(&json!({ "trabajo": "otro" })).is_err());
+    assert!(crate::server::load().espejo.unwrap().trabajos[0].estado.pedido_ahora);
     // La poda del almacén quita un paquete: se ve faltar y se borra en la vuelta siguiente.
     std::fs::remove_file(almacen.join("ana/conta/data/ab/abcd")).unwrap();
-    crate::espejo::hacer(&t, Motivo::Horario, &almacen);
+    crate::espejo::hacer(&t, Motivo::Ahora, &almacen);
+    assert!(!crate::server::load().espejo.unwrap().trabajos[0].estado.pedido_ahora, "al empezar, se olvida");
     assert!(espejo.join("ana/conta/data/ab/abcd").is_file());
     assert_eq!(crate::server::load().espejo.unwrap().trabajos[0].estado.por_borrar.as_ref().map(|p| p.archivos), Some(1));
     crate::espejo::hacer(&t, Motivo::Horario, &almacen);

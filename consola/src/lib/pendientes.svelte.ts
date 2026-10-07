@@ -67,6 +67,7 @@ export function lugarDe(tipo: string, cuerpo: Record<string, unknown>): { lugar:
       // Plan 0.7.26: los espejos que hace el propio equipo.
       if ("espejo_equipo" in cuerpo) return { lugar: "espejo", titulo: cuerpo.espejo_equipo === null ? "Quitar los espejos del equipo" : "Espejos del equipo" };
       if ("espejo_freno" in cuerpo) return { lugar: "espejo", titulo: "Confirmar el freno del espejo" };
+      if ("espejo_ahora" in cuerpo) return { lugar: "espejo", titulo: "Hacer un espejo ahora" };
       if ("anadir" in cuerpo) return { lugar: "guarda", titulo: `Dar acceso a otro equipo` };
       if ("quitar" in cuerpo) return { lugar: "guarda", titulo: `Quitar el acceso de «${String(cuerpo.quitar ?? "")}»` };
       return { lugar: "guarda", titulo: cuerpo.activo === false ? "Dejar de guardar copias" : "Este equipo guarda copias" };
