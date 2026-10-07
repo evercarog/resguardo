@@ -839,11 +839,24 @@ const rutas: Ruta[] = [
       let atributos: T.AtributosDestino | null = null;
       if (d.atributos && typeof d.atributos === "object") {
         const a = d.atributos as Record<string, unknown>;
-        if (Object.keys(a).some((k) => !["lugar", "inmutable", "soporte"].includes(k))) throw err(422, "datos", "Destino no válido.");
+        if (Object.keys(a).some((k) => !["lugar", "inmutable", "soporte", "tipo", "aislado", "bloqueo_dias", "aislado_dias"].includes(k))) throw err(422, "datos", "Destino no válido.");
+        // 0.7.26: tipo y marcas.
+        if (a.tipo != null && !["local", "fuera", "nube"].includes(String(a.tipo))) throw err(422, "datos", "Tipo no válido.");
+        if (a.aislado != null && typeof a.aislado !== "boolean") throw err(422, "datos", "Destino no válido.");
+        const dias = (v: unknown, max: number) => v == null || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= max);
+        if (!dias(a.bloqueo_dias, 36500) || !dias(a.aislado_dias, 365)) throw err(422, "datos", "Días no válidos.");
         if (a.lugar != null && !["este_equipo", "oficina", "otra_sede", "nube"].includes(String(a.lugar))) throw err(422, "datos", "Lugar no válido.");
         if (a.inmutable != null && !["solo_anadir", "object_lock", "instantaneas", "desconectado", "no"].includes(String(a.inmutable))) throw err(422, "datos", "Inmutable no válido.");
         const soporte = typeof a.soporte === "string" && a.soporte.trim() ? a.soporte.trim().slice(0, 60) : undefined;
-        const limpio = { ...(a.lugar ? { lugar: a.lugar } : {}), ...(a.inmutable ? { inmutable: a.inmutable } : {}), ...(soporte ? { soporte } : {}) } as T.AtributosDestino;
+        const limpio = {
+          ...(a.lugar ? { lugar: a.lugar } : {}),
+          ...(a.inmutable ? { inmutable: a.inmutable } : {}),
+          ...(soporte ? { soporte } : {}),
+          ...(a.tipo ? { tipo: a.tipo } : {}),
+          ...(a.aislado != null ? { aislado: a.aislado } : {}),
+          ...(a.bloqueo_dias != null ? { bloqueo_dias: a.bloqueo_dias } : {}),
+          ...(a.aislado_dias != null ? { aislado_dias: a.aislado_dias } : {}),
+        } as T.AtributosDestino;
         atributos = Object.keys(limpio).length ? limpio : null;
       }
       const nombre = String(d.nombre ?? "").trim();

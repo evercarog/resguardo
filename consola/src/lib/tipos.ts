@@ -278,6 +278,8 @@ export interface ResumenEquipo {
         espacio?: EspacioVolumen | null;
         /** Tarea 8e: el sistema de archivos de una carpeta. Solo un dato. */
         sistema_archivos?: string | null;
+        /** 0.7.26: cuándo vio el almacén conectado el disco de la carpeta (para «Aislado»). */
+        aislado?: ConexionVolumen | null;
         /** (agente con `admite: "espejo_flexible"`, docs/espejo.md) su horario propio; sin él, cada día a `hora`. */
         horario?: Horario | null;
         /** También después de cada copia nueva. */
@@ -365,6 +367,23 @@ export interface AtributosDestino {
   inmutable?: InmutableDestino;
   /** Un nombre para el soporte: dos destinos con el mismo cuentan como uno. */
   soporte?: string;
+  /** 0.7.26 (bloque 2): el tipo, uno solo. Sin él, el de `lugar`. */
+  tipo?: TipoDestino;
+  /** 0.7.26: marca «Aislado» (un medio que se desconecta). `inmutable: "desconectado"` se lee igual. */
+  aislado?: boolean;
+  /** 0.7.26: días del bloqueo de objetos (Object Lock), si se sabe. */
+  bloqueo_dias?: number;
+  /** 0.7.26: avisar si el medio aislado no se conecta en estos días (sin él, 30). */
+  aislado_dias?: number;
+}
+
+/** 0.7.26 (bloque 2, docs/regla-3-2-1.md): el tipo de un destino. */
+export type TipoDestino = "local" | "fuera" | "nube";
+
+/** 0.7.26: lo que el agente vio de un medio local (aislado o no): cuándo se conectó y qué volúmenes (resumen, nunca la ruta ni el número de serie). */
+export interface ConexionVolumen {
+  ultima_conexion?: string | null;
+  volumenes?: { id: string; visto: string }[];
 }
 
 /** v1.31: bytes libres y totales de un volumen o de una nube, y cuándo se leyeron. */
@@ -533,6 +552,8 @@ export interface DestinoResumen {
   red?: boolean;
   /** Tarea 8e, solo un destino local: el sistema de archivos de su carpeta («NTFS», «zfs»…). Solo un dato. */
   sistema_archivos?: string | null;
+  /** 0.7.26, solo un destino local: cuándo vio el agente su disco conectado (para «Aislado»). Un agente anterior no lo dice. */
+  aislado?: ConexionVolumen | null;
 }
 
 export interface Equipo {

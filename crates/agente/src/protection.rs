@@ -308,6 +308,31 @@ pub enum Lugar {
     Nube,
 }
 
+/// 0.7.26 (bloque 2): el tipo de un destino, uno solo. `Local` (este equipo u otro
+/// de la oficina), `Fuera` (fuera del sitio: otra sede, un servidor de fuera) o `Nube`.
+/// Sin él se deduce de `lugar` (`este_equipo`/`oficina` → local, `otra_sede` → fuera, `nube` → nube).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TipoDestino {
+    Local,
+    Fuera,
+    Nube,
+}
+
+impl TipoDestino {
+    /// El tipo que corresponde a un `lugar` de antes.
+    pub fn de_lugar(l: Lugar) -> Self {
+        match l {
+            Lugar::EsteEquipo | Lugar::Oficina => Self::Local,
+            Lugar::OtraSede => Self::Fuera,
+            Lugar::Nube => Self::Nube,
+        }
+    }
+}
+
+/// Días sin conectarse tras los que un medio aislado avisa (si no se dice otra cosa).
+pub const DIAS_AISLADO: u32 = 30;
+
 /// Si un destino es inmutable (o está fuera del alcance de los equipos).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -358,6 +383,39 @@ pub struct PasoRegla {
     /// Su comprobación encontró datos dañados (el espejo verifica sin contraseñas).
     #[serde(default)]
     pub verificacion_mal: bool,
+    /// 0.7.26: el tipo (local, fuera, nube). Sin él, el de `lugar`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tipo_destino: Option<TipoDestino>,
+    /// 0.7.26: marca «Aislado» (un medio que se desconecta y se rota). `inmutable:
+    /// "desconectado"` de antes se lee igual.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub aislado: bool,
+    /// 0.7.26: la última vez que el agente vio el medio conectado (RFC 3339). Sin
+    /// ella no se sabe (un agente anterior): no avisa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conectado: Option<String>,
+    /// 0.7.26: días sin conectarse tras los que avisa (sin él, 30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aislado_dias: Option<u32>,
+}
+
+impl PasoRegla {
+    /// ¿Cuenta como fuera del sitio? (Fuera del sitio o Nube.)
+    pub fn es_fuera(&self) -> bool {
+        self.tipo_destino.unwrap_or_else(|| TipoDestino::de_lugar(self.lugar)) != TipoDestino::Local
+    }
+    /// ¿Marca «Inmutable»? (solo añadir, bloqueo de objetos, instantáneas fuera de su alcance).
+    pub fn es_inmutable(&self) -> bool {
+        !matches!(self.inmutable, Inmutable::No | Inmutable::Desconectado)
+    }
+    /// ¿Marca «Aislado»?
+    pub fn es_aislado(&self) -> bool {
+        self.aislado || self.inmutable == Inmutable::Desconectado
+    }
+    /// Los días sin conectarse que se aceptan (1 a 365; sin él, 30).
+    pub fn dias_aislado(&self) -> u32 {
+        self.aislado_dias.filter(|d| (1..=365).contains(d)).unwrap_or(DIAS_AISLADO)
+    }
 }
 
 /// La verificación o la prueba de restauración del repositorio de la copia.
@@ -409,8 +467,9 @@ pub struct Regla321 {
     pub partes: Vec<ParteRegla>,
     /// Los pasos que no están al día.
     pub atrasados: Vec<String>,
-    /// `mismo_equipo` (dos soportes en el mismo equipo: un incendio se los lleva a la vez)
-    /// e `inmutable_local` (lo inmutable está todo en la oficina).
+    /// `mismo_equipo` (dos soportes en el mismo equipo: un incendio se los lleva a la vez),
+    /// `inmutable_local` (lo inmutable o aislado está todo en el sitio) y
+    /// `aislado_sin_conectar` (un medio aislado no se ha conectado en sus N días).
     pub avisos: Vec<String>,
 }
 
@@ -424,9 +483,19 @@ pub fn margen_horas(cada_horas: Option<f64>) -> f64 {
 }
 
 /// ¿Está al día este paso? (su última vez bien, dentro de su horario más un margen).
+/// Un medio aislado se conecta de vez en cuando: le basta con sus N días.
 pub fn paso_al_dia(p: &PasoRegla, ahora: DateTime<Local>) -> bool {
     let Some(t) = p.ultima_ok.as_deref().and_then(parse) else { return false };
-    (ahora - t).num_seconds() as f64 / 3600.0 <= margen_horas(p.cada_horas)
+    let mut margen = margen_horas(p.cada_horas);
+    if p.es_aislado() {
+        margen = margen.max(f64::from(p.dias_aislado()) * 24.0);
+    }
+    (ahora - t).num_seconds() as f64 / 3600.0 <= margen
+}
+
+/// ¿Un medio aislado lleva más de sus N días sin conectarse? Sin fecha no se sabe: no.
+pub fn aislado_sin_conectar(p: &PasoRegla, ahora: DateTime<Local>) -> bool {
+    p.es_aislado() && p.conectado.as_deref().and_then(parse).is_some_and(|t| ahora - t > Duration::days(i64::from(p.dias_aislado())))
 }
 
 /// ¿Correcta y reciente (45 días)?
@@ -456,8 +525,9 @@ pub fn regla_321(e: &EntradaRegla, ahora: DateTime<Local>) -> Regla321 {
         s.insert(e.origen.soporte.as_str());
         s.len() as u32
     };
-    let fuera = |l: &[&PasoRegla]| l.iter().filter(|p| matches!(p.lugar, Lugar::OtraSede | Lugar::Nube)).count() as u32;
-    let inmutables = |l: &[&PasoRegla]| l.iter().filter(|p| p.inmutable != Inmutable::No).count() as u32;
+    // El «1 fuera»: Fuera del sitio y Nube. El otro «1»: Inmutable o Aislado.
+    let fuera = |l: &[&PasoRegla]| l.iter().filter(|p| p.es_fuera()).count() as u32;
+    let inmutables = |l: &[&PasoRegla]| l.iter().filter(|p| p.es_inmutable() || p.es_aislado()).count() as u32;
     let n = |x: u32| if x == 1 { "1 destino".to_string() } else { format!("{x} destinos") };
 
     let (c, cc) = (1 + al_dia.len() as u32, 1 + todos.len() as u32);
@@ -520,8 +590,11 @@ pub fn regla_321(e: &EntradaRegla, ahora: DateTime<Local>) -> Regla321 {
     if por_equipo.values().any(|s| s.len() >= 2) {
         avisos.push("mismo_equipo".to_string());
     }
-    if ic > 0 && !todos.iter().any(|p| p.inmutable != Inmutable::No && matches!(p.lugar, Lugar::OtraSede | Lugar::Nube)) {
+    if ic > 0 && !todos.iter().any(|p| (p.es_inmutable() || p.es_aislado()) && p.es_fuera()) {
         avisos.push("inmutable_local".to_string());
+    }
+    if todos.iter().any(|p| aislado_sin_conectar(p, ahora)) {
+        avisos.push("aislado_sin_conectar".to_string());
     }
     Regla321 { cumple, cumple_config, dejo_de_cumplir: cumple_config && !cumple, partes, atrasados, avisos }
 }

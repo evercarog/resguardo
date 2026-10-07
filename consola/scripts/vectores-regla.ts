@@ -23,6 +23,7 @@ import {
   textoEntorno,
   type EntradaRegla,
 } from "../src/lib/regla321";
+import { atributosDe, clasificar, estadoConexion, textoClasificacion, tipoDeLugar, ultimaConexion } from "../src/lib/tipoDestino";
 
 let fallos = 0;
 let total = 0;
@@ -144,7 +145,7 @@ const informeMal: Informe = { recibido: iso(1), datos: { repos: [repoInf({ exter
 const mal = reglaDeCopia(recepcion, k, equipos, informeMal, [], AHORA)!;
 igual("la copia externa falla: deja de cumplir «fuera»", [mal.regla.cumple, mal.regla.dejo_de_cumplir, mal.regla.partes.find((p) => p.id === "fuera")!.accion], [false, true, "poner_al_dia"]);
 igual("qué hacer: decirlo con su nombre", queHacer(mal.regla.partes.find((p) => p.id === "fuera")!, mal, "c1", AHORA)?.texto, "«Dropbox Oficina» no está al día (la última vez falló o aún no se ha hecho) (y 1 paso más): revisa por qué.");
-igual("en frase", fraseRegla(mal.regla), "Dejó de cumplir: 1 fuera de la oficina (algo no está al día).");
+igual("en frase", fraseRegla(mal.regla), "Dejó de cumplir: 1 fuera del sitio (algo no está al día).");
 
 // Lo que dice la persona en el catálogo manda sobre lo deducido.
 const catalogo: DestinoCatalogo[] = [
@@ -163,7 +164,7 @@ igual(
     ["externa", "otra_sede", "no", "marcado:cinta", "Nube Sur"],
   ],
 );
-igual("lo deducido se recuerda (para «volver a lo deducido»)", marcada.pasos[0].porDefecto, { lugar: "oficina", inmutable: "solo_anadir" });
+igual("lo deducido se recuerda (para «volver a lo deducido»)", marcada.pasos[0].porDefecto, { lugar: "oficina", inmutable: "solo_anadir", bloqueoDias: null });
 igual("el mismo soporte marcado cuenta una vez", marcada.regla.partes.find((p) => p.id === "soportes")!.valor, 3);
 cierto("la clave de una carpeta del espejo no lleva la ruta", !claveEspejoCarpeta(almacen.id, "F:\\Espejo").includes("Espejo") && /^espejo:[0-9a-f-]+:[0-9a-f]{8}$/.test(claveEspejoCarpeta(almacen.id, "F:\\Espejo")));
 igual("…y no distingue mayúsculas ni la barra final", claveEspejoCarpeta("a", "F:\\Espejo\\"), claveEspejoCarpeta("a", "f:\\espejo"));
@@ -210,15 +211,71 @@ console.log("\n· La tira: estado corto de cada parte y la línea de lo que falt
   igual("la configuración cumple, algo no está al día", estadoParte(parte("copias", 2, 3, false, true)), { tono: "warn", icono: "atrasado", texto: "Atrasado" });
   igual("falta uno / faltan dos", [estadoParte(parte("copias", 2, 3, false, false)).texto, estadoParte(parte("copias", 1, 3, false, false)).texto], ["Falta 1", "Faltan 2"]);
   igual("en el «0», lo que hay por resolver", estadoParte(parte("errores", 2, 0, false, false)).texto, "Faltan 2");
-  igual("la línea corta: lo atrasado (el espejo en la nube lleva 70 h fallando)", lineaFalta(mal.regla), "No está al día: 1 fuera de la oficina.");
+  igual("la línea corta: lo atrasado (el espejo en la nube lleva 70 h fallando)", lineaFalta(mal.regla), "No está al día: 1 fuera del sitio.");
   igual(
     "la línea corta: lo que falta",
     lineaFalta({ ...mal.regla, partes: mal.regla.partes.map((p) => (p.id === "inmutable" ? { ...p, cumple: false, cumple_config: false } : p)) }),
-    "Falta: 1 inmutable. No está al día: 1 fuera de la oficina.",
+    "Falta: 1 inmutable o aislado. No está al día: 1 fuera del sitio.",
   );
   igual("si cumple, nada", lineaFalta({ ...mal.regla, cumple: true }), null);
   const pm = mal.regla.partes.find((p) => !p.cumple)!;
-  cierto("el globo de una parte dice qué pide, cómo está y qué hacer", globoParte(pm, mal, "c1", AHORA).startsWith("1 fuera de la oficina: ") && globoParte(pm, mal, "c1", AHORA).includes("Qué hacer"));
+  cierto("el globo de una parte dice qué pide, cómo está y qué hacer", globoParte(pm, mal, "c1", AHORA).startsWith("1 fuera del sitio: ") && globoParte(pm, mal, "c1", AHORA).includes("Qué hacer"));
+}
+
+console.log("\n· 0.7.26: tipo y marcas de un destino (lib/tipoDestino.ts)");
+{
+  const zona = { lugar: "oficina", inmutable: "solo_anadir" } as const;
+  const b2l = { lugar: "nube", inmutable: "object_lock", bloqueoDias: 30 } as const;
+  igual("lugares de antes → tipo", (["este_equipo", "oficina", "otra_sede", "nube"] as const).map(tipoDeLugar), ["local", "local", "fuera", "nube"]);
+  igual("zona de un almacén: Local + Inmutable (deducido)", clasificar(zona, null), {
+    tipo: "local",
+    inmutable: true,
+    como: "solo_anadir",
+    aislado: false,
+    bloqueoDias: null,
+    aisladoDias: 30,
+    tipoPorPersona: false,
+    marcasPorPersona: false,
+  });
+  igual("B2 con bloqueo de la copia externa: Nube + Inmutable 30 días", [clasificar(b2l, null).tipo, clasificar(b2l, null).inmutable, clasificar(b2l, null).bloqueoDias], ["nube", true, 30]);
+  igual("«desconectado» de antes se lee como Aislado (no Inmutable)", [clasificar(zona, { inmutable: "desconectado" }).aislado, clasificar(zona, { inmutable: "desconectado" }).inmutable], [true, false]);
+  igual("el lugar de antes marcado por una persona da el tipo", [clasificar(zona, { lugar: "otra_sede" }).tipo, clasificar(zona, { lugar: "otra_sede" }).tipoPorPersona], ["fuera", true]);
+  igual("el tipo nuevo manda sobre el lugar", clasificar(zona, { lugar: "otra_sede", tipo: "nube" }).tipo, "nube");
+  const base2 = { tipo: "local" as const, inmutable: true, como: "solo_anadir" as const, aislado: false, bloqueoDias: null, aisladoDias: 30, soporte: "" };
+  igual("sin cambios: nada que guardar", atributosDe(zona, base2), {});
+  igual("Aislado sin Inmutable: también «desconectado» para una consola anterior", atributosDe(zona, { ...base2, inmutable: false, aislado: true }), { inmutable: "desconectado", aislado: true });
+  igual("Aislado e Inmutable a la vez", atributosDe(zona, { ...base2, aislado: true, aisladoDias: 14 }), { aislado: true, aislado_dias: 14 });
+  igual("Fuera del sitio: también el lugar de antes", atributosDe(zona, { ...base2, tipo: "fuera" }), { tipo: "fuera", lugar: "otra_sede" });
+  igual("Local desde una nube: «oficina» para una consola anterior", atributosDe(b2l, { ...base2, tipo: "local", como: "object_lock", bloqueoDias: 30 }), { tipo: "local", lugar: "oficina" });
+  igual("otro bloqueo de días", atributosDe(b2l, { ...base2, tipo: "nube", como: "object_lock", bloqueoDias: 90 }), { bloqueo_dias: 90 });
+  for (const [n, e] of [
+    ["ida y vuelta: Aislado", { ...base2, inmutable: false, aislado: true }],
+    ["ida y vuelta: Nube inmutable y aislada", { ...base2, tipo: "nube" as const, aislado: true, aisladoDias: 10 }],
+    ["ida y vuelta: Fuera sin marcas", { ...base2, tipo: "fuera" as const, inmutable: false }],
+  ] as const) {
+    const c = clasificar(zona, atributosDe(zona, e));
+    igual(n, [c.tipo, c.inmutable, c.aislado, c.aisladoDias], [e.tipo, e.inmutable, e.aislado, e.aisladoDias]);
+  }
+  igual("el nombre accesible", textoClasificacion({ tipo: "nube", inmutable: true, aislado: false, bloqueoDias: 30 }), "Nube, inmutable (bloqueo de 30 días)");
+
+  console.log("\n· 0.7.26: la conexión de un medio aislado (la ve el agente)");
+  igual("un agente anterior: sin datos (no es un fallo)", estadoConexion(null, 30, AHORA), { sinDatos: true, tarde: false, texto: "Sin datos de conexión", discos: [] });
+  igual("visto hace 3 días", estadoConexion({ ultima_conexion: iso(72), volumenes: [{ id: "a1", visto: iso(72) }] }, 30, AHORA).texto, "Conectado por última vez hace 3 días");
+  const rot = estadoConexion({ ultima_conexion: iso(24 * 40), volumenes: [{ id: "a1", visto: iso(24 * 47) }, { id: "b2", visto: iso(24 * 40) }] }, 30, AHORA);
+  igual("40 días sin conectarse: pide conectarlo", [rot.tarde, rot.texto], [true, "Conecta el medio aislado para comprobar la rotación (última vez visto hace 40 días)"]);
+  igual("con dos discos, uno por disco (el más reciente primero)", rot.discos.map((d) => d.texto), ["Disco 1: visto hace 40 días", "Disco 2: visto hace 47 días"]);
+  igual("la última conexión, de la lista si falta", ultimaConexion({ volumenes: [{ id: "a", visto: iso(5) }, { id: "b", visto: iso(2) }] }), iso(2));
+
+  // Un USB del equipo marcado Aislado: la regla usa la conexión que vio el agente.
+  const usbD: DestinoResumen = { id: "usb-1", nombre: "USB", tipo: "local", unidad: "E:", extraible: true, aislado: { ultima_conexion: iso(24 * 40), volumenes: [{ id: "a1", visto: iso(24 * 40) }] } };
+  const conUsb: Equipo = { ...recepcion, resumen: { ...recepcion.resumen!, destinos: [usbD], repositorios: [{ id: "r", nombre: "R", destino: "usb-1" }], copias: [{ id: "k", nombre: "K", repo: "r", horario: diario, ultima: { cuando: iso(24 * 40), estado: "ok" } }] } };
+  const cat: DestinoCatalogo[] = [{ id: "usb-1", nombre: "", tipo: "local", atributos: { inmutable: "desconectado", aislado: true } }];
+  const ru = reglaDeCopia(conUsb, conUsb.resumen!.copias![0], [conUsb], null, cat, AHORA)!;
+  const p0 = ru.pasos[0];
+  igual("el paso: Local, Aislado, conectado hace 40 días", [p0.tipo_destino, p0.aislado, p0.conectado, p0.clasificacion.marcasPorPersona], ["local", true, iso(24 * 40), true]);
+  igual("avisa: lleva más de 30 días sin conectarse", ru.regla.avisos.includes("aislado_sin_conectar"), true);
+  const ruSin = reglaDeCopia({ ...conUsb, resumen: { ...conUsb.resumen!, destinos: [{ ...usbD, aislado: undefined }] } }, conUsb.resumen!.copias![0], [conUsb], null, cat, AHORA)!;
+  igual("sin datos de conexión (agente anterior): no avisa", ruSin.regla.avisos.includes("aislado_sin_conectar"), false);
 }
 
 console.log(`\n${total - fallos}/${total} correctos`);

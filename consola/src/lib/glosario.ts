@@ -71,8 +71,18 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   "regla-321": {
     title: "Regla 3-2-1-1-0",
-    text: "3 copias de los datos (con los originales), en 2 soportes distintos, 1 fuera de la oficina, 1 que no se pueda borrar desde los equipos y 0 errores al verificar y probar la restauración. Solo cuenta lo que está al día.",
+    text: "3 copias de los datos (con los originales), en 2 soportes distintos, 1 fuera del sitio (Fuera del sitio o Nube), 1 inmutable o aislado y 0 errores al verificar y probar la restauración. Solo cuenta lo que está al día.",
     todo: "Es una guía, no una obligación: la tira de cada copia dice qué falta y dónde se arregla.",
+  },
+  "tipo-destino": {
+    title: "Tipo y marcas de un destino",
+    text: "Tipo: Local (este equipo u otro de la oficina), Fuera del sitio (otra sede, un servidor de fuera) o Nube. Marcas: Inmutable (no se puede borrar desde los equipos: solo añadir, bloqueo de objetos de N días, instantáneas del anfitrión) y Aislado (un medio que se desconecta y se rota).",
+    todo: "Se deduce del destino; si no acierta, cámbialo. Lo que marca una persona manda y se indica.",
+  },
+  aislado: {
+    title: "Aislado",
+    text: "Un medio que se desconecta y se rota (por ejemplo, discos USB). El agente apunta cuándo ve cada disco conectado: así se ve si la rotación se cumple.",
+    todo: "Si un medio aislado no se conecta en sus días (30 por defecto), la consola avisa. Un agente anterior no lo dice: «sin datos de conexión».",
   },
   instantaneas: {
     title: "Instantáneas fuera de su alcance",

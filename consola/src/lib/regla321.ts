@@ -15,7 +15,8 @@
 // Guía, nunca obligación: nada de esto bloquea un botón. Y nunca cuenta el
 // sistema operativo ni el sistema de archivos (8e): solo lo que dice la persona.
 // Sin dependencias de Svelte (lo prueban los vectores).
-import type { AtributosDestino, CopiaResumen, DestinoCatalogo, DestinoResumen, Equipo, Informe, InmutableDestino, LugarDestino, RepositorioResumen } from "./tipos";
+import type { AtributosDestino, ConexionVolumen, CopiaResumen, DestinoCatalogo, DestinoResumen, Equipo, Informe, InmutableDestino, LugarDestino, RepositorioResumen, TipoDestino } from "./tipos";
+import { clasificar, DIAS_AISLADO, tipoDeLugar, ultimaConexion, type Clasificacion, type Deducido } from "./tipoDestino";
 import { claveNube, claveZona, nombreDestino, nombreZonaPorDefecto, unidadDe, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { espejoDelRepo, nombreEnAlmacen } from "./espejo";
 import { destinoDe, informeDe } from "./repo";
@@ -49,6 +50,14 @@ export interface PasoRegla {
   cada_horas?: number | null;
   /** Su comprobación encontró datos dañados. */
   verificacion_mal?: boolean;
+  /** 0.7.26: el tipo (local, fuera, nube). Sin él, el de `lugar`. */
+  tipo_destino?: TipoDestino;
+  /** 0.7.26: marca «Aislado» (`inmutable: "desconectado"` se lee igual). */
+  aislado?: boolean;
+  /** 0.7.26: la última vez que el agente vio el medio conectado. Sin ella no se sabe: no avisa. */
+  conectado?: string | null;
+  /** 0.7.26: días sin conectarse tras los que avisa (sin él, 30). */
+  aislado_dias?: number | null;
 }
 
 export interface PruebaRegla {
@@ -83,7 +92,7 @@ export interface Regla321 {
   dejo_de_cumplir: boolean;
   partes: ParteRegla[];
   atrasados: string[];
-  /** `mismo_equipo`, `inmutable_local`. */
+  /** `mismo_equipo`, `inmutable_local`, `aislado_sin_conectar`. */
   avisos: string[];
 }
 
@@ -97,11 +106,27 @@ export function margenHoras(cadaHoras: number | null | undefined): number {
   return c * 1.5 + 12;
 }
 
-/** ¿Está al día este paso? */
+/** ¿Fuera del sitio? (Fuera del sitio o Nube.) */
+export const esFuera = (p: Pick<PasoRegla, "tipo_destino" | "lugar">) => (p.tipo_destino ?? tipoDeLugar(p.lugar ?? "este_equipo")) !== "local";
+/** ¿Marca «Inmutable»? (solo añadir, bloqueo de objetos, instantáneas). */
+export const esInmutable = (p: Pick<PasoRegla, "inmutable">) => !!p.inmutable && p.inmutable !== "no" && p.inmutable !== "desconectado";
+/** ¿Marca «Aislado»? */
+export const esAislado = (p: Pick<PasoRegla, "inmutable" | "aislado">) => !!p.aislado || p.inmutable === "desconectado";
+/** Los días sin conectarse que se aceptan (1 a 365; sin él, 30). */
+export const diasAislado = (p: Pick<PasoRegla, "aislado_dias">) => (p.aislado_dias != null && Number.isInteger(p.aislado_dias) && p.aislado_dias >= 1 && p.aislado_dias <= 365 ? p.aislado_dias : DIAS_AISLADO);
+
+/** ¿Está al día este paso? Un medio aislado se conecta de vez en cuando: le bastan sus N días. */
 export function pasoAlDia(p: PasoRegla, ahora: number): boolean {
   const t = p.ultima_ok ? Date.parse(p.ultima_ok) : NaN;
   if (!Number.isFinite(t)) return false;
-  return Math.trunc((ahora - t) / 1000) / 3600 <= margenHoras(p.cada_horas);
+  const margen = esAislado(p) ? Math.max(margenHoras(p.cada_horas), diasAislado(p) * 24) : margenHoras(p.cada_horas);
+  return Math.trunc((ahora - t) / 1000) / 3600 <= margen;
+}
+
+/** ¿Un medio aislado lleva más de sus N días sin conectarse? Sin fecha no se sabe: no. */
+export function aisladoSinConectar(p: PasoRegla, ahora: number): boolean {
+  const t = p.conectado ? Date.parse(p.conectado) : NaN;
+  return esAislado(p) && Number.isFinite(t) && Math.trunc((ahora - t) / 1000) > diasAislado(p) * 86_400;
 }
 
 function pruebaBien(p: PruebaRegla, ahora: number): boolean {
@@ -109,8 +134,8 @@ function pruebaBien(p: PruebaRegla, ahora: number): boolean {
   return p.configurada && !p.fallo && Number.isFinite(t) && ahora - t <= DIAS_PRUEBA_REGLA * 24 * HORA;
 }
 
-const fueraDeLaOficina = (l: LugarDestino | undefined) => l === "otra_sede" || l === "nube";
-const esInmutable = (i: InmutableDestino | undefined) => !!i && i !== "no";
+/** El otro «1»: Inmutable o Aislado. */
+const cuentaInmutable = (p: PasoRegla) => esInmutable(p) || esAislado(p);
 
 function parte(id: IdParte, meta: number, valor: number, valorConfig: number, accionFalta: string, alDia: string, detalle: string): ParteRegla {
   const [cumple, cumpleConfig] = id === "errores" ? [valor === 0, valorConfig === 0] : [valor >= meta, valorConfig >= meta];
@@ -123,8 +148,9 @@ export function regla321(e: EntradaRegla, ahora: number): Regla321 {
   const todos = e.pasos;
   const atrasados = e.pasos.filter((p) => !pasoAlDia(p, ahora)).map((p) => p.id);
   const soportes = (l: PasoRegla[]) => new Set([e.origen.soporte, ...l.map((p) => p.soporte)]).size;
-  const fuera = (l: PasoRegla[]) => l.filter((p) => fueraDeLaOficina(p.lugar)).length;
-  const inmutables = (l: PasoRegla[]) => l.filter((p) => esInmutable(p.inmutable)).length;
+  // El «1 fuera»: Fuera del sitio y Nube. El otro «1»: Inmutable o Aislado.
+  const fuera = (l: PasoRegla[]) => l.filter(esFuera).length;
+  const inmutables = (l: PasoRegla[]) => l.filter(cuentaInmutable).length;
   const n = (x: number) => plural(x, "destino", "destinos");
 
   const [c, cc] = [1 + alDia.length, 1 + todos.length];
@@ -151,8 +177,8 @@ export function regla321(e: EntradaRegla, ahora: number): Regla321 {
   const partes = [
     parte("copias", 3, c, cc, "anadir_destino", "poner_al_dia", `${c} de 3: los originales y ${n(c - 1)} al día.`),
     parte("soportes", 2, s, sc, "otro_soporte", "poner_al_dia", `${s} de 2 soportes distintos (equipo y disco).`),
-    parte("fuera", 1, f, fc, "anadir_fuera", "poner_al_dia", `${n(f)} fuera de la oficina.`),
-    parte("inmutable", 1, i, ic, "anadir_inmutable", "poner_al_dia", `${n(i)} inmutable o fuera del alcance de los equipos.`),
+    parte("fuera", 1, f, fc, "anadir_fuera", "poner_al_dia", `${n(f)} fuera del sitio.`),
+    parte("inmutable", 1, i, ic, "anadir_inmutable", "poner_al_dia", `${n(i)} inmutable o aislado.`),
     parte(
       "errores",
       0,
@@ -170,7 +196,8 @@ export function regla321(e: EntradaRegla, ahora: number): Regla321 {
   const porEquipo = new Map<string, Set<string>>([[e.origen.equipo, new Set([e.origen.soporte])]]);
   for (const p of todos) if (p.equipo) porEquipo.set(p.equipo, new Set([...(porEquipo.get(p.equipo) ?? []), p.soporte]));
   if ([...porEquipo.values()].some((x) => x.size >= 2)) avisos.push("mismo_equipo");
-  if (ic > 0 && !todos.some((p) => esInmutable(p.inmutable) && fueraDeLaOficina(p.lugar))) avisos.push("inmutable_local");
+  if (ic > 0 && !todos.some((p) => cuentaInmutable(p) && esFuera(p))) avisos.push("inmutable_local");
+  if (todos.some((p) => aisladoSinConectar(p, ahora))) avisos.push("aislado_sin_conectar");
   return { cumple, cumple_config: cumpleConfig, dejo_de_cumplir: cumpleConfig && !cumple, partes, atrasados, avisos };
 }
 
@@ -185,9 +212,13 @@ export interface PasoVista extends PasoRegla {
   /** La clave del destino en el catálogo (para marcarlo), si la tiene. */
   clave: string | null;
   /** Lo deducido del tipo (antes de lo que dice la persona). */
-  porDefecto: Required<Pick<AtributosDestino, "lugar" | "inmutable">>;
+  porDefecto: Deducido;
   /** Lo que dice la persona en el catálogo. */
   marcado: AtributosDestino | null;
+  /** 0.7.26: tipo y marcas (lo deducido con lo marcado encima). */
+  clasificacion: Clasificacion;
+  /** 0.7.26: lo que vio el agente de su disco (para «Aislado»); null si no lo dice. */
+  conexion: ConexionVolumen | null;
   /** El equipo que lo hace o lo guarda (para el enlace «Ponlo al día»). */
   equipoNombre: string | null;
   equipoId: string | null;
@@ -204,12 +235,14 @@ export interface MarcarDestino {
   nombre: string;
   tipo: DestinoCatalogo["tipo"];
   donde: string | null;
-  porDefecto: Required<Pick<AtributosDestino, "lugar" | "inmutable">>;
+  porDefecto: Deducido;
   /** Su entrada del catálogo (nombre propio y lo marcado), si la tiene. */
   catalogo: DestinoCatalogo | null;
   sistemaArchivos: string | null;
   /** El equipo que lo guarda, para enseñar su entorno (8e). */
   equipo: Equipo | null;
+  /** 0.7.26: lo que vio el agente de su disco (para «Aislado»). */
+  conexion?: ConexionVolumen | null;
 }
 
 /** El tipo del catálogo de un destino de un equipo. */
@@ -282,15 +315,27 @@ function deducirDestino(
   }
 }
 
-/** Lo deducido con lo que dice la persona encima. */
-function conMarcado(p: Omit<PasoVista, "marcado" | "porDefecto">, catalogo: DestinoCatalogo[]): PasoVista {
+/** Lo deducido con lo que dice la persona encima (0.7.26: también el tipo y las marcas). */
+function conMarcado(
+  p: Omit<PasoVista, "marcado" | "porDefecto" | "clasificacion" | "conexion"> & { bloqueoDias?: number | null; conexion?: ConexionVolumen | null },
+  catalogo: DestinoCatalogo[],
+): PasoVista {
+  const { bloqueoDias, conexion, ...resto } = p;
   const marcado = (p.clave && catalogo.find((c) => c.id === p.clave)?.atributos) || null;
+  const porDefecto: Deducido = { lugar: p.lugar, inmutable: p.inmutable, bloqueoDias: bloqueoDias ?? null };
+  const c = clasificar(porDefecto, marcado);
   return {
-    ...p,
-    porDefecto: { lugar: p.lugar, inmutable: p.inmutable },
+    ...resto,
+    porDefecto,
     marcado,
+    clasificacion: c,
+    conexion: conexion ?? null,
     lugar: marcado?.lugar ?? p.lugar,
-    inmutable: marcado?.inmutable ?? p.inmutable,
+    inmutable: c.inmutable ? c.como : c.aislado ? "desconectado" : "no",
+    tipo_destino: c.tipo,
+    aislado: c.aislado,
+    conectado: c.aislado ? ultimaConexion(conexion) : null,
+    aislado_dias: c.aisladoDias,
     soporte: marcado?.soporte ? `marcado:${marcado.soporte.toLowerCase()}` : p.soporte,
   };
 }
@@ -339,6 +384,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
         sistemaArchivos: x.fs,
         tipoCatalogo: tipoCatalogoDe(d, !!x.zona),
         donde: !x.zona && d && d.tipo !== "local" ? (d.donde ?? null) : null,
+        conexion: d?.tipo === "local" ? (d.aislado ?? null) : null,
       },
       catalogo,
     ),
@@ -405,6 +451,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
             sistemaArchivos: nube ? null : (dd.sistema_archivos ?? null),
             tipoCatalogo: nube ? "nube" : "local",
             donde: null,
+            conexion: nube ? null : (dd.aislado ?? null),
           },
           catalogo,
         ),
@@ -436,6 +483,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           sistemaArchivos: xe.fs,
           tipoCatalogo: tipoCatalogoDe(de, !!xe.zona),
           donde: !xe.zona && de && de.tipo !== "local" ? (de.donde ?? null) : null,
+          bloqueoDias: r.externa.bloqueo_dias ?? null,
+          conexion: de?.tipo === "local" ? (de.aislado ?? null) : null,
         },
         catalogo,
       ),
@@ -468,6 +517,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           sistemaArchivos: xd.fs,
           tipoCatalogo: tipoCatalogoDe(de, !!xd.zona),
           donde: !xd.zona && de && de.tipo !== "local" && de.tipo !== "nube" ? (de.donde ?? null) : null,
+          bloqueoDias: dv.bloqueo_dias ?? null,
+          conexion: de?.tipo === "local" ? (de.aislado ?? null) : null,
         },
         catalogo,
       ),
@@ -538,7 +589,7 @@ export function fraseConfig(r: Regla321): string {
 export function marcarDesdePaso(p: PasoVista, equipos: Equipo[], catalogo: DestinoCatalogo[]): MarcarDestino | null {
   if (!p.clave) return null;
   const c = catalogo.find((x) => x.id === p.clave) ?? null;
-  return { clave: p.clave, nombre: p.nombre, tipo: p.tipoCatalogo, donde: p.donde, porDefecto: p.porDefecto, catalogo: c, sistemaArchivos: p.sistemaArchivos, equipo: equipos.find((e) => e.id === p.equipo) ?? null };
+  return { clave: p.clave, nombre: p.nombre, tipo: p.tipoCatalogo, donde: p.donde, porDefecto: p.porDefecto, catalogo: c, sistemaArchivos: p.sistemaArchivos, equipo: equipos.find((e) => e.id === p.equipo) ?? null, conexion: p.conexion };
 }
 
 /** Lo deducido de un destino de la lista de «Repositorios y destinos» (sin una copia concreta). */
@@ -557,7 +608,29 @@ export function marcarDesdeVista(v: DestinoVista, equipos: Equipo[]): MarcarDest
   const d: DestinoResumen = v.destino ?? { id: v.clave, nombre: v.nombre, tipo: (v.tipo as DestinoResumen["tipo"]) ?? "otro", donde: v.donde ?? undefined };
   const e = equipos.find((x) => v.equipos.includes(x.nombre)) ?? equipos[0];
   const x = e ? deducirDestino(d, e, equipos, !!d.inmutable) : { lugar: "otra_sede" as LugarDestino, inmutable: "no" as InmutableDestino, fs: null };
-  return { ...base, tipo: tipoCatalogoDe(d, false), porDefecto: { lugar: x.lugar, inmutable: x.inmutable }, sistemaArchivos: x.fs, equipo: d.tipo === "local" ? (e ?? null) : null };
+  // B2 o S3 con bloqueo: los días de la copia externa o derivada que va a él, si se saben.
+  const bloqueoDias = bloqueoConocido(v.clave, equipos);
+  const inmutable: InmutableDestino = x.inmutable === "no" && bloqueoDias && (d.tipo === "b2" || d.tipo === "s3") ? "object_lock" : x.inmutable;
+  return {
+    ...base,
+    tipo: tipoCatalogoDe(d, false),
+    porDefecto: { lugar: x.lugar, inmutable, bloqueoDias },
+    sistemaArchivos: x.fs,
+    equipo: d.tipo === "local" ? (e ?? null) : null,
+    conexion: d.tipo === "local" ? (d.aislado ?? null) : null,
+  };
+}
+
+/** Los días de bloqueo de objetos de la copia externa o derivada que va a un destino (el mayor), si se saben. */
+export function bloqueoConocido(destinoId: string, equipos: Equipo[]): number | null {
+  const dias = equipos.flatMap((e) =>
+    (e.resumen?.repositorios ?? []).flatMap((r) => [
+      r.externa?.destino_id === destinoId ? (r.externa.bloqueo_dias ?? 0) : 0,
+      ...(r.derivadas ?? []).map((dv) => (dv.destino_id === destinoId ? (dv.bloqueo_dias ?? 0) : 0)),
+    ]),
+  );
+  const max = Math.max(0, ...dias);
+  return max > 0 ? max : null;
 }
 
 export interface CuentaRegla {
@@ -581,8 +654,8 @@ export function cuentaRegla(rs: ReglaCopia[]): CuentaRegla {
 export const PARTES: Record<IdParte, { cifra: string; titulo: string; corto: string }> = {
   copias: { cifra: "3", titulo: "3 copias", corto: "copias" },
   soportes: { cifra: "2", titulo: "2 soportes", corto: "soportes" },
-  fuera: { cifra: "1", titulo: "1 fuera de la oficina", corto: "fuera" },
-  inmutable: { cifra: "1", titulo: "1 inmutable", corto: "inmutable" },
+  fuera: { cifra: "1", titulo: "1 fuera del sitio", corto: "fuera" },
+  inmutable: { cifra: "1", titulo: "1 inmutable o aislado", corto: "inmutable" },
   errores: { cifra: "0", titulo: "0 errores", corto: "errores" },
 };
 
@@ -645,12 +718,12 @@ export function fraseParte(p: ParteRegla, rc: ReglaCopia, ahora: number): string
     case "soportes":
       return `${p.valor === 1 ? "Un solo soporte" : `${p.valor} soportes`}: equipo y disco distintos.`;
     case "fuera": {
-      const f = al.filter((x) => fueraDeLaOficina(x.lugar));
-      return f.length ? `${nombres(f)}.` : "Ninguno al día fuera de la oficina.";
+      const f = al.filter((x) => esFuera(x));
+      return f.length ? `${nombres(f)}.` : "Ninguno al día fuera del sitio (Fuera del sitio o Nube).";
     }
     case "inmutable": {
-      const i = al.filter((x) => esInmutable(x.inmutable));
-      return i.length ? `${nombres(i)}.` : "Ninguno al día que no se pueda borrar desde los equipos.";
+      const i = al.filter((x) => cuentaInmutable(x));
+      return i.length ? `${nombres(i)}.` : "Ninguno al día inmutable o aislado.";
     }
     case "errores":
       return p.valor ? p.detalle : "Verificación y prueba de restauración recientes y correctas.";
@@ -669,7 +742,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
   const repo = `/c/${cliente}/equipos/${e.id}/repositorios/${encodeURIComponent(rc.repo.id)}`;
   const externa = { texto: "Copia externa", href: `/c/${cliente}/equipos/${e.id}?externa=${encodeURIComponent(rc.repo.id)}` };
   // Los atrasados que importan para esta parte (fuera: los de fuera; inmutable: los inmutables), primero.
-  const importa = (x: PasoVista) => (p.id === "fuera" ? fueraDeLaOficina(x.lugar) : p.id === "inmutable" ? esInmutable(x.inmutable) : true);
+  const importa = (x: PasoVista) => (p.id === "fuera" ? esFuera(x) : p.id === "inmutable" ? cuentaInmutable(x) : true);
   const todosAtrasados = rc.pasos.filter((x) => rc.regla.atrasados.includes(x.id));
   const atrasados = [...todosAtrasados.filter(importa), ...todosAtrasados.filter((x) => !importa(x))];
   switch (p.accion) {
@@ -685,10 +758,10 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
     case "otro_soporte":
       return { texto: "Guarda una copia en otro equipo u otro disco: un almacén de la oficina, un disco USB o la nube.", enlace: { texto: "Repositorios y destinos", href: `/c/${cliente}/repositorios` } };
     case "anadir_fuera":
-      return { texto: "Añade un destino fuera de la oficina: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia externa, espejo del almacén o una copia directa a la nube.", enlace: externa };
+      return { texto: "Añade un destino Fuera del sitio o en la Nube: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia externa, espejo del almacén o copia directa a la nube.", enlace: externa };
     case "anadir_inmutable":
       return {
-        texto: "Añade un destino que no se pueda borrar desde los equipos: un almacén (solo añadir), B2 o S3 con bloqueo de objetos, o marca un destino con instantáneas del anfitrión o desconectado.",
+        texto: "Añade un destino inmutable (un almacén, B2 o S3 con bloqueo de objetos) o marca uno como Aislado (un disco que se desconecta y se rota).",
         enlace: { texto: "Destinos", href: `/c/${cliente}/repositorios#destinos` },
       };
     case "programar_verificacion":
@@ -719,7 +792,8 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
 /** Los avisos, en frase. */
 export const TEXTO_AVISO: Record<string, string> = {
   mismo_equipo: "Dos soportes están en el mismo equipo: un fallo del equipo, un robo o un incendio se los lleva a la vez.",
-  inmutable_local: "Lo que no se puede borrar está todo en la oficina: no protege de un incendio o un robo.",
+  inmutable_local: "Lo inmutable o aislado está todo en el sitio: no protege de un incendio o un robo.",
+  aislado_sin_conectar: "Un medio aislado lleva demasiado sin conectarse: conéctalo para comprobar la rotación.",
 };
 
 /** «Cumple la regla 3-2-1-1-0», «Le falta: 1 fuera de la oficina y 0 errores», «Dejó de cumplir: …». */
