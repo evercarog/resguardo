@@ -21,3 +21,6 @@ src-tauri/resources/agente/*.exe
 
 # Revisiones de seguridad y auditorías locales (no se publican)
 /revisiones/
+
+# Llaves privadas de minisign: NUNCA en el repositorio
+*.key
