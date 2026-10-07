@@ -35,7 +35,7 @@ Acordado con el responsable del proyecto el 2026-10-07. Marca aquí el estado de
 
 ## Bloque 4 — Espejos como trabajos
 
-Hecho en la rama `ia/0726-bloque4` (`crates/agente/src/espejo_trabajos.rs`; diseño en [espejo.md](espejo.md) «Trabajos de espejo»; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.4x; consola: página «Espejos» del equipo, `EditorEspejo`, `espejosDeCopia`; lo no probado, en [registro-ia.md](registro-ia.md)). Además: «Hacer ahora» (`espejo_ahora`).
+Hecho en la rama `ia/0726-bloque4` (`crates/agente/src/espejo_trabajos.rs`; diseño en [espejo.md](espejo.md) «Trabajos de espejo»; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.65; consola: página «Espejos» del equipo, `EditorEspejo`, `espejosDeCopia`; lo no probado, en [registro-ia.md](registro-ia.md)). Además: «Hacer ahora» (`espejo_ahora`).
 
 - [x] **4.1 Trabajo de espejo.** Quién lo hace: el almacén (recomendado si el repositorio está ahí) o el propio equipo (repositorios en sus discos; funciona solo con el agente). Qué: todos, los de ciertos equipos, o repositorios concretos. Adónde: otra zona/disco o una nube conectada en quien lo hace. Cuándo: horario, «en cadena» o «después de» otro espejo o de cada copia nueva (con retraso). Retención, freno, verificación sin contraseñas, límite de velocidad, activo/pausado, nombre. Varios trabajos por repositorio, a destinos u horas distintas.
 - [x] **4.2 Retención.** Nunca borra · Sigue al original con retraso de N días · Igual que el origen (sincroniza en la siguiente pasada; aviso «si algo borra en el original, aquí también»). Con bloqueo de objetos de N días: sin «igual que el origen», retraso mayor que N, nunca borrar algo bloqueado.
@@ -54,7 +54,7 @@ Hecho en la rama `ia/0726-bloque4` (`crates/agente/src/espejo_trabajos.rs`; dise
 
 ## Bloque 7 — Despliegue masivo (para instalar muchos equipos)
 
-- [x] **7.1 Código de alta para varios equipos:** (rama `ia/0726-bloque7`; contrato en `api-servidor.md` §4 y «Cambios», v1.4x; guía en `guia-instalacion.md` 5.5) válido para N altas y caduca en X días (por defecto 10 equipos, 7 días), generado en el navegador como el de 9a (el servidor solo guarda su huella); se puede anular; cada alta queda en la auditoría.
+- [x] **7.1 Código de alta para varios equipos:** (rama `ia/0726-bloque7`; contrato en `api-servidor.md` §4 y «Cambios», v1.63; guía en `guia-instalacion.md` 5.5) válido para N altas y caduca en X días (por defecto 10 equipos, 7 días), generado en el navegador como el de 9a (el servidor solo guarda su huella); se puede anular; cada alta queda en la auditoría.
 - [x] **7.2 Línea de PowerShell** (rama `ia/0726-bloque7`; huella SHA-256 fijada en la línea, también codificada para herramientas de despliegue; la de Linux, con la huella y fuera del historial de bash) (y la de Linux ya existente, con el mismo código): descarga el instalador desde la consola, comprueba su firma o huella, instala en silencio y vincula con el código. Para pegar en cada equipo o usar en una herramienta de despliegue.
 - [x] **7.3 «Equipos esperando confirmación»:** (rama `ia/0726-bloque7`) lista con el código de comprobación de cada uno y «Confirmar los que coinciden» (uno a uno o en bloque); nada se da de alta sin confirmar.
 

@@ -4,7 +4,7 @@ Diseño de la tarea 3 de [plan-mejoras.md](plan-mejoras.md) («Espejo más flexi
 
 ## Trabajos de espejo (0.7.26, bloque 4)
 
-Desde la 0.7.26 el espejo es una **lista de trabajos** (`espejo.trabajos[]`, `crates/agente/src/espejo_trabajos.rs`; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.4x). Lo de abajo (destinos, §3a–§3f) sigue valiendo: cada destino de antes **es** un trabajo, con el mismo motor (`espejo_motor.rs`) y el mismo archivo de estado.
+Desde la 0.7.26 el espejo es una **lista de trabajos** (`espejo.trabajos[]`, `crates/agente/src/espejo_trabajos.rs`; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.65). Lo de abajo (destinos, §3a–§3f) sigue valiendo: cada destino de antes **es** un trabajo, con el mismo motor (`espejo_motor.rs`) y el mismo archivo de estado.
 
 | Campo | Qué es |
 |---|---|

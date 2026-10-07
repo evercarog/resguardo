@@ -425,7 +425,7 @@ Arreglado en esta tarea (lo barato): nombre, etiquetas y observación del equipo
 
 ### 6.5 Datos comunes del cliente (0.7.26, bloque 8)
 
-Contrato «v1.4x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios». Código: `crates/protocolo/src/datos_cliente.rs` (claves, validación, quién gana; vectores compartidos con la consola), `crates/agente/src/datos_cliente.rs`, `crates/servidor/src/datos_comunes.rs`, `consola/src/lib/datosComunes.ts` y `.svelte.ts`, componente `DatosComunes`.
+Contrato «v1.66, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios». Código: `crates/protocolo/src/datos_cliente.rs` (claves, validación, quién gana; vectores compartidos con la consola), `crates/agente/src/datos_cliente.rs`, `crates/servidor/src/datos_comunes.rs`, `consola/src/lib/datosComunes.ts` y `.svelte.ts`, componente `DatosComunes`.
 
 **Problema.** En la consola local la etiqueta «Servidor» salía azul y en la en línea sin color. Lo mismo con los nombres, el tipo y las marcas de los destinos y con las plantillas: cada servidor guardaba los suyos.
 

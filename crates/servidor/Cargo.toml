@@ -1,6 +1,6 @@
 [package]
 name = "resguardo-servidor"
-version = "0.7.25"
+version = "0.7.26"
 description = "Resguardo Server: consola web, API y canal de los agentes (ver docs/plataforma.md)"
 edition.workspace = true
 license.workspace = true
