@@ -77,7 +77,7 @@ impl Registro {
         } else {
             l.push(Visto { id: id.to_string(), visto: ahora.to_string() });
         }
-        l.sort_by(|a, b| parse(&b.visto).cmp(&parse(&a.visto)));
+        l.sort_by_key(|v| std::cmp::Reverse(parse(&v.visto)));
         l.truncate(MAX_POR_DESTINO);
         true
     }
@@ -85,7 +85,12 @@ impl Registro {
     /// Al terminar una copia: el disco `id` se vio `ahora` en los destinos que ya lo conocían.
     pub fn tocar(&mut self, id: &str, ahora: &str) -> bool {
         let claves: Vec<String> = self.destinos.iter().filter(|(_, l)| l.iter().any(|v| v.id == id)).map(|(k, _)| k.clone()).collect();
-        claves.iter().fold(false, |c, k| self.apuntar(k, id, ahora) || c)
+        // En todos (no `any`: hay que apuntarlo en cada destino que lo conoce).
+        let mut cambio = false;
+        for k in &claves {
+            cambio |= self.apuntar(k, id, ahora);
+        }
+        cambio
     }
 
     /// `{ ultima_conexion, volumenes: [{ id, visto }] }` de un destino (el más reciente primero), o `null`.
