@@ -17,6 +17,7 @@ import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/reten
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
 import { errorCadenas } from "../lib/cadenas";
 import { usosDeNube } from "../lib/nubesEquipo";
+import { ADMITE_EQUIPO, ADMITE_TRABAJOS, claveDestinoTrabajo, errorTrabajos, nombrePorDefecto, reduceTrabajos, trabajosDelAlmacen, trabajosDelEquipo } from "../lib/espejoTrabajos";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
 import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
@@ -388,6 +389,47 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       e.resumen ??= {};
       // Espejo nocturno a otra carpeta (otro disco): { carpeta, hora } o null para quitarlo.
       // §3b: confirmar lo que falta de golpe en el almacén (espera, como el agente).
+      // Plan 0.7.26 (bloque 4): trabajos de espejo, del almacén o del propio equipo (como el agente).
+      const conTrabajosMock = !!e.resumen.admite?.includes(ADMITE_TRABAJOS);
+      const delEquipoMock = !!e.resumen.admite?.includes(ADMITE_EQUIPO);
+      if ("espejo_freno" in c && (c.espejo_freno as { trabajo?: string }).trabajo) {
+        if (!plana.not_before) return resultado(e, o, "rechazada", "Confirmar lo que falta reduce la protección: falta la espera (not_before).");
+        const f = c.espejo_freno as { trabajo: string; quien?: string };
+        const t = (f.quien === "equipo" ? trabajosDelEquipo(e) : trabajosDelAlmacen(e)).find((x) => x.id === f.trabajo);
+        if (!t) return resultado(e, o, "fallida", "Ese espejo ya no está.");
+        if (t.retencion.modo === "nunca") return resultado(e, o, "fallida", "Ese espejo nunca borra nada: no hay nada que confirmar.");
+        t.freno_aviso = null;
+        t.retenidos = null;
+        return resultado(e, o, "hecha", `Confirmado: la próxima vez que se haga «${t.nombre}» se anota lo que ya no está y se borrará del espejo a su tiempo.`);
+      }
+      const pideTrabajos = "espejo" in c && !!c.espejo && Array.isArray((c.espejo as { trabajos?: unknown }).trabajos);
+      if (("espejo_equipo" in c && delEquipoMock) || (pideTrabajos && conTrabajosMock) || ("espejo" in c && c.espejo === null && conTrabajosMock)) {
+        const equipo = "espejo_equipo" in c;
+        const cuerpo = (equipo ? c.espejo_equipo : c.espejo) as { trabajos?: T.TrabajoEspejo[] } | null;
+        const nuevos = cuerpo?.trabajos ?? [];
+        if (!equipo && !e.resumen.guarda_copias?.activo) return resultado(e, o, "fallida", "Activa antes el Servidor de copias.");
+        const err = errorTrabajos(nuevos, equipo ? "equipo" : "almacen");
+        if (err) return resultado(e, o, "fallida", err);
+        const antes = equipo ? trabajosDelEquipo(e) : trabajosDelAlmacen(e);
+        if (reduceTrabajos(antes, nuevos) && !plana.not_before) return resultado(e, o, "rechazada", "Ese cambio de los espejos reduce la protección: falta la espera (not_before).");
+        const nubes = [...(e.resumen.nubes ?? []), ...(e.resumen.guarda_copias?.nubes ?? [])];
+        for (const t of nuevos) {
+          if (t.adonde.tipo === "nube" && !nubes.some((n) => n.nombre === t.adonde.nube)) return resultado(e, o, "fallida", `No hay ninguna nube «${t.adonde.nube}» conectada en este equipo: conéctala antes.`);
+          const malCarpeta = t.adonde.tipo === "carpeta" ? errorCarpetaEspejo(t.adonde.carpeta, /windows/i.test(e.so)) : null;
+          if (malCarpeta) return resultado(e, o, "fallida", malCarpeta);
+        }
+        // Lo de cada uno que sigue (su última vuelta…), conservado; uno nuevo, sin nada.
+        const guardados: T.TrabajoEspejoResumen[] = nuevos.map((t) => {
+          const a = antes.find((x) => x.id === t.id && claveDestinoTrabajo(x) === claveDestinoTrabajo(t));
+          const n = { ...t, nombre: t.nombre || nombrePorDefecto(t.adonde) };
+          return a ? { ...a, ...n } : n;
+        });
+        if (equipo) e.resumen.espejo_equipo = guardados.length ? { trabajos: guardados } : null;
+        else if (!guardados.length) e.resumen.guarda_copias!.espejo = null;
+        else e.resumen.guarda_copias!.espejo = { hora: e.resumen.guarda_copias!.espejo?.hora ?? "02:00", ultima: e.resumen.guarda_copias!.espejo?.ultima ?? null, resultado: e.resumen.guarda_copias!.espejo?.resultado ?? null, destinos: [], trabajos: guardados };
+        return resultado(e, o, "hecha", guardados.length ? (guardados.length === 1 ? "Espejo guardado." : `${guardados.length} espejos guardados.`) : "Espejos quitados (lo ya copiado se queda en su destino).");
+      }
+      if ("espejo" in c && conTrabajosMock && trabajosDelAlmacen(e).length) return resultado(e, o, "fallida", "Este almacén tiene espejos que esta consola no sabe cambiar: cámbialos desde una consola actualizada.");
       if ("espejo_freno" in c) {
         if (!plana.not_before) return resultado(e, o, "rechazada", "Confirmar lo que falta en el almacén reduce la protección: falta la espera (not_before).");
         const f = c.espejo_freno as DestinoEspejo;

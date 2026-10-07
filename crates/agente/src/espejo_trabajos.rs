@@ -1146,7 +1146,7 @@ pub fn aceptar_freno(t: &Trabajo) -> Result<String, String> {
     }
     let cuando = match t.retencion {
         Retencion::Retraso { dias } => format!("pasados {dias} días"),
-        _ => "en la vuelta siguiente".into(),
+        _ => "la vez siguiente".into(),
     };
     Ok(format!("Confirmado: la próxima vez que se haga «{}» se anota lo que ya no está y se borrará del espejo {cuando}.", t.nombre))
 }

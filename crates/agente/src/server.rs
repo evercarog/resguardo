@@ -218,13 +218,14 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
     if !c.enabled {
         return Err("Activa antes el Servidor de copias.".into());
     }
+    // Quitarlo todo vale siempre (como antes).
+    let Some(mut nuevo) = nuevo else { return poner_trabajos(None) };
     if let Some(e) = &c.espejo {
         let actuales = e.trabajos_efectivos();
         if actuales.iter().any(|t| !crate::espejo_trabajos::exacto(t, &actuales, e.limite_kib)) {
             return Err("Este almacén tiene espejos que esta consola no sabe cambiar (en cadena, «igual que el origen», pausados…): cámbialos desde una consola actualizada.".into());
         }
     }
-    let Some(mut nuevo) = nuevo else { return poner_trabajos(None) };
     nuevo.normalizar();
     if nuevo.destinos.is_empty() {
         return Err("Falta al menos un destino para el espejo.".into());

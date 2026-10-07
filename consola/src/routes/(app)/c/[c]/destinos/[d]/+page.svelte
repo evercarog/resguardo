@@ -18,6 +18,7 @@
   import { bytesRepo, estadoRepo, informeDe, nVersiones } from "$lib/repo";
   import { TEXTO_TIPO } from "$lib/destinos";
   import { nombreTipoNube } from "$lib/espejo";
+  import { admiteEspejoEquipo, admiteTrabajos, hrefEspejos } from "$lib/espejoTrabajos";
   import { destinoQuitable } from "$lib/datosEquipo";
   import { actividadDestino, reposEnDestino, usarEnCopia, usosDeDestino, vistaPorClave } from "$lib/fichaDestino";
   import { marcarDesdeVista, textoEntorno, type MarcarDestino } from "$lib/regla321";
@@ -63,6 +64,16 @@
   const protegido = $derived(filas.reduce((n, x) => n + (x.tam ?? 0), 0));
   const usos = $derived(v ? usosDeDestino(v, actual.equipos, c) : []);
   const posibles = $derived(v ? usarEnCopia(v, actual.equipos, c) : []);
+  /** Plan 0.7.26 (bloque 4): «Usar en un espejo»: la página de espejos de quien lo haría, con este destino ya elegido. */
+  const usarEspejo = $derived.by(() => {
+    if (v?.zona && admiteTrabajos(v.zona.almacen)) return hrefEspejos(c, v.zona.almacen.id, { destino: v.clave, quien: "almacen" });
+    if (v?.nube) {
+      const e = v.nube.equipo;
+      if (e.resumen?.guarda_copias?.activo && admiteTrabajos(e)) return hrefEspejos(c, e.id, { destino: v.clave, quien: "almacen" });
+      if (admiteEspejoEquipo(e)) return hrefEspejos(c, e.id, { destino: v.clave, quien: "equipo" });
+    }
+    return null;
+  });
   const actividad = $derived(v ? actividadDestino(v, actual.equipos, c) : []);
   const marca = $derived<MarcarDestino | null>(v ? marcarDesdeVista(v, actual.equipos) : null);
   const atrib = $derived(v?.catalogo?.atributos ?? null);
@@ -242,7 +253,11 @@
     {/if}
 
     <section id="usar" aria-labelledby="t-usar">
-      <div class="section-head"><h2 id="t-usar">Usar en una copia</h2></div>
+      <div class="section-head">
+        <h2 id="t-usar">Usar en una copia</h2>
+        <!-- Plan 0.7.26 (bloque 4): un espejo hacia aquí (lo hace el almacén de la zona o el equipo de la nube). -->
+        {#if usarEspejo && administra}<a class="btn btn-sm" href={usarEspejo}><Plus size={14} />Usar en un espejo</a>{/if}
+      </div>
       {#if posibles.length}
         <p class="explica">
           {#if v.clase === "nube"}Esta nube está conectada en {v.nube?.equipo.nombre}: sirve para el <strong>espejo</strong> de lo que guarda ese almacén o para un <strong>repositorio nuevo a partir de</strong> otro, en el equipo dueño.

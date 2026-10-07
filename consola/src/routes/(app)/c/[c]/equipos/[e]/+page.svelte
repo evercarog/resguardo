@@ -119,6 +119,7 @@
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
   import { cuandoEnFrase, filtroEnFrase, pasoDeEspejo } from "$lib/cadenas";
   import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
+  import { admiteEspejoEquipo, admiteTrabajos, estadoTrabajo, hrefEspejos, textoCuando as textoCuandoTrabajo, textoRetencion as textoRetencionTrabajo, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
   import type { DerivadaResumen } from "$lib/tipos";
@@ -328,6 +329,10 @@
   const espejoActual = $derived(equipo?.resumen?.guarda_copias?.espejo ?? null);
   const nubes = $derived(equipo?.resumen?.guarda_copias?.nubes ?? []);
   const flexible = $derived(admiteEspejoFlexible(equipo));
+  // Plan 0.7.26 (bloque 4): con trabajos, el espejo se cambia en su página («Espejos»).
+  const conTrabajos = $derived(admiteTrabajos(equipo));
+  const trabajosAlmacen = $derived([...trabajosDelAlmacen(equipo)].sort((a, b) => a.orden - b.orden));
+  const trabajosPropios = $derived([...trabajosDelEquipo(equipo)].sort((a, b) => a.orden - b.orden));
   /** Destinos actuales, en la forma de la orden (sin sus resultados, con sus opciones). */
   const destinosActuales = $derived<DestinoEspejoUI[]>((espejoActual?.destinos ?? []).map(destinoParaOrden));
   // `limite`: el campo es numérico (bind:value da número, o "" si se vacía).
@@ -1197,7 +1202,29 @@
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
           <!-- Tarea 7b: las zonas (otros discos que sirve, cada uno con su puerto). -->
           {#if actual.cliente}<ZonasAlmacen cliente={actual.cliente} {equipo} equipos={actual.equipos} administra={puede.administrar(rol)} alCambiar={() => void cargar()} />{/if}
-          {#if g.espejo}
+          {#if conTrabajos}
+            <!-- Plan 0.7.26 (bloque 4): los espejos como trabajos, en su página («Espejos»). -->
+            <div class="espejo">
+              <p class="externa"><HardDrive size={14} /><span>Espejos de lo que guarda</span><Ayuda id="espejo" /></p>
+              {#if trabajosAlmacen.length}
+                <ul class="destinos-espejo">
+                  {#each trabajosAlmacen as t (t.id)}
+                    {@const e = estadoTrabajo(t)}
+                    <li>
+                      <span class="ic-d">{#if t.adonde.tipo === "nube"}<Cloud size={14} />{:else}<HardDrive size={14} />{/if}</span>
+                      <span class="d-texto">
+                        <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
+                        <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosAlmacen.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
+                        {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado} <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
+                        {#if t.freno_aviso}<span class="msg-fallo">Freno: {t.freno_aviso}</span>{/if}
+                      </span>
+                      <Chip pequeno tono={e === "error" ? "bad" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {:else if g.espejo}
             <div class="espejo">
               <p class="externa">
                 <HardDrive size={14} /><span>{flexible ? "Espejo de lo que guarda" : `Espejo cada noche a las ${g.espejo.hora}`}{#if g.espejo.limite_kib}{" · "}subida limitada a {numero(g.espejo.limite_kib)} KiB/s{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
@@ -1266,7 +1293,15 @@
           {#if g.nubes?.length}
             <p class="externa"><Cloud size={14} />Nubes conectadas: {g.nubes.map((n) => n.nombre).join(", ")} <a class="link" href="#t-nubes">(ver abajo)</a></p>
           {/if}
-          {#if puede.administrar(rol)}
+          {#if conTrabajos}
+            <div class="acciones">
+              <a class="btn btn-sm" href={hrefEspejos(c, equipo.id)}><HardDrive size={14} />Espejos{#if trabajosAlmacen.length}{" "}({trabajosAlmacen.length}){/if}</a>
+              {#if puede.administrar(rol)}
+                <a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "almacen" })}><Plus size={14} />Añadir espejo</a>
+                <MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} />
+              {/if}
+            </div>
+          {:else if puede.administrar(rol)}
             <div class="acciones">
               <button class="btn btn-sm" onclick={() => abrirEspejo()}><Plus size={14} />{g.espejo ? "Añadir destino del espejo" : "Espejo de lo que guarda"}</button>
               <MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} />
@@ -1284,6 +1319,35 @@
           </div>
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
           {#if !pendGuarda.some((p) => !terminada(p.orden))}<div class="acciones"><button class="btn btn-sm" onclick={abrirGuardar}><Server size={14} />Este equipo guarda copias</button></div>{/if}
+        </section>
+      {/if}
+
+      {#if admiteEspejoEquipo(equipo) && (trabajosPropios.length || puede.administrar(rol))}
+        <!-- Plan 0.7.26 (bloque 4): espejos que hace el propio equipo con los repositorios de sus discos. -->
+        <section class="card p" aria-labelledby="t-espejos-eq">
+          <h3 class="section-title" id="t-espejos-eq">Espejos de este equipo</h3>
+          {#if trabajosPropios.length}
+            <ul class="destinos-espejo">
+              {#each trabajosPropios as t (t.id)}
+                {@const e = estadoTrabajo(t)}
+                <li>
+                  <span class="ic-d">{#if t.adonde.tipo === "nube"}<Cloud size={14} />{:else}<HardDrive size={14} />{/if}</span>
+                  <span class="d-texto">
+                    <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
+                    <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosPropios.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
+                    {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado}</span>{/if}
+                  </span>
+                  <Chip pequeno tono={e === "error" ? "bad" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="faint">Copia los repositorios de sus discos a otro disco o a una nube conectada aquí, sin almacén ni contraseñas.</p>
+          {/if}
+          <div class="acciones">
+            <a class="btn btn-sm" href={hrefEspejos(c, equipo.id)}><HardDrive size={14} />Espejos</a>
+            {#if puede.administrar(rol)}<a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "equipo" })}><Plus size={14} />Añadir espejo</a>{/if}
+          </div>
         </section>
       {/if}
 
