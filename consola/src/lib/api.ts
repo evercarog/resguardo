@@ -8,6 +8,7 @@
 // - Las sesiones interactivas usan espera larga (hasta 25 s por petición).
 import type * as T from "./tipos";
 import type { CodigoAbierto } from "./emparejar";
+import type { DatosComunesCliente, EntradaOrden } from "./datosComunes";
 import { mensajePausa, pausaTras } from "./pausa429";
 import { conexionOk, conexionPerdida, empezar } from "./actividad.svelte";
 
@@ -307,6 +308,14 @@ export const borrarDestino = (c: string, id: string) => pedir<void>("DELETE", `$
 export const ajustesEtiquetas = (c: string) => pedir<T.AjusteEtiqueta[]>("GET", `${cli(c)}/etiquetas`, undefined, { invisible: true });
 export const ponerAjusteEtiqueta = (c: string, a: { nombre: string; color: number | null; plantilla: string | null; avisos: T.AvisosEtiqueta | null }) =>
   pedir<T.AjusteEtiqueta[]>("PUT", `${cli(c)}/etiquetas`, a);
+// 0.7.26 (bloque 8): los datos comunes del cliente (colores, catálogo, plantillas), iguales en
+// todas sus consolas (lib/datosComunes.ts). Solo administradores; un servidor anterior da 404.
+export const datosComunes = (c: string) => pedir<DatosComunesCliente>("GET", `${cli(c)}/datos-comunes`, undefined, { invisible: true });
+export const ponerDatosComunes = (c: string, entradas: { clave: string; valor: unknown; semilla?: boolean }[]) =>
+  pedir<{ entradas: EntradaOrden[] }>("POST", `${cli(c)}/datos-comunes`, { entradas }, { invisible: true });
+export const datosComunesEnviados = (c: string, entradas: { clave: string; cambiado: string }[]) =>
+  pedir<{ n: number }>("POST", `${cli(c)}/datos-comunes/enviadas`, { entradas }, { invisible: true });
+export const traerPlantillaComun = (c: string, clave: string, cambiado: string, cifrado: string) => pedir<unknown>("POST", `${cli(c)}/datos-comunes/traer`, { clave, cambiado, cifrado });
 // v1.40: observaciones y comentarios (en claro en el servidor; lib/notas.svelte.ts).
 export const indiceNotas = (c: string) => pedir<{ objetos: T.IndiceNota[] }>("GET", `${cli(c)}/notas`, undefined, { invisible: true });
 export const notasDe = (c: string, tipo: T.TipoNota, objeto: string) =>

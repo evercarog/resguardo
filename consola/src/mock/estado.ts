@@ -488,7 +488,8 @@ export async function sembrar(vacio = false) {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
         // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar"],
+        // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "datos_cliente"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],

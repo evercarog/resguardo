@@ -10,6 +10,7 @@
   import { vigilarProgreso } from "$lib/progreso.svelte";
   import { conectarVivo, seguirCambios, type Cambio } from "$lib/vivo.svelte";
   import PantallaError from "$lib/componentes/PantallaError.svelte";
+  import DatosComunes from "$lib/componentes/DatosComunes.svelte";
 
   let { children }: { children: Snippet } = $props();
   const id = $derived(page.params.c ?? "");
@@ -69,5 +70,7 @@
     {/if}
   </div>
 {:else}
+  <!-- 0.7.26 (bloque 8): lo mismo en todas las consolas (aviso si algo espera a una persona). -->
+  <DatosComunes />
   {@render children()}
 {/if}

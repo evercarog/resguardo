@@ -3,13 +3,19 @@
   // «inmutable», tarea 8a y 8e; docs/regla-3-2-1.md). Tipo (uno): Local, Fuera
   // del sitio o Nube. Marcas: Inmutable (con los días del bloqueo de objetos) y
   // Aislado (con los días tras los que avisa). Se deducen del destino; aquí se
-  // cambian. Solo va al catálogo del cliente (en claro, sin secretos): no manda
-  // órdenes ni toca ningún equipo. El sistema de archivos, el entorno y la
-  // última conexión que vio el agente se enseñan solo como dato.
+  // cambian. Va al catálogo del cliente (en claro, sin secretos) y, si algún
+  // equipo guarda los datos comunes (0.7.26, bloque 8), se reparte a todas las
+  // consolas con la clave de administración: cuenta en la regla 3-2-1. El
+  // sistema de archivos, el entorno y la última conexión que vio el agente se
+  // enseñan solo como dato.
   import { Building2, Cloud, HardDrive, Lock, ShieldCheck, TriangleAlert, Unplug } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import BotonCargando from "../BotonCargando.svelte";
+  import CampoClave from "../CampoClave.svelte";
   import Ayuda from "../Ayuda.svelte";
+  import { actual } from "$lib/estado.svelte";
+  import { equiposQueGuardan } from "$lib/datosComunes";
+  import { repartirConClave } from "$lib/datosComunes.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { guardarEnCatalogo, quitarDelCatalogo } from "$lib/catalogoDestinos.svelte";
   import { textoEntorno, type MarcarDestino } from "$lib/regla321";
@@ -32,6 +38,11 @@
   let soporte = $state(soporteInicial());
   let ocupado = $state(false);
   let error = $state("");
+  // 0.7.26 (bloque 8): con equipos que guardan los datos comunes, el tipo y las marcas se
+  // reparten a las demás consolas con la clave de administración.
+  const compartido = $derived(actual.id === cliente && !!actual.cliente && equiposQueGuardan(actual.equipos).length > 0);
+  let clave = $state("");
+  let paso = $state("");
 
   /** Solo lo que se aparta de lo deducido (con lo que entiende una consola anterior). */
   const atributos = $derived(atributosDe(destino.porDefecto, { tipo, inmutable, como, aislado, bloqueoDias: bloqueo, aisladoDias, soporte }));
@@ -49,18 +60,30 @@
   async function guardar(e: SubmitEvent) {
     e.preventDefault();
     if (invalido) return;
+    if (compartido && !clave) return void (error = "Escribe la clave de administración: el tipo y las marcas se reparten a todas las consolas.");
     ocupado = true;
     error = "";
     try {
       if (marcado) await guardarEnCatalogo(cliente, destino.clave, { nombre: nombrePropio, tipo: destino.tipo, donde: destino.donde, atributos });
       else if (nombrePropio) await guardarEnCatalogo(cliente, destino.clave, { nombre: nombrePropio, tipo: destino.tipo, donde: destino.donde, atributos: null });
       else if (destino.catalogo) await quitarDelCatalogo(cliente, destino.clave);
-      avisar(marcado ? `Guardado: «${destino.nombre}» queda como lo has marcado.` : `«${destino.nombre}» vuelve a lo deducido.`);
+      const hecho = marcado ? `Guardado: «${destino.nombre}» queda como lo has marcado.` : `«${destino.nombre}» vuelve a lo deducido.`;
+      if (compartido && actual.cliente) {
+        try {
+          await repartirConClave(actual.cliente, actual.equipos, clave, (t) => (paso = t));
+        } catch (err) {
+          // Aquí ya está guardado; queda por repartir (el aviso de arriba deja hacerlo después).
+          error = `${hecho} No se pudo repartir a las demás consolas: ${(err as Error).message}`;
+          return;
+        }
+      }
+      avisar(compartido ? `${hecho} Lo verán así todas las consolas.` : hecho);
       onclose();
     } catch (err) {
       error = (err as Error).message;
     } finally {
       ocupado = false;
+      paso = "";
     }
   }
 
@@ -81,7 +104,7 @@
     <span class="ticon"><ShieldCheck size={18} /></span>
     <div>
       <h2 id="t-atributos">Tipo y marcas de «{destino.nombre}»</h2>
-      <p>Se deducen del destino; cámbialos si no aciertan. Solo cambia cómo lo cuenta la consola. <Ayuda id="tipo-destino" /></p>
+      <p>Se deducen del destino; cámbialos si no aciertan. Solo cambia cómo lo cuentan las consolas. <Ayuda id="tipo-destino" /></p>
     </div>
   </div>
   <form class="form" onsubmit={guardar}>
@@ -147,6 +170,10 @@
         <span class="solo-dato">(solo un dato: no cuenta en la regla)</span>
       </p>
     {/if}
+    {#if compartido}
+      <CampoClave requerido id="at-clave" etiqueta="Clave de administración" bind:value={clave} ayuda="Cuenta en la regla 3-2-1: se reparte a todas las consolas del cliente a través de sus equipos." />
+    {/if}
+    {#if paso}<p class="faint" aria-live="polite">{paso}</p>{/if}
     {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
     <footer>
       {#if marcado}<button type="button" class="btn btn-ghost izquierda" disabled={ocupado} onclick={volver}>Volver a lo deducido</button>{/if}

@@ -16,6 +16,8 @@
   import { borrar } from "$lib/cripto/bytes";
   import { kcfgDelCliente } from "$lib/ordenar";
   import { cargarPlantillas, type Plantilla } from "$lib/plantillas";
+  import { equiposQueGuardan } from "$lib/datosComunes";
+  import { sincronizar } from "$lib/datosComunes.svelte";
   import { ajusteDe, colorPorNombre, conAvisos, cuerpoAjuste, N_COLORES, NOMBRES_COLOR } from "$lib/etiquetasGrupos";
   import { plural } from "$lib/formato";
   import { TIPO_CANAL } from "$lib/notificaciones";
@@ -30,6 +32,7 @@
   const rol = $derived(actual.cliente?.rol);
   const esPropietario = $derived(puede.propietario(rol));
   const automatico = untrack(() => colorPorNombre(nombre));
+  const compartido = $derived(equiposQueGuardan(actual.equipos).length > 0);
 
   // --- Color ------------------------------------------------------------------
   /** -1: el automático (por el nombre). */
@@ -95,6 +98,8 @@
     try {
       const cuerpo = todoPorDefecto ? cuerpoAjuste(nombre, null, null, esPropietario ? null : previo?.avisos) : cuerpoAjuste(nombre, color >= 0 ? color : null, plantilla || null, avisos);
       actual.etiquetas = await api.ponerAjusteEtiqueta(actual.id, cuerpo);
+      // 0.7.26 (bloque 8): el color y la plantilla, a las demás consolas (por los equipos).
+      void sincronizar();
       avisar(todoPorDefecto ? `«${nombre}» vuelve a lo de siempre.` : `Ajustes de «${nombre}» guardados.`);
       onclose();
     } catch (err) {
@@ -111,7 +116,7 @@
       <span class="ticon"><Tag size={18} /></span>
       <div>
         <h2 id="t-ajustes-et">Etiqueta «{nombre}»</h2>
-        <p>{n ? `${plural(n, "equipo la lleva", "equipos la llevan")}. ` : ""}Su color sale en todas las pantallas del cliente; la plantilla y los avisos valen para todos sus equipos.</p>
+        <p>{n ? `${plural(n, "equipo la lleva", "equipos la llevan")}. ` : ""}Su color sale en todas las pantallas del cliente; la plantilla y los avisos valen para todos sus equipos.{compartido ? " El color y la plantilla se ven igual en todas las consolas; los avisos son de esta." : ""}</p>
       </div>
     </div>
 
