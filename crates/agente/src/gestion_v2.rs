@@ -578,12 +578,47 @@ pub struct Copia {
     /// su horario, o ninguno (`horario` vacío). Un agente anterior lo ignora.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tras: Option<String>,
+    /// Plan 0.7.26 (`admite: "inicio_despues"`): cómo empieza. `horario` (sin
+    /// `tras`), `cadena` (tras la anterior, solo si sale bien: lo de siempre con
+    /// `tras`) o `despues` (tras la anterior, aunque falle). Sin el campo y con
+    /// `tras`, `cadena`. Un agente anterior lo ignora.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inicio: Option<String>,
+    /// Plan 0.7.26: minutos de espera tras terminar la anterior (0 a 1440; sin
+    /// el campo, 0: enseguida). Solo con `tras`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retraso_min: Option<u32>,
 }
+
+/// Plan 0.7.26: como mucho, un día de retraso tras la anterior.
+pub const MAX_RETRASO_MIN: u32 = 1440;
 
 impl Copia {
     /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior».)
     pub fn con_horario(&self) -> bool {
         !self.horario.reglas.is_empty() || !self.horario.horas.is_empty()
+    }
+
+    /// Plan 0.7.26: cómo empieza «después de» la anterior (siempre o solo si
+    /// sale bien, y con cuánto retraso). `None` si no va después de ninguna.
+    pub fn modo_cadena(&self) -> Option<crate::agent::ChainMode> {
+        self.tras.as_ref()?;
+        Some(crate::agent::ChainMode { always: self.inicio.as_deref() == Some("despues"), delay_min: self.retraso_min.unwrap_or(0) })
+    }
+
+    /// Plan 0.7.26: `inicio` y `retraso_min` que tienen sentido con `tras`.
+    pub fn valida_inicio(&self) -> Result<(), String> {
+        match (self.inicio.as_deref(), &self.tras) {
+            (None, _) | (Some("cadena" | "despues"), Some(_)) | (Some("horario"), None) => {}
+            (Some("horario"), Some(_)) => return Err(format!("La copia «{}» empieza con su horario: no puede ir además después de otra.", self.nombre)),
+            (Some("cadena" | "despues"), None) => return Err(format!("La copia «{}» va después de otra, pero no dice de cuál.", self.nombre)),
+            (Some(x), _) => return Err(format!("Cómo empieza la copia «{}» no es válido: «{x}».", self.nombre)),
+        }
+        match self.retraso_min {
+            Some(n) if n > MAX_RETRASO_MIN => Err(format!("El retraso de la copia «{}» es de 0 a {MAX_RETRASO_MIN} minutos.", self.nombre)),
+            Some(n) if n > 0 && self.tras.is_none() => Err(format!("La copia «{}» tiene retraso, pero no va después de otra.", self.nombre)),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -919,6 +954,7 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
             return Err(format!("Día no válido en la copia «{}» (1 = lunes … 7 = domingo).", k.nombre));
         }
         plan_de(k)?;
+        k.valida_inicio()?;
     }
     validar_cadenas(&cfg.copias)?;
     for (repo, va) in cfg.verificaciones.iter().flatten() {
@@ -946,7 +982,9 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
             "rest_username": acc.rest_auth.as_ref().map(|a| a.0.clone()), "cacert": acc.cacert, "plans": planes,
         }))
         .map_err(|e| e.to_string())?;
-        crate::agent::set_schedule(&repo, Some(&acc), Some(crate::agent::Schedule::Plans))?;
+        // Plan 0.7.26: «después de la anterior» aunque falle y el retraso, por copia.
+        let modos = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.modo_cadena()?))).collect();
+        crate::agent::set_schedule_modes(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos)?;
     }
     let verificados = aplicar_verificaciones(v, &cfg)?;
     aplicar_pruebas(v, &cfg)?;
@@ -1011,7 +1049,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 23] = [
+pub const ADMITE: [&str; 24] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1061,6 +1099,9 @@ pub const ADMITE: [&str; 23] = [
     // (Dropbox; si no puede ahora, lo reintenta 7 días), borra los restos y no deja si algo la usa;
     // `resumen.nubes_por_anular` (docs/destinos.md «Desconectar una nube»).
     "nube_revocar",
+    // (pendiente de numerar) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
+    // anterior aunque falle) y `retraso_min` (minutos tras la anterior), también en el resumen.
+    "inicio_despues",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1112,6 +1153,8 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "id": k.id, "nombre": k.nombre, "repo": k.repo, "horario": k.horario, "carpetas": k.carpetas.len(), "activa": k.activa, "solo_si_cambios": k.solo_si_cambios,
                 // Tarea 7c: «después de la anterior» (el id de la otra copia).
                 "tras": k.tras,
+                // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
+                "inicio": k.inicio, "retraso_min": k.retraso_min,
                 "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added })),
                 "proxima": proximas.get(&k.id),
             })
@@ -2531,6 +2574,43 @@ mod tests {
         assert!(ADMITE.contains(&"cadenas"));
     }
 
+    /// Plan 0.7.26: `inicio` (`horario` | `cadena` | `despues`) y `retraso_min`.
+    /// Sin `inicio`, `tras` es «en cadena» (lo de siempre).
+    #[test]
+    fn inicio_de_las_copias() {
+        let copia = |tras: Option<&str>, inicio: Option<&str>, retraso: Option<u32>| -> Copia {
+            serde_json::from_value(json!({"id": "k", "nombre": "K", "repo": "r1", "carpetas": [r"C:\Datos"],
+                "horario": {"dias": [], "horas": []}, "tras": tras, "inicio": inicio, "retraso_min": retraso}))
+            .unwrap()
+        };
+        use crate::agent::ChainMode;
+        // Lo de siempre: `tras` sin `inicio` va en cadena, sin retraso.
+        let k = copia(Some("a"), None, None);
+        k.valida_inicio().unwrap();
+        assert_eq!(k.modo_cadena(), Some(ChainMode { always: false, delay_min: 0 }));
+        assert!(serde_json::to_value(&k).unwrap().get("inicio").is_none(), "una consola anterior no lo ve");
+        assert_eq!(copia(Some("a"), Some("cadena"), Some(10)).modo_cadena(), Some(ChainMode { always: false, delay_min: 10 }));
+        assert_eq!(copia(Some("a"), Some("despues"), None).modo_cadena(), Some(ChainMode { always: true, delay_min: 0 }));
+        assert_eq!(copia(None, Some("horario"), None).modo_cadena(), None);
+        for (tras, inicio, retraso) in
+            [(Some("a"), Some("despues"), Some(0)), (Some("a"), Some("cadena"), Some(MAX_RETRASO_MIN)), (None, Some("horario"), None), (None, None, Some(0))]
+        {
+            copia(tras, inicio, retraso).valida_inicio().unwrap();
+        }
+        // Lo que no tiene sentido.
+        for (tras, inicio, retraso) in [
+            (Some("a"), Some("horario"), None),
+            (None, Some("despues"), None),
+            (None, Some("cadena"), None),
+            (Some("a"), Some("luego"), None),
+            (Some("a"), Some("despues"), Some(MAX_RETRASO_MIN + 1)),
+            (None, None, Some(5)),
+        ] {
+            assert!(copia(tras, inicio, retraso).valida_inicio().is_err(), "{tras:?} {inicio:?} {retraso:?}");
+        }
+        assert!(ADMITE.contains(&"inicio_despues"));
+    }
+
     #[test]
     fn copia_a_plan() {
         let k = Copia {
@@ -2544,6 +2624,8 @@ mod tests {
             gancho: None,
             solo_si_cambios: true,
             tras: None,
+            inicio: None,
+            retraso_min: None,
         };
         let p = plan_de(&k).unwrap();
         assert!(p.skip_unchanged, "encendido por defecto");
@@ -2576,6 +2658,8 @@ mod tests {
             gancho: None,
             solo_si_cambios: true,
             tras: None,
+            inicio: None,
+            retraso_min: None,
         };
         // Viernes 2 de octubre de 2026, 14:00: la siguiente, a las 19:00; después, el lunes.
         let vie = chrono::Local.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();

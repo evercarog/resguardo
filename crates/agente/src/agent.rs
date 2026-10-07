@@ -366,6 +366,26 @@ pub struct AgentPlan {
     /// el que empieza cuando termina bien; ver [`chain_turn`]). Con o sin horario propio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    /// Plan 0.7.26, bloque 3 (`admite: "inicio_despues"`, `inicio: "despues"`):
+    /// empieza cuando la anterior termina, **aunque falle**. Sin él («en
+    /// cadena»), solo si sale bien; si falla, la cadena se para y avisa.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub after_always: bool,
+    /// Plan 0.7.26: minutos que espera tras terminar la anterior (0: enseguida).
+    #[serde(default, skip_serializing_if = "es_cero")]
+    pub after_delay_min: u32,
+}
+
+fn es_cero(n: &u32) -> bool {
+    *n == 0
+}
+
+/// Plan 0.7.26: cómo empieza un plan que va «después de» otro: siempre (aunque
+/// la anterior falle) y con cuántos minutos de retraso. Por id del plan.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ChainMode {
+    pub always: bool,
+    pub delay_min: u32,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -955,6 +975,8 @@ pub fn migrate_legacy(config: &mut AgentConfig, state: &mut AgentState) -> bool 
             skip_unchanged: false,
             ganchos: vec![],
             after: None,
+            after_always: false,
+            after_delay_min: 0,
         });
         repo.schedule = Schedule::Plans;
         if let Some(run) = state.runs.remove(&repo.id) {
@@ -1101,6 +1123,17 @@ pub fn set_schedule_by_id(id: &str, _schedule: Option<Schedule>) -> Result<(), S
 }
 
 pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Schedule>) -> Result<(), String> {
+    set_schedule_modes(repo, access, schedule, &std::collections::BTreeMap::new())
+}
+
+/// Como [`set_schedule`], con el modo de inicio de los planes «después de»
+/// (plan 0.7.26: `inicio: "despues"` y `retraso_min`), por id del plan.
+pub fn set_schedule_modes(
+    repo: &Repo,
+    access: Option<&Access>,
+    schedule: Option<Schedule>,
+    modes: &std::collections::BTreeMap<String, ChainMode>,
+) -> Result<(), String> {
     require_admin()?;
     prepare_dir()?;
     let mut config = load_config();
@@ -1132,6 +1165,8 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
                         (None, Some(_)) => crate::plans::PlanSchedule::from_rules(vec![]),
                         (None, None) => return None,
                     };
+                    // Plan 0.7.26: «después de» aunque falle y su retraso (solo con `after`).
+                    let mode = if p.after.is_some() { modes.get(&p.id).copied().unwrap_or_default() } else { ChainMode::default() };
                     // Si el plan ya estaba igual, conserva su fecha de activación.
                     let same = previous
                         .as_ref()
@@ -1149,6 +1184,8 @@ pub fn set_schedule(repo: &Repo, access: Option<&Access>, schedule: Option<Sched
                         skip_unchanged: p.skip_unchanged,
                         ganchos: p.ganchos.clone(),
                         after: p.after.clone(),
+                        after_always: mode.always,
+                        after_delay_min: mode.delay_min,
                     })
                 })
                 .collect()
@@ -1581,17 +1618,47 @@ pub fn plan_since(plan: &AgentPlan, key: &str, state: &AgentState) -> DateTime<L
 /// Tarea 7c: ¿la anterior de `plan` terminó después de `since`, y cómo? «Bien»
 /// es una copia correcta, sin cambios o con algún archivo sin leer (`warning`):
 /// hay una versión (o no hacía falta); solo un error para la cadena.
-pub fn chain_turn(plan: &AgentPlan, state: &AgentState, since: DateTime<Local>) -> ChainTurn {
-    let Some(prev) = plan.after.as_ref().and_then(|a| state.runs.get(a)) else { return ChainTurn::Wait };
-    let Ok(finished) = DateTime::parse_from_rfc3339(&prev.finished) else { return ChainTurn::Wait };
-    if finished.with_timezone(&Local) <= since {
+///
+/// Plan 0.7.26: con `after_always` («después de la anterior») un error no la
+/// para; con `after_delay_min`, espera esos minutos desde que terminó la anterior.
+pub fn chain_turn(plan: &AgentPlan, state: &AgentState, since: DateTime<Local>, now: DateTime<Local>) -> ChainTurn {
+    let Some(finished) = chain_previous_end(plan, state, since) else { return ChainTurn::Wait };
+    let failed = plan.after.as_ref().and_then(|a| state.runs.get(a)).is_some_and(|r| r.result == "error");
+    if failed && !plan.after_always {
+        return ChainTurn::Stopped;
+    }
+    if now < finished + Duration::minutes(i64::from(plan.after_delay_min)) {
         return ChainTurn::Wait;
     }
-    if prev.result == "error" {
-        ChainTurn::Stopped
-    } else {
-        ChainTurn::Go
-    }
+    ChainTurn::Go
+}
+
+/// Cuándo terminó la anterior de `plan`, si fue después de `since`.
+fn chain_previous_end(plan: &AgentPlan, state: &AgentState, since: DateTime<Local>) -> Option<DateTime<Local>> {
+    let prev = plan.after.as_ref().and_then(|a| state.runs.get(a))?;
+    let finished = DateTime::parse_from_rfc3339(&prev.finished).ok()?.with_timezone(&Local);
+    (finished > since).then_some(finished)
+}
+
+/// Plan 0.7.26: la hora a la que toca el primer plan «después de» que espera su
+/// retraso (la anterior ya terminó y él aún no ha empezado), para no dormir de más.
+pub fn next_chain_slot(config: &AgentConfig, state: &AgentState, now: DateTime<Local>) -> Option<DateTime<Local>> {
+    config
+        .repos
+        .iter()
+        .filter(|r| r.active_pause(now).is_none())
+        .flat_map(|r| r.plans.iter().map(move |p| (r, p)))
+        .filter(|(_, p)| p.after_delay_min > 0)
+        .filter_map(|(r, p)| {
+            let key = crate::plans::plan_key(&r.id, &p.id);
+            let since = plan_since(p, &key, state);
+            if chain_turn(p, state, since, now) != ChainTurn::Wait {
+                return None;
+            }
+            let at = chain_previous_end(p, state, since)? + Duration::minutes(i64::from(p.after_delay_min));
+            (at > now).then_some(at)
+        })
+        .min()
 }
 
 /// Tarea 7c: si la anterior de `plan` falló después de su última vez, este no
@@ -1599,7 +1666,7 @@ pub fn chain_turn(plan: &AgentPlan, state: &AgentState, since: DateTime<Local>) 
 /// historial y `state.chains`, que va al informe y avisa con `cadena_parada`).
 fn note_chain_stop(repo: &AgentRepo, plan: &AgentPlan, key: &str, state: &mut AgentState) {
     let Some(previous) = plan.after.clone() else { return };
-    if chain_turn(plan, state, plan_since(plan, key, state)) != ChainTurn::Stopped {
+    if chain_turn(plan, state, plan_since(plan, key, state), Local::now()) != ChainTurn::Stopped {
         return;
     }
     let Some(prev) = state.runs.get(&previous) else { return };
@@ -1644,7 +1711,7 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
     let key = crate::plans::plan_key(&repo.id, &plan.id);
     let since = plan_since(plan, &key, state);
     // Tarea 7c: la anterior terminó bien después de la última vez de este.
-    if plan.after.is_some() && chain_turn(plan, state, since) == ChainTurn::Go {
+    if plan.after.is_some() && chain_turn(plan, state, since, now) == ChainTurn::Go {
         return Some(false);
     }
     if plan.schedule.is_due(since, now) {
@@ -1661,7 +1728,9 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
 pub fn wait_until_next_slot(max: std::time::Duration, now: DateTime<Local>) -> std::time::Duration {
     let config = load_config();
     let next = config.repos.iter().filter(|r| r.active_pause(now).is_none()).flat_map(|r| r.plans.iter()).filter_map(|p| p.schedule.next_slot(now)).min();
-    wait_for(next, now, max)
+    // Plan 0.7.26: un «después de» con retraso que ya tiene su hora.
+    let chained = if config.repos.iter().any(|r| r.plans.iter().any(|p| p.after_delay_min > 0)) { next_chain_slot(&config, &load_state(), now) } else { None };
+    wait_for(next.into_iter().chain(chained).min(), now, max)
 }
 
 fn wait_for(next: Option<DateTime<Local>>, now: DateTime<Local>, max: std::time::Duration) -> std::time::Duration {
@@ -2024,7 +2093,7 @@ pub fn run() -> i32 {
                 note_chain_stop(repo, plan, &key, &mut state);
                 let asked = pass == 0 && requested.contains(&key);
                 let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()) else { continue };
-                let by_chain = plan.after.is_some() && chain_turn(plan, &state, plan_since(plan, &key, &state)) == ChainTurn::Go;
+                let by_chain = plan.after.is_some() && chain_turn(plan, &state, plan_since(plan, &key, &state), Local::now()) == ChainTurn::Go;
                 let attempts = state.retries.get(&key).copied().unwrap_or(0);
                 if retry {
                     log(&format!("Reintento {} de {MAX_RETRIES} de «{}» (plan «{}»).", attempts + 1, repo.name, plan.name));
@@ -2527,6 +2596,8 @@ pub mod tests {
                 skip_unchanged: false,
                 ganchos: vec![],
                 after: None,
+                after_always: false,
+                after_delay_min: 0,
             }],
             verify: None,
             offsite: None,
@@ -2598,7 +2669,7 @@ pub mod tests {
         assert_eq!(plan_turn(&repo, &plan, &state, false, now), None);
         // Terminó bien después: empieza. Con algún archivo sin leer, también.
         state.runs.insert("r#p".into(), fin("2026-09-30 10:00", "ok"));
-        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state)), ChainTurn::Go);
+        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state), now), ChainTurn::Go);
         assert_eq!(plan_turn(&repo, &plan, &state, false, now), Some(false));
         state.runs.insert("r#p".into(), fin("2026-09-30 10:00", "warning"));
         assert_eq!(plan_turn(&repo, &plan, &state, false, now), Some(false));
@@ -2607,7 +2678,7 @@ pub mod tests {
         assert_eq!(plan_turn(&repo, &plan, &state, false, now), None);
         // La anterior falla: la cadena se para (no empieza).
         state.runs.insert("r#p".into(), fin("2026-09-30 11:00", "error"));
-        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state)), ChainTurn::Stopped);
+        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state), at("2026-09-30 11:05")), ChainTurn::Stopped);
         assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 11:05")), None);
         // Y cuando la anterior se reintenta y sale bien, sigue sola.
         state.runs.insert("r#p".into(), fin("2026-09-30 11:16", "ok"));
@@ -2617,7 +2688,51 @@ pub mod tests {
         pausado.pause = Some(Pause { since: at("2026-09-30 11:00").to_rfc3339(), until: None });
         assert_eq!(plan_turn(&pausado, &plan, &state, false, at("2026-09-30 11:20")), None);
         // Un plan sin anterior no es de ninguna cadena.
-        assert_eq!(chain_turn(&repo.plans[0], &state, at("2026-09-30 00:00")), ChainTurn::Wait);
+        assert_eq!(chain_turn(&repo.plans[0], &state, at("2026-09-30 00:00"), now), ChainTurn::Wait);
+    }
+
+    /// Plan 0.7.26: «después de la anterior» (`after_always`) empieza aunque la
+    /// anterior falle; «en cadena» no. Con retraso, espera esos minutos.
+    #[test]
+    fn despues_de_la_anterior_aunque_falle_y_con_retraso() {
+        let repo = repo_cada_hora();
+        let mut plan = repo.plans[0].clone();
+        plan.id = "disco-e".into();
+        plan.schedule = crate::plans::PlanSchedule::from_rules(vec![]);
+        plan.after = Some("r#p".into());
+        let fin = |h: &str, result: &str| RunRecord { started: at(h).to_rfc3339(), finished: at(h).to_rfc3339(), result: result.into(), ..Default::default() };
+        let mut state = AgentState::default();
+        state.runs.insert("r#p".into(), fin("2026-09-30 10:00", "error"));
+        let since = plan_since(&plan, "r#disco-e", &state);
+        // En cadena: la anterior falló, se para.
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 10:01")), ChainTurn::Stopped);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 10:01")), None);
+        // Después de la anterior: empieza igual.
+        plan.after_always = true;
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 10:01")), ChainTurn::Go);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 10:01")), Some(false));
+        // Con 15 minutos de retraso: espera, y luego empieza.
+        plan.after_delay_min = 15;
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 10:10")), ChainTurn::Wait);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 10:10")), None);
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 10:15")), ChainTurn::Go);
+        // La espera se tiene en cuenta para no dormir de más.
+        let config = AgentConfig { repos: vec![AgentRepo { plans: vec![plan.clone()], ..repo.clone() }], ..Default::default() };
+        assert_eq!(next_chain_slot(&config, &state, at("2026-09-30 10:10")), Some(at("2026-09-30 10:15")));
+        assert_eq!(next_chain_slot(&config, &state, at("2026-09-30 10:20")), None, "ya le toca");
+        // En cadena con retraso: si la anterior sale bien, espera igual; si falla, se para sin esperar.
+        plan.after_always = false;
+        state.runs.insert("r#p".into(), fin("2026-09-30 11:00", "ok"));
+        let since = plan_since(&plan, "r#disco-e", &state);
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 11:05")), ChainTurn::Wait);
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 11:16")), ChainTurn::Go);
+        state.runs.insert("r#p".into(), fin("2026-09-30 12:00", "error"));
+        assert_eq!(chain_turn(&plan, &state, since, at("2026-09-30 12:01")), ChainTurn::Stopped);
+        // Ya hecho después de la anterior: no se repite.
+        plan.after_always = true;
+        state.runs.insert("r#disco-e".into(), fin("2026-09-30 12:20", "ok"));
+        assert_eq!(chain_turn(&plan, &state, plan_since(&plan, "r#disco-e", &state), at("2026-09-30 12:30")), ChainTurn::Wait);
+        assert_eq!(next_chain_slot(&config, &state, at("2026-09-30 12:30")), None);
     }
 
     #[test]
