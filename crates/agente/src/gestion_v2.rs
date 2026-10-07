@@ -1156,6 +1156,14 @@ pub fn resumen(v: &Vinculo) -> Value {
                 }
                 // Tarea 8e: el sistema de archivos (solo su nombre; nunca resta en la regla 3-2-1).
                 x["sistema_archivos"] = crate::espacio::json_fs(&d.donde);
+                // 0.7.26: cuándo se vio conectado su disco (para la marca «Aislado»): solo
+                // un resumen del volumen y la hora, nunca la ruta. Sin datos, no va.
+                if disco["red"] != true {
+                    let a = crate::volumenes::resumen(&format!("destino:{}", d.id), &d.donde);
+                    if !a.is_null() {
+                        x["aislado"] = a;
+                    }
+                }
             }
             x
         }).collect::<Vec<_>>(),

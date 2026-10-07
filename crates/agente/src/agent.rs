@@ -1832,6 +1832,10 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dy
     }
     crate::ganchos::despues(&preparado);
     crate::ganchos::aplicar(&mut record, &preparado);
+    // 0.7.26: si el repositorio está en un disco del equipo, su disco se vio ahora (marca «Aislado»).
+    if record.result != "error" {
+        crate::volumenes::tocar(&repo.location);
+    }
     record.finished = Local::now().to_rfc3339();
     record
 }

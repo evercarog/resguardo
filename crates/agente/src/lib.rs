@@ -86,6 +86,7 @@ pub mod tasks;
 mod traslado_it;
 pub mod traslado_v2;
 pub mod ventana;
+pub mod volumenes;
 pub mod web;
 
 /// Orden de búsqueda de DLL seguro (ver platform::harden_dll_search).

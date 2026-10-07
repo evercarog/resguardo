@@ -229,14 +229,14 @@ fn disco_sistema(_: &str) -> Disco {
 
 /// Sistemas de archivos de red (`/proc/self/mountinfo`).
 #[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
-fn es_fs_de_red(tipo: &str) -> bool {
+pub(crate) fn es_fs_de_red(tipo: &str) -> bool {
     matches!(tipo, "nfs" | "nfs4" | "cifs" | "smb3" | "smbfs" | "fuse.sshfs" | "9p" | "afs" | "ceph" | "glusterfs" | "fuse.rclone")
 }
 
 /// El sistema de archivos y la fuente del montaje que contiene `ruta` (el de
 /// punto de montaje más largo), leídos de `/proc/self/mountinfo`.
 #[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
-fn montaje_de(mountinfo: &str, ruta: &str) -> Option<(String, String)> {
+pub(crate) fn montaje_de(mountinfo: &str, ruta: &str) -> Option<(String, String)> {
     // «\040» es un espacio en los campos de mountinfo.
     let sin_escapes = |x: &str| x.replace(r"\040", " ").replace(r"\011", "\t").replace(r"\134", "\\");
     let dentro = |punto: &str| punto == "/" || ruta == punto || ruta.starts_with(&format!("{}/", punto.trim_end_matches('/')));
