@@ -274,7 +274,9 @@ pub fn con_origen(dest: &Access, src: &Access) -> Result<(Access, Vec<String>), 
         both.location = crate::tasks::location_with_auth(&both.location, Some(&auth));
     }
     for kv in &src.env {
-        if !both.env.iter().any(|(k, _)| *k == kv.0) {
+        // Tarea 4a: la marca de la nube del origen va siempre (si es otra nube que la del
+        // destino, `nube::preparar_vuelta` lo dice en vez de usar la que no es).
+        if kv.0 == crate::nube::MARCA || !both.env.iter().any(|(k, _)| *k == kv.0) {
             both.env.push(kv.clone());
         }
     }

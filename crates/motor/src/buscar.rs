@@ -336,7 +336,8 @@ pub fn buscar(acc: &Access, texto: &str, desde: Option<&str>, hasta: Option<&str
     args.push("--".into());
     args.push(patron(&texto));
 
-    let mut hijo = restic::spawn(acc, &args)?;
+    // Lo preparado (una nube por rclone) vive hasta que restic termina.
+    let (mut hijo, _vuelta) = restic::spawn_vuelta(acc, &args)?;
     let salida = hijo.stdout.take().ok_or("No se pudo leer la salida de restic.")?;
     let mut errores = hijo.stderr.take().ok_or("No se pudo leer la salida de restic.")?;
     let hilo_err = std::thread::spawn(move || {

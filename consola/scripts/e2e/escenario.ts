@@ -43,6 +43,7 @@ import { vueltasDelRepo, type EntradaRetencion } from "../../src/lib/retencionDe
 import { bytesRepo, destinoDe, informeDe, nVersiones, proteccion } from "../../src/lib/repo";
 import { proximaDe } from "../../src/lib/copia";
 import { claveZona, destinosDelCliente, errorRespuestaZona, idDestinoZona, zonaDeDestino, zonasDe } from "../../src/lib/destinos";
+import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
@@ -527,6 +528,49 @@ async function principal() {
         const rB = (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((x) => x.id === repoE);
         igual([rB?.derivadas?.[0]?.id, rB?.derivadas?.[0]?.cuando?.tras_copia, rB?.derivadas?.[0]?.filtro?.ultimos_dias], ["d1", true, 30], "El resumen de B lleva la derivada (sin rutas ni secretos)");
         comprobar(!JSON.stringify(rB).includes(otraClave) && !JSON.stringify(rB).includes(carpetaNube), "Ni la contraseña ni la carpeta en el resumen");
+
+        // 4. Tarea 4a completa: un repositorio DIRECTAMENTE en la nube, como lo crea «+ Repositorio nuevo…»
+        //    del editor de copias (lib/repoNuevo.ts), una copia de las carpetas a él y una restauración.
+        const eqBNube = await consola.equipo(c, eqB.id);
+        comprobar(eqBNube.resumen?.admite?.includes("repo_en_nube"), "B admite repositorios directamente en una nube", eqBNube.resumen?.admite);
+        const opcion = opcionesRepoNuevo(eqBNube, [eqAAhora, eqBNube]).find((o) => o.nombre === "Nube de pruebas" && o.uso.ok);
+        comprobar(opcion?.que.tipo === "nube" || opcion?.que.tipo === "propio", "«Nuevo repositorio» ofrece la nube conectada en B", opcion);
+        const repoNube = `directo-nube-${randomBytes(2).toString("hex")}`;
+        const claveNube = Buffer.from(aleatorio(32)).toString("base64url");
+        const destNube = destinoNubeCuerpo(eqBNube, "Nube de pruebas", "Directo");
+        await consola.hecha(c, eqB.id, "crear_repositorio", { id: repoNube, nombre: "Documentos en la nube", contrasena: claveNube, destino: destNube }, { claveAdmin: CLAVE_ADMIN }, {}, 120_000);
+        comprobar(fs.existsSync(path.join(carpetaNube, "Directo", repoNube, "config")), "El repositorio está en la nube (la carpeta de la nube de pruebas)");
+        const copiaNube = { ...copia, id: "documentos-nube", nombre: "Documentos a la nube", repo: repoNube };
+        await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, copiaD, copiaTras, copiaNube] } }, { claveAdmin: CLAVE_ADMIN });
+        const desdeNube = Date.now();
+        await consola.hecha(c, eqB.id, "copiar_ahora", { copia: "documentos-nube", repo: repoNube });
+        const ultimaNube = await esperar("que termine la copia directa a la nube", async () => {
+          const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "documentos-nube");
+          return k?.ultima && new Date(k.ultima.cuando).getTime() >= desdeNube - 5_000 ? k.ultima : null;
+        }, { plazo: 180_000, cada: 1000 });
+        igual(ultimaNube.estado, "ok", `La copia directa a la nube terminó bien (${ultimaNube.mensaje ?? ""})`);
+        const enNube = JSON.parse(ejecutar(resticBin, ["snapshots", "--json", "--no-lock"], { env: { RESTIC_REPOSITORY: path.join(carpetaNube, "Directo", repoNube), RESTIC_PASSWORD: claveNube } }).salida || "[]") as unknown[];
+        comprobar(enNube.length === 1, "En la nube hay una versión y se abre con su contraseña", enNube.length);
+        const secretosNube = { repo: { repo: repoNube, contrasena: claveNube } };
+        const sesNube = new SesionE2E(consola, c);
+        await sesNube.abrir(eqB.id, "explorar", { repo: repoNube }, secretosNube);
+        const vNube = ((await sesNube.pedir("versiones")).versiones as { id: string }[])[0]?.id;
+        await sesNube.cerrar();
+        comprobar(!!vNube, "Explorar el repositorio de la nube enseña su versión");
+        const facturaNube = path.join(datosB, "Facturas", "factura-001.txt");
+        const antesNube = new Set(fs.readdirSync(path.join(datosB, "Facturas")));
+        const restN = await consola.mandar(c, eqB.id, "restaurar", { repo: repoNube, version: vNube, rutas: [rutaRestic(facturaNube)], destino: "junto", reemplazar: false }, secretosNube);
+        const rN = await consola.resultado(c, eqB.id, restN, { plazo: 120_000 });
+        igual(rN.estado, "hecha", `Restaurar desde la nube: ${rN.mensaje}`);
+        const nuevaCarpeta = fs.readdirSync(path.join(datosB, "Facturas")).find((n) => n.startsWith("Restaurado ") && !antesNube.has(n));
+        comprobar(nuevaCarpeta && fs.readFileSync(path.join(datosB, "Facturas", nuevaCarpeta, "factura-001.txt"), "utf8") === fs.readFileSync(facturaNube, "utf8"), "El archivo restaurado desde la nube es el de la versión");
+        if (nuevaCarpeta) fs.rmSync(path.join(datosB, "Facturas", nuevaCarpeta), { recursive: true, force: true });
+        const rNube = (await consola.equipo(c, eqB.id)).resumen;
+        comprobar(!JSON.stringify(rNube).includes(claveNube) && !JSON.stringify(rNube).includes(carpetaNube), "Ni la contraseña ni la carpeta de la nube en el resumen de B");
+        // Se quita (los pasos siguientes cuentan los repositorios de B); lo de la nube se queda.
+        await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, copiaD, copiaTras] } }, { claveAdmin: CLAVE_ADMIN });
+        await consola.hecha(c, eqB.id, "quitar_repositorio", { repo: repoNube, quitar_destino: true }, { claveAdmin: CLAVE_ADMIN, ...secretosNube }, {}, 120_000);
+        log(`B copió directamente a la nube («${repoNube}») y restauró desde ella`);
         // Quitar la derivada (espera; aquí de 0 s) y la nube; vuelve la configuración de antes (los pasos siguientes cuentan con una sola copia).
         await consola.hecha(c, eqB.id, "quitar_derivada", { repo: repoE, id: "d1" }, secretosE);
       } else log("Sin rclone junto a restic: se salta la copia derivada por rclone.");

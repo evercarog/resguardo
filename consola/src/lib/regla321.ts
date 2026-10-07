@@ -685,7 +685,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
     case "otro_soporte":
       return { texto: "Guarda una copia en otro equipo u otro disco: un almacén de la oficina, un disco USB o la nube.", enlace: { texto: "Repositorios y destinos", href: `/c/${cliente}/repositorios` } };
     case "anadir_fuera":
-      return { texto: "Añade un destino fuera de la oficina: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia externa o espejo del almacén.", enlace: externa };
+      return { texto: "Añade un destino fuera de la oficina: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia externa, espejo del almacén o una copia directa a la nube.", enlace: externa };
     case "anadir_inmutable":
       return {
         texto: "Añade un destino que no se pueda borrar desde los equipos: un almacén (solo añadir), B2 o S3 con bloqueo de objetos, o marca un destino con instantáneas del anfitrión o desconectado.",

@@ -10,6 +10,8 @@ const TICK: Duration = Duration::from_secs(5 * 60);
 
 /// Punto de entrada del binario. Devuelve el código de salida.
 pub fn main() -> i32 {
+    // Tarea 4a: cada restic con un repositorio en una nube recibe la nube al día.
+    crate::nube::registrar();
     let args: Vec<String> = std::env::args().collect();
     let has = |a: &str| args.iter().any(|x| x == a);
     let value = |a: &str| args.iter().position(|x| x == a).and_then(|i| args.get(i + 1)).cloned();

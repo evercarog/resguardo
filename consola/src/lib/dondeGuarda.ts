@@ -87,6 +87,9 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
     case "s3":
     case "b2":
       return { clase: "nube", texto: `Nube (${NUBE[d.tipo]})`, detalle: d.donde ? `bucket ${d.donde}` : d.nombre, mismoEquipo: false, clave: d.id };
+    // Tarea 4a: directamente en una nube conectada en el equipo (Dropbox…), en una carpeta suya.
+    case "nube":
+      return { clase: "nube", texto: `Nube (${d.nube ?? d.nombre})`, detalle: d.donde ? `carpeta ${d.donde}` : null, mismoEquipo: false, clave: d.id };
     case "sftp":
       return { clase: "servidor", texto: "Servidor externo (SFTP)", detalle: servidorDe(d.donde) ?? d.nombre, mismoEquipo: false, clave: d.id };
     default:

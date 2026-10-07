@@ -203,7 +203,7 @@
                   <ChevronRight size={16} class="flecha" />
                 </a>
                 <p class="tile-linea num">
-                  {#if v.clase === "nube"}Para el espejo del almacén{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
+                  {#if v.clase === "nube"}Para el espejo del almacén y, conectándola en cada equipo, para sus repositorios{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
                 </p>
                 <span class="tile-chips">
                   {#if d?.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}

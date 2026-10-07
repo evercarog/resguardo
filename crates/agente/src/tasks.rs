@@ -1324,6 +1324,8 @@ pub fn location_with_auth(location: &str, auth: Option<&(String, String)>) -> St
 fn copy_access(src: &Access, dest: &Access) -> Access {
     let mut env = dest.env.clone();
     env.push(("RESTIC_FROM_PASSWORD".into(), src.password.clone()));
+    // Tarea 4a: el origen en una nube conectada (su marca; la misma nube que el destino, si también va a una).
+    env.extend(src.env.iter().filter(|(k, _)| k == crate::nube::MARCA).cloned());
     Access { location: dest.location.clone(), password: dest.password.clone(), rest_auth: src.rest_auth.clone(), cacert: src.cacert.clone(), env }
 }
 

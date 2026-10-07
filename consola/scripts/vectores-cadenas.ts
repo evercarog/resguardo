@@ -178,7 +178,20 @@ console.log("\n· Para qué sirve cada destino desde una copia («Añadir paso»
   const r = recepcion.resumen!.repositorios![0];
   cierto("están todos: zonas, destinos de los equipos y nubes (la del equipo, una sola vez)", ["Almacén ALMACEN-01 · Disco D", "Almacén ALMACEN-01 · Disco E", "B2 de la oficina", "Dropbox Oficina", "Dropbox de RECEPCION"].every((n) => lista.some((x) => x.nombre === n)));
   const oficina = usosPosibles(d("Dropbox Oficina"), recepcion, r, equipos);
-  igual("Dropbox del almacén: espejo sí; copia directa no (se propone la derivada)", [oficina.espejo.ok, oficina.copia.ok, oficina.copia.accion?.tipo === "otro_paso"], [true, false, true]);
+  igual("Dropbox del almacén: espejo sí; copia directa no con un agente sin «repo_en_nube» (actualizarlo)", [oficina.espejo.ok, oficina.copia.ok, oficina.copia.accion?.tipo], [true, false, "actualizar"]);
+  {
+    // Tarea 4a: con un agente que copia directo a una nube.
+    const directo = { ...recepcion, resumen: { ...recepcion.resumen, admite: [...recepcion.resumen!.admite!, "nube_equipo", "repo_en_nube"] } };
+    const eqs = [almacen, directo];
+    const otra = usosPosibles(d("Dropbox Oficina"), directo, r, eqs).copia;
+    igual(
+      "…copia directa a la Dropbox del almacén: «Conectar Dropbox también en RECEPCION»",
+      [otra.ok, otra.accion?.tipo, otra.accion && "texto" in otra.accion ? otra.accion.texto : null],
+      [false, "conectar_nube", "Conectar Dropbox también en RECEPCION"],
+    );
+    const suya = usosPosibles(d("Dropbox de RECEPCION"), directo, r, eqs).copia;
+    igual("…a la Dropbox conectada en el propio equipo: sí (y se avisa de que no es inmutable)", [suya.ok, suya.motivo], [true, "No es inmutable"]);
+  }
   igual("…derivada: el agente aún no usa nubes → actualizarlo", [oficina.derivada.ok, oficina.derivada.accion?.tipo, oficina.derivada.motivo], [false, "actualizar", "Actualiza el agente de RECEPCION para usar nubes"]);
   const nuevo = { ...recepcion, resumen: { ...recepcion.resumen, admite: [...recepcion.resumen!.admite!, "nube_equipo"] } };
   const conNubes = usosPosibles(d("Dropbox Oficina"), nuevo, r, [almacen, nuevo]);

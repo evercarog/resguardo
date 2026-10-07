@@ -257,6 +257,7 @@ export const ID = {
   caja: "0a0e1b2c-0000-4000-8000-0000000000e6",
   estudio: "0a0e1b2c-0000-4000-8000-0000000000e7",
   archivos: "0a0e1b2c-0000-4000-8000-0000000000e8",
+  apps: "0a0e1b2c-0000-4000-8000-0000000000e9",
 };
 
 export async function sembrar(vacio = false) {
@@ -487,7 +488,7 @@ export async function sembrar(vacio = false) {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
         // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "datos_equipo", "quitar_destino"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -520,6 +521,24 @@ export async function sembrar(vacio = false) {
     },
     { claveAdmin: DEMO.claveAdmin, kcfg: kSur, contrasenas: { caja: DEMO.contrasenaRepo, siigo: DEMO.contrasenaRepo }, semilla: 4, id: ID.caja },
   );
+  // Tarea 4a: un servidor de aplicaciones con un agente nuevo y sin ninguna nube conectada.
+  // La Dropbox del cliente está en el almacén: «Nuevo repositorio» ofrece conectarla también aquí.
+  const surApps = await crearEquipo(
+    sur,
+    {
+      nombre: "SERVIDOR-APPS",
+      so: "Windows Server 2022",
+      version_agente: "0.7.25",
+      resumen: {
+        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "escritorio", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto"],
+        consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
+        repositorios: [],
+        copias: [],
+        destinos: [],
+      },
+    },
+    { claveAdmin: DEMO.claveAdmin, kcfg: kSur, semilla: 6, id: ID.apps },
+  );
   const estudio = await crearEquipo(
     propio,
     {
@@ -547,7 +566,7 @@ export async function sembrar(vacio = false) {
     },
     { claveAdmin: DEMO.claveAdmin, kcfg: kPropio, contrasenas: { proyectos: DEMO.contrasenaRepo }, semilla: 5, id: ID.estudio },
   );
-  for (const e of [recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, estudio]) {
+  for (const e of [recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, surApps, estudio]) {
     e.ultimoSeqAceptado = 17;
     e.siguiente_seq = 18;
   }
@@ -587,7 +606,7 @@ export async function sembrar(vacio = false) {
   enriquecer(archivos, { externa: false, soloAnadir: false, medioAnadido: 650_000_000, local: { unidad: "D:" } });
   if (archivos.informes[0]) archivos.informes[0].datos.version = archivos.version_agente;
   archivos.etiquetas = ["Servidores"];
-  estado.equipos.push(recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, estudio);
+  estado.equipos.push(recepcion, contabilidad, portatil, servidorAltamar, archivos, surAlmacen, surCaja, surApps, estudio);
   // Un intento anterior de vincular CAJA-1 que se quedó sin confirmar (el bug de un equipo
   // que salía dos veces): la consola lo marca como duplicado y ofrece quitarlo.
   const cajaDuplicada: EquipoMock = {

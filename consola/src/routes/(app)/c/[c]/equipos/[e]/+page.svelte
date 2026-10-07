@@ -86,6 +86,7 @@
   import Vacio from "$lib/componentes/Vacio.svelte";
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import CopiarEnAlmacen from "$lib/componentes/CopiarEnAlmacen.svelte";
+  import NuevoRepositorio from "$lib/componentes/NuevoRepositorio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
@@ -268,6 +269,8 @@
   /** Equipos del cliente que guardan copias (para «Copiar en …»). */
   const almacenes = $derived(actual.equipos.filter((x) => x.id !== equipo?.id && x.confirmado && x.modo !== "trasladado" && x.resumen?.guarda_copias?.activo));
   let copiarEn = $state<Equipo | null>(null);
+  /** «Repositorio nuevo…» con este equipo ya elegido (almacén, nube o disco). */
+  let repoNuevo = $state(false);
   /** v1.28: un almacén puede tener un repositorio en sí mismo (para lo suyo, p. ej. las copias de la consola). */
   const propioPosible = $derived(!!equipo && admiteAlmacenPropio(equipo) && !destinos.some((d) => esDeAlmacen(d, equipo!)));
   function abrirGuardar() {
@@ -1301,6 +1304,15 @@
         </section>
       {/if}
 
+      {#if puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado"}
+        <!-- Tarea 4a: un repositorio nuevo en cualquier destino (también directamente en una nube), con este equipo ya elegido. -->
+        <section class="card p">
+          <h3 class="section-title">Repositorio nuevo</h3>
+          <p class="faint nota-almacen">En un almacén de la oficina, en una nube (Dropbox…) o en un disco. Si la nube aún no está conectada en {equipo.nombre}, se conecta desde ahí mismo.</p>
+          <div class="acciones"><button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Repositorio nuevo…</button></div>
+        </section>
+      {/if}
+
       {#if almacenes.length && puede.administrar(rol)}
         <section class="card p">
           <h3 class="section-title">Copiar en un equipo de la oficina</h3>
@@ -1507,6 +1519,16 @@
       }}
     />
   {/key}
+{/if}
+
+{#if repoNuevo && equipo && actual.cliente}
+  <NuevoRepositorio
+    cliente={actual.cliente}
+    equipos={actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x))}
+    destinos={equipo.resumen?.destinos ?? []}
+    equipoInicial={equipo.id}
+    onclose={() => ((repoNuevo = false), void cargar())}
+  />
 {/if}
 
 {#if copiarEn && equipo && actual.cliente}

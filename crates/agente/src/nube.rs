@@ -18,9 +18,13 @@
 //!   (comprobado con rclone 1.75.1: con `client_id` propio y sin secreto, tras
 //!   un intento con «Basic», manda `client_id` en el cuerpo). Ver docs/destinos.md.
 //! - **Usar**: rclone recibe el remoto por variables de entorno
-//!   (`RCLONE_CONFIG_RNUBE_TYPE`, `…_TOKEN`); nunca se escribe un `rclone.conf`
-//!   con el token. El archivo de configuración que rclone pudiera tocar es uno
-//!   vacío dentro de la carpeta privada, y se borra al terminar.
+//!   (`RCLONE_CONFIG_RNUBE_TYPE`, `…_TOKEN`); el agente nunca escribe un
+//!   `rclone.conf` con el token. El archivo de configuración es uno vacío y
+//!   propio de cada vuelta dentro de la carpeta privada: si rclone renueva el
+//!   token, lo deja ahí; al terminar se vuelve a sellar y el archivo se borra.
+//! - **Repositorios en la nube** (tarea 4a, `rclone:rnube:…`): con la copia solo
+//!   se guarda una marca con el nombre de la nube ([`MARCA`]); cada proceso de
+//!   restic recibe la nube al día ([`preparar_vuelta`]), también su `rclone serve restic`.
 //! - Lo que sube son los archivos del Servidor de copias tal cual: paquetes de
 //!   restic ya cifrados. Ninguna contraseña de repositorio interviene.
 //! - Nunca se borra nada en la nube: `rclone copy` (nunca `sync`) con
@@ -148,30 +152,9 @@ pub fn comando(n: &Nube, conf: &Path) -> Result<std::process::Command, String> {
     // Solo el entorno mínimo (ninguna `RCLONE_*` heredada: `RCLONE_DUMP`,
     // `RCLONE_LOG_FILE`… sacarían el token); las del remoto, las pone el agente.
     resguardo_motor::proceso::entorno_minimo(&mut c);
-    let m = REMOTO.to_uppercase();
-    c.env(format!("RCLONE_CONFIG_{m}_TYPE"), &n.tipo).arg("--config").arg(conf);
-    if !n.token.is_empty() {
-        c.env(format!("RCLONE_CONFIG_{m}_TOKEN"), &n.token);
-    }
-    // §3c: los datos del destino, también por variables de entorno (nunca en la línea de órdenes).
-    for (k, v) in n.parametros.iter().filter(|(k, _)| k.as_str() != CLAVE_HOST) {
-        c.env(format!("RCLONE_CONFIG_{m}_{}", k.to_uppercase()), v);
-    }
-    // SFTP: la clave del servidor fijada en un known_hosts temporal junto al
-    // archivo de configuración (carpeta privada); sin ella, rclone no comprobaría con quién habla.
-    if let Some(k) = n.parametros.get(CLAVE_HOST) {
-        let host = n.parametros.get("host").cloned().unwrap_or_default();
-        let linea = match n.parametros.get("port").filter(|p| p.as_str() != "22") {
-            Some(p) => format!("[{host}]:{p} {k}\n"),
-            None => format!("{host} {k}\n"),
-        };
-        let kh = conf.with_extension("hosts");
-        crate::agent::write_new(&kh, linea.as_bytes()).map_err(|e| format!("No se pudo preparar la clave del servidor: {e}"))?;
-        c.env(format!("RCLONE_CONFIG_{m}_KNOWN_HOSTS_FILE"), &kh);
-    }
-    if let Some(k) = &n.app_key {
-        // La app «Resguardo» (sin secreto): si rclone tiene que renovar, lo hace como cliente público.
-        c.env(format!("RCLONE_CONFIG_{m}_CLIENT_ID"), k);
+    c.arg("--config").arg(conf);
+    for (k, v) in variables_remoto(n, conf)? {
+        c.env(k, v);
     }
     c.stdin(std::process::Stdio::null());
     #[cfg(windows)]
@@ -180,6 +163,37 @@ pub fn comando(n: &Nube, conf: &Path) -> Result<std::process::Command, String> {
         c.creation_flags(0x0800_0000); // sin ventana
     }
     Ok(c)
+}
+
+/// Las variables del remoto `rnube` (tipo, token, datos del destino, `client_id`
+/// de la app). SFTP: la clave del servidor, fijada en un known_hosts junto a
+/// `conf` (en la carpeta privada; se borra con él); sin ella, rclone no
+/// comprobaría con quién habla. Nunca van en la línea de órdenes.
+fn variables_remoto(n: &Nube, conf: &Path) -> Result<Vec<(String, String)>, String> {
+    let m = REMOTO.to_uppercase();
+    let mut env = vec![(format!("RCLONE_CONFIG_{m}_TYPE"), n.tipo.clone())];
+    if !n.token.is_empty() {
+        env.push((format!("RCLONE_CONFIG_{m}_TOKEN"), n.token.clone()));
+    }
+    // §3c: los datos del destino.
+    for (k, v) in n.parametros.iter().filter(|(k, _)| k.as_str() != CLAVE_HOST) {
+        env.push((format!("RCLONE_CONFIG_{m}_{}", k.to_uppercase()), v.clone()));
+    }
+    if let Some(k) = n.parametros.get(CLAVE_HOST) {
+        let host = n.parametros.get("host").cloned().unwrap_or_default();
+        let linea = match n.parametros.get("port").filter(|p| p.as_str() != "22") {
+            Some(p) => format!("[{host}]:{p} {k}\n"),
+            None => format!("{host} {k}\n"),
+        };
+        let kh = conf.with_extension("hosts");
+        crate::agent::write_new(&kh, linea.as_bytes()).map_err(|e| format!("No se pudo preparar la clave del servidor: {e}"))?;
+        env.push((format!("RCLONE_CONFIG_{m}_KNOWN_HOSTS_FILE"), kh.display().to_string()));
+    }
+    if let Some(k) = &n.app_key {
+        // La app «Resguardo» (sin secreto): si rclone tiene que renovar, lo hace como cliente público.
+        env.push((format!("RCLONE_CONFIG_{m}_CLIENT_ID"), k.clone()));
+    }
+    Ok(env)
 }
 
 /// Quita las variables `RCLONE_*` heredadas del entorno (`RCLONE_DUMP`,
@@ -372,16 +386,52 @@ fn rclone(
     });
     // Si rclone renovó el token, lo deja en ese archivo (carpeta privada): se
     // guarda protegido con los demás y el archivo se borra.
-    if let Some(nuevo) = std::fs::read_to_string(&conf).ok().and_then(|t| token_de_conf(&t)).filter(|t| *t != n.token) {
+    recoger_y_borrar(&n.nombre, &n.token, &conf);
+    out
+}
+
+/// Al terminar rclone: si renovó el token y lo dejó en `conf`, se vuelve a
+/// sellar con los demás (ver [`token_a_guardar`]); `conf` y su known_hosts se borran.
+fn recoger_y_borrar(nombre: &str, usado: &str, conf: &Path) {
+    if let Some(nuevo) = std::fs::read_to_string(conf).ok().and_then(|t| token_de_conf(&t)) {
         let mut nubes = cargar();
-        if let Some(x) = nubes.iter_mut().find(|x| x.nombre == n.nombre) {
-            x.token = nuevo;
-            let _ = guardar(&nubes);
+        if let Some(x) = nubes.iter_mut().find(|x| x.nombre == nombre) {
+            if let Some(t) = token_a_guardar(&x.token, usado, &nuevo) {
+                x.token = t;
+                if guardar(&nubes).is_ok() {
+                    crate::agent::log_detail(&format!("Nube «{nombre}»: permiso renovado por rclone y guardado."));
+                }
+            }
         }
     }
-    let _ = std::fs::remove_file(&conf);
+    let _ = std::fs::remove_file(conf);
     let _ = std::fs::remove_file(conf.with_extension("hosts"));
-    out
+}
+
+/// Qué token guardar después de una vuelta de rclone. `guardado`: el que hay
+/// ahora sellado; `usado`: el que recibió rclone; `de_rclone`: el que dejó en
+/// su archivo. Solo si es de la misma conexión (nadie la volvió a conectar
+/// mientras tanto) y es más nuevo; nunca uno sin refresh token si lo había.
+/// Así dos vueltas a la vez, o una nube reconectada a mitad, no pisan nada.
+fn token_a_guardar(guardado: &str, usado: &str, de_rclone: &str) -> Option<String> {
+    if de_rclone == guardado || de_rclone.len() > 16 * 1024 || de_rclone.chars().any(char::is_control) {
+        return None;
+    }
+    let leer = |t: &str| serde_json::from_str::<serde_json::Value>(t).unwrap_or_default();
+    let (g, u, n) = (leer(guardado), leer(usado), leer(de_rclone));
+    n["access_token"].as_str().filter(|a| token_plausible(a))?;
+    let refresh = |v: &serde_json::Value| v["refresh_token"].as_str().unwrap_or("").to_string();
+    let caduca = |v: &serde_json::Value| v["expiry"].as_str().and_then(|e| chrono::DateTime::parse_from_rfc3339(e).ok()).map_or(0, |d| d.timestamp());
+    let (rg, ru, rn) = (refresh(&g), refresh(&u), refresh(&n));
+    if rn.is_empty() && !rg.is_empty() {
+        return None;
+    }
+    let mas_nuevo = caduca(&n) > caduca(&g);
+    // La misma conexión que se usó (rclone pudo cambiar el refresh token si la nube los rota).
+    let misma_conexion = rg == ru && (rn != rg || mas_nuevo);
+    // Otra vuelta ya guardó uno de la misma cadena: solo si este caduca después.
+    let misma_cadena = !rn.is_empty() && rn == rg && mas_nuevo;
+    (misma_conexion || misma_cadena).then(|| de_rclone.to_string())
 }
 
 /// El error de rclone, en una frase (sin rutas locales ni tokens).
@@ -1069,43 +1119,98 @@ fn conectar_con(p: PedidoConectar, renovar: Renovar) -> Result<String, String> {
 
 /// Tarea 4a: ¿la usa alguna copia derivada (o la externa) de este equipo?
 pub fn usa_copias(nombre: &str) -> bool {
-    crate::agent::load_config()
+    let derivadas = crate::agent::load_config()
         .repos
         .iter()
-        .any(|r| r.offsite.iter().chain(r.derived.iter().map(|d| &d.offsite)).any(|o| o.dest.nube.as_deref() == Some(nombre)))
+        .any(|r| r.offsite.iter().chain(r.derived.iter().map(|d| &d.offsite)).any(|o| o.dest.nube.as_deref() == Some(nombre)));
+    // También un repositorio que está en ella (copia las carpetas directamente).
+    derivadas || crate::servidor_v2::cargar().is_some_and(|v| repos_en_la_nube(&v, nombre))
 }
 
-/// Tarea 4a: las variables con las que restic usa la nube `nombre` por su
-/// backend `rclone:` (`rclone:rnube:<carpeta>`): el remoto `rnube` como en el
-/// espejo, con el token al día, y un archivo de configuración vacío en la carpeta
-/// privada (rclone no escribe el token en otro sitio). Se calculan en cada uso:
-/// nunca se guardan con la copia. SFTP no (su clave del servidor va en un archivo
-/// aparte): para eso, un destino SFTP de los de siempre.
+/// ¿Algún repositorio del vínculo está en la nube `nombre`?
+fn repos_en_la_nube(v: &crate::servidor_v2::Vinculo, nombre: &str) -> bool {
+    v.destinos.iter().filter(|d| d.tipo == "nube" && d.nube.as_deref() == Some(nombre)).any(|d| v.repos_v2.iter().any(|r| r.destino == d.id))
+}
+
+/// Marca, en las variables de un acceso de restic, de que el repositorio está en
+/// la nube conectada que dice (su nombre; no es secreto). Es lo único que se
+/// guarda con la copia (`Secret::env`): las credenciales se ponen en cada
+/// proceso ([`preparar_vuelta`]), así nunca se usa un token viejo.
+pub const MARCA: &str = "RESGUARDO_NUBE";
+/// Carpeta (dentro de la privada) con el archivo de configuración de cada vuelta.
+const VUELTAS: &str = "rclone-vueltas";
+/// Un archivo de una vuelta con más de esto es de un proceso que no terminó bien
+/// (las copias se cortan a las 20 h): se borra.
+const VUELTA_OLVIDADA: std::time::Duration = std::time::Duration::from_secs(48 * 3600);
+
+/// Tarea 4a: lo que lleva el acceso de restic a un repositorio en la nube
+/// `nombre` (`rclone:rnube:<carpeta>/<repo>`): solo la [`MARCA`]. Comprueba
+/// que la nube está conectada y que hay rclone.
 pub fn entorno_restic(nombre: &str) -> Result<Vec<(String, String)>, String> {
-    let n = buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
-    if n.parametros.contains_key(CLAVE_HOST) {
-        return Err("Un destino SFTP conectado por rclone no sirve para las copias derivadas: usa un destino SFTP.".into());
+    buscar(nombre).ok_or_else(|| format!("la nube «{nombre}» ya no está conectada en este equipo."))?;
+    comprobar_binario()?;
+    Ok(vec![(MARCA.into(), nombre.into())])
+}
+
+/// Al arrancar el agente: cada proceso de restic con la [`MARCA`] recibe la nube al día.
+pub fn registrar() {
+    resguardo_motor::restic::set_preparar(preparar_vuelta);
+}
+
+/// Justo antes de lanzar restic con la [`MARCA`]: el token renovado si caduca
+/// pronto, el remoto `rnube` por variables de entorno y un archivo de
+/// configuración **propio de esta vuelta** (vacío, en la carpeta privada). Si la
+/// vuelta dura más que el token (4 h en Dropbox), rclone lo renueva él solo
+/// (con el `client_id` de la app) y lo deja en ese archivo; al terminar, se
+/// vuelve a sellar y el archivo se borra (ver [`recoger_y_borrar`]).
+/// También vale para el `rclone serve restic` que lanza restic: hereda las variables.
+fn preparar_vuelta(env: &[(String, String)]) -> Result<Option<resguardo_motor::restic::Preparado>, String> {
+    let mut nombres = env.iter().filter(|(k, _)| k == MARCA).map(|(_, v)| v.as_str());
+    let Some(nombre) = nombres.next() else { return Ok(None) };
+    if nombres.any(|o| o != nombre) {
+        return Err("El origen y el destino están en dos nubes distintas: eso aún no se puede (usa la misma nube o un destino que no sea por rclone).".into());
     }
+    let n = buscar(nombre).ok_or_else(|| format!("La nube «{nombre}» ya no está conectada en este equipo: vuelve a conectarla."))?;
     comprobar_binario()?;
     let n = al_dia(&n, &renovar_dropbox)?;
-    let m = REMOTO.to_uppercase();
-    let mut env = vec![(format!("RCLONE_CONFIG_{m}_TYPE"), n.tipo.clone())];
-    if !n.token.is_empty() {
-        env.push((format!("RCLONE_CONFIG_{m}_TOKEN"), n.token.clone()));
+    let conf = archivo_de_vuelta()?;
+    let mut nuevo: Vec<(String, String)> = env.iter().filter(|(k, _)| k != MARCA && !k.to_ascii_uppercase().starts_with("RCLONE_")).cloned().collect();
+    match variables_remoto(&n, &conf) {
+        Ok(v) => nuevo.extend(v),
+        Err(e) => {
+            let _ = std::fs::remove_file(&conf);
+            return Err(e);
+        }
     }
-    for (k, v) in &n.parametros {
-        env.push((format!("RCLONE_CONFIG_{m}_{}", k.to_uppercase()), v.clone()));
-    }
-    if let Some(k) = &n.app_key {
-        env.push((format!("RCLONE_CONFIG_{m}_CLIENT_ID"), k.clone()));
-    }
+    nuevo.push(("RCLONE_CONFIG".into(), conf.display().to_string()));
+    let (nombre, usado) = (n.nombre.clone(), n.token.clone());
+    Ok(Some(resguardo_motor::restic::Preparado::new(nuevo, move || recoger_y_borrar(&nombre, &usado, &conf))))
+}
+
+/// Un archivo de configuración nuevo y vacío para una vuelta (en la carpeta
+/// privada, que solo leen SYSTEM y los administradores). Antes, se borran los
+/// olvidados y el compartido de versiones anteriores (podían guardar un token).
+fn archivo_de_vuelta() -> Result<PathBuf, String> {
     crate::agent::prepare_dir()?;
-    let conf = crate::agent::private_dir().join("rclone-restic.conf");
-    if !conf.is_file() {
-        crate::agent::write_new(&conf, b"").map_err(|e| format!("No se pudo preparar rclone: {e}"))?;
+    let _ = std::fs::remove_file(crate::agent::private_dir().join("rclone-restic.conf"));
+    let dir = crate::agent::private_dir().join(VUELTAS);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("No se pudo preparar rclone: {e}"))?;
+    limpiar_vueltas(&dir, std::time::SystemTime::now());
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let conf = dir.join(format!("vuelta-{}-{n}-{}.conf", std::process::id(), chrono::Utc::now().timestamp_millis()));
+    crate::agent::write_new(&conf, b"").map_err(|e| format!("No se pudo preparar rclone: {e}"))?;
+    Ok(conf)
+}
+
+/// Borra los archivos de vueltas que no terminaron bien (más de 48 h).
+fn limpiar_vueltas(dir: &Path, ahora: std::time::SystemTime) {
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let viejo = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| ahora.duration_since(m).ok()).is_some_and(|d| d > VUELTA_OLVIDADA);
+        if viejo && e.file_type().is_ok_and(|t| t.is_file()) {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
-    env.push(("RCLONE_CONFIG".into(), conf.display().to_string()));
-    Ok(env)
 }
 
 /// La ubicación de restic de `<carpeta>/<repo>` en una nube conectada (`rclone:rnube:…`).
@@ -1128,7 +1233,7 @@ pub fn quitar_desde_orden(c: &serde_json::Value) -> Result<String, String> {
     }
     // Tarea 4a: una copia derivada que va a ella dejaría de poder subir sin decirlo.
     if usa_copias(&nombre) {
-        return Err(format!("«{nombre}» la usa una copia derivada de este equipo: quita antes esa copia."));
+        return Err(format!("«{nombre}» la usa una copia de este equipo (un repositorio o una copia derivada en ella): quita antes esa copia."));
     }
     let mut aviso = "";
     let mut conf = crate::server::load();
@@ -1768,6 +1873,173 @@ mod tests {
         let otro = leer_conectar_rclone(&json!({ "tipo": "smb", "nombre": "B2 Oficina", "parametros": { "host": "nas", "usuario": "u", "contrasena": "c" } }))
             .unwrap();
         assert!(conectar_rclone_con(&otro, &|s| Ok(s.into()), &|_, _| Ok(())).is_err());
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------- Tarea 4a: repositorios en la nube ----------
+
+    fn tok(access: &str, refresh: &str, horas: i64) -> String {
+        token_rclone(access, refresh, chrono::Utc::now() + chrono::Duration::hours(horas))
+    }
+
+    #[test]
+    fn token_que_se_vuelve_a_sellar() {
+        let usado = tok("a1", RT, -1);
+        let renovado = tok("a2", RT, 4);
+        // Lo normal: rclone lo renovó y nadie tocó lo guardado.
+        assert_eq!(token_a_guardar(&usado, &usado, &renovado).as_deref(), Some(renovado.as_str()));
+        // Igual que lo guardado: nada.
+        assert_eq!(token_a_guardar(&renovado, &usado, &renovado), None);
+        // Otra vuelta ya guardó uno más nuevo de la misma conexión: no se pisa con uno más viejo…
+        let mas_nuevo = tok("a3", RT, 5);
+        assert_eq!(token_a_guardar(&mas_nuevo, &usado, &renovado), None);
+        // …y uno que caduca después sí se guarda.
+        assert_eq!(token_a_guardar(&renovado, &usado, &mas_nuevo).as_deref(), Some(mas_nuevo.as_str()));
+        // La nube se volvió a conectar a mitad de la vuelta (otro refresh token): no se toca.
+        let reconectada = tok("b1", "rt-otro-0123456789", 4);
+        assert_eq!(token_a_guardar(&reconectada, &usado, &renovado), None);
+        // Una nube que rota el refresh token: el nuevo, si lo guardado sigue siendo el usado.
+        let rotado = tok("a2", "rt-rotado-0123456789", 1);
+        assert_eq!(token_a_guardar(&usado, &usado, &rotado).as_deref(), Some(rotado.as_str()));
+        // Nunca uno sin refresh token si lo había, ni basura.
+        let sin_refresh = json!({ "access_token": "a9", "expiry": "2099-01-01T00:00:00Z" }).to_string();
+        assert_eq!(token_a_guardar(&usado, &usado, &sin_refresh), None);
+        for mal in ["", "{}", "no es json", "{\"access_token\":\"con espacio\",\"refresh_token\":\"x\"}"] {
+            assert_eq!(token_a_guardar(&usado, &usado, mal), None, "{mal}");
+        }
+        // Con fracciones de segundo y zona (como lo escribe rclone).
+        let de_rclone =
+            format!(r#"{{"access_token":"a4","token_type":"bearer","refresh_token":"{RT}","expiry":"2099-10-06T21:19:05.9726568-05:00","expires_in":14400}}"#);
+        assert!(token_a_guardar(&renovado, &usado, &de_rclone).is_some());
+    }
+
+    /// Lo que se guarda con la copia es solo la marca; las credenciales, en cada proceso.
+    #[test]
+    fn la_vuelta_pone_la_nube_al_dia_y_limpia() {
+        let _l = crate::restic::tests::real_repo_lock();
+        if comprobar_binario().is_err() {
+            eprintln!("Sin rclone en src-tauri/binaries: se salta la prueba.");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("resguardo-nube-vuelta-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("RESGUARDO_AGENT_DIR", &dir);
+        let n = Nube { nombre: "Caja".into(), tipo: "dropbox".into(), token: tok(AT, RT, 4), app_key: Some(KEY.into()), ..Default::default() };
+        guardar(std::slice::from_ref(&n)).unwrap();
+        assert!(entorno_restic("No existe").is_err());
+        let env = entorno_restic("Caja").unwrap();
+        assert_eq!(env, vec![(MARCA.to_string(), "Caja".to_string())]);
+        // Sin la marca: nada que preparar.
+        assert!(preparar_vuelta(&[("OTRA".into(), "x".into())]).unwrap().is_none());
+        // Dos nubes distintas en el mismo proceso: no.
+        assert!(preparar_vuelta(&[(MARCA.into(), "Caja".into()), (MARCA.into(), "Otra".into())]).is_err());
+        // El archivo compartido de versiones anteriores: se borra.
+        std::fs::write(crate::agent::private_dir().join("rclone-restic.conf"), "[rnube]\ntoken = viejo\n").unwrap();
+        let mut con = env.clone();
+        con.push(("RCLONE_DUMP".into(), "headers".into()));
+        con.push(("HTTPS_PROXY".into(), "http://127.0.0.1:9".into()));
+        let p = preparar_vuelta(&con).unwrap().unwrap();
+        let get = |k: &str| p.env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone());
+        assert_eq!(get("RCLONE_CONFIG_RNUBE_TYPE").as_deref(), Some("dropbox"));
+        assert_eq!(get("RCLONE_CONFIG_RNUBE_CLIENT_ID").as_deref(), Some(KEY));
+        assert!(get("RCLONE_CONFIG_RNUBE_TOKEN").unwrap().contains(RT));
+        assert_eq!(get("HTTPS_PROXY").as_deref(), Some("http://127.0.0.1:9"), "lo demás sigue");
+        assert!(get(MARCA).is_none() && get("RCLONE_DUMP").is_none(), "ni la marca ni otras de rclone");
+        assert!(!format!("{p:?}").contains(RT), "sin credenciales al depurar");
+        let conf = PathBuf::from(get("RCLONE_CONFIG").unwrap());
+        assert!(conf.starts_with(crate::agent::private_dir().join(VUELTAS)) && conf.is_file());
+        assert!(!crate::agent::private_dir().join("rclone-restic.conf").exists());
+        // Otra vuelta a la vez: su propio archivo.
+        let p2 = preparar_vuelta(&env).unwrap().unwrap();
+        let conf2 = PathBuf::from(p2.env.iter().find(|(k, _)| k == "RCLONE_CONFIG").unwrap().1.clone());
+        assert_ne!(conf, conf2);
+        // rclone renovó durante la vuelta y lo dejó en su archivo: al terminar se sella y el archivo se va.
+        let nuevo = tok("fresco-de-rclone", RT, 8);
+        std::fs::write(&conf, format!("[rnube]\ntoken = {nuevo}\n\n")).unwrap();
+        drop(p);
+        assert!(!conf.exists());
+        assert_eq!(buscar("Caja").unwrap().token, nuevo);
+        drop(p2);
+        assert!(!conf2.exists());
+        assert_eq!(buscar("Caja").unwrap().token, nuevo, "la otra vuelta no tenía nada nuevo");
+        // Los olvidados (más de 48 h) se borran.
+        let vueltas = crate::agent::private_dir().join(VUELTAS);
+        std::fs::write(vueltas.join("vuelta-olvidada.conf"), "[rnube]\ntoken = x\n").unwrap();
+        limpiar_vueltas(&vueltas, std::time::SystemTime::now());
+        assert_eq!(std::fs::read_dir(&vueltas).unwrap().count(), 1, "la de ahora se queda");
+        limpiar_vueltas(&vueltas, std::time::SystemTime::now() + std::time::Duration::from_secs(49 * 3600));
+        assert_eq!(std::fs::read_dir(&vueltas).unwrap().count(), 0);
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un servidor de tokens de mentira (como el de Dropbox) en 127.0.0.1: cuenta
+    /// las renovaciones y da `fresco-N`. Nunca toca una nube de verdad.
+    fn servidor_de_tokens() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/token", l.local_addr().unwrap());
+        let n = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cuenta = n.clone();
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                let mut buf = [0u8; 8192];
+                let leido = s.read(&mut buf).unwrap_or(0);
+                if !String::from_utf8_lossy(&buf[..leido]).contains("refresh_token") {
+                    // El cuerpo puede llegar aparte.
+                    let _ = s.read(&mut buf);
+                }
+                let i = cuenta.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let cuerpo = format!(r#"{{"access_token":"fresco-{i}","token_type":"bearer","expires_in":14400}}"#);
+                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{cuerpo}", cuerpo.len());
+            }
+        });
+        (url, n)
+    }
+
+    /// Con el restic y el rclone de verdad: un repositorio `rclone:` cuyo token ya
+    /// caducó. rclone (lanzado por restic) lo renueva contra el servidor de mentira
+    /// y, al terminar, el agente lo vuelve a sellar. Sin red hacia fuera (un proxy
+    /// cerrado): la llamada a la nube falla, la renovación no.
+    #[test]
+    fn restic_en_la_nube_renueva_el_token_caducado() {
+        let _l = crate::restic::tests::real_repo_lock();
+        let Ok(rclone) = comprobar_binario() else {
+            eprintln!("Sin rclone en src-tauri/binaries: se salta la prueba.");
+            return;
+        };
+        if resguardo_motor::restic::version().is_err() {
+            eprintln!("Sin restic: se salta la prueba.");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("resguardo-nube-caduca-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("RESGUARDO_AGENT_DIR", &dir);
+        // restic busca «rclone» en el PATH (en las pruebas no hay uno junto al ejecutable).
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::copy(&rclone, bin.join(if cfg!(windows) { "rclone.exe" } else { "rclone" })).unwrap();
+        let path = std::env::join_paths(std::iter::once(bin.clone()).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()))).unwrap();
+        let (url, renovaciones) = servidor_de_tokens();
+        let mut parametros = std::collections::BTreeMap::new();
+        parametros.insert("token_url".to_string(), url);
+        parametros.insert("client_id".to_string(), KEY.to_string());
+        // Sin `app_key`: el agente no renueva antes (no llama a Dropbox); lo hace rclone.
+        guardar(&[Nube { nombre: "Caja".into(), tipo: "dropbox".into(), token: tok("caducado", RT, -2), parametros, ..Default::default() }]).unwrap();
+        registrar();
+        let mut env = entorno_restic("Caja").unwrap();
+        env.push(("PATH".into(), path.to_string_lossy().into_owned()));
+        env.push(("HTTPS_PROXY".into(), "http://127.0.0.1:9".into()));
+        let acc =
+            resguardo_motor::restic::Access { env, ..resguardo_motor::restic::Access::new(ubicacion_restic("Resguardo", "repo"), "contrasena-de-prueba") };
+        let r = resguardo_motor::restic::run_raw(&acc, &["cat", "config", "--no-lock"], std::time::Duration::from_secs(25));
+        assert!(r.as_ref().map_or(true, |o| o.code != Some(0)), "sin red no puede abrirlo");
+        assert!(renovaciones.load(std::sync::atomic::Ordering::SeqCst) >= 1, "rclone renovó");
+        let ahora = buscar("Caja").unwrap().token;
+        assert!(ahora.contains("fresco-") && ahora.contains(RT), "renovado y sellado de nuevo");
+        assert!(std::fs::read_dir(crate::agent::private_dir().join(VUELTAS)).unwrap().next().is_none(), "sin archivos de la vuelta");
         std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }

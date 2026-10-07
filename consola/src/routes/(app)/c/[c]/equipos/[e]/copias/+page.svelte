@@ -55,6 +55,8 @@
   import { destinoDe } from "$lib/repo";
   import { claveDeDestino } from "$lib/fichaDestino";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  // Crear un repositorio sin salir del editor (también en una nube: tarea 4a).
+  import NuevoRepositorio from "$lib/componentes/NuevoRepositorio.svelte";
 
   const c = $derived(page.params.c ?? "");
   const id = $derived(page.params.e ?? "");
@@ -137,6 +139,11 @@
         }) : undefined;
         const k = i >= 0 ? cfg.copias[i + 1] : cfg.copias.at(-1);
         if (k && enDestino) k.repo = enDestino.id;
+        // Aún sin repositorio en ese destino (p. ej. una nube): «+ Repositorio nuevo…» con él ya elegido.
+        else if (k && dest) {
+          destinoPedido = dest;
+          repoNuevoPara = k.id;
+        }
       }
       // ?copia=<id>: desde la página de la copia, con su tarjeta abierta.
       const pedida = page.url.searchParams.get("copia");
@@ -436,8 +443,35 @@
   const repoResumen = (id: string) => equipo?.resumen?.repositorios?.find((r) => r.id === id) ?? null;
   /** Otras copias que guardan en el mismo repositorio (comparten retención, verificación y prueba). */
   const tambien = (k: CopiaConfig) => (cfg?.copias ?? []).filter((x) => x.id !== k.id && x.repo === k.repo);
-  /** Las nubes del cliente (para decir en el repositorio de una copia que directo todavía no). */
+  /** Las nubes del cliente: con un agente que aún no copia directo a una nube, se ven desactivadas y con el porqué. */
   const nubesCliente = $derived(destinosParaPasos(actual.equipos, catalogo).filter((v) => v.clase === "nube"));
+  const admiteRepoEnNube = $derived(admite(equipo, ADMITE.repoEnNube));
+
+  // --- «+ Repositorio nuevo…» sin salir del editor -----------------------------
+  // El mismo diálogo que «Nuevo repositorio» (lib/repoNuevo.ts: almacenes y sus zonas,
+  // destinos del equipo, catálogo, nubes y uno nuevo), con este equipo fijo y la
+  // autorización que ya se calculó al abrir el editor. El repositorio lo crea el
+  // equipo con su orden; aquí queda elegido en la copia y se envía con lo demás.
+  const REPO_NUEVO = "__repo_nuevo__";
+  /** La copia que pidió el repositorio nuevo (o `""`: ninguna en concreto). */
+  let repoNuevoPara = $state<string | null>(null);
+  /** «Usar en una copia» desde la página de un destino sin repositorio de este equipo: ese destino. */
+  let destinoPedido = $state<string | undefined>(undefined);
+  let avisoRepo = $state("");
+  function repoCreado(r: { id: string; nombre: string; destino: string }) {
+    if (!cfg || !equipo) return;
+    if (!cfg.repositorios.some((x) => x.id === r.id)) cfg.repositorios.push({ id: r.id, nombre: r.nombre, destino: r.destino });
+    const k = cfg.copias.find((x) => x.id === repoNuevoPara);
+    if (k) k.repo = r.id;
+    avisoRepo = `«${r.nombre}» pedido a ${equipo.nombre}: lo crea antes de aplicar las copias.${k ? ` Ya está elegido en «${k.nombre}».` : ""} Cuando acabes, pulsa «Enviar al equipo».`;
+  }
+  /** El selector del repositorio de una copia: «+ Repositorio nuevo…» abre el diálogo (y no cambia la copia). */
+  function elegirRepo(k: CopiaConfig, sel: HTMLSelectElement) {
+    if (sel.value === REPO_NUEVO) {
+      sel.value = k.repo;
+      repoNuevoPara = k.id;
+    } else k.repo = sel.value;
+  }
   /** Repositorios que no usa ninguna copia (su verificación y su prueba van al final). */
   const reposSinCopias = $derived(repos.filter((r) => !cfg?.copias.some((k) => k.repo === r.id)));
 
@@ -613,7 +647,15 @@
     {#if !repos.length}
       <div class="notice notice-warn">
         <TriangleAlert size={16} />
-        <p>Este equipo aún no tiene repositorios. <a href="/c/{c}/repositorios">Crea uno</a> y vuelve aquí.</p>
+        <p>Este equipo aún no tiene repositorios: crea uno aquí mismo (en un almacén, una nube o un disco).</p>
+        <button type="button" class="btn btn-sm" onclick={() => (repoNuevoPara = "")}><Plus size={14} />Repositorio nuevo…</button>
+      </div>
+    {/if}
+    {#if avisoRepo}
+      <div class="notice notice-info aviso-orden" role="status">
+        <Database size={16} />
+        <p>{avisoRepo}</p>
+        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (avisoRepo = "")}>Entendido</button>
       </div>
     {/if}
 
@@ -796,12 +838,14 @@
                 <div class="repo-k" id="ajustes-{k.id}">
                   <div class="field">
                     <label class="field-label" for="repo-{k.id}">Repositorio</label>
-                    <select id="repo-{k.id}" class="input" bind:value={k.repo}>
+                    <select id="repo-{k.id}" class="input" value={k.repo} onchange={(e) => elegirRepo(k, e.currentTarget)}>
+                      {#if !k.repo}<option value="" disabled>Elige un repositorio</option>{/if}
                       {#each repos as r (r.id)}<option value={r.id}>{r.nombre}</option>{/each}
-                      {#if nubesCliente.length}
-                        <!-- 4a pendiente: carpetas directas a una nube, todavía no. Se ven, desactivadas, con el camino que sí. -->
-                        <optgroup label="Nubes: copia aquí y después «Repositorio nuevo a partir de esta»">
-                          {#each nubesCliente as n (n.clave)}<option disabled value="">{n.nombre} · directo, todavía no</option>{/each}
+                      <option value={REPO_NUEVO}>+ Repositorio nuevo… (un almacén, una nube o un disco)</option>
+                      {#if nubesCliente.length && !admiteRepoEnNube}
+                        <!-- Un agente sin `repo_en_nube`: directo a una nube, todavía no. Se ven, desactivadas, con el camino que sí. -->
+                        <optgroup label="Nubes: actualiza el agente o copia aquí y después «Repositorio nuevo a partir de esta»">
+                          {#each nubesCliente as n (n.clave)}<option disabled value="">{n.nombre} · directo, actualiza el agente</option>{/each}
                         </optgroup>
                       {/if}
                     </select>
@@ -847,7 +891,7 @@
     </div>
 
     <div class="nueva-fila">
-      <button class="btn btn-primary nueva" onclick={() => { nueva(); const k = cfg?.copias.at(-1); if (k) abiertas[k.id] = true; }} disabled={!repos.length}><Plus size={16} />Añadir una copia</button>
+      <button class="btn btn-primary nueva" onclick={() => { nueva(); const k = cfg?.copias.at(-1); if (k) abiertas[k.id] = true; }}><Plus size={16} />Añadir una copia</button>
       <button class="btn btn-ghost" onclick={nueva321} disabled={!repos.length} use:tip={"Una copia cada día al almacén, con verificación semanal y prueba de restauración mensual; y dice dónde añadir el espejo a otro disco y la copia en la nube"}><ShieldCheck size={16} />Con la plantilla 3-2-1</button>
       {#if plantillas.length && repos.length}
         <MenuAcciones texto="Desde una plantilla" icono={LayoutTemplate} etiqueta="Añadir una copia desde una plantilla" grupos={[plantillas.map((p) => ({ texto: p.nombre, onclick: () => nuevaDesde(p) }))]} izquierda />
@@ -1001,6 +1045,19 @@
       void gancho;
       elegirPara = null;
     }}
+  />
+{/if}
+
+{#if repoNuevoPara !== null && equipo && actual.cliente && prueba && cfg}
+  <NuevoRepositorio
+    cliente={actual.cliente}
+    equipos={actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x))}
+    destinos={equipo.resumen?.destinos ?? []}
+    equipoInicial={equipo.id}
+    {prueba}
+    alCreado={repoCreado}
+    destinoClave={destinoPedido}
+    onclose={() => ((repoNuevoPara = null), (destinoPedido = undefined))}
   />
 {/if}
 
