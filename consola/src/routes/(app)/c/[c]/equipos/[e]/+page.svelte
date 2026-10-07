@@ -91,6 +91,7 @@
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import ConectarNube from "$lib/componentes/ConectarNube.svelte";
+  import { admiteRevocar, motivoNoDesconectar, nubesDelEquipo, nubesPorAnular, queHaceAlDesconectar } from "$lib/nubesEquipo";
   import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
   import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
   import ZonasAlmacen from "$lib/componentes/ZonasAlmacen.svelte";
@@ -251,7 +252,9 @@
   const pendCopias = $derived(pendientesDe("copias", id));
   const pendRepos = $derived(pendientesDe("repositorios", id));
   const pendDestinos = $derived(pendientesDe("destinos", id));
-  const pendGuarda = $derived(pendientesDe(["guarda", "espejo", "nubes"], id));
+  const pendGuarda = $derived(pendientesDe(["guarda", "espejo"], id));
+  /** Conectar o desconectar nubes (en cualquier equipo; se ven en «Nubes conectadas»). */
+  const pendNubes = $derived(pendientesDe(["nubes"], id));
 
   // --- Órdenes -------------------------------------------------------------
   type Dialogo = {
@@ -482,26 +485,29 @@
       descripcion: `Dejará de copiarse a ${nombre}. Lo que ya está allí se queda.`,
     });
   }
-  /** Qué hacer además al desconectar: retirar el permiso o la clave en su web. */
-  const revocar = (nombre: string) => {
-    const t = nubes.find((n) => n.nombre === nombre)?.tipo ?? "dropbox";
-    return t === "dropbox" ? "Revoca también el permiso en la web de Dropbox («Aplicaciones conectadas»)." : t === "drive" ? "Revoca también el permiso en tu cuenta de Google." : "Si ya no la usa nadie, borra también esa clave o ese usuario en el servicio.";
-  };
+  /** Plan 0.7.26 (1.1): las nubes conectadas en este equipo (sea o no almacén), qué las usa y las que faltan por anular. */
+  const nubesEquipo = $derived(nubesDelEquipo(equipo));
+  const porAnular = $derived(nubesPorAnular(equipo));
   let conectarNube = $state(false);
   /** §3c: «Conectar otro destino» (B2, S3, SFTP, SMB, WebDAV). */
   let conectarDestino = $state(false);
   /** §3e: «Restaurar desde el espejo…». */
   let desdeEspejo = $state(false);
-  /** Desconectar una nube: espera si el espejo la usa (lo decide esDestructiva con el contexto). */
+  /**
+   * Desconectar una nube (clave de administración). Con `admite: "nube_revocar"` el equipo
+   * anula el permiso en el proveedor y no deja si algo la usa (la página ya no ofrece el botón).
+   * Con un agente anterior: espera si el espejo la usa (lo decide esDestructiva con el contexto).
+   */
   function quitarNube(nombre: string) {
-    const usada = destinosActuales.some((d) => d.tipo === "nube" && d.nube === nombre);
+    const tipo = nubesEquipo.find((n) => n.nombre === nombre)?.tipo ?? "dropbox";
+    const usada = !admiteRevocar(equipo) && destinosActuales.some((d) => d.tipo === "nube" && d.nube === nombre);
     abrir({
       tipo: "quitar_nube",
       cuerpo: { nombre },
       titulo: `Desconectar «${nombre}»`,
       descripcion: usada
-        ? `El espejo dejará de subir a «${nombre}» y el equipo olvidará su permiso. Lo ya subido se queda allí. ${revocar(nombre)}`
-        : `${equipo!.nombre} olvidará el permiso de «${nombre}». ${revocar(nombre)}`,
+        ? `El espejo dejará de subir a «${nombre}» y el equipo olvidará su permiso. Lo ya subido se queda allí. ${queHaceAlDesconectar(equipo, tipo)}`
+        : `${equipo!.nombre} olvidará el permiso de «${nombre}». Lo ya subido se queda allí. ${queHaceAlDesconectar(equipo, tipo)}`,
     });
   }
 
@@ -1258,9 +1264,7 @@
             </div>
           {/if}
           {#if g.nubes?.length}
-            <p class="externa">
-              <Cloud size={14} />Nubes conectadas: {#each g.nubes as n, ni (n.nombre)}{ni ? ", " : ""}<span class="nube-c">{n.nombre}{#if puede.administrar(rol)}<button class="link quitar-nube" onclick={() => quitarNube(n.nombre)} aria-label="Desconectar {n.nombre}">Desconectar</button>{/if}</span>{/each}
-            </p>
+            <p class="externa"><Cloud size={14} />Nubes conectadas: {g.nubes.map((n) => n.nombre).join(", ")} <a class="link" href="#t-nubes">(ver abajo)</a></p>
           {/if}
           {#if puede.administrar(rol)}
             <div class="acciones">
@@ -1280,6 +1284,42 @@
           </div>
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
           {#if !pendGuarda.some((p) => !terminada(p.orden))}<div class="acciones"><button class="btn btn-sm" onclick={abrirGuardar}><Server size={14} />Este equipo guarda copias</button></div>{/if}
+        </section>
+      {/if}
+
+      {#if nubesEquipo.length || porAnular.length || pendNubes.length}
+        <!-- Plan 0.7.26 (1.1): en cualquier equipo, no solo en los almacenes. -->
+        <section class="card p" aria-labelledby="t-nubes">
+          <h3 class="section-title" id="t-nubes">Nubes conectadas</h3>
+          {#each pendNubes as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
+          {#if nubesEquipo.length}
+            <ul class="lista-nubes">
+              {#each nubesEquipo as n (n.nombre)}
+                {@const motivo = motivoNoDesconectar(equipo, n)}
+                <li class="nube-fila">
+                  <span class="ic-d"><Cloud size={14} /></span>
+                  <span class="nube-texto">
+                    <strong>{n.nombre}</strong>
+                    <span class="faint">{nombreTipoNube(n.tipo) || n.tipo}{#if n.usos.length}{" · "}la usa {n.usos.join(", ")}{:else}{" · "}sin uso en este equipo{/if}</span>
+                    {#if motivo && puede.administrar(rol)}<span class="faint nube-motivo">{motivo}</span>{/if}
+                  </span>
+                  {#if puede.administrar(rol) && !motivo}
+                    <button class="btn btn-sm btn-ghost quitar-nube" onclick={() => quitarNube(n.nombre)} aria-label="Desconectar {n.nombre}">Desconectar</button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+            {#if !admiteRevocar(equipo)}
+              <p class="faint nota-almacen">Actualiza el agente de {equipo.nombre} para que, al desconectar, anule también el permiso en Dropbox.</p>
+            {/if}
+          {/if}
+          {#each porAnular as n (n.nombre)}
+            <div class="notice notice-warn nube-por-anular">
+              <p>
+                <strong>«{n.nombre}»</strong>: credenciales borradas de este equipo; no se pudo anular el permiso en {n.tipo === "dropbox" ? "Dropbox" : "el proveedor"} todavía: se reintentará{#if n.hasta}{" "}hasta el {fechaLarga(n.hasta)}{/if}.
+              </p>
+            </div>
+          {/each}
         </section>
       {/if}
 
@@ -2129,13 +2169,38 @@
   .conectar-nube {
     margin-top: 8px;
   }
-  .nube-c {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-  }
   .quitar-nube {
-    font-size: var(--fs-xs);
+    margin-left: auto;
+  }
+  .lista-nubes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .nube-fila {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .nube-texto {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 200px;
+  }
+  .nube-texto .faint {
+    font-size: var(--fs-sm);
+    overflow-wrap: anywhere;
+  }
+  .nube-por-anular {
+    margin-top: 8px;
+  }
+  .nube-por-anular p {
+    margin: 0;
   }
   .unidad {
     align-self: center;

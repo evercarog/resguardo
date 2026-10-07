@@ -322,6 +322,8 @@ export interface ResumenEquipo {
   pausado_hasta?: string | null;
   /** Tarea 4a: las nubes conectadas en el equipo (también si no guarda copias). */
   nubes?: { nombre: string; tipo: string }[];
+  /** Plan 0.7.26 (1.1, `admite: "nube_revocar"`): nubes desconectadas cuyo permiso aún no se pudo anular en el proveedor (se reintenta 7 días). */
+  nubes_por_anular?: { nombre: string; tipo: string; desde?: string | null; hasta?: string | null; intentos?: number }[];
   /** Tarea 8e: si el agente corre en una máquina virtual o un contenedor. Solo un dato (nunca resta). */
   entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra" | string; contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" | string } | null;
 }
