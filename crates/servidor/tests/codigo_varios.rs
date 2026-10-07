@@ -288,6 +288,13 @@ async fn anular_caducar_limites_y_permisos() {
     assert_eq!((r.estado, r.json["error"].as_str()), (StatusCode::NOT_FOUND, Some("codigo")));
     let v = p.pedir("GET", &format!("{ruta}/{lote}"), None, Some(&cookie)).await.json;
     assert_eq!((v["estado"].as_str(), v["usados"].as_i64(), v["pendientes"].as_u64()), (Some("anulado"), Some(1), Some(1)));
+    // El intento con el código anulado se reconoce y queda en el lote y en la auditoría.
+    assert_eq!(v["rechazos"].as_i64(), Some(1));
+    assert!(p
+        .auditoria(&cookie, &c)
+        .await
+        .iter()
+        .any(|e| e["accion"] == "codigo_varios_rechazado" && e["datos"].as_str().is_some_and(|d| d.contains("anulado"))));
     assert!(v["anulado"].is_string());
     assert_eq!(p.pedir("GET", &format!("/api/agente/instalador/{lote}"), None, None).await.estado, StatusCode::NOT_FOUND, "anulado: sin descarga");
     assert_eq!(p.pedir("DELETE", &format!("{ruta}/{uuid}", uuid = uuid::Uuid::new_v4()), None, Some(&cookie)).await.estado, StatusCode::NOT_FOUND);

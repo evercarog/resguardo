@@ -768,10 +768,6 @@ impl Almacen for Sqlite {
     fn cliente_de_lote(&self, lote: &str) -> R<Option<String>> {
         self.ctl().query_row("SELECT cliente_id FROM codigos_varios WHERE lote_id = ?1", [lote], |r| r.get(0)).optional().map_err(s)
     }
-    fn desindexar_codigo_varios(&self, lote: &str) -> R<()> {
-        self.ctl().execute("DELETE FROM codigos_varios WHERE lote_id = ?1", [lote]).map_err(s)?;
-        Ok(())
-    }
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()> {
         self.ctl().execute("INSERT INTO indice_equipos (equipo_id, cliente_id) VALUES (?1, ?2)", [equipo, cliente]).map_err(s)?;
         Ok(())

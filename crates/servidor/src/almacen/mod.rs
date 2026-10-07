@@ -560,11 +560,10 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     /// Bloque 7: el código para varios equipos en el índice global (su hash → cliente y lote).
     fn indexar_codigo_varios(&self, codigo_hash: &str, cliente: &str, lote: &str, caduca: Ts) -> R<()>;
     /// (cliente, lote) del código para varios equipos con ese hash, si está en el índice (aunque
-    /// esté agotado: el cliente decide; se quita al anularlo y al caducar).
+    /// esté agotado o anulado: el lote decide; se quita al caducar).
     fn codigo_varios(&self, codigo_hash: &str) -> R<Option<(String, String)>>;
     /// El cliente del lote (para la descarga anónima del instalador con el id del lote).
     fn cliente_de_lote(&self, lote: &str) -> R<Option<String>>;
-    fn desindexar_codigo_varios(&self, lote: &str) -> R<()>;
     /// Ficha de recepción de un cliente («Recibir un cliente», F6): `usos` altas de equipos hasta `caduca`.
     fn crear_ficha(&self, hash: &str, cliente: &str, usos: i64, caduca: Ts) -> R<()>;
     /// Gasta un uso de la ficha si vale: su cliente.

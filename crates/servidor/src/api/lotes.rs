@@ -208,8 +208,8 @@ pub async fn anular(State(st): State<St>, u: Usuario, Path((c, l)): Path<(String
     let existe = st
         .db(move |db| {
             let Some(lote) = db.lote(&ctx, &l)? else { return Ok(false) };
-            // Primero fuera del índice: desde aquí, nadie más se une con él.
-            db.desindexar_codigo_varios(&l)?;
+            // Se queda en el índice hasta que caduca (lo limpia `limpiar_servidor`): así un intento
+            // con el código ya anulado se reconoce, se rechaza y queda en la auditoría.
             if db.anular_lote(&ctx, &l, ahora())? {
                 db.auditar(&ctx, &actor, "anular_codigo_varios", &l, &json!({ "usados": lote.usados, "usos": lote.usos }).to_string())?;
             }
