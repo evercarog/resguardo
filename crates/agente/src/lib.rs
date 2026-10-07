@@ -39,6 +39,9 @@ pub mod cli;
 mod consolas_it;
 pub mod consolas_v2;
 pub mod console;
+pub mod datos_cliente;
+#[cfg(test)]
+mod datos_cliente_it;
 pub mod datos_equipo;
 #[cfg(test)]
 mod datos_equipo_it;
