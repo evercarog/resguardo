@@ -40,6 +40,74 @@ UNIDAD="/etc/systemd/system/resguardo-server.service"
 
 fallo() { echo "Error: $*" >&2; exit 1; }
 
+# ¿Está apt/dpkg ocupado? (p. ej. las actualizaciones automáticas del sistema
+# justo después de arrancar una máquina nueva). Con fuser, por sus cerrojos;
+# sin él (contenedores mínimos), por los procesos.
+apt_ocupado() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1
+  else
+    pgrep -x 'apt|apt-get|dpkg|unattended-upgr' >/dev/null 2>&1
+  fi
+}
+
+# Espera (hasta 10 min, avisando) a que apt quede libre en vez de fallar.
+esperar_apt() {
+  espera=0
+  while apt_ocupado; do
+    if [ "$espera" -eq 0 ]; then echo "Esperando a que terminen las actualizaciones automáticas del sistema (apt está ocupado; hasta 10 min)..."; fi
+    [ "$espera" -lt 600 ] || fallo "apt sigue ocupado después de 10 minutos. Espera a que terminen las actualizaciones del sistema y repite."
+    sleep 5
+    espera=$((espera + 5))
+  done
+}
+
+# apt-get, después de esperar a que quede libre (y, por si acaso, que también
+# espere él: DPkg::Lock::Timeout, apt 1.9.11 o posterior; los anteriores lo ignoran).
+apt_get() {
+  esperar_apt
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 "$@"
+}
+
+# El minisign oficial para Linux (0.12), por si el sistema no lo trae ni lo
+# tiene apt (Ubuntu 22.04). Su huella SHA-256 está fijada: la comprobó el
+# responsable del proyecto contra la llave del autor de minisign
+# (RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3).
+MINISIGN_URL="https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz"
+MINISIGN_SHA256="9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73"
+
+# Deja en MINISIGN con qué comprobar la firma: el del sistema; si no está, el de
+# apt; si apt no lo tiene, el oficial con su huella comprobada, en la carpeta
+# temporal (no se deja instalado). RESGUARDO_MINISIGN=oficial usa siempre el
+# oficial (p. ej. si el del sistema es demasiado antiguo).
+MINISIGN=""
+preparar_minisign() {
+  if [ "${RESGUARDO_MINISIGN:-}" != "oficial" ]; then
+    if command -v minisign >/dev/null 2>&1; then MINISIGN="minisign"; return 0; fi
+    if command -v apt-get >/dev/null 2>&1; then
+      echo "Instalando minisign (para comprobar la firma)..."
+      esperar_apt
+      if { apt_get update -qq && apt_get install -y -qq minisign; } >/dev/null 2>&1 && command -v minisign >/dev/null 2>&1; then
+        MINISIGN="minisign"
+        return 0
+      fi
+      echo "minisign no está en los paquetes de este sistema (p. ej. Ubuntu 22.04): se usa el oficial (0.12)."
+    fi
+  fi
+  command -v curl >/dev/null 2>&1 || { apt_get update -qq && apt_get install -y -qq curl ca-certificates >/dev/null; }
+  echo "Descargando minisign 0.12 (oficial)..."
+  curl -fsSL -o "$TMP/minisign.tar.gz" "$MINISIGN_URL" || fallo "no se pudo descargar minisign (hace falta para comprobar la firma)."
+  [ "$(sha256sum "$TMP/minisign.tar.gz" | awk '{print $1}')" = "$MINISIGN_SHA256" ] \
+    || fallo "el minisign descargado no es el oficial (su huella SHA-256 no coincide): no se usa ni se instala nada."
+  mkdir -p "$TMP/minisign"
+  # tar puede avisar de atributos extendidos del archivo (xattr): no importa.
+  tar -xzf "$TMP/minisign.tar.gz" -C "$TMP/minisign" 2>/dev/null || true
+  MINISIGN="$(find "$TMP/minisign" -type f -name minisign -path "*/$ARQ/*" | head -n 1)"
+  [ -n "$MINISIGN" ] || fallo "el minisign oficial no trae la versión para $ARQ."
+  chmod 0755 "$MINISIGN"
+  echo "minisign oficial 0.12 con su huella comprobada (solo para esta instalación)."
+}
+
 SIN_FIRMA=0
 DESINSTALAR=0
 PURGAR=0
@@ -107,18 +175,15 @@ if [ -n "$PAQUETE_LOCAL" ]; then
 else
   [ "$SIN_FIRMA" = 0 ] || fallo "--sin-firma solo vale con --paquete (un archivo que ya has comprobado)."
   [ "$LLAVE_PUBLICA" != "PENDIENTE" ] || fallo "este script aún no tiene la llave pública de publicación: no se descarga nada sin poder comprobar la firma. Instala desde un paquete copiado al equipo (--paquete, ver docs/servidor-linux.md)."
-  command -v curl >/dev/null || { apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null; }
+  command -v curl >/dev/null || { apt_get update -qq && apt_get install -y -qq curl ca-certificates >/dev/null; }
   echo "Descargando ${ARCHIVO}..."
   curl -fsSL -o "$TMP/$ARCHIVO" "$BASE/$ARCHIVO"
   curl -fsSL -o "$TMP/$ARCHIVO.minisig" "$BASE/$ARCHIVO.minisig"
 fi
 if [ -f "$TMP/$ARCHIVO.minisig" ] && [ "$LLAVE_PUBLICA" != "PENDIENTE" ]; then
-  if ! command -v minisign >/dev/null; then
-    echo "Instalando minisign (para comprobar la firma)..."
-    apt-get update -qq && apt-get install -y -qq minisign >/dev/null
-  fi
+  preparar_minisign
   echo "Comprobando la firma..."
-  minisign -Vm "$TMP/$ARCHIVO" -P "$LLAVE_PUBLICA" || fallo "la firma no es válida: no se instala."
+  "$MINISIGN" -Vm "$TMP/$ARCHIVO" -P "$LLAVE_PUBLICA" || fallo "la firma no es válida: no se instala."
 elif [ "$SIN_FIRMA" = 1 ]; then
   echo "Sin comprobar la firma (--sin-firma). SHA-256 del paquete:"
   echo "  $(sha256sum "$TMP/$ARCHIVO" | awk '{print $1}')"

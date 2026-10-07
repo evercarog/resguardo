@@ -39,6 +39,35 @@ set -eu
 
 fallo() { echo "Error: $*" >&2; exit 1; }
 
+# ¿Está apt/dpkg ocupado? (p. ej. las actualizaciones automáticas del sistema
+# justo después de arrancar una máquina nueva). Con fuser, por sus cerrojos;
+# sin él (contenedores mínimos), por los procesos.
+apt_ocupado() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1
+  else
+    pgrep -x 'apt|apt-get|dpkg|unattended-upgr' >/dev/null 2>&1
+  fi
+}
+
+# Espera (hasta 10 min, avisando) a que apt quede libre en vez de fallar.
+esperar_apt() {
+  espera=0
+  while apt_ocupado; do
+    if [ "$espera" -eq 0 ]; then echo "Esperando a que terminen las actualizaciones automáticas del sistema (apt está ocupado; hasta 10 min)..."; fi
+    [ "$espera" -lt 600 ] || fallo "apt sigue ocupado después de 10 minutos. Espera a que terminen las actualizaciones del sistema y repite."
+    sleep 5
+    espera=$((espera + 5))
+  done
+}
+
+# apt-get, después de esperar a que quede libre (y, por si acaso, que también
+# espere él: DPkg::Lock::Timeout, apt 1.9.11 o posterior; los anteriores lo ignoran).
+apt_get() {
+  esperar_apt
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 "$@"
+}
+
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 DOMINIO=""
 CORREO=""
@@ -96,8 +125,8 @@ fi
 
 # --- 1. Actualizaciones de seguridad automáticas ---
 echo "== Actualizaciones de seguridad automáticas"
-apt-get update -qq
-apt-get install -y -qq unattended-upgrades fail2ban python3-systemd curl ca-certificates >/dev/null
+apt_get update -qq
+apt_get install -y -qq unattended-upgrades fail2ban python3-systemd curl ca-certificates >/dev/null
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 // Resguardo (preparar-vm.sh): listas cada día y actualizaciones de seguridad
 // automáticas (lo que dice 50unattended-upgrades: en Ubuntu, «-security»).
@@ -127,7 +156,7 @@ if [ "$CORTAFUEGOS" = 1 ]; then
     abrir_iptables
     if [ -n "$SSH_DESDE" ]; then echo "  (--ssh-desde: en Oracle Cloud, limítalo en la «Security List» de la red virtual.)"; fi
   else
-    apt-get install -y -qq ufw >/dev/null
+    apt_get install -y -qq ufw >/dev/null
     ufw --force default deny incoming >/dev/null
     ufw --force default allow outgoing >/dev/null
     if [ -n "$SSH_DESDE" ]; then

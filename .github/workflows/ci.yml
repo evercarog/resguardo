@@ -163,6 +163,8 @@ jobs:
           # restic, rest-server y rclone oficiales (GitHub), con sus huellas, junto al binario.
           sh scripts/fetch-binarios-linux.sh src-tauri/target/x86_64-unknown-linux-musl/release
           sh -n packaging/linux/instalar-agente.sh
+          # Plan 0.7.26 (1.2): los guiones de instalación, sin avisos de shellcheck (viene en las imágenes de GitHub).
+          shellcheck -s sh packaging/linux/instalar-agente.sh packaging/linux/instalar-servidor.sh packaging/linux/nube/preparar-vm.sh
           sh packaging/linux/construir-paquetes.sh "$BIN" "$VERSION" x86_64 paquetes
           dpkg-deb --info paquetes/*.deb
           dpkg-deb --contents paquetes/*.deb
@@ -181,6 +183,8 @@ jobs:
           sudo sh paquetes/instalar-agente.sh --paquete "$P" --sin-firma | tee instalacion.txt
           grep -q 'coincide con su SHA256SUMS' instalacion.txt
           grep -q 'resguardo-agente vincular' instalacion.txt
+          # Aún no guarda copias: se dice cómo.
+          grep -q 'Para que este equipo guarde las copias de otros' instalacion.txt
           systemctl is-active resguardo-agente
           sudo resguardo-agente estado | tee estado.txt
           grep -q 'Sin vincular' estado.txt
@@ -208,6 +212,8 @@ jobs:
           # Actualizar encima: sigue todo en marcha, y avisa de que es la misma versión.
           sudo sh /opt/resguardo-agente/instalar-agente.sh --paquete "$P" --sin-firma | tee reinstalar.txt
           grep -q 'Misma versión' reinstalar.txt
+          # Ya guarda copias: no se repite el aviso de cómo hacerlo.
+          nunca grep -q 'Para que este equipo guarde las copias de otros' reinstalar.txt
           systemctl is-active resguardo-agente
           # Un paquete más antiguo que el instalado: lo dice con las dos versiones.
           echo 99.0.0 | sudo tee /opt/resguardo-agente/VERSION >/dev/null
@@ -224,6 +230,31 @@ jobs:
           sudo sh /opt/resguardo-agente/instalar-agente.sh --desinstalar --purgar
           nunca sudo test -e /var/lib/resguardo-agente
           nunca systemctl is-active resguardo-guarda-copias
+          # Plan 0.7.26 (1.2): con firma y el minisign oficial 0.12 (lo que pasa en Ubuntu 22.04, que no
+          # tiene el paquete minisign): una llave de PRUEBAS creada aquí; el guion comprueba la huella fijada
+          # del minisign descargado y lo usa desde la carpeta temporal.
+          mkdir -p firmado && cp "$P" firmado/
+          node --input-type=module -e '
+            import { firmarPruebas } from "./scripts/lib/minisign.mjs";
+            import { generateKeyPairSync, randomBytes } from "node:crypto";
+            import fs from "node:fs";
+            const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+            const semilla = privateKey.export({ format: "der", type: "pkcs8" }).subarray(-32).toString("hex");
+            const pk = publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+            const id = randomBytes(8).toString("hex");
+            const p = "firmado/resguardo-agente-x86_64-linux-musl.tar.gz";
+            fs.writeFileSync(p + ".minisig", firmarPruebas(fs.readFileSync(p), semilla, id, "timestamp:1760000000\tfile:resguardo-agente-x86_64-linux-musl.tar.gz"));
+            fs.writeFileSync("firmado/llave.txt", Buffer.concat([Buffer.from("Ed"), Buffer.from(id, "hex").reverse(), pk]).toString("base64"));
+          '
+          LLAVE="$(cat firmado/llave.txt)"
+          sudo RESGUARDO_LLAVE_PUBLICA="$LLAVE" RESGUARDO_MINISIGN=oficial sh paquetes/instalar-agente.sh --paquete firmado/resguardo-agente-x86_64-linux-musl.tar.gz | tee firmado.txt
+          grep -q 'minisign oficial 0.12 con su huella comprobada' firmado.txt
+          systemctl is-active resguardo-agente
+          sudo sh /opt/resguardo-agente/instalar-agente.sh --desinstalar --purgar
+          # El paquete cambiado después de firmarlo: se niega.
+          printf x >> firmado/resguardo-agente-x86_64-linux-musl.tar.gz
+          nunca sudo RESGUARDO_LLAVE_PUBLICA="$LLAVE" RESGUARDO_MINISIGN=oficial sh paquetes/instalar-agente.sh --paquete firmado/resguardo-agente-x86_64-linux-musl.tar.gz
+          nunca test -e /opt/resguardo-agente
       - name: Instalar el .deb, comprobar y purgar
         run: |
           nunca() { if "$@"; then echo "No debía funcionar: $*"; exit 1; fi; }
