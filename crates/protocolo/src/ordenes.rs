@@ -110,6 +110,13 @@ pub const TIPOS: &[Tipo] = &[
     // administradores. Un agente anterior la sigue tratando como inofensiva (no mira la
     // prueba que le llega de más).
     t("quitar_destino", Administracion, false, false, true),
+    // 0.7.26 (bloque 8): los datos comunes del cliente (colores de las etiquetas, catálogo de
+    // destinos, plantillas), iguales en todas sus consolas a través de sus equipos
+    // (datos_cliente.rs, docs/consolas-multiples.md §6.5). Solo administradores, como
+    // cambiarlos en la consola. El tipo y las marcas de un destino cuentan en la regla
+    // 3-2-1: van en `datos_cliente_admin`, con la clave de administración.
+    t("datos_cliente", Inofensiva, false, false, true),
+    t("datos_cliente_admin", Administracion, false, false, true),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).
@@ -197,6 +204,11 @@ mod tests {
         let q = tipo("quitar_destino").unwrap();
         assert!(q.nivel == Nivel::Administracion && !q.destructiva && q.solo_administradores);
         assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&"quitar_destino"));
+        // 0.7.26: datos comunes del cliente; el tipo y las marcas de un destino, con la clave.
+        let d = tipo("datos_cliente").unwrap();
+        assert!(d.nivel == Nivel::Inofensiva && !d.destructiva && d.solo_administradores);
+        let d = tipo("datos_cliente_admin").unwrap();
+        assert!(d.nivel == Nivel::Administracion && !d.destructiva && d.solo_administradores);
         // Ninguna inofensiva es destructiva.
         assert!(TIPOS.iter().filter(|t| t.nivel == Nivel::Inofensiva).all(|t| !t.destructiva));
     }
