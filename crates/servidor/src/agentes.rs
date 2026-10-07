@@ -600,6 +600,10 @@ pub struct Config {
     /// v1.36: la espera mínima que aplica el equipo (quizá la cambió otra consola).
     #[serde(default)]
     espera_min_horas: Option<i64>,
+    /// 0.7.26 (bloque 8): los datos comunes del cliente que guarda el equipo
+    /// (crate::datos_comunes). Un agente anterior no lo manda.
+    #[serde(default)]
+    datos_cliente: Option<Value>,
 }
 
 async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
@@ -619,6 +623,9 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
         && c.resumen["cambio_config"]["consola"]["identidad"].as_str().is_some_and(|i| i != st.identidad_pub))
     .then(|| texto_corto(c.resumen["cambio_config"]["consola"]["nombre"].as_str().unwrap_or("otra consola"), 80));
     let aviso_otra = clave_desde_otra.is_some();
+    let propia = st.identidad_pub.clone();
+    let comunes_cambiados = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let comunes = comunes_cambiados.clone();
     let (pistas, datos_cambiados) = st
         .db(move |db| {
             // v1.30: el almacén aplicó la retención en el repositorio de otro equipo: pista a su dueño.
@@ -631,6 +638,12 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
             let mut datos = false;
             if let Some(e) = actual.as_ref().filter(|e| e.confirmado) {
                 datos = crate::datos_equipo::aplicar(db, &ctx, e, &c.resumen)?;
+                // 0.7.26 (bloque 8): los datos comunes del cliente, juntos con los de sus demás equipos.
+                if let Some(d) = &c.datos_cliente {
+                    if crate::datos_comunes::recibir(db, &ctx, &e.id, &propia, d)? > 0 {
+                        comunes.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
             }
             // v1.36: lo que pudo cambiar otra consola (la clave o la espera): el equipo lo dice al subir su configuración.
             if let Some(e) = actual.as_ref().filter(|e| e.confirmado) {
@@ -665,6 +678,9 @@ async fn registrar_config(st: &St, a: &Agente, c: Config) -> Res<()> {
         .await?;
     if datos_cambiados {
         st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
+    }
+    if comunes_cambiados.load(std::sync::atomic::Ordering::Relaxed) {
+        st.vivo.avisar(a.ctx.id(), Cambio::DatosComunes);
     }
     for (e, repo) in pistas {
         st.al_agente(&e, &json!({ "t": "refrescar", "repo": repo }));

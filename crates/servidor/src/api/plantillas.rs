@@ -50,11 +50,14 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
     let por = u.0.cuenta.nombre.clone();
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
     let id2 = id.clone();
+    let propia = st.identidad_pub.clone();
     let cabe = st
         .db(move |db| {
             let ok = db.guardar_plantilla(&ctx, &id2, &p.cifrado, &por, MAX_PLANTILLAS)?;
             if ok {
                 db.auditar(&ctx, &actor, "guardar_plantilla", &id2, "{}")?;
+                // 0.7.26 (bloque 8): para las demás consolas (cifrada tal cual).
+                crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("plantilla:{id2}"), &por, &propia);
             }
             Ok(ok)
         })
@@ -69,11 +72,14 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
 pub async fn borrar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(String, String)>) -> Res<StatusCode> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    let (por, propia) = (u.0.cuenta.nombre.clone(), st.identidad_pub.clone());
     let existia = st
         .db(move |db| {
             let ok = db.borrar_plantilla(&ctx, &id)?;
             if ok {
                 db.auditar(&ctx, &actor, "borrar_plantilla", &id, "{}")?;
+                // 0.7.26 (bloque 8): borrada también en las demás consolas.
+                crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("plantilla:{id}"), &por, &propia);
             }
             Ok(ok)
         })

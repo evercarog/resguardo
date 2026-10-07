@@ -183,6 +183,7 @@ CREATE INDEX IF NOT EXISTS historial_hora ON historial (equipo_id, hora);
 CREATE TABLE IF NOT EXISTS plantillas (id TEXT PRIMARY KEY, cifrado TEXT NOT NULL, actualizada INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS destinos (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, donde TEXT, actualizado INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS etiquetas_ajustes (clave TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizada INTEGER NOT NULL, por TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS datos_comunes (clave TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizada INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS auditoria_importada (
   n INTEGER PRIMARY KEY, creado INTEGER NOT NULL, actor TEXT NOT NULL, accion TEXT NOT NULL, objetivo TEXT NOT NULL,
   datos TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL, origen TEXT NOT NULL);
@@ -1459,6 +1460,25 @@ impl Almacen for Sqlite {
     fn borrar_ajuste_etiqueta(&self, c: &ClienteCtx, nombre: &str) -> R<bool> {
         let clave = nombre.to_lowercase();
         self.con(c, |db| Ok(db.execute("DELETE FROM etiquetas_ajustes WHERE clave = ?1", [clave]).map_err(s)? > 0))
+    }
+
+    // ---------- Datos comunes del cliente (0.7.26, bloque 8) ----------
+    fn datos_comunes(&self, c: &ClienteCtx) -> R<Vec<(String, String)>> {
+        self.con(c, |db| {
+            let mut st = db.prepare("SELECT clave, datos FROM datos_comunes ORDER BY clave").map_err(s)?;
+            let filas = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
+    fn poner_dato_comun(&self, c: &ClienteCtx, clave: &str, datos: &str) -> R<()> {
+        self.con(c, |db| {
+            db.execute(
+                "INSERT INTO datos_comunes (clave, datos, actualizada) VALUES (?1, ?2, ?3) ON CONFLICT(clave) DO UPDATE SET datos = ?2, actualizada = ?3",
+                params![clave, datos, ahora()],
+            )
+            .map_err(s)?;
+            Ok(())
+        })
     }
 
     // ---------- Catálogo de destinos (tarea 7a) ----------
