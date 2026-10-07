@@ -58,6 +58,11 @@
     vertical-align: middle;
     min-width: 0;
   }
+  /* La compacta no se parte: el tipo y sus marcas, siempre juntos. */
+  .td:not(.completa) {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
   .completa {
     font-size: var(--fs-sm, 0.8125rem);
     gap: 6px 8px;

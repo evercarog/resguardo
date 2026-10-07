@@ -1254,6 +1254,10 @@
   .camino strong {
     color: var(--text-1);
     font-weight: 550;
+    white-space: nowrap;
+  }
+  .camino li {
+    flex-wrap: wrap;
   }
   .flecha {
     color: var(--text-3);
