@@ -201,6 +201,16 @@ Riesgo que queda hoy: si atacan el servidor de una consola, pueden cambiar el Ja
 - [ ] **12d. Regla de dos personas** (opcional por cliente): lo destructivo necesita la aprobación de una segunda persona o de otra consola.
 - [ ] **12e. Pentest externo** antes de abrir la consola en línea a más clientes.
 
+## 13. Restauraciones (para revisar en el plan de la versión siguiente a la 0.7.26)
+
+Apuntado el 2026-10-07, tras la primera restauración real desde la consola. Se revisa con el responsable antes de empezar.
+
+- [ ] **13a. Restaurar en otra carpeta desde la consola:** con la clave de administración, «Explorar…» o ruta escrita, solo en una carpeta nueva o vacía (nunca sobrescribir), nunca dentro de las carpetas del sistema. Así también se puede restaurar una unidad entera en otra carpeta.
+- [ ] **13b. Restaurar en un .zip:** «Guardar como .zip en el equipo» (carpeta elegida, sin límite) y «Descargar .zip» al navegador (cifrado de punta a punta, para tamaños pequeños o medianos). **Con contraseña opcional** en AES-256 (no ZipCrypto, que es débil): la contraseña se escribe en el navegador y viaja sellada al equipo, nunca al servidor. Avisar de que el Explorador de Windows no abre .zip con AES (hace falta 7-Zip o similar).
+- [ ] **13c. Detalle en vivo:** gráfico de velocidad, archivos y datos restaurados, tiempo restante y carpeta en curso, con el estilo de las copias.
+- [ ] **13d. Página «Restauraciones»** por cliente y por equipo (quién, cuándo, qué versión, cuánto, cuánto tardó, resultado, con su detalle y gráfico) y **estadísticas** (número, tiempos, éxito), también en Informes.
+- [ ] **13e. A decidir:** que una restauración real correcta cuente como prueba de restauración en la regla 3-2-1-1-0.
+
 ## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
 
 - **Copia del sistema operativo.** Windows: imagen del sistema con `wbadmin` (ya sale en VHDX) como paso «antes de copiar», guardada en el repositorio (restic deduplica entre imágenes) y restauración guiada con el entorno de recuperación de Windows. Linux: integrar ReaR (Relax-and-Recover) para el medio de rescate. Más adelante, un USB de rescate propio. Las máquinas virtuales, mejor desde el anfitrión (Proxmox Backup Server o `vzdump`, Hyper-V), con Resguardo guardando esas copias.
