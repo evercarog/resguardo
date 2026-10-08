@@ -214,6 +214,8 @@ Apuntado el 2026-10-07, tras la primera restauración real desde la consola. Se 
 
 ## 14. Apuntado para el plan de la 0.7.27 (de la puesta en marcha de la 0.7.26)
 
+Decisión del responsable (2026-10-07): unos días de uso real sin versiones nuevas; lo que vaya saliendo se apunta aquí y en la 0.7.27 se presenta el plan completo (bloques 12, 13 y 14) antes de empezar.
+
 Se revisa con el responsable antes de empezar, junto con los bloques 12 y 13.
 
 - [ ] **14a. Aprobar una orden en espera desde el propio equipo**, pidiendo la **clave de administración** (ventana del agente en Windows; `resguardo-agente ordenes aprobar <n.º>` como root en Linux), enseñando el detalle de la orden, la consola y quién la mandó; queda en el historial de todas las consolas con aviso «Aprobada en el equipo por X»; opción por cliente (activada por defecto); nunca desde una consola web.
@@ -222,6 +224,9 @@ Se revisa con el responsable antes de empezar, junto con los bloques 12 y 13.
 - [ ] **14d. Historial de un año completo:** el equipo envía un resumen por día de todo el año (cuántas versiones, cuánto, fallos) para el calendario de «1 año», la lista de periodos largos y «Todas» se piden al equipo (como en Restaurar), y el texto dice «213 en este periodo · 682 en total».
 - [ ] **14e. Renombrar repositorios** desde la consola (igual en todas las consolas).
 - [ ] **14f. Versiones del agente:** que el servidor **baje solo** de GitHub las versiones firmadas (comprobando la firma) y un botón **«Buscar ahora»** que haga que los agentes busquen al momento aunque la consola no tenga la versión.
+- [ ] **14h. Los espejos a la vista (fallos de la 0.7.26):** el mapa no dibuja los trabajos de espejo (p. ej. almacén → nube); su progreso en vivo no sale en «tareas en marcha» ni en el repositorio; «Copias» y la tarjeta de la copia no los mencionan; en «Repositorios» el espejo debe salir junto a su repositorio como «su copia en <destino>» (estado, tamaño, última subida, verificación, prueba), no como un repositorio aparte.
+- [ ] **14i. Página de cada espejo:** estado y próxima subida, historial de subidas (fecha, cuánto, cuánto tardó, errores) con gráficos como las copias, lo que ocupa en el destino, verificaciones y lo que quitó la retención.
+- [ ] **14j. Prueba de restauración desde el espejo:** «Probar ahora» y programarla (p. ej. mensual); cuenta en la regla 3-2-1-1-0 para ese destino.
 - [ ] **14g. Informe ejecutivo programado** por correo (PDF con el logo del prestador: % de copias correctas, regla 3-2-1-1-0, verificaciones y pruebas del periodo) y **plantillas de avisos para Teams, Slack y Discord**.
 
 ## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
