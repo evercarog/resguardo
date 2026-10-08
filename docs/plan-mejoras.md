@@ -212,6 +212,18 @@ Apuntado el 2026-10-07, tras la primera restauración real desde la consola. Se 
 - [ ] **13f. Restauraciones en curso en todas las consolas**, como las copias: ya llegan a todas (progreso `restauracion` desde v1.47, en «tareas en marcha»); falta comprobarlo con dos consolas reales, enseñar quién la empezó y desde qué consola, y una vista «En curso» por cliente y en «Todos los clientes» que junte copias, restauraciones, espejos y verificaciones en marcha, con su detalle en vivo (13c).
 - [ ] **13e. Decidido (2026-10-07):** una restauración real correcta **cuenta como prueba de restauración** en la regla 3-2-1-1-0 para ese repositorio, con su fecha y la marca «Restauración real» (p. ej. «Prueba bien · restauración real, hace 3 días»). Caduca igual que las pruebas programadas (hoy 45 días, configurable): pasado el plazo sin otra restauración real ni prueba programada, la regla vuelve a pedirla. Solo cuenta si terminó bien y restauró algo.
 
+## 14. Apuntado para el plan de la 0.7.27 (de la puesta en marcha de la 0.7.26)
+
+Se revisa con el responsable antes de empezar, junto con los bloques 12 y 13.
+
+- [ ] **14a. Aprobar una orden en espera desde el propio equipo**, pidiendo la **clave de administración** (ventana del agente en Windows; `resguardo-agente ordenes aprobar <n.º>` como root en Linux), enseñando el detalle de la orden, la consola y quién la mandó; queda en el historial de todas las consolas con aviso «Aprobada en el equipo por X»; opción por cliente (activada por defecto); nunca desde una consola web.
+- [ ] **14b. Destinos claros:** un solo formulario para crear o conectar un destino (el mismo en «Nuevo destino» y en el espejo), con **bucket y carpeta en campos separados** (una sola forma de escribir la ruta); el paso «Adónde» del espejo ofrece primero los destinos que ya existen y solo pide credenciales si no están conectados ahí; todas las nubes al mismo nivel y visibles (sin separar Dropbox); la carpeta «para probar» no se pide aparte; **«Quitar»** en cada destino del catálogo (y dice qué lo usa si no se puede); aviso de destino repetido («ya tienes este bucket como …»).
+- [ ] **14c. Espejos:** uno que nunca ha terminado bien se cambia o se quita **sin espera**; las órdenes en espera dicen exactamente qué cambian («quitar "X"», «cambiar su carpeta a …») en vez del título genérico.
+- [ ] **14d. Historial de un año completo:** el equipo envía un resumen por día de todo el año (cuántas versiones, cuánto, fallos) para el calendario de «1 año», la lista de periodos largos y «Todas» se piden al equipo (como en Restaurar), y el texto dice «213 en este periodo · 682 en total».
+- [ ] **14e. Renombrar repositorios** desde la consola (igual en todas las consolas).
+- [ ] **14f. Versiones del agente:** que el servidor **baje solo** de GitHub las versiones firmadas (comprobando la firma) y un botón **«Buscar ahora»** que haga que los agentes busquen al momento aunque la consola no tenga la versión.
+- [ ] **14g. Informe ejecutivo programado** por correo (PDF con el logo del prestador: % de copias correctas, regla 3-2-1-1-0, verificaciones y pruebas del periodo) y **plantillas de avisos para Teams, Slack y Discord**.
+
 ## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
 
 - **Copia del sistema operativo.** Windows: imagen del sistema con `wbadmin` (ya sale en VHDX) como paso «antes de copiar», guardada en el repositorio (restic deduplica entre imágenes) y restauración guiada con el entorno de recuperación de Windows. Linux: integrar ReaR (Relax-and-Recover) para el medio de rescate. Más adelante, un USB de rescate propio. Las máquinas virtuales, mejor desde el anfitrión (Proxmox Backup Server o `vzdump`, Hyper-V), con Resguardo guardando esas copias.
