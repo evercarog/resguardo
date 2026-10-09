@@ -214,7 +214,7 @@ Apuntado el 2026-10-07, tras la primera restauración real desde la consola. Se 
 
 ## 14. Apuntado para el plan de la 0.7.27 (de la puesta en marcha de la 0.7.26)
 
-Decisión del responsable (2026-10-07): unos días de uso real sin versiones nuevas; lo que vaya saliendo se apunta aquí y en la 0.7.27 se presenta el plan completo (bloques 12, 13 y 14) antes de empezar.
+Decisión del responsable (2026-10-07): unos días de uso real sin versiones nuevas; lo que vaya saliendo se apunta aquí y en la 0.7.27 se presenta el plan completo (bloques 12, 13 y 14) antes de empezar. **Decidido el 2026-10-09: una sola versión grande** con todo (no repartirla en varias); dentro, primero los fallos (14ee, 14jj, 14oo, 14rr, 14nn…), luego lo que desbloquea el trabajo real (14e, 14b) y después el resto, con pruebas en cada bloque.
 
 Se revisa con el responsable antes de empezar, junto con los bloques 12 y 13.
 
