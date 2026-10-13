@@ -23,6 +23,7 @@
 pub mod ajustes;
 pub mod cifrado;
 pub mod contenido;
+pub mod datos_basicos;
 pub mod problemas;
 pub mod reglas;
 pub mod resumen;

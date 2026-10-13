@@ -31,7 +31,8 @@ pub struct Problema {
 pub fn tipos(f: Fuente) -> &'static [&'static str] {
     match f {
         Fuente::Informe => &["copia_fallida", "verificacion_fallida", "externa_fallida", "prueba_fallida", "cadena_parada"],
-        Fuente::Resumen => &["espejo_fallido", "retencion_fallida"],
+        // 14uu: los datos básicos del equipo (disco casi lleno, sistema sin soporte).
+        Fuente::Resumen => &["espejo_fallido", "retencion_fallida", "disco_lleno", "sin_soporte_pronto", "sin_soporte"],
     }
 }
 
@@ -158,6 +159,10 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
             _ => {}
         }
     }
+    // 14uu (plan 0.8.0, D3): disco del equipo casi lleno y sistema que se queda sin soporte.
+    let (mas, mas_sanos) = super::datos_basicos::problemas(resumen, chrono::Local::now().date_naive());
+    p.extend(mas);
+    sanos.extend(mas_sanos);
     (p, sanos)
 }
 
@@ -188,12 +193,39 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
 
 /// (Cuando falla, cuando se arregla.)
 pub fn titulos(p: &Problema, equipo: &str) -> (String, String) {
+    // 14uu: no son fallos de algo que se hizo, sino el estado del equipo.
+    match p.tipo.as_str() {
+        "disco_lleno" => {
+            let t = format!("{ESPACIO_POCO}{} de «{equipo}»", p.nombre);
+            return (t.clone(), titulo_ok(&t));
+        }
+        "sin_soporte_pronto" | "sin_soporte" => {
+            let t = if p.tipo == "sin_soporte" {
+                format!("El sistema de «{equipo}» ya no tiene soporte")
+            } else {
+                format!("El sistema de «{equipo}» se queda sin soporte pronto")
+            };
+            return (t.clone(), titulo_ok(&t));
+        }
+        _ => {}
+    }
     let s = sujeto(&p.tipo, &p.nombre, equipo);
     (format!("Falló {s}"), format!("Volvió a funcionar {s}"))
 }
 
+/// 14uu: el principio del título de `disco_lleno` («Queda poco espacio en el disco C: de «pc-01»»).
+const ESPACIO_POCO: &str = "Queda poco espacio en el disco ";
+
 /// El título de «arreglado» a partir del de «falló».
 pub fn titulo_ok(titulo: &str) -> String {
+    if let Some(s) = titulo.strip_prefix(ESPACIO_POCO) {
+        return format!("Vuelve a haber espacio en el disco {s}");
+    }
+    if let Some(r) = titulo.strip_prefix("El sistema de ") {
+        if let Some(e) = r.strip_suffix(" se queda sin soporte pronto").or_else(|| r.strip_suffix(" ya no tiene soporte")) {
+            return format!("Resuelto: el sistema de {e} tiene soporte");
+        }
+    }
     match titulo.strip_prefix("Falló ") {
         Some(s) => format!("Volvió a funcionar {s}"),
         None => format!("Resuelto: {titulo}"),
@@ -260,6 +292,40 @@ mod tests {
         assert_eq!(t, "Falló la retención de «r-oficina» en el almacén «ALMACEN»");
         assert_eq!(titulo_ok(&t), ok);
         assert!(tipos(Fuente::Resumen).contains(&"retencion_fallida"));
+    }
+
+    /// 14uu: los títulos de los datos básicos del equipo y su vuelta a la normalidad.
+    #[test]
+    fn titulos_de_los_datos_basicos() {
+        let p = |tipo: &str, nombre: &str| Problema {
+            tipo: tipo.into(),
+            sujeto: String::new(),
+            nombre: nombre.into(),
+            mensaje: String::new(),
+            marca: String::new(),
+            cuando: None,
+        };
+        let (t, ok) = titulos(&p("disco_lleno", "C:"), "pc-01");
+        assert_eq!(t, "Queda poco espacio en el disco C: de «pc-01»");
+        assert_eq!(ok, "Vuelve a haber espacio en el disco C: de «pc-01»");
+        assert_eq!(titulo_ok(&t), ok);
+        let (t, ok) = titulos(&p("sin_soporte_pronto", "Windows 10 Pro 22H2"), "pc-01");
+        assert_eq!(t, "El sistema de «pc-01» se queda sin soporte pronto");
+        assert_eq!(ok, "Resuelto: el sistema de «pc-01» tiene soporte");
+        let (t, ok) = titulos(&p("sin_soporte", "x"), "srv-ventas");
+        assert_eq!(t, "El sistema de «srv-ventas» ya no tiene soporte");
+        assert_eq!(titulo_ok(&t), ok);
+        for t in ["disco_lleno", "sin_soporte_pronto", "sin_soporte"] {
+            assert!(tipos(Fuente::Resumen).contains(&t));
+        }
+        // Del resumen entero (con la fecha de hoy: un sistema sin fecha en la tabla no avisa).
+        let (p, s) = de_resumen(&json!({ "datos_basicos": {
+            "sistema": { "familia": "linux", "nombre": "Inventado 1", "id": "inventado", "version": "1" },
+            "discos": [{ "punto": "/", "total": 100u64 << 30, "libre": 1u64 << 30, "en_uso": true }]
+        } }));
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].tipo, "disco_lleno");
+        assert_eq!(s, vec!["sin_soporte|".to_string(), "sin_soporte_pronto|".to_string()]);
     }
 
     /// Tarea 7c: `cadena_parada` sale de `informe.cadenas[]`; y 4b: las derivadas, como `externa_fallida`.

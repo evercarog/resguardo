@@ -1,0 +1,53 @@
+# Fin del soporte de los sistemas operativos (aviso «El sistema se queda sin soporte»,
+# plan-mejoras 14uu). El servidor lo lleva dentro al compilarse: para cambiar una fecha,
+# edita este archivo y vuelve a compilar (las pruebas comprueban que todas las líneas valen).
+#
+# Fuentes (revisadas el 2026-10-13):
+#   Windows y Windows Server: https://learn.microsoft.com/lifecycle/products/
+#     (Windows 11 Home/Pro: 24 meses por versión; Enterprise/Education: 36 meses;
+#      Windows Server y LTSC: fin del soporte extendido).
+#   Ubuntu: https://ubuntu.com/about/release-cycle (fin del soporte estándar de las LTS).
+#   Debian: https://wiki.debian.org/LTS (fin del soporte LTS).
+#
+# Formato: familia | versión | edición | fecha (AAAA-MM-DD)
+#   familia: windows-10, windows-11, windows-server, ubuntu, debian
+#   versión: Windows 10/11, la de «DisplayVersion» (22H2…); Windows Server, el año del
+#            nombre (2016…; 2012 R2 cuenta como 2012); Linux, VERSION_ID de os-release.
+#            «*» vale para cualquiera.
+#   edición (solo Windows 10/11): hogar (Home, Pro…), empresa (Enterprise, Education),
+#            ltsc (Enterprise LTSC, IoT Enterprise LTSC) o «*».
+# Se busca primero la línea exacta, luego con «*» en la edición, luego en la versión.
+
+windows-10 | *    | hogar   | 2025-10-14
+windows-10 | *    | empresa | 2025-10-14
+windows-10 | 1607 | ltsc    | 2026-10-13
+windows-10 | 1809 | ltsc    | 2029-01-09
+windows-10 | 21H2 | ltsc    | 2027-01-12
+
+windows-11 | 21H2 | hogar   | 2023-10-10
+windows-11 | 21H2 | empresa | 2024-10-08
+windows-11 | 22H2 | hogar   | 2024-10-08
+windows-11 | 22H2 | empresa | 2025-10-14
+windows-11 | 23H2 | hogar   | 2025-11-11
+windows-11 | 23H2 | empresa | 2026-11-10
+windows-11 | 24H2 | hogar   | 2026-10-13
+windows-11 | 24H2 | empresa | 2027-10-12
+windows-11 | 24H2 | ltsc    | 2029-10-09
+windows-11 | 25H2 | hogar   | 2027-10-12
+windows-11 | 25H2 | empresa | 2028-10-10
+
+windows-server | 2008 | * | 2020-01-14
+windows-server | 2012 | * | 2023-10-10
+windows-server | 2016 | * | 2027-01-12
+windows-server | 2019 | * | 2029-01-09
+windows-server | 2022 | * | 2031-10-14
+windows-server | 2025 | * | 2034-11-14
+
+ubuntu | 18.04 | * | 2023-05-31
+ubuntu | 20.04 | * | 2025-05-31
+ubuntu | 22.04 | * | 2027-04-30
+ubuntu | 24.04 | * | 2029-04-30
+
+debian | 10 | * | 2024-06-30
+debian | 11 | * | 2026-08-31
+debian | 12 | * | 2028-06-30

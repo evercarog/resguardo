@@ -39,7 +39,10 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "cadena_parada"
         | "orden_no_aplicada"
         | "actualizacion_fallida"
-        | "nube_sin_anular" => Severidad::Importante,
+        | "nube_sin_anular"
+        // 14uu: disco del equipo casi lleno y sistema ya sin soporte («pronto» es informativo).
+        | "disco_lleno"
+        | "sin_soporte" => Severidad::Importante,
         _ => Severidad::Informativo,
     }
 }
