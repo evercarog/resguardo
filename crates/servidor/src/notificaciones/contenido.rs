@@ -844,6 +844,230 @@ pub fn webhook(ms: &[Mensaje], s: &Salida, f: &Formato, id: &str, ahora: Ts) -> 
     })
 }
 
+// ---------- Microsoft Teams, Slack y Discord (plan 0.8.0, G2) ----------
+
+/// Un mensaje para un chat (Teams, Slack o Discord), antes de darle el formato de cada uno:
+/// la etiqueta de su importancia, el título, el texto, los datos (cliente, equipo…), el color
+/// y el enlace a la consola. Lo mismo que el correo, sin rutas ni secretos.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Chat {
+    /// «Crítico», «Importante», «Informativo», «Resuelto», «Prueba», «Resumen» o «3 avisos».
+    pub etiqueta: String,
+    pub titulo: String,
+    pub texto: String,
+    pub datos: Vec<(&'static str, String)>,
+    /// El color del estado (docs/diseno.md §2, en claro), en RGB.
+    pub color: u32,
+    /// El color con nombre de las Adaptive Cards (`Attention`, `Warning`, `Good`, `Accent`).
+    pub color_teams: &'static str,
+    pub enlace: Option<String>,
+    pub hora: Ts,
+}
+
+/// El color de cada importancia: (RGB, el de Teams).
+fn color_chat(evento: &str, sev: Severidad) -> (u32, &'static str) {
+    match (evento, sev) {
+        ("recuperacion" | "prueba", _) => (0x126c35, "Good"),
+        ("resumen", _) => (0x2257d6, "Accent"),
+        (_, Severidad::Critico) => (0xc42121, "Attention"),
+        (_, Severidad::Importante) => (0xa04e09, "Warning"),
+        _ => (0x2257d6, "Accent"),
+    }
+}
+
+/// El cuerpo del texto (sin el título de la primera línea, el enlace ni el pie).
+fn cuerpo_texto(s: &Salida) -> String {
+    let cuerpo = s.texto.split("\n—\n").next().unwrap_or(&s.texto);
+    cuerpo.lines().skip(1).filter(|l| !l.starts_with("Ver en la consola:") && !l.starts_with("Consola:")).collect::<Vec<_>>().join("\n").trim().to_string()
+}
+
+/// Corta un texto a `n` caracteres (con «…» si sobra).
+fn corto(t: &str, n: usize) -> String {
+    if t.chars().count() <= n {
+        t.to_string()
+    } else {
+        format!("{}…", t.chars().take(n.saturating_sub(1)).collect::<String>())
+    }
+}
+
+/// Lo que dicen uno o varios mensajes, para un chat.
+pub fn chat(ms: &[Mensaje], s: &Salida, f: &Formato, ahora: Ts) -> Chat {
+    let (color, color_teams) = color_chat(s.evento, s.severidad);
+    let alertas: Vec<(&Alerta, bool)> = ms.iter().filter_map(alerta).collect();
+    let base = |etiqueta: String, titulo: String, texto: String, datos: Vec<(&'static str, String)>, hora: Ts| Chat {
+        etiqueta,
+        titulo,
+        texto,
+        datos,
+        color,
+        color_teams,
+        enlace: s.enlace.clone(),
+        hora,
+    };
+    match (s.evento, alertas.as_slice()) {
+        ("aviso" | "recuperacion", [(a, resuelto)]) => {
+            let mut datos = vec![("Cliente", a.cliente.clone())];
+            if let Some(e) = &a.equipo {
+                datos.push(("Equipo", e.clone()));
+            }
+            if !resuelto {
+                datos.push(("Importancia", a.severidad.texto().to_string()));
+            }
+            datos.push(("Cuándo", fecha_larga(a.hora, f.zona)));
+            if let (Some(v), false) = (veces(a, f.zona), resuelto) {
+                datos.push(("Veces", v));
+            }
+            let etiqueta = if *resuelto { "Resuelto".to_string() } else { a.severidad.texto().to_string() };
+            base(etiqueta, a.titulo.clone(), a.texto.clone(), datos, a.hora)
+        }
+        ("grupo", _) => {
+            let mut texto = String::new();
+            for (a, resuelto) in alertas.iter().take(20) {
+                let etiqueta = if *resuelto { "Resuelto" } else { a.severidad.texto() };
+                let _ = writeln!(texto, "• {etiqueta}: {} ({}, {})", a.titulo, sitio(a), fecha_corta(a.hora, f.zona));
+            }
+            if alertas.len() > 20 {
+                let _ = writeln!(texto, "… y {} más en la consola.", alertas.len() - 20);
+            }
+            let clientes = clientes_de(ms);
+            let mut datos = vec![("Avisos", alertas.len().to_string())];
+            if let [(_, nombre)] = clientes.as_slice() {
+                datos.push(("Cliente", nombre.clone()));
+            } else {
+                datos.push(("Clientes", clientes.len().to_string()));
+            }
+            let hora = alertas.iter().map(|(a, _)| a.hora).max().unwrap_or(ahora);
+            base(plural(alertas.len() as u64, "aviso", "avisos"), s.asunto.clone(), texto.trim_end().to_string(), datos, hora)
+        }
+        ("resumen", _) => {
+            let datos = ms
+                .iter()
+                .find_map(|m| match m {
+                    Mensaje::Resumen(r) => Some(vec![
+                        ("Clientes", r.clientes.len().to_string()),
+                        ("Copias correctas", r.clientes.iter().map(|c| c.copias_ok).sum::<u32>().to_string()),
+                        ("Fallos", r.clientes.iter().map(|c| c.fallos).sum::<u32>().to_string()),
+                    ]),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            base("Resumen".into(), s.asunto.clone(), corto(&cuerpo_texto(s), 3000), datos, ahora)
+        }
+        // La prueba: así se verá un aviso (con su color, sus datos y el enlace).
+        _ => base(
+            "Prueba".into(),
+            "Las notificaciones funcionan".into(),
+            cuerpo_texto(s),
+            vec![("Importancia", "Informativo (mensaje de prueba)".into()), ("Cuándo", fecha_larga(ahora, f.zona))],
+            ahora,
+        ),
+    }
+}
+
+/// Texto para el *mrkdwn* de Slack: sin `<`, `>` ni `&` sueltos (así nadie puede meter un
+/// enlace ni un `<!channel>` con el nombre de un equipo).
+fn esc_slack(t: &str) -> String {
+    t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// Texto para el Markdown de Discord: con `\` delante de lo que daría formato o un enlace.
+fn esc_discord(t: &str) -> String {
+    let mut o = String::with_capacity(t.len());
+    for c in t.chars() {
+        if "\\*_~`|>[]()#".contains(c) {
+            o.push('\\');
+        }
+        o.push(c);
+    }
+    o
+}
+
+/// Texto para una Adaptive Card: su Markdown no hace enlaces sin «](» (un nombre no puede
+/// esconder uno).
+fn esc_teams(t: &str) -> String {
+    t.replace("](", "] (")
+}
+
+/// Microsoft Teams: una Adaptive Card, como la piden los flujos de trabajo («Publicar en un
+/// canal cuando se reciba una solicitud de webhook») y los conectores de entrada.
+pub fn teams(c: &Chat) -> Value {
+    let mut body = vec![
+        json!({ "type": "TextBlock", "text": esc_teams(&c.etiqueta), "color": c.color_teams, "weight": "Bolder", "size": "Small", "spacing": "None" }),
+        json!({ "type": "TextBlock", "text": esc_teams(&corto(&c.titulo, 300)), "weight": "Bolder", "size": "Medium", "wrap": true, "spacing": "Small" }),
+    ];
+    if !c.texto.is_empty() {
+        body.push(json!({ "type": "TextBlock", "text": esc_teams(&corto(&c.texto, 4000)), "wrap": true }));
+    }
+    if !c.datos.is_empty() {
+        body.push(json!({
+            "type": "FactSet",
+            "facts": c.datos.iter().map(|(k, v)| json!({ "title": k, "value": esc_teams(&corto(v, 300)) })).collect::<Vec<_>>(),
+        }));
+    }
+    let mut tarjeta = json!({
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "msteams": { "width": "Full" },
+        "body": body,
+    });
+    if let Some(u) = &c.enlace {
+        tarjeta["actions"] = json!([{ "type": "Action.OpenUrl", "title": "Ver en la consola", "url": u }]);
+    }
+    json!({
+        "type": "message",
+        "attachments": [{ "contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": null, "content": tarjeta }],
+    })
+}
+
+/// Slack: *blocks* dentro de un adjunto con el color de la importancia (la barra de la izquierda).
+pub fn slack(c: &Chat) -> Value {
+    let resumen = format!("{}: {}", c.etiqueta, c.titulo);
+    let mut blocks = vec![
+        json!({ "type": "header", "text": { "type": "plain_text", "text": corto(&c.titulo, 150), "emoji": false } }),
+        json!({ "type": "context", "elements": [{ "type": "mrkdwn", "text": format!("*{}*", esc_slack(&c.etiqueta)) }] }),
+    ];
+    if !c.texto.is_empty() {
+        blocks.push(json!({ "type": "section", "text": { "type": "mrkdwn", "text": esc_slack(&corto(&c.texto, 2900)) } }));
+    }
+    if !c.datos.is_empty() {
+        blocks.push(json!({
+            "type": "section",
+            "fields": c.datos.iter().take(10).map(|(k, v)| json!({ "type": "mrkdwn", "text": format!("*{}*\n{}", esc_slack(k), esc_slack(&corto(v, 1900))) })).collect::<Vec<_>>(),
+        }));
+    }
+    if let Some(u) = &c.enlace {
+        blocks.push(json!({
+            "type": "actions",
+            "elements": [{ "type": "button", "text": { "type": "plain_text", "text": "Ver en la consola", "emoji": false }, "url": u }],
+        }));
+    }
+    json!({
+        "text": esc_slack(&corto(&resumen, 300)),
+        "attachments": [{ "color": format!("#{:06x}", c.color), "fallback": corto(&resumen, 300), "blocks": blocks }],
+    })
+}
+
+/// Discord: un *embed* con el color de la importancia. Sin menciones (`allowed_mentions`
+/// vacío: un `@everyone` en un texto no avisa a nadie).
+pub fn discord(c: &Chat, z: FixedOffset) -> Value {
+    let hora = chrono::DateTime::from_timestamp(c.hora, 0).map(|d| d.with_timezone(&z).to_rfc3339()).unwrap_or_default();
+    let mut embed = json!({
+        "title": corto(&c.titulo, 256),
+        "color": c.color,
+        "fields": c.datos.iter().take(25).map(|(k, v)| json!({ "name": k, "value": esc_discord(&corto(v, 1000)), "inline": true })).collect::<Vec<_>>(),
+        "footer": { "text": format!("Resguardo · {}", c.etiqueta) },
+        "timestamp": hora,
+    });
+    if !c.texto.is_empty() {
+        embed["description"] = json!(esc_discord(&corto(&c.texto, 4000)));
+    }
+    if let Some(u) = &c.enlace {
+        embed["url"] = json!(u);
+    }
+    json!({ "username": "Resguardo", "allowed_mentions": { "parse": [] }, "embeds": [embed] })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

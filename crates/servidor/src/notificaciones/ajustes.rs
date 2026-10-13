@@ -32,6 +32,11 @@ pub enum TipoCanal {
     Webhook,
     Ntfy,
     Telegram,
+    /// Plan 0.8.0 (G2): Microsoft Teams (flujo de trabajo o conector de entrada), Slack y
+    /// Discord, con el formato propio de cada uno. La dirección, como la del webhook, es secreta.
+    Teams,
+    Slack,
+    Discord,
 }
 
 impl TipoCanal {
@@ -41,7 +46,14 @@ impl TipoCanal {
             TipoCanal::Webhook => "webhook",
             TipoCanal::Ntfy => "ntfy",
             TipoCanal::Telegram => "telegram",
+            TipoCanal::Teams => "teams",
+            TipoCanal::Slack => "slack",
+            TipoCanal::Discord => "discord",
         }
+    }
+    /// Los que llevan la dirección del webhook de un chat (Teams, Slack, Discord).
+    pub fn es_chat(self) -> bool {
+        matches!(self, TipoCanal::Teams | TipoCanal::Slack | TipoCanal::Discord)
     }
     /// Los secretos que admite cada tipo.
     pub fn campos_secretos(self) -> &'static [&'static str] {
@@ -50,6 +62,7 @@ impl TipoCanal {
             TipoCanal::Webhook => &["url", "secreto"],
             TipoCanal::Ntfy => &["url", "token"],
             TipoCanal::Telegram => &["token"],
+            TipoCanal::Teams | TipoCanal::Slack | TipoCanal::Discord => &["url"],
         }
     }
 }
@@ -476,7 +489,9 @@ pub fn valida_config(tipo: TipoCanal, c: &ConfigCanal) -> Result<ConfigCanal, St
             c = ConfigCanal { chat_id: Some(chat), ..Default::default() };
         }
         // La dirección es un secreto: aquí solo queda su servidor (lo pone `aplicar`).
-        TipoCanal::Webhook | TipoCanal::Ntfy => c = ConfigCanal { servidor: c.servidor.clone(), ..Default::default() },
+        TipoCanal::Webhook | TipoCanal::Ntfy | TipoCanal::Teams | TipoCanal::Slack | TipoCanal::Discord => {
+            c = ConfigCanal { servidor: c.servidor.clone(), ..Default::default() }
+        }
     }
     Ok(c)
 }
@@ -490,7 +505,7 @@ pub fn valida_secreto(tipo: TipoCanal, campo: &str, v: &str) -> Result<Option<St
         return Err("Valor no válido.".into());
     }
     match (tipo, campo) {
-        (TipoCanal::Webhook | TipoCanal::Ntfy, "url") => {
+        (TipoCanal::Webhook | TipoCanal::Ntfy | TipoCanal::Teams | TipoCanal::Slack | TipoCanal::Discord, "url") => {
             let (https, host, resto) = partes_url(v.trim()).ok_or("Escribe la dirección completa, con https://.")?;
             if !https && !es_local(&host) {
                 return Err("La dirección tiene que ser https:// (http:// solo en este mismo equipo).".into());
@@ -522,7 +537,7 @@ pub fn valida_secreto(tipo: TipoCanal, campo: &str, v: &str) -> Result<Option<St
 pub fn completo(c: &Canal) -> bool {
     match c.tipo {
         TipoCanal::Correo => c.config.host.is_some() && c.config.remitente.is_some(),
-        TipoCanal::Webhook | TipoCanal::Ntfy => c.secretos.contains_key("url"),
+        TipoCanal::Webhook | TipoCanal::Ntfy | TipoCanal::Teams | TipoCanal::Slack | TipoCanal::Discord => c.secretos.contains_key("url"),
         TipoCanal::Telegram => c.secretos.contains_key("token") && c.config.chat_id.is_some(),
     }
 }
@@ -581,6 +596,9 @@ pub fn aplicar(previo: Option<&Canal>, c: &CambioCanal, clave: &Clave, ambito: &
             TipoCanal::Webhook => "Webhook",
             TipoCanal::Ntfy => "ntfy",
             TipoCanal::Telegram => "Telegram",
+            TipoCanal::Teams => "Microsoft Teams",
+            TipoCanal::Slack => "Slack",
+            TipoCanal::Discord => "Discord",
         }
         .into();
     }
@@ -849,5 +867,22 @@ mod tests {
         c.config.as_mut().unwrap().host = Some("192.168.1.10".into());
         assert!(aplicar(None, &c, &clave(), "cliente:c1", "a", 1).is_err());
         assert!(aplicar(None, &c, &clave(), "servidor", "a", 1).is_ok());
+
+        // Plan 0.8.0 (G2): Teams, Slack y Discord, como el webhook (la dirección es secreta).
+        for tipo in [TipoCanal::Teams, TipoCanal::Slack, TipoCanal::Discord] {
+            let ch = |url: &str| CambioCanal { tipo: Some(tipo), secretos: Some(BTreeMap::from([("url".to_string(), url.to_string())])), ..Default::default() };
+            let (canal, _) = aplicar(None, &ch("https://hooks.ejemplo.com/servicios/T0/B0/SECRETO"), &clave(), "cliente:c1", "a", 1).unwrap();
+            assert!(completo(&canal) && canal.config.servidor.as_deref() == Some("hooks.ejemplo.com"));
+            assert!(!vista_canal(&canal).to_string().contains("SECRETO"));
+            assert!(!canal.nombre.is_empty());
+            // Una dirección con «@» en el camino (la de los conectores de Teams) vale.
+            assert!(aplicar(None, &ch("https://x.webhook.office.com/webhookb2/a-b@c-d/IncomingWebhook/e/f"), &clave(), "cliente:c1", "a", 1).is_ok());
+            assert!(aplicar(None, &ch("http://hooks.ejemplo.com/x"), &clave(), "servidor", "a", 1).is_err(), "solo https");
+            assert!(aplicar(None, &ch("https://10.0.0.5/x"), &clave(), "cliente:c1", "a", 1).is_err(), "un cliente, nunca a la red local");
+            assert!(aplicar(None, &ch("https://10.0.0.5/x"), &clave(), "servidor", "a", 1).is_ok());
+            let otro = CambioCanal { tipo: Some(tipo), secretos: Some(BTreeMap::from([("token".to_string(), "x".to_string())])), ..Default::default() };
+            assert!(aplicar(None, &otro, &clave(), "servidor", "a", 1).is_err(), "solo la dirección");
+            assert_eq!(serde_json::to_value(tipo).unwrap(), serde_json::json!(tipo.texto()));
+        }
     }
 }

@@ -1290,7 +1290,8 @@ export interface ClienteRecibido extends Ficha {
 // ---------------------------------------------------------------------------
 
 export type Severidad = "critico" | "importante" | "informativo";
-export type TipoCanal = "correo" | "webhook" | "ntfy" | "telegram";
+/** Plan 0.8.0 (G2): «teams», «slack» y «discord», con el formato propio de cada chat. */
+export type TipoCanal = "correo" | "webhook" | "ntfy" | "telegram" | "teams" | "slack" | "discord";
 
 /** Horas de silencio («HH:MM», hora del servidor). */
 export interface Silencio {
@@ -1316,7 +1317,7 @@ export interface ConfigCanal {
   usuario?: string;
   remitente?: string;
   chat_id?: string;
-  /** Webhook y ntfy: el servidor de la dirección (la dirección entera es secreta). */
+  /** Webhook, ntfy, Teams, Slack y Discord: el servidor de la dirección (la dirección entera es secreta). */
   servidor?: string;
 }
 
