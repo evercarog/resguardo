@@ -76,7 +76,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   "tipo-destino": {
     title: "Tipo y marcas de un destino",
-    text: "Tipo: Local (este equipo u otro de la oficina), Fuera del sitio (otra sede, un servidor de fuera) o Nube. Marcas: Inmutable (no se puede borrar desde los equipos: solo añadir, bloqueo de objetos de N días, instantáneas del anfitrión) y Aislado (un medio que se desconecta y se rota).",
+    text: "Tipo: Local (este equipo u otro de la oficina), Fuera del sitio (otra sede, un servidor de fuera) o Nube. Marcas: Inmutable (nadie puede borrarlo durante un plazo: bloqueo de objetos de N días o instantáneas del anfitrión que el almacén no ve) y Aislado (un medio que se desconecta y se rota). Aparte, «Solo añadir»: los equipos no pueden borrar, pero no es inmutable.",
     todo: "Se deduce del destino; si no acierta, cámbialo. Lo que marca una persona manda y se indica.",
   },
   aislado: {
@@ -91,7 +91,13 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   inmutable: {
     title: "Inmutable",
-    text: "Destino en la nube con bloqueo de objetos (Object Lock): durante el plazo fijado, nadie puede borrar ni cambiar las copias, ni siquiera con la clave de la nube.",
+    text: "Nadie puede borrar ni cambiar las copias durante un plazo, ni siquiera quien administra el destino: una nube con bloqueo de objetos (Object Lock) o instantáneas del anfitrión que el almacén no ve. Es lo que cuenta como «1 inmutable» en la regla 3-2-1-1-0, junto con un medio aislado.",
+    todo: "Un almacén de solo añadir no basta: protege de los equipos, no de quien sea administrador del almacén.",
+  },
+  "solo-anadir": {
+    title: "Solo añadir",
+    text: "Los equipos pueden guardar versiones nuevas, pero no borrar las que ya hay: un ransomware en un equipo no puede borrar sus copias. No es inmutable: quien sea administrador (root) en el almacén o en su anfitrión puede borrarlas, y la retención del propio almacén también quita versiones. Por eso no cuenta como «1 inmutable» en la regla 3-2-1-1-0.",
+    todo: "Para tener algo inmutable: una nube con bloqueo de objetos, instantáneas del anfitrión que el almacén no ve (márcalas en el destino) o un disco que se desconecta y se rota.",
   },
   retencion: {
     title: "Retención",

@@ -281,7 +281,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       const s = saludEquipo(x.almacen, ahora);
       // La tarjeta es el almacén entero; lleva a la página de la zona del primer repositorio que llega (o la principal).
       const zona = zonaDeDestino(destinoDe(p.equipo.resumen?.destinos, x.r), todos)?.id ?? PRINCIPAL;
-      tipoNodo.set(x.destino, { clave: claveZona(x.almacen.id, PRINCIPAL), si: { tipo: "local", inmutable: true, aislado: false, bloqueoDias: null } });
+      tipoNodo.set(x.destino, { clave: claveZona(x.almacen.id, PRINCIPAL), si: { tipo: "local", inmutable: false, soloAnadir: true, aislado: false, bloqueoDias: null } });
       return poner({
         id: x.destino,
         tipo: "destino",
@@ -517,7 +517,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         nube && d.nube
           ? { clave: claveNube(alm.id, d.nube), si: { ...tipoDeNube(tipoNube), inmutable: !!d.bloqueo } }
           : d.tipo === "zona" && d.carpeta
-            ? { clave: claveZona(alm.id, d.carpeta), si: { tipo: "local", inmutable: true, aislado: false, bloqueoDias: null } }
+            ? { clave: claveZona(alm.id, d.carpeta), si: { tipo: "local", inmutable: false, soloAnadir: true, aislado: false, bloqueoDias: null } }
             : { si: { tipo: "local", inmutable: !!d.bloqueo, aislado: false, bloqueoDias: null } },
       );
       // 14mm: un espejo de todo el almacén (su zona principal, sin selección) sale del almacén; uno con

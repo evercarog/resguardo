@@ -13,7 +13,7 @@ La forma moderna de la regla 3-2-1, **3-2-1-1-0**, para **cada copia** (las carp
 | **3** | Tres copias de los datos, contando los originales. | Los originales (1) más cada destino **al día** al que llegan esos datos. |
 | **2** | En dos soportes distintos. | Soportes distintos entre los originales y los destinos al día. Soporte = **equipo + disco** (o la nube, o el servidor de fuera). |
 | **1** | Una fuera del sitio. | Destinos al día de tipo **Fuera del sitio** o **Nube** (0.7.26; antes, `lugar` `otra_sede` o `nube`). |
-| **1** | Una inmutable o aislada. | Destinos al día con la marca **Inmutable** (solo añadir desde el equipo, bloqueo de objetos, instantáneas fuera de su alcance) o **Aislado** (un medio que se desconecta y se rota). |
+| **1** | Una inmutable o aislada. | Destinos al día con la marca **Inmutable** (bloqueo de objetos, instantáneas fuera de su alcance) o **Aislado** (un medio que se desconecta y se rota). **«Solo añadir» no cuenta** (0.8.0, 14z): protege de los equipos, no de quien sea root en el almacén o su anfitrión ni de su retención; salvo que una persona lo marcara como inmutable (se respeta). |
 | **0** | Cero errores al verificar y al probar la restauración. | Verificación y prueba de restauración programadas, la última de cada una correcta y reciente (45 días como mucho), y ningún destino con datos dañados en su comprobación. |
 
 **Guía, nunca obligación.** Se puede guardar cualquier configuración. La consola dice cómo queda cada copia y qué hacer para cumplir; nunca bloquea un botón ni resta en otra parte por no cumplirla.
@@ -30,7 +30,7 @@ Cada destino lleva tres datos para la regla:
 
 | Destino | Dónde | Inmutable | Soporte |
 |---|---|---|---|
-| Zona de un almacén del cliente (otro equipo) | `oficina` | `solo_anadir` (las zonas siempre lo son) | el almacén + el disco de la zona («D:»; sin letra, la zona) |
+| Zona de un almacén del cliente (otro equipo) | `oficina` | `solo_anadir` (las zonas siempre lo son; desde la 0.8.0 es un dato, no cuenta como inmutable) | el almacén + el disco de la zona («D:»; sin letra, la zona) |
 | …el almacén del propio equipo | `este_equipo` | `solo_anadir` | igual |
 | Servidor de copias de fuera (rest) | `otra_sede` | `solo_anadir` si se comprobó (`solo_anadir` del repositorio o `inmutable` del destino); si no, `no` | el servidor |
 | B2, S3 | `nube` | `object_lock` si se marcó (bloqueo de días de la copia externa o `inmutable`); si no, `no` | la nube + el bucket |
@@ -63,10 +63,11 @@ Desde la 0.7.26 cada destino tiene **un tipo** y **marcas combinables** (lo de 8
 | **Local** (tipo) | Este equipo u otro de la oficina (`lugar` `este_equipo` u `oficina`). | `hard-drive` |
 | **Fuera del sitio** (tipo) | Otra sede, un servidor de fuera (`otra_sede`). | `building-2` |
 | **Nube** (tipo) | Dropbox, Drive, OneDrive, B2, S3… (`nube`). | `cloud` |
-| **Inmutable** (marca) | No se puede borrar desde los equipos: solo añadir, bloqueo de objetos de N días (`bloqueo_dias`), instantáneas fuera de su alcance. | `lock` |
+| **Inmutable** (marca) | Nadie puede borrarlo durante un plazo: bloqueo de objetos de N días (`bloqueo_dias`), instantáneas fuera de su alcance. | `lock` |
+| **Solo añadir** (dato, 0.8.0) | Los equipos no pueden borrar (las zonas de un almacén, un servidor de fuera comprobado). No es una marca: no cuenta en el «1 inmutable». | `shield-half` |
 | **Aislado** (marca) | Un medio que se desconecta y se rota (discos USB). Avisa si no se conecta en N días (`aislado_dias`, 30 por defecto). | `unplug` |
 
-**Deducción** (siempre editable; lo que marca una persona manda y se dice «marcado por una persona»): carpeta del equipo → Local; zona de un almacén → Local + Inmutable (desde el punto de vista del equipo); Dropbox, Drive, OneDrive → Nube; B2 o S3 → Nube y, con bloqueo de objetos, + Inmutable con los días de la copia externa o derivada que va a él; un servidor de fuera → Fuera del sitio (+ Inmutable si es de solo añadir); SMB → Local; SFTP → Fuera del sitio.
+**Deducción** (siempre editable; lo que marca una persona manda y se dice «marcado por una persona»): carpeta del equipo → Local; zona de un almacén → Local + Solo añadir (desde la 0.8.0; antes, Local + Inmutable); Dropbox, Drive, OneDrive → Nube; B2 o S3 → Nube y, con bloqueo de objetos, + Inmutable con los días de la copia externa o derivada que va a él; un servidor de fuera → Fuera del sitio (+ Inmutable si es de solo añadir); SMB → Local; SFTP → Fuera del sitio.
 
 **Compatibilidad.** En el catálogo, `atributos` gana `tipo`, `aislado`, `bloqueo_dias` y `aislado_dias`, todos opcionales. La consola sigue escribiendo `lugar` e `inmutable` para una consola anterior (`tipo: "fuera"` → `lugar: "otra_sede"`; Aislado sin Inmutable → `inmutable: "desconectado"`) y lee `inmutable: "desconectado"` de antes como «Aislado». Solo se guarda lo que se aparta de lo deducido.
 
@@ -75,6 +76,14 @@ Desde la 0.7.26 cada destino tiene **un tipo** y **marcas combinables** (lo de 8
 **En la regla.** Un paso Aislado está al día si su última vez bien es de sus N días (no de su horario: se conecta de vez en cuando) y avisa (`aislado_sin_conectar`) si el agente lo vio conectado hace más de N días. Un destino con las dos marcas cuenta una vez. El aviso `inmutable_local` sale si todo lo inmutable o aislado es Local.
 
 **Dónde se ve** (un componente, `TipoDestino`: icono y palabra, nunca solo el color): la página del destino (editor de tipo, marcas, días del bloqueo y días del aislado, con la última conexión), las tarjetas de «Repositorios y destinos», los selectores de destino (Nuevo repositorio, paso espejo, copia derivada), la cabecera de cada copia en el editor y en su página (cada paso de la cadena con su icono) y las tarjetas del mapa.
+
+### «Solo añadir» no es «Inmutable» (0.8.0, 14z)
+
+Una zona de un almacén (y un servidor de fuera comprobado de solo añadir) protege de los **equipos**: no pueden borrar lo ya copiado. Pero no protege de quien sea **root en el almacén o en su anfitrión**, ni de la **retención del propio almacén**. Desde la 0.8.0 se deduce como **Local + Solo añadir** (un dato que se enseña con su icono, `shield-half`), no como «Inmutable», y el «1 inmutable» de la regla solo cuenta el bloqueo de objetos, un medio aislado o las instantáneas fuera de su alcance marcadas por la persona.
+
+- En la entrada de la regla, `inmutable: "solo_anadir"` sigue llegando como dato, y `PasoRegla` gana `inmutable_marcado?: bool` (la marca la puso una persona): con él, «solo añadir» cuenta (lo marcado por una persona se respeta). Lo mismo en `protection.rs` y en `regla321.ts`, con los vectores compartidos (`zona_solo_anadir_no_es_inmutable`, `zona_con_instantaneas_marcadas`, `tipo_manda_sobre_lugar`).
+- En «Tipo y marcas», la marca «Inmutable» ofrece «Bloqueo de objetos» e «Instantáneas fuera de su alcance»; «Solo añadir» ya no se elige (si una persona lo marcó antes, se ve y se respeta).
+- El aviso `inmutable_local` deja de salir con solo una zona de solo añadir (ya no es inmutable).
 
 ## 8b. El cálculo, por copia
 

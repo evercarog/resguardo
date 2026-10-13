@@ -59,6 +59,8 @@ export interface PasoRegla {
   conectado?: string | null;
   /** 0.7.26: días sin conectarse tras los que avisa (sin él, 30). */
   aislado_dias?: number | null;
+  /** 14z: la marca «Inmutable» la puso una persona (con `solo_anadir`, cuenta: lo marcado se respeta). */
+  inmutable_marcado?: boolean;
 }
 
 export interface PruebaRegla {
@@ -109,8 +111,15 @@ export function margenHoras(cadaHoras: number | null | undefined): number {
 
 /** ¿Fuera del sitio? (Fuera del sitio o Nube.) */
 export const esFuera = (p: Pick<PasoRegla, "tipo_destino" | "lugar">) => (p.tipo_destino ?? tipoDeLugar(p.lugar ?? "este_equipo")) !== "local";
-/** ¿Marca «Inmutable»? (solo añadir, bloqueo de objetos, instantáneas). */
-export const esInmutable = (p: Pick<PasoRegla, "inmutable">) => !!p.inmutable && p.inmutable !== "no" && p.inmutable !== "desconectado";
+/**
+ * ¿Marca «Inmutable»? Bloqueo de objetos o instantáneas fuera de su alcance. 14z:
+ * «Solo añadir» no lo es (protege de los equipos, no de quien sea root en el
+ * almacén o su anfitrión, ni de su retención), salvo que lo marcara una persona.
+ */
+export const esInmutable = (p: Pick<PasoRegla, "inmutable" | "inmutable_marcado">) =>
+  p.inmutable === "object_lock" || p.inmutable === "instantaneas" || (p.inmutable === "solo_anadir" && !!p.inmutable_marcado);
+/** 14z: ¿de solo añadir? (Un dato aparte: no cuenta como inmutable.) */
+export const esSoloAnadir = (p: Pick<PasoRegla, "inmutable">) => p.inmutable === "solo_anadir";
 /** ¿Marca «Aislado»? */
 export const esAislado = (p: Pick<PasoRegla, "inmutable" | "aislado">) => !!p.aislado || p.inmutable === "desconectado";
 /** Los días sin conectarse que se aceptan (1 a 365; sin él, 30). */
@@ -332,7 +341,9 @@ function conMarcado(
     clasificacion: c,
     conexion: conexion ?? null,
     lugar: marcado?.lugar ?? p.lugar,
-    inmutable: c.inmutable ? c.como : c.aislado ? "desconectado" : "no",
+    // 14z: «solo añadir» se pasa como dato (no cuenta como inmutable) salvo que lo marcara una persona.
+    inmutable: c.inmutable ? c.como : c.aislado ? "desconectado" : c.soloAnadir ? "solo_anadir" : "no",
+    inmutable_marcado: c.inmutable && c.como === "solo_anadir" ? true : undefined,
     tipo_destino: c.tipo,
     aislado: c.aislado,
     conectado: c.aislado ? ultimaConexion(conexion) : null,
@@ -583,7 +594,8 @@ export function reglaEnEdicion(
 /** La frase de la configuración: «Con esta configuración cumple…» o «Le faltaría: …». */
 export function fraseConfig(r: Regla321): string {
   if (r.cumple_config) return r.cumple ? "Cumple la regla 3-2-1-1-0." : "Con esta configuración cumple la regla 3-2-1-1-0 (cuando todo esté al día).";
-  return `Para la regla 3-2-1-1-0 le falta: ${lista(r.partes.filter((p) => !p.cumple_config).map((p) => PARTES[p.id].titulo))}.`;
+  // 14n: el «0» en palabras, no «0 errores».
+  return `Para la regla 3-2-1-1-0 le falta: ${lista(r.partes.filter((p) => !p.cumple_config).map((p) => (p.id === "errores" ? "programar la verificación y la prueba de restauración" : PARTES[p.id].titulo)))}.`;
 }
 
 /** Para marcar el destino de un paso (desde la tira de una copia). */
@@ -646,7 +658,7 @@ export function tipoDePaso(p: PasoCadena, equipos: Equipo[], catalogo: DestinoCa
   }
   const t = p.tipoDestino ?? "";
   const tipo: TipoDestino = ["b2", "s3", "nube"].includes(t) ? "nube" : ["rest", "sftp"].includes(t) ? "fuera" : "local";
-  return { tipo, inmutable: !!p.inmutable || t === "zona", aislado: false, bloqueoDias: null };
+  return { tipo, inmutable: !!p.inmutable, soloAnadir: !!p.soloAnadir || t === "zona", aislado: false, bloqueoDias: null };
 }
 
 /** Los días de bloqueo de objetos de la copia externa o derivada que va a un destino (el mayor), si se saben. */
@@ -703,9 +715,51 @@ export const TEXTO_INMUTABLE: Record<InmutableDestino, string> = {
 };
 
 /** El valor de una parte en corto: «2 de 3», «0 errores», «1 de 1». */
-export function cifraParte(p: ParteRegla): string {
-  if (p.id === "errores") return p.valor === 0 ? "sin errores" : plural(p.valor, "por resolver", "por resolver");
+export function cifraParte(p: ParteRegla, rc?: ReglaCopia, ahora?: number): string {
+  // 14n: en el «0», qué falta en palabras («falta una verificación reciente»), no «1 por resolver».
+  if (p.id === "errores") {
+    if (p.valor === 0) return "sin errores";
+    const c = rc && ahora != null ? estadoCero(rc.entrada, ahora) : null;
+    return c?.falta.length ? `falta ${lista(c.falta)}` : plural(p.valor, "cosa por hacer", "cosas por hacer");
+  }
   return p.valor > p.meta ? `${p.valor} (pide ${p.meta})` : `${p.valor} de ${p.meta}`;
+}
+
+/** 14n: lo que falta y lo que ya está bien en el «0» (verificación, prueba de restauración, destinos dañados). */
+export interface EstadoCero {
+  /** «una verificación reciente», «programar la prueba de restauración»… */
+  falta: string[];
+  /** «la verificación», «la prueba de restauración» (lo que ya está bien). */
+  bien: string[];
+  /** Lo que se puede hacer ya, si falta algo que se arregla con un botón. */
+  accion: "verificar_ahora" | "probar_restauracion" | null;
+}
+
+export function estadoCero(e: Pick<EntradaRegla, "verificacion" | "prueba_restauracion" | "pasos">, ahora: number): EstadoCero {
+  const falta: string[] = [];
+  const bien: string[] = [];
+  let accion: EstadoCero["accion"] = null;
+  for (const [p, nombre, una, boton] of [
+    [e.verificacion, "la verificación", "una verificación", "verificar_ahora"],
+    [e.prueba_restauracion, "la prueba de restauración", "una prueba de restauración", "probar_restauracion"],
+  ] as const) {
+    if (!p.configurada) falta.push(`programar ${nombre}`);
+    else if (pruebaBien(p, ahora)) bien.push(nombre);
+    else {
+      falta.push(p.fallo ? `${una} correcta (la última falló)` : `${una} reciente`);
+      accion ??= boton;
+    }
+  }
+  const danado = e.pasos.find((x) => x.verificacion_mal);
+  if (danado) falta.push(`revisar «${danado.nombre ?? danado.id}» (encontró archivos dañados)`);
+  return { falta, bien, accion };
+}
+
+/** 14n: «Falta: una verificación reciente (la prueba de restauración ya está bien).», o null si no falta nada. */
+export function fraseCero(c: EstadoCero): string | null {
+  if (!c.falta.length) return null;
+  const ya = c.bien.length ? ` (${lista(c.bien)} ya ${c.bien.length > 1 ? "están" : "está"} bien)` : "";
+  return `Falta: ${lista(c.falta)}${ya}.`;
 }
 
 /**
@@ -725,15 +779,25 @@ export function estadoParte(p: ParteRegla): { tono: "ok" | "warn" | "neutral"; i
 /** El globo de una parte: qué pide, cómo está y, si falta algo, qué hacer. */
 export function globoParte(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: number): string {
   const que = queHacer(p, rc, cliente, ahora);
+  // 14n: en el «0», sin «0 errores: 1 por resolver»: qué falta y qué ya está bien.
+  if (p.id === "errores" && !p.cumple) return [`${PARTES[p.id].titulo}: ${fraseParte(p, rc, ahora)}`, que ? `Qué hacer: ${que.texto}` : ""].filter(Boolean).join(" ");
   return [`${PARTES[p.id].titulo}: ${cifraParte(p)}.`, fraseParte(p, rc, ahora), que ? `Qué hacer: ${que.texto}` : ""].filter(Boolean).join(" ");
 }
 
-/** Lo que se ve debajo de la tira: una línea corta, «Falta: 1 fuera de la oficina · 1 inmutable», o null si cumple. */
-export function lineaFalta(r: Regla321): string | null {
+/**
+ * Lo que se ve debajo de la tira: una línea corta, «Falta: 1 fuera del sitio · 1
+ * inmutable», o null si cumple. 14n: el «0» va aparte y en palabras («Falta: una
+ * verificación reciente (la prueba de restauración ya está bien).»), nunca «0 errores».
+ */
+export function lineaFalta(r: Regla321, rc?: ReglaCopia, ahora?: number): string | null {
   if (r.cumple) return null;
-  const falta = r.partes.filter((p) => !p.cumple_config).map((p) => PARTES[p.id].titulo);
-  const atrasado = r.partes.filter((p) => !p.cumple && p.cumple_config).map((p) => PARTES[p.id].titulo);
-  return [falta.length ? `Falta: ${falta.join(" · ")}` : "", atrasado.length ? `No está al día: ${atrasado.join(" · ")}` : ""].filter(Boolean).join(". ") + ".";
+  const sinCero = r.partes.filter((p) => p.id !== "errores");
+  const falta = sinCero.filter((p) => !p.cumple_config).map((p) => PARTES[p.id].titulo);
+  const atrasado = sinCero.filter((p) => !p.cumple && p.cumple_config).map((p) => PARTES[p.id].titulo);
+  const cero = r.partes.find((p) => p.id === "errores");
+  const fraseDelCero = cero && !cero.cumple ? (rc && ahora != null ? fraseCero(estadoCero(rc.entrada, ahora)) : null) ?? "Falta: una verificación y una prueba de restauración recientes y correctas." : null;
+  const partes = [falta.length ? `Falta: ${falta.join(" · ")}.` : "", atrasado.length ? `No está al día: ${atrasado.join(" · ")}.` : "", fraseDelCero ?? ""].filter(Boolean);
+  return partes.length ? partes.join(" ") : null;
 }
 
 /** Lo que dice la parte, en una frase, con los nombres de los destinos. */
@@ -754,7 +818,7 @@ export function fraseParte(p: ParteRegla, rc: ReglaCopia, ahora: number): string
       return i.length ? `${nombres(i)}.` : "Ninguno al día inmutable o aislado.";
     }
     case "errores":
-      return p.valor ? p.detalle : "Verificación y prueba de restauración recientes y correctas.";
+      return p.valor ? (fraseCero(estadoCero(rc.entrada, ahora)) ?? p.detalle) : "Verificación y prueba de restauración recientes y correctas.";
   }
 }
 
@@ -789,7 +853,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
       return { texto: "Añade un destino Fuera del sitio o en la Nube: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia externa, espejo del almacén o copia directa a la nube.", enlace: externa };
     case "anadir_inmutable":
       return {
-        texto: "Añade un destino inmutable (un almacén, B2 o S3 con bloqueo de objetos) o marca uno como Aislado (un disco que se desconecta y se rota).",
+        texto: "Añade un destino inmutable (B2 o S3 con bloqueo de objetos), marca las instantáneas del anfitrión del almacén que él no ve, o marca uno como Aislado (un disco que se desconecta y se rota). Un almacén de solo añadir no basta: no protege de quien lo administra.",
         enlace: { texto: "Destinos", href: `/c/${cliente}/repositorios#destinos` },
       };
     case "programar_verificacion":
@@ -827,8 +891,10 @@ export const TEXTO_AVISO: Record<string, string> = {
 /** «Cumple la regla 3-2-1-1-0», «Le falta: 1 fuera de la oficina y 0 errores», «Dejó de cumplir: …». */
 export function fraseRegla(r: Regla321): string {
   if (r.cumple) return "Cumple la regla 3-2-1-1-0.";
-  const faltan = r.partes.filter((p) => !p.cumple_config).map((p) => PARTES[p.id].titulo);
-  const atrasadas = r.partes.filter((p) => !p.cumple && p.cumple_config).map((p) => PARTES[p.id].titulo);
+  // 14n: el «0» en palabras («una verificación o prueba reciente»), no «0 errores».
+  const titulo = (p: ParteRegla) => (p.id === "errores" ? (p.cumple_config ? "una verificación o prueba de restauración reciente" : "programar la verificación o la prueba de restauración") : PARTES[p.id].titulo);
+  const faltan = r.partes.filter((p) => !p.cumple_config).map(titulo);
+  const atrasadas = r.partes.filter((p) => !p.cumple && p.cumple_config).map(titulo);
   if (r.dejo_de_cumplir) return `Dejó de cumplir: ${lista(atrasadas)} (algo no está al día).`;
   return `Le falta: ${lista(faltan)}.${atrasadas.length ? ` Y no está al día: ${lista(atrasadas)}.` : ""}`;
 }

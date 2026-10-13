@@ -180,8 +180,10 @@ export interface PasoCadena {
   destinoId?: string;
   /** Para la tarea 8: «zona», «rest», «b2», «s3», «local», «nube», «carpeta» (espejo a una carpeta del almacén)… */
   tipoDestino?: string;
-  /** Inmutable (bloqueo de objetos o solo añadir); null: no se sabe. */
+  /** Inmutable (bloqueo de objetos); null: no se sabe. 14z: «solo añadir» va aparte. */
   inmutable?: boolean | null;
+  /** 14z: de solo añadir (los equipos no pueden borrar). Un dato: no es inmutable. */
+  soloAnadir?: boolean;
   /** Aviso: no es inmutable (Dropbox, Drive, SMB, SFTP, WebDAV). */
   noInmutable?: string;
   /** Queda fuera del alcance de la retención del original (un espejo sin retención o una copia con la suya). */
@@ -202,7 +204,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
   const destinos = e.resumen?.destinos ?? [];
   if (r.externa) {
     const d = destinos.find((x) => x.id === r.externa!.destino_id) ?? destinos.find((x) => x.nombre === r.externa!.destino);
-    const inmutable = r.externa.bloqueo_dias ? true : r.externa.solo_anadir ? true : null;
+    const inmutable = r.externa.bloqueo_dias ? true : null;
     pasos.push({
       clase: "derivada",
       texto: r.externa.destino,
@@ -212,6 +214,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
       destinoId: d?.id ?? r.externa.destino_id ?? undefined,
       tipoDestino: d?.tipo,
       inmutable,
+      soloAnadir: !!r.externa.solo_anadir,
       fueraRetencion: true,
     });
   }
@@ -219,7 +222,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
     const d = destinos.find((y) => y.id === x.destino_id);
     const tipo = d?.tipo === "nube" ? tipoNube(e, d.nube) : undefined;
     const filtro = filtroEnFrase(x.filtro);
-    const inmutable = x.bloqueo_dias ? true : x.solo_anadir ? true : tipo ? (TIPOS_NUBE[tipo]?.inmutable ?? null) || null : null;
+    const inmutable = x.bloqueo_dias ? true : tipo ? (TIPOS_NUBE[tipo]?.inmutable ?? null) || null : null;
     pasos.push({
       clase: "derivada",
       texto: x.destino ?? "otro destino",
@@ -229,6 +232,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
       destinoId: x.destino_id ?? undefined,
       tipoDestino: d?.tipo,
       inmutable,
+      soloAnadir: !!x.solo_anadir,
       noInmutable: tipo && TIPOS_NUBE[tipo] && !TIPOS_NUBE[tipo].inmutable ? NO_INMUTABLE(TIPOS_NUBE[tipo].nombre) : undefined,
       fueraRetencion: true,
     });
@@ -293,7 +297,8 @@ export function lineaCadena(e: Equipo, copiaId: string, equipos: Equipo[]): Paso
       nivel,
       destinoId: z ? `zona:${z.almacen.id}:${z.id}` : d?.id,
       tipoDestino: z ? "zona" : d?.tipo,
-      inmutable: r?.solo_anadir ? true : null,
+      inmutable: null,
+      soloAnadir: !!r?.solo_anadir || !!z,
       fueraRetencion: nivel > 0,
     });
     if (r && !reposVistos.has(r.id)) {
@@ -326,7 +331,8 @@ export function pasosDelRepo(e: Equipo, repoId: string, equipos: Equipo[]): Paso
       nivel: 0,
       destinoId: z ? `zona:${z.almacen.id}:${z.id}` : d?.id,
       tipoDestino: z ? "zona" : d?.tipo,
-      inmutable: r.solo_anadir ? true : null,
+      inmutable: null,
+      soloAnadir: !!r.solo_anadir || !!z,
       fueraRetencion: false,
     },
     ...pasosEspejo(e, r, equipos, 1),

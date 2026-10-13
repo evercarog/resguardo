@@ -50,7 +50,7 @@ export const GUIAS: Guia[] = [
       "En la ficha de cada equipo que vaya a copiar ahí, «Copiar en «…»»: se crea su repositorio y se muestra su kit.",
       "Imprime o guarda cada kit fuera del equipo.",
     ],
-    ver: ["guarda-copias", "inmutable"],
+    ver: ["guarda-copias", "solo-anadir"],
   },
   {
     id: "guia-espejo",
@@ -133,12 +133,13 @@ export const GUIAS: Guia[] = [
     titulo: "La regla 3-2-1-1-0",
     resumen: "Cómo saber si cada copia aguanta un ransomware, un robo o un incendio, y qué le falta.",
     texto: [
-      "3 copias de los datos (contando los originales), en 2 soportes distintos (otro equipo u otro disco), 1 fuera del sitio (Fuera del sitio o Nube), 1 inmutable (solo añadir, bloqueo de objetos, instantáneas del anfitrión) o aislado (un disco que se desconecta y se rota) y 0 errores al verificar y al probar la restauración.",
+      "3 copias de los datos (contando los originales), en 2 soportes distintos (otro equipo u otro disco), 1 fuera del sitio (Fuera del sitio o Nube), 1 inmutable (bloqueo de objetos o instantáneas del anfitrión que el almacén no ve) o aislado (un disco que se desconecta y se rota) y 0 errores al verificar y al probar la restauración.",
       "Solo cuenta lo que está al día. Es una guía: puedes guardar una copia que no la cumple, y la consola te dice qué le falta y dónde se arregla.",
       "Cada destino tiene un tipo (Local, Fuera del sitio o Nube) y marcas (Inmutable, Aislado), deducidos. Si no aciertan, cámbialos en la página del destino → «Tipo y marcas»: lo que marcas tú manda.",
+      "Un almacén es de «solo añadir»: los equipos no pueden borrar lo copiado. Eso protege de un ransomware en un equipo, pero no es inmutable: quien administre el almacén (o su anfitrión) sí puede borrar, y su retención quita versiones. Por eso no cuenta como el «1 inmutable».",
     ],
     pasos: ["Mira la tira «3 · 2 · 1 · 1 · 0» en la página de cada copia.", "Pulsa lo que falta: te lleva a donde se hace (copia externa, espejo, verificación, prueba de restauración).", "Para una copia nueva, «Con la plantilla 3-2-1» en «Añadir o cambiar copias»."],
-    ver: ["regla-321", "inmutable", "instantaneas"],
+    ver: ["regla-321", "inmutable", "solo-anadir", "instantaneas"],
   },
   {
     id: "guia-almacen-inmutable",

@@ -1,11 +1,14 @@
 // Tipo y marcas de un destino (0.7.26, bloque 2; docs/regla-3-2-1.md).
 //
 // Tipo, uno solo: Local · Fuera del sitio · Nube. Marcas, combinables:
-// Inmutable (solo añadir, bloqueo de objetos de N días, instantáneas fuera de
-// su alcance) y Aislado (un medio que se desconecta y se rota).
+// Inmutable (bloqueo de objetos de N días, instantáneas fuera de su alcance) y
+// Aislado (un medio que se desconecta y se rota). Aparte, un dato que se
+// enseña: «Solo añadir» (14z, 0.8.0): los equipos no pueden borrar, pero no
+// protege de quien sea root en el almacén o su anfitrión ni de su retención,
+// así que no es «Inmutable» (salvo que lo marque una persona).
 //
 // Se deduce del destino (carpeta del equipo → Local; zona de un almacén →
-// Local + Inmutable; Dropbox/Drive/OneDrive → Nube; B2/S3 → Nube, + Inmutable
+// Local + Solo añadir; Dropbox/Drive/OneDrive → Nube; B2/S3 → Nube, + Inmutable
 // si tiene bloqueo) y siempre se puede cambiar: lo que marca una persona manda
 // y se dice («marcado por una persona»).
 //
@@ -29,8 +32,15 @@ export const AYUDA_TIPO: Record<TipoDestino, string> = {
 };
 export const TEXTO_MARCA = { inmutable: "Inmutable", aislado: "Aislado" } as const;
 
-/** Las formas de ser inmutable (la marca «Inmutable»). */
-export const COMO_INMUTABLE: Exclude<InmutableDestino, "no" | "desconectado">[] = ["solo_anadir", "object_lock", "instantaneas"];
+/**
+ * Las formas de ser inmutable que se eligen en la marca «Inmutable». 14z: «Solo
+ * añadir» ya no se ofrece (es un dato aparte); si una persona lo marcó antes, se
+ * respeta y se sigue enseñando.
+ */
+export const COMO_INMUTABLE: Exclude<InmutableDestino, "no" | "desconectado">[] = ["object_lock", "instantaneas"];
+/** 14z: lo que es «Solo añadir», en una frase (ayuda, glosario, ficha del destino). */
+export const TEXTO_SOLO_ANADIR =
+  "Solo añadir: los equipos pueden guardar versiones nuevas, pero no borrar las que ya hay. No es inmutable: no protege de quien sea administrador (root) en el almacén o en su anfitrión, ni de la retención del propio almacén.";
 export const TEXTO_COMO_INMUTABLE: Record<(typeof COMO_INMUTABLE)[number], string> = {
   solo_anadir: "Solo añadir",
   object_lock: "Bloqueo de objetos",
@@ -54,8 +64,10 @@ export interface Deducido {
 
 export interface Clasificacion {
   tipo: TipoDestino;
-  /** Marca «Inmutable». */
+  /** Marca «Inmutable» (bloqueo de objetos, instantáneas; «solo añadir» solo si lo marcó una persona). */
   inmutable: boolean;
+  /** 14z: de solo añadir (lo deducido o lo marcado). Un dato que se enseña: no cuenta como inmutable. */
+  soloAnadir: boolean;
   /** Cómo es inmutable («no» si no lo es). */
   como: InmutableDestino;
   /** Marca «Aislado». */
@@ -77,12 +89,14 @@ export function clasificar(d: Deducido, a: AtributosDestino | null | undefined):
   const at = a ?? {};
   const tipo = at.tipo ?? (at.lugar ? tipoDeLugar(at.lugar) : tipoDeLugar(d.lugar));
   const forma = at.inmutable ?? d.inmutable;
-  const inmutable = forma !== "no" && forma !== "desconectado";
+  // 14z: «solo añadir» solo es la marca «Inmutable» si lo marcó una persona (se respeta).
+  const inmutable = forma === "object_lock" || forma === "instantaneas" || (forma === "solo_anadir" && at.inmutable === "solo_anadir");
   const aislado = at.aislado ?? forma === "desconectado";
   const como = inmutable ? forma : "no";
   return {
     tipo,
     inmutable,
+    soloAnadir: forma === "solo_anadir" || d.inmutable === "solo_anadir",
     como,
     aislado,
     bloqueoDias: como === "object_lock" ? (diasValidos(at.bloqueo_dias, 36500) ?? diasValidos(d.bloqueoDias, 36500)) : null,
@@ -115,7 +129,8 @@ export function atributosDe(d: Deducido, e: Eleccion): AtributosDestino {
     a.lugar = lugarDeTipo(e.tipo, d.lugar);
   }
   const como: InmutableDestino = e.inmutable ? (e.como === "no" || e.como === "desconectado" ? "instantaneas" : e.como) : "no";
-  const forma: InmutableDestino = e.inmutable ? como : e.aislado ? "desconectado" : "no";
+  // 14z: sin marca, lo de solo añadir sigue siendo lo que se dedujo (es un dato, no una marca).
+  const forma: InmutableDestino = e.inmutable ? como : e.aislado ? "desconectado" : d.inmutable === "solo_anadir" ? "solo_anadir" : "no";
   const deducidoAislado = d.inmutable === "desconectado";
   if (forma !== d.inmutable) a.inmutable = forma;
   if (e.aislado !== deducidoAislado) a.aislado = e.aislado;
@@ -166,17 +181,24 @@ export function ultimaConexion(c: ConexionVolumen | null | undefined): string | 
   return [c?.ultima_conexion, ...(c?.volumenes ?? []).map((v) => v.visto)].filter((x): x is string => !!x && Number.isFinite(Date.parse(x))).sort().at(-1) ?? null;
 }
 
-/** Lo que se enseña en corto (selectores, cadenas, mapa). */
-export type TipoCorto = Pick<Clasificacion, "tipo" | "inmutable" | "aislado" | "bloqueoDias"> & { porPersona?: boolean };
+/** Lo que se enseña en corto (selectores, cadenas, mapa). `soloAnadir` (14z): el dato aparte. */
+export type TipoCorto = Pick<Clasificacion, "tipo" | "inmutable" | "aislado" | "bloqueoDias"> & { porPersona?: boolean; soloAnadir?: boolean };
 
 /** De una clasificación, lo que se enseña en corto. */
-export const corta = (c: Clasificacion): TipoCorto => ({ tipo: c.tipo, inmutable: c.inmutable, aislado: c.aislado, bloqueoDias: c.bloqueoDias, porPersona: c.tipoPorPersona || c.marcasPorPersona });
+export const corta = (c: Clasificacion): TipoCorto => ({
+  tipo: c.tipo,
+  inmutable: c.inmutable,
+  aislado: c.aislado,
+  bloqueoDias: c.bloqueoDias,
+  porPersona: c.tipoPorPersona || c.marcasPorPersona,
+  soloAnadir: c.soloAnadir && !c.inmutable,
+});
 
 /** Una nube conectada (Dropbox, Drive, OneDrive…; un NAS por SMB es local, SFTP fuera del sitio): nunca inmutable. */
 export const tipoDeNube = (tipoNube: string): TipoCorto => ({ tipo: tipoNube === "smb" ? "local" : tipoNube === "sftp" ? "fuera" : "nube", inmutable: false, aislado: false, bloqueoDias: null });
 
-/** El nombre accesible del tipo y sus marcas: «Nube, inmutable (bloqueo de 30 días)». */
-export function textoClasificacion(c: Pick<Clasificacion, "tipo" | "inmutable" | "aislado" | "bloqueoDias">): string {
-  const marcas = [c.inmutable ? `inmutable${c.bloqueoDias ? ` (bloqueo de ${c.bloqueoDias} días)` : ""}` : null, c.aislado ? "aislado" : null].filter(Boolean);
+/** El nombre accesible del tipo y sus marcas: «Nube, inmutable (bloqueo de 30 días)», «Local, solo añadir». */
+export function textoClasificacion(c: Pick<Clasificacion, "tipo" | "inmutable" | "aislado" | "bloqueoDias"> & { soloAnadir?: boolean }): string {
+  const marcas = [c.inmutable ? `inmutable${c.bloqueoDias ? ` (bloqueo de ${c.bloqueoDias} días)` : ""}` : null, c.soloAnadir && !c.inmutable ? "solo añadir" : null, c.aislado ? "aislado" : null].filter(Boolean);
   return [TEXTO_TIPO[c.tipo], ...marcas].join(", ");
 }

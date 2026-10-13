@@ -337,7 +337,8 @@ pub const DIAS_AISLADO: u32 = 30;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Inmutable {
-    /// Rest-server de solo añadir: desde el equipo no se puede borrar.
+    /// Rest-server de solo añadir: desde el equipo no se puede borrar. 14z: no cuenta
+    /// como inmutable en la regla (salvo que lo marque una persona, `inmutable_marcado`).
     SoloAnadir,
     /// Bloqueo de objetos (Object Lock) en la nube.
     ObjectLock,
@@ -397,6 +398,10 @@ pub struct PasoRegla {
     /// 0.7.26: días sin conectarse tras los que avisa (sin él, 30).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aislado_dias: Option<u32>,
+    /// 14z (0.8.0): la marca «Inmutable» la puso una persona. Solo importa con
+    /// `inmutable: "solo_anadir"`: lo marcado por una persona se respeta y cuenta.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inmutable_marcado: bool,
 }
 
 impl PasoRegla {
@@ -404,9 +409,19 @@ impl PasoRegla {
     pub fn es_fuera(&self) -> bool {
         self.tipo_destino.unwrap_or_else(|| TipoDestino::de_lugar(self.lugar)) != TipoDestino::Local
     }
-    /// ¿Marca «Inmutable»? (solo añadir, bloqueo de objetos, instantáneas fuera de su alcance).
+    /// ¿Marca «Inmutable»? Bloqueo de objetos o instantáneas fuera de su alcance.
+    /// 14z: «Solo añadir» no lo es (protege de los equipos, no de quien sea root
+    /// en el almacén o su anfitrión, ni de su retención), salvo que lo marcara una persona.
     pub fn es_inmutable(&self) -> bool {
-        !matches!(self.inmutable, Inmutable::No | Inmutable::Desconectado)
+        match self.inmutable {
+            Inmutable::ObjectLock | Inmutable::Instantaneas => true,
+            Inmutable::SoloAnadir => self.inmutable_marcado,
+            Inmutable::No | Inmutable::Desconectado => false,
+        }
+    }
+    /// 14z: ¿de solo añadir? (Un dato aparte, que se enseña: no cuenta como inmutable.)
+    pub fn es_solo_anadir(&self) -> bool {
+        self.inmutable == Inmutable::SoloAnadir
     }
     /// ¿Marca «Aislado»?
     pub fn es_aislado(&self) -> bool {
@@ -912,7 +927,9 @@ mod tests {
         assert!(!r.cumple && !r.cumple_config && !r.dejo_de_cumplir);
         let accion = |id: &str| r.partes.iter().find(|x| x.id == id).unwrap().accion.clone();
         assert_eq!((accion("copias"), accion("fuera"), accion("errores")), ("anadir_destino".into(), "anadir_fuera".into(), "programar_prueba".into()));
-        assert_eq!(r.avisos, ["inmutable_local"]);
+        // 14z: una zona de solo añadir no es inmutable (ni avisa de «inmutable en el sitio»).
+        assert_eq!(accion("inmutable"), "anadir_inmutable");
+        assert!(r.avisos.is_empty(), "{:?}", r.avisos);
         // Nunca cuenta el sistema de archivos ni el sistema operativo: no están en la entrada.
         assert_eq!(margen_horas(None), 48.0);
         assert_eq!(margen_horas(Some(1.0)), 13.5);

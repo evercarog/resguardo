@@ -9,7 +9,7 @@
   // Todo sale de los resúmenes de los equipos y del catálogo (lib/fichaDestino.ts).
   import { untrack } from "svelte";
   import { page } from "$app/state";
-  import { ArrowRight, Cloud, Database, HardDrive, Lock, Network, Pencil, Server, ShieldCheck, Trash2, TriangleAlert, Usb, CircleCheck, CircleAlert, Activity, Plus, StickyNote } from "@lucide/svelte";
+  import { ArrowRight, Cloud, Database, HardDrive, Lock, Network, Pencil, Server, ShieldCheck, ShieldHalf, Trash2, TriangleAlert, Usb, CircleCheck, CircleAlert, Activity, Plus, StickyNote } from "@lucide/svelte";
   import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
@@ -171,7 +171,7 @@
         </dl>
         <div class="chips">
           {#if v.zona}
-            <span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>
+            <span class="badge badge-sm tone-neutral" use:tip={"Los equipos pueden añadir copias, pero no borrarlas. No es inmutable: no protege de quien sea administrador del almacén ni de su retención."}><ShieldHalf size={11} />Solo añadir<Ayuda id="solo-anadir" /></span>
             {#if v.zona.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}
             {#if v.zona.escucha === false}<span class="badge badge-sm tone-warn"><TriangleAlert size={11} />Sin responder</span>{/if}
           {/if}
@@ -189,12 +189,16 @@
             <h2 class="section-title" id="t-regla"><ShieldCheck size={16} />Tipo y marcas <Ayuda id="tipo-destino" /></h2>
             {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = true)}>Cambiar</button>{/if}
           </div>
-          <p class="tipo-linea"><TipoDestino variante="completa" tipo={clase.tipo} inmutable={clase.inmutable} aislado={clase.aislado} bloqueoDias={clase.bloqueoDias} porPersona={clase.tipoPorPersona || clase.marcasPorPersona} /></p>
+          <p class="tipo-linea"><TipoDestino variante="completa" tipo={clase.tipo} inmutable={clase.inmutable} soloAnadir={clase.soloAnadir} aislado={clase.aislado} bloqueoDias={clase.bloqueoDias} porPersona={clase.tipoPorPersona || clase.marcasPorPersona} /></p>
           <dl class="datos">
             <dt>Tipo</dt>
             <dd>{TIPO_DESTINO[clase.tipo]} <span class="faint">· {quien(clase.tipo !== deducida?.tipo)}</span></dd>
             <dt>Inmutable</dt>
             <dd>{clase.inmutable ? `${TEXTO_COMO_INMUTABLE[clase.como as "solo_anadir"] ?? "Sí"}${clase.bloqueoDias ? ` · ${clase.bloqueoDias} días` : ""}` : "No"} <span class="faint">· {quien(clase.inmutable !== deducida?.inmutable || clase.como !== deducida?.como || clase.bloqueoDias !== deducida?.bloqueoDias)}</span></dd>
+            {#if clase.soloAnadir}
+              <dt>Solo añadir</dt>
+              <dd>Sí <span class="faint">· los equipos no pueden borrar; no cuenta como inmutable</span> <Ayuda id="solo-anadir" /></dd>
+            {/if}
             <dt>Aislado</dt>
             <dd>
               {#if clase.aislado && conexion}
