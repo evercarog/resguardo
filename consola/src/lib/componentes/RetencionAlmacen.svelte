@@ -20,7 +20,7 @@
   import { errorReglas, reglasDe } from "$lib/horario";
   import { horarioEnFrase } from "$lib/formato";
   import type { Horario } from "$lib/tipos";
-  import { admitePlazos, copiaRegla, DIAS_CORTOS, errorHorario, errorRegla, HORARIO_POR_DEFECTO, horarioDeCopias, mismaRegla, nuevaClave, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden, textoHorario, type EnAlmacen } from "$lib/retencion";
+  import { admitePlazos, admitePorDia, copiaRegla, DIAS_CORTOS, errorHorario, errorRegla, HORARIO_POR_DEFECTO, horarioDeCopias, mismaRegla, nuevaClave, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden, textoHorario, type EnAlmacen } from "$lib/retencion";
   import EditorRetencion from "./EditorRetencion.svelte";
   import type { Cliente, Equipo, Orden, Regla, RepositorioResumen } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
@@ -64,7 +64,7 @@
   const pideContrasena = $derived(claveNueva || cambiaRegla);
   /** Horarias, plazos y «siempre» (v1.28): los dos agentes tienen que entenderlos. */
   const admite = $derived(admitePlazos(equipo) && admitePlazos(en.almacen));
-  const errReg = $derived(errorRegla(regla, admite));
+  const errReg = $derived(errorRegla(regla, admite, admitePorDia(almacen)));
   const errHor = $derived(errorHorario({ dias, hora }) ?? (usaReglas ? errorReglas(reglasDe(horarioAlm)) : null));
   const listo = $derived(!errReg && !errHor && !!claveAdmin && (!pideContrasena || !!contrasena));
   const espera = $derived(almacen.espera_min_horas ?? cliente.espera_min_horas);
@@ -151,7 +151,7 @@
     </div>
   {:else}
     <form class="form" onsubmit={guardar}>
-      <EditorRetencion id="ra" bind:regla {admite} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
+      <EditorRetencion id="ra" bind:regla {admite} admitePorDia={admitePorDia(almacen)} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
 
       {#if admiteReglasAlm}
         <label class="switch-row"><input type="checkbox" class="switch" bind:checked={conReglas} /><span>Con un horario como el de las copias<span class="faint">Cada N días, un día de cada mes, varias horas…</span></span></label>

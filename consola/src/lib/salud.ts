@@ -16,7 +16,8 @@ const DIA = 86_400_000;
 const minuscula = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
 export function copiaAtrasada(c: CopiaResumen, ahora = Date.now()) {
-  return c.activa !== false && !!c.proxima && Date.parse(c.proxima) < ahora - 3600_000;
+  // Plan 0.8.0, F1: una copia completada o solo a mano nunca va atrasada.
+  return c.activa !== false && !c.completada && !c.a_mano && !!c.proxima && Date.parse(c.proxima) < ahora - 3600_000;
 }
 
 /** ¿Copias automáticas en pausa? (`pausado_hasta`: una fecha o "indefinido"). */
@@ -158,6 +159,9 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   etiquetas_equipo: "Cambiar las etiquetas del equipo",
   observacion_equipo: "Cambiar la observación del equipo",
   quitar_destino: "Quitar un destino",
+  // Plan 0.8.0, F2.
+  comentario_version: "Comentar una versión",
+  conservar_version: "Conservar una versión para siempre",
 };
 
 export const nombreOrden = (t: string) => NOMBRE_ORDEN[t] ?? t.replaceAll("_", " ");

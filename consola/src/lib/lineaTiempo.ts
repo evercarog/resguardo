@@ -5,7 +5,7 @@
 // fijo; las demás, en tinta neutra) y la retención simulada (qué se queda y
 // por qué, qué quitaría la próxima vez).
 import type { DestinoResumen, Equipo, Regla, RepositorioResumen } from "./tipos";
-import { almacenDe, motivosQuedan, reglaDe, type Periodo } from "./retencion";
+import { almacenDe, motivosQuedan, reglaDe, type MotivoQueda } from "./retencion";
 
 const HORA = 3_600_000;
 const DIA = 24 * HORA;
@@ -127,10 +127,10 @@ export function reglaEfectiva(repo: RepositorioResumen | null | undefined, desti
   return r ? { regla: r, quien: null } : null;
 }
 
-export const NOMBRE_MOTIVO: Record<Periodo, string> = { horarias: "horaria", diarias: "diaria", semanales: "semanal", mensuales: "mensual", anuales: "anual" };
+export const NOMBRE_MOTIVO: Record<MotivoQueda, string> = { horarias: "horaria", diarias: "diaria", semanales: "semanal", mensuales: "mensual", anuales: "anual", por_dia: "por día" };
 
 /** Por qué se queda cada versión (de la lista en cualquier orden), con su id: null = la próxima retención la quitaría. */
-export function retencionDe(versiones: { id: string; hora: string }[], regla: Regla | null): Map<string, Periodo | null> | null {
+export function retencionDe(versiones: { id: string; hora: string }[], regla: Regla | null): Map<string, MotivoQueda | null> | null {
   if (!regla) return null;
   const orden = [...versiones].sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
   const motivos = motivosQuedan(
@@ -235,7 +235,7 @@ export function filasHoras(horas: number[]): { desde: number; paso: number; n: n
  */
 export function calendario(
   versiones: { id: string; t: number }[],
-  motivos: Map<string, Periodo | null> | null,
+  motivos: Map<string, MotivoQueda | null> | null,
   ahora: number,
   dias: Rango,
   tira = false,

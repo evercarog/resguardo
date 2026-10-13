@@ -25,7 +25,7 @@
   import { anadidoDe, duracion, nVersiones, versionesDe } from "$lib/repo";
   import { retencionDe } from "$lib/lineaTiempo";
   import { sucesosDe, unirVersiones, type Suceso, type VersionSesion } from "$lib/historial";
-  import { textoRegla, type Periodo } from "$lib/retencion";
+  import { textoRegla, type MotivoQueda } from "$lib/retencion";
   import BotonCargando from "../BotonCargando.svelte";
   import LineaTiempoVersiones from "./LineaTiempoVersiones.svelte";
   import PedirVersiones from "./PedirVersiones.svelte";
@@ -158,7 +158,7 @@
   const conRegla = $derived(vistas.filter((f) => f.regla));
   const motivos = $derived.by(() => {
     if (!conRegla.length) return null;
-    const m = new Map<string, Periodo | null>();
+    const m = new Map<string, MotivoQueda | null>();
     const visibles = new Set(versiones.map((x) => x.v.id));
     for (const f of conRegla) for (const [k, x] of retencionDe(todasDe(f.repo, f.inf), f.regla ?? null) ?? []) if (visibles.has(k)) m.set(k, x);
     return m;
@@ -262,6 +262,7 @@
   {:else}
     <LineaTiempoVersiones
       versiones={linea}
+      marcas={{ equipo: delEquipo }}
       {copias}
       motivosDados={motivos}
       {textoRetencion}

@@ -28,6 +28,13 @@ export const UNA_POR: Record<Periodo, string> = { horarias: "hora", diarias: "d�
 /** Lo que el agente dice que entiende (v1.28). */
 export const ADMITE_PLAZOS = "retencion_plazos";
 export const admitePlazos = (e: Equipo | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_PLAZOS);
+/** Plan 0.8.0, F3 (14u): «N versiones por día» (lo decide el planificador del agente o del almacén). */
+export const ADMITE_POR_DIA = "retencion_por_dia";
+export const admitePorDia = (e: Equipo | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_POR_DIA);
+/** Como el agente: hasta 12 horas en «N por día». */
+export const MAX_HORAS_POR_DIA = 12;
+/** Por qué se queda una versión: un periodo de la regla o, F3, «por día». */
+export type MotivoQueda = Periodo | "por_dia";
 
 /** Un plazo de restic: años, meses, días y horas. */
 export interface Plazo {
@@ -84,6 +91,11 @@ export function reglaParaOrden(r: Regla): Regla {
   if (cantidad(r, "horarias")) out.horarias = cantidad(r, "horarias");
   const plazos = Object.fromEntries(PERIODOS.filter((k) => plazoDe(r, k)).map((k) => [k, plazoDe(r, k)!]));
   if (Object.keys(plazos).length) out.plazos = plazos;
+  // F3: «N por día» (horas ordenadas y sin repetir; sin horas, la primera y la última).
+  if (r.por_dia) {
+    const horas = [...new Set(r.por_dia.horas ?? [])].sort();
+    out.por_dia = { ...(horas.length ? { horas } : {}), ...(r.por_dia.plazo ? { plazo: r.por_dia.plazo } : {}) };
+  }
   return out;
 }
 
@@ -100,8 +112,18 @@ export const reglaDe = (r: RepositorioResumen | null | undefined): Regla | null 
 
 export const mismaRegla = (a: Regla | null | undefined, b: Regla | null | undefined) => !!a && !!b && JSON.stringify(reglaParaOrden(a)) === JSON.stringify(reglaParaOrden(b));
 
+/** Lo que falla de «N por día» (F3), o null. */
+export function errorPorDia(d: Regla["por_dia"]): string | null {
+  if (!d) return null;
+  const hs = d.horas ?? [];
+  if (hs.length > MAX_HORAS_POR_DIA) return `«Versiones por día» admite hasta ${MAX_HORAS_POR_DIA} horas.`;
+  if (hs.some((h) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(h)) || new Set(hs).size !== hs.length) return "Las horas de «Versiones por día» son HH:MM, sin repetir.";
+  if (d.plazo && !leerPlazo(d.plazo)) return "El plazo de «Versiones por día» no vale (por ejemplo 30d o 6m).";
+  return null;
+}
+
 /** Como el agente: al menos una regla; de 0 a 1000 de cada tipo (o «siempre») y plazos de restic. Sin `admite`, solo lo de antes. */
-export function errorRegla(r: Regla, admite = true): string | null {
+export function errorRegla(r: Regla, admite = true, admitePorDia = true): string | null {
   for (const k of PERIODOS) {
     const n = cantidad(r, k);
     if (!Number.isInteger(n) || (n !== SIEMPRE && (n < 0 || n > 1000))) return "Entre 0 y 1000 de cada tipo.";
@@ -109,13 +131,16 @@ export function errorRegla(r: Regla, admite = true): string | null {
     if (p && !leerPlazo(p)) return `El plazo de las ${k} no vale (por ejemplo 15d, 6m o 1y).`;
   }
   if (!admite && usaPlazos(r)) return "Este agente solo guarda diarias, semanales, mensuales y anuales: actualízalo para usar horarias, plazos o «siempre».";
-  if (!PERIODOS.some((k) => cantidad(r, k) !== 0 || plazoDe(r, k))) return "Tiene que guardar al menos una versión.";
+  if (r.por_dia && !admitePorDia) return "Este agente aún no aplica «Versiones por día»: actualízalo.";
+  const err = errorPorDia(r.por_dia);
+  if (err) return err;
+  if (!PERIODOS.some((k) => cantidad(r, k) !== 0 || plazoDe(r, k)) && !r.por_dia) return "Tiene que guardar al menos una versión.";
   return null;
 }
 
 /** Como el agente (`Retencion::texto`): lo de antes igual; con v1.28, solo lo que guarda. */
 export function textoRegla(r: Regla): string {
-  if (!usaPlazos(r)) return `${r.diarias} diarias · ${r.semanales} semanales · ${r.mensuales} mensuales · ${r.anuales} anuales`;
+  if (!usaPlazos(r) && !r.por_dia) return `${r.diarias} diarias · ${r.semanales} semanales · ${r.mensuales} mensuales · ${r.anuales} anuales`;
   const partes: string[] = [];
   for (const k of PERIODOS) {
     const p = plazoDe(r, k);
@@ -124,7 +149,16 @@ export function textoRegla(r: Regla): string {
     if (n === SIEMPRE) partes.push(`${k} siempre`);
     else if (n) partes.push(`${n} ${k}`);
   }
+  if (r.por_dia) partes.push(textoPorDia(r.por_dia));
   return partes.join(" · ");
+}
+
+/** F3, como el agente (`PorDia::texto`): «2 por día (la primera y la última)», «2 por día (las más cercanas a las 09:00 y 18:00) durante 30 días». */
+export function textoPorDia(d: NonNullable<Regla["por_dia"]>): string {
+  const hs = [...(d.horas ?? [])].sort();
+  const cuales = hs.length ? `las más cercanas a ${hs.length === 1 ? "la" : "las"} ${enLista(hs)}` : "la primera y la última";
+  const p = d.plazo && leerPlazo(d.plazo) ? ` durante ${plazoEnPalabras(d.plazo)}` : "";
+  return `${hs.length || 2} por día (${cuales})${p}`;
 }
 
 /** Lista en castellano: «a», «a y b», «a, b y c». */
@@ -150,6 +184,11 @@ export function resumenRegla(r: Regla): string {
     if (n === SIEMPRE) partes.push(`una por ${UNA_POR[k]} siempre`);
     else if (n === 1) partes.push(`la última ${SINGULAR[k]}`);
     else if (n) partes.push(`las últimas ${n} ${k}`);
+  }
+  if (r.por_dia) {
+    const hs = [...(r.por_dia.horas ?? [])].sort();
+    const p = r.por_dia.plazo && leerPlazo(r.por_dia.plazo) ? ` durante ${plazoEnPalabras(r.por_dia.plazo)}` : "";
+    partes.push(hs.length ? `de cada día, las más cercanas a ${hs.length === 1 ? "la" : "las"} ${enLista(hs)}${p}` : `de cada día, la primera y la última${p}`);
   }
   if (!partes.length) return "No guarda ninguna versión.";
   return `Conserva ${enLista(partes)}.${plazos ? " Los plazos cuentan desde la versión más reciente: si el equipo deja de copiar, no se pierde nada por esperar." : ""}`;
@@ -180,9 +219,48 @@ export function restarPlazo(t: Date, p: Plazo): Date {
   return new Date(d.getTime() - p.horas * 3_600_000);
 }
 
+const claveDiaLocal = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+
+/**
+ * F3 (14u): las que guarda «N versiones por día», de unas horas de la más reciente
+ * a la más antigua (como `retencion_almacen::por_dia` del agente): de cada día
+ * dentro del plazo (contado desde la más reciente), la más cercana a cada hora o,
+ * sin horas, la primera y la última. A igual distancia, la más antigua.
+ */
+export function porDiaQuedan(horas: Date[], d: Regla["por_dia"]): boolean[] {
+  const out = horas.map(() => false);
+  if (!d || !horas.length) return out;
+  const p = leerPlazo(d.plazo ?? null);
+  const lim = p ? restarPlazo(horas[0], p).getTime() : null;
+  const dias = new Map<string, number[]>();
+  horas.forEach((t, i) => {
+    if (lim !== null && t.getTime() <= lim) return;
+    const k = claveDiaLocal(t);
+    (dias.get(k) ?? dias.set(k, []).get(k)!).push(i);
+  });
+  const hs = (d.horas ?? []).map((h) => h.split(":").map(Number)).filter((x) => x.length === 2 && x.every(Number.isFinite));
+  for (const idx of dias.values()) {
+    // De la más antigua a la más reciente (a igual hora, la que venía después en la lista: la más antigua).
+    const asc = [...idx].sort((a, b) => horas[a].getTime() - horas[b].getTime() || b - a);
+    if (!hs.length) {
+      out[asc[0]] = true;
+      out[asc[asc.length - 1]] = true;
+      continue;
+    }
+    const t0 = horas[asc[0]];
+    for (const [h, m] of hs) {
+      const objetivo = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate(), h, m).getTime();
+      let mejor = asc[0];
+      for (const i of asc) if (Math.abs(horas[i].getTime() - objetivo) < Math.abs(horas[mejor].getTime() - objetivo)) mejor = i;
+      out[mejor] = true;
+    }
+  }
+  return out;
+}
+
 /** Las que se quedan (índices), de unas horas en orden de la más reciente a la más antigua. */
 export function seQuedan(horas: Date[], r: Regla): boolean[] {
-  const quedan = horas.map(() => false);
+  const quedan = porDiaQuedan(horas, r.por_dia);
   if (!horas.length) return quedan;
   const limites = PERIODOS.map((k) => {
     const p = leerPlazo(plazoDe(r, k));
@@ -221,9 +299,10 @@ export function seQuedan(horas: Date[], r: Regla): boolean[] {
  * la regla que la alcanzó), o null si la próxima retención la quitaría. Para
  * la línea de tiempo de las versiones.
  */
-export function motivosQuedan(horas: Date[], r: Regla): (Periodo | null)[] {
-  const motivo: (Periodo | null)[] = horas.map(() => null);
+export function motivosQuedan(horas: Date[], r: Regla): (MotivoQueda | null)[] {
+  const motivo: (MotivoQueda | null)[] = horas.map(() => null);
   if (!horas.length) return motivo;
+  const delDia = porDiaQuedan(horas, r.por_dia);
   const limites = PERIODOS.map((k) => {
     const p = leerPlazo(plazoDe(r, k));
     return p ? restarPlazo(horas[0], p).getTime() : null;
@@ -252,6 +331,7 @@ export function motivosQuedan(horas: Date[], r: Regla): (Periodo | null)[] {
       }
     }
   });
+  delDia.forEach((x, n) => x && (motivo[n] ??= "por_dia"));
   return motivo;
 }
 

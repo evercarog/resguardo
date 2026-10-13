@@ -7,10 +7,14 @@
   //
   // Con un agente sin `admite: ["retencion_plazos"]` solo se ofrecen diarias,
   // semanales, mensuales y anuales (lo que entiende); lo demás, «Actualiza el agente».
+  //
+  // Plan 0.8.0, F3 (14u): «A medida» con «Versiones por día» (de cada día, las más
+  // cercanas a unas horas o la primera y la última), solo donde la aplica el
+  // planificador del agente o del almacén (`admitePorDia`).
   import { untrack } from "svelte";
-  import { Info } from "@lucide/svelte";
+  import { CalendarDays, Info, Plus, X } from "@lucide/svelte";
   import { numero } from "$lib/formato";
-  import { copiaRegla, errorRegla, estimarVersiones, leerPlazo, PERIODOS, plazoEnPalabras, presetDe, PRESETS, resumenRegla, SIEMPRE, type Periodo } from "$lib/retencion";
+  import { copiaRegla, errorRegla, estimarVersiones, leerPlazo, MAX_HORAS_POR_DIA, PERIODOS, plazoEnPalabras, presetDe, PRESETS, resumenRegla, SIEMPRE, type Periodo } from "$lib/retencion";
   import type { Regla } from "$lib/tipos";
 
   let {
@@ -19,6 +23,7 @@
     admite,
     horasDelDia,
     copias,
+    admitePorDia = false,
   }: {
     id: string;
     regla: Regla;
@@ -28,6 +33,8 @@
     horasDelDia?: (fecha: Date) => string[];
     /** «unas 24 copias al día» (para la estimación). */
     copias?: string;
+    /** F3: ¿se puede «Versiones por día»? (Solo con el planificador del agente o del almacén que lo entiende.) */
+    admitePorDia?: boolean;
   } = $props();
 
   const NOMBRE: Record<Periodo, string> = { horarias: "Horarias", diarias: "Diarias", semanales: "Semanales", mensuales: "Mensuales", anuales: "Anuales" };
@@ -43,7 +50,7 @@
   let personalizada = $state(untrack(() => presetDe(regla) === "personalizada"));
   const elegido = $derived(personalizada ? "personalizada" : presetDe(regla));
   const filas = $derived(PERIODOS.filter((k) => admite || k !== "horarias"));
-  const error = $derived(errorRegla(regla, admite));
+  const error = $derived(errorRegla(regla, admite, admitePorDia));
   const estimacion = $derived(error ? null : estimarVersiones(regla, horasDelDia));
 
   function elegir(p: string) {
@@ -74,6 +81,27 @@
   function ponerPlazo(k: Periodo, n: number | string, u: string) {
     const v = Math.trunc(Number(n));
     regla.plazos = { ...(regla.plazos ?? {}), [k]: v > 0 ? `${v}${u}` : null };
+  }
+
+  // F3: «Versiones por día».
+  const porDia = $derived(regla.por_dia ?? null);
+  const conHoras = $derived(!!porDia?.horas?.length);
+  function alternarPorDia(si: boolean) {
+    if (si) regla.por_dia = { horas: ["09:00", "18:00"], plazo: "30d" };
+    else delete regla.por_dia;
+  }
+  function ponerHoras(horas: string[]) {
+    if (!regla.por_dia) return;
+    regla.por_dia = { ...regla.por_dia, horas };
+  }
+  const plazoDia = $derived.by(() => {
+    const m = /^(\d+)([dmy])$/.exec(porDia?.plazo ?? "");
+    return m ? { n: Number(m[1]), u: m[2] } : { n: "" as const, u: "d" };
+  });
+  function ponerPlazoDia(n: number | string, u: string) {
+    if (!regla.por_dia) return;
+    const v = Math.trunc(Number(n));
+    regla.por_dia = { ...regla.por_dia, plazo: v > 0 ? `${v}${u}` : null };
   }
 </script>
 
@@ -136,6 +164,44 @@
         </span>
       {/each}
     </div>
+  {/if}
+
+  {#if elegido === "personalizada" && (admitePorDia || porDia)}
+    <!-- F3 (14u): lo decide el planificador del almacén (o del equipo), también sobre lo que ya hay. -->
+    <fieldset class="por-dia">
+      <legend class="field-label"><CalendarDays size={14} />Versiones por día</legend>
+      <label class="switch-row"><input type="checkbox" class="switch" checked={!!porDia} disabled={!admitePorDia && !porDia} onchange={(e) => alternarPorDia(e.currentTarget.checked)} /><span>Guardar además unas versiones de cada día<span class="faint">Se suma a lo de arriba y vale también para las versiones que ya existen.</span></span></label>
+      {#if porDia}
+        <div class="segmented inline" role="radiogroup" aria-label="Qué versiones de cada día">
+          <button type="button" role="radio" aria-checked={!conHoras} class:on={!conHoras} onclick={() => ponerHoras([])}>La primera y la última</button>
+          <button type="button" role="radio" aria-checked={conHoras} class:on={conHoras} onclick={() => !conHoras && ponerHoras(["09:00", "18:00"])}>Las más cercanas a unas horas</button>
+        </div>
+        {#if conHoras}
+          <div class="horas-dia" role="group" aria-label="Horas">
+            {#each porDia.horas ?? [] as h, i (i)}
+              <span class="hora-chip">
+                <input class="input" type="time" value={h} aria-label="Hora {i + 1}" onchange={(e) => ponerHoras((porDia.horas ?? []).map((x, j) => (j === i ? e.currentTarget.value : x)))} />
+                <button type="button" class="icon-btn mini" aria-label="Quitar la hora {h}" disabled={(porDia.horas ?? []).length <= 1} onclick={() => ponerHoras((porDia.horas ?? []).filter((_, j) => j !== i))}><X size={13} /></button>
+              </span>
+            {/each}
+            {#if (porDia.horas ?? []).length < MAX_HORAS_POR_DIA}
+              <button type="button" class="btn btn-sm btn-ghost" onclick={() => ponerHoras([...(porDia.horas ?? []), "12:00"])}><Plus size={14} />Otra hora</button>
+            {/if}
+          </div>
+        {/if}
+        <label class="plazo">
+          Durante
+          <input class="input num" type="number" min="0" max="9999" placeholder="siempre" value={plazoDia.n} aria-label="Versiones por día: durante cuánto tiempo" oninput={(e) => ponerPlazoDia(e.currentTarget.value, plazoDia.u)} />
+          <select class="input" value={plazoDia.u} aria-label="Unidad" onchange={(e) => ponerPlazoDia(plazoDia.n || 1, e.currentTarget.value)}>
+            <option value="d">días</option>
+            <option value="m">meses</option>
+            <option value="y">años</option>
+          </select>
+          <span class="faint">(vacío: siempre)</span>
+        </label>
+      {/if}
+      {#if !admitePorDia}<p class="faint nota">Actualiza el agente que aplica esta retención para usar «Versiones por día».</p>{/if}
+    </fieldset>
   {/if}
 
   {#if error}
@@ -260,5 +326,41 @@
     .cab {
       display: none;
     }
+  }
+  .por-dia {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
+  }
+  .por-dia legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .horas-dia {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .hora-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .hora-chip .input {
+    width: 7.5em;
+  }
+  .por-dia .plazo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-sm);
+  }
+  .por-dia .plazo .num {
+    width: 6em;
   }
 </style>

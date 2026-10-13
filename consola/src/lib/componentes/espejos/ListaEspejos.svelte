@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { franjasEnFrase } from "$lib/franjas";
   // Los espejos de un equipo (plan 0.7.26, bloque 4): los que hace el almacén con lo
   // que guarda o los que hace el propio equipo con los repositorios de sus discos.
   // Cada uno en una tarjeta con su resumen y cómo fue; se ordenan, se pausan, se
@@ -198,7 +199,7 @@
       </p>
       <p class="linea faint">
         <span>{textoCuando(t, nombreDe)}</span><span aria-hidden="true">·</span><span class:igual={t.retencion.modo === "igual"}>{textoRetencion(t)}</span>
-        {#if t.limite_kib}<span aria-hidden="true">·</span><span>hasta {t.limite_kib} KiB/s</span>{/if}
+        {#if t.limite_franjas?.length}<span aria-hidden="true">·</span><span>{franjasEnFrase(t.limite_franjas, t.limite_kib)}</span>{:else if t.limite_kib}<span aria-hidden="true">·</span><span>hasta {t.limite_kib} KiB/s</span>{/if}
       </p>
       {#if t.retencion.modo === "igual"}<p class="aviso-igual"><ShieldAlert size={13} />{AVISO_IGUAL}</p>{/if}
       <p class="estado faint">

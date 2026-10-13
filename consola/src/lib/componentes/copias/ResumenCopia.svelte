@@ -2,7 +2,7 @@
   // Una copia en una línea (plan 0.7.26, bloque 3.1): cuándo · qué → dónde,
   // con el icono del tipo de destino; y debajo, sus espejos y copias derivadas
   // agrupados por quién los hace (lib/espejosCopia.ts). Sin emojis: iconos.
-  import { CalendarClock, CornerDownRight, Database, FolderOpen, GitBranch, HardDrive, Link2, Repeat } from "@lucide/svelte";
+  import { CalendarCheck, CalendarClock, CornerDownRight, Database, FolderOpen, GitBranch, Hand, HardDrive, Link2, Repeat } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import TipoDestino from "$lib/componentes/TipoDestino.svelte";
   import { cuandoEnFrase, inicioDe, queEnFrase } from "$lib/copiaGuiada";
@@ -32,7 +32,7 @@
 
   const k = $derived(copias[i]);
   const modo = $derived(inicioDe(k));
-  const ICONO = { horario: CalendarClock, cadena: Link2, despues: Repeat } as const;
+  const ICONO = { horario: CalendarClock, cadena: Link2, despues: Repeat, a_mano: Hand, una_vez: CalendarCheck } as const;
   const Icono = $derived(ICONO[modo]);
   const repo = $derived(repos.find((r) => r.id === k.repo));
   const p0 = $derived(k.repo ? pasosDelRepo(equipo, k.repo, equipos)[0] : undefined);
@@ -42,7 +42,7 @@
 
 <div class="resumen-copia">
   <p class="linea">
-    <span class="trozo"><Icono size={14} />{cuandoEnFrase(copias, i)}</span>
+    <span class="trozo"><Icono size={14} />{cuandoEnFrase(copias, i, equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas)}</span>
     <span class="sep" aria-hidden="true">·</span>
     <span class="trozo"><FolderOpen size={14} />{queEnFrase({ carpetas: k.carpetas, exclusiones: [] })}</span>
     <span class="sep" aria-hidden="true">→</span>

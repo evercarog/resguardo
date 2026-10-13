@@ -24,16 +24,19 @@
   import { NOMBRE_MOTIVO, nombreDia, type VersionLinea } from "$lib/lineaTiempo";
   import { esFallo, NO_CONSTA, SIN_DETALLE, type NotaVersion, type Suceso, type TipoSuceso } from "$lib/historial";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
-  import type { Periodo } from "$lib/retencion";
+  import type { MotivoQueda } from "$lib/retencion";
   import type { Tono } from "$lib/salud";
   import FormaCopia from "./FormaCopia.svelte";
+  import MarcasVersion from "../MarcasVersion.svelte";
+  import { comentariosDe, conservadaDe } from "$lib/versionesNotas";
+  import type { Equipo } from "$lib/tipos";
 
   type V = VersionLinea & { t: number };
   export type FilaBitacora = { k: "v"; t: number; v: V } | { k: "s"; t: number; s: Suceso };
   interface Props {
     dias: { dia: number; filas: FilaBitacora[] }[];
     ahora: number;
-    motivos: Map<string, Periodo | null> | null;
+    motivos: Map<string, MotivoQueda | null> | null;
     hueco: (copia: string | null | undefined) => 0 | 1 | 2 | 3;
     nombreCopia: (copia: string | null | undefined, repo?: string | null) => string;
     seleccion: string | null;
@@ -48,8 +51,18 @@
     notas?: Map<string, NotaVersion>;
     /** Abrir el detalle de la vuelta de un suceso. */
     alAbrirSuceso?: (s: Suceso) => void;
+    /** Plan 0.8.0, F2: el equipo de las versiones (sus comentarios y las que se conservan para siempre) y su repositorio si no lo dicen. */
+    marcas?: { equipo: Equipo | null | undefined; repo?: string | null } | null;
   }
-  let { dias, ahora, motivos, hueco, nombreCopia, seleccion, alElegir, acciones, reciente = null, nuevas, etiqueta, notas, alAbrirSuceso }: Props = $props();
+  let { dias, ahora, motivos, hueco, nombreCopia, seleccion, alElegir, acciones, reciente = null, nuevas, etiqueta, notas, alAbrirSuceso, marcas = null }: Props = $props();
+  const repoDe = (v: V) => v.repo ?? marcas?.repo ?? "";
+  /** Plan 0.8.0, F2: lo que se dice de sus comentarios y de si se conserva (para el lector de pantalla). */
+  function marcasEnTexto(v: V): string | null {
+    if (!marcas?.equipo) return null;
+    const c = conservadaDe(marcas.equipo, repoDe(v), v.id);
+    const n = comentariosDe(marcas.equipo, repoDe(v), v.id).length;
+    return [c ? `se conserva para siempre: ${c.motivo}` : null, n ? (n === 1 ? "1 comentario" : `${n} comentarios`) : null].filter(Boolean).join(", ") || null;
+  }
 
   const fmtHora = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" });
   const fmtLargo = new Intl.DateTimeFormat("es", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
@@ -77,6 +90,7 @@
       `copia «${nombreCopia(v.copia, v.repo)}»`,
       a ? `${a.texto}${a.motivo ? `: ${a.motivo}` : ""}` : null,
       estado(v.id),
+      marcasEnTexto(v),
       v.id === reciente ? "la más reciente" : null,
       ...(v.etiquetas ?? []),
     ]
@@ -175,6 +189,7 @@
                 {/if}
                 {#if v.id === reciente}<span class="badge badge-sm tone-accent" aria-hidden="true">La más reciente</span>{/if}
                 {#each v.etiquetas ?? [] as t (t)}<EtiquetaVersion nombre={t} oculta />{/each}
+                {#if marcas?.equipo}<span class="marcas" aria-hidden="true"><MarcasVersion equipo={marcas.equipo} repo={repoDe(v)} version={v.id} /></span>{/if}
                 <span class="hueco"></span>
                 {#if v.archivos != null}<span class="dato num" aria-hidden="true">{plural(v.archivos, "archivo", "archivos")}</span>{/if}
                 {#if estado(v.id)}<span class="estado" aria-hidden="true">{estado(v.id)}</span>{/if}
@@ -540,5 +555,10 @@
     from {
       background: color-mix(in srgb, var(--accent) 22%, transparent);
     }
+  }
+  .marcas {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 </style>

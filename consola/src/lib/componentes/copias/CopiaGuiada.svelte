@@ -60,7 +60,7 @@
     cliente: Cliente;
     prueba?: Uint8Array;
     version: string | null;
-    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean };
+    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean };
     /** Cómo queda en la regla 3-2-1-1-0 con lo elegido (sin repositorio, null). */
     regla: ReglaCopia | null;
     /** Las sugerencias de un clic que se pueden hacer con este equipo. */
@@ -82,7 +82,7 @@
   const k = $derived(copias[i]);
   const repoNombre = $derived(repos.find((r) => r.id === k.repo)?.nombre ?? "");
   const resumenDe: Record<PasoCopia, () => string> = {
-    cuando: () => cuandoEnFrase(copias, i),
+    cuando: () => cuandoEnFrase(copias, i, equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas),
     que: () => queEnFrase(k),
     donde: () => repoNombre || "Sin repositorio",
     resumen: () => "",
@@ -123,7 +123,7 @@
     <PasoGuiado n={1} titulo={TITULO_PASO.cuando} abierto={paso === "cuando"} hecho={pasoHecho(k, "cuando")} resumen={resumenDe.cuando()} onabrir={() => (paso = "cuando")}>
       {#snippet ayuda()}<Ayuda id="inicio-copia" />{/snippet}
       <form class="paso-form" onsubmit={siguiente}>
-        <CuandoEmpieza {copias} {i} admite={{ reglas: admite.reglas, cadenas: admite.cadenas, despues: admite.despues }} {version} equipo={equipo.nombre} guiado />
+        <CuandoEmpieza {copias} {i} admite={{ reglas: admite.reglas, cadenas: admite.cadenas, despues: admite.despues, termina: admite.termina }} {version} equipo={equipo.nombre} guiado hechas={equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas ?? null} />
         <div class="pie"><button class="btn btn-primary btn-sm">Siguiente<ArrowRight size={14} /></button></div>
       </form>
     </PasoGuiado>
