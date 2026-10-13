@@ -37,9 +37,15 @@ igual(
     `if((Get-FileHash $f -Algorithm SHA256).Hash -ne '${SHA.toUpperCase()}'){Remove-Item $f;throw 'El instalador descargado no es el esperado: no se ha instalado nada.'}`,
     "$p=Start-Process $f -ArgumentList '/S /CODE=ABCD-EFGH-JKMN-PQRS /SERVIDOR=https://192.0.2.10:8443' -Wait -PassThru",
     "Remove-Item $f",
-    "if($p.ExitCode -eq 0){Get-Content (Join-Path $env:ProgramFiles 'Resguardo Agente\\emparejamiento.txt')}else{Write-Host ('No se pudo vincular (salida '+$p.ExitCode+'). Mira el registro del agente.')}",
+    "if($p.ExitCode -eq 0){Get-Content (Join-Path $env:ProgramFiles 'Resguardo Agente\\emparejamiento.txt')}else{Write-Host ('No se pudo vincular (salida '+$p.ExitCode+').')",
+    "$l=Join-Path $env:ProgramData 'ResguardoAgente\\instalador.log'",
+    "if(Test-Path $l){Get-Content $l -Tail 1}",
+    "Write-Host 'Para vincularlo a mano, pega esto en esta misma ventana:'",
+    "Write-Host ('& '''+(Join-Path $env:ProgramFiles 'Resguardo Agente\\resguardo-agente.exe')+''' vincular ABCD-EFGH-JKMN-PQRS --servidor https://192.0.2.10:8443')}",
   ].join(";"),
 );
+cierto("14ee: si no vincula, enseña el motivo del instalador", linea.includes("Get-Content $l -Tail 1") && linea.includes("ResguardoAgente\\instalador.log"));
+cierto("14ee: y la orden para vincularlo a mano, con este código y este servidor", linea.includes("vincular ABCD-EFGH-JKMN-PQRS --servidor https://192.0.2.10:8443"));
 cierto("Una sola línea (sin saltos)", !/[\r\n]/.test(linea));
 cierto("La huella va fijada en la línea", linea.includes(`-ne '${SHA.toUpperCase()}'`));
 cierto("Si la huella no coincide, borra y no ejecuta nada", /Hash -ne '[0-9A-F]{64}'\)\{Remove-Item \$f;throw/.test(linea));

@@ -539,6 +539,11 @@ fn procesar(db: &dyn Almacen, e: &Evento, ahora: Ts) -> R<()> {
                 }
                 let sano = sanos.contains(&id);
                 let ok = problemas::titulo_ok(&inc.titulo);
+                // 14tt: volvió a funcionar (la vuelta siguiente salió bien): su aviso de la
+                // lista se marca solo como resuelto, sin que nadie tenga que verlo.
+                if sano {
+                    db.resolver_avisos(&ctx, equipo, &inc.tipo, &format!("{}.", inc.titulo), AVISO_RESUELTO)?;
+                }
                 cerrar(db, inc, sano, &ok, &nc, Some(&ne), ahora)?;
             }
             Ok(())

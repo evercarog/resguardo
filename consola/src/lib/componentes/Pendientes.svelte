@@ -6,7 +6,7 @@
   // equipo tiene en espera (de su resumen), diciendo desde cuál; esas se cancelan con
   // la orden `cancelar_espera`, inofensiva (sin clave).
   import { onMount, untrack } from "svelte";
-  import { Clock, X } from "@lucide/svelte";
+  import { Check, Clock, X } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
   import { seguirCambios } from "$lib/vivo.svelte";
@@ -91,6 +91,8 @@
             <span class="faint">
               {#if o.otraConsola}Desde otra consola: <strong class="consola">{o.otraConsola}</strong>{#if o.por}{" · "}pedida por {o.por}{/if}{:else}Pedida por {o.por ?? "?"}{/if}
               {#if o.aplica}{" · "}se aplica en <time datetime={o.aplica} use:tip={fechaLarga(o.aplica)}>{cuentaAtras(o.aplica, reloj.ahora)}</time>{/if}
+              <!-- 14oo: el equipo ya comprobó sus claves al recibirla (y las vuelve a comprobar al aplicarla). -->
+              {#if o.clavesComprobadas}{" · "}<span class="comprobadas" use:tip={o.repositorio ? `El equipo ya comprobó las claves (la contraseña, la de «${o.repositorio}»); las vuelve a comprobar al aplicarla.` : "El equipo ya comprobó las claves; las vuelve a comprobar al aplicarla."}><Check size={12} />claves comprobadas</span>{/if}
             </span>
           </span>
           {#if puede.ordenar(actual.cliente?.rol) && puedeCancelar(o)}
@@ -153,6 +155,12 @@
   .consola {
     font-weight: 500;
     color: var(--text-1);
+  }
+  .comprobadas {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--ok);
   }
   .conf {
     display: flex;

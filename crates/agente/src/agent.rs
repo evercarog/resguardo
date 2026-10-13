@@ -2993,6 +2993,32 @@ pub mod tests {
         assert_ne!(again.started, off.started);
         assert!(again.message.starts_with("Nada nuevo"), "{}", again.message);
 
+        // 14nn: una copia externa de la consola cuya carpeta de destino se borró a mano: no se
+        // crea otra vacía (lo subiría todo); tras 3 vueltas seguidas, se pausa y lo dice.
+        let mut o = load_config().repos[0].offsite.clone().unwrap();
+        o.provider = "destino:disco-externo".into();
+        o.verify = None;
+        set_offsite("agente-test", Some(o), None).unwrap();
+        fs::remove_dir_all(&dest_dir).unwrap();
+        for vuelta in 1..=crate::tasks::MAX_AUSENTE {
+            crate::tasks::request_now("agente-test", "offsite").unwrap();
+            assert_eq!(crate::tasks::run(), 2);
+            let t = crate::tasks::load_state();
+            let r = &t.runs["offsite:agente-test"];
+            assert!(r.message.starts_with(crate::tasks::DESTINO_AUSENTE), "{}", r.message);
+            assert_eq!(t.ausentes["offsite:agente-test"].seguidas, vuelta);
+            assert_eq!(t.ausentes["offsite:agente-test"].pausada.is_some(), vuelta == crate::tasks::MAX_AUSENTE);
+            assert_eq!(r.message.contains("Se pausó"), vuelta == crate::tasks::MAX_AUSENTE, "{}", r.message);
+        }
+        assert!(!dest_dir.exists(), "no se creó otra vacía");
+        // Volver a crearla desde cero (la carpeta otra vez) y «Ahora»: sale bien y la pausa se va.
+        assert_eq!(crate::tasks::prepare_destination(&src_access, &dest_access).unwrap(), "created");
+        crate::tasks::request_now("agente-test", "offsite").unwrap();
+        assert_eq!(crate::tasks::run(), 0);
+        let t = crate::tasks::load_state();
+        assert_eq!(t.runs["offsite:agente-test"].result, "ok", "{}", t.runs["offsite:agente-test"].message);
+        assert!(t.ausentes.is_empty());
+
         // v1.28: la verificación automática de la consola (`config.verificaciones`).
         let mut vin = crate::servidor_v2::Vinculo::default();
         vin.repos_v2.push(crate::gestion_v2::RepoV2 { id: "agente-test".into(), ..Default::default() });

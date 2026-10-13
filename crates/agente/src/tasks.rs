@@ -231,6 +231,10 @@ pub struct DestinoExterno {
     /// la ubicación es `rclone:rnube:…` y sus credenciales se ponen al usarla.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nube: Option<String>,
+    /// 14jj: la autoridad TLS propia del destino (un almacén), en un archivo de la carpeta
+    /// privada: cada subida y cada verificación la pasan a restic además de la del origen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cacert: Option<String>,
 }
 
 impl DestinoExterno {
@@ -816,6 +820,57 @@ pub struct TasksState {
     /// Verificación rotativa de cada destino.
     #[serde(default)]
     pub rotation: HashMap<String, Rotation>,
+    /// 14nn: copias externas o derivadas cuyo destino ya no existe (por la clave de su tarea).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub ausentes: HashMap<String, Ausente>,
+}
+
+/// 14nn: una copia externa o derivada que falla porque su destino ya no existe (la carpeta
+/// se borró a mano, o el repositorio «que ya existía» no aparece).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Ausente {
+    /// Vueltas seguidas que fallaron por eso.
+    pub seguidas: u32,
+    /// Pausada tras [`MAX_AUSENTE`] vueltas así: el `enabled_at` de la copia entonces (si se
+    /// vuelve a configurar, cambia y la pausa deja de valer). «Ahora» la intenta igual.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pausada: Option<String>,
+}
+
+/// 14nn: vueltas seguidas con el destino ausente antes de pausar la copia (y avisar una vez).
+pub const MAX_AUSENTE: u32 = 3;
+
+/// 14nn: la carpeta (de este equipo) del destino de una copia externa o derivada ya no está.
+pub const DESTINO_AUSENTE: &str = "La carpeta del destino de esta copia ya no existe (¿se borró?). No se crea otra para no subirlo todo \
+                                   de nuevo: quita esta copia o vuelve a crearla desde cero.";
+
+/// 14nn: ¿falló porque su destino ya no existe?
+pub fn destino_ausente(mensaje: &str) -> bool {
+    mensaje.starts_with(DESTINO_AUSENTE) || mensaje.starts_with(MISSING_EXISTING)
+}
+
+/// 14nn: ¿es una carpeta de este equipo que ya no existe, en un disco que sí está? (Un disco
+/// que no está conectado no cuenta: puede ser uno que se rota.)
+pub fn carpeta_borrada(location: &str) -> bool {
+    let p = std::path::Path::new(location);
+    if !p.is_absolute() || location.contains("://") || p.exists() {
+        return false;
+    }
+    p.ancestors().last().is_some_and(|raiz| raiz != p && raiz.is_dir())
+}
+
+/// 14tt: «No hubo respuesta en N s…» de una subida a su destino, dicho de la copia: qué pasa
+/// y qué se hace (sin el último mensaje del motor de copias, que aquí no ayuda).
+pub fn destino_sin_respuesta(mensaje: &str) -> Option<String> {
+    let resto = mensaje.strip_prefix(restic::SIN_RESPUESTA)?;
+    let segundos: String = resto.chars().take_while(char::is_ascii_digit).collect();
+    let en = if segundos.is_empty() { String::new() } else { format!(" en {segundos} s") };
+    Some(format!("El destino no respondió{en} (¿apagado o sin red?). Se reintenta en la próxima subida."))
+}
+
+/// 14nn: ¿está pausada esa copia por tener el destino ausente?
+fn pausada(state: &TasksState, key: &str, o: &Offsite) -> bool {
+    state.ausentes.get(key).and_then(|a| a.pausada.as_deref()) == Some(o.enabled_at.as_str())
 }
 
 pub fn key(kind: &str, repo_id: &str) -> String {
@@ -912,7 +967,7 @@ fn due_at(config: &AgentConfig, state: &mut TasksState, ctx: &DueContext, consum
     for repo in &config.repos {
         if let Some(o) = &repo.offsite {
             let asked = requested(state, &repo.id, "offsite", consume);
-            let paused = repo.active_pause(now).is_some();
+            let paused = repo.active_pause(now).is_some() || pausada(state, &key("offsite", &repo.id), o);
             let held = ctx.holds.contains(&repo.id);
             let last = since(state, &key("offsite", &repo.id), &o.enabled_at);
             let scheduled = match &o.schedule {
@@ -926,7 +981,7 @@ fn due_at(config: &AgentConfig, state: &mut TasksState, ctx: &DueContext, consum
         // Tarea 4b: las demás copias derivadas, cada una con su horario.
         for d in &repo.derived {
             let asked = requested(state, &repo.id, &derived_request(DERIVADA, &d.id), consume);
-            let paused = repo.active_pause(now).is_some();
+            let paused = repo.active_pause(now).is_some() || pausada(state, &derived_key(DERIVADA, &repo.id, &d.id), &d.offsite);
             let held = ctx.holds.contains(&repo.id);
             let last = since(state, &derived_key(DERIVADA, &repo.id, &d.id), &d.offsite.enabled_at);
             let scheduled = match &d.offsite.schedule {
@@ -1127,6 +1182,14 @@ pub fn run() -> i32 {
         });
         save_state(&mut state);
 
+        // 14nn: la carpeta del destino (de este equipo) ya no está y la copia ya había subido
+        // (o ya faltaba la vez anterior): no se crea otra vacía que lo suba todo de nuevo.
+        let carpeta_ausente = (kind == "offsite" || kind == DERIVADA)
+            && repo.offsite.as_ref().is_some_and(|o| {
+                let k = task_key(kind, &repo);
+                let ya_subio = state.runs.get(&k).is_some_and(|r| r.result == "ok") || state.ausentes.contains_key(&k);
+                o.provider.starts_with("destino:") && ya_subio && carpeta_borrada(&dest_access(o, secret).location)
+            });
         // Verificación rotativa: la parte que toca.
         let rot_key = task_rotation_key(kind, &repo);
         let parts = task_verify(&repo, kind).map_or(0, |v| v.rotate_parts);
@@ -1178,8 +1241,34 @@ pub fn run() -> i32 {
                     Err(e) => failed(RunRecord { started: Local::now().to_rfc3339(), ..Default::default() }, e),
                 }
             }
+            _ if carpeta_ausente => failed(RunRecord { started: Local::now().to_rfc3339(), ..Default::default() }, DESTINO_AUSENTE.into()),
             _ => offsite_repo(&repo, secret, repo.offsite.as_ref().unwrap(), load_guard().holds.contains_key(&repo.id), &mut report),
         };
+        let mut record = record;
+        if kind == "offsite" || kind == DERIVADA {
+            // 14tt: una copia que no llega a su destino: qué pasa y qué se hace.
+            if record.result == "error" {
+                if let Some(m) = destino_sin_respuesta(&record.message) {
+                    record.message = m;
+                }
+            }
+            // 14nn: tras MAX_AUSENTE vueltas seguidas con el destino ausente, se pausa (y el
+            // aviso sale una vez, con esta vuelta) en vez de fallar cada día.
+            let k = task_key(kind, &repo);
+            if record.result == "error" && destino_ausente(&record.message) {
+                let a = state.ausentes.entry(k).or_default();
+                a.seguidas += 1;
+                if a.seguidas >= MAX_AUSENTE && a.pausada.is_none() {
+                    a.pausada = repo.offsite.as_ref().map(|o| o.enabled_at.clone());
+                    record.message = format!(
+                        "{} Se pausó tras {MAX_AUSENTE} intentos seguidos: no se vuelve a intentar hasta que la cambies o pulses «Subir ahora».",
+                        record.message
+                    );
+                }
+            } else {
+                state.ausentes.remove(&k);
+            }
+        }
         let tag = match record.result.as_str() {
             "ok" => "",
             "warning" => "AVISO: ",
@@ -1197,7 +1286,6 @@ pub fn run() -> i32 {
             }
         }
         // El estado y el historial los leen todos los usuarios: sin rutas.
-        let mut record = record;
         record.message = crate::web::local_message(&record.message);
         crate::history::append(
             &crate::history::agent_file(),
@@ -1260,6 +1348,9 @@ pub fn cloud_env(location: &str, region: Option<&str>, key_id: Option<&str>, key
 /// Acceso al repositorio de destino. La contraseña es la propia si se eligió
 /// otra; si no, la misma del repositorio de origen.
 fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
+    // 14jj: la autoridad TLS propia del destino (un almacén). Las guardadas antes de llevarla
+    // consigo la toman del destino del equipo (`destino:<id>`), si la tiene.
+    let cacert = offsite.dest.cacert.clone().or_else(|| crate::gestion_v2::ca_del_destino(offsite.provider.strip_prefix("destino:")?));
     // Hacia otro destino de la app: su ubicación (con usuario de servidor si
     // lo tiene) y sus variables de nube, guardadas en los secretos.
     if let Some(location) = secret.offsite_location.as_ref().filter(|_| offsite.provider.starts_with("destino:")) {
@@ -1267,7 +1358,7 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
             location: location.clone(),
             password: secret.offsite_password.clone().unwrap_or_else(|| secret.password.clone()),
             rest_auth: None,
-            cacert: None,
+            cacert,
             env: secret.offsite_env.clone(),
         };
     }
@@ -1275,7 +1366,7 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
         location: offsite.location.clone(),
         password: secret.offsite_password.clone().unwrap_or_else(|| secret.password.clone()),
         rest_auth: None,
-        cacert: None,
+        cacert,
         env: cloud_env(&offsite.location, offsite.region.as_deref(), secret.offsite_key_id.as_deref(), secret.offsite_secret.as_deref()),
     }
 }
@@ -1321,12 +1412,39 @@ pub fn location_with_auth(location: &str, auth: Option<&(String, String)>) -> St
 
 /// `restic -r DESTINO <cmd> --from-repo ORIGEN`: credenciales del destino, y
 /// del origen su contraseña (RESTIC_FROM_PASSWORD) y su usuario de rest-server.
+/// 14jj: con las autoridades TLS propias de los dos (un mismo restic habla con el origen y
+/// con el destino), en un solo archivo si son distintas ([`autoridades`]).
 fn copy_access(src: &Access, dest: &Access) -> Access {
     let mut env = dest.env.clone();
     env.push(("RESTIC_FROM_PASSWORD".into(), src.password.clone()));
     // Tarea 4a: el origen en una nube conectada (su marca; la misma nube que el destino, si también va a una).
     env.extend(src.env.iter().filter(|(k, _)| k == crate::nube::MARCA).cloned());
-    Access { location: dest.location.clone(), password: dest.password.clone(), rest_auth: src.rest_auth.clone(), cacert: src.cacert.clone(), env }
+    let cacert = autoridades(src.cacert.as_deref(), dest.cacert.as_deref());
+    Access { location: dest.location.clone(), password: dest.password.clone(), rest_auth: src.rest_auth.clone(), cacert, env }
+}
+
+/// 14jj: el `--cacert` de un restic que habla con el origen y con el destino. Si los dos
+/// tienen autoridad propia y son distintas, un archivo con las dos (restic carga todos los
+/// certificados del archivo), en la carpeta privada y con el nombre de su contenido; si solo
+/// uno la tiene, la suya. Antes solo iba la del origen y un destino con autoridad propia (un
+/// almacén) fallaba con «Problema con el certificado HTTPS del servidor».
+pub fn autoridades(origen: Option<&str>, destino: Option<&str>) -> Option<String> {
+    let (o, d) = match (origen, destino) {
+        (Some(o), Some(d)) if o != d => (o, d),
+        (o, d) => return d.or(o).map(str::to_string),
+    };
+    let (Ok(a), Ok(b)) = (fs::read_to_string(o), fs::read_to_string(d)) else { return Some(d.to_string()) };
+    if a.trim() == b.trim() {
+        return Some(d.to_string());
+    }
+    let juntas = format!("{}\n{}\n", a.trim_end(), b.trim_end());
+    let huella = <sha2::Sha256 as sha2::Digest>::digest(juntas.as_bytes());
+    let nombre: String = huella.iter().take(8).map(|x| format!("{x:02x}")).collect();
+    let ruta = agent::private_dir().join(format!("ca-copia-{nombre}.pem"));
+    if fs::read_to_string(&ruta).ok().as_deref() != Some(juntas.as_str()) && fs::write(&ruta, &juntas).is_err() {
+        return Some(d.to_string());
+    }
+    Some(ruta.display().to_string())
 }
 
 // ---------- Verificación ----------
@@ -1365,7 +1483,7 @@ pub fn verify_args(verify: &Verify, part: u32) -> Vec<String> {
 /// ejecuta «restic check» en el servidor», que no le dice qué hacer a quien mira la consola
 /// (prueba de resistencia con un archivo del almacén estropeado, docs/estabilidad.md).
 pub const DATOS_DANADOS: &str =
-    "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare («restic repair packs»).";
+    "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare.";
 
 /// ¿La salida de `restic check` (en minúsculas) habla de datos dañados (no de conexión, contraseña…)?
 fn datos_danados(text: &str) -> bool {
@@ -1478,8 +1596,8 @@ pub fn chunker_polynomial(acc: &Access) -> Result<String, String> {
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let json = text.lines().skip_while(|l| !l.trim_start().starts_with('{')).collect::<Vec<_>>().join("\n");
-    let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| format!("Respuesta inesperada de restic: {e}"))?;
-    v["chunker_polynomial"].as_str().map(str::to_string).ok_or_else(|| "Respuesta inesperada de restic: falta el troceado.".into())
+    let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| format!("Respuesta inesperada del motor de copias: {e}"))?;
+    v["chunker_polynomial"].as_str().map(str::to_string).ok_or_else(|| "Respuesta inesperada del motor de copias: falta el troceado.".into())
 }
 
 /// ¿Ya está esa versión del origen en el destino? Como `restic copy`: por su
@@ -1505,7 +1623,7 @@ fn failed(mut record: RunRecord, message: String) -> RunRecord {
 
 /// `held`: la subida está frenada por un cambio inusual y se hace porque se
 /// pidió a mano: se sube, pero no se aplica la retención (no se borra nada allí).
-fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool, report: &mut dyn FnMut(&TaskProgress)) -> RunRecord {
+pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool, report: &mut dyn FnMut(&TaskProgress)) -> RunRecord {
     let mut record = RunRecord { started: Local::now().to_rfc3339(), ..Default::default() };
     let src = source_access(repo, secret);
     let dest = match dest_access_listo(offsite, secret) {
@@ -1825,6 +1943,39 @@ mod tests {
         let held = DueContext { holds: [config.repos[0].id.clone()].into(), ..Default::default() };
         let todo = due_at(&config, &mut state, &held, false, now);
         assert_eq!(todo.iter().map(|(k, _)| *k).collect::<Vec<_>>(), ["verify"]);
+        // 14nn: pausada por tener el destino ausente, la copia externa tampoco toca.
+        let enabled_at = config.repos[0].offsite.as_ref().unwrap().enabled_at.clone();
+        state.ausentes.insert(key("offsite", &config.repos[0].id), Ausente { seguidas: MAX_AUSENTE, pausada: Some(enabled_at) });
+        let todo = due_at(&config, &mut state, &ctx, false, now);
+        assert_eq!(todo.iter().map(|(k, _)| *k).collect::<Vec<_>>(), ["verify"]);
+        // Vuelta a configurar (otro `enabled_at`): la pausa ya no vale.
+        config.repos[0].offsite.as_mut().unwrap().enabled_at = at("2026-09-30 07:00").to_rfc3339();
+        assert_eq!(due_at(&config, &mut state, &ctx, false, now).len(), 2);
+    }
+
+    /// 14nn y 14tt: el destino que ya no está y el que no responde, dichos de la copia.
+    #[test]
+    fn destino_ausente_o_sin_respuesta() {
+        let b = std::env::temp_dir().join(format!("resguardo-ausente-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(b.join("repo")).unwrap();
+        let s = |p: std::path::PathBuf| p.display().to_string();
+        assert!(!carpeta_borrada(&s(b.join("repo"))), "la carpeta está");
+        assert!(carpeta_borrada(&s(b.join("borrada"))), "no está, y su disco sí");
+        assert!(!carpeta_borrada("rest:https://192.168.1.20:8000/pc-01/docs"));
+        assert!(!carpeta_borrada("rclone:rnube:Resguardo/docs"));
+        assert!(!carpeta_borrada("s3:https://s3.ejemplo.com/cubo/docs"));
+        assert!(!carpeta_borrada("docs"), "relativa: no se sabe");
+        if cfg!(windows) {
+            // Un disco que no está conectado (p. ej. uno que se rota): no es «borrada».
+            let libre = ('F'..='Z').rev().find(|l| !std::path::Path::new(&format!("{l}:\\")).exists()).unwrap();
+            assert!(!carpeta_borrada(&format!("{libre}:\\Copias\\docs")));
+        }
+        assert!(destino_ausente(DESTINO_AUSENTE) && destino_ausente(MISSING_EXISTING));
+        assert!(!destino_ausente("No queda espacio en el destino."));
+        let m = destino_sin_respuesta("No hubo respuesta en 40 s (¿apagado o sin red?). Lo último que dijo: Load(<config/0>, 0, 0) returned error").unwrap();
+        assert_eq!(m, "El destino no respondió en 40 s (¿apagado o sin red?). Se reintenta en la próxima subida.");
+        assert!(destino_sin_respuesta("Contraseña incorrecta.").is_none());
+        let _ = fs::remove_dir_all(&b);
     }
 
     fn t(s: &str) -> DateTime<Local> {
@@ -2145,7 +2296,7 @@ mod tests {
         assert!(o.dest.normal() && o.dest.lock_days().is_none());
         assert!(!serde_json::to_string(&o).unwrap().contains(r#""dest":"#), "un agente anterior la lee igual");
         let mut o2 = o.clone();
-        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None };
+        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None, cacert: None };
         let t = serde_json::to_string(&o2).unwrap();
         assert!(t.contains(r#""dest":{"existing":true,"object_lock_days":30}"#), "{t}");
         assert_eq!(serde_json::from_str::<Offsite>(&t).unwrap(), o2);
@@ -2243,7 +2394,7 @@ mod tests {
             enabled_at: Local::now().to_rfc3339(),
             guard: None,
             verify: None,
-            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None },
+            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None, cacert: None },
             filtro: None,
         }
     }
@@ -2458,6 +2609,39 @@ mod tests {
                 assert!(tamano_datos(&nube_dir) < todo - MIB as u64, "con prune se libera");
             }
         }
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    /// 14jj: el `--cacert` de un restic que habla con el origen y con el destino.
+    #[test]
+    fn autoridades_del_origen_y_del_destino() {
+        let _l = crate::restic::tests::real_repo_lock();
+        let b = std::env::temp_dir().join(format!("resguardo-autoridades-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("RESGUARDO_AGENT_DIR", b.join("agente"));
+        agent::prepare_dir().unwrap();
+        let (o, d, igual) = (b.join("origen.pem"), b.join("destino.pem"), b.join("igual.pem"));
+        fs::write(&o, "-----BEGIN CERTIFICATE-----\nORIGEN\n-----END CERTIFICATE-----\n").unwrap();
+        fs::write(&d, "-----BEGIN CERTIFICATE-----\nDESTINO\n-----END CERTIFICATE-----\n").unwrap();
+        fs::write(&igual, fs::read(&d).unwrap()).unwrap();
+        let (o, d, igual) = (o.display().to_string(), d.display().to_string(), igual.display().to_string());
+        // Solo uno la tiene: la suya. Ninguno: nada.
+        assert_eq!(autoridades(None, None), None);
+        assert_eq!(autoridades(Some(&o), None).as_deref(), Some(o.as_str()));
+        assert_eq!(autoridades(None, Some(&d)).as_deref(), Some(d.as_str()));
+        assert_eq!(autoridades(Some(&d), Some(&d)).as_deref(), Some(d.as_str()));
+        assert_eq!(autoridades(Some(&igual), Some(&d)).as_deref(), Some(d.as_str()), "la misma autoridad en dos archivos");
+        // Las dos, distintas: un archivo con las dos, en la carpeta privada (siempre el mismo).
+        let juntas = autoridades(Some(&o), Some(&d)).unwrap();
+        assert!(juntas.starts_with(&agent::private_dir().display().to_string()), "{juntas}");
+        let t = fs::read_to_string(&juntas).unwrap();
+        assert!(t.contains("ORIGEN") && t.contains("DESTINO"), "{t}");
+        assert_eq!(autoridades(Some(&o), Some(&d)).unwrap(), juntas);
+        // Y el acceso de un `copy` las lleva.
+        let src = Access { cacert: Some(o.clone()), ..Access::new("rest:https://origen/r", "a") };
+        let dest = Access { cacert: Some(d.clone()), ..Access::new("rest:https://destino/r", "b") };
+        assert_eq!(copy_access(&src, &dest).cacert.as_deref(), Some(juntas.as_str()));
+        assert_eq!(copy_access(&Access::new("C:/disco/r", "a"), &dest).cacert.as_deref(), Some(d.as_str()), "origen local: la del destino");
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = fs::remove_dir_all(&b);
     }
 }

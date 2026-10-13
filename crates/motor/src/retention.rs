@@ -256,7 +256,7 @@ pub(crate) struct Group {
 pub(crate) fn grupos_de_forget(out: &[u8]) -> Result<Vec<Group>, String> {
     let text = String::from_utf8_lossy(out);
     let json = text.lines().find(|l| l.trim_start().starts_with('[')).unwrap_or("[]");
-    serde_json::from_str(json).map_err(|e| format!("Respuesta inesperada de restic: {e}"))
+    serde_json::from_str(json).map_err(|e| format!("Respuesta inesperada del motor de copias: {e}"))
 }
 
 /// restic escribe `null` en vez de `[]` cuando una lista está vacía (p. ej.

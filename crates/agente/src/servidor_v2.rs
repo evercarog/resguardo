@@ -376,6 +376,10 @@ pub struct Esperado {
     pub huella_ca: Option<String>,
     /// El cliente al que va el equipo.
     pub cliente: Option<String>,
+    /// 14ee: cuánto seguir intentando llegar al servidor (el instalador, recién arrancado el
+    /// servicio y quizá con la red o el cortafuegos aún despertando). Solo antes de unirse:
+    /// una vez enviado el código no se repite nada (se gastaría).
+    pub esperar: Duration,
 }
 
 /// ¿Es la huella la esperada? (sin distinguir mayúsculas; los `:` cuentan igual).
@@ -417,14 +421,27 @@ pub fn vincular_con(url: &str, codigo: &str, nombre: &str, esperado: &Esperado) 
         return Err("Escribe la dirección del servidor con https:// (p. ej. https://192.168.1.20:8443).".into());
     }
     // 1. La autoridad TLS (sin comprobar esta única vez: la autentica el SAS v3, que la incluye).
+    // 14ee: si el servidor no responde, se sigue intentando hasta `esperar` (el instalador).
     let ca_pem = if url.starts_with("https://") {
-        let mut r = agente_http(&url, None)?.get(&format!("{url}/api/servidor/ca")).call().map_err(|e| match e {
-            // Aquí aún no se comprueba el certificado: un fallo de TLS es que no habla HTTPS.
-            ureq::Error::Tls(_) | ureq::Error::Rustls(_) => {
-                "En esa dirección no responde un servidor HTTPS. Revisa la dirección y el puerto (por defecto, 8443).".to_string()
+        let hasta = std::time::Instant::now() + esperado.esperar;
+        let mut avisado = false;
+        let mut r = loop {
+            match agente_http(&url, None)?.get(&format!("{url}/api/servidor/ca")).call() {
+                Ok(r) => break r,
+                // Aquí aún no se comprueba el certificado: un fallo de TLS es que no habla HTTPS.
+                Err(ureq::Error::Tls(_) | ureq::Error::Rustls(_)) => {
+                    return Err("En esa dirección no responde un servidor HTTPS. Revisa la dirección y el puerto (por defecto, 8443).".into());
+                }
+                Err(e) if std::time::Instant::now() + Duration::from_secs(3) < hasta => {
+                    if !avisado {
+                        avisado = true;
+                        crate::agent::log(&format!("Vincular: {url} aún no responde ({}); se sigue intentando.", explicar_error_conexion(&e)));
+                    }
+                    std::thread::sleep(Duration::from_secs(3));
+                }
+                Err(e) => return Err(explicar_error_conexion(&e)),
             }
-            e => explicar_error_conexion(&e),
-        })?;
+        };
         let pem = r.body_mut().read_to_string().unwrap_or_default();
         if !pem.contains("BEGIN CERTIFICATE") {
             return Err("En esa dirección no hay un Resguardo Server (no devolvió su certificado). Revisa la dirección y el puerto (por defecto, 8443).".into());
@@ -1982,7 +1999,7 @@ fn vincular_local_si_toca() {
             return;
         }
     };
-    let esperado = Esperado { huella_ca: Some(d.huella_ca.clone()), cliente: Some(d.cliente.clone()) };
+    let esperado = Esperado { huella_ca: Some(d.huella_ca.clone()), cliente: Some(d.cliente.clone()), ..Default::default() };
     match vincular_con(&d.servidor, &d.codigo, &d.nombre, &esperado) {
         Ok(_) => {
             let _ = std::fs::remove_file(&p);

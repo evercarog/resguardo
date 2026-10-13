@@ -127,14 +127,12 @@ fn spawn_error(e: std::io::Error) -> String {
         if !BUNDLED_ONLY.load(Ordering::Relaxed) {
             "No se encontró el ejecutable de restic. Instálalo y asegúrate de que esté en el PATH.".into()
         } else if cfg!(windows) {
-            "No se encontró restic junto a Resguardo. Vuelve a instalar Resguardo para recuperarlo.".into()
+            "Falta el motor de copias junto a Resguardo. Vuelve a instalar Resguardo para recuperarlo.".into()
         } else {
-            "No se encontró restic junto al agente ni en /usr/bin/restic. Vuelve a instalar Resguardo Agente \
-             (su paquete trae el restic oficial)."
-                .into()
+            "Falta el motor de copias junto al agente. Vuelve a instalar Resguardo Agente (su paquete lo trae).".into()
         }
     } else {
-        format!("No se pudo ejecutar restic: {e}")
+        format!("No se pudo ejecutar el motor de copias: {e}")
     }
 }
 
@@ -293,7 +291,7 @@ fn explain(stderr: &str) -> Option<String> {
     } else if s.contains("ciphertext verification failed") || s.contains("pack id does not match") || s.contains("does not match, want") {
         // Un archivo de datos del repositorio dañado (en la prueba de resistencia: la retención
         // del almacén lo encontró al podar y salía el texto de restic tal cual).
-        "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare («restic repair packs»)."
+        "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare."
     } else if s.contains("401 unauthorized") || s.contains("(401)") {
         "El servidor rechazó el usuario o la contraseña de acceso (401). Comprueba en el servidor que ese usuario sigue \
          existiendo y tiene esa contraseña."
@@ -317,8 +315,8 @@ fn explain(stderr: &str) -> Option<String> {
     } else if s.contains("repository is already locked") || s.contains("unable to create lock") {
         BUSY
     } else if s.contains("unknown flag") || s.contains("unknown shorthand flag") {
-        "La versión de restic de este equipo es demasiado antigua para Resguardo (hace falta la 0.17 o posterior). \
-         Reinstala Resguardo, que trae la suya, o pon el restic oficial junto al agente."
+        "El motor de copias de este equipo es demasiado antiguo para Resguardo (hace falta la 0.17 o posterior). \
+         Reinstala Resguardo, que trae el suyo."
     } else if s.contains("wrong password") || s.contains("no key found") {
         "Contraseña incorrecta."
     } else if (s.contains("unable to open config file") || s.contains("is there a repository at")) && !s.contains("://") {
@@ -403,7 +401,7 @@ const BUSY: &str = "El repositorio está ocupado por otra operación (por ejempl
 
 /// restic terminó sin código de salida: lo cortó una señal (otro programa, el
 /// sistema sin memoria o el apagado del equipo).
-pub const KILLED: &str = "restic se detuvo de golpe (lo cerró el sistema, otro programa o el apagado del equipo). \
+pub const KILLED: &str = "El motor de copias se detuvo de golpe (lo cerró el sistema, otro programa o el apagado del equipo). \
                           Vuelve a intentarlo; si se repite, revisa la memoria libre del equipo.";
 
 /// Código 10 de restic: no hay repositorio en esa ubicación.
@@ -447,9 +445,9 @@ fn exit_error_text(code: Option<i32>, stderr: &str) -> String {
         Some(12) => "Contraseña incorrecta.".to_string(),
         _ => explain(stderr).unwrap_or_else(|| {
             if let Some(line) = key_line(stderr) {
-                format!("restic: {line}")
+                format!("Falló: {line}")
             } else if let Some(c) = code {
-                format!("restic terminó con un error (código {c}). Vuelve a intentarlo; si se repite, mira el registro.")
+                format!("El motor de copias terminó con un error (código {c}). Vuelve a intentarlo; si se repite, mira el registro.")
             } else {
                 KILLED.to_string()
             }
@@ -576,7 +574,7 @@ fn run_child(child: &mut Child, timeout: Duration, cancel: Option<&AtomicBool>, 
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
             Ok(None) => {}
-            Err(e) => break Err(format!("No se pudo esperar a restic: {e}")),
+            Err(e) => break Err(format!("No se pudo esperar al motor de copias: {e}")),
         }
         if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
             break Err(CANCELLED.to_string());
@@ -602,14 +600,20 @@ fn run_child(child: &mut Child, timeout: Duration, cancel: Option<&AtomicBool>, 
         Err(msg) if msg.is_empty() => {
             let secs = timeout.as_secs();
             Err(match (explain(&err), last_line(&err)) {
-                (Some(why), _) => format!("{why}\n\n(restic seguía reintentando tras {secs} s y se detuvo.)"),
-                (None, Some(line)) => format!("No hubo respuesta en {secs} s. Último mensaje de restic:\n{line}"),
-                (None, None) => format!("No hubo respuesta en {secs} s. Revisa la ubicación, el usuario y la contraseña del servidor."),
+                (Some(why), _) => format!("{why} (se siguió intentando {secs} s y se detuvo)."),
+                // 14tt: en una sola línea (los avisos se quedan con la primera) y sin «lo
+                // último que dijo» si no dijo nada.
+                (None, Some(line)) => format!("{SIN_RESPUESTA}{secs} s (¿apagado o sin red?). Lo último que dijo: {line}"),
+                (None, None) => format!("{SIN_RESPUESTA}{secs} s (¿apagado o sin red?). Revisa también la ubicación, el usuario y la contraseña."),
             })
         }
         Err(msg) => Err(msg),
     }
 }
+
+/// Principio del mensaje de una vuelta que no tuvo respuesta en su plazo (14tt): el agente
+/// lo reconoce para decir qué pasa con una copia derivada o externa que no llega.
+pub const SIN_RESPUESTA: &str = "No hubo respuesta en ";
 
 /// Lanza restic con stdout y stderr conectados para leerlos mientras se ejecuta.
 /// Si el acceso necesita preparación (una nube por rclone), hay que usar
@@ -737,7 +741,7 @@ pub fn stats(access: &Access) -> Result<RepoStats, String> {
 pub fn parse_stats(out: &[u8]) -> Result<RepoStats, String> {
     let text = String::from_utf8_lossy(out);
     let json = text.lines().find(|l| l.trim_start().starts_with('{')).unwrap_or("{}");
-    serde_json::from_str(json).map_err(|e| format!("Respuesta inesperada de restic: {e}"))
+    serde_json::from_str(json).map_err(|e| format!("Respuesta inesperada del motor de copias: {e}"))
 }
 
 pub fn snapshots(access: &Access) -> Result<Vec<Snapshot>, String> {
@@ -746,7 +750,7 @@ pub fn snapshots(access: &Access) -> Result<Vec<Snapshot>, String> {
 
 /// La salida de `restic snapshots --json`.
 pub fn parse_snapshots(out: &[u8]) -> Result<Vec<Snapshot>, String> {
-    serde_json::from_slice(out).map_err(|e| format!("Respuesta inesperada de restic: {e}"))
+    serde_json::from_slice(out).map_err(|e| format!("Respuesta inesperada del motor de copias: {e}"))
 }
 
 /// Un elemento de un snapshot (`restic ls --json`).
@@ -944,7 +948,7 @@ pub mod tests {
         assert!(e("Fatal: unable to open config file: stat E:\\Backups\\config: The system cannot find the path specified.\nIs there a repository at the following location?")
             .contains("¿Está conectado el disco?"));
         // Desconocido: solo la línea importante, no todo el volcado.
-        assert_eq!(e("detalle 1\nFatal: algo raro pasó\ndetalle 2"), "restic: algo raro pasó");
+        assert_eq!(e("detalle 1\nFatal: algo raro pasó\ndetalle 2"), "Falló: algo raro pasó");
         // restic anterior a la 0.17 (p. ej. el de Debian 12) no conoce las opciones nuevas.
         assert!(e("unknown flag: --skip-if-unchanged").contains("0.17"));
         // Sin código de salida (lo mató una señal) y sin nada en stderr.

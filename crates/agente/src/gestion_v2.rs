@@ -369,18 +369,28 @@ pub fn acceso_destino(d: &Destino, ruta: &str, contrasena: &str) -> Result<resgu
         "nube" => (None, crate::nube::entorno_restic(d.nube.as_deref().unwrap_or_default())?),
         _ => (None, Vec::new()),
     };
-    let cacert = match &d.ca_pem {
-        Some(pem) => {
-            let path = crate::agent::private_dir().join(format!("ca-destino-{}.pem", d.id));
-            if std::fs::read_to_string(&path).ok().as_deref() != Some(pem.as_str()) {
-                crate::agent::prepare_dir()?;
-                std::fs::write(&path, pem).map_err(|e| format!("No se pudo guardar la autoridad del destino: {e}"))?;
-            }
-            Some(path.display().to_string())
-        }
-        None => None,
-    };
+    let cacert = archivo_ca(d)?;
     Ok(resguardo_motor::restic::Access { location, password: contrasena.to_string(), rest_auth, cacert, env })
+}
+
+/// La autoridad TLS propia de un destino (un almacén) en un archivo de la carpeta privada
+/// (lo que pide `--cacert`), o `None` si no tiene.
+fn archivo_ca(d: &Destino) -> Result<Option<String>, String> {
+    let Some(pem) = &d.ca_pem else { return Ok(None) };
+    let path = crate::agent::private_dir().join(format!("ca-destino-{}.pem", d.id));
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(pem.as_str()) {
+        crate::agent::prepare_dir()?;
+        std::fs::write(&path, pem).map_err(|e| format!("No se pudo guardar la autoridad del destino: {e}"))?;
+    }
+    Ok(Some(path.display().to_string()))
+}
+
+/// 14jj: la autoridad TLS del destino `id` del equipo (para las copias externas o derivadas
+/// guardadas antes de llevarla consigo), si la tiene.
+pub fn ca_del_destino(id: &str) -> Option<String> {
+    let v = crate::servidor_v2::cargar()?;
+    let d = v.destinos.iter().find(|d| d.id == id)?;
+    archivo_ca(d).ok().flatten()
 }
 
 /// Tarea 4a: la nube de un destino `nube`, conectada en este equipo.
@@ -1896,9 +1906,9 @@ fn preparar_derivada(
     // Lo que se va a usar, comprobado antes de guardar nada.
     let src = acceso(v, repo)?;
     let contrasena_destino = c["contrasena_destino"].as_str().filter(|s| !s.is_empty()).map(str::to_string).or_else(|| misma.then(guardada).flatten());
-    // Sin certificado propio: la subida usa el del origen (`tasks::dest_access`).
-    let d_sin_ca = Destino { ca_pem: None, ..d.clone() };
-    let dest_acc = acceso_destino(&d_sin_ca, &ruta, contrasena_destino.as_deref().unwrap_or(&src.password))?;
+    // 14jj: con la autoridad TLS propia del destino (un almacén), si la tiene: cada subida
+    // lleva las dos, la del origen y la del destino (`tasks::copy_access`).
+    let dest_acc = acceso_destino(&d, &ruta, contrasena_destino.as_deref().unwrap_or(&src.password))?;
     if dest_acc.location.trim_end_matches(['/', '\\']).eq_ignore_ascii_case(src.location.trim_end_matches(['/', '\\'])) {
         return Err("Ese es el mismo repositorio de origen: la copia tiene que ir a otro.".into());
     }
@@ -1908,12 +1918,18 @@ fn preparar_derivada(
         location: con_auth.clone(),
         password: dest_acc.password.clone(),
         rest_auth: None,
-        cacert: None,
+        cacert: dest_acc.cacert.clone(),
         env: dest_acc.env.clone(),
     };
     let probado = probar_externa(&src, &dest_run, existente, solo_probar)?;
     let solo_anadir = (d.tipo == "rest")
-        .then(|| crate::protection::probe_append_only(&dest_acc.location, dest_acc.rest_auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), None))
+        .then(|| {
+            crate::protection::probe_append_only(
+                &dest_acc.location,
+                dest_acc.rest_auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())),
+                dest_acc.cacert.as_deref(),
+            )
+        })
         .flatten()
         == Some(true);
     let efecto = efecto_retencion(retencion.is_some(), bloqueo, solo_anadir);
@@ -1937,7 +1953,13 @@ fn preparar_derivada(
         retencion,
         destino: d,
         nuevo,
-        dest: crate::tasks::DestinoExterno { existing: existente, object_lock_days: bloqueo, append_only: solo_anadir, nube: nube.clone() },
+        dest: crate::tasks::DestinoExterno {
+            existing: existente,
+            object_lock_days: bloqueo,
+            append_only: solo_anadir,
+            nube: nube.clone(),
+            cacert: dest_acc.cacert.clone(),
+        },
         // Las credenciales de una nube no se guardan con la copia: se ponen al día en cada uso.
         creds: crate::agent::OffsiteSecrets {
             password: contrasena_destino,

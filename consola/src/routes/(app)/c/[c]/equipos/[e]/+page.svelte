@@ -114,7 +114,7 @@
   // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   // v1.56: nombre, etiquetas y observación del equipo iguales en todas sus consolas; quitar destinos sin uso.
-  import { admiteDatosEquipo, alcanceDatos, cambiadoDesde, conDatosDelEquipo, destinoQueQuedaVacio, destinoQuitable, problemaDestinoPaso, TEXTO_PROBLEMA_PASO, usosDestino, variasConsolas } from "$lib/datosEquipo";
+  import { admiteDatosEquipo, alcanceDatos, cambiadoDesde, conDatosDelEquipo, destinoQueQuedaVacio, destinoQuitable, problemaDestinoPaso, TEXTO_PROBLEMA_PASO, textoDestinoAusente, usosDestino, variasConsolas } from "$lib/datosEquipo";
   import { pedirAlEquipo } from "$lib/pedirAlEquipo";
   import AlmacenEnOtraConsola from "$lib/componentes/AlmacenEnOtraConsola.svelte";
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
@@ -1091,6 +1091,8 @@
                 {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
                   {@const raro = problemaDestinoPaso(equipo, r.externa.destino_id, r.externa.destino)}
                   {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia externa</button>{/if}</p>{/if}
+                  <!-- 14nn: su destino ya no existe: quitarla o volver a crearla desde cero. -->
+                  {#if inf?.externa?.motivo === "destino_ausente"}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {textoDestinoAusente(inf.externa)}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar esta copia</button>{#if !r.solo_lectura}<button class="btn btn-sm" onclick={() => abrirExterna(r)}>Volver a crearla desde cero</button>{/if}{/if}</p>{/if}
                 {/if}
                 {#each r.derivadas ?? [] as dv (dv.id)}
                   {@const ult = ultimaDerivada(r, dv.id)}
@@ -1100,7 +1102,9 @@
                       Copia derivada a «{dv.destino ?? "otro destino"}» · {cuandoEnFrase(dv.cuando).toLowerCase()}{#if filtroEnFrase(dv.filtro)}{" · "}solo las versiones {filtroEnFrase(dv.filtro)}{/if}{#each detallesExterna(dv) as d (d)}{" · "}{d}{/each}
                       {#if dv.activa === false}<span class="faint">{" · "}sin copias activas en el repositorio: no se hace</span>{/if}
                       {#if problemaDestinoPaso(equipo, dv.destino_id, dv.destino)}{@const raro = problemaDestinoPaso(equipo, dv.destino_id, dv.destino)!}<span class="paso-raro en-linea" role="note"><TriangleAlert size={13} /><span class="txt">{TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarDerivada(r, dv)}>Quitar la copia derivada</button>{/if}</span>{/if}
-                      {#if ult?.resultado}{" · "}<Chip pequeno tono={ult.resultado === "fallo" ? "bad" : "ok"} texto={ult.resultado === "fallo" ? "Falló" : "Hecha"} />{/if}
+                      {#if ult?.resultado}{" · "}<Chip pequeno tono={ult.resultado === "fallo" ? "bad" : "ok"} texto={ult.resultado === "fallo" ? (ult.pausada ? "En pausa" : "Falló") : "Hecha"} />{/if}
+                      <!-- 14nn: su destino ya no existe: quitarla o volver a crearla desde cero. -->
+                      {#if ult?.motivo === "destino_ausente"}<span class="paso-raro en-linea" role="note"><TriangleAlert size={13} /><span class="txt">{textoDestinoAusente(ult)}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarDerivada(r, dv)}>Quitar esta copia</button><button class="btn btn-sm" onclick={() => (derivadaPara = { repo: r, derivada: dv })}>Volver a crearla desde cero</button>{/if}</span>{/if}
                     </span>
                     {#if puede.ordenar(rol)}
                       <MenuAcciones

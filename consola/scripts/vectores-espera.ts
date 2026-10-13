@@ -45,7 +45,7 @@ const equipo: Equipo = {
       { id: "b", nombre: "consola.ejemplo.com", url: "https://consola.ejemplo.com", identidad: ID_OTRA, sal_cliente: null, ultimo_contacto: null, desde: null, esta: false },
     ],
     en_espera: [
-      espera("o-propia", { nombre: "Oficina", identidad: ID_ESTA, esta: true }, 20),
+      espera("o-propia", { nombre: "Oficina", identidad: ID_ESTA, esta: true }, 20, { claves_comprobadas: true, repositorio: "Facturas" }),
       espera("o-otra", { nombre: null, identidad: ID_OTRA, esta: false }, 2, { tipo: "pausar", descripcion: "Pausar las copias", por: "Bruno" }),
       espera("o-caducada", { nombre: "En línea", identidad: ID_OTRA, esta: false }, -30),
     ],
@@ -77,6 +77,7 @@ cierto("ninguna dirección de consola en la lista", !JSON.stringify(filas).inclu
 igual("nombre de la consola: el suyo en el equipo", nombreConsola(equipo, { nombre: "En línea", identidad: ID_OTRA, esta: false }), "En línea");
 const conNombre: Equipo = { ...equipo, resumen: { ...equipo.resumen, consolas: equipo.resumen!.consolas!.map((c) => (c.esta ? c : { ...c, nombre: "Consola del integrador" })) } };
 igual("…o el de `consolas` con esa identidad, si no es una dirección", nombreConsola(conNombre, { nombre: null, identidad: ID_OTRA, esta: false }), "Consola del integrador");
+igual("14oo: la propia dice que el equipo ya comprobó sus claves (y de qué repositorio); la otra, no", [filas[1].clavesComprobadas, filas[1].repositorio, filas[0].clavesComprobadas, filas[0].repositorio], [true, "Facturas", false, null]);
 igual("cancelar las de otra consola: si el equipo lo admite", [admiteCancelarEspera(equipo), admiteCancelarEspera(viejo)], [true, false]);
 igual("con un equipo o un servidor anterior (sin `en_espera`): solo las propias", filasEnEspera([propia], [viejo], AHORA).map((f) => [f.id, f.cancelar]), [["o-propia", "servidor"]]);
 

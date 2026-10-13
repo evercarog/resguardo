@@ -199,6 +199,11 @@ fn fallo_de_copia_y_volvio_a_funcionar() {
     assert_eq!(w.last().unwrap()["evento"], "recuperacion");
     assert_eq!(w.last().unwrap()["avisos"][0]["resuelto"], true);
     assert!(p.st.db.notif_incidentes_abiertos(None).unwrap().is_empty());
+    // 14tt: el aviso de la lista se marca solo como resuelto.
+    assert!(!p.st.db.avisos(&p.ctx, true).unwrap().iter().any(|a| a.tipo == "copia_fallida"), "ya no está sin ver");
+    let todos = p.st.db.avisos(&p.ctx, false).unwrap();
+    let a = todos.iter().find(|a| a.tipo == "copia_fallida").unwrap();
+    assert_eq!(a.visto_por.as_deref(), Some(crate::notificaciones::AVISO_RESUELTO));
     // Ir bien otra vez no repite nada.
     p.informe(copia("ok", "2026-10-04T09:00:00Z"));
     p.pasada(T0 + 3 * 3600 + 60);

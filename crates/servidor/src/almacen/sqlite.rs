@@ -1307,6 +1307,15 @@ impl Almacen for Sqlite {
             Ok(())
         })
     }
+    fn resolver_avisos(&self, c: &ClienteCtx, equipo: &str, tipo: &str, prefijo: &str, por: &str) -> R<usize> {
+        self.con(c, |db| {
+            db.execute(
+                "UPDATE avisos SET visto_por = ?4 WHERE visto_por IS NULL AND equipo_id = ?1 AND tipo = ?2 AND substr(mensaje, 1, length(?3)) = ?3",
+                params![equipo, tipo, prefijo, por],
+            )
+            .map_err(s)
+        })
+    }
     fn auditar(&self, c: &ClienteCtx, actor: &str, accion: &str, objetivo: &str, datos: &str) -> R<()> {
         self.con(c, |db| auditar_en(db, actor, accion, objetivo, datos))
     }

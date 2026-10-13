@@ -111,7 +111,13 @@ export function lineaPowerShell(d: DatosLinea): string {
     `if((Get-FileHash $f -Algorithm SHA256).Hash -ne ${comillasPs(d.sha256.toUpperCase())}){Remove-Item $f;throw 'El instalador descargado no es el esperado: no se ha instalado nada.'}`,
     `$p=Start-Process $f -ArgumentList ${comillasPs(args)} -Wait -PassThru`,
     "Remove-Item $f",
-    "if($p.ExitCode -eq 0){Get-Content (Join-Path $env:ProgramFiles 'Resguardo Agente\\emparejamiento.txt')}else{Write-Host ('No se pudo vincular (salida '+$p.ExitCode+'). Mira el registro del agente.')}",
+    // 14ee: si no vincula, el motivo que dejó el instalador (instalador.log, sin el código) y la
+    // orden para vincularlo a mano, lista para pegar en la misma ventana.
+    "if($p.ExitCode -eq 0){Get-Content (Join-Path $env:ProgramFiles 'Resguardo Agente\\emparejamiento.txt')}else{" +
+      "Write-Host ('No se pudo vincular (salida '+$p.ExitCode+').');" +
+      "$l=Join-Path $env:ProgramData 'ResguardoAgente\\instalador.log';if(Test-Path $l){Get-Content $l -Tail 1};" +
+      "Write-Host 'Para vincularlo a mano, pega esto en esta misma ventana:';" +
+      `Write-Host ('& '''+(Join-Path $env:ProgramFiles 'Resguardo Agente\\resguardo-agente.exe')+${comillasPs(`' vincular ${d.codigo} --servidor ${servidor}`)})}`,
   ].join(";");
 }
 

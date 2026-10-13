@@ -101,3 +101,14 @@ export const TEXTO_PROBLEMA_PASO: Record<ProblemaPaso, string> = {
   sin_destino: "Su destino ya no está en el equipo: no se hace. Quítala o vuelve a crearla con otro destino.",
   mismo_equipo: "Va a una carpeta de este mismo equipo: si el equipo se daña o lo cifra un ransomware, se pierde con él.",
 };
+
+/**
+ * 14nn: lo que se dice de una copia externa o derivada cuyo destino ya no existe (la carpeta se
+ * borró, o el repositorio «que ya existía» no aparece), según su última vuelta en el informe.
+ */
+export function textoDestinoAusente(t: { pausada?: boolean } | null | undefined): string {
+  const base = "Su destino ya no existe (¿se borró la carpeta?).";
+  return t?.pausada
+    ? `${base} Está en pausa para no fallar cada día: quítala o vuelve a crearla desde cero (lo sube todo otra vez).`
+    : `${base} Quítala o vuelve a crearla desde cero (lo sube todo otra vez).`;
+}

@@ -139,8 +139,8 @@ pub fn config_id(access: &Access) -> Result<String, String> {
     if out.code != Some(0) {
         return Err(restic::exit_error(out.code, &out.stderr));
     }
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("Respuesta inesperada de restic: {e}"))?;
-    v["id"].as_str().map(String::from).ok_or_else(|| "restic no devolvió el ID del repositorio.".into())
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("Respuesta inesperada del motor de copias: {e}"))?;
+    v["id"].as_str().map(String::from).ok_or_else(|| "El motor de copias no devolvió el identificador del repositorio.".into())
 }
 
 /// Lo que se imprime de un destino. `access`: para leer el ID del repositorio

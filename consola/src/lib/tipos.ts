@@ -199,6 +199,10 @@ export interface OrdenEnEspera {
   emitida: string;
   aplica: string;
   caduca: string;
+  /** 14oo: el equipo ya comprobó sus claves al recibirla (al aplicarla las vuelve a comprobar). */
+  claves_comprobadas?: boolean;
+  /** 14oo: de qué repositorio era la contraseña comprobada (su nombre), si pedía una. */
+  repositorio?: string | null;
 }
 
 /** Un dato del equipo que comparten sus consolas y quién lo cambió (v1.56). */
@@ -797,6 +801,10 @@ export interface TareaInforme {
   ultima: string | null;
   resultado: "ok" | "aviso" | "fallo";
   mensaje_corto: string | null;
+  /** 14nn (copia externa o derivada): falló porque su destino ya no existe. */
+  motivo?: "destino_ausente" | null;
+  /** 14nn: por eso dejó de intentarse (tras 3 vueltas seguidas), hasta cambiarla o «Subir ahora». */
+  pausada?: boolean;
 }
 
 export type EstadoComprobacion = "ok" | "aviso" | "fallo" | "desconocido";

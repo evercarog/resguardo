@@ -394,7 +394,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         ];
       e.resumen.repositorios = [...(e.resumen.repositorios ?? []), { id: repoId, nombre: String(c.nombre), destino: d.id, versiones: 0, bytes: 0 }];
       guardarConfig(e, configInicial(e), plana.seq);
-      return resultado(e, o, "hecha", "Repositorio creado (restic init).");
+      return resultado(e, o, "hecha", "Repositorio creado.");
     }
     case "guarda_copias": {
       e.resumen ??= {};
