@@ -353,9 +353,26 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
 
 fn tarea(t: &crate::tasks::TasksState, kind: &str, repo: &str) -> Value {
     match t.runs.get(&crate::tasks::key(kind, repo)) {
-        Some(r) => json!({ "ultima": r.finished, "resultado": resultado(&r.result), "mensaje_corto": corto(&r.message) }),
+        Some(r) => con_ausencia(
+            json!({ "ultima": r.finished, "resultado": resultado(&r.result), "mensaje_corto": corto(&r.message) }),
+            t,
+            &crate::tasks::key(kind, repo),
+        ),
         None => Value::Null,
     }
+}
+
+/// 14nn (campos opcionales): `motivo: "destino_ausente"` si la última vuelta de una copia
+/// externa o derivada falló porque su destino ya no existe, y `pausada: true` si por eso
+/// dejó de intentarse. La consola ofrece entonces «Quitar» o «Volver a crearla».
+fn con_ausencia(mut x: Value, t: &crate::tasks::TasksState, clave: &str) -> Value {
+    if let Some(a) = t.ausentes.get(clave) {
+        x["motivo"] = json!("destino_ausente");
+        if a.pausada.is_some() {
+            x["pausada"] = json!(true);
+        }
+    }
+    x
 }
 
 fn estado(s: &crate::protection::State) -> &'static str {
@@ -417,8 +434,9 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                 "derivadas": r.derivadas.iter().filter_map(|d| {
                     let id = d["id"].as_str()?;
                     let destino = v.destinos.iter().find(|x| Some(x.id.as_str()) == d["destino"].as_str()).map(|x| x.nombre.clone());
-                    let mut x = match t.runs.get(&crate::tasks::derived_key(crate::tasks::DERIVADA, &r.id, id)) {
-                        Some(run) => json!({ "ultima": run.finished, "resultado": resultado(&run.result), "mensaje_corto": corto(&run.message) }),
+                    let clave = crate::tasks::derived_key(crate::tasks::DERIVADA, &r.id, id);
+                    let mut x = match t.runs.get(&clave) {
+                        Some(run) => con_ausencia(json!({ "ultima": run.finished, "resultado": resultado(&run.result), "mensaje_corto": corto(&run.message) }), &t, &clave),
                         None => json!({}),
                     };
                     x["id"] = json!(id);

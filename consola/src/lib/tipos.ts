@@ -795,6 +795,10 @@ export interface TareaInforme {
   ultima: string | null;
   resultado: "ok" | "aviso" | "fallo";
   mensaje_corto: string | null;
+  /** 14nn (copia externa o derivada): falló porque su destino ya no existe. */
+  motivo?: "destino_ausente" | null;
+  /** 14nn: por eso dejó de intentarse (tras 3 vueltas seguidas), hasta cambiarla o «Subir ahora». */
+  pausada?: boolean;
 }
 
 export type EstadoComprobacion = "ok" | "aviso" | "fallo" | "desconocido";

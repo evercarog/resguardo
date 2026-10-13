@@ -326,7 +326,7 @@ fn versiones_del_repo(acc: &crate::restic::Access) -> Result<Vec<crate::restic::
     if out.code != Some(0) {
         return Err(error_publico(&out));
     }
-    serde_json::from_slice(&out.stdout).map_err(|_| "Respuesta inesperada de restic al listar las versiones.".to_string())
+    serde_json::from_slice(&out.stdout).map_err(|_| "Respuesta inesperada del motor de copias al listar las versiones.".to_string())
 }
 
 // ---------- Qué versiones quitar (sin fiarse de la hora que pone el equipo) ----------

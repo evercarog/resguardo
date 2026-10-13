@@ -338,8 +338,8 @@ pub fn buscar(acc: &Access, texto: &str, desde: Option<&str>, hasta: Option<&str
 
     // Lo preparado (una nube por rclone) vive hasta que restic termina.
     let (mut hijo, _vuelta) = restic::spawn_vuelta(acc, &args)?;
-    let salida = hijo.stdout.take().ok_or("No se pudo leer la salida de restic.")?;
-    let mut errores = hijo.stderr.take().ok_or("No se pudo leer la salida de restic.")?;
+    let salida = hijo.stdout.take().ok_or("No se pudo leer la salida del motor de copias.")?;
+    let mut errores = hijo.stderr.take().ok_or("No se pudo leer la salida del motor de copias.")?;
     let hilo_err = std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = (&mut errores).take(64 * 1024).read_to_end(&mut buf);
@@ -369,7 +369,7 @@ pub fn buscar(acc: &Access, texto: &str, desde: Option<&str>, hasta: Option<&str
     hecho.store(true, Ordering::Relaxed);
     let _ = vigilante.join();
     let estado = {
-        let mut h = hijo.lock().map_err(|_| "No se pudo esperar a restic.")?;
+        let mut h = hijo.lock().map_err(|_| "No se pudo esperar al motor de copias.")?;
         if lleno {
             restic::kill_tree(&mut h);
         }
@@ -382,7 +382,7 @@ pub fn buscar(acc: &Access, texto: &str, desde: Option<&str>, hasta: Option<&str
         if codigo != Some(0) {
             return Err(restic::exit_error(codigo, &stderr));
         }
-        leido.map_err(|e| format!("No se entendió la respuesta de restic: {e}"))?;
+        leido.map_err(|e| format!("No se entendió la respuesta del motor de copias: {e}"))?;
     }
     b.coincidencias = coincidencias;
     b.archivos = agrupar(por_ruta);

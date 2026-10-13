@@ -188,7 +188,12 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
 
 /// (Cuando falla, cuando se arregla.)
 pub fn titulos(p: &Problema, equipo: &str) -> (String, String) {
-    let s = sujeto(&p.tipo, &p.nombre, equipo);
+    // 14tt: una copia derivada (sujeto `<repo>--<derivada>`) no es «la copia externa».
+    let s = if p.tipo == "externa_fallida" && p.sujeto.contains("--") {
+        format!("la copia derivada «{}» en «{equipo}»", p.nombre)
+    } else {
+        sujeto(&p.tipo, &p.nombre, equipo)
+    };
     (format!("Falló {s}"), format!("Volvió a funcionar {s}"))
 }
 
@@ -279,6 +284,8 @@ mod tests {
         let (p, sanos) = de_informe(&informe);
         assert_eq!(p.len(), 2);
         assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str(), p[0].nombre.as_str()), ("externa_fallida", "r1--d2", "Oficina → Dropbox Sur"));
+        // 14tt: una derivada se dice derivada (no «copia externa»).
+        assert_eq!(titulos(&p[0], "pc-01").0, "Falló la copia derivada «Oficina → Dropbox Sur» en «pc-01»");
         assert_eq!((p[1].tipo.as_str(), p[1].sujeto.as_str()), ("cadena_parada", "disco-e"));
         assert!(p[1].mensaje.contains("«Documentos»"));
         assert_eq!(p[1].marca, "2026-10-04T10:05:00+02:00");

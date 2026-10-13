@@ -673,6 +673,9 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn crear_aviso(&self, c: &ClienteCtx, equipo: Option<&str>, tipo: &str, mensaje: &str) -> R<()>;
     fn avisos(&self, c: &ClienteCtx, solo_abiertos: bool) -> R<Vec<Aviso>>;
     fn marcar_aviso(&self, c: &ClienteCtx, id: &str, por: &str) -> R<()>;
+    /// 14tt: marca como vistos (`por`) los avisos sin ver de ese equipo y tipo cuyo mensaje
+    /// empieza por `prefijo` (lo que volvió a funcionar). Devuelve cuántos.
+    fn resolver_avisos(&self, c: &ClienteCtx, equipo: &str, tipo: &str, prefijo: &str, por: &str) -> R<usize>;
     fn auditar(&self, c: &ClienteCtx, actor: &str, accion: &str, objetivo: &str, datos: &str) -> R<()>;
     fn auditoria(&self, c: &ClienteCtx, desde: i64, limite: i64) -> R<Vec<EntradaAuditoria>>;
     /// De la más reciente hacia atrás: entradas con `n < antes` (todas si `None`).

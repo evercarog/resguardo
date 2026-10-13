@@ -862,7 +862,7 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
             }
             t
         });
-        let mut salida = hijo.stdout.take().ok_or("restic no dio salida.")?;
+        let mut salida = hijo.stdout.take().ok_or("El motor de copias no dio salida.")?;
         let r = subir(v, &relevo, &clave, &mut salida);
         if r.is_err() {
             let _ = hijo.kill();
