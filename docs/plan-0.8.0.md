@@ -37,7 +37,7 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 - [ ] **D1. Sedes (14ll, 14ss-4):** dato propio (no etiqueta), lista por cliente; cada equipo y cada destino en una sede; «fuera del sitio» = otra sede que el equipo (nube siempre fuera); regla 3-2-1, avisos de «mismo equipo» e «inmutable todo en el sitio» con sedes y derivadas.
 - [ ] **D2. Vista de Equipos (14ss):** categorías de etiqueta (un valor por equipo), agrupar por niveles («Sede, luego Tipo») sin duplicados, orden manual igual en todas las consolas.
-- [ ] **D3. Datos del equipo (14uu):** sistema exacto, procesador, memoria, discos, modelo y último arranque; avisos de disco casi lleno y de sistema que se queda sin soporte.
+- [x] **D3. Datos del equipo (14uu):** (rama `ia/080-datos-equipo`; contrato v1.6x en `api-servidor.md`, lo no probado en `registro-ia.md`) sistema exacto, procesador, memoria, discos, modelo y último arranque; avisos de disco casi lleno y de sistema que se queda sin soporte.
 - [ ] **D4. «Todos los clientes» con secciones (14xx):** Copias, Equipos, Avisos, Órdenes en espera, En curso y Restauraciones de todos.
 
 ## Bloque E — Restauraciones y pruebas
