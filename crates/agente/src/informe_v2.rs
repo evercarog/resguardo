@@ -429,6 +429,8 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                 "espacio": c.espacio,
                 "verificacion": tarea(&t, "verify", &r.id),
                 "prueba_restauracion": tarea(&t, "restore_test", &r.id),
+                // 13e: la última restauración real correcta (cuenta como prueba de restauración).
+                "restauracion_real": crate::restaurar_v2::real_de(&r.id).map(|x| json!({ "ultima": x.fin, "archivos": x.archivos, "bytes": x.bytes })),
                 "externa": tarea(&t, "offsite", &r.id),
                 // Tarea 4b: la última vuelta de cada copia derivada (de ahí el aviso `externa_fallida`).
                 "derivadas": r.derivadas.iter().filter_map(|d| {

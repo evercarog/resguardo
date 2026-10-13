@@ -65,6 +65,8 @@ export interface PruebaRegla {
   configurada: boolean;
   ultima_ok?: string | null;
   fallo?: boolean;
+  /** 13e: la prueba que cuenta es una restauración real correcta (solo para enseñarlo). */
+  real?: boolean;
 }
 
 export interface EntradaRegla {
@@ -536,14 +538,30 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
   };
   const pr = inf?.prueba_restauracion ?? null;
   const itemPrueba = inf?.proteccion?.items.find((it) => it.id === "restauracion");
-  const prueba: PruebaRegla = {
+  const programada: PruebaRegla = {
     // Programada (en el agente o desde la consola) o hecha alguna vez a mano.
     configurada: !!r.prueba_auto || !!pr || !!r.prueba_restauracion || (!!itemPrueba && !/^Sin prueba/i.test(itemPrueba.detalle)),
     ultima_ok: pr?.ultima ?? r.prueba_restauracion ?? null,
     fallo: pr?.resultado === "fallo",
   };
+  const prueba = conRestauracionReal(programada, inf?.restauracion_real?.ultima ?? null);
   const entrada: EntradaRegla = { origen: { equipo: e.id, soporte: `equipo:${e.id}:origen` }, pasos, verificacion, prueba_restauracion: prueba };
   return { equipo: e, copia: k, repo: r, entrada, pasos, regla: regla321(entrada, ahora) };
+}
+
+/**
+ * 13e: una restauración real correcta (terminó bien y restauró algo) cuenta como
+ * prueba de restauración del repositorio, con la misma caducidad; manda la más
+ * reciente de las dos (una prueba posterior que falló sigue mandando).
+ */
+export function conRestauracionReal(p: PruebaRegla, real: string | null | undefined): PruebaRegla {
+  const tReal = real ? Date.parse(real) : NaN;
+  if (!Number.isFinite(tReal)) return p;
+  const tPrueba = p.ultima_ok ? Date.parse(p.ultima_ok) : NaN;
+  // La más reciente manda: una prueba que falló (o salió bien) después de la restauración real.
+  if (p.fallo && Number.isFinite(tPrueba) && tPrueba > tReal) return p;
+  if (!p.fallo && Number.isFinite(tPrueba) && tPrueba >= tReal) return p;
+  return { configurada: true, ultima_ok: real, fallo: false, real: true };
 }
 
 /** Las de todas las copias del cliente (sin los equipos trasladados). */
@@ -754,7 +772,7 @@ export function fraseParte(p: ParteRegla, rc: ReglaCopia, ahora: number): string
       return i.length ? `${nombres(i)}.` : "Ninguno al día inmutable o aislado.";
     }
     case "errores":
-      return p.valor ? p.detalle : "Verificación y prueba de restauración recientes y correctas.";
+      return p.valor ? p.detalle : rc.entrada.prueba_restauracion.real ? "Verificación y prueba de restauración recientes y correctas (la prueba: una restauración real)." : "Verificación y prueba de restauración recientes y correctas.";
   }
 }
 

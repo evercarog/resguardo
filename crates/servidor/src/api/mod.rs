@@ -18,6 +18,8 @@ pub(crate) mod plantillas;
 // Tarea 7a: el catálogo de destinos del cliente (en claro, sin secretos).
 pub(crate) mod destinos;
 mod respaldo;
+// Plan 0.8.0, E2: registro de restauraciones (motivo y ajustes del cliente).
+pub(crate) mod restauraciones;
 mod servidor_clientes;
 mod sesiones;
 
@@ -287,6 +289,9 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/plantillas", get(plantillas::listar))
         // v1.52: color, plantilla por defecto y avisos de cada etiqueta de los equipos.
         .route("/api/clientes/{c}/etiquetas", get(etiquetas::listar).put(etiquetas::poner))
+        .route("/api/clientes/{c}/restauraciones", get(restauraciones::listar))
+        .route("/api/clientes/{c}/restauraciones/ajustes", put(restauraciones::poner_ajustes))
+        .route("/api/clientes/{c}/equipos/{e}/restauraciones/{id}", put(restauraciones::poner_motivo))
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
         .route("/api/clientes/{c}/destinos", get(destinos::listar))
         .route("/api/clientes/{c}/destinos/{d}", put(destinos::guardar).delete(destinos::borrar))

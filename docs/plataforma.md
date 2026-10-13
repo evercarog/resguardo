@@ -134,7 +134,7 @@ Lo que hoy funciona con la web de Supabase (equipos con la app, oficinas con el 
   - Roles: propietario, administrador, técnico y solo lectura. Auditoría encadenada por hash.
   - **OIDC opcional más adelante** (Entra ID, Google Workspace, Keycloak).
 - **Avisos:** en la consola (siempre), **web push** (VAPID generado por el propio servidor; necesita Internet en el navegador) y **SMTP opcional** (el del cliente, Gmail o cualquiera). Sin Internet, avisos en la consola y en la app de escritorio.
-- **Relé de descargas:** como el disco es del propio servidor, **restaurar descargando al navegador** está disponible desde el principio, con un límite configurable (500 MB por defecto) y borrado al terminar.
+- **Relé de descargas:** como el disco es del propio servidor, **restaurar descargando al navegador** está disponible desde el principio, con un límite configurable (2 GB por defecto) y borrado al terminar.
 
 ### 2.3 Base de datos
 

@@ -21,7 +21,7 @@ import { argon2Navegador } from "./cripto/argon2";
 import { aB64, borrar } from "./cripto/bytes";
 import { etiquetaValida, kCfg, materialCliente, pruebaAdmin, pruebaCodigo, verificador } from "./cripto/claves";
 import { comprobarLlaves, ErrorLlavesCambiadas, fijar } from "./fijadas";
-import { NIVEL, PIDE_TAMBIEN_ADMIN, sellarOrden, type Autorizacion } from "./cripto/ordenes";
+import { NIVEL, PIDE_TAMBIEN_ADMIN, pideAdminPorCuerpo, sellarOrden, type Autorizacion } from "./cripto/ordenes";
 import { seguirOrden } from "./pendientes.svelte";
 import { app } from "./estado.svelte";
 import type * as T from "./tipos";
@@ -37,6 +37,7 @@ export interface Secretos {
 }
 
 export const necesitaAdmin = (tipo: string) => NIVEL[tipo] === "admin" || PIDE_TAMBIEN_ADMIN.has(tipo);
+const necesitaAdminTipo = necesitaAdmin;
 export const necesitaRepo = (tipo: string) => NIVEL[tipo] === "repo";
 /** v1.49: ¿guarda el equipo las órdenes con espera (las recibe al momento)? */
 const admiteEspera = (e: T.Equipo) => !!e.resumen?.admite?.includes("ordenes_en_espera");
@@ -117,6 +118,8 @@ export async function mandarOrden(opts: {
   const { cliente, tipo } = opts;
   let equipo = opts.equipo;
   const cuerpo = { ...(opts.cuerpo ?? {}) };
+  // 13a/13b: restaurar en otra carpeta o en un .zip pide también la clave de administración.
+  const necesitaAdmin = (t: string) => necesitaAdminTipo(t) || pideAdminPorCuerpo(t, cuerpo);
   const autorizacion: Autorizacion = { prueba_admin: null, clave_repo: null };
   const aBorrar: Uint8Array[] = [];
   try {

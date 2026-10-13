@@ -471,6 +471,21 @@ export const historialEquipo = (c: string, e: string, o: { antes?: string; desde
     throw x;
   });
 };
+/**
+ * Plan 0.8.0, E2: el registro de restauraciones del cliente (o de un equipo): las
+ * entradas que anotan los equipos, el motivo que añadieron las personas de esta
+ * consola y el ajuste del cliente. Con un servidor anterior (404), vacío.
+ */
+export const restauraciones = (c: string, equipo?: string) =>
+  pedir<T.Restauraciones>("GET", `${cli(c)}/restauraciones${equipo ? `?equipo=${enc(equipo)}` : ""}`).catch((x: unknown) => {
+    if (x instanceof ApiError && x.estado === 404) return { ajustes: { motivo_obligatorio: false }, entradas: [], notas: [] } as T.Restauraciones;
+    throw x;
+  });
+/** El motivo (y las notas) de una restauración; `id` es `restauracion-<orden>` o el de su entrada. */
+export const ponerMotivoRestauracion = (c: string, e: string, id: string, motivo: T.MotivoRestauracion, notas?: string | null) =>
+  pedir<{ ok: boolean }>("PUT", `${cli(c)}/equipos/${enc(e)}/restauraciones/${enc(id)}`, { motivo, notas: notas ?? null });
+export const ponerAjustesRestauraciones = (c: string, motivoObligatorio: boolean) =>
+  pedir<T.Restauraciones["ajustes"]>("PUT", `${cli(c)}/restauraciones/ajustes`, { motivo_obligatorio: motivoObligatorio });
 export const avisos = (c: string, abiertos = true) => pedir<T.Aviso[]>("GET", `${cli(c)}/avisos${abiertos ? "?abiertos=1" : ""}`);
 export const marcarVisto = (c: string, a: string) => pedir<void>("POST", `${cli(c)}/avisos/${enc(a)}/visto`);
 export const auditoria = (c: string, desde?: number, limite = 100) =>

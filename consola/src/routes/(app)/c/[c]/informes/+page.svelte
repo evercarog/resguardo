@@ -30,6 +30,8 @@
   import { etiquetasDe, gruposPorEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
   import { cuentaRegla, fraseRegla, PARTES, reglasDelCliente } from "$lib/regla321";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import { estadisticas, juntar, MOTIVOS, textoTardo } from "$lib/restauraciones";
+  import type { Restauraciones } from "$lib/tipos";
 
   type Periodo = "mes" | "anterior" | "30";
   // A principios de mes, lo que se quiere enseñar suele ser el mes que acaba de terminar.
@@ -121,6 +123,29 @@
     const [cc, ids] = [actual.id, actual.equipos.map((e) => e.id)];
     untrack(() => void cargarInformes(cc, ids));
   });
+
+  // Plan 0.8.0 (E2, 13d): las restauraciones del periodo (número, tiempo medio —el RTO real— y éxito).
+  let restauraciones = $state<Restauraciones | null>(null);
+  $effect(() => {
+    const cc = actual.id;
+    if (!cc) return;
+    untrack(() =>
+      void api
+        .restauraciones(cc)
+        .then((r) => (restauraciones = r))
+        .catch(() => (restauraciones = null)),
+    );
+  });
+  const restDelPeriodo = $derived(
+    restauraciones
+      ? juntar(restauraciones).filter((r) => {
+          const t = Date.parse(r.hora);
+          const eq = actual.equipos.find((e) => e.id === r.equipo);
+          return t >= rango.desde.getTime() && t < rango.hasta.getTime() && (!eq || pasaFiltro(eq, deEtiqueta));
+        })
+      : [],
+  );
+  const cifrasRest = $derived(estadisticas(restDelPeriodo));
 
   // Tarea 8: la regla 3-2-1-1-0 de cada copia (con lo que dice el catálogo de destinos).
   $effect(() => {
@@ -406,6 +431,29 @@
           <p class="leyenda">3 copias (con los originales) · 2 soportes · 1 fuera del sitio · 1 inmutable o aislado · 0 errores al verificar y probar la restauración. ✓ cumple, ◷ configurada pero no está al día, ✗ falta. Es una guía.</p>
         </section>
       {/if}
+
+      <!-- Plan 0.8.0 (E2): las restauraciones del periodo. -->
+      <section class="bloque" aria-labelledby="t-rest">
+        <h3 id="t-rest">Restauraciones <span class="sub-h">· {plural(cifrasRest.total, "en el periodo", "en el periodo")}</span></h3>
+        {#if cifrasRest.total}
+          <table class="tabla">
+            <caption class="sr-only">Restauraciones del periodo</caption>
+            <tbody>
+              <tr><th scope="row">Correctas</th><td class="num">{numero(cifrasRest.correctas)} de {numero(cifrasRest.total)} ({cifrasRest.exito} %)</td></tr>
+              <tr><th scope="row">Tiempo medio hasta tener los datos (RTO real)</th><td class="num">{textoTardo(cifrasRest.medio_s)}{cifrasRest.maximo_s != null ? ` · la más larga, ${textoTardo(cifrasRest.maximo_s)}` : ""}</td></tr>
+              <tr><th scope="row">Datos restaurados</th><td class="num">{bytes(cifrasRest.bytes)} · {plural(cifrasRest.archivos, "archivo", "archivos")}</td></tr>
+              <tr><th scope="row">Cuentan como prueba de restauración</th><td class="num">{numero(cifrasRest.reales)}</td></tr>
+              <tr>
+                <th scope="row">Motivos</th>
+                <td>{MOTIVOS.map((m) => ({ m, n: restDelPeriodo.filter((r) => r.motivoFinal?.tipo === m.id).length })).filter((x) => x.n).map((x) => `${x.m.texto}: ${x.n}`).join(" · ") || "Sin motivo"}{cifrasRest.sinMotivo && cifrasRest.sinMotivo < cifrasRest.total ? ` · sin motivo: ${cifrasRest.sinMotivo}` : ""}</td>
+              </tr>
+            </tbody>
+          </table>
+        {:else}
+          <p class="faint">Ninguna restauración en este periodo.</p>
+        {/if}
+        <p class="leyenda no-imprimir"><a href="/c/{actual.id}/restauraciones">Ver todas las restauraciones</a></p>
+      </section>
 
       <section class="bloque" aria-labelledby="t-repos">
         <h3 id="t-repos">Repositorios</h3>

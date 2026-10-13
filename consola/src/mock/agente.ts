@@ -10,7 +10,8 @@ import { aB64, deB64, deUtf8, iguales, utf8 } from "../lib/cripto/bytes";
 import { abrir, sellar } from "../lib/cripto/sobre";
 import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/claves";
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
-import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
+import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, pideAdminPorCuerpo, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
+import { errorCarpetaRestaurar } from "../lib/restauraciones";
 import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
@@ -20,7 +21,7 @@ import { usosDeNube, usosEspejoDeNube } from "../lib/nubesEquipo";
 import { ADMITE_EQUIPO, ADMITE_TRABAJOS, claveDestinoTrabajo, errorTrabajos, nombrePorDefecto, reduceTrabajos, trabajosDelAlmacen, trabajosDelEquipo } from "../lib/espejoTrabajos";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
-import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
+import { empezarCopia, empezarHistorial, empezarRestauracion, empezarTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 import { observacionDelEquipo } from "./notas";
@@ -35,6 +36,36 @@ export const esperando = new Map<string, Set<() => void>>();
 export function despertar(sesion: string) {
   for (const f of esperando.get(sesion) ?? []) f();
   esperando.delete(sesion);
+}
+
+/** Plan 0.8.0 (13d): la entrada `restauracion` que anota el agente (sin rutas ni secretos). */
+function anotarRestauracion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana, c: Record<string, unknown>, destino: string, inicio: number, ok: boolean, mensaje: string | null) {
+  const m = c.motivo as { tipo?: string; notas?: string } | undefined;
+  const fin = Date.now();
+  estado.restauraciones.push({
+    cliente: e.cliente,
+    equipo: e.id,
+    id: `restauracion-${o.id}`,
+    hora: new Date(fin).toISOString(),
+    inicio: new Date(inicio).toISOString(),
+    duracion_s: Math.round((fin - inicio) / 1000),
+    repo: String(c.repo ?? ""),
+    version: String(c.version ?? "").slice(0, 8),
+    elementos: Array.isArray(c.rutas) ? c.rutas.length : 0,
+    archivos: ok ? 4_200 : null,
+    bytes: ok ? 1_800_000_000 : null,
+    destino,
+    cifrado: (destino === "zip" || destino === "descarga") && typeof c.contrasena_zip === "string" && c.contrasena_zip.length > 0,
+    desde: !c.desde ? "principal" : c.desde === "externa" ? "externa" : "derivada",
+    desde_nombre: null,
+    resultado: ok ? "ok" : "fallo",
+    mensaje,
+    motivo: m?.tipo && ["borrado", "dano", "prueba", "otro"].includes(m.tipo) ? { tipo: m.tipo as T.MotivoRestauracion, notas: m.notas ?? null } : null,
+    por: plana.por ?? null,
+    consola: "Esta consola",
+    orden: o.id,
+    en_el_equipo: false,
+  });
 }
 
 function resultado(e: EquipoMock, o: OrdenMock, estadoO: T.EstadoOrden, mensaje: string | null, detalle: string | null = null) {
@@ -199,7 +230,7 @@ export async function procesarOrden(o: OrdenMock) {
   if (plana.tipo === "alta") {
     autorizada = !e.verificador; // solo la primera vez
     motivo = "Este equipo ya estaba dado de alta.";
-  } else if (nivel === "admin" || PIDE_TAMBIEN_ADMIN.has(plana.tipo)) {
+  } else if (nivel === "admin" || PIDE_TAMBIEN_ADMIN.has(plana.tipo) || pideAdminPorCuerpo(plana.tipo, plana.cuerpo as Record<string, unknown>)) {
     if (!pruebaOk()) {
       autorizada = false;
       motivo = "La clave de administración no es correcta.";
@@ -1046,23 +1077,44 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       return resultado(e, o, "hecha", `Espera: ${h} h.`, JSON.stringify({ espera_min_horas: h }));
     }
     case "restaurar": {
-      await espera(2500);
       const rutas = (Array.isArray(c.rutas) ? c.rutas : []).map(String);
+      const inicio = Date.now();
+      const anotar = (ok: boolean, mensaje: string | null) => anotarRestauracion(e, o, plana, c, String(c.destino ?? "junto"), inicio, ok, mensaje);
+      // Plan 0.8.0 (13a, 13b): otra carpeta (nueva o vacía) o un .zip, como el agente.
+      if (c.destino === "nueva" || c.destino === "zip") {
+        const mal = errorCarpetaRestaurar(String(c.carpeta ?? ""), /windows/i.test(e.so));
+        if (mal) {
+          anotar(false, mal);
+          return resultado(e, o, "fallida", mal);
+        }
+        if (c.destino === "nueva" && /no-vacia/i.test(String(c.carpeta))) {
+          const m = "Esa carpeta no está vacía: elige una carpeta nueva o vacía (nunca se sobrescribe nada).";
+          anotar(false, m);
+          return resultado(e, o, "fallida", m);
+        }
+        const pw = c.contrasena_zip;
+        if (pw !== undefined && (typeof pw !== "string" || pw.length < 8 || pw.length > 128)) return resultado(e, o, "fallida", "La contraseña del .zip tiene que tener entre 8 y 128 caracteres.");
+      }
       // v1.10: «en su sitio» solo dentro de las carpetas que copia el equipo (como el agente).
       if (c.destino === "original") {
         const copiadas = configInicial(e).copias.flatMap((k) => k.carpetas).map((x) => x.toLowerCase().replace(/\\/g, "/").replace(/^([a-z]):/, "/$1"));
         const fuera = rutas.find((r) => !copiadas.some((k) => r.toLowerCase() === k || r.toLowerCase().startsWith(`${k}/`)));
         if (fuera) return resultado(e, o, "fallida", `«${fuera}» no está en las carpetas que copia este equipo: restáuralo junto al original.`);
       }
-      // Una unidad entera («/C») no se restaura (como el agente).
-      if (rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
+      // Una unidad entera («/C») no se restaura junto al original ni en su sitio; en otra carpeta o en un .zip, sí (como el agente).
+      if (c.destino !== "nueva" && c.destino !== "zip" && rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
         return resultado(e, o, "fallida", "No se puede restaurar una unidad entera de una vez. Elige las carpetas de dentro.");
       }
+      // 13c: en vivo, como el agente (en esta consola: la empezó ella).
+      resultado(e, o, "en_marcha", "Restaurando…");
+      await new Promise<void>((listo) => empezarRestauracion(e.cliente, e.id, String(c.repo ?? ""), 14_000, { por: plana.por ?? null, otra_consola: false, en_el_equipo: false }, listo));
       // Como el agente: sin la carpeta (no manda rutas; la consola la enseña aparte).
+      anotar(true, null);
       return resultado(e, o, "hecha", `Restaurado (${rutas.length} elementos).`);
     }
     case "descargar":
       await prepararDescarga(e, o, plana);
+      anotarRestauracion(e, o, plana, c, "descarga", Date.now() - 3000, true, null);
       return resultado(e, o, "hecha", "Descarga lista en el relé.");
     case "abrir_sesion":
     case "explorar":
