@@ -127,7 +127,8 @@
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
   import { caminoDeCopia, textoEslabon, type Eslabon } from "$lib/camino";
   import { enVivoCamino } from "$lib/caminoVivo.svelte";
-  import { reglaDeCopia } from "$lib/regla321";
+  import { reglaDeCopia, type ReglaCopia } from "$lib/regla321";
+  import { saludCompleta } from "$lib/saludCompleta";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { hrefDestino } from "$lib/fichaDestino";
   import type { DerivadaResumen } from "$lib/tipos";
@@ -218,17 +219,23 @@
     const cc = c;
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
-  const caminoRepo = $derived.by(() => {
-    const m = new Map<string, Eslabon[]>();
+  const reglasRepo = $derived.by(() => {
+    const m = new Map<string, ReglaCopia>();
     if (!equipo) return m;
     const eq = equipo;
     const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
     for (const r of repos) {
       const k = copias.find((x) => x.repo === r.id && x.activa !== false);
-      if (!k) continue;
-      const rc = reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora);
-      m.set(r.id, caminoDeCopia(rc, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: todos, informe: eq.ultimo_informe ?? null }).filter((x) => x.clase !== "copia"));
+      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+      if (rc) m.set(r.id, rc);
     }
+    return m;
+  });
+  const caminoRepo = $derived.by(() => {
+    const m = new Map<string, Eslabon[]>();
+    if (!equipo) return m;
+    const todos = actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x));
+    for (const [id, rc] of reglasRepo) m.set(id, caminoDeCopia(rc, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: todos, informe: equipo.ultimo_informe ?? null }).filter((x) => x.clase !== "copia"));
     return m;
   });
   /** C1: cada copia derivada (también la «copia externa» de antes) como un repositorio propio, enlazado con su origen. */
@@ -1085,7 +1092,7 @@
           <div class="rejilla repos">
             {#each repos as r (r.id)}
               {@const inf = informeDe(equipo.ultimo_informe, r.id)}
-              {@const prot = proteccion(inf, comprobacionLugar(r, equipo, actual.equipos))}
+              {@const prot = saludCompleta(inf, { extra: comprobacionLugar(r, equipo, actual.equipos), rc: reglasRepo.get(r.id) ?? null, retencionAlmacen: reglaEfectiva(r, destinoDe(equipo.resumen?.destinos, r), actual.equipos)?.quien ?? null, ahora: reloj.ahora })}
               {@const ej = ultimaEjecucion(inf)}
               {@const riesgo = riesgoMismoEquipo(r, equipo, actual.equipos)}
               <article class="card repo">

@@ -205,7 +205,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   "salud-proteccion": {
     title: "Salud de la protección",
-    text: "Siete comprobaciones, las mismas que la app de escritorio: copias automáticas, protección contra borrado, copia externa, verificación, prueba de restauración, kit de recuperación y retención.",
+    text: "Siete comprobaciones: copias automáticas, protección contra borrado, fuera del sitio, verificación, prueba de restauración, kit de recuperación y retención. El equipo calcula lo suyo y la consola lo completa con lo que solo ella ve (los espejos del almacén, la retención que aplica el almacén, lo marcado en cada destino), con los mismos datos que la regla 3-2-1-1-0.",
   },
   "prot-copias": {
     title: "Copias automáticas",
@@ -217,9 +217,9 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Que nadie, ni un ransomware con acceso al equipo, pueda borrar las versiones: un servidor de solo añadir (como «Este equipo guarda copias») o un bucket con bloqueo de objetos. Un disco normal se puede borrar.",
   },
   "prot-externa": {
-    title: "Copia externa",
-    text: "Otra copia fuera de este sitio (la nube u otro disco), por si hay un robo, un incendio o un ransomware.",
-    todo: "Configúrala en «Más… → Copia externa» del repositorio, o con el espejo del equipo que guarda copias.",
+    title: "Fuera del sitio",
+    text: "Alguna copia de estos datos está fuera del sitio o en la nube (el propio repositorio, un espejo o una copia derivada), por si hay un robo, un incendio o un ransomware. «Fuera del sitio» o «en la nube» es una propiedad del destino, no un tipo de copia.",
+    todo: "Añade un espejo del almacén a la nube, o una copia derivada a la nube o a otra sede («Añadir paso» en la tarjeta del repositorio).",
   },
   "prot-verificacion": {
     title: "Verificación",

@@ -5,6 +5,7 @@ import type { DestinoResumen, Equipo, Informe, RepoInforme } from "../src/lib/ti
 import { reglaDeCopia } from "../src/lib/regla321";
 import { caminoDeCopia, caminoEnTexto, eslabonMal, lineaEslabon, resumenCamino, textoEslabon } from "../src/lib/camino";
 import { cuentaCopias, filasCopias, filtrarCopias } from "../src/lib/copiasCliente";
+import { saludCompleta } from "../src/lib/saludCompleta";
 
 let fallos = 0;
 let total = 0;
@@ -149,6 +150,30 @@ console.log("\n· La página «Copias» con el camino (lib/copiasCliente.ts)");
   igual("la cifra: «N al día · M con un paso fallando»", cuentaCopias(filas), { total: 2, alDia: 1, conPasoMal: 1, atencion: 1 });
   const bien = filasCopias(equipos, { e1: informeBien, a1: null }, AHORA, []);
   igual("con todo bien: las dos al día", cuentaCopias(bien), { total: 2, alDia: 2, conPasoMal: 0, atencion: 0 });
+}
+
+console.log("\n· 14w: la salud de la protección, completada por la consola (lib/saludCompleta.ts)");
+{
+  const delAgente = repoInf("docs", {
+    proteccion: {
+      puntuacion: 5,
+      total: 7,
+      items: [
+        { id: "copias", estado: "ok", etiqueta: "Copias automáticas", detalle: "" },
+        { id: "externa", estado: "fallo", etiqueta: "Copia externa", detalle: "Todas las versiones están en un solo sitio." },
+        { id: "retencion", estado: "aviso", etiqueta: "Retención", detalle: "Sin política: el repositorio crece sin fin." },
+      ],
+    },
+  });
+  const rc = reglaDeCopia(pc, k1, equipos, informeBien, [], AHORA);
+  const p = saludCompleta(delAgente, { rc, retencionAlmacen: "ALMACEN-01", ahora: AHORA })!;
+  const item = (id: string) => p.items.find((i) => i.id === id)!;
+  igual("el espejo del almacén a la nube cuenta como fuera del sitio", [item("externa").estado, item("externa").etiqueta], ["ok", "Fuera del sitio"]);
+  cierto("…y lo dice con su nombre", item("externa").detalle.includes("«Backblaze Oficina»"));
+  igual("la retención la aplica el almacén", [item("retencion").estado, item("retencion").detalle], ["ok", "La aplica el almacén «ALMACEN-01»."]);
+  igual("la cuenta, rehecha", [p.puntuacion, p.total, p.pendientes, p.tono], [3, 3, 0, "ok"]);
+  const sinRegla = saludCompleta(delAgente, { ahora: AHORA })!;
+  igual("sin copia activa: lo del agente, con el nombre nuevo", [sinRegla.items[1].estado, sinRegla.items[1].etiqueta], ["fallo", "Fuera del sitio"]);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
