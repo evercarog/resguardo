@@ -1212,6 +1212,9 @@ pub fn run() -> i32 {
                 // Tarea 4b: de qué derivada es (en el historial no hay otro campo para decirlo).
                 message: if derivada.is_some() { format!("«{destino}»: {}", record.message) } else { record.message.clone() },
                 files_new: record.files_new,
+                // v1.6x (14o): lo restaurado en una prueba y de qué versión (para su detalle en la consola).
+                data_added: record.data_added,
+                snapshot_id: record.snapshot_id.clone(),
                 ..Default::default()
             },
         );

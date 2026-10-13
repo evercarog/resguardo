@@ -15,7 +15,9 @@
   // 14d: «213 en este periodo · 682 en total», la opción «Todas» y, cuando el
   // resumen no las trae (solo los últimos 60 días), «Pedir todas» al equipo con
   // la contraseña del repositorio, como en Restaurar (PedirVersiones).
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import * as api from "$lib/api";
+  import type { EntradaRetencion } from "$lib/retencionDetalle";
   import { Archive, Check, Copy, FolderSearch, History, PanelRightOpen } from "@lucide/svelte";
   import "../detalle/pulsable.css";
   import type { Cliente, CopiaResumen, Equipo, EntradaHistorial, Informe, Regla, RepoInforme, RepositorioResumen, VersionInforme } from "$lib/tipos";
@@ -130,7 +132,27 @@
   );
   const porId = $derived(new Map(versiones.map((x) => [x.v.id, x])));
   const linea = $derived(versiones.map(({ v, repo }) => ({ id: v.id, hora: v.hora, copia: v.copia, repo, bytes: v.total_bytes, anadido: anadidoDe(v), archivos: null, etiquetas: v.etiquetas ?? [] })));
-  const sucesos = $derived(sucesosDe({ fuentes: vistas, copias, historial, ultimas, soloCopia: copia, conRepo: varios, conEquipo: equipo && !verRepo }));
+  // 14o: las vueltas de la retención y las restauraciones (el historial solo las da si se piden).
+  const idCliente = $derived(cliente?.id ?? "");
+  const idEquipo = $derived(delEquipo?.id ?? "");
+  let extra = $state<{ retenciones: EntradaRetencion[]; ordenes: EntradaHistorial[] }>({ retenciones: [], ordenes: [] });
+  $effect(() => {
+    const [c, e] = [idCliente, idEquipo];
+    if (!c || !e) return;
+    untrack(() =>
+      api.historialEquipo(c, e, { tipo: ["retencion", "orden"], limite: 200 }).then(
+        (x) => {
+          if (c !== idCliente || e !== idEquipo) return;
+          extra = { retenciones: x.filter((y) => y.tipo === ("retencion" as string)) as unknown as EntradaRetencion[], ordenes: x.filter((y) => y.tipo === "orden") };
+        },
+        () => {},
+      ),
+    );
+  });
+  const hrefRetencion = (r: string) => `/c/${idCliente}/equipos/${idEquipo}/repositorios/${encodeURIComponent(r)}/retencion`;
+  const sucesos = $derived(
+    sucesosDe({ fuentes: vistas, copias, historial, ultimas, soloCopia: copia, conRepo: varios, conEquipo: equipo && !verRepo, retenciones: extra.retenciones, ordenes: extra.ordenes, hrefRetencion: idCliente && idEquipo ? hrefRetencion : undefined }),
+  );
 
   // La retención: la de cada repositorio, simulada con todas sus versiones (como en su página).
   const conRegla = $derived(vistas.filter((f) => f.regla));

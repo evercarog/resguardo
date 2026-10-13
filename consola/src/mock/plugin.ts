@@ -1264,7 +1264,7 @@ const rutas: Ruta[] = [
       const limite = Math.min(Math.max(Number(q.get("limite") ?? 500) || 500, 1), 2000);
       // v1.45: las vueltas de la retención, solo pedidas con `tipo` (como el servidor).
       let l = [...historialMock(equipoDe(c, e)), ...(retencionesMock(equipoDe(c, e)) as unknown as T.EntradaHistorial[])]
-        .filter((h) => (!desde || Date.parse(h.hora) > Date.parse(desde)) && (!hasta || Date.parse(h.hora) <= Date.parse(hasta)) && (tipos.length ? tipos.includes(h.tipo) : (h.tipo as string) !== "retencion"))
+        .filter((h) => (!desde || Date.parse(h.hora) > Date.parse(desde)) && (!hasta || Date.parse(h.hora) <= Date.parse(hasta)) && (tipos.length ? tipos.includes(h.tipo) : (h.tipo as string) !== "retencion" && h.tipo !== "orden"))
         .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const antes = q.get("antes");
       if (antes) {
