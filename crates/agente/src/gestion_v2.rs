@@ -1260,6 +1260,15 @@ pub fn resumen(v: &Vinculo) -> Value {
     if !comunes.is_null() {
         r["datos_cliente"] = comunes;
     }
+    // 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último
+    // arranque (leídos al arrancar y una vez al día). Las rutas solo marcan qué discos
+    // guardan algo de las copias (`en_uso`): no salen del equipo.
+    let mut rutas: Vec<String> = copias.iter().flat_map(|k| k.carpetas.iter().cloned()).collect();
+    rutas.extend(v.destinos.iter().filter(|d| d.tipo == "local").map(|d| d.donde.clone()));
+    if let Some(c) = r["guarda_copias"]["carpeta"].as_str() {
+        rutas.push(c.to_string());
+    }
+    r["datos_basicos"] = crate::datos_basicos::resumen(&rutas);
     r
 }
 

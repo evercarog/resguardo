@@ -19,6 +19,7 @@
   import Vacio from "$lib/componentes/Vacio.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { guardar, leer } from "$lib/recordar";
+  import { grupoSistema, textoBuscable } from "$lib/datosBasicos";
 
   let buscar = $state("");
   // El filtro se recuerda en este navegador (por cliente).
@@ -39,11 +40,18 @@
   });
   const informeDe = (id: string) => (ultimos.cliente === actual.id ? ultimos.porEquipo[id] : undefined);
 
+  // 14uu: filtrar por sistema («Windows 11», «Windows Server 2016», «Ubuntu 22.04»…).
+  let sistema = $state("");
+  const sistemas = $derived([...new Set(actual.equipos.map((e) => grupoSistema(e)))].sort((a, b) => a.localeCompare(b, "es", { numeric: true })));
+  // Un sistema que ya no tiene ningún equipo deja de filtrar.
+  const sistemaActivo = $derived(sistemas.includes(sistema) ? sistema : "");
+
   const lista = $derived(
     actual.equipos
       .filter((e) => {
         const t = buscar.trim().toLowerCase();
-        if (t && !`${e.nombre} ${e.so} ${(e.etiquetas ?? []).join(" ")}`.toLowerCase().includes(t)) return false;
+        if (t && !`${e.nombre} ${textoBuscable(e)} ${(e.etiquetas ?? []).join(" ")}`.toLowerCase().includes(t)) return false;
+        if (sistemaActivo && grupoSistema(e) !== sistemaActivo) return false;
         if (!pasaFiltro(e, filtroEtiqueta.valor)) return false;
         const tono: Tono = saludEquipo(e, reloj.ahora).tono;
         if (filtro === "atencion") return tono === "bad" || tono === "warn";
@@ -162,6 +170,12 @@
         <Search size={15} />
         <input class="input" type="search" placeholder="Buscar por nombre o sistema" bind:value={buscar} aria-label="Buscar equipos" />
       </label>
+      {#if sistemas.length > 1}
+        <select class="input sistema" bind:value={sistema} aria-label="Filtrar por sistema">
+          <option value="">Todos los sistemas</option>
+          {#each sistemas as s (s)}<option value={s}>{s} ({actual.equipos.filter((e) => grupoSistema(e) === s).length})</option>{/each}
+        </select>
+      {/if}
       <div class="segmented inline" role="group" aria-label="Filtrar">
         <button class:on={filtro === "todos"} aria-pressed={filtro === "todos"} onclick={() => ponerFiltro("todos")}>Todos</button>
         <button class:on={filtro === "atencion"} aria-pressed={filtro === "atencion"} onclick={() => ponerFiltro("atencion")}>Necesitan atención</button>
@@ -233,6 +247,7 @@
             class="btn btn-sm"
             onclick={() => {
               buscar = "";
+              sistema = "";
               ponerFiltro("todos");
               filtroEtiqueta.poner("");
             }}><X size={14} />Quitar los filtros</button
@@ -357,6 +372,10 @@
   }
   .buscar .input {
     padding-left: 34px;
+  }
+  .sistema {
+    width: auto;
+    max-width: 100%;
   }
   @media (max-width: 640px) {
     .segmented.inline {

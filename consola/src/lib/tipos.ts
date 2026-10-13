@@ -336,6 +336,8 @@ export interface ResumenEquipo {
   nubes_por_anular?: { nombre: string; tipo: string; desde?: string | null; hasta?: string | null; intentos?: number }[];
   /** Tarea 8e: si el agente corre en una máquina virtual o un contenedor. Solo un dato (nunca resta). */
   entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra" | string; contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" | string } | null;
+  /** 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último arranque. Léelo con `datosBasicos()` (comprobado). */
+  datos_basicos?: import("./datosBasicos").DatosBasicos | null;
 }
 
 /** Tarea 7b: una zona más de un almacén. */
@@ -918,7 +920,11 @@ export type TipoAviso =
   // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió a la anterior.
   | "actualizacion_fallida"
   // Plan 0.7.26 (1.1): en 7 días no se pudo anular el permiso de una nube desconectada.
-  | "nube_sin_anular";
+  | "nube_sin_anular"
+  // 14uu (plan 0.8.0, D3): los crea el servidor con los datos básicos del equipo.
+  | "disco_lleno"
+  | "sin_soporte_pronto"
+  | "sin_soporte";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {

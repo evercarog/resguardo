@@ -3,7 +3,7 @@
   // gravedad (lo urgente arriba) o por equipo; cada uno con su acción directa
   // y «Marcar como visto» (queda anotado quién lo vio).
   import { slide } from "svelte/transition";
-  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, Cloud, KeyRound, Monitor, Power, ShieldAlert, TriangleAlert, WifiOff } from "@lucide/svelte";
+  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, Cloud, HardDrive, KeyRound, Monitor, Power, ShieldAlert, ShieldOff, TriangleAlert, WifiOff } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { dur } from "$ui/movimiento";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
@@ -24,6 +24,7 @@
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { destinoAviso } from "$lib/detalle";
   import { sinMarcadores } from "$lib/textosEquipo";
+  import { datosBasicos, reinicioAntes } from "$lib/datosBasicos";
   import { tip } from "$lib/tooltip";
   import "$lib/componentes/detalle/pulsable.css";
 
@@ -88,6 +89,10 @@
     actualizacion_fallida: { texto: "Actualización fallida", tono: "warn", icono: TriangleAlert, que: "El equipo volvió solo a la versión anterior y sigue copiando. Esa versión queda retenida para el resto del cliente.", accion: () => ({ texto: "Ver las versiones", href: `/c/${c}/versiones` }) },
     // Plan 0.7.26 (1.1): las credenciales ya se borraron del equipo, pero el permiso puede seguir en Dropbox.
     nube_sin_anular: { texto: "Permiso de nube sin anular", tono: "warn", icono: Cloud, que: "Mira en la web de Dropbox → Configuración → Aplicaciones conectadas si sigue «Resguardo». Quítalo solo si ningún otro equipo la usa.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
+    // 14uu (plan 0.8.0, D3): de los datos básicos del equipo.
+    disco_lleno: { texto: "Disco casi lleno", tono: "warn", icono: HardDrive, que: "En la ficha del equipo ves cuánto queda en cada disco.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
+    sin_soporte_pronto: { texto: "Sistema sin soporte pronto", tono: "neutral", icono: ShieldOff, que: "En la ficha del equipo ves su sistema exacto.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
+    sin_soporte: { texto: "Sistema sin soporte", tono: "warn", icono: ShieldOff, que: "Sin actualizaciones de seguridad, el equipo es más fácil de atacar.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };
@@ -207,6 +212,8 @@
                 <span class="fila-titulo">{i.texto}{#if eq && agrupar === "gravedad"}<a class="eq" href="/c/{c}/equipos/{eq.id}"><Monitor size={12} />{eq.nombre}</a>{/if}</span>
                 {#if rel}<a class="mensaje pulsable" href={rel.href} use:tip={"Ver detalle"}>{sinMarcadores(a.mensaje)}</a>{:else}<span class="mensaje">{sinMarcadores(a.mensaje)}</span>{/if}
                 {#if i.que && !a.visto_por}<span class="fila-sub">{i.que}</span>{/if}
+                <!-- 14uu: una copia que falló justo después de arrancar el equipo (suele ser eso). -->
+                {#if a.tipo === "copia_fallida" && reinicioAntes(datosBasicos(equipo(a.equipo)), a.creado)}<span class="fila-sub reinicio"><Power size={12} />{reinicioAntes(datosBasicos(equipo(a.equipo)), a.creado)}</span>{/if}
                 <span class="fila-sub cuando"><Tiempo iso={a.creado} />{#if a.visto_por}<span class="visto-por"><Check size={12} />Visto por {a.visto_por}</span>{/if}</span>
               </span>
               <span class="acciones">
@@ -225,6 +232,11 @@
 </div>
 
 <style>
+  .reinicio {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
   .barra-filtros {
     display: flex;
     flex-wrap: wrap;

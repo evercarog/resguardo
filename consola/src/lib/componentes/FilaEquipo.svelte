@@ -20,6 +20,7 @@
   import EnMarcha from "./EnMarcha.svelte";
   import ContadorNotas from "./notas/ContadorNotas.svelte";
   import SinConfirmar from "./SinConfirmar.svelte";
+  import { sistemaDe } from "$lib/datosBasicos";
 
   let { equipo, cliente, informe, acciones = false }: { equipo: Equipo; cliente: string; informe?: Informe | null; acciones?: boolean } = $props();
   /** La misma máquina ya dada de alta con otra entrada (un intento anterior sin confirmar). */
@@ -66,7 +67,7 @@
       <span class="solo-movil est-movil"><EnMarcha equipo={equipo.id} compacto /><Chip pequeno tono={salud.tono} texto={salud.texto} /></span>
       {#if sinConfirmar}<span class="fila-sub">{#if duplicado}Duplicado: este equipo ya está dado de alta como «{duplicado.nombre}»{:else}Falta confirmar el número de comprobación{/if}</span>{/if}
       <span class="fila-sub">
-        {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{equipo.so}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
+        {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{sistemaDe(equipo)}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
         {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado</span>{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}
       </span>
       <!-- En móvil, la última copia va aquí (la columna de la derecha no cabe). -->
