@@ -1087,7 +1087,7 @@
 
       {#if repos.length || pendRepos.length}
         <section>
-          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length} y {reposDerivados.length} {reposDerivados.length === 1 ? "derivado" : "derivados"}{/if}</span></h2></div>
+          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length}{` y ${reposDerivados.length} ${reposDerivados.length === 1 ? "derivado" : "derivados"}`}{/if}</span></h2></div>
           {#each pendRepos as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
           <div class="rejilla repos">
             {#each repos as r (r.id)}
@@ -2129,6 +2129,10 @@
   .repo-derivado {
     gap: var(--sp-2);
     border-style: dashed;
+  }
+  .repo-derivado h3 {
+    flex-wrap: wrap;
+    gap: 0 0.3em;
   }
   .der-estado {
     margin: 0;

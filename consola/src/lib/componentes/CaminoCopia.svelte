@@ -56,9 +56,7 @@
       {#each eslabones as x (x.id)}
         <li use:tip={globo(x)}>
           <span class="flecha faint" aria-hidden="true">→</span>
-          {@render nombre(x)}
-          <span class="faint" aria-hidden="true">·</span>
-          {@render estado(x)}
+          <span class="cuerpo">{@render nombre(x)}<span class="faint sep" aria-hidden="true">{" · "}</span>{@render estado(x)}</span>
         </li>
       {/each}
     </ul>
@@ -93,12 +91,29 @@
     font-size: var(--fs-sm);
     line-height: var(--lh-sm);
   }
+  /* Una línea por paso: la flecha a la izquierda y el resto como texto que se parte (también en el móvil). */
   .camino-lin li {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 6px;
-    flex-wrap: wrap;
+    align-items: baseline;
     min-width: 0;
+  }
+  .camino-lin .cuerpo {
+    min-width: 0;
+  }
+  .camino-lin .nom {
+    display: inline;
+  }
+  .camino-lin .nom :global(.td) {
+    margin-right: 4px;
+  }
+  .camino-lin .que {
+    margin-left: 5px;
+  }
+  .camino-lin .est {
+    display: inline-flex;
+    vertical-align: baseline;
   }
   .nom {
     display: inline-flex;
@@ -110,6 +125,8 @@
   }
   .que {
     font-size: var(--fs-xs);
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
   .est {
     display: inline-flex;

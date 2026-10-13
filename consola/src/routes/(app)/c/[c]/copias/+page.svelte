@@ -338,6 +338,8 @@
     flex: 1;
   }
   .pasos-camino {
+    flex-basis: 100%;
+    min-width: 0;
     margin-top: 2px;
   }
   .fila-copia > .estado {
