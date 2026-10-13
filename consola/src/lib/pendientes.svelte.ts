@@ -53,7 +53,7 @@ export function lugarDe(tipo: string, cuerpo: Record<string, unknown>): { lugar:
     case "cambiar_retencion":
       return { lugar: "repositorios", titulo: "Nueva retención", objetivo: repo };
     case "cambiar_copia_externa":
-      return { lugar: "repositorios", titulo: cuerpo.hora === null ? "Quitar la copia externa" : "Copia externa", objetivo: repo };
+      return { lugar: "repositorios", titulo: cuerpo.hora === null ? "Quitar la copia derivada" : "Copia derivada", objetivo: repo };
     case "cambiar_derivada":
       return { lugar: "repositorios", titulo: "Copia derivada", objetivo: repo };
     case "quitar_derivada":

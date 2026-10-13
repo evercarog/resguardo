@@ -245,7 +245,7 @@
               <li>
                 <a class="fila-d" href={u.href}>
                   {#if u.tipo === "espejo_sale"}<ArrowRight size={16} class="ic" />{:else}<Cloud size={16} class="ic" />{/if}
-                  <span class="fd-texto"><strong>{u.texto}</strong><span class="faint">{u.tipo === "externa" ? "Copia externa: llega aquí" : u.tipo === "derivada" ? "Repositorio a partir de otro: llega aquí" : u.tipo === "espejo_entra" ? "El almacén refleja aquí lo que guarda" : "Lo que guarda esta zona sale a otro sitio"}{#if u.ultima}{" · "}<Tiempo iso={u.ultima} />{/if}</span></span>
+                  <span class="fd-texto"><strong>{u.texto}</strong><span class="faint">{u.tipo === "externa" ? "Copia derivada: llega aquí" : u.tipo === "derivada" ? "Copia derivada: llega aquí" : u.tipo === "espejo_entra" ? "El almacén refleja aquí lo que guarda" : "Lo que guarda esta zona sale a otro sitio"}{#if u.ultima}{" · "}<Tiempo iso={u.ultima} />{/if}</span></span>
                   {#if u.resultado}<Chip pequeno tono={u.resultado === "fallo" ? "bad" : u.resultado === "aviso" ? "warn" : "ok"} texto={u.resultado === "fallo" ? "Falló" : u.resultado === "aviso" ? "Con avisos" : "Al día"} />{/if}
                   <ArrowRight size={14} class="flecha" />
                 </a>

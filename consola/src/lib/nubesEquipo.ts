@@ -44,7 +44,7 @@ export function usosDeNube(e: Pick<Equipo, "resumen"> | null | undefined, nombre
   const en = (destino?: string | null, id?: string | null) => (!!id && ids.has(id)) || (!!destino && nombres.has(destino));
   for (const repo of r.repositorios ?? []) {
     if (en(repo.destino)) usos.push(`el repositorio «${repo.nombre}»`);
-    if (repo.externa && en(repo.externa.destino, repo.externa.destino_id)) usos.push(`la copia externa de «${repo.nombre}»`);
+    if (repo.externa && en(repo.externa.destino, repo.externa.destino_id)) usos.push(`la copia derivada de «${repo.nombre}»`);
     if ((repo.derivadas ?? []).some((d) => en(d.destino, d.destino_id))) usos.push(`una copia derivada de «${repo.nombre}»`);
   }
   if (r.guarda_copias?.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre)) usos.push("el espejo de este almacén");

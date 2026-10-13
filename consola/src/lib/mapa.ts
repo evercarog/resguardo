@@ -383,8 +383,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         id: `ex:${e.id}:${x.r.externa?.destino_id ?? x.r.externa?.destino ?? x.r.id}`,
         tipo: "externa",
         col: 3,
-        nombre: x.r.externa?.destino ?? "Copia externa",
-        sub: x.r.externa ? `Copia externa · cada día a las ${x.r.externa.hora}` : `De «${x.r.nombre}»`,
+        nombre: x.r.externa?.destino ?? "Copia derivada",
+        sub: x.r.externa ? `Copia derivada · cada día a las ${x.r.externa.hora}` : `De «${x.r.nombre}»`,
         tono: subiendo ? "info" : tono,
         estado: subiendo ?? (ext ? (tono === "bad" ? "Falló" : tono === "warn" ? (ext.resultado === "aviso" ? "Con avisos" : "Atrasada") : "Al día") : "Todavía sin ninguna"),
         ultima: ext?.ultima ?? null,
@@ -556,7 +556,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       .map((p) => {
         const destinos = aristas.filter((a) => a.de === p.id).map((a) => ({ a, n: por(a.a) }));
         const guarda = destinos.filter((x) => x.a.tipo === "guarda").map((x) => x.n.nombre);
-        const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia externa" ? `copia externa (${enFrase(x.n, ahora)})` : `copia externa a ${x.n.nombre} (${enFrase(x.n, ahora)})`));
+        const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia derivada" ? `copia derivada (${enFrase(x.n, ahora)})` : `copia derivada a ${x.n.nombre} (${enFrase(x.n, ahora)})`));
         const der = destinos.filter((x) => x.a.tipo === "derivada").map((x) => `después, una copia derivada a ${x.n.nombre}${x.a.etiqueta ? ` (${x.a.etiqueta})` : ""}`);
         const esp = destinos.filter((x) => x.a.tipo === "espejo" && x.n.tipo === "espejo").map((x) => `espejo en ${x.n.nombre} (${enFrase(x.n, ahora)})`);
         const mismo = p.aviso || destinos.some((x) => x.a.tipo === "guarda" && x.n.aviso) ? ", en el mismo equipo que protege" : "";

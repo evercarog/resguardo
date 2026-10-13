@@ -310,13 +310,14 @@ Dropbox **no es inmutable**: quien tenga la cuenta o el permiso puede borrar. Ac
 
 ---
 
-## 11. Verificación, prueba de restauración y copia externa
+## 11. Verificación, prueba de restauración, espejos y copias derivadas
 
 - **Verificar** (en cada repositorio): comprueba ahora una parte de lo guardado. No pide claves.
 - **Más… → Probar la restauración**: restaura unos archivos al azar a una carpeta temporal y los compara.
-- **Salud de la protección** (página del repositorio): siete comprobaciones (copias automáticas, protección contra borrado, copia externa, verificación, prueba de restauración, kit y retención) con lo que falta.
+- **Salud de la protección** (página del repositorio): siete comprobaciones (copias automáticas, protección contra borrado, fuera del sitio, verificación, prueba de restauración, kit y retención) con lo que falta. «Fuera del sitio» cuenta lo mismo que la regla 3-2-1-1-0: el propio repositorio en la nube, los espejos (del almacén o del equipo) y las copias derivadas.
 - **Verificación automática** (agente posterior a la 0.7.10; **Cambiar las copias → Verificación automática**, o **Verificar automáticamente…** en la página del repositorio): cada N días, un porcentaje de los datos que va rotando (con 10 %, todo en 10 comprobaciones); la primera, a las 03:00 siguientes. En un almacén con retención, el almacén además comprueba la estructura tras cada poda; la página del repositorio enseña las dos.
-- **Copia externa** (**Más… → Copia externa…**): cada día, el equipo dueño copia las versiones del repositorio a otro destino (otro disco, servidor de copias, SFTP, S3 o B2), con su retención y, si quieres, otra contraseña (apúntala en el kit). Pide la contraseña del repositorio. Si el repositorio está en un almacén con espejo, el espejo suele bastar.
+- **Tres trabajos:** la **copia** (carpetas → repositorio), el **espejo** (el mismo repositorio en otro destino) y la **copia derivada** (las versiones de un repositorio → otro repositorio). «Fuera del sitio» o «en la nube» es cosa del destino, no un tipo de copia. El camino de cada copia (repositorio → espejos → derivadas, con su estado) se ve bajo el título de la copia, en la tarjeta del repositorio y en «Copias».
+- **Copia derivada** (antes «copia externa»; **Añadir paso** o **Más…** en la tarjeta del repositorio): el equipo dueño copia las versiones del repositorio a otro destino (otro disco, servidor de copias, SFTP, S3 o B2), con su retención y, si quieres, otra contraseña (apúntala en el kit). Pide la contraseña del repositorio. Si el repositorio está en un almacén con espejo, el espejo suele bastar.
 
 ---
 

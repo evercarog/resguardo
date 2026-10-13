@@ -895,7 +895,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
   if (p.cumple) return null;
   const e = rc.equipo;
   const repo = `/c/${cliente}/equipos/${e.id}/repositorios/${encodeURIComponent(rc.repo.id)}`;
-  const externa = { texto: "Copia externa", href: `/c/${cliente}/equipos/${e.id}?externa=${encodeURIComponent(rc.repo.id)}` };
+  const externa = { texto: "Copia derivada", href: `/c/${cliente}/equipos/${e.id}?externa=${encodeURIComponent(rc.repo.id)}` };
   // Los atrasados que importan para esta parte (fuera: los de fuera; inmutable: los inmutables), primero.
   const importa = (x: PasoVista) => (p.id === "fuera" ? esFuera(x) : p.id === "inmutable" ? cuentaInmutable(x) : true);
   const todosAtrasados = rc.pasos.filter((x) => rc.regla.atrasados.includes(x.id));
@@ -909,11 +909,11 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
       return { texto: `«${x.nombre}» ${desde}${atrasados.length > 1 ? ` (y ${plural(atrasados.length - 1, "paso más", "pasos más")})` : ""}: revisa por qué.`, enlace: { texto: `Revisar «${x.nombre}»`, href } };
     }
     case "anadir_destino":
-      return { texto: "Añade otro destino: una copia externa (la nube u otro disco) o un espejo del almacén.", enlace: externa };
+      return { texto: "Añade otro destino: una copia derivada (la nube u otro disco) o un espejo del almacén.", enlace: externa };
     case "otro_soporte":
       return { texto: "Guarda una copia en otro equipo u otro disco: un almacén de la oficina, un disco USB o la nube.", enlace: { texto: "Repositorios y destinos", href: `/c/${cliente}/repositorios` } };
     case "anadir_fuera":
-      return { texto: "Añade un destino Fuera del sitio o en la Nube: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia externa, espejo del almacén o copia directa a la nube.", enlace: externa };
+      return { texto: "Añade un destino Fuera del sitio o en la Nube: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia derivada, espejo del almacén o copia directa a la nube.", enlace: externa };
     case "anadir_inmutable":
       return {
         texto: "Añade un destino inmutable (B2 o S3 con bloqueo de objetos), marca las instantáneas del anfitrión del almacén que él no ve, o marca uno como Aislado (un disco que se desconecta y se rota). Un almacén de solo añadir no basta: no protege de quien lo administra.",

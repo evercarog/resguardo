@@ -93,7 +93,7 @@ Para una copia (carpetas de un equipo → un repositorio), los datos llegan a:
 
 1. **El destino del repositorio** (paso `copia`): una zona de un almacén, un servidor de fuera, una nube, una carpeta o un disco del equipo. Al día si la copia salió bien dentro de su horario más un margen.
 2. **Los destinos del espejo del almacén** (paso `espejo`), si el repositorio está en la **zona principal** de un almacén (el espejo de hoy copia la principal) y el destino del espejo lo incluye (`repos` sin selección o con ese `<usuario>/<repo>`).
-3. **La copia externa** del repositorio (paso `externa`).
+3. **La copia externa** del repositorio (paso `externa`; desde la 0.8.0 se enseña como una copia derivada más, 14x).
 4. **(Parte B)** Los pasos de una cadena: espejos por repositorio (también desde otras zonas), copias derivadas (`derivadas[]`) y copias nuevas «después de la anterior». Entran como **más pasos** en la misma lista, con los mismos campos: el cálculo no cambia.
 
 ### Modelo de entrada (pequeño, a propósito)

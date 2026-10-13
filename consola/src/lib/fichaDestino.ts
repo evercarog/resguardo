@@ -69,7 +69,7 @@ export function usosDeDestino(v: DestinoVista, equipos: Equipo[], cliente: strin
     for (const r of e.resumen?.repositorios ?? []) {
       const href = `/c/${cliente}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}`;
       const idExterna = r.externa ? (r.externa.destino_id ?? destinos.find((d) => d.nombre === r.externa!.destino)?.id ?? null) : null;
-      if (idExterna && v.ids.includes(idExterna)) out.push({ tipo: "externa", texto: `Copia externa de «${r.nombre}» (${e.nombre})`, equipo: e, href });
+      if (idExterna && v.ids.includes(idExterna)) out.push({ tipo: "externa", texto: `Copia derivada de «${r.nombre}» (${e.nombre})`, equipo: e, href });
       for (const x of r.derivadas ?? []) if (x.destino_id && v.ids.includes(x.destino_id)) out.push({ tipo: "derivada", texto: `Copia derivada de «${r.nombre}» (${e.nombre})`, equipo: e, href });
     }
   }

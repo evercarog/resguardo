@@ -208,7 +208,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
     pasos.push({
       clase: "derivada",
       texto: r.externa.destino,
-      detalle: `copia externa · cada día a las ${r.externa.hora}`,
+      detalle: `copia derivada · cada día a las ${r.externa.hora}`,
       despues: false,
       nivel,
       destinoId: d?.id ?? r.externa.destino_id ?? undefined,

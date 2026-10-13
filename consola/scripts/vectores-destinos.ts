@@ -180,7 +180,7 @@ console.log("\n· La página de un destino (lib/fichaDestino.ts)");
   igual("todos los destinos tienen página", vs.every((v) => vistaPorClave(v.clave, eqs, [])?.clave === v.clave), true);
   igual("una clave que ya no está: ninguna", vistaPorClave("zona:otro:principal", eqs, []), null);
   igual("los repositorios de cada zona", [reposEnDestino(vD2, eqs).map((x) => x.repo.id), reposEnDestino(vE2, eqs).map((x) => x.repo.id)], [["documentos"], ["contabilidad"]]);
-  igual("lo que usa el B2: la copia externa de «documentos»", usosDeDestino(vB2, eqs, "c1").map((u) => [u.tipo, u.texto]), [["externa", "Copia externa de «documentos» (RECEPCION)"]]);
+  igual("lo que usa el B2: la copia externa de «documentos»", usosDeDestino(vB2, eqs, "c1").map((u) => [u.tipo, u.texto]), [["externa", "Copia derivada de «documentos» (RECEPCION)"]]);
   igual("la nube del almacén: le llega el espejo de la principal", usosDeDestino(vNube, eqs, "c1").map((u) => [u.tipo, u.resultado]), [["espejo_entra", "ok"]]);
   igual(
     "la zona principal sale a la nube y a la E; a la E le llega",

@@ -38,7 +38,7 @@ Con esto, marca la zona del almacén como «Con instantáneas inmutables fuera d
 ## Otras formas
 
 - **Linux endurecido, sin anfitrión**: un Debian mínimo solo para el almacén, sin acceso remoto (ni SSH ni escritorio remoto; se administra en local), actualizaciones automáticas de seguridad, cortafuegos que solo deja entrar el puerto del almacén desde la red de la oficina. Para lo antiguo, `chattr +i` con un plazo (una tarea de `root` que marca inmutables las carpetas de `data/` de más de N días y se las quita antes de podar): complica la retención del almacén, así que solo si sabes lo que haces. No cuenta como «instantáneas»: márcalo solo si de verdad nadie del almacén puede deshacerlo.
-- **Discos USB que se rotan**: dos o tres discos para la copia externa (o el espejo), uno conectado y los otros guardados fuera de la oficina, desconectados. Un disco desconectado no lo cifra nadie. Márcalos como «Desconectado» y, si son el mismo juego de discos, con el mismo **soporte** («Discos USB rotados») para que cuenten como uno.
+- **Discos USB que se rotan**: dos o tres discos para una copia derivada (o el espejo), uno conectado y los otros guardados fuera de la oficina, desconectados. Un disco desconectado no lo cifra nadie. Márcalos como «Desconectado» y, si son el mismo juego de discos, con el mismo **soporte** («Discos USB rotados») para que cuenten como uno.
 
 ## Un almacén con Windows
 

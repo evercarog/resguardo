@@ -668,7 +668,7 @@
         {@const Ic = ICONO[d.n.icono]}
         <li class="hoja">
           <span class="flecha" aria-hidden="true">→</span>
-          <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia externa" ? "Copia externa a " : d.a.tipo === "derivada" ? "Después, copia derivada a " : d.a.tipo === "espejo" ? "Espejo en " : ""}{d.n.nombre}</a>
+          <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia derivada" ? "Copia derivada a " : d.a.tipo === "derivada" ? "Después, copia derivada a " : d.a.tipo === "espejo" ? "Espejo en " : ""}{d.n.nombre}</a>
           {@render estado(d.n, d.n.icono !== "almacen")}
           {#if d.n.aviso}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{d.n.aviso}</span>{/if}
         </li>

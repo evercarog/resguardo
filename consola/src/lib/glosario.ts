@@ -163,13 +163,13 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Un repositorio de otro equipo que se añadió aquí para explorarlo y restaurar. Ninguna copia de este equipo escribe en él.",
   },
   "copia-externa": {
-    title: "Copia externa",
-    text: "Cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",
+    title: "Copia derivada (antes «copia externa»)",
+    text: "La «copia externa» de antes es una copia derivada: cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",
     todo: "Usa la misma contraseña que el repositorio salvo que pongas otra; en ese caso, apúntala en el kit. También puede ir a un repositorio que ya existe (p. ej. el de la nube de la app de escritorio): solo sube lo que le falte. Si el destino tiene bloqueo de objetos, márcalo: allí no se libera espacio.",
   },
   "copia-derivada": {
     title: "Copia derivada",
-    text: "Otra copia de un repositorio en otro destino, además de la copia externa: el equipo crea allí un repositorio con el mismo troceado (deduplica con el original) y le sube las versiones, todas o las que pasen un filtro (etiquetas, equipo, carpetas, fechas). Puede ir después de cada copia o a una hora, con su propia contraseña, su retención y su verificación.",
+    text: "Las versiones de un repositorio llevadas a otro repositorio, en otro destino (no es un espejo: el espejo es el mismo repositorio en otro sitio). El equipo crea allí un repositorio con el mismo troceado (deduplica con el original) y le sube las versiones, todas o las que pasen un filtro (etiquetas, equipo, carpetas, fechas). Puede ir después de cada copia o a una hora, con su propia contraseña, su retención y su verificación.",
     todo: "Si le pones otra contraseña, guárdala en el kit. Para Dropbox o Google Drive, conecta antes la nube en este mismo equipo.",
   },
   cadena: {

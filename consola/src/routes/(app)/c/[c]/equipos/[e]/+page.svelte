@@ -614,7 +614,7 @@
     const paginaRet = `/c/${c}/equipos/${id}/repositorios/${encodeURIComponent(r.id)}?retencion=1`;
     // Lo frecuente (retención, verificación, prueba, espejo, derivadas) está a la vista (PasosRepo).
     const proteccion: AccionMenu[] = [
-      ...(r.externa && !r.solo_lectura ? [{ texto: "Cambiar la copia externa", onclick: () => abrirExterna(r) }] : []),
+      ...(r.externa && !r.solo_lectura ? [{ texto: "Cambiar la copia derivada", onclick: () => abrirExterna(r) }] : []),
       // v1.41: con todo su historial, a otro destino (p. ej. el almacén de otro equipo).
       // Si ya se está moviendo (desde otra consola u otro navegador), aquí no se puede empezar otro.
       ...(!r.solo_lectura && puede.administrar(rol) && !moverBloqueado(r.id) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
@@ -624,7 +624,7 @@
       ...(conVersiones && !r.solo_lectura && !r.solo_anadir && !enAlm
         ? [{ texto: "Aplicar retención (borra versiones)", peligro: true, onclick: () => abrir({ tipo: "aplicar_retencion", cuerpo: { repo: r.id }, descripcion: `Se borrarán de «${r.nombre}» las versiones que ya no entren en su retención.`, repo: ref }) }]
         : []),
-      ...(r.externa ? [{ texto: "Quitar la copia externa", peligro: true, onclick: () => quitarExterna(r) }] : []),
+      ...(r.externa ? [{ texto: "Quitar la copia derivada", peligro: true, onclick: () => quitarExterna(r) }] : []),
       ...(conCopias
         ? [{ texto: "Dejar de copiar", peligro: true, onclick: () => abrir({ tipo: "dejar_de_copiar", cuerpo: { repo: r.id }, descripcion: `${equipo!.nombre} dejará de copiar en «${r.nombre}». Lo ya guardado sigue en su destino.`, repo: ref }) }]
         : []),
@@ -735,7 +735,7 @@
     abrir({
       tipo: "cambiar_copia_externa",
       cuerpo: {},
-      titulo: r.externa ? "Cambiar la copia externa" : "Copia externa",
+      titulo: r.externa ? "Cambiar la copia derivada" : "Copia derivada",
       descripcion: admiteExternaExistente(equipo)
         ? `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino: a un repositorio nuevo (lo crea allí, en una carpeta con su id) o a uno que ya existe. Si algo le pasa al destino principal, queda esta.`
         : `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino (la primera vez crea allí el repositorio, en una carpeta con su id). Si algo le pasa al destino principal, queda esta.`,
@@ -1131,11 +1131,11 @@
                 <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover />
                 {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) && !moverBloqueado(r.id) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
-                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
+                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia derivada a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
                   {@const raro = problemaDestinoPaso(equipo, r.externa.destino_id, r.externa.destino)}
-                  {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia externa</button>{/if}</p>{/if}
+                  {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia derivada:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia derivada</button>{/if}</p>{/if}
                   <!-- 14nn: su destino ya no existe: quitarla o volver a crearla desde cero. -->
-                  {#if inf?.externa?.motivo === "destino_ausente"}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {textoDestinoAusente(inf.externa)}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar esta copia</button>{#if !r.solo_lectura}<button class="btn btn-sm" onclick={() => abrirExterna(r)}>Volver a crearla desde cero</button>{/if}{/if}</p>{/if}
+                  {#if inf?.externa?.motivo === "destino_ausente"}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia derivada:</strong> {textoDestinoAusente(inf.externa)}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar esta copia</button>{#if !r.solo_lectura}<button class="btn btn-sm" onclick={() => abrirExterna(r)}>Volver a crearla desde cero</button>{/if}{/if}</p>{/if}
                 {/if}
                 {#each r.derivadas ?? [] as dv (dv.id)}
                   {@const ult = ultimaDerivada(r, dv.id)}
@@ -1486,7 +1486,7 @@
       {#if almacenes.length && puede.administrar(rol)}
         <section class="card p">
           <h3 class="section-title">Copiar en un equipo de la oficina</h3>
-          <p class="faint nota-almacen">Rápido para restaurar y sin tocar el router. Lo recomendado: además, una copia externa en la nube.</p>
+          <p class="faint nota-almacen">Rápido para restaurar y sin tocar el router. Lo recomendado: además, una copia derivada en la nube.</p>
           <div class="acciones">
             {#each almacenes as a (a.id)}<button class="btn btn-sm" onclick={() => (copiarEn = a)}><Server size={14} />Copiar en «{a.nombre}»</button>{/each}
           </div>
@@ -1763,7 +1763,7 @@
     <EditorRetencion id="ret" bind:regla={reg} admite={admitePlazos(equipo)} {...horarioDeCopias(copias, String(dialogo.cuerpo.repo ?? ""))} />
   {:else if dialogo?.campos === "externa"}
     {#if extNueva}
-      <div class="segmented" role="group" aria-label="Repositorio de la copia externa">
+      <div class="segmented" role="group" aria-label="Repositorio de la copia derivada">
         <button type="button" class:on={extX.modo === "nuevo"} aria-pressed={extX.modo === "nuevo"} onclick={() => (extX.modo = "nuevo")}><Plus size={14} />Crear uno nuevo</button>
         <button type="button" class:on={extX.modo === "existente"} aria-pressed={extX.modo === "existente"} onclick={() => (extX.modo = "existente")}><Database size={14} />Usar uno que ya existe</button>
       </div>
@@ -1849,9 +1849,9 @@
       {#if efectoExterna}<p class="faint nota-esp">{efectoExterna}</p>{/if}
     {/if}
     {#if !(extNueva && extX.modo === "existente")}
-    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia externa<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
+    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia derivada<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
     {#if ext.otraContrasena}
-      <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia externa" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia externa." />
+      <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia derivada" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia derivada." />
     {/if}
     {/if}
   {:else if dialogo?.campos === "espejo"}

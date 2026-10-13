@@ -134,7 +134,7 @@ export function riesgoMismoEquipo(repo: RepositorioResumen, equipo: Equipo, equi
   return {
     lugar,
     titulo: "Copias en el mismo equipo",
-    texto: `Las copias de ${n} se guardan en el propio ${n}: si ese equipo se daña o lo cifra un ransomware, se pierden las dos. Guárdalas en un almacén de otro equipo o añade una copia externa.`,
+    texto: `Las copias de ${n} se guardan en el propio ${n}: si ese equipo se daña o lo cifra un ransomware, se pierden las dos. Guárdalas en un almacén de otro equipo o añade una copia derivada.`,
     nota:
       lugar.discoDesconocido === "agente"
         ? `El agente de ${n} aún no dice si es un disco USB (actualízalo). Si lo es y lo guardas aparte, no pasa nada.`
@@ -164,6 +164,6 @@ export function riesgosDelCliente(equipos: Equipo[], todos: Equipo[] = equipos):
  */
 export function comprobacionLugar(repo: RepositorioResumen, equipo: Equipo, equipos: Equipo[]): ComprobacionProteccion | null {
   const r = riesgoMismoEquipo(repo, equipo, equipos);
-  if (r) return { id: "lugar", estado: "aviso", etiqueta: "Fuera de este equipo", detalle: `${r.lugar.texto}: si se daña o lo cifra un ransomware, se pierden los archivos y las copias. Guárdalas en un almacén de otro equipo o añade una copia externa.` };
+  if (r) return { id: "lugar", estado: "aviso", etiqueta: "Fuera de este equipo", detalle: `${r.lugar.texto}: si se daña o lo cifra un ransomware, se pierden los archivos y las copias. Guárdalas en un almacén de otro equipo o añade una copia derivada.` };
   return null;
 }

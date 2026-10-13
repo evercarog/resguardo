@@ -200,7 +200,7 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
     const FUERA: &str = "Fuera del sitio";
     let mut subidas: Vec<(String, Option<RunFact>)> = Vec::new();
     if f.has_offsite {
-        subidas.push(("la copia externa".into(), f.offsite_run.clone()));
+        subidas.push(("la copia derivada de cada día".into(), f.offsite_run.clone()));
     }
     subidas.extend(f.derived.iter().map(|d| (format!("la copia derivada a «{}»", d.name), d.run.clone())));
     let atrasada = |r: &RunFact| match (parse(&r.finished), f.last_snapshot.as_deref().and_then(parse)) {

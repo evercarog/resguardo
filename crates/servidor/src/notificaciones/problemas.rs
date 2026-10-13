@@ -182,7 +182,7 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
     match tipo {
         "copia_fallida" => format!("la copia «{nombre}» en «{equipo}»"),
         "verificacion_fallida" => format!("la verificación de «{nombre}» en «{equipo}»"),
-        "externa_fallida" => format!("la copia externa de «{nombre}» en «{equipo}»"),
+        "externa_fallida" => format!("la copia derivada de «{nombre}» en «{equipo}»"),
         "prueba_fallida" => format!("la prueba de restauración de «{nombre}» en «{equipo}»"),
         "espejo_fallido" => format!("el espejo de «{equipo}»"),
         "retencion_fallida" => format!("la retención de «{nombre}» en el almacén «{equipo}»"),

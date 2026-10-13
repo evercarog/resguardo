@@ -43,7 +43,7 @@ export const GUIAS: Guia[] = [
     resumen: "Un equipo de la oficina recibe las copias de los demás, sin que nadie pueda borrarlas desde el equipo que copia.",
     texto: [
       "Se instala en ese equipo un servidor de copias de solo añadir con su propio certificado y su regla del cortafuegos. Cada equipo que copia en él tiene su usuario y no puede borrar lo ya copiado, ni siquiera un ransomware que se cuele en él.",
-      "Es rápido para restaurar y no hace falta tocar el router. Lo recomendado es tener además una copia fuera de la oficina: el espejo en otro disco o en la nube, o una copia externa.",
+      "Es rápido para restaurar y no hace falta tocar el router. Lo recomendado es tener además algo fuera del sitio: un espejo o una copia derivada a la nube (otro disco ayuda, pero sigue en el sitio).",
     ],
     pasos: [
       "En la ficha del equipo, «Este equipo guarda copias»: elige la carpeta (mejor un disco dedicado) y el puerto.",
@@ -88,14 +88,15 @@ export const GUIAS: Guia[] = [
   },
   {
     id: "guia-copia-externa",
-    titulo: "Copia externa de un repositorio",
-    resumen: "Cada día, a la hora que elijas, el equipo copia las versiones de un repositorio a otro destino.",
+    titulo: "Copia, espejo y copia derivada",
+    resumen: "Tres trabajos y nada más: la copia guarda carpetas en un repositorio; el espejo pone ese mismo repositorio en otro destino; la copia derivada lleva sus versiones a otro repositorio.",
     texto: [
-      "La hace el equipo dueño del repositorio. Sirve para tener otra copia fuera (la nube, otro disco u otro servidor) por si el destino principal falla, se lo roban o lo cifra un ransomware.",
-      "Usa la contraseña del repositorio de origen, salvo que pongas otra (si la pones, apúntala en el kit). Si el repositorio está en un equipo que guarda copias, suele ser más sencillo el espejo de ese equipo.",
+      "Copia: las carpetas de un equipo → un repositorio. Espejo: el mismo repositorio (los mismos archivos, la misma contraseña) en otro destino; lo hace el almacén o el propio equipo, sin contraseñas. Copia derivada: las versiones de un repositorio → otro repositorio, en otro destino, con su propia retención y, si quieres, otra contraseña; la hace el equipo dueño.",
+      "«Fuera del sitio» o «en la nube» no es un tipo de copia: es lo que es el destino. Un espejo o una copia derivada a la nube cuentan como fuera del sitio en la regla 3-2-1-1-0.",
+      "La «copia externa» de antes (cada día a una hora) es una copia derivada más: se ve y se cambia igual.",
     ],
-    pasos: ["En la ficha del equipo, en la tarjeta del repositorio: «Más… → Copia externa…».", "Elige un destino que ya tenga el equipo o crea uno nuevo, la hora y, si quieres, una retención propia."],
-    ver: ["copia-externa", "prot-externa"],
+    pasos: ["En la ficha del equipo, en la tarjeta del repositorio: «Añadir paso» → espejo o copia derivada.", "Elige un destino que ya tenga el equipo o crea uno nuevo, cuándo y, si quieres, una retención propia."],
+    ver: ["copia-derivada", "espejo", "prot-externa"],
   },
   {
     id: "guia-mover",
@@ -138,7 +139,7 @@ export const GUIAS: Guia[] = [
       "Cada destino tiene un tipo (Local, Fuera del sitio o Nube) y marcas (Inmutable, Aislado), deducidos. Si no aciertan, cámbialos en la página del destino → «Tipo y marcas»: lo que marcas tú manda.",
       "Un almacén es de «solo añadir»: los equipos no pueden borrar lo copiado. Eso protege de un ransomware en un equipo, pero no es inmutable: quien administre el almacén (o su anfitrión) sí puede borrar, y su retención quita versiones. Por eso no cuenta como el «1 inmutable».",
     ],
-    pasos: ["Mira la tira «3 · 2 · 1 · 1 · 0» en la página de cada copia.", "Pulsa lo que falta: te lleva a donde se hace (copia externa, espejo, verificación, prueba de restauración).", "Para una copia nueva, «Con la plantilla 3-2-1» en «Añadir o cambiar copias»."],
+    pasos: ["Mira la tira «3 · 2 · 1 · 1 · 0» en la página de cada copia.", "Pulsa lo que falta: te lleva a donde se hace (copia derivada, espejo, verificación, prueba de restauración).", "Para una copia nueva, «Con la plantilla 3-2-1» en «Añadir o cambiar copias»."],
     ver: ["regla-321", "inmutable", "solo-anadir", "instantaneas"],
   },
   {

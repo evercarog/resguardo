@@ -320,14 +320,14 @@
             </dd>
           </div>
           <div>
-            <dt>Copia externa</dt>
+            <dt>Copia derivada</dt>
             <dd>
               {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />
               {:else if repo.externa}<span class="faint">A «{repo.externa.destino}» cada día a las {repo.externa.hora}, todavía sin ninguna</span>
               {:else}<span class="faint">No tiene</span>{/if}
               {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
               <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
-              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia externa</button></span>{/if}
+              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia derivada</button></span>{/if}
             </dd>
           </div>
           {#if enAlm}
