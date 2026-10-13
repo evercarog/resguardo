@@ -51,6 +51,27 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-pulido`
+
+- **Pedido:** C5 del plan 0.8.0 (pulido de pantallas), en autónomo: 14vv, 14ww (1), 14bb, 14d, 14o, 14q y la ayuda de 14qq y 14yy. 14zz (explorador de carpetas) no entraba en esta rama.
+- **Cambios:**
+  - 14vv: «Datos nuevos por versión» en dos columnas por tema (tamaño | actividad), en estrecho en ese orden; la página del repositorio pasa a tener las mismas cuatro gráficas.
+  - 14ww (1): la observación de la copia justo bajo el título de su página y su primera línea como segunda línea en «Copias».
+  - 14bb: color de la etiqueta en «Etiquetas de <equipo>» (administradores o más), guardado por `PUT /etiquetas` conservando plantilla y avisos, y repartido con `sincronizar()`. `EtiquetaChip` admite `indice` (color sin guardar).
+  - 14q: «Más opciones» con contenedor propio (el flex dentro de `<details>` no siempre se aplicaba) y aviso de reglas dudosas con «Cambiar por *.x» (`exclusionesDudosas`/`corregirExclusion`, también en «Avanzado»).
+  - 14qq/14yy: consejo bajo el horario + glosario `copiar-enseguida`; pregunta «La contraseña de un repositorio se filtró» en la ayuda.
+  - 14d: «N en este periodo · M en total», periodo «Todas» (calendario como mucho un año), «Ver más» por tandas de 40 y «Pedir todas a <equipo>» (sesión `explorar` con la contraseña, op `versiones`, como Restaurar; `PedirVersiones.svelte`, `unirVersiones`).
+  - 14o: cada entrada del historial que no es versión se abre con un clic (ficha); entran también las retenciones del propio equipo y las restauraciones (pedidas una vez con `tipo=retencion,orden`). Agente: `verificacion`, `prueba_restauracion` y `externa` de la bitácora llevan `duracion_s`, `archivos`, `bytes`, `version`, `versiones` (opcionales; v1.6x en `api-servidor.md`); `tasks.rs` pasa `data_added` y `snapshot_id` al historial.
+  - Mock: pruebas con detalle, verificaciones nuevas y antiguas, una restauración y, en la op `versiones`, las de antes de los 60 días.
+- **Comprobado (Windows 11):** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (bien salvo las 3 conocidas por permisos del temporal; con ellas saltadas y `--no-fail-fast`, todo bien), consola `check`, `build`, `test:vectores`, `test:sin-referencias`; `npm run e2e`: la primera vez falló en el paso 5 con `ECONNRESET` (PC cargado), la segunda pasó entera. Capturas en `revisiones/080-pulido/` (modo mock).
+- **Sin probar / dudas:**
+  - Los campos nuevos de la bitácora no se han visto con un agente real (solo prueba unitaria y mock). Las entradas viejas siguen diciendo «sin detalle (agente anterior)».
+  - Las versiones traídas con «Pedir todas» no saben su copia salvo que el repositorio tenga una sola; con varias copias en el mismo repositorio, la vista de una copia no las enseña. No se recargan en vivo.
+  - Las restauraciones se asignan a su repositorio por el nombre que lleva la descripción de la orden («Restaurar «X» …»); si se renombra el repositorio, salen solo en la vista del equipo. Lo que tarda una restauración dice «no consta».
+  - Retenciones y órdenes se piden una vez al abrir la página (hasta 200 entradas); una retención nueva no aparece hasta recargar. Las del almacén no salen aquí (siguen en «Retención en detalle»).
+  - «Cómo se comprueba» de la verificación y de la prueba es un texto fijo que describe lo que hace el agente actual, no algo que mande el equipo.
+  - El color de etiqueta se guarda aunque las etiquetas vayan al equipo (`etiquetas_equipo`); si guardar el color falla tras guardar las etiquetas, solo se avisa.
+
 ## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-datos-equipo`
 
 - **Pedido:** D3 del plan 0.8.0 (plan-mejoras 14uu), en autónomo: datos básicos del equipo en el resumen, avisos de disco casi lleno y de sistema sin soporte, tarjeta «Equipo» y sistema exacto en la consola.
