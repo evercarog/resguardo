@@ -397,6 +397,10 @@ pub struct PasoRegla {
     /// 0.7.26: días sin conectarse tras los que avisa (sin él, 30).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aislado_dias: Option<u32>,
+    /// Plan 0.8.0, F1 (14pp): sin plazo (una copia completada o solo a mano): está al día
+    /// si tiene alguna versión, sin mirar cuándo.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sin_plazo: bool,
 }
 
 impl PasoRegla {
@@ -486,6 +490,9 @@ pub fn margen_horas(cada_horas: Option<f64>) -> f64 {
 /// Un medio aislado se conecta de vez en cuando: le basta con sus N días.
 pub fn paso_al_dia(p: &PasoRegla, ahora: DateTime<Local>) -> bool {
     let Some(t) = p.ultima_ok.as_deref().and_then(parse) else { return false };
+    if p.sin_plazo {
+        return true;
+    }
     let mut margen = margen_horas(p.cada_horas);
     if p.es_aislado() {
         margen = margen.max(f64::from(p.dias_aislado()) * 24.0);
@@ -863,6 +870,17 @@ mod tests {
         assert_eq!(p.total, 6, "sin prueba de restauración propia");
         assert_eq!(p.score, 6, "{:#?}", p.items);
         assert!(p.items[0].detail.contains("Recibe la copia externa de «Siigo»"));
+    }
+
+    /// Plan 0.8.0, F1 (14pp): una copia completada o solo a mano está al día si tiene alguna
+    /// versión, sin mirar cuándo (sin ninguna, no).
+    #[test]
+    fn paso_sin_plazo() {
+        let hace = |d: i64| Some((now() - Duration::days(d)).to_rfc3339());
+        let p = PasoRegla { id: "k".into(), soporte: "s".into(), ultima_ok: hace(200), ..Default::default() };
+        assert!(!paso_al_dia(&p, now()));
+        assert!(paso_al_dia(&PasoRegla { sin_plazo: true, ..p.clone() }, now()));
+        assert!(!paso_al_dia(&PasoRegla { sin_plazo: true, ultima_ok: None, ..p }, now()));
     }
 
     /// Los vectores compartidos con la consola (`consola/scripts/vectores-regla.ts`).
