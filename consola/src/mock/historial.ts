@@ -156,7 +156,14 @@ export function historialMock(eq: { id: string; nombre?: string; resumen: T.Equi
     for (let semana = 1; semana <= 12; semana++) {
       const hora = new Date(ahora - semana * 7 * 86_400_000 - 3 * 3600_000).toISOString();
       const fallo = rnd() < 0.15;
-      out.push({ id: `${r.id}-v${semana}`, hora, tipo: "verificacion", repo: r.id, resultado: fallo ? "fallo" : "ok", ...(fallo ? { mensaje: "Faltan 2 paquetes de datos." } : {}) });
+      // v1.6x (14o): las de las últimas 6 semanas, de un agente nuevo (con lo que tardaron); las de antes, de uno anterior.
+      out.push({ id: `${r.id}-v${semana}`, hora, tipo: "verificacion", repo: r.id, resultado: fallo ? "fallo" : "ok", ...(semana <= 6 ? { duracion_s: Math.round(120 + rnd() * 600) } : {}), ...(fallo ? { mensaje: "Faltan 2 paquetes de datos." } : {}) });
+    }
+    // 14o: una prueba de restauración al mes, con su detalle (agente nuevo).
+    for (let mes = 1; mes <= 3; mes++) {
+      const hora = new Date(ahora - mes * 30 * 86_400_000 - 5 * 3600_000).toISOString();
+      const v = Math.floor(rnd() * 0xffffffff).toString(16).padStart(8, "0");
+      out.push({ id: `${r.id}-p${mes}`, hora, tipo: "prueba_restauracion", repo: r.id, resultado: "ok", mensaje: "25 archivos restaurados y comprobados.", duracion_s: Math.round(40 + rnd() * 200), archivos: 25, bytes: Math.round(rnd() * 180_000_000), version: v });
     }
     const copia = eq.resumen?.copias?.find((k) => k.repo === r.id);
     if (!copia) continue;
@@ -199,6 +206,21 @@ export function historialMock(eq: { id: string; nombre?: string; resumen: T.Equi
   // Un aviso del equipo (como el agente, bitacora.rs `aviso`): informativo, no es un fallo.
   if (eq.resumen?.repositorios?.length)
     out.push({ id: `${eq.id}-aviso-consola`, hora: new Date(ahora - 2 * 86_400_000 - 5 * 3600_000).toISOString(), tipo: "aviso", mensaje: "Este equipo se conectó también a otra consola (copias.ejemplo.net)." });
+  // 14o: una restauración (orden «restaurar» del historial común; solo pedida con `tipo=orden`).
+  const r0 = eq.resumen?.repositorios?.[0];
+  if (r0)
+    out.push({
+      id: `${eq.id}-orden-restaurar`,
+      hora: new Date(ahora - 6 * 86_400_000 - 2 * 3600_000).toISOString(),
+      tipo: "orden",
+      orden: "restaurar",
+      orden_id: `${eq.id}-o-restaurar`,
+      descripcion: `Restaurar «${r0.nombre}» reemplazando los archivos originales`,
+      consola: "Consola local",
+      por: "Ana",
+      resultado: "hecha" as unknown as T.EntradaHistorial["resultado"],
+      mensaje: "Restaurado (12 elementos).",
+    });
   // v1.50 (9b): el equipo vio que una de sus consolas rehízo su actividad (agente, ancla.rs).
   if (eq.nombre === "CAJA-1")
     out.push({

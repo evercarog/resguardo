@@ -3,9 +3,9 @@
 // (src/lib/copiasCliente.ts). `npm run test:vectores`.
 import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioResumen, VersionInforme } from "../src/lib/tipos";
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
-import { lineaEnDisco } from "../src/lib/repo";
+import { duracion, lineaEnDisco } from "../src/lib/repo";
 import { bytes } from "../src/lib/formato";
-import { esFallo, pasaFiltro, sucesoHistorial, sucesosDe } from "../src/lib/historial";
+import { esFallo, fichaTarea, pasaFiltro, sucesoHistorial, sucesoRetencion, sucesosDe, unirVersiones } from "../src/lib/historial";
 import { moviendoDe, textoPasoCopias } from "../src/lib/mover";
 import { textoCorto, textoMover } from "../src/lib/textoProgreso";
 import { altoCalendario, altoFila, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
@@ -191,6 +191,49 @@ igual("y en el nuevo", sucesoHistorial(hm, "nuevo").titulo, "Movido aquí desde 
 igual("un paso que falló", [sucesoHistorial({ ...hm, paso: "historial", resultado: "fallo" }, "r2").titulo, sucesoHistorial({ ...hm, resultado: "fallo" }, "r2").tono], ["Mover a otro sitio: falló", "bad"]);
 const conMover = sucesosDe({ fuentes: [{ repo: repo2, inf: null }, { repo: { id: "nuevo", nombre: "Contabilidad (almacén)", destino: "d" }, inf: null }], copias, historial: [hm], conRepo: true }).sucesos;
 igual("en un equipo (los dos repositorios a la vez), una sola vez", conMover.filter((x) => x.tipo === "historial").length, 1);
+
+console.log("\n· Todas las versiones: las del resumen y las pedidas al equipo (14d)");
+{
+  const delInforme = [v("aaaa1111", 1), v("bbbb2222", 30)];
+  const traidas = [
+    { id: "aaaa1111" + "0".repeat(56), cuando: h(1), bytes: 5, etiquetas: [] },
+    { id: "cccc3333" + "0".repeat(56), cuando: h(24 * 90), bytes: 7, archivos: 3, etiquetas: ["diaria"] },
+    { id: "no-vale", cuando: h(2) },
+    { id: "dddd4444" + "0".repeat(56), cuando: "ayer" },
+  ];
+  const u = unirVersiones(delInforme, traidas, "k1");
+  igual("sin repetir y la más reciente primero", u.map((x) => x.id), ["aaaa1111", "bbbb2222", "cccc3333"]);
+  igual("las del resumen mandan (con todos sus datos)", u[0].total_bytes, 1e9);
+  igual("la traída: solo lo que se sabe", [u[2].copia, u[2].total_bytes, u[2].anadido, u[2].duracion_s, u[2].etiquetas], ["k1", 7, null, null, ["diaria"]]);
+  igual("sin copia única, la copia no se inventa", unirVersiones(delInforme, traidas, null)[2].copia, null);
+  igual("sin traídas, las del resumen tal cual", unirVersiones(delInforme, undefined), delInforme);
+}
+
+console.log("\n· Detalle de cada entrada del historial (14o)");
+{
+  const nueva = fichaTarea("prueba", { duracion_s: 95, archivos: 25, bytes: 3_000_000, version: "abcdef0123456789" });
+  igual("prueba de un agente nuevo: lo que tardó, la versión y lo restaurado", [nueva.anterior, nueva.ficha.slice(0, 3).map((f) => f.v)], [false, [duracion(95), "abcdef01", `25 (${bytes(3_000_000)})`]]);
+  const vieja = fichaTarea("prueba", {});
+  igual("de un agente anterior: sin inventar", [vieja.anterior, vieja.ficha.slice(0, 3).map((f) => f.v)], [true, [null, null, null]]);
+  igual("subida: las versiones subidas", fichaTarea("externa", { duracion_s: 30, versiones: 4 }).ficha.map((f) => f.v), [duracion(30), "4"]);
+  igual("espejo: lo que tardó «no consta» (nunca lo anota)", fichaTarea("espejo", {}).anterior, false);
+  const ret = sucesoRetencion(
+    { id: "r1", hora: h(2), inicio: h(2.01), tipo: "retencion", origen: "equipo", por: "automatica", repo: "r1", resultado: "ok", antes: 30, quedan: 27, quitadas: 3, liberado: 1e6 },
+    "r1",
+    "",
+    "/ret",
+  )!;
+  igual("retención: su detalle", [ret.tipo, ret.chip, ret.meta, ret.ficha!.map((f) => f.v), ret.enlace?.href], ["retencion", "Correcta", "3 quitadas", ["El propio equipo, con su horario", duracion(36), "30 antes · 27 después", "3", bytes(1e6)], "/ret"]);
+  const orden = (id: string, horas: number, resultado: string): EntradaHistorial =>
+    ({ id, hora: h(horas), tipo: "orden", orden: "restaurar", orden_id: "o1", descripcion: "Restaurar «Documentos» reemplazando los archivos originales", por: "Ana", resultado }) as unknown as EntradaHistorial;
+  const s = sucesosDe({ fuentes: [{ repo, inf: null }], copias, ordenes: [orden("a", 5, "en_espera"), orden("b", 1, "hecha")], retenciones: [] }).sucesos;
+  const rs = s.filter((x) => x.tipo === "restauracion");
+  igual("restauración: una por orden, la última noticia", rs.map((x) => [x.chip, x.repo, x.meta]), [["Hecha", "r1", "por Ana"]]);
+  const otra = sucesosDe({ fuentes: [{ repo: repo2, inf: null }], copias, ordenes: [orden("b", 1, "hecha")] }).sucesos;
+  igual("de otro repositorio, no sale", otra.filter((x) => x.tipo === "restauracion").length, 0);
+  const tarea = sucesosDe({ fuentes: [{ repo, inf: null }], copias, historial: [{ id: "p1", hora: h(3), tipo: "prueba_restauracion", repo: "r1", resultado: "ok", duracion_s: 120, archivos: 10 }] }).sucesos[0];
+  igual("una prueba del historial: con su detalle y lo que tardó a la vista", [tarea.meta, tarea.ficha?.[0]], [duracion(120), { k: "Cuánto tardó", v: duracion(120) }]);
+}
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

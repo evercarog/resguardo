@@ -5,8 +5,9 @@
   import { X } from "@lucide/svelte";
   import { colorEtiqueta } from "$lib/etiquetas.svelte";
 
-  let { nombre, onquitar, onclick, activa = false, n }: { nombre: string; onquitar?: () => void; onclick?: () => void; activa?: boolean; n?: number } = $props();
-  const color = $derived(`var(--et-${colorEtiqueta(nombre)})`);
+  // `indice`: un color aún sin guardar (14bb: elegido al añadir la etiqueta).
+  let { nombre, onquitar, onclick, activa = false, n, indice }: { nombre: string; onquitar?: () => void; onclick?: () => void; activa?: boolean; n?: number; indice?: number } = $props();
+  const color = $derived(`var(--et-${indice ?? colorEtiqueta(nombre)})`);
 </script>
 
 {#if onclick}

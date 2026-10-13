@@ -1028,6 +1028,15 @@ export interface EntradaHistorial {
   antes?: { n: number; creado: number; hash: string };
   ahora?: { n: number; creado: number; hash: string };
   motivo?: "retrocede" | "otra_huella";
+  /**
+   * v1.6x (14o), en «verificacion», «prueba_restauracion» y «externa» (agentes nuevos;
+   * `duracion_s` también): los archivos restaurados en la prueba, lo que ocupaban, la
+   * versión probada (8 hex) y, en la copia externa, cuántas versiones subió.
+   */
+  archivos?: number;
+  bytes?: number;
+  version?: string;
+  versiones?: number;
   /** Solo «resumen_dia» (vueltas de una copia de un día de hace más de un año). */
   dia?: string;
   ok?: number;

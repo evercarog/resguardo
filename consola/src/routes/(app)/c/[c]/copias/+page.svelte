@@ -15,7 +15,7 @@
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { ESTADOS_FILTRO, filasCopias, filtrarCopias, ORDENES, ordenarCopias, type EstadoFiltro, type FilaCopia, type Orden } from "$lib/copiasCliente";
   import { guardar, leer } from "$lib/recordar";
-  import { objetoDe } from "$lib/notas.svelte";
+  import { notaDe, notas, objetoDe } from "$lib/notas.svelte";
   import AccionesEnBloque from "$lib/componentes/AccionesEnBloque.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
@@ -212,6 +212,8 @@
                 <ChevronRight size={14} aria-hidden="true" />
               </a>
               <ContadorNotas tipo="copia" objeto={objetoDe(x.equipo.id, x.copia.id)} />
+              <!-- 14ww (1): la observación de la copia, a la vista como segunda línea (su primera línea). -->
+              {#if notas.disponible}{@const obs = notaDe("copia", objetoDe(x.equipo.id, x.copia.id))?.titulo}{#if obs}<span class="sub obs-copia">{obs}</span>{/if}{/if}
               <span class="sub">
                 <a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>{" · "}{#if x.repo}<a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}/repositorios/{encodeURIComponent(x.repo.id)}">{x.repo.nombre}</a>{:else}{x.copia.repo}{/if}
               </span>
@@ -370,6 +372,12 @@
   }
   .sub.faint {
     font-size: var(--fs-xs);
+  }
+  .obs-copia {
+    color: var(--text-1);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .link-suave {
     color: inherit;

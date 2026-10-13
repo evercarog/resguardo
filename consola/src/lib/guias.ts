@@ -202,6 +202,17 @@ export const PREGUNTAS: Pregunta[] = [
     respuesta: ["Está en su kit de recuperación. Si no lo tienes, el propio equipo la muestra en local, como administrador (cambia «documentos» por el id del repositorio, que ves en «Repositorios y destinos»)."],
     comando: "resguardo-agente kit documentos",
   },
+  // 14yy (lo que sí se hace): la contraseña de un repositorio no se cambia en el sitio.
+  {
+    id: "si-contrasena-filtrada",
+    si: "La contraseña de un repositorio se filtró",
+    respuesta: [
+      "No se cambia en el mismo repositorio: quien copió su kit podría seguir abriéndolo (la llave de dentro no cambia) y los espejos guardan la llave antigua. Lo seguro es pasar a un repositorio nuevo con otra contraseña, con todo su historial.",
+      "1. En la página de la copia o del repositorio, «Añadir paso → Repositorio nuevo a partir de esta», con «Otra contraseña». Se crea con otra llave y se le traen todas las versiones. Guarda su kit nuevo.",
+      "2. Cuando haya traído el historial, «Cambiar» la copia para que guarde en el repositorio nuevo.",
+      "3. Pasado un tiempo (cuando ya no necesites restaurar desde el viejo), quita el repositorio viejo y sus espejos. Destruye el kit antiguo.",
+    ],
+  },
   {
     id: "si-llaves",
     si: "Sale «Las llaves de un equipo han cambiado»",

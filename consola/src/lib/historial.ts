@@ -7,14 +7,30 @@
 // el espejo, los pasos «Antes de copiar» que fueron mal y lo que el equipo
 // resume por día de hace más de un año. Sirve igual para un repositorio, para
 // una copia y para un equipo entero (varios repositorios a la vez).
-import type { CopiaResumen, EjecucionInforme, EntradaHistorial, Informe, RepoInforme, RepositorioResumen, ResultadoGancho, TareaInforme } from "./tipos";
+import type { CopiaResumen, EjecucionInforme, EntradaHistorial, Informe, RepoInforme, RepositorioResumen, ResultadoGancho, TareaInforme, VersionInforme } from "./tipos";
 import { agruparResultados, NOMBRE_GANCHO } from "./ganchos";
 import { duracion, pruebaRestauracion, TEXTO_RESULTADO, TEXTO_TAREA, TONO_RESULTADO, TONO_TAREA, verificacion, versionDeVuelta, versionesDe } from "./repo";
 import { bytes, numero } from "./formato";
 import type { Tono } from "./salud";
+import type { EntradaRetencion } from "./retencionDetalle";
+import { textoRegla } from "./retencion";
+import { RESULTADO_ORDEN, resultadoOrden } from "./espera";
+import { mensajeOrden } from "./textosEquipo";
 
 /** Qué clase de suceso es (cada una con su icono en la pantalla). */
-export type TipoSuceso = "copia" | "sin_cambios" | "fallo" | "gancho" | "resumen" | "verificacion" | "prueba" | "externa" | "espejo" | "aviso" | "historial";
+export type TipoSuceso = "copia" | "sin_cambios" | "fallo" | "gancho" | "resumen" | "verificacion" | "prueba" | "externa" | "espejo" | "aviso" | "historial" | "retencion" | "restauracion";
+
+/**
+ * 14o: una fila del detalle de un suceso («Cuánto tardó: 3 min»). Sin valor
+ * (`null`), el equipo no lo dijo: se enseña «sin detalle» y nunca se inventa.
+ */
+export interface FilaFicha {
+  k: string;
+  v: string | null;
+}
+/** Lo que se dice de un dato que no llegó: de un agente anterior o, si es nuevo, que no consta. */
+export const SIN_DETALLE = "sin detalle (agente anterior)";
+export const NO_CONSTA = "no consta";
 
 /**
  * Qué fue, para los filtros y la marca del calendario: un fallo de verdad (una
@@ -56,6 +72,12 @@ export interface Suceso {
   copia: string | null;
   /** La hora de la vuelta (abre su detalle en el cajón), si la tiene el informe. */
   vuelta: string | null;
+  /** 14o: su detalle (se abre con un clic en la bitácora), con lo que dijo el equipo. */
+  ficha?: FilaFicha[];
+  /** Si el equipo es anterior (no manda estos datos): lo que falta se dice «sin detalle (agente anterior)». */
+  anterior?: boolean;
+  /** Dónde verlo entero (la retención, en «Retención en detalle»). */
+  enlace?: { href: string; texto: string } | null;
 }
 
 /** Lo que se dice de una versión aparte de ella misma: si su vuelta tuvo avisos y sus pasos previos. */
@@ -83,6 +105,121 @@ export interface EntradaSucesos {
   conRepo?: boolean;
   /** También lo del equipo que no es de un repositorio (el espejo de un almacén, sus avisos). */
   conEquipo?: boolean;
+  /**
+   * 14o: lo que el historial solo da si se pide (`tipo`): las vueltas de la retención
+   * del equipo y lo que pasó con las órdenes (de ellas, las restauraciones).
+   */
+  retenciones?: EntradaRetencion[];
+  ordenes?: EntradaHistorial[];
+  /** La página «Retención en detalle» de un repositorio. */
+  hrefRetencion?: (repo: string) => string;
+}
+
+const numeroValido = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : null);
+const versionCorta = (x: unknown): string | null => (typeof x === "string" && /^[0-9a-f]{8,64}$/i.test(x) ? x.slice(0, 8).toLowerCase() : null);
+
+/**
+ * 14o: el detalle de una verificación, una prueba de restauración, una subida
+ * o un espejo del historial del equipo. Los agentes nuevos mandan lo que tardó,
+ * lo restaurado y la versión (v1.6x); con uno anterior solo hay el resultado y
+ * su mensaje, y lo demás se dice «sin detalle».
+ */
+export function fichaTarea(tipo: TipoSuceso, h: Pick<EntradaHistorial, "duracion_s" | "archivos" | "bytes" | "version" | "versiones">): { ficha: FilaFicha[]; anterior: boolean } {
+  const d = numeroValido(h.duracion_s);
+  // El espejo del almacén no anota lo que tarda (ni los agentes nuevos): ahí no es «anterior».
+  const anterior = d == null && tipo !== "espejo";
+  const ficha: FilaFicha[] = [];
+  if (tipo === "prueba") {
+    const a = numeroValido(h.archivos);
+    const b = numeroValido(h.bytes);
+    ficha.push({ k: "Versión probada", v: versionCorta(h.version) });
+    ficha.push({ k: "Archivos restaurados", v: a == null ? null : `${numero(a)}${b != null ? ` (${bytes(b)})` : ""}` });
+    ficha.push({ k: "Dónde", v: "En una carpeta temporal del equipo, que se borra al terminar." });
+    ficha.push({ k: "Cómo se comprueba", v: "El contenido de cada archivo restaurado, con sus huellas, y su tamaño." });
+  } else if (tipo === "verificacion") {
+    ficha.push({ k: "Cómo se comprueba", v: "La estructura del repositorio y una parte de sus datos, leídos y comprobados con sus huellas (cada vez, otra parte)." });
+  } else if (tipo === "externa") {
+    const n = numeroValido(h.versiones);
+    ficha.push({ k: "Versiones subidas", v: n == null ? null : numero(n) });
+  }
+  ficha.unshift({ k: "Cuánto tardó", v: d == null ? null : duracion(d) });
+  return { ficha, anterior };
+}
+
+const QUIEN_RETENCION: Record<string, string> = { equipo: "El propio equipo", almacen: "El almacén", externa: "En la copia externa" };
+const POR_RETENCION: Record<string, string> = { orden: "a mano, desde una consola", ventana: "a mano, desde la ventana del equipo", automatica: "con su horario" };
+
+/** 14o: una vuelta de la retención (v1.45) como suceso, con su detalle. */
+export function sucesoRetencion(r: EntradaRetencion, repo: string, deRepo = "", href?: string): Suceso | null {
+  const t = ms(r.hora);
+  if (!Number.isFinite(t)) return null;
+  const fallo = r.resultado === "fallo";
+  const quitadas = numeroValido(r.quitadas);
+  const inicio = r.inicio ? ms(r.inicio) : NaN;
+  const tardo = Number.isFinite(inicio) && t >= inicio ? Math.round((t - inicio) / 1000) : null;
+  const antes = numeroValido(r.antes);
+  const quedan = numeroValido(r.quedan);
+  const liberado = numeroValido(r.liberado);
+  const ficha: FilaFicha[] = [
+    { k: "Quién la aplicó", v: `${QUIEN_RETENCION[r.origen ?? "equipo"] ?? "El equipo"}${r.por && POR_RETENCION[r.por] ? `, ${POR_RETENCION[r.por]}` : ""}` },
+    { k: "Cuánto tardó", v: tardo == null ? null : duracion(tardo) },
+    { k: "Versiones", v: antes != null && quedan != null ? `${numero(antes)} antes · ${numero(quedan)} después` : null },
+    { k: "Quitadas", v: quitadas == null ? null : numero(quitadas) },
+    { k: "Espacio liberado", v: liberado == null ? null : bytes(liberado) },
+  ];
+  if (r.regla) ficha.push({ k: "Regla", v: textoRegla(r.regla) });
+  return {
+    clave: `r|${r.id}`,
+    hora: r.hora,
+    t,
+    tipo: "retencion",
+    tono: fallo ? "bad" : "ok",
+    clase: fallo ? "fallo" : "ok",
+    titulo: `Retención${deRepo}`,
+    chip: fallo ? "Falló" : "Correcta",
+    detalle: r.mensaje ?? null,
+    meta: quitadas == null ? null : quitadas ? `${numero(quitadas)} ${quitadas === 1 ? "quitada" : "quitadas"}` : "nada que quitar",
+    repo,
+    copia: null,
+    vuelta: null,
+    ficha,
+    anterior: r.compactada ? false : !r.inicio,
+    enlace: href ? { href, texto: "Ver en «Retención en detalle»" } : null,
+  };
+}
+
+/** 14o: una restauración (una orden «restaurar» del historial común, v1.49) como suceso. */
+export function sucesoRestauracion(h: EntradaHistorial, repo: string | null): Suceso | null {
+  const t = ms(h.hora);
+  if (!Number.isFinite(t)) return null;
+  const r = resultadoOrden(h);
+  const estado = RESULTADO_ORDEN[r] ?? { texto: r || "Sin resultado", tono: "neutral" as const };
+  const tono: Tono = estado.tono;
+  const mensaje = h.mensaje ? mensajeOrden("restaurar", h.mensaje) : null;
+  return {
+    clave: `o|${h.id}`,
+    hora: h.hora,
+    t,
+    tipo: "restauracion",
+    tono,
+    clase: claseDe({ tipo: "restauracion", tono }),
+    titulo: "Restauración",
+    chip: estado.texto,
+    detalle: tono === "bad" ? mensaje : null,
+    meta: h.por ? `por ${h.por}` : null,
+    repo,
+    copia: null,
+    vuelta: null,
+    ficha: [
+      { k: "Qué", v: h.descripcion ?? null },
+      { k: "Quién", v: h.por ?? null },
+      { k: "Desde", v: h.consola ? `la consola «${h.consola}»` : null },
+      { k: "Resultado", v: mensaje ?? estado.texto },
+      // Lo que tardó una restauración aún no lo anota el equipo (la ficha de cada restauración, 14l).
+      { k: "Cuánto tardó", v: null },
+    ],
+    anterior: false,
+  };
 }
 
 const ms = (h: string) => Date.parse(h);
@@ -114,6 +251,16 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
   const historial = e.historial ?? [];
   /** Las entradas `historial` ya contadas (salen en el repositorio de origen y en el nuevo). */
   const yaHistorial = new Set<string>();
+  // 14o: las restauraciones (órdenes «restaurar»), la última noticia de cada una.
+  const porOrden = new Map<string, EntradaHistorial>();
+  for (const h of e.ordenes ?? []) {
+    if (h.tipo !== "orden" || h.orden !== "restaurar") continue;
+    const k = h.orden_id || h.id;
+    const ya = porOrden.get(k);
+    if (!ya || ms(h.hora) > ms(ya.hora)) porOrden.set(k, h);
+  }
+  const restauraciones = [...porOrden.values()];
+  const restauracionesVistas = new Set<string>();
 
   for (const { repo, inf } of e.fuentes) {
     const deRepo = e.conRepo ? ` · «${repo.nombre}»` : "";
@@ -178,6 +325,22 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
         repo: repo.id,
         copia,
         vuelta: desdeInforme ? x.hora : null,
+        // 14o: sin su vuelta en el informe (más antigua), su detalle con lo que guarda el historial.
+        ficha: desdeInforme
+          ? undefined
+          : [
+              { k: "Cuánto tardó", v: minutos(x.duracion_s) },
+              ...(resultado === "fallo"
+                ? []
+                : [
+                    { k: "Lo nuevo", v: anadido != null ? bytes(anadido) : null },
+                    {
+                      k: "Archivos",
+                      v: x.archivos_nuevos != null || x.archivos_cambiados != null ? `${numero(x.archivos_nuevos ?? 0)} nuevos · ${numero(x.archivos_cambiados ?? 0)} cambiados` : null,
+                    },
+                  ]),
+              ...gs.map((g) => ({ k: NOMBRE_GANCHO[g.tipo] ?? g.tipo, v: `${textoGancho(g)}${g.mensaje ? `: ${g.mensaje}` : ""}` })),
+            ],
       });
     };
 
@@ -225,9 +388,37 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
       } else if (TAREA[h.tipo] && h.resultado && h.resultado !== "sin_cambios") {
         const [tipo, titulo] = TAREA[h.tipo]!;
         vistas.add(`t|${tipo}|${Math.round(ms(h.hora) / 60_000)}`);
-        out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo, tono: TONO_TAREA[h.resultado], titulo: `${titulo}${deRepo}`, chip: TEXTO_TAREA[h.resultado], detalle: h.mensaje ?? null, meta: null, repo: repo.id, copia: null, vuelta: null });
+        const d = numeroValido(h.duracion_s);
+        out.push({
+          clave: `h|${h.id}`,
+          hora: h.hora,
+          t: ms(h.hora),
+          tipo,
+          tono: TONO_TAREA[h.resultado],
+          titulo: `${titulo}${deRepo}`,
+          chip: TEXTO_TAREA[h.resultado],
+          detalle: h.mensaje ?? null,
+          meta: d != null ? duracion(d) : null,
+          repo: repo.id,
+          copia: null,
+          vuelta: null,
+          ...fichaTarea(tipo, h),
+        });
       }
     }
+    // 14o: las vueltas de la retención que hizo el propio equipo (las del almacén, en «Retención en detalle»).
+    for (const r of e.retenciones ?? []) {
+      if (r.tipo !== "retencion" || r.repo !== repo.id || (r.origen && r.origen !== "equipo")) continue;
+      const s = sucesoRetencion(r, repo.id, deRepo, e.hrefRetencion?.(repo.id));
+      if (s) out.push(s);
+    }
+    // 14o: las restauraciones de este repositorio (la orden dice su nombre: «Restaurar «…» …»).
+    for (const h of restauraciones)
+      if (!restauracionesVistas.has(h.id) && h.descripcion?.includes(`«${repo.nombre}»`)) {
+        restauracionesVistas.add(h.id);
+        const s = sucesoRestauracion(h, repo.id);
+        if (s) out.push({ ...s, titulo: `${s.titulo}${deRepo}` });
+      }
     // La última de cada tarea, del informe, si el historial no la trae (servidores o agentes anteriores).
     const tareas: [TipoSuceso, string, TareaInforme | null][] = [
       ["verificacion", "Verificación", verificacion(repo, inf)],
@@ -236,7 +427,22 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
     ];
     for (const [tipo, titulo, x] of tareas) {
       if (!x?.ultima || vistas.has(`t|${tipo}|${Math.round(ms(x.ultima) / 60_000)}`)) continue;
-      out.push({ clave: `i|${repo.id}|${tipo}`, hora: x.ultima, t: ms(x.ultima), tipo, tono: TONO_TAREA[x.resultado], titulo: `${titulo}${deRepo}`, chip: TEXTO_TAREA[x.resultado], detalle: x.mensaje_corto ?? null, meta: null, repo: repo.id, copia: null, vuelta: null });
+      out.push({
+        clave: `i|${repo.id}|${tipo}`,
+        hora: x.ultima,
+        t: ms(x.ultima),
+        tipo,
+        tono: TONO_TAREA[x.resultado],
+        titulo: `${titulo}${deRepo}`,
+        chip: TEXTO_TAREA[x.resultado],
+        detalle: x.mensaje_corto ?? null,
+        meta: null,
+        repo: repo.id,
+        copia: null,
+        vuelta: null,
+        // Solo del informe (el historial no la trae): lo demás no se sabe.
+        ...fichaTarea(tipo, {}),
+      });
     }
     // Pasos previos que no casan con ninguna vuelta (la vuelta ya no está en el informe).
     for (const g of ganchos)
@@ -257,11 +463,32 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
             vuelta: null,
           });
   }
+  // En un equipo entero, también las restauraciones que no dicen de qué repositorio son.
+  if (e.conEquipo)
+    for (const h of restauraciones)
+      if (!restauracionesVistas.has(h.id)) {
+        const s = sucesoRestauracion(h, null);
+        if (s) out.push(s);
+      }
   if (e.conEquipo)
     for (const h of historial) {
       if (h.repo) continue;
       if (h.tipo === "espejo" && h.resultado && h.resultado !== "sin_cambios")
-        out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo: "espejo", tono: TONO_TAREA[h.resultado], titulo: "Espejo de lo que guarda", chip: TEXTO_TAREA[h.resultado], detalle: h.mensaje ?? null, meta: null, repo: null, copia: null, vuelta: null });
+        out.push({
+          clave: `h|${h.id}`,
+          hora: h.hora,
+          t: ms(h.hora),
+          tipo: "espejo",
+          tono: TONO_TAREA[h.resultado],
+          titulo: "Espejo de lo que guarda",
+          chip: TEXTO_TAREA[h.resultado],
+          detalle: h.mensaje ?? null,
+          meta: null,
+          repo: null,
+          copia: null,
+          vuelta: null,
+          ...fichaTarea("espejo", h),
+        });
       // v1.50 (9b): el equipo vio que una de sus consolas rehízo su actividad.
       else if (h.tipo === "auditoria_rehecha" && h.antes && h.ahora)
         out.push({ clave: `h|${h.id}`, hora: h.hora, t: ms(h.hora), tipo: "aviso", tono: "bad", titulo: `${h.consola ? `La consola «${h.consola}»` : "Una de sus consolas"} rehízo su actividad`, chip: "Actividad rehecha", detalle: textoRehecha(h.antes, h.ahora), meta: null, repo: null, copia: null, vuelta: null });
@@ -341,4 +568,45 @@ export function versionesDeFuentes(fuentes: FuenteHistorial[], soloCopia?: strin
       .filter((v) => !soloCopia || v.copia === soloCopia)
       .map((v) => ({ v, repo: repo.id })),
   );
+}
+
+/** 14d: una versión tal como la da el equipo en la sesión `explorar` (`versiones`, api-servidor.md §7). */
+export interface VersionSesion {
+  id: string;
+  cuando: string;
+  archivos?: number | null;
+  bytes?: number | null;
+  etiquetas?: string[] | null;
+}
+
+/**
+ * 14d: las versiones del informe (los últimos 60 días, con todos sus datos) y
+ * las que se pidieron al equipo (todas, con menos datos), sin repetir. Las del
+ * informe mandan; de las demás no se sabe la copia que las hizo, salvo que el
+ * repositorio tenga una sola (`copiaUnica`). Lo que no se sabe va a `null`:
+ * nunca se inventa. La más reciente primero.
+ */
+export function unirVersiones(informe: VersionInforme[], traidas: VersionSesion[] | null | undefined, copiaUnica: string | null = null): VersionInforme[] {
+  if (!traidas?.length) return informe;
+  const ya = new Set(informe.map((v) => v.id.slice(0, 8)));
+  const mas: VersionInforme[] = [];
+  for (const t of traidas) {
+    const id = String(t.id ?? "").slice(0, 8);
+    if (!/^[0-9a-f]{8}$/.test(id) || ya.has(id) || Number.isNaN(Date.parse(t.cuando))) continue;
+    ya.add(id);
+    mas.push({
+      id,
+      hora: t.cuando,
+      copia: copiaUnica,
+      total_bytes: typeof t.bytes === "number" ? t.bytes : null,
+      anadido: null,
+      anadido_empaquetado: null,
+      archivos_nuevos: null,
+      archivos_cambiados: null,
+      archivos_sin_cambios: null,
+      duracion_s: null,
+      etiquetas: Array.isArray(t.etiquetas) ? t.etiquetas.filter((x) => typeof x === "string") : [],
+    });
+  }
+  return [...informe, ...mas].sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
 }

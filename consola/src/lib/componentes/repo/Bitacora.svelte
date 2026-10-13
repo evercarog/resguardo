@@ -12,13 +12,17 @@
   // ellas (Restaurar), pulsar es elegirla. Un suceso con su vuelta en el
   // informe abre su detalle. Las filas que se pulsan son botones de verdad
   // (Tab) y las flechas ↑↓ van de una a otra.
+  //
+  // 14o: los demás sucesos con detalle (verificaciones, pruebas, subidas,
+  // espejos, retenciones, restauraciones) se abren con un clic, como una
+  // versión: debajo, lo que dijo el equipo; lo que no dijo, «sin detalle».
   import type { Snippet } from "svelte";
   import { fade } from "svelte/transition";
-  import { ArchiveRestore, ArrowRightLeft, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CloudUpload, Copy, HardDrive, Info, RefreshCw, ShieldCheck, TriangleAlert, Wrench } from "@lucide/svelte";
+  import { ArchiveRestore, ArrowRightLeft, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CloudUpload, Copy, HardDrive, History, Info, RefreshCw, Scissors, ShieldCheck, TriangleAlert, Wrench } from "@lucide/svelte";
   import { dur } from "$ui/movimiento";
   import { bytes, plural } from "$lib/formato";
   import { NOMBRE_MOTIVO, nombreDia, type VersionLinea } from "$lib/lineaTiempo";
-  import { esFallo, type NotaVersion, type Suceso, type TipoSuceso } from "$lib/historial";
+  import { esFallo, NO_CONSTA, SIN_DETALLE, type NotaVersion, type Suceso, type TipoSuceso } from "$lib/historial";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import type { Periodo } from "$lib/retencion";
   import type { Tono } from "$lib/salud";
@@ -93,7 +97,17 @@
     espejo: HardDrive,
     aviso: Info,
     historial: ArrowRightLeft,
+    retencion: Scissors,
+    restauracion: History,
   };
+  // 14o: los sucesos abiertos (su detalle debajo); pulsar otra vez lo cierra.
+  let abiertos = $state(new Set<string>());
+  function alternarSuceso(k: string) {
+    const x = new Set(abiertos);
+    if (x.has(k)) x.delete(k);
+    else x.add(k);
+    abiertos = x;
+  }
   const ICONO_TONO: Record<Tono, typeof RefreshCw> = { ok: CircleCheck, warn: TriangleAlert, bad: CircleAlert, info: Info, paused: CircleDashed, neutral: CircleDashed };
   /** Lo que fue bien va en tinta tranquila (icono del estado y palabra); lo que no, en chip. */
   const enChip = (t: Tono) => t === "bad" || t === "warn";
@@ -175,6 +189,8 @@
             {@const IconoT = ICONO_TIPO[s.tipo]}
             {@const IconoE = ICONO_TONO[s.tono]}
             {@const abre = !!(alAbrirSuceso && s.vuelta)}
+            {@const conFicha = !abre && !!s.ficha?.length}
+            {@const abierto = conFicha && abiertos.has(s.clave)}
             <li class="s tone-{s.tono}" class:nueva={nuevas.has(s.clave)}>
               <span class="nodo nodo-s" aria-hidden="true"><span class="marca-s"><IconoE size={12} /></span></span>
               {#snippet contenido()}
@@ -184,11 +200,24 @@
                 {#if enChip(s.tono)}<span class="badge badge-sm tone-{s.tono}"><IconoE size={12} />{s.chip}</span>{:else}<span class="palabra">{s.chip}</span>{/if}
                 <span class="hueco"></span>
                 {#if s.meta}<span class="meta-s num">{s.meta}</span>{/if}
-                {#if abre}<ChevronRight size={15} class="flecha" aria-hidden="true" />{/if}
+                {#if abre || conFicha}<ChevronRight size={15} class="flecha {abierto ? 'girada' : ''}" aria-hidden="true" />{/if}
                 {#if s.detalle}<span class="motivo">{s.detalle}</span>{/if}
               {/snippet}
               {#if abre}
                 <button type="button" class="fs fv" aria-label={describirSuceso(s)} onclick={() => alAbrirSuceso!(s)}>{@render contenido()}</button>
+              {:else if conFicha}
+                <button type="button" class="fs fv" aria-label={describirSuceso(s)} aria-expanded={abierto} onclick={() => alternarSuceso(s.clave)}>{@render contenido()}</button>
+                {#if abierto}
+                  <div class="ficha-s" in:fade={{ duration: dur(120) }}>
+                    <dl>
+                      {#each s.ficha ?? [] as x, i (i)}
+                        <div class="fila-f"><dt>{x.k}</dt><dd class:sin={x.v == null}>{x.v ?? (s.anterior ? SIN_DETALLE : NO_CONSTA)}</dd></div>
+                      {/each}
+                      {#if s.detalle}<div class="fila-f"><dt>{s.tono === "bad" || s.tono === "warn" ? "Errores" : "Mensaje"}</dt><dd>{s.detalle}</dd></div>{/if}
+                    </dl>
+                    {#if s.enlace}<a class="link" href={s.enlace.href}>{s.enlace.texto}</a>{/if}
+                  </div>
+                {/if}
               {:else}
                 <div class="fs">{@render contenido()}</div>
               {/if}
@@ -408,6 +437,53 @@
   .elegida > .fv :global(.flecha) {
     opacity: 1;
     rotate: 90deg;
+  }
+  /* 14o: el detalle de un suceso, debajo de su fila. */
+  .ficha-s {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 2px 0 6px;
+    padding: 8px 10px;
+    font-size: var(--fs-sm);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+  .ficha-s dl {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+  }
+  .fila-f {
+    display: grid;
+    grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+    gap: 2px 12px;
+  }
+  .fila-f dt {
+    color: var(--text-3);
+  }
+  .fila-f dd {
+    margin: 0;
+    color: var(--text-1);
+    overflow-wrap: anywhere;
+  }
+  .fila-f dd.sin {
+    color: var(--text-3);
+    font-style: italic;
+  }
+  .ficha-s .link {
+    align-self: flex-start;
+    font-size: var(--fs-xs);
+  }
+  .fv :global(.flecha.girada) {
+    opacity: 1;
+    rotate: 90deg;
+  }
+  @container (max-width: 480px) {
+    .fila-f {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   .acciones {
     display: flex;

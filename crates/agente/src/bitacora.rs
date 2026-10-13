@@ -350,16 +350,29 @@ pub fn desde_historial(e: &crate::history::Entry) {
 }
 
 pub fn entrada_de_historial(e: &crate::history::Entry) -> Option<(&'static str, Value)> {
+    let duracion = DateTime::parse_from_rfc3339(&e.started).ok().zip(DateTime::parse_from_rfc3339(&e.finished).ok()).map(|(a, b)| (b - a).num_seconds().max(0));
     let comun = |tipo: &'static str| {
-        (
-            tipo,
-            json!({ "hora": e.finished, "repo": e.repo_id, "resultado": resultado(&e.result), "mensaje": Some(corto(&e.message)).filter(|m| !m.is_empty()) }),
-        )
+        let mut v =
+            json!({ "hora": e.finished, "repo": e.repo_id, "resultado": resultado(&e.result), "mensaje": Some(corto(&e.message)).filter(|m| !m.is_empty()) });
+        // v1.6x (14o): el detalle de cada entrada en la consola (lo que tardó, cuánto y qué
+        // versión). Campos opcionales: un servidor o una consola anteriores los ignoran.
+        if let Some(d) = duracion {
+            v["duracion_s"] = json!(d);
+        }
+        // En la copia externa cuenta versiones subidas; en la prueba, archivos restaurados.
+        if let Some(n) = e.files_new {
+            v[if tipo == "externa" { "versiones" } else { "archivos" }] = json!(n);
+        }
+        if let Some(b) = e.data_added {
+            v["bytes"] = json!(b);
+        }
+        if let Some(id) = e.snapshot_id.as_deref().filter(|s| s.len() >= 8 && s.bytes().all(|c| c.is_ascii_hexdigit())) {
+            v["version"] = json!(id[..8].to_ascii_lowercase());
+        }
+        (tipo, v)
     };
     Some(match e.kind.as_str() {
         "backup" => {
-            let duracion =
-                DateTime::parse_from_rfc3339(&e.started).ok().zip(DateTime::parse_from_rfc3339(&e.finished).ok()).map(|(a, b)| (b - a).num_seconds().max(0));
             let ganchos: Vec<Value> = e.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": corto(&g.mensaje) })).collect();
             (
                 "copia",
@@ -551,6 +564,8 @@ mod tests {
         assert_eq!((l[0]["resultado"].as_str(), l[0]["duracion_s"].as_i64(), l[0]["anadido"].as_u64()), (Some("fallo"), Some(90), Some(1234)));
         assert_eq!(l[0]["ganchos"][0]["tipo"], "sqlserver");
         assert_eq!(l[2]["resultado"], "aviso");
+        // v1.6x (14o): lo que tardó y cuánto, también en las tareas.
+        assert_eq!((l[2]["duracion_s"].as_i64(), l[2]["bytes"].as_u64(), l[2].get("version")), (Some(90), Some(1234), None));
         assert_eq!(l[4]["aviso"], "cambio_inusual");
         let texto: String = segmentos(&d).iter().map(|(_, p)| std::fs::read_to_string(p).unwrap()).collect();
         assert!(!texto.contains("Users") && !texto.contains("Volcados"), "sin rutas: {texto}");

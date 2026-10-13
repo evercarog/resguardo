@@ -1239,9 +1239,23 @@ function listarVersion(ruta: string): Entrada[] {
 
 function versiones(repo: string, equipo?: string) {
   // Las mismas del informe del equipo (v1.7), si las tiene: así coinciden los ids.
-  const inf = estado.equipos.find((x) => x.id === equipo)?.informes[0]?.datos.repos?.find((x) => x.id === repo);
-  if (inf?.versiones.length)
-    return inf.versiones.map((v) => ({ id: v.id, cuando: v.hora, archivos: (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0) + (v.archivos_sin_cambios ?? 0), bytes: v.total_bytes ?? 0, etiquetas: v.etiquetas, repo }));
+  const eq = estado.equipos.find((x) => x.id === equipo);
+  const inf = eq?.informes[0]?.datos.repos?.find((x) => x.id === repo);
+  if (inf?.versiones.length) {
+    const recientes = inf.versiones.map((v) => ({ id: v.id, cuando: v.hora, archivos: (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0) + (v.archivos_sin_cambios ?? 0), bytes: v.total_bytes ?? 0, etiquetas: v.etiquetas, repo }));
+    // 14d: las de antes de los 60 días que trae el informe, hasta las que dice el resumen (una cada día).
+    const total = eq?.resumen?.repositorios?.find((x) => x.id === repo)?.versiones ?? recientes.length;
+    const ultima = Math.min(...recientes.map((v) => Date.parse(v.cuando)));
+    const antes = Array.from({ length: Math.max(0, total - recientes.length) }, (_, i) => ({
+      id: (0x5e000000 + i * 104_729).toString(16).padStart(8, "0").slice(0, 8),
+      cuando: new Date(ultima - (i + 1) * 86_400_000).toISOString(),
+      archivos: 13_000 - i * 9,
+      bytes: 36_000_000_000 - i * 40_000_000,
+      etiquetas: i % 30 === 0 ? ["mensual"] : [],
+      repo,
+    }));
+    return [...recientes, ...antes];
+  }
   const out = [];
   for (let i = 0; i < 40; i++) {
     const d = new Date(Date.now() - i * 12 * 3600_000 - 2 * 3600_000);
