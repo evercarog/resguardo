@@ -51,6 +51,26 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-camino`
+
+- **Pedido:** C1 y C4 del plan 0.8.0, en autónomo: el camino de cada copia a la vista (14kk, 14h: página de la copia, tarjeta del repositorio, «Copias», derivada como repositorio propio) y un solo vocabulario (14x, 14z, 14w, 14n).
+- **Cambios:**
+  - C1: `lib/camino.ts` (función pura `caminoDeCopia`, con `scripts/vectores-camino.ts`) a partir de los pasos de `reglaDeCopia`, que ahora deciden qué espejos del almacén incluyen el repositorio con `enAlmacenDe`/`entraEnEspejo` del mapa (antes no veía la selección por equipo), cuentan los espejos del propio equipo (`espejo_equipo`) y guardan la última vuelta de cada paso (`intento`, `despues`, `pausado`). Componente `CaminoCopia` (cabecera y líneas) y `caminoVivo.svelte.ts` (lo en marcha, como el mapa). Página de la copia: camino bajo el título y «Después» en «Cuándo y dónde» (sin «Copia externa: no tiene: todas las versiones están en un solo sitio»). Ficha del equipo: «Después» en cada tarjeta de repositorio y cada copia derivada (también la externa de antes) como tarjeta propia enlazada con su origen. «Copias»: una línea por paso, «Un paso falla» junto al estado, la cifra «N de M al día · K con un paso fallando», los pasos en «Necesitan atención» y filtro «Espejos».
+  - 14z: «Solo añadir» es un dato (`soloAnadir`, icono `shield-half`), no la marca «Inmutable». Regla en `protection.rs` y `regla321.ts`: el «1 inmutable» solo cuenta bloqueo de objetos, instantáneas y aislado, salvo `inmutable_marcado` (lo marcó una persona). Vectores compartidos rehechos con la regla de la consola y comprobados con la de Rust (11 cambian, 2 nuevos; herramienta `scripts/rehacer-vectores-regla-080camino.ts`, fuera de `test:vectores`).
+  - 14n: `estadoCero`/`fraseCero`: «Falta: una verificación reciente (la prueba de restauración ya está bien).» en la tira, el globo, `fraseRegla` y `fraseConfig`; botón «Verificar ahora»/«Probar ahora» en la tira de la página de la copia.
+  - 14w: agente: la comprobación `externa` se llama «Fuera del sitio» y cuenta el repositorio en la nube y las derivadas (`Facts.derived`). Consola: `lib/saludCompleta.ts` la rehace con los pasos de la regla y pone bien la retención si la aplica el almacén (página del repositorio y tarjeta).
+  - 14x: «copia externa» → «copia derivada» en la consola (textos visibles, no comentarios ni ids), glosario y guías (guía nueva «Copia, espejo y copia derivada»), textos del agente que se ven (bandeja, ventana, órdenes en espera, resultados) y el aviso del servidor; docs de usuario. Contrato y nombres internos sin cambios (`cambiar_copia_externa`, `externa`, `externa_fallida`).
+- **Comprobado (Windows 11):** `cargo fmt --all --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace --no-fail-fast` con las 3 conocidas saltadas: todo bien (agente 376 bien, 1 ignorada); `npm run check` 0 errores; `npm run build` bien; `npm run test:vectores` todo bien; `npm run test:sin-referencias` 0; e2e: «Escenario completo» (unos 915 s, a la primera). Capturas del simulado en `revisiones/080-camino/` (copias claro/oscuro/móvil, página de la copia claro y móvil, tarjeta del repositorio y derivada, salud de la protección).
+- **Sin probar / dudas:**
+  - Nada con agentes ni almacenes reales. El «Sin conexión» de un paso se deduce de que quien lo hace (el almacén o el equipo) no está conectado: no distingue VPN caída de equipo apagado.
+  - Los espejos no tienen progreso en vivo (el agente no lo manda: C3/14p); solo las copias y la subida de derivadas (`copia_externa`), y con varias derivadas en un repositorio no se sabe cuál sube: se marcan todas.
+  - El camino de una tarjeta de repositorio sale de su **primera copia activa**; un repositorio sin copias activas (importado, derivado) no enseña camino ni la salud completada.
+  - Una zona marcada antes por una persona como «Inmutable · solo añadir» se respeta; una zona deducida deja de contar como inmutable: copias que cumplían la regla con solo el almacén pasan a «Falta 1 inmutable». Es lo pedido, pero cambiará la cuenta de Estado e Informes.
+  - En «Tipo y marcas» ya no se elige «solo añadir» como forma de ser inmutable; si alguien deja una marca antigua «solo añadir» en una zona que ya lo es, al guardar se pierde (no se guarda lo igual a lo deducido).
+  - Salud: la consola manda sobre el agente en «Fuera del sitio» cuando hay copia activa (lo marcado por una persona puede hacer que un servidor de fuera cuente como local y la salud diga «falta»). Un agente anterior sigue diciendo «Copia externa» en el detalle; la consola cambia solo el título.
+  - 14h queda a medias: «su copia en <destino>» con tamaño, verificación y prueba en «Repositorios», y la página de cada espejo (14i), no entraban.
+  - El 14n con datos del simulado no se pudo ver en una captura (ninguna copia del simulado tiene el «0» pendiente); lo cubren los vectores.
+
 ## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-pulido`
 
 - **Pedido:** C5 del plan 0.8.0 (pulido de pantallas), en autónomo: 14vv, 14ww (1), 14bb, 14d, 14o, 14q y la ayuda de 14qq y 14yy. 14zz (explorador de carpetas) no entraba en esta rama.
