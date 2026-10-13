@@ -51,6 +51,21 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-nombres`
+
+- **Pedido:** B1 del plan 0.8.0 (14e): carpetas legibles en el almacén para lo nuevo, renombrar repositorios en todas las consolas y cambiar de forma coordinada la carpeta de lo que ya existe («Ordenar nombres de carpeta»), con el diseño escrito antes ([nombres-legibles.md](nombres-legibles.md)).
+- **Cambios:**
+  - Agente: `nombres.rs` (regla de nombres con vectores compartidos, usuario legible y libre, `mover` con deshacer, espera a que el rest-server lea el `.htpasswd` con un usuario de prueba de un solo uso), `guarda_copias { anadir, nombre }` y `{ mover }`, `guarda_copias.renombres`, `cambiar_destino { carpetas }`, orden `nombre_repositorio` (protocolo: inofensiva, solo administradores), el motor del espejo no frena por lo movido (`Opciones.antiguas`, `Alcance::con_antiguas`), la retención del almacén se renombra con lo movido, descripciones del historial (`nombre` opcional en la retención del almacén). `admite: "nombres_legibles"`.
+  - Consola: `lib/nombres.ts`, ids legibles al crear en un almacén (Copiar en, Nuevo repositorio, Mover), «Cambiar el nombre» del repositorio, `OrdenarCarpetas` (almacén → equipo → importados; Reintentar / Deshacer), `RutasPendientes`, nombres legibles en órdenes en espera e historial de otras consolas; mock y e2e (paso 3a).
+- **Comprobado:** pruebas unitarias nuevas (`nombres::tests`, 21), `ordenar_carpetas_real` con el rest-server y restic reales (mover, la ruta nueva en el equipo, copiar después, el usuario de antes ya no entra, volver a mover), vectores de la consola (66 nuevos) y el flujo completo en el modo simulado (capturas en `revisiones/080-nombres/`, ignorada). `cargo fmt --check`, los dos `clippy -D warnings` (también `consola-integrada` tras `npm run build`), `cargo test --workspace` (saltando las 3 de siempre que fallan en este PC por permisos del temporal: `espejo_del_equipo_con_restic_y_rclone`, `restaurar_desde_el_espejo`, `repositorio_directo_en_una_nube_conectada`), `npm run check`, `build`, `test:vectores`, `test:sin-referencias` y el e2e completo en Windows (con el paso 3a nuevo): todo bien.
+- **Sin probar / dudas:**
+  - **No se mueve nada en el destino del espejo**: la carpeta nueva se vuelve a subir entera y la vieja queda para la retención del espejo (con «nunca borra», para siempre). Se valoró `rclone moveto` y se dejó (con Object Lock no se puede borrar; el espejo nunca mueve ni borra fuera de su retención). Si volver a subir pesa en un caso real, una opción explícita «Mover también en el destino».
+  - «Ordenar» no espera (no borra nada) y pide la clave de administración. Entre las dos órdenes el equipo no puede copiar unos segundos; con el equipo apagado se queda pendiente (aviso «sigue con la ruta de antes»).
+  - Las carpetas de las copias derivadas que van a un almacén no se ordenan (se mueven con la del usuario).
+  - Con un servidor de Linux, `SIGHUP` y el usuario de prueba; probado solo en Windows.
+  - En el mock, CAJA-1 pasa a tener un usuario «de antes» (UUID) y «Ventas» una carpeta con el nombre del almacén, para enseñar el flujo.
+  - Usuarios de antes = id recortado a 32 caracteres (`user_name`): `para` guarda ese mismo recorte.
+
 ## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-a-consola`
 
 - **Pedido:** bloque A de `docs/plan-0.8.0.md`, parte de la consola (14rr, 14y, 14gg, 14ff, 14aa en parte, 14nn de la consola, 14mm y el mapa de 14kk), en autónomo, desde `ia/integracion-080`. A la vez otra sesión hacía la parte del agente (14ee, 14jj, 14oo, 14nn, 14tt): no toqué `OrdenDialog.svelte` ni los textos de la orden «Quitar la copia externa».
