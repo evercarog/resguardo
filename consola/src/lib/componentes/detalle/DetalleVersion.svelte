@@ -9,7 +9,7 @@
   import { anteriorDeLaCopia, ganchosDeVuelta, vueltasDeVersion } from "$lib/detalle";
   import { anadidoDe, duracion, TEXTO_RESULTADO, TONO_RESULTADO } from "$lib/repo";
   import { explicarError } from "$lib/copia";
-  import { NOMBRE_GANCHO } from "$lib/ganchos";
+  import { agruparResultados, NOMBRE_GANCHO } from "$lib/ganchos";
   import { bytes, fechaLarga, hora, numero, plural } from "$lib/formato";
   import { tip } from "$lib/tooltip";
   import Chip from "../Chip.svelte";
@@ -129,7 +129,7 @@
     {#if ganchos.length}
       <h4>Antes de copiar</h4>
       <ul class="ganchos">
-        {#each ganchos as g, i (i)}
+        {#each agruparResultados(ganchos) as g, i (i)}
           <li>
             <Chip pequeno tono={g.estado === "ok" ? "ok" : g.estado === "aviso" ? "warn" : "bad"} texto={NOMBRE_GANCHO[g.tipo] ?? g.tipo} />
             {#if g.mensaje}<span class="faint">{g.mensaje}</span>{/if}

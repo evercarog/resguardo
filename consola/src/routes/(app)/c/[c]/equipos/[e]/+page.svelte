@@ -62,7 +62,7 @@
   import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, textoRetencion, errorDiasRetencion, diaLegible, RETENCION_ESPEJO, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
   import { errorReglas, reglasDe } from "$lib/horario";
   import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
-  import { errorCarpetaDestino, errorCarpetaEspejo } from "$lib/ganchos";
+  import { errorCarpetaDestino, errorCarpetaEspejo, agruparResultados } from "$lib/ganchos";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import { estadoCopia, proximaDe, ultimaVuelta } from "$lib/copia";
   import type { Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen, RetencionAlmacen } from "$lib/tipos";
@@ -1005,7 +1005,7 @@
                   {#if rk}<span class="fila-sub"><SeGuardaEn pequeno lugar={lugarRepo(rk, equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(rk, equipo, actual.equipos)} /></span>{/if}
                   {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo">{vuelta.mensaje}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
-                  {#each equipo.ultimo_informe?.datos.copias?.find((x) => x.id === k.id)?.ganchos ?? [] as g, gi (gi)}
+                  {#each agruparResultados(equipo.ultimo_informe?.datos.copias?.find((x) => x.id === k.id)?.ganchos ?? []) as g, gi (gi)}
                     <span class="fila-sub gancho-res">
                       <Chip pequeno tono={g.estado === "ok" ? "ok" : g.estado === "aviso" ? "warn" : "bad"} texto={NOMBRE_GANCHO[g.tipo] ?? g.tipo} />
                       {#if g.mensaje}<span class:msg-fallo={g.estado === "fallo"}>{g.mensaje}</span>{/if}

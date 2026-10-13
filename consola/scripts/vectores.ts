@@ -26,7 +26,7 @@ import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia
 import { bytesRepo, destinoDe, versionDeVuelta } from "../src/lib/repo";
 import type { CopiaResumen, Equipo, Informe, ReglaHorario, RepoInforme, TareaEnMarcha } from "../src/lib/tipos";
 import { cifrasTarea, porcentaje, textoCorto, textoFase, textoQuedan } from "../src/lib/textoProgreso";
-import { baseValida, errorCarpetaDestino, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, instanciaValida, limpiar, rutaValida, versionAlMenos } from "../src/lib/ganchos";
+import { baseValida, errorCarpetaDestino, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, agruparResultados, ganchosEnFrase, resultadoDeGancho, instanciaValida, limpiar, rutaValida, versionAlMenos } from "../src/lib/ganchos";
 import {
   ARGON2,
   type Argon2,
@@ -528,6 +528,28 @@ if (v1.paquete) {
   igual("error: desconocido", explicarError("algo raro").ayuda, "si-copia-falla");
   // Cada vez que se hace una copia es «una copia» (no «una vuelta»).
   cierto("frase: «La última copia»", fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false }, ahora).includes("La última copia, "));
+  // 14gg: varios volcados, una sola vez y con los nombres (como mucho 3).
+  {
+    const seis = ["Ventas", "Nominas", "Compras", "Bancos", "Cartera", "Activos"];
+    const sql = { tipo: "sqlserver" as const, instancia: ".", bases: seis, carpeta: "D:\Volcados" };
+    igual("ganchos: 6 bases, una vez", ganchosEnFrase([sql]), ["volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más)"]);
+    igual("ganchos: 2 bases", ganchosEnFrase([{ ...sql, bases: ["Ventas", "Nominas"] }]), ["volcado de 2 bases de SQL Server (Ventas y Nominas)"]);
+    igual("ganchos: una base", ganchosEnFrase([{ ...sql, bases: ["Ventas"] }]), ["volcado de la base «Ventas» de SQL Server"]);
+    igual(
+      "ganchos: dos volcados y dos carpetas, agrupados",
+      ganchosEnFrase([sql, { ...sql, bases: ["Ventas", "Otra"] }, { tipo: "carpeta_reciente", carpeta: "D:\CopiasApp", horas: 24 }, { tipo: "carpeta_reciente", carpeta: "E:\CopiasApp", horas: 24 }]),
+      ["volcado de 7 bases de SQL Server (Ventas, Nominas, Compras y 4 más)", "comprobar que las copias de la aplicación están al día en 2 carpetas"],
+    );
+    const res = seis.map((b) => ({ tipo: "sqlserver" as const, mensaje: `Volcado de SQL Server de «${b}» hecho.` }));
+    igual("ganchos: solo con el informe, con los nombres", ganchosEnFrase(null, res), ["volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más)"]);
+    igual("ganchos: solo con el informe, sin nombres", ganchosEnFrase(null, [{ tipo: "sqlserver", mensaje: null }, { tipo: "sqlserver", mensaje: null }]), ["volcado de 2 bases de SQL Server"]);
+    const conFallo = [...res.map((r) => ({ ...r, estado: "ok" as const })), { tipo: "sqlserver" as const, estado: "fallo" as const, mensaje: "No se pudo volcar «Otra» de SQL Server: x" }];
+    igual("resultados: los volcados bien, en una línea; el fallo, suelto", agruparResultados(conFallo).map((r) => [r.estado, r.mensaje]), [["ok", "6 bases volcadas: Ventas, Nominas, Compras y 3 más."], ["fallo", "No se pudo volcar «Otra» de SQL Server: x"]]);
+    igual("resultado de un paso: el peor de sus bases", resultadoDeGancho({ ...sql, bases: [...seis, "Otra"] }, conFallo)?.estado, "fallo");
+    igual("resultado de un paso: todas bien, juntas", resultadoDeGancho(sql, conFallo)?.mensaje, "6 bases volcadas: Ventas, Nominas, Compras y 3 más.");
+    const frase = fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false, ganchos: ganchosEnFrase([sql]) }, ahora);
+    cierto("frase: el volcado una sola vez", frase.includes("(antes, volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más))") && frase.split("SQL Server").length === 2);
+  }
   cierto(
     "explicaciones de errores sin «vuelta»",
     ["No se pudo conectar con el servidor de copias.", "3 archivos en uso no se pudieron leer.", "algo raro"].every((m) => !/vuelta/i.test(JSON.stringify(explicarError(m)))),

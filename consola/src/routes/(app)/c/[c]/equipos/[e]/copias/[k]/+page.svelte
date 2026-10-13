@@ -42,7 +42,7 @@
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, fechaLarga, horarioEnFrase, numero, plural, relativo } from "$lib/formato";
   import { enPausa } from "$lib/salud";
-  import { fraseGancho, ganchosDe, NOMBRE_GANCHO } from "$lib/ganchos";
+  import { agruparResultados, fraseGancho, ganchosDe, ganchosEnFrase, NOMBRE_GANCHO, resultadoDeGancho } from "$lib/ganchos";
   import { anadidoDe, destinoDe, duracion, informeDe } from "$lib/repo";
   // v1.41: dónde se guarda y el aviso «copias en el mismo equipo».
   import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
@@ -270,7 +270,7 @@
     <EnMarcha equipo={e} copia={kid} marco alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
 
     <p class="frase">
-      {fraseCopia(k, { equipo: equipo.nombre, repo: repo?.nombre ?? k.repo, vuelta, proxima, pausada, ganchos: ganchosRes.map((g) => (NOMBRE_GANCHO[g.tipo] ?? g.tipo).replace(/^./, (x) => x.toLowerCase())) }, reloj.ahora)}
+      {fraseCopia(k, { equipo: equipo.nombre, repo: repo?.nombre ?? k.repo, vuelta, proxima, pausada, ganchos: ganchosEnFrase(detalle ? ganchosDe(detalle.gancho) : null, ganchosRes) }, reloj.ahora)}
     </p>
 
     {#if explicacion && vuelta}
@@ -407,7 +407,7 @@
         {#if detalle && ganchosDe(detalle.gancho).length}
           <ul class="ganchos">
             {#each ganchosDe(detalle.gancho) as g, i (i)}
-              {@const r = ganchosRes.find((x) => x.tipo === g.tipo)}
+              {@const r = resultadoDeGancho(g, ganchosRes)}
               <li>
                 <span>{fraseGancho(g)}</span>
                 {#if r}<Chip pequeno tono={tonoGancho(r.estado)} texto={textoGancho(r.estado)} />{/if}
@@ -417,7 +417,7 @@
           </ul>
         {:else if ganchosRes.length}
           <ul class="ganchos">
-            {#each ganchosRes as r, i (i)}
+            {#each agruparResultados(ganchosRes) as r, i (i)}
               <li>
                 <span>{NOMBRE_GANCHO[r.tipo] ?? r.tipo}</span>
                 <Chip pequeno tono={tonoGancho(r.estado)} texto={textoGancho(r.estado)} />

@@ -8,7 +8,7 @@
 // resume por día de hace más de un año. Sirve igual para un repositorio, para
 // una copia y para un equipo entero (varios repositorios a la vez).
 import type { CopiaResumen, EjecucionInforme, EntradaHistorial, Informe, RepoInforme, RepositorioResumen, ResultadoGancho, TareaInforme } from "./tipos";
-import { NOMBRE_GANCHO } from "./ganchos";
+import { agruparResultados, NOMBRE_GANCHO } from "./ganchos";
 import { duracion, pruebaRestauracion, TEXTO_RESULTADO, TEXTO_TAREA, TONO_RESULTADO, TONO_TAREA, verificacion, versionDeVuelta, versionesDe } from "./repo";
 import { bytes, numero } from "./formato";
 import type { Tono } from "./salud";
@@ -138,7 +138,7 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
       return g.gs;
     };
     const malos = (gs: ResultadoGancho[]) => gs.filter((g) => g.estado !== "ok");
-    const textoGanchos = (gs: ResultadoGancho[]) => (gs.length ? `antes de copiar: ${gs.map((g) => `${(NOMBRE_GANCHO[g.tipo] ?? g.tipo).replace(/^./, (x) => x.toLowerCase())} ${textoGancho(g).toLowerCase()}`).join(", ")}` : null);
+    const textoGanchos = (gs: ResultadoGancho[]) => (gs.length ? `antes de copiar: ${agruparResultados(gs).map((g) => `${(NOMBRE_GANCHO[g.tipo] ?? g.tipo).replace(/^./, (x) => x.toLowerCase())} ${textoGancho(g).toLowerCase()}`).join(", ")}` : null);
 
     // Lo ya contado (para no repetir lo que traen el informe y el historial).
     const vistas = new Set<string>();
@@ -241,7 +241,7 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
     // Pasos previos que no casan con ninguna vuelta (la vuelta ya no está en el informe).
     for (const g of ganchos)
       if (!g.usado)
-        for (const [i, x] of g.gs.entries())
+        for (const [i, x] of agruparResultados(g.gs).entries())
           out.push({
             clave: `g|${repo.id}|${g.copia}|${g.hora}|${i}`,
             hora: g.hora,
