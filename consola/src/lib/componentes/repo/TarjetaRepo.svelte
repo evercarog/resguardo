@@ -59,9 +59,9 @@
   {/if}
 
   <p class="linea externa" class:sin={!repo.externa && !inf?.externa}>
-    {#if !repo.externa && inf?.externa}<Cloud size={13} />Copia externa{#if inf.externa.ultima}{" · "}última {relativo(inf.externa.ultima, ahora)}{/if}{#if inf.externa.resultado === "fallo"}{" · "}<span class="mal">falló</span>{/if}
+    {#if !repo.externa && inf?.externa}<Cloud size={13} />Copia derivada{#if inf.externa.ultima}{" · "}última {relativo(inf.externa.ultima, ahora)}{/if}{#if inf.externa.resultado === "fallo"}{" · "}<span class="mal">falló</span>{/if}
     {:else if repo.externa}<Cloud size={13} />A «{repo.externa.destino}» cada día a las {repo.externa.hora}{#if inf?.externa?.ultima}{" · "}última {relativo(inf.externa.ultima, ahora)}{/if}
-    {:else}<CloudOff size={13} />Sin copia externa{/if}
+    {:else}<CloudOff size={13} />Sin copia derivada{/if}
   </p>
 
   <div class="pie">

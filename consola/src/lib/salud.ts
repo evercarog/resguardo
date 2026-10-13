@@ -124,7 +124,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   aplicar_retencion: "Aplicar la retención",
   quitar_repositorio: "Quitar un repositorio",
   dejar_de_copiar: "Dejar de copiar",
-  cambiar_copia_externa: "Cambiar la copia externa",
+  cambiar_copia_externa: "Cambiar la copia derivada",
   cambiar_derivada: "Cambiar una copia derivada",
   quitar_derivada: "Quitar una copia derivada",
   rotar_contrasena_repo: "Cambiar la contraseña del repositorio",

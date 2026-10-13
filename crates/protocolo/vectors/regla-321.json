@@ -138,11 +138,11 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 1,
-            "valor_config": 1,
-            "cumple": true,
-            "cumple_config": true,
-            "accion": ""
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
           },
           {
             "id": "errores",
@@ -155,9 +155,7 @@
           }
         ],
         "atrasados": [],
-        "avisos": [
-          "inmutable_local"
-        ]
+        "avisos": []
       }
     },
     {
@@ -235,8 +233,8 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
+            "valor": 1,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -330,11 +328,11 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 1,
-            "valor_config": 2,
-            "cumple": true,
+            "valor": 0,
+            "valor_config": 1,
+            "cumple": false,
             "cumple_config": true,
-            "accion": ""
+            "accion": "poner_al_dia"
           },
           {
             "id": "errores",
@@ -428,11 +426,11 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
-            "cumple": true,
-            "cumple_config": true,
-            "accion": ""
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
           },
           {
             "id": "errores",
@@ -446,8 +444,7 @@
         ],
         "atrasados": [],
         "avisos": [
-          "mismo_equipo",
-          "inmutable_local"
+          "mismo_equipo"
         ]
       }
     },
@@ -700,8 +697,8 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
+            "valor": 1,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -795,8 +792,8 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
+            "valor": 1,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -890,8 +887,8 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
+            "valor": 1,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -996,8 +993,8 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
+            "valor": 1,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -1197,7 +1194,7 @@
             "id": "inmutable",
             "meta": 1,
             "valor": 1,
-            "valor_config": 2,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -1294,8 +1291,8 @@
           {
             "id": "inmutable",
             "meta": 1,
-            "valor": 2,
-            "valor_config": 2,
+            "valor": 1,
+            "valor_config": 1,
             "cumple": true,
             "cumple_config": true,
             "accion": ""
@@ -1316,7 +1313,7 @@
     },
     {
       "nombre": "tipo_manda_sobre_lugar",
-      "que": "0.7.26: el tipo manda sobre el lugar de antes: un servidor «otra_sede» marcado Local no cuenta fuera; un NAS «oficina» marcado Fuera del sitio, sí.",
+      "que": "0.7.26: el tipo manda sobre el lugar de antes: un servidor «otra_sede» marcado Local no cuenta fuera; un NAS «oficina» marcado Fuera del sitio, sí. 14z: el NAS lo marcó una persona como inmutable (solo añadir): se respeta.",
       "entrada": {
         "origen": {
           "equipo": "e-recepcion",
@@ -1343,7 +1340,8 @@
             "inmutable": "solo_anadir",
             "soporte": "servidor:nas",
             "ultima_ok": "2026-10-01T02:00:00-05:00",
-            "cada_horas": 24
+            "cada_horas": 24,
+            "inmutable_marcado": true
           }
         ],
         "verificacion": {
@@ -1901,6 +1899,178 @@
         ],
         "atrasados": [],
         "avisos": []
+      }
+    },
+    {
+      "nombre": "zona_solo_anadir_no_es_inmutable",
+      "que": "14z (0.8.0): una zona de un almacén es de solo añadir, no inmutable: protege de los equipos, no de quien administra el almacén ni de su retención. No cuenta en el «1 inmutable» ni avisa de «inmutable en el sitio».",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "zona_con_instantaneas_marcadas",
+      "que": "14z: la misma zona con instantáneas del anfitrión que el almacén no ve, marcadas por una persona: cuenta como inmutable, y es local (avisa).",
+      "entrada": {
+        "origen": {
+          "equipo": "e-recepcion",
+          "soporte": "equipo:e-recepcion:origen"
+        },
+        "pasos": [
+          {
+            "id": "zona-d",
+            "nombre": "Almacén ALMACEN-01 · Disco D",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "instantaneas",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T11:00:00-05:00",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-28T03:00:00-05:00"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-20T04:00:00-05:00"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "inmutable_local"
+        ]
       }
     }
   ]

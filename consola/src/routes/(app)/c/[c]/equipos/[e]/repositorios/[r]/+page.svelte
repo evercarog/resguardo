@@ -53,6 +53,9 @@
   import TraerHistorial from "$lib/componentes/TraerHistorial.svelte";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
+  import { saludCompleta } from "$lib/saludCompleta";
+  import { reglaDeCopia } from "$lib/regla321";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
   import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia, elegirFechas, ir } from "$lib/componentes/detalle/navegar";
@@ -113,7 +116,19 @@
   const destino = $derived(destinoDe(destinos, repo));
   const lugar = $derived(equipo && repo ? lugarRepo(repo, equipo, actual.equipos) : null);
   const riesgo = $derived(equipo && repo ? riesgoMismoEquipo(repo, equipo, actual.equipos) : null);
-  const prot = $derived(proteccion(inf, equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null));
+  // 14w: la salud del agente, completada con lo que sabe la consola (espejos del almacén y del
+  // equipo, derivadas, lo marcado en cada destino, la retención del almacén): lo mismo que la tira 3-2-1.
+  $effect(() => {
+    const cc = c;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const reglaRepo = $derived.by(() => {
+    if (!equipo || !repo) return null;
+    const eq = equipo;
+    const k = copias.find((x) => x.repo === repo!.id && x.activa !== false);
+    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+  });
+  const prot = $derived(saludCompleta(inf, { extra: equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null, rc: reglaRepo, retencionAlmacen: reglaEfectiva(repo, destino, actual.equipos)?.quien ?? null, ahora: reloj.ahora }));
   const ej = $derived(ultimaEjecucion(inf));
   const verif = $derived(repo ? verificacion(repo, inf) : null);
   const prueba = $derived(repo ? pruebaRestauracion(repo, inf) : null);
@@ -285,7 +300,7 @@
       {:else}
         <section class="card p sin-salud">
           <h2 class="section-title">Salud de la protección <Ayuda id="salud-proteccion" /></h2>
-          <p class="faint">Llegará con el próximo informe de {equipo.nombre}: copias automáticas, protección contra borrado, copia externa, verificación, prueba de restauración, kit y retención.</p>
+          <p class="faint">Llegará con el próximo informe de {equipo.nombre}: copias automáticas, protección contra borrado, fuera del sitio, verificación, prueba de restauración, kit y retención.</p>
         </section>
       {/if}
       <section class="card p mantenimiento">
@@ -346,14 +361,14 @@
             </dd>
           </div>
           <div>
-            <dt>Copia externa</dt>
+            <dt>Copia derivada</dt>
             <dd>
               {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />
               {:else if repo.externa}<span class="faint">A «{repo.externa.destino}» cada día a las {repo.externa.hora}, todavía sin ninguna</span>
               {:else}<span class="faint">No tiene</span>{/if}
               {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
               <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
-              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia externa</button></span>{/if}
+              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia derivada</button></span>{/if}
             </dd>
           </div>
           {#if enAlm}

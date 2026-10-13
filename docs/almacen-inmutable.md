@@ -4,7 +4,9 @@ Guía de la tarea 8e de [plan-mejoras.md](plan-mejoras.md), con [regla-3-2-1.md]
 
 El almacén (el equipo con «Este equipo guarda copias») ya protege mucho: cada equipo copia en un rest-server de **solo añadir** con su propio usuario, así que un equipo comprometido no puede borrar sus copias. Pero el almacén mismo es un equipo: si alguien se hace con él (o con su administrador), puede borrar sus discos. Esta guía es para que **ni siquiera así** se pierdan las copias.
 
-La consola **no comprueba** nada de esto (el almacén no puede ver lo que hace su anfitrión): cuando lo tengas, márcalo tú en el destino («Repositorios y destinos» → el destino → «Regla 3-2-1» → «Con instantáneas inmutables fuera de su alcance» o «Desconectado»). La regla 3-2-1-1-0 lo cuenta como inmutable y te recuerda que es **local**: no protege de un incendio o un robo de la oficina. Mantén también una copia fuera (la copia externa a la nube, con bloqueo de objetos si puedes).
+**«Solo añadir» no es «inmutable»** (0.8.0, 14z). Una zona de un almacén se enseña como **Local + Solo añadir**: protege de los equipos (no pueden borrar lo ya copiado), pero no de quien sea administrador (root) en el almacén o en su anfitrión, ni de la retención del propio almacén. Por eso **no cuenta** como el «1 inmutable» de la regla 3-2-1-1-0. Lo que sí cuenta: un bucket con **bloqueo de objetos** (Object Lock), **instantáneas fuera de su alcance** que marcas tú (las de esta guía) y un medio **aislado** que se desconecta y se rota. Si una persona marcó antes un destino como «Inmutable · solo añadir», la consola lo respeta y lo sigue contando.
+
+La consola **no comprueba** nada de esto (el almacén no puede ver lo que hace su anfitrión): cuando lo tengas, márcalo tú en el destino («Repositorios y destinos» → el destino → «Tipo y marcas» → «Inmutable · Instantáneas fuera de su alcance» o «Aislado»). La regla 3-2-1-1-0 lo cuenta como inmutable y te recuerda que es **local**: no protege de un incendio o un robo de la oficina. Mantén también una copia fuera (un espejo o una copia derivada a la nube, con bloqueo de objetos si puedes).
 
 El sistema de archivos de cada carpeta y si el almacén corre en un contenedor o una máquina virtual se enseñan en la consola **solo como dato**: nunca restan en la regla ni en la salud de la protección.
 
@@ -36,7 +38,7 @@ Con esto, marca la zona del almacén como «Con instantáneas inmutables fuera d
 ## Otras formas
 
 - **Linux endurecido, sin anfitrión**: un Debian mínimo solo para el almacén, sin acceso remoto (ni SSH ni escritorio remoto; se administra en local), actualizaciones automáticas de seguridad, cortafuegos que solo deja entrar el puerto del almacén desde la red de la oficina. Para lo antiguo, `chattr +i` con un plazo (una tarea de `root` que marca inmutables las carpetas de `data/` de más de N días y se las quita antes de podar): complica la retención del almacén, así que solo si sabes lo que haces. No cuenta como «instantáneas»: márcalo solo si de verdad nadie del almacén puede deshacerlo.
-- **Discos USB que se rotan**: dos o tres discos para la copia externa (o el espejo), uno conectado y los otros guardados fuera de la oficina, desconectados. Un disco desconectado no lo cifra nadie. Márcalos como «Desconectado» y, si son el mismo juego de discos, con el mismo **soporte** («Discos USB rotados») para que cuenten como uno.
+- **Discos USB que se rotan**: dos o tres discos para una copia derivada (o el espejo), uno conectado y los otros guardados fuera de la oficina, desconectados. Un disco desconectado no lo cifra nadie. Márcalos como «Desconectado» y, si son el mismo juego de discos, con el mismo **soporte** («Discos USB rotados») para que cuenten como uno.
 
 ## Un almacén con Windows
 
@@ -45,7 +47,7 @@ Se puede, y funciona igual, pero **las instantáneas de Windows (VSS, «versione
 - **Fuera del dominio** de la oficina: un administrador del dominio comprometido no debe ser administrador del almacén.
 - **Una cuenta de administrador propia**, con una contraseña que no se use en ningún otro sitio; nadie trabaja con ella a diario.
 - **Sin escritorio remoto expuesto** (ni a internet ni a toda la oficina); si hace falta, solo desde un equipo concreto.
-- **Una copia fuera de su alcance**: la copia externa a la nube con bloqueo de objetos (Backblaze B2 o S3 con Object Lock), o discos USB rotados. Eso es lo que hace que cumpla el «1 inmutable» de verdad.
+- **Una copia fuera de su alcance**: un espejo o una copia derivada a la nube con bloqueo de objetos (Backblaze B2 o S3 con Object Lock), o discos USB rotados. Eso es lo que hace que cumpla el «1 inmutable» de verdad.
 
 ## Comprobar
 

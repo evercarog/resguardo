@@ -50,7 +50,7 @@ igual("servidorDe quita el esquema de restic y el usuario", servidorDe("rest:htt
 console.log("\n· Copias en el mismo equipo");
 const r = riesgoMismoEquipo(servidor.resumen!.repositorios![0], servidor, todos);
 cierto("en una carpeta del propio equipo, sin copia externa: aviso", !!r);
-igual("…con la frase de siempre", r?.texto, "Las copias de SERVIDOR se guardan en el propio SERVIDOR: si ese equipo se daña o lo cifra un ransomware, se pierden las dos. Guárdalas en un almacén de otro equipo o añade una copia externa.");
+igual("…con la frase de siempre", r?.texto, "Las copias de SERVIDOR se guardan en el propio SERVIDOR: si ese equipo se daña o lo cifra un ransomware, se pierden las dos. Guárdalas en un almacén de otro equipo o añade una copia derivada.");
 igual("…sin nota si se sabe qué disco es", r?.nota, null);
 const conExterna = { ...servidor.resumen!.repositorios![0], externa: { destino: "Nube", hora: "21:00" } };
 igual("con copia externa: sin aviso", riesgoMismoEquipo(conExterna, servidor, todos), null);

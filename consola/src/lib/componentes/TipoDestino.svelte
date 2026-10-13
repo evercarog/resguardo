@@ -4,14 +4,16 @@
   // selectores): el icono del tipo y su nombre, y las marcas solo con icono
   // (con su nombre para lectores de pantalla y en el globo). «completa»
   // (página y tarjetas del destino): todo con palabra, los días del bloqueo y,
-  // si lo marcó una persona, «marcado por una persona».
-  import { Building2, Cloud, HardDrive, Lock, Unplug } from "@lucide/svelte";
+  // si lo marcó una persona, «marcado por una persona». 14z: «Solo añadir» es un
+  // dato aparte (escudo a medias): no es la marca «Inmutable».
+  import { Building2, Cloud, HardDrive, Lock, ShieldHalf, Unplug } from "@lucide/svelte";
   import { TEXTO_TIPO, textoClasificacion } from "$lib/tipoDestino";
   import type { TipoDestino } from "$lib/tipos";
 
   let {
     tipo,
     inmutable = false,
+    soloAnadir = false,
     aislado = false,
     bloqueoDias = null,
     porPersona = false,
@@ -20,6 +22,8 @@
   }: {
     tipo: TipoDestino;
     inmutable?: boolean;
+    /** 14z: de solo añadir (los equipos no pueden borrar). No es inmutable. */
+    soloAnadir?: boolean;
     aislado?: boolean;
     bloqueoDias?: number | null;
     porPersona?: boolean;
@@ -30,7 +34,7 @@
 
   const ICONO = { local: HardDrive, fuera: Building2, nube: Cloud } as const;
   const Icono = $derived(ICONO[tipo]);
-  const texto = $derived(textoClasificacion({ tipo, inmutable, aislado, bloqueoDias }) + (porPersona ? " (marcado por una persona)" : ""));
+  const texto = $derived(textoClasificacion({ tipo, inmutable, aislado, bloqueoDias, soloAnadir }) + (porPersona ? " (marcado por una persona)" : ""));
   const tam = $derived(variante === "completa" ? 15 : 13);
 </script>
 
@@ -39,6 +43,9 @@
   <span class="pieza" aria-hidden="true"><Icono size={tam} />{#if !soloIcono}<span>{TEXTO_TIPO[tipo]}</span>{/if}</span>
   {#if inmutable}
     <span class="pieza marca" aria-hidden="true"><Lock size={tam} />{#if variante === "completa"}<span>Inmutable{bloqueoDias ? ` · ${bloqueoDias} días` : ""}</span>{/if}</span>
+  {/if}
+  {#if soloAnadir && !inmutable}
+    <span class="pieza dato" aria-hidden="true"><ShieldHalf size={tam} />{#if variante === "completa"}<span>Solo añadir</span>{/if}</span>
   {/if}
   {#if aislado}
     <span class="pieza marca" aria-hidden="true"><Unplug size={tam} />{#if variante === "completa"}<span>Aislado</span>{/if}</span>
@@ -82,6 +89,9 @@
   }
   .marca {
     color: var(--text-1);
+  }
+  .dato {
+    color: var(--text-2);
   }
   .persona {
     color: var(--text-3);

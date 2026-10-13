@@ -143,7 +143,7 @@ pub fn quien_la_usa(nombre: &str) -> Option<String> {
     }
     for r in crate::agent::load_config().repos.iter() {
         if r.offsite.as_ref().is_some_and(|o| o.dest.nube.as_deref() == Some(nombre)) {
-            usos.push(format!("la copia externa de «{}»", r.name));
+            usos.push(format!("la copia derivada de cada día de «{}»", r.name));
         }
         if r.derived.iter().any(|d| d.offsite.dest.nube.as_deref() == Some(nombre)) {
             usos.push(format!("una copia derivada de «{}»", r.name));

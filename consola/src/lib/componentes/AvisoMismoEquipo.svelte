@@ -28,7 +28,7 @@
     {#if onmover || hrefExterna}
       <div class="acciones">
         {#if onmover}<button type="button" class="btn btn-sm" onclick={onmover}><ArrowRightLeft size={14} />Mover a un almacén…</button>{/if}
-        {#if hrefExterna}<a class="btn btn-sm btn-ghost" href={hrefExterna}><CloudUpload size={14} />Añadir copia externa…</a>{/if}
+        {#if hrefExterna}<a class="btn btn-sm btn-ghost" href={hrefExterna}><CloudUpload size={14} />Añadir copia derivada…</a>{/if}
       </div>
     {/if}
   </div>

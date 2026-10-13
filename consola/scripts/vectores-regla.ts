@@ -9,7 +9,9 @@ import type { DestinoCatalogo, DestinoResumen, Equipo, Informe, RepoInforme } fr
 import {
   claveEspejoCarpeta,
   cuentaRegla,
+  estadoCero,
   estadoParte,
+  fraseCero,
   globoParte,
   lineaFalta,
   fraseRegla,
@@ -22,6 +24,7 @@ import {
   resumenCorto,
   textoEntorno,
   type EntradaRegla,
+  type PruebaRegla,
 } from "../src/lib/regla321";
 import { atributosDe, clasificar, estadoConexion, textoClasificacion, tipoDeLugar, ultimaConexion } from "../src/lib/tipoDestino";
 
@@ -145,7 +148,8 @@ const informeMal: Informe = { recibido: iso(1), datos: { repos: [repoInf({ exter
 const mal = reglaDeCopia(recepcion, k, equipos, informeMal, [], AHORA)!;
 igual("la copia externa falla: deja de cumplir «fuera»", [mal.regla.cumple, mal.regla.dejo_de_cumplir, mal.regla.partes.find((p) => p.id === "fuera")!.accion], [false, true, "poner_al_dia"]);
 igual("qué hacer: decirlo con su nombre", queHacer(mal.regla.partes.find((p) => p.id === "fuera")!, mal, "c1", AHORA)?.texto, "«Dropbox Oficina» no está al día (la última vez falló o aún no se ha hecho) (y 1 paso más): revisa por qué.");
-igual("en frase", fraseRegla(mal.regla), "Dejó de cumplir: 1 fuera del sitio (algo no está al día).");
+// 14z: la zona del almacén es de solo añadir (no inmutable): lo único inmutable era B2, y está atrasado.
+igual("en frase", fraseRegla(mal.regla), "Dejó de cumplir: 1 fuera del sitio y 1 inmutable o aislado (algo no está al día).");
 
 // Lo que dice la persona en el catálogo manda sobre lo deducido.
 const catalogo: DestinoCatalogo[] = [
@@ -197,7 +201,7 @@ igual("con uno que la admite: programarla", queHacer({ ...errores, accion: "prog
 console.log("\n· Por cliente y entorno");
 const todas = reglasDelCliente(equipos, { [recepcion.id]: informeMal }, [], AHORA);
 igual("las copias que cuentan (activas, no importadas)", todas.map((x) => x.copia.id), ["docs"]);
-igual("la cuenta", cuentaRegla(todas), { total: 1, cumplen: 0, dejaron: 1, faltan: { copias: 0, soportes: 0, fuera: 1, inmutable: 0, errores: 0 } });
+igual("la cuenta", cuentaRegla(todas), { total: 1, cumplen: 0, dejaron: 1, faltan: { copias: 0, soportes: 0, fuera: 1, inmutable: 1, errores: 0 } });
 igual("el entorno, en palabras", [textoEntorno(almacen), textoEntorno(recepcion), textoEntorno({ resumen: { entorno: { virtual: "hyperv" } } })], [
   "En un contenedor LXC dentro de una máquina virtual KVM (Proxmox, QEMU)",
   null,
@@ -211,13 +215,30 @@ console.log("\n· La tira: estado corto de cada parte y la línea de lo que falt
   igual("la configuración cumple, algo no está al día", estadoParte(parte("copias", 2, 3, false, true)), { tono: "warn", icono: "atrasado", texto: "Atrasado" });
   igual("falta uno / faltan dos", [estadoParte(parte("copias", 2, 3, false, false)).texto, estadoParte(parte("copias", 1, 3, false, false)).texto], ["Falta 1", "Faltan 2"]);
   igual("en el «0», lo que hay por resolver", estadoParte(parte("errores", 2, 0, false, false)).texto, "Faltan 2");
-  igual("la línea corta: lo atrasado (el espejo en la nube lleva 70 h fallando)", lineaFalta(mal.regla), "No está al día: 1 fuera del sitio.");
+  igual("la línea corta: lo atrasado (el espejo en la nube lleva 70 h fallando)", lineaFalta(mal.regla), "No está al día: 1 fuera del sitio · 1 inmutable o aislado.");
   igual(
     "la línea corta: lo que falta",
     lineaFalta({ ...mal.regla, partes: mal.regla.partes.map((p) => (p.id === "inmutable" ? { ...p, cumple: false, cumple_config: false } : p)) }),
     "Falta: 1 inmutable o aislado. No está al día: 1 fuera del sitio.",
   );
   igual("si cumple, nada", lineaFalta({ ...mal.regla, cumple: true }), null);
+  // 14n: el «0» dice qué falta y qué ya está bien, nunca «0 errores: 1 por resolver».
+  const hace = (d: number) => new Date(AHORA - d * 86_400_000).toISOString();
+  const entradaCero = (v: PruebaRegla, pr: PruebaRegla) => ({ origen: { equipo: "e", soporte: "s" }, pasos: [], verificacion: v, prueba_restauracion: pr });
+  const vieja = { configurada: true, ultima_ok: hace(60) };
+  const reciente = { configurada: true, ultima_ok: hace(3) };
+  igual("14n: falta una verificación reciente, la prueba ya está bien", fraseCero(estadoCero(entradaCero(vieja, reciente), AHORA)), "Falta: una verificación reciente (la prueba de restauración ya está bien).");
+  igual("14n: con el botón para hacerla", estadoCero(entradaCero(vieja, reciente), AHORA).accion, "verificar_ahora");
+  igual("14n: la prueba falló y la verificación sin programar", fraseCero(estadoCero(entradaCero({ configurada: false }, { configurada: true, ultima_ok: hace(2), fallo: true }), AHORA)), "Falta: programar la verificación y una prueba de restauración correcta (la última falló).");
+  igual("14n: todo bien, nada que decir", fraseCero(estadoCero(entradaCero(reciente, reciente), AHORA)), null);
+  {
+    const e = entradaCero(vieja, reciente);
+    const rcCero = { ...mal, entrada: e, regla: regla321(e, AHORA) };
+    const l = lineaFalta(rcCero.regla, rcCero, AHORA) ?? "";
+    cierto("14n: la línea de la tira lo dice en palabras (sin «0 errores»)", l.includes("Falta: una verificación reciente (la prueba de restauración ya está bien).") && !l.includes("0 errores"));
+    const g = globoParte(rcCero.regla.partes.find((p) => p.id === "errores")!, rcCero, "c1", AHORA);
+    cierto("14n: el globo del «0» tampoco dice «por resolver»", !g.includes("por resolver") && g.includes("una verificación reciente"));
+  }
   const pm = mal.regla.partes.find((p) => !p.cumple)!;
   cierto("el globo de una parte dice qué pide, cómo está y qué hacer", globoParte(pm, mal, "c1", AHORA).startsWith("1 fuera del sitio: ") && globoParte(pm, mal, "c1", AHORA).includes("Qué hacer"));
 }
@@ -227,10 +248,12 @@ console.log("\n· 0.7.26: tipo y marcas de un destino (lib/tipoDestino.ts)");
   const zona = { lugar: "oficina", inmutable: "solo_anadir" } as const;
   const b2l = { lugar: "nube", inmutable: "object_lock", bloqueoDias: 30 } as const;
   igual("lugares de antes → tipo", (["este_equipo", "oficina", "otra_sede", "nube"] as const).map(tipoDeLugar), ["local", "local", "fuera", "nube"]);
-  igual("zona de un almacén: Local + Inmutable (deducido)", clasificar(zona, null), {
+  // 14z: una zona de un almacén es Local + Solo añadir (un dato), no Inmutable.
+  igual("zona de un almacén: Local + Solo añadir (deducido), no Inmutable", clasificar(zona, null), {
     tipo: "local",
-    inmutable: true,
-    como: "solo_anadir",
+    inmutable: false,
+    soloAnadir: true,
+    como: "no",
     aislado: false,
     bloqueoDias: null,
     aisladoDias: 30,
@@ -241,16 +264,19 @@ console.log("\n· 0.7.26: tipo y marcas de un destino (lib/tipoDestino.ts)");
   igual("«desconectado» de antes se lee como Aislado (no Inmutable)", [clasificar(zona, { inmutable: "desconectado" }).aislado, clasificar(zona, { inmutable: "desconectado" }).inmutable], [true, false]);
   igual("el lugar de antes marcado por una persona da el tipo", [clasificar(zona, { lugar: "otra_sede" }).tipo, clasificar(zona, { lugar: "otra_sede" }).tipoPorPersona], ["fuera", true]);
   igual("el tipo nuevo manda sobre el lugar", clasificar(zona, { lugar: "otra_sede", tipo: "nube" }).tipo, "nube");
-  const base2 = { tipo: "local" as const, inmutable: true, como: "solo_anadir" as const, aislado: false, bloqueoDias: null, aisladoDias: 30, soporte: "" };
+  igual("14z: «solo añadir» marcado por una persona se respeta (cuenta como Inmutable)", [clasificar({ lugar: "otra_sede", inmutable: "no" }, { inmutable: "solo_anadir" }).inmutable, clasificar({ lugar: "otra_sede", inmutable: "no" }, { inmutable: "solo_anadir" }).soloAnadir], [true, true]);
+  igual("14z: instantáneas marcadas en una zona: Inmutable y sigue siendo de solo añadir", [clasificar(zona, { inmutable: "instantaneas" }).inmutable, clasificar(zona, { inmutable: "instantaneas" }).soloAnadir], [true, true]);
+  const base2 = { tipo: "local" as const, inmutable: false, como: "instantaneas" as const, aislado: false, bloqueoDias: null, aisladoDias: 30, soporte: "" };
   igual("sin cambios: nada que guardar", atributosDe(zona, base2), {});
   igual("Aislado sin Inmutable: también «desconectado» para una consola anterior", atributosDe(zona, { ...base2, inmutable: false, aislado: true }), { inmutable: "desconectado", aislado: true });
-  igual("Aislado e Inmutable a la vez", atributosDe(zona, { ...base2, aislado: true, aisladoDias: 14 }), { aislado: true, aislado_dias: 14 });
+  igual("Aislado e Inmutable a la vez", atributosDe(zona, { ...base2, inmutable: true, aislado: true, aisladoDias: 14 }), { inmutable: "instantaneas", aislado: true, aislado_dias: 14 });
+  igual("14z: quitar las marcas de una zona no le quita lo de solo añadir", atributosDe(zona, base2), {});
   igual("Fuera del sitio: también el lugar de antes", atributosDe(zona, { ...base2, tipo: "fuera" }), { tipo: "fuera", lugar: "otra_sede" });
-  igual("Local desde una nube: «oficina» para una consola anterior", atributosDe(b2l, { ...base2, tipo: "local", como: "object_lock", bloqueoDias: 30 }), { tipo: "local", lugar: "oficina" });
-  igual("otro bloqueo de días", atributosDe(b2l, { ...base2, tipo: "nube", como: "object_lock", bloqueoDias: 90 }), { bloqueo_dias: 90 });
+  igual("Local desde una nube: «oficina» para una consola anterior", atributosDe(b2l, { ...base2, tipo: "local", inmutable: true, como: "object_lock", bloqueoDias: 30 }), { tipo: "local", lugar: "oficina" });
+  igual("otro bloqueo de días", atributosDe(b2l, { ...base2, tipo: "nube", inmutable: true, como: "object_lock", bloqueoDias: 90 }), { bloqueo_dias: 90 });
   for (const [n, e] of [
     ["ida y vuelta: Aislado", { ...base2, inmutable: false, aislado: true }],
-    ["ida y vuelta: Nube inmutable y aislada", { ...base2, tipo: "nube" as const, aislado: true, aisladoDias: 10 }],
+    ["ida y vuelta: Nube inmutable y aislada", { ...base2, tipo: "nube" as const, inmutable: true, como: "object_lock" as const, aislado: true, aisladoDias: 10 }],
     ["ida y vuelta: Fuera sin marcas", { ...base2, tipo: "fuera" as const, inmutable: false }],
   ] as const) {
     const c = clasificar(zona, atributosDe(zona, e));

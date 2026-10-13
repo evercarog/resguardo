@@ -1655,7 +1655,7 @@ pub fn usos_destino(v: &Vinculo, id: &str) -> Vec<String> {
             usos.push(format!("el repositorio «{}»", r.nombre));
         }
         if r.externa.as_ref().is_some_and(|e| e["destino"] == id) {
-            usos.push(format!("la copia externa de «{}»", r.nombre));
+            usos.push(format!("la copia derivada de cada día de «{}»", r.nombre));
         }
         if r.derivadas.iter().any(|e| e["destino"] == id) {
             usos.push(format!("una copia derivada de «{}»", r.nombre));
@@ -1857,7 +1857,7 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         None if solo_probar => String::new(),
         None => {
             crate::agent::set_offsite(repo, None, None)?;
-            return Ok("Copia externa quitada (lo ya copiado sigue en su destino).".into());
+            return Ok("Copia derivada de cada día quitada (lo ya copiado sigue en su destino).".into());
         }
     };
     let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).unwrap_or(Value::Null);
@@ -1880,7 +1880,7 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         r.externa = Some(e);
     }
     let _ = subir_config(v);
-    Ok(format!("Copia externa a «{}» cada día a las {hora}. {}", p.destino.nombre, p.texto))
+    Ok(format!("Copia derivada a «{}» cada día a las {hora}. {}", p.destino.nombre, p.texto))
 }
 
 /// Lo que se comprueba y prepara antes de guardar una copia externa o

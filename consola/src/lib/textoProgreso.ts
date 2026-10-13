@@ -10,8 +10,8 @@ const NBSP = " ";
 export const NOMBRE_TAREA: Record<TipoTarea, string> = {
   copia: "Copiando",
   verificar: "Verificando",
-  verificar_externa: "Verificando la copia externa",
-  copia_externa: "Subiendo la copia externa",
+  verificar_externa: "Verificando la copia derivada",
+  copia_externa: "Subiendo la copia derivada",
   prueba_restauracion: "Probando a restaurar",
   historial: "Trayendo el historial",
   retencion: "Aplicando la retención",

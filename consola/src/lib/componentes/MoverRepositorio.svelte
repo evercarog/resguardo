@@ -517,7 +517,7 @@
         {#if desconectado}
           <div class="notice notice-warn"><Clock size={16} /><p>{equipo.nombre} no está conectado ahora. Las órdenes le esperarán: puedes empezar, cerrar esta ventana y volver cuando se conecte.</p></div>
         {/if}
-        {#if repo.externa}<p class="faint pequeno">La copia externa de «{repo.nombre}» no se mueve: configúrala después en el nuevo si la quieres.</p>{/if}
+        {#if repo.externa}<p class="faint pequeno">La copia derivada de «{repo.nombre}» no se mueve: configúrala después en el nuevo si la quieres.</p>{/if}
         <CampoClave requerido id="m-admin" etiqueta="Clave de administración" bind:value={claveAdmin} error={error && /clave/i.test(error) ? error : ""}>
           {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
         </CampoClave>

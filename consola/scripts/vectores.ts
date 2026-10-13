@@ -855,12 +855,12 @@ console.log("\n· Progreso en vivo (v1.25)");
   igual("el espejo que falla, en rojo", m.aristas.filter((a) => a.tipo === "espejo").map((a) => a.tono), ["ok", "bad"]);
   igual("en palabras (espacios finos aparte)", m.frases.map((x) => x.replace(/[  ]/g, " ")), ["PC-01 copia «Docs 1» a ALMACEN-01 (al día, hace 3 h).", "ALMACEN-01 se refleja en Disco 2 (al día, hace 10 h) y Dropbox (falló hace 2 h)."]);
   igual(
-    "0.7.26: tipo y marcas de cada destino (el almacén: Local + Inmutable; Dropbox: Nube)",
-    m.nodos.filter((n) => n.col >= 2).map((n) => [n.nombre, n.tipoDestino?.tipo, n.tipoDestino?.inmutable]),
+    "0.7.26: tipo y marcas de cada destino (14z: el almacén, Local + Solo añadir, no Inmutable; Dropbox: Nube)",
+    m.nodos.filter((n) => n.col >= 2).map((n) => [n.nombre, n.tipoDestino?.tipo, n.tipoDestino?.inmutable, !!n.tipoDestino?.soloAnadir]),
     [
-      ["ALMACEN-01", "local", true],
-      ["Dropbox", "nube", false],
-      ["Disco 2", "local", false],
+      ["ALMACEN-01", "local", false, true],
+      ["Dropbox", "nube", false, false],
+      ["Disco 2", "local", false, false],
     ],
   );
   const vivo = construirMapa([pc(1), almacen], {}, { cliente: "c", ahora, enVivo: (_e, _r, t) => (t === "copia" ? "Copiando 40 %" : null) });

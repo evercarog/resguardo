@@ -23,7 +23,7 @@
       [
         ["Verificación", inf?.verificacion],
         ["Prueba de restauración", inf?.prueba_restauracion],
-        ["Copia externa", inf?.externa],
+        ["Copia derivada", inf?.externa],
       ] as const
     ).filter(([, t]) => t && t.resultado !== "ok"),
   );

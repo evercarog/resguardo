@@ -538,7 +538,7 @@ fn al_empezar(a: &Actividad) -> (String, String) {
         "copia" => format!("Copiando «{}»", a.nombre),
         "restauracion" => format!("Restaurando desde «{}»", a.nombre),
         "verificacion" => format!("Verificando «{}»", a.nombre),
-        "copia_externa" => format!("Subiendo la copia externa de «{}»", a.nombre),
+        "copia_externa" => format!("Subiendo la copia derivada de «{}»", a.nombre),
         "espejo" => format!("Copiando el espejo a «{}»", a.nombre),
         "nube" => format!("Subiendo a «{}»", a.nombre),
         _ => format!("Empezó «{}»", a.nombre),

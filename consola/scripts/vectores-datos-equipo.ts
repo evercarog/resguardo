@@ -69,7 +69,7 @@ console.log("\n· Quitar un destino sin uso");
     },
   };
   igual("usos del almacén", usosDestino(e, "d-alm"), ["el repositorio «Documentos»"]);
-  igual("usos de la nube de la externa", usosDestino(e, "d-ext"), ["la copia externa de «Documentos»"]);
+  igual("usos de la nube de la externa", usosDestino(e, "d-ext"), ["la copia derivada de «Documentos»"]);
   igual("usos de la derivada", usosDestino(e, "d-der"), ["una copia derivada de «Documentos»"]);
   igual("el local sin uso se puede quitar", destinoQuitable(e, "d-local"), true);
   igual("el que usa un repositorio, no", destinoQuitable(e, "d-alm"), false);

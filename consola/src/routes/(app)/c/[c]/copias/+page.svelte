@@ -8,12 +8,19 @@
   // orden; cada fila lleva a la página de la copia y tiene «Copiar ahora»
   // (el diálogo de siempre) y «Ver versiones». «Varias a la vez» copia ahora
   // las elegidas. Todo sale del resumen de cada equipo y de su último informe.
+  // C1 (plan 0.8.0, 14h): bajo cada copia, una línea por paso de su camino
+  // (espejos y copias derivadas, con su estado y su enlace); los pasos cuentan
+  // en «Necesitan atención» y en la cifra de las que están al día, y hay un
+  // filtro «Con espejo / sin espejo».
   import { tip } from "$lib/tooltip";
   import { CalendarClock, ChevronRight, FolderSync, HardDrive, History, ListChecks, Play, Search, TriangleAlert, X } from "@lucide/svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, horarioEnFrase, numero, plural, relativo, cuandoFrase } from "$lib/formato";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
-  import { ESTADOS_FILTRO, filasCopias, filtrarCopias, ORDENES, ordenarCopias, type EstadoFiltro, type FilaCopia, type Orden } from "$lib/copiasCliente";
+  import { cuentaCopias, ESPEJO_FILTRO, ESTADOS_FILTRO, filasCopias, filtrarCopias, ORDENES, ordenarCopias, type EspejoFiltro, type EstadoFiltro, type FilaCopia, type Orden } from "$lib/copiasCliente";
+  import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
+  import { enVivoCamino } from "$lib/caminoVivo.svelte";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { guardar, leer } from "$lib/recordar";
   import { notaDe, notas, objetoDe } from "$lib/notas.svelte";
   import AccionesEnBloque from "$lib/componentes/AccionesEnBloque.svelte";
@@ -37,7 +44,12 @@
     untrack(() => void cargarInformes(cc, ids));
   });
   const informes = $derived(ultimos.cliente === actual.id ? ultimos.porEquipo : {});
-  const filas = $derived(filasCopias(actual.equipos, informes, reloj.ahora));
+  // El catálogo de destinos (lo marcado en cada uno), para el tipo de cada paso del camino.
+  $effect(() => {
+    const cc = actual.id;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const filas = $derived(filasCopias(actual.equipos, informes, reloj.ahora, catalogoDe(actual.id), { cliente: actual.id, enVivo: enVivoCamino }));
 
   // Filtros: el estado y el orden se recuerdan en este navegador (por cliente).
   let buscar = $state("");
@@ -45,6 +57,7 @@
   let orden = $state<Orden>("estado");
   let equipo = $state("");
   let repo = $state("");
+  let espejo = $state<EspejoFiltro>("todos");
   const ID_ESTADOS = ESTADOS_FILTRO.map((x) => x.id);
   const ID_ORDENES = ORDENES.map((x) => x.id);
   $effect.pre(() => {
@@ -64,9 +77,10 @@
     buscar = "";
     equipo = "";
     repo = "";
+    espejo = "todos";
     ponerEstado("todos");
   }
-  const vistas = $derived(ordenarCopias(filtrarCopias(filas, { buscar, estado, equipo: equipo || null, repo: repo || null }), orden));
+  const vistas = $derived(ordenarCopias(filtrarCopias(filas, { buscar, estado, equipo: equipo || null, repo: repo || null, espejo }), orden));
   const equiposConCopias = $derived(actual.equipos.filter((e) => e.resumen?.copias?.length).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")));
   const repos = $derived(
     actual.equipos
@@ -77,11 +91,12 @@
   $effect(() => {
     if (repo && !repos.some((r) => r.clave === repo)) repo = "";
   });
-  const hayFiltro = $derived(!!buscar.trim() || estado !== "todos" || !!equipo || !!repo);
+  const hayFiltro = $derived(!!buscar.trim() || estado !== "todos" || !!equipo || !!repo || espejo !== "todos");
 
-  // Cifras.
-  const atencion = $derived(filas.filter((x) => x.estado.tono === "bad" || x.estado.tono === "warn").length);
-  const alDia = $derived(filas.filter((x) => x.estado.tono === "ok").length);
+  // Cifras (C1: con los pasos del camino; una copia al día con un paso fallando no está del todo al día).
+  const cuenta = $derived(cuentaCopias(filas));
+  const atencion = $derived(cuenta.atencion);
+  const alDia = $derived(cuenta.alDia);
   const protegido = $derived(filas.reduce((n, x) => n + (x.protegido ?? 0), 0));
   const proxima = $derived(
     filas
@@ -134,7 +149,7 @@
     titulo="Copias"
     icono={FolderSync}
     migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Copias" }]}
-    resumen={actual.cargado ? `${plural(filas.length, "copia", "copias")} en ${plural(equiposN, "equipo", "equipos")}${atencion ? ` · ${plural(atencion, "necesita atención", "necesitan atención")}` : filas.length ? " · todas al día o en su sitio" : ""}` : "Cargando…"}
+    resumen={actual.cargado ? `${plural(filas.length, "copia", "copias")} en ${plural(equiposN, "equipo", "equipos")}${atencion ? ` · ${plural(atencion, "necesita atención", "necesitan atención")}` : filas.length ? " · todas al día o en su sitio" : ""}${cuenta.conPasoMal ? ` (${plural(cuenta.conPasoMal, "al día con un paso fallando", "al día con un paso fallando")})` : ""}` : "Cargando…"}
   />
 
   {#if !actual.cargado || !actual.cliente}
@@ -148,8 +163,8 @@
     </div>
   {:else}
     <div class="cifras" role="list" aria-label="Cifras de las copias">
-      <Cifra icono={FolderSync} etiqueta="Copias" valor={numero(alDia)} de="de {filas.length}" sub="al día" />
-      <Cifra icono={TriangleAlert} etiqueta="Necesitan atención" valor={numero(atencion)} sub={atencion ? "con error, atrasadas o con avisos" : "ninguna"} mal={atencion > 0} />
+      <Cifra icono={FolderSync} etiqueta="Copias" valor={numero(alDia)} de="de {filas.length}" sub={cuenta.conPasoMal ? `al día · ${plural(cuenta.conPasoMal, "con un paso fallando", "con un paso fallando")}` : "al día"} />
+      <Cifra icono={TriangleAlert} etiqueta="Necesitan atención" valor={numero(atencion)} sub={atencion ? "con error, atrasadas, con avisos o con un paso fallando" : "ninguna"} mal={atencion > 0} />
       <Cifra icono={HardDrive} etiqueta="Protegido" valor={protegido ? bytes(protegido) : "—"} sub="lo que copian, según su última versión" />
       <Cifra icono={CalendarClock} etiqueta="Próxima copia" valor={proxima ? relativo(proxima, reloj.ahora) : "—"} sub={proxima ? cuandoFrase(proxima, reloj.ahora) : "nada programado"} />
     </div>
@@ -178,6 +193,12 @@
         <select class="input" bind:value={repo}>
           <option value="">Todos</option>
           {#each repos as r (r.clave)}<option value={r.clave}>{r.texto}</option>{/each}
+        </select>
+      </label>
+      <label class="sel">
+        <span class="faint">Espejos</span>
+        <select class="input" bind:value={espejo} aria-label="Con o sin espejo o copia derivada">
+          {#each ESPEJO_FILTRO as f (f.id)}<option value={f.id}>{f.texto}</option>{/each}
         </select>
       </label>
       <label class="sel">
@@ -218,12 +239,18 @@
                 <a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>{" · "}{#if x.repo}<a class="link-suave" href="/c/{actual.id}/equipos/{x.equipo.id}/repositorios/{encodeURIComponent(x.repo.id)}">{x.repo.nombre}</a>{:else}{x.copia.repo}{/if}
               </span>
               {#if x.repo}<span class="sub"><SeGuardaEn pequeno lugar={lugarRepo(x.repo, x.equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(x.repo, x.equipo, actual.equipos)} /></span>{/if}
+              <!-- C1: una línea por paso de su camino (espejos y copias derivadas), con su estado y su enlace. -->
+              {#if x.pasos.length}<div class="pasos-camino"><CaminoCopia eslabones={x.pasos} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{x.copia.nombre}»" /></div>{/if}
               <span class="sub faint">{horarioEnFrase(x.copia.horario)}</span>
               {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub msg-fallo">{x.vuelta.mensaje}</span>{/if}
               <span class="vivo"><EnMarcha equipo={x.equipo.id} copia={x.copia.id} compacto /></span>
             </div>
             <div class="estado">
               <Chip tono={x.estado.tono} texto={x.estado.texto} />
+              {#if x.estado.tono === "ok" && x.pasoMal}
+                {@const mal = x.pasos.filter((p) => !p.vivo && (p.tono === "bad" || p.tono === "warn"))}
+                <Chip pequeno tono={mal.some((p) => p.tono === "bad") ? "bad" : "warn"} texto={mal.length === 1 ? (mal[0].tono === "bad" ? "Un paso falla" : "Un paso atrasado") : `${mal.length} pasos mal`} />
+              {/if}
             </div>
             <div class="cuando num">
               <span>{#if x.vuelta}Última <Tiempo iso={x.vuelta.cuando} /><span class="faint">{" · "}{TEXTO_ULTIMA[x.vuelta.resultado]}</span>{:else}<span class="faint">Ninguna todavía</span>{/if}</span>
@@ -309,6 +336,17 @@
   }
   .hueco {
     flex: 1;
+  }
+  .pasos-camino {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-top: 2px;
+  }
+  .fila-copia > .estado {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
   }
   /* La fila se adapta al ancho de la lista (con la barra lateral, no al de la ventana). */
   .lista-copias {

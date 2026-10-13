@@ -8,11 +8,11 @@
   // obligación: no bloquea nada.
   // `compacta`: la misma tira en una píldora de cinco segmentos (listas,
   // «Cambiar las copias», Estado): cifra e icono de estado en cada uno.
-  import { Check, CircleDashed, Clock, Info, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { Check, CircleDashed, Clock, FlaskConical, Info, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import Ayuda from "../Ayuda.svelte";
   import { relativo } from "$lib/formato";
-  import { cifraParte, estadoParte, fraseRegla, globoParte, lineaFalta, pasoAlDia, PARTES, queHacer, TEXTO_AVISO, type PasoVista, type ReglaCopia } from "$lib/regla321";
+  import { cifraParte, estadoCero, estadoParte, fraseRegla, globoParte, lineaFalta, pasoAlDia, PARTES, queHacer, TEXTO_AVISO, type PasoVista, type ReglaCopia } from "$lib/regla321";
   import { guardar, leer } from "$lib/recordar";
   import { corta, estadoConexion } from "$lib/tipoDestino";
   import TipoDestino from "../TipoDestino.svelte";
@@ -25,6 +25,7 @@
     titulo = true,
     onmarcar,
     enlaceDestino,
+    onaccion,
   }: {
     rc: ReglaCopia;
     cliente: string;
@@ -34,13 +35,17 @@
     onmarcar?: (p: PasoVista) => void;
     /** La página de un destino de la lista «Dónde llegan los datos» (si la tiene). */
     enlaceDestino?: (p: PasoVista) => string | null;
+    /** 14n: hacer ya lo que falta en el «0» («Verificar ahora», «Probar ahora»). Sin ella, no hay botón. */
+    onaccion?: (tipo: "verificar_ahora" | "probar_restauracion") => void;
   } = $props();
 
   const r = $derived(rc.regla);
   const estado = $derived(r.cumple ? { tono: "ok", texto: "Cumple" } : r.dejo_de_cumplir ? { tono: "warn", texto: "Dejó de cumplir" } : { tono: "neutral", texto: "No la cumple" });
   // Lo que falta, con su enlace (la línea corta de debajo); el texto largo, en el globo de cada parte.
   const pendientes = $derived(r.partes.filter((p) => !p.cumple).map((p) => ({ p, que: queHacer(p, rc, cliente, ahora) })));
-  const falta = $derived(lineaFalta(r));
+  const falta = $derived(lineaFalta(r, rc, ahora));
+  // 14n: lo que se puede hacer ya en el «0» (una verificación o una prueba que no es reciente).
+  const cero = $derived(estadoCero(rc.entrada, ahora));
   // Un enlace por sitio (dos partes que se arreglan en el mismo sitio, una vez).
   const enlaces = $derived([...new Map(pendientes.flatMap(({ que }) => (que?.enlace ? [[que.enlace.href, que.enlace] as const] : []))).values()]);
   const hayLocal = $derived(rc.pasos.some((p) => p.inmutable === "instantaneas" || p.inmutable === "desconectado"));
@@ -79,7 +84,7 @@
           <span class="r-cifra" aria-hidden="true">{PARTES[p.id].cifra}</span>
           <span class="nombre">{PARTES[p.id].corto}</span>
           <span class="estado">{@render icono(e.icono, 12)}<span>{e.texto}</span></span>
-          <span class="sr-only">: {PARTES[p.id].titulo}, {cifraParte(p)}.</span>
+          <span class="sr-only">: {PARTES[p.id].titulo}, {cifraParte(p, rc, ahora)}.</span>
         </li>
       {/each}
     </ol>
@@ -90,6 +95,9 @@
         {#each enlaces as e (e.href)}
           <a class="link" href={e.href}>{e.texto} →</a>
         {/each}
+        {#if onaccion && cero.accion}
+          <button class="btn btn-sm" onclick={() => onaccion(cero.accion!)}>{#if cero.accion === "verificar_ahora"}<ShieldCheck size={14} />Verificar ahora{:else}<FlaskConical size={14} />Probar ahora{/if}</button>
+        {/if}
       </p>
       <p class="faint guia">Es una guía, no una obligación. Pasa el ratón o toca cada parte para ver qué pide y qué hacer.</p>
     {/if}
