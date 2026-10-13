@@ -170,7 +170,8 @@
     else if (v.startsWith("nube:")) {
       // Plan 0.8.0 (B2): el bucket y la carpeta base que recuerda el destino; aquí, como mucho, una subcarpeta.
       t.adonde = { tipo: "nube", nube: v.slice(5), carpeta: "" };
-      sub = "";
+      // Sin carpeta base en el destino, «Resguardo» (como antes); con ella, ninguna subcarpeta.
+      sub = infoNube.base ? "" : "Resguardo";
       propia = false;
       bucketEscrito = "";
       rehacerCarpeta();
@@ -401,7 +402,7 @@
               {/if}
               <div class="field crece">
                 <label class="field-label" for="ee-sub">Subcarpeta <span class="faint">(opcional)</span></label>
-                <input id="ee-sub" class="input mono" bind:value={sub} oninput={rehacerCarpeta} spellcheck="false" placeholder={infoNube.base ? "" : "Resguardo"} />
+                <input id="ee-sub" class="input mono" bind:value={sub} oninput={rehacerCarpeta} spellcheck="false" placeholder="p. ej. oficina" />
                 {#if errorSub}<p class="error-campo">{errorSub}</p>{/if}
               </div>
             </div>

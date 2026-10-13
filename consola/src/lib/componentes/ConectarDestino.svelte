@@ -332,7 +332,7 @@
               {#if errorDeBase}<p class="error-campo">{errorDeBase}</p>{/if}
             </div>
           </div>
-          <p class="ruta faint">Todo irá en <code>{carpetaFinal || "(la raíz)"}/…</code>{#if tipo === "dropbox"}, dentro de Aplicaciones/Resguardo{/if}.</p>
+          <p class="ruta faint">Todo irá dentro de <code>{carpetaFinal || "la raíz"}</code>{#if tipo === "dropbox"} (en Aplicaciones/Resguardo){/if}.</p>
         {/if}
         {#if repetido}<div class="notice notice-warn" role="status"><TriangleAlert size={16} /><p>{repetido}</p></div>{/if}
 

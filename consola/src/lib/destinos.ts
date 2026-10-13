@@ -462,6 +462,10 @@ function unirIguales(l: DestinoVista[]): DestinoVista[] {
   return l.filter((v) => !quitados.has(v));
 }
 
+/** La entrada del catálogo de red (B2, S3 o servidor de copias, con dirección) de una vista, si la tiene (también unida). */
+export const catalogoDeRed = (v: Pick<DestinoVista, "catalogo" | "alias">): DestinoCatalogo | undefined =>
+  [v.catalogo, ...(v.alias ?? [])].find((c): c is DestinoCatalogo => !!c && ["b2", "s3", "rest"].includes(c.tipo) && !!c.donde?.trim());
+
 /** Todas las claves con las que se llega a una vista (la suya y las de lo unido a ella). */
 export const clavesDe = (v: DestinoVista) => [v.clave, ...(v.catalogo && v.catalogo.id !== v.clave ? [v.catalogo.id] : []), ...(v.alias ?? []).map((a) => a.id)];
 

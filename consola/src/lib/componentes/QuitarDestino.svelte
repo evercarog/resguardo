@@ -43,7 +43,7 @@
   });
   const nubeOcupada = $derived(!!usosNube && !!textoUsosCorto(usosNube));
   // Los destinos de los equipos: los que ya no usa nada se quitan; si no, se dice qué los usa.
-  const propios = $derived(equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id) && d.tipo !== "nube").map((d) => ({ equipo: e, destino: d }))));
+  const propios = $derived(equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id)).map((d) => ({ equipo: e, destino: d }))));
   const quitables = $derived(propios.filter((q) => destinoQuitable(q.equipo, q.destino.id)));
   const usosEquipos = $derived(usosDeVista({ ...v, nube: undefined, zona: undefined }, equipos));
   const ocupado = $derived(!!propios.length && !quitables.length && !!textoUsosCorto(usosEquipos));

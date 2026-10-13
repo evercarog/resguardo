@@ -10,7 +10,7 @@
 import type { CopiaConfig, CuandoDerivada, DerivadaResumen, DestinoCatalogo, Equipo, FiltroVersiones, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { almacenDe } from "./retencion";
-import { almacenesDe, claveNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
+import { almacenesDe, catalogoDeRed, claveNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { etiquetaCarpeta, nombreTipoNube, TIPOS_NUBE } from "./espejo";
 import { horarioEnFrase } from "./formato";
 
@@ -504,6 +504,9 @@ export function usosPosibles(d: DestinoVista, equipo: Equipo, repo: RepositorioR
     const aqui = d.nube.equipo.id === equipo.id || (equipo.resumen?.nubes ?? []).some((n) => n.nombre === d.nube!.nombre);
     derivada = aqui
       ? { ok: true }
+      : // Plan 0.8.0 (B2): unida a un B2 o S3 del catálogo con el mismo bucket: desde el equipo, con sus credenciales.
+        catalogoDeRed(d)
+        ? { ok: true, motivo: "Pide sus credenciales" }
       : !admite(equipo, ADMITE.nubeEquipo)
         ? { ok: false, motivo: `Actualiza el agente de ${equipo.nombre} para usar nubes`, accion: { tipo: "actualizar", equipo } }
         : d.nube.tipo === "dropbox"

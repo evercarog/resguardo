@@ -19,7 +19,7 @@
   import ElegirDestinoPaso, { type OpcionDestino } from "./ElegirDestinoPaso.svelte";
   import ConectarNube from "./ConectarNube.svelte";
   import DarAccesoAlmacen from "./DarAccesoAlmacen.svelte";
-  import { claveZona, dondeConBase, type ZonaVista } from "$lib/destinos";
+  import { catalogoDeRed, claveZona, dondeConBase, type ZonaVista } from "$lib/destinos";
   import { diasBloqueo, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   import { TIPOS_NUBE, nombreTipoNube } from "$lib/espejo";
   import { admitePlazos, copiaRegla, errorRegla, horarioDeCopias, REGLA_POR_DEFECTO, reglaParaOrden } from "$lib/retencion";
@@ -114,9 +114,12 @@
       const uso = dado ? { ok: true } : usosPosibles(v, equipo, repo, equipos).derivada;
       const id = dado ?? v.ids.find((x) => propios.has(x));
       const nubeAqui = v.nube && (v.nube.equipo.id === equipo.id || nubes.some((n) => n.nombre === v.nube!.nombre));
-      const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clave}`;
+      // Plan 0.8.0 (B2): un destino unido a una entrada de red del catálogo se crea en el equipo con esa entrada.
+      const red = catalogoDeRed(v);
+      const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clase === "suelto" || !red ? v.clave : red.id}`;
       // Plan 0.8.0 (B2): con la carpeta base del catálogo delante.
-      if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: dondeConBase(v.tipo, v.donde ?? "", v.catalogo?.carpeta) };
+      if (valor.startsWith("cat:") && red) delCatalogo[valor] = { tipo: red.tipo as TipoNuevo, nombre: v.nombre, donde: dondeConBase(red.tipo, red.donde ?? "", red.carpeta) };
+      else if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: dondeConBase(v.tipo, v.donde ?? "", v.catalogo?.carpeta) };
       porClave[v.clave] = valor;
       if (!l.some((o) => o.valor === valor)) l.push({ valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso, tipoDestino: corta(clasificacionDeVista(v, equipos)) });
     }
