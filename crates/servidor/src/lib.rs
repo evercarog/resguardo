@@ -18,6 +18,7 @@ pub mod datos_comunes;
 pub mod datos_equipo;
 pub mod error;
 pub mod estado;
+pub mod github;
 pub mod identidad;
 pub mod instalador_agente;
 pub mod notificaciones;
@@ -68,6 +69,8 @@ pub fn preparar(datos: &Path, opciones: Opciones) -> Result<St, String> {
 /// los agentes conectados, y limpiar lo caducado.
 pub fn tareas(st: St) {
     notificaciones::arrancar(st.clone());
+    // 14f: las versiones firmadas del agente, de GitHub (cada 6 h por defecto).
+    github::arrancar(st.clone());
     let st1 = st.clone();
     tokio::spawn(async move {
         let mut t = tokio::time::interval(Duration::from_secs(30));

@@ -207,7 +207,11 @@ pub fn router(st: St) -> Router {
         .route("/api/servidor/respaldo/ahora", post(respaldo::ahora))
         // Actualización automática de los agentes: el espejo de las publicaciones firmadas.
         .route("/api/servidor/publicacion", get(crate::publicaciones::ver).put(crate::publicaciones::poner))
+        .route("/api/servidor/publicacion/github", put(crate::publicaciones::ajustes_github))
+        .route("/api/servidor/publicacion/github/ahora", post(crate::publicaciones::buscar_github_ahora))
         .route("/api/servidor/publicacion/{v}/{n}", put(crate::publicaciones::subir_archivo))
+        // 14dd: «Ponerlo ahora», el instalador del agente de la versión firmada.
+        .route("/api/servidor/instalador-agente", post(crate::publicaciones::poner_instalador))
         // Notificaciones (canales del servidor, registro)
         .route("/api/servidor/notificaciones", get(notificaciones::ver).put(notificaciones::cambiar))
         .route("/api/servidor/notificaciones/canales", post(notificaciones::crear_canal))
@@ -267,6 +271,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/equipos/{e}/anillo", put(crate::publicaciones::poner_anillo))
         .route("/api/clientes/{c}/actualizaciones", get(crate::publicaciones::ver_cliente).put(crate::publicaciones::cambiar_cliente))
         .route("/api/clientes/{c}/actualizaciones/ahora", post(crate::publicaciones::actualizar_ahora))
+        .route("/api/clientes/{c}/actualizaciones/buscar", post(crate::publicaciones::buscar_ahora))
         .route("/api/clientes/{c}/equipos/{e}/config", get(equipos::config))
         .route("/api/clientes/{c}/equipos/{e}/informes", get(equipos::informes))
         .route("/api/clientes/{c}/equipos/{e}/historial", get(equipos::historial))

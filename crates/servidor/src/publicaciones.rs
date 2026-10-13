@@ -238,6 +238,15 @@ fn poner_archivo_de(g: &Guardada, a: &p::Archivo, origen: &Path) -> Result<(), S
     if !meta.is_file() || meta.len() != a.tamano {
         return Err(format!("{}: el tamaño no coincide con el del manifiesto ({} bytes).", a.nombre, a.tamano));
     }
+    let mut entrada = std::fs::File::open(origen).map_err(|e| e.to_string())?;
+    poner_archivo_leyendo(g, a, &mut entrada)
+}
+
+/// Pone un archivo de la versión `g` leyéndolo de `entrada` (una carpeta o una descarga,
+/// 14f): se escribe al lado, como mucho su `tamano` del manifiesto, y solo se queda si
+/// lo escrito tiene ese tamaño y ese SHA-256.
+pub(crate) fn poner_archivo_leyendo(g: &Guardada, a: &p::Archivo, entrada: &mut dyn std::io::Read) -> Result<(), String> {
+    use std::io::Read;
     let tmp = g.dir.join(format!(".{}.{}", a.nombre, uuid::Uuid::new_v4().simple()));
     let r = (|| {
         let mut o = std::fs::OpenOptions::new();
@@ -245,13 +254,16 @@ fn poner_archivo_de(g: &Guardada, a: &p::Archivo, origen: &Path) -> Result<(), S
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
         let mut salida = o.open(&tmp).map_err(|e| e.to_string())?;
-        let mut entrada = std::fs::File::open(origen).map_err(|e| e.to_string())?;
-        std::io::copy(&mut entrada, &mut salida).map_err(|e| e.to_string())?;
+        // Uno de más para saber si se pasa (sin leer lo que venga detrás).
+        let n = std::io::copy(&mut entrada.take(a.tamano + 1), &mut salida).map_err(|e| format!("{}: {e}", a.nombre))?;
+        if n > a.tamano {
+            return Err(format!("{} es más grande que en el manifiesto ({} bytes): no se pone.", a.nombre, a.tamano));
+        }
         salida.sync_all().map_err(|e| e.to_string())?;
         drop(salida);
         // El SHA-256 de lo que quedó escrito (no del origen, que podría cambiar mientras).
         if !archivo_bien(&tmp, a) {
-            return Err(format!("{}: el SHA-256 no coincide con el del manifiesto. No se pone.", a.nombre));
+            return Err(format!("{}: el tamaño o el SHA-256 no coinciden con los del manifiesto firmado. No se pone.", a.nombre));
         }
         std::fs::rename(&tmp, g.dir.join(&a.nombre)).map_err(|e| e.to_string())
     })();
@@ -440,15 +452,139 @@ fn solo_propietario(u: &Usuario) -> Res<()> {
 }
 
 fn estado_servidor(st: &St) -> Value {
+    use crate::instalador_agente as ia;
     let llaves = llaves(&st.opciones);
     let todas = guardadas(&st.datos, &llaves);
+    let db = st.db.as_ref();
+    let usa_el_de_datos = st.opciones.instalador_agente.as_deref() == Some(ia::en_datos(&st.datos).as_path());
     json!({
         "sin_llave": llaves.vacia(),
         "llaves": llaves.ids(),
         "vigente": todas.iter().find(|g| g.completa()).map(Guardada::vista),
         "guardadas": todas.iter().map(Guardada::vista).collect::<Vec<_>>(),
         "version_servidor": env!("CARGO_PKG_VERSION"),
+        // 14f (pendiente de numerar): bajarlas solas de GitHub.
+        "github": {
+            "ajustes": crate::github::ajustes(db).unwrap_or_default(),
+            "ultima": crate::github::ultima(db).ok().flatten(),
+            "buscando": crate::github::buscando(),
+            // En una compilación de desarrollo solo busca sola con RESGUARDO_GITHUB_AUTO=1.
+            "automatica": crate::github::automatica_permitida(),
+        },
+        // 14dd (pendiente de numerar): el instalador del agente de Windows que da el servidor.
+        "instalador": {
+            "hay": st.opciones.instalador_agente.as_ref().is_some_and(|r| r.is_file()),
+            "de_datos": usa_el_de_datos,
+            "version": if usa_el_de_datos { ia::version_puesta(&st.datos) } else { None },
+        },
     })
+}
+
+async fn estado_servidor_async(st: &St) -> Res<Json<Value>> {
+    let st2 = st.clone();
+    Ok(Json(tokio::task::spawn_blocking(move || estado_servidor(&st2)).await.map_err(ErrorApi::interno)?))
+}
+
+#[derive(Deserialize)]
+pub struct AjustesGithub {
+    activo: bool,
+    #[serde(default)]
+    horas: Option<u32>,
+}
+
+/// `PUT /api/servidor/publicacion/github` (propietario del servidor): `{ activo, horas? }`.
+pub async fn ajustes_github(State(st): State<St>, u: Usuario, Json(n): Json<AjustesGithub>) -> Res<Json<Value>> {
+    solo_propietario(&u)?;
+    let horas = n.horas.unwrap_or(crate::github::HORAS);
+    if !(1..=crate::github::MAX_HORAS).contains(&horas) {
+        return Err(ErrorApi::datos(format!("Cada 1 a {} horas.", crate::github::MAX_HORAS)));
+    }
+    let a = crate::github::Ajustes { activo: n.activo, horas };
+    let correo = u.0.cuenta.correo.clone();
+    st.db(move |db| {
+        crate::github::guardar_ajustes(db, &a)?;
+        db.auditar_servidor(&format!("cuenta:{correo}"), "github_ajustes", "", &json!({ "activo": a.activo, "horas": a.horas }).to_string())
+    })
+    .await?;
+    estado_servidor_async(&st).await
+}
+
+/// `POST /api/servidor/publicacion/github/ahora` (propietario del servidor): busca ya en
+/// GitHub (en segundo plano: `github.buscando` hasta que acabe). 409 si ya está buscando.
+pub async fn buscar_github_ahora(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
+    solo_propietario(&u)?;
+    if crate::github::buscando() {
+        return Err(ErrorApi::conflicto("Ya está buscando en GitHub."));
+    }
+    let correo = u.0.cuenta.correo.clone();
+    st.db(move |db| db.auditar_servidor(&format!("cuenta:{correo}"), "github_buscar", "", "{}")).await?;
+    let st2 = st.clone();
+    // Puede tardar (bajar los archivos): no se espera aquí; la consola mira `github.buscando`.
+    tokio::task::spawn_blocking(move || crate::github::buscar_y_anotar(&st2, &crate::github::Fuente::github()));
+    // Que ya se vea «buscando» (la tarea acaba de empezar o empieza enseguida).
+    for _ in 0..20 {
+        if crate::github::buscando() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    estado_servidor_async(&st).await
+}
+
+/// `POST /api/servidor/instalador-agente` (propietario del servidor, 14dd, «Ponerlo ahora»):
+/// pone como instalador del agente el de Windows de la versión firmada que tiene el
+/// servidor (si no tiene ninguna, antes la busca en GitHub), con las mismas comprobaciones
+/// que `poner-instalador-agente`. Si no se puede, 409 con el motivo.
+pub async fn poner_instalador(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
+    use crate::instalador_agente as ia;
+    solo_propietario(&u)?;
+    let st2 = st.clone();
+    let r = tokio::task::spawn_blocking(move || -> Result<ia::DePublicacion, String> {
+        let datos = &st2.datos;
+        if st2.opciones.instalador_agente.as_deref() != Some(ia::en_datos(datos).as_path()) {
+            return Err("Este servidor usa otro instalador (el que trae Resguardo Server o el de --instalador-agente): cámbialo ahí.".into());
+        }
+        let l = llaves(&st2.opciones);
+        if l.vacia() {
+            return Err(
+                "Este servidor se compiló sin llave de publicación: no acepta versiones del agente. Ponlo con «sudo resguardo-server poner-instalador-agente»."
+                    .into(),
+            );
+        }
+        let con_windows = |g: &Guardada| g.manifiesto.archivos.iter().any(|a| a.plataforma == "windows-x86_64");
+        let g = match vigente(datos, &l).filter(con_windows) {
+            Some(g) => g,
+            None => {
+                // Sin ninguna versión bajada: se busca ahora en GitHub.
+                match crate::github::buscar_y_anotar(&st2, &crate::github::Fuente::github()) {
+                    None => return Err("Ya está buscando la versión en GitHub: espera un momento y vuelve a intentarlo.".into()),
+                    Some(u) if u.resultado == "sin_red" || u.resultado == "no_cuadra" => {
+                        return Err(format!(
+                            "Este servidor aún no tiene ninguna versión del agente y no se pudo bajar de GitHub: {}",
+                            u.mensaje.unwrap_or_default()
+                        ))
+                    }
+                    Some(_) => {}
+                }
+                vigente(datos, &l)
+                    .filter(con_windows)
+                    .ok_or("No hay ninguna versión del agente con el instalador de Windows completa: súbela en «Actualizaciones de los agentes».")?
+            }
+        };
+        ia::de_publicacion(datos, &g, true)
+    })
+    .await
+    .map_err(ErrorApi::interno)?
+    .map_err(ErrorApi::conflicto)?;
+    let (version, puesto) = match &r {
+        ia::DePublicacion::Puesto { version, .. } => (version.clone(), true),
+        ia::DePublicacion::AlDia { version } => (version.clone(), false),
+        ia::DePublicacion::OtroAMano => (String::new(), false),
+    };
+    let correo = u.0.cuenta.correo.clone();
+    let v2 = version.clone();
+    st.db(move |db| db.auditar_servidor(&format!("cuenta:{correo}"), "poner_instalador_agente", &v2, "{}")).await?;
+    Ok(Json(json!({ "version": version, "puesto": puesto })))
 }
 
 /// `GET /api/servidor/publicacion` (propietario del servidor).
@@ -478,8 +614,7 @@ pub async fn poner(State(st): State<St>, u: Usuario, Json(n): Json<NuevoManifies
         .map_err(ErrorApi::datos)?;
     let (correo, version) = (u.0.cuenta.correo.clone(), r.manifiesto.version.clone());
     st.db(move |db| db.auditar_servidor(&format!("cuenta:{correo}"), "poner_publicacion", &version, "{}")).await?;
-    let st2 = st.clone();
-    Ok(Json(tokio::task::spawn_blocking(move || estado_servidor(&st2)).await.map_err(ErrorApi::interno)?))
+    estado_servidor_async(&st).await
 }
 
 /// `PUT /api/servidor/publicacion/{version}/{nombre}` (propietario del servidor): el
@@ -665,6 +800,23 @@ pub async fn actualizar_ahora(State(st): State<St>, u: Usuario, Ruta(c): Ruta<St
     };
     let tocados = tocar(&st, &equipos);
     Ok(Json(json!({ "version": version, "avisados": tocados })))
+}
+
+/// `POST /api/clientes/{c}/actualizaciones/buscar` (técnico o más, 14f): los equipos
+/// conectados del cliente buscan ya una versión nueva (en sus consolas y en GitHub, si
+/// pueden), aunque este servidor no tenga ninguna. Inofensiva: no aprueba nada, solo
+/// adelanta la búsqueda que cada equipo hace cada 6 h (el agente atiende como mucho un
+/// toque por minuto). Devuelve `{ avisados }`.
+pub async fn buscar_ahora(State(st): State<St>, u: Usuario, Ruta(c): Ruta<String>) -> Res<Json<Value>> {
+    let (ctx, _) = u.miembro(&st, &c, Rol::Tecnico).await?;
+    if !st.limites.intento(&format!("buscar-versiones:{c}"), 30, std::time::Duration::from_secs(3600)) {
+        return Err(ErrorApi::demasiados());
+    }
+    let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    let (c2, ctx2) = (c.clone(), ctx.clone());
+    st.db(move |db| db.auditar(&ctx2, &actor, "buscar_versiones", &c2, "{}")).await?;
+    let equipos = ids_equipos(&st, &ctx).await?;
+    Ok(Json(json!({ "avisados": tocar(&st, &equipos) })))
 }
 
 #[derive(Deserialize)]
