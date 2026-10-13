@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { admiteNombres, idRepoEnAlmacen } from "$lib/nombres";
+  import { usuarioEnAlmacen } from "$lib/direccion";
   // «Mover a otro sitio…» (v1.41): llevar un repositorio, con todo su
   // historial, a otro destino (lo recomendado: el almacén de otro equipo del
   // cliente). Sin órdenes nuevas, en pasos que se ven:
@@ -236,7 +238,8 @@
     vista = "pasos";
     await correr(async () => {
       await prepararClave();
-      const id = idNuevo();
+      // B1: en un almacén, su carpeta es su nombre (el usuario aún no se sabe: sin chocar con los del equipo).
+      const id = o.almacen ? idRepoEnAlmacen(nombre.trim(), equipo, o.almacen, o.destino ? usuarioEnAlmacen(o.destino.donde) : null) : idNuevo();
       kitId = id;
       // 1. Acceso al almacén (si el equipo aún no copia en él).
       let destinoCuerpo: Record<string, unknown> = { id: o.destino?.id ?? "" };
@@ -245,7 +248,7 @@
         ponerPaso("acceso", "en_marcha", `Pidiendo a ${alm.nombre} un usuario para ${equipo.nombre}…`);
         const eph = parEfimero();
         try {
-          const ord = await mandarOrden({ cliente, equipo: alm, tipo: "guarda_copias", cuerpo: { anadir: equipo.id }, secretos: { claveAdmin }, responderA: aB64(eph.publica), alPaso: (t) => ponerPaso("acceso", "en_marcha", t) });
+          const ord = await mandarOrden({ cliente, equipo: alm, tipo: "guarda_copias", cuerpo: { anadir: equipo.id, ...(admiteNombres(alm) ? { nombre: equipo.nombre } : {}) }, secretos: { claveAdmin }, responderA: aB64(eph.publica), alPaso: (t) => ponerPaso("acceso", "en_marcha", t) });
           const r = await esperar(alm, ord.id, "acceso", `Esperando a ${alm.nombre}…`);
           if (r.estado !== "hecha" || !r.detalle) throw new Error(r.mensaje ?? `${alm.nombre} no pudo dar acceso.`);
           const sellado = (JSON.parse(r.detalle) as { sellado?: string }).sellado;

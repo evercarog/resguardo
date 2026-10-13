@@ -9,7 +9,7 @@
   import { page } from "$app/state";
   import { untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
-  import { ArrowRightLeft, Database, History, Play, ShieldCheck } from "@lucide/svelte";
+  import { ArrowRightLeft, Database, History, Pencil, Play, ShieldCheck } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero, relativo } from "$lib/formato";
@@ -71,6 +71,10 @@
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   import { tareasDe } from "$lib/progreso.svelte";
   import { hayPlanMover, moviendoDe } from "$lib/mover";
+  // Plan 0.8.0, B1: cambiar el nombre (todas las consolas) y ordenar su carpeta en el almacén.
+  import RenombrarRepositorio from "$lib/componentes/RenombrarRepositorio.svelte";
+  import OrdenarCarpetas from "$lib/componentes/OrdenarCarpetas.svelte";
+  import { admiteNombres, equiposEnAlmacen, hayQueOrdenar, planOrden } from "$lib/nombres";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -134,7 +138,7 @@
     if (!enAlm || !repo) return;
     dialogo = {
       tipo: "aplicar_retencion_almacen",
-      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta },
+      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta, nombre: `${repo.nombre}, de ${equipo?.nombre ?? ""}` },
       descripcion: `${enAlm.almacen.nombre} borrará ahora de «${repo.nombre}» las versiones que ya no entren en su retención (lo hace él, en local) en cuanto pase la espera, sin aguardar a su próxima hora.`,
       para: enAlm.almacen,
     };
@@ -143,7 +147,7 @@
     if (!enAlm || !repo) return;
     dialogo = {
       tipo: "retencion_almacen",
-      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta, quitar: true },
+      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta, quitar: true, nombre: `${repo.nombre}, de ${equipo?.nombre ?? ""}` },
       titulo: "Dejar de aplicar la retención",
       descripcion: `${enAlm.almacen.nombre} dejará de podar «${repo.nombre}» y borrará del repositorio su clave (ya no podrá abrirlo). No borra versiones: el repositorio volverá a crecer sin límite.`,
       para: enAlm.almacen,
@@ -162,6 +166,14 @@
   function quitarExterna() {
     if (repo) dialogo = ordenQuitarExterna(repo, destinos);
   }
+  let renombrar = $state(false);
+  let ordenar = $state(false);
+  /** B1: ¿su carpeta (o la del equipo) en el almacén aún no es legible? */
+  const porOrdenar = $derived.by(() => {
+    if (!enAlm || !repo || repo.solo_lectura || !admiteNombres(enAlm.almacen)) return false;
+    const en = equiposEnAlmacen(enAlm.almacen, actual.equipos).find((x) => x.equipo.id === e && x.repos.some((r) => r.repo.id === rid));
+    return !!en && hayQueOrdenar(planOrden(en));
+  });
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -183,6 +195,7 @@
       <div class="cab-texto">
         <div class="titulo">
           <h1>{repo.nombre}</h1>
+          {#if admiteNombres(equipo) && puede.administrar(rol) && !repo.solo_lectura}<button class="btn btn-ghost btn-sm" use:tip={"Cambiar el nombre (en todas sus consolas)"} aria-label="Cambiar el nombre" onclick={() => (renombrar = true)}><Pencil size={14} /></button>{/if}
           <button class="pulsable-bloque chip-pulsable" use:tip={"¿Por qué? Ver detalle"} onclick={abrirEstado}><Chip tono={estado.tono} texto={estado.texto} /></button>
           {#if repo.solo_lectura}<span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}
         </div>
@@ -211,7 +224,7 @@
         </div>
       {/if}
     </header>
-    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
+    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} />{#if porOrdenar && puede.administrar(rol)}<button class="btn btn-sm btn-ghost" use:tip={"Que su carpeta en el almacén lleve su nombre"} onclick={() => (ordenar = true)}>Ordenar su carpeta…</button>{/if}</p>{/if}
     <!-- Lo que se ajusta del repositorio, a la vista (docs/editor-de-copias.md). -->
     {#if actual.cliente && puede.ordenar(rol)}
       <PasosRepo cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} copia={suyas.length === 1 ? suyas[0].id : null} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
@@ -411,6 +424,14 @@
 
 {#if mover && equipo && repo && actual.cliente}
   <MoverRepositorio cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} onclose={() => (mover = false)} />
+{/if}
+
+{#if renombrar && equipo && repo && actual.cliente}
+  <RenombrarRepositorio cliente={actual.cliente} {equipo} {repo} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} onclose={() => (renombrar = false)} />
+{/if}
+
+{#if ordenar && enAlm && actual.cliente}
+  <OrdenarCarpetas cliente={actual.cliente} almacen={enAlm.almacen} equipos={actual.equipos} equipoInicial={e} soloRepo={rid} onclose={() => (ordenar = false)} />
 {/if}
 
 {#if traer && equipo && repo && actual.cliente}

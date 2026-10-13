@@ -157,6 +157,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   nombre_equipo: "Cambiar el nombre del equipo",
   etiquetas_equipo: "Cambiar las etiquetas del equipo",
   observacion_equipo: "Cambiar la observación del equipo",
+  nombre_repositorio: "Cambiar el nombre de un repositorio",
   quitar_destino: "Quitar un destino",
 };
 

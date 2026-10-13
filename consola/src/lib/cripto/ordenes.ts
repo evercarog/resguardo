@@ -65,6 +65,8 @@ export const NIVEL: Record<string, Nivel> = {
   nombre_equipo: "sesion",
   etiquetas_equipo: "sesion",
   observacion_equipo: "sesion",
+  // Plan 0.8.0, B1 (docs/nombres-legibles.md): el nombre de un repositorio, igual en todas sus consolas.
+  nombre_repositorio: "sesion",
   // Olvidar un destino que ya no usa nada (v1.56): desde la v1.59 pide la clave de
   // administración, como crearlo (olvida sus credenciales). Un agente anterior, que la
   // tenía por inofensiva, no mira la prueba que le llega de más.
@@ -84,7 +86,7 @@ export const PIDE_TAMBIEN_ADMIN = new Set(["quitar_repositorio", "compartir_acce
 export const ABRE_SESION = new Set(["abrir_sesion", "explorar", "elegir_carpetas"]);
 
 /** Los técnicos no pueden mandarlas. */
-export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "quitar_destino", "datos_cliente", "datos_cliente_admin"]);
+export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "nombre_repositorio", "quitar_destino", "datos_cliente", "datos_cliente_admin"]);
 
 /**
  * ¿Es destructiva? Algunas solo lo son con cierto cuerpo: desvincular con
