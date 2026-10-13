@@ -1,12 +1,19 @@
 <script lang="ts">
   // Poner o quitar etiquetas a un equipo (técnicos o más; v1.18). Propone las
   // que ya usa el cliente para que no salgan «Contabilidad» y «contabilidad».
-  import { Tag } from "@lucide/svelte";
+  //
+  // 14bb: el color de cada etiqueta se elige aquí mismo (administradores o
+  // más, como en «Ajustar»), con la misma paleta y su nombre escrito. Se guarda
+  // igual que desde «Ajustar»: en el servidor, por cliente, conservando la
+  // plantilla y los avisos que tuviera.
+  import { Palette, Tag } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
-  import { actual, cargarCliente } from "$lib/estado.svelte";
+  import { actual, cargarCliente, puede } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { etiquetasDe, limpiarEtiqueta, MAX_ETIQUETAS, MAX_LARGO } from "$lib/etiquetas.svelte";
+  import { ajusteDe, colorPorNombre, cuerpoAjuste, N_COLORES, NOMBRES_COLOR } from "$lib/etiquetasGrupos";
+  import { sincronizar } from "$lib/datosComunes.svelte";
   import type { Equipo } from "$lib/tipos";
   import EtiquetaChip from "./EtiquetaChip.svelte";
   import BotonCargando from "./BotonCargando.svelte";
@@ -38,6 +45,29 @@
     if (lista.length >= MAX_ETIQUETAS) return void (error = `Como mucho ${MAX_ETIQUETAS} etiquetas por equipo.`);
     lista = [...lista, nombre];
     texto = "";
+    // La recién añadida queda elegida para ponerle color.
+    if (puedeColor) deColor = nombre;
+  }
+
+  // --- Color (14bb) ------------------------------------------------------------
+  const puedeColor = $derived(puede.administrar(actual.cliente?.rol));
+  /** El color guardado de una etiqueta (-1: el automático, por el nombre). */
+  const guardado = (t: string) => ajusteDe(t, actual.etiquetas)?.color ?? -1;
+  /** Los colores cambiados aquí (sin guardar), por etiqueta. */
+  let colores = $state<Record<string, number>>({});
+  let deColor = $state<string | null>(null);
+  const elegida = $derived(deColor && lista.includes(deColor) ? deColor : (lista[lista.length - 1] ?? null));
+  const colorDe = (t: string) => colores[t] ?? guardado(t);
+  /** El índice que se ve (el automático si no hay uno elegido). */
+  const indiceDe = (t: string) => (colorDe(t) >= 0 ? colorDe(t) : colorPorNombre(t));
+  const cambiosColor = $derived(Object.entries(colores).filter(([t, c]) => lista.includes(t) && c !== guardado(t)));
+  async function guardarColores() {
+    for (const [t, c] of cambiosColor) {
+      const previo = ajusteDe(t, actual.etiquetas);
+      actual.etiquetas = await api.ponerAjusteEtiqueta(actual.id, cuerpoAjuste(t, c >= 0 ? c : null, previo?.plantilla ?? null, previo?.avisos));
+    }
+    // Como desde «Ajustar»: el color, a las demás consolas (por los equipos).
+    if (cambiosColor.length) void sincronizar();
   }
   function teclas(e: KeyboardEvent) {
     if (e.key === "Enter" || e.key === ",") {
@@ -51,6 +81,13 @@
     if (error) return;
     guardando = true;
     try {
+      if (!cambianEtiquetas) {
+        // Solo el color (14bb).
+        await guardarColores();
+        avisar(cambiosColor.length === 1 ? "Color guardado." : "Colores guardados.");
+        onclose();
+        return;
+      }
       let nuevo: Equipo;
       if (admiteDatosEquipo(equipo) && actual.cliente) {
         // v1.56: las guarda el equipo y las ven igual todas sus consolas.
@@ -61,6 +98,13 @@
         nuevo = await api.ponerEtiquetas(actual.id, equipo.id, lista);
         avisar(lista.length ? "Etiquetas guardadas." : "Etiquetas quitadas.");
       }
+      if (cambiosColor.length) {
+        try {
+          await guardarColores();
+        } catch (err) {
+          avisar(`Las etiquetas se guardaron, pero el color no: ${(err as Error).message}`, "warn");
+        }
+      }
       alGuardar?.(nuevo);
       void cargarCliente(actual.id, { silencioso: true });
       onclose();
@@ -70,7 +114,8 @@
       guardando = false;
     }
   }
-  const cambiado = $derived(JSON.stringify(lista) !== JSON.stringify(equipo.etiquetas ?? []) || !!texto.trim());
+  const cambianEtiquetas = $derived(JSON.stringify(lista) !== JSON.stringify(equipo.etiquetas ?? []) || !!texto.trim());
+  const cambiado = $derived(cambianEtiquetas || cambiosColor.length > 0);
 </script>
 
 <Modal labelledby="t-etiquetas" {onclose} width={480}>
@@ -85,12 +130,36 @@
     <div class="field">
       <label class="field-label" for="et-nueva">Etiquetas</label>
       <div class="caja">
-        {#each lista as t (t)}<EtiquetaChip nombre={t} onquitar={() => (lista = lista.filter((x) => x !== t))} />{/each}
+        {#each lista as t (t)}<EtiquetaChip nombre={t} indice={indiceDe(t)} onquitar={() => (lista = lista.filter((x) => x !== t))} />{/each}
         <!-- svelte-ignore a11y_autofocus -->
         <input id="et-nueva" class="entrada" bind:value={texto} onkeydown={teclas} placeholder={lista.length ? "Añadir otra…" : "Escribe y pulsa Intro"} maxlength={MAX_LARGO} autocomplete="off" autofocus aria-invalid={!!error} aria-describedby="et-nueva-ayuda" />
       </div>
       {#if error}<p class="error-campo" id="et-nueva-ayuda" role="alert">{error}</p>{:else}<span class="field-hint" id="et-nueva-ayuda">Intro o coma para añadir. Hasta {MAX_ETIQUETAS} por equipo.</span>{/if}
     </div>
+    {#if puedeColor && elegida}
+      {@const actualColor = colorDe(elegida)}
+      <fieldset class="grupo-color">
+        <legend><Palette size={14} />Color</legend>
+        {#if lista.length > 1}
+          <div class="cual" role="group" aria-label="Etiqueta a la que se pone color">
+            {#each lista as t (t)}<EtiquetaChip nombre={t} indice={indiceDe(t)} activa={t === elegida} onclick={() => (deColor = t)} />{/each}
+          </div>
+        {/if}
+        <div class="colores">
+          <label class="op" style:--et="var(--et-{colorPorNombre(elegida)})">
+            <input type="radio" name="color-et-equipo" checked={actualColor < 0} onchange={() => (colores = { ...colores, [elegida]: -1 })} />
+            <span class="punto" aria-hidden="true"></span>Automático<span class="faint">({NOMBRES_COLOR[colorPorNombre(elegida)].toLowerCase()})</span>
+          </label>
+          {#each Array.from({ length: N_COLORES }, (_, i) => i) as i (i)}
+            <label class="op" style:--et="var(--et-{i})">
+              <input type="radio" name="color-et-equipo" checked={actualColor === i} onchange={() => (colores = { ...colores, [elegida]: i })} />
+              <span class="punto" aria-hidden="true"></span>{NOMBRES_COLOR[i]}
+            </label>
+          {/each}
+        </div>
+        <span class="field-hint">De «{elegida}», igual en todos sus equipos. El nombre siempre va escrito: el color solo ayuda a reconocerla.</span>
+      </fieldset>
+    {/if}
     {#if sugeridas.length}
       <div class="sugeridas">
         <span class="faint">Ya en uso:</span>
@@ -142,5 +211,63 @@
   .nota {
     margin: 0;
     font-size: var(--fs-xs);
+  }
+  /* El color de la etiqueta elegida (14bb): la misma paleta que «Ajustar». */
+  .grupo-color {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+  .grupo-color legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: var(--fs-sm);
+  }
+  .cual,
+  .colores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .op {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .op input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .op:has(input:checked) {
+    color: var(--text-1);
+    background: color-mix(in srgb, var(--et) 14%, var(--surface));
+    border-color: color-mix(in srgb, var(--et) 70%, var(--border));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--et) 70%, var(--border));
+  }
+  .op:has(input:focus-visible) {
+    box-shadow: var(--focus);
+  }
+  .punto {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    background: var(--et);
+    border-radius: 999px;
   }
 </style>
