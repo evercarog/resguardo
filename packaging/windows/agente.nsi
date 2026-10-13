@@ -17,7 +17,8 @@
 ; mano, sin tocar la configuración, las claves ni los vínculos; además deja el
 ; icono de la bandeja como estaba (sin /TRAY=) y no intenta vincular nada.
 ; El número de comprobación queda en «emparejamiento.txt» junto al programa
-; (solo administradores). Código de salida 2 si el emparejamiento falla.
+; (solo administradores). Código de salida 2 si el emparejamiento falla; el motivo
+; queda siempre en C:\ProgramData\ResguardoAgente\instalador.log (14ee).
 ;
 ; Instalador «listo» (v1.17): Resguardo Server añade al final de este mismo
 ; instalador una cola con servidor, huella de su autoridad TLS, cliente,
@@ -425,8 +426,9 @@ Function TrimNewLineFn
   Exch $R0
 FunctionEnd
 
-; Ejecuta --pair con $Code. Deja el número en $Sas y la consola en $Console;
-; si falla, $Sas vacío y el motivo en $R9.
+; Ejecuta `vincular` (o --pair, sin servidor) con $Code. Deja el número en $Sas y la
+; consola en $Console; si falla, $Sas vacío y el motivo en $R9. Pase lo que pase, deja una
+; línea en instalador.log (14ee: la línea de PowerShell la enseña si falla).
 Function PairNow
   StrCpy $Sas ""
   StrCpy $Console ""
@@ -436,10 +438,9 @@ Function PairNow
   Pop $0
   ${If} $0 != "1"
     StrCpy $R9 "Ese código no es válido: son letras y cifras, como ABCD-EFGH-JK."
-    Return
+    Goto fin
   ${EndIf}
   InitPluginsDir
-  Delete "$PLUGINSDIR\pair.txt"
   ${If} $Servidor != ""
     ; Solo https:// y sin comillas ni espacios (va en una línea de órdenes).
     StrCpy $1 $Servidor 8
@@ -449,26 +450,37 @@ Function PairNow
     ${OrIf} $2 != ""
     ${OrIf} $3 != ""
       StrCpy $R9 "La dirección del servidor debe empezar por https:// (p. ej. https://192.168.1.20:8443)."
-      Return
+      Goto fin
     ${EndIf}
-    ExecWait '"$INSTDIR\resguardo-agente.exe" vincular "$Code" --servidor "$Servidor" --result "$PLUGINSDIR\pair.txt"' $0
-    ; Recién instalado, el servicio aún arranca: un segundo intento si el primero falla
-    ; (el motivo queda en el registro del agente).
-    ${If} $0 != 0
-      Sleep 3000
-      ExecWait '"$INSTDIR\resguardo-agente.exe" vincular "$Code" --servidor "$Servidor" --result "$PLUGINSDIR\pair.txt"' $0
+    ; 14ee: `vincular` prepara él mismo la carpeta del agente con sus permisos (el servicio
+    ; acaba de arrancar y quizá aún no la tiene: sin ella, el motivo de un fallo no quedaba
+    ; en ningún registro), sigue intentando llegar al servidor hasta 60 s (--esperar) y
+    ; siempre deja el resultado en pair.txt. Si no lo deja (el proceso no llegó a arrancar o
+    ; lo cortó algo, p. ej. un antivirus), se vuelve a lanzar, hasta 4 veces.
+    StrCpy $R8 0
+    otra_vez:
+    IntOp $R8 $R8 + 1
+    Delete "$PLUGINSDIR\pair.txt"
+    ClearErrors
+    ExecWait '"$INSTDIR\resguardo-agente.exe" vincular "$Code" --servidor "$Servidor" --esperar 60 --result "$PLUGINSDIR\pair.txt"' $0
+    ${IfNot} ${FileExists} "$PLUGINSDIR\pair.txt"
+    ${AndIf} $R8 < 4
+      Sleep 5000
+      Goto otra_vez
     ${EndIf}
   ${Else}
+    StrCpy $R8 1
+    Delete "$PLUGINSDIR\pair.txt"
     ExecWait '"$INSTDIR\resguardo-agente.exe" --pair "$Code" --result "$PLUGINSDIR\pair.txt"' $0
   ${EndIf}
   ClearErrors
   FileOpen $1 "$PLUGINSDIR\pair.txt" r
   ${If} ${Errors}
-    StrCpy $R9 "No se pudo emparejar (el agente terminó con el código $0). Comprueba que este equipo llega al servidor y vuelve a intentarlo; el motivo queda en el registro del agente."
+    StrCpy $R9 "El agente terminó sin decir el resultado (código $0, $R8 intentos). Comprueba que nada lo bloquea (un antivirus) y vincúlalo a mano."
     ${If} $Servidor == ""
       StrCpy $R9 "No se pudo emparejar: falta la dirección de la consola (Resguardo Server), la que sale junto al código, p. ej. https://192.168.1.20:8443. Sin dirección solo se empareja con la antigua app de escritorio."
     ${EndIf}
-    Return
+    Goto fin
   ${EndIf}
   FileRead $1 $2
   FileRead $1 $3
@@ -486,7 +498,51 @@ Function PairNow
     FileClose $1
   ${Else}
     StrCpy $R9 $3
+    ${If} $R9 == ""
+      StrCpy $R9 "El agente no dijo el motivo (código $0)."
+    ${EndIf}
   ${EndIf}
+  fin:
+  ${If} $Sas != ""
+    Push "Vinculado con «$Console». Número de comprobación: $Sas."
+  ${Else}
+    Push "No se pudo vincular con $Servidor: $R9"
+  ${EndIf}
+  Call AnotarInstalador
+FunctionEnd
+
+; 14ee: una línea en C:\ProgramData\ResguardoAgente\instalador.log con lo que pasó al
+; vincular (nunca el código ni contraseñas). El texto entra por la pila. Si la carpeta aún no
+; existe (el agente no llegó a prepararla), se crea: el servicio le pone sus permisos.
+Function AnotarInstalador
+  Exch $R7
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  Push $7
+  Push $8
+  SetShellVarContext all
+  CreateDirectory "$APPDATA\ResguardoAgente"
+  ${GetTime} "" "L" $1 $2 $3 $4 $5 $6 $7
+  ClearErrors
+  FileOpen $8 "$APPDATA\ResguardoAgente\instalador.log" a
+  ${IfNot} ${Errors}
+    FileSeek $8 0 END
+    FileWrite $8 "$3-$2-$1 $5:$6:$7 Resguardo Agente ${VERSION}: $R7$\r$\n"
+    FileClose $8
+  ${EndIf}
+  Pop $8
+  Pop $7
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $R7
 FunctionEnd
 
 ; ---------- Emparejar ----------
@@ -545,17 +601,23 @@ Function PairPreparado
   DetailPrint "Vinculando con $Servidor como «$NombrePrep»..."
   StrCpy $Sas ""
   StrCpy $Console ""
+  ; 14ee: como en PairNow, `vincular` prepara la carpeta del agente, espera al servidor hasta
+  ; 60 s y siempre deja el resultado; si no lo deja, se vuelve a lanzar (hasta 4 veces).
+  StrCpy $R8 0
+  otra_vez:
+  IntOp $R8 $R8 + 1
   Delete "$PLUGINSDIR\pair.txt"
-  ExecWait '"$INSTDIR\resguardo-agente.exe" vincular --instalador "$EXEPATH" --result "$PLUGINSDIR\pair.txt"' $0
-  ; Recién instalado, el servicio aún arranca: un segundo intento si el primero falla.
-  ${If} $0 != 0
-    Sleep 3000
-    ExecWait '"$INSTDIR\resguardo-agente.exe" vincular --instalador "$EXEPATH" --result "$PLUGINSDIR\pair.txt"' $0
+  ClearErrors
+  ExecWait '"$INSTDIR\resguardo-agente.exe" vincular --instalador "$EXEPATH" --esperar 60 --result "$PLUGINSDIR\pair.txt"' $0
+  ${IfNot} ${FileExists} "$PLUGINSDIR\pair.txt"
+  ${AndIf} $R8 < 4
+    Sleep 5000
+    Goto otra_vez
   ${EndIf}
   ClearErrors
   FileOpen $1 "$PLUGINSDIR\pair.txt" r
   ${If} ${Errors}
-    StrCpy $ErrorPrep "El agente terminó con el código $0; el motivo queda en su registro."
+    StrCpy $ErrorPrep "El agente terminó sin decir el resultado (código $0, $R8 intentos). Comprueba que nada lo bloquea (un antivirus) y vincúlalo a mano."
     Goto fallo
   ${EndIf}
   FileRead $1 $2
@@ -571,11 +633,18 @@ Function PairPreparado
     FileOpen $1 "$INSTDIR\emparejamiento.txt" w
     FileWrite $1 "Consola: $Console$\r$\nEquipo: $NombrePrep$\r$\nNúmero de comprobación: $Sas$\r$\n"
     FileClose $1
+    Push "Vinculado con «$Console» como «$NombrePrep» (instalador listo). Número de comprobación: $Sas."
+    Call AnotarInstalador
     Return
   ${EndIf}
   StrCpy $ErrorPrep $3
+  ${If} $ErrorPrep == ""
+    StrCpy $ErrorPrep "El agente no dijo el motivo (código $0)."
+  ${EndIf}
   fallo:
   DetailPrint "No se pudo vincular con los datos del instalador: $ErrorPrep"
+  Push "No se pudo vincular con $Servidor (instalador listo): $ErrorPrep"
+  Call AnotarInstalador
   ${If} ${Silent}
     SetErrorLevel 2
   ${EndIf}

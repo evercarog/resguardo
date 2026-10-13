@@ -18,6 +18,8 @@
 //! resguardo-agente repositorio crear <id> --nombre … --tipo … --donde … [--usuario …]
 //! ```
 
+use std::time::Duration;
+
 pub const ORDENES: &[&str] = &[
     "estado",
     "copias",
@@ -173,6 +175,104 @@ pub fn motivo_actualizacion(m: &str) -> &'static str {
         "sin_consola" => "ninguna consola respondió",
         _ => "esperando",
     }
+}
+
+/// `vincular`. Con `--result <archivo>` (el instalador) deja **siempre** el resultado en ese
+/// archivo, pase lo que pase: «ok», el código de comprobación y el servidor, o «error» y el
+/// motivo (una cosa por línea), y el motivo también en el registro del agente (14ee).
+fn vincular(args: &[String]) -> Result<(), String> {
+    let Some(archivo) = opcion(args, "--result") else { return vincular_y_contar(args) };
+    // 14ee: la carpeta del agente, preparada aquí con sus permisos (como el servicio). El
+    // instalador lanza `vincular` justo después de arrancar el servicio, que aún puede no
+    // haberla creado: sin ella, el motivo de un fallo no quedaba en ningún registro.
+    preparar_carpeta(Duration::from_secs(20));
+    let r = vincular_con_resultado(args);
+    let texto = match &r {
+        Ok(v) => format!("ok\r\n{}\r\n{}\r\n", v.sas, v.servidor),
+        Err(e) => {
+            crate::agent::log(&format!("No se pudo vincular: {e}"));
+            format!("error\r\n{}\r\n", e.replace(['\r', '\n'], " "))
+        }
+    };
+    std::fs::write(&archivo, &texto).map_err(|e| {
+        crate::agent::log(&format!("Vincular: no se pudo dejar el resultado para el instalador: {e}"));
+        e.to_string()
+    })?;
+    r.map(|_| ()).map_err(|_| "No se pudo vincular.".into())
+}
+
+/// La carpeta del agente lista (con sus permisos) antes de vincular, con unos reintentos: el
+/// servicio recién arrancado puede estar preparándola a la vez. Sin administrador no se toca
+/// (`vincular` lo dirá después).
+fn preparar_carpeta(plazo: Duration) {
+    if crate::agent::require_admin().is_err() {
+        return;
+    }
+    let hasta = std::time::Instant::now() + plazo;
+    loop {
+        match crate::agent::prepare_dir() {
+            Ok(()) => return,
+            Err(e) if std::time::Instant::now() >= hasta => {
+                // Puede que el registro aún no se pueda escribir: el motivo va en el resultado.
+                crate::agent::log(&format!("Vincular: no se pudo preparar la carpeta del agente: {e}"));
+                return;
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(500)),
+        }
+    }
+}
+
+/// Los datos de `vincular` (del instalador «listo» o de la línea) y la vinculación.
+fn vincular_con_resultado(args: &[String]) -> Result<crate::servidor_v2::Vinculado, String> {
+    // v1.17: con --instalador <ruta>, todo sale de la cola del instalador (servidor,
+    // huella de su autoridad TLS, cliente, nombre y código de un solo uso).
+    let preparado = match opcion(args, "--instalador") {
+        Some(r) => Some(leer_instalador(&r)?.ok_or("Este instalador no trae datos para vincular: usa un código de la consola.")?),
+        None => None,
+    };
+    let (codigo, url, nombre, huella, cliente) = match &preparado {
+        Some(d) => (d.codigo.clone(), d.servidor.clone(), d.nombre.clone(), Some(d.huella_ca.clone()), Some(d.cliente.clone())),
+        None => (
+            arg(args, 1)?.to_string(),
+            opcion(args, "--servidor").ok_or("Falta --servidor <url> (p. ej. https://192.168.1.20:8443).")?,
+            opcion(args, "--nombre").unwrap_or_else(crate::web::default_device_name),
+            opcion(args, "--huella-ca"),
+            None,
+        ),
+    };
+    // 14ee: --esperar <segundos> (el instalador): seguir intentando llegar al servidor.
+    let esperar = match opcion(args, "--esperar") {
+        Some(s) => Duration::from_secs(s.parse::<u64>().map_err(|_| "--esperar va en segundos (p. ej. 60).")?.min(300)),
+        None => Duration::ZERO,
+    };
+    let esperado = crate::servidor_v2::Esperado { huella_ca: huella, cliente, esperar };
+    if args.iter().any(|a| a == "--empezar-de-cero") {
+        crate::servidor_v2::empezar_de_cero()?;
+    }
+    crate::agent::log(&format!("Vinculando este equipo con {url}…"));
+    crate::servidor_v2::vincular_con(&url, &codigo, &nombre, &esperado)
+}
+
+/// `vincular` en la terminal: lo que hay que comprobar en la consola.
+fn vincular_y_contar(args: &[String]) -> Result<(), String> {
+    let v = vincular_con_resultado(args)?;
+    println!("Vinculado con {}.", v.servidor);
+    println!("Huella de la autoridad TLS del servidor: {}", v.huella_ca);
+    println!();
+    println!("  Código de comprobación: {}", v.sas);
+    println!();
+    println!("Comprueba en la consola que ve el mismo código antes de confirmar.");
+    if !v.sas_v3 {
+        println!("El servidor es antiguo y el código no cubre su certificado: comprueba también que la consola");
+        println!("enseña esta misma huella de la autoridad TLS. Si no es la misma, no confirmes.");
+    }
+    if v.espera_alta {
+        println!();
+        println!("Este equipo ya tenía clave de administración: conserva su configuración y sus copias.");
+        println!("El servidor nuevo tiene que darlo de alta con esa MISMA clave; hasta entonces no recibe nada.");
+        println!("Si es otro cliente (otra clave), repite con --empezar-de-cero.");
+    }
+    Ok(())
 }
 
 /// Las ventanas de Windows sin consola: la de la terminal desde la que se lanza.
@@ -360,60 +460,7 @@ fn orden(args: &[String]) -> Result<(), String> {
                 Err("Sin datos para vincular.".into())
             }
         }
-        "vincular" => {
-            // v1.17: con --instalador <ruta>, todo sale de la cola del instalador (servidor,
-            // huella de su autoridad TLS, cliente, nombre y código de un solo uso).
-            let preparado = match opcion(args, "--instalador") {
-                Some(r) => Some(leer_instalador(&r)?.ok_or("Este instalador no trae datos para vincular: usa un código de la consola.")?),
-                None => None,
-            };
-            let (codigo, url, nombre, huella, cliente) = match &preparado {
-                Some(d) => (d.codigo.clone(), d.servidor.clone(), d.nombre.clone(), Some(d.huella_ca.clone()), Some(d.cliente.clone())),
-                None => (
-                    arg(args, 1)?.to_string(),
-                    opcion(args, "--servidor").ok_or("Falta --servidor <url> (p. ej. https://192.168.1.20:8443).")?,
-                    opcion(args, "--nombre").unwrap_or_else(crate::web::default_device_name),
-                    opcion(args, "--huella-ca"),
-                    None,
-                ),
-            };
-            let codigo = codigo.as_str();
-            let esperado = crate::servidor_v2::Esperado { huella_ca: huella, cliente };
-            if args.iter().any(|a| a == "--empezar-de-cero") {
-                crate::servidor_v2::empezar_de_cero()?;
-            }
-            // Con --result <archivo> (el instalador): «ok», el código de comprobación y el
-            // servidor, o «error» y el motivo, una cosa por línea.
-            if let Some(archivo) = opcion(args, "--result") {
-                let texto = match crate::servidor_v2::vincular_con(&url, codigo, &nombre, &esperado) {
-                    Ok(v) => format!("ok\r\n{}\r\n{}\r\n", v.sas, v.servidor),
-                    Err(e) => {
-                        crate::agent::log(&format!("No se pudo vincular con {url}: {e}"));
-                        format!("error\r\n{}\r\n", e.replace(['\r', '\n'], " "))
-                    }
-                };
-                std::fs::write(&archivo, &texto).map_err(|e| e.to_string())?;
-                return if texto.starts_with("ok") { Ok(()) } else { Err("No se pudo vincular.".into()) };
-            }
-            let v = crate::servidor_v2::vincular_con(&url, codigo, &nombre, &esperado)?;
-            println!("Vinculado con {}.", v.servidor);
-            println!("Huella de la autoridad TLS del servidor: {}", v.huella_ca);
-            println!();
-            println!("  Código de comprobación: {}", v.sas);
-            println!();
-            println!("Comprueba en la consola que ve el mismo código antes de confirmar.");
-            if !v.sas_v3 {
-                println!("El servidor es antiguo y el código no cubre su certificado: comprueba también que la consola");
-                println!("enseña esta misma huella de la autoridad TLS. Si no es la misma, no confirmes.");
-            }
-            if v.espera_alta {
-                println!();
-                println!("Este equipo ya tenía clave de administración: conserva su configuración y sus copias.");
-                println!("El servidor nuevo tiene que darlo de alta con esa MISMA clave; hasta entonces no recibe nada.");
-                println!("Si es otro cliente (otra clave), repite con --empezar-de-cero.");
-            }
-            Ok(())
-        }
+        "vincular" => vincular(args),
         "desvincular" => {
             crate::servidor_v2::desvincular_local()?;
             println!("El equipo ha dejado el servidor y sigue con sus copias en modo local.");
