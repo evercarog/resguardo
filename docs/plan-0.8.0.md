@@ -11,9 +11,9 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 - [ ] **A1. Vinculación silenciosa (14ee).** La línea de PowerShell instala pero no vincula (3 de 3 veces, sin rastro en el registro). Reproducir en máquina virtual, arreglar `PairNow` del instalador, dejar el motivo en `instalador.log` y enseñarlo en la línea. **Imprescindible antes de desplegar muchos equipos.**
 - [ ] **A2. Derivada o copia externa hacia un destino con autoridad TLS propia (14jj).** Pasar a restic las dos autoridades (origen y destino). Prueba de integración local → almacén con CA propia.
 - [ ] **A3. Claves de una orden en espera comprobadas al recibirla (14oo)**, no a las 24 h; la ventana dice de qué repositorio es la contraseña que pide.
-- [ ] **A4. «Elegir qué copiar» que no hace nada (14rr)**; **copia externa o derivada con el destino borrado (14nn)**: detectarlo, «Quitar» o «Volver a crearla», y «Quitar» también en la página del repositorio.
-- [ ] **A5. Mapa:** el mismo servidor dos veces y espejos colgados del sitio equivocado (14mm); dibujar derivadas (14kk).
-- [ ] **A6. Textos:** sin datos de ningún cliente en ejemplos y pruebas (14y), aviso de derivada sin respuesta sin «restic» y con qué hacer (14tt), frase de varios volcados (14gg), «Un destino nuevo…» siempre visible (14ff), botón apagado dice qué falta (14aa).
+- [~] **A4. «Elegir qué copiar» que no hace nada (14rr)**; (rama `ia/080-a-consola`: 14rr hecho y «Quitar la copia externa» también en la página del repositorio; falta lo del agente de 14nn: detectar el destino borrado, «Volver a crearla» y pausarla tras N fallos) **copia externa o derivada con el destino borrado (14nn)**: detectarlo, «Quitar» o «Volver a crearla», y «Quitar» también en la página del repositorio.
+- [x] **A5. Mapa:** (rama `ia/080-a-consola`) el mismo servidor dos veces y espejos colgados del sitio equivocado (14mm); dibujar derivadas (14kk).
+- [~] **A6. Textos:** (rama `ia/080-a-consola`: 14y, 14gg, 14ff y 14aa —botón apagado que dice qué falta— hechos; 14tt es del agente, en otra rama) sin datos de ningún cliente en ejemplos y pruebas (14y), aviso de derivada sin respuesta sin «restic» y con qué hacer (14tt), frase de varios volcados (14gg), «Un destino nuevo…» siempre visible (14ff), botón apagado dice qué falta (14aa).
 
 ## Bloque B — Lo que desbloquea el trabajo real
 
