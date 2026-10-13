@@ -234,3 +234,10 @@ export function destinoNubeCuerpo(equipo: Equipo, nube: string, carpeta: string,
   const ya = equipo.resumen?.destinos?.find((d) => d.tipo === "nube" && d.nube === nube && (d.donde ?? "").replace(/^\/+|\/+$/g, "") === c);
   return ya ? { id: ya.id } : { id: idDestinoNube(nube, sufijo), nombre: nube, tipo: "nube", nube, donde: c };
 }
+
+/**
+ * 14rr: «Elegir qué copiar» tras crear un repositorio fuera del editor de copias:
+ * el editor con una copia nueva y ese repositorio ya elegido (`?nueva=1&repo=`).
+ */
+export const enlaceElegirQueCopiar = (cliente: string, equipo: string, repo: string) =>
+  `/c/${cliente}/equipos/${equipo}/copias?nueva=1&repo=${encodeURIComponent(repo)}`;

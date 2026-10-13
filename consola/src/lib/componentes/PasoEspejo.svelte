@@ -7,6 +7,7 @@
   // espejos (clave de administración). Con uno anterior, lo de antes (PasoEspejoDestinos).
   import EditorEspejo from "./espejos/EditorEspejo.svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
+  import { avisar } from "$lib/avisos.svelte";
   import PasoEspejoDestinos from "./PasoEspejoDestinos.svelte";
   import { repoEnAlmacen } from "$lib/cadenas";
   import { claveNube, PRINCIPAL, zonasDe } from "$lib/destinos";
@@ -66,6 +67,9 @@
     cuerpo={cuerpoAlmacen(conTrabajo(base, guardado))}
     titulo="Añadir un espejo"
     descripcion={`${almacen.nombre} copiará «${repo.nombre}» de ${equipo.nombre} a otro destino (${guardado.nombre || nombrePorDefecto(guardado.adonde)}): los mismos archivos cifrados, sin abrirlos. Se restaura con la misma contraseña del kit. ${textoRetencion(guardado)}.${guardado.retencion.modo === "igual" ? ` ${AVISO_IGUAL}` : ""}`}
+    alTerminar={(o) => {
+      if (o.estado === "hecha") avisar(`Espejo «${guardado?.nombre || (guardado ? nombrePorDefecto(guardado.adonde) : "nuevo")}» añadido: empieza con su primera subida.`);
+    }}
     {onclose}
   />
 {/if}

@@ -12,6 +12,7 @@
   import { untrack } from "svelte";
   import { ArrowLeft, ArrowRight, Check, ChevronDown, Cloud, Pencil, Save, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
+  import BotonFalta from "../BotonFalta.svelte";
   import ElegirDestinoPaso, { type OpcionDestino } from "../ElegirDestinoPaso.svelte";
   import EditorHorario from "../EditorHorario.svelte";
   import ConectarNube from "../ConectarNube.svelte";
@@ -459,9 +460,9 @@
       {/if}
       <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
       {#if avanzado || paso === "resumen"}
-        <button type="submit" class="btn btn-primary" disabled={!!error}><Save size={15} />Guardar…</button>
+        <BotonFalta type="submit" falta={error ? { texto: error, yaVisible: true } : null}><Save size={15} />Guardar…</BotonFalta>
       {:else}
-        <button type="submit" class="btn btn-primary" disabled={!!errorPaso}>{desdeResumen ? "Listo" : "Siguiente"}<ArrowRight size={15} /></button>
+        <BotonFalta type="submit" falta={errorPaso ? { texto: errorPaso, yaVisible: true } : null}>{desdeResumen ? "Listo" : "Siguiente"}<ArrowRight size={15} /></BotonFalta>
       {/if}
     </footer>
   </form>

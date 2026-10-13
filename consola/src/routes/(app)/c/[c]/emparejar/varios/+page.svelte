@@ -42,6 +42,8 @@
   import CampoClave from "$lib/componentes/CampoClave.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
+  import BotonFalta from "$lib/componentes/BotonFalta.svelte";
+  import { primeraFalta } from "$lib/falta";
 
   const c = $derived(actual.id);
   const soportado = $derived(app.servidor?.codigo_varios === true);
@@ -219,6 +221,15 @@
   let progreso = $state<Record<string, { texto: string; mal?: boolean }>>({});
   const primero = $derived(!actual.equipos.some((e) => e.confirmado && e.etiqueta));
   const claveValida = $derived(primero ? clave.length >= 16 && clave === repetir && guardada : clave.length > 0);
+  // 14aa: qué falta para «Dar de alta».
+  const faltaClave = $derived(
+    primeraFalta([
+      [clave.length > 0, { texto: "Falta la clave de administración", campo: "clave-admin" }],
+      [!primero || clave.length >= 16, { texto: "La clave necesita al menos 16 caracteres", campo: "clave-admin" }],
+      [!primero || clave === repetir, { texto: "Repite la clave igual", campo: "clave-repetir" }],
+      [!primero || guardada, { texto: "Marca «La he guardado en un sitio seguro»", campo: "clave-guardada" }],
+    ]),
+  );
 
   function pedirClave(rs: Revision[]) {
     if (!rs.length) return;
@@ -353,14 +364,14 @@
             <TriangleAlert size={16} />
             <p>Guárdala en un gestor de contraseñas o imprímela. <strong>Si la pierdes</strong>, los equipos siguen copiando, pero para cambiarlos habrá que restablecerla en cada uno.</p>
           </div>
-          <label class="switch-row"><input type="checkbox" bind:checked={guardada} /><span>La he guardado en un sitio seguro</span></label>
+          <label class="switch-row"><input id="clave-guardada" type="checkbox" bind:checked={guardada} /><span>La he guardado en un sitio seguro</span></label>
         {/if}
         <p class="faint pequeno-izq">Tarda unos segundos por equipo (la clave se comprueba en este navegador).</p>
         {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
         <footer class="pie">
           {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{paso2}</span>{/if}
           <button type="button" class="btn btn-ghost" onclick={cancelarClave} disabled={ocupado}>Cancelar</button>
-          <button class="btn btn-primary" disabled={!claveValida || ocupado}>{paraConfirmar.length === 1 ? "Dar de alta" : `Dar de alta los ${paraConfirmar.length}`}</button>
+          <BotonFalta disabled={ocupado} falta={faltaClave}>{paraConfirmar.length === 1 ? "Dar de alta" : `Dar de alta los ${paraConfirmar.length}`}</BotonFalta>
         </footer>
       </form>
     </section>
@@ -553,7 +564,7 @@
         {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
         <p class="faint pequeno-izq">El código lo crea este navegador y aquí se queda: el servidor solo guarda su huella. Cada equipo que se una tendrá que confirmarse aquí.</p>
         <div class="fin">
-          <BotonCargando class="btn btn-primary" disabled={!!errorForm} cargando={creando} textoCargando="Creando…" type="submit"><Plus size={16} />Crear el código</BotonCargando>
+          <BotonFalta falta={errorForm ? { texto: errorForm, campo: errorUsosDias(Number(usos), Number(dias)) ? "v-usos" : "v-nombre" } : null} cargando={creando} textoCargando="Creando…" type="submit"><Plus size={16} />Crear el código</BotonFalta>
         </div>
       </form>
     </section>

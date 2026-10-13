@@ -6,6 +6,7 @@
   // equipo con la clave de administración (lo que reduce la protección, con la espera).
   import { ArrowDown, ArrowUp, CornerDownRight, Plus, ShieldAlert } from "@lucide/svelte";
   import OrdenDialog from "../OrdenDialog.svelte";
+  import { avisar } from "$lib/avisos.svelte";
   import MenuAcciones from "../MenuAcciones.svelte";
   import Chip from "../Chip.svelte";
   import Tiempo from "../Tiempo.svelte";
@@ -91,7 +92,7 @@
 
   // --- Editor y órdenes ---
   let editor = $state<{ trabajo: TrabajoEspejo; nuevo: boolean } | null>(null);
-  let orden = $state<{ cuerpo: Record<string, unknown>; titulo: string; descripcion: string } | null>(null);
+  let orden = $state<{ cuerpo: Record<string, unknown>; titulo: string; descripcion: string; exito?: string } | null>(null);
   const cuerpo = (ts: TrabajoEspejo[]) => (quien === "almacen" ? cuerpoAlmacen(ts) : cuerpoEquipo(ts));
   const base = $derived(lista.map(paraOrden));
 
@@ -118,6 +119,8 @@
     orden = {
       cuerpo: cuerpo(conTrabajo(base, t)),
       titulo: nuevo ? "Añadir un espejo" : `Cambiar «${nombre}»`,
+      // 14aa: al aplicarse, un aviso breve que se va solo.
+      exito: nuevo ? `Espejo «${nombre}» añadido: empieza con su primera subida.` : `«${nombre}» cambiado.`,
       descripcion: `${quien === "almacen" ? hace.nombre : `${hace.nombre} (el propio equipo)`} hará «${nombre}». Qué: ${textoQue(t, nombreRepo(t), nombreEquipo)} → ${destino(t).nombre}. Cuándo: ${textoCuando(t, nombreDe)}. ${textoRetencion(t)}.${t.retencion.modo === "igual" ? ` ${AVISO_IGUAL}` : ""}`,
     };
   }
@@ -226,6 +229,7 @@
   <EditorEspejo {cliente} {hace} {quien} {equipos} trabajo={editor.trabajo} todos={base} nuevo={editor.nuevo} onguardar={guardado} onclose={() => (editor = null)} />
 {/if}
 {#if orden}
+  {@const exito = orden.exito}
   <OrdenDialog
     {cliente}
     equipo={hace}
@@ -234,7 +238,10 @@
     titulo={orden.titulo}
     descripcion={orden.descripcion}
     onclose={() => (orden = null)}
-    alTerminar={() => alTerminar?.()}
+    alTerminar={(o) => {
+      if (exito && o.estado === "hecha") avisar(exito);
+      alTerminar?.();
+    }}
   />
 {/if}
 

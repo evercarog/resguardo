@@ -9,7 +9,8 @@
   import { Check, Database, FolderOpen, KeyRound, LoaderCircle, Printer, TriangleAlert } from "@lucide/svelte";
   import { errorCarpetaDestino } from "$lib/ganchos";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
-  import BotonCargando from "./BotonCargando.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
+  import { primeraFalta } from "$lib/falta";
   import CopiarEnAlmacen from "./CopiarEnAlmacen.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { aleatorio } from "$lib/cripto/bytes";
@@ -32,7 +33,7 @@
   import { type ZonaVista } from "$lib/destinos";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   // Tarea 4a: todos los destinos (también las nubes) con si sirven desde el equipo y, si no, qué hacer.
-  import { almacenesPara, destinoNubeCuerpo, errorCarpetaNube, nubeNoInmutable, opcionDeClave, opcionesRepoNuevo, opcionInicial } from "$lib/repoNuevo";
+  import { almacenesPara, destinoNubeCuerpo, enlaceElegirQueCopiar, errorCarpetaNube, nubeNoInmutable, opcionDeClave, opcionesRepoNuevo, opcionInicial } from "$lib/repoNuevo";
   import { esDeAlmacen } from "$lib/retencion";
   import { TIPOS_NUBE } from "$lib/espejo";
   import ElegirDestinoPaso from "./ElegirDestinoPaso.svelte";
@@ -151,6 +152,19 @@
       !carpetaError &&
       (!paraHistorial || repoExistenteCompleto(origen)),
   );
+  // 14aa: qué falta para «Seguir» (lo dice el botón y, al pulsarlo, marca el campo).
+  const faltaDatos = $derived(
+    primeraFalta([
+      [!!equipo, { texto: "Falta el equipo", campo: "r-equipo" }],
+      [nombre.trim(), { texto: "Falta el nombre", campo: "r-nombre" }],
+      [elegida?.uso.ok, { texto: "Elige un destino que sirva desde este equipo" }],
+      [!conCampos || nombreDestino.trim(), { texto: "Falta el nombre del destino", campo: "d-nombre" }],
+      [!conCampos || donde.trim(), { texto: tipo === "local" ? "Falta la carpeta" : tipo === "rest" ? "Falta la dirección" : "Falta el bucket", campo: "d-donde" }],
+      [!carpetaError, { texto: carpetaError ?? "", campo: "r-carpeta-nube" }],
+      [!paraHistorial || repoExistenteCompleto(origen), { texto: "Faltan datos del repositorio de origen" }],
+      [!errorTextoNota(observaciones), { texto: errorTextoNota(observaciones) ?? "", campo: "r-observaciones" }],
+    ]),
+  );
   // Al elegir equipo: el almacén de la oficina al que aún no copia (lo recomendado),
   // o uno de sus destinos. Después manda lo que se elija aquí.
   let equipoVisto = "";
@@ -204,6 +218,12 @@
   /** La contraseña que se usará (la generada o la escrita). */
   const clave = $derived(propia ? escrita : contrasena);
   const errorEscrita = $derived(!propia ? null : escrita.length < 12 ? "Al menos 12 caracteres." : escrita !== repetida ? "Las dos no coinciden." : null);
+  const faltaKit = $derived(
+    primeraFalta([
+      [!errorEscrita, { texto: errorEscrita ?? "", campo: "r-propia" }],
+      [impreso, { texto: "Marca «He guardado el kit»", campo: "r-impreso" }],
+    ]),
+  );
 
   /** 32 bytes aleatorios en base64url: la contraseña del repositorio. */
   function generar() {
@@ -262,6 +282,9 @@
         paraHistorial
           ? `Pedido al equipo (orden n.º ${o.seq}): creará «${nombre.trim()}». Después, en su página, usa «Traer historial».`
           : `Pedido al equipo (orden n.º ${o.seq}): creará «${nombre.trim()}».`,
+        "ok",
+        // 14rr: fuera del editor de copias, el siguiente paso (el editor con este repositorio ya elegido).
+        alCreado || paraHistorial ? undefined : { texto: "Elegir qué copiar", href: enlaceElegirQueCopiar(cliente.id, equipo.id, id) },
       );
       void cargarCliente(cliente.id, { silencioso: true });
       onclose();
@@ -381,7 +404,7 @@
       </details>
       <footer>
         <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-        <button type="button" class="btn btn-primary" disabled={!datosOk || !!errorTextoNota(observaciones)} onclick={() => (almacenElegido ? (copiarEn = almacenElegido) : aKit())}>Seguir</button>
+        <BotonFalta type="button" falta={datosOk && !errorTextoNota(observaciones) ? null : (faltaDatos ?? { texto: "Faltan datos" })} onclick={() => (almacenElegido ? (copiarEn = almacenElegido) : aKit())}>Seguir</BotonFalta>
       </footer>
     </div>
   {:else if paso === "kit"}
@@ -413,16 +436,16 @@
       <div class="acciones">
         <button type="button" class="btn" onclick={() => window.print()}><Printer size={15} />Imprimir o guardar en PDF</button>
       </div>
-      <label class="switch-row"><input type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
+      <label class="switch-row"><input id="r-impreso" type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
       {#if prueba && error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={() => (paso = "datos")}>Atrás</button>
         {#if prueba}
           <!-- Desde el editor de copias: la clave ya se escribió al abrirlo. -->
-          <BotonCargando type="button" class="btn btn-primary" disabled={!impreso || !!errorEscrita} cargando={ocupado} textoCargando="Enviando…" onclick={() => void crear()}><Check size={15} />Crear el repositorio</BotonCargando>
+          <BotonFalta type="button" falta={faltaKit} cargando={ocupado} textoCargando="Enviando…" onclick={() => void crear()}><Check size={15} />Crear el repositorio</BotonFalta>
         {:else}
-          <button type="button" class="btn btn-primary" disabled={!impreso || !!errorEscrita} onclick={() => (paso = "clave")}><Check size={15} />Seguir</button>
+          <BotonFalta type="button" falta={faltaKit} onclick={() => (paso = "clave")}><Check size={15} />Seguir</BotonFalta>
         {/if}
       </footer>
     </div>
@@ -436,7 +459,7 @@
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={() => (paso = "kit")}>Atrás</button>
-        <BotonCargando class="btn btn-primary" disabled={!claveAdmin} cargando={ocupado} textoCargando="Enviando…"><KeyRound size={15} />Confirmar con la clave de administración</BotonCargando>
+        <BotonFalta falta={claveAdmin ? null : { texto: "Falta la clave de administración", campo: "r-admin" }} cargando={ocupado} textoCargando="Enviando…"><KeyRound size={15} />Confirmar con la clave de administración</BotonFalta>
       </footer>
     </form>
   {/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BotonFalta from "../BotonFalta.svelte";
   // Una copia de carpetas, paso a paso (plan 0.7.26, bloque 3.2): Cuándo →
   // Qué → Dónde → Resumen. Los pasos hechos quedan arriba como una línea que se
   // toca para volver; lo poco habitual, en «Más opciones» dentro del paso.
@@ -165,14 +166,14 @@
           >
           <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
         </details>
-        <div class="pie"><button class="btn btn-primary btn-sm" disabled={!k.carpetas.length} use:tip={k.carpetas.length ? "" : "Elige al menos una carpeta"}>Siguiente<ArrowRight size={14} /></button></div>
+        <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.carpetas.length ? null : { texto: "Elige al menos una carpeta" }}>Siguiente<ArrowRight size={14} /></BotonFalta></div>
       </form>
     </PasoGuiado>
 
     <PasoGuiado n={3} titulo={TITULO_PASO.donde} abierto={paso === "donde"} hecho={pasoHecho(k, "donde")} resumen={resumenDe.donde()} deshabilitado={!abrible("donde")} onabrir={() => (paso = "donde")}>
       <form class="paso-form" onsubmit={siguiente}>
         <ElegirRepositorio id={k.id} {repos} {equipo} {equipos} {catalogo} {copias} copia={k.id} bind:value={k.repo} admiteFiltros={admite.filtros} onNuevo={onNuevoRepo} />
-        <div class="pie"><button class="btn btn-primary btn-sm" disabled={!k.repo}>Siguiente<ArrowRight size={14} /></button></div>
+        <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.repo ? null : { texto: "Elige dónde se guarda" }}>Siguiente<ArrowRight size={14} /></BotonFalta></div>
       </form>
     </PasoGuiado>
 
@@ -199,9 +200,9 @@
       {/if}
       <div class="pie">
         <button type="button" class="btn btn-ghost btn-sm" onclick={onCerrar}>Listo</button>
-        <button type="button" class="btn btn-primary btn-sm" disabled={!cambiado || guardando || problemas.length > 0} onclick={onGuardar}>
+        <BotonFalta type="button" class="btn btn-primary btn-sm" disabled={guardando} falta={guardando ? null : problemas.length ? { texto: "Antes, arregla lo de arriba", yaVisible: true } : !cambiado ? { texto: "Aún no has cambiado nada" } : null} onclick={onGuardar}>
           {#if guardando}<LoaderCircle size={14} class="spin" />{textoGuardando || "Guardando…"}{:else}<Save size={14} />Guardar{/if}
-        </button>
+        </BotonFalta>
       </div>
     </PasoGuiado>
   </ol>
