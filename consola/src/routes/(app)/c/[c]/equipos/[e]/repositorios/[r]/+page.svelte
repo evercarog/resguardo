@@ -162,6 +162,12 @@
   function quitarExterna() {
     if (repo) dialogo = ordenQuitarExterna(repo, destinos);
   }
+  // 14bbb: «Comprobar la contraseña» (el equipo la prueba de verdad contra el repositorio).
+  const admiteComprobar = $derived(!!equipo?.resumen?.admite?.includes("comprobar_contrasena"));
+  const comprobada = $derived(repo?.contrasena_comprobada ?? null);
+  let comprobar = $state(false);
+  const TEXTO_COMPROBADA = { abre: "La abre", no_abre: "No la abre", sin_respuesta: "Sin respuesta" } as const;
+  const TONO_COMPROBADA = { abre: "ok", no_abre: "bad", sin_respuesta: "warn" } as const;
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -304,6 +310,28 @@
               {#if prueba?.mensaje_corto}<span class="faint msg">{prueba.mensaje_corto}</span>{/if}
             </dd>
           </div>
+          <div id="kit">
+            <dt>Kit y contraseña</dt>
+            <dd>
+              {#if comprobada?.ultima}
+                <Chip pequeno tono={TONO_COMPROBADA[comprobada.resultado] ?? "neutral"} texto={TEXTO_COMPROBADA[comprobada.resultado] ?? comprobada.resultado} /> <Tiempo iso={comprobada.ultima} />
+                {#if comprobada.bien && comprobada.bien !== comprobada.ultima}<span class="faint msg">La última vez que la abrió: <Tiempo iso={comprobada.bien} />.</span>{/if}
+                {#if comprobada.resultado === "no_abre"}<span class="msg aviso-ret">La contraseña que tiene guardada {equipo.nombre} no abrió el repositorio: revísalo cuanto antes.</span>{/if}
+              {:else}
+                <span class="faint">Contraseña sin comprobar todavía</span>
+              {/if}
+              <span class="faint msg">Escribe la contraseña del kit y {equipo.nombre} prueba si abre el repositorio de verdad (y sus copias con la misma). Los fallos cuentan como intentos.</span>
+              {#if !repo.solo_lectura && puede.ordenar(rol)}
+                <span class="msg">
+                  {#if admiteComprobar}
+                    <button type="button" class="btn btn-sm" onclick={() => (comprobar = true)}>Comprobar la contraseña</button>
+                  {:else}
+                    <span class="faint">Para comprobarla, actualiza el agente de {equipo.nombre}.</span>
+                  {/if}
+                </span>
+              {/if}
+            </dd>
+          </div>
           <div>
             <dt>Copia externa</dt>
             <dd>
@@ -408,6 +436,21 @@
   {#key dialogo}
   <OrdenDialog cliente={actual.cliente} equipo={dialogo.para ?? equipo} tipo={dialogo.tipo} cuerpo={dialogo.cuerpo} titulo={dialogo.titulo} descripcion={dialogo.descripcion} accion={dialogo.accion} repo={dialogo.repo} onclose={() => (dialogo = null)} />
   {/key}
+{/if}
+
+{#if comprobar && equipo && repo && actual.cliente}
+  <OrdenDialog
+    cliente={actual.cliente}
+    {equipo}
+    tipo="comprobar_contrasena"
+    cuerpo={{ repo: repo.id }}
+    titulo="Comprobar la contraseña de «{repo.nombre}»"
+    descripcion="Escribe la contraseña de tu kit. {equipo.nombre} probará si abre «{repo.nombre}» de verdad y también sus copias externas o derivadas con la misma contraseña. Sus espejos son el mismo repositorio: se abren con la misma. No cambia nada ni guarda la contraseña."
+    repo={{ id: repo.id, nombre: repo.nombre }}
+    accion="Comprobar"
+    alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})}
+    onclose={() => (comprobar = false)}
+  />
 {/if}
 
 {#if retAlm && enAlm?.admite && equipo && repo && actual.cliente}

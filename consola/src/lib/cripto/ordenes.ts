@@ -31,6 +31,8 @@ export const NIVEL: Record<string, Nivel> = {
   cambiar_derivada: "repo",
   quitar_derivada: "repo",
   rotar_contrasena_repo: "repo",
+  // 14bbb: el equipo prueba que la contraseña abre el repositorio (sin espera).
+  comprobar_contrasena: "repo",
   alta: "admin",
   config: "admin",
   elegir_carpetas: "admin",

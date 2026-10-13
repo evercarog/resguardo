@@ -3,8 +3,8 @@
   // la versión del agente que este servidor da a sus equipos y subir otra. El servidor solo la
   // acepta con la firma de la llave de publicación de Resguardo y cada archivo con su SHA-256:
   // esta página no firma nada (ni puede). Y cómo actualizar el propio servidor (a mano, por ahora).
-  import { onMount } from "svelte";
-  import { CircleAlert, PackageCheck, Upload } from "@lucide/svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
+  import { CircleAlert, CloudDownload, PackageCheck, RefreshCw, Upload } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { bytes, fechaLarga } from "$lib/formato";
@@ -28,6 +28,64 @@
       r = null;
     }
   });
+
+  // 14f: bajarlas solas de GitHub (con la misma comprobación que al subirlas).
+  let buscando = $state(false);
+  let guardandoGh = $state(false);
+  let sondeo: ReturnType<typeof setInterval> | null = null;
+  const gh = $derived(r?.github ?? null);
+  function seguirBusqueda() {
+    if (sondeo) return;
+    const inicio = Date.now();
+    sondeo = setInterval(async () => {
+      try {
+        const x = await api.publicacionServidor();
+        if (x) r = x;
+        if (!x?.github?.buscando || Date.now() - inicio > 30 * 60_000) {
+          if (sondeo) clearInterval(sondeo);
+          sondeo = null;
+          const u = x?.github?.ultima;
+          if (u?.mensaje) (u.resultado === "nueva" || u.resultado === "al_dia" ? avisar : (m: string) => fallo(new Error(m)))(u.mensaje);
+        }
+      } catch {
+        /* se reintenta */
+      }
+    }, 2000);
+  }
+  onDestroy(() => {
+    if (sondeo) clearInterval(sondeo);
+  });
+  $effect(() => {
+    if (r?.github?.buscando) untrack(seguirBusqueda);
+  });
+  async function buscarAhora() {
+    buscando = true;
+    try {
+      r = await api.buscarGithubAhora();
+      seguirBusqueda();
+    } catch (e) {
+      fallo(e);
+    } finally {
+      buscando = false;
+    }
+  }
+  async function cambiarGithub(activo: boolean, horas: number) {
+    guardandoGh = true;
+    try {
+      r = await api.ajustesGithub({ activo, horas });
+    } catch (e) {
+      fallo(e);
+    } finally {
+      guardandoGh = false;
+    }
+  }
+  const TEXTO_ULTIMA: Record<string, { tono: "ok" | "warn" | "bad" | "neutral"; texto: string }> = {
+    nueva: { tono: "ok", texto: "Versión nueva bajada" },
+    al_dia: { tono: "ok", texto: "Al día" },
+    sin_red: { tono: "warn", texto: "No se pudo mirar" },
+    no_cuadra: { tono: "bad", texto: "Rechazada: no cuadra" },
+  };
+  const HORAS = [1, 3, 6, 12, 24, 48, 168];
 
   const PLATAFORMA: Record<string, string> = { "windows-x86_64": "Windows", "linux-x86_64": "Linux x86_64", "linux-aarch64": "Linux arm64" };
 
@@ -113,6 +171,46 @@
         <code class="selectable">sudo resguardo-server poner-publicacion &lt;carpeta&gt;</code>. Llave{r.llaves.length === 1 ? "" : "s"}: {r.llaves.join(", ")}.
       </p>
     {/if}
+    {#if gh && !r.sin_llave}
+      <div class="github" aria-labelledby="t-github">
+        <h3 id="t-github"><CloudDownload size={15} /> Bajarlas solas de GitHub</h3>
+        <p class="faint">El servidor baja la última versión publicada (el manifiesto, su firma y los archivos), comprueba la firma con la llave de publicación y el SHA-256 de cada archivo, y solo entonces la da a sus equipos. Si algo no cuadra, no la usa y lo dice aquí.</p>
+        <div class="fila-gh">
+          <label class="switch-row">
+            <input type="checkbox" checked={gh.ajustes.activo} disabled={guardandoGh} onchange={(e) => cambiarGithub((e.currentTarget as HTMLInputElement).checked, gh.ajustes.horas)} />
+            <span>Buscar sola</span>
+          </label>
+          <label class="cada">
+            cada
+            <select class="input input-sm" value={gh.ajustes.horas} disabled={guardandoGh || !gh.ajustes.activo} onchange={(e) => cambiarGithub(gh.ajustes.activo, Number((e.currentTarget as HTMLSelectElement).value))} aria-label="Cada cuántas horas">
+              {#each HORAS as h (h)}<option value={h}>{h === 168 ? "semana" : h === 1 ? "hora" : `${h} h`}</option>{/each}
+            </select>
+          </label>
+          <BotonCargando class="btn btn-sm" cargando={buscando || gh.buscando} textoCargando="Buscando en GitHub…" onclick={buscarAhora}><RefreshCw size={14} />Buscar ahora</BotonCargando>
+        </div>
+        {#if !gh.automatica}<p class="faint pequeno">Compilación de desarrollo: no busca sola (solo con «Buscar ahora»).</p>{/if}
+        {#if gh.ultima}
+          {@const t = TEXTO_ULTIMA[gh.ultima.resultado] ?? { tono: "neutral" as const, texto: gh.ultima.resultado }}
+          <p class="ultima-gh">
+            <Chip pequeno tono={t.tono} texto={t.texto} />
+            <span class="faint">{fechaLarga(new Date(gh.ultima.cuando * 1000).toISOString())}</span>
+            {#if gh.ultima.mensaje}<span>{gh.ultima.mensaje}</span>{/if}
+          </p>
+          {#if gh.ultima.instalador}<p class="faint pequeno">{gh.ultima.instalador}</p>{/if}
+        {:else}
+          <p class="faint pequeno">Todavía no ha buscado.</p>
+        {/if}
+      </div>
+    {/if}
+    {#if r.instalador}
+      <p class="faint pequeno">
+        Instalador del agente para «Instalar muchos equipos» y «Descargar instalador listo»:
+        {#if !r.instalador.hay}ninguno todavía{#if r.instalador.de_datos}{" "}(se pone solo al bajar una versión de GitHub, o desde «Instalar muchos equipos»){/if}.
+        {:else if r.instalador.version}el de la {r.instalador.version}, de una versión firmada.
+        {:else if r.instalador.de_datos}uno puesto a mano.
+        {:else}el que trae Resguardo Server (o el de <code>--instalador-agente</code>).{/if}
+      </p>
+    {/if}
     <details class="ayuda">
       <summary>Actualizar este servidor ({r.version_servidor})</summary>
       <p class="faint">
@@ -178,6 +276,44 @@
   }
   .lista .pequeno {
     margin: 0;
+  }
+  .github {
+    margin-top: var(--sp-4);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
+  }
+  .github h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .github > p {
+    margin: 4px 0 0;
+    font-size: var(--fs-sm);
+  }
+  .fila-gh {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+  }
+  .cada {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-sm);
+  }
+  .ultima-gh {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
   }
   .ayuda {
     margin-top: var(--sp-3);

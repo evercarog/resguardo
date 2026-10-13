@@ -69,6 +69,7 @@ const ORDEN: Record<string, Icono> = {
   alta: KeyRound,
   cambiar_clave_admin: KeyRound,
   rotar_contrasena_repo: KeyRound,
+  comprobar_contrasena: KeyRound,
   clave_almacen: KeyRound,
   desbloquear: Unlock,
   crear_repositorio: DatabaseZap,
