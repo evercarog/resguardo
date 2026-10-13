@@ -1156,6 +1156,8 @@
           hayMas={historia.hayMas}
           cargandoMas={historia.cargando}
           alCargarMas={historia.cargarMas}
+          cliente={actual.cliente}
+          delEquipo={equipo}
         />
       {/if}
 

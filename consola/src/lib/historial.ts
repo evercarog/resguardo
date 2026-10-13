@@ -7,7 +7,7 @@
 // el espejo, los pasos «Antes de copiar» que fueron mal y lo que el equipo
 // resume por día de hace más de un año. Sirve igual para un repositorio, para
 // una copia y para un equipo entero (varios repositorios a la vez).
-import type { CopiaResumen, EjecucionInforme, EntradaHistorial, Informe, RepoInforme, RepositorioResumen, ResultadoGancho, TareaInforme } from "./tipos";
+import type { CopiaResumen, EjecucionInforme, EntradaHistorial, Informe, RepoInforme, RepositorioResumen, ResultadoGancho, TareaInforme, VersionInforme } from "./tipos";
 import { NOMBRE_GANCHO } from "./ganchos";
 import { duracion, pruebaRestauracion, TEXTO_RESULTADO, TEXTO_TAREA, TONO_RESULTADO, TONO_TAREA, verificacion, versionDeVuelta, versionesDe } from "./repo";
 import { bytes, numero } from "./formato";
@@ -341,4 +341,45 @@ export function versionesDeFuentes(fuentes: FuenteHistorial[], soloCopia?: strin
       .filter((v) => !soloCopia || v.copia === soloCopia)
       .map((v) => ({ v, repo: repo.id })),
   );
+}
+
+/** 14d: una versión tal como la da el equipo en la sesión `explorar` (`versiones`, api-servidor.md §7). */
+export interface VersionSesion {
+  id: string;
+  cuando: string;
+  archivos?: number | null;
+  bytes?: number | null;
+  etiquetas?: string[] | null;
+}
+
+/**
+ * 14d: las versiones del informe (los últimos 60 días, con todos sus datos) y
+ * las que se pidieron al equipo (todas, con menos datos), sin repetir. Las del
+ * informe mandan; de las demás no se sabe la copia que las hizo, salvo que el
+ * repositorio tenga una sola (`copiaUnica`). Lo que no se sabe va a `null`:
+ * nunca se inventa. La más reciente primero.
+ */
+export function unirVersiones(informe: VersionInforme[], traidas: VersionSesion[] | null | undefined, copiaUnica: string | null = null): VersionInforme[] {
+  if (!traidas?.length) return informe;
+  const ya = new Set(informe.map((v) => v.id.slice(0, 8)));
+  const mas: VersionInforme[] = [];
+  for (const t of traidas) {
+    const id = String(t.id ?? "").slice(0, 8);
+    if (!/^[0-9a-f]{8}$/.test(id) || ya.has(id) || Number.isNaN(Date.parse(t.cuando))) continue;
+    ya.add(id);
+    mas.push({
+      id,
+      hora: t.cuando,
+      copia: copiaUnica,
+      total_bytes: typeof t.bytes === "number" ? t.bytes : null,
+      anadido: null,
+      anadido_empaquetado: null,
+      archivos_nuevos: null,
+      archivos_cambiados: null,
+      archivos_sin_cambios: null,
+      duracion_s: null,
+      etiquetas: Array.isArray(t.etiquetas) ? t.etiquetas.filter((x) => typeof x === "string") : [],
+    });
+  }
+  return [...informe, ...mas].sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
 }

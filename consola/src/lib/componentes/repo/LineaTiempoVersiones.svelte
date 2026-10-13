@@ -76,6 +76,10 @@
     herramientas?: Snippet;
     /** Debajo de la bitácora (en el historial, «Cargar más»). */
     pie?: Snippet;
+    /** 14d: cuántas versiones hay en lo que se ve (el periodo, el día o las fechas elegidas). */
+    enPeriodo?: number;
+    /** 14d: ¿se ha elegido «Todas» (toda la historia)? */
+    todas?: boolean;
   }
   let {
     versiones,
@@ -100,6 +104,8 @@
     nombreRepo,
     herramientas,
     pie,
+    enPeriodo = $bindable(0),
+    todas = $bindable(false),
   }: Props = $props();
 
   const id = $props.id();
@@ -146,10 +152,12 @@
     const desde60 = inicioDia(minuto, -59);
     return filasHoras([...lista.map((v) => v.t), ...fallos].filter((t) => t >= desde60 && t <= minuto));
   });
-  const cal = $derived(calendario(lista, motivos, minuto, rango, movil, fallos, rango === 365 || movil ? undefined : filasFijas));
+  /** Con «Todas», el calendario enseña el último año (como mucho un año, 14d). */
+  const rangoVisto = $derived<Rango>(todas ? 365 : rango);
+  const cal = $derived(calendario(lista, motivos, minuto, rangoVisto, movil, fallos, rangoVisto === 365 || movil ? undefined : filasFijas));
   /** El alto del marco del calendario: el mismo en todos los periodos. */
   const altoMarco = $derived(altoCalendario(filasFijas.n, movil));
-  const inicioRango = $derived(inicioDia(minuto, 1 - rango));
+  const inicioRango = $derived(inicioDia(minuto, 1 - rangoVisto));
 
   // El filtro: un día (de fuera, en la URL, o de aquí) o, dentro de él, una
   // hora; o un intervalo de días (el selector de fechas, `?desde=&hasta=`).
@@ -217,16 +225,25 @@
   }
   function cambiarRango(r: Rango) {
     rango = r;
+    todas = false;
     limite = PRIMERAS;
     if (filtro && filtro.desde < inicioDia(minuto, 1 - r)) quitarFiltro();
   }
 
   // Qué se ve: el tramo (el filtro, el periodo o, en «Un año» del historial, también lo de antes) y la clase.
   let que = $state<FiltroHistorial>("todo");
-  const desde = $derived(filtro ? filtro.desde : !conCalendario || (conSucesos && rango === 365) ? -Infinity : inicioRango);
+  const desde = $derived(filtro ? filtro.desde : !conCalendario || todas || (conSucesos && rango === 365) ? -Infinity : inicioRango);
   const hasta = $derived(filtro ? filtro.hasta : Infinity);
   const vsTramo = $derived(lista.filter((v) => v.t >= desde && v.t < hasta));
   const ssTramo = $derived(todosSucesos.filter((s) => s.t >= desde && s.t < hasta));
+  $effect(() => {
+    enPeriodo = vsTramo.length;
+  });
+  /** «Todas» (14d): toda la historia en la bitácora; el calendario, como mucho un año. */
+  function verTodas() {
+    todas = true;
+    limite = PRIMERAS;
+  }
   const cuenta = $derived(
     Object.fromEntries(FILTROS_HISTORIAL.map((f) => [f.id, (f.id === "todo" || f.id === "versiones" ? vsTramo.length : 0) + ssTramo.filter((s) => pasaFiltro(s, f.id)).length])) as Record<FiltroHistorial, number>,
   );
@@ -240,7 +257,7 @@
   const elegida = $derived(seleccion ? (lista.find((v) => v.id === seleccion) ?? null) : null);
   // Los días con algo, para elegir uno con un control de tamaño cómodo (WCAG 2.5.8).
   const diasConAlgo = $derived.by(() => {
-    const enRango = (t: number) => !conCalendario || t >= inicioRango;
+    const enRango = (t: number) => !conCalendario || todas || t >= inicioRango;
     const m = new Map<number, { v: number; s: number }>();
     const de = (t: number) => {
       const d = inicioDia(t);
@@ -296,10 +313,13 @@
           : anuncio;
   });
 
-  const nombreRango = $derived(rango === 365 ? "el último año" : `los últimos ${rango} días`);
+  const nombreRango = $derived(todas ? "toda la historia" : rango === 365 ? "el último año" : `los últimos ${rango} días`);
+  const nombreCalendario = $derived(rangoVisto === 365 ? "el último año" : `los últimos ${rangoVisto} días`);
   const fallosRango = $derived(fallos.filter((t) => t >= inicioRango).length);
   const resumen = $derived(
-    cal.total || fallosRango
+    todas && !filtro
+      ? `${plural(lista.length, "versión", "versiones")} en toda la historia que conoce esta página; el calendario enseña el último año (${numero(cal.total)}).`
+      : cal.total || fallosRango
       ? `${plural(cal.total, "versión", "versiones")} en ${nombreRango}, ${plural(cal.diasCon, "día", "días")} con alguna${fallosRango ? `; ${fallosRango === 1 ? "un fallo" : `${numero(fallosRango)} fallos`}` : ""}${motivos ? `; la próxima retención quitaría ${numero(cal.quitan)}` : ""}.`
       : `Ninguna versión en ${nombreRango}.`,
   );
@@ -319,8 +339,9 @@
       <div class="herr">
         <div class="segmented inline" role="group" aria-label="Periodo">
           {#each RANGOS as r (r.dias)}
-            <button type="button" class:on={rango === r.dias} aria-pressed={rango === r.dias} onclick={() => cambiarRango(r.dias)}>{r.texto}</button>
+            <button type="button" class:on={!todas && rango === r.dias} aria-pressed={!todas && rango === r.dias} onclick={() => cambiarRango(r.dias)}>{r.texto}</button>
           {/each}
+          <button type="button" class:on={todas} aria-pressed={todas} onclick={verTodas}>Todas</button>
         </div>
         <ElegirFechas desde={filtro ? inicioDia(filtro.desde) : null} hasta={filtro ? inicioDia(filtro.hasta - 1) : null} ahora={minuto} diasCon={clavesConAlgo} alElegir={elegirFechas} />
         {#if herramientas}{@render herramientas()}{/if}
@@ -336,7 +357,7 @@
           alFiltrar={filtrar}
           descrito="{id}-resumen"
           marco={altoMarco}
-          etiqueta="{etiqueta}: calendario de {nombreRango}{cal.modo === 'horas' ? ', un día por columna y las horas en filas' : cal.modo === 'meses' ? ', un mes por fila y los días del mes en columnas' : ', un cuadro por día'}. Flechas para moverse; Intro muestra abajo lo de ese momento."
+          etiqueta="{etiqueta}: calendario de {nombreCalendario}{cal.modo === 'horas' ? ', un día por columna y las horas en filas' : cal.modo === 'meses' ? ', un mes por fila y los días del mes en columnas' : ', un cuadro por día'}. Flechas para moverse; Intro muestra abajo lo de ese momento."
         />
         </div>
         <div class="pie-cal">
@@ -397,9 +418,9 @@
         {#if quedan > 0}
           <div class="mas">
             <button type="button" class="btn btn-sm" aria-describedby="{id}-quedan" onclick={() => (limite += PAGINA)}>
-              {#if limite === PRIMERAS}Ver todas ({numero(filas.length)}){:else}Cargar más{/if}
+              Ver más ({numero(Math.min(PAGINA, quedan))})
             </button>
-            <span class="faint num" id="{id}-quedan">{limite === PRIMERAS ? `Se ven las ${numero(filasVisibles.length)} más recientes.` : `Se ven ${numero(filasVisibles.length)} de ${numero(filas.length)}; quedan ${numero(quedan)}.`}</span>
+            <span class="faint num" id="{id}-quedan">{`Se ven ${limite === PRIMERAS ? "las " : ""}${numero(filasVisibles.length)}${limite === PRIMERAS ? " más recientes" : ""} de ${numero(filas.length)}; quedan ${numero(quedan)}.`}</span>
           </div>
         {:else if limite > PRIMERAS && filas.length > PRIMERAS}
           <div class="mas"><button type="button" class="btn btn-sm btn-ghost" onclick={() => (limite = PRIMERAS)}>Ver solo las más recientes</button></div>
@@ -407,8 +428,8 @@
       {:else}
         <p class="faint vacio">
           {#if filtro}{conSucesos ? VACIO[que] : "Ninguna versión en ese momento."} Prueba con otra casilla o con el día entero.
-          {:else if conSucesos && que !== "todo"}{VACIO[que].replace("en ese momento", `en ${nombreRango}`)}{#if rango !== 365}{" "}Elige un periodo más largo.{/if}
-          {:else}Nada en {nombreRango}: elige un periodo más largo.{/if}
+          {:else if conSucesos && que !== "todo"}{VACIO[que].replace("en ese momento", `en ${nombreRango}`)}{#if rango !== 365 && !todas}{" "}Elige un periodo más largo.{/if}
+          {:else}Nada en {nombreRango}{#if !todas}: elige un periodo más largo{/if}.{/if}
         </p>
       {/if}
       {#if pie && quedan === 0}{@render pie()}{/if}

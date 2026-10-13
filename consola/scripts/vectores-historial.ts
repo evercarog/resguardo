@@ -5,7 +5,7 @@ import type { CopiaResumen, EntradaHistorial, Equipo, RepoInforme, RepositorioRe
 import { filasCopias, filtrarCopias, ordenarCopias } from "../src/lib/copiasCliente";
 import { lineaEnDisco } from "../src/lib/repo";
 import { bytes } from "../src/lib/formato";
-import { esFallo, pasaFiltro, sucesoHistorial, sucesosDe } from "../src/lib/historial";
+import { esFallo, pasaFiltro, sucesoHistorial, sucesosDe, unirVersiones } from "../src/lib/historial";
 import { moviendoDe, textoPasoCopias } from "../src/lib/mover";
 import { textoCorto, textoMover } from "../src/lib/textoProgreso";
 import { altoCalendario, altoFila, calendario, diaDeClave, nombreIntervalo } from "../src/lib/lineaTiempo";
@@ -191,6 +191,23 @@ igual("y en el nuevo", sucesoHistorial(hm, "nuevo").titulo, "Movido aquí desde 
 igual("un paso que falló", [sucesoHistorial({ ...hm, paso: "historial", resultado: "fallo" }, "r2").titulo, sucesoHistorial({ ...hm, resultado: "fallo" }, "r2").tono], ["Mover a otro sitio: falló", "bad"]);
 const conMover = sucesosDe({ fuentes: [{ repo: repo2, inf: null }, { repo: { id: "nuevo", nombre: "Contabilidad (almacén)", destino: "d" }, inf: null }], copias, historial: [hm], conRepo: true }).sucesos;
 igual("en un equipo (los dos repositorios a la vez), una sola vez", conMover.filter((x) => x.tipo === "historial").length, 1);
+
+console.log("\n· Todas las versiones: las del resumen y las pedidas al equipo (14d)");
+{
+  const delInforme = [v("aaaa1111", 1), v("bbbb2222", 30)];
+  const traidas = [
+    { id: "aaaa1111" + "0".repeat(56), cuando: h(1), bytes: 5, etiquetas: [] },
+    { id: "cccc3333" + "0".repeat(56), cuando: h(24 * 90), bytes: 7, archivos: 3, etiquetas: ["diaria"] },
+    { id: "no-vale", cuando: h(2) },
+    { id: "dddd4444" + "0".repeat(56), cuando: "ayer" },
+  ];
+  const u = unirVersiones(delInforme, traidas, "k1");
+  igual("sin repetir y la más reciente primero", u.map((x) => x.id), ["aaaa1111", "bbbb2222", "cccc3333"]);
+  igual("las del resumen mandan (con todos sus datos)", u[0].total_bytes, 1e9);
+  igual("la traída: solo lo que se sabe", [u[2].copia, u[2].total_bytes, u[2].anadido, u[2].duracion_s, u[2].etiquetas], ["k1", 7, null, null, ["diaria"]]);
+  igual("sin copia única, la copia no se inventa", unirVersiones(delInforme, traidas, null)[2].copia, null);
+  igual("sin traídas, las del resumen tal cual", unirVersiones(delInforme, undefined), delInforme);
+}
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

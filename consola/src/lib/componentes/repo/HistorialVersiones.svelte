@@ -11,17 +11,22 @@
   // suceso con su vuelta en el informe abre su detalle. En un equipo, un
   // desplegable elige una copia o un repositorio. «Cargar más» pide lo de
   // antes al historial del equipo.
+  //
+  // 14d: «213 en este periodo · 682 en total», la opción «Todas» y, cuando el
+  // resumen no las trae (solo los últimos 60 días), «Pedir todas» al equipo con
+  // la contraseña del repositorio, como en Restaurar (PedirVersiones).
   import { onMount, tick } from "svelte";
   import { Archive, Check, Copy, FolderSearch, History, PanelRightOpen } from "@lucide/svelte";
   import "../detalle/pulsable.css";
-  import type { CopiaResumen, EntradaHistorial, Informe, Regla, RepoInforme, RepositorioResumen, VersionInforme } from "$lib/tipos";
+  import type { Cliente, CopiaResumen, Equipo, EntradaHistorial, Informe, Regla, RepoInforme, RepositorioResumen, VersionInforme } from "$lib/tipos";
   import { bytes, fechaLarga, numero, plural, relativo } from "$lib/formato";
   import { anadidoDe, duracion, nVersiones, versionesDe } from "$lib/repo";
   import { retencionDe } from "$lib/lineaTiempo";
-  import { sucesosDe, type Suceso } from "$lib/historial";
+  import { sucesosDe, unirVersiones, type Suceso, type VersionSesion } from "$lib/historial";
   import { textoRegla, type Periodo } from "$lib/retencion";
   import BotonCargando from "../BotonCargando.svelte";
   import LineaTiempoVersiones from "./LineaTiempoVersiones.svelte";
+  import PedirVersiones from "./PedirVersiones.svelte";
 
   interface Fuente {
     repo: RepositorioResumen;
@@ -53,6 +58,8 @@
     hayMas = false,
     cargandoMas = false,
     alCargarMas,
+    cliente = null,
+    delEquipo = null,
   }: {
     fuentes: Fuente[];
     copias: CopiaResumen[];
@@ -87,6 +94,9 @@
     hayMas?: boolean;
     cargandoMas?: boolean;
     alCargarMas?: () => void;
+    /** 14d: para pedir al equipo las versiones que no trae el resumen (sin ellos, no se ofrece). */
+    cliente?: Cliente | null;
+    delEquipo?: Equipo | null;
   } = $props();
 
   const id = $props.id();
@@ -102,9 +112,18 @@
   const vistas = $derived(verRepo ? fuentes.filter((f) => f.repo.id === verRepo) : fuentes);
   const varios = $derived(equipo && vistas.length > 1);
 
+  // 14d: las que se pidieron al equipo (todas), por repositorio, mientras la página esté abierta.
+  let traidas = $state<Record<string, VersionSesion[]>>({});
+  /** Una sola copia guarda en el repositorio: las versiones traídas son suyas. */
+  const copiaUnica = (r: string) => {
+    const ks = copias.filter((k) => k.repo === r);
+    return ks.length === 1 ? ks[0].id : null;
+  };
+  /** Todas las versiones conocidas de un repositorio: las del resumen y las traídas. */
+  const todasDe = (repo: RepositorioResumen, inf: RepoInforme | null) => unirVersiones(versionesDe(inf), traidas[repo.id], copiaUnica(repo.id));
   const versiones = $derived(
     vistas.flatMap(({ repo, inf }) =>
-      versionesDe(inf)
+      todasDe(repo, inf)
         .filter((v) => !copia || v.copia === copia)
         .map((v) => ({ v, repo: repo.id })),
     ),
@@ -119,7 +138,7 @@
     if (!conRegla.length) return null;
     const m = new Map<string, Periodo | null>();
     const visibles = new Set(versiones.map((x) => x.v.id));
-    for (const f of conRegla) for (const [k, x] of retencionDe(versionesDe(f.inf), f.regla ?? null) ?? []) if (visibles.has(k)) m.set(k, x);
+    for (const f of conRegla) for (const [k, x] of retencionDe(todasDe(f.repo, f.inf), f.regla ?? null) ?? []) if (visibles.has(k)) m.set(k, x);
     return m;
   });
   const textoRetencion = $derived(
@@ -141,7 +160,7 @@
   const deltas = $derived.by(() => {
     const m = new Map<string, number>();
     for (const { repo, inf } of vistas) {
-      const vs = versionesDe(inf);
+      const vs = todasDe(repo, inf);
       for (const [i, v] of vs.entries()) {
         if (v.total_bytes == null) continue;
         const antes = vs.slice(i + 1).find((x) => x.copia === v.copia && x.total_bytes != null);
@@ -168,7 +187,14 @@
   const abrirSuceso = (s: Suceso) => s.vuelta && alAbrirVuelta?.(s.vuelta, s.repo);
 
   // La línea de debajo del título: cuántas versiones y de cuándo es lo leído.
-  const total = $derived(soloCopia || copia ? versiones.length : vistas.reduce((n, f) => n + nVersiones(f.repo, f.inf), 0));
+  const total = $derived(soloCopia || copia ? versiones.length : vistas.reduce((n, f) => n + Math.max(nVersiones(f.repo, f.inf), todasDe(f.repo, f.inf).length), 0));
+  // 14d: cuántas hay en lo que se ve (lo dice la línea de tiempo) y si se pueden pedir las que faltan.
+  let enPeriodo = $state(0);
+  let todas = $state(false);
+  const unaFuente = $derived(vistas.length === 1 ? vistas[0] : null);
+  const faltan = $derived(
+    unaFuente && !traidas[unaFuente.repo.id] && cliente && delEquipo && puedeRestaurar ? nVersiones(unaFuente.repo, unaFuente.inf) > versionesDe(unaFuente.inf).length : false,
+  );
   const leidas = $derived(
     vistas
       .map((f) => f.inf?.versiones_leidas)
@@ -184,13 +210,26 @@
   <header class="cab">
     <div>
       <h2 class="section-title" id="t-historial">{titulo}</h2>
-      <p class="faint">
-        {plural(total, "versión", "versiones")}{!copia && total > versiones.length && versiones.length ? ` · aquí, las de los últimos 60 días (${numero(versiones.length)})` : ""}{equipo && !verRepo ? ` en ${plural(fuentes.length, "repositorio", "repositorios")}` : ""}
+      <p class="faint num">
+        {#if versiones.length}{numero(enPeriodo)} en este periodo · {/if}{plural(total, "versión", "versiones")} en total{!copia && total > versiones.length && versiones.length ? ` (aquí, ${numero(versiones.length)})` : ""}{equipo && !verRepo ? ` en ${plural(fuentes.length, "repositorio", "repositorios")}` : ""}
         {#if leidas}<span class="leidas">{" · "}leídas {relativo(leidas, ahora)}</span>{/if}
       </p>
       {#if resumen}<p class="faint num">{resumen}</p>{/if}
     </div>
   </header>
+  {#if faltan && unaFuente && cliente && delEquipo}
+    <PedirVersiones
+      {cliente}
+      equipo={delEquipo}
+      repo={unaFuente.repo}
+      conocidas={versionesDe(unaFuente.inf).length}
+      total={nVersiones(unaFuente.repo, unaFuente.inf)}
+      alTraer={(vs) => {
+        traidas = { ...traidas, [unaFuente!.repo.id]: vs };
+        todas = true;
+      }}
+    />
+  {/if}
 
   {#if !versiones.length && !sucesos.sucesos.length}
     <div class="empty-state">
@@ -216,6 +255,8 @@
       notas={sucesos.notas}
       alAbrirSuceso={alAbrirVuelta ? abrirSuceso : undefined}
       {nombreRepo}
+      bind:enPeriodo
+      bind:todas
     >
       {#snippet herramientas()}
         {#if equipo && (fuentes.length > 1 || copias.length > 1)}
@@ -274,7 +315,7 @@
         {/if}
       {/snippet}
     </LineaTiempoVersiones>
-    {#if recortado}<p class="faint recortado">Para que el informe del equipo no pese demasiado, aquí faltan las versiones más antiguas de estos 60 días.</p>{/if}
+    {#if recortado && !(unaFuente && traidas[unaFuente.repo.id])}<p class="faint recortado">Para que el informe del equipo no pese demasiado, aquí faltan las versiones más antiguas de estos 60 días.</p>{/if}
   {/if}
 </section>
 
