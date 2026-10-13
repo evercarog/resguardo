@@ -17,7 +17,7 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque B — Lo que desbloquea el trabajo real
 
-- [ ] **B1. Nombres legibles y renombrar (14e):** carpetas `equipo-sufijo/repositorio` en el almacén para lo nuevo; renombrar repositorios en todas las consolas; cambio coordinado de carpeta para lo existente (almacén, equipo y espejos a la vez).
+- [x] **B1. Nombres legibles y renombrar (14e):** (rama `ia/080-nombres`; diseño en [nombres-legibles.md](nombres-legibles.md), contrato v1.6x en `api-servidor.md`; en el destino del espejo no se mueve nada, valorado y dejado para más adelante) carpetas `equipo-sufijo/repositorio` en el almacén para lo nuevo; renombrar repositorios en todas las consolas; cambio coordinado de carpeta para lo existente (almacén, equipo y espejos a la vez).
 - [ ] **B2. Destinos claros (14b, 14r):** un solo formulario; el destino recuerda bucket y carpeta base y el espejo no los vuelve a pedir (enseña la ruta final); «Quitar»/«Desconectar» en cada tarjeta cuando se puede (y bloqueado con motivo cuando no; hoy se puede desconectar una nube que usan los espejos); catálogo y nube conectada con el mismo bucket = un solo destino; aviso de repetidos.
 - [ ] **B3. Derivada a un almacén sin usuario (14hh):** «Dar acceso a este equipo en el almacén» ahí mismo, sin repositorio de relleno.
 - [ ] **B4. Contraseñas (14ii, 14bbb):** «Generada / La escribo yo» en todas partes; **«Comprobar la contraseña»** contra el propio repositorio (y sus espejos), sin espera, con bloqueo por intentos y fecha en la salud.

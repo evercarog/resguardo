@@ -276,12 +276,14 @@
         {#if importadores.length}<p class="faint pequeno">{importadores.map((x) => x.equipo.nombre).join(", ")} {importadores.length === 1 ? "lo tiene" : "lo tienen"} importado: también usará la ruta nueva.</p>{/if}
         {#if espejos.length && (moverUsuario || repos.length)}
           <div class="notice notice-info">
+            <div>
             <p>
               <strong>Espejos.</strong> En su destino no se mueve nada: la carpeta nueva se copia entera la próxima vez que copie{tamano ? ` (unos ${bytes(tamano)})` : ""}.
             </p>
             <ul>
               {#each espejos as t (t.id)}<li>«{t.nombre}»{t.adonde.tipo === "nube" && t.adonde.nube ? ` (a ${t.adonde.nube})` : ""}: {textoCarpetaVieja(t)}.</li>{/each}
             </ul>
+            </div>
           </div>
         {/if}
         <p class="faint pequeno">Mejor cuando no esté copiando: si hay una copia en marcha, el almacén no mueve nada y te lo dice.</p>

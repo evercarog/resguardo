@@ -48,6 +48,7 @@ import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
 import { nubesDelEquipo } from "../../src/lib/nubesEquipo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
+import { cuerpoMover, cuerpoRutaNueva, equiposEnAlmacen, planOrden, rutasPendientes, type Movido } from "../../src/lib/nombres";
 import { diferencia, pendiente, trozos, type DatosComunesCliente, type EntradaOrden } from "../../src/lib/datosComunes";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
@@ -355,6 +356,44 @@ async function principal() {
       }, { plazo, cada: 1000 });
     };
     const secretosRepo = { repo: { repo: repoId, contrasena: contrasenaRepo } };
+    /** La carpeta del repositorio de B en el almacén (cambia en 3a). */
+    let carpetaB = repoId;
+
+    // -----------------------------------------------------------------------
+    paso("3a. Nombres legibles (plan 0.8.0, B1): renombrar el repositorio y «Ordenar nombres de carpeta» en el almacén y en B");
+    {
+      // Renombrar: lo guarda B y sale en su resumen (igual en todas sus consolas). La carpeta no cambia.
+      await consola.hecha(c, eqB.id, "nombre_repositorio", { repo: repoId, nombre: "Contabilidad" });
+      await esperar("el nombre nuevo en el resumen de B", async () => ((await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.nombre === "Contabilidad" ? true : null), { plazo: 20_000 });
+      // Ordenar: el usuario de B es su id y la carpeta, la del nombre del almacén.
+      const [eA, eB] = await Promise.all([consola.equipo(c, eqA.id), consola.equipo(c, eqB.id)]);
+      const en = equiposEnAlmacen(eA, [eA, eB]).find((x) => x.equipo.id === eqB.id)!;
+      const plan = planOrden(en);
+      igual([plan.usuario, plan.repos.map((r) => [r.de, r.propuesta])], [true, [[repoId, "contabilidad"]]], "Qué se ordena: la carpeta de B y la de «Contabilidad»");
+      const r = await consola.hecha(c, eqA.id, "guarda_copias", cuerpoMover(en, plan), { claveAdmin: CLAVE_ADMIN }, {}, 180_000);
+      const movido = (JSON.parse(r.detalle ?? "{}") as { mover?: Movido }).mover!;
+      comprobar(/-[0-9a-f]{4}$/.test(movido.usuario?.a ?? "") && movido.repos[0]?.a === "contabilidad", "El almacén movió las dos carpetas", movido);
+      comprobar(fs.existsSync(path.join(almacen, movido.usuario!.a, "contabilidad", "config")) && !fs.existsSync(path.join(almacen, acceso.destino.usuario)), "En el disco del almacén, con los nombres nuevos");
+      // Hasta que B pone la ruta nueva, la consola lo ve pendiente.
+      const pend = await esperar("la ruta pendiente de B", async () => {
+        const a2 = await consola.equipo(c, eqA.id);
+        const p = rutasPendientes(a2, [a2, await consola.equipo(c, eqB.id)]);
+        return p.length ? p : null;
+      }, { plazo: 30_000 });
+      igual(pend[0].cuerpo, cuerpoRutaNueva(en, movido), "La consola sabe qué le falta a B");
+      await consola.hecha(c, eqB.id, "cambiar_destino", cuerpoRutaNueva(en, movido)!, { claveAdmin: CLAVE_ADMIN }, {}, 120_000);
+      const despues = await esperar("la ruta nueva en el resumen de B", async () => {
+        const e = await consola.equipo(c, eqB.id);
+        return e.resumen?.repositorios?.find((x) => x.id === repoId)?.ruta === "contabilidad" ? e : null;
+      }, { plazo: 20_000 });
+      const a3 = await consola.equipo(c, eqA.id);
+      igual(rutasPendientes(a3, [a3, despues]).length, 0, "Ya no queda nada pendiente");
+      acceso.destino.donde = acceso.destino.donde.replace(`/${acceso.destino.usuario}/`, `/${movido.usuario!.a}/`);
+      acceso.destino.usuario = movido.usuario!.a;
+      carpetaB = "contabilidad";
+      const tras = await copiarAhora(consola, c);
+      igual(tras.estado, "ok", `B sigue copiando con la ruta nueva (${tras.mensaje ?? ""})`);
+    }
 
     // -----------------------------------------------------------------------
     paso("3b. Otra zona en el almacén de A (tarea 7b): «Disco E» con su puerto; B copia también allí");
@@ -378,12 +417,14 @@ async function principal() {
         c,
         eqA.id,
         "guarda_copias",
-        { anadir: eqB.id, zona: zona.id },
+        // B1: con `nombre`, una carpeta legible («<equipo>-xxxx»).
+        { anadir: eqB.id, zona: zona.id, nombre: eqB.nombre },
         { claveAdmin: CLAVE_ADMIN },
       );
       const vista = zonasDe(await consola.equipo(c, eqA.id)).find((z) => z.id === zona.id)!;
       igual(errorRespuestaZona(accesoE, vista), null, "La respuesta es de la zona pedida y por su puerto");
       comprobar(accesoE.usuario !== acceso.usuario, "En la zona, B tiene otro usuario (únicos en todo el almacén)", [accesoE.usuario, acceso.usuario]);
+      comprobar(/-[0-9a-f]{4}$/.test(accesoE.usuario) && !accesoE.usuario.includes(eqB.id.slice(0, 8)), "Con el nombre del equipo y un sufijo, no su id", accesoE.usuario);
       const repoE = `disco-e-${randomBytes(2).toString("hex")}`;
       const contrasenaE = Buffer.from(aleatorio(32)).toString("base64url");
       await consola.hecha(
@@ -783,7 +824,7 @@ async function principal() {
     // Versiones con otras horas, como las haría B (su usuario y su contraseña: solo añadir).
     const caAlmacen = dir("ca-almacen.pem");
     fs.writeFileSync(caAlmacen, acceso.destino.ca_pem);
-    const repoUrl = `rest:${acceso.destino.donde.replace(/\/?$/, "/")}${repoId}`;
+    const repoUrl = `rest:${acceso.destino.donde.replace(/\/?$/, "/")}${carpetaB}`;
     const envRestic = { RESTIC_REPOSITORY: repoUrl, RESTIC_PASSWORD: contrasenaRepo, RESTIC_REST_USERNAME: acceso.destino.usuario, RESTIC_REST_PASSWORD: acceso.destino.secreto, RESTIC_CACERT: caAlmacen, RESTIC_CACHE_DIR: dir("cache-restic") };
     const comoB = (args: string[]) => {
       const r = ejecutar(resticBin, args, { env: envRestic, plazo: 300_000 });
