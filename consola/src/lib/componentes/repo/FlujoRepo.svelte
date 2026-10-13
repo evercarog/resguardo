@@ -20,7 +20,19 @@
     equipos,
     ahora,
     equipo,
-  }: { repo: RepositorioResumen; inf: RepoInforme | null; copias: CopiaResumen[]; destinos: DestinoResumen[]; equipos: Equipo[]; ahora: number; /** v1.41: el equipo que copia (para decir «en este mismo equipo»). */ equipo?: Equipo } = $props();
+    alQuitarExterna,
+  }: {
+    repo: RepositorioResumen;
+    inf: RepoInforme | null;
+    copias: CopiaResumen[];
+    destinos: DestinoResumen[];
+    equipos: Equipo[];
+    ahora: number;
+    /** v1.41: el equipo que copia (para decir «en este mismo equipo»). */
+    equipo?: Equipo;
+    /** 14nn: «Quitar la copia externa» cuando falla (solo si quien mira puede mandar órdenes). */
+    alQuitarExterna?: () => void;
+  } = $props();
 
   const suyas = $derived(copias.filter((k) => k.repo === repo.id));
   const destino = $derived(destinoDe(destinos, repo));
@@ -113,6 +125,9 @@
             {#if tercero.tono === "ok"}<CircleCheck size={13} />{:else if tercero.tono === "bad"}<CircleAlert size={13} />{:else}<TriangleAlert size={13} />{/if}
             {tercero.texto}
           </span>
+          {#if repo.externa && tercero.tono === "bad" && alQuitarExterna}
+            <span class="acc"><button type="button" class="btn btn-sm" onclick={alQuitarExterna}>Quitar la copia externa</button></span>
+          {/if}
         {/if}
       </div>
     </li>
@@ -200,6 +215,9 @@
   .st.aviso-mismo {
     font-weight: 500;
     color: var(--warn);
+  }
+  .acc {
+    margin-top: var(--sp-2);
   }
   .flecha {
     display: flex;

@@ -35,6 +35,7 @@
   } from "$lib/repo";
   import type { Equipo, EquipoDetalle, VersionInforme } from "$lib/tipos";
   import { almacenDe, textoHorario, textoRegla } from "$lib/retencion";
+  import { ordenQuitarExterna } from "$lib/copiaExterna";
   import { admiteVerificacion, fraseVerificacion } from "$lib/verificacion";
   import RetencionAlmacen from "$lib/componentes/RetencionAlmacen.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -123,7 +124,7 @@
   const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
 
   // Órdenes desde aquí (con su diálogo de siempre). `para`: a otro equipo (el almacén).
-  let dialogo = $state<{ tipo: string; cuerpo: Record<string, unknown>; descripcion: string; accion?: string; titulo?: string; para?: Equipo } | null>(null);
+  let dialogo = $state<{ tipo: string; cuerpo: Record<string, unknown>; descripcion: string; accion?: string; titulo?: string; para?: Equipo; repo?: { id: string; nombre: string } } | null>(null);
 
   // v1.22: en un almacén (solo añadir), la retención la aplica el almacén.
   const enAlm = $derived(repo ? almacenDe(repo, destino, actual.equipos) : null);
@@ -156,6 +157,11 @@
   const moviendo = $derived(moviendoDe(tareasDe(e), rid));
   const planAqui = $derived(!!moviendo && hayPlanMover(c, e, moviendo.origen ?? rid));
   const moverBloqueado = $derived(!!moviendo && (moviendo.otra_consola || !planAqui));
+  // 14nn: «Quitar la copia externa» también aquí, con la misma orden que la ficha del equipo.
+  const puedeQuitarExterna = $derived(!!repo?.externa && !repo.solo_lectura && puede.ordenar(rol));
+  function quitarExterna() {
+    if (repo) dialogo = ordenQuitarExterna(repo, destinos);
+  }
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -252,7 +258,7 @@
       </div>
     </div>
 
-    <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} />
+    <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} alQuitarExterna={puedeQuitarExterna ? quitarExterna : undefined} />
 
     <div class="dos" id="sec-proteccion">
       {#if prot}
@@ -304,6 +310,9 @@
               {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />
               {:else if repo.externa}<span class="faint">A «{repo.externa.destino}» cada día a las {repo.externa.hora}, todavía sin ninguna</span>
               {:else}<span class="faint">No tiene</span>{/if}
+              {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
+              <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
+              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia externa</button></span>{/if}
             </dd>
           </div>
           {#if enAlm}
@@ -388,7 +397,7 @@
 
 {#if dialogo && equipo && actual.cliente}
   {#key dialogo}
-  <OrdenDialog cliente={actual.cliente} equipo={dialogo.para ?? equipo} tipo={dialogo.tipo} cuerpo={dialogo.cuerpo} titulo={dialogo.titulo} descripcion={dialogo.descripcion} accion={dialogo.accion} onclose={() => (dialogo = null)} />
+  <OrdenDialog cliente={actual.cliente} equipo={dialogo.para ?? equipo} tipo={dialogo.tipo} cuerpo={dialogo.cuerpo} titulo={dialogo.titulo} descripcion={dialogo.descripcion} accion={dialogo.accion} repo={dialogo.repo} onclose={() => (dialogo = null)} />
   {/key}
 {/if}
 

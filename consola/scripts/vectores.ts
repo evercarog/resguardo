@@ -20,7 +20,7 @@ import { esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN } from "../src/lib/cripto/orde
 import { almacenDe, errorHorario, errorRegla, estimarVersiones, leerPlazo, leerRegla, nuevaClave, plazoEnPalabras, presetDe, PRESETS, REGLA_POR_DEFECTO, reglaParaOrden, restarPlazo, resumenRegla, textoHorario, textoRegla } from "../src/lib/retencion";
 import { errorVerificacion, fraseVerificacion, partesVerificacion } from "../src/lib/verificacion";
 import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnAlmacen } from "../src/lib/direccion";
-import { cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
+import { cuerpoBloqueo, cuerpoExistente, detallesExterna, ordenQuitarExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
 import { resultadoConError } from "../src/lib/salud";
 import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
 import { bytesRepo, destinoDe, versionDeVuelta } from "../src/lib/repo";
@@ -528,6 +528,12 @@ if (v1.paquete) {
   igual("error: desconocido", explicarError("algo raro").ayuda, "si-copia-falla");
   // Cada vez que se hace una copia es «una copia» (no «una vuelta»).
   cierto("frase: «La última copia»", fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false }, ahora).includes("La última copia, "));
+  // 14nn: «Quitar la copia externa», la misma orden en la ficha del equipo y en la página del repositorio.
+  {
+    const r = { id: "ventas", nombre: "Ventas", destino: "d1", externa: { destino: "Nube oficina", hora: "23:00" } } as unknown as Parameters<typeof ordenQuitarExterna>[0];
+    const q = ordenQuitarExterna(r, [{ id: "b2-1", nombre: "Nube oficina", tipo: "b2" } as never]);
+    igual("quitar la copia externa: la orden y su destino (por el nombre)", [q.tipo, q.cuerpo, q.repo], ["cambiar_copia_externa", { repo: "ventas", destino: { id: "b2-1" }, hora: null }, { id: "ventas", nombre: "Ventas" }]);
+  }
   // 14gg: varios volcados, una sola vez y con los nombres (como mucho 3).
   {
     const seis = ["Ventas", "Nominas", "Compras", "Bancos", "Cartera", "Activos"];

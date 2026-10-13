@@ -2,7 +2,7 @@
 // que ya existe» y el bloqueo de objetos del destino. Lo que no es pantalla, sin
 // dependencias del navegador (lo prueban los vectores, scripts/vectores.ts).
 import { destinoCuerpo, partirDireccion, repoExistenteCompleto, repoExistenteVacio, type RepoExistente } from "./direccion";
-import type { Equipo } from "./tipos";
+import type { DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
 
 /** Agentes que entienden `existente`, `ruta`, `bloqueo_dias` y `solo_probar`. */
 export const ADMITE_EXTERNA_EXISTENTE = "externa_existente";
@@ -74,4 +74,24 @@ export function textoRetencionDestino(conRetencion: boolean, bloqueo: number | n
 export function detallesExterna(x: { existente?: boolean | null; bloqueo_dias?: number | null; solo_anadir?: boolean | null } | null | undefined): string[] {
   if (!x) return [];
   return [x.existente ? "a un repositorio que ya existía" : "", x.bloqueo_dias ? `bloqueo de ${x.bloqueo_dias} días (sin prune)` : "", x.solo_anadir ? "destino de solo añadir" : ""].filter(Boolean);
+}
+
+/** El destino de la copia externa de `r` (su id o, con un agente anterior, por el nombre). */
+export const idDestinoExterna = (r: RepositorioResumen, destinos: DestinoResumen[]) =>
+  r.externa ? (r.externa.destino_id ?? destinos.find((d) => d.nombre === r.externa!.destino)?.id) : undefined;
+
+/**
+ * 14nn: la orden «Quitar la copia externa» de un repositorio, la misma en la
+ * ficha del equipo, la página del repositorio (su tarjeta «Cómo se protegen tus
+ * datos» y Comprobaciones) y donde haga falta.
+ */
+export function ordenQuitarExterna(r: RepositorioResumen, destinos: DestinoResumen[]) {
+  const id = idDestinoExterna(r, destinos);
+  return {
+    tipo: "cambiar_copia_externa",
+    cuerpo: { repo: r.id, ...(id ? { destino: { id } } : {}), hora: null } as Record<string, unknown>,
+    titulo: "Quitar la copia externa",
+    descripcion: `«${r.nombre}» dejará de copiarse cada día a «${r.externa?.destino ?? "su destino externo"}». Lo ya copiado allí se queda.`,
+    repo: { id: r.id, nombre: r.nombre },
+  };
 }

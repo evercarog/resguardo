@@ -109,7 +109,7 @@
   import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
   import FormRepoExistente from "$lib/componentes/FormRepoExistente.svelte";
-  import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
+  import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, ordenQuitarExterna, textoRetencionDestino } from "$lib/copiaExterna";
   // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   // v1.56: nombre, etiquetas y observación del equipo iguales en todas sus consolas; quitar destinos sin uso.
@@ -724,15 +724,9 @@
       accion: "Quitar el destino",
     });
   }
+  // 14nn: la misma orden que en la página del repositorio (lib/copiaExterna.ts).
   function quitarExterna(r: RepositorioResumen) {
-    const id = idDestinoExterna(r);
-    abrir({
-      tipo: "cambiar_copia_externa",
-      cuerpo: { repo: r.id, ...(id ? { destino: { id } } : {}), hora: null },
-      titulo: "Quitar la copia externa",
-      descripcion: `«${r.nombre}» dejará de copiarse cada día a «${r.externa?.destino ?? "su destino externo"}». Lo ya copiado allí se queda.`,
-      repo: { id: r.id, nombre: r.nombre },
-    });
+    abrir(ordenQuitarExterna(r, destinos));
   }
 
 
