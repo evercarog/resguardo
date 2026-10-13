@@ -167,6 +167,11 @@ pub struct Opciones {
     pub bloqueo_dias: Option<u32>,
     /// Plan 0.7.26 (4.3): el freno.
     pub freno: Freno,
+    /// B1 (docs/nombres-legibles.md): carpetas movidas en el almacén, `(de, a)`
+    /// (`<usuario>` o `<usuario>/<repo>`). Lo que falta bajo una `de` no cuenta para
+    /// el freno (se movió a propósito) pero sí para la retención; en un destino con
+    /// selección, la ruta vieja de lo elegido se sigue mirando en el destino.
+    pub antiguas: Vec<(String, String)>,
 }
 
 /// Cuándo se borra lo que falta.
@@ -264,6 +269,33 @@ impl Alcance {
                 let todas = v.clone();
                 v.retain(|r| !todas.iter().any(|o| o != r && r.starts_with(&format!("{o}/"))));
                 v
+            }
+        }
+    }
+
+    /// B1: lo que se mira en el destino: el alcance y, con una selección, la ruta
+    /// antigua de lo elegido que se movió en el almacén (`antiguas`: `(de, a)`).
+    pub fn con_antiguas(&self, antiguas: &[(String, String)]) -> Alcance {
+        match self {
+            Alcance::Todos => Alcance::Todos,
+            Alcance::Repos(l) => {
+                let mut v = l.clone();
+                // Varias veces: lo movido dos veces (a → b → c) también se encuentra.
+                for _ in 0..4 {
+                    let antes = v.len();
+                    for (de, a) in antiguas {
+                        for r in v.clone() {
+                            let vieja = if r == *a { Some(de.clone()) } else { r.strip_prefix(&format!("{a}/")).map(|resto| format!("{de}/{resto}")) };
+                            if let Some(x) = vieja.filter(|x| repo_valido(x) && !v.contains(x)) {
+                                v.push(x);
+                            }
+                        }
+                    }
+                    if v.len() == antes {
+                        break;
+                    }
+                }
+                Alcance::Repos(v)
             }
         }
     }
@@ -407,7 +439,7 @@ pub fn vuelta(
         r.faltan_repos = l.iter().filter(|x| !repo_valido(x) || !origen.join(x.as_str()).join("config").is_file()).cloned().collect();
     }
     let origen_l = listar_carpeta(origen, alcance)?;
-    let destino = listar_destino(lado, alcance)?;
+    let destino = listar_destino(lado, &alcance.con_antiguas(&op.antiguas))?;
     let mut copiar: Vec<&Archivo> = Vec::new();
     for a in &origen_l {
         if a.reciente {
@@ -488,13 +520,16 @@ pub fn retencion(
     }
     let nuevos: Vec<(&str, u64)> =
         faltan.iter().filter(|(k, _)| !estado.faltan.contains_key(**k) && !estado.retenidos.contains_key(**k)).map(|(k, v)| (*k, *v)).collect();
+    // B1: lo que se movió a propósito en el almacén no cuenta para el freno.
+    let movido = |k: &str| op.antiguas.iter().any(|(de, _)| k.starts_with(&format!("{de}/")));
+    let cuentan: Vec<&(&str, u64)> = nuevos.iter().filter(|(k, _)| !movido(k)).collect();
     // Un repositorio entero: su `config` está en el destino y no en el almacén.
-    let enteros: Vec<&str> = nuevos.iter().filter_map(|(k, _)| k.strip_suffix("/config").or((*k == "config").then_some("(raíz)"))).collect();
-    let mucho = op.freno.salta(nuevos.len() as u64, destino.len() as u64, origen.len() as u64);
+    let enteros: Vec<&str> = cuentan.iter().filter_map(|(k, _)| k.strip_suffix("/config").or((*k == "config").then_some("(raíz)"))).collect();
+    let mucho = op.freno.salta(cuentan.len() as u64, destino.len() as u64, origen.len() as u64);
     let mut borrar_ahora = true;
     if !estado.aceptar_freno && (mucho || !enteros.is_empty()) {
         let que = if enteros.is_empty() {
-            format!("el {} % de lo que hay en el espejo ({} archivos)", nuevos.len() * 100 / destino.len().max(1), nuevos.len())
+            format!("el {} % de lo que hay en el espejo ({} archivos)", cuentan.len() * 100 / destino.len().max(1), cuentan.len())
         } else {
             format!("el repositorio {} entero", enteros.join(", "))
         };

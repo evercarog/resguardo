@@ -118,6 +118,10 @@ pub struct ServerConfig {
     /// Tarea 7b: otras carpetas (otros discos) que sirve, cada una en su puerto.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zonas: Vec<Zona>,
+    /// B1 (docs/nombres-legibles.md): carpetas movidas con «Ordenar nombres de
+    /// carpeta» (las últimas). El espejo no frena por lo que falta bajo una `de`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renombres: Vec<crate::nombres::Renombre>,
 }
 
 impl Default for ServerConfig {
@@ -132,6 +136,7 @@ impl Default for ServerConfig {
             cert_names: Vec::new(),
             espejo: None,
             zonas: Vec::new(),
+            renombres: Vec::new(),
         }
     }
 }
@@ -540,6 +545,13 @@ pub fn create_user(c: &mut ServerConfig, raw: &str) -> Result<(String, String), 
 /// Igual, en una zona (7b) o en la principal. El nombre es único en todo el
 /// almacén (si ya lo tiene otra zona, «ana-2»).
 pub fn create_user_en(f: &Files, c: &mut ServerConfig, zona: Option<&str>, raw: &str) -> Result<(String, String), String> {
+    create_user_legible(f, c, zona, raw, None)
+}
+
+/// Igual y, con `legible` (B1, docs/nombres-legibles.md), el usuario (y su carpeta) es
+/// el nombre del equipo normalizado con un sufijo al azar (`pc-01-3f2a`); `raw` (el id
+/// del equipo) queda en `para`, para saber si ya tiene usuario en una zona.
+pub fn create_user_legible(f: &Files, c: &mut ServerConfig, zona: Option<&str>, raw: &str, legible: Option<&str>) -> Result<(String, String), String> {
     let base = user_name(raw);
     if base.is_empty() {
         return Err("Escribe un nombre para el equipo (letras, cifras o guiones).".into());
@@ -548,11 +560,15 @@ pub fn create_user_en(f: &Files, c: &mut ServerConfig, zona: Option<&str>, raw: 
         return Err("Esa zona ya no está en este almacén.".into());
     }
     let mut user = base.clone();
-    for i in 2.. {
-        if !c.usuario_existe(&user) {
-            break;
+    if let Some(l) = legible {
+        user = crate::nombres::usuario_legible(c, l)?;
+    } else {
+        for i in 2.. {
+            if !c.usuario_existe(&user) {
+                break;
+            }
+            user = format!("{base}-{i}");
         }
-        user = format!("{base}-{i}");
     }
     let password = new_password();
     let mut lines: Vec<String> = f.read_htpasswd_de(zona).into_iter().filter(|l| !l.starts_with(&format!("{user}:"))).collect();
@@ -1176,6 +1192,11 @@ pub fn anadir_equipo(name: &str) -> Result<(String, String, String), String> {
 
 /// Igual, en una zona (7b) o en la principal. Devuelve también el puerto.
 pub fn anadir_equipo_en(name: &str, zona: Option<&str>) -> Result<(String, String, String, u16), String> {
+    anadir_equipo_legible(name, zona, None)
+}
+
+/// Igual, con el nombre legible del equipo para su carpeta (B1; sin él, su id).
+pub fn anadir_equipo_legible(name: &str, zona: Option<&str>, legible: Option<&str>) -> Result<(String, String, String, u16), String> {
     crate::agent::require_admin()?;
     let mut c = load();
     if !c.enabled {
@@ -1192,7 +1213,7 @@ pub fn anadir_equipo_en(name: &str, zona: Option<&str>) -> Result<(String, Strin
             Some(_) => format!("Ya hay un equipo «{base}» en esa zona."),
         });
     }
-    let (user, password) = create_user_en(&Files::agent(), &mut c, zona, name)?;
+    let (user, password) = create_user_legible(&Files::agent(), &mut c, zona, name, legible)?;
     save(&c)?;
     // En pruebas el rest-server solo escucha en 127.0.0.1 (ver `args`): `localhost`, que el certificado cubre.
     let ip = if crate::agent::test_mode() { None } else { lan_addresses().into_iter().next() }.unwrap_or_else(|| "localhost".into());

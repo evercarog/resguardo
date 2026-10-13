@@ -65,6 +65,7 @@ pub mod ipc_local;
 pub mod jobs;
 pub mod kit;
 pub mod managed;
+pub mod nombres;
 pub mod nube;
 pub mod nube_anular;
 #[cfg(test)]
