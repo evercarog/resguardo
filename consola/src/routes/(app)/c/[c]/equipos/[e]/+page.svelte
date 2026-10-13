@@ -41,6 +41,7 @@
     Monitor,
     Pencil,
     Play,
+    Power,
     RefreshCw,
     Server,
     ShieldCheck,
@@ -131,6 +132,8 @@
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
   import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
   import { objetoDe } from "$lib/notas.svelte";
+  import DatosDelEquipo from "$lib/componentes/DatosDelEquipo.svelte";
+  import { datosBasicos, reinicioAntes, sistemaDe } from "$lib/datosBasicos";
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
@@ -842,7 +845,7 @@
           </div>
         {/if}
         <p class="sub">
-          <span class="junto">{equipo.so} · agente <span class="pastilla mono">{equipo.version_agente}</span></span>
+          <span class="junto">{sistemaDe(equipo)} · agente <span class="pastilla mono">{equipo.version_agente}</span></span>
           <!-- La actualización automática (docs/actualizaciones.md): solo si hay algo que contar. -->
           {#if actualizacionEq && !["al_dia", "sin_datos"].includes(actualizacionEq.clave)}
             <a class="junto enlace-version" href="/c/{c}/versiones" use:tip={actualizacionEq.detalle ?? actualizacionEq.texto}><Chip pequeno tono={actualizacionEq.tono} texto={actualizacionEq.texto} /></a>
@@ -1004,6 +1007,8 @@
                   <span class="fila-sub">{#if k.tras}Después de «{copias.find((x) => x.id === k.tras)?.nombre ?? k.tras}»{#if typeof k.horario === "object" && (k.horario?.horas?.length || k.horario?.reglas?.length)}{" y "}{horarioEnFrase(k.horario).toLowerCase()}{/if}{:else}{horarioEnFrase(k.horario)}{/if}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {rk?.nombre ?? k.repo}</span>
                   {#if rk}<span class="fila-sub"><SeGuardaEn pequeno lugar={lugarRepo(rk, equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(rk, equipo, actual.equipos)} /></span>{/if}
                   {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo">{vuelta.mensaje}</span>{/if}
+                  <!-- 14uu: si el equipo arrancó poco antes del fallo, se dice (suele explicarlo). -->
+                  {#if vuelta?.resultado === "fallo" && reinicioAntes(datosBasicos(equipo), vuelta.cuando)}<span class="fila-sub reinicio"><Power size={12} />{reinicioAntes(datosBasicos(equipo), vuelta.cuando)}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
                   {#each equipo.ultimo_informe?.datos.copias?.find((x) => x.id === k.id)?.ganchos ?? [] as g, gi (gi)}
                     <span class="fila-sub gancho-res">
@@ -1386,6 +1391,9 @@
           {/each}
         </section>
       {/if}
+
+      <!-- 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último arranque. -->
+      <DatosDelEquipo {equipo} ahora={reloj.ahora} />
 
       {#if equipo.resumen?.escritorio}
         {@const esc = equipo.resumen.escritorio}
@@ -2277,6 +2285,11 @@
     gap: 6px;
     margin-top: 2px;
     white-space: normal;
+  }
+  .reinicio {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
   .msg-fallo {
     color: var(--bad);

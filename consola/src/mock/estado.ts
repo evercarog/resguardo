@@ -3,6 +3,7 @@
 // con TOTP de mentira, clientes, equipos con llaves de verdad (el «agente»
 // simulado abre los sobres y firma los resultados), órdenes, avisos,
 // auditoría encadenada, sesiones y relé.
+import type { SistemaEquipo } from "../lib/datosBasicos";
 import { informeRepo, type OpcionesHistorial } from "./historial";
 import { sembrarOtrosClientes } from "./otrosClientes";
 import { randomUUID, createHash } from "node:crypto";
@@ -328,6 +329,21 @@ export async function sembrar(vacio = false) {
     proxima: dentro(95),
   });
 
+  // 14uu (plan 0.8.0, D3): los datos básicos que manda un agente nuevo (inventados).
+  const G = 1_000_000_000;
+  const win = (nombre: string, variante: string, version: string | null, compilacion: string): SistemaEquipo => ({ familia: "windows", nombre, variante, version, compilacion });
+  const disco = (punto: string, totalG: number, libreG: number, fs: string, en_uso = false) => ({ punto, total: totalG * G, libre: libreG * G, sistema_archivos: fs, en_uso });
+  const basicos = (sistema: SistemaEquipo, procesador: string, nucleos: number, memoriaG: number, fabricante: string | null, modelo: string | null, arrancoHaceMin: number, discos: ReturnType<typeof disco>[]) => ({
+    leido: hace(60 * 3),
+    sistema,
+    procesador: { nombre: procesador, nucleos },
+    memoria: memoriaG * 1024 ** 3,
+    fabricante,
+    modelo,
+    arranque: hace(arrancoHaceMin),
+    discos,
+  });
+
   const servidorAltamar = await crearEquipo(
     altamar,
     {
@@ -350,6 +366,16 @@ export async function sembrar(vacio = false) {
         admite: ["espejo_zonas", "espejo_flexible"],
         // Tarea 8e: un contenedor de Proxmox (solo un dato en la consola).
         entorno: { contenedor: "lxc" },
+        datos_basicos: basicos(
+          { familia: "linux", nombre: "Debian GNU/Linux 12 (bookworm)", id: "debian", version: "12", kernel: "6.8.12-4-pve" },
+          "Intel(R) Xeon(R) E-2236 CPU @ 3.40GHz",
+          4,
+          8,
+          "QEMU",
+          "Standard PC (i440FX + PIIX, 1996)",
+          60 * 24 * 41,
+          [disco("/", 32, 21, "ext4"), disco("/srv/resguardo/copias", 4000, 640, "zfs", true)],
+        ),
         destinos: [destinoNube],
         repositorios: [repo("copia-externa", "Copia externa de la oficina", "b2-altamar", 210, 412_000_000_000)],
         copias: [copia("subida-nube", "Subida a la nube", "copia-externa", ["23:00"], 1)],
@@ -367,6 +393,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         servidores_respaldo: [{ url: "https://respaldo.ejemplo.co", identidad_corta: "7Q2kLm9x" }],
+        datos_basicos: basicos(win("Windows 11 Pro", "Professional", "24H2", "26100.2033"), "Intel(R) Core(TM) i5-12400", 12, 16, "Dell Inc.", "OptiPlex 7000", 60 * 26, [disco("C:", 512, 301, "NTFS", true)]),
         respaldo_dias: 3,
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
@@ -386,6 +413,8 @@ export async function sembrar(vacio = false) {
       so: "Windows 10 Pro",
       ultimo_contacto: hace(4),
       resumen: {
+        // Windows 10 sin soporte, el disco C: casi lleno y un reinicio justo antes de la copia fallida.
+        datos_basicos: basicos(win("Windows 10 Pro", "Professional", "22H2", "19045.5011"), "Intel(R) Core(TM) i3-7100 CPU @ 3.90GHz", 4, 8, "HP", "HP ProDesk 400 G4 SFF", 205, [disco("C:", 240, 7, "NTFS", true), disco("D:", 1000, 612, "NTFS")]),
         destinos: [destinoServidor],
         repositorios: [repo("siigo", "Siigo y documentos", "servidor-altamar", 96, 91_200_000_000)],
         copias: [copia("siigo", "Siigo", "siigo", ["12:30", "18:30"], 2, false)],
@@ -416,9 +445,14 @@ export async function sembrar(vacio = false) {
     {
       nombre: "SERVIDOR-ARCHIVOS",
       version_agente: "0.7.18",
-      so: "Windows Server 2022",
+      so: "Windows Server 2016",
       resumen: {
         admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo"],
+        datos_basicos: basicos(win("Windows Server 2016 Standard", "ServerStandard", "1607", "14393.7428"), "Intel(R) Xeon(R) Silver 4310 CPU @ 2.10GHz", 24, 64, "HPE", "ProLiant DL380 Gen10 Plus", 60 * 24 * 12, [
+          disco("C:", 240, 88, "NTFS", true),
+          disco("D:", 4000, 1480, "ReFS", true),
+          disco("E:", 2000, 1900, "NTFS"),
+        ]),
         destinos: [{ id: "carpeta-d", nombre: "Copias en el disco D", tipo: "local", donde: undefined, unidad: "D:", extraible: false, red: false }],
         // Plan 0.7.26 (bloque 4): el propio equipo hace el espejo de su repositorio del disco D a un USB.
         espejo_equipo: {
@@ -446,6 +480,11 @@ export async function sembrar(vacio = false) {
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         entorno: { virtual: "hyperv" },
+        datos_basicos: basicos(win("Windows 11 Pro", "Professional", "25H2", "26200.6899"), "AMD Ryzen 5 5600G with Radeon Graphics", 12, 32, "Microsoft Corporation", "Virtual Machine", 60 * 24 * 3, [
+          disco("C:", 128, 41, "NTFS"),
+          disco("D:", 500, 3.4, "NTFS", true),
+          disco("F:", 2000, 1800, "ReFS", true),
+        ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
           espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "caja-1", repos: ["caja", "siigo"] }],
@@ -672,6 +711,9 @@ export async function sembrar(vacio = false) {
   const aviso = (cliente: string, equipo: string | null, tipo: T.TipoAviso, mensaje: string, minutos: number) =>
     estado.avisos.push({ id: randomUUID(), cliente, equipo, tipo, mensaje, creado: hace(minutos), visto_por: null, abierto: true });
   aviso(altamar.id, contabilidad.id, "copia_fallida", "La copia «Siigo» de CONTABILIDAD falló: no se pudo conectar con el servidor de copias.", 175);
+  aviso(altamar.id, contabilidad.id, "disco_lleno", "Queda poco espacio en el disco C: de «CONTABILIDAD». Quedan 7 GB libres de 240 GB (2 %). Libera espacio o amplía el disco: si se llena, las copias pueden fallar.", 60 * 2);
+  aviso(altamar.id, contabilidad.id, "sin_soporte", "El sistema de «CONTABILIDAD» ya no tiene soporte. Windows 10 Pro 22H2 no recibe actualizaciones de seguridad desde el 14 de octubre de 2025. Actualízalo a una versión con soporte o cambia el equipo.", 60 * 20);
+  aviso(altamar.id, archivos.id, "sin_soporte_pronto", "El sistema de «SERVIDOR-ARCHIVOS» se queda sin soporte pronto. Windows Server 2016 Standard 1607 deja de recibir actualizaciones de seguridad el 12 de enero de 2027 (en 91 días). Planifica la actualización.", 60 * 30);
   aviso(altamar.id, portatil.id, "equipo_sin_contacto", "PORTATIL-GERENCIA no se conecta desde hace 2 días.", 60 * 28);
   aviso(sur.id, surCaja.id, "intentos_fallidos", "Hubo 3 intentos fallidos con la clave de administración en CAJA-1.", 60 * 5);
   aviso(sur.id, surCaja.id, "auditoria_rehecha", "La consola «Consola en línea» rehízo su registro de actividad: antes llegaba a la entrada n.º 412 y ahora solo a la 388. Si nadie restauró una copia anterior de esa consola, alguien la ha cambiado entera; compruébala con un ancla de un correo anterior.", 60 * 3);
