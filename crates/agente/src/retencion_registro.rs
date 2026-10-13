@@ -147,6 +147,7 @@ pub fn retencion_de_politica(p: &resguardo_motor::retention::Policy) -> Option<R
             mensuales: p.keep_within_monthly.clone(),
             anuales: p.keep_within_yearly.clone(),
         },
+        por_dia: None,
     })
 }
 

@@ -109,6 +109,9 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "etiquetas_equipo",
     "observacion_equipo",
     "quitar_destino",
+    // Plan 0.8.0, F2: comentarios en las versiones y «Conservar para siempre».
+    "comentario_version",
+    "conservar_version",
 ];
 
 /// El nombre que se enseña de una consola: el suyo o el nombre de su dirección.

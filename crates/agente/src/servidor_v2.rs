@@ -132,6 +132,13 @@ pub struct Vinculo {
     /// destinos, plantillas cifradas) que reparten sus consolas (datos_cliente.rs). Del equipo.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub datos_cliente: resguardo_protocolo::datos_cliente::Documento,
+    /// Plan 0.8.0, F2 (14ww-2): comentarios en las versiones, iguales en todas sus
+    /// consolas (versiones_v2.rs). Del equipo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comentarios: Vec<crate::versiones_v2::Comentario>,
+    /// Plan 0.8.0, F2 (14cc): versiones que la retención del equipo nunca quita (versiones_v2.rs). Del equipo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conservadas: Vec<crate::versiones_v2::Conservada>,
 }
 
 fn es_cero(n: &u64) -> bool {
@@ -645,6 +652,8 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             "config" => copias_activas(v.config_v1.as_ref()) > 0 && copias_activas(c.get("config")) == 0,
             // v1.22: poner o cambiar la retención del almacén (borrará versiones); quitarla, no.
             "retencion_almacen" => c["quitar"] != true,
+            // Plan 0.8.0, F2: dejar de conservar una versión (la retención podrá quitarla).
+            "conservar_version" => c["conservar"] != true,
             _ => false,
         }
 }
@@ -1117,6 +1126,22 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // (datos_cliente.rs). El tipo y las marcas de un destino, solo con la clave.
         "datos_cliente" | "datos_cliente_admin" => {
             let m = crate::datos_cliente::aplicar(v, c, o.tipo == "datos_cliente_admin", o.por.as_deref())?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        // Plan 0.8.0, F2: comentarios en las versiones y «Conservar para siempre» (en el
+        // equipo dueño o, con `usuario`, en el almacén). Se suben al momento a todas.
+        "comentario_version" => {
+            let m = crate::versiones_v2::comentar(v, c, o.por.as_deref())?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        "conservar_version" => {
+            let m = if c.get("usuario").is_some() {
+                crate::versiones_v2::conservar_en_almacen(v, c, o.por.as_deref())?
+            } else {
+                crate::versiones_v2::conservar(v, c, o.por.as_deref())?
+            };
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }

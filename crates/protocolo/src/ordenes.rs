@@ -117,6 +117,13 @@ pub const TIPOS: &[Tipo] = &[
     // 3-2-1: van en `datos_cliente_admin`, con la clave de administración.
     t("datos_cliente", Inofensiva, false, false, true),
     t("datos_cliente_admin", Administracion, false, false, true),
+    // Plan 0.8.0, F2 (14ww-2): un comentario en una versión, guardado en el equipo y visto
+    // por todas sus consolas. Inofensiva: texto validado, sin secretos; no toca el repositorio.
+    t("comentario_version", Inofensiva, false, false, false),
+    // Plan 0.8.0, F2 (14cc): «Conservar esta versión para siempre», con motivo, en el equipo
+    // dueño o en el almacén. Con la clave de administración; quitarla reduce la protección
+    // (según el cuerpo: `conservar: false`).
+    t("conservar_version", Administracion, false, false, false),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).
@@ -146,8 +153,18 @@ pub fn segundos_de_espera(horas: i64) -> i64 {
 /// que ve el cuerpo, la exige siempre que el cuerpo sea destructivo.
 /// `quitar_nube` lo es si el espejo usa esa nube (lo sabe el equipo).
 /// `retencion_almacen` lo es salvo con `quitar: true` (deja de podar).
-pub const DESTRUCTIVAS_SEGUN_CUERPO: &[&str] =
-    &["desvincular", "guarda_copias", "cambiar_espera", "restaurar", "cambiar_copia_externa", "quitar_nube", "retencion_almacen", "cambiar_derivada"];
+pub const DESTRUCTIVAS_SEGUN_CUERPO: &[&str] = &[
+    "desvincular",
+    "guarda_copias",
+    "cambiar_espera",
+    "restaurar",
+    "cambiar_copia_externa",
+    "quitar_nube",
+    "retencion_almacen",
+    "cambiar_derivada",
+    // Plan 0.8.0, F2: dejar de conservar una versión (`conservar: false`).
+    "conservar_version",
+];
 /// Tamaño máximo de un sobre de orden (base64).
 pub const MAX_SOBRE_BYTES: usize = 64 * 1024;
 
@@ -209,6 +226,11 @@ mod tests {
         assert!(d.nivel == Nivel::Inofensiva && !d.destructiva && d.solo_administradores);
         let d = tipo("datos_cliente_admin").unwrap();
         assert!(d.nivel == Nivel::Administracion && !d.destructiva && d.solo_administradores);
+        // Plan 0.8.0, F2: comentar es inofensivo; conservar, con la clave (quitarlo, con espera).
+        let c = tipo("comentario_version").unwrap();
+        assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !DESTRUCTIVAS_SEGUN_CUERPO.contains(&"comentario_version"));
+        let c = tipo("conservar_version").unwrap();
+        assert!(c.nivel == Nivel::Administracion && !c.destructiva && DESTRUCTIVAS_SEGUN_CUERPO.contains(&"conservar_version"));
         // Ninguna inofensiva es destructiva.
         assert!(TIPOS.iter().filter(|t| t.nivel == Nivel::Inofensiva).all(|t| !t.destructiva));
     }

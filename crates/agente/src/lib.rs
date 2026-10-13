@@ -92,6 +92,7 @@ pub mod tasks;
 mod traslado_it;
 pub mod traslado_v2;
 pub mod ventana;
+pub mod versiones_v2;
 #[cfg(test)]
 mod vincular_it;
 pub mod volumenes;
