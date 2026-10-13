@@ -238,6 +238,10 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     if !tiene("destinos", "atributos")? {
         db.execute_batch("ALTER TABLE destinos ADD COLUMN atributos TEXT").map_err(s)?;
     }
+    // Plan 0.8.0 (B2): la carpeta base de cada destino (dentro del bucket o de la nube).
+    if !tiene("destinos", "carpeta")? {
+        db.execute_batch("ALTER TABLE destinos ADD COLUMN carpeta TEXT").map_err(s)?;
+    }
     // v1.58 (órdenes con espera que no se aplicaban): por qué caducó (`sin_entregar` o
     // `sin_respuesta`), si falta avisar de que no se aplicó, desde cuándo se puede volver a
     // entregar (reloj del equipo atrasado) y cuántas veces se volvió a intentar.
@@ -1613,8 +1617,9 @@ impl Almacen for Sqlite {
     // ---------- Catálogo de destinos (tarea 7a) ----------
     fn destinos_catalogo(&self, c: &ClienteCtx) -> R<Vec<DestinoCatalogo>> {
         self.con(c, |db| {
-            let mut st =
-                db.prepare("SELECT id, nombre, tipo, donde, actualizado, por, atributos FROM destinos ORDER BY nombre COLLATE NOCASE, id").map_err(s)?;
+            let mut st = db
+                .prepare("SELECT id, nombre, tipo, donde, actualizado, por, atributos, carpeta FROM destinos ORDER BY nombre COLLATE NOCASE, id")
+                .map_err(s)?;
             let filas = st
                 .query_map([], |r| {
                     Ok(DestinoCatalogo {
@@ -1625,6 +1630,7 @@ impl Almacen for Sqlite {
                         actualizado: r.get(4)?,
                         por: r.get(5)?,
                         atributos: r.get(6)?,
+                        carpeta: r.get(7)?,
                     })
                 })
                 .map_err(s)?;
@@ -1639,11 +1645,11 @@ impl Almacen for Sqlite {
                 return Ok(false);
             }
             let sql = if mantener_atributos {
-                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por, atributos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6"
+                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por, atributos, carpeta) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6, carpeta = ?8"
             } else {
-                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por, atributos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6, atributos = ?7"
+                "INSERT INTO destinos (id, nombre, tipo, donde, actualizado, por, atributos, carpeta) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET nombre = ?2, tipo = ?3, donde = ?4, actualizado = ?5, por = ?6, atributos = ?7, carpeta = ?8"
             };
-            db.execute(sql, params![d.id, d.nombre, d.tipo, d.donde, d.actualizado, d.por, d.atributos]).map_err(s)?;
+            db.execute(sql, params![d.id, d.nombre, d.tipo, d.donde, d.actualizado, d.por, d.atributos, d.carpeta]).map_err(s)?;
             Ok(true)
         })
     }

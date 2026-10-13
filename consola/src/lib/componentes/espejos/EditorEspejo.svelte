@@ -19,9 +19,9 @@
   import ConectarDestino from "../ConectarDestino.svelte";
   import Ayuda from "../Ayuda.svelte";
   import { app, puede } from "$lib/estado.svelte";
-  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import { catalogoDe, cargarCatalogo, guardarEnCatalogo } from "$lib/catalogoDestinos.svelte";
   import { destinosParaPasos, detalleDestino } from "$lib/cadenas";
-  import { nombreZonaPorDefecto, PRINCIPAL, zonasDe } from "$lib/destinos";
+  import { bucketDeNube, claveNube, errorBucket, errorSubcarpeta, nombreZonaPorDefecto, nubeConBucket, PRINCIPAL, subcarpetaDe, unirCarpeta, zonasDe, type DestinoVista } from "$lib/destinos";
   import { TIPOS_NUBE } from "$lib/espejo";
   import { errorCarpetaEspejo } from "$lib/ganchos";
   import { clasificacionDeVista } from "$lib/regla321";
@@ -131,18 +131,52 @@
     for (const n of nubesHace) {
       const v = vistas.find((x) => x.nube && x.nube.equipo.id === hace.id && x.nube.nombre === n.nombre);
       const inmutable = TIPOS_NUBE[n.tipo]?.inmutable;
-      l.push({ valor: `nube:${n.nombre}`, nombre: v?.nombre ?? n.nombre, detalle: v ? detalleDestino(v) : TIPOS_NUBE[n.tipo]?.nombre, clase: "nube", uso: { ok: true, motivo: inmutable === false ? "No es inmutable" : undefined }, tipoDestino: v ? corta(clasificacionDeVista(v, equipos)) : undefined });
+      // Plan 0.8.0 (B2): con el bucket y la carpeta que recuerda.
+      const bb = v ? bucketDeNube(v) : null;
+      const donde = bb && (bb.bucket || bb.base) ? unirCarpeta(bb.bucket, bb.base) : null;
+      l.push({ valor: `nube:${n.nombre}`, nombre: v?.nombre ?? n.nombre, detalle: [v ? detalleDestino(v) : TIPOS_NUBE[n.tipo]?.nombre, donde].filter(Boolean).join(" · "), clase: "nube", uso: { ok: true, motivo: inmutable === false ? "No es inmutable" : undefined }, tipoDestino: v ? corta(clasificacionDeVista(v, equipos)) : undefined });
     }
+    // Plan 0.8.0 (B2, 14b): los destinos del cliente que aún no están conectados aquí (B2 y S3 del
+    // catálogo, nubes conectadas en otros equipos): primero los que ya existen, y solo se piden sus credenciales.
+    for (const v of porConectar) l.push({ valor: `conectar:${v.clave}`, nombre: v.nombre, detalle: detalleDestino(v), clase: "nube", uso: { ok: false, motivo: `Aún no está conectado en ${hace.nombre}`, accion: { tipo: "conectar_nube", equipo: hace, nube: v.clave, tipoNube: tipoDeVista(v), texto: `Conectar en ${hace.nombre}` } }, tipoDestino: corta(clasificacionDeVista(v, equipos)) });
     l.push({ valor: "carpeta", nombre: `Otra carpeta de ${hace.nombre}…`, detalle: "Mejor en otro disco", clase: "carpeta", uso: { ok: true } });
     return l;
   });
+  /** El tipo de nube de un destino de la lista (B2, S3, Dropbox…). */
+  const tipoDeVista = (v: DestinoVista) => v.nube?.tipo ?? (v.tipo === "b2" || v.tipo === "s3" ? v.tipo : (v.destino?.tipo ?? v.tipo));
+  /** Los destinos de nube o de red que aún no están conectados en quien hace el espejo (no los suyos). */
+  const porConectar = $derived(
+    vistas.filter((v) => {
+      if (v.zona || (v.nube && v.nube.equipo.id === hace.id)) return false;
+      if (v.nube && nubesHace.some((n) => n.nombre === v.nube!.nombre)) return false;
+      if (v.nube) return v.nube.tipo !== "drive";
+      return v.clase === "suelto" && (v.tipo === "b2" || v.tipo === "s3");
+    }),
+  );
+  /** «Conectar en …» de un destino que aún no está aquí: el formulario con lo que ya se sabe de él. */
+  function conectarVista(clave: string) {
+    const v = vistas.find((x) => x.clave === clave);
+    if (!v) return;
+    const bb = v.nube ? bucketDeNube(v) : { bucket: v.catalogo?.donde?.split(/[:/]/).pop() ?? null, base: v.catalogo?.carpeta ?? null };
+    const servidor = v.tipo === "s3" && v.catalogo?.donde?.includes("/") ? v.catalogo.donde.split("/")[0] : null;
+    conectarCon = { tipo: tipoDeVista(v), nombre: v.nombre.slice(0, 40), bucket: bb.bucket, base: bb.base ?? "Resguardo", servidor };
+    conectar = "otro";
+  }
+  let conectarCon = $state<{ tipo: string; nombre: string; bucket: string | null; base: string | null; servidor: string | null } | null>(null);
   const valorAdonde = $derived(t.adonde.tipo === "zona" ? `zona:${t.adonde.carpeta}` : t.adonde.tipo === "nube" ? `nube:${t.adonde.nube ?? ""}` : "carpeta");
   /** Al elegir otro destino: su carpeta y su bloqueo de objetos (si lo dice el catálogo). */
   function elegirAdonde(v: string) {
     if (v === valorAdonde) return;
     if (v.startsWith("zona:")) t.adonde = { tipo: "zona", carpeta: v.slice(5) };
-    else if (v.startsWith("nube:")) t.adonde = { tipo: "nube", nube: v.slice(5), carpeta: t.adonde.tipo === "nube" ? t.adonde.carpeta : "Resguardo" };
-    else t.adonde = { tipo: "carpeta", carpeta: "" };
+    else if (v.startsWith("nube:")) {
+      // Plan 0.8.0 (B2): el bucket y la carpeta base que recuerda el destino; aquí, como mucho, una subcarpeta.
+      t.adonde = { tipo: "nube", nube: v.slice(5), carpeta: "" };
+      // Sin carpeta base en el destino, «Resguardo» (como antes); con ella, ninguna subcarpeta.
+      sub = infoNube.base ? "" : "Resguardo";
+      propia = false;
+      bucketEscrito = "";
+      rehacerCarpeta();
+    } else t.adonde = { tipo: "carpeta", carpeta: "" };
     const vista = v.startsWith("nube:") ? vistas.find((x) => x.nube && x.nube.equipo.id === hace.id && x.nube.nombre === v.slice(5)) : v.startsWith("zona:") ? vistas.find((x) => x.zona && x.zona.almacen.id === hace.id && x.zona.id === v.slice(5)) : undefined;
     const dias = vista ? clasificacionDeVista(vista, equipos).bloqueoDias : null;
     t.bloqueo_dias = dias ?? null;
@@ -152,6 +186,39 @@
   const win = $derived(/windows/i.test(hace.so ?? ""));
   const errorCarpeta = $derived(t.adonde.tipo === "carpeta" && t.adonde.carpeta.trim() ? errorCarpetaEspejo(t.adonde.carpeta, win) : null);
   const tipoNube = $derived(t.adonde.tipo === "nube" ? nubesHace.find((n) => n.nombre === t.adonde.nube)?.tipo : undefined);
+  // Plan 0.8.0 (B2, 14b): en una nube, el bucket y la carpeta base los pone el destino; aquí solo una subcarpeta
+  // opcional, y se enseña la ruta final. Un espejo de antes con «bucket/carpeta» escrita a mano sigue igual.
+  const vistaNube = $derived(t.adonde.tipo === "nube" ? vistas.find((x) => x.nube && x.nube.equipo.id === hace.id && x.nube.nombre === t.adonde.nube) : undefined);
+  const infoNube = $derived(vistaNube ? bucketDeNube(vistaNube) : { bucket: null, base: null, deducido: false });
+  /** Una nube con bucket (B2, S3, NAS) que aún no lo recuerda: se pide una vez y se guarda en el destino. */
+  const pideBucket = $derived(t.adonde.tipo === "nube" && nubeConBucket(tipoNube) && !infoNube.bucket);
+  let bucketEscrito = $state("");
+  let sub = $state("");
+  /** La carpeta de un espejo guardado que no cuelga del bucket y la carpeta base: se respeta tal cual. */
+  let propia = $state(false);
+  const bucketUsado = $derived(infoNube.bucket ?? (bucketEscrito.trim() || null));
+  function rehacerCarpeta() {
+    if (t.adonde.tipo !== "nube" || propia) return;
+    t.adonde = { ...t.adonde, carpeta: unirCarpeta(nubeConBucket(tipoNube) ? bucketUsado : null, infoNube.base, sub) };
+  }
+  // Al abrir un espejo que ya va a una nube: lo que va detrás del bucket y la carpeta base (o «propia»).
+  untrack(() => {
+    if (t.adonde.tipo !== "nube") return;
+    const s = subcarpetaDe(t.adonde.carpeta, nubeConBucket(tipoNube) ? infoNube.bucket : null, infoNube.base);
+    if (s === null || (nubeConBucket(tipoNube) && !infoNube.bucket)) propia = !!t.adonde.carpeta.trim();
+    else sub = s;
+  });
+  const errorBucketEscrito = $derived(pideBucket && !propia ? errorBucket(tipoNube ?? "", bucketEscrito) : null);
+  const errorSub = $derived(propia ? null : errorSubcarpeta(sub));
+  /** Un repositorio de ejemplo para la ruta final («caja-1/siigo»). */
+  const ejemploRepo = $derived(t.que.tipo === "repos" && t.que.repos[0] ? t.que.repos[0] : quien === "equipo" ? (repos[0]?.valor ?? "<repositorio>") : (repos[0]?.valor ?? "<equipo>/<repositorio>"));
+  const rutaFinal = $derived(t.adonde.tipo === "zona" ? null : t.adonde.carpeta.trim() ? `${t.adonde.carpeta.trim().replace(/[\\/]+$/, "")}${t.adonde.tipo === "carpeta" && win ? "\\" : "/"}${t.adonde.tipo === "carpeta" && win ? ejemploRepo.replace(/\//g, "\\") : ejemploRepo}` : null);
+  /** Al guardar: el bucket escrito queda en el destino (catálogo del cliente), para no pedirlo más. */
+  function recordarBucket() {
+    if (!pideBucket || propia || !bucketEscrito.trim() || t.adonde.tipo !== "nube" || !t.adonde.nube || !puede.administrar(cliente.rol)) return;
+    const nombre = vistaNube?.catalogo?.nombre?.trim() || t.adonde.nube;
+    void guardarEnCatalogo(cliente.id, claveNube(hace.id, t.adonde.nube), { nombre, tipo: "nube", donde: bucketEscrito.trim() }).catch(() => {});
+  }
   let conectar = $state<"dropbox" | "otro" | null>(null);
   const textoAdonde = $derived(opciones.find((o) => o.valor === valorAdonde && o.valor !== "carpeta")?.nombre ?? (t.adonde.carpeta.trim() || "Sin elegir"));
 
@@ -195,13 +262,17 @@
 
   // --- Todo junto ---
   const lista = $derived(conTrabajo(todos, { ...t, nombre: t.nombre.trim() }));
-  const error = $derived(errorTrabajos(lista, quien) ?? errorCarpeta);
+  const error = $derived(errorTrabajos(lista, quien) ?? errorCarpeta ?? (t.adonde.tipo === "nube" ? (errorBucketEscrito ?? errorSub) : null));
   /** El error del paso (o null): no se avanza con algo a medias. */
   const errorPaso = $derived.by(() => {
     if (paso === "que") return t.que.tipo === "equipos" && !t.que.equipos.length ? "Elige al menos un equipo." : t.que.tipo === "repos" && !t.que.repos.length ? "Elige al menos un repositorio." : null;
     if (paso === "adonde") {
       if (t.adonde.tipo === "carpeta") return t.adonde.carpeta.trim() ? errorCarpeta : "Escribe la carpeta.";
-      if (t.adonde.tipo === "nube" && !t.adonde.carpeta.trim()) return "Escribe la carpeta dentro de la nube.";
+      if (t.adonde.tipo === "nube") {
+        if (errorBucketEscrito) return pideBucket && !bucketEscrito.trim() ? `Escribe el ${tipoNube === "smb" ? "recurso compartido" : "bucket"}.` : errorBucketEscrito;
+        if (errorSub) return errorSub;
+        if (!t.adonde.carpeta.trim()) return "Pon una subcarpeta (o una carpeta base en el destino).";
+      }
       return null;
     }
     if (paso === "cuando") return !conHorario && !t.cuando.tras_copia && tras === "no" ? "Elige al menos uno." : tras !== "no" && !(t.cuando.cadena || t.cuando.despues) ? "Elige después de cuál." : null;
@@ -224,6 +295,7 @@
   }
   function guardar() {
     if (error) return;
+    recordarBucket();
     onguardar({ ...t, nombre: t.nombre.trim() || nombrePorDefecto(t.adonde) });
   }
   /** La línea de resumen de cada paso. */
@@ -306,7 +378,7 @@
     {#if verPaso("adonde")}
       <fieldset class="paso">
         <legend class="sr-only">Adónde</legend>
-        <ElegirDestinoPaso id="ee-adonde" etiqueta="Adónde" {opciones} bind:value={() => valorAdonde, elegirAdonde} />
+        <ElegirDestinoPaso id="ee-adonde" etiqueta="Adónde" {opciones} bind:value={() => valorAdonde, elegirAdonde} alConectar={(_e, clave) => conectarVista(clave)} />
         {#if t.adonde.tipo === "carpeta"}
           <div class="field">
             <label class="field-label" for="ee-carpeta">Carpeta</label>
@@ -314,18 +386,36 @@
             {#if errorCarpeta}<p class="error-campo">{errorCarpeta}</p>{:else}<span class="field-hint">Si falla el disco del original, el espejo sigue ahí.</span>{/if}
           </div>
         {:else if t.adonde.tipo === "nube"}
-          <div class="field">
-            <label class="field-label" for="ee-nube">Carpeta dentro de la nube</label>
-            <input id="ee-nube" class="input mono" bind:value={t.adonde.carpeta} spellcheck="false" />
-          </div>
+          {#if propia}
+            <div class="field">
+              <label class="field-label" for="ee-nube">Carpeta dentro de la nube</label>
+              <input id="ee-nube" class="input mono" bind:value={t.adonde.carpeta} spellcheck="false" />
+              <span class="field-hint">Este espejo usa su propia carpeta (con el bucket delante). Se queda así. {#if infoNube.bucket || infoNube.base}<button type="button" class="btn btn-sm btn-ghost enlinea" onclick={() => ((propia = false), (sub = ""), rehacerCarpeta())}>Usar la carpeta del destino</button>{/if}</span>
+            </div>
+          {:else}
+            <div class="fila">
+              {#if pideBucket}
+                <div class="field">
+                  <label class="field-label" for="ee-bucket">{tipoNube === "smb" ? "Recurso compartido" : "Bucket"}</label>
+                  <input id="ee-bucket" class="input mono" bind:value={bucketEscrito} oninput={rehacerCarpeta} spellcheck="false" placeholder={tipoNube === "smb" ? "copias" : "mi-bucket"} />
+                  {#if errorBucketEscrito && bucketEscrito}<p class="error-campo">{errorBucketEscrito}</p>{:else}<span class="field-hint">Una sola vez: el destino lo recordará.</span>{/if}
+                </div>
+              {/if}
+              <div class="field crece">
+                <label class="field-label" for="ee-sub">Subcarpeta <span class="faint">(opcional)</span></label>
+                <input id="ee-sub" class="input mono" bind:value={sub} oninput={rehacerCarpeta} spellcheck="false" placeholder="p. ej. oficina" />
+                {#if errorSub}<p class="error-campo">{errorSub}</p>{/if}
+              </div>
+            </div>
+          {/if}
           {#if tipoNube && TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable}
             <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: quien entre en la cuenta podría borrar lo de allí.</p></div>
           {/if}
         {/if}
+        {#if rutaFinal}<p class="ruta faint">Quedará en <code>{rutaFinal}</code></p>{/if}
         {#if puede.administrar(cliente.rol)}
           <div class="conectar">
-            <button type="button" class="btn btn-sm btn-ghost" onclick={() => (conectar = "dropbox")}><Cloud size={13} />Conectar Dropbox en {hace.nombre}</button>
-            <button type="button" class="btn btn-sm btn-ghost" onclick={() => (conectar = "otro")}>Otra nube o servidor…</button>
+            <button type="button" class="btn btn-sm btn-ghost" onclick={() => ((conectarCon = null), (conectar = "otro"))}><Cloud size={13} />Conectar otra nube o servidor en {hace.nombre}…</button>
           </div>
         {/if}
         <details class="mas" bind:open={mas.adonde}>
@@ -471,7 +561,7 @@
 {#if conectar === "dropbox"}
   <ConectarNube {cliente} equipo={hace} onclose={() => (conectar = null)} />
 {:else if conectar === "otro"}
-  <ConectarDestino {cliente} equipo={hace} onclose={() => (conectar = null)} />
+  <ConectarDestino {cliente} equipo={hace} inicial={conectarCon} onclose={() => (conectar = null)} />
 {/if}
 
 <style>
@@ -635,6 +725,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  /* Plan 0.8.0 (B2): la ruta final que va a quedar. */
+  .ruta {
+    margin: 0;
+    font-size: var(--fs-sm);
+    overflow-wrap: anywhere;
+  }
+  .enlinea {
+    margin-left: 4px;
   }
   .resumen {
     list-style: none;

@@ -406,6 +406,10 @@ fn nube_conectada(d: &Destino) -> Result<(), String> {
 /// Con `tipo: "nube"` (`repo_en_nube`), `nube` es el nombre de una nube conectada en este equipo y `donde` su carpeta.
 /// Lo inicializa (o, si ya existe, comprueba que la contraseña lo abre).
 pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
+    // Plan 0.8.0 (B3, 14hh): solo el acceso a una zona de un almacén, sin repositorio.
+    if c["solo_destino"] == true {
+        return poner_solo_destino(v, &c["destino"]);
+    }
     let (id, nombre, contrasena) = (texto(c, "id"), texto(c, "nombre"), texto(c, "contrasena"));
     if !id_valido(&id) {
         return Err(format!("Id de repositorio no válido: «{id}»."));
@@ -483,6 +487,59 @@ pub fn crear_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
         Err(e) => return Err(e),
     };
     *v = prueba;
+    let _ = subir_config(v);
+    Ok(mensaje)
+}
+
+/// Plan 0.8.0 (B3, 14hh): `crear_repositorio { solo_destino: true, destino }` (clave de
+/// administración, `admite: "solo_destino"`): guarda el acceso que dio un almacén
+/// (`guarda_copias { anadir }`) como destino de este equipo **sin crear ningún
+/// repositorio**, para que una copia derivada (o un repositorio después) pueda ir a
+/// esa zona. Solo un servidor de copias de un almacén (`rest` con `equipo_almacen`,
+/// https y su autoridad). Si ya estaba, se ponen al día su dirección y sus credenciales.
+fn poner_solo_destino(v: &mut Vinculo, dest: &Value) -> Result<String, String> {
+    let id = texto(dest, "id");
+    if !id_valido(&id) {
+        return Err("Id de destino no válido.".into());
+    }
+    let Some(almacen) = equipo_almacen_de(dest) else {
+        return Err("Solo se da acceso así a una zona de un almacén (un servidor de copias con su equipo).".into());
+    };
+    let d = Destino {
+        id: id.clone(),
+        nombre: texto(dest, "nombre").trim().to_string(),
+        tipo: "rest".into(),
+        donde: texto(dest, "donde").trim().to_string(),
+        usuario: dest["usuario"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
+        secreto: dest["secreto"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
+        ca_pem: dest["ca_pem"].as_str().filter(|s| s.contains("BEGIN CERTIFICATE")).map(str::to_string),
+        equipo_almacen: Some(almacen.clone()),
+        nube: None,
+    };
+    if !texto_valido(&d.nombre, 80) {
+        return Err("Escribe un nombre para el destino.".into());
+    }
+    if !d.donde.starts_with("https://") {
+        return Err("La dirección del almacén tiene que ser https://.".into());
+    }
+    if d.usuario.is_none() || d.secreto.is_none() || d.ca_pem.is_none() {
+        return Err("Faltan el usuario, la contraseña o la autoridad del almacén.".into());
+    }
+    ubicacion(&d, "")?;
+    let mensaje = match v.destinos.iter_mut().find(|x| x.id == id) {
+        Some(x) if x.tipo != "rest" || x.equipo_almacen.as_deref() != Some(almacen.as_str()) => {
+            return Err(format!("Ya hay un destino «{id}» que no es de ese almacén."));
+        }
+        Some(x) => {
+            *x = d;
+            format!("Acceso a «{}» puesto al día (sin crear ningún repositorio).", x.nombre)
+        }
+        None => {
+            let m = format!("Este equipo ya puede guardar en «{}» (sin crear ningún repositorio).", d.nombre);
+            v.destinos.push(d);
+            m
+        }
+    };
     let _ = subir_config(v);
     Ok(mensaje)
 }
@@ -1059,7 +1116,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 27] = [
+pub const ADMITE: [&str; 28] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1121,6 +1178,9 @@ pub const ADMITE: [&str; 27] = [
     // (pendiente de numerar) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
     // anterior aunque falle) y `retraso_min` (minutos tras la anterior), también en el resumen.
     "inicio_despues",
+    // (pendiente de numerar) plan 0.8.0 (B3, 14hh): `crear_repositorio { solo_destino: true, destino }`
+    // guarda el acceso a una zona de un almacén sin crear ningún repositorio (para una copia derivada).
+    "solo_destino",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -3014,6 +3074,47 @@ mod tests {
         assert!(crear_repositorio(&mut v, &c).unwrap_err().contains("no está conectada en este equipo"));
         assert!(v.destinos.is_empty() && v.repos_v2.is_empty());
         assert!(ADMITE.contains(&"nube_equipo") && ADMITE.contains(&"repo_en_nube"));
+    }
+
+    /// Plan 0.8.0 (B3, 14hh): dar acceso a una zona de un almacén sin crear repositorio.
+    #[test]
+    fn solo_el_acceso_a_un_almacen() {
+        let mut v = Vinculo::default();
+        let ca = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+        let pedir = |dest: serde_json::Value| json!({ "solo_destino": true, "destino": dest });
+        let bien = json!({ "id": "almacen-0b5c1f8e", "nombre": "ALMACEN-01", "tipo": "rest", "donde": "https://192.0.2.10:8000/pc-01/",
+            "usuario": "pc-01", "secreto": "una-clave", "ca_pem": ca, "equipo_almacen": "0b5c1f8e" });
+        let m = crear_repositorio(&mut v, &pedir(bien.clone())).unwrap();
+        assert!(m.contains("sin crear ningún repositorio"), "{m}");
+        assert!(v.repos_v2.is_empty(), "ningún repositorio");
+        let d = &v.destinos[0];
+        assert_eq!((d.id.as_str(), d.usuario.as_deref(), d.equipo_almacen.as_deref()), ("almacen-0b5c1f8e", Some("pc-01"), Some("0b5c1f8e")));
+        assert!(d.ca_pem.is_some());
+        // Otra vez (el almacén dio otra contraseña): se pone al día, no se duplica.
+        let mut otra = bien.clone();
+        otra["secreto"] = json!("otra-clave");
+        assert!(crear_repositorio(&mut v, &pedir(otra)).unwrap().contains("al día"));
+        assert_eq!((v.destinos.len(), v.destinos[0].secreto.as_deref()), (1, Some("otra-clave")));
+        // Solo un almacén (rest con su equipo, https, credenciales y autoridad).
+        for (campo, valor) in [
+            ("equipo_almacen", json!(null)),
+            ("tipo", json!("b2")),
+            ("donde", json!("http://192.0.2.10:8000/")),
+            ("ca_pem", json!(null)),
+            ("secreto", json!("")),
+        ] {
+            let mut mala = bien.clone();
+            mala["id"] = json!("almacen-otro");
+            mala[campo] = valor;
+            assert!(crear_repositorio(&mut v, &pedir(mala)).is_err(), "{campo}");
+        }
+        // Un destino con ese id que no es de ese almacén: no se toca.
+        v.destinos.push(Destino { id: "d-disco".into(), nombre: "Disco".into(), tipo: "local".into(), donde: r"E:\Copias".into(), ..Default::default() });
+        let mut choca = bien.clone();
+        choca["id"] = json!("d-disco");
+        assert!(crear_repositorio(&mut v, &pedir(choca)).unwrap_err().contains("no es de ese almacén"));
+        assert_eq!(v.destinos[1].tipo, "local");
+        assert!(ADMITE.contains(&"solo_destino"));
     }
 
     /// Tarea 4a completa: un repositorio directamente en una nube conectada en el

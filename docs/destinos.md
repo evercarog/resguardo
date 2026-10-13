@@ -205,6 +205,24 @@ Rama `ia/repos-en-la-nube`. Una copia puede guardar sus carpetas **directamente*
 
 Con un agente anterior la consola avisa: el permiso sigue vivo en Dropbox y se quita desde su web → Aplicaciones conectadas, lo que desconecta todos los equipos que la usan.
 
+## Un destino es uno solo y recuerda su bucket (plan 0.8.0, B2 y B3)
+
+Rama `ia/080-destinos` (plan-mejoras 14b, 14r y 14hh; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.6x).
+
+**Un solo formulario** (`consola/src/lib/componentes/ConectarDestino.svelte`), el mismo en «Nuevo destino», en «Conectar otro destino» de un almacén y en el paso «Adónde» del espejo. Todas las nubes al mismo nivel (B2, S3, Dropbox, NAS por SMB, SFTP, WebDAV y un servidor de copias de fuera). El **bucket** (o el recurso del NAS) y la **carpeta base** (`Resguardo` por defecto) van en campos aparte; con ellos prueba el equipo que entra al conectar (no hay otra «carpeta para probar»). «Dónde»: solo en la lista (B2, S3 y servidor de copias: las credenciales se piden al crear un repositorio, selladas para ese equipo) o conectado ya en un almacén para sus espejos. Avisa si ya hay un destino con ese bucket o ese servidor.
+
+**Lo que recuerda.** El catálogo del cliente guarda la carpeta base (`carpeta`) y, en la entrada de una nube conectada (`nube:<equipo>:<nombre>`), su bucket (`donde`). En claro: no son secretos. No viajan en los datos comunes (un agente anterior rechazaría el valor), así que cada consola tiene los suyos. Si una nube conectada antes no lo recuerda, el bucket se deduce de sus espejos (la primera parte de su carpeta) o se pide una sola vez en el espejo y se guarda.
+
+**El espejo no vuelve a pedirlo.** En el paso «Adónde» salen primero los destinos que ya existen; los que aún no están conectados en quien hace el espejo llevan «Conectar en …» con lo que ya se sabe (solo faltan las credenciales). En una nube solo se pide una subcarpeta opcional y se enseña la ruta final («Quedará en `mi-bucket/Resguardo/pc-01/ventas`»). La carpeta que se manda al almacén es la de siempre (`bucket/base/subcarpeta`): el agente no cambia. Un espejo guardado con una carpeta escrita a mano que no cuelga del bucket y la base se respeta tal cual («Este espejo usa su propia carpeta»).
+
+**Cuándo dos destinos son el mismo** (`identidadDeVista` en `lib/destinos.ts`, con vectores): mismo tipo y mismo bucket (B2: el bucket, que es único en B2; S3: servidor y bucket) o la misma dirección de servidor (servidor de copias: máquina y puerto; SFTP: la máquina). La nube conectada en el almacén, la entrada del catálogo y los destinos de los equipos con ese bucket son **una sola ficha**: manda el nombre que puso una persona, lo marcado para la regla 3-2-1 (p. ej. «Inmutable 30 días») vale para todos y se llega a la ficha también por la clave del catálogo. Dropbox, Drive, SMB y WebDAV no se unen (no hay un bucket que los identifique); las zonas ya son una por zona.
+
+**Quitar y Desconectar** (`QuitarDestino.svelte`) en la tarjeta de cada destino y en su página: una entrada suelta del catálogo, «Quitar» (solo la lista); una nube conectada, «Desconectar» (`quitar_nube`, clave de administración); el destino de un equipo, «Quitar» (`quitar_destino`). Si algo lo usa, el botón está apagado y dice qué («Lo usan 2 espejos», con la lista al lado). Una nube que usa un espejo (también en pausa, o el espejo del propio equipo) no se puede desconectar: antes la consola solo miraba la vista de los destinos de antes, que trae los trabajos activos.
+
+**La página de un destino que recibe espejos** enseña cada espejo por su nombre (estado, última subida, enlace a los espejos de quien lo hace) y los repositorios que guarda, con su tamaño (el del repositorio en el almacén: el espejo tiene los mismos archivos), el total protegido y el espacio del destino.
+
+**Derivada a un almacén sin usuario (14hh).** En el diálogo de la copia derivada, una zona donde el equipo aún no tiene usuario ofrece «Dar acceso a ‹equipo› en este almacén» (`DarAccesoAlmacen.svelte`): con la clave de administración, el almacén da el usuario (`guarda_copias { anadir, zona? }`, respuesta sellada para el navegador) y el equipo lo guarda como destino **sin crear repositorio** (`crear_repositorio { solo_destino: true }`, agente con `admite: "solo_destino"`); después la zona queda elegida y se sigue con la derivada. Con un agente anterior se dice que hay que actualizarlo, y solo se propone un espejo si el repositorio ya está en ese almacén.
+
 ## Hecho en la fase 2
 
 - `discover.rs` (`place_scan`, `clone_repo`, `cancel_clone`), `s3list.rs`, `Place.known`.

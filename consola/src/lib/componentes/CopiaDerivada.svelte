@@ -18,6 +18,8 @@
   import { actual } from "$lib/estado.svelte";
   import ElegirDestinoPaso, { type OpcionDestino } from "./ElegirDestinoPaso.svelte";
   import ConectarNube from "./ConectarNube.svelte";
+  import DarAccesoAlmacen from "./DarAccesoAlmacen.svelte";
+  import { catalogoDeRed, claveZona, dondeConBase, type ZonaVista } from "$lib/destinos";
   import { diasBloqueo, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
   import { TIPOS_NUBE, nombreTipoNube } from "$lib/espejo";
   import { admitePlazos, copiaRegla, errorRegla, horarioDeCopias, REGLA_POR_DEFECTO, reglaParaOrden } from "$lib/retencion";
@@ -26,7 +28,7 @@
   import { corta } from "$lib/tipoDestino";
   import PasoGuiado from "./copias/PasoGuiado.svelte";
   import { PASOS_DERIVADA, TITULO_PASO_DERIVADA, type PasoDerivada } from "$lib/copiaGuiada";
-  import type { Cliente, DerivadaResumen, EquipoDetalle, RepositorioResumen } from "$lib/tipos";
+  import type { Cliente, DerivadaResumen, Equipo, EquipoDetalle, RepositorioResumen } from "$lib/tipos";
 
   interface Props {
     cliente: Cliente;
@@ -107,11 +109,17 @@
     /** El valor de cada destino por su clave (para elegir el de la página de la que se llegó). */
     const porClave: Record<string, string> = {};
     for (const v of destinosParaPasos(equipos, catalogoDe(cliente.id))) {
-      const uso = usosPosibles(v, equipo, repo, equipos).derivada;
-      const id = v.ids.find((x) => propios.has(x));
+      // Plan 0.8.0 (B3): una zona a la que se acaba de dar acceso, ya elegible (antes de que llegue el resumen nuevo).
+      const dado = accesos[v.clave];
+      const uso = dado ? { ok: true } : usosPosibles(v, equipo, repo, equipos).derivada;
+      const id = dado ?? v.ids.find((x) => propios.has(x));
       const nubeAqui = v.nube && (v.nube.equipo.id === equipo.id || nubes.some((n) => n.nombre === v.nube!.nombre));
-      const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clave}`;
-      if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: v.donde ?? "" };
+      // Plan 0.8.0 (B2): un destino unido a una entrada de red del catálogo se crea en el equipo con esa entrada.
+      const red = catalogoDeRed(v);
+      const valor = !uso.ok ? `no:${v.clave}` : nubeAqui && conNubes ? `nube:${v.nube!.nombre}` : id ? id : `cat:${v.clase === "suelto" || !red ? v.clave : red.id}`;
+      // Plan 0.8.0 (B2): con la carpeta base del catálogo delante.
+      if (valor.startsWith("cat:") && red) delCatalogo[valor] = { tipo: red.tipo as TipoNuevo, nombre: v.nombre, donde: dondeConBase(red.tipo, red.donde ?? "", red.carpeta) };
+      else if (valor.startsWith("cat:") && ["b2", "s3", "rest"].includes(v.tipo)) delCatalogo[valor] = { tipo: v.tipo as TipoNuevo, nombre: v.nombre, donde: dondeConBase(v.tipo, v.donde ?? "", v.catalogo?.carpeta) };
       porClave[v.clave] = valor;
       if (!l.some((o) => o.valor === valor)) l.push({ valor, nombre: v.nombre, detalle: detalleDestino(v), clase: v.clase, uso, tipoDestino: corta(clasificacionDeVista(v, equipos)) });
     }
@@ -121,6 +129,9 @@
   });
   const opciones = $derived(lista.opciones);
   let conectar = $state<{ nube: string } | null>(null);
+  /** Plan 0.8.0 (B3, 14hh): «Dar acceso a … en este almacén» y las zonas a las que ya se dio (clave → id del destino). */
+  let darAcceso = $state<{ equipo: Equipo; zona: ZonaVista } | null>(null);
+  let accesos = $state<Record<string, string>>({});
   // El destino de la página desde la que se llegó, una vez, si sirve desde este equipo (si no, el selector dice por qué).
   // svelte-ignore state_referenced_locally
   if (destinoInicial && !derivada && lista.porClave[destinoInicial] && !lista.porClave[destinoInicial].startsWith("no:")) elegir(lista.porClave[destinoInicial]);
@@ -287,7 +298,7 @@
       <span class="field-hint">Para llevarla a otro destino, quítala y añade otra (lo de allí se queda).</span>
     </div>
   {:else}
-    <ElegirDestinoPaso id="dv-destino" etiqueta="Copiar a" {opciones} bind:value={() => f.destino, elegir} alConectar={(_e, nube) => (conectar = { nube })} />
+    <ElegirDestinoPaso id="dv-destino" etiqueta="Copiar a" {opciones} bind:value={() => f.destino, elegir} alConectar={(_e, nube) => (conectar = { nube })} alDarAcceso={(e, zona) => (darAcceso = { equipo: e, zona })} />
   {/if}
   {#if nubeElegida}
     <div class="field">
@@ -426,6 +437,10 @@
 
 
 {#if conectar}<ConectarNube {cliente} {equipo} nombreInicial={conectar.nube} onclose={() => (conectar = null)} />{/if}
+{#if darAcceso}
+  {@const z = darAcceso.zona}
+  <DarAccesoAlmacen {cliente} equipo={darAcceso.equipo} zona={z} onclose={() => (darAcceso = null)} alDar={(id) => ((accesos = { ...accesos, [claveZona(z.almacen.id, z.id)]: id }), elegir(id))} />
+{/if}
 
 <style>
   .nota-dest {

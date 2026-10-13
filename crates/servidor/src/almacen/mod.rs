@@ -356,8 +356,12 @@ pub struct DestinoCatalogo {
     pub nombre: String,
     /// `zona`, `rest`, `s3`, `b2`, `sftp`, `nube` o `local`.
     pub tipo: String,
-    /// Servidor o bucket (solo `rest`, `s3`, `b2` y `sftp`).
+    /// Servidor o bucket (`rest`, `s3`, `b2` y `sftp`; en una `nube` conectada, opcional:
+    /// su bucket o recurso, el que recuerda para el espejo, plan 0.8.0 B2).
     pub donde: Option<String>,
+    /// Plan 0.8.0 (B2, 14b): la carpeta base dentro del bucket o de la nube («Resguardo»),
+    /// relativa y sin `..`. Lo que el espejo y los repositorios nuevos ponen delante.
+    pub carpeta: Option<String>,
     /// Tarea 8 (docs/regla-3-2-1.md): para la regla 3-2-1-1-0, lo que dice la persona
     /// de este destino (`{ lugar?, inmutable?, soporte? }`, JSON ya validado). En claro:
     /// no son secretos. `None`: lo deducido del tipo.

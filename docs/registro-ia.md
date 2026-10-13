@@ -2,6 +2,27 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-13 · `ia/080-destinos` · Plan 0.8.0, B2 y B3: destinos claros y acceso al almacén (14b, 14r, 14hh)
+
+Claude Code (Opus), en autónomo, desde `ia/integracion-080`. Pedido: un solo formulario de destino con bucket y carpeta base aparte que el destino recuerde; el espejo que no los vuelva a pedir y enseñe la ruta final; «Quitar»/«Desconectar» en cada destino (y bloquear desconectar una nube que usan los espejos); catálogo y nube conectada con el mismo bucket como una sola ficha; la página de un destino que recibe espejos; y «Dar acceso a … en este almacén» en la copia derivada. Detalle en [destinos.md](destinos.md) «Un destino es uno solo y recuerda su bucket»; contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.6x.
+
+**Hecho:**
+
+- **Servidor:** el catálogo guarda `carpeta` (carpeta base, validada) y, en una nube conectada, `donde` (su bucket); un `PUT` sin ellos los conserva. No van en los datos comunes (un agente anterior rechazaría el valor entero). Columna nueva `destinos.carpeta`. Pruebas en `api/destinos.rs`, `datos_comunes.rs` y `tests/api.rs`.
+- **Agente:** `crear_repositorio { solo_destino: true, destino }` (`admite: "solo_destino"`): guarda el acceso que dio un almacén como destino sin crear repositorio (solo `rest` con `equipo_almacen`, https, credenciales y autoridad; si ya está, lo pone al día). `quitar_nube` dice qué espejo la usa por su nombre (también en pausa). Pruebas `solo_el_acceso_a_un_almacen` y `no_deja_si_la_usan_y_avisa_si_sigue_viva`.
+- **Consola:** `ConectarDestino.svelte` es el formulario único (Nuevo destino, almacén y espejo), con todas las nubes al mismo nivel, bucket y carpeta base aparte, «Solo en la lista» o «Conectarlo ya en …», aviso de repetido y «Falta …». Espejo, paso «Adónde»: primero los destinos existentes (los no conectados aquí, con «Conectar en …» y sus datos), en una nube solo una subcarpeta y la ruta final; bucket pedido una sola vez si no se sabe. `lib/destinos.ts`: identidad de un destino y unión en una ficha (`identidadDeVista`), bucket y base de una nube (`bucketDeNube`), usos en palabras, `dondeConBase`. `QuitarDestino.svelte` en tarjetas y página. Página del destino con «Lo que guarda por espejo». `nubesEquipo.ts`: los trabajos de espejo (también en pausa y los del propio equipo) bloquean «Desconectar» (antes solo miraba `espejo.destinos`, la vista de antes con los activos). `DarAccesoAlmacen.svelte` y la acción `dar_acceso` en `cadenas.ts`; el motivo ya no propone un espejo si el origen no está en ese almacén. Simulador con un B2 del catálogo con el mismo bucket que la nube del almacén. Vectores nuevos en `vectores-destinos.ts`, `vectores-nubes.ts` y `vectores-cadenas.ts`.
+
+**Sin probar:** nada contra equipos ni nubes reales. `solo_destino` + derivada contra un almacén con autoridad TLS propia depende de 14jj (otro asistente, `preparar_derivada` quita la CA del destino). El flujo completo «Dar acceso» se probó solo en el simulador. No hay escenario e2e nuevo para B2/B3.
+
+**Decisiones dudosas (para revisar):**
+
+- La carpeta base y el bucket de una nube viven en el catálogo de cada consola y no se reparten por los datos comunes: hacerlo pide ampliar `datos_cliente` en el protocolo (con agentes nuevos). Se podría hacer con un campo nuevo en una clave aparte (`destino.ruta:<id>`) que los agentes anteriores no reciban.
+- Regla de «el mismo destino»: B2 por el bucket; S3 por servidor y bucket (sin servidor conocido, solo si coincide vacío); servidor de copias por máquina y puerto; SFTP por máquina. Dos equipos con destinos propios al mismo bucket también se unen. Dropbox, Drive, SMB y WebDAV nunca. En una ficha unida manda el destino de un equipo, luego la nube, luego la entrada suelta; el nombre puesto por una persona gana.
+- El tamaño de cada repositorio en un destino de espejo es el del repositorio en el almacén (el espejo tiene los mismos archivos salvo lo que retenga o aún no haya subido).
+- «Quitar» una entrada suelta del catálogo no pide la clave de administración (no manda nada a ningún equipo; el servidor pide rol de administrador).
+- `solo_destino` va dentro de `crear_repositorio` (y no una orden nueva) para no tocar la lista de tipos de órdenes: un agente anterior la rechaza por falta de contraseña.
+- Los botones «Conectar Dropbox…» y «Conectar otro destino…» del menú del almacén siguen; el segundo ya abre el formulario único (que incluye Dropbox).
+
 ## Resumen de la noche del 2026-10-06 (trabajo autónomo, Claude Code en el equipo de desarrollo)
 
 *Se actualiza a medida que avanza; el detalle de cada tarea está en su entrada más abajo.*

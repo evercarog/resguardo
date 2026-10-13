@@ -106,7 +106,9 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
         Clase::Destino => match destino(db, ctx, sujeto)? {
             Some(d) if !d.nombre.trim().is_empty() => {
                 let mut v = json!({ "nombre": d.nombre, "clase": d.tipo });
-                if let Some(w) = d.donde {
+                // Plan 0.8.0 (B2): el bucket de una nube y la carpeta base se quedan en el catálogo
+                // de esta consola (los agentes de antes rechazarían el dato entero con ellos).
+                if let Some(w) = d.donde.filter(|_| matches!(d.tipo.as_str(), "rest" | "s3" | "b2" | "sftp")) {
                     v["donde"] = json!(w);
                 }
                 v
@@ -193,7 +195,8 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
             } else {
                 let tipo = valor["clase"].as_str().map(str::to_string).or_else(|| previo.as_ref().map(|d| d.tipo.clone())).unwrap_or_default();
                 let donde = valor["donde"].as_str().map(str::to_string).or_else(|| previo.as_ref().and_then(|d| d.donde.clone()));
-                let d = DestinoCatalogo { id: sujeto.to_string(), nombre, tipo, donde, atributos: None, actualizado: ahora(), por: por.to_string() };
+                let carpeta = previo.as_ref().and_then(|d| d.carpeta.clone());
+                let d = DestinoCatalogo { id: sujeto.to_string(), nombre, tipo, donde, carpeta, atributos: None, actualizado: ahora(), por: por.to_string() };
                 db.guardar_destino(ctx, &d, crate::api::destinos::MAX_DESTINOS, true)?;
             }
         }
@@ -223,6 +226,7 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
                         nombre: String::new(),
                         tipo: valor["clase"].as_str().unwrap_or_default().to_string(),
                         donde: None,
+                        carpeta: None,
                         atributos,
                         actualizado: ahora(),
                         por: por.to_string(),
@@ -605,11 +609,25 @@ mod tests {
             nombre: "Nube norte".into(),
             tipo: "b2".into(),
             donde: Some("copias-norte".into()),
+            carpeta: Some("Resguardo".into()),
             atributos: None,
             actualizado: 0,
             por: "Ana".into(),
         };
         db.guardar_destino(&ctx, &propio, 200, false).unwrap();
+        // Plan 0.8.0 (B2): la carpeta base y el bucket de una nube no viajan en el dato común
+        // (un agente anterior rechazaría el valor entero).
+        let nube = DestinoCatalogo {
+            id: "nube:e9:b2-oficina".into(),
+            nombre: "B2 Oficina".into(),
+            tipo: "nube".into(),
+            donde: Some("mi-bucket".into()),
+            ..propio.clone()
+        };
+        db.guardar_destino(&ctx, &nube, 200, false).unwrap();
+        assert_eq!(valor_local(&db, &ctx, "destino:nube:e9:b2-oficina").unwrap(), json!({ "nombre": "B2 Oficina", "clase": "nube" }));
+        assert_eq!(valor_local(&db, &ctx, "destino:destino-1").unwrap(), json!({ "nombre": "Nube norte", "clase": "b2", "donde": "copias-norte" }));
+        db.borrar_destino(&ctx, "nube:e9:b2-oficina").unwrap();
         recibir(&db, &ctx, "e1", AQUI, &json!({ "destino:destino-1": entrada(json!({ "nombre": "Nube sur", "clase": "b2", "donde": "copias-norte" }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina") })).unwrap();
         assert_eq!(db.destinos_catalogo(&ctx).unwrap()[0].nombre, "Nube norte");
         assert_eq!(filas(&db, &ctx).unwrap()["destino:destino-1"].estado, Estado::Conflicto);

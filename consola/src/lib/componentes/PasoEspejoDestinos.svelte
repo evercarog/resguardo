@@ -16,7 +16,7 @@
   import ElegirDestinoPaso, { type OpcionDestino } from "./ElegirDestinoPaso.svelte";
   import ConectarNube from "./ConectarNube.svelte";
   import ConectarDestino from "./ConectarDestino.svelte";
-  import { zonasDe, nombreZonaPorDefecto, PRINCIPAL } from "$lib/destinos";
+  import { bucketDeNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, unirCarpeta, zonasDe } from "$lib/destinos";
   import { destinoParaOrden, errorDiasRetencion, horaParaConsolasAnteriores, horarioDiario, nombreTipoNube, RETENCION_ESPEJO, TIPOS_NUBE, type DestinoEspejoOrden } from "$lib/espejo";
   import { errorCarpetaEspejo } from "$lib/ganchos";
   import { clasificacionDeVista } from "$lib/regla321";
@@ -44,11 +44,18 @@
   const espejo = $derived(almacen?.resumen?.guarda_copias?.espejo ?? null);
   const win = $derived(/windows/i.test(almacen?.so ?? ""));
 
+  /** La carpeta de un espejo nuevo a esa nube: su bucket y su carpeta base, o «Resguardo». */
+  function carpetaDeNube(nombre: string | undefined): string {
+    const v = nombre && almacen ? destinosDelCliente(equipos, catalogoDe(cliente.id)).find((x) => x.nube && x.nube.equipo.id === almacen.id && x.nube.nombre === nombre) : undefined;
+    const b = v ? bucketDeNube(v) : null;
+    return (b && unirCarpeta(b.bucket, b.base ?? "Resguardo")) || "Resguardo";
+  }
   // svelte-ignore state_referenced_locally
   let f = $state({
     destino: otrasZonas[0] ? `zona:${otrasZonas[0].id}` : nubes[0] ? `nube:${nubes[0].nombre}` : "carpeta",
     carpeta: "",
-    carpetaNube: "Resguardo",
+    // Plan 0.8.0 (B2): el bucket y la carpeta base que recuerda la nube (si no, «Resguardo»).
+    carpetaNube: carpetaDeNube(nubes[0]?.nombre),
     conRetencion: false,
     dias: RETENCION_ESPEJO.defecto as number,
   });
@@ -114,6 +121,7 @@
         <div class="field">
           <label class="field-label" for="pe-nube">Carpeta dentro de la nube</label>
           <input id="pe-nube" class="input mono" bind:value={f.carpetaNube} spellcheck="false" />
+          <span class="field-hint">En B2, S3 o un NAS, con el bucket (o el recurso) delante. Quedará en <code>{f.carpetaNube.trim().replace(/\/+$/, "") || "…"}/{en.nombre}</code>.</span>
         </div>
         {#if tipoNube && TIPOS_NUBE[tipoNube] && !TIPOS_NUBE[tipoNube].inmutable}
           <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: alguien con acceso a la cuenta podría borrar lo de allí.</p></div>

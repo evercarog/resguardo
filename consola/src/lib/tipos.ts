@@ -367,8 +367,10 @@ export interface DestinoCatalogo {
   id: string;
   nombre: string;
   tipo: "zona" | "rest" | "s3" | "b2" | "sftp" | "nube" | "local";
-  /** Servidor o bucket (solo en los de red). */
+  /** Servidor o bucket (en los de red; en una nube conectada, opcional: su bucket o recurso, plan 0.8.0 B2). */
   donde?: string | null;
+  /** Plan 0.8.0 (B2, 14b): la carpeta base dentro del bucket o de la nube («Resguardo»). Un servidor anterior no la tiene. */
+  carpeta?: string | null;
   /** Tarea 8: lo que dice la persona para la regla 3-2-1-1-0 (sin ello, lo deducido del tipo). */
   atributos?: AtributosDestino | null;
   actualizado?: string;

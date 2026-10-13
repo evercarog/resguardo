@@ -26,10 +26,10 @@
   import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import NuevoDestino from "$lib/componentes/NuevoDestino.svelte";
-  import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
-  import { destinoQuitable, usosDestino } from "$lib/datosEquipo";
+  import QuitarDestino from "$lib/componentes/QuitarDestino.svelte";
+  import { usosDestino } from "$lib/datosEquipo";
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
-  import { destinosDelCliente, TEXTO_TIPO, type DestinoVista } from "$lib/destinos";
+  import { destinosDelCliente, TEXTO_TIPO, usosDeVista, type DestinoVista } from "$lib/destinos";
   import { hrefDestino } from "$lib/fichaDestino";
   import { page } from "$app/state";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
@@ -51,13 +51,7 @@
     const c = clasificar(m.porDefecto, m.catalogo?.atributos);
     return { ...c, conexion: c.aislado ? estadoConexion(m.conexion, c.aisladoDias, reloj.ahora) : null, soporte: m.catalogo?.atributos?.soporte ?? null };
   }
-  /** v1.56: «Quitar este destino» (sin repositorios ni copias que lo usen) en un equipo. */
-  let quitar = $state<{ equipo: Equipo; destino: DestinoResumen } | null>(null);
-  function quitablesEn(v: DestinoVista): { equipo: Equipo; destino: DestinoResumen }[] {
-    return actual.equipos.flatMap((e) =>
-      (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id) && destinoQuitable(e, d.id)).map((d) => ({ equipo: e, destino: d })),
-    );
-  }
+
   /** v1.56: lo que usa un destino sin repositorios (una copia externa o derivada), con su equipo. */
   function otrosUsos(v: DestinoVista): string[] {
     return actual.equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id)).flatMap((d) => usosDestino(e, d.id).map((u) => `${u} (${e.nombre})`)));
@@ -207,7 +201,7 @@
                   <ChevronRight size={16} class="flecha" />
                 </a>
                 <p class="tile-linea num">
-                  {#if v.clase === "nube"}Para el espejo del almacén y, conectándola en cada equipo, para sus repositorios{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
+                  {#if v.clase === "nube"}{@const esp = usosDeVista(v, actual.equipos).espejos}{#if esp.length}Recibe {plural(esp.length, "espejo", "espejos")}: {esp.join(", ")}{:else}Para el espejo del almacén y, conectándola en cada equipo, para sus repositorios{/if}{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
                 </p>
                 <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
                 {#if cl.conexion}<p class="tile-dato" class:tarde={cl.conexion.tarde}>{#if cl.conexion.tarde}<TriangleAlert size={12} />{/if}<span>{cl.conexion.texto}</span></p>{/if}
@@ -219,15 +213,14 @@
                     {:else}<span class="badge badge-sm tone-warn" use:tip={"Las copias se quedan en el mismo equipo que protegen: si se daña o lo cifra un ransomware, se pierden las dos."}><TriangleAlert size={11} />En el mismo equipo</span>{/if}
                   {/if}
                   {#if v.clase === "nube" && v.nube && !["b2", "s3"].includes(v.nube.tipo)}<span class="badge badge-sm tone-neutral" use:tip={"Quien tenga su permiso puede borrar lo copiado: conviene que otro destino sea inmutable."}>No inmutable</span>{/if}
+                  {#if v.alias?.length || (v.nube && v.catalogo && v.catalogo.id !== v.clave)}<span class="badge badge-sm tone-neutral" use:tip={"La nube conectada y el destino de la lista con el mismo bucket son el mismo: una sola ficha."}>Unido</span>{/if}
                   <span class="corte" aria-hidden="true"></span>
                   {#if puede.ordenar(actual.cliente?.rol) && v.clase !== "suelto"}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
                   {#if d}<button class="btn btn-sm btn-ghost" class:notas-destino={v.clase === "suelto"} onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Local, Fuera del sitio o Nube; Inmutable, Aislado"}><ShieldCheck size={12} />Tipo y marcas</button>{/if}
-                  <!-- v1.56: sin repositorios ni copias que lo usen, se puede quitar del equipo (nada de lo guardado se borra). -->
-                  {#if administra && v.clase === "equipo" && !suyos.length}
-                    {#each quitablesEn(v) as q (q.equipo.id)}<button class="btn btn-sm btn-ghost quitar-dest" onclick={() => (quitar = q)}><Trash2 size={12} />{quitablesEn(v).length > 1 ? `Quitar de ${q.equipo.nombre}` : "Quitar este destino"}</button>{/each}
-                  {/if}
+                  <!-- Plan 0.8.0 (B2): «Quitar» o «Desconectar» cuando nadie lo usa; si no, el botón dice qué lo usa. -->
+                  {#if administra}<QuitarDestino cliente={actual.cliente} {v} equipos={actual.equipos} alCambiar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })} />{/if}
                 </span>
                 {#if d?.sistema_archivos}<p class="tile-dato faint"><span class="pastilla mono">{d.sistema_archivos}</span> solo un dato</p>{/if}
               </div>
@@ -304,21 +297,7 @@
 {#if nuevoDestino && actual.cliente}<NuevoDestino cliente={actual.cliente} equipos={actual.equipos} onclose={() => (nuevoDestino = false)} alCambiar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })} />{/if}
 {#if renombrar && actual.id}<RenombrarDestino cliente={actual.id} destino={renombrar} onclose={() => (renombrar = null)} />{/if}
 {#if marcar && actual.id}<AtributosDestino cliente={actual.id} destino={marcar} onclose={() => (marcar = null)} />{/if}
-{#if quitar && actual.cliente}
-  <OrdenDialog
-    cliente={actual.cliente}
-    equipo={quitar.equipo}
-    tipo="quitar_destino"
-    cuerpo={{ destino: quitar.destino.id }}
-    titulo="Quitar este destino"
-    descripcion={quitar.destino.tipo === "local"
-      ? `${quitar.equipo.nombre} olvidará «${quitar.destino.nombre}». No se borra nada de su carpeta: si aún tiene copias guardadas, te lo dirá y seguirán ahí.`
-      : `${quitar.equipo.nombre} olvidará «${quitar.destino.nombre}» y sus credenciales. Lo guardado allí se queda.`}
-    accion="Quitar el destino"
-    onclose={() => ((quitar = null), actual.id && void cargarCliente(actual.id, { silencioso: true }))}
-    alTerminar={() => actual.id && void cargarCliente(actual.id, { silencioso: true })}
-  />
-{/if}
+
 {#if notasDestino}<NotasDialogo tipo="destino" objeto={notasDestino.id} nombre={notasDestino.nombre} onclose={() => (notasDestino = null)} />{/if}
 
 <style>
@@ -338,9 +317,6 @@
     .solo-ancho-tabla {
       display: none;
     }
-  }
-  .quitar-dest {
-    color: var(--bad);
   }
   /* Los chips de estado en su fila y las acciones (empezando por «Usar en una copia») en la siguiente. */
   .corte {
