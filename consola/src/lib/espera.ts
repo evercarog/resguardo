@@ -22,6 +22,10 @@ export interface FilaEspera {
   aplica: string;
   /** «servidor»: de esta consola (`cancelarOrden`); «orden»: de otra (`cancelar_espera`). */
   cancelar: "servidor" | "orden";
+  /** 14oo: el equipo ya comprobó sus claves al recibirla (lo dice su resumen). */
+  clavesComprobadas: boolean;
+  /** 14oo: de qué repositorio era la contraseña que comprobó, si pedía una. */
+  repositorio: string | null;
 }
 
 /** El nombre que se enseña de la consola que mandó una orden: el suyo en el equipo o, si no tiene, el de `resumen.consolas` con esa identidad. Nunca la dirección. */
@@ -60,6 +64,8 @@ export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: nu
       por: o.emitida_por?.nombre ?? null,
       aplica: o.not_before ?? delEquipo?.aplica ?? "",
       cancelar: "servidor",
+      clavesComprobadas: delEquipo?.claves_comprobadas === true,
+      repositorio: delEquipo?.repositorio ?? null,
     });
   }
   for (const e of equipos) {
@@ -78,6 +84,8 @@ export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: nu
         por: x.por ?? null,
         aplica: x.aplica,
         cancelar: "orden",
+        clavesComprobadas: x.claves_comprobadas === true,
+        repositorio: x.repositorio ?? null,
       });
     }
   }

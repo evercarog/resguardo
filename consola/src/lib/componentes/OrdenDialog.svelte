@@ -107,6 +107,16 @@
           : (accion ?? nombreOrden(tipo)),
   );
 
+  // 14oo: en lo que solo quita o cambia algo de un repositorio (su copia externa o derivada),
+  // de qué repositorio es la contraseña: la del origen, no la de la copia.
+  const ayudaRepo = $derived(
+    repo && ["cambiar_copia_externa", "cambiar_derivada", "quitar_derivada"].includes(tipo)
+      ? `Es la de «${repo.nombre}» (la de su kit), no la de su copia externa o derivada. Va cifrada solo para el equipo, que la comprueba.`
+      : "Está en el kit de recuperación. Va cifrada solo para el equipo, que la comprueba.",
+  );
+  // 14oo: un equipo que guarda las órdenes en espera comprueba las claves al recibirla.
+  const compruebaAlRecibir = $derived(!!equipo.resumen?.admite?.includes("ordenes_en_espera"));
+
   function olvidar() {
     claveAdmin = "";
     contrasenaRepo = "";
@@ -290,14 +300,14 @@
         <div class="notice notice-warn">
           <Clock size={16} />
           <p>
-            Esta orden reduce la protección o borra copias, así que <strong>espera {espera} h</strong> antes de aplicarse (hacia el {fechaLarga(cuando.toISOString())}). Hasta entonces, cualquiera del cliente puede cancelarla.
+            Esta orden reduce la protección o borra copias, así que <strong>espera {espera} h</strong> antes de aplicarse (hacia el {fechaLarga(cuando.toISOString())}). Hasta entonces, cualquiera del cliente puede cancelarla.{#if compruebaAlRecibir && (pideAdmin || pideRepo)}{" "}Las claves se comprueban ya, al llegar al equipo: si alguna no vale, lo sabrás enseguida.{/if}
             <Ayuda id="espera" />
           </p>
         </div>
       {/if}
 
       {#if pideRepo && !sinSecretos}
-        <CampoClave requerido id="clave-repo" etiqueta={repo ? `Contraseña del repositorio «${repo.nombre}»` : "Contraseña del repositorio"} bind:value={contrasenaRepo} autofocus ayuda="Está en el kit de recuperación. Va cifrada solo para el equipo, que la comprueba.">
+        <CampoClave requerido id="clave-repo" etiqueta={repo ? `Contraseña del repositorio «${repo.nombre}»` : "Contraseña del repositorio"} bind:value={contrasenaRepo} autofocus ayuda={ayudaRepo}>
           {#snippet extra()}<Ayuda id="contrasena-repo" />{/snippet}
         </CampoClave>
       {/if}

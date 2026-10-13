@@ -199,6 +199,10 @@ export interface OrdenEnEspera {
   emitida: string;
   aplica: string;
   caduca: string;
+  /** 14oo: el equipo ya comprobó sus claves al recibirla (al aplicarla las vuelve a comprobar). */
+  claves_comprobadas?: boolean;
+  /** 14oo: de qué repositorio era la contraseña comprobada (su nombre), si pedía una. */
+  repositorio?: string | null;
 }
 
 /** Un dato del equipo que comparten sus consolas y quién lo cambió (v1.56). */

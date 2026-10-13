@@ -59,6 +59,14 @@ pub struct EnEspera {
     /// `not_before`.
     pub aplica: String,
     pub caduca: String,
+    /// 14oo: las claves que pide (la de administración y la del repositorio) ya se comprobaron
+    /// al recibirla, con el mismo bloqueo por intentos fallidos; al aplicarla se vuelven a
+    /// comprobar (por si cambiaron entretanto).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub claves_comprobadas: bool,
+    /// 14oo: de qué repositorio era la contraseña comprobada (su nombre), si pedía una.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repositorio: Option<String>,
 }
 
 fn ahora() -> i64 {
@@ -189,6 +197,8 @@ fn ficha(v: &Vinculo, o: &orden_v2::OrdenV2, orden_id: &str, sellado: &str) -> E
         emitida: o.emitida.clone(),
         aplica: o.not_before.clone().unwrap_or_default(),
         caduca: o.caduca.clone(),
+        claves_comprobadas: false,
+        repositorio: None,
     }
 }
 
@@ -203,10 +213,13 @@ pub fn recibir(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo, ord
     if !id_valido(orden_id) {
         return (s::rechazada("Orden no válida."), None);
     }
-    // La espera mínima y la autorización, ya (con sus intentos fallidos y bloqueos).
-    if let Err(r) = s::comprobar(v, o, tipo) {
-        return r;
-    }
+    // 14oo: la espera mínima y las claves, ya al recibirla (con sus intentos fallidos y
+    // bloqueos): si alguna no vale, se rechaza ahora y no a su hora. Al aplicarla se vuelve a
+    // comprobar todo.
+    let repo = match s::comprobar(v, o, tipo) {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
     let enlace = v.id_enlace();
     if v.en_espera.iter().any(|e| e.id == orden_id) {
         return (s::rechazada("Esa orden ya está en espera."), None);
@@ -214,7 +227,9 @@ pub fn recibir(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo, ord
     if v.en_espera.iter().filter(|e| e.enlace == enlace).count() >= MAX_POR_CONSOLA {
         return (s::rechazada(format!("Demasiadas órdenes en espera desde esta consola (como mucho {MAX_POR_CONSOLA}): cancela alguna.")), None);
     }
-    let e = ficha(v, o, orden_id, sellado);
+    let mut e = ficha(v, o, orden_id, sellado);
+    e.claves_comprobadas = true;
+    e.repositorio = repo.map(|r| corto(&nombre_repo(v, &r), 80));
     v.en_espera.push(e.clone());
     let _ = s::guardar(v);
     cambio();
@@ -516,11 +531,19 @@ pub fn resumen(v: &Vinculo) -> Value {
         .filter(|e| ts(&e.caduca).is_some_and(|c| c > t) && identidad_de(v, &e.enlace).as_deref() == Some(e.identidad.as_str()))
         .map(|e| {
             let nombre = nombres.get(&e.enlace).map(|n| corto(n, 60)).filter(|n| !n.is_empty()).or_else(|| (!e.consola.is_empty()).then(|| e.consola.clone()));
-            json!({
+            let mut x = json!({
                 "id": e.id, "tipo": e.tipo, "descripcion": e.descripcion,
                 "consola": { "nombre": nombre, "identidad": e.identidad, "esta": e.enlace == v.id_enlace() },
                 "por": e.por, "emitida": e.emitida, "aplica": e.aplica, "caduca": e.caduca,
-            })
+            });
+            // 14oo (opcionales): las claves ya se comprobaron al recibirla, y de qué repositorio.
+            if e.claves_comprobadas {
+                x["claves_comprobadas"] = json!(true);
+            }
+            if let Some(r) = &e.repositorio {
+                x["repositorio"] = json!(r);
+            }
+            x
         })
         .collect::<Vec<_>>())
 }
@@ -630,5 +653,66 @@ mod tests {
         assert!(l[1]["consola"]["nombre"].is_null());
         let texto = r.to_string();
         assert!(!texto.contains("192.168") && !texto.contains("ejemplo.com") && !texto.contains("SOBRE"), "ni direcciones ni el sobre: {texto}");
+    }
+
+    /// 14oo: las claves de una orden con espera se comprueban al recibirla (con el mismo
+    /// bloqueo por intentos), se rechaza en el momento si no valen y, si valen, la orden en
+    /// espera dice que ya se comprobaron y de qué repositorio era la contraseña.
+    #[test]
+    fn claves_comprobadas_al_recibirla() {
+        let _l = crate::restic::tests::real_repo_lock();
+        let dir = std::env::temp_dir().join(format!("resguardo-espera-claves-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("RESGUARDO_AGENT_DIR", &dir);
+        crate::agent::prepare_dir().unwrap();
+        let mut v = Vinculo { cliente_id: "c1".into(), equipo_id: "e1".into(), secreto: "s".into(), espera_min_horas: 1, ..Default::default() };
+        v.repos_v2.push(crate::gestion_v2::RepoV2 {
+            id: "docs".into(),
+            nombre: "Ventas".into(),
+            contrasena: "la buena de verdad".into(),
+            ..Default::default()
+        });
+        let tipo = ordenes::tipo("quitar_derivada").unwrap();
+        let t = chrono::Utc::now();
+        let orden = |seq: u64, contrasena: &str| orden_v2::OrdenV2 {
+            v: 2,
+            cliente: "c1".into(),
+            equipo: "e1".into(),
+            seq,
+            nonce: format!("n{seq}"),
+            emitida: t.to_rfc3339(),
+            caduca: (t + chrono::Duration::days(3)).to_rfc3339(),
+            not_before: Some((t + chrono::Duration::hours(2)).to_rfc3339()),
+            tipo: "quitar_derivada".into(),
+            cuerpo: json!({ "repo": "docs", "id": "nube" }),
+            autorizacion: orden_v2::Autorizacion {
+                clave_repo: Some(orden_v2::ClaveRepo { repo: "docs".into(), contrasena: contrasena.into() }),
+                ..Default::default()
+            },
+            responder_a: None,
+            por: Some("Ana".into()),
+        };
+        // La contraseña mal: rechazada ya (no se guarda) y cuenta como intento fallido.
+        let (r, _) = recibir(&mut v, &orden(1, "la de la copia externa"), tipo, "orden-1", "SOBRE");
+        assert_eq!(r.estado, "rechazada");
+        assert!(r.mensaje.contains("contraseña del repositorio"), "{}", r.mensaje);
+        assert!(v.en_espera.is_empty());
+        assert_eq!(v.fallos.get("repo:docs").map(|f| f.n), Some(1));
+        // Bien: en espera, con las claves comprobadas y de qué repositorio era.
+        let (r, _) = recibir(&mut v, &orden(2, "la buena de verdad"), tipo, "orden-2", "SOBRE");
+        assert_eq!(r.estado, EN_ESPERA, "{}", r.mensaje);
+        assert!(v.en_espera[0].claves_comprobadas);
+        assert_eq!(v.en_espera[0].repositorio.as_deref(), Some("Ventas"));
+        let l = resumen(&v);
+        assert_eq!(l[0]["claves_comprobadas"], true, "{l}");
+        assert_eq!(l[0]["repositorio"], "Ventas");
+        assert!(!l.to_string().contains("la buena de verdad"), "sin la contraseña");
+        // Una guardada por un agente anterior (sin el campo) se lee igual y no lo dice.
+        let vieja: EnEspera = serde_json::from_value(
+            json!({ "id": "x", "enlace": "principal", "identidad": "", "tipo": "pausar", "seq": 1, "emitida": "", "aplica": "", "caduca": "" }),
+        )
+        .unwrap();
+        assert!(!vieja.claves_comprobadas && vieja.repositorio.is_none());
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

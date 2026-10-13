@@ -148,6 +148,7 @@ fn ordenes_en_espera_entre_dos_consolas() {
     let v = cargar().unwrap();
     assert_eq!(v.en_espera.len(), 1);
     assert_eq!(v.espera_min_horas, 3, "no se aplicó");
+    assert!(v.en_espera[0].claves_comprobadas, "14oo: la clave de administración, comprobada al recibirla");
     let guardada = serde_json::to_string(&v.en_espera[0]).unwrap();
     assert!(!guardada.contains(&B64.encode(prueba)), "la prueba de la clave no se guarda en claro");
     let orden_4 = v.en_espera[0].id.clone();
@@ -166,6 +167,7 @@ fn ordenes_en_espera_entre_dos_consolas() {
     assert_eq!(l[0]["consola"]["esta"], false);
     assert_eq!(l[0]["por"], "Ana");
     assert_eq!(l[0]["descripcion"], "Acortar la espera a 2 h");
+    assert_eq!(l[0]["claves_comprobadas"], true, "14oo");
     assert!(!r_b["en_espera"].to_string().contains(&a.url), "sin la dirección de la otra consola");
     hasta("el aviso «orden_en_espera» en B", || {
         let (_, av) = cb.pedir("GET", &format!("/api/clientes/{c_b}/avisos?abiertos=1"), None);

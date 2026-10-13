@@ -524,7 +524,7 @@ export async function sembrar(vacio = false) {
         nubes_por_anular: [{ nombre: "Dropbox Antigua", tipo: "dropbox", desde: hace(60 * 3), hasta: dentro(60 * 24 * 7 - 60 * 3), intentos: 2 }],
         // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
         en_espera: [
-          { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Siigo»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46) },
+          { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Siigo»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46), claves_comprobadas: true, repositorio: "Siigo" },
         ],
         // v1.36: también la gestiona una consola en línea (y el último cambio vino de allí).
         consolas: [
