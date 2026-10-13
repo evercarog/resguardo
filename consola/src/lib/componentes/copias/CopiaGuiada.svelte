@@ -15,6 +15,7 @@
   import ResumenCopia from "./ResumenCopia.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
+  import AvisoExclusiones from "./AvisoExclusiones.svelte";
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
   import { alternarExclusion, cuandoEnFrase, EXCLUSIONES_HABITUALES, pasoHecho, PASOS_COPIA, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
   import { ganchosDe } from "$lib/ganchos";
@@ -149,21 +150,25 @@
         </div>
         <details class="mas" bind:open={masQue}>
           <summary>Más opciones</summary>
-          <div class="field">
-            <span class="field-label">No copiar <Ayuda id="exclusiones" /></span>
-            <div class="chips-exc">
-              {#each EXCLUSIONES_HABITUALES as h (h.regla)}
-                <button type="button" class="chip-exc" class:on={k.exclusiones.includes(h.regla)} aria-pressed={k.exclusiones.includes(h.regla)} use:tip={h.regla} onclick={() => alternarExclusion(k, h.regla)}>{#if k.exclusiones.includes(h.regla)}<Check size={12} />{/if}{h.texto}</button>
-              {/each}
+          <!-- 14q: cada sección con el aire de las demás (dentro de <details> el flex no siempre se aplica). -->
+          <div class="mas-cuerpo">
+            <div class="field">
+              <span class="field-label">No copiar <Ayuda id="exclusiones" /></span>
+              <div class="chips-exc">
+                {#each EXCLUSIONES_HABITUALES as h (h.regla)}
+                  <button type="button" class="chip-exc" class:on={k.exclusiones.includes(h.regla)} aria-pressed={k.exclusiones.includes(h.regla)} use:tip={h.regla} onclick={() => alternarExclusion(k, h.regla)}>{#if k.exclusiones.includes(h.regla)}<Check size={12} />{/if}{h.texto}</button>
+                {/each}
+              </div>
+              <textarea class="input mono" rows="2" spellcheck="false" aria-label="Otras reglas, una por línea" placeholder="Otras reglas, una por línea" value={otras.join("\n")} oninput={(e) => (k.exclusiones = [...k.exclusiones.filter((x) => EXCLUSIONES_HABITUALES.some((h) => h.regla === x)), ...e.currentTarget.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)])}></textarea>
+              <AvisoExclusiones {k} />
             </div>
-            <textarea class="input mono" rows="2" spellcheck="false" aria-label="Otras reglas, una por línea" placeholder="Otras reglas, una por línea" value={otras.join("\n")} oninput={(e) => (k.exclusiones = [...k.exclusiones.filter((x) => EXCLUSIONES_HABITUALES.some((h) => h.regla === x)), ...e.currentTarget.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)])}></textarea>
+            <label class="switch-row"
+              ><input type="checkbox" class="switch" checked={k.solo_si_cambios !== false} disabled={!admite.soloCambios} onchange={(e) => (k.solo_si_cambios = e.currentTarget.checked)} /><span
+                ><span class="con-ayuda">Solo guardar si hay cambios <Ayuda id="solo-si-cambios" /></span>{#if !admite.soloCambios}<span class="faint">Actualiza el agente para poder apagarlo.</span>{/if}</span
+              ></label
+            >
+            <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
           </div>
-          <label class="switch-row"
-            ><input type="checkbox" class="switch" checked={k.solo_si_cambios !== false} disabled={!admite.soloCambios} onchange={(e) => (k.solo_si_cambios = e.currentTarget.checked)} /><span
-              ><span class="con-ayuda">Solo guardar si hay cambios <Ayuda id="solo-si-cambios" /></span>{#if !admite.soloCambios}<span class="faint">Actualiza el agente para poder apagarlo.</span>{/if}</span
-            ></label
-          >
-          <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
         </details>
         <div class="pie"><button class="btn btn-primary btn-sm" disabled={!k.carpetas.length} use:tip={k.carpetas.length ? "" : "Elige al menos una carpeta"}>Siguiente<ArrowRight size={14} /></button></div>
       </form>
@@ -289,6 +294,18 @@
   }
   .mas[open] {
     display: flex;
+  }
+  /* Las secciones de «Más opciones» («No copiar», «Solo guardar si hay cambios»,
+     «Antes de copiar») separadas como las demás, con una línea fina entre ellas. */
+  .mas-cuerpo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    margin-top: var(--sp-3);
+  }
+  .mas-cuerpo > :global(* + *) {
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--border);
   }
   .con-ayuda {
     display: inline-flex;

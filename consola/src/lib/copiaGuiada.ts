@@ -200,6 +200,48 @@ export function alternarExclusion(k: CopiaConfig, regla: string): void {
   k.exclusiones = k.exclusiones.includes(regla) ? k.exclusiones.filter((x) => x !== regla) : [...k.exclusiones, regla];
 }
 
+/** Una regla de «No copiar» que seguramente no hace lo que se quiere (14q). */
+export interface ExclusionDudosa {
+  regla: string;
+  /** La que seguramente se quería («*.crdownload»). */
+  propuesta: string;
+  motivo: string;
+}
+/**
+ * Terminaciones que se suelen querer excluir enteras. Una regla sin comodines
+ * ni barras solo excluye lo que se llame **exactamente** así: «.crdownload» no
+ * quita «informe.pdf.crdownload», y «tmp» solo quita un archivo o una carpeta
+ * llamados «tmp».
+ */
+const TERMINACIONES = new Set(["tmp", "temp", "crdownload", "part", "partial", "download", "lock", "lck", "log", "bak", "old", "swp", "dmp", "etl"]);
+
+/** Las reglas de «No copiar» que seguramente no hacen lo que se quiere, con su arreglo. */
+export function exclusionesDudosas(reglas: string[]): ExclusionDudosa[] {
+  const out: ExclusionDudosa[] = [];
+  for (const bruta of reglas) {
+    const r = bruta.trim();
+    // Con comodines o con una ruta, la persona ya sabe lo que hace.
+    if (!r || /[*?[\]/\\]/.test(r)) continue;
+    const conPunto = /^\.([A-Za-z0-9]{1,12})$/.exec(r);
+    if (conPunto && TERMINACIONES.has(conPunto[1].toLowerCase())) {
+      const p = `*.${conPunto[1]}`;
+      out.push({ regla: r, propuesta: p, motivo: `«${r}» solo excluye un archivo que se llame exactamente así. Para todos los que terminan en ${r}: «${p}».` });
+      continue;
+    }
+    if (/^[A-Za-z0-9]{1,12}$/.test(r) && TERMINACIONES.has(r.toLowerCase())) {
+      const p = `*.${r}`;
+      out.push({ regla: r, propuesta: p, motivo: `«${r}» solo excluye lo que se llame exactamente «${r}» (un archivo o una carpeta). Si querías los archivos .${r}: «${p}».` });
+    }
+  }
+  return out;
+}
+
+/** Cambia una regla por su propuesta, en el mismo sitio (sin repetirla si ya estaba). */
+export function corregirExclusion(k: Pick<CopiaConfig, "exclusiones">, regla: string, propuesta: string): void {
+  const ya = k.exclusiones.includes(propuesta);
+  k.exclusiones = k.exclusiones.flatMap((x) => (x.trim() === regla ? (ya ? [] : [propuesta]) : [x]));
+}
+
 // --- Los pasos -------------------------------------------------------------------
 
 export type PasoCopia = "cuando" | "que" | "donde" | "resumen";

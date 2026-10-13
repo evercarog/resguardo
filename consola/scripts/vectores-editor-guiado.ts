@@ -24,6 +24,8 @@ import {
   retrasoEnFrase,
   sugerencias,
   alternarExclusion,
+  corregirExclusion,
+  exclusionesDudosas,
 } from "../src/lib/copiaGuiada";
 import { espejosDeCopia } from "../src/lib/espejosCopia";
 import { horarioParaEnviar } from "../src/lib/horario";
@@ -253,6 +255,28 @@ console.log("\n· Espejos agrupados por almacén");
   );
   igual("sin espejos ni derivadas, nada", espejosDeCopia(recepcion, "solo", [almacen, recepcion]), []);
   igual("un repositorio que no está, nada", espejosDeCopia(recepcion, "otro", [almacen, recepcion]), []);
+}
+
+// --- «No copiar»: reglas que seguramente no hacen lo que se quiere (14q) -------
+{
+  const dudosas = exclusionesDudosas(["*.tmp", ".crdownload", ".lock", "tmp", "Thumbs.db", ".DS_Store", ".git", "node_modules", "C:\\Temp", "*.LOG", ".Bak", "logs"]);
+  igual(
+    "las dudosas, con su propuesta",
+    dudosas.map((d) => [d.regla, d.propuesta]),
+    [
+      [".crdownload", "*.crdownload"],
+      [".lock", "*.lock"],
+      ["tmp", "*.tmp"],
+      [".Bak", "*.Bak"],
+    ],
+  );
+  igual("el motivo lo explica", dudosas[0].motivo, "«.crdownload» solo excluye un archivo que se llame exactamente así. Para todos los que terminan en .crdownload: «*.crdownload».");
+  const k = { exclusiones: ["*.tmp", ".crdownload", "~$*", "tmp"] };
+  corregirExclusion(k, ".crdownload", "*.crdownload");
+  igual("corregir la cambia en su sitio", k.exclusiones, ["*.tmp", "*.crdownload", "~$*", "tmp"]);
+  corregirExclusion(k, "tmp", "*.tmp");
+  igual("si la propuesta ya estaba, no se repite", k.exclusiones, ["*.tmp", "*.crdownload", "~$*"]);
+  igual("ya sin dudosas", exclusionesDudosas(k.exclusiones), []);
 }
 
 console.log(`\n${total - fallos}/${total} ${fallos ? "con fallos" : "bien"}`);

@@ -62,6 +62,7 @@
   import { app } from "$lib/estado.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import CopiaGuiada from "$lib/componentes/copias/CopiaGuiada.svelte";
+  import AvisoExclusiones from "$lib/componentes/copias/AvisoExclusiones.svelte";
   import CuandoEmpieza from "$lib/componentes/copias/CuandoEmpieza.svelte";
   import ResumenCopia from "$lib/componentes/copias/ResumenCopia.svelte";
   import type { PedidoRepoNuevo } from "$lib/componentes/copias/ElegirRepositorio.svelte";
@@ -978,6 +979,7 @@
                   <div class="field">
                     <label class="field-label" for="exc-{k.id}">No copiar <Ayuda id="exclusiones" /></label>
                     <textarea id="exc-{k.id}" class="input mono" rows="4" spellcheck="false" value={k.exclusiones.join("\n")} oninput={(e) => (k.exclusiones = lineas(e.currentTarget.value))}></textarea>
+                    <AvisoExclusiones {k} />
                   </div>
                 </div>
                 {#if admiteSoloCambios}
