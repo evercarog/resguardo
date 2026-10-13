@@ -55,6 +55,10 @@ pub const TIPOS: &[Tipo] = &[
     t("nombre_equipo", Inofensiva, false, false, true),
     t("etiquetas_equipo", Inofensiva, false, false, false),
     t("observacion_equipo", Inofensiva, false, false, false),
+    // Plan 0.8.0, B1 (docs/nombres-legibles.md): el nombre que se ve de un repositorio,
+    // igual en todas sus consolas. Metadato (no cambia su id ni su carpeta); como el
+    // nombre del equipo, solo administradores.
+    t("nombre_repositorio", Inofensiva, false, false, true),
     // Contraseña del repositorio
     t("explorar", Repositorio, false, true, false),
     t("restaurar", Repositorio, false, false, false),
@@ -195,7 +199,7 @@ mod tests {
         let c = tipo("cancelar_espera").unwrap();
         assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !c.solo_administradores);
         // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
-        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false)] {
+        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false), ("nombre_repositorio", true)] {
             let x = tipo(t).unwrap();
             assert!(x.nivel == Nivel::Inofensiva && !x.destructiva && x.solo_administradores == solo_admin, "{t}");
             assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&t), "{t}");

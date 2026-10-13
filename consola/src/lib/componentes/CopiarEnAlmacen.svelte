@@ -28,6 +28,8 @@
   import BotonFalta from "./BotonFalta.svelte";
   // Tarea 7b: en otra zona del almacén (otro disco, con su puerto).
   import { errorRespuestaZona, idDestinoZona, PRINCIPAL, type ZonaVista } from "$lib/destinos";
+  // Plan 0.8.0, B1: carpetas legibles (la del equipo la elige el almacén; la del repositorio, su nombre).
+  import { admiteNombres, idRepoEnAlmacen } from "$lib/nombres";
 
   interface Acceso {
     usuario: string;
@@ -117,7 +119,7 @@
         equipo: almacen,
         tipo: "guarda_copias",
         // v1.28: su propio almacén, por localhost (no depende de su IP ni del cortafuegos).
-        cuerpo: { anadir: equipo.id, ...(propio ? { local: true } : {}), ...(enZona ? { zona: enZona.id } : {}) },
+        cuerpo: { anadir: equipo.id, ...(admiteNombres(almacen) ? { nombre: equipo.nombre } : {}), ...(propio ? { local: true } : {}), ...(enZona ? { zona: enZona.id } : {}) },
         secretos: { claveAdmin },
         responderA: aB64(eph.publica),
         alPaso: (t) => (pasoTxt = t),
@@ -139,7 +141,8 @@
       const b = aleatorio(32);
       contrasena = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
       b.fill(0);
-      repoId = `${almacen.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "almacen"}-${crypto.randomUUID().slice(0, 4)}`;
+      // B1: su carpeta en el almacén es su nombre («contabilidad», «contabilidad-2»…).
+      repoId = idRepoEnAlmacen(nombre.trim(), equipo, almacen, acceso.usuario);
       paso = "kit";
     } catch (err) {
       if (err instanceof ErrorLlavesCambiadas) cambiadas = almacen;

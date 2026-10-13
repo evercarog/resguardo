@@ -97,6 +97,7 @@ const ORDEN: Record<string, Icono> = {
   quitar_derivada: CloudUpload,
   // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
   nombre_equipo: Pencil,
+  nombre_repositorio: Pencil,
   etiquetas_equipo: Tag,
   observacion_equipo: StickyNote,
   quitar_destino: Trash2,

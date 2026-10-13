@@ -1,0 +1,42 @@
+{
+  "descripcion": "Nombres de carpeta legibles en el almacén (docs/nombres-legibles.md). Los usan el agente (crates/agente/src/nombres.rs) y la consola (consola/src/lib/nombres.ts): mismo texto, misma carpeta.",
+  "normalizar": [
+    { "entrada": "PC-01", "max": 35, "defecto": "equipo", "salida": "pc-01" },
+    { "entrada": "Contabilidad", "max": 40, "defecto": "repositorio", "salida": "contabilidad" },
+    { "entrada": "  Recepción Planta 2  ", "max": 35, "defecto": "equipo", "salida": "recepcion-planta-2" },
+    { "entrada": "Año fiscal: 2025/26", "max": 40, "defecto": "repositorio", "salida": "ano-fiscal-2025-26" },
+    { "entrada": "ÁÉÍÓÚ ÀÈÌÒÙ ÄËÏÖÜ ÂÊÎÔÛ Ñ Ç", "max": 64, "defecto": "x", "salida": "aeiou-aeiou-aeiou-aeiou-n-c" },
+    { "entrada": "Ventas_SQL.bak", "max": 40, "defecto": "repositorio", "salida": "ventas-sql-bak" },
+    { "entrada": "../../etc/passwd", "max": 40, "defecto": "repositorio", "salida": "etc-passwd" },
+    { "entrada": "C:\\Datos\\Caja", "max": 40, "defecto": "repositorio", "salida": "c-datos-caja" },
+    { "entrada": "..", "max": 40, "defecto": "repositorio", "salida": "repositorio" },
+    { "entrada": "", "max": 35, "defecto": "equipo", "salida": "equipo" },
+    { "entrada": "日本語", "max": 35, "defecto": "equipo", "salida": "equipo" },
+    { "entrada": "Ünïcödé — ¿qué?", "max": 40, "defecto": "repositorio", "salida": "unicode-que" },
+    { "entrada": "a\u0000b\nc\td", "max": 40, "defecto": "repositorio", "salida": "a-b-c-d" },
+    { "entrada": "Servidor de contabilidad de la oficina principal", "max": 35, "defecto": "equipo", "salida": "servidor-de-contabilidad-de-la-ofic" },
+    { "entrada": "Caja uno", "max": 5, "defecto": "equipo", "salida": "caja" },
+    { "entrada": "æøß", "max": 40, "defecto": "repositorio", "salida": "repositorio" },
+    { "entrada": "Copia---Diaria", "max": 40, "defecto": "repositorio", "salida": "copia-diaria" },
+    { "entrada": "0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f", "max": 64, "defecto": "equipo", "salida": "0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f" }
+  ],
+  "validas": [
+    { "carpeta": "pc-01-3f2a", "valida": true },
+    { "carpeta": "contabilidad", "valida": true },
+    { "carpeta": "0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f", "valida": true },
+    { "carpeta": "a", "valida": true },
+    { "carpeta": "", "valida": false },
+    { "carpeta": "-pc", "valida": false },
+    { "carpeta": "pc-", "valida": false },
+    { "carpeta": "PC-01", "valida": false },
+    { "carpeta": "pc_01", "valida": false },
+    { "carpeta": "pc.01", "valida": false },
+    { "carpeta": "..", "valida": false },
+    { "carpeta": "a/b", "valida": false },
+    { "carpeta": "a\\b", "valida": false },
+    { "carpeta": "a:b", "valida": false },
+    { "carpeta": "a b", "valida": false },
+    { "carpeta": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valida": true },
+    { "carpeta": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valida": false }
+  ]
+}

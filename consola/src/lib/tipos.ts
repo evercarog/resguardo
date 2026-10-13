@@ -332,6 +332,8 @@ export interface ResumenEquipo {
      * principal sigue en `carpeta`, `puerto`, `usuarios`, `espacio` y `repositorios`.
      */
     zonas?: ZonaAlmacen[] | null;
+    /** Plan 0.8.0, B1 (`admite: "nombres_legibles"`): carpetas movidas con «Ordenar nombres de carpeta» (las últimas, la más reciente primero). */
+    renombres?: import("./nombres").RenombreAlmacen[] | null;
   } | null;
   pausado_hasta?: string | null;
   /** Plan 0.7.26 (agente con `admite: "espejo_equipo"`): los espejos que hace el propio equipo de los repositorios de sus discos. */

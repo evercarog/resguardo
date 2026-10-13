@@ -1142,6 +1142,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
+        // B1 (docs/nombres-legibles.md): el nombre de un repositorio, igual en todas sus consolas.
+        "nombre_repositorio" => {
+            let m = g::nombre_repositorio(v, c)?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
         // v1.56: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
         "quitar_destino" => {
             let m = g::quitar_destino(v, c)?;
@@ -2381,6 +2387,9 @@ mod tests {
         assert!(!destructiva(&v, &orden(json!({ "zona": { "carpeta": "E:\\Resguardo", "puerto": 8002 } })), tipo));
         assert!(!destructiva(&v, &orden(json!({ "zona": { "id": "z1a2b3c", "nombre": "Disco E" } })), tipo));
         assert!(!destructiva(&v, &orden(json!({ "anadir": "pc", "zona": "z1a2b3c" })), tipo));
+        // B1: «Ordenar nombres de carpeta» (y deshacerlo) no espera: no borra nada.
+        assert!(!destructiva(&v, &orden(json!({ "mover": { "usuario": "pc", "legible": "PC 01" } })), tipo));
+        assert!(!destructiva(&v, &orden(json!({ "mover": { "usuario": "pc-01-3f2a", "deshacer": true } })), tipo));
         // Una zona mal escrita no se toma por la principal.
         assert!(crate::gestion_v2::guarda_copias(&json!({ "anadir": "pc", "zona": "../x" }), true).unwrap_err().contains("Zona no válida"));
         assert!(crate::gestion_v2::guarda_copias(&json!({ "quitar": "pc", "zona": 3 }), true).unwrap_err().contains("Zona no válida"));

@@ -95,6 +95,10 @@
   import { admiteRevocar, motivoNoDesconectar, nubesDelEquipo, nubesPorAnular, queHaceAlDesconectar } from "$lib/nubesEquipo";
   import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
   import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
+  // Plan 0.8.0, B1: «Ordenar nombres de carpeta» y las rutas que un equipo aún no usa.
+  import OrdenarCarpetas from "$lib/componentes/OrdenarCarpetas.svelte";
+  import RutasPendientes from "$lib/componentes/RutasPendientes.svelte";
+  import { admiteNombres } from "$lib/nombres";
   import ZonasAlmacen from "$lib/componentes/ZonasAlmacen.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
@@ -501,6 +505,8 @@
   let conectarDestino = $state(false);
   /** §3e: «Restaurar desde el espejo…». */
   let desdeEspejo = $state(false);
+  /** B1: «Ordenar nombres de carpeta…». */
+  let ordenarCarpetas = $state(false);
   /**
    * Desconectar una nube (clave de administración). Con `admite: "nube_revocar"` el equipo
    * anula el permiso en el proveedor y no deja si algo la usa (la página ya no ofrece el botón).
@@ -524,6 +530,7 @@
       [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, ...(admiteMasDestinos(equipo) ? [{ texto: "Conectar otro destino (B2, S3, SFTP, NAS, WebDAV)…", onclick: () => (conectarDestino = true) }] : []), { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
       [
         ...(conEspejo ? [{ texto: "Restaurar desde el espejo…", onclick: () => (desdeEspejo = true) }] : []),
+        ...(admiteNombres(equipo) && puede.administrar(rol) ? [{ texto: "Ordenar nombres de carpeta…", onclick: () => (ordenarCarpetas = true) }] : []),
         ...(conEspejo ? [{ texto: "Quitar todo el espejo", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { espejo: null }, titulo: "Quitar el espejo", descripcion: "Dejará de copiarse cada noche a todos sus destinos. Lo que ya está en ellos se queda." }) }] : []),
         { texto: "Dejar de guardar copias", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { activo: false }, titulo: "Dejar de guardar copias", descripcion: `${equipo!.nombre} dejará de recibir copias de los demás equipos. Lo ya guardado se queda en su disco.` }) },
       ],
@@ -893,6 +900,7 @@
       <div class="notice notice-info trasladado"><Info size={16} /><p>{equipo.nombre} se trasladó a otro servidor y ya no recibe órdenes desde aquí. Se conserva su historial.</p></div>
     {/if}
     <Observaciones tipo="equipo" objeto={equipo.id} />
+    {#if actual.cliente}<RutasPendientes cliente={actual.cliente} equipos={actual.equipos} {equipo} puede={puede.administrar(rol)} />{/if}
 
     {#if otrasConsolas.length && !trasladado}
       <section class="consolas-eq" aria-label="Otras consolas">
@@ -1580,6 +1588,10 @@
 {#if conectarNube && equipo && actual.cliente}
   <ConectarNube cliente={actual.cliente} {equipo} onclose={() => ((conectarNube = false), void cargar())} />
 {/if}
+{#if ordenarCarpetas && equipo && actual.cliente}
+  <OrdenarCarpetas cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} onclose={() => (ordenarCarpetas = false)} />
+{/if}
+
 {#if desdeEspejo && equipo && actual.cliente}
   <RestaurarDesdeEspejo cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} nombre={nombreRepoAlmacen} onclose={() => (desdeEspejo = false)} />
 {/if}

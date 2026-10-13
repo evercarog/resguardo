@@ -109,6 +109,8 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "etiquetas_equipo",
     "observacion_equipo",
     "quitar_destino",
+    // B1: el nombre de un repositorio.
+    "nombre_repositorio",
 ];
 
 /// El nombre que se enseña de una consola: el suyo o el nombre de su dirección.

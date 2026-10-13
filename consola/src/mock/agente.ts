@@ -25,6 +25,7 @@ import { empezarCopia, empezarHistorial, empezarRestauracion, empezarTarea } fro
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 import { observacionDelEquipo } from "./notas";
+import { ADMITE_NOMBRES, carpetaNueva, MAX_EQUIPO, normalizar } from "../lib/nombres";
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Claves del almacén que algún equipo dueño ya añadió a su repositorio (clave_almacen). */
@@ -597,7 +598,11 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           return resultado(e, o, "hecha", `Equipo cliente «${usuario}» añadido en la zona «${zonaPedida.nombre}».`, JSON.stringify({ sellado: aB64(sellar(deB64(plana.responder_a), utf8(JSON.stringify(acceso)))) }));
         }
         const cliente = estado.equipos.find((x) => x.id === c.anadir);
-        const usuario = (cliente?.nombre ?? "equipo").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        // Plan 0.8.0, B1: con `nombre`, la carpeta del equipo es legible (`pc-01-3f2a`).
+        const usuario =
+          typeof c.nombre === "string" && e.resumen.admite?.includes(ADMITE_NOMBRES)
+            ? `${normalizar(c.nombre, MAX_EQUIPO, "equipo")}-${randomUUID().slice(0, 4)}`
+            : (cliente?.nombre ?? "equipo").toLowerCase().replace(/[^a-z0-9]+/g, "-");
         // v1.28: `local: true`, su propio almacén (por localhost).
         const host = c.local === true && e.resumen.admite?.includes("almacen_propio") ? "localhost" : "192.168.1.20";
         const acceso = {
@@ -608,6 +613,59 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         };
         e.resumen.guarda_copias.usuarios = (e.resumen.guarda_copias.usuarios ?? 0) + 1;
         return resultado(e, o, "hecha", `Acceso creado para «${usuario}».`, JSON.stringify({ sellado: aB64(sellar(deB64(plana.responder_a), utf8(JSON.stringify(acceso)))) }));
+      }
+      // Plan 0.8.0, B1: «Ordenar nombres de carpeta» (como el agente: mueve, pone al día espejos y retención).
+      if (c.mover && typeof c.mover === "object" && e.resumen.admite?.includes(ADMITE_NOMBRES) && e.resumen.guarda_copias) {
+        const g = e.resumen.guarda_copias;
+        const m = c.mover as { usuario?: string; legible?: string; repos?: { de: string; nombre: string }[]; deshacer?: boolean };
+        const listas = [g.repositorios ?? [], ...(g.zonas ?? []).map((z) => z.repositorios ?? [])];
+        const u = listas.flat().find((x) => x.usuario === m.usuario);
+        if (!u) return resultado(e, o, "fallida", `«${m.usuario}» no es un equipo de este almacén.`);
+        g.renombres ??= [];
+        let nuevoU: string | null = null;
+        const repos: { de: string; a: string }[] = [];
+        let olvidar: string | null = null;
+        if (m.deshacer) {
+          const ult = g.renombres.find((r) => r.a === u.usuario || r.a.startsWith(`${u.usuario}/`));
+          if (!ult) return resultado(e, o, "fallida", "No hay nada que deshacer en la carpeta de ese equipo.");
+          olvidar = ult.cuando;
+          for (const r of g.renombres.filter((x) => x.cuando === ult.cuando)) {
+            if (!r.a.includes("/")) nuevoU = r.de;
+            else repos.push({ de: r.a.split("/")[1], a: r.de.split("/")[1] });
+          }
+        } else {
+          for (const r of m.repos ?? []) {
+            if (!u.repos.includes(r.de)) return resultado(e, o, "fallida", `No hay ningún repositorio «${u.usuario}/${r.de}» en este almacén.`);
+            const a = carpetaNueva(r.nombre, [...u.repos.filter((x) => x !== r.de), ...repos.map((x) => x.a)]);
+            if (a !== r.de) repos.push({ de: r.de, a });
+          }
+          if (m.legible) nuevoU = `${normalizar(m.legible, MAX_EQUIPO, "equipo")}-${randomUUID().slice(0, 4)}`;
+        }
+        if (!nuevoU && !repos.length) return resultado(e, o, "fallida", "Ya tienen esos nombres: no hay nada que mover.");
+        const antes = u.usuario;
+        const despues = nuevoU ?? antes;
+        const ruta = (x: string) => {
+          const [uu, rr] = x.includes("/") ? x.split("/") : [x, null];
+          if (uu !== antes) return x;
+          return rr == null ? despues : `${despues}/${repos.find((y) => y.de === rr)?.a ?? rr}`;
+        };
+        u.repos = u.repos.map((r) => repos.find((y) => y.de === r)?.a ?? r);
+        u.usuario = despues;
+        for (const t of g.espejo?.trabajos ?? []) {
+          if (t.que.tipo === "repos") t.que.repos = t.que.repos.map(ruta);
+          if (t.que.tipo === "equipos") t.que.equipos = t.que.equipos.map(ruta);
+          if (t.vistos) t.vistos = t.vistos.map(ruta);
+        }
+        for (const d of g.espejo?.destinos ?? []) {
+          if (d.repos) d.repos = d.repos.map(ruta);
+          if (d.vistos) d.vistos = d.vistos.map(ruta);
+        }
+        for (const r of g.retenciones ?? []) if (r.usuario === antes) [r.usuario, r.repo] = ruta(`${antes}/${r.repo}`).split("/");
+        const cuando = ahora();
+        if (olvidar) g.renombres = g.renombres.filter((r) => r.cuando !== olvidar);
+        g.renombres = [...repos.map((r) => ({ de: `${antes}/${r.de}`, a: `${despues}/${r.a}`, cuando })), ...(nuevoU ? [{ de: antes, a: despues, cuando }] : []), ...g.renombres].slice(0, 50);
+        const partes = [...(nuevoU ? [`la carpeta del equipo «${antes}» → «${despues}»`] : []), ...repos.map((r) => `«${r.de}» → «${r.a}»`)];
+        return resultado(e, o, "hecha", `Carpetas movidas en el almacén: ${partes.join(", ")}.`, JSON.stringify({ mover: { usuario: nuevoU ? { de: antes, a: despues } : null, repos } }));
       }
       if (typeof c.quitar === "string") {
         if (e.resumen.guarda_copias) e.resumen.guarda_copias.usuarios = Math.max(0, (e.resumen.guarda_copias.usuarios ?? 1) - 1);
@@ -753,6 +811,17 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       e.resumen.datos_equipo.observacion = { valor: t, ...campo };
       observacionDelEquipo(e.cliente, e.id, t, `${plana.por ?? "El equipo"} (desde la consola «Consola de pruebas»)`);
       return resultado(e, o, "hecha", t ? "Observación guardada: la verán todas sus consolas." : "Observación quitada en todas sus consolas.");
+    }
+    // Plan 0.8.0, B1: el nombre de un repositorio (como el agente).
+    case "nombre_repositorio": {
+      if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      const r = e.resumen.repositorios?.find((x) => x.id === c.repo);
+      const n = String(c.nombre ?? "").trim();
+      if (!r) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      if (!n || n.length > 80) return resultado(e, o, "fallida", "Escribe un nombre para el repositorio (hasta 80 caracteres).");
+      const antes = r.nombre;
+      r.nombre = n;
+      return resultado(e, o, "hecha", `«${antes}» ahora se llama «${n}». Lo verán así todas sus consolas.`);
     }
     case "quitar_destino": {
       const d = e.resumen?.destinos?.find((x) => x.id === c.destino);
@@ -998,6 +1067,15 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const d = e.resumen?.destinos?.find((x) => x.id === c.destino);
       if (!d) return resultado(e, o, "fallida", "Ese destino no existe en este equipo.");
       if (typeof c.donde === "string" && c.donde) d.donde = c.donde;
+      // Plan 0.8.0, B1: la carpeta nueva de algunos repositorios (el id no cambia).
+      if (c.carpetas && typeof c.carpetas === "object") {
+        if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "fallida", "Este agente aún no sabe cambiar la carpeta de un repositorio: actualízalo.");
+        for (const [id, carpeta] of Object.entries(c.carpetas as Record<string, string>)) {
+          const r = e.resumen.repositorios?.find((x) => x.id === id && x.destino === d.id);
+          if (!r || !/^[a-z0-9-]{1,64}$/.test(carpeta)) return resultado(e, o, "fallida", `Carpeta no válida para «${id}».`);
+          r.ruta = carpeta === r.id ? null : carpeta;
+        }
+      }
       return resultado(e, o, "hecha", `Destino «${d.nombre}» actualizado: todos sus repositorios se abren con los datos nuevos.`);
     }
     // --- v1.22: retención en el almacén ------------------------------------------
