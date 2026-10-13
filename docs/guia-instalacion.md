@@ -344,7 +344,7 @@ Cada noche, el servidor guarda una copia cifrada de sí mismo (cuentas, clientes
 3. **¿Dónde los quieres?**:
    - **En el equipo, junto al original (Recomendado):** crea al lado una carpeta `Restaurado AAAA-MM-DD HHMM`. Nunca sobrescribe.
    - **En su sitio:** vuelve a donde estaba; lo que ya exista se deja como está salvo que marques **Reemplazar** (y entonces se pierde lo que haya).
-   - **Descargar en este navegador:** hasta 500 MB; llega cifrado por el servidor, que no puede leerlo.
+   - **Descargar en este navegador:** hasta 2 GB (o lo que permita el servidor); llega cifrado por el servidor, que no puede leerlo.
 4. **Restaurar** y comprueba que el archivo se abre. Borra la carpeta «Restaurado…».
 
 **Restaurar en otro equipo** (arriba en **Restaurar**): con el equipo original vivo, comparte su acceso; si ya no existe, escribe los datos de su kit.

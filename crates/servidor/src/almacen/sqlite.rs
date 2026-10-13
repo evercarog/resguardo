@@ -188,6 +188,8 @@ CREATE TABLE IF NOT EXISTS plantillas (id TEXT PRIMARY KEY, cifrado TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS destinos (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, donde TEXT, actualizado INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS etiquetas_ajustes (clave TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizada INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS datos_comunes (clave TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizada INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS restauraciones_notas (equipo_id TEXT NOT NULL, id TEXT NOT NULL, motivo TEXT NOT NULL, notas TEXT, por TEXT NOT NULL, actualizada INTEGER NOT NULL, PRIMARY KEY (equipo_id, id));
+CREATE TABLE IF NOT EXISTS ajustes_cliente (clave TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizada INTEGER NOT NULL, por TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS auditoria_importada (
   n INTEGER PRIMARY KEY, creado INTEGER NOT NULL, actor TEXT NOT NULL, accion TEXT NOT NULL, objetivo TEXT NOT NULL,
   datos TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL, origen TEXT NOT NULL);
@@ -1580,6 +1582,56 @@ impl Almacen for Sqlite {
     fn borrar_ajuste_etiqueta(&self, c: &ClienteCtx, nombre: &str) -> R<bool> {
         let clave = nombre.to_lowercase();
         self.con(c, |db| Ok(db.execute("DELETE FROM etiquetas_ajustes WHERE clave = ?1", [clave]).map_err(s)? > 0))
+    }
+
+    // ---------- Restauraciones (plan 0.8.0, E2) ----------
+    fn notas_restauracion(&self, c: &ClienteCtx) -> R<Vec<NotaRestauracion>> {
+        self.con(c, |db| {
+            let mut st = db.prepare("SELECT equipo_id, id, motivo, notas, por, actualizada FROM restauraciones_notas ORDER BY actualizada DESC").map_err(s)?;
+            let filas = st
+                .query_map([], |r| {
+                    Ok(NotaRestauracion { equipo: r.get(0)?, id: r.get(1)?, motivo: r.get(2)?, notas: r.get(3)?, por: r.get(4)?, actualizada: r.get(5)? })
+                })
+                .map_err(s)?;
+            filas.collect::<Result<Vec<_>, _>>().map_err(s)
+        })
+    }
+    fn poner_nota_restauracion(&self, c: &ClienteCtx, n: &NotaRestauracion, maximo: i64) -> R<bool> {
+        self.con(c, |db| {
+            let existe: bool = db
+                .query_row("SELECT 1 FROM restauraciones_notas WHERE equipo_id = ?1 AND id = ?2", params![n.equipo, n.id], |_| Ok(true))
+                .optional()
+                .map_err(s)?
+                .unwrap_or(false);
+            let total: i64 = db.query_row("SELECT COUNT(*) FROM restauraciones_notas", [], |r| r.get(0)).map_err(s)?;
+            if !existe && total >= maximo {
+                return Ok(false);
+            }
+            db.execute(
+                "INSERT INTO restauraciones_notas (equipo_id, id, motivo, notas, por, actualizada) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(equipo_id, id) DO UPDATE SET motivo = ?3, notas = ?4, por = ?5, actualizada = ?6",
+                params![n.equipo, n.id, n.motivo, n.notas, n.por, ahora()],
+            )
+            .map_err(s)?;
+            Ok(true)
+        })
+    }
+    fn ajuste_cliente(&self, c: &ClienteCtx, clave: &str) -> R<Option<(String, Ts, String)>> {
+        self.con(c, |db| {
+            db.query_row("SELECT datos, actualizada, por FROM ajustes_cliente WHERE clave = ?1", [clave], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .optional()
+                .map_err(s)
+        })
+    }
+    fn poner_ajuste_cliente(&self, c: &ClienteCtx, clave: &str, datos: &str, por: &str) -> R<()> {
+        self.con(c, |db| {
+            db.execute(
+                "INSERT INTO ajustes_cliente (clave, datos, actualizada, por) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(clave) DO UPDATE SET datos = ?2, actualizada = ?3, por = ?4",
+                params![clave, datos, ahora(), por],
+            )
+            .map_err(s)?;
+            Ok(())
+        })
     }
 
     // ---------- Datos comunes del cliente (0.7.26, bloque 8) ----------

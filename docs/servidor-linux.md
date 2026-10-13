@@ -28,7 +28,7 @@ Cloud o Hetzner, con certificado público y varios clientes), ver
   recientes lo traen activado. Sin él, el servicio no arranca (226/NAMESPACE).
 - Unos **100 MB** libres en el disco raíz para el programa y sus datos
   (`/var/lib/resguardo-server`: cuentas, equipos y certificados; las
-  descargas al navegador pasan por ahí, hasta 500 MB cada una).
+  descargas al navegador pasan por ahí, hasta 2 GB cada una).
 - El **puerto 8443** libre (se puede cambiar).
 - Los paquetes, de la integración continua (artefacto `servidor-linux-x86_64`
   del trabajo «Paquetes del servidor») o de una versión publicada:

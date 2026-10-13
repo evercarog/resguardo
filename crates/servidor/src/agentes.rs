@@ -754,11 +754,24 @@ pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
 /// v1.47: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
 /// v1.49: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
 /// v1.50 (9b): `auditoria_rehecha` (una consola del equipo rehízo la cadena de su auditoría).
-pub const TIPOS_HISTORIAL: &[&str] =
-    &["copia", "resumen_dia", "verificacion", "prueba_restauracion", "externa", "espejo", "aviso", "retencion", "historial", "orden", "auditoria_rehecha"];
-/// Los que solo se dan si se piden con `tipo` (v1.45; `orden`, v1.49): una consola anterior no
-/// los conoce (o son grandes). Sin `tipo`, el historial es el de siempre.
-pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion", "orden"];
+/// v1.6x (pendiente de numerar al unir; plan 0.8.0, E2): `restauracion` (cada restauración, sin rutas).
+pub const TIPOS_HISTORIAL: &[&str] = &[
+    "copia",
+    "resumen_dia",
+    "verificacion",
+    "prueba_restauracion",
+    "externa",
+    "espejo",
+    "aviso",
+    "retencion",
+    "historial",
+    "orden",
+    "auditoria_rehecha",
+    "restauracion",
+];
+/// Los que solo se dan si se piden con `tipo` (v1.45; `orden`, v1.49; `restauracion`, v1.6x):
+/// una consola anterior no los conoce (o son grandes). Sin `tipo`, el historial es el de siempre.
+pub const TIPOS_SOLO_PEDIDOS: &[&str] = &["retencion", "orden", "restauracion"];
 /// Vueltas de la retención con la lista de versiones por equipo; las anteriores, solo con sus cifras.
 pub const RETENCIONES_CON_DETALLE: i64 = 50;
 /// 2000-01-01: nada de antes (ni de más de un día en el futuro, por los relojes).

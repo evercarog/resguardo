@@ -883,7 +883,7 @@ La consola envía la orden `descargar` con `relevo: { id, max_bytes }`.
 - **borra** con `DELETE /api/clientes/{c}/relevos/{r}` al terminar.
 
 Límites:
-- Configurable: 500 MB por relé por defecto, 2 GB en total en el servidor.
+- Configurable: 2 GB por relé por defecto (`--max-descarga MB`; antes 500 MB), y en total en el servidor el doble del máximo (al menos 2 GB).
 - Caduca 1 h después de terminar la subida.
 - Cifrado de cada trozo como en §1, con `relevo.clave` (32 bytes de la consola, dentro del sobre de la orden). El servidor solo ve trozos opacos.
 - El agente lo genera con `restic dump` (un archivo tal cual, o una carpeta con `--archive zip`).
