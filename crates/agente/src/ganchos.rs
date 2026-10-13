@@ -322,10 +322,10 @@ mod tests {
         assert_eq!(servicio_sql("SERVIDOR-01\\sqlexpress"), "MSSQL$SQLEXPRESS");
         assert_eq!(servicio_sql("localhost\\MSSQLSERVER,1433"), "MSSQLSERVER");
         assert_eq!(archivo_volcado("Contab 2026$"), "resguardo-Contab_2026_.bak");
-        let t = tsql_volcado("WO_Altamar", Path::new(r"C:\ResguardoVolcados\resguardo-WO_Altamar.bak"));
+        let t = tsql_volcado("Ventas", Path::new(r"C:\ResguardoVolcados\resguardo-Ventas.bak"));
         assert_eq!(
             t,
-            r"BACKUP DATABASE [WO_Altamar] TO DISK = N'C:\ResguardoVolcados\resguardo-WO_Altamar.bak' WITH COPY_ONLY, INIT, FORMAT, CHECKSUM, NAME = N'Resguardo'"
+            r"BACKUP DATABASE [Ventas] TO DISK = N'C:\ResguardoVolcados\resguardo-Ventas.bak' WITH COPY_ONLY, INIT, FORMAT, CHECKSUM, NAME = N'Resguardo'"
         );
     }
 

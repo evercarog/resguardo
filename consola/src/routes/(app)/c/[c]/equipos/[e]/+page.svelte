@@ -63,7 +63,7 @@
   import { admiteEspejoFlexible, conRepos, cuandoEspejo, textoVerificacion, textoRetencion, errorDiasRetencion, diaLegible, RETENCION_ESPEJO, destinoParaOrden, horaParaConsolasAnteriores, horarioDiario, nombresRepos, nuevosEn, textoRepos, type DestinoEspejoOrden, type DestinoEspejoResumen } from "$lib/espejo";
   import { errorReglas, reglasDe } from "$lib/horario";
   import EspejoOpciones from "$lib/componentes/EspejoOpciones.svelte";
-  import { errorCarpetaDestino, errorCarpetaEspejo } from "$lib/ganchos";
+  import { errorCarpetaDestino, errorCarpetaEspejo, agruparResultados } from "$lib/ganchos";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import { estadoCopia, proximaDe, ultimaVuelta } from "$lib/copia";
   import type { Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen, RetencionAlmacen } from "$lib/tipos";
@@ -110,7 +110,7 @@
   import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
   import MoverRepositorio from "$lib/componentes/MoverRepositorio.svelte";
   import FormRepoExistente from "$lib/componentes/FormRepoExistente.svelte";
-  import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, textoRetencionDestino } from "$lib/copiaExterna";
+  import { admiteExternaExistente, cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, MAX_BLOQUEO, ordenQuitarExterna, textoRetencionDestino } from "$lib/copiaExterna";
   // v1.47: un «Mover a otro sitio…» en marcha (también si lo empezó otra consola).
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   // v1.56: nombre, etiquetas y observación del equipo iguales en todas sus consolas; quitar destinos sin uso.
@@ -727,15 +727,9 @@
       accion: "Quitar el destino",
     });
   }
+  // 14nn: la misma orden que en la página del repositorio (lib/copiaExterna.ts).
   function quitarExterna(r: RepositorioResumen) {
-    const id = idDestinoExterna(r);
-    abrir({
-      tipo: "cambiar_copia_externa",
-      cuerpo: { repo: r.id, ...(id ? { destino: { id } } : {}), hora: null },
-      titulo: "Quitar la copia externa",
-      descripcion: `«${r.nombre}» dejará de copiarse cada día a «${r.externa?.destino ?? "su destino externo"}». Lo ya copiado allí se queda.`,
-      repo: { id: r.id, nombre: r.nombre },
-    });
+    abrir(ordenQuitarExterna(r, destinos));
   }
 
 
@@ -1010,7 +1004,7 @@
                   <!-- 14uu: si el equipo arrancó poco antes del fallo, se dice (suele explicarlo). -->
                   {#if vuelta?.resultado === "fallo" && reinicioAntes(datosBasicos(equipo), vuelta.cuando)}<span class="fila-sub reinicio"><Power size={12} />{reinicioAntes(datosBasicos(equipo), vuelta.cuando)}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
-                  {#each equipo.ultimo_informe?.datos.copias?.find((x) => x.id === k.id)?.ganchos ?? [] as g, gi (gi)}
+                  {#each agruparResultados(equipo.ultimo_informe?.datos.copias?.find((x) => x.id === k.id)?.ganchos ?? []) as g, gi (gi)}
                     <span class="fila-sub gancho-res">
                       <Chip pequeno tono={g.estado === "ok" ? "ok" : g.estado === "aviso" ? "warn" : "bad"} texto={NOMBRE_GANCHO[g.tipo] ?? g.tipo} />
                       {#if g.mensaje}<span class:msg-fallo={g.estado === "fallo"}>{g.mensaje}</span>{/if}

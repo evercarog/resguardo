@@ -51,7 +51,7 @@ function resultado(e: EquipoMock, o: OrdenMock, estadoO: T.EstadoOrden, mensaje:
 
 const CARPETAS: Record<string, string[]> = {
   documentos: ["C:\\Users\\recepcion\\Documents", "C:\\Users\\recepcion\\Desktop", "D:\\Escaneos"],
-  siigo: ["C:\\SIIWI01", "C:\\Users\\contador\\Documents"],
+  ventas: ["C:\\AppVentas", "C:\\Users\\contador\\Documents"],
   gerencia: ["C:\\Users\\gerente\\Desktop", "C:\\Users\\gerente\\Documents"],
   caja: ["C:\\Facturas"],
   proyectos: ["E:\\Proyectos", "E:\\Audio", "F:\\Entregas", "C:\\Users\\estudio\\Documents"],
@@ -75,8 +75,8 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
       ...(c.inicio ? { inicio: c.inicio } : {}),
       ...(c.retraso_min ? { retraso_min: c.retraso_min } : {}),
-      // CONTABILIDAD (agente 0.7.2) vuelca su base de SQL Server antes de copiar «Siigo».
-      gancho: c.id === "siigo" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["SIIGO_ALTAMAR"], carpeta: "C:\\ResguardoVolcados" }] : null,
+      // CONTABILIDAD (agente 0.7.2) vuelca sus bases de SQL Server antes de copiar «Ventas» (14gg: varias).
+      gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
     repositorios: (r.repositorios ?? []).map((x) => ({
       id: x.id,
@@ -793,7 +793,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     // --- v1.14: venir de la app de escritorio -----------------------------------
     // Simulación: la contraseña «mala» no abre; una dirección con «nada» no tiene
-    // repositorio; con «:8001» el servidor es de solo añadir (como el de Siigo).
+    // repositorio; con «:8001» el servidor es de solo añadir (como el de Ventas).
     case "adoptar_repositorio": {
       const d = (c.destino ?? {}) as { id?: string; nombre?: string; tipo?: T.DestinoResumen["tipo"]; donde?: string };
       const contrasena = String(c.contrasena ?? "");
@@ -1197,7 +1197,7 @@ export async function mensajeDeConsola(s: SesionMock, cifrado: string) {
         op: "sugerencias",
         sugerencias: [
           { id: "usuarios", nombre: "Carpetas de usuarios", detalle: "3 usuarios: recepcion, contador, gerente", rutas: ["C:\\Users\\recepcion", "C:\\Users\\contador", "C:\\Users\\gerente"] },
-          { id: "siigo", nombre: "Siigo", detalle: "Datos en C:\\SIIWI01", rutas: ["C:\\SIIWI01"], gancho: "siigo" },
+          { id: "ventas", nombre: "Ventas", detalle: "Datos en C:\\AppVentas", rutas: ["C:\\AppVentas"], gancho: "ventas" },
           { id: "sqlserver", nombre: "SQL Server · 2 bases", detalle: "Se vuelcan con COPY_ONLY antes de copiar", rutas: [], gancho: "sqlserver" },
         ],
       });
@@ -1260,7 +1260,7 @@ function arbol(ruta: string, version: boolean): Entrada[] {
   if (r === "C:")
     return [
       { nombre: "Users", tipo: "dir" },
-      { nombre: "SIIWI01", tipo: "dir" },
+      { nombre: "AppVentas", tipo: "dir" },
       { nombre: "Program Files", tipo: "dir", sistema: true },
       { nombre: "Windows", tipo: "dir", sistema: true },
     ];

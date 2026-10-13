@@ -33,10 +33,10 @@ igual("la hora para una consola anterior: la del primer horario", horaParaConsol
 igual("…o la de antes si no hay ninguna", horaParaConsolasAnteriores([{ tipo: "carpeta", carpeta: "E:\\x" }], "02:00"), "02:00");
 
 console.log("\n· Espejo: qué repositorios (3f)");
-const todos = nombresRepos([{ usuario: "caja-1", repos: ["caja", "siigo"] }, { usuario: "srv", repos: ["."] }, { usuario: "raro", repos: ["a/b"] }]);
-igual("los nombres del almacén: <usuario>/<repo> o <usuario>", todos, ["caja-1/caja", "caja-1/siigo", "srv"]);
+const todos = nombresRepos([{ usuario: "caja-1", repos: ["caja", "ventas"] }, { usuario: "srv", repos: ["."] }, { usuario: "raro", repos: ["a/b"] }]);
+igual("los nombres del almacén: <usuario>/<repo> o <usuario>", todos, ["caja-1/caja", "caja-1/ventas", "srv"]);
 igual("todos: no hay nuevos", nuevosEn({}, todos), []);
-igual("con selección: los que no se vieron", nuevosEn({ repos: ["caja-1/caja"], vistos: ["caja-1/caja", "caja-1/siigo"] }, todos), ["srv"]);
+igual("con selección: los que no se vieron", nuevosEn({ repos: ["caja-1/caja"], vistos: ["caja-1/caja", "caja-1/ventas"] }, todos), ["srv"]);
 igual("textos", [textoRepos({}), textoRepos({ repos: ["srv"] }), textoRepos({ repos: ["a", "b"] }, (r) => r.toUpperCase())], ["Todos los repositorios", "Solo srv", "2 repositorios: A, B"]);
 igual("añadir los nuevos", conRepos({ tipo: "carpeta", carpeta: "E:\\x", repos: ["srv"], vistos: ["srv"] }, ["caja-1/caja"], todos), { tipo: "carpeta", carpeta: "E:\\x", repos: ["srv", "caja-1/caja"], vistos: todos });
 igual("la selección se reenvía", destinoParaOrden({ tipo: "carpeta", carpeta: "E:\\x", repos: ["srv"], vistos: ["srv", "caja-1/caja"] }), { tipo: "carpeta", carpeta: "E:\\x", repos: ["srv"], vistos: ["srv", "caja-1/caja"] });
@@ -47,9 +47,9 @@ igual("quitar uno de la selección espera", esDestructiva("guarda_copias", orden
 igual("añadir uno no espera", esDestructiva("guarda_copias", orden(["a", "b"]), undefined, ctx(["a"])), false);
 igual("pasar a todos no espera", esDestructiva("guarda_copias", orden(undefined), undefined, ctx(["a"])), false);
 igual("el nombre de un repositorio en su almacén", [nombreEnAlmacen("rest:https://10.0.0.5:8000/caja-1/", { id: "caja" }), nombreEnAlmacen("https://almacen:8000/srv", { id: "x", ruta: "." }), nombreEnAlmacen("E:\\copias", { id: "x" })], ["caja-1/caja", "srv", null]);
-const esp = { hora: "02:00", destinos: [{ tipo: "carpeta" as const, carpeta: "E:\\x" }, { tipo: "nube" as const, nube: "B2", carpeta: "y", repos: ["caja-1/siigo"] }] };
+const esp = { hora: "02:00", destinos: [{ tipo: "carpeta" as const, carpeta: "E:\\x" }, { tipo: "nube" as const, nube: "B2", carpeta: "y", repos: ["caja-1/ventas"] }] };
 igual("desde un repositorio, solo los destinos a los que va", espejoDelRepo(esp, "caja-1/caja")?.destinos?.length, 1);
-igual("…y los dos si entra en la selección", espejoDelRepo(esp, "caja-1/siigo")?.destinos?.length, 2);
+igual("…y los dos si entra en la selección", espejoDelRepo(esp, "caja-1/ventas")?.destinos?.length, 2);
 igual("…y ninguno si no va a ninguno", espejoDelRepo({ hora: "02:00", destinos: [esp.destinos[1]] }, "caja-1/caja"), null);
 
 console.log("\n· Espejo: comprobar (3d)");

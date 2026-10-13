@@ -159,7 +159,7 @@ GUIAS.push({
   resumen: "Dos pasos cerrados que el agente hace antes de cada copia.",
   texto: [
     "«Volcar bases de datos de SQL Server antes de copiar»: el agente hace una copia COPY_ONLY de cada base en una carpeta del equipo, la incluye en la copia y borra el volcado al terminar. COPY_ONLY no estorba a las copias propias de SQL Server. Si un volcado falla, la copia sale como fallida (el resto de carpetas se copia igual).",
-    "«Avisar si la carpeta de copias de una aplicación lleva más de N horas sin archivos nuevos»: para programas que hacen sus propias copias (World Office, por ejemplo). Si el archivo más nuevo es más viejo que lo indicado, la copia sale con avisos.",
+    "«Avisar si la carpeta de copias de una aplicación lleva más de N horas sin archivos nuevos»: para programas que hacen sus propias copias. Si el archivo más nuevo es más viejo que lo indicado, la copia sale con avisos.",
     "La cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita el rol db_backupoperator en cada base que se vuelca (o sysadmin). Se da en SQL Server Management Studio, en Seguridad → Inicios de sesión.",
     "Hace falta el agente 0.7.2 o posterior: con uno anterior, la consola no lo ofrece.",
   ],

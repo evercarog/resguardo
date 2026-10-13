@@ -20,13 +20,13 @@ import { esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN } from "../src/lib/cripto/orde
 import { almacenDe, errorHorario, errorRegla, estimarVersiones, leerPlazo, leerRegla, nuevaClave, plazoEnPalabras, presetDe, PRESETS, REGLA_POR_DEFECTO, reglaParaOrden, restarPlazo, resumenRegla, textoHorario, textoRegla } from "../src/lib/retencion";
 import { errorVerificacion, fraseVerificacion, partesVerificacion } from "../src/lib/verificacion";
 import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnAlmacen } from "../src/lib/direccion";
-import { cuerpoBloqueo, cuerpoExistente, detallesExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
+import { cuerpoBloqueo, cuerpoExistente, detallesExterna, ordenQuitarExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
 import { resultadoConError } from "../src/lib/salud";
 import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
 import { bytesRepo, destinoDe, versionDeVuelta } from "../src/lib/repo";
 import type { CopiaResumen, Equipo, Informe, ReglaHorario, RepoInforme, TareaEnMarcha } from "../src/lib/tipos";
 import { cifrasTarea, porcentaje, textoCorto, textoFase, textoQuedan } from "../src/lib/textoProgreso";
-import { baseValida, errorCarpetaDestino, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, instanciaValida, limpiar, rutaValida, versionAlMenos } from "../src/lib/ganchos";
+import { baseValida, errorCarpetaDestino, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, agruparResultados, ganchosEnFrase, resultadoDeGancho, instanciaValida, limpiar, rutaValida, versionAlMenos } from "../src/lib/ganchos";
 import {
   ARGON2,
   type Argon2,
@@ -441,7 +441,7 @@ if (v1.paquete) {
   cierto("ruta relativa no", !rutaValida("Volcados"));
   cierto("ruta con «..» no", !rutaValida("C:\\a\\..\\b"));
   cierto("ruta con comilla no", !rutaValida("C:\\a'b"));
-  const sql = { tipo: "sqlserver" as const, instancia: ".", bases: ["WO_Empresa", "Contab 2026"], carpeta: "C:\\ResguardoVolcados" };
+  const sql = { tipo: "sqlserver" as const, instancia: ".", bases: ["Ventas", "Nominas 2026"], carpeta: "C:\\ResguardoVolcados" };
   cierto("sqlserver válido", errorGancho(sql) === null);
   cierto("sqlserver con base repetida (sin mayúsculas) no", errorGancho({ ...sql, bases: ["a", "A"] }) !== null);
   cierto("sqlserver: «.» no se envía (es la predeterminada)", !("instancia" in limpiar(sql)));
@@ -528,6 +528,34 @@ if (v1.paquete) {
   igual("error: desconocido", explicarError("algo raro").ayuda, "si-copia-falla");
   // Cada vez que se hace una copia es «una copia» (no «una vuelta»).
   cierto("frase: «La última copia»", fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false }, ahora).includes("La última copia, "));
+  // 14nn: «Quitar la copia externa», la misma orden en la ficha del equipo y en la página del repositorio.
+  {
+    const r = { id: "ventas", nombre: "Ventas", destino: "d1", externa: { destino: "Nube oficina", hora: "23:00" } } as unknown as Parameters<typeof ordenQuitarExterna>[0];
+    const q = ordenQuitarExterna(r, [{ id: "b2-1", nombre: "Nube oficina", tipo: "b2" } as never]);
+    igual("quitar la copia externa: la orden y su destino (por el nombre)", [q.tipo, q.cuerpo, q.repo], ["cambiar_copia_externa", { repo: "ventas", destino: { id: "b2-1" }, hora: null }, { id: "ventas", nombre: "Ventas" }]);
+  }
+  // 14gg: varios volcados, una sola vez y con los nombres (como mucho 3).
+  {
+    const seis = ["Ventas", "Nominas", "Compras", "Bancos", "Cartera", "Activos"];
+    const sql = { tipo: "sqlserver" as const, instancia: ".", bases: seis, carpeta: "D:\Volcados" };
+    igual("ganchos: 6 bases, una vez", ganchosEnFrase([sql]), ["volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más)"]);
+    igual("ganchos: 2 bases", ganchosEnFrase([{ ...sql, bases: ["Ventas", "Nominas"] }]), ["volcado de 2 bases de SQL Server (Ventas y Nominas)"]);
+    igual("ganchos: una base", ganchosEnFrase([{ ...sql, bases: ["Ventas"] }]), ["volcado de la base «Ventas» de SQL Server"]);
+    igual(
+      "ganchos: dos volcados y dos carpetas, agrupados",
+      ganchosEnFrase([sql, { ...sql, bases: ["Ventas", "Otra"] }, { tipo: "carpeta_reciente", carpeta: "D:\CopiasApp", horas: 24 }, { tipo: "carpeta_reciente", carpeta: "E:\CopiasApp", horas: 24 }]),
+      ["volcado de 7 bases de SQL Server (Ventas, Nominas, Compras y 4 más)", "comprobar que las copias de la aplicación están al día en 2 carpetas"],
+    );
+    const res = seis.map((b) => ({ tipo: "sqlserver" as const, mensaje: `Volcado de SQL Server de «${b}» hecho.` }));
+    igual("ganchos: solo con el informe, con los nombres", ganchosEnFrase(null, res), ["volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más)"]);
+    igual("ganchos: solo con el informe, sin nombres", ganchosEnFrase(null, [{ tipo: "sqlserver", mensaje: null }, { tipo: "sqlserver", mensaje: null }]), ["volcado de 2 bases de SQL Server"]);
+    const conFallo = [...res.map((r) => ({ ...r, estado: "ok" as const })), { tipo: "sqlserver" as const, estado: "fallo" as const, mensaje: "No se pudo volcar «Otra» de SQL Server: x" }];
+    igual("resultados: los volcados bien, en una línea; el fallo, suelto", agruparResultados(conFallo).map((r) => [r.estado, r.mensaje]), [["ok", "6 bases volcadas: Ventas, Nominas, Compras y 3 más."], ["fallo", "No se pudo volcar «Otra» de SQL Server: x"]]);
+    igual("resultado de un paso: el peor de sus bases", resultadoDeGancho({ ...sql, bases: [...seis, "Otra"] }, conFallo)?.estado, "fallo");
+    igual("resultado de un paso: todas bien, juntas", resultadoDeGancho(sql, conFallo)?.mensaje, "6 bases volcadas: Ventas, Nominas, Compras y 3 más.");
+    const frase = fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false, ganchos: ganchosEnFrase([sql]) }, ahora);
+    cierto("frase: el volcado una sola vez", frase.includes("«Documentos»; antes, volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más): ") && frase.split("SQL Server").length === 2);
+  }
   cierto(
     "explicaciones de errores sin «vuelta»",
     ["No se pudo conectar con el servidor de copias.", "3 archivos en uso no se pudieron leer.", "algo raro"].every((m) => !/vuelta/i.test(JSON.stringify(explicarError(m)))),
@@ -562,25 +590,25 @@ if (v1.paquete) {
 
 // ---------------------------------------------------------------------------
 console.log("\n· Repositorios que ya existen (v1.14: adoptar_repositorio y copiar_historial)");
-igual("rest con carpeta", partirDireccion("rest", "http://192.168.1.30:8001/Siigo"), { donde: "http://192.168.1.30:8001", ruta: "Siigo" });
+igual("rest con carpeta", partirDireccion("rest", "http://192.168.1.30:8001/Ventas"), { donde: "http://192.168.1.30:8001", ruta: "Ventas" });
 igual("rest con «rest:» y barra final", partirDireccion("rest", "rest:https://nas:8000/ana/portatil/"), { donde: "https://nas:8000/ana", ruta: "portatil" });
 igual("rest en la raíz", partirDireccion("rest", "https://nas:8000/"), { donde: "https://nas:8000", ruta: "" });
-igual("local de Windows", partirDireccion("local", "D:\\Copias\\Siigo\\"), { donde: "D:\\Copias", ruta: "Siigo" });
-igual("local en la raíz del disco", partirDireccion("local", "E:\\Siigo"), { donde: "E:\\", ruta: "Siigo" });
-igual("local de Linux", partirDireccion("local", "/srv/copias/siigo"), { donde: "/srv/copias", ruta: "siigo" });
-igual("b2 cubo:carpeta", partirDireccion("b2", "b2:cubo:siigo"), { donde: "cubo", ruta: "siigo" });
-igual("b2 con subcarpeta", partirDireccion("b2", "cubo:clientes/siigo"), { donde: "cubo:clientes", ruta: "siigo" });
-igual("s3", partirDireccion("s3", "s3.amazonaws.com/cubo/siigo"), { donde: "s3.amazonaws.com/cubo", ruta: "siigo" });
+igual("local de Windows", partirDireccion("local", "D:\\Copias\\Ventas\\"), { donde: "D:\\Copias", ruta: "Ventas" });
+igual("local en la raíz del disco", partirDireccion("local", "E:\\Ventas"), { donde: "E:\\", ruta: "Ventas" });
+igual("local de Linux", partirDireccion("local", "/srv/copias/ventas"), { donde: "/srv/copias", ruta: "ventas" });
+igual("b2 cubo:carpeta", partirDireccion("b2", "b2:cubo:ventas"), { donde: "cubo", ruta: "ventas" });
+igual("b2 con subcarpeta", partirDireccion("b2", "cubo:clientes/ventas"), { donde: "cubo:clientes", ruta: "ventas" });
+igual("s3", partirDireccion("s3", "s3.amazonaws.com/cubo/ventas"), { donde: "s3.amazonaws.com/cubo", ruta: "ventas" });
 igual("usuario en el almacén", usuarioEnAlmacen("https://192.168.1.50:8002/servidor-01/"), "servidor-01");
 igual("usuario en el almacén, con «rest:» y sin barra", usuarioEnAlmacen("rest:https://almacen:8002/servidor-01"), "servidor-01");
 igual("sin usuario: no es un almacén", usuarioEnAlmacen("https://192.168.1.50:8002"), "");
 igual("dos niveles: no es un almacén", usuarioEnAlmacen("https://nas:8000/ana/portatil"), "");
-igual("ruta en un almacén de Linux", rutaEnAlmacen("/mnt/restic/resguardo/", "servidor-01", "siigo"), "/mnt/restic/resguardo/servidor-01/siigo");
-igual("ruta en un almacén de Windows", rutaEnAlmacen("E:\\Resguardo", "servidor-01", "siigo"), "E:\\Resguardo\\servidor-01\\siigo");
+igual("ruta en un almacén de Linux", rutaEnAlmacen("/mnt/restic/resguardo/", "servidor-01", "ventas"), "/mnt/restic/resguardo/servidor-01/ventas");
+igual("ruta en un almacén de Windows", rutaEnAlmacen("E:\\Resguardo", "servidor-01", "ventas"), "E:\\Resguardo\\servidor-01\\ventas");
 {
-  const r = { tipo: "rest" as const, direccion: "https://nas:8000/Siigo", usuario: "ana", secreto: "s3creto", ca: "", contrasena: "clave" };
+  const r = { tipo: "rest" as const, direccion: "https://nas:8000/Ventas", usuario: "ana", secreto: "s3creto", ca: "", contrasena: "clave" };
   igual("destino sin certificado vacío", destinoCuerpo(r, { id: "d1" }), { id: "d1", tipo: "rest", donde: "https://nas:8000", usuario: "ana", secreto: "s3creto" });
-  igual("origen", origenCuerpo({ ...r, tipo: "local", direccion: "D:\\Copias\\Siigo" }), { destino: { tipo: "local", donde: "D:\\Copias" }, ruta: "Siigo", contrasena: "clave" });
+  igual("origen", origenCuerpo({ ...r, tipo: "local", direccion: "D:\\Copias\\Ventas" }), { destino: { tipo: "local", donde: "D:\\Copias" }, ruta: "Ventas", contrasena: "clave" });
 }
 igual("nivel de las órdenes nuevas", [NIVEL.adoptar_repositorio, NIVEL.copiar_historial], ["admin", "admin"]);
 
@@ -588,16 +616,16 @@ igual("nivel de las órdenes nuevas", [NIVEL.adoptar_repositorio, NIVEL.copiar_h
 console.log("\n· Copia externa a un repositorio que ya existe (v1.46)");
 {
   const x = { ...externaExtraVacia(), modo: "existente" as const };
-  x.existente = { ...x.existente, direccion: "b2:cubo-copias:clientes/siigo", usuario: "0041a2b3", secreto: "K004secreto", contrasena: "clave de la nube" };
+  x.existente = { ...x.existente, direccion: "b2:cubo-copias:clientes/ventas", usuario: "0041a2b3", secreto: "K004secreto", contrasena: "clave de la nube" };
   igual("B2: destino, carpeta, existente y su contraseña", cuerpoExistente(x, "externa-1a2b"), {
     destino: { id: "externa-1a2b", tipo: "b2", donde: "cubo-copias:clientes", usuario: "0041a2b3", secreto: "K004secreto" },
-    ruta: "siigo",
+    ruta: "ventas",
     existente: true,
     contrasena_destino: "clave de la nube",
   });
-  const s3 = { ...x, nombreExistente: " Nube ", existente: { ...x.existente, tipo: "s3" as const, direccion: "s3:https://s3.us-west-004.backblazeb2.com/cubo-copias/siigo" } };
+  const s3 = { ...x, nombreExistente: " Nube ", existente: { ...x.existente, tipo: "s3" as const, direccion: "s3:https://s3.us-west-004.backblazeb2.com/cubo-copias/ventas" } };
   igual("S3 de B2, con nombre", cuerpoExistente(s3, "e1").destino, { id: "e1", nombre: "Nube", tipo: "s3", donde: "https://s3.us-west-004.backblazeb2.com/cubo-copias", usuario: "0041a2b3", secreto: "K004secreto" });
-  const rest = { ...x, existente: { ...x.existente, tipo: "rest" as const, direccion: "https://nas:8000/Siigo", ca: "-----BEGIN CERTIFICATE-----x" } };
+  const rest = { ...x, existente: { ...x.existente, tipo: "rest" as const, direccion: "https://nas:8000/Ventas", ca: "-----BEGIN CERTIFICATE-----x" } };
   cierto("rest: sin certificado propio (la subida usa el del origen)", !("ca_pem" in cuerpoExistente(rest, "e1").destino));
   cierto("incompleto sin contraseña", !existenteCompleto({ ...x, existente: { ...x.existente, contrasena: "" } }) && existenteCompleto(x));
   igual("días de bloqueo", [diasBloqueo(30), diasBloqueo("30"), diasBloqueo(""), diasBloqueo(0), diasBloqueo(3651), diasBloqueo("1.5")], [30, 30, null, null, null, null]);
@@ -624,12 +652,12 @@ igual("regla vacía no vale", errorRegla({ diarias: 0, semanales: 0, mensuales: 
 igual("regla de más de 1000 no vale", errorRegla({ diarias: 1001, semanales: 0, mensuales: 0, anuales: 0 }) !== null, true);
 // v1.28: horarias, plazos y «siempre» (como `Retencion` del agente y `restic forget`).
 {
-  const siigo = PRESETS.find((p) => p.id === "contables")!.regla;
-  igual("Siigo: texto como el agente", textoRegla(siigo), "horarias 15 días · diarias 1 año · mensuales siempre");
+  const horaria = PRESETS.find((p) => p.id === "hora15d-dia1a-mes")!.regla;
+  igual("La de cada hora: texto como el agente", textoRegla(horaria), "horarias 15 días · diarias 1 año · mensuales siempre");
   igual("lo de antes: texto de siempre", textoRegla(REGLA_POR_DEFECTO), "7 diarias · 4 semanales · 12 mensuales · 2 anuales");
-  igual("Siigo: en palabras", resumenRegla(siigo).split(".")[0], "Conserva una por hora durante 15 días, una por día durante 1 año y una por mes siempre");
-  igual("Siigo vale", errorRegla(siigo), null);
-  igual("Siigo con un agente anterior: «actualízalo»", /actualízalo/.test(errorRegla(siigo, false) ?? ""), true);
+  igual("La de cada hora: en palabras", resumenRegla(horaria).split(".")[0], "Conserva una por hora durante 15 días, una por día durante 1 año y una por mes siempre");
+  igual("La de cada hora vale", errorRegla(horaria), null);
+  igual("La de cada hora con un agente anterior: «actualízalo»", /actualízalo/.test(errorRegla(horaria, false) ?? ""), true);
   igual("lo de antes con un agente anterior: vale", errorRegla(REGLA_POR_DEFECTO, false), null);
   igual("plazo que no vale", errorRegla({ ...REGLA_POR_DEFECTO, plazos: { diarias: "15 días" } }) !== null, true);
   igual("solo plazos: vale", errorRegla({ diarias: 0, semanales: 0, mensuales: 0, anuales: 0, plazos: { diarias: "30d" } }), null);
@@ -642,12 +670,12 @@ igual("regla de más de 1000 no vale", errorRegla({ diarias: 1001, semanales: 0,
     anuales: 0,
     plazos: { horarias: "15d" },
   });
-  igual("el preset de una regla", [presetDe(siigo), presetDe(REGLA_POR_DEFECTO), presetDe({ ...REGLA_POR_DEFECTO, diarias: 8 })], ["contables", "clasica", "personalizada"]);
+  igual("el preset de una regla", [presetDe(horaria), presetDe(REGLA_POR_DEFECTO), presetDe({ ...REGLA_POR_DEFECTO, diarias: 8 })], ["hora15d-dia1a-mes", "clasica", "personalizada"]);
   igual("31 de marzo menos un mes (Go)", restarPlazo(new Date(2026, 2, 31, 10), { anos: 0, meses: 1, dias: 0, horas: 0 }).getTime(), new Date(2026, 2, 3, 10).getTime());
   // Una copia cada hora durante dos años: 360 horarias + ~350 diarias + las mensuales de antes.
   const ahora = new Date(2026, 9, 4, 12, 0);
-  const e = estimarVersiones(siigo, undefined, ahora);
-  cierto(`Siigo cada hora: unas 710 versiones (${e.versiones}), 12 más cada año (${e.porAno})`, e.versiones >= 705 && e.versiones <= 730 && e.porAno === 12);
+  const e = estimarVersiones(horaria, undefined, ahora);
+  cierto(`Ventas cada hora: unas 710 versiones (${e.versiones}), 12 más cada año (${e.porAno})`, e.versiones >= 705 && e.versiones <= 730 && e.porAno === 12);
   const e2 = estimarVersiones(PRESETS.find((p) => p.id === "30d6m")!.regla, () => ["13:00"], ahora);
   cierto(`Diarias 30 días, semanales 6 meses con una copia al día: unas 51 (${e2.versiones}), sin crecer`, e2.versiones >= 48 && e2.versiones <= 54 && e2.porAno === 0);
   const e3 = estimarVersiones(REGLA_POR_DEFECTO, () => ["13:00"], ahora);
@@ -665,11 +693,11 @@ igual("horario sin días no vale", errorHorario({ dias: [], hora: "03:00" }) !==
 igual("hora mal escrita no vale", errorHorario({ dias: [7], hora: "3:00" }) !== null, true);
 igual("clave del almacén: 32 bytes en base64url", /^[A-Za-z0-9_-]{43}$/.test(nuevaClave()), true);
 {
-  const almacen = { id: "0a0e1b2c-0000-4000-8000-0000000000e5", nombre: "ALMACEN-01", modo: "gestionado", resumen: { guarda_copias: { activo: true, retenciones: [{ usuario: "servidor-01", repo: "Siigo", retencion: REGLA_POR_DEFECTO, horario: { dias: [7], hora: "03:00" } }] } } } as unknown as Equipo;
+  const almacen = { id: "0a0e1b2c-0000-4000-8000-0000000000e5", nombre: "ALMACEN-01", modo: "gestionado", resumen: { guarda_copias: { activo: true, retenciones: [{ usuario: "servidor-01", repo: "Ventas", retencion: REGLA_POR_DEFECTO, horario: { dias: [7], hora: "03:00" } }] } } } as unknown as Equipo;
   const destino = { id: "almacen-0a0e1b2c", nombre: "ALMACEN-01", tipo: "rest" as const, donde: "https://192.168.1.50:8002/servidor-01/" };
-  const adoptado = { id: "siigo-adoptado", nombre: "Siigo", destino: destino.id, ruta: "Siigo" };
+  const adoptado = { id: "ventas-adoptado", nombre: "Ventas", destino: destino.id, ruta: "Ventas" };
   const en = almacenDe(adoptado, destino, [almacen]);
-  igual("almacén de un repositorio adoptado (usuario y carpeta)", [en?.almacen.nombre, en?.usuario, en?.carpeta, en?.admite, en?.retencion?.repo], ["ALMACEN-01", "servidor-01", "Siigo", true, "Siigo"]);
+  igual("almacén de un repositorio adoptado (usuario y carpeta)", [en?.almacen.nombre, en?.usuario, en?.carpeta, en?.admite, en?.retencion?.repo], ["ALMACEN-01", "servidor-01", "Ventas", true, "Ventas"]);
   igual("uno creado con «Copiar en…»: su id es la carpeta", almacenDe({ id: "almacen-a1b2", nombre: "X", destino: destino.id }, destino, [almacen])?.carpeta, "almacen-a1b2");
   igual("en otro rest-server no hay almacén", almacenDe(adoptado, { ...destino, id: "otro", nombre: "NAS" }, [almacen]), null);
   igual("un almacén con agente anterior no la admite", almacenDe(adoptado, destino, [{ ...almacen, resumen: { guarda_copias: { activo: true } } } as Equipo])?.admite, false);

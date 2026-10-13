@@ -789,3 +789,23 @@ button.fila {
   line-clamp: 2;
   white-space: normal;
 }
+
+/* 14aa: el campo que falta, marcado un momento al pulsar un botón apagado (BotonFalta). */
+.campo-falta,
+.input.campo-falta:focus {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .campo-falta {
+    animation: campo-falta 0.32s var(--ease) 1;
+  }
+}
+@keyframes campo-falta {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}

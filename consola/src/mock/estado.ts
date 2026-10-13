@@ -416,11 +416,11 @@ export async function sembrar(vacio = false) {
         // Windows 10 sin soporte, el disco C: casi lleno y un reinicio justo antes de la copia fallida.
         datos_basicos: basicos(win("Windows 10 Pro", "Professional", "22H2", "19045.5011"), "Intel(R) Core(TM) i3-7100 CPU @ 3.90GHz", 4, 8, "HP", "HP ProDesk 400 G4 SFF", 205, [disco("C:", 240, 7, "NTFS", true), disco("D:", 1000, 612, "NTFS")]),
         destinos: [destinoServidor],
-        repositorios: [repo("siigo", "Siigo y documentos", "servidor-altamar", 96, 91_200_000_000)],
-        copias: [copia("siigo", "Siigo", "siigo", ["12:30", "18:30"], 2, false)],
+        repositorios: [repo("ventas", "Ventas y documentos", "servidor-altamar", 96, 91_200_000_000)],
+        copias: [copia("ventas", "Ventas", "ventas", ["12:30", "18:30"], 2, false)],
       },
     },
-    { claveAdmin: DEMO.claveAdmin, kcfg: kAltamar, contrasenas: { siigo: DEMO.contrasenaRepo }, semilla: 0, id: ID.contabilidad },
+    { claveAdmin: DEMO.claveAdmin, kcfg: kAltamar, contrasenas: { ventas: DEMO.contrasenaRepo }, semilla: 0, id: ID.contabilidad },
   );
   const portatil = await crearEquipo(
     altamar,
@@ -487,7 +487,7 @@ export async function sembrar(vacio = false) {
         ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
-          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "caja-1", repos: ["caja", "siigo"] }],
+          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "caja-1", repos: ["caja", "ventas"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
           zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 0, escucha: true, sistema_archivos: "ReFS", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [] }],
           espejo: {
@@ -498,7 +498,7 @@ export async function sembrar(vacio = false) {
             destinos: [
               { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo", horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true, retencion_dias: 30, por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" }, freno: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén", verificar_pct: 5, verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 }, ultima: hace(60 * 13),
  resultado: "Espejo hecho: 1.204 archivos nuevos (38 GB).", espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
-              { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["caja-1/siigo"], vistos: ["caja-1/siigo"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
+              { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["caja-1/ventas"], vistos: ["caja-1/ventas"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
               // Tarea 7d.2: un paso «espejo» de la cadena de «Caja»: a la zona F, después de cada copia, sin retención.
               { tipo: "zona", carpeta: "z3c4d5e", repos: ["caja-1/caja"], vistos: ["caja-1/caja"], tras_copia: true, ultima: hace(60 * 3), resultado: "Espejo hecho en zona z3c4d5e: 12 archivos nuevos (4 MB), 3.120 ya estaban, 0 se dejan para la próxima vez.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
             ],
@@ -511,9 +511,9 @@ export async function sembrar(vacio = false) {
                 por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" },
                 freno_aviso: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito, confírmalo en la consola; si no, revisa el almacén",
                 espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
-              { id: "t1b2c3d4e5f", nombre: "Siigo a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/siigo"] }, vistos: ["caja-1/siigo"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
+              { id: "t1b2c3d4e5f", nombre: "Ventas a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/ventas"] }, vistos: ["caja-1/ventas"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
                 cuando: { cadena: "t0a1b2c3d4e", retraso_min: 15 }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, limite_kib: 4096, orden: 1,
-                ultima: hace(60 * 13), resultado: "ERROR: espejo «Siigo a Dropbox» en Dropbox Oficina:CafeDelSur: Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez." },
+                ultima: hace(60 * 13), resultado: "ERROR: espejo «Ventas a Dropbox» en Dropbox Oficina:CafeDelSur: Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez." },
               { id: "t2c3d4e5f60", nombre: "Caja a Disco F", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/caja"] }, vistos: ["caja-1/caja"], adonde: { tipo: "zona", carpeta: "z3c4d5e" },
                 cuando: { tras_copia: true }, retencion: { modo: "igual" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "avisar" }, orden: 2,
                 ultima: hace(60 * 3), resultado: "Espejo «Caja a Disco F» hecho en zona z3c4d5e (después de una copia nueva): 12 archivos nuevos (4 MB), 3.120 ya estaban.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
@@ -551,7 +551,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         // v1.28: agente nuevo; «Caja» se verifica sola cada semana (10 %, rotativa).
-        // v1.46: «Siigo» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
+        // v1.46: «Ventas» (movido al almacén) puede llevar su copia externa al repositorio de la nube de siempre.
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
@@ -563,7 +563,7 @@ export async function sembrar(vacio = false) {
         nubes_por_anular: [{ nombre: "Dropbox Antigua", tipo: "dropbox", desde: hace(60 * 3), hasta: dentro(60 * 24 * 7 - 60 * 3), intentos: 2 }],
         // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
         en_espera: [
-          { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Siigo»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46) },
+          { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Ventas»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46) },
         ],
         // v1.36: también la gestiona una consola en línea (y el último cambio vino de allí).
         consolas: [
@@ -576,9 +576,11 @@ export async function sembrar(vacio = false) {
             // Tarea 4b: una copia derivada a la Dropbox conectada en el propio equipo, después de cada copia, solo las diarias.
             derivadas: [{ id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true }] },
           // También en el almacén, todavía sin retención (v1.22: «Retención en el almacén…»).
-          { ...repo("siigo", "Siigo", "almacen-sur", 52, 9_800_000_000), solo_anadir: true }],
-        // Tarea 7c: «Siigo» va después de «Caja y facturas».
-        copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("siigo", "Siigo", "siigo", ["14:00"], 1), tras: "caja" }],
+          { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true },
+          // 14mm: el mismo almacén dado de alta como «Servidor de copias» genérico (un repositorio adoptado): el mapa lo une.
+          { ...repo("historico", "Histórico", "servidor-copias", 12, 1_300_000_000), ruta: "caja-1/historico", solo_anadir: true }],
+        // Tarea 7c: «Ventas» va después de «Caja y facturas».
+        copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("ventas", "Ventas", "ventas", ["14:00"], 1), tras: "caja" }],
         destinos: [
           { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/caja-1/", equipo_almacen: ID.almacen },
           // 0.7.26: dos discos USB que se rotan (marcado «Aislado» en el catálogo): el agente dice cuándo vio cada uno.
@@ -593,12 +595,13 @@ export async function sembrar(vacio = false) {
             aislado: { ultima_conexion: hace(60 * 24 * 34), volumenes: [{ id: "9f3a1c2b7d4e5a60", visto: hace(60 * 24 * 34) }, { id: "1b2c3d4e5f607182", visto: hace(60 * 24 * 41) }] },
           },
           { id: "nube-dropbox-caja", nombre: "Dropbox Caja", tipo: "nube", nube: "Dropbox Caja", donde: "Resguardo" },
+          { id: "servidor-copias", nombre: "Servidor de copias", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000" },
           // v1.56: un destino que se quedó sin repositorios (se quitaron): «Quitar este destino».
           { id: "disco-viejo", nombre: "Disco o carpeta del equipo", tipo: "local", unidad: "C:", extraible: false, red: false },
         ],
       },
     },
-    { claveAdmin: DEMO.claveAdmin, kcfg: kSur, contrasenas: { caja: DEMO.contrasenaRepo, siigo: DEMO.contrasenaRepo }, semilla: 4, id: ID.caja },
+    { claveAdmin: DEMO.claveAdmin, kcfg: kSur, contrasenas: { caja: DEMO.contrasenaRepo, ventas: DEMO.contrasenaRepo, historico: DEMO.contrasenaRepo }, semilla: 4, id: ID.caja },
   );
   // Tarea 4a: un servidor de aplicaciones con un agente nuevo y sin ninguna nube conectada.
   // La Dropbox del cliente está en el almacén: «Nuevo repositorio» ofrece conectarla también aquí.
@@ -670,7 +673,7 @@ export async function sembrar(vacio = false) {
   if (contabilidad.informes[0]) {
     const d = contabilidad.informes[0].datos;
     d.version = contabilidad.version_agente;
-    for (const k of d.copias ?? []) if (k.id === "siigo") k.ganchos = [{ tipo: "sqlserver", estado: "ok", mensaje: "Volcada 1 base (SIIGO_ALTAMAR, 1,2 GB) en C:\\ResguardoVolcados." }];
+    for (const k of d.copias ?? []) if (k.id === "ventas") k.ganchos = ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"].map((b) => ({ tipo: "sqlserver" as const, estado: "ok" as const, mensaje: `Volcado de SQL Server de «${b}» hecho.` }));
   }
   for (const e of [recepcion, portatil, servidorAltamar, surAlmacen, surCaja, estudio]) if (e.informes[0]) e.informes[0].datos.version = e.version_agente;
   // Etiquetas (v1.18) para agrupar y filtrar.
@@ -710,7 +713,7 @@ export async function sembrar(vacio = false) {
 
   const aviso = (cliente: string, equipo: string | null, tipo: T.TipoAviso, mensaje: string, minutos: number) =>
     estado.avisos.push({ id: randomUUID(), cliente, equipo, tipo, mensaje, creado: hace(minutos), visto_por: null, abierto: true });
-  aviso(altamar.id, contabilidad.id, "copia_fallida", "La copia «Siigo» de CONTABILIDAD falló: no se pudo conectar con el servidor de copias.", 175);
+  aviso(altamar.id, contabilidad.id, "copia_fallida", "La copia «Ventas» de CONTABILIDAD falló: no se pudo conectar con el servidor de copias.", 175);
   aviso(altamar.id, contabilidad.id, "disco_lleno", "Queda poco espacio en el disco C: de «CONTABILIDAD». Quedan 7 GB libres de 240 GB (2 %). Libera espacio o amplía el disco: si se llena, las copias pueden fallar.", 60 * 2);
   aviso(altamar.id, contabilidad.id, "sin_soporte", "El sistema de «CONTABILIDAD» ya no tiene soporte. Windows 10 Pro 22H2 no recibe actualizaciones de seguridad desde el 14 de octubre de 2025. Actualízalo a una versión con soporte o cambia el equipo.", 60 * 20);
   aviso(altamar.id, archivos.id, "sin_soporte_pronto", "El sistema de «SERVIDOR-ARCHIVOS» se queda sin soporte pronto. Windows Server 2016 Standard 1607 deja de recibir actualizaciones de seguridad el 12 de enero de 2027 (en 91 días). Planifica la actualización.", 60 * 30);

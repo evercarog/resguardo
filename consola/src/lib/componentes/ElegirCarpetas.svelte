@@ -3,7 +3,7 @@
   // Elegir carpetas en vivo: abre una sesión cifrada con el equipo
   // (orden «elegir_carpetas», con la prueba de administración) y recorre su
   // árbol. Arriba, las sugerencias que detecta el agente (carpetas de
-  // usuarios, Siigo, SQL Server…). El servidor no ve ninguna ruta.
+  // usuarios, Ventas, SQL Server…). El servidor no ve ninguna ruta.
   // Con `unica`, se elige una sola carpeta (p. ej. dónde guardar un destino
   // local o las copias que recibe un equipo de almacenamiento) y, si el
   // agente lo admite (v1.15, `crear_carpeta`), se puede crear una nueva.

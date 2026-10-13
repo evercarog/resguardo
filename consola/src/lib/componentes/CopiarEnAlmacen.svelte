@@ -21,9 +21,11 @@
   import type { Cliente, Equipo, Orden } from "$lib/tipos";
   import { TEXTO_TROCEADO, origenCuerpo, recordarOrigen, type RepoExistente } from "$lib/adoptar";
   import { TEXTO_ALMACEN_PROPIO } from "$lib/retencion";
+  import { enlaceElegirQueCopiar } from "$lib/repoNuevo";
   import Ayuda from "./Ayuda.svelte";
   import CampoClave from "./CampoClave.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   // Tarea 7b: en otra zona del almacén (otro disco, con su puerto).
   import { errorRespuestaZona, idDestinoZona, PRINCIPAL, type ZonaVista } from "$lib/destinos";
 
@@ -233,7 +235,7 @@
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cancelar</button>
-        <button class="btn btn-primary" disabled={ocupado || !claveAdmin || !nombre.trim()}><KeyRound size={15} />Confirmar con la clave de administración</button>
+        <BotonFalta disabled={ocupado} falta={!nombre.trim() ? { texto: "Falta el nombre", campo: "a-nombre" } : !claveAdmin ? { texto: "Falta la clave de administración", campo: "a-clave" } : null}><KeyRound size={15} />Confirmar con la clave de administración</BotonFalta>
       </footer>
     </form>
   {:else if paso === "kit"}
@@ -252,25 +254,28 @@
         </dl>
       </article>
       <div><button type="button" class="btn" onclick={() => window.print()}><Printer size={15} />Imprimir o guardar en PDF</button></div>
-      <label class="switch-row"><input type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
+      <label class="switch-row"><input id="a-impreso" type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
       {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
-        <button type="button" class="btn btn-primary" disabled={!impreso || ocupado} onclick={crear}><Check size={15} />Crear el repositorio en {equipo.nombre}</button>
+        <BotonFalta type="button" disabled={ocupado} falta={impreso ? null : { texto: "Marca «He guardado el kit»", campo: "a-impreso" }} onclick={crear}><Check size={15} />Crear el repositorio en {equipo.nombre}</BotonFalta>
       </footer>
     </div>
   {:else}
     {#if origen}
       <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {nombreAlmacen}, con la misma forma de trocear que <code>{origen.direccion}</code>. Ahora, en su página, «Traer historial» (ya tiene puesto ese origen: solo falta su contraseña).</p>
     {:else}
-      <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {nombreAlmacen}. Ahora elige qué copiar.</p>
+      <p>Listo: {equipo.nombre} ya tiene el repositorio «{nombre}» en {nombreAlmacen}. {alCreado ? "Ya está elegido en la copia: sigue con ella." : "Ahora elige qué copiar."}</p>
     {/if}
     <footer>
       <button class="btn btn-ghost" onclick={onclose}>Cerrar</button>
       {#if origen}
         <a class="btn btn-primary" href="/c/{cliente.id}/equipos/{equipo.id}/repositorios/{encodeURIComponent(repoId)}?traer=1" onclick={onclose}>Traer el historial</a>
+      {:else if alCreado}
+        <!-- 14rr: desde el editor de copias ya se está en «…/copias»; el repositorio ya quedó elegido en la copia. -->
+        <button class="btn btn-primary" onclick={onclose}><Check size={15} />Usar este repositorio</button>
       {:else}
-        <a class="btn btn-primary" href="/c/{cliente.id}/equipos/{equipo.id}/copias">Elegir qué copiar</a>
+        <a class="btn btn-primary" href={enlaceElegirQueCopiar(cliente.id, equipo.id, repoId)} onclick={onclose}>Elegir qué copiar</a>
       {/if}
     </footer>
   {/if}

@@ -111,7 +111,7 @@
       </div>
       <div class="field">
         <label class="field-label" for="nombre-cliente">Nombre</label>
-        <input id="nombre-cliente" class="input" bind:value={nombre} placeholder="Por ejemplo: Ferretería Altamar" aria-required="true" />
+        <input id="nombre-cliente" class="input" bind:value={nombre} placeholder="Por ejemplo: Oficina Norte" aria-required="true" />
       </div>
       <div class="field">
         <div class="label-row"><label class="field-label" for="espera">Espera antes de borrar</label><Ayuda id="espera" /></div>

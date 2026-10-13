@@ -10,7 +10,7 @@
   // - Dropbox, Drive, NAS o WebDAV: se conectan en un almacén (para su espejo).
   import { Cloud, HardDrive, Server, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
-  import BotonCargando from "./BotonCargando.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import NuevaZona from "./NuevaZona.svelte";
   import Ayuda from "./Ayuda.svelte";
   import { avisar } from "$lib/avisos.svelte";
@@ -45,6 +45,18 @@
   const errorNombre = $derived(nombre ? errorNombreDestino(nombre) : null);
   const errorDonde = $derived(donde.trim() ? errorDondeCatalogo(tipo, donde) : null);
   const valido = $derived(!errorNombreDestino(nombre) && !errorDondeCatalogo(tipo, donde));
+  // 14aa: qué falta para «Crear el destino».
+  const faltaDestino = $derived(
+    valido
+      ? null
+      : !nombre.trim()
+        ? { texto: "Falta el nombre", campo: "nd-nombre" }
+        : errorNombreDestino(nombre)
+          ? { texto: errorNombreDestino(nombre) ?? "", campo: "nd-nombre" }
+          : !donde.trim()
+            ? { texto: "Falta la dirección", campo: "nd-donde" }
+            : { texto: errorDondeCatalogo(tipo, donde) ?? "Revisa la dirección", campo: "nd-donde" },
+  );
 
   async function guardar(e: SubmitEvent) {
     e.preventDefault();
@@ -129,7 +141,7 @@
           {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
           <footer>
             <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cancelar</button>
-            <BotonCargando class="btn btn-primary" disabled={!valido} cargando={ocupado} textoCargando="Guardando…">Crear el destino</BotonCargando>
+            <BotonFalta falta={faltaDestino} cargando={ocupado} textoCargando="Guardando…">Crear el destino</BotonFalta>
           </footer>
         </form>
       {:else}

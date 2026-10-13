@@ -132,6 +132,57 @@ console.log("\n· Un almacén con zonas, espejos y nubes (lo que guardan en él 
   comprobar("el cliente entero", construirMapa(equipos, {}, { cliente: "c", ahora, agruparDesde: 99 }));
 }
 
+console.log("\n· 14mm: un solo nodo por servidor y los espejos desde sus repositorios");
+{
+  // El almacén dio acceso a PUESTO-A («Copiar en …»); PUESTO-B llega al mismo servidor como
+  // «Servidor de copias» genérico (un repositorio adoptado), y el propio almacén por localhost.
+  const alm = almacen("alm-este", "ALMACEN-ESTE", 0);
+  alm.resumen!.guarda_copias!.espejo = {
+    hora: "02:00",
+    destinos: [
+      { tipo: "nube", nube: "Nube Este", ultima: h(4), resultado: "Espejo hecho.", repos: ["puesto-b/ventas"] },
+      { tipo: "carpeta", carpeta: "G:\\Espejo", ultima: h(40), resultado: "ERROR: disco lleno.", repos: ["puesto-a"] },
+      { tipo: "nube", nube: "Nube de nadie", ultima: h(4), resultado: "Espejo hecho.", repos: ["otro/x"] },
+    ],
+  } as never;
+  alm.resumen!.destinos = [{ id: "d-local", nombre: "Mi almacén", tipo: "rest", donde: "https://localhost:8000/almacen-este/" }] as never;
+  alm.resumen!.repositorios = [repo("consola", "Consola", "d-local")];
+  const a = pc("pc-a", "PUESTO-A", [repo("docs", "Documentos", "d-alm")], [{ id: "d-alm", nombre: "Almacén Este", tipo: "rest", donde: "https://almacen-este.lan:8000/puesto-a/", equipo_almacen: "alm-este" }] as never);
+  const b = pc("pc-b", "PUESTO-B", [{ ...repo("ventas", "Ventas", "d-rest"), ruta: "puesto-b/ventas" }], [{ id: "d-rest", nombre: "Servidor de copias", tipo: "rest", donde: "https://almacen-este.lan:8000" }] as never);
+  const m = construirMapa([a, b, alm], {}, { cliente: "c", ahora, agruparDesde: 99 });
+  const destinos = m.nodos.filter((n) => n.tipo === "destino");
+  igual("el almacén y el «Servidor de copias» con su dirección son un solo nodo", destinos.map((n) => n.id), ["al:alm-este"]);
+  igual("los tres repositorios llegan a él", m.aristas.filter((x) => x.tipo === "guarda").map((x) => x.a), ["al:alm-este", "al:alm-este", "al:alm-este"]);
+  const espejo = (nombre: string) => m.aristas.filter((x) => x.tipo === "espejo" && m.nodos.find((n) => n.id === x.a)?.nombre === nombre).map((x) => [x.de, x.tono]);
+  igual("el espejo de Ventas sale de Ventas (al día)", espejo("Nube Este"), [["rp:pc-b:ventas", "ok"]]);
+  igual("el de PUESTO-A sale de su repositorio (falló)", espejo("G:\\Espejo"), [["rp:pc-a:docs", "bad"]]);
+  igual("el de un repositorio que no sale aquí, no se dibuja", espejo("Nube de nadie"), []);
+  cierto("ningún espejo cuelga del almacén", !m.aristas.some((x) => x.tipo === "espejo" && x.de === "al:alm-este"));
+  cierto("la frase lo cuenta desde el repositorio", m.frases.some((f) => f.includes("«Ventas»") && f.includes("espejo en Nube Este")));
+  comprobar("un solo nodo por servidor", m);
+}
+
+console.log("\n· 14kk: las copias derivadas, «después» del repositorio a su destino");
+{
+  const alm = almacen("alm-oeste", "ALMACEN-OESTE", 0);
+  const destinos = [
+    { id: "d-local", nombre: "Disco D", tipo: "local", unidad: "D:" },
+    { id: "d-alm", nombre: "Almacén Oeste", tipo: "rest", donde: "https://oeste.lan:8000/caja-3/", equipo_almacen: "alm-oeste" },
+    { id: "d-b2", nombre: "B2 Oeste", tipo: "b2", donde: "oeste-copias" },
+  ] as never;
+  const r1 = { ...repo("caja", "Caja", "d-local"), derivadas: [{ id: "dv1", destino: "Almacén Oeste", destino_id: "d-alm", cuando: { tras_copia: true } }, { id: "dv2", destino: "B2 Oeste", destino_id: "d-b2", cuando: { hora: "23:00" } }] } as RepositorioResumen;
+  const r2 = repo("docs", "Documentos", "d-alm");
+  const caja = pc("caja-3", "CAJA-3", [r1, r2], destinos);
+  const inf = { recibido: h(1), datos: { repos: [{ id: "caja", nombre: "Caja", versiones: [], versiones_leidas: null, ejecuciones: [], espacio: null, verificacion: null, prueba_restauracion: null, externa: null, proteccion: null, derivadas: [{ id: "dv1", resultado: "fallo", ultima: h(2) }] }] } } as never;
+  const m = construirMapa([caja, alm], { "caja-3": inf }, { cliente: "c", ahora, agruparDesde: 99 });
+  const der = m.aristas.filter((x) => x.tipo === "derivada");
+  igual("dos flechas derivadas desde «Caja»", der.map((x) => [x.de, x.a]), [["rp:caja-3:caja", "al:alm-oeste"], ["rp:caja-3:caja", "de:b2|oeste-copias"]]);
+  igual("con su estado y «después» si aún no se hizo", der.map((x) => [x.tono, x.etiqueta?.replace(/\s/g, " ")]), [["bad", "falló hace 2 h"], ["neutral", "después · cada día a las 23:00"]]);
+  cierto("al almacén de la derivada llegan también los suyos (un solo nodo)", m.nodos.filter((n) => n.id === "al:alm-oeste").length === 1 && m.aristas.some((x) => x.tipo === "guarda" && x.de === "rp:caja-3:docs" && x.a === "al:alm-oeste"));
+  cierto("la frase lo cuenta", m.frases.some((f) => f.includes("después, una copia derivada a B2 Oeste")));
+  comprobar("derivadas", m);
+}
+
 console.log("\n· El mapa de todos los clientes, con muchos equipos");
 {
   const clientes: PanelCliente[] = Array.from({ length: 5 }, (_, k) => {

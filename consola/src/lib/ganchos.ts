@@ -2,7 +2,8 @@
 // antes de copiar. Solo dos plantillas cerradas, con las MISMAS reglas que el
 // agente (crates/motor/src/ganchos.rs), para avisar al momento: el agente
 // rechaza la configuración entera si algo no cuadra.
-import type { Gancho, GanchoCarpetaReciente, GanchoSqlserver } from "./tipos";
+import { lista } from "./formato";
+import type { Gancho, GanchoCarpetaReciente, GanchoSqlserver, ResultadoGancho } from "./tipos";
 
 export const MAX_GANCHOS = 4;
 export const MAX_BASES = 20;
@@ -63,7 +64,7 @@ export function errorGancho(g: Gancho): string | null {
     if (enCarpetaDelSistema(g.carpeta, !g.carpeta.trim().startsWith("/"))) return "La carpeta de los volcados no puede ir en la de Windows, los programas ni Resguardo (p. ej. C:\\ResguardoVolcados).";
     return null;
   }
-  if (!rutaValida(g.carpeta) && !g.carpeta.trim().startsWith("\\\\")) return "La carpeta a vigilar tiene que ser una ruta completa (p. ej. D:\\WO\\Copias).";
+  if (!rutaValida(g.carpeta) && !g.carpeta.trim().startsWith("\\\\")) return "La carpeta a vigilar tiene que ser una ruta completa (p. ej. D:\\CopiasApp).";
   if (!Number.isInteger(g.horas) || g.horas < 1 || g.horas > 720) return "Las horas tienen que estar entre 1 y 720.";
   const e = g.extension ?? null;
   if (e !== null && (!e.length || e.length > 10 || !/^[A-Za-z0-9.]+$/.test(e))) return "Extensión no válida (p. ej. .bak).";
@@ -94,6 +95,76 @@ export const NOMBRE_GANCHO: Record<Gancho["tipo"], string> = {
   sqlserver: "Volcado de SQL Server",
   carpeta_reciente: "Copias de la aplicación al día",
 };
+
+/** Hasta 3 nombres y «y N más»: «A, B y C», «A, B, C y 3 más». */
+function nombresCortos(xs: string[], max = 3): string {
+  return xs.length <= max ? lista(xs) : `${xs.slice(0, max).join(", ")} y ${xs.length - max} más`;
+}
+
+/**
+ * Los pasos «antes de copiar» de una copia, en una frase y sin repetir (14gg):
+ * «volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más)». Con la
+ * configuración (`ganchos`) se dicen los nombres; sin ella, solo con los
+ * resultados del último informe (uno por paso o por base), se agrupan por tipo.
+ */
+export function ganchosEnFrase(ganchos: Gancho[] | null | undefined, resultados: Pick<ResultadoGancho, "tipo" | "mensaje">[] = []): string[] {
+  const out: string[] = [];
+  if (ganchos?.length) {
+    const bases = [...new Set(ganchos.flatMap((g) => (g.tipo === "sqlserver" ? g.bases.filter(Boolean) : [])))];
+    if (bases.length === 1) out.push(`volcado de la base «${bases[0]}» de SQL Server`);
+    else if (bases.length > 1) out.push(`volcado de ${bases.length} bases de SQL Server (${nombresCortos(bases)})`);
+    else if (ganchos.some((g) => g.tipo === "sqlserver")) out.push("volcado de SQL Server");
+    const carpetas = ganchos.filter((g) => g.tipo === "carpeta_reciente").length;
+    if (carpetas === 1) out.push("comprobar que las copias de la aplicación están al día");
+    else if (carpetas > 1) out.push(`comprobar que las copias de la aplicación están al día en ${carpetas} carpetas`);
+    return out;
+  }
+  // El agente da un resultado por base, con su nombre entre comillas («Ventas»).
+  const sql = resultados.filter((r) => r.tipo === "sqlserver");
+  const nombres = [...new Set(sql.map((r) => /«([^»]+)»/.exec(r.mensaje ?? "")?.[1]).filter((x): x is string => !!x))];
+  const conNombres = nombres.length === sql.length;
+  if (sql.length === 1) out.push(conNombres ? `volcado de la base «${nombres[0]}» de SQL Server` : "volcado de SQL Server");
+  else if (sql.length > 1) out.push(`volcado de ${sql.length} bases de SQL Server${conNombres ? ` (${nombresCortos(nombres)})` : ""}`);
+  const carpetas = resultados.filter((r) => r.tipo === "carpeta_reciente").length;
+  if (carpetas === 1) out.push("comprobar que las copias de la aplicación están al día");
+  else if (carpetas > 1) out.push(`comprobar que las copias de la aplicación están al día en ${carpetas} carpetas`);
+  return out;
+}
+
+/**
+ * Los resultados de los pasos previos de una copia, para listarlos: los volcados
+ * que fueron bien se juntan en una sola línea («6 bases volcadas: Ventas,
+ * Nominas, Compras y 3 más»); lo que falló o tuvo avisos sigue suelto, con su
+ * mensaje (14gg).
+ */
+export function agruparResultados<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje">>(rs: R[]): R[] {
+  const bien = rs.filter((r) => r.tipo === "sqlserver" && r.estado === "ok");
+  if (bien.length < 2) return rs;
+  const nombres = bien.map((r) => /«([^»]+)»/.exec(r.mensaje ?? "")?.[1]).filter((x): x is string => !!x);
+  const mensaje = `${bien.length} bases volcadas${nombres.length === bien.length ? `: ${nombresCortos(nombres)}` : ""}.`;
+  const out: R[] = [];
+  let puesto = false;
+  for (const r of rs) {
+    if (!bien.includes(r)) out.push(r);
+    else if (!puesto) {
+      out.push({ ...r, mensaje });
+      puesto = true;
+    }
+  }
+  return out;
+}
+
+/**
+ * El resultado que se enseña junto a un paso de la configuración: el peor de los
+ * suyos (en un volcado hay uno por base) y, si alguna falló, su mensaje.
+ */
+export function resultadoDeGancho<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje">>(g: Gancho, rs: R[]): R | undefined {
+  const suyos = rs.filter((r) => r.tipo === g.tipo && (g.tipo !== "sqlserver" || g.bases.some((b) => (r.mensaje ?? "").includes(`«${b}»`)) || !/«/.test(r.mensaje ?? "")));
+  const orden = { fallo: 0, aviso: 1, ok: 2 } as const;
+  const peor = [...suyos].sort((a, b) => orden[a.estado] - orden[b.estado])[0];
+  if (!peor || g.tipo !== "sqlserver" || suyos.length < 2 || peor.estado !== "ok") return peor;
+  return agruparResultados(suyos)[0];
+}
 
 /** Una frase de lo que hará. */
 export function fraseGancho(g: Gancho): string {

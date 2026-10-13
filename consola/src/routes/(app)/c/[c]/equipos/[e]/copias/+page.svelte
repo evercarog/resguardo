@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BotonFalta from "$lib/componentes/BotonFalta.svelte";
   import { tip } from "$lib/tooltip";
   // Editor de copias de un equipo (orden «config», con la clave de administración).
   //
@@ -43,7 +44,6 @@
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MenuAcciones from "$lib/componentes/MenuAcciones.svelte";
-  import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { cargarPlantillas, guardarPlantilla, plantillaDe, retencionEnFrase, type Plantilla } from "$lib/plantillas";
   import { admitePruebaAuto, configParaEnviar, PRUEBA_POR_DEFECTO } from "$lib/configEnvio";
@@ -168,7 +168,10 @@
           return !!d && claveDeDestino(d, actual.equipos) === dest;
         }) : undefined;
         const k = i >= 0 ? cfg.copias[i + 1] : cfg.copias.at(-1);
-        if (k && enDestino) k.repo = enDestino.id;
+        // 14rr: ?repo=<id> (un repositorio recién creado fuera del editor): ya elegido.
+        const repoPedido = page.url.searchParams.get("repo");
+        if (k && repoPedido && cfg.repositorios.some((r) => r.id === repoPedido)) k.repo = repoPedido;
+        else if (k && enDestino) k.repo = enDestino.id;
         // Aún sin repositorio en ese destino (p. ej. una nube): «+ Repositorio nuevo…» con él ya elegido.
         else if (k && dest) {
           destinoPedido = dest;
@@ -736,9 +739,9 @@
         <label class="switch-row modo"><input type="checkbox" class="switch" checked={avanzado} onchange={(e) => ponerAvanzado(e.currentTarget.checked)} /><span>Avanzado</span></label>
         <Ayuda id="modo-avanzado" />
         {#if cambiado && !guardando}<button class="btn btn-ghost" onclick={cancelarCambios} use:tip={"Vuelve a lo que tiene el equipo ahora"}><Undo2 size={16} />Cancelar cambios</button>{/if}
-        <button class="btn btn-primary" disabled={!cambiado || guardando || problemas.length > 0} onclick={guardar}>
+        <BotonFalta disabled={guardando} falta={guardando ? null : problemas.length ? { texto: `Antes, arregla ${problemas[0].replace(/\.$/, "")}${problemas.length > 1 ? ` (y ${problemas.length - 1} más)` : ""}` } : !cambiado ? { texto: "Aún no has cambiado nada" } : null} onclick={guardar}>
           {#if guardando}<LoaderCircle size={16} class="spin" />{paso || "Enviando…"}{:else}<Save size={16} />Enviar al equipo{/if}
-        </button>
+        </BotonFalta>
       </div>
     {/if}
   </div>
@@ -765,7 +768,7 @@
         {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
         <div class="fin">
           {#if abriendo}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{paso}</span>{/if}
-          <button class="btn btn-primary" disabled={!clave || abriendo}><KeyRound size={16} />Abrir las copias</button>
+          <BotonFalta disabled={abriendo} falta={clave ? null : { texto: "Falta la clave de administración", campo: "clave-admin" }}><KeyRound size={16} />Abrir las copias</BotonFalta>
         </div>
       </form>
     </section>
@@ -1154,13 +1157,13 @@
       <div class="field">
         <label class="field-label" for="pla-nombre">Nombre de la plantilla</label>
         <!-- svelte-ignore a11y_autofocus -->
-        <input id="pla-nombre" class="input" bind:value={guardarComo.nombre} maxlength="80" autofocus placeholder="Por ejemplo: Copia de Siigo" aria-required="true" aria-invalid={!!guardarComo.error} aria-describedby={guardarComo.error ? "pla-nombre-error" : undefined} />
+        <input id="pla-nombre" class="input" bind:value={guardarComo.nombre} maxlength="80" autofocus placeholder="Por ejemplo: Copia de documentos" aria-required="true" aria-invalid={!!guardarComo.error} aria-describedby={guardarComo.error ? "pla-nombre-error" : undefined} />
       </div>
       <p class="faint nota">Se guarda cifrada con la clave de administración: el servidor no ve ni el nombre ni las carpetas. Usarla en un equipo solo rellena sus copias; se revisan y se envían como siempre.</p>
       {#if guardarComo.error}<p class="error-campo" id="pla-nombre-error" role="alert">{guardarComo.error}</p>{/if}
       <footer>
         <button type="button" class="btn btn-ghost" onclick={() => (guardarComo = null)}>Cancelar</button>
-        <BotonCargando class="btn btn-primary" disabled={!guardarComo.nombre.trim()} cargando={guardarComo.enviando} textoCargando="Guardando…">Guardar plantilla</BotonCargando>
+        <BotonFalta falta={guardarComo.nombre.trim() ? null : { texto: "Falta el nombre", campo: "pla-nombre" }} cargando={guardarComo.enviando} textoCargando="Guardando…">Guardar plantilla</BotonFalta>
       </footer>
     </form>
   </Modal>

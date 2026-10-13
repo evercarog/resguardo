@@ -4,7 +4,8 @@
 import type { DestinoCatalogo, DestinoResumen, Equipo } from "../src/lib/tipos";
 import { destinosParaPasos } from "../src/lib/cadenas";
 import { usarEnCopia } from "../src/lib/fichaDestino";
-import { destinoNubeCuerpo, errorCarpetaNube, idDestinoNube, nubeNoInmutable, opcionDeClave, opcionesRepoNuevo, opcionInicial, type OpcionRepo } from "../src/lib/repoNuevo";
+import { primeraFalta } from "../src/lib/falta";
+import { destinoNubeCuerpo, enlaceElegirQueCopiar, errorCarpetaNube, idDestinoNube, nubeNoInmutable, opcionDeClave, opcionesRepoNuevo, opcionInicial, type OpcionRepo } from "../src/lib/repoNuevo";
 
 let fallos = 0;
 let total = 0;
@@ -144,6 +145,20 @@ console.log("\n· El destino de la orden y la carpeta");
   cierto("…y las que no", ["", "../x", "a//b", "C:/x", "a\\b", "a/./b"].every((c) => !!errorCarpetaNube(c)));
   cierto("Dropbox no es inmutable; B2 sí", nubeNoInmutable("dropbox") && !nubeNoInmutable("b2") && !nubeNoInmutable(undefined));
 }
+
+// 14rr: tras crear un repositorio fuera del editor, «Elegir qué copiar» lleva al editor con él elegido.
+igual("Elegir qué copiar: el editor con una copia nueva y ese repositorio", enlaceElegirQueCopiar("c1", "e1", "ventas-ab12"), "/c/c1/equipos/e1/copias?nueva=1&repo=ventas-ab12");
+// 14aa: lo primero que falta (lo que dice el botón apagado).
+igual(
+  "qué falta: lo primero que no se cumple",
+  primeraFalta([
+    [true, { texto: "Falta el equipo" }],
+    ["", { texto: "Falta el nombre", campo: "r-nombre" }],
+    [false, { texto: "Elige un destino" }],
+  ]),
+  { texto: "Falta el nombre", campo: "r-nombre" },
+);
+igual("qué falta: nada", primeraFalta([[1, { texto: "x" }], ["a", { texto: "y" }]]), null);
 
 console.log(`\n${total - fallos}/${total} bien`);
 if (fallos) process.exit(1);

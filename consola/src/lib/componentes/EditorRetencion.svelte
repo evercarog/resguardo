@@ -1,6 +1,6 @@
 <script lang="ts">
   // Qué versiones guarda un repositorio (lib/retencion.ts): reglas de un clic
-  // («Programas contables: horarias 15 días, diarias 1 año, mensuales siempre»…) o a
+  // («Cada hora 15 días, diarias 1 año, mensuales siempre»…) o a
   // medida, con plazos («una por día durante 1 año») y cantidades («las
   // últimas 7 diarias», o «siempre»). Debajo, en palabras y cuántas versiones
   // quedan más o menos con el horario de sus copias.
@@ -153,7 +153,7 @@
     {/if}
   {/if}
   {#if !admite}
-    <p class="faint nota">Horarias, plazos («una por día durante 1 año») y «siempre» necesitan un agente más nuevo: actualiza el agente para usar «Programas contables».</p>
+    <p class="faint nota">Horarias, plazos («una por día durante 1 año») y «siempre» necesitan un agente más nuevo: actualiza el agente para usar «Cada hora 15 días, diarias 1 año, mensuales siempre».</p>
   {/if}
 </div>
 

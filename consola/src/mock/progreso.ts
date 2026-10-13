@@ -76,16 +76,16 @@ function sembrar() {
     h.empezo = Date.now() - (h.preparar + h.escanear + h.subir * 0.6);
     sims.push(h);
   }
-  // v1.47: CONTABILIDAD mueve «Siigo y documentos» al almacén, empezado desde OTRA consola
+  // v1.47: CONTABILIDAD mueve «Ventas y documentos» al almacén, empezado desde OTRA consola
   // (la de la oficina): aquí solo se ve (aviso en el repositorio y en el equipo, sin poder llevarlo).
   const conta = estado.equipos.find((e) => e.id === ID.contabilidad);
-  const rs = conta?.resumen?.repositorios?.find((r) => r.id === "siigo");
+  const rs = conta?.resumen?.repositorios?.find((r) => r.id === "ventas");
   if (conta && rs) {
     const m: Sim = {
       cliente: conta.cliente,
       equipo: conta.id,
       tipo: "historial",
-      repo: "siigo-almacen",
+      repo: "ventas-almacen",
       nombre: `${rs.nombre} (almacén)`,
       empezo: 0,
       ganchos: 0,

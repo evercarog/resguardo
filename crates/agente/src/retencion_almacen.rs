@@ -983,7 +983,7 @@ mod tests {
         );
     }
 
-    /// «Programas contables» con una copia cada hora durante 2 años: las horarias de los
+    /// «Cada hora 15 días, diarias 1 año, mensuales siempre» con una copia cada hora durante 2 años: las horarias de los
     /// últimos 15 días, una por día del último año y una por mes de antes. Y
     /// las falsas (con fecha futura) no mueven el plazo.
     #[test]
@@ -1118,7 +1118,7 @@ mod tests {
     }
 
     /// Plazos y horarias: `planear` decide lo mismo que `restic forget --dry-run`
-    /// con reglas al azar (y la de los programas contables) sobre versiones de verdad.
+    /// con reglas al azar (y la de «cada hora 15 días, diarias 1 año, mensuales siempre») sobre versiones de verdad.
     #[test]
     fn plazos_como_restic_forget() {
         let _real = crate::restic::tests::real_repo_lock();

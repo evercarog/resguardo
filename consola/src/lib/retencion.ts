@@ -320,9 +320,9 @@ export interface Preset {
   plazos: boolean;
 }
 
-/** Las reglas de un clic (la de los programas contables: horarias 15 días, diarias 1 año, mensuales siempre). */
+/** Las reglas de un clic, descritas por lo que hacen (sin nombres de programas ni de clientes). */
 export const PRESETS: Preset[] = [
-  { id: "contables", texto: "Programas contables: horarias 15 días, diarias 1 año, mensuales siempre", regla: { diarias: 0, semanales: 0, mensuales: SIEMPRE, anuales: 0, plazos: { horarias: "15d", diarias: "1y" } }, plazos: true },
+  { id: "hora15d-dia1a-mes", texto: "Cada hora 15 días, diarias 1 año, mensuales siempre", regla: { diarias: 0, semanales: 0, mensuales: SIEMPRE, anuales: 0, plazos: { horarias: "15d", diarias: "1y" } }, plazos: true },
   { id: "30d6m", texto: "Diarias 30 días, semanales 6 meses", regla: { diarias: 0, semanales: 0, mensuales: 0, anuales: 0, plazos: { diarias: "30d", semanales: "6m" } }, plazos: true },
   { id: "clasica", texto: "7 diarias, 4 semanales, 12 mensuales y 2 anuales", regla: { ...REGLA_POR_DEFECTO }, plazos: false },
 ];

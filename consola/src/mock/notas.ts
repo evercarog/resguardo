@@ -31,8 +31,8 @@ export function sembrarNotas() {
       ID.altamar,
       [
         { tipo: "cliente", objeto: ID.altamar, texto: "**Contrato de soporte** hasta diciembre de 2027.\nContacto: Marta (gerencia), ext. 204.", actualizada: hace(60 * 24 * 9), por: "Ana" },
-        { tipo: "equipo", objeto: ID.contabilidad, texto: "Equipo de *Siigo*: no reiniciar en horario de caja.\n- Disco cambiado en octubre\n- Si falla la copia, llamar a Luis", actualizada: hace(60 * 30), por: "Ana" },
-        { tipo: "copia", objeto: `${ID.contabilidad}/siigo`, texto: "La base de Siigo se copia cerrada: el programa debe estar cerrado a las 18:30.", actualizada: hace(60 * 24 * 2), por: "Ana" },
+        { tipo: "equipo", objeto: ID.contabilidad, texto: "Equipo de *Ventas*: no reiniciar en horario de caja.\n- Disco cambiado en octubre\n- Si falla la copia, llamar a Luis", actualizada: hace(60 * 30), por: "Ana" },
+        { tipo: "copia", objeto: `${ID.contabilidad}/ventas`, texto: "La base de Ventas se copia cerrada: el programa debe estar cerrado a las 18:30.", actualizada: hace(60 * 24 * 2), por: "Ana" },
       ],
     ],
   ]);

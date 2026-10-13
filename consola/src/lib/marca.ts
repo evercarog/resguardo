@@ -78,7 +78,7 @@ export function dataUrlAArchivo(url: string, nombre = "logo"): File {
   return new File([datos], nombre, { type: m[1] });
 }
 
-/** Iniciales para el monograma (sin logo): «Ferretería Altamar» → «FA». */
+/** Iniciales para el monograma (sin logo): «Oficina Norte» → «ON». */
 export function iniciales(nombre: string): string {
   const ps = nombre
     .trim()

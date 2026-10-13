@@ -32,9 +32,9 @@ const CARPETAS = [
   "/C/Users/recepcion/Documents/Clientes/Contratos",
   "/C/Users/recepcion/Desktop",
   "/C/Users/recepcion/Pictures/Escaneos",
-  "/C/SIIWI01/Datos",
-  "/C/SIIWI01/BckRebuild",
-  "/C/SIIWI01/Informes",
+  "/C/AppVentas/Datos",
+  "/C/AppVentas/BckRebuild",
+  "/C/AppVentas/Informes",
 ];
 const NOMBRES: Record<string, string[]> = {
   Octubre: ["FV-10234.pdf", "FV-10235.pdf", "FV-10236.pdf", "FV-10237.pdf", "FV-10238.pdf", "Resumen octubre.xlsx", "NC-0045.pdf"],
@@ -100,7 +100,7 @@ function calcular(hasta: VersionMock, desde: VersionMock, versiones: VersionMock
   }
   const base = [...ARCHIVOS].sort(() => r() - 0.5);
   for (let i = 0; i < nCambiados; i++) {
-    const ruta = i < base.length ? base[i] : `/C/SIIWI01/Datos/Z${String(i).padStart(3, "0")}.DAT`;
+    const ruta = i < base.length ? base[i] : `/C/AppVentas/Datos/Z${String(i).padStart(3, "0")}.DAT`;
     if (cambios.has(ruta)) continue;
     const antes = tamano(ruta, desde.id);
     cambios.set(ruta, { ruta, tipo: r() < 0.08 ? "metadatos" : "cambiado", bytes_antes: antes, bytes: Math.max(0, Math.round(antes * (0.9 + r() * 0.3))) });
