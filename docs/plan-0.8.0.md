@@ -42,8 +42,8 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque E — Restauraciones y pruebas
 
-- [ ] **E1. Restaurar mejor (13a, 13b, 14m):** en otra carpeta (nueva o vacía), en .zip (en el equipo o descargado, con AES-256 opcional), y elegir desde dónde (almacén, espejo, derivada) con recomendación si el principal no responde.
-- [ ] **E2. Registro de restauraciones (13d, 14l, 13e):** página «Restauraciones» por cliente y equipo, ficha automática (quién, qué, cuánto, cuánto tardó) con motivo; estadísticas en Informes; una restauración real correcta cuenta como prueba.
+- [x] **E1. Restaurar mejor (13a, 13b, 14m):** (rama `ia/080-restaurar`; contrato v1.6x en `api-servidor.md`; falta en 14m los espejos del propio equipo; lo no probado en `registro-ia.md`) en otra carpeta (nueva o vacía), en .zip (en el equipo o descargado, con AES-256 opcional), y elegir desde dónde (almacén, espejo, derivada) con recomendación si el principal no responde.
+- [x] **E2. Registro de restauraciones (13d, 14l, 13e):** (rama `ia/080-restaurar`; 13c y 13f a medias: sin carpeta en curso ni vista «En curso») página «Restauraciones» por cliente y equipo, ficha automática (quién, qué, cuánto, cuánto tardó) con motivo; estadísticas en Informes; una restauración real correcta cuenta como prueba.
 - [ ] **E3. Pruebas funcionales (14k):** política por cliente, aviso al vencer, formulario de la prueba con RTO y RPO, historial; cuenta para el «0».
 - [ ] **E4. Prueba de restauración desde un espejo (14j).**
 

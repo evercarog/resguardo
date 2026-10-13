@@ -2,6 +2,27 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-13 · rama `ia/080-restaurar` · Claude Code (autónomo) · plan 0.8.0 E1 y E2
+
+**Pedido:** restaurar mejor (13a, 13b, 14m) y registro de restauraciones (13d, 14l, 13e), con el detalle en vivo (13c) y quién la empezó (13f). Desde `origin/ia/integracion-080`; sin unir a nada.
+
+**Hecho:**
+- Agente (`restaurar_v2.rs` nuevo, `sesiones_v2.rs`, `servidor_v2.rs`, `progreso_v2.rs`, `escritorio.rs`, `protection.rs`, `informe_v2.rs`, `tasks.rs`): `restaurar { destino: "nueva" }` (carpeta nueva o vacía; si no existe, se crea solo la última; nunca del sistema, de los programas ni de Resguardo, sin `..` ni enlaces, comprobada también su ruta real; vale una unidad entera) y `{ destino: "zip" }` (.zip siempre nuevo, «(2)» si ya hay uno, con `contrasena_zip` en AES-256). Los dos piden la clave de administración por el cuerpo (`pide_admin_por_cuerpo`). El .zip se escribe desde `restic dump --archive tar` (o `dump` del archivo suelto, según `restic ls`) leído con el crate `tar` y pasado al `zip`: **nada en claro en el disco**; si falla, se borra el .zip a medias. `descargar` con `contrasena_zip` hace lo mismo en el temporal del agente (ya cifrado). `desde` (`externa` o una derivada) en `explorar`, `restaurar` y `descargar` con `tasks::acceso_copia`. Progreso de la restauración con archivos, ritmo medio, lo que queda, `por`, `consola`, `otra_consola` y `en_el_equipo`. Entrada `restauracion` en la bitácora (sin rutas ni nombres; la prueba lo comprueba) y `restauraciones.json` con la última restauración real correcta por repositorio, que la salud de la protección cuenta como prueba (45 días) e `informe.repos[].restauracion_real`. `admite`: `restaurar_carpeta`, `restaurar_desde`, `restauracion_real`.
+- Dependencias: `zip` con la característica `aes-crypto` (aes 0.8, pbkdf2 0.12, hmac, sha1, constant_time_eq, zeroize: RustCrypto, MIT/Apache) y `tar` 0.4 sin funciones por defecto (alexcrichton, MIT/Apache). Elegidas porque `zip` ya estaba y es el estándar en Rust, y `tar` para no escribir los archivos restaurados en claro en un temporal. **`cargo deny` no está instalado en este equipo** (no lo instalé): no se pasó; las licencias están en la lista de `deny.toml`.
+- Servidor: tipo de historial `restauracion` (solo si se pide), `GET /api/clientes/{c}/restauraciones`, `PUT …/equipos/{e}/restauraciones/{id}` (motivo) y `PUT …/restauraciones/ajustes` (motivo obligatorio), tablas `restauraciones_notas` y `ajustes_cliente` (`CREATE TABLE IF NOT EXISTS`). `max_descarga` en `GET /api/servidor`; `--max-descarga` a 2048 MB por defecto y el total del relé al doble (docs actualizadas).
+- Consola: Restaurar con paso «Desde dónde» (repositorio, copia externa, derivadas y espejos del almacén, con estado, última actualización y recomendación; el espejo abre `RestaurarDesdeEspejo` ya rellenado), «Dónde» con otra carpeta (escrita o «Explorar…»), .zip en el equipo y descarga con contraseña AES opcional (aviso del Explorador de Windows), la clave de administración, el motivo (chips) y el progreso en vivo con `ProgresoCopia`. Página «Restauraciones» (barra lateral y paleta) con cifras, dos gráficas, lista, ficha y motivo editable, y el ajuste «Pedir siempre el motivo». Sección en Informes. La regla 3-2-1-1-0 cuenta la restauración real (`conRestauracionReal`). Quién la pidió en el texto del progreso de todas las consolas. Simulador y `vectores-restauraciones.ts` (56 comprobaciones). Paso 4b del e2e (otra carpeta, no vacía, carpeta del sistema, .zip con AES y sin contraseña, registro, motivo y restauración real).
+
+**Sin probar:** con dos consolas reales a la vez (13f); restaurar una unidad entera de verdad (solo carpetas en la prueba); .zip de varios GB y la descarga de 2 GB al navegador (el navegador guarda la descarga en memoria hasta el final); abrir el .zip con 7-Zip a mano (la prueba lo abre con el crate `zip` y el e2e mira la cabecera AES); `desde` con una derivada o la copia externa reales (solo la lógica); restaurar desde la ventana del equipo con el registro (`en_el_equipo`); Linux.
+
+**Decisiones dudosas:**
+- «Guardar como .zip» vale en una carpeta que ya existe aunque tenga cosas (el .zip es siempre nuevo y nunca sobrescribe); si no existe, se crea como en 13a.
+- El motivo va en el cuerpo sellado de la orden (lo anota el equipo y lo ven todas las consolas) **y** en esta consola (se puede cambiar después; manda el de esta consola). El «obligatorio» es por consola, no por cliente en todas.
+- «Carpeta en curso» (13c) no se enseña: sería una ruta y las rutas no salen del equipo.
+- Recomendación de «Desde dónde»: el más cercano que no está caído; una copia fallida no lo descarta, el almacén desconectado sí.
+- Desde otra copia (externa o derivada) la restauración no cuenta como prueba del repositorio principal.
+- El máximo de descarga por defecto es 2048 MiB (la consola lo enseña como «2,1 GB»).
+- `restaurar { destino: "carpeta" }` desde una orden de consola ahora también pide la clave de administración (antes solo lo usaba la ventana).
+
 ## Resumen de la noche del 2026-10-06 (trabajo autónomo, Claude Code en el equipo de desarrollo)
 
 *Se actualiza a medida que avanza; el detalle de cada tarea está en su entrada más abajo.*
