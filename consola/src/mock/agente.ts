@@ -16,7 +16,7 @@ import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
 import { errorCadenas } from "../lib/cadenas";
-import { usosDeNube } from "../lib/nubesEquipo";
+import { usosDeNube, usosEspejoDeNube } from "../lib/nubesEquipo";
 import { ADMITE_EQUIPO, ADMITE_TRABAJOS, claveDestinoTrabajo, errorTrabajos, nombrePorDefecto, reduceTrabajos, trabajosDelAlmacen, trabajosDelEquipo } from "../lib/espejoTrabajos";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
@@ -371,6 +371,19 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (e.resumen) e.resumen.pausado_hasta = null;
       return resultado(e, o, "hecha", "Copias reanudadas.");
     case "crear_repositorio": {
+      // Plan 0.8.0 (B3): solo el acceso a una zona de un almacén, sin repositorio (como el agente).
+      if (c.solo_destino === true) {
+        if (!e.resumen?.admite?.includes("solo_destino")) return resultado(e, o, "fallida", "La contraseña del repositorio necesita al menos 8 caracteres.");
+        const d = c.destino as { id: string; nombre?: string; tipo?: string; donde?: string; usuario?: string; secreto?: string; ca_pem?: string; equipo_almacen?: string };
+        if (d.tipo !== "rest" || !d.equipo_almacen || !String(d.donde ?? "").startsWith("https://") || !d.usuario || !d.secreto || !String(d.ca_pem ?? "").includes("BEGIN CERTIFICATE"))
+          return resultado(e, o, "fallida", "Solo se da acceso así a una zona de un almacén (un servidor de copias con su equipo).");
+        e.resumen ??= {};
+        const nuevo: T.DestinoResumen = { id: d.id, nombre: String(d.nombre ?? ""), tipo: "rest", donde: d.donde, equipo_almacen: d.equipo_almacen };
+        const ya = (e.resumen.destinos ?? []).some((x) => x.id === d.id);
+        e.resumen.destinos = [...(e.resumen.destinos ?? []).filter((x) => x.id !== d.id), nuevo];
+        guardarConfig(e, configInicial(e), plana.seq);
+        return resultado(e, o, "hecha", ya ? `Acceso a «${nuevo.nombre}» puesto al día (sin crear ningún repositorio).` : `Este equipo ya puede guardar en «${nuevo.nombre}» (sin crear ningún repositorio).`);
+      }
       // restic init tarda: unos 8 s «en marcha», para ver el hueco «Creando…» en su lista.
       o.estado = "en_marcha";
       o.actualizada = ahora();
@@ -622,7 +635,9 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         );
       }
       if (!g?.nubes?.some((n) => n.nombre === nombre)) return resultado(e, o, "fallida", `No hay ninguna nube «${nombre}» en este equipo.`);
-      const usada = g.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre);
+      // Plan 0.8.0 (B2): con trabajos de espejo (también en pausa), no se deja (como el agente).
+      if (g.espejo?.trabajos?.length && usosEspejoDeNube(e, nombre).length) return resultado(e, o, "fallida", `«${nombre}» no se desconecta: la usa ${usosEspejoDeNube(e, nombre).join(", ")}. Quítala antes de ahí y vuelve a intentarlo.`);
+      const usada =g.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre);
       if (usada && !plana.not_before) return resultado(e, o, "rechazada", "Desconectar una nube que usa el espejo es destructivo: falta la espera (not_before).");
       g.nubes = g.nubes.filter((n) => n.nombre !== nombre);
       // Como el agente: quita ese destino del espejo, y el espejo si se queda vacío.

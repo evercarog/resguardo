@@ -23,7 +23,7 @@ import { retencionesMock } from "./retencion";
 import { progresoDe } from "./progreso";
 import { rutasNotificaciones } from "./notificaciones";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
-import { errorDondeCatalogo } from "../lib/destinos";
+import { errorDondeCatalogo, errorSubcarpeta } from "../lib/destinos";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
 
 class HttpError extends Error {
@@ -835,7 +835,7 @@ const rutas: Ruta[] = [
       const { cuenta } = miembro(ctx, c, "administrador");
       const d = ctx.cuerpo as Record<string, unknown>;
       if (!/^[a-z0-9:_.-]{1,120}$/.test(id) || id.split(":").some((x) => !x || x === "." || x === "..")) throw err(422, "datos", "Id de destino no válido.");
-      if (Object.keys(d).some((k) => !["nombre", "tipo", "donde", "atributos"].includes(k))) throw err(422, "datos", "Destino no válido: solo nombre, tipo, dirección y atributos (las credenciales nunca van al servidor).");
+      if (Object.keys(d).some((k) => !["nombre", "tipo", "donde", "carpeta", "atributos"].includes(k))) throw err(422, "datos", "Destino no válido: solo nombre, tipo, dirección y atributos (las credenciales nunca van al servidor).");
       // Tarea 8: los atributos para la regla 3-2-1-1-0 (sin el campo, se quedan los que había).
       let atributos: T.AtributosDestino | null = null;
       if (d.atributos && typeof d.atributos === "object") {
@@ -865,14 +865,22 @@ const rutas: Ruta[] = [
       if ((!nombre && !atributos) || nombre.length > 80) throw err(422, "datos", "Escribe un nombre para el destino (hasta 80 caracteres).");
       if (!("atributos" in d)) atributos = destinosMock.get(c)?.get(id)?.atributos ?? null;
       if (!["zona", "rest", "s3", "b2", "sftp", "nube", "local"].includes(tipo)) throw err(422, "datos", "Tipo de destino no válido.");
-      const donde = typeof d.donde === "string" && d.donde.trim() ? d.donde.trim() : null;
+      const previo = destinosMock.get(c)?.get(id);
+      // Plan 0.8.0 (B2): una nube puede llevar su bucket; sin `donde` ni `carpeta`, se quedan los que había.
+      let donde = typeof d.donde === "string" && d.donde.trim() ? d.donde.trim() : null;
       if (donde && ["rest", "s3", "b2", "sftp"].includes(tipo)) {
         const e = errorDondeCatalogo(tipo as "rest" | "s3" | "b2" | "sftp", donde);
         if (e) throw err(422, "datos", e);
-      } else if (donde) throw err(422, "datos", "Solo los destinos de red llevan dirección.");
+      } else if (donde && tipo === "nube") {
+        if (/\s/.test(donde) || donde.includes("@") || /^[a-z]:|^[\\/~]/i.test(donde)) throw err(422, "datos", "Dirección no válida.");
+      } else if (donde) throw err(422, "datos", "Solo los destinos de red y las nubes llevan dirección.");
+      if (!donde && !("donde" in d) && previo?.tipo === tipo) donde = previo.donde ?? null;
+      const carpetaPedida = typeof d.carpeta === "string" ? d.carpeta.trim().replace(/^\/+|\/+$/g, "") : null;
+      if (carpetaPedida && errorSubcarpeta(carpetaPedida)) throw err(422, "datos", `La carpeta base: ${errorSubcarpeta(carpetaPedida)}`);
+      const carpeta = "carpeta" in d ? carpetaPedida || null : previo?.tipo === tipo ? (previo.carpeta ?? null) : null;
       const m = destinosMock.get(c) ?? new Map();
       if (!m.has(id) && m.size >= 200) throw err(422, "datos", "Como mucho 200 destinos en el catálogo: quita alguno.");
-      m.set(id, { id, nombre, tipo: tipo as T.DestinoCatalogo["tipo"], donde, atributos, actualizado: new Date().toISOString(), por: cuenta.nombre });
+      m.set(id, { id, nombre, tipo: tipo as T.DestinoCatalogo["tipo"], donde, carpeta, atributos, actualizado: new Date().toISOString(), por: cuenta.nombre });
       destinosMock.set(c, m);
       auditar(c, cuenta.id, "guardar_destino", id, { nombre, tipo });
       return undefined;
@@ -1657,7 +1665,14 @@ function marcaJson(c: string) {
 /** Tarea 7a: el catálogo de destinos de cada cliente. */
 const destinosMock = new Map<string, Map<string, T.DestinoCatalogo>>([
   // 0.7.26: el «Disco 2» de CAJA-1 son discos USB que se rotan: marcado «Aislado» por una persona.
-  [ID.sur, new Map([["disco-2", { id: "disco-2", nombre: "", tipo: "local", donde: null, atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" }, actualizado: new Date().toISOString(), por: "Ana Restrepo" }]])],
+  [
+    ID.sur,
+    new Map([
+      ["disco-2", { id: "disco-2", nombre: "", tipo: "local", donde: null, atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" }, actualizado: new Date().toISOString(), por: "Ana Restrepo" }],
+      // Plan 0.8.0 (B2, 14r): el mismo bucket que la nube B2 conectada en ALMACEN-SUR, marcado Inmutable 30 días: una sola ficha.
+      ["destino-b2sur", { id: "destino-b2sur", nombre: "Backblaze del Sur", tipo: "b2", donde: "cafe-espejo", carpeta: null, atributos: { inmutable: "object_lock", bloqueo_dias: 30, tipo: "nube" }, actualizado: new Date().toISOString(), por: "Ana Restrepo" }],
+    ]),
+  ],
 ]);
 /** Plantillas de copia (v1.20) por cliente: solo bytes cifrados por la consola. */
 const plantillasMock = new Map<string, Map<string, { cifrado: string; actualizada: string; por: string }>>();

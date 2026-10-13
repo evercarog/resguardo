@@ -27,8 +27,19 @@ export function cargarCatalogo(c: string, forzar = false): Promise<void> {
  * `atributos` (o `null` para quitarlos) cambia también lo de la regla 3-2-1;
  * sin el campo, el servidor deja los que había.
  */
-export async function guardarEnCatalogo(c: string, id: string, d: { nombre: string; tipo: DestinoCatalogo["tipo"]; donde?: string | null; atributos?: AtributosDestino | null }) {
-  await api.ponerDestino(c, id, { nombre: d.nombre.trim(), tipo: d.tipo, ...(d.donde ? { donde: d.donde.trim() } : {}), ...(d.atributos !== undefined ? { atributos: d.atributos } : {}) });
+export async function guardarEnCatalogo(
+  c: string,
+  id: string,
+  d: { nombre: string; tipo: DestinoCatalogo["tipo"]; donde?: string | null; carpeta?: string | null; atributos?: AtributosDestino | null },
+) {
+  // Plan 0.8.0 (B2): `carpeta` solo si se dice (sin el campo, el servidor deja la que había).
+  await api.ponerDestino(c, id, {
+    nombre: d.nombre.trim(),
+    tipo: d.tipo,
+    ...(d.donde ? { donde: d.donde.trim() } : {}),
+    ...(d.carpeta !== undefined ? { carpeta: d.carpeta?.trim() || null } : {}),
+    ...(d.atributos !== undefined ? { atributos: d.atributos } : {}),
+  });
   await cargarCatalogo(c, true);
   repartir();
 }

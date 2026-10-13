@@ -5,7 +5,7 @@
 // lib/cadenas.ts, el mismo que «Añadir paso» del editor de copias). Todo sale de los
 // resúmenes de los equipos y del catálogo (sin rutas de los equipos ni secretos).
 import type { DestinoCatalogo, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
-import { claveNube, claveZona, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
+import { claveNube, claveZona, clavesDe, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
 import { destinoDe } from "./repo";
 import { destinosParaPasos, usosPosibles } from "./cadenas";
 
@@ -21,7 +21,9 @@ export function claveDeDestino(d: DestinoResumen, equipos: Equipo[]): string {
 /** El destino de una clave (null si ya no está: una zona quitada, una nube desconectada…). */
 export function vistaPorClave(clave: string, equipos: Equipo[], catalogo: DestinoCatalogo[]): DestinoVista | null {
   // Los del cliente y las nubes conectadas en los equipos (las de «Añadir paso»).
-  return destinosParaPasos(equipos, catalogo).find((v) => v.clave === clave) ?? null;
+  // Plan 0.8.0 (B2): también por la clave de lo que se unió a él (la entrada del catálogo con el mismo bucket).
+  const l = destinosParaPasos(equipos, catalogo);
+  return l.find((v) => v.clave === clave) ?? l.find((v) => clavesDe(v).includes(clave)) ?? null;
 }
 
 export interface RepoEnDestino {

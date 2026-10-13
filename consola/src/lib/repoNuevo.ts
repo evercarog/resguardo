@@ -16,7 +16,7 @@
 // Sin dependencias de Svelte: lo prueban los vectores (scripts/vectores-repo-nuevo.ts).
 import type { DestinoCatalogo, DestinoResumen, Equipo } from "./tipos";
 import { ADMITE, admite, destinosParaPasos, nubeEn, usoNubeDirecta, type Uso } from "./cadenas";
-import { claveZona, destinosDelCliente, nombreDestino, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasNuevasPara, type ZonaVista } from "./destinos";
+import { claveZona, destinosDelCliente, dondeConBase, nombreDestino, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasNuevasPara, type ZonaVista } from "./destinos";
 import { admiteAlmacenPropio, esDeAlmacen } from "./retencion";
 import { nombreTipoNube, TIPOS_NUBE } from "./espejo";
 import { clasificacionDeVista } from "./regla321";
@@ -126,16 +126,24 @@ export function opcionesRepoNuevo(equipo: Equipo, equipos: Equipo[], catalogo: D
     });
   }
   // 4. Los del catálogo que aún no tiene (de red y con credenciales).
-  for (const v of vistas.filter((v) => v.clase === "suelto" && ["b2", "s3", "rest"].includes(v.tipo) && !propios.some((d) => d.id === v.clave))) {
-    l.push({
-      valor: `catalogo:${v.clave}`,
-      nombre: v.nombre,
-      detalle: [TEXTO_TIPO[v.tipo] ?? v.tipo, v.donde, "aún sin repositorios · pide sus credenciales"].filter(Boolean).join(" · "),
-      clase: "suelto",
-      uso: { ok: true },
-      que: { tipo: "catalogo", clave: v.clave, tipoDestino: v.tipo as "b2" | "s3" | "rest", nombre: v.nombre, donde: v.donde ?? "" },
-      tipoDestino: tipoDe(v),
-    });
+  // Plan 0.8.0 (B2): también la entrada del catálogo unida a otro destino con el mismo bucket (p. ej. la
+  // nube conectada en el almacén), y con su carpeta base delante («mi-bucket:Resguardo»).
+  for (const v of vistas) {
+    if (v.ids.some((id) => propios.some((d) => d.id === id))) continue;
+    for (const c of [v.catalogo, ...(v.alias ?? [])]) {
+      if (!c || !["b2", "s3", "rest"].includes(c.tipo) || !c.donde || propios.some((d) => d.id === c.id) || (v.clase !== "suelto" && c.id === v.clave)) continue;
+      if (l.some((o) => o.valor === `catalogo:${c.id}`)) continue;
+      const donde = dondeConBase(c.tipo, c.donde, c.carpeta);
+      l.push({
+        valor: `catalogo:${c.id}`,
+        nombre: v.nombre,
+        detalle: [TEXTO_TIPO[c.tipo] ?? c.tipo, donde, v.clase === "suelto" ? "aún sin repositorios · pide sus credenciales" : "pide sus credenciales"].filter(Boolean).join(" · "),
+        clase: "suelto",
+        uso: { ok: true },
+        que: { tipo: "catalogo", clave: c.id, tipoDestino: c.tipo as "b2" | "s3" | "rest", nombre: v.nombre, donde },
+        tipoDestino: tipoDe(v),
+      });
+    }
   }
   // 5. Las nubes conectadas en algún equipo (una vez cada una, por nombre y tipo).
   const yaUsadas = new Set(propios.filter((d) => d.tipo === "nube").map((d) => (d.nube ?? d.nombre).toLowerCase()));
