@@ -8,12 +8,12 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque A — Fallos encontrados en uso real (primero)
 
-- [ ] **A1. Vinculación silenciosa (14ee).** La línea de PowerShell instala pero no vincula (3 de 3 veces, sin rastro en el registro). Reproducir en máquina virtual, arreglar `PairNow` del instalador, dejar el motivo en `instalador.log` y enseñarlo en la línea. **Imprescindible antes de desplegar muchos equipos.**
-- [ ] **A2. Derivada o copia externa hacia un destino con autoridad TLS propia (14jj).** Pasar a restic las dos autoridades (origen y destino). Prueba de integración local → almacén con CA propia.
-- [ ] **A3. Claves de una orden en espera comprobadas al recibirla (14oo)**, no a las 24 h; la ventana dice de qué repositorio es la contraseña que pide.
-- [ ] **A4. «Elegir qué copiar» que no hace nada (14rr)**; **copia externa o derivada con el destino borrado (14nn)**: detectarlo, «Quitar» o «Volver a crearla», y «Quitar» también en la página del repositorio.
+- [~] **A1. Vinculación silenciosa (14ee).** (Rama `ia/080-a-agente`: `vincular` prepara la carpeta del agente y deja siempre el motivo, el instalador espera y reintenta y lo anota en `instalador.log`, la línea lo enseña con la orden para vincular a mano. **Falta** probar el instalador en una máquina virtual de Windows.) La línea de PowerShell instala pero no vincula (3 de 3 veces, sin rastro en el registro). Reproducir en máquina virtual, arreglar `PairNow` del instalador, dejar el motivo en `instalador.log` y enseñarlo en la línea. **Imprescindible antes de desplegar muchos equipos.**
+- [x] **A2. Derivada o copia externa hacia un destino con autoridad TLS propia (14jj).** (Rama `ia/080-a-agente`, con prueba de integración contra un rest-server real; queda verla en una máquina virtual de Windows con un almacén de verdad.) Pasar a restic las dos autoridades (origen y destino). Prueba de integración local → almacén con CA propia.
+- [x] **A3. Claves de una orden en espera comprobadas al recibirla (14oo)** (rama `ia/080-a-agente`), no a las 24 h; la ventana dice de qué repositorio es la contraseña que pide.
+- [~] **A4. «Elegir qué copiar» que no hace nada (14rr)**; **copia externa o derivada con el destino borrado (14nn)**: detectarlo, «Quitar» o «Volver a crearla», y «Quitar» también en la página del repositorio. (Rama `ia/080-a-agente`: la parte del agente de 14nn y «Quitar esta copia» / «Volver a crearla desde cero» en la tarjeta del repositorio del equipo. Falta 14rr y «Quitar» en la página del repositorio.)
 - [ ] **A5. Mapa:** el mismo servidor dos veces y espejos colgados del sitio equivocado (14mm); dibujar derivadas (14kk).
-- [ ] **A6. Textos:** sin datos de ningún cliente en ejemplos y pruebas (14y), aviso de derivada sin respuesta sin «restic» y con qué hacer (14tt), frase de varios volcados (14gg), «Un destino nuevo…» siempre visible (14ff), botón apagado dice qué falta (14aa).
+- [~] **A6. Textos:** sin datos de ningún cliente en ejemplos y pruebas (14y), aviso de derivada sin respuesta sin «restic» y con qué hacer (14tt, hecho en la rama `ia/080-a-agente`), frase de varios volcados (14gg), «Un destino nuevo…» siempre visible (14ff), botón apagado dice qué falta (14aa).
 
 ## Bloque B — Lo que desbloquea el trabajo real
 

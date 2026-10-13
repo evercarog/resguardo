@@ -196,7 +196,7 @@ Para 10, 30 o 100 equipos a la vez: **Añadir equipo → Instalar muchos equipos
 
 > **Si algo falla**
 > - «El instalador descargado no es el esperado»: el instalador del servidor cambió (se actualizó) después de copiar la línea. Vuelve a copiarla.
-> - «No se pudo vincular (salida 2)»: el equipo no llega al servidor, o el código se anuló, se agotó o caducó. Mira cuántos quedan en la consola.
+> - «No se pudo vincular (salida 2)»: debajo sale el motivo (lo deja el instalador en `C:\ProgramData\ResguardoAgente\instalador.log`) y la orden `vincular` lista para pegar en la misma ventana. Lo habitual: el equipo no llega al servidor, o el código se anuló, se agotó o caducó (mira cuántos quedan en la consola).
 
 > **Si algo falla**
 > - «No se pudo vincular con los datos de este instalador»: el equipo no llega al servidor (abre la dirección en su navegador), o el código caducó o ya se usó. Escribe un código nuevo en la misma pantalla del instalador.
