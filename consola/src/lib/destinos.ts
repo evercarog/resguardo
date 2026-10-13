@@ -567,3 +567,16 @@ export function textoUsos(u: UsosVista): string | null {
   const n = u.repos.length + u.espejos.length + u.copias.length;
   return `${n === 1 ? "Lo usa" : "Lo usan"} ${partes.join("; ")}.`;
 }
+
+/** Lo mismo, corto, para el botón apagado («Lo usan 3 espejos», «Lo usan 2 repositorios y 1 espejo»). */
+export function textoUsosCorto(u: UsosVista): string | null {
+  const n = (k: number, uno: string, varios: string) => (k === 1 ? `1 ${uno}` : `${k} ${varios}`);
+  const partes = [
+    u.repos.length ? n(u.repos.length, "repositorio", "repositorios") : "",
+    u.espejos.length ? n(u.espejos.length, "espejo", "espejos") : "",
+    u.copias.length ? n(u.copias.length, "copia", "copias") : "",
+  ].filter(Boolean);
+  if (!partes.length) return null;
+  const total = u.repos.length + u.espejos.length + u.copias.length;
+  return `${total === 1 ? "Lo usa" : "Lo usan"} ${partes.length > 1 ? `${partes.slice(0, -1).join(", ")} y ${partes[partes.length - 1]}` : partes[0]}`;
+}

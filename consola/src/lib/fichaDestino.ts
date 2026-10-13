@@ -7,7 +7,78 @@
 import type { DestinoCatalogo, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
 import { claveNube, claveZona, clavesDe, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
 import { destinoDe } from "./repo";
-import { destinosParaPasos, usosPosibles } from "./cadenas";
+import { destinosParaPasos, repoEnAlmacen, usosPosibles } from "./cadenas";
+import { estadoTrabajo, hrefEspejos, nombrePorDefecto, trabajosDelAlmacen, trabajosDelEquipo } from "./espejoTrabajos";
+import type { TrabajoEspejoResumen } from "./tipos";
+
+// --- Plan 0.8.0 (B2, 14r): lo que guarda un destino que recibe espejos ---
+
+/** Un repositorio que llega a un destino por un espejo (con su dueño, si está en esta consola). */
+export interface RepoPorEspejo {
+  /** `<usuario>/<repo>` en el almacén, o el id del repositorio en un espejo del propio equipo. */
+  valor: string;
+  nombre: string;
+  equipo?: Equipo;
+  repo?: RepositorioResumen;
+}
+/** Un espejo que llega a un destino, con lo que guarda allí. */
+export interface EspejoEnDestino {
+  trabajo: TrabajoEspejoResumen;
+  nombre: string;
+  /** Quién lo hace: el almacén o el propio equipo. */
+  hace: Equipo;
+  quien: "almacen" | "equipo";
+  estado: ReturnType<typeof estadoTrabajo>;
+  href: string;
+  repos: RepoPorEspejo[];
+}
+
+/** Los repositorios que copia un trabajo de espejo (según su selección), con su dueño si está aquí. */
+export function reposDeTrabajo(t: TrabajoEspejoResumen, hace: Equipo, equipos: Equipo[]): RepoPorEspejo[] {
+  if (t.quien === "equipo") {
+    const locales = new Set((hace.resumen?.destinos ?? []).filter((d) => d.tipo === "local").map((d) => d.id));
+    const suyos = (hace.resumen?.repositorios ?? []).filter((r) => locales.has(r.destino));
+    const elegidos = t.que.tipo === "repos" ? suyos.filter((r) => (t.que as { repos: string[] }).repos.includes(r.id)) : suyos;
+    return elegidos.map((r) => ({ valor: r.id, nombre: r.nombre || r.id, equipo: hace, repo: r }));
+  }
+  const zona = t.zona || PRINCIPAL;
+  const g = hace.resumen?.guarda_copias;
+  const lista = zona === PRINCIPAL ? g?.repositorios : g?.zonas?.find((z) => z.id === zona)?.repositorios;
+  const todos = [...new Set((lista ?? []).flatMap((u) => u.repos.map((r) => (r === "." || r === "" ? u.usuario : `${u.usuario}/${r}`))))].sort();
+  const elegidos = t.que.tipo === "repos" ? todos.filter((x) => (t.que as { repos: string[] }).repos.includes(x)) : t.que.tipo === "equipos" ? todos.filter((x) => (t.que as { equipos: string[] }).equipos.includes(x.split("/")[0])) : todos;
+  return elegidos.map((valor) => {
+    for (const e of equipos)
+      for (const r of e.resumen?.repositorios ?? []) {
+        const en = repoEnAlmacen(e, r, equipos);
+        if (en && en.almacen.id === hace.id && en.nombre === valor && en.zona === zona) return { valor, nombre: r.nombre || r.id, equipo: e, repo: r };
+      }
+    return { valor, nombre: valor };
+  });
+}
+
+/** Los espejos que llegan a un destino (una nube conectada o una zona), por su nombre y con lo que guardan allí. */
+export function espejosEnDestino(v: DestinoVista, equipos: Equipo[], cliente: string): EspejoEnDestino[] {
+  const out: EspejoEnDestino[] = [];
+  const llega = (t: TrabajoEspejoResumen, hace: Equipo) =>
+    (!!v.nube && v.nube.equipo.id === hace.id && t.adonde.tipo === "nube" && t.adonde.nube === v.nube.nombre) || (!!v.zona && v.zona.almacen.id === hace.id && t.adonde.tipo === "zona" && t.adonde.carpeta === v.zona.id);
+  for (const hace of equipos)
+    for (const [quien, lista] of [
+      ["almacen", trabajosDelAlmacen(hace)],
+      ["equipo", trabajosDelEquipo(hace)],
+    ] as const)
+      for (const t of lista)
+        if (llega(t, hace))
+          out.push({
+            trabajo: t,
+            nombre: t.nombre.trim() || nombrePorDefecto(t.adonde),
+            hace,
+            quien,
+            estado: estadoTrabajo(t),
+            href: hrefEspejos(cliente, hace.id),
+            repos: reposDeTrabajo(t, hace, equipos),
+          });
+  return out;
+}
 
 /** La dirección de la página de un destino (la clave del catálogo, codificada). */
 export const hrefDestino = (cliente: string, clave: string) => `/c/${cliente}/destinos/${encodeURIComponent(clave)}`;
@@ -81,9 +152,15 @@ export function usosDeDestino(v: DestinoVista, equipos: Equipo[], cliente: strin
     if (!a.resumen?.guarda_copias?.activo || !esp) continue;
     const zonas = zonasDe(a);
     const nombreZona = (id: string | null | undefined) => zonas.find((z) => z.id === (id ?? PRINCIPAL))?.nombre ?? "la zona principal";
+    // Plan 0.8.0 (B2, 14r): con trabajos, cada espejo que llega, por su nombre (también los que están en pausa).
+    const trabajos = esp.trabajos ?? [];
+    for (const t of trabajos) {
+      const entra = (v.nube && v.nube.equipo.id === a.id && t.adonde.tipo === "nube" && t.adonde.nube === v.nube.nombre) || (v.zona && v.zona.almacen.id === a.id && t.adonde.tipo === "zona" && t.adonde.carpeta === v.zona.id);
+      if (entra) out.push({ tipo: "espejo_entra", texto: `Espejo «${t.nombre.trim() || nombrePorDefecto(t.adonde)}» (${a.nombre})${t.activo ? "" : " · en pausa"}`, equipo: a, href: hrefEspejos(cliente, a.id), ultima: t.ultima, resultado: t.resultado });
+    }
     for (const d of esp.destinos ?? []) {
       const href = `/c/${cliente}/equipos/${a.id}`;
-      const entra = (v.nube && v.nube.equipo.id === a.id && d.tipo === "nube" && d.nube === v.nube.nombre) || (v.zona && v.zona.almacen.id === a.id && d.tipo === "zona" && d.carpeta === v.zona.id);
+      const entra = !trabajos.length && ((v.nube && v.nube.equipo.id === a.id && d.tipo === "nube" && d.nube === v.nube.nombre) || (v.zona && v.zona.almacen.id === a.id && d.tipo === "zona" && d.carpeta === v.zona.id));
       if (entra) out.push({ tipo: "espejo_entra", texto: `Espejo de ${nombreZona(d.zona)} del almacén ${a.nombre}`, equipo: a, href, ultima: d.ultima, resultado: d.resultado });
       if (v.zona && v.zona.almacen.id === a.id && (d.zona ?? PRINCIPAL) === v.zona.id)
         out.push({ tipo: "espejo_sale", texto: `Se refleja en ${nombreEspejo(a, d)}`, equipo: a, href: d.tipo === "nube" && d.nube ? hrefDestino(cliente, claveNube(a.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(cliente, claveZona(a.id, d.carpeta)) : href, ultima: d.ultima, resultado: d.resultado });
@@ -100,7 +177,8 @@ export interface SucesoDestino {
   href: string;
 }
 
-const tonoDe = (r: string | null | undefined): SucesoDestino["tono"] => (r === "fallo" || r === "error" ? "bad" : r === "aviso" ? "warn" : "ok");
+/** El tono de un resultado: «fallo», «error» o un mensaje del agente que empieza por «ERROR» es malo. */
+export const tonoDe = (r: string | null | undefined): SucesoDestino["tono"] => (r === "fallo" || r === "error" || !!r?.startsWith("ERROR") ? "bad" : r === "aviso" ? "warn" : "ok");
 
 /** Lo último que pasó en un destino: la última vez de cada copia que guarda aquí y del espejo que llega o sale, lo más reciente primero. */
 export function actividadDestino(v: DestinoVista, equipos: Equipo[], cliente: string, max = 12): SucesoDestino[] {
