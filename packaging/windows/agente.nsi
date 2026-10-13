@@ -401,6 +401,11 @@ Section "Resguardo Agente" SecMain
     ${If} $Sas == ""
       SetErrorLevel 2
     ${EndIf}
+  ${ElseIf} ${Silent}
+  ${AndIf} $Code != ""
+    ; 14ee: con /CODE= en un equipo ya vinculado no se hace nada: que quede dicho.
+    Push "Este equipo ya estaba vinculado: no se ha usado el código (para otro servidor: resguardo-agente vincular CÓDIGO --servidor https://…)."
+    Call AnotarInstalador
   ${EndIf}
 !endif
 SectionEnd
