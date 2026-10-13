@@ -20,6 +20,9 @@ import { clasificar, corta, DIAS_AISLADO, tipoDeLugar, ultimaConexion, type Clas
 import { destinosParaPasos, type PasoCadena } from "./cadenas";
 import { almacenesDe, claveNube, claveZona, nombreDestino, nombreZonaPorDefecto, unidadDe, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { espejoDelRepo, nombreEnAlmacen } from "./espejo";
+import { trabajoIncluye, trabajosDelEquipo } from "./espejoTrabajos";
+// Lo que ya sabe el mapa de qué espejos incluyen un repositorio (14mm): una sola lógica.
+import { enAlmacenDe, entraEnEspejo } from "./mapa";
 import { destinoDe, informeDe } from "./repo";
 import { resultadoConError } from "./salud";
 import { proximaProgramada, ultimaProgramada } from "./copia";
@@ -237,6 +240,12 @@ export interface PasoVista extends PasoRegla {
   /** Para guardarlo en el catálogo: su tipo y, si es de red, su dirección. */
   tipoCatalogo: DestinoCatalogo["tipo"];
   donde: string | null;
+  /** C1 (14kk): la última vez que se intentó, bien o mal (para el camino: «falló hace 3 h»). */
+  intento?: { cuando: string | null; mal: boolean; aviso?: boolean; mensaje?: string | null } | null;
+  /** C1: empieza «después» (de cada copia o de la anterior). */
+  despues?: boolean;
+  /** C1: en pausa (un espejo desactivado, una derivada que dejó de intentarse). */
+  pausado?: boolean;
 }
 
 /** Lo que hace falta para marcar un destino (AtributosDestino.svelte). */
@@ -397,6 +406,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
         tipoCatalogo: tipoCatalogoDe(d, !!x.zona),
         donde: !x.zona && d && d.tipo !== "local" ? (d.donde ?? null) : null,
         conexion: d?.tipo === "local" ? (d.aislado ?? null) : null,
+        intento: k.ultima ? { cuando: k.ultima.cuando, mal: k.ultima.estado === "fallo" } : null,
+        despues: !!k.tras,
       },
       catalogo,
     ),
@@ -408,9 +419,13 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
     const a = x.zona.almacen;
     const g = a.resumen?.guarda_copias;
     const zonaId = x.zona.id;
-    const esp = espejoDelRepo(g?.espejo ?? null, nombreEnAlmacen(d?.donde, r));
+    // C1: qué destinos del espejo incluyen este repositorio, con la misma lógica que el mapa
+    // (lib/mapa.ts: su zona y su selección, por repositorio o por equipo); sin saber su
+    // nombre en el almacén, como antes (por el nombre de su carpeta).
+    const en = enAlmacenDe(r, d, a);
+    const esp = en ? (g?.espejo ?? null) : espejoDelRepo(g?.espejo ?? null, nombreEnAlmacen(d?.donde, r));
     (esp?.destinos ?? []).forEach((dd, i) => {
-      if ((dd.zona ?? "principal") !== zonaId) return;
+      if (en ? !entraEnEspejo(dd, en) : (dd.zona ?? "principal") !== zonaId) return;
       const nube = dd.tipo === "nube";
       // A otra zona del mismo almacén: su disco, con el nombre de la zona.
       const zonaDestino = dd.tipo === "zona" ? zonasDe(a).find((z) => z.id === dd.carpeta) : undefined;
@@ -434,6 +449,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
               sistemaArchivos: null,
               tipoCatalogo: "zona",
               donde: null,
+              intento: dd.ultima || dd.resultado ? { cuando: dd.ultima ?? null, mal: resultadoConError(dd.resultado), mensaje: dd.resultado ?? null } : null,
+              despues: !!dd.tras_copia,
             },
             catalogo,
           ),
@@ -464,6 +481,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
             tipoCatalogo: nube ? "nube" : "local",
             donde: null,
             conexion: nube ? null : (dd.aislado ?? null),
+            intento: dd.ultima || dd.resultado ? { cuando: dd.ultima ?? null, mal: resultadoConError(dd.resultado), mensaje: dd.resultado ?? null } : null,
+            despues: !!dd.tras_copia,
           },
           catalogo,
         ),
@@ -497,6 +516,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           donde: !xe.zona && de && de.tipo !== "local" ? (de.donde ?? null) : null,
           bloqueoDias: r.externa.bloqueo_dias ?? null,
           conexion: de?.tipo === "local" ? (de.aislado ?? null) : null,
+          intento: ext ? { cuando: ext.ultima, mal: ext.resultado === "fallo", aviso: ext.resultado === "aviso", mensaje: ext.mensaje_corto } : null,
+          pausado: !!ext?.pausada,
         },
         catalogo,
       ),
@@ -531,6 +552,48 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           donde: !xd.zona && de && de.tipo !== "local" && de.tipo !== "nube" ? (de.donde ?? null) : null,
           bloqueoDias: dv.bloqueo_dias ?? null,
           conexion: de?.tipo === "local" ? (de.aislado ?? null) : null,
+          intento: ult ? { cuando: ult.ultima ?? null, mal: ult.resultado === "fallo", aviso: ult.resultado === "aviso", mensaje: ult.mensaje_corto ?? null } : null,
+          despues: !!dv.cuando?.tras_copia,
+          pausado: !!ult?.pausada,
+        },
+        catalogo,
+      ),
+    );
+  }
+
+  // 5. 14w (plan 0.8.0): los espejos que hace el propio equipo de este repositorio
+  //    (agente con `espejo_equipo`): a otra carpeta suya o a una nube conectada en él.
+  for (const t of trabajosDelEquipo(e)) {
+    if (!trabajoIncluye(t, r.id)) continue;
+    const nube = t.adonde.tipo === "nube";
+    const tipoNube = nube ? ([...(e.resumen?.nubes ?? []), ...(e.resumen?.guarda_copias?.nubes ?? [])].find((n) => n.nombre === t.adonde.nube)?.tipo ?? "") : "";
+    const lugar: LugarDestino = nube ? (tipoNube === "smb" ? "oficina" : tipoNube === "sftp" ? "otra_sede" : "nube") : "este_equipo";
+    const carpeta = t.adonde.carpeta ?? "";
+    const clave = nube ? claveNube(e.id, t.adonde.nube ?? "") : null;
+    const mal = !!t.resultado && t.resultado.startsWith("ERROR");
+    pasos.push(
+      conMarcado(
+        {
+          id: `espejo-equipo-${t.id}`,
+          nombre: (clave && catalogo.find((c) => c.id === clave)?.nombre.trim()) || t.nombre || (nube ? (t.adonde.nube ?? "Nube") : `Espejo en ${unidadDe(carpeta) ? `el disco ${unidadDe(carpeta)}` : "otra carpeta"} de ${e.nombre}`),
+          tipo: "espejo",
+          lugar,
+          inmutable: t.bloqueo ? "object_lock" : "no",
+          soporte: nube ? `nube:${clave}` : `equipo:${e.id}:${unidadDe(carpeta) ?? `espejo-${resumenCorto(carpeta)}`}`,
+          equipo: nube ? null : e.id,
+          ultima_ok: mal ? null : (t.ultima ?? null),
+          cada_horas: t.cuando.tras_copia ? cadaCopia : t.cuando.horario ? horasEntre(t.cuando.horario, ahora) : 24,
+          verificacion_mal: (t.verificacion?.mal ?? 0) > 0,
+          clave,
+          equipoNombre: e.nombre,
+          equipoId: e.id,
+          sistemaArchivos: null,
+          tipoCatalogo: nube ? "nube" : "local",
+          donde: null,
+          bloqueoDias: t.bloqueo_dias ?? null,
+          intento: t.ultima || t.resultado ? { cuando: t.ultima ?? null, mal, mensaje: t.resultado ?? null } : null,
+          despues: !!(t.cuando.tras_copia || t.cuando.cadena || t.cuando.despues),
+          pausado: !t.activo,
         },
         catalogo,
       ),

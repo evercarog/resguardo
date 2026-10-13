@@ -123,6 +123,13 @@
   import { admiteEspejoEquipo, admiteTrabajos, estadoTrabajo, hrefEspejos, opcionesRepos, textoCuando as textoCuandoTrabajo, textoRetencion as textoRetencionTrabajo, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
+  // C1 (plan 0.8.0, 14kk): el camino de cada repositorio en su tarjeta, y cada copia derivada como repositorio propio.
+  import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
+  import { caminoDeCopia, textoEslabon, type Eslabon } from "$lib/camino";
+  import { enVivoCamino } from "$lib/caminoVivo.svelte";
+  import { reglaDeCopia } from "$lib/regla321";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import { hrefDestino } from "$lib/fichaDestino";
   import type { DerivadaResumen } from "$lib/tipos";
   import { tareasDe } from "$lib/progreso.svelte";
   import { hayPlanMover, moviendoDe } from "$lib/mover";
@@ -205,6 +212,33 @@
   const salud = $derived(equipo ? saludEquipo(equipo, reloj.ahora) : null);
   const copias = $derived(equipo?.resumen?.copias ?? []);
   const repos = $derived(equipo?.resumen?.repositorios ?? []);
+  // C1: lo que va después de cada repositorio (espejos y copias derivadas), con su estado: de la
+  // regla de su primera copia activa (los mismos pasos que la tira 3-2-1 y el mapa).
+  $effect(() => {
+    const cc = c;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const caminoRepo = $derived.by(() => {
+    const m = new Map<string, Eslabon[]>();
+    if (!equipo) return m;
+    const eq = equipo;
+    const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
+    for (const r of repos) {
+      const k = copias.find((x) => x.repo === r.id && x.activa !== false);
+      if (!k) continue;
+      const rc = reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora);
+      m.set(r.id, caminoDeCopia(rc, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: todos, informe: eq.ultimo_informe ?? null }).filter((x) => x.clase !== "copia"));
+    }
+    return m;
+  });
+  /** C1: cada copia derivada (también la «copia externa» de antes) como un repositorio propio, enlazado con su origen. */
+  const reposDerivados = $derived(
+    repos.flatMap((r) => [
+      ...(r.externa ? [{ r, id: "externa", destino: r.externa.destino ?? "otro destino", destinoId: r.externa.destino_id ?? null }] : []),
+      ...(r.derivadas ?? []).filter((dv) => dv.activa !== false).map((dv) => ({ r, id: dv.id, destino: dv.destino ?? "otro destino", destinoId: dv.destino_id ?? null })),
+    ]),
+  );
+  const eslabonDerivada = (repo: string, id: string) => caminoRepo.get(repo)?.find((x) => x.id === (id === "externa" ? "externa" : `derivada-${id}`));
   const destinos = $derived(equipo?.resumen?.destinos ?? []);
   const pausado = $derived(!!equipo && enPausa(equipo, reloj.ahora));
   // Cifras del resumen: última vuelta y próxima de todas sus copias, lo protegido y los 60 días.
@@ -1046,7 +1080,7 @@
 
       {#if repos.length || pendRepos.length}
         <section>
-          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}</span></h2></div>
+          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length} y {reposDerivados.length} {reposDerivados.length === 1 ? "derivado" : "derivados"}{/if}</span></h2></div>
           {#each pendRepos as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
           <div class="rejilla repos">
             {#each repos as r (r.id)}
@@ -1064,6 +1098,8 @@
                   {#if ej}<Chip pequeno tono={TONO_RESULTADO[ej.resultado]} texto={ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado]} />{/if}
                   <ChevronRight size={16} />
                 </a>
+                <!-- C1: el camino del repositorio (espejos y copias derivadas), con el estado de cada uno. -->
+                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" /></div>{/if}
                 {#if nVersiones(r, inf)}
                   <div class="fact-boxes">
                     <div><span class="faint">Versiones</span><strong class="num">{numero(nVersiones(r, inf))}</strong></div>
@@ -1127,6 +1163,21 @@
                     <MenuAcciones etiqueta="Más acciones de «{r.nombre}»" grupos={masRepo(r)} />
                   </div>
                 {/if}
+              </article>
+            {/each}
+            <!-- C1 (14kk): cada copia derivada como repositorio propio, enlazado con su origen. -->
+            {#each reposDerivados as d (d.r.id + "|" + d.id)}
+              {@const x = eslabonDerivada(d.r.id, d.id)}
+              <article class="card repo repo-derivado">
+                <div class="repo-cab">
+                  <span class="card-icon"><Database size={18} /></span>
+                  <div class="repo-nombre">
+                    <h3>{d.r.nombre} <span class="faint">en</span> {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}</h3>
+                    <p class="donde faint">Copia derivada de <a class="link-suave" href="/c/{c}/equipos/{equipo.id}/repositorios/{encodeURIComponent(d.r.id)}">«{d.r.nombre}»</a>: sus versiones, en otro repositorio <Ayuda id="copia-derivada" /></p>
+                  </div>
+                  {#if x}<Chip pequeno tono={x.tono} texto={x.estado} girando={x.vivo} />{/if}
+                </div>
+                {#if x}<p class="faint der-estado">{x.cuando || x.vivo ? textoEslabon(x, reloj.ahora).replace(/^./, (l) => l.toUpperCase()) : "Todavía no ha subido nada."}</p>{/if}
               </article>
             {/each}
           </div>
@@ -2067,6 +2118,24 @@
     flex-direction: column;
     gap: var(--sp-4);
     padding: var(--sp-5);
+  }
+  .repo-derivado {
+    gap: var(--sp-2);
+    border-style: dashed;
+  }
+  .der-estado {
+    margin: 0;
+    font-size: var(--fs-sm);
+  }
+  .camino-repo {
+    display: grid;
+    gap: 4px;
+  }
+  .et-camino {
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
   .repo-cab {
     display: flex;
