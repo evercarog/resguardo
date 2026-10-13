@@ -475,6 +475,9 @@ fn derivada_hacia_un_almacen_con_autoridad_propia() {
     assert_eq!(r.result, "ok", "subida con la autoridad del destino del equipo: {}", r.message);
     assert_eq!(restic::snapshots(&en_almacen).unwrap().len(), 2);
 
+    std::env::remove_var("RESGUARDO_AGENT_DIR");
+    drop(guard);
+}
 
 /// B1 (docs/nombres-legibles.md): «Ordenar nombres de carpeta» de verdad, con el
 /// rest-server real. Un equipo con el usuario de antes (su id) y un repositorio con
