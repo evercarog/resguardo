@@ -57,6 +57,7 @@ pub mod espejo_trabajos;
 #[cfg(test)]
 mod espera_it;
 pub mod espera_v2;
+pub mod franjas;
 pub mod ganchos;
 pub mod gestion_v2;
 pub mod history;

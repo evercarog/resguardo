@@ -1209,7 +1209,7 @@ pub fn documento(v: &Vinculo) -> Value {
         .map(|r| {
             let mut x = json!({ "id": r.id, "nombre": r.nombre, "destino": r.destino, "retencion": r.retencion });
             if !r.derivadas.is_empty() {
-                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion") })).collect::<Vec<_>>());
+                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion"), "limite": d.get("limite") })).collect::<Vec<_>>());
             }
             x
         })
@@ -1236,7 +1236,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 31] = [
+pub const ADMITE: [&str; 32] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1308,6 +1308,9 @@ pub const ADMITE: [&str; 31] = [
     "conservar_version",
     // (pendiente de numerar) plan 0.8.0, F3 (14u): `retencion.por_dia` (en el equipo y en el almacén).
     "retencion_por_dia",
+    // (pendiente de numerar) plan 0.8.0, F4 (14t): límite de velocidad según la hora en los espejos
+    // (`trabajos[].limite_franjas`, por rclone) y en las copias derivadas (`cambiar_derivada { limite }`).
+    "limite_franjas",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -2241,6 +2244,7 @@ fn preparar_derivada(
             append_only: solo_anadir,
             nube: nube.clone(),
             cacert: dest_acc.cacert.clone(),
+            limit_windows: vec![],
         },
         // Las credenciales de una nube no se guardan con la copia: se ponen al día en cada uso.
         creds: crate::agent::OffsiteSecrets {
@@ -2360,7 +2364,13 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     if let Some(va) = &verificacion {
         va.valida()?;
     }
-    let offsite = p.offsite(schedule, filtro.clone(), verificacion.as_ref().map(|va| va.verify(chrono::Local::now())))?;
+    let mut offsite = p.offsite(schedule, filtro.clone(), verificacion.as_ref().map(|va| va.verify(chrono::Local::now())))?;
+    // Plan 0.8.0, F4 (14t): `limite { kib?, franjas? }`, la velocidad de subida según la hora.
+    let limite = limite_de(c)?;
+    if let Some((kib, franjas)) = &limite {
+        offsite.limit_upload_kib = *kib;
+        offsite.dest.limit_windows = franjas.clone();
+    }
     crate::agent::set_derived(repo, &id, Some(crate::tasks::Derived { id: id.clone(), offsite }), Some(p.creds))?;
     if let Some(d) = p.nuevo.clone() {
         v.destinos.push(d);
@@ -2374,6 +2384,9 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     if let Some(va) = &verificacion {
         e["verificacion"] = json!(va);
     }
+    if let Some((kib, franjas)) = &limite {
+        e["limite"] = json!({ "kib": kib, "franjas": franjas });
+    }
     if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
         r.derivadas.retain(|x| x["id"] != id.as_str());
         r.derivadas.push(e);
@@ -2384,6 +2397,25 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
         None => String::new(),
     };
     Ok(format!("Copia derivada a «{}»{que} guardada. {}", p.destino.nombre, p.texto))
+}
+
+/// Plan 0.8.0, F4 (14t): `limite { kib?, franjas? }` de una copia derivada (`None` sin
+/// el campo o sin nada: sin límite). `kib`: fuera de las franjas.
+pub fn limite_de(c: &Value) -> Result<Option<(Option<u32>, Vec<crate::franjas::Franja>)>, String> {
+    let Some(l) = c.get("limite").filter(|l| l.is_object()) else { return Ok(None) };
+    let kib = match &l["kib"] {
+        Value::Null => None,
+        x => Some(x.as_u64().and_then(|k| u32::try_from(k).ok()).ok_or("Límite de velocidad no válido.")?).filter(|k| *k > 0),
+    };
+    if kib.is_some_and(|k| !(crate::franjas::MIN_KIB..=crate::franjas::MAX_KIB).contains(&k)) {
+        return Err(format!("El límite de velocidad va de {} KiB/s a {} KiB/s.", crate::franjas::MIN_KIB, crate::franjas::MAX_KIB));
+    }
+    let franjas: Vec<crate::franjas::Franja> = match l.get("franjas") {
+        None | Some(Value::Null) => vec![],
+        Some(f) => serde_json::from_value(f.clone()).map_err(|_| "Franjas de velocidad no válidas.".to_string())?,
+    };
+    crate::franjas::validar(&franjas)?;
+    Ok((kib.is_some() || !franjas.is_empty()).then_some((kib, franjas)))
 }
 
 /// `quitar_derivada { repo, id }` (contraseña del repositorio; reduce la
@@ -2423,6 +2455,8 @@ fn derivada_resumen(v: &Vinculo, repo: &str, e: &Value, agente: Option<&crate::a
         "solo_anadir": e.get("solo_anadir"),
         "filtro": Some(filtro).filter(|f| f.is_object()),
         "verificacion": e.get("verificacion"),
+        // Plan 0.8.0, F4: la velocidad de subida según la hora (sin nada, no va).
+        "limite": e.get("limite"),
         // Si el agente la tiene (un repositorio sin copias activas la pierde) y si aplica retención allí.
         "activa": tarea.is_some(),
         "con_retencion": tarea.map(|t| t.offsite.retention.as_ref().is_some_and(|p| !p.is_empty())),
@@ -2959,6 +2993,27 @@ mod tests {
             assert!(copia(tras, inicio, retraso).valida_inicio().is_err(), "{tras:?} {inicio:?} {retraso:?}");
         }
         assert!(ADMITE.contains(&"inicio_despues"));
+    }
+
+    /// F4 (14t): `limite { kib?, franjas? }` de una copia derivada.
+    #[test]
+    fn limite_de_velocidad_de_una_derivada() {
+        assert_eq!(limite_de(&json!({})).unwrap(), None);
+        assert_eq!(limite_de(&json!({ "limite": { "kib": 0, "franjas": [] } })).unwrap(), None, "nada: sin límite");
+        let (kib, franjas) =
+            limite_de(&json!({ "limite": { "kib": 4096, "franjas": [{ "dias": [1, 2, 3, 4, 5], "desde": "08:00", "hasta": "18:00", "kib": 2048 }] } }))
+                .unwrap()
+                .unwrap();
+        assert_eq!((kib, franjas.len(), franjas[0].kib), (Some(4096), 1, 2048));
+        for malo in [
+            json!({ "limite": { "kib": 10 } }),
+            json!({ "limite": { "kib": "mucho" } }),
+            json!({ "limite": { "franjas": [{ "dias": [1], "desde": "18:00", "hasta": "08:00", "kib": 2048 }] } }),
+            json!({ "limite": { "franjas": "lunes" } }),
+        ] {
+            assert!(limite_de(&malo).is_err(), "{malo}");
+        }
+        assert!(ADMITE.contains(&"limite_franjas"));
     }
 
     /// F1 (14pp): «solo a mano», «una sola vez» y «termina después de N copias o el día …».

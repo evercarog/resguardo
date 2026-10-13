@@ -333,7 +333,7 @@ pub enum Lado<'a> {
     Carpeta(&'a Path),
     /// Una nube conectada (nube.rs), en `carpeta` dentro de ella. `trabajo`:
     /// carpeta privada donde dejar las listas de archivos para rclone.
-    Nube { nube: &'a crate::nube::Nube, carpeta: &'a str, trabajo: &'a Path, limite_kib: Option<u32> },
+    Nube { nube: &'a crate::nube::Nube, carpeta: &'a str, trabajo: &'a Path, limite: Option<String> },
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -434,7 +434,7 @@ pub fn vuelta(
     }
     match lado {
         Lado::Carpeta(d) => copiar_a_carpeta(origen, d, &copiar, &mut r, avance)?,
-        Lado::Nube { nube, carpeta, trabajo, limite_kib } => {
+        Lado::Nube { nube, carpeta, trabajo, limite } => {
             // Antes de subir, cada archivo se comprueba: uno dañado no sale del almacén.
             let mut rels: Vec<&str> = Vec::new();
             for a in &copiar {
@@ -444,7 +444,7 @@ pub fn vuelta(
                     rels.push(a.rel.as_str());
                 }
             }
-            let (n, bytes) = crate::nube::copiar_lista(nube, origen, carpeta, &rels, *limite_kib, trabajo, avance)?;
+            let (n, bytes) = crate::nube::copiar_lista(nube, origen, carpeta, &rels, limite.as_deref(), trabajo, avance)?;
             r.copiados += n;
             r.bytes += bytes;
         }
@@ -1037,7 +1037,7 @@ mod tests {
         let carpeta_nube = nube.display().to_string().replace('\\', "/");
         let hay_rclone = crate::nube::comprobar_binario().is_ok();
         if hay_rclone {
-            let lado = Lado::Nube { nube: &n, carpeta: &carpeta_nube, trabajo: &trabajo, limite_kib: None };
+            let lado = Lado::Nube { nube: &n, carpeta: &carpeta_nube, trabajo: &trabajo, limite: None };
             let r = vuelta(&almacen, &lado, &alcance, &op, &mut Estado::default(), &mut |_, _| {}).unwrap();
             assert!(r.copiados > 5);
         }
