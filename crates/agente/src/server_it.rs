@@ -358,3 +358,123 @@ fn zonas_del_almacen_real() {
     std::env::remove_var("RESGUARDO_AGENT_DIR");
     drop(guard);
 }
+
+/// 14jj: una copia derivada desde un repositorio local (sin autoridad TLS propia) hacia un
+/// almacén con su autoridad propia. Antes se quitaba a propósito la del destino y «Probar»,
+/// la creación del repositorio de destino y cada subida fallaban con «Problema con el
+/// certificado HTTPS del servidor». Ahora restic recibe las autoridades que hagan falta.
+#[test]
+fn derivada_hacia_un_almacen_con_autoridad_propia() {
+    let Ok(bin) = std::env::var("RESGUARDO_TEST_REST_SERVER") else {
+        return;
+    };
+    if restic::version().is_err() {
+        eprintln!("sin restic: se salta la prueba");
+        return;
+    }
+    // RESGUARDO_AGENT_DIR es de todo el proceso: como las demás pruebas que lo cambian, con el candado.
+    let _real = crate::restic::tests::real_repo_lock();
+    let dir = std::env::temp_dir().join(format!("resguardo-derivada-ca-{}", uuid::Uuid::new_v4()));
+    let mut guard = Cleanup { child: None, dir: dir.clone() };
+    let files = Files { public: dir.join("publico"), private: dir.join("privado") };
+    let data = dir.join("copias");
+    let datos = dir.join("datos");
+    for d in [&files.public, &files.private, &data, &datos] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    std::fs::write(datos.join("factura.txt"), "Factura de prueba\n".repeat(200)).unwrap();
+    files.make_cert(&["localhost".into(), "127.0.0.1".into()]).unwrap();
+    let pass = crate::server::new_password();
+    files.write_htpasswd(&[htpasswd_line("pc-01", &pass).unwrap()]).unwrap();
+    let port = free_port();
+    let log = std::fs::File::create(dir.join("rest-server.log")).unwrap();
+    let child = Command::new(PathBuf::from(bin))
+        .args(files.args(&data.display().to_string(), &format!("127.0.0.1:{port}")))
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .expect("no arranca el rest-server");
+    guard.child = Some(child);
+    let start = Instant::now();
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+        assert!(start.elapsed() < Duration::from_secs(15), "el rest-server no escucha");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    std::env::set_var("RESGUARDO_AGENT_DIR", dir.join("agente"));
+    crate::agent::prepare_dir().unwrap();
+
+    // El origen: un repositorio en un disco del equipo (sin autoridad propia), con una versión.
+    let local = dir.join("disco");
+    let mut v = crate::servidor_v2::Vinculo { equipo_id: uuid::Uuid::new_v4().to_string(), modo: "local".into(), ..Default::default() };
+    v.destinos.push(crate::gestion_v2::Destino {
+        id: "disco".into(),
+        nombre: "Disco".into(),
+        tipo: "local".into(),
+        donde: local.display().to_string(),
+        ..Default::default()
+    });
+    v.repos_v2.push(crate::gestion_v2::RepoV2 {
+        id: "docs".into(),
+        nombre: "Ventas".into(),
+        destino: "disco".into(),
+        contrasena: "clave del origen".into(),
+        ..Default::default()
+    });
+    let src = crate::gestion_v2::acceso(&v, "docs").unwrap();
+    assert!(src.cacert.is_none());
+    assert_eq!(run(&src, &["init"]).code, Some(0));
+    let b = run(&src, &["backup", "--host", "pc-01", &datos.display().to_string()]);
+    assert_eq!(b.code, Some(0), "{}", b.stderr);
+    // El almacén, como lo da `guarda_copias { anadir }`: con su autoridad propia.
+    let pem = std::fs::read_to_string(files.ca()).unwrap();
+    v.destinos.push(crate::gestion_v2::Destino {
+        id: "almacen".into(),
+        nombre: "Almacén".into(),
+        tipo: "rest".into(),
+        donde: format!("https://127.0.0.1:{port}/pc-01/"),
+        usuario: Some("pc-01".into()),
+        secreto: Some(pass.clone()),
+        ca_pem: Some(pem),
+        ..Default::default()
+    });
+    crate::servidor_v2::guardar(&v).unwrap();
+
+    // 1. «Probar» la derivada: el almacén responde (antes, error de certificado).
+    let c = serde_json::json!({ "id": "alm", "destino": { "id": "almacen" }, "tras_copia": true, "solo_probar": true });
+    let m = crate::gestion_v2::cambiar_derivada(&mut v, &c, "docs").expect("probar la derivada hacia el almacén");
+    assert!(m.contains("El destino responde"), "{m}");
+
+    // 2. Crear el repositorio de destino y subir, como lo hará cada vuelta del agente.
+    let dest_acc = crate::gestion_v2::acceso_destino(&v.destinos[1], "docs-alm", "clave del origen").unwrap();
+    let ca_destino = dest_acc.cacert.clone().expect("la autoridad del almacén va con el destino");
+    let offsite = |con_ca: bool| -> crate::tasks::Offsite {
+        let mut o: crate::tasks::Offsite = serde_json::from_value(serde_json::json!({
+            "location": dest_acc.location, "provider": "destino:almacen", "schedule": { "kind": "daily", "time": "03:00" },
+            "target_name": "Almacén", "enabled_at": chrono::Local::now().to_rfc3339(),
+        }))
+        .unwrap();
+        o.dest.cacert = con_ca.then(|| ca_destino.clone());
+        o
+    };
+    let secret = crate::agent::Secret {
+        password: "clave del origen".into(),
+        offsite_location: Some(crate::tasks::location_with_auth(&dest_acc.location, dest_acc.rest_auth.as_ref())),
+        ..Default::default()
+    };
+    let repo = crate::agent::AgentRepo { id: "docs".into(), location: src.location.clone(), ..crate::agent::tests::repo_cada_hora() };
+    let r = crate::tasks::offsite_repo(&repo, &secret, &offsite(true), false, &mut |_| {});
+    assert_eq!(r.result, "ok", "subida al almacén: {}", r.message);
+    let en_almacen = Access { cacert: Some(ca_destino.clone()), ..dest_acc.clone() };
+    assert_eq!(restic::snapshots(&en_almacen).unwrap().len(), 1, "la versión llegó al almacén");
+
+    // 3. Una guardada antes (sin la autoridad consigo): la toma del destino del equipo.
+    let b = run(&src, &["backup", "--host", "pc-01", &datos.display().to_string()]);
+    assert_eq!(b.code, Some(0), "{}", b.stderr);
+    let r = crate::tasks::offsite_repo(&repo, &secret, &offsite(false), false, &mut |_| {});
+    assert_eq!(r.result, "ok", "subida con la autoridad del destino del equipo: {}", r.message);
+    assert_eq!(restic::snapshots(&en_almacen).unwrap().len(), 2);
+
+    std::env::remove_var("RESGUARDO_AGENT_DIR");
+    drop(guard);
+}

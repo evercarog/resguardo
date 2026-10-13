@@ -231,6 +231,10 @@ pub struct DestinoExterno {
     /// la ubicación es `rclone:rnube:…` y sus credenciales se ponen al usarla.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nube: Option<String>,
+    /// 14jj: la autoridad TLS propia del destino (un almacén), en un archivo de la carpeta
+    /// privada: cada subida y cada verificación la pasan a restic además de la del origen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cacert: Option<String>,
 }
 
 impl DestinoExterno {
@@ -1260,6 +1264,9 @@ pub fn cloud_env(location: &str, region: Option<&str>, key_id: Option<&str>, key
 /// Acceso al repositorio de destino. La contraseña es la propia si se eligió
 /// otra; si no, la misma del repositorio de origen.
 fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
+    // 14jj: la autoridad TLS propia del destino (un almacén). Las guardadas antes de llevarla
+    // consigo la toman del destino del equipo (`destino:<id>`), si la tiene.
+    let cacert = offsite.dest.cacert.clone().or_else(|| crate::gestion_v2::ca_del_destino(offsite.provider.strip_prefix("destino:")?));
     // Hacia otro destino de la app: su ubicación (con usuario de servidor si
     // lo tiene) y sus variables de nube, guardadas en los secretos.
     if let Some(location) = secret.offsite_location.as_ref().filter(|_| offsite.provider.starts_with("destino:")) {
@@ -1267,7 +1274,7 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
             location: location.clone(),
             password: secret.offsite_password.clone().unwrap_or_else(|| secret.password.clone()),
             rest_auth: None,
-            cacert: None,
+            cacert,
             env: secret.offsite_env.clone(),
         };
     }
@@ -1275,7 +1282,7 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
         location: offsite.location.clone(),
         password: secret.offsite_password.clone().unwrap_or_else(|| secret.password.clone()),
         rest_auth: None,
-        cacert: None,
+        cacert,
         env: cloud_env(&offsite.location, offsite.region.as_deref(), secret.offsite_key_id.as_deref(), secret.offsite_secret.as_deref()),
     }
 }
@@ -1321,12 +1328,39 @@ pub fn location_with_auth(location: &str, auth: Option<&(String, String)>) -> St
 
 /// `restic -r DESTINO <cmd> --from-repo ORIGEN`: credenciales del destino, y
 /// del origen su contraseña (RESTIC_FROM_PASSWORD) y su usuario de rest-server.
+/// 14jj: con las autoridades TLS propias de los dos (un mismo restic habla con el origen y
+/// con el destino), en un solo archivo si son distintas ([`autoridades`]).
 fn copy_access(src: &Access, dest: &Access) -> Access {
     let mut env = dest.env.clone();
     env.push(("RESTIC_FROM_PASSWORD".into(), src.password.clone()));
     // Tarea 4a: el origen en una nube conectada (su marca; la misma nube que el destino, si también va a una).
     env.extend(src.env.iter().filter(|(k, _)| k == crate::nube::MARCA).cloned());
-    Access { location: dest.location.clone(), password: dest.password.clone(), rest_auth: src.rest_auth.clone(), cacert: src.cacert.clone(), env }
+    let cacert = autoridades(src.cacert.as_deref(), dest.cacert.as_deref());
+    Access { location: dest.location.clone(), password: dest.password.clone(), rest_auth: src.rest_auth.clone(), cacert, env }
+}
+
+/// 14jj: el `--cacert` de un restic que habla con el origen y con el destino. Si los dos
+/// tienen autoridad propia y son distintas, un archivo con las dos (restic carga todos los
+/// certificados del archivo), en la carpeta privada y con el nombre de su contenido; si solo
+/// uno la tiene, la suya. Antes solo iba la del origen y un destino con autoridad propia (un
+/// almacén) fallaba con «Problema con el certificado HTTPS del servidor».
+pub fn autoridades(origen: Option<&str>, destino: Option<&str>) -> Option<String> {
+    let (o, d) = match (origen, destino) {
+        (Some(o), Some(d)) if o != d => (o, d),
+        (o, d) => return d.or(o).map(str::to_string),
+    };
+    let (Ok(a), Ok(b)) = (fs::read_to_string(o), fs::read_to_string(d)) else { return Some(d.to_string()) };
+    if a.trim() == b.trim() {
+        return Some(d.to_string());
+    }
+    let juntas = format!("{}\n{}\n", a.trim_end(), b.trim_end());
+    let huella = <sha2::Sha256 as sha2::Digest>::digest(juntas.as_bytes());
+    let nombre: String = huella.iter().take(8).map(|x| format!("{x:02x}")).collect();
+    let ruta = agent::private_dir().join(format!("ca-copia-{nombre}.pem"));
+    if fs::read_to_string(&ruta).ok().as_deref() != Some(juntas.as_str()) && fs::write(&ruta, &juntas).is_err() {
+        return Some(d.to_string());
+    }
+    Some(ruta.display().to_string())
 }
 
 // ---------- Verificación ----------
@@ -1505,7 +1539,7 @@ fn failed(mut record: RunRecord, message: String) -> RunRecord {
 
 /// `held`: la subida está frenada por un cambio inusual y se hace porque se
 /// pidió a mano: se sube, pero no se aplica la retención (no se borra nada allí).
-fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool, report: &mut dyn FnMut(&TaskProgress)) -> RunRecord {
+pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite, held: bool, report: &mut dyn FnMut(&TaskProgress)) -> RunRecord {
     let mut record = RunRecord { started: Local::now().to_rfc3339(), ..Default::default() };
     let src = source_access(repo, secret);
     let dest = match dest_access_listo(offsite, secret) {
@@ -2145,7 +2179,7 @@ mod tests {
         assert!(o.dest.normal() && o.dest.lock_days().is_none());
         assert!(!serde_json::to_string(&o).unwrap().contains(r#""dest":"#), "un agente anterior la lee igual");
         let mut o2 = o.clone();
-        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None };
+        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None, cacert: None };
         let t = serde_json::to_string(&o2).unwrap();
         assert!(t.contains(r#""dest":{"existing":true,"object_lock_days":30}"#), "{t}");
         assert_eq!(serde_json::from_str::<Offsite>(&t).unwrap(), o2);
@@ -2243,7 +2277,7 @@ mod tests {
             enabled_at: Local::now().to_rfc3339(),
             guard: None,
             verify: None,
-            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None },
+            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None, cacert: None },
             filtro: None,
         }
     }
@@ -2458,6 +2492,39 @@ mod tests {
                 assert!(tamano_datos(&nube_dir) < todo - MIB as u64, "con prune se libera");
             }
         }
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    /// 14jj: el `--cacert` de un restic que habla con el origen y con el destino.
+    #[test]
+    fn autoridades_del_origen_y_del_destino() {
+        let _l = crate::restic::tests::real_repo_lock();
+        let b = std::env::temp_dir().join(format!("resguardo-autoridades-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("RESGUARDO_AGENT_DIR", b.join("agente"));
+        agent::prepare_dir().unwrap();
+        let (o, d, igual) = (b.join("origen.pem"), b.join("destino.pem"), b.join("igual.pem"));
+        fs::write(&o, "-----BEGIN CERTIFICATE-----\nORIGEN\n-----END CERTIFICATE-----\n").unwrap();
+        fs::write(&d, "-----BEGIN CERTIFICATE-----\nDESTINO\n-----END CERTIFICATE-----\n").unwrap();
+        fs::write(&igual, fs::read(&d).unwrap()).unwrap();
+        let (o, d, igual) = (o.display().to_string(), d.display().to_string(), igual.display().to_string());
+        // Solo uno la tiene: la suya. Ninguno: nada.
+        assert_eq!(autoridades(None, None), None);
+        assert_eq!(autoridades(Some(&o), None).as_deref(), Some(o.as_str()));
+        assert_eq!(autoridades(None, Some(&d)).as_deref(), Some(d.as_str()));
+        assert_eq!(autoridades(Some(&d), Some(&d)).as_deref(), Some(d.as_str()));
+        assert_eq!(autoridades(Some(&igual), Some(&d)).as_deref(), Some(d.as_str()), "la misma autoridad en dos archivos");
+        // Las dos, distintas: un archivo con las dos, en la carpeta privada (siempre el mismo).
+        let juntas = autoridades(Some(&o), Some(&d)).unwrap();
+        assert!(juntas.starts_with(&agent::private_dir().display().to_string()), "{juntas}");
+        let t = fs::read_to_string(&juntas).unwrap();
+        assert!(t.contains("ORIGEN") && t.contains("DESTINO"), "{t}");
+        assert_eq!(autoridades(Some(&o), Some(&d)).unwrap(), juntas);
+        // Y el acceso de un `copy` las lleva.
+        let src = Access { cacert: Some(o.clone()), ..Access::new("rest:https://origen/r", "a") };
+        let dest = Access { cacert: Some(d.clone()), ..Access::new("rest:https://destino/r", "b") };
+        assert_eq!(copy_access(&src, &dest).cacert.as_deref(), Some(juntas.as_str()));
+        assert_eq!(copy_access(&Access::new("C:/disco/r", "a"), &dest).cacert.as_deref(), Some(d.as_str()), "origen local: la del destino");
+        std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = fs::remove_dir_all(&b);
     }
 }
