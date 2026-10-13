@@ -161,6 +161,7 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "cambiar_derivada" => format!("Cambiar la retención o el destino de una copia derivada de «{}»", r()),
         "quitar_derivada" => format!("Quitar una copia derivada de «{}»", r()),
         "restaurar" => format!("Restaurar «{}» reemplazando los archivos originales", r()),
+        "comprobar_contrasena" => format!("Comprobar la contraseña de «{}»", r()),
         "pausar" => "Pausar las copias".to_string(),
         "baja_equipo" => "Dar de baja el equipo".to_string(),
         "desvincular" => "Dejar de copiar y desvincular el equipo".to_string(),

@@ -54,6 +54,10 @@ pub struct Facts {
     pub restore_test_run: Option<RunFact>,
     /// Kit guardado y vigente / guardado pero ya no vale (cambió la ubicación).
     pub kit_ok: bool,
+    /// 14bbb: la última vez que «Comprobar la contraseña» abrió el repositorio (RFC 3339) y si
+    /// la última comprobación dijo que la contraseña guardada no lo abre.
+    pub contrasena_comprobada: Option<String>,
+    pub contrasena_no_abre: bool,
     pub kit_stale: bool,
     pub has_retention: bool,
     /// v1.41: un destino local, qué disco es (unidad, extraíble, de la red). `None`: no es local.
@@ -112,6 +116,19 @@ fn ago(t: &str, now: DateTime<Local>) -> String {
         format!("hace {} h", d.num_hours())
     } else {
         format!("hace {} días", d.num_days())
+    }
+}
+
+/// «hace 3 meses» (o «hace 12 días», «hoy»): para lo que se comprueba de tarde en tarde.
+fn hace_meses(t: &str, now: DateTime<Local>) -> String {
+    let Some(t) = parse(t) else { return String::new() };
+    let dias = now.signed_duration_since(t).num_days().max(0);
+    match dias {
+        0 => "hoy".into(),
+        1 => "ayer".into(),
+        2..=59 => format!("hace {dias} días"),
+        _ if dias < 730 => format!("hace {} meses", dias / 30),
+        _ => format!("hace {} años", dias / 365),
     }
 }
 
@@ -240,9 +257,15 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
         });
     }
 
-    // 6. Kit de recuperación.
-    items.push(if f.kit_ok {
-        item("kit", State::Ok, "Kit de recuperación", "Guardado.")
+    // 6. Kit de recuperación (14bbb: con cuándo se comprobó su contraseña; solo informa).
+    items.push(if f.contrasena_no_abre {
+        item("kit", State::Bad, "Kit de recuperación", "La última comprobación dice que la contraseña guardada no abre el repositorio.")
+    } else if f.kit_ok {
+        let detalle = match f.contrasena_comprobada.as_deref() {
+            Some(t) => format!("Guardado. Contraseña comprobada {}.", hace_meses(t, now)),
+            None => "Guardado.".to_string(),
+        };
+        item("kit", State::Ok, "Kit de recuperación", detalle)
     } else if f.kit_stale {
         item("kit", State::Warn, "Kit de recuperación", "La ubicación cambió desde el último kit: guarda uno nuevo.")
     } else {

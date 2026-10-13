@@ -1374,6 +1374,11 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
     }
 }
 
+/// 14bbb: el acceso al repositorio de una copia externa o derivada (para «Comprobar la contraseña»).
+pub fn acceso_copia(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {
+    dest_access_listo(offsite, secret)
+}
+
 /// El acceso al destino listo para usar: con una nube (tarea 4a), con sus
 /// credenciales de ahora (el token al día; nunca guardadas con la copia).
 fn dest_access_listo(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {

@@ -399,6 +399,11 @@ fn proteccion(
     // seguir sin confirmar que se guardó; la retención es la del servidor.
     f.kit_ok = true;
     f.kit_stale = false;
+    // 14bbb: «Contraseña comprobada hace 3 meses».
+    if let Some(a) = crate::comprobar_contrasena::leer().remove(&r.id) {
+        f.contrasena_comprobada = a.bien.clone();
+        f.contrasena_no_abre = a.resultado == "no_abre";
+    }
     f.has_retention = r.retencion.is_some();
     let p = crate::protection::evaluate(&f, ahora);
     json!({

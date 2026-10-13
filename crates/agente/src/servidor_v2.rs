@@ -1230,6 +1230,22 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "elegir_carpetas" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Carpetas).map(hecha),
         "abrir_sesion" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Basica).map(hecha),
+        // 14bbb: probar de verdad que la contraseña (ya comparada con la guardada, con el
+        // bloqueo por intentos) abre el repositorio y sus copias con la misma. Puede tardar
+        // (destinos lejanos): en segundo plano. No se guarda la contraseña.
+        "comprobar_contrasena" => {
+            let r = repo.unwrap_or("").to_string();
+            let acc = g::acceso(v, &r)?;
+            let nombre = v.repos_v2.iter().find(|x| x.id == r).map(|x| x.nombre.clone()).unwrap_or_else(|| r.clone());
+            let destinos: Vec<(String, String)> = v.destinos.iter().map(|d| (d.id.clone(), d.nombre.clone())).collect();
+            Ok(en_segundo_plano(v, orden_id, seq, "comprobar_contrasena", "Comprobando la contraseña…", move |_| {
+                let copias = crate::comprobar_contrasena::copias_de(&r, &|id| destinos.iter().find(|(d, _)| d == id).map(|(_, n)| n.clone()));
+                let c = crate::comprobar_contrasena::comprobar(&acc, copias);
+                crate::comprobar_contrasena::anotar(&r, &c, &chrono::Local::now().to_rfc3339());
+                let res = if c.bien() { hecha(c.mensaje(&nombre)) } else { fallida(c.mensaje(&nombre)) };
+                Ok(Resultado { detalle: Some(c.detalle().to_string()), ..res })
+            }))
+        }
         "explorar" => {
             let acc = g::acceso(v, repo.unwrap_or(""))?;
             crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Explorar(Box::new(acc))).map(hecha)

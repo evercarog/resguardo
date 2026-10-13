@@ -1059,7 +1059,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 27] = [
+pub const ADMITE: [&str; 28] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1121,6 +1121,8 @@ pub const ADMITE: [&str; 27] = [
     // (pendiente de numerar) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
     // anterior aunque falle) y `retraso_min` (minutos tras la anterior), también en el resumen.
     "inicio_despues",
+    // (pendiente de numerar) 14bbb: la orden `comprobar_contrasena` y `repositorios[].contrasena_comprobada`.
+    "comprobar_contrasena",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1142,6 +1144,7 @@ pub fn resumen(v: &Vinculo) -> Value {
     let proximas = proximas(&copias, now);
     let cache_repos = Value::Object(v.repos_v2.iter().map(|r| (r.id.clone(), crate::informe_v2::resumen_repo(&r.id))).collect());
     let tareas = crate::tasks::load_state();
+    let comprobadas = crate::comprobar_contrasena::leer();
     // v1.28: la verificación automática de cada repositorio (la del agente) y cuándo toca.
     let verificacion_auto = |id: &str| {
         let r = config.repos.iter().find(|r| r.id == id)?;
@@ -1204,6 +1207,8 @@ pub fn resumen(v: &Vinculo) -> Value {
             })),
             // Tarea 4b: las demás copias derivadas (sin rutas ni secretos).
             "derivadas": r.derivadas.iter().map(|e| derivada_resumen(v, &r.id, e, config.repos.iter().find(|x| x.id == r.id))).collect::<Vec<_>>(),
+            // 14bbb: cuándo se comprobó por última vez su contraseña (y cómo fue).
+            "contrasena_comprobada": crate::comprobar_contrasena::resumen(&r.id, &comprobadas),
         })).collect::<Vec<_>>(),
         // Sin la carpeta de un destino local (es una ruta del equipo).
         // v1.30: `equipo_almacen`, el equipo que guarda copias del destino (si se sabe).
