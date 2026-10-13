@@ -32,7 +32,23 @@ export function textoMover(t: TareaEnMarcha): string | null {
 }
 
 /** Qué está haciendo ahora (encabezado de la barra). */
+/**
+ * 13f: quién pidió una restauración y desde dónde, como se dice en cualquier
+ * consola del equipo: «pedida por Ana desde «Oficina»», «desde la ventana del equipo».
+ */
+export function quienRestaura(t: TareaEnMarcha): string | null {
+  if (t.tipo !== "restauracion") return null;
+  if (t.en_el_equipo) return "desde la ventana del equipo";
+  const por = t.por?.trim() ? `pedida por ${t.por.trim()}` : "";
+  const donde = t.otra_consola ? (t.consola ? `desde «${t.consola}»` : "desde otra consola") : "";
+  return [por, donde].filter(Boolean).join(" ") || null;
+}
+
 export function textoFase(t: TareaEnMarcha): string {
+  if (t.tipo === "restauracion") {
+    const q = quienRestaura(t);
+    return `${t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA.restauracion}${q ? ` (${q})` : ""}`;
+  }
   if (t.tipo !== "copia") return t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA[t.tipo];
   switch (t.fase) {
     case "antes_de_copiar":

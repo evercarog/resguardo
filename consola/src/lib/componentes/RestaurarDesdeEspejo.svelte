@@ -17,14 +17,26 @@
     almacen,
     equipos,
     nombre = (r: string) => r,
+    destinoInicial,
+    repoInicial,
     onclose,
-  }: { cliente: Cliente; almacen: Equipo; equipos: Equipo[]; nombre?: (r: string) => string; onclose: () => void } = $props();
+  }: {
+    cliente: Cliente;
+    almacen: Equipo;
+    equipos: Equipo[];
+    nombre?: (r: string) => string;
+    /** 14m (Restaurar → «Desde dónde»): el destino del espejo (su clave) y el repositorio ya elegidos. */
+    destinoInicial?: string;
+    repoInicial?: string;
+    onclose: () => void;
+  } = $props();
 
   const g = $derived(almacen.resumen?.guarda_copias);
   const destinos = $derived((g?.espejo?.destinos ?? []) as DestinoEspejoResumen[]);
   const tipoDe = (d: DestinoEspejoResumen) => g?.nubes?.find((n) => n.nombre === d.nube)?.tipo ?? null;
-  let clave = $state("");
-  let repo = $state("");
+  const iniciales = () => ({ d: destinoInicial ?? "", r: repoInicial ?? "" });
+  let clave = $state(iniciales().d);
+  let repo = $state(iniciales().r);
   const destino = $derived(destinos.find((d) => claveEspejo(d) === clave) ?? null);
   // Los repositorios que van a ese destino (todos, o su selección).
   const repos = $derived(destino ? (Array.isArray(destino.repos) ? [...destino.repos].sort() : nombresRepos(g?.repositorios)) : []);

@@ -124,6 +124,11 @@ export interface Estado {
   paquetes: Map<string, Uint8Array>;
   auditoriaImportada: Map<string, T.EntradaAuditoria[]>;
   fichas: { hash: string; cliente: string; usos: number; caduca: string }[];
+  /** Plan 0.8.0, E2: lo que anotan los equipos de cada restauración, los motivos de esta consola y el ajuste del cliente. */
+  restauraciones: (T.Restauracion & { cliente: string })[];
+  notasRest: (T.NotaRestauracion & { cliente: string })[];
+  ajustesRest: Map<string, boolean>;
+  restSembradas: Set<string>;
 }
 
 export let estado: Estado;
@@ -280,6 +285,10 @@ export async function sembrar(vacio = false) {
     paquetes: new Map(),
     auditoriaImportada: new Map(),
     fichas: [],
+    restauraciones: [],
+    notasRest: [],
+    ajustesRest: new Map(),
+    restSembradas: new Set(),
   };
   if (vacio) return;
 
@@ -555,7 +564,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -609,7 +618,7 @@ export async function sembrar(vacio = false) {
       so: "Windows Server 2022",
       version_agente: "0.7.25",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "escritorio", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto"],
+        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "escritorio", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto", "restaurar_carpeta", "restaurar_desde", "restauracion_real"],
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         repositorios: [],
         copias: [],
@@ -756,4 +765,53 @@ export async function sembrar(vacio = false) {
   auditar(propio.id, ana.id, "cliente.crear", "Propio", null, t(60 * 24 * 12));
   // v1.38: dos clientes más (uno de Ana y otro que no es suyo), para «Todos los clientes».
   await sembrarOtrosClientes({ estado, crearEquipo, kcfgDe, ana, marta, sal, claveAdmin: DEMO.claveAdmin, contrasenaRepo: DEMO.contrasenaRepo });
+}
+
+/**
+ * Plan 0.8.0, E2: unas restauraciones de ejemplo (deterministas) para cada
+ * cliente, la primera vez que se piden: varias correctas, una fallida, con y sin
+ * motivo, desde la consola y desde la ventana del equipo. Sin rutas.
+ */
+export function sembrarRestauraciones(cliente: string) {
+  if (estado.restSembradas.has(cliente)) return;
+  estado.restSembradas.add(cliente);
+  const eqs = estado.equipos.filter((e) => e.cliente === cliente && (e.resumen?.repositorios?.length ?? 0) > 0);
+  const motivos: (T.MotivoRestauracion | null)[] = ["borrado", "prueba", null, "dano", "borrado", "otro", null, "prueba"];
+  const destinos = ["junto", "nueva", "zip", "descarga", "junto", "original", "zip", "junto"];
+  const ahora = Date.now();
+  eqs.slice(0, 4).forEach((e, i) => {
+    (e.resumen?.repositorios ?? []).slice(0, 2).forEach((r, j) => {
+      for (let k = 0; k < 3; k++) {
+        const n = i * 6 + j * 3 + k;
+        const fin = ahora - (n * 9 + 2) * 86_400_000 - n * 3_600_000;
+        const dur = 40 + ((n * 137) % 1500);
+        const fallo = n % 7 === 5;
+        const motivo = motivos[n % motivos.length];
+        estado.restauraciones.push({
+          cliente,
+          equipo: e.id,
+          id: `restauracion-ejemplo-${e.id.slice(0, 8)}-${n}`,
+          hora: new Date(fin).toISOString(),
+          inicio: new Date(fin - dur * 1000).toISOString(),
+          duracion_s: dur,
+          repo: r.id,
+          version: ((n * 2654435761) >>> 0).toString(16).padStart(8, "0").slice(0, 8),
+          elementos: 1 + (n % 4),
+          archivos: fallo ? null : 3 + ((n * 53) % 900),
+          bytes: fallo ? null : 2_000_000 + ((n * 7_919_000) % 3_000_000_000),
+          destino: destinos[n % destinos.length],
+          cifrado: n % 3 === 0 && (destinos[n % destinos.length] === "zip" || destinos[n % destinos.length] === "descarga"),
+          desde: n % 9 === 4 ? "derivada" : "principal",
+          desde_nombre: n % 9 === 4 ? "Nube de la oficina" : null,
+          resultado: fallo ? "fallo" : "ok",
+          mensaje: fallo ? "Esa carpeta no está vacía: elige una carpeta nueva o vacía (nunca se sobrescribe nada)." : null,
+          motivo: motivo ? { tipo: motivo, notas: motivo === "borrado" ? "Se borró una carpeta compartida." : null } : null,
+          por: n % 5 === 3 ? null : n % 2 ? "Ana Pérez" : "Luis Gómez",
+          consola: n % 5 === 3 ? null : n % 4 === 1 ? "Consola en línea" : "Oficina",
+          orden: n % 5 === 3 ? null : `ejemplo-${n}`,
+          en_el_equipo: n % 5 === 3,
+        });
+      }
+    });
+  });
 }

@@ -79,6 +79,14 @@ export const NIVEL: Record<string, Nivel> = {
 /** Además de la contraseña del repositorio, piden la clave de administración. */
 export const PIDE_TAMBIEN_ADMIN = new Set(["quitar_repositorio", "compartir_acceso", "clave_almacen"]);
 
+/**
+ * Plan 0.8.0 (13a, 13b): las que piden también la clave de administración por su
+ * cuerpo (el equipo lo comprueba igual): restaurar en otra carpeta o en un .zip.
+ */
+export function pideAdminPorCuerpo(tipo: string, cuerpo: Record<string, unknown> | undefined): boolean {
+  return tipo === "restaurar" && ["nueva", "zip", "carpeta"].includes(String(cuerpo?.destino ?? ""));
+}
+
 /** Tipos que abren una sesión interactiva (llevan `sesion`). */
 /** Las que abren una sesión interactiva (protocolo/ordenes.rs). `restaurar` y `descargar` no: van sin `sesion`. */
 export const ABRE_SESION = new Set(["abrir_sesion", "explorar", "elegir_carpetas"]);

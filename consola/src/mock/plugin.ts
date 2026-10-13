@@ -17,7 +17,7 @@ import { sasV2, sasV3 } from "../lib/cripto/claves";
 import { ABRE_SESION, esDestructiva, NIVEL, SOLO_ADMIN_ROL } from "../lib/cripto/ordenes";
 import type * as T from "../lib/tipos";
 import type { DatosComunesCliente, FilaComun } from "../lib/datosComunes";
-import { auditar, DEMO, estado, ID, sembrar, verificarCadena, type EmparejamientoMock, type EquipoMock, type OrdenMock } from "./estado";
+import { auditar, DEMO, estado, ID, sembrar, sembrarRestauraciones, verificarCadena, type EmparejamientoMock, type EquipoMock, type OrdenMock } from "./estado";
 import { historialMock } from "./historial";
 import { retencionesMock } from "./retencion";
 import { progresoDe } from "./progreso";
@@ -184,6 +184,45 @@ const anillosMock = new Map<string, "prueba" | "general">();
 const politicaDe = (c: string): T.PoliticaActualizaciones => politicasMock.get(c) ?? { modo: "auto", dias_general: 2, ventana: null, aprobada: null, retenidas: [] };
 
 const rutas: Ruta[] = [
+  // Plan 0.8.0, E2: el registro de restauraciones (como el servidor: entradas de los equipos, motivos y ajuste).
+  [
+    "GET",
+    new RegExp(`^${C}/restauraciones$`),
+    (ctx, [c]) => {
+      miembro(ctx, c);
+      sembrarRestauraciones(c);
+      const eq = ctx.url.searchParams.get("equipo");
+      const ids = estado.equipos.filter((e) => e.cliente === c && (!eq || e.id === eq)).map((e) => e.id);
+      return {
+        ajustes: { motivo_obligatorio: estado.ajustesRest.get(c) ?? false },
+        entradas: estado.restauraciones.filter((r) => r.cliente === c && ids.includes(r.equipo)).map(({ cliente: _c, ...r }) => r),
+        notas: estado.notasRest.filter((n) => n.cliente === c && ids.includes(n.equipo)).map(({ cliente: _c, ...n }) => n),
+      } satisfies T.Restauraciones;
+    },
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/restauraciones/ajustes$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      estado.ajustesRest.set(c, !!(ctx.cuerpo as { motivo_obligatorio?: boolean }).motivo_obligatorio);
+      return { motivo_obligatorio: estado.ajustesRest.get(c) ?? false, actualizada: new Date().toISOString(), por: sesionDe(ctx).nombre };
+    },
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/equipos/([^/]+)/restauraciones/([^/]+)$`),
+    (ctx, [c, e, id]) => {
+      miembro(ctx, c, "tecnico");
+      equipoDe(c, e);
+      const b = ctx.cuerpo as { motivo?: string; notas?: string | null };
+      if (!/^restauracion-[A-Za-z0-9-]{1,50}$/.test(id)) throw err(422, "datos", "Restauración no válida.");
+      if (!["borrado", "dano", "prueba", "otro"].includes(b.motivo ?? "")) throw err(422, "datos", "Motivo no válido.");
+      estado.notasRest = estado.notasRest.filter((n) => !(n.cliente === c && n.equipo === e && n.id === id));
+      estado.notasRest.push({ cliente: c, equipo: e, id, motivo: b.motivo as T.MotivoRestauracion, notas: b.notas?.trim() || null, por: sesionDe(ctx).nombre, actualizada: new Date().toISOString() });
+      return { ok: true };
+    },
+  ],
   [
     "GET",
     /^\/api\/servidor\/publicacion$/,
@@ -235,7 +274,7 @@ const rutas: Ruta[] = [
       return { anillo: a };
     },
   ],
-  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: true, agente_local: true, codigo_navegador: true })],
+  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: true, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024 })],
 
   ["GET", /^\/api\/servidor\/respaldo$/, (ctx) => respaldoDe(ctx)],
   [

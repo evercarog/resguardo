@@ -27,6 +27,8 @@ export interface Servidor {
   publico?: boolean;
   /** v1.39: canal en vivo de la consola (`GET /api/clientes/{c}/vivo`, WebSocket). */
   vivo?: boolean;
+  /** v1.6x (plan 0.8.0, E1): lo más que puede ocupar una descarga por el relé, en bytes (sin el campo: 500 MB). */
+  max_descarga?: number;
 }
 
 /** v1.34: cuotas de un cliente. null = la predeterminada; 0 = sin límite. */
@@ -819,6 +821,8 @@ export interface RepoInforme {
   espacio: { en_disco_bytes: number | null; sin_comprimir: number | null; ratio: number | null; leido: string | null } | null;
   verificacion: TareaInforme | null;
   prueba_restauracion: TareaInforme | null;
+  /** v1.6x (13e): la última restauración real correcta (cuenta como prueba de restauración). */
+  restauracion_real?: { ultima: string; archivos?: number; bytes?: number } | null;
   externa: TareaInforme | null;
   /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
   derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
@@ -884,6 +888,9 @@ export interface TareaEnMarcha {
   otra_consola?: boolean | null;
   /** El nombre, en el equipo, de esa consola (si tiene uno; nunca su dirección). */
   consola?: string | null;
+  /** v1.6x (13f, restauraciones): quién la pidió (como lo dice su consola) y si se pidió desde la ventana del equipo. */
+  por?: string | null;
+  en_el_equipo?: boolean | null;
 }
 
 export interface ProgresoEquipo {
@@ -1442,4 +1449,51 @@ export interface NotasObjeto {
 export interface NotasExportadas {
   observaciones: { tipo: TipoNota; objeto: string; texto: string; actualizada: string; por: string }[];
   comentarios: { id: string; tipo: TipoNota; objeto: string; texto: string; autor: string; creado: string; editado: string | null }[];
+}
+
+/** v1.6x (plan 0.8.0, E2): una restauración, como la anota el equipo en su bitácora (sin rutas). */
+export interface Restauracion {
+  equipo: string;
+  id: string;
+  hora: string;
+  inicio?: string | null;
+  duracion_s?: number | null;
+  repo: string;
+  /** Los 8 primeros caracteres de la versión. */
+  version?: string | null;
+  elementos?: number | null;
+  archivos?: number | null;
+  bytes?: number | null;
+  /** `junto`, `original`, `carpeta` (desde la ventana), `nueva`, `zip` o `descarga`. */
+  destino?: string | null;
+  /** El .zip lleva contraseña (AES-256). */
+  cifrado?: boolean | null;
+  /** `principal`, `externa` o `derivada`. */
+  desde?: string | null;
+  desde_nombre?: string | null;
+  resultado: "ok" | "fallo";
+  mensaje?: string | null;
+  motivo?: { tipo: MotivoRestauracion; notas?: string | null } | null;
+  por?: string | null;
+  consola?: string | null;
+  orden?: string | null;
+  en_el_equipo?: boolean | null;
+}
+
+export type MotivoRestauracion = "borrado" | "dano" | "prueba" | "otro";
+
+/** El motivo que le añadió una persona en esta consola. */
+export interface NotaRestauracion {
+  equipo: string;
+  id: string;
+  motivo: MotivoRestauracion;
+  notas?: string | null;
+  por?: string | null;
+  actualizada?: string | null;
+}
+
+export interface Restauraciones {
+  ajustes: { motivo_obligatorio: boolean; actualizada?: string | null; por?: string | null };
+  entradas: Restauracion[];
+  notas: NotaRestauracion[];
 }

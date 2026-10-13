@@ -51,6 +51,7 @@
         ["Copias", "/copias", ICONO_SECCION.copias],
         ["Repositorios y destinos", "/repositorios", ICONO_SECCION.repositorios],
         ["Restaurar archivos", "/restaurar", ICONO_SECCION.restaurar],
+        ["Restauraciones", "/restauraciones", ICONO_SECCION.restauraciones],
         ["Buscar archivos…", "/buscar", ICONO_SECCION.buscar],
         ["Órdenes", "/ordenes", ICONO_SECCION.ordenes],
         ["Avisos", "/avisos", ICONO_SECCION.avisos],

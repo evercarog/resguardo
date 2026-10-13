@@ -3,6 +3,7 @@
 // barra lateral, la paleta, las listas y las cabeceras.
 import {
   Activity,
+  ArchiveRestore,
   ArrowRightLeft,
   BellRing,
   Cable,
@@ -44,6 +45,7 @@ export const ICONO_SECCION = {
   copias: FolderSync,
   repositorios: Database,
   restaurar: History,
+  restauraciones: ArchiveRestore,
   buscar: FileSearch,
   ordenes: ClipboardList,
   avisos: BellRing,

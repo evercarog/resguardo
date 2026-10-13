@@ -115,6 +115,26 @@ function tareaDe(s: Sim, ahora: number): T.TareaEnMarcha {
     const etapa = s.extra?.mover ? "Moviéndose a otro sitio: trayendo el historial" : "Trayendo el historial";
     return { ...base, fase: "en_marcha", etapa, versiones: hechas, versiones_total: total_, porcentaje: Math.round((hechas / total_) * 1000) / 1000 };
   }
+  if (s.tipo === "restauracion") {
+    // 13c: como el agente, bytes y archivos restaurados, el ritmo medio y lo que queda.
+    const f = Math.min(1, t / total(s));
+    const [bt, at] = [s.bytes || 1_800_000_000, s.archivos || 4_200];
+    const lleva = Math.max(1, t / 1000);
+    const bytesHechos = Math.round(bt * f);
+    return {
+      ...base,
+      fase: f < 0.03 ? "preparando" : "en_marcha",
+      etapa: "Restaurando",
+      porcentaje: f < 0.03 ? null : Math.round(f * 1000) / 1000,
+      bytes: f < 0.03 ? null : bytesHechos,
+      bytes_total: bt,
+      archivos: Math.round(at * f),
+      archivos_total: at,
+      velocidad: Math.round(bytesHechos / lleva),
+      subida: Math.max(0, Math.round(bytesHechos / lleva + 4_000_000 * Math.sin(ahora / 3000))),
+      quedan_s: f < 0.05 ? null : Math.round((total(s) - t) / 1000),
+    };
+  }
   if (s.tipo !== "copia") {
     const f = Math.min(1, t / total(s));
     const parte = f < 0.15 ? "Revisando copias, carpetas y bloques…" : `Leyendo el 5 % de los datos…`;
@@ -214,6 +234,15 @@ export function empezarHistorial(cliente: string, equipo: string, repo: string, 
 }
 
 /** Una tarea larga de un repositorio (verificar, copia externa…). */
+/** 13c/13f: una restauración en marcha, con quién la pidió y desde qué consola. */
+export function empezarRestauracion(cliente: string, equipo: string, repo: string, ms: number, extra: Partial<T.TareaEnMarcha>, alTerminar?: () => void) {
+  sembrar();
+  sims = sims.filter((s) => !(s.equipo === equipo && s.repo === repo && s.tipo === "restauracion"));
+  const s: Sim = { cliente, equipo, tipo: "restauracion", repo, empezo: Date.now() + 500, ganchos: 0, preparar: 0, escanear: 0, subir: ms, terminar: 0, archivos: 4_200, bytes: 1_800_000_000, extra, alTerminar };
+  sims.push(s);
+  programar(s);
+}
+
 export function empezarTarea(cliente: string, equipo: string, repo: string, tipo: T.TipoTarea, ms: number, alTerminar?: () => void) {
   sembrar();
   sims = sims.filter((s) => !(s.equipo === equipo && s.repo === repo && s.tipo === tipo));
