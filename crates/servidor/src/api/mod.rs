@@ -272,6 +272,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/actualizaciones", get(crate::publicaciones::ver_cliente).put(crate::publicaciones::cambiar_cliente))
         .route("/api/clientes/{c}/actualizaciones/ahora", post(crate::publicaciones::actualizar_ahora))
         .route("/api/clientes/{c}/actualizaciones/buscar", post(crate::publicaciones::buscar_ahora))
+        .route("/api/clientes/{c}/recordatorio-kit", get(crate::recordatorio_kit::ver).put(crate::recordatorio_kit::cambiar))
         .route("/api/clientes/{c}/equipos/{e}/config", get(equipos::config))
         .route("/api/clientes/{c}/equipos/{e}/informes", get(equipos::informes))
         .route("/api/clientes/{c}/equipos/{e}/historial", get(equipos::historial))

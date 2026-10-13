@@ -27,6 +27,7 @@ pub mod progreso;
 #[cfg(test)]
 mod propiedades;
 pub mod publicaciones;
+pub mod recordatorio_kit;
 pub mod registro;
 pub mod respaldo;
 pub mod vivo;
@@ -119,6 +120,8 @@ pub fn tareas(st: St) {
                     avisar_no_aplicadas(&st2, &ctx);
                     quitar_sin_alta(&st2, &ctx);
                     avisar_sin_contacto(&st2, &ctx, ahora);
+                    // 14bbb: «Comprueba que tu kit de «X» sigue sirviendo».
+                    recordatorio_kit::recordar(&st2, &ctx, ahora);
                 }
                 // Lo que ocupan los relés, medido de nuevo (corrige cualquier desvío de la cuenta).
                 st2.uso_relevos.poner(estado::medir_relevos(&datos.join("relevos")));
