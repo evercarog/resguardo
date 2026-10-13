@@ -537,7 +537,9 @@ export async function sembrar(vacio = false) {
             // Tarea 4b: una copia derivada a la Dropbox conectada en el propio equipo, después de cada copia, solo las diarias.
             derivadas: [{ id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true }] },
           // También en el almacén, todavía sin retención (v1.22: «Retención en el almacén…»).
-          { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true }],
+          { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true },
+          // 14mm: el mismo almacén dado de alta como «Servidor de copias» genérico (un repositorio adoptado): el mapa lo une.
+          { ...repo("historico", "Histórico", "servidor-copias", 12, 1_300_000_000), ruta: "caja-1/historico", solo_anadir: true }],
         // Tarea 7c: «Ventas» va después de «Caja y facturas».
         copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("ventas", "Ventas", "ventas", ["14:00"], 1), tras: "caja" }],
         destinos: [
@@ -554,12 +556,13 @@ export async function sembrar(vacio = false) {
             aislado: { ultima_conexion: hace(60 * 24 * 34), volumenes: [{ id: "9f3a1c2b7d4e5a60", visto: hace(60 * 24 * 34) }, { id: "1b2c3d4e5f607182", visto: hace(60 * 24 * 41) }] },
           },
           { id: "nube-dropbox-caja", nombre: "Dropbox Caja", tipo: "nube", nube: "Dropbox Caja", donde: "Resguardo" },
+          { id: "servidor-copias", nombre: "Servidor de copias", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000" },
           // v1.56: un destino que se quedó sin repositorios (se quitaron): «Quitar este destino».
           { id: "disco-viejo", nombre: "Disco o carpeta del equipo", tipo: "local", unidad: "C:", extraible: false, red: false },
         ],
       },
     },
-    { claveAdmin: DEMO.claveAdmin, kcfg: kSur, contrasenas: { caja: DEMO.contrasenaRepo, ventas: DEMO.contrasenaRepo }, semilla: 4, id: ID.caja },
+    { claveAdmin: DEMO.claveAdmin, kcfg: kSur, contrasenas: { caja: DEMO.contrasenaRepo, ventas: DEMO.contrasenaRepo, historico: DEMO.contrasenaRepo }, semilla: 4, id: ID.caja },
   );
   // Tarea 4a: un servidor de aplicaciones con un agente nuevo y sin ninguna nube conectada.
   // La Dropbox del cliente está en el almacén: «Nuevo repositorio» ofrece conectarla también aquí.
@@ -631,7 +634,7 @@ export async function sembrar(vacio = false) {
   if (contabilidad.informes[0]) {
     const d = contabilidad.informes[0].datos;
     d.version = contabilidad.version_agente;
-    for (const k of d.copias ?? []) if (k.id === "ventas") k.ganchos = [{ tipo: "sqlserver", estado: "ok", mensaje: "Volcada 1 base (VENTAS_2026, 1,2 GB) en C:\\ResguardoVolcados." }];
+    for (const k of d.copias ?? []) if (k.id === "ventas") k.ganchos = ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"].map((b) => ({ tipo: "sqlserver" as const, estado: "ok" as const, mensaje: `Volcado de SQL Server de «${b}» hecho.` }));
   }
   for (const e of [recepcion, portatil, servidorAltamar, surAlmacen, surCaja, estudio]) if (e.informes[0]) e.informes[0].datos.version = e.version_agente;
   // Etiquetas (v1.18) para agrupar y filtrar.

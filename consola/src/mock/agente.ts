@@ -75,8 +75,8 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
       ...(c.inicio ? { inicio: c.inicio } : {}),
       ...(c.retraso_min ? { retraso_min: c.retraso_min } : {}),
-      // CONTABILIDAD (agente 0.7.2) vuelca su base de SQL Server antes de copiar «Ventas».
-      gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026"], carpeta: "C:\\ResguardoVolcados" }] : null,
+      // CONTABILIDAD (agente 0.7.2) vuelca sus bases de SQL Server antes de copiar «Ventas» (14gg: varias).
+      gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
     repositorios: (r.repositorios ?? []).map((x) => ({
       id: x.id,

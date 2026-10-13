@@ -113,7 +113,8 @@ export function fraseCopia(
   ahora = Date.now(),
 ): string {
   const que = k.carpetas != null ? plural(k.carpetas, "carpeta", "carpetas") : "sus carpetas";
-  const antes = o.ganchos?.length ? ` (antes, ${lista(o.ganchos)})` : "";
+  // 14gg: sin paréntesis dentro de paréntesis («volcado de 6 bases de SQL Server (A, B, C y 3 más)»).
+  const antes = o.ganchos?.length ? `; antes, ${lista(o.ganchos)}` : "";
   const partes = [`Copia ${que} de ${o.equipo} en «${o.repo}»${antes}: ${horarioEnFrase(k.horario).replace(/^./, (c) => c.toLowerCase())}.`];
   if (k.activa === false) partes.push("Ahora está desactivada: no se hará hasta que la actives.");
   else if (o.pausada) partes.push("Las copias automáticas están en pausa.");

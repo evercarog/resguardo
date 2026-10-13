@@ -554,7 +554,7 @@ if (v1.paquete) {
     igual("resultado de un paso: el peor de sus bases", resultadoDeGancho({ ...sql, bases: [...seis, "Otra"] }, conFallo)?.estado, "fallo");
     igual("resultado de un paso: todas bien, juntas", resultadoDeGancho(sql, conFallo)?.mensaje, "6 bases volcadas: Ventas, Nominas, Compras y 3 más.");
     const frase = fraseCopia(k, { equipo: "RECEPCION", repo: "Documentos", vuelta: v, proxima: null, pausada: false, ganchos: ganchosEnFrase([sql]) }, ahora);
-    cierto("frase: el volcado una sola vez", frase.includes("(antes, volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más))") && frase.split("SQL Server").length === 2);
+    cierto("frase: el volcado una sola vez", frase.includes("«Documentos»; antes, volcado de 6 bases de SQL Server (Ventas, Nominas, Compras y 3 más): ") && frase.split("SQL Server").length === 2);
   }
   cierto(
     "explicaciones de errores sin «vuelta»",

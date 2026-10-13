@@ -7,16 +7,16 @@
 // marcha llega como una función (`enVivo`) para que esto sea TypeScript sin
 // runas (se prueba en scripts/vectores.ts). Con muchos equipos, los que están
 // al día y van a los mismos sitios se juntan en un grupo.
-import type { DestinoCatalogo, Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
+import type { DestinoCatalogo, DestinoResumen, Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
-import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
-import { claveNube, claveZona, PRINCIPAL, zonaDeDestino, zonasDe } from "./destinos";
+import { almacenDeDestino, lugarDe, riesgoMismoEquipo, servidorDe } from "./dondeGuarda";
+import { claveNube, claveZona, PRINCIPAL, puertoDe, zonaDeDestino, zonasDe } from "./destinos";
 // Las páginas de los destinos (como las de los repositorios): cada tarjeta de destino lleva a la suya.
 import { hrefDestino } from "./fichaDestino";
-import { destinosParaPasos } from "./cadenas";
+import { cuandoEnFrase, destinosParaPasos } from "./cadenas";
 import { clasificacionDeVista } from "./regla321";
 import { corta, tipoDeNube, type TipoCorto } from "./tipoDestino";
 
@@ -63,7 +63,8 @@ export interface AristaMapa {
   id: string;
   de: string;
   a: string;
-  tipo: "cliente" | "copia" | "guarda" | "externa" | "espejo";
+  /** «derivada» (14kk): una copia derivada, «después» del repositorio de origen, hasta su destino. */
+  tipo: "cliente" | "copia" | "guarda" | "externa" | "espejo" | "derivada";
   tono: Tono;
   /** En marcha ahora: el trazo se mueve (salvo con movimiento reducido). */
   vivo: boolean;
@@ -108,14 +109,83 @@ const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
  * desde otra): lo que hace ese almacén (su espejo) no se ve aquí.
  */
 export function claveDestino(e: Equipo, r: RepositorioResumen, equipos: Equipo[]): { clave: string; almacen?: Equipo; fuera?: boolean } {
-  const d = destinoDe(e.resumen?.destinos, r);
-  const almacen = d?.equipo_almacen ? equipos.find((x) => x.id === d.equipo_almacen) : undefined;
+  return claveDeDestino(e, destinoDe(e.resumen?.destinos, r), equipos, r.destino);
+}
+
+const LOCALES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+/** El nombre del servidor de una dirección, sin usuario ni puerto («https://nas:8002/caja/» → «nas»). */
+export function servidorSinPuerto(donde: string | null | undefined): string | null {
+  const h = servidorDe(donde);
+  return h ? h.replace(/^[^@]*@/, "").replace(/:\d+$/, "").toLowerCase() || null : null;
+}
+
+/**
+ * 14mm: el almacén del cliente que hay detrás de un destino de `e`. Además de los
+ * que dio «Copiar en …» (`equipo_almacen`) y de los que se reconocen por su id o
+ * su nombre, un destino «Servidor de copias» (REST, p. ej. el de los
+ * repositorios adoptados) es el mismo almacén si apunta al mismo servidor que
+ * los accesos que ese almacén dio a otros equipos, o a «localhost» desde el
+ * propio almacén. Así el mapa lo dibuja una sola vez.
+ */
+export function almacenDetras(e: Equipo, d: DestinoResumen | undefined, equipos: Equipo[]): Equipo | undefined {
+  if (!d) return undefined;
+  if (d.equipo_almacen) return equipos.find((x) => x.id === d.equipo_almacen);
+  if (d.tipo !== "rest") return undefined;
+  const conocido = almacenDeDestino(d, equipos);
+  if (conocido) return conocido;
+  const host = servidorSinPuerto(d.donde);
+  if (!host) return undefined;
+  if (LOCALES.has(host)) return e.resumen?.guarda_copias?.activo ? e : undefined;
+  for (const x of equipos)
+    for (const y of x.resumen?.destinos ?? []) {
+      if (!y.equipo_almacen || y.tipo !== "rest" || servidorSinPuerto(y.donde) !== host) continue;
+      const a = equipos.find((z) => z.id === y.equipo_almacen && z.resumen?.guarda_copias?.activo);
+      if (a) return a;
+    }
+  return undefined;
+}
+
+/** Como `claveDestino`, para un destino cualquiera de `e` (el de un repositorio o el de una derivada). */
+export function claveDeDestino(e: Equipo, d: DestinoResumen | undefined, equipos: Equipo[], respaldo: string): { clave: string; almacen?: Equipo; fuera?: boolean } {
+  const almacen = almacenDetras(e, d, equipos);
   // Un disco o carpeta local es de su equipo: dos equipos con un «Disco D» no son el mismo sitio.
   if (!almacen && d?.tipo === "local") return { clave: `de:local|${e.id}|${d.id}` };
   // Lo dio un almacén del cliente («Copiar en …»), pero ese almacén no está aquí.
   if (!almacen && d?.tipo === "rest" && d.equipo_almacen) return { clave: `al:${d.equipo_almacen}`, fuera: true };
-  return { clave: almacen ? `al:${almacen.id}` : d ? `de:${d.tipo}|${d.donde ?? d.nombre}` : `de:?|${r.destino}`, almacen };
+  return { clave: almacen ? `al:${almacen.id}` : d ? `de:${d.tipo}|${d.donde ?? d.nombre}` : `de:?|${respaldo}`, almacen };
 }
+
+/**
+ * 14mm: cómo se llama un repositorio dentro de su almacén (`<usuario>/<repo>`,
+ * lo que usan las selecciones de los espejos) y en qué zona está.
+ */
+export function enAlmacenDe(r: RepositorioResumen, d: DestinoResumen | undefined, almacen: Equipo): { nombre: string; usuario: string; zona: string } | null {
+  if (!d || d.tipo !== "rest") return null;
+  const sin = (d.donde ?? "").trim().replace(/^[a-z0-9+]+:(?=[a-z]+:\/\/)/i, "");
+  let ruta = "";
+  try {
+    ruta = new URL(sin.includes("://") ? sin : `x://${sin}`).pathname;
+  } catch {
+    ruta = sin.replace(/^[^/]*/, "");
+  }
+  const propia = r.ruta === "." ? "" : (r.ruta || r.id);
+  const partes = [...ruta.split("/"), ...propia.split("/")].map((x) => {
+    try {
+      return decodeURIComponent(x);
+    } catch {
+      return x;
+    }
+  }).filter(Boolean);
+  if (!partes.length) return null;
+  const zonas = zonasDe(almacen);
+  const p = puertoDe(d.donde);
+  const zona = (p != null ? zonas.find((z) => z.puerto === p)?.id : undefined) ?? PRINCIPAL;
+  return { nombre: partes.join("/"), usuario: partes[0], zona };
+}
+
+/** ¿Entra este repositorio en un destino del espejo? (Su zona y su selección: todos, el usuario o el repositorio.) */
+export const entraEnEspejo = (x: { zona?: string | null; repos?: string[] | null }, en: { nombre: string; usuario: string; zona: string }) =>
+  (x.zona ?? PRINCIPAL) === en.zona && (!Array.isArray(x.repos) || x.repos.includes(en.nombre) || x.repos.includes(en.usuario));
 
 /** Las otras consolas del equipo (por su nombre, sin direcciones), para decir dónde mirar. */
 const otrasConsolasDe = (e: Equipo) => (e.resumen?.consolas ?? []).filter((c) => !c.esta).map((c) => c.nombre?.trim() || "otra consola");
@@ -181,7 +251,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     for (const p of paquetes) {
       const tranquilo =
         saludEquipo(p.equipo, ahora).tono === "ok" &&
-        p.repos.every((x) => estadoRepo(x.r, informeDe(informes[p.equipo.id], x.r.id), p.equipo.resumen?.copias ?? [], ahora).tono === "ok" && !vivo(p.equipo.id, x.r.id, "copia") && !x.r.externa && !riesgoMismoEquipo(x.r, p.equipo, todos));
+        p.repos.every((x) => estadoRepo(x.r, informeDe(informes[p.equipo.id], x.r.id), p.equipo.resumen?.copias ?? [], ahora).tono === "ok" && !vivo(p.equipo.id, x.r.id, "copia") && !x.r.externa && !x.r.derivadas?.length && !riesgoMismoEquipo(x.r, p.equipo, todos));
       if (tranquilo && p.repos.length) {
         const k = [...new Set(p.repos.map((x) => x.destino))].sort().join("+");
         grupos.set(k, [...(grupos.get(k) ?? []), p]);
@@ -190,6 +260,21 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     // Un grupo de uno no ahorra nada.
     for (const [k, ps] of grupos) if (ps.length < 2) (sueltos.push(...ps), grupos.delete(k));
   } else sueltos.push(...paquetes);
+
+  /** 14mm: las píldoras que guardan en cada almacén, con el nombre de sus repositorios allí (para colgar de ellas los espejos). */
+  const enAlmacenes = new Map<string, { pildora: string; en: { nombre: string; usuario: string; zona: string }[] }[]>();
+  const anotarEnAlmacen = (pildora: string, xs: { p: Paquete; x: Paquete["repos"][number] }[]) => {
+    for (const { p, x } of xs) {
+      if (!x.almacen) continue;
+      const en = enAlmacenDe(x.r, destinoDe(p.equipo.resumen?.destinos, x.r), x.almacen);
+      if (!en) continue;
+      const l = enAlmacenes.get(x.almacen.id) ?? [];
+      const ya = l.find((y) => y.pildora === pildora);
+      if (ya) ya.en.push(en);
+      else l.push({ pildora, en: [en] });
+      enAlmacenes.set(x.almacen.id, l);
+    }
+  };
 
   const nodoDestino = (p: Paquete, x: Paquete["repos"][number]): NodoMapa => {
     if (x.almacen) {
@@ -311,6 +396,32 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       if (x.r.externa?.destino_id) tipoNodo.set(n.id, { clave: x.r.externa.destino_id });
       unir({ id: `${pildora.id}>${n.id}`, de: pildora.id, a: n.id, tipo: "externa", tono: n.tono, vivo: !!subiendo, etiqueta: subiendo ? undefined : frescura(n.tono, n.ultima, ahora) });
     }
+
+    // 14kk: las copias derivadas, una flecha «después» del repositorio a su destino
+    // (el mismo nodo que los repositorios que ya guardan allí; si no hay, uno nuevo).
+    for (const dv of x.r.derivadas ?? []) {
+      if (dv.activa === false) continue;
+      const dd = (e.resumen?.destinos ?? []).find((y) => y.id === dv.destino_id) ?? (e.resumen?.destinos ?? []).find((y) => y.nombre === dv.destino);
+      const k = claveDeDestino(e, dd, todos, dv.destino_id ?? dv.destino ?? dv.id);
+      const destinoNodo =
+        nodos.get(k.clave) ??
+        (dd
+          ? nodoDestino(p, { r: { ...x.r, destino: dd.id }, destino: k.clave, almacen: k.almacen, fuera: k.fuera })
+          : poner({ id: k.clave, tipo: "destino", col: 2, nombre: dv.destino ?? "Otro destino", sub: "Destino", tono: "neutral", estado: "Sin copias todavía", ultima: null, icono: "servidor" }));
+      const r = inf?.derivadas?.find((y) => y.id === dv.id);
+      const tono: Tono = r?.resultado === "fallo" ? "bad" : r?.resultado === "aviso" ? "warn" : r?.ultima ? (Date.parse(r.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
+      const cuando = cuandoEnFrase(dv.cuando ?? null).toLowerCase();
+      unir({
+        id: `${pildora.id}>dv:${dv.id}>${destinoNodo.id}`,
+        de: pildora.id,
+        a: destinoNodo.id,
+        tipo: "derivada",
+        tono,
+        vivo: false,
+        etiqueta: r?.ultima ? frescura(tono, r.ultima, ahora) : !cuando ? "después" : cuando.startsWith("después") ? cuando : `después · ${cuando}`,
+      });
+      if (r?.ultima && (!destinoNodo.ultima || r.ultima > destinoNodo.ultima)) destinoNodo.ultima = r.ultima;
+    }
     return pildora;
   };
 
@@ -333,6 +444,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     });
     for (const x of p.repos) {
       const pildora = ponerRepo(p, x);
+      anotarEnAlmacen(pildora.id, [{ p, x }]);
       unir({ id: `${n.id}>${pildora.id}`, de: n.id, a: pildora.id, tipo: "copia", tono: pildora.tono, vivo: !!pildora.vivo });
     }
   }
@@ -358,6 +470,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       const ultima = xs.map(({ p, x }) => ultimaVersion(x.r, informeDe(informes[p.equipo.id], x.r.id)) ?? "").sort().at(-1) || null;
       const pildora = poner({ id: `rg:${k}:${dk}`, tipo: "repo", col: 1, nombre: plural(xs.length, "repositorio", "repositorios"), sub: "al día", tono: "ok", estado: "Al día", ultima, href: `/c/${c}/repositorios`, icono: "repo", cifra: total ? bytes(total) : undefined });
       const dest = nodoDestino(xs[0].p, xs[0].x);
+      anotarEnAlmacen(pildora.id, xs);
       if (ultima && (!dest.ultima || ultima > dest.ultima)) dest.ultima = ultima;
       unir({ id: `${g.id}>${pildora.id}`, de: g.id, a: pildora.id, tipo: "copia", tono: "ok", vivo: false });
       unir({ id: `${pildora.id}>${dest.id}`, de: pildora.id, a: dest.id, tipo: "guarda", tono: "ok", vivo: false, etiqueta: frescura("ok", ultima, ahora) });
@@ -407,7 +520,19 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
             ? { clave: claveZona(alm.id, d.carpeta), si: { tipo: "local", inmutable: true, aislado: false, bloqueoDias: null } }
             : { si: { tipo: "local", inmutable: !!d.bloqueo, aislado: false, bloqueoDias: null } },
       );
-      unir({ id: `${n.id}>${e.id}`, de: n.id, a: e.id, tipo: "espejo", tono, vivo: false, etiqueta: frescura(tono, e.ultima, ahora) });
+      // 14mm: un espejo de todo el almacén (su zona principal, sin selección) sale del almacén; uno con
+      // selección o de otra zona, de los repositorios que copia, con su estado. Si no se ve ninguno de
+      // los suyos, no se dibuja (es de equipos que no salen aquí); sin repositorios a la vista, del almacén.
+      const todo = !Array.isArray(d.repos) && (d.zona ?? PRINCIPAL) === PRINCIPAL;
+      const vistos = enAlmacenes.get(alm.id) ?? [];
+      const desde = todo ? [] : vistos.filter((y) => y.en.some((en) => entraEnEspejo(d, en))).map((y) => y.pildora);
+      const de = todo || !vistos.length ? [n.id] : desde;
+      if (!de.length) {
+        nodos.delete(e.id);
+        tipoNodo.delete(e.id);
+        return;
+      }
+      for (const x of de) unir({ id: `${x}>${e.id}`, de: x, a: e.id, tipo: "espejo", tono, vivo: false, etiqueta: frescura(tono, e.ultima, ahora) });
     });
   }
 
@@ -432,8 +557,11 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         const destinos = aristas.filter((a) => a.de === p.id).map((a) => ({ a, n: por(a.a) }));
         const guarda = destinos.filter((x) => x.a.tipo === "guarda").map((x) => x.n.nombre);
         const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia externa" ? `copia externa (${enFrase(x.n, ahora)})` : `copia externa a ${x.n.nombre} (${enFrase(x.n, ahora)})`));
+        const der = destinos.filter((x) => x.a.tipo === "derivada").map((x) => `después, una copia derivada a ${x.n.nombre}${x.a.etiqueta ? ` (${x.a.etiqueta})` : ""}`);
+        const esp = destinos.filter((x) => x.a.tipo === "espejo" && x.n.tipo === "espejo").map((x) => `espejo en ${x.n.nombre} (${enFrase(x.n, ahora)})`);
         const mismo = p.aviso || destinos.some((x) => x.a.tipo === "guarda" && x.n.aviso) ? ", en el mismo equipo que protege" : "";
-        return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)}${mismo})${ext.length ? `, con ${lista(ext)}` : ""}`;
+        const mas = [...ext, ...esp, ...der];
+        return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)}${mismo})${mas.length ? `, con ${lista(mas)}` : ""}`;
       });
     frases.push(partes.length ? `${n.nombre} copia ${lista(partes)}.` : `${n.nombre}: ${minus(n.sub)}.`);
   }

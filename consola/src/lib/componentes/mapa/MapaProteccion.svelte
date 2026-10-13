@@ -18,7 +18,7 @@
   import { ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, Cloud, Database, HardDrive, Layers, Link2, List, LoaderCircle, Maximize, Minimize, Monitor, Scan, Server, TriangleAlert, Waypoints, ZoomIn, ZoomOut } from "@lucide/svelte";
   import type { Equipo, Informe } from "$lib/tipos";
   import { construirMapa, raices, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva } from "$lib/mapa";
-  import { disponer } from "$lib/mapaGeometria";
+  import { disponer, puntoEn } from "$lib/mapaGeometria";
   import MarcaCliente from "../MarcaCliente.svelte";
   import TipoDestino from "../TipoDestino.svelte";
   import { catalogoDe } from "$lib/catalogoDestinos.svelte";
@@ -469,6 +469,13 @@
       .map((r): Marca => ({ id: r.id, de: r.de, a: r.a, tono: aristaPorId.get(r.id)?.tono ?? "neutral", x: r.marca!.x, y: r.marca!.y })),
   );
 
+  /** 14kk: las copias derivadas llevan «después» sobre su flecha (el estado va en su marca y en las frases). */
+  const despues = $derived(
+    disp.rutas
+      .filter((r) => aristaPorId.get(r.id)?.tipo === "derivada" && r.tramos.length)
+      .map((r) => ({ id: r.id, de: r.de, a: r.a, ...puntoEn(r.tramos[0], r.marca ? 0.28 : 0.5), titulo: aristaPorId.get(r.id)?.etiqueta ?? "después" })),
+  );
+
   // Al pasar por una tarjeta (o enfocarla), su cadena entera resalta y lo demás se apaga.
   let foco = $state<string | null>(null);
   const cadena = $derived.by(() => {
@@ -661,7 +668,7 @@
         {@const Ic = ICONO[d.n.icono]}
         <li class="hoja">
           <span class="flecha" aria-hidden="true">→</span>
-          <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia externa" ? "Copia externa a " : ""}{d.n.nombre}</a>
+          <a href={d.n.href}><Ic size={14} aria-hidden="true" />{d.a.tipo === "externa" && d.n.nombre !== "Copia externa" ? "Copia externa a " : d.a.tipo === "derivada" ? "Después, copia derivada a " : d.a.tipo === "espejo" ? "Espejo en " : ""}{d.n.nombre}</a>
           {@render estado(d.n, d.n.icono !== "almacen")}
           {#if d.n.aviso}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{d.n.aviso}</span>{/if}
         </li>
@@ -785,7 +792,7 @@
             <g transform="translate({MARGEN} {MARGEN})">
               {#each disp.rutas as r (r.id)}
                 {@const a = aristaPorId.get(r.id)}
-                {#if a}<path class="trazo t-{tonoTrazo(a.tono)}" class:vivo={a.vivo} class:apagado={cadena && !(cadena.has(a.de) && cadena.has(a.a))} d={r.d} />{/if}
+                {#if a}<path class="trazo t-{tonoTrazo(a.tono)}" class:vivo={a.vivo} class:derivada={a.tipo === "derivada"} class:apagado={cadena && !(cadena.has(a.de) && cadena.has(a.a))} d={r.d} />{/if}
               {/each}
               {#each Object.entries(disp.cajas) as [id, c] (id)}
                 {#if conSalida.has(id)}<circle class="puerto" cx={c.x + c.w} cy={c.y + c.h / 2} r="3" />{/if}
@@ -800,6 +807,9 @@
                 <div class="caja" data-caja={id} style:left="{MARGEN + c.x}px" style:top="{MARGEN + c.y}px" style:width="{c.w}px">{@render tarjeta(n)}</div>
               {/if}
             {/each}
+          {/each}
+          {#each despues as r (r.id)}
+            <span class="despues" class:apagado={cadena && !(cadena.has(r.de) && cadena.has(r.a))} style:left="{MARGEN + r.x}px" style:top="{MARGEN + r.y}px" aria-hidden="true">después</span>
           {/each}
           {#each marcas as r (r.id)}
             {@const St = ESTADO[r.tono]}
@@ -1332,6 +1342,26 @@
     .trazo.vivo {
       animation: none;
     }
+  }
+  /* 14kk: la copia derivada, de puntos (otro paso, «después» del repositorio). */
+  .trazo.derivada {
+    stroke-dasharray: 1.5 4;
+    stroke-width: 1.75;
+  }
+  .despues {
+    position: absolute;
+    z-index: 2;
+    padding: 0 6px;
+    font-size: 10.5px;
+    line-height: 16px;
+    color: var(--text-2);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    translate: -50% -50%;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity var(--dur) var(--ease);
   }
   .puerto {
     fill: var(--surface);
