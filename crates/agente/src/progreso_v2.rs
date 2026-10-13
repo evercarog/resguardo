@@ -139,14 +139,17 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
     // al «Mover a otro sitio…»; aplicar la retención) y las restauraciones.
     let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
     out.extend(ops::lista().iter().map(|o| tarea_operacion(o, &enlace)));
-    out.extend(crate::escritorio::en_marcha::actividades().iter().filter_map(tarea_restauracion));
+    out.extend(crate::escritorio::en_marcha::actividades().iter().filter_map(|a| tarea_restauracion(a, &enlace)));
     out.truncate(MAX_TAREAS);
     out
 }
 
 /// Una restauración en marcha (del registro del servicio), sin rutas: el repositorio y las cifras.
-pub fn tarea_restauracion(a: &crate::escritorio::Actividad) -> Option<Value> {
+/// 13c/13f: también archivos, ritmo, lo que queda y quién la empezó y desde qué consola
+/// (`otra_consola` si no fue la consola `enlace`; `en_el_equipo` si fue desde su ventana).
+pub fn tarea_restauracion(a: &crate::escritorio::Actividad, enlace: &str) -> Option<Value> {
     let repo = a.clave.strip_prefix("restauracion:").filter(|_| a.tipo == "restauracion")?;
+    let otra = a.enlace.as_deref().is_some_and(|e| e != enlace);
     Some(json!({
         "tipo": "restauracion",
         "repo": repo,
@@ -155,7 +158,16 @@ pub fn tarea_restauracion(a: &crate::escritorio::Actividad) -> Option<Value> {
         "porcentaje": a.porcentaje,
         "bytes": a.bytes,
         "bytes_total": a.bytes_total,
+        "archivos": a.archivos,
+        "archivos_total": a.archivos_total,
+        "velocidad": a.velocidad,
+        "subida": a.velocidad,
+        "quedan_s": a.quedan_s,
         "empezo": a.empezo,
+        "por": a.por,
+        "otra_consola": otra,
+        "consola": if otra { a.consola.clone() } else { None },
+        "en_el_equipo": a.enlace.is_none(),
     }))
 }
 
@@ -517,12 +529,19 @@ mod tests {
             porcentaje: Some(0.25),
             ..Default::default()
         };
-        let t = tarea_restauracion(&a).unwrap();
+        let t = tarea_restauracion(&a, "e1").unwrap();
         assert_eq!(
             (t["tipo"].as_str(), t["repo"].as_str(), t["fase"].as_str(), t["porcentaje"].as_f64()),
             (Some("restauracion"), Some("r9"), Some("en_marcha"), Some(0.25))
         );
-        assert!(tarea_restauracion(&crate::escritorio::Actividad { tipo: "espejo".into(), clave: "espejo:1".into(), ..Default::default() }).is_none());
+        assert!(tarea_restauracion(&crate::escritorio::Actividad { tipo: "espejo".into(), clave: "espejo:1".into(), ..Default::default() }, "e1").is_none());
+        // 13f: desde la ventana del equipo; desde esta consola; desde otra (con su nombre, nunca su dirección).
+        assert_eq!((t["en_el_equipo"].as_bool(), t["otra_consola"].as_bool()), (Some(true), Some(false)));
+        let b = crate::escritorio::Actividad { enlace: Some("e2".into()), consola: Some("Oficina".into()), por: Some("Ana".into()), archivos: Some(3), ..a };
+        let de_esta = tarea_restauracion(&b, "e2").unwrap();
+        assert_eq!((de_esta["otra_consola"].as_bool(), de_esta["consola"].is_null(), de_esta["por"].as_str()), (Some(false), true, Some("Ana")));
+        let de_otra = tarea_restauracion(&b, "e1").unwrap();
+        assert_eq!((de_otra["otra_consola"].as_bool(), de_otra["consola"].as_str(), de_otra["archivos"].as_u64()), (Some(true), Some("Oficina"), Some(3)));
     }
 
     #[test]

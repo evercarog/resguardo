@@ -52,6 +52,8 @@ pub struct Facts {
     pub cloud_verify_run: Option<RunFact>,
     pub has_restore_test: bool,
     pub restore_test_run: Option<RunFact>,
+    /// 13e: fin (RFC 3339) de la última restauración real correcta que restauró algo.
+    pub real_restore: Option<String>,
     /// Kit guardado y vigente / guardado pero ya no vale (cambió la ubicación).
     pub kit_ok: bool,
     pub kit_stale: bool,
@@ -225,7 +227,13 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
     });
 
     // 5. Prueba de restauración (en un destino que solo recibe una copia externa, no aplica).
-    if !target {
+    // 13e: una restauración real correcta cuenta como prueba (con la misma caducidad),
+    // salvo que haya una prueba más reciente (bien o mal: manda la última).
+    let real = f.real_restore.as_deref().filter(|t| parse(t).is_some_and(|t| now - t <= Duration::days(DIAS_PRUEBA_REGLA)));
+    let real = real.filter(|t| f.restore_test_run.as_ref().is_none_or(|r| parse(&r.finished) < parse(t)));
+    if let Some(t) = real.filter(|_| !target) {
+        items.push(item("restauracion", State::Ok, "Prueba de restauración", format!("Correcta · restauración real, {}.", ago(t, now))));
+    } else if !target {
         items.push(if !f.has_restore_test {
             item("restauracion", State::Warn, "Prueba de restauración", "Sin prueba: nadie comprueba que las copias se puedan recuperar de verdad.")
         } else {
@@ -637,6 +645,7 @@ pub fn agent_facts(
         verify_run: task("verify"),
         has_restore_test: entry.is_some_and(|e| e.restore_test.is_some()),
         restore_test_run: task("restore_test"),
+        real_restore: crate::restaurar_v2::real_de(repo_id).map(|r| r.fin),
         has_cloud_verify: entry.is_some_and(|e| e.offsite.as_ref().is_some_and(|o| o.verify.is_some())),
         cloud_verify_run: task("verify_offsite"),
         ..Default::default()
@@ -817,6 +826,28 @@ mod tests {
         let mut f = completo();
         f.append_only = None;
         assert_eq!(evaluate(&f, now()).items[1].state, State::Unknown);
+    }
+
+    /// 13e: una restauración real correcta cuenta como prueba, con la misma caducidad.
+    #[test]
+    fn restauracion_real_como_prueba() {
+        let item = |f: &Facts| evaluate(f, now()).items.into_iter().find(|i| i.id == "restauracion").unwrap();
+        let mut f = completo();
+        f.has_restore_test = false;
+        f.restore_test_run = None;
+        assert_eq!(item(&f).state, State::Warn);
+        f.real_restore = Some("2026-09-27T10:00:00-05:00".into());
+        let i = item(&f);
+        assert!(i.state == State::Ok && i.detail.contains("restauración real"), "{i:?}");
+        // Una prueba posterior que falló manda; una anterior, no.
+        f.has_restore_test = true;
+        f.restore_test_run = Some(RunFact { ok: false, finished: "2026-09-28T04:00:00-05:00".into(), message: "x".into() });
+        assert_eq!(item(&f).state, State::Bad);
+        f.restore_test_run = Some(RunFact { ok: false, finished: "2026-09-20T04:00:00-05:00".into(), message: "x".into() });
+        assert_eq!(item(&f).state, State::Ok);
+        // Caducada (más de 45 días): ya no cuenta.
+        f.real_restore = Some("2026-07-01T10:00:00-05:00".into());
+        assert_eq!(item(&f).state, State::Bad);
     }
 
     #[test]

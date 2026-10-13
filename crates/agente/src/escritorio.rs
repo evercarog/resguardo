@@ -150,6 +150,14 @@ pub struct Actividad {
     pub quedan_s: Option<u64>,
     #[serde(default)]
     pub empezo: String,
+    /// 13f: quién la pidió (como lo dice su consola), desde qué consola (su nombre en
+    /// el equipo, nunca su dirección) y su enlace. Sin consola: desde el propio equipo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub por: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consola: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enlace: Option<String>,
 }
 
 /// Lo último terminado de cada tarea.
@@ -200,6 +208,7 @@ pub fn actividad_copia(r: &crate::agent::RunningCopy, nombre: &str, ahora: DateT
         archivos_s: t["archivos_s"].as_u64(),
         quedan_s: t["quedan_s"].as_u64(),
         empezo: r.started.clone(),
+        ..Default::default()
     })
 }
 
@@ -240,6 +249,20 @@ pub mod en_marcha {
     pub struct Guarda {
         id: String,
         resultado: Option<String>,
+        desde: std::time::Instant,
+    }
+
+    /// [`empezar`] con quién la pidió y desde qué consola (13f).
+    pub fn empezar_por(tipo: &str, clave: &str, nombre: &str, q: &crate::restaurar_v2::Quien) -> Guarda {
+        let g = empezar(tipo, clave, nombre);
+        if let Ok(mut v) = EN_CURSO.lock() {
+            if let Some(a) = v.iter_mut().find(|a| a.id == g.id) {
+                a.por = q.por.as_deref().map(|p| p.chars().filter(|c| !c.is_control()).take(80).collect());
+                a.consola = q.consola.clone();
+                a.enlace = Some(q.enlace.clone()).filter(|e| !e.is_empty());
+            }
+        }
+        g
     }
 
     /// Empieza una tarea: `tipo` como en [`Actividad::tipo`]; `clave`, lo que no cambia entre ejecuciones.
@@ -259,7 +282,7 @@ pub mod en_marcha {
         if let Ok(mut v) = EN_CURSO.lock() {
             v.push(a);
         }
-        Guarda { id, resultado: None }
+        Guarda { id, resultado: None, desde: std::time::Instant::now() }
     }
 
     impl Guarda {
@@ -273,6 +296,22 @@ pub mod en_marcha {
                         (Some(b), Some(t)) if t > 0 => Some(super::redondeo(b as f64 / t as f64)),
                         _ => None,
                     };
+                }
+            }
+        }
+
+        /// Cifras de una restauración (13c): bytes y archivos, con sus totales si se
+        /// saben; de ahí el ritmo medio (bytes/s) y lo que queda.
+        pub fn cifras(&self, bytes: Option<u64>, bytes_total: Option<u64>, archivos: Option<u64>, archivos_total: Option<u64>) {
+            self.progreso(bytes, bytes_total);
+            let lleva = self.desde.elapsed();
+            if let Ok(mut v) = EN_CURSO.lock() {
+                if let Some(a) = v.iter_mut().find(|a| a.id == self.id) {
+                    a.archivos = archivos;
+                    a.archivos_total = archivos_total;
+                    let s = lleva.as_secs_f64();
+                    a.velocidad = bytes.filter(|_| s >= 2.0).map(|b| (b as f64 / s).round() as u64);
+                    a.quedan_s = a.porcentaje.and_then(|p| crate::tasks::eta(lleva, p));
                 }
             }
         }

@@ -1049,7 +1049,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 27] = [
+pub const ADMITE: [&str; 30] = [
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1111,6 +1111,16 @@ pub const ADMITE: [&str; 27] = [
     // (pendiente de numerar) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
     // anterior aunque falle) y `retraso_min` (minutos tras la anterior), también en el resumen.
     "inicio_despues",
+    // v1.6x (pendiente de numerar al unir) plan 0.8.0, E1: `restaurar { destino: "nueva" | "zip" }`
+    // (con la clave de administración), `contrasena_zip` (AES-256, también en `descargar`),
+    // `motivo` y la entrada `restauracion` de la bitácora (13a, 13b, 13d).
+    "restaurar_carpeta",
+    // v1.6x (pendiente de numerar al unir) 14m: `desde` (`externa` o una copia derivada) en
+    // `explorar`, `restaurar` y `descargar`.
+    "restaurar_desde",
+    // v1.6x (pendiente de numerar al unir) 13e: `informe.repos[].restauracion_real` (una restauración
+    // real correcta cuenta como prueba de restauración).
+    "restauracion_real",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

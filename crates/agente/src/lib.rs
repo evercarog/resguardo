@@ -76,6 +76,7 @@ pub mod progreso_v2;
 mod propiedades;
 pub mod protection;
 pub mod remote;
+pub mod restaurar_v2;
 pub mod restore_test;
 pub mod retencion_almacen;
 pub mod retencion_registro;
