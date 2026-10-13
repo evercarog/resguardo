@@ -233,7 +233,7 @@
     <div>
       <h2 class="section-title" id="t-historial">{titulo}</h2>
       <p class="faint num">
-        {#if versiones.length}{numero(enPeriodo)} en este periodo · {/if}{plural(total, "versión", "versiones")} en total{!copia && total > versiones.length && versiones.length ? ` (aquí, ${numero(versiones.length)})` : ""}{equipo && !verRepo ? ` en ${plural(fuentes.length, "repositorio", "repositorios")}` : ""}
+        {#if versiones.length}{`${numero(enPeriodo)} en este periodo · `}{/if}{plural(total, "versión", "versiones")} en total{!copia && !faltan && total > versiones.length && versiones.length ? ` (aquí, ${numero(versiones.length)})` : ""}{equipo && !verRepo ? ` en ${plural(fuentes.length, "repositorio", "repositorios")}` : ""}
         {#if leidas}<span class="leidas">{" · "}leídas {relativo(leidas, ahora)}</span>{/if}
       </p>
       {#if resumen}<p class="faint num">{resumen}</p>{/if}

@@ -102,6 +102,9 @@
   .desbloquear {
     position: relative;
   }
+  .desbloquear :global(.intro) {
+    padding-right: 28px;
+  }
   .cerrar {
     position: absolute;
     top: 6px;
