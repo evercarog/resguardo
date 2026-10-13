@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn plantillas_y_validaciones() {
         let g = de_config(
-            &json!({"tipo": "sqlserver", "instancia": "SERVIDOR-01\\SQLEXPRESS", "bases": ["WO_Altamar", "Contab 2026"], "carpeta": "C:\\ResguardoVolcados"}),
+            &json!({"tipo": "sqlserver", "instancia": "SERVIDOR-01\\SQLEXPRESS", "bases": ["Ventas", "Nominas 2026"], "carpeta": "C:\\ResguardoVolcados"}),
         )
         .unwrap();
         assert_eq!(g[0].tipo(), "sqlserver");

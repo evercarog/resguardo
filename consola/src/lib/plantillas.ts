@@ -1,4 +1,4 @@
-// Plantillas de copia de un cliente (v1.20): «Copia de Siigo», «Documentos de
+// Plantillas de copia de un cliente (v1.20): «Copia de Ventas», «Documentos de
 // usuario»… Llevan carpetas y ganchos (rutas de los equipos), así que se
 // cifran aquí con una clave derivada de K_cfg (cripto/simetrico.ts,
 // clavePlantillas) y el servidor solo guarda bytes. Usar una plantilla solo

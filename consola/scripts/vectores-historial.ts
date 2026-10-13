@@ -28,7 +28,7 @@ const repo2: RepositorioResumen = { id: "r2", nombre: "Contabilidad", destino: "
 const copias: CopiaResumen[] = [
   { id: "k1", nombre: "Escritorio", repo: "r1" },
   { id: "k2", nombre: "Facturas", repo: "r1" },
-  { id: "k3", nombre: "Siigo", repo: "r2" },
+  { id: "k3", nombre: "Ventas", repo: "r2" },
 ];
 const inf: RepoInforme = {
   id: "r1",
@@ -152,7 +152,7 @@ console.log("\n· «En disco» junto a «Protegido» (lib/repo.ts)");
 
 console.log("\n· Copias del cliente (lib/copiasCliente.ts)");
 const base = { so: "Windows 11", version_agente: "0.7.17", box_pub: "", sign_pub: "", sal_equipo: "", etiqueta: null, modo: "gestionado" as const, confirmado: true, conectado: true, ultimo_contacto: h(0.1), estado_servicio: "en_marcha" as const, siguiente_seq: 1, rol: "agente" as const };
-const e1: Equipo = { ...base, id: "e1", nombre: "CONTABILIDAD", resumen: { destinos: [{ id: "d", nombre: "Almacén", tipo: "rest" }], repositorios: [{ ...repo2 }], copias: [{ id: "k3", nombre: "Siigo", repo: "r2", activa: true, ultima: { cuando: h(3), estado: "fallo", mensaje: "Sin red" } }] } };
+const e1: Equipo = { ...base, id: "e1", nombre: "CONTABILIDAD", resumen: { destinos: [{ id: "d", nombre: "Almacén", tipo: "rest" }], repositorios: [{ ...repo2 }], copias: [{ id: "k3", nombre: "Ventas", repo: "r2", activa: true, ultima: { cuando: h(3), estado: "fallo", mensaje: "Sin red" } }] } };
 const e2: Equipo = {
   ...base,
   id: "e2",
@@ -174,8 +174,8 @@ igual("orden por lo que protege: lo que no se sabe, al final", ordenarCopias(fil
 
 console.log("\n· Mover a otro sitio, visto desde cualquier consola (lib/mover.ts, lib/textoProgreso.ts, lib/historial.ts)");
 igual("0 copias: «No hay copias que cambiar» (no hace falta)", textoPasoCopias([]), { texto: "No hay copias que cambiar", sinCopias: true });
-igual("1 copia: en singular", textoPasoCopias(["Siigo"]).texto, "Cambiar la copia «Siigo» para que guarde en el nuevo");
-igual("N copias: cuántas y cuáles", textoPasoCopias(["Siigo", "Escritorio", "Facturas"]).texto, "Cambiar las 3 copias («Siigo», «Escritorio» y «Facturas») para que guarden en el nuevo");
+igual("1 copia: en singular", textoPasoCopias(["Ventas"]).texto, "Cambiar la copia «Ventas» para que guarde en el nuevo");
+igual("N copias: cuántas y cuáles", textoPasoCopias(["Ventas", "Escritorio", "Facturas"]).texto, "Cambiar las 3 copias («Ventas», «Escritorio» y «Facturas») para que guarden en el nuevo");
 igual("nunca «Cambiar ninguna copia…»", [[], ["a"], ["a", "b"]].map((x) => /ninguna/i.test(textoPasoCopias(x).texto)), [false, false, false]);
 const tm = { tipo: "historial" as const, repo: "nuevo", origen: "r2", nombre: "Contabilidad (almacén)", nombre_origen: "Contabilidad", mover: true, paso: "historial" as const, fase: "en_marcha" as const, versiones: 56, versiones_total: 255 };
 igual("desde otra consola, con su nombre", textoMover({ ...tm, otra_consola: true, consola: "Oficina" }), "Moviéndose a otro sitio (iniciado desde «Oficina»): trayendo el historial, 56 de 255 versiones");

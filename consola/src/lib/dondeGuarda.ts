@@ -16,7 +16,7 @@ export type ClaseLugar = "almacen" | "almacen_propio" | "carpeta" | "usb" | "red
 
 export interface Lugar {
   clase: ClaseLugar;
-  /** Lo principal: «Almacén SERVIDOR-ALTAMAR (otro equipo)», «En este mismo equipo (D:)», «Nube (Backblaze B2)»… */
+  /** Lo principal: «Almacén SERVIDOR-01 (otro equipo)», «En este mismo equipo (D:)», «Nube (Backblaze B2)»… */
   texto: string;
   /** Lo que va después del «·»: la carpeta del almacén, el bucket, el servidor o el nombre del destino. */
   detalle: string | null;
@@ -102,7 +102,7 @@ export function lugarRepo(repo: RepositorioResumen | null | undefined, equipo: E
   return lugarDe(destinoDe(equipo.resumen?.destinos, repo), equipo, equipos);
 }
 
-/** «Almacén SERVIDOR-ALTAMAR (otro equipo) · D:\Copias»: la línea entera (sin el «Se guarda en:»). */
+/** «Almacén SERVIDOR-01 (otro equipo) · D:\Copias»: la línea entera (sin el «Se guarda en:»). */
 export const lineaLugar = (l: Lugar) => (l.detalle ? `${l.texto} · ${l.detalle}` : l.texto);
 
 export interface RiesgoMismoEquipo {

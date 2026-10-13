@@ -67,7 +67,7 @@
           <div class="fila-campos">
             <div class="field">
               <label class="field-label" for="g-bases-{id}-{i}">Bases de datos</label>
-              <textarea id="g-bases-{id}-{i}" class="input mono" rows="2" spellcheck="false" value={g.bases.join("\n")} oninput={(e) => (g.bases = bases(e.currentTarget.value))} placeholder="WO_Empresa&#10;Contabilidad 2026"></textarea>
+              <textarea id="g-bases-{id}-{i}" class="input mono" rows="2" spellcheck="false" value={g.bases.join("\n")} oninput={(e) => (g.bases = bases(e.currentTarget.value))} placeholder="Ventas&#10;Nominas"></textarea>
               <span class="field-hint">Una por línea, hasta {MAX_BASES}.</span>
             </div>
             <div class="field">
@@ -85,12 +85,12 @@
             <span class="field-hint">En el propio equipo, con sitio para los volcados. La cuenta del equipo necesita permiso de copia en cada base: <a href="/ayuda#ganchos">cómo darlo</a>.</span>
           </div>
         {:else}
-          <p class="faint expl">Para programas que hacen sus propias copias (por ejemplo, World Office): si el archivo más nuevo de su carpeta es más viejo que lo indicado, la copia sale «con avisos». No cambia lo que se copia.</p>
+          <p class="faint expl">Para programas que hacen sus propias copias : si el archivo más nuevo de su carpeta es más viejo que lo indicado, la copia sale «con avisos». No cambia lo que se copia.</p>
           <div class="fila-campos">
             <div class="field">
               <label class="field-label" for="g-carp-{id}-{i}">Carpeta de sus copias</label>
               <div class="con-boton">
-                <input id="g-carp-{id}-{i}" class="input mono" bind:value={g.carpeta} placeholder="D:\WO\Copias" spellcheck="false" />
+                <input id="g-carp-{id}-{i}" class="input mono" bind:value={g.carpeta} placeholder="D:\CopiasApp" spellcheck="false" />
                 {#if equipo && cliente}<button type="button" class="btn" onclick={() => (explorando = i)}><FolderOpen size={15} />Explorar…</button>{/if}
               </div>
             </div>

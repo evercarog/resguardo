@@ -63,7 +63,7 @@ export function errorGancho(g: Gancho): string | null {
     if (enCarpetaDelSistema(g.carpeta, !g.carpeta.trim().startsWith("/"))) return "La carpeta de los volcados no puede ir en la de Windows, los programas ni Resguardo (p. ej. C:\\ResguardoVolcados).";
     return null;
   }
-  if (!rutaValida(g.carpeta) && !g.carpeta.trim().startsWith("\\\\")) return "La carpeta a vigilar tiene que ser una ruta completa (p. ej. D:\\WO\\Copias).";
+  if (!rutaValida(g.carpeta) && !g.carpeta.trim().startsWith("\\\\")) return "La carpeta a vigilar tiene que ser una ruta completa (p. ej. D:\\CopiasApp).";
   if (!Number.isInteger(g.horas) || g.horas < 1 || g.horas > 720) return "Las horas tienen que estar entre 1 y 720.";
   const e = g.extension ?? null;
   if (e !== null && (!e.length || e.length > 10 || !/^[A-Za-z0-9.]+$/.test(e))) return "Extensión no válida (p. ej. .bak).";

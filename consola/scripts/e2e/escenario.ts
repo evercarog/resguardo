@@ -1095,7 +1095,7 @@ async function principal() {
       // «La nube»: un repositorio con el troceado del de B y sus versiones de hasta ahora (lo que subió la app antigua), con otra contraseña.
       const nube = dir("nube-copias");
       const claveNube = Buffer.from(aleatorio(24)).toString("base64url");
-      const envNube = { ...envRestic, RESTIC_REPOSITORY: path.join(nube, "siigo"), RESTIC_PASSWORD: claveNube, RESTIC_FROM_REPOSITORY: repoUrl, RESTIC_FROM_PASSWORD: contrasenaRepo };
+      const envNube = { ...envRestic, RESTIC_REPOSITORY: path.join(nube, "ventas"), RESTIC_PASSWORD: claveNube, RESTIC_FROM_REPOSITORY: repoUrl, RESTIC_FROM_PASSWORD: contrasenaRepo };
       for (const args of [["init", "--copy-chunker-params"], ["copy"]]) {
         const r = ejecutar(resticBin, args, { env: envNube, plazo: 300_000 });
         comprobar(r.codigo === 0, `restic ${args[0]} de «la nube» falló`, r.salida);
@@ -1109,7 +1109,7 @@ async function principal() {
       const externa = {
         repo: repoId,
         destino: { id: `externa-${randomBytes(3).toString("hex")}`, tipo: "local", donde: nube },
-        ruta: "siigo",
+        ruta: "ventas",
         existente: true,
         contrasena_destino: claveNube,
         hora: "03:00",

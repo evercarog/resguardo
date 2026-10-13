@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Migas de pan: «Equipos / CONTABILIDAD / Siigo y documentos». Los
+  // Migas de pan: «Equipos / CONTABILIDAD / Ventas y documentos». Los
   // anteriores son enlaces; el último es la página actual.
   import { ChevronRight } from "@lucide/svelte";
 

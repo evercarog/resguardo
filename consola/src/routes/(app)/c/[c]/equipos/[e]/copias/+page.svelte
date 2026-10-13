@@ -1154,7 +1154,7 @@
       <div class="field">
         <label class="field-label" for="pla-nombre">Nombre de la plantilla</label>
         <!-- svelte-ignore a11y_autofocus -->
-        <input id="pla-nombre" class="input" bind:value={guardarComo.nombre} maxlength="80" autofocus placeholder="Por ejemplo: Copia de Siigo" aria-required="true" aria-invalid={!!guardarComo.error} aria-describedby={guardarComo.error ? "pla-nombre-error" : undefined} />
+        <input id="pla-nombre" class="input" bind:value={guardarComo.nombre} maxlength="80" autofocus placeholder="Por ejemplo: Copia de documentos" aria-required="true" aria-invalid={!!guardarComo.error} aria-describedby={guardarComo.error ? "pla-nombre-error" : undefined} />
       </div>
       <p class="faint nota">Se guarda cifrada con la clave de administración: el servidor no ve ni el nombre ni las carpetas. Usarla en un equipo solo rellena sus copias; se revisan y se envían como siempre.</p>
       {#if guardarComo.error}<p class="error-campo" id="pla-nombre-error" role="alert">{guardarComo.error}</p>{/if}

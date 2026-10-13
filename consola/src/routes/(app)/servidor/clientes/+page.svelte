@@ -259,7 +259,7 @@
       </div>
       <div class="field">
         <label class="field-label" for="nombre-ajeno">Nombre</label>
-        <input id="nombre-ajeno" class="input" bind:value={nombre} placeholder="Por ejemplo: Ferretería Altamar" aria-required="true" />
+        <input id="nombre-ajeno" class="input" bind:value={nombre} placeholder="Por ejemplo: Oficina Norte" aria-required="true" />
       </div>
       <div class="field">
         <label class="field-label" for="espera-ajeno">Espera antes de borrar</label>

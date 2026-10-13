@@ -15,7 +15,7 @@
 </script>
 
 <script lang="ts">
-  // «Se guarda en: Almacén SERVIDOR-ALTAMAR (otro equipo) · D:\Copias»: una línea, con el
+  // «Se guarda en: Almacén SERVIDOR-01 (otro equipo) · D:\Copias»: una línea, con el
   // icono de cada clase de sitio. Si se queda en el mismo equipo que protege
   // (sin nada fuera), en el color de aviso, con su icono y «mismo equipo».
   import { untrack } from "svelte";

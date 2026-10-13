@@ -229,11 +229,11 @@
           <label class="field-label" for="a-ruta">Carpeta del repositorio en {almacen ? almacen.nombre : destinoSel.nombre}</label>
           {#if raizLocal && !almacen}
             <div class="con-boton">
-              <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="siigo" />
+              <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="ventas" />
               <button type="button" class="btn" onclick={() => (explorar = "destino")}><FolderOpen size={15} />Explorar…</button>
             </div>
           {:else}
-            <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="siigo" />
+            <input id="a-ruta" class="input mono" bind:value={ruta} spellcheck="false" autocomplete="off" placeholder="ventas" />
           {/if}
           {#if almacen}
             <span class="field-hint">

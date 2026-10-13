@@ -29,10 +29,10 @@ export const repoExistenteVacio = (): RepoExistente => ({ tipo: "rest", direccio
 /**
  * Parte la dirección completa del repositorio en su destino y su carpeta (el
  * agente guarda el destino y, aparte, la ruta dentro de él):
- *  - `http://192.168.1.30:8001/Siigo` → `http://192.168.1.30:8001` + `Siigo`
+ *  - `http://192.168.1.30:8001/Ventas` → `http://192.168.1.30:8001` + `Ventas`
  *  - `rest:https://nas:8000/ana/portatil/` → `https://nas:8000/ana` + `portatil`
- *  - `D:\Copias\Siigo` → `D:\Copias` + `Siigo`
- *  - `b2:cubo:siigo` o `cubo:siigo` → `cubo` + `siigo`; `cubo:a/b` → `cubo:a` + `b`
+ *  - `D:\Copias\Ventas` → `D:\Copias` + `Ventas`
+ *  - `b2:cubo:ventas` o `cubo:ventas` → `cubo` + `ventas`; `cubo:a/b` → `cubo:a` + `b`
  *  - `https://nas:8000/` (un solo repositorio en la raíz) → igual + `""`
  */
 export function partirDireccion(tipo: TipoExistente, direccion: string): { donde: string; ruta: string } {
@@ -42,7 +42,7 @@ export function partirDireccion(tipo: TipoExistente, direccion: string): { donde
   if (tipo === "local") {
     const s = d.replace(/[\\/]+$/, "");
     const i = Math.max(s.lastIndexOf("\\"), s.lastIndexOf("/"));
-    // «D:\Siigo» → «D:\» + «Siigo»; «/srv/siigo» → «/srv» + «siigo».
+    // «D:\Ventas» → «D:\» + «Ventas»; «/srv/ventas» → «/srv» + «ventas».
     if (i < 0) return { donde: s, ruta: "" };
     const donde = s.slice(0, i) || "/";
     return { donde: /^[A-Za-z]:$/.test(donde) ? `${donde}\\` : donde, ruta: s.slice(i + 1) };
