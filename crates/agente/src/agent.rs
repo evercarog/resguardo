@@ -374,6 +374,126 @@ pub struct AgentPlan {
     /// Plan 0.7.26: minutos que espera tras terminar la anterior (0: enseguida).
     #[serde(default, skip_serializing_if = "es_cero")]
     pub after_delay_min: u32,
+    /// F1 (14pp, `admite: "termina"`): solo a mano, una sola vez o con fin (tras N
+    /// copias correctas o un día). Sin él, como siempre: con su horario, sin fin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<PlanEnd>,
+}
+
+/// F1 (14pp): cuándo termina un plan. La cuenta de copias correctas va en
+/// `state.json` (`AgentState::ends`), atada a esta regla: si cambia (otra cifra,
+/// otra fecha o «Reanudar», que pone otro `since`), vuelve a empezar.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanEnd {
+    /// «Solo a mano»: sin horario, solo «Copiar ahora». Nunca termina.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub manual: bool,
+    /// Termina tras estas copias correctas (o con avisos: guardan versión).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    /// Termina al acabar este día (AAAA-MM-DD, hora del equipo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+    /// «Una sola vez», a esta hora (AAAA-MM-DDTHH:MM, hora del equipo): sin horario.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub once_at: Option<String>,
+    /// Desde cuándo cuenta (lo pone la consola al poner el fin o al reanudar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+}
+
+impl PlanEnd {
+    /// La firma de la regla (la cuenta es de esta regla).
+    pub fn sig(&self) -> String {
+        serde_json::to_string(&(&self.count, &self.until, &self.once_at, &self.since)).unwrap_or_default()
+    }
+    /// ¿Tiene un fin (y por tanto cuenta)? «Solo a mano» no termina nunca.
+    pub fn ends(&self) -> bool {
+        self.count.is_some() || self.until.is_some() || self.once_at.is_some()
+    }
+    /// Sin horario propio (solo a mano o una sola vez).
+    pub fn without_schedule(&self) -> bool {
+        self.manual || self.once_at.is_some()
+    }
+    pub fn once_local(&self) -> Option<DateTime<Local>> {
+        let t = chrono::NaiveDateTime::parse_from_str(self.once_at.as_deref()?, "%Y-%m-%dT%H:%M").ok()?;
+        Local.from_local_datetime(&t).earliest()
+    }
+    pub fn until_date(&self) -> Option<chrono::NaiveDate> {
+        chrono::NaiveDate::parse_from_str(self.until.as_deref()?, "%Y-%m-%d").ok()
+    }
+}
+
+/// F1: la cuenta de un plan con fin (en `state.json`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndCount {
+    /// [`PlanEnd::sig`] de la regla con la que se cuenta.
+    pub sig: String,
+    /// Copias correctas hechas desde entonces.
+    #[serde(default)]
+    pub done: u32,
+    /// Cuándo terminó (RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed: Option<String>,
+}
+
+/// F1: copias correctas hechas por un plan con fin (con su regla de ahora) y cuándo terminó.
+pub fn end_status(plan: &AgentPlan, key: &str, state: &AgentState) -> (u32, Option<String>) {
+    let Some(e) = plan.end.as_ref().filter(|e| e.ends()) else { return (0, None) };
+    match state.ends.get(key).filter(|c| c.sig == e.sig()) {
+        Some(c) => (c.done, c.completed.clone()),
+        None => (0, None),
+    }
+}
+
+/// F1: ¿ya terminó? (Hizo sus N copias, su única vez, o pasó su último día.)
+pub fn plan_finished(plan: &AgentPlan, key: &str, state: &AgentState, now: DateTime<Local>) -> bool {
+    let Some(e) = plan.end.as_ref().filter(|e| e.ends()) else { return false };
+    let (done, completed) = end_status(plan, key, state);
+    completed.is_some() || e.count.is_some_and(|n| done >= n) || (e.once_at.is_some() && done >= 1) || e.until_date().is_some_and(|u| now.date_naive() > u)
+}
+
+/// F1: anota una copia de un plan con fin. Correcta (o con avisos), cuenta; si con
+/// ella llega a su fin, queda terminada. Devuelve `true` si terminó ahora.
+pub fn note_end(plan: &AgentPlan, key: &str, state: &mut AgentState, ok: bool, now: DateTime<Local>) -> bool {
+    let Some(e) = plan.end.as_ref().filter(|e| e.ends()) else { return false };
+    if plan_finished(plan, key, state, now) {
+        return false;
+    }
+    let sig = e.sig();
+    let c = state.ends.entry(key.to_string()).or_default();
+    if c.sig != sig {
+        *c = EndCount { sig, done: 0, completed: None };
+    }
+    if ok {
+        c.done = c.done.saturating_add(1);
+    }
+    if plan_finished(plan, key, state, now) {
+        if let Some(c) = state.ends.get_mut(key) {
+            c.completed = Some(now.to_rfc3339());
+        }
+        return true;
+    }
+    false
+}
+
+/// F1: los planes cuyo último día ya pasó quedan terminados (con la hora en que se vio).
+fn mark_finished(config: &AgentConfig, state: &mut AgentState, now: DateTime<Local>) {
+    for repo in &config.repos {
+        for plan in &repo.plans {
+            let key = crate::plans::plan_key(&repo.id, &plan.id);
+            let Some(e) = plan.end.as_ref().filter(|e| e.ends()) else { continue };
+            if !plan_finished(plan, &key, state, now) || end_status(plan, &key, state).1.is_some() {
+                continue;
+            }
+            let c = state.ends.entry(key.clone()).or_default();
+            if c.sig != e.sig() {
+                *c = EndCount { sig: e.sig(), done: 0, completed: None };
+            }
+            c.completed = Some(now.to_rfc3339());
+            log(&format!("«{}» (plan «{}») completada: pasó su último día. Sus versiones se quedan.", repo.name, plan.name));
+        }
+    }
 }
 
 fn es_cero(n: &u32) -> bool {
@@ -542,6 +662,9 @@ pub struct AgentState {
     /// Tarea 7c: cómo quedó cada plan «después de la anterior» (`<repo>#<plan>`).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub chains: HashMap<String, ChainState>,
+    /// F1 (14pp): la cuenta de los planes con fin (`<repo>#<plan>`).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub ends: HashMap<String, EndCount>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -977,6 +1100,7 @@ pub fn migrate_legacy(config: &mut AgentConfig, state: &mut AgentState) -> bool 
             after: None,
             after_always: false,
             after_delay_min: 0,
+            end: None,
         });
         repo.schedule = Schedule::Plans;
         if let Some(run) = state.runs.remove(&repo.id) {
@@ -1134,6 +1258,18 @@ pub fn set_schedule_modes(
     schedule: Option<Schedule>,
     modes: &std::collections::BTreeMap<String, ChainMode>,
 ) -> Result<(), String> {
+    set_schedule_full(repo, access, schedule, modes, &std::collections::BTreeMap::new())
+}
+
+/// Como [`set_schedule_modes`], con el fin de cada plan (F1, 14pp; por id del plan).
+/// Un plan sin horario entra si es «solo a mano» o «una sola vez».
+pub fn set_schedule_full(
+    repo: &Repo,
+    access: Option<&Access>,
+    schedule: Option<Schedule>,
+    modes: &std::collections::BTreeMap<String, ChainMode>,
+    ends: &std::collections::BTreeMap<String, PlanEnd>,
+) -> Result<(), String> {
     require_admin()?;
     prepare_dir()?;
     let mut config = load_config();
@@ -1160,9 +1296,12 @@ pub fn set_schedule_modes(
                 .iter()
                 .filter_map(|p| {
                     // Tarea 7c: un plan «después de la anterior» puede no tener horario propio.
+                    let end = ends.get(&p.id).cloned();
                     let s = match (&p.schedule, &p.after) {
                         (Some(s), _) => s.clone(),
                         (None, Some(_)) => crate::plans::PlanSchedule::from_rules(vec![]),
+                        // F1: «solo a mano» o «una sola vez», sin horario.
+                        (None, None) if end.as_ref().is_some_and(PlanEnd::without_schedule) => crate::plans::PlanSchedule::from_rules(vec![]),
                         (None, None) => return None,
                     };
                     // Plan 0.7.26: «después de» aunque falle y su retraso (solo con `after`).
@@ -1186,6 +1325,7 @@ pub fn set_schedule_modes(
                         after: p.after.clone(),
                         after_always: mode.always,
                         after_delay_min: mode.delay_min,
+                        end,
                     })
                 })
                 .collect()
@@ -1709,7 +1849,20 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
         return None;
     }
     let key = crate::plans::plan_key(&repo.id, &plan.id);
+    // F1: una copia completada ya no se hace sola (sí a mano, con «Copiar ahora»).
+    if plan_finished(plan, &key, state, now) {
+        return None;
+    }
     let since = plan_since(plan, &key, state);
+    // F1: «una sola vez», a su hora (o al encender el equipo si estaba apagado), si
+    // aún no empezó ninguna desde entonces.
+    if let Some(at) = plan.end.as_ref().and_then(PlanEnd::once_local) {
+        if now >= at && since < at {
+            return Some(false);
+        }
+        let attempts = state.retries.get(&key).copied().unwrap_or(0);
+        return retry_due(state.runs.get(&key), attempts, now).then_some(true);
+    }
     // Tarea 7c: la anterior terminó bien después de la última vez de este.
     if plan.after.is_some() && chain_turn(plan, state, since, now) == ChainTurn::Go {
         return Some(false);
@@ -1727,7 +1880,14 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
 /// menos de 30 segundos.
 pub fn wait_until_next_slot(max: std::time::Duration, now: DateTime<Local>) -> std::time::Duration {
     let config = load_config();
-    let next = config.repos.iter().filter(|r| r.active_pause(now).is_none()).flat_map(|r| r.plans.iter()).filter_map(|p| p.schedule.next_slot(now)).min();
+    let next = config
+        .repos
+        .iter()
+        .filter(|r| r.active_pause(now).is_none())
+        .flat_map(|r| r.plans.iter())
+        // F1: «una sola vez», a su hora.
+        .filter_map(|p| p.schedule.next_slot(now).into_iter().chain(p.end.as_ref().and_then(PlanEnd::once_local).filter(|t| *t > now)).min())
+        .min();
     // Plan 0.7.26: un «después de» con retraso que ya tiene su hora.
     let chained = if config.repos.iter().any(|r| r.plans.iter().any(|p| p.after_delay_min > 0)) { next_chain_slot(&config, &load_state(), now) } else { None };
     wait_for(next.into_iter().chain(chained).min(), now, max)
@@ -2007,6 +2167,8 @@ pub fn run() -> i32 {
         }
     }
     let config = config;
+    // F1: las copias con fin cuyo último día ya pasó quedan completadas.
+    mark_finished(&config, &mut state, Local::now());
 
     let mut requested = take_requests(&config, &mut state);
     for id in &requested {
@@ -2252,6 +2414,10 @@ pub fn run() -> i32 {
                             ChainState { state: "ok".into(), at, previous: plan.after.clone().unwrap_or_default(), message: String::new() },
                         );
                     }
+                }
+                // F1: cuenta para su fin (si tiene) y, si llega, queda completada.
+                if note_end(plan, &key, &mut state, record.result != "error", Local::now()) {
+                    log(&format!("«{}» (plan «{}») completada: hizo lo que tenía previsto. Sus versiones se quedan.", repo.name, plan.name));
                 }
                 done_keys.push(key.clone());
                 state.runs.insert(key, record);
@@ -2598,6 +2764,7 @@ pub mod tests {
                 after: None,
                 after_always: false,
                 after_delay_min: 0,
+                end: None,
             }],
             verify: None,
             offsite: None,
@@ -2648,6 +2815,97 @@ pub mod tests {
         // Una fecha de fin ilegible no deja las copias paradas para siempre.
         repo.pause = Some(Pause { since: "x".into(), until: Some("mañana".into()) });
         assert!(repo.active_pause(now).is_none());
+    }
+
+    /// F1 (14pp): un plan con fin cuenta sus copias correctas y, al llegar, queda
+    /// completado: ya no se hace solo (sí a mano). La cuenta es de su regla.
+    #[test]
+    fn plan_con_fin_queda_completado() {
+        let mut repo = repo_cada_hora();
+        repo.plans[0].end = Some(PlanEnd { count: Some(2), ..Default::default() });
+        let plan = repo.plans[0].clone();
+        let mut state = AgentState::default();
+        let ok = |h: &str| RunRecord { started: at(h).to_rfc3339(), finished: at(h).to_rfc3339(), result: "ok".into(), ..Default::default() };
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 10:30")), Some(false));
+        // Una fallida no cuenta; dos correctas, sí: completada.
+        assert!(!note_end(&plan, "r#p", &mut state, false, at("2026-09-30 10:31")));
+        assert!(!note_end(&plan, "r#p", &mut state, true, at("2026-09-30 10:32")));
+        assert_eq!(end_status(&plan, "r#p", &state), (1, None));
+        assert!(note_end(&plan, "r#p", &mut state, true, at("2026-09-30 11:32")));
+        state.runs.insert("r#p".into(), ok("2026-09-30 11:30"));
+        let (hechas, cuando) = end_status(&plan, "r#p", &state);
+        assert_eq!(hechas, 2);
+        assert!(cuando.is_some());
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 15:30")), None, "completada: no se hace sola");
+        assert_eq!(plan_turn(&repo, &plan, &state, true, at("2026-09-30 15:30")), Some(false), "a mano, sí");
+        assert!(!note_end(&plan, "r#p", &mut state, true, at("2026-09-30 15:31")), "ya no cuenta");
+        assert_eq!(end_status(&plan, "r#p", &state).0, 2);
+        // «Reanudar» (otra regla, con otro `since`): vuelve a contar desde cero.
+        let mut otra = plan.clone();
+        otra.end = Some(PlanEnd { count: Some(2), since: Some(at("2026-10-01 09:00").to_rfc3339()), ..Default::default() });
+        assert_eq!(end_status(&otra, "r#p", &state), (0, None));
+        assert_eq!(plan_turn(&repo, &otra, &state, false, at("2026-10-01 10:30")), Some(false));
+
+        // Termina el día …: después de ese día, completada (y se anota al verlo).
+        let mut hasta = plan.clone();
+        hasta.end = Some(PlanEnd { until: Some("2026-09-30".into()), ..Default::default() });
+        let mut st = AgentState::default();
+        assert!(!plan_finished(&hasta, "r#p", &st, at("2026-09-30 23:59")));
+        assert!(plan_finished(&hasta, "r#p", &st, at("2026-10-01 00:01")));
+        assert_eq!(plan_turn(&repo, &hasta, &st, false, at("2026-10-01 10:30")), None);
+        let mut cfg = AgentConfig::default();
+        let mut r2 = repo.clone();
+        r2.plans = vec![hasta.clone()];
+        cfg.repos.push(r2);
+        mark_finished(&cfg, &mut st, at("2026-10-01 00:05"));
+        assert!(end_status(&hasta, "r#p", &st).1.is_some());
+    }
+
+    /// F1: «una sola vez» a su hora (o al encender el equipo después) y nunca más;
+    /// «solo a mano» nunca se hace solo.
+    #[test]
+    fn una_sola_vez_y_solo_a_mano() {
+        let mut repo = repo_cada_hora();
+        repo.plans[0].schedule = crate::plans::PlanSchedule::from_rules(vec![]);
+        repo.plans[0].end = Some(PlanEnd { once_at: Some("2026-09-30T21:30".into()), ..Default::default() });
+        let plan = repo.plans[0].clone();
+        let mut state = AgentState::default();
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 21:00")), None, "aún no es la hora");
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 21:31")), Some(false));
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-10-02 08:00")), Some(false), "el equipo estaba apagado: al encenderlo");
+        // Hecha bien: completada.
+        state.runs.insert(
+            "r#p".into(),
+            RunRecord {
+                started: at("2026-09-30 21:31").to_rfc3339(),
+                finished: at("2026-09-30 21:40").to_rfc3339(),
+                result: "ok".into(),
+                ..Default::default()
+            },
+        );
+        assert!(note_end(&plan, "r#p", &mut state, true, at("2026-09-30 21:40")));
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-10-02 08:00")), None);
+        // Si falla, no vuelve a empezar cada vuelta: solo los reintentos de siempre.
+        let mut st = AgentState::default();
+        st.runs.insert(
+            "r#p".into(),
+            RunRecord {
+                started: at("2026-09-30 21:31").to_rfc3339(),
+                finished: at("2026-09-30 21:32").to_rfc3339(),
+                result: "error".into(),
+                ..Default::default()
+            },
+        );
+        st.retries.insert("r#p".into(), MAX_RETRIES);
+        assert_eq!(plan_turn(&repo, &plan, &st, false, at("2026-09-30 23:00")), None);
+
+        // Solo a mano: nunca toca solo.
+        repo.plans[0].end = Some(PlanEnd { manual: true, ..Default::default() });
+        let manual = repo.plans[0].clone();
+        let st = AgentState::default();
+        assert_eq!(plan_turn(&repo, &manual, &st, false, at("2026-10-05 10:00")), None);
+        assert_eq!(plan_turn(&repo, &manual, &st, true, at("2026-10-05 10:00")), Some(false));
+        assert!(!plan_finished(&manual, "r#p", &st, at("2030-01-01 00:00")), "solo a mano no termina");
     }
 
     /// Tarea 7c: un plan «después de la anterior» empieza cuando la anterior
