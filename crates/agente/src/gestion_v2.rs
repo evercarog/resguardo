@@ -1631,7 +1631,7 @@ fn proximas(copias: &[Copia], ahora: chrono::DateTime<chrono::Local>) -> Value {
             continue;
         }
         if let Some(at) = plan.and_then(|p| p.end.as_ref()).and_then(crate::agent::PlanEnd::once_local) {
-            let empezada = estado.runs.get(&clave).and_then(|r| chrono::DateTime::parse_from_rfc3339(&r.started).ok()).is_some_and(|t| t >= at);
+            let empezada = plan.and_then(|p| p.end.as_ref()).is_some_and(|e| e.once_started(estado.runs.get(&clave)));
             out.insert(k.id.clone(), if k.activa && !empezada { json!(at.max(ahora).to_rfc3339()) } else { Value::Null });
             continue;
         }

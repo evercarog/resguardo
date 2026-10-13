@@ -422,6 +422,15 @@ impl PlanEnd {
     pub fn until_date(&self) -> Option<chrono::NaiveDate> {
         chrono::NaiveDate::parse_from_str(self.until.as_deref()?, "%Y-%m-%d").ok()
     }
+    /// «Una sola vez»: ¿empezó ya alguna vuelta que cuente? Las de antes de su hora o de
+    /// cuando se puso (`since`, la hora absoluta de la consola) no cuentan. Así «Ahora»
+    /// (una hora ya pasada) no depende de la zona horaria del navegador.
+    pub fn once_started(&self, last: Option<&RunRecord>) -> bool {
+        let Some(at) = self.once_local() else { return false };
+        let since = self.since.as_deref().and_then(|s| DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Local));
+        let umbral = since.map_or(at, |d| d.max(at));
+        last.and_then(|r| DateTime::parse_from_rfc3339(&r.started).ok()).is_some_and(|t| t.with_timezone(&Local) >= umbral)
+    }
 }
 
 /// F1: la cuenta de un plan con fin (en `state.json`).
@@ -1857,7 +1866,7 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
     // F1: «una sola vez», a su hora (o al encender el equipo si estaba apagado), si
     // aún no empezó ninguna desde entonces.
     if let Some(at) = plan.end.as_ref().and_then(PlanEnd::once_local) {
-        if now >= at && since < at {
+        if now >= at && !plan.end.as_ref().is_some_and(|e| e.once_started(state.runs.get(&key))) {
             return Some(false);
         }
         let attempts = state.retries.get(&key).copied().unwrap_or(0);
@@ -2898,6 +2907,17 @@ pub mod tests {
         );
         st.retries.insert("r#p".into(), MAX_RETRIES);
         assert_eq!(plan_turn(&repo, &plan, &st, false, at("2026-09-30 23:00")), None);
+
+        // «Ahora»: una hora ya pasada (la víspera a las 00:00) y `since`, cuando se puso: toca
+        // aunque el equipo tenga otra zona horaria, y una vuelta de antes no cuenta.
+        let mut ahora = plan.clone();
+        ahora.end = Some(PlanEnd { once_at: Some("2026-10-04T00:00".into()), since: Some(at("2026-10-05 09:00").to_rfc3339()), ..Default::default() });
+        let mut st = AgentState::default();
+        st.runs.insert("r#p".into(), RunRecord { started: at("2026-10-04 13:00").to_rfc3339(), result: "ok".into(), ..Default::default() });
+        assert_eq!(plan_turn(&repo, &ahora, &st, false, at("2026-10-05 09:01")), Some(false));
+        st.runs.insert("r#p".into(), RunRecord { started: at("2026-10-05 09:02").to_rfc3339(), result: "error".into(), ..Default::default() });
+        st.retries.insert("r#p".into(), MAX_RETRIES);
+        assert_eq!(plan_turn(&repo, &ahora, &st, false, at("2026-10-05 10:00")), None, "ya empezó una: no otra cada vuelta");
 
         // Solo a mano: nunca toca solo.
         repo.plans[0].end = Some(PlanEnd { manual: true, ..Default::default() });
