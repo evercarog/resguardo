@@ -8,7 +8,8 @@
   // «Personalizar») y en el avanzado (el editor completo a la vista): los dos
   // cambian la copia con las funciones de lib/copiaGuiada.ts.
   import { untrack } from "svelte";
-  import { CalendarClock, Link2, Repeat, Settings2, Timer } from "@lucide/svelte";
+  import { CalendarClock, Lightbulb, Link2, Repeat, Settings2, Timer } from "@lucide/svelte";
+  import Ayuda from "$lib/componentes/Ayuda.svelte";
   import { tip } from "$lib/tooltip";
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
   import { aplicarPlantilla, AYUDA_INICIO, inicioDe, plantillaDe, ponerInicio, ponerRetraso, RETRASOS, retrasoEnFrase, TEXTO_INICIO, TEXTO_PLANTILLA, type ModoInicio, type PlantillaHorario } from "$lib/copiaGuiada";
@@ -102,6 +103,8 @@
     {:else}
       <EditorHorario id={k.id} bind:horario={k.horario} admiteReglas={admite.reglas} {version} />
     {/if}
+    <!-- 14qq: el truco de «cada 5 minutos + solo si hay cambios», en vez de «cuando algo cambie». -->
+    <p class="faint linea consejo"><Lightbulb size={14} aria-hidden="true" /><span>Para copiar enseguida lo que cambia poco: cada 5 minutos con «Solo guardar si hay cambios». Si no cambió nada, no guarda nada ni ocupa espacio. <Ayuda id="copiar-enseguida" /></span></p>
   {:else}
     {#if otraAnterior}<p class="faint linea">Va después de «{otraAnterior.nombre}», que no es la de encima.</p>{/if}
     <div class="retraso">
@@ -218,5 +221,14 @@
   .linea {
     margin: 0;
     font-size: var(--fs-sm);
+  }
+  .consejo {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .consejo > :global(svg) {
+    flex: none;
+    margin-top: 2px;
   }
 </style>

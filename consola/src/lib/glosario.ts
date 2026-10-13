@@ -256,6 +256,12 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "«Con horario»: a sus horas. «En cadena»: cuando la copia de encima termina bien; si falla, esta no se hace y se avisa. «Después de la anterior»: cuando la de encima termina, salga bien o mal. En las dos últimas, sin horario propio: enseguida o con unos minutos de retraso.",
     todo: "La primera copia siempre empieza con su horario. «Después de la anterior» y el retraso piden un agente actualizado.",
   },
+  // 14qq (lo que sí se hace): el truco para copiar enseguida, sin otra opción.
+  "copiar-enseguida": {
+    title: "Copiar enseguida lo que cambia poco",
+    text: "Ponla «Cada 5 minutos» y deja puesto «Solo guardar si hay cambios» (en «Qué → Más opciones»). Cada 5 minutos el equipo mira si algo cambió: si no cambió, no guarda nada ni ocupa espacio; si cambió, lo guarda enseguida.",
+    todo: "En servidores con mucha escritura (bases de datos, carpetas que cambian sin parar), mejor cada 15 o 30 minutos: cada copia revisa las carpetas y hace una instantánea del disco.",
+  },
   exclusiones: {
     title: "No copiar",
     text: "Archivos o carpetas que se dejan fuera, una regla por línea: «*.tmp» deja fuera todos los .tmp; «node_modules», las carpetas con ese nombre. Las habituales ya vienen puestas.",
