@@ -13,7 +13,7 @@ import { abrir, parEfimero } from "../../src/lib/cripto/sobre";
 import { etiquetaEquipo, etiquetaValida, hashCodigo, kCfg, materialCliente, pruebaAdmin, pruebaCodigo, resultadoFirmado, sasV3, verificador, ARGON2, type Argon2 } from "../../src/lib/cripto/claves";
 import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
 import { cola } from "../../src/lib/cola";
-import { esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, sellarOrden, type Autorizacion } from "../../src/lib/cripto/ordenes";
+import { esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, pideAdminPorCuerpo, sellarOrden, type Autorizacion } from "../../src/lib/cripto/ordenes";
 import { claveDireccion, cifrarMensaje, descifrarMensaje } from "../../src/lib/cripto/simetrico";
 import type { Cliente, Equipo, Orden } from "../../src/lib/tipos";
 import { Autenticador, comprobar, deBase32, EXE, ejecutar, escucha, esperar, Fallo, igual, log, pedirHttps, Proceso, type Respuesta } from "./entorno";
@@ -229,7 +229,8 @@ export class Consola {
   ): Promise<Orden> {
     const e = await this.equipo(c, equipoId);
     const autorizacion: Autorizacion = { prueba_admin: null, clave_repo: null };
-    const necesitaAdmin = NIVEL[tipo] === "admin" || PIDE_TAMBIEN_ADMIN.has(tipo);
+    // Plan 0.8.0 (13a, 13b): restaurar en otra carpeta o en un .zip pide también la clave de administración.
+    const necesitaAdmin = NIVEL[tipo] === "admin" || PIDE_TAMBIEN_ADMIN.has(tipo) || pideAdminPorCuerpo(tipo, cuerpo);
     const cuerpoFinal = { ...cuerpo };
     if (extra.alta) {
       const clave = secretos.claveAdmin!;

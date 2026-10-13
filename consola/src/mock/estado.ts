@@ -407,7 +407,7 @@ export async function sembrar(vacio = false) {
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto", "cadenas", "derivadas"],
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real"],
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },

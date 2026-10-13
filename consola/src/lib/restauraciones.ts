@@ -146,13 +146,13 @@ export interface OrigenRestauracion {
 }
 
 /**
- * El recomendado: el primero disponible en orden de cercanía (el principal, las copias del
- * propio equipo y, al final, los espejos del almacén), sin fallos; si no hay ninguno sin
- * fallos, el primero disponible.
+ * El recomendado: el más cercano que responde (en orden: el principal, las copias del
+ * propio equipo y, al final, los espejos del almacén); unos avisos (una copia que falló)
+ * no lo descartan, que no responda sí. Si ninguno responde, el primero disponible.
  */
 export function recomendar(os: OrigenRestauracion[]): OrigenRestauracion[] {
   const posibles = os.filter((o) => !o.noSe);
-  const elegido = posibles.find((o) => o.estado === "ok") ?? posibles.find((o) => o.estado !== "fallo") ?? posibles[0];
+  const elegido = posibles.find((o) => o.estado !== "fallo") ?? posibles[0];
   return os.map((o) => ({ ...o, recomendado: !!elegido && o.id === elegido.id }));
 }
 

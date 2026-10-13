@@ -1080,19 +1080,19 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         const pw = c.contrasena_zip;
         if (pw !== undefined && (typeof pw !== "string" || pw.length < 8 || pw.length > 128)) return resultado(e, o, "fallida", "La contraseña del .zip tiene que tener entre 8 y 128 caracteres.");
       }
-      // 13c: en vivo, como el agente (en esta consola: la empezó ella).
-      resultado(e, o, "en_marcha", "Restaurando…");
-      await new Promise<void>((listo) => empezarRestauracion(e.cliente, e.id, String(c.repo ?? ""), 14_000, { por: plana.por ?? null, otra_consola: false, en_el_equipo: false }, listo));
       // v1.10: «en su sitio» solo dentro de las carpetas que copia el equipo (como el agente).
       if (c.destino === "original") {
         const copiadas = configInicial(e).copias.flatMap((k) => k.carpetas).map((x) => x.toLowerCase().replace(/\\/g, "/").replace(/^([a-z]):/, "/$1"));
         const fuera = rutas.find((r) => !copiadas.some((k) => r.toLowerCase() === k || r.toLowerCase().startsWith(`${k}/`)));
         if (fuera) return resultado(e, o, "fallida", `«${fuera}» no está en las carpetas que copia este equipo: restáuralo junto al original.`);
       }
-      // Una unidad entera («/C») no se restaura (como el agente).
-      if (rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
+      // Una unidad entera («/C») no se restaura junto al original ni en su sitio; en otra carpeta o en un .zip, sí (como el agente).
+      if (c.destino !== "nueva" && c.destino !== "zip" && rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
         return resultado(e, o, "fallida", "No se puede restaurar una unidad entera de una vez. Elige las carpetas de dentro.");
       }
+      // 13c: en vivo, como el agente (en esta consola: la empezó ella).
+      resultado(e, o, "en_marcha", "Restaurando…");
+      await new Promise<void>((listo) => empezarRestauracion(e.cliente, e.id, String(c.repo ?? ""), 14_000, { por: plana.por ?? null, otra_consola: false, en_el_equipo: false }, listo));
       // Como el agente: sin la carpeta (no manda rutas; la consola la enseña aparte).
       anotar(true, null);
       return resultado(e, o, "hecha", `Restaurado (${rutas.length} elementos).`);

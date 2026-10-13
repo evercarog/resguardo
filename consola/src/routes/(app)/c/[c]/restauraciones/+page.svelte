@@ -160,7 +160,7 @@
     <div class="cifras" role="list" aria-label="Cifras de las restauraciones">
       <Cifra icono={ArchiveRestore} etiqueta="Restauraciones" valor={numero(cifras.total)} sub={cifras.fallidas ? plural(cifras.fallidas, "fallida", "fallidas") : "todas correctas"} mal={cifras.fallidas > 0} />
       <Cifra icono={Clock} etiqueta="Tiempo medio (RTO real)" valor={textoTardo(cifras.medio_s)} sub={cifras.maximo_s != null ? `la más larga, ${textoTardo(cifras.maximo_s)}` : "sin correctas"} />
-      <Cifra icono={CircleCheck} etiqueta="Éxito" valor={cifras.exito == null ? "—" : `${cifras.exito} %`} sub={`${bytes(cifras.bytes)} restaurados`} mal={cifras.exito != null && cifras.exito < 100} />
+      <Cifra icono={CircleCheck} etiqueta="Éxito" valor={cifras.exito == null ? "—" : `${cifras.exito} %`} sub={`${bytes(cifras.bytes)} restaurados`} />
       <Cifra icono={MessageSquareText} etiqueta="Sin motivo" valor={numero(cifras.sinMotivo)} sub={datos.ajustes.motivo_obligatorio ? "el motivo es obligatorio" : "el motivo es opcional"} />
     </div>
 

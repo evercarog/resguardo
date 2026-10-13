@@ -718,6 +718,81 @@ async function principal() {
     log(`Restaurado en «Facturas/${restaurado}»`);
 
     // -----------------------------------------------------------------------
+    paso("4b. Restaurar en otra carpeta (nueva o vacía) y en un .zip con contraseña; su registro (plan 0.8.0, E1 y E2)");
+    {
+      const conAdmin = { ...secretosRepo, claveAdmin: CLAVE_ADMIN };
+      const facturasV = rutaRestic(path.join(datosB, "Facturas"));
+      // 13a: en una carpeta nueva (la crea el equipo), con su motivo.
+      const carpetaNueva = path.join(base, "restaurado-otra-carpeta");
+      const cuerpoNueva = { repo: repoId, version, rutas: [facturasV], destino: "nueva", carpeta: carpetaNueva, motivo: { tipo: "prueba", notas: "Prueba de extremo a extremo" } };
+      const oNueva = await consola.mandar(c, eqB.id, "restaurar", cuerpoNueva, conAdmin);
+      const rNueva = await consola.resultado(c, eqB.id, oNueva, { plazo: 120_000 });
+      igual(rNueva.estado, "hecha", `Restaurar en otra carpeta: ${rNueva.mensaje}`);
+      comprobar(!(rNueva.mensaje ?? "").includes(base), "El resultado va sin rutas del equipo", rNueva.mensaje);
+      igual(fs.readFileSync(path.join(carpetaNueva, "Facturas", "factura-001.txt"), "utf8"), contenido, "En la carpeta nueva, la factura de la versión");
+      // Otra vez a la misma: ya no está vacía, el equipo se niega (nunca sobrescribe).
+      const rOtra = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "restaurar", cuerpoNueva, conAdmin), { plazo: 120_000 });
+      igual(rOtra.estado, "fallida", "Una carpeta con algo dentro: no se restaura encima");
+      comprobar(/no está vacía/.test(rOtra.mensaje ?? ""), "Dice que la carpeta no está vacía", rOtra.mensaje);
+      // Una carpeta del sistema, tampoco.
+      const sistema = WIN ? path.join(process.env.SystemRoot ?? "C:\\Windows", "Temp", "resguardo-e2e") : "/etc/resguardo-e2e";
+      const rSis = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "restaurar", { ...cuerpoNueva, carpeta: sistema }, conAdmin), { plazo: 120_000 });
+      igual(rSis.estado, "fallida", "En una carpeta del sistema: no");
+      comprobar(!fs.existsSync(sistema), "Nada creado en la carpeta del sistema", sistema);
+
+      // 13b: en un .zip con contraseña (AES-256) en una carpeta que ya existe.
+      const carpetaZip = dir("zips-e2e");
+      fs.mkdirSync(carpetaZip, { recursive: true });
+      const claveZip = "una clave del zip de prueba";
+      const rZip = await consola.resultado(
+        c,
+        eqB.id,
+        await consola.mandar(c, eqB.id, "restaurar", { repo: repoId, version, rutas: [facturasV], destino: "zip", carpeta: carpetaZip, nombre: "Facturas", contrasena_zip: claveZip }, conAdmin),
+        { plazo: 120_000 },
+      );
+      igual(rZip.estado, "hecha", `Restaurar en un .zip: ${rZip.mensaje}`);
+      const zip = fs.readFileSync(path.join(carpetaZip, "Facturas.zip"));
+      igual(zip.readUInt32LE(0), 0x04034b50, "Es un .zip");
+      comprobar(zip.includes(Buffer.from([0x01, 0x99, 0x07, 0x00])), "Lleva el campo de AES (0x9901) en cada archivo", zip.length);
+      comprobar(!zip.includes(Buffer.from(contenido)) && !zip.includes(Buffer.from(claveZip)), "Ni el contenido ni la contraseña van en claro");
+      // Otra vez con el mismo nombre: otro .zip, nunca encima.
+      const rZip2 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "restaurar", { repo: repoId, version, rutas: [rutaRestic(original)], destino: "zip", carpeta: carpetaZip, nombre: "Facturas" }, conAdmin), { plazo: 120_000 });
+      igual(rZip2.estado, "hecha", `El segundo .zip: ${rZip2.mensaje}`);
+      comprobar(fs.existsSync(path.join(carpetaZip, "Facturas (2).zip")), "El segundo, «Facturas (2).zip»", fs.readdirSync(carpetaZip));
+
+      // 13d, 14l: el equipo anota cada restauración en su bitácora (sin rutas) y llega al servidor.
+      type Reg = { entradas: { id: string; destino?: string; resultado: string; cifrado?: boolean; motivo?: { tipo: string } | null; por?: string | null }[]; notas: { id: string; motivo: string }[] };
+      const reg = await esperar(
+        "el registro de restauraciones en el servidor",
+        async () => {
+          const r = await consola.ok<Reg>("GET", `/api/clientes/${c.id}/restauraciones?equipo=${eqB.id}`);
+          return r.entradas.some((x) => x.id === `restauracion-${oNueva.id}`) && r.entradas.some((x) => x.destino === "zip" && x.cifrado) ? r : undefined;
+        },
+        { plazo: 150_000, cada: 2_000 },
+      );
+      const laNueva = reg.entradas.find((x) => x.id === `restauracion-${oNueva.id}`)!;
+      igual([laNueva.destino, laNueva.resultado, laNueva.motivo?.tipo, laNueva.por], ["nueva", "ok", "prueba", "Ana"], "La entrada de la restauración en otra carpeta");
+      comprobar(reg.entradas.some((x) => x.destino === "nueva" && x.resultado === "fallo"), "También la que no se pudo hacer", reg.entradas);
+      const texto = JSON.stringify(reg);
+      comprobar(!texto.includes(base) && !texto.includes("factura-001") && !texto.includes(claveZip), "El registro no lleva rutas, nombres de archivos ni la contraseña del .zip");
+      // El motivo que añade una persona en esta consola.
+      await consola.ok("PUT", `/api/clientes/${c.id}/equipos/${eqB.id}/restauraciones/restauracion-${oNueva.id}`, { motivo: "borrado", notas: "Lo pidió el cliente" });
+      const reg2 = await consola.ok<Reg>("GET", `/api/clientes/${c.id}/restauraciones?equipo=${eqB.id}`);
+      comprobar(reg2.notas.some((n) => n.id === `restauracion-${oNueva.id}` && n.motivo === "borrado"), "El motivo de esta consola queda guardado", reg2.notas);
+      // 13e: una restauración real correcta cuenta como prueba de restauración del repositorio.
+      const conReal = await esperar(
+        "la restauración real en el informe de B",
+        async () => {
+          const inf = (await consola.ok<{ datos: { repos?: { id: string; restauracion_real?: { ultima: string } | null }[] } }[]>("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/informes?limite=1`))[0];
+          return inf?.datos.repos?.find((x) => x.id === repoId)?.restauracion_real ?? undefined;
+        },
+        { plazo: 150_000, cada: 2_000 },
+      );
+      comprobar(!!conReal.ultima, "El informe dice cuándo fue la restauración real", conReal);
+      log("Restaurado en otra carpeta y en .zip (AES-256), con su registro");
+    }
+
+    // -----------------------------------------------------------------------
     paso("4a. Actualización automática: la consola sirve una versión firmada (llave de PRUEBAS) y B «se actualiza»");
     {
       // docs/actualizaciones.md: la sustitución real del programa se prueba en máquinas virtuales
