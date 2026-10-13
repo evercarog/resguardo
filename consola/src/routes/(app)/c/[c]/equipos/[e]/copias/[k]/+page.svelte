@@ -253,6 +253,8 @@
         </div>
       {/if}
     </header>
+    <!-- 14ww (1): la observación de la copia, a la vista bajo el título. -->
+    <Observaciones tipo="copia" objeto={objetoDe(e, kid)} />
     {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
     <!-- Lo del repositorio, a la vista (docs/editor-de-copias.md): retención, verificación, prueba y «Añadir paso». -->
     {#if repo && actual.cliente && puede.ordenar(rol)}
@@ -265,7 +267,6 @@
         hrefExterna={puede.ordenar(rol) ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(repo.id)}` : undefined}
       />
     {/if}
-    <Observaciones tipo="copia" objeto={objetoDe(e, kid)} />
 
     <EnMarcha equipo={e} copia={kid} marco alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
 
@@ -528,16 +529,23 @@
     {#if versiones.length >= 2 || conDuracion.length >= 2}
       <section class="card p graficas" id="sec-graficas" aria-labelledby="t-graficas">
         <h2 class="section-title" id="t-graficas"><ChartColumn size={16} />Datos nuevos por versión</h2>
-        {#if versiones.length >= 2}<GraficaBarras titulo="Datos añadidos" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />{/if}
-        {#if conDuracion.length >= 2}
-          <GraficaBarras titulo="Duración de cada copia" datos={conDuracion} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} alElegir={(x) => abrirVuelta(x.hora)} elegido={sel.vuelta} />
-        {:else}
-          <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
-        {/if}
-        {#if versiones.length >= 2}
-          <GraficaBarras titulo="Archivos nuevos y cambiados" datos={versiones} valor={(v) => (v.archivos_nuevos == null && v.archivos_cambiados == null ? null : (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0))} formato={(x) => numero(x)} alElegir={(v) => abrirVersion(v.id, "nuevos")} elegido={sel.version} clave={(v) => v.id} />
-          <GraficaBarras titulo="Tamaño de lo copiado" datos={versiones} valor={(v) => v.total_bytes} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
-        {/if}
+        <!-- Agrupadas por tema (14vv): a la izquierda el tamaño, a la derecha la actividad; en estrecho, en ese orden. -->
+        <div class="col-graf" aria-label="Tamaño">
+          {#if versiones.length >= 2}
+            <GraficaBarras titulo="Datos añadidos" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+            <GraficaBarras titulo="Tamaño de lo copiado" datos={versiones} valor={(v) => v.total_bytes} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+          {/if}
+        </div>
+        <div class="col-graf" aria-label="Actividad">
+          {#if versiones.length >= 2}
+            <GraficaBarras titulo="Archivos nuevos y cambiados" datos={versiones} valor={(v) => (v.archivos_nuevos == null && v.archivos_cambiados == null ? null : (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0))} formato={(x) => numero(x)} alElegir={(v) => abrirVersion(v.id, "nuevos")} elegido={sel.version} clave={(v) => v.id} />
+          {/if}
+          {#if conDuracion.length >= 2}
+            <GraficaBarras titulo="Duración de cada copia" datos={conDuracion} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} alElegir={(x) => abrirVuelta(x.hora)} elegido={sel.vuelta} />
+          {:else}
+            <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+          {/if}
+        </div>
       </section>
     {/if}
 
@@ -799,6 +807,15 @@
     gap: var(--sp-6);
   }
   /* El título de la sección, a todo lo ancho (las gráficas van en dos columnas). */
+  .col-graf {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+    min-width: 0;
+  }
+  .col-graf:empty {
+    display: none;
+  }
   .graficas > h2 {
     display: flex;
     align-items: center;

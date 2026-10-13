@@ -350,8 +350,15 @@
 
     {#if versiones.length >= 2}
       <section class="card p graficas" id="sec-graficas" aria-label="Gráficas por versión">
-        <GraficaBarras titulo="Datos añadidos por versión" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
-        <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+        <!-- Mismo orden que en la página de la copia (14vv): tamaño a la izquierda, actividad a la derecha. -->
+        <div class="col-graf" aria-label="Tamaño">
+          <GraficaBarras titulo="Datos añadidos" datos={versiones} valor={(v) => anadidoDe(v)} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+          <GraficaBarras titulo="Tamaño de lo copiado" datos={versiones} valor={(v) => v.total_bytes} formato={(x) => bytes(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+        </div>
+        <div class="col-graf" aria-label="Actividad">
+          <GraficaBarras titulo="Archivos nuevos y cambiados" datos={versiones} valor={(v) => (v.archivos_nuevos == null && v.archivos_cambiados == null ? null : (v.archivos_nuevos ?? 0) + (v.archivos_cambiados ?? 0))} formato={(x) => numero(x)} alElegir={(v) => abrirVersion(v.id, "nuevos")} elegido={sel.version} clave={(v) => v.id} />
+          <GraficaBarras titulo="Duración por versión" datos={versiones} valor={(v) => v.duracion_s} formato={(x) => duracion(x)} alElegir={(v) => abrirVersion(v.id)} elegido={sel.version} clave={(v) => v.id} />
+        </div>
       </section>
     {/if}
 
@@ -560,6 +567,12 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--sp-6);
+  }
+  .col-graf {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+    min-width: 0;
   }
   .pie {
     margin: 0;
