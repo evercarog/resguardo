@@ -128,6 +128,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   cambiar_derivada: "Cambiar una copia derivada",
   quitar_derivada: "Quitar una copia derivada",
   rotar_contrasena_repo: "Cambiar la contraseña del repositorio",
+  comprobar_contrasena: "Comprobar la contraseña",
   alta: "Dar de alta",
   config: "Cambiar las copias",
   elegir_carpetas: "Elegir carpetas",

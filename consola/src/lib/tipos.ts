@@ -474,6 +474,8 @@ export interface RepositorioResumen {
   id: string;
   nombre: string;
   destino: string;
+  /** 14bbb: la última vez que «Comprobar la contraseña» lo abrió (`bien`) y cómo fue la última. */
+  contrasena_comprobada?: ContrasenaComprobada | null;
   versiones?: number;
   bytes?: number;
   ultima_version?: string | null;
@@ -943,7 +945,9 @@ export type TipoAviso =
   // 14uu (plan 0.8.0, D3): los crea el servidor con los datos básicos del equipo.
   | "disco_lleno"
   | "sin_soporte_pronto"
-  | "sin_soporte";
+  | "sin_soporte"
+  // 14bbb: la contraseña de un repositorio lleva N meses sin comprobarse.
+  | "kit_por_comprobar";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {
@@ -986,6 +990,29 @@ export interface PublicacionServidor {
   vigente: PublicacionAgente | null;
   guardadas: PublicacionAgente[];
   version_servidor: string;
+  /** 14f: bajarlas solas de GitHub (servidor anterior: sin el campo). */
+  github?: {
+    ajustes: { activo: boolean; horas: number };
+    ultima: { cuando: number; resultado: "nueva" | "al_dia" | "sin_red" | "no_cuadra"; version?: string | null; mensaje?: string | null; instalador?: string | null } | null;
+    buscando: boolean;
+    /** false: compilación de desarrollo sin RESGUARDO_GITHUB_AUTO (solo «Buscar ahora»). */
+    automatica: boolean;
+  };
+  /** 14dd: el instalador del agente de Windows que da el servidor. */
+  instalador?: { hay: boolean; de_datos: boolean; version?: string | null };
+}
+
+/** 14bbb: «Comprobar la contraseña» de un repositorio, según el equipo. */
+export interface ContrasenaComprobada {
+  bien?: string | null;
+  ultima: string;
+  resultado: "abre" | "no_abre" | "sin_respuesta";
+}
+
+/** 14bbb: el recordatorio de comprobar los kits de un cliente. */
+export interface RecordatorioKit {
+  activo: boolean;
+  meses: number;
 }
 
 /**

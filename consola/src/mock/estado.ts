@@ -564,7 +564,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -581,7 +581,10 @@ export async function sembrar(vacio = false) {
         ],
         cambio_config: { tipo: "config", cuando: hace(60 * 3), consola: { nombre: "Consola en línea", url: "https://consola.ejemplo.com", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=" } },
         // Con copia externa diaria a un segundo disco (cambiar_copia_externa).
-        repositorios: [{ ...repo("caja", "Caja", "almacen-sur", 77, 4_100_000_000), retencion: "7 diarias · 4 semanales · 12 mensuales · 2 anuales", retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 }, solo_anadir: true, externa: { destino: "Disco 2", destino_id: "disco-2", hora: "21:00" }, verificacion_auto: { cada_dias: 7, porcentaje: 10, proxima: dentro(60 * 24 * 3), todo_leido: hace(60 * 24 * 40) },
+        repositorios: [{ ...repo("caja", "Caja", "almacen-sur", 77, 4_100_000_000), retencion: "7 diarias · 4 semanales · 12 mensuales · 2 anuales", retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 }, solo_anadir: true, externa: { destino: "Disco 2", destino_id: "disco-2", hora: "21:00" },
+            // 14bbb: la contraseña del kit se comprobó hace unos 3 meses.
+            contrasena_comprobada: { bien: hace(60 * 24 * 95), ultima: hace(60 * 24 * 95), resultado: "abre" },
+            verificacion_auto: { cada_dias: 7, porcentaje: 10, proxima: dentro(60 * 24 * 3), todo_leido: hace(60 * 24 * 40) },
             // Tarea 4b: una copia derivada a la Dropbox conectada en el propio equipo, después de cada copia, solo las diarias.
             derivadas: [{ id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true }] },
           // También en el almacén, todavía sin retención (v1.22: «Retención en el almacén…»).

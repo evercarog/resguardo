@@ -1260,6 +1260,26 @@ async function principal() {
     }
 
     // -----------------------------------------------------------------------
+    paso("6b3. «Comprobar la contraseña» (14bbb): el equipo abre de verdad el repositorio; una que no es se rechaza y cuenta como intento");
+    {
+      comprobar(eqBAhora.resumen?.admite?.includes("comprobar_contrasena"), "B admite «Comprobar la contraseña»");
+      const bien = await consola.hecha(c, eqB.id, "comprobar_contrasena", { repo: repoId }, secretosRepo, {}, 180_000);
+      comprobar(/La contraseña abre/.test(bien.mensaje ?? ""), `Bien: ${bien.mensaje}`);
+      // La copia externa a «la nube» usa otra contraseña: se dice, no se prueba con esta.
+      comprobar(/usa otra contraseña/.test(bien.mensaje ?? ""), "La copia externa con otra contraseña se dice aparte", bien.mensaje);
+      comprobar(!(bien.mensaje ?? "").includes(contrasenaRepo) && !(bien.mensaje ?? "").toLowerCase().includes("restic"), "Sin la contraseña ni la palabra del motor", bien.mensaje);
+      const detalle = JSON.parse(bien.detalle ?? "{}");
+      igual(detalle.resultado, "abre", "El detalle dice que abre");
+      const cc = await esperar("la fecha de la comprobación en el resumen de B", async () => (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.contrasena_comprobada, { plazo: 30_000 });
+      comprobar(cc.resultado === "abre" && cc.bien && Date.now() - new Date(cc.bien).getTime() < 10 * 60_000, "Queda la fecha en el resumen", cc);
+      // Una que no es: el equipo la rechaza sin probar nada (y cuenta para el bloqueo por intentos).
+      const mal = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "comprobar_contrasena", { repo: repoId }, { repo: { repo: repoId, contrasena: "no es esta" } }), { plazo: 60_000 });
+      comprobar(mal.estado === "rechazada" && /no es correcta/.test(mal.mensaje ?? ""), `Mal: ${mal.estado}: ${mal.mensaje}`);
+      const tras = (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.contrasena_comprobada;
+      igual(tras?.bien, cc.bien, "Una que no es no cambia la fecha");
+    }
+
+    // -----------------------------------------------------------------------
     paso("6c. Copia de la consola, restaurarla en otra carpeta y que los equipos vuelvan solos");
     // v1.50 (9b): un ancla de antes de la copia (como la de un resumen por correo).
     const anclaAntes = anclaDe(c.id, ((await consola.ok("GET", `/api/clientes/${c.id}/auditoria?orden=desc&limite=1`)) as EntradaAuditoria[])[0]);

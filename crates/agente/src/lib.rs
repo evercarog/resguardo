@@ -35,6 +35,7 @@ pub mod ancla;
 pub mod bandeja;
 pub mod bitacora;
 pub mod cli;
+pub mod comprobar_contrasena;
 #[cfg(test)]
 mod consolas_it;
 pub mod consolas_v2;

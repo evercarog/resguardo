@@ -1202,6 +1202,17 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       abrirSesion(e, o, plana);
       return resultado(e, o, "hecha", "Sesión abierta.");
     }
+    case "comprobar_contrasena": {
+      // 14bbb: como el agente, la contraseña ya se comparó con la guardada (y contó como intento);
+      // aquí el motor «abre» el repositorio y sus copias con la misma.
+      const repo = e.resumen?.repositorios?.find((x) => x.id === c.repo);
+      if (!repo) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      const ahora = new Date().toISOString();
+      repo.contrasena_comprobada = { bien: ahora, ultima: ahora, resultado: "abre" };
+      const copias = [repo.externa?.destino, ...(repo.derivadas ?? []).map((d) => d.destino)].filter((x): x is string => !!x);
+      const tambien = copias.length ? ` También abre la copia en ${copias.map((n) => `«${n}»`).join(" y ")}.` : "";
+      return resultado(e, o, "hecha", `La contraseña abre «${repo.nombre}»: tu kit sirve.${tambien}`);
+    }
     case "cambiar_retencion": {
       // Como el agente: valida y la guarda (v1.28: horarias, plazos y «siempre» solo si los entiende).
       const repo = e.resumen?.repositorios?.find((x) => x.id === c.repo);

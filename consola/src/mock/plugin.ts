@@ -179,6 +179,33 @@ const publicacionMock: T.PublicacionAgente = {
     { plataforma: "linux-x86_64", nombre: "resguardo-agente-x86_64-linux-musl.tar.gz", tamano: 31_200_000, sha256: "b".repeat(64), presente: true },
   ],
 };
+// 14f y 14dd: bajarlas de GitHub y el instalador del agente, simulados.
+// MOCK_SIN_INSTALADOR=1: el servidor arranca sin el instalador del agente («Ponerlo ahora»).
+let instaladorMock = process.env.MOCK_SIN_INSTALADOR !== "1";
+let instaladorVersionMock: string | null = null;
+const githubMock: NonNullable<T.PublicacionServidor["github"]> = {
+  ajustes: { activo: true, horas: 6 },
+  ultima: { cuando: Math.floor(Date.now() / 1000) - 2 * 3600, resultado: "al_dia", version: "0.7.25", mensaje: "Al día: la última versión firmada es la 0.7.25.", instalador: null },
+  buscando: false,
+  automatica: true,
+};
+let buscandoHasta = 0;
+const estadoPublicacion = (): T.PublicacionServidor => {
+  if (githubMock.buscando && Date.now() > buscandoHasta) {
+    githubMock.buscando = false;
+    githubMock.ultima = { cuando: Math.floor(Date.now() / 1000), resultado: "al_dia", version: publicacionMock.version, mensaje: `Al día: la última versión firmada es la ${publicacionMock.version}.`, instalador: null };
+  }
+  return {
+    sin_llave: false,
+    llaves: ["C57E2BA1129956D5"],
+    vigente: publicacionMock,
+    guardadas: [publicacionMock],
+    version_servidor: "0.1.0 (simulado)",
+    github: { ...githubMock },
+    instalador: { hay: instaladorMock, de_datos: true, version: instaladorVersionMock },
+  };
+};
+const recordatoriosMock = new Map<string, T.RecordatorioKit>();
 const politicasMock = new Map<string, T.PoliticaActualizaciones>();
 const anillosMock = new Map<string, "prueba" | "general">();
 const politicaDe = (c: string): T.PoliticaActualizaciones => politicasMock.get(c) ?? { modo: "auto", dias_general: 2, ventana: null, aprobada: null, retenidas: [] };
@@ -228,7 +255,68 @@ const rutas: Ruta[] = [
     /^\/api\/servidor\/publicacion$/,
     (ctx) => {
       if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
-      return { sin_llave: false, llaves: ["C57E2BA1129956D5"], vigente: publicacionMock, guardadas: [publicacionMock], version_servidor: "0.1.0 (simulado)" } satisfies T.PublicacionServidor;
+      return estadoPublicacion();
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/servidor\/publicacion\/github$/,
+    (ctx) => {
+      if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const b = ctx.cuerpo as { activo?: boolean; horas?: number };
+      const horas = b.horas ?? 6;
+      if (!(horas >= 1 && horas <= 168)) throw err(422, "datos", "Cada 1 a 168 horas.");
+      githubMock.ajustes = { activo: b.activo !== false, horas };
+      return estadoPublicacion();
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/publicacion\/github\/ahora$/,
+    (ctx) => {
+      if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      if (githubMock.buscando) throw err(409, "conflicto", "Ya está buscando en GitHub.");
+      githubMock.buscando = true;
+      buscandoHasta = Date.now() + 3000;
+      return estadoPublicacion();
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/instalador-agente$/,
+    (ctx) => {
+      if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      instaladorMock = true;
+      instaladorVersionMock = publicacionMock.version;
+      return { version: publicacionMock.version, puesto: true };
+    },
+  ],
+  [
+    "POST",
+    new RegExp(`^${C}/actualizaciones/buscar$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "tecnico");
+      return { avisados: estado.equipos.filter((e) => e.cliente === c && e.conectado).length };
+    },
+  ],
+  [
+    "GET",
+    new RegExp(`^${C}/recordatorio-kit$`),
+    (ctx, [c]) => {
+      miembro(ctx, c);
+      return recordatoriosMock.get(c) ?? { activo: true, meses: 6 };
+    },
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/recordatorio-kit$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      const b = ctx.cuerpo as Partial<T.RecordatorioKit>;
+      const r = { activo: b.activo !== false, meses: Number(b.meses ?? 6) };
+      if (!(r.meses >= 1 && r.meses <= 36)) throw err(422, "datos", "Cada 1 a 36 meses.");
+      recordatoriosMock.set(c, r);
+      return r;
     },
   ],
   [
@@ -274,7 +362,7 @@ const rutas: Ruta[] = [
       return { anillo: a };
     },
   ],
-  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: true, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024 })],
+  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: instaladorMock, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024 })],
 
   ["GET", /^\/api\/servidor\/respaldo$/, (ctx) => respaldoDe(ctx)],
   [
