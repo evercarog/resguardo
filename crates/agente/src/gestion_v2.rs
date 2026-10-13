@@ -1116,7 +1116,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 33] = [
+pub const ADMITE: &[&str] = &[
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",

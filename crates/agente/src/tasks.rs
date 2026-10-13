@@ -1375,7 +1375,7 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
 }
 
 /// 14bbb: el acceso al repositorio de una copia externa o derivada (para «Comprobar la contraseña»).
-pub fn acceso_copia(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {
+pub fn acceso_de_copia_externa(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {
     dest_access_listo(offsite, secret)
 }
 

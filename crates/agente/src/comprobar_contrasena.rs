@@ -201,12 +201,15 @@ pub fn copias_de(repo_id: &str, nombre_destino: &dyn Fn(&str) -> Option<String>)
     if let Some(o) = &r.offsite {
         v.push(Copia {
             nombre: nombre(o, "la copia externa".into()),
-            acceso: misma(&secreto.offsite_password).then(|| crate::tasks::acceso_copia(o, &secreto)),
+            acceso: misma(&secreto.offsite_password).then(|| crate::tasks::acceso_de_copia_externa(o, &secreto)),
         });
     }
     for d in &r.derived {
         let s = crate::tasks::derived_secret(&secreto, &d.id);
-        v.push(Copia { nombre: nombre(&d.offsite, d.id.clone()), acceso: misma(&s.offsite_password).then(|| crate::tasks::acceso_copia(&d.offsite, &s)) });
+        v.push(Copia {
+            nombre: nombre(&d.offsite, d.id.clone()),
+            acceso: misma(&s.offsite_password).then(|| crate::tasks::acceso_de_copia_externa(&d.offsite, &s)),
+        });
     }
     v
 }
