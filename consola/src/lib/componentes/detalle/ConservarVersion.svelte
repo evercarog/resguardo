@@ -80,10 +80,10 @@
         <p>
           {#each hechas as h, i (i)}
             {#if h.orden.not_before && h.orden.estado === "pendiente"}
-              Enviada a {h.equipo}: se aplicará dentro de <strong>{cuentaAtras(h.orden.not_before)}</strong>, salvo que alguien la cancele.
+              Enviada a {h.equipo}: se aplicará dentro de <strong>{cuentaAtras(h.orden.not_before)}</strong>, salvo que alguien la cancele.{" "}
             {:else}
               Enviada a {h.equipo}.
-            {/if}
+            {/if}{" "}
           {/each}
           {conservar ? "En unos segundos se verá junto a la versión." : ""}
         </p>

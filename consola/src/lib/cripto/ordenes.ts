@@ -185,7 +185,7 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
       return cuerpo.quitar !== true;
     // Plan 0.8.0, F2: dejar de conservar una versión (la retención podrá quitarla).
     case "conservar_version":
-      return cuerpo.conservar !== true;
+      return cuerpo.conservar === false;
     case "desvincular":
       return cuerpo.modo === "dejar_de_copiar";
     // Quitar la copia externa (hora: null) deja de proteger fuera de la oficina.

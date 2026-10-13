@@ -713,6 +713,8 @@
         pruebas: admitePrueba,
         cadenas: admiteCadenas,
         despues: admiteDespues,
+        // Plan 0.8.0, F1: «Solo a mano», «Una sola vez» y «Termina».
+        termina: admiteTermina,
       });
       // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
       for (const h of [...historiales]) {

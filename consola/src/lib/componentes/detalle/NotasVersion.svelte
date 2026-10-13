@@ -165,6 +165,9 @@
     flex-direction: column;
     gap: var(--sp-3);
   }
+  .notas-version > :global(.btn) {
+    align-self: flex-start;
+  }
   .conservada {
     display: flex;
     flex-wrap: wrap;

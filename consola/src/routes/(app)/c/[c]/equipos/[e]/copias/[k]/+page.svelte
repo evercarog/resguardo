@@ -283,7 +283,7 @@
         <CircleCheck size={16} />
         <p>
           Completada {relativo(k.completada, reloj.ahora)}: {k.termina?.una_vez ? "ya se hizo su única vez" : k.termina?.veces ? `hizo sus ${k.termina.veces === 1 ? "copia prevista" : `${k.termina.veces} copias previstas`}` : "pasó su último día"}. No avisa ni se hace sola; sus versiones, su repositorio y su retención se quedan.
-          {#if puede.ordenar(rol)}Puedes copiar a mano cuando quieras{#if puede.administrar(rol)} o reanudarla{/if}.{/if}
+          {#if puede.ordenar(rol)}{puede.administrar(rol) ? "Puedes copiar a mano cuando quieras o reanudarla." : "Puedes copiar a mano cuando quieras."}{/if}
         </p>
       </div>
       {#if reanudando}

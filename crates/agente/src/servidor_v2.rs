@@ -617,6 +617,20 @@ fn en_marcha(m: impl Into<String>) -> Resultado {
     Resultado { estado: "en_marcha", mensaje: m.into(), detalle: None }
 }
 
+/// Una vuelta del agente ahora mismo (no a los 5 minutos); si ya hay una en marcha, esta sale sola.
+fn vuelta_ahora() {
+    if crate::agent::is_managed_agent() && !crate::agent::test_mode() {
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe)
+                .arg("--agent-run")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+    }
+}
+
 /// ¿Reduce la protección? Por el tipo o, en algunas, por su cuerpo (que el
 /// servidor no ve: allí se fía del `not_before` que declara la consola, y
 /// aquí se vuelve a comprobar).
@@ -1076,7 +1090,14 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
     let seq = o.seq;
     let r: Result<Resultado, String> = (|| match o.tipo.as_str() {
         "alta" => alta(v, o),
-        "config" => g::aplicar_config(v, c).map(hecha),
+        "config" => {
+            let m = g::aplicar_config(v, c)?;
+            // Plan 0.8.0, F1: «Una sola vez · Ahora»: una vuelta enseguida (no a los 5 minutos).
+            if g::una_vez_pendiente() {
+                vuelta_ahora();
+            }
+            Ok(hecha(m))
+        }
         "crear_repositorio" => g::crear_repositorio(v, c).map(hecha),
         "cambiar_destino" => g::cambiar_destino(v, c).map(hecha),
         "cambiar_copia_externa" => g::cambiar_copia_externa(v, c, repo.unwrap_or("")).map(hecha),
@@ -1159,17 +1180,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "copiar_ahora" => {
             let m = g::copiar_ahora(v, c)?;
-            // Una vuelta del agente ahora mismo (no a los 5 minutos); si ya hay una en marcha, esta sale sola.
-            if crate::agent::is_managed_agent() && !crate::agent::test_mode() {
-                if let Ok(exe) = std::env::current_exe() {
-                    let _ = std::process::Command::new(exe)
-                        .arg("--agent-run")
-                        .stdin(std::process::Stdio::null())
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn();
-                }
-            }
+            vuelta_ahora();
             Ok(hecha(m))
         }
         "verificar_ahora" | "subir_ahora" | "probar_restauracion" => {

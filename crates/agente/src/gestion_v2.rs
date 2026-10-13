@@ -1236,7 +1236,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 32] = [
+pub const ADMITE: &[&str] = &[
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1611,6 +1611,20 @@ pub fn cadenas_informe(estado: &crate::agent::AgentState, copias: &[Copia]) -> V
 /// v1.12: la próxima vez que toca cada copia, `{id: RFC 3339 | null}`. Null si
 /// está desactivada, sin horario o su repositorio está en pausa sin fecha; con
 /// una pausa con fecha, la primera hora después de que termine.
+/// F1: ¿hay alguna copia «una sola vez» cuya hora ya llegó y que aún no empezó? (Entonces
+/// se hace una vuelta enseguida, como con «Copiar ahora».)
+pub fn una_vez_pendiente() -> bool {
+    let config = crate::agent::load_config();
+    let estado = crate::agent::load_state();
+    let ahora = chrono::Local::now();
+    config.repos.iter().flat_map(|r| r.plans.iter().map(move |p| (r, p))).any(|(r, p)| {
+        let clave = crate::plans::plan_key(&r.id, &p.id);
+        p.end.as_ref().and_then(crate::agent::PlanEnd::once_local).is_some_and(|at| at <= ahora)
+            && !p.end.as_ref().is_some_and(|e| e.once_started(estado.runs.get(&clave)))
+            && !crate::agent::plan_finished(p, &clave, &estado, ahora)
+    })
+}
+
 /// F1: copias hechas y cuándo terminó una copia con fin (según el agente).
 fn fin_de(config: &crate::agent::AgentConfig, estado: &crate::agent::AgentState, k: &Copia) -> Option<(u32, Option<String>)> {
     k.termina.as_ref().filter(|t| t.algo())?;

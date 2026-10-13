@@ -105,7 +105,8 @@
   // F1: cuándo termina y «una sola vez».
   const fin = $derived(terminaDe(k));
   const MODOS_FIN: ModoTermina[] = ["nunca", "veces", "hasta"];
-  let unaVezAhora = $state(untrack(() => esAhora(copias[i]?.termina?.una_vez)));
+  // «Ahora» es una hora ya pasada (la víspera a las 00:00); «En una fecha y hora», una que aún no llegó.
+  const unaVezAhora = $derived(esAhora(k.termina?.una_vez));
   /** La fecha y hora que se propone para «En una fecha y hora»: mañana a las 21:00. */
   const manana = () => `${fechaHoraDe(Date.now() + 86_400_000).slice(0, 10)}T21:00`;
 </script>
@@ -175,8 +176,8 @@
   {:else if modo === "una_vez"}
     <div class="retraso">
       <div class="segmented inline" role="radiogroup" aria-label="Cuándo se hace «{k.nombre}»">
-        <button type="button" role="radio" aria-checked={unaVezAhora} class:on={unaVezAhora} onclick={() => ((unaVezAhora = true), ponerUnaVez(k, "ahora"))}>Ahora</button>
-        <button type="button" role="radio" aria-checked={!unaVezAhora} class:on={!unaVezAhora} onclick={() => ((unaVezAhora = false), ponerUnaVez(k, manana()))}>En una fecha y hora</button>
+        <button type="button" role="radio" aria-checked={unaVezAhora} class:on={unaVezAhora} onclick={() => ponerUnaVez(k, "ahora")}>Ahora</button>
+        <button type="button" role="radio" aria-checked={!unaVezAhora} class:on={!unaVezAhora} onclick={() => !unaVezAhora || ponerUnaVez(k, manana())}>En una fecha y hora</button>
       </div>
       {#if !unaVezAhora}
         <label class="min">

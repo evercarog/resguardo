@@ -64,8 +64,11 @@
     gap: 6px;
     font-size: var(--fs-sm);
   }
+  .op .input {
+    width: auto;
+  }
   .num {
-    width: 6em;
+    width: 6em !important;
   }
   .nota {
     margin: 0;
