@@ -107,6 +107,9 @@
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import SinConfirmar from "$lib/componentes/SinConfirmar.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
+  // 14ii: «Generada / La escribo yo» también en la copia derivada con otra contraseña.
+  import ContrasenaRepo from "$lib/componentes/ContrasenaRepo.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import Modal from "$ui/componentes/Modal.svelte";
   import { comprobarLlaves, fijadaEl, type EstadoLlaves } from "$lib/fijadas";
   import { ErrorEtiqueta, kcfgComprobada } from "$lib/ordenar";
@@ -685,9 +688,10 @@
     conRetencion: false,
     retencion: { ...RET_EXT },
     otraContrasena: false,
-    contrasenaDestino: "",
   });
   let ext = $state(extVacia());
+  /** 14ii: la contraseña de «Otra contraseña para la copia derivada». */
+  let extPw = $state(nuevaContrasena());
   /** v1.46 (agente con `externa_existente`): «Usar uno que ya existe», bloqueo de objetos y «Probar». */
   let extX = $state(externaExtraVacia());
   const extNueva = $derived(admiteExternaExistente(equipo));
@@ -709,7 +713,7 @@
                   ...(ext.tipo !== "local" && ext.secreto ? { secreto: ext.secreto } : {}),
                 }
               : { id: ext.destino },
-          ...(ext.otraContrasena && ext.contrasenaDestino ? { contrasena_destino: ext.contrasenaDestino } : {}),
+          ...(ext.otraContrasena && claveElegida(extPw) ? { contrasena_destino: claveElegida(extPw) } : {}),
         }),
     hora: ext.hora,
     ...(ext.conRetencion ? { retencion: reglaParaOrden(ext.retencion) } : {}),
@@ -721,7 +725,7 @@
       /^([01]\d|2[0-3]):[0-5]\d$/.test(ext.hora) &&
       (extNueva && extX.modo === "existente"
         ? existenteCompleto(extX)
-        : !!ext.destino && (ext.destino !== "nuevo" || (!!ext.nombre.trim() && !!ext.donde.trim())) && (!ext.otraContrasena || ext.contrasenaDestino.length >= 8)) &&
+        : !!ext.destino && (ext.destino !== "nuevo" || (!!ext.nombre.trim() && !!ext.donde.trim())) && (!ext.otraContrasena || !errorContrasena(extPw))) &&
       !errorBloqueo(extX),
   );
   /** Qué pasa con la retención allí (lo mismo que dirá el equipo al guardarla). */
@@ -1641,7 +1645,8 @@
     probar={dialogo.campos === "externa" && extNueva ? { cuerpo: { solo_probar: true }, texto: "Probar" } : null}
     onclose={() => {
       dialogo = null;
-      ext.secreto = ext.contrasenaDestino = "";
+      ext.secreto = "";
+      olvidarContrasena(extPw);
       extX.existente.secreto = extX.existente.contrasena = "";
       // Lo que haya cambiado el equipo (p. ej. el espejo) se ve al cerrar.
       void cargar();
@@ -1876,9 +1881,10 @@
       {#if efectoExterna}<p class="faint nota-esp">{efectoExterna}</p>{/if}
     {/if}
     {#if !(extNueva && extX.modo === "existente")}
-    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia derivada<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
+    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} onchange={() => ext.otraContrasena && !extPw.generada && (extPw = nuevaContrasena())} /><span>Otra contraseña para la copia derivada<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
     {#if ext.otraContrasena}
-      <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia derivada" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia derivada." />
+      <ContrasenaRepo id="x-contrasena" bind:valor={extPw} etiqueta="Contraseña de la copia derivada" />
+      <p class="faint nota-esp">Para su kit: <code class="selectable">{claveElegida(extPw)}</code>. Apúntala antes de guardar: sin ella no se puede leer la copia derivada.</p>
     {/if}
     {/if}
   {:else if dialogo?.campos === "espejo"}

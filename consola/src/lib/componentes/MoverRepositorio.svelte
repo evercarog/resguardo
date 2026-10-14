@@ -22,7 +22,10 @@
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { argon2Navegador } from "$lib/cripto/argon2";
-  import { aB64, aleatorio, borrar, deB64, deUtf8 } from "$lib/cripto/bytes";
+  import { aB64, borrar, deB64, deUtf8 } from "$lib/cripto/bytes";
+  // 14ii: «Generada / La escribo yo», como en «Nuevo repositorio».
+  import ContrasenaRepo from "./ContrasenaRepo.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena as nuevaContrasenaRepo, olvidarContrasena } from "$lib/contrasenaRepo";
   import { pruebaAdmin } from "$lib/cripto/claves";
   import { abrir as abrirSobre, parEfimero } from "$lib/cripto/sobre";
   import { descifrarConfig } from "$lib/cripto/simetrico";
@@ -163,7 +166,10 @@
   let pasoTxt = $state("");
   let kcfg: Uint8Array | null = null;
   let prueba: Uint8Array | null = null;
-  let contrasena = $state("");
+  /** 14ii: la contraseña del repositorio nuevo, generada aquí o escrita. */
+  let pw = $state(nuevaContrasenaRepo());
+  const contrasena = $derived(claveElegida(pw));
+  const errorPw = $derived(errorContrasena(pw));
   let impreso = $state(false);
   let kitListo: (() => void) | null = null;
   let acceso: { donde: string; usuario: string; secreto: string; ca_pem: string } | null = null;
@@ -172,7 +178,8 @@
     vivo = false;
     borrar(kcfg, prueba);
     kcfg = prueba = null;
-    claveAdmin = contrasena = "";
+    claveAdmin = "";
+    olvidarContrasena(pw);
     acceso = null;
     kitListo = null;
   });
@@ -209,11 +216,6 @@
     pasoTxt = "";
   }
 
-  function nuevaContrasena() {
-    const b = aleatorio(32);
-    contrasena = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    b.fill(0);
-  }
   const idNuevo = () =>
     `${nombre
       .trim()
@@ -278,7 +280,7 @@
       }
 
       // 2. El kit (lo confirma la persona).
-      nuevaContrasena();
+      pw = nuevaContrasenaRepo();
       impreso = false;
       ponerPaso("kit", "en_marcha", "Imprímelo o guárdalo en PDF: sin esta contraseña nadie podrá leer el repositorio nuevo.");
       await new Promise<void>((res) => (kitListo = res));
@@ -303,7 +305,7 @@
         secretos: { prueba: prueba! },
         alPaso: (t) => ponerPaso("crear", "en_marcha", t),
       });
-      contrasena = "";
+      olvidarContrasena(pw);
       acceso = null;
       // Desde aquí se recuerda: si se cierra la ventana, al volver sigue.
       guardarPlan({ nuevo: id, nombre: nombre.trim(), donde: lineaLugar(o.lugar), almacen: o.almacen?.id, fase: "creando", ordenes: { crear: crear.id } });
@@ -544,6 +546,7 @@
               <span class="p-t">{p.texto} <span class="sr-only">({TEXTO_ESTADO[p.estado]})</span><span class="p-est">{TEXTO_ESTADO[p.estado]}</span></span>
               {#if p.detalle}<span class="p-d">{p.detalle}</span>{/if}
               {#if p.id === "kit" && p.estado === "en_marcha"}
+                <ContrasenaRepo id="m" bind:valor={pw} alCambiar={() => (impreso = false)} />
                 <article class="kit" id="kit-imprimible">
                   <h3>Kit de recuperación · Resguardo</h3>
                   <dl>
@@ -559,7 +562,7 @@
                 <div class="kit-acc">
                   <button type="button" class="btn btn-sm" onclick={() => window.print()}><Printer size={14} />Imprimir o guardar en PDF</button>
                   <label class="switch-row"><input type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
-                  <button type="button" class="btn btn-sm btn-primary" disabled={!impreso} onclick={() => kitListo?.()}><Check size={14} />Seguir</button>
+                  <button type="button" class="btn btn-sm btn-primary" disabled={!impreso || !!errorPw} onclick={() => kitListo?.()}><Check size={14} />Seguir</button>
                 </div>
               {/if}
             </div>

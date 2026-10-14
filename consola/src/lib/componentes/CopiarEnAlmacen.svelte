@@ -12,7 +12,10 @@
   import { Check, KeyRound, LoaderCircle, Printer, Server, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
-  import { aB64, aleatorio, borrar, deB64, deUtf8 } from "$lib/cripto/bytes";
+  import { aB64, borrar, deB64, deUtf8 } from "$lib/cripto/bytes";
+  // 14ii: «Generada / La escribo yo», como en «Nuevo repositorio».
+  import ContrasenaRepo from "./ContrasenaRepo.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import { abrir, parEfimero } from "$lib/cripto/sobre";
   import { ErrorLlavesCambiadas, mandarOrden } from "$lib/ordenar";
   import { fechaLarga } from "$lib/formato";
@@ -85,7 +88,9 @@
   let error = $state("");
   let cambiadas = $state<Equipo | null>(null);
   let acceso: Acceso | null = null;
-  let contrasena = $state("");
+  let pw = $state(nuevaContrasena());
+  const contrasena = $derived(claveElegida(pw));
+  const errorPw = $derived(errorContrasena(pw));
   let impreso = $state(false);
   let huella = $state("");
   let donde = $state("");
@@ -93,7 +98,8 @@
   let repoId = $state("");
 
   onDestroy(() => {
-    claveAdmin = contrasena = "";
+    claveAdmin = "";
+    olvidarContrasena(pw);
     if (origen) origen.contrasena = origen.secreto = "";
     acceso = null;
   });
@@ -138,9 +144,7 @@
       }
       huella = acceso.huella_tls;
       donde = acceso.destino.donde;
-      const b = aleatorio(32);
-      contrasena = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-      b.fill(0);
+      if (!pw.generada) pw = nuevaContrasena();
       // B1: su carpeta en el almacén es su nombre («contabilidad», «contabilidad-2»…).
       repoId = idRepoEnAlmacen(nombre.trim(), equipo, almacen, acceso.usuario);
       paso = "kit";
@@ -192,7 +196,8 @@
         recordarOrigen(cliente.id, equipo.id, id, origen);
         origen.contrasena = origen.secreto = "";
       }
-      claveAdmin = contrasena = "";
+      claveAdmin = "";
+      olvidarContrasena(pw);
       acceso = null;
       paso = "listo";
       alCreado?.({ id, nombre: nombre.trim(), destino: idDestinoZona(almacen.id, enZona?.id ?? PRINCIPAL) });
@@ -243,7 +248,8 @@
     </form>
   {:else if paso === "kit"}
     <div class="form">
-      <p>Este es el <strong>kit de recuperación</strong> del repositorio. Imprímelo o guárdalo en PDF antes de seguir.</p>
+      <p>Este es el <strong>kit de recuperación</strong> del repositorio. Sin esta contraseña nadie, ni tú, podrá leer sus copias: imprímelo o guárdalo en PDF antes de seguir.</p>
+      <ContrasenaRepo id="a" bind:valor={pw} alCambiar={() => (impreso = false)} />
       <article class="kit" id="kit-imprimible">
         <h3>Kit de recuperación · Resguardo</h3>
         <dl>
@@ -261,7 +267,7 @@
       {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
-        <BotonFalta type="button" disabled={ocupado} falta={impreso ? null : { texto: "Marca «He guardado el kit»", campo: "a-impreso" }} onclick={crear}><Check size={15} />Crear el repositorio en {equipo.nombre}</BotonFalta>
+        <BotonFalta type="button" disabled={ocupado} falta={errorPw ? { texto: errorPw, campo: "a-propia" } : impreso ? null : { texto: "Marca «He guardado el kit»", campo: "a-impreso" }} onclick={crear}><Check size={15} />Crear el repositorio en {equipo.nombre}</BotonFalta>
       </footer>
     </div>
   {:else}

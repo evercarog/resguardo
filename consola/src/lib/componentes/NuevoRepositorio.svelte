@@ -15,7 +15,8 @@
   import { primeraFalta } from "$lib/falta";
   import CopiarEnAlmacen from "./CopiarEnAlmacen.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
-  import { aleatorio } from "$lib/cripto/bytes";
+  import ContrasenaRepo from "./ContrasenaRepo.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import { ErrorEtiqueta, mandarOrden } from "$lib/ordenar";
   import { fechaLarga } from "$lib/formato";
   import { avisar } from "$lib/avisos.svelte";
@@ -89,16 +90,13 @@
   let carpetaNube = $state("Resguardo");
   /** «Conectar Dropbox (también) en …» desde la lista. */
   let conectarEn = $state<{ equipo: Equipo; nube: string } | null>(null);
-  /** La contraseña: generada aquí (lo normal) o escrita por la persona. */
-  let propia = $state(false);
-  let escrita = $state("");
-  let repetida = $state("");
+  /** 14ii: la contraseña, generada aquí (lo normal) o escrita por la persona. */
+  let pw = $state(nuevaContrasena());
   let tipo = $state<"rest" | "b2" | "s3" | "local">("rest");
   let donde = $state("");
   let nombreDestino = $state("");
   let usuario = $state("");
   let secretoDestino = $state("");
-  let contrasena = $state("");
   let impreso = $state(false);
   let claveAdmin = $state("");
   let ocupado = $state(false);
@@ -218,8 +216,8 @@
   /** La opción de la lista que lleva a ese almacén (el «Copiar en …» o el destino que ya tiene). */
   const opcionOtroAlmacen = $derived(otroAlmacen ? opciones.find((o) => o.uso.ok && ((o.que.tipo === "almacen" && o.que.almacen.id === otroAlmacen.id && !o.que.zona) || (o.que.tipo === "propio" && esDeAlmacen(o.que.destino, otroAlmacen)))) : undefined);
   /** La contraseña que se usará (la generada o la escrita). */
-  const clave = $derived(propia ? escrita : contrasena);
-  const errorEscrita = $derived(!propia ? null : escrita.length < 12 ? "Al menos 12 caracteres." : escrita !== repetida ? "Las dos no coinciden." : null);
+  const clave = $derived(claveElegida(pw));
+  const errorEscrita = $derived(errorContrasena(pw));
   const faltaKit = $derived(
     primeraFalta([
       [!errorEscrita, { texto: errorEscrita ?? "", campo: "r-propia" }],
@@ -227,15 +225,8 @@
     ]),
   );
 
-  /** 32 bytes aleatorios en base64url: la contraseña del repositorio. */
-  function generar() {
-    const b = aleatorio(32);
-    contrasena = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    b.fill(0);
-  }
-
   function aKit() {
-    generar();
+    if (!pw.generada) pw = nuevaContrasena();
     // B1: en un almacén (un destino que ya tiene allí), su carpeta es su nombre.
     const alm = destino?.tipo === "rest" ? equipos.find((a) => a.resumen?.guarda_copias?.activo && esDeAlmacen(destino, a)) : undefined;
     if (alm && equipo) {
@@ -255,7 +246,8 @@
   }
 
   function olvidar() {
-    contrasena = escrita = repetida = secretoDestino = claveAdmin = usuario = origen.contrasena = origen.secreto = "";
+    olvidarContrasena(pw);
+    secretoDestino = claveAdmin = usuario = origen.contrasena = origen.secreto = "";
   }
   onDestroy(olvidar);
 
@@ -419,17 +411,7 @@
   {:else if paso === "kit"}
     <div class="form">
       <p>Este es el <strong>kit de recuperación</strong> del repositorio. Sin esta contraseña nadie, ni tú, podrá leer sus copias: imprímelo o guárdalo en PDF ahora.</p>
-      <div class="segmented" role="radiogroup" aria-label="Contraseña del repositorio">
-        <button type="button" role="radio" aria-checked={!propia} class:on={!propia} onclick={() => ((propia = false), (impreso = false))}>Generada (recomendado)</button>
-        <button type="button" role="radio" aria-checked={propia} class:on={propia} onclick={() => ((propia = true), (impreso = false))}>La escribo yo</button>
-      </div>
-      {#if propia}
-        <div class="fila-campos">
-          <CampoClave id="r-propia" etiqueta="Contraseña" bind:value={escrita} />
-          <CampoClave id="r-repetida" etiqueta="Repítela" bind:value={repetida} />
-        </div>
-        {#if errorEscrita && (escrita || repetida)}<p class="error-campo">{errorEscrita}</p>{:else}<span class="field-hint">Larga y que no uses en otro sitio. La generada es más segura.</span>{/if}
-      {/if}
+      <ContrasenaRepo id="r" bind:valor={pw} alCambiar={() => (impreso = false)} />
       <article class="kit" id="kit-imprimible">
         <h3>Kit de recuperación · Resguardo</h3>
         <dl>
