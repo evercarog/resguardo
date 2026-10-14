@@ -880,15 +880,19 @@ async function principal() {
       const crudo = pdf.bytes;
       const textoPdf: string[] = [];
       for (let i = crudo.indexOf("stream\n"); i >= 0; i = crudo.indexOf("stream\n", i + 7)) {
+        if (crudo.subarray(i - 3, i).toString("latin1") === "end") continue;
         const fin = crudo.indexOf("endstream", i);
         try {
-          textoPdf.push(zlib.inflateSync(crudo.subarray(i + 7, fin)).toString("latin1"));
+          const flujo = zlib.inflateSync(crudo.subarray(i + 7, fin)).toString("latin1");
+          // Cada texto, en literal («(…) Tj») o en hexadecimal («<…> Tj», con letras fuera de ASCII).
+          for (const m of flujo.matchAll(/\(((?:\\.|[^\\)])*)\)\s*Tj|<([0-9A-Fa-f]*)>\s*Tj/g))
+            textoPdf.push(m[2] !== undefined ? Buffer.from(m[2], "hex").toString("latin1") : m[1].replace(/\\(.)/g, "$1"));
         } catch {
           /* la imagen del logo u otro flujo */
         }
       }
       const todoPdf = textoPdf.join("\n");
-      comprobar(todoPdf.includes("Pruebas funcionales \\(simulacros de recuperaci") && todoPdf.includes("(35 min)") && todoPdf.includes("(12 h)"), "El PDF lleva la sección de pruebas funcionales con su RTO y RPO", todoPdf.length);
+      comprobar(todoPdf.includes("Pruebas funcionales (simulacros de recuperación)") && textoPdf.includes("35 min") && textoPdf.includes("12 h"), "El PDF lleva la sección de pruebas funcionales con su RTO y RPO", textoPdf.filter((x) => /funcionales|min| h$/.test(x)));
       comprobar(!todoPdf.toLowerCase().includes("restic"), "Sin «restic» en el PDF");
 
       // E4: el espejo del almacén en un disco, conectado a B (aquí, la misma máquina): B restaura unos
