@@ -1148,7 +1148,7 @@ pub fn anotar_vuelta(t: &mut Trabajo, texto: &str, v: &Vuelta, resumenes: &[crat
         // Con muchos repositorios, los que más ocupan (el total sigue siendo el de todos).
         if repos.len() > MAX_OCUPA_REPOS {
             let mut l: Vec<(String, u64)> = repos.into_iter().collect();
-            l.sort_by(|a, b| b.1.cmp(&a.1));
+            l.sort_by_key(|x| std::cmp::Reverse(x.1));
             l.truncate(MAX_OCUPA_REPOS);
             repos = l.into_iter().collect();
         }

@@ -171,7 +171,7 @@
     {/if}
     {#if estado === "error" && t.resultado}<div class="notice notice-danger"><ShieldAlert size={16} /><p>{t.resultado.replace(/^ERROR:\s*/, "")}</p></div>{/if}
     {#if t.freno_aviso || t.retenidos}
-      <div class="notice notice-warn"><ShieldAlert size={16} /><p><strong>Freno:</strong> {t.freno_aviso ?? `se conservan ${plural(t.retenidos?.archivos ?? 0, "archivo", "archivos")} que faltan en el original.`} Confírmalo desde <a href={hrefEspejos(c, id)}>los espejos de {equipo.nombre}</a> si sabes por qué falta.</p></div>
+      <div class="notice notice-warn"><ShieldAlert size={16} /><p><strong>Freno:</strong> {t.freno_aviso ? t.freno_aviso.replace(/\.?$/, ".") : `se conservan ${plural(t.retenidos?.archivos ?? 0, "archivo", "archivos")} que faltan en el original.`} Confírmalo desde <a href={hrefEspejos(c, id)}>los espejos de {equipo.nombre}</a> si sabes por qué falta.</p></div>
     {/if}
 
     <div class="cifras" role="list" aria-label="Cifras del espejo">
@@ -188,7 +188,7 @@
       />
     </div>
 
-    {#if filas.length >= 2}
+    {#if filas.filter((f) => f.resultado === "ok").length >= 2}
       <section class="card p graficas" aria-labelledby="t-graf">
         <h2 class="section-title" id="t-graf"><ChartColumn size={16} />Sus subidas</h2>
         <!-- Como en las copias (14vv): a la izquierda el tamaño, a la derecha la actividad. -->
@@ -197,7 +197,7 @@
           {#if conOcupa.length >= 2}<GraficaBarras titulo="Lo que ocupa en el destino" datos={conOcupa} valor={(x) => x.ocupa} formato={(x) => bytes(x)} />{/if}
         </div>
         <div class="col-graf" aria-label="Actividad">
-          <GraficaBarras titulo="Archivos subidos" datos={filas} valor={(x) => x.archivos} formato={(x) => numero(x)} />
+          <GraficaBarras titulo="Archivos subidos" datos={filas} valor={(x) => x.archivos} formato={(x) => numero(Math.round(x))} />
           <GraficaBarras titulo="Duración de cada subida" datos={filas} valor={(x) => x.duracion_s} formato={(x) => duracion(x)} />
         </div>
       </section>
