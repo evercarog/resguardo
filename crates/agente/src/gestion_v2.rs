@@ -162,6 +162,75 @@ pub struct Retencion {
     pub anuales: i64,
     #[serde(default, skip_serializing_if = "Plazos::vacio")]
     pub plazos: Plazos,
+    /// Plan 0.8.0, F3 (14u, `admite: "retencion_por_dia"`): «N versiones por día».
+    /// Solo la aplica el planificador propio (el del almacén y, con esto, el del
+    /// equipo): restic no tiene esa regla. Un agente anterior la ignora (la consola
+    /// no se la ofrece).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub por_dia: Option<PorDia>,
+}
+
+/// F3 (14u): de cada día (en la hora de cada versión), las versiones más cercanas a
+/// estas horas o, sin horas, la primera y la última del día. Dentro de `plazo`
+/// (contado desde la más reciente, como los demás plazos); sin él, todos los días.
+/// Se suma a lo demás de la regla (lo que guarda cualquiera de las dos, se queda) y
+/// vale también para la historia que ya existe: no depende de etiquetas al copiar.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct PorDia {
+    /// «HH:MM» (1 a 12, sin repetir). Vacío: la primera y la última del día.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub horas: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plazo: Option<String>,
+}
+
+/// F3: como mucho, tantas horas en «N versiones por día».
+pub const MAX_HORAS_POR_DIA: usize = 12;
+
+impl PorDia {
+    /// Cuántas se quedan de cada día.
+    pub fn cuantas(&self) -> usize {
+        if self.horas.is_empty() {
+            2
+        } else {
+            self.horas.len()
+        }
+    }
+
+    pub fn valida(&self) -> Result<(), String> {
+        if self.horas.len() > MAX_HORAS_POR_DIA {
+            return Err(format!("«Versiones por día» admite hasta {MAX_HORAS_POR_DIA} horas."));
+        }
+        let mut vistas = std::collections::HashSet::new();
+        for h in &self.horas {
+            if h.len() != 5 || chrono::NaiveTime::parse_from_str(h, "%H:%M").is_err() || !vistas.insert(h.as_str()) {
+                return Err(format!("Hora no válida en «Versiones por día»: «{h}» (HH:MM, sin repetir)."));
+            }
+        }
+        if let Some(p) = self.plazo.as_deref().filter(|p| !p.is_empty()) {
+            if Plazo::leer(p).is_none() {
+                return Err(format!("Plazo de «Versiones por día» no válido: «{p}» (por ejemplo 30d o 6m)."));
+            }
+        }
+        Ok(())
+    }
+
+    /// «2 por día (la primera y la última)», «3 por día, las más cercanas a las 09:00, 13:00 y 18:00, 30 días».
+    pub fn texto(&self) -> String {
+        let cuales = if self.horas.is_empty() {
+            "la primera y la última".to_string()
+        } else {
+            let mut hs = self.horas.clone();
+            hs.sort();
+            let lista = match hs.len() {
+                1 => hs[0].clone(),
+                n => format!("{} y {}", hs[..n - 1].join(", "), hs[n - 1]),
+            };
+            format!("las más cercanas a {} {lista}", if hs.len() == 1 { "la" } else { "las" })
+        };
+        let plazo = self.plazo.as_deref().and_then(Plazo::leer).map(|p| format!(" durante {}", p.texto())).unwrap_or_default();
+        format!("{} por día ({cuales}){plazo}", self.cuantas())
+    }
 }
 
 const PALABRAS: [&str; 5] = ["horarias", "diarias", "semanales", "mensuales", "anuales"];
@@ -172,9 +241,9 @@ impl Retencion {
         [self.horarias, self.diarias, self.semanales, self.mensuales, self.anuales]
     }
 
-    /// ¿Usa algo de v1.28 (horarias, plazos o «siempre»)?
+    /// ¿Usa algo de v1.28 (horarias, plazos o «siempre»), o «por día»?
     pub fn nueva(&self) -> bool {
-        self.horarias != 0 || !self.plazos.vacio() || self.cantidades().contains(&SIEMPRE)
+        self.horarias != 0 || !self.plazos.vacio() || self.cantidades().contains(&SIEMPRE) || self.por_dia.is_some()
     }
 
     pub fn politica(&self) -> resguardo_motor::retention::Policy {
@@ -206,7 +275,10 @@ impl Retencion {
                 }
             }
         }
-        if self.cantidades().iter().all(|n| *n == 0) && self.plazos.vacio() {
+        if let Some(d) = &self.por_dia {
+            d.valida()?;
+        }
+        if self.cantidades().iter().all(|n| *n == 0) && self.plazos.vacio() && self.por_dia.is_none() {
             return Err("La retención tiene que guardar al menos una versión (y como mucho 1000 de cada tipo).".into());
         }
         Ok(())
@@ -229,6 +301,9 @@ impl Retencion {
                 0 => {}
                 n => partes.push(format!("{n} {palabra}")),
             }
+        }
+        if let Some(d) = &self.por_dia {
+            partes.push(d.texto());
         }
         partes.join(" · ")
     }
@@ -655,15 +730,112 @@ pub struct Copia {
     /// el campo, 0: enseguida). Solo con `tras`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retraso_min: Option<u32>,
+    /// F1 (14pp, `admite: "termina"`): «Solo a mano»: sin horario, solo «Copiar
+    /// ahora». No cuenta como atrasada. Un agente anterior lo ignora (y rechaza la
+    /// copia sin horario: la consola no se lo ofrece).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub a_mano: bool,
+    /// F1: cuándo termina («Una sola vez», tras N copias o el día …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub termina: Option<Termina>,
+}
+
+/// F1 (14pp): cuándo termina una copia. Al terminar queda **completada**: no se
+/// hace sola ni avisa, y conserva su repositorio, sus versiones y su retención.
+/// La cuenta la lleva el agente (sin consola) y vuelve a empezar si esto cambia.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub struct Termina {
+    /// Después de N copias correctas (1 a 10 000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub veces: Option<u32>,
+    /// El último día en que se copia (AAAA-MM-DD, hora del equipo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hasta: Option<String>,
+    /// «Una sola vez», a esta hora (AAAA-MM-DDTHH:MM, hora del equipo). Sin horario.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub una_vez: Option<String>,
+    /// Desde cuándo cuenta (RFC 3339; lo pone la consola al poner el fin o al reanudar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desde: Option<String>,
+}
+
+/// F1: como mucho, tantas copias antes de terminar.
+pub const MAX_VECES: u32 = 10_000;
+
+impl Termina {
+    /// ¿Dice algo? (Uno vacío es «nunca».)
+    pub fn algo(&self) -> bool {
+        self.veces.is_some() || self.hasta.is_some() || self.una_vez.is_some()
+    }
+
+    pub fn valida(&self, nombre: &str) -> Result<(), String> {
+        if let Some(n) = self.veces {
+            if !(1..=MAX_VECES).contains(&n) {
+                return Err(format!("La copia «{nombre}» termina después de 1 a {MAX_VECES} copias."));
+            }
+        }
+        if let Some(h) = &self.hasta {
+            if chrono::NaiveDate::parse_from_str(h, "%Y-%m-%d").is_err() {
+                return Err(format!("El día en que termina la copia «{nombre}» no es válido (AAAA-MM-DD)."));
+            }
+        }
+        if let Some(u) = &self.una_vez {
+            if u.len() != 16 || chrono::NaiveDateTime::parse_from_str(u, "%Y-%m-%dT%H:%M").is_err() {
+                return Err(format!("La hora de «Una sola vez» de la copia «{nombre}» no es válida (AAAA-MM-DDTHH:MM)."));
+            }
+            if self.veces.is_some() || self.hasta.is_some() {
+                return Err(format!("La copia «{nombre}» se hace una sola vez: no lleva además un número de copias ni un último día."));
+            }
+        }
+        if self.desde.as_deref().is_some_and(|d| d.len() > 40 || chrono::DateTime::parse_from_rfc3339(d).is_err()) {
+            return Err(format!("La fecha desde la que cuenta la copia «{nombre}» no es válida."));
+        }
+        Ok(())
+    }
 }
 
 /// Plan 0.7.26: como mucho, un día de retraso tras la anterior.
 pub const MAX_RETRASO_MIN: u32 = 1440;
 
 impl Copia {
-    /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior».)
+    /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior»,
+    /// «solo a mano» o «una sola vez».)
     pub fn con_horario(&self) -> bool {
         !self.horario.reglas.is_empty() || !self.horario.horas.is_empty()
+    }
+
+    /// F1: sin horario a propósito («solo a mano» o «una sola vez»).
+    pub fn sin_horario(&self) -> bool {
+        self.a_mano || self.termina.as_ref().is_some_and(|t| t.una_vez.is_some())
+    }
+
+    /// F1: el fin del plan en el agente (`None`: como siempre).
+    pub fn fin(&self) -> Option<crate::agent::PlanEnd> {
+        let t = self.termina.as_ref().filter(|t| t.algo());
+        if !self.a_mano && t.is_none() {
+            return None;
+        }
+        Some(crate::agent::PlanEnd {
+            manual: self.a_mano,
+            count: t.and_then(|t| t.veces),
+            until: t.and_then(|t| t.hasta.clone()),
+            once_at: t.and_then(|t| t.una_vez.clone()),
+            since: t.and_then(|t| t.desde.clone()),
+        })
+    }
+
+    /// F1: «solo a mano» y «una sola vez» no tienen horario ni van tras otra.
+    pub fn valida_termina(&self) -> Result<(), String> {
+        if let Some(t) = &self.termina {
+            t.valida(&self.nombre)?;
+        }
+        if self.a_mano && self.termina.as_ref().is_some_and(Termina::algo) {
+            return Err(format!("La copia «{}» es solo a mano: no termina.", self.nombre));
+        }
+        if self.sin_horario() && (self.con_horario() || self.tras.is_some()) {
+            return Err(format!("La copia «{}» no tiene horario (solo a mano o una sola vez): ni horario ni «después de» otra.", self.nombre));
+        }
+        Ok(())
     }
 
     /// Plan 0.7.26: cómo empieza «después de» la anterior (siempre o solo si
@@ -961,6 +1133,8 @@ fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
     // Tarea 7c: «después de la anterior» sin horario propio: el plan va sin horario.
     let schedule = match (&c.tras, c.con_horario()) {
         (Some(_), false) => None,
+        // F1: «solo a mano» o «una sola vez»: sin horario.
+        (None, false) if c.sin_horario() => None,
         _ => Some(c.horario.plan_schedule().map_err(|e| format!("Copia «{}»: {e}", c.nombre))?),
     };
     let plan: crate::plans::Plan = serde_json::from_value(json!({
@@ -1020,6 +1194,7 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         if k.horario.dias.iter().any(|d| !(1..=7).contains(d)) {
             return Err(format!("Día no válido en la copia «{}» (1 = lunes … 7 = domingo).", k.nombre));
         }
+        k.valida_termina()?;
         plan_de(k)?;
         k.valida_inicio()?;
     }
@@ -1051,7 +1226,9 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         .map_err(|e| e.to_string())?;
         // Plan 0.7.26: «después de la anterior» aunque falle y el retraso, por copia.
         let modos = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.modo_cadena()?))).collect();
-        crate::agent::set_schedule_modes(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos)?;
+        // F1: solo a mano, una sola vez o con fin.
+        let fines = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.fin()?))).collect();
+        crate::agent::set_schedule_full(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos, &fines)?;
     }
     let verificados = aplicar_verificaciones(v, &cfg)?;
     aplicar_pruebas(v, &cfg)?;
@@ -1089,7 +1266,7 @@ pub fn documento(v: &Vinculo) -> Value {
         .map(|r| {
             let mut x = json!({ "id": r.id, "nombre": r.nombre, "destino": r.destino, "retencion": r.retencion });
             if !r.derivadas.is_empty() {
-                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion") })).collect::<Vec<_>>());
+                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion"), "limite": d.get("limite") })).collect::<Vec<_>>());
             }
             x
         })
@@ -1201,6 +1378,19 @@ pub const ADMITE: &[&str] = &[
     // `resumen.aprobar_en_equipo`, `aprobar_en_equipo` en `hola`/`tomar`/`{"t":"ajustes"}`,
     // `aprobada_en_equipo` en el historial y el aviso `orden_aprobada_en_equipo`.
     "aprobar_en_equipo",
+    // (pendiente de numerar) plan 0.8.0, F1 (14pp): `config.copias[].a_mano` y `termina`
+    // (`veces`, `hasta`, `una_vez`, `desde`); en el resumen, `hechas` y `completada`.
+    "termina",
+    // (pendiente de numerar) plan 0.8.0, F2 (14ww-2): `comentario_version` y `resumen.comentarios`.
+    "comentarios_version",
+    // (pendiente de numerar) plan 0.8.0, F2 (14cc): `conservar_version` (en el equipo y en el almacén),
+    // `resumen.conservadas`, `guarda_copias.conservadas`; la retención nunca las quita.
+    "conservar_version",
+    // (pendiente de numerar) plan 0.8.0, F3 (14u): `retencion.por_dia` (en el equipo y en el almacén).
+    "retencion_por_dia",
+    // (pendiente de numerar) plan 0.8.0, F4 (14t): límite de velocidad según la hora en los espejos
+    // (`trabajos[].limite_franjas`, por rclone) y en las copias derivadas (`cambiar_derivada { limite }`).
+    "limite_franjas",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1255,6 +1445,11 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "tras": k.tras,
                 // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
                 "inicio": k.inicio, "retraso_min": k.retraso_min,
+                // F1 (14pp): solo a mano, cuándo termina, cuántas lleva y si ya terminó.
+                "a_mano": k.a_mano.then_some(true),
+                "termina": k.termina.as_ref().filter(|t| t.algo()),
+                "hechas": fin_de(&config, &estado, k).map(|f| f.0),
+                "completada": fin_de(&config, &estado, k).and_then(|f| f.1),
                 "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added })),
                 "proxima": proximas.get(&k.id),
             })
@@ -1355,6 +1550,16 @@ pub fn resumen(v: &Vinculo) -> Value {
     let comunes = crate::datos_cliente::resumen(v);
     if !comunes.is_null() {
         r["datos_cliente"] = comunes;
+    }
+    // Plan 0.8.0, F2: comentarios en las versiones y versiones conservadas para siempre
+    // (iguales en todas sus consolas; sin nada, no van).
+    let comentarios = crate::versiones_v2::resumen_comentarios(v);
+    if !comentarios.is_null() {
+        r["comentarios"] = comentarios;
+    }
+    let conservadas = crate::versiones_v2::resumen_conservadas(v);
+    if !conservadas.is_null() {
+        r["conservadas"] = conservadas;
     }
     // 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último
     // arranque (leídos al arrancar y una vez al día). Las rutas solo marcan qué discos
@@ -1492,10 +1697,44 @@ pub fn cadenas_informe(estado: &crate::agent::AgentState, copias: &[Copia]) -> V
 /// v1.12: la próxima vez que toca cada copia, `{id: RFC 3339 | null}`. Null si
 /// está desactivada, sin horario o su repositorio está en pausa sin fecha; con
 /// una pausa con fecha, la primera hora después de que termine.
+/// F1: ¿hay alguna copia «una sola vez» cuya hora ya llegó y que aún no empezó? (Entonces
+/// se hace una vuelta enseguida, como con «Copiar ahora».)
+pub fn una_vez_pendiente() -> bool {
+    let config = crate::agent::load_config();
+    let estado = crate::agent::load_state();
+    let ahora = chrono::Local::now();
+    config.repos.iter().flat_map(|r| r.plans.iter().map(move |p| (r, p))).any(|(r, p)| {
+        let clave = crate::plans::plan_key(&r.id, &p.id);
+        p.end.as_ref().and_then(crate::agent::PlanEnd::once_local).is_some_and(|at| at <= ahora)
+            && !p.end.as_ref().is_some_and(|e| e.once_started(estado.runs.get(&clave)))
+            && !crate::agent::plan_finished(p, &clave, &estado, ahora)
+    })
+}
+
+/// F1: copias hechas y cuándo terminó una copia con fin (según el agente).
+fn fin_de(config: &crate::agent::AgentConfig, estado: &crate::agent::AgentState, k: &Copia) -> Option<(u32, Option<String>)> {
+    k.termina.as_ref().filter(|t| t.algo())?;
+    let plan = config.repos.iter().find(|r| r.id == k.repo)?.plans.iter().find(|p| p.id == k.id)?;
+    Some(crate::agent::end_status(plan, &crate::plans::plan_key(&k.repo, &k.id), estado))
+}
+
 fn proximas(copias: &[Copia], ahora: chrono::DateTime<chrono::Local>) -> Value {
     let config = crate::agent::load_config();
+    let estado = crate::agent::load_state();
     let mut out = serde_json::Map::new();
     for k in copias {
+        // F1: una copia completada no vuelve a tocar; «una sola vez», a su hora si aún no se hizo.
+        let plan = config.repos.iter().find(|r| r.id == k.repo).and_then(|r| r.plans.iter().find(|p| p.id == k.id));
+        let clave = crate::plans::plan_key(&k.repo, &k.id);
+        if plan.is_some_and(|p| crate::agent::plan_finished(p, &clave, &estado, ahora)) {
+            out.insert(k.id.clone(), Value::Null);
+            continue;
+        }
+        if let Some(at) = plan.and_then(|p| p.end.as_ref()).and_then(crate::agent::PlanEnd::once_local) {
+            let empezada = plan.and_then(|p| p.end.as_ref()).is_some_and(|e| e.once_started(estado.runs.get(&clave)));
+            out.insert(k.id.clone(), if k.activa && !empezada { json!(at.max(ahora).to_rfc3339()) } else { Value::Null });
+            continue;
+        }
         let pausa = config.repos.iter().find(|r| r.id == k.repo).and_then(|r| r.active_pause(ahora));
         let desde = match pausa {
             None => Some(ahora),
@@ -1618,14 +1857,23 @@ pub fn aplicar_retencion_por(v: &Vinculo, repo: &str, por: &'static str) -> Resu
     let inicio = chrono::Local::now();
     // Lo que había, para anotar qué se quitó (si no se puede leer, se aplica igual).
     let antes = resguardo_motor::restic::snapshots(&acc).ok();
-    let mut args: Vec<String> = vec!["forget".into(), "--prune".into(), "--retry-lock".into(), "30m".into()];
-    args.extend(politica.args());
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let out = resguardo_motor::restic::run_raw(&acc, &refs, std::time::Duration::from_secs(6 * 3600));
-    let r = match &out {
-        Ok(o) if o.code == Some(0) => Ok("Retención aplicada.".to_string()),
-        Ok(o) => Err(resguardo_motor::restic::exit_error(o.code, &o.stderr)),
-        Err(e) => Err(e.clone()),
+    // Plan 0.8.0: con versiones conservadas para siempre (F2) o «N por día» (F3), decide el
+    // planificador propio (las reglas de `restic forget`, probadas contra él) y se quitan
+    // por id; si no, `restic forget` con la regla, como siempre.
+    let conservadas = crate::versiones_v2::conservadas_de(v, repo);
+    let (out, r) = if !conservadas.is_empty() || regla.por_dia.is_some() {
+        retencion_por_ids(&acc, antes.as_deref(), regla, &conservadas)
+    } else {
+        let mut args: Vec<String> = vec!["forget".into(), "--prune".into(), "--retry-lock".into(), "30m".into()];
+        args.extend(politica.args());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = resguardo_motor::restic::run_raw(&acc, &refs, std::time::Duration::from_secs(6 * 3600));
+        let r = match &out {
+            Ok(o) if o.code == Some(0) => Ok("Retención aplicada.".to_string()),
+            Ok(o) => Err(resguardo_motor::restic::exit_error(o.code, &o.stderr)),
+            Err(e) => Err(e.clone()),
+        };
+        (out, r)
     };
     if let Some(antes) = &antes {
         let despues = resguardo_motor::restic::snapshots(&acc).ok();
@@ -1651,6 +1899,55 @@ pub fn aplicar_retencion_por(v: &Vinculo, repo: &str, por: &'static str) -> Resu
         });
     }
     r
+}
+
+/// Plan 0.8.0 (F2, F3): la retención del equipo decidida por el planificador propio
+/// (`retencion_almacen::planear`, con las horas de las versiones como de fiar: son
+/// las del propio equipo), sin las conservadas para siempre, y quitada por ids.
+/// Devuelve la salida del `prune` (para lo liberado) y el mensaje.
+fn retencion_por_ids(
+    acc: &resguardo_motor::restic::Access,
+    antes: Option<&[resguardo_motor::restic::Snapshot]>,
+    regla: &Retencion,
+    conservadas: &[String],
+) -> (Result<resguardo_motor::restic::RawOutput, String>, Result<String, String>) {
+    let Some(antes) = antes else {
+        let e = "No se pudieron leer las versiones del repositorio: no se ha quitado nada.".to_string();
+        return (Err(e.clone()), Err(e));
+    };
+    let versiones: Vec<crate::retencion_almacen::Version> = antes.iter().map(crate::retencion_almacen::Version::de_confianza).collect();
+    let plan = crate::retencion_almacen::planear(&versiones, regla);
+    let (quitar, salvadas) = crate::versiones_v2::sin_conservadas(plan.quitar, conservadas);
+    let limite = std::time::Duration::from_secs(6 * 3600);
+    for tanda in quitar.chunks(100) {
+        let mut args: Vec<&str> = vec!["forget", "--retry-lock", "30m", "--"];
+        args.extend(tanda.iter().map(String::as_str));
+        match resguardo_motor::restic::run_raw(acc, &args, limite) {
+            Ok(o) if o.code == Some(0) => {}
+            Ok(o) => {
+                let e = resguardo_motor::restic::exit_error(o.code, &o.stderr);
+                return (Ok(o), Err(e));
+            }
+            Err(e) => return (Err(e.clone()), Err(e)),
+        }
+    }
+    let out = if quitar.is_empty() {
+        Ok(resguardo_motor::restic::RawOutput { code: Some(0), stdout: Vec::new(), stderr: String::new() })
+    } else {
+        resguardo_motor::restic::run_raw(acc, &["prune", "--retry-lock", "30m"], limite)
+    };
+    let mut m = "Retención aplicada.".to_string();
+    match salvadas {
+        0 => {}
+        1 => m.push_str(" 1 versión conservada para siempre no se toca."),
+        n => m.push_str(&format!(" {n} versiones conservadas para siempre no se tocan.")),
+    }
+    let r = match &out {
+        Ok(o) if o.code == Some(0) => Ok(m),
+        Ok(o) => Err(resguardo_motor::restic::exit_error(o.code, &o.stderr)),
+        Err(e) => Err(e.clone()),
+    };
+    (out, r)
 }
 
 /// `dejar_de_copiar {repo}` y `quitar_repositorio {repo}` (este, además, lo olvida con su contraseña).
@@ -1733,6 +2030,8 @@ pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool, quitar_destin
     let destino = v.repos_v2.iter().find(|r| r.id == repo).map(|r| r.destino.clone()).unwrap_or_default();
     if olvidar {
         v.repos_v2.retain(|r| r.id != repo);
+        // Plan 0.8.0, F2: sus comentarios y marcas se van con él.
+        crate::versiones_v2::olvidar_repo(v, repo);
         if let Some(cfg) = v.config_v1.as_mut() {
             if let Some(copias) = cfg["copias"].as_array_mut() {
                 copias.retain(|k| k["repo"] != repo);
@@ -2075,6 +2374,7 @@ fn preparar_derivada(
             append_only: solo_anadir,
             nube: nube.clone(),
             cacert: dest_acc.cacert.clone(),
+            limit_windows: vec![],
         },
         // Las credenciales de una nube no se guardan con la copia: se ponen al día en cada uso.
         creds: crate::agent::OffsiteSecrets {
@@ -2194,7 +2494,13 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     if let Some(va) = &verificacion {
         va.valida()?;
     }
-    let offsite = p.offsite(schedule, filtro.clone(), verificacion.as_ref().map(|va| va.verify(chrono::Local::now())))?;
+    let mut offsite = p.offsite(schedule, filtro.clone(), verificacion.as_ref().map(|va| va.verify(chrono::Local::now())))?;
+    // Plan 0.8.0, F4 (14t): `limite { kib?, franjas? }`, la velocidad de subida según la hora.
+    let limite = limite_de(c)?;
+    if let Some((kib, franjas)) = &limite {
+        offsite.limit_upload_kib = *kib;
+        offsite.dest.limit_windows = franjas.clone();
+    }
     crate::agent::set_derived(repo, &id, Some(crate::tasks::Derived { id: id.clone(), offsite }), Some(p.creds))?;
     if let Some(d) = p.nuevo.clone() {
         v.destinos.push(d);
@@ -2208,6 +2514,9 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     if let Some(va) = &verificacion {
         e["verificacion"] = json!(va);
     }
+    if let Some((kib, franjas)) = &limite {
+        e["limite"] = json!({ "kib": kib, "franjas": franjas });
+    }
     if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
         r.derivadas.retain(|x| x["id"] != id.as_str());
         r.derivadas.push(e);
@@ -2218,6 +2527,28 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
         None => String::new(),
     };
     Ok(format!("Copia derivada a «{}»{que} guardada. {}", p.destino.nombre, p.texto))
+}
+
+/// Plan 0.8.0, F4 (14t): `limite { kib?, franjas? }` de una copia derivada (`None` sin
+/// el campo o sin nada: sin límite). `kib`: fuera de las franjas.
+/// F4: el límite fuera de las franjas (KiB/s) y las franjas.
+pub type Limite = (Option<u32>, Vec<crate::franjas::Franja>);
+
+pub fn limite_de(c: &Value) -> Result<Option<Limite>, String> {
+    let Some(l) = c.get("limite").filter(|l| l.is_object()) else { return Ok(None) };
+    let kib = match &l["kib"] {
+        Value::Null => None,
+        x => Some(x.as_u64().and_then(|k| u32::try_from(k).ok()).ok_or("Límite de velocidad no válido.")?).filter(|k| *k > 0),
+    };
+    if kib.is_some_and(|k| !(crate::franjas::MIN_KIB..=crate::franjas::MAX_KIB).contains(&k)) {
+        return Err(format!("El límite de velocidad va de {} KiB/s a {} KiB/s.", crate::franjas::MIN_KIB, crate::franjas::MAX_KIB));
+    }
+    let franjas: Vec<crate::franjas::Franja> = match l.get("franjas") {
+        None | Some(Value::Null) => vec![],
+        Some(f) => serde_json::from_value(f.clone()).map_err(|_| "Franjas de velocidad no válidas.".to_string())?,
+    };
+    crate::franjas::validar(&franjas)?;
+    Ok((kib.is_some() || !franjas.is_empty()).then_some((kib, franjas)))
 }
 
 /// `quitar_derivada { repo, id }` (contraseña del repositorio; reduce la
@@ -2257,6 +2588,8 @@ fn derivada_resumen(v: &Vinculo, repo: &str, e: &Value, agente: Option<&crate::a
         "solo_anadir": e.get("solo_anadir"),
         "filtro": Some(filtro).filter(|f| f.is_object()),
         "verificacion": e.get("verificacion"),
+        // Plan 0.8.0, F4: la velocidad de subida según la hora (sin nada, no va).
+        "limite": e.get("limite"),
         // Si el agente la tiene (un repositorio sin copias activas la pierde) y si aplica retención allí.
         "activa": tarea.is_some(),
         "con_retencion": tarea.map(|t| t.offsite.retention.as_ref().is_some_and(|p| !p.is_empty())),
@@ -2493,6 +2826,8 @@ pub fn resumen_guarda_copias() -> Value {
         "nubes": crate::nube::lista(),
         // Tarea 7b: las otras zonas (otros discos), cada una con su puerto; solo si hay.
         "zonas": (!c.zonas.is_empty()).then(|| crate::server::resumen_zonas(&c)),
+        // Plan 0.8.0, F2 (14cc): las versiones que su retención nunca quita (`null` si ninguna).
+        "conservadas": crate::versiones_v2::resumen_almacen(),
         // B1: las carpetas movidas («Ordenar nombres de carpeta»), las 50 últimas: la
         // consola ve qué equipo sigue con la ruta de antes. Solo nombres de carpeta.
         "renombres": (!c.renombres.is_empty()).then(|| c.renombres.iter().rev().take(50).collect::<Vec<_>>()),
@@ -2803,6 +3138,78 @@ mod tests {
         assert!(ADMITE.contains(&"inicio_despues"));
     }
 
+    /// F4 (14t): `limite { kib?, franjas? }` de una copia derivada.
+    #[test]
+    fn limite_de_velocidad_de_una_derivada() {
+        assert_eq!(limite_de(&json!({})).unwrap(), None);
+        assert_eq!(limite_de(&json!({ "limite": { "kib": 0, "franjas": [] } })).unwrap(), None, "nada: sin límite");
+        let (kib, franjas) =
+            limite_de(&json!({ "limite": { "kib": 4096, "franjas": [{ "dias": [1, 2, 3, 4, 5], "desde": "08:00", "hasta": "18:00", "kib": 2048 }] } }))
+                .unwrap()
+                .unwrap();
+        assert_eq!((kib, franjas.len(), franjas[0].kib), (Some(4096), 1, 2048));
+        for malo in [
+            json!({ "limite": { "kib": 10 } }),
+            json!({ "limite": { "kib": "mucho" } }),
+            json!({ "limite": { "franjas": [{ "dias": [1], "desde": "18:00", "hasta": "08:00", "kib": 2048 }] } }),
+            json!({ "limite": { "franjas": "lunes" } }),
+        ] {
+            assert!(limite_de(&malo).is_err(), "{malo}");
+        }
+        assert!(ADMITE.contains(&"limite_franjas"));
+    }
+
+    /// F1 (14pp): «solo a mano», «una sola vez» y «termina después de N copias o el día …».
+    #[test]
+    fn cuando_termina_una_copia() {
+        let copia = |extra: Value| -> Copia {
+            let mut v = json!({"id": "k", "nombre": "K", "repo": "r1", "carpetas": [r"C:\Datos"], "horario": {"dias": [], "horas": []}});
+            for (k, x) in extra.as_object().unwrap() {
+                v[k] = x.clone();
+            }
+            serde_json::from_value(v).unwrap()
+        };
+        // Solo a mano: sin horario, sin fin, plan sin horario (solo «Copiar ahora»).
+        let a_mano = copia(json!({"a_mano": true}));
+        a_mano.valida_termina().unwrap();
+        assert!(plan_de(&a_mano).unwrap().schedule.is_none());
+        assert_eq!(a_mano.fin(), Some(crate::agent::PlanEnd { manual: true, ..Default::default() }));
+        // Una sola vez: a una hora, sin horario.
+        let una = copia(json!({"termina": {"una_vez": "2026-10-20T21:30"}}));
+        una.valida_termina().unwrap();
+        assert!(plan_de(&una).unwrap().schedule.is_none());
+        let fin = una.fin().unwrap();
+        assert!(fin.without_schedule() && fin.ends() && fin.once_local().is_some());
+        // Con horario y fin: tras 10 copias o el día …
+        let diez = copia(json!({"horario": {"dias": [1], "horas": ["13:00"]}, "termina": {"veces": 10, "hasta": "2027-01-31"}}));
+        diez.valida_termina().unwrap();
+        assert!(plan_de(&diez).unwrap().schedule.is_some());
+        let f = diez.fin().unwrap();
+        assert_eq!((f.count, f.until.as_deref(), f.manual), (Some(10), Some("2027-01-31"), false));
+        // «Nunca» (vacío) es como sin el campo.
+        assert_eq!(copia(json!({"horario": {"dias": [1], "horas": ["13:00"]}, "termina": {}})).fin(), None);
+        // Lo que no vale.
+        for mala in [
+            json!({"a_mano": true, "horario": {"dias": [1], "horas": ["13:00"]}}),
+            json!({"a_mano": true, "tras": "otra"}),
+            json!({"a_mano": true, "termina": {"veces": 3}}),
+            json!({"termina": {"una_vez": "2026-10-20T21:30", "veces": 2}}),
+            json!({"termina": {"una_vez": "mañana"}}),
+            json!({"horario": {"dias": [1], "horas": ["13:00"]}, "termina": {"veces": 0}}),
+            json!({"horario": {"dias": [1], "horas": ["13:00"]}, "termina": {"veces": MAX_VECES + 1}}),
+            json!({"horario": {"dias": [1], "horas": ["13:00"]}, "termina": {"hasta": "31/01/2027"}}),
+            json!({"horario": {"dias": [1], "horas": ["13:00"]}, "termina": {"veces": 2, "desde": "ayer"}}),
+        ] {
+            assert!(copia(mala.clone()).valida_termina().is_err(), "{mala}");
+        }
+        // Sin horario y sin «a mano» ni «una vez», como siempre: no vale.
+        assert!(plan_de(&copia(json!({}))).is_err());
+        // Un agente anterior no ve nada nuevo si no se usa.
+        let v = serde_json::to_value(copia(json!({"horario": {"dias": [1], "horas": ["13:00"]}}))).unwrap();
+        assert!(v.get("a_mano").is_none() && v.get("termina").is_none());
+        assert!(ADMITE.contains(&"termina"));
+    }
+
     #[test]
     fn copia_a_plan() {
         let k = Copia {
@@ -2818,6 +3225,8 @@ mod tests {
             tras: None,
             inicio: None,
             retraso_min: None,
+            a_mano: false,
+            termina: None,
         };
         let p = plan_de(&k).unwrap();
         assert!(p.skip_unchanged, "encendido por defecto");
@@ -2852,6 +3261,8 @@ mod tests {
             tras: None,
             inicio: None,
             retraso_min: None,
+            a_mano: false,
+            termina: None,
         };
         // Viernes 2 de octubre de 2026, 14:00: la siguiente, a las 19:00; después, el lunes.
         let vie = chrono::Local.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();

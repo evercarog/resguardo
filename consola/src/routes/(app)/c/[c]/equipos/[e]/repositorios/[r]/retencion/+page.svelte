@@ -7,10 +7,11 @@
   // repositorio, la de la copia y Ctrl+K.
   import { page } from "$app/state";
   import { untrack } from "svelte";
-  import { CalendarClock } from "@lucide/svelte";
+  import { CalendarClock, Pin } from "@lucide/svelte";
+  import { mismaVersion } from "$lib/versionesNotas";
   import * as api from "$lib/api";
   import { actual, reloj } from "$lib/estado.svelte";
-  import { bytes, numero, plural } from "$lib/formato";
+  import { bytes, fechaLarga, numero, plural } from "$lib/formato";
   import { horasDelDia, reglasDe } from "$lib/horario";
   import { reglaEfectiva } from "$lib/lineaTiempo";
   import { destinoDe, informeDe, nVersiones, versionesDe } from "$lib/repo";
@@ -94,8 +95,21 @@
     const reglas = copia ? reglasDe(copia.horario as Horario) : [];
     return reglas.length ? (f: Date) => horasDelDia(reglas, f) : null;
   };
+  // Plan 0.8.0, F2 (14cc): las que se conservan para siempre (en el equipo y en su almacén): la retención nunca las quita.
+  const conservadas = $derived.by(() => {
+    const out: { version: string; motivo: string; cuando: string; donde: string }[] = (equipo?.resumen?.conservadas ?? []).filter((x) => x.repo === rid).map((x) => ({ version: x.version, motivo: x.motivo, cuando: x.cuando, donde: equipo?.nombre ?? "" }));
+    const l = enAlm ? enAlm.almacen.resumen?.guarda_copias?.conservadas?.find((x) => x.usuario === enAlm.usuario && x.repo === enAlm.carpeta) : null;
+    for (const v of l?.versiones ?? []) {
+      const ya = out.find((x) => mismaVersion(x.version, v.version));
+      if (ya) ya.donde = `${ya.donde} y ${enAlm!.almacen.nombre}`;
+      else out.push({ version: v.version, motivo: v.motivo, cuando: v.cuando, donde: enAlm!.almacen.nombre });
+    }
+    return out;
+  });
   const prevision = $derived(
-    efectiva && repo ? prever({ versiones, total: nVersiones(repo, inf), regla: efectiva.regla, ahora: reloj.ahora, proxima, dias, horasDe }) : null,
+    efectiva && repo
+      ? prever({ versiones, total: nVersiones(repo, inf), regla: efectiva.regla, ahora: reloj.ahora, proxima, dias, horasDe, conservadas: conservadas.map((x) => x.version) })
+      : null,
   );
   const marcas = $derived(marcasPorDia(vueltas, prevision, reloj.ahora));
 
@@ -143,6 +157,7 @@
 
     <IndicePagina
       items={[
+        ...(conservadas.length ? [{ id: "ret-conservadas", texto: "Para siempre" }] : []),
         { id: "ret-calendario", texto: "Calendario" },
         { id: "ret-eliminado", texto: "Lo que se eliminó" },
         ...(prevision ? [{ id: "ret-proximo", texto: "Lo que se eliminará" }] : []),
@@ -195,6 +210,18 @@
         <button class="btn btn-sm btn-ghost" onclick={() => (dia = null)}>Quitar el día elegido</button>
       {/if}
     </div>
+
+    {#if conservadas.length}
+      <!-- Plan 0.8.0, F2 (14cc): lo que la retención nunca quita, con su motivo. -->
+      <section class="card p" id="ret-conservadas" aria-labelledby="ret-conservadas-t">
+        <h2 class="section-title" id="ret-conservadas-t"><Pin size={16} />Se conservan para siempre</h2>
+        <ul class="conservadas">
+          {#each conservadas as x (x.version)}
+            <li><code>{x.version.slice(0, 8)}</code> «{x.motivo}» <span class="faint">· desde el {fechaLarga(x.cuando)} · lo respeta {x.donde}</span></li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
 
     <section class="card p" id="ret-calendario" aria-labelledby="ret-calendario-t">
       <h2 class="section-title" id="ret-calendario-t">Calendario</h2>
@@ -322,5 +349,13 @@
     .cifra strong {
       font-size: 20px;
     }
+  }
+  .conservadas {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: var(--fs-sm);
   }
 </style>

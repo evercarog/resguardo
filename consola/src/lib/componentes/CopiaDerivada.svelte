@@ -1,4 +1,6 @@
 <script lang="ts">
+  import LimiteFranjas from "./LimiteFranjas.svelte";
+  import { admiteFranjas, errorFranjas, MAX_KIB, MIN_KIB } from "$lib/franjas";
   // Copia derivada (tarea 4b, docs/copias-en-cadena.md): otra copia de un
   // repositorio en otro destino, además de la copia externa de siempre. La hace
   // el equipo dueño (que tiene las dos contraseñas) con `cambiar_derivada`:
@@ -82,6 +84,9 @@
     desde: derivada?.filtro?.desde ?? "",
     ultimosDias: (derivada?.filtro?.ultimos_dias ?? "") as number | string,
     verificar: !!derivada?.verificacion,
+    // Plan 0.8.0, F4 (14t): la velocidad de subida según la hora.
+    limiteKib: (derivada?.limite?.kib ?? "") as number | string,
+    franjas: (derivada?.limite?.franjas ?? []).map((x) => ({ ...x, dias: [...x.dias] })),
   });
   /** Carpetas del filtro que el resumen solo cuenta (no las enseña): al guardar se sustituyen por las de aquí. */
   // svelte-ignore state_referenced_locally
@@ -176,6 +181,8 @@
     bloqueo_dias: f.conBloqueo ? (diasBloqueo(f.bloqueoDias) ?? 0) : 0,
     ...(filtro ? { filtro } : {}),
     ...(f.verificar ? { verificacion: derivada?.verificacion ?? { cada_dias: 7, porcentaje: 5 } } : {}),
+    // F4: solo a un agente que lo entiende (y solo si se puso algo, o para quitar el que había).
+    ...(admiteFranjas(equipo) && (Number(f.limiteKib) > 0 || f.franjas.length || derivada?.limite) ? { limite: { kib: Number(f.limiteKib) > 0 ? Math.round(Number(f.limiteKib)) : null, franjas: f.franjas } } : {}),
   });
   const errorF = $derived(conFiltros ? errorFiltro({ desde: f.desde, ultimos_dias: f.ultimosDias }) : null);
   const valido = $derived(
@@ -187,6 +194,8 @@
       (!f.otra || (f.contrasena.length >= 8 && f.impreso)) &&
       (!f.conRetencion || !errorRegla(f.retencion, admitePlazos(equipo))) &&
       (!f.conBloqueo || diasBloqueo(f.bloqueoDias) !== null) &&
+      !errorFranjas(f.franjas) &&
+      (f.limiteKib === "" || Number(f.limiteKib) === 0 || (Number(f.limiteKib) >= MIN_KIB && Number(f.limiteKib) <= MAX_KIB)) &&
       !errorF,
   );
   // Plan 0.7.26: el modo guiado (un paso abierto a la vez; el de origen ya está hecho).
@@ -427,6 +436,15 @@
 {/snippet}
 {#snippet verificarCampo()}
   <label class="switch-row"><input type="checkbox" bind:checked={f.verificar} /><span>Verificar la copia derivada<span class="faint">Cada semana, el 5 % de sus datos (rotando): en 20 semanas se ha leído todo.</span></span></label>
+  <!-- Plan 0.8.0, F4 (14t): p. ej. 2 MB/s en horario de oficina y sin límite de noche. -->
+  {#if admiteFranjas(equipo)}
+    <div class="field">
+      <label class="field-label" for="dv-vel">Velocidad máxima de subida (KiB/s)</label>
+      <input id="dv-vel" class="input num corto" type="number" min="0" placeholder="sin límite" bind:value={f.limiteKib} />
+      <span class="field-hint">Fuera de las franjas de abajo (si las hay).</span>
+    </div>
+  {/if}
+  <LimiteFranjas id="dv-fr" bind:franjas={f.franjas} porDefecto={Number(f.limiteKib) > 0 ? Number(f.limiteKib) : null} admite={admiteFranjas(equipo)} equipo={equipo.nombre} />
 {/snippet}
 {#snippet resumenCampos()}
 

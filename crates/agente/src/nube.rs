@@ -529,7 +529,7 @@ pub fn copiar_lista(
     origen: &Path,
     carpeta: &str,
     rels: &[&str],
-    limite_kib: Option<u32>,
+    limite: Option<&str>,
     trabajo: &Path,
     ritmos: &mut dyn FnMut(Option<u64>, Option<u64>),
 ) -> Result<(u64, u64), String> {
@@ -557,8 +557,9 @@ pub fn copiar_lista(
                 "--retries",
                 "3",
             ]);
-            if let Some(k) = limite_kib.filter(|k| *k > 0) {
-                c.arg("--bwlimit").arg(format!("{k}K"));
+            // Plan 0.8.0, F4: el límite de siempre («512K») o su horario («Mon-08:00,2048K …»).
+            if let Some(l) = limite.filter(|l| !l.is_empty()) {
+                c.arg("--bwlimit").arg(l);
             }
         },
         ritmos,
@@ -1484,7 +1485,7 @@ mod tests {
         std::fs::File::options().write(true).open(o.join(&malo)).unwrap().set_modified(viejo).unwrap();
         let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), ..Default::default() };
         let carpeta = d.display().to_string().replace('\\', "/");
-        let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: None };
+        let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite: None };
         let op = Opciones { verificar_pct: 100, ..Default::default() };
         let r = vuelta(&o, &lado, &Alcance::Todos, &op, &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.danados_origen.clone()), (1, vec![malo.clone()]));
@@ -1523,7 +1524,7 @@ mod tests {
         // Remoto «local» con la ruta del destino como «carpeta»: el mismo camino que Dropbox, sin cuenta.
         let n = Nube { nombre: "Prueba".into(), tipo: "local".into(), token: String::new(), ..Default::default() };
         let carpeta = d.display().to_string().replace('\\', "/");
-        let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite_kib: Some(100_000) };
+        let lado = Lado::Nube { nube: &n, carpeta: &carpeta, trabajo: &trabajo, limite: Some("100000K".into()) };
         let solo = Alcance::Repos(vec!["ana/repo".into()]);
         let r = vuelta(&o, &lado, &solo, &Opciones::default(), &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.bytes, r.recientes), (2, 6, 1));
@@ -1734,7 +1735,7 @@ mod tests {
         };
         let n = conecta(publica.trim());
         probar(&n, "", &trabajo).unwrap();
-        let lado = Lado::Nube { nube: &n, carpeta: "espejo", trabajo: &trabajo, limite_kib: None };
+        let lado = Lado::Nube { nube: &n, carpeta: "espejo", trabajo: &trabajo, limite: None };
         let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
         assert_eq!((r.copiados, r.danados_origen.len()), (2, 0));
         assert_eq!(std::fs::read_to_string(d.join("espejo").join(&rel)).unwrap(), "paquete");
@@ -1776,7 +1777,7 @@ mod tests {
                     .collect(),
                 ..Default::default()
             };
-            let lado = Lado::Nube { nube: &n, carpeta: "Resguardo", trabajo: &trabajo, limite_kib: None };
+            let lado = Lado::Nube { nube: &n, carpeta: "Resguardo", trabajo: &trabajo, limite: None };
             let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
             assert_eq!(r.copiados, 2);
             assert_eq!(std::fs::read_to_string(dav.join("Resguardo").join(&rel)).unwrap(), "paquete");
@@ -1812,7 +1813,7 @@ mod tests {
                 .collect(),
                 ..Default::default()
             };
-            let lado = Lado::Nube { nube: &n, carpeta: "copias/sur", trabajo: &trabajo, limite_kib: None };
+            let lado = Lado::Nube { nube: &n, carpeta: "copias/sur", trabajo: &trabajo, limite: None };
             let r = vuelta(&o, &lado, &Alcance::Todos, &Opciones { verificar_pct: 100, ..Default::default() }, &mut Estado::default(), &mut |_, _| {}).unwrap();
             assert_eq!(r.copiados, 2);
             assert_eq!(std::fs::read_to_string(s3.join("copias/sur").join(&rel)).unwrap(), "paquete");

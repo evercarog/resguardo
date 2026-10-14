@@ -6,6 +6,7 @@
 // scripts/vectores-espejo-trabajos.ts): lo que se manda, lo que se comprueba (lo
 // mismo que el agente, con vectores compartidos), qué reduce la protección (la
 // espera) y los textos cortos de la interfaz.
+import { errorFranjas } from "./franjas";
 import { horarioEnFrase, lista } from "./formato";
 import { repoEnAlmacen } from "./cadenas";
 import { destinoDe } from "./repo";
@@ -82,6 +83,8 @@ export function paraOrden(t: TrabajoEspejo): TrabajoEspejo {
   if (t.zona && t.zona !== PRINCIPAL) o.zona = t.zona;
   if (typeof t.verificar_pct === "number") o.verificar_pct = Math.round(t.verificar_pct);
   if (t.limite_kib && t.limite_kib > 0) o.limite_kib = Math.round(t.limite_kib);
+  // Plan 0.8.0, F4 (14t): límite según la hora, solo hacia una nube.
+  if (t.adonde.tipo === "nube" && t.limite_franjas?.length) o.limite_franjas = t.limite_franjas.map((f) => ({ dias: [...f.dias], desde: f.desde, hasta: f.hasta, kib: Math.round(f.kib) }));
   if (t.bloqueo) o.bloqueo = true;
   if (t.bloqueo_dias && t.bloqueo_dias > 0) o.bloqueo_dias = Math.round(t.bloqueo_dias);
   if (t.que.tipo === "repos" && t.vistos?.length) o.vistos = [...t.vistos];
@@ -206,6 +209,7 @@ export function errorTrabajo(t: TrabajoEspejo, quien: "almacen" | "equipo"): str
   if (!Number.isInteger(f.min_archivos) || f.min_archivos < 0 || f.min_archivos > 10_000_000 || !Number.isInteger(f.min_faltan) || f.min_faltan < 0 || f.min_faltan > 10_000_000) return "Mínimos del freno no válidos.";
   if (f.accion !== "avisar" && f.accion !== "confirmar") return "Acción del freno no válida.";
   if (t.verificar_pct != null && (t.verificar_pct < 0 || t.verificar_pct > 100)) return "La verificación va de 0 a 100 %.";
+  if (t.adonde.tipo === "nube" && errorFranjas(t.limite_franjas)) return errorFranjas(t.limite_franjas);
   return null;
 }
 

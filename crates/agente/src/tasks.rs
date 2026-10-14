@@ -235,6 +235,10 @@ pub struct DestinoExterno {
     /// privada: cada subida y cada verificación la pasan a restic además de la del origen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cacert: Option<String>,
+    /// Plan 0.8.0, F4 (14t): límite de subida según la hora (franjas.rs). Cada vuelta
+    /// usa el de la franja en la que empieza; fuera de todas, `limit_upload_kib`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub limit_windows: Vec<crate::franjas::Franja>,
 }
 
 impl DestinoExterno {
@@ -1756,7 +1760,8 @@ pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite,
         }
     };
 
-    let limit = offsite.limit_upload_kib.filter(|k| *k > 0).map(|k| k.to_string());
+    // Plan 0.8.0, F4: el de la franja en la que empieza (o el de siempre).
+    let limit = crate::franjas::limite_ahora(&offsite.dest.limit_windows, offsite.limit_upload_kib, Local::now()).map(|k| k.to_string());
     // Por tandas: la línea de órdenes de Windows tiene un límite de longitud.
     let ids: Vec<String> = todo.iter().map(|s| s.id.clone()).collect();
     let batches: Vec<Vec<String>> = ids.chunks(100).map(|c| c.to_vec()).collect();
@@ -2320,7 +2325,7 @@ mod tests {
         assert!(o.dest.normal() && o.dest.lock_days().is_none());
         assert!(!serde_json::to_string(&o).unwrap().contains(r#""dest":"#), "un agente anterior la lee igual");
         let mut o2 = o.clone();
-        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None, cacert: None };
+        o2.dest = DestinoExterno { existing: true, object_lock_days: Some(30), append_only: false, nube: None, cacert: None, limit_windows: vec![] };
         let t = serde_json::to_string(&o2).unwrap();
         assert!(t.contains(r#""dest":{"existing":true,"object_lock_days":30}"#), "{t}");
         assert_eq!(serde_json::from_str::<Offsite>(&t).unwrap(), o2);
@@ -2418,7 +2423,7 @@ mod tests {
             enabled_at: Local::now().to_rfc3339(),
             guard: None,
             verify: None,
-            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None, cacert: None },
+            dest: DestinoExterno { existing, object_lock_days: lock, append_only: false, nube: None, cacert: None, limit_windows: vec![] },
             filtro: None,
         }
     }

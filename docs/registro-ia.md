@@ -135,6 +135,25 @@ Plantilla:
 - **Sin probar / dudas:** lo que falta verificar o decisiones a revisar.
 ```
 
+## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-copias`
+
+**Pedido:** bloque F de la 0.8.0 (copias y versiones): F1/14pp (cuándo termina una copia), 14ww parte 2 (comentarios en las versiones), 14cc («Conservar para siempre»), F3/14u («N versiones por día») y F4/14t (límite de velocidad según la hora). Trabajo autónomo, desde `ia/integracion-080`.
+
+**Hecho:**
+
+- **F1 (agente):** `config.copias[].a_mano` y `termina { veces, hasta, una_vez, desde }`. El agente lleva la cuenta en `state.json` (`AgentState.ends`), atada a la regla (`PlanEnd::sig`, que incluye `desde`: «Reanudar» pone otro y la cuenta empieza de cero). Una copia completada no se hace sola ni cuenta como atrasada; «Copiar ahora» sigue. «Una sola vez · Ahora» manda una hora ya pasada (la víspera a las 00:00) y `desde` absoluto: así no depende de la zona horaria del navegador; al aplicar la configuración se lanza una vuelta enseguida. Resumen: `a_mano`, `termina`, `hechas`, `completada`. La regla 3-2-1-1-0 tiene `sin_plazo` en los pasos (Rust y consola).
+- **F1 (consola):** «Solo a mano» y «Una sola vez» en «Cuándo empieza» (guiado y avanzado) y «Termina: nunca / después de N copias / el día…»; estado «Completada», frase («…, 10 veces: van 3»), «Reanudar» en la página de la copia (pide cómo sigue y abre el editor con `?reanudar=`).
+- **F2:** órdenes nuevas `comentario_version` (inofensiva; texto ≤ 280, sin control, sin nada que parezca una contraseña o clave; editar/borrar solo la misma cuenta desde la misma consola) y `conservar_version` (clave de administración, motivo obligatorio también al quitar; quitar es destructiva según el cuerpo). Se guardan **en el equipo** (`servidor.bin`) y van en el resumen; quedan en el historial común con su descripción (con el motivo). En el almacén, `conservar_version { usuario, repo, … }` guarda una lista de ids (`privado/almacen-conservadas.json`) que su planificador respeta. **Por qué ids y no `restic tag`:** etiquetar reescribe la versión con otro id (y borra la vieja, imposible en solo añadir desde el equipo), y rompería comentarios e informes. La retención del equipo, con conservadas o «por día», pasa por el planificador propio y quita por ids. Consola: detalle de la versión (comentarios y conservar), iconos en la bitácora de versiones y en Restaurar, sección «Se conservan para siempre» en «Retención en detalle» y la simulación las respeta.
+- **F3:** `retencion.por_dia { horas?, plazo? }` en el planificador del almacén (`retencion_almacen::por_dia`) y en la simulación de la consola (`porDiaQuedan`), con vectores compartidos `crates/protocolo/vectors/retencion-por-dia.json`. Editor «A medida» → «Versiones por día», solo con agentes que lo admiten.
+- **F4:** franjas `{ dias, desde, hasta, kib }` (`franjas.rs`, `lib/franjas.ts`). Espejos a una nube: rclone `--bwlimit` con horario semanal; derivadas: restic `--limit-upload` de la franja en la que empieza (guardado en `DestinoExterno.limit_windows` para no tocar el `Offsite` que construye la app antigua congelada). «Más opciones» del espejo y de la derivada.
+- Contrato en `api-servidor.md` (§5 y «Cambios», v1.6x pendiente de numerar). `ADMITE` pasa a slice (como en la integración) con `termina`, `comentarios_version`, `conservar_version`, `retencion_por_dia`, `limite_franjas`.
+- Vectores nuevos `scripts/vectores-copias-versiones.ts` (78). e2e: paso 5 conserva una versión que la regla quitaría (equipo y almacén) y comprueba que la retención del almacén no la quita; comentario y comentario con contraseña rechazado; paso 5a2 «Una sola vez · Ahora» completada y «Solo a mano».
+- Arreglo encontrado al probar en el simulado: el editor enviaba la configuración sin `admite.termina` (se perdía «termina» al guardar), como el arreglo de `cadenas` de la 0.7.26.
+
+**Sin probar:** franjas de velocidad con rclone/restic de verdad (solo pruebas unitarias del horario y del límite elegido); «Versiones por día» contra un almacén real (solo planificador y vectores); la vuelta inmediata tras «Una sola vez · Ahora» fuera del modo de pruebas (en el e2e el agente da vueltas cada 10 s); «Reanudar» de punta a punta con un agente real (probado en el simulado).
+
+**Dudoso:** el contador de copias en `state.json` y no en la configuración (es el estado persistente del agente; si se borra, la cuenta vuelve a cero); cambiar «Termina» en el editor reinicia la cuenta; cuentan las copias correctas y con avisos; los comentarios van en claro en el resumen (como la observación del equipo), con tope de 40 por equipo y 24 KiB; la detección de secretos es heurística.
+
 ## 2026-10-13 · Claude Code (Claude Opus 5.5) · rama `ia/080-camino`
 
 - **Pedido:** C1 y C4 del plan 0.8.0, en autónomo: el camino de cada copia a la vista (14kk, 14h: página de la copia, tarjeta del repositorio, «Copias», derivada como repositorio propio) y un solo vocabulario (14x, 14z, 14w, 14n).

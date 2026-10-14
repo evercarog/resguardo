@@ -8,6 +8,7 @@ import type { Tono } from "./salud";
 import { cuandoFrase, horarioEnFrase, lista, plural, relativo } from "./formato";
 import { informeDe } from "./repo";
 import { proximaVez, reglasDe, ultimaVez } from "./horario";
+import { esAhora, fechaHoraEnPalabras, terminaEnFrase } from "./copiaGuiada";
 
 /** El informe del repositorio con solo las versiones y vueltas de esta copia. */
 export function infCopia(inf: RepoInforme | null, copia: string): RepoInforme | null {
@@ -24,6 +25,8 @@ export const filaInforme = (informe: Informe | null | undefined, k: Pick<CopiaRe
  * anterior que no lo dice, calculado del horario (null si está desactivada).
  */
 export function proximaDe(k: CopiaResumen, informe: Informe | null | undefined, ahora = Date.now()): string | null {
+  // Plan 0.8.0, F1: una completada o solo a mano no vuelve a tocar sola.
+  if (k.completada || k.a_mano) return null;
   const dicha = k.proxima ?? informe?.datos.proximas?.[k.id];
   if (dicha !== undefined) return dicha;
   if (k.activa === false) return null;
@@ -83,7 +86,8 @@ const MARGEN = 2 * 3600_000;
  * sabe desde cuándo existe): sale como «Sin copias todavía».
  */
 export function atrasada(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now()): boolean {
-  if (k.activa === false || pausada || !vuelta) return false;
+  // Plan 0.8.0, F1: una completada o solo a mano nunca va atrasada.
+  if (k.activa === false || pausada || !vuelta || k.completada || k.a_mano) return false;
   const slot = ultimaProgramada(k.horario, ahora);
   if (slot == null || slot > ahora - MARGEN) return false;
   return Date.parse(vuelta.cuando) < slot;
@@ -96,6 +100,8 @@ export interface EstadoCopia {
 
 export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now()): EstadoCopia {
   if (k.activa === false) return { tono: "neutral", texto: "Desactivada" };
+  // Plan 0.8.0, F1: completada (hizo lo previsto): ni fallida ni atrasada.
+  if (k.completada) return { tono: "ok", texto: "Completada" };
   if (pausada) return { tono: "paused", texto: "En pausa" };
   if (vuelta?.resultado === "fallo") return { tono: "bad", texto: "Con error" };
   if (atrasada(k, vuelta, pausada, ahora)) return { tono: "warn", texto: "Atrasada" };
@@ -115,13 +121,27 @@ export function fraseCopia(
   const que = k.carpetas != null ? plural(k.carpetas, "carpeta", "carpetas") : "sus carpetas";
   // 14gg: sin paréntesis dentro de paréntesis («volcado de 6 bases de SQL Server (A, B, C y 3 más)»).
   const antes = o.ganchos?.length ? `; antes, ${lista(o.ganchos)}` : "";
-  const partes = [`Copia ${que} de ${o.equipo} en «${o.repo}»${antes}: ${horarioEnFrase(k.horario).replace(/^./, (c) => c.toLowerCase())}.`];
+  const partes = [`Copia ${que} de ${o.equipo} en «${o.repo}»${antes}: ${cuandoCopiaEnFrase(k, ahora).replace(/^./, (c) => c.toLowerCase())}.`];
   if (k.activa === false) partes.push("Ahora está desactivada: no se hará hasta que la actives.");
+  else if (k.completada) partes.push(`Está completada desde ${relativo(k.completada, ahora)}: ya no se hace sola; sus versiones se quedan.`);
   else if (o.pausada) partes.push("Las copias automáticas están en pausa.");
   if (o.vuelta) partes.push(`La última copia, ${relativo(o.vuelta.cuando, ahora)}, ${TEXTO_VUELTA[o.vuelta.resultado]}.`);
   else partes.push("Todavía no se ha hecho ninguna vez.");
   if (o.proxima && k.activa !== false && Date.parse(o.proxima) > ahora) partes.push(`La próxima será ${cuandoFrase(o.proxima, ahora)}.`);
   return partes.join(" ");
+}
+
+/**
+ * Plan 0.8.0, F1: cuándo se hace, en una frase (lo que dice el equipo): «Solo a
+ * mano», «Una sola vez, el 20 oct 2026 a las 21:30», «Cada mes el día 1, 10
+ * veces: van 3».
+ */
+export function cuandoCopiaEnFrase(k: CopiaResumen, ahora = Date.now()): string {
+  if (k.a_mano) return "Solo a mano";
+  const una = k.termina?.una_vez;
+  if (una) return esAhora(una, ahora) ? "Una sola vez" : `Una sola vez, el ${fechaHoraEnPalabras(una)}`;
+  const fin = terminaEnFrase(k.termina, k.hechas);
+  return fin ? `${horarioEnFrase(k.horario)}, ${fin}` : horarioEnFrase(k.horario);
 }
 
 export interface CifrasCopia {

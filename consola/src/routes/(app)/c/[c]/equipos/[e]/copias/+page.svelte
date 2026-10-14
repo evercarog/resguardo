@@ -70,6 +70,9 @@
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
   import {
     ADMITE_INICIO_DESPUES,
+    ADMITE_TERMINA,
+    leerComoSeguir,
+    reanudarCopia,
     copiaNueva,
     duplicarCopia,
     errorInicio,
@@ -183,6 +186,13 @@
       const pedida = page.url.searchParams.get("copia");
       if (pedida && cfg.copias.some((x) => x.id === pedida)) {
         abiertas[pedida] = true;
+        // Plan 0.8.0, F1: «Reanudar» una copia completada (?reanudar=nunca|veces:N|hasta:AAAA-MM-DD|una_vez).
+        const como = leerComoSeguir(page.url.searchParams.get("reanudar"));
+        const kr = cfg.copias.find((x) => x.id === pedida);
+        if (como && kr && admiteTermina) {
+          reanudarCopia(kr, como);
+          pasos[pedida] = "resumen";
+        }
         void tick().then(() => document.getElementById(`copia-${pedida}`)?.scrollIntoView({ block: "start" }));
       }
     } catch (err) {
@@ -206,7 +216,8 @@
   function problemaHorario(k: CopiaConfig): string | null {
     const reglas = reglasDe(k.horario, admiteReglas);
     // Tarea 7c: «después de la anterior» no necesita horario propio.
-    if (!reglas.length) return k.activa && !k.tras ? `«${k.nombre}» no tiene horario.` : null;
+    // Plan 0.8.0, F1: «Solo a mano» y «Una sola vez» tampoco.
+    if (!reglas.length) return k.activa && !k.tras && !k.a_mano && !k.termina?.una_vez ? `«${k.nombre}» no tiene horario.` : null;
     const e = errorReglas(reglas, admiteReglas);
     return e ? `«${k.nombre}»: ${e.replace(/^./, (x) => x.toLowerCase()).replace(/\.$/, "")}` : null;
   }
@@ -403,9 +414,11 @@
   const admiteCadenas = $derived(admite(equipo, ADMITE.cadenas));
   /** Plan 0.7.26: y «Después de la anterior» aunque falle, con retraso (`inicio`, `retraso_min`). */
   const admiteDespues = $derived(admite(equipo, ADMITE_INICIO_DESPUES));
+  /** Plan 0.8.0, F1: «Solo a mano», «Una sola vez» y «Termina» (`a_mano`, `termina`). */
+  const admiteTermina = $derived(admite(equipo, ADMITE_TERMINA));
   const admiteFiltros = $derived(admite(equipo, ADMITE.filtros));
   /** Lo que cada control de «Cuándo empieza» puede ofrecer con este agente. */
-  const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues });
+  const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, termina: admiteTermina });
   /** Una copia antigua «después de» que además tenía su horario (ya no se ofrece): se dice y se puede quitar. */
   const conHorarioDeAntes = (k: CopiaConfig) => !!k.tras && reglasDe(k.horario, admiteReglas).length > 0;
   // --- Ordenar (docs/editor-de-copias.md): asa para arrastrar, flechas y menú ---
@@ -700,6 +713,8 @@
         pruebas: admitePrueba,
         cadenas: admiteCadenas,
         despues: admiteDespues,
+        // Plan 0.8.0, F1: «Solo a mano», «Una sola vez» y «Termina».
+        termina: admiteTermina,
       });
       // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
       for (const h of [...historiales]) {
@@ -917,7 +932,7 @@
                   cliente={actual.cliente}
                   prueba={prueba ?? undefined}
                   version={versionAgente}
-                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros }}
+                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina }}
                   regla={rc}
                   puede={puedeSugerir(k)}
                   pendientes={pendientesDe(k)}
@@ -968,7 +983,7 @@
                 {#if guardadas.has(k.id)}<Observaciones tipo="copia" objeto={objetoDe(equipo.id, k.id)} compacto />{/if}
                 <div class="field">
                   <span class="field-label">Cuándo empieza <Ayuda id="inicio-copia" /></span>
-                  <CuandoEmpieza copias={cfg.copias} {i} admite={admiteInicio} version={versionAgente} equipo={equipo.nombre} />
+                  <CuandoEmpieza copias={cfg.copias} {i} admite={admiteInicio} version={versionAgente} equipo={equipo.nombre} hechas={equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas ?? null} />
                   {#if conHorarioDeAntes(k)}
                     <p class="faint nota">Además tenía su horario ({resumenHorario(k.horario)}).<button type="button" class="btn btn-sm btn-ghost" onclick={() => (k.horario = { dias: [], horas: [] })}>Quitarlo</button></p>
                   {/if}

@@ -35,7 +35,7 @@
     type VersionLinea,
   } from "$lib/lineaTiempo";
   import { esFallo, FILTROS_HISTORIAL, pasaFiltro, type FiltroHistorial, type NotaVersion, type Suceso } from "$lib/historial";
-  import { textoRegla, type Periodo } from "$lib/retencion";
+  import { textoRegla, type MotivoQueda } from "$lib/retencion";
   import CalendarioCalor from "./CalendarioCalor.svelte";
   import Bitacora, { type FilaBitacora } from "./Bitacora.svelte";
   import FormaCopia from "./FormaCopia.svelte";
@@ -48,7 +48,7 @@
     /** Quién aplica la retención (un almacén), si no es el equipo. */
     quien?: string | null;
     /** La retención ya simulada (varios repositorios, cada uno con la suya); sin ella, con `regla`. */
-    motivosDados?: Map<string, Periodo | null> | null;
+    motivosDados?: Map<string, MotivoQueda | null> | null;
     /** La frase de la retención simulada, si no es una sola regla. */
     textoRetencion?: string | null;
     ahora: number;
@@ -80,6 +80,8 @@
     enPeriodo?: number;
     /** 14d: ¿se ha elegido «Todas» (toda la historia)? */
     todas?: boolean;
+    /** Plan 0.8.0, F2: comentarios y «se conserva para siempre» junto a cada versión. */
+    marcas?: { equipo: import("$lib/tipos").Equipo | null | undefined; repo?: string | null } | null;
   }
   let {
     versiones,
@@ -106,6 +108,7 @@
     pie,
     enPeriodo = $bindable(0),
     todas = $bindable(false),
+    marcas = null,
   }: Props = $props();
 
   const id = $props.id();
@@ -412,6 +415,7 @@
           reciente={acciones ? null : (lista[0]?.id ?? null)}
           {nuevas}
           {notas}
+          {marcas}
           {alAbrirSuceso}
           etiqueta={filtro ? `Lo de ${filtro.texto}` : conSucesos ? `Historial y versiones de ${nombreRango}` : `Versiones de ${nombreRango}`}
         />

@@ -22,9 +22,11 @@ import {
   KeyRound,
   LayoutDashboard,
   Lock,
+  MessageSquare,
   Monitor,
   Pause,
   Pencil,
+  Pin,
   Play,
   Server,
   Settings2,
@@ -102,6 +104,9 @@ const ORDEN: Record<string, Icono> = {
   etiquetas_equipo: Tag,
   observacion_equipo: StickyNote,
   quitar_destino: Trash2,
+  // Plan 0.8.0, F2.
+  comentario_version: MessageSquare,
+  conservar_version: Pin,
 };
 
 /** El icono de un tipo de orden (o uno genérico). */

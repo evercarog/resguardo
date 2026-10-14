@@ -28,6 +28,8 @@ export interface Admite {
   pruebas?: boolean;
   /** Plan 0.7.26: `inicio: "despues"` y `retraso_min` (agente con `admite: "inicio_despues"`). */
   despues?: boolean;
+  /** Plan 0.8.0, F1: `a_mano` y `termina` (agente con `admite: "termina"`). */
+  termina?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -41,6 +43,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     cadenas: !!equipo.resumen?.admite?.includes("cadenas"),
     pruebas: admitePruebaAuto(equipo),
     despues: !!equipo.resumen?.admite?.includes("inicio_despues"),
+    termina: !!equipo.resumen?.admite?.includes("termina"),
   };
 }
 
@@ -60,8 +63,10 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
   const copias = c0.copias.map((k) => {
     // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
     // Plan 0.7.26: `inicio` solo para «despues» (lo demás se deduce de `tras`) y el retraso si hay; los dos, solo a un agente que los entiende.
-    const { solo_si_cambios, tras, inicio, retraso_min, ...resto } = k;
+    // Plan 0.8.0, F1: «Solo a mano» y «Termina», solo a un agente que los entiende (la consola no se los ofrece a otro).
+    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, ...resto } = k;
     const conTras = !!a.cadenas && !!tras;
+    const conFin = !!a.termina && !!termina && (termina.veces != null || !!termina.hasta || !!termina.una_vez);
     return {
       ...resto,
       horario: {
@@ -74,6 +79,8 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       ...(conTras ? { tras } : {}),
       ...(conTras && a.despues && inicio === "despues" ? { inicio } : {}),
       ...(conTras && a.despues && retraso_min && retraso_min > 0 ? { retraso_min } : {}),
+      ...(a.termina && a_mano ? { a_mano: true } : {}),
+      ...(conFin ? { termina: Object.fromEntries(Object.entries(termina!).filter(([, v]) => v != null && v !== "")) } : {}),
     };
   });
   return {

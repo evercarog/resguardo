@@ -175,6 +175,10 @@ pub struct Trabajo {
     /// Límite de velocidad hacia una nube (KiB/s).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limite_kib: Option<u32>,
+    /// Plan 0.8.0, F4 (14t, `admite: "limite_franjas"`): límite según la hora hacia una
+    /// nube (fuera de las franjas, `limite_kib`). rclone lo cambia a su hora.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub limite_franjas: Vec<crate::franjas::Franja>,
     /// Orden en la lista (y en qué orden se hacen los que tocan a la vez).
     #[serde(default)]
     pub orden: u32,
@@ -332,6 +336,7 @@ pub fn de_destino(d: &crate::espejo::Destino, hora: &str, limite_kib: Option<u32
         freno: Freno::default(),
         verificar_pct: d.verificar_pct,
         limite_kib: limite_kib.filter(|_| d.tipo == "nube"),
+        limite_franjas: vec![],
         orden,
         bloqueo: d.bloqueo,
         bloqueo_dias: None,
@@ -413,6 +418,7 @@ pub fn exacto(t: &Trabajo, todos: &[Trabajo], limite_kib: Option<u32>) -> bool {
         && t.bloqueo_dias.is_none()
         && t.nombre == nombre_por_defecto(&t.adonde)
         && (t.adonde.tipo != "nube" || t.limite_kib == limite_kib)
+        && t.limite_franjas.is_empty()
         && todos.iter().filter(|o| o.clave_destino() == t.clave_destino()).count() == 1
 }
 
@@ -574,6 +580,11 @@ pub fn validar(t: &mut Trabajo, quien: &str) -> Result<(), String> {
         return Err("El % de verificación del espejo tiene que ir de 0 a 100.".into());
     }
     t.limite_kib = t.limite_kib.filter(|k| *k > 0);
+    crate::franjas::validar(&t.limite_franjas)?;
+    if t.adonde.tipo != "nube" {
+        // Solo hacia una nube: a un disco no hay red que cuidar.
+        t.limite_franjas.clear();
+    }
     // Lo que había al elegir: solo con una selección de repositorios.
     if !matches!(t.que, Que::Repos { .. }) {
         t.vistos.clear();
@@ -815,7 +826,7 @@ pub fn vuelta(
             Some(s) => format!("{base}/{s}"),
             None => base.to_string(),
         };
-        Lado::Nube { nube: &nube, carpeta: &carpeta_nube, trabajo: &trabajo, limite_kib: t.limite_kib }
+        Lado::Nube { nube: &nube, carpeta: &carpeta_nube, trabajo: &trabajo, limite: crate::franjas::bwlimit(&t.limite_franjas, t.limite_kib) }
     } else {
         let base =
             if t.adonde.tipo == "zona" { carpeta_zona(&t.adonde.carpeta).ok_or("esa zona ya no está en este almacén.")? } else { t.adonde.carpeta.clone() };
@@ -873,7 +884,7 @@ pub fn resumen(t: &Trabajo, espacio: Value) -> Value {
     let mut v = json!({
         "id": t.id, "nombre": t.nombre, "activo": t.activo, "quien": t.quien, "que": t.que, "adonde": t.adonde,
         "cuando": t.cuando, "retencion": t.retencion, "freno": t.freno, "verificar_pct": t.pct_verificar(),
-        "limite_kib": t.limite_kib, "orden": t.orden, "bloqueo": t.bloqueo, "bloqueo_dias": t.bloqueo_dias,
+        "limite_kib": t.limite_kib, "limite_franjas": (!t.limite_franjas.is_empty()).then_some(&t.limite_franjas), "orden": t.orden, "bloqueo": t.bloqueo, "bloqueo_dias": t.bloqueo_dias,
         "ultima": t.estado.ultima, "inicio": t.estado.inicio, "resultado": t.estado.resultado,
         "verificacion": t.estado.verificacion, "danados_origen": t.estado.danados_origen,
         "por_borrar": t.estado.por_borrar, "freno_aviso": t.estado.freno,

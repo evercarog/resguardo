@@ -78,6 +78,10 @@ export const NIVEL: Record<string, Nivel> = {
   // cuentan en la regla 3-2-1: con la clave de administración.
   datos_cliente: "sesion",
   datos_cliente_admin: "admin",
+  // Plan 0.8.0, F2: un comentario en una versión (inofensivo: texto validado, lo guarda el
+  // equipo) y «Conservar para siempre» (con la clave; quitarlo, con espera).
+  comentario_version: "sesion",
+  conservar_version: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */
@@ -191,6 +195,9 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
     // v1.22: poner o cambiar la retención del almacén borrará versiones; quitarla, no.
     case "retencion_almacen":
       return cuerpo.quitar !== true;
+    // Plan 0.8.0, F2: dejar de conservar una versión (la retención podrá quitarla).
+    case "conservar_version":
+      return cuerpo.conservar === false;
     case "desvincular":
       return cuerpo.modo === "dejar_de_copiar";
     // Quitar la copia externa (hora: null) deja de proteger fuera de la oficina.

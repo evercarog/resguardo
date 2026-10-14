@@ -1,0 +1,29 @@
+{
+  "_": "Plan 0.8.0, F3 (14u): «N versiones por día» en la retención. Los mismos casos los pasan el planificador del agente (retencion_almacen::planear) y la simulación de la consola (consola/src/lib/retencion.ts, seQuedan). Horas locales, de la más reciente a la más antigua; `quedan` dice cuáles se quedan.",
+  "casos": [
+    {
+      "nombre": "la primera y la última de cada día",
+      "regla": { "diarias": 0, "semanales": 0, "mensuales": 0, "anuales": 0, "por_dia": {} },
+      "horas": ["2026-10-05T18:00", "2026-10-05T13:00", "2026-10-05T09:00", "2026-10-04T20:00", "2026-10-04T08:00", "2026-10-03T12:00"],
+      "quedan": [true, false, true, true, true, true]
+    },
+    {
+      "nombre": "las más cercanas a las 09:00 y las 18:00 (a igual distancia, la más antigua)",
+      "regla": { "diarias": 0, "semanales": 0, "mensuales": 0, "anuales": 0, "por_dia": { "horas": ["09:00", "18:00"] } },
+      "horas": ["2026-10-05T18:00", "2026-10-05T13:00", "2026-10-05T09:00", "2026-10-04T20:00", "2026-10-04T08:00", "2026-10-02T11:00", "2026-10-02T10:00", "2026-10-02T08:00"],
+      "quedan": [true, false, true, true, true, true, false, true]
+    },
+    {
+      "nombre": "con plazo de 2 días (lo de antes no lo guarda esta regla)",
+      "regla": { "diarias": 0, "semanales": 0, "mensuales": 0, "anuales": 0, "por_dia": { "plazo": "2d" } },
+      "horas": ["2026-10-05T18:00", "2026-10-05T13:00", "2026-10-05T09:00", "2026-10-04T20:00", "2026-10-04T08:00", "2026-10-03T12:00"],
+      "quedan": [true, false, true, true, true, false]
+    },
+    {
+      "nombre": "se suma a las demás reglas (2 diarias y la más cercana a las 12:00 durante 1 día)",
+      "regla": { "diarias": 2, "semanales": 0, "mensuales": 0, "anuales": 0, "por_dia": { "horas": ["12:00"], "plazo": "1d" } },
+      "horas": ["2026-10-05T18:00", "2026-10-05T13:00", "2026-10-05T09:00", "2026-10-04T20:00", "2026-10-04T08:00", "2026-10-03T12:00"],
+      "quedan": [true, true, false, true, false, false]
+    }
+  ]
+}

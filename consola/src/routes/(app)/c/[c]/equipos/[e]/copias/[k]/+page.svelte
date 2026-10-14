@@ -19,6 +19,7 @@
   import {
     CalendarClock,
     ChartColumn,
+    CircleCheck,
     CircleHelp,
     Database,
     Eye,
@@ -31,6 +32,7 @@
     LockKeyhole,
     Pencil,
     Play,
+    RotateCcw,
     TriangleAlert,
   } from "@lucide/svelte";
   import * as api from "$lib/api";
@@ -47,7 +49,8 @@
   import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
   import AvisoMismoEquipo from "$lib/componentes/AvisoMismoEquipo.svelte";
-  import { atrasada, cifrasCopia, estadoCopia, explicarError, filaInforme, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "$lib/copia";
+  import { atrasada, cifrasCopia, cuandoCopiaEnFrase, estadoCopia, explicarError, filaInforme, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "$lib/copia";
+  import ReanudarCopia from "$lib/componentes/copias/ReanudarCopia.svelte";
   import type { Configuracion, CopiaConfig, EquipoDetalle, VersionInforme } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
@@ -223,6 +226,9 @@
   const copiarAhora = () =>
     k && (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 
+  // Plan 0.8.0, F1: una copia completada se puede reanudar (cómo sigue, y después el editor).
+  let reanudando = $state(false);
+
   const tonoGancho = (s: string) => (s === "ok" ? "ok" : s === "aviso" ? "warn" : "bad") as "ok" | "warn" | "bad";
   const textoGancho = (s: string) => (s === "ok" ? "Correcto" : s === "aviso" ? "Con avisos" : "Falló");
 </script>
@@ -255,6 +261,7 @@
       {#if puede.ordenar(rol)}
         <div class="page-actions">
           {#if k.activa !== false}<button class="btn btn-primary" onclick={copiarAhora}><Play size={16} />Copiar ahora</button>{/if}
+          {#if k.completada && puede.administrar(rol)}<button class="btn" onclick={() => (reanudando = !reanudando)} aria-expanded={reanudando}><RotateCcw size={16} />Reanudar</button>{/if}
           {#if puede.administrar(rol)}<a class="btn" href="/c/{c}/equipos/{e}/copias?copia={encodeURIComponent(kid)}" use:tip={"Carpetas, horario, cuándo empieza y su orden, en el editor de copias"}><Pencil size={16} />Cambiar</a>{/if}
           {#if versiones.length || repo?.versiones}<a class="btn btn-ghost" href="/c/{c}/restaurar?equipo={e}&repo={encodeURIComponent(k.repo)}"><History size={16} />Restaurar</a>{/if}
         </div>
@@ -279,6 +286,20 @@
     {/if}
 
     <EnMarcha equipo={e} copia={kid} marco alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
+
+    {#if k.completada}
+      <!-- Plan 0.8.0, F1 (14pp): completada, ni fallida ni atrasada. -->
+      <div class="notice notice-success" role="status">
+        <CircleCheck size={16} />
+        <p>
+          Completada {relativo(k.completada, reloj.ahora)}: {k.termina?.una_vez ? "ya se hizo su única vez" : k.termina?.veces ? `hizo sus ${k.termina.veces === 1 ? "copia prevista" : `${k.termina.veces} copias previstas`}` : "pasó su último día"}. No avisa ni se hace sola; sus versiones, su repositorio y su retención se quedan.
+          {#if puede.ordenar(rol)}{puede.administrar(rol) ? "Puedes copiar a mano cuando quieras o reanudarla." : "Puedes copiar a mano cuando quieras."}{/if}
+        </p>
+      </div>
+      {#if reanudando}
+        <ReanudarCopia copia={k} href="/c/{c}/equipos/{e}/copias?copia={encodeURIComponent(kid)}" oncerrar={() => (reanudando = false)} />
+      {/if}
+    {/if}
 
     <p class="frase">
       {fraseCopia(k, { equipo: equipo.nombre, repo: repo?.nombre ?? k.repo, vuelta, proxima, pausada, ganchos: ganchosEnFrase(detalle ? ganchosDe(detalle.gancho) : null, ganchosRes) }, reloj.ahora)}
@@ -332,7 +353,7 @@
       <div class="cifra">
         <span class="k">Próxima</span>
         <strong class="num">{proxima && Date.parse(proxima) > reloj.ahora ? relativo(proxima, reloj.ahora) : "—"}</strong>
-        <span class="faint">{k.activa === false ? "desactivada" : pausada ? "en pausa" : proxima && Date.parse(proxima) > reloj.ahora ? cuandoFrase(proxima, reloj.ahora) : horarioEnFrase(k.horario)}</span>
+        <span class="faint">{k.activa === false ? "desactivada" : k.completada ? "completada" : k.a_mano ? "solo a mano" : pausada ? "en pausa" : proxima && Date.parse(proxima) > reloj.ahora ? cuandoFrase(proxima, reloj.ahora) : cuandoCopiaEnFrase(k, reloj.ahora)}</span>
       </div>
       <button class="cifra pulsable-bloque" use:tip={"Ver los problemas recientes"} onclick={abrirEstado}>
         <span class="k">Copias correctas</span>
@@ -451,7 +472,7 @@
             <dt>{k.tras ? "Empieza" : "Horario"}</dt>
             <dd>
               {#if k.tras}<Link2 size={14} />Después de «{copias.find((x) => x.id === k.tras)?.nombre ?? k.tras}»{#if typeof k.horario === "object" && (k.horario?.horas?.length || k.horario?.reglas?.length)}{" y "}{horarioEnFrase(k.horario).toLowerCase()}{/if}
-              {:else}<CalendarClock size={14} />{horarioEnFrase(k.horario)}{/if}{k.activa === false ? " (desactivada)" : ""}
+              {:else}<CalendarClock size={14} />{cuandoCopiaEnFrase(k, reloj.ahora)}{/if}{k.activa === false ? " (desactivada)" : ""}
             </dd>
           </div>
           <div>

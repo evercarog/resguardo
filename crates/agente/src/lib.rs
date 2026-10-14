@@ -58,6 +58,7 @@ pub mod espejo_trabajos;
 #[cfg(test)]
 mod espera_it;
 pub mod espera_v2;
+pub mod franjas;
 pub mod ganchos;
 pub mod gestion_v2;
 pub mod history;
@@ -95,6 +96,7 @@ pub mod tasks;
 mod traslado_it;
 pub mod traslado_v2;
 pub mod ventana;
+pub mod versiones_v2;
 #[cfg(test)]
 mod vincular_it;
 pub mod volumenes;
