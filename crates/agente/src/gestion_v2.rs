@@ -1395,6 +1395,9 @@ pub const ADMITE: &[&str] = &[
     // `sede:`, `sede.equipo:` y `sede.destino:` (con la clave), `etiqueta.categoria:` y
     // `orden.equipos:` en `datos_cliente` (docs/sedes.md).
     resguardo_protocolo::datos_cliente::ADMITE_SEDES,
+    // v1.6x (pendiente de numerar al unir) 14ccc: `verificar` (opcional) en el gancho `sqlserver`
+    // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
+    "verificar_volcado",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

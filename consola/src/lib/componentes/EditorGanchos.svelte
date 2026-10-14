@@ -6,7 +6,7 @@
   // rechazaría la configuración: entonces solo se explica qué hacer.
   import { CircleAlert, Database, FolderClock, FolderOpen, Plus, Trash2 } from "@lucide/svelte";
   import type { Cliente, Equipo, Gancho } from "$lib/tipos";
-  import { errorCarpetaDestino, errorGancho, MAX_BASES, MAX_GANCHOS, VERSION_GANCHOS } from "$lib/ganchos";
+  import { admiteVerificarVolcado, errorCarpetaDestino, errorGancho, MAX_BASES, MAX_GANCHOS, VERSION_GANCHOS } from "$lib/ganchos";
   import Ayuda from "./Ayuda.svelte";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
 
@@ -31,6 +31,8 @@
   /** El paso cuya carpeta se está eligiendo. */
   let explorando = $state<number | null>(null);
   const win = $derived(/windows/i.test(equipo?.so ?? "windows"));
+  /** 14ccc: el agente comprueba cada volcado (y se puede apagar) desde «verificar_volcado». */
+  const conVerificar = $derived(admiteVerificarVolcado(equipo));
 
   function anadir(tipo: Gancho["tipo"]) {
     ganchos = [...ganchos, tipo === "sqlserver" ? { tipo, instancia: ".", bases: [""], carpeta: "C:\\ResguardoVolcados" } : { tipo, carpeta: "", horas: 26, extension: null }];
@@ -63,7 +65,7 @@
           <button type="button" class="icon-btn" aria-label="Quitar este paso" use:tip={"Quitar"} onclick={() => quitar(i)}><Trash2 size={14} /></button>
         </div>
         {#if g.tipo === "sqlserver"}
-          <p class="faint expl">Cada base se vuelca (copia «COPY_ONLY», que no estorba a las copias propias de SQL Server) en la carpeta, se copia con lo demás y el volcado se borra al terminar. Si un volcado falla, la copia sale como fallida.</p>
+          <p class="faint expl">Cada base se vuelca (copia «COPY_ONLY», que no estorba a las copias propias de SQL Server) en la carpeta{conVerificar && g.verificar !== false ? ", se verifica" : ""}, se copia con lo demás y el volcado se borra al terminar. Si un volcado falla, la copia sale como fallida.</p>
           <div class="fila-campos">
             <div class="field">
               <label class="field-label" for="g-bases-{id}-{i}">Bases de datos</label>
@@ -84,6 +86,16 @@
             </div>
             <span class="field-hint">En el propio equipo, con sitio para los volcados. La cuenta del equipo necesita permiso de copia en cada base: <a href="/ayuda#ganchos">cómo darlo</a>.</span>
           </div>
+          {#if conVerificar}
+            <!-- 14ccc: «Más opciones» del paso; activado por defecto (sin el campo, el agente verifica). -->
+            <details class="mas">
+              <summary>Más opciones{g.verificar === false ? " · sin verificar los volcados" : ""}</summary>
+              <label class="switch-row">
+                <input type="checkbox" class="switch" checked={g.verificar !== false} onchange={(e) => (g.verificar = e.currentTarget.checked ? undefined : false)} />
+                <span>Verificar cada volcado (recomendado)<span class="faint">Al terminar cada volcado, SQL Server lo relee entero y comprueba sus sumas («RESTORE VERIFYONLY»). Si no pasa, la copia sale fallida. Tarda más o menos lo que tardó el volcado. <a href="/ayuda#guia-comprobar-volcado">Comprobar los datos de un volcado</a></span></span>
+              </label>
+            </details>
+          {/if}
         {:else}
           <p class="faint expl">Para programas que hacen sus propias copias : si el archivo más nuevo de su carpeta es más viejo que lo indicado, la copia sale «con avisos». No cambia lo que se copia.</p>
           <div class="fila-campos">
@@ -166,6 +178,14 @@
     background: var(--surface-2);
     border: 1px solid transparent;
     border-radius: var(--radius);
+  }
+  .mas summary {
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+  }
+  .mas[open] summary {
+    margin-bottom: var(--sp-3);
   }
   .gancho.mal {
     border-color: color-mix(in srgb, var(--bad) 40%, transparent);

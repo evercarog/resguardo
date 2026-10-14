@@ -16,7 +16,7 @@
   const plano = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const q = $derived(plano(buscar.trim()));
   const casa = (...t: (string | undefined)[]) => !q || q.split(/\s+/).every((p) => plano(t.filter(Boolean).join(" ")).includes(p));
-  const guias = $derived(GUIAS.filter((g) => casa(g.titulo, g.resumen, ...g.texto, ...(g.pasos ?? []))));
+  const guias = $derived(GUIAS.filter((g) => casa(g.titulo, g.resumen, ...g.texto, ...(g.pasos ?? []), ...(g.ordenes ?? []).flatMap((o) => [o.texto, o.comando]))));
   const preguntas = $derived(PREGUNTAS.filter((p) => casa(p.si, ...p.respuesta)));
   const terminos = $derived(Object.entries(GLOSARIO).filter(([, e]) => casa(e.title, e.text, e.todo)));
   const nada = $derived(!!q && !guias.length && !preguntas.length && !terminos.length);
@@ -90,6 +90,9 @@
               {#each g.texto as t, i (i)}<p>{t}</p>{/each}
               {#if g.pasos}
                 <ol>{#each g.pasos as p, i (i)}<li>{p}</li>{/each}</ol>
+              {/if}
+              {#if g.ordenes}
+                <ol class="ordenes">{#each g.ordenes as o, i (i)}<li><p>{o.texto}</p>{@render linea(o.comando)}</li>{/each}</ol>
               {/if}
               {#if g.comando}{@render comando(g.comando)}{/if}
               {#if g.ver?.length}
@@ -167,6 +170,13 @@
     </section>
   {/if}
 </div>
+
+{#snippet linea(c: string)}
+  <div class="cmd">
+    <code class="selectable">{c}</code>
+    <button type="button" class="btn btn-sm" onclick={() => copiar(c)}>{#if copiado === c}<Check size={14} />Copiado{:else}<Copy size={14} />Copiar{/if}</button>
+  </div>
+{/snippet}
 
 {#snippet comando(c: string)}
   <div class="cmd">
@@ -303,6 +313,12 @@
     word-break: break-all;
     background: var(--surface-2);
     border-radius: var(--radius-sm);
+  }
+  .ordenes li + li {
+    margin-top: var(--sp-3);
+  }
+  .ordenes p {
+    margin: 0 0 6px;
   }
   .cmd-nota {
     margin-top: -6px !important;

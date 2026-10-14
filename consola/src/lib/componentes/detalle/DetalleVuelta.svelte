@@ -83,7 +83,7 @@
       <h3>Antes de copiar</h3>
       <ul class="ganchos">
         {#each agruparResultados(ganchos) as g, i (i)}
-          <li><Chip pequeno tono={g.estado === "ok" ? "ok" : g.estado === "aviso" ? "warn" : "bad"} texto={NOMBRE_GANCHO[g.tipo] ?? g.tipo} />{#if g.mensaje}<span class="faint">{g.mensaje}</span>{/if}</li>
+          <li><Chip pequeno tono={g.estado === "ok" ? "ok" : g.estado === "aviso" ? "warn" : "bad"} texto={NOMBRE_GANCHO[g.tipo] ?? g.tipo} />{#if g.verificado === true}<Chip pequeno tono="ok" texto="Volcado verificado" />{/if}{#if g.mensaje}<span class="faint">{g.mensaje}</span>{/if}</li>
         {/each}
       </ul>
     </section>

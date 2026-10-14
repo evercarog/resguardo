@@ -1339,6 +1339,8 @@ export interface GanchoSqlserver {
   instancia?: string;
   bases: string[];
   carpeta: string;
+  /** 14ccc (agente con `admite: "verificar_volcado"`): `false` no comprueba cada volcado con `RESTORE VERIFYONLY`. Sin el campo, sí. */
+  verificar?: boolean;
 }
 /** Aviso si el archivo más nuevo de la carpeta (copias propias de una aplicación) es más viejo que `horas`. */
 export interface GanchoCarpetaReciente {
@@ -1353,6 +1355,8 @@ export interface ResultadoGancho {
   tipo: "sqlserver" | "carpeta_reciente";
   estado: "ok" | "aviso" | "fallo";
   mensaje: string | null;
+  /** 14ccc: en un volcado de SQL Server, si pasó `RESTORE VERIFYONLY` (sin el campo: no se verificó). */
+  verificado?: boolean | null;
 }
 
 /** v1.28: «Verificar automáticamente cada `cada_dias` días, `porcentaje` % de los datos (rotativa)». */

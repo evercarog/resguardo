@@ -2,6 +2,9 @@
 // (14ii, src/lib/contrasenaRepo.ts) y el explorador de carpetas del equipo
 // (14zz, src/lib/arbolCarpetas.ts). `npm run test:vectores` (con las demás).
 import { claveElegida, errorContrasena, generarContrasena, MIN_ESCRITA, nuevaContrasena, olvidarContrasena } from "../src/lib/contrasenaRepo";
+import { admiteVerificarVolcado, agruparResultados, limpiar, paraConfig } from "../src/lib/ganchos";
+import { admiteDe } from "../src/lib/configEnvio";
+import type { Equipo, Gancho, ResultadoGancho } from "../src/lib/tipos";
 
 let fallos = 0;
 let total = 0;
@@ -37,6 +40,23 @@ console.log("\n· 14ii: contraseña de un repositorio nuevo");
   igual("olvidar borra todo", [c.generada, c.escrita, c.repetida], ["", "", ""]);
   c.propia = false;
   igual("generada olvidada: falta", errorContrasena(c), "Falta la contraseña");
+}
+
+console.log("\n· 14ccc: verificar cada volcado de SQL Server");
+{
+  const g: Gancho = { tipo: "sqlserver", bases: ["Ventas"], carpeta: "C:\\ResguardoVolcados", verificar: false };
+  igual("a un agente anterior no se manda «verificar»", "verificar" in limpiar(g), false);
+  igual("apagado, a un agente que lo entiende", limpiar(g, true), { tipo: "sqlserver", bases: ["Ventas"], carpeta: "C:\\ResguardoVolcados", verificar: false });
+  igual("encendido (lo normal): sin el campo", "verificar" in limpiar({ ...g, verificar: undefined }, true), false);
+  igual("paraConfig lo pasa", paraConfig([g], true), { tipo: "sqlserver", bases: ["Ventas"], carpeta: "C:\\ResguardoVolcados", verificar: false });
+  igual("admite: con verificar_volcado", admiteVerificarVolcado({ resumen: { admite: ["termina", "verificar_volcado"] } }), true);
+  igual("admite: agente anterior", admiteVerificarVolcado({ resumen: { admite: ["termina"] } }), false);
+  igual("Admite del equipo", admiteDe({ version_agente: "0.8.0", resumen: { admite: ["verificar_volcado"] } } as unknown as Equipo).verificarVolcado, true);
+  const ok = (b: string, v?: boolean): ResultadoGancho => ({ tipo: "sqlserver", estado: "ok", mensaje: `Volcado de SQL Server de «${b}» hecho${v ? " y verificado" : ""}.`, verificado: v ?? null });
+  igual("todas verificadas: lo dice", agruparResultados([ok("A", true), ok("B", true)]).map((r) => [r.mensaje, r.verificado]), [["2 bases volcadas y verificadas: A y B.", true]]);
+  igual("alguna sin verificar: no lo dice", agruparResultados([ok("A", true), ok("B")]).map((r) => [r.mensaje, r.verificado]), [["2 bases volcadas: A y B.", null]]);
+  const mal: ResultadoGancho = { tipo: "sqlserver", estado: "fallo", mensaje: "El volcado de «C» no se pudo verificar: dañado", verificado: false };
+  igual("la que no pasó, suelta", agruparResultados([ok("A", true), ok("B", true), mal]).map((r) => r.estado), ["ok", "fallo"]);
 }
 
 console.log(`\n${total - fallos} de ${total} bien${fallos ? `, ${fallos} MAL` : ""}.`);

@@ -543,7 +543,12 @@ mod tests {
             result: result.into(),
             message: r"No se pudo leer C:\Users\Ana\secreto.txt".into(),
             data_added: Some(1234),
-            ganchos: vec![crate::ganchos::ResultadoGancho { tipo: "sqlserver".into(), estado: "ok".into(), mensaje: r"Volcado en D:\Volcados\x.bak".into() }],
+            ganchos: vec![crate::ganchos::ResultadoGancho {
+                tipo: "sqlserver".into(),
+                estado: "ok".into(),
+                mensaje: r"Volcado en D:\Volcados\x.bak".into(),
+                verificado: None,
+            }],
             ..Default::default()
         }
     }

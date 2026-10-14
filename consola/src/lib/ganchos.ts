@@ -71,12 +71,20 @@ export function errorGancho(g: Gancho): string | null {
   return null;
 }
 
-/** El gancho exactamente con los campos que acepta el agente (ni uno más). */
-export function limpiar(g: Gancho): Gancho {
+/** 14ccc: ¿el agente entiende `verificar` en el gancho de SQL Server? (Los anteriores rechazan campos que no conocen.) */
+export const admiteVerificarVolcado = (e: { resumen?: { admite?: string[] | null } | null } | null | undefined) => !!e?.resumen?.admite?.includes("verificar_volcado");
+
+/**
+ * El gancho exactamente con los campos que acepta el agente (ni uno más).
+ * `verificar` (14ccc) solo se manda apagado y a un agente que lo entiende: sin
+ * el campo, el agente nuevo verifica cada volcado.
+ */
+export function limpiar(g: Gancho, conVerificar = false): Gancho {
   if (g.tipo === "sqlserver") {
     const s: GanchoSqlserver = { tipo: "sqlserver", bases: g.bases.map((b) => b), carpeta: g.carpeta.trim() };
     const inst = (g.instancia ?? "").trim();
     if (inst && inst !== ".") s.instancia = inst;
+    if (conVerificar && g.verificar === false) s.verificar = false;
     return s;
   }
   const c: GanchoCarpetaReciente = { tipo: "carpeta_reciente", carpeta: g.carpeta.trim(), horas: g.horas };
@@ -86,8 +94,8 @@ export function limpiar(g: Gancho): Gancho {
 }
 
 /** El valor de `gancho` para la configuración: null, uno o la lista. */
-export function paraConfig(gs: Gancho[]): Gancho | Gancho[] | null {
-  const l = gs.map(limpiar);
+export function paraConfig(gs: Gancho[], conVerificar = false): Gancho | Gancho[] | null {
+  const l = gs.map((g) => limpiar(g, conVerificar));
   return l.length === 0 ? null : l.length === 1 ? l[0] : l;
 }
 
@@ -137,17 +145,19 @@ export function ganchosEnFrase(ganchos: Gancho[] | null | undefined, resultados:
  * Nominas, Compras y 3 más»); lo que falló o tuvo avisos sigue suelto, con su
  * mensaje (14gg).
  */
-export function agruparResultados<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje">>(rs: R[]): R[] {
+export function agruparResultados<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje" | "verificado">>(rs: R[]): R[] {
   const bien = rs.filter((r) => r.tipo === "sqlserver" && r.estado === "ok");
   if (bien.length < 2) return rs;
   const nombres = bien.map((r) => /«([^»]+)»/.exec(r.mensaje ?? "")?.[1]).filter((x): x is string => !!x);
-  const mensaje = `${bien.length} bases volcadas${nombres.length === bien.length ? `: ${nombresCortos(nombres)}` : ""}.`;
+  // 14ccc: «y verificadas» solo si lo están todas.
+  const verificadas = bien.every((r) => r.verificado === true);
+  const mensaje = `${bien.length} bases volcadas${verificadas ? " y verificadas" : ""}${nombres.length === bien.length ? `: ${nombresCortos(nombres)}` : ""}.`;
   const out: R[] = [];
   let puesto = false;
   for (const r of rs) {
     if (!bien.includes(r)) out.push(r);
     else if (!puesto) {
-      out.push({ ...r, mensaje });
+      out.push({ ...r, mensaje, verificado: verificadas || null });
       puesto = true;
     }
   }
@@ -158,7 +168,7 @@ export function agruparResultados<R extends Pick<ResultadoGancho, "tipo" | "esta
  * El resultado que se enseña junto a un paso de la configuración: el peor de los
  * suyos (en un volcado hay uno por base) y, si alguna falló, su mensaje.
  */
-export function resultadoDeGancho<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje">>(g: Gancho, rs: R[]): R | undefined {
+export function resultadoDeGancho<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje" | "verificado">>(g: Gancho, rs: R[]): R | undefined {
   const suyos = rs.filter((r) => r.tipo === g.tipo && (g.tipo !== "sqlserver" || g.bases.some((b) => (r.mensaje ?? "").includes(`«${b}»`)) || !/«/.test(r.mensaje ?? "")));
   const orden = { fallo: 0, aviso: 1, ok: 2 } as const;
   const peor = [...suyos].sort((a, b) => orden[a.estado] - orden[b.estado])[0];

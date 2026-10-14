@@ -14,6 +14,8 @@ export interface Guia {
   pasos?: string[];
   /** Un comando para copiar (en el equipo, como administrador). */
   comando?: string;
+  /** Pasos con su orden para copiar (después de `pasos`). */
+  ordenes?: { texto: string; comando: string }[];
   /** Enlaces del glosario relacionados. */
   ver?: string[];
 }
@@ -166,6 +168,30 @@ GUIAS.push({
     "Hace falta el agente 0.7.2 o posterior: con uno anterior, la consola no lo ofrece.",
   ],
   pasos: ["En la ficha del equipo, «Añadir o cambiar copias».", "En la copia, «Antes de copiar»: elige el paso y rellena sus datos.", "«Enviar al equipo» con la clave de administración."],
+  ver: ["ganchos"],
+});
+
+// 14ccc: comprobar de verdad lo que hay dentro de un volcado (para las pruebas funcionales).
+GUIAS.push({
+  id: "guia-comprobar-volcado",
+  titulo: "Comprobar los datos de un volcado sin el Management Studio",
+  resumen: "Con sqlcmd: qué hay dentro, si está entero y si la base se abre bien.",
+  texto: [
+    "Cada volcado ya se verifica al hacerlo (si el agente es reciente y no lo has apagado en «Más opciones» del paso): SQL Server lo relee entero y comprueba sus sumas. En «Antes de copiar» de cada versión sale «Volcado verificado». Eso dice que el archivo está entero, no que la base sirva: para eso hay que restaurarla y comprobarla.",
+    "Hazlo en un servidor de pruebas con SQL Server, no en el de producción: se restaura con otro nombre y no pisa la base real, pero ocupa disco y memoria mientras dura. Es lo que conviene hacer en cada prueba funcional (simulacro de recuperación): apunta en su registro cuánto tardó y de qué fecha eran los datos.",
+    "Primero saca el volcado de la copia: en Restaurar, elige la versión, la carpeta de los volcados y «En otra carpeta» del servidor de pruebas (por ejemplo C:\\Pruebas). Después, en una consola de ese servidor (sqlcmd viene con SQL Server; «-S .» es la instancia predeterminada y «-E» entra con tu cuenta de Windows):",
+  ],
+  ordenes: [
+    { texto: "Qué hay dentro (base, fecha y tamaño):", comando: "sqlcmd -S . -E -Q \"RESTORE HEADERONLY FROM DISK = N'C:\\Pruebas\\resguardo-Ventas.bak'\"" },
+    { texto: "Que está entero (debe decir que el conjunto de copia es válido):", comando: "sqlcmd -S . -E -Q \"RESTORE VERIFYONLY FROM DISK = N'C:\\Pruebas\\resguardo-Ventas.bak' WITH CHECKSUM\"" },
+    { texto: "Los nombres lógicos de sus archivos (suelen ser «Ventas» y «Ventas_log»):", comando: "sqlcmd -S . -E -Q \"RESTORE FILELISTONLY FROM DISK = N'C:\\Pruebas\\resguardo-Ventas.bak'\"" },
+    {
+      texto: "Restaurarla con otro nombre, moviendo cada archivo a la carpeta de pruebas:",
+      comando: "sqlcmd -S . -E -Q \"RESTORE DATABASE [Ventas_prueba] FROM DISK = N'C:\\Pruebas\\resguardo-Ventas.bak' WITH MOVE N'Ventas' TO N'C:\\Pruebas\\Ventas_prueba.mdf', MOVE N'Ventas_log' TO N'C:\\Pruebas\\Ventas_prueba_log.ldf', CHECKSUM, RECOVERY\"",
+    },
+    { texto: "Comprobar la base restaurada (si no dice nada, está bien). Abre también alguna tabla que conozcas para ver que los datos son los esperados:", comando: "sqlcmd -S . -E -Q \"DBCC CHECKDB ([Ventas_prueba]) WITH NO_INFOMSGS\"" },
+    { texto: "Quitarla al terminar (y borra después la carpeta C:\\Pruebas):", comando: "sqlcmd -S . -E -Q \"DROP DATABASE [Ventas_prueba]\"" },
+  ],
   ver: ["ganchos"],
 });
 

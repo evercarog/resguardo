@@ -332,7 +332,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         const gs = ganchosDe(k.gancho);
         if (gs.length > MAX_GANCHOS) return resultado(e, o, "fallida", `«${k.nombre}»: como mucho ${MAX_GANCHOS} ganchos.`);
         for (const g of gs) {
-          const permitidos = g.tipo === "sqlserver" ? ["tipo", "instancia", "bases", "carpeta"] : g.tipo === "carpeta_reciente" ? ["tipo", "carpeta", "horas", "extension"] : null;
+          const permitidos = g.tipo === "sqlserver" ? ["tipo", "instancia", "bases", "carpeta", ...(e.resumen?.admite?.includes("verificar_volcado") ? ["verificar"] : [])] : g.tipo === "carpeta_reciente" ? ["tipo", "carpeta", "horas", "extension"] : null;
           if (!permitidos || Object.keys(g).some((x) => !permitidos.includes(x))) return resultado(e, o, "fallida", "Configuración no válida: gancho desconocido o con campos de más.");
           const err = errorGancho(g);
           if (err) return resultado(e, o, "fallida", err);

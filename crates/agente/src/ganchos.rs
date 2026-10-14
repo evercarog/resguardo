@@ -7,8 +7,10 @@
 //!   nombres de base e instancia solo admiten caracteres seguros, así que no
 //!   pueden salirse del T-SQL de la plantilla. Si el agente crea la carpeta
 //!   de los volcados, la deja solo para SYSTEM, Administradores y el servicio
-//!   de SQL Server. Al terminar la copia se borran los volcados que hizo
-//!   (y solo esos archivos).
+//!   de SQL Server. Cada volcado se comprueba enseguida con `RESTORE
+//!   VERIFYONLY … WITH CHECKSUM` (14ccc; desactivable con `verificar: false`):
+//!   si no pasa, la copia sale fallida. Al terminar la copia se borran los
+//!   volcados que hizo (y solo esos archivos).
 //! - `carpeta_reciente`: solo lee fechas de archivos.
 
 pub use resguardo_motor::ganchos::*;
@@ -23,6 +25,11 @@ pub struct ResultadoGancho {
     /// "ok", "aviso" o "fallo".
     pub estado: String,
     pub mensaje: String,
+    /// v1.6x (pendiente de numerar al unir, 14ccc): en un volcado de SQL Server,
+    /// si se comprobó con `RESTORE VERIFYONLY` (true: bien; false: no pasó).
+    /// Sin el campo: no se verificó (desactivado o agente anterior).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verificado: Option<bool>,
 }
 
 /// Lo preparado antes de la copia.
@@ -50,27 +57,33 @@ pub fn antes(ganchos: &[Gancho]) -> Preparado {
     let mut p = Preparado::default();
     for g in ganchos {
         if let Err(e) = g.validate() {
-            p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: "fallo".into(), mensaje: e });
+            p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: "fallo".into(), mensaje: e, verificado: None });
             continue;
         }
         match g {
-            Gancho::Sqlserver { instancia, bases, carpeta } => {
+            Gancho::Sqlserver { instancia, bases, carpeta, .. } => {
                 let carpeta = carpeta.trim();
+                let verificar = g.verifica_volcados();
                 match preparar_carpeta(Path::new(carpeta), instancia) {
-                    Err(e) => p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: "fallo".into(), mensaje: e }),
+                    Err(e) => p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: "fallo".into(), mensaje: e, verificado: None }),
                     Ok(()) => {
                         p.carpetas.push(carpeta.to_string());
                         for b in bases {
-                            let r = volcar(instancia, b, Path::new(carpeta));
-                            let (estado, mensaje) = match r {
-                                Ok(f) => {
-                                    p.volcados.push(f);
-                                    ("ok", format!("Volcado de SQL Server de «{b}» hecho."))
-                                }
-                                Err(e) => ("fallo", format!("No se pudo volcar «{b}» de SQL Server: {e}")),
+                            let volcado = volcar(instancia, b, Path::new(carpeta));
+                            if let Ok(f) = &volcado {
+                                p.volcados.push(f.clone());
+                            }
+                            let comprobado = match &volcado {
+                                Ok(f) if verificar => Some(verificar_volcado(instancia, f)),
+                                _ => None,
                             };
-                            crate::agent::log(&format!("{}{mensaje}", if estado == "ok" { "" } else { "ERROR: " }));
-                            p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: estado.into(), mensaje });
+                            let r = resultado_volcado(
+                                b,
+                                volcado.as_ref().map(|_| ()).map_err(String::as_str),
+                                comprobado.as_ref().map(|c| c.as_ref().map(|_| ()).map_err(String::as_str)),
+                            );
+                            crate::agent::log(&format!("{}{}", if r.estado == "ok" { "" } else { "ERROR: " }, r.mensaje));
+                            p.resultados.push(r);
                         }
                     }
                 }
@@ -80,11 +93,23 @@ pub fn antes(ganchos: &[Gancho]) -> Preparado {
                     Ok(h) => ("ok", format!("Copias de la aplicación al día (la más nueva, de hace {h} h).")),
                     Err(e) => ("aviso", e),
                 };
-                p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: estado.into(), mensaje });
+                p.resultados.push(ResultadoGancho { tipo: g.tipo().into(), estado: estado.into(), mensaje, verificado: None });
             }
         }
     }
     p
+}
+
+/// 14ccc: el resultado de volcar una base y, si se pidió, de verificar el volcado.
+/// `verificacion`: `None` si no se verificó (desactivado o el volcado falló).
+pub fn resultado_volcado(base: &str, volcado: Result<(), &str>, verificacion: Option<Result<(), &str>>) -> ResultadoGancho {
+    let (estado, mensaje, verificado) = match (volcado, verificacion) {
+        (Err(e), _) => ("fallo", format!("No se pudo volcar «{base}» de SQL Server: {e}"), None),
+        (Ok(()), None) => ("ok", format!("Volcado de SQL Server de «{base}» hecho (sin verificar)."), None),
+        (Ok(()), Some(Ok(()))) => ("ok", format!("Volcado de SQL Server de «{base}» hecho y verificado."), Some(true)),
+        (Ok(()), Some(Err(e))) => ("fallo", format!("El volcado de «{base}» no se pudo verificar: {e}"), Some(false)),
+    };
+    ResultadoGancho { tipo: "sqlserver".into(), estado: estado.into(), mensaje, verificado }
 }
 
 /// Después de la copia (haya ido bien o no): borra los volcados que hizo.
@@ -214,36 +239,82 @@ pub fn tsql_volcado(base: &str, ruta: &Path) -> String {
     format!("BACKUP DATABASE [{base}] TO DISK = N'{}' WITH COPY_ONLY, INIT, FORMAT, CHECKSUM, NAME = N'Resguardo'", ruta.display())
 }
 
+/// 14ccc: comprobar el volcado recién hecho (ruta ya validada: sin `'`). Lee el
+/// archivo entero y comprueba la suma de cada página, sin restaurar nada.
+pub fn tsql_verificar(ruta: &Path) -> String {
+    format!("RESTORE VERIFYONLY FROM DISK = N'{}' WITH CHECKSUM", ruta.display())
+}
+
+/// La ruta va entre comillas simples en el T-SQL: nunca con `'` ni `]`, aunque la carpeta ya esté validada.
+fn ruta_segura(ruta: &Path) -> bool {
+    !ruta.to_string_lossy().contains(['\'', ']'])
+}
+
 fn volcar(instancia: &str, base: &str, carpeta: &Path) -> Result<PathBuf, String> {
     if !base_valida(base) || !instancia_valida(instancia) {
         return Err("parámetros no válidos.".into());
     }
-    let sqlcmd = sqlcmd().ok_or("no se encuentra sqlcmd (las herramientas de línea de órdenes de SQL Server).")?;
     let ruta = carpeta.join(archivo_volcado(base));
+    if !ruta_segura(&ruta) {
+        return Err("parámetros no válidos.".into());
+    }
     quitar_volcado_previo(&ruta)?;
+    ejecutar_sqlcmd(instancia, &tsql_volcado(base, &ruta))?;
+    if ruta.is_file() {
+        Ok(ruta)
+    } else {
+        Err("sqlcmd terminó sin dejar el volcado.".into())
+    }
+}
+
+/// 14ccc: `RESTORE VERIFYONLY … WITH CHECKSUM` del volcado, en la misma instancia.
+fn verificar_volcado(instancia: &str, ruta: &Path) -> Result<(), String> {
+    if !instancia_valida(instancia) || !ruta_segura(ruta) {
+        return Err("parámetros no válidos.".into());
+    }
+    ejecutar_sqlcmd(instancia, &tsql_verificar(ruta))
+}
+
+/// Ejecuta un T-SQL de la plantilla con sqlcmd. El error, en palabras y sin rutas.
+fn ejecutar_sqlcmd(instancia: &str, tsql: &str) -> Result<(), String> {
+    let sqlcmd = sqlcmd().ok_or("no se encuentra sqlcmd (las herramientas de línea de órdenes de SQL Server).")?;
     let mut c = std::process::Command::new(sqlcmd);
     // Sin `SQLCMDINI` (un guion que sqlcmd ejecuta al conectar), `SQLCMDSERVER`… heredadas.
     resguardo_motor::proceso::entorno_minimo(&mut c);
-    c.args(argumentos_sqlcmd(instancia, &tsql_volcado(base, &ruta))).stdin(std::process::Stdio::null());
+    c.args(argumentos_sqlcmd(instancia, tsql)).stdin(std::process::Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         c.creation_flags(0x0800_0000);
     }
     let out = c.output().map_err(|e| format!("no se pudo ejecutar sqlcmd: {e}"))?;
-    if out.status.success() && ruta.is_file() {
-        return Ok(ruta);
+    if out.status.success() {
+        return Ok(());
     }
     let texto = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
-    let linea = texto.lines().map(str::trim).find(|l| l.starts_with("Msg") || l.contains("Error") || l.contains("error")).unwrap_or("sqlcmd terminó con error");
+    Err(error_sqlcmd(&texto))
+}
+
+/// La línea útil de la salida de sqlcmd, con una pista de qué hacer si se reconoce.
+pub fn error_sqlcmd(texto: &str) -> String {
+    let lineas: Vec<&str> = texto.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    // «Msg 3241, Level 16, State 0…» va seguida del texto del error: mejor ese texto.
+    let linea = lineas
+        .iter()
+        .position(|l| l.starts_with("Msg"))
+        .and_then(|i| lineas.get(i + 1).copied())
+        .or_else(|| lineas.iter().copied().find(|l| l.contains("Error") || l.contains("error")))
+        .unwrap_or("sqlcmd terminó con error");
     let pista = if texto.contains("Login failed") || texto.contains("Error de inicio de sesión") {
         " (la cuenta del equipo, NT AUTHORITY\\SYSTEM, necesita el rol db_backupoperator en la base)"
     } else if texto.contains("Operating system error 5") || texto.contains("error 5(") {
         " (el servicio de SQL Server no puede escribir en la carpeta de los volcados)"
+    } else if ["damaged", "checksum", "dañad", "suma de comprobación"].iter().any(|x| texto.contains(x)) {
+        " (el volcado está dañado: revisa el disco de la carpeta de los volcados y la base con DBCC CHECKDB)"
     } else {
         ""
     };
-    Err(format!("{}{pista}", crate::web::public_message(linea)))
+    format!("{}{pista}", crate::web::public_message(linea))
 }
 
 /// Horas desde el archivo más nuevo de la carpeta (hasta 3 niveles y 20 000
@@ -327,6 +398,50 @@ mod tests {
             t,
             r"BACKUP DATABASE [Ventas] TO DISK = N'C:\ResguardoVolcados\resguardo-Ventas.bak' WITH COPY_ONLY, INIT, FORMAT, CHECKSUM, NAME = N'Resguardo'"
         );
+        // 14ccc: la verificación del mismo archivo, sin restaurar nada.
+        assert_eq!(
+            tsql_verificar(Path::new(r"C:\ResguardoVolcados\resguardo-Ventas.bak")),
+            r"RESTORE VERIFYONLY FROM DISK = N'C:\ResguardoVolcados\resguardo-Ventas.bak' WITH CHECKSUM"
+        );
+        let a = argumentos_sqlcmd(".", &tsql_verificar(Path::new(r"C:\v\resguardo-x.bak")));
+        assert_eq!(a.last().map(String::as_str), Some(r"RESTORE VERIFYONLY FROM DISK = N'C:\v\resguardo-x.bak' WITH CHECKSUM"));
+        // Una ruta con comilla o corchete nunca llega al T-SQL.
+        assert!(ruta_segura(Path::new(r"C:\v\resguardo-x.bak")));
+        assert!(!ruta_segura(Path::new(r"C:\v'; DROP DATABASE x; --\a.bak")));
+        assert!(!ruta_segura(Path::new(r"C:\v]\a.bak")));
+    }
+
+    #[test]
+    fn volcado_verificado_o_no() {
+        let r = resultado_volcado("Ventas", Ok(()), Some(Ok(())));
+        assert_eq!((r.estado.as_str(), r.mensaje.as_str(), r.verificado), ("ok", "Volcado de SQL Server de «Ventas» hecho y verificado.", Some(true)));
+        let r = resultado_volcado("Ventas", Ok(()), None);
+        assert_eq!((r.estado.as_str(), r.mensaje.as_str(), r.verificado), ("ok", "Volcado de SQL Server de «Ventas» hecho (sin verificar).", None));
+        let r = resultado_volcado("Ventas", Ok(()), Some(Err("el volcado está dañado")));
+        assert_eq!(
+            (r.estado.as_str(), r.mensaje.as_str(), r.verificado),
+            ("fallo", "El volcado de «Ventas» no se pudo verificar: el volcado está dañado", Some(false))
+        );
+        let r = resultado_volcado("Ventas", Err("sin permiso"), None);
+        assert_eq!((r.estado.as_str(), r.mensaje.as_str(), r.verificado), ("fallo", "No se pudo volcar «Ventas» de SQL Server: sin permiso", None));
+        // Sin `verificado`, el resultado se escribe como antes (los agentes y consolas anteriores no lo conocen).
+        assert!(serde_json::to_value(resultado_volcado("a", Ok(()), None)).unwrap().get("verificado").is_none());
+        assert_eq!(serde_json::to_value(resultado_volcado("a", Ok(()), Some(Ok(())))).unwrap()["verificado"], serde_json::json!(true));
+        // La copia sale fallida si un volcado no pasa la verificación.
+        let p = Preparado { resultados: vec![resultado_volcado("Ventas", Ok(()), Some(Err("x")))], ..Default::default() };
+        let mut r = crate::agent::RunRecord { result: "ok".into(), ..Default::default() };
+        aplicar(&mut r, &p);
+        assert_eq!((r.result.as_str(), r.message.as_str()), ("error", "Copia hecha, pero el volcado de «Ventas» no se pudo verificar: x"));
+    }
+
+    #[test]
+    fn errores_de_sqlcmd_en_palabras() {
+        let danado = "Msg 3189, Level 16, State 1, Server S, Line 1\nDamage to the backup set was detected.\nMsg 3013, Level 16, State 1\nVERIFY DATABASE is terminating abnormally.";
+        assert_eq!(error_sqlcmd(danado), "Damage to the backup set was detected.");
+        let suma = "Msg 3183, Level 16, State 1\nRESTORE detected an error on page (1:80) in database \"x\" as read from the backup set. checksum mismatch";
+        assert!(error_sqlcmd(suma).ends_with("(el volcado está dañado: revisa el disco de la carpeta de los volcados y la base con DBCC CHECKDB)"));
+        assert!(error_sqlcmd("Msg 18456, Level 14\nLogin failed for user 'NT AUTHORITY\\SYSTEM'.").contains("db_backupoperator"));
+        assert_eq!(error_sqlcmd(""), "sqlcmd terminó con error");
     }
 
     #[test]
@@ -357,7 +472,12 @@ mod tests {
         // Un volcado fallido es un error aunque restic haya ido bien.
         let mut r = crate::agent::RunRecord { result: "ok".into(), ..Default::default() };
         let p = Preparado {
-            resultados: vec![ResultadoGancho { tipo: "sqlserver".into(), estado: "fallo".into(), mensaje: "No se pudo volcar «a» de SQL Server: x".into() }],
+            resultados: vec![ResultadoGancho {
+                tipo: "sqlserver".into(),
+                estado: "fallo".into(),
+                mensaje: "No se pudo volcar «a» de SQL Server: x".into(),
+                verificado: None,
+            }],
             ..Default::default()
         };
         aplicar(&mut r, &p);
