@@ -30,7 +30,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
-import { cuerpoAlmacen, errorTrabajos, FRENO_DEFECTO, trabajosDelAlmacen, type TrabajoEspejo } from "../../src/lib/espejoTrabajos";
+import { cuerpoAlmacen, cuerpoEquipo, errorTrabajos, FRENO_DEFECTO, sinTrabajo, trabajosDelAlmacen, trabajosDelEquipo, type TrabajoEspejo } from "../../src/lib/espejoTrabajos";
+import { esDestructiva } from "../../src/lib/cripto/ordenes";
 import { spawnSync } from "node:child_process";
 import { aB64, aleatorio } from "../../src/lib/cripto/bytes";
 import { etiquetaEquipo, etiquetaValida, hashCodigo, kCfg, materialCliente } from "../../src/lib/cripto/claves";
@@ -1647,6 +1648,127 @@ async function principal() {
       comprobar(fs.existsSync(path.join(carpeta, idRepo, "config")), "Lo guardado en la carpeta se queda");
       await esperar("el destino quitado también en la en línea", async () => !(await consola3.equipo(c3, eqB2.id)).resumen?.destinos?.some((d) => d.id === idDestino) || null, { plazo: 60_000, cada: 1000 });
       log("Destino vacío quitado; su carpeta sigue con sus copias");
+    }
+
+    // -----------------------------------------------------------------------
+    paso("8a3b. Lo largo en vivo en las dos consolas (C3, 14p): una verificación y la subida de un espejo de B; uno que nunca terminó se quita sin espera y la orden en espera dice qué cambia (C2, 14c)");
+    {
+      const eB = await consola2.equipo(c2, eqB2.id);
+      /** Lo que está en marcha en B, como lo ve la consola en línea (lo que pide su navegador). */
+      const enLinea = async () => ((await consola3.ok("GET", `/api/clientes/${c3.id}/progreso`).catch(() => [])) as any[]).filter((x) => x.equipo === eqB2.id).flatMap((x) => x.tareas ?? []);
+      // 1. «Verificar ahora» desde la local: la en línea la ve «en cola» y después en marcha, de la otra consola.
+      const vistas: any[] = [];
+      let mirando = true;
+      const mirar = (async () => {
+        while (mirando) {
+          const t = (await enLinea()).find((x: any) => x.tipo === "verificar" && x.repo === repoId);
+          if (t) vistas.push(t);
+          await dormir(300);
+        }
+      })();
+      const antesVer = Date.now();
+      await consola2.hecha(c2, eqB2.id, "verificar_ahora", { repo: repoId });
+      await esperar("la verificación de B (en cola o en marcha) en la en línea", async () => vistas.length || null, { plazo: 180_000, cada: 500 });
+      await esperar("que la verificación de B termine", async () => {
+        const inf = informeDe((await consola2.equipo(c2, eqB2.id)).ultimo_informe as any, repoId);
+        return inf?.verificacion?.ultima && new Date(inf.verificacion.ultima).getTime() >= antesVer - 2_000 ? true : null;
+      }, { plazo: 240_000, cada: 1000 });
+      mirando = false;
+      await mirar;
+      const fases = [...new Set(vistas.map((t) => t.fase))];
+      log(`La en línea vio la verificación de B: ${fases.join(" → ")}`);
+      comprobar(vistas.every((t) => t.otra_consola === true && t.por === "Ana"), "La en línea la ve como de la otra consola, con quién la pidió", vistas[0]);
+      comprobar(!JSON.stringify(vistas).includes(s2.url), "Sin la dirección de la otra consola", vistas[0]);
+      if (!fases.includes("en_cola")) log("(La verificación empezó antes de que la en línea la viera en cola)");
+
+      // 2. Un espejo del propio B a una nube (simulada), con la subida limitada: la en línea ve su subida en vivo.
+      if (!rclone || !eB.resumen?.admite?.includes("espejo_equipo") || !eB.resumen?.admite?.includes("espejo_primera")) {
+        log("(Sin rclone o B sin espejos propios: no se prueba el espejo en vivo)");
+      } else {
+        const carpeta = dir("disco-de-b-espejo");
+        fs.mkdirSync(carpeta, { recursive: true });
+        const idDestino = `local-${randomBytes(3).toString("hex")}`;
+        const idRepo = `espejado-${randomBytes(2).toString("hex")}`;
+        const contrasena = Buffer.from(aleatorio(24)).toString("base64url");
+        await consola2.hecha(c2, eqB2.id, "crear_repositorio", { id: idRepo, nombre: "Para el espejo", destino: { id: idDestino, nombre: "Disco de B", tipo: "local", donde: carpeta }, contrasena }, { claveAdmin: claveB }, {}, 120_000);
+        // Un paquete grande con el nombre de su huella (el espejo no abre nada: copia archivos) y todo «antiguo».
+        const raiz = path.join(carpeta, idRepo);
+        const grande = randomBytes(20 * 1024 * 1024);
+        const h = createHash("sha256").update(grande).digest("hex");
+        fs.mkdirSync(path.join(raiz, "data", h.slice(0, 2)), { recursive: true });
+        fs.writeFileSync(path.join(raiz, "data", h.slice(0, 2), h), grande);
+        const envejecer = (d: string) => {
+          for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+            const p = path.join(d, e.name);
+            if (e.isDirectory()) envejecer(p);
+            else fs.utimesSync(p, new Date(Date.now() - 3600_000), new Date(Date.now() - 3600_000));
+          }
+        };
+        envejecer(raiz);
+        const nubeB = dir("nube-de-b");
+        fs.mkdirSync(nubeB, { recursive: true });
+        await consola2.hecha(c2, eqB2.id, "conectar_nube", { tipo: "alias", nombre: "Nube de B", parametros: { carpeta: nubeB } }, { claveAdmin: claveB }, {}, 60_000);
+        const vivoT: TrabajoEspejo = {
+          id: "e2e-vivo", nombre: "B a la nube", activo: true, quien: "equipo", que: { tipo: "repos", repos: [idRepo] },
+          adonde: { tipo: "nube", nube: "Nube de B", carpeta: "Espejo" }, cuando: { horario: { dias: [1, 2, 3, 4, 5, 6, 7], horas: ["03:00"] } },
+          retencion: { modo: "nunca" }, freno: { ...FRENO_DEFECTO }, limite_kib: 1024, orden: 0,
+        };
+        // 14s: otro cuya primera subida espera a la madrugada (dentro de horas): nunca ha terminado bien.
+        const nuncaT: TrabajoEspejo = {
+          id: "e2e-nunca", nombre: "Todavía no", activo: true, quien: "equipo", que: { tipo: "repos", repos: [idRepo] },
+          adonde: { tipo: "carpeta", carpeta: dir("espejo-de-b") }, cuando: { tras_copia: true, primera_desde: new Date(Date.now() + 6 * 3600_000).toISOString() },
+          retencion: { modo: "nunca" }, freno: { ...FRENO_DEFECTO }, orden: 1,
+        };
+        igual(errorTrabajos([vivoT, nuncaT], "equipo"), null, "La consola da por buenos los dos espejos de B");
+        const vistosEsp: any[] = [];
+        mirando = true;
+        const mirarEsp = (async () => {
+          while (mirando) {
+            const t = (await enLinea()).find((x: any) => x.tipo === "espejo" && x.repo === "e2e-vivo");
+            if (t) vistosEsp.push(t);
+            await dormir(500);
+          }
+        })();
+        await consola2.hecha(c2, eqB2.id, "guarda_copias", cuerpoEquipo([vivoT, nuncaT]), { claveAdmin: claveB });
+        const subiendo = (await esperar("la subida del espejo de B, en vivo en la en línea", async () => vistosEsp.find((t) => t.fase === "subiendo" && t.bytes_total) ?? null, { plazo: 180_000, cada: 500 })) as any;
+        comprobar(subiendo.espejo === "e2e-vivo" && subiendo.nombre === "B a la nube" && subiendo.quien === "equipo" && subiendo.primera === true, "Con su espejo, quién lo hace y que es la primera subida", subiendo);
+        comprobar(subiendo.bytes_total >= grande.length, "Con lo que hay que subir", subiendo);
+        comprobar(!JSON.stringify(subiendo).includes(carpeta) && !JSON.stringify(subiendo).includes(nubeB), "Sin rutas", subiendo);
+        const terminado = (await esperar("el espejo de B terminado, con su registro", async () => {
+          const t = trabajosDelEquipo(await consola3.equipo(c3, eqB2.id)).find((x) => x.id === "e2e-vivo");
+          return t?.subidas?.length && t.ocupa ? t : null;
+        }, { plazo: 180_000, cada: 1000 })) as any;
+        mirando = false;
+        await mirarEsp;
+        const conBytes = vistosEsp.filter((t) => t.bytes != null).map((t) => t.bytes);
+        log(`La en línea vio ${vistosEsp.length} noticias de la subida (de ${conBytes[0] ?? 0} a ${conBytes.at(-1) ?? 0} bytes)`);
+        comprobar(conBytes.length >= 2 && conBytes.at(-1) > conBytes[0], "Las cifras avanzan en vivo", conBytes);
+        const sub = terminado.subidas.at(-1);
+        comprobar(sub.resultado === "ok" && sub.bytes >= grande.length && terminado.ocupa.bytes >= grande.length && terminado.ocupa.repos?.[idRepo] >= grande.length, "Su registro: lo subido y lo que ocupa allí", { sub, ocupa: terminado.ocupa });
+        comprobar(terminado.nunca_bien === false && !!terminado.bien, "Ya terminó bien", terminado);
+        const nunca = trabajosDelEquipo(await consola3.equipo(c3, eqB2.id)).find((x) => x.id === "e2e-nunca");
+        comprobar(nunca?.nunca_bien === true && !nunca.ultima, "El de la madrugada aún no ha empezado: nunca terminó bien", nunca);
+        // 14c: quitar el que nunca terminó no espera (la consola no le pone espera y el equipo lo acepta así).
+        const sinNunca = cuerpoEquipo(sinTrabajo([vivoT, nuncaT], "e2e-nunca"));
+        const eB3 = await consola3.equipo(c3, eqB2.id);
+        const ctx = { espejoEquipo: eB3.resumen?.espejo_equipo ?? null };
+        comprobar(!esDestructiva("guarda_copias", sinNunca, 3, ctx), "Quitar uno que nunca terminó no reduce la protección");
+        comprobar(esDestructiva("guarda_copias", cuerpoEquipo([nuncaT]), 3, ctx), "Quitar el que ya subió, sí");
+        await consola3.hecha(c3, eqB2.id, "guarda_copias", sinNunca, { claveAdmin: claveB });
+        await esperar("el espejo que nunca terminó, quitado", async () => !trabajosDelEquipo(await consola2.equipo(c2, eqB2.id)).some((x) => x.id === "e2e-nunca") || null, { plazo: 60_000, cada: 1000 });
+        log("Un espejo que nunca terminó se quita sin espera");
+        // Quitar el otro sí espera, y la orden en espera dice exactamente qué cambia (en las dos consolas).
+        const quitar = await consola2.mandar(c2, eqB2.id, "guarda_copias", cuerpoEquipo([]), { claveAdmin: claveB }, { esperar: true });
+        const enEspera = (await esperar("la orden de quitar el espejo, en espera en la en línea", async () => (await consola3.equipo(c3, eqB2.id)).resumen?.en_espera?.find((x: any) => x.id === quitar.id) ?? null, { plazo: 60_000, cada: 1000 })) as any;
+        comprobar(/quitar «B a la nube»/i.test(enEspera.descripcion ?? ""), `La orden en espera dice qué cambia: «${enEspera.descripcion}»`, enEspera);
+        comprobar(!(enEspera.descripcion ?? "").includes(nubeB), "Sin rutas", enEspera.descripcion);
+        await consola3.hecha(c3, eqB2.id, "cancelar_espera", { id: quitar.id });
+        // Lo de esta prueba, fuera (al momento).
+        await consola2.hecha(c2, eqB2.id, "guarda_copias", cuerpoEquipo([]), { claveAdmin: claveB });
+        await consola2.hecha(c2, eqB2.id, "quitar_nube", { nombre: "Nube de B" }, { claveAdmin: claveB }, {}, 60_000);
+        await consola2.hecha(c2, eqB2.id, "quitar_repositorio", { repo: idRepo, quitar_destino: true }, { claveAdmin: claveB, repo: { repo: idRepo, contrasena } }, {}, 120_000);
+        log("Espejo de B en vivo en las dos consolas, con su registro; la orden en espera dice qué cambia");
+      }
     }
 
     // -----------------------------------------------------------------------
