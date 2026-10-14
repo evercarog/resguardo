@@ -560,7 +560,34 @@ pub fn guardar_comprobado(mut entrada: impl std::io::Read, destino: &Path, a: &p
 }
 
 /// Baja el archivo de su origen (y, si falla y se permite, de su `url` en GitHub).
-fn bajar(oferta: &Oferta, a: &p::Archivo, destino: &Path) -> Result<(), String> {
+/// 14p: lo que se va bajando, para el progreso en todas las consolas (como mucho una vez por segundo).
+struct Contando<'a, R> {
+    dentro: R,
+    op: Option<&'a crate::progreso_v2::ops::Op>,
+    total: u64,
+    n: u64,
+    ultimo: std::time::Instant,
+}
+
+impl<'a, R> Contando<'a, R> {
+    fn nuevo(dentro: R, op: Option<&'a crate::progreso_v2::ops::Op>, total: u64) -> Self {
+        Contando { dentro, op, total, n: 0, ultimo: std::time::Instant::now() }
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for Contando<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let leidos = self.dentro.read(buf)?;
+        self.n += leidos as u64;
+        if let Some(op) = self.op.filter(|_| self.ultimo.elapsed() >= Duration::from_secs(1) || leidos == 0) {
+            self.ultimo = std::time::Instant::now();
+            op.bytes("Bajando la versión nueva", self.n.min(self.total), Some(self.total));
+        }
+        Ok(leidos)
+    }
+}
+
+fn bajar(oferta: &Oferta, a: &p::Archivo, destino: &Path, op: Option<&crate::progreso_v2::ops::Op>) -> Result<(), String> {
     let de_consola = || -> Result<(), String> {
         let Origen::Consola { enlace, ruta, .. } = &oferta.origen else { return Err("sin consola".into()) };
         let v = crate::consolas_v2::vista(enlace).ok_or("Esa consola ya no gestiona este equipo.")?;
@@ -574,7 +601,7 @@ fn bajar(oferta: &Oferta, a: &p::Archivo, destino: &Path) -> Result<(), String> 
         if r.status().as_u16() != 200 {
             return Err(format!("La consola respondió {} al pedir {}.", r.status().as_u16(), a.nombre));
         }
-        guardar_comprobado(r.body_mut().as_reader(), destino, a)
+        guardar_comprobado(Contando::nuevo(r.body_mut().as_reader(), op, a.tamano), destino, a)
     };
     let de_url = || -> Result<(), String> {
         let url = a.url.as_deref().filter(|u| u.starts_with("https://")).ok_or("El manifiesto no da una dirección para este archivo.")?;
@@ -582,7 +609,7 @@ fn bajar(oferta: &Oferta, a: &p::Archivo, destino: &Path) -> Result<(), String> 
         if r.status().as_u16() != 200 {
             return Err(format!("{url} respondió {}.", r.status().as_u16()));
         }
-        guardar_comprobado(r.body_mut().as_reader(), destino, a)
+        guardar_comprobado(Contando::nuevo(r.body_mut().as_reader(), op, a.tamano), destino, a)
     };
     match &oferta.origen {
         Origen::Consola { .. } => de_consola().or_else(|e| if github_permitido() { de_url().map_err(|e2| format!("{e} · {e2}")) } else { Err(e) }),
@@ -672,8 +699,17 @@ fn instalar(oferta: &Oferta, plataforma: &str) -> Result<(), String> {
         e.version_objetivo = Some(m.version.clone());
         e.cuando = Some(ahora_rfc());
     });
+    // 14p: a la vista de todas las consolas del equipo, mientras se baja y se prepara.
+    let op = crate::progreso_v2::ops::empezar(crate::progreso_v2::ops::Operacion {
+        tipo: "actualizacion",
+        nombre: Some(format!("Resguardo Agente {}", m.version.chars().take(40).collect::<String>())),
+        etapa: "Bajando la versión nueva".into(),
+        ..Default::default()
+    });
+    op.bytes("Bajando la versión nueva", 0, Some(a.tamano));
     let parte = dir.join("descarga.part");
-    bajar(oferta, &a, &parte)?;
+    bajar(oferta, &a, &parte, Some(&op))?;
+    op.avance("Preparando la actualización", None, None);
     let archivo = dir.join(&a.nombre);
     let _ = std::fs::remove_file(&archivo);
     std::fs::rename(&parte, &archivo).map_err(|e| e.to_string())?;

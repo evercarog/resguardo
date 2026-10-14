@@ -562,9 +562,35 @@ const rutas: Ruta[] = [
           pendientes: estado.ordenes.filter((o) => o.cliente === c.id && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).length,
           informes: estado.equipos.filter((e) => e.cliente === c.id && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] })),
           informes_completos: true,
+          organizacion: organizacionDe(c.id),
         })),
         progreso: suyos.flatMap((c) => progresoDe(c.id).map((p) => ({ ...p, cliente: c.id }))),
       };
+    },
+  ],
+  // Plan 0.8.0, D4 (14xx): avisos, órdenes con espera y restauraciones de todos los clientes de la cuenta.
+  [
+    "GET",
+    /^\/api\/panel\/(avisos|ordenes|restauraciones)$/,
+    (ctx, [que]) => {
+      const cuenta = sesionDe(ctx);
+      const suyos = estado.clientes.filter((c) => rolEn(cuenta.id, c.id)).sort((a, b) => a.nombre.localeCompare(b.nombre));
+      const datos = (c: string) => {
+        if (que === "avisos")
+          return estado.avisos
+            .filter((a) => a.cliente === c && a.abierto)
+            .sort((a, b) => Date.parse(b.creado) - Date.parse(a.creado))
+            .map(({ cliente: _c, abierto: _a, ...a }) => a);
+        if (que === "ordenes")
+          return estado.ordenes.filter((o) => o.cliente === c && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).map(ordenPublica);
+        sembrarRestauraciones(c);
+        return {
+          ajustes: { motivo_obligatorio: estado.ajustesRest.get(c) ?? false },
+          entradas: estado.restauraciones.filter((r) => r.cliente === c).map(({ cliente: _c, ...r }) => r),
+          notas: estado.notasRest.filter((n) => n.cliente === c).map(({ cliente: _c, ...n }) => n),
+        };
+      };
+      return { generado: new Date().toISOString(), omitidos: 0, clientes: suyos.map((c) => ({ id: c.id, nombre: c.nombre, rol: rolEn(cuenta.id, c.id), datos: datos(c.id) })) };
     },
   ],
   [
@@ -1338,6 +1364,12 @@ const rutas: Ruta[] = [
     },
   ],
   [
+    // Plan 0.8.0 (D1, D2): sedes, categorías y orden (cualquier miembro).
+    "GET",
+    new RegExp(`^${C}/organizacion$`),
+    (ctx, [c]) => (miembro(ctx, c), organizacionDe(c)),
+  ],
+  [
     // 0.7.26 (bloque 8): los datos comunes del cliente (solo administradores).
     "GET",
     new RegExp(`^${C}/datos-comunes$`),
@@ -1893,10 +1925,47 @@ function datosComunesDe(c: string): DatosComunesCliente {
             ],
             sin_compartir: [],
           }
-        : { filas: [], sin_compartir: [] },
+        : c === ID.altamar
+          ? {
+              // Plan 0.8.0 (D1, D2): dos sedes, sus equipos, dos categorías y un orden a mano.
+              filas: [
+                ["sede:norte-0a1b", { nombre: "Oficina Norte", notas: "Planta baja, junto a recepción", principal: true }],
+                ["sede:sur-2c3d", { nombre: "Planta Sur", notas: "Nave de producción" }],
+                [`sede.equipo:${ID.servidor}`, { sede: "norte-0a1b" }],
+                [`sede.equipo:${ID.recepcion}`, { sede: "norte-0a1b" }],
+                [`sede.equipo:${ID.contabilidad}`, { sede: "norte-0a1b" }],
+                [`sede.equipo:${ID.archivos}`, { sede: "sur-2c3d" }],
+                ["etiqueta.categoria:tipo-4e5f", { nombre: "Tipo", etiquetas: ["Servidores"] }],
+                ["etiqueta.categoria:area-6a7b", { nombre: "Área", etiquetas: ["Recepción", "Contabilidad", "Gerencia"] }],
+                ["orden.equipos:todos", { ids: [ID.servidor, ID.contabilidad, ID.recepcion, ID.archivos, ID.portatil] }],
+              ].map(([clave, valor]) => f({ clave: clave as string, valor, estado: "aplicado", semilla: false, esta: true, consola: null, por: "Ana Restrepo", cambiado: hace(60 * 24) })),
+              sin_compartir: [],
+            }
+          : { filas: [], sin_compartir: [] },
     );
   }
   return datosComunesMock.get(c)!;
+}
+
+/** Plan 0.8.0 (D1, D2): `GET /organizacion`, como el servidor (`crate::sedes`), de los datos comunes. */
+function organizacionDe(c: string) {
+  const o = { sedes: [] as { id: string; nombre: string; notas: string | null; principal: boolean }[], equipos: {} as Record<string, string>, destinos: {} as Record<string, string>, categorias: [] as { id: string; nombre: string; etiquetas: string[] }[], orden: [] as string[] };
+  for (const f of datosComunesDe(c).filas) {
+    const v = f.valor as Record<string, unknown> | null;
+    if (!v) continue;
+    const [clase, ...resto] = f.clave.split(":");
+    const sujeto = resto.join(":");
+    if (clase === "sede") o.sedes.push({ id: sujeto, nombre: String(v.nombre), notas: (v.notas as string) ?? null, principal: v.principal === true });
+    else if (clase === "sede.equipo") o.equipos[sujeto] = String(v.sede);
+    else if (clase === "sede.destino") o.destinos[sujeto] = String(v.sede);
+    else if (clase === "etiqueta.categoria") o.categorias.push({ id: sujeto, nombre: String(v.nombre), etiquetas: (v.etiquetas as string[]) ?? [] });
+    else if (clase === "orden.equipos") o.orden = (v.ids as string[]) ?? [];
+  }
+  o.sedes.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  o.categorias.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  const existe = (s: string) => o.sedes.some((x) => x.id === s);
+  for (const m of [o.equipos, o.destinos]) for (const k of Object.keys(m)) if (!existe(m[k])) delete m[k];
+  return o;
 }
 
 /** El agente anuncia SAS v3 desde 0.7.10. */

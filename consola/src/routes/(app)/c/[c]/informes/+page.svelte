@@ -169,10 +169,10 @@
 
   // v1.52: un informe por etiqueta («Contabilidad»): solo sus equipos.
   let deEtiqueta = $state("");
-  const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos, listaFuncionales(actual.id)));
+  const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos, actual.organizacion, listaFuncionales(actual.id)));
   const cuentaR = $derived(cuentaRegla(reglas));
   // Plan 0.8.0 (G1): la de todo el cliente, para el informe ejecutivo programado.
-  const reglasTodas = $derived(reglasDelCliente(actual.equipos, ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos, listaFuncionales(actual.id)));
+  const reglasTodas = $derived(reglasDelCliente(actual.equipos, ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos, actual.organizacion, listaFuncionales(actual.id)));
   const etiquetas = $derived(etiquetasDe(actual.equipos));
   $effect.pre(() => {
     // Una etiqueta que ya nadie lleva (u otro cliente): vuelve al cliente entero.

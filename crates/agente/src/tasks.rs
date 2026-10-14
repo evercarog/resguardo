@@ -753,6 +753,14 @@ pub struct RunningTask {
     pub read_bps: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upload_bps: Option<u64>,
+    /// 14p: quién la pidió con «Ahora» (como lo dice su consola), desde qué consola (su
+    /// nombre en el equipo, nunca su dirección) y su enlace. Sin esto: por su horario.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub por: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consola: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enlace: Option<String>,
 }
 
 /// Progreso de una tarea, tal como lo informa quien la ejecuta.
@@ -1044,6 +1052,12 @@ fn due_at(config: &AgentConfig, state: &mut TasksState, ctx: &DueContext, consum
 
 /// Pide una ejecución inmediata (la app sin administrador; la atiende el agente en ≤ 5 min).
 pub fn request_now(repo_id: &str, kind: &str) -> Result<(), String> {
+    request_now_por(repo_id, kind, None)
+}
+
+/// 14p: [`request_now`] diciendo quién la pide y desde qué consola (para el progreso en
+/// todas las consolas). Solo nombres: nunca la dirección de la consola.
+pub fn request_now_por(repo_id: &str, kind: &str, quien: Option<&crate::restaurar_v2::Quien>) -> Result<(), String> {
     let config = agent::load_config();
     let repo = config.repos.iter().find(|r| r.id == repo_id).ok_or("Este repositorio no está en el agente.")?;
     let configured = match kind {
@@ -1060,8 +1074,95 @@ pub fn request_now(repo_id: &str, kind: &str) -> Result<(), String> {
     if !configured {
         return Err("Esa tarea no está programada en este repositorio.".into());
     }
-    let body = serde_json::json!({ "requested_at": Local::now().to_rfc3339() });
+    let mut body = serde_json::json!({ "requested_at": Local::now().to_rfc3339() });
+    if let Some(q) = quien {
+        body["por"] = q.por.as_deref().map(|p| p.chars().filter(|c| !c.is_control()).take(80).collect::<String>()).into();
+        body["consola"] = q.consola.clone().into();
+        body["enlace"] = q.enlace.clone().into();
+    }
     fs::write(agent::requests_dir().join(format!("{repo_id}.{kind}")), body.to_string()).map_err(|e| format!("No se pudo dejar la solicitud al agente: {e}"))
+}
+
+/// 14p: quién pidió con «Ahora» la tarea `pedida` (`verify`, `derivada-<id>`…) de un
+/// repositorio, si esa solicitud es la que se acaba de atender (en la última hora). La
+/// carpeta de solicitudes la pueden escribir los usuarios del equipo: solo nombres cortos
+/// y limpios, que se enseñan como dato (nunca deciden nada).
+fn quien_pidio(state: &TasksState, repo_id: &str, pedida: &str) -> PedidaPor {
+    let nada = PedidaPor::default();
+    let path = agent::requests_dir().join(format!("{repo_id}.{pedida}"));
+    let Ok(meta) = fs::symlink_metadata(&path) else { return nada };
+    let Some(stamp) = meta.is_file().then(|| meta.modified().ok()).flatten().map(|m| DateTime::<chrono::Utc>::from(m).min(chrono::Utc::now())) else {
+        return nada;
+    };
+    let atendida = state.requests_seen.get(&key(pedida, repo_id)).and_then(|s| DateTime::parse_from_rfc3339(s).ok()).is_some_and(|s| s >= stamp);
+    if !atendida || chrono::Utc::now().signed_duration_since(stamp) > chrono::Duration::hours(1) {
+        return nada;
+    }
+    quien_de(&leer_solicitud(&path))
+}
+
+/// Una solicitud «Ahora» (como mucho 4 KiB: la carpeta la pueden escribir los usuarios).
+fn leer_solicitud(path: &std::path::Path) -> serde_json::Value {
+    use std::io::Read;
+    let mut b = Vec::new();
+    if let Ok(f) = fs::File::open(path) {
+        let _ = f.take(4096).read_to_end(&mut b);
+    }
+    serde_json::from_slice(&b).unwrap_or_default()
+}
+
+/// 14p: quién pidió una tarea con «Ahora» (como lo dice su consola), desde qué consola
+/// (su nombre en el equipo) y su enlace.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PedidaPor {
+    pub por: Option<String>,
+    pub consola: Option<String>,
+    pub enlace: Option<String>,
+}
+
+/// Quién la pidió: nombres cortos y sin controles.
+fn quien_de(v: &serde_json::Value) -> PedidaPor {
+    let texto =
+        |k: &str, max: usize| v[k].as_str().map(|x| x.chars().filter(|c| !c.is_control()).take(max).collect::<String>()).filter(|x| !x.trim().is_empty());
+    PedidaPor { por: texto("por", 80), consola: texto("consola", 60), enlace: texto("enlace", 80) }
+}
+
+/// 14p: lo pedido con «Ahora» que aún no ha empezado (en cola): `(repo, tarea)`, con la
+/// tarea como en `tasks.json` (`verify`, `offsite`, `restore_test`, `verify_offsite`,
+/// `derivada-<id>`, `verify_derivada-<id>`) y quién la pidió.
+pub fn en_cola(config: &AgentConfig) -> Vec<(String, String, PedidaPor)> {
+    let mut state = load_state();
+    let corriendo = state.live_running().map(|r| (r.repo_id.clone(), r.kind.clone()));
+    let mut out = Vec::new();
+    for repo in &config.repos {
+        let mut pedidas: Vec<String> = Vec::new();
+        if repo.verify.is_some() {
+            pedidas.push("verify".into());
+        }
+        if let Some(o) = &repo.offsite {
+            pedidas.push("offsite".into());
+            if o.verify.is_some() {
+                pedidas.push("verify_offsite".into());
+            }
+        }
+        if repo.restore_test.is_some() {
+            pedidas.push("restore_test".into());
+        }
+        for d in &repo.derived {
+            pedidas.push(derived_request(DERIVADA, &d.id));
+            if d.offsite.verify.is_some() {
+                pedidas.push(derived_request(VERIFY_DERIVADA, &d.id));
+            }
+        }
+        for p in pedidas {
+            if corriendo.as_ref().is_some_and(|(r, k)| *r == repo.id && *k == p) || !requested(&mut state, &repo.id, &p, false) {
+                continue;
+            }
+            let quien = quien_de(&leer_solicitud(&agent::requests_dir().join(format!("{}.{p}", repo.id))));
+            out.push((repo.id.clone(), p, quien));
+        }
+    }
+    out
 }
 
 // ---------- Proceso de tareas ----------
@@ -1175,6 +1276,12 @@ pub fn run() -> i32 {
         };
         let quiet = if agent::apply_discreet(&config) { " (modo discreto: prioridad baja)" } else { "" };
         agent::log(&format!("{what} de «{}»…{quiet}", repo.name));
+        // 14p: si la pidieron con «Ahora», quién y desde qué consola.
+        let pedida = match derivada.as_ref() {
+            Some(d) => derived_request(kind, &d.id),
+            None => kind.to_string(),
+        };
+        let PedidaPor { por, consola, enlace } = quien_pidio(&state, &repo.id, &pedida);
         state.running = Some(RunningTask {
             repo_id: repo.id.clone(),
             kind: kind.into(),
@@ -1182,6 +1289,9 @@ pub fn run() -> i32 {
             stage: "Preparando…".into(),
             done: 0,
             updated: Some(Local::now().to_rfc3339()),
+            por,
+            consola,
+            enlace,
             ..Default::default()
         });
         save_state(&mut state);

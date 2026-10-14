@@ -3265,8 +3265,18 @@ pub mod tests {
         // Recién hechas: no se repiten; «ejecutar ahora» sí.
         assert_eq!(crate::tasks::run(), 0);
         assert_eq!(crate::tasks::load_state().runs["offsite:agente-test"].started, off.started);
-        crate::tasks::request_now("agente-test", "offsite").unwrap();
+        // 14p: pedida desde una consola, «en cola» (con quién la pidió) hasta que empieza.
+        assert!(crate::tasks::en_cola(&load_config()).is_empty());
+        let q = crate::restaurar_v2::Quien { por: Some("Ana".into()), consola: Some("Oficina".into()), enlace: "e2".into(), orden: None };
+        crate::tasks::request_now_por("agente-test", "offsite", Some(&q)).unwrap();
+        let cola = crate::tasks::en_cola(&load_config());
+        assert_eq!(cola.len(), 1, "{cola:?}");
+        assert_eq!(
+            (cola[0].0.as_str(), cola[0].1.as_str(), cola[0].2.por.as_deref(), cola[0].2.consola.as_deref()),
+            ("agente-test", "offsite", Some("Ana"), Some("Oficina"))
+        );
         assert_eq!(crate::tasks::run(), 0);
+        assert!(crate::tasks::en_cola(&load_config()).is_empty(), "al empezar, deja de estar en cola");
         let again = &crate::tasks::load_state().runs["offsite:agente-test"];
         assert_ne!(again.started, off.started);
         assert!(again.message.starts_with("Nada nuevo"), "{}", again.message);

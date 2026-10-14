@@ -2,6 +2,46 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-14 · `ia/080-espejos-vivo` · Plan 0.8.0, C2 y C3: espejos a la vista y progreso en vivo (14i, 14h, 14s, 14c, 14p)
+
+Claude Code (Opus), en autónomo, desde `ia/integracion-080` (unida otra vez al final, con el bloque F; conflictos en `ADMITE`, «Cambios» y `test:vectores`, resueltos sumando). Contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.6x; diseño en [espejo.md](espejo.md).
+
+**Hecho:**
+
+- **Agente, registro de cada espejo (14i):** `EstadoTrabajo` guarda `subidas` (las últimas 30 vueltas: inicio, fin, resultado, motivo, lo copiado, lo borrado por su retención, lo comprobado, lo que ocupa y el error en una línea sin rutas), `ocupa` (lo que ocupa en el destino por repositorio: lo que había, más lo copiado, menos lo borrado; el motor lo cuenta en cada vuelta sin listar otra vez) y `bien`. Van en el resumen y, con sus cifras, en la bitácora (`espejo`, opcional).
+- **14c:** `registro` marca los trabajos de los que este agente sabe toda la historia (los nuevos o los que terminan bien); `nunca_bien()` = con registro, sin `bien` y sin un resultado bueno. `reduce` no cuenta esos (tampoco al quitar el espejo entero). La consola lo mismo con `nunca_bien` del resumen (vectores compartidos). `espera_v2::descripcion` dice qué cambia en los espejos («Espejos del almacén: quitar «X»», «cambiar el destino de «X» a la nube «B2»», «a una carpeta del disco E:»), sin rutas.
+- **14s:** `cuando.primera_desde` (`admite: "espejo_primera"`): la primera vuelta no empieza antes. El editor de espejos, en el resumen, dice el tamaño de la primera subida (lo que ocupan los repositorios que entran) y deja elegir «Empezar ahora» o «en la próxima franja de la madrugada» (las 2:00 de la consola).
+- **Progreso en vivo (C3, 14p):** el agente manda las vueltas de los espejos (tipo `espejo`; en una carpeta, bytes copiados de los que hay que copiar; hacia una nube, lo que sube rclone medido por sus contadores de E/S), la actualización del agente (bajando la versión, en bytes) y la retención del almacén, y «en cola» lo pedido con «Ahora» (verificar, probar, subir una derivada, «Hacer ahora» un espejo) con quién lo pidió y desde qué consola (la solicitud lleva ahora `por`, `consola` y `enlace`; se leen como mucho 4 KiB). El servidor admite los tipos, la fase y los campos nuevos; pasar de «en cola» a en marcha cuenta como «empieza».
+- **Consola:** página de cada espejo (`/equipos/<e>/espejos/<t>`), progreso en vivo en la lista de espejos, en la ficha del equipo (actualización, espejos, retención del almacén), en el camino de la copia y en la tarjeta del repositorio («su copia en <destino>» con lo que ocupa allí y su comprobación), enlaces nuevos desde el camino, la página del destino (con el tamaño real cuando se sabe) y el mapa; textos de «en cola» y de quién lo pidió. Simulador con registro, una primera subida en vivo y una verificación que pasa por «en cola». Vectores `vectores-espejo-pagina.ts`. E2E: paso 8a3b.
+
+**Sin probar:** contra equipos o consolas reales (todo en pruebas y en el e2e). La medida de lo subido a una nube depende de los contadores de E/S del proceso de rclone (en Linux, `/proc`): sin ellos el porcentaje no avanza hasta el final. La madrugada de 14s es la de la consola, no la del equipo (si están en otra zona horaria, empieza a otra hora). La actualización del agente con su progreso solo en pruebas (sin una actualización real).
+
+**Decisiones dudosas (para revisar):**
+
+- 14c: un trabajo creado por un agente anterior que nunca terminó bien **sigue esperando** (no se sabe su historia): se prefirió no quitar protección por suponer.
+- «Lo que ocupa en el destino» es lo que el espejo cuenta en cada vuelta (lista el destino de todos modos), no una consulta aparte: si alguien borra a mano en el destino, se ve en la vuelta siguiente.
+- El progreso de un espejo sale como `repo = id del trabajo` (el servidor exige `repo`); la consola lo distingue por el tipo.
+- «En cola» incluye lo pedido con «Ahora» que el agente aún no ha empezado; mientras hay algo en cola, la actualización automática del agente espera (lo cuenta como algo en marcha).
+
+## 2026-10-14 · rama `ia/080-sedes` · Claude Code (autónomo) · plan 0.8.0 D1, D2 y D4 (14ll, 14ss, 14xx)
+
+**Pedido:** sedes por cliente (dato propio, no etiqueta) y la regla 3-2-1-1-0 con ellas; vista de Equipos con categorías de etiqueta, agrupar por niveles y orden a mano; «Todos los clientes» con secciones.
+
+**Hecho:**
+- Protocolo y agente: datos comunes `sede:`, `sede.equipo:` y `sede.destino:` (estas dos con la clave de administración), `etiqueta.categoria:` y `orden.equipos:todos`, con vectores; `admite: "sedes"`. Regla: `OrigenRegla.sede`/`PasoRegla.sede` en `protection.rs` y `regla321.ts` con 6 vectores nuevos compartidos.
+- Servidor: `GET /api/clientes/{c}/organizacion` (cualquier miembro; módulo `sedes.rs`), `organizacion` en `/api/panel`, y `GET /api/panel/{avisos,ordenes,restauraciones}` (solo los clientes de la cuenta; la prueba `tests/panel.rs` comprueba que nadie ve clientes ajenos ni la organización de otro).
+- Consola: `lib/sedes.ts` (con `vectores-sedes.ts`), `reglaDeCopia` con la organización; «Sedes y categorías» en Equipos; sede en la ficha del equipo, en la del destino y con «Varios a la vez»; aviso de equipos sin sede; «Agrupar por» dos niveles sin duplicados con grupos plegables; orden «A mano» con flechas o arrastrando; un valor por categoría al poner etiquetas; la sede en «Dónde llegan los datos». «Copias en el mismo equipo» cuenta las copias derivadas. «Todos los clientes»: barra lateral con Estado, Copias, Equipos, Avisos, Órdenes en espera, En curso y Restauraciones (`lib/todosSecciones.ts` con `vectores-todos.ts`). Simulador con sedes; e2e paso 3b2.
+- Docs: `sedes.md`, `api-servidor.md` «Cambios» (v1.6x), `regla-3-2-1.md`, planes.
+
+**Sin probar:** repartir la sede de un equipo con la clave entre dos consolas reales (lo cubre el e2e contra un agente, no dos consolas con el aviso de datos comunes); arrastrar y soltar en navegadores táctiles (las flechas siempre están); el contador «Órdenes en espera» de la barra lateral en el simulador no suma las de otras consolas (el servidor real sí, `en_espera_de_otras`).
+
+**Decisiones dudosas:**
+- Un destino sin sede asignada está en la sede de su equipo (zona, disco, carpeta) salvo que una persona marcara su tipo; un servidor de fuera sin sede asignada no tiene sede y manda su tipo.
+- La sede de un equipo o destino pide la clave para repartirse (como el tipo de un destino); aquí se aplica al momento.
+- «Por persona» = en el navegador con la cuenta en la clave, no en el servidor.
+- «Todos los clientes» pide avisos, órdenes y restauraciones en una petición al servidor (con lo que ya hacía `/api/panel`: pertenencia en cada petición, acotado) en vez de N peticiones; con un servidor anterior, cliente a cliente.
+- La agrupación «Etiquetas» junta en un grupo las etiquetas sueltas de cada equipo («Contabilidad · Ventas») para no repetir equipos.
+
 ## 2026-10-13 · `ia/080-informes` · Plan 0.8.0, bloque G: informe ejecutivo y canales (14g)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-080`. Pedido: un informe ejecutivo en PDF por cliente y periodo, programado por correo con destinatarios propios, con el logo del prestador (y el del cliente como sustituto), «Descargar el informe» y «Enviar ahora»; y tipos de canal Microsoft Teams, Slack y Discord con su formato. Contrato (solo consola ↔ servidor) en [api-servidor.md](api-servidor.md) §13 «Informe ejecutivo» y «Canales», y «Cambios» v1.6x.

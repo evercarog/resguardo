@@ -34,6 +34,9 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
+  import ElegirSede from "$lib/componentes/ElegirSede.svelte";
+  import { sedeDeEquipo } from "$lib/sedes";
+  import { ponerSedeDestino } from "$lib/organizacion.svelte";
   import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
 
@@ -60,13 +63,17 @@
       return { e, r, versiones: nVersiones(r, inf), tam: bytesRepo(r, inf), estado: estadoRepo(r, inf, e.resumen?.copias ?? [], reloj.ahora) };
     }),
   );
-  // Plan 0.8.0 (B2, 14r): los espejos que llegan aquí, por su nombre, con los repositorios que guarda cada uno
-  // (su tamaño es el del repositorio en el almacén: el espejo tiene los mismos archivos).
+  // Plan 0.8.0 (B2, 14r): los espejos que llegan aquí, por su nombre, con los repositorios que guarda cada uno.
+  // 14i: con lo que ocupa cada uno en el destino si el agente lo cuenta (`ocupa`); si no, el del almacén
+  // (el espejo tiene los mismos archivos, salvo lo que retenga).
   const espejos = $derived(
     v
       ? espejosEnDestino(v, actual.equipos, c).map((x) => ({
           ...x,
-          filas: x.repos.map((r) => ({ ...r, tam: r.repo && r.equipo ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null })),
+          filas: x.repos.map((r) => {
+            const aqui = x.trabajo.ocupa?.repos?.[r.valor];
+            return { ...r, real: aqui != null, tam: aqui ?? (r.repo && r.equipo ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null) };
+          }),
         }))
       : [],
   );
@@ -218,6 +225,20 @@
             <dt>Soporte</dt>
             <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
           </dl>
+          <!-- Plan 0.8.0, D1: su sede (la nube no es sede: siempre fuera). -->
+          {#if actual.organizacion.sedes.length && clase.tipo !== "nube"}
+            {@const suEquipo = marca.equipo?.id ?? null}
+            {@const deSuEquipo = suEquipo && !atrib?.tipo ? sedeDeEquipo(actual.organizacion, suEquipo).sede : null}
+            <div class="sede-dest">
+              <ElegirSede
+                id="sede-destino"
+                asignada={actual.organizacion.destinos[marca.clave] ?? null}
+                sinAsignar={deSuEquipo ? `Sin asignar: la de su equipo (${deSuEquipo.nombre})` : "Sin asignar: manda su tipo"}
+                guardar={(s) => ponerSedeDestino(c, marca.clave, s)}
+              />
+              <p class="faint">Fuera del sitio para los equipos de otra sede; en el sitio para los de la suya.</p>
+            </div>
+          {/if}
         </section>
       {/if}
     </div>
@@ -243,7 +264,7 @@
                       {#if f.equipo && f.repo}
                         <a class="fila-d" href="/c/{c}/equipos/{f.equipo.id}/repositorios/{encodeURIComponent(f.repo.id)}">
                           <Database size={14} class="ic" />
-                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)} (como en el almacén)` : ""}</span></span>
+                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)}${f.real ? " aquí" : " (como en el almacén)"}` : ""}</span></span>
                           <ArrowRight size={14} class="flecha" />
                         </a>
                       {:else}
@@ -373,6 +394,13 @@
 {#if notas && d && v}<NotasDialogo tipo="destino" objeto={d.id} nombre={v.nombre} onclose={() => (notas = false)} />{/if}
 
 <style>
+  .sede-dest {
+    margin-top: var(--sp-3);
+  }
+  .sede-dest p {
+    margin: 4px 0 0;
+    font-size: var(--fs-xs);
+  }
   .dos {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));

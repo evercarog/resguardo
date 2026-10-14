@@ -685,9 +685,11 @@ fn copias_activas(config: Option<&Value>) -> usize {
 /// pedido que no se entiende cuenta como destructivo (y luego se rechaza).
 fn quita_destinos_del_espejo(e: &Value) -> bool {
     // Plan 0.7.26: con trabajos o en la forma de antes, comparando trabajo a trabajo.
+    let actuales = crate::server::load().espejo.map(|a| a.trabajos_efectivos()).unwrap_or_default();
     match crate::espejo::trabajos_del_pedido(e) {
-        Ok(Some(nuevos)) => crate::espejo_trabajos::reduce(&crate::server::load().espejo.map(|a| a.trabajos_efectivos()).unwrap_or_default(), &nuevos),
-        Ok(None) => true,
+        Ok(Some(nuevos)) => crate::espejo_trabajos::reduce(&actuales, &nuevos),
+        // Quitarlo entero: 14c, salvo si ninguno de sus trabajos ha terminado bien nunca.
+        Ok(None) => actuales.is_empty() || crate::espejo_trabajos::reduce(&actuales, &[]),
         Err(_) => true,
     }
 }
@@ -1206,6 +1208,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(hecha(m))
         }
         "actualizar_agente" => Ok(rechazada("Próximamente: las actualizaciones firmadas llegarán con la llave de publicación del proyecto.")),
+        // 14p: «Hacer ahora» un espejo, con quién lo pide y desde qué consola (para su progreso).
+        "guarda_copias" if c.get("espejo_ahora").is_some() => {
+            let q = quien(v, o, orden_id);
+            let pedido = crate::espejo_trabajos::Pedido { por: q.por, consola: q.consola, enlace: q.enlace };
+            Ok(hecha(crate::espejo_trabajos::pedir_ahora(&c["espejo_ahora"], Some(pedido))?))
+        }
         "guarda_copias" => {
             let (m, privado) = g::guarda_copias(c, o.responder_a.is_some())?;
             let _ = g::subir_config(v);
@@ -1244,7 +1252,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
                 ("subir_ahora", Some(d)) => crate::tasks::derived_request(crate::tasks::DERIVADA, d),
                 _ => "restore_test".to_string(),
             };
-            crate::tasks::request_now(&r, &tarea)?;
+            crate::tasks::request_now_por(&r, &tarea, Some(&quien(v, o, orden_id)))?;
             Ok(hecha("Tarea pedida: empieza en unos segundos."))
         }
         "pausar" => g::pausar(v, c).map(hecha),
@@ -1756,7 +1764,8 @@ fn config_rustls(ca_pem: &str) -> Result<Arc<rustls::ClientConfig>, String> {
 }
 
 /// Cada cuánto se despierta el canal sin mensajes del servidor (para el progreso).
-const ESPERA_CANAL: Duration = Duration::from_secs(5);
+// 14p: cada 2 s (antes 5), para que lo que empieza o termina llegue enseguida a las consolas.
+const ESPERA_CANAL: Duration = Duration::from_secs(2);
 /// Entre dos informes por el canal, como poco (salvo el de cuando termina una copia).
 const ENTRE_INFORMES: Duration = Duration::from_secs(15);
 /// El de cuando termina una copia: casi enseguida (una copia termina como mucho cada pocos segundos).

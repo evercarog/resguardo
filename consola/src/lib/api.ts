@@ -221,6 +221,10 @@ export const clientesDelServidor = () => pedir<T.ClientesDelServidor>("GET", "/a
 /** v1.38: «Todos los clientes»: lo de cada cliente del que la cuenta es miembro, en una petición (404 con un servidor anterior). */
 export const panel = (opciones: { invisible?: boolean } = {}) => pedir<import("./global").Panel>("GET", "/api/panel", undefined, opciones);
 /** v1.38: solo lo que está en marcha en todos esos clientes. */
+// Plan 0.8.0, D4 (14xx): avisos, órdenes en espera y restauraciones de todos los clientes de la cuenta.
+export const panelAvisos = () => pedir<import("./global").PanelDe<T.Aviso[]>>("GET", "/api/panel/avisos", undefined, { invisible: true });
+export const panelOrdenes = () => pedir<import("./global").PanelDe<T.Orden[]>>("GET", "/api/panel/ordenes", undefined, { invisible: true });
+export const panelRestauraciones = () => pedir<import("./global").PanelDe<T.Restauraciones>>("GET", "/api/panel/restauraciones", undefined, { invisible: true });
 export const panelProgreso = () => pedir<import("./global").ProgresoPanel[]>("GET", "/api/panel/progreso", undefined, { invisible: true });
 /** Un cliente para otra persona: sin ser miembro, con su invitación de propietario. */
 export const crearClienteParaOtro = (b: { nombre: string; espera_min_horas?: number; cuotas?: T.Cuotas }) =>
@@ -328,6 +332,8 @@ export const ponerAjusteEtiqueta = (c: string, a: { nombre: string; color: numbe
   pedir<T.AjusteEtiqueta[]>("PUT", `${cli(c)}/etiquetas`, a);
 // 0.7.26 (bloque 8): los datos comunes del cliente (colores, catálogo, plantillas), iguales en
 // todas sus consolas (lib/datosComunes.ts). Solo administradores; un servidor anterior da 404.
+// Plan 0.8.0, D1 y D2: sedes, categorías y orden (cualquier miembro). Se cambian con ponerDatosComunes.
+export const organizacion = (c: string) => pedir<unknown>("GET", `${cli(c)}/organizacion`, undefined, { invisible: true });
 export const datosComunes = (c: string) => pedir<DatosComunesCliente>("GET", `${cli(c)}/datos-comunes`, undefined, { invisible: true });
 export const ponerDatosComunes = (c: string, entradas: { clave: string; valor: unknown; semilla?: boolean }[]) =>
   pedir<{ entradas: EntradaOrden[] }>("POST", `${cli(c)}/datos-comunes`, { entradas }, { invisible: true });

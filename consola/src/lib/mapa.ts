@@ -16,6 +16,7 @@ import { almacenDeDestino, lugarDe, riesgoMismoEquipo, servidorDe } from "./dond
 import { claveNube, claveZona, PRINCIPAL, puertoDe, zonaDeDestino, zonasDe } from "./destinos";
 // Las páginas de los destinos (como las de los repositorios): cada tarjeta de destino lleva a la suya.
 import { hrefDestino } from "./fichaDestino";
+import { hrefEspejo } from "./espejoTrabajos";
 import { cuandoEnFrase, destinosParaPasos } from "./cadenas";
 import { clasificacionDeVista } from "./regla321";
 import { corta, tipoDeNube, type TipoCorto } from "./tipoDestino";
@@ -507,8 +508,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         tono,
         estado: mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado",
         ultima: d.ultima ?? null,
-        // Una nube o una zona tienen su página; una carpeta del espejo, no (está en la ficha del almacén).
-        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : `/c/${c}/equipos/${alm.id}`,
+        // Una nube o una zona tienen su página; una carpeta del espejo, no: la página del espejo (14i) o la ficha del almacén.
+        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : d.trabajo ? hrefEspejo(c, alm.id, d.trabajo) : `/c/${c}/equipos/${alm.id}`,
         icono: nube ? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "nube") : "disco",
       });
       const tipoNube = (alm.resumen?.guarda_copias?.nubes ?? []).find((x) => x.nombre === d.nube)?.tipo ?? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "");

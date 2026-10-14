@@ -13,6 +13,7 @@
   import Tiempo from "../Tiempo.svelte";
   import TipoDestino from "../TipoDestino.svelte";
   import EditorEspejo from "./EditorEspejo.svelte";
+  import EnMarcha from "../EnMarcha.svelte";
   import { tip } from "$lib/tooltip";
   import { puede } from "$lib/estado.svelte";
   import { bytes, plural } from "$lib/formato";
@@ -29,6 +30,7 @@
     cuerpoEquipo,
     equiposDelAlmacen,
     estadoTrabajo,
+    hrefEspejo,
     mover,
     nombrePorDefecto,
     opcionesRepos,
@@ -120,27 +122,29 @@
     orden = {
       cuerpo: cuerpo(conTrabajo(base, t)),
       titulo: nuevo ? "Añadir un espejo" : `Cambiar «${nombre}»`,
-      // 14aa: al aplicarse, un aviso breve que se va solo.
-      exito: nuevo ? `Espejo «${nombre}» añadido: empieza con su primera subida.` : `«${nombre}» cambiado.`,
+      // 14aa: al aplicarse, un aviso breve que se va solo. 14s: cuándo empieza su primera subida.
+      exito: nuevo ? (t.cuando.primera_desde ? `Espejo «${nombre}» añadido: su primera subida empieza esta madrugada.` : `Espejo «${nombre}» añadido: empieza con su primera subida.`) : `«${nombre}» cambiado.`,
       descripcion: `${quien === "almacen" ? hace.nombre : `${hace.nombre} (el propio equipo)`} hará «${nombre}». Qué: ${textoQue(t, nombreRepo(t), nombreEquipo)} → ${destino(t).nombre}. Cuándo: ${textoCuando(t, nombreDe)}. ${textoRetencion(t)}.${t.retencion.modo === "igual" ? ` ${AVISO_IGUAL}` : ""}`,
     };
   }
   function moverUno(t: TrabajoEspejo, d: -1 | 1) {
     orden = { cuerpo: cuerpo(mover(base, t.id, d)), titulo: "Cambiar el orden de los espejos", descripcion: "Cuando tocan varios a la vez, se hacen en este orden." };
   }
-  function pausar(t: TrabajoEspejo) {
+  /** 14c: uno que nunca ha terminado bien aún no protege nada: cambiarlo o quitarlo no espera. */
+  const sinEspera = (t: TrabajoEspejoResumen) => (t.nunca_bien ? " Aún no ha terminado ninguna subida: no hace falta esperar." : " Reduce la protección: espera su turno.");
+  function pausar(t: TrabajoEspejoResumen) {
     const pausa = t.activo;
     orden = {
       cuerpo: cuerpo(conTrabajo(base, { ...paraOrden(t), activo: !pausa })),
       titulo: pausa ? `Pausar «${t.nombre}»` : `Activar «${t.nombre}»`,
-      descripcion: pausa ? "Deja de hacerse hasta que lo actives (lo ya copiado se queda). Reduce la protección: espera su turno." : "Vuelve a hacerse cuando toque.",
+      descripcion: pausa ? `Deja de hacerse hasta que lo actives (lo ya copiado se queda).${sinEspera(t)}` : "Vuelve a hacerse cuando toque.",
     };
   }
-  function quitar(t: TrabajoEspejo) {
+  function quitar(t: TrabajoEspejoResumen) {
     orden = {
       cuerpo: cuerpo(sinTrabajo(base, t.id)),
       titulo: `Quitar «${t.nombre}»`,
-      descripcion: `Deja de hacerse. Lo ya copiado se queda en su destino.${lista.some((x) => x.cuando.cadena === t.id || x.cuando.despues === t.id) ? " Los que iban después de él pasan a hacerse después de cada copia nueva." : ""}`,
+      descripcion: `Deja de hacerse. Lo ya copiado se queda en su destino.${lista.some((x) => x.cuando.cadena === t.id || x.cuando.despues === t.id) ? " Los que iban después de él pasan a hacerse después de cada copia nueva." : ""}${sinEspera(t)}`,
     };
   }
   function duplicar(t: TrabajoEspejo) {
@@ -171,7 +175,7 @@
     <article class="card espejo" class:pausado={!t.activo} class:tras={!!despues}>
       {#if despues}<p class="tras-de faint"><CornerDownRight size={13} />{t.cuando.cadena ? "En cadena tras" : "Después de"} «{nombreDe(despues)}»</p>{/if}
       <div class="cab">
-        <h3>{t.nombre || nombrePorDefecto(t.adonde)}</h3>
+        <h3><a class="link-suave" href={hrefEspejo(cliente.id, hace.id, t.id)}>{t.nombre || nombrePorDefecto(t.adonde)}</a></h3>
         <Chip tono={TONO[e]} texto={TEXTO[e]} pequeno />
         {#if admin}
           <div class="acciones">
@@ -207,6 +211,9 @@
         {#if t.verificacion}{" · "}comprobados {plural(t.verificacion.archivos, "archivo", "archivos")}{t.verificacion.mal ? `, ${t.verificacion.mal} mal` : ""}{/if}
         {#if t.por_borrar?.archivos}{" · "}{plural(t.por_borrar.archivos, "archivo", "archivos")} ({bytes(t.por_borrar.bytes)}) por borrar{t.por_borrar.primero ? ` desde el ${diaLegible(t.por_borrar.primero)}` : ""}{/if}
       </p>
+      {#if t.ocupa}<p class="estado faint">Ocupa {bytes(t.ocupa.bytes)} en el destino · <a class="link-suave" href={hrefEspejo(cliente.id, hace.id, t.id)}>historial de subidas</a></p>{/if}
+      <!-- 14p: su subida en vivo (o «en cola»), en todas las consolas. -->
+      <EnMarcha equipo={hace.id} repo={t.id} tipos={["espejo"]} />
       {#if e === "error" && t.resultado}<p class="msg-fallo">{t.resultado}</p>{/if}
       {#if t.freno_aviso || t.retenidos}
         <div class="notice notice-warn freno">

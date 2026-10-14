@@ -56,6 +56,20 @@ pub enum Clase {
     DestinoRegla,
     /// `plantilla:<id>` → `{ cifrado, sal, cliente }` o `null` (borrada).
     Plantilla,
+    /// 0.8.0 (D1, 14ll): `sede:<id>` → `{ nombre, notas?, principal? }` o `null` (quitada).
+    Sede,
+    /// 0.8.0 (D1): `sede.equipo:<id del equipo>` → `{ sede }` o `null` (la de por defecto).
+    /// **Pide la clave de administración** (cuenta en la regla 3-2-1, como el tipo de un destino).
+    SedeEquipo,
+    /// 0.8.0 (D1): `sede.destino:<id del catálogo>` → `{ sede }` o `null` (la de su equipo, o
+    /// ninguna). **Pide la clave de administración.**
+    SedeDestino,
+    /// 0.8.0 (D2, 14ss): `etiqueta.categoria:<id>` → `{ nombre, etiquetas: [..] }` o `null`
+    /// (una categoría de etiquetas: un solo valor por equipo).
+    EtiquetaCategoria,
+    /// 0.8.0 (D2): `orden.equipos:<ámbito>` (hoy, `todos`) → `{ ids: [..] }` o `null` (el orden
+    /// a mano de los equipos, igual en todas las consolas).
+    OrdenEquipos,
 }
 
 impl Clase {
@@ -66,11 +80,39 @@ impl Clase {
             Clase::Destino => "destino:",
             Clase::DestinoRegla => "destino.regla:",
             Clase::Plantilla => "plantilla:",
+            Clase::Sede => "sede:",
+            Clase::SedeEquipo => "sede.equipo:",
+            Clase::SedeDestino => "sede.destino:",
+            Clase::EtiquetaCategoria => "etiqueta.categoria:",
+            Clase::OrdenEquipos => "orden.equipos:",
         }
     }
 }
 
-const CLASES: [Clase; 5] = [Clase::EtiquetaColor, Clase::EtiquetaPlantilla, Clase::DestinoRegla, Clase::Destino, Clase::Plantilla];
+const CLASES: [Clase; 10] = [
+    Clase::EtiquetaColor,
+    Clase::EtiquetaPlantilla,
+    Clase::DestinoRegla,
+    Clase::Destino,
+    Clase::Plantilla,
+    Clase::Sede,
+    Clase::SedeEquipo,
+    Clase::SedeDestino,
+    Clase::EtiquetaCategoria,
+    Clase::OrdenEquipos,
+];
+
+/// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
+/// etiqueta y el orden de los equipos. A uno anterior no se le mandan (rechazaría la orden entera).
+pub const ADMITE_SEDES: &str = "sedes";
+/// ¿Es de las clases nuevas de la 0.8.0 (solo para agentes con [`ADMITE_SEDES`])?
+pub fn es_de_sedes(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos))
+}
+/// Como mucho, sedes, categorías y equipos en el orden a mano.
+pub const MAX_SEDES: usize = 50;
+pub const MAX_ETIQUETAS_CATEGORIA: usize = 50;
+pub const MAX_ORDEN: usize = 500;
 
 /// Un dato y quién lo cambió por última vez.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -108,14 +150,17 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
     let ok = match c {
         Clase::EtiquetaColor | Clase::EtiquetaPlantilla => normalizar_etiqueta(sujeto).is_some_and(|n| n.to_lowercase() == sujeto),
         Clase::Destino | Clase::DestinoRegla => id_destino_valido(sujeto),
-        Clase::Plantilla => id_simple(sujeto),
+        Clase::Plantilla | Clase::Sede | Clase::SedeEquipo | Clase::EtiquetaCategoria => id_simple(sujeto),
+        Clase::SedeDestino => id_destino_valido(sujeto),
+        Clase::OrdenEquipos => sujeto == "todos",
     };
     ok.then_some((c, sujeto))
 }
 
-/// ¿Cambiar este dato pide la clave de administración? (Tipo y marcas de un destino.)
+/// ¿Cambiar este dato pide la clave de administración? (Lo que cuenta en la regla 3-2-1: el
+/// tipo y las marcas de un destino y, desde la 0.8.0, la sede de un equipo o de un destino.)
 pub fn pide_admin(clave: &str) -> bool {
-    clave.starts_with(Clase::DestinoRegla.prefijo())
+    [Clase::DestinoRegla, Clase::SedeEquipo, Clase::SedeDestino].iter().any(|c| clave.starts_with(c.prefijo()))
 }
 
 /// Una etiqueta limpia como las de los equipos: sin espacios de más, de 1 a 32
@@ -151,6 +196,14 @@ pub fn id_simple(id: &str) -> bool {
 /// Un texto corto de quien lo cambió (consola, persona): sin caracteres de control, hasta `max`.
 pub fn texto_corto(t: &str, max: usize) -> String {
     t.chars().filter(|c| !c.is_control()).take(max).collect::<String>().trim().to_string()
+}
+
+/// Un texto de una persona (nombre o notas), sin espacios de más alrededor, de `min` a `max`
+/// caracteres y sin caracteres de control (con `lineas`, se admiten los saltos de línea).
+fn texto_valido(v: Option<&Value>, min: usize, max: usize, lineas: bool) -> Option<String> {
+    let t = v?.as_str()?.trim();
+    let n = t.chars().count();
+    (n >= min && n <= max && !t.chars().any(|c| c.is_control() && !(lineas && matches!(c, '\n' | '\r' | '\t')))).then(|| t.to_string())
 }
 
 fn nombre_destino(n: &str) -> Option<String> {
@@ -301,6 +354,60 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
             let cliente = m.get("cliente").and_then(Value::as_str).filter(|x| id_simple(x)).ok_or("Cliente no válido.")?;
             Ok(json!({ "cifrado": cifrado, "sal": sal, "cliente": cliente }))
         }
+        Clase::Sede => {
+            solo_campos(m, &["nombre", "notas", "principal"])?;
+            let nombre = texto_valido(m.get("nombre"), 1, 60, false).ok_or("El nombre de la sede: de 1 a 60 caracteres.")?;
+            let mut v = json!({ "nombre": nombre });
+            if let Some(n) = m.get("notas").filter(|n| !n.is_null()) {
+                let n = texto_valido(Some(n), 0, 500, true).ok_or("Las notas de la sede: hasta 500 caracteres.")?;
+                if !n.is_empty() {
+                    v["notas"] = json!(n);
+                }
+            }
+            match m.get("principal") {
+                None | Some(Value::Null) | Some(Value::Bool(false)) => {}
+                Some(Value::Bool(true)) => v["principal"] = json!(true),
+                _ => return Err("Principal: sí o no."),
+            }
+            Ok(v)
+        }
+        Clase::SedeEquipo | Clase::SedeDestino => {
+            solo_campos(m, &["sede"])?;
+            let sede = m.get("sede").and_then(Value::as_str).filter(|x| id_simple(x)).ok_or("Sede no válida.")?;
+            Ok(json!({ "sede": sede }))
+        }
+        Clase::EtiquetaCategoria => {
+            solo_campos(m, &["nombre", "etiquetas"])?;
+            let nombre =
+                m.get("nombre").and_then(Value::as_str).and_then(normalizar_etiqueta).ok_or("El nombre de la categoría: de 1 a 32 caracteres, sin comas.")?;
+            let xs = m.get("etiquetas").and_then(Value::as_array).ok_or("Faltan las etiquetas de la categoría (una lista).")?;
+            if xs.len() > MAX_ETIQUETAS_CATEGORIA {
+                return Err("Como mucho 50 etiquetas en una categoría.");
+            }
+            let mut out: Vec<String> = Vec::new();
+            for x in xs {
+                let t = x.as_str().and_then(normalizar_etiqueta).ok_or("Etiqueta no válida en la categoría.")?;
+                if !out.iter().any(|o| o.to_lowercase() == t.to_lowercase()) {
+                    out.push(t);
+                }
+            }
+            Ok(json!({ "nombre": nombre, "etiquetas": out }))
+        }
+        Clase::OrdenEquipos => {
+            solo_campos(m, &["ids"])?;
+            let xs = m.get("ids").and_then(Value::as_array).ok_or("Faltan los equipos (una lista).")?;
+            if xs.len() > MAX_ORDEN {
+                return Err("Como mucho 500 equipos en el orden.");
+            }
+            let mut out: Vec<&str> = Vec::new();
+            for x in xs {
+                let id = x.as_str().filter(|x| id_simple(x)).ok_or("Id de equipo no válido.")?;
+                if !out.contains(&id) {
+                    out.push(id);
+                }
+            }
+            Ok(json!({ "ids": out }))
+        }
     })();
     r.map_err(str::to_string)
 }
@@ -427,6 +534,40 @@ mod tests {
         assert!(valor_valido("plantilla:pla-1", &json!({ "cifrado": B64.encode([7u8; 10]), "sal": sal, "cliente": "c-1" })).is_err());
         assert!(valor_valido("plantilla:pla-1", &json!({ "cifrado": B64.encode(vec![7u8; 40 * 1024]), "sal": sal, "cliente": "c-1" })).is_err(), "grande");
         assert!(valor_valido("plantilla:pla-1", &json!({ "cifrado": cifrado, "sal": "x", "cliente": "c-1" })).is_err());
+    }
+
+    /// 0.8.0 (D1, D2): sedes, sede de equipos y destinos, categorías de etiqueta y orden a mano.
+    #[test]
+    fn sedes_categorias_y_orden() {
+        assert_eq!(
+            valor_valido("sede:norte", &json!({ "nombre": " Oficina Norte ", "notas": " Planta baja\ny sótano ", "principal": true })).unwrap(),
+            json!({ "nombre": "Oficina Norte", "notas": "Planta baja\ny sótano", "principal": true })
+        );
+        assert_eq!(valor_valido("sede:norte", &json!({ "nombre": "Norte", "notas": "", "principal": false })).unwrap(), json!({ "nombre": "Norte" }));
+        assert!(valor_valido("sede:norte", &json!({ "nombre": "" })).is_err(), "sin nombre");
+        assert!(valor_valido("sede:norte", &json!({ "nombre": "a".repeat(61) })).is_err());
+        assert!(valor_valido("sede:norte", &json!({ "nombre": "Norte\u{7}" })).is_err());
+        assert!(valor_valido("sede:norte", &json!({ "nombre": "Norte", "notas": "x".repeat(501) })).is_err());
+        assert!(valor_valido("sede:norte", &json!({ "nombre": "Norte", "direccion": "Calle 1" })).is_err(), "campos de más");
+        assert!(valor_valido("sede:norte", &json!({ "nombre": "Norte", "principal": "si" })).is_err());
+        assert_eq!(valor_valido("sede.equipo:e-1", &json!({ "sede": "norte" })).unwrap(), json!({ "sede": "norte" }));
+        assert!(valor_valido("sede.destino:zona:e1:principal", &json!({ "sede": "a b" })).is_err());
+        assert!(valor_valido("sede.destino:zona:e1:principal", &json!({ "sede": "norte", "x": 1 })).is_err());
+        assert_eq!(
+            valor_valido("etiqueta.categoria:tipo", &json!({ "nombre": " Tipo ", "etiquetas": ["Servidor", " Puesto ", "servidor"] })).unwrap(),
+            json!({ "nombre": "Tipo", "etiquetas": ["Servidor", "Puesto"] }),
+            "sin repetir"
+        );
+        assert!(valor_valido("etiqueta.categoria:tipo", &json!({ "nombre": "Tipo", "etiquetas": ["a,b"] })).is_err());
+        assert!(valor_valido("etiqueta.categoria:tipo", &json!({ "nombre": "Tipo" })).is_err());
+        let muchas: Vec<String> = (0..51).map(|i| format!("e{i}")).collect();
+        assert!(valor_valido("etiqueta.categoria:tipo", &json!({ "nombre": "Tipo", "etiquetas": muchas })).is_err());
+        assert_eq!(valor_valido("orden.equipos:todos", &json!({ "ids": ["b", "a", "b"] })).unwrap(), json!({ "ids": ["b", "a"] }));
+        assert!(valor_valido("orden.equipos:todos", &json!({ "ids": ["../a"] })).is_err());
+        let ids: Vec<String> = (0..501).map(|i| format!("e{i}")).collect();
+        assert!(valor_valido("orden.equipos:todos", &json!({ "ids": ids })).is_err());
+        assert!(es_de_sedes("sede:norte") && es_de_sedes("orden.equipos:todos") && !es_de_sedes("etiqueta.color:x") && !es_de_sedes("inventada:x"));
+        assert!(pide_admin("sede.equipo:e-1") && pide_admin("sede.destino:x") && !pide_admin("sede:x") && !pide_admin("etiqueta.categoria:x"));
     }
 
     #[test]

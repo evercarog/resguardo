@@ -55,7 +55,7 @@ export function filasCopias(
       const vuelta = ultimaVuelta(k, informe);
       const ultimaVersion = infCopia(informeDe(informe, k.repo), k.id)?.versiones[0];
       const estado = estadoCopia(k, vuelta, pausada, ahora);
-      const pasos = caminoDeCopia(reglaDeCopia(e, k, todos, informe, catalogo, ahora, o.funcionales ?? []), { cliente: o.cliente ?? "", ahora, enVivo: o.enVivo, equipos: todos, informe }).filter((x) => x.clase !== "copia");
+      const pasos = caminoDeCopia(reglaDeCopia(e, k, todos, informe, catalogo, ahora, null, o.funcionales ?? []), { cliente: o.cliente ?? "", ahora, enVivo: o.enVivo, equipos: todos, informe }).filter((x) => x.clase !== "copia");
       const pasoMal = pasos.some(eslabonMal);
       return {
         clave: `${e.id}|${k.id}`,
@@ -123,7 +123,7 @@ export interface FiltroCopias {
   espejo?: EspejoFiltro;
 }
 
-export function filtrarCopias(filas: FilaCopia[], f: FiltroCopias): FilaCopia[] {
+export function filtrarCopias<F extends FilaCopia>(filas: F[], f: FiltroCopias): F[] {
   const palabras = sinTildes(f.buscar ?? "")
     .split(/\s+/)
     .filter(Boolean);
@@ -147,7 +147,7 @@ export function filtrarCopias(filas: FilaCopia[], f: FiltroCopias): FilaCopia[] 
 
 const ms = (x: string | null | undefined) => (x ? Date.parse(x) : NaN);
 const tonoOrden = (f: FilaCopia) => (f.estado.tono === "ok" && f.pasoMal ? (f.pasos.some((p) => p.tono === "bad") ? "bad" : "warn") : f.estado.tono);
-export function ordenarCopias(filas: FilaCopia[], orden: Orden): FilaCopia[] {
+export function ordenarCopias<F extends FilaCopia>(filas: F[], orden: Orden): F[] {
   const porNombre = (a: FilaCopia, b: FilaCopia) => a.copia.nombre.localeCompare(b.copia.nombre, "es") || a.equipo.nombre.localeCompare(b.equipo.nombre, "es");
   // Lo que no tiene dato, al final.
   const num = (a: number, b: number, asc: boolean) => (Number.isNaN(a) ? (Number.isNaN(b) ? 0 : 1) : Number.isNaN(b) ? -1 : asc ? a - b : b - a);

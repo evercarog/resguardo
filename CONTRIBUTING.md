@@ -18,10 +18,10 @@
 | `crates/protocolo` | Sobres sellados, mensajes firmados, códigos de emparejamiento. Con vectores de prueba (`vectors/`). |
 | `crates/motor` | Motor de copias: restic, planes, retención, tamaños. |
 | `crates/servidor` | Resguardo Server: API, canal de los agentes y consola embebida. |
-| `crates/agente` | Resguardo Agente (Windows y Linux) y lo que comparte con la app de escritorio. |
+| `crates/agente` | Resguardo Agente (Windows y Linux), con su ventana local y el almacén. |
 | `consola/` | Consola web de Resguardo Server (SvelteKit). |
 | `ui/`, `escritorio/` | Sistema de diseño común y marcador de la app de escritorio (ver su README). |
-| `src/` y `src-tauri/` | La app de escritorio (SvelteKit + Tauri). |
+| `src/` y `src-tauri/` | La app de escritorio antigua (SvelteKit + Tauri): **congelada**, nunca se publicó; no se trabaja en ella. |
 | `packaging/` | Instaladores: NSIS del agente y del servidor (Windows), paquetes y systemd (Linux), Docker. |
 | `fuzz/` | Fuzzing de los analizadores del protocolo (cargo-fuzz). |
 | `docs/` | Diseño, modelo de amenazas y sistema de diseño. |
@@ -34,7 +34,6 @@ Requisitos: Rust estable, Node 22 y, en Windows, las herramientas de compilació
 npm ci                      # dependencias de la interfaz
 npm run check               # svelte-check
 npm run dev                 # interfaz en el navegador, con datos simulados (src/lib/mock.ts)
-npm run tauri dev           # la app de escritorio completa
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings

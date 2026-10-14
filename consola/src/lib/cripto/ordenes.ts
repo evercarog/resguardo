@@ -224,10 +224,11 @@ export function esDestructiva(tipo: string, cuerpo: Record<string, unknown> = {}
         typeof cuerpo.quitar === "string" ||
         // Tarea 7b: quitar una zona del almacén (sus equipos dejan de poder copiar allí).
         typeof cuerpo.quitar_zona === "string" ||
-        cuerpo.espejo === null ||
+        // 14c: quitar el espejo entero, salvo si ninguno de sus trabajos terminó bien nunca.
+        (cuerpo.espejo === null && (contexto?.espejo?.trabajos?.length ? reduceTrabajos(contexto.espejo.trabajos, []) : true)) ||
         // Confirmar lo que falta de golpe en el almacén (el espejo lo borrará pasados sus días).
         "espejo_freno" in cuerpo ||
-        ("espejo" in cuerpo && quitaDestinoEspejo(cuerpo.espejo, contexto?.espejo)) ||
+        ("espejo" in cuerpo && cuerpo.espejo !== null && quitaDestinoEspejo(cuerpo.espejo, contexto?.espejo)) ||
         // Plan 0.7.26: los espejos del propio equipo (quitarlos todos, pausar uno, borrar antes…).
         ("espejo_equipo" in cuerpo && reduceEspejoEquipo(cuerpo.espejo_equipo, contexto?.espejoEquipo))
       );

@@ -173,7 +173,8 @@
       alEnviar?.(o);
       void cargarCliente(cliente.id, { silencioso: true });
       // Lo que pone algo en marcha: el progreso se pregunta deprisa un rato.
-      if (["copiar_ahora", "verificar_ahora", "subir_ahora", "probar_restauracion"].includes(tipo)) progresoPronto();
+      // 14p: también «Hacer ahora» un espejo (su vuelta, en cola y luego en vivo).
+      if (["copiar_ahora", "verificar_ahora", "subir_ahora", "probar_restauracion"].includes(tipo) || (tipo === "guarda_copias" && "espejo_ahora" in cuerpo)) progresoPronto();
       if (o.not_before) {
         fase = "fin";
         return;

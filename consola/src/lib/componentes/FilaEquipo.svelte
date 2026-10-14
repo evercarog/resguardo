@@ -5,7 +5,7 @@
   // estado (icono y texto) y, con `acciones`, un menú rápido: copiar ahora
   // cualquiera de sus copias, restaurar o ver sus órdenes.
   import { goto } from "$app/navigation";
-  import { ClipboardList, HardDrive, History, Laptop, Monitor, Play, Server } from "@lucide/svelte";
+  import { Building2, ClipboardList, HardDrive, History, Laptop, Monitor, Play, Server } from "@lucide/svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { duplicadoDe, proximaCopia, saludEquipo } from "$lib/salud";
   import { cuandoFrase, relativo } from "$lib/formato";
@@ -22,7 +22,20 @@
   import SinConfirmar from "./SinConfirmar.svelte";
   import { sistemaDe } from "$lib/datosBasicos";
 
-  let { equipo, cliente, informe, acciones = false }: { equipo: Equipo; cliente: string; informe?: Informe | null; acciones?: boolean } = $props();
+  let {
+    equipo,
+    cliente,
+    informe,
+    acciones = false,
+    sede = null,
+  }: {
+    equipo: Equipo;
+    cliente: string;
+    informe?: Informe | null;
+    acciones?: boolean;
+    /** Plan 0.8.0, D1: el nombre de su sede, si se enseña («Oficina Norte»; sin asignar, «… (principal)»). */
+    sede?: string | null;
+  } = $props();
   /** La misma máquina ya dada de alta con otra entrada (un intento anterior sin confirmar). */
   const duplicado = $derived(duplicadoDe(equipo, actual.equipos));
   const salud = $derived(duplicado ? { tono: "neutral" as const, texto: "Duplicado", detalle: "" } : saludEquipo(equipo, reloj.ahora));
@@ -67,7 +80,7 @@
       <span class="solo-movil est-movil"><EnMarcha equipo={equipo.id} compacto /><Chip pequeno tono={salud.tono} texto={salud.texto} /></span>
       {#if sinConfirmar}<span class="fila-sub">{#if duplicado}Duplicado: este equipo ya está dado de alta como «{duplicado.nombre}»{:else}Falta confirmar el número de comprobación{/if}</span>{/if}
       <span class="fila-sub">
-        {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{sistemaDe(equipo)}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
+        {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{#if sede}<span class="sede"><Building2 size={11} aria-hidden="true" />{sede}</span>{" · "}{/if}{sistemaDe(equipo)}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
         {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado</span>{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}
       </span>
       <!-- En móvil, la última copia va aquí (la columna de la derecha no cabe). -->
@@ -103,6 +116,11 @@
 {/if}
 
 <style>
+  .sede {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
   .fila-eq {
     position: relative;
     display: flex;

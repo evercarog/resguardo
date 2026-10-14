@@ -170,8 +170,30 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "baja_equipo" => "Dar de baja el equipo".to_string(),
         "desvincular" => "Dejar de copiar y desvincular el equipo".to_string(),
         "config" => "Cambiar las copias (quedan sin ninguna activa)".to_string(),
-        "guarda_copias" if c.get("espejo_equipo").is_some() => "Cambiar o quitar los espejos de este equipo".to_string(),
-        "guarda_copias" if c.get("espejo").is_some() || c.get("espejo_freno").is_some() => "Cambiar el espejo del almacén o confirmar su freno".to_string(),
+        // 14c: qué cambia exactamente («Quitar «X»», «Cambiar el destino de «X» a la nube «B2»»).
+        "guarda_copias" if c.get("espejo_equipo").is_some() => {
+            describir_espejos(&crate::espejo_trabajos::cargar_equipo().trabajos, &c["espejo_equipo"], crate::espejo_trabajos::QUIEN_EQUIPO)
+                .map(|d| format!("Espejos de este equipo: {d}"))
+                .unwrap_or_else(|| "Cambiar o quitar los espejos de este equipo".to_string())
+        }
+        "guarda_copias" if c.get("espejo_freno").is_some() => {
+            let id = c["espejo_freno"]["trabajo"].as_str().unwrap_or_default();
+            let ts = if c["espejo_freno"]["quien"] == crate::espejo_trabajos::QUIEN_EQUIPO {
+                crate::espejo_trabajos::cargar_equipo().trabajos
+            } else {
+                crate::server::load().espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default()
+            };
+            match ts.iter().find(|t| t.id == id) {
+                Some(t) => format!("Confirmar el freno del espejo «{}»: se borrará lo que falta en el original", corto(&t.nombre, 60)),
+                None => "Confirmar el freno de un espejo".to_string(),
+            }
+        }
+        "guarda_copias" if c.get("espejo").is_some() => {
+            let actuales = crate::server::load().espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default();
+            describir_espejos(&actuales, &c["espejo"], crate::espejo_trabajos::QUIEN_ALMACEN)
+                .map(|d| format!("Espejos del almacén: {d}"))
+                .unwrap_or_else(|| "Cambiar el espejo del almacén".to_string())
+        }
         // B1: «Ordenar nombres de carpeta» (no espera; se anota en el historial común).
         "guarda_copias" if c.get("mover").is_some() => {
             format!("Ordenar los nombres de carpeta de «{}» en el almacén", corto(c["mover"]["usuario"].as_str().unwrap_or("?"), 64))
@@ -192,6 +214,26 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         _ => return None,
     };
     Some(corto(&crate::web::public_message(&d), 160))
+}
+
+/// 14c: qué cambia en los espejos pedidos (`null`: quitarlos todos), en palabras y sin rutas.
+fn describir_espejos(actuales: &[crate::espejo_trabajos::Trabajo], pedido: &Value, quien: &str) -> Option<String> {
+    use crate::espejo_trabajos as et;
+    let nuevos = if pedido.is_null() {
+        Vec::new()
+    } else if quien == et::QUIEN_EQUIPO {
+        et::leer_pedido(pedido, quien).ok()?
+    } else {
+        crate::espejo::trabajos_del_pedido(pedido).ok()?.unwrap_or_default()
+    };
+    if nuevos.is_empty() && actuales.len() > 1 {
+        return Some(format!("quitar los {} espejos", actuales.len()));
+    }
+    let zonas: Vec<(String, String)> = crate::server::load().zonas.iter().map(|z| (z.id.clone(), z.nombre.clone())).collect();
+    et::describir_cambio(actuales, &nuevos, &zonas).map(|d| {
+        let mut c = d.chars();
+        c.next().map(|p| p.to_lowercase().collect::<String>() + c.as_str()).unwrap_or_default()
+    })
 }
 
 /// La ficha de una orden de la consola activa de `v` (para guardarla o anotarla).

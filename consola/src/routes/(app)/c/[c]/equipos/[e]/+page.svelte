@@ -76,6 +76,9 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import EditorEtiquetas from "$lib/componentes/EditorEtiquetas.svelte";
+  import ElegirSede from "$lib/componentes/ElegirSede.svelte";
+  import { sedePorDefecto } from "$lib/sedes";
+  import { ponerSedeEquipos } from "$lib/organizacion.svelte";
   import { filtroEtiqueta, plantillasPropuestas } from "$lib/etiquetas.svelte";
   import PendienteItem from "$lib/componentes/PendienteItem.svelte";
   import { pendientesDe, terminada } from "$lib/pendientes.svelte";
@@ -231,7 +234,7 @@
     const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
     for (const r of repos) {
       const k = copias.find((x) => x.repo === r.id && x.activa !== false);
-      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, listaFuncionales(c)) : null;
+      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c)) : null;
       if (rc) m.set(r.id, rc);
     }
     return m;
@@ -904,6 +907,18 @@
             {#if puede.ordenar(rol)}<button class="link mini-et" onclick={() => (editarEtiquetas = true)}><Tag size={12} />{equipo.etiquetas?.length ? "Cambiar etiquetas" : "Añadir etiquetas"}</button>{/if}
           </div>
         {/if}
+        <!-- Plan 0.8.0, D1: su sede (cuenta en la regla 3-2-1-1-0). -->
+        {#if actual.organizacion.sedes.length}
+          {@const eqId = equipo.id}
+          <div class="sede-eq">
+            <ElegirSede
+              id="sede-equipo"
+              asignada={actual.organizacion.equipos[eqId] ?? null}
+              sinAsignar={`Sin asignar: la principal (${sedePorDefecto(actual.organizacion)?.nombre ?? "—"})`}
+              guardar={(s) => ponerSedeEquipos(c, [eqId], s)}
+            />
+          </div>
+        {/if}
       </div>
       {#if puede.ordenar(rol)}
         <div class="page-actions">
@@ -1032,6 +1047,9 @@
         </div>
       {/if}
 
+      <!-- 14p: lo largo que no es de una copia ni de un repositorio (la actualización del agente, los espejos, la retención del almacén), en vivo. -->
+      <EnMarcha equipo={equipo.id} tipos={["actualizacion", "espejo", ...(equipo.resumen?.guarda_copias?.activo ? (["retencion"] as const) : [])]} marco />
+
       <section>
         <div class="section-head">
           <h2>Copias <span class="count">· {copias.length}</span></h2>
@@ -1115,7 +1133,7 @@
                   <ChevronRight size={16} />
                 </a>
                 <!-- C1: el camino del repositorio (espejos y copias derivadas), con el estado de cada uno. -->
-                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" /></div>{/if}
+                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" copiaEn /></div>{/if}
                 {#if nVersiones(r, inf)}
                   <div class="fact-boxes">
                     <div><span class="faint">Versiones</span><strong class="num">{numero(nVersiones(r, inf))}</strong></div>
@@ -2034,6 +2052,9 @@
   }
   .en-camino {
     margin-bottom: var(--sp-2);
+  }
+  .sede-eq {
+    margin-top: 6px;
   }
   .etiquetas-eq {
     display: flex;

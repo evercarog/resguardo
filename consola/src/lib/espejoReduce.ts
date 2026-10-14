@@ -16,10 +16,13 @@ export function claveDestinoTrabajo(t: Pick<TrabajoEspejo, "quien" | "adonde" | 
 
 const diasHastaBorrar = (r: RetencionEspejo) => (r.modo === "nunca" ? Infinity : r.modo === "igual" ? 0 : r.dias);
 
-/** ¿Reduce la protección pasar de `antes` a `ahora`? (la orden espera): quitar o pausar uno, cambiar su destino, dejar fuera repositorios, borrar antes, quitar el bloqueo o aflojar el freno. */
-export function reduceTrabajos(antes: TrabajoEspejo[], ahora: TrabajoEspejo[]): boolean {
+/**
+ * ¿Reduce la protección pasar de `antes` a `ahora`? (la orden espera): quitar o pausar uno, cambiar su destino, dejar fuera repositorios, borrar antes, quitar el bloqueo o aflojar el freno.
+ * 14c: uno que nunca ha terminado bien (`nunca_bien` del resumen) no cuenta: aún no protege nada.
+ */
+export function reduceTrabajos(antes: (TrabajoEspejo & { nunca_bien?: boolean | null })[], ahora: TrabajoEspejo[]): boolean {
   return antes
-    .filter((a) => a.activo !== false)
+    .filter((a) => a.activo !== false && a.nunca_bien !== true)
     .some((a) => {
       const n = ahora.find((x) => x.id === a.id);
       if (!n || n.activo === false || claveDestinoTrabajo(n) !== claveDestinoTrabajo(a)) return true;

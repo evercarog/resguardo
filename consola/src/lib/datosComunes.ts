@@ -25,8 +25,15 @@ export const admiteDatosCliente = (e: Pick<Equipo, "resumen"> | null | undefined
 /** Los equipos a los que se mandan: confirmados, gestionados desde aquí y con un agente que los guarda. */
 export const equiposQueGuardan = (equipos: Equipo[]) => equipos.filter((e) => e.confirmado && e.modo === "gestionado" && admiteDatosCliente(e));
 
-export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla"];
+export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos"];
+
+/** 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda sedes, categorías y orden. */
+export const ADMITE_SEDES = "sedes";
+/** ¿Es de las clases de la 0.8.0? (Solo a los agentes con `admite: "sedes"`: uno anterior rechazaría la orden entera.) */
+export const esDeSedes = (clave: string) => ["sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos"].includes(claseDe(clave)?.clase ?? "");
+/** ¿Las guarda este equipo? */
+export const admiteSedes = (e: Pick<Equipo, "resumen"> | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_SEDES);
 
 /** Una etiqueta limpia como las de los equipos (o null). */
 export function normalizarEtiqueta(x: string): string | null {
@@ -45,14 +52,16 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
   const ok =
     clase === "etiqueta.color" || clase === "etiqueta.plantilla"
       ? normalizarEtiqueta(sujeto)?.toLowerCase() === sujeto
-      : clase === "plantilla"
+      : clase === "plantilla" || clase === "sede" || clase === "sede.equipo" || clase === "etiqueta.categoria"
         ? idSimple(sujeto)
-        : idDestinoValido(sujeto);
+        : clase === "orden.equipos"
+          ? sujeto === "todos"
+          : idDestinoValido(sujeto);
   return ok ? { clase, sujeto } : null;
 }
 
-/** ¿Cambiarlo pide la clave de administración? (El tipo y las marcas de un destino: cuentan en la regla 3-2-1.) */
-export const pideClave = (clave: string) => clave.startsWith("destino.regla:");
+/** ¿Cambiarlo pide la clave de administración? (Lo que cuenta en la regla 3-2-1: el tipo y las marcas de un destino y la sede de un equipo o de un destino.) */
+export const pideClave = (clave: string) => ["destino.regla:", "sede.equipo:", "sede.destino:"].some((p) => clave.startsWith(p));
 
 export const claveColor = (etiqueta: string) => {
   const n = normalizarEtiqueta(etiqueta);
@@ -178,8 +187,11 @@ export function textoAviso(p: Pendiente): string | null {
   const partes: string[] = [];
   const n = p.diferencias.length;
   if (n) partes.push(n === 1 ? "1 dato distinto entre consolas" : `${n} datos distintos entre consolas`);
-  const k = p.porEnviarConClave.length + p.sinCompartirConClave.length;
+  const conClave = [...p.porEnviarConClave, ...p.sinCompartirConClave];
+  const k = conClave.filter((x) => x.clave.startsWith("destino.regla:")).length;
   if (k) partes.push(k === 1 ? "1 tipo de destino por repartir (pide la clave)" : `${k} tipos de destino por repartir (piden la clave)`);
+  const ks = conClave.length - k;
+  if (ks) partes.push(ks === 1 ? "1 sede de un equipo o destino por repartir (pide la clave)" : `${ks} sedes de equipos o destinos por repartir (piden la clave)`);
   const t = p.porTraer.length;
   if (t) partes.push(t === 1 ? "1 plantilla de otra consola por traer" : `${t} plantillas de otra consola por traer`);
   return partes.length ? partes.join(" · ") : null;
@@ -238,6 +250,15 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
       return v ? textoRegla(v.atributos as AtributosDestino) : "lo deducido";
     case "plantilla":
       return v ? "la tiene" : "borrada";
+    case "sede":
+      return typeof v?.nombre === "string" ? `«${v.nombre}»` : "quitada";
+    case "sede.equipo":
+    case "sede.destino":
+      return typeof v?.sede === "string" ? `la sede ${v.sede}` : "la de por defecto";
+    case "etiqueta.categoria":
+      return Array.isArray(v?.etiquetas) ? (v.etiquetas as string[]).join(", ") || "sin etiquetas" : "quitada";
+    case "orden.equipos":
+      return v ? "un orden a mano" : "sin orden a mano";
     default:
       return "—";
   }
@@ -258,6 +279,16 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
       return `Tipo y marcas de ${nombres.destino?.(c.sujeto) ? `«${nombres.destino(c.sujeto)}»` : c.sujeto}`;
     case "plantilla":
       return `Plantilla de copia ${nombres.plantilla?.(c.sujeto) ? `«${nombres.plantilla(c.sujeto)}»` : ""}`.trim();
+    case "sede":
+      return `Sede «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto}»`;
+    case "sede.equipo":
+      return "Sede de un equipo";
+    case "sede.destino":
+      return `Sede de ${nombres.destino?.(c.sujeto) ? `«${nombres.destino(c.sujeto)}»` : c.sujeto}`;
+    case "etiqueta.categoria":
+      return `Categoría «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto}»`;
+    case "orden.equipos":
+      return "Orden de los equipos";
     default:
       return f.clave;
   }

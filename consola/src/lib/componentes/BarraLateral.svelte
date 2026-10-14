@@ -11,6 +11,7 @@
     ChevronsUpDown,
     CircleHelp,
     ClipboardList,
+    Clock,
     Database,
     FileBarChart,
     FileSearch,
@@ -38,6 +39,7 @@
   import Logo from "$ui/componentes/Logo.svelte";
   import * as api from "$lib/api";
   import { actual, app, puede } from "$lib/estado.svelte";
+  import { todos } from "$lib/todos.svelte";
   import { sinDuplicados } from "$lib/salud";
   import { funcionalesDe } from "$lib/funcionales.svelte";
   import CopiasEnMarcha from "./CopiasEnMarcha.svelte";
@@ -50,7 +52,23 @@
 
   const c = $derived(actual.id);
   /** v1.38: en «Todos los clientes» no se enseñan las secciones del último cliente abierto. */
-  const enTodos = $derived(page.url.pathname === "/todos");
+  // Plan 0.8.0 (D4): y en sus secciones (/todos/copias, /todos/avisos…).
+  const enTodos = $derived(page.url.pathname === "/todos" || page.url.pathname.startsWith("/todos/"));
+  /** Plan 0.8.0, D4 (14xx): las secciones de «Todos los clientes», como las de un cliente. */
+  const seccionesTodos = $derived.by((): Seccion[] => {
+    const avisos = todos.clientes.reduce((n, x) => n + (x.avisos_abiertos || 0), 0);
+    const pendientes = todos.clientes.reduce((n, x) => n + (x.pendientes || 0), 0);
+    const enMarcha = todos.progreso.reduce((n, x) => n + x.tareas.length, 0);
+    return [
+      { href: "/todos", texto: "Estado", icono: LayoutDashboard, exacto: true },
+      { href: "/todos/copias", texto: "Copias", icono: FolderSync },
+      { href: "/todos/equipos", texto: "Equipos", icono: Monitor },
+      { href: "/todos/avisos", texto: "Avisos", icono: BellRing, cuenta: avisos || undefined, tono: avisos ? "bad" : undefined },
+      { href: "/todos/ordenes", texto: "Órdenes en espera", icono: Clock, cuenta: pendientes || undefined, tono: pendientes ? "warn" : undefined },
+      { href: "/todos/en-curso", texto: "En curso", icono: Activity, cuenta: enMarcha || undefined },
+      { href: "/todos/restauraciones", texto: "Restauraciones", icono: ArchiveRestore },
+    ];
+  });
   const variosClientes = $derived(app.clientes.length > 1);
   const rol = $derived(actual.cliente?.rol);
   type Seccion = { href: string; texto: string; icono: typeof Monitor; exacto?: boolean; cuenta?: number; tono?: "warn" | "bad" };
@@ -242,19 +260,40 @@
     <Search size={15} />{#if !plegada}<span>Buscar o ir a…</span><kbd>{MOD} K</kbd>{/if}
   </button>
 
-  {#if variosClientes}
+  {#if variosClientes && !enTodos}
     <ul class="items global">
       <li>
-        <a
-          href="/todos"
-          class:on={enTodos}
-          aria-current={enTodos ? "page" : undefined}
-          aria-label={plegada ? "Todos los clientes" : undefined}
-          use:tip={plegada ? "Todos los clientes" : null}
-          onclick={alNavegar}><Layers size={16} />{#if !plegada}<span class="texto">Todos los clientes</span>{/if}</a
+        <a href="/todos" aria-label={plegada ? "Todos los clientes" : undefined} use:tip={plegada ? "Todos los clientes" : null} onclick={alNavegar}
+          ><Layers size={16} />{#if !plegada}<span class="texto">Todos los clientes</span>{/if}</a
         >
       </li>
     </ul>
+  {/if}
+
+  {#if enTodos}
+    <div class="grupos">
+      <div class="grupo">
+        <p class="grupo-titulo" class:sr-only={plegada} id="grupo-todos">Todos los clientes</p>
+        <ul class="items" aria-labelledby="grupo-todos">
+          {#each seccionesTodos as s (s.href)}
+            <li>
+              <a
+                href={s.href}
+                class:on={activo(s.href, s.exacto)}
+                aria-current={activo(s.href, s.exacto) ? "page" : undefined}
+                aria-label={plegada ? nombreDe(s) : undefined}
+                use:tip={plegada ? nombreDe(s) : null}
+                onclick={alNavegar}
+              >
+                <s.icono size={16} />
+                {#if !plegada}<span class="texto">{s.texto}</span>{/if}
+                {#if s.cuenta}<span class="cuenta num" class:warn={s.tono === "warn"} class:bad={s.tono === "bad"}>{s.cuenta}</span>{/if}
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
   {/if}
 
   {#if c && !enTodos}

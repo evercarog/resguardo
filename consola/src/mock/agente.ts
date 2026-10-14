@@ -430,10 +430,10 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "copia_externa", 30_000);
       return resultado(e, o, "hecha", "Subida pedida: empieza en unos segundos.");
     case "verificar_ahora":
-      // La verificación se ve en marcha (v1.25) mientras el equipo responde.
-      empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "verificar", 20_000);
-      await espera(21_500);
-      return resultado(e, o, "hecha", "Verificación correcta: sin errores en el 5 % revisado.");
+      // La verificación se ve en marcha (v1.25) mientras el equipo responde; 14p: primero unos segundos «en cola».
+      empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "verificar", 20_000, undefined, { por: "Ana" }, 6_000);
+      await espera(1_500);
+      return resultado(e, o, "hecha", "Tarea pedida: empieza en unos segundos.");
     case "probar_restauracion": {
       // Plan 0.8.0, E4 (14j): desde un espejo (ahora, programada o quitarla), como el agente.
       const rinf = e.informes[0]?.datos.repos?.find((x) => x.id === String(c.repo ?? ""));

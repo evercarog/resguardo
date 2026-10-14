@@ -8,7 +8,7 @@ import type { DestinoCatalogo, DestinoResumen, Equipo, RepositorioResumen } from
 import { claveNube, claveZona, clavesDe, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
 import { destinoDe } from "./repo";
 import { destinosParaPasos, repoEnAlmacen, usosPosibles } from "./cadenas";
-import { estadoTrabajo, hrefEspejos, nombrePorDefecto, trabajosDelAlmacen, trabajosDelEquipo } from "./espejoTrabajos";
+import { estadoTrabajo, hrefEspejo, nombrePorDefecto, trabajosDelAlmacen, trabajosDelEquipo } from "./espejoTrabajos";
 import type { TrabajoEspejoResumen } from "./tipos";
 
 // --- Plan 0.8.0 (B2, 14r): lo que guarda un destino que recibe espejos ---
@@ -74,7 +74,7 @@ export function espejosEnDestino(v: DestinoVista, equipos: Equipo[], cliente: st
             hace,
             quien,
             estado: estadoTrabajo(t),
-            href: hrefEspejos(cliente, hace.id),
+            href: hrefEspejo(cliente, hace.id, t.id),
             repos: reposDeTrabajo(t, hace, equipos),
           });
   return out;
@@ -156,7 +156,7 @@ export function usosDeDestino(v: DestinoVista, equipos: Equipo[], cliente: strin
     const trabajos = esp.trabajos ?? [];
     for (const t of trabajos) {
       const entra = (v.nube && v.nube.equipo.id === a.id && t.adonde.tipo === "nube" && t.adonde.nube === v.nube.nombre) || (v.zona && v.zona.almacen.id === a.id && t.adonde.tipo === "zona" && t.adonde.carpeta === v.zona.id);
-      if (entra) out.push({ tipo: "espejo_entra", texto: `Espejo «${t.nombre.trim() || nombrePorDefecto(t.adonde)}» (${a.nombre})${t.activo ? "" : " · en pausa"}`, equipo: a, href: hrefEspejos(cliente, a.id), ultima: t.ultima, resultado: t.resultado });
+      if (entra) out.push({ tipo: "espejo_entra", texto: `Espejo «${t.nombre.trim() || nombrePorDefecto(t.adonde)}» (${a.nombre})${t.activo ? "" : " · en pausa"}`, equipo: a, href: hrefEspejo(cliente, a.id, t.id), ultima: t.ultima, resultado: t.resultado });
     }
     for (const d of esp.destinos ?? []) {
       const href = `/c/${cliente}/equipos/${a.id}`;
