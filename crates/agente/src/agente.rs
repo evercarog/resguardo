@@ -252,6 +252,8 @@ fn one_tick() {
     crate::espejo::si_toca();
     // Plan 0.7.26 (bloque 4): los espejos que hace el propio equipo.
     crate::espejo_trabajos::si_toca_equipo();
+    // Plan 0.8.0, E4 (14j): las pruebas de restauración desde un espejo programadas.
+    crate::prueba_espejo::si_toca();
     // v1.22: la retención de los repositorios que guarda este almacén, a su hora.
     crate::retencion_almacen::si_toca();
     // Plan 0.7.26 (1.1): los permisos de nubes desconectadas que no se pudieron anular aún.

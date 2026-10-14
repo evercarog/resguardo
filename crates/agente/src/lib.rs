@@ -78,6 +78,8 @@ pub mod progreso_v2;
 #[cfg(test)]
 mod propiedades;
 pub mod protection;
+// Plan 0.8.0, E4 (14j): prueba de restauración desde un espejo, hecha por el equipo dueño.
+pub mod prueba_espejo;
 pub mod remote;
 pub mod restaurar_v2;
 pub mod restore_test;

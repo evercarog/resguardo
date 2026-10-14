@@ -92,6 +92,16 @@ pub fn de_informe(datos: &Value) -> (Vec<Problema>, Vec<String>) {
                 mirar("externa_fallida", &sujeto, format!("{nombre} → {destino}"), d, "ultima", "mensaje_corto");
             }
         }
+        // Plan 0.8.0, E4 (14j): las pruebas de restauración desde un espejo, con su sujeto
+        // `<repo>--e-<prueba>` y el aviso de siempre (`prueba_fallida`).
+        for d in r["pruebas_espejo"].as_array().into_iter().flatten().take(16) {
+            let pid = corto(&d["id"], 40);
+            let sujeto = format!("{id}--e-{pid}");
+            if id_ok(&pid) && sujeto.len() <= 64 {
+                let desde = Some(corto(&d["nombre"], 80)).filter(|n| !n.is_empty()).unwrap_or_else(|| pid.clone());
+                mirar("prueba_fallida", &sujeto, format!("{nombre}» desde «{desde}"), d, "ultima", "mensaje_corto");
+            }
+        }
     }
     // Tarea 7c: una copia «después de la anterior» que no se hizo porque la anterior falló.
     for c in datos["cadenas"].as_array().into_iter().flatten().take(MAX_PROBLEMAS) {
@@ -331,6 +341,21 @@ mod tests {
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].tipo, "disco_lleno");
         assert_eq!(s, vec!["sin_soporte|".to_string(), "sin_soporte_pronto|".to_string()]);
+    }
+
+    /// E4 (14j): una prueba desde un espejo que falla sale como `prueba_fallida`, con su propio sujeto.
+    #[test]
+    fn pruebas_desde_un_espejo() {
+        let informe = json!({ "repos": [{ "id": "r1", "nombre": "Oficina", "pruebas_espejo": [
+            { "id": "eq-t1", "nombre": "Disco E", "ultima": "2026-10-04T05:00:00+02:00", "resultado": "fallo", "mensaje_corto": "Un archivo no coincide." },
+            { "id": "n-sur", "nombre": "Nube Sur", "ultima": "2026-10-04T05:10:00+02:00", "resultado": "ok" },
+            { "id": "programada-sin-hacer", "nombre": "Otra", "cada_dias": 30 }
+        ] }] });
+        let (p, sanos) = de_informe(&informe);
+        assert_eq!(p.len(), 1);
+        assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str()), ("prueba_fallida", "r1--e-eq-t1"));
+        assert!(p[0].nombre.contains("Disco E"));
+        assert!(sanos.contains(&"prueba_fallida|r1--e-n-sur".to_string()), "{sanos:?}");
     }
 
     /// Tarea 7c: `cadena_parada` sale de `informe.cadenas[]`; y 4b: las derivadas, como `externa_fallida`.

@@ -453,6 +453,8 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                     }
                     Some(x)
                 }).collect::<Vec<_>>(),
+                // E4 (14j): las pruebas de restauración desde un espejo (de ahí el aviso `prueba_fallida`).
+                "pruebas_espejo": crate::prueba_espejo::informe(&r.id),
                 "proteccion": proteccion(v, r, &cfg, &st, &t, ahora),
             })
         })

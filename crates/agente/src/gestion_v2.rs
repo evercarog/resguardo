@@ -1391,6 +1391,10 @@ pub const ADMITE: &[&str] = &[
     // (pendiente de numerar) plan 0.8.0, F4 (14t): límite de velocidad según la hora en los espejos
     // (`trabajos[].limite_franjas`, por rclone) y en las copias derivadas (`cambiar_derivada { limite }`).
     "limite_franjas",
+    // v1.6x (pendiente de numerar al unir) plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
+    // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
+    // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
+    crate::prueba_espejo::ADMITE,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
