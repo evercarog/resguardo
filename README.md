@@ -2,7 +2,7 @@
 
 **Copias de seguridad para empresas pequeñas, inmunes al ransomware y sin tener que confiar en el servidor.** Basado en [restic](https://restic.net).
 
-> **Estado: en desarrollo activo (0.7.x).** La app de escritorio para Windows se usa a diario en producción. Resguardo Server (consola web) y los agentes de Windows y Linux funcionan y se están probando en clientes reales. Las interfaces y los formatos todavía pueden cambiar.
+> **Estado: en desarrollo activo (0.7.x; la 0.8.0, en preparación).** Resguardo Server (consola web, en tu servidor o en línea) y los agentes de Windows y Linux se usan a diario con clientes reales, con actualización automática firmada. Las interfaces y los formatos todavía pueden cambiar.
 >
 > Resguardo es un proyecto independiente; no es un producto oficial de restic.
 
@@ -11,24 +11,23 @@
 ## Qué es
 
 - **Resguardo Server:** un programa que instalas en tu propio servidor (Windows, Debian, Ubuntu, un contenedor de Proxmox o Docker). Desde su **consola web** gestionas las copias de todos los equipos de cada cliente: qué se copia y cuándo, retención, verificación, pruebas de restauración, restaurar, avisos y auditoría.
-- **Resguardo Agente:** un servicio ligero en cada equipo (Windows y Linux) que hace las copias con restic y se conecta al servidor siempre hacia fuera. Si el servidor desaparece, el equipo sigue copiando solo y se administra con su línea de órdenes.
-- **Servidor de copias:** cualquier equipo con el agente puede guardar las copias de los demás (el rest-server oficial en modo **solo añadir**), con un **espejo** cada noche a otro disco o a una nube (Dropbox, conectada desde la consola).
-- **La app de escritorio** (Windows): crear, programar, vigilar y restaurar copias sin servidor ni línea de órdenes.
+- **Resguardo Agente:** un servicio ligero en cada equipo (Windows y Linux) que hace las copias con restic y se conecta al servidor siempre hacia fuera. Si el servidor desaparece, el equipo sigue copiando solo. En Windows trae su **ventana** (icono en la bandeja, gráficas en vivo, avisos) y un **modo sin consola**, con una clave de administración local, para usarlo en un equipo suelto sin ningún servidor; en Linux, su línea de órdenes.
+- **Almacén (Servidor de copias):** cualquier equipo con el agente puede guardar las copias de los demás (el rest-server oficial en modo **solo añadir**, cada equipo con su usuario), y hace **espejos** a otros discos o a la nube (Backblaze B2, S3, Dropbox…) con su horario, su retención y su verificación, sin conocer ninguna contraseña.
+- **Varias consolas a la vez:** un equipo puede estar en la consola de tu oficina y en una consola en línea al mismo tiempo; la autoridad sigue siendo la clave de administración del cliente.
 
-Más: ganchos «antes de copiar» (volcado de SQL Server, carpeta reciente), copia externa a la nube con Object Lock, modo discreto, pausas, cambiar de servidor sin reinstalar.
+Más: editor de copias guiado, copias en cadena y **copias derivadas** (las versiones de un repositorio a otro, con su propia contraseña y retención), ganchos «antes de copiar» (volcado de SQL Server, carpeta reciente), la regla **3-2-1-1-0** como guía, restaurar paso a paso, informes, avisos por correo y canales, actualización automática firmada por anillos, modo discreto, pausas y cambiar de servidor sin reinstalar.
 
 ### Cómo encaja
 
 ```mermaid
 flowchart TB
   nav["Navegador<br/>consola web"] -- HTTPS --> srv["Resguardo Server<br/>sin autoridad: mensajero<br/>y datos cifrados"]
-  app["App de escritorio<br/>(opcional, sin servidor)"]
   srv -- "WSS (el equipo se conecta)" --> aw["Agente Windows<br/>servicio, VSS, CLI"]
   srv -- "WSS (el equipo se conecta)" --> al["Agente Linux<br/>systemd, CLI"]
   aw -- "restic por la red local (TLS)" --> sc["Servidor de copias<br/>rest-server solo añadir"]
   al -- restic --> sc
-  sc -- "espejo nocturno" --> esp["Otro disco o Dropbox"]
-  aw -- "copia externa" --> nube["Nube S3 / B2<br/>con Object Lock"]
+  sc -- "espejos" --> esp["Otros discos o nube<br/>(B2, S3, Dropbox)"]
+  aw -- "copia derivada" --> nube["Nube S3 / B2<br/>con Object Lock"]
 ```
 
 ### Capturas
@@ -106,10 +105,11 @@ Consola web de Resguardo Server con el servidor simulado (`npm run dev:mock`); l
 Las dos últimas se escriben en el navegador y viajan **selladas para el equipo** que las comprueba (X25519); el servidor solo hace de mensajero. Un servidor comprometido, o quien robe su base de datos, no puede ordenar nada importante ni leer las copias.
 
 - **restic hace el trabajo:** cifrado y formato de repositorio auditados por años de uso. Resguardo no reinventa la criptografía de las copias.
-- **Solo añadir:** el Servidor de copias (rest-server con `--append-only --private-repos`) no deja borrar desde los equipos, y la copia externa en la nube puede ser inmutable (Object Lock). Un equipo infectado no puede destruir sus copias.
+- **Solo añadir:** el Servidor de copias (rest-server con `--append-only --private-repos`) no deja borrar desde los equipos, y las copias en la nube pueden ser inmutables (Object Lock). Un equipo infectado no puede destruir sus copias.
 - **Lo destructivo espera:** acortar la retención, borrar un repositorio o dar de baja un equipo se aplica tras una espera que hace cumplir el propio equipo (24 h por defecto, nunca menos de 1 h), con avisos y la opción de cancelar.
 - **Órdenes firmadas y de un solo uso** (`seq`, `nonce`, caducidad); el agente firma sus respuestas y fija la identidad del servidor al vincularse (código de comprobación en los dos lados).
 - **Secretos en el sistema:** DPAPI de máquina en Windows, archivos solo para root en Linux; nada en los argumentos de los procesos.
+- **Actualizaciones firmadas:** los agentes solo instalan versiones firmadas con una llave que se guarda fuera de línea, por anillos y con vuelta atrás automática.
 - **Sin telemetría.**
 
 Detalle y modelo de amenazas: [docs/plataforma.md](docs/plataforma.md) (§3). Política de seguridad y cómo avisar de un fallo: [SECURITY.md](SECURITY.md).
@@ -139,7 +139,7 @@ Abre `https://<ip-del-equipo>:8443/` desde otro PC, comprueba la huella del cert
 **Agente:**
 
 ```sh
-sudo apt install ./resguardo-agente_0.7.6_amd64.deb
+sudo apt install ./resguardo-agente_<versión>_amd64.deb
 sudo resguardo-agente vincular ABCD-1234 --servidor https://192.168.1.20:8443
 sudo resguardo-agente estado
 ```
@@ -148,7 +148,7 @@ Paso a paso, restic 0.17 y contenedores de Proxmox: [docs/agente-linux.md](docs/
 
 ### Sin servidor
 
-El agente funciona solo y se administra con su línea de órdenes (`resguardo-agente ayuda`): crear repositorios, copiar ahora, ver versiones, restaurar, exportar e importar la configuración y hacer de Servidor de copias.
+El agente funciona solo: en Windows, con su ventana en **modo sin consola** (clave de administración local; se puede vincular a una consola más tarde sin perder nada, ver [docs/agente-ventana.md](docs/agente-ventana.md)); en Windows y Linux, con su línea de órdenes (`resguardo-agente ayuda`): crear repositorios, copiar ahora, ver versiones, restaurar, exportar e importar la configuración y hacer de Servidor de copias. El modo sin consola es el menos probado en uso real.
 
 ## Compilar
 
@@ -160,7 +160,6 @@ cargo build --release -p resguardo-servidor --features consola-integrada   # tra
 cargo build --release -p resguardo-agente  # el agente (Windows o Linux)
 npm run build:servidor                     # instalador de Resguardo Server (Windows, NSIS)
 npm run build:agente                       # instalador de Resguardo Agente (Windows, NSIS)
-npm run tauri dev                          # la app de escritorio
 ```
 
 ## Estructura
@@ -168,10 +167,10 @@ npm run tauri dev                          # la app de escritorio
 ```
 crates/protocolo   sobres sellados, órdenes firmadas, emparejamiento (+ vectores Rust↔JS)
 crates/motor       restic, planes, retención, tamaños, ganchos
-crates/agente      Resguardo Agente (Windows y Linux) y lo que comparte con la app
+crates/agente      Resguardo Agente (Windows y Linux), con su ventana local y el almacén
 crates/servidor    Resguardo Server (API, canal de los agentes, consola embebida)
 consola/           consola web de Resguardo Server (SvelteKit)
-src/, src-tauri/   app de escritorio (SvelteKit + Tauri)
+src/, src-tauri/   app de escritorio antigua: congelada, nunca se publicó y no se usa
 packaging/         instaladores (NSIS de Windows, paquetes y systemd de Linux, Docker)
 fuzz/              fuzzing del protocolo
 docs/              diseño, modelo de amenazas, guías y sistema de diseño
@@ -191,9 +190,9 @@ Issues y pull requests bienvenidos. Lee [CONTRIBUTING.md](CONTRIBUTING.md), el [
 
 **Backups for small businesses that are immune to ransomware and don't require trusting the server.** Built on [restic](https://restic.net).
 
-> **Status: under active development (0.7.x).** The Windows desktop app is used daily in production; Resguardo Server (web console) and the Windows and Linux agents work and are being piloted. Interfaces and formats may still change. Resguardo is an independent project, not an official restic product.
+> **Status: under active development (0.7.x; 0.8.0 in preparation).** Resguardo Server (web console, self-hosted or online) and the Windows and Linux agents are used daily with real clients, with signed automatic updates. Interfaces and formats may still change. Resguardo is an independent project, not an official restic product.
 
-**What it is:** a self-hosted server with a web console, lightweight agents (Windows service, Linux systemd) that run restic and connect outbound to the server, an optional append-only backup node (official rest-server) with a nightly mirror to another disk or Dropbox, and a Windows desktop app for serverless use.
+**What it is:** a self-hosted server with a web console, lightweight agents (Windows service, Linux systemd) that run restic and connect outbound to the server, an optional append-only backup node (official rest-server) that mirrors to other disks or the cloud (Backblaze B2, S3, Dropbox) without knowing any password, derived copies between repositories, and devices that can belong to several consoles at once.
 
 **Screenshots** (web console, from the built-in simulator; all companies, devices and people are made up — the UI is in Spanish). More, in light and dark and on a phone, under [Capturas](#capturas):
 
@@ -204,7 +203,7 @@ Issues y pull requests bienvenidos. Lee [CONTRIBUTING.md](CONTRIBUTING.md), el [
 | [![Restore wizard](docs/capturas/restaurar-claro.webp)](docs/capturas/restaurar-claro.webp) Restore wizard: picking files from a version | [![Pairing](docs/capturas/emparejar-claro.webp)](docs/capturas/emparejar-claro.webp) Adding a device: compare the verification number on both sides |
 | [![Reports](docs/capturas/informes-claro.webp)](docs/capturas/informes-claro.webp) Printable monthly report | [![Command palette](docs/capturas/paleta-oscuro.webp)](docs/capturas/paleta-oscuro.webp) `Ctrl+K` command palette (dark theme) |
 
-**Security model — the server has no authority.** Three keys: a console account (password + TOTP) for status and harmless requests; the **repository password** for anything that touches or reveals data; the client's **admin key** for structural changes. The last two are typed in the browser, sealed for the agent that verifies them, and never stored by the server. Backup storage is append-only, cloud copies can be immutable (Object Lock), destructive changes are delayed by the agent itself, orders are signed and single-use, and the agent pins the server's identity at pairing (verification code shown on both sides).
+**Security model — the server has no authority.** Three keys: a console account (password + TOTP) for status and harmless requests; the **repository password** for anything that touches or reveals data; the client's **admin key** for structural changes. The last two are typed in the browser, sealed for the agent that verifies them, and never stored by the server. Backup storage is append-only, cloud copies can be immutable (Object Lock), agent updates are signed with an offline key, destructive changes are delayed by the agent itself, orders are signed and single-use, and the agent pins the server's identity at pairing (verification code shown on both sides).
 
 **Quick start:** Windows — run the server installer, create a client in the console, click «Añadir equipo», then run the agent installer on each PC with that code. Linux — `apt install ./resguardo-agente_…deb` then `resguardo-agente vincular <code> --servidor https://…`; see [docs/agente-linux.md](docs/agente-linux.md) (Spanish).
 

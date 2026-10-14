@@ -36,13 +36,13 @@ Resguardo está en **desarrollo activo**. Solo la última versión publicada rec
 
 | Versión | Soporte |
 |---|---|
-| La última publicada (0.7.x del agente y del servidor; la app de escritorio, su última versión) | ✅ |
+| La última publicada (0.7.x del agente y del servidor) | ✅ |
 | Anteriores | ❌ (actualiza a la última) |
 
 ## Alcance
 
 **Dentro:**
-- la app de escritorio y su agente (`resguardo.exe`, `resguardo-agente.exe`) y sus instaladores;
+- el agente (`resguardo-agente.exe`, con su ventana) y sus instaladores;
 - el protocolo entre la consola y los agentes (`crates/protocolo`) y el motor de copias (`crates/motor`);
 - el Servidor de copias que configura Resguardo (argumentos, certificados, usuarios, firewall);
 - Resguardo Server y su consola, cuando existan (`crates/servidor`);
