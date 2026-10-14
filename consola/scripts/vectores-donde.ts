@@ -54,6 +54,11 @@ igual("…con la frase de siempre", r?.texto, "Las copias de SERVIDOR se guardan
 igual("…sin nota si se sabe qué disco es", r?.nota, null);
 const conExterna = { ...servidor.resumen!.repositorios![0], externa: { destino: "Nube", hora: "21:00" } };
 igual("con copia externa: sin aviso", riesgoMismoEquipo(conExterna, servidor, todos), null);
+// 0.8.0 (14ll): una copia derivada a otro sitio también lo saca de aquí (antes seguía avisando).
+const conNube = { ...servidor, resumen: { ...servidor.resumen!, destinos: [...(servidor.resumen!.destinos ?? []), { id: "b2", nombre: "Nube", tipo: "b2" as const, donde: "copias" }] } };
+const conDerivada = { ...servidor.resumen!.repositorios![0], derivadas: [{ id: "dv1", destino_id: "b2", destino: "Nube" }] };
+igual("con una copia derivada a la nube: sin aviso", riesgoMismoEquipo(conDerivada as never, conNube as never, todos), null);
+igual("con una derivada desactivada: sigue el aviso", !!riesgoMismoEquipo({ ...conDerivada, derivadas: [{ ...conDerivada.derivadas[0], activa: false }] } as never, conNube as never, todos), true);
 const usb = equipo("u", "PORTATIL", local({ extraible: true }));
 igual("en un disco USB: sin aviso", riesgoMismoEquipo(usb.resumen!.repositorios![0], usb, [usb]), null);
 const antiguo = equipo("a", "VIEJO", { id: "disco", nombre: "Disco D", tipo: "local" });

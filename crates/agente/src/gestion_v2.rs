@@ -1391,6 +1391,10 @@ pub const ADMITE: &[&str] = &[
     // (pendiente de numerar) plan 0.8.0, F4 (14t): límite de velocidad según la hora en los espejos
     // (`trabajos[].limite_franjas`, por rclone) y en las copias derivadas (`cambiar_derivada { limite }`).
     "limite_franjas",
+    // v1.6x (pendiente de numerar al unir) plan 0.8.0, D1 y D2 (14ll, 14ss): los datos comunes
+    // `sede:`, `sede.equipo:` y `sede.destino:` (con la clave), `etiqueta.categoria:` y
+    // `orden.equipos:` en `datos_cliente` (docs/sedes.md).
+    resguardo_protocolo::datos_cliente::ADMITE_SEDES,
     // v1.6x (pendiente de numerar al unir) 14s: `cuando.primera_desde` en los trabajos de espejo (la
     // primera subida, no antes de esa hora). 14i, 14c y 14p (campos opcionales, sin token): `subidas`,
     // `ocupa`, `bien`, `nunca_bien` y `en_cola` en cada trabajo y el progreso `espejo`.

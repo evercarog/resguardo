@@ -11,6 +11,7 @@
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { cuentaRegla, fraseRegla, PARTES, reglasDelCliente, type IdParte } from "$lib/regla321";
   import type { Equipo, Informe } from "$lib/tipos";
+  import { actual } from "$lib/estado.svelte";
 
   let {
     cliente,
@@ -25,7 +26,7 @@
     const cc = cliente;
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
-  const reglas = $derived(reglasDelCliente(equipos, informes, catalogoDe(cliente), ahora, todos));
+  const reglas = $derived(reglasDelCliente(equipos, informes, catalogoDe(cliente), ahora, todos, actual.id === cliente ? actual.organizacion : null));
   const cuenta = $derived(cuentaRegla(reglas));
   // Las que no cumplen, primero las que dejaron de cumplir.
   const noCumplen = $derived(reglas.filter((r) => !r.regla.cumple).sort((a, b) => Number(b.regla.dejo_de_cumplir) - Number(a.regla.dejo_de_cumplir) || a.copia.nombre.localeCompare(b.copia.nombre)));

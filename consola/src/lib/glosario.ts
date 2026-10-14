@@ -200,6 +200,19 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Otra carpeta (normalmente otro disco) que sirve el mismo almacén, con su propio puerto: «Almacén · Disco D», «Almacén · Disco E». Cada zona es un destino: los equipos que copian en ella tienen allí su propio usuario y tampoco pueden borrar lo ya copiado. Dos discos del mismo almacén protegen de que falle uno, pero no de un robo o un incendio del equipo.",
     todo: "Añádela en la ficha del almacén («Añadir una zona…») con la clave de administración. Abre su puerto en el cortafuegos del router solo si hace falta copiar desde otra sede.",
   },
+  sedes: {
+    title: "Sedes",
+    text: "Los sitios del cliente (la oficina, la planta…). Cada equipo y cada destino está en una sede; la nube no es sede. Para la regla 3-2-1-1-0, una copia está «fuera del sitio» si su destino está en otra sede que el equipo que copia: el mismo almacén puede estar en el sitio para unos equipos y fuera para otros.",
+    todo: "Sin asignar, un equipo está en la sede principal, y un disco o la zona de un almacén, en la de su equipo. La sede de un equipo o de un destino cuenta en la regla: repartirla a las demás consolas pide la clave de administración.",
+  },
+  "categorias-etiqueta": {
+    title: "Categorías de etiqueta",
+    text: "Un grupo de etiquetas con un solo valor por equipo, por ejemplo «Tipo»: Servidor o Puesto. Sirven para agrupar los equipos por niveles («Sede, luego Tipo») sin que ninguno salga dos veces. Las etiquetas sueltas siguen igual.",
+  },
+  "orden-a-mano": {
+    title: "Orden a mano",
+    text: "Pon los equipos en el orden que quieras dentro de cada grupo, con las flechas o arrastrando. El orden se guarda en el servidor y lo ven igual todas las consolas del cliente.",
+  },
   "catalogo-destinos": {
     title: "Destinos sin repositorio",
     text: "Un destino se puede crear antes que sus repositorios y ponerle el nombre que quieras. El servidor solo guarda el nombre, el tipo y el servidor o bucket: las credenciales van selladas para cada equipo cuando crea un repositorio allí.",

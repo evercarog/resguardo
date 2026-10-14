@@ -33,7 +33,9 @@ pub fn aplicar(v: &mut Vinculo, c: &Value, admin: bool, por: Option<&str>) -> Re
             return Err("Dato común desconocido.".into());
         }
         if dc::pide_admin(clave) && !admin {
-            return Err("El tipo y las marcas de un destino cuentan en la regla 3-2-1: cambiarlos pide la clave de administración.".into());
+            return Err(
+                "El tipo, las marcas y la sede de un equipo o de un destino cuentan en la regla 3-2-1: cambiarlos pide la clave de administración.".into()
+            );
         }
         let valor = dc::valor_valido(clave, &x["valor"])?;
         let ms = x["cambiado"].as_str().and_then(dc::milis).ok_or("Falta la hora del cambio.")?;
@@ -86,6 +88,15 @@ pub fn descripcion(c: &Value) -> Option<String> {
             Some(dc::Clase::Destino) => "el nombre de un destino".to_string(),
             Some(dc::Clase::DestinoRegla) => "el tipo y las marcas de un destino".to_string(),
             Some(dc::Clase::Plantilla) => "una plantilla de copia".to_string(),
+            Some(dc::Clase::Sede) => {
+                format!("la sede «{}»", x["valor"]["nombre"].as_str().map(|n| n.chars().take(40).collect()).unwrap_or_else(|| sujeto("sede:")))
+            }
+            Some(dc::Clase::SedeEquipo) => "la sede de un equipo".to_string(),
+            Some(dc::Clase::SedeDestino) => "la sede de un destino".to_string(),
+            Some(dc::Clase::EtiquetaCategoria) => {
+                format!("la categoría de etiquetas «{}»", x["valor"]["nombre"].as_str().map(str::to_string).unwrap_or_else(|| sujeto("etiqueta.categoria:")))
+            }
+            Some(dc::Clase::OrdenEquipos) => "el orden de los equipos".to_string(),
             None => "un dato".to_string(),
         }
     };
@@ -183,6 +194,27 @@ mod tests {
         // El nombre de un destino no la pide.
         let nombre = json!({ "entradas": [{ "clave": "destino:zona:e1:principal", "valor": { "nombre": "Almacén · Disco D", "clase": "zona" }, "cambiado": "2026-10-07T10:00:00Z" }] });
         aplicar(&mut v, &nombre, false, None).unwrap();
+    }
+
+    /// 0.8.0 (D1, D2): las sedes y el orden se guardan como los demás; la sede de un equipo o
+    /// de un destino pide la clave (cuenta en la regla 3-2-1); el agente lo dice en `admite`.
+    #[test]
+    fn sedes_y_orden() {
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_SEDES));
+        let mut v = vinculo("id", "Oficina");
+        let sedes = json!({ "entradas": [
+            { "clave": "sede:norte", "valor": { "nombre": "Oficina Norte", "principal": true }, "cambiado": "2026-10-07T10:00:00Z" },
+            { "clave": "etiqueta.categoria:tipo", "valor": { "nombre": "Tipo", "etiquetas": ["Servidor", "Puesto"] }, "cambiado": "2026-10-07T10:00:00Z" },
+            { "clave": "orden.equipos:todos", "valor": { "ids": ["e2", "e1"] }, "cambiado": "2026-10-07T10:00:00Z" },
+        ]});
+        aplicar(&mut v, &sedes, false, None).unwrap();
+        assert_eq!(v.datos_cliente.len(), 3);
+        let de_equipo = json!({ "entradas": [{ "clave": "sede.equipo:e1", "valor": { "sede": "norte" }, "cambiado": "2026-10-07T10:00:00Z" }] });
+        assert!(aplicar(&mut v, &de_equipo, false, None).unwrap_err().contains("clave de administración"));
+        aplicar(&mut v, &de_equipo, true, None).unwrap();
+        assert_eq!(v.datos_cliente["sede.equipo:e1"].valor["sede"], "norte");
+        assert_eq!(descripcion(&de_equipo).unwrap(), "Cambiar la sede de un equipo en todas las consolas");
+        assert_eq!(descripcion(&json!({ "entradas": [sedes["entradas"][0].clone()] })).unwrap(), "Cambiar la sede «Oficina Norte» en todas las consolas");
     }
 
     #[test]

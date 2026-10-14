@@ -23,6 +23,25 @@ Claude Code (Opus), en autónomo, desde `ia/integracion-080` (unida otra vez al 
 - El progreso de un espejo sale como `repo = id del trabajo` (el servidor exige `repo`); la consola lo distingue por el tipo.
 - «En cola» incluye lo pedido con «Ahora» que el agente aún no ha empezado; mientras hay algo en cola, la actualización automática del agente espera (lo cuenta como algo en marcha).
 
+## 2026-10-14 · rama `ia/080-sedes` · Claude Code (autónomo) · plan 0.8.0 D1, D2 y D4 (14ll, 14ss, 14xx)
+
+**Pedido:** sedes por cliente (dato propio, no etiqueta) y la regla 3-2-1-1-0 con ellas; vista de Equipos con categorías de etiqueta, agrupar por niveles y orden a mano; «Todos los clientes» con secciones.
+
+**Hecho:**
+- Protocolo y agente: datos comunes `sede:`, `sede.equipo:` y `sede.destino:` (estas dos con la clave de administración), `etiqueta.categoria:` y `orden.equipos:todos`, con vectores; `admite: "sedes"`. Regla: `OrigenRegla.sede`/`PasoRegla.sede` en `protection.rs` y `regla321.ts` con 6 vectores nuevos compartidos.
+- Servidor: `GET /api/clientes/{c}/organizacion` (cualquier miembro; módulo `sedes.rs`), `organizacion` en `/api/panel`, y `GET /api/panel/{avisos,ordenes,restauraciones}` (solo los clientes de la cuenta; la prueba `tests/panel.rs` comprueba que nadie ve clientes ajenos ni la organización de otro).
+- Consola: `lib/sedes.ts` (con `vectores-sedes.ts`), `reglaDeCopia` con la organización; «Sedes y categorías» en Equipos; sede en la ficha del equipo, en la del destino y con «Varios a la vez»; aviso de equipos sin sede; «Agrupar por» dos niveles sin duplicados con grupos plegables; orden «A mano» con flechas o arrastrando; un valor por categoría al poner etiquetas; la sede en «Dónde llegan los datos». «Copias en el mismo equipo» cuenta las copias derivadas. «Todos los clientes»: barra lateral con Estado, Copias, Equipos, Avisos, Órdenes en espera, En curso y Restauraciones (`lib/todosSecciones.ts` con `vectores-todos.ts`). Simulador con sedes; e2e paso 3b2.
+- Docs: `sedes.md`, `api-servidor.md` «Cambios» (v1.6x), `regla-3-2-1.md`, planes.
+
+**Sin probar:** repartir la sede de un equipo con la clave entre dos consolas reales (lo cubre el e2e contra un agente, no dos consolas con el aviso de datos comunes); arrastrar y soltar en navegadores táctiles (las flechas siempre están); el contador «Órdenes en espera» de la barra lateral en el simulador no suma las de otras consolas (el servidor real sí, `en_espera_de_otras`).
+
+**Decisiones dudosas:**
+- Un destino sin sede asignada está en la sede de su equipo (zona, disco, carpeta) salvo que una persona marcara su tipo; un servidor de fuera sin sede asignada no tiene sede y manda su tipo.
+- La sede de un equipo o destino pide la clave para repartirse (como el tipo de un destino); aquí se aplica al momento.
+- «Por persona» = en el navegador con la cuenta en la clave, no en el servidor.
+- «Todos los clientes» pide avisos, órdenes y restauraciones en una petición al servidor (con lo que ya hacía `/api/panel`: pertenencia en cada petición, acotado) en vez de N peticiones; con un servidor anterior, cliente a cliente.
+- La agrupación «Etiquetas» junta en un grupo las etiquetas sueltas de cada equipo («Contabilidad · Ventas») para no repetir equipos.
+
 ## 2026-10-13 · `ia/080-informes` · Plan 0.8.0, bloque G: informe ejecutivo y canales (14g)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-080`. Pedido: un informe ejecutivo en PDF por cliente y periodo, programado por correo con destinatarios propios, con el logo del prestador (y el del cliente como sustituto), «Descargar el informe» y «Enviar ahora»; y tipos de canal Microsoft Teams, Slack y Discord con su formato. Contrato (solo consola ↔ servidor) en [api-servidor.md](api-servidor.md) §13 «Informe ejecutivo» y «Canales», y «Cambios» v1.6x.

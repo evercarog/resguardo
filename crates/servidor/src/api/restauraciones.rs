@@ -55,32 +55,33 @@ fn ajustes_de(datos: Option<(String, i64, String)>) -> Value {
     })
 }
 
+/// Lo de `listar` (también para «Todos los clientes», `GET /api/panel/restauraciones`).
+pub(super) fn de_cliente(db: &dyn crate::almacen::Almacen, ctx: &crate::almacen::ClienteCtx, solo: Option<String>) -> crate::almacen::R<Value> {
+    let equipos: Vec<String> = db.equipos(ctx)?.into_iter().map(|e| e.id).filter(|id| solo.as_ref().is_none_or(|s| s == id)).collect();
+    let filtro = FiltroHistorial { tipos: vec!["restauracion".into()], ..Default::default() };
+    let mut entradas = Vec::new();
+    for e in &equipos {
+        for f in db.historial(ctx, e, &filtro, POR_EQUIPO)? {
+            if let Ok(mut v) = serde_json::from_str::<Value>(&f.datos) {
+                v["equipo"] = json!(e);
+                entradas.push(v);
+            }
+        }
+    }
+    let notas: Vec<Value> = db
+        .notas_restauracion(ctx)?
+        .into_iter()
+        .filter(|n| equipos.contains(&n.equipo))
+        .map(|n| json!({ "equipo": n.equipo, "id": n.id, "motivo": n.motivo, "notas": n.notas, "por": n.por, "actualizada": fecha(n.actualizada) }))
+        .collect();
+    Ok(json!({ "ajustes": ajustes_de(db.ajuste_cliente(ctx, AJUSTE)?), "entradas": entradas, "notas": notas }))
+}
+
 /// `GET /api/clientes/{c}/restauraciones[?equipo=]`: `{ ajustes, entradas: [{ equipo, … }], notas: [...] }`.
 pub async fn listar(State(st): State<St>, u: Usuario, Path(c): Path<String>, Query(q): Query<Filtro>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Lectura).await?;
     let solo = q.equipo.filter(|e| !e.is_empty());
-    let r = st
-        .db(move |db| {
-            let equipos: Vec<String> = db.equipos(&ctx)?.into_iter().map(|e| e.id).filter(|id| solo.as_ref().is_none_or(|s| s == id)).collect();
-            let filtro = FiltroHistorial { tipos: vec!["restauracion".into()], ..Default::default() };
-            let mut entradas = Vec::new();
-            for e in &equipos {
-                for f in db.historial(&ctx, e, &filtro, POR_EQUIPO)? {
-                    if let Ok(mut v) = serde_json::from_str::<Value>(&f.datos) {
-                        v["equipo"] = json!(e);
-                        entradas.push(v);
-                    }
-                }
-            }
-            let notas: Vec<Value> = db
-                .notas_restauracion(&ctx)?
-                .into_iter()
-                .filter(|n| equipos.contains(&n.equipo))
-                .map(|n| json!({ "equipo": n.equipo, "id": n.id, "motivo": n.motivo, "notas": n.notas, "por": n.por, "actualizada": fecha(n.actualizada) }))
-                .collect();
-            Ok(json!({ "ajustes": ajustes_de(db.ajuste_cliente(&ctx, AJUSTE)?), "entradas": entradas, "notas": notas }))
-        })
-        .await?;
+    let r = st.db(move |db| de_cliente(db, &ctx, solo)).await?;
     Ok(Json(r))
 }
 

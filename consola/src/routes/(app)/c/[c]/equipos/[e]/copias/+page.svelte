@@ -353,7 +353,7 @@
     return reglaEnEdicion(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), equipo.ultimo_informe, catalogo, reloj.ahora, {
       verificacion: !!cfg?.verificaciones?.[k.repo],
       prueba: !!cfg?.pruebas_restauracion?.[k.repo],
-    });
+    }, actual.organizacion);
   }
   /** Las copias añadidas con la plantilla «3-2-1 recomendada» (para enseñar sus pasos). */
   let con321 = $state<string[]>([]);

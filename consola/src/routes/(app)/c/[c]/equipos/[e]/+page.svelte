@@ -75,6 +75,9 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import EditorEtiquetas from "$lib/componentes/EditorEtiquetas.svelte";
+  import ElegirSede from "$lib/componentes/ElegirSede.svelte";
+  import { sedePorDefecto } from "$lib/sedes";
+  import { ponerSedeEquipos } from "$lib/organizacion.svelte";
   import { filtroEtiqueta, plantillasPropuestas } from "$lib/etiquetas.svelte";
   import PendienteItem from "$lib/componentes/PendienteItem.svelte";
   import { pendientesDe, terminada } from "$lib/pendientes.svelte";
@@ -230,7 +233,7 @@
     const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
     for (const r of repos) {
       const k = copias.find((x) => x.repo === r.id && x.activa !== false);
-      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion) : null;
       if (rc) m.set(r.id, rc);
     }
     return m;
@@ -901,6 +904,18 @@
           <div class="etiquetas-eq">
             {#each equipo.etiquetas ?? [] as t (t)}<a class="et-enlace" href="/c/{c}/equipos" onclick={() => filtroEtiqueta.poner(t)} use:tip={`Ver los equipos con «${t}»`}><EtiquetaChip nombre={t} /></a>{/each}
             {#if puede.ordenar(rol)}<button class="link mini-et" onclick={() => (editarEtiquetas = true)}><Tag size={12} />{equipo.etiquetas?.length ? "Cambiar etiquetas" : "Añadir etiquetas"}</button>{/if}
+          </div>
+        {/if}
+        <!-- Plan 0.8.0, D1: su sede (cuenta en la regla 3-2-1-1-0). -->
+        {#if actual.organizacion.sedes.length}
+          {@const eqId = equipo.id}
+          <div class="sede-eq">
+            <ElegirSede
+              id="sede-equipo"
+              asignada={actual.organizacion.equipos[eqId] ?? null}
+              sinAsignar={`Sin asignar: la principal (${sedePorDefecto(actual.organizacion)?.nombre ?? "—"})`}
+              guardar={(s) => ponerSedeEquipos(c, [eqId], s)}
+            />
           </div>
         {/if}
       </div>
@@ -2036,6 +2051,9 @@
   }
   .en-camino {
     margin-bottom: var(--sp-2);
+  }
+  .sede-eq {
+    margin-top: 6px;
   }
   .etiquetas-eq {
     display: flex;
