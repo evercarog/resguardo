@@ -1480,6 +1480,12 @@
       <!-- 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último arranque. -->
       <DatosDelEquipo {equipo} ahora={reloj.ahora} />
 
+      <!-- C6 (bloque 5 de la 0.7.26): lo menos usado, plegado cuando el equipo ya copia (abierto en uno nuevo, que lo necesita). -->
+      {@const hayMas = !!equipo.resumen?.escritorio || (propioPosible && puede.administrar(rol)) || (puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado") || (!!almacenes.length && puede.administrar(rol))}
+      {#if hayMas}
+      <details class="menos-usado" open={!repos.length}>
+        <summary>Más opciones<span class="faint">Repositorio nuevo, copiar en otro equipo y la ventana del agente</span></summary>
+        <div class="menos-usado-cuerpo">
       {#if equipo.resumen?.escritorio}
         {@const esc = equipo.resumen.escritorio}
         <section class="card p" aria-labelledby="t-en-equipo">
@@ -1518,6 +1524,9 @@
             {#each almacenes as a (a.id)}<button class="btn btn-sm" onclick={() => (copiarEn = a)}><Server size={14} />Copiar en «{a.nombre}»</button>{/each}
           </div>
         </section>
+      {/if}
+        </div>
+      </details>
       {/if}
       <Comentarios tipo="equipo" objeto={equipo.id} />
     {:else if tab === "ordenes"}
@@ -2007,6 +2016,27 @@
 {/if}
 
 <style>
+  .menos-usado > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: var(--sp-2) 0;
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .menos-usado > summary .faint {
+    font-weight: 400;
+    font-size: var(--fs-xs);
+  }
+  .menos-usado-cuerpo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    margin-top: var(--sp-2);
+  }
   .consolas-eq {
     display: flex;
     gap: var(--sp-3);

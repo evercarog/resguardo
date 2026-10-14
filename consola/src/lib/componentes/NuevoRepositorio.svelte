@@ -16,6 +16,8 @@
   import CopiarEnAlmacen from "./CopiarEnAlmacen.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import ContrasenaRepo from "./ContrasenaRepo.svelte";
+  // C6: los mismos pasos que los demás asistentes (editor de copias, Restaurar).
+  import Pasos from "./Pasos.svelte";
   import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import { ErrorEtiqueta, mandarOrden } from "$lib/ordenar";
   import { fechaLarga } from "$lib/formato";
@@ -73,6 +75,13 @@
   } = $props();
 
   type Paso = "datos" | "kit" | "clave";
+  /** Desde el editor de copias la clave ya se escribió: dos pasos. */
+  // svelte-ignore state_referenced_locally
+  const PASOS = [
+    { id: "datos", texto: "Nombre y destino" },
+    { id: "kit", texto: "Contraseña y kit" },
+    ...(prueba ? [] : [{ id: "clave", texto: "Confirmar" }]),
+  ];
   let paso = $state<Paso>("datos");
   // Valores iniciales del formulario (después manda lo que se elija aquí).
   const inicial = () => ({
@@ -310,6 +319,7 @@
     </div>
   </div>
 
+  {#if !existente}<Pasos pasos={PASOS} actual={paso} alElegir={ocupado ? undefined : (id) => void (paso = id as Paso)} />{/if}
   {#if paso === "datos"}
     <div class="form">
       {#if !alCreado}
@@ -396,11 +406,12 @@
           </div>
         </div>
       {/if}
-      {#if !almacenElegido}<CampoObservaciones id="r-observaciones" bind:valor={observaciones} filas={2} />{/if}
-      <!-- También en un almacén: «Copiar en …» lo pasa a crear_repositorio (parametros_de). -->
-      <details class="avanzado" bind:open={paraHistorial}>
-        <summary>Para traer el historial de otro repositorio (avanzado)</summary>
-        <p class="faint nota">{TEXTO_TROCEADO} Después, en la página del repositorio, «Traer historial» ya tendrá puesto este origen: solo faltará su contraseña.</p>
+      <!-- C6: «Más opciones», como en el editor de copias. -->
+      <details class="avanzado" open={paraHistorial || !!observaciones.trim()}>
+        <summary>Más opciones{#if paraHistorial}<span class="faint"> · para traer el historial de otro</span>{/if}</summary>
+        {#if !almacenElegido}<CampoObservaciones id="r-observaciones" bind:valor={observaciones} filas={2} />{/if}
+        <!-- También en un almacén: «Copiar en …» lo pasa a crear_repositorio (parametros_de). -->
+        <label class="switch-row"><input type="checkbox" class="switch" bind:checked={paraHistorial} /><span>Para traer el historial de otro repositorio<span class="faint">{TEXTO_TROCEADO} Después, en la página del repositorio, «Traer historial» ya tendrá puesto este origen: solo faltará su contraseña.</span></span></label>
         {#if paraHistorial}<FormRepoExistente bind:repo={origen} id="p" nombreEquipo={equipo?.nombre} alExplorar={equipo ? () => (explorarOrigen = true) : undefined} />{/if}
       </details>
       <footer>
@@ -442,7 +453,15 @@
     </div>
   {:else}
     <form class="form" onsubmit={crear}>
-      <p>{equipo?.nombre} creará «{nombre}» en {ubicacion}. Confírmalo con la clave de administración de {cliente.nombre}.</p>
+      <!-- C6: el resumen antes de confirmar, como en el editor de copias. -->
+      <dl class="resumen">
+        <dt>Equipo</dt><dd>{equipo?.nombre}</dd>
+        <dt>Repositorio</dt><dd>{nombre}</dd>
+        <dt>Destino</dt><dd>{ubicacion}</dd>
+        <dt>Contraseña</dt><dd>{pw.propia ? "La escrita por ti" : "Generada en este navegador"} · en el kit</dd>
+        {#if paraHistorial}<dt>Después</dt><dd>Traer el historial de <code>{origen.direccion}</code></dd>{/if}
+      </dl>
+      <p>Confírmalo con la clave de administración de {cliente.nombre}.</p>
       <CampoClave requerido id="r-admin" etiqueta="Clave de administración" bind:value={claveAdmin} autofocus error={error && error.includes("clave") ? error : ""}>
         {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
       </CampoClave>
@@ -529,6 +548,23 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);
+  }
+  .resumen {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 6px 12px;
+    margin: 0;
+    padding: var(--sp-3) var(--sp-4);
+    font-size: var(--fs-sm);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+  .resumen dt {
+    color: var(--text-3);
+  }
+  .resumen dd {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
   .avanzado summary {
     cursor: pointer;

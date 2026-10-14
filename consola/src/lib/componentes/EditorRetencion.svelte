@@ -111,12 +111,14 @@
     {#each PRESETS as p (p.id)}
       <label class="preset" class:on={elegido === p.id} class:off={p.plazos && !admite}>
         <input type="radio" name="{id}-preset" value={p.id} checked={elegido === p.id} disabled={p.plazos && !admite} onchange={() => elegir(p.id)} />
-        <span>{p.texto}{#if p.plazos && !admite}<span class="faint"> · Actualiza el agente para usar esto</span>{/if}</span>
+        <span class="preset-txt"
+          ><span>{p.texto}{#if p.recomendada}<span class="badge badge-sm tone-neutral recomendada">Recomendada</span>{/if}{#if p.plazos && !admite}<span class="faint"> · Actualiza el agente para usar esto</span>{/if}</span><span class="faint para">{p.para}</span></span
+        >
       </label>
     {/each}
     <label class="preset" class:on={elegido === "personalizada"}>
       <input type="radio" name="{id}-preset" value="personalizada" checked={elegido === "personalizada"} onchange={() => elegir("personalizada")} />
-      <span>A medida</span>
+      <span class="preset-txt"><span>Personalizar</span><span class="faint para">Tú decides cuántas versiones guardar de cada hora, día, semana, mes y año, y durante cuánto.</span></span>
     </label>
   </fieldset>
 
@@ -224,6 +226,17 @@
 </div>
 
 <style>
+  .preset-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .preset-txt .para {
+    font-size: var(--fs-xs);
+  }
+  .recomendada {
+    margin-left: 6px;
+  }
   .editor-ret {
     display: flex;
     flex-direction: column;

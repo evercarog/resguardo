@@ -41,6 +41,7 @@
   import Ayuda from "./Ayuda.svelte";
   import CampoClave from "./CampoClave.svelte";
   import ConectarNube from "./ConectarNube.svelte";
+  import Pasos from "./Pasos.svelte";
 
   type Tipo = "b2" | "s3" | "rest" | "dropbox" | "sftp" | "smb" | "webdav";
   interface Props {
@@ -52,8 +53,10 @@
     onclose: () => void;
     /** Cuando el equipo ya la tiene conectada (para elegirla ya en el espejo). */
     alConectar?: (nombre: string) => void;
+    /** C6: desde «Nuevo destino», los pasos del asistente («Qué destino» ya hecho, este es el último). */
+    pasos?: { id: string; texto: string }[];
   }
-  let { cliente, equipo = null, inicial = null, onclose, alConectar }: Props = $props();
+  let { cliente, equipo = null, inicial = null, onclose, alConectar, pasos }: Props = $props();
 
   const TIPOS: { tipo: Tipo; texto: string; detalle: string }[] = [
     { tipo: "b2", texto: "Backblaze B2", detalle: "Bucket; inmutable con bloqueo de objetos" },
@@ -282,6 +285,7 @@
       </div>
     </div>
 
+    {#if pasos}<Pasos {pasos} actual={pasos[pasos.length - 1].id} completo={!!hecho} />{/if}
     {#if hecho}
       <div class="form">
         <div class="notice notice-success" role="status"><Check size={16} /><p>{hecho}</p></div>
