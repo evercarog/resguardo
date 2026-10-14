@@ -414,6 +414,10 @@ pub struct OrigenRegla {
     pub equipo: String,
     /// Equipo + disco (`equipo:<id>:origen`).
     pub soporte: String,
+    /// 0.8.0 (D1, 14ll): la sede del equipo que copia, si el cliente tiene sedes (lo pone la
+    /// consola; el agente no las conoce).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sede: Option<String>,
 }
 
 /// Un destino al que llegan los datos de la copia (un paso del camino o de la cadena).
@@ -460,12 +464,24 @@ pub struct PasoRegla {
     /// `inmutable: "solo_anadir"`: lo marcado por una persona se respeta y cuenta.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub inmutable_marcado: bool,
+    /// 0.8.0 (D1, 14ll): la sede del destino, si se sabe (la nube no es sede: siempre fuera).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sede: Option<String>,
 }
 
 impl PasoRegla {
-    /// ¿Cuenta como fuera del sitio? (Fuera del sitio o Nube.)
-    pub fn es_fuera(&self) -> bool {
-        self.tipo_destino.unwrap_or_else(|| TipoDestino::de_lugar(self.lugar)) != TipoDestino::Local
+    /// ¿Cuenta como fuera del sitio para los originales de `origen`? La nube, siempre. Con la
+    /// sede del destino y la del equipo que copia (0.8.0, D1), fuera es estar en otra sede;
+    /// sin sedes, el tipo del destino (Fuera del sitio o Nube), como antes.
+    pub fn es_fuera(&self, origen: &OrigenRegla) -> bool {
+        let tipo = self.tipo_destino.unwrap_or_else(|| TipoDestino::de_lugar(self.lugar));
+        if tipo == TipoDestino::Nube {
+            return true;
+        }
+        match (origen.sede.as_deref().filter(|s| !s.is_empty()), self.sede.as_deref().filter(|s| !s.is_empty())) {
+            (Some(a), Some(b)) => a != b,
+            _ => tipo != TipoDestino::Local,
+        }
     }
     /// ¿Marca «Inmutable»? Bloqueo de objetos o instantáneas fuera de su alcance.
     /// 14z: «Solo añadir» no lo es (protege de los equipos, no de quien sea root
@@ -599,7 +615,7 @@ pub fn regla_321(e: &EntradaRegla, ahora: DateTime<Local>) -> Regla321 {
         s.len() as u32
     };
     // El «1 fuera»: Fuera del sitio y Nube. El otro «1»: Inmutable o Aislado.
-    let fuera = |l: &[&PasoRegla]| l.iter().filter(|p| p.es_fuera()).count() as u32;
+    let fuera = |l: &[&PasoRegla]| l.iter().filter(|p| p.es_fuera(&e.origen)).count() as u32;
     let inmutables = |l: &[&PasoRegla]| l.iter().filter(|p| p.es_inmutable() || p.es_aislado()).count() as u32;
     let n = |x: u32| if x == 1 { "1 destino".to_string() } else { format!("{x} destinos") };
 
@@ -663,7 +679,7 @@ pub fn regla_321(e: &EntradaRegla, ahora: DateTime<Local>) -> Regla321 {
     if por_equipo.values().any(|s| s.len() >= 2) {
         avisos.push("mismo_equipo".to_string());
     }
-    if ic > 0 && !todos.iter().any(|p| (p.es_inmutable() || p.es_aislado()) && p.es_fuera()) {
+    if ic > 0 && !todos.iter().any(|p| (p.es_inmutable() || p.es_aislado()) && p.es_fuera(&e.origen)) {
         avisos.push("inmutable_local".to_string());
     }
     if todos.iter().any(|p| aislado_sin_conectar(p, ahora)) {
@@ -1028,7 +1044,7 @@ mod tests {
         // Con entrada: la regla va aparte y no toca la puntuación.
         let mut f = completo();
         f.regla = Some(EntradaRegla {
-            origen: OrigenRegla { equipo: "e1".into(), soporte: "equipo:e1:origen".into() },
+            origen: OrigenRegla { equipo: "e1".into(), soporte: "equipo:e1:origen".into(), sede: None },
             pasos: vec![PasoRegla {
                 id: "zona".into(),
                 lugar: Lugar::Oficina,

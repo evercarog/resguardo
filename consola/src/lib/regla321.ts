@@ -36,6 +36,8 @@ export type IdParte = "copias" | "soportes" | "fuera" | "inmutable" | "errores";
 export interface OrigenRegla {
   equipo: string;
   soporte: string;
+  /** 0.8.0 (D1, 14ll): la sede del equipo que copia, si el cliente tiene sedes. */
+  sede?: string | null;
 }
 
 export interface PasoRegla {
@@ -64,6 +66,8 @@ export interface PasoRegla {
   aislado_dias?: number | null;
   /** 14z: la marca «Inmutable» la puso una persona (con `solo_anadir`, cuenta: lo marcado se respeta). */
   inmutable_marcado?: boolean;
+  /** 0.8.0 (D1, 14ll): la sede del destino, si se sabe (la nube no es sede: siempre fuera). */
+  sede?: string | null;
 }
 
 export interface PruebaRegla {
@@ -114,8 +118,19 @@ export function margenHoras(cadaHoras: number | null | undefined): number {
   return c * 1.5 + 12;
 }
 
-/** ¿Fuera del sitio? (Fuera del sitio o Nube.) */
-export const esFuera = (p: Pick<PasoRegla, "tipo_destino" | "lugar">) => (p.tipo_destino ?? tipoDeLugar(p.lugar ?? "este_equipo")) !== "local";
+/**
+ * ¿Fuera del sitio para los originales de `origen`? La nube, siempre. Con la sede del
+ * destino y la del equipo que copia (0.8.0, D1), fuera es estar en otra sede; sin sedes,
+ * el tipo del destino (Fuera del sitio o Nube), como antes. Como `PasoRegla::es_fuera`.
+ */
+export function esFuera(p: Pick<PasoRegla, "tipo_destino" | "lugar" | "sede">, origen?: Pick<OrigenRegla, "sede"> | null): boolean {
+  const tipo = p.tipo_destino ?? tipoDeLugar(p.lugar ?? "este_equipo");
+  if (tipo === "nube") return true;
+  const a = origen?.sede || null;
+  const b = p.sede || null;
+  if (a && b) return a !== b;
+  return tipo !== "local";
+}
 /**
  * ¿Marca «Inmutable»? Bloqueo de objetos o instantáneas fuera de su alcance. 14z:
  * «Solo añadir» no lo es (protege de los equipos, no de quien sea root en el
@@ -164,7 +179,7 @@ export function regla321(e: EntradaRegla, ahora: number): Regla321 {
   const atrasados = e.pasos.filter((p) => !pasoAlDia(p, ahora)).map((p) => p.id);
   const soportes = (l: PasoRegla[]) => new Set([e.origen.soporte, ...l.map((p) => p.soporte)]).size;
   // El «1 fuera»: Fuera del sitio y Nube. El otro «1»: Inmutable o Aislado.
-  const fuera = (l: PasoRegla[]) => l.filter(esFuera).length;
+  const fuera = (l: PasoRegla[]) => l.filter((p) => esFuera(p, e.origen)).length;
   const inmutables = (l: PasoRegla[]) => l.filter(cuentaInmutable).length;
   const n = (x: number) => plural(x, "destino", "destinos");
 
@@ -211,7 +226,7 @@ export function regla321(e: EntradaRegla, ahora: number): Regla321 {
   const porEquipo = new Map<string, Set<string>>([[e.origen.equipo, new Set([e.origen.soporte])]]);
   for (const p of todos) if (p.equipo) porEquipo.set(p.equipo, new Set([...(porEquipo.get(p.equipo) ?? []), p.soporte]));
   if ([...porEquipo.values()].some((x) => x.size >= 2)) avisos.push("mismo_equipo");
-  if (ic > 0 && !todos.some((p) => cuentaInmutable(p) && esFuera(p))) avisos.push("inmutable_local");
+  if (ic > 0 && !todos.some((p) => cuentaInmutable(p) && esFuera(p, e.origen))) avisos.push("inmutable_local");
   if (todos.some((p) => aisladoSinConectar(p, ahora))) avisos.push("aislado_sin_conectar");
   return { cumple, cumple_config: cumpleConfig, dejo_de_cumplir: cumpleConfig && !cumple, partes, atrasados, avisos };
 }
@@ -891,7 +906,7 @@ export function fraseParte(p: ParteRegla, rc: ReglaCopia, ahora: number): string
     case "soportes":
       return `${p.valor === 1 ? "Un solo soporte" : `${p.valor} soportes`}: equipo y disco distintos.`;
     case "fuera": {
-      const f = al.filter((x) => esFuera(x));
+      const f = al.filter((x) => esFuera(x, rc.entrada.origen));
       return f.length ? `${nombres(f)}.` : "Ninguno al día fuera del sitio (Fuera del sitio o Nube).";
     }
     case "inmutable": {
@@ -915,7 +930,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
   const repo = `/c/${cliente}/equipos/${e.id}/repositorios/${encodeURIComponent(rc.repo.id)}`;
   const externa = { texto: "Copia derivada", href: `/c/${cliente}/equipos/${e.id}?externa=${encodeURIComponent(rc.repo.id)}` };
   // Los atrasados que importan para esta parte (fuera: los de fuera; inmutable: los inmutables), primero.
-  const importa = (x: PasoVista) => (p.id === "fuera" ? esFuera(x) : p.id === "inmutable" ? cuentaInmutable(x) : true);
+  const importa = (x: PasoVista) => (p.id === "fuera" ? esFuera(x, rc.entrada.origen) : p.id === "inmutable" ? cuentaInmutable(x) : true);
   const todosAtrasados = rc.pasos.filter((x) => rc.regla.atrasados.includes(x.id));
   const atrasados = [...todosAtrasados.filter(importa), ...todosAtrasados.filter((x) => !importa(x))];
   switch (p.accion) {

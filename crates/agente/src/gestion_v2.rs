@@ -1201,6 +1201,10 @@ pub const ADMITE: &[&str] = &[
     // `resumen.aprobar_en_equipo`, `aprobar_en_equipo` en `hola`/`tomar`/`{"t":"ajustes"}`,
     // `aprobada_en_equipo` en el historial y el aviso `orden_aprobada_en_equipo`.
     "aprobar_en_equipo",
+    // v1.6x (pendiente de numerar al unir) plan 0.8.0, D1 y D2 (14ll, 14ss): los datos comunes
+    // `sede:`, `sede.equipo:` y `sede.destino:` (con la clave), `etiqueta.categoria:` y
+    // `orden.equipos:` en `datos_cliente` (docs/sedes.md).
+    resguardo_protocolo::datos_cliente::ADMITE_SEDES,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
