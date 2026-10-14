@@ -375,6 +375,17 @@ mod win {
                 let token = crate::nube::token_de_salida(&String::from_utf8_lossy(&salida.stdout)).ok_or("No llegó el permiso de la nube.")?;
                 ipc::pedir_con_prueba("conectar_nube", &prueba, json!({ "tipo": tipo, "nombre": p["nombre"], "token": token }))
             }
+            // 14a: las órdenes que esperan su turno (solo para administradores del equipo: lo
+            // comprueba el servicio con la cuenta que da el sistema).
+            "en_espera" => ipc::pedir(&json!({ "op": "en_espera" })),
+            // 14a: aprobar una ya. Siempre con la clave escrita en ese momento (no vale la de
+            // «desbloqueada»); la prueba se calcula aquí y la clave no sale de este proceso.
+            "aprobar" => {
+                let hola = ipc::pedir(&json!({ "op": "hola" }))?;
+                let sal = hola["sal_equipo"].as_str().ok_or("Este equipo aún no tiene clave de administración.")?;
+                let prueba = ipc::prueba(p["clave"].as_str().unwrap_or(""), sal)?;
+                ipc::pedir(&json!({ "op": "aprobar_espera", "reto": hola["reto"], "prueba": prueba, "id": p["orden"] }))
+            }
             "servicio" => {
                 let op = p["que"].as_str().unwrap_or("");
                 if !OPS_CON_CLAVE.contains(&op) {

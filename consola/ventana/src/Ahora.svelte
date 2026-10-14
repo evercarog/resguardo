@@ -8,6 +8,7 @@
   import { pedir, vivo } from "./puente.svelte";
   import { quedan, seriesDe, textoFase, tono, TIPOS } from "./estado";
   import type { Actividad } from "./tipos";
+  import EnEspera from "./EnEspera.svelte";
 
   let { irAjustes, sinConfigurar }: { irAjustes: () => void; sinConfigurar: boolean } = $props();
 
@@ -56,6 +57,8 @@
 </script>
 
 <div class="v-pila">
+  <!-- 14a: lo que espera su turno (solo lo ve un administrador del equipo). -->
+  <EnEspera />
   {#if sinConfigurar}
     <section class="v-tarjeta bienvenida">
       <Sparkles size={22} aria-hidden="true" />

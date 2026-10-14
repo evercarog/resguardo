@@ -68,6 +68,7 @@
               <span class="faint">
                 Desde {h.consola ? `«${h.consola}»` : "otra consola"}{#if h.por}{" · "}pedida por {h.por}{/if}
                 {#if h.cancelada_desde}{" · "}cancelada desde «{h.cancelada_desde}»{/if}
+                {#if h.aprobada_en_equipo}{" · "}<strong class="aprobada">aprobada en el equipo por {h.aprobada_en_equipo}</strong>{/if}
                 {#if h.mensaje && resultadoOrden(h) !== "hecha"}{" · "}{mensajeOrden(h.orden, h.mensaje)}{/if}
               </span>
             </span>
@@ -83,6 +84,10 @@
 {/if}
 
 <style>
+  .aprobada {
+    font-weight: 500;
+    color: var(--warn);
+  }
   .otras {
     display: flex;
     flex-direction: column;

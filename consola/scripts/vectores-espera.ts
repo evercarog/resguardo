@@ -78,6 +78,20 @@ igual("nombre de la consola: el suyo en el equipo", nombreConsola(equipo, { nomb
 const conNombre: Equipo = { ...equipo, resumen: { ...equipo.resumen, consolas: equipo.resumen!.consolas!.map((c) => (c.esta ? c : { ...c, nombre: "Consola del integrador" })) } };
 igual("…o el de `consolas` con esa identidad, si no es una dirección", nombreConsola(conNombre, { nombre: null, identidad: ID_OTRA, esta: false }), "Consola del integrador");
 igual("14oo: la propia dice que el equipo ya comprobó sus claves (y de qué repositorio); la otra, no", [filas[1].clavesComprobadas, filas[1].repositorio, filas[0].clavesComprobadas, filas[0].repositorio], [true, "Facturas", false, null]);
+igual("14a: sin `admite: aprobar_en_equipo`, ninguna se puede aprobar en el equipo", filas.map((f) => f.aprobable), [false, false]);
+const nuevo: Equipo = {
+  ...equipo,
+  resumen: {
+    ...equipo.resumen,
+    admite: [...equipo.resumen!.admite!, "aprobar_en_equipo"],
+    en_espera: [
+      espera("o-propia", { nombre: "Oficina", identidad: ID_ESTA, esta: true }, 20, { aprobable: true }),
+      espera("o-otra", { nombre: null, identidad: ID_OTRA, esta: false }, 2, { aprobable: false }),
+    ],
+  },
+};
+const filasNuevo = filasEnEspera([propia], [nuevo], AHORA);
+igual("14a: con un agente que lo admite, la que su cliente deja aprobar sí y la otra no", filasNuevo.map((f) => [f.id, f.aprobable]), [["o-otra", false], ["o-propia", true]]);
 igual("cancelar las de otra consola: si el equipo lo admite", [admiteCancelarEspera(equipo), admiteCancelarEspera(viejo)], [true, false]);
 igual("con un equipo o un servidor anterior (sin `en_espera`): solo las propias", filasEnEspera([propia], [viejo], AHORA).map((f) => [f.id, f.cancelar]), [["o-propia", "servidor"]]);
 

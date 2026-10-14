@@ -3,7 +3,7 @@
   // gravedad (lo urgente arriba) o por equipo; cada uno con su acción directa
   // y «Marcar como visto» (queda anotado quién lo vio).
   import { slide } from "svelte/transition";
-  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, Cloud, HardDrive, KeyRound, Monitor, Power, ShieldAlert, ShieldOff, TriangleAlert, WifiOff } from "@lucide/svelte";
+  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, Cloud, HardDrive, KeyRound, Monitor, MonitorCheck, Power, ShieldAlert, ShieldOff, TriangleAlert, WifiOff } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { dur } from "$ui/movimiento";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
@@ -84,6 +84,8 @@
     // v1.49: otra consola mandó una orden que el equipo tiene en espera (se puede cancelar desde aquí).
     // v1.58: una orden con espera que caducó, se rechazó o falló: en «Órdenes» se ve por qué y se puede volver a mandar.
     orden_no_aplicada: { texto: "Orden sin aplicar", tono: "warn", icono: TriangleAlert, que: "Mira en Órdenes por qué no se aplicó y, si aún hace falta, vuelve a mandarla.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
+    // 14a: alguien delante del equipo, con la clave de administración, la adelantó.
+    orden_aprobada_en_equipo: { texto: "Se aprobó en el equipo una orden que reducía la protección", tono: "warn", icono: MonitorCheck, que: "Alguien delante del equipo, como administrador y con la clave de administración, la aplicó sin esperar a su hora. Si no lo esperabas, cambia la clave de administración y revisa quién administra ese equipo.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
     orden_en_espera: { texto: "Orden en espera desde otra consola", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes (desde cualquier consola) y cambia la clave de administración.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
     auditoria_rehecha: { texto: "Actividad rehecha", tono: "bad", icono: ShieldAlert, que: "Abre esa consola y, en Actividad, usa «Comprobar con un ancla» con un resumen por correo anterior.", accion: () => ({ texto: "Actividad de esta consola", href: `/c/${c}/auditoria` }) },
     // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió solo a la anterior.

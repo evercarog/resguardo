@@ -1373,6 +1373,11 @@ pub const ADMITE: &[&str] = &[
     crate::nombres::ADMITE,
     // (pendiente de numerar) 14bbb: la orden `comprobar_contrasena` y `repositorios[].contrasena_comprobada`.
     "comprobar_contrasena",
+    // v1.6x (pendiente de numerar al unir) 14a: aprobar una orden en espera en el propio equipo
+    // (ventana o `resguardo-agente ordenes aprobar`), `en_espera[].aprobable`,
+    // `resumen.aprobar_en_equipo`, `aprobar_en_equipo` en `hola`/`tomar`/`{"t":"ajustes"}`,
+    // `aprobada_en_equipo` en el historial y el aviso `orden_aprobada_en_equipo`.
+    "aprobar_en_equipo",
     // (pendiente de numerar) plan 0.8.0, F1 (14pp): `config.copias[].a_mano` y `termina`
     // (`veces`, `hasta`, `una_vez`, `desde`); en el resumen, `hechas` y `completada`.
     "termina",
@@ -1530,6 +1535,9 @@ pub fn resumen(v: &Vinculo) -> Value {
         "cambio_config": crate::consolas_v2::resumen_cambio(v),
         // v1.49: las órdenes con espera que tiene el equipo (de cualquiera de sus consolas).
         "en_espera": crate::espera_v2::resumen(v),
+        // 14a: si el cliente de esta consola deja aprobar sus órdenes en espera en el propio equipo
+        // (lo que el equipo recibió de ella; por defecto, sí).
+        "aprobar_en_equipo": crate::espera_v2::aprobable(v, &v.id_enlace()),
     });
     // v1.56: el nombre, las etiquetas y la observación que tiene el equipo (solo lo puesto con
     // sus órdenes; cada consola enseña esto en vez de lo suyo). Sin nada puesto, no va.

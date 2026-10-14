@@ -124,6 +124,10 @@ pub struct Vinculo {
     /// sellado; espera_v2.rs, docs/consolas-multiples.md §5). Del equipo, no de un vínculo.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub en_espera: Vec<crate::espera_v2::EnEspera>,
+    /// 14a (v1.6x): las consolas (ids de vínculo) cuyo cliente desactivó «Aprobar en el equipo»:
+    /// sus órdenes en espera no se pueden adelantar desde aquí. Sin nada, se puede (por defecto).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sin_aprobar_en_equipo: Vec<String>,
     /// v1.56: el nombre, las etiquetas y la observación del equipo puestos con sus órdenes
     /// (`nombre_equipo`…), iguales en todas sus consolas (datos_equipo.rs). Del equipo.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -741,6 +745,7 @@ fn anotar_fallo_sin_bitacora(v: &mut Vinculo, clave: &str) -> Option<String> {
 fn nombre_clave(clave: &str) -> String {
     match clave.strip_prefix("repo:") {
         Some(r) => format!("la contraseña del repositorio «{r}»"),
+        None if clave == CLAVE_EQUIPO => "la clave de administración escrita en el equipo (para aprobar una orden en espera)".into(),
         None => "la clave de administración".into(),
     }
 }
@@ -1543,14 +1548,48 @@ fn orden_de(id: &str, o: &Value) -> Option<(Resultado, Option<String>, Vinculo)>
 fn aplicar_en_espera(id: &str) -> bool {
     let hechas = crate::espera_v2::aplicar_las_que_tocan(id);
     for a in &hechas {
-        if let Some(av) = &a.aviso {
-            let _ = llamar_ok(&a.credenciales, "/api/agente/aviso", &json!({ "tipo": "intentos_fallidos", "mensaje": av }));
-        }
-        if enviar_resultado(&a.credenciales, &a.orden, a.seq, &a.resultado).is_err() {
-            largas::guardar_resultado(&a.credenciales.id_enlace(), &a.orden, a.seq, &a.tipo, &a.resultado);
-        }
+        contestar_aplicada(a);
     }
     !hechas.is_empty()
+}
+
+/// El resultado firmado de una orden en espera que se aplicó (a su hora o aprobada en el
+/// equipo, 14a) a la consola que la mandó; si no responde, se guarda para cuando vuelva.
+pub(crate) fn contestar_aplicada(a: &crate::espera_v2::Aplicada) {
+    if let Some(av) = &a.aviso {
+        let _ = llamar_ok(&a.credenciales, "/api/agente/aviso", &json!({ "tipo": "intentos_fallidos", "mensaje": av }));
+    }
+    if enviar_resultado(&a.credenciales, &a.orden, a.seq, &a.resultado).is_err() {
+        largas::guardar_resultado(&a.credenciales.id_enlace(), &a.orden, a.seq, &a.tipo, &a.resultado);
+    }
+}
+
+// ---------- La clave escrita en el propio equipo (14a) ----------
+
+/// Cuenta de fallos de la clave de administración escrita en el equipo para aprobar una orden
+/// en espera: el mismo bloqueo que las órdenes (5 fallos seguidos, 15 min, el doble cada vez
+/// hasta 24 h; aviso en la bitácora que reciben todas las consolas), aparte de la de las
+/// consolas (quien prueba claves en el equipo no bloquea las órdenes, ni al revés).
+const CLAVE_EQUIPO: &str = "equipo";
+
+/// Si la clave escrita en el equipo está bloqueada, hasta cuándo (en palabras).
+pub(crate) fn bloqueo_equipo() -> Option<String> {
+    let v = cargar()?;
+    bloqueada(&v, CLAVE_EQUIPO).map(|h| format!("Bloqueado por intentos fallidos con la clave hasta {}.", fecha(h)))
+}
+
+/// Un fallo de la clave escrita en el equipo (con su aviso a todas las consolas si toca).
+pub(crate) fn fallo_equipo() {
+    crate::consolas_v2::modificar(|v| {
+        let _ = anotar_fallo(v, CLAVE_EQUIPO);
+    });
+}
+
+/// La clave escrita en el equipo era la buena: se olvidan sus fallos.
+pub(crate) fn acierto_equipo() {
+    if cargar().is_some_and(|v| v.fallos.contains_key(CLAVE_EQUIPO)) {
+        crate::consolas_v2::modificar(|v| acierto(v, CLAVE_EQUIPO));
+    }
 }
 
 /// La lista de ids de `canceladas` (de `tomar`), con tope.
@@ -1605,6 +1644,8 @@ fn ronda_de(id: &str) -> Result<bool, String> {
     anotar_contacto(id);
     // v1.49: su hora (para las órdenes en espera) y las que canceló.
     crate::espera_v2::anotar_hora(id, &r);
+    // 14a: si su cliente deja aprobar sus órdenes en espera en el propio equipo.
+    crate::espera_v2::anotar_opcion(id, &r);
     crate::espera_v2::canceladas_por_su_consola(id, &ids_de(&r["canceladas"]));
     // v1.50 (9b): la cabeza de la auditoría de esa consola (una anterior no la manda).
     crate::ancla::recibir(&v, &r["ancla"]);
@@ -1781,6 +1822,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
     anotar_contacto(id);
     // v1.49: su hora, para las órdenes en espera (también en cada latido).
     crate::espera_v2::anotar_hora(id, &hola);
+    // 14a: si su cliente deja aprobar sus órdenes en espera en el propio equipo.
+    crate::espera_v2::anotar_opcion(id, &hola);
     let _ = ws.send(Message::Text(json!({ "t": "informe", "datos": informe_de(id) }).to_string().into()));
     // v1.23: el servidor dice hasta dónde tiene el historial del equipo; si es una
     // consola nueva (nada), se sube todo lo de los últimos 90 días.
@@ -1847,6 +1890,8 @@ pub fn canal_de(id: &str) -> Result<(), String> {
                     "ancla" => crate::ancla::recibir(&v, &m["ancla"]),
                     // v1.57: «Actualizar ahora» o un cambio de la política: buscar la versión ya.
                     "actualizacion" => crate::actualizacion::toque(),
+                    // 14a: el cliente cambió «Aprobar en el equipo» en esta consola.
+                    "ajustes" => crate::espera_v2::anotar_opcion(id, &m),
                     // Un servidor anterior no conoce `progreso`: no se le vuelve a mandar.
                     "error" if m["mensaje"].as_str().is_some_and(|x| x.contains("desconocido")) => progreso.desactivar(),
                     "orden" => {

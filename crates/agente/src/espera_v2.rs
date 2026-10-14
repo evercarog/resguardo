@@ -286,6 +286,12 @@ fn avisar_a_las_demas(v: &Vinculo, e: &EnEspera) {
 
 /// Anota en el historial del equipo (el que reciben todas sus consolas) qué pasó con una orden.
 fn anotar(e: &EnEspera, resultado: &str, mensaje: Option<&str>, cancelada_desde: Option<&str>) {
+    anotar_con(e, resultado, mensaje, cancelada_desde, None);
+}
+
+/// Como [`anotar`]; con `aprobada_en_equipo` (14a), la cuenta del sistema que la aprobó en el
+/// propio equipo antes de su hora.
+fn anotar_con(e: &EnEspera, resultado: &str, mensaje: Option<&str>, cancelada_desde: Option<&str>, aprobada_en_equipo: Option<&str>) {
     crate::bitacora::anotar(
         "orden",
         json!({
@@ -295,6 +301,7 @@ fn anotar(e: &EnEspera, resultado: &str, mensaje: Option<&str>, cancelada_desde:
             "mensaje": mensaje.map(crate::web::public_message).filter(|m| !m.is_empty()),
             "aplica": (!e.aplica.is_empty()).then_some(&e.aplica),
             "cancelada_desde": cancelada_desde,
+            "aprobada_en_equipo": aprobada_en_equipo,
         }),
     );
 }
@@ -529,6 +536,182 @@ pub fn canceladas_por_su_consola(id: &str, ordenes: &[String]) {
     });
 }
 
+// ---------- Aprobar en el propio equipo (14a) ----------
+
+/// ¿Deja el cliente de la consola `enlace` aprobar en el equipo sus órdenes en espera? Por
+/// defecto, sí: solo no si esa consola dijo que su cliente lo desactivó.
+pub fn aprobable(v: &Vinculo, enlace: &str) -> bool {
+    !v.sin_aprobar_en_equipo.iter().any(|e| e == enlace)
+}
+
+/// Lo que dice la consola `enlace` de la opción de su cliente «Aprobar en el equipo»
+/// (`aprobar_en_equipo` en su `hola`, en `tomar` o en `{"t": "ajustes"}`). Un servidor
+/// anterior no lo dice: entonces no cambia nada (y se puede, por defecto).
+pub fn anotar_opcion(enlace: &str, m: &Value) {
+    let Some(activa) = m.get("aprobar_en_equipo").and_then(Value::as_bool) else { return };
+    if s::cargar().is_some_and(|v| aprobable(&v, enlace) == activa) {
+        return;
+    }
+    let cambiado = crate::consolas_v2::modificar(|v| {
+        let antes = aprobable(v, enlace);
+        let vivos = v.ids_enlaces();
+        v.sin_aprobar_en_equipo.retain(|e| e != enlace && vivos.contains(e));
+        if !activa {
+            v.sin_aprobar_en_equipo.push(enlace.to_string());
+        }
+        antes != activa
+    });
+    if cambiado == Some(true) {
+        cambio();
+        crate::agent::log(&format!("Una consola {} aprobar en el equipo sus órdenes en espera.", if activa { "vuelve a permitir" } else { "ya no permite" }));
+    }
+}
+
+/// ¿Sigue esperando y su consola sigue siendo la misma? (Las caducadas y las de una consola
+/// que ya no está no se enseñan ni se aprueban.)
+fn viva(v: &Vinculo, e: &EnEspera, t: i64) -> bool {
+    ts(&e.caduca).is_some_and(|c| c > t) && identidad_de(v, &e.enlace).as_deref() == Some(e.identidad.as_str())
+}
+
+/// Las órdenes en espera para la ventana y la línea de órdenes del propio equipo (quien está
+/// delante), de la que antes se aplica a la que más tarda, numeradas desde 1. Sin el sobre ni
+/// direcciones; con el nombre de la consola y si se pueden aprobar aquí.
+pub fn lista_local(v: &Vinculo) -> Vec<Value> {
+    let t = ahora();
+    let nombres: HashMap<String, String> =
+        std::iter::once((v.id_enlace(), v.nombre_consola.clone())).chain(v.otras.iter().map(|e| (e.id.clone(), e.nombre.clone()))).collect();
+    let mut l: Vec<&EnEspera> = v.en_espera.iter().filter(|e| viva(v, e, t)).collect();
+    l.sort_by_key(|e| ts(&e.aplica).unwrap_or(i64::MAX));
+    l.iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let consola = nombres
+                .get(&e.enlace)
+                .map(|n| corto(n, 60))
+                .filter(|n| !n.is_empty() && !n.contains("://"))
+                .or_else(|| (!e.consola.is_empty()).then(|| e.consola.clone()));
+            json!({
+                "n": i + 1, "id": e.id, "tipo": e.tipo,
+                "descripcion": e.descripcion.clone().unwrap_or_else(|| format!("«{}»", e.tipo)),
+                "consola": consola, "por": e.por, "emitida": e.emitida, "aplica": e.aplica, "caduca": e.caduca,
+                "repositorio": e.repositorio, "aprobable": aprobable(v, &e.enlace),
+            })
+        })
+        .collect()
+}
+
+/// El mensaje del resultado de una orden aprobada en el equipo (va firmado: corto, para que
+/// el servidor no lo recorte).
+fn mensaje_aprobada(usuario: &str, r: &Resultado) -> String {
+    let m = corto(&crate::web::public_message(&r.mensaje), 360);
+    if matches!(r.estado, "hecha" | "en_marcha") {
+        format!("Aprobada en el equipo por {usuario}: {m}")
+    } else {
+        format!("Aprobada en el equipo por {usuario}, pero no se pudo aplicar: {m}")
+    }
+}
+
+/// El detalle con `aprobada_en_equipo` (si el que había es un objeto JSON, o no había).
+fn detalle_aprobada(detalle: Option<String>, usuario: &str) -> Option<String> {
+    match detalle.as_deref().map(serde_json::from_str::<Value>) {
+        None => Some(json!({ "aprobada_en_equipo": usuario }).to_string()),
+        Some(Ok(Value::Object(mut m))) => {
+            m.insert("aprobada_en_equipo".into(), json!(usuario));
+            Some(Value::Object(m).to_string())
+        }
+        _ => detalle,
+    }
+}
+
+/// Aprueba en el propio equipo la orden en espera `id`: se aplica ya, sin esperar a su hora.
+/// Quien llama ya comprobó la clave de administración (con su bloqueo por intentos) y que es
+/// un administrador del equipo (ipc_local); `usuario` es la cuenta del sistema que la aprueba
+/// (la da el sistema, no la petición). Lo demás se comprueba como al aplicarla a su hora: el
+/// sobre, su consola, la espera mínima declarada y las claves **de este momento**. Queda en el
+/// historial de todas las consolas («Aprobada en el equipo por …»), con un aviso en todas, y el
+/// resultado firmado va a la consola que la mandó.
+pub fn aprobar(id: &str, usuario: &str) -> Result<Value, String> {
+    let usuario = {
+        let u = corto(usuario, 80);
+        if u.is_empty() {
+            "una cuenta sin identificar".to_string()
+        } else {
+            u
+        }
+    };
+    if !id_valido(id) {
+        return Err("Falta qué orden aprobar.".into());
+    }
+    let ya_no = "Esa orden ya no está esperando: se aplicó, se canceló o caducó.";
+    let antes = s::cargar().ok_or("Este equipo no está vinculado a ninguna consola.")?;
+    let e = antes.en_espera.iter().find(|e| e.id == id && viva(&antes, e, ahora())).cloned().ok_or(ya_no)?;
+    if !aprobable(&antes, &e.enlace) {
+        return Err("El cliente de la consola que la mandó no deja aprobar órdenes en el equipo: se aplicará a su hora si nadie la cancela.".into());
+    }
+    let a = crate::consolas_v2::con_enlace(&e.enlace, |v| -> Result<Aplicada, String> {
+        let t = ahora();
+        descartar(v, t);
+        let i = v.en_espera.iter().position(|x| x.id == id).ok_or(ya_no)?;
+        if !aprobable(v, &v.en_espera[i].enlace) {
+            return Err("El cliente de la consola que la mandó ya no deja aprobar órdenes en el equipo.".into());
+        }
+        let e = v.en_espera.remove(i);
+        // Fuera de la lista (y en disco) antes de ejecutarla: se aplica una sola vez.
+        let _ = s::guardar(v);
+        cambio();
+        let credenciales = v.clone();
+        let (mut resultado, aviso) = match abrir_guardada(v, &e, t) {
+            Ok(o) => match ordenes::tipo(&o.tipo) {
+                Some(tipo) => s::autorizar_y_ejecutar(v, &o, tipo, &e.id),
+                None => (s::rechazada("Tipo de orden desconocido."), None),
+            },
+            Err(m) => (s::rechazada(m), None),
+        };
+        resultado.mensaje = mensaje_aprobada(&usuario, &resultado);
+        resultado.detalle = detalle_aprobada(resultado.detalle.take(), &usuario);
+        anotar_con(&e, resultado.estado, Some(&resultado.mensaje), None, Some(&usuario));
+        if resultado.estado == "hecha" && crate::consolas_v2::CAMBIAN_CONFIG.contains(&e.tipo.as_str()) {
+            for o in v.otras.iter_mut() {
+                o.config_pendiente = true;
+            }
+        }
+        crate::agent::log(&format!(
+            "Orden «{}» en espera, aprobada en el equipo por {usuario}: {} ({}).",
+            e.tipo,
+            resultado.estado.replace('_', " "),
+            resultado.mensaje
+        ));
+        avisar_aprobada(&antes, &e, &usuario, &resultado);
+        Ok(Aplicada { orden: e.id, seq: e.seq, tipo: e.tipo, resultado, aviso, credenciales })
+    })
+    .ok_or("La consola que la mandó ya no gestiona este equipo.")??;
+    s::contestar_aplicada(&a);
+    Ok(json!({ "estado": a.resultado.estado, "mensaje": a.resultado.mensaje }))
+}
+
+/// «Se aprobó en el equipo una orden que reducía la protección», a **todas** las consolas
+/// (también a la que la mandó). Un servidor anterior no conoce el tipo: como cambio inusual.
+fn avisar_aprobada(v: &Vinculo, e: &EnEspera, usuario: &str, r: &Resultado) {
+    let todas = v.vistas();
+    if todas.is_empty() {
+        return;
+    }
+    let desde = if e.consola.is_empty() { "otra consola".to_string() } else { format!("la consola «{}»", e.consola) };
+    let que = e.descripcion.clone().unwrap_or_else(|| format!("«{}»", e.tipo));
+    let por = e.por.as_deref().map(|p| format!(", pedida por {p}")).unwrap_or_default();
+    let como = if matches!(r.estado, "hecha" | "en_marcha") { "se aplicó ya" } else { "no se pudo aplicar" };
+    let mensaje = format!(
+        "Se aprobó en el equipo una orden que reducía la protección: {que} (desde {desde}{por}). La aprobó {usuario} con la clave de administración y {como}, sin esperar a su hora. Si no lo esperabas, cambia la clave de administración."
+    );
+    std::thread::spawn(move || {
+        for w in todas {
+            if let Ok((400 | 422, _)) = s::llamar(&w, "POST", "/api/agente/aviso", Some(&json!({ "tipo": "orden_aprobada_en_equipo", "mensaje": mensaje }))) {
+                let _ = s::llamar(&w, "POST", "/api/agente/aviso", Some(&json!({ "tipo": "cambio_inusual", "mensaje": mensaje })));
+            }
+        }
+    });
+}
+
 // ---------- Resumen ----------
 
 /// `resumen.en_espera` para la consola activa de `v`: las que siguen esperando, con
@@ -555,6 +738,8 @@ pub fn resumen(v: &Vinculo) -> Value {
             if let Some(r) = &e.repositorio {
                 x["repositorio"] = json!(r);
             }
+            // 14a (opcional): se puede aprobar en el propio equipo (lo deja el cliente de su consola).
+            x["aprobable"] = json!(aprobable(v, &e.enlace));
             x
         })
         .collect::<Vec<_>>())
@@ -665,6 +850,41 @@ mod tests {
         assert!(l[1]["consola"]["nombre"].is_null());
         let texto = r.to_string();
         assert!(!texto.contains("192.168") && !texto.contains("ejemplo.com") && !texto.contains("SOBRE"), "ni direcciones ni el sobre: {texto}");
+        // 14a: por defecto, todas se pueden aprobar en el equipo; las de una consola cuyo cliente lo
+        // desactivó, no.
+        assert_eq!(l[0]["aprobable"], true);
+        v.sin_aprobar_en_equipo.push("b".into());
+        let r = resumen(&v);
+        assert_eq!(r[0]["aprobable"], true);
+        assert_eq!(r[1]["aprobable"], false);
+        // La lista del propio equipo: numerada, de la que antes se aplica a la que más tarda, sin
+        // direcciones (el nombre de la consola «b» es su dirección: no se dice).
+        v.en_espera[1].aplica = (chrono::Local::now() + chrono::Duration::hours(2)).to_rfc3339();
+        let l = lista_local(&v);
+        assert_eq!(l.iter().map(|x| (x["n"].as_u64().unwrap(), x["id"].as_str().unwrap())).collect::<Vec<_>>(), vec![(1, "o-2"), (2, "o-1")]);
+        assert_eq!(l[0]["aprobable"], false);
+        assert_eq!(l[1]["consola"], "Oficina");
+        assert_eq!(l[0]["descripcion"], "«pausar»");
+        let texto = json!(l).to_string();
+        assert!(!texto.contains("192.168") && !texto.contains("ejemplo.com") && !texto.contains("SOBRE"), "{texto}");
+    }
+
+    /// 14a: lo que se contesta a la consola que la mandó, firmado: quién la aprobó, sin pisar
+    /// el detalle que ya hubiera.
+    #[test]
+    fn resultado_de_una_aprobada() {
+        let r = Resultado { estado: "hecha", mensaje: "Copias en pausa.".into(), detalle: None };
+        assert_eq!(mensaje_aprobada("ana (PC-01)", &r), "Aprobada en el equipo por ana (PC-01): Copias en pausa.");
+        let mal = Resultado { estado: "rechazada", mensaje: "La clave de administración no es correcta.".into(), detalle: None };
+        assert!(mensaje_aprobada("ana", &mal).contains("pero no se pudo aplicar"));
+        assert!(
+            mensaje_aprobada("ana", &Resultado { estado: "hecha", mensaje: "x".repeat(2000), detalle: None }).chars().count() < 500,
+            "que el servidor no lo recorte"
+        );
+        assert_eq!(detalle_aprobada(None, "ana").as_deref(), Some(r#"{"aprobada_en_equipo":"ana"}"#));
+        let d: Value = serde_json::from_str(&detalle_aprobada(Some(r#"{"espera_min_horas":2}"#.into()), "ana").unwrap()).unwrap();
+        assert_eq!((d["espera_min_horas"].as_i64(), d["aprobada_en_equipo"].as_str()), (Some(2), Some("ana")));
+        assert_eq!(detalle_aprobada(Some("no es json".into()), "ana").as_deref(), Some("no es json"), "lo que no es un objeto, tal cual");
     }
 
     /// 14oo: las claves de una orden con espera se comprueban al recibirla (con el mismo

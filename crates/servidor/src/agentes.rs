@@ -722,6 +722,8 @@ const TIPOS_AVISO: &[&str] = &[
     "orden_en_espera",
     "actualizacion_fallida",
     "nube_sin_anular",
+    // v1.6x (pendiente de numerar al unir) 14a: se aprobó en el propio equipo una orden en espera.
+    "orden_aprobada_en_equipo",
 ];
 
 #[derive(Deserialize)]
@@ -972,7 +974,7 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
     adelantar_seq_de(&st, &a, p.ultimo_seq).await?;
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
     let identidad = st.identidad.clone();
-    let (ordenes, canceladas, atencion, sesiones, ultima, ancla) = st
+    let (ordenes, canceladas, atencion, sesiones, ultima, ancla, aprobar) = st
         .db(move |db| {
             let ahora = ahora();
             let adelantar = admite_espera(db, &ctx, &equipo)?;
@@ -982,7 +984,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
             let atencion = db.equipo(&ctx, &equipo)?.and_then(|e| e.atencion_hasta).is_some_and(|t| t > ahora) || !sesiones.is_empty();
             let ultima = db.ultima_historial(&ctx, &equipo)?;
             let ancla = crate::ancla::firmada_de(db, &ctx, &identidad);
-            Ok((ordenes, canceladas, atencion, sesiones, ultima, ancla))
+            let aprobar = crate::api::aprobar_equipo::activa(db, ctx.id());
+            Ok((ordenes, canceladas, atencion, sesiones, ultima, ancla, aprobar))
         })
         .await?;
     for o in &ordenes {
@@ -999,6 +1002,8 @@ async fn tomar(State(st): State<St>, a: Agente, Json(p): Json<Tomar>) -> Res<Jso
         "ahora": crate::api::fecha(ahora()),
         // v1.50 (9b): la cabeza de la auditoría del cliente, firmada; un agente anterior la ignora.
         "ancla": ancla,
+        // 14a (v1.6x): si el cliente deja aprobar en el equipo las órdenes en espera de esta consola.
+        "aprobar_en_equipo": aprobar,
     })))
 }
 
@@ -1170,20 +1175,22 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
     st.conectados.lock().unwrap_or_else(|e| e.into_inner()).insert(a.equipo.clone(), tx.clone());
     st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
     let (ctx, e2, identidad) = (a.ctx.clone(), a.equipo.clone(), st.identidad.clone());
-    let (atencion, ultima, ancla) = st
+    let (atencion, ultima, ancla, aprobar) = st
         .db(move |db| {
             let ahora = ahora();
             let atencion =
                 db.equipo(&ctx, &e2)?.and_then(|e| e.atencion_hasta).is_some_and(|t| t > ahora) || !db.sesiones_abiertas(&ctx, &e2, ahora)?.is_empty();
-            Ok((atencion, db.ultima_historial(&ctx, &e2)?, crate::ancla::firmada_de(db, &ctx, &identidad)))
+            let aprobar = crate::api::aprobar_equipo::activa(db, ctx.id());
+            Ok((atencion, db.ultima_historial(&ctx, &e2)?, crate::ancla::firmada_de(db, &ctx, &identidad), aprobar))
         })
         .await
-        .unwrap_or((false, None, Value::Null));
+        .unwrap_or((false, None, Value::Null, true));
     // v1.23: hasta dónde tiene el historial del equipo (el agente sube lo que falte).
     // v1.49: `ahora`, la hora del servidor (para las órdenes en espera; también en cada latido).
     // v1.50 (9b): y la cabeza de la auditoría del cliente, firmada.
+    // 14a (v1.6x): si el cliente deja aprobar en el equipo las órdenes en espera de esta consola.
     let _ = tx.send(
-        json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) }, "ahora": crate::api::fecha(ahora()), "ancla": ancla })
+        json!({ "t": "hola", "firma": firma, "atencion": atencion, "historial": { "ultima": crate::api::fecha_opt(ultima) }, "ahora": crate::api::fecha(ahora()), "ancla": ancla, "aprobar_en_equipo": aprobar })
             .to_string(),
     );
     // Lo que estaba esperando (y lo que se entregó y quizá no llegó).

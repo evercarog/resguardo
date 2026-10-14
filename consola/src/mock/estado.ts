@@ -564,7 +564,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -572,7 +572,7 @@ export async function sembrar(vacio = false) {
         nubes_por_anular: [{ nombre: "Dropbox Antigua", tipo: "dropbox", desde: hace(60 * 3), hasta: dentro(60 * 24 * 7 - 60 * 3), intentos: 2 }],
         // v1.49: una orden destructiva que mandó la consola en línea y el equipo tiene en espera.
         en_espera: [
-          { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Ventas»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46) },
+          { id: "8f6d2c1e-0000-4000-8000-00000000e5e1", tipo: "quitar_repositorio", descripcion: "Quitar el repositorio «Ventas»", consola: { nombre: "Consola en línea", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=", esta: false }, por: "Bruno", emitida: hace(60 * 2), aplica: dentro(60 * 22), caduca: dentro(60 * 46), claves_comprobadas: true, repositorio: "Ventas", aprobable: true },
         ],
         // v1.36: también la gestiona una consola en línea (y el último cambio vino de allí).
         consolas: [
@@ -731,6 +731,8 @@ export async function sembrar(vacio = false) {
   aviso(altamar.id, archivos.id, "sin_soporte_pronto", "El sistema de «SERVIDOR-ARCHIVOS» se queda sin soporte pronto. Windows Server 2016 Standard 1607 deja de recibir actualizaciones de seguridad el 12 de enero de 2027 (en 91 días). Planifica la actualización.", 60 * 30);
   aviso(altamar.id, portatil.id, "equipo_sin_contacto", "PORTATIL-GERENCIA no se conecta desde hace 2 días.", 60 * 28);
   aviso(sur.id, surCaja.id, "intentos_fallidos", "Hubo 3 intentos fallidos con la clave de administración en CAJA-1.", 60 * 5);
+  // 14a: alguien delante del equipo aprobó una orden en espera con la clave de administración.
+  aviso(sur.id, surCaja.id, "orden_aprobada_en_equipo", "Se aprobó en el equipo una orden que reducía la protección: Pausar las copias (desde la consola «Consola en línea», pedida por Bruno). La aprobó ana (CAJA-1) con la clave de administración y se aplicó ya, sin esperar a su hora. Si no lo esperabas, cambia la clave de administración.", 60 * 26);
   aviso(sur.id, surCaja.id, "auditoria_rehecha", "La consola «Consola en línea» rehízo su registro de actividad: antes llegaba a la entrada n.º 412 y ahora solo a la 388. Si nadie restauró una copia anterior de esa consola, alguien la ha cambiado entera; compruébala con un ancla de un correo anterior.", 60 * 3);
 
   // Una orden destructiva esperando su turno, para la tarjeta «Pendiente».
