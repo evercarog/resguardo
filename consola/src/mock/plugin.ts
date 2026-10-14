@@ -607,7 +607,20 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}$`),
     (ctx, [c]) => {
       const { cliente, rol } = miembro(ctx, c);
-      return { id: cliente.id, nombre: cliente.nombre, sal_cliente: cliente.sal_cliente, espera_min_horas: cliente.espera_min_horas, rol, marca: marcaJson(c) };
+      return { id: cliente.id, nombre: cliente.nombre, sal_cliente: cliente.sal_cliente, espera_min_horas: cliente.espera_min_horas, rol, marca: marcaJson(c), aprobar_en_equipo: aprobarMock.get(c) ?? { activa: true } };
+    },
+  ],
+  // 14a: «Aprobar en el equipo», como crates/servidor/src/api/aprobar_equipo.rs.
+  [
+    "PUT",
+    new RegExp(`^${C}/aprobar-en-equipo$`),
+    (ctx, [c]) => {
+      const { cuenta } = miembro(ctx, c, "propietario");
+      const activa = (ctx.cuerpo as { activa?: unknown }).activa === true;
+      const o = { activa, actualizada: new Date().toISOString(), por: cuenta.nombre };
+      aprobarMock.set(c, o);
+      auditar(c, cuenta.id, "aprobar_en_equipo", c, { activa });
+      return o;
     },
   ],
   // v1.32: marca del cliente (logo PNG y acento), como crates/servidor/src/api/marca.rs.
@@ -1793,6 +1806,8 @@ export function mockApi(): Plugin {
 const HUELLA_CA = "3F:A2:91:0C:7D:44:E8:12:5B:C0:9A:61:2E:F3:88:D7:41:0B:6C:9E:25:73:AA:5D:08:E4:C1:7F:39:B2:66:1A";
 /** Marca de cada cliente (v1.32). De salida, dos clientes con su acento. */
 const ACENTOS_MARCA = ["teal", "blue", "indigo", "violet", "rose", "amber", "graphite"];
+/** 14a: la opción «Aprobar en el equipo» de cada cliente (sin valor: activada). */
+const aprobarMock = new Map<string, { activa: boolean; actualizada?: string; por?: string }>();
 const marcasMock = new Map<string, { acento?: string | null; logo?: Buffer; huella?: string; actualizada?: string; por?: string }>([
   ["0a0e1b2c-0000-4000-8000-0000000000a1", { acento: "blue" }],
   ["0a0e1b2c-0000-4000-8000-0000000000a2", { acento: "amber" }],

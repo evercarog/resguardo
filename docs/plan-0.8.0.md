@@ -61,7 +61,7 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque H — Seguridad de la consola y del equipo
 
-- [ ] **H1. Aprobar una orden en espera desde el propio equipo (14a)** con la clave de administración (ventana del agente en Windows; `resguardo-agente ordenes aprobar` en Linux); nunca desde la web.
+- [x] **H1. Aprobar una orden en espera desde el propio equipo (14a)** (rama `ia/080-aprobar-equipo`; diseño y modelo de amenazas en `consolas-multiples.md` §5.11, contrato v1.6x en `api-servidor.md`; lo no probado en `registro-ia.md`) con la clave de administración (ventana del agente en Windows; `resguardo-agente ordenes aprobar` en Linux); nunca desde la web.
 - [ ] **H2. Consola verificada (12a):** la consola web firmada con la llave de publicación y comprobada antes de escribir la clave de administración (desde la ventana del agente).
 - [ ] **H3. Lo delicado desde la ventana del agente (12b):** cambiar la clave, restaurar en otro sitio, quitar repositorios.
 - [ ] **H4. Passkeys (12c)** para entrar en la consola, además del TOTP.

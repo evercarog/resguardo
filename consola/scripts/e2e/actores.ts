@@ -93,8 +93,9 @@ export class Agente {
     return { RESGUARDO_AGENT_DIR: this.dir, RESGUARDO_PRUEBA_SIN_ESPERA: "1", RESGUARDO_LLAVES_PRUEBAS: LLAVE_PRUEBAS_PUB };
   }
   /** `resguardo-agente <args>` (la línea de órdenes, como un administrador en el equipo). */
-  cli(args: string[]) {
-    const r = ejecutar(this.binario, args, { env: this.env });
+  cli(args: string[], entrada?: string) {
+    // `entrada`: lo que se escribe en la terminal (p. ej. la clave que pide `ordenes aprobar`; nunca en los argumentos).
+    const r = ejecutar(this.binario, args, { env: this.env, entrada });
     fs.appendFileSync(this.registro, `\n$ resguardo-agente ${args.join(" ")}\n${r.salida}\n`);
     return r;
   }

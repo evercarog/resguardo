@@ -130,6 +130,22 @@ sudo resguardo-agente registro 30    # las últimas líneas del registro
 journalctl -u resguardo-agente -n 30 --no-pager
 ```
 
+## Órdenes que esperan su turno
+
+Una orden que reduce la protección (quitar un repositorio, pausar…) espera antes de
+aplicarse y cualquier consola puede cancelarla. Si quien la mandó está delante del
+equipo, puede adelantarla con la clave de administración (si el cliente lo permite,
+lo que viene activado):
+
+```sh
+sudo resguardo-agente ordenes            # las que esperan, numeradas, con su detalle
+sudo resguardo-agente ordenes aprobar 1  # la aplica ya; pide la clave sin que se vea
+```
+
+La clave nunca va como argumento. Queda en el historial de todas las consolas
+(«Aprobada en el equipo por root (sudo, ana)») y todas reciben un aviso. Ver
+[consolas-multiples.md](consolas-multiples.md) §5.11.
+
 ## En un contenedor (CT) de Proxmox
 
 Igual que en Debian, con estas diferencias:

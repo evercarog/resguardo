@@ -198,7 +198,9 @@ export const crearCliente = (nombre: string, espera_min_horas: number) =>
 export const cliente = (c: string) => pedir<T.Cliente>("GET", cli(c));
 // v1.32: marca del cliente. `logo`: PNG en base64 (ya convertido en el navegador, lib/marca.ts).
 export const marca = (c: string) => pedir<T.MarcaCliente>("GET", `${cli(c)}/marca`);
-export const cambiarMarca = (c: string, b: { acento: T.MarcaCliente["acento"]; logo?: string; quitar_logo?: boolean }) => pedir<T.MarcaCliente>("PUT", `${cli(c)}/marca`, b);
+// 14a: «Aprobar en el equipo» (las órdenes en espera se aprueban solo delante del equipo, nunca desde aquí).
+export const ponerAprobarEnEquipo = (c: string, activa: boolean) => pedir<NonNullable<T.Cliente["aprobar_en_equipo"]>>("PUT", `${cli(c)}/aprobar-en-equipo`, { activa });
+export const cambiarMarca =(c: string, b: { acento: T.MarcaCliente["acento"]; logo?: string; quitar_logo?: boolean }) => pedir<T.MarcaCliente>("PUT", `${cli(c)}/marca`, b);
 export const renombrarCliente = (c: string, nombre: string) => pedir<T.Cliente>("PATCH", cli(c), { nombre });
 export const miembros = (c: string) => pedir<T.Miembro[]>("GET", `${cli(c)}/miembros`);
 export const cambiarRol = (c: string, cuentaId: string, rol: T.Rol) => pedir<void>("PUT", `${cli(c)}/miembros/${enc(cuentaId)}`, { rol });

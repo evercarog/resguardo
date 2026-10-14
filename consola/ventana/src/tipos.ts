@@ -85,5 +85,22 @@ export interface Datos {
   ahora: string;
 }
 
+/** 14a: una orden que espera su turno en este equipo (`en_espera` del servicio). */
+export interface OrdenLocal {
+  n: number;
+  id: string;
+  tipo: string;
+  descripcion: string;
+  /** El nombre de la consola que la mandó (nunca su dirección). */
+  consola: string | null;
+  por: string | null;
+  emitida: string;
+  aplica: string;
+  caduca: string;
+  repositorio: string | null;
+  /** Su cliente deja aprobarla en el equipo. */
+  aprobable: boolean;
+}
+
 /** Lo que dice el servicio de este equipo (`hola`). */
 export type Modo = "sin_clave" | "local" | "gestionado" | "web" | "pendiente" | "desvinculado";

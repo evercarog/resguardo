@@ -27,7 +27,13 @@ export interface FilaEspera {
   clavesComprobadas: boolean;
   /** 14oo: de qué repositorio era la contraseña que comprobó, si pedía una. */
   repositorio: string | null;
+  /** 14a: se puede aprobar en el propio equipo (con la clave de administración, delante de él). Nunca desde aquí. */
+  aprobable: boolean;
 }
+
+/** 14a: ¿la deja aprobar el equipo? Solo si su agente lo admite y lo dice de esa orden. */
+export const aprobableEnEquipo = (e: T.Equipo | undefined, x: T.OrdenEnEspera | undefined) =>
+  !!x && x.aprobable === true && !!e?.resumen?.admite?.includes("aprobar_en_equipo");
 
 /** El nombre que se enseña de la consola que mandó una orden: el suyo en el equipo o, si no tiene, el de `resumen.consolas` con esa identidad. Nunca la dirección. */
 export function nombreConsola(e: T.Equipo | undefined, c: T.OrdenEnEspera["consola"]): string {
@@ -70,6 +76,7 @@ export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: nu
       cancelar: "servidor",
       clavesComprobadas: delEquipo?.claves_comprobadas === true,
       repositorio: delEquipo?.repositorio ?? null,
+      aprobable: aprobableEnEquipo(e, delEquipo),
     });
   }
   for (const e of equipos) {
@@ -90,6 +97,7 @@ export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: nu
         cancelar: "orden",
         clavesComprobadas: x.claves_comprobadas === true,
         repositorio: x.repositorio ?? null,
+        aprobable: aprobableEnEquipo(e, x),
       });
     }
   }

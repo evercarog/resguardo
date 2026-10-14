@@ -452,6 +452,8 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "orden_destructiva" => format!("Orden destructiva pendiente en {e}"),
         // v1.49: la mandó otra consola y el equipo la tiene en espera (consolas-multiples.md §5.6).
         "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
+        // 14a: alguien con la clave de administración la aprobó delante del equipo, antes de su hora.
+        "orden_aprobada_en_equipo" => format!("Se aprobó en {e} una orden que reducía la protección"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
         // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.
@@ -472,7 +474,7 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
 fn ruta(cliente: &str, equipo: Option<&str>, tipo: &str) -> String {
     match equipo {
         // v1.49: la de otra consola se ve (y se cancela) en «Órdenes».
-        _ if tipo == "orden_en_espera" || tipo == "orden_no_aplicada" => format!("/c/{cliente}/ordenes"),
+        _ if matches!(tipo, "orden_en_espera" | "orden_no_aplicada" | "orden_aprobada_en_equipo") => format!("/c/{cliente}/ordenes"),
         _ if tipo == "auditoria_rehecha" => format!("/c/{cliente}/auditoria"),
         Some(e) if !matches!(tipo, "orden_destructiva") => format!("/c/{cliente}/equipos/{e}"),
         _ => format!("/c/{cliente}/avisos"),

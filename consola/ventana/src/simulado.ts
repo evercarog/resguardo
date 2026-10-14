@@ -1,7 +1,7 @@
 // Datos simulados para `npm run dev:ventana` (solo en desarrollo: no entra en
 // la página que lleva el agente). Una copia en marcha con ritmos que suben y
 // bajan, y un servicio de mentira para los ajustes y el modo local.
-import type { Datos, EstadoBandeja, Punto } from "./tipos";
+import type { Datos, EstadoBandeja, OrdenLocal, Punto } from "./tipos";
 
 const inicio = Date.now();
 const serie: Punto[] = [];
@@ -106,6 +106,36 @@ const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Cuándo se pidió «Traer historial» (simulado: una versión por segundo). */
 let historialSimulado = 0;
 
+/** 14a: las órdenes en espera del simulador. */
+let ordenesSimuladas: OrdenLocal[] = [
+  {
+    n: 1,
+    id: "o-pausar",
+    tipo: "pausar",
+    descripcion: "Pausar las copias",
+    consola: "Consola en línea",
+    por: "Bruno",
+    emitida: new Date(Date.now() - 2 * 3600_000).toISOString(),
+    aplica: new Date(Date.now() + 22 * 3600_000).toISOString(),
+    caduca: new Date(Date.now() + 46 * 3600_000).toISOString(),
+    repositorio: null,
+    aprobable: true,
+  },
+  {
+    n: 2,
+    id: "o-quitar",
+    tipo: "quitar_repositorio",
+    descripcion: "Quitar el repositorio «Fotos»",
+    consola: "Oficina",
+    por: "Ana",
+    emitida: new Date(Date.now() - 3600_000).toISOString(),
+    aplica: new Date(Date.now() + 47 * 3600_000).toISOString(),
+    caduca: new Date(Date.now() + 70 * 3600_000).toISOString(),
+    repositorio: "Fotos",
+    aprobable: false,
+  },
+];
+
 export async function simular(op: string, c: Record<string, unknown>): Promise<unknown> {
   await espera(250);
   switch (op) {
@@ -121,6 +151,14 @@ export async function simular(op: string, c: Record<string, unknown>): Promise<u
       return { mensaje: "Copia pedida: empieza en unos segundos." };
     case "bloquear":
       return null;
+    // 14a: una orden que espera su turno y «Aprobar ahora» (con la clave del simulador).
+    case "en_espera":
+      return { ordenes: ordenesSimuladas };
+    case "aprobar": {
+      if (c.clave !== "caballo bateria grapa") throw new Error("La clave de administración no es correcta.");
+      ordenesSimuladas = ordenesSimuladas.filter((o) => o.id !== c.orden);
+      return { estado: "hecha", mensaje: "Aprobada en el equipo por ana (PORTATIL-ANA): Copias en pausa durante 2 h." };
+    }
     case "desbloqueada":
       return { abierta: false };
     case "servicio": {

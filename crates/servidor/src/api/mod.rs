@@ -8,6 +8,7 @@ pub(crate) mod equipos;
 pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
 // Bloque 7: códigos de alta para varios equipos.
+pub(crate) mod aprobar_equipo;
 pub(crate) mod lotes;
 pub(crate) mod marca;
 // Plan 0.8.0 (G1): el informe ejecutivo en PDF y el prestador.
@@ -256,6 +257,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}", get(clientes::ver).patch(clientes::renombrar))
         // v1.32: marca del cliente (logo PNG y acento).
         .route("/api/clientes/{c}/marca", get(marca::ver).put(marca::cambiar))
+        // 14a: la opción del cliente «Aprobar en el equipo» (lo ve cada cliente en `GET /api/clientes/{c}`).
+        .route("/api/clientes/{c}/aprobar-en-equipo", put(aprobar_equipo::cambiar))
         .route("/api/clientes/{c}/marca/logo", get(marca::logo))
         // Plan 0.8.0 (G1): el informe ejecutivo (PDF por correo y para descargar).
         .route("/api/clientes/{c}/informe-ejecutivo", get(informe::ver).put(informe::cambiar))

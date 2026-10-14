@@ -23,6 +23,11 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Las órdenes que pueden borrar o dejar sin copias (acortar la retención, quitar un repositorio, pausar…) esperan antes de aplicarse. Mientras tanto, cualquiera con acceso puede cancelarlas. La comprueba también el propio equipo.",
     todo: "Si ves una orden pendiente que no esperabas, cancélala y cambia la clave de administración.",
   },
+  "aprobar-en-equipo": {
+    title: "Aprobar en el equipo",
+    text: "Una orden que espera su turno se puede aplicar ya desde el propio equipo: en su ventana de Resguardo (Windows) o con «resguardo-agente ordenes aprobar» (Linux, como root). Solo un administrador del equipo, y escribiendo la clave de administración, con el mismo bloqueo por intentos fallidos. Queda en el historial de todas las consolas como «Aprobada en el equipo por …», con un aviso en todas. Desde esta web nunca se puede.",
+    todo: "Si nadie tiene que aprobar nada delante de los equipos, desactívalo: las órdenes solo se aplicarán a su hora.",
+  },
   "retencion-almacen": {
     title: "Retención en el almacén",
     text: "Un almacén («Este equipo guarda copias») es de solo añadir: ningún equipo puede borrar allí, ni siquiera lo suyo antiguo. Por eso la retención la aplica el propio almacén, en su disco y a la hora que elijas, con una clave propia que el equipo añade al repositorio. Con esa clave el almacén también puede leer ese repositorio.",

@@ -14,6 +14,7 @@
 //! resguardo-agente guardar-copias estado|activar|anadir|quitar|desactivar …
 //! resguardo-agente servidores
 //! resguardo-agente consolas [quitar <n.º | dirección | huella>]
+//! resguardo-agente ordenes [aprobar <n.º>]
 //! resguardo-agente config exportar|importar <archivo>
 //! resguardo-agente repositorio crear <id> --nombre … --tipo … --donde … [--usuario …]
 //! ```
@@ -35,6 +36,7 @@ pub const ORDENES: &[&str] = &[
     "nube",
     "servidores",
     "consolas",
+    "ordenes",
     "config",
     "repositorio",
     "ayuda",
@@ -102,6 +104,10 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
   consolas quitar <n.º | dirección | huella>
                                           Deja de conectarse a una consola (p. ej. una que ya no existe);
                                           las demás siguen igual
+  ordenes                                 Órdenes que esperan su turno en este equipo (de todas sus consolas)
+  ordenes aprobar <n.º>                   La aplica ya, sin esperar a su hora: pide la clave de administración
+                                          (sin que se vea al escribirla) y queda en el historial de todas
+                                          las consolas, con un aviso en todas
   config exportar <archivo>               La configuración del equipo, sin contraseñas (JSON)
   config importar <archivo>               Aplica las copias de un archivo (solo en modo local)
   repositorio crear <id> --nombre <n> --tipo local|rest|s3|b2|sftp --donde <dónde> [--usuario <u>]
@@ -526,6 +532,7 @@ fn orden(args: &[String]) -> Result<(), String> {
                 Some(otro) => Err(format!("«consolas {otro}» no existe. Usa «consolas» o «consolas quitar <n.º | dirección | huella>».")),
             }
         }
+        "ordenes" => ordenes(args),
         "config" => {
             crate::agent::require_admin()?;
             let archivo = arg(args, 2)?;
@@ -574,6 +581,168 @@ fn orden(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         otra => Err(format!("Orden desconocida: {otra}. Usa «resguardo-agente ayuda».")),
+    }
+}
+
+/// 14a: `ordenes` (las que esperan su turno) y `ordenes aprobar <n.º>`.
+fn ordenes(args: &[String]) -> Result<(), String> {
+    crate::agent::require_admin()?;
+    let v = crate::servidor_v2::cargar()
+        .filter(|v| v.modo == "gestionado" && !v.secreto.is_empty())
+        .ok_or("Este equipo no está gestionado por ninguna consola.")?;
+    let lista = crate::espera_v2::lista_local(&v);
+    let ahora = chrono::Local::now();
+    match args.get(1).map(String::as_str) {
+        None | Some("lista") => {
+            if lista.is_empty() {
+                println!("Ninguna orden espera su turno en este equipo.");
+            }
+            for o in &lista {
+                println!("{}", texto_orden(o, ahora));
+            }
+            Ok(())
+        }
+        Some("aprobar") => {
+            let n: usize = arg(args, 2)?.parse().map_err(|_| "Di el número de la orden (el de «resguardo-agente ordenes»).")?;
+            let o = lista.iter().find(|o| o["n"].as_u64() == Some(n as u64)).ok_or(format!("No hay ninguna orden esperando con el número {n}."))?;
+            println!("{}", texto_orden(o, ahora));
+            if o["aprobable"] != true {
+                return Err("El cliente de la consola que la mandó no deja aprobar órdenes en el equipo.".into());
+            }
+            println!("Se aplicará ya, sin esperar a su hora. Quedará en el historial de todas las consolas, con un aviso en todas.");
+            let hola = crate::ipc_local::pedir(&serde_json::json!({ "op": "hola" }))?;
+            let sal = hola["sal_equipo"].as_str().ok_or("Este equipo aún no tiene clave de administración.")?.to_string();
+            let clave = leer_clave("Clave de administración (Intro para no aprobarla): ")?;
+            if clave.is_empty() {
+                println!("No se aprobó: sigue esperando su turno.");
+                return Ok(());
+            }
+            let prueba = crate::ipc_local::prueba(&clave, &sal)?;
+            drop(clave);
+            // Quién lo pidió con sudo (solo informativo; el servicio sabe que es root).
+            let sudo = std::env::var("SUDO_USER").ok().filter(|_| cfg!(unix));
+            let r = crate::ipc_local::pedir(&serde_json::json!({
+                "op": "aprobar_espera", "reto": hola["reto"], "prueba": prueba, "id": o["id"], "sudo_usuario": sudo,
+            }))?;
+            println!("{}", r["mensaje"].as_str().unwrap_or("Aprobada."));
+            if !matches!(r["estado"].as_str(), Some("hecha" | "en_marcha")) {
+                return Err("La orden se aprobó, pero no se pudo aplicar.".into());
+            }
+            Ok(())
+        }
+        Some(otro) => Err(format!("«ordenes {otro}» no existe. Usa «ordenes» o «ordenes aprobar <n.º>».")),
+    }
+}
+
+/// Una orden en espera, para la terminal.
+pub fn texto_orden(o: &serde_json::Value, ahora: chrono::DateTime<chrono::Local>) -> String {
+    let t = |k: &str| o[k].as_str().unwrap_or("").to_string();
+    let desde = match o["consola"].as_str() {
+        Some(c) if !c.is_empty() => format!("desde la consola «{c}»"),
+        _ => "desde otra consola".into(),
+    };
+    let por = o["por"].as_str().map(|p| format!(", pedida por {p}")).unwrap_or_default();
+    let repo = o["repositorio"].as_str().map(|r| format!(" (repositorio «{r}»)")).unwrap_or_default();
+    let mut s = format!("{}. {}{repo}\n   {desde}{por} · se aplica {}", o["n"].as_u64().unwrap_or(0), t("descripcion"), cuando_rfc3339(&t("aplica"), ahora));
+    if o["aprobable"] == true {
+        s.push_str(&format!("\n   Aprobarla ya: resguardo-agente ordenes aprobar {}", o["n"].as_u64().unwrap_or(0)));
+    } else {
+        s.push_str("\n   Su cliente no deja aprobarla en el equipo: se aplica a su hora si nadie la cancela.");
+    }
+    s
+}
+
+/// Lee una clave de la terminal **sin que se vea** al escribirla (si la entrada no es una
+/// terminal, p. ej. redirigida, la lee tal cual). Nunca va en los argumentos.
+fn leer_clave(pregunta: &str) -> Result<String, String> {
+    use std::io::Write;
+    eprint!("{pregunta}");
+    let _ = std::io::stderr().flush();
+    let _eco = SinEco::poner();
+    let mut s = String::new();
+    let r = std::io::stdin().read_line(&mut s);
+    if _eco.activo() {
+        eprintln!();
+    }
+    r.map_err(|e| e.to_string())?;
+    Ok(s.trim_end_matches(['\r', '\n']).to_string())
+}
+
+/// Quita el eco de la terminal mientras vive (y lo devuelve como estaba al soltarlo).
+struct SinEco {
+    #[cfg(unix)]
+    antes: Option<libc::termios>,
+    #[cfg(windows)]
+    antes: Option<(windows_sys::Win32::Foundation::HANDLE, u32)>,
+}
+
+impl SinEco {
+    #[cfg(unix)]
+    fn poner() -> SinEco {
+        // SAFETY: fd 0; estructuras locales.
+        unsafe {
+            if libc::isatty(0) != 1 {
+                return SinEco { antes: None };
+            }
+            let mut t: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(0, &mut t) != 0 {
+                return SinEco { antes: None };
+            }
+            let antes = t;
+            t.c_lflag &= !libc::ECHO;
+            if libc::tcsetattr(0, libc::TCSANOW, &t) != 0 {
+                return SinEco { antes: None };
+            }
+            SinEco { antes: Some(antes) }
+        }
+    }
+
+    #[cfg(windows)]
+    fn poner() -> SinEco {
+        use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_ECHO_INPUT, STD_INPUT_HANDLE};
+        // SAFETY: el handle de la entrada estándar; si no es una consola, GetConsoleMode falla y no se toca nada.
+        unsafe {
+            let h = GetStdHandle(STD_INPUT_HANDLE);
+            let mut modo = 0u32;
+            if h.is_null() || GetConsoleMode(h, &mut modo) == 0 {
+                return SinEco { antes: None };
+            }
+            if SetConsoleMode(h, modo & !ENABLE_ECHO_INPUT) == 0 {
+                return SinEco { antes: None };
+            }
+            SinEco { antes: Some((h, modo)) }
+        }
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn poner() -> SinEco {
+        SinEco {}
+    }
+
+    fn activo(&self) -> bool {
+        #[cfg(any(unix, windows))]
+        return self.antes.is_some();
+        #[cfg(not(any(unix, windows)))]
+        false
+    }
+}
+
+impl Drop for SinEco {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(t) = self.antes {
+            // SAFETY: devuelve el modo que tenía la terminal.
+            unsafe {
+                libc::tcsetattr(0, libc::TCSANOW, &t);
+            }
+        }
+        #[cfg(windows)]
+        if let Some((h, modo)) = self.antes {
+            // SAFETY: el mismo handle y el modo que tenía.
+            unsafe {
+                windows_sys::Win32::System::Console::SetConsoleMode(h, modo);
+            }
+        }
     }
 }
 
@@ -908,6 +1077,20 @@ mod tests {
 
     fn at(s: &str) -> chrono::DateTime<Local> {
         Local.from_local_datetime(&chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()).unwrap()
+    }
+
+    /// 14a: `ordenes`, una por bloque, con cómo aprobarla (o por qué no se puede).
+    #[test]
+    fn texto_de_una_orden_en_espera() {
+        let ahora = at("2026-10-13 10:00");
+        let aplica = at("2026-10-14 10:30").to_rfc3339();
+        let o = serde_json::json!({ "n": 2, "id": "x", "descripcion": "Pausar las copias", "consola": "Oficina", "por": "Ana", "aplica": aplica, "aprobable": true });
+        let t = texto_orden(&o, ahora);
+        assert!(t.starts_with("2. Pausar las copias\n   desde la consola «Oficina», pedida por Ana · se aplica mañana 10:30"), "{t}");
+        assert!(t.ends_with("resguardo-agente ordenes aprobar 2"), "{t}");
+        let no = serde_json::json!({ "n": 1, "descripcion": "Quitar el repositorio «Fotos»", "consola": null, "aplica": aplica, "aprobable": false, "repositorio": "Fotos" });
+        let t = texto_orden(&no, ahora);
+        assert!(t.contains("desde otra consola") && t.contains("(repositorio «Fotos»)") && t.contains("no deja aprobarla"), "{t}");
     }
 
     #[test]

@@ -1553,6 +1553,52 @@ async function principal() {
     log("Órdenes en espera entre consolas: bien");
 
     // -----------------------------------------------------------------------
+    paso("8a2b. Aprobar en el equipo (14a): una orden en espera de la local, aprobada con la línea de órdenes de B, se aplica ya y las dos consolas lo ven");
+    {
+      comprobar((await consola2.equipo(c2, eqB2.id)).resumen?.admite?.includes("aprobar_en_equipo"), "B admite aprobar en el equipo");
+      const pausaLarga = await consola2.mandar(c2, eqB2.id, "pausar", {}, { claveAdmin: claveB }, { esperar: true });
+      const enB = (await esperar("la orden en espera, aprobable, en el resumen de la en línea", async () => {
+        const e = await consola3.equipo(c3, eqB2.id);
+        return (e.resumen?.en_espera ?? []).find((x: any) => x.id === pausaLarga.id && x.aprobable === true) ?? null;
+      }, { plazo: 60_000, cada: 1000 })) as any;
+      log(`En espera y aprobable en el equipo: ${enB.descripcion}`);
+      const lista = B.cli(["ordenes"]);
+      comprobar(lista.codigo === 0 && /Pausar las copias/.test(lista.salida) && /ordenes aprobar 1/.test(lista.salida), "«ordenes» la enseña con cómo aprobarla", lista.salida);
+      // La clave, mal: no se aplica (cuenta como intento fallido).
+      const mal = B.cli(["ordenes", "aprobar", "1"], "otra clave cualquiera\n");
+      comprobar(mal.codigo !== 0 && /no es correcta/.test(mal.salida), "Con la clave mal no se aprueba", mal.salida);
+      await dormir(1_200);
+      const bien = B.cli(["ordenes", "aprobar", "1"], `${claveB}\n`);
+      comprobar(bien.codigo === 0 && /Aprobada en el equipo por/.test(bien.salida), "Con la clave buena se aprueba", bien.salida);
+      comprobar(!bien.salida.includes(claveB) && !mal.salida.includes("otra clave cualquiera"), "La clave no sale en la terminal ni en el registro");
+      const aplicada = await consola2.resultado(c2, eqB2.id, pausaLarga, { plazo: 60_000 });
+      igual(aplicada.estado, "hecha", `Aplicada ya en la local, sin esperar a su hora (${aplicada.mensaje})`);
+      comprobar(/^Aprobada en el equipo por /.test(aplicada.mensaje ?? ""), "El resultado firmado dice que se aprobó en el equipo", aplicada);
+      for (const [consola, c] of [[consola2, c2], [consola3, c3]] as const) {
+        await esperar("«Aprobada en el equipo por …» en el historial común", async () => {
+          const h = (await consola.ok("GET", `/api/clientes/${c.id}/equipos/${eqB2.id}/historial?tipo=orden&limite=100`)) as any[];
+          return h.find((x) => x.orden_id === pausaLarga.id && x.aprobada_en_equipo && x.resultado === "hecha") ?? null;
+        }, { plazo: 60_000, cada: 1000 });
+        await esperar("el aviso «Se aprobó en el equipo…»", async () => {
+          const av = (await consola.ok("GET", `/api/clientes/${c.id}/avisos?abiertos=1`)) as any[];
+          return av.some((a) => a.tipo === "orden_aprobada_en_equipo") || null;
+        }, { plazo: 60_000, cada: 1000 });
+      }
+      await esperar("la pausa en la en línea", async () => !!(await consola3.equipo(c3, eqB2.id)).resumen?.pausado_hasta || null, { plazo: 60_000, cada: 1000 });
+      await consola2.hecha(c2, eqB2.id, "reanudar", {});
+      // Con la opción desactivada en la local, B ya no deja aprobar sus órdenes.
+      await consola2.ok("PUT", `/api/clientes/${c2.id}/aprobar-en-equipo`, { activa: false });
+      await esperar("que B sepa que la local no deja aprobar", async () => (await consola2.equipo(c2, eqB2.id)).resumen?.aprobar_en_equipo === false || null, { plazo: 60_000, cada: 1000 });
+      const otra = await consola2.mandar(c2, eqB2.id, "pausar", {}, { claveAdmin: claveB }, { esperar: true });
+      await esperar("la nueva en espera en B", async () => (B.cli(["ordenes"]).salida.includes("no deja aprobarla") ? true : null), { plazo: 60_000, cada: 2000 });
+      const no = B.cli(["ordenes", "aprobar", "1"], `${claveB}\n`);
+      comprobar(no.codigo !== 0 && /no deja aprobar/.test(no.salida), "Desactivado: no se aprueba en el equipo", no.salida);
+      await consola2.ok("POST", `/api/clientes/${c2.id}/ordenes/${otra.id}/cancelar`);
+      await consola2.ok("PUT", `/api/clientes/${c2.id}/aprobar-en-equipo`, { activa: true });
+      log("Aprobar en el equipo: bien");
+    }
+
+    // -----------------------------------------------------------------------
     paso("8a3. Lo que comparten las consolas: nombre, etiquetas y observación del equipo; quitar un destino que se queda vacío");
     {
       // Convivencia: cada consola con su nombre (como antes de actualizar) y nada se pisa
