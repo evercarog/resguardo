@@ -65,7 +65,7 @@ pub async fn servidor(State(st): State<St>) -> Res<Json<Value>> {
         // Bloque 7: códigos para varios equipos (`…/codigos-varios`) y la descarga del instalador
         // para la línea de PowerShell (`GET /api/agente/instalador/{lote}`).
         "codigo_varios": true,
-        // v1.6x (pendiente de numerar al unir; plan 0.8.0, E1): lo más que puede ocupar una
+        // v1.6x (0.8.0; plan 0.8.0, E1): lo más que puede ocupar una
         // descarga por el relé (bytes): la consola ofrece «Descargar .zip» hasta ahí.
         "max_descarga": st.opciones.max_relevo,
     });

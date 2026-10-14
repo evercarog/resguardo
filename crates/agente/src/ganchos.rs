@@ -25,7 +25,7 @@ pub struct ResultadoGancho {
     /// "ok", "aviso" o "fallo".
     pub estado: String,
     pub mensaje: String,
-    /// v1.6x (pendiente de numerar al unir, 14ccc): en un volcado de SQL Server,
+    /// v1.6x (0.8.0, 14ccc): en un volcado de SQL Server,
     /// si se comprobó con `RESTORE VERIFYONLY` (true: bien; false: no pasó).
     /// Sin el campo: no se verificó (desactivado o agente anterior).
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -722,7 +722,7 @@ const TIPOS_AVISO: &[&str] = &[
     "orden_en_espera",
     "actualizacion_fallida",
     "nube_sin_anular",
-    // v1.6x (pendiente de numerar al unir) 14a: se aprobó en el propio equipo una orden en espera.
+    // 0.8.0 14a: se aprobó en el propio equipo una orden en espera.
     "orden_aprobada_en_equipo",
 ];
 
@@ -756,7 +756,7 @@ pub const MAX_ENTRADA_RETENCION: usize = 96 * 1024;
 /// v1.47: `historial` (se trajo el historial de otro repositorio; con `mover`, un paso de «Mover a otro sitio…»).
 /// v1.49: `orden` (lo que el equipo hizo con cada orden, de cualquiera de sus consolas; consolas-multiples.md §5.8).
 /// v1.50 (9b): `auditoria_rehecha` (una consola del equipo rehízo la cadena de su auditoría).
-/// v1.6x (pendiente de numerar al unir; plan 0.8.0, E2): `restauracion` (cada restauración, sin rutas).
+/// v1.6x (0.8.0; plan 0.8.0, E2): `restauracion` (cada restauración, sin rutas).
 pub const TIPOS_HISTORIAL: &[&str] = &[
     "copia",
     "resumen_dia",

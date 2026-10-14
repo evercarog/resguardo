@@ -1,4 +1,4 @@
-//! 14a (v1.6x, pendiente de numerar al unir): la opción del cliente «Aprobar en el equipo»
+//! 14a (0.8.0): la opción del cliente «Aprobar en el equipo»
 //! (docs/consolas-multiples.md §5.11).
 //!
 //! Activada por defecto: quien está delante de un equipo, como administrador y con la clave

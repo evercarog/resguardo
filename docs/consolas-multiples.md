@@ -258,7 +258,7 @@ El verificador es **del equipo** (uno), así que tras `cambiar_clave_admin` desd
 
 ## 5. Órdenes en espera a la vista de todas las consolas (v1.49)
 
-Tareas 1 y 9c de [plan-mejoras.md](plan-mejoras.md). Contrato «v1.49, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+Tareas 1 y 9c de [plan-mejoras.md](plan-mejoras.md). Contrato «v1.49» en [api-servidor.md](api-servidor.md), «Cambios».
 
 **Problema.** Hasta ahora la consola que mandaba una orden con espera (las destructivas, con `not_before`) la guardaba ella y solo la entregaba al equipo al llegar su hora. El equipo no sabía que existía: **las demás consolas no la veían ni podían cancelarla**, y tampoco veían las órdenes que habían mandado las otras. Alguien con la clave de administración en una consola podía mandar algo destructivo sin que quien vigila desde la otra se enterase hasta que se aplicaba.
 
@@ -368,7 +368,7 @@ Se anotan todas las órdenes que el equipo recibe salvo las que abren una sesió
 
 ### 5.11 Aprobar una orden en espera en el propio equipo (14a, plan 0.8.0 H1)
 
-Contrato «v1.6x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+Contrato «0.8.0» en [api-servidor.md](api-servidor.md), «Cambios».
 
 **Para qué.** A veces la persona que manda una orden que reduce la protección está delante del equipo (p. ej. quita un repositorio que ya no hace falta y no quiere esperar 24 h). Puede **adelantarla**, de forma segura, desde el propio equipo.
 
@@ -401,7 +401,7 @@ Lo que no cambia: la orden ya fue firmada por la consola, sus claves se comproba
 
 ## 6. Lo que comparten las consolas de un equipo y lo que es de cada una (v1.56)
 
-Contrato «v1.56, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+Contrato «v1.56» en [api-servidor.md](api-servidor.md), «Cambios».
 
 **Problema.** Con un equipo en dos consolas (p. ej. la de la oficina y la en línea), cambiarle el nombre en una no lo cambiaba en la otra: cada servidor guardaba el suyo. Pasaba lo mismo con sus etiquetas y su observación. Además, el mapa «Camino de sus copias» de una consola no enseñaba lo que hace un almacén que solo está en la otra (su espejo a otro disco o a Dropbox), y al quitar un repositorio de un disco del propio equipo su destino se quedaba en la lista para siempre.
 
@@ -456,7 +456,7 @@ Arreglado en esta tarea (lo barato): nombre, etiquetas y observación del equipo
 
 ### 6.5 Datos comunes del cliente (0.7.26, bloque 8)
 
-Contrato «v1.66, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios». Código: `crates/protocolo/src/datos_cliente.rs` (claves, validación, quién gana; vectores compartidos con la consola), `crates/agente/src/datos_cliente.rs`, `crates/servidor/src/datos_comunes.rs`, `consola/src/lib/datosComunes.ts` y `.svelte.ts`, componente `DatosComunes`.
+Contrato «v1.66» en [api-servidor.md](api-servidor.md), «Cambios». Código: `crates/protocolo/src/datos_cliente.rs` (claves, validación, quién gana; vectores compartidos con la consola), `crates/agente/src/datos_cliente.rs`, `crates/servidor/src/datos_comunes.rs`, `consola/src/lib/datosComunes.ts` y `.svelte.ts`, componente `DatosComunes`.
 
 **Problema.** En la consola local la etiqueta «Servidor» salía azul y en la en línea sin color. Lo mismo con los nombres, el tipo y las marcas de los destinos y con las plantillas: cada servidor guardaba los suyos.
 

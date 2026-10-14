@@ -1291,7 +1291,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `retencion_almacen_horario` (la retención del almacén, también con reglas).
 /// v1.49: `ordenes_en_espera` (guarda las órdenes con espera y las aplica a su hora,
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
-/// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
+/// (0.8.0) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
 pub const ADMITE: &[&str] = &[
     "retencion_plazos",
@@ -1305,104 +1305,104 @@ pub const ADMITE: &[&str] = &[
     "externa_existente",
     "ordenes_en_espera",
     "espejo_flexible",
-    // (pendiente de numerar) "conectar_nube" también con B2, S3, SFTP, SMB y WebDAV (docs/espejo.md §3c).
+    // (0.8.0) "conectar_nube" también con B2, S3, SFTP, SMB y WebDAV (docs/espejo.md §3c).
     "espejo_destinos",
-    // (pendiente de numerar) varias zonas en el almacén: `guarda_copias { zona }`, `{ quitar_zona }`,
+    // (0.8.0) varias zonas en el almacén: `guarda_copias { zona }`, `{ quitar_zona }`,
     // `{ anadir, zona }`, `{ quitar, zona }` y `guarda_copias.zonas` (docs/copias-en-cadena.md, 7b).
     "zonas_almacen",
-    // (pendiente de numerar) tarea 7c: `config.copias[].tras` («después de la anterior») e
+    // (0.8.0) tarea 7c: `config.copias[].tras` («después de la anterior») e
     // `informe.cadenas[]` (aviso `cadena_parada`) (docs/copias-en-cadena.md).
     "cadenas",
-    // (pendiente de numerar) tarea 4b: `cambiar_derivada` / `quitar_derivada`, `repositorios[].derivadas`,
+    // (0.8.0) tarea 4b: `cambiar_derivada` / `quitar_derivada`, `repositorios[].derivadas`,
     // `informe.repos[].derivadas` y `subir_ahora { derivada }`.
     "derivadas",
-    // (pendiente de numerar) tarea 4c: `filtro` con `carpetas`, `desde` y `ultimos_dias` en `copiar_historial`
+    // (0.8.0) tarea 4c: `filtro` con `carpetas`, `desde` y `ultimos_dias` en `copiar_historial`
     // y en las copias derivadas (un agente anterior solo entiende `equipos` y `etiquetas`).
     "filtros",
-    // (pendiente de numerar) tarea 4a: `conectar_nube` también fuera de un almacén y destinos
+    // (0.8.0) tarea 4a: `conectar_nube` también fuera de un almacén y destinos
     // `{ tipo: "nube", nube, donde }` en las copias derivadas (por rclone).
     "nube_equipo",
-    // (pendiente de numerar) tarea 4a completa: `crear_repositorio` con un destino `{ tipo: "nube", nube, donde }`
+    // (0.8.0) tarea 4a completa: `crear_repositorio` con un destino `{ tipo: "nube", nube, donde }`
     // (copiar las carpetas directamente a una nube conectada en el equipo; el token se pone al día en cada proceso).
     "repo_en_nube",
-    // (pendiente de numerar) tarea 7d.2: destinos del espejo con `zona` (de qué zona copia) y
+    // (0.8.0) tarea 7d.2: destinos del espejo con `zona` (de qué zona copia) y
     // `{ tipo: "zona", carpeta: "<id>" | "principal" }` (a otra zona del almacén).
     "espejo_zonas",
-    // (pendiente de numerar) tarea 8: `config.pruebas_restauracion` y `repositorios[].prueba_auto`.
+    // (0.8.0) tarea 8: `config.pruebas_restauracion` y `repositorios[].prueba_auto`.
     "prueba_auto",
-    // (pendiente de numerar) el nombre, las etiquetas y la observación del equipo, iguales en todas
+    // (0.8.0) el nombre, las etiquetas y la observación del equipo, iguales en todas
     // sus consolas: `nombre_equipo`, `etiquetas_equipo`, `observacion_equipo` y `resumen.datos_equipo`
     // (docs/consolas-multiples.md §6).
     "datos_equipo",
-    // (pendiente de numerar) `quitar_destino` (un destino sin uso) y `quitar_repositorio { quitar_destino }`.
+    // (0.8.0) `quitar_destino` (un destino sin uso) y `quitar_repositorio { quitar_destino }`.
     "quitar_destino",
-    // (pendiente de numerar; 0.7.26, bloque 8) los datos comunes del cliente: `datos_cliente`,
+    // (v1.66; 0.7.26, bloque 8) los datos comunes del cliente: `datos_cliente`,
     // `datos_cliente_admin`, `resumen.datos_cliente` y `datos_cliente` al subir la configuración.
     "datos_cliente",
-    // (pendiente de numerar) actualización automática: `informe.actualizacion`, `{"t":"actualizacion"}`
+    // (0.8.0) actualización automática: `informe.actualizacion`, `{"t":"actualizacion"}`
     // por el canal y `GET /api/agente/actualizacion` (docs/actualizaciones.md).
     "actualizaciones",
-    // (pendiente de numerar) plan 0.7.26, 1.1: `quitar_nube` anula el permiso en el proveedor
+    // (0.8.0) plan 0.7.26, 1.1: `quitar_nube` anula el permiso en el proveedor
     // (Dropbox; si no puede ahora, lo reintenta 7 días), borra los restos y no deja si algo la usa;
     // `resumen.nubes_por_anular` (docs/destinos.md «Desconectar una nube»).
     "nube_revocar",
-    // (pendiente de numerar) plan 0.7.26, bloque 4: trabajos de espejo en el almacén
+    // (0.8.0) plan 0.7.26, bloque 4: trabajos de espejo en el almacén
     // (`guarda_copias { espejo: { trabajos } }`, `guarda_copias.espejo.trabajos[]`, `espejo_freno { trabajo }`).
     "espejo_trabajos",
-    // (pendiente de numerar) plan 0.7.26, bloque 4: espejos que hace el propio equipo con los
+    // (0.8.0) plan 0.7.26, bloque 4: espejos que hace el propio equipo con los
     // repositorios de sus discos (`guarda_copias { espejo_equipo }`, `resumen.espejo_equipo`).
     "espejo_equipo",
-    // (pendiente de numerar) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
+    // (0.8.0) plan 0.7.26, bloque 3: `config.copias[].inicio` («despues»: tras la
     // anterior aunque falle) y `retraso_min` (minutos tras la anterior), también en el resumen.
     "inicio_despues",
-    // (pendiente de numerar) plan 0.8.0 (B3, 14hh): `crear_repositorio { solo_destino: true, destino }`
+    // (0.8.0) plan 0.8.0 (B3, 14hh): `crear_repositorio { solo_destino: true, destino }`
     // guarda el acceso a una zona de un almacén sin crear ningún repositorio (para una copia derivada).
     "solo_destino",
-    // v1.6x (pendiente de numerar al unir) plan 0.8.0, E1: `restaurar { destino: "nueva" | "zip" }`
+    // 0.8.0 plan 0.8.0, E1: `restaurar { destino: "nueva" | "zip" }`
     // (con la clave de administración), `contrasena_zip` (AES-256, también en `descargar`),
     // `motivo` y la entrada `restauracion` de la bitácora (13a, 13b, 13d).
     "restaurar_carpeta",
-    // v1.6x (pendiente de numerar al unir) 14m: `desde` (`externa` o una copia derivada) en
+    // 0.8.0 14m: `desde` (`externa` o una copia derivada) en
     // `explorar`, `restaurar` y `descargar`.
     "restaurar_desde",
-    // v1.6x (pendiente de numerar al unir) 13e: `informe.repos[].restauracion_real` (una restauración
+    // 0.8.0 13e: `informe.repos[].restauracion_real` (una restauración
     // real correcta cuenta como prueba de restauración).
     "restauracion_real",
-    // (pendiente de numerar) plan 0.8.0, B1: carpetas legibles en el almacén (`guarda_copias { anadir, nombre }`,
+    // (0.8.0) plan 0.8.0, B1: carpetas legibles en el almacén (`guarda_copias { anadir, nombre }`,
     // `{ mover }`, `guarda_copias.renombres`), `cambiar_destino { carpetas }` y `nombre_repositorio`.
     crate::nombres::ADMITE,
-    // (pendiente de numerar) 14bbb: la orden `comprobar_contrasena` y `repositorios[].contrasena_comprobada`.
+    // (0.8.0) 14bbb: la orden `comprobar_contrasena` y `repositorios[].contrasena_comprobada`.
     "comprobar_contrasena",
-    // v1.6x (pendiente de numerar al unir) 14a: aprobar una orden en espera en el propio equipo
+    // 0.8.0 14a: aprobar una orden en espera en el propio equipo
     // (ventana o `resguardo-agente ordenes aprobar`), `en_espera[].aprobable`,
     // `resumen.aprobar_en_equipo`, `aprobar_en_equipo` en `hola`/`tomar`/`{"t":"ajustes"}`,
     // `aprobada_en_equipo` en el historial y el aviso `orden_aprobada_en_equipo`.
     "aprobar_en_equipo",
-    // (pendiente de numerar) plan 0.8.0, F1 (14pp): `config.copias[].a_mano` y `termina`
+    // (0.8.0) plan 0.8.0, F1 (14pp): `config.copias[].a_mano` y `termina`
     // (`veces`, `hasta`, `una_vez`, `desde`); en el resumen, `hechas` y `completada`.
     "termina",
-    // (pendiente de numerar) plan 0.8.0, F2 (14ww-2): `comentario_version` y `resumen.comentarios`.
+    // (0.8.0) plan 0.8.0, F2 (14ww-2): `comentario_version` y `resumen.comentarios`.
     "comentarios_version",
-    // (pendiente de numerar) plan 0.8.0, F2 (14cc): `conservar_version` (en el equipo y en el almacén),
+    // (0.8.0) plan 0.8.0, F2 (14cc): `conservar_version` (en el equipo y en el almacén),
     // `resumen.conservadas`, `guarda_copias.conservadas`; la retención nunca las quita.
     "conservar_version",
-    // (pendiente de numerar) plan 0.8.0, F3 (14u): `retencion.por_dia` (en el equipo y en el almacén).
+    // (0.8.0) plan 0.8.0, F3 (14u): `retencion.por_dia` (en el equipo y en el almacén).
     "retencion_por_dia",
-    // (pendiente de numerar) plan 0.8.0, F4 (14t): límite de velocidad según la hora en los espejos
+    // (0.8.0) plan 0.8.0, F4 (14t): límite de velocidad según la hora en los espejos
     // (`trabajos[].limite_franjas`, por rclone) y en las copias derivadas (`cambiar_derivada { limite }`).
     "limite_franjas",
-    // v1.6x (pendiente de numerar al unir) plan 0.8.0, D1 y D2 (14ll, 14ss): los datos comunes
+    // 0.8.0 plan 0.8.0, D1 y D2 (14ll, 14ss): los datos comunes
     // `sede:`, `sede.equipo:` y `sede.destino:` (con la clave), `etiqueta.categoria:` y
     // `orden.equipos:` en `datos_cliente` (docs/sedes.md).
     resguardo_protocolo::datos_cliente::ADMITE_SEDES,
-    // v1.6x (pendiente de numerar al unir) 14s: `cuando.primera_desde` en los trabajos de espejo (la
+    // 0.8.0 14s: `cuando.primera_desde` en los trabajos de espejo (la
     // primera subida, no antes de esa hora). 14i, 14c y 14p (campos opcionales, sin token): `subidas`,
     // `ocupa`, `bien`, `nunca_bien` y `en_cola` en cada trabajo y el progreso `espejo`.
     "espejo_primera",
-    // v1.6x (pendiente de numerar al unir) 14ccc: `verificar` (opcional) en el gancho `sqlserver`
+    // 0.8.0 14ccc: `verificar` (opcional) en el gancho `sqlserver`
     // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
     "verificar_volcado",
-    // v1.6x (pendiente de numerar al unir) plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
+    // 0.8.0 plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
     // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
     // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
     crate::prueba_espejo::ADMITE,
@@ -1676,7 +1676,7 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
     if let Some(v) = v.filter(|v| v.ultimo_seq > 0) {
         inf["ultimo_seq"] = json!(v.ultimo_seq);
     }
-    // (pendiente de numerar) la actualización automática: versión disponible, estado y motivo.
+    // (0.8.0) la actualización automática: versión disponible, estado y motivo.
     inf["actualizacion"] = crate::actualizacion::informe();
     // Lo que está en marcha (v1.25): también aquí, por si el canal no pasa.
     let progreso = crate::progreso_v2::tareas(v);

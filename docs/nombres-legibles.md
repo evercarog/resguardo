@@ -114,7 +114,7 @@ En la ficha del almacén, **«Ordenar nombres de carpeta…»** (y, en la págin
 
 ## Contrato (compatible hacia atrás)
 
-En `api-servidor.md` → «Cambios», como «v1.6x (pendiente de numerar al unir)»:
+En `api-servidor.md` → «Cambios», como «0.8.0»:
 
 - `admite: "nombres_legibles"`.
 - `guarda_copias { anadir, nombre? }`; `guarda_copias { mover: { usuario, legible?, repos?: [{ de, nombre }] } }` y `{ mover: { usuario, deshacer: true } }` → `detalle.mover: { usuario?: { de, a }, repos: [{ de, a }], zona? }`.

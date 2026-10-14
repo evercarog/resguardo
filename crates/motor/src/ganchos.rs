@@ -33,7 +33,7 @@ pub enum Gancho {
         /// servicio de SQL Server tiene que poder escribir en ella (la carpeta
         /// `Backup` de la instancia ya tiene ese permiso).
         carpeta: String,
-        /// v1.6x (pendiente de numerar al unir, 14ccc): comprobar cada volcado con
+        /// v1.6x (0.8.0, 14ccc): comprobar cada volcado con
         /// `RESTORE VERIFYONLY … WITH CHECKSUM` al hacerlo. Sin el campo, sí (por
         /// defecto); `false` lo desactiva. La consola solo lo manda a agentes con
         /// `admite: "verificar_volcado"` (los anteriores rechazan campos que no conocen).

@@ -463,7 +463,7 @@ fn estado_servidor(st: &St) -> Value {
         "vigente": todas.iter().find(|g| g.completa()).map(Guardada::vista),
         "guardadas": todas.iter().map(Guardada::vista).collect::<Vec<_>>(),
         "version_servidor": env!("CARGO_PKG_VERSION"),
-        // 14f (pendiente de numerar): bajarlas solas de GitHub.
+        // 14f (0.8.0): bajarlas solas de GitHub.
         "github": {
             "ajustes": crate::github::ajustes(db).unwrap_or_default(),
             "ultima": crate::github::ultima(db).ok().flatten(),
@@ -471,7 +471,7 @@ fn estado_servidor(st: &St) -> Value {
             // En una compilación de desarrollo solo busca sola con RESGUARDO_GITHUB_AUTO=1.
             "automatica": crate::github::automatica_permitida(),
         },
-        // 14dd (pendiente de numerar): el instalador del agente de Windows que da el servidor.
+        // 14dd (0.8.0): el instalador del agente de Windows que da el servidor.
         "instalador": {
             "hay": st.opciones.instalador_agente.as_ref().is_some_and(|r| r.is_file()),
             "de_datos": usa_el_de_datos,

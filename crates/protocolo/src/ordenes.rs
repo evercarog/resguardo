@@ -72,7 +72,7 @@ pub const TIPOS: &[Tipo] = &[
     t("cambiar_derivada", Repositorio, false, false, false),
     t("quitar_derivada", Repositorio, true, false, false),
     t("rotar_contrasena_repo", Repositorio, false, false, false),
-    // 14bbb (pendiente de numerar): el equipo prueba que la contraseña abre el repositorio (y
+    // 14bbb (0.8.0): el equipo prueba que la contraseña abre el repositorio (y
     // sus copias con la misma). No cambia nada ni reduce la protección: sin espera. Los
     // fallos cuentan para el bloqueo por intentos, como los de las demás.
     t("comprobar_contrasena", Repositorio, false, false, false),
