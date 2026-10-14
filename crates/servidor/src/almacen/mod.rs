@@ -373,6 +373,22 @@ pub struct DestinoCatalogo {
 
 /// Lo que se ajusta de una etiqueta de equipos (v1.52): su color, la plantilla de
 /// copia que se propone a un equipo nuevo con ella y cómo se avisa de sus equipos.
+/// El motivo de una restauración (14l) que añade una persona en la consola (en claro,
+/// como las observaciones). `id` es el de su entrada `restauracion` de la bitácora.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotaRestauracion {
+    pub equipo: String,
+    pub id: String,
+    /// `borrado`, `dano`, `prueba` u `otro`.
+    pub motivo: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notas: Option<String>,
+    #[serde(default)]
+    pub por: String,
+    #[serde(default)]
+    pub actualizada: Ts,
+}
+
 /// En claro, como las etiquetas: son metadatos (la plantilla es un id opaco; su nombre
 /// y sus carpetas siguen cifrados).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -730,6 +746,15 @@ pub trait Almacen: Send + Sync + AlmacenNotas {
     fn datos_comunes(&self, c: &ClienteCtx) -> R<Vec<(String, String)>>;
     /// Crea o sustituye una fila.
     fn poner_dato_comun(&self, c: &ClienteCtx, clave: &str, datos: &str) -> R<()>;
+
+    // ---------- Restauraciones (plan 0.8.0, E2: 13d, 14l) ----------
+    /// El motivo y las notas que añadieron las personas de esta consola a cada restauración.
+    fn notas_restauracion(&self, c: &ClienteCtx) -> R<Vec<NotaRestauracion>>;
+    /// Crea o sustituye la de (equipo, id); `false` si es nueva y ya hay `maximo`.
+    fn poner_nota_restauracion(&self, c: &ClienteCtx, n: &NotaRestauracion, maximo: i64) -> R<bool>;
+    /// Un ajuste del cliente (JSON), p. ej. `restauraciones` (¿motivo obligatorio?).
+    fn ajuste_cliente(&self, c: &ClienteCtx, clave: &str) -> R<Option<(String, Ts, String)>>;
+    fn poner_ajuste_cliente(&self, c: &ClienteCtx, clave: &str, datos: &str, por: &str) -> R<()>;
 
     // ---------- Historial de los equipos (v1.23) ----------
     /// Guarda las entradas que no estuvieran ya (por id); devuelve cuántas son nuevas.

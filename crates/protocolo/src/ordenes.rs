@@ -55,6 +55,10 @@ pub const TIPOS: &[Tipo] = &[
     t("nombre_equipo", Inofensiva, false, false, true),
     t("etiquetas_equipo", Inofensiva, false, false, false),
     t("observacion_equipo", Inofensiva, false, false, false),
+    // Plan 0.8.0, B1 (docs/nombres-legibles.md): el nombre que se ve de un repositorio,
+    // igual en todas sus consolas. Metadato (no cambia su id ni su carpeta); como el
+    // nombre del equipo, solo administradores.
+    t("nombre_repositorio", Inofensiva, false, false, true),
     // Contraseña del repositorio
     t("explorar", Repositorio, false, true, false),
     t("restaurar", Repositorio, false, false, false),
@@ -68,6 +72,10 @@ pub const TIPOS: &[Tipo] = &[
     t("cambiar_derivada", Repositorio, false, false, false),
     t("quitar_derivada", Repositorio, true, false, false),
     t("rotar_contrasena_repo", Repositorio, false, false, false),
+    // 14bbb (pendiente de numerar): el equipo prueba que la contraseña abre el repositorio (y
+    // sus copias con la misma). No cambia nada ni reduce la protección: sin espera. Los
+    // fallos cuentan para el bloqueo por intentos, como los de las demás.
+    t("comprobar_contrasena", Repositorio, false, false, false),
     t("quitar_repositorio", RepositorioYAdministracion, true, false, false),
     // Restaurar en otro equipo: el equipo de origen sella su acceso para el de destino.
     t("compartir_acceso", RepositorioYAdministracion, false, false, false),
@@ -195,7 +203,7 @@ mod tests {
         let c = tipo("cancelar_espera").unwrap();
         assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !c.solo_administradores);
         // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
-        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false)] {
+        for (t, solo_admin) in [("nombre_equipo", true), ("etiquetas_equipo", false), ("observacion_equipo", false), ("nombre_repositorio", true)] {
             let x = tipo(t).unwrap();
             assert!(x.nivel == Nivel::Inofensiva && !x.destructiva && x.solo_administradores == solo_admin, "{t}");
             assert!(!DESTRUCTIVAS_SEGUN_CUERPO.contains(&t), "{t}");

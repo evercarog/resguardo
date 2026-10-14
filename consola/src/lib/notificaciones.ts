@@ -7,7 +7,7 @@ export const SEVERIDADES: Severidad[] = ["critico", "importante", "informativo"]
 
 export const SEVERIDAD: Record<Severidad, { texto: string; tono: Tono; que: string }> = {
   critico: { texto: "Crítico", tono: "bad", que: "Copias o verificaciones que fallan, intentos con la clave, bloqueos, órdenes destructivas, cambio de clave." },
-  importante: { texto: "Importante", tono: "warn", que: "Equipos sin contacto, copias atrasadas, copia externa, espejo o prueba de restauración que fallan." },
+  importante: { texto: "Importante", tono: "warn", que: "Equipos sin contacto, copias atrasadas, copia derivada, espejo o prueba de restauración que fallan." },
   informativo: { texto: "Informativo", tono: "info", que: "Lo demás, y cuando algo vuelve a funcionar." },
 };
 

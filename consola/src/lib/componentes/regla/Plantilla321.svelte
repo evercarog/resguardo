@@ -91,7 +91,7 @@
           parteB: true,
         },
     r?.externa
-      ? { titulo: "En la nube, después de la anterior", estado: "hecho", texto: `Copia externa a «${r.externa.destino}»${r.externa.bloqueo_dias ? ` con bloqueo de ${r.externa.bloqueo_dias} días` : ""}.` }
+      ? { titulo: "En la nube, después de la anterior", estado: "hecho", texto: `Copia derivada a «${r.externa.destino}»${r.externa.bloqueo_dias ? ` con bloqueo de ${r.externa.bloqueo_dias} días` : ""}.` }
       : derivada
       ? { titulo: "En la nube, después de la anterior", estado: "hecho", texto: `Copia derivada a «${derivada.destino ?? "otro destino"}»${derivada.bloqueo_dias ? ` con bloqueo de ${derivada.bloqueo_dias} días` : ""}.` }
       : conDerivadas
@@ -104,8 +104,8 @@
       : {
           titulo: "En la nube, después de la anterior",
           estado: "pendiente",
-          texto: "Hoy: la copia externa del repositorio a Backblaze B2 con bloqueo de objetos (o a Dropbox, sin bloqueo).",
-          enlace: { texto: "Copia externa", href: `/c/${cliente}/equipos/${equipo.id}?externa=${encodeURIComponent(repo)}` },
+          texto: "Hoy: la copia derivada del repositorio a Backblaze B2 con bloqueo de objetos (o a Dropbox, sin bloqueo).",
+          enlace: { texto: "Copia derivada", href: `/c/${cliente}/equipos/${equipo.id}?externa=${encodeURIComponent(repo)}` },
           parteB: true,
         },
   ]);

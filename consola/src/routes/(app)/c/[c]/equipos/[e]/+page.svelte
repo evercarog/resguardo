@@ -95,6 +95,10 @@
   import { admiteRevocar, motivoNoDesconectar, nubesDelEquipo, nubesPorAnular, queHaceAlDesconectar } from "$lib/nubesEquipo";
   import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
   import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
+  // Plan 0.8.0, B1: «Ordenar nombres de carpeta» y las rutas que un equipo aún no usa.
+  import OrdenarCarpetas from "$lib/componentes/OrdenarCarpetas.svelte";
+  import RutasPendientes from "$lib/componentes/RutasPendientes.svelte";
+  import { admiteNombres } from "$lib/nombres";
   import ZonasAlmacen from "$lib/componentes/ZonasAlmacen.svelte";
   import MenuAcciones, { type AccionMenu } from "$lib/componentes/MenuAcciones.svelte";
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
@@ -123,6 +127,14 @@
   import { admiteEspejoEquipo, admiteTrabajos, estadoTrabajo, hrefEspejos, opcionesRepos, textoCuando as textoCuandoTrabajo, textoRetencion as textoRetencionTrabajo, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
+  // C1 (plan 0.8.0, 14kk): el camino de cada repositorio en su tarjeta, y cada copia derivada como repositorio propio.
+  import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
+  import { caminoDeCopia, textoEslabon, type Eslabon } from "$lib/camino";
+  import { enVivoCamino } from "$lib/caminoVivo.svelte";
+  import { reglaDeCopia, type ReglaCopia } from "$lib/regla321";
+  import { saludCompleta } from "$lib/saludCompleta";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import { hrefDestino } from "$lib/fichaDestino";
   import type { DerivadaResumen } from "$lib/tipos";
   import { tareasDe } from "$lib/progreso.svelte";
   import { hayPlanMover, moviendoDe } from "$lib/mover";
@@ -205,6 +217,39 @@
   const salud = $derived(equipo ? saludEquipo(equipo, reloj.ahora) : null);
   const copias = $derived(equipo?.resumen?.copias ?? []);
   const repos = $derived(equipo?.resumen?.repositorios ?? []);
+  // C1: lo que va después de cada repositorio (espejos y copias derivadas), con su estado: de la
+  // regla de su primera copia activa (los mismos pasos que la tira 3-2-1 y el mapa).
+  $effect(() => {
+    const cc = c;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const reglasRepo = $derived.by(() => {
+    const m = new Map<string, ReglaCopia>();
+    if (!equipo) return m;
+    const eq = equipo;
+    const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
+    for (const r of repos) {
+      const k = copias.find((x) => x.repo === r.id && x.activa !== false);
+      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+      if (rc) m.set(r.id, rc);
+    }
+    return m;
+  });
+  const caminoRepo = $derived.by(() => {
+    const m = new Map<string, Eslabon[]>();
+    if (!equipo) return m;
+    const todos = actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x));
+    for (const [id, rc] of reglasRepo) m.set(id, caminoDeCopia(rc, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: todos, informe: equipo.ultimo_informe ?? null }).filter((x) => x.clase !== "copia"));
+    return m;
+  });
+  /** C1: cada copia derivada (también la «copia externa» de antes) como un repositorio propio, enlazado con su origen. */
+  const reposDerivados = $derived(
+    repos.flatMap((r) => [
+      ...(r.externa ? [{ r, id: "externa", destino: r.externa.destino ?? "otro destino", destinoId: r.externa.destino_id ?? null }] : []),
+      ...(r.derivadas ?? []).filter((dv) => dv.activa !== false).map((dv) => ({ r, id: dv.id, destino: dv.destino ?? "otro destino", destinoId: dv.destino_id ?? null })),
+    ]),
+  );
+  const eslabonDerivada = (repo: string, id: string) => caminoRepo.get(repo)?.find((x) => x.id === (id === "externa" ? "externa" : `derivada-${id}`));
   const destinos = $derived(equipo?.resumen?.destinos ?? []);
   const pausado = $derived(!!equipo && enPausa(equipo, reloj.ahora));
   // Cifras del resumen: última vuelta y próxima de todas sus copias, lo protegido y los 60 días.
@@ -501,6 +546,8 @@
   let conectarDestino = $state(false);
   /** §3e: «Restaurar desde el espejo…». */
   let desdeEspejo = $state(false);
+  /** B1: «Ordenar nombres de carpeta…». */
+  let ordenarCarpetas = $state(false);
   /**
    * Desconectar una nube (clave de administración). Con `admite: "nube_revocar"` el equipo
    * anula el permiso en el proveedor y no deja si algo la usa (la página ya no ofrece el botón).
@@ -524,6 +571,7 @@
       [{ texto: "Conectar Dropbox…", onclick: () => (conectarNube = true) }, ...(admiteMasDestinos(equipo) ? [{ texto: "Conectar otro destino (B2, S3, SFTP, NAS, WebDAV)…", onclick: () => (conectarDestino = true) }] : []), { texto: "Quitar el acceso de un equipo…", onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { quitar: "" }, titulo: "Quitar el acceso de un equipo", descripcion: "Ese equipo dejará de poder copiar aquí. Lo que ya copió se queda.", campos: "quitar" }) }],
       [
         ...(conEspejo ? [{ texto: "Restaurar desde el espejo…", onclick: () => (desdeEspejo = true) }] : []),
+        ...(admiteNombres(equipo) && puede.administrar(rol) ? [{ texto: "Ordenar nombres de carpeta…", onclick: () => (ordenarCarpetas = true) }] : []),
         ...(conEspejo ? [{ texto: "Quitar todo el espejo", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { espejo: null }, titulo: "Quitar el espejo", descripcion: "Dejará de copiarse cada noche a todos sus destinos. Lo que ya está en ellos se queda." }) }] : []),
         { texto: "Dejar de guardar copias", peligro: true, onclick: () => abrir({ tipo: "guarda_copias", cuerpo: { activo: false }, titulo: "Dejar de guardar copias", descripcion: `${equipo!.nombre} dejará de recibir copias de los demás equipos. Lo ya guardado se queda en su disco.` }) },
       ],
@@ -573,7 +621,7 @@
     const paginaRet = `/c/${c}/equipos/${id}/repositorios/${encodeURIComponent(r.id)}?retencion=1`;
     // Lo frecuente (retención, verificación, prueba, espejo, derivadas) está a la vista (PasosRepo).
     const proteccion: AccionMenu[] = [
-      ...(r.externa && !r.solo_lectura ? [{ texto: "Cambiar la copia externa", onclick: () => abrirExterna(r) }] : []),
+      ...(r.externa && !r.solo_lectura ? [{ texto: "Cambiar la copia derivada", onclick: () => abrirExterna(r) }] : []),
       // v1.41: con todo su historial, a otro destino (p. ej. el almacén de otro equipo).
       // Si ya se está moviendo (desde otra consola u otro navegador), aquí no se puede empezar otro.
       ...(!r.solo_lectura && puede.administrar(rol) && !moverBloqueado(r.id) ? [{ texto: "Mover a otro sitio…", onclick: () => (mover = r) }] : []),
@@ -583,7 +631,7 @@
       ...(conVersiones && !r.solo_lectura && !r.solo_anadir && !enAlm
         ? [{ texto: "Aplicar retención (borra versiones)", peligro: true, onclick: () => abrir({ tipo: "aplicar_retencion", cuerpo: { repo: r.id }, descripcion: `Se borrarán de «${r.nombre}» las versiones que ya no entren en su retención.`, repo: ref }) }]
         : []),
-      ...(r.externa ? [{ texto: "Quitar la copia externa", peligro: true, onclick: () => quitarExterna(r) }] : []),
+      ...(r.externa ? [{ texto: "Quitar la copia derivada", peligro: true, onclick: () => quitarExterna(r) }] : []),
       ...(conCopias
         ? [{ texto: "Dejar de copiar", peligro: true, onclick: () => abrir({ tipo: "dejar_de_copiar", cuerpo: { repo: r.id }, descripcion: `${equipo!.nombre} dejará de copiar en «${r.nombre}». Lo ya guardado sigue en su destino.`, repo: ref }) }]
         : []),
@@ -694,7 +742,7 @@
     abrir({
       tipo: "cambiar_copia_externa",
       cuerpo: {},
-      titulo: r.externa ? "Cambiar la copia externa" : "Copia externa",
+      titulo: r.externa ? "Cambiar la copia derivada" : "Copia derivada",
       descripcion: admiteExternaExistente(equipo)
         ? `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino: a un repositorio nuevo (lo crea allí, en una carpeta con su id) o a uno que ya existe. Si algo le pasa al destino principal, queda esta.`
         : `Cada día, a la hora que elijas, ${equipo!.nombre} copiará «${r.nombre}» a otro destino (la primera vez crea allí el repositorio, en una carpeta con su id). Si algo le pasa al destino principal, queda esta.`,
@@ -893,6 +941,7 @@
       <div class="notice notice-info trasladado"><Info size={16} /><p>{equipo.nombre} se trasladó a otro servidor y ya no recibe órdenes desde aquí. Se conserva su historial.</p></div>
     {/if}
     <Observaciones tipo="equipo" objeto={equipo.id} />
+    {#if actual.cliente}<RutasPendientes cliente={actual.cliente} equipos={actual.equipos} {equipo} puede={puede.administrar(rol)} />{/if}
 
     {#if otrasConsolas.length && !trasladado}
       <section class="consolas-eq" aria-label="Otras consolas">
@@ -1046,12 +1095,12 @@
 
       {#if repos.length || pendRepos.length}
         <section>
-          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}</span></h2></div>
+          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length}{` y ${reposDerivados.length} ${reposDerivados.length === 1 ? "derivado" : "derivados"}`}{/if}</span></h2></div>
           {#each pendRepos as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
           <div class="rejilla repos">
             {#each repos as r (r.id)}
               {@const inf = informeDe(equipo.ultimo_informe, r.id)}
-              {@const prot = proteccion(inf, comprobacionLugar(r, equipo, actual.equipos))}
+              {@const prot = saludCompleta(inf, { extra: comprobacionLugar(r, equipo, actual.equipos), rc: reglasRepo.get(r.id) ?? null, retencionAlmacen: reglaEfectiva(r, destinoDe(equipo.resumen?.destinos, r), actual.equipos)?.quien ?? null, ahora: reloj.ahora })}
               {@const ej = ultimaEjecucion(inf)}
               {@const riesgo = riesgoMismoEquipo(r, equipo, actual.equipos)}
               <article class="card repo">
@@ -1064,6 +1113,8 @@
                   {#if ej}<Chip pequeno tono={TONO_RESULTADO[ej.resultado]} texto={ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado]} />{/if}
                   <ChevronRight size={16} />
                 </a>
+                <!-- C1: el camino del repositorio (espejos y copias derivadas), con el estado de cada uno. -->
+                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" /></div>{/if}
                 {#if nVersiones(r, inf)}
                   <div class="fact-boxes">
                     <div><span class="faint">Versiones</span><strong class="num">{numero(nVersiones(r, inf))}</strong></div>
@@ -1088,11 +1139,11 @@
                 <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover />
                 {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) && !moverBloqueado(r.id) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
-                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia externa a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
+                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia derivada a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
                   {@const raro = problemaDestinoPaso(equipo, r.externa.destino_id, r.externa.destino)}
-                  {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia externa</button>{/if}</p>{/if}
+                  {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia derivada:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia derivada</button>{/if}</p>{/if}
                   <!-- 14nn: su destino ya no existe: quitarla o volver a crearla desde cero. -->
-                  {#if inf?.externa?.motivo === "destino_ausente"}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia externa:</strong> {textoDestinoAusente(inf.externa)}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar esta copia</button>{#if !r.solo_lectura}<button class="btn btn-sm" onclick={() => abrirExterna(r)}>Volver a crearla desde cero</button>{/if}{/if}</p>{/if}
+                  {#if inf?.externa?.motivo === "destino_ausente"}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia derivada:</strong> {textoDestinoAusente(inf.externa)}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar esta copia</button>{#if !r.solo_lectura}<button class="btn btn-sm" onclick={() => abrirExterna(r)}>Volver a crearla desde cero</button>{/if}{/if}</p>{/if}
                 {/if}
                 {#each r.derivadas ?? [] as dv (dv.id)}
                   {@const ult = ultimaDerivada(r, dv.id)}
@@ -1127,6 +1178,21 @@
                     <MenuAcciones etiqueta="Más acciones de «{r.nombre}»" grupos={masRepo(r)} />
                   </div>
                 {/if}
+              </article>
+            {/each}
+            <!-- C1 (14kk): cada copia derivada como repositorio propio, enlazado con su origen. -->
+            {#each reposDerivados as d (d.r.id + "|" + d.id)}
+              {@const x = eslabonDerivada(d.r.id, d.id)}
+              <article class="card repo repo-derivado">
+                <div class="repo-cab">
+                  <span class="card-icon"><Database size={18} /></span>
+                  <div class="repo-nombre">
+                    <h3>{d.r.nombre} <span class="faint">en</span> {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}</h3>
+                    <p class="donde faint">Copia derivada de <a class="link-suave" href="/c/{c}/equipos/{equipo.id}/repositorios/{encodeURIComponent(d.r.id)}">«{d.r.nombre}»</a>: sus versiones, en otro repositorio <Ayuda id="copia-derivada" /></p>
+                  </div>
+                  {#if x}<Chip pequeno tono={x.tono} texto={x.estado} girando={x.vivo} />{/if}
+                </div>
+                {#if x}<p class="faint der-estado">{x.cuando || x.vivo ? textoEslabon(x, reloj.ahora).replace(/^./, (l) => l.toUpperCase()) : "Todavía no ha subido nada."}</p>{/if}
               </article>
             {/each}
           </div>
@@ -1428,7 +1494,7 @@
       {#if almacenes.length && puede.administrar(rol)}
         <section class="card p">
           <h3 class="section-title">Copiar en un equipo de la oficina</h3>
-          <p class="faint nota-almacen">Rápido para restaurar y sin tocar el router. Lo recomendado: además, una copia externa en la nube.</p>
+          <p class="faint nota-almacen">Rápido para restaurar y sin tocar el router. Lo recomendado: además, una copia derivada en la nube.</p>
           <div class="acciones">
             {#each almacenes as a (a.id)}<button class="btn btn-sm" onclick={() => (copiarEn = a)}><Server size={14} />Copiar en «{a.nombre}»</button>{/each}
           </div>
@@ -1580,6 +1646,10 @@
 {#if conectarNube && equipo && actual.cliente}
   <ConectarNube cliente={actual.cliente} {equipo} onclose={() => ((conectarNube = false), void cargar())} />
 {/if}
+{#if ordenarCarpetas && equipo && actual.cliente}
+  <OrdenarCarpetas cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} onclose={() => (ordenarCarpetas = false)} />
+{/if}
+
 {#if desdeEspejo && equipo && actual.cliente}
   <RestaurarDesdeEspejo cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} nombre={nombreRepoAlmacen} onclose={() => (desdeEspejo = false)} />
 {/if}
@@ -1705,7 +1775,7 @@
     <EditorRetencion id="ret" bind:regla={reg} admite={admitePlazos(equipo)} {...horarioDeCopias(copias, String(dialogo.cuerpo.repo ?? ""))} />
   {:else if dialogo?.campos === "externa"}
     {#if extNueva}
-      <div class="segmented" role="group" aria-label="Repositorio de la copia externa">
+      <div class="segmented" role="group" aria-label="Repositorio de la copia derivada">
         <button type="button" class:on={extX.modo === "nuevo"} aria-pressed={extX.modo === "nuevo"} onclick={() => (extX.modo = "nuevo")}><Plus size={14} />Crear uno nuevo</button>
         <button type="button" class:on={extX.modo === "existente"} aria-pressed={extX.modo === "existente"} onclick={() => (extX.modo = "existente")}><Database size={14} />Usar uno que ya existe</button>
       </div>
@@ -1791,9 +1861,9 @@
       {#if efectoExterna}<p class="faint nota-esp">{efectoExterna}</p>{/if}
     {/if}
     {#if !(extNueva && extX.modo === "existente")}
-    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia externa<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
+    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia derivada<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
     {#if ext.otraContrasena}
-      <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia externa" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia externa." />
+      <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia derivada" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia derivada." />
     {/if}
     {/if}
   {:else if dialogo?.campos === "espejo"}
@@ -2067,6 +2137,28 @@
     flex-direction: column;
     gap: var(--sp-4);
     padding: var(--sp-5);
+  }
+  .repo-derivado {
+    gap: var(--sp-2);
+    border-style: dashed;
+  }
+  .repo-derivado h3 {
+    flex-wrap: wrap;
+    gap: 0 0.3em;
+  }
+  .der-estado {
+    margin: 0;
+    font-size: var(--fs-sm);
+  }
+  .camino-repo {
+    display: grid;
+    gap: 4px;
+  }
+  .et-camino {
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
   .repo-cab {
     display: flex;

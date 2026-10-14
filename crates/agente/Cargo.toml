@@ -31,8 +31,12 @@ tungstenite = { version = "0.27", default-features = false, features = ["handsha
 crypto_box = { version = "0.9.1", features = ["seal"] }
 base64 = "0.22"
 bcrypt = "0.15"
-# Descargas de varios archivos en un zip (deflate en Rust puro).
-zip = { version = "2", default-features = false, features = ["deflate"] }
+# Descargas de varios archivos en un zip (deflate en Rust puro). `aes-crypto`: el
+# .zip con contraseña de «Restaurar en un .zip» (13b) en AES-256 (nunca ZipCrypto).
+zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
+# Leer el tar que da `restic dump --archive tar` para pasarlo al .zip sin escribir
+# nada en claro en el disco (13b).
+tar = { version = "0.4", default-features = false }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Almacén de secretos del usuario (la app de escritorio): Credential Manager

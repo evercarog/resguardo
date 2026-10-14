@@ -78,7 +78,7 @@
         ? conDerivadas
           ? [{ texto: "Repositorio nuevo a partir de esta", icono: GitBranch, detalle: conCopias ? "Independiente desde ahí, con su contraseña" : "Primero, una copia que guarde aquí", disabled: !conCopias, onclick: () => (derivada = true) }]
           : !repo.externa && conCopias
-            ? [{ texto: "Copia externa…", icono: CloudUpload, detalle: `Actualiza el agente de ${equipo.nombre} para más pasos`, onclick: () => void goto(`${base}?externa=${encodeURIComponent(repo.id)}`) }]
+            ? [{ texto: "Copia derivada…", icono: CloudUpload, detalle: `Actualiza el agente de ${equipo.nombre} para más pasos`, onclick: () => void goto(`${base}?externa=${encodeURIComponent(repo.id)}`) }]
             : []
         : []),
     ],

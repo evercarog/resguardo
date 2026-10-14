@@ -1116,7 +1116,7 @@ fn estado_de(result: &str) -> &'static str {
 /// `resumen.en_espera`, `cancelar_espera`; docs/consolas-multiples.md §5).
 /// (pendiente de numerar) `espejo_flexible`: el espejo del almacén con horario, selección,
 /// retención y verificación por destino (docs/espejo.md).
-pub const ADMITE: [&str; 28] = [
+pub const ADMITE: &[&str] = &[
     "retencion_plazos",
     "verificacion_auto",
     "almacen_propio",
@@ -1181,6 +1181,21 @@ pub const ADMITE: [&str; 28] = [
     // (pendiente de numerar) plan 0.8.0 (B3, 14hh): `crear_repositorio { solo_destino: true, destino }`
     // guarda el acceso a una zona de un almacén sin crear ningún repositorio (para una copia derivada).
     "solo_destino",
+    // v1.6x (pendiente de numerar al unir) plan 0.8.0, E1: `restaurar { destino: "nueva" | "zip" }`
+    // (con la clave de administración), `contrasena_zip` (AES-256, también en `descargar`),
+    // `motivo` y la entrada `restauracion` de la bitácora (13a, 13b, 13d).
+    "restaurar_carpeta",
+    // v1.6x (pendiente de numerar al unir) 14m: `desde` (`externa` o una copia derivada) en
+    // `explorar`, `restaurar` y `descargar`.
+    "restaurar_desde",
+    // v1.6x (pendiente de numerar al unir) 13e: `informe.repos[].restauracion_real` (una restauración
+    // real correcta cuenta como prueba de restauración).
+    "restauracion_real",
+    // (pendiente de numerar) plan 0.8.0, B1: carpetas legibles en el almacén (`guarda_copias { anadir, nombre }`,
+    // `{ mover }`, `guarda_copias.renombres`), `cambiar_destino { carpetas }` y `nombre_repositorio`.
+    crate::nombres::ADMITE,
+    // (pendiente de numerar) 14bbb: la orden `comprobar_contrasena` y `repositorios[].contrasena_comprobada`.
+    "comprobar_contrasena",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1202,6 +1217,7 @@ pub fn resumen(v: &Vinculo) -> Value {
     let proximas = proximas(&copias, now);
     let cache_repos = Value::Object(v.repos_v2.iter().map(|r| (r.id.clone(), crate::informe_v2::resumen_repo(&r.id))).collect());
     let tareas = crate::tasks::load_state();
+    let comprobadas = crate::comprobar_contrasena::leer();
     // v1.28: la verificación automática de cada repositorio (la del agente) y cuándo toca.
     let verificacion_auto = |id: &str| {
         let r = config.repos.iter().find(|r| r.id == id)?;
@@ -1264,6 +1280,8 @@ pub fn resumen(v: &Vinculo) -> Value {
             })),
             // Tarea 4b: las demás copias derivadas (sin rutas ni secretos).
             "derivadas": r.derivadas.iter().map(|e| derivada_resumen(v, &r.id, e, config.repos.iter().find(|x| x.id == r.id))).collect::<Vec<_>>(),
+            // 14bbb: cuándo se comprobó por última vez su contraseña (y cómo fue).
+            "contrasena_comprobada": crate::comprobar_contrasena::resumen(&r.id, &comprobadas),
         })).collect::<Vec<_>>(),
         // Sin la carpeta de un destino local (es una ruta del equipo).
         // v1.30: `equipo_almacen`, el equipo que guarda copias del destino (si se sabe).
@@ -1637,7 +1655,7 @@ pub fn usos_destino(v: &Vinculo, id: &str) -> Vec<String> {
             usos.push(format!("el repositorio «{}»", r.nombre));
         }
         if r.externa.as_ref().is_some_and(|e| e["destino"] == id) {
-            usos.push(format!("la copia externa de «{}»", r.nombre));
+            usos.push(format!("la copia derivada de cada día de «{}»", r.nombre));
         }
         if r.derivadas.iter().any(|e| e["destino"] == id) {
             usos.push(format!("una copia derivada de «{}»", r.nombre));
@@ -1764,6 +1782,20 @@ pub fn cambiar_destino(v: &mut Vinculo, c: &Value) -> Result<String, String> {
     }
     let mut prueba = v.clone();
     prueba.destinos[pos] = d;
+    // B1 (docs/nombres-legibles.md): la carpeta nueva de algunos de sus repositorios
+    // (tras «Ordenar nombres de carpeta» en el almacén). El id no cambia.
+    if let Some(cs) = c.get("carpetas").filter(|x| !x.is_null()) {
+        let cs = cs.as_object().ok_or("«carpetas» tiene que ser un objeto (repositorio → carpeta).")?;
+        for (repo, carpeta) in cs {
+            let carpeta = carpeta.as_str().filter(|x| crate::nombres::carpeta_valida(x)).ok_or_else(|| format!("Carpeta no válida para «{repo}»."))?;
+            let r = prueba
+                .repos_v2
+                .iter_mut()
+                .find(|r| r.id == *repo && r.destino == id)
+                .ok_or_else(|| format!("«{repo}» no es un repositorio de ese destino."))?;
+            r.ubicacion_origen = (carpeta != r.id).then(|| carpeta.to_string());
+        }
+    }
     let repos: Vec<String> = prueba.repos_v2.iter().filter(|r| r.destino == id).map(|r| r.id.clone()).collect();
     for r in &repos {
         let acc = acceso(&prueba, r)?;
@@ -1777,6 +1809,22 @@ pub fn cambiar_destino(v: &mut Vinculo, c: &Value) -> Result<String, String> {
         let _ = subir_config(v);
     }
     Ok(format!("Destino actualizado ({} repositorios comprobados).", repos.len()))
+}
+
+/// `nombre_repositorio { repo, nombre }` (B1, inofensiva): el nombre que se ve de un
+/// repositorio, igual en todas las consolas. No cambia su id ni su carpeta.
+pub fn nombre_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> {
+    let id = texto(c, "repo");
+    let nombre = texto(c, "nombre").trim().to_string();
+    if !texto_valido(&nombre, 80) {
+        return Err("Escribe un nombre para el repositorio (hasta 80 caracteres).".into());
+    }
+    let r = v.repos_v2.iter_mut().find(|r| r.id == id).ok_or("Ese repositorio no lo gestiona este servidor.")?;
+    if r.nombre == nombre {
+        return Ok(format!("El repositorio ya se llama «{nombre}»."));
+    }
+    let antes = std::mem::replace(&mut r.nombre, nombre.clone());
+    Ok(format!("«{antes}» ahora se llama «{nombre}». Lo verán así todas sus consolas."))
 }
 
 /// `cambiar_copia_externa {repo, destino: {id} | {id, nombre, tipo, donde, usuario?, secreto?, ca_pem?}, hora: "HH:MM" | null, retencion?, contrasena_destino?,
@@ -1809,7 +1857,7 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         None if solo_probar => String::new(),
         None => {
             crate::agent::set_offsite(repo, None, None)?;
-            return Ok("Copia externa quitada (lo ya copiado sigue en su destino).".into());
+            return Ok("Copia derivada de cada día quitada (lo ya copiado sigue en su destino).".into());
         }
     };
     let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).unwrap_or(Value::Null);
@@ -1832,7 +1880,7 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         r.externa = Some(e);
     }
     let _ = subir_config(v);
-    Ok(format!("Copia externa a «{}» cada día a las {hora}. {}", p.destino.nombre, p.texto))
+    Ok(format!("Copia derivada a «{}» cada día a las {hora}. {}", p.destino.nombre, p.texto))
 }
 
 /// Lo que se comprueba y prepara antes de guardar una copia externa o
@@ -2308,7 +2356,9 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         }
         // Tarea 7b: en una zona (otro disco del almacén, con su puerto) o en la principal.
         let zona = zona_de(c)?;
-        let (usuario, contrasena, ubicacion, puerto) = server::anadir_equipo_en(nombre, zona.as_deref())?;
+        // B1 (docs/nombres-legibles.md): con `nombre`, la carpeta del equipo es legible (`pc-01-3f2a`).
+        let legible = crate::nombres::texto_legible(c, "nombre")?;
+        let (usuario, contrasena, ubicacion, puerto) = server::anadir_equipo_legible(nombre, zona.as_deref(), legible.as_deref())?;
         // Que el rest-server ya lo acepte cuando el equipo cliente cree su repositorio.
         server::esperar_usuario_de(zona.as_deref(), &usuario, &contrasena);
         let cfg = server::load();
@@ -2326,6 +2376,11 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         }
         let donde = zona.and_then(|z| cfg.zonas.iter().find(|x| x.id == z).map(|x| format!(" en la zona «{}»", x.nombre))).unwrap_or_default();
         return Ok((format!("Equipo cliente «{usuario}» añadido{donde}."), Some(privado)));
+    }
+    // B1 (docs/nombres-legibles.md): «Ordenar nombres de carpeta» de un equipo.
+    if let Some(m) = c.get("mover").filter(|m| m.is_object()) {
+        let (mensaje, detalle) = crate::nombres::mover(m)?;
+        return Ok((mensaje, Some(detalle)));
     }
     // Tarea 7b: crear una zona (`{ zona: { nombre?, carpeta, puerto } }`) o
     // cambiar su nombre (`{ zona: { id, nombre } }`).
@@ -2430,6 +2485,9 @@ pub fn resumen_guarda_copias() -> Value {
         "nubes": crate::nube::lista(),
         // Tarea 7b: las otras zonas (otros discos), cada una con su puerto; solo si hay.
         "zonas": (!c.zonas.is_empty()).then(|| crate::server::resumen_zonas(&c)),
+        // B1: las carpetas movidas («Ordenar nombres de carpeta»), las 50 últimas: la
+        // consola ve qué equipo sigue con la ruta de antes. Solo nombres de carpeta.
+        "renombres": (!c.renombres.is_empty()).then(|| c.renombres.iter().rev().take(50).collect::<Vec<_>>()),
     })
 }
 

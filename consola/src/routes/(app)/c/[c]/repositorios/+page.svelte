@@ -184,7 +184,7 @@
                   {plural(z.usuarios, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}
                 </p>
                 {#if mz.sistemaArchivos || entorno}<p class="tile-dato faint">{#if mz.sistemaArchivos}<span class="pastilla mono">{mz.sistemaArchivos}</span>{/if}{#if entorno}{" "}{entorno}{/if}</p>{/if}
-                <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
+                <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} soloAnadir={cl.soloAnadir} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
                 {#if cl.conexion}<p class="tile-dato" class:tarde={cl.conexion.tarde}>{#if cl.conexion.tarde}<TriangleAlert size={12} />{/if}<span>{cl.conexion.texto}</span></p>{/if}
                 <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<span class="badge badge-sm tone-warn">Sin responder</span>{/if}
                   <span class="corte" aria-hidden="true"></span>
@@ -203,7 +203,7 @@
                 <p class="tile-linea num">
                   {#if v.clase === "nube"}{@const esp = usosDeVista(v, actual.equipos).espejos}{#if esp.length}Recibe {plural(esp.length, "espejo", "espejos")}: {esp.join(", ")}{:else}Para el espejo del almacén y, conectándola en cada equipo, para sus repositorios{/if}{:else if v.clase === "suelto"}Sin repositorios todavía: elígelo en «Nuevo repositorio»{:else}{#if suyos.length}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{:else if otrosUsos(v).length}Sin repositorios: lo usa {otrosUsos(v).join(", ")}{:else}Sin repositorios todavía{/if}{#if suyos.length || !otrosUsos(v).length}{" · "}lo usa{v.equipos.length > 1 ? "n" : ""} {v.equipos.join(", ")}{/if}{/if}
                 </p>
-                <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
+                <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} soloAnadir={cl.soloAnadir} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
                 {#if cl.conexion}<p class="tile-dato" class:tarde={cl.conexion.tarde}>{#if cl.conexion.tarde}<TriangleAlert size={12} />{/if}<span>{cl.conexion.texto}</span></p>{/if}
                 <span class="tile-chips">
                   {#if d?.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}

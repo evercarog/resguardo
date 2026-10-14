@@ -654,9 +654,45 @@ fn partes(ruta: &str) -> Result<(String, String), String> {
 /// puesto una unión hacia la carpeta de Windows), sin nombres que Windows
 /// recorta o interpreta (`a.`, `a `, `a:flujo`, `..`) y que no sea del sistema,
 /// de los programas ni de Resguardo, tampoco escrita con nombres cortos
-/// (`C:\PROGRA~1`): se mira también su ruta real.
-fn carpeta_destino(d: &str) -> Result<std::path::PathBuf, String> {
-    let mal = || "Elige una carpeta de un disco de este equipo donde restaurar (que no sea del sistema ni de los programas).".to_string();
+/// (`C:\PROGRA~1`): se mira también su ruta real. También la de arriba de una
+/// carpeta nueva donde restaurar desde la consola (`restaurar_v2`).
+pub(crate) fn carpeta_destino(d: &str) -> Result<std::path::PathBuf, String> {
+    let mal = || MAL_DESTINO.to_string();
+    forma_de_carpeta(d)?;
+    let p = std::path::Path::new(d);
+    if crate::platform::hay_enlace_en_el_camino(p) {
+        return Err("Esa carpeta es un enlace o está dentro de uno: elige una carpeta normal.".into());
+    }
+    match std::fs::symlink_metadata(p) {
+        Ok(m) if m.is_dir() => {}
+        _ => return Err("Esa carpeta no existe (o no es una carpeta): elígela con el explorador.".into()),
+    }
+    let real = std::fs::canonicalize(p).map_err(|_| mal())?;
+    let real = real.to_string_lossy();
+    if real.starts_with(r"\\?\UNC\") || carpeta_del_sistema(d) || carpeta_del_sistema(real.strip_prefix(r"\\?\").unwrap_or(&real)) {
+        return Err(mal());
+    }
+    Ok(p.to_path_buf())
+}
+
+/// Lo que se dice cuando una carpeta no vale para restaurar.
+pub(crate) const MAL_DESTINO: &str = "Elige una carpeta de un disco de este equipo donde restaurar (que no sea del sistema ni de los programas).";
+
+/// ¿Es una carpeta del sistema, de los programas o de Resguardo (o está dentro)?
+pub(crate) fn es_del_sistema(d: &str) -> bool {
+    carpeta_del_sistema(d)
+}
+
+/// ¿Es un nombre que Windows convierte en un dispositivo (`CON`, `nul.txt`…)?
+pub(crate) fn es_dispositivo(nombre: &str) -> bool {
+    dispositivo_de_windows(nombre)
+}
+
+/// La forma de la ruta de una carpeta donde restaurar: absoluta, de un disco de
+/// este equipo (nada de red), sin nombres que Windows recorta o interpreta
+/// (`a.`, `a `, `a:flujo`, `..`, `CON`) ni caracteres de control.
+pub(crate) fn forma_de_carpeta(d: &str) -> Result<(), String> {
+    let mal = || MAL_DESTINO.to_string();
     if d.is_empty() || d.chars().any(char::is_control) || d.len() > 1024 {
         return Err(mal());
     }
@@ -681,20 +717,7 @@ fn carpeta_destino(d: &str) -> Result<std::path::PathBuf, String> {
     } else if !d.starts_with('/') || d.starts_with("//") || d.split('/').any(|c| c == "." || c == "..") {
         return Err(mal());
     }
-    let p = std::path::Path::new(d);
-    if crate::platform::hay_enlace_en_el_camino(p) {
-        return Err("Esa carpeta es un enlace o está dentro de uno: elige una carpeta normal.".into());
-    }
-    match std::fs::symlink_metadata(p) {
-        Ok(m) if m.is_dir() => {}
-        _ => return Err("Esa carpeta no existe (o no es una carpeta): elígela con el explorador.".into()),
-    }
-    let real = std::fs::canonicalize(p).map_err(|_| mal())?;
-    let real = real.to_string_lossy();
-    if real.starts_with(r"\\?\UNC\") || carpeta_del_sistema(d) || carpeta_del_sistema(real.strip_prefix(r"\\?\").unwrap_or(&real)) {
-        return Err(mal());
-    }
-    Ok(p.to_path_buf())
+    Ok(())
 }
 
 /// La carpeta «Restaurado …» dentro de `padre`: **nueva** (si ya hay algo con
@@ -721,12 +744,49 @@ fn carpeta_restaurado(padre: &std::path::Path, nombre: &str, dueno: Option<&str>
     Err("Ya hay demasiadas carpetas «Restaurado» con esa hora: vuelve a intentarlo en un minuto.".into())
 }
 
-/// `restaurar {repo, version, rutas, destino: "junto"|"original"|"carpeta", carpeta?, reemplazar}`.
-/// «junto»: en una carpeta nueva «Restaurado …» al lado de cada ruta; «original»:
-/// en su sitio (sin `reemplazar`, nunca sobrescribe); «carpeta» (solo la ventana
-/// del equipo): en una carpeta nueva «Restaurado …» dentro de la que se elija.
+/// `restaurar {repo, version, rutas, destino, carpeta?, reemplazar?, nombre?, contrasena_zip?, desde?, motivo?}`.
+/// - «junto»: en una carpeta nueva «Restaurado …» al lado de cada ruta;
+/// - «original»: en su sitio (sin `reemplazar`, nunca sobrescribe);
+/// - «carpeta» (solo la ventana del equipo): en una carpeta nueva «Restaurado …» dentro de la que se elija;
+/// - «nueva» (13a, con la clave de administración): en una carpeta nueva o vacía (`restaurar_v2`);
+/// - «zip» (13b, con la clave de administración): en un .zip nuevo en la carpeta elegida, con `contrasena_zip` en AES-256.
+///
 /// `dueno`: la cuenta que lo pide en el equipo (la ventana), si se sabe.
 pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result<String, String> {
+    restaurar_con(acc, c, dueno, &crate::restaurar_v2::Quien::default(), None)
+}
+
+/// [`restaurar`] con quién la pide (para el progreso y el registro, 13d/13f) y,
+/// si se restaura desde otra copia (14m), el nombre de su destino.
+pub fn restaurar_con(
+    acc: &restic::Access,
+    c: &Value,
+    dueno: Option<&str>,
+    q: &crate::restaurar_v2::Quien,
+    desde_nombre: Option<&str>,
+) -> Result<String, String> {
+    let inicio = chrono::Local::now();
+    let repo = c["repo"].as_str().unwrap_or("");
+    let destino = match c["destino"].as_str() {
+        Some("original") => "original",
+        Some("carpeta") => "carpeta",
+        Some("nueva") => "nueva",
+        Some("zip") => "zip",
+        _ => "junto",
+    };
+    let r = restaurar_dentro(acc, c, dueno, q);
+    let cifras = r.as_ref().map(|(_, x)| *x).map_err(Clone::clone);
+    crate::restaurar_v2::anotar(repo, c, destino, q, inicio, &cifras, desde_nombre);
+    r.map(|(m, _)| m)
+}
+
+fn restaurar_dentro(
+    acc: &restic::Access,
+    c: &Value,
+    dueno: Option<&str>,
+    q: &crate::restaurar_v2::Quien,
+) -> Result<(String, crate::restaurar_v2::Cifras), String> {
+    use crate::restaurar_v2 as r2;
     let version = c["version"].as_str().unwrap_or("");
     if !restic::valid_snapshot_id(version) {
         return Err("Versión no válida.".into());
@@ -734,6 +794,42 @@ pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result
     let rutas: Vec<String> = c["rutas"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
     if rutas.is_empty() || rutas.len() > 100 {
         return Err("Elige entre 1 y 100 archivos o carpetas.".into());
+    }
+    // Para la ventana, los avisos del escritorio y las consolas (el nombre del repositorio, sin rutas).
+    let repo = c["repo"].as_str().unwrap_or("");
+    let nombre = crate::agent::load_config().repos.iter().find(|r| r.id == repo).map(|r| r.name.clone()).unwrap_or_else(|| "Copias".into());
+    let sello = chrono::Local::now().format("%Y-%m-%d %H%M").to_string();
+    match c["destino"].as_str() {
+        // 13a: en una carpeta nueva o vacía (también una unidad entera).
+        Some("nueva") => {
+            let carpeta = r2::carpeta_nueva_o_vacia(c["carpeta"].as_str().unwrap_or(""), dueno)?;
+            let guarda = crate::escritorio::en_marcha::empezar_por("restauracion", repo, &nombre, q);
+            let cifras = r2::restaurar_en_carpeta(acc, version, &rutas, &carpeta, &guarda)?;
+            guarda.terminar("ok");
+            return Ok((format!("Restaurado ({} elementos) en «{}».", rutas.len(), carpeta.display()), cifras));
+        }
+        // 13b: en un .zip nuevo en la carpeta elegida (si no existe, se crea nueva).
+        Some("zip") => {
+            let contrasena = r2::contrasena_zip(c)?;
+            let d = c["carpeta"].as_str().unwrap_or("");
+            let carpeta = if std::path::Path::new(d).is_dir() { carpeta_destino(d)? } else { r2::carpeta_nueva_o_vacia(d, dueno)? };
+            let nombre_zip = r2::nombre_zip(c["nombre"].as_str(), &sello)?;
+            let (ruta_zip, archivo) = r2::crear_zip_nuevo(&carpeta, &nombre_zip)?;
+            let guarda = crate::escritorio::en_marcha::empezar_por("restauracion", repo, &nombre, q);
+            let hecho = r2::zip_de_rutas(acc, version, &rutas, std::io::BufWriter::new(archivo), contrasena.as_deref(), Some(&guarda))
+                .and_then(|(w, cifras)| w.into_inner().map_err(|e| e.to_string())?.sync_all().map(|_| cifras).map_err(|e| e.to_string()));
+            let cifras = match hecho {
+                Ok(x) => x,
+                Err(e) => {
+                    // A medias no sirve: se quita (solo el .zip que se acaba de crear).
+                    let _ = std::fs::remove_file(&ruta_zip);
+                    return Err(e);
+                }
+            };
+            guarda.terminar("ok");
+            return Ok((format!("Restaurado ({} elementos) en «{}».", rutas.len(), ruta_zip.display()), cifras));
+        }
+        _ => {}
     }
     // v1.36 (solo la ventana del equipo, con la clave): «carpeta», en la que elija el administrador.
     let carpeta = match c["destino"].as_str() {
@@ -743,25 +839,24 @@ pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result
     let junto = match c["destino"].as_str() {
         Some("junto") | Some("carpeta") | None => true,
         Some("original") => false,
-        Some(_) => return Err("Destino no válido («junto» u «original»).".into()),
+        Some(_) => return Err("Destino no válido.".into()),
     };
     let reemplazar = !junto && c["reemplazar"].as_bool().unwrap_or(false);
     // «En su sitio» solo dentro de las carpetas que copia este equipo en ese
     // repositorio: una versión con rutas inventadas (quien tiene la contraseña
     // del repositorio puede crearla) no escribe como SYSTEM en otra parte del
-    // disco (p. ej. en la carpeta de Windows).
+    // disco (p. ej. en la carpeta de Windows). Y desde otra copia (14m), nunca en su sitio.
     if !junto {
-        let repo = c["repo"].as_str().unwrap_or("");
+        if c["desde"].as_str().is_some_and(|d| !d.is_empty()) {
+            return Err("Desde otra copia se restaura junto al original o en otra carpeta, no en su sitio.".into());
+        }
         if let Some(r) = rutas.iter().find(|r| !ruta_local(r).is_ok_and(|l| dentro_de_copias(repo, &l))) {
             return Err(format!("«{r}» no está en las carpetas que copia este equipo: restáuralo junto al original."));
         }
     }
-    // Para la ventana y los avisos del escritorio (el nombre del repositorio, sin rutas).
-    let repo = c["repo"].as_str().unwrap_or("");
-    let nombre = crate::agent::load_config().repos.iter().find(|r| r.id == repo).map(|r| r.name.clone()).unwrap_or_else(|| "Copias".into());
-    let guarda = crate::escritorio::en_marcha::empezar("restauracion", repo, &nombre);
-    let sello = chrono::Local::now().format("%Y-%m-%d %H%M").to_string();
+    let guarda = crate::escritorio::en_marcha::empezar_por("restauracion", repo, &nombre, q);
     let mut destinos = Vec::new();
+    let mut total = r2::Cifras::default();
     // Las carpetas «Restaurado …» ya creadas en esta restauración (una por cada carpeta de arriba).
     let mut creadas: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
     for ruta in &rutas {
@@ -786,12 +881,18 @@ pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result
         let destino = objetivo.display().to_string();
         let origen = format!("{version}:{padre}");
         let incluir = format!("/{nombre}");
-        // Con `--json`, restic dice cuánto lleva: la ventana del equipo lo enseña (escritura en el disco).
+        // Con `--json`, restic dice cuánto lleva: la ventana del equipo y las consolas lo enseñan (13c).
+        let base = total;
+        let mut ultima = r2::Cifras::default();
         let mut al_avanzar = |l: &str| {
-            if let Ok(v) = serde_json::from_str::<Value>(l) {
-                if v["message_type"] == "status" {
-                    guarda.progreso(v["bytes_restored"].as_u64(), v["total_bytes"].as_u64());
-                }
+            if let Some((hechas, t)) = serde_json::from_str::<Value>(l).ok().as_ref().and_then(r2::cifras_de_restore) {
+                ultima = hechas;
+                guarda.cifras(
+                    Some(base.bytes + hechas.bytes),
+                    t.map(|t| base.bytes + t.bytes),
+                    Some(base.archivos + hechas.archivos),
+                    t.map(|t| base.archivos + t.archivos),
+                );
             }
         };
         let out = restic::run_raw_lines(
@@ -803,13 +904,15 @@ pub fn restaurar(acc: &restic::Access, c: &Value, dueno: Option<&str>) -> Result
         if out.code != Some(0) {
             return Err(restic::exit_error(out.code, &out.stderr));
         }
+        total.archivos += ultima.archivos;
+        total.bytes += ultima.bytes;
         if !destinos.contains(&destino) {
             destinos.push(destino);
         }
     }
     guarda.terminar("ok");
     // Rutas entre comillas: así se quitan enteras (con espacios) donde no deben verse.
-    Ok(format!("Restaurado ({} elementos) en «{}».", rutas.len(), destinos.join("», «")))
+    Ok((format!("Restaurado ({} elementos) en «{}».", rutas.len(), destinos.join("», «")), total))
 }
 
 /// El resultado de `restaurar` para las consolas: sin la carpeta (las rutas no
@@ -825,8 +928,10 @@ pub fn restaurado_sin_rutas(c: &Value) -> String {
 /// cifrado en trozos de 4 MiB. Una ruta: `restic dump` (el archivo tal cual,
 /// o la carpeta en zip). Varias (solo en zip): se restauran en una carpeta
 /// temporal del agente, se comprimen y se borra todo al terminar.
-/// Devuelve el número de trozos.
-pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, String> {
+/// Con `contrasena_zip` (13b), siempre un .zip en AES-256, hecho con `restic dump`
+/// en un archivo temporal del agente (ya cifrado: nada en claro en el disco).
+/// Devuelve el número de trozos y lo que se descargó (para el registro).
+pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<(u64, crate::restaurar_v2::Cifras), String> {
     let version = c["version"].as_str().unwrap_or("");
     if !restic::valid_snapshot_id(version) {
         return Err("Versión no válida.".into());
@@ -843,6 +948,21 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
         "zip" => true,
         _ => return Err("Formato no válido («archivo» o «zip»).".into()),
     };
+    if let Some(contrasena) = crate::restaurar_v2::contrasena_zip(c)? {
+        let tmp = crate::agent::private_dir().join(format!("descarga-{relevo}"));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let r = (|| {
+            std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+            let archivo = tmp.join("descarga.zip");
+            let f = std::fs::File::create(&archivo).map_err(|e| e.to_string())?;
+            let (w, cifras) = crate::restaurar_v2::zip_de_rutas(acc, version, &rutas, std::io::BufWriter::new(f), Some(&contrasena), None)?;
+            drop(w.into_inner().map_err(|e| e.to_string())?);
+            let mut f = std::fs::File::open(&archivo).map_err(|e| e.to_string())?;
+            Ok((subir(v, &relevo, &clave, &mut f)?, cifras))
+        })();
+        let _ = std::fs::remove_dir_all(&tmp);
+        return r;
+    }
     if rutas.len() > 1 && !zip {
         return Err("Varios archivos o carpetas se descargan en un zip.".into());
     }
@@ -862,8 +982,9 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
             }
             t
         });
-        let mut salida = hijo.stdout.take().ok_or("El motor de copias no dio salida.")?;
-        let r = subir(v, &relevo, &clave, &mut salida);
+        let salida = hijo.stdout.take().ok_or("El motor de copias no dio salida.")?;
+        let mut contada = Contador { dentro: salida, n: 0 };
+        let r = subir(v, &relevo, &clave, &mut contada);
         if r.is_err() {
             let _ = hijo.kill();
         }
@@ -873,7 +994,7 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
         if !estado.success() {
             return Err(restic::exit_error(estado.code(), &err));
         }
-        return Ok(n);
+        return Ok((n, crate::restaurar_v2::Cifras { archivos: u64::from(!zip), bytes: contada.n }));
     }
     // Varias rutas: restaurar en una carpeta temporal y comprimir.
     let tmp = crate::agent::private_dir().join(format!("descarga-{relevo}"));
@@ -888,10 +1009,11 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
         // lo elegido, no la ruta entera del equipo.
         let grupos = por_carpeta(&rutas)?;
         let mut usados: Vec<String> = Vec::new();
+        let mut cifras = crate::restaurar_v2::Cifras::default();
         for (padre, nombres) in &grupos {
             let destino = if grupos.len() == 1 { datos.clone() } else { datos.join(nombre_de_grupo(padre, &mut usados)) };
             std::fs::create_dir_all(&destino).map_err(|e| e.to_string())?;
-            let mut args: Vec<String> = vec!["restore".into(), format!("{version}:{padre}"), "--target".into(), destino.display().to_string()];
+            let mut args: Vec<String> = vec!["restore".into(), format!("{version}:{padre}"), "--target".into(), destino.display().to_string(), "--json".into()];
             for n in nombres {
                 args.extend(["--include".into(), format!("/{n}")]);
             }
@@ -900,14 +1022,37 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<u64, St
             if out.code != Some(0) {
                 return Err(restic::exit_error(out.code, &out.stderr));
             }
+            if let Some((hechas, _)) = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .rev()
+                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                .find_map(|l| crate::restaurar_v2::cifras_de_restore(&l))
+            {
+                cifras.archivos += hechas.archivos;
+                cifras.bytes += hechas.bytes;
+            }
         }
         let archivo = tmp.join("descarga.zip");
         comprimir(&datos, &archivo)?;
         let mut f = std::fs::File::open(&archivo).map_err(|e| e.to_string())?;
-        subir(v, &relevo, &clave, &mut f)
+        Ok((subir(v, &relevo, &clave, &mut f)?, cifras))
     })();
     let _ = std::fs::remove_dir_all(&tmp);
     r
+}
+
+/// Cuenta lo que se lee (lo que se descarga, para el registro).
+struct Contador<R> {
+    dentro: R,
+    n: u64,
+}
+
+impl<R: Read> Read for Contador<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.dentro.read(buf)?;
+        self.n += n as u64;
+        Ok(n)
+    }
 }
 
 /// Las rutas de una descarga, juntas por su carpeta (en el orden en que llegan).
@@ -925,7 +1070,7 @@ fn por_carpeta(rutas: &[String]) -> Result<Vec<(String, Vec<String>)>, String> {
 
 /// La carpeta del zip para lo de `padre` cuando vienen de varias: su último nombre
 /// (sin caracteres que Windows no admite), sin repetir.
-fn nombre_de_grupo(padre: &str, usados: &mut Vec<String>) -> String {
+pub(crate) fn nombre_de_grupo(padre: &str, usados: &mut Vec<String>) -> String {
     let base: String = padre.rsplit('/').find(|s| !s.is_empty()).unwrap_or("carpeta").chars().map(|c| if "<>:\"|?*\\".contains(c) { '_' } else { c }).collect();
     let mut nombre = base.clone();
     let mut n = 2;

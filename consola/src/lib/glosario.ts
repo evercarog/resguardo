@@ -76,7 +76,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   "tipo-destino": {
     title: "Tipo y marcas de un destino",
-    text: "Tipo: Local (este equipo u otro de la oficina), Fuera del sitio (otra sede, un servidor de fuera) o Nube. Marcas: Inmutable (no se puede borrar desde los equipos: solo añadir, bloqueo de objetos de N días, instantáneas del anfitrión) y Aislado (un medio que se desconecta y se rota).",
+    text: "Tipo: Local (este equipo u otro de la oficina), Fuera del sitio (otra sede, un servidor de fuera) o Nube. Marcas: Inmutable (nadie puede borrarlo durante un plazo: bloqueo de objetos de N días o instantáneas del anfitrión que el almacén no ve) y Aislado (un medio que se desconecta y se rota). Aparte, «Solo añadir»: los equipos no pueden borrar, pero no es inmutable.",
     todo: "Se deduce del destino; si no acierta, cámbialo. Lo que marca una persona manda y se indica.",
   },
   aislado: {
@@ -91,7 +91,13 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   inmutable: {
     title: "Inmutable",
-    text: "Destino en la nube con bloqueo de objetos (Object Lock): durante el plazo fijado, nadie puede borrar ni cambiar las copias, ni siquiera con la clave de la nube.",
+    text: "Nadie puede borrar ni cambiar las copias durante un plazo, ni siquiera quien administra el destino: una nube con bloqueo de objetos (Object Lock) o instantáneas del anfitrión que el almacén no ve. Es lo que cuenta como «1 inmutable» en la regla 3-2-1-1-0, junto con un medio aislado.",
+    todo: "Un almacén de solo añadir no basta: protege de los equipos, no de quien sea administrador del almacén.",
+  },
+  "solo-anadir": {
+    title: "Solo añadir",
+    text: "Los equipos pueden guardar versiones nuevas, pero no borrar las que ya hay: un ransomware en un equipo no puede borrar sus copias. No es inmutable: quien sea administrador (root) en el almacén o en su anfitrión puede borrarlas, y la retención del propio almacén también quita versiones. Por eso no cuenta como «1 inmutable» en la regla 3-2-1-1-0.",
+    todo: "Para tener algo inmutable: una nube con bloqueo de objetos, instantáneas del anfitrión que el almacén no ve (márcalas en el destino) o un disco que se desconecta y se rota.",
   },
   retencion: {
     title: "Retención",
@@ -157,13 +163,13 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Un repositorio de otro equipo que se añadió aquí para explorarlo y restaurar. Ninguna copia de este equipo escribe en él.",
   },
   "copia-externa": {
-    title: "Copia externa",
-    text: "Cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",
+    title: "Copia derivada (antes «copia externa»)",
+    text: "La «copia externa» de antes es una copia derivada: cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",
     todo: "Usa la misma contraseña que el repositorio salvo que pongas otra; en ese caso, apúntala en el kit. También puede ir a un repositorio que ya existe (p. ej. el de la nube de la app de escritorio): solo sube lo que le falte. Si el destino tiene bloqueo de objetos, márcalo: allí no se libera espacio.",
   },
   "copia-derivada": {
     title: "Copia derivada",
-    text: "Otra copia de un repositorio en otro destino, además de la copia externa: el equipo crea allí un repositorio con el mismo troceado (deduplica con el original) y le sube las versiones, todas o las que pasen un filtro (etiquetas, equipo, carpetas, fechas). Puede ir después de cada copia o a una hora, con su propia contraseña, su retención y su verificación.",
+    text: "Las versiones de un repositorio llevadas a otro repositorio, en otro destino (no es un espejo: el espejo es el mismo repositorio en otro sitio). El equipo crea allí un repositorio con el mismo troceado (deduplica con el original) y le sube las versiones, todas o las que pasen un filtro (etiquetas, equipo, carpetas, fechas). Puede ir después de cada copia o a una hora, con su propia contraseña, su retención y su verificación.",
     todo: "Si le pones otra contraseña, guárdala en el kit. Para Dropbox o Google Drive, conecta antes la nube en este mismo equipo.",
   },
   cadena: {
@@ -199,7 +205,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   "salud-proteccion": {
     title: "Salud de la protección",
-    text: "Siete comprobaciones, las mismas que la app de escritorio: copias automáticas, protección contra borrado, copia externa, verificación, prueba de restauración, kit de recuperación y retención.",
+    text: "Siete comprobaciones: copias automáticas, protección contra borrado, fuera del sitio, verificación, prueba de restauración, kit de recuperación y retención. El equipo calcula lo suyo y la consola lo completa con lo que solo ella ve (los espejos del almacén, la retención que aplica el almacén, lo marcado en cada destino), con los mismos datos que la regla 3-2-1-1-0.",
   },
   "prot-copias": {
     title: "Copias automáticas",
@@ -211,9 +217,9 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     text: "Que nadie, ni un ransomware con acceso al equipo, pueda borrar las versiones: un servidor de solo añadir (como «Este equipo guarda copias») o un bucket con bloqueo de objetos. Un disco normal se puede borrar.",
   },
   "prot-externa": {
-    title: "Copia externa",
-    text: "Otra copia fuera de este sitio (la nube u otro disco), por si hay un robo, un incendio o un ransomware.",
-    todo: "Configúrala en «Más… → Copia externa» del repositorio, o con el espejo del equipo que guarda copias.",
+    title: "Fuera del sitio",
+    text: "Alguna copia de estos datos está fuera del sitio o en la nube (el propio repositorio, un espejo o una copia derivada), por si hay un robo, un incendio o un ransomware. «Fuera del sitio» o «en la nube» es una propiedad del destino, no un tipo de copia.",
+    todo: "Añade un espejo del almacén a la nube, o una copia derivada a la nube o a otra sede («Añadir paso» en la tarjeta del repositorio).",
   },
   "prot-verificacion": {
     title: "Verificación",

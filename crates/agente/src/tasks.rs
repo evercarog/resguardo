@@ -1374,6 +1374,11 @@ fn dest_access(offsite: &Offsite, secret: &Secret) -> Access {
     }
 }
 
+/// 14bbb: el acceso al repositorio de una copia externa o derivada (para «Comprobar la contraseña»).
+pub fn acceso_de_copia_externa(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {
+    dest_access_listo(offsite, secret)
+}
+
 /// El acceso al destino listo para usar: con una nube (tarea 4a), con sus
 /// credenciales de ahora (el token al día; nunca guardadas con la copia).
 fn dest_access_listo(offsite: &Offsite, secret: &Secret) -> Result<Access, String> {
@@ -1382,6 +1387,22 @@ fn dest_access_listo(offsite: &Offsite, secret: &Secret) -> Result<Access, Strin
         a.env = crate::nube::entorno_restic(n)?;
     }
     Ok(a)
+}
+
+/// 14m: el acceso a la copia externa (`externa`) o a una copia derivada (su id) de
+/// `repo_id`, para explorarla y restaurar desde ella (el equipo ya lo tiene: es el
+/// que la hace), y el nombre de su destino si se sabe.
+pub fn acceso_copia(repo_id: &str, copia: &str) -> Result<(Access, Option<String>), String> {
+    let config = agent::load_config();
+    let repo = config.repos.iter().find(|r| r.id == repo_id).ok_or("Ese repositorio no está en este equipo.")?;
+    let secrets = agent::load_secrets()?;
+    let secret = secrets.get(repo_id).ok_or("Este equipo no tiene la contraseña de ese repositorio.")?;
+    if copia == "externa" {
+        let o = repo.offsite.as_ref().ok_or("Ese repositorio no tiene copia externa.")?;
+        return Ok((dest_access_listo(o, secret)?, o.target_name.clone()));
+    }
+    let d = repo.derived.iter().find(|d| d.id == copia).ok_or("Esa copia derivada ya no existe.")?;
+    Ok((dest_access_listo(&d.offsite, &derived_secret(secret, copia))?, d.offsite.target_name.clone()))
 }
 
 /// Ubicación de restic con el usuario y la contraseña del servidor REST

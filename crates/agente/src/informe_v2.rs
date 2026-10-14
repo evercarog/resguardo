@@ -399,6 +399,11 @@ fn proteccion(
     // seguir sin confirmar que se guardó; la retención es la del servidor.
     f.kit_ok = true;
     f.kit_stale = false;
+    // 14bbb: «Contraseña comprobada hace 3 meses».
+    if let Some(a) = crate::comprobar_contrasena::leer().remove(&r.id) {
+        f.contrasena_comprobada = a.bien.clone();
+        f.contrasena_no_abre = a.resultado == "no_abre";
+    }
     f.has_retention = r.retencion.is_some();
     let p = crate::protection::evaluate(&f, ahora);
     json!({
@@ -429,6 +434,8 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                 "espacio": c.espacio,
                 "verificacion": tarea(&t, "verify", &r.id),
                 "prueba_restauracion": tarea(&t, "restore_test", &r.id),
+                // 13e: la última restauración real correcta (cuenta como prueba de restauración).
+                "restauracion_real": crate::restaurar_v2::real_de(&r.id).map(|x| json!({ "ultima": x.fin, "archivos": x.archivos, "bytes": x.bytes })),
                 "externa": tarea(&t, "offsite", &r.id),
                 // Tarea 4b: la última vuelta de cada copia derivada (de ahí el aviso `externa_fallida`).
                 "derivadas": r.derivadas.iter().filter_map(|d| {

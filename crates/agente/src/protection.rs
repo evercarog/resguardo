@@ -1,6 +1,13 @@
 //! Salud de la protección de un destino: una lista de comprobaciones (copias
-//! al día, protección contra borrado, copia externa, verificación, prueba de
+//! al día, protección contra borrado, fuera del sitio, verificación, prueba de
 //! restauración, kit de recuperación y retención) con su estado.
+//!
+//! 14w (0.8.0): la comprobación «externa» se llama «Fuera del sitio»: alguna
+//! copia de estos datos está fuera del sitio o en la nube (el propio
+//! repositorio, la copia externa de siempre o una copia derivada). Lo que solo
+//! sabe la consola (los espejos del almacén, la retención que aplica el
+//! almacén, lo marcado en cada destino) lo completa ella con los mismos datos
+//! que la regla 3-2-1-1-0, sin contradecir esto.
 //!
 //! Las reglas viven solo aquí: la app y el informe a la web reúnen los datos
 //! (`Facts`) cada uno con lo que tiene a mano y llaman a `evaluate`.
@@ -44,6 +51,9 @@ pub struct Facts {
     pub has_offsite: bool,
     pub offsite_run: Option<RunFact>,
     pub offsite_held: bool,
+    /// 14w: las copias derivadas del repositorio que no van a un disco de este
+    /// equipo (la nube, un servidor, otro almacén), con su última vuelta.
+    pub derived: Vec<DerivedFact>,
     /// RFC 3339 de la versión más reciente del destino.
     pub last_snapshot: Option<String>,
     pub has_verify: bool,
@@ -52,8 +62,14 @@ pub struct Facts {
     pub cloud_verify_run: Option<RunFact>,
     pub has_restore_test: bool,
     pub restore_test_run: Option<RunFact>,
+    /// 13e: fin (RFC 3339) de la última restauración real correcta que restauró algo.
+    pub real_restore: Option<String>,
     /// Kit guardado y vigente / guardado pero ya no vale (cambió la ubicación).
     pub kit_ok: bool,
+    /// 14bbb: la última vez que «Comprobar la contraseña» abrió el repositorio (RFC 3339) y si
+    /// la última comprobación dijo que la contraseña guardada no lo abre.
+    pub contrasena_comprobada: Option<String>,
+    pub contrasena_no_abre: bool,
     pub kit_stale: bool,
     pub has_retention: bool,
     /// v1.41: un destino local, qué disco es (unidad, extraíble, de la red). `None`: no es local.
@@ -61,6 +77,14 @@ pub struct Facts {
     /// Tarea 8: por dónde pasan los datos de una copia (la regla 3-2-1-1-0). Quien
     /// la ve entera (la consola, con todos los equipos) la arma; `None`: no se evalúa.
     pub regla: Option<EntradaRegla>,
+}
+
+/// 14w: una copia derivada (su destino y su última vuelta).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DerivedFact {
+    /// El nombre de su destino, para decirlo.
+    pub name: String,
+    pub run: Option<RunFact>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,6 +139,19 @@ fn ago(t: &str, now: DateTime<Local>) -> String {
     }
 }
 
+/// «hace 3 meses» (o «hace 12 días», «hoy»): para lo que se comprueba de tarde en tarde.
+fn hace_meses(t: &str, now: DateTime<Local>) -> String {
+    let Some(t) = parse(t) else { return String::new() };
+    let dias = now.signed_duration_since(t).num_days().max(0);
+    match dias {
+        0 => "hoy".into(),
+        1 => "ayer".into(),
+        2..=59 => format!("hace {dias} días"),
+        _ if dias < 730 => format!("hace {} meses", dias / 30),
+        _ => format!("hace {} años", dias / 365),
+    }
+}
+
 /// Nombres en una frase: «X», «X y Y».
 fn names(list: &[String]) -> String {
     match list {
@@ -134,7 +171,7 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
 
     // 1. Copias automáticas activas y al día.
     items.push(if target {
-        item("copias", State::Ok, "Copias", format!("Recibe la copia externa de {}.", names(&f.offsite_sources)))
+        item("copias", State::Ok, "Copias", format!("Recibe la copia derivada de {}.", names(&f.offsite_sources)))
     } else if !f.scheduled {
         item("copias", State::Bad, "Copias automáticas", "Sin copias automáticas: solo se copia cuando alguien lo hace a mano.")
     } else if f.monitor {
@@ -172,38 +209,47 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
             "borrado",
             State::Warn,
             "Protegida contra borrado",
-            "Un ransomware podría borrarla; usa un servidor de solo añadir o una copia externa con bloqueo.",
+            "Un ransomware podría borrarla; usa un servidor de solo añadir o una copia derivada a una nube con bloqueo.",
         ),
     });
 
-    // 3. Copia externa configurada y al día.
+    // 3. 14w: Fuera del sitio: alguna copia de estos datos está fuera del sitio o en la
+    //    nube (el propio repositorio, la copia externa de siempre o una copia derivada).
+    //    Los espejos del almacén no los ve este equipo: los cuenta la consola.
+    const FUERA: &str = "Fuera del sitio";
+    let mut subidas: Vec<(String, Option<RunFact>)> = Vec::new();
+    if f.has_offsite {
+        subidas.push(("la copia derivada de cada día".into(), f.offsite_run.clone()));
+    }
+    subidas.extend(f.derived.iter().map(|d| (format!("la copia derivada a «{}»", d.name), d.run.clone())));
+    let atrasada = |r: &RunFact| match (parse(&r.finished), f.last_snapshot.as_deref().and_then(parse)) {
+        (Some(up), Some(snap)) => snap - up > Duration::hours(24),
+        _ => false,
+    };
+    let al_dia = subidas.iter().find_map(|(q, r)| r.as_ref().filter(|r| r.ok && !atrasada(r)).map(|r| (q, r)));
+    let bien = subidas.iter().find_map(|(q, r)| r.as_ref().filter(|r| r.ok).map(|r| (q, r)));
+    let alguna = subidas.iter().find_map(|(q, r)| r.as_ref().map(|r| (q, r)));
     items.push(if target {
-        item("externa", State::Ok, "Copia externa", format!("Este repositorio es la copia externa de {}.", names(&f.offsite_sources)))
-    } else if !f.has_offsite {
-        item("externa", State::Bad, "Copia externa", "Todas las versiones están en un solo sitio: configura una copia externa (la nube u otro disco).")
+        item("externa", State::Ok, FUERA, format!("Este repositorio es la copia derivada de {}.", names(&f.offsite_sources)))
+    } else if cloud || f.kind == "rclone" {
+        item("externa", State::Ok, FUERA, "El propio repositorio está en la nube.")
+    } else if subidas.is_empty() {
+        item(
+            "externa",
+            State::Bad,
+            FUERA,
+            "Ninguna copia de estos datos está fuera del sitio ni en la nube: añade un espejo o una copia derivada a la nube o a otra sede.",
+        )
     } else if f.offsite_held {
-        item("externa", State::Bad, "Copia externa", "Subida frenada por un cambio inusual: revísalo.")
+        item("externa", State::Bad, FUERA, "Subida frenada por un cambio inusual: revísalo.")
+    } else if let Some((que, r)) = al_dia {
+        item("externa", State::Ok, FUERA, format!("Al día: {que} (última subida {}).", ago(&r.finished, now)))
+    } else if let Some((que, r)) = bien {
+        item("externa", State::Warn, FUERA, format!("Atrasada: la última subida de {que} fue {} y hay versiones más nuevas.", ago(&r.finished, now)))
+    } else if let Some((que, r)) = alguna {
+        item("externa", State::Bad, FUERA, format!("La última subida de {que} falló: {}", r.message))
     } else {
-        match &f.offsite_run {
-            None => item("externa", State::Warn, "Copia externa", "Configurada, todavía sin ninguna subida."),
-            Some(r) if !r.ok => item("externa", State::Bad, "Copia externa", format!("La última subida falló: {}", r.message)),
-            Some(r) => {
-                let behind = match (parse(&r.finished), f.last_snapshot.as_deref().and_then(parse)) {
-                    (Some(up), Some(snap)) => snap - up > Duration::hours(24),
-                    _ => false,
-                };
-                if behind {
-                    item(
-                        "externa",
-                        State::Warn,
-                        "Copia externa",
-                        format!("Atrasada: la última subida fue {} y hay versiones más nuevas.", ago(&r.finished, now)),
-                    )
-                } else {
-                    item("externa", State::Ok, "Copia externa", format!("Al día (última subida {}).", ago(&r.finished, now)))
-                }
-            }
-        }
+        item("externa", State::Warn, FUERA, "Configurada, todavía sin ninguna subida.")
     });
 
     // 4. Verificación (del destino y, si la hay, de su copia en la nube).
@@ -213,7 +259,7 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
             "verificacion",
             State::Warn,
             "Verificación",
-            if target { "Sin verificación: prográmala en el origen, en «Copia externa»." } else { "Sin verificación programada." },
+            if target { "Sin verificación: prográmala en el origen, en su copia derivada." } else { "Sin verificación programada." },
         )
     } else if run_v.as_ref().is_some_and(|r| !r.ok) || (!target && f.cloud_verify_run.as_ref().is_some_and(|r| !r.ok)) {
         item("verificacion", State::Bad, "Verificación", "La última verificación encontró errores o no se pudo hacer.")
@@ -225,7 +271,13 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
     });
 
     // 5. Prueba de restauración (en un destino que solo recibe una copia externa, no aplica).
-    if !target {
+    // 13e: una restauración real correcta cuenta como prueba (con la misma caducidad),
+    // salvo que haya una prueba más reciente (bien o mal: manda la última).
+    let real = f.real_restore.as_deref().filter(|t| parse(t).is_some_and(|t| now - t <= Duration::days(DIAS_PRUEBA_REGLA)));
+    let real = real.filter(|t| f.restore_test_run.as_ref().is_none_or(|r| parse(&r.finished) < parse(t)));
+    if let Some(t) = real.filter(|_| !target) {
+        items.push(item("restauracion", State::Ok, "Prueba de restauración", format!("Correcta · restauración real, {}.", ago(t, now))));
+    } else if !target {
         items.push(if !f.has_restore_test {
             item("restauracion", State::Warn, "Prueba de restauración", "Sin prueba: nadie comprueba que las copias se puedan recuperar de verdad.")
         } else {
@@ -240,9 +292,15 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
         });
     }
 
-    // 6. Kit de recuperación.
-    items.push(if f.kit_ok {
-        item("kit", State::Ok, "Kit de recuperación", "Guardado.")
+    // 6. Kit de recuperación (14bbb: con cuándo se comprobó su contraseña; solo informa).
+    items.push(if f.contrasena_no_abre {
+        item("kit", State::Bad, "Kit de recuperación", "La última comprobación dice que la contraseña guardada no abre el repositorio.")
+    } else if f.kit_ok {
+        let detalle = match f.contrasena_comprobada.as_deref() {
+            Some(t) => format!("Guardado. Contraseña comprobada {}.", hace_meses(t, now)),
+            None => "Guardado.".to_string(),
+        };
+        item("kit", State::Ok, "Kit de recuperación", detalle)
     } else if f.kit_stale {
         item("kit", State::Warn, "Kit de recuperación", "La ubicación cambió desde el último kit: guarda uno nuevo.")
     } else {
@@ -267,15 +325,15 @@ pub fn evaluate(f: &Facts, now: DateTime<Local>) -> Protection {
             item("lugar", State::Ok, "Fuera de este equipo", "En una carpeta de otra máquina de la red.")
         } else if disk.extraible == Some(true) {
             item("lugar", State::Ok, "Fuera de este equipo", format!("En un disco extraíble{unidad}: guárdalo lejos del equipo cuando no copie."))
-        } else if f.has_offsite {
-            item("lugar", State::Ok, "Fuera de este equipo", format!("En este mismo equipo{unidad}, pero con copia externa."))
+        } else if f.has_offsite || !f.derived.is_empty() {
+            item("lugar", State::Ok, "Fuera de este equipo", format!("En este mismo equipo{unidad}, pero con una copia derivada en otro sitio."))
         } else {
             item(
                 "lugar",
                 State::Warn,
                 "Fuera de este equipo",
                 format!(
-                    "En este mismo equipo{unidad}: si se daña o lo cifra un ransomware, se pierden los archivos y las copias. Guárdalas en un almacén de otro equipo o añade una copia externa."
+                    "En este mismo equipo{unidad}: si se daña o lo cifra un ransomware, se pierden los archivos y las copias. Guárdalas en un almacén de otro equipo o añade una copia derivada a otro sitio."
                 ),
             )
         });
@@ -337,7 +395,8 @@ pub const DIAS_AISLADO: u32 = 30;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Inmutable {
-    /// Rest-server de solo añadir: desde el equipo no se puede borrar.
+    /// Rest-server de solo añadir: desde el equipo no se puede borrar. 14z: no cuenta
+    /// como inmutable en la regla (salvo que lo marque una persona, `inmutable_marcado`).
     SoloAnadir,
     /// Bloqueo de objetos (Object Lock) en la nube.
     ObjectLock,
@@ -397,6 +456,10 @@ pub struct PasoRegla {
     /// 0.7.26: días sin conectarse tras los que avisa (sin él, 30).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aislado_dias: Option<u32>,
+    /// 14z (0.8.0): la marca «Inmutable» la puso una persona. Solo importa con
+    /// `inmutable: "solo_anadir"`: lo marcado por una persona se respeta y cuenta.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inmutable_marcado: bool,
 }
 
 impl PasoRegla {
@@ -404,9 +467,19 @@ impl PasoRegla {
     pub fn es_fuera(&self) -> bool {
         self.tipo_destino.unwrap_or_else(|| TipoDestino::de_lugar(self.lugar)) != TipoDestino::Local
     }
-    /// ¿Marca «Inmutable»? (solo añadir, bloqueo de objetos, instantáneas fuera de su alcance).
+    /// ¿Marca «Inmutable»? Bloqueo de objetos o instantáneas fuera de su alcance.
+    /// 14z: «Solo añadir» no lo es (protege de los equipos, no de quien sea root
+    /// en el almacén o su anfitrión, ni de su retención), salvo que lo marcara una persona.
     pub fn es_inmutable(&self) -> bool {
-        !matches!(self.inmutable, Inmutable::No | Inmutable::Desconectado)
+        match self.inmutable {
+            Inmutable::ObjectLock | Inmutable::Instantaneas => true,
+            Inmutable::SoloAnadir => self.inmutable_marcado,
+            Inmutable::No | Inmutable::Desconectado => false,
+        }
+    }
+    /// 14z: ¿de solo añadir? (Un dato aparte, que se enseña: no cuenta como inmutable.)
+    pub fn es_solo_anadir(&self) -> bool {
+        self.inmutable == Inmutable::SoloAnadir
     }
     /// ¿Marca «Aislado»?
     pub fn es_aislado(&self) -> bool {
@@ -637,6 +710,7 @@ pub fn agent_facts(
         verify_run: task("verify"),
         has_restore_test: entry.is_some_and(|e| e.restore_test.is_some()),
         restore_test_run: task("restore_test"),
+        real_restore: crate::restaurar_v2::real_de(repo_id).map(|r| r.fin),
         has_cloud_verify: entry.is_some_and(|e| e.offsite.as_ref().is_some_and(|o| o.verify.is_some())),
         cloud_verify_run: task("verify_offsite"),
         ..Default::default()
@@ -650,7 +724,17 @@ pub fn agent_facts(
             f.cloud_verify_run = tasks.runs.get(&crate::tasks::key("verify_offsite", &src.id)).map(RunFact::from_record);
         }
     }
+    // 14w: las copias derivadas que no van a un disco de este equipo.
     if let Some(e) = entry {
+        f.derived = e
+            .derived
+            .iter()
+            .filter(|d| crate::kit::kind_of(&d.offsite.location) != "local")
+            .map(|d| DerivedFact {
+                name: d.offsite.target_name.clone().unwrap_or_else(|| d.id.clone()),
+                run: tasks.runs.get(&crate::tasks::derived_key(crate::tasks::DERIVADA, repo_id, &d.id)).map(RunFact::from_record),
+            })
+            .collect();
         f.object_lock = e.object_lock;
         f.has_retention = e.has_retention;
         f.kit_ok = e.kit.as_ref().is_some_and(|k| k.matches(location, None));
@@ -819,6 +903,28 @@ mod tests {
         assert_eq!(evaluate(&f, now()).items[1].state, State::Unknown);
     }
 
+    /// 13e: una restauración real correcta cuenta como prueba, con la misma caducidad.
+    #[test]
+    fn restauracion_real_como_prueba() {
+        let item = |f: &Facts| evaluate(f, now()).items.into_iter().find(|i| i.id == "restauracion").unwrap();
+        let mut f = completo();
+        f.has_restore_test = false;
+        f.restore_test_run = None;
+        assert_eq!(item(&f).state, State::Warn);
+        f.real_restore = Some("2026-09-27T10:00:00-05:00".into());
+        let i = item(&f);
+        assert!(i.state == State::Ok && i.detail.contains("restauración real"), "{i:?}");
+        // Una prueba posterior que falló manda; una anterior, no.
+        f.has_restore_test = true;
+        f.restore_test_run = Some(RunFact { ok: false, finished: "2026-09-28T04:00:00-05:00".into(), message: "x".into() });
+        assert_eq!(item(&f).state, State::Bad);
+        f.restore_test_run = Some(RunFact { ok: false, finished: "2026-09-20T04:00:00-05:00".into(), message: "x".into() });
+        assert_eq!(item(&f).state, State::Ok);
+        // Caducada (más de 45 días): ya no cuenta.
+        f.real_restore = Some("2026-07-01T10:00:00-05:00".into());
+        assert_eq!(item(&f).state, State::Bad);
+    }
+
     #[test]
     fn copias_en_el_mismo_equipo() {
         let lugar = |f: &Facts| evaluate(f, now()).items.into_iter().find(|i| i.id == "lugar");
@@ -844,7 +950,7 @@ mod tests {
         assert_eq!(lugar(&f).unwrap().state, State::Ok);
         f.disk = None;
         f.has_offsite = true;
-        assert!(lugar(&f).unwrap().detail.contains("con copia externa"));
+        assert!(lugar(&f).unwrap().detail.contains("con una copia derivada"));
     }
 
     #[test]
@@ -862,7 +968,7 @@ mod tests {
         let p = evaluate(&f, now());
         assert_eq!(p.total, 6, "sin prueba de restauración propia");
         assert_eq!(p.score, 6, "{:#?}", p.items);
-        assert!(p.items[0].detail.contains("Recibe la copia externa de «Siigo»"));
+        assert!(p.items[0].detail.contains("Recibe la copia derivada de «Siigo»"));
     }
 
     /// Los vectores compartidos con la consola (`consola/scripts/vectores-regla.ts`).
@@ -882,6 +988,35 @@ mod tests {
             }
             assert_eq!(obtenido, v["esperado"], "vector «{nombre}»: {}", v["que"]);
         }
+    }
+
+    /// 14w: «Fuera del sitio» cuenta el propio repositorio en la nube y las copias derivadas.
+    #[test]
+    fn fuera_del_sitio_con_derivadas() {
+        let fuera = |f: &Facts| evaluate(f, now()).items.into_iter().find(|i| i.id == "externa").unwrap();
+        let mut f = completo();
+        f.has_offsite = false;
+        f.offsite_run = None;
+        let i = fuera(&f);
+        assert_eq!((i.state, i.label.as_str()), (State::Bad, "Fuera del sitio"));
+        assert!(i.detail.contains("espejo o una copia derivada"), "{}", i.detail);
+        // Una derivada a la nube al día: bien, y lo dice con su nombre.
+        f.derived = vec![DerivedFact { name: "Backblaze".into(), run: ok("2026-10-01T11:30:00-05:00") }];
+        let i = fuera(&f);
+        assert_eq!(i.state, State::Ok);
+        assert!(i.detail.contains("«Backblaze»"), "{}", i.detail);
+        // Falló: mal, con el mensaje.
+        f.derived[0].run = Some(RunFact { ok: false, finished: "2026-10-01T11:30:00-05:00".into(), message: "sin red".into() });
+        assert_eq!(fuera(&f).state, State::Bad);
+        // Una que falla y otra al día: basta con una.
+        f.has_offsite = true;
+        f.offsite_run = ok("2026-10-01T11:30:00-05:00");
+        assert_eq!(fuera(&f).state, State::Ok);
+        // El propio repositorio en la nube.
+        let mut n = completo();
+        n.kind = "b2".into();
+        n.has_offsite = false;
+        assert_eq!(fuera(&n).state, State::Ok);
     }
 
     #[test]
@@ -912,7 +1047,9 @@ mod tests {
         assert!(!r.cumple && !r.cumple_config && !r.dejo_de_cumplir);
         let accion = |id: &str| r.partes.iter().find(|x| x.id == id).unwrap().accion.clone();
         assert_eq!((accion("copias"), accion("fuera"), accion("errores")), ("anadir_destino".into(), "anadir_fuera".into(), "programar_prueba".into()));
-        assert_eq!(r.avisos, ["inmutable_local"]);
+        // 14z: una zona de solo añadir no es inmutable (ni avisa de «inmutable en el sitio»).
+        assert_eq!(accion("inmutable"), "anadir_inmutable");
+        assert!(r.avisos.is_empty(), "{:?}", r.avisos);
         // Nunca cuenta el sistema de archivos ni el sistema operativo: no están en la entrada.
         assert_eq!(margen_horas(None), 48.0);
         assert_eq!(margen_horas(Some(1.0)), 13.5);

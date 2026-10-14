@@ -27,6 +27,8 @@ export interface Servidor {
   publico?: boolean;
   /** v1.39: canal en vivo de la consola (`GET /api/clientes/{c}/vivo`, WebSocket). */
   vivo?: boolean;
+  /** v1.6x (plan 0.8.0, E1): lo más que puede ocupar una descarga por el relé, en bytes (sin el campo: 500 MB). */
+  max_descarga?: number;
 }
 
 /** v1.34: cuotas de un cliente. null = la predeterminada; 0 = sin límite. */
@@ -330,6 +332,8 @@ export interface ResumenEquipo {
      * principal sigue en `carpeta`, `puerto`, `usuarios`, `espacio` y `repositorios`.
      */
     zonas?: ZonaAlmacen[] | null;
+    /** Plan 0.8.0, B1 (`admite: "nombres_legibles"`): carpetas movidas con «Ordenar nombres de carpeta» (las últimas, la más reciente primero). */
+    renombres?: import("./nombres").RenombreAlmacen[] | null;
   } | null;
   pausado_hasta?: string | null;
   /** Plan 0.7.26 (agente con `admite: "espejo_equipo"`): los espejos que hace el propio equipo de los repositorios de sus discos. */
@@ -470,6 +474,8 @@ export interface RepositorioResumen {
   id: string;
   nombre: string;
   destino: string;
+  /** 14bbb: la última vez que «Comprobar la contraseña» lo abrió (`bien`) y cómo fue la última. */
+  contrasena_comprobada?: ContrasenaComprobada | null;
   versiones?: number;
   bytes?: number;
   ultima_version?: string | null;
@@ -829,6 +835,8 @@ export interface RepoInforme {
   espacio: { en_disco_bytes: number | null; sin_comprimir: number | null; ratio: number | null; leido: string | null } | null;
   verificacion: TareaInforme | null;
   prueba_restauracion: TareaInforme | null;
+  /** v1.6x (13e): la última restauración real correcta (cuenta como prueba de restauración). */
+  restauracion_real?: { ultima: string; archivos?: number; bytes?: number } | null;
   externa: TareaInforme | null;
   /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
   derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
@@ -894,6 +902,9 @@ export interface TareaEnMarcha {
   otra_consola?: boolean | null;
   /** El nombre, en el equipo, de esa consola (si tiene uno; nunca su dirección). */
   consola?: string | null;
+  /** v1.6x (13f, restauraciones): quién la pidió (como lo dice su consola) y si se pidió desde la ventana del equipo. */
+  por?: string | null;
+  en_el_equipo?: boolean | null;
 }
 
 export interface ProgresoEquipo {
@@ -936,7 +947,9 @@ export type TipoAviso =
   | "sin_soporte_pronto"
   | "sin_soporte"
   // Plan 0.8.0 (G1): el informe ejecutivo programado no se pudo poner en la cola (sin correo…).
-  | "informe_no_enviado";
+  | "informe_no_enviado"
+  // 14bbb: la contraseña de un repositorio lleva N meses sin comprobarse.
+  | "kit_por_comprobar";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {
@@ -979,6 +992,29 @@ export interface PublicacionServidor {
   vigente: PublicacionAgente | null;
   guardadas: PublicacionAgente[];
   version_servidor: string;
+  /** 14f: bajarlas solas de GitHub (servidor anterior: sin el campo). */
+  github?: {
+    ajustes: { activo: boolean; horas: number };
+    ultima: { cuando: number; resultado: "nueva" | "al_dia" | "sin_red" | "no_cuadra"; version?: string | null; mensaje?: string | null; instalador?: string | null } | null;
+    buscando: boolean;
+    /** false: compilación de desarrollo sin RESGUARDO_GITHUB_AUTO (solo «Buscar ahora»). */
+    automatica: boolean;
+  };
+  /** 14dd: el instalador del agente de Windows que da el servidor. */
+  instalador?: { hay: boolean; de_datos: boolean; version?: string | null };
+}
+
+/** 14bbb: «Comprobar la contraseña» de un repositorio, según el equipo. */
+export interface ContrasenaComprobada {
+  bien?: string | null;
+  ultima: string;
+  resultado: "abre" | "no_abre" | "sin_respuesta";
+}
+
+/** 14bbb: el recordatorio de comprobar los kits de un cliente. */
+export interface RecordatorioKit {
+  activo: boolean;
+  meses: number;
 }
 
 /**
@@ -1464,6 +1500,53 @@ export interface NotasObjeto {
 export interface NotasExportadas {
   observaciones: { tipo: TipoNota; objeto: string; texto: string; actualizada: string; por: string }[];
   comentarios: { id: string; tipo: TipoNota; objeto: string; texto: string; autor: string; creado: string; editado: string | null }[];
+}
+
+/** v1.6x (plan 0.8.0, E2): una restauración, como la anota el equipo en su bitácora (sin rutas). */
+export interface Restauracion {
+  equipo: string;
+  id: string;
+  hora: string;
+  inicio?: string | null;
+  duracion_s?: number | null;
+  repo: string;
+  /** Los 8 primeros caracteres de la versión. */
+  version?: string | null;
+  elementos?: number | null;
+  archivos?: number | null;
+  bytes?: number | null;
+  /** `junto`, `original`, `carpeta` (desde la ventana), `nueva`, `zip` o `descarga`. */
+  destino?: string | null;
+  /** El .zip lleva contraseña (AES-256). */
+  cifrado?: boolean | null;
+  /** `principal`, `externa` o `derivada`. */
+  desde?: string | null;
+  desde_nombre?: string | null;
+  resultado: "ok" | "fallo";
+  mensaje?: string | null;
+  motivo?: { tipo: MotivoRestauracion; notas?: string | null } | null;
+  por?: string | null;
+  consola?: string | null;
+  orden?: string | null;
+  en_el_equipo?: boolean | null;
+}
+
+export type MotivoRestauracion = "borrado" | "dano" | "prueba" | "otro";
+
+/** El motivo que le añadió una persona en esta consola. */
+export interface NotaRestauracion {
+  equipo: string;
+  id: string;
+  motivo: MotivoRestauracion;
+  notas?: string | null;
+  por?: string | null;
+  actualizada?: string | null;
+}
+
+export interface Restauraciones {
+  ajustes: { motivo_obligatorio: boolean; actualizada?: string | null; por?: string | null };
+  entradas: Restauracion[];
+  notas: NotaRestauracion[];
 }
 
 // ---------------------------------------------------------------------------

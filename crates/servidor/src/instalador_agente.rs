@@ -75,6 +75,7 @@ pub struct Puesto {
 /// Comprueba `archivo` (y su SHA-256, si se da) y lo deja en la carpeta de
 /// datos: carpeta `agente/` 0700 y archivo 0600, del dueño de la carpeta de
 /// datos (el usuario del servicio). Reemplaza el anterior de una vez (rename).
+/// Puesto a mano no se sabe su versión: se olvida la de [`de_publicacion`].
 pub fn poner(datos: &Path, archivo: &Path, sha256: Option<&str>) -> Result<Puesto, String> {
     if !datos.is_dir() {
         return Err(format!("No existe la carpeta de datos {}: ¿está instalado el servidor? (o usa --datos)", datos.display()));
@@ -84,8 +85,15 @@ pub fn poner(datos: &Path, archivo: &Path, sha256: Option<&str>) -> Result<Puest
         return Err(format!("{} no es un archivo válido (o pasa de {} MB).", archivo.display(), MAX_BYTES / (1024 * 1024)));
     }
     let bytes = std::fs::read(archivo).map_err(|e| format!("No se pudo leer {}: {e}", archivo.display()))?;
-    comprobar(&bytes)?;
-    let suma = sha256_hex(&bytes);
+    let p = poner_bytes(datos, &bytes, sha256)?;
+    let _ = std::fs::remove_file(marca(datos));
+    Ok(p)
+}
+
+/// Comprueba `bytes` (y su SHA-256, si se da) y los deja como el instalador del servidor.
+fn poner_bytes(datos: &Path, bytes: &[u8], sha256: Option<&str>) -> Result<Puesto, String> {
+    comprobar(bytes)?;
+    let suma = sha256_hex(bytes);
     if let Some(esperada) = sha256 {
         let esperada = esperada.trim().to_ascii_lowercase();
         if esperada != suma {
@@ -100,7 +108,7 @@ pub fn poner(datos: &Path, archivo: &Path, sha256: Option<&str>) -> Result<Puest
     std::fs::create_dir_all(&carpeta).map_err(|e| format!("No se pudo crear {}: {e}", carpeta.display()))?;
     let destino = en_datos(datos);
     let tmp = carpeta.join(format!(".{NOMBRE}.{}", uuid::Uuid::new_v4().simple()));
-    let escrito = escribir_solo_dueno(&tmp, &bytes).and_then(|()| {
+    let escrito = escribir_solo_dueno(&tmp, bytes).and_then(|()| {
         #[cfg(unix)]
         dar_al_dueno(datos, &[carpeta.as_path(), tmp.as_path()]);
         std::fs::rename(&tmp, &destino).map_err(|e| e.to_string())
@@ -110,6 +118,74 @@ pub fn poner(datos: &Path, archivo: &Path, sha256: Option<&str>) -> Result<Puest
         return Err(format!("No se pudo dejar el instalador en {}: {e}", destino.display()));
     }
     Ok(Puesto { ruta: destino, sha256: suma, bytes: bytes.len() as u64 })
+}
+
+// ---------------------------------------------------------------------------
+// 14dd: el instalador, de la publicación firmada que ya tiene el servidor
+// ---------------------------------------------------------------------------
+
+/// La versión del instalador puesto desde una publicación firmada (al lado, en `agente/`).
+/// Sin ella, el instalador vino con el servidor o se puso a mano (versión desconocida).
+pub fn marca(datos: &Path) -> PathBuf {
+    datos.join("agente").join("instalador-version.json")
+}
+
+/// La versión del instalador de la carpeta de datos, si se puso desde una publicación.
+pub fn version_puesta(datos: &Path) -> Option<String> {
+    let t = std::fs::read_to_string(marca(datos)).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&t).ok()?;
+    let version = v["version"].as_str()?;
+    resguardo_protocolo::publicacion::Version::leer(version).map(|_| version.to_string())
+}
+
+/// Lo que hizo [`de_publicacion`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum DePublicacion {
+    /// Puesto el de esa versión.
+    Puesto { version: String, bytes: u64 },
+    /// Ya estaba el de esa versión (o uno más nuevo).
+    AlDia { version: String },
+    /// Hay otro puesto a mano (o el que trae el servidor) y no se pidió cambiarlo.
+    OtroAMano,
+}
+
+/// 14dd: pone como instalador del agente el de Windows de la publicación firmada `g`
+/// (el `instalador-nsis` de `windows-x86_64` que lista su manifiesto, ya bajado y con su
+/// SHA-256 comprobado), con las mismas comprobaciones que `poner-instalador-agente`.
+/// Solo si no hay ninguno o el que hay es de una versión anterior; uno puesto a mano
+/// (sin versión conocida) solo se cambia con `forzar` («Ponerlo ahora»).
+pub fn de_publicacion(datos: &Path, g: &crate::publicaciones::Guardada, forzar: bool) -> Result<DePublicacion, String> {
+    use resguardo_protocolo::publicacion as p;
+    let m = &g.manifiesto;
+    let a = m
+        .archivos
+        .iter()
+        .find(|a| a.plataforma == "windows-x86_64" && a.tipo == "instalador-nsis")
+        .ok_or_else(|| format!("La versión {} no trae el instalador de Windows.", m.version))?;
+    if g.faltan.contains(&a.nombre) {
+        return Err(format!("Aún falta bajar {} de la versión {}.", a.nombre, m.version));
+    }
+    let hay = en_datos(datos).is_file();
+    match version_puesta(datos) {
+        Some(v) if hay && p::comparar(&v, &m.version).is_some_and(|o| o.is_ge()) => return Ok(DePublicacion::AlDia { version: v }),
+        None if hay && !forzar => return Ok(DePublicacion::OtroAMano),
+        _ => {}
+    }
+    let ruta = g.dir.join(&a.nombre);
+    let meta = std::fs::symlink_metadata(&ruta).map_err(|e| format!("No se pudo abrir {}: {e}", a.nombre))?;
+    if !meta.is_file() || meta.len() != a.tamano || meta.len() > MAX_BYTES {
+        return Err(format!("{} no tiene el tamaño del manifiesto firmado.", a.nombre));
+    }
+    let bytes = std::fs::read(&ruta).map_err(|e| format!("No se pudo leer {}: {e}", a.nombre))?;
+    // El SHA-256 firmado, otra vez sobre lo que se va a servir.
+    let puesto = poner_bytes(datos, &bytes, Some(&a.sha256))?;
+    let texto = serde_json::json!({ "version": m.version, "sha256": puesto.sha256, "archivo": a.nombre }).to_string();
+    let tmp = marca(datos).with_extension(format!("{}.tmp", uuid::Uuid::new_v4().simple()));
+    escribir_solo_dueno(&tmp, texto.as_bytes()).and_then(|()| std::fs::rename(&tmp, marca(datos)).map_err(|e| e.to_string())).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("No se pudo anotar la versión del instalador: {e}")
+    })?;
+    Ok(DePublicacion::Puesto { version: m.version.clone(), bytes: puesto.bytes })
 }
 
 fn escribir_solo_dueno(ruta: &Path, bytes: &[u8]) -> Result<(), String> {

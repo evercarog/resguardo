@@ -8,7 +8,7 @@
   // consolas con la clave de administración: cuenta en la regla 3-2-1. El
   // sistema de archivos, el entorno y la última conexión que vio el agente se
   // enseñan solo como dato.
-  import { Building2, Cloud, HardDrive, Lock, ShieldCheck, TriangleAlert, Unplug } from "@lucide/svelte";
+  import { Building2, Cloud, HardDrive, Lock, ShieldCheck, ShieldHalf, TriangleAlert, Unplug } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import BotonCargando from "../BotonCargando.svelte";
   import CampoClave from "../CampoClave.svelte";
@@ -19,7 +19,7 @@
   import { avisar } from "$lib/avisos.svelte";
   import { guardarEnCatalogo, quitarDelCatalogo } from "$lib/catalogoDestinos.svelte";
   import { textoEntorno, type MarcarDestino } from "$lib/regla321";
-  import { AYUDA_TIPO, atributosDe, clasificar, COMO_INMUTABLE, DIAS_AISLADO, estadoConexion, TEXTO_COMO_INMUTABLE, TEXTO_TIPO, TIPOS_DESTINO, tipoDeLugar } from "$lib/tipoDestino";
+  import { AYUDA_TIPO, atributosDe, clasificar, COMO_INMUTABLE, DIAS_AISLADO, estadoConexion, TEXTO_COMO_INMUTABLE, TEXTO_SOLO_ANADIR, TEXTO_TIPO, TIPOS_DESTINO, tipoDeLugar } from "$lib/tipoDestino";
   import type { InmutableDestino, TipoDestino } from "$lib/tipos";
 
   let { cliente, destino, onclose }: { cliente: string; destino: MarcarDestino; onclose: () => void } = $props();
@@ -31,6 +31,8 @@
   let tipo = $state<TipoDestino>(inicial().tipo);
   let inmutable = $state(inicial().inmutable);
   let como = $state<InmutableDestino>(inicial().inmutable ? inicial().como : deducido().inmutable ? deducido().como : "instantaneas");
+  // 14z: «solo añadir» ya no se elige como forma de ser inmutable; si una persona lo marcó antes, se respeta y se ve.
+  const formas = $derived(como === "solo_anadir" ? (["solo_anadir", ...COMO_INMUTABLE] as const) : COMO_INMUTABLE);
   let bloqueo = $state<number | null>(inicial().bloqueoDias);
   let aislado = $state(inicial().aislado);
   let aisladoDias = $state<number>(inicial().aisladoDias);
@@ -123,22 +125,25 @@
     </fieldset>
     <fieldset class="field">
       <legend class="field-label">Marcas</legend>
-      <label class="marca"><input type="checkbox" bind:checked={inmutable} /><Lock size={15} aria-hidden="true" /><span>Inmutable <span class="faint">· no se puede borrar desde los equipos</span></span></label>
+      <label class="marca"><input type="checkbox" bind:checked={inmutable} /><Lock size={15} aria-hidden="true" /><span>Inmutable <span class="faint">· nadie puede borrarlo durante un plazo, ni desde el almacén</span></span></label>
       {#if inmutable}
         <div class="sub">
           <label class="sr-only" for="at-como">Cómo es inmutable</label>
           <select id="at-como" class="input" bind:value={como}>
-            {#each COMO_INMUTABLE as c (c)}<option value={c}>{TEXTO_COMO_INMUTABLE[c]}{deducido().inmutable && c === deducido().como ? " (lo deducido)" : ""}</option>{/each}
+            {#each formas as c (c)}<option value={c}>{TEXTO_COMO_INMUTABLE[c]}{deducido().inmutable && c === deducido().como ? " (lo deducido)" : ""}</option>{/each}
           </select>
           {#if como === "object_lock"}
             <label class="dias"><span>Bloqueo de</span><input class="input" type="number" min="1" max="36500" step="1" bind:value={bloqueo} aria-invalid={!!errorBloqueo} placeholder="30" /><span>días</span></label>
             {#if errorBloqueo}<span class="field-hint error">{errorBloqueo}</span>{/if}
-          {:else if como === "solo_anadir" && deducido().como !== "solo_anadir"}
-            <span class="field-hint">Solo si su servidor es de verdad de solo añadir: la salud sigue diciendo lo que comprueba el equipo.</span>
+          {:else if como === "solo_anadir"}
+            <span class="field-hint">Lo marcó una persona y se respeta. Solo añadir por sí solo no es inmutable: mejor «Instantáneas fuera de su alcance» si las hay.</span>
           {:else if como === "instantaneas"}
             <span class="field-hint">Lo dices tú: el almacén no puede comprobarlas. <Ayuda id="instantaneas" /></span>
           {/if}
         </div>
+      {/if}
+      {#if deducido().soloAnadir}
+        <p class="solo-anadir"><ShieldHalf size={15} aria-hidden="true" /><span><strong>Solo añadir</strong> <span class="faint">· {TEXTO_SOLO_ANADIR.replace(/^Solo añadir: /, "")}</span></span></p>
       {/if}
       <label class="marca"><input type="checkbox" bind:checked={aislado} /><Unplug size={15} aria-hidden="true" /><span>Aislado <span class="faint">· se desconecta y se rota</span></span></label>
       {#if aislado}
@@ -184,6 +189,18 @@
 </Modal>
 
 <style>
+  .solo-anadir {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin: 4px 0;
+    font-size: var(--fs-sm);
+    line-height: var(--lh-sm);
+  }
+  .solo-anadir :global(svg) {
+    flex: none;
+    margin-top: 2px;
+  }
   fieldset {
     border: 0;
     padding: 0;

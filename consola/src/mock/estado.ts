@@ -124,6 +124,11 @@ export interface Estado {
   paquetes: Map<string, Uint8Array>;
   auditoriaImportada: Map<string, T.EntradaAuditoria[]>;
   fichas: { hash: string; cliente: string; usos: number; caduca: string }[];
+  /** Plan 0.8.0, E2: lo que anotan los equipos de cada restauración, los motivos de esta consola y el ajuste del cliente. */
+  restauraciones: (T.Restauracion & { cliente: string })[];
+  notasRest: (T.NotaRestauracion & { cliente: string })[];
+  ajustesRest: Map<string, boolean>;
+  restSembradas: Set<string>;
 }
 
 export let estado: Estado;
@@ -280,6 +285,10 @@ export async function sembrar(vacio = false) {
     paquetes: new Map(),
     auditoriaImportada: new Map(),
     fichas: [],
+    restauraciones: [],
+    notasRest: [],
+    ajustesRest: new Map(),
+    restSembradas: new Set(),
   };
   if (vacio) return;
 
@@ -398,7 +407,7 @@ export async function sembrar(vacio = false) {
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto", "cadenas", "derivadas"],
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real"],
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },
@@ -476,7 +485,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       rol: "almacenamiento",
       // v1.28: agente nuevo (plazos, verificación automática y su propio almacén).
-      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo"],
+      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles"],
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         entorno: { virtual: "hyperv" },
@@ -487,7 +496,7 @@ export async function sembrar(vacio = false) {
         ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
-          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "caja-1", repos: ["caja", "ventas"] }],
+          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
           zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 0, escucha: true, sistema_archivos: "ReFS", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [] }],
           espejo: {
@@ -498,9 +507,9 @@ export async function sembrar(vacio = false) {
             destinos: [
               { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo", horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true, retencion_dias: 30, por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" }, freno: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén", verificar_pct: 5, verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 }, ultima: hace(60 * 13),
  resultado: "Espejo hecho: 1.204 archivos nuevos (38 GB).", espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
-              { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["caja-1/ventas"], vistos: ["caja-1/ventas"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
+              { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
               // Tarea 7d.2: un paso «espejo» de la cadena de «Caja»: a la zona F, después de cada copia, sin retención.
-              { tipo: "zona", carpeta: "z3c4d5e", repos: ["caja-1/caja"], vistos: ["caja-1/caja"], tras_copia: true, ultima: hace(60 * 3), resultado: "Espejo hecho en zona z3c4d5e: 12 archivos nuevos (4 MB), 3.120 ya estaban, 0 se dejan para la próxima vez.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
+              { tipo: "zona", carpeta: "z3c4d5e", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], tras_copia: true, ultima: hace(60 * 3), resultado: "Espejo hecho en zona z3c4d5e: 12 archivos nuevos (4 MB), 3.120 ya estaban, 0 se dejan para la próxima vez.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
             ],
             // Plan 0.7.26 (bloque 4): los mismos espejos como trabajos, más uno a B2 con bloqueo, en pausa.
             trabajos: [
@@ -511,10 +520,10 @@ export async function sembrar(vacio = false) {
                 por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" },
                 freno_aviso: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito, confírmalo en la consola; si no, revisa el almacén",
                 espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
-              { id: "t1b2c3d4e5f", nombre: "Ventas a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/ventas"] }, vistos: ["caja-1/ventas"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
+              { id: "t1b2c3d4e5f", nombre: "Ventas a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"] }, vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
                 cuando: { cadena: "t0a1b2c3d4e", retraso_min: 15 }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, limite_kib: 4096, orden: 1,
                 ultima: hace(60 * 13), resultado: "ERROR: espejo «Ventas a Dropbox» en Dropbox Oficina:CafeDelSur: Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez." },
-              { id: "t2c3d4e5f60", nombre: "Caja a Disco F", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["caja-1/caja"] }, vistos: ["caja-1/caja"], adonde: { tipo: "zona", carpeta: "z3c4d5e" },
+              { id: "t2c3d4e5f60", nombre: "Caja a Disco F", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"] }, vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], adonde: { tipo: "zona", carpeta: "z3c4d5e" },
                 cuando: { tras_copia: true }, retencion: { modo: "igual" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "avisar" }, orden: 2,
                 ultima: hace(60 * 3), resultado: "Espejo «Caja a Disco F» hecho en zona z3c4d5e (después de una copia nueva): 12 archivos nuevos (4 MB), 3.120 ya estaban.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
               { id: "t3d4e5f6071", nombre: "Todo a B2 (bloqueo 30 días)", activo: false, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "nube", nube: "B2 Café del Sur", carpeta: "cafe-espejo/sur" },
@@ -525,7 +534,7 @@ export async function sembrar(vacio = false) {
           // v1.22: la retención de «Caja» la aplica el almacén, los domingos a las 03:00.
           retenciones: [
             {
-              usuario: "caja-1",
+              usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b",
               repo: "caja",
               retencion: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 },
               texto: "7 diarias · 4 semanales · 12 mensuales · 2 anuales",
@@ -555,7 +564,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "solo_destino"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -572,17 +581,20 @@ export async function sembrar(vacio = false) {
         ],
         cambio_config: { tipo: "config", cuando: hace(60 * 3), consola: { nombre: "Consola en línea", url: "https://consola.ejemplo.com", identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=" } },
         // Con copia externa diaria a un segundo disco (cambiar_copia_externa).
-        repositorios: [{ ...repo("caja", "Caja", "almacen-sur", 77, 4_100_000_000), retencion: "7 diarias · 4 semanales · 12 mensuales · 2 anuales", retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 }, solo_anadir: true, externa: { destino: "Disco 2", destino_id: "disco-2", hora: "21:00" }, verificacion_auto: { cada_dias: 7, porcentaje: 10, proxima: dentro(60 * 24 * 3), todo_leido: hace(60 * 24 * 40) },
+        repositorios: [{ ...repo("caja", "Caja", "almacen-sur", 77, 4_100_000_000), retencion: "7 diarias · 4 semanales · 12 mensuales · 2 anuales", retencion_regla: { diarias: 7, semanales: 4, mensuales: 12, anuales: 2 }, solo_anadir: true, externa: { destino: "Disco 2", destino_id: "disco-2", hora: "21:00" },
+            // 14bbb: la contraseña del kit se comprobó hace unos 3 meses.
+            contrasena_comprobada: { bien: hace(60 * 24 * 95), ultima: hace(60 * 24 * 95), resultado: "abre" },
+            verificacion_auto: { cada_dias: 7, porcentaje: 10, proxima: dentro(60 * 24 * 3), todo_leido: hace(60 * 24 * 40) },
             // Tarea 4b: una copia derivada a la Dropbox conectada en el propio equipo, después de cada copia, solo las diarias.
             derivadas: [{ id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true }] },
           // También en el almacén, todavía sin retención (v1.22: «Retención en el almacén…»).
-          { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true },
+          { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true, ruta: "almacen-sur-7c2a" },
           // 14mm: el mismo almacén dado de alta como «Servidor de copias» genérico (un repositorio adoptado): el mapa lo une.
           { ...repo("historico", "Histórico", "servidor-copias", 12, 1_300_000_000), ruta: "caja-1/historico", solo_anadir: true }],
         // Tarea 7c: «Ventas» va después de «Caja y facturas».
         copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("ventas", "Ventas", "ventas", ["14:00"], 1), tras: "caja" }],
         destinos: [
-          { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/caja-1/", equipo_almacen: ID.almacen },
+          { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/", equipo_almacen: ID.almacen },
           // 0.7.26: dos discos USB que se rotan (marcado «Aislado» en el catálogo): el agente dice cuándo vio cada uno.
           {
             id: "disco-2",
@@ -612,7 +624,7 @@ export async function sembrar(vacio = false) {
       so: "Windows Server 2022",
       version_agente: "0.7.25",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "escritorio", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto"],
+        admite: ["retencion_plazos", "verificacion_auto", "consolas_multiples", "escritorio", "verificacion_horario", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "prueba_auto", "restaurar_carpeta", "restaurar_desde", "restauracion_real"],
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         repositorios: [],
         copias: [],
@@ -759,4 +771,53 @@ export async function sembrar(vacio = false) {
   auditar(propio.id, ana.id, "cliente.crear", "Propio", null, t(60 * 24 * 12));
   // v1.38: dos clientes más (uno de Ana y otro que no es suyo), para «Todos los clientes».
   await sembrarOtrosClientes({ estado, crearEquipo, kcfgDe, ana, marta, sal, claveAdmin: DEMO.claveAdmin, contrasenaRepo: DEMO.contrasenaRepo });
+}
+
+/**
+ * Plan 0.8.0, E2: unas restauraciones de ejemplo (deterministas) para cada
+ * cliente, la primera vez que se piden: varias correctas, una fallida, con y sin
+ * motivo, desde la consola y desde la ventana del equipo. Sin rutas.
+ */
+export function sembrarRestauraciones(cliente: string) {
+  if (estado.restSembradas.has(cliente)) return;
+  estado.restSembradas.add(cliente);
+  const eqs = estado.equipos.filter((e) => e.cliente === cliente && (e.resumen?.repositorios?.length ?? 0) > 0);
+  const motivos: (T.MotivoRestauracion | null)[] = ["borrado", "prueba", null, "dano", "borrado", "otro", null, "prueba"];
+  const destinos = ["junto", "nueva", "zip", "descarga", "junto", "original", "zip", "junto"];
+  const ahora = Date.now();
+  eqs.slice(0, 4).forEach((e, i) => {
+    (e.resumen?.repositorios ?? []).slice(0, 2).forEach((r, j) => {
+      for (let k = 0; k < 3; k++) {
+        const n = i * 6 + j * 3 + k;
+        const fin = ahora - (n * 9 + 2) * 86_400_000 - n * 3_600_000;
+        const dur = 40 + ((n * 137) % 1500);
+        const fallo = n % 7 === 5;
+        const motivo = motivos[n % motivos.length];
+        estado.restauraciones.push({
+          cliente,
+          equipo: e.id,
+          id: `restauracion-ejemplo-${e.id.slice(0, 8)}-${n}`,
+          hora: new Date(fin).toISOString(),
+          inicio: new Date(fin - dur * 1000).toISOString(),
+          duracion_s: dur,
+          repo: r.id,
+          version: ((n * 2654435761) >>> 0).toString(16).padStart(8, "0").slice(0, 8),
+          elementos: 1 + (n % 4),
+          archivos: fallo ? null : 3 + ((n * 53) % 900),
+          bytes: fallo ? null : 2_000_000 + ((n * 7_919_000) % 3_000_000_000),
+          destino: destinos[n % destinos.length],
+          cifrado: n % 3 === 0 && (destinos[n % destinos.length] === "zip" || destinos[n % destinos.length] === "descarga"),
+          desde: n % 9 === 4 ? "derivada" : "principal",
+          desde_nombre: n % 9 === 4 ? "Nube de la oficina" : null,
+          resultado: fallo ? "fallo" : "ok",
+          mensaje: fallo ? "Esa carpeta no está vacía: elige una carpeta nueva o vacía (nunca se sobrescribe nada)." : null,
+          motivo: motivo ? { tipo: motivo, notas: motivo === "borrado" ? "Se borró una carpeta compartida." : null } : null,
+          por: n % 5 === 3 ? null : n % 2 ? "Ana Pérez" : "Luis Gómez",
+          consola: n % 5 === 3 ? null : n % 4 === 1 ? "Consola en línea" : "Oficina",
+          orden: n % 5 === 3 ? null : `ejemplo-${n}`,
+          en_el_equipo: n % 5 === 3,
+        });
+      }
+    });
+  });
 }

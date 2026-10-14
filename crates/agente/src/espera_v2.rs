@@ -151,22 +151,31 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
     let c = &o.cuerpo;
     let repo = o.autorizacion.clave_repo.as_ref().map(|r| r.repo.clone()).or_else(|| c["repo"].as_str().map(str::to_string)).unwrap_or_default();
     let r = || nombre_repo(v, &repo);
-    let almacen = || format!("{}/{}", c["usuario"].as_str().unwrap_or("?"), c["repo"].as_str().unwrap_or("?"));
+    // B1: con `nombre` («Contabilidad, de PC-01»), ese; si no, `usuario/repo` como antes.
+    let almacen = || match c["nombre"].as_str().map(str::trim).filter(|n| !n.is_empty() && n.chars().count() <= 80) {
+        Some(n) => format!("«{n}»"),
+        None => format!("{}/{}", c["usuario"].as_str().unwrap_or("?"), c["repo"].as_str().unwrap_or("?")),
+    };
     let d = match o.tipo.as_str() {
         "quitar_repositorio" => format!("Quitar el repositorio «{}»", r()),
         "dejar_de_copiar" => format!("Dejar de copiar en «{}»", r()),
         "cambiar_retencion" => format!("Cambiar la retención de «{}»", r()),
         "aplicar_retencion" => format!("Aplicar la retención en «{}»", r()),
-        "cambiar_copia_externa" => format!("Quitar la copia externa de «{}»", r()),
+        "cambiar_copia_externa" => format!("Quitar la copia derivada de cada día de «{}»", r()),
         "cambiar_derivada" => format!("Cambiar la retención o el destino de una copia derivada de «{}»", r()),
         "quitar_derivada" => format!("Quitar una copia derivada de «{}»", r()),
         "restaurar" => format!("Restaurar «{}» reemplazando los archivos originales", r()),
+        "comprobar_contrasena" => format!("Comprobar la contraseña de «{}»", r()),
         "pausar" => "Pausar las copias".to_string(),
         "baja_equipo" => "Dar de baja el equipo".to_string(),
         "desvincular" => "Dejar de copiar y desvincular el equipo".to_string(),
         "config" => "Cambiar las copias (quedan sin ninguna activa)".to_string(),
         "guarda_copias" if c.get("espejo_equipo").is_some() => "Cambiar o quitar los espejos de este equipo".to_string(),
         "guarda_copias" if c.get("espejo").is_some() || c.get("espejo_freno").is_some() => "Cambiar el espejo del almacén o confirmar su freno".to_string(),
+        // B1: «Ordenar nombres de carpeta» (no espera; se anota en el historial común).
+        "guarda_copias" if c.get("mover").is_some() => {
+            format!("Ordenar los nombres de carpeta de «{}» en el almacén", corto(c["mover"]["usuario"].as_str().unwrap_or("?"), 64))
+        }
         "guarda_copias" => "Cambiar o quitar el almacén («Guarda copias»)".to_string(),
         "cambiar_espera" => format!("Acortar la espera a {} h", c["horas"].as_i64().unwrap_or(0)),
         "quitar_nube" => format!("Desconectar la nube «{}»", corto(c["nombre"].as_str().unwrap_or(""), 60)),
@@ -174,6 +183,7 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "aplicar_retencion_almacen" => format!("Aplicar la retención del almacén en {}", almacen()),
         // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
         "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => crate::datos_equipo::descripcion(&o.tipo, c)?,
+        "nombre_repositorio" => format!("Cambiar el nombre de un repositorio a «{}»", corto(c["nombre"].as_str().unwrap_or("").trim(), 80)),
         "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
         // 0.7.26 (bloque 8): datos comunes del cliente (sin los valores).
         "datos_cliente" | "datos_cliente_admin" => crate::datos_cliente::descripcion(c)?,

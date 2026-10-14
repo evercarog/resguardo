@@ -7,7 +7,7 @@
   // dónde (junto al original, lo recomendado; en su sitio; o descargar por el
   // relé) → progreso → listo, con dónde quedó. La contraseña solo vive en
   // esta pantalla y se borra al salir; el servidor no ve ni rutas ni archivos.
-  import { bytesRepo, destinoDe, informeDe, nVersiones, ultimaVersion } from "$lib/repo";
+  import { bytesRepo, destinoDe, informeDe, nVersiones, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Pasos from "$lib/componentes/Pasos.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
@@ -25,12 +25,14 @@
     ChevronRight,
     Database,
     Download,
+    FileArchive,
     File,
     Folder,
     FolderOpen,
     FolderPlus,
     HardDrive,
     History,
+    LifeBuoy,
     LoaderCircle,
     LockKeyhole,
     Monitor,
@@ -43,7 +45,7 @@
   } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
-  import { actual, puede, reloj } from "$lib/estado.svelte";
+  import { actual, app, puede, reloj } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { aB64, aleatorio, borrar } from "$lib/cripto/bytes";
   import { ErrorFaltaAdmin, ErrorLlavesCambiadas, mandarOrden } from "$lib/ordenar";
@@ -63,6 +65,15 @@
   import LineaTiempoVersiones from "$lib/componentes/repo/LineaTiempoVersiones.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
   import { textoRestaurar } from "$lib/textosEquipo";
+  // Plan 0.8.0, E1 y E2: otra carpeta, .zip, desde dónde, en vivo y motivo.
+  import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
+  import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
+  import ProgresoCopia from "$lib/componentes/ProgresoCopia.svelte";
+  import { tareasDe } from "$lib/progreso.svelte";
+  import { espejoDelRepo, etiquetaCarpeta, nombreEnAlmacen } from "$lib/espejo";
+  import { claveEspejo } from "$lib/cripto/ordenes";
+  import { errorCarpetaRestaurar, errorContrasenaZip, errorNombreZip, MOTIVOS, recomendar, type OrigenRestauracion } from "$lib/restauraciones";
+  import type { MotivoRestauracion } from "$lib/tipos";
 
   interface Version {
     id: string;
@@ -79,7 +90,7 @@
     ruta?: string;
   }
 
-  type Paso = "origen" | "repo" | "clave" | "version" | "archivos" | "destino" | "progreso";
+  type Paso = "origen" | "repo" | "desde" | "clave" | "version" | "archivos" | "destino" | "progreso";
   let paso = $state<Paso>("origen");
   let equipoId = $state(page.url.searchParams.get("equipo") ?? "");
   $effect(() => {
@@ -104,7 +115,7 @@
   let elegidas = $state<Map<string, Entrada>>(new Map());
   let buscar = $state("");
   let resultados = $state<Entrada[] | null>(null);
-  let destino = $state<"junto" | "original" | "descargar">("junto");
+  let destino = $state<"junto" | "original" | "nueva" | "zip" | "descargar">("junto");
   let reemplazar = $state(false);
   let orden = $state<Orden | null>(null);
   let progreso = $state<Progreso | null>(null);
@@ -124,7 +135,130 @@
   const unir = (ruta: string, nombre: string) => (ruta.endsWith("/") ? ruta + nombre : `${ruta}/${nombre}`);
   const totalElegido = $derived([...elegidas.values()].reduce((n, e) => n + (e.bytes ?? 0), 0));
   const hayCarpetas = $derived([...elegidas.values()].some((e) => e.tipo === "dir"));
-  const MAX_RELEVO = 500 * 1000 * 1000;
+  /** Lo más que puede ocupar una descarga por el relé (lo dice el servidor; uno anterior, 500 MB). */
+  const MAX_RELEVO = $derived(app.servidor?.max_descarga ?? 500 * 1024 * 1024);
+
+  // ---------- 14m: desde dónde ----------
+  /** `""`: el repositorio; `externa` o el id de una copia derivada (las hace el propio equipo). */
+  let desde = $state("");
+  /** El origen elegido en el paso «Desde dónde» (también un espejo, que se abre aparte). */
+  let origenElegido = $state("principal");
+  let desdeEspejo = $state<{ almacen: Equipo; clave: string; repo: string } | null>(null);
+  const informeRepo = $derived(equipo && repo ? informeDe(ultimos.porEquipo[equipo.id], repo.id) : null);
+  const admiteDesde = $derived(!!equipo?.resumen?.admite?.includes("restaurar_desde"));
+  const admiteCarpeta = $derived(!!equipo?.resumen?.admite?.includes("restaurar_carpeta"));
+  const destinoRepo = $derived(equipo && repo ? destinoDe(equipo.resumen?.destinos, repo) : undefined);
+  const almacenRepo = $derived(destinoRepo?.equipo_almacen ? actual.equipos.find((e) => e.id === destinoRepo.equipo_almacen) : undefined);
+  const nombreEspejo = $derived(repo ? nombreEnAlmacen(destinoRepo?.donde, repo) : null);
+  const espejoRepo = $derived(espejoDelRepo(almacenRepo?.resumen?.guarda_copias?.espejo ?? null, nombreEspejo));
+  const estadoTarea = (t: { resultado?: string | null; ultima?: string | null } | null | undefined): OrigenRestauracion["estado"] =>
+    !t?.ultima ? "desconocido" : t.resultado === "fallo" ? "fallo" : t.resultado === "aviso" ? "aviso" : "ok";
+  /** Todos los sitios donde está este repositorio, de lo más cercano a lo más lejano, con el recomendado. */
+  const origenes = $derived.by((): (OrigenRestauracion & { motivo?: string })[] => {
+    if (!equipo || !repo) return [];
+    const os: (OrigenRestauracion & { motivo?: string })[] = [];
+    const ej = ultimaEjecucion(informeRepo);
+    const sinEquipo = !equipo.conectado ? `${equipo.nombre} no está conectado ahora.` : undefined;
+    const almacenCaido = almacenRepo && !almacenRepo.conectado ? `${almacenRepo.nombre} no responde.` : undefined;
+    os.push({
+      id: "principal",
+      tipo: "principal",
+      nombre: "Su repositorio",
+      donde: destinoRepo?.nombre ?? repo.destino ?? "",
+      estado: almacenCaido ? "fallo" : sinEquipo ? "aviso" : ej?.resultado === "fallo" ? "aviso" : "ok",
+      ultima: ultimaVersion(repo, informeRepo),
+      motivo: almacenCaido ?? sinEquipo,
+    });
+    const actualiza = `Para restaurar desde aquí, actualiza el agente de ${equipo.nombre}.`;
+    if (repo.externa) {
+      const t = informeRepo?.externa;
+      os.push({ id: "externa", tipo: "externa", nombre: "Copia externa", donde: repo.externa.destino, estado: sinEquipo ? "aviso" : estadoTarea(t), ultima: t?.ultima ?? null, noSe: admiteDesde ? null : actualiza, motivo: sinEquipo });
+    }
+    for (const d of repo.derivadas ?? []) {
+      const t = informeRepo?.derivadas?.find((x) => x.id === d.id);
+      os.push({
+        id: d.id,
+        tipo: "derivada",
+        nombre: "Copia derivada",
+        donde: d.destino ?? "otro destino",
+        estado: sinEquipo ? "aviso" : estadoTarea(t as { resultado?: string | null; ultima?: string | null } | undefined),
+        ultima: t?.ultima ?? null,
+        noSe: !admiteDesde ? actualiza : d.activa === false ? "Esta copia derivada no está activa en el equipo." : null,
+        motivo: sinEquipo,
+      });
+    }
+    for (const dd of espejoRepo?.destinos ?? []) {
+      os.push({
+        id: `espejo:${claveEspejo(dd)}`,
+        tipo: "espejo",
+        nombre: `Espejo de ${almacenRepo?.nombre ?? "el almacén"}`,
+        donde: dd.tipo === "nube" ? (dd.nube ?? "nube") : etiquetaCarpeta(dd.carpeta),
+        estado: dd.resultado === "fallo" ? "fallo" : dd.ultima ? "ok" : "desconocido",
+        ultima: dd.ultima ?? null,
+        noSe: nombreEspejo ? null : "No se sabe dónde está este repositorio en el espejo.",
+      });
+    }
+    return recomendar(os);
+  });
+  const recomendado = $derived(origenes.find((o) => o.recomendado));
+  const principalCaido = $derived(origenes[0]?.estado === "fallo" && !!recomendado && recomendado.id !== "principal");
+
+  function seguirDesde() {
+    const o = origenes.find((x) => x.id === origenElegido);
+    if (!o || o.noSe) return;
+    if (o.tipo === "espejo") {
+      if (almacenRepo && nombreEspejo) desdeEspejo = { almacen: almacenRepo, clave: o.id.slice("espejo:".length), repo: nombreEspejo };
+      return;
+    }
+    desde = o.tipo === "principal" ? "" : o.id;
+    paso = "clave";
+  }
+
+  // ---------- 13a, 13b: otra carpeta y .zip ----------
+  let carpetaNueva = $state("");
+  let carpetaZip = $state("");
+  let nombreZip = $state("");
+  let contrasenaZip = $state("");
+  let contrasenaZip2 = $state("");
+  let claveAdminDestino = $state("");
+  let explorarPara = $state<"nueva" | "zip" | null>(null);
+  /** Lo que se mandó (para decir dónde quedó). */
+  let enviado = $state<{ carpeta: string; nombreZip: string; cifrado: boolean } | null>(null);
+  const errorDestino = $derived.by(() => {
+    if (destino === "nueva") return errorCarpetaRestaurar(carpetaNueva, esWindows);
+    if (destino === "zip") return errorCarpetaRestaurar(carpetaZip, esWindows) ?? errorNombreZip(nombreZip) ?? errorContrasenaZip(contrasenaZip, contrasenaZip2);
+    if (destino === "descargar") return errorContrasenaZip(contrasenaZip, contrasenaZip2);
+    return null;
+  });
+  const pideClaveAdmin = $derived(destino === "nueva" || destino === "zip");
+  /** Dónde quedó el .zip (si ya había uno con ese nombre, el equipo le pone «(2)»). */
+  const rutaZip = $derived.by(() => (enviado ? `${enviado.carpeta.replace(/[\\/]+$/, "")}${esWindows ? "\\" : "/"}${enviado.nombreZip}` : ""));
+
+  // ---------- 14l: motivo ----------
+  let motivo = $state<MotivoRestauracion | "">("");
+  let notasMotivo = $state("");
+  let motivoObligatorio = $state(false);
+  $effect(() => {
+    const [cc, eq] = [actual.id, equipoId];
+    if (!cc || !eq) return;
+    untrack(() =>
+      void api
+        .restauraciones(cc, eq)
+        .then((r) => (motivoObligatorio = r.ajustes.motivo_obligatorio))
+        .catch(() => {}),
+    );
+  });
+  /** Qué falta para poder restaurar (el botón lo dice). */
+  const falta = $derived.by(() => {
+    if (errorDestino) return errorDestino;
+    if (pideClaveAdmin && !claveAdminDestino) return "Escribe la clave de administración.";
+    if (motivoObligatorio && !motivo) return "Elige el motivo de la restauración.";
+    if (destino === "descargar" && totalElegido > MAX_RELEVO) return `Son más de ${bytes(MAX_RELEVO)}: guárdalo como .zip en el equipo.`;
+    return "";
+  });
+
+  /** 13c: la restauración en vivo en el equipo (con el estilo de las copias). */
+  const enVivo = $derived(equipo && repo ? tareasDe(equipo.id, { repo: repo.id, tipos: ["restauracion"] })[0] : undefined);
 
   // Si se llega con ?equipo=&repo= (o solo ?equipo=), se saltan los primeros pasos (una vez).
   let saltado = false;
@@ -157,7 +291,12 @@
   function elegirRepo(id: string) {
     repoId = id;
     contrasena = "";
-    paso = "clave";
+    desde = "";
+    // 14m: si el repositorio está en más de un sitio, primero «Desde dónde» (con el recomendado ya elegido).
+    if (origenes.length > 1) {
+      origenElegido = recomendado?.id ?? "principal";
+      paso = "desde";
+    } else paso = "clave";
   }
   /** Volver a un paso ya hecho (desde los pasos de arriba). Antes de la versión, se cierra la sesión abierta. */
   function volverA(id: string): boolean {
@@ -173,6 +312,7 @@
       claveAdmin = "";
     }
     if (destinoPaso === "origen") repoId = "";
+    if (indice(destinoPaso) <= indice("desde")) desde = "";
     error = "";
     paso = destinoPaso;
     return true;
@@ -200,7 +340,7 @@
     error = "";
     ocupado = true;
     try {
-      sesion = await Sesion.abrir({ cliente: actual.cliente, equipo, tipo: "explorar", cuerpo: { repo: repo.id }, secretos: { repo: { repo: repo.id, contrasena }, claveAdmin: pideAdmin ? claveAdmin : undefined }, alPaso: (t) => (pasoTxt = t) });
+      sesion = await Sesion.abrir({ cliente: actual.cliente, equipo, tipo: "explorar", cuerpo: { repo: repo.id, ...(desde ? { desde } : {}) }, secretos: { repo: { repo: repo.id, contrasena }, claveAdmin: pideAdmin ? claveAdmin : undefined }, alPaso: (t) => (pasoTxt = t) });
       claveAdmin = "";
       pideAdmin = false;
       pasoTxt = "Esperando al equipo…";
@@ -289,39 +429,60 @@
   const retencionLinea = $derived(repo && equipo ? reglaEfectiva(repo, destinoDe(equipo.resumen?.destinos, repo), actual.equipos) : null);
   async function restaurar() {
     if (!equipo || !repo || !version || !actual.cliente) return;
+    if (falta) {
+      error = falta;
+      return;
+    }
     error = "";
     ocupado = true;
     const rutas = [...elegidas.keys()];
     carpetaFija = carpetaRestaurado;
+    // 14l: el motivo va con la orden (el equipo lo anota en su registro, que ven todas las consolas).
+    const conMotivo = motivo ? { motivo: { tipo: motivo, ...(notasMotivo.trim() ? { notas: notasMotivo.trim().slice(0, 500) } : {}) } } : {};
+    const conDesde = desde ? { desde } : {};
+    const zipCifrado = !!contrasenaZip && (destino === "zip" || destino === "descargar");
     try {
       if (destino === "descargar") {
         const relevo = crypto.randomUUID();
         const clave = aleatorio(32);
+        // Con contraseña (13b), siempre un .zip en AES-256 (lo hace el equipo).
+        const formato = rutas.length === 1 && !hayCarpetas && !zipCifrado ? "archivo" : "zip";
         orden = await mandarOrden({
           cliente: actual.cliente,
           equipo,
           tipo: "descargar",
-          cuerpo: { repo: repo.id, version: version.id, rutas, formato: rutas.length === 1 && !hayCarpetas ? "archivo" : "zip", relevo: { id: relevo, clave: aB64(clave) } },
+          cuerpo: { repo: repo.id, version: version.id, rutas, formato, relevo: { id: relevo, clave: aB64(clave) }, ...conDesde, ...conMotivo, ...(zipCifrado ? { contrasena_zip: contrasenaZip } : {}) },
           secretos: { repo: { repo: repo.id, contrasena } },
           relevo: { id: relevo, max_bytes: MAX_RELEVO },
           alPaso: (t) => (pasoTxt = t),
         });
+        contrasenaZip = contrasenaZip2 = "";
+        void guardarMotivo(orden.id);
         paso = "progreso";
         const blob = await bajarRelevo({ cliente: actual.cliente.id, relevo, clave, signal: parar.signal, alProgreso: (p) => (progreso = p) });
         borrar(clave);
-        const nombre = rutas.length === 1 && !hayCarpetas ? rutas[0].split(/[\\/]/).pop() || "archivo" : `restauracion-${equipo.nombre}-${new Date(version.cuando).toISOString().slice(0, 10)}.zip`;
+        const nombre = formato === "archivo" ? rutas[0].split(/[\\/]/).pop() || "archivo" : `restauracion-${equipo.nombre}-${new Date(version.cuando).toISOString().slice(0, 10)}.zip`;
         await guardar(blob, nombre);
+        enviado = { carpeta: "", nombreZip: nombre, cifrado: zipCifrado };
         terminado = true;
         avisar("Descarga lista.");
       } else {
+        const cuerpo: Record<string, unknown> = { repo: repo.id, version: version.id, rutas, ...conDesde, ...conMotivo };
+        if (destino === "nueva") Object.assign(cuerpo, { destino: "nueva", carpeta: carpetaNueva.trim() });
+        else if (destino === "zip")
+          Object.assign(cuerpo, { destino: "zip", carpeta: carpetaZip.trim(), ...(nombreZip.trim() ? { nombre: nombreZip.trim() } : {}), ...(zipCifrado ? { contrasena_zip: contrasenaZip } : {}) });
+        else Object.assign(cuerpo, { destino: destino === "original" ? "original" : "junto", reemplazar: destino === "original" && reemplazar });
         orden = await mandarOrden({
           cliente: actual.cliente,
           equipo,
           tipo: "restaurar",
-          cuerpo: { repo: repo.id, version: version.id, rutas, destino: destino === "original" ? "original" : "junto", reemplazar: destino === "original" && reemplazar },
-          secretos: { repo: { repo: repo.id, contrasena } },
+          cuerpo,
+          secretos: { repo: { repo: repo.id, contrasena }, ...(pideClaveAdmin ? { claveAdmin: claveAdminDestino } : {}) },
           alPaso: (t) => (pasoTxt = t),
         });
+        enviado = { carpeta: destino === "nueva" ? carpetaNueva.trim() : destino === "zip" ? carpetaZip.trim() : "", nombreZip: destino === "zip" ? `${nombreZip.trim().replace(/\.zip$/i, "") || carpetaRestaurado}.zip` : "", cifrado: zipCifrado };
+        claveAdminDestino = contrasenaZip = contrasenaZip2 = "";
+        void guardarMotivo(orden.id);
         paso = "progreso";
         seguir(orden.id);
       }
@@ -331,6 +492,16 @@
     } finally {
       ocupado = false;
       pasoTxt = "";
+    }
+  }
+
+  /** 14l: el motivo también en esta consola (se puede cambiar después en «Restauraciones»). */
+  async function guardarMotivo(ordenId: string) {
+    if (!motivo || !actual.cliente || !equipo) return;
+    try {
+      await api.ponerMotivoRestauracion(actual.cliente.id, equipo.id, `restauracion-${ordenId}`, motivo, notasMotivo.trim() || null);
+    } catch {
+      /* Con un servidor anterior no se guarda aquí; el equipo lo anota igual. */
     }
   }
 
@@ -406,6 +577,7 @@
   const PASOS: { id: Paso; texto: string }[] = [
     { id: "origen", texto: "Equipo" },
     { id: "repo", texto: "Repositorio" },
+    { id: "desde", texto: "Desde dónde" },
     { id: "clave", texto: "Contraseña" },
     { id: "version", texto: "Versión" },
     { id: "archivos", texto: "Archivos" },
@@ -503,13 +675,48 @@
         </div>
         <div class="fin izq"><button class="btn btn-ghost" onclick={() => volverA("origen")}><ArrowLeft size={15} />Otro equipo</button></div>
       </section>
+    {:else if paso === "desde" && equipo && repo}
+      <section class="paso-card" aria-labelledby="t-desde">
+        <header class="paso-cab">
+          <h2 id="t-desde">¿Desde dónde restauras «{repo.nombre}»?</h2>
+          <p>Este repositorio está en más de un sitio. Lo más cercano suele ser lo más rápido; si no responde, usa otro.</p>
+        </header>
+        {#if principalCaido && recomendado}
+          <div class="notice notice-warn">
+            <TriangleAlert size={16} />
+            <p>{origenes[0].motivo ?? "Su repositorio no responde."} Te proponemos restaurar desde «{recomendado.donde}»{#if recomendado.ultima} (actualizada <Tiempo iso={recomendado.ultima} />){/if}.</p>
+          </div>
+        {/if}
+        <div class="card p-0 lista" role="radiogroup" aria-labelledby="t-desde">
+          {#each origenes as o (o.id)}
+            <label class="fila elegible-fila origen" class:on={origenElegido === o.id} class:apagado={!!o.noSe}>
+              <input type="radio" name="desde" value={o.id} bind:group={origenElegido} disabled={!!o.noSe} />
+              <span class="tile-ic">{#if o.tipo === "espejo"}<LifeBuoy size={16} />{:else if o.tipo === "principal"}<Database size={16} />{:else}<Server size={16} />{/if}</span>
+              <span class="fila-texto">
+                <span class="fila-titulo">{o.nombre} · {o.donde}{#if o.recomendado} <span class="badge badge-sm tone-ok">Recomendado</span>{/if}</span>
+                <span class="fila-sub">
+                  {#if o.noSe}{o.noSe}{:else if o.motivo}{o.motivo}{:else if o.tipo === "espejo"}Se abre con la contraseña del repositorio, en el equipo que elijas.{:else if o.tipo === "principal"}Donde copia {equipo.nombre}.{:else}La hace {equipo.nombre}: se restaura con su acceso.{/if}
+                </span>
+              </span>
+              <span class="fila-meta num">
+                <Chip pequeno tono={o.estado === "ok" ? "ok" : o.estado === "fallo" ? "bad" : o.estado === "aviso" ? "warn" : "neutral"} texto={o.estado === "ok" ? "Al día" : o.estado === "fallo" ? "No responde" : o.estado === "aviso" ? "Con avisos" : "Sin datos"} />
+                {#if o.ultima}<span class="bloque">actualizado <Tiempo iso={o.ultima} /></span>{/if}
+              </span>
+            </label>
+          {/each}
+        </div>
+        <div class="fin">
+          <button class="btn btn-ghost" onclick={() => volverA((equipo?.resumen?.repositorios?.length ?? 0) > 1 ? "repo" : "origen")}><ArrowLeft size={15} />Atrás</button>
+          <button class="btn btn-primary" disabled={!!origenes.find((x) => x.id === origenElegido)?.noSe} onclick={seguirDesde}>Seguir<ArrowRight size={15} /></button>
+        </div>
+      </section>
     {:else if paso === "clave" && equipo && repo}
       <section class="card p estrecha">
         <form class="form" onsubmit={abrir}>
           <div class="dlg-title">
             <span class="ticon"><LockKeyhole size={18} /></span>
             <div>
-              <h2>Abrir «{repo.nombre}» de {equipo.nombre}</h2>
+              <h2>Abrir «{repo.nombre}» de {equipo.nombre}{#if desde}, desde «{origenes.find((o) => o.id === desde)?.donde ?? "otra copia"}»{/if}</h2>
               <p>Para ver sus versiones hace falta la contraseña del repositorio. Se usa solo en esta pantalla y se olvida al salir.</p>
             </div>
           </div>
@@ -527,7 +734,7 @@
           {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
           <div class="fin">
             {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
-            <button type="button" class="btn btn-ghost" onclick={() => volverA((equipo?.resumen?.repositorios?.length ?? 0) > 1 ? "repo" : "origen")} disabled={ocupado}><ArrowLeft size={15} />Atrás</button>
+            <button type="button" class="btn btn-ghost" onclick={() => volverA(origenes.length > 1 ? "desde" : (equipo?.resumen?.repositorios?.length ?? 0) > 1 ? "repo" : "origen")} disabled={ocupado}><ArrowLeft size={15} />Atrás</button>
             <button class="btn btn-primary" disabled={!contrasena || (pideAdmin && !claveAdmin) || ocupado || llavesCambiadas}><LockKeyhole size={15} />{pideAdmin ? "Abrir con las dos claves" : "Abrir el repositorio"}</button>
           </div>
         </form>
@@ -621,30 +828,105 @@
               {#if ejemploJunto}<span class="ejemplo">Por ejemplo: <code>{ejemploJunto}</code></span>{/if}
             </span>
           </label>
-          <label class="opcion" class:on={destino === "original"}>
-            <input type="radio" bind:group={destino} value="original" />
+          <label class="opcion" class:on={destino === "original"} class:apagado={!!desde}>
+            <input type="radio" bind:group={destino} value="original" disabled={!!desde} />
             <HardDrive size={18} />
-            <span><strong>En {equipo.nombre}, en su sitio</strong><span class="faint">Vuelve a donde estaba. Si ya existe, se deja como está salvo que marques «Reemplazar».</span></span>
+            <span>
+              <strong>En {equipo.nombre}, en su sitio</strong>
+              <span class="faint">{desde ? "Desde otra copia no se restaura en su sitio: elige junto al original u otra carpeta." : "Vuelve a donde estaba. Si ya existe, se deja como está salvo que marques «Reemplazar»."}</span>
+            </span>
+          </label>
+          <label class="opcion" class:on={destino === "nueva"} class:apagado={!admiteCarpeta}>
+            <input type="radio" bind:group={destino} value="nueva" disabled={!admiteCarpeta} />
+            <FolderOpen size={18} />
+            <span>
+              <strong>En {equipo.nombre}, en otra carpeta</strong>
+              <span class="faint">{admiteCarpeta ? "En una carpeta nueva o vacía que elijas (también una unidad entera). Nunca sobrescribe nada." : `Para elegir otra carpeta, actualiza el agente de ${equipo.nombre}.`}</span>
+            </span>
+          </label>
+          <label class="opcion" class:on={destino === "zip"} class:apagado={!admiteCarpeta}>
+            <input type="radio" bind:group={destino} value="zip" disabled={!admiteCarpeta} />
+            <FileArchive size={18} />
+            <span>
+              <strong>En {equipo.nombre}, como .zip</strong>
+              <span class="faint">{admiteCarpeta ? "Un .zip en la carpeta que elijas, sin límite de tamaño y con contraseña si quieres." : `Para guardarlo como .zip, actualiza el agente de ${equipo.nombre}.`}</span>
+            </span>
           </label>
           <label class="opcion" class:on={destino === "descargar"}>
             <input type="radio" bind:group={destino} value="descargar" />
             <Download size={18} />
-            <span><strong>Descargar en este navegador</strong><span class="faint">Hasta 500 MB. Llega cifrado por el servidor, que no puede leerlo. <Ayuda id="relevo" /></span></span>
+            <span><strong>Descargar en este navegador</strong><span class="faint">Hasta {bytes(MAX_RELEVO)}{admiteCarpeta ? ", como .zip con contraseña si quieres" : ""}. Llega cifrado por el servidor, que no puede leerlo. <Ayuda id="relevo" /></span></span>
           </label>
         </div>
         {#if destino === "original"}
           <label class="switch-row"><input type="checkbox" bind:checked={reemplazar} /><span><strong>Reemplazar</strong> los archivos que ya existan<span class="faint">Lo que haya ahora se perderá.</span></span></label>
         {/if}
-        {#if destino === "descargar" && totalElegido > MAX_RELEVO}
-          <div class="notice notice-warn"><TriangleAlert size={16} /><p>Son más de 500 MB: mejor restaurar en el equipo.</p></div>
+        {#if destino === "nueva"}
+          <div class="field">
+            <label class="field-label" for="carpeta-nueva">Carpeta en {equipo.nombre}</label>
+            <div class="con-boton">
+              <input id="carpeta-nueva" class="input mono" bind:value={carpetaNueva} placeholder={esWindows ? "D:\\Restaurado" : "/srv/restaurado"} autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn" onclick={() => (explorarPara = "nueva")}><FolderOpen size={15} />Explorar…</button>
+            </div>
+            <span class="field-hint">Una carpeta nueva (se crea) o vacía. No vale una carpeta del sistema, de los programas ni de Resguardo.</span>
+            {#if carpetaNueva.trim() && errorCarpetaRestaurar(carpetaNueva, esWindows)}<span class="field-error">{errorCarpetaRestaurar(carpetaNueva, esWindows)}</span>{/if}
+          </div>
         {/if}
+        {#if destino === "zip"}
+          <div class="field">
+            <label class="field-label" for="carpeta-zip">Carpeta donde guardar el .zip en {equipo.nombre}</label>
+            <div class="con-boton">
+              <input id="carpeta-zip" class="input mono" bind:value={carpetaZip} placeholder={esWindows ? "D:\\Restauraciones" : "/srv/restauraciones"} autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn" onclick={() => (explorarPara = "zip")}><FolderOpen size={15} />Explorar…</button>
+            </div>
+            {#if carpetaZip.trim() && errorCarpetaRestaurar(carpetaZip, esWindows)}<span class="field-error">{errorCarpetaRestaurar(carpetaZip, esWindows)}</span>{/if}
+          </div>
+          <div class="field">
+            <label class="field-label" for="nombre-zip">Nombre del .zip <span class="faint">(opcional)</span></label>
+            <input id="nombre-zip" class="input" bind:value={nombreZip} placeholder={carpetaRestaurado} autocomplete="off" />
+            <span class="field-hint">Si ya hay uno con ese nombre, se guarda como «… (2).zip». Nunca se sobrescribe.</span>
+            {#if errorNombreZip(nombreZip)}<span class="field-error">{errorNombreZip(nombreZip)}</span>{/if}
+          </div>
+        {/if}
+        {#if (destino === "zip" || destino === "descargar") && admiteCarpeta}
+          <fieldset class="zip-clave">
+            <legend>Contraseña del .zip <span class="faint">(opcional)</span></legend>
+            <CampoClave id="zip-clave" etiqueta="Contraseña" bind:value={contrasenaZip} ayuda="AES-256. Se escribe aquí y viaja sellada para el equipo: el servidor no la ve." />
+            {#if contrasenaZip}<CampoClave id="zip-clave-2" etiqueta="Repítela" bind:value={contrasenaZip2} />{/if}
+            {#if contrasenaZip}
+              <div class="notice notice-info"><p>El Explorador de Windows no abre un .zip con AES: hace falta 7-Zip o un programa parecido. Guarda la contraseña: sin ella no se puede abrir.</p></div>
+            {/if}
+            {#if errorContrasenaZip(contrasenaZip, contrasenaZip2) && contrasenaZip2}<span class="field-error">{errorContrasenaZip(contrasenaZip, contrasenaZip2)}</span>{/if}
+          </fieldset>
+        {/if}
+        {#if destino === "descargar" && totalElegido > MAX_RELEVO}
+          <div class="notice notice-warn sugerencia">
+            <p>Son más de {bytes(MAX_RELEVO)}: por el navegador no cabe. Guárdalo como .zip en {equipo.nombre}.</p>
+            {#if admiteCarpeta}<button class="btn btn-sm" onclick={() => (destino = "zip")}><FileArchive size={14} />Guardar como .zip en el equipo</button>{/if}
+          </div>
+        {/if}
+        {#if pideClaveAdmin}
+          <CampoClave requerido id="clave-admin-destino" etiqueta="Clave de administración" bind:value={claveAdminDestino} ayuda="Restaurar en otra carpeta o en un .zip escribe donde elijas en el equipo: lo confirma la clave de administración.">
+            {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
+          </CampoClave>
+        {/if}
+        <fieldset class="motivo">
+          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio en este cliente)" : "(opcional)"}</span></legend>
+          <div class="chips-motivo" role="radiogroup" aria-label="Motivo">
+            {#each MOTIVOS as m (m.id)}
+              <label class="chip-motivo" class:on={motivo === m.id}><input type="radio" name="motivo" value={m.id} bind:group={motivo} />{m.texto}</label>
+            {/each}
+            {#if motivo && !motivoObligatorio}<button type="button" class="link" onclick={() => (motivo = "")}>Quitar</button>{/if}
+          </div>
+          {#if motivo}<input class="input" bind:value={notasMotivo} maxlength={500} placeholder="Notas (opcional): qué pasó, quién lo pidió… Sin contraseñas." aria-label="Notas del motivo" />{/if}
+        </fieldset>
         <p class="faint pequeno">¿Lo necesitas en otro equipo? <button class="link" onclick={() => (enOtro = { equipo: equipoId, repo: repoId })}>Restaurar en otro equipo</button></p>
         {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
         <div class="fin">
-          {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
+          {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{:else if falta}<span class="espera faint" role="status">{falta}</span>{/if}
           <button class="btn btn-ghost" onclick={() => (paso = "archivos")} disabled={ocupado}><ArrowLeft size={15} />Atrás</button>
-          <button class="btn {reemplazar && destino === 'original' ? 'btn-danger' : 'btn-primary'}" disabled={ocupado || (destino === "descargar" && totalElegido > MAX_RELEVO)} onclick={restaurar}>
-            {#if destino === "descargar"}<Download size={15} />Descargar{:else}<History size={15} />Restaurar{/if} {plural(elegidas.size, "elemento", "elementos")}
+          <button class="btn {reemplazar && destino === 'original' ? 'btn-danger' : 'btn-primary'}" disabled={ocupado || !!falta} onclick={restaurar}>
+            {#if destino === "descargar"}<Download size={15} />Descargar{:else if destino === "zip"}<FileArchive size={15} />Guardar el .zip con{:else}<History size={15} />Restaurar{/if} {plural(elegidas.size, "elemento", "elementos")}
           </button>
         </div>
       </section>
@@ -655,6 +937,7 @@
             <Ilustracion nombre="restaurado" ancho={150} />
             <h2 class="section-title">Descarga terminada</h2>
             <p class="faint">Está en la carpeta de descargas de este navegador. Ya se ha borrado del servidor.</p>
+            {#if enviado?.cifrado}<p class="faint pequeno">Es un .zip con contraseña (AES-256): ábrelo con 7-Zip o un programa parecido; el Explorador de Windows no lo abre.</p>{/if}
           {:else}
             <span class="gran-ic info"><Download size={26} /></span>
             <h2 class="section-title">{progreso?.fase === "bajando" ? "Descargando y descifrando…" : progreso?.fase === "subiendo" ? `${equipo?.nombre} está preparando los archivos…` : "Esperando al equipo…"}</h2>
@@ -671,6 +954,10 @@
           {:else}
             <span class="gran-ic info"><LoaderCircle size={28} class="spin" /></span>
             <h2 class="section-title">Restaurando en {equipo?.nombre}…</h2>
+          {/if}
+          {#if !terminado && enVivo && equipo}
+            <!-- 13c: el detalle en vivo, con el estilo de las copias (y en todas las consolas del equipo). -->
+            <div class="en-vivo"><ProgresoCopia tarea={enVivo} equipo={equipo.id} titulo={repo?.nombre} /></div>
           {/if}
           <ol class="etapas" aria-label="Cómo va">
             {#each ETAPAS as et, j (et.id)}
@@ -695,6 +982,14 @@
                 {:else if destino === "junto"}
                   <strong>Junto al original</strong>
                   <p>Al lado de cada elemento hay una carpeta «Restaurado …» con la fecha de hoy.</p>
+                {:else if destino === "nueva" && enviado}
+                  <strong>En la carpeta que elegiste</strong>
+                  <p>Ábrela en {equipo?.nombre} con el Explorador de archivos:</p>
+                  <Copiable texto={enviado.carpeta} que="la ruta" />
+                {:else if destino === "zip" && enviado}
+                  <strong>El .zip está en {equipo?.nombre}</strong>
+                  <p>Si ya había uno con ese nombre, este se llama «… (2).zip».{enviado.cifrado ? " Tiene contraseña (AES-256): ábrelo con 7-Zip o un programa parecido." : ""}</p>
+                  <Copiable texto={rutaZip} que="la ruta" />
                 {:else}
                   <strong>En su sitio de siempre</strong>
                   <p>{reemplazar ? "Los archivos se han reemplazado por los de la versión elegida." : "Lo que ya existía se ha dejado como estaba; lo que faltaba ha vuelto a su carpeta."}</p>
@@ -722,6 +1017,7 @@
               error = "";
             }}>Restaurar más de esta versión</button
           >
+          <a class="btn" href="/c/{actual.id}/restauraciones?equipo={encodeURIComponent(equipoId)}">Ver en Restauraciones</a>
           <a class="btn btn-primary" href="/c/{actual.id}/equipos/{equipoId}?tab=ordenes">Ver en el equipo</a>
         </div>
       </section>
@@ -768,11 +1064,113 @@
   {/if}
 {/snippet}
 
+{#if explorarPara && equipo && actual.cliente}
+  <ElegirCarpetas
+    cliente={actual.cliente}
+    {equipo}
+    unica
+    claveAdmin={claveAdminDestino || undefined}
+    titulo={explorarPara === "zip" ? "¿Dónde guardar el .zip?" : "¿En qué carpeta restaurar?"}
+    iniciales={[explorarPara === "zip" ? carpetaZip : carpetaNueva].filter(Boolean)}
+    validar={(r) => errorCarpetaRestaurar(r, esWindows)}
+    onclose={() => (explorarPara = null)}
+    alElegir={(rutas) => {
+      if (explorarPara === "zip") carpetaZip = rutas[0] ?? carpetaZip;
+      else carpetaNueva = rutas[0] ?? carpetaNueva;
+      explorarPara = null;
+    }}
+  />
+{/if}
+
+{#if desdeEspejo && actual.cliente}
+  <RestaurarDesdeEspejo
+    cliente={actual.cliente}
+    almacen={desdeEspejo.almacen}
+    equipos={actual.equipos}
+    destinoInicial={desdeEspejo.clave}
+    repoInicial={desdeEspejo.repo}
+    nombre={(r) => (r === nombreEspejo && repo ? repo.nombre : r)}
+    onclose={() => (desdeEspejo = null)}
+  />
+{/if}
+
 {#if enOtro !== undefined && actual.cliente}
   <RestaurarEnOtro cliente={actual.cliente} equipos={actual.equipos} origenInicial={enOtro ?? undefined} onclose={() => (enOtro = undefined)} />
 {/if}
 
 <style>
+  .origen input[type="radio"] {
+    flex: none;
+  }
+  .origen.on {
+    background: var(--accent-soft);
+  }
+  .apagado {
+    opacity: 0.6;
+  }
+  .con-boton {
+    display: flex;
+    gap: 8px;
+  }
+  .con-boton .input {
+    flex: 1;
+    min-width: 0;
+  }
+  .mono {
+    font-family: var(--mono);
+  }
+  .zip-clave,
+  .motivo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .zip-clave legend,
+  .motivo legend {
+    margin-bottom: var(--sp-2);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .chips-motivo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip-motivo {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .chip-motivo input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .chip-motivo.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .chip-motivo:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .en-vivo {
+    width: 100%;
+    text-align: left;
+  }
+  .field-error {
+    font-size: var(--fs-xs);
+    color: var(--bad);
+  }
   .paso-card {
     display: flex;
     flex-direction: column;

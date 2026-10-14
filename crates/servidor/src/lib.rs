@@ -18,6 +18,7 @@ pub mod datos_comunes;
 pub mod datos_equipo;
 pub mod error;
 pub mod estado;
+pub mod github;
 pub mod identidad;
 pub mod instalador_agente;
 // Plan 0.8.0 (G1): el informe ejecutivo en PDF, programado por correo.
@@ -28,6 +29,7 @@ pub mod progreso;
 #[cfg(test)]
 mod propiedades;
 pub mod publicaciones;
+pub mod recordatorio_kit;
 pub mod registro;
 pub mod respaldo;
 pub mod vivo;
@@ -70,6 +72,8 @@ pub fn preparar(datos: &Path, opciones: Opciones) -> Result<St, String> {
 /// los agentes conectados, y limpiar lo caducado.
 pub fn tareas(st: St) {
     notificaciones::arrancar(st.clone());
+    // 14f: las versiones firmadas del agente, de GitHub (cada 6 h por defecto).
+    github::arrancar(st.clone());
     let st1 = st.clone();
     tokio::spawn(async move {
         let mut t = tokio::time::interval(Duration::from_secs(30));
@@ -118,6 +122,8 @@ pub fn tareas(st: St) {
                     avisar_no_aplicadas(&st2, &ctx);
                     quitar_sin_alta(&st2, &ctx);
                     avisar_sin_contacto(&st2, &ctx, ahora);
+                    // 14bbb: «Comprueba que tu kit de «X» sigue sirviendo».
+                    recordatorio_kit::recordar(&st2, &ctx, ahora);
                 }
                 // Lo que ocupan los relés, medido de nuevo (corrige cualquier desvío de la cuenta).
                 st2.uso_relevos.poner(estado::medir_relevos(&datos.join("relevos")));

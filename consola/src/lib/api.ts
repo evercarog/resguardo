@@ -132,6 +132,12 @@ const sin404 = <R>(p: Promise<R>) =>
 export const publicacionServidor = () => sin404(pedir<T.PublicacionServidor>("GET", "/api/servidor/publicacion", undefined, { invisible: true }));
 /** El manifiesto y su firma, el texto exacto de los dos archivos. */
 export const ponerPublicacion = (manifiesto: string, firma: string) => pedir<T.PublicacionServidor>("PUT", "/api/servidor/publicacion", { manifiesto, firma });
+/** 14f: bajarlas solas de GitHub (activo y cada cuántas horas). */
+export const ajustesGithub = (b: { activo: boolean; horas: number }) => pedir<T.PublicacionServidor>("PUT", "/api/servidor/publicacion/github", b);
+/** 14f: «Buscar ahora» en GitHub (sigue en segundo plano: `github.buscando`). */
+export const buscarGithubAhora = () => pedir<T.PublicacionServidor>("POST", "/api/servidor/publicacion/github/ahora");
+/** 14dd: «Ponerlo ahora», el instalador del agente de la versión firmada que tiene el servidor. */
+export const ponerInstaladorAgente = () => pedir<{ version: string; puesto: boolean }>("POST", "/api/servidor/instalador-agente");
 /** Un archivo de la versión, tal cual (el servidor lo comprueba con el manifiesto firmado). */
 export async function subirArchivoPublicacion(version: string, nombre: string, archivo: Blob): Promise<T.PublicacionServidor> {
   const fin = empezar();
@@ -448,6 +454,11 @@ export const actualizaciones = (c: string) => sin404(pedir<T.ActualizacionesClie
 export const cambiarPoliticaActualizaciones = (c: string, b: { modo: T.PoliticaActualizaciones["modo"]; dias_general: number; ventana: T.VentanaMantenimiento | null }) =>
   pedir<{ politica: T.PoliticaActualizaciones }>("PUT", `${cli(c)}/actualizaciones`, b);
 /** Aprueba la versión que da este servidor (todo el cliente o un equipo) y avisa a los conectados. */
+/** 14f: los equipos conectados buscan ya una versión nueva (aunque este servidor no la tenga). */
+export const buscarVersionesAhora = (c: string) => pedir<{ avisados: number }>("POST", `${cli(c)}/actualizaciones/buscar`);
+/** 14bbb: el recordatorio de comprobar los kits. */
+export const recordatorioKit = (c: string) => sin404(pedir<T.RecordatorioKit>("GET", `${cli(c)}/recordatorio-kit`, undefined, { invisible: true }));
+export const cambiarRecordatorioKit = (c: string, b: T.RecordatorioKit) => pedir<T.RecordatorioKit>("PUT", `${cli(c)}/recordatorio-kit`, b);
 export const actualizarAhora = (c: string, equipo?: string) => pedir<{ version: string; avisados: number }>("POST", `${cli(c)}/actualizaciones/ahora`, equipo ? { equipo } : {});
 export const ponerAnillo = (c: string, e: string, anillo: "prueba" | "general") => pedir<{ anillo: string }>("PUT", `${cli(c)}/equipos/${enc(e)}/anillo`, { anillo });
 export const informes = (c: string, e: string, limite = 20) => pedir<T.Informe[]>("GET", `${cli(c)}/equipos/${enc(e)}/informes?limite=${limite}`);
@@ -471,6 +482,21 @@ export const historialEquipo = (c: string, e: string, o: { antes?: string; desde
     throw x;
   });
 };
+/**
+ * Plan 0.8.0, E2: el registro de restauraciones del cliente (o de un equipo): las
+ * entradas que anotan los equipos, el motivo que añadieron las personas de esta
+ * consola y el ajuste del cliente. Con un servidor anterior (404), vacío.
+ */
+export const restauraciones = (c: string, equipo?: string) =>
+  pedir<T.Restauraciones>("GET", `${cli(c)}/restauraciones${equipo ? `?equipo=${enc(equipo)}` : ""}`).catch((x: unknown) => {
+    if (x instanceof ApiError && x.estado === 404) return { ajustes: { motivo_obligatorio: false }, entradas: [], notas: [] } as T.Restauraciones;
+    throw x;
+  });
+/** El motivo (y las notas) de una restauración; `id` es `restauracion-<orden>` o el de su entrada. */
+export const ponerMotivoRestauracion = (c: string, e: string, id: string, motivo: T.MotivoRestauracion, notas?: string | null) =>
+  pedir<{ ok: boolean }>("PUT", `${cli(c)}/equipos/${enc(e)}/restauraciones/${enc(id)}`, { motivo, notas: notas ?? null });
+export const ponerAjustesRestauraciones = (c: string, motivoObligatorio: boolean) =>
+  pedir<T.Restauraciones["ajustes"]>("PUT", `${cli(c)}/restauraciones/ajustes`, { motivo_obligatorio: motivoObligatorio });
 export const avisos = (c: string, abiertos = true) => pedir<T.Aviso[]>("GET", `${cli(c)}/avisos${abiertos ? "?abiertos=1" : ""}`);
 export const marcarVisto = (c: string, a: string) => pedir<void>("POST", `${cli(c)}/avisos/${enc(a)}/visto`);
 export const auditoria = (c: string, desde?: number, limite = 100) =>

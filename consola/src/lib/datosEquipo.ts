@@ -55,7 +55,7 @@ export function usosDestino(e: Pick<Equipo, "resumen">, destinoId: string): stri
   const usos: string[] = [];
   for (const r of e.resumen?.repositorios ?? []) {
     if (destinoDe(destinos, r)?.id === destinoId) usos.push(`el repositorio «${r.nombre}»`);
-    if (r.externa && idDestinoExterna(destinos, r.externa) === destinoId) usos.push(`la copia externa de «${r.nombre}»`);
+    if (r.externa && idDestinoExterna(destinos, r.externa) === destinoId) usos.push(`la copia derivada de «${r.nombre}»`);
     if ((r.derivadas ?? []).some((d) => d.destino_id === destinoId)) usos.push(`una copia derivada de «${r.nombre}»`);
   }
   return usos;

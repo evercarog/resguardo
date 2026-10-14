@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PonerInstalador from "$lib/componentes/PonerInstalador.svelte";
   import { tip } from "$lib/tooltip";
   // Añadir un equipo: código de un solo uso → el equipo se une → número de
   // comprobación (SAS) a ojo en los dos lados → clave de administración →
@@ -599,7 +600,7 @@
 
       {#if (so === "windows" && modoWin === "listo") || so === "linux"}
         {#if so === "windows" && !puedeListo}
-          <div class="notice notice-info"><p>Este servidor no tiene el instalador del agente: viene con Resguardo Server para Windows y, en un servidor Linux, se pone con <code>sudo resguardo-server poner-instalador-agente Resguardo-Agente-setup.exe</code>. Mientras tanto, usa «Instalador normal y un código».</p></div>
+          <PonerInstalador mientras="Mientras tanto, usa «Instalador normal y un código»." />
         {:else}
           <div class="field">
             <label class="field-label" for="p-nombre">Nombre del equipo</label>

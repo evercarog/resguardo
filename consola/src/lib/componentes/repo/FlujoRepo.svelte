@@ -63,9 +63,9 @@
         ? {
             // El agente informa de una copia externa propia (p. ej. a la nube) aunque el resumen no la nombre.
             tono: inf.externa.resultado === "fallo" ? "bad" : inf.externa.resultado === "aviso" ? "warn" : "ok",
-            nombre: "Copia externa",
+            nombre: "Copia derivada",
             sub: inf.externa.ultima ? `Última ${relativo(inf.externa.ultima, ahora)}` : "Todavía sin ninguna",
-            flecha: "copia externa",
+            flecha: "copia derivada",
             texto: inf.externa.resultado === "fallo" ? (inf.externa.mensaje_corto ?? "La última falló") : inf.externa.resultado === "aviso" ? "Con avisos" : "Al día",
           }
         : espejo
@@ -117,7 +117,7 @@
     <li class="paso tone-{tercero?.tono ?? 'neutral'}" class:discontinuo={!tercero}>
       <span class="ic" aria-hidden="true">{#if tercero}<Cloud size={18} />{:else}<CloudOff size={18} />{/if}</span>
       <div class="cuerpo">
-        <span class="k">Copia externa <Ayuda id="copia-externa" /></span>
+        <span class="k">Copia derivada <Ayuda id="copia-externa" /></span>
         <strong>{tercero?.nombre ?? "Todavía no hay"}</strong>
         <span class="faint sub">{tercero?.sub ?? "Todas las versiones están en un solo lugar."}</span>
         {#if tercero}
@@ -126,7 +126,7 @@
             {tercero.texto}
           </span>
           {#if repo.externa && tercero.tono === "bad" && alQuitarExterna}
-            <span class="acc"><button type="button" class="btn btn-sm" onclick={alQuitarExterna}>Quitar la copia externa</button></span>
+            <span class="acc"><button type="button" class="btn btn-sm" onclick={alQuitarExterna}>Quitar la copia derivada</button></span>
           {/if}
         {/if}
       </div>

@@ -16,11 +16,14 @@
   import { ordenesDeOtras, RESULTADO_ORDEN, resultadoOrden } from "$lib/espera";
   import type { EntradaHistorial, Equipo } from "$lib/tipos";
   import Chip from "./Chip.svelte";
+  import { legibleEnTexto, mapaNombresCliente } from "$lib/nombres";
 
   let { equipo = "" }: { equipo?: string } = $props();
 
   type Fila = EntradaHistorial & { equipoNombre: string; equipoId: string };
   let filas = $state<Fila[]>([]);
+  /** B1: los nombres de carpeta del almacén, con el nombre que se ve. */
+  const nombres = $derived(mapaNombresCliente(actual.equipos));
   let vuelta = 0;
 
   /** Los equipos que se gestionan también desde otra consola (los demás no tienen nada que contar aquí). */
@@ -61,7 +64,7 @@
           {@const r = RESULTADO_ORDEN[resultadoOrden(h)] ?? { texto: resultadoOrden(h) || "—", tono: "neutral" as const }}
           <li>
             <span class="texto">
-              <span><strong>{h.descripcion ?? nombreOrden(h.orden ?? "")}</strong> en {h.equipoNombre}</span>
+              <span><strong>{h.descripcion ? legibleEnTexto(h.descripcion, nombres) : nombreOrden(h.orden ?? "")}</strong> en {h.equipoNombre}</span>
               <span class="faint">
                 Desde {h.consola ? `«${h.consola}»` : "otra consola"}{#if h.por}{" · "}pedida por {h.por}{/if}
                 {#if h.cancelada_desde}{" · "}cancelada desde «{h.cancelada_desde}»{/if}
