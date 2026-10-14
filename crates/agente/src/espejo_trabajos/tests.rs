@@ -23,7 +23,19 @@ fn vectores_compartidos_con_la_consola() {
         assert_eq!(r.is_ok(), p["ok"].as_bool().unwrap(), "{}: {:?}", p["nombre"], r.err());
     }
     for c in doc["reduce"].as_array().unwrap() {
-        let de = |k: &str| -> Vec<Trabajo> { lista(&c[k]).into_iter().map(|t| serde_json::from_value(t).unwrap()).collect() };
+        // 14c: `nunca_bien` es lo que dice el resumen; aquí, un trabajo del que se lleva la cuenta y nunca terminó bien.
+        let de = |k: &str| -> Vec<Trabajo> {
+            lista(&c[k])
+                .into_iter()
+                .map(|t| {
+                    let nunca = t["nunca_bien"] == true;
+                    let mut x: Trabajo = serde_json::from_value(t).unwrap();
+                    x.estado.registro = nunca;
+                    assert_eq!(x.nunca_bien(), nunca);
+                    x
+                })
+                .collect()
+        };
         assert_eq!(reduce(&de("antes"), &de("ahora")), c["reduce"].as_bool().unwrap(), "{}", c["nombre"]);
     }
 }
@@ -571,10 +583,15 @@ fn almacen_igual_que_el_origen() {
     assert!(espejo.join("ana/conta/data/ab/abcd").is_file() && !espejo.join("srv").exists(), "solo los de ese equipo");
     let guardado = crate::server::load().espejo.unwrap();
     assert_eq!(guardado.trabajos[0].estado.resultado.as_deref(), Some(texto.as_str()));
+    // 14i: la vuelta en su registro y lo que ocupa cada repositorio en el destino.
+    let e = &guardado.trabajos[0].estado;
+    assert_eq!((e.subidas.len(), e.subidas[0].archivos, e.subidas[0].resultado.as_str()), (1, 3, "ok"));
+    let ocupa = e.ocupa.clone().unwrap();
+    assert_eq!((ocupa.bytes, ocupa.repos.get("ana/conta").copied()), (60, Some(60)));
     assert_eq!(guardado.destinos.len(), 1, "y la vista para un agente anterior");
     // «Hacer ahora»: queda pedido hasta que empieza la vuelta siguiente.
-    assert!(pedir_ahora(&json!({ "trabajo": "t1" })).unwrap().contains("Disco E"));
-    assert!(pedir_ahora(&json!({ "trabajo": "otro" })).is_err());
+    assert!(pedir_ahora(&json!({ "trabajo": "t1" }), None).unwrap().contains("Disco E"));
+    assert!(pedir_ahora(&json!({ "trabajo": "otro" }), None).is_err());
     assert!(crate::server::load().espejo.unwrap().trabajos[0].estado.pedido_ahora);
     // La poda del almacén quita un paquete: se ve faltar y se borra en la vuelta siguiente.
     std::fs::remove_file(almacen.join("ana/conta/data/ab/abcd")).unwrap();
@@ -584,6 +601,8 @@ fn almacen_igual_que_el_origen() {
     assert_eq!(crate::server::load().espejo.unwrap().trabajos[0].estado.por_borrar.as_ref().map(|p| p.archivos), Some(1));
     crate::espejo::hacer(&t, Motivo::Horario, &almacen);
     assert!(!espejo.join("ana/conta/data/ab/abcd").exists() && espejo.join("ana/conta/data/cd/cdef").is_file());
+    let e = crate::server::load().espejo.unwrap().trabajos[0].estado.clone();
+    assert_eq!((e.subidas.len(), e.subidas[2].borrados, e.subidas[2].borrados_bytes, e.ocupa.map(|o| o.bytes)), (3, 1, 22, Some(38)), "lo borrado ya no ocupa");
     // Una orden de antes (por destinos) no puede cambiar estos trabajos.
     assert!(crate::server::poner_espejo(
         crate::espejo::pedido(&json!({ "destinos": [{ "tipo": "carpeta", "carpeta": espejo.display().to_string() }] })).unwrap()
@@ -674,4 +693,115 @@ fn espejo_del_equipo_con_restic_y_rclone() {
     assert!(resumen_equipo().is_null());
     std::env::remove_var("RESGUARDO_AGENT_DIR");
     let _ = std::fs::remove_dir_all(&b);
+}
+
+/// 14i y 14c: cada vuelta queda en su registro (como mucho 30, sin rutas), con lo que ocupa en
+/// el destino; uno nuevo nunca terminado bien se quita sin espera, y deja de serlo al terminar bien.
+#[test]
+fn registro_de_subidas_y_nunca_terminado() {
+    let mut nuevos = vec![trabajo("n", carpeta("E:\\Espejo"))];
+    conservar_estado(&mut nuevos, &[], &|_| {});
+    let mut t = nuevos.remove(0);
+    assert!(t.estado.registro && t.nunca_bien(), "uno nuevo: se sabe que nunca terminó bien");
+    assert!(!reduce(&[t.clone()], &[]), "quitarlo no espera");
+    assert!(!reduce(&[t.clone()], &[Trabajo { adonde: carpeta("F:\\Otro"), ..t.clone() }]), "cambiarlo de destino tampoco");
+    // Una vuelta que falla: sigue sin terminar bien, y el error queda sin la ruta.
+    let v = Vuelta { inicio: "2026-10-14T01:00:00+02:00", fin: "2026-10-14T01:05:00+02:00", motivo: Motivo::Horario, ocupa: BTreeMap::new(), completo: false };
+    anotar_vuelta(&mut t, "ERROR: espejo «n» en E:\\Espejo\\ana: no se puede escribir en E:\\Espejo\\ana\\x", &v, &[]);
+    assert!(t.nunca_bien() && !reduce(&[t.clone()], &[]));
+    let s = &t.estado.subidas[0];
+    assert_eq!((s.resultado.as_str(), s.motivo.as_str()), ("error", "horario"));
+    assert!(!s.error.as_deref().unwrap().contains("Espejo\\ana"), "sin rutas: {:?}", s.error);
+    assert!(t.estado.ocupa.is_none());
+    // Una que sale bien: ya protege algo, y quitarlo espera.
+    let r = Resumen {
+        copiados: 3,
+        bytes: 300,
+        verificados: 2,
+        borrados: 1,
+        borrados_bytes: 50,
+        ocupa: BTreeMap::from([("ana/conta".to_string(), 250), ("srv/sql".to_string(), 50)]),
+        ..Default::default()
+    };
+    let v = Vuelta { inicio: "2026-10-14T02:00:00+02:00", fin: "2026-10-14T02:10:00+02:00", motivo: Motivo::Ahora, ocupa: r.ocupa.clone(), completo: true };
+    anotar_vuelta(&mut t, "Espejo «n» hecho en E:", &v, &[r]);
+    assert!(!t.nunca_bien() && reduce(&[t.clone()], &[]));
+    assert_eq!(t.estado.bien.as_deref(), Some("2026-10-14T02:10:00+02:00"));
+    let o = t.estado.ocupa.clone().unwrap();
+    assert_eq!((o.bytes, o.repos.get("ana/conta").copied()), (300, Some(250)));
+    let s = t.estado.subidas.last().unwrap();
+    assert_eq!((s.archivos, s.bytes, s.borrados, s.borrados_bytes, s.verificados, s.ocupa, s.motivo.as_str()), (3, 300, 1, 50, 2, Some(300), "ahora"));
+    // Un espejo del equipo que no pudo con un repositorio: lo de ese, lo de antes.
+    let v = Vuelta {
+        inicio: "2026-10-14T03:00:00+02:00",
+        fin: "2026-10-14T03:01:00+02:00",
+        motivo: Motivo::TrasCopia,
+        ocupa: BTreeMap::from([("srv/sql".to_string(), 80)]),
+        completo: false,
+    };
+    anotar_vuelta(&mut t, "ERROR: espejo «n»: ana/conta: no está", &v, &[Resumen::default()]);
+    let o = t.estado.ocupa.clone().unwrap();
+    assert_eq!((o.bytes, o.repos.get("ana/conta").copied(), o.repos.get("srv/sql").copied()), (330, Some(250), Some(80)));
+    assert!(!t.nunca_bien(), "una vez bien, ya cuenta aunque la última falle");
+    // Como mucho 30 en el registro: se van las más antiguas.
+    for i in 0..40 {
+        let fin = format!("2026-10-15T{:02}:{:02}:00+02:00", i / 60, i % 60);
+        anotar_vuelta(&mut t, "Espejo hecho", &Vuelta { inicio: &fin, fin: &fin, motivo: Motivo::Horario, ocupa: BTreeMap::new(), completo: false }, &[]);
+    }
+    assert_eq!(t.estado.subidas.len(), MAX_SUBIDAS);
+    assert!(t.estado.subidas[0].inicio.starts_with("2026-10-15T00:10"));
+    // En el resumen: su registro, lo que ocupa y si nunca terminó bien.
+    let r = resumen(&t, Value::Null);
+    assert_eq!((r["subidas"].as_array().map(Vec::len), r["nunca_bien"].as_bool(), r["ocupa"]["bytes"].as_u64()), (Some(30), Some(false), Some(330)));
+    // Uno de un agente anterior (sin cuenta) que nunca terminó: no se sabe, espera.
+    let viejo = trabajo("v", carpeta("E:\\V"));
+    assert!(!viejo.nunca_bien() && reduce(&[viejo], &[]));
+}
+
+/// 14s: la primera subida «en la próxima franja de la madrugada»: no antes de su hora (salvo
+/// «Hacer ahora»); después, como siempre.
+#[test]
+fn primera_subida_desde_una_hora() {
+    let mut t = trabajo("p", carpeta("E:\\P"));
+    t.cuando = Cuando { tras_copia: true, horario: Some(horario_diario("02:00")), primera_desde: Some(hora(15, 2, 0).to_rfc3339()), ..Default::default() };
+    let ts = vec![t.clone()];
+    assert_eq!(toca(&t, &ts, hora(14, 22, 0), None), None, "aún no es su hora");
+    assert_eq!(toca(&t, &ts, hora(15, 2, 1), None), Some(Motivo::Horario));
+    let mut ya = t.clone();
+    ya.estado.pedido_ahora = true;
+    assert_eq!(toca(&ya, &ts, hora(14, 22, 0), None), Some(Motivo::Ahora), "«Hacer ahora» la adelanta");
+    // Validación: una hora válida y no muy lejana.
+    let mut v = t.clone();
+    v.cuando.primera_desde = Some((chrono::Local::now() + chrono::Duration::hours(6)).to_rfc3339());
+    assert!(validar(&mut v, QUIEN_ALMACEN).is_ok());
+    v.cuando.primera_desde = Some((chrono::Local::now() + chrono::Duration::days(20)).to_rfc3339());
+    assert!(validar(&mut v, QUIEN_ALMACEN).is_err());
+    v.cuando.primera_desde = Some("mañana".into());
+    assert!(validar(&mut v, QUIEN_ALMACEN).is_err());
+}
+
+/// 14c: el título de una orden en espera dice exactamente qué cambia, sin rutas.
+#[test]
+fn que_cambia_en_palabras() {
+    let mut a = trabajo("a", carpeta("E:\\Espejos\\Oficina"));
+    a.nombre = "Contabilidad al disco".into();
+    let mut b = trabajo("b", nube("B2 Oficina", "Resguardo"));
+    b.nombre = "Todo a la nube".into();
+    let zonas = vec![("z0e0e0e".to_string(), "Disco E".to_string())];
+    let antes = vec![a.clone(), b.clone()];
+    assert_eq!(describir_cambio(&antes, &[b.clone()], &zonas).as_deref(), Some("Quitar «Contabilidad al disco»"));
+    let otra = Trabajo { adonde: nube("Dropbox Sur", "Resguardo"), ..a.clone() };
+    assert_eq!(describir_cambio(&antes, &[otra, b.clone()], &zonas).as_deref(), Some("Cambiar el destino de «Contabilidad al disco» a la nube «Dropbox Sur»"));
+    let a2 = Trabajo { adonde: carpeta("F:\\Otra\\carpeta"), ..a.clone() };
+    let d = describir_cambio(&antes, &[a2, b.clone()], &zonas).unwrap();
+    assert!(d.ends_with("a una carpeta del disco F:") && !d.contains("Otra"), "sin la ruta: {d}");
+    let a3 = Trabajo { adonde: Adonde { tipo: "zona".into(), carpeta: "z0e0e0e".into(), nube: None }, ..a.clone() };
+    assert!(describir_cambio(&antes, &[a3, b.clone()], &zonas).unwrap().ends_with("a la zona «Disco E»"));
+    let pausado = Trabajo { activo: false, ..b.clone() };
+    assert_eq!(describir_cambio(&antes, &[a.clone(), pausado], &zonas).as_deref(), Some("Pausar «Todo a la nube»"));
+    let retencion = Trabajo { retencion: Retencion::Igual, ..b.clone() };
+    assert_eq!(describir_cambio(&antes, &[a.clone(), retencion], &zonas).as_deref(), Some("Cambiar «Todo a la nube» para «igual que el origen»"));
+    assert_eq!(describir_cambio(&antes, &antes, &zonas), None);
+    let muchos: Vec<Trabajo> = (0..5).map(|i| trabajo(&format!("n{i}"), carpeta("E:\\N"))).collect();
+    assert!(describir_cambio(&[], &muchos, &zonas).unwrap().ends_with("y 2 cambios más"));
 }

@@ -1395,6 +1395,10 @@ pub const ADMITE: &[&str] = &[
     // `sede:`, `sede.equipo:` y `sede.destino:` (con la clave), `etiqueta.categoria:` y
     // `orden.equipos:` en `datos_cliente` (docs/sedes.md).
     resguardo_protocolo::datos_cliente::ADMITE_SEDES,
+    // v1.6x (pendiente de numerar al unir) 14s: `cuando.primera_desde` en los trabajos de espejo (la
+    // primera subida, no antes de esa hora). 14i, 14c y 14p (campos opcionales, sin token): `subidas`,
+    // `ocupa`, `bien`, `nunca_bien` y `en_cola` en cada trabajo y el progreso `espejo`.
+    "espejo_primera",
     // v1.6x (pendiente de numerar al unir) 14ccc: `verificar` (opcional) en el gancho `sqlserver`
     // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
     "verificar_volcado",
@@ -2761,7 +2765,7 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
     }
     // Plan 0.7.26 (bloque 4): «Hacer ahora» un espejo (del almacén o del propio equipo).
     if let Some(a) = c.get("espejo_ahora") {
-        return Ok((crate::espejo_trabajos::pedir_ahora(a)?, None));
+        return Ok((crate::espejo_trabajos::pedir_ahora(a, None)?, None));
     }
     // Plan 0.7.26 (bloque 4): los espejos que hace el propio equipo (no hace falta ser almacén).
     if let Some(e) = c.get("espejo_equipo") {

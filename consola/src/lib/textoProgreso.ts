@@ -16,6 +16,22 @@ export const NOMBRE_TAREA: Record<TipoTarea, string> = {
   historial: "Trayendo el historial",
   retencion: "Aplicando la retención",
   restauracion: "Restaurando",
+  espejo: "Subiendo el espejo",
+  actualizacion: "Actualizando el agente",
+};
+
+/** 14p: qué es, en infinitivo (para «En cola: verificar»). */
+export const QUE_TAREA: Record<TipoTarea, string> = {
+  copia: "copiar",
+  verificar: "verificar",
+  verificar_externa: "verificar la copia derivada",
+  copia_externa: "subir la copia derivada",
+  prueba_restauracion: "probar a restaurar",
+  historial: "traer el historial",
+  retencion: "aplicar la retención",
+  restauracion: "restaurar",
+  espejo: "subir el espejo",
+  actualizacion: "actualizar el agente",
 };
 
 /**
@@ -38,6 +54,15 @@ export function textoMover(t: TareaEnMarcha): string | null {
  */
 export function quienRestaura(t: TareaEnMarcha): string | null {
   if (t.tipo !== "restauracion") return null;
+  return quienEmpezo(t);
+}
+
+/**
+ * 14p: quién empezó cualquier cosa en marcha y desde dónde, como se dice en todas las
+ * consolas del equipo: «pedida por Ana desde «Oficina»», «desde otra consola», «desde la
+ * ventana del equipo». `null` si lo empezó su horario (o esta consola sin decir quién).
+ */
+export function quienEmpezo(t: TareaEnMarcha): string | null {
   if (t.en_el_equipo) return "desde la ventana del equipo";
   const por = t.por?.trim() ? `pedida por ${t.por.trim()}` : "";
   const donde = t.otra_consola ? (t.consola ? `desde «${t.consola}»` : "desde otra consola") : "";
@@ -45,9 +70,15 @@ export function quienRestaura(t: TareaEnMarcha): string | null {
 }
 
 export function textoFase(t: TareaEnMarcha): string {
-  if (t.tipo === "restauracion") {
-    const q = quienRestaura(t);
-    return `${t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA.restauracion}${q ? ` (${q})` : ""}`;
+  // 14p: pedido con «Ahora» y aún sin empezar.
+  if (t.fase === "en_cola") {
+    const q = quienEmpezo(t);
+    return `En cola: ${QUE_TAREA[t.tipo] ?? "empezar"}${q ? ` (${q})` : ""}`;
+  }
+  if (t.tipo === "restauracion" || t.tipo === "espejo" || ((t.tipo === "verificar" || t.tipo === "verificar_externa" || t.tipo === "prueba_restauracion" || t.tipo === "copia_externa") && (t.por || t.otra_consola))) {
+    const q = quienEmpezo(t);
+    const de = t.tipo === "espejo" && t.nombre ? ` de «${t.nombre}»` : "";
+    return `${t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA[t.tipo]}${de}${q ? ` (${q})` : ""}`;
   }
   if (t.tipo !== "copia") return t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA[t.tipo];
   switch (t.fase) {
@@ -104,6 +135,7 @@ export function cifrasTarea(t: TareaEnMarcha): string[] {
 
 /** Texto corto: «Copiando… 42 %», «Preparando…», «Verificando… 10 %». */
 export function textoCorto(t: TareaEnMarcha, pct?: number | null): string {
+  if (t.fase === "en_cola") return "En cola…";
   const p = pct === undefined ? porcentaje(t) : pct;
   const que =
     t.tipo === "copia" && (t.fase === "preparando" || t.fase === "antes_de_copiar")
@@ -112,6 +144,8 @@ export function textoCorto(t: TareaEnMarcha, pct?: number | null): string {
         ? "Copiando"
         : t.mover
           ? "Moviendo"
-          : (NOMBRE_TAREA[t.tipo] ?? "En marcha").split(" ")[0];
+          : t.tipo === "espejo"
+            ? "Subiendo"
+            : (NOMBRE_TAREA[t.tipo] ?? "En marcha").split(" ")[0];
   return p == null ? `${que}…` : `${que}… ${p}${NBSP}%`;
 }

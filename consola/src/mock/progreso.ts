@@ -33,6 +33,8 @@ interface Sim {
   extra?: Partial<T.TareaEnMarcha>;
   alTerminar?: () => void;
   hecha?: boolean;
+  /** 14p: tanto tiempo «en cola» antes de empezar (ms). */
+  cola?: number;
 }
 
 let sims: Sim[] = [];
@@ -102,12 +104,55 @@ function sembrar() {
     m.empezo = Date.now() - m.subir * 0.22;
     sims.push(m);
   }
+  // 14p: ALMACEN-SUR reintenta la primera subida de «Ventas a Dropbox» (en vivo en todas las consolas).
+  const sur = estado.equipos.find((e) => e.nombre === "ALMACEN-SUR");
+  if (sur) {
+    const es: Sim = {
+      cliente: sur.cliente,
+      equipo: sur.id,
+      tipo: "espejo",
+      repo: "t1b2c3d4e5f",
+      nombre: "Ventas a Dropbox",
+      empezo: 0,
+      ganchos: 0,
+      preparar: 5_000,
+      escanear: 0,
+      subir: 25 * 60_000,
+      terminar: 0,
+      archivos: 0,
+      bytes: 270_800_000_000,
+      bucle: true,
+      extra: { espejo: "t1b2c3d4e5f", quien: "almacen", primera: true, por: "Marta", otra_consola: true, consola: "Oficina" },
+    };
+    es.empezo = Date.now() - (es.preparar + es.subir * 0.18);
+    sims.push(es);
+  }
 }
 
 /** Una tarea en marcha según el tiempo que lleva. */
 function tareaDe(s: Sim, ahora: number): T.TareaEnMarcha {
   const t = Math.max(0, ahora - s.empezo);
   const base = { tipo: s.tipo, repo: s.repo, copia: s.copia ?? null, nombre: s.nombre ?? null, empezo: iso(s.empezo), actualizado: iso(ahora - (ahora % 3000)), ...s.extra };
+  // 14p: pedida con «Ahora» y aún sin empezar.
+  if (s.cola && ahora < s.empezo) return { ...base, fase: "en_cola", etapa: "En cola", empezo: null };
+  if (s.tipo === "espejo") {
+    // Como el agente: lo subido de lo que hay que subir, con su ritmo (de la subida) y lo que queda.
+    const f = Math.min(1, Math.max(0, (t - s.preparar) / s.subir));
+    if (t < s.preparar) return { ...base, fase: "preparando", etapa: s.extra?.primera ? "Primera subida" : "Subiendo lo nuevo" };
+    const vel = Math.round((s.bytes / (s.subir / 1000)) * (1 + 0.22 * Math.sin(ahora / 4000)));
+    return {
+      ...base,
+      fase: "subiendo",
+      etapa: s.extra?.primera ? "Primera subida" : "Subiendo lo nuevo",
+      porcentaje: Math.round(f * 1000) / 1000,
+      bytes: Math.round(s.bytes * f),
+      bytes_total: s.bytes,
+      velocidad: vel,
+      subida: vel,
+      lectura: Math.round(vel * 1.04),
+      quedan_s: Math.max(1, Math.round((s.subir - (t - s.preparar)) / 1000)),
+    };
+  }
   if (s.tipo === "historial") {
     // Como el agente: «X de Y versiones» (sin bytes ni «quedan»).
     const total_ = s.versiones ?? 40;
@@ -243,10 +288,10 @@ export function empezarRestauracion(cliente: string, equipo: string, repo: strin
   programar(s);
 }
 
-export function empezarTarea(cliente: string, equipo: string, repo: string, tipo: T.TipoTarea, ms: number, alTerminar?: () => void) {
+export function empezarTarea(cliente: string, equipo: string, repo: string, tipo: T.TipoTarea, ms: number, alTerminar?: () => void, extra?: Partial<T.TareaEnMarcha>, cola = 0) {
   sembrar();
   sims = sims.filter((s) => !(s.equipo === equipo && s.repo === repo && s.tipo === tipo));
-  const s: Sim = { cliente, equipo, tipo, repo, empezo: Date.now() + 1_000, ganchos: 0, preparar: 0, escanear: 0, subir: ms, terminar: 0, archivos: 0, bytes: 0, alTerminar };
+  const s: Sim = { cliente, equipo, tipo, repo, empezo: Date.now() + 1_000 + cola, ganchos: 0, preparar: 0, escanear: 0, subir: ms, terminar: 0, archivos: 0, bytes: 0, alTerminar, extra, cola };
   sims.push(s);
   programar(s);
 }

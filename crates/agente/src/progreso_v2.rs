@@ -96,6 +96,30 @@ fn tipo_tarea(kind: &str) -> &'static str {
 
 /// Una tarea larga (verificar, copia externa, prueba de restauración).
 pub fn tarea_larga(t: &crate::tasks::RunningTask) -> Value {
+    tarea_larga_para(t, "")
+}
+
+/// [`tarea_larga`] como la ve la consola `enlace`: 14p, con quién la pidió con «Ahora» y
+/// desde qué consola (`otra_consola` si no fue esta; nunca su dirección).
+pub fn tarea_larga_para(t: &crate::tasks::RunningTask, enlace: &str) -> Value {
+    let mut v = tarea_larga_sin_quien(t);
+    if let Some(e) = t.enlace.as_deref() {
+        let otra = e != enlace;
+        v["por"] = t.por.clone().into();
+        v["otra_consola"] = otra.into();
+        if otra {
+            v["consola"] = t.consola.clone().into();
+        }
+    }
+    v
+}
+
+/// La derivada de una tarea (`derivada-<id>`, `verify_derivada-<id>`), si es de una.
+fn derivada_de(kind: &str) -> Option<&str> {
+    kind.split_once('-').filter(|(k, _)| *k == crate::tasks::DERIVADA || *k == crate::tasks::VERIFY_DERIVADA).map(|(_, d)| d)
+}
+
+fn tarea_larga_sin_quien(t: &crate::tasks::RunningTask) -> Value {
     let etapa: String = crate::web::public_message(&t.stage).chars().take(120).collect();
     let tipo = tipo_tarea(&t.kind);
     json!({
@@ -117,6 +141,82 @@ pub fn tarea_larga(t: &crate::tasks::RunningTask) -> Value {
     })
 }
 
+/// 14p: el tipo para la consola de una tarea pedida con «Ahora» (`verify`, `derivada-<id>`…).
+fn tipo_pedida(pedida: &str) -> &'static str {
+    match pedida.split_once('-').map_or(pedida, |(k, _)| k) {
+        "verify" => "verificar",
+        "verify_offsite" | crate::tasks::VERIFY_DERIVADA => "verificar_externa",
+        "restore_test" => "prueba_restauracion",
+        _ => "copia_externa",
+    }
+}
+
+/// 14p: algo pedido con «Ahora» que aún no ha empezado («en cola»), como lo ve la consola `enlace`.
+pub fn tarea_en_cola(repo: &str, pedida: &str, quien: &crate::tasks::PedidaPor, enlace: &str) -> Value {
+    let mut v = json!({ "tipo": tipo_pedida(pedida), "repo": repo, "fase": "en_cola", "etapa": "En cola", "derivada": derivada_de(pedida) });
+    if let Some(e) = quien.enlace.as_deref() {
+        let otra = e != enlace;
+        v["por"] = quien.por.clone().into();
+        v["otra_consola"] = otra.into();
+        if otra {
+            v["consola"] = quien.consola.clone().into();
+        }
+    }
+    v
+}
+
+/// 14p: la vuelta de un espejo en marcha (del registro del servicio), sin rutas: el trabajo,
+/// quién lo hace, lo copiado de lo que hay que copiar, el ritmo y lo que queda.
+pub fn tarea_espejo(a: &crate::escritorio::Actividad, enlace: &str) -> Option<Value> {
+    let id = a.espejo.as_deref().filter(|_| a.tipo == "espejo" || a.tipo == "nube")?;
+    let otra = a.enlace.as_deref().is_some_and(|e| e != enlace);
+    Some(json!({
+        "tipo": "espejo",
+        "repo": id,
+        "espejo": id,
+        "nombre": a.espejo_nombre,
+        "quien": a.quien,
+        "primera": a.primera.then_some(true),
+        "fase": if a.bytes_total.is_none() { "preparando" } else { "subiendo" },
+        "etapa": if a.primera { "Primera subida" } else { "Subiendo lo nuevo" },
+        "porcentaje": a.porcentaje,
+        "bytes": a.bytes,
+        "bytes_total": a.bytes_total,
+        "velocidad": a.velocidad,
+        "lectura": a.lectura,
+        "subida": a.subida.or(a.velocidad),
+        "quedan_s": a.quedan_s,
+        "empezo": a.empezo,
+        "actualizado": chrono::Local::now().to_rfc3339(),
+        "por": a.por,
+        "otra_consola": a.enlace.is_some().then_some(otra),
+        "consola": if otra { a.consola.clone() } else { None },
+    }))
+}
+
+/// 14p: los espejos con «Hacer ahora» pendiente que no están en marcha («en cola»).
+fn espejos_en_cola(en_marcha: &[crate::escritorio::Actividad], enlace: &str) -> Vec<Value> {
+    let corriendo: Vec<&str> = en_marcha.iter().filter_map(|a| a.espejo.as_deref()).collect();
+    let mut trabajos = crate::espejo_trabajos::cargar_equipo().trabajos;
+    let c = crate::server::load();
+    if c.enabled {
+        trabajos.extend(c.espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default());
+    }
+    trabajos
+        .iter()
+        .filter(|t| t.activo && t.estado.pedido_ahora && !corriendo.contains(&t.id.as_str()))
+        .map(|t| {
+            let p = t.estado.pedido.clone().unwrap_or_default();
+            let otra = !p.enlace.is_empty() && p.enlace != enlace;
+            json!({
+                "tipo": "espejo", "repo": t.id, "espejo": t.id, "nombre": t.nombre, "quien": t.quien,
+                "primera": t.nunca_bien().then_some(true), "fase": "en_cola", "etapa": "En cola",
+                "por": p.por, "otra_consola": (!p.enlace.is_empty()).then_some(otra), "consola": if otra { p.consola } else { None },
+            })
+        })
+        .collect()
+}
+
 /// Lo que está en marcha ahora mismo en este equipo (vacío si nada), tal como
 /// se le cuenta a la consola de `v`: a todas las consolas lo mismo, salvo quién
 /// empezó cada operación (`otra_consola`, ver [`tarea_operacion`]).
@@ -132,14 +232,21 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
         let nombre = copias.iter().find(|k| k.repo == r.repo_id && Some(&k.id) == r.plan_id.as_ref()).map(|k| k.nombre.as_str());
         out.extend(tarea_copia(r, nombre, ahora));
     }
+    let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
     if let Some(t) = crate::tasks::load_state().live_running() {
-        out.push(tarea_larga(t));
+        out.push(tarea_larga_para(t, &enlace));
     }
     // v1.47: lo que corre dentro del servicio por una orden (traer el historial, también
     // al «Mover a otro sitio…»; aplicar la retención) y las restauraciones.
-    let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
     out.extend(ops::lista().iter().map(|o| tarea_operacion(o, &enlace)));
-    out.extend(crate::escritorio::en_marcha::actividades().iter().filter_map(|a| tarea_restauracion(a, &enlace)));
+    let actividades = crate::escritorio::en_marcha::actividades();
+    out.extend(actividades.iter().filter_map(|a| tarea_restauracion(a, &enlace)));
+    // 14p: los espejos en marcha y, después, lo pedido con «Ahora» que aún no empezó.
+    out.extend(actividades.iter().filter_map(|a| tarea_espejo(a, &enlace)));
+    if out.len() < MAX_TAREAS {
+        out.extend(crate::tasks::en_cola(&crate::agent::load_config()).iter().map(|(r, p, q)| tarea_en_cola(r, p, q, &enlace)));
+        out.extend(espejos_en_cola(&actividades, &enlace));
+    }
     out.truncate(MAX_TAREAS);
     out
 }
@@ -176,8 +283,9 @@ pub fn tarea_restauracion(a: &crate::escritorio::Actividad, enlace: &str) -> Opt
 /// llevarla); `consola`, el nombre que esa consola tiene en el equipo (nunca su
 /// dirección), si tiene uno.
 pub fn tarea_operacion(o: &ops::Operacion, enlace: &str) -> Value {
-    let otra = o.enlace != enlace;
-    let porcentaje = match (o.hechas, o.total) {
+    // 14p: sin consola (la actualización del agente la decide el propio equipo), de nadie.
+    let otra = !o.enlace.is_empty() && o.enlace != enlace;
+    let porcentaje = match (o.hechas.or(o.bytes), o.total.or(o.bytes_total)) {
         (Some(h), Some(t)) if t > 0 => Some(((h as f64 / t as f64).clamp(0.0, 1.0) * 1000.0).round() / 1000.0),
         _ => None,
     };
@@ -189,11 +297,18 @@ pub fn tarea_operacion(o: &ops::Operacion, enlace: &str) -> Value {
         "nombre_origen": o.nombre_origen,
         "mover": o.mover.then_some(true),
         "paso": o.paso,
-        "fase": if o.tipo == "historial" && o.hechas.is_none() { "preparando" } else { "en_marcha" },
+        "fase": if (o.tipo == "historial" && o.hechas.is_none()) || (o.tipo == "actualizacion" && o.bytes.is_none()) { "preparando" } else { "en_marcha" },
         "etapa": (!o.etapa.is_empty()).then(|| o.etapa.clone()),
         "porcentaje": porcentaje,
         "versiones": o.hechas.filter(|_| o.tipo == "historial"),
         "versiones_total": o.total.filter(|_| o.tipo == "historial"),
+        // 14p: en bytes (la actualización del agente, la retención del almacén).
+        "bytes": o.bytes,
+        "bytes_total": o.bytes_total,
+        "velocidad": o.velocidad,
+        "subida": o.velocidad,
+        "quedan_s": o.quedan_s,
+        "por": o.por,
         "otra_consola": otra,
         "consola": if otra { o.consola.clone() } else { None },
         "empezo": o.empezo,
@@ -234,6 +349,14 @@ pub mod ops {
         pub etapa: String,
         pub hechas: Option<u64>,
         pub total: Option<u64>,
+        /// 14p: lo hecho y lo que hay que hacer en bytes (bajar una versión del agente…).
+        pub bytes: Option<u64>,
+        pub bytes_total: Option<u64>,
+        /// Bytes por segundo (media desde que empezó) y segundos que faltan.
+        pub velocidad: Option<u64>,
+        pub quedan_s: Option<u64>,
+        /// Quién la pidió (como lo dice su consola), si se sabe.
+        pub por: Option<String>,
         pub empezo: String,
         pub actualizado: String,
     }
@@ -271,6 +394,24 @@ pub mod ops {
     }
 
     impl Op {
+        /// 14p: cómo va en bytes (y de ahí el ritmo medio y lo que queda).
+        pub fn bytes(&self, etapa: &str, hechos: u64, total: Option<u64>) {
+            let mut l = OPS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(o) = l.iter_mut().find(|o| o.id == self.0) {
+                o.etapa = crate::web::public_message(etapa).chars().take(120).collect();
+                o.bytes = Some(hechos);
+                o.bytes_total = total;
+                let lleva = chrono::DateTime::parse_from_rfc3339(&o.empezo).map(|e| chrono::Local::now().signed_duration_since(e)).ok();
+                let s = lleva.map(|d| d.num_milliseconds() as f64 / 1000.0).unwrap_or(0.0);
+                o.velocidad = (s >= 2.0).then(|| (hechos as f64 / s).round() as u64);
+                o.quedan_s = match (total, o.velocidad) {
+                    (Some(t), Some(v)) if v > 0 && t > hechos => Some((t - hechos) / v),
+                    _ => None,
+                };
+                o.actualizado = chrono::Local::now().to_rfc3339();
+            }
+        }
+
         /// Cómo va: qué hace (en palabras, sin rutas) y, si se saben, cuántas de cuántas.
         pub fn avance(&self, etapa: &str, hechas: Option<u64>, total: Option<u64>) {
             let mut l = OPS.lock().unwrap_or_else(|e| e.into_inner());
@@ -348,14 +489,28 @@ impl RitmoIo {
     }
 }
 
-/// Decide cuándo mandar el progreso: cada `cada` mientras hay algo en marcha
-/// y una vez más (vacío) cuando termina, para que la consola lo quite enseguida.
+/// Entre dos lecturas de lo que está en marcha, al menos esto (leer son unos pocos archivos pequeños).
+pub const MIRAR_CADA: Duration = Duration::from_secs(1);
+
+/// Decide cuándo mandar el progreso: cada `cada` mientras hay algo en marcha, una
+/// vez más (vacío) cuando termina, para que la consola lo quite enseguida, y 14p
+/// **en cuanto algo empieza, termina o sale de la cola** (sin esperar a `cada`: una
+/// verificación de unos segundos se veía empezar y terminar entre dos mensajes).
+/// Como mucho un mensaje por [`MIRAR_CADA`].
 #[derive(Default)]
 pub struct Emisor {
     ultimo: Option<Instant>,
+    mirado: Option<Instant>,
     activo: bool,
+    /// Qué había en marcha en lo último que se mandó (tipo, repositorio, copia y si estaba en cola).
+    claves: Vec<String>,
     /// El servidor no lo admite (anterior a v1.25): no se manda más.
     apagado: bool,
+}
+
+/// Qué tareas son, sin sus cifras.
+fn claves(t: &[Value]) -> Vec<String> {
+    t.iter().map(|x| format!("{}|{}|{}|{}", x["tipo"], x["repo"], x["copia"], x["fase"] == "en_cola")).collect()
 }
 
 impl Emisor {
@@ -365,11 +520,18 @@ impl Emisor {
 
     /// Las tareas que toca mandar ahora, o `None` si aún no toca o no hay nada nuevo que decir.
     pub fn toca(&mut self, cada: Duration, ahora: Instant, leer: impl FnOnce() -> Vec<Value>) -> Option<Vec<Value>> {
-        if self.apagado || self.ultimo.is_some_and(|u| ahora.saturating_duration_since(u) < cada) {
+        if self.apagado || self.mirado.is_some_and(|m| ahora.saturating_duration_since(m) < MIRAR_CADA.min(cada)) {
+            return None;
+        }
+        self.mirado = Some(ahora);
+        let tareas = leer();
+        let nuevas = claves(&tareas);
+        let toca = self.ultimo.is_none_or(|u| ahora.saturating_duration_since(u) >= cada) || nuevas != self.claves;
+        if !toca {
             return None;
         }
         self.ultimo = Some(ahora);
-        let tareas = leer();
+        self.claves = nuevas;
         let antes = std::mem::replace(&mut self.activo, !tareas.is_empty());
         (antes || self.activo).then_some(tareas)
     }
@@ -544,6 +706,97 @@ mod tests {
         assert_eq!((de_otra["otra_consola"].as_bool(), de_otra["consola"].as_str(), de_otra["archivos"].as_u64()), (Some(true), Some("Oficina"), Some(3)));
     }
 
+    /// 14p: la vuelta de un espejo, a todas las consolas: su trabajo, quién lo hace, si es la
+    /// primera subida, las cifras y quién la pidió (nunca la dirección de su consola ni rutas).
+    #[test]
+    fn espejo_en_marcha_a_todas_las_consolas() {
+        let a = crate::escritorio::Actividad {
+            tipo: "nube".into(),
+            clave: "nube:t1".into(),
+            nombre: "B2 Oficina".into(),
+            espejo: Some("t1".into()),
+            espejo_nombre: Some("Todo a la nube".into()),
+            quien: Some("almacen".into()),
+            primera: true,
+            bytes: Some(30),
+            bytes_total: Some(120),
+            porcentaje: Some(0.25),
+            velocidad: Some(10),
+            subida: Some(12),
+            quedan_s: Some(9),
+            ..Default::default()
+        };
+        let t = tarea_espejo(&a, "e1").unwrap();
+        assert_eq!(
+            (t["tipo"].as_str(), t["repo"].as_str(), t["espejo"].as_str(), t["nombre"].as_str()),
+            (Some("espejo"), Some("t1"), Some("t1"), Some("Todo a la nube"))
+        );
+        assert_eq!(
+            (t["fase"].as_str(), t["primera"].as_bool(), t["porcentaje"].as_f64(), t["subida"].as_u64()),
+            (Some("subiendo"), Some(true), Some(0.25), Some(12))
+        );
+        assert!(t["otra_consola"].is_null(), "por su horario: de nadie");
+        // Pedido con «Hacer ahora» desde otra consola: su nombre, nunca su dirección.
+        let b = crate::escritorio::Actividad {
+            enlace: Some("e2".into()),
+            consola: Some("Oficina".into()),
+            por: Some("Ana".into()),
+            bytes_total: None,
+            ..a.clone()
+        };
+        let t = tarea_espejo(&b, "e1").unwrap();
+        assert_eq!(
+            (t["otra_consola"].as_bool(), t["consola"].as_str(), t["por"].as_str(), t["fase"].as_str()),
+            (Some(true), Some("Oficina"), Some("Ana"), Some("preparando"))
+        );
+        assert_eq!(tarea_espejo(&b, "e2").unwrap()["consola"], Value::Null, "la que lo pidió no se nombra a sí misma");
+        // Una restauración no es un espejo (y al revés).
+        assert!(tarea_espejo(&crate::escritorio::Actividad { tipo: "restauracion".into(), espejo: None, ..Default::default() }, "e1").is_none());
+        assert!(tarea_restauracion(&a, "e1").is_none());
+    }
+
+    /// 14p: lo pedido con «Ahora» que aún no empezó, «en cola», con quién lo pidió.
+    #[test]
+    fn en_cola_con_quien_la_pidio() {
+        let q = crate::tasks::PedidaPor { por: Some("Ana".into()), consola: Some("Oficina".into()), enlace: Some("e2".into()) };
+        let t = tarea_en_cola("r1", "verify", &q, "e1");
+        assert_eq!((t["tipo"].as_str(), t["fase"].as_str(), t["etapa"].as_str()), (Some("verificar"), Some("en_cola"), Some("En cola")));
+        assert_eq!((t["otra_consola"].as_bool(), t["consola"].as_str(), t["por"].as_str()), (Some(true), Some("Oficina"), Some("Ana")));
+        let t = tarea_en_cola("r1", "verify_derivada-d1", &crate::tasks::PedidaPor::default(), "e1");
+        assert_eq!((t["tipo"].as_str(), t["derivada"].as_str(), t["otra_consola"].is_null()), (Some("verificar_externa"), Some("d1"), true));
+        assert_eq!(tarea_en_cola("r1", "restore_test", &q, "e2")["consola"], Value::Null);
+        assert_eq!(tarea_en_cola("r1", "derivada-d1", &q, "e2")["tipo"], "copia_externa");
+        // La tarea larga ya en marcha, con quién la pidió.
+        let r = crate::tasks::RunningTask {
+            repo_id: "r1".into(),
+            kind: "verify".into(),
+            enlace: Some("e2".into()),
+            consola: Some("Oficina".into()),
+            por: Some("Ana".into()),
+            ..Default::default()
+        };
+        let t = tarea_larga_para(&r, "e1");
+        assert_eq!((t["otra_consola"].as_bool(), t["consola"].as_str(), t["por"].as_str()), (Some(true), Some("Oficina"), Some("Ana")));
+        assert!(tarea_larga_para(&crate::tasks::RunningTask { enlace: None, ..r }, "e1")["otra_consola"].is_null());
+    }
+
+    /// 14p: la actualización del agente, en bytes (con su ritmo y lo que queda), de nadie.
+    #[test]
+    fn actualizacion_en_bytes() {
+        let g = ops::empezar(ops::Operacion { tipo: "actualizacion", nombre: Some("Resguardo Agente 9.9.9".into()), ..Default::default() });
+        let t = tareas(None).into_iter().find(|t| t["tipo"] == "actualizacion").expect("en marcha");
+        assert_eq!((t["fase"].as_str(), t["otra_consola"].as_bool()), (Some("preparando"), Some(false)));
+        g.bytes(r"Bajando C:\Windows\x", 25, Some(100));
+        let t = tareas(None).into_iter().find(|t| t["tipo"] == "actualizacion").expect("en marcha");
+        assert_eq!(
+            (t["fase"].as_str(), t["bytes"].as_u64(), t["bytes_total"].as_u64(), t["porcentaje"].as_f64()),
+            (Some("en_marcha"), Some(25), Some(100), Some(0.25))
+        );
+        assert!(!t["etapa"].as_str().unwrap().contains("Windows"), "sin rutas");
+        assert!(t["versiones"].is_null());
+        drop(g);
+    }
+
     #[test]
     fn ritmo_de_los_contadores_de_un_proceso() {
         let mut r = RitmoIo::default();
@@ -566,6 +819,23 @@ mod tests {
         let _ = r.medir(Some(std::process::id()));
     }
 
+    /// 14p: lo que empieza o termina se manda enseguida (como mucho uno por segundo), sin esperar a `cada`.
+    #[test]
+    fn emisor_enseguida_al_empezar_y_al_terminar() {
+        let mut e = Emisor::default();
+        let t0 = Instant::now();
+        let cada = Duration::from_secs(5);
+        let ver = || vec![json!({ "tipo": "verificar", "repo": "r", "fase": "en_marcha" })];
+        let cola = || vec![json!({ "tipo": "verificar", "repo": "r", "fase": "en_cola" })];
+        assert_eq!(e.toca(cada, t0, Vec::new), None);
+        assert_eq!(e.toca(cada, t0 + Duration::from_millis(500), cola), None, "antes de un segundo no se mira");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(1), cola).map(|x| x.len()), Some(1), "en cola: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(2), cola), None, "lo mismo: hasta `cada`");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(3), ver).map(|x| x.len()), Some(1), "empieza: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(4), Vec::new), Some(vec![]), "termina: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(10), Vec::new), None);
+    }
+
     #[test]
     fn emisor_cada_cierto_tiempo_y_uno_vacio_al_terminar() {
         let mut e = Emisor::default();
@@ -573,9 +843,10 @@ mod tests {
         let cada = Duration::from_secs(5);
         let una = || vec![json!({ "tipo": "copia" })];
         assert_eq!(e.toca(cada, t0, Vec::new), None, "nada en marcha: nada que mandar");
-        assert_eq!(e.toca(cada, t0 + Duration::from_secs(1), una), None, "aún no toca");
-        assert_eq!(e.toca(cada, t0 + Duration::from_secs(5), una).map(|x| x.len()), Some(1));
-        assert_eq!(e.toca(cada, t0 + Duration::from_secs(10), una).map(|x| x.len()), Some(1));
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(1), una).map(|x| x.len()), Some(1), "empieza: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(5), una), None, "lo mismo: aún no toca");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(6), una).map(|x| x.len()), Some(1));
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(11), una).map(|x| x.len()), Some(1));
         assert_eq!(e.toca(cada, t0 + Duration::from_secs(15), Vec::new), Some(vec![]), "terminó: uno vacío");
         assert_eq!(e.toca(cada, t0 + Duration::from_secs(20), Vec::new), None);
     }

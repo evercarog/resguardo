@@ -401,10 +401,30 @@ pub fn entrada_de_historial(e: &crate::history::Entry) -> Option<(&'static str, 
     })
 }
 
-/// Una vuelta del espejo del Servidor de copias.
-pub fn espejo(hora: &str, resultado_texto: &str) {
+/// Una vuelta del espejo del Servidor de copias. v1.6x (14i): con el trabajo (su id, su
+/// nombre y quién lo hace) y las cifras de la vuelta (lo copiado, lo borrado, lo comprobado,
+/// lo que ocupa en el destino y cuánto tardó), campos opcionales.
+pub fn espejo(hora: &str, resultado_texto: &str, trabajo: Option<(&crate::espejo_trabajos::Trabajo, Option<&crate::espejo_trabajos::Subida>)>) {
     let fallo = resultado_texto.starts_with("ERROR");
-    anotar("espejo", json!({ "hora": hora, "resultado": if fallo { "fallo" } else { "ok" }, "mensaje": corto(resultado_texto) }));
+    let mut e = json!({ "hora": hora, "resultado": if fallo { "fallo" } else { "ok" }, "mensaje": corto(resultado_texto) });
+    if let Some((t, s)) = trabajo {
+        e["espejo"] = t.id.clone().into();
+        e["nombre"] = t.nombre.clone().into();
+        e["quien"] = t.quien.clone().into();
+        if let Some(s) = s {
+            let dur = DateTime::parse_from_rfc3339(&s.fin).ok().zip(DateTime::parse_from_rfc3339(&s.inicio).ok()).map(|(f, i)| (f - i).num_seconds().max(0));
+            e["duracion_s"] = dur.into();
+            e["archivos"] = s.archivos.into();
+            e["bytes"] = s.bytes.into();
+            e["borrados"] = s.borrados.into();
+            e["borrados_bytes"] = s.borrados_bytes.into();
+            e["verificados"] = s.verificados.into();
+            e["mal"] = s.mal.into();
+            e["ocupa"] = s.ocupa.into();
+            e["motivo"] = s.motivo.clone().into();
+        }
+    }
+    anotar("espejo", e);
 }
 
 /// Un aviso que el equipo manda al servidor (p. ej. «intentos_fallidos»).

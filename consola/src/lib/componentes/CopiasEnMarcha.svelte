@@ -23,11 +23,24 @@
   const pct = $derived(pctConjunto(lista, pulso.ahora));
   const nombreEquipo = (id: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
   // v1.47: un «Mover a otro sitio…» (de esta consola o de otra), por el repositorio que se mueve.
-  const queEs = (t: TareaEnMarcha) => (t.mover ? `Mover «${t.nombre_origen ?? t.nombre ?? t.repo}»` : t.nombre ? t.nombre : textoFase(t));
+  // 14p: un espejo por su nombre; lo que está en cola, dicho.
+  const queEs = (t: TareaEnMarcha) =>
+    t.mover
+      ? `Mover «${t.nombre_origen ?? t.nombre ?? t.repo}»`
+      : t.fase === "en_cola"
+        ? `${t.nombre ? `«${t.nombre}»: ` : ""}${textoFase(t)}`
+        : t.tipo === "espejo"
+          ? `Espejo «${t.nombre ?? t.repo}»`
+          : t.nombre
+            ? t.nombre
+            : textoFase(t);
   function hrefDe(x: { equipo: string; tarea: TareaEnMarcha }) {
     const base = `/c/${actual.id}/equipos/${encodeURIComponent(x.equipo)}`;
     if (x.tarea.tipo === "copia" && x.tarea.copia) return `${base}/copias/${encodeURIComponent(x.tarea.copia)}`;
-    if (x.tarea.tipo === "historial" || x.tarea.tipo === "retencion") return `${base}/repositorios/${encodeURIComponent(x.tarea.origen ?? x.tarea.repo)}`;
+    if (x.tarea.tipo === "espejo") return `${base}/espejos/${encodeURIComponent(x.tarea.espejo ?? x.tarea.repo)}`;
+    // La retención del almacén va por `usuario/repo`: al almacén.
+    if ((x.tarea.tipo === "historial" || x.tarea.tipo === "retencion") && !(x.tarea.origen ?? x.tarea.repo).includes("/")) return `${base}/repositorios/${encodeURIComponent(x.tarea.origen ?? x.tarea.repo)}`;
+    if (["verificar", "verificar_externa", "prueba_restauracion", "copia_externa", "restauracion"].includes(x.tarea.tipo)) return `${base}/repositorios/${encodeURIComponent(x.tarea.repo)}`;
     return base;
   }
   /** Con una, a ella; con varias del mismo equipo, a ese equipo; si no, a la lista de equipos (cada uno con su chip). */

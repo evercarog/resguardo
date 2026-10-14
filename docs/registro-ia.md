@@ -2,6 +2,27 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-14 · `ia/080-espejos-vivo` · Plan 0.8.0, C2 y C3: espejos a la vista y progreso en vivo (14i, 14h, 14s, 14c, 14p)
+
+Claude Code (Opus), en autónomo, desde `ia/integracion-080` (unida otra vez al final, con el bloque F; conflictos en `ADMITE`, «Cambios» y `test:vectores`, resueltos sumando). Contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.6x; diseño en [espejo.md](espejo.md).
+
+**Hecho:**
+
+- **Agente, registro de cada espejo (14i):** `EstadoTrabajo` guarda `subidas` (las últimas 30 vueltas: inicio, fin, resultado, motivo, lo copiado, lo borrado por su retención, lo comprobado, lo que ocupa y el error en una línea sin rutas), `ocupa` (lo que ocupa en el destino por repositorio: lo que había, más lo copiado, menos lo borrado; el motor lo cuenta en cada vuelta sin listar otra vez) y `bien`. Van en el resumen y, con sus cifras, en la bitácora (`espejo`, opcional).
+- **14c:** `registro` marca los trabajos de los que este agente sabe toda la historia (los nuevos o los que terminan bien); `nunca_bien()` = con registro, sin `bien` y sin un resultado bueno. `reduce` no cuenta esos (tampoco al quitar el espejo entero). La consola lo mismo con `nunca_bien` del resumen (vectores compartidos). `espera_v2::descripcion` dice qué cambia en los espejos («Espejos del almacén: quitar «X»», «cambiar el destino de «X» a la nube «B2»», «a una carpeta del disco E:»), sin rutas.
+- **14s:** `cuando.primera_desde` (`admite: "espejo_primera"`): la primera vuelta no empieza antes. El editor de espejos, en el resumen, dice el tamaño de la primera subida (lo que ocupan los repositorios que entran) y deja elegir «Empezar ahora» o «en la próxima franja de la madrugada» (las 2:00 de la consola).
+- **Progreso en vivo (C3, 14p):** el agente manda las vueltas de los espejos (tipo `espejo`; en una carpeta, bytes copiados de los que hay que copiar; hacia una nube, lo que sube rclone medido por sus contadores de E/S), la actualización del agente (bajando la versión, en bytes) y la retención del almacén, y «en cola» lo pedido con «Ahora» (verificar, probar, subir una derivada, «Hacer ahora» un espejo) con quién lo pidió y desde qué consola (la solicitud lleva ahora `por`, `consola` y `enlace`; se leen como mucho 4 KiB). El servidor admite los tipos, la fase y los campos nuevos; pasar de «en cola» a en marcha cuenta como «empieza».
+- **Consola:** página de cada espejo (`/equipos/<e>/espejos/<t>`), progreso en vivo en la lista de espejos, en la ficha del equipo (actualización, espejos, retención del almacén), en el camino de la copia y en la tarjeta del repositorio («su copia en <destino>» con lo que ocupa allí y su comprobación), enlaces nuevos desde el camino, la página del destino (con el tamaño real cuando se sabe) y el mapa; textos de «en cola» y de quién lo pidió. Simulador con registro, una primera subida en vivo y una verificación que pasa por «en cola». Vectores `vectores-espejo-pagina.ts`. E2E: paso 8a3b.
+
+**Sin probar:** contra equipos o consolas reales (todo en pruebas y en el e2e). La medida de lo subido a una nube depende de los contadores de E/S del proceso de rclone (en Linux, `/proc`): sin ellos el porcentaje no avanza hasta el final. La madrugada de 14s es la de la consola, no la del equipo (si están en otra zona horaria, empieza a otra hora). La actualización del agente con su progreso solo en pruebas (sin una actualización real).
+
+**Decisiones dudosas (para revisar):**
+
+- 14c: un trabajo creado por un agente anterior que nunca terminó bien **sigue esperando** (no se sabe su historia): se prefirió no quitar protección por suponer.
+- «Lo que ocupa en el destino» es lo que el espejo cuenta en cada vuelta (lista el destino de todos modos), no una consulta aparte: si alguien borra a mano en el destino, se ve en la vuelta siguiente.
+- El progreso de un espejo sale como `repo = id del trabajo` (el servidor exige `repo`); la consola lo distingue por el tipo.
+- «En cola» incluye lo pedido con «Ahora» que el agente aún no ha empezado; mientras hay algo en cola, la actualización automática del agente espera (lo cuenta como algo en marcha).
+
 ## 2026-10-14 · rama `ia/080-sedes` · Claude Code (autónomo) · plan 0.8.0 D1, D2 y D4 (14ll, 14ss, 14xx)
 
 **Pedido:** sedes por cliente (dato propio, no etiqueta) y la regla 3-2-1-1-0 con ellas; vista de Equipos con categorías de etiqueta, agrupar por niveles y orden a mano; «Todos los clientes» con secciones.

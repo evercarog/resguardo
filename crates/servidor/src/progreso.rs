@@ -28,8 +28,12 @@ pub const MAX_BYTES: usize = 16 * 1024;
 pub const CADUCA: Duration = Duration::from_secs(90);
 
 // v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`.
-const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"];
-const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha"];
+// v1.6x (14p): `espejo` (una vuelta de un espejo, del almacén o del propio equipo) y
+// `actualizacion` (el agente se baja y prepara una versión nueva); la fase `en_cola` (pedido
+// con «Ahora», aún sin empezar).
+const TIPOS: &[&str] =
+    &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion", "espejo", "actualizacion"];
+const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha", "en_cola"];
 // v1.47: `origen` (el repositorio del que se trae), `nombre_origen`, `paso` y `consola` (el
 // nombre, en el equipo, de la consola que la empezó; nunca su dirección).
 const TEXTOS: &[(&str, usize)] = &[
@@ -43,10 +47,17 @@ const TEXTOS: &[(&str, usize)] = &[
     ("nombre_origen", 120),
     ("paso", 16),
     ("consola", 60),
+    // v1.6x (13f, 14p): quién la pidió (como lo dice su consola); de un espejo, su trabajo
+    // y quién lo hace; de una derivada pedida con «Ahora», su id.
+    ("por", 80),
+    ("espejo", 40),
+    ("quien", 10),
+    ("derivada", 40),
 ];
 /// v1.47: `mover` (un paso de «Mover a otro sitio…») y `otra_consola` (la empezó otra
 /// consola del equipo: aquí solo se enseña).
-const SINO: &[&str] = &["mover", "otra_consola"];
+/// v1.6x: `en_el_equipo` (13f: pedida desde la ventana del equipo) y `primera` (14p: la primera subida de un espejo).
+const SINO: &[&str] = &["mover", "otra_consola", "en_el_equipo", "primera"];
 // v1.36: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
 const NUMEROS: &[&str] =
     &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
@@ -112,9 +123,20 @@ impl Progresos {
     }
 }
 
-/// Qué tareas son (tipo, repositorio y copia), sin sus cifras.
+/// Qué tareas son (tipo, repositorio y copia), sin sus cifras. v1.6x: lo que pasa de «en
+/// cola» a en marcha también empieza.
 fn claves(t: &[Value]) -> Vec<String> {
-    t.iter().map(|x| format!("{}|{}|{}", x["tipo"].as_str().unwrap_or(""), x["repo"].as_str().unwrap_or(""), x["copia"].as_str().unwrap_or(""))).collect()
+    t.iter()
+        .map(|x| {
+            format!(
+                "{}|{}|{}|{}",
+                x["tipo"].as_str().unwrap_or(""),
+                x["repo"].as_str().unwrap_or(""),
+                x["copia"].as_str().unwrap_or(""),
+                x["fase"] == "en_cola"
+            )
+        })
+        .collect()
 }
 
 fn texto(s: &str, max: usize) -> String {
@@ -222,6 +244,35 @@ mod tests {
         assert_eq!((h["versiones"].as_u64(), h["versiones_total"].as_u64()), (Some(56), Some(255)));
         assert!(h.get("url").is_none());
         assert!(v[1].get("mover").is_none(), "solo sí o no");
+    }
+
+    /// v1.6x (14p): un espejo (con su trabajo, quién lo hace y si es la primera subida), la
+    /// actualización del agente y lo que está «en cola», con quién lo pidió.
+    #[test]
+    fn espejos_actualizacion_y_en_cola() {
+        let t = json!([
+            { "tipo": "espejo", "fase": "subiendo", "repo": "t1", "espejo": "t1", "quien": "almacen", "primera": true, "nombre": "Todo a la nube",
+              "bytes": 30, "bytes_total": 120, "porcentaje": 0.25, "subida": 12, "quedan_s": 9, "por": "Ana", "otra_consola": true, "consola": "Oficina" },
+            { "tipo": "actualizacion", "fase": "en_marcha", "repo": "", "bytes": 5, "bytes_total": 10 },
+            { "tipo": "verificar", "fase": "en_cola", "repo": "r1", "derivada": "d1", "en_el_equipo": false },
+            { "tipo": "espejo", "fase": "en_cola", "repo": "t2", "quien": "x".repeat(50) }
+        ]);
+        let v = limpiar(&t).unwrap();
+        assert_eq!(v.len(), 4);
+        assert_eq!(
+            (v[0]["espejo"].as_str(), v[0]["quien"].as_str(), v[0]["primera"].as_bool(), v[0]["por"].as_str()),
+            (Some("t1"), Some("almacen"), Some(true), Some("Ana"))
+        );
+        assert_eq!((v[1]["tipo"].as_str(), v[1]["bytes_total"].as_u64()), (Some("actualizacion"), Some(10)));
+        assert_eq!((v[2]["fase"].as_str(), v[2]["derivada"].as_str(), v[2]["en_el_equipo"].as_bool()), (Some("en_cola"), Some("d1"), Some(false)));
+        assert_eq!(v[3]["quien"].as_str().unwrap().len(), 10, "acotado");
+        // De «en cola» a en marcha: empieza algo (las consolas preguntan enseguida).
+        let p = Progresos::default();
+        let cola = vec![json!({ "tipo": "verificar", "fase": "en_cola", "repo": "r" })];
+        let ya = vec![json!({ "tipo": "verificar", "fase": "en_marcha", "repo": "r" })];
+        assert_eq!(p.poner("c1", "e1", cola), Some(Paso::Empieza));
+        assert_eq!(p.poner("c1", "e1", ya.clone()), Some(Paso::Empieza));
+        assert_eq!(p.poner("c1", "e1", ya), Some(Paso::Cambia));
     }
 
     #[test]

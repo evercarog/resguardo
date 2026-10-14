@@ -158,6 +158,16 @@ pub struct Actividad {
     pub consola: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enlace: Option<String>,
+    /// 14p (espejos): el trabajo (su id y su nombre), quién lo hace (`almacen` o `equipo`)
+    /// y si es su primera subida (nunca ha terminado bien).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub espejo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub espejo_nombre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quien: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub primera: bool,
 }
 
 /// Lo último terminado de cada tarea.
@@ -312,6 +322,23 @@ pub mod en_marcha {
                     let s = lleva.as_secs_f64();
                     a.velocidad = bytes.filter(|_| s >= 2.0).map(|b| (b as f64 / s).round() as u64);
                     a.quedan_s = a.porcentaje.and_then(|p| crate::tasks::eta(lleva, p));
+                }
+            }
+        }
+
+        /// 14p: de qué espejo es (para el progreso en todas las consolas) y quién lo pidió.
+        pub fn espejo(&self, t: &crate::espejo_trabajos::Trabajo) {
+            if let Ok(mut v) = EN_CURSO.lock() {
+                if let Some(a) = v.iter_mut().find(|a| a.id == self.id) {
+                    a.espejo = Some(t.id.clone());
+                    a.espejo_nombre = Some(t.nombre.chars().take(80).collect());
+                    a.quien = Some(t.quien.clone());
+                    a.primera = t.nunca_bien();
+                    if let Some(p) = &t.estado.pedido {
+                        a.por = p.por.as_deref().map(|x| x.chars().filter(|c| !c.is_control()).take(80).collect());
+                        a.consola.clone_from(&p.consola);
+                        a.enlace = Some(p.enlace.clone()).filter(|e| !e.is_empty());
+                    }
                 }
             }
         }
