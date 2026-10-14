@@ -30,6 +30,7 @@
   import { etiquetasDe, gruposPorEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
   import { cuentaRegla, fraseRegla, PARTES, reglasDelCliente } from "$lib/regla321";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
+  import InformeEjecutivo from "$lib/componentes/InformeEjecutivo.svelte";
   import { estadisticas, juntar, MOTIVOS, textoTardo } from "$lib/restauraciones";
   import type { Restauraciones } from "$lib/tipos";
 
@@ -157,6 +158,8 @@
   let deEtiqueta = $state("");
   const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos));
   const cuentaR = $derived(cuentaRegla(reglas));
+  // Plan 0.8.0 (G1): la de todo el cliente, para el informe ejecutivo programado.
+  const reglasTodas = $derived(reglasDelCliente(actual.equipos, ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos));
   const etiquetas = $derived(etiquetasDe(actual.equipos));
   $effect.pre(() => {
     // Una etiqueta que ya nadie lleva (u otro cliente): vuelve al cliente entero.
@@ -298,6 +301,8 @@
       </div>
     {/if}
   </div>
+
+  <InformeEjecutivo reglas={reglasTodas} />
 
   <article class="hoja card" aria-label="Informe de {actual.cliente?.nombre ?? ''}">
     <header class="portada marca-cliente" data-acento={marca?.acento ?? undefined} class:con-acento={!!marca?.acento}>

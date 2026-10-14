@@ -137,6 +137,18 @@ pub fn peticion(
             let v = serde_json::json!({ "chat_id": chat_v, "text": contenido::telegram(s), "parse_mode": "HTML", "disable_web_page_preview": true });
             Ok(PeticionHttp { url: format!("https://api.telegram.org/bot{token}/sendMessage"), cabeceras, cuerpo: json(&v), red_local: false })
         }
+        // Plan 0.8.0 (G2): el formato propio de cada chat; las mismas protecciones de red que el
+        // webhook (los de un cliente, solo a IP públicas con `ResolutorPublico`).
+        TipoCanal::Teams | TipoCanal::Slack | TipoCanal::Discord => {
+            let url = secretos.get("url").ok_or_else(falta)?.clone();
+            let c = contenido::chat(ms, s, f, ahora);
+            let v = match canal.tipo {
+                TipoCanal::Teams => contenido::teams(&c),
+                TipoCanal::Slack => contenido::slack(&c),
+                _ => contenido::discord(&c, f.zona),
+            };
+            Ok(PeticionHttp { url, cabeceras, cuerpo: json(&v), red_local: false })
+        }
         TipoCanal::Correo => Err(Fallo::definitivo("Un canal de correo no va por HTTP.")),
     }
 }
@@ -145,6 +157,19 @@ pub fn peticion(
 /// HTML y su imagen van juntos (multipart/related, `Content-ID` [`contenido::CID_LOGO`]):
 /// el correo no carga nada de fuera.
 fn cuerpo(s: &Salida) -> lettre::message::MultiPart {
+    use lettre::message::header::ContentType;
+    use lettre::message::{Attachment, MultiPart};
+    let dentro = cuerpo_sin_adjunto(s);
+    match &s.adjunto {
+        None => dentro,
+        // Plan 0.8.0 (G1): el PDF del informe, adjunto (multipart/mixed).
+        Some(a) => MultiPart::mixed()
+            .multipart(dentro)
+            .singlepart(Attachment::new(a.nombre.clone()).body(a.datos.clone(), ContentType::parse(a.tipo).unwrap_or(ContentType::TEXT_PLAIN))),
+    }
+}
+
+fn cuerpo_sin_adjunto(s: &Salida) -> lettre::message::MultiPart {
     use lettre::message::header::ContentType;
     use lettre::message::{Attachment, MultiPart, SinglePart};
     match &s.logo {
@@ -228,6 +253,23 @@ fn http_estado(estado: u16, servicio: &str) -> Result<(), Fallo> {
         408 | 425 | 429 => Err(Fallo::temporal(format!("{servicio} pide esperar (HTTP {estado})."))),
         500..=599 => Err(Fallo::temporal(format!("{servicio} tuvo un problema (HTTP {estado})."))),
         _ => Err(Fallo::definitivo(format!("{servicio} rechazó el mensaje (HTTP {estado})."))),
+    }
+}
+
+/// Quién contesta, para los errores (sin la dirección, que es secreta).
+fn servicio_de(url: &str) -> &'static str {
+    let host = super::ajustes::partes_url(url).map(|(_, h, _)| h).unwrap_or_default();
+    let es = |d: &str| host == d || host.ends_with(&format!(".{d}"));
+    if es("api.telegram.org") {
+        "Telegram"
+    } else if es("slack.com") {
+        "Slack"
+    } else if es("discord.com") || es("discordapp.com") {
+        "Discord"
+    } else if es("logic.azure.com") || es("office.com") || es("powerplatform.com") || es("powerautomate.com") {
+        "Microsoft Teams"
+    } else {
+        "El servicio"
     }
 }
 
@@ -331,7 +373,7 @@ impl Transporte for Real {
         for (k, v) in &p.cabeceras {
             r = r.header(k, v);
         }
-        let servicio = if p.url.starts_with("https://api.telegram.org/") { "Telegram" } else { "El servicio" };
+        let servicio = servicio_de(&p.url);
         let resp = r.send(&p.cuerpo[..]).map_err(|e| http_error(&e))?;
         http_estado(resp.status().as_u16(), servicio)
     }
@@ -443,7 +485,12 @@ mod tests {
     }
 
     fn formato() -> Formato {
-        Formato { url_consola: Some("https://copias.ejemplo.com".into()), zona: chrono::FixedOffset::east_opt(0).unwrap(), marcas: Default::default() }
+        Formato {
+            url_consola: Some("https://copias.ejemplo.com".into()),
+            zona: chrono::FixedOffset::east_opt(0).unwrap(),
+            marcas: Default::default(),
+            logo_informe: None,
+        }
     }
 
     fn prueba() -> Vec<Mensaje> {
@@ -497,6 +544,120 @@ mod tests {
         assert_eq!(v["chat_id"], -1001234);
         assert_eq!(v["parse_mode"], "HTML");
         assert!(v["text"].as_str().unwrap().contains("<b>Prueba de notificaciones de Resguardo</b>"));
+    }
+
+    fn alerta_chat() -> Mensaje {
+        Mensaje::Aviso(crate::notificaciones::Alerta {
+            tipo: "copia_fallida".into(),
+            severidad: crate::notificaciones::Severidad::Critico,
+            titulo: "Falló la copia «Documentos» en «pc-01»".into(),
+            texto: "No se pudo leer [ruta]: [x](https://malo.ejemplo) <!channel> @everyone *negrita*".into(),
+            cliente_id: "cl-1".into(),
+            cliente: "Oficina Norte".into(),
+            equipo_id: Some("e1".into()),
+            equipo: Some("pc-01 <!here>".into()),
+            veces: 3,
+            desde: 1_791_000_000,
+            hora: 1_791_100_000,
+            ruta: "/c/cl-1/equipos/e1".into(),
+        })
+    }
+
+    fn cuerpo_chat(tipo: TipoCanal, ms: &[Mensaje]) -> serde_json::Value {
+        let c = canal(tipo, ConfigCanal::default());
+        let sec = BTreeMap::from([("url".to_string(), "https://hooks.ejemplo.com/servicios/T0/B0/xyz".to_string())]);
+        let t = Falso::default();
+        enviar(&t, "cliente:cl-1", &c, &sec, "", ms, &formato(), "id-1", 1_791_100_800).unwrap();
+        match t.enviados().pop().unwrap() {
+            Enviado::Http(p) => {
+                // Las protecciones de red de siempre: los de un cliente, solo a IP públicas.
+                assert!(!p.red_local);
+                assert_eq!(p.url, "https://hooks.ejemplo.com/servicios/T0/B0/xyz");
+                assert!(p.cabeceras.contains(&("Content-Type".into(), "application/json".into())));
+                serde_json::from_slice(&p.cuerpo).unwrap()
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Plan 0.8.0 (G2): el JSON de Teams (Adaptive Card), Slack (blocks) y Discord (embed).
+    #[test]
+    fn teams_slack_y_discord() {
+        let ms = [alerta_chat()];
+        let enlace = "https://copias.ejemplo.com/c/cl-1/equipos/e1";
+
+        let v = cuerpo_chat(TipoCanal::Teams, &ms);
+        assert_eq!(v["type"], "message");
+        let a = &v["attachments"][0];
+        assert_eq!(a["contentType"], "application/vnd.microsoft.card.adaptive");
+        let t = &a["content"];
+        assert_eq!((t["type"].as_str(), t["version"].as_str()), (Some("AdaptiveCard"), Some("1.4")));
+        assert_eq!((t["body"][0]["text"].as_str(), t["body"][0]["color"].as_str()), (Some("Crítico"), Some("Attention")));
+        assert_eq!(t["body"][1]["text"], "Falló la copia «Documentos» en «pc-01»");
+        assert!(!t["body"][2]["text"].as_str().unwrap().contains("](https"), "sin enlaces escondidos: {}", t["body"][2]);
+        let hechos = t["body"][3]["facts"].as_array().unwrap();
+        assert_eq!(hechos[0], serde_json::json!({ "title": "Cliente", "value": "Oficina Norte" }));
+        assert_eq!(hechos[1]["title"], "Equipo");
+        assert_eq!(hechos[2], serde_json::json!({ "title": "Importancia", "value": "Crítico" }));
+        assert_eq!(t["actions"][0], serde_json::json!({ "type": "Action.OpenUrl", "title": "Ver en la consola", "url": enlace }));
+
+        let v = cuerpo_chat(TipoCanal::Slack, &ms);
+        let a = &v["attachments"][0];
+        assert_eq!(a["color"], "#c42121");
+        assert_eq!(v["text"], "Crítico: Falló la copia «Documentos» en «pc-01»");
+        let b = a["blocks"].as_array().unwrap();
+        assert_eq!((b[0]["type"].as_str(), b[0]["text"]["type"].as_str()), (Some("header"), Some("plain_text")));
+        assert_eq!(b[1]["elements"][0]["text"], "*Crítico*");
+        let texto = b[2]["text"]["text"].as_str().unwrap();
+        assert!(texto.contains("&lt;!channel&gt;") && !texto.contains("<!"), "{texto}");
+        let campos: Vec<&str> = b[3]["fields"].as_array().unwrap().iter().map(|f| f["text"].as_str().unwrap()).collect();
+        assert_eq!(campos[0], "*Cliente*\nOficina Norte");
+        assert_eq!(campos[1], "*Equipo*\npc-01 &lt;!here&gt;");
+        assert_eq!(b[4]["elements"][0]["url"], enlace);
+
+        let v = cuerpo_chat(TipoCanal::Discord, &ms);
+        assert_eq!(v["allowed_mentions"], serde_json::json!({ "parse": [] }), "nadie recibe una mención");
+        assert_eq!(v["username"], "Resguardo");
+        let e = &v["embeds"][0];
+        assert_eq!(e["color"], 0xc42121);
+        assert_eq!(e["title"], "Falló la copia «Documentos» en «pc-01»");
+        assert_eq!(e["url"], enlace);
+        assert_eq!(e["footer"]["text"], "Resguardo · Crítico");
+        let d = e["description"].as_str().unwrap();
+        assert!(d.contains("\\[x\\]\\(https://malo.ejemplo\\)") && d.contains("\\*negrita\\*"), "{d}");
+        assert_eq!(e["fields"][0], serde_json::json!({ "name": "Cliente", "value": "Oficina Norte", "inline": true }));
+        assert!(e["timestamp"].as_str().unwrap().starts_with("2026-"));
+
+        // «Volvió a funcionar»: verde y sin importancia; la prueba, también verde.
+        let ok = match alerta_chat() {
+            Mensaje::Aviso(mut a) => {
+                a.titulo = "Volvió a funcionar la copia «Documentos» en «pc-01»".into();
+                Mensaje::Recuperacion(a)
+            }
+            _ => unreachable!(),
+        };
+        let v = cuerpo_chat(TipoCanal::Discord, std::slice::from_ref(&ok));
+        assert_eq!(v["embeds"][0]["color"], 0x126c35);
+        assert!(!v["embeds"][0]["fields"].as_array().unwrap().iter().any(|f| f["name"] == "Importancia"));
+        let v = cuerpo_chat(TipoCanal::Teams, &[ok]);
+        assert_eq!(v["attachments"][0]["content"]["body"][0]["text"], "Resuelto");
+        for tipo in [TipoCanal::Teams, TipoCanal::Slack, TipoCanal::Discord] {
+            let v = cuerpo_chat(tipo, &prueba()).to_string();
+            assert!(v.contains("Las notificaciones funcionan") && v.contains("mensaje de prueba"), "{v}");
+            assert!(v.contains("126c35") || v.contains(&0x126c35.to_string()) || v.contains("\"Good\""), "{v}");
+        }
+        // Varios avisos juntos: uno solo, con la lista.
+        let v = cuerpo_chat(TipoCanal::Slack, &[alerta_chat(), alerta_chat()]);
+        assert_eq!(v["attachments"][0]["blocks"][1]["elements"][0]["text"], "*2 avisos*");
+        // Importante: naranja.
+        let imp = match alerta_chat() {
+            Mensaje::Aviso(mut a) => {
+                a.severidad = crate::notificaciones::Severidad::Importante;
+                Mensaje::Aviso(a)
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(cuerpo_chat(TipoCanal::Slack, &[imp])["attachments"][0]["color"], "#a04e09");
     }
 
     #[test]

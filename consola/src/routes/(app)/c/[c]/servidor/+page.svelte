@@ -29,6 +29,7 @@
   import CopiaConsola from "$lib/componentes/CopiaConsola.svelte";
   import PublicacionesServidor from "$lib/componentes/PublicacionesServidor.svelte";
   import NotificacionesServidor from "$lib/componentes/NotificacionesServidor.svelte";
+  import PrestadorInformes from "$lib/componentes/PrestadorInformes.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
@@ -332,6 +333,7 @@
       </div>
     </section>
   {/if}
+  {#if app.cuenta?.superusuario}<PrestadorInformes />{/if}
   {#if app.cuenta?.superusuario}<CopiaConsola />{/if}
   {#if app.cuenta?.superusuario}<PublicacionesServidor />{/if}
 </div>

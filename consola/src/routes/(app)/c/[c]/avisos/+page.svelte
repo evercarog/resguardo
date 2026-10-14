@@ -96,6 +96,8 @@
     disco_lleno: { texto: "Disco casi lleno", tono: "warn", icono: HardDrive, que: "En la ficha del equipo ves cuánto queda en cada disco.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     sin_soporte_pronto: { texto: "Sistema sin soporte pronto", tono: "neutral", icono: ShieldOff, que: "En la ficha del equipo ves su sistema exacto.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     sin_soporte: { texto: "Sistema sin soporte", tono: "warn", icono: ShieldOff, que: "Sin actualizaciones de seguridad, el equipo es más fácil de atacar.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
+    // Plan 0.8.0 (G1): el informe ejecutivo programado no salió.
+    informe_no_enviado: { texto: "Informe sin enviar", tono: "warn", icono: TriangleAlert, que: "Revisa el canal de correo y los destinatarios del informe; desde Informes puedes enviarlo ahora.", accion: () => ({ texto: "Ver Informes", href: `/c/${c}/informes` }) },
     // 14bbb: recordatorio (informativo) de comprobar que el kit de un repositorio sigue sirviendo.
     kit_por_comprobar: { texto: "Kit por comprobar", tono: "neutral", icono: KeyRound, que: "En la página del repositorio, «Comprobar la contraseña»: el equipo dice si la del kit lo abre de verdad.", accion: (e) => (e ? { texto: "Ver sus repositorios", href: `/c/${c}/equipos/${e}` } : null) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },

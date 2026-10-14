@@ -27,7 +27,7 @@ const POR_PAPEL: Record<T.Rol, { inmediatos: T.Severidad[]; resumen: boolean }> 
 };
 
 const SOLO_SERVIDOR = "Los canales de un cliente no pueden mandar a este equipo ni a la red local: usa una dirección pública (o pide al propietario del servidor que lo ponga en los canales del servidor).";
-const SECRETOS: Record<T.TipoCanal, string[]> = { correo: ["contrasena"], webhook: ["url", "secreto"], ntfy: ["url", "token"], telegram: ["token"] };
+const SECRETOS: Record<T.TipoCanal, string[]> = { correo: ["contrasena"], webhook: ["url", "secreto"], ntfy: ["url", "token"], telegram: ["token"], teams: ["url"], slack: ["url"], discord: ["url"] };
 
 type Datos = {
   ajustes: Omit<T.AjustesNotif, "canales">;
@@ -70,6 +70,19 @@ function datos(): Datos {
     actualizado: hace(60 * 24 * 2),
     por: "Ana Restrepo",
   };
+  // Plan 0.8.0 (G2): un canal de Teams (la dirección, secreta: solo se ve su servidor).
+  const teams: T.CanalNotif = {
+    id: randomUUID(),
+    tipo: "teams",
+    nombre: "Soporte en Teams",
+    activo: true,
+    config: { servidor: "prod-00.westeurope.logic.azure.com" },
+    secretos: { url: "configurado" },
+    reglas: reglasPorDefecto(),
+    completo: true,
+    actualizado: hace(60 * 5),
+    por: "Ana Restrepo",
+  };
   const envio = (e: Partial<T.EnvioNotif> & Pick<T.EnvioNotif, "titulo" | "estado">): T.EnvioNotif => ({
     id: randomUUID(),
     creado: hace(30),
@@ -88,10 +101,11 @@ function datos(): Datos {
   });
   st = {
     ajustes: { url_consola: null, max_por_hora: 10, hora_resumen: "08:00", dia_semanal: 1 },
-    canales: new Map([["servidor", [correo, telegram]]]),
+    canales: new Map([["servidor", [correo, telegram, teams]]]),
     secretos: new Map<string, Record<string, string>>([
       [correo.id, { contrasena: "contraseña-del-simulador" }],
       [telegram.id, { token: "123456:SIMULADOxxxxxxxxxxxxxxxxxxxxxxxxx" }],
+      [teams.id, { url: "https://prod-00.westeurope.logic.azure.com/workflows/simulado/triggers/manual/paths/invoke" }],
     ]),
     prefs: new Map(),
     personas: new Map(),
@@ -165,7 +179,7 @@ export function rutasNotificaciones<C extends Ctx>(h: Ayudas<C>): [string, RegEx
     const c: T.CanalNotif = previo ? structuredClone(previo) : { id: randomUUID(), tipo, nombre: "", activo: true, config: {}, secretos: {}, reglas: reglasPorDefecto(), completo: false, actualizado: "", por: "" };
     const secretos = { ...(d.secretos.get(c.id) ?? {}) };
     if (b.nombre !== undefined) c.nombre = b.nombre.trim();
-    if (!c.nombre) c.nombre = { correo: "Correo", webhook: "Webhook", ntfy: "ntfy", telegram: "Telegram" }[tipo];
+    if (!c.nombre) c.nombre = { correo: "Correo", webhook: "Webhook", ntfy: "ntfy", telegram: "Telegram", teams: "Microsoft Teams", slack: "Slack", discord: "Discord" }[tipo];
     if (b.activo !== undefined) c.activo = b.activo;
     if (b.reglas) c.reglas = { ...b.reglas, clientes: ambito === "servidor" ? b.reglas.clientes : null };
     if (b.config) {
