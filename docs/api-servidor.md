@@ -1030,7 +1030,7 @@ Los deducidos entran también en la lista de avisos (una vez por problema, no en
 `Canal`:
 
 ```json
-{ "id", "tipo": "correo" | "webhook" | "ntfy" | "telegram", "nombre", "activo": true,
+{ "id", "tipo": "correo" | "webhook" | "ntfy" | "telegram" | "teams" | "slack" | "discord", "nombre", "activo": true,
   "config": { "host", "puerto", "seguridad": "starttls" | "tls" | "ninguna", "usuario", "remitente", "chat_id", "servidor" },
   "secretos": { "<campo>": "configurado" },
   "reglas": { "severidades": ["critico", "importante"], "clientes": ["<id>"] | null, "silencio": Silencio | null,
@@ -1042,6 +1042,11 @@ Los deducidos entran también en la lista de avisos (una vez por problema, no en
 - `webhook`: secretos `url` (https; http solo al propio equipo) y `secreto` (opcional, 16 caracteres o más) para firmar.
 - `ntfy`: secretos `url` (la del tema: `https://ntfy.sh/<tema>`) y `token` (opcional, `Authorization: Bearer`). Se publica en JSON (`topic`, `title`, `message`, `priority` 5/4/3, `tags`, `click`).
 - `telegram`: `config.chat_id` (número o `@canal`) y secreto `token` del bot. `sendMessage` con `parse_mode: "HTML"`.
+- `teams`, `slack` y `discord` (plan 0.8.0, G2): secreto `url`, la dirección del webhook que da cada aplicación (https; se enseña solo su servidor), con las mismas protecciones de red que el webhook. Cada uno con su formato y el color de la importancia (crítico `#c42121`, importante `#a04e09`, informativo y resumen `#2257d6`, resuelto y prueba `#126c35`), el título, los datos (cliente, equipo, importancia, cuándo, veces) y el enlace a la consola:
+  - Teams: `{ "type": "message", "attachments": [{ "contentType": "application/vnd.microsoft.card.adaptive", "content": AdaptiveCard 1.4 }] }` (lo aceptan los flujos de trabajo «Publicar en un canal cuando se reciba una solicitud de webhook» y los conectores de entrada): una línea con la importancia en su color (`Attention`, `Warning`, `Accent`, `Good`), el título, el texto, un `FactSet` y `Action.OpenUrl` «Ver en la consola».
+  - Slack: `{ "text", "attachments": [{ "color": "#c42121", "fallback", "blocks": [header, context, section, section con fields, actions con el botón] }] }`. El texto, sin `<`, `>` ni `&` sueltos (ni enlaces ni `<!channel>` desde un nombre).
+  - Discord: `{ "username": "Resguardo", "allowed_mentions": { "parse": [] }, "embeds": [{ "title", "description", "url", "color", "fields", "footer", "timestamp" }] }`, con el Markdown escapado y sin menciones.
+  «Enviar prueba» manda un mensaje de ejemplo con ese formato.
 - `reglas` (canales que no son de correo): qué gravedades, de qué clientes (solo en los del servidor; `null`: todos), horas de silencio y si mandan los resúmenes (en texto; el webhook, en JSON).
 
 `Silencio`: `{ "desde": "22:00", "hasta": "07:00", "salvo_criticos": true }` (hora del servidor; cruza la medianoche si `desde > hasta`). Lo que llega dentro sale a las `hasta` (agrupado); los críticos pasan si `salvo_criticos`.
@@ -1063,7 +1068,7 @@ Los deducidos entran también en la lista de avisos (una vez por problema, no en
 | `POST`, `PATCH`, `DELETE …/clientes/{c}/notificaciones/canales[/{k}]`, `POST …/{k}/prueba` | propietario | como los del servidor | como los del servidor (auditados en el cliente) |
 | `GET /api/clientes/{c}/notificaciones/registro` | propietario | — | `[Envio]`: los últimos 100 de este cliente y de sus canales |
 
-`Envio` (registro): `{ id, creado, enviado | null, canal: { id, nombre, tipo } | null, ambito: "servidor" | "cliente", cliente, destino (el correo o el servidor del canal), tipo: "aviso" | "recuperacion" | "resumen" | "prueba", severidad, titulo, estado: "pendiente" | "enviado" | "fallido" | "descartado", intentos, siguiente | null, error | null, nota | null }`. `nota` cuenta lo que pasó en palabras («En horas de silencio: sale a las 07:00.», «Tope de 10 por hora: sale agrupado…», «Agrupado con 3 más.», «Reintento 3 a las 10:42.», «Se arregló antes de enviarse.»). `error` nunca lleva la dirección ni un secreto.
+`Envio` (registro): `{ id, creado, enviado | null, canal: { id, nombre, tipo } | null, ambito: "servidor" | "cliente", cliente, destino (el correo o el servidor del canal), tipo: "aviso" | "recuperacion" | "resumen" | "prueba" | "informe", severidad, titulo, estado: "pendiente" | "enviado" | "fallido" | "descartado", intentos, siguiente | null, error | null, nota | null }`. `nota` cuenta lo que pasó en palabras («En horas de silencio: sale a las 07:00.», «Tope de 10 por hora: sale agrupado…», «Agrupado con 3 más.», «Reintento 3 a las 10:42.», «Se arregló antes de enviarse.»). `error` nunca lleva la dirección ni un secreto.
 
 ### Personas: qué recibe cada una
 
@@ -1094,6 +1099,25 @@ A la `hora_resumen` del servidor: el **diario** cada día y el **semanal** («Re
 ```
 
 Un 2xx es entregado; 408, 425, 429 y 5xx se reintentan; los demás 4xx no. No se siguen redirecciones.
+
+### Informe ejecutivo (plan 0.8.0, G1)
+
+Un PDF por cliente y periodo (semanal: de lunes a domingo; mensual: el mes entero) que escribe el propio servidor (`crates/servidor/src/informe`, con pdf-writer; sin navegador): % de copias correctas, copias por día, datos nuevos por día y su tendencia, la regla 3-2-1-1-0 (cuántas copias la cumplen y qué falta), verificaciones, pruebas de restauración y restauraciones (las entradas `restauracion` del historial, con su tiempo medio), equipos con su estado de hoy, las copias que fallaron (mensajes sin rutas) y los avisos críticos e importantes abiertos. Lleva el logo del **prestador** (del servidor) o el de la marca del cliente, y en el pie «Preparado por <prestador> con Resguardo». Nunca rutas, nombres de archivos, contraseñas ni la palabra «restic».
+
+El programado sale por correo (el canal de correo del cliente o el del servidor, por la cola de envíos: reintentos y registro, `tipo: "informe"`), con el PDF adjunto (`multipart/mixed`, `informe-semanal-AAAA-MM-DD.pdf` o `informe-mensual-AAAA-MM.pdf`), a la `hora_resumen` del servidor: el semanal desde el `dia_semana` elegido, con la semana anterior; el mensual desde el día 1, con el mes anterior. Una vez por periodo; al encenderlo, el periodo que acaba de terminar no sale. Si no se puede poner en la cola (sin canal de correo), aviso `informe_no_enviado` en el cliente.
+
+La regla 3-2-1-1-0 la calcula la **consola** (ve todos los equipos y el catálogo de destinos): al abrir Informes manda el estado de cada parte de cada copia (solo ids y `cumple` | `atrasado` | `falta`) y el informe usa la última, con su fecha.
+
+| Método y ruta | Quién | Pide | Responde |
+|---|---|---|---|
+| `GET /api/clientes/{c}/informe-ejecutivo` | miembro | — | `{ programa: { activo, periodo: "semanal" \| "mensual", dia_semana: 1–7, destinatarios: [correo], logo: "prestador" \| "cliente" \| "ninguno", actualizado, por }, prestador: { nombre, logo: <url> \| null }, logo_cliente: bool, regla: { calculada, por, copias } \| null, ultimo: { cuando, periodo, desde, hasta, destinatarios: n, a_mano, por } \| null, correo: bool, hora: "HH:MM" }` |
+| `PUT /api/clientes/{c}/informe-ejecutivo` | administrador | lo que cambia del programa (`destinatarios`: hasta 20 direcciones válidas, sin repetir; encendido, al menos una) | el programa. Auditado (`cambiar_informe_ejecutivo`, sin las direcciones) |
+| `PUT /api/clientes/{c}/informe-ejecutivo/regla` | técnico | `{ copias: [{ equipo, copia, partes: [5 × "cumple" \| "atrasado" \| "falta"] }] }` (hasta 5000; ids cortos; los de equipos de otro cliente se descartan) | 204. 120 por hora |
+| `GET /api/clientes/{c}/informe-ejecutivo/pdf?periodo=&cual=anterior\|actual` | miembro | — | `application/pdf` (`attachment`). 60 por hora y persona |
+| `POST /api/clientes/{c}/informe-ejecutivo/enviar` | administrador | `{ periodo?, cual? }` | `{ enviados }` (a los destinatarios del programa); 422 sin destinatarios o sin canal de correo. 10 por hora y cliente. Auditado (`enviar_informe_ejecutivo`) |
+| `GET /api/servidor/informes` | propietario del servidor | — | `{ nombre, logo: <url> \| null, actualizado, por }` |
+| `PUT /api/servidor/informes` | propietario del servidor | `{ nombre? ("" lo quita, hasta 80), logo?: <PNG en base64>, quitar_logo? }` | lo mismo. El logo, **solo PNG** (≤ 200 KB, ≤ 2048 px, firma, IHDR e IEND comprobados, como la marca de un cliente): la consola convierte antes un SVG, JPG o WebP a PNG en el navegador. Auditado en el servidor (`cambiar_prestador_informes`) |
+| `GET /api/servidor/informes/logo` | cualquier sesión | — | el PNG (`image/png`, `nosniff`) |
 
 ---
 
@@ -1455,3 +1479,6 @@ La política y los anillos se guardan en la tabla de valores del servidor (`act:
   - **`crear_repositorio { solo_destino: true, destino }`** (clave de administración; agente con `admite: "solo_destino"`): guarda en el equipo el acceso que dio un almacén (`guarda_copias { anadir, zona? }`, detalle sellado) como destino, **sin crear ningún repositorio**. Solo un servidor de copias de un almacén: `destino { id, nombre, tipo: "rest", donde: "https://…", usuario, secreto, ca_pem, equipo_almacen }`; si ya hay uno con ese id de ese almacén, se ponen al día su dirección y sus credenciales; si es de otra cosa, `fallida`. Un agente anterior la rechaza (le falta la contraseña del repositorio): la consola solo la ofrece con `admite`. Es para la copia derivada a una zona donde el equipo aún no tiene usuario («Dar acceso a … en este almacén»).
   - **`quitar_nube`**: al no dejar desconectar una nube que usa el espejo del almacén, el agente dice cada trabajo por su nombre (también los que están en pausa).
   - **Consola.** Un solo formulario para una nube o un servidor (en «Nuevo destino», en el almacén y en el paso «Adónde» del espejo) con el bucket y la carpeta base aparte; el espejo no vuelve a pedirlos (como mucho una subcarpeta) y enseña la ruta final; un espejo guardado con `bucket/carpeta` escrita a mano sigue igual. La nube conectada y la entrada del catálogo con el mismo bucket (o el mismo servidor) son una sola ficha. «Quitar» o «Desconectar» en cada destino cuando nadie lo usa; si no, el botón dice qué lo usa.
+- v1.6x (pendiente de numerar al unir; plan 0.8.0, bloque G: informe ejecutivo y canales, plan-mejoras 14g). Solo entre la consola y el servidor; el contrato con los agentes no cambia:
+  - **Informe ejecutivo** (§13, «Informe ejecutivo»): `GET/PUT /api/clientes/{c}/informe-ejecutivo`, `PUT …/regla`, `GET …/pdf`, `POST …/enviar`, y el prestador del servidor en `GET/PUT /api/servidor/informes` y `GET /api/servidor/informes/logo`. Envío nuevo `tipo: "informe"` (correo con el PDF adjunto) y aviso nuevo `informe_no_enviado`.
+  - **Canales `teams`, `slack` y `discord`** (§13, «Canales»): secreto `url`, con el formato de cada aplicación, el color de la importancia y el enlace a la consola. Un servidor anterior los rechaza (422).
