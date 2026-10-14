@@ -158,6 +158,19 @@ pub fn peticion(
 /// el correo no carga nada de fuera.
 fn cuerpo(s: &Salida) -> lettre::message::MultiPart {
     use lettre::message::header::ContentType;
+    use lettre::message::{Attachment, MultiPart};
+    let dentro = cuerpo_sin_adjunto(s);
+    match &s.adjunto {
+        None => dentro,
+        // Plan 0.8.0 (G1): el PDF del informe, adjunto (multipart/mixed).
+        Some(a) => MultiPart::mixed()
+            .multipart(dentro)
+            .singlepart(Attachment::new(a.nombre.clone()).body(a.datos.clone(), ContentType::parse(a.tipo).unwrap_or(ContentType::TEXT_PLAIN))),
+    }
+}
+
+fn cuerpo_sin_adjunto(s: &Salida) -> lettre::message::MultiPart {
+    use lettre::message::header::ContentType;
     use lettre::message::{Attachment, MultiPart, SinglePart};
     match &s.logo {
         None => MultiPart::alternative_plain_html(s.texto.clone(), s.html.clone()),
@@ -472,7 +485,12 @@ mod tests {
     }
 
     fn formato() -> Formato {
-        Formato { url_consola: Some("https://copias.ejemplo.com".into()), zona: chrono::FixedOffset::east_opt(0).unwrap(), marcas: Default::default() }
+        Formato {
+            url_consola: Some("https://copias.ejemplo.com".into()),
+            zona: chrono::FixedOffset::east_opt(0).unwrap(),
+            marcas: Default::default(),
+            logo_informe: None,
+        }
     }
 
     fn prueba() -> Vec<Mensaje> {

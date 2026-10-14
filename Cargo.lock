@@ -3210,6 +3210,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdf-writer"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e456864a7a304047bff84977dc6fb162bd956475d40ba50b2dcecaada7f753"
+dependencies = [
+ "bitflags 2.13.2",
+ "itoa",
+ "memchr",
+ "ryu",
+]
+
+[[package]]
 name = "pem"
 version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3832,6 +3844,9 @@ dependencies = [
  "hyper",
  "hyper-util",
  "lettre",
+ "miniz_oxide 0.8.9",
+ "pdf-writer",
+ "png 0.18.1",
  "proptest",
  "rand",
  "rcgen",

@@ -23,6 +23,8 @@ pub struct Formato {
     /// Cliente → su marca (v1.32). Un correo de un solo cliente sale con la suya;
     /// uno que junta varios (un resumen de todos, un grupo de avisos), neutro.
     pub marcas: BTreeMap<String, MarcaCorreo>,
+    /// Plan 0.8.0 (G1): el logo (PNG) del PDF del informe ejecutivo, si lo lleva.
+    pub logo_informe: Option<Vec<u8>>,
 }
 
 /// La marca de un cliente en el correo: su nombre, el acento (claro y oscuro,
@@ -65,6 +67,16 @@ pub struct Salida {
     /// El logo del cliente (PNG) que el HTML enseña como `cid:` [`CID_LOGO`]: el
     /// correo lo lleva dentro (multipart/related). Los demás canales no lo usan.
     pub logo: Option<Vec<u8>>,
+    /// Plan 0.8.0 (G1): un archivo adjunto (el PDF del informe ejecutivo). Solo el correo.
+    pub adjunto: Option<Adjunto>,
+}
+
+/// Un archivo adjunto al correo.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Adjunto {
+    pub nombre: String,
+    pub tipo: &'static str,
+    pub datos: Vec<u8>,
 }
 
 // ---------- Texto sin rutas ni secretos ----------
@@ -456,6 +468,7 @@ fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato, m: Option<&MarcaCorreo>) 
         severidad: if resuelto { Severidad::Informativo } else { a.severidad },
         enlace,
         logo: logo_de(m),
+        adjunto: None,
     }
 }
 
@@ -516,7 +529,7 @@ fn grupo(alertas: &[(&Alerta, bool)], f: &Formato, m: Option<&MarcaCorreo>) -> S
         cuerpo.push_str(&boton(u, "Ver los avisos en la consola"));
     }
     let html = pagina(f, m, &asunto, explicacion, &cuerpo);
-    Salida { evento: "grupo", asunto, texto, html, severidad: sev, enlace, logo: logo_de(m) }
+    Salida { evento: "grupo", asunto, texto, html, severidad: sev, enlace, logo: logo_de(m), adjunto: None }
 }
 
 // ---------- Resúmenes ----------
@@ -653,7 +666,7 @@ fn resumen(r: &Resumen, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
     texto.push_str(PIE_TEXTO.trim_start_matches('\n'));
     let previo = format!("{} · {} · {}", plural(equipos as u64, "equipo", "equipos"), plural(fallos as u64, "fallo", "fallos"), tamano(bytes));
     let html = pagina(f, m, &asunto, &previo, &cuerpo);
-    Salida { evento: "resumen", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m) }
+    Salida { evento: "resumen", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m), adjunto: None }
 }
 
 /// Por qué el resumen lleva el «ancla de la actividad» (plan-mejoras 9b).
@@ -730,7 +743,55 @@ fn prueba(quien: &str, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
         cuerpo.push_str(&boton(u, "Abrir la consola"));
     }
     let html = pagina(f, m, &asunto, &explicacion, &cuerpo);
-    Salida { evento: "prueba", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m) }
+    Salida { evento: "prueba", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m), adjunto: None }
+}
+
+// ---------- Informe ejecutivo (plan 0.8.0, G1) ----------
+
+/// «Informe semanal de copias · Oficina Norte · del 5 al 11 de octubre de 2026».
+pub fn asunto_informe(i: &crate::informe::Informe) -> String {
+    format!("{} · {} · {}", titulo_informe(i), i.cliente, crate::informe::pdf::texto_periodo(i))
+}
+
+fn titulo_informe(i: &crate::informe::Informe) -> &'static str {
+    match i.periodo {
+        crate::informe::Periodo::Semanal => "Informe semanal de copias",
+        crate::informe::Periodo::Mensual => "Informe mensual de copias",
+    }
+}
+
+/// El correo del informe: la frase, cuatro cifras y el PDF adjunto.
+fn informe(i: &crate::informe::Informe, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
+    let asunto = asunto_informe(i);
+    let que = titulo_informe(i);
+    let frase = crate::informe::pdf::frase(i);
+    let enlace = enlace(f, &format!("/c/{}/informes", i.cliente_id));
+    let periodo = crate::informe::pdf::texto_periodo(i);
+    let correctas = i.copias.porcentaje().map(|p| format!("{:.0}\u{a0}%", p.floor())).unwrap_or_else(|| "—".into());
+    let mut texto = format!("{que}\n{} · {periodo}\n\n{frase}\n\nVa adjunto el informe completo en PDF.\n", i.cliente);
+    if let Some(u) = &enlace {
+        let _ = write!(texto, "\nVer en la consola: {u}\n");
+    }
+    texto.push_str(PIE_TEXTO);
+    let mut cuerpo = chip(if i.copias.fallo > 0 { Tono::Importante } else { Tono::Bien }, "Informe");
+    cuerpo.push_str(&h1(que));
+    cuerpo.push_str(&p(&format!("{} · {periodo}", i.cliente)));
+    let _ = write!(
+        cuerpo,
+        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"6\" style=\"margin:4px -6px 8px\"><tr>{}{}</tr><tr>{}{}</tr></table>",
+        cifra(&correctas, "copias correctas"),
+        cifra(&i.copias.fallo.to_string(), "copias fallidas"),
+        cifra(&i.copias.total().to_string(), "copias en total"),
+        cifra(&tamano(i.espacio.protegido), "protegido hoy"),
+    );
+    cuerpo.push_str(&p(&frase));
+    cuerpo.push_str(&p("Va adjunto el informe completo en PDF."));
+    if let Some(u) = &enlace {
+        cuerpo.push_str(&boton(u, "Ver los informes en la consola"));
+    }
+    let html = pagina(f, m, &asunto, &frase, &cuerpo);
+    let adjunto = Adjunto { nombre: crate::informe::nombre_archivo(i), tipo: "application/pdf", datos: crate::informe::pdf::pdf(i, f.logo_informe.as_deref()) };
+    Salida { evento: "informe", asunto, texto, html, severidad: Severidad::Informativo, enlace, logo: logo_de(m), adjunto: Some(adjunto) }
 }
 
 fn logo_de(m: Option<&MarcaCorreo>) -> Option<Vec<u8>> {
@@ -750,6 +811,7 @@ pub fn clientes_de(ms: &[Mensaje]) -> Vec<(String, String)> {
             Mensaje::Aviso(a) | Mensaje::Recuperacion(a) => poner(&a.cliente_id, &a.cliente),
             Mensaje::Resumen(r) => r.clientes.iter().for_each(|c| poner(&c.id, &c.nombre)),
             Mensaje::Prueba { .. } => {}
+            Mensaje::Informe(i) => poner(&i.cliente_id, &i.cliente),
         }
     }
     v
@@ -772,6 +834,7 @@ pub fn componer(ms: &[Mensaje], f: &Formato) -> Salida {
     match ms {
         [Mensaje::Resumen(r)] => resumen(r, f, marca),
         [Mensaje::Prueba { quien }] => prueba(quien, f, marca),
+        [Mensaje::Informe(i)] => informe(i, f, marca),
         [m] => {
             let (a, resuelto) = alerta(m).expect("aviso o recuperación");
             una_alerta(a, resuelto, f, marca)
@@ -905,6 +968,8 @@ pub fn chat(ms: &[Mensaje], s: &Salida, f: &Formato, ahora: Ts) -> Chat {
         hora,
     };
     match (s.evento, alertas.as_slice()) {
+        // El informe solo va por correo; si llegara a un chat, su asunto y su frase.
+        ("informe", _) => base("Informe".into(), s.asunto.clone(), corto(&cuerpo_texto(s), 3000), Vec::new(), ahora),
         ("aviso" | "recuperacion", [(a, resuelto)]) => {
             let mut datos = vec![("Cliente", a.cliente.clone())];
             if let Some(e) = &a.equipo {
@@ -1107,7 +1172,12 @@ mod tests {
     const HASTA: Ts = 1_791_100_800;
 
     fn formato() -> Formato {
-        Formato { url_consola: Some("https://copias.ejemplo.com:8443".into()), zona: FixedOffset::east_opt(2 * 3600).unwrap(), marcas: BTreeMap::new() }
+        Formato {
+            url_consola: Some("https://copias.ejemplo.com:8443".into()),
+            zona: FixedOffset::east_opt(2 * 3600).unwrap(),
+            marcas: BTreeMap::new(),
+            logo_informe: None,
+        }
     }
 
     /// Un PNG de 64 × 16 (solo la firma y la cabecera: lo que mira el correo).

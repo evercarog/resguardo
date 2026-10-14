@@ -20,6 +20,8 @@ pub mod error;
 pub mod estado;
 pub mod identidad;
 pub mod instalador_agente;
+// Plan 0.8.0 (G1): el informe ejecutivo en PDF, programado por correo.
+pub mod informe;
 pub mod notificaciones;
 pub mod pistas;
 pub mod progreso;
