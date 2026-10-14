@@ -397,6 +397,38 @@ pub struct Resumen {
     /// Plan 0.7.26 (freno «avisar»): lo que se conserva en el espejo por el freno.
     pub retenidos: u64,
     pub retenidos_bytes: u64,
+    /// 14i: lo que ocupaban en el destino los borrados de esta vuelta.
+    pub borrados_bytes: u64,
+    /// 14i/14h: lo que ocupa en el destino, al terminar la vuelta, cada repositorio
+    /// (`<usuario>/<repo>`, o "" lo que esté en la raíz) del alcance.
+    pub ocupa: BTreeMap<String, u64>,
+}
+
+impl Resumen {
+    /// Todo lo que ocupa en el destino (del alcance).
+    pub fn ocupa_total(&self) -> u64 {
+        self.ocupa.values().sum()
+    }
+}
+
+/// El repositorio (`<usuario>/<repo>`) de un archivo del destino, por su ruta relativa.
+pub fn repo_de(rel: &str) -> String {
+    let mut p = rel.split('/');
+    match (p.next(), p.next(), p.next()) {
+        (Some(u), Some(r), Some(_)) => format!("{u}/{r}"),
+        _ => String::new(),
+    }
+}
+
+thread_local! {
+    /// 14p: lo que falta por copiar en la vuelta de este hilo (bytes, archivos), en
+    /// cuanto se sabe (tras listar el origen y el destino). Para el progreso en vivo.
+    static POR_COPIAR: std::cell::Cell<Option<(u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// 14p: lo que hay que copiar en la vuelta en marcha en este hilo, si ya se sabe.
+pub fn por_copiar() -> Option<(u64, u64)> {
+    POR_COPIAR.with(std::cell::Cell::get)
 }
 
 /// Lo que hay en el destino (ruta relativa → tamaño), dentro del alcance.
@@ -430,6 +462,7 @@ pub fn vuelta(
     avance: &mut dyn FnMut(Option<u64>, Option<u64>),
 ) -> Result<Resumen, String> {
     let mut r = Resumen::default();
+    POR_COPIAR.with(|c| c.set(None));
     // Sin la carpeta del almacén (un disco que no está) no se hace nada: lo
     // contrario parecería un almacén vacío.
     if !origen.is_dir() {
@@ -464,6 +497,7 @@ pub fn vuelta(
             None => copiar.push(a),
         }
     }
+    POR_COPIAR.with(|c| c.set(Some((copiar.iter().map(|a| a.len).sum(), copiar.len() as u64))));
     match lado {
         Lado::Carpeta(d) => copiar_a_carpeta(origen, d, &copiar, &mut r, avance)?,
         Lado::Nube { nube, carpeta, trabajo, limite_kib } => {
@@ -482,7 +516,19 @@ pub fn vuelta(
         }
     }
     verificar(origen, lado, &destino, op, estado, &mut r)?;
-    retencion(lado, &origen_l, &destino, op, estado, &mut r, chrono::Local::now().date_naive())?;
+    let quitados = retencion(lado, &origen_l, &destino, op, estado, &mut r, chrono::Local::now().date_naive())?;
+    // 14i: lo que ocupa cada repositorio en el destino al terminar: lo que había, lo
+    // copiado ahora y sin lo borrado (lo de otro tamaño se queda como estaba).
+    let mut ocupa: BTreeMap<String, u64> = BTreeMap::new();
+    let quitados: HashSet<&str> = quitados.iter().map(String::as_str).collect();
+    for (rel, len) in destino.iter().filter(|(k, _)| !quitados.contains(k.as_str())) {
+        *ocupa.entry(repo_de(rel)).or_default() += len;
+    }
+    let danados: HashSet<&str> = r.danados_origen.iter().map(String::as_str).collect();
+    for a in copiar.iter().filter(|a| !danados.contains(a.rel.as_str())) {
+        *ocupa.entry(repo_de(&a.rel)).or_default() += a.len;
+    }
+    r.ocupa = ocupa;
     Ok(r)
 }
 
@@ -496,13 +542,14 @@ pub fn retencion(
     estado: &mut Estado,
     r: &mut Resumen,
     hoy: chrono::NaiveDate,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
+    let mut quitados = Vec::new();
     let Some(borrado) = op.borrado() else {
         // Sin retención (o con bloqueo) no se lleva la cuenta: nunca se borra.
         estado.faltan.clear();
         estado.retenidos.clear();
         estado.aceptar_freno = false;
-        return Ok(());
+        return Ok(quitados);
     };
     estado.vueltas += 1;
     let vuelta = estado.vueltas;
@@ -571,9 +618,12 @@ pub fn retencion(
         if !vencidos.is_empty() {
             borrar(lado, &vencidos)?;
             for k in &vencidos {
-                estado.faltan.remove(k);
+                if let Some(f) = estado.faltan.remove(k) {
+                    r.borrados_bytes += f.bytes;
+                }
             }
             r.borrados = vencidos.len() as u64;
+            quitados = vencidos;
         }
     }
     r.por_borrar = estado.faltan.len() as u64;
@@ -590,7 +640,7 @@ pub fn retencion(
         // En la próxima vuelta.
         Borrado::Igual => None,
     };
-    Ok(())
+    Ok(quitados)
 }
 
 /// Borra estos archivos del destino (solo ellos; nunca carpetas enteras ni a través de enlaces).

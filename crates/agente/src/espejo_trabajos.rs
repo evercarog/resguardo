@@ -89,6 +89,10 @@ pub struct Cuando {
     /// Con retraso (minutos) tras la copia nueva o el otro trabajo.
     #[serde(default, skip_serializing_if = "es_cero")]
     pub retraso_min: u32,
+    /// 14s: la primera subida, no antes de esta hora (RFC 3339; «en la próxima franja de la
+    /// madrugada»). Solo cuenta mientras no ha empezado ninguna vuelta; «Hacer ahora» la adelanta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primera_desde: Option<String>,
 }
 
 /// Retención.
@@ -144,6 +148,93 @@ pub struct EstadoTrabajo {
     /// «Hacer ahora» (`espejo_ahora`): toca en cuanto se pueda.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pedido_ahora: bool,
+    /// 14p: quién pidió «Hacer ahora» y desde qué consola (su nombre en el equipo, nunca su dirección).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pedido: Option<Pedido>,
+    /// 14c: cuándo terminó bien la última vuelta (sin `ERROR`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bien: Option<String>,
+    /// 14c: este equipo lleva la cuenta de `bien` desde que existe el trabajo (o desde una
+    /// vuelta bien): sin `bien`, de verdad nunca ha terminado bien. Sin esto (un trabajo
+    /// de un agente anterior) no se sabe, y cuenta como si hubiera terminado.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub registro: bool,
+    /// 14i: las últimas vueltas, de la más antigua a la más reciente ([`MAX_SUBIDAS`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subidas: Vec<Subida>,
+    /// 14i/14h: lo que ocupa en el destino (tras la última vuelta que lo pudo contar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ocupa: Option<Ocupa>,
+}
+
+/// 14i: como mucho, tantas vueltas en el registro de cada trabajo.
+pub const MAX_SUBIDAS: usize = 30;
+/// 14i: como mucho, tantos repositorios en lo que ocupa cada trabajo.
+pub const MAX_OCUPA_REPOS: usize = 200;
+
+/// 14p: quién pidió algo (como lo dice su consola) y desde qué consola.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Pedido {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub por: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consola: Option<String>,
+    #[serde(default)]
+    pub enlace: String,
+}
+
+/// 14i: una vuelta de un trabajo, para su página (sin rutas).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Subida {
+    pub inicio: String,
+    pub fin: String,
+    /// "ok" o "error".
+    pub resultado: String,
+    /// `horario`, `tras_copia`, `tras_otro` o `ahora`.
+    #[serde(default)]
+    pub motivo: String,
+    /// Lo copiado en esta vuelta.
+    #[serde(default)]
+    pub archivos: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    /// Lo que borró su retención.
+    #[serde(default, skip_serializing_if = "es_cero64")]
+    pub borrados: u64,
+    #[serde(default, skip_serializing_if = "es_cero64")]
+    pub borrados_bytes: u64,
+    /// Archivos comprobados del destino y cuántos estaban mal.
+    #[serde(default, skip_serializing_if = "es_cero64")]
+    pub verificados: u64,
+    #[serde(default, skip_serializing_if = "es_cero64")]
+    pub mal: u64,
+    /// Lo que ocupa en el destino al terminar (si se pudo contar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ocupa: Option<u64>,
+    /// El error, en una línea y sin rutas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// 14i/14h: lo que ocupa un trabajo en su destino: en total y por repositorio
+/// (`<usuario>/<repo>` en el almacén, el id en el equipo).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Ocupa {
+    pub bytes: u64,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub repos: std::collections::BTreeMap<String, u64>,
+    pub cuando: String,
+}
+
+impl Motivo {
+    pub fn clave(self) -> &'static str {
+        match self {
+            Motivo::Horario => "horario",
+            Motivo::TrasCopia => "tras_copia",
+            Motivo::TrasOtro => "tras_otro",
+            Motivo::Ahora => "ahora",
+        }
+    }
 }
 
 /// Un trabajo de espejo.
@@ -266,6 +357,13 @@ impl Trabajo {
     pub fn ok(&self) -> bool {
         self.estado.resultado.as_deref().is_some_and(|r| !r.starts_with("ERROR"))
     }
+
+    /// 14c: ¿nunca ha terminado bien una vuelta? (Quitarlo o cambiarlo no reduce la
+    /// protección: aún no protege nada.) Uno de un agente anterior que ya hizo alguna
+    /// vuelta no se sabe: cuenta como si hubiera terminado.
+    pub fn nunca_bien(&self) -> bool {
+        self.estado.bien.is_none() && !self.ok() && (self.estado.ultima.is_none() || self.estado.registro)
+    }
 }
 
 /// Una fecha RFC 3339 (o solo AAAA-MM-DD, de versiones anteriores).
@@ -347,6 +445,7 @@ pub fn de_destino(d: &crate::espejo::Destino, hora: &str, limite_kib: Option<u32
             retenidos: None,
             cuota: d.cuota.clone(),
             pedido_ahora: false,
+            ..Default::default()
         },
         adonde,
     }
@@ -543,6 +642,14 @@ pub fn validar(t: &mut Trabajo, quien: &str) -> Result<(), String> {
     if t.cuando.retraso_min > RETRASO_MAX_MIN {
         return Err("El retraso del espejo va de 0 a 1440 minutos (un día).".into());
     }
+    // 14s: la primera subida, a partir de una hora (como mucho dentro de 8 días).
+    if let Some(p) = t.cuando.primera_desde.take() {
+        let d = chrono::DateTime::parse_from_rfc3339(p.trim()).map_err(|_| "Hora de la primera subida no válida.".to_string())?;
+        if d.signed_duration_since(chrono::Local::now()) > chrono::Duration::days(8) {
+            return Err("La primera subida tiene que empezar en los próximos días.".into());
+        }
+        t.cuando.primera_desde = Some(d.to_rfc3339());
+    }
     if t.cuando.horario.is_none() && !t.cuando.tras_copia && t.cuando.cadena.is_none() && t.cuando.despues.is_none() {
         return Err(format!("Di cuándo se hace «{}»: con horario, después de cada copia o después de otro espejo.", t.nombre));
     }
@@ -617,8 +724,10 @@ pub fn validar_conjunto(ts: &[Trabajo]) -> Result<(), String> {
 /// ¿Reduce la protección pasar de `antes` a `ahora`? (orden con espera). Quitar o
 /// pausar un espejo, cambiar su destino, dejar fuera repositorios, borrar antes,
 /// quitar el bloqueo o aflojar el freno.
+///
+/// 14c: uno que nunca ha terminado bien una vuelta no cuenta (aún no protege nada).
 pub fn reduce(antes: &[Trabajo], ahora: &[Trabajo]) -> bool {
-    antes.iter().filter(|a| a.activo).any(|a| {
+    antes.iter().filter(|a| a.activo && !a.nunca_bien()).any(|a| {
         let Some(n) = ahora.iter().find(|n| n.id == a.id) else { return true };
         if !n.activo || n.clave_destino() != a.clave_destino() {
             return true;
@@ -681,7 +790,11 @@ pub fn conservar_estado(nuevos: &mut [Trabajo], anteriores: &[Trabajo], olvidar:
     for t in nuevos.iter_mut() {
         match anteriores.iter().find(|a| a.id == t.id && a.clave_destino() == t.clave_destino()) {
             Some(a) => t.estado = a.estado.clone(),
-            None => olvidar(t),
+            None => {
+                olvidar(t);
+                // 14c: nuevo (o a otro destino): desde aquí se sabe si alguna vez terminó bien.
+                t.estado = EstadoTrabajo { registro: true, ..EstadoTrabajo::default() };
+            }
         }
     }
 }
@@ -708,6 +821,10 @@ pub fn toca(t: &Trabajo, todos: &[Trabajo], ahora: chrono::DateTime<chrono::Loca
     }
     if t.estado.pedido_ahora {
         return Some(Motivo::Ahora);
+    }
+    // 14s: la primera subida, no antes de su hora.
+    if t.estado.inicio.is_none() && t.cuando.primera_desde.as_deref().and_then(fecha).is_some_and(|d| ahora < d) {
+        return None;
     }
     let desde = t.desde();
     if let Some(plan) = t.plan() {
@@ -868,6 +985,112 @@ pub fn anotar_resultado(t: &mut Trabajo, texto: &str, fin: &str, resumenes: &[cr
     t.estado.retenidos = (retenidos > 0).then(|| (retenidos, suma(&|r| r.retenidos_bytes)));
 }
 
+/// 14p: el avance de una vuelta para el progreso en vivo (en todas las consolas): lo
+/// copiado de lo que hay que copiar. En una carpeta lo dice el motor tras cada archivo;
+/// hacia una nube, se cuenta con lo que sube rclone (sus contadores de E/S). Con varios
+/// repositorios (los espejos del equipo), se suman.
+#[derive(Default)]
+pub struct Avance {
+    carpeta: bool,
+    antes_bytes: u64,
+    antes_total: u64,
+    actual: u64,
+    total: u64,
+    subido: f64,
+    ultimo: Option<std::time::Instant>,
+}
+
+impl Avance {
+    pub fn nuevo(t: &Trabajo) -> Self {
+        Avance { carpeta: t.adonde.tipo != "nube", ..Default::default() }
+    }
+
+    /// Empieza otro repositorio: lo del anterior queda contado.
+    pub fn siguiente(&mut self) {
+        self.antes_bytes += self.actual.min(self.total);
+        self.antes_total += self.total;
+        (self.actual, self.total, self.subido, self.ultimo) = (0, 0, 0.0, None);
+    }
+
+    /// Lo que dice el motor (en una carpeta, bytes copiados; en una nube, lectura y subida por segundo).
+    pub fn anotar(&mut self, g: &crate::escritorio::en_marcha::Guarda, l: Option<u64>, s: Option<u64>) {
+        if let Some((b, _)) = crate::espejo_motor::por_copiar() {
+            self.total = b;
+        }
+        if self.carpeta {
+            self.actual = l.unwrap_or(self.actual);
+        } else {
+            let ahora = std::time::Instant::now();
+            if let (Some(u), Some(s)) = (self.ultimo, s) {
+                self.subido += s as f64 * ahora.saturating_duration_since(u).as_secs_f64();
+            }
+            self.ultimo = Some(ahora);
+            self.actual = (self.subido as u64).min(self.total);
+            g.ritmos(l, s);
+        }
+        let total = self.antes_total + self.total;
+        g.cifras(Some(self.antes_bytes + self.actual.min(self.total)), (total > 0).then_some(total), None, None);
+    }
+}
+
+/// Una vuelta terminada, para su registro (14i) y para saber si alguna terminó bien (14c).
+pub struct Vuelta<'a> {
+    pub inicio: &'a str,
+    pub fin: &'a str,
+    pub motivo: Motivo,
+    /// Lo que ocupa cada repositorio en el destino, de lo que se pudo contar en esta vuelta
+    /// (en el almacén, `<usuario>/<repo>`; en el equipo, su id). Lo que no, sigue como estaba.
+    pub ocupa: std::collections::BTreeMap<String, u64>,
+    /// ¿Se contó todo lo del trabajo? (Si no, el total suma lo de antes de lo que falte.)
+    pub completo: bool,
+}
+
+/// Lo que queda de una vuelta: su resultado ([`anotar_resultado`]), si terminó bien, lo
+/// que ocupa en el destino y una línea más en su registro (como mucho [`MAX_SUBIDAS`]).
+pub fn anotar_vuelta(t: &mut Trabajo, texto: &str, v: &Vuelta, resumenes: &[crate::espejo_motor::Resumen]) {
+    anotar_resultado(t, texto, v.fin, resumenes);
+    let error = texto.starts_with("ERROR");
+    if !error {
+        t.estado.bien = Some(v.fin.to_string());
+        t.estado.registro = true;
+    }
+    if !v.ocupa.is_empty() || (v.completo && !resumenes.is_empty()) {
+        let mut repos = if v.completo { std::collections::BTreeMap::new() } else { t.estado.ocupa.as_ref().map(|o| o.repos.clone()).unwrap_or_default() };
+        repos.extend(v.ocupa.iter().map(|(k, b)| (k.clone(), *b)));
+        let bytes = repos.values().sum();
+        // Con muchos repositorios, los que más ocupan (el total sigue siendo el de todos).
+        if repos.len() > MAX_OCUPA_REPOS {
+            let mut l: Vec<(String, u64)> = repos.into_iter().collect();
+            l.sort_by(|a, b| b.1.cmp(&a.1));
+            l.truncate(MAX_OCUPA_REPOS);
+            repos = l.into_iter().collect();
+        }
+        t.estado.ocupa = Some(Ocupa { bytes, repos, cuando: v.fin.to_string() });
+    }
+    let suma = |f: &dyn Fn(&crate::espejo_motor::Resumen) -> u64| resumenes.iter().map(f).sum::<u64>();
+    let mal = suma(&|r| r.mal_destino.len() as u64 + r.reparados);
+    let error_corto = error.then(|| {
+        let sin = texto.strip_prefix("ERROR:").unwrap_or(texto).trim();
+        crate::web::public_message(sin).chars().take(200).collect::<String>()
+    });
+    t.estado.subidas.push(Subida {
+        inicio: v.inicio.to_string(),
+        fin: v.fin.to_string(),
+        resultado: if error { "error" } else { "ok" }.into(),
+        motivo: v.motivo.clave().into(),
+        archivos: suma(&|r| r.copiados),
+        bytes: suma(&|r| r.bytes),
+        borrados: suma(&|r| r.borrados),
+        borrados_bytes: suma(&|r| r.borrados_bytes),
+        verificados: suma(&|r| r.verificados),
+        mal,
+        ocupa: t.estado.ocupa.as_ref().filter(|o| o.cuando == v.fin).map(|o| o.bytes),
+        error: error_corto,
+    });
+    let sobran = t.estado.subidas.len().saturating_sub(MAX_SUBIDAS);
+    t.estado.subidas.drain(..sobran);
+}
+
 /// Lo que se ve de un trabajo en el resumen (sin secretos ni estado interno).
 pub fn resumen(t: &Trabajo, espacio: Value) -> Value {
     let mut v = json!({
@@ -879,6 +1102,11 @@ pub fn resumen(t: &Trabajo, espacio: Value) -> Value {
         "por_borrar": t.estado.por_borrar, "freno_aviso": t.estado.freno,
         "retenidos": t.estado.retenidos.map(|(a, b)| json!({ "archivos": a, "bytes": b })),
         "proxima": proxima(t), "espacio": espacio,
+        // v1.6x (14c, 14i, 14h, 14p): si alguna vez terminó bien, sus últimas vueltas, lo
+        // que ocupa en el destino y «Hacer ahora» pendiente (en cola).
+        "bien": t.estado.bien, "nunca_bien": t.nunca_bien(),
+        "subidas": (!t.estado.subidas.is_empty()).then_some(&t.estado.subidas),
+        "ocupa": t.estado.ocupa, "en_cola": t.estado.pedido_ahora,
     });
     if let Some(z) = &t.zona {
         v["zona"] = z.clone().into();
@@ -1107,30 +1335,29 @@ pub fn si_toca_equipo() {
 /// Una vuelta de un espejo del equipo: cada repositorio a `<destino>/<id>`.
 pub fn hacer_equipo(t: &Trabajo, motivo: Motivo, locales: &[(String, PathBuf)]) -> String {
     let inicio = chrono::Local::now().to_rfc3339();
-    anotar_equipo(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora) = (Some(inicio.clone()), false));
+    anotar_equipo(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora, x.estado.pedido) = (Some(inicio.clone()), false, None));
     let nombre_ventana = t.adonde.nube.clone().unwrap_or_else(|| "Disco o carpeta del equipo".into());
     let guarda = crate::escritorio::en_marcha::empezar(if t.adonde.tipo == "nube" { "nube" } else { "espejo" }, &format!("eq-{}", t.id), &nombre_ventana);
-    let carpeta = t.adonde.tipo != "nube";
+    guarda.espejo(t);
+    let mut avance = Avance::nuevo(t);
     let mut hechos: Vec<(Option<String>, Result<String, String>)> = Vec::new();
     let mut resumenes = Vec::new();
+    let mut ocupa = std::collections::BTreeMap::new();
     for (id, origen) in repos_de(t, locales) {
+        avance.siguiente();
         let r = match origen {
             None => Err("ya no está en este equipo (o no está en un disco suyo).".to_string()),
-            Some(o) => vuelta(t, &o, &Alcance::Todos, Some(&id), &|_| None, &archivo_estado(t, Some(&id)), &mut |l, s| {
-                if carpeta {
-                    guarda.progreso(l, None)
-                } else {
-                    guarda.ritmos(l, s)
-                }
-            }),
+            Some(o) => vuelta(t, &o, &Alcance::Todos, Some(&id), &|_| None, &archivo_estado(t, Some(&id)), &mut |l, s| avance.anotar(&guarda, l, s)),
         };
         let texto = r.and_then(|r| {
             let x = crate::espejo::texto_de(&r);
+            ocupa.insert(id.clone(), r.ocupa_total());
             resumenes.push(r);
             x
         });
         hechos.push((Some(id), texto));
     }
+    let completo = hechos.iter().all(|(_, r)| r.is_ok());
     let texto = texto_de(t, motivo, &hechos);
     if texto.starts_with("ERROR") {
         drop(guarda);
@@ -1140,19 +1367,22 @@ pub fn hacer_equipo(t: &Trabajo, motivo: Motivo, locales: &[(String, PathBuf)]) 
     crate::agent::log(&texto);
     let cuota = if t.adonde.tipo == "nube" { t.adonde.nube.as_deref().and_then(crate::nube::buscar).and_then(|n| crate::nube::cuota(&n)) } else { None };
     let fin = chrono::Local::now().to_rfc3339();
+    let v = Vuelta { inicio: &inicio, fin: &fin, motivo, ocupa, completo };
+    let mut registro = None;
     anotar_equipo(&t.id, |x| {
-        anotar_resultado(x, &texto, &fin, &resumenes);
+        anotar_vuelta(x, &texto, &v, &resumenes);
         if let Some(q) = cuota {
             x.estado.cuota = Some((q, fin.clone()));
         }
+        registro = x.estado.subidas.last().cloned();
     });
-    crate::bitacora::espejo(&fin, &texto);
+    crate::bitacora::espejo(&fin, &texto, Some((t, registro.as_ref())));
     texto
 }
 
 /// «Hacer ahora» (`guarda_copias { espejo_ahora: { trabajo, quien? } }`): ese trabajo
 /// toca en cuanto se pueda (no reduce la protección: solo copia).
-pub fn pedir_ahora(v: &Value) -> Result<String, String> {
+pub fn pedir_ahora(v: &Value, pedido: Option<Pedido>) -> Result<String, String> {
     let id = v["trabajo"].as_str().ok_or("Falta el espejo.")?;
     let nombre;
     if v["quien"] == QUIEN_EQUIPO {
@@ -1162,6 +1392,7 @@ pub fn pedir_ahora(v: &Value) -> Result<String, String> {
             return Err("Ese espejo está en pausa: actívalo antes.".into());
         }
         t.estado.pedido_ahora = true;
+        t.estado.pedido.clone_from(&pedido);
         nombre = t.nombre.clone();
         guardar_equipo(&e)?;
         #[cfg(not(test))]
@@ -1174,6 +1405,7 @@ pub fn pedir_ahora(v: &Value) -> Result<String, String> {
             return Err("Ese espejo está en pausa: actívalo antes.".into());
         }
         t.estado.pedido_ahora = true;
+        t.estado.pedido = pedido;
         nombre = t.nombre.clone();
         c.espejo = Some(crate::espejo::Espejo::de_trabajos(ts));
         crate::server::save(&c)?;

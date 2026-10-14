@@ -96,6 +96,30 @@ fn tipo_tarea(kind: &str) -> &'static str {
 
 /// Una tarea larga (verificar, copia externa, prueba de restauración).
 pub fn tarea_larga(t: &crate::tasks::RunningTask) -> Value {
+    tarea_larga_para(t, "")
+}
+
+/// [`tarea_larga`] como la ve la consola `enlace`: 14p, con quién la pidió con «Ahora» y
+/// desde qué consola (`otra_consola` si no fue esta; nunca su dirección).
+pub fn tarea_larga_para(t: &crate::tasks::RunningTask, enlace: &str) -> Value {
+    let mut v = tarea_larga_sin_quien(t);
+    if let Some(e) = t.enlace.as_deref() {
+        let otra = e != enlace;
+        v["por"] = t.por.clone().into();
+        v["otra_consola"] = otra.into();
+        if otra {
+            v["consola"] = t.consola.clone().into();
+        }
+    }
+    v
+}
+
+/// La derivada de una tarea (`derivada-<id>`, `verify_derivada-<id>`), si es de una.
+fn derivada_de(kind: &str) -> Option<&str> {
+    kind.split_once('-').filter(|(k, _)| *k == crate::tasks::DERIVADA || *k == crate::tasks::VERIFY_DERIVADA).map(|(_, d)| d)
+}
+
+fn tarea_larga_sin_quien(t: &crate::tasks::RunningTask) -> Value {
     let etapa: String = crate::web::public_message(&t.stage).chars().take(120).collect();
     let tipo = tipo_tarea(&t.kind);
     json!({
@@ -117,6 +141,82 @@ pub fn tarea_larga(t: &crate::tasks::RunningTask) -> Value {
     })
 }
 
+/// 14p: el tipo para la consola de una tarea pedida con «Ahora» (`verify`, `derivada-<id>`…).
+fn tipo_pedida(pedida: &str) -> &'static str {
+    match pedida.split_once('-').map_or(pedida, |(k, _)| k) {
+        "verify" => "verificar",
+        "verify_offsite" | crate::tasks::VERIFY_DERIVADA => "verificar_externa",
+        "restore_test" => "prueba_restauracion",
+        _ => "copia_externa",
+    }
+}
+
+/// 14p: algo pedido con «Ahora» que aún no ha empezado («en cola»), como lo ve la consola `enlace`.
+pub fn tarea_en_cola(repo: &str, pedida: &str, quien: &crate::tasks::PedidaPor, enlace: &str) -> Value {
+    let mut v = json!({ "tipo": tipo_pedida(pedida), "repo": repo, "fase": "en_cola", "etapa": "En cola", "derivada": derivada_de(pedida) });
+    if let Some(e) = quien.enlace.as_deref() {
+        let otra = e != enlace;
+        v["por"] = quien.por.clone().into();
+        v["otra_consola"] = otra.into();
+        if otra {
+            v["consola"] = quien.consola.clone().into();
+        }
+    }
+    v
+}
+
+/// 14p: la vuelta de un espejo en marcha (del registro del servicio), sin rutas: el trabajo,
+/// quién lo hace, lo copiado de lo que hay que copiar, el ritmo y lo que queda.
+pub fn tarea_espejo(a: &crate::escritorio::Actividad, enlace: &str) -> Option<Value> {
+    let id = a.espejo.as_deref().filter(|_| a.tipo == "espejo" || a.tipo == "nube")?;
+    let otra = a.enlace.as_deref().is_some_and(|e| e != enlace);
+    Some(json!({
+        "tipo": "espejo",
+        "repo": id,
+        "espejo": id,
+        "nombre": a.espejo_nombre,
+        "quien": a.quien,
+        "primera": a.primera.then_some(true),
+        "fase": if a.bytes_total.is_none() { "preparando" } else { "subiendo" },
+        "etapa": if a.primera { "Primera subida" } else { "Subiendo lo nuevo" },
+        "porcentaje": a.porcentaje,
+        "bytes": a.bytes,
+        "bytes_total": a.bytes_total,
+        "velocidad": a.velocidad,
+        "lectura": a.lectura,
+        "subida": a.subida.or(a.velocidad),
+        "quedan_s": a.quedan_s,
+        "empezo": a.empezo,
+        "actualizado": chrono::Local::now().to_rfc3339(),
+        "por": a.por,
+        "otra_consola": a.enlace.is_some().then_some(otra),
+        "consola": if otra { a.consola.clone() } else { None },
+    }))
+}
+
+/// 14p: los espejos con «Hacer ahora» pendiente que no están en marcha («en cola»).
+fn espejos_en_cola(en_marcha: &[crate::escritorio::Actividad], enlace: &str) -> Vec<Value> {
+    let corriendo: Vec<&str> = en_marcha.iter().filter_map(|a| a.espejo.as_deref()).collect();
+    let mut trabajos = crate::espejo_trabajos::cargar_equipo().trabajos;
+    let c = crate::server::load();
+    if c.enabled {
+        trabajos.extend(c.espejo.map(|e| e.trabajos_efectivos()).unwrap_or_default());
+    }
+    trabajos
+        .iter()
+        .filter(|t| t.activo && t.estado.pedido_ahora && !corriendo.contains(&t.id.as_str()))
+        .map(|t| {
+            let p = t.estado.pedido.clone().unwrap_or_default();
+            let otra = !p.enlace.is_empty() && p.enlace != enlace;
+            json!({
+                "tipo": "espejo", "repo": t.id, "espejo": t.id, "nombre": t.nombre, "quien": t.quien,
+                "primera": t.nunca_bien().then_some(true), "fase": "en_cola", "etapa": "En cola",
+                "por": p.por, "otra_consola": (!p.enlace.is_empty()).then_some(otra), "consola": if otra { p.consola } else { None },
+            })
+        })
+        .collect()
+}
+
 /// Lo que está en marcha ahora mismo en este equipo (vacío si nada), tal como
 /// se le cuenta a la consola de `v`: a todas las consolas lo mismo, salvo quién
 /// empezó cada operación (`otra_consola`, ver [`tarea_operacion`]).
@@ -132,14 +232,21 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
         let nombre = copias.iter().find(|k| k.repo == r.repo_id && Some(&k.id) == r.plan_id.as_ref()).map(|k| k.nombre.as_str());
         out.extend(tarea_copia(r, nombre, ahora));
     }
+    let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
     if let Some(t) = crate::tasks::load_state().live_running() {
-        out.push(tarea_larga(t));
+        out.push(tarea_larga_para(t, &enlace));
     }
     // v1.47: lo que corre dentro del servicio por una orden (traer el historial, también
     // al «Mover a otro sitio…»; aplicar la retención) y las restauraciones.
-    let enlace = v.map(Vinculo::id_enlace).unwrap_or_default();
     out.extend(ops::lista().iter().map(|o| tarea_operacion(o, &enlace)));
-    out.extend(crate::escritorio::en_marcha::actividades().iter().filter_map(|a| tarea_restauracion(a, &enlace)));
+    let actividades = crate::escritorio::en_marcha::actividades();
+    out.extend(actividades.iter().filter_map(|a| tarea_restauracion(a, &enlace)));
+    // 14p: los espejos en marcha y, después, lo pedido con «Ahora» que aún no empezó.
+    out.extend(actividades.iter().filter_map(|a| tarea_espejo(a, &enlace)));
+    if out.len() < MAX_TAREAS {
+        out.extend(crate::tasks::en_cola(&crate::agent::load_config()).iter().map(|(r, p, q)| tarea_en_cola(r, p, q, &enlace)));
+        out.extend(espejos_en_cola(&actividades, &enlace));
+    }
     out.truncate(MAX_TAREAS);
     out
 }
@@ -176,8 +283,9 @@ pub fn tarea_restauracion(a: &crate::escritorio::Actividad, enlace: &str) -> Opt
 /// llevarla); `consola`, el nombre que esa consola tiene en el equipo (nunca su
 /// dirección), si tiene uno.
 pub fn tarea_operacion(o: &ops::Operacion, enlace: &str) -> Value {
-    let otra = o.enlace != enlace;
-    let porcentaje = match (o.hechas, o.total) {
+    // 14p: sin consola (la actualización del agente la decide el propio equipo), de nadie.
+    let otra = !o.enlace.is_empty() && o.enlace != enlace;
+    let porcentaje = match (o.hechas.or(o.bytes), o.total.or(o.bytes_total)) {
         (Some(h), Some(t)) if t > 0 => Some(((h as f64 / t as f64).clamp(0.0, 1.0) * 1000.0).round() / 1000.0),
         _ => None,
     };
@@ -189,11 +297,18 @@ pub fn tarea_operacion(o: &ops::Operacion, enlace: &str) -> Value {
         "nombre_origen": o.nombre_origen,
         "mover": o.mover.then_some(true),
         "paso": o.paso,
-        "fase": if o.tipo == "historial" && o.hechas.is_none() { "preparando" } else { "en_marcha" },
+        "fase": if (o.tipo == "historial" && o.hechas.is_none()) || (o.tipo == "actualizacion" && o.bytes.is_none()) { "preparando" } else { "en_marcha" },
         "etapa": (!o.etapa.is_empty()).then(|| o.etapa.clone()),
         "porcentaje": porcentaje,
         "versiones": o.hechas.filter(|_| o.tipo == "historial"),
         "versiones_total": o.total.filter(|_| o.tipo == "historial"),
+        // 14p: en bytes (la actualización del agente, la retención del almacén).
+        "bytes": o.bytes,
+        "bytes_total": o.bytes_total,
+        "velocidad": o.velocidad,
+        "subida": o.velocidad,
+        "quedan_s": o.quedan_s,
+        "por": o.por,
         "otra_consola": otra,
         "consola": if otra { o.consola.clone() } else { None },
         "empezo": o.empezo,
@@ -234,6 +349,14 @@ pub mod ops {
         pub etapa: String,
         pub hechas: Option<u64>,
         pub total: Option<u64>,
+        /// 14p: lo hecho y lo que hay que hacer en bytes (bajar una versión del agente…).
+        pub bytes: Option<u64>,
+        pub bytes_total: Option<u64>,
+        /// Bytes por segundo (media desde que empezó) y segundos que faltan.
+        pub velocidad: Option<u64>,
+        pub quedan_s: Option<u64>,
+        /// Quién la pidió (como lo dice su consola), si se sabe.
+        pub por: Option<String>,
         pub empezo: String,
         pub actualizado: String,
     }
@@ -271,6 +394,24 @@ pub mod ops {
     }
 
     impl Op {
+        /// 14p: cómo va en bytes (y de ahí el ritmo medio y lo que queda).
+        pub fn bytes(&self, etapa: &str, hechos: u64, total: Option<u64>) {
+            let mut l = OPS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(o) = l.iter_mut().find(|o| o.id == self.0) {
+                o.etapa = crate::web::public_message(etapa).chars().take(120).collect();
+                o.bytes = Some(hechos);
+                o.bytes_total = total;
+                let lleva = chrono::DateTime::parse_from_rfc3339(&o.empezo).map(|e| chrono::Local::now().signed_duration_since(e)).ok();
+                let s = lleva.map(|d| d.num_milliseconds() as f64 / 1000.0).unwrap_or(0.0);
+                o.velocidad = (s >= 2.0).then(|| (hechos as f64 / s).round() as u64);
+                o.quedan_s = match (total, o.velocidad) {
+                    (Some(t), Some(v)) if v > 0 && t > hechos => Some((t - hechos) / v),
+                    _ => None,
+                };
+                o.actualizado = chrono::Local::now().to_rfc3339();
+            }
+        }
+
         /// Cómo va: qué hace (en palabras, sin rutas) y, si se saben, cuántas de cuántas.
         pub fn avance(&self, etapa: &str, hechas: Option<u64>, total: Option<u64>) {
             let mut l = OPS.lock().unwrap_or_else(|e| e.into_inner());

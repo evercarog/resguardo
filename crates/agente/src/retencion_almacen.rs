@@ -708,7 +708,16 @@ pub fn aplicar_por(usuario: &str, repo: &str, por: &'static str) -> Result<Strin
     }
     let inicio = Local::now();
     let mut detalle = Detalle::default();
+    // 14p: en marcha, a la vista de todas las consolas del almacén (sin la carpeta: solo su nombre).
+    let op = crate::progreso_v2::ops::empezar(crate::progreso_v2::ops::Operacion {
+        tipo: "retencion",
+        repo: clave.chars().take(64).collect(),
+        nombre: Some(clave.clone()),
+        etapa: "Aplicando la retención del almacén".into(),
+        ..Default::default()
+    });
     let r = ejecutar_con(&carpeta, &mut e, &mut detalle);
+    drop(op);
     if let Some(antes) = &detalle.antes {
         crate::retencion_registro::anotar(&crate::retencion_registro::Vuelta {
             origen: "almacen",

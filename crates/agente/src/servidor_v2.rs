@@ -1160,6 +1160,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(hecha(m))
         }
         "actualizar_agente" => Ok(rechazada("Próximamente: las actualizaciones firmadas llegarán con la llave de publicación del proyecto.")),
+        // 14p: «Hacer ahora» un espejo, con quién lo pide y desde qué consola (para su progreso).
+        "guarda_copias" if c.get("espejo_ahora").is_some() => {
+            let q = quien(v, o, orden_id);
+            let pedido = crate::espejo_trabajos::Pedido { por: q.por, consola: q.consola, enlace: q.enlace };
+            Ok(hecha(crate::espejo_trabajos::pedir_ahora(&c["espejo_ahora"], Some(pedido))?))
+        }
         "guarda_copias" => {
             let (m, privado) = g::guarda_copias(c, o.responder_a.is_some())?;
             let _ = g::subir_config(v);
@@ -1192,7 +1198,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
                 ("subir_ahora", Some(d)) => crate::tasks::derived_request(crate::tasks::DERIVADA, d),
                 _ => "restore_test".to_string(),
             };
-            crate::tasks::request_now(&r, &tarea)?;
+            crate::tasks::request_now_por(&r, &tarea, Some(&quien(v, o, orden_id)))?;
             Ok(hecha("Tarea pedida: empieza en unos segundos."))
         }
         "pausar" => g::pausar(v, c).map(hecha),

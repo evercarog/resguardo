@@ -565,8 +565,8 @@ fn almacen_igual_que_el_origen() {
     assert_eq!(guardado.trabajos[0].estado.resultado.as_deref(), Some(texto.as_str()));
     assert_eq!(guardado.destinos.len(), 1, "y la vista para un agente anterior");
     // «Hacer ahora»: queda pedido hasta que empieza la vuelta siguiente.
-    assert!(pedir_ahora(&json!({ "trabajo": "t1" })).unwrap().contains("Disco E"));
-    assert!(pedir_ahora(&json!({ "trabajo": "otro" })).is_err());
+    assert!(pedir_ahora(&json!({ "trabajo": "t1" }), None).unwrap().contains("Disco E"));
+    assert!(pedir_ahora(&json!({ "trabajo": "otro" }), None).is_err());
     assert!(crate::server::load().espejo.unwrap().trabajos[0].estado.pedido_ahora);
     // La poda del almacén quita un paquete: se ve faltar y se borra en la vuelta siguiente.
     std::fs::remove_file(almacen.join("ana/conta/data/ab/abcd")).unwrap();

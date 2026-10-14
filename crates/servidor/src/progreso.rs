@@ -28,8 +28,22 @@ pub const MAX_BYTES: usize = 16 * 1024;
 pub const CADUCA: Duration = Duration::from_secs(90);
 
 // v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`.
-const TIPOS: &[&str] = &["copia", "verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"];
-const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha"];
+// v1.6x (14p): `espejo` (una vuelta de un espejo, del almacén o del propio equipo) y
+// `actualizacion` (el agente se baja y prepara una versión nueva); la fase `en_cola` (pedido
+// con «Ahora», aún sin empezar).
+const TIPOS: &[&str] = &[
+    "copia",
+    "verificar",
+    "verificar_externa",
+    "copia_externa",
+    "prueba_restauracion",
+    "historial",
+    "retencion",
+    "restauracion",
+    "espejo",
+    "actualizacion",
+];
+const FASES: &[&str] = &["antes_de_copiar", "preparando", "escaneando", "subiendo", "terminando", "en_marcha", "en_cola"];
 // v1.47: `origen` (el repositorio del que se trae), `nombre_origen`, `paso` y `consola` (el
 // nombre, en el equipo, de la consola que la empezó; nunca su dirección).
 const TEXTOS: &[(&str, usize)] = &[
@@ -43,10 +57,17 @@ const TEXTOS: &[(&str, usize)] = &[
     ("nombre_origen", 120),
     ("paso", 16),
     ("consola", 60),
+    // v1.6x (13f, 14p): quién la pidió (como lo dice su consola); de un espejo, su trabajo
+    // y quién lo hace; de una derivada pedida con «Ahora», su id.
+    ("por", 80),
+    ("espejo", 40),
+    ("quien", 10),
+    ("derivada", 40),
 ];
 /// v1.47: `mover` (un paso de «Mover a otro sitio…») y `otra_consola` (la empezó otra
 /// consola del equipo: aquí solo se enseña).
-const SINO: &[&str] = &["mover", "otra_consola"];
+/// v1.6x: `en_el_equipo` (13f: pedida desde la ventana del equipo) y `primera` (14p: la primera subida de un espejo).
+const SINO: &[&str] = &["mover", "otra_consola", "en_el_equipo", "primera"];
 // v1.36: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
 const NUMEROS: &[&str] =
     &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
