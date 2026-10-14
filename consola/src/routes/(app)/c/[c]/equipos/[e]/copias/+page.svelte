@@ -1226,10 +1226,13 @@
     {equipo}
     {prueba}
     iniciales={cfg.copias[elegirPara].carpetas}
+    exclusiones={cfg.copias[elegirPara].exclusiones}
     onclose={() => (elegirPara = null)}
-    alElegir={(rutas, gancho) => {
+    alElegir={(rutas, gancho, exclusiones) => {
       const k = cfg!.copias[elegirPara!];
       k.carpetas = rutas;
+      // 14zz: las subcarpetas desmarcadas van a «No copiar» (ruta exacta); las reglas de antes se quedan.
+      if (exclusiones) k.exclusiones = exclusiones;
       void gancho;
       elegirPara = null;
     }}

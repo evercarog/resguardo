@@ -4,6 +4,7 @@
 import { claveElegida, errorContrasena, generarContrasena, MIN_ESCRITA, nuevaContrasena, olvidarContrasena } from "../src/lib/contrasenaRepo";
 import { admiteVerificarVolcado, agruparResultados, limpiar, paraConfig } from "../src/lib/ganchos";
 import { admiteDe } from "../src/lib/configEnvio";
+import { alternarNodo, dentroDe, dentroDeExcluida, esRutaExacta, estadoNodo, exclusionesFinales, quitarExclusion, seleccionInicial } from "../src/lib/arbolCarpetas";
 import type { Equipo, Gancho, ResultadoGancho } from "../src/lib/tipos";
 
 let fallos = 0;
@@ -57,6 +58,45 @@ console.log("\n· 14ccc: verificar cada volcado de SQL Server");
   igual("alguna sin verificar: no lo dice", agruparResultados([ok("A", true), ok("B")]).map((r) => [r.mensaje, r.verificado]), [["2 bases volcadas: A y B.", null]]);
   const mal: ResultadoGancho = { tipo: "sqlserver", estado: "fallo", mensaje: "El volcado de «C» no se pudo verificar: dañado", verificado: false };
   igual("la que no pasó, suelta", agruparResultados([ok("A", true), ok("B", true), mal]).map((r) => r.estado), ["ok", "fallo"]);
+}
+
+console.log("\n· 14zz: árbol de carpetas con subcarpetas");
+{
+  const W = true;
+  const U = "C:\\Users\\ana";
+  const D = `${U}\\Documents`;
+  const V = `${U}\\Videos`;
+  let s = seleccionInicial([U], ["*.tmp", `${V}`, "C:\\Otra\\*.log"], W);
+  igual("de «No copiar» solo entran las rutas exactas", s.excluidas, [V]);
+  igual("la carpeta con una excluida dentro: a medias", estadoNodo(U, s, W), "medio");
+  igual("su subcarpeta: marcada", estadoNodo(D, s, W), "si");
+  igual("la de dentro de una marcada, también (aunque aparezca después)", estadoNodo(`${D}\\Nueva`, s, W), "si");
+  igual("la excluida: sin marcar", estadoNodo(V, s, W), "no");
+  igual("lo de dentro de la excluida no se puede marcar suelto", dentroDeExcluida(`${V}\\2026`, s, W), true);
+  igual("la de arriba de una elegida: a medias", estadoNodo("C:\\Users", s, W), "medio");
+  igual("sin distinguir mayúsculas en Windows", estadoNodo("c:\\users\\ANA\\documents", s, W), "si");
+  s = alternarNodo(D, s, W);
+  igual("desmarcar una subcarpeta la excluye con su ruta", s, { elegidas: [U], excluidas: [V, D] });
+  s = alternarNodo(D, s, W);
+  igual("volver a marcarla la quita de «No copiar»", s, { elegidas: [U], excluidas: [V] });
+  s = alternarNodo(U, s, W);
+  igual("marcar la que está a medias: entera", s, { elegidas: [U], excluidas: [] });
+  s = alternarNodo(U, s, W);
+  igual("desmarcar la elegida: fuera (sin exclusiones colgando)", s, { elegidas: [], excluidas: [] });
+  s = alternarNodo(D, { elegidas: [D], excluidas: [] }, W);
+  igual("desmarcar una elegida suelta no la excluye", s, { elegidas: [], excluidas: [] });
+  s = alternarNodo(U, { elegidas: [D, "C:\\Users\\luis"], excluidas: [`${D}\\Viejo`] }, W);
+  igual("marcar la de arriba recoge las de dentro", s, { elegidas: ["C:\\Users\\luis", U], excluidas: [] });
+  s = quitarExclusion(V, { elegidas: [U], excluidas: [V] }, W);
+  igual("quitar una exclusión desde la lista", s, { elegidas: [U], excluidas: [] });
+  igual(
+    "«No copiar» final: las reglas se quedan; las rutas sueltas fuera de lo elegido, no",
+    exclusionesFinales(["*.tmp", "C:\\Vieja\\x", V], { elegidas: [U], excluidas: [V, "C:\\Vieja\\x", `${D}\\Borradores`] }, W),
+    ["*.tmp", V, `${D}\\Borradores`],
+  );
+  igual("ruta exacta en Linux", [esRutaExacta("/home/ana/tmp", false), esRutaExacta("/home/*/cache", false), esRutaExacta("*.iso", false)], [true, false, false]);
+  igual("Linux distingue mayúsculas", dentroDe("/home/Ana/x", "/home/ana", false), false);
+  igual("la raíz de un disco contiene todo", dentroDe("C:\\Users", "C:\\", W), true);
 }
 
 console.log(`\n${total - fallos} de ${total} bien${fallos ? `, ${fallos} MAL` : ""}.`);
