@@ -20,6 +20,7 @@
     rc,
     equipos,
     ordena,
+    titulo = "Pruebas desde los espejos",
   }: {
     cliente: Cliente;
     /** El equipo dueño del repositorio (el que hace la prueba). */
@@ -28,6 +29,8 @@
     rc: ReglaCopia | null;
     equipos: Equipo[];
     ordena: boolean;
+    /** El título de la sección (en la página de un espejo, el repositorio). */
+    titulo?: string;
   } = $props();
 
   const admite = $derived(!!equipo.resumen?.admite?.includes("prueba_espejo"));
@@ -62,7 +65,7 @@
 
 {#if rc && opciones.length}
   <section class="card p pruebas-espejo" aria-labelledby="t-pe-{rc.repo.id}">
-    <h3 class="section-title" id="t-pe-{rc.repo.id}"><FlaskConical size={15} />Pruebas desde los espejos</h3>
+    <h3 class="section-title" id="t-pe-{rc.repo.id}"><FlaskConical size={15} />{titulo}</h3>
     {#if !admite}
       <p class="faint">Actualiza Resguardo en «{equipo.nombre}» para probar a restaurar desde sus espejos.</p>
     {/if}
