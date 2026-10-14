@@ -14,9 +14,11 @@
 
 pub mod notas;
 pub mod postgres;
+pub mod pruebas;
 pub mod sqlite;
 
 pub use notas::{AlmacenNotas, Comentario, IndiceNotas, Observacion};
+pub use pruebas::{AdjuntoInfo, AlmacenPruebas, PruebaGuardada};
 
 use crate::notificaciones::{Envio, Incidente, Severidad};
 use serde::{Deserialize, Serialize};
@@ -521,7 +523,7 @@ pub struct UsoCliente {
 }
 
 /// Lo que la API necesita guardar. Ver [`sqlite::Sqlite`].
-pub trait Almacen: Send + Sync + AlmacenNotas {
+pub trait Almacen: Send + Sync + AlmacenNotas + AlmacenPruebas {
     // ---------- Servidor ----------
     fn valor(&self, clave: &str) -> R<Option<String>>;
     fn poner_valor(&self, clave: &str, valor: &str) -> R<()>;

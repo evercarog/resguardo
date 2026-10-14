@@ -43,7 +43,9 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "nube_sin_anular"
         // 14uu: disco del equipo casi lleno y sistema ya sin soporte («pronto» es informativo).
         | "disco_lleno"
-        | "sin_soporte" => Severidad::Importante,
+        | "sin_soporte"
+        // Plan 0.8.0, E3 (14k): la prueba funcional venció («pronto» es informativo).
+        | "prueba_funcional_vencida" => Severidad::Importante,
         _ => Severidad::Informativo,
     }
 }
