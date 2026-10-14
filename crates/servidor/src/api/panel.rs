@@ -289,7 +289,7 @@ where
 pub async fn avisos(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
     de_cada_cliente(&st, &u, |db, ctx| {
         let mut xs = db.avisos(ctx, true)?;
-        xs.sort_by(|a, b| b.creado.cmp(&a.creado));
+        xs.sort_by_key(|a| std::cmp::Reverse(a.creado));
         xs.truncate(MAX_AVISOS);
         Ok(json!(xs
             .iter()
