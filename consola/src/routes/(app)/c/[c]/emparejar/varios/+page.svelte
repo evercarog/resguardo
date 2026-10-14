@@ -3,6 +3,7 @@
   // este navegador; el servidor solo guarda su hash), la línea de PowerShell y la de Linux para
   // pegar en cada equipo, y «Equipos esperando confirmación». Nada se da de alta solo: cada equipo
   // enseña su número de comprobación y aquí se marca, después de compararlo, uno a uno o varios.
+  import PonerInstalador from "$lib/componentes/PonerInstalador.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { onDestroy, untrack } from "svelte";
   import { goto } from "$app/navigation";
@@ -434,7 +435,7 @@
 
           <h2 class="section-title"><Monitor size={16} /> Windows</h2>
           {#if sinInstalador}
-            <div class="notice notice-info"><p>Este servidor no tiene el instalador del agente: viene con Resguardo Server para Windows y, en un servidor Linux, se pone con <code>sudo resguardo-server poner-instalador-agente Resguardo-Agente-setup.exe</code>.</p></div>
+            <PonerInstalador />
           {:else if !huella}
             <p class="espera" role="status"><LoaderCircle size={15} class="spin" />Calculando la huella del instalador…</p>
           {:else if linea}

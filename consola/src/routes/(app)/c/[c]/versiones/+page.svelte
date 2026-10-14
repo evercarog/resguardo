@@ -4,7 +4,7 @@
   // apruebes o en pausa, con su ventana), «Actualizar ahora» y el estado de cada equipo.
   // El estado lo cuenta cada agente en su informe; aquí solo se pone en palabras.
   import { untrack } from "svelte";
-  import { CircleArrowUp, CirclePause, CirclePlay, PackageCheck, ShieldCheck, TriangleAlert } from "@lucide/svelte";
+  import { CircleArrowUp, CirclePause, CirclePlay, PackageCheck, RefreshCw, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
@@ -112,6 +112,25 @@
     }
   }
 
+  // 14f: los equipos buscan ya (en sus consolas y en GitHub), aunque este servidor no tenga la versión.
+  let buscando = $state(false);
+  async function buscarAhora() {
+    buscando = true;
+    try {
+      const r = await api.buscarVersionesAhora(actual.id);
+      avisar(
+        r.avisados
+          ? `${plural(r.avisados, "equipo conectado busca", "equipos conectados buscan")} ya una versión nueva, aquí y en GitHub si pueden salir a Internet. Lo que encuentren sale en su estado en un momento.`
+          : "Ningún equipo está conectado ahora: buscarán al conectarse (y, como siempre, cada 6 h).",
+      );
+      setTimeout(() => void recargarInformes(actual.id), 15_000);
+    } catch (e) {
+      fallo(e);
+    } finally {
+      buscando = false;
+    }
+  }
+
   async function anillo(id: string, a: "prueba" | "general") {
     cambiandoAnillo = id;
     try {
@@ -139,6 +158,9 @@
     resumen="La versión del agente de cada equipo y cómo se actualizan solos: primero los de prueba y, si van bien, los demás."
   >
     {#snippet acciones()}
+      {#if datos && puede.ordenar(rol)}
+        <BotonCargando class="btn" cargando={buscando} textoCargando="Avisando…" onclick={buscarAhora} title="Que los equipos busquen ya una versión nueva, aunque este servidor aún no la tenga"><RefreshCw size={16} />Buscar ahora</BotonCargando>
+      {/if}
       {#if datos && admin && disponible}
         <BotonCargando class="btn btn-primary" cargando={aprobando === "*"} textoCargando="Aprobando…" onclick={() => ahora()} disabled={datos.politica.modo === "pausada"}
           ><CircleArrowUp size={16} />Actualizar ahora</BotonCargando

@@ -964,7 +964,7 @@
                     {@const tp = tipoDePaso(p, actual.equipos, catalogo)}
                     <li use:tip={p.detalle + (p.noInmutable ? ` · ${p.noInmutable}` : "")}>
                       <CornerDownRight size={13} />
-                      <span class="rama-t">{#if p.clase === "espejo"}<HardDrive size={13} />Espejo{:else if p.detalle.startsWith("copia externa")}<CloudUpload size={13} />Copia externa{:else}<GitBranch size={13} />Copia derivada{/if}</span>
+                      <span class="rama-t">{#if p.clase === "espejo"}<HardDrive size={13} />Espejo{:else if p.detalle.startsWith("copia derivada")}<CloudUpload size={13} />Copia derivada{:else}<GitBranch size={13} />Copia derivada{/if}</span>
                       <span class="faint rama-d">{#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{p.texto}{p.despues ? " · después de cada copia" : ""}</span>
                     </li>
                   {/each}

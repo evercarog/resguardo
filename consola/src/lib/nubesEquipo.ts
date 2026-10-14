@@ -6,7 +6,8 @@
 // - Las nubes vienen de `resumen.nubes` (cualquier equipo, tarea 4a) y de
 //   `resumen.guarda_copias.nubes` (almacenes): se juntan por nombre.
 // - Qué la usa (lo que dice el resumen): repositorios en un destino «nube» con
-//   ese nombre, copias externas o derivadas a ese destino y el espejo del almacén.
+//   ese nombre, copias externas o derivadas a ese destino y los espejos (del almacén y
+//   del propio equipo, cada uno por su nombre, también los que están en pausa).
 //   Con un agente con `admite: "nube_revocar"`, si algo la usa el equipo no deja
 //   desconectarla: la consola lo dice antes y no ofrece el botón.
 // - Con un agente anterior, desconectar solo olvida el permiso en el equipo: el
@@ -44,10 +45,29 @@ export function usosDeNube(e: Pick<Equipo, "resumen"> | null | undefined, nombre
   const en = (destino?: string | null, id?: string | null) => (!!id && ids.has(id)) || (!!destino && nombres.has(destino));
   for (const repo of r.repositorios ?? []) {
     if (en(repo.destino)) usos.push(`el repositorio «${repo.nombre}»`);
-    if (repo.externa && en(repo.externa.destino, repo.externa.destino_id)) usos.push(`la copia externa de «${repo.nombre}»`);
+    if (repo.externa && en(repo.externa.destino, repo.externa.destino_id)) usos.push(`la copia derivada de «${repo.nombre}»`);
     if ((repo.derivadas ?? []).some((d) => en(d.destino, d.destino_id))) usos.push(`una copia derivada de «${repo.nombre}»`);
   }
-  if (r.guarda_copias?.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre)) usos.push("el espejo de este almacén");
+  usos.push(...usosEspejoDeNube(e, nombre));
+  return usos;
+}
+
+/**
+ * Plan 0.8.0 (B2): los espejos que usan la nube `nombre` en este equipo, por su nombre:
+ * los trabajos del almacén y los del propio equipo, también los que están en pausa
+ * (el resumen de los destinos de antes solo trae los activos). Sin trabajos (un agente
+ * anterior), el espejo de antes.
+ */
+export function usosEspejoDeNube(e: Pick<Equipo, "resumen"> | null | undefined, nombre: string): string[] {
+  const r = e?.resumen;
+  if (!r) return [];
+  const usa = (t: { adonde: { tipo: string; nube?: string | null } }) => t.adonde?.tipo === "nube" && t.adonde.nube === nombre;
+  const trabajos = r.guarda_copias?.espejo?.trabajos;
+  const usos: string[] = [];
+  if (trabajos?.length) {
+    for (const t of trabajos.filter(usa)) usos.push(`el espejo «${t.nombre.trim() || `a «${nombre}»`}»${t.activo ? "" : " (en pausa)"}`);
+  } else if (r.guarda_copias?.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre)) usos.push("el espejo de este almacén");
+  for (const t of (r.espejo_equipo?.trabajos ?? []).filter(usa)) usos.push(`el espejo «${t.nombre.trim() || `a «${nombre}»`}» de este equipo${t.activo ? "" : " (en pausa)"}`);
   return usos;
 }
 
@@ -84,7 +104,9 @@ export function queHaceAlDesconectar(e: Pick<Equipo, "resumen"> | null | undefin
  * el porqué. Con un agente anterior, `null` (él decide, como siempre).
  */
 export function motivoNoDesconectar(e: Pick<Equipo, "resumen"> | null | undefined, n: NubeDelEquipo): string | null {
-  if (!admiteRevocar(e) || !n.usos.length) return null;
+  // Plan 0.8.0 (B2): un espejo con trabajos (agente 0.7.26) que la usa bloquea siempre, también en pausa.
+  const conTrabajos = !!e?.resumen?.guarda_copias?.espejo?.trabajos?.length || !!e?.resumen?.espejo_equipo?.trabajos?.length;
+  if (!n.usos.length || (!admiteRevocar(e) && !(conTrabajos && usosEspejoDeNube(e, n.nombre).length))) return null;
   const lista = n.usos.length > 3 ? `${n.usos.slice(0, 3).join(", ")} y ${n.usos.length - 3} más` : n.usos.join(", ");
   return `La usa ${lista}. Quítala antes de ahí para poder desconectarla.`;
 }

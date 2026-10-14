@@ -830,7 +830,8 @@ pub(crate) fn comprobar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::
             return Err((rechazada(format!("Esta orden reduce la protección y tenía que esperar {} h.", v.espera_min_horas)), None));
         }
     }
-    let necesita_admin = matches!(tipo.nivel, ordenes::Nivel::Administracion | ordenes::Nivel::RepositorioYAdministracion) && o.tipo != "alta";
+    let necesita_admin =
+        (matches!(tipo.nivel, ordenes::Nivel::Administracion | ordenes::Nivel::RepositorioYAdministracion) && o.tipo != "alta") || pide_admin_por_cuerpo(o);
     let necesita_repo = matches!(tipo.nivel, ordenes::Nivel::Repositorio | ordenes::Nivel::RepositorioYAdministracion);
     if necesita_admin {
         // v1.59: `quitar_destino` era inofensiva (v1.56). Una consola anterior la manda sin
@@ -890,6 +891,27 @@ pub(crate) fn autorizar_y_ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo:
     }
     let _ = guardar(v);
     (r, None)
+}
+
+/// Quién manda una orden y desde qué consola (13d/13f): su nombre (el que dice la
+/// consola), el nombre de esa consola en el equipo (nunca su dirección) y su enlace.
+fn quien(v: &Vinculo, o: &orden_v2::OrdenV2, orden_id: &str) -> crate::restaurar_v2::Quien {
+    crate::restaurar_v2::Quien {
+        por: o.por.clone(),
+        consola: Some(v.nombre_consola.trim().chars().take(60).collect::<String>()).filter(|n| !n.is_empty()),
+        enlace: v.id_enlace(),
+        orden: Some(orden_id.to_string()).filter(|x| !x.is_empty()),
+    }
+}
+
+fn r_de(c: &Value) -> &str {
+    c["repo"].as_str().unwrap_or("")
+}
+
+/// 13a/13b: restaurar en otra carpeta o en un .zip pide también la clave de
+/// administración (escribe donde se elija en el equipo).
+fn pide_admin_por_cuerpo(o: &orden_v2::OrdenV2) -> bool {
+    o.tipo == "restaurar" && matches!(o.cuerpo["destino"].as_str(), Some("nueva" | "zip" | "carpeta"))
 }
 
 /// Las órdenes largas (restaurar, descargar, aplicar la retención): se
@@ -1166,6 +1188,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
+        // B1 (docs/nombres-legibles.md): el nombre de un repositorio, igual en todas sus consolas.
+        "nombre_repositorio" => {
+            let m = g::nombre_repositorio(v, c)?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
         // v1.56: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
         "quitar_destino" => {
             let m = g::quitar_destino(v, c)?;
@@ -1266,22 +1294,51 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "elegir_carpetas" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Carpetas).map(hecha),
         "abrir_sesion" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Basica).map(hecha),
+        // 14bbb: probar de verdad que la contraseña (ya comparada con la guardada, con el
+        // bloqueo por intentos) abre el repositorio y sus copias con la misma. Puede tardar
+        // (destinos lejanos): en segundo plano. No se guarda la contraseña.
+        "comprobar_contrasena" => {
+            let r = repo.unwrap_or("").to_string();
+            let acc = g::acceso(v, &r)?;
+            let nombre = v.repos_v2.iter().find(|x| x.id == r).map(|x| x.nombre.clone()).unwrap_or_else(|| r.clone());
+            let destinos: Vec<(String, String)> = v.destinos.iter().map(|d| (d.id.clone(), d.nombre.clone())).collect();
+            Ok(en_segundo_plano(v, orden_id, seq, "comprobar_contrasena", "Comprobando la contraseña…", move |_| {
+                let copias = crate::comprobar_contrasena::copias_de(&r, &|id| destinos.iter().find(|(d, _)| d == id).map(|(_, n)| n.clone()));
+                let c = crate::comprobar_contrasena::comprobar(&acc, copias);
+                crate::comprobar_contrasena::anotar(&r, &c, &chrono::Local::now().to_rfc3339());
+                let res = if c.bien() { hecha(c.mensaje(&nombre)) } else { fallida(c.mensaje(&nombre)) };
+                Ok(Resultado { detalle: Some(c.detalle().to_string()), ..res })
+            }))
+        }
+        // 14m: con `desde` (`externa` o el id de una copia derivada), desde esa copia.
         "explorar" => {
-            let acc = g::acceso(v, repo.unwrap_or(""))?;
+            let r = repo.unwrap_or("");
+            let (acc, _) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
             crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Explorar(Box::new(acc))).map(hecha)
         }
         "restaurar" => {
-            let acc = g::acceso(v, repo.unwrap_or(""))?;
-            let c = c.clone();
+            let r = repo.unwrap_or("");
+            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let mut c = c.clone();
+            c["repo"] = json!(r);
+            let q = quien(v, o, orden_id);
             Ok(en_segundo_plano(v, orden_id, seq, "restaurar", "Restaurando…", move |_| {
-                crate::sesiones_v2::restaurar(&acc, &c, None).map(|_| hecha(crate::sesiones_v2::restaurado_sin_rutas(&c)))
+                crate::sesiones_v2::restaurar_con(&acc, &c, None, &q, desde_nombre.as_deref()).map(|_| hecha(crate::sesiones_v2::restaurado_sin_rutas(&c)))
             }))
         }
         "descargar" => {
-            let acc = g::acceso(v, repo.unwrap_or(""))?;
-            let c = c.clone();
+            let r = repo.unwrap_or("");
+            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let mut c = c.clone();
+            c["repo"] = json!(r);
+            let q = quien(v, o, orden_id);
             Ok(en_segundo_plano(v, orden_id, seq, "descargar", "Preparando la descarga…", move |v| {
-                let n = crate::sesiones_v2::descargar(v, &acc, &c)?;
+                let inicio = chrono::Local::now();
+                let hecho = crate::sesiones_v2::descargar(v, &acc, &c);
+                // 13d: también las descargas van al registro de restauraciones.
+                let cifras = hecho.as_ref().map(|(_, x)| *x).map_err(Clone::clone);
+                crate::restaurar_v2::anotar(r_de(&c), &c, "descarga", &q, inicio, &cifras, desde_nombre.as_deref());
+                let (n, _) = hecho?;
                 Ok(Resultado { detalle: Some(json!({ "trozos": n }).to_string()), ..hecha("Descarga lista en el relé.") })
             }))
         }
@@ -2382,6 +2439,9 @@ mod tests {
         assert!(!destructiva(&v, &orden(json!({ "zona": { "carpeta": "E:\\Resguardo", "puerto": 8002 } })), tipo));
         assert!(!destructiva(&v, &orden(json!({ "zona": { "id": "z1a2b3c", "nombre": "Disco E" } })), tipo));
         assert!(!destructiva(&v, &orden(json!({ "anadir": "pc", "zona": "z1a2b3c" })), tipo));
+        // B1: «Ordenar nombres de carpeta» (y deshacerlo) no espera: no borra nada.
+        assert!(!destructiva(&v, &orden(json!({ "mover": { "usuario": "pc", "legible": "PC 01" } })), tipo));
+        assert!(!destructiva(&v, &orden(json!({ "mover": { "usuario": "pc-01-3f2a", "deshacer": true } })), tipo));
         // Una zona mal escrita no se toma por la principal.
         assert!(crate::gestion_v2::guarda_copias(&json!({ "anadir": "pc", "zona": "../x" }), true).unwrap_err().contains("Zona no válida"));
         assert!(crate::gestion_v2::guarda_copias(&json!({ "quitar": "pc", "zona": 3 }), true).unwrap_err().contains("Zona no válida"));

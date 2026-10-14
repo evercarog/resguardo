@@ -112,6 +112,8 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     // Plan 0.8.0, F2: comentarios en las versiones y «Conservar para siempre».
     "comentario_version",
     "conservar_version",
+    // B1: el nombre de un repositorio.
+    "nombre_repositorio",
 ];
 
 /// El nombre que se enseña de una consola: el suyo o el nombre de su dirección.

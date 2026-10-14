@@ -73,6 +73,33 @@ console.log("\n· Nubes de un equipo que no es almacén y de un almacén (lib/nu
     "Este equipo tiene un agente anterior: solo olvida el permiso. El permiso sigue vivo en Dropbox: quítalo desde la web de Dropbox → Aplicaciones conectadas (ojo: desconecta todos los equipos).",
   );
   igual("sin resumen: nada", [nubesDelEquipo(null), nubesPorAnular(undefined), usosDeNube(null, "x")], [[], [], []]);
+
+  // Plan 0.8.0 (B2): con trabajos de espejo, cada uno por su nombre (también en pausa), y bloquea
+  // aunque el resumen de los destinos de antes no lo traiga (solo lleva los activos).
+  const trabajo = (id: string, nombre: string, nube: string, activo: boolean, quien: "almacen" | "equipo" = "almacen") => ({
+    id, nombre, activo, quien, que: { tipo: "todos" as const }, adonde: { tipo: "nube" as const, nube, carpeta: "mi-bucket/Resguardo" },
+    cuando: { tras_copia: true }, retencion: { modo: "nunca" as const }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" as const }, orden: 0,
+  });
+  const conTrabajos: Equipo = {
+    ...almacen,
+    resumen: {
+      admite: ["espejo_flexible", "espejo_trabajos"],
+      guarda_copias: {
+        activo: true,
+        nubes: [{ nombre: "B2 Oficina", tipo: "b2" }, { nombre: "Dropbox Oficina", tipo: "dropbox" }],
+        espejo: { hora: "02:00", destinos: [], trabajos: [trabajo("t1", "Ventas a B2", "B2 Oficina", false), trabajo("t2", "Todo a B2", "B2 Oficina", true)] },
+      },
+      espejo_equipo: { trabajos: [trabajo("t3", "Discos a Dropbox", "Dropbox Oficina", true, "equipo")] },
+    },
+  };
+  const t = nubesDelEquipo(conTrabajos);
+  igual("los espejos por su nombre, también en pausa", usosDeNube(conTrabajos, "B2 Oficina"), ["el espejo «Ventas a B2» (en pausa)", "el espejo «Todo a B2»"]);
+  igual("el espejo del propio equipo", usosDeNube(conTrabajos, "Dropbox Oficina"), ["el espejo «Discos a Dropbox» de este equipo"]);
+  igual(
+    "con trabajos, la consola no deja desconectarla (aunque el agente no diga nube_revocar)",
+    motivoNoDesconectar(conTrabajos, t[0]),
+    "La usa el espejo «Ventas a B2» (en pausa), el espejo «Todo a B2». Quítala antes de ahí para poder desconectarla.",
+  );
 }
 
 console.log(`\n${total - fallos}/${total} bien`);

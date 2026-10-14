@@ -111,7 +111,8 @@
         cliente,
         equipo: almacen,
         tipo: "retencion_almacen",
-        cuerpo: { usuario: en.usuario, repo: en.carpeta, ...(clave ? { clave } : {}), retencion: reglaParaOrden(regla), horario: { dias: [...dias], hora, ...(usaReglas ? { reglas: reglasDe(horarioAlm) } : {}) }, verificar },
+        // B1: `nombre`, para que el historial y las órdenes en espera digan cuál es (no la carpeta).
+        cuerpo: { usuario: en.usuario, repo: en.carpeta, nombre: `${repo.nombre}, de ${equipo.nombre}`, ...(clave ? { clave } : {}), retencion: reglaParaOrden(regla), horario: { dias: [...dias], hora, ...(usaReglas ? { reglas: reglasDe(horarioAlm) } : {}) }, verificar },
         secretos: { claveAdmin },
         alPaso: (t) => (paso = t),
       });

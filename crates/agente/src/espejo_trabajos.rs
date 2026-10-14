@@ -217,6 +217,7 @@ impl Trabajo {
             bloqueo: self.bloqueo,
             bloqueo_dias: self.bloqueo_dias,
             freno: self.freno.clone(),
+            antiguas: Vec::new(),
         }
     }
 
@@ -842,7 +843,12 @@ pub fn vuelta(
         Lado::Carpeta(&carpeta_destino)
     };
     let mut e = leer_estado(estado);
-    let r = crate::espejo_motor::vuelta(origen, &lado, alcance, &t.opciones(), &mut e, avance);
+    let mut op = t.opciones();
+    // B1: lo movido en el almacén («Ordenar nombres de carpeta») no hace saltar el freno.
+    if !t.es_equipo() {
+        op.antiguas = crate::nombres::antiguas(&crate::server::load(), t.zona.as_deref());
+    }
+    let r = crate::espejo_motor::vuelta(origen, &lado, alcance, &op, &mut e, avance);
     guardar_estado(estado, &e);
     r
 }

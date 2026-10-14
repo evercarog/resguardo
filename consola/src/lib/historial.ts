@@ -146,7 +146,7 @@ export function fichaTarea(tipo: TipoSuceso, h: Pick<EntradaHistorial, "duracion
   return { ficha, anterior };
 }
 
-const QUIEN_RETENCION: Record<string, string> = { equipo: "El propio equipo", almacen: "El almacén", externa: "En la copia externa" };
+const QUIEN_RETENCION: Record<string, string> = { equipo: "El propio equipo", almacen: "El almacén", externa: "En la copia derivada" };
 const POR_RETENCION: Record<string, string> = { orden: "a mano, desde una consola", ventana: "a mano, desde la ventana del equipo", automatica: "con su horario" };
 
 /** 14o: una vuelta de la retención (v1.45) como suceso, con su detalle. */

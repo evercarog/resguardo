@@ -33,7 +33,7 @@ Uso: resguardo-server [opciones]
                        (la IP más a la derecha que no es de un proxy de confianza)
   --consola DIR        Carpeta con la consola web compilada (tiene prioridad sobre la que
                        lleva dentro el binario compilado con la feature consola-integrada)
-  --max-descarga MB    Tamaño máximo de una descarga al navegador (por defecto 500)
+  --max-descarga MB    Tamaño máximo de una descarga al navegador (por defecto 2048)
   --instalador-agente ARCHIVO  Instalador del agente para «Descargar instalador listo» (por
                        defecto, el de poner-instalador-agente en la carpeta de datos o
                        agente/Resguardo-Agente-setup.exe junto al programa)
@@ -224,7 +224,8 @@ fn leer_args(args: &[String]) -> Result<Option<(Config, Modo)>, String> {
         consola: None,
         max_mb: match entorno("RESGUARDO_MAX_DESCARGA") {
             Some(v) => v.parse().map_err(|_| format!("RESGUARDO_MAX_DESCARGA no es un número de MB: {v}."))?,
-            None => 500,
+            // Plan 0.8.0 (E1): «Descargar .zip» hasta 2 GB (decidido); lo mayor, al disco del equipo.
+            None => 2048,
         },
         instalador_agente: entorno("RESGUARDO_INSTALADOR_AGENTE").map(PathBuf::from),
         dominio: entorno("RESGUARDO_DOMINIO"),
@@ -664,6 +665,8 @@ pub fn arrancar(c: Config, salida: &dyn Fn(&str)) -> Result<(), String> {
     let instalador_agente = Some(resguardo_servidor::instalador_agente::elegir(c.instalador_agente.clone(), &c.datos, junto));
     let opciones = Opciones {
         max_relevo: c.max_mb * 1024 * 1024,
+        // En el disco del servidor a la vez, al menos dos descargas de las más grandes.
+        total_relevo: (c.max_mb * 1024 * 1024).saturating_mul(2).max(2 * 1024 * 1024 * 1024),
         https: !c.sin_tls || c.proxy,
         consola: c.consola.clone(),
         instalador_agente,
@@ -673,7 +676,6 @@ pub fn arrancar(c: Config, salida: &dyn Fn(&str)) -> Result<(), String> {
         url_agentes: c.url_agentes.clone(),
         publico: c.publico,
         llaves_pruebas: llaves_pruebas(),
-        ..Default::default()
     };
     let st = preparar(&c.datos, opciones)?;
     salida(&format!("Resguardo Server {} · datos en {}", env!("CARGO_PKG_VERSION"), c.datos.display()));

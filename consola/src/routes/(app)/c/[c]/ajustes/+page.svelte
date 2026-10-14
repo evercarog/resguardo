@@ -10,7 +10,7 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { fechaLarga, plural } from "$lib/formato";
   import { mandarOrden } from "$lib/ordenar";
-  import type { CodigoRestablecimiento, Invitacion, Miembro, PersonaNotif, PrefEtiqueta, Rol, Severidad } from "$lib/tipos";
+  import type { CodigoRestablecimiento, Invitacion, Miembro, PersonaNotif, PrefEtiqueta, RecordatorioKit, Rol, Severidad } from "$lib/tipos";
   import { etiquetasDe } from "$lib/etiquetasGrupos";
   import AvisosPorEtiqueta from "$lib/componentes/AvisosPorEtiqueta.svelte";
   import { SEVERIDAD, SEVERIDADES, textoSeveridades } from "$lib/notificaciones";
@@ -117,6 +117,25 @@
   $effect(() => {
     if (actual.cliente?.id && puede.propietario(actual.cliente.rol)) untrack(() => void cargar());
   });
+
+  // 14bbb: recordar comprobar los kits (aviso informativo cada N meses; null: servidor anterior).
+  let recordatorio = $state<RecordatorioKit | null>(null);
+  let guardandoRecordatorio = $state(false);
+  $effect(() => {
+    const id = actual.cliente?.id;
+    if (id) untrack(() => api.recordatorioKit(id).then((r) => (recordatorio = r), () => (recordatorio = null)));
+  });
+  async function cambiarRecordatorio(r: RecordatorioKit) {
+    guardandoRecordatorio = true;
+    try {
+      recordatorio = await api.cambiarRecordatorioKit(actual.id, r);
+      avisar(r.activo ? `Te recordaremos comprobar los kits cada ${r.meses} ${r.meses === 1 ? "mes" : "meses"}.` : "Sin recordatorio de comprobar los kits.");
+    } catch (e) {
+      fallo(e);
+    } finally {
+      guardandoRecordatorio = false;
+    }
+  }
 
   const ROLES: Rol[] = ["propietario", "administrador", "tecnico", "lectura"];
   const DESC: Record<Rol, string> = {
@@ -294,6 +313,20 @@
         </span>
         <button class="btn btn-sm" onclick={() => (cambiarClave = true)} disabled={!equiposDelCambio(actual.equipos).length}><KeyRound size={14} />Cambiar</button>
       </div>
+      {#if recordatorio}
+        <div class="fila-ajuste">
+          <span>
+            <strong>Recordar comprobar los kits</strong>
+            <span class="faint">Un aviso informativo cuando la contraseña de un repositorio lleve tiempo sin comprobarse con «Comprobar la contraseña» (en la página del repositorio).</span>
+          </span>
+          <span class="recordatorio">
+            <label class="switch-row"><input type="checkbox" checked={recordatorio.activo} disabled={guardandoRecordatorio} onchange={(e) => cambiarRecordatorio({ ...recordatorio!, activo: (e.currentTarget as HTMLInputElement).checked })} /><span>Cada</span></label>
+            <select class="input input-sm" value={recordatorio.meses} disabled={guardandoRecordatorio || !recordatorio.activo} aria-label="Cada cuántos meses" onchange={(e) => cambiarRecordatorio({ ...recordatorio!, meses: Number((e.currentTarget as HTMLSelectElement).value) })}>
+              {#each [1, 3, 6, 12, 24] as m (m)}<option value={m}>{m} {m === 1 ? "mes" : "meses"}</option>{/each}
+            </select>
+          </span>
+        </div>
+      {/if}
     </section>
 
     <section>
@@ -698,5 +731,11 @@
     .fila {
       flex-wrap: wrap;
     }
+  }
+  .recordatorio {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
 </style>

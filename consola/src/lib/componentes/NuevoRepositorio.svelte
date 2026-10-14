@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { idRepoEnAlmacen } from "$lib/nombres";
+  import { usuarioEnAlmacen } from "$lib/direccion";
   // Crear un repositorio desde la consola (orden «crear_repositorio», con la
   // clave de administración). La contraseña del repositorio la genera este
   // navegador, se muestra en el kit de recuperación (para imprimir) y viaja
@@ -234,6 +236,13 @@
 
   function aKit() {
     generar();
+    // B1: en un almacén (un destino que ya tiene allí), su carpeta es su nombre.
+    const alm = destino?.tipo === "rest" ? equipos.find((a) => a.resumen?.guarda_copias?.activo && esDeAlmacen(destino, a)) : undefined;
+    if (alm && equipo) {
+      repoId = idRepoEnAlmacen(nombre.trim(), equipo, alm, usuarioEnAlmacen(destino?.donde));
+      paso = "kit";
+      return;
+    }
     repoId = `${nombre
       .trim()
       .toLowerCase()

@@ -10,21 +10,23 @@ import { aB64, deB64, deUtf8, iguales, utf8 } from "../lib/cripto/bytes";
 import { abrir, sellar } from "../lib/cripto/sobre";
 import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/claves";
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
-import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
+import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, pideAdminPorCuerpo, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
+import { errorCarpetaRestaurar } from "../lib/restauraciones";
 import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
 import { errorCadenas } from "../lib/cadenas";
-import { usosDeNube } from "../lib/nubesEquipo";
+import { usosDeNube, usosEspejoDeNube } from "../lib/nubesEquipo";
 import { ADMITE_EQUIPO, ADMITE_TRABAJOS, claveDestinoTrabajo, errorTrabajos, nombrePorDefecto, reduceTrabajos, trabajosDelAlmacen, trabajosDelEquipo } from "../lib/espejoTrabajos";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
-import { empezarCopia, empezarHistorial, empezarTarea } from "./progreso";
+import { empezarCopia, empezarHistorial, empezarRestauracion, empezarTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 import { observacionDelEquipo } from "./notas";
 import { pareceSecreto } from "../lib/versionesNotas";
+import { ADMITE_NOMBRES, carpetaNueva, MAX_EQUIPO, normalizar } from "../lib/nombres";
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Claves del almacén que algún equipo dueño ya añadió a su repositorio (clave_almacen). */
@@ -36,6 +38,36 @@ export const esperando = new Map<string, Set<() => void>>();
 export function despertar(sesion: string) {
   for (const f of esperando.get(sesion) ?? []) f();
   esperando.delete(sesion);
+}
+
+/** Plan 0.8.0 (13d): la entrada `restauracion` que anota el agente (sin rutas ni secretos). */
+function anotarRestauracion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana, c: Record<string, unknown>, destino: string, inicio: number, ok: boolean, mensaje: string | null) {
+  const m = c.motivo as { tipo?: string; notas?: string } | undefined;
+  const fin = Date.now();
+  estado.restauraciones.push({
+    cliente: e.cliente,
+    equipo: e.id,
+    id: `restauracion-${o.id}`,
+    hora: new Date(fin).toISOString(),
+    inicio: new Date(inicio).toISOString(),
+    duracion_s: Math.round((fin - inicio) / 1000),
+    repo: String(c.repo ?? ""),
+    version: String(c.version ?? "").slice(0, 8),
+    elementos: Array.isArray(c.rutas) ? c.rutas.length : 0,
+    archivos: ok ? 4_200 : null,
+    bytes: ok ? 1_800_000_000 : null,
+    destino,
+    cifrado: (destino === "zip" || destino === "descarga") && typeof c.contrasena_zip === "string" && c.contrasena_zip.length > 0,
+    desde: !c.desde ? "principal" : c.desde === "externa" ? "externa" : "derivada",
+    desde_nombre: null,
+    resultado: ok ? "ok" : "fallo",
+    mensaje,
+    motivo: m?.tipo && ["borrado", "dano", "prueba", "otro"].includes(m.tipo) ? { tipo: m.tipo as T.MotivoRestauracion, notas: m.notas ?? null } : null,
+    por: plana.por ?? null,
+    consola: "Esta consola",
+    orden: o.id,
+    en_el_equipo: false,
+  });
 }
 
 function resultado(e: EquipoMock, o: OrdenMock, estadoO: T.EstadoOrden, mensaje: string | null, detalle: string | null = null) {
@@ -215,7 +247,7 @@ export async function procesarOrden(o: OrdenMock) {
   if (plana.tipo === "alta") {
     autorizada = !e.verificador; // solo la primera vez
     motivo = "Este equipo ya estaba dado de alta.";
-  } else if (nivel === "admin" || PIDE_TAMBIEN_ADMIN.has(plana.tipo)) {
+  } else if (nivel === "admin" || PIDE_TAMBIEN_ADMIN.has(plana.tipo) || pideAdminPorCuerpo(plana.tipo, plana.cuerpo as Record<string, unknown>)) {
     if (!pruebaOk()) {
       autorizada = false;
       motivo = "La clave de administración no es correcta.";
@@ -414,6 +446,19 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (e.resumen) e.resumen.pausado_hasta = null;
       return resultado(e, o, "hecha", "Copias reanudadas.");
     case "crear_repositorio": {
+      // Plan 0.8.0 (B3): solo el acceso a una zona de un almacén, sin repositorio (como el agente).
+      if (c.solo_destino === true) {
+        if (!e.resumen?.admite?.includes("solo_destino")) return resultado(e, o, "fallida", "La contraseña del repositorio necesita al menos 8 caracteres.");
+        const d = c.destino as { id: string; nombre?: string; tipo?: string; donde?: string; usuario?: string; secreto?: string; ca_pem?: string; equipo_almacen?: string };
+        if (d.tipo !== "rest" || !d.equipo_almacen || !String(d.donde ?? "").startsWith("https://") || !d.usuario || !d.secreto || !String(d.ca_pem ?? "").includes("BEGIN CERTIFICATE"))
+          return resultado(e, o, "fallida", "Solo se da acceso así a una zona de un almacén (un servidor de copias con su equipo).");
+        e.resumen ??= {};
+        const nuevo: T.DestinoResumen = { id: d.id, nombre: String(d.nombre ?? ""), tipo: "rest", donde: d.donde, equipo_almacen: d.equipo_almacen };
+        const ya = (e.resumen.destinos ?? []).some((x) => x.id === d.id);
+        e.resumen.destinos = [...(e.resumen.destinos ?? []).filter((x) => x.id !== d.id), nuevo];
+        guardarConfig(e, configInicial(e), plana.seq);
+        return resultado(e, o, "hecha", ya ? `Acceso a «${nuevo.nombre}» puesto al día (sin crear ningún repositorio).` : `Este equipo ya puede guardar en «${nuevo.nombre}» (sin crear ningún repositorio).`);
+      }
       // restic init tarda: unos 8 s «en marcha», para ver el hueco «Creando…» en su lista.
       o.estado = "en_marcha";
       o.actualizada = ahora();
@@ -596,7 +641,11 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
           return resultado(e, o, "hecha", `Equipo cliente «${usuario}» añadido en la zona «${zonaPedida.nombre}».`, JSON.stringify({ sellado: aB64(sellar(deB64(plana.responder_a), utf8(JSON.stringify(acceso)))) }));
         }
         const cliente = estado.equipos.find((x) => x.id === c.anadir);
-        const usuario = (cliente?.nombre ?? "equipo").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        // Plan 0.8.0, B1: con `nombre`, la carpeta del equipo es legible (`pc-01-3f2a`).
+        const usuario =
+          typeof c.nombre === "string" && e.resumen.admite?.includes(ADMITE_NOMBRES)
+            ? `${normalizar(c.nombre, MAX_EQUIPO, "equipo")}-${randomUUID().slice(0, 4)}`
+            : (cliente?.nombre ?? "equipo").toLowerCase().replace(/[^a-z0-9]+/g, "-");
         // v1.28: `local: true`, su propio almacén (por localhost).
         const host = c.local === true && e.resumen.admite?.includes("almacen_propio") ? "localhost" : "192.168.1.20";
         const acceso = {
@@ -607,6 +656,59 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         };
         e.resumen.guarda_copias.usuarios = (e.resumen.guarda_copias.usuarios ?? 0) + 1;
         return resultado(e, o, "hecha", `Acceso creado para «${usuario}».`, JSON.stringify({ sellado: aB64(sellar(deB64(plana.responder_a), utf8(JSON.stringify(acceso)))) }));
+      }
+      // Plan 0.8.0, B1: «Ordenar nombres de carpeta» (como el agente: mueve, pone al día espejos y retención).
+      if (c.mover && typeof c.mover === "object" && e.resumen.admite?.includes(ADMITE_NOMBRES) && e.resumen.guarda_copias) {
+        const g = e.resumen.guarda_copias;
+        const m = c.mover as { usuario?: string; legible?: string; repos?: { de: string; nombre: string }[]; deshacer?: boolean };
+        const listas = [g.repositorios ?? [], ...(g.zonas ?? []).map((z) => z.repositorios ?? [])];
+        const u = listas.flat().find((x) => x.usuario === m.usuario);
+        if (!u) return resultado(e, o, "fallida", `«${m.usuario}» no es un equipo de este almacén.`);
+        g.renombres ??= [];
+        let nuevoU: string | null = null;
+        const repos: { de: string; a: string }[] = [];
+        let olvidar: string | null = null;
+        if (m.deshacer) {
+          const ult = g.renombres.find((r) => r.a === u.usuario || r.a.startsWith(`${u.usuario}/`));
+          if (!ult) return resultado(e, o, "fallida", "No hay nada que deshacer en la carpeta de ese equipo.");
+          olvidar = ult.cuando;
+          for (const r of g.renombres.filter((x) => x.cuando === ult.cuando)) {
+            if (!r.a.includes("/")) nuevoU = r.de;
+            else repos.push({ de: r.a.split("/")[1], a: r.de.split("/")[1] });
+          }
+        } else {
+          for (const r of m.repos ?? []) {
+            if (!u.repos.includes(r.de)) return resultado(e, o, "fallida", `No hay ningún repositorio «${u.usuario}/${r.de}» en este almacén.`);
+            const a = carpetaNueva(r.nombre, [...u.repos.filter((x) => x !== r.de), ...repos.map((x) => x.a)]);
+            if (a !== r.de) repos.push({ de: r.de, a });
+          }
+          if (m.legible) nuevoU = `${normalizar(m.legible, MAX_EQUIPO, "equipo")}-${randomUUID().slice(0, 4)}`;
+        }
+        if (!nuevoU && !repos.length) return resultado(e, o, "fallida", "Ya tienen esos nombres: no hay nada que mover.");
+        const antes = u.usuario;
+        const despues = nuevoU ?? antes;
+        const ruta = (x: string) => {
+          const [uu, rr] = x.includes("/") ? x.split("/") : [x, null];
+          if (uu !== antes) return x;
+          return rr == null ? despues : `${despues}/${repos.find((y) => y.de === rr)?.a ?? rr}`;
+        };
+        u.repos = u.repos.map((r) => repos.find((y) => y.de === r)?.a ?? r);
+        u.usuario = despues;
+        for (const t of g.espejo?.trabajos ?? []) {
+          if (t.que.tipo === "repos") t.que.repos = t.que.repos.map(ruta);
+          if (t.que.tipo === "equipos") t.que.equipos = t.que.equipos.map(ruta);
+          if (t.vistos) t.vistos = t.vistos.map(ruta);
+        }
+        for (const d of g.espejo?.destinos ?? []) {
+          if (d.repos) d.repos = d.repos.map(ruta);
+          if (d.vistos) d.vistos = d.vistos.map(ruta);
+        }
+        for (const r of g.retenciones ?? []) if (r.usuario === antes) [r.usuario, r.repo] = ruta(`${antes}/${r.repo}`).split("/");
+        const cuando = ahora();
+        if (olvidar) g.renombres = g.renombres.filter((r) => r.cuando !== olvidar);
+        g.renombres = [...repos.map((r) => ({ de: `${antes}/${r.de}`, a: `${despues}/${r.a}`, cuando })), ...(nuevoU ? [{ de: antes, a: despues, cuando }] : []), ...g.renombres].slice(0, 50);
+        const partes = [...(nuevoU ? [`la carpeta del equipo «${antes}» → «${despues}»`] : []), ...repos.map((r) => `«${r.de}» → «${r.a}»`)];
+        return resultado(e, o, "hecha", `Carpetas movidas en el almacén: ${partes.join(", ")}.`, JSON.stringify({ mover: { usuario: nuevoU ? { de: antes, a: despues } : null, repos } }));
       }
       if (typeof c.quitar === "string") {
         if (e.resumen.guarda_copias) e.resumen.guarda_copias.usuarios = Math.max(0, (e.resumen.guarda_copias.usuarios ?? 1) - 1);
@@ -665,7 +767,9 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         );
       }
       if (!g?.nubes?.some((n) => n.nombre === nombre)) return resultado(e, o, "fallida", `No hay ninguna nube «${nombre}» en este equipo.`);
-      const usada = g.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre);
+      // Plan 0.8.0 (B2): con trabajos de espejo (también en pausa), no se deja (como el agente).
+      if (g.espejo?.trabajos?.length && usosEspejoDeNube(e, nombre).length) return resultado(e, o, "fallida", `«${nombre}» no se desconecta: la usa ${usosEspejoDeNube(e, nombre).join(", ")}. Quítala antes de ahí y vuelve a intentarlo.`);
+      const usada =g.espejo?.destinos?.some((d) => d.tipo === "nube" && d.nube === nombre);
       if (usada && !plana.not_before) return resultado(e, o, "rechazada", "Desconectar una nube que usa el espejo es destructivo: falta la espera (not_before).");
       g.nubes = g.nubes.filter((n) => n.nombre !== nombre);
       // Como el agente: quita ese destino del espejo, y el espejo si se queda vacío.
@@ -804,6 +908,17 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (c.conservar === true) lista.push({ repo: repo.id, version, motivo, cuando: ahora(), consola: "Consola de pruebas", por: plana.por ?? null });
       e.resumen.conservadas = lista;
       return resultado(e, o, "hecha", c.conservar === true ? `Versión de «${repo.nombre}» conservada para siempre: la retención nunca la quitará.` : `La versión de «${repo.nombre}» ya no se conserva para siempre: la retención podrá quitarla.`);
+    }
+    // Plan 0.8.0, B1: el nombre de un repositorio (como el agente).
+    case "nombre_repositorio": {
+      if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      const r = e.resumen.repositorios?.find((x) => x.id === c.repo);
+      const n = String(c.nombre ?? "").trim();
+      if (!r) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      if (!n || n.length > 80) return resultado(e, o, "fallida", "Escribe un nombre para el repositorio (hasta 80 caracteres).");
+      const antes = r.nombre;
+      r.nombre = n;
+      return resultado(e, o, "hecha", `«${antes}» ahora se llama «${n}». Lo verán así todas sus consolas.`);
     }
     case "quitar_destino": {
       const d = e.resumen?.destinos?.find((x) => x.id === c.destino);
@@ -1051,6 +1166,15 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const d = e.resumen?.destinos?.find((x) => x.id === c.destino);
       if (!d) return resultado(e, o, "fallida", "Ese destino no existe en este equipo.");
       if (typeof c.donde === "string" && c.donde) d.donde = c.donde;
+      // Plan 0.8.0, B1: la carpeta nueva de algunos repositorios (el id no cambia).
+      if (c.carpetas && typeof c.carpetas === "object") {
+        if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "fallida", "Este agente aún no sabe cambiar la carpeta de un repositorio: actualízalo.");
+        for (const [id, carpeta] of Object.entries(c.carpetas as Record<string, string>)) {
+          const r = e.resumen.repositorios?.find((x) => x.id === id && x.destino === d.id);
+          if (!r || !/^[a-z0-9-]{1,64}$/.test(carpeta)) return resultado(e, o, "fallida", `Carpeta no válida para «${id}».`);
+          r.ruta = carpeta === r.id ? null : carpeta;
+        }
+      }
       return resultado(e, o, "hecha", `Destino «${d.nombre}» actualizado: todos sus repositorios se abren con los datos nuevos.`);
     }
     // --- v1.22: retención en el almacén ------------------------------------------
@@ -1130,23 +1254,44 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       return resultado(e, o, "hecha", `Espera: ${h} h.`, JSON.stringify({ espera_min_horas: h }));
     }
     case "restaurar": {
-      await espera(2500);
       const rutas = (Array.isArray(c.rutas) ? c.rutas : []).map(String);
+      const inicio = Date.now();
+      const anotar = (ok: boolean, mensaje: string | null) => anotarRestauracion(e, o, plana, c, String(c.destino ?? "junto"), inicio, ok, mensaje);
+      // Plan 0.8.0 (13a, 13b): otra carpeta (nueva o vacía) o un .zip, como el agente.
+      if (c.destino === "nueva" || c.destino === "zip") {
+        const mal = errorCarpetaRestaurar(String(c.carpeta ?? ""), /windows/i.test(e.so));
+        if (mal) {
+          anotar(false, mal);
+          return resultado(e, o, "fallida", mal);
+        }
+        if (c.destino === "nueva" && /no-vacia/i.test(String(c.carpeta))) {
+          const m = "Esa carpeta no está vacía: elige una carpeta nueva o vacía (nunca se sobrescribe nada).";
+          anotar(false, m);
+          return resultado(e, o, "fallida", m);
+        }
+        const pw = c.contrasena_zip;
+        if (pw !== undefined && (typeof pw !== "string" || pw.length < 8 || pw.length > 128)) return resultado(e, o, "fallida", "La contraseña del .zip tiene que tener entre 8 y 128 caracteres.");
+      }
       // v1.10: «en su sitio» solo dentro de las carpetas que copia el equipo (como el agente).
       if (c.destino === "original") {
         const copiadas = configInicial(e).copias.flatMap((k) => k.carpetas).map((x) => x.toLowerCase().replace(/\\/g, "/").replace(/^([a-z]):/, "/$1"));
         const fuera = rutas.find((r) => !copiadas.some((k) => r.toLowerCase() === k || r.toLowerCase().startsWith(`${k}/`)));
         if (fuera) return resultado(e, o, "fallida", `«${fuera}» no está en las carpetas que copia este equipo: restáuralo junto al original.`);
       }
-      // Una unidad entera («/C») no se restaura (como el agente).
-      if (rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
+      // Una unidad entera («/C») no se restaura junto al original ni en su sitio; en otra carpeta o en un .zip, sí (como el agente).
+      if (c.destino !== "nueva" && c.destino !== "zip" && rutas.some((r) => r.replace(/\/+$/, "").split("/").filter(Boolean).length < 2)) {
         return resultado(e, o, "fallida", "No se puede restaurar una unidad entera de una vez. Elige las carpetas de dentro.");
       }
+      // 13c: en vivo, como el agente (en esta consola: la empezó ella).
+      resultado(e, o, "en_marcha", "Restaurando…");
+      await new Promise<void>((listo) => empezarRestauracion(e.cliente, e.id, String(c.repo ?? ""), 14_000, { por: plana.por ?? null, otra_consola: false, en_el_equipo: false }, listo));
       // Como el agente: sin la carpeta (no manda rutas; la consola la enseña aparte).
+      anotar(true, null);
       return resultado(e, o, "hecha", `Restaurado (${rutas.length} elementos).`);
     }
     case "descargar":
       await prepararDescarga(e, o, plana);
+      anotarRestauracion(e, o, plana, c, "descarga", Date.now() - 3000, true, null);
       return resultado(e, o, "hecha", "Descarga lista en el relé.");
     case "abrir_sesion":
     case "explorar":
@@ -1155,6 +1300,17 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       // después no toca la orden: el servidor no puede cambiar un resultado firmado por el equipo.
       abrirSesion(e, o, plana);
       return resultado(e, o, "hecha", "Sesión abierta.");
+    }
+    case "comprobar_contrasena": {
+      // 14bbb: como el agente, la contraseña ya se comparó con la guardada (y contó como intento);
+      // aquí el motor «abre» el repositorio y sus copias con la misma.
+      const repo = e.resumen?.repositorios?.find((x) => x.id === c.repo);
+      if (!repo) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      const ahora = new Date().toISOString();
+      repo.contrasena_comprobada = { bien: ahora, ultima: ahora, resultado: "abre" };
+      const copias = [repo.externa?.destino, ...(repo.derivadas ?? []).map((d) => d.destino)].filter((x): x is string => !!x);
+      const tambien = copias.length ? ` También abre la copia en ${copias.map((n) => `«${n}»`).join(" y ")}.` : "";
+      return resultado(e, o, "hecha", `La contraseña abre «${repo.nombre}»: tu kit sirve.${tambien}`);
     }
     case "cambiar_retencion": {
       // Como el agente: valida y la guarda (v1.28: horarias, plazos y «siempre» solo si los entiende).

@@ -47,12 +47,15 @@ fn parece_ruta_local(d: &str) -> bool {
 }
 
 /// `donde` de un destino de red: servidor o bucket, sin credenciales ni rutas locales.
+/// Plan 0.8.0 (B2): una `nube` conectada puede llevarlo también (opcional): su bucket
+/// o su recurso, el que recuerda para el espejo (así no se vuelve a pedir).
 pub fn donde_valido(tipo: &str, donde: Option<&str>) -> Result<Option<String>, &'static str> {
     let d = donde.map(str::trim).filter(|d| !d.is_empty());
     match tipo {
+        "rest" | "s3" | "b2" | "sftp" | "nube" if d.is_some() => {}
         "rest" | "s3" | "b2" | "sftp" => {}
         _ if d.is_none() => return Ok(None),
-        _ => return Err("Solo los destinos de red (rest-server, S3, B2, SFTP) llevan dirección."),
+        _ => return Err("Solo los destinos de red (rest-server, S3, B2, SFTP) y las nubes llevan dirección."),
     }
     let Some(d) = d else { return Err("Falta la dirección del destino (servidor o bucket).") };
     if d.chars().count() > 300 || d.chars().any(|c| c.is_control() || c.is_whitespace()) {
@@ -68,6 +71,20 @@ pub fn donde_valido(tipo: &str, donde: Option<&str>) -> Result<Option<String>, &
         return Err("Una carpeta local no va en el catálogo: se elige al crear el repositorio en su equipo.");
     }
     Ok(Some(d.to_string()))
+}
+
+/// Plan 0.8.0 (B2, 14b): la carpeta base dentro del bucket o de la nube («Resguardo»,
+/// «copias/oficina»): relativa, con `/`, sin `..`, `\` ni `:`, hasta 200 caracteres.
+/// Vacía: ninguna.
+pub fn carpeta_valida(c: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(c) = c.map(|c| c.trim().trim_matches('/')).filter(|c| !c.is_empty()) else { return Ok(None) };
+    if c.chars().count() > 200 || c.chars().any(|x| x.is_control() || matches!(x, '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
+        return Err("La carpeta base: hasta 200 caracteres, con «/» y sin «\\», «:» ni caracteres raros.");
+    }
+    if c.split('/').any(|p| p.is_empty() || p == "." || p == ".." || p.trim() != p) {
+        return Err("La carpeta base no puede llevar «..», partes vacías ni espacios al principio o al final de cada parte.");
+    }
+    Ok(Some(c.to_string()))
 }
 
 /// Tarea 8 (docs/regla-3-2-1.md): dónde está un destino.
@@ -137,7 +154,7 @@ pub async fn listar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> 
         .iter()
         .map(|d| {
             let atributos = d.atributos.as_deref().and_then(|a| serde_json::from_str::<Value>(a).ok()).unwrap_or(Value::Null);
-            json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde, "atributos": atributos, "actualizado": fecha(d.actualizado), "por": d.por })
+            json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde, "carpeta": d.carpeta, "atributos": atributos, "actualizado": fecha(d.actualizado), "por": d.por })
         })
         .collect::<Vec<_>>())))
 }
@@ -153,6 +170,9 @@ pub struct Guardar {
     /// Tarea 8. Sin el campo, se quedan los que había; `null` o `{}`, se quitan.
     #[serde(default)]
     atributos: Option<Atributos>,
+    /// Plan 0.8.0 (B2): la carpeta base. Sin el campo (una consola anterior), se queda la que había.
+    #[serde(default)]
+    carpeta: Option<String>,
 }
 
 /// `PUT /api/clientes/{c}/destinos/{id}` (administrador): crea o sustituye.
@@ -163,6 +183,10 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
     }
     // Sin `atributos` (una consola anterior), los que ya tuviera se quedan.
     let mantener = g.get("atributos").is_none();
+    // Plan 0.8.0 (B2): lo mismo con la carpeta base y, en una nube (que una consola
+    // anterior renombra sin él), con su bucket.
+    let mantener_carpeta = g.get("carpeta").is_none();
+    let mantener_donde = g.get("donde").is_none();
     let g: Guardar = serde_json::from_value(g)
         .map_err(|_| ErrorApi::datos("Destino no válido: solo nombre, tipo, dirección y atributos (las credenciales nunca van al servidor)."))?;
     let atributos = match g.atributos {
@@ -177,11 +201,13 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
         return Err(ErrorApi::datos("Tipo de destino no válido."));
     }
     let donde = donde_valido(&g.tipo, g.donde.as_deref()).map_err(ErrorApi::datos)?;
-    let d = DestinoCatalogo {
+    let carpeta = carpeta_valida(g.carpeta.as_deref()).map_err(ErrorApi::datos)?;
+    let mut d = DestinoCatalogo {
         id: id.clone(),
         nombre: g.nombre.trim().to_string(),
         tipo: g.tipo,
         donde,
+        carpeta,
         atributos,
         actualizado: crate::almacen::ahora(),
         por: u.0.cuenta.nombre.clone(),
@@ -196,6 +222,14 @@ pub async fn guardar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Stri
     let cabe = st
         .db(move |db| {
             let previo = db.destinos_catalogo(&ctx)?.into_iter().find(|x| x.id == id);
+            if let Some(p) = previo.as_ref().filter(|p| p.tipo == d.tipo) {
+                if mantener_carpeta {
+                    d.carpeta = p.carpeta.clone();
+                }
+                if mantener_donde && d.donde.is_none() {
+                    d.donde = p.donde.clone();
+                }
+            }
             let ok = db.guardar_destino(&ctx, &d, MAX_DESTINOS, mantener)?;
             if ok {
                 db.auditar(&ctx, &actor, "guardar_destino", &id, &datos)?;
@@ -280,6 +314,16 @@ mod tests {
         assert_eq!(donde_valido("zona", None).unwrap(), None);
         assert!(donde_valido("local", Some(r"D:\Copias")).is_err(), "una carpeta local nunca va en el catálogo");
         assert!(donde_valido("b2", Some("dos palabras")).is_err());
+        // Plan 0.8.0 (B2): el bucket de una nube conectada, opcional y con las mismas reglas.
+        assert_eq!(donde_valido("nube", Some(" mi-bucket ")).unwrap().as_deref(), Some("mi-bucket"));
+        assert_eq!(donde_valido("nube", None).unwrap(), None);
+        assert!(donde_valido("nube", Some("https://ana:clave@s3.ejemplo.com/mi-bucket")).is_err());
+        assert!(donde_valido("nube", Some(r"D:\Copias")).is_err());
+        assert_eq!(carpeta_valida(Some(" /Resguardo/oficina/ ")).unwrap().as_deref(), Some("Resguardo/oficina"));
+        assert_eq!(carpeta_valida(Some("  ")).unwrap(), None);
+        for mala in ["a/../b", "a//b", r"a\b", "C:/x", "a/ b", "a\u{7}b", &"x".repeat(201)] {
+            assert!(carpeta_valida(Some(mala)).is_err(), "{mala}");
+        }
         assert!(nombre_valido("Almacén · Disco E") && !nombre_valido(" ") && !nombre_valido("a\u{7}") && !nombre_valido(&"x".repeat(81)));
     }
 

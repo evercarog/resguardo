@@ -60,7 +60,7 @@ Google, qué entra en el nivel gratuito y si la IP externa tiene coste).
   para restaurar en el navegador, el equipo sube esos archivos (cifrados de
   extremo a extremo) al servidor y el navegador los baja. Ese es el único
   tráfico grande, y tiene su cuota por cliente y mes (`relevo_mb_mes`) y un
-  tamaño máximo por descarga (`--max-descarga MB`, 500 por defecto). En un
+  tamaño máximo por descarga (`--max-descarga MB`, 2048 por defecto). En un
   servidor con poco tráfico gratis (Google), pon una cuota pequeña o restaura
   en el propio equipo.
 

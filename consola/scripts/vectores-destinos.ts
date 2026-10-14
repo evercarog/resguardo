@@ -4,6 +4,17 @@
 import type { DestinoCatalogo, DestinoResumen, Equipo } from "../src/lib/tipos";
 import {
   admiteZonas,
+  avisoRepetido,
+  bucketDeNube,
+  dondeConBase,
+  errorBucket,
+  errorSubcarpeta,
+  identidadDestino,
+  partesDonde,
+  subcarpetaDe,
+  textoUsos,
+  unirCarpeta,
+  usosDeVista,
   claveNube,
   claveZona,
   destinosDelCliente,
@@ -180,7 +191,7 @@ console.log("\n· La página de un destino (lib/fichaDestino.ts)");
   igual("todos los destinos tienen página", vs.every((v) => vistaPorClave(v.clave, eqs, [])?.clave === v.clave), true);
   igual("una clave que ya no está: ninguna", vistaPorClave("zona:otro:principal", eqs, []), null);
   igual("los repositorios de cada zona", [reposEnDestino(vD2, eqs).map((x) => x.repo.id), reposEnDestino(vE2, eqs).map((x) => x.repo.id)], [["documentos"], ["contabilidad"]]);
-  igual("lo que usa el B2: la copia externa de «documentos»", usosDeDestino(vB2, eqs, "c1").map((u) => [u.tipo, u.texto]), [["externa", "Copia externa de «documentos» (RECEPCION)"]]);
+  igual("lo que usa el B2: la copia externa de «documentos»", usosDeDestino(vB2, eqs, "c1").map((u) => [u.tipo, u.texto]), [["externa", "Copia derivada de «documentos» (RECEPCION)"]]);
   igual("la nube del almacén: le llega el espejo de la principal", usosDeDestino(vNube, eqs, "c1").map((u) => [u.tipo, u.resultado]), [["espejo_entra", "ok"]]);
   igual(
     "la zona principal sale a la nube y a la E; a la E le llega",
@@ -213,6 +224,62 @@ console.log("\n· La página de un destino (lib/fichaDestino.ts)");
     [`/c/c1/equipos/e-recepcion/copias?nueva=1&${q(vB2)}`, `/c/c1/equipos/e-recepcion?derivada=documentos&${q(vB2)}`, `/c/c1/equipos/e-recepcion?derivada=contabilidad&${q(vB2)}`],
   );
   cierto("un agente sin copias derivadas: no se ofrecen", usarEnCopia(vB2, [alm2, { ...rec2, resumen: { ...rec2.resumen!, admite: [] } }, caja], "c1").every((u) => !u.href.includes("derivada=")));
+}
+
+{
+  console.log("\n· Un destino es uno solo y recuerda su bucket (plan 0.8.0, B2: 14b y 14r)");
+  igual(
+    "las partes de una dirección",
+    [partesDonde("b2", "Mi-Bucket:Resguardo/x"), partesDonde("s3", "https://s3.ejemplo.com/mi-bucket/a"), partesDonde("s3", "mi-bucket"), partesDonde("rest", "https://192.0.2.10:8000/pc-01/"), partesDonde("sftp", "copias@nas.ejemplo.com:/srv")],
+    [
+      { servidor: "", bucket: "mi-bucket", ruta: "Resguardo/x" },
+      { servidor: "s3.ejemplo.com", bucket: "mi-bucket", ruta: "a" },
+      { servidor: "", bucket: "mi-bucket", ruta: "" },
+      { servidor: "192.0.2.10:8000", bucket: "", ruta: "pc-01" },
+      { servidor: "nas.ejemplo.com", bucket: "", ruta: "srv" },
+    ],
+  );
+  igual(
+    "la identidad: el bucket (B2), servidor y bucket (S3), máquina y puerto (servidor de copias)",
+    [identidadDestino("b2", "mi-bucket:Resguardo"), identidadDestino("b2", "MI-BUCKET"), identidadDestino("rest", "https://192.0.2.10:8000/caja/"), identidadDestino("local", "D:\\x"), identidadDestino("b2", "")],
+    ["b2|mi-bucket", "b2|mi-bucket", "rest|192.0.2.10:8000", null, null],
+  );
+  // El almacén con una nube B2 conectada, cuyo espejo ya escribe en «mi-bucket/Resguardo»; en el catálogo,
+  // «Backblaze Oficina» con ese mismo bucket, marcado Inmutable 30 días.
+  const trabajo = (id: string, nombre: string, activo: boolean) => ({
+    id, nombre, activo, quien: "almacen" as const, que: { tipo: "todos" as const }, adonde: { tipo: "nube" as const, nube: "B2 Oficina", carpeta: "mi-bucket/Resguardo" },
+    cuando: { tras_copia: true }, retencion: { modo: "nunca" as const }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" as const }, orden: 0,
+  });
+  const alm3: Equipo = {
+    ...almacen,
+    resumen: { ...almacen.resumen, guarda_copias: { ...almacen.resumen!.guarda_copias!, nubes: [{ nombre: "B2 Oficina", tipo: "b2" }, { nombre: "Dropbox Oficina", tipo: "dropbox" }], espejo: { hora: "02:00", destinos: [], trabajos: [trabajo("t1", "Todo a B2", true), trabajo("t2", "Ventas a B2", false)] } } },
+  };
+  const cat3: DestinoCatalogo[] = [{ id: "destino-b2of", nombre: "Backblaze Oficina", tipo: "b2", donde: "mi-bucket", carpeta: "Resguardo", atributos: { inmutable: "object_lock", bloqueo_dias: 30 } }];
+  const l3 = destinosDelCliente([alm3, recepcion, caja], cat3);
+  const b2v = l3.filter((v) => v.nube?.nombre === "B2 Oficina" || v.catalogo?.id === "destino-b2of");
+  igual("la nube conectada y la entrada del catálogo con el mismo bucket son una sola ficha", b2v.length, 1);
+  igual("…con el nombre de la persona y lo marcado para la regla (Inmutable 30 días)", [b2v[0].nombre, b2v[0].catalogo?.atributos?.bloqueo_dias, b2v[0].clase], ["Backblaze Oficina", 30, "nube"]);
+  igual("…y se llega a ella también por la clave del catálogo", vistaPorClave("destino-b2of", [alm3, recepcion, caja], cat3)?.clave, claveNube(almacen.id, "B2 Oficina"));
+  igual("el bucket y la carpeta base que recuerda", bucketDeNube(b2v[0]), { bucket: "mi-bucket", base: "Resguardo", deducido: false });
+  igual("sin catálogo: el bucket sale de sus espejos", bucketDeNube(destinosDelCliente([alm3], []).find((v) => v.nube?.nombre === "B2 Oficina")!), { bucket: "mi-bucket", base: null, deducido: true });
+  igual("Dropbox no lleva bucket (y no se une con nada)", bucketDeNube(l3.find((v) => v.nube?.nombre === "Dropbox Oficina")!), { bucket: null, base: null, deducido: false });
+  igual("el B2 de RECEPCION («copias-sur») es otro bucket: aparte", l3.filter((v) => v.destino?.id === "destino-1a2b3c4d").length, 1);
+  // Dos equipos con su propio destino al mismo bucket: uno solo, con los dos.
+  const otroB2: Equipo = { ...base, id: "e-otro", nombre: "PC-01", rol: "agente", resumen: { destinos: [{ id: "destino-x", nombre: "B2", tipo: "b2", donde: "copias-sur:Resguardo" }], repositorios: [{ id: "r1", nombre: "Ventas", destino: "destino-x" } as never] } };
+  const juntos = destinosDelCliente([almacen, recepcion, otroB2], []).filter((v) => v.tipo === "b2");
+  igual("dos equipos con el mismo bucket: un destino con los dos", [juntos.length, juntos[0].ids, juntos[0].equipos], [1, ["destino-1a2b3c4d", "destino-x"], ["RECEPCION", "PC-01"]]);
+  igual("aviso de repetido al crear", avisoRepetido(l3, "b2", "MI-BUCKET"), "Ya tienes este bucket como «Backblaze Oficina»: mejor usa ese que crear otro.");
+  igual("…y nada si es otro", avisoRepetido(l3, "b2", "otro-bucket"), null);
+  igual("subcarpeta de una carpeta ya guardada", [subcarpetaDe("mi-bucket/Resguardo/oficina", "mi-bucket", "Resguardo"), subcarpetaDe("mi-bucket/Resguardo", "mi-bucket", "Resguardo"), subcarpetaDe("otro/x", "mi-bucket", "Resguardo")], ["oficina", "", null]);
+  igual("la carpeta del espejo", unirCarpeta("mi-bucket", "/Resguardo/", "", "oficina"), "mi-bucket/Resguardo/oficina");
+  igual("la dirección con su carpeta base", [dondeConBase("b2", "mi-bucket", "Resguardo"), dondeConBase("b2", "mi-bucket:copias", "Resguardo"), dondeConBase("s3", "s3.ejemplo.com/mi-bucket", "Resguardo"), dondeConBase("rest", "https://nas:8000", "x"), dondeConBase("b2", "mi-bucket", null)], ["mi-bucket:Resguardo", "mi-bucket:copias/Resguardo", "s3.ejemplo.com/mi-bucket/Resguardo", "https://nas:8000", "mi-bucket"]);
+  igual("subcarpetas no válidas", [errorSubcarpeta("a/../b"), errorSubcarpeta("C:/x"), errorSubcarpeta("oficina/2026"), errorSubcarpeta("")], ["Sin «..», partes vacías ni espacios al principio o al final.", "Con «/» y sin «\\», «:» ni caracteres raros.", null, null]);
+  igual("buckets", [errorBucket("b2", "mi-bucket"), errorBucket("b2", "Mi Bucket"), errorBucket("smb", "copias"), errorBucket("smb", "a/b")], [null, "Solo letras minúsculas, cifras, puntos y guiones (de 3 a 63).", null, "Solo el nombre del recurso compartido, sin «/»."]);
+  const u = usosDeVista(b2v[0], [alm3, recepcion, caja]);
+  igual("qué usa la nube: sus espejos por su nombre (también en pausa)", u.espejos, ["«Todo a B2»", "«Ventas a B2» (en pausa)"]);
+  igual("…en una frase para el botón", textoUsos(u), "Lo usan 2 espejos: «Todo a B2» y «Ventas a B2» (en pausa).");
+  igual("un destino sin uso: nada", textoUsos(usosDeVista(l3.find((v) => v.nube?.nombre === "Dropbox Oficina")!, [alm3])), null);
+  igual("un destino con un repositorio", textoUsos(usosDeVista(juntos[0], [almacen, recepcion, otroB2])), "Lo usa el repositorio «Ventas» (PC-01).");
 }
 
 console.log(`\n${fallos ? "MAL" : "ok"}: ${total - fallos}/${total} (destinos y zonas)`);

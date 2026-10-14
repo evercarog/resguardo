@@ -9,7 +9,7 @@
   // Todo sale de los resúmenes de los equipos y del catálogo (lib/fichaDestino.ts).
   import { untrack } from "svelte";
   import { page } from "$app/state";
-  import { ArrowRight, Cloud, Database, HardDrive, Lock, Network, Pencil, Server, ShieldCheck, Trash2, TriangleAlert, Usb, CircleCheck, CircleAlert, Activity, Plus, StickyNote } from "@lucide/svelte";
+  import { ArrowRight, Cloud, Database, HardDrive, Lock, Network, Pencil, Server, ShieldCheck, ShieldHalf, Trash2, TriangleAlert, Usb, CircleCheck, CircleAlert, Activity, Plus, StickyNote } from "@lucide/svelte";
   import { actual, cargarCliente, puede, reloj } from "$lib/estado.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
@@ -19,12 +19,12 @@
   import { TEXTO_TIPO } from "$lib/destinos";
   import { nombreTipoNube } from "$lib/espejo";
   import { admiteEspejoEquipo, admiteTrabajos, hrefEspejos } from "$lib/espejoTrabajos";
-  import { destinoQuitable } from "$lib/datosEquipo";
-  import { actividadDestino, reposEnDestino, usarEnCopia, usosDeDestino, vistaPorClave } from "$lib/fichaDestino";
+  import { actividadDestino, espejosEnDestino, reposEnDestino, tonoDe, usarEnCopia, usosDeDestino, vistaPorClave } from "$lib/fichaDestino";
+  import QuitarDestino from "$lib/componentes/QuitarDestino.svelte";
   import { marcarDesdeVista, textoEntorno, type MarcarDestino } from "$lib/regla321";
   import { clasificar, estadoConexion, TEXTO_COMO_INMUTABLE, TEXTO_TIPO as TIPO_DESTINO } from "$lib/tipoDestino";
   import TipoDestino from "$lib/componentes/TipoDestino.svelte";
-  import type { DestinoResumen, Equipo } from "$lib/tipos";
+  import type { DestinoResumen } from "$lib/tipos";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
@@ -32,7 +32,6 @@
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
-  import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
   import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
@@ -61,7 +60,19 @@
       return { e, r, versiones: nVersiones(r, inf), tam: bytesRepo(r, inf), estado: estadoRepo(r, inf, e.resumen?.copias ?? [], reloj.ahora) };
     }),
   );
-  const protegido = $derived(filas.reduce((n, x) => n + (x.tam ?? 0), 0));
+  // Plan 0.8.0 (B2, 14r): los espejos que llegan aquí, por su nombre, con los repositorios que guarda cada uno
+  // (su tamaño es el del repositorio en el almacén: el espejo tiene los mismos archivos).
+  const espejos = $derived(
+    v
+      ? espejosEnDestino(v, actual.equipos, c).map((x) => ({
+          ...x,
+          filas: x.repos.map((r) => ({ ...r, tam: r.repo && r.equipo ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null })),
+        }))
+      : [],
+  );
+  /** Los repositorios distintos que llegan por espejo (uno que llega por dos espejos cuenta una vez). */
+  const porEspejo = $derived([...new Map(espejos.flatMap((x) => x.filas.map((f) => [`${x.hace.id}:${f.valor}`, f] as const))).values()]);
+  const protegido = $derived(filas.reduce((n, x) => n + (x.tam ?? 0), 0) + porEspejo.reduce((n, x) => n + (x.tam ?? 0), 0));
   const usos = $derived(v ? usosDeDestino(v, actual.equipos, c) : []);
   const posibles = $derived(v ? usarEnCopia(v, actual.equipos, c) : []);
   /** Plan 0.7.26 (bloque 4): «Usar en un espejo»: la página de espejos de quien lo haría, con este destino ya elegido. */
@@ -88,7 +99,7 @@
   // El espacio libre: el de la zona o el que dio el espejo de esa nube.
   const espacio = $derived.by(() => {
     if (v?.zona?.espacio) return v.zona.espacio;
-    if (v?.nube) return v.nube.equipo.resumen?.guarda_copias?.espejo?.destinos?.find((x) => x.tipo === "nube" && x.nube === v!.nube!.nombre)?.espacio ?? null;
+    if (v?.nube) return espejos.find((x) => x.trabajo.espacio)?.trabajo.espacio ?? v.nube.equipo.resumen?.guarda_copias?.espejo?.destinos?.find((x) => x.tipo === "nube" && x.nube === v!.nube!.nombre)?.espacio ?? null;
     return null;
   });
   const equiposQueLoUsan = $derived(actual.equipos.filter((e) => v?.equipos.includes(e.nombre)));
@@ -105,9 +116,6 @@
   const Icono = $derived(v?.zona ? Server : v?.nube ? Cloud : d?.tipo === "local" ? (d.extraible ? Usb : d.red ? Network : HardDrive) : ["b2", "s3", "nube"].includes(v?.tipo ?? "") ? Cloud : v?.tipo === "rest" || v?.tipo === "sftp" ? Server : Database);
   const mismoEquipo = $derived(d?.tipo === "local" && !d.red && !d.extraible);
 
-  // «Quitar este destino» (v1.56; con la clave de administración desde la v1.59): en cada equipo que lo tiene y ya no lo usa.
-  const quitables = $derived(v && v.clase === "equipo" && !suyos.length ? actual.equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((x) => v!.ids.includes(x.id) && destinoQuitable(e, x.id)).map((x) => ({ equipo: e, destino: x }))) : []);
-  let quitar = $state<{ equipo: Equipo; destino: DestinoResumen } | null>(null);
   let renombrar = $state(false);
   let marcar = $state(false);
   let notas = $state(false);
@@ -144,8 +152,8 @@
     </CabeceraPagina>
 
     <div class="cifras" role="list" aria-label="Cifras del destino">
-      <Cifra icono={Database} etiqueta="Repositorios" valor={numero(filas.length)} sub={filas.length ? `de ${plural(new Set(filas.map((x) => x.e.id)).size, "equipo", "equipos")}` : v.clase === "nube" ? "para el espejo del almacén" : "ninguno todavía"} />
-      <Cifra icono={HardDrive} etiqueta="Protegido" valor={protegido ? bytes(protegido) : "—"} sub={filas.length ? "lo que ocupan sus versiones" : "sin repositorios"} />
+      <Cifra icono={Database} etiqueta="Repositorios" valor={numero(filas.length + porEspejo.length)} sub={porEspejo.length ? `${plural(porEspejo.length, "llega", "llegan")} por ${plural(espejos.length, "espejo", "espejos")}` : filas.length ? `de ${plural(new Set(filas.map((x) => x.e.id)).size, "equipo", "equipos")}` : v.clase === "nube" ? "para el espejo del almacén" : "ninguno todavía"} />
+      <Cifra icono={HardDrive} etiqueta="Protegido" valor={protegido ? bytes(protegido) : "—"} sub={filas.length || porEspejo.length ? "lo que ocupan sus versiones" : "sin repositorios"} />
       <Cifra icono={Server} etiqueta="Espacio libre" valor={espacio ? bytes(espacio.libre) : "—"} de={espacio ? `de ${bytes(espacio.total)}` : undefined} sub={espacio ? (espacio.leido ? `medido ${relativo(espacio.leido, reloj.ahora)}` : "lo último que dijo") : v.clase === "nube" || ["b2", "s3"].includes(v.tipo) ? "el proveedor no dice un límite" : "no se sabe todavía"} />
       <Cifra icono={Activity} etiqueta="Lo último" valor={actividad[0] ? relativo(actividad[0].cuando, reloj.ahora) : "—"} sub={actividad[0] ? actividad[0].texto : "nada todavía"} mal={actividad[0]?.tono === "bad"} />
     </div>
@@ -171,7 +179,7 @@
         </dl>
         <div class="chips">
           {#if v.zona}
-            <span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>
+            <span class="badge badge-sm tone-neutral" use:tip={"Los equipos pueden añadir copias, pero no borrarlas. No es inmutable: no protege de quien sea administrador del almacén ni de su retención."}><ShieldHalf size={11} />Solo añadir<Ayuda id="solo-anadir" /></span>
             {#if v.zona.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}
             {#if v.zona.escucha === false}<span class="badge badge-sm tone-warn"><TriangleAlert size={11} />Sin responder</span>{/if}
           {/if}
@@ -189,12 +197,16 @@
             <h2 class="section-title" id="t-regla"><ShieldCheck size={16} />Tipo y marcas <Ayuda id="tipo-destino" /></h2>
             {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = true)}>Cambiar</button>{/if}
           </div>
-          <p class="tipo-linea"><TipoDestino variante="completa" tipo={clase.tipo} inmutable={clase.inmutable} aislado={clase.aislado} bloqueoDias={clase.bloqueoDias} porPersona={clase.tipoPorPersona || clase.marcasPorPersona} /></p>
+          <p class="tipo-linea"><TipoDestino variante="completa" tipo={clase.tipo} inmutable={clase.inmutable} soloAnadir={clase.soloAnadir} aislado={clase.aislado} bloqueoDias={clase.bloqueoDias} porPersona={clase.tipoPorPersona || clase.marcasPorPersona} /></p>
           <dl class="datos">
             <dt>Tipo</dt>
             <dd>{TIPO_DESTINO[clase.tipo]} <span class="faint">· {quien(clase.tipo !== deducida?.tipo)}</span></dd>
             <dt>Inmutable</dt>
             <dd>{clase.inmutable ? `${TEXTO_COMO_INMUTABLE[clase.como as "solo_anadir"] ?? "Sí"}${clase.bloqueoDias ? ` · ${clase.bloqueoDias} días` : ""}` : "No"} <span class="faint">· {quien(clase.inmutable !== deducida?.inmutable || clase.como !== deducida?.como || clase.bloqueoDias !== deducida?.bloqueoDias)}</span></dd>
+            {#if clase.soloAnadir}
+              <dt>Solo añadir</dt>
+              <dd>Sí <span class="faint">· los equipos no pueden borrar; no cuenta como inmutable</span> <Ayuda id="solo-anadir" /></dd>
+            {/if}
             <dt>Aislado</dt>
             <dd>
               {#if clase.aislado && conexion}
@@ -209,6 +221,45 @@
         </section>
       {/if}
     </div>
+
+    {#if espejos.length}
+      <section aria-labelledby="t-espejos">
+        <div class="section-head"><h2 id="t-espejos">Lo que guarda por espejo <span class="count">· {espejos.length}</span> <Ayuda id="espejo" /></h2></div>
+        <div class="espejos">
+          {#each espejos as x (x.hace.id + x.trabajo.id)}
+            {@const total = x.filas.reduce((n, f) => n + (f.tam ?? 0), 0)}
+            <div class="card p-0">
+              <a class="fila-d cab-espejo" href={x.href}>
+                <Cloud size={16} class="ic" />
+                <span class="fd-texto"><strong>{x.nombre}</strong><span class="faint">Lo hace {x.hace.nombre}{x.quien === "equipo" ? " (sus discos)" : ""} · {plural(x.filas.length, "repositorio", "repositorios")}{total ? ` · ${bytes(total)}` : ""}{#if x.trabajo.ultima}{" · "}última subida <Tiempo iso={x.trabajo.ultima} />{/if}</span></span>
+                <Chip pequeno tono={x.estado === "error" ? "bad" : x.estado === "ok" ? "ok" : x.estado === "pausado" ? "paused" : "neutral"} texto={x.estado === "error" ? "Falló" : x.estado === "ok" ? "Al día" : x.estado === "pausado" ? "En pausa" : "Todavía no"} />
+                <ArrowRight size={14} class="flecha" />
+              </a>
+              {#if x.estado === "error" && x.trabajo.resultado}<p class="faint mal-espejo">{x.trabajo.resultado.replace(/^ERROR:\s*/, "")}</p>{/if}
+              {#if x.filas.length}
+                <ul class="lista-d dentro">
+                  {#each x.filas as f (f.valor)}
+                    <li>
+                      {#if f.equipo && f.repo}
+                        <a class="fila-d" href="/c/{c}/equipos/{f.equipo.id}/repositorios/{encodeURIComponent(f.repo.id)}">
+                          <Database size={14} class="ic" />
+                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)} (como en el almacén)` : ""}</span></span>
+                          <ArrowRight size={14} class="flecha" />
+                        </a>
+                      {:else}
+                        <span class="fila-d"><Database size={14} class="ic" /><span class="fd-texto"><strong class="mono">{f.nombre}</strong><span class="faint">De un equipo que no está en esta consola</span></span></span>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              {:else}
+                <p class="faint vacio-linea dentro-p">{x.trabajo.que.tipo === "todos" ? "Copiará todo lo que guarde el almacén; todavía no hay nada." : "Ninguno de los repositorios elegidos está todavía en el almacén."}</p>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
 
     <section aria-labelledby="t-repos">
       <div class="section-head"><h2 id="t-repos">Repositorios aquí <span class="count">· {filas.length}</span> <Ayuda id="repositorio" /></h2></div>
@@ -228,7 +279,7 @@
           </ul>
         </div>
       {:else}
-        <p class="faint vacio-linea">{v.clase === "nube" ? "Una nube conectada en un almacén no guarda repositorios propios: recibe el espejo o copias derivadas." : "Ningún repositorio se guarda aquí todavía."}</p>
+        <p class="faint vacio-linea">{espejos.length ? "Ninguno propio: lo que guarda llega por espejo (arriba)." : v.clase === "nube" ? "Una nube conectada en un almacén no guarda repositorios propios: recibe el espejo o copias derivadas." : "Ningún repositorio se guarda aquí todavía."}</p>
       {/if}
     </section>
 
@@ -241,8 +292,8 @@
               <li>
                 <a class="fila-d" href={u.href}>
                   {#if u.tipo === "espejo_sale"}<ArrowRight size={16} class="ic" />{:else}<Cloud size={16} class="ic" />{/if}
-                  <span class="fd-texto"><strong>{u.texto}</strong><span class="faint">{u.tipo === "externa" ? "Copia externa: llega aquí" : u.tipo === "derivada" ? "Repositorio a partir de otro: llega aquí" : u.tipo === "espejo_entra" ? "El almacén refleja aquí lo que guarda" : "Lo que guarda esta zona sale a otro sitio"}{#if u.ultima}{" · "}<Tiempo iso={u.ultima} />{/if}</span></span>
-                  {#if u.resultado}<Chip pequeno tono={u.resultado === "fallo" ? "bad" : u.resultado === "aviso" ? "warn" : "ok"} texto={u.resultado === "fallo" ? "Falló" : u.resultado === "aviso" ? "Con avisos" : "Al día"} />{/if}
+                  <span class="fd-texto"><strong>{u.texto}</strong><span class="faint">{u.tipo === "externa" ? "Copia derivada: llega aquí" : u.tipo === "derivada" ? "Copia derivada: llega aquí" : u.tipo === "espejo_entra" ? "El almacén refleja aquí lo que guarda" : "Lo que guarda esta zona sale a otro sitio"}{#if u.ultima}{" · "}<Tiempo iso={u.ultima} />{/if}</span></span>
+                  {#if u.resultado}{@const tono = tonoDe(u.resultado)}<Chip pequeno {tono} texto={tono === "bad" ? "Falló" : tono === "warn" ? "Con avisos" : "Al día"} />{/if}
                   <ArrowRight size={14} class="flecha" />
                 </a>
               </li>
@@ -304,14 +355,13 @@
       {/if}
     </section>
 
-    {#if administra && quitables.length}
+    {#if administra && !v.zona}
+      <!-- Plan 0.8.0 (B2): «Quitar» o «Desconectar» cuando nadie lo usa; si no, qué lo usa. -->
       <section class="card p peligro" aria-labelledby="t-quitar">
-        <h2 class="section-title" id="t-quitar">Quitar este destino</h2>
-        <p class="faint">Ya no lo usa nada. El equipo olvida el destino y sus credenciales; lo guardado allí se queda. Pide la clave de administración.</p>
+        <h2 class="section-title" id="t-quitar">{v.nube ? "Desconectar o quitar" : "Quitar este destino"}</h2>
+        <p class="faint">{v.clase === "suelto" ? "Solo sale de la lista: no toca ningún equipo ni lo que haya en el bucket." : "El equipo olvida el destino y sus credenciales; lo guardado allí se queda. Pide la clave de administración."}</p>
         <div class="chips">
-          {#each quitables as q (q.equipo.id + q.destino.id)}
-            <button class="btn btn-sm quitar-dest" onclick={() => (quitar = q)}><Trash2 size={13} />{quitables.length > 1 ? `Quitar de ${q.equipo.nombre}` : "Quitar este destino"}</button>
-          {/each}
+          <QuitarDestino cliente={actual.cliente} {v} equipos={actual.equipos} variante="pagina" alCambiar={recargar} />
         </div>
       </section>
     {/if}
@@ -321,21 +371,6 @@
 {#if renombrar && v && actual.id}<RenombrarDestino cliente={actual.id} destino={v} onclose={() => (renombrar = false)} />{/if}
 {#if marcar && marca && actual.id}<AtributosDestino cliente={actual.id} destino={marca} onclose={() => (marcar = false)} />{/if}
 {#if notas && d && v}<NotasDialogo tipo="destino" objeto={d.id} nombre={v.nombre} onclose={() => (notas = false)} />{/if}
-{#if quitar && actual.cliente}
-  <OrdenDialog
-    cliente={actual.cliente}
-    equipo={quitar.equipo}
-    tipo="quitar_destino"
-    cuerpo={{ destino: quitar.destino.id }}
-    titulo="Quitar este destino"
-    descripcion={quitar.destino.tipo === "local"
-      ? `${quitar.equipo.nombre} olvidará «${quitar.destino.nombre}». No se borra nada de su carpeta: si aún tiene copias guardadas, te lo dirá y seguirán ahí.`
-      : `${quitar.equipo.nombre} olvidará «${quitar.destino.nombre}» y sus credenciales. Lo guardado allí se queda.`}
-    accion="Quitar el destino"
-    onclose={() => ((quitar = null), recargar())}
-    alTerminar={recargar}
-  />
-{/if}
 
 <style>
   .dos {
@@ -477,8 +512,30 @@
     margin: 0;
     font-size: var(--fs-sm);
   }
-  .quitar-dest {
+  /* Plan 0.8.0 (B2, 14r): lo que guarda por espejo, una tarjeta por espejo. */
+  .espejos {
+    display: grid;
+    gap: var(--sp-3);
+  }
+  .cab-espejo {
+    border-bottom: 1px solid var(--border);
+  }
+  .mal-espejo {
+    margin: 0;
+    padding: 8px 16px;
+    font-size: var(--fs-sm);
     color: var(--bad);
+    border-bottom: 1px solid var(--border);
+  }
+  .lista-d.dentro .fila-d {
+    padding-left: 40px;
+    min-height: 40px;
+  }
+  .dentro-p {
+    padding: 10px 16px;
+  }
+  .mono {
+    font-family: var(--mono, ui-monospace, monospace);
   }
   @media (max-width: 640px) {
     .datos {

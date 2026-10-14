@@ -143,14 +143,28 @@ pub fn quien_la_usa(nombre: &str) -> Option<String> {
     }
     for r in crate::agent::load_config().repos.iter() {
         if r.offsite.as_ref().is_some_and(|o| o.dest.nube.as_deref() == Some(nombre)) {
-            usos.push(format!("la copia externa de «{}»", r.name));
+            usos.push(format!("la copia derivada de cada día de «{}»", r.name));
         }
         if r.derived.iter().any(|d| d.offsite.dest.nube.as_deref() == Some(nombre)) {
             usos.push(format!("una copia derivada de «{}»", r.name));
         }
     }
     if crate::nube::usa_espejo(nombre) {
-        usos.push("el espejo de este almacén".into());
+        // Plan 0.8.0 (B2): con trabajos, cada espejo por su nombre (también los pausados).
+        let nombres: Vec<String> = crate::server::load()
+            .espejo
+            .map(|e| {
+                e.trabajos
+                    .iter()
+                    .filter(|t| !t.es_equipo() && t.adonde.tipo == "nube" && t.adonde.nube.as_deref() == Some(nombre))
+                    .map(|t| t.nombre.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if nombres.is_empty() {
+            usos.push("el espejo de este almacén".into());
+        }
+        usos.extend(nombres.into_iter().map(|n| format!("el espejo «{n}» de este almacén")));
     }
     // Plan 0.7.26 (bloque 4): un espejo que hace el propio equipo.
     if let Some(t) = crate::espejo_trabajos::cargar_equipo().trabajos.iter().find(|t| t.adonde.tipo == "nube" && t.adonde.nube.as_deref() == Some(nombre)) {
@@ -701,6 +715,18 @@ mod tests {
         let e = desconectar("Dropbox Sur", &f.urls).unwrap_err();
         assert!(e.contains("la usa el espejo de este almacén"), "{e}");
         assert!(crate::nube::buscar("Dropbox Sur").is_some() && f.recibido.lock().unwrap().is_empty());
+        // Plan 0.8.0 (B2): con trabajos, un espejo en pausa también la usa, y se dice cuál.
+        let t: crate::espejo_trabajos::Trabajo = serde_json::from_value(serde_json::json!({
+            "id": "t0a1b2c3d4e", "nombre": "Ventas a Dropbox", "activo": false, "quien": "almacen", "que": { "tipo": "todos" },
+            "adonde": { "tipo": "nube", "nube": "Dropbox Sur", "carpeta": "Sur" }, "cuando": { "tras_copia": true },
+            "retencion": { "modo": "nunca" }, "freno": { "pct": 10, "min_archivos": 100, "min_faltan": 20, "accion": "confirmar" }, "orden": 0
+        }))
+        .unwrap();
+        conf.espejo = Some(crate::espejo::Espejo { hora: "02:00".into(), trabajos: vec![t], ..Default::default() });
+        crate::server::save(&conf).unwrap();
+        let e = desconectar("Dropbox Sur", &f.urls).unwrap_err();
+        assert!(e.contains("el espejo «Ventas a Dropbox» de este almacén"), "{e}");
+        assert!(crate::nube::buscar("Dropbox Sur").is_some());
         conf.espejo = None;
         crate::server::save(&conf).unwrap();
 

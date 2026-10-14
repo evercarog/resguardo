@@ -111,7 +111,7 @@
   // de qué repositorio es la contraseña: la del origen, no la de la copia.
   const ayudaRepo = $derived(
     repo && ["cambiar_copia_externa", "cambiar_derivada", "quitar_derivada"].includes(tipo)
-      ? `Es la de «${repo.nombre}» (la de su kit), no la de su copia externa o derivada. Va cifrada solo para el equipo, que la comprueba.`
+      ? `Es la de «${repo.nombre}» (la de su kit), no la de su copia derivada. Va cifrada solo para el equipo, que la comprueba.`
       : "Está en el kit de recuperación. Va cifrada solo para el equipo, que la comprueba.",
   );
   // 14oo: un equipo que guarda las órdenes en espera comprueba las claves al recibirla.

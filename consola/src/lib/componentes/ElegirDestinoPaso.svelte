@@ -18,7 +18,8 @@
   // todos los destinos del cliente, cada uno con si se puede usar desde aquí y,
   // si no, por qué y qué hacer (conectar la nube en ese equipo, actualizar su
   // agente u otro tipo de paso). Nunca se esconde uno sin decir por qué.
-  import { Cloud, Database, FolderPlus, HardDrive, Plus, Server } from "@lucide/svelte";
+  import { Cloud, Database, FolderPlus, HardDrive, KeyRound, Plus, Server } from "@lucide/svelte";
+  import type { ZonaVista } from "$lib/destinos";
   import { untrack } from "svelte";
   import type { Equipo } from "$lib/tipos";
   import TipoDestino from "./TipoDestino.svelte";
@@ -32,8 +33,10 @@
     alConectar?: (equipo: Equipo, nube: string, tipoNube: string) => void;
     /** «Usar … en su lugar» (otro tipo de paso). */
     alOtroPaso?: (uso: string) => void;
+    /** Plan 0.8.0 (B3): «Dar acceso a … en este almacén» (sin crear repositorio). */
+    alDarAcceso?: (equipo: Equipo, zona: ZonaVista) => void;
   }
-  let { id, etiqueta, opciones, value = $bindable(), alConectar, alOtroPaso }: Props = $props();
+  let { id, etiqueta, opciones, value = $bindable(), alConectar, alOtroPaso, alDarAcceso }: Props = $props();
   const ICONO = { zona: Server, nube: Cloud, equipo: Database, suelto: Database, carpeta: HardDrive, nuevo: Plus } as const;
 
   // 14ff: «Un destino nuevo…» siempre a la vista (bajo la lista, fuera de lo que
@@ -78,6 +81,9 @@
     {#if !o.uso.ok && o.uso.accion?.tipo === "conectar_nube" && alConectar}
       {@const a = o.uso.accion}
       <button type="button" class="btn btn-sm" onclick={() => alConectar(a.equipo, a.nube, a.tipoNube)}><Cloud size={13} />{a.texto ?? `Conectar en ${a.equipo.nombre}`}</button>
+    {:else if !o.uso.ok && o.uso.accion?.tipo === "dar_acceso" && alDarAcceso}
+      {@const a = o.uso.accion}
+      <button type="button" class="btn btn-sm" onclick={() => alDarAcceso(a.equipo, a.zona)}><KeyRound size={13} />{a.texto}</button>
     {:else if !o.uso.ok && o.uso.accion?.tipo === "otro_paso" && alOtroPaso}
       {@const a = o.uso.accion}
       <button type="button" class="btn btn-sm btn-ghost" onclick={() => alOtroPaso(a.uso)}>{a.uso === "derivada" ? "Repositorio nuevo a partir de esta" : a.uso === "espejo" ? "Espejo" : "Copia nueva"}</button>

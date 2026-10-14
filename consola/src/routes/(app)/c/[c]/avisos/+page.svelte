@@ -76,7 +76,7 @@
     // v1.29: los crea el servidor a partir de lo que cuentan los equipos.
     verificacion_fallida: { texto: "Verificación fallida", tono: "bad", icono: ShieldAlert, que: "Puede haber datos dañados en el repositorio: ábrelo, mira qué dijo y verifícalo otra vez.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     // 14nn y 14tt: también las copias derivadas; si su destino ya no existe, en el equipo se quita o se vuelve a crear.
-    externa_fallida: { texto: "Copia externa o derivada fallida", tono: "warn", icono: CircleAlert, que: "Revisa su destino (encendido, red, credenciales o espacio). Si ya no existe, en el equipo: «Quitar esta copia» o «Volver a crearla desde cero».", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
+    externa_fallida: { texto: "Copia derivada fallida", tono: "warn", icono: CircleAlert, que: "Revisa su destino (encendido, red, credenciales o espacio). Si ya no existe, en el equipo: «Quitar esta copia» o «Volver a crearla desde cero».", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     prueba_fallida: { texto: "Prueba de restauración fallida", tono: "warn", icono: TriangleAlert, que: "La copia no se pudo restaurar en la prueba: mira qué dijo y pruébala otra vez.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     espejo_fallido: { texto: "Espejo fallido", tono: "warn", icono: TriangleAlert, que: "El espejo del almacén no terminó: revisa su disco o su nube.", accion: (e) => (e ? { texto: "Ver el almacén", href: `/c/${c}/equipos/${e}` } : null) },
     retencion_fallida: { texto: "Retención del almacén fallida", tono: "warn", icono: TriangleAlert, que: "No se quitaron versiones antiguas: el almacén sigue llenándose. Mira qué dijo y aplícala otra vez.", accion: (e) => (e ? { texto: "Ver el almacén", href: `/c/${c}/equipos/${e}` } : null) },
@@ -94,6 +94,8 @@
     disco_lleno: { texto: "Disco casi lleno", tono: "warn", icono: HardDrive, que: "En la ficha del equipo ves cuánto queda en cada disco.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     sin_soporte_pronto: { texto: "Sistema sin soporte pronto", tono: "neutral", icono: ShieldOff, que: "En la ficha del equipo ves su sistema exacto.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     sin_soporte: { texto: "Sistema sin soporte", tono: "warn", icono: ShieldOff, que: "Sin actualizaciones de seguridad, el equipo es más fácil de atacar.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
+    // 14bbb: recordatorio (informativo) de comprobar que el kit de un repositorio sigue sirviendo.
+    kit_por_comprobar: { texto: "Kit por comprobar", tono: "neutral", icono: KeyRound, que: "En la página del repositorio, «Comprobar la contraseña»: el equipo dice si la del kit lo abre de verdad.", accion: (e) => (e ? { texto: "Ver sus repositorios", href: `/c/${c}/equipos/${e}` } : null) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };

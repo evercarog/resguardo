@@ -10,7 +10,7 @@
 import type { CopiaConfig, CuandoDerivada, DerivadaResumen, DestinoCatalogo, Equipo, FiltroVersiones, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { almacenDe } from "./retencion";
-import { almacenesDe, claveNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
+import { almacenesDe, catalogoDeRed, claveNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { etiquetaCarpeta, nombreTipoNube, TIPOS_NUBE } from "./espejo";
 import { horarioEnFrase } from "./formato";
 
@@ -28,6 +28,8 @@ export const ADMITE = {
   espejoZonas: "espejo_zonas",
   /** Tarea 4a completa: `crear_repositorio` en una nube conectada en el equipo (copiar las carpetas directamente). */
   repoEnNube: "repo_en_nube",
+  /** Plan 0.8.0 (B3): `crear_repositorio { solo_destino }`, el acceso a una zona de un almacén sin repositorio. */
+  soloDestino: "solo_destino",
 } as const;
 export const admite = (e: Pick<Equipo, "resumen"> | null | undefined, que: string) => !!e?.resumen?.admite?.includes(que);
 
@@ -180,8 +182,10 @@ export interface PasoCadena {
   destinoId?: string;
   /** Para la tarea 8: «zona», «rest», «b2», «s3», «local», «nube», «carpeta» (espejo a una carpeta del almacén)… */
   tipoDestino?: string;
-  /** Inmutable (bloqueo de objetos o solo añadir); null: no se sabe. */
+  /** Inmutable (bloqueo de objetos); null: no se sabe. 14z: «solo añadir» va aparte. */
   inmutable?: boolean | null;
+  /** 14z: de solo añadir (los equipos no pueden borrar). Un dato: no es inmutable. */
+  soloAnadir?: boolean;
   /** Aviso: no es inmutable (Dropbox, Drive, SMB, SFTP, WebDAV). */
   noInmutable?: string;
   /** Queda fuera del alcance de la retención del original (un espejo sin retención o una copia con la suya). */
@@ -202,16 +206,17 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
   const destinos = e.resumen?.destinos ?? [];
   if (r.externa) {
     const d = destinos.find((x) => x.id === r.externa!.destino_id) ?? destinos.find((x) => x.nombre === r.externa!.destino);
-    const inmutable = r.externa.bloqueo_dias ? true : r.externa.solo_anadir ? true : null;
+    const inmutable = r.externa.bloqueo_dias ? true : null;
     pasos.push({
       clase: "derivada",
       texto: r.externa.destino,
-      detalle: `copia externa · cada día a las ${r.externa.hora}`,
+      detalle: `copia derivada · cada día a las ${r.externa.hora}`,
       despues: false,
       nivel,
       destinoId: d?.id ?? r.externa.destino_id ?? undefined,
       tipoDestino: d?.tipo,
       inmutable,
+      soloAnadir: !!r.externa.solo_anadir,
       fueraRetencion: true,
     });
   }
@@ -219,7 +224,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
     const d = destinos.find((y) => y.id === x.destino_id);
     const tipo = d?.tipo === "nube" ? tipoNube(e, d.nube) : undefined;
     const filtro = filtroEnFrase(x.filtro);
-    const inmutable = x.bloqueo_dias ? true : x.solo_anadir ? true : tipo ? (TIPOS_NUBE[tipo]?.inmutable ?? null) || null : null;
+    const inmutable = x.bloqueo_dias ? true : tipo ? (TIPOS_NUBE[tipo]?.inmutable ?? null) || null : null;
     pasos.push({
       clase: "derivada",
       texto: x.destino ?? "otro destino",
@@ -229,6 +234,7 @@ function pasosDerivadas(e: Equipo, r: RepositorioResumen, nivel: number): PasoCa
       destinoId: x.destino_id ?? undefined,
       tipoDestino: d?.tipo,
       inmutable,
+      soloAnadir: !!x.solo_anadir,
       noInmutable: tipo && TIPOS_NUBE[tipo] && !TIPOS_NUBE[tipo].inmutable ? NO_INMUTABLE(TIPOS_NUBE[tipo].nombre) : undefined,
       fueraRetencion: true,
     });
@@ -293,7 +299,8 @@ export function lineaCadena(e: Equipo, copiaId: string, equipos: Equipo[]): Paso
       nivel,
       destinoId: z ? `zona:${z.almacen.id}:${z.id}` : d?.id,
       tipoDestino: z ? "zona" : d?.tipo,
-      inmutable: r?.solo_anadir ? true : null,
+      inmutable: null,
+      soloAnadir: !!r?.solo_anadir || !!z,
       fueraRetencion: nivel > 0,
     });
     if (r && !reposVistos.has(r.id)) {
@@ -326,7 +333,8 @@ export function pasosDelRepo(e: Equipo, repoId: string, equipos: Equipo[]): Paso
       nivel: 0,
       destinoId: z ? `zona:${z.almacen.id}:${z.id}` : d?.id,
       tipoDestino: z ? "zona" : d?.tipo,
-      inmutable: r.solo_anadir ? true : null,
+      inmutable: null,
+      soloAnadir: !!r.solo_anadir || !!z,
       fueraRetencion: false,
     },
     ...pasosEspejo(e, r, equipos, 1),
@@ -405,7 +413,12 @@ export interface Uso {
   /** Por qué no (o una nota corta si sí). */
   motivo?: string;
   /** Lo que lo haría posible: conectar la nube en un equipo, actualizar su agente o usar otro tipo de paso. */
-  accion?: { tipo: "conectar_nube"; equipo: Equipo; nube: string; tipoNube: string; texto?: string } | { tipo: "actualizar"; equipo: Equipo } | { tipo: "otro_paso"; uso: UsoPaso };
+  accion?:
+    | { tipo: "conectar_nube"; equipo: Equipo; nube: string; tipoNube: string; texto?: string }
+    | { tipo: "actualizar"; equipo: Equipo }
+    | { tipo: "otro_paso"; uso: UsoPaso }
+    /** Plan 0.8.0 (B3, 14hh): dar acceso a `equipo` en esa zona del almacén (sin crear repositorio). */
+    | { tipo: "dar_acceso"; equipo: Equipo; zona: ZonaVista; texto: string };
 }
 
 /** Todos los destinos del cliente, más las nubes conectadas en equipos que no son almacenes (para las derivadas). */
@@ -491,18 +504,32 @@ export function usosPosibles(d: DestinoVista, equipo: Equipo, repo: RepositorioR
   const tiene = d.ids.some((id) => equipo.resumen?.destinos?.some((x) => x.id === id));
   if (esElSuyo) derivada = yaEsta;
   else if (!admite(equipo, ADMITE.derivadas)) derivada = { ok: false, motivo: `Actualiza el agente de ${equipo.nombre}`, accion: { tipo: "actualizar", equipo } };
+  // Plan 0.8.0 (B2): un destino que el equipo ya tiene (también si es el mismo bucket que una nube conectada).
+  else if (tiene) derivada = { ok: true };
   else if (d.nube) {
     const aqui = d.nube.equipo.id === equipo.id || (equipo.resumen?.nubes ?? []).some((n) => n.nombre === d.nube!.nombre);
     derivada = aqui
       ? { ok: true }
+      : // Plan 0.8.0 (B2): unida a un B2 o S3 del catálogo con el mismo bucket: desde el equipo, con sus credenciales.
+        catalogoDeRed(d)
+        ? { ok: true, motivo: "Pide sus credenciales" }
       : !admite(equipo, ADMITE.nubeEquipo)
         ? { ok: false, motivo: `Actualiza el agente de ${equipo.nombre} para usar nubes`, accion: { tipo: "actualizar", equipo } }
         : d.nube.tipo === "dropbox"
           ? { ok: false, motivo: `Hace falta también en ${equipo.nombre}`, accion: { tipo: "conectar_nube", equipo, nube: d.nube.nombre, tipoNube: d.nube.tipo } }
           : // B2, S3, SFTP… conectadas por rclone en el almacén: desde el equipo, como un destino nuevo con sus datos.
             { ok: false, motivo: `Desde ${equipo.nombre}: «Un destino nuevo…» con sus datos` };
-  } else if (tiene) derivada = { ok: true };
-  else if (d.zona) derivada = { ok: false, motivo: `${equipo.nombre} aún no entra en esta zona: mejor un espejo` };
+  } else if (d.zona) {
+    // Plan 0.8.0 (B3, 14hh): sin usuario en esa zona, darle acceso ahí mismo (sin repositorio de relleno).
+    // Un espejo solo se propone si el repositorio ya está en ese almacén (lo haría él).
+    const espejoPosible = !!en && en.almacen.id === d.zona.almacen.id;
+    const texto = `Dar acceso a ${equipo.nombre} en ${d.zona.principal ? d.zona.almacen.nombre : `${d.zona.almacen.nombre} · ${d.zona.nombre ?? "otra zona"}`}`;
+    derivada = admite(equipo, ADMITE.soloDestino)
+      ? { ok: false, motivo: `${equipo.nombre} aún no tiene acceso a esta zona`, accion: { tipo: "dar_acceso", equipo, zona: d.zona, texto } }
+      : espejoPosible
+        ? { ok: false, motivo: `${equipo.nombre} aún no tiene acceso a esta zona: mejor un espejo (o actualiza su agente para dárselo desde aquí)`, accion: { tipo: "otro_paso", uso: "espejo" } }
+        : { ok: false, motivo: `${equipo.nombre} aún no tiene acceso a esta zona: actualiza su agente para dárselo desde aquí`, accion: { tipo: "actualizar", equipo } };
+  }
   else if (["b2", "s3", "rest"].includes(d.tipo)) derivada = { ok: true, motivo: "Pide sus credenciales" };
   else derivada = { ok: false, motivo: `No es de ${equipo.nombre}` };
 

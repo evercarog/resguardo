@@ -6,6 +6,7 @@
 // Aquí se juntan en una sola lista, sin repetir y sin la dirección de ninguna consola.
 import type * as T from "./tipos";
 import { mensajeOrden } from "./textosEquipo";
+import { legibleEnTexto, mapaNombresCliente } from "./nombres";
 
 export interface FilaEspera {
   id: string;
@@ -48,6 +49,9 @@ export const admiteCancelarEspera = (e: T.Equipo | undefined) => !!e?.resumen?.a
  */
 export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: number): FilaEspera[] {
   const porId = new Map(equipos.map((e) => [e.id, e]));
+  // B1: «0b5c…/almacen-01-3f2a» → «Contabilidad, de PC-01» (agentes que no lo dicen ya así).
+  const nombres = mapaNombresCliente(equipos);
+  const legible = (t: string | null | undefined) => (t ? legibleEnTexto(t, nombres) : null);
   const filas: FilaEspera[] = [];
   const vistos = new Set<string>();
   for (const o of propias) {
@@ -59,7 +63,7 @@ export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: nu
       tipo: o.tipo,
       equipo: o.equipo ?? "",
       equipoNombre: e?.nombre ?? "un equipo",
-      descripcion: delEquipo?.descripcion ?? null,
+      descripcion: legible(delEquipo?.descripcion),
       otraConsola: null,
       por: o.emitida_por?.nombre ?? null,
       aplica: o.not_before ?? delEquipo?.aplica ?? "",
@@ -79,7 +83,7 @@ export function filasEnEspera(propias: T.Orden[], equipos: T.Equipo[], ahora: nu
         tipo: x.tipo,
         equipo: e.id,
         equipoNombre: e.nombre,
-        descripcion: x.descripcion ?? null,
+        descripcion: legible(x.descripcion),
         otraConsola: nombreConsola(e, x.consola),
         por: x.por ?? null,
         aplica: x.aplica,

@@ -3,6 +3,7 @@
 // barra lateral, la paleta, las listas y las cabeceras.
 import {
   Activity,
+  ArchiveRestore,
   ArrowRightLeft,
   BellRing,
   Cable,
@@ -46,6 +47,7 @@ export const ICONO_SECCION = {
   copias: FolderSync,
   repositorios: Database,
   restaurar: History,
+  restauraciones: ArchiveRestore,
   buscar: FileSearch,
   ordenes: ClipboardList,
   avisos: BellRing,
@@ -71,6 +73,7 @@ const ORDEN: Record<string, Icono> = {
   alta: KeyRound,
   cambiar_clave_admin: KeyRound,
   rotar_contrasena_repo: KeyRound,
+  comprobar_contrasena: KeyRound,
   clave_almacen: KeyRound,
   desbloquear: Unlock,
   crear_repositorio: DatabaseZap,
@@ -97,6 +100,7 @@ const ORDEN: Record<string, Icono> = {
   quitar_derivada: CloudUpload,
   // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
   nombre_equipo: Pencil,
+  nombre_repositorio: Pencil,
   etiquetas_equipo: Tag,
   observacion_equipo: StickyNote,
   quitar_destino: Trash2,

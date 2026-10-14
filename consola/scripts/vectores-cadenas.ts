@@ -200,7 +200,15 @@ console.log("\n· Para qué sirve cada destino desde una copia («Añadir paso»
   igual("la nube conectada en el propio equipo: derivada sí, espejo no (no está en el almacén)", [propia.derivada.ok, propia.espejo.ok, lista.filter((x) => x.nombre.startsWith("Dropbox") && x.nombre.toLowerCase().includes("recepcion")).length], [true, false, 1]);
   igual("su propia zona: «ya guarda aquí»", usosPosibles(d("Almacén ALMACEN-01 · Disco D"), recepcion, r, equipos).espejo.motivo, "Ya guarda aquí");
   const zonaE = usosPosibles(d("Almacén ALMACEN-01 · Disco E"), recepcion, r, equipos);
-  igual("otra zona del almacén: espejo sí, derivada no (mejor un espejo)", [zonaE.espejo.ok, zonaE.derivada.ok], [true, false]);
+  igual("otra zona del almacén: espejo sí, derivada no (mejor un espejo)", [zonaE.espejo.ok, zonaE.derivada.ok, zonaE.derivada.accion?.tipo], [true, false, "otro_paso"]);
+  // Plan 0.8.0 (B3, 14hh): con un agente que admite «solo_destino», «Dar acceso a … en este almacén».
+  const conAcceso = { ...recepcion, resumen: { ...recepcion.resumen, admite: [...recepcion.resumen!.admite!, "solo_destino"] } };
+  const da = usosPosibles(d("Almacén ALMACEN-01 · Disco E"), conAcceso, r, [almacen, conAcceso]).derivada;
+  igual("…y con el agente nuevo, darle acceso ahí mismo", [da.ok, da.accion?.tipo, da.accion?.tipo === "dar_acceso" ? da.accion.texto : null], [false, "dar_acceso", "Dar acceso a RECEPCION en ALMACEN-01 · Disco E"]);
+  // Desde un repositorio de un disco del equipo (no está en un almacén) no se propone un espejo.
+  const local = { ...r, id: "local", destino: "B2 de la oficina" };
+  const desdeLocal = usosPosibles(d("Almacén ALMACEN-01 · Disco E"), recepcion, local, equipos).derivada;
+  igual("desde un repositorio que no está en un almacén, el motivo no propone un espejo", [desdeLocal.motivo?.includes("espejo"), desdeLocal.accion?.tipo], [false, "actualizar"]);
   const b2u = usosPosibles(d("B2 de la oficina"), recepcion, r, equipos);
   igual("B2 del equipo: derivada sí, espejo no", [b2u.derivada.ok, b2u.espejo.ok], [true, false]);
 }

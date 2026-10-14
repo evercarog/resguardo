@@ -1605,6 +1605,28 @@ async fn catalogo_de_destinos_sin_secretos() {
     }
     let todo = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json.to_string();
     assert!(!todo.contains("K001abc") && !todo.contains("clave@") && !todo.contains("Copias"), "{todo}");
+    // Plan 0.8.0 (B2): una nube conectada recuerda su bucket y su carpeta base; una consola
+    // anterior que solo la renombra (sin `donde` ni `carpeta`) no los borra.
+    let nube = format!("/api/clientes/{c}/destinos/nube:0b5c1f8e:b2-oficina");
+    let r = pedir(
+        &p.app,
+        "PUT",
+        &nube,
+        Some(json!({ "nombre": "B2 Oficina", "tipo": "nube", "donde": "mi-bucket", "carpeta": "/Resguardo/" })),
+        Some(&cookie),
+        &[],
+    )
+    .await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.json);
+    pedir(&p.app, "PUT", &nube, Some(json!({ "nombre": "B2 de la oficina", "tipo": "nube" })), Some(&cookie), &[]).await;
+    let l = pedir(&p.app, "GET", &lista, None, Some(&cookie), &[]).await.json;
+    let n = l.as_array().unwrap().iter().find(|d| d["id"] == "nube:0b5c1f8e:b2-oficina").unwrap();
+    assert_eq!((n["nombre"].as_str(), n["donde"].as_str(), n["carpeta"].as_str()), (Some("B2 de la oficina"), Some("mi-bucket"), Some("Resguardo")), "{n}");
+    for cuerpo in [json!({ "nombre": "B2", "tipo": "nube", "carpeta": "a/../b" }), json!({ "nombre": "B2", "tipo": "nube", "donde": "https://ana:clave@x/y" })]
+    {
+        assert_eq!(pedir(&p.app, "PUT", &nube, Some(cuerpo.clone()), Some(&cookie), &[]).await.estado, StatusCode::UNPROCESSABLE_ENTITY, "{cuerpo}");
+    }
+    assert_eq!(pedir(&p.app, "DELETE", &nube, None, Some(&cookie), &[]).await.estado, StatusCode::NO_CONTENT);
     // Tarea 8: lo que dice la persona para la regla 3-2-1-1-0.
     let atributos = |l: &Value, id: &str| l.as_array().unwrap().iter().find(|d| d["id"] == id).unwrap()["atributos"].clone();
     let r = pedir(

@@ -728,11 +728,18 @@ fn repos_del_trabajo(t: &crate::espejo_trabajos::Trabajo, origen: &Path) -> Vec<
     }
 }
 
+/// Hay una vuelta de los espejos del almacén en marcha (en este proceso).
+static EN_MARCHA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// B1: ¿hay un espejo del almacén en marcha? («Ordenar nombres de carpeta» espera a que termine.)
+pub fn en_marcha() -> bool {
+    EN_MARCHA.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Lo llama el servicio en cada vuelta: los trabajos del almacén a los que toca, uno
 /// detrás de otro (por su orden) en otro hilo, anotando el resultado de cada uno.
 pub fn si_toca() {
     use crate::espejo_trabajos::{self as et, Motivo};
-    static EN_MARCHA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     static ULTIMA_MIRADA: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     if EN_MARCHA.load(std::sync::atomic::Ordering::SeqCst) {
         return;

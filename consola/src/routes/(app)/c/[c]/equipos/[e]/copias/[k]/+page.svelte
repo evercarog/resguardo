@@ -12,7 +12,6 @@
   import Migas from "$lib/componentes/Migas.svelte";
   import { lineaCadena } from "$lib/cadenas";
   import { hrefDestino } from "$lib/fichaDestino";
-  import { cuandoCortoEspejo, espejoDelRepo, nombreEnAlmacen } from "$lib/espejo";
   import { onDestroy, untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
@@ -75,11 +74,13 @@
   // Tarea 8: la regla 3-2-1-1-0 de esta copia (guía, nunca obligación).
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
-  import { marcarDesdePaso, reglaDeCopia, tipoDePaso, type MarcarDestino } from "$lib/regla321";
-  import TipoDestino from "$lib/componentes/TipoDestino.svelte";
+  import { marcarDesdePaso, reglaDeCopia, type MarcarDestino } from "$lib/regla321";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
-  import { pasosDelRepo } from "$lib/cadenas";
+  // C1 (plan 0.8.0, 14kk): el camino de la copia, arriba, con el estado de cada eslabón.
+  import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
+  import { caminoDeCopia } from "$lib/camino";
+  import { enVivoCamino } from "$lib/caminoVivo.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -129,10 +130,6 @@
   const conDuracion = $derived(ejecuciones.filter((x) => x.duracion_s != null));
   const ganchosRes = $derived(fila?.ganchos ?? []);
   const rol = $derived(equipo?.modo === "trasladado" ? "lectura" : actual.cliente?.rol);
-  const almacen = $derived(destino?.equipo_almacen ? actual.equipos.find((x) => x.id === destino.equipo_almacen) : null);
-  /** Lo que cuelga de su repositorio (espejos, copia externa, derivadas). */
-  const pasosRepo = $derived(equipo && k ? pasosDelRepo(equipo, k.repo, actual.equipos).slice(1) : []);
-  const espejo = $derived(espejoDelRepo(almacen?.resumen?.guarda_copias?.espejo ?? null, repo ? nombreEnAlmacen(destino?.donde, repo) : null));
   const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
   // Tarea 8: la regla 3-2-1-1-0, con lo que dice el catálogo de destinos del cliente.
   $effect(() => {
@@ -142,6 +139,16 @@
   const catalogo = $derived(catalogoDe(c));
   const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora) : null);
   let marcar = $state<MarcarDestino | null>(null);
+  const eslabones = $derived(caminoDeCopia(regla, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: actual.equipos, informe }));
+  const despues = $derived(eslabones.filter((x) => x.clase !== "copia"));
+  // 14n: «Verificar ahora» / «Probar ahora» desde la tira, con el diálogo de siempre.
+  function hacerDesdeRegla(tipo: "verificar_ahora" | "probar_restauracion") {
+    if (!k || !repo) return;
+    dialogo =
+      tipo === "verificar_ahora"
+        ? { tipo, cuerpo: { repo: k.repo }, descripcion: `Se comprobará ahora una parte de «${repo.nombre}» para confirmar que las copias se pueden leer.`, accion: "Verificar ahora" }
+        : { tipo, cuerpo: { repo: k.repo }, descripcion: `Se restaurarán unos archivos de «${repo.nombre}» a una carpeta temporal y se compararán. No toca tus archivos.`, accion: "Probar la restauración" };
+  }
   // La retención que se le aplica a su repositorio (simulada con todas sus versiones, como en su página).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
   // v1.23: el historial que guarda el propio equipo (lo de antes, verificaciones, subidas…), por páginas y en vivo.
@@ -262,7 +269,10 @@
     </header>
     <!-- 14ww (1): la observación de la copia, a la vista bajo el título. -->
     <Observaciones tipo="copia" objeto={objetoDe(e, kid)} />
-    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
+    <!-- C1: el camino entero bajo el título (antes, solo «Se guarda en»): cada eslabón con su tipo, su estado y su enlace. -->
+    {#if eslabones.length}
+      <div class="donde camino-arriba"><span class="faint et-camino">Camino</span><CaminoCopia {eslabones} ahora={reloj.ahora} etiqueta="Camino de «{k.nombre}»" /></div>
+    {:else if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
     <!-- Lo del repositorio, a la vista (docs/editor-de-copias.md): retención, verificación, prueba y «Añadir paso». -->
     {#if repo && actual.cliente && puede.ordenar(rol)}
       <PasosRepo cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} copia={kid} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
@@ -359,7 +369,7 @@
 
     {#if regla}
       <div id="sec-regla">
-        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} enlaceDestino={(p) => (p.clave && !p.clave.startsWith("espejo:") ? hrefDestino(c, p.clave) : null)} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
+        <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} onaccion={puede.ordenar(rol) && equipo.modo !== "trasladado" ? hacerDesdeRegla : undefined} enlaceDestino={(p) => (p.clave && !p.clave.startsWith("espejo:") ? hrefDestino(c, p.clave) : null)} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
       </div>
       {#if marcar}<AtributosDestino cliente={c} destino={marcar} onclose={() => (marcar = null)} />{/if}
     {/if}
@@ -489,42 +499,18 @@
               {#if lugar}<SeGuardaEn enlace pequeno etiqueta="en" {lugar} riesgo={!!riesgo} />{#if destino?.inmutable}<span class="faint">(solo añadir)</span>{/if}{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
             </dd>
           </div>
-          {#if camino.length > 2}
-            <!-- La cadena de la copia, con cada destino enlazado a su página. -->
-            <div>
-              <dt>Camino</dt>
-              <dd class="camino">
-                {#each camino.slice(1) as p, i (i)}
-                  {@const tp = tipoDePaso(p, actual.equipos, catalogo)}
-                  {#if i}<span class="faint" aria-hidden="true">{p.despues ? " → después → " : " → "}</span>{/if}{#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{#if p.destinoId}<a class="link-suave" href={hrefDestino(c, p.destinoId)}>{p.texto}</a>{:else}{p.texto}{/if}{#if p.clase === "espejo"}<span class="faint"> (espejo)</span>{:else if p.clase === "derivada"}<span class="faint"> (copia derivada)</span>{/if}
-                {/each}
-              </dd>
-            </div>
-          {/if}
+          <!-- C1/14x: lo que va después del repositorio (espejos y copias derivadas), con su estado; el camino entero está arriba. -->
           <div>
-            <dt>Copia externa <Ayuda id="copia-externa" /></dt>
+            <dt>Después <Ayuda id="cadena" /></dt>
             <dd>
-              {#if repo?.externa}A «{repo.externa.destino}» cada día a las {repo.externa.hora}
-              {:else}<span class="faint">No tiene: todas las versiones están en un solo sitio</span>{/if}
+              {#if despues.length}<CaminoCopia eslabones={despues} ahora={reloj.ahora} forma="lineas" etiqueta="Después de su repositorio" />
+              {:else if camino.length > 2}<span class="faint">{camino.length - 2} {camino.length - 2 === 1 ? "paso" : "pasos"} sin estado todavía</span>
+              {:else}<span class="faint">Nada: todas las versiones están en su repositorio. Un espejo o una copia derivada las tendría también en otro sitio.</span>{/if}
             </dd>
           </div>
-          {#if pasosRepo.length}
-            <div>
-              <dt>Además</dt>
-              <dd class="ramas">
-                {#each pasosRepo as p, i (i)}{@const tp = tipoDePaso(p, actual.equipos, catalogo)}<span use:tip={p.detalle}>{p.clase === "espejo" ? "Espejo" : p.detalle.startsWith("copia externa") ? "Copia externa" : "Repositorio derivado"} · {#if tp}<TipoDestino {...tp} soloIcono />{" "}{/if}{p.texto}</span>{/each}
-              </dd>
-            </div>
-          {/if}
-          {#if espejo && almacen}
-            <div>
-              <dt>Espejo <Ayuda id="espejo" /></dt>
-              <dd>{almacen.nombre} lo copia {cuandoCortoEspejo(espejo)}{#if espejo.ultima}<span class="faint">, la última {relativo(espejo.ultima, reloj.ahora)}</span>{/if}</dd>
-            </div>
-          {/if}
           <div>
             <dt>Retención <Ayuda id="retencion" /></dt>
-            <dd>{#if repo?.retencion}Guarda {repo.retencion}{:else}<span class="faint">Todas las versiones (sin retención)</span>{/if}{#if repo && (repo.retencion || retencionLinea)}{" "}<a class="link-suave" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(repo.id)}/retencion">Ver en detalle</a>{/if}</dd>
+            <dd>{#if repo?.retencion}Guarda {repo.retencion}{:else if retencionLinea?.quien}La aplica el almacén «{retencionLinea.quien}»{:else}<span class="faint">Todas las versiones (sin retención)</span>{/if}{#if repo && (repo.retencion || retencionLinea)}{" "}<a class="link-suave" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(repo.id)}/retencion">Ver en detalle</a>{/if}</dd>
           </div>
         </dl>
       </section>
@@ -606,6 +592,21 @@
   }
   .donde {
     margin: calc(-1 * var(--sp-2)) 0 0;
+  }
+  .camino-arriba {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+  .et-camino {
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
   .cab-texto {
     flex: 1;

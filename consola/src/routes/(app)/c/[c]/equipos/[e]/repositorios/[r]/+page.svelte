@@ -9,7 +9,7 @@
   import { page } from "$app/state";
   import { untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
-  import { ArrowRightLeft, Database, History, Play, ShieldCheck } from "@lucide/svelte";
+  import { ArrowRightLeft, Database, History, Pencil, Play, ShieldCheck } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero, relativo } from "$lib/formato";
@@ -53,6 +53,9 @@
   import TraerHistorial from "$lib/componentes/TraerHistorial.svelte";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
+  import { saludCompleta } from "$lib/saludCompleta";
+  import { reglaDeCopia } from "$lib/regla321";
+  import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
   import { abrirEspacio, abrirEstado, abrirVersion, abrirVuelta, elegirDia, elegirFechas, ir } from "$lib/componentes/detalle/navegar";
@@ -71,6 +74,10 @@
   import MoviendoseAviso from "$lib/componentes/MoviendoseAviso.svelte";
   import { tareasDe } from "$lib/progreso.svelte";
   import { hayPlanMover, moviendoDe } from "$lib/mover";
+  // Plan 0.8.0, B1: cambiar el nombre (todas las consolas) y ordenar su carpeta en el almacén.
+  import RenombrarRepositorio from "$lib/componentes/RenombrarRepositorio.svelte";
+  import OrdenarCarpetas from "$lib/componentes/OrdenarCarpetas.svelte";
+  import { admiteNombres, equiposEnAlmacen, hayQueOrdenar, planOrden } from "$lib/nombres";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -109,7 +116,19 @@
   const destino = $derived(destinoDe(destinos, repo));
   const lugar = $derived(equipo && repo ? lugarRepo(repo, equipo, actual.equipos) : null);
   const riesgo = $derived(equipo && repo ? riesgoMismoEquipo(repo, equipo, actual.equipos) : null);
-  const prot = $derived(proteccion(inf, equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null));
+  // 14w: la salud del agente, completada con lo que sabe la consola (espejos del almacén y del
+  // equipo, derivadas, lo marcado en cada destino, la retención del almacén): lo mismo que la tira 3-2-1.
+  $effect(() => {
+    const cc = c;
+    if (cc) untrack(() => void cargarCatalogo(cc));
+  });
+  const reglaRepo = $derived.by(() => {
+    if (!equipo || !repo) return null;
+    const eq = equipo;
+    const k = copias.find((x) => x.repo === repo!.id && x.activa !== false);
+    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+  });
+  const prot = $derived(saludCompleta(inf, { extra: equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null, rc: reglaRepo, retencionAlmacen: reglaEfectiva(repo, destino, actual.equipos)?.quien ?? null, ahora: reloj.ahora }));
   const ej = $derived(ultimaEjecucion(inf));
   const verif = $derived(repo ? verificacion(repo, inf) : null);
   const prueba = $derived(repo ? pruebaRestauracion(repo, inf) : null);
@@ -134,7 +153,7 @@
     if (!enAlm || !repo) return;
     dialogo = {
       tipo: "aplicar_retencion_almacen",
-      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta },
+      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta, nombre: `${repo.nombre}, de ${equipo?.nombre ?? ""}` },
       descripcion: `${enAlm.almacen.nombre} borrará ahora de «${repo.nombre}» las versiones que ya no entren en su retención (lo hace él, en local) en cuanto pase la espera, sin aguardar a su próxima hora.`,
       para: enAlm.almacen,
     };
@@ -143,7 +162,7 @@
     if (!enAlm || !repo) return;
     dialogo = {
       tipo: "retencion_almacen",
-      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta, quitar: true },
+      cuerpo: { usuario: enAlm.usuario, repo: enAlm.carpeta, quitar: true, nombre: `${repo.nombre}, de ${equipo?.nombre ?? ""}` },
       titulo: "Dejar de aplicar la retención",
       descripcion: `${enAlm.almacen.nombre} dejará de podar «${repo.nombre}» y borrará del repositorio su clave (ya no podrá abrirlo). No borra versiones: el repositorio volverá a crecer sin límite.`,
       para: enAlm.almacen,
@@ -162,6 +181,20 @@
   function quitarExterna() {
     if (repo) dialogo = ordenQuitarExterna(repo, destinos);
   }
+  let renombrar = $state(false);
+  let ordenar = $state(false);
+  /** B1: ¿su carpeta (o la del equipo) en el almacén aún no es legible? */
+  const porOrdenar = $derived.by(() => {
+    if (!enAlm || !repo || repo.solo_lectura || !admiteNombres(enAlm.almacen)) return false;
+    const en = equiposEnAlmacen(enAlm.almacen, actual.equipos).find((x) => x.equipo.id === e && x.repos.some((r) => r.repo.id === rid));
+    return !!en && hayQueOrdenar(planOrden(en));
+  });
+  // 14bbb: «Comprobar la contraseña» (el equipo la prueba de verdad contra el repositorio).
+  const admiteComprobar = $derived(!!equipo?.resumen?.admite?.includes("comprobar_contrasena"));
+  const comprobada = $derived(repo?.contrasena_comprobada ?? null);
+  let comprobar = $state(false);
+  const TEXTO_COMPROBADA = { abre: "La abre", no_abre: "No la abre", sin_respuesta: "Sin respuesta" } as const;
+  const TONO_COMPROBADA = { abre: "ok", no_abre: "bad", sin_respuesta: "warn" } as const;
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -183,6 +216,7 @@
       <div class="cab-texto">
         <div class="titulo">
           <h1>{repo.nombre}</h1>
+          {#if admiteNombres(equipo) && puede.administrar(rol) && !repo.solo_lectura}<button class="btn btn-ghost btn-sm" use:tip={"Cambiar el nombre (en todas sus consolas)"} aria-label="Cambiar el nombre" onclick={() => (renombrar = true)}><Pencil size={14} /></button>{/if}
           <button class="pulsable-bloque chip-pulsable" use:tip={"¿Por qué? Ver detalle"} onclick={abrirEstado}><Chip tono={estado.tono} texto={estado.texto} /></button>
           {#if repo.solo_lectura}<span class="badge badge-sm tone-neutral">Solo lectura</span>{/if}
         </div>
@@ -211,7 +245,7 @@
         </div>
       {/if}
     </header>
-    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
+    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} />{#if porOrdenar && puede.administrar(rol)}<button class="btn btn-sm btn-ghost" use:tip={"Que su carpeta en el almacén lleve su nombre"} onclick={() => (ordenar = true)}>Ordenar su carpeta…</button>{/if}</p>{/if}
     <!-- Lo que se ajusta del repositorio, a la vista (docs/editor-de-copias.md). -->
     {#if actual.cliente && puede.ordenar(rol)}
       <PasosRepo cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} copia={suyas.length === 1 ? suyas[0].id : null} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />
@@ -266,7 +300,7 @@
       {:else}
         <section class="card p sin-salud">
           <h2 class="section-title">Salud de la protección <Ayuda id="salud-proteccion" /></h2>
-          <p class="faint">Llegará con el próximo informe de {equipo.nombre}: copias automáticas, protección contra borrado, copia externa, verificación, prueba de restauración, kit y retención.</p>
+          <p class="faint">Llegará con el próximo informe de {equipo.nombre}: copias automáticas, protección contra borrado, fuera del sitio, verificación, prueba de restauración, kit y retención.</p>
         </section>
       {/if}
       <section class="card p mantenimiento">
@@ -304,15 +338,37 @@
               {#if prueba?.mensaje_corto}<span class="faint msg">{prueba.mensaje_corto}</span>{/if}
             </dd>
           </div>
+          <div id="kit">
+            <dt>Kit y contraseña</dt>
+            <dd>
+              {#if comprobada?.ultima}
+                <Chip pequeno tono={TONO_COMPROBADA[comprobada.resultado] ?? "neutral"} texto={TEXTO_COMPROBADA[comprobada.resultado] ?? comprobada.resultado} /> <Tiempo iso={comprobada.ultima} />
+                {#if comprobada.bien && comprobada.bien !== comprobada.ultima}<span class="faint msg">La última vez que la abrió: <Tiempo iso={comprobada.bien} />.</span>{/if}
+                {#if comprobada.resultado === "no_abre"}<span class="msg aviso-ret">La contraseña que tiene guardada {equipo.nombre} no abrió el repositorio: revísalo cuanto antes.</span>{/if}
+              {:else}
+                <span class="faint">Contraseña sin comprobar todavía</span>
+              {/if}
+              <span class="faint msg">Escribe la contraseña del kit y {equipo.nombre} prueba si abre el repositorio de verdad (y sus copias con la misma). Los fallos cuentan como intentos.</span>
+              {#if !repo.solo_lectura && puede.ordenar(rol)}
+                <span class="msg">
+                  {#if admiteComprobar}
+                    <button type="button" class="btn btn-sm" onclick={() => (comprobar = true)}>Comprobar la contraseña</button>
+                  {:else}
+                    <span class="faint">Para comprobarla, actualiza el agente de {equipo.nombre}.</span>
+                  {/if}
+                </span>
+              {/if}
+            </dd>
+          </div>
           <div>
-            <dt>Copia externa</dt>
+            <dt>Copia derivada</dt>
             <dd>
               {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />
               {:else if repo.externa}<span class="faint">A «{repo.externa.destino}» cada día a las {repo.externa.hora}, todavía sin ninguna</span>
               {:else}<span class="faint">No tiene</span>{/if}
               {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
               <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
-              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia externa</button></span>{/if}
+              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia derivada</button></span>{/if}
             </dd>
           </div>
           {#if enAlm}
@@ -410,6 +466,21 @@
   {/key}
 {/if}
 
+{#if comprobar && equipo && repo && actual.cliente}
+  <OrdenDialog
+    cliente={actual.cliente}
+    {equipo}
+    tipo="comprobar_contrasena"
+    cuerpo={{ repo: repo.id }}
+    titulo="Comprobar la contraseña de «{repo.nombre}»"
+    descripcion="Escribe la contraseña de tu kit. {equipo.nombre} probará si abre «{repo.nombre}» de verdad y también sus copias externas o derivadas con la misma contraseña. Sus espejos son el mismo repositorio: se abren con la misma. No cambia nada ni guarda la contraseña."
+    repo={{ id: repo.id, nombre: repo.nombre }}
+    accion="Comprobar"
+    alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})}
+    onclose={() => (comprobar = false)}
+  />
+{/if}
+
 {#if retAlm && enAlm?.admite && equipo && repo && actual.cliente}
   <RetencionAlmacen cliente={actual.cliente} {equipo} {repo} en={enAlm} onclose={() => (retAlm = false)} />
 {/if}
@@ -420,6 +491,14 @@
 
 {#if mover && equipo && repo && actual.cliente}
   <MoverRepositorio cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} onclose={() => (mover = false)} />
+{/if}
+
+{#if renombrar && equipo && repo && actual.cliente}
+  <RenombrarRepositorio cliente={actual.cliente} {equipo} {repo} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} onclose={() => (renombrar = false)} />
+{/if}
+
+{#if ordenar && enAlm && actual.cliente}
+  <OrdenarCarpetas cliente={actual.cliente} almacen={enAlm.almacen} equipos={actual.equipos} equipoInicial={e} soloRepo={rid} onclose={() => (ordenar = false)} />
 {/if}
 
 {#if traer && equipo && repo && actual.cliente}

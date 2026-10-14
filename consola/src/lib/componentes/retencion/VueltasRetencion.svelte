@@ -48,7 +48,7 @@
 
 {#if !vistas.length}
   <p class="faint vacio">
-    {vueltas.length ? "Nada con lo elegido." : "Todavía no hay nada anotado. Cada vez que se aplique la retención (desde la consola, a su hora en el almacén o al subir la copia externa) se guardará aquí lo que quitó."}
+    {vueltas.length ? "Nada con lo elegido." : "Todavía no hay nada anotado. Cada vez que se aplique la retención (desde la consola, a su hora en el almacén o al subir la copia derivada) se guardará aquí lo que quitó."}
   </p>
 {:else}
   <ol class="vueltas">

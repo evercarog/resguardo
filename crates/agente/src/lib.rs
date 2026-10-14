@@ -35,6 +35,7 @@ pub mod ancla;
 pub mod bandeja;
 pub mod bitacora;
 pub mod cli;
+pub mod comprobar_contrasena;
 #[cfg(test)]
 mod consolas_it;
 pub mod consolas_v2;
@@ -66,6 +67,7 @@ pub mod ipc_local;
 pub mod jobs;
 pub mod kit;
 pub mod managed;
+pub mod nombres;
 pub mod nube;
 pub mod nube_anular;
 #[cfg(test)]
@@ -77,6 +79,7 @@ pub mod progreso_v2;
 mod propiedades;
 pub mod protection;
 pub mod remote;
+pub mod restaurar_v2;
 pub mod restore_test;
 pub mod retencion_almacen;
 pub mod retencion_registro;

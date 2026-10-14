@@ -90,7 +90,7 @@ export function ordenQuitarExterna(r: RepositorioResumen, destinos: DestinoResum
   return {
     tipo: "cambiar_copia_externa",
     cuerpo: { repo: r.id, ...(id ? { destino: { id } } : {}), hora: null } as Record<string, unknown>,
-    titulo: "Quitar la copia externa",
+    titulo: "Quitar la copia derivada",
     descripcion: `«${r.nombre}» dejará de copiarse cada día a «${r.externa?.destino ?? "su destino externo"}». Lo ya copiado allí se queda.`,
     repo: { id: r.id, nombre: r.nombre },
   };

@@ -223,7 +223,10 @@ Todo como root: archivos nuevos `0755` de root en `/opt/resguardo-agente` (que y
 - `resguardo-server poner-publicacion <carpeta>` (en la máquina del servidor) o «Servidor → Actualizaciones de los agentes → Subir…» en la consola (propietario del servidor): el manifiesto, su firma y los archivos. El servidor comprueba la firma y cada SHA-256 **antes** de aceptarlos, los guarda en `publicaciones/agente/<versión>/` (solo para el usuario del servicio) y, cuando están todos, la sirve. Guarda como mucho las 3 últimas.
 - Nunca firma ni cambia nada: sirve el manifiesto y la firma **tal cual** (byte a byte).
 - Rutas en `docs/api-servidor.md` §14.
-- **Más adelante:** que el servidor la baje solo de GitHub (con la misma comprobación) y que se actualice él mismo con el mismo mecanismo (otro `producto` en el manifiesto). Ver el plan, tarea 11.
+- **Desde GitHub, sola** (14f/11g, plan 0.8.0 B6): cada 6 h por defecto (el propietario del servidor lo apaga o cambia en «Actualizaciones de los agentes», con «Buscar ahora»), el servidor baja la última publicación (`releases/latest/download/manifiesto-agente.json`, su firma y los archivos) y la acepta con **el mismo código** que «Subir una versión»: firma con una llave fijada, tamaño y SHA-256 de cada archivo. Solo HTTPS a GitHub y sus sitios de descarga, redirecciones a mano solo entre ellos, con tiempo y tamaño máximos. Si algo no cuadra no se usa, se dice en esa página y queda en la auditoría del servidor. En una compilación de desarrollo solo busca sola con `RESGUARDO_GITHUB_AUTO=1`.
+- **El instalador del agente** para «Instalar muchos equipos» y «Descargar instalador listo» (14dd): con la versión bajada completa, el servidor pone el instalador de Windows que lista su manifiesto (comprobado como con `poner-instalador-agente`) si no tiene ninguno o el que tiene es de una versión anterior; en «Instalar muchos equipos», «Ponerlo ahora» lo hace al momento (o dice por qué no).
+- **«Buscar ahora» en «Versiones»:** da el toque a los equipos conectados para que busquen ya (en sus consolas y en GitHub), aunque la consola no tenga la versión; no aprueba nada.
+- **Más adelante:** que Resguardo Server se actualice él mismo con el mismo mecanismo (otro `producto` en el manifiesto). Ver el plan, tarea 11.
 
 ---
 

@@ -50,6 +50,7 @@ import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos"
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import { comentariosDe, conservadaDe, destinosConservar } from "../../src/lib/versionesNotas";
 import { unaVezAhora } from "../../src/lib/copiaGuiada";
+import { cuerpoMover, cuerpoRutaNueva, equiposEnAlmacen, planOrden, rutasPendientes, type Movido } from "../../src/lib/nombres";
 import { diferencia, pendiente, trozos, type DatosComunesCliente, type EntradaOrden } from "../../src/lib/datosComunes";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
 import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
@@ -357,6 +358,44 @@ async function principal() {
       }, { plazo, cada: 1000 });
     };
     const secretosRepo = { repo: { repo: repoId, contrasena: contrasenaRepo } };
+    /** La carpeta del repositorio de B en el almacén (cambia en 3a). */
+    let carpetaB = repoId;
+
+    // -----------------------------------------------------------------------
+    paso("3a. Nombres legibles (plan 0.8.0, B1): renombrar el repositorio y «Ordenar nombres de carpeta» en el almacén y en B");
+    {
+      // Renombrar: lo guarda B y sale en su resumen (igual en todas sus consolas). La carpeta no cambia.
+      await consola.hecha(c, eqB.id, "nombre_repositorio", { repo: repoId, nombre: "Contabilidad" });
+      await esperar("el nombre nuevo en el resumen de B", async () => ((await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.nombre === "Contabilidad" ? true : null), { plazo: 20_000 });
+      // Ordenar: el usuario de B es su id y la carpeta, la del nombre del almacén.
+      const [eA, eB] = await Promise.all([consola.equipo(c, eqA.id), consola.equipo(c, eqB.id)]);
+      const en = equiposEnAlmacen(eA, [eA, eB]).find((x) => x.equipo.id === eqB.id)!;
+      const plan = planOrden(en);
+      igual([plan.usuario, plan.repos.map((r) => [r.de, r.propuesta])], [true, [[repoId, "contabilidad"]]], "Qué se ordena: la carpeta de B y la de «Contabilidad»");
+      const r = await consola.hecha(c, eqA.id, "guarda_copias", cuerpoMover(en, plan), { claveAdmin: CLAVE_ADMIN }, {}, 180_000);
+      const movido = (JSON.parse(r.detalle ?? "{}") as { mover?: Movido }).mover!;
+      comprobar(/-[0-9a-f]{4}$/.test(movido.usuario?.a ?? "") && movido.repos[0]?.a === "contabilidad", "El almacén movió las dos carpetas", movido);
+      comprobar(fs.existsSync(path.join(almacen, movido.usuario!.a, "contabilidad", "config")) && !fs.existsSync(path.join(almacen, acceso.destino.usuario)), "En el disco del almacén, con los nombres nuevos");
+      // Hasta que B pone la ruta nueva, la consola lo ve pendiente.
+      const pend = await esperar("la ruta pendiente de B", async () => {
+        const a2 = await consola.equipo(c, eqA.id);
+        const p = rutasPendientes(a2, [a2, await consola.equipo(c, eqB.id)]);
+        return p.length ? p : null;
+      }, { plazo: 30_000 });
+      igual(pend[0].cuerpo, cuerpoRutaNueva(en, movido), "La consola sabe qué le falta a B");
+      await consola.hecha(c, eqB.id, "cambiar_destino", cuerpoRutaNueva(en, movido)!, { claveAdmin: CLAVE_ADMIN }, {}, 120_000);
+      const despues = await esperar("la ruta nueva en el resumen de B", async () => {
+        const e = await consola.equipo(c, eqB.id);
+        return e.resumen?.repositorios?.find((x) => x.id === repoId)?.ruta === "contabilidad" ? e : null;
+      }, { plazo: 20_000 });
+      const a3 = await consola.equipo(c, eqA.id);
+      igual(rutasPendientes(a3, [a3, despues]).length, 0, "Ya no queda nada pendiente");
+      acceso.destino.donde = acceso.destino.donde.replace(`/${acceso.destino.usuario}/`, `/${movido.usuario!.a}/`);
+      acceso.destino.usuario = movido.usuario!.a;
+      carpetaB = "contabilidad";
+      const tras = await copiarAhora(consola, c);
+      igual(tras.estado, "ok", `B sigue copiando con la ruta nueva (${tras.mensaje ?? ""})`);
+    }
 
     // -----------------------------------------------------------------------
     paso("3b. Otra zona en el almacén de A (tarea 7b): «Disco E» con su puerto; B copia también allí");
@@ -380,12 +419,14 @@ async function principal() {
         c,
         eqA.id,
         "guarda_copias",
-        { anadir: eqB.id, zona: zona.id },
+        // B1: con `nombre`, una carpeta legible («<equipo>-xxxx»).
+        { anadir: eqB.id, zona: zona.id, nombre: eqB.nombre },
         { claveAdmin: CLAVE_ADMIN },
       );
       const vista = zonasDe(await consola.equipo(c, eqA.id)).find((z) => z.id === zona.id)!;
       igual(errorRespuestaZona(accesoE, vista), null, "La respuesta es de la zona pedida y por su puerto");
       comprobar(accesoE.usuario !== acceso.usuario, "En la zona, B tiene otro usuario (únicos en todo el almacén)", [accesoE.usuario, acceso.usuario]);
+      comprobar(/-[0-9a-f]{4}$/.test(accesoE.usuario) && !accesoE.usuario.includes(eqB.id.slice(0, 8)), "Con el nombre del equipo y un sufijo, no su id", accesoE.usuario);
       const repoE = `disco-e-${randomBytes(2).toString("hex")}`;
       const contrasenaE = Buffer.from(aleatorio(32)).toString("base64url");
       await consola.hecha(
@@ -720,6 +761,81 @@ async function principal() {
     log(`Restaurado en «Facturas/${restaurado}»`);
 
     // -----------------------------------------------------------------------
+    paso("4b. Restaurar en otra carpeta (nueva o vacía) y en un .zip con contraseña; su registro (plan 0.8.0, E1 y E2)");
+    {
+      const conAdmin = { ...secretosRepo, claveAdmin: CLAVE_ADMIN };
+      const facturasV = rutaRestic(path.join(datosB, "Facturas"));
+      // 13a: en una carpeta nueva (la crea el equipo), con su motivo.
+      const carpetaNueva = path.join(base, "restaurado-otra-carpeta");
+      const cuerpoNueva = { repo: repoId, version, rutas: [facturasV], destino: "nueva", carpeta: carpetaNueva, motivo: { tipo: "prueba", notas: "Prueba de extremo a extremo" } };
+      const oNueva = await consola.mandar(c, eqB.id, "restaurar", cuerpoNueva, conAdmin);
+      const rNueva = await consola.resultado(c, eqB.id, oNueva, { plazo: 120_000 });
+      igual(rNueva.estado, "hecha", `Restaurar en otra carpeta: ${rNueva.mensaje}`);
+      comprobar(!(rNueva.mensaje ?? "").includes(base), "El resultado va sin rutas del equipo", rNueva.mensaje);
+      igual(fs.readFileSync(path.join(carpetaNueva, "Facturas", "factura-001.txt"), "utf8"), contenido, "En la carpeta nueva, la factura de la versión");
+      // Otra vez a la misma: ya no está vacía, el equipo se niega (nunca sobrescribe).
+      const rOtra = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "restaurar", cuerpoNueva, conAdmin), { plazo: 120_000 });
+      igual(rOtra.estado, "fallida", "Una carpeta con algo dentro: no se restaura encima");
+      comprobar(/no está vacía/.test(rOtra.mensaje ?? ""), "Dice que la carpeta no está vacía", rOtra.mensaje);
+      // Una carpeta del sistema, tampoco.
+      const sistema = WIN ? path.join(process.env.SystemRoot ?? "C:\\Windows", "Temp", "resguardo-e2e") : "/etc/resguardo-e2e";
+      const rSis = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "restaurar", { ...cuerpoNueva, carpeta: sistema }, conAdmin), { plazo: 120_000 });
+      igual(rSis.estado, "fallida", "En una carpeta del sistema: no");
+      comprobar(!fs.existsSync(sistema), "Nada creado en la carpeta del sistema", sistema);
+
+      // 13b: en un .zip con contraseña (AES-256) en una carpeta que ya existe.
+      const carpetaZip = dir("zips-e2e");
+      fs.mkdirSync(carpetaZip, { recursive: true });
+      const claveZip = "una clave del zip de prueba";
+      const rZip = await consola.resultado(
+        c,
+        eqB.id,
+        await consola.mandar(c, eqB.id, "restaurar", { repo: repoId, version, rutas: [facturasV], destino: "zip", carpeta: carpetaZip, nombre: "Facturas", contrasena_zip: claveZip }, conAdmin),
+        { plazo: 120_000 },
+      );
+      igual(rZip.estado, "hecha", `Restaurar en un .zip: ${rZip.mensaje}`);
+      const zip = fs.readFileSync(path.join(carpetaZip, "Facturas.zip"));
+      igual(zip.readUInt32LE(0), 0x04034b50, "Es un .zip");
+      comprobar(zip.includes(Buffer.from([0x01, 0x99, 0x07, 0x00])), "Lleva el campo de AES (0x9901) en cada archivo", zip.length);
+      comprobar(!zip.includes(Buffer.from(contenido)) && !zip.includes(Buffer.from(claveZip)), "Ni el contenido ni la contraseña van en claro");
+      // Otra vez con el mismo nombre: otro .zip, nunca encima.
+      const rZip2 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "restaurar", { repo: repoId, version, rutas: [rutaRestic(original)], destino: "zip", carpeta: carpetaZip, nombre: "Facturas" }, conAdmin), { plazo: 120_000 });
+      igual(rZip2.estado, "hecha", `El segundo .zip: ${rZip2.mensaje}`);
+      comprobar(fs.existsSync(path.join(carpetaZip, "Facturas (2).zip")), "El segundo, «Facturas (2).zip»", fs.readdirSync(carpetaZip));
+
+      // 13d, 14l: el equipo anota cada restauración en su bitácora (sin rutas) y llega al servidor.
+      type Reg = { entradas: { id: string; destino?: string; resultado: string; cifrado?: boolean; motivo?: { tipo: string } | null; por?: string | null }[]; notas: { id: string; motivo: string }[] };
+      const reg = await esperar(
+        "el registro de restauraciones en el servidor",
+        async () => {
+          const r = await consola.ok<Reg>("GET", `/api/clientes/${c.id}/restauraciones?equipo=${eqB.id}`);
+          return r.entradas.some((x) => x.id === `restauracion-${oNueva.id}`) && r.entradas.some((x) => x.destino === "zip" && x.cifrado) ? r : undefined;
+        },
+        { plazo: 150_000, cada: 2_000 },
+      );
+      const laNueva = reg.entradas.find((x) => x.id === `restauracion-${oNueva.id}`)!;
+      igual([laNueva.destino, laNueva.resultado, laNueva.motivo?.tipo, laNueva.por], ["nueva", "ok", "prueba", "Ana"], "La entrada de la restauración en otra carpeta");
+      comprobar(reg.entradas.some((x) => x.destino === "nueva" && x.resultado === "fallo"), "También la que no se pudo hacer", reg.entradas);
+      const texto = JSON.stringify(reg);
+      comprobar(!texto.includes(base) && !texto.includes("factura-001") && !texto.includes(claveZip), "El registro no lleva rutas, nombres de archivos ni la contraseña del .zip");
+      // El motivo que añade una persona en esta consola.
+      await consola.ok("PUT", `/api/clientes/${c.id}/equipos/${eqB.id}/restauraciones/restauracion-${oNueva.id}`, { motivo: "borrado", notas: "Lo pidió el cliente" });
+      const reg2 = await consola.ok<Reg>("GET", `/api/clientes/${c.id}/restauraciones?equipo=${eqB.id}`);
+      comprobar(reg2.notas.some((n) => n.id === `restauracion-${oNueva.id}` && n.motivo === "borrado"), "El motivo de esta consola queda guardado", reg2.notas);
+      // 13e: una restauración real correcta cuenta como prueba de restauración del repositorio.
+      const conReal = await esperar(
+        "la restauración real en el informe de B",
+        async () => {
+          const inf = (await consola.ok<{ datos: { repos?: { id: string; restauracion_real?: { ultima: string } | null }[] } }[]>("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/informes?limite=1`))[0];
+          return inf?.datos.repos?.find((x) => x.id === repoId)?.restauracion_real ?? undefined;
+        },
+        { plazo: 150_000, cada: 2_000 },
+      );
+      comprobar(!!conReal.ultima, "El informe dice cuándo fue la restauración real", conReal);
+      log("Restaurado en otra carpeta y en .zip (AES-256), con su registro");
+    }
+
+    // -----------------------------------------------------------------------
     paso("4a. Actualización automática: la consola sirve una versión firmada (llave de PRUEBAS) y B «se actualiza»");
     {
       // docs/actualizaciones.md: la sustitución real del programa se prueba en máquinas virtuales
@@ -785,7 +901,7 @@ async function principal() {
     // Versiones con otras horas, como las haría B (su usuario y su contraseña: solo añadir).
     const caAlmacen = dir("ca-almacen.pem");
     fs.writeFileSync(caAlmacen, acceso.destino.ca_pem);
-    const repoUrl = `rest:${acceso.destino.donde.replace(/\/?$/, "/")}${repoId}`;
+    const repoUrl = `rest:${acceso.destino.donde.replace(/\/?$/, "/")}${carpetaB}`;
     const envRestic = { RESTIC_REPOSITORY: repoUrl, RESTIC_PASSWORD: contrasenaRepo, RESTIC_REST_USERNAME: acceso.destino.usuario, RESTIC_REST_PASSWORD: acceso.destino.secreto, RESTIC_CACERT: caAlmacen, RESTIC_CACHE_DIR: dir("cache-restic") };
     const comoB = (args: string[]) => {
       const r = ejecutar(resticBin, args, { env: envRestic, plazo: 300_000 });
@@ -1200,6 +1316,26 @@ async function principal() {
       comprobar(total > yaSubidas, `«La nube» tiene lo nuevo (${yaSubidas} → ${total} versiones)`);
       // Sin repetir ninguna: las mismas que en el almacén.
       igual(total, snapshots().length, "Ni una versión repetida en «la nube»");
+    }
+
+    // -----------------------------------------------------------------------
+    paso("6b3. «Comprobar la contraseña» (14bbb): el equipo abre de verdad el repositorio; una que no es se rechaza y cuenta como intento");
+    {
+      comprobar(eqBAhora.resumen?.admite?.includes("comprobar_contrasena"), "B admite «Comprobar la contraseña»");
+      const bien = await consola.hecha(c, eqB.id, "comprobar_contrasena", { repo: repoId }, secretosRepo, {}, 180_000);
+      comprobar(/La contraseña abre/.test(bien.mensaje ?? ""), `Bien: ${bien.mensaje}`);
+      // La copia externa a «la nube» usa otra contraseña: se dice, no se prueba con esta.
+      comprobar(/usa otra contraseña/.test(bien.mensaje ?? ""), "La copia externa con otra contraseña se dice aparte", bien.mensaje);
+      comprobar(!(bien.mensaje ?? "").includes(contrasenaRepo) && !(bien.mensaje ?? "").toLowerCase().includes("restic"), "Sin la contraseña ni la palabra del motor", bien.mensaje);
+      const detalle = JSON.parse(bien.detalle ?? "{}");
+      igual(detalle.resultado, "abre", "El detalle dice que abre");
+      const cc = await esperar("la fecha de la comprobación en el resumen de B", async () => (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.contrasena_comprobada, { plazo: 30_000 });
+      comprobar(cc.resultado === "abre" && cc.bien && Date.now() - new Date(cc.bien).getTime() < 10 * 60_000, "Queda la fecha en el resumen", cc);
+      // Una que no es: el equipo la rechaza sin probar nada (y cuenta para el bloqueo por intentos).
+      const mal = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "comprobar_contrasena", { repo: repoId }, { repo: { repo: repoId, contrasena: "no es esta" } }), { plazo: 60_000 });
+      comprobar(mal.estado === "rechazada" && /no es correcta/.test(mal.mensaje ?? ""), `Mal: ${mal.estado}: ${mal.mensaje}`);
+      const tras = (await consola.equipo(c, eqB.id)).resumen?.repositorios?.find((r) => r.id === repoId)?.contrasena_comprobada;
+      igual(tras?.bien, cc.bien, "Una que no es no cambia la fecha");
     }
 
     // -----------------------------------------------------------------------

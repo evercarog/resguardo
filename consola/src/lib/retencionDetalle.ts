@@ -181,14 +181,14 @@ export function totales(vs: VueltaRetencion[]): Totales {
 /** Quién la aplicó, en corto: «Equipo», «Almacén X», «Copia externa». */
 export function quienCorto(v: VueltaRetencion, almacen?: string | null): string {
   if (v.origen === "almacen") return `Almacén ${almacen ?? "(otro equipo)"}`;
-  if (v.origen === "externa") return "Copia externa";
+  if (v.origen === "externa") return "Copia derivada";
   return "Equipo";
 }
 
 /** Y en una frase. */
 export function quienAplico(v: VueltaRetencion, nombres: { equipo: string; almacen?: string | null }): string {
   if (v.origen === "almacen") return `El almacén ${nombres.almacen ?? "(otro equipo)"}, ${v.por === "automatica" ? "a su hora (automática)" : "al pedirlo desde la consola («Aplicar ahora»)"}.`;
-  if (v.origen === "externa") return `${nombres.equipo}, en el destino de su copia externa, al subirla (automática).`;
+  if (v.origen === "externa") return `${nombres.equipo}, en el destino de su copia derivada, al subirla (automática).`;
   return `${nombres.equipo}, ${v.por === "ventana" ? "desde su ventana" : "con una orden de la consola"}.`;
 }
 

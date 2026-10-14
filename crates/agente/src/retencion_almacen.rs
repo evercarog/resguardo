@@ -223,6 +223,28 @@ fn cambiar<T>(f: impl FnOnce(&mut Vec<Entrada>) -> Result<T, String>) -> Result<
     Ok(r)
 }
 
+/// B1 (docs/nombres-legibles.md): las reglas de `usuario` pasan a `nuevo` y, dentro de
+/// él, la carpeta de cada repositorio `(de, a)` (en memoria).
+pub fn renombrar_en(lista: &mut [Entrada], usuario: &str, nuevo: &str, repos: &[(String, String)]) {
+    for e in lista.iter_mut().filter(|e| e.usuario == usuario) {
+        if let Some((_, a)) = repos.iter().find(|(de, _)| *de == e.repo) {
+            e.repo = a.clone();
+        }
+        e.usuario = nuevo.to_string();
+    }
+}
+
+/// Lo mismo, guardado (con el candado).
+pub fn renombrar(usuario: &str, nuevo: &str, repos: &[(String, String)]) -> Result<(), String> {
+    if !archivo().is_file() {
+        return Ok(());
+    }
+    cambiar(|l| {
+        renombrar_en(l, usuario, nuevo, repos);
+        Ok(())
+    })
+}
+
 // ---------- Dónde está cada repositorio ----------
 
 /// Nombre de una carpeta: letras, cifras, `.`, `-` y `_`, sin ser `.` ni `..`.

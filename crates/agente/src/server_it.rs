@@ -478,3 +478,108 @@ fn derivada_hacia_un_almacen_con_autoridad_propia() {
     std::env::remove_var("RESGUARDO_AGENT_DIR");
     drop(guard);
 }
+
+/// B1 (docs/nombres-legibles.md): «Ordenar nombres de carpeta» de verdad, con el
+/// rest-server real. Un equipo con el usuario de antes (su id) y un repositorio con
+/// el nombre del almacén; el almacén mueve las dos carpetas (y lo dice su espejo),
+/// el equipo pone la ruta nueva (`cambiar_destino { donde, usuario, carpetas }`,
+/// que abre el repositorio antes de guardar) y sigue copiando. El usuario de antes
+/// ya no entra, y se puede volver a mover (deshacer es la misma orden al revés).
+#[test]
+fn ordenar_carpetas_real() {
+    let Some(bin) = rest_server_de_pruebas() else {
+        eprintln!("omitido: sin rest-server (RESGUARDO_TEST_REST_SERVER o src-tauri/binaries)");
+        return;
+    };
+    binary_check_at(&bin).expect("la huella del rest-server incluido no coincide");
+    let _real = crate::restic::tests::real_repo_lock();
+    let base = std::env::temp_dir().join(format!("resguardo-ordenar-{}", uuid::Uuid::new_v4()));
+    let guard = Cleanup { child: None, dir: base.clone() };
+    std::fs::create_dir_all(&base).unwrap();
+    let probar = restic::run_raw(&Access::new(base.display().to_string(), "x"), &["version"], Duration::from_secs(30)).is_ok_and(|o| o.code == Some(0));
+    if !probar {
+        eprintln!("omitido: sin restic");
+        return;
+    }
+    std::env::set_var("RESGUARDO_AGENT_DIR", base.join("agente"));
+    std::env::set_var("RESGUARDO_REST_SERVER_BIN", &bin);
+    let d = base.join("disco-d");
+    let p = free_port();
+    crate::server::activar(&d.display().to_string(), p, true).expect("activar el almacén");
+    esperar("el almacén escucha", Duration::from_secs(20), || crate::server::listening(p));
+    let id_equipo = "0b5c1f8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f";
+    // Como hasta ahora: el usuario es el id del equipo.
+    let (u, pass, _, _) = crate::server::anadir_equipo_en(id_equipo, None).expect("dar acceso al equipo");
+    crate::server::esperar_usuario(&u, &pass);
+    let pem = std::fs::read_to_string(crate::server::cert_file()).unwrap();
+    let mut v = crate::servidor_v2::Vinculo::default();
+    let destino = serde_json::json!({ "id": "almacen-0b5c1f8e", "nombre": "ALMACEN-01", "tipo": "rest", "donde": format!("https://localhost:{p}/{u}/"),
+                                      "usuario": u, "secreto": pass, "ca_pem": pem });
+    let c = serde_json::json!({ "id": "almacen-01-3f2a", "nombre": "Contabilidad", "contrasena": "clave del repositorio", "destino": destino });
+    crate::gestion_v2::crear_repositorio(&mut v, &c).expect("crear el repositorio en el almacén");
+    let origen = base.join("origen");
+    std::fs::create_dir_all(&origen).unwrap();
+    std::fs::write(origen.join("factura.txt"), "Factura de prueba\n".repeat(100)).unwrap();
+    let antes = crate::gestion_v2::acceso(&v, "almacen-01-3f2a").unwrap();
+    assert_eq!(run(&antes, &["backup", &origen.display().to_string()]).code, Some(0));
+    // Un espejo del almacén que elige ese repositorio.
+    let mut t = crate::espejo_trabajos::Trabajo { id: "sel".into(), nombre: "Sel".into(), activo: true, ..Default::default() };
+    t.adonde = crate::espejo_trabajos::Adonde { tipo: "carpeta".into(), carpeta: base.join("espejo").display().to_string(), nube: None };
+    t.que = crate::espejo_trabajos::Que::Repos { repos: vec![format!("{u}/almacen-01-3f2a")] };
+    let mut cfg = crate::server::load();
+    cfg.espejo = Some(crate::espejo::Espejo::de_trabajos(vec![t]));
+    crate::server::save(&cfg).unwrap();
+
+    // 1. El almacén mueve las carpetas (y espera a que el rest-server lea el usuario nuevo).
+    let (m, detalle) =
+        crate::nombres::mover(&serde_json::json!({ "usuario": u, "legible": "PC 01", "repos": [{ "de": "almacen-01-3f2a", "nombre": "Contabilidad" }] }))
+            .expect("mover en el almacén");
+    eprintln!("mover: {m}");
+    let nuevo = detalle["mover"]["usuario"]["a"].as_str().unwrap().to_string();
+    assert!(nuevo.starts_with("pc-01-"), "{detalle}");
+    assert_eq!(detalle["mover"]["repos"][0]["a"], "contabilidad");
+    assert!(d.join(&nuevo).join("contabilidad").join("config").is_file() && !d.join(&u).exists());
+    let cfg = crate::server::load();
+    assert!(cfg.users.iter().any(|x| x.name == nuevo && x.para.as_deref() == Some(u.as_str())));
+    let ts = &cfg.espejo.as_ref().unwrap().trabajos;
+    assert_eq!(ts[0].que, crate::espejo_trabajos::Que::Repos { repos: vec![format!("{nuevo}/contabilidad")] });
+    assert!(!crate::server::Files::agent().read_htpasswd_de(None).iter().any(|l| l.starts_with("resguardo-sonda-")), "el usuario de prueba se quita");
+    // Hasta que el equipo se entera, su ruta ya no vale.
+    assert_ne!(run(&antes, &["snapshots"]).code, Some(0));
+
+    // 2. El equipo pone la ruta nueva (comprueba que abre antes de guardar).
+    let mal = serde_json::json!({ "destino": "almacen-0b5c1f8e", "carpetas": { "almacen-01-3f2a": "../otro" } });
+    assert!(crate::gestion_v2::cambiar_destino(&mut v, &mal).unwrap_err().contains("no válida"));
+    let incompleta = serde_json::json!({ "destino": "almacen-0b5c1f8e", "carpetas": { "almacen-01-3f2a": "contabilidad" } });
+    assert!(crate::gestion_v2::cambiar_destino(&mut v, &incompleta).is_err(), "sin el usuario nuevo no abre: no se guarda nada");
+    assert!(v.repos_v2[0].ubicacion_origen.is_none());
+    let bien = serde_json::json!({ "destino": "almacen-0b5c1f8e", "donde": format!("https://localhost:{p}/{nuevo}/"), "usuario": nuevo,
+                                   "carpetas": { "almacen-01-3f2a": "contabilidad" } });
+    crate::gestion_v2::cambiar_destino(&mut v, &bien).expect("la ruta nueva en el equipo");
+    let ahora = crate::gestion_v2::acceso(&v, "almacen-01-3f2a").unwrap();
+    assert!(ahora.location.ends_with(&format!("/{nuevo}/contabilidad")), "{}", ahora.location);
+    assert_eq!(restic::snapshots(&ahora).unwrap().len(), 1, "todo el historial");
+    std::fs::write(origen.join("factura.txt"), "Factura cambiada\n".repeat(100)).unwrap();
+    assert_eq!(run(&ahora, &["backup", &origen.display().to_string()]).code, Some(0), "sigue copiando");
+    assert_eq!(restic::snapshots(&ahora).unwrap().len(), 2);
+    // El usuario de antes ya no entra.
+    let mut viejo = ahora.clone();
+    viejo.rest_auth = Some((u.clone(), pass.clone()));
+    let out = run(&viejo, &["snapshots"]);
+    assert!(out.code != Some(0) && out.stderr.contains("401"), "{}", out.stderr);
+    // Solo añadir, como antes.
+    let snap = restic::snapshots(&ahora).unwrap()[0].id.clone();
+    assert_ne!(run(&ahora, &["forget", &snap]).code, Some(0));
+
+    // 3. Se puede volver a mover (deshacer es la misma orden al revés).
+    let (_, det) = crate::nombres::mover(&serde_json::json!({ "usuario": nuevo, "legible": "Otro" })).expect("otro nombre");
+    let otro = det["mover"]["usuario"]["a"].as_str().unwrap().to_string();
+    assert!(otro.starts_with("otro-") && d.join(&otro).join("contabilidad").is_dir());
+    assert_eq!(crate::server::load().renombres.len(), 3);
+
+    crate::server::desactivar().expect("desactivar");
+    esperar("el almacén deja de escuchar", Duration::from_secs(20), || !crate::server::listening(p));
+    std::env::remove_var("RESGUARDO_REST_SERVER_BIN");
+    std::env::remove_var("RESGUARDO_AGENT_DIR");
+    drop(guard);
+}
