@@ -112,7 +112,7 @@
       <label class="preset" class:on={elegido === p.id} class:off={p.plazos && !admite}>
         <input type="radio" name="{id}-preset" value={p.id} checked={elegido === p.id} disabled={p.plazos && !admite} onchange={() => elegir(p.id)} />
         <span class="preset-txt"
-          ><span>{p.texto}{#if p.recomendada}<span class="badge badge-sm tone-neutral recomendada">Recomendada</span>{/if}{#if p.plazos && !admite}<span class="faint"> · Actualiza el agente para usar esto</span>{/if}</span><span class="faint para">{p.para}</span></span
+          ><span>{p.texto}{#if p.recomendada}<span class="badge badge-sm tone-neutral recomendada">Recomendada</span>{/if}{#if p.plazos && !admite}<span class="faint">&nbsp;· Actualiza el agente para usar esto</span>{/if}</span><span class="faint para">{p.para}</span></span
         >
       </label>
     {/each}

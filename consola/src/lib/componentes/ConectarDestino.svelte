@@ -285,7 +285,7 @@
       </div>
     </div>
 
-    {#if pasos}<Pasos {pasos} actual={pasos[pasos.length - 1].id} completo={!!hecho} />{/if}
+    {#if pasos}<div class="pasos-dlg"><Pasos {pasos} actual={pasos[pasos.length - 1].id} completo={!!hecho} /></div>{/if}
     {#if hecho}
       <div class="form">
         <div class="notice notice-success" role="status"><Check size={16} /><p>{hecho}</p></div>

@@ -319,7 +319,7 @@
     </div>
   </div>
 
-  {#if !existente}<Pasos pasos={PASOS} actual={paso} alElegir={ocupado ? undefined : (id) => void (paso = id as Paso)} />{/if}
+  {#if !existente}<div class="pasos-dlg"><Pasos pasos={PASOS} actual={paso} alElegir={ocupado ? undefined : (id) => void (paso = id as Paso)} /></div>{/if}
   {#if paso === "datos"}
     <div class="form">
       {#if !alCreado}

@@ -2017,6 +2017,7 @@
 
 <style>
   .menos-usado > summary {
+    list-style: none;
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -2026,6 +2027,19 @@
     font-weight: 500;
     color: var(--text-2);
     cursor: pointer;
+  }
+  .menos-usado > summary::-webkit-details-marker {
+    display: none;
+  }
+  .menos-usado > summary::before {
+    content: "›";
+    display: inline-block;
+    width: 12px;
+    color: var(--text-3);
+    transition: transform var(--dur) var(--ease);
+  }
+  .menos-usado[open] > summary::before {
+    transform: rotate(90deg);
   }
   .menos-usado > summary .faint {
     font-weight: 400;

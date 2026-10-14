@@ -49,7 +49,7 @@
         <p>Dónde se guardarán repositorios o espejos. Se crea ahora y se usa después. <Ayuda id="catalogo-destinos" /></p>
       </div>
     </div>
-    <Pasos pasos={PASOS} actual="que" />
+    <div class="pasos-dlg"><Pasos pasos={PASOS} actual="que" /></div>
     <div class="form">
       <div class="clases" role="radiogroup" aria-label="Qué destino">
         <label class="clase" class:on={clase === "nube"}>
