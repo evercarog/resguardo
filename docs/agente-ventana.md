@@ -87,6 +87,8 @@ En la configuración gestionada (`Configuracion` v1, orden `config`):
   al pasar el ratón y un resumen para lectores de pantalla. Con poca historia se
   ve de cerca y se va alejando hasta 5 minutos; al terminar, la onda baja a cero.
   Sin nada en marcha, el estado tranquilo (última copia, próxima, «Copiar ahora»).
+  Arriba, si las hay y quien mira es administrador del equipo, «Órdenes esperando
+  su turno» con «Aprobar ahora» (14a, con la clave de administración).
 - **Copias**: cada copia con su resultado, cuándo y la próxima; «Copiar ahora».
 - **Historial**: barras de 14 días (correctas, con avisos, fallidas; con icono y
   texto, no solo color) y lo último de cada tarea.
@@ -185,7 +187,10 @@ ACL, atada a un reto de un uso: lo mismo que ya viaja (cifrado) en cada orden.
 | `historial`, `kit`, `cambiar_clave`, `vincular` | local | |
 | `adoptar_repositorio`, `copiar_historial`, `historial_traido` | local | «Usar uno que ya existe» (o solo probarlo) y «Traer historial» (en segundo plano; `historial_traido { repo }` dice cómo va: `{ estado, mensaje }` o `null`) |
 
-En un equipo gestionado la ventana solo cambia `escritorio`.
+| `en_espera` | sin clave, solo administradores del equipo | 14a: las órdenes que esperan su turno (`n`, descripción, consola por su nombre, quién, cuándo, repositorio, `aprobable`) |
+| `aprobar_espera { id }` | con clave, solo administradores del equipo, gestionado | 14a: la aplica ya (docs/consolas-multiples.md §5.11); además del bloqueo de la ventana, el de las órdenes (cuenta `equipo`) |
+
+En un equipo gestionado la ventana solo cambia `escritorio` y, con la clave escrita en ese momento, **aprueba** órdenes en espera (14a: sección «Órdenes esperando su turno» en «Ahora», que solo ve un administrador del equipo). La línea de órdenes hace lo mismo con `resguardo-agente ordenes [aprobar <n.º>]`.
 
 ## 5. Modo sin consola
 

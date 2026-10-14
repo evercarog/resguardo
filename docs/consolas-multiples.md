@@ -364,7 +364,38 @@ Se anotan todas las órdenes que el equipo recibe salvo las que abren una sesió
 - Las consolas apagadas cuando entra la orden no reciben el aviso por correo o push: la ven al volver (resumen e historial).
 - Una cancelación desde otra consola llega al equipo por el canal de esa otra consola: si el equipo no habla con ella, no se puede cancelar desde allí (desde la que la mandó, sí).
 - `por` lo pone la consola que manda la orden: una consola maliciosa puede poner cualquier nombre.
-- La ventana del propio equipo todavía no enseña ni cancela las órdenes en espera (lo hace cualquier consola).
+- La ventana del propio equipo enseña las órdenes en espera y deja **aprobarlas** (§5.11), pero no cancelarlas (eso lo hace cualquier consola).
+
+### 5.11 Aprobar una orden en espera en el propio equipo (14a, plan 0.8.0 H1)
+
+Contrato «v1.6x, pendiente de numerar al unir» en [api-servidor.md](api-servidor.md), «Cambios».
+
+**Para qué.** A veces la persona que manda una orden que reduce la protección está delante del equipo (p. ej. quita un repositorio que ya no hace falta y no quiere esperar 24 h). Puede **adelantarla**, de forma segura, desde el propio equipo.
+
+**Cómo.**
+
+- **Windows:** en la ventana de Resguardo, pestaña «Ahora», la sección «Órdenes esperando su turno» con cada una: qué hace, desde qué consola, quién la pidió, de qué repositorio y cuándo se aplicaría. «Aprobar ahora» pide **siempre** la clave de administración (aunque los ajustes estén desbloqueados) y la aplica ya.
+- **Linux** (y Windows, como administrador): `resguardo-agente ordenes` las lista numeradas; `resguardo-agente ordenes aprobar <n.º>` enseña su detalle y pide la clave **por la terminal, sin eco** (nunca como argumento: no queda en el historial de la terminal ni en la lista de procesos). Pulsar Intro sin escribir nada no aprueba.
+- La ventana y la línea de órdenes calculan la prueba (Argon2id con la sal del equipo, como la consola) y la mandan al servicio por el canal local (`ipc_local`: tubería con DACL en Windows, socket de root en Linux), con un reto de un solo uso. **La clave no sale de ese proceso** ni va a ningún registro.
+- El servicio comprueba: que quien pide es **administrador del equipo** (lo dice el sistema: el token de la tubería o el uid del socket, no la petición); el **bloqueo por intentos** de la ventana (5 fallos → 1 min, el doble cada vez hasta 1 h, por cuenta) **y** el de las órdenes, con su propia cuenta «equipo» en el vínculo (5 fallos en 15 min → 15 min, el doble cada vez hasta 24 h; aviso de intentos fallidos en el historial que reciben todas las consolas); la prueba contra el verificador, en tiempo constante; y que el cliente de la consola que la mandó lo deja (opción abajo).
+- Después hace lo mismo que al aplicarla a su hora (§5.4) salvo la hora: saca la orden de la lista (se aplica una sola vez), vuelve a abrir el sobre, comprueba que esa consola sigue siendo la misma, la espera mínima declarada y las claves **de este momento**, y la ejecuta.
+- **Rastro en todas las consolas:** el resultado firmado va a la consola que la mandó («Aprobada en el equipo por ana (PC-01): …», con `detalle.aprobada_en_equipo`); el historial común lleva `aprobada_en_equipo` con la cuenta del sistema (en Windows, `usuario (EQUIPO o DOMINIO)`; en Linux, la cuenta, y `root (sudo, ana)` si se usó `sudo`); y **todas** las consolas reciben el aviso crítico «Se aprobó en el equipo una orden que reducía la protección» (correo y push según sus reglas).
+
+**Opción por cliente** (activada por defecto), en «Personas y ajustes» → «Aprobar en el equipo» (propietarios). Cada consola se la dice al equipo (en el `hola`, en `tomar` y, al cambiarla, al momento) y el equipo la guarda **por consola**: rige para las órdenes que mandó esa consola. Desactivada, el equipo no ofrece aprobarlas (la ventana y la terminal dicen por qué) y el servicio lo rechaza. La lista «Órdenes esperando su turno» de la consola dice «Se puede aprobar en el equipo» cuando el agente lo admite y la opción lo deja.
+
+**Nunca desde la web.** No hay ninguna orden ni ruta del servidor que apruebe: solo se aprueba delante del equipo. La consola solo informa y cambia la opción.
+
+**Modelo de amenazas.**
+
+| Quién | Qué puede con esto | Por qué se acepta |
+|---|---|---|
+| Alguien con sesión en el equipo **sin** ser administrador | Nada: ni ve las órdenes ni puede aprobarlas | El servicio comprueba la cuenta que da el sistema |
+| Un administrador del equipo **sin** la clave | Nada: cada intento cuenta y se bloquea, y los fallos llegan como aviso a todas las consolas | La clave de administración del cliente es lo que autoriza; el administrador del equipo no la tiene por serlo |
+| Un administrador del equipo **con** la clave | Adelantar una orden que **ya** firmó una consola con esa misma clave (y cuyas claves se comprobaron al recibirla) | Ya podía hacer mucho: parar el servicio, borrar copias locales, llevarse los datos o restaurar con la clave desde la ventana. No puede inventar órdenes: solo adelanta las que ya mandó una consola, y deja rastro en **todas** («Aprobada en el equipo por …» y aviso crítico) |
+| Una consola (o su servidor) comprometida | Nada nuevo: no puede aprobar (no hay ruta) y desactivar la opción solo quita una comodidad; activarla solo deja aprobar a quien ya está delante con la clave | La opción la manda cada consola para sus propias órdenes |
+| Un programa malicioso en la sesión de un administrador | Lo mismo que ese administrador si captura la clave al escribirla | Es el límite de cualquier sitio donde se escribe la clave (§4.1); la ventana no se abre elevada y el canal local no se puede suplantar |
+
+Lo que no cambia: la orden ya fue firmada por la consola, sus claves se comprobaron al recibirla (14oo), cualquiera puede seguir cancelándola mientras espera y, si alguien cambió la clave de administración entretanto, se rechaza.
 
 ---
 

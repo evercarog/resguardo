@@ -2,6 +2,26 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-13 · rama `ia/080-aprobar-equipo` · Claude Code (autónomo) · plan 0.8.0 H1 (14a)
+
+**Pedido:** aprobar una orden en espera desde el propio equipo (ventana en Windows, `resguardo-agente ordenes aprobar` en Linux) con la clave de administración; rastro y aviso en todas las consolas; opción por cliente activada por defecto; nunca desde la web. Desde `origin/ia/integracion-080` (rebasada sobre 8239331); sin unir a nada.
+
+**Hecho:**
+- Agente: `espera_v2.rs` (`aprobar`, `lista_local`, `aprobable`, `anotar_opcion`; el resultado firmado dice «Aprobada en el equipo por …» con `detalle.aprobada_en_equipo`; historial con `aprobada_en_equipo`; aviso `orden_aprobada_en_equipo` a todas las consolas, con `cambio_inusual` si el servidor es anterior; `en_espera[].aprobable`), `servidor_v2.rs` (`Vinculo.sin_aprobar_en_equipo` por consola, `contestar_aplicada`, bloqueo por intentos de la clave escrita en el equipo con la cuenta `equipo`, la opción leída del `hola`, de `tomar` y de `{"t":"ajustes"}`), `gestion_v2.rs` (`admite: "aprobar_en_equipo"` al final, `resumen.aprobar_en_equipo`), `ipc_local.rs` (ops `en_espera` y `aprobar_espera`, solo administradores del equipo; nombre de la cuenta del sistema: `LookupAccountSidW` en Windows como «usuario (EQUIPO)», `getpwuid_r` en Unix, `root (sudo, ana)`), `ventana.rs` (ops `en_espera` y `aprobar`, siempre con la clave escrita en ese momento), `cli.rs` (`ordenes` y `ordenes aprobar <n.º>`, clave por la terminal sin eco: `tcsetattr` / `SetConsoleMode`).
+- Servidor: `api/aprobar_equipo.rs` (`PUT /api/clientes/{c}/aprobar-en-equipo`, propietario, auditado, en los valores del servidor; avisa al momento a los equipos conectados), `aprobar_en_equipo` en `GET /api/clientes/{c}`, en `tomar` y en el `hola` del canal; aviso nuevo `orden_aprobada_en_equipo` (crítico, enlaza a Órdenes).
+- Consola: «Se puede aprobar en el equipo» en «Órdenes esperando su turno», «aprobada en el equipo por …» en «Desde otras consolas», interruptor en «Personas y ajustes» con su ayuda (`glosario` «aprobar-en-equipo»), el aviso en Avisos; simulador; vectores en `vectores-espera.ts`. Ventana: sección «Órdenes esperando su turno» en «Ahora» (`EnEspera.svelte`) con «Aprobar ahora».
+- Pruebas: unitarias (`espera_v2`, `ipc_local`, `cli`), la de integración `espera_it.rs` con dos servidores reales (clave mal → intento fallido; buena → aplicada ya, historial y aviso en las dos; opción desactivada → no deja) y paso 8a2b del e2e (la CLI con la clave por la entrada estándar).
+- Docs: `consolas-multiples.md` §5.11 (cómo y modelo de amenazas), `api-servidor.md` «Cambios», `agente-ventana.md`, `agente-linux.md`.
+
+**Sin probar:** la ventana de verdad en Windows (WebView2) y su captura: el servidor de desarrollo de la ventana no arranca en este worktree (`node_modules` enlazado, «Tsconfig not found» al cargar `vite.ventana.config.ts`); sí compila (`build:ventana`) y pasa `check:ventana`. La clave sin eco en una terminal real (en las pruebas la entrada no es una terminal). El nombre de la cuenta en Windows con `LookupAccountSidW` y en Linux con `getpwuid_r` (las pruebas pasan el nombre hecho). Un agente en Linux de verdad.
+
+**Decisiones dudosas:**
+- La opción es **por consola**: el equipo la guarda por vínculo y rige para las órdenes que mandó esa consola (cada servidor tiene su cliente). No va en los datos comunes del cliente; cambiarla no pide la clave de administración (desactivarla solo quita una comodidad y activarla solo deja aprobar a quien ya está delante con la clave). Si la lectura del valor falla en el servidor, se manda «activada» (la de por defecto).
+- Ver la lista en la ventana no pide la clave (solo ser administrador del equipo); aprobar pide **siempre** la clave aunque los ajustes estén desbloqueados.
+- Dos bloqueos a la vez al aprobar: el de la ventana (por cuenta, en memoria) y el de las órdenes con una cuenta propia «equipo» en el vínculo (persistente, avisa a las consolas), para que probar claves en el equipo no bloquee las órdenes de las consolas.
+- La cuenta se enseña como «usuario (EQUIPO)» y no «EQUIPO\usuario»: con la barra, el filtro de rutas de los mensajes la tapaba.
+- El aviso en la consola tiene tono `warn` (como «Orden en espera desde otra consola»), aunque en el servidor es crítico (correo y push).
+
 ## 2026-10-13 · rama `ia/080-restaurar` · Claude Code (autónomo) · plan 0.8.0 E1 y E2
 
 **Pedido:** restaurar mejor (13a, 13b, 14m) y registro de restauraciones (13d, 14l, 13e), con el detalle en vivo (13c) y quién la empezó (13f). Desde `origin/ia/integracion-080`; sin unir a nada.

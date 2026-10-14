@@ -46,7 +46,35 @@ pub const ESPERA_PETICION_MS: u64 = 10_000;
 
 /// Qué operaciones llevan prueba de administración (todas menos estas).
 fn sin_prueba(op: &str) -> bool {
-    matches!(op, "hola" | "crear_clave")
+    matches!(op, "hola" | "crear_clave" | "en_espera")
+}
+
+/// 14a: ¿puede `cliente` ver o aprobar las órdenes en espera en el equipo? Solo SYSTEM/root o
+/// un administrador del equipo (en pruebas, cualquiera), además de la clave para aprobar.
+pub fn puede_aprobar(cliente: &Cliente, pruebas: bool) -> Result<(), String> {
+    if cliente.admin || pruebas {
+        return Ok(());
+    }
+    Err("Solo un administrador de este equipo puede ver y aprobar las órdenes que esperan su turno.".into())
+}
+
+/// 14a: quién aprueba, para el historial: la cuenta que da el sistema. Si es root por `sudo`,
+/// se añade quién lo pidió (lo dice la línea de órdenes; root ya puede todo en el equipo).
+pub fn quien_aprueba(cliente: &Cliente, pet: &Value) -> String {
+    let limpio = |s: &str| s.chars().filter(|c| !c.is_control()).collect::<String>().trim().chars().take(60).collect::<String>();
+    let mut quien = limpio(&cliente.nombre);
+    // `DOMINIO\usuario` → `usuario (DOMINIO)` (con la barra parecería una ruta y no se enseñaría).
+    if let Some((d, u)) = quien.clone().split_once('\\') {
+        quien = format!("{u} ({d})");
+    }
+    if quien.is_empty() {
+        quien = if cliente.id.is_empty() { "una cuenta sin identificar".into() } else { limpio(&cliente.id) };
+    }
+    let sudo = pet["sudo_usuario"].as_str().map(limpio).filter(|s| !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || "._-".contains(c)));
+    match sudo {
+        Some(s) if quien == "root" && s != "root" => format!("root (sudo, {s})"),
+        _ => quien,
+    }
 }
 
 // ---------- Retos y límites (sin sistema operativo: se prueban) ----------
@@ -142,6 +170,9 @@ pub struct Cliente {
     /// ¿Es SYSTEM o root, o una cuenta del grupo Administradores (también con
     /// UAC, cuando el grupo va «solo para denegar» en su token filtrado)?
     pub admin: bool,
+    /// 14a: el nombre de la cuenta (`EQUIPO\usuario` en Windows, el de `/etc/passwd` en
+    /// Unix), para el historial («Aprobada en el equipo por …»). Vacío si no se supo.
+    pub nombre: String,
 }
 
 /// Cuentas distintas de las que se recuerdan los fallos a la vez (en un equipo
@@ -372,13 +403,49 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Client
         crate::agente::refrescar_bandeja();
         return Ok(json!({ "modo": "local" }));
     }
+    if op == "en_espera" {
+        // 14a: lo que espera su turno, para quien está delante (solo administradores del equipo).
+        puede_aprobar(cliente, crate::agent::test_mode())?;
+        let v = v.filter(|v| v.modo == "gestionado" && !v.secreto.is_empty());
+        return Ok(json!({ "ordenes": v.as_ref().map(crate::espera_v2::lista_local).unwrap_or_default() }));
+    }
     if sin_prueba(op) {
         return Err("Operación no válida.".into());
     }
+    let aprobar = op == "aprobar_espera";
+    if aprobar {
+        // 14a: solo administradores del equipo, y con el bloqueo por intentos de las órdenes
+        // (además del de la ventana). El reto se gasta igual: no se puede repetir.
+        if let Err(e) = puede_aprobar(cliente, crate::agent::test_mode()) {
+            crate::agent::log(&format!("Equipo: la cuenta {} (sin ser administradora) intentó aprobar una orden en espera.", cliente.id));
+            return Err(e);
+        }
+        if let Some(m) = s::bloqueo_equipo() {
+            let _ = servidor.lock().map(|mut sv| sv.retos.gastar(pet["reto"].as_str().unwrap_or(""), ahora_ms(), &cliente.id));
+            return Err(m);
+        }
+    }
     let verificador = v.as_ref().and_then(|v| v.verificador.as_deref()).and_then(|x| B64.decode(x).ok());
-    servidor.lock().map_err(|_| "Ocupado.")?.autorizar(pet, verificador.as_deref(), ahora_ms(), &cliente.id)?;
+    let r = servidor.lock().map_err(|_| "Ocupado.")?.autorizar(pet, verificador.as_deref(), ahora_ms(), &cliente.id);
+    if aprobar {
+        match &r {
+            Ok(()) => s::acierto_equipo(),
+            Err(e) if e == CLAVE_INCORRECTA => s::fallo_equipo(),
+            Err(_) => {}
+        }
+    }
+    r?;
     let mut v = v.ok_or("Este equipo aún no tiene clave de administración.")?;
     let local = modo(Some(&v), web) == "local";
+    if aprobar {
+        if modo(Some(&v), web) != "gestionado" {
+            return Err("Este equipo no lo gestiona ninguna consola: no tiene órdenes en espera.".into());
+        }
+        let quien = quien_aprueba(cliente, pet);
+        let r = crate::espera_v2::aprobar(pet["id"].as_str().unwrap_or(""), &quien)?;
+        crate::agente::refrescar_bandeja();
+        return Ok(r);
+    }
     match op {
         // Solo comprobar la clave («Desbloquear»).
         "comprobar" => Ok(json!({ "modo": modo(Some(&v), web) })),
@@ -886,7 +953,25 @@ mod transporte {
                     .any(|x| IsWellKnownSid(x.Sid, WinBuiltinAdministratorsSid) != 0 && x.Attributes & (SE_GROUP_ENABLED | SE_GROUP_USE_FOR_DENY_ONLY) != 0);
             }
         }
-        Cliente { id, admin }
+        Cliente { id, admin, nombre: nombre_de_sid(sid) }
+    }
+
+    /// 14a: `EQUIPO\usuario` (o `DOMINIO\usuario`) de un SID, o vacío si no se sabe.
+    unsafe fn nombre_de_sid(sid: windows_sys::Win32::Security::PSID) -> String {
+        use windows_sys::Win32::Security::LookupAccountSidW;
+        let (mut nombre, mut dominio) = ([0u16; 256], [0u16; 256]);
+        let (mut n, mut d, mut uso) = (nombre.len() as u32, dominio.len() as u32, 0);
+        if LookupAccountSidW(std::ptr::null(), sid, nombre.as_mut_ptr(), &mut n, dominio.as_mut_ptr(), &mut d, &mut uso) == 0 {
+            return String::new();
+        }
+        let txt = |b: &[u16], l: u32| String::from_utf16_lossy(&b[..(l as usize).min(b.len())]);
+        let (nombre, dominio) = (txt(&nombre, n), txt(&dominio, d));
+        // «ana (PC-01)» y no «PC-01\ana»: con la barra, el filtro de rutas de los mensajes lo taparía.
+        if dominio.is_empty() {
+            nombre
+        } else {
+            format!("{nombre} ({dominio})")
+        }
     }
 
     /// ¿La tubería es de SYSTEM o de los administradores? (Si no, la creó otro usuario.)
@@ -1006,9 +1091,23 @@ mod transporte {
             (unsafe { libc::getpeereid(fd, &mut uid, &mut gid) } == 0).then_some(uid)
         };
         match uid {
-            Some(u) => Cliente { id: format!("uid:{u}"), admin: u == 0 },
+            Some(u) => Cliente { id: format!("uid:{u}"), admin: u == 0, nombre: nombre_de_uid(u) },
             None => Cliente::default(),
         }
+    }
+
+    /// El nombre de la cuenta `uid` en el sistema (`getpwuid_r`), o vacío.
+    fn nombre_de_uid(uid: libc::uid_t) -> String {
+        let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut buf = vec![0 as libc::c_char; 4096];
+        let mut res: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: estructura, búfer y salida locales con su tamaño; el nombre apunta dentro de `buf`.
+        let r = unsafe { libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr(), buf.len(), &mut res) };
+        if r != 0 || res.is_null() || pw.pw_name.is_null() {
+            return String::new();
+        }
+        // SAFETY: cadena terminada en cero dentro de `buf`, que sigue vivo.
+        unsafe { std::ffi::CStr::from_ptr(pw.pw_name) }.to_string_lossy().chars().take(64).collect()
     }
 
     pub fn escuchar(direccion: &str, atiende: Atiende) -> Result<(), String> {
@@ -1260,12 +1359,30 @@ mod tests {
     /// La primera clave (modo sin consola) solo la pone un administrador del equipo.
     #[test]
     fn solo_un_administrador_pone_la_primera_clave() {
-        let usuario = Cliente { id: "S-1-5-21-1001".into(), admin: false };
-        let admin = Cliente { id: "S-1-5-21-500".into(), admin: true };
+        let usuario = Cliente { id: "S-1-5-21-1001".into(), admin: false, ..Default::default() };
+        let admin = Cliente { id: "S-1-5-21-500".into(), admin: true, ..Default::default() };
         assert!(puede_crear_clave(&usuario, false).unwrap_err().contains("Solo un administrador"));
         assert!(puede_crear_clave(&Cliente::default(), false).is_err(), "sin identificar: no");
         assert!(puede_crear_clave(&admin, false).is_ok());
         assert!(puede_crear_clave(&usuario, true).is_ok(), "en pruebas, cualquiera");
+    }
+
+    /// 14a: ver y aprobar órdenes en espera, solo un administrador del equipo; quién aprueba
+    /// lo dice el sistema (con `sudo`, también quién lo pidió).
+    #[test]
+    fn aprobar_solo_administradores_y_quien() {
+        let usuario = Cliente { id: "S-1-5-21-1001".into(), admin: false, nombre: "pepe (PC-01)".into() };
+        let admin = Cliente { id: "S-1-5-21-500".into(), admin: true, nombre: "ana (PC-01)".into() };
+        assert!(puede_aprobar(&usuario, false).unwrap_err().contains("Solo un administrador"));
+        assert!(puede_aprobar(&Cliente::default(), false).is_err());
+        assert!(puede_aprobar(&admin, false).is_ok());
+        assert_eq!(quien_aprueba(&admin, &json!({ "sudo_usuario": "otro" })), "ana (PC-01)", "sudo solo cuenta para root");
+        let root = Cliente { id: "uid:0".into(), admin: true, nombre: "root".into() };
+        assert_eq!(quien_aprueba(&root, &json!({ "sudo_usuario": "ana" })), "root (sudo, ana)");
+        assert_eq!(quien_aprueba(&root, &json!({ "sudo_usuario": "ana; rm -rf /" })), "root", "nada raro de la petición");
+        assert_eq!(quien_aprueba(&Cliente { id: "uid:1000".into(), ..Default::default() }, &json!({})), "uid:1000");
+        let barra = Cliente { admin: true, nombre: "OFICINA\\luis".into(), ..Default::default() };
+        assert_eq!(quien_aprueba(&barra, &json!({})), "luis (OFICINA)");
     }
 
     #[test]

@@ -68,7 +68,24 @@
       pendientesClave = [];
     }
   }
-  const nombreEquipo = (id: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
+  // ---- 14a: «Aprobar en el equipo» (activada por defecto) ----
+  let guardandoAprobar = $state(false);
+  const aprobarActiva = $derived(actual.cliente?.aprobar_en_equipo?.activa ?? true);
+  const sinAprobar = $derived(actual.equipos.filter((x) => x.confirmado && x.resumen && !x.resumen.admite?.includes("aprobar_en_equipo")));
+  async function cambiarAprobar(activa: boolean) {
+    if (!actual.cliente) return;
+    guardandoAprobar = true;
+    try {
+      const r = await api.ponerAprobarEnEquipo(actual.id, activa);
+      actual.cliente.aprobar_en_equipo = r;
+      avisar(activa ? "Se puede aprobar en el equipo: los equipos conectados ya lo saben." : "Ya no se puede aprobar en el equipo: los equipos conectados ya lo saben.");
+    } catch (e) {
+      fallo(e);
+    } finally {
+      guardandoAprobar = false;
+    }
+  }
+  const nombreEquipo = (id: string) =>actual.equipos.find((e) => e.id === id)?.nombre ?? "un equipo";
 
   async function cargar() {
     void cargarCambioClave();
@@ -288,6 +305,18 @@
           <span class="faint">{actual.cliente.espera_min_horas} h. La aplica cada equipo; cambiarla pide la clave de administración.</span>
         </span>
         <button class="btn btn-sm" onclick={() => ((horas = actual.cliente!.espera_min_horas), (espera = true))} disabled={!actual.equipos.length}><Clock size={14} />Cambiar</button>
+      </div>
+      <div class="fila-ajuste">
+        <span>
+          <strong id="t-aprobar">Aprobar en el equipo <Ayuda id="aprobar-en-equipo" /></strong>
+          <span class="faint">
+            {aprobarActiva
+              ? "Quien esté delante de un equipo, como administrador y con la clave de administración, puede aplicar ya una orden que espera su turno. Queda en el historial de todas las consolas, con un aviso. Nunca desde esta web."
+              : "Desactivado: las órdenes que esperan su turno solo se aplican a su hora (o se cancelan)."}
+            {#if sinAprobar.length}{" "}{plural(sinAprobar.length, "equipo tiene", "equipos tienen")} un agente anterior que no lo admite.{/if}
+          </span>
+        </span>
+        <input class="switch" type="checkbox" aria-labelledby="t-aprobar" checked={aprobarActiva} disabled={guardandoAprobar} onchange={(e) => cambiarAprobar(e.currentTarget.checked)} />
       </div>
       <div class="fila-ajuste">
         <span class="con-marca">
