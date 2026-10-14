@@ -77,7 +77,8 @@ export function textoFase(t: TareaEnMarcha): string {
   }
   if (t.tipo === "restauracion" || t.tipo === "espejo" || ((t.tipo === "verificar" || t.tipo === "verificar_externa" || t.tipo === "prueba_restauracion" || t.tipo === "copia_externa") && (t.por || t.otra_consola))) {
     const q = quienEmpezo(t);
-    return `${t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA[t.tipo]}${q ? ` (${q})` : ""}`;
+    const de = t.tipo === "espejo" && t.nombre ? ` de «${t.nombre}»` : "";
+    return `${t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA[t.tipo]}${de}${q ? ` (${q})` : ""}`;
   }
   if (t.tipo !== "copia") return t.etapa?.trim().replace(/…$/, "") || NOMBRE_TAREA[t.tipo];
   switch (t.fase) {

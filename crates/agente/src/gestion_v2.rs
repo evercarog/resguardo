@@ -1201,6 +1201,10 @@ pub const ADMITE: &[&str] = &[
     // `resumen.aprobar_en_equipo`, `aprobar_en_equipo` en `hola`/`tomar`/`{"t":"ajustes"}`,
     // `aprobada_en_equipo` en el historial y el aviso `orden_aprobada_en_equipo`.
     "aprobar_en_equipo",
+    // v1.6x (pendiente de numerar al unir) 14s: `cuando.primera_desde` en los trabajos de espejo (la
+    // primera subida, no antes de esa hora). 14i, 14c y 14p (campos opcionales, sin token): `subidas`,
+    // `ocupa`, `bien`, `nunca_bien` y `en_cola` en cada trabajo y el progreso `espejo`.
+    "espejo_primera",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

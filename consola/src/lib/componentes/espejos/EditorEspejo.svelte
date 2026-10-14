@@ -10,7 +10,7 @@
   // entera con la clave de administración (OrdenDialog). El almacén nunca recibe
   // contraseñas de repositorios: copia archivos cifrados sin abrirlos.
   import { untrack } from "svelte";
-  import { ArrowLeft, ArrowRight, Check, ChevronDown, Cloud, Pencil, Save, TriangleAlert } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Check, ChevronDown, Cloud, CloudUpload, Pencil, Save, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import BotonFalta from "../BotonFalta.svelte";
   import ElegirDestinoPaso, { type OpcionDestino } from "../ElegirDestinoPaso.svelte";
@@ -26,6 +26,8 @@
   import { errorCarpetaEspejo } from "$lib/ganchos";
   import { clasificacionDeVista } from "$lib/regla321";
   import { corta } from "$lib/tipoDestino";
+  import { bytes, plural } from "$lib/formato";
+  import { admitePrimeraDesde, empiezaDeCero, madrugadaSiguiente, primeraSubida } from "$lib/espejoPagina";
   import {
     AVISO_IGUAL,
     conTrabajo,
@@ -293,10 +295,19 @@
     paso = p;
     desdeResumen = true;
   }
+  // --- 14s: la primera subida, avisada (con su tamaño y cuándo empieza) ---
+  const deCero = $derived(t.activo && empiezaDeCero(t, nuevo ? null : trabajo, nuevo));
+  const primera = $derived(deCero ? primeraSubida(t, hace, equipos) : null);
+  const madrugada = $derived(admitePrimeraDesde(hace));
+  // svelte-ignore state_referenced_locally
+  let empezar = $state<"ahora" | "madrugada">(trabajo.cuando.primera_desde && Date.parse(trabajo.cuando.primera_desde) > Date.now() ? "madrugada" : "ahora");
   function guardar() {
     if (error) return;
     recordarBucket();
-    onguardar({ ...t, nombre: t.nombre.trim() || nombrePorDefecto(t.adonde) });
+    const cuando = { ...t.cuando };
+    if (primera && madrugada && empezar === "madrugada") cuando.primera_desde = madrugadaSiguiente(Date.now());
+    else if (deCero) delete cuando.primera_desde;
+    onguardar({ ...t, cuando, nombre: t.nombre.trim() || nombrePorDefecto(t.adonde) });
   }
   /** La línea de resumen de cada paso. */
   const lineas = $derived<Record<IdPaso, string>>({
@@ -532,6 +543,25 @@
       {#if t.retencion.modo === "igual"}<div class="notice notice-warn"><TriangleAlert size={16} /><p>{AVISO_IGUAL}</p></div>{/if}
     {/if}
 
+    {#if (avanzado || paso === "resumen") && primera}
+      <!-- 14s: la primera subida, con su tamaño y cuándo empieza (y se ve en vivo). -->
+      <div class="notice notice-info primera">
+        <CloudUpload size={16} />
+        <div>
+          <p>
+            Al guardar empezará la primera subida: {primera.bytes ? `unos ${bytes(primera.bytes)}` : "todo lo que guarda"}{primera.sinTamano ? ` (sin contar ${plural(primera.sinTamano, "repositorio", "repositorios")} de los que no se sabe el tamaño)` : ""}. Lo que ya esté en el destino no se vuelve a subir.
+          </p>
+          {#if madrugada}
+            <div class="opciones-primera" role="radiogroup" aria-label="Cuándo empieza la primera subida">
+              <label><input type="radio" name="ee-primera" value="ahora" bind:group={empezar} /> Empezar ahora</label>
+              <label><input type="radio" name="ee-primera" value="madrugada" bind:group={empezar} /> Empezar en la próxima franja de la madrugada (desde las 2:00)</label>
+            </div>
+          {/if}
+          <p class="faint">Se ve en vivo en la página del espejo y en todas las consolas.</p>
+        </div>
+      </div>
+    {/if}
+
     {#if avanzado || paso === "resumen"}
       <div class="fila final">
         <div class="field crece">
@@ -734,6 +764,22 @@
   }
   .enlinea {
     margin-left: 4px;
+  }
+  .primera div {
+    display: grid;
+    gap: 6px;
+  }
+  .primera p {
+    margin: 0;
+  }
+  .opciones-primera {
+    display: grid;
+    gap: 4px;
+  }
+  .opciones-primera label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
   }
   .resumen {
     list-style: none;

@@ -1031,6 +1031,9 @@
         </div>
       {/if}
 
+      <!-- 14p: lo largo que no es de una copia ni de un repositorio (la actualización del agente, los espejos, la retención del almacén), en vivo. -->
+      <EnMarcha equipo={equipo.id} tipos={["actualizacion", "espejo", ...(equipo.resumen?.guarda_copias?.activo ? (["retencion"] as const) : [])]} marco />
+
       <section>
         <div class="section-head">
           <h2>Copias <span class="count">· {copias.length}</span></h2>

@@ -67,6 +67,8 @@ export function paraOrden(t: TrabajoEspejo): TrabajoEspejo {
   if (t.cuando.cadena) cuando.cadena = t.cuando.cadena;
   else if (t.cuando.despues) cuando.despues = t.cuando.despues;
   if (t.cuando.retraso_min) cuando.retraso_min = Math.max(0, Math.round(t.cuando.retraso_min));
+  // 14s: la primera subida, no antes de esa hora (solo mientras no ha empezado ninguna; después, el agente la ignora).
+  if (t.cuando.primera_desde) cuando.primera_desde = t.cuando.primera_desde;
   const o: TrabajoEspejo = {
     id: t.id,
     nombre: t.nombre.trim(),
