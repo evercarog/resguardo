@@ -35,10 +35,10 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque D — Organizar: sedes, grupos y equipos
 
-- [ ] **D1. Sedes (14ll, 14ss-4):** dato propio (no etiqueta), lista por cliente; cada equipo y cada destino en una sede; «fuera del sitio» = otra sede que el equipo (nube siempre fuera); regla 3-2-1, avisos de «mismo equipo» e «inmutable todo en el sitio» con sedes y derivadas.
-- [ ] **D2. Vista de Equipos (14ss):** categorías de etiqueta (un valor por equipo), agrupar por niveles («Sede, luego Tipo») sin duplicados, orden manual igual en todas las consolas.
+- [x] **D1. Sedes (14ll, 14ss-4):** (rama `ia/080-sedes`; diseño en [sedes.md](sedes.md), contrato v1.6x en `api-servidor.md`, lo no probado en `registro-ia.md`) dato propio (no etiqueta), lista por cliente; cada equipo y cada destino en una sede; «fuera del sitio» = otra sede que el equipo (nube siempre fuera); regla 3-2-1, avisos de «mismo equipo» e «inmutable todo en el sitio» con sedes y derivadas.
+- [x] **D2. Vista de Equipos (14ss):** (rama `ia/080-sedes`; categorías, «Agrupar por» dos niveles con sede y sistema, grupos plegables, orden «A mano» con flechas o arrastrando, igual en todas las consolas) categorías de etiqueta (un valor por equipo), agrupar por niveles («Sede, luego Tipo») sin duplicados, orden manual igual en todas las consolas.
 - [x] **D3. Datos del equipo (14uu):** (rama `ia/080-datos-equipo`; contrato v1.6x en `api-servidor.md`, lo no probado en `registro-ia.md`) sistema exacto, procesador, memoria, discos, modelo y último arranque; avisos de disco casi lleno y de sistema que se queda sin soporte.
-- [ ] **D4. «Todos los clientes» con secciones (14xx):** Copias, Equipos, Avisos, Órdenes en espera, En curso y Restauraciones de todos.
+- [x] **D4. «Todos los clientes» con secciones (14xx):** (rama `ia/080-sedes`; `GET /api/panel/{avisos,ordenes,restauraciones}` para todos de una vez, solo los clientes de la cuenta) Copias, Equipos, Avisos, Órdenes en espera, En curso y Restauraciones de todos.
 
 ## Bloque E — Restauraciones y pruebas
 
