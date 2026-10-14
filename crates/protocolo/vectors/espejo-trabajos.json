@@ -1,5 +1,5 @@
 {
-  "_": "Vectores de los trabajos de espejo (plan 0.7.26, bloque 4; docs/espejo.md «Trabajos de espejo»). Los pasan el agente (crates/agente/src/espejo_trabajos/tests.rs) y la consola (consola/scripts/vectores-espejo-trabajos.ts): qué pedidos se aceptan y qué cambios reducen la protección (la consola pone la espera y el agente la exige).",
+  "_": "Vectores de los trabajos de espejo (plan 0.7.26, bloque 4; docs/espejo.md «Trabajos de espejo»). En «reduce», `nunca_bien` es lo que dice el resumen (14c: uno que nunca terminó bien una vuelta no cuenta). Los pasan el agente (crates/agente/src/espejo_trabajos/tests.rs) y la consola (consola/scripts/vectores-espejo-trabajos.ts): qué pedidos se aceptan y qué cambios reducen la protección (la consola pone la espera y el agente la exige).",
   "base": {
     "id": "t1",
     "nombre": "Disco E",
@@ -64,6 +64,11 @@
     { "nombre": "aflojar el freno", "antes": [{}], "ahora": [{ "freno": { "pct": 20, "min_archivos": 100, "min_faltan": 20, "accion": "confirmar" } }], "reduce": true },
     { "nombre": "freno de confirmar a avisar", "antes": [{}], "ahora": [{ "freno": { "pct": 10, "min_archivos": 100, "min_faltan": 20, "accion": "avisar" } }], "reduce": true },
     { "nombre": "apretar el freno", "antes": [{}], "ahora": [{ "freno": { "pct": 5, "min_archivos": 50, "min_faltan": 10, "accion": "confirmar" } }], "reduce": false },
-    { "nombre": "cambiar la hora", "antes": [{}], "ahora": [{ "cuando": { "horario": { "dias": [1], "horas": ["05:00"] } } }], "reduce": false }
+    { "nombre": "cambiar la hora", "antes": [{}], "ahora": [{ "cuando": { "horario": { "dias": [1], "horas": ["05:00"] } } }], "reduce": false },
+    { "nombre": "14c: quitar uno que nunca terminó bien", "antes": [{ "nunca_bien": true }], "ahora": [], "reduce": false },
+    { "nombre": "14c: pausar uno que nunca terminó bien", "antes": [{ "nunca_bien": true }], "ahora": [{ "activo": false }], "reduce": false },
+    { "nombre": "14c: cambiar el destino de uno que nunca terminó bien", "antes": [{ "nunca_bien": true }], "ahora": [{ "adonde": { "tipo": "carpeta", "carpeta": "F:\\Espejo" } }], "reduce": false },
+    { "nombre": "14c: quitar uno que ya terminó bien alguna vez", "antes": [{ "nunca_bien": false }], "ahora": [], "reduce": true },
+    { "nombre": "14c: quitar los dos, uno ya terminó bien", "antes": [{ "nunca_bien": true }, { "id": "t2", "adonde": { "tipo": "carpeta", "carpeta": "F:\\Espejo" } }], "ahora": [], "reduce": true }
   ]
 }

@@ -685,6 +685,97 @@ mod tests {
         assert_eq!((de_otra["otra_consola"].as_bool(), de_otra["consola"].as_str(), de_otra["archivos"].as_u64()), (Some(true), Some("Oficina"), Some(3)));
     }
 
+    /// 14p: la vuelta de un espejo, a todas las consolas: su trabajo, quién lo hace, si es la
+    /// primera subida, las cifras y quién la pidió (nunca la dirección de su consola ni rutas).
+    #[test]
+    fn espejo_en_marcha_a_todas_las_consolas() {
+        let a = crate::escritorio::Actividad {
+            tipo: "nube".into(),
+            clave: "nube:t1".into(),
+            nombre: "B2 Oficina".into(),
+            espejo: Some("t1".into()),
+            espejo_nombre: Some("Todo a la nube".into()),
+            quien: Some("almacen".into()),
+            primera: true,
+            bytes: Some(30),
+            bytes_total: Some(120),
+            porcentaje: Some(0.25),
+            velocidad: Some(10),
+            subida: Some(12),
+            quedan_s: Some(9),
+            ..Default::default()
+        };
+        let t = tarea_espejo(&a, "e1").unwrap();
+        assert_eq!(
+            (t["tipo"].as_str(), t["repo"].as_str(), t["espejo"].as_str(), t["nombre"].as_str()),
+            (Some("espejo"), Some("t1"), Some("t1"), Some("Todo a la nube"))
+        );
+        assert_eq!(
+            (t["fase"].as_str(), t["primera"].as_bool(), t["porcentaje"].as_f64(), t["subida"].as_u64()),
+            (Some("subiendo"), Some(true), Some(0.25), Some(12))
+        );
+        assert!(t["otra_consola"].is_null(), "por su horario: de nadie");
+        // Pedido con «Hacer ahora» desde otra consola: su nombre, nunca su dirección.
+        let b = crate::escritorio::Actividad {
+            enlace: Some("e2".into()),
+            consola: Some("Oficina".into()),
+            por: Some("Ana".into()),
+            bytes_total: None,
+            ..a.clone()
+        };
+        let t = tarea_espejo(&b, "e1").unwrap();
+        assert_eq!(
+            (t["otra_consola"].as_bool(), t["consola"].as_str(), t["por"].as_str(), t["fase"].as_str()),
+            (Some(true), Some("Oficina"), Some("Ana"), Some("preparando"))
+        );
+        assert_eq!(tarea_espejo(&b, "e2").unwrap()["consola"], Value::Null, "la que lo pidió no se nombra a sí misma");
+        // Una restauración no es un espejo (y al revés).
+        assert!(tarea_espejo(&crate::escritorio::Actividad { tipo: "restauracion".into(), espejo: None, ..Default::default() }, "e1").is_none());
+        assert!(tarea_restauracion(&a, "e1").is_none());
+    }
+
+    /// 14p: lo pedido con «Ahora» que aún no empezó, «en cola», con quién lo pidió.
+    #[test]
+    fn en_cola_con_quien_la_pidio() {
+        let q = crate::tasks::PedidaPor { por: Some("Ana".into()), consola: Some("Oficina".into()), enlace: Some("e2".into()) };
+        let t = tarea_en_cola("r1", "verify", &q, "e1");
+        assert_eq!((t["tipo"].as_str(), t["fase"].as_str(), t["etapa"].as_str()), (Some("verificar"), Some("en_cola"), Some("En cola")));
+        assert_eq!((t["otra_consola"].as_bool(), t["consola"].as_str(), t["por"].as_str()), (Some(true), Some("Oficina"), Some("Ana")));
+        let t = tarea_en_cola("r1", "verify_derivada-d1", &crate::tasks::PedidaPor::default(), "e1");
+        assert_eq!((t["tipo"].as_str(), t["derivada"].as_str(), t["otra_consola"].is_null()), (Some("verificar_externa"), Some("d1"), true));
+        assert_eq!(tarea_en_cola("r1", "restore_test", &q, "e2")["consola"], Value::Null);
+        assert_eq!(tarea_en_cola("r1", "derivada-d1", &q, "e2")["tipo"], "copia_externa");
+        // La tarea larga ya en marcha, con quién la pidió.
+        let r = crate::tasks::RunningTask {
+            repo_id: "r1".into(),
+            kind: "verify".into(),
+            enlace: Some("e2".into()),
+            consola: Some("Oficina".into()),
+            por: Some("Ana".into()),
+            ..Default::default()
+        };
+        let t = tarea_larga_para(&r, "e1");
+        assert_eq!((t["otra_consola"].as_bool(), t["consola"].as_str(), t["por"].as_str()), (Some(true), Some("Oficina"), Some("Ana")));
+        assert!(tarea_larga_para(&crate::tasks::RunningTask { enlace: None, ..r }, "e1")["otra_consola"].is_null());
+    }
+
+    /// 14p: la actualización del agente, en bytes (con su ritmo y lo que queda), de nadie.
+    #[test]
+    fn actualizacion_en_bytes() {
+        let g = ops::empezar(ops::Operacion { tipo: "actualizacion", nombre: Some("Resguardo Agente 9.9.9".into()), ..Default::default() });
+        let t = tareas(None).into_iter().find(|t| t["tipo"] == "actualizacion").expect("en marcha");
+        assert_eq!((t["fase"].as_str(), t["otra_consola"].as_bool()), (Some("preparando"), Some(false)));
+        g.bytes(r"Bajando C:\Windows\x", 25, Some(100));
+        let t = tareas(None).into_iter().find(|t| t["tipo"] == "actualizacion").expect("en marcha");
+        assert_eq!(
+            (t["fase"].as_str(), t["bytes"].as_u64(), t["bytes_total"].as_u64(), t["porcentaje"].as_f64()),
+            (Some("en_marcha"), Some(25), Some(100), Some(0.25))
+        );
+        assert!(!t["etapa"].as_str().unwrap().contains("Windows"), "sin rutas");
+        assert!(t["versiones"].is_null());
+        drop(g);
+    }
+
     #[test]
     fn ritmo_de_los_contadores_de_un_proceso() {
         let mut r = RitmoIo::default();

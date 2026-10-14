@@ -359,10 +359,11 @@ impl Trabajo {
     }
 
     /// 14c: ¿nunca ha terminado bien una vuelta? (Quitarlo o cambiarlo no reduce la
-    /// protección: aún no protege nada.) Uno de un agente anterior que ya hizo alguna
-    /// vuelta no se sabe: cuenta como si hubiera terminado.
+    /// protección: aún no protege nada.) Solo si este equipo lo sabe de verdad (lleva la
+    /// cuenta desde que existe el trabajo); uno de un agente anterior cuenta como si
+    /// hubiera terminado.
     pub fn nunca_bien(&self) -> bool {
-        self.estado.bien.is_none() && !self.ok() && (self.estado.ultima.is_none() || self.estado.registro)
+        self.estado.registro && self.estado.bien.is_none() && !self.ok()
     }
 }
 
@@ -747,6 +748,92 @@ pub fn reduce(antes: &[Trabajo], ahora: &[Trabajo]) -> bool {
             || (f.accion == AccionFreno::Confirmar && g.accion == AccionFreno::Avisar);
         menos || borra_antes || bloqueo || freno
     })
+}
+
+/// 14c: adónde va un trabajo, en palabras y sin rutas (para el título de una orden que
+/// se ve en todas las consolas): «la nube «B2 Oficina»», «la zona «Disco E»», «una carpeta
+/// del disco E:». `zonas`: (id, nombre) de las zonas del almacén.
+pub fn adonde_en_palabras(t: &Trabajo, zonas: &[(String, String)]) -> String {
+    match t.adonde.tipo.as_str() {
+        "nube" => format!("la nube «{}»", t.adonde.nube.as_deref().unwrap_or_default().chars().take(60).collect::<String>()),
+        "zona" if t.adonde.carpeta == "principal" => "la zona principal del almacén".into(),
+        "zona" => match zonas.iter().find(|(id, _)| *id == t.adonde.carpeta).map(|(_, n)| n.trim()).filter(|n| !n.is_empty()) {
+            Some(n) => format!("la zona «{}»", n.chars().take(60).collect::<String>()),
+            None => "otra zona del almacén".into(),
+        },
+        _ => {
+            let c = t.adonde.carpeta.trim();
+            let mut letras = c.chars();
+            match (letras.next(), letras.next()) {
+                (Some(l), Some(':')) if l.is_ascii_alphabetic() => format!("una carpeta del disco {}:", l.to_ascii_uppercase()),
+                _ => "otra carpeta de este equipo".into(),
+            }
+        }
+    }
+}
+
+/// 14c: qué cambia exactamente de `antes` a `ahora` (para el título de la orden en espera,
+/// que se ve en todas las consolas): «quitar «Contabilidad a la nube»», «cambiar el destino
+/// de «X» a la nube «B2»», «pausar «X»»… Sin rutas. `None` si no cambia nada que se diga.
+pub fn describir_cambio(antes: &[Trabajo], ahora: &[Trabajo], zonas: &[(String, String)]) -> Option<String> {
+    let nombre = |t: &Trabajo| format!("«{}»", t.nombre.chars().take(60).collect::<String>());
+    let mut partes: Vec<String> = Vec::new();
+    for a in antes {
+        let Some(n) = ahora.iter().find(|n| n.id == a.id) else {
+            partes.push(format!("quitar {}", nombre(a)));
+            continue;
+        };
+        if a.activo && !n.activo {
+            partes.push(format!("pausar {}", nombre(a)));
+        } else if !a.activo && n.activo {
+            partes.push(format!("activar {}", nombre(a)));
+        }
+        if n.clave_destino() != a.clave_destino() {
+            partes.push(format!("cambiar el destino de {} a {}", nombre(a), adonde_en_palabras(n, zonas)));
+        }
+        let fuera = match (&a.que, &n.que) {
+            (_, Que::Todos) => 0,
+            (Que::Todos, _) => usize::MAX,
+            (Que::Equipos { equipos: x }, Que::Equipos { equipos: y }) | (Que::Repos { repos: x }, Que::Repos { repos: y }) => {
+                x.iter().filter(|r| !y.contains(r)).count()
+            }
+            _ => usize::MAX,
+        };
+        match fuera {
+            0 => {}
+            usize::MAX => partes.push(format!("dejar solo algunos repositorios en {}", nombre(a))),
+            1 => partes.push(format!("dejar fuera un repositorio de {}", nombre(a))),
+            k => partes.push(format!("dejar fuera {k} repositorios de {}", nombre(a))),
+        }
+        if n.retencion != a.retencion {
+            let r = match n.retencion {
+                Retencion::Nunca => "que nunca borre".to_string(),
+                Retencion::Igual => "«igual que el origen»".to_string(),
+                Retencion::Retraso { dias } => format!("que borre con {dias} días de retraso"),
+            };
+            partes.push(format!("cambiar {} para {r}", nombre(a)));
+        }
+        if (a.bloqueo && !n.bloqueo) || (a.bloqueo_dias.is_some() && n.bloqueo_dias.is_none()) {
+            partes.push(format!("quitar el bloqueo de {}", nombre(a)));
+        }
+        if n.freno != a.freno {
+            partes.push(format!("cambiar el freno de {}", nombre(a)));
+        }
+    }
+    for n in ahora.iter().filter(|n| !antes.iter().any(|a| a.id == n.id)) {
+        partes.push(format!("añadir {}", nombre(n)));
+    }
+    if partes.is_empty() {
+        return None;
+    }
+    let mas = partes.len().saturating_sub(3);
+    partes.truncate(3);
+    let mut texto = partes.join("; ");
+    if mas > 0 {
+        texto += &format!(" y {mas} {} más", if mas == 1 { "cambio" } else { "cambios" });
+    }
+    let mut c = texto.chars();
+    Some(c.next().map(|p| p.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default())
 }
 
 /// Con una selección: lo que había al elegirla (lo que dice la consola; si no, lo de

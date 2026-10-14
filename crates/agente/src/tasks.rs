@@ -1118,7 +1118,8 @@ pub struct PedidaPor {
 
 /// Quién la pidió: nombres cortos y sin controles.
 fn quien_de(v: &serde_json::Value) -> PedidaPor {
-    let texto = |k: &str, max: usize| v[k].as_str().map(|x| x.chars().filter(|c| !c.is_control()).take(max).collect::<String>()).filter(|x| !x.trim().is_empty());
+    let texto =
+        |k: &str, max: usize| v[k].as_str().map(|x| x.chars().filter(|c| !c.is_control()).take(max).collect::<String>()).filter(|x| !x.trim().is_empty());
     PedidaPor { por: texto("por", 80), consola: texto("consola", 60), enlace: texto("enlace", 80) }
 }
 
