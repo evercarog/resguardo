@@ -62,10 +62,10 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 ## Bloque H — Seguridad de la consola y del equipo
 
 - [x] **H1. Aprobar una orden en espera desde el propio equipo (14a)** (rama `ia/080-aprobar-equipo`; diseño y modelo de amenazas en `consolas-multiples.md` §5.11, contrato v1.6x en `api-servidor.md`; lo no probado en `registro-ia.md`) con la clave de administración (ventana del agente en Windows; `resguardo-agente ordenes aprobar` en Linux); nunca desde la web.
-- **H2 (para una versión posterior, decisión del responsable 2026-10-14).** Consola verificada (12a):** la consola web firmada con la llave de publicación y comprobada antes de escribir la clave de administración (desde la ventana del agente).
-- **H3 (para una versión posterior, decisión del responsable 2026-10-14).** Lo delicado desde la ventana del agente (12b):** cambiar la clave, restaurar en otro sitio, quitar repositorios.
-- **H4 (para una versión posterior, decisión del responsable 2026-10-14).** Passkeys (12c)** para entrar en la consola, además del TOTP.
-- **H5 (para una versión posterior, decisión del responsable 2026-10-14).** Regla de dos personas (12d)**, opcional por cliente.
+- **H2 (para una versión posterior, decisión del responsable 2026-10-14).** Consola verificada (12a): la consola web firmada con la llave de publicación y comprobada antes de escribir la clave de administración (desde la ventana del agente).
+- **H3 (para una versión posterior, decisión del responsable 2026-10-14).** Lo delicado desde la ventana del agente (12b): cambiar la clave, restaurar en otro sitio, quitar repositorios.
+- **H4 (para una versión posterior, decisión del responsable 2026-10-14).** Passkeys (12c) para entrar en la consola, además del TOTP.
+- **H5 (para una versión posterior, decisión del responsable 2026-10-14).** Regla de dos personas (12d), opcional por cliente.
 - **12e. Pentest externo:** no es trabajo de código; se prepara la lista de lo que hay que revisar y se contrata aparte cuando el responsable decida.
 
 ## Bloque I — Publicar y actualizar
