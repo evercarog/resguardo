@@ -72,13 +72,15 @@ pub async fn crear(State(st): State<St>, u: Usuario, Json(p): Json<Nuevo>) -> Re
 
 pub async fn ver(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     let (_, rol) = u.miembro(&st, &c, MIEMBRO).await?;
-    let (cliente, marca) = st.db(move |db| Ok((db.cliente(&c)?, super::marca::leer(db, &c)?))).await?;
+    let (cliente, marca, aprobar) = st.db(move |db| Ok((db.cliente(&c)?, super::marca::leer(db, &c)?, super::aprobar_equipo::leer(db, &c)?))).await?;
     let cliente = cliente.ok_or_else(ErrorApi::no_existe)?;
     let marca = super::marca::json(&cliente.id, &marca);
     Ok(Json(json!({
         "id": cliente.id, "nombre": cliente.nombre, "sal_cliente": cliente.sal_cliente, "espera_min_horas": cliente.espera_min_horas, "rol": rol.texto(),
         // v1.32: la marca del cliente.
         "marca": marca,
+        // 14a (v1.6x): «Aprobar en el equipo» (activada por defecto).
+        "aprobar_en_equipo": super::aprobar_equipo::json(&aprobar),
     })))
 }
 

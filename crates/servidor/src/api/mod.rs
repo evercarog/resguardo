@@ -8,6 +8,7 @@ pub(crate) mod equipos;
 pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
 // Bloque 7: códigos de alta para varios equipos.
+pub(crate) mod aprobar_equipo;
 pub(crate) mod lotes;
 pub(crate) mod marca;
 pub(crate) mod notas;
@@ -252,6 +253,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}", get(clientes::ver).patch(clientes::renombrar))
         // v1.32: marca del cliente (logo PNG y acento).
         .route("/api/clientes/{c}/marca", get(marca::ver).put(marca::cambiar))
+        // 14a: la opción del cliente «Aprobar en el equipo» (lo ve cada cliente en `GET /api/clientes/{c}`).
+        .route("/api/clientes/{c}/aprobar-en-equipo", put(aprobar_equipo::cambiar))
         .route("/api/clientes/{c}/marca/logo", get(marca::logo))
         .route("/api/clientes/{c}/miembros", get(clientes::miembros))
         .route("/api/clientes/{c}/miembros/{cuenta}", put(clientes::poner_rol).delete(clientes::quitar))
