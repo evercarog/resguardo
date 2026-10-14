@@ -17,7 +17,7 @@ export const TITULO_FUERA = "Fuera del sitio";
 
 /** 14w: «Fuera del sitio: alguna copia de estos datos está fuera del sitio o en la nube», con los pasos de la regla. */
 export function fueraDelSitio(rc: ReglaCopia, ahora: number): ComprobacionProteccion {
-  const fuera = rc.pasos.filter((p) => esFuera(p));
+  const fuera = rc.pasos.filter((p) => esFuera(p, rc.entrada.origen));
   const alDia = fuera.filter((p) => pasoAlDia(p, ahora));
   const nombres = (l: typeof fuera) => lista(l.map((p) => `«${p.nombre}»`));
   if (alDia.length) {

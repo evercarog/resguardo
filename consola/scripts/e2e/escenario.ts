@@ -50,6 +50,7 @@ import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos"
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
 import { comentariosDe, conservadaDe, destinosConservar } from "../../src/lib/versionesNotas";
 import { unaVezAhora } from "../../src/lib/copiaGuiada";
+import { leerOrganizacion } from "../../src/lib/sedes";
 import { cuerpoMover, cuerpoRutaNueva, equiposEnAlmacen, planOrden, rutasPendientes, type Movido } from "../../src/lib/nombres";
 import { diferencia, pendiente, trozos, type DatosComunesCliente, type EntradaOrden } from "../../src/lib/datosComunes";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
@@ -488,6 +489,49 @@ async function principal() {
       );
       igual(rcE?.regla.avisos, ["inmutable_local"], "…y avisa de que lo inmutable es local");
       log(`B copia también en «Disco E» (puerto ${puertoE}, usuario ${accesoE.usuario})`);
+
+      // ---------------------------------------------------------------------
+      paso("3b2. Sedes (plan 0.8.0, D1): A en «Oficina Norte», B en «Planta Sur»; la regla dice «fuera» según la sede");
+      {
+        const ahora = () => new Date().toISOString();
+        const sedes = [
+          { clave: "sede:norte-e2e", valor: { nombre: "Oficina Norte", principal: true } },
+          { clave: "sede:sur-e2e", valor: { nombre: "Planta Sur" } },
+          { clave: `sede.equipo:${eqA.id}`, valor: { sede: "norte-e2e" } },
+          { clave: `sede.equipo:${eqB.id}`, valor: { sede: "sur-e2e" } },
+        ];
+        const r = (await consola.ok("POST", `/api/clientes/${c.id}/datos-comunes`, { entradas: sedes })) as { entradas: EntradaOrden[] };
+        igual(r.entradas.length, 4, "Las sedes y la sede de los dos equipos se guardan en el servidor");
+        const org = () => consola.ok("GET", `/api/clientes/${c.id}/organizacion`).then(leerOrganizacion);
+        const o1 = await org();
+        igual([o1.sedes.map((s) => s.nombre), o1.equipos[eqA.id], o1.equipos[eqB.id]], [["Oficina Norte", "Planta Sur"], "norte-e2e", "sur-e2e"], "La organización del cliente las dice");
+        // Al agente: la lista de sedes sin clave; la sede de un equipo, solo con la clave de administración.
+        comprobar((await consola.equipo(c, eqB.id)).resumen?.admite?.includes("sedes"), "B guarda las sedes (admite «sedes»)");
+        const conHora = (x: { clave: string; valor: unknown }) => ({ ...x, cambiado: ahora() });
+        await consola.hecha(c, eqB.id, "datos_cliente", { entradas: sedes.slice(0, 2).map(conHora) });
+        const sinClave = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "datos_cliente", { entradas: sedes.slice(2).map(conHora) }));
+        comprobar(sinClave.estado === "fallida" && /clave de administración/.test(sinClave.mensaje ?? ""), "La sede de un equipo sin la clave de administración: el equipo la rechaza", sinClave);
+        await consola.hecha(c, eqB.id, "datos_cliente_admin", { entradas: sedes.slice(2).map(conHora) }, { claveAdmin: CLAVE_ADMIN });
+        const regla = async () => {
+          const [eA, eB] = [await consola.equipo(c, eqA.id), await consola.equipo(c, eqB.id)];
+          const k = eB.resumen?.copias?.find((x) => x.id === "documentos-e");
+          return k ? reglaDeCopia(eB, k, [eA, eB], null, catalogo8, Date.now(), await org()) : null;
+        };
+        const fueraDe = (x: Awaited<ReturnType<typeof regla>>) => x?.regla.partes.find((p) => p.id === "fuera")?.valor;
+        const r1 = await regla();
+        igual([r1?.entrada.origen.sede, r1?.pasos[0].sede, fueraDe(r1)], ["sur-e2e", "norte-e2e", 1], "B (Planta Sur) copia en la zona E de A (Oficina Norte): fuera del sitio");
+        igual(r1?.regla.avisos, [], "…y lo inmutable ya no está todo en el sitio");
+        // La zona E en la sede de B: en el sitio otra vez.
+        const zonaE = claveZona(eqA.id, zona.id);
+        await consola.ok("POST", `/api/clientes/${c.id}/datos-comunes`, { entradas: [{ clave: `sede.destino:${zonaE}`, valor: { sede: "sur-e2e" } }] });
+        const r2 = await regla();
+        igual([r2?.pasos[0].sede, fueraDe(r2), r2?.regla.avisos], ["sur-e2e", 0, ["inmutable_local"]], "La zona E puesta en Planta Sur: en el sitio para B");
+        // Se quitan para no cambiar lo que comprueban los pasos siguientes (sin sedes, como siempre).
+        await consola.ok("POST", `/api/clientes/${c.id}/datos-comunes`, { entradas: [...sedes, { clave: `sede.destino:${zonaE}`, valor: null }].map((x) => ({ clave: x.clave, valor: null })) });
+        const o3 = await org();
+        igual([o3.sedes.length, Object.keys(o3.equipos).length, fueraDe(await regla())], [0, 0, 0], "Sin sedes, la regla vuelve a mirar el tipo del destino");
+        log("Sedes: «fuera» según la sede del equipo y la del destino");
+      }
 
       // ---------------------------------------------------------------------
       paso("3c. Copias en cadena (tarea 7, parte B): Documentos → zona D; después → zona E; espejo E → D; copia derivada por rclone con otra contraseña");

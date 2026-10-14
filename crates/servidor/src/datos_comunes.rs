@@ -125,6 +125,9 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
                 Value::Null
             }
         }
+        // 0.8.0 (D1, D2): las sedes, las categorías y el orden no tienen otro sitio aquí: viven
+        // solo como datos comunes (`crate::sedes`). Nunca chocan con «lo de aquí»: gana el más reciente.
+        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos => Value::Null,
     })
 }
 
@@ -241,6 +244,8 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
                 db.borrar_plantilla(ctx, sujeto)?;
             }
         }
+        // 0.8.0 (D1, D2): su único sitio es el propio dato común (lo guarda `registrar` o `recibir`).
+        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos => {}
     }
     Ok(())
 }

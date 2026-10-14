@@ -19,6 +19,7 @@
   import BotonCargando from "./BotonCargando.svelte";
   import { admiteDatosEquipo, alcanceDatos, cambiadoDesde, variasConsolas } from "$lib/datosEquipo";
   import { pedirAlEquipo } from "$lib/pedirAlEquipo";
+  import { categoriaDe, conUnaPorCategoria } from "$lib/sedes";
 
   let { equipo, onclose, alGuardar }: { equipo: Equipo; onclose: () => void; alGuardar?: (e: Equipo) => void } = $props();
 
@@ -27,6 +28,8 @@
   let lista = $state<string[]>(inicio());
   let texto = $state("");
   let error = $state("");
+  /** Plan 0.8.0, D2: lo que se quitó para dejar un solo valor por categoría. */
+  let nota = $state("");
   let guardando = $state(false);
   const existentes = $derived(etiquetasDe(actual.equipos).filter((t) => !lista.some((x) => x.toLowerCase() === t.nombre.toLowerCase())));
   const sugeridas = $derived(texto.trim() ? existentes.filter((t) => t.nombre.toLowerCase().includes(texto.trim().toLowerCase())) : existentes);
@@ -42,8 +45,11 @@
     const igual = etiquetasDe(actual.equipos).find((e) => e.nombre.toLowerCase() === x.toLowerCase());
     const nombre = igual?.nombre ?? x;
     if (lista.some((e) => e.toLowerCase() === nombre.toLowerCase())) return void (texto = "");
-    if (lista.length >= MAX_ETIQUETAS) return void (error = `Como mucho ${MAX_ETIQUETAS} etiquetas por equipo.`);
-    lista = [...lista, nombre];
+    // Plan 0.8.0, D2: un solo valor por categoría («Tipo»: Servidor o Puesto).
+    const c = conUnaPorCategoria(actual.organizacion, lista, nombre);
+    if (c.etiquetas.length > MAX_ETIQUETAS) return void (error = `Como mucho ${MAX_ETIQUETAS} etiquetas por equipo.`);
+    lista = c.etiquetas;
+    nota = c.quitadas.length ? `Quitada ${c.quitadas.map((x) => `«${x}»`).join(", ")}: «${categoriaDe(actual.organizacion, nombre)?.nombre}» tiene un solo valor por equipo.` : "";
     texto = "";
     // La recién añadida queda elegida para ponerle color.
     if (puedeColor) deColor = nombre;
@@ -134,7 +140,7 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input id="et-nueva" class="entrada" bind:value={texto} onkeydown={teclas} placeholder={lista.length ? "Añadir otra…" : "Escribe y pulsa Intro"} maxlength={MAX_LARGO} autocomplete="off" autofocus aria-invalid={!!error} aria-describedby="et-nueva-ayuda" />
       </div>
-      {#if error}<p class="error-campo" id="et-nueva-ayuda" role="alert">{error}</p>{:else}<span class="field-hint" id="et-nueva-ayuda">Intro o coma para añadir. Hasta {MAX_ETIQUETAS} por equipo.</span>{/if}
+      {#if error}<p class="error-campo" id="et-nueva-ayuda" role="alert">{error}</p>{:else if nota}<span class="field-hint" id="et-nueva-ayuda" role="status">{nota}</span>{:else}<span class="field-hint" id="et-nueva-ayuda">Intro o coma para añadir. Hasta {MAX_ETIQUETAS} por equipo.{#if actual.organizacion.categorias.length}{" "}Las de una categoría ({actual.organizacion.categorias.map((c) => c.nombre).join(", ")}), una sola por equipo.{/if}</span>{/if}
     </div>
     {#if puedeColor && elegida}
       {@const actualColor = colorDe(elegida)}

@@ -31,6 +31,15 @@ export interface PanelCliente {
   informes: { equipo: string; recibido: string; datos: Informe["datos"] }[];
   /** false: algún informe no cupo en la respuesta (el panel sigue con el resumen). */
   informes_completos: boolean;
+  /** Plan 0.8.0 (D1, D2): sedes, categorías y orden (un servidor anterior no lo manda). */
+  organizacion?: unknown;
+}
+
+/** Plan 0.8.0, D4: lo mismo de cada cliente de la cuenta (`/api/panel/avisos`, `/ordenes`, `/restauraciones`). */
+export interface PanelDe<X> {
+  generado: string;
+  clientes: { id: string; nombre: string; rol: Rol; datos: X }[];
+  omitidos: number;
 }
 
 /** Algo en marcha en un equipo de un cliente. */

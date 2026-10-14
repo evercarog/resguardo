@@ -34,6 +34,9 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
   import AtributosDestino from "$lib/componentes/regla/AtributosDestino.svelte";
+  import ElegirSede from "$lib/componentes/ElegirSede.svelte";
+  import { sedeDeEquipo } from "$lib/sedes";
+  import { ponerSedeDestino } from "$lib/organizacion.svelte";
   import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
 
@@ -218,6 +221,20 @@
             <dt>Soporte</dt>
             <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
           </dl>
+          <!-- Plan 0.8.0, D1: su sede (la nube no es sede: siempre fuera). -->
+          {#if actual.organizacion.sedes.length && clase.tipo !== "nube"}
+            {@const suEquipo = marca.equipo?.id ?? null}
+            {@const deSuEquipo = suEquipo && !atrib?.tipo ? sedeDeEquipo(actual.organizacion, suEquipo).sede : null}
+            <div class="sede-dest">
+              <ElegirSede
+                id="sede-destino"
+                asignada={actual.organizacion.destinos[marca.clave] ?? null}
+                sinAsignar={deSuEquipo ? `Sin asignar: la de su equipo (${deSuEquipo.nombre})` : "Sin asignar: manda su tipo"}
+                guardar={(s) => ponerSedeDestino(c, marca.clave, s)}
+              />
+              <p class="faint">Fuera del sitio para los equipos de otra sede; en el sitio para los de la suya.</p>
+            </div>
+          {/if}
         </section>
       {/if}
     </div>
@@ -373,6 +390,13 @@
 {#if notas && d && v}<NotasDialogo tipo="destino" objeto={d.id} nombre={v.nombre} onclose={() => (notas = false)} />{/if}
 
 <style>
+  .sede-dest {
+    margin-top: var(--sp-3);
+  }
+  .sede-dest p {
+    margin: 4px 0 0;
+    font-size: var(--fs-xs);
+  }
   .dos {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));

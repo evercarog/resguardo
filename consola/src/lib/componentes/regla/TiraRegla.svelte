@@ -8,7 +8,7 @@
   // obligación: no bloquea nada.
   // `compacta`: la misma tira en una píldora de cinco segmentos (listas,
   // «Cambiar las copias», Estado): cifra e icono de estado en cada uno.
-  import { Check, CircleDashed, Clock, FlaskConical, Info, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { Building2, Check, CircleDashed, Clock, FlaskConical, Info, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import Ayuda from "../Ayuda.svelte";
   import { relativo } from "$lib/formato";
@@ -16,6 +16,10 @@
   import { guardar, leer } from "$lib/recordar";
   import { corta, estadoConexion } from "$lib/tipoDestino";
   import TipoDestino from "../TipoDestino.svelte";
+  import { actual } from "$lib/estado.svelte";
+  import { sedePorId } from "$lib/sedes";
+  /** D1: el nombre de una sede (la del equipo que copia). */
+  const sedeNombre = (id: string) => sedePorId(actual.organizacion, id)?.nombre ?? id;
 
   let {
     rc,
@@ -109,13 +113,13 @@
       <details class="pasos">
         <summary>Dónde llegan los datos · {rc.pasos.length + 1} copias contando los originales</summary>
         <ul>
-          <li class="paso"><span class="p-nombre">Los originales</span><span class="faint">en {rc.equipo.nombre}</span></li>
+          <li class="paso"><span class="p-nombre">Los originales</span><span class="faint">en {rc.equipo.nombre}{#if rc.entrada.origen.sede}{" · "}<span class="sede"><Building2 size={12} aria-hidden="true" />{sedeNombre(rc.entrada.origen.sede)}</span>{/if}</span></li>
           {#each rc.pasos as p (p.id)}
             {@const al = pasoAlDia(p, ahora)}
             {@const href = enlaceDestino?.(p)}
             <li class="paso">
               {#if href}<a class="p-nombre link-suave" {href}>{p.nombre}</a>{:else}<span class="p-nombre">{p.nombre}</span>{/if}
-              <span class="faint p-tipo"><TipoDestino {...corta(p.clasificacion)} />{#if p.clasificacion.tipoPorPersona || p.clasificacion.marcasPorPersona}<span class="badge badge-sm tone-neutral" use:tip={"Lo marcó una persona en el destino (no se deduce)."}>Marcado por una persona</span>{/if}{#if p.clasificacion.aislado}{@const cx = estadoConexion(p.conexion, p.clasificacion.aisladoDias, ahora)}<span class:tarde={cx.tarde}>{cx.texto}</span>{/if}{#if p.sistemaArchivos}<span class="pastilla mono">{p.sistemaArchivos}</span>{/if}</span>
+              <span class="faint p-tipo"><TipoDestino {...corta(p.clasificacion)} />{#if p.clasificacion.tipoPorPersona || p.clasificacion.marcasPorPersona}<span class="badge badge-sm tone-neutral" use:tip={"Lo marcó una persona en el destino (no se deduce)."}>Marcado por una persona</span>{/if}{#if p.clasificacion.aislado}{@const cx = estadoConexion(p.conexion, p.clasificacion.aisladoDias, ahora)}<span class:tarde={cx.tarde}>{cx.texto}</span>{/if}{#if p.sistemaArchivos}<span class="pastilla mono">{p.sistemaArchivos}</span>{/if}{#if p.sedeNombre}<span class="sede" use:tip={p.sede && rc.entrada.origen.sede ? (p.sede === rc.entrada.origen.sede ? "En la misma sede que el equipo que copia: en el sitio." : "En otra sede que el equipo que copia: fuera del sitio.") : null}><Building2 size={12} aria-hidden="true" />{p.sedeNombre}{p.sedeAsignada ? "" : " (la de su equipo)"}</span>{/if}</span>
               <span class="badge badge-sm tone-{al ? 'ok' : 'warn'}">{al ? "Al día" : p.ultima_ok ? `Atrasado · ${relativo(p.ultima_ok, ahora)}` : "No está al día"}</span>
               {#if onmarcar && p.clave}<button class="btn btn-sm btn-ghost" onclick={() => onmarcar(p)}>Cambiar</button>{/if}
             </li>
@@ -135,6 +139,11 @@
 {/if}
 
 <style>
+  .sede {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
   .regla {
     display: grid;
     gap: var(--sp-3);

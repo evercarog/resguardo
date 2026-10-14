@@ -7,6 +7,7 @@ mod datos_comunes;
 pub(crate) mod equipos;
 pub(crate) mod etiquetas;
 pub(crate) mod instaladores;
+mod organizacion;
 // Bloque 7: códigos de alta para varios equipos.
 pub(crate) mod aprobar_equipo;
 pub(crate) mod lotes;
@@ -247,6 +248,10 @@ pub fn router(st: St) -> Router {
         // v1.38: «Todos los clientes» (solo los clientes de los que la cuenta es miembro).
         .route("/api/panel", get(panel::ver))
         .route("/api/panel/progreso", get(panel::progreso))
+        // Plan 0.8.0, D4 (14xx): avisos, órdenes en espera y restauraciones de todos los clientes de la cuenta.
+        .route("/api/panel/avisos", get(panel::avisos))
+        .route("/api/panel/ordenes", get(panel::ordenes))
+        .route("/api/panel/restauraciones", get(panel::restauraciones))
         .route("/api/clientes/{c}/fichas", post(clientes::ficha))
         .route(
             "/api/clientes/{c}/paquete",
@@ -314,6 +319,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/destinos", get(destinos::listar))
         .route("/api/clientes/{c}/destinos/{d}", put(destinos::guardar).delete(destinos::borrar))
         .route("/api/clientes/{c}/datos-comunes", get(datos_comunes::ver).post(datos_comunes::poner))
+        // Plan 0.8.0, D1 y D2: sedes, categorías de etiqueta y orden de los equipos (cualquier miembro).
+        .route("/api/clientes/{c}/organizacion", get(organizacion::ver))
         .route("/api/clientes/{c}/datos-comunes/enviadas", post(datos_comunes::enviadas))
         .route("/api/clientes/{c}/datos-comunes/traer", post(datos_comunes::traer))
         .route("/api/clientes/{c}/emparejamientos/{p}", get(equipos::ver_emparejamiento).delete(equipos::cancelar_emparejamiento))

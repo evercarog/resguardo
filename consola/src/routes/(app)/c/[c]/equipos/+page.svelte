@@ -1,6 +1,14 @@
 <script lang="ts">
   import { tip } from "$lib/tooltip";
-  import { CirclePause, CirclePlay, Clock, LayoutTemplate, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, Building2, ChevronRight, CirclePause, CirclePlay, Clock, GripVertical, LayoutTemplate, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import Modal from "$ui/componentes/Modal.svelte";
+  import Anuncio from "$lib/componentes/Anuncio.svelte";
+  import Ayuda from "$lib/componentes/Ayuda.svelte";
+  import OrganizarEquipos from "$lib/componentes/OrganizarEquipos.svelte";
+  import { avisar, fallo } from "$lib/avisos.svelte";
+  import { agruparPorNiveles, enOrdenManual, equiposSinSede, leerNiveles, moverAntesDe, moverEnGrupo, nivelesDisponibles, sedeDeEquipo, sedePorDefecto, type GrupoNivel, type Nivel } from "$lib/sedes";
+  import { ponerOrden, ponerSedeEquipos } from "$lib/organizacion.svelte";
+  import type { Equipo } from "$lib/tipos";
   import AccionesEnBloque from "$lib/componentes/AccionesEnBloque.svelte";
   import AplicarPlantillaEnBloque from "$lib/componentes/AplicarPlantillaEnBloque.svelte";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
@@ -8,18 +16,18 @@
   import { enFondo } from "$lib/actividad.svelte";
   import { untrack } from "svelte";
   import { seguirCambios } from "$lib/vivo.svelte";
-  import { actual, puede, reloj } from "$lib/estado.svelte";
+  import { actual, app, puede, reloj } from "$lib/estado.svelte";
   import { lista as lista_, plural } from "$lib/formato";
   import type { Preparado } from "$lib/tipos";
   import { PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import FilaEquipo from "$lib/componentes/FilaEquipo.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { agruparPorEtiqueta, ajusteDe, etiquetasDe, filtroEtiqueta, gruposPorEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import { agruparPorEtiqueta, ajusteDe, etiquetasDe, filtroEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
-  import { guardar, leer } from "$lib/recordar";
-  import { grupoSistema, textoBuscable } from "$lib/datosBasicos";
+  import { guardar, leer, leerTexto } from "$lib/recordar";
+  import { datosBasicos, grupoSistema, textoBuscable } from "$lib/datosBasicos";
 
   let buscar = $state("");
   // El filtro se recuerda en este navegador (por cliente).
@@ -60,6 +68,136 @@
       })
       .sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)),
   );
+
+  // --- Plan 0.8.0, D2 (14ss): agrupar por niveles, orden y sedes ---------------
+  // Lo elegido se recuerda por persona (su cuenta) y cliente, en este navegador.
+  const yo = $derived(app.cuenta?.id ?? "");
+  const org = $derived(actual.organizacion);
+  const conSistema = $derived(sistemas.length > 1 || actual.equipos.some((e) => !!datosBasicos(e)));
+  const disponibles = $derived(nivelesDisponibles(org, conSistema));
+  let niveles = $state<Nivel[]>([]);
+  $effect.pre(() => {
+    if (!actual.id) return;
+    const guardado = leerTexto(`equipos.agrupar.${yo}.${actual.id}`);
+    // Quien tenía «Agrupar por etiqueta» (antes de la 0.8.0) sigue agrupado por etiquetas.
+    niveles = leerNiveles(guardado || (agruparPorEtiqueta.valor ? "etiqueta" : ""), disponibles);
+  });
+  function ponerNivel(i: number, v: string) {
+    const ns = [...niveles];
+    if (!v) ns.splice(i);
+    else ns[i] = v as Nivel;
+    niveles = leerNiveles(ns.join(">"), disponibles);
+    guardar(`equipos.agrupar.${yo}.${actual.id}`, niveles.join(">") || "nada");
+  }
+  const ORDENES = ["atencion", "nombre", "manual"] as const;
+  let orden = $state<(typeof ORDENES)[number]>("atencion");
+  $effect.pre(() => {
+    if (actual.id) orden = leer(`equipos.orden.${yo}.${actual.id}`, ORDENES, "atencion");
+  });
+  function ponerOrdenVista(o: (typeof ORDENES)[number]) {
+    orden = o;
+    guardar(`equipos.orden.${yo}.${actual.id}`, o === "atencion" ? "" : o);
+  }
+  const ordenada = $derived(
+    orden === "manual" ? enOrdenManual(lista, org.orden) : orden === "nombre" ? [...lista].sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true })) : lista,
+  );
+  const arbol = $derived(niveles.length && !filtroEtiqueta.valor ? agruparPorNiveles(ordenada, niveles, { organizacion: org, sistema: grupoSistema }) : null);
+  /** La sede en cada fila (si hay sedes y no se agrupa por ella). */
+  const sedeFila = (e: Equipo) => {
+    if (!org.sedes.length || niveles.includes("sede")) return null;
+    const s = sedeDeEquipo(org, e.id);
+    return s.sede ? (s.asignada ? s.sede.nombre : `${s.sede.nombre} (sin asignar)`) : null;
+  };
+  const sinSede = $derived(equiposSinSede(org, contablesSinTrasladar()));
+  function contablesSinTrasladar() {
+    return sinDuplicados(actual.equipos).filter((e) => e.modo !== "trasladado" && e.confirmado);
+  }
+
+  // Grupos plegados (por cliente, en este navegador).
+  let plegados = $state<Set<string>>(new Set());
+  $effect.pre(() => {
+    if (!actual.id) return;
+    try {
+      plegados = new Set(JSON.parse(leerTexto(`equipos.plegados.${actual.id}`) || "[]") as string[]);
+    } catch {
+      plegados = new Set();
+    }
+  });
+  function plegar(clave: string) {
+    const s = new Set(plegados);
+    if (s.has(clave)) s.delete(clave);
+    else s.add(clave);
+    plegados = s;
+    guardar(`equipos.plegados.${actual.id}`, s.size ? JSON.stringify([...s].slice(-200)) : "");
+  }
+
+  // Orden a mano: flechas (teclado) o arrastrar, dentro de cada grupo; igual en todas las consolas.
+  const ordenEditable = $derived(orden === "manual" && puede.administrar(actual.cliente?.rol));
+  let anuncio = $state("");
+  let arrastrando = $state<string | null>(null);
+  async function aplicarOrden(nuevo: string[] | null, e: Equipo, grupo: Equipo[]) {
+    if (!nuevo) return;
+    const antes = org.orden;
+    actual.organizacion = { ...org, orden: nuevo };
+    const pos = enOrdenManual(grupo, nuevo).findIndex((x) => x.id === e.id) + 1;
+    anuncio = `${e.nombre}: posición ${pos} de ${grupo.length}.`;
+    try {
+      await ponerOrden(actual.id, nuevo);
+    } catch (err) {
+      actual.organizacion = { ...actual.organizacion, orden: antes };
+      fallo(err);
+    }
+  }
+  const idsEnOrden = () => enOrdenManual(actual.equipos, org.orden).map((x) => x.id);
+  const mover = (e: Equipo, grupo: Equipo[], paso: number) =>
+    aplicarOrden(
+      moverEnGrupo(
+        idsEnOrden(),
+        grupo.map((x) => x.id),
+        e.id,
+        paso,
+      ),
+      e,
+      grupo,
+    );
+  function soltar(destino: Equipo | null, grupo: Equipo[]) {
+    const id = arrastrando;
+    arrastrando = null;
+    const e = actual.equipos.find((x) => x.id === id);
+    if (!e || !grupo.some((x) => x.id === e.id)) return;
+    void aplicarOrden(
+      moverAntesDe(
+        idsEnOrden(),
+        grupo.map((x) => x.id),
+        e.id,
+        destino?.id ?? null,
+      ),
+      e,
+      grupo,
+    );
+  }
+  let organizar = $state(false);
+  // «Varios a la vez» → poner sede.
+  let ponerSede = $state(false);
+  let sedeElegida = $state("");
+  let poniendoSede = $state(false);
+  async function aplicarSede() {
+    poniendoSede = true;
+    try {
+      await ponerSedeEquipos(
+        actual.id,
+        seleccion.map((e) => e.id),
+        sedeElegida || null,
+      );
+      const s = org.sedes.find((x) => x.id === sedeElegida);
+      avisar(`${plural(seleccion.length, "equipo", "equipos")} ${s ? `en «${s.nombre}»` : "sin sede asignada (la principal)"}. Para que lo vean las demás consolas, repártelo con la clave de administración desde el aviso de datos comunes.`);
+      ponerSede = false;
+    } catch (err) {
+      fallo(err);
+    } finally {
+      poniendoSede = false;
+    }
+  }
   // Las cuentas, sin los duplicados sin confirmar (salen en la lista para quitarlos, pero no cuentan).
   const contables = $derived(sinDuplicados(actual.equipos));
   const conectados = $derived(contables.filter((e) => e.conectado).length);
@@ -73,9 +211,7 @@
     untrack(() => void cargar());
     return untrack(() => seguirCambios(() => enFondo(cargar), { ms: 10_000, toca: (x) => x.t === "equipo" }));
   });
-  // v1.52: agrupados por etiqueta (un equipo con dos sale en las dos).
-  const grupos = $derived(agruparPorEtiqueta.valor && !filtroEtiqueta.valor ? gruposPorEtiqueta(lista) : null);
-  const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
+
 
   // --- Acciones en bloque: copiar ahora, verificar, reanudar (inofensivas), pausar
   // (con la clave, y espera) y aplicar una plantilla (con la clave; v1.52) -------
@@ -85,7 +221,7 @@
   let aplicarPlantilla = $state(false);
   /** Los que pueden recibir órdenes de aquí (confirmados y no trasladados). */
   const elegible = (e: { confirmado: boolean; modo: string }) => e.confirmado && e.modo !== "trasladado";
-  const elegiblesVisibles = $derived(lista.filter(elegible));
+  const elegiblesVisibles = $derived(ordenada.filter(elegible));
   const todosElegidos = $derived(elegiblesVisibles.length > 0 && elegiblesVisibles.every((e) => elegidos.has(e.id)));
   const seleccion = $derived(actual.equipos.filter((e) => elegidos.has(e.id) && elegible(e)));
   function alternar(id: string, on: boolean) {
@@ -140,9 +276,21 @@
       <p>{plural(contables.length, "equipo", "equipos")} · {plural(conectados, "conectado ahora", "conectados ahora")}</p>
     </div>
     {#if puede.administrar(actual.cliente?.rol)}
-      <a class="btn btn-primary" href="/c/{actual.id}/emparejar"><Plus size={16} />Añadir equipo</a>
+      <div class="acciones-cab">
+        <button class="btn" onclick={() => (organizar = true)}><Building2 size={16} />Sedes y categorías</button>
+        <a class="btn btn-primary" href="/c/{actual.id}/emparejar"><Plus size={16} />Añadir equipo</a>
+      </div>
     {/if}
   </div>
+
+  {#if org.sedes.length && sinSede.length}
+    <div class="notice notice-info">
+      <Building2 size={16} />
+      <p>
+        {plural(sinSede.length, "equipo no tiene sede", "equipos no tienen sede")}: {sinSede.length === 1 ? "cuenta" : "cuentan"} en «{sedePorDefecto(org)?.nombre}», la principal. Ponle la suya en su ficha o con «Varios a la vez». <Ayuda id="sedes" />
+      </p>
+    </div>
+  {/if}
 
   {#if unidos.length}
     <div class="notice notice-warn">
@@ -186,9 +334,30 @@
       {/if}
     </div>
     <FiltroEtiquetas />
-    {#if hayEtiquetas && !filtroEtiqueta.valor}
-      <label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>
-    {/if}
+    <div class="vista" role="group" aria-label="Cómo ver la lista">
+      {#if !filtroEtiqueta.valor}
+        <label class="agrupar" for="ag-1">Agrupar por</label>
+        <select id="ag-1" class="input input-sm" value={niveles[0] ?? ""} onchange={(e) => ponerNivel(0, e.currentTarget.value)}>
+          <option value="">Nada</option>
+          {#each disponibles as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
+        </select>
+        {#if niveles[0]}
+          <label class="agrupar" for="ag-2">luego</label>
+          <select id="ag-2" class="input input-sm" value={niveles[1] ?? ""} onchange={(e) => ponerNivel(1, e.currentTarget.value)}>
+            <option value="">Nada</option>
+            {#each disponibles.filter((d) => d.nivel !== niveles[0]) as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
+          </select>
+        {/if}
+      {/if}
+      <label class="agrupar" for="orden">Orden</label>
+      <select id="orden" class="input input-sm" value={orden} onchange={(e) => ponerOrdenVista(e.currentTarget.value as (typeof ORDENES)[number])}>
+        <option value="atencion">Lo que necesita atención primero</option>
+        <option value="nombre">Por nombre</option>
+        <option value="manual">A mano</option>
+      </select>
+      {#if orden === "manual"}<Ayuda id="orden-a-mano" />{/if}
+    </div>
+    <Anuncio texto={anuncio} />
     {#if seleccionando && etiquetasVisibles.length}
       <div class="por-etiqueta" role="group" aria-label="Elegir los equipos de una etiqueta">
         <span class="faint">Elegir todos los de:</span>
@@ -198,46 +367,99 @@
         {/each}
       </div>
     {/if}
-    {#if grupos && lista.length}
+    {#snippet filas(es: Equipo[])}
+      {#each es as e, i (e.id)}
+        {#if seleccionando}
+          <div class="con-sel" class:on={elegidos.has(e.id)}>
+            <input type="checkbox" class="sel" aria-label="Elegir {e.nombre}" disabled={!elegible(e)} checked={elegidos.has(e.id)} onchange={(ev) => alternar(e.id, ev.currentTarget.checked)} />
+            <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} sede={sedeFila(e)} />
+          </div>
+        {:else if ordenEditable}
+          <div
+            class="con-orden"
+            class:arrastrando={arrastrando === e.id}
+            role="group"
+            aria-label={e.nombre}
+            draggable="true"
+            ondragstart={(ev) => {
+              arrastrando = e.id;
+              ev.dataTransfer?.setData("text/plain", e.id);
+            }}
+            ondragend={() => (arrastrando = null)}
+            ondragover={(ev) => arrastrando && es.some((x) => x.id === arrastrando) && ev.preventDefault()}
+            ondrop={(ev) => {
+              ev.preventDefault();
+              soltar(e, es);
+            }}
+          >
+            <span class="asa" aria-hidden="true"><GripVertical size={14} /></span>
+            <span class="flechas">
+              <button class="icon-btn sm" aria-label="Subir {e.nombre}" disabled={i === 0} onclick={() => mover(e, es, -1)}><ArrowUp size={14} /></button>
+              <button class="icon-btn sm" aria-label="Bajar {e.nombre}" disabled={i === es.length - 1} onclick={() => mover(e, es, 1)}><ArrowDown size={14} /></button>
+            </span>
+            <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} sede={sedeFila(e)} acciones />
+          </div>
+        {:else}
+          <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} sede={sedeFila(e)} acciones />
+        {/if}
+      {/each}
+      {#if ordenEditable && arrastrando && es.some((x) => x.id === arrastrando)}
+        <div
+          class="soltar-final"
+          role="group"
+          aria-label="Soltar al final"
+          ondragover={(ev) => ev.preventDefault()}
+          ondrop={(ev) => {
+            ev.preventDefault();
+            soltar(null, es);
+          }}
+        >
+          Soltar al final
+        </div>
+      {/if}
+    {/snippet}
+    {#snippet grupo(g: GrupoNivel<Equipo>, hondo: number)}
+      {@const eg = g.equipos.filter(elegible)}
+      {@const plegado = plegados.has(g.clave)}
+      {@const atencion = g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length}
+      <section class={hondo ? "subgrupo" : "card lista grupo"} aria-label="{g.titulo}: {plural(g.equipos.length, 'equipo', 'equipos')}">
+        <div class="fila cab-grupo" class:sub={hondo > 0}>
+          {#if seleccionando}
+            <input type="checkbox" aria-label="Elegir los de {g.titulo}" disabled={!eg.length} checked={eg.length > 0 && eg.every((e) => elegidos.has(e.id))} onchange={(ev) => alternarGrupo(g.equipos, ev.currentTarget.checked)} />
+          {/if}
+          <button class="plegar" aria-expanded={!plegado} onclick={() => plegar(g.clave)}>
+            <span class="chev" class:abierto={!plegado}><ChevronRight size={15} /></span>
+            {#if g.sin}<span class="sin-et">{g.titulo}</span>
+            {:else if g.nivel === "sede"}<span class="titulo-g"><Building2 size={14} />{g.titulo}</span>
+            {:else if g.nivel === "sistema"}<span class="titulo-g"><Monitor size={14} />{g.titulo}</span>
+            {:else if g.nivel === "etiqueta"}<span class="titulo-g">{#each g.titulo.split(" · ") as t (t)}<EtiquetaChip nombre={t} />{/each}</span>
+            {:else}<span class="titulo-g"><EtiquetaChip nombre={g.titulo} /></span>{/if}
+          </button>
+          <span class="faint resumen-g">{plural(g.equipos.filter((e) => contables.includes(e)).length, "equipo", "equipos")}{#if atencion}{" · "}<span class="atencion">{plural(atencion, "necesita atención", "necesitan atención")}</span>{/if}</span>
+        </div>
+        {#if !plegado}
+          {#if g.hijos.length}
+            {#each g.hijos as h (h.clave)}{@render grupo(h, hondo + 1)}{/each}
+          {:else}
+            {@render filas(g.equipos)}
+          {/if}
+        {/if}
+      </section>
+    {/snippet}
+    {#if arbol && ordenada.length}
       <div class="grupos">
-        {#each grupos as g (g.etiqueta ?? "")}
-          {@const eg = g.equipos.filter(elegible)}
-          <section class="card lista grupo" aria-label={g.etiqueta ? `Equipos con «${g.etiqueta}»` : "Equipos sin etiqueta"}>
-            <div class="fila cab-grupo">
-              {#if seleccionando}
-                <input type="checkbox" aria-label="Elegir los de {g.etiqueta ?? 'sin etiqueta'}" disabled={!eg.length} checked={eg.length > 0 && eg.every((e) => elegidos.has(e.id))} onchange={(ev) => alternarGrupo(g.equipos, ev.currentTarget.checked)} />
-              {/if}
-              {#if g.etiqueta}<EtiquetaChip nombre={g.etiqueta} />{:else}<span class="sin-et">Sin etiqueta</span>{/if}
-              <span class="faint resumen-g">{plural(g.equipos.filter((e) => contables.includes(e)).length, "equipo", "equipos")}{#if g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length}{" · "}{plural(g.equipos.filter((e) => ["bad", "warn"].includes(saludEquipo(e, reloj.ahora).tono)).length, "necesita atención", "necesitan atención")}{/if}</span>
-            </div>
-            {#each g.equipos as e (e.id)}
-              {#if seleccionando}
-                <div class="con-sel" class:on={elegidos.has(e.id)}>
-                  <input type="checkbox" class="sel" aria-label="Elegir {e.nombre}" disabled={!elegible(e)} checked={elegidos.has(e.id)} onchange={(ev) => alternar(e.id, ev.currentTarget.checked)} />
-                  <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} />
-                </div>
-              {:else}
-                <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} acciones />
-              {/if}
-            {/each}
-          </section>
-        {/each}
+        {#each arbol as g (g.clave)}{@render grupo(g, 0)}{/each}
       </div>
-    {:else if lista.length}
+    {:else if ordenada.length}
       <div class="card lista">
         {#if seleccionando}
           <label class="fila sel-todos">
             <input type="checkbox" checked={todosElegidos} indeterminate={!todosElegidos && elegiblesVisibles.some((e) => elegidos.has(e.id))} onchange={(ev) => alternarTodos(ev.currentTarget.checked)} />
             <span>Todos los que se ven{filtroEtiqueta.valor ? ` con «${filtroEtiqueta.valor}»` : ""} ({elegiblesVisibles.length})</span>
           </label>
-          {#each lista as e (e.id)}
-            <div class="con-sel" class:on={elegidos.has(e.id)}>
-              <input type="checkbox" class="sel" aria-label="Elegir {e.nombre}" disabled={!elegible(e)} checked={elegidos.has(e.id)} onchange={(ev) => alternar(e.id, ev.currentTarget.checked)} />
-              <FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} />
-            </div>
-          {/each}
+          {@render filas(ordenada)}
         {:else}
-          {#each lista as e (e.id)}<FilaEquipo equipo={e} cliente={actual.id} informe={informeDe(e.id)} acciones />{/each}
+          {@render filas(ordenada)}
         {/if}
       </div>
     {:else}
@@ -263,11 +485,38 @@
         {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (enBloque = "pausar")}><CirclePause size={14} />Pausar</button>{/if}
         <button class="btn btn-sm" disabled={!seleccion.some((e) => e.resumen?.pausado_hasta)} onclick={() => (enBloque = "reanudar")}><CirclePlay size={14} />Reanudar</button>
         {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (aplicarPlantilla = true)}><LayoutTemplate size={14} />Aplicar plantilla</button>{/if}
+        {#if puede.administrar(actual.cliente.rol) && org.sedes.length}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => ((sedeElegida = ""), (ponerSede = true))}><Building2 size={14} />Poner sede</button>{/if}
         <button class="btn btn-sm btn-ghost" onclick={salirDeSeleccion}><X size={14} />Terminar</button>
       </div>
     {/if}
   {/if}
 </div>
+
+{#if organizar}<OrganizarEquipos onclose={() => (organizar = false)} />{/if}
+
+{#if ponerSede}
+  <Modal labelledby="t-poner-sede" onclose={() => (ponerSede = false)} width={440}>
+    <div class="dlg-title">
+      <span class="ticon"><Building2 size={18} /></span>
+      <div>
+        <h2 id="t-poner-sede">Sede de {plural(seleccion.length, "equipo", "equipos")}</h2>
+        <p>Cuenta en la regla 3-2-1-1-0: un destino en otra sede está fuera del sitio. <Ayuda id="sedes" /></p>
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label" for="sede-bloque">Sede</label>
+      <select id="sede-bloque" class="input" bind:value={sedeElegida}>
+        <option value="">Sin asignar: la principal ({sedePorDefecto(org)?.nombre ?? "—"})</option>
+        {#each [...org.sedes].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")) as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
+      </select>
+      <span class="field-hint">{seleccion.map((e) => e.nombre).join(", ")}</span>
+    </div>
+    <footer class="pie">
+      <button class="btn btn-ghost" onclick={() => (ponerSede = false)}>Cancelar</button>
+      <button class="btn btn-primary" disabled={poniendoSede} onclick={aplicarSede}>{poniendoSede ? "Guardando…" : "Guardar"}</button>
+    </footer>
+  </Modal>
+{/if}
 
 {#if aplicarPlantilla && actual.cliente}
   <AplicarPlantillaEnBloque cliente={actual.cliente} equipos={seleccion} plantillaInicial={plantillaComun} onclose={() => (aplicarPlantilla = false)} />
@@ -284,7 +533,105 @@
     gap: 8px;
     font-size: var(--fs-sm);
     color: var(--text-2);
+  }
+  .vista {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .vista select {
+    width: auto;
+    max-width: 100%;
+  }
+  .acciones-cab {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .plegar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 0 4px;
+    border: none;
+    background: none;
+    color: var(--text-1);
+    font: inherit;
+    font-weight: 550;
     cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+  .plegar:hover {
+    background: var(--surface-3);
+  }
+  .chev {
+    display: inline-flex;
+    color: var(--text-3);
+    transition: transform var(--dur) var(--ease);
+  }
+  .chev.abierto {
+    transform: rotate(90deg);
+  }
+  .titulo-g {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .titulo-g :global(svg) {
+    color: var(--text-3);
+  }
+  .atencion {
+    color: var(--warn);
+  }
+  .subgrupo {
+    border-top: 1px solid var(--border);
+  }
+  .cab-grupo.sub {
+    padding-left: var(--sp-8);
+    background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+  }
+  .con-orden {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding-left: 6px;
+    border-top: 1px solid var(--border);
+  }
+  .con-orden :global(.fila-eq) {
+    flex: 1;
+    min-width: 0;
+    border-top: none;
+  }
+  .con-orden.arrastrando {
+    opacity: 0.5;
+  }
+  .asa {
+    display: inline-flex;
+    color: var(--text-3);
+    cursor: grab;
+  }
+  .flechas {
+    display: inline-flex;
+    flex-direction: column;
+  }
+  .icon-btn.sm {
+    width: 24px;
+    height: 24px;
+  }
+  .soltar-final {
+    padding: 8px var(--sp-4);
+    border-top: 1px dashed var(--border-strong);
+    font-size: var(--fs-sm);
+    color: var(--text-3);
+    text-align: center;
+  }
+  .pie {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: var(--sp-4);
   }
   .por-etiqueta {
     display: flex;
