@@ -398,13 +398,17 @@ export interface Preset {
   regla: Regla;
   /** Necesita un agente con `retencion_plazos`. */
   plazos: boolean;
+  /** C6: para qué sirve, en una frase (sin nombres de programas ni de clientes). */
+  para: string;
+  /** La que se recomienda si no sabes cuál elegir. */
+  recomendada?: boolean;
 }
 
 /** Las reglas de un clic, descritas por lo que hacen (sin nombres de programas ni de clientes). */
 export const PRESETS: Preset[] = [
-  { id: "hora15d-dia1a-mes", texto: "Cada hora 15 días, diarias 1 año, mensuales siempre", regla: { diarias: 0, semanales: 0, mensuales: SIEMPRE, anuales: 0, plazos: { horarias: "15d", diarias: "1y" } }, plazos: true },
-  { id: "30d6m", texto: "Diarias 30 días, semanales 6 meses", regla: { diarias: 0, semanales: 0, mensuales: 0, anuales: 0, plazos: { diarias: "30d", semanales: "6m" } }, plazos: true },
-  { id: "clasica", texto: "7 diarias, 4 semanales, 12 mensuales y 2 anuales", regla: { ...REGLA_POR_DEFECTO }, plazos: false },
+  { id: "hora15d-dia1a-mes", texto: "Cada hora 15 días, diarias 1 año, mensuales siempre", regla: { diarias: 0, semanales: 0, mensuales: SIEMPRE, anuales: 0, plazos: { horarias: "15d", diarias: "1y" } }, plazos: true, recomendada: true, para: "Vuelves a cualquier hora de las dos últimas semanas, a cualquier día del último año y a cada mes desde el principio." },
+  { id: "30d6m", texto: "Diarias 30 días, semanales 6 meses", regla: { diarias: 0, semanales: 0, mensuales: 0, anuales: 0, plazos: { diarias: "30d", semanales: "6m" } }, plazos: true, para: "Ocupa poco: el último mes día a día y medio año semana a semana. Para datos que cambian mucho y no hace falta guardar años." },
+  { id: "clasica", texto: "7 diarias, 4 semanales, 12 mensuales y 2 anuales", regla: { ...REGLA_POR_DEFECTO }, plazos: false, para: "Pocas versiones que llegan lejos: la última semana, el último mes, el último año y dos años más. Vale con cualquier agente." },
 ];
 
 /** El preset que es exactamente esta regla, si hay. */

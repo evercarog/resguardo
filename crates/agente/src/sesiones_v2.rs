@@ -349,22 +349,45 @@ fn crear_carpeta(padre: &str, nombre: &str) -> Result<(String, bool), String> {
     }
 }
 
-/// Carpetas que suele interesar copiar.
+/// Carpetas que suele interesar copiar. En Windows, las de cada perfil de
+/// `C:\Users` que se usa de verdad (14zz): sin cuentas internas o de servicio,
+/// sin perfiles vacíos ni repetidos («ana.OFICINA.000»), y primero los que
+/// tienen datos y se usaron hace menos.
 fn sugerencias() -> Vec<Value> {
     let mut out = Vec::new();
     #[cfg(windows)]
     {
         if let Ok(it) = std::fs::read_dir(r"C:\Users") {
-            for u in it.flatten() {
-                let nombre = u.file_name().to_string_lossy().into_owned();
-                if ["Public", "Default", "Default User", "All Users"].contains(&nombre.as_str()) || !u.path().is_dir() {
+            let perfiles: Vec<(String, std::path::PathBuf)> =
+                it.flatten().filter(|u| u.path().is_dir()).map(|u| (u.file_name().to_string_lossy().into_owned(), u.path())).collect();
+            let nombres: Vec<String> = perfiles.iter().map(|(n, _)| n.clone()).collect();
+            let mut vistos: Vec<PerfilVisto> = Vec::new();
+            for (nombre, dir) in &perfiles {
+                if perfil_oculto(nombre, &nombres) {
                     continue;
                 }
-                let rutas: Vec<String> =
-                    ["Documents", "Desktop", "Pictures"].iter().map(|s| u.path().join(s)).filter(|p| p.is_dir()).map(|p| p.display().to_string()).collect();
-                if !rutas.is_empty() {
-                    out.push(json!({ "id": format!("usuario-{nombre}"), "nombre": format!("Documentos de {nombre}"), "detalle": "Documentos, Escritorio e Imágenes", "rutas": rutas }));
+                let rutas: Vec<std::path::PathBuf> = ["Documents", "Desktop", "Pictures"].iter().map(|s| dir.join(s)).filter(|p| p.is_dir()).collect();
+                if rutas.is_empty() {
+                    continue;
                 }
+                let con_datos = rutas
+                    .iter()
+                    .any(|p| std::fs::read_dir(p).map(|mut d| d.any(|e| e.is_ok_and(|e| !es_de_relleno(&e.file_name().to_string_lossy())))).unwrap_or(false));
+                // El uso: lo último que cambió en el perfil (su registro, NTUSER.DAT, se escribe al entrar).
+                let reciente = std::iter::once(dir.join("NTUSER.DAT"))
+                    .chain(rutas.iter().cloned())
+                    .filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+                    .max()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
+                vistos.push(PerfilVisto { nombre: nombre.clone(), rutas: rutas.iter().map(|p| p.display().to_string()).collect(), con_datos, reciente });
+            }
+            for p in ordenar_perfiles(vistos) {
+                // Un perfil sin nada en sus carpetas no se sugiere (cuentas que nunca se usaron).
+                if !p.con_datos {
+                    continue;
+                }
+                out.push(json!({ "id": format!("usuario-{}", p.nombre), "nombre": format!("Documentos de {}", p.nombre), "detalle": "Documentos, Escritorio e Imágenes", "rutas": p.rutas }));
             }
         }
     }
@@ -377,6 +400,75 @@ fn sugerencias() -> Vec<Value> {
         }
     }
     out
+}
+
+/// Un perfil de `C:\Users` con lo que se sabe de él para ordenarlo.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+struct PerfilVisto {
+    nombre: String,
+    rutas: Vec<String>,
+    /// Alguna de sus carpetas tiene algo (además de `desktop.ini`).
+    con_datos: bool,
+    /// Segundos desde 1970 de lo último que cambió.
+    reciente: u64,
+}
+
+/// Archivos que Windows pone en cualquier carpeta de un perfil nuevo.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn es_de_relleno(nombre: &str) -> bool {
+    nombre.eq_ignore_ascii_case("desktop.ini") || nombre.eq_ignore_ascii_case("thumbs.db")
+}
+
+/// Primero los que tienen datos; dentro, los usados hace menos; a igualdad, por nombre.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn ordenar_perfiles(mut v: Vec<PerfilVisto>) -> Vec<PerfilVisto> {
+    v.sort_by(|a, b| b.con_datos.cmp(&a.con_datos).then(b.reciente.cmp(&a.reciente)).then_with(|| a.nombre.to_lowercase().cmp(&b.nombre.to_lowercase())));
+    v
+}
+
+/// 14zz: perfiles de `C:\Users` que no son de una persona o que repiten otro:
+/// los públicos y de plantilla, los de los grupos de aplicaciones de IIS y .NET
+/// («.NET v4.5», «Classic .NET AppPool», «DefaultAppPool»), cuentas de servicio
+/// (de SQL Server, «…$», `defaultuser0`, `WDAGUtilityAccount`) y los repetidos
+/// que Windows crea cuando un perfil se estropea («ana.OFICINA.000», «ana.001»)
+/// si existe el original («ana» o «ana.OFICINA»).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn perfil_oculto(nombre: &str, todos: &[String]) -> bool {
+    let n = nombre.to_lowercase();
+    const FIJOS: [&str; 10] = [
+        "public",
+        "default",
+        "default user",
+        "all users",
+        "defaultapppool",
+        "classic .net apppool",
+        "defaultuser0",
+        "wdagutilityaccount",
+        "administrador.default",
+        "temp",
+    ];
+    if FIJOS.contains(&n.as_str())
+        || n.starts_with(".net ")
+        || n.ends_with('$')
+        || n.ends_with(" apppool")
+        || n.starts_with("mssql")
+        || n.starts_with("sqlserver")
+        || n.starts_with("sqltelemetry")
+        || n.starts_with("nt service")
+        || n.starts_with("iusr")
+        || n.starts_with("iwam_")
+        || n.starts_with("aspnet")
+    {
+        return true;
+    }
+    // «base.000» o «base.DOMINIO.000»: un repetido si existe «base» o «base.DOMINIO».
+    let Some((resto, num)) = n.rsplit_once('.') else { return false };
+    if num.len() != 3 || !num.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let base = resto.split('.').next().unwrap_or(resto);
+    todos.iter().map(|t| t.to_lowercase()).any(|t| t != n && (t == resto || t == base))
 }
 
 fn versiones(acc: &restic::Access) -> Result<Vec<Value>, String> {
@@ -1374,6 +1466,39 @@ mod tests {
         let r = operar(&tipo, "buscar", &json!({ "version": vs[0].short_id, "texto": "Facturas" }), &mut m).unwrap();
         assert_eq!(r["resultados"].as_array().unwrap().iter().map(|x| x["tipo"].as_str().unwrap()).collect::<Vec<_>>(), ["dir"], "{r}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn sugerencias_sin_cuentas_internas_ni_repetidos() {
+        let todos: Vec<String> = [
+            "ana",
+            "Luis.OFICINA",
+            "luis.OFICINA.000",
+            "ana.001",
+            "marta.OFICINA.000",
+            ".NET v2.0",
+            ".NET v4.5",
+            ".NET v4.5 Classic",
+            "Classic .NET AppPool",
+            "DefaultAppPool",
+            "Default",
+            "Public",
+            "MSSQL$SQLEXPRESS",
+            "defaultuser0",
+            "Administrador",
+        ]
+        .map(String::from)
+        .to_vec();
+        let visibles: Vec<&str> = todos.iter().filter(|n| !perfil_oculto(n, &todos)).map(String::as_str).collect();
+        // «marta.OFICINA.000» se queda: no está el original.
+        assert_eq!(visibles, ["ana", "Luis.OFICINA", "marta.OFICINA.000", "Administrador"]);
+        let p = |nombre: &str, con_datos: bool, reciente: u64| PerfilVisto { nombre: nombre.into(), rutas: vec![], con_datos, reciente };
+        let orden: Vec<String> = ordenar_perfiles(vec![p("vacio", false, 900), p("vieja", true, 100), p("nueva", true, 500), p("Beta", true, 500)])
+            .into_iter()
+            .map(|x| x.nombre)
+            .collect();
+        assert_eq!(orden, ["Beta", "nueva", "vieja", "vacio"]);
+        assert!(es_de_relleno("desktop.ini") && es_de_relleno("Thumbs.db") && !es_de_relleno("factura.pdf"));
     }
 
     #[test]

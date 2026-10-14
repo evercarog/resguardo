@@ -9,12 +9,14 @@
   // hora, con su contraseña (la misma u otra, al kit), su retención y su
   // verificación. Los secretos solo viven en este diálogo.
   import { onDestroy } from "svelte";
-  import { Cloud, KeyRound, Printer, RefreshCw, TriangleAlert } from "@lucide/svelte";
+  import { Cloud, KeyRound, Printer, TriangleAlert } from "@lucide/svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
   import CampoClave from "./CampoClave.svelte";
   import EditorRetencion from "./EditorRetencion.svelte";
   import Ayuda from "./Ayuda.svelte";
-  import { aleatorio } from "$lib/cripto/bytes";
+  // 14ii: «Generada / La escribo yo», como en «Nuevo repositorio».
+  import ContrasenaRepo from "./ContrasenaRepo.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import { ADMITE, admite, cuandoEnFrase, destinosParaDerivada, destinosParaPasos, detalleDestino, errorFiltro, filtroEnFrase, filtroParaOrden, idDerivadaNueva, TEXTO_FUERA_RETENCION, usosPosibles } from "$lib/cadenas";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { actual } from "$lib/estado.svelte";
@@ -72,7 +74,6 @@
     cuando: (derivada?.cuando?.hora ? "hora" : derivada?.cuando?.horario ? "horario" : "tras") as "tras" | "hora" | "horario",
     hora: derivada?.cuando?.hora ?? "23:00",
     otra: false,
-    contrasena: "",
     impreso: false,
     conRetencion: false,
     retencion: copiaRegla(REGLA_POR_DEFECTO),
@@ -92,14 +93,13 @@
   // svelte-ignore state_referenced_locally
   const carpetasOcultas = typeof derivada?.filtro?.carpetas === "number" ? derivada.filtro.carpetas : 0;
 
-  function generar() {
-    const b = aleatorio(24);
-    f.contrasena = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    b.fill(0);
-    f.impreso = false;
-  }
+  /** La contraseña nueva de «Otra contraseña» (generada aquí o escrita). */
+  let pw = $state(nuevaContrasena());
+  const contrasenaNueva = $derived(claveElegida(pw));
+  const errorPw = $derived(errorContrasena(pw));
   onDestroy(() => {
-    f.contrasena = f.secreto = "";
+    f.secreto = "";
+    olvidarContrasena(pw);
   });
 
   // Todos los destinos del cliente (docs/editor-de-copias.md), con si sirven desde este equipo y por qué no.
@@ -177,7 +177,7 @@
     destino: destinoCuerpo,
     ...(f.cuando === "tras" ? { tras_copia: true } : f.cuando === "horario" && derivada?.cuando?.horario ? { horario: derivada.cuando.horario } : { hora: f.hora }),
     ...(f.conRetencion ? { retencion: reglaParaOrden(f.retencion) } : {}),
-    ...(f.otra && f.contrasena ? { contrasena_destino: f.contrasena } : {}),
+    ...(f.otra && contrasenaNueva ? { contrasena_destino: contrasenaNueva } : {}),
     bloqueo_dias: f.conBloqueo ? (diasBloqueo(f.bloqueoDias) ?? 0) : 0,
     ...(filtro ? { filtro } : {}),
     ...(f.verificar ? { verificacion: derivada?.verificacion ?? { cada_dias: 7, porcentaje: 5 } } : {}),
@@ -191,7 +191,7 @@
       !f.destino.startsWith("no:") &&
       (!esNuevo || (!!f.nombre.trim() && !!f.donde.trim())) &&
       (f.cuando !== "hora" || /^([01]\d|2[0-3]):[0-5]\d$/.test(f.hora)) &&
-      (!f.otra || (f.contrasena.length >= 8 && f.impreso)) &&
+      (!f.otra || (!errorPw && f.impreso)) &&
       (!f.conRetencion || !errorRegla(f.retencion, admitePlazos(equipo))) &&
       (!f.conBloqueo || diasBloqueo(f.bloqueoDias) !== null) &&
       !errorFranjas(f.franjas) &&
@@ -366,9 +366,10 @@
 {/snippet}
 {#snippet contrasenaCampos()}
 
-  <label class="switch-row"><input type="checkbox" bind:checked={f.otra} onchange={() => f.otra && !f.contrasena && generar()} /><span>{derivada ? "Otra contraseña nueva" : "Otra contraseña"}<span class="faint">{derivada ? "Si no, se queda la que tiene." : "Si no, la misma que el repositorio de origen (la de su kit)."}</span></span></label>
+  <label class="switch-row"><input type="checkbox" bind:checked={f.otra} onchange={() => f.otra && !pw.generada && (pw = nuevaContrasena())} /><span>{derivada ? "Otra contraseña nueva" : "Otra contraseña"}<span class="faint">{derivada ? "Si no, se queda la que tiene." : "Si no, la misma que el repositorio de origen (la de su kit)."}</span></span></label>
   {#if !f.otra && fuera && !derivada}<p class="faint nota">Recomendado: otra contraseña para un destino fuera de la oficina (así una contraseña no abre los dos). No es obligatorio.</p>{/if}
   {#if f.otra}
+    <ContrasenaRepo id="dv" bind:valor={pw} etiqueta="Contraseña de la copia derivada" alCambiar={() => (f.impreso = false)} />
     <article class="kit" id="kit-imprimible">
       <h3>Kit de recuperación · copia derivada</h3>
       <dl>
@@ -376,12 +377,11 @@
         <dt>Equipo</dt><dd>{equipo.nombre}</dd>
         <dt>Copia de</dt><dd>{repo.nombre} · <span class="pastilla mono selectable">{repo.id}-{id}</span></dd>
         <dt>Destino</dt><dd>{nombreDestino}</dd>
-        <dt>Contraseña</dt><dd><code class="selectable pw">{f.contrasena}</code></dd>
+        <dt>Contraseña</dt><dd><code class="selectable pw">{contrasenaNueva}</code></dd>
         <dt>Creado</dt><dd>{fechaLarga(new Date().toISOString())}</dd>
       </dl>
     </article>
     <div class="acciones">
-      <button type="button" class="btn btn-sm" onclick={generar}><RefreshCw size={14} />Otra</button>
       <button type="button" class="btn btn-sm" onclick={() => window.print()}><Printer size={14} />Imprimir o guardar en PDF</button>
     </div>
     <label class="switch-row"><input type="checkbox" bind:checked={f.impreso} /><span>He guardado el kit en un sitio seguro<span class="faint">Sin esta contraseña nadie podrá leer esta copia.</span></span></label>

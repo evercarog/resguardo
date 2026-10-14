@@ -14,6 +14,8 @@
   import NuevaZona from "./NuevaZona.svelte";
   import ConectarDestino from "./ConectarDestino.svelte";
   import Ayuda from "./Ayuda.svelte";
+  // C6: los mismos pasos que los demás asistentes.
+  import Pasos from "./Pasos.svelte";
   import { admiteZonas, almacenesDe } from "$lib/destinos";
   import type { Cliente, Equipo } from "$lib/tipos";
 
@@ -28,12 +30,16 @@
   const almacen = $derived(conZonas.find((a) => a.id === almacenId) ?? conZonas[0]);
   let zonaEn = $state<Equipo | null>(null);
   let formulario = $state(false);
+  const PASOS = [
+    { id: "que", texto: "Qué destino" },
+    { id: "datos", texto: "Sus datos" },
+  ];
 </script>
 
 {#if zonaEn}
   <NuevaZona {cliente} equipo={zonaEn} onclose={() => ((zonaEn = null), alCambiar?.(), onclose())} alTerminar={() => alCambiar?.()} />
 {:else if formulario}
-  <ConectarDestino {cliente} onclose={() => ((formulario = false), alCambiar?.(), onclose())} alConectar={() => alCambiar?.()} />
+  <ConectarDestino {cliente} pasos={PASOS} onclose={() => ((formulario = false), alCambiar?.(), onclose())} alConectar={() => alCambiar?.()} />
 {:else}
   <Modal labelledby="t-nuevo-destino" {onclose} width={560}>
     <div class="dlg-title">
@@ -43,6 +49,7 @@
         <p>Dónde se guardarán repositorios o espejos. Se crea ahora y se usa después. <Ayuda id="catalogo-destinos" /></p>
       </div>
     </div>
+    <div class="pasos-dlg"><Pasos pasos={PASOS} actual="que" /></div>
     <div class="form">
       <div class="clases" role="radiogroup" aria-label="Qué destino">
         <label class="clase" class:on={clase === "nube"}>

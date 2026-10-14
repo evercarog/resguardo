@@ -608,7 +608,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -729,7 +729,7 @@ export async function sembrar(vacio = false) {
   if (contabilidad.informes[0]) {
     const d = contabilidad.informes[0].datos;
     d.version = contabilidad.version_agente;
-    for (const k of d.copias ?? []) if (k.id === "ventas") k.ganchos = ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"].map((b) => ({ tipo: "sqlserver" as const, estado: "ok" as const, mensaje: `Volcado de SQL Server de «${b}» hecho.` }));
+    for (const k of d.copias ?? []) if (k.id === "ventas") k.ganchos = ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"].map((b) => ({ tipo: "sqlserver" as const, estado: "ok" as const, mensaje: `Volcado de SQL Server de «${b}» hecho y verificado.`, verificado: true }));
   }
   for (const e of [recepcion, portatil, servidorAltamar, surAlmacen, surCaja, estudio]) if (e.informes[0]) e.informes[0].datos.version = e.version_agente;
   // Etiquetas (v1.18) para agrupar y filtrar.

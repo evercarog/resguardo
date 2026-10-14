@@ -3,8 +3,10 @@
 //! plantilla y rellena sus campos; el agente solo sabe ejecutar estas.
 //!
 //! - `sqlserver`: antes de la copia, un volcado `BACKUP DATABASE … WITH
-//!   COPY_ONLY` de cada base a una carpeta local que entra en la copia; al
-//!   terminar, se borran los volcados que hizo el gancho (solo esos archivos).
+//!   COPY_ONLY, CHECKSUM` de cada base a una carpeta local que entra en la
+//!   copia y, salvo `verificar: false`, un `RESTORE VERIFYONLY … WITH CHECKSUM`
+//!   de cada volcado (14ccc); al terminar, se borran los volcados que hizo el
+//!   gancho (solo esos archivos).
 //! - `carpeta_reciente`: comprueba que la carpeta de copias propias de una
 //!   aplicación tiene algún archivo de las últimas `horas`; si no, la copia
 //!   termina con aviso (no cambia lo que se copia).
@@ -31,6 +33,12 @@ pub enum Gancho {
         /// servicio de SQL Server tiene que poder escribir en ella (la carpeta
         /// `Backup` de la instancia ya tiene ese permiso).
         carpeta: String,
+        /// v1.6x (pendiente de numerar al unir, 14ccc): comprobar cada volcado con
+        /// `RESTORE VERIFYONLY … WITH CHECKSUM` al hacerlo. Sin el campo, sí (por
+        /// defecto); `false` lo desactiva. La consola solo lo manda a agentes con
+        /// `admite: "verificar_volcado"` (los anteriores rechazan campos que no conocen).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        verificar: Option<bool>,
     },
     /// Aviso si la carpeta de copias de una aplicación no tiene nada reciente.
     CarpetaReciente {
@@ -96,7 +104,7 @@ impl Gancho {
 
     pub fn validate(&self) -> Result<(), String> {
         match self {
-            Gancho::Sqlserver { instancia, bases, carpeta } => {
+            Gancho::Sqlserver { instancia, bases, carpeta, .. } => {
                 if !instancia_valida(instancia) {
                     return Err(format!("Instancia de SQL Server no válida: «{instancia}» (p. ej. «.» o «EQUIPO\\SQLEXPRESS»)."));
                 }
@@ -128,6 +136,11 @@ impl Gancho {
             }
         }
         Ok(())
+    }
+
+    /// 14ccc: ¿se verifica cada volcado al hacerlo? (Por defecto, sí.)
+    pub fn verifica_volcados(&self) -> bool {
+        matches!(self, Gancho::Sqlserver { verificar, .. } if verificar.unwrap_or(true))
     }
 
     /// Carpetas que el gancho añade a la copia (los volcados).
@@ -202,6 +215,14 @@ mod tests {
             assert!(de_config(&mal).is_err(), "{mal}");
         }
         assert!(instancia_valida("localhost,1433") && instancia_valida(".") && !instancia_valida("a\\b\\c"));
+        // 14ccc: verificar cada volcado, por defecto sí; `false` lo desactiva y no se escribe si no viene.
+        assert!(g[0].verifica_volcados());
+        let sin = de_config(&json!({"tipo": "sqlserver", "bases": ["a"], "carpeta": "D:\\v", "verificar": false})).unwrap();
+        assert!(!sin[0].verifica_volcados());
+        assert_eq!(serde_json::to_value(&sin[0]).unwrap()["verificar"], json!(false));
+        assert!(serde_json::to_value(&d[0]).unwrap().get("verificar").is_none());
+        assert!(de_config(&json!({"tipo": "sqlserver", "bases": ["a"], "carpeta": "D:\\v", "verificar": "no"})).is_err());
+        assert!(!dos[0].verifica_volcados());
         let cinco = serde_json::Value::Array(vec![json!({"tipo": "carpeta_reciente", "carpeta": "D:\\x", "horas": 5}); 5]);
         assert!(de_config(&cinco).is_err());
     }

@@ -15,7 +15,10 @@
   import { primeraFalta } from "$lib/falta";
   import CopiarEnAlmacen from "./CopiarEnAlmacen.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
-  import { aleatorio } from "$lib/cripto/bytes";
+  import ContrasenaRepo from "./ContrasenaRepo.svelte";
+  // C6: los mismos pasos que los demás asistentes (editor de copias, Restaurar).
+  import Pasos from "./Pasos.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import { ErrorEtiqueta, mandarOrden } from "$lib/ordenar";
   import { fechaLarga } from "$lib/formato";
   import { avisar } from "$lib/avisos.svelte";
@@ -72,6 +75,13 @@
   } = $props();
 
   type Paso = "datos" | "kit" | "clave";
+  /** Desde el editor de copias la clave ya se escribió: dos pasos. */
+  // svelte-ignore state_referenced_locally
+  const PASOS = [
+    { id: "datos", texto: "Nombre y destino" },
+    { id: "kit", texto: "Contraseña y kit" },
+    ...(prueba ? [] : [{ id: "clave", texto: "Confirmar" }]),
+  ];
   let paso = $state<Paso>("datos");
   // Valores iniciales del formulario (después manda lo que se elija aquí).
   const inicial = () => ({
@@ -89,16 +99,13 @@
   let carpetaNube = $state("Resguardo");
   /** «Conectar Dropbox (también) en …» desde la lista. */
   let conectarEn = $state<{ equipo: Equipo; nube: string } | null>(null);
-  /** La contraseña: generada aquí (lo normal) o escrita por la persona. */
-  let propia = $state(false);
-  let escrita = $state("");
-  let repetida = $state("");
+  /** 14ii: la contraseña, generada aquí (lo normal) o escrita por la persona. */
+  let pw = $state(nuevaContrasena());
   let tipo = $state<"rest" | "b2" | "s3" | "local">("rest");
   let donde = $state("");
   let nombreDestino = $state("");
   let usuario = $state("");
   let secretoDestino = $state("");
-  let contrasena = $state("");
   let impreso = $state(false);
   let claveAdmin = $state("");
   let ocupado = $state(false);
@@ -218,8 +225,8 @@
   /** La opción de la lista que lleva a ese almacén (el «Copiar en …» o el destino que ya tiene). */
   const opcionOtroAlmacen = $derived(otroAlmacen ? opciones.find((o) => o.uso.ok && ((o.que.tipo === "almacen" && o.que.almacen.id === otroAlmacen.id && !o.que.zona) || (o.que.tipo === "propio" && esDeAlmacen(o.que.destino, otroAlmacen)))) : undefined);
   /** La contraseña que se usará (la generada o la escrita). */
-  const clave = $derived(propia ? escrita : contrasena);
-  const errorEscrita = $derived(!propia ? null : escrita.length < 12 ? "Al menos 12 caracteres." : escrita !== repetida ? "Las dos no coinciden." : null);
+  const clave = $derived(claveElegida(pw));
+  const errorEscrita = $derived(errorContrasena(pw));
   const faltaKit = $derived(
     primeraFalta([
       [!errorEscrita, { texto: errorEscrita ?? "", campo: "r-propia" }],
@@ -227,15 +234,8 @@
     ]),
   );
 
-  /** 32 bytes aleatorios en base64url: la contraseña del repositorio. */
-  function generar() {
-    const b = aleatorio(32);
-    contrasena = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    b.fill(0);
-  }
-
   function aKit() {
-    generar();
+    if (!pw.generada) pw = nuevaContrasena();
     // B1: en un almacén (un destino que ya tiene allí), su carpeta es su nombre.
     const alm = destino?.tipo === "rest" ? equipos.find((a) => a.resumen?.guarda_copias?.activo && esDeAlmacen(destino, a)) : undefined;
     if (alm && equipo) {
@@ -255,7 +255,8 @@
   }
 
   function olvidar() {
-    contrasena = escrita = repetida = secretoDestino = claveAdmin = usuario = origen.contrasena = origen.secreto = "";
+    olvidarContrasena(pw);
+    secretoDestino = claveAdmin = usuario = origen.contrasena = origen.secreto = "";
   }
   onDestroy(olvidar);
 
@@ -318,6 +319,7 @@
     </div>
   </div>
 
+  {#if !existente}<div class="pasos-dlg"><Pasos pasos={PASOS} actual={paso} alElegir={ocupado ? undefined : (id) => void (paso = id as Paso)} /></div>{/if}
   {#if paso === "datos"}
     <div class="form">
       {#if !alCreado}
@@ -404,11 +406,12 @@
           </div>
         </div>
       {/if}
-      {#if !almacenElegido}<CampoObservaciones id="r-observaciones" bind:valor={observaciones} filas={2} />{/if}
-      <!-- También en un almacén: «Copiar en …» lo pasa a crear_repositorio (parametros_de). -->
-      <details class="avanzado" bind:open={paraHistorial}>
-        <summary>Para traer el historial de otro repositorio (avanzado)</summary>
-        <p class="faint nota">{TEXTO_TROCEADO} Después, en la página del repositorio, «Traer historial» ya tendrá puesto este origen: solo faltará su contraseña.</p>
+      <!-- C6: «Más opciones», como en el editor de copias. -->
+      <details class="avanzado" open={paraHistorial || !!observaciones.trim()}>
+        <summary>Más opciones{#if paraHistorial}<span class="faint"> · para traer el historial de otro</span>{/if}</summary>
+        {#if !almacenElegido}<CampoObservaciones id="r-observaciones" bind:valor={observaciones} filas={2} />{/if}
+        <!-- También en un almacén: «Copiar en …» lo pasa a crear_repositorio (parametros_de). -->
+        <label class="switch-row"><input type="checkbox" class="switch" bind:checked={paraHistorial} /><span>Para traer el historial de otro repositorio<span class="faint">{TEXTO_TROCEADO} Después, en la página del repositorio, «Traer historial» ya tendrá puesto este origen: solo faltará su contraseña.</span></span></label>
         {#if paraHistorial}<FormRepoExistente bind:repo={origen} id="p" nombreEquipo={equipo?.nombre} alExplorar={equipo ? () => (explorarOrigen = true) : undefined} />{/if}
       </details>
       <footer>
@@ -419,17 +422,7 @@
   {:else if paso === "kit"}
     <div class="form">
       <p>Este es el <strong>kit de recuperación</strong> del repositorio. Sin esta contraseña nadie, ni tú, podrá leer sus copias: imprímelo o guárdalo en PDF ahora.</p>
-      <div class="segmented" role="radiogroup" aria-label="Contraseña del repositorio">
-        <button type="button" role="radio" aria-checked={!propia} class:on={!propia} onclick={() => ((propia = false), (impreso = false))}>Generada (recomendado)</button>
-        <button type="button" role="radio" aria-checked={propia} class:on={propia} onclick={() => ((propia = true), (impreso = false))}>La escribo yo</button>
-      </div>
-      {#if propia}
-        <div class="fila-campos">
-          <CampoClave id="r-propia" etiqueta="Contraseña" bind:value={escrita} />
-          <CampoClave id="r-repetida" etiqueta="Repítela" bind:value={repetida} />
-        </div>
-        {#if errorEscrita && (escrita || repetida)}<p class="error-campo">{errorEscrita}</p>{:else}<span class="field-hint">Larga y que no uses en otro sitio. La generada es más segura.</span>{/if}
-      {/if}
+      <ContrasenaRepo id="r" bind:valor={pw} alCambiar={() => (impreso = false)} />
       <article class="kit" id="kit-imprimible">
         <h3>Kit de recuperación · Resguardo</h3>
         <dl>
@@ -460,7 +453,15 @@
     </div>
   {:else}
     <form class="form" onsubmit={crear}>
-      <p>{equipo?.nombre} creará «{nombre}» en {ubicacion}. Confírmalo con la clave de administración de {cliente.nombre}.</p>
+      <!-- C6: el resumen antes de confirmar, como en el editor de copias. -->
+      <dl class="resumen">
+        <dt>Equipo</dt><dd>{equipo?.nombre}</dd>
+        <dt>Repositorio</dt><dd>{nombre}</dd>
+        <dt>Destino</dt><dd>{ubicacion}</dd>
+        <dt>Contraseña</dt><dd>{pw.propia ? "La escrita por ti" : "Generada en este navegador"} · en el kit</dd>
+        {#if paraHistorial}<dt>Después</dt><dd>Traer el historial de <code>{origen.direccion}</code></dd>{/if}
+      </dl>
+      <p>Confírmalo con la clave de administración de {cliente.nombre}.</p>
       <CampoClave requerido id="r-admin" etiqueta="Clave de administración" bind:value={claveAdmin} autofocus error={error && error.includes("clave") ? error : ""}>
         {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
       </CampoClave>
@@ -547,6 +548,23 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);
+  }
+  .resumen {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 6px 12px;
+    margin: 0;
+    padding: var(--sp-3) var(--sp-4);
+    font-size: var(--fs-sm);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+  .resumen dt {
+    color: var(--text-3);
+  }
+  .resumen dd {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
   .avanzado summary {
     cursor: pointer;

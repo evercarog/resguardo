@@ -69,6 +69,8 @@ export class Sesion {
     secretos?: Secretos;
     cuerpo?: Record<string, unknown>;
     alPaso?: (t: string) => void;
+    /** Cuánto esperar el «lista» del equipo (por defecto, 90 s; 14zz: más con equipos lejanos). */
+    espera?: number;
   }): Promise<Sesion> {
     const s = new Sesion(opts.cliente, opts.equipo);
     try {
@@ -112,7 +114,7 @@ export class Sesion {
     setTimeout(() => {
       clearInterval(vigilar);
       s.listaMal(new Error(opts.equipo.conectado ? "El equipo no responde. Puede estar ocupado: vuelve a intentarlo en un momento." : "El equipo no está conectado. Abrirá la sesión cuando vuelva."));
-    }, 90_000);
+    }, opts.espera ?? 90_000);
     return s;
   }
 

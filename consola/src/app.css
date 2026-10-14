@@ -211,6 +211,10 @@ button.fila {
 .dialog > .dlg-title {
   margin-bottom: var(--sp-4);
 }
+/* C6: los pasos de un asistente en un diálogo, con el mismo aire debajo. */
+.dialog > .pasos-dlg {
+  margin-bottom: var(--sp-5);
+}
 
 /* Formularios. */
 .form {

@@ -107,6 +107,9 @@
   import AlertaLlaves from "$lib/componentes/AlertaLlaves.svelte";
   import SinConfirmar from "$lib/componentes/SinConfirmar.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
+  // 14ii: «Generada / La escribo yo» también en la copia derivada con otra contraseña.
+  import ContrasenaRepo from "$lib/componentes/ContrasenaRepo.svelte";
+  import { claveElegida, errorContrasena, nuevaContrasena, olvidarContrasena } from "$lib/contrasenaRepo";
   import Modal from "$ui/componentes/Modal.svelte";
   import { comprobarLlaves, fijadaEl, type EstadoLlaves } from "$lib/fijadas";
   import { ErrorEtiqueta, kcfgComprobada } from "$lib/ordenar";
@@ -685,9 +688,10 @@
     conRetencion: false,
     retencion: { ...RET_EXT },
     otraContrasena: false,
-    contrasenaDestino: "",
   });
   let ext = $state(extVacia());
+  /** 14ii: la contraseña de «Otra contraseña para la copia derivada». */
+  let extPw = $state(nuevaContrasena());
   /** v1.46 (agente con `externa_existente`): «Usar uno que ya existe», bloqueo de objetos y «Probar». */
   let extX = $state(externaExtraVacia());
   const extNueva = $derived(admiteExternaExistente(equipo));
@@ -709,7 +713,7 @@
                   ...(ext.tipo !== "local" && ext.secreto ? { secreto: ext.secreto } : {}),
                 }
               : { id: ext.destino },
-          ...(ext.otraContrasena && ext.contrasenaDestino ? { contrasena_destino: ext.contrasenaDestino } : {}),
+          ...(ext.otraContrasena && claveElegida(extPw) ? { contrasena_destino: claveElegida(extPw) } : {}),
         }),
     hora: ext.hora,
     ...(ext.conRetencion ? { retencion: reglaParaOrden(ext.retencion) } : {}),
@@ -721,7 +725,7 @@
       /^([01]\d|2[0-3]):[0-5]\d$/.test(ext.hora) &&
       (extNueva && extX.modo === "existente"
         ? existenteCompleto(extX)
-        : !!ext.destino && (ext.destino !== "nuevo" || (!!ext.nombre.trim() && !!ext.donde.trim())) && (!ext.otraContrasena || ext.contrasenaDestino.length >= 8)) &&
+        : !!ext.destino && (ext.destino !== "nuevo" || (!!ext.nombre.trim() && !!ext.donde.trim())) && (!ext.otraContrasena || !errorContrasena(extPw))) &&
       !errorBloqueo(extX),
   );
   /** Qué pasa con la retención allí (lo mismo que dirá el equipo al guardarla). */
@@ -1479,6 +1483,12 @@
       <!-- 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último arranque. -->
       <DatosDelEquipo {equipo} ahora={reloj.ahora} />
 
+      <!-- C6 (bloque 5 de la 0.7.26): lo menos usado, plegado cuando el equipo ya copia (abierto en uno nuevo, que lo necesita). -->
+      {@const hayMas = !!equipo.resumen?.escritorio || (propioPosible && puede.administrar(rol)) || (puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado") || (!!almacenes.length && puede.administrar(rol))}
+      {#if hayMas}
+      <details class="menos-usado" open={!repos.length}>
+        <summary>Más opciones<span class="faint">Repositorio nuevo, copiar en otro equipo y la ventana del agente</span></summary>
+        <div class="menos-usado-cuerpo">
       {#if equipo.resumen?.escritorio}
         {@const esc = equipo.resumen.escritorio}
         <section class="card p" aria-labelledby="t-en-equipo">
@@ -1517,6 +1527,9 @@
             {#each almacenes as a (a.id)}<button class="btn btn-sm" onclick={() => (copiarEn = a)}><Server size={14} />Copiar en «{a.nombre}»</button>{/each}
           </div>
         </section>
+      {/if}
+        </div>
+      </details>
       {/if}
       <Comentarios tipo="equipo" objeto={equipo.id} />
     {:else if tab === "ordenes"}
@@ -1644,7 +1657,8 @@
     probar={dialogo.campos === "externa" && extNueva ? { cuerpo: { solo_probar: true }, texto: "Probar" } : null}
     onclose={() => {
       dialogo = null;
-      ext.secreto = ext.contrasenaDestino = "";
+      ext.secreto = "";
+      olvidarContrasena(extPw);
       extX.existente.secreto = extX.existente.contrasena = "";
       // Lo que haya cambiado el equipo (p. ej. el espejo) se ve al cerrar.
       void cargar();
@@ -1879,9 +1893,10 @@
       {#if efectoExterna}<p class="faint nota-esp">{efectoExterna}</p>{/if}
     {/if}
     {#if !(extNueva && extX.modo === "existente")}
-    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} /><span>Otra contraseña para la copia derivada<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
+    <label class="switch-row"><input type="checkbox" bind:checked={ext.otraContrasena} onchange={() => ext.otraContrasena && !extPw.generada && (extPw = nuevaContrasena())} /><span>Otra contraseña para la copia derivada<span class="faint">Si no, usa la del repositorio de origen (la de su kit).</span></span></label>
     {#if ext.otraContrasena}
-      <CampoClave requerido id="x-contrasena" etiqueta="Contraseña de la copia derivada" bind:value={ext.contrasenaDestino} ayuda="Al menos 8 caracteres. Apúntala en el kit: sin ella no se puede leer la copia derivada." />
+      <ContrasenaRepo id="x-contrasena" bind:valor={extPw} etiqueta="Contraseña de la copia derivada" />
+      <p class="faint nota-esp">Para su kit: <code class="selectable">{claveElegida(extPw)}</code>. Apúntala antes de guardar: sin ella no se puede leer la copia derivada.</p>
     {/if}
     {/if}
   {:else if dialogo?.campos === "espejo"}
@@ -2004,6 +2019,41 @@
 {/if}
 
 <style>
+  .menos-usado > summary {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: var(--sp-2) 0;
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .menos-usado > summary::-webkit-details-marker {
+    display: none;
+  }
+  .menos-usado > summary::before {
+    content: "›";
+    display: inline-block;
+    width: 12px;
+    color: var(--text-3);
+    transition: transform var(--dur) var(--ease);
+  }
+  .menos-usado[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  .menos-usado > summary .faint {
+    font-weight: 400;
+    font-size: var(--fs-xs);
+  }
+  .menos-usado-cuerpo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    margin-top: var(--sp-2);
+  }
   .consolas-eq {
     display: flex;
     gap: var(--sp-3);

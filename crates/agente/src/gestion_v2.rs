@@ -1399,6 +1399,9 @@ pub const ADMITE: &[&str] = &[
     // primera subida, no antes de esa hora). 14i, 14c y 14p (campos opcionales, sin token): `subidas`,
     // `ocupa`, `bien`, `nunca_bien` y `en_cola` en cada trabajo y el progreso `espejo`.
     "espejo_primera",
+    // v1.6x (pendiente de numerar al unir) 14ccc: `verificar` (opcional) en el gancho `sqlserver`
+    // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
+    "verificar_volcado",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

@@ -2,6 +2,29 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-14 · `ia/080-pulido-final` · Plan 0.8.0, pulido final: 14ii, 14zz, 14ccc y C6
+
+Claude Code (Opus), en autónomo, desde `ia/integracion-080` (unida otra vez al final, con C2 y C3; conflictos en `ADMITE`, «Cambios» y `test:vectores`, resueltos sumando). Contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.6x (14ccc).
+
+**Hecho:**
+
+- **14ii:** componente `ContrasenaRepo.svelte` con las reglas en `lib/contrasenaRepo.ts` (generada de 32 bytes en base64url; escrita de 12 caracteres o más, repetida y sin espacios en los extremos; «la generada es más segura»). En Nuevo repositorio, Copiar en el almacén (antes solo generada), la copia derivada con «Otra contraseña» (antes solo generada y con 8 caracteres) del editor y de la página del equipo (antes solo escrita), y Pasar a otro repositorio. El kit enseña la elegida; la contraseña nunca sale del navegador salvo sellada en la orden.
+- **14ccc:** el gancho de SQL Server comprueba cada volcado con `RESTORE VERIFYONLY FROM DISK=N'…' WITH CHECKSUM` (ruta sin `'` ni `]`, comprobado también justo antes); `verificar: false` lo apaga (campo opcional, solo a agentes con `admite: "verificar_volcado"`: los anteriores rechazan los ganchos con campos de más). Si no pasa, la copia sale fallida con «El volcado de «X» no se pudo verificar: …». Cada resultado lleva `verificado`; «Antes de copiar» de cada versión enseña «Volcado verificado» y la frase agrupada dice «6 bases volcadas y verificadas». Errores de sqlcmd en palabras (la línea tras «Msg …» y una pista si está dañado). Interruptor en «Más opciones» del paso. Guía «Comprobar los datos de un volcado sin el Management Studio» (sqlcmd con HEADERONLY, VERIFYONLY, FILELISTONLY, WITH MOVE, DBCC CHECKDB y DROP DATABASE, en un servidor de pruebas), con un bloque copiable por orden (`ordenes` nuevo en las guías).
+- **14zz:** agente: sugerencias sin perfiles internos o de servicio (.NET, IIS, SQL Server, `…$`, `defaultuser0`…), sin vacíos y sin repetidos «usuario.DOMINIO.000» si existe el original, ordenadas por datos y uso (lo último que cambió en el perfil). Consola: sesión con 3 min de paciencia y 90 s por nivel, «Reintentar» en la sesión y en cada nivel, lo cargado se recuerda en memoria durante la sesión del navegador (se ve enseguida al volver y se refresca en silencio). Árbol con subcarpetas (`lib/arbolCarpetas.ts`): marcar una carpeta marca lo de dentro, desmarcar una subcarpeta la añade a «No copiar» con su ruta exacta (tachada en el árbol y en una lista con «Volver a copiarla»), la de arriba queda a medias (–), lo que está dentro de una excluida no se puede marcar suelto.
+- **C6 (con mesura):** Nuevo repositorio con `Pasos` («Nombre y destino», «Contraseña y kit», «Confirmar»), «Más opciones» (observaciones y traer el historial) y un resumen antes de la clave; Nuevo destino con dos pasos; retención con cada plantilla descrita por lo que hace, la primera «Recomendada» y «A medida» → «Personalizar»; página del equipo con «Más opciones» (repositorio nuevo, copiar en otro equipo, ventana del agente) plegado si ya tiene repositorios. Restaurar: revisado, ya tenía sus pasos y no lo toqué.
+- Pruebas: `cargo test` de los ganchos (T-SQL de verificación, mensajes, errores de sqlcmd, `verificar` por defecto y apagado) y de las sugerencias; `scripts/vectores-pulido-final.ts` (contraseña, `verificar` solo a quien lo admite, agrupar verificados, árbol). Capturas en `revisiones/080-pulido-final/` (simulador).
+- Comprobaciones tras unir la integración: `cargo fmt --check`, `clippy --workspace --all-targets` y `clippy -p resguardo-servidor --features consola-integrada`, `cargo test --workspace` (con los tres `--skip` de siempre), `npm run check`, `build`, `test:vectores`, `e2e` (escenario completo) y `test:sin-referencias`: todas bien.
+
+**Sin probar:** contra un SQL Server de verdad (el `RESTORE VERIFYONLY` y los textos de error reales de sqlcmd en español); el explorador con un equipo lejano real (VPN); las sugerencias en un Windows con perfiles de verdad; el escenario e2e no recorre estas pantallas (es por API).
+
+**Decisiones dudosas (para revisar):**
+
+- La verificación tarda más o menos lo que el volcado (relee el archivo entero): con bases grandes alarga la copia. Activada por defecto, como pide el plan.
+- Las exclusiones del árbol son rutas exactas en «No copiar» (`--iexclude C:uta` en Windows, como ya hace el agente con el registro). Una carpeta con `*`, `?` o `[` en el nombre se tomaría como comodín. Las rutas exactas de «No copiar» que quedan fuera de todas las carpetas elegidas se quitan al usar el árbol (ya no sirven de nada).
+- «Lo cargado se recuerda» solo en memoria (se pierde al recargar la página), para no guardar rutas de los equipos en el navegador.
+- Perfiles «usuario.000» sin el original sí se sugieren (pueden ser el único que se usa).
+- El enlace «desde las pruebas funcionales» es por ahora el texto de la guía: 14k aún no existe en la integración; cuando llegue, su formulario puede enlazar `/ayuda#guia-comprobar-volcado`.
+
 ## 2026-10-14 · `ia/080-espejos-vivo` · Plan 0.8.0, C2 y C3: espejos a la vista y progreso en vivo (14i, 14h, 14s, 14c, 14p)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-080` (unida otra vez al final, con el bloque F; conflictos en `ADMITE`, «Cambios» y `test:vectores`, resueltos sumando). Contrato en [api-servidor.md](api-servidor.md) «Cambios», v1.6x; diseño en [espejo.md](espejo.md).
