@@ -147,6 +147,12 @@
 {/if}
 
 <style>
+  .pruebas-espejo h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 var(--sp-3);
+  }
   .pruebas-espejo ul {
     margin: 0;
     padding: 0;

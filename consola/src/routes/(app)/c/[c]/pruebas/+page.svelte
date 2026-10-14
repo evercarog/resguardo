@@ -180,7 +180,7 @@
         {@const t = textoPlazo(datos.estado.cliente)}
         <p class="plazo"><Chip tono={t.tono} texto={t.tono === "ok" ? "Al día" : t.tono === "warn" ? "Pronto" : "Vencida"} /> {t.texto}</p>
         <p class="faint">
-          {datos.estado.cliente.ultima ? `La última que cuenta (correcta o con incidencias): ${fechaLarga(datos.estado.cliente.ultima)}.` : "Aún no hay ninguna que cuente."} Se avisa en la consola y por los canales {plural(ajustes?.aviso_dias ?? 30, "día", "días")} antes y al vencer.
+          {datos.estado.cliente.ultima ? `La última que cuenta (correcta o con incidencias): ${diaLargo(datos.estado.cliente.ultima.slice(0, 10))}.` : "Aún no hay ninguna que cuente."} Se avisa en la consola y por los canales {plural(ajustes?.aviso_dias ?? 30, "día", "días")} antes y al vencer.
         </p>
         {#if datos.estado.repos.length}
           <ul class="plazos-repo">
@@ -391,6 +391,11 @@
 {/if}
 
 <style>
+  .estado-cab h2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
   .estado-cab {
     display: flex;
     align-items: center;
@@ -502,7 +507,10 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    flex-wrap: wrap;
+  }
+  .fila-campo .input:not(.mini) {
+    flex: 1;
+    min-width: 0;
   }
   .mini {
     width: 5.5rem;
