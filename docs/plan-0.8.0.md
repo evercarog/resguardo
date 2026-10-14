@@ -49,10 +49,10 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque F — Copias y versiones
 
-- [ ] **F1. Cuándo termina una copia (14pp):** «Solo a mano», «Una sola vez» y «Termina después de N copias o el día …»; estado «completada» sin avisos.
-- [ ] **F2. Versiones (14cc, 14ww-2):** comentarios en cada versión; «Conservar para siempre» con motivo obligatorio (también al quitarlo), respetado por la retención del almacén.
-- [ ] **F3. Retención (14u):** «N versiones por día» decidido por el planificador del almacén, también sobre la historia existente.
-- [ ] **F4. Límite de velocidad según la hora (14t)** en espejos y derivadas.
+- [x] **F1. Cuándo termina una copia (14pp):** (rama `ia/080-copias`; contrato v1.6x en `api-servidor.md`, lo no probado en `registro-ia.md`) «Solo a mano», «Una sola vez» y «Termina después de N copias o el día …»; estado «completada» sin avisos.
+- [x] **F2. Versiones (14cc, 14ww-2):** (rama `ia/080-copias`: comentarios y «conservar» guardados en el equipo; en el almacén, lista de ids protegidos) comentarios en cada versión; «Conservar para siempre» con motivo obligatorio (también al quitarlo), respetado por la retención del almacén.
+- [x] **F3. Retención (14u):** (rama `ia/080-copias`: planificador del almacén y, con «por día» o versiones conservadas, también el del equipo; vectores compartidos) «N versiones por día» decidido por el planificador del almacén, también sobre la historia existente.
+- [x] **F4. Límite de velocidad según la hora (14t)** (rama `ia/080-copias`: rclone `--bwlimit` con horario en los espejos a una nube; restic `--limit-upload` de la franja en la que empieza cada derivada) en espejos y derivadas.
 
 ## Bloque G — Informes y avisos
 
