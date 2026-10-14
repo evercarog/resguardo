@@ -1046,6 +1046,9 @@
         </div>
       {/if}
 
+      <!-- 14p: lo largo que no es de una copia ni de un repositorio (la actualización del agente, los espejos, la retención del almacén), en vivo. -->
+      <EnMarcha equipo={equipo.id} tipos={["actualizacion", "espejo", ...(equipo.resumen?.guarda_copias?.activo ? (["retencion"] as const) : [])]} marco />
+
       <section>
         <div class="section-head">
           <h2>Copias <span class="count">· {copias.length}</span></h2>
@@ -1129,7 +1132,7 @@
                   <ChevronRight size={16} />
                 </a>
                 <!-- C1: el camino del repositorio (espejos y copias derivadas), con el estado de cada uno. -->
-                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" /></div>{/if}
+                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" copiaEn /></div>{/if}
                 {#if nVersiones(r, inf)}
                   <div class="fact-boxes">
                     <div><span class="faint">Versiones</span><strong class="num">{numero(nVersiones(r, inf))}</strong></div>

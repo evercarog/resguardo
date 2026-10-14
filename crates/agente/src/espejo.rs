@@ -787,28 +787,26 @@ pub fn hacer(t: &crate::espejo_trabajos::Trabajo, motivo: crate::espejo_trabajos
     use crate::espejo_trabajos as et;
     // El comienzo, antes de empezar: si el servicio se para a medias, no se repite en bucle.
     let inicio = chrono::Local::now().to_rfc3339();
-    anotar(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora) = (Some(inicio.clone()), false));
+    anotar(&t.id, |x| (x.estado.inicio, x.estado.pedido_ahora, x.estado.pedido) = (Some(inicio.clone()), false, None));
     // Para la ventana y los avisos del escritorio: sin la carpeta (es una ruta).
     let (tipo, nombre) = match t.adonde.nube.as_deref().filter(|_| t.adonde.tipo == "nube") {
         Some(n) => ("nube", n.to_string()),
         None => ("espejo", "Disco o carpeta del equipo".to_string()),
     };
     let guarda = crate::escritorio::en_marcha::empezar(tipo, &t.id, &nombre);
-    let carpeta = t.adonde.tipo != "nube";
+    guarda.espejo(t);
+    let mut avance = et::Avance::nuevo(t);
     let zona = |z: &str| crate::server::load().carpeta_zona(Some(z)).map(str::to_string);
-    let hecho = et::vuelta(t, origen, &t.alcance(), None, &zona, &et::archivo_estado(t, None), &mut |l, s| {
-        if carpeta {
-            guarda.progreso(l, None)
-        } else {
-            guarda.ritmos(l, s)
-        }
-    });
+    let hecho = et::vuelta(t, origen, &t.alcance(), None, &zona, &et::archivo_estado(t, None), &mut |l, s| avance.anotar(&guarda, l, s));
     let mut resumenes = Vec::new();
+    let mut ocupa = std::collections::BTreeMap::new();
     let texto = hecho.and_then(|r| {
         let x = texto_de(&r);
+        ocupa.clone_from(&r.ocupa);
         resumenes.push(r);
         x
     });
+    let completo = !resumenes.is_empty();
     let texto = et::texto_de(t, motivo, &[(None, texto)]);
     if texto.starts_with("ERROR") {
         drop(guarda);
@@ -819,14 +817,17 @@ pub fn hacer(t: &crate::espejo_trabajos::Trabajo, motivo: crate::espejo_trabajos
     // v1.31: el espacio de la nube tras cada vuelta (para «¿Cuándo se llena?»).
     let cuota = if t.adonde.tipo == "nube" { t.adonde.nube.as_deref().and_then(crate::nube::buscar).and_then(|n| crate::nube::cuota(&n)) } else { None };
     let fin = chrono::Local::now().to_rfc3339();
+    let v = et::Vuelta { inicio: &inicio, fin: &fin, motivo, ocupa, completo };
+    let mut registro = None;
     anotar(&t.id, |x| {
-        et::anotar_resultado(x, &texto, &fin, &resumenes);
+        et::anotar_vuelta(x, &texto, &v, &resumenes);
         if let Some(q) = cuota {
             x.estado.cuota = Some((q, fin.clone()));
         }
+        registro = x.estado.subidas.last().cloned();
     });
     // También en la bitácora del equipo (para una consola nueva).
-    crate::bitacora::espejo(&fin, &texto);
+    crate::bitacora::espejo(&fin, &texto, Some((t, registro.as_ref())));
     texto
 }
 

@@ -134,6 +134,40 @@ export interface Estado {
 export let estado: Estado;
 
 const hace = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+
+/**
+ * 14i: las últimas vueltas de un espejo simulado, de la más antigua a la más reciente
+ * (la última, hace `ultimaMin` minutos; una cada `cadaMin`). `fallos`: cuáles fallan
+ * (contando desde la más reciente, 0); `borrar`: en cuáles quita algo su retención.
+ */
+function subidasEspejo(n: number, ultimaMin: number, cadaMin: number, o: { bytes: number; ocupa: number; fallos?: number[]; borrar?: number[]; error?: string; motivo?: string; verificar?: number }): T.SubidaEspejo[] {
+  const out: T.SubidaEspejo[] = [];
+  let ocupa = o.ocupa;
+  for (let i = 0; i < n; i++) {
+    const fin = ultimaMin + i * cadaMin;
+    const mal = o.fallos?.includes(i) ?? false;
+    const vaiven = 0.55 + 0.9 * Math.abs(Math.sin(i * 1.7));
+    const bytes = mal ? 0 : Math.round(o.bytes * vaiven);
+    const dur = mal ? 40 + i : Math.round(120 + (bytes / o.bytes) * 900 + (i % 3) * 60);
+    const borra = !mal && (o.borrar?.includes(i) ?? false);
+    out.push({
+      inicio: hace(fin + dur / 60),
+      fin: hace(fin),
+      resultado: mal ? "error" : "ok",
+      motivo: o.motivo ?? (i % 5 === 0 ? "tras_copia" : "horario"),
+      archivos: mal ? 0 : Math.round(bytes / 9_000_000) + 3,
+      bytes,
+      borrados: borra ? 40 + i * 3 : 0,
+      borrados_bytes: borra ? 600_000_000 + i * 10_000_000 : 0,
+      verificados: !mal && o.verificar && i % 4 === 0 ? o.verificar : 0,
+      mal: 0,
+      ocupa: mal ? null : ocupa,
+      error: mal ? (o.error ?? "No se pudo escribir en el destino: el disco no está conectado.") : null,
+    });
+    if (!mal) ocupa -= bytes - (borra ? 600_000_000 + i * 10_000_000 : 0);
+  }
+  return out.reverse();
+}
 /** La próxima vez que el reloj marque esa hora en punto (hoy o mañana). */
 const proximaA = (h: number) => {
   const d = new Date();
@@ -485,7 +519,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       rol: "almacenamiento",
       // v1.28: agente nuevo (plazos, verificación automática y su propio almacén).
-      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles"],
+      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles", "espejo_primera"],
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         entorno: { virtual: "hyperv" },
@@ -505,11 +539,11 @@ export async function sembrar(vacio = false) {
             resultado: "Espejo hecho: 1.204 archivos nuevos (38 GB) en 2 destinos.",
             limite_kib: 4096,
             destinos: [
-              { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo", horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true, retencion_dias: 30, por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" }, freno: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén", verificar_pct: 5, verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 }, ultima: hace(60 * 13),
+              { trabajo: "t0a1b2c3d4e", tipo: "carpeta", carpeta: "E:\\Resguardo-espejo", horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true, retencion_dias: 30, por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" }, freno: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén", verificar_pct: 5, verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 }, ultima: hace(60 * 13),
  resultado: "Espejo hecho: 1.204 archivos nuevos (38 GB).", espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
-              { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
+              { trabajo: "t1b2c3d4e5f", tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], ultima: hace(60 * 13), resultado: "ERROR: Dropbox respondió 429 (demasiadas peticiones); se reintenta mañana.", espacio: { libre: 520_000_000, total: 2_199_023_255_552, leido: hace(60 * 13) } },
               // Tarea 7d.2: un paso «espejo» de la cadena de «Caja»: a la zona F, después de cada copia, sin retención.
-              { tipo: "zona", carpeta: "z3c4d5e", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], tras_copia: true, ultima: hace(60 * 3), resultado: "Espejo hecho en zona z3c4d5e: 12 archivos nuevos (4 MB), 3.120 ya estaban, 0 se dejan para la próxima vez.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
+              { trabajo: "t2c3d4e5f60", tipo: "zona", carpeta: "z3c4d5e", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], tras_copia: true, ultima: hace(60 * 3), resultado: "Espejo hecho en zona z3c4d5e: 12 archivos nuevos (4 MB), 3.120 ya estaban, 0 se dejan para la próxima vez.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
             ],
             // Plan 0.7.26 (bloque 4): los mismos espejos como trabajos, más uno a B2 con bloqueo, en pausa.
             trabajos: [
@@ -517,17 +551,27 @@ export async function sembrar(vacio = false) {
                 cuando: { horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true },
                 retencion: { modo: "retraso", dias: 30 }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, verificar_pct: 5, orden: 0,
                 ultima: hace(60 * 13), resultado: "Espejo «Disco E cada hora» hecho en E:\\Resguardo-espejo: 1.204 archivos nuevos (38 GB).", proxima: dentro(47), verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 },
+                // 14i: su registro de vueltas y lo que ocupa en el destino.
+                bien: hace(60 * 13), nunca_bien: false,
+                subidas: subidasEspejo(30, 60 * 13, 60, { bytes: 1_400_000_000, ocupa: 312_000_000_000, fallos: [7, 8], borrar: [3, 15], verificar: 61, error: "No se pudo escribir en el destino: el disco E no está conectado." }),
+                ocupa: { bytes: 312_000_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": 41_200_000_000, "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a": 270_800_000_000 }, cuando: hace(60 * 13) },
                 por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" },
                 freno_aviso: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito, confírmalo en la consola; si no, revisa el almacén",
                 espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
               { id: "t1b2c3d4e5f", nombre: "Ventas a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"] }, vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
                 cuando: { cadena: "t0a1b2c3d4e", retraso_min: 15 }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, limite_kib: 4096, orden: 1,
-                ultima: hace(60 * 13), resultado: "ERROR: espejo «Ventas a Dropbox» en Dropbox Oficina:CafeDelSur: Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez." },
+                ultima: hace(60 * 13), resultado: "ERROR: espejo «Ventas a Dropbox» en Dropbox Oficina:CafeDelSur: Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez.",
+                // 14c: nunca ha terminado bien (la primera subida se cortó): se quita o se cambia sin espera. 14p: ahora la reintenta (progreso.ts).
+                nunca_bien: true,
+                subidas: subidasEspejo(3, 60 * 13, 60 * 24, { bytes: 0, ocupa: 0, fallos: [0, 1, 2], motivo: "tras_otro", error: "Dropbox respondió 429 (demasiadas peticiones); se reintenta la próxima vez." }) },
               { id: "t2c3d4e5f60", nombre: "Caja a Disco F", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"] }, vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja"], adonde: { tipo: "zona", carpeta: "z3c4d5e" },
                 cuando: { tras_copia: true }, retencion: { modo: "igual" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "avisar" }, orden: 2,
-                ultima: hace(60 * 3), resultado: "Espejo «Caja a Disco F» hecho en zona z3c4d5e (después de una copia nueva): 12 archivos nuevos (4 MB), 3.120 ya estaban.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
+                ultima: hace(60 * 3), resultado: "Espejo «Caja a Disco F» hecho en zona z3c4d5e (después de una copia nueva): 12 archivos nuevos (4 MB), 3.120 ya estaban.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) },
+                bien: hace(60 * 3), nunca_bien: false,
+                subidas: subidasEspejo(12, 60 * 3, 60 * 8, { bytes: 60_000_000, ocupa: 41_200_000_000, motivo: "tras_copia", borrar: [2, 9] }),
+                ocupa: { bytes: 41_200_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": 41_200_000_000 }, cuando: hace(60 * 3) } },
               { id: "t3d4e5f6071", nombre: "Todo a B2 (bloqueo 30 días)", activo: false, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "nube", nube: "B2 Café del Sur", carpeta: "cafe-espejo/sur" },
-                cuando: { despues: "t0a1b2c3d4e", retraso_min: 60 }, retencion: { modo: "retraso", dias: 45 }, bloqueo_dias: 30, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 3 },
+                cuando: { despues: "t0a1b2c3d4e", retraso_min: 60 }, retencion: { modo: "retraso", dias: 45 }, bloqueo_dias: 30, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 3, nunca_bien: true },
             ],
           },
           nubes: [{ nombre: "Dropbox Oficina", tipo: "dropbox" }, { nombre: "B2 Café del Sur", tipo: "b2" }],
