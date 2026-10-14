@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Ficha de un equipo: estado, copias, repositorios, órdenes, informes y detalles.
   import Copiable from "$lib/componentes/Copiable.svelte";
@@ -230,7 +231,7 @@
     const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
     for (const r of repos) {
       const k = copias.find((x) => x.repo === r.id && x.activa !== false);
-      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, listaFuncionales(c)) : null;
       if (rc) m.set(r.id, rc);
     }
     return m;

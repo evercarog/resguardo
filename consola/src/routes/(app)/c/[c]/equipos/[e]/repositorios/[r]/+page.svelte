@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Un repositorio en detalle, como en la app de escritorio: la frase que lo
   // resume, el camino de los datos, la salud de la protección, las cifras,
@@ -126,7 +127,7 @@
     if (!equipo || !repo) return null;
     const eq = equipo;
     const k = copias.find((x) => x.repo === repo!.id && x.activa !== false);
-    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora) : null;
+    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, listaFuncionales(c)) : null;
   });
   const prot = $derived(saludCompleta(inf, { extra: equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null, rc: reglaRepo, retencionAlmacen: reglaEfectiva(repo, destino, actual.equipos)?.quien ?? null, ahora: reloj.ahora }));
   const ej = $derived(ultimaEjecucion(inf));

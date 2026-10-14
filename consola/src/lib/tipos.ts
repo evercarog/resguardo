@@ -918,6 +918,8 @@ export interface RepoInforme {
   externa: TareaInforme | null;
   /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
   derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
+  /** Plan 0.8.0, E4 (14j): las pruebas de restauración desde un espejo (agentes con `prueba_espejo`). */
+  pruebas_espejo?: import("./tiposPruebas").PruebaEspejoInforme[];
   proteccion: { puntuacion: number; total: number; items: ComprobacionProteccion[] } | null;
   /** Se quitaron las entradas más antiguas para que el informe quepa (~200 KiB). */
   recortado?: boolean;

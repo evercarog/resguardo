@@ -7,6 +7,7 @@
 //   un texto en español para la persona (el del servidor o uno propio).
 // - Las sesiones interactivas usan espera larga (hasta 25 s por petición).
 import type * as T from "./tipos";
+import type * as TP from "./tiposPruebas";
 import type { CodigoAbierto } from "./emparejar";
 import type { DatosComunesCliente, EntradaOrden } from "./datosComunes";
 import type { Lote, LoteDetalle } from "./despliegue";
@@ -499,6 +500,27 @@ export const ponerMotivoRestauracion = (c: string, e: string, id: string, motivo
   pedir<{ ok: boolean }>("PUT", `${cli(c)}/equipos/${enc(e)}/restauraciones/${enc(id)}`, { motivo, notas: notas ?? null });
 export const ponerAjustesRestauraciones = (c: string, motivoObligatorio: boolean) =>
   pedir<T.Restauraciones["ajustes"]>("PUT", `${cli(c)}/restauraciones/ajustes`, { motivo_obligatorio: motivoObligatorio });
+/**
+ * Plan 0.8.0, E3 (14k): las pruebas funcionales del cliente, su política y su plazo. Con
+ * un servidor anterior (404), `null` (la consola no ofrece registrarlas).
+ */
+export const pruebasFuncionales = (c: string) =>
+  pedir<TP.PruebasFuncionales>("GET", `${cli(c)}/pruebas-funcionales`, undefined, { invisible: true }).catch((x: unknown) => {
+    if (x instanceof ApiError && x.estado === 404) return null;
+    throw x;
+  });
+export const registrarPruebaFuncional = (c: string, p: TP.EntradaPruebaFuncional) =>
+  pedir<TP.PruebasFuncionales & { id: string }>("POST", `${cli(c)}/pruebas-funcionales`, p);
+export const cambiarPruebaFuncional = (c: string, id: string, p: TP.EntradaPruebaFuncional) =>
+  pedir<TP.PruebasFuncionales & { id: string }>("PUT", `${cli(c)}/pruebas-funcionales/${enc(id)}`, p);
+export const borrarPruebaFuncional = (c: string, id: string) => pedir<TP.PruebasFuncionales>("DELETE", `${cli(c)}/pruebas-funcionales/${enc(id)}`);
+export const ponerPoliticaPruebas = (c: string, p: TP.PoliticaPruebas) => pedir<TP.PruebasFuncionales>("PUT", `${cli(c)}/pruebas-funcionales/ajustes`, p);
+/** Un adjunto (PDF, PNG o JPG, ≤ 2 MB), en base64. */
+export const anadirAdjuntoPrueba = (c: string, id: string, nombre: string, datos: string) =>
+  pedir<TP.PruebasFuncionales>("POST", `${cli(c)}/pruebas-funcionales/${enc(id)}/adjuntos`, { nombre, datos });
+export const borrarAdjuntoPrueba = (c: string, id: string, n: number) => pedir<TP.PruebasFuncionales>("DELETE", `${cli(c)}/pruebas-funcionales/${enc(id)}/adjuntos/${n}`);
+/** Se descarga (el servidor lo manda siempre como adjunto). */
+export const urlAdjuntoPrueba = (c: string, id: string, n: number) => `${cli(c)}/pruebas-funcionales/${enc(id)}/adjuntos/${n}`;
 export const avisos = (c: string, abiertos = true) => pedir<T.Aviso[]>("GET", `${cli(c)}/avisos${abiertos ? "?abiertos=1" : ""}`);
 export const marcarVisto = (c: string, a: string) => pedir<void>("POST", `${cli(c)}/avisos/${enc(a)}/visto`);
 export const auditoria = (c: string, desde?: number, limite = 100) =>

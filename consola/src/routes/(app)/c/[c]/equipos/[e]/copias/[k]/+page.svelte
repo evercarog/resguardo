@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Una copia en detalle (como la página de un repositorio): cómo está, qué
   // copia, cuándo y dónde, sus vueltas de 60 días en cuadros y gráficas, los
@@ -137,7 +138,7 @@
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
   const catalogo = $derived(catalogoDe(c));
-  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora) : null);
+  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora, listaFuncionales(c)) : null);
   let marcar = $state<MarcarDestino | null>(null);
   const eslabones = $derived(caminoDeCopia(regla, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: actual.equipos, informe }));
   const despues = $derived(eslabones.filter((x) => x.clase !== "copia"));

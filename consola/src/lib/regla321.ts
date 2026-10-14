@@ -28,6 +28,7 @@ import { resultadoConError } from "./salud";
 import { proximaProgramada, ultimaProgramada } from "./copia";
 import { servidorDe } from "./dondeGuarda";
 import { lista, plural, relativo } from "./formato";
+import type { PruebaEspejoInforme, PruebaFuncional } from "./tiposPruebas";
 
 // ---------- 1. La regla (como protection.rs) ----------
 
@@ -74,6 +75,10 @@ export interface PruebaRegla {
   fallo?: boolean;
   /** 13e: la prueba que cuenta es una restauración real correcta (solo para enseñarlo). */
   real?: boolean;
+  /** Plan 0.8.0, E3/E4: la que cuenta es una prueba funcional o una prueba desde un espejo (solo para enseñarlo). */
+  origen?: "funcional" | "espejo";
+  /** El nombre del espejo (con `origen: "espejo"`). */
+  origenNombre?: string | null;
 }
 
 export interface EntradaRegla {
@@ -251,6 +256,14 @@ export interface PasoVista extends PasoRegla {
   despues?: boolean;
   /** C1: en pausa (un espejo desactivado, una derivada que dejó de intentarse). */
   pausado?: boolean;
+  /**
+   * Plan 0.8.0, E4 (14j): de dónde sale la copia de un paso «espejo», para probar a
+   * restaurar desde ahí: quién lo hace, su trabajo (del equipo), el almacén, adónde va
+   * (`carpeta`, `nube` o `zona`), su carpeta o nube y la ruta del repositorio dentro.
+   */
+  espejo?: { quien: "almacen" | "equipo"; trabajo?: string | null; almacen?: string | null; tipo: string; carpeta: string; nube?: string | null; ruta: string | null };
+  /** E4: la última prueba de restauración desde este espejo (la hace el equipo dueño). */
+  prueba?: PruebaEspejoInforme | null;
 }
 
 /** Lo que hace falta para marcar un destino (AtributosDestino.svelte). */
@@ -381,7 +394,15 @@ function ultimaBien(k: CopiaResumen, informe: Informe | null | undefined): strin
  * La regla de una copia (activa, en un repositorio que no es de solo lectura),
  * o null. `informe`: el último del equipo; `catalogo`: el del cliente.
  */
-export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], informe: Informe | null | undefined, catalogo: DestinoCatalogo[], ahora: number): ReglaCopia | null {
+export function reglaDeCopia(
+  e: Equipo,
+  k: CopiaResumen,
+  equipos: Equipo[],
+  informe: Informe | null | undefined,
+  catalogo: DestinoCatalogo[],
+  ahora: number,
+  funcionales: PruebaFuncional[] = [],
+): ReglaCopia | null {
   if (k.activa === false) return null;
   const r = e.resumen?.repositorios?.find((x) => x.id === k.repo);
   if (!r || r.solo_lectura) return null;
@@ -461,6 +482,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
               donde: null,
               intento: dd.ultima || dd.resultado ? { cuando: dd.ultima ?? null, mal: resultadoConError(dd.resultado), mensaje: dd.resultado ?? null } : null,
               despues: !!dd.tras_copia,
+              espejo: { quien: "almacen", almacen: a.id, tipo: "zona", carpeta: zonaDestino.carpeta ?? "", ruta: en?.nombre ?? nombreEnAlmacen(d?.donde, r) },
             },
             catalogo,
           ),
@@ -494,6 +516,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
             conexion: nube ? null : (dd.aislado ?? null),
             intento: dd.ultima || dd.resultado ? { cuando: dd.ultima ?? null, mal: resultadoConError(dd.resultado), mensaje: dd.resultado ?? null } : null,
             despues: !!dd.tras_copia,
+            espejo: { quien: "almacen", almacen: a.id, tipo: nube ? "nube" : "carpeta", carpeta, nube: dd.nube ?? null, ruta: en?.nombre ?? nombreEnAlmacen(d?.donde, r) },
           },
           catalogo,
         ),
@@ -606,6 +629,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           intento: t.ultima || t.resultado ? { cuando: t.ultima ?? null, mal, mensaje: t.resultado ?? null } : null,
           despues: !!(t.cuando.tras_copia || t.cuando.cadena || t.cuando.despues),
           pausado: !t.activo,
+          espejo: { quien: "equipo", trabajo: t.id, tipo: t.adonde.tipo, carpeta, nube: t.adonde.nube ?? null, ruta: r.id },
         },
         catalogo,
       ),
@@ -628,7 +652,21 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
     ultima_ok: pr?.ultima ?? r.prueba_restauracion ?? null,
     fallo: pr?.resultado === "fallo",
   };
-  const prueba = conRestauracionReal(programada, inf?.restauracion_real?.ultima ?? null);
+  let prueba = conRestauracionReal(programada, inf?.restauracion_real?.ultima ?? null);
+  // E4 (14j): cada espejo con su última prueba desde él (la hace el equipo dueño). Una que
+  // falló marca ese destino («datos dañados en su comprobación»); una correcta cuenta como
+  // prueba de restauración del repositorio (es el mismo repositorio).
+  for (const p of pasos) {
+    if (p.tipo !== "espejo" || !p.espejo) continue;
+    const pr = (inf?.pruebas_espejo ?? []).find((x) => x.id === idPruebaEspejo(p));
+    if (!pr) continue;
+    p.prueba = pr;
+    if (pr.resultado === "fallo") p.verificacion_mal = true;
+    if (pr.ultima && pr.resultado) prueba = conOtraPrueba(prueba, { cuando: pr.ultima, ok: pr.resultado === "ok", origen: "espejo", nombre: p.nombre });
+  }
+  // E3 (14k): la última prueba funcional de este repositorio (o de todo el cliente).
+  const f = ultimaFuncional(funcionales, e.id, r.id);
+  if (f) prueba = conOtraPrueba(prueba, { cuando: f.cuando, ok: f.ok, origen: "funcional" });
   const entrada: EntradaRegla = { origen: { equipo: e.id, soporte: `equipo:${e.id}:origen` }, pasos, verificacion, prueba_restauracion: prueba };
   return { equipo: e, copia: k, repo: r, entrada, pasos, regla: regla321(entrada, ahora) };
 }
@@ -638,6 +676,42 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
  * prueba de restauración del repositorio, con la misma caducidad; manda la más
  * reciente de las dos (una prueba posterior que falló sigue mandando).
  */
+/** E4 (14j): el id de la prueba desde un espejo (estable: por su trabajo o por su destino). */
+export function idPruebaEspejo(p: Pick<PasoVista, "espejo" | "clave" | "id">): string {
+  const base = p.espejo?.quien === "equipo" && p.espejo.trabajo ? `eq:${p.espejo.trabajo}` : `${p.espejo?.almacen ?? ""}:${p.clave ?? p.id}`;
+  return `e-${resumenCorto(base)}`;
+}
+
+/**
+ * E3 (14k): la última prueba funcional que incluye ese repositorio (de todo el cliente o
+ * con él en la lista), con su día (a mediodía, hora local). Solo «Correcta» cuenta como
+ * bien: con incidencias o fallida, el «0» pide revisarla.
+ */
+export function ultimaFuncional(ps: PruebaFuncional[], equipo: string, repo: string): { cuando: string; ok: boolean } | null {
+  let mejor: { cuando: string; ok: boolean; t: number } | null = null;
+  for (const p of ps) {
+    if (p.alcance !== "cliente" && !p.repos.some((x) => x.equipo === equipo && x.repo === repo)) continue;
+    const t = Date.parse(`${p.fecha}T12:00:00`);
+    if (!Number.isFinite(t) || (mejor && mejor.t >= t)) continue;
+    mejor = { cuando: new Date(t).toISOString(), ok: p.resultado === "ok", t };
+  }
+  return mejor ? { cuando: mejor.cuando, ok: mejor.ok } : null;
+}
+
+/**
+ * E3/E4: otra prueba de restauración (funcional o desde un espejo) junto a la que ya
+ * hay: manda la más reciente, como con la restauración real (13e), con la misma
+ * caducidad. Una que falló después de la última correcta deja el «0» por revisar.
+ */
+export function conOtraPrueba(p: PruebaRegla, o: { cuando: string; ok: boolean; origen: "funcional" | "espejo"; nombre?: string | null }): PruebaRegla {
+  const t = Date.parse(o.cuando);
+  if (!Number.isFinite(t)) return p;
+  const tp = p.ultima_ok ? Date.parse(p.ultima_ok) : NaN;
+  // La que ya había es más reciente: manda ella.
+  if (Number.isFinite(tp) && tp >= t) return p;
+  return { configurada: true, ultima_ok: o.cuando, fallo: !o.ok, origen: o.origen, origenNombre: o.nombre ?? null };
+}
+
 export function conRestauracionReal(p: PruebaRegla, real: string | null | undefined): PruebaRegla {
   const tReal = real ? Date.parse(real) : NaN;
   if (!Number.isFinite(tReal)) return p;
@@ -649,10 +723,17 @@ export function conRestauracionReal(p: PruebaRegla, real: string | null | undefi
 }
 
 /** Las de todas las copias del cliente (sin los equipos trasladados). */
-export function reglasDelCliente(equipos: Equipo[], informes: Record<string, Informe | null | undefined>, catalogo: DestinoCatalogo[], ahora: number, todos: Equipo[] = equipos): ReglaCopia[] {
+export function reglasDelCliente(
+  equipos: Equipo[],
+  informes: Record<string, Informe | null | undefined>,
+  catalogo: DestinoCatalogo[],
+  ahora: number,
+  todos: Equipo[] = equipos,
+  funcionales: PruebaFuncional[] = [],
+): ReglaCopia[] {
   return equipos
     .filter((e) => e.modo !== "trasladado")
-    .flatMap((e) => (e.resumen?.copias ?? []).map((k) => reglaDeCopia(e, k, todos, informes[e.id], catalogo, ahora)))
+    .flatMap((e) => (e.resumen?.copias ?? []).map((k) => reglaDeCopia(e, k, todos, informes[e.id], catalogo, ahora, funcionales)))
     .filter((x): x is ReglaCopia => !!x);
 }
 
@@ -670,9 +751,10 @@ export function reglaEnEdicion(
   catalogo: DestinoCatalogo[],
   ahora: number,
   programado: { verificacion?: boolean; prueba?: boolean } = {},
+  funcionales: PruebaFuncional[] = [],
 ): ReglaCopia | null {
   const previa = e.resumen?.copias?.find((x) => x.id === k.id);
-  const rc = reglaDeCopia(e, { ...previa, ...k, activa: k.activa !== false }, equipos, informe, catalogo, ahora);
+  const rc = reglaDeCopia(e, { ...previa, ...k, activa: k.activa !== false }, equipos, informe, catalogo, ahora, funcionales);
   if (!rc) return null;
   const entrada: EntradaRegla = {
     ...rc.entrada,
@@ -837,12 +919,14 @@ export function estadoCero(e: Pick<EntradaRegla, "verificacion" | "prueba_restau
     if (!p.configurada) falta.push(`programar ${nombre}`);
     else if (pruebaBien(p, ahora)) bien.push(nombre);
     else {
-      falta.push(p.fallo ? `${una} correcta (la última falló)` : `${una} reciente`);
+      const cual = p.origen === "funcional" ? "la última, una prueba funcional, falló" : p.origen === "espejo" ? "la última, desde un espejo, falló" : "la última falló";
+      falta.push(p.fallo ? `${una} correcta (${cual})` : `${una} reciente`);
       accion ??= boton;
     }
   }
   const danado = e.pasos.find((x) => x.verificacion_mal);
-  if (danado) falta.push(`revisar «${danado.nombre ?? danado.id}» (encontró archivos dañados)`);
+  // E4: la prueba de restauración desde ese espejo falló (o su comprobación encontró archivos dañados).
+  if (danado) falta.push(`revisar «${danado.nombre ?? danado.id}» (${(danado as { prueba?: { resultado?: string | null } | null }).prueba?.resultado === "fallo" ? "falló la prueba de restauración desde ahí" : "encontró archivos dañados"})`);
   return { falta, bien, accion };
 }
 
@@ -909,8 +993,15 @@ export function fraseParte(p: ParteRegla, rc: ReglaCopia, ahora: number): string
       return i.length ? `${nombres(i)}.` : "Ninguno al día inmutable o aislado.";
     }
     case "errores":
-      return p.valor ? (fraseCero(estadoCero(rc.entrada, ahora)) ?? p.detalle) : rc.entrada.prueba_restauracion.real ? "Verificación y prueba de restauración recientes y correctas (la prueba: una restauración real)." : "Verificación y prueba de restauración recientes y correctas.";
+      return p.valor ? (fraseCero(estadoCero(rc.entrada, ahora)) ?? p.detalle) : `Verificación y prueba de restauración recientes y correctas${quePrueba(rc.entrada.prueba_restauracion)}.`;
   }
+}
+
+/** De dónde salió la prueba que cuenta, si no es la programada: « (la prueba: …)». */
+export function quePrueba(p: PruebaRegla): string {
+  if (p.origen === "funcional") return " (la prueba: una prueba funcional)";
+  if (p.origen === "espejo") return p.origenNombre ? ` (la prueba: desde el espejo «${p.origenNombre}»)` : " (la prueba: desde un espejo)";
+  return p.real ? " (la prueba: una restauración real)" : "";
 }
 
 export interface QueHacer {
@@ -960,12 +1051,17 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
       return { texto: rc.entrada.verificacion.fallo ? "La última verificación encontró errores o no se pudo hacer: revísala." : "No hay una verificación correcta reciente: verifica ahora.", enlace: { texto: "Ver el repositorio", href: repo } };
     case "revisar_prueba":
       return {
-        texto: rc.entrada.prueba_restauracion.fallo ? "La última prueba de restauración falló: revísala." : `No hay una prueba de restauración correcta en los últimos ${DIAS_PRUEBA_REGLA} días: prueba ahora.`,
-        enlace: { texto: "Ver el repositorio", href: repo },
+        texto: rc.entrada.prueba_restauracion.fallo
+          ? rc.entrada.prueba_restauracion.origen === "funcional"
+            ? "La última prueba funcional no salió del todo bien: revísala y repítela."
+            : "La última prueba de restauración falló: revísala."
+          : `No hay una prueba de restauración correcta en los últimos ${DIAS_PRUEBA_REGLA} días: prueba ahora.`,
+        enlace: rc.entrada.prueba_restauracion.fallo && rc.entrada.prueba_restauracion.origen === "funcional" ? { texto: "Ver las pruebas funcionales", href: `/c/${cliente}/pruebas` } : { texto: "Ver el repositorio", href: repo },
       };
     case "revisar_destino": {
       const x = rc.pasos.find((y) => y.verificacion_mal);
-      return { texto: `${x ? `«${x.nombre}»` : "Un destino"} encontró archivos dañados al comprobarse: revísalo.`, enlace: x?.equipoId ? { texto: `Revisar «${x.nombre}»`, href: `/c/${cliente}/equipos/${x.equipoId}` } : undefined };
+      const prueba = x?.prueba?.resultado === "fallo";
+      return { texto: `${x ? `«${x.nombre}»` : "Un destino"} ${prueba ? "no pasó la prueba de restauración desde ahí" : "encontró archivos dañados al comprobarse"}: revísalo.`, enlace: x?.equipoId ? { texto: `Revisar «${x.nombre}»`, href: `/c/${cliente}/equipos/${x.equipoId}` } : undefined };
     }
     default:
       return null;

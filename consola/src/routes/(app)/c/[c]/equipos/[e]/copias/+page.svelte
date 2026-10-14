@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   import BotonFalta from "$lib/componentes/BotonFalta.svelte";
   import { tip } from "$lib/tooltip";
   // Editor de copias de un equipo (orden «config», con la clave de administración).
@@ -353,7 +354,7 @@
     return reglaEnEdicion(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), equipo.ultimo_informe, catalogo, reloj.ahora, {
       verificacion: !!cfg?.verificaciones?.[k.repo],
       prueba: !!cfg?.pruebas_restauracion?.[k.repo],
-    });
+    }, listaFuncionales(actual.id));
   }
   /** Las copias añadidas con la plantilla «3-2-1 recomendada» (para enseñar sus pasos). */
   let con321 = $state<string[]>([]);

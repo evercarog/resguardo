@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   // Informe mensual del cliente, para enseñar o imprimir (o guardar en PDF):
   // portada con la marca del cliente (v1.32), un resumen en una frase, cuatro
   // cifras, las copias de cada día del periodo, una tabla por equipo y, de
@@ -156,10 +157,10 @@
 
   // v1.52: un informe por etiqueta («Contabilidad»): solo sus equipos.
   let deEtiqueta = $state("");
-  const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos));
+  const reglas = $derived(reglasDelCliente(actual.equipos.filter((e) => pasaFiltro(e, deEtiqueta)), ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos, listaFuncionales(actual.id)));
   const cuentaR = $derived(cuentaRegla(reglas));
   // Plan 0.8.0 (G1): la de todo el cliente, para el informe ejecutivo programado.
-  const reglasTodas = $derived(reglasDelCliente(actual.equipos, ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos));
+  const reglasTodas = $derived(reglasDelCliente(actual.equipos, ultimos.porEquipo, catalogoDe(actual.id), reloj.ahora, actual.equipos, listaFuncionales(actual.id)));
   const etiquetas = $derived(etiquetasDe(actual.equipos));
   $effect.pre(() => {
     // Una etiqueta que ya nadie lleva (u otro cliente): vuelve al cliente entero.

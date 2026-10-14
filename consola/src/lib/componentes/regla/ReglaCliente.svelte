@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   // La regla 3-2-1-1-0 de todas las copias de un cliente (tarea 8c): cuántas
   // la cumplen y cuáles no, con lo que les falta. En Estado, las que dejaron de
   // cumplir salen como aviso no urgente (no van a «Necesita atención»). En
@@ -25,7 +26,7 @@
     const cc = cliente;
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
-  const reglas = $derived(reglasDelCliente(equipos, informes, catalogoDe(cliente), ahora, todos));
+  const reglas = $derived(reglasDelCliente(equipos, informes, catalogoDe(cliente), ahora, todos, listaFuncionales(cliente)));
   const cuenta = $derived(cuentaRegla(reglas));
   // Las que no cumplen, primero las que dejaron de cumplir.
   const noCumplen = $derived(reglas.filter((r) => !r.regla.cumple).sort((a, b) => Number(b.regla.dejo_de_cumplir) - Number(a.regla.dejo_de_cumplir) || a.copia.nombre.localeCompare(b.copia.nombre)));

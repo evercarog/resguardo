@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   import { untrack } from "svelte";
   // Copias del cliente (docs/diseno.md §5): todas las copias de todos sus
   // equipos en una lista, como Equipos y Repositorios: qué copia, de qué
@@ -49,7 +50,7 @@
     const cc = actual.id;
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
-  const filas = $derived(filasCopias(actual.equipos, informes, reloj.ahora, catalogoDe(actual.id), { cliente: actual.id, enVivo: enVivoCamino }));
+  const filas = $derived(filasCopias(actual.equipos, informes, reloj.ahora, catalogoDe(actual.id), { cliente: actual.id, enVivo: enVivoCamino, funcionales: listaFuncionales(actual.id) }));
 
   // Filtros: el estado y el orden se recuerdan en este navegador (por cliente).
   let buscar = $state("");
