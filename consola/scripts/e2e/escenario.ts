@@ -48,11 +48,14 @@ import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
 import { nubesDelEquipo } from "../../src/lib/nubesEquipo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
+import { nombreEnAlmacen } from "../../src/lib/espejo";
+import type * as TP from "../../src/lib/tiposPruebas";
+import zlib from "node:zlib";
 import { comentariosDe, conservadaDe, destinosConservar } from "../../src/lib/versionesNotas";
 import { unaVezAhora } from "../../src/lib/copiaGuiada";
 import { cuerpoMover, cuerpoRutaNueva, equiposEnAlmacen, planOrden, rutasPendientes, type Movido } from "../../src/lib/nombres";
 import { diferencia, pendiente, trozos, type DatosComunesCliente, type EntradaOrden } from "../../src/lib/datosComunes";
-import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
+import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Informe, Regla } from "../../src/lib/tipos";
 import { generarCodigo, LARGO_PREPARADO } from "../../src/lib/codigo";
 import { aConfirmar, esperando, revisar, type LoteDetalle } from "../../src/lib/despliegue";
 import { argon2, Agente, binario, Consola, SesionE2E, Servidor } from "./actores";
@@ -833,6 +836,115 @@ async function principal() {
       );
       comprobar(!!conReal.ultima, "El informe dice cuándo fue la restauración real", conReal);
       log("Restaurado en otra carpeta y en .zip (AES-256), con su registro");
+    }
+
+    // -----------------------------------------------------------------------
+    paso("4c. Pruebas funcionales (plan 0.8.0, E3) con RTO y RPO en la regla y en el PDF; prueba de restauración desde un espejo en disco (E4)");
+    {
+      // E3: registrar un simulacro (con la restauración de 4b) y verlo en el «0» de la regla.
+      const hoy = new Date().toISOString().slice(0, 10);
+      const pf = {
+        fecha: hoy, motivo: "programada", alcance: "repos", repos: [{ equipo: eqB.id, repo: repoId }],
+        que: "Las facturas del último mes", donde: "Otra carpeta del equipo", quien: "", resultado: "ok",
+        rto_min: 35, rpo_min: 720, notas: "Simulacro de extremo a extremo.",
+      };
+      const malo = await consola.pedir("POST", `/api/clientes/${c.id}/pruebas-funcionales`, { ...pf, fecha: "2999-01-01" });
+      igual(malo.estado, 422, "Una prueba con fecha futura se rechaza");
+      await consola.ok("PUT", `/api/clientes/${c.id}/pruebas-funcionales/ajustes`, { activo: true, meses: 6, aviso_dias: 30, rto_objetivo_min: 60, rpo_objetivo_min: 1440 });
+      const reg = await consola.ok<TP.PruebasFuncionales & { id: string }>("POST", `/api/clientes/${c.id}/pruebas-funcionales`, pf);
+      const guardada = reg.pruebas.find((p) => p.id === reg.id)!;
+      igual([guardada.rto_min, guardada.rpo_min, guardada.quien, guardada.cumple_rto, guardada.cumple_rpo], [35, 720, "Ana", true, true], "La prueba guardada, con quién y si cumple los objetivos");
+      igual(reg.estado?.cliente.fase, "al_dia", "Con ella, el plazo del cliente está al día");
+      // Un adjunto PDF (comprobado por su contenido) y uno que no lo es.
+      const pdfAdj = Buffer.from("%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n");
+      const conAdj = await consola.ok<TP.PruebasFuncionales>("POST", `/api/clientes/${c.id}/pruebas-funcionales/${reg.id}/adjuntos`, { nombre: "acta.pdf", datos: pdfAdj.toString("base64") });
+      igual(conAdj.pruebas.find((p) => p.id === reg.id)?.adjuntos.map((a) => a.tipo), ["application/pdf"], "El acta en PDF queda adjunta");
+      const html = await consola.pedir("POST", `/api/clientes/${c.id}/pruebas-funcionales/${reg.id}/adjuntos`, { nombre: "x.pdf", datos: Buffer.from("<html><script>1</script>").toString("base64") });
+      igual(html.estado, 422, "Un adjunto que no es PDF, PNG ni JPG se rechaza");
+      const descarga = await consola.pedir("GET", `/api/clientes/${c.id}/pruebas-funcionales/${reg.id}/adjuntos/1`);
+      comprobar(descarga.estado === 200 && String(descarga.cabeceras["content-disposition"]).startsWith("attachment") && descarga.cabeceras["x-content-type-options"] === "nosniff", "El adjunto se descarga siempre como archivo", descarga.cabeceras);
+      // La regla 3-2-1-1-0 de su copia: sin otra prueba más reciente, la que cuenta es la funcional.
+      const eqB4 = await consola.equipo(c, eqB.id);
+      const k = eqB4.resumen?.copias?.find((x) => x.repo === repoId && x.activa !== false);
+      comprobar(k, "B tiene una copia de ese repositorio", eqB4.resumen?.copias);
+      const infB = (await consola.ok<Informe[]>("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/informes?limite=1`))[0];
+      const sinOtras: Informe = { ...infB, datos: { ...infB.datos, repos: infB.datos.repos?.map((r) => (r.id === repoId ? { ...r, prueba_restauracion: null, restauracion_real: null } : r)) } };
+      const todos = [await consola.equipo(c, eqA.id), eqB4];
+      const rcF = reglaDeCopia(eqB4, k!, todos, sinOtras, [], Date.now(), reg.pruebas);
+      igual([rcF?.entrada.prueba_restauracion.origen, rcF?.entrada.prueba_restauracion.fallo], ["funcional", false], "En el «0», la prueba de restauración es la prueba funcional");
+      const rcSin = reglaDeCopia(eqB4, k!, todos, sinOtras, [], Date.now(), []);
+      comprobar(!rcSin?.entrada.prueba_restauracion.ultima_ok, "Sin la prueba funcional (ni otra), el «0» no tiene prueba de restauración", rcSin?.entrada.prueba_restauracion);
+      // En el informe ejecutivo en PDF: su sección, con lo que tardó (el texto va comprimido: se descomprime).
+      const pdf = await consola.pedir("GET", `/api/clientes/${c.id}/informe-ejecutivo/pdf?periodo=semanal&cual=actual`);
+      igual(pdf.estado, 200, "El PDF del informe");
+      const crudo = pdf.bytes;
+      const textoPdf: string[] = [];
+      for (let i = crudo.indexOf("stream\n"); i >= 0; i = crudo.indexOf("stream\n", i + 7)) {
+        const fin = crudo.indexOf("endstream", i);
+        try {
+          textoPdf.push(zlib.inflateSync(crudo.subarray(i + 7, fin)).toString("latin1"));
+        } catch {
+          /* la imagen del logo u otro flujo */
+        }
+      }
+      const todoPdf = textoPdf.join("\n");
+      comprobar(todoPdf.includes("Pruebas funcionales \\(simulacros de recuperaci") && todoPdf.includes("(35 min)") && todoPdf.includes("(12 h)"), "El PDF lleva la sección de pruebas funcionales con su RTO y RPO", todoPdf.length);
+      comprobar(!todoPdf.toLowerCase().includes("restic"), "Sin «restic» en el PDF");
+
+      // E4: el espejo del almacén en un disco, conectado a B (aquí, la misma máquina): B restaura unos
+      // archivos desde esa copia con la contraseña que ya tiene y los compara. El almacén no la ve.
+      comprobar(eqB4.resumen?.admite?.includes("prueba_espejo"), "B sabe probar desde un espejo", eqB4.resumen?.admite);
+      const rB = eqB4.resumen?.repositorios?.find((x) => x.id === repoId)!;
+      const rel = nombreEnAlmacen(destinoDe(eqB4.resumen?.destinos, rB)?.donde, rB);
+      comprobar(rel, "Se sabe en qué carpeta del almacén está", rB);
+      const origen = path.join(almacen, ...rel!.split("/"));
+      const discoEspejo = dir("disco-espejo", ...rel!.split("/"));
+      fs.cpSync(origen, discoEspejo, { recursive: true });
+      const pruebaE = { id: "e-e2e-disco", nombre: "Disco del espejo", destino: "espejo:e2e", carpeta: discoEspejo };
+      const deEspejo = async (antes: string | null) =>
+        esperar(
+          "la prueba desde el espejo en el informe de B",
+          async () => {
+            const inf = (await consola.ok<Informe[]>("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/informes?limite=1`))[0];
+            const x = inf?.datos.repos?.find((r) => r.id === repoId)?.pruebas_espejo?.find((p) => p.id === pruebaE.id);
+            return x?.ultima && x.ultima !== antes ? x : undefined;
+          },
+          { plazo: 180_000, cada: 2_000 },
+        );
+      const o1 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "probar_restauracion", { repo: repoId, espejo: pruebaE }), { plazo: 60_000 });
+      igual(o1.estado, "hecha", `Probar desde el espejo: ${o1.mensaje}`);
+      const bien = await deEspejo(null);
+      igual(bien.resultado, "ok", `La prueba desde el disco del espejo sale bien: ${bien.mensaje_corto}`);
+      comprobar((bien.archivos ?? 0) > 0 && !JSON.stringify(bien).includes(base), "Restauró archivos y el informe no lleva la ruta", bien);
+      // Una copia del espejo dañada: la prueba falla y lo dice (y avisa como «prueba_fallida»).
+      const paquetes = (function todos(d: string): string[] {
+        return fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? todos(path.join(d, e.name)) : [path.join(d, e.name)]));
+      })(path.join(discoEspejo, "data"));
+      for (const p of paquetes) fs.writeFileSync(p, "dañado");
+      const o2 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "probar_restauracion", { repo: repoId, espejo: pruebaE }), { plazo: 60_000 });
+      igual(o2.estado, "hecha", "La segunda prueba se pide");
+      const mal = await deEspejo(bien.ultima ?? null);
+      igual(mal.resultado, "fallo", `Con la copia dañada, la prueba falla: ${mal.mensaje_corto}`);
+      // Programarla (cada mes) y quitarla.
+      const o3 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "probar_restauracion", { repo: repoId, programar_espejo: { ...pruebaE, cada_dias: 30 } }), { plazo: 60_000 });
+      igual(o3.estado, "hecha", `Programar la prueba desde el espejo: ${o3.mensaje}`);
+      const prog = await esperar(
+        "la prueba programada en el informe de B",
+        async () => {
+          const inf = (await consola.ok<Informe[]>("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/informes?limite=1`))[0];
+          const x = inf?.datos.repos?.find((r) => r.id === repoId)?.pruebas_espejo?.find((p) => p.id === pruebaE.id);
+          return x?.cada_dias === 30 && x.proxima ? x : undefined;
+        },
+        { plazo: 180_000, cada: 2_000 },
+      );
+      comprobar(Date.parse(prog.proxima!) > Date.now(), "La próxima, más adelante (la primera, de madrugada)", prog.proxima);
+      const o4 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "probar_restauracion", { repo: repoId, quitar_espejo: pruebaE.id }), { plazo: 60_000 });
+      igual(o4.estado, "hecha", `Quitarla: ${o4.mensaje}`);
+      // Una carpeta sin la copia (el disco no está): se dice al momento, sin probar nada.
+      const o5 = await consola.resultado(c, eqB.id, await consola.mandar(c, eqB.id, "probar_restauracion", { repo: repoId, espejo: { ...pruebaE, carpeta: dir("no-esta-el-disco") } }), { plazo: 60_000 });
+      comprobar(o5.estado === "fallida" && /conectado el disco/.test(o5.mensaje ?? ""), "Sin el disco del espejo, falla enseguida y lo dice", o5);
+      fs.rmSync(dir("disco-espejo"), { recursive: true, force: true });
+      log("Prueba funcional registrada (en la regla y en el PDF) y prueba de restauración desde un espejo en disco: bien, dañada, programada y quitada");
     }
 
     // -----------------------------------------------------------------------
