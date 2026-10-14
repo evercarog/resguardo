@@ -60,13 +60,17 @@
       return { e, r, versiones: nVersiones(r, inf), tam: bytesRepo(r, inf), estado: estadoRepo(r, inf, e.resumen?.copias ?? [], reloj.ahora) };
     }),
   );
-  // Plan 0.8.0 (B2, 14r): los espejos que llegan aquí, por su nombre, con los repositorios que guarda cada uno
-  // (su tamaño es el del repositorio en el almacén: el espejo tiene los mismos archivos).
+  // Plan 0.8.0 (B2, 14r): los espejos que llegan aquí, por su nombre, con los repositorios que guarda cada uno.
+  // 14i: con lo que ocupa cada uno en el destino si el agente lo cuenta (`ocupa`); si no, el del almacén
+  // (el espejo tiene los mismos archivos, salvo lo que retenga).
   const espejos = $derived(
     v
       ? espejosEnDestino(v, actual.equipos, c).map((x) => ({
           ...x,
-          filas: x.repos.map((r) => ({ ...r, tam: r.repo && r.equipo ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null })),
+          filas: x.repos.map((r) => {
+            const aqui = x.trabajo.ocupa?.repos?.[r.valor];
+            return { ...r, real: aqui != null, tam: aqui ?? (r.repo && r.equipo ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null) };
+          }),
         }))
       : [],
   );
@@ -243,7 +247,7 @@
                       {#if f.equipo && f.repo}
                         <a class="fila-d" href="/c/{c}/equipos/{f.equipo.id}/repositorios/{encodeURIComponent(f.repo.id)}">
                           <Database size={14} class="ic" />
-                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)} (como en el almacén)` : ""}</span></span>
+                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)}${f.real ? " aquí" : " (como en el almacén)"}` : ""}</span></span>
                           <ArrowRight size={14} class="flecha" />
                         </a>
                       {:else}

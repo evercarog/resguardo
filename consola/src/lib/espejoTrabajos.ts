@@ -391,6 +391,9 @@ export function espejosDeCopia(equipo: Equipo, repo: RepositorioResumen, equipos
 }
 
 /** El enlace a los espejos de un equipo (almacén o propio), con lo que se quiere hacer ya elegido. */
+/** 14i: la página de un espejo (de quien lo hace). */
+export const hrefEspejo = (cliente: string, equipo: string, trabajo: string) => `/c/${cliente}/equipos/${encodeURIComponent(equipo)}/espejos/${encodeURIComponent(trabajo)}`;
+
 export function hrefEspejos(cliente: string, equipo: string, nuevo?: { repo?: string; zona?: string; destino?: string; quien?: "almacen" | "equipo" }, editar?: string): string {
   const q = new URLSearchParams();
   if (nuevo) {

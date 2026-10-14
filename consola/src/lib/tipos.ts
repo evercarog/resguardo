@@ -867,9 +867,13 @@ export interface Informe {
 }
 
 /** Fase de una tarea en marcha (v1.25): las de una copia y `en_marcha` (las demás tareas). */
-export type FaseTarea = "antes_de_copiar" | "preparando" | "escaneando" | "subiendo" | "terminando" | "en_marcha";
-/** v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`. */
-export type TipoTarea = "copia" | "verificar" | "verificar_externa" | "copia_externa" | "prueba_restauracion" | "historial" | "retencion" | "restauracion";
+/** v1.6x (14p): `en_cola`, pedido con «Ahora» y aún sin empezar. */
+export type FaseTarea = "antes_de_copiar" | "preparando" | "escaneando" | "subiendo" | "terminando" | "en_marcha" | "en_cola";
+/**
+ * v1.47: `historial` (traer el historial; también los pasos de «Mover a otro sitio…»), `retencion` y `restauracion`.
+ * v1.6x (14p): `espejo` (una vuelta de un espejo; `repo` es el id del trabajo) y `actualizacion` (el agente se actualiza).
+ */
+export type TipoTarea = "copia" | "verificar" | "verificar_externa" | "copia_externa" | "prueba_restauracion" | "historial" | "retencion" | "restauracion" | "espejo" | "actualizacion";
 
 /** Algo que está en marcha en un equipo, con su progreso (v1.25, `GET …/progreso`). Sin rutas. */
 export interface TareaEnMarcha {
@@ -911,6 +915,12 @@ export interface TareaEnMarcha {
   /** v1.6x (13f, restauraciones): quién la pidió (como lo dice su consola) y si se pidió desde la ventana del equipo. */
   por?: string | null;
   en_el_equipo?: boolean | null;
+  /** v1.6x (14p, espejos): el id del trabajo, quién lo hace y si es su primera subida (nunca terminó bien). */
+  espejo?: string | null;
+  quien?: "almacen" | "equipo" | null;
+  primera?: boolean | null;
+  /** v1.6x (14p): la copia derivada de una tarea pedida con «Ahora» (en cola). */
+  derivada?: string | null;
 }
 
 export interface ProgresoEquipo {
@@ -1161,6 +1171,8 @@ export interface CuandoEspejo {
   /** Después de ese otro trabajo, salga bien o no. */
   despues?: string | null;
   retraso_min?: number;
+  /** v1.6x (14s): la primera subida, no antes de esta hora (ISO; «en la próxima franja de la madrugada»). */
+  primera_desde?: string | null;
 }
 export type RetencionEspejo = { modo: "nunca" } | { modo: "retraso"; dias: number } | { modo: "igual" };
 export interface FrenoEspejo {
@@ -1203,6 +1215,33 @@ export interface TrabajoEspejoResumen extends TrabajoEspejo {
   /** Lo que conserva el freno «avisar». */
   retenidos?: { archivos: number; bytes: number } | null;
   espacio?: EspacioVolumen | null;
+  /** v1.6x (14c): cuándo terminó bien la última vez; `nunca_bien`, si este equipo sabe que nunca terminó bien (se quita sin espera). */
+  bien?: string | null;
+  nunca_bien?: boolean | null;
+  /** v1.6x (14i): sus últimas vueltas (como mucho 30, de la más antigua a la más reciente). */
+  subidas?: SubidaEspejo[] | null;
+  /** v1.6x (14i, 14h): lo que ocupa en el destino, en total y por repositorio (`<usuario>/<repo>` en el almacén, el id en el equipo). */
+  ocupa?: { bytes: number; repos?: Record<string, number> | null; cuando: string } | null;
+  /** v1.6x (14p): «Hacer ahora» pedido y aún sin empezar. */
+  en_cola?: boolean | null;
+}
+
+/** v1.6x (14i): una vuelta de un espejo (sin rutas). */
+export interface SubidaEspejo {
+  inicio: string;
+  fin: string;
+  resultado: "ok" | "error";
+  /** `horario`, `tras_copia`, `tras_otro` o `ahora`. */
+  motivo?: string;
+  archivos: number;
+  bytes: number;
+  borrados?: number;
+  borrados_bytes?: number;
+  verificados?: number;
+  mal?: number;
+  /** Lo que ocupa en el destino al terminar. */
+  ocupa?: number | null;
+  error?: string | null;
 }
 
 export interface Horario {

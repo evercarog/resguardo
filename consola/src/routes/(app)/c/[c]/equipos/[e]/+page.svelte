@@ -1114,7 +1114,7 @@
                   <ChevronRight size={16} />
                 </a>
                 <!-- C1: el camino del repositorio (espejos y copias derivadas), con el estado de cada uno. -->
-                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" /></div>{/if}
+                {#if caminoRepo.get(r.id)?.length}<div class="camino-repo"><span class="faint et-camino">Después</span><CaminoCopia eslabones={caminoRepo.get(r.id) ?? []} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{r.nombre}»" copiaEn /></div>{/if}
                 {#if nVersiones(r, inf)}
                   <div class="fact-boxes">
                     <div><span class="faint">Versiones</span><strong class="num">{numero(nVersiones(r, inf))}</strong></div>

@@ -248,6 +248,9 @@ export interface PasoVista extends PasoRegla {
   despues?: boolean;
   /** C1: en pausa (un espejo desactivado, una derivada que dejó de intentarse). */
   pausado?: boolean;
+  /** 14i/14h: de un espejo, el id de su trabajo y la clave de este repositorio en lo que ocupa (`<usuario>/<repo>` o su id). */
+  trabajo?: string | null;
+  ocupaClave?: string | null;
 }
 
 /** Lo que hace falta para marcar un destino (AtributosDestino.svelte). */
@@ -453,6 +456,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
               donde: null,
               intento: dd.ultima || dd.resultado ? { cuando: dd.ultima ?? null, mal: resultadoConError(dd.resultado), mensaje: dd.resultado ?? null } : null,
               despues: !!dd.tras_copia,
+              trabajo: dd.trabajo ?? null,
+              ocupaClave: en?.nombre ?? null,
             },
             catalogo,
           ),
@@ -485,6 +490,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
             conexion: nube ? null : (dd.aislado ?? null),
             intento: dd.ultima || dd.resultado ? { cuando: dd.ultima ?? null, mal: resultadoConError(dd.resultado), mensaje: dd.resultado ?? null } : null,
             despues: !!dd.tras_copia,
+            trabajo: dd.trabajo ?? null,
+            ocupaClave: en?.nombre ?? null,
           },
           catalogo,
         ),
@@ -596,6 +603,8 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           intento: t.ultima || t.resultado ? { cuando: t.ultima ?? null, mal, mensaje: t.resultado ?? null } : null,
           despues: !!(t.cuando.tras_copia || t.cuando.cadena || t.cuando.despues),
           pausado: !t.activo,
+          trabajo: t.id,
+          ocupaClave: r.id,
         },
         catalogo,
       ),

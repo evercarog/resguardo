@@ -662,9 +662,11 @@ fn copias_activas(config: Option<&Value>) -> usize {
 /// pedido que no se entiende cuenta como destructivo (y luego se rechaza).
 fn quita_destinos_del_espejo(e: &Value) -> bool {
     // Plan 0.7.26: con trabajos o en la forma de antes, comparando trabajo a trabajo.
+    let actuales = crate::server::load().espejo.map(|a| a.trabajos_efectivos()).unwrap_or_default();
     match crate::espejo::trabajos_del_pedido(e) {
-        Ok(Some(nuevos)) => crate::espejo_trabajos::reduce(&crate::server::load().espejo.map(|a| a.trabajos_efectivos()).unwrap_or_default(), &nuevos),
-        Ok(None) => true,
+        Ok(Some(nuevos)) => crate::espejo_trabajos::reduce(&actuales, &nuevos),
+        // Quitarlo entero: 14c, salvo si ninguno de sus trabajos ha terminado bien nunca.
+        Ok(None) => actuales.is_empty() || crate::espejo_trabajos::reduce(&actuales, &[]),
         Err(_) => true,
     }
 }

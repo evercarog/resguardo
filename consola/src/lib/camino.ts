@@ -18,7 +18,8 @@ import { atrasada, estadoCopia, ultimaVuelta } from "./copia";
 import { enPausa } from "./salud";
 import { hrefDestino } from "./fichaDestino";
 import { relativo } from "./formato";
-import type { Equipo, Informe } from "./tipos";
+import { hrefEspejo, trabajosDelAlmacen, trabajosDelEquipo } from "./espejoTrabajos";
+import type { Equipo, Informe, TrabajoEspejoResumen } from "./tipos";
 
 /** Un eslabón del camino: el repositorio de la copia, un espejo o una copia derivada. */
 export interface Eslabon {
@@ -42,13 +43,17 @@ export interface Eslabon {
   /** Algo en marcha ahora. */
   vivo: boolean;
   href: string | null;
+  /** 14h: de un espejo, lo que ocupa este repositorio en su destino (si se sabe), cuándo se contó y su última comprobación. */
+  ocupa?: number | null;
+  ocupaCuando?: string | null;
+  verificacion?: { ultima: string; archivos: number; mal: number } | null;
 }
 
 export interface OpcionesCamino {
   cliente: string;
   ahora: number;
-  /** Lo que está en marcha (la misma que el mapa): «Copiando 40 %», «Subiendo 12 %», o null. */
-  enVivo?: (equipo: string, repo: string, tipo: "copia" | "copia_externa") => string | null;
+  /** Lo que está en marcha (la misma que el mapa): «Copiando 40 %», «Subiendo 12 %», o null. (14p: de un espejo, `repo` es su trabajo.) */
+  enVivo?: (equipo: string, repo: string, tipo: "copia" | "copia_externa" | "espejo") => string | null;
   /** Para saber si quien hace el paso (el almacén) está conectado. */
   equipos?: Equipo[];
   informe?: Informe | null;
@@ -57,8 +62,9 @@ export interface OpcionesCamino {
 const CLASE: Record<PasoVista["tipo"], Eslabon["clase"]> = { copia: "copia", espejo: "espejo", externa: "derivada", derivada: "derivada", paso: "derivada" };
 const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
-/** El enlace de un paso: la página de su destino si la tiene; si no, los espejos de quien lo hace o el repositorio. */
+/** El enlace de un paso: un espejo, su página (14i); si no, la página de su destino si la tiene; si no, los espejos de quien lo hace o el repositorio. */
 function enlace(p: PasoVista, rc: ReglaCopia, cliente: string): string | null {
+  if (p.tipo === "espejo" && p.equipoId && p.trabajo) return hrefEspejo(cliente, p.equipoId, p.trabajo);
   if (p.clave && !p.clave.startsWith("espejo:")) return hrefDestino(cliente, p.clave);
   if (p.tipo === "espejo" && p.equipoId) return `/c/${cliente}/equipos/${p.equipoId}/espejos`;
   return `/c/${cliente}/equipos/${rc.equipo.id}/repositorios/${encodeURIComponent(rc.repo.id)}`;
@@ -112,7 +118,12 @@ export function caminoDeCopia(rc: ReglaCopia | null, o: OpcionesCamino): Eslabon
       return { ...base, ...estadoPaso(p, e, o.ahora), vivo: false };
     }
     const hace = equipos.find((x) => x.id === p.equipoId) ?? (p.equipoId === e.id ? e : undefined);
-    return { ...base, ...estadoPaso(p, hace, o.ahora), vivo: false };
+    // 14h/14i: su trabajo (lo que ocupa este repositorio allí y su última comprobación) y, 14p, su subida en vivo.
+    const t: TrabajoEspejoResumen | undefined = hace && p.trabajo ? [...trabajosDelAlmacen(hace), ...trabajosDelEquipo(hace)].find((x) => x.id === p.trabajo) : undefined;
+    const extra = { ocupa: p.ocupaClave ? (t?.ocupa?.repos?.[p.ocupaClave] ?? null) : null, ocupaCuando: t?.ocupa?.cuando ?? null, verificacion: t?.verificacion ?? null };
+    const enMarcha = hace && p.trabajo ? vivo(hace.id, p.trabajo, "espejo") : null;
+    if (enMarcha) return { ...base, ...extra, tono: "info", estado: enMarcha, cuando: null, vivo: true };
+    return { ...base, ...extra, ...estadoPaso(p, hace, o.ahora), vivo: false };
   });
 }
 
