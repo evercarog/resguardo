@@ -9,14 +9,13 @@
   // Solo los clientes de los que la cuenta es miembro (GET /api/panel): el
   // propietario del servidor no ve aquí los ajenos (para eso, las cifras de
   // «Clientes del servidor»).
-  import { onMount } from "svelte";
   import { Archive, Building2, CalendarClock, CircleAlert, CircleCheck, Database, Info, Layers, LockKeyhole, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import * as api from "$lib/api";
-  import { app, cargarClientes, reloj } from "$lib/estado.svelte";
+  import { app, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, numero, plural, relativo } from "$lib/formato";
   import { tip } from "$lib/tooltip";
   import { atencion as atencionDe, llenadoGlobal, saludCliente, totales as totalesDe, type Atencion } from "$lib/global";
-  import { cargarTodos, todos, vigilarTodos } from "$lib/todos.svelte";
+  import { cargarTodos, todos } from "$lib/todos.svelte";
   import { PESO, type Tono } from "$lib/salud";
   import type { Cliente } from "$lib/tipos";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
@@ -31,10 +30,7 @@
   import MapaTodos from "$lib/componentes/todos/MapaTodos.svelte";
   import LlenadoTodos from "$lib/componentes/todos/LlenadoTodos.svelte";
 
-  onMount(() => {
-    void cargarClientes();
-    return vigilarTodos();
-  });
+  // La carga y lo que está en marcha, en ./+layout.svelte (las secciones lo comparten).
 
   const clientes = $derived(todos.clientes);
   const saludes = $derived(new Map(clientes.map((c) => [c.id, saludCliente(c, reloj.ahora)])));
