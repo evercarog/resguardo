@@ -2415,7 +2415,10 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
 
 /// Plan 0.8.0, F4 (14t): `limite { kib?, franjas? }` de una copia derivada (`None` sin
 /// el campo o sin nada: sin límite). `kib`: fuera de las franjas.
-pub fn limite_de(c: &Value) -> Result<Option<(Option<u32>, Vec<crate::franjas::Franja>)>, String> {
+/// F4: el límite fuera de las franjas (KiB/s) y las franjas.
+pub type Limite = (Option<u32>, Vec<crate::franjas::Franja>);
+
+pub fn limite_de(c: &Value) -> Result<Option<Limite>, String> {
     let Some(l) = c.get("limite").filter(|l| l.is_object()) else { return Ok(None) };
     let kib = match &l["kib"] {
         Value::Null => None,
