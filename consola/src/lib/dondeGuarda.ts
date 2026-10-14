@@ -128,6 +128,9 @@ export function riesgoMismoEquipo(repo: RepositorioResumen, equipo: Equipo, equi
   const lugar = lugarRepo(repo, equipo, equipos);
   if (lugar.clase !== "carpeta" && lugar.clase !== "almacen_propio") return null;
   if (repo.externa) return null;
+  // 0.8.0 (14ll): una copia derivada activa a otro sitio (otro equipo, un almacén, la nube) ya
+  // lo saca de aquí; antes solo contaba la externa y el aviso seguía con una derivada hecha.
+  if ((repo.derivadas ?? []).some((d) => d.activa !== false && lugarDe(equipo.resumen?.destinos?.find((x) => x.id === d.destino_id), equipo, equipos).mismoEquipo === false)) return null;
   // Su propio almacén con espejo (a otro disco o a la nube): ya sale de aquí cada noche.
   if (lugar.clase === "almacen_propio" && equipo.resumen?.guarda_copias?.espejo?.destinos?.length) return null;
   const n = equipo.nombre;

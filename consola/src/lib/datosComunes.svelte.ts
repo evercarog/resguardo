@@ -17,7 +17,7 @@ import { cifrarPlantilla, clavePlantillas, descifrarPlantilla } from "./cripto/s
 import { cargarCatalogo } from "./catalogoDestinos.svelte";
 import { actual, cargarCliente, puede } from "./estado.svelte";
 import { kcfgDelCliente, mandarOrden, pruebaParaEquipo } from "./ordenar";
-import { equiposQueGuardan, pendiente, trozos, type DatosComunesCliente, type Diferencia, type EntradaOrden } from "./datosComunes";
+import { admiteSedes, equiposQueGuardan, esDeSedes, pendiente, trozos, type DatosComunesCliente, type Diferencia, type EntradaOrden } from "./datosComunes";
 import type * as T from "./tipos";
 
 export const comunes = $state({
@@ -62,11 +62,15 @@ async function mandarATodos(cliente: T.Cliente, equipos: T.Equipo[], entradas: E
   const fallos: string[] = [];
   let ok = 0;
   if (!entradas.length || !destino.length) return { equipos: 0, fallos };
+  /** Lo que llegó a algún equipo (0.8.0: las sedes, solo a los que las guardan). */
+  const llegaron = new Set<string>();
   for (const e of destino) {
     const prueba = pruebas?.get(e.id);
     if (pruebas && !prueba) continue;
+    const suyas = admiteSedes(e) ? entradas : entradas.filter((x) => !esDeSedes(x.clave));
+    if (!suyas.length) continue;
     let bien = true;
-    for (const t of trozos(entradas)) {
+    for (const t of trozos(suyas)) {
       try {
         await mandarOrden({ cliente, equipo: e, tipo: pruebas ? "datos_cliente_admin" : "datos_cliente", cuerpo: { entradas: t }, secretos: prueba ? { prueba } : undefined });
       } catch (err) {
@@ -75,9 +79,13 @@ async function mandarATodos(cliente: T.Cliente, equipos: T.Equipo[], entradas: E
         break;
       }
     }
-    if (bien) ok++;
+    if (bien) {
+      ok++;
+      for (const x of suyas) llegaron.add(x.clave);
+    }
   }
-  if (ok) await api.datosComunesEnviados(cliente.id, entradas.map((x) => ({ clave: x.clave, cambiado: x.cambiado })));
+  const enviadas = entradas.filter((x) => llegaron.has(x.clave));
+  if (enviadas.length) await api.datosComunesEnviados(cliente.id, enviadas.map((x) => ({ clave: x.clave, cambiado: x.cambiado })));
   return { equipos: ok, fallos };
 }
 

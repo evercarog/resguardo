@@ -28,6 +28,7 @@ import { resultadoConError } from "./salud";
 import { proximaProgramada, ultimaProgramada } from "./copia";
 import { servidorDe } from "./dondeGuarda";
 import { lista, plural, relativo } from "./formato";
+import { sedeDeDestino, sedeDeEquipo, type Organizacion } from "./sedes";
 
 // ---------- 1. La regla (como protection.rs) ----------
 
@@ -263,6 +264,10 @@ export interface PasoVista extends PasoRegla {
   despues?: boolean;
   /** C1: en pausa (un espejo desactivado, una derivada que dejó de intentarse). */
   pausado?: boolean;
+  /** 0.8.0 (D1): el nombre de su sede, si se sabe (para enseñarlo). */
+  sedeNombre?: string | null;
+  /** 0.8.0 (D1): la sede se la puso una persona (si no, la de su equipo). */
+  sedeAsignada?: boolean;
 }
 
 /** Lo que hace falta para marcar un destino (AtributosDestino.svelte). */
@@ -393,7 +398,15 @@ function ultimaBien(k: CopiaResumen, informe: Informe | null | undefined): strin
  * La regla de una copia (activa, en un repositorio que no es de solo lectura),
  * o null. `informe`: el último del equipo; `catalogo`: el del cliente.
  */
-export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], informe: Informe | null | undefined, catalogo: DestinoCatalogo[], ahora: number): ReglaCopia | null {
+export function reglaDeCopia(
+  e: Equipo,
+  k: CopiaResumen,
+  equipos: Equipo[],
+  informe: Informe | null | undefined,
+  catalogo: DestinoCatalogo[],
+  ahora: number,
+  organizacion?: Organizacion | null,
+): ReglaCopia | null {
   if (k.activa === false) return null;
   const r = e.resumen?.repositorios?.find((x) => x.id === k.repo);
   if (!r || r.solo_lectura) return null;
@@ -634,8 +647,25 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
     fallo: pr?.resultado === "fallo",
   };
   const prueba = conRestauracionReal(programada, inf?.restauracion_real?.ultima ?? null);
-  const entrada: EntradaRegla = { origen: { equipo: e.id, soporte: `equipo:${e.id}:origen` }, pasos, verificacion, prueba_restauracion: prueba };
+  const sedeOrigen = ponerSedes(e.id, pasos, organizacion);
+  const entrada: EntradaRegla = { origen: { equipo: e.id, soporte: `equipo:${e.id}:origen`, ...(sedeOrigen ? { sede: sedeOrigen } : {}) }, pasos, verificacion, prueba_restauracion: prueba };
   return { equipo: e, copia: k, repo: r, entrada, pasos, regla: regla321(entrada, ahora) };
+}
+
+/**
+ * 0.8.0 (D1, 14ll): con sedes en el cliente, la sede del equipo que copia y la de cada
+ * paso (la asignada al destino o, sin ella, la de su equipo; la nube, ninguna). Devuelve
+ * la del equipo (o null sin sedes: todo como antes).
+ */
+export function ponerSedes(equipo: string, pasos: PasoVista[], o: Organizacion | null | undefined): string | null {
+  if (!o?.sedes.length) return null;
+  for (const p of pasos) {
+    const s = sedeDeDestino(o, { clave: p.clave, equipo: p.equipo, nube: p.tipo_destino === "nube", tipoMarcado: !!p.marcado?.tipo });
+    if (s.sede) p.sede = s.sede.id;
+    p.sedeNombre = s.sede?.nombre ?? null;
+    p.sedeAsignada = s.asignada;
+  }
+  return sedeDeEquipo(o, equipo).sede?.id ?? null;
 }
 
 /**
@@ -654,10 +684,17 @@ export function conRestauracionReal(p: PruebaRegla, real: string | null | undefi
 }
 
 /** Las de todas las copias del cliente (sin los equipos trasladados). */
-export function reglasDelCliente(equipos: Equipo[], informes: Record<string, Informe | null | undefined>, catalogo: DestinoCatalogo[], ahora: number, todos: Equipo[] = equipos): ReglaCopia[] {
+export function reglasDelCliente(
+  equipos: Equipo[],
+  informes: Record<string, Informe | null | undefined>,
+  catalogo: DestinoCatalogo[],
+  ahora: number,
+  todos: Equipo[] = equipos,
+  organizacion?: Organizacion | null,
+): ReglaCopia[] {
   return equipos
     .filter((e) => e.modo !== "trasladado")
-    .flatMap((e) => (e.resumen?.copias ?? []).map((k) => reglaDeCopia(e, k, todos, informes[e.id], catalogo, ahora)))
+    .flatMap((e) => (e.resumen?.copias ?? []).map((k) => reglaDeCopia(e, k, todos, informes[e.id], catalogo, ahora, organizacion)))
     .filter((x): x is ReglaCopia => !!x);
 }
 
@@ -675,9 +712,10 @@ export function reglaEnEdicion(
   catalogo: DestinoCatalogo[],
   ahora: number,
   programado: { verificacion?: boolean; prueba?: boolean } = {},
+  organizacion?: Organizacion | null,
 ): ReglaCopia | null {
   const previa = e.resumen?.copias?.find((x) => x.id === k.id);
-  const rc = reglaDeCopia(e, { ...previa, ...k, activa: k.activa !== false }, equipos, informe, catalogo, ahora);
+  const rc = reglaDeCopia(e, { ...previa, ...k, activa: k.activa !== false }, equipos, informe, catalogo, ahora, organizacion);
   if (!rc) return null;
   const entrada: EntradaRegla = {
     ...rc.entrada,
