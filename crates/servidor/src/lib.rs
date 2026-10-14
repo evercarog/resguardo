@@ -30,6 +30,7 @@ pub mod publicaciones;
 pub mod recordatorio_kit;
 pub mod registro;
 pub mod respaldo;
+pub mod sedes;
 pub mod vivo;
 
 use estado::{Estado, IpCliente, Limites, Opciones, St};

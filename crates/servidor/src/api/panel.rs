@@ -45,6 +45,8 @@ struct Foto {
     pendientes: usize,
     /// `(equipo, { equipo, recibido, datos })`, con su tamaño.
     informes: Vec<(Value, usize)>,
+    /// Plan 0.8.0 (D1, D2): sedes, categorías y orden del cliente (`crate::sedes`).
+    organizacion: Value,
 }
 
 static FOTOS: LazyLock<Mutex<HashMap<String, Arc<Foto>>>> = LazyLock::new(Default::default);
@@ -176,12 +178,13 @@ async fn fotos(st: &St, clientes: Vec<String>) -> Res<HashMap<String, Arc<Foto>>
                 // v1.49: también las que mandó otra consola y el equipo tiene en espera.
                 let pendientes = db.ordenes_con_espera(&ctx, t)?.len() + super::en_espera_de_otras(&equipos, t);
                 let marca = super::marca::json(&c, &super::marca::leer(db, &c)?);
-                v.push((c, equipos, avisos, pendientes, informes, marca));
+                let organizacion = crate::sedes::organizacion(db, &ctx)?;
+                v.push((c, equipos, avisos, pendientes, informes, marca, organizacion));
             }
             Ok(v)
         })
         .await?;
-    for (c, equipos, avisos, pendientes, informes, marca) in leidos {
+    for (c, equipos, avisos, pendientes, informes, marca, organizacion) in leidos {
         let f = Arc::new(Foto {
             hecha: Instant::now(),
             marca,
@@ -190,6 +193,7 @@ async fn fotos(st: &St, clientes: Vec<String>) -> Res<HashMap<String, Arc<Foto>>
             avisos,
             pendientes,
             informes,
+            organizacion,
         });
         guardar_foto(&c, f.clone());
         out.insert(c, f);
@@ -240,7 +244,7 @@ pub async fn ver(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
         clientes.push(json!({
             "id": id, "nombre": nombre, "rol": rol.texto(), "marca": f.marca,
             "equipos": f.equipos, "avisos_abiertos": f.avisos, "pendientes": f.pendientes,
-            "informes": informes, "informes_completos": completos,
+            "informes": informes, "informes_completos": completos, "organizacion": f.organizacion,
         }));
     }
     Ok(Json(json!({ "generado": fecha(ahora()), "clientes": clientes, "omitidos": omitidos, "progreso": progreso })))
@@ -254,6 +258,68 @@ pub async fn progreso(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
     let fotos = fotos(&st, con_algo.clone()).await?;
     let out: Vec<Value> = con_algo.iter().filter_map(|c| fotos.get(c).map(|f| progreso_de(&st, c, &f.ids))).flatten().collect();
     Ok(Json(json!(out)))
+}
+
+/// Avisos sin revisar por cliente, como mucho (los más recientes).
+pub const MAX_AVISOS: usize = 200;
+
+/// Plan 0.8.0, D4 (14xx): lo mismo de cada cliente de la cuenta, uno tras otro, con su
+/// papel. `f` lee lo de un cliente (con su contexto ya autorizado por la pertenencia).
+async fn de_cada_cliente<F>(st: &St, u: &Usuario, f: F) -> Res<Json<Value>>
+where
+    F: Fn(&dyn crate::almacen::Almacen, &ClienteCtx) -> crate::almacen::R<Value> + Send + 'static,
+{
+    let (cs, omitidos) = mis_clientes(st, u).await?;
+    let clientes = st
+        .db(move |db| {
+            let mut out = Vec::new();
+            for (id, nombre, rol) in cs {
+                let ctx = ClienteCtx::autorizado(&id);
+                let datos = f(db, &ctx)?;
+                out.push(json!({ "id": id, "nombre": nombre, "rol": rol.texto(), "datos": datos }));
+            }
+            Ok(out)
+        })
+        .await?;
+    Ok(Json(json!({ "generado": fecha(ahora()), "clientes": clientes, "omitidos": omitidos })))
+}
+
+/// `GET /api/panel/avisos`: los avisos sin revisar de cada cliente de la cuenta (`datos`: la
+/// lista, como `GET /api/clientes/{c}/avisos?abiertos=1`, hasta [`MAX_AVISOS`] por cliente).
+pub async fn avisos(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
+    de_cada_cliente(&st, &u, |db, ctx| {
+        let mut xs = db.avisos(ctx, true)?;
+        xs.sort_by(|a, b| b.creado.cmp(&a.creado));
+        xs.truncate(MAX_AVISOS);
+        Ok(json!(xs
+            .iter()
+            .map(|a| json!({ "id": a.id, "equipo": a.equipo, "tipo": a.tipo, "mensaje": a.mensaje, "creado": fecha(a.creado), "visto_por": a.visto_por }))
+            .collect::<Vec<_>>()))
+    })
+    .await
+}
+
+/// `GET /api/panel/ordenes`: las órdenes con espera de esta consola en cada cliente de la
+/// cuenta (como `GET /api/clientes/{c}/ordenes?pendientes=1`). Las que mandó otra consola
+/// llegan en el resumen de cada equipo (`/api/panel`, `en_espera`).
+pub async fn ordenes(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
+    let t = ahora();
+    de_cada_cliente(&st, &u, move |db, ctx| {
+        let os = db.ordenes_con_espera(ctx, t)?;
+        let mut out = Vec::new();
+        for o in &os {
+            let nombre = db.cuenta(&o.emitida_por)?.map(|c| c.nombre).unwrap_or_else(|| "?".into());
+            out.push(super::orden_json(o, &nombre));
+        }
+        Ok(json!(out))
+    })
+    .await
+}
+
+/// `GET /api/panel/restauraciones`: el registro de restauraciones de cada cliente de la cuenta
+/// (como `GET /api/clientes/{c}/restauraciones`).
+pub async fn restauraciones(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
+    de_cada_cliente(&st, &u, |db, ctx| super::restauraciones::de_cliente(db, ctx, None)).await
 }
 
 #[cfg(test)]
@@ -272,6 +338,7 @@ mod tests {
                 avisos: 0,
                 pendientes: 0,
                 informes: vec![(json!({ "datos": "x".repeat(1000) }), 1000)],
+                organizacion: Value::Null,
             })
         };
         guardar_foto("prueba-fotos-vieja", foto(60));

@@ -22,6 +22,7 @@ use tower::ServiceExt;
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 const EQUIPO_B: &str = "EQUIPO-SECRETO-DE-B";
 const REPO_B: &str = "Nóminas secretas de B";
+const SEDE_B: &str = "Sede secreta de B";
 
 struct Prueba {
     _dir: tempfile::TempDir,
@@ -135,7 +136,15 @@ async fn cada_cuenta_ve_solo_sus_clientes() {
     let tareas_a = json!({ "tareas": [{ "tipo": "copia", "fase": "subiendo", "repo": "ra", "porcentaje": 0.1 }] });
     assert_eq!(pedir(&p.app, "POST", "/api/agente/progreso", Some(tareas_a), None, Some(&auth_a)).await.estado, StatusCode::NO_CONTENT);
 
-    let secretos = [EQUIPO_B, REPO_B, equipo_b.as_str(), b.as_str(), "bea@cliente-b"];
+    // Plan 0.8.0 (D1): una sede de B, con su equipo en ella (Bea es la propietaria de B).
+    let sede = json!({ "entradas": [
+        { "clave": "sede:sede-b", "valor": { "nombre": SEDE_B } },
+        { "clave": format!("sede.equipo:{equipo_b}"), "valor": { "sede": "sede-b" } },
+    ]});
+    let r = pedir(&p.app, "POST", &format!("/api/clientes/{b}/datos-comunes"), Some(sede), Some(&bea), None).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+
+    let secretos = [EQUIPO_B, REPO_B, equipo_b.as_str(), b.as_str(), "bea@cliente-b", SEDE_B];
     let sin_b = |r: &Resp, quien: &str| {
         for s in secretos {
             assert!(!r.texto.contains(s), "{quien} vio «{s}»: {}", r.texto);
@@ -159,6 +168,18 @@ async fn cada_cuenta_ve_solo_sus_clientes() {
     assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
     assert_eq!(r.json.as_array().unwrap().len(), 1);
     sin_b(&r, "el progreso de Ana");
+    // D4 (14xx): avisos, órdenes en espera y restauraciones de todos, también sin B.
+    for ruta in ["/api/panel/avisos", "/api/panel/ordenes", "/api/panel/restauraciones"] {
+        let r = pedir(&p.app, "GET", ruta, None, Some(&ana), None).await;
+        assert_eq!(r.estado, StatusCode::OK, "{ruta}: {}", r.json);
+        assert_eq!(ids(&r), [a.as_str(), c.as_str()], "{ruta}");
+        assert!(r.json["clientes"][0]["datos"].is_array() || r.json["clientes"][0]["datos"].is_object(), "{ruta}: {}", r.json);
+        sin_b(&r, ruta);
+    }
+    // D1: la organización de B no la ve quien no es miembro (aunque sea la propietaria del servidor).
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{b}/organizacion"), None, Some(&ana), None).await;
+    assert!(r.estado == StatusCode::FORBIDDEN || r.estado == StatusCode::NOT_FOUND, "{}: {}", r.estado, r.texto);
+    sin_b(&r, "la organización de B pedida por Ana");
 
     // Luis: solo A, como técnico.
     let r = pedir(&p.app, "GET", "/api/panel", None, Some(&luis), None).await;
@@ -175,8 +196,17 @@ async fn cada_cuenta_ve_solo_sus_clientes() {
     assert_eq!(cb["informes"][0]["datos"]["repos"][0]["nombre"], REPO_B);
     assert_eq!(r.json["progreso"][0]["tareas"][0]["porcentaje"], 0.4);
     assert!(!r.texto.contains(&a) && !r.texto.contains("EQUIPO-DE-A"), "nada de A");
+    assert_eq!(cb["organizacion"]["sedes"][0]["nombre"], SEDE_B);
     let r = pedir(&p.app, "GET", "/api/panel/progreso", None, Some(&bea), None).await;
     assert_eq!(r.json[0]["equipo"], equipo_b.as_str());
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{b}/organizacion"), None, Some(&bea), None).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json["equipos"][equipo_b.as_str()], "sede-b");
+    for ruta in ["/api/panel/avisos", "/api/panel/ordenes", "/api/panel/restauraciones"] {
+        let r = pedir(&p.app, "GET", ruta, None, Some(&bea), None).await;
+        assert_eq!(ids(&r), [b.as_str()], "{ruta}");
+        assert!(!r.texto.contains(&a), "{ruta}: nada de A");
+    }
 
     // Al dejar de ser miembro, deja de verlo al momento (aunque lo de A siga en la memoria).
     let r = pedir(&p.app, "GET", "/api/cuenta", None, Some(&luis), None).await;
@@ -189,7 +219,7 @@ async fn cada_cuenta_ve_solo_sus_clientes() {
     assert!(pedir(&p.app, "GET", "/api/panel/progreso", None, Some(&luis), None).await.json.as_array().unwrap().is_empty());
 
     // Sin sesión (o a medias), nada.
-    for ruta in ["/api/panel", "/api/panel/progreso"] {
+    for ruta in ["/api/panel", "/api/panel/progreso", "/api/panel/avisos", "/api/panel/ordenes", "/api/panel/restauraciones"] {
         let r = pedir(&p.app, "GET", ruta, None, None, None).await;
         assert_eq!(r.estado, StatusCode::UNAUTHORIZED, "{ruta}");
     }
