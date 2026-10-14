@@ -62,10 +62,10 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 ## Bloque H — Seguridad de la consola y del equipo
 
 - [x] **H1. Aprobar una orden en espera desde el propio equipo (14a)** (rama `ia/080-aprobar-equipo`; diseño y modelo de amenazas en `consolas-multiples.md` §5.11, contrato v1.6x en `api-servidor.md`; lo no probado en `registro-ia.md`) con la clave de administración (ventana del agente en Windows; `resguardo-agente ordenes aprobar` en Linux); nunca desde la web.
-- [ ] **H2. Consola verificada (12a):** la consola web firmada con la llave de publicación y comprobada antes de escribir la clave de administración (desde la ventana del agente).
-- [ ] **H3. Lo delicado desde la ventana del agente (12b):** cambiar la clave, restaurar en otro sitio, quitar repositorios.
-- [ ] **H4. Passkeys (12c)** para entrar en la consola, además del TOTP.
-- [ ] **H5. Regla de dos personas (12d)**, opcional por cliente.
+- **H2 (para una versión posterior, decisión del responsable 2026-10-14).** Consola verificada (12a):** la consola web firmada con la llave de publicación y comprobada antes de escribir la clave de administración (desde la ventana del agente).
+- **H3 (para una versión posterior, decisión del responsable 2026-10-14).** Lo delicado desde la ventana del agente (12b):** cambiar la clave, restaurar en otro sitio, quitar repositorios.
+- **H4 (para una versión posterior, decisión del responsable 2026-10-14).** Passkeys (12c)** para entrar en la consola, además del TOTP.
+- **H5 (para una versión posterior, decisión del responsable 2026-10-14).** Regla de dos personas (12d)**, opcional por cliente.
 - **12e. Pentest externo:** no es trabajo de código; se prepara la lista de lo que hay que revisar y se contrata aparte cuando el responsable decida.
 
 ## Bloque I — Publicar y actualizar
@@ -95,7 +95,7 @@ A → B → C → D → E → F → G → H → I. Cada bloque en su rama `ia/08
 ## Decisiones pendientes (para el visto bueno)
 
 1. **Nombre:** 0.8.0 (salto grande) o 0.7.27.
-2. **Bloque H completo** en esta versión (consola verificada, passkeys, dos personas) o solo H1 y dejar H2–H5 para la siguiente.
+2. ~~Bloque H completo~~ **Decidido (2026-10-14): solo H1 en esta versión; H2–H5 para una versión posterior.**
 3. **14v** (derivadas filtradas hechas por el almacén con la llave que ya tiene por la retención): sí o no.
 4. **G1** con el logo del prestador: ¿uno para todos los clientes o uno por cliente?
 5. **E1 .zip descargado al navegador:** tamaño máximo (propuesta: 2 GB; lo mayor, al disco del equipo).
