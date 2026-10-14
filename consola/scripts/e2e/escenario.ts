@@ -915,9 +915,9 @@ async function principal() {
       const infB = (await consola.ok<Informe[]>("GET", `/api/clientes/${c.id}/equipos/${eqB.id}/informes?limite=1`))[0];
       const sinOtras: Informe = { ...infB, datos: { ...infB.datos, repos: infB.datos.repos?.map((r) => (r.id === repoId ? { ...r, prueba_restauracion: null, restauracion_real: null } : r)) } };
       const todos = [await consola.equipo(c, eqA.id), eqB4];
-      const rcF = reglaDeCopia(eqB4, k!, todos, sinOtras, [], Date.now(), reg.pruebas);
+      const rcF = reglaDeCopia(eqB4, k!, todos, sinOtras, [], Date.now(), null, reg.pruebas);
       igual([rcF?.entrada.prueba_restauracion.origen, rcF?.entrada.prueba_restauracion.fallo], ["funcional", false], "En el «0», la prueba de restauración es la prueba funcional");
-      const rcSin = reglaDeCopia(eqB4, k!, todos, sinOtras, [], Date.now(), []);
+      const rcSin = reglaDeCopia(eqB4, k!, todos, sinOtras, [], Date.now(), null, []);
       comprobar(!rcSin?.entrada.prueba_restauracion.ultima_ok, "Sin la prueba funcional (ni otra), el «0» no tiene prueba de restauración", rcSin?.entrada.prueba_restauracion);
       // En el informe ejecutivo en PDF: su sección, con lo que tardó (el texto va comprimido: se descomprime).
       const pdf = await consola.pedir("GET", `/api/clientes/${c.id}/informe-ejecutivo/pdf?periodo=semanal&cual=actual`);
