@@ -1,10 +1,10 @@
 <script lang="ts">
   // Canales de notificación de un ámbito (el servidor o un cliente): correo,
-  // webhook, ntfy y Telegram (api-servidor.md §13). Los secretos nunca vuelven
+  // webhook, ntfy, Telegram, Microsoft Teams, Slack y Discord (api-servidor.md §13). Los secretos nunca vuelven
   // del servidor: aquí solo se sabe si están puestos («Configurado»), y para
   // cambiar a dónde va un canal o un secreto hace falta un código de la
   // aplicación de autenticación (el servidor lo comprueba).
-  import { BellRing, CircleAlert, Mail, MoonStar, Pencil, Plus, Power, Send, Trash2, Webhook } from "@lucide/svelte";
+  import { BellRing, CircleAlert, Hash, Mail, MessageSquare, MessagesSquare, MoonStar, Pencil, Plus, Power, Send, Trash2, Webhook } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { ApiError, type AmbitoNotif } from "$lib/api";
@@ -27,9 +27,17 @@
   }: { ambito: AmbitoNotif; canales: CanalNotif[]; vacio?: string; alCambiar?: () => void } = $props();
 
   const delServidor = $derived(!("cliente" in ambito));
-  const ICONO = { correo: Mail, webhook: Webhook, ntfy: BellRing, telegram: Send };
+  const ICONO = { correo: Mail, webhook: Webhook, ntfy: BellRing, telegram: Send, teams: MessagesSquare, slack: Hash, discord: MessageSquare };
   const hayCorreo = $derived(canales.some((c) => c.tipo === "correo"));
-  const NUEVO: Record<TipoCanal, string> = { correo: "Añadir el correo", webhook: "Añadir un webhook", ntfy: "Añadir ntfy", telegram: "Añadir Telegram" };
+  const NUEVO: Record<TipoCanal, string> = {
+    correo: "Añadir el correo",
+    webhook: "Añadir un webhook",
+    ntfy: "Añadir ntfy",
+    telegram: "Añadir Telegram",
+    teams: "Añadir Microsoft Teams",
+    slack: "Añadir Slack",
+    discord: "Añadir Discord",
+  };
   const SILENCIO = { desde: "22:00", hasta: "07:00", salvo_criticos: true };
 
   function destino(c: CanalNotif): string {
@@ -228,7 +236,7 @@
     <p class="faint vacio">{vacio}</p>
   {/if}
   <div class="anadir">
-    {#each ["correo", "webhook", "ntfy", "telegram"] as t (t)}
+    {#each ["correo", "teams", "slack", "discord", "webhook", "ntfy", "telegram"] as t (t)}
       {@const Icono = ICONO[t as TipoCanal]}
       {#if t !== "correo" || !hayCorreo}
         <button class="btn btn-sm" onclick={() => abrir(null, t as TipoCanal)}><Plus size={14} /><Icono size={14} />{TIPO_CANAL[t as TipoCanal].texto}</button>

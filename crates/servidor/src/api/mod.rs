@@ -12,6 +12,8 @@ mod organizacion;
 pub(crate) mod aprobar_equipo;
 pub(crate) mod lotes;
 pub(crate) mod marca;
+// Plan 0.8.0 (G1): el informe ejecutivo en PDF y el prestador.
+mod informe;
 pub(crate) mod notas;
 mod notificaciones;
 mod ordenes;
@@ -222,6 +224,8 @@ pub fn router(st: St) -> Router {
         .route("/api/servidor/notificaciones/canales/{k}", patch(notificaciones::cambiar_canal).delete(notificaciones::borrar_canal))
         .route("/api/servidor/notificaciones/canales/{k}/prueba", post(notificaciones::probar_canal))
         .route("/api/servidor/notificaciones/registro", get(notificaciones::registro_servidor))
+        .route("/api/servidor/informes", get(informe::ver_prestador).put(informe::cambiar_prestador))
+        .route("/api/servidor/informes/logo", get(informe::logo_prestador))
         // Clientes del servidor (v1.34: solo cifras; sin entrar en los clientes)
         .route("/api/servidor/clientes", get(servidor_clientes::listar).post(servidor_clientes::crear_para_otro))
         .route("/api/servidor/clientes/{c}/cuotas", put(servidor_clientes::poner_cuotas))
@@ -261,6 +265,11 @@ pub fn router(st: St) -> Router {
         // 14a: la opción del cliente «Aprobar en el equipo» (lo ve cada cliente en `GET /api/clientes/{c}`).
         .route("/api/clientes/{c}/aprobar-en-equipo", put(aprobar_equipo::cambiar))
         .route("/api/clientes/{c}/marca/logo", get(marca::logo))
+        // Plan 0.8.0 (G1): el informe ejecutivo (PDF por correo y para descargar).
+        .route("/api/clientes/{c}/informe-ejecutivo", get(informe::ver).put(informe::cambiar))
+        .route("/api/clientes/{c}/informe-ejecutivo/regla", put(informe::poner_regla))
+        .route("/api/clientes/{c}/informe-ejecutivo/pdf", get(informe::pdf))
+        .route("/api/clientes/{c}/informe-ejecutivo/enviar", post(informe::enviar))
         .route("/api/clientes/{c}/miembros", get(clientes::miembros))
         .route("/api/clientes/{c}/miembros/{cuenta}", put(clientes::poner_rol).delete(clientes::quitar))
         .route("/api/clientes/{c}/miembros/{cuenta}/restablecer-totp", post(cuentas::restablecer_totp))

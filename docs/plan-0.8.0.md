@@ -56,8 +56,8 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 ## Bloque G — Informes y avisos
 
-- [ ] **G1. Informe ejecutivo programado (14g):** PDF por correo con el logo del prestador (copias correctas, regla 3-2-1-1-0, verificaciones, pruebas y restauraciones del periodo).
-- [ ] **G2. Plantillas de avisos para Teams, Slack y Discord (14g).**
+- [x] **G1. Informe ejecutivo programado (14g):** (rama `ia/080-informes`: PDF escrito en el servidor con pdf-writer, semanal o mensual por cliente con sus destinatarios, «Descargar el informe» y «Enviar ahora» en Informes, logo del prestador en Servidor con el de la marca del cliente como sustituto; la regla 3-2-1-1-0 la manda la consola al abrir Informes; lo no probado, en `registro-ia.md`) PDF por correo con el logo del prestador (copias correctas, regla 3-2-1-1-0, verificaciones, pruebas y restauraciones del periodo).
+- [x] **G2. Plantillas de avisos para Teams, Slack y Discord (14g).** (rama `ia/080-informes`: Adaptive Card, blocks y embed con el color de la importancia; las mismas protecciones de red que el webhook; sin probar contra los servicios de verdad)
 
 ## Bloque H — Seguridad de la consola y del equipo
 

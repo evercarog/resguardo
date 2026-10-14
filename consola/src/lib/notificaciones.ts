@@ -13,9 +13,12 @@ export const SEVERIDAD: Record<Severidad, { texto: string; tono: Tono; que: stri
 
 export const TIPO_CANAL: Record<TipoCanal, { texto: string; que: string }> = {
   correo: { texto: "Correo", que: "Por SMTP, a cada persona según sus preferencias (Personas)." },
-  webhook: { texto: "Webhook", que: "Un POST con JSON (firmado si pones un secreto) a la dirección que digas: Slack, Teams, tu sistema de tickets…" },
+  webhook: { texto: "Webhook", que: "Un POST con JSON (firmado si pones un secreto) a la dirección que digas: tu sistema de tickets, tu propia integración…" },
   ntfy: { texto: "ntfy", que: "Notificaciones en el móvil con la app ntfy (ntfy.sh o tu propio servidor)." },
   telegram: { texto: "Telegram", que: "Mensajes de un bot de Telegram a un chat o grupo." },
+  teams: { texto: "Microsoft Teams", que: "Una tarjeta en un canal de Teams, con el color de su importancia y el botón «Ver en la consola»." },
+  slack: { texto: "Slack", que: "Un mensaje en un canal de Slack, con el color de su importancia y el botón «Ver en la consola»." },
+  discord: { texto: "Discord", que: "Un mensaje en un canal de Discord, con el color de su importancia y el enlace a la consola." },
 };
 
 /** Los secretos de cada tipo, con su etiqueta y si hacen falta. */
@@ -30,6 +33,30 @@ export const SECRETOS: Record<TipoCanal, { campo: string; etiqueta: string; requ
     { campo: "token", etiqueta: "Token", requerido: false, ayuda: "Opcional, si el tema está protegido." },
   ],
   telegram: [{ campo: "token", etiqueta: "Token del bot", requerido: true, ayuda: "Te lo da @BotFather al crear el bot (123456789:AA…)." }],
+  teams: [
+    {
+      campo: "url",
+      etiqueta: "Dirección del webhook",
+      requerido: true,
+      ayuda: "En Teams: en el canal, «Flujos de trabajo» → «Publicar en un canal cuando se reciba una solicitud de webhook», y copia la dirección que te da. Se guarda cifrada.",
+    },
+  ],
+  slack: [
+    {
+      campo: "url",
+      etiqueta: "Dirección del webhook",
+      requerido: true,
+      ayuda: "En Slack: una app con «Incoming Webhooks» para el canal (https://hooks.slack.com/services/…). Se guarda cifrada.",
+    },
+  ],
+  discord: [
+    {
+      campo: "url",
+      etiqueta: "Dirección del webhook",
+      requerido: true,
+      ayuda: "En Discord: ajustes del canal → «Integraciones» → «Webhooks» → «Copiar URL del webhook». Se guarda cifrada.",
+    },
+  ],
 };
 
 export const reglasPorDefecto = (): ReglasCanal => ({ severidades: ["critico", "importante"], clientes: null, silencio: null, resumen_diario: false, resumen_semanal: false });
@@ -57,7 +84,7 @@ export function estadoEnvio(e: EnvioNotif): { texto: string; tono: Tono } {
   }
 }
 
-export const TIPO_ENVIO: Record<EnvioNotif["tipo"], string> = { aviso: "Aviso", recuperacion: "Volvió a funcionar", resumen: "Resumen", prueba: "Prueba" };
+export const TIPO_ENVIO: Record<EnvioNotif["tipo"], string> = { aviso: "Aviso", recuperacion: "Volvió a funcionar", resumen: "Resumen", prueba: "Prueba", informe: "Informe" };
 
 export const DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 

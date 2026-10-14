@@ -157,7 +157,11 @@ pub enum Mensaje {
     Aviso(Alerta),
     Recuperacion(Alerta),
     Resumen(resumen::Resumen),
-    Prueba { quien: String },
+    Prueba {
+        quien: String,
+    },
+    /// Plan 0.8.0 (G1): el informe ejecutivo de un cliente (solo por correo, con el PDF adjunto).
+    Informe(Box<crate::informe::Informe>),
 }
 
 impl Mensaje {
@@ -167,11 +171,12 @@ impl Mensaje {
             Mensaje::Recuperacion(_) => "recuperacion",
             Mensaje::Resumen(_) => "resumen",
             Mensaje::Prueba { .. } => "prueba",
+            Mensaje::Informe(_) => "informe",
         }
     }
     /// Los resúmenes y las pruebas no cuentan para el tope por hora ni se agrupan.
     pub fn suelto(&self) -> bool {
-        matches!(self, Mensaje::Resumen(_) | Mensaje::Prueba { .. })
+        matches!(self, Mensaje::Resumen(_) | Mensaje::Prueba { .. } | Mensaje::Informe(_))
     }
 }
 
@@ -359,6 +364,7 @@ pub fn pasada(db: &Arc<dyn Almacen>, motor: &Motor, ahora: Ts) -> R<()> {
     motor.tocados.lock().unwrap_or_else(|e| e.into_inner()).extend(tocados);
     reconectados(db, ahora)?;
     resumen::si_toca(db, ahora)?;
+    crate::informe::si_toca(db, ahora)?;
     entregar(db, motor, ahora)?;
     if ahora % 3600 < 10 {
         db.notif_limpiar(ahora - 30 * 24 * 3600)?;
@@ -815,6 +821,7 @@ fn titulo_de(m: &Mensaje) -> String {
         Mensaje::Aviso(a) | Mensaje::Recuperacion(a) => a.titulo.clone(),
         Mensaje::Resumen(r) => contenido::asunto_resumen(r),
         Mensaje::Prueba { .. } => "Prueba".into(),
+        Mensaje::Informe(i) => contenido::asunto_informe(i),
     }
 }
 
@@ -897,7 +904,7 @@ fn entregar(db: &dyn Almacen, motor: &Motor, ahora: Ts) -> R<()> {
             continue;
         };
         let secretos = ajustes::abrir_secretos(&canal, &motor.clave, &ambito);
-        let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora), marcas: BTreeMap::new() };
+        let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora), marcas: BTreeMap::new(), logo_informe: None };
         let (sueltos, juntos): (Vec<Envio>, Vec<Envio>) = envios.into_iter().partition(|e| e.mensaje.suelto());
         for e in sueltos {
             let ms = std::slice::from_ref(&e.mensaje);
@@ -941,6 +948,12 @@ fn con_marca(db: &dyn Almacen, base: &contenido::Formato, ms: &[Mensaje], client
         },
         _ => return f,
     };
+    // Plan 0.8.0 (G1): el logo del informe ejecutivo (el del prestador o el del cliente).
+    if let Some(Mensaje::Informe(_)) = ms.iter().find(|m| matches!(m, Mensaje::Informe(_))) {
+        if let Ok(p) = crate::informe::programa(db, &id) {
+            f.logo_informe = crate::informe::logo(db, &id, p.logo);
+        }
+    }
     let Ok(m) = crate::api::marca::leer(db, &id) else { return f };
     let acento = m.acento.as_deref().and_then(contenido::colores_acento);
     // El logo ya se comprobó al guardarlo (PNG); se vuelve a mirar por si acaso.
@@ -1002,7 +1015,7 @@ pub fn probar(
     let secretos = ajustes::abrir_secretos(canal, &motor.clave, ambito);
     let m = Mensaje::Prueba { quien: quien.into() };
     let id = uuid::Uuid::new_v4().to_string();
-    let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora), marcas: BTreeMap::new() };
+    let formato = contenido::Formato { url_consola: ajustes.url_consola.clone(), zona: zona(ahora), marcas: BTreeMap::new(), logo_informe: None };
     // La prueba de un canal del cliente sale con su marca.
     let formato = con_marca(db, &formato, std::slice::from_ref(&m), cliente);
     let r = if ajustes::completo(canal) {
