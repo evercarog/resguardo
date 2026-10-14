@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PruebasEspejo from "$lib/componentes/pruebas/PruebasEspejo.svelte";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Una copia en detalle (como la página de un repositorio): cómo está, qué
@@ -373,6 +374,8 @@
         <TiraRegla rc={regla} cliente={c} ahora={reloj.ahora} onaccion={puede.ordenar(rol) && equipo.modo !== "trasladado" ? hacerDesdeRegla : undefined} enlaceDestino={(p) => (p.clave && !p.clave.startsWith("espejo:") ? hrefDestino(c, p.clave) : null)} onmarcar={puede.administrar(rol) ? (p) => (marcar = marcarDesdePaso(p, actual.equipos, catalogo)) : undefined} />
       </div>
       {#if marcar}<AtributosDestino cliente={c} destino={marcar} onclose={() => (marcar = null)} />{/if}
+      <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de su camino. -->
+      {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={regla} equipos={actual.equipos} ordena={puede.ordenar(rol) && equipo.modo !== "trasladado"} />{/if}
     {/if}
 
     {#if repo}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PruebasEspejo from "$lib/componentes/pruebas/PruebasEspejo.svelte";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Un repositorio en detalle, como en la app de escritorio: la frase que lo
@@ -294,6 +295,8 @@
     </div>
 
     <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} alQuitarExterna={puedeQuitarExterna ? quitarExterna : undefined} />
+    <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de este repositorio. -->
+    {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={reglaRepo} equipos={actual.equipos} ordena={puede.ordenar(rol)} />{/if}
 
     <div class="dos" id="sec-proteccion">
       {#if prot}
