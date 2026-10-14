@@ -636,7 +636,7 @@ mod tests {
             }
             _ => unreachable!(),
         };
-        let v = cuerpo_chat(TipoCanal::Discord, &[ok.clone()]);
+        let v = cuerpo_chat(TipoCanal::Discord, std::slice::from_ref(&ok));
         assert_eq!(v["embeds"][0]["color"], 0x126c35);
         assert!(!v["embeds"][0]["fields"].as_array().unwrap().iter().any(|f| f["name"] == "Importancia"));
         let v = cuerpo_chat(TipoCanal::Teams, &[ok]);

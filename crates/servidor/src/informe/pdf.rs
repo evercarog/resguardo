@@ -217,7 +217,7 @@ fn numero(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push('.');
         }
         out.push(c);
@@ -400,6 +400,7 @@ impl Lienzo {
         self.rect_redondo(x - r, y - r, 2.0 * r, 2.0 * r, r, color);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn linea(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: u32, grosor: f32, discontinua: bool) {
         let (r, g, b) = rgb(color);
         let c = self.c();
@@ -523,9 +524,13 @@ fn imagen(png_bytes: &[u8]) -> Option<Imagen> {
     let px = buf.get(..salida.buffer_size())?;
     let (rgb, alfa): (Vec<u8>, Option<Vec<u8>>) = match salida.color_type {
         png::ColorType::Grayscale => (px.iter().flat_map(|g| [*g, *g, *g]).collect(), None),
-        png::ColorType::GrayscaleAlpha => (px.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0]]).collect(), Some(px.chunks_exact(2).map(|p| p[1]).collect())),
+        png::ColorType::GrayscaleAlpha => {
+            (px.as_chunks::<2>().0.iter().flat_map(|p| [p[0], p[0], p[0]]).collect(), Some(px.as_chunks::<2>().0.iter().map(|p| p[1]).collect()))
+        }
         png::ColorType::Rgb => (px.to_vec(), None),
-        png::ColorType::Rgba => (px.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect(), Some(px.chunks_exact(4).map(|p| p[3]).collect())),
+        png::ColorType::Rgba => {
+            (px.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect(), Some(px.as_chunks::<4>().0.iter().map(|p| p[3]).collect()))
+        }
         png::ColorType::Indexed => return None,
     };
     if rgb.len() != salida.width as usize * salida.height as usize * 3 {
