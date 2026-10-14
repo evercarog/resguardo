@@ -2,6 +2,22 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-14 · `ia/integracion-080` · **Resumen de la versión 0.8.0 (para el responsable)**
+
+Claude Code (Opus), en autónomo del 2026-10-13 al 2026-10-14, con el plan [plan-0.8.0.md](plan-0.8.0.md) aprobado («una sola versión grande»). Trabajo repartido en 13 ramas `ia/080-*` hechas por asistentes en paralelo y unidas en `ia/integracion-080` solo tras pasar todas las comprobaciones. **No se ha publicado nada**; no se unió a `main` (salvo el README).
+
+**Hecho (todo unido y comprobado junto):** bloques A (fallos de uso real), B (nombres legibles, destinos claros, acceso al almacén, contraseñas, versiones e instalador desde GitHub), C (camino a la vista, espejos y progreso en vivo, vocabulario, pulido), D (sedes, vista de Equipos, datos del equipo, «Todos los clientes»), E (restaurar mejor, registro de restauraciones, pruebas funcionales, prueba desde un espejo), F (copias con fin, comentarios y conservar versiones, N por día, velocidad por horas), G (informe ejecutivo PDF, Teams/Slack/Discord) y H1 (aprobar en el equipo). Además 14ccc (verificar cada volcado de SQL). Contrato **v1.67 a v1.81**. Versión subida a **0.8.0**. `rustls` 0.23.46 por cuatro avisos de seguridad nuevos (RUSTSEC-2026-0346…0349; **afectan también a la 0.7.26 publicada**).
+
+**Comprobado sobre la versión completa (04f858b):** `cargo fmt`, `clippy` (todo y servidor con consola), `cargo test --workspace` (~820, con las 3 de siempre saltadas por permisos del temporal de este PC), `npm run check`, `build`, `test:vectores`, **e2e completo** y `test:sin-referencias`. CI de GitHub en la integración: todo bien salvo `cargo-deny` por los avisos de rustls, ya corregidos.
+
+**Sin probar en real (antes del anillo «general»):** la línea de PowerShell en un Windows Server (14ee, A1); espejos a la nube con progreso en vivo y prueba desde una nube; Teams/Slack/Discord reales; envío programado del informe; restaurar una unidad entera y descargas de 2 GB; la ventana del agente en modo sin consola; la verificación de volcados con un SQL Server real.
+
+**Decisiones tomadas por defecto (revísalas):** nombre 0.8.0; solo H1 del bloque H (H2–H5 para otra versión, confirmado por el responsable); 14v no; logo del informe del prestador con el de la marca del cliente si tiene; .zip al navegador hasta 2 GB; política de pruebas funcionales activada (6 meses); verificación de volcados activada por defecto; la sede de equipos y destinos pide la clave para repartirse; programar/quitar una prueba desde un espejo sin clave. El detalle y las demás dudas, en la entrada de cada rama más abajo.
+
+**Incidencias del entorno:** límites de uso y reinicios de sesión (las ramas se reanudaron sin perder trabajo); memoria y disco C: agotados con varias compilaciones (ahora ≤3 a la vez y temporal en F:); al quitar worktrees con `node_modules` enlazado se dañó `consola/node_modules` del checkout principal (reinstalado con `npm ci`; ya no se enlaza).
+
+**Para publicar:** instaladores de Windows en `publicar/0.8.0/` y paquetes de Linux de la CI; el responsable firma (`firmar-publicacion.mjs` y `minisign` de los tar.gz del servidor), después `SHA256SUMS`, `gh release` e `instalar/`.
+
 ## 2026-10-14 · `ia/080-pruebas` · Plan 0.8.0, bloque E: pruebas funcionales (E3, 14k) y prueba de restauración desde un espejo (E4, 14j)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-080` (unida al final, 1c94ff7). Pedido: simulacros de recuperación con su política por cliente (y por repositorio), avisos al acercarse y al vencer, registro con RTO y RPO, adjuntos opcionales, historial en una página, en Informes y en el PDF, y que cuenten en el «0»; y la prueba de restauración desde un espejo hecha por el equipo dueño, ahora o programada, que cuente para ese destino.

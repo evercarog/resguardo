@@ -92,13 +92,13 @@ En cada bloque: `cargo fmt`, `clippy`, `cargo test --workspace`, `npm run check`
 
 A → B → C → D → E → F → G → H → I. Cada bloque en su rama `ia/080-<bloque>`, unida a la rama de integración solo si pasan todas las comprobaciones. Al terminar A y B (lo que más frena hoy), una versión de prueba para un equipo de prueba antes de seguir con el resto, sin publicarla.
 
-## Decisiones pendientes (para el visto bueno)
+## Decisiones pendientes (tomadas por defecto en autónomo; para el visto bueno del responsable)
 
-1. **Nombre:** 0.8.0 (salto grande) o 0.7.27.
+1. **Nombre:** por defecto **0.8.0** (ya puesto en los `Cargo.toml`; si se prefiere 0.7.27, se cambia antes de publicar).
 2. ~~Bloque H completo~~ **Decidido (2026-10-14): solo H1 en esta versión; H2–H5 para una versión posterior.**
-3. **14v** (derivadas filtradas hechas por el almacén con la llave que ya tiene por la retención): sí o no.
-4. **G1** con el logo del prestador: ¿uno para todos los clientes o uno por cliente?
-5. **E1 .zip descargado al navegador:** tamaño máximo (propuesta: 2 GB; lo mayor, al disco del equipo).
+3. **14v:** por defecto **no** (el almacén sigue sin usar contraseñas más allá de la retención); queda para otra versión si se quiere.
+4. **G1:** hecho con **el logo del prestador** (servidor) y, si el cliente tiene logo de marca, el suyo en su informe.
+5. **E1:** hecho con **2 GB** como máximo al navegador (`--max-descarga` por defecto 2048 MB); lo mayor, .zip en el disco del equipo.
 
 ## Decisiones tomadas
 
