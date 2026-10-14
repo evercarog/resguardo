@@ -6,6 +6,7 @@
     Activity,
     ArchiveRestore,
     ArrowRightLeft,
+    ClipboardCheck,
     BellRing,
     ChevronsUpDown,
     CircleHelp,
@@ -38,6 +39,7 @@
   import * as api from "$lib/api";
   import { actual, app, puede } from "$lib/estado.svelte";
   import { sinDuplicados } from "$lib/salud";
+  import { funcionalesDe } from "$lib/funcionales.svelte";
   import CopiasEnMarcha from "./CopiasEnMarcha.svelte";
   import MarcaCliente from "./MarcaCliente.svelte";
 
@@ -53,6 +55,12 @@
   const rol = $derived(actual.cliente?.rol);
   type Seccion = { href: string; texto: string; icono: typeof Monitor; exacto?: boolean; cuenta?: number; tono?: "warn" | "bad" };
   // Las secciones del cliente, en tres grupos con su etiqueta (el orden de siempre).
+  /** E3 (14k): la prueba funcional se acerca (ámbar) o venció (rojo); si no, nada. */
+  const avisoPruebas = (cc: string): "warn" | "bad" | null => {
+    const f = funcionalesDe(cc)?.estado?.cliente.fase;
+    return f === "vencida" ? "bad" : f === "pronto" ? "warn" : null;
+  };
+
   const grupos = $derived.by(() => {
     const gs: { titulo: string; items: Seccion[] }[] = [
       {
@@ -70,6 +78,8 @@
           { href: `/c/${c}/restaurar`, texto: "Restaurar", icono: History },
           // Plan 0.8.0 (E2): el registro de restauraciones.
           { href: `/c/${c}/restauraciones`, texto: "Restauraciones", icono: ArchiveRestore },
+          // Plan 0.8.0 (E3, 14k): los simulacros de recuperación y su plazo.
+          { href: `/c/${c}/pruebas`, texto: "Pruebas funcionales", icono: ClipboardCheck, cuenta: avisoPruebas(c) ? 1 : undefined, tono: avisoPruebas(c) ?? undefined },
           { href: `/c/${c}/buscar`, texto: "Buscar archivos", icono: FileSearch },
           { href: `/c/${c}/ordenes`, texto: "Órdenes", icono: ClipboardList, cuenta: actual.pendientes || undefined, tono: actual.pendientes ? "warn" : undefined },
           { href: `/c/${c}/avisos`, texto: "Avisos", icono: BellRing, cuenta: actual.avisosAbiertos || undefined, tono: actual.avisosAbiertos ? "bad" : undefined },

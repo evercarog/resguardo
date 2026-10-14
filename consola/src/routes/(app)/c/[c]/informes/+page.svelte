@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { listaFuncionales } from "$lib/funcionales.svelte";
+  import { funcionalesDe, listaFuncionales } from "$lib/funcionales.svelte";
+  import { cifrasPruebas, diaLargo, resultadoPrueba, textoAlcance, textoMinutos, textoPlazo } from "$lib/pruebasFuncionales";
   // Informe mensual del cliente, para enseñar o imprimir (o guardar en PDF):
   // portada con la marca del cliente (v1.32), un resumen en una frase, cuatro
   // cifras, las copias de cada día del periodo, una tabla por equipo y, de
@@ -148,6 +149,17 @@
       : [],
   );
   const cifrasRest = $derived(estadisticas(restDelPeriodo));
+
+  // Plan 0.8.0 (E3, 14k): las pruebas funcionales del periodo (con su RTO y RPO) y el plazo.
+  const funcionales = $derived(funcionalesDe(actual.id));
+  const pfDelPeriodo = $derived(
+    (funcionales?.pruebas ?? []).filter((p) => {
+      const t = Date.parse(`${p.fecha}T12:00:00`);
+      return t >= rango.desde.getTime() && t < rango.hasta.getTime();
+    }),
+  );
+  const cifrasPf = $derived(cifrasPruebas(pfDelPeriodo));
+  const nombrePf = (eq: string, repo: string) => actual.equipos.find((e) => e.id === eq)?.resumen?.repositorios?.find((r) => r.id === repo)?.nombre ?? repo;
 
   // Tarea 8: la regla 3-2-1-1-0 de cada copia (con lo que dice el catálogo de destinos).
   $effect(() => {
@@ -460,6 +472,44 @@
         {/if}
         <p class="leyenda no-imprimir"><a href="/c/{actual.id}/restauraciones">Ver todas las restauraciones</a></p>
       </section>
+
+      <!-- Plan 0.8.0 (E3, 14k): las pruebas funcionales del periodo. -->
+      {#if funcionales}
+        <section class="bloque" aria-labelledby="t-pf">
+          <h3 id="t-pf">Pruebas funcionales <span class="sub-h">· {plural(cifrasPf.total, "en el periodo", "en el periodo")}</span></h3>
+          {#if funcionales.estado}
+            {@const t = textoPlazo(funcionales.estado.cliente)}
+            <p class="leyenda">{t.texto}</p>
+          {/if}
+          {#if cifrasPf.total}
+            <table class="tabla">
+              <caption class="sr-only">Pruebas funcionales del periodo</caption>
+              <thead><tr><th scope="col">Fecha</th><th scope="col">Alcance</th><th scope="col">Resultado</th><th scope="col" class="der">Datos de vuelta</th><th scope="col" class="der">Antigüedad</th><th scope="col">Quién</th></tr></thead>
+              <tbody>
+                {#each pfDelPeriodo as p (p.id)}
+                  <tr>
+                    <td>{diaLargo(p.fecha)}</td>
+                    <td>{textoAlcance(p, nombrePf)}</td>
+                    <td>{resultadoPrueba(p.resultado).texto}</td>
+                    <td class="num der">{textoMinutos(p.rto_min)}{p.cumple_rto === false ? " ✗" : ""}</td>
+                    <td class="num der">{textoMinutos(p.rpo_min)}{p.cumple_rpo === false ? " ✗" : ""}</td>
+                    <td>{p.quien || p.por}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            {#if funcionales.ajustes.rto_objetivo_min || funcionales.ajustes.rpo_objetivo_min}
+              <p class="leyenda">
+                Objetivos: {[funcionales.ajustes.rto_objetivo_min ? `datos de vuelta en ${textoMinutos(funcionales.ajustes.rto_objetivo_min)} (RTO)` : "", funcionales.ajustes.rpo_objetivo_min ? `perder ${textoMinutos(funcionales.ajustes.rpo_objetivo_min)} como mucho (RPO)` : ""].filter(Boolean).join(" · ")}.
+                ✗ no lo cumple.
+              </p>
+            {/if}
+          {:else}
+            <p class="faint">Ninguna prueba funcional en este periodo.</p>
+          {/if}
+          <p class="leyenda no-imprimir"><a href="/c/{actual.id}/pruebas">Ver todas las pruebas funcionales</a></p>
+        </section>
+      {/if}
 
       <section class="bloque" aria-labelledby="t-repos">
         <h3 id="t-repos">Repositorios</h3>
