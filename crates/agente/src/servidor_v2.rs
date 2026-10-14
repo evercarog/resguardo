@@ -1748,7 +1748,8 @@ fn config_rustls(ca_pem: &str) -> Result<Arc<rustls::ClientConfig>, String> {
 }
 
 /// Cada cuánto se despierta el canal sin mensajes del servidor (para el progreso).
-const ESPERA_CANAL: Duration = Duration::from_secs(5);
+// 14p: cada 2 s (antes 5), para que lo que empieza o termina llegue enseguida a las consolas.
+const ESPERA_CANAL: Duration = Duration::from_secs(2);
 /// Entre dos informes por el canal, como poco (salvo el de cuando termina una copia).
 const ENTRE_INFORMES: Duration = Duration::from_secs(15);
 /// El de cuando termina una copia: casi enseguida (una copia termina como mucho cada pocos segundos).

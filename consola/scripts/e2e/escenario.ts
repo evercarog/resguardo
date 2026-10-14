@@ -1725,13 +1725,18 @@ async function principal() {
           await dormir(300);
         }
       })();
-      const antesVer = Date.now();
-      await consola2.hecha(c2, eqB2.id, "verificar_ahora", { repo: repoId });
-      await esperar("la verificación de B (en cola o en marcha) en la en línea", async () => vistas.length || null, { plazo: 180_000, cada: 500 });
-      await esperar("que la verificación de B termine", async () => {
-        const inf = informeDe((await consola2.equipo(c2, eqB2.id)).ultimo_informe as any, repoId);
-        return inf?.verificacion?.ultima && new Date(inf.verificacion.ultima).getTime() >= antesVer - 2_000 ? true : null;
-      }, { plazo: 240_000, cada: 1000 });
+      // Una verificación pequeña dura un par de segundos: si no se llega a ver, se pide otra (como mucho 3).
+      for (let intento = 1; intento <= 3 && !vistas.length; intento++) {
+        const antesVer = Date.now();
+        await consola2.hecha(c2, eqB2.id, "verificar_ahora", { repo: repoId });
+        await esperar("que la verificación de B termine", async () => {
+          const inf = informeDe((await consola2.equipo(c2, eqB2.id)).ultimo_informe as any, repoId);
+          return inf?.verificacion?.ultima && new Date(inf.verificacion.ultima).getTime() >= antesVer - 2_000 ? true : null;
+        }, { plazo: 240_000, cada: 1000 });
+        await dormir(2_000);
+        if (!vistas.length) log(`(Intento ${intento}: la verificación terminó sin que la en línea la viera; otra vez)`);
+      }
+      comprobar(vistas.length > 0, "La en línea ve la verificación de B (en cola o en marcha)");
       mirando = false;
       await mirar;
       const fases = [...new Set(vistas.map((t) => t.fase))];

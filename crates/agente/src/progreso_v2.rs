@@ -489,14 +489,28 @@ impl RitmoIo {
     }
 }
 
-/// Decide cuándo mandar el progreso: cada `cada` mientras hay algo en marcha
-/// y una vez más (vacío) cuando termina, para que la consola lo quite enseguida.
+/// Entre dos lecturas de lo que está en marcha, al menos esto (leer son unos pocos archivos pequeños).
+pub const MIRAR_CADA: Duration = Duration::from_secs(1);
+
+/// Decide cuándo mandar el progreso: cada `cada` mientras hay algo en marcha, una
+/// vez más (vacío) cuando termina, para que la consola lo quite enseguida, y 14p
+/// **en cuanto algo empieza, termina o sale de la cola** (sin esperar a `cada`: una
+/// verificación de unos segundos se veía empezar y terminar entre dos mensajes).
+/// Como mucho un mensaje por [`MIRAR_CADA`].
 #[derive(Default)]
 pub struct Emisor {
     ultimo: Option<Instant>,
+    mirado: Option<Instant>,
     activo: bool,
+    /// Qué había en marcha en lo último que se mandó (tipo, repositorio, copia y si estaba en cola).
+    claves: Vec<String>,
     /// El servidor no lo admite (anterior a v1.25): no se manda más.
     apagado: bool,
+}
+
+/// Qué tareas son, sin sus cifras.
+fn claves(t: &[Value]) -> Vec<String> {
+    t.iter().map(|x| format!("{}|{}|{}|{}", x["tipo"], x["repo"], x["copia"], x["fase"] == "en_cola")).collect()
 }
 
 impl Emisor {
@@ -506,11 +520,18 @@ impl Emisor {
 
     /// Las tareas que toca mandar ahora, o `None` si aún no toca o no hay nada nuevo que decir.
     pub fn toca(&mut self, cada: Duration, ahora: Instant, leer: impl FnOnce() -> Vec<Value>) -> Option<Vec<Value>> {
-        if self.apagado || self.ultimo.is_some_and(|u| ahora.saturating_duration_since(u) < cada) {
+        if self.apagado || self.mirado.is_some_and(|m| ahora.saturating_duration_since(m) < MIRAR_CADA.min(cada)) {
+            return None;
+        }
+        self.mirado = Some(ahora);
+        let tareas = leer();
+        let nuevas = claves(&tareas);
+        let toca = self.ultimo.is_none_or(|u| ahora.saturating_duration_since(u) >= cada) || nuevas != self.claves;
+        if !toca {
             return None;
         }
         self.ultimo = Some(ahora);
-        let tareas = leer();
+        self.claves = nuevas;
         let antes = std::mem::replace(&mut self.activo, !tareas.is_empty());
         (antes || self.activo).then_some(tareas)
     }
@@ -798,6 +819,23 @@ mod tests {
         let _ = r.medir(Some(std::process::id()));
     }
 
+    /// 14p: lo que empieza o termina se manda enseguida (como mucho uno por segundo), sin esperar a `cada`.
+    #[test]
+    fn emisor_enseguida_al_empezar_y_al_terminar() {
+        let mut e = Emisor::default();
+        let t0 = Instant::now();
+        let cada = Duration::from_secs(5);
+        let ver = || vec![json!({ "tipo": "verificar", "repo": "r", "fase": "en_marcha" })];
+        let cola = || vec![json!({ "tipo": "verificar", "repo": "r", "fase": "en_cola" })];
+        assert_eq!(e.toca(cada, t0, Vec::new), None);
+        assert_eq!(e.toca(cada, t0 + Duration::from_millis(500), cola), None, "antes de un segundo no se mira");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(1), cola).map(|x| x.len()), Some(1), "en cola: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(2), cola), None, "lo mismo: hasta `cada`");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(3), ver).map(|x| x.len()), Some(1), "empieza: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(4), Vec::new), Some(vec![]), "termina: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(10), Vec::new), None);
+    }
+
     #[test]
     fn emisor_cada_cierto_tiempo_y_uno_vacio_al_terminar() {
         let mut e = Emisor::default();
@@ -805,9 +843,10 @@ mod tests {
         let cada = Duration::from_secs(5);
         let una = || vec![json!({ "tipo": "copia" })];
         assert_eq!(e.toca(cada, t0, Vec::new), None, "nada en marcha: nada que mandar");
-        assert_eq!(e.toca(cada, t0 + Duration::from_secs(1), una), None, "aún no toca");
-        assert_eq!(e.toca(cada, t0 + Duration::from_secs(5), una).map(|x| x.len()), Some(1));
-        assert_eq!(e.toca(cada, t0 + Duration::from_secs(10), una).map(|x| x.len()), Some(1));
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(1), una).map(|x| x.len()), Some(1), "empieza: enseguida");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(5), una), None, "lo mismo: aún no toca");
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(6), una).map(|x| x.len()), Some(1));
+        assert_eq!(e.toca(cada, t0 + Duration::from_secs(11), una).map(|x| x.len()), Some(1));
         assert_eq!(e.toca(cada, t0 + Duration::from_secs(15), Vec::new), Some(vec![]), "terminó: uno vacío");
         assert_eq!(e.toca(cada, t0 + Duration::from_secs(20), Vec::new), None);
     }
