@@ -24,6 +24,7 @@ import { progresoDe } from "./progreso";
 import { rutasNotificaciones } from "./notificaciones";
 import { rutasInforme } from "./informe";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
+import { reiniciarPruebas, rutasPruebas } from "./pruebas";
 import { errorDondeCatalogo, errorSubcarpeta } from "../lib/destinos";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
 
@@ -1724,6 +1725,18 @@ const rutas: Ruta[] = [
   }),
   // v1.40: observaciones y comentarios.
   ...rutasNotas<Ctx>({ err, miembro }),
+  // Plan 0.8.0, E3 (14k): las pruebas funcionales.
+  ...rutasPruebas<Ctx>({
+    err,
+    miembro,
+    archivo: (ctx, tipo, nombre, datos) => {
+      ctx.res.setHeader("Content-Type", tipo);
+      ctx.res.setHeader("Content-Disposition", `attachment; filename="${nombre}"`);
+      ctx.res.setHeader("X-Content-Type-Options", "nosniff");
+      ctx.res.end(datos);
+      return SIN_CUERPO;
+    },
+  }),
   [
     "POST",
     /^\/api\/__mock\/reiniciar$/,
@@ -1752,6 +1765,7 @@ function darFicha(cliente: string, usos: number, dias: number) {
 async function iniciar(vacio = false) {
   await sembrar(vacio);
   sembrarNotas();
+  reiniciarPruebas();
   for (const e of estado.equipos) guardarConfig(e, configInicial(e), 12);
   console.log(`\n  Resguardo Server simulado: ${vacio ? `sin cuentas (código de primer arranque: ${DEMO.codigoArranque})` : `${DEMO.correo} / ${DEMO.contrasena}, TOTP cualquier código de 6 cifras`}\n`);
 }

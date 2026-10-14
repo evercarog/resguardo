@@ -44,8 +44,8 @@ Propuesta del 2026-10-13, **pendiente del visto bueno del responsable**. Recoge 
 
 - [x] **E1. Restaurar mejor (13a, 13b, 14m):** (rama `ia/080-restaurar`; contrato v1.6x en `api-servidor.md`; falta en 14m los espejos del propio equipo; lo no probado en `registro-ia.md`) en otra carpeta (nueva o vacía), en .zip (en el equipo o descargado, con AES-256 opcional), y elegir desde dónde (almacén, espejo, derivada) con recomendación si el principal no responde.
 - [x] **E2. Registro de restauraciones (13d, 14l, 13e):** (rama `ia/080-restaurar`; 13c y 13f a medias: sin carpeta en curso ni vista «En curso») página «Restauraciones» por cliente y equipo, ficha automática (quién, qué, cuánto, cuánto tardó) con motivo; estadísticas en Informes; una restauración real correcta cuenta como prueba.
-- [ ] **E3. Pruebas funcionales (14k):** política por cliente, aviso al vencer, formulario de la prueba con RTO y RPO, historial; cuenta para el «0».
-- [ ] **E4. Prueba de restauración desde un espejo (14j).**
+- [x] **E3. Pruebas funcionales (14k):** (rama `ia/080-pruebas`; contrato v1.6x en `api-servidor.md`, §6 «Pruebas funcionales»; lo no probado en `registro-ia.md`) política por cliente, aviso al vencer, formulario de la prueba con RTO y RPO, historial; cuenta para el «0». Página «Pruebas funcionales», política (plazo, aviso, objetivos de RTO y RPO, plazos por repositorio), avisos informativo e importante, adjuntos PDF/PNG/JPG, enlace desde una restauración registrada, en Informes y en el PDF.
+- [~] **E4. Prueba de restauración desde un espejo (14j).** (rama `ia/080-pruebas`: «Probar ahora», «Programar…» y «Quitar» en la página de cada espejo, de la copia y del repositorio; la hace el equipo dueño desde un espejo suyo, una nube conectada en él o el disco del espejo conectado ahí; cuenta en la regla para ese destino. **Falta:** probar desde un espejo del almacén que el equipo dueño no alcanza —un disco del almacén sin conectarlo al equipo— sin moverlo: haría falta que el almacén lo sirviera de solo lectura.)
 
 ## Bloque F — Copias y versiones
 

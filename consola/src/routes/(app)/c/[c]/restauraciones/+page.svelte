@@ -7,7 +7,7 @@
   import { untrack } from "svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { ArchiveRestore, CircleCheck, Clock, History, ListChecks, LoaderCircle, MessageSquareText, TriangleAlert } from "@lucide/svelte";
+  import { ArchiveRestore, CircleCheck, ClipboardCheck, Clock, History, ListChecks, LoaderCircle, MessageSquareText, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
@@ -241,6 +241,13 @@
         <dd>Cuenta como prueba de restauración real del repositorio (45 días).</dd>
       {/if}
     </dl>
+    {#if puede.ordenar(actual.cliente?.rol)}
+      <!-- Plan 0.8.0, E3 (14k): si fue un simulacro, se registra con sus datos ya puestos. -->
+      <p class="como-prueba">
+        <a class="btn btn-sm" href="/c/{actual.id}/pruebas?restauracion={encodeURIComponent(`${r.equipo}|${r.id}`)}"><ClipboardCheck size={14} />Registrar como prueba funcional</a>
+        <span class="faint">Con el día, el repositorio y lo que tardó ya puestos.</span>
+      </p>
+    {/if}
     <div class="form motivo-ficha">
       <h3 class="section-title">Motivo</h3>
       {#if puede.ordenar(actual.cliente?.rol)}
@@ -359,5 +366,13 @@
   }
   .ajuste {
     max-width: 660px;
+  }
+  .como-prueba {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 var(--sp-4);
+    font-size: var(--fs-sm);
   }
 </style>

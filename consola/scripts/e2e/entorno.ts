@@ -173,6 +173,8 @@ export interface Respuesta<T = any> {
   cuerpo: T;
   cabeceras: Record<string, string | string[] | undefined>;
   texto: string;
+  /** El cuerpo tal cual (p. ej. un PDF). */
+  bytes: Buffer;
 }
 
 export function pedirHttps(url: string, opciones: { metodo?: string; cuerpo?: unknown; cabeceras?: Record<string, string>; ca?: string; plazo?: number } = {}): Promise<Respuesta> {
@@ -197,14 +199,15 @@ export function pedirHttps(url: string, opciones: { metodo?: string; cuerpo?: un
         const trozos: Buffer[] = [];
         res.on("data", (b) => trozos.push(b));
         res.on("end", () => {
-          const texto = Buffer.concat(trozos).toString("utf8");
+          const bytes = Buffer.concat(trozos);
+          const texto = bytes.toString("utf8");
           let cuerpo: unknown = texto;
           try {
             cuerpo = texto ? JSON.parse(texto) : null;
           } catch {
             /* no es JSON */
           }
-          ok({ estado: res.statusCode ?? 0, cuerpo, cabeceras: res.headers, texto });
+          ok({ estado: res.statusCode ?? 0, cuerpo, cabeceras: res.headers, texto, bytes });
         });
       },
     );

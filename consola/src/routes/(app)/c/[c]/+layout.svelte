@@ -7,6 +7,7 @@
   import { page } from "$app/state";
   import { actual, cargarCliente } from "$lib/estado.svelte";
   import { recargarInformes } from "$lib/informes.svelte";
+  import { cargarFuncionales } from "$lib/funcionales.svelte";
   import { vigilarProgreso } from "$lib/progreso.svelte";
   import { conectarVivo, seguirCambios, type Cambio } from "$lib/vivo.svelte";
   import PantallaError from "$lib/componentes/PantallaError.svelte";
@@ -24,6 +25,12 @@
     } catch {
       /* sin almacenamiento */
     }
+  });
+
+  // Plan 0.8.0, E3 (14k): las pruebas funcionales del cliente (cuentan en el «0» de la regla).
+  $effect(() => {
+    const c = id;
+    if (c) untrack(() => void cargarFuncionales(c));
   });
 
   // El canal en vivo del cliente (antes que el progreso: este se apunta a sus cambios).

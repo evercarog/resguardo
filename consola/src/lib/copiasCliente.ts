@@ -4,6 +4,7 @@
 // filtros, la búsqueda y el orden. C1 (plan 0.8.0, 14h): cada fila trae los
 // pasos de su camino (espejos y copias derivadas, lib/camino.ts), que cuentan
 // en «Necesitan atención» y en la cifra de las que están al día.
+import type { PruebaFuncional } from "./tiposPruebas";
 import type { CopiaResumen, DestinoCatalogo, DestinoResumen, Equipo, Informe, RepositorioResumen } from "./tipos";
 import { caminoDeCopia, eslabonMal, type Eslabon, type OpcionesCamino } from "./camino";
 import { reglaDeCopia } from "./regla321";
@@ -43,7 +44,7 @@ export function filasCopias(
   informes: Record<string, Informe | null | undefined>,
   ahora = Date.now(),
   catalogo: DestinoCatalogo[] = [],
-  o: { cliente?: string; enVivo?: OpcionesCamino["enVivo"]; todos?: Equipo[] } = {},
+  o: { cliente?: string; enVivo?: OpcionesCamino["enVivo"]; todos?: Equipo[]; funcionales?: PruebaFuncional[] } = {},
 ): FilaCopia[] {
   const todos = o.todos ?? equipos;
   return equipos.flatMap((e) => {
@@ -54,7 +55,7 @@ export function filasCopias(
       const vuelta = ultimaVuelta(k, informe);
       const ultimaVersion = infCopia(informeDe(informe, k.repo), k.id)?.versiones[0];
       const estado = estadoCopia(k, vuelta, pausada, ahora);
-      const pasos = caminoDeCopia(reglaDeCopia(e, k, todos, informe, catalogo, ahora), { cliente: o.cliente ?? "", ahora, enVivo: o.enVivo, equipos: todos, informe }).filter((x) => x.clase !== "copia");
+      const pasos = caminoDeCopia(reglaDeCopia(e, k, todos, informe, catalogo, ahora, null, o.funcionales ?? []), { cliente: o.cliente ?? "", ahora, enVivo: o.enVivo, equipos: todos, informe }).filter((x) => x.clase !== "copia");
       const pasoMal = pasos.some(eslabonMal);
       return {
         clave: `${e.id}|${k.id}`,

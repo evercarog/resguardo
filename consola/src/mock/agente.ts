@@ -434,9 +434,36 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "verificar", 20_000, undefined, { por: "Ana" }, 6_000);
       await espera(1_500);
       return resultado(e, o, "hecha", "Tarea pedida: empieza en unos segundos.");
-    case "probar_restauracion":
+    case "probar_restauracion": {
+      // Plan 0.8.0, E4 (14j): desde un espejo (ahora, programada o quitarla), como el agente.
+      const rinf = e.informes[0]?.datos.repos?.find((x) => x.id === String(c.repo ?? ""));
+      const lista = () => (rinf ? (rinf.pruebas_espejo ??= []) : []);
+      if (c.espejo || c.programar_espejo) {
+        if (!e.resumen?.admite?.includes("prueba_espejo")) return resultado(e, o, "fallida", "Este agente no sabe probar desde un espejo: actualízalo.");
+        const p = (c.espejo ?? c.programar_espejo) as { id: string; nombre: string; destino?: string | null; trabajo?: string; nube?: string; carpeta?: string; cada_dias?: number };
+        if (!/^[a-z0-9-]{1,40}$/.test(p.id ?? "")) return resultado(e, o, "fallida", "Prueba no válida.");
+        if (!p.trabajo && !p.carpeta) return resultado(e, o, "fallida", "Di desde dónde: un espejo del equipo, una nube conectada o una carpeta de un disco.");
+        const x = lista().find((y) => y.id === p.id) ?? lista()[lista().push({ id: p.id, nombre: p.nombre }) - 1];
+        Object.assign(x, { nombre: p.nombre, destino: p.destino ?? null, forma: p.trabajo ? "espejo_equipo" : p.nube ? "nube" : "carpeta" });
+        if (c.programar_espejo) {
+          Object.assign(x, { cada_dias: p.cada_dias ?? 30, proxima: new Date(Date.now() + (p.cada_dias ?? 30) * 86_400_000).toISOString() });
+          return resultado(e, o, "hecha", `Prueba desde «${p.nombre}» programada cada ${p.cada_dias ?? 30} días.`);
+        }
+        empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "prueba_restauracion", 6_000);
+        await espera(6500);
+        Object.assign(x, { ultima: new Date().toISOString(), inicio: new Date(Date.now() - 6000).toISOString(), resultado: "ok", mensaje_corto: "20 archivos (84 MB) de la versión de ayer restaurados y comprobados.", archivos: 20, bytes: 88_080_384 });
+        return resultado(e, o, "hecha", `Prueba desde «${p.nombre}» pedida: empieza ahora.`);
+      }
+      if (c.quitar_espejo) {
+        const x = lista().find((y) => y.id === c.quitar_espejo);
+        if (!x?.cada_dias) return resultado(e, o, "fallida", "Esa prueba ya no está programada.");
+        x.cada_dias = null;
+        x.proxima = null;
+        return resultado(e, o, "hecha", `La prueba desde «${x.nombre}» ya no está programada (sus resultados se quedan).`);
+      }
       await espera(3000);
       return resultado(e, o, "hecha", "Prueba de restauración correcta: 25 archivos comparados.");
+    }
     case "pausar": {
       const h = Number(c.horas ?? 0);
       if (e.resumen) e.resumen.pausado_hasta = h > 0 ? new Date(Date.now() + h * 3600_000).toISOString() : "indefinido";

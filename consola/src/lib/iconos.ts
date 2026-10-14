@@ -5,6 +5,7 @@ import {
   Activity,
   ArchiveRestore,
   ArrowRightLeft,
+  ClipboardCheck,
   BellRing,
   Cable,
   ClipboardList,
@@ -48,6 +49,8 @@ export const ICONO_SECCION = {
   repositorios: Database,
   restaurar: History,
   restauraciones: ArchiveRestore,
+  // Plan 0.8.0, E3 (14k).
+  pruebas: ClipboardCheck,
   buscar: FileSearch,
   ordenes: ClipboardList,
   avisos: BellRing,

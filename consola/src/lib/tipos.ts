@@ -918,6 +918,8 @@ export interface RepoInforme {
   externa: TareaInforme | null;
   /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
   derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
+  /** Plan 0.8.0, E4 (14j): las pruebas de restauración desde un espejo (agentes con `prueba_espejo`). */
+  pruebas_espejo?: import("./tiposPruebas").PruebaEspejoInforme[];
   proteccion: { puntuacion: number; total: number; items: ComprobacionProteccion[] } | null;
   /** Se quitaron las entradas más antiguas para que el informe quepa (~200 KiB). */
   recortado?: boolean;
@@ -1039,7 +1041,10 @@ export type TipoAviso =
   // Plan 0.8.0 (G1): el informe ejecutivo programado no se pudo poner en la cola (sin correo…).
   | "informe_no_enviado"
   // 14bbb: la contraseña de un repositorio lleva N meses sin comprobarse.
-  | "kit_por_comprobar";
+  | "kit_por_comprobar"
+  // Plan 0.8.0, E3 (14k): el plazo de las pruebas funcionales (se acerca: informativo; venció: importante).
+  | "prueba_funcional_pronto"
+  | "prueba_funcional_vencida";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {

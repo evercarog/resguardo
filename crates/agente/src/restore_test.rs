@@ -274,6 +274,12 @@ pub fn run(access: &Access, cfg: &RestoreTest, report: Report) -> RunRecord {
     run_in(access, cfg, &agent::private_dir(), report)
 }
 
+/// Plan 0.8.0, E4 (14j): la misma prueba en otra carpeta privada (la de las pruebas
+/// desde un espejo, que corren en el servicio a la vez que las de siempre).
+pub fn run_en(access: &Access, cfg: &RestoreTest, base: &Path, report: Report) -> RunRecord {
+    run_in(access, cfg, base, report)
+}
+
 /// `base`: carpeta (sin acceso para los usuarios) donde se restaura y se borra.
 fn run_in(access: &Access, cfg: &RestoreTest, base: &Path, report: Report) -> RunRecord {
     let mut record = RunRecord { started: Local::now().to_rfc3339(), ..Default::default() };

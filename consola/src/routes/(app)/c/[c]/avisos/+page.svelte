@@ -3,7 +3,7 @@
   // gravedad (lo urgente arriba) o por equipo; cada uno con su acción directa
   // y «Marcar como visto» (queda anotado quién lo vio).
   import { slide } from "svelte/transition";
-  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, Clock, Cloud, HardDrive, KeyRound, Monitor, MonitorCheck, Power, ShieldAlert, ShieldOff, TriangleAlert, WifiOff } from "@lucide/svelte";
+  import { BellOff, BellRing, Check, CheckCheck, CircleAlert, ClipboardCheck, Clock, Cloud, HardDrive, KeyRound, Monitor, MonitorCheck, Power, ShieldAlert, ShieldOff, TriangleAlert, WifiOff } from "@lucide/svelte";
   import * as api from "$lib/api";
   import { dur } from "$ui/movimiento";
   import { actual, cargarCliente, puede } from "$lib/estado.svelte";
@@ -100,6 +100,9 @@
     informe_no_enviado: { texto: "Informe sin enviar", tono: "warn", icono: TriangleAlert, que: "Revisa el canal de correo y los destinatarios del informe; desde Informes puedes enviarlo ahora.", accion: () => ({ texto: "Ver Informes", href: `/c/${c}/informes` }) },
     // 14bbb: recordatorio (informativo) de comprobar que el kit de un repositorio sigue sirviendo.
     kit_por_comprobar: { texto: "Kit por comprobar", tono: "neutral", icono: KeyRound, que: "En la página del repositorio, «Comprobar la contraseña»: el equipo dice si la del kit lo abre de verdad.", accion: (e) => (e ? { texto: "Ver sus repositorios", href: `/c/${c}/equipos/${e}` } : null) },
+    // Plan 0.8.0, E3 (14k): el plazo de las pruebas funcionales (simulacros de recuperación).
+    prueba_funcional_pronto: { texto: "Prueba funcional pronto", tono: "neutral", icono: ClipboardCheck, que: "Prepara el simulacro y regístralo en «Pruebas funcionales» con lo que tardó.", accion: () => ({ texto: "Ver las pruebas funcionales", href: `/c/${c}/pruebas` }) },
+    prueba_funcional_vencida: { texto: "Prueba funcional vencida", tono: "warn", icono: ClipboardCheck, que: "Haz el simulacro de recuperación y regístralo: hasta entonces no se sabe si se recuperaría a tiempo.", accion: () => ({ texto: "Registrar una prueba", href: `/c/${c}/pruebas?registrar=1` }) },
     cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };

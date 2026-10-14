@@ -226,6 +226,9 @@ pub struct Informe {
     pub verificaciones: Pruebas,
     pub pruebas: Pruebas,
     pub restauraciones: Restauraciones,
+    /// Plan 0.8.0, E3 (14k): las pruebas funcionales del periodo, los objetivos y el plazo.
+    #[serde(default)]
+    pub funcionales: crate::pruebas_funcionales::ParaInforme,
     pub espacio: Espacio,
     pub regla: Option<Regla>,
     pub avisos: Vec<AvisoInforme>,
@@ -277,6 +280,7 @@ pub fn preparar(db: &dyn Almacen, cliente: &str, periodo: Periodo, desde: Ts, ha
         verificaciones: Pruebas::default(),
         pruebas: Pruebas::default(),
         restauraciones: Restauraciones::default(),
+        funcionales: crate::pruebas_funcionales::ParaInforme::default(),
         espacio: Espacio::default(),
         regla: None,
         avisos: Vec::new(),
@@ -435,6 +439,9 @@ pub fn preparar(db: &dyn Almacen, cliente: &str, periodo: Periodo, desde: Ts, ha
         .take(MAX_AVISOS)
         .map(|i| AvisoInforme { titulo: contenido::texto_publico(&i.titulo), severidad: i.severidad, veces: i.veces, desde: i.primero })
         .collect();
+
+    // E3 (14k): las pruebas funcionales del periodo.
+    inf.funcionales = crate::pruebas_funcionales::para_informe(db, &ctx, &equipos, desde, hasta, ahora)?;
 
     // La regla 3-2-1-1-0: la última que calculó la consola (solo de los equipos que siguen).
     if let Some(foto) = super::foto_regla(db, cliente)? {

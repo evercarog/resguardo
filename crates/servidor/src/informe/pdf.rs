@@ -870,6 +870,89 @@ fn pruebas(l: &mut Lienzo, i: &Informe) {
     }
 }
 
+/// RTO o RPO en palabras cortas: «45 min», «4 h», «2 días».
+fn minutos(m: u32) -> String {
+    match m {
+        0..=59 => format!("{m} min"),
+        60..=2879 if m.is_multiple_of(60) => format!("{} h", m / 60),
+        60..=2879 => format!("{} h {} min", m / 60, m % 60),
+        _ => plural(u64::from(m / 1440), "día", "días"),
+    }
+}
+
+/// Plan 0.8.0, E3 (14k): las pruebas funcionales (simulacros de recuperación) del periodo,
+/// con su RTO y RPO, los objetivos y el plazo de la siguiente.
+fn funcionales(l: &mut Lienzo, i: &Informe) {
+    let f = &i.funcionales;
+    l.seccion("Pruebas funcionales (simulacros de recuperación)", 50.0);
+    let z = zona(i);
+    let mut frase = vec![match f.ultima {
+        Some(u) => format!("La última fue el {}.", fecha_larga(u, z)),
+        None => "Aún no se ha registrado ninguna.".to_string(),
+    }];
+    match (f.fase.as_deref(), f.vence) {
+        (Some("vencida"), Some(v)) => frase.push(format!("El plazo de la siguiente venció el {}.", fecha_larga(v, z))),
+        (Some(_), Some(v)) => frase.push(format!("La siguiente toca antes del {}.", fecha_larga(v, z))),
+        _ => {}
+    }
+    let objetivos: Vec<String> = [
+        f.rto_objetivo_min.map(|m| format!("datos de vuelta en {} como mucho", minutos(m))),
+        f.rpo_objetivo_min.map(|m| format!("perder {} como mucho", minutos(m))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if !objetivos.is_empty() {
+        frase.push(format!("Objetivos: {}.", objetivos.join("; ")));
+    }
+    let color = if f.fase.as_deref() == Some("vencida") { WARN } else { TEXTO_2 };
+    l.parrafo(&frase.join(" "), F::Normal, 9.5, color);
+    if f.lista.is_empty() {
+        l.parrafo("Ninguna en el periodo.", F::Normal, 9.5, TEXTO_3);
+        return;
+    }
+    l.y -= 6.0;
+    let resultado = |r: &str| match r {
+        "ok" => Celda { punto: Some(OK), ..celda("Correcta") },
+        "parcial" => Celda { punto: Some(WARN), ..celda("Con incidencias") },
+        _ => Celda { punto: Some(BAD), color: Some(BAD), ..celda("Falló") },
+    };
+    let con_objetivo = |valor: Option<u32>, cumple: Option<bool>| match (valor, cumple) {
+        (None, _) => celda("—"),
+        (Some(m), Some(false)) => Celda { color: Some(WARN), ..celda(format!("{} (no cumple)", minutos(m))) },
+        (Some(m), _) => celda(minutos(m)),
+    };
+    let filas: Vec<Vec<Celda>> = f
+        .lista
+        .iter()
+        .map(|p| {
+            vec![
+                celda(fecha_larga(p.fecha, FixedOffset::east_opt(0).expect("cero"))),
+                celda(&p.alcance),
+                resultado(&p.resultado),
+                con_objetivo(p.rto_min, p.cumple_rto),
+                con_objetivo(p.rpo_min, p.cumple_rpo),
+                celda(&p.quien),
+            ]
+        })
+        .collect();
+    l.tabla(
+        &[
+            col("FECHA", 92.0),
+            col_2("ALCANCE", 120.0),
+            col("RESULTADO", 82.0),
+            col("DATOS DE VUELTA", 80.0),
+            col("ANTIGÜEDAD", 72.0),
+            col("QUIÉN", UTIL - 446.0),
+        ],
+        &filas,
+    );
+    if f.mas > 0 {
+        l.y -= 4.0;
+        l.parrafo(&format!("… y {} más en la consola.", numero(u64::from(f.mas))), F::Normal, 8.5, TEXTO_3);
+    }
+}
+
 fn equipos(l: &mut Lienzo, i: &Informe) {
     l.seccion("Equipos", 60.0);
     let z = zona(i);
@@ -1001,6 +1084,7 @@ fn componer(i: &Informe, logo: Option<&Imagen>) -> Lienzo {
     grafica_datos(&mut l, i);
     regla(&mut l, i);
     pruebas(&mut l, i);
+    funcionales(&mut l, i);
     equipos(&mut l, i);
     fallos(&mut l, i);
     avisos(&mut l, i);

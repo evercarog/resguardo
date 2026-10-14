@@ -96,6 +96,21 @@ fn servidor() -> Prueba {
     }
     st.db.guardar_historial(&ctx, "e2", &h2).unwrap();
     st.db.guardar_informe(&ctx, "e1", &json!({ "repos": [{ "id": "r1", "espacio": { "en_disco_bytes": 120_000_000_000u64 } }] })).unwrap();
+    // E3 (14k): una prueba funcional en el periodo (con incidencias, RTO fuera del objetivo) y otra de antes.
+    st.db
+        .poner_ajuste_cliente(
+            &ctx,
+            "pruebas_funcionales",
+            &json!({ "activo": true, "meses": 6, "aviso_dias": 30, "rto_objetivo_min": 120, "rpo_objetivo_min": 1440 }).to_string(),
+            "Ana",
+        )
+        .unwrap();
+    for (id, fecha, resultado, rto) in [("pf-1", "2026-10-08", "parcial", 180), ("pf-0", "2026-04-02", "ok", 60)] {
+        let datos = json!({ "fecha": fecha, "motivo": "programada", "alcance": "repos", "repos": [{ "equipo": "e1", "repo": "r1" }], "que": "Facturas", "donde": "Máquina de pruebas", "quien": "Teo", "resultado": resultado, "rto_min": rto, "rpo_min": 600 });
+        let t = crate::pruebas_funcionales::dia(fecha).unwrap();
+        let g = crate::almacen::PruebaGuardada { id: id.into(), fecha: t, datos: datos.to_string(), creada: t, actualizada: t, por: "Ana".into() };
+        assert!(st.db.guardar_prueba_funcional(&ctx, &g, 10).unwrap());
+    }
     // La regla que calculó la consola.
     use EstadoParte::*;
     guardar_foto_regla(
@@ -196,6 +211,13 @@ fn datos_del_periodo() {
     assert_eq!(r.sin_cumplir[0].copia, "Contabilidad");
     assert_eq!(r.sin_cumplir[0].falta, "Falta: 1 fuera del sitio · 1 inmutable o aislado. No está al día: 0 errores.");
     assert_eq!(i.prestador.as_deref(), Some("Soporte Ejemplo"));
+    // E3 (14k): solo la del periodo, con su alcance por nombre y si cumple los objetivos.
+    let f = &i.funcionales;
+    assert_eq!(f.lista.len(), 1);
+    assert_eq!((f.lista[0].alcance.as_str(), f.lista[0].resultado.as_str(), f.lista[0].quien.as_str()), ("Principal", "parcial", "Teo"));
+    assert_eq!((f.lista[0].cumple_rto, f.lista[0].cumple_rpo), (Some(false), Some(true)));
+    assert_eq!((f.rto_objetivo_min, f.ultima), (Some(120), crate::pruebas_funcionales::dia("2026-10-08")));
+    assert_eq!(f.fase.as_deref(), Some("al_dia"));
     // Cabe en la cola (va entero en el envío).
     assert!(serde_json::to_string(&i).unwrap().len() < 64 * 1024);
 }
@@ -220,6 +242,12 @@ fn el_pdf() {
         "Datos nuevos por día",
         "Regla 3-2-1-1-0",
         "Verificaciones, pruebas de restauración y restauraciones",
+        "Pruebas funcionales (simulacros de recuperación)",
+        "Con incidencias",
+        "3 h (no cumple)",
+        "Objetivos: datos de vuelta en 2 h",
+        "perder 24 h como mucho.",
+        "La siguiente toca antes del 6 de abril de 2027.",
         "Equipos",
         "Copias que fallaron",
         "Avisos importantes sin resolver",

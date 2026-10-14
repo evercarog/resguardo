@@ -1,4 +1,7 @@
 <script lang="ts">
+  import PruebasEspejo from "$lib/componentes/pruebas/PruebasEspejo.svelte";
+  import { listaFuncionales } from "$lib/funcionales.svelte";
+  import { cargarInformes, ultimos } from "$lib/informes.svelte";
   // La página de un espejo (plan 0.8.0, C2; plan-mejoras 14i): su estado y la
   // próxima subida, la subida en vivo (14p), el historial de sus vueltas con
   // gráficas como las de las copias (lo subido, cuánto tardó, lo que ocupa en
@@ -30,7 +33,7 @@
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { destinosParaPasos } from "$lib/cadenas";
   import { claveNube, claveZona, nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
-  import { clasificacionDeVista } from "$lib/regla321";
+  import { clasificacionDeVista, reglaDeCopia, type ReglaCopia } from "$lib/regla321";
   import { corta, tipoDeNube } from "$lib/tipoDestino";
   import { AVISO_IGUAL, equiposDelAlmacen, estadoTrabajo, hrefEspejos, nombrePorDefecto, opcionesRepos, textoCuando, textoFreno, textoQue, textoRetencion, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
   import { filasSubidas, ocupaPorRepo, resumenSubidas, TEXTO_MOTIVO } from "$lib/espejoPagina";
@@ -119,6 +122,26 @@
   // Lo que ocupa algún repositorio que ya no entra (lo retiene el destino hasta que su retención lo quite).
   const fuera = $derived(ocupa.filter((o) => !repos.some((r) => r.valor === o.clave)));
   const vivo = $derived(equipo && t ? tareasDe(equipo.id, { repo: t.id, tipos: ["espejo"] }) : []);
+
+  // Plan 0.8.0, E4 (14j): probar a restaurar desde este espejo, por cada repositorio que guarda
+  // (la hace su equipo dueño, con la contraseña que ya tiene; el almacén no la ve).
+  $effect(() => {
+    const [cc, ids] = [c, actual.equipos.map((x) => x.id)];
+    if (cc) untrack(() => void cargarInformes(cc, ids));
+  });
+  const pruebasAqui = $derived.by(() => {
+    if (!t) return [];
+    const out: { clave: string; equipo: (typeof actual.equipos)[number]; rc: ReglaCopia; nombre: string }[] = [];
+    for (const r of filasRepos) {
+      const eq = r.equipo ? actual.equipos.find((x) => x.id === r.equipo!.id) : undefined;
+      const k = eq?.resumen?.copias?.find((x) => x.repo === r.repo?.id && x.activa !== false);
+      if (!eq || !k) continue;
+      const rc = reglaDeCopia(eq, k, actual.equipos, ultimos.porEquipo[eq.id] ?? (eq.id === equipo?.id ? (equipo.ultimo_informe ?? null) : null), catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c));
+      const pasos = rc?.pasos.filter((p) => p.tipo === "espejo" && p.trabajo === t.id) ?? [];
+      if (rc && pasos.length) out.push({ clave: `${eq.id}|${k.repo}`, equipo: eq, rc: { ...rc, pasos }, nombre: r.nombre });
+    }
+    return out;
+  });
 
   let orden = $state<{ cuerpo: Record<string, unknown>; titulo: string; descripcion: string } | null>(null);
   function ahora() {
@@ -267,6 +290,18 @@
       {/if}
     </section>
 
+    {#if pruebasAqui.length && actual.cliente}
+      <section aria-labelledby="t-pruebas-espejo">
+        <div class="section-head"><h2 id="t-pruebas-espejo">Prueba de restauración desde aquí</h2></div>
+        <p class="faint">La hace el equipo dueño de cada repositorio: restaura unos archivos desde esta copia y los compara. El espejo nunca recibe la contraseña.</p>
+        <div class="pruebas-lista">
+          {#each pruebasAqui as x (x.clave)}
+            <PruebasEspejo cliente={actual.cliente} equipo={x.equipo} rc={x.rc} equipos={actual.equipos} ordena={puede.ordenar(actual.cliente.rol)} titulo={`«${x.nombre}» de ${x.equipo.nombre}`} />
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     <section aria-labelledby="t-ret">
       <div class="section-head"><h2 id="t-ret">Retención y comprobación</h2></div>
       <div class="card p detalles">
@@ -412,5 +447,10 @@
       grid-column: 2 / -1;
       grid-row: 2;
     }
+  }
+  .pruebas-lista {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
   }
 </style>

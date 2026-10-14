@@ -1227,6 +1227,22 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "verificar_ahora" | "subir_ahora" | "probar_restauracion" => {
             let r = texto(c, "repo");
             repo_gestionado(v, &r)?;
+            // E4 (14j): la prueba de restauración desde un espejo (ahora, programarla o quitarla).
+            if o.tipo == "probar_restauracion" {
+                if c.get("espejo").is_some() {
+                    return crate::prueba_espejo::pedir_ahora(v, &r, c).map(hecha);
+                }
+                if c.get("programar_espejo").is_some() {
+                    let m = crate::prueba_espejo::programar(v, &r, c)?;
+                    vuelta_ahora();
+                    return Ok(hecha(m));
+                }
+                if c.get("quitar_espejo").is_some() {
+                    let m = crate::prueba_espejo::quitar(&r, c)?;
+                    vuelta_ahora();
+                    return Ok(hecha(m));
+                }
+            }
             // Tarea 4b: `derivada: "<id>"` sube (o verifica) esa copia derivada.
             let derivada = c["derivada"].as_str().filter(|d| crate::gestion_v2::id_derivada_valido(d));
             let tarea = match (o.tipo.as_str(), derivada) {

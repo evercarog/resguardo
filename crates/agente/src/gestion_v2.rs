@@ -1402,6 +1402,10 @@ pub const ADMITE: &[&str] = &[
     // v1.6x (pendiente de numerar al unir) 14ccc: `verificar` (opcional) en el gancho `sqlserver`
     // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
     "verificar_volcado",
+    // v1.6x (pendiente de numerar al unir) plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
+    // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
+    // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
+    crate::prueba_espejo::ADMITE,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

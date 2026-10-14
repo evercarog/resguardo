@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PruebasEspejo from "$lib/componentes/pruebas/PruebasEspejo.svelte";
+  import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Un repositorio en detalle, como en la app de escritorio: la frase que lo
   // resume, el camino de los datos, la salud de la protección, las cifras,
@@ -126,7 +128,7 @@
     if (!equipo || !repo) return null;
     const eq = equipo;
     const k = copias.find((x) => x.repo === repo!.id && x.activa !== false);
-    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion) : null;
+    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c)) : null;
   });
   const prot = $derived(saludCompleta(inf, { extra: equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null, rc: reglaRepo, retencionAlmacen: reglaEfectiva(repo, destino, actual.equipos)?.quien ?? null, ahora: reloj.ahora }));
   const ej = $derived(ultimaEjecucion(inf));
@@ -293,6 +295,8 @@
     </div>
 
     <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} alQuitarExterna={puedeQuitarExterna ? quitarExterna : undefined} />
+    <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de este repositorio. -->
+    {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={reglaRepo} equipos={actual.equipos} ordena={puede.ordenar(rol)} />{/if}
 
     <div class="dos" id="sec-proteccion">
       {#if prot}

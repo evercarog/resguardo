@@ -461,6 +461,9 @@ pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String
         "actualizacion_fallida" => format!("{e} no pudo actualizarse y volvió a la versión anterior"),
         // Plan 0.7.26 (1.1): el permiso de una nube desconectada sigue vivo en Dropbox.
         "nube_sin_anular" => format!("{e} no pudo anular el permiso de una nube desconectada"),
+        // Plan 0.8.0, E3 (14k): el plazo de las pruebas funcionales (simulacros de recuperación).
+        "prueba_funcional_pronto" => format!("Se acerca el plazo de una prueba funcional en {e}"),
+        "prueba_funcional_vencida" => format!("Venció el plazo de una prueba funcional en {e}"),
         _ => format!("Aviso de {e}"),
     };
     let ok = match tipo {
@@ -476,6 +479,7 @@ fn ruta(cliente: &str, equipo: Option<&str>, tipo: &str) -> String {
         // v1.49: la de otra consola se ve (y se cancela) en «Órdenes».
         _ if matches!(tipo, "orden_en_espera" | "orden_no_aplicada" | "orden_aprobada_en_equipo") => format!("/c/{cliente}/ordenes"),
         _ if tipo == "auditoria_rehecha" => format!("/c/{cliente}/auditoria"),
+        _ if matches!(tipo, "prueba_funcional_pronto" | "prueba_funcional_vencida") => format!("/c/{cliente}/pruebas"),
         Some(e) if !matches!(tipo, "orden_destructiva") => format!("/c/{cliente}/equipos/{e}"),
         _ => format!("/c/{cliente}/avisos"),
     }

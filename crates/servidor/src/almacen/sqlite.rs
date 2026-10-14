@@ -362,6 +362,7 @@ impl Sqlite {
         let db = abrir(&path, ESQUEMA_CLIENTE)?;
         migrar_cliente(&db)?;
         db.execute_batch(super::notas::ESQUEMA).map_err(s)?;
+        db.execute_batch(super::pruebas::ESQUEMA).map_err(s)?;
         let con = Arc::new(Mutex::new(db));
         let cerrar = mapa.poner(c.id(), con.clone());
         drop(mapa);

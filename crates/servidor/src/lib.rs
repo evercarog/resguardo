@@ -26,8 +26,10 @@ pub mod informe;
 pub mod notificaciones;
 pub mod pistas;
 pub mod progreso;
+// Plan 0.8.0, E3 (14k): pruebas funcionales con su política, sus avisos y su sitio en el informe.
 #[cfg(test)]
 mod propiedades;
+pub mod pruebas_funcionales;
 pub mod publicaciones;
 pub mod recordatorio_kit;
 pub mod registro;
@@ -125,6 +127,8 @@ pub fn tareas(st: St) {
                     avisar_sin_contacto(&st2, &ctx, ahora);
                     // 14bbb: «Comprueba que tu kit de «X» sigue sirviendo».
                     recordatorio_kit::recordar(&st2, &ctx, ahora);
+                    // E3 (14k): «Toca una prueba funcional» al acercarse y al vencer el plazo.
+                    pruebas_funcionales::recordar(&st2, &ctx, ahora);
                 }
                 // Lo que ocupan los relés, medido de nuevo (corrige cualquier desvío de la cuenta).
                 st2.uso_relevos.poner(estado::medir_relevos(&datos.join("relevos")));

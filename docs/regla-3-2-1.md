@@ -150,6 +150,12 @@ Regla321 {
 - La retención: un espejo **con retención** sigue a la del original (con retraso y freno). Cuenta como un destino más; la recomendación de copias-en-cadena.md («al menos un destino fuera del alcance de la retención») la da la parte B al crear los pasos.
 - Los repositorios de solo lectura (importados) y las copias desactivadas: no se evalúan.
 
+### Pruebas funcionales y pruebas desde un espejo en el «0» (0.8.0, E3 y E4)
+
+- **Prueba funcional** (14k): la última correcta que incluye el repositorio (de todo el cliente o con él en la lista) cuenta como prueba de restauración, con la misma caducidad (45 días). Manda la más reciente de todas (la programada, la restauración real de 13e, la funcional, la del espejo): una funcional posterior con incidencias o fallida deja el «0» en «revisar la prueba». Solo «Correcta» cuenta como bien.
+- **Prueba desde un espejo** (14j): la hace el equipo dueño con la contraseña del repositorio desde la copia del espejo. Se asocia al paso «espejo» de la regla por su id (`e-` + un resumen del trabajo del equipo o de la clave del destino). Si la última falló, ese paso cuenta como `verificacion_mal` (el «0» dice «revisar «X» (falló la prueba de restauración desde ahí)»); si salió bien, cuenta como prueba de restauración del repositorio (es el mismo repositorio).
+- Sin cambios en `protection.rs` ni en los vectores compartidos: lo que llega a la regla es el mismo `PruebaRegla` y los mismos pasos (`origen` y `origenNombre` solo se enseñan).
+
 ## 8c. En la consola
 
 - **En cada copia** (su página): una tira **«3 · 2 · 1 · 1 · 0»** con cada parte cumplida o no, su cifra («2 de 3») y **qué hacer** («Añade un destino fuera de la oficina: Dropbox o B2 → Copia externa»), con enlace al sitio donde se hace hoy (copia externa, espejo del almacén, verificación, prueba de restauración, ficha del destino). Debajo, los destinos que cuentan, con su lugar, si es inmutable y si está al día.

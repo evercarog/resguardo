@@ -315,6 +315,18 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/restauraciones", get(restauraciones::listar))
         .route("/api/clientes/{c}/restauraciones/ajustes", put(restauraciones::poner_ajustes))
         .route("/api/clientes/{c}/equipos/{e}/restauraciones/{id}", put(restauraciones::poner_motivo))
+        // Plan 0.8.0, E3 (14k): pruebas funcionales (simulacros de recuperación), su política y sus adjuntos.
+        .route("/api/clientes/{c}/pruebas-funcionales", get(crate::pruebas_funcionales::listar).post(crate::pruebas_funcionales::registrar))
+        .route("/api/clientes/{c}/pruebas-funcionales/ajustes", put(crate::pruebas_funcionales::poner_ajustes))
+        .route("/api/clientes/{c}/pruebas-funcionales/{id}", put(crate::pruebas_funcionales::cambiar).delete(crate::pruebas_funcionales::borrar))
+        .route(
+            "/api/clientes/{c}/pruebas-funcionales/{id}/adjuntos",
+            post(crate::pruebas_funcionales::anadir_adjunto).layer(DefaultBodyLimit::max(crate::pruebas_funcionales::MAX_CUERPO_ADJUNTO)),
+        )
+        .route(
+            "/api/clientes/{c}/pruebas-funcionales/{id}/adjuntos/{n}",
+            get(crate::pruebas_funcionales::adjunto).delete(crate::pruebas_funcionales::borrar_adjunto),
+        )
         .route("/api/clientes/{c}/plantillas/{p}", put(plantillas::guardar).delete(plantillas::borrar))
         .route("/api/clientes/{c}/destinos", get(destinos::listar))
         .route("/api/clientes/{c}/destinos/{d}", put(destinos::guardar).delete(destinos::borrar))
