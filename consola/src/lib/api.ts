@@ -586,3 +586,53 @@ export async function trozoRelevo(c: string, r: string, n: number, signal?: Abor
   }
   return new Uint8Array(await res.arrayBuffer());
 }
+
+// ---------------------------------------------------------------------------
+// Informe ejecutivo (plan 0.8.0, G1): programa, regla, PDF y prestador
+// ---------------------------------------------------------------------------
+
+export const informeEjecutivo = (c: string) => pedir<T.InformeEjecutivo>("GET", `${cli(c)}/informe-ejecutivo`);
+export const cambiarInformeEjecutivo = (c: string, b: Partial<Pick<T.ProgramaInforme, "activo" | "periodo" | "dia_semana" | "destinatarios" | "logo">>) =>
+  pedir<T.ProgramaInforme>("PUT", `${cli(c)}/informe-ejecutivo`, b);
+/** La regla 3-2-1-1-0 que acaba de calcular esta consola (solo ids y estados), para el informe programado. */
+export const ponerReglaInforme = (c: string, copias: { equipo: string; copia: string; partes: T.EstadoParteInforme[] }[]) =>
+  pedir<void>("PUT", `${cli(c)}/informe-ejecutivo/regla`, { copias }, { invisible: true });
+export const enviarInformeEjecutivo = (c: string, b: { periodo: T.PeriodoInforme; cual: "anterior" | "actual" }) =>
+  pedir<{ enviados: number }>("POST", `${cli(c)}/informe-ejecutivo/enviar`, b);
+export const prestadorInformes = () => pedir<T.PrestadorInforme>("GET", "/api/servidor/informes");
+export const cambiarPrestadorInformes = (b: { nombre?: string; logo?: string; quitar_logo?: boolean }) => pedir<T.PrestadorInforme>("PUT", "/api/servidor/informes", b);
+
+/** «Descargar el informe»: el PDF y el nombre que propone el servidor. */
+export async function pdfInforme(c: string, periodo: T.PeriodoInforme, cual: "anterior" | "actual"): Promise<{ datos: Blob; archivo: string }> {
+  const fin = empezar();
+  let res: Response;
+  try {
+    res = await fetch(`${cli(c)}/informe-ejecutivo/pdf?${new URLSearchParams({ periodo, cual })}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/pdf, application/json" },
+    });
+  } catch {
+    fin();
+    conexionPerdida();
+    throw new ApiError("red", mensajeDe("red"), 0);
+  }
+  try {
+    conexionOk();
+    if (!res.ok) {
+      let d: { error?: string; mensaje?: string } & Record<string, unknown> = {};
+      try {
+        d = await res.json();
+      } catch {
+        /* sin cuerpo */
+      }
+      const codigo = d.error ?? (res.status === 429 ? "demasiados_intentos" : "interno");
+      if (res.status === 401) alPerderSesion?.(codigo);
+      throw new ApiError(codigo, d.mensaje || mensajeDe(codigo), res.status, d);
+    }
+    const archivo = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "informe.pdf";
+    return { datos: await res.blob(), archivo };
+  } finally {
+    fin();
+  }
+}

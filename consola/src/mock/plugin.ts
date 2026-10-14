@@ -22,6 +22,7 @@ import { historialMock } from "./historial";
 import { retencionesMock } from "./retencion";
 import { progresoDe } from "./progreso";
 import { rutasNotificaciones } from "./notificaciones";
+import { rutasInforme } from "./informe";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
 import { errorDondeCatalogo, errorSubcarpeta } from "../lib/destinos";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
@@ -1537,6 +1538,18 @@ const rutas: Ruta[] = [
   ],
   // v1.29: notificaciones (canales, prueba, registro y preferencias).
   ...rutasNotificaciones<Ctx>({ err, cuenta: (ctx) => sesionDe(ctx), miembro }),
+  // Plan 0.8.0 (G1): el informe ejecutivo y el prestador.
+  ...rutasInforme<Ctx>({
+    err,
+    cuenta: (ctx) => sesionDe(ctx),
+    miembro,
+    archivo: (ctx, tipo, nombre, datos) => {
+      ctx.res.setHeader("Content-Type", tipo);
+      ctx.res.setHeader("Content-Disposition", `attachment; filename="${nombre}"`);
+      ctx.res.end(datos);
+      return SIN_CUERPO;
+    },
+  }),
   // v1.40: observaciones y comentarios.
   ...rutasNotas<Ctx>({ err, miembro }),
   [

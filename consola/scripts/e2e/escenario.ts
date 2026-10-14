@@ -1038,6 +1038,32 @@ async function principal() {
     comprobar(registro.some((e: any) => e.tipo === "recuperacion" && e.estado === "enviado"), "El registro de envíos tiene la recuperación enviada", registro);
 
     // -----------------------------------------------------------------------
+    paso("6a1. Informe ejecutivo (G1): programado, «Descargar el informe» y «Enviar ahora» con el PDF adjunto");
+    const prog = await consola.ok("PUT", `/api/clientes/${c.id}/informe-ejecutivo`, { activo: true, periodo: "semanal", dia_semana: 1, destinatarios: ["direccion@prueba.example"], logo: "prestador" });
+    comprobar(prog.activo === true && prog.destinatarios.length === 1, "El informe semanal queda programado", prog);
+    const malo = await consola.pedir("PUT", `/api/clientes/${c.id}/informe-ejecutivo`, { destinatarios: ["no es un correo"] });
+    igual(malo.estado, 422, "Un destinatario que no es un correo se rechaza");
+    // La regla que manda la consola (solo ids y estados) y el prestador, con su nombre.
+    await consola.ok("PUT", `/api/clientes/${c.id}/informe-ejecutivo/regla`, { copias: [{ equipo: eqB.id, copia: "otra", partes: ["cumple", "cumple", "falta", "falta", "cumple"] }] });
+    await consola.ok("PUT", "/api/servidor/informes", { nombre: "Soporte de prueba" });
+    const ver = await consola.ok("GET", `/api/clientes/${c.id}/informe-ejecutivo`);
+    comprobar(ver.correo === true && ver.regla?.copias === 1 && ver.prestador?.nombre === "Soporte de prueba", "El informe sabe del correo, la regla y el prestador", ver);
+    const pdf = await consola.pedir("GET", `/api/clientes/${c.id}/informe-ejecutivo/pdf?periodo=semanal&cual=actual`);
+    comprobar(pdf.estado === 200 && pdf.texto.startsWith("%PDF-") && String(pdf.cabeceras["content-type"]).includes("application/pdf"), "«Descargar el informe» da un PDF", pdf.estado);
+    const enviado = await consola.ok("POST", `/api/clientes/${c.id}/informe-ejecutivo/enviar`, { periodo: "semanal", cual: "actual" });
+    igual(enviado.enviados, 1, "«Enviar ahora» lo pone en la cola para su destinatario");
+    const correoInforme = await esperar(
+      "el correo del informe ejecutivo con el PDF",
+      () => buzon.correos.find((m) => m.para.some((p) => p.includes("direccion@prueba.example")) && /Informe semanal de copias/.test(m.asunto)),
+      { plazo: 60_000 },
+    );
+    log(`Correo: «${correoInforme.asunto}»`);
+    comprobar(/application\/pdf/.test(correoInforme.datos) && correoInforme.datos.includes("JVBERi0"), "El correo lleva el PDF adjunto");
+    comprobar(!correoInforme.datos.includes(datosB) && !correoInforme.datos.includes(acceso.destino.secreto), "El correo del informe no lleva rutas ni secretos");
+    const reg1 = await consola.ok("GET", `/api/clientes/${c.id}/notificaciones/registro`);
+    comprobar(reg1.some((e: any) => e.tipo === "informe" && e.estado === "enviado"), "El registro de envíos tiene el informe enviado", reg1);
+
+    // -----------------------------------------------------------------------
     paso("6a2. «Orden destructiva pendiente»: se cierra al aplicarse o cancelarse, y la siguiente vuelve a avisar");
     // La de la retención del paso 5 ya se aplicó: su aviso está cerrado, así que esta avisa otra vez.
     const destructivas = () => buzon.correos.filter((m) => /Orden destructiva pendiente en «ALMACEN-A»/.test(m.asunto));

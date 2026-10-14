@@ -84,7 +84,7 @@ export function estadoEnvio(e: EnvioNotif): { texto: string; tono: Tono } {
   }
 }
 
-export const TIPO_ENVIO: Record<EnvioNotif["tipo"], string> = { aviso: "Aviso", recuperacion: "Volvió a funcionar", resumen: "Resumen", prueba: "Prueba" };
+export const TIPO_ENVIO: Record<EnvioNotif["tipo"], string> = { aviso: "Aviso", recuperacion: "Volvió a funcionar", resumen: "Resumen", prueba: "Prueba", informe: "Informe" };
 
 export const DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 

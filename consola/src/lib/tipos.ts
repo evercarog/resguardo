@@ -934,7 +934,9 @@ export type TipoAviso =
   // 14uu (plan 0.8.0, D3): los crea el servidor con los datos básicos del equipo.
   | "disco_lleno"
   | "sin_soporte_pronto"
-  | "sin_soporte";
+  | "sin_soporte"
+  // Plan 0.8.0 (G1): el informe ejecutivo programado no se pudo poner en la cola (sin correo…).
+  | "informe_no_enviado";
 
 /** v1.57 (docs/actualizaciones.md): una versión del agente que tiene este servidor. */
 export interface PublicacionAgente {
@@ -1370,7 +1372,7 @@ export interface EnvioNotif {
   ambito: "servidor" | "cliente";
   cliente: string | null;
   destino: string | null;
-  tipo: "aviso" | "recuperacion" | "resumen" | "prueba";
+  tipo: "aviso" | "recuperacion" | "resumen" | "prueba" | "informe";
   severidad: Severidad;
   titulo: string;
   estado: "pendiente" | "enviado" | "fallido" | "descartado";
@@ -1463,3 +1465,46 @@ export interface NotasExportadas {
   observaciones: { tipo: TipoNota; objeto: string; texto: string; actualizada: string; por: string }[];
   comentarios: { id: string; tipo: TipoNota; objeto: string; texto: string; autor: string; creado: string; editado: string | null }[];
 }
+
+// ---------------------------------------------------------------------------
+// Informe ejecutivo (plan 0.8.0, G1; api-servidor.md, «Informe ejecutivo»)
+// ---------------------------------------------------------------------------
+
+export type PeriodoInforme = "semanal" | "mensual";
+/** Qué logo lleva el PDF: el del prestador (el del servidor), el de la marca del cliente o ninguno. */
+export type LogoInforme = "prestador" | "cliente" | "ninguno";
+
+export interface ProgramaInforme {
+  activo: boolean;
+  periodo: PeriodoInforme;
+  /** El semanal sale ese día (1 = lunes … 7 = domingo) con la semana anterior; el mensual, el día 1. */
+  dia_semana: number;
+  destinatarios: string[];
+  logo: LogoInforme;
+  actualizado?: string | null;
+  por?: string | null;
+}
+
+export interface PrestadorInforme {
+  nombre: string | null;
+  /** La URL del PNG (con su versión), o null. */
+  logo: string | null;
+  actualizado?: string | null;
+  por?: string | null;
+}
+
+export interface InformeEjecutivo {
+  programa: ProgramaInforme;
+  prestador: PrestadorInforme;
+  /** ¿Tiene el cliente logo en su marca? */
+  logo_cliente: boolean;
+  /** La última regla 3-2-1-1-0 que mandó la consola. */
+  regla: { calculada: string; por: string; copias: number } | null;
+  ultimo: { cuando: string; periodo: PeriodoInforme; desde: string; hasta: string; destinatarios: number; a_mano: boolean; por: string | null } | null;
+  /** ¿Hay un canal de correo encendido (del cliente o del servidor)? */
+  correo: boolean;
+  /** La hora de los resúmenes del servidor («HH:MM»): la del informe programado. */
+  hora: string;
+}
+
+export type EstadoParteInforme = "cumple" | "atrasado" | "falta";
