@@ -874,7 +874,7 @@ fn pruebas(l: &mut Lienzo, i: &Informe) {
 fn minutos(m: u32) -> String {
     match m {
         0..=59 => format!("{m} min"),
-        60..=2879 if m % 60 == 0 => format!("{} h", m / 60),
+        60..=2879 if m.is_multiple_of(60) => format!("{} h", m / 60),
         60..=2879 => format!("{} h {} min", m / 60, m % 60),
         _ => plural(u64::from(m / 1440), "día", "días"),
     }
