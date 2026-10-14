@@ -221,6 +221,22 @@ export function historialMock(eq: { id: string; nombre?: string; resumen: T.Equi
       resultado: "hecha" as unknown as T.EntradaHistorial["resultado"],
       mensaje: "Restaurado (12 elementos).",
     });
+  // 14a: una orden de la otra consola, aprobada en el propio equipo antes de su hora.
+  if (eq.nombre === "CAJA-1")
+    out.push({
+      id: `${eq.id}-orden-aprobada`,
+      hora: new Date(ahora - 26 * 3600_000).toISOString(),
+      tipo: "orden",
+      orden: "pausar",
+      orden_id: `${eq.id}-o-pausar`,
+      descripcion: "Pausar las copias",
+      consola: "Consola en línea",
+      identidad: "b3RyYS1jb25zb2xhLWVuLWxpbmVhLTAwMDAwMDAwMDA=",
+      por: "Bruno",
+      resultado: "hecha" as unknown as T.EntradaHistorial["resultado"],
+      mensaje: "Aprobada en el equipo por ana (CAJA-1): Copias en pausa durante 2 h.",
+      aprobada_en_equipo: "ana (CAJA-1)",
+    });
   // v1.50 (9b): el equipo vio que una de sus consolas rehízo su actividad (agente, ancla.rs).
   if (eq.nombre === "CAJA-1")
     out.push({

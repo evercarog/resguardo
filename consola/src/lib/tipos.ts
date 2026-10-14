@@ -150,6 +150,8 @@ export interface Cliente {
   rol: Rol;
   /** v1.32. */
   marca?: MarcaCliente;
+  /** 14a: «Aprobar en el equipo» (activada por defecto; un servidor anterior no la dice). */
+  aprobar_en_equipo?: { activa: boolean; actualizada?: string | null; por?: string | null };
 }
 
 export interface Miembro {
@@ -205,6 +207,8 @@ export interface OrdenEnEspera {
   claves_comprobadas?: boolean;
   /** 14oo: de qué repositorio era la contraseña comprobada (su nombre), si pedía una. */
   repositorio?: string | null;
+  /** 14a: se puede aprobar en el propio equipo (el agente lo admite y el cliente de su consola lo deja). */
+  aprobable?: boolean;
 }
 
 /** Un dato del equipo que comparten sus consolas y quién lo cambió (v1.56). */
@@ -243,6 +247,8 @@ export interface ResumenEquipo {
   cambio_config?: { tipo: string; cuando: string; consola: { nombre: string; url: string; identidad: string } } | null;
   /** v1.49: las órdenes con espera que el equipo ya tiene (de cualquiera de sus consolas). */
   en_espera?: OrdenEnEspera[];
+  /** 14a (`admite: "aprobar_en_equipo"`): si el cliente de esta consola deja aprobar en el propio equipo sus órdenes en espera (lo que el equipo recibió). */
+  aprobar_en_equipo?: boolean;
   /**
    * v1.56 (`admite: "datos_equipo"`, docs/consolas-multiples.md §6): el nombre, las etiquetas y la
    * observación que tiene el propio equipo, puestos con sus órdenes desde cualquiera de sus
@@ -942,6 +948,8 @@ export type TipoAviso =
   | "actualizacion_fallida"
   // Plan 0.7.26 (1.1): en 7 días no se pudo anular el permiso de una nube desconectada.
   | "nube_sin_anular"
+  // 14a: se aprobó en el propio equipo una orden en espera (con la clave de administración).
+  | "orden_aprobada_en_equipo"
   // 14uu (plan 0.8.0, D3): los crea el servidor con los datos básicos del equipo.
   | "disco_lleno"
   | "sin_soporte_pronto"
@@ -1058,6 +1066,8 @@ export interface EntradaHistorial {
   por?: string;
   aplica?: string;
   cancelada_desde?: string;
+  /** 14a, solo «orden»: la cuenta del sistema que la aprobó en el propio equipo antes de su hora. */
+  aprobada_en_equipo?: string;
   /**
    * v1.50 (9b), solo «auditoria_rehecha»: una consola del equipo rehízo la cadena de su
    * actividad. `consola` es su nombre en el equipo; `antes` y `ahora`, las dos cabezas
