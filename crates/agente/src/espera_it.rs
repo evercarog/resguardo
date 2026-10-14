@@ -243,8 +243,73 @@ fn ordenes_en_espera_entre_dos_consolas() {
     esperar_estado(&ca, &ea, 8, "rechazada");
     assert!(cargar().unwrap().en_espera.is_empty());
 
-    // 8. Quitar la consola que la mandó: sus órdenes en espera no se aplicarán.
+    // 7b. 14a: aprobarla en el propio equipo (la ventana o `ordenes aprobar`, por el canal local)
+    // con la clave de administración: se aplica ya, A recibe el resultado firmado y las dos
+    // consolas lo ven en el historial y con un aviso.
     enviar(&ca, &ea, &con_espera(&ea, 9, "pausar", json!({}), 3600));
+    ronda().unwrap();
+    let id9 = cargar().unwrap().en_espera[0].id.clone();
+    s::enviar_informe(&id_b).unwrap();
+    let r_b = resumen_de(&cb, &eb, &kcfg_b);
+    assert_eq!(r_b["en_espera"][0]["aprobable"], true, "por defecto, se puede: {r_b}");
+    assert_eq!(r_b["aprobar_en_equipo"], true, "{r_b}");
+    let local = std::sync::Mutex::new(crate::ipc_local::Servidor::default());
+    let quien = crate::ipc_local::Cliente { id: "S-1-5-21-500".into(), admin: true, nombre: "ana (PRUEBA)".into() };
+    let lista = crate::ipc_local::atender(&local, &json!({ "op": "en_espera" }), &quien);
+    assert_eq!(lista["datos"]["ordenes"][0]["id"], id9.as_str(), "{lista}");
+    assert_eq!(lista["datos"]["ordenes"][0]["consola"], "Oficina", "{lista}");
+    let aprobar = |clave: &str, id: &str| {
+        let hola = crate::ipc_local::atender(&local, &json!({ "op": "hola" }), &quien);
+        let p = crate::ipc_local::prueba(clave, hola["datos"]["sal_equipo"].as_str().unwrap()).unwrap();
+        crate::ipc_local::atender(&local, &json!({ "op": "aprobar_espera", "reto": hola["datos"]["reto"], "prueba": p, "id": id }), &quien)
+    };
+    let mala = aprobar("otra clave cualquiera", &id9);
+    assert_eq!(mala["ok"], false, "{mala}");
+    assert_eq!(cargar().unwrap().fallos.get("equipo").map(|f| f.n), Some(1), "cuenta como intento fallido");
+    assert_eq!(cargar().unwrap().en_espera.len(), 1, "con la clave mal, sigue esperando");
+    std::thread::sleep(Duration::from_millis(1100));
+    let buena = aprobar(CLAVE, &id9);
+    assert_eq!(buena["ok"], true, "{buena}");
+    assert_eq!(buena["datos"]["estado"], "hecha", "{buena}");
+    assert!(cargar().unwrap().en_espera.is_empty());
+    assert_eq!(cargar().unwrap().fallos.get("equipo").map(|f| f.n).unwrap_or(0), 0, "el acierto olvida los fallos");
+    let o9 = esperar_estado(&ca, &ea, 9, "hecha");
+    assert!(o9["mensaje"].as_str().unwrap().starts_with("Aprobada en el equipo por ana (PRUEBA)"), "{o9}");
+    assert!(o9["detalle"].as_str().unwrap_or("").contains("aprobada_en_equipo"), "{o9}");
+    for (consola, e) in [(&ca, &ea), (&cb, &eb)] {
+        hasta("la aprobada en el historial", || {
+            historial_ordenes(consola, e)
+                .into_iter()
+                .find(|x| x["orden_id"] == id9.as_str() && x["aprobada_en_equipo"] == "ana (PRUEBA)" && x["resultado"] == "hecha")
+        });
+        hasta("el aviso «orden_aprobada_en_equipo»", || {
+            let (_, av) = consola.pedir("GET", &format!("/api/clientes/{}/avisos?abiertos=1", e.c), None);
+            av.as_array().unwrap().iter().any(|x| x["tipo"] == "orden_aprobada_en_equipo").then_some(())
+        });
+    }
+    // Ya no está: aprobarla otra vez no hace nada.
+    let otra = aprobar(CLAVE, &id9);
+    assert!(otra["error"].as_str().unwrap_or("").contains("ya no está esperando"), "{otra}");
+    enviar(&ca, &ea, &orden(&ea, 10, "reanudar", json!({})));
+    esperar_estado(&ca, &ea, 10, "hecha");
+
+    // 7c. El cliente de A lo desactiva: el equipo lo recibe y ya no deja aprobar las de A.
+    let (st, op) = ca.pedir("PUT", &format!("/api/clientes/{c_a}/aprobar-en-equipo"), Some(json!({ "activa": false })));
+    assert_eq!(st, 200, "{op}");
+    hasta("que el equipo sepa que A no deja", || (!crate::espera_v2::aprobable(&cargar().unwrap(), &id_a)).then_some(()));
+    enviar(&ca, &ea, &con_espera(&ea, 11, "pausar", json!({}), 3600));
+    ronda().unwrap();
+    let id11 = cargar().unwrap().en_espera[0].id.clone();
+    let no = aprobar(CLAVE, &id11);
+    assert!(no["error"].as_str().unwrap_or("").contains("no deja"), "{no}");
+    assert_eq!(cargar().unwrap().en_espera.len(), 1, "sigue esperando");
+    assert_eq!(ca.pedir("POST", &format!("/api/clientes/{c_a}/ordenes/{id11}/cancelar"), None).0, 200);
+    hasta("que el equipo la quite", || cargar().unwrap().en_espera.is_empty().then_some(()));
+    assert_eq!(ca.pedir("PUT", &format!("/api/clientes/{c_a}/aprobar-en-equipo"), Some(json!({ "activa": true }))).0, 200);
+    hasta("que el equipo sepa que A vuelve a dejar", || crate::espera_v2::aprobable(&cargar().unwrap(), &id_a).then_some(()));
+
+    // 8. Quitar la consola que la mandó: sus órdenes en espera no se aplicarán.
+    enviar(&ca, &ea, &con_espera(&ea, 12, "pausar", json!({}), 3600));
     ronda().unwrap();
     assert_eq!(cargar().unwrap().en_espera.len(), 1);
     let mut quitar = orden(&eb, 3, "quitar_consola", json!({ "identidad": a.identidad }));
