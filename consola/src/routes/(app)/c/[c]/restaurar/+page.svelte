@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MarcasVersion from "$lib/componentes/MarcasVersion.svelte";
   import Ilustracion from "$ui/componentes/Ilustracion.svelte";
   import { tip } from "$lib/tooltip";
   // Restaurar, como un asistente tranquilo: equipo → repositorio →
@@ -749,6 +750,7 @@
           <div class="card p">
             <LineaTiempoVersiones
               versiones={versionesLinea}
+              marcas={{ equipo, repo: repo?.id ?? null }}
               copias={equipo?.resumen?.copias?.filter((k) => k.repo === repo?.id) ?? []}
               regla={retencionLinea?.regla ?? null}
               quien={retencionLinea?.quien ?? null}
@@ -769,7 +771,7 @@
       <section class="card p-0 archivos" aria-labelledby="t-archivos">
         <div class="cab-paso">
           <FolderOpen size={16} />
-          <span class="cab-texto"><strong id="t-archivos">¿Qué archivos?</strong><span class="faint">Versión del {dia(version.cuando)}, {hora(version.cuando)}</span></span>
+          <span class="cab-texto"><strong id="t-archivos">¿Qué archivos?</strong><span class="faint">Versión del {dia(version.cuando)}, {hora(version.cuando)} <MarcasVersion {equipo} repo={repo?.id ?? ""} version={version.id} /></span></span>
           <button class="link" onclick={() => volverA("version")}>Otra versión</button>
         </div>
         <form class="buscar" onsubmit={hacerBusqueda} role="search">

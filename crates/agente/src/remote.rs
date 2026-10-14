@@ -119,6 +119,7 @@ mod tests {
             after: None,
             after_always: false,
             after_delay_min: 0,
+            end: None,
         };
         let repo: AgentRepo = serde_json::from_value(serde_json::json!({
             "id": "r1",

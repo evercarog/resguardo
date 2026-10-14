@@ -200,9 +200,17 @@ fn pedidos_de_trabajos() {
         (json!({ "freno": { "pct": 60 } }), "freno de más del 50 %"),
         (json!({ "freno": { "accion": "nada" } }), "acción"),
         (json!({ "verificar_pct": 101 }), "verificación"),
+        (json!({ "limite_franjas": [{ "dias": [1], "desde": "18:00", "hasta": "08:00", "kib": 2048 }] }), "franja al revés"),
     ] {
         assert!(uno(mal.clone()).is_err(), "{por}: {mal}");
     }
+    // F4 (14t): franjas de velocidad, solo hacia una nube (a un disco no hay red que cuidar).
+    let franja = json!([{ "dias": [1, 2, 3, 4, 5], "desde": "08:00", "hasta": "18:00", "kib": 2048 }]);
+    assert!(uno(json!({ "limite_franjas": franja.clone() })).unwrap()[0].limite_franjas.is_empty());
+    let n = uno(json!({ "limite_franjas": franja, "adonde": { "tipo": "nube", "nube": "Dropbox", "carpeta": "Resguardo" } })).unwrap();
+    assert_eq!(n[0].limite_franjas.len(), 1);
+    assert!(resumen(&n[0], json!(null))["limite_franjas"].is_array());
+    assert!(crate::franjas::bwlimit(&n[0].limite_franjas, n[0].limite_kib).unwrap().contains("Mon-08:00,2048K"));
     // Con bloqueo de objetos de 30 días, un retraso de 31 sí.
     let b = uno(json!({ "retencion": { "modo": "retraso", "dias": 31 }, "bloqueo_dias": 30 })).unwrap();
     assert_eq!(b[0].opciones().bloqueo_dias, Some(30));

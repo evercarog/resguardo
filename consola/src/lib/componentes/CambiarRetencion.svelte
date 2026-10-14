@@ -9,7 +9,7 @@
   import RetencionAlmacen from "./RetencionAlmacen.svelte";
   import EditorRetencion from "./EditorRetencion.svelte";
   import { destinoDe } from "$lib/repo";
-  import { admitePlazos, almacenDe, copiaRegla, errorRegla, horarioDeCopias, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden } from "$lib/retencion";
+  import { admitePlazos, admitePorDia, almacenDe, copiaRegla, errorRegla, horarioDeCopias, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden } from "$lib/retencion";
   import type { Cliente, Equipo, RepositorioResumen } from "$lib/tipos";
 
   interface Props {
@@ -38,11 +38,11 @@
     titulo="Retención de «{repo.nombre}»"
     descripcion="Qué versiones guarda «{repo.nombre}». Solo se guarda la regla: las sobrantes se borran al «Aplicar retención»."
     repo={{ id: repo.id, nombre: repo.nombre }}
-    valido={!errorRegla(regla, admitePlazos(equipo))}
+    valido={!errorRegla(regla, admitePlazos(equipo), admitePorDia(equipo))}
     {onclose}
   >
     {#snippet campos()}
-      <EditorRetencion id="ret-{repo.id}" bind:regla admite={admitePlazos(equipo)} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
+      <EditorRetencion id="ret-{repo.id}" bind:regla admite={admitePlazos(equipo)} admitePorDia={admitePorDia(equipo)} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />
     {/snippet}
   </OrdenDialog>
 {/if}

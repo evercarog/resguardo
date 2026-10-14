@@ -398,6 +398,12 @@ impl Version {
         }
     }
 
+    /// Una versión del propio equipo (su retención, sin almacén): su hora es de fiar.
+    pub fn de_confianza(s: &crate::restic::Snapshot) -> Version {
+        let hora = DateTime::parse_from_rfc3339(&s.time).ok();
+        Version { id: s.id.clone(), grupo: crate::retencion_registro::grupo_de(s), hora, subida: hora.map(|h| h.with_timezone(&chrono::Utc)) }
+    }
+
     /// ¿Su hora no cuadra con su subida (o no se sabe)? Entonces no se quita ni cuenta.
     pub fn sospechosa(&self) -> bool {
         match (self.hora, self.subida) {
@@ -478,6 +484,8 @@ pub fn planear(versiones: &[Version], r: &Retencion) -> Plan {
     for (_, mut lista) in grupos {
         lista.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.id.cmp(&a.0.id)));
         let Some(mas_reciente) = lista.first().map(|x| x.1) else { continue };
+        // F3 (14u): «N versiones por día» se suma a lo demás.
+        let del_dia = r.por_dia.as_ref().map(|d| por_dia(&lista.iter().map(|(v, t)| (v.id.as_str(), *t)).collect::<Vec<_>>(), d)).unwrap_or_default();
         let limites: Vec<Option<Hora>> = plazos.iter().map(|p| p.as_ref().and_then(|p| restar_plazo(&mas_reciente, p))).collect();
         let mut quedan: Vec<(i64, Option<i64>)> = r.cantidades().iter().map(|n| (*n, None)).collect();
         let mut en_plazo: Vec<Option<i64>> = vec![None; HUECOS.len()];
@@ -506,12 +514,46 @@ pub fn planear(versiones: &[Version], r: &Retencion) -> Plan {
                     }
                 }
             }
-            if !guardar {
+            if !guardar && !del_dia.contains(v.id.as_str()) {
                 quitar.push(v.id.clone());
             }
         }
     }
     Plan { quitar, sospechosas }
+}
+
+/// F3 (14u): las que guarda «N versiones por día» de un grupo (de la más reciente a la
+/// más antigua): de cada día (en la hora de la propia versión) dentro del plazo
+/// (contado desde la más reciente), la más cercana a cada hora o, sin horas, la
+/// primera y la última. A igual distancia, la más antigua (y, a igual hora, el id menor).
+pub fn por_dia<'a>(lista: &[(&'a str, Hora)], d: &crate::gestion_v2::PorDia) -> std::collections::HashSet<&'a str> {
+    use std::collections::{BTreeMap, HashSet};
+    let mut out = HashSet::new();
+    let Some(mas_reciente) = lista.first().map(|x| x.1) else { return out };
+    let limite = d.plazo.as_deref().and_then(Plazo::leer).and_then(|p| restar_plazo(&mas_reciente, &p));
+    let mut dias: BTreeMap<chrono::NaiveDate, Vec<(&'a str, Hora)>> = BTreeMap::new();
+    for (id, t) in lista {
+        if limite.is_some_and(|l| *t <= l) {
+            continue;
+        }
+        dias.entry(t.naive_local().date()).or_default().push((id, *t));
+    }
+    let horas: Vec<NaiveTime> = d.horas.iter().filter_map(|h| NaiveTime::parse_from_str(h, "%H:%M").ok()).collect();
+    for (dia, mut vs) in dias {
+        vs.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)));
+        if horas.is_empty() {
+            out.extend(vs.first().map(|x| x.0));
+            out.extend(vs.last().map(|x| x.0));
+            continue;
+        }
+        for h in &horas {
+            let objetivo = dia.and_time(*h);
+            if let Some(x) = vs.iter().min_by_key(|x| (x.1.naive_local() - objetivo).num_seconds().abs()) {
+                out.insert(x.0);
+            }
+        }
+    }
+    out
 }
 
 /// Pone al día la clave de la entrada: si abre, su id; y borra la anterior.
@@ -561,7 +603,11 @@ pub fn ejecutar_con(carpeta: &Path, e: &mut Entrada, d: &mut Detalle) -> Result<
     let lista = versiones_del_repo(&acc)?;
     let antes = lista.len();
     let versiones: Vec<Version> = lista.iter().map(|s| Version::de(s, carpeta)).collect();
-    let plan = planear(&versiones, &e.retencion);
+    let mut plan = planear(&versiones, &e.retencion);
+    // Plan 0.8.0, F2 (14cc): las conservadas para siempre nunca se quitan.
+    let (quitar, salvadas) =
+        crate::versiones_v2::sin_conservadas(std::mem::take(&mut plan.quitar), &crate::versiones_v2::conservadas_almacen(&e.usuario, &e.repo));
+    plan.quitar = quitar;
     // Por qué se va cada una (solo las de confianza: las sospechosas no cuentan).
     let candidatas: Vec<crate::retencion_registro::Candidata> = versiones
         .iter()
@@ -600,6 +646,11 @@ pub fn ejecutar_con(carpeta: &Path, e: &mut Entrada, d: &mut Detalle) -> Result<
         1 => format!("Retención aplicada: 1 versión quitada, quedan {despues}."),
         n => format!("Retención aplicada: {n} versiones quitadas, quedan {despues}."),
     };
+    match salvadas {
+        0 => {}
+        1 => m.push_str(" 1 versión conservada para siempre no se toca."),
+        n => m.push_str(&format!(" {n} versiones conservadas para siempre no se tocan.")),
+    }
     match plan.sospechosas {
         0 => {}
         1 => m.push_str(" 1 versión con una fecha que no cuadra con su subida (traída de otro repositorio, o el reloj del equipo) no se toca."),
@@ -878,6 +929,67 @@ mod tests {
         assert!(h.reglas.is_empty() && !serde_json::to_string(&h).unwrap().contains("reglas"));
     }
 
+    /// Plan 0.8.0, F3 (14u): «N versiones por día», con los vectores que comparte con la
+    /// consola (crates/protocolo/vectors/retencion-por-dia.json).
+    #[test]
+    fn versiones_por_dia_vectores_compartidos() {
+        let doc: serde_json::Value = serde_json::from_str(include_str!("../../protocolo/vectors/retencion-por-dia.json")).unwrap();
+        for caso in doc["casos"].as_array().unwrap() {
+            let regla: Retencion = serde_json::from_value(caso["regla"].clone()).unwrap();
+            regla.valida().unwrap();
+            let versiones: Vec<Version> = caso["horas"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(i, h)| {
+                    let t = chrono::NaiveDateTime::parse_from_str(h.as_str().unwrap(), "%Y-%m-%dT%H:%M").unwrap();
+                    let t = Local.from_local_datetime(&t).unwrap();
+                    version(&format!("{i:08x}"), t, t)
+                })
+                .collect();
+            let plan = planear(&versiones, &regla);
+            let quedan: Vec<bool> = versiones.iter().map(|v| !plan.quitar.contains(&v.id)).collect();
+            let esperado: Vec<bool> = serde_json::from_value(caso["quedan"].clone()).unwrap();
+            assert_eq!(quedan, esperado, "{}", caso["nombre"]);
+        }
+    }
+
+    /// F3: sin el campo, la regla de siempre (una consola anterior no lo manda); en palabras.
+    #[test]
+    fn versiones_por_dia_en_palabras_y_validas() {
+        use crate::gestion_v2::PorDia;
+        let r: Retencion = serde_json::from_value(serde_json::json!({ "diarias": 7, "semanales": 4, "mensuales": 12, "anuales": 2 })).unwrap();
+        assert!(r.por_dia.is_none());
+        assert!(serde_json::to_value(&r).unwrap().get("por_dia").is_none());
+        let d = PorDia { horas: vec!["18:00".into(), "09:00".into()], plazo: Some("30d".into()) };
+        assert_eq!(d.texto(), "2 por día (las más cercanas a las 09:00 y 18:00) durante 30 días");
+        assert_eq!(PorDia::default().texto(), "2 por día (la primera y la última)");
+        let solo: Retencion = Retencion { por_dia: Some(PorDia::default()), ..Default::default() };
+        solo.valida().unwrap();
+        for malo in [
+            PorDia { horas: vec!["9:00".into()], plazo: None },
+            PorDia { horas: vec!["09:00".into(), "09:00".into()], plazo: None },
+            PorDia { horas: vec![], plazo: Some("treinta".into()) },
+            PorDia { horas: (0..13).map(|h| format!("{h:02}:00")).collect(), plazo: None },
+        ] {
+            assert!(Retencion { por_dia: Some(malo.clone()), ..Default::default() }.valida().is_err(), "{malo:?}");
+        }
+        assert!(crate::gestion_v2::ADMITE.contains(&"retencion_por_dia"));
+    }
+
+    /// F2 (14cc): las conservadas para siempre nunca se quitan, aunque la regla las quitaría.
+    #[test]
+    fn la_retencion_nunca_quita_las_conservadas() {
+        let t0 = Local.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let versiones: Vec<Version> = (0..10).map(|d| version(&format!("{d:08x}aa"), t0 - Duration::days(d), t0 - Duration::days(d))).collect();
+        let plan = planear(&versiones, &Retencion { diarias: 3, ..Default::default() });
+        assert_eq!(plan.quitar.len(), 7);
+        let (quitar, salvadas) = crate::versiones_v2::sin_conservadas(plan.quitar, &["00000007".to_string()]);
+        assert_eq!((quitar.len(), salvadas), (6, 1));
+        assert!(!quitar.contains(&"00000007aa".to_string()));
+    }
+
     #[test]
     fn horario_semanal() {
         let h = Horario { dias: vec![7], hora: "03:00".into(), reglas: vec![] };
@@ -1074,6 +1186,7 @@ mod tests {
                 plazos: crate::gestion_v2::Plazos {
                     horarias: p[0].map(Into::into), diarias: p[1].map(Into::into), semanales: p[2].map(Into::into), mensuales: p[3].map(Into::into), anuales: p[4].map(Into::into),
                 },
+                por_dia: None,
             };
             let r1 = mk(&a);
             // r2 = r1 con más: cada cantidad la mayor (SIEMPRE gana) y cada plazo, el de r1 o el extra.
@@ -1213,6 +1326,7 @@ mod tests {
                 mensuales: n[3],
                 anuales: n[4],
                 plazos: crate::gestion_v2::Plazos { horarias: ph, diarias: pd, semanales: pw, mensuales: pm, anuales: py },
+                por_dia: None,
             };
             if r.valida().is_ok() {
                 reglas.push(r);

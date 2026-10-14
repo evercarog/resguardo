@@ -49,6 +49,8 @@ import { destinoNubeCuerpo, opcionesRepoNuevo } from "../../src/lib/repoNuevo";
 import { nubesDelEquipo } from "../../src/lib/nubesEquipo";
 import { unirBusqueda, type PaginaBusqueda } from "../../src/lib/buscarArchivos";
 import { pasoAlDia, reglaDeCopia } from "../../src/lib/regla321";
+import { comentariosDe, conservadaDe, destinosConservar } from "../../src/lib/versionesNotas";
+import { unaVezAhora } from "../../src/lib/copiaGuiada";
 import { cuerpoMover, cuerpoRutaNueva, equiposEnAlmacen, planOrden, rutasPendientes, type Movido } from "../../src/lib/nombres";
 import { diferencia, pendiente, trozos, type DatosComunesCliente, type EntradaOrden } from "../../src/lib/datosComunes";
 import type { Cliente, DestinoCatalogo, EntradaAuditoria, Equipo, Regla } from "../../src/lib/tipos";
@@ -948,6 +950,33 @@ async function principal() {
       return r?.clave === "ok" ? r : null;
     }, { plazo: 30_000 });
     comprobar(!JSON.stringify(enAlmacen).includes(claveAlmacen), "El resumen no lleva la clave del almacén");
+
+    // Plan 0.8.0, F2 (14cc): «Conservar para siempre» una versión que la regla quitaría, con su
+    // motivo, en el equipo dueño y en el almacén (como ConservarVersion.svelte); y un comentario.
+    const victima = buenas.find((_, i) => !quedan[i]);
+    comprobar(victima, "Hay una versión que la regla quitaría (para conservarla)", buenas.map((s, i) => [s.short_id, quedan[i]]));
+    const destinosCons = destinosConservar(eqBAhora, repoResumen, [eqAAhora, eqBAhora], victima!.short_id, "Cierre contable de prueba", true);
+    igual(destinosCons.map((d) => [d.quien, d.equipo.id]), [["equipo", eqB.id], ["almacen", eqA.id]], "«Conservar» va al equipo dueño y a su almacén");
+    for (const d of destinosCons) await consola.hecha(c, d.equipo.id, "conservar_version", d.cuerpo, { claveAdmin: CLAVE_ADMIN });
+    await esperar("la versión conservada en el resumen de B y en el del almacén", async () => {
+      const [b, a] = [await consola.equipo(c, eqB.id), await consola.equipo(c, eqA.id)];
+      const enA = a.resumen?.guarda_copias?.conservadas?.find((x) => x.usuario === en.usuario && x.repo === en.carpeta);
+      return conservadaDe(b, repoId, victima!.id)?.motivo === "Cierre contable de prueba" && enA?.versiones.some((v) => v.version === victima!.short_id) ? b : null;
+    }, { plazo: 30_000 });
+    // Sin motivo, no; y quitarla reduce la protección: sin espera, el equipo la rechaza.
+    const sinMotivo = await consola.mandar(c, eqB.id, "conservar_version", { repo: repoId, version: victima!.short_id, motivo: "", conservar: true }, { claveAdmin: CLAVE_ADMIN });
+    comprobar((await consola.resultado(c, eqB.id, sinMotivo)).estado !== "hecha", "Sin motivo no se conserva");
+    esperadas.add(victima!.id);
+    // Un comentario en esa versión (inofensivo): lo guarda el equipo y lo ven sus consolas.
+    await consola.hecha(c, eqB.id, "comentario_version", { repo: repoId, version: victima!.short_id, texto: "Antes de limpiar los .bak", autor: "cuenta-e2e" }, {});
+    const conComentario = await esperar("el comentario en el resumen de B", async () => {
+      const b = await consola.equipo(c, eqB.id);
+      return comentariosDe(b, repoId, victima!.short_id).length ? b : null;
+    }, { plazo: 30_000 });
+    igual(comentariosDe(conComentario, repoId, victima!.short_id).map((x) => [x.texto, x.autor]), [["Antes de limpiar los .bak", "cuenta-e2e"]], "El comentario, con quién lo escribió");
+    const conSecreto = await consola.mandar(c, eqB.id, "comentario_version", { repo: repoId, version: victima!.short_id, texto: "contraseña: Verano2026" }, {});
+    comprobar((await consola.resultado(c, eqB.id, conSecreto)).estado !== "hecha", "Un comentario con una contraseña se rechaza");
+
     const ap = await consola.mandar(c, eqA.id, "aplicar_retencion_almacen", { usuario: en.usuario, repo: en.carpeta }, { claveAdmin: CLAVE_ADMIN });
     const apr = await consola.resultado(c, eqA.id, ap, { plazo: 180_000 });
     igual(apr.estado, "hecha", `Aplicar la retención en el almacén: ${apr.mensaje}`);
@@ -955,6 +984,7 @@ async function principal() {
     const despues = snapshots();
     igual(despues.map((s) => s.id).sort(), [...esperadas].sort(), "Las versiones que quedan son las que dice la consola (y las de hora falsa siguen ahí)");
     comprobar(/2 versiones con una fecha que no cuadra/.test(apr.mensaje ?? ""), "El mensaje cuenta las sospechosas", apr.mensaje);
+    comprobar(despues.some((x) => x.id === victima!.id) && /1 versión conservada para siempre no se toca/.test(apr.mensaje ?? ""), "La retención del almacén no quitó la conservada (y lo dice)", apr.mensaje);
     // Desde B (solo añadir) sigue sin poderse borrar nada.
     comprobar(ejecutar(resticBin, ["forget", despues[0].id], { env: envRestic }).codigo !== 0, "B no puede borrar versiones en el almacén");
     await esperar("el resultado en el resumen del almacén", async () => {
@@ -1046,6 +1076,35 @@ async function principal() {
       comprobar(/Fecha no válida/.test(malFecha.error ?? ""), "Valida las fechas", malFecha);
       await sb.cerrar();
       log(`Buscar archivos: notas.md en ${notas!.versiones.length} versiones (${notas!.cambios} cambios); la factura en ${factura!.versiones.length} de ${enRango.length} en el rango`);
+    }
+
+    // -----------------------------------------------------------------------
+    paso("5a2. Una copia «Una sola vez · Ahora» (plan 0.8.0, F1): se hace y queda completada");
+    {
+      comprobar((await consola.equipo(c, eqB.id)).resumen?.admite?.includes("termina"), "B admite «termina»");
+      const unaVez = { ...copia, id: "una-vez", nombre: "Una sola vez", horario: { dias: [], horas: [] }, termina: { una_vez: unaVezAhora(), desde: new Date().toISOString() } };
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, unaVez] } }, { claveAdmin: CLAVE_ADMIN });
+      const hecha = await esperar("la copia «una sola vez» completada en el resumen de B", async () => {
+        const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "una-vez");
+        return k?.completada ? k : null;
+      }, { plazo: 180_000, cada: 2000 });
+      igual([hecha.hechas, hecha.proxima ?? null, hecha.ultima?.estado], [1, null, "ok"], "Hecha una vez, sin próxima y correcta");
+      // Ya no vuelve a hacerse sola (el agente da una vuelta cada 10 s).
+      await dormir(25_000);
+      const despuesUnaVez = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "una-vez");
+      igual(despuesUnaVez?.ultima?.cuando, hecha.ultima?.cuando, "Completada: no se vuelve a hacer sola");
+      // «Solo a mano» y una que no tiene horario sin decirlo: la primera vale; la segunda, no.
+      const aMano = { ...copia, id: "a-mano", nombre: "Solo a mano", horario: { dias: [], horas: [] }, a_mano: true };
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia, aMano] } }, { claveAdmin: CLAVE_ADMIN });
+      const km = await esperar("la copia «solo a mano» en el resumen, sin próxima", async () => {
+        const k = (await consola.equipo(c, eqB.id)).resumen?.copias?.find((x) => x.id === "a-mano");
+        return k?.a_mano ? k : null;
+      }, { plazo: 20_000 });
+      igual(km.proxima ?? null, null, "Solo a mano: sin próxima");
+      const mal = await consola.mandar(c, eqB.id, "config", { config: { v: 1, copias: [copia, { ...aMano, a_mano: false }] } }, { claveAdmin: CLAVE_ADMIN });
+      comprobar((await consola.resultado(c, eqB.id, mal)).estado === "fallida", "Sin horario y sin «solo a mano» no vale");
+      await consola.hecha(c, eqB.id, "config", { config: { v: 1, copias: [copia] } }, { claveAdmin: CLAVE_ADMIN });
+      log(`Una sola vez: completada ${hecha.completada}`);
     }
 
     // -----------------------------------------------------------------------

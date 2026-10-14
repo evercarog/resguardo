@@ -136,6 +136,13 @@ pub struct Vinculo {
     /// destinos, plantillas cifradas) que reparten sus consolas (datos_cliente.rs). Del equipo.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub datos_cliente: resguardo_protocolo::datos_cliente::Documento,
+    /// Plan 0.8.0, F2 (14ww-2): comentarios en las versiones, iguales en todas sus
+    /// consolas (versiones_v2.rs). Del equipo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comentarios: Vec<crate::versiones_v2::Comentario>,
+    /// Plan 0.8.0, F2 (14cc): versiones que la retención del equipo nunca quita (versiones_v2.rs). Del equipo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conservadas: Vec<crate::versiones_v2::Conservada>,
 }
 
 fn es_cero(n: &u64) -> bool {
@@ -614,6 +621,20 @@ fn en_marcha(m: impl Into<String>) -> Resultado {
     Resultado { estado: "en_marcha", mensaje: m.into(), detalle: None }
 }
 
+/// Una vuelta del agente ahora mismo (no a los 5 minutos); si ya hay una en marcha, esta sale sola.
+fn vuelta_ahora() {
+    if crate::agent::is_managed_agent() && !crate::agent::test_mode() {
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe)
+                .arg("--agent-run")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+    }
+}
+
 /// ¿Reduce la protección? Por el tipo o, en algunas, por su cuerpo (que el
 /// servidor no ve: allí se fía del `not_before` que declara la consola, y
 /// aquí se vuelve a comprobar).
@@ -649,6 +670,8 @@ fn destructiva(v: &Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::Tipo) -> bool
             "config" => copias_activas(v.config_v1.as_ref()) > 0 && copias_activas(c.get("config")) == 0,
             // v1.22: poner o cambiar la retención del almacén (borrará versiones); quitarla, no.
             "retencion_almacen" => c["quitar"] != true,
+            // Plan 0.8.0, F2: dejar de conservar una versión (la retención podrá quitarla).
+            "conservar_version" => c["conservar"] != true,
             _ => false,
         }
 }
@@ -1096,7 +1119,14 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
     let seq = o.seq;
     let r: Result<Resultado, String> = (|| match o.tipo.as_str() {
         "alta" => alta(v, o),
-        "config" => g::aplicar_config(v, c).map(hecha),
+        "config" => {
+            let m = g::aplicar_config(v, c)?;
+            // Plan 0.8.0, F1: «Una sola vez · Ahora»: una vuelta enseguida (no a los 5 minutos).
+            if g::una_vez_pendiente() {
+                vuelta_ahora();
+            }
+            Ok(hecha(m))
+        }
         "crear_repositorio" => g::crear_repositorio(v, c).map(hecha),
         "cambiar_destino" => g::cambiar_destino(v, c).map(hecha),
         "cambiar_copia_externa" => g::cambiar_copia_externa(v, c, repo.unwrap_or("")).map(hecha),
@@ -1149,6 +1179,22 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
+        // Plan 0.8.0, F2: comentarios en las versiones y «Conservar para siempre» (en el
+        // equipo dueño o, con `usuario`, en el almacén). Se suben al momento a todas.
+        "comentario_version" => {
+            let m = crate::versiones_v2::comentar(v, c, o.por.as_deref())?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        "conservar_version" => {
+            let m = if c.get("usuario").is_some() {
+                crate::versiones_v2::conservar_en_almacen(v, c, o.por.as_deref())?
+            } else {
+                crate::versiones_v2::conservar(v, c, o.por.as_deref())?
+            };
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
         // B1 (docs/nombres-legibles.md): el nombre de un repositorio, igual en todas sus consolas.
         "nombre_repositorio" => {
             let m = g::nombre_repositorio(v, c)?;
@@ -1175,17 +1221,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "copiar_ahora" => {
             let m = g::copiar_ahora(v, c)?;
-            // Una vuelta del agente ahora mismo (no a los 5 minutos); si ya hay una en marcha, esta sale sola.
-            if crate::agent::is_managed_agent() && !crate::agent::test_mode() {
-                if let Ok(exe) = std::env::current_exe() {
-                    let _ = std::process::Command::new(exe)
-                        .arg("--agent-run")
-                        .stdin(std::process::Stdio::null())
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn();
-                }
-            }
+            vuelta_ahora();
             Ok(hecha(m))
         }
         "verificar_ahora" | "subir_ahora" | "probar_restauracion" => {

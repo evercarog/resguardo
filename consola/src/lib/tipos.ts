@@ -338,6 +338,8 @@ export interface ResumenEquipo {
      * principal sigue en `carpeta`, `puerto`, `usuarios`, `espacio` y `repositorios`.
      */
     zonas?: ZonaAlmacen[] | null;
+    /** Plan 0.8.0, F2 (14cc): las versiones que la retención de este almacén nunca quita. */
+    conservadas?: { usuario: string; repo: string; versiones: { version: string; motivo: string; cuando: string }[] }[] | null;
     /** Plan 0.8.0, B1 (`admite: "nombres_legibles"`): carpetas movidas con «Ordenar nombres de carpeta» (las últimas, la más reciente primero). */
     renombres?: import("./nombres").RenombreAlmacen[] | null;
   } | null;
@@ -352,6 +354,46 @@ export interface ResumenEquipo {
   entorno?: { virtual?: "kvm" | "vmware" | "hyperv" | "virtualbox" | "xen" | "otra" | string; contenedor?: "lxc" | "docker" | "podman" | "wsl" | "otro" | string } | null;
   /** 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último arranque. Léelo con `datosBasicos()` (comprobado). */
   datos_basicos?: import("./datosBasicos").DatosBasicos | null;
+  /** Plan 0.8.0, F2 (14ww-2, `admite: "comentarios_version"`): comentarios en las versiones, guardados en el equipo. */
+  comentarios?: ComentarioVersion[] | null;
+  /** Plan 0.8.0, F2 (14cc, `admite: "conservar_version"`): versiones que la retención del equipo nunca quita. */
+  conservadas?: VersionConservada[] | null;
+}
+
+/** Plan 0.8.0, F2 (14ww-2): un comentario en una versión (lo guarda el equipo; lo ven todas sus consolas). */
+export interface ComentarioVersion {
+  id: string;
+  repo: string;
+  /** El id de la versión (8 a 64 hex; se compara por el principio). */
+  version: string;
+  texto: string;
+  cuando: string;
+  editado?: string | null;
+  consola?: string | null;
+  por?: string | null;
+  /** La cuenta que lo escribió en esa consola (para «Cambiar» y «Borrar»). */
+  autor?: string | null;
+  /** Lo escribió la consola que recibe el resumen. */
+  esta?: boolean;
+}
+
+/** Plan 0.8.0, F2 (14cc): una versión que la retención nunca quita, con su motivo. */
+export interface VersionConservada {
+  repo: string;
+  version: string;
+  motivo: string;
+  cuando: string;
+  consola?: string | null;
+  por?: string | null;
+}
+
+/** Plan 0.8.0, F4 (14t): una franja con su límite de velocidad (KiB/s; 0, sin límite). */
+export interface FranjaVelocidad {
+  /** 1 = lunes … 7 = domingo. */
+  dias: number[];
+  desde: string;
+  hasta: string;
+  kib: number;
 }
 
 /** Tarea 7b: una zona más de un almacén. */
@@ -438,6 +480,26 @@ export interface CopiaResumen {
   /** Plan 0.7.26: «despues» (aunque la anterior falle) o, sin él, en cadena; y el retraso. */
   inicio?: "horario" | "cadena" | "despues" | null;
   retraso_min?: number | null;
+  /** Plan 0.8.0, F1 (14pp, `admite: "termina"`): solo a mano (sin horario). */
+  a_mano?: boolean | null;
+  /** F1: cuándo termina. */
+  termina?: Termina | null;
+  /** F1: copias correctas hechas desde que se puso el fin. */
+  hechas?: number | null;
+  /** F1: cuándo terminó (RFC 3339): queda «completada». */
+  completada?: string | null;
+}
+
+/** Plan 0.8.0, F1 (14pp): cuándo termina una copia. */
+export interface Termina {
+  /** Después de N copias correctas. */
+  veces?: number | null;
+  /** El último día (AAAA-MM-DD, hora del equipo). */
+  hasta?: string | null;
+  /** «Una sola vez», a esta hora (AAAA-MM-DDTHH:MM, hora del equipo). */
+  una_vez?: string | null;
+  /** Desde cuándo cuenta (RFC 3339; al poner el fin o al reanudar). */
+  desde?: string | null;
 }
 
 /** Tarea 4c: qué versiones sube una copia derivada (o trae «Traer el historial»). */
@@ -474,6 +536,8 @@ export interface DerivadaResumen {
   /** Si el agente la tiene (un repositorio sin copias activas la pierde). */
   activa?: boolean;
   con_retencion?: boolean | null;
+  /** Plan 0.8.0, F4 (14t, `admite: "limite_franjas"`): la velocidad de subida según la hora. */
+  limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
 }
 
 export interface RepositorioResumen {
@@ -541,6 +605,14 @@ export interface Regla {
   anuales: number;
   /** v1.28. */
   plazos?: Plazos;
+  /** Plan 0.8.0, F3 (14u, `admite: "retencion_por_dia"`): «N versiones por día». */
+  por_dia?: PorDia | null;
+}
+
+/** F3: de cada día, las más cercanas a unas horas o, sin horas, la primera y la última; dentro de `plazo` (sin él, todos los días). */
+export interface PorDia {
+  horas?: string[];
+  plazo?: string | null;
 }
 
 /** Días (1 = lunes … 7 = domingo) y hora local («03:00»). */
@@ -1196,6 +1268,8 @@ export interface TrabajoEspejo {
   freno: FrenoEspejo;
   verificar_pct?: number | null;
   limite_kib?: number | null;
+  /** Plan 0.8.0, F4 (14t): límite según la hora hacia una nube (fuera de las franjas, `limite_kib`). */
+  limite_franjas?: FranjaVelocidad[] | null;
   orden: number;
   bloqueo?: boolean;
   bloqueo_dias?: number | null;
@@ -1291,6 +1365,10 @@ export interface CopiaConfig {
   inicio?: "horario" | "cadena" | "despues";
   /** Plan 0.7.26: con `tras`, minutos de espera tras la anterior (sin el campo: enseguida). */
   retraso_min?: number;
+  /** Plan 0.8.0, F1 (14pp, `admite: "termina"`): «Solo a mano» (horario vacío, sin `tras`). */
+  a_mano?: boolean;
+  /** F1: cuándo termina («Una sola vez», tras N copias o el día …). */
+  termina?: Termina | null;
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */

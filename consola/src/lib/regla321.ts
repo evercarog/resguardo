@@ -62,6 +62,8 @@ export interface PasoRegla {
   conectado?: string | null;
   /** 0.7.26: días sin conectarse tras los que avisa (sin él, 30). */
   aislado_dias?: number | null;
+  /** Plan 0.8.0, F1 (14pp): sin plazo (copia completada o solo a mano): al día si tiene alguna versión. */
+  sin_plazo?: boolean;
   /** 14z: la marca «Inmutable» la puso una persona (con `solo_anadir`, cuenta: lo marcado se respeta). */
   inmutable_marcado?: boolean;
 }
@@ -134,6 +136,7 @@ export const diasAislado = (p: Pick<PasoRegla, "aislado_dias">) => (p.aislado_di
 export function pasoAlDia(p: PasoRegla, ahora: number): boolean {
   const t = p.ultima_ok ? Date.parse(p.ultima_ok) : NaN;
   if (!Number.isFinite(t)) return false;
+  if (p.sin_plazo) return true;
   const margen = esAislado(p) ? Math.max(margenHoras(p.cada_horas), diasAislado(p) * 24) : margenHoras(p.cada_horas);
   return Math.trunc((ahora - t) / 1000) / 3600 <= margen;
 }
@@ -387,6 +390,9 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
   if (!r || r.solo_lectura) return null;
   const d = destinoDe(e.resumen?.destinos, r);
   const cadaCopia = horasEntre(k.horario, ahora);
+  // Plan 0.8.0, F1: una copia completada o solo a mano no tiene plazo (ni lo que va tras cada copia suya).
+  const sinPlazo = !!k.completada || !!k.a_mano;
+  const conPlazo = (trasCopia: boolean | null | undefined) => (sinPlazo && trasCopia !== false ? { sin_plazo: true } : {});
   const pasos: PasoVista[] = [];
 
   // 1. El destino del repositorio.
@@ -404,6 +410,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
         equipo: x.equipo,
         ultima_ok: ultimaBien(k, informe),
         cada_horas: cadaCopia,
+        ...conPlazo(true),
         clave: claveDestino,
         equipoNombre: e.nombre,
         equipoId: e.id,
@@ -447,6 +454,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
               equipo: a.id,
               ultima_ok: resultadoConError(dd.resultado) ? null : (dd.ultima ?? null),
               cada_horas: dd.tras_copia ? cadaCopia : dd.horario ? horasEntre(dd.horario, ahora) : 24,
+              ...conPlazo(!!dd.tras_copia),
               verificacion_mal: (dd.verificacion?.mal ?? 0) > 0,
               clave: claveZona(a.id, zonaDestino.id),
               equipoNombre: a.nombre,
@@ -480,6 +488,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
             equipo: nube ? null : a.id,
             ultima_ok: resultadoConError(dd.resultado) ? null : (dd.ultima ?? null),
             cada_horas: dd.tras_copia ? cadaCopia : dd.horario ? horasEntre(dd.horario, ahora) : 24,
+            ...conPlazo(!!dd.tras_copia),
             verificacion_mal: (dd.verificacion?.mal ?? 0) > 0,
             clave,
             equipoNombre: a.nombre,
@@ -552,6 +561,7 @@ export function reglaDeCopia(e: Equipo, k: CopiaResumen, equipos: Equipo[], info
           equipo: xd.equipo,
           ultima_ok: ult && ult.resultado !== "fallo" ? (ult.ultima ?? null) : null,
           cada_horas: dv.cuando?.tras_copia ? cadaCopia : dv.cuando?.horario ? horasEntre(dv.cuando.horario, ahora) : 24,
+          ...conPlazo(!!dv.cuando?.tras_copia),
           verificacion_mal: ult?.verificacion?.resultado === "fallo",
           clave: xd.zona ? claveZona(xd.zona.almacen.id, xd.zona.id) : (de?.id ?? null),
           equipoNombre: e.nombre,

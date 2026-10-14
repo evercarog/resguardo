@@ -11,7 +11,7 @@
 //   por equipo y carpetas) sobre las versiones que conoce la consola, con las
 //   copias que vendrán según su horario. Es una simulación: decide restic, y el
 //   almacén no toca las versiones con una hora que no cuadra con su subida.
-import { HUECOS, leerPlazo, PERIODOS, plazoEnPalabras, restarPlazo, SIEMPRE, type Periodo } from "./retencion";
+import { HUECOS, leerPlazo, PERIODOS, plazoEnPalabras, porDiaQuedan, restarPlazo, SIEMPRE, type Periodo } from "./retencion";
 import type { Regla } from "./tipos";
 
 // ── Lo que anota el equipo ─────────────────────────────────────────────────
@@ -240,13 +240,17 @@ export function textoSeVa(m: Motivo | null, hora: Date | null, regla: Regla | nu
 }
 
 /** Por qué se queda: «Se queda: la diaria del 3 oct». */
-export const textoSeQueda = (p: Periodo, hora: Date) => `Se queda: la ${SINGULAR[p]} ${etiquetaHueco(p, hora)}.`;
+export function textoSeQueda(p: Explicacion["queda"] & string, hora: Date): string {
+  if (p === "conservada") return "Se queda: se conserva para siempre.";
+  if (p === "por_dia") return `Se queda: es de las que se guardan cada día (${sinPunto(fmtDiaMes.format(hora))}).`;
+  return `Se queda: la ${SINGULAR[p]} ${etiquetaHueco(p, hora)}.`;
+}
 
 // ── La simulación ─────────────────────────────────────────────────────────
 
-/** Por qué se queda (el periodo más largo que la guarda) o por qué se iría. */
+/** Por qué se queda (el periodo más largo que la guarda; F3 «por día»; F2 «se conserva para siempre») o por qué se iría. */
 export interface Explicacion {
-  queda: Periodo | null;
+  queda: Periodo | "por_dia" | "conservada" | null;
   motivo: Motivo | null;
 }
 
@@ -270,8 +274,10 @@ export function explicar(horas: Date[], r: Regla): Explicacion[] {
   const enPlazo: (number | null)[] = PERIODOS.map(() => null);
   const visto: (number | null)[] = PERIODOS.map(() => null);
   const ultima = horas.length - 1;
+  // F3: «N por día» se suma a lo demás.
+  const delDia = porDiaQuedan(horas, r.por_dia);
   horas.forEach((t, n) => {
-    let queda: Periodo | null = null;
+    let queda: Explicacion["queda"] = null;
     let motivo: Motivo | null = null;
     for (let i = 0; i < PERIODOS.length; i++) {
       const h = HUECOS[i](t);
@@ -294,6 +300,7 @@ export function explicar(horas: Date[], r: Regla): Explicacion[] {
         } else if (nuevo) motivo = { tipo: "plazo", periodo: PERIODOS[i] };
       }
     }
+    if (!queda && delDia[n]) queda = "por_dia";
     out[n] = queda ? { queda, motivo: null } : { queda: null, motivo: motivo ?? { tipo: "repe", periodo: PERIODOS[masCorto] } };
   });
   return out;
@@ -346,6 +353,8 @@ export function prever(o: {
   proxima?: number | null;
   dias: number;
   horasDe?: (copia: string | null) => ((fecha: Date) => string[]) | null;
+  /** Plan 0.8.0, F2 (14cc): ids que se conservan para siempre (la retención nunca los quita). */
+  conservadas?: string[];
 }): Prevision {
   const { regla, ahora, dias } = o;
   const incompleta = (o.total ?? 0) > o.versiones.length;
@@ -377,6 +386,8 @@ export function prever(o: {
     supuestas += ts.filter((t) => t <= fin).length;
   }
   const centinela = -8.64e15;
+  const cons = o.conservadas ?? [];
+  const conservada = (id: string) => cons.some((c) => Math.min(c.length, id.length) >= 8 && c.slice(0, Math.min(c.length, id.length)) === id.slice(0, Math.min(c.length, id.length)));
   /** Cómo queda cada versión de ahora si se aplicara la retención en `T`. */
   const en = (T: number) => {
     const m = new Map<string, Explicacion>();
@@ -388,7 +399,7 @@ export function prever(o: {
         lista.map((x) => new Date(x.t)),
         regla,
       );
-      lista.forEach((x, i) => x.id && m.set(x.id, ex[i]));
+      lista.forEach((x, i) => x.id && m.set(x.id, conservada(x.id) ? { queda: "conservada", motivo: null } : ex[i]));
     }
     return m;
   };

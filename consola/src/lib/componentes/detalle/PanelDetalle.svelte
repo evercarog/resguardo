@@ -116,7 +116,7 @@
       <VersionesArchivo acceso={elAcceso()} ruta={archivo} {puedeRestaurar} />
     {:else if sel.vista === "version"}
       {#if version}
-        <DetalleVersion {version} {versiones} {ejecuciones} {historial} {copias} repo={repo.id} {enlaceCopia} {enlaceRestaurar} {puedeRestaurar} />
+        <DetalleVersion {version} {versiones} {ejecuciones} {historial} {copias} repo={repo.id} {enlaceCopia} {enlaceRestaurar} {puedeRestaurar} {cliente} {equipo} repoResumen={repo} />
       {:else}
         <p class="faint">Esa versión ya no está en el informe del equipo (es de hace más de 60 días o la quitó la retención). Puedes ver qué cambió en ella si aún está en el repositorio.</p>
         <button class="btn" onclick={() => ir({ vista: "cambios" })}>Qué cambió</button>

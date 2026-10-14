@@ -5,7 +5,9 @@
   // con ese filtro), las vueltas que la dejaron (con reintentos y errores), los
   // pasos «Antes de copiar» y lo que se puede hacer con ella.
   import { ArrowLeft, ArrowRight, Check, Copy, FolderSearch, GitCompareArrows, History, PieChart, TriangleAlert } from "@lucide/svelte";
-  import type { CopiaResumen, EjecucionInforme, EntradaHistorial, VersionInforme } from "$lib/tipos";
+  import type { Cliente, CopiaResumen, EjecucionInforme, EntradaHistorial, Equipo, RepositorioResumen, VersionInforme } from "$lib/tipos";
+  import { actual } from "$lib/estado.svelte";
+  import NotasVersion from "./NotasVersion.svelte";
   import { anteriorDeLaCopia, ganchosDeVuelta, vueltasDeVersion } from "$lib/detalle";
   import { anadidoDe, duracion, TEXTO_RESULTADO, TONO_RESULTADO } from "$lib/repo";
   import { explicarError } from "$lib/copia";
@@ -26,7 +28,14 @@
     enlaceCopia,
     enlaceRestaurar,
     puedeRestaurar,
+    cliente = null,
+    equipo = null,
+    repoResumen = null,
   }: {
+    /** Plan 0.8.0, F2: para los comentarios y «Conservar para siempre» (sin ellos, no salen). */
+    cliente?: Cliente | null;
+    equipo?: Equipo | null;
+    repoResumen?: RepositorioResumen | null;
     version: VersionInforme;
     versiones: VersionInforme[];
     ejecuciones: EjecucionInforme[];
@@ -83,6 +92,11 @@
       {#if delta != null}<span class="faint">{fmtDelta(delta)}</span>{/if}
     </div>
   </dl>
+
+  {#if cliente && equipo && repoResumen}
+    <!-- Plan 0.8.0, F2: comentarios (14ww-2) y «Conservar para siempre» (14cc). -->
+    <NotasVersion {cliente} {equipo} equipos={actual.equipos} repo={repoResumen} version={v.id} />
+  {/if}
 
   <section aria-labelledby="t-archivos">
     <h3 id="t-archivos">Archivos</h3>

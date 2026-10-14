@@ -109,6 +109,9 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "etiquetas_equipo",
     "observacion_equipo",
     "quitar_destino",
+    // Plan 0.8.0, F2: comentarios en las versiones y «Conservar para siempre».
+    "comentario_version",
+    "conservar_version",
     // B1: el nombre de un repositorio.
     "nombre_repositorio",
 ];

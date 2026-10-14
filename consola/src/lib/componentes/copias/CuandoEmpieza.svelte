@@ -4,15 +4,41 @@
   // (siempre). En las dos últimas no hay horario: «Inmediatamente» o «Con
   // retraso de N min». La primera solo puede ir con horario.
   //
+  // Plan 0.8.0, F1 (14pp): también «Solo a mano» (sin horario, solo «Copiar
+  // ahora») y «Una sola vez» (ahora o en una fecha y hora), y para cualquier
+  // horario «Termina: nunca / después de N copias / el día …». Al terminar, la
+  // copia queda completada. Lo cuenta el agente.
+  //
   // El mismo control en el modo guiado (con plantillas rápidas y
   // «Personalizar») y en el avanzado (el editor completo a la vista): los dos
   // cambian la copia con las funciones de lib/copiaGuiada.ts.
   import { untrack } from "svelte";
-  import { CalendarClock, Lightbulb, Link2, Repeat, Settings2, Timer } from "@lucide/svelte";
+  import { CalendarCheck, CalendarClock, Hand, Lightbulb, Link2, Repeat, Settings2, Timer } from "@lucide/svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import { tip } from "$lib/tooltip";
   import EditorHorario from "$lib/componentes/EditorHorario.svelte";
-  import { aplicarPlantilla, AYUDA_INICIO, inicioDe, plantillaDe, ponerInicio, ponerRetraso, RETRASOS, retrasoEnFrase, TEXTO_INICIO, TEXTO_PLANTILLA, type ModoInicio, type PlantillaHorario } from "$lib/copiaGuiada";
+  import {
+    aplicarPlantilla,
+    AYUDA_INICIO,
+    esAhora,
+    fechaHoraDe,
+    inicioDe,
+    MAX_VECES,
+    plantillaDe,
+    ponerInicio,
+    ponerRetraso,
+    ponerTermina,
+    ponerUnaVez,
+    RETRASOS,
+    retrasoEnFrase,
+    terminaDe,
+    TEXTO_INICIO,
+    TEXTO_PLANTILLA,
+    TEXTO_TERMINA,
+    type ModoInicio,
+    type ModoTermina,
+    type PlantillaHorario,
+  } from "$lib/copiaGuiada";
   import { resumenHorario } from "$lib/formato";
   import type { CopiaConfig, Horario } from "$lib/tipos";
 
@@ -23,15 +49,18 @@
     version = null,
     equipo,
     guiado = false,
+    hechas = null,
   }: {
     copias: CopiaConfig[];
     i: number;
-    admite: { reglas: boolean; cadenas: boolean; despues: boolean };
+    admite: { reglas: boolean; cadenas: boolean; despues: boolean; termina?: boolean };
     version?: string | null;
     /** El nombre del equipo (para «Actualiza el agente de …»). */
     equipo: string;
     /** Con plantillas rápidas y «Personalizar» (si no, el editor completo). */
     guiado?: boolean;
+    /** F1: copias correctas hechas desde que se puso el fin (lo dice el equipo). */
+    hechas?: number | null;
   } = $props();
 
   const k = $derived(copias[i]);
@@ -45,6 +74,8 @@
   }
   const motivo = (m: ModoInicio): string | null => {
     if (m === "horario") return null;
+    // F1: no dependen de la anterior; solo de que el agente las entienda.
+    if (m === "a_mano" || m === "una_vez") return admite.termina ? null : `Actualiza el agente de ${equipo} para «${TEXTO_INICIO[m]}»`;
     if (i === 0) return "La primera empieza con su horario";
     if (!admite.cadenas) return `Actualiza el agente de ${equipo} para encadenar copias`;
     if (m === "despues" && !admite.despues) return `Actualiza el agente de ${equipo} para «Después de la anterior»`;
@@ -68,13 +99,21 @@
     hora = h;
     if (pl.plantilla === "cada_dia" || pl.plantilla === "laborables") aplicarPlantilla(k, pl.plantilla, h, admite.reglas);
   }
-  const ICONO = { horario: CalendarClock, cadena: Link2, despues: Repeat } as const;
+  const ICONO = { horario: CalendarClock, cadena: Link2, despues: Repeat, a_mano: Hand, una_vez: CalendarCheck } as const;
   let conRetraso = $state(untrack(() => (copias[i]?.retraso_min ?? 0) > 0));
+
+  // F1: cuándo termina y «una sola vez».
+  const fin = $derived(terminaDe(k));
+  const MODOS_FIN: ModoTermina[] = ["nunca", "veces", "hasta"];
+  // «Ahora» es una hora ya pasada (la víspera a las 00:00); «En una fecha y hora», una que aún no llegó.
+  const unaVezAhora = $derived(esAhora(k.termina?.una_vez));
+  /** La fecha y hora que se propone para «En una fecha y hora»: mañana a las 21:00. */
+  const manana = () => `${fechaHoraDe(Date.now() + 86_400_000).slice(0, 10)}T21:00`;
 </script>
 
 <div class="cuando">
   <div class="segmented inline" role="radiogroup" aria-label="Cuándo empieza «{k.nombre}»">
-    {#each ["horario", "cadena", "despues"] as const as m (m)}
+    {#each ["horario", "cadena", "despues", "a_mano", "una_vez"] as const as m (m)}
       {@const no = motivo(m)}
       {@const Icono = ICONO[m]}
       <button type="button" role="radio" aria-checked={modo === m} class:on={modo === m} disabled={!!no && modo !== m} use:tip={no ?? AYUDA_INICIO[m]} onclick={() => elegir(m)}><Icono size={14} />{TEXTO_INICIO[m]}</button>
@@ -103,8 +142,51 @@
     {:else}
       <EditorHorario id={k.id} bind:horario={k.horario} admiteReglas={admite.reglas} {version} />
     {/if}
+    {#if admite.termina}
+      <!-- F1 (14pp): como el «Finaliza» de un calendario. -->
+      <div class="termina">
+        <span class="etq">Termina</span>
+        <div class="segmented inline" role="radiogroup" aria-label="Cuándo termina «{k.nombre}»">
+          {#each MODOS_FIN as t (t)}
+            <button type="button" role="radio" aria-checked={fin === t} class:on={fin === t} onclick={() => fin !== t && ponerTermina(k, t)}>{TEXTO_TERMINA[t]}</button>
+          {/each}
+        </div>
+        {#if fin === "veces"}
+          <label class="min">
+            Después de
+            <input class="input num" type="number" min="1" max={MAX_VECES} value={k.termina?.veces ?? 10} aria-label="Copias antes de terminar" onchange={(e) => ponerTermina(k, "veces", Number(e.currentTarget.value))} />
+            copias correctas
+          </label>
+        {:else if fin === "hasta"}
+          <label class="min">
+            El
+            <input class="input" type="date" value={k.termina?.hasta ?? ""} aria-label="Último día" onchange={(e) => ponerTermina(k, "hasta", e.currentTarget.value)} />
+            (incluido)
+          </label>
+        {/if}
+      </div>
+      {#if fin !== "nunca"}
+        <p class="faint linea">Al terminar queda completada: no avisa ni cuenta como atrasada, y sus versiones se quedan. Podrás copiar a mano o reanudarla.{#if fin === "veces" && hechas != null}{" "}Van {hechas}.{/if}</p>
+      {/if}
+    {/if}
     <!-- 14qq: el truco de «cada 5 minutos + solo si hay cambios», en vez de «cuando algo cambie». -->
     <p class="faint linea consejo"><Lightbulb size={14} aria-hidden="true" /><span>Para copiar enseguida lo que cambia poco: cada 5 minutos con «Solo guardar si hay cambios». Si no cambió nada, no guarda nada ni ocupa espacio. <Ayuda id="copiar-enseguida" /></span></p>
+  {:else if modo === "a_mano"}
+    <p class="faint linea">Sin horario: solo se copia cuando pulses «Copiar ahora». No cuenta como atrasada ni avisa por no copiar.</p>
+  {:else if modo === "una_vez"}
+    <div class="retraso">
+      <div class="segmented inline" role="radiogroup" aria-label="Cuándo se hace «{k.nombre}»">
+        <button type="button" role="radio" aria-checked={unaVezAhora} class:on={unaVezAhora} onclick={() => ponerUnaVez(k, "ahora")}>Ahora</button>
+        <button type="button" role="radio" aria-checked={!unaVezAhora} class:on={!unaVezAhora} onclick={() => !unaVezAhora || ponerUnaVez(k, manana())}>En una fecha y hora</button>
+      </div>
+      {#if !unaVezAhora}
+        <label class="min">
+          <span class="sr-only">Fecha y hora</span>
+          <input class="input" type="datetime-local" value={k.termina?.una_vez ?? ""} onchange={(e) => e.currentTarget.value && ponerUnaVez(k, e.currentTarget.value.slice(0, 16))} />
+        </label>
+      {/if}
+    </div>
+    <p class="faint linea">{unaVezAhora ? "En cuanto el equipo reciba los cambios." : "A esa hora del equipo (si está apagado, al encenderlo)."} Cuando salga bien queda completada, con sus versiones.</p>
   {:else}
     {#if otraAnterior}<p class="faint linea">Va después de «{otraAnterior.nombre}», que no es la de encima.</p>{/if}
     <div class="retraso">
@@ -221,6 +303,27 @@
   .linea {
     margin: 0;
     font-size: var(--fs-sm);
+  }
+  .termina {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .termina .etq {
+    font-size: var(--fs-sm);
+    font-weight: 550;
+    color: var(--text-2);
+  }
+  .min {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-sm);
+  }
+  .min .num {
+    width: 6em;
   }
   .consejo {
     display: flex;

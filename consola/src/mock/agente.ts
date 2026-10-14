@@ -25,6 +25,7 @@ import { empezarCopia, empezarHistorial, empezarRestauracion, empezarTarea } fro
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 import { observacionDelEquipo } from "./notas";
+import { pareceSecreto } from "../lib/versionesNotas";
 import { ADMITE_NOMBRES, carpetaNueva, MAX_EQUIPO, normalizar } from "../lib/nombres";
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -183,6 +184,21 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       tras: c.tras ?? null,
       inicio: c.inicio ?? null,
       retraso_min: c.retraso_min ?? null,
+      // Plan 0.8.0, F1: como el agente con `admite: "termina"` (la cuenta vuelve a cero si cambia la regla).
+      ...(previo.admite?.includes("termina")
+        ? (() => {
+            const antes = previo.copias?.find((p) => p.id === c.id);
+            const misma = JSON.stringify(antes?.termina ?? null) === JSON.stringify(c.termina ?? null);
+            const fin = !!c.termina && (c.termina.veces != null || !!c.termina.hasta || !!c.termina.una_vez);
+            return {
+              a_mano: c.a_mano ? true : null,
+              termina: fin ? c.termina : null,
+              hechas: fin ? (misma ? (antes?.hechas ?? 0) : 0) : null,
+              completada: fin && misma ? (antes?.completada ?? null) : null,
+              proxima: c.a_mano ? null : (antes?.proxima ?? null),
+            };
+          })()
+        : {}),
       // v1.16: como el agente 0.7.7 (los anteriores ni lo leen: siempre encendido).
       ...(versionAlMenos(e.version_agente, "0.7.7") ? { solo_si_cambios: c.solo_si_cambios !== false } : {}),
     })),
@@ -326,6 +342,12 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (!e.resumen?.admite?.includes("cadenas")) for (const k of cfg.copias) delete k.tras;
       // Plan 0.7.26: `inicio` y `retraso_min`, como el agente con `admite: "inicio_despues"` (uno anterior los ignora).
       if (!e.resumen?.admite?.includes("inicio_despues")) for (const k of cfg.copias) (delete k.inicio, delete k.retraso_min);
+      // Plan 0.8.0, F1: `a_mano` y `termina`, como el agente con `admite: "termina"` (uno anterior los ignora).
+      if (!e.resumen?.admite?.includes("termina")) for (const k of cfg.copias) (delete k.a_mano, delete k.termina);
+      for (const k of cfg.copias) {
+        if ((k.a_mano || k.termina?.una_vez) && (k.tras || k.horario.horas.length || k.horario.reglas?.length)) return resultado(e, o, "fallida", `La copia «${k.nombre}» no tiene horario (solo a mano o una sola vez): ni horario ni «después de» otra.`);
+        if (k.termina?.veces != null && !(k.termina.veces >= 1 && k.termina.veces <= 10_000)) return resultado(e, o, "fallida", `La copia «${k.nombre}» termina después de 1 a 10000 copias.`);
+      }
       for (const k of cfg.copias) {
         if ((k.inicio === "horario" && k.tras) || ((k.inicio === "cadena" || k.inicio === "despues") && !k.tras)) return resultado(e, o, "fallida", `Cómo empieza la copia «${k.nombre}» no cuadra con «tras».`);
         if (k.retraso_min != null && (k.retraso_min < 0 || k.retraso_min > 1440 || (k.retraso_min > 0 && !k.tras))) return resultado(e, o, "fallida", `El retraso de la copia «${k.nombre}» es de 0 a 1440 minutos, y solo tras otra.`);
@@ -334,7 +356,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (errCadena) return resultado(e, o, "fallida", errCadena);
       // Horario (v1.24): un agente ≥ 0.7.9 usa las reglas si las hay; uno anterior no las lee y usa la lista de horas.
       for (const k of cfg.copias) {
-        if (k.tras && !k.horario.reglas?.length && !k.horario.horas.length) continue;
+        if ((k.tras || k.a_mano || k.termina?.una_vez) && !k.horario.reglas?.length && !k.horario.horas.length) continue;
         if (k.horario.reglas?.length && !versionAlMenos(e.version_agente, VERSION_REGLAS)) delete k.horario.reglas;
         if (k.horario.reglas?.length) {
           const err = errorReglas(k.horario.reglas);
@@ -368,6 +390,22 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       e.resumen = resumenDe(e, cfg);
       guardarConfig(e, cfg, plana.seq);
+      // Plan 0.8.0, F1: «Una sola vez · Ahora»: el equipo la hace en su próxima vuelta y queda completada.
+      for (const k of cfg.copias) {
+        const r = e.resumen.copias?.find((x) => x.id === k.id);
+        const una = k.termina?.una_vez;
+        if (!r || !una || r.completada || r.hechas || una > new Date().toISOString().slice(0, 16)) continue;
+        setTimeout(
+          () =>
+            empezarCopia(e.cliente, e.id, k.repo, k.id, k.nombre, false, () => {
+              r.ultima = { cuando: ahora(), estado: "ok", bytes: 96_000_000 };
+              r.hechas = 1;
+              r.completada = ahora();
+              r.proxima = null;
+            }),
+          1500,
+        );
+      }
       const n = cfg.copias.reduce((s, x) => s + x.carpetas.length, 0);
       return resultado(e, o, "hecha", `Configuración aplicada: ${cfg.copias.length} copias, ${n} carpetas.`, detallePara(plana, { carpetas: n }));
     }
@@ -379,6 +417,11 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       if (copia)
         empezarCopia(e.cliente, e.id, copia.repo, copia.id, copia.nombre, !!e.informes[0]?.datos.copias?.find((x) => x.id === copia.id)?.ganchos?.length, () => {
           copia.ultima = { cuando: ahora(), estado: "ok", bytes: 214_000_000 };
+          // Plan 0.8.0, F1: cuenta para su fin (y, al llegar, queda completada).
+          if (copia.termina && !copia.completada) {
+            copia.hechas = (copia.hechas ?? 0) + 1;
+            if ((copia.termina.veces != null && copia.hechas >= copia.termina.veces) || copia.termina.una_vez) copia.completada = ahora();
+          }
         });
       return resultado(e, o, "hecha", "Copia pedida: empieza en unos segundos.");
     }
@@ -812,6 +855,60 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       observacionDelEquipo(e.cliente, e.id, t, `${plana.por ?? "El equipo"} (desde la consola «Consola de pruebas»)`);
       return resultado(e, o, "hecha", t ? "Observación guardada: la verán todas sus consolas." : "Observación quitada en todas sus consolas.");
     }
+    // Plan 0.8.0, F2 (14ww-2): comentarios en las versiones, guardados en el equipo.
+    case "comentario_version": {
+      if (!e.resumen?.admite?.includes("comentarios_version")) return resultado(e, o, "rechazada", "Tipo de orden desconocido.");
+      const repo = String(c.repo ?? "");
+      if (!e.resumen.repositorios?.some((r) => r.id === repo)) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      const version = String(c.version ?? "").toLowerCase();
+      if (!/^[0-9a-f]{8,64}$/.test(version)) return resultado(e, o, "fallida", "Versión no válida.");
+      const texto = String(c.texto ?? "").replace(/\r\n?/g, "\n").trim();
+      if (texto.length > 280) return resultado(e, o, "fallida", "Como mucho 280 caracteres.");
+      if (pareceSecreto(texto)) return resultado(e, o, "fallida", "Parece una contraseña o una clave: no la pongas en un comentario.");
+      const lista = (e.resumen.comentarios ??= []);
+      const id = typeof c.id === "string" && c.id ? c.id : null;
+      if (!id) {
+        if (!texto) return resultado(e, o, "fallida", "Escribe el comentario.");
+        lista.unshift({ id: randomUUID().replaceAll("-", "").slice(0, 12), repo, version, texto, cuando: ahora(), consola: "Consola de pruebas", por: plana.por ?? null, autor: typeof c.autor === "string" ? c.autor : null, esta: true });
+        return resultado(e, o, "hecha", "Comentario guardado: lo verán todas las consolas del equipo.");
+      }
+      const x = lista.find((y) => y.id === id && y.repo === repo);
+      if (!x) return resultado(e, o, "fallida", "Ese comentario ya no existe.");
+      if (!x.esta || !x.autor || x.autor !== c.autor) return resultado(e, o, "fallida", "Solo quien escribió el comentario puede cambiarlo o borrarlo.");
+      if (!texto) {
+        e.resumen.comentarios = lista.filter((y) => y !== x);
+        return resultado(e, o, "hecha", "Comentario borrado.");
+      }
+      x.texto = texto;
+      x.editado = ahora();
+      return resultado(e, o, "hecha", "Comentario cambiado.");
+    }
+    // Plan 0.8.0, F2 (14cc): «Conservar para siempre», en el equipo dueño o (con `usuario`) en el almacén.
+    case "conservar_version": {
+      if (!e.resumen?.admite?.includes("conservar_version")) return resultado(e, o, "rechazada", "Tipo de orden desconocido.");
+      const version = String(c.version ?? "").toLowerCase();
+      if (!/^[0-9a-f]{8,64}$/.test(version)) return resultado(e, o, "fallida", "Versión no válida.");
+      const motivo = String(c.motivo ?? "").replace(/\s+/g, " ").trim();
+      if (motivo.length < 3 || motivo.length > 200) return resultado(e, o, "fallida", "Escribe el motivo (de 3 a 200 caracteres).");
+      if (c.conservar !== true && !plana.not_before) return resultado(e, o, "rechazada", "Dejar de conservar una versión reduce la protección: falta la espera (not_before).");
+      const misma = (a: string) => a.slice(0, 8) === version.slice(0, 8);
+      if (typeof c.usuario === "string") {
+        const g = e.resumen.guarda_copias;
+        if (!g?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias de otros.");
+        const lista = (g.conservadas ??= []);
+        let x = lista.find((y) => y.usuario === c.usuario && y.repo === c.repo);
+        if (!x) lista.push((x = { usuario: c.usuario, repo: String(c.repo ?? ""), versiones: [] }));
+        x.versiones = x.versiones.filter((v) => !misma(v.version));
+        if (c.conservar === true) x.versiones.push({ version, motivo, cuando: ahora() });
+        return resultado(e, o, "hecha", c.conservar === true ? `La retención de este almacén nunca quitará esa versión de «${c.usuario}/${String(c.repo)}».` : `La retención de este almacén ya puede quitar esa versión de «${c.usuario}/${String(c.repo)}».`);
+      }
+      const repo = e.resumen.repositorios?.find((r) => r.id === c.repo);
+      if (!repo) return resultado(e, o, "fallida", "Ese repositorio no lo gestiona este servidor.");
+      const lista = (e.resumen.conservadas ??= []).filter((x) => !(x.repo === repo.id && misma(x.version)));
+      if (c.conservar === true) lista.push({ repo: repo.id, version, motivo, cuando: ahora(), consola: "Consola de pruebas", por: plana.por ?? null });
+      e.resumen.conservadas = lista;
+      return resultado(e, o, "hecha", c.conservar === true ? `Versión de «${repo.nombre}» conservada para siempre: la retención nunca la quitará.` : `La versión de «${repo.nombre}» ya no se conserva para siempre: la retención podrá quitarla.`);
+    }
     // Plan 0.8.0, B1: el nombre de un repositorio (como el agente).
     case "nombre_repositorio": {
       if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
@@ -1051,6 +1148,8 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         verificacion: (c.verificacion as T.VerificacionAuto | undefined) ?? null,
         activa: true,
         con_retencion: !!c.retencion,
+        // Plan 0.8.0, F4: la velocidad según la hora (como el agente con `admite: "limite_franjas"`).
+        ...(c.limite && e.resumen?.admite?.includes("limite_franjas") ? { limite: c.limite as T.DerivadaResumen["limite"] } : {}),
       };
       repo.derivadas = [...(repo.derivadas ?? []).filter((x) => x.id !== id), nueva];
       guardarConfig(e, configInicial(e), plana.seq);

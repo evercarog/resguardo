@@ -205,6 +205,8 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "aplicar_retencion_almacen" => format!("Aplicar la retención del almacén en {}", almacen()),
         // v1.56: los datos del equipo que comparten sus consolas y olvidar un destino sin uso.
         "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => crate::datos_equipo::descripcion(&o.tipo, c)?,
+        // Plan 0.8.0, F2 (con el motivo de «Conservar»).
+        "comentario_version" | "conservar_version" => crate::versiones_v2::descripcion(&o.tipo, v, c)?,
         "nombre_repositorio" => format!("Cambiar el nombre de un repositorio a «{}»", corto(c["nombre"].as_str().unwrap_or("").trim(), 80)),
         "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
         // 0.7.26 (bloque 8): datos comunes del cliente (sin los valores).
