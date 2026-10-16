@@ -312,6 +312,7 @@ Apuntado a partir del 2026-10-14, tras publicar la 0.8.0. Igual que con el bloqu
   - **Informes**.
   - Abajo, separado: **Ajustes**, que une Personas y ajustes, Organización (sedes, categorías, etiquetas y grupos de exclusiones: 15a, 15y), Versiones del agente y Servidor, con pestañas; solo lo que cada papel puede usar.
   - Sin títulos de grupo si no hacen falta; cada pestaña con su dirección (los enlaces de hoy redirigen a la nueva); el buscador (Ctrl K) llega a todo, también a cada pestaña; en móvil, el mismo orden. Mismo criterio en «Todos los clientes» (14xx). Probarlo con alguien que no conozca la consola antes de darlo por bueno.
+- [ ] **15cc. El mapa anima también las copias derivadas y los espejos:** hoy solo se animan la copia (equipo → repositorio → destino) y la copia externa antigua: `enVivo` (`lib/mapa.ts`) solo admite `"copia"` y `"copia_externa"`, y las flechas de las **derivadas** (lista `derivadas`, 14kk) y de los **espejos** se crean con `vivo: false` fijo, aunque el progreso en vivo de los dos ya llega a la consola (14p: tipos `derivada` y `espejo`, con el id de la derivada o del trabajo). Visto el 2026-10-16 con una derivada en marcha que no se veía. Hacer: `enVivo` con el tipo y el id (derivada, espejo por trabajo y destino, retención del almacén, verificación y prueba si se quieren), la flecha animada con su porcentaje en la etiqueta («subiendo 45 %») y el nodo destino en «info», igual que las copias; en el mapa de «Todos los clientes» también.
 
 ## Ideas a futuro (sin fecha, apuntadas el 2026-10-06)
 
