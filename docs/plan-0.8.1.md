@@ -1,22 +1,20 @@
-# Plan de la 0.8.1 y la 0.9.0 (propuesta para revisar)
+# Plan de la versión 0.8.1
 
-Propuesta del 2026-10-19, **pendiente del visto bueno del responsable**. Recoge el bloque 15 de [plan-mejoras.md](plan-mejoras.md) (15a–15rr, apuntado durante la primera semana de uso real de la 0.8.0) y lo que quedó abierto de los bloques 11–14. El detalle de cada punto está en `plan-mejoras.md`; aquí, el orden, el alcance y las decisiones. Marca aquí el estado de cada bloque (`[ ]` pendiente, `[~]` en curso, `[x]` hecho, con la rama). Lo que cambie mensajes entre agente y consola va en `docs/api-servidor.md` → «Cambios», compatible hacia atrás.
+Propuesta del 2026-10-19. **Visto bueno del responsable el 2026-10-19:** se hace todo, en **una sola versión llamada 0.8.1** («vamos muy rápido con las versiones»), y se añaden los detalles menores de la revisión (bloque G). Recoge el bloque 15 de [plan-mejoras.md](plan-mejoras.md) (15a–15rr, apuntado durante la primera semana de uso real de la 0.8.0) y lo que quedó abierto de los bloques 11–14. El detalle de cada punto está en `plan-mejoras.md`; aquí, el orden, el alcance y las decisiones. Marca aquí el estado de cada bloque (`[ ]` pendiente, `[~]` en curso, `[x]` hecho, con la rama). Lo que cambie mensajes entre agente y consola va en `docs/api-servidor.md` → «Cambios», compatible hacia atrás.
 
-**Objetivo de la 0.9.0: pulir.** Menos pantallas y más claras, ver de un vistazo dónde está cada cosa, que nada falle en silencio y que lo de cada día (renombrar, excluir, restaurar, desplegar) sea fácil. Pocas funciones nuevas grandes.
+**Objetivo: pulir.** Menos pantallas y más claras, ver de un vistazo dónde está cada cosa, que nada falle en silencio y que lo de cada día (renombrar, excluir, restaurar, desplegar) sea fácil. Pocas funciones nuevas grandes.
 
 **Principio (2026-10-16):** Resguardo es para cualquiera, no para un cliente concreto. Cada punto se diseña para cualquier entorno (equipo físico, Hyper-V, VMware, Proxmox, NAS, nube); lo propio de un proveedor, como extra opcional.
 
-## 0.8.1 — Arreglos que estorban el despliegue (antes, corta)
+## Bloque R — Arreglos que estorban el despliegue (primero)
 
-Una versión pequeña, solo fallos, para desplegar ya muchos equipos sin rodeos. Con su prueba cada uno.
+Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. Van primero dentro de la versión.
 
 - [ ] **R1. Instalación silenciosa que no vincula (15ff, causa real de 14ee):** el instalador corta `/SERVIDOR=https://…` en la primera `/`. Leerlo bien, la línea de la consola con comillas, y **prueba real en el CI**: compilar el instalador, instalarlo en silencio en el Windows del CI y comprobar que vincula.
 - [ ] **R2. Quitar la derivada «de cada día» no la quita de la consola (15p):** limpiar `externa` al quitarla y, al arrancar, las que quedaron así.
 - [ ] **R3. El instalador de «Instalar muchos equipos» se queda viejo (15x):** cambiarlo solo al bajar una versión más nueva; la página dice qué versión reparte; «Cambiarlo» también si se puso a mano.
 - [ ] **R4. «Ordenar nombres de carpeta» rompe las derivadas hacia el almacén (15i).**
 - [ ] **R5. Copia cortada al apagar sin rastro ni reintento (15jj):** anotarla «en curso» al empezar, «interrumpida» al arrancar, y reintentarla.
-
-## 0.9.0 — Pulir
 
 ### Bloque A — Que nada falle en silencio
 
@@ -67,18 +65,21 @@ Una versión pequeña, solo fallos, para desplegar ya muchos equipos sin rodeos.
 - [ ] **F1.** `resguardo-agente` en el PATH, la bandeja tras instalar, y que diga por qué no abre la ventana (elevada o sin WebView2) (15o).
 - [ ] **F2.** Instalar sin rodeos con ESET, Intune o GPO: guía con las órdenes en forma `cmd` (15x) y, con R1, una sola tarea.
 
-## Para decidir antes de empezar
+## Bloque G — Detalles menores (de la revisión del 2026-10-19)
 
-1. **¿Una 0.8.1 primero** (R1–R5, en unos días) y luego la 0.9.0? Recomendado: sí, desbloquea el despliegue por ESET.
-2. **El nombre:** «0.9.0» para la versión de pulir.
-3. **¿Entran ya o se dejan para después?** Son grandes o nuevas, y la 0.9.0 es para pulir:
-   - 15mm, que la persona del equipo recupere sus archivos desde el menú contextual;
-   - 15qq, la evidencia para cumplimiento (paquete para auditoría);
-   - D7 (portátiles) y D8 (apagar al terminar);
-   - C4, la infraestructura fase 1.
-   Recomendación: C4 y D7 dentro; 15mm, 15qq y D8 para la siguiente.
-4. **Seguridad de la consola (bloque 12):** passkeys (12c) y regla de dos personas (12d) siguen pendientes. Recomendación: 12c en la 0.9.0 si sobra tiempo; el resto, en su propia versión.
-5. **14v** (derivadas filtradas hechas por el almacén) sigue en «no».
+Pendiente de completar con la revisión de textos, estados vacíos y errores, accesibilidad y móvil, y mensajes del agente, el instalador y el servidor.
+
+## Bloque H — Lo que se decidió meter también (2026-10-19)
+
+- [ ] **H1.** Que la persona del equipo recupere sus propios archivos desde el menú contextual, con sus salvaguardas (15mm).
+- [ ] **H2.** Paquete de evidencia para auditoría y campos opcionales de responsable, criticidad y datos personales (15qq).
+- [ ] **H3.** Passkeys (WebAuthn) para entrar en la consola, además del TOTP (12c).
+
+## Decisiones (2026-10-19)
+
+1. **Una sola versión, 0.8.1**, con el bloque R primero. Mientras sale, en los despliegues por ESET se sigue con dos tareas (instalar y luego vincular).
+2. **Todo dentro:** también C4 (infraestructura fase 1), D7 (portátiles), D8 (apagar al terminar), 15mm, 15qq y las passkeys (bloque H).
+3. **14v** (derivadas filtradas hechas por el almacén) sigue en «no». **12a, 12b, 12d y 12e** (resto de la seguridad de la consola) quedan para una versión propia.
 
 ## Fuera de este plan
 
