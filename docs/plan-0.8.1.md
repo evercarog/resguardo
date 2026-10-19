@@ -67,7 +67,15 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ## Bloque G — Detalles menores (de la revisión del 2026-10-19)
 
-Pendiente de completar con la revisión de textos, estados vacíos y errores, accesibilidad y móvil, y mensajes del agente, el instalador y el servidor.
+Cuatro revisiones del código (textos, estados de las pantallas, accesibilidad y móvil, y lo que se ve fuera de la consola); unos 100 hallazgos, ordenados en [revision-detalles-0.8.1.md](revision-detalles-0.8.1.md).
+
+- [ ] **G1. Fallos de verdad (con el bloque R):** variables de CSS que no existen (los fallos de los espejos no salen en rojo), Escape que cierra diálogos que no deben cerrarse (se pierde lo escrito o un código de un solo uso), cargas que no terminan nunca si falla una petición, un informe para el cliente con datos en blanco sin avisar, botones que mandan dos veces con un doble clic, errores inesperados en inglés, un enlace roto, la prueba de restauración contada como verificación en los avisos de Windows. Con una comprobación estática de variables de CSS en `test:vectores`.
+- [ ] **G2. Confirmar y no perder trabajo:** avisar al salir con cambios sin enviar, confirmar lo que borra, `BotonFalta` en los botones apagados que no dicen qué falta, estados vacíos con su botón.
+- [ ] **G3. Un solo vocabulario en la consola:** tipos de destino, credenciales, botones («Seguir», «Listo»…), «copia derivada», «quitar», unidades y fechas, erratas y frases largas.
+- [ ] **G4. Fuera de la consola:** avisos y correos con nombres legibles y qué hacer; «número de comprobación», «vincular», «almacén» y «copia derivada» también en el agente, la bandeja, la ventana y el instalador; textos del instalador que ya no son ciertos; ayuda de `resguardo-agente`; errores en inglés.
+- [ ] **G5. Accesibilidad:** estados con icono y texto, sin `title` nativo, tablas y cambios legibles con lector de pantalla, teclado en las pestañas.
+- [ ] **G6. Pantallas estrechas:** tablas y fichas que desbordan a 375 px, direcciones largas, campos que hacen ampliar la página en el iPhone.
+- [ ] **G7. Sistema de diseño:** tamaños con sus tokens y piezas repetidas a `ui/` (kit imprimible, buscador, barra de fuerza de la clave).
 
 ## Bloque H — Lo que se decidió meter también (2026-10-19)
 
