@@ -43,6 +43,13 @@ pub fn main() -> i32 {
         let _ = service::uninstall();
         return crate::agent_purge();
     }
+    // 15o: el instalador y el desinstalador ponen o quitan la carpeta del programa del PATH del sistema.
+    if has("--anadir-al-path") {
+        return crate::path_sistema::anadir_main();
+    }
+    if has("--quitar-del-path") {
+        return crate::path_sistema::quitar_main();
+    }
     if let Some(code) = value("--pair") {
         let (url, key) = crate::web::defaults();
         let (url, key) = (value("--web-url").unwrap_or(url), value("--web-key").unwrap_or(key));
@@ -101,8 +108,17 @@ pub fn main() -> i32 {
         return report(tray::run());
     }
     // La ventana (docs/agente-ventana.md): la abre la bandeja, como el usuario.
+    // 15o: si no se puede abrir (como administrador o sin WebView2), un cuadro de aviso con el
+    // motivo y qué hacer, en vez de cerrarse sin decir nada.
     if has("--ventana") {
-        return report(crate::ventana::run());
+        return match crate::ventana::run() {
+            Ok(()) => 0,
+            Err(e) => {
+                crate::agent::log(&format!("Ventana: {e}"));
+                crate::ventana::explicar_que_no_abre(&e);
+                1
+            }
+        };
     }
     // En primer plano, sin servicio (pruebas o Linux sin systemd): el canal con
     // el servidor y una vuelta del agente cada `--cada` segundos (300 por defecto).
@@ -737,9 +753,11 @@ mod tray {
         }
         let lado = lado_icono();
         let elevado = crate::platform::is_elevated();
+        // 15o: sin WebView2 la ventana no se abre; la bandeja lo sabe antes de ofrecerla.
+        let webview2 = crate::ventana::webview2_disponible();
         let mut estado = leer();
         let mut variante = bandeja::variante(&estado, &ahora());
-        let mut entradas = bandeja::menu(&estado, &ahora(), elevado);
+        let mut entradas = bandeja::menu(&estado, &ahora(), elevado, webview2);
         let (menu, mut acciones) = construir(&entradas);
         let mut tooltip = bandeja::tooltip(&estado, &ahora());
         let mut builder = tray_icon::TrayIconBuilder::new().with_tooltip(&tooltip).with_menu(Box::new(menu));
@@ -747,7 +765,7 @@ mod tray {
             builder = builder.with_icon(i);
         }
         // Con la ventana disponible, pulsar el icono la abre (el menú, con el botón derecho).
-        let disponible = |e: &EstadoBandeja| e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado;
+        let disponible = |e: &EstadoBandeja| e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado && webview2;
         let mut con_ventana = disponible(&estado);
         builder = builder.with_menu_on_left_click(!con_ventana);
         let tray = builder.build().map_err(|e| format!("No se pudo crear el icono de la bandeja: {e}"))?;
@@ -816,7 +834,7 @@ mod tray {
                         avisador.avisar(a);
                     }
                 }
-                if crate::escritorio::abrir_al_empezar(&mut vistas, &nuevo.actividades, nuevo.escritorio.ventana, false) && !elevado {
+                if crate::escritorio::abrir_al_empezar(&mut vistas, &nuevo.actividades, nuevo.escritorio.ventana, false) && !elevado && webview2 {
                     abrir_ventana();
                 }
                 if disponible(&nuevo) != con_ventana {
@@ -833,7 +851,7 @@ mod tray {
                     let _ = tray.set_tooltip(Some(&texto));
                     tooltip = texto;
                 }
-                let nuevas = bandeja::menu(&nuevo, &t, elevado);
+                let nuevas = bandeja::menu(&nuevo, &t, elevado, webview2);
                 if nuevas != entradas {
                     let (menu, a) = construir(&nuevas);
                     tray.set_menu(Some(Box::new(menu)));

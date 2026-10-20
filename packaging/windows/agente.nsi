@@ -5,19 +5,20 @@
 ;            /DRESTIC_LICENSE=… /DAGENT_SHA256=… /DOUT_FILE=… agente.nsi
 ;
 ; Instalación para todo el equipo (administrador): copia resguardo-agente.exe
-; y restic.exe, instala y arranca el servicio «ResguardoAgente», y empareja el
-; equipo con la consola (página «Emparejar» con el código y el número de
-; comprobación en grande).
+; y restic.exe, instala y arranca el servicio «ResguardoAgente», añade su
+; carpeta al PATH del sistema (15o) y vincula el equipo con la consola (página
+; «Vincular con la consola» con el código y el número de comprobación en grande).
 ;
 ; Sin ventanas (para desplegar en muchos equipos):
-;   Resguardo-Agente-setup.exe /S /CODE=ABCD-EFGH-JK [/TRAY=0]
+;   Resguardo-Agente-setup.exe /S /CODE=ABCD-EFGH-JK /SERVIDOR=https://… [/TRAY=0]
+; La dirección también puede ir entre comillas: /SERVIDOR="https://…" (15ff).
 ;
 ; Actualización automática (docs/actualizaciones.md): el actualizador del
 ; agente lo ejecuta con /S /ACTUALIZACION=1. Igual que una actualización a
 ; mano, sin tocar la configuración, las claves ni los vínculos; además deja el
 ; icono de la bandeja como estaba (sin /TRAY=) y no intenta vincular nada.
 ; El número de comprobación queda en «emparejamiento.txt» junto al programa
-; (solo administradores). Código de salida 2 si el emparejamiento falla; el motivo
+; (solo administradores). Código de salida 2 si no se puede vincular; el motivo
 ; queda siempre en C:\ProgramData\ResguardoAgente\instalador.log (14ee).
 ;
 ; Instalador «listo» (v1.17): Resguardo Server añade al final de este mismo
@@ -101,7 +102,7 @@ Var FinTexto
 Var FinConsola
 
 !define MUI_WELCOMEPAGE_TITLE "Instalar ${PRODUCT}"
-!define MUI_WELCOMEPAGE_TEXT "Resguardo Agente hace las copias de seguridad de este equipo tal como las decide quien lo gestiona desde la consola de Resguardo.$\r$\n$\r$\nNo tiene ventana: es un servicio de Windows y, si quieres, un icono discreto en la bandeja que dice cómo van las copias y quién gestiona el equipo.$\r$\n$\r$\nTen a mano el código y la dirección que muestra la consola en «Equipos → Añadir equipo». Con el instalador listo que se descarga de la consola no hace falta: se vincula solo."
+!define MUI_WELCOMEPAGE_TEXT "Resguardo Agente hace las copias de seguridad de este equipo tal como las decide quien lo gestiona desde la consola de Resguardo.$\r$\n$\r$\nFunciona como un servicio de Windows. Si quieres, deja un icono discreto en la bandeja que dice cómo van las copias y quién gestiona el equipo, y desde el que se abre la ventana de Resguardo.$\r$\n$\r$\nTen a mano el código y la dirección que muestra la consola en «Equipos → Añadir equipo». Con el instalador listo que se descarga de la consola no hace falta: se vincula solo."
 !insertmacro MUI_PAGE_WELCOME
 Page custom OptionsPage OptionsLeave
 !insertmacro PaginaInstalar
@@ -149,11 +150,12 @@ Function .onInit
     StrCpy $Code ""
   ${EndIf}
   ; Resguardo Server: con /SERVIDOR=https://… se vincula a él en vez de a la consola de Windows.
-  ClearErrors
-  ${GetOptions} $R0 "/SERVIDOR=" $Servidor
-  ${If} ${Errors}
-    StrCpy $Servidor ""
-  ${EndIf}
+  ; 15ff: sin ${GetOptions}, que usa la «/» de la opción como separador y cortaba el valor
+  ; en la primera «/» de «https://» (quedaba «https:» y no se vinculaba ninguna instalación
+  ; silenciosa). Admite también el valor entre comillas: /SERVIDOR="https://…".
+  Push $R0
+  Call LeerServidor
+  Pop $Servidor
   ClearErrors
   ${GetOptions} $R0 "/TRAY=" $R1
   ${IfNot} ${Errors}
@@ -177,6 +179,50 @@ Function .onInit
       ${EndIf}
     ${EndIf}
   ${EndIf}
+FunctionEnd
+
+; 15ff: el valor de /SERVIDOR= en los parámetros (entra y sale por la pila; "" si no está).
+; Lo que sigue a «/SERVIDOR=» hasta el siguiente espacio; si empieza por comillas, hasta la
+; comilla de cierre. Si la opción entera venía entre comillas ("/SERVIDOR=https://…"), la
+; comilla final no forma parte del valor. Sin mayúsculas ni minúsculas en el nombre, como
+; ${GetOptions}. PairNow comprueba después que empiece por https:// y no lleve comillas ni espacios.
+Function LeerServidor
+  Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  ${StrStr} $1 $0 "/SERVIDOR="
+  ${If} $1 == ""
+    StrCpy $0 ""
+    Goto fin
+  ${EndIf}
+  StrCpy $1 $1 "" 10
+  StrCpy $2 $1 1
+  ${If} $2 == '"'
+    StrCpy $1 $1 "" 1
+    StrCpy $3 '"'
+  ${Else}
+    StrCpy $3 " "
+  ${EndIf}
+  StrCpy $2 0
+  ${Do}
+    StrCpy $4 $1 1 $2
+    ${If} $4 == ""
+    ${OrIf} $4 == $3
+    ${OrIf} $4 == '"'
+    ${OrIf} $4 == "$\t"
+      ${ExitDo}
+    ${EndIf}
+    IntOp $2 $2 + 1
+  ${Loop}
+  StrCpy $0 $1 $2
+  fin:
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Exch $0
 FunctionEnd
 
 ; Solo letras, cifras y guiones (va en una línea de órdenes): 1 si vale.
@@ -241,7 +287,7 @@ Function OptionsPage
   !insertmacro MUI_HEADER_TEXT "Opciones" "Lo que verá quien use este equipo."
   nsDialogs::Create 1018
   Pop $0
-  ${NSD_CreateLabel} 0 0 100% 36u "El icono de la bandeja dice cómo van las copias («Tus archivos están protegidos», cuándo fue la última y cuándo toca la siguiente) y quién gestiona el equipo. No permite cambiar nada de las copias."
+  ${NSD_CreateLabel} 0 0 100% 36u "El icono de la bandeja dice cómo van las copias («Tus archivos están protegidos», cuándo fue la última y cuándo toca la siguiente) y quién gestiona el equipo. Desde él se abre la ventana de Resguardo."
   Pop $0
   ${NSD_CreateCheckbox} 0 44u 100% 12u "Mostrar el icono de Resguardo en la bandeja"
   Pop $TrayBox
@@ -374,10 +420,28 @@ Section "Resguardo Agente" SecMain
     Pop $0
   ${EndIf}
 
+  ; 15o: la carpeta del programa en el PATH del sistema, para que «resguardo-agente …» funcione
+  ; en cualquier símbolo del sistema nuevo. Lo hace el propio agente (lee y escribe el valor
+  ; sin expandir y sin límite de longitud; no toca las demás entradas).
+  nsExec::Exec '"$INSTDIR\resguardo-agente.exe" --anadir-al-path'
+  Pop $0
+
+  ; 15o: «Resguardo» en el menú Inicio (abre la ventana) y el acceso que usa el instalador para
+  ; arrancar la bandeja con el usuario de la sesión (no como administrador).
+  CreateShortCut "$SMPROGRAMS\Resguardo.lnk" "$INSTDIR\resguardo-agente.exe" "--ventana" "$INSTDIR\uninstall.exe" 0
+  CreateShortCut "$INSTDIR\Resguardo (bandeja).lnk" "$INSTDIR\resguardo-agente.exe" "--tray" "$INSTDIR\uninstall.exe" 0
+
   ${If} $Tray == "1"
     WriteRegStr HKLM "${RUN_KEY}" "ResguardoAgente" '"$INSTDIR\resguardo-agente.exe" --tray'
-    ${IfNot} ${Silent}
-      Exec '"$INSTDIR\resguardo-agente.exe" --tray'
+    ; 15o: la bandeja, ya, en la sesión de quien instala, a través del Explorador (como el
+    ; usuario, no elevada: elevada no ofrece «Abrir Resguardo»). También sin ventanas (la línea
+    ; de PowerShell), salvo en la actualización automática o si quien instala es SYSTEM (ESET,
+    ; Intune, GPO): ahí no hay sesión, y el icono sale al entrar en Windows.
+    UserInfo::GetName
+    Pop $1
+    ${If} $Actualizacion != "1"
+    ${AndIf} $1 != "SYSTEM"
+      Exec '"$WINDIR\explorer.exe" "$INSTDIR\Resguardo (bandeja).lnk"'
     ${EndIf}
   ${Else}
     DeleteRegValue HKLM "${RUN_KEY}" "ResguardoAgente"
@@ -389,7 +453,7 @@ Section "Resguardo Agente" SecMain
     Call PairPreparado
   ${EndIf}
 
-  ; Sin ventanas: se empareja aquí con /CODE=.
+  ; Sin ventanas: se vincula aquí con /CODE=.
   Call AlreadyPaired
   Pop $0
   ${If} $Preparado == "1"
@@ -404,7 +468,7 @@ Section "Resguardo Agente" SecMain
   ${ElseIf} ${Silent}
   ${AndIf} $Code != ""
     ; 14ee: con /CODE= en un equipo ya vinculado no se hace nada: que quede dicho.
-    Push "Este equipo ya estaba vinculado: no se ha usado el código (para otro servidor: resguardo-agente vincular CÓDIGO --servidor https://…)."
+    Push "Este equipo ya estaba vinculado: no se ha usado el código (para otra consola, como administrador: resguardo-agente vincular CÓDIGO --servidor https://…)."
     Call AnotarInstalador
   ${EndIf}
 !endif
@@ -454,7 +518,7 @@ Function PairNow
     ${If} $1 != "https://"
     ${OrIf} $2 != ""
     ${OrIf} $3 != ""
-      StrCpy $R9 "La dirección del servidor debe empezar por https:// (p. ej. https://192.168.1.20:8443)."
+      StrCpy $R9 "La dirección del servidor («$Servidor») debe empezar por https:// y no llevar espacios ni comillas (p. ej. https://192.0.2.20:8443)."
       Goto fin
     ${EndIf}
     ; 14ee: `vincular` prepara él mismo la carpeta del agente con sus permisos (el servicio
@@ -483,7 +547,7 @@ Function PairNow
   ${If} ${Errors}
     StrCpy $R9 "El agente terminó sin decir el resultado (código $0, $R8 intentos). Comprueba que nada lo bloquea (un antivirus) y vincúlalo a mano."
     ${If} $Servidor == ""
-      StrCpy $R9 "No se pudo emparejar: falta la dirección de la consola (Resguardo Server), la que sale junto al código, p. ej. https://192.168.1.20:8443. Sin dirección solo se empareja con la antigua app de escritorio."
+      StrCpy $R9 "Falta la dirección de la consola, la que sale junto al código (p. ej. https://192.0.2.20:8443)."
     ${EndIf}
     Goto fin
   ${EndIf}
@@ -550,9 +614,9 @@ Function AnotarInstalador
   Pop $R7
 FunctionEnd
 
-; ---------- Emparejar ----------
+; ---------- Vincular con la consola ----------
 
-; ¿Ya emparejado? (al actualizar): no se vuelve a pedir el código.
+; ¿Ya vinculado? (al actualizar): no se vuelve a pedir el código.
 Function AlreadyPaired
   !ifdef VISTA_PREVIA
     Push "0"
@@ -668,7 +732,7 @@ Function PairPage
     StrCpy $PairSkipped "1"
     Abort
   ${EndIf}
-  !insertmacro MUI_HEADER_TEXT "Emparejar con la consola" "El código de un solo uso que muestra la consola."
+  !insertmacro MUI_HEADER_TEXT "Vincular con la consola" "El código de un solo uso que muestra la consola."
   nsDialogs::Create 1018
   Pop $0
   ${NSD_CreateLabel} 0 0 100% 30u "Escribe el código que te muestra la consola de Resguardo Server (en «Equipos → Añadir equipo»):"
@@ -684,7 +748,7 @@ Function PairPage
   ${If} $ErrorPrep != ""
     ${NSD_CreateLabel} 0 92u 100% 40u "No se pudo vincular con los datos de este instalador: $ErrorPrep  Pide en la consola un código nuevo y escríbelo arriba."
   ${Else}
-    ${NSD_CreateLabel} 0 90u 100% 44u "Por ejemplo https://192.168.1.20:8443. Deja el código en blanco para emparejarlo más tarde (como administrador: resguardo-agente.exe vincular CÓDIGO --servidor https://…).$\r$\nSolo con la antigua app de escritorio (Resguardo para Windows) se deja vacía la dirección."
+    ${NSD_CreateLabel} 0 90u 100% 44u "Por ejemplo https://192.0.2.20:8443. Deja el código en blanco para vincularlo más tarde (como administrador, en el símbolo del sistema: resguardo-agente vincular CÓDIGO --servidor https://…)."
   ${EndIf}
   Pop $0
   ${NSD_SetFocus} $CodeInput
@@ -702,7 +766,7 @@ Function PairLeave
   StrCpy $Preparado "0"
   Call PairNow
   ${If} $Sas == ""
-    MessageBox MB_ICONEXCLAMATION "No se pudo emparejar:$\r$\n$\r$\n$R9"
+    MessageBox MB_ICONEXCLAMATION "No se pudo vincular con la consola:$\r$\n$\r$\n$R9"
     Abort
   ${EndIf}
 FunctionEnd
@@ -714,7 +778,7 @@ Function SasPage
   !insertmacro MUI_HEADER_TEXT "Comprueba el número" "Para estar seguros de que es tu consola."
   nsDialogs::Create 1018
   Pop $0
-  ${NSD_CreateLabel} 0 0 100% 24u "Emparejado con «$Console». Comprueba que la consola muestra el mismo número:"
+  ${NSD_CreateLabel} 0 0 100% 24u "Vinculado con «$Console». Comprueba que la consola muestra el mismo número:"
   Pop $0
   ${NSD_CreateLabel} 0 30u 100% 44u "$Sas"
   Pop $1
@@ -742,7 +806,7 @@ Function FinPre
   ${ElseIf} $0 == "1"
     StrCpy $FinTexto "Este equipo ya estaba vinculado con su consola: sigue con sus copias como hasta ahora."
   ${Else}
-    StrCpy $FinTexto "Falta vincular este equipo con la consola. Como administrador, en el símbolo del sistema:$\r$\n$\r$\n  resguardo-agente vincular CÓDIGO --servidor https://…$\r$\n$\r$\nEl código y la dirección están en la consola, en «Equipos → Añadir equipo»."
+    StrCpy $FinTexto "Falta vincular este equipo con la consola. Como administrador, en un símbolo del sistema nuevo:$\r$\n$\r$\n  resguardo-agente vincular CÓDIGO --servidor https://…$\r$\n$\r$\nEl código y la dirección están en la consola, en «Equipos → Añadir equipo»."
   ${EndIf}
   ${If} $FinConsola != ""
     StrCpy $FinTexto "$FinTexto$\r$\n$\r$\nAbre la consola: $FinConsola"
@@ -778,6 +842,11 @@ Section "Uninstall"
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM resguardo-agente.exe'
   Pop $0
   DeleteRegValue HKLM "${RUN_KEY}" "ResguardoAgente"
+  ; 15o: fuera del PATH del sistema (solo su carpeta; las demás entradas se quedan como estaban).
+  nsExec::Exec '"$INSTDIR\resguardo-agente.exe" --quitar-del-path'
+  Pop $0
+  Delete "$SMPROGRAMS\Resguardo.lnk"
+  Delete "$INSTDIR\Resguardo (bandeja).lnk"
 
   ; El Servidor de copias: rest-server, su tarea y su regla del cortafuegos.
   ; Las copias que guardaba se quedan en su carpeta.
@@ -788,12 +857,12 @@ Section "Uninstall"
   nsExec::Exec '"$SYSDIR\netsh.exe" advfirewall firewall delete rule "name=${SERVER_TASK}"'
   Pop $0
 
-  ; Los datos (emparejamiento, copias programadas, historial y contraseñas
+  ; Los datos (vínculo con la consola, copias programadas, historial y contraseñas
   ; cifradas) solo se borran si se pide. Son solo del agente
   ; (ProgramData\ResguardoAgente): los de la app de escritorio
   ; (ProgramData\Resguardo) nunca se tocan.
   ${If} ${FileExists} "$APPDATA\ResguardoAgente\*.*"
-    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "¿Borrar también los datos de Resguardo Agente de este equipo?$\r$\n$\r$\n$APPDATA\ResguardoAgente guarda el emparejamiento con la consola, las copias programadas, el historial y las contraseñas (cifradas). Las copias guardadas en el servidor no se tocan.$\r$\n$\r$\nSi vas a volver a instalarlo, elige «No»." /SD IDNO IDNO keep_data
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "¿Borrar también los datos de Resguardo Agente de este equipo?$\r$\n$\r$\n$APPDATA\ResguardoAgente guarda el vínculo con la consola, las copias programadas, el historial y las contraseñas de los repositorios (cifradas).$\r$\n$\r$\nLas copias guardadas no se tocan, pero sin el kit de recuperación de cada repositorio no se podrán abrir. Si no lo tienes, elige «No» y guárdalo antes (como administrador, en el símbolo del sistema: resguardo-agente kit).$\r$\n$\r$\nSi vas a volver a instalarlo, elige «No»." /SD IDNO IDNO keep_data
     DetailPrint "Borrando los datos del agente..."
     nsExec::Exec '"$INSTDIR\resguardo-agente.exe" --agent-purge'
     Pop $0
