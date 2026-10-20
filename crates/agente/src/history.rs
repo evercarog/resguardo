@@ -56,6 +56,9 @@ pub struct Entry {
     /// Resultado de los ganchos de la copia («backup»), si tiene.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ganchos: Vec<crate::ganchos::ResultadoGancho>,
+    /// 15oo: el texto técnico de un fallo, sin rutas (para el «Detalle técnico»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// Usuario de Windows que usa la app (para «quién cambió qué»).

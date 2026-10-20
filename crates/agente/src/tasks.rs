@@ -1401,6 +1401,7 @@ pub fn run() -> i32 {
         }
         // El estado y el historial los leen todos los usuarios: sin rutas.
         record.message = crate::web::local_message(&record.message);
+        record.detail = record.detail.as_deref().map(crate::web::local_message);
         crate::history::append(
             &crate::history::agent_file(),
             &crate::history::Entry {
@@ -1417,6 +1418,7 @@ pub fn run() -> i32 {
                 // v1.6x (14o): lo restaurado en una prueba y de qué versión (para su detalle en la consola).
                 data_added: record.data_added,
                 snapshot_id: record.snapshot_id.clone(),
+                detail: record.detail.clone(),
                 ..Default::default()
             },
         );
@@ -1671,7 +1673,11 @@ fn verify_repo(mut access: Access, verify: &Verify, part: u32, report: &mut dyn 
         Ok(out) => {
             let text = String::from_utf8_lossy(&out.stdout).to_lowercase() + &out.stderr.to_lowercase();
             record.result = "error".into();
-            record.message = if datos_danados(&text) { DATOS_DANADOS.into() } else { restic::exit_error(out.code, &out.stderr) };
+            if datos_danados(&text) {
+                record.message = DATOS_DANADOS.into();
+            } else {
+                (record.message, record.detail) = restic::exit_error_partes(out.code, &out.stderr);
+            }
         }
         Err(e) => {
             record.result = "error".into();
@@ -1907,7 +1913,7 @@ pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite,
         }
         Ok(out) => {
             record.result = "error".into();
-            record.message = restic::exit_error(out.code, &out.stderr);
+            (record.message, record.detail) = restic::exit_error_partes(out.code, &out.stderr);
             record.finished = Local::now().to_rfc3339();
             return record;
         }
