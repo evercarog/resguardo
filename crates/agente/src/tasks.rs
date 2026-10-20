@@ -2032,6 +2032,8 @@ pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite,
             });
         }
     }
+    // 15g: cuántas versiones tiene ahora su repositorio (para la página de la copia derivada).
+    record.versiones_destino = restic::snapshots(&dest).ok().map(|l| l.len() as u64);
     record.finished = Local::now().to_rfc3339();
     record
 }

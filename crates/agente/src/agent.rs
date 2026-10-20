@@ -644,6 +644,9 @@ pub struct RunRecord {
     /// servicio se cortó a mitad). Va con `result: "error"`, así que cuenta para el reintento.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrumpida: bool,
+    /// 15g (copia externa o derivada): las versiones que tiene su repositorio tras la vuelta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub versiones_destino: Option<u64>,
 }
 
 /// 15jj: lo que se anota de una copia que quedó «en curso» (`state.running`, en disco
