@@ -511,6 +511,9 @@ pub enum Accion {
     Ventana,
 }
 
+/// Lo que dice el menú en lugar de «Abrir Resguardo» si la bandeja va como administrador.
+pub const TEXTO_ELEVADA: &str = "Para ver la ventana, abre el icono sin «Ejecutar como administrador» (menú Inicio → Resguardo).";
+
 /// Parte un texto en líneas de hasta `ancho` caracteres, por los espacios.
 pub fn en_lineas(texto: &str, ancho: usize) -> Vec<String> {
     let mut lineas: Vec<String> = Vec::new();
@@ -540,17 +543,27 @@ pub enum Entrada {
 /// Resguardo» (la ventana, si no está apagada), las copias (solo lectura), «Copiar ahora» (si se puede pedir), «Abrir la consola»,
 /// «Ver el registro» y «Ocultar el icono».
 ///
-/// `elevado`: la bandeja corre como administrador (la abrió el instalador).
-/// Entonces no abre programas (un Bloc de notas de administrador en la
-/// sesión de un usuario le daría acceso a todo el equipo).
-pub fn menu(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>, elevado: bool) -> Vec<Entrada> {
+/// `elevado`: la bandeja corre como administrador (p. ej. abierta desde una
+/// terminal de administrador). Entonces no abre programas (un Bloc de notas
+/// de administrador en la sesión de un usuario le daría acceso a todo el
+/// equipo), y el menú dice por qué no ofrece la ventana (15o).
+///
+/// `webview2`: este Windows tiene WebView2, que la ventana necesita. Sin él,
+/// «Abrir Resguardo» lo dice y, al pulsarlo, explica cómo instalarlo (15o).
+pub fn menu(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>, elevado: bool, webview2: bool) -> Vec<Entrada> {
     let mut m = vec![Entrada::Texto(linea_estado(e, ahora))];
     // Quién gestiona el equipo, en líneas cortas (un menú no parte el texto).
     m.extend(en_lineas(&e.privacy, 60).into_iter().map(Entrada::Texto));
     m.push(Entrada::Separador);
     // La ventana, si no está apagada (y nunca como administrador: sería un navegador elevado).
-    if e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado {
-        m.push(Entrada::Opcion("Abrir Resguardo".into(), Accion::Ventana));
+    if e.escritorio.ventana != crate::escritorio::Ventana::Off {
+        if elevado {
+            m.extend(en_lineas(TEXTO_ELEVADA, 60).into_iter().map(Entrada::Texto));
+        } else if webview2 {
+            m.push(Entrada::Opcion("Abrir Resguardo".into(), Accion::Ventana));
+        } else {
+            m.push(Entrada::Opcion("Abrir Resguardo (falta WebView2)…".into(), Accion::Ventana));
+        }
     }
     if e.vinculado {
         let filas: Vec<Entrada> = if e.copias.is_empty() {
@@ -1027,7 +1040,7 @@ mod tests {
         e.privacy = "Este equipo lo gestiona Resguardo Server (x): …".into();
         e.consola = Some("https://copias.ejemplo.com:8443".into());
         e.pedir = true;
-        let m = menu(&e, &ahora(), false);
+        let m = menu(&e, &ahora(), false, true);
         assert_eq!(m[0], Entrada::Texto("Tus archivos están protegidos.".into()));
         assert_eq!(m[1], Entrada::Texto(e.privacy.clone()));
         assert_eq!(m[3], Entrada::Opcion("Abrir Resguardo".into(), Accion::Ventana));
@@ -1041,7 +1054,7 @@ mod tests {
         // Varias copias: un submenú, sin las que están en pausa.
         e.copias.push(copia("Correo", "", None, None));
         e.copias.push(CopiaBandeja { pausada: true, ..copia("Fotos", "ok", None, None) });
-        let m = menu(&e, &ahora(), false);
+        let m = menu(&e, &ahora(), false, true);
         let sub = m.iter().find_map(|x| match x {
             Entrada::Submenu(t, s) if t == "Copiar ahora" => Some(s.clone()),
             _ => None,
@@ -1053,12 +1066,21 @@ mod tests {
         // Sin carpeta de solicitudes, sin consola https y como administrador: solo lo que es leer.
         e.pedir = false;
         e.consola = Some("http://inseguro".into());
-        let m = menu(&e, &ahora(), true);
+        let m = menu(&e, &ahora(), true, true);
         assert_eq!(opciones(&m), ["Copias ▸", "Ocultar el icono hasta el próximo inicio de sesión"], "como administrador, sin la ventana");
+        // 15o: y dice por qué no la ofrece.
+        assert!(m.contains(&Entrada::Texto("Para ver la ventana, abre el icono sin «Ejecutar como".into())), "{m:?}");
+        // 15o: sin WebView2 se ofrece, pero diciendo lo que falta (al pulsarla se explica).
+        e.consola = Some("https://copias.ejemplo.com:8443".into());
+        let m = menu(&e, &ahora(), false, false);
+        assert_eq!(
+            m.iter().find(|x| matches!(x, Entrada::Opcion(_, Accion::Ventana))),
+            Some(&Entrada::Opcion("Abrir Resguardo (falta WebView2)…".into(), Accion::Ventana))
+        );
 
         // La línea de quién lo gestiona, partida para que el menú no sea enorme.
         e.privacy = "Este equipo lo gestiona Resguardo Server (copias.ejemplo.com:8443): su administrador puede ver y restaurar sus copias.".into();
-        let m = menu(&e, &ahora(), false);
+        let m = menu(&e, &ahora(), false, true);
         assert_eq!(m[1], Entrada::Texto("Este equipo lo gestiona Resguardo Server".into()));
         assert_eq!(m[2], Entrada::Texto("(copias.ejemplo.com:8443): su administrador puede ver y".into()));
         assert_eq!(m[3], Entrada::Texto("restaurar sus copias.".into()));
@@ -1066,13 +1088,13 @@ mod tests {
         assert!(en_lineas("", 60).is_empty());
 
         // Sin vincular: ni copias ni consola.
-        let m = menu(&EstadoBandeja::default(), &ahora(), false);
+        let m = menu(&EstadoBandeja::default(), &ahora(), false, true);
         assert_eq!(m[0], Entrada::Texto("Sin vincular a ninguna consola.".into()));
         assert_eq!(opciones(&m), ["Abrir Resguardo", "Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
         // Con la ventana apagada desde la consola: el menú de siempre.
         let mut apagada = EstadoBandeja::default();
         apagada.escritorio.ventana = crate::escritorio::Ventana::Off;
-        assert_eq!(opciones(&menu(&apagada, &ahora(), false)), ["Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
+        assert_eq!(opciones(&menu(&apagada, &ahora(), false, true)), ["Ver el registro", "Ocultar el icono hasta el próximo inicio de sesión"]);
     }
 
     #[test]

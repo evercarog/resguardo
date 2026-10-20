@@ -4,7 +4,7 @@
   import { CircleHelp } from "@lucide/svelte";
   import type { RepoInforme } from "$lib/tipos";
   import { problemasRecientes } from "$lib/detalle";
-  import { proteccion, TEXTO_RESULTADO, TONO_COMPROBACION, TONO_RESULTADO, TEXTO_TAREA, TONO_TAREA, ultimaEjecucion } from "$lib/repo";
+  import { proteccion, TEXTO_TAREA, textoResultado, TONO_COMPROBACION, TONO_TAREA, tonoResultado, ultimaEjecucion } from "$lib/repo";
   import { explicarError } from "$lib/copia";
   import { fraseError } from "$lib/errorCopia";
   import ErrorCopia from "../ErrorCopia.svelte";
@@ -36,7 +36,7 @@
     <h3>La última copia</h3>
     {#if ultima}
       <button class="pulsable-bloque fila" use:tip={"Ver el detalle"} onclick={() => abrirVuelta(ultima!.hora)}>
-        <Chip tono={TONO_RESULTADO[ultima.resultado]} texto={TEXTO_RESULTADO[ultima.resultado]} />
+        <Chip tono={tonoResultado(ultima)} texto={textoResultado(ultima)} />
         <span>{relativo(ultima.hora, ahora)}</span>
         {#if ultima.mensaje_corto && ultima.resultado !== "ok"}<span class="msg">{fraseError(ultima.mensaje_corto)}</span>{/if}
       </button>
@@ -55,7 +55,7 @@
           <li>
             <button class="pulsable-bloque fila" use:tip={"Ver el detalle"} onclick={() => abrirVuelta(e.hora)}>
               <span class="num cuando">{fechaCorta(e.hora)}</span>
-              <Chip pequeno tono={TONO_RESULTADO[e.resultado]} texto={TEXTO_RESULTADO[e.resultado]} />
+              <Chip pequeno tono={tonoResultado(e)} texto={textoResultado(e)} />
               <span class="msg">{e.mensaje_corto ? fraseError(e.mensaje_corto) : explicarError(e.mensaje_corto).titulo}</span>
             </button>
           </li>

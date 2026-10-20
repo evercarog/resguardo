@@ -7,7 +7,7 @@
   // Ficha de un equipo: estado, copias, repositorios, órdenes, informes y detalles.
   import Copiable from "$lib/componentes/Copiable.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
-  import { bytesRepo, destinoDe, dias, diasCopia, informeDe, nVersiones, proteccion, TEXTO_RESULTADO, TONO_RESULTADO, ultimaEjecucion, ultimaVersion } from "$lib/repo";
+  import { bytesRepo, destinoDe, dias, diasCopia, informeDe, nVersiones, proteccion, textoResultado, tonoResultado, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
   import { ultimas24h } from "$lib/panel";
@@ -1152,7 +1152,7 @@
                     <h3>{r.nombre} <ContadorNotas tipo="repositorio" objeto={objetoDe(equipo.id, r.id)} />{#if r.solo_lectura} <span class="badge badge-sm tone-neutral" use:tip={"Importado de otro equipo: se puede explorar y restaurar, pero ninguna copia escribe en él."}>Solo lectura</span>{/if}</h3>
                     <p class="donde"><SeGuardaEn pequeno lugar={lugarRepo(r, equipo, actual.equipos)} riesgo={!!riesgo} /></p>
                   </div>
-                  {#if ej}<Chip pequeno tono={TONO_RESULTADO[ej.resultado]} texto={ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado]} />{/if}
+                  {#if ej}<Chip pequeno tono={tonoResultado(ej)} texto={ej.resultado === "ok" ? "Al día" : textoResultado(ej)} />{/if}
                   <ChevronRight size={16} />
                 </a>
                 <!-- C1: el camino del repositorio (espejos y copias derivadas), con el estado de cada uno. -->

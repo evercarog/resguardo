@@ -600,6 +600,9 @@ pub struct Entrada<'a> {
     pub fallidas: &'a [String],
     /// ¿Es un almacén («Este equipo guarda copias»)?
     pub almacen: bool,
+    /// 15x: ¿se acaba de vincular (con un agente que puede ser viejo, el del instalador que se
+    /// repartió)? Entonces no espera los días de su anillo: lo demás de la política, sí.
+    pub recien_vinculado: bool,
 }
 
 /// El resultado: `al_dia`, `instalar`, `pendiente` (con su motivo) o `pausada`.
@@ -686,7 +689,7 @@ pub fn decidir(e: &Entrada) -> Decision {
     if p.retenidas.iter().any(es) || e.fallidas.iter().any(es) {
         return Decision::pendiente("retenida", None);
     }
-    if p.anillo != "prueba" {
+    if p.anillo != "prueba" && !e.recien_vinculado {
         let desde = e.disponible_desde + Duration::days(i64::from(p.dias_general.min(MAX_DIAS_GENERAL)));
         if e.ahora < desde {
             return Decision::pendiente("espera_anillo", Some(desde));
@@ -1005,6 +1008,7 @@ mod tests {
                 en_marcha: c["en_marcha"].as_bool().unwrap_or(false),
                 fallidas: &fallidas,
                 almacen: c["almacen"].as_bool().unwrap_or(false),
+                recien_vinculado: c["recien_vinculado"].as_bool().unwrap_or(false),
             });
             let esperado = &c["decision"];
             assert_eq!(d.estado, esperado["estado"].as_str().unwrap(), "{nombre}: {d:?}");

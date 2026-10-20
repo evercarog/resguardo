@@ -379,6 +379,13 @@ fn en_marcha() -> bool {
     !crate::progreso_v2::tareas(None).is_empty() || !crate::escritorio::en_marcha::actividades().is_empty()
 }
 
+/// 15x: ¿se acaba de vincular? Gestionado y sin ninguna copia hecha todavía: el agente es el
+/// del instalador que se repartió (quizá anterior a la versión vigente), así que no espera los
+/// días de su anillo para ponerse al día (lo demás de la política, sí: modo, ventana…).
+fn recien_vinculado() -> bool {
+    crate::servidor_v2::cargar().is_some_and(|v| v.modo == "gestionado") && crate::agent::load_state().runs.is_empty()
+}
+
 /// Busca, decide y, si toca, baja e instala.
 pub fn buscar_e_instalar() -> Result<(), String> {
     let llaves = llaves();
@@ -448,6 +455,7 @@ pub fn buscar_e_instalar() -> Result<(), String> {
         en_marcha: en_marcha(),
         fallidas: &fallidas,
         almacen: crate::server::load().enabled,
+        recien_vinculado: recien_vinculado(),
     });
     let origen = oferta.origen.texto();
     cambiar(|e| {

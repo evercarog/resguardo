@@ -154,10 +154,12 @@ Este botón solo sale con Resguardo Server para Windows (es el que trae el insta
 ### 5.2 Windows: instalador normal y un código
 
 1. **Instalador normal y un código** → **Generar el código** (vale 15 min).
-2. En el equipo, `Resguardo-Agente_0.7.10_x64-setup.exe` como administrador. En **«Emparejar con la consola»**: el código y la **dirección de Resguardo Server** (`https://192.168.1.20:8443`). **No la dejes vacía**: vacía, intenta emparejarse con la app de escritorio antigua.
+2. En el equipo, `Resguardo-Agente_0.8.1_x64-setup.exe` como administrador. En **«Vincular con la consola»**: el código y la **dirección de Resguardo Server** (`https://192.0.2.20:8443`). No la dejes vacía.
 3. El instalador enseña el número. En la consola, compáralo → **Coincide** → clave de administración.
 
-Para muchos equipos, sin ventanas: `Resguardo-Agente-setup.exe /S /CODE=ABCD-EFGH-JK /SERVIDOR=https://192.168.1.20:8443 [/TRAY=0]` (el número queda en `emparejamiento.txt`, junto al programa).
+Para muchos equipos, sin ventanas: `Resguardo-Agente-setup.exe /S /CODE=ABCD-EFGH-JK /SERVIDOR="https://192.0.2.20:8443" [/TRAY=0]` (el número queda en `emparejamiento.txt`, junto al programa). Pon la dirección **entre comillas**: los instaladores 0.8.0 la cortaban en la primera «/» si iba sin ellas y no vinculaban (desde la 0.8.1 se lee bien de las dos formas).
+
+El instalador añade su carpeta al `PATH` del sistema: en un símbolo del sistema **nuevo** basta con escribir `resguardo-agente estado` (antes había que poner la ruta entera, `"C:\Program Files\Resguardo Agente\resguardo-agente.exe"`). La ventana se abre desde el menú Inicio («Resguardo») o desde el icono de la bandeja.
 
 ### 5.3 Linux (Debian, Ubuntu o un CT)
 
@@ -187,7 +189,7 @@ Para 10, 30 o 100 equipos a la vez: **Añadir equipo → Instalar muchos equipos
    Número de comprobación: 123 456
    ```
 
-   Para una herramienta de despliegue (GPO, Intune, PDQ…), **Para una herramienta de despliegue** da la misma línea codificada: `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand …`, como administrador o como SYSTEM. El instalador lo da el servidor (viene con Resguardo Server para Windows; en Linux, `poner-instalador-agente`).
+   Para una herramienta de despliegue (ESET, GPO, Intune, PDQ…), **Para una herramienta de despliegue** da la misma línea codificada: `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand …`, como administrador o como SYSTEM (ver 5.6). El instalador lo da el servidor (viene con Resguardo Server para Windows; en Linux, `poner-instalador-agente`). La página dice **qué versión del agente reparte**; si es más vieja que la última que tiene el servidor, o se puso a mano y no se sabe cuál es, quien administra el servidor la cambia con **«Cambiarlo por el de la X»**.
 3. **Linux**: instala el agente ([agente-linux.md](agente-linux.md)) y pega la línea como root (`sudo resguardo-agente vincular … --huella-ca …`). Empieza por un espacio: en Debian y Ubuntu, bash no la guarda en el historial.
 4. En la consola, **Equipos esperando confirmación** enseña cada equipo con su nombre, su IP y su número en grande. Compara el número con el de la pantalla de cada equipo y **marca solo los que coinciden**. Después, **Confirmar** uno o **Confirmar los seleccionados** (la clave de administración, una vez para todos; tarda unos segundos por equipo). Uno que no reconoces: **Rechazar** (se quita; su uso no se devuelve). Si el número del servidor no coincide con el que calcula tu navegador, la consola no deja confirmarlo.
 5. Al terminar, **Anular el código**. Los que ya se unieron siguen esperando hasta que los confirmes o rechaces.
@@ -197,6 +199,41 @@ Para 10, 30 o 100 equipos a la vez: **Añadir equipo → Instalar muchos equipos
 > **Si algo falla**
 > - «El instalador descargado no es el esperado»: el instalador del servidor cambió (se actualizó) después de copiar la línea. Vuelve a copiarla.
 > - «No se pudo vincular (salida 2)»: debajo sale el motivo (lo deja el instalador en `C:\ProgramData\ResguardoAgente\instalador.log`) y la orden `vincular` lista para pegar en la misma ventana. Lo habitual: el equipo no llega al servidor, o el código se anuló, se agotó o caducó (mira cuántos quedan en la consola).
+
+### 5.6 Instalar con ESET, Intune o GPO
+
+Las herramientas de despliegue ejecutan las órdenes **por `cmd`**, no por PowerShell (las tareas «Ejecutar comando» de ESET PROTECT, por ejemplo). Ahí una orden suelta de PowerShell falla con «no se reconoce» o «No se esperaba &». Lo que sí funciona:
+
+- **Instalar y vincular, en una sola tarea**: la orden codificada de **Para una herramienta de despliegue**, tal cual. Empieza por `powershell.exe`, así que `cmd` la lanza sin más:
+
+  ```bat
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABFAHIAcgBvAHIA…
+  ```
+
+  Corre como SYSTEM (lo normal en ESET, Intune y GPO): sin sesión no aparece el icono de la bandeja hasta que alguien entra en Windows.
+- **Si un equipo se instaló pero no se vinculó** (salida 2): otra tarea con la orden `vincular`, con la ruta entera (así funciona aunque el `PATH` aún no tenga el agente). La da la misma página, en forma de `cmd`:
+
+  ```bat
+  "%ProgramFiles%\Resguardo Agente\resguardo-agente.exe" vincular ABCD-EFGH-JKMN-PQRS --servidor https://192.0.2.20:8443
+  ```
+
+- **Para ver el número de comprobación** de un equipo (en el resultado de la tarea):
+
+  ```bat
+  type "%ProgramFiles%\Resguardo Agente\emparejamiento.txt"
+  ```
+
+  Y si algo falló, el motivo: `type "%ProgramData%\ResguardoAgente\instalador.log"`.
+
+- **Con el instalador copiado en el equipo** (una GPO de inicio, un recurso compartido de solo lectura…), sin la línea de PowerShell:
+
+  ```bat
+  "\\servidor-archivos\software\Resguardo-Agente-setup.exe" /S /CODE=ABCD-EFGH-JKMN-PQRS /SERVIDOR="https://192.0.2.20:8443"
+  ```
+
+  La dirección, entre comillas. Comprueba antes la huella SHA-256 del instalador (`certutil -hashfile Resguardo-Agente-setup.exe SHA256`) con la que enseña la consola.
+
+En **Intune**, como aplicación Win32 o script de plataforma, sirve la misma orden codificada (o el instalador con esas opciones); en una **GPO**, como script de inicio del equipo. En todos los casos, después, en la consola: **Equipos esperando confirmación**, compara el número de cada equipo y confírmalo.
 
 > **Si algo falla**
 > - «No se pudo vincular con los datos de este instalador»: el equipo no llega al servidor (abre la dirección en su navegador), o el código caducó o ya se usó. Escribe un código nuevo en la misma pantalla del instalador.

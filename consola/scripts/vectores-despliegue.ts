@@ -4,7 +4,7 @@
 // que marca la persona. También el código del lote guardado en el navegador (lib/codigo.ts).
 //
 //   npm run test:vectores
-import { comandoCodificado, comillasPs, aConfirmar, errorNombreLote, errorUsosDias, esperando, lineaLinuxVarios, lineaPowerShell, resumenLote, revisar, type EquipoDelLote } from "../src/lib/despliegue";
+import { comandoCodificado, comillasPs, aConfirmar, errorNombreLote, errorUsosDias, esperando, lineaLinuxVarios, lineaPowerShell, ordenesCmd, resumenLote, revisar, type EquipoDelLote } from "../src/lib/despliegue";
 import { Codigos, PLAZO_GUARDADO_MS, type Almacen } from "../src/lib/codigo";
 import { hashCodigo, sasV2, sasV3 } from "../src/lib/cripto/claves";
 
@@ -35,7 +35,7 @@ igual(
     "$f=Join-Path $env:TEMP 'Resguardo-Agente-setup.exe'",
     `try{[Net.ServicePointManager]::ServerCertificateValidationCallback={$true};(New-Object Net.WebClient).DownloadFile('https://192.0.2.10:8443/api/agente/instalador/${LOTE}',$f)}finally{[Net.ServicePointManager]::ServerCertificateValidationCallback=$null}`,
     `if((Get-FileHash $f -Algorithm SHA256).Hash -ne '${SHA.toUpperCase()}'){Remove-Item $f;throw 'El instalador descargado no es el esperado: no se ha instalado nada.'}`,
-    "$p=Start-Process $f -ArgumentList '/S /CODE=ABCD-EFGH-JKMN-PQRS /SERVIDOR=https://192.0.2.10:8443' -Wait -PassThru",
+    `$p=Start-Process $f -ArgumentList '/S /CODE=ABCD-EFGH-JKMN-PQRS /SERVIDOR="https://192.0.2.10:8443"' -Wait -PassThru`,
     "Remove-Item $f",
     "if($p.ExitCode -eq 0){Get-Content (Join-Path $env:ProgramFiles 'Resguardo Agente\\emparejamiento.txt')}else{Write-Host ('No se pudo vincular (salida '+$p.ExitCode+').')",
     "$l=Join-Path $env:ProgramData 'ResguardoAgente\\instalador.log'",
@@ -47,9 +47,13 @@ igual(
 cierto("14ee: si no vincula, enseña el motivo del instalador", linea.includes("Get-Content $l -Tail 1") && linea.includes("ResguardoAgente\\instalador.log"));
 cierto("14ee: y la orden para vincularlo a mano, con este código y este servidor", linea.includes("vincular ABCD-EFGH-JKMN-PQRS --servidor https://192.0.2.10:8443"));
 cierto("Una sola línea (sin saltos)", !/[\r\n]/.test(linea));
+// 15ff: la dirección entre comillas dobles (dentro de las simples de PowerShell, literales): los
+// instaladores 0.8.0 (`${GetOptions}` de NSIS) la cortaban en la primera «/» si iba sin comillas.
+cierto("15ff: /SERVIDOR= entre comillas dobles", linea.includes(`/SERVIDOR="https://192.0.2.10:8443"'`));
+cierto("15ff: ninguna «/» de la dirección fuera de comillas en los argumentos", !/\/SERVIDOR=https:/.test(linea));
 cierto("La huella va fijada en la línea", linea.includes(`-ne '${SHA.toUpperCase()}'`));
 cierto("Si la huella no coincide, borra y no ejecuta nada", /Hash -ne '[0-9A-F]{64}'\)\{Remove-Item \$f;throw/.test(linea));
-cierto("Baja de ESTE servidor (nunca de otro sitio)", (linea.match(/https:\/\/[^'\s/]+/g) ?? []).every((u) => u === "https://192.0.2.10:8443"));
+cierto("Baja de ESTE servidor (nunca de otro sitio)", (linea.match(/https:\/\/[^'"\s/]+/g) ?? []).every((u) => u === "https://192.0.2.10:8443"));
 cierto("Deja la comprobación de certificados como estaba", linea.includes("finally{[Net.ServicePointManager]::ServerCertificateValidationCallback=$null}"));
 igual("Mayúsculas en el id del lote: se normaliza", lineaPowerShell({ ...buena, lote: LOTE.toUpperCase() }), linea);
 igual("La huella en minúsculas o mayúsculas: igual", lineaPowerShell({ ...buena, sha256: SHA.toUpperCase() }), linea);
@@ -81,6 +85,16 @@ const b64 = cod.replace("powershell.exe -NoProfile -ExecutionPolicy Bypass -Enco
 igual("Orden codificada: vuelve a dar la línea", Buffer.from(b64, "base64").toString("utf16le"), linea);
 cierto("Orden codificada: sin comillas ni espacios en lo codificado", /^[A-Za-z0-9+/=]+$/.test(b64));
 igual("Sin línea, sin orden", comandoCodificado(""), "");
+
+// --- Las órdenes en forma de cmd (ESET, Intune, GPO) -------------------------------
+console.log("\n— Órdenes para cmd —");
+igual("vincular y leer el número, con la ruta entera y sin & ni PowerShell", ordenesCmd("ABCD-EFGH-JKMN-PQRS", "https://192.0.2.10:8443/"), {
+  vincular: '"%ProgramFiles%\\Resguardo Agente\\resguardo-agente.exe" vincular ABCD-EFGH-JKMN-PQRS --servidor https://192.0.2.10:8443',
+  numero: 'type "%ProgramFiles%\\Resguardo Agente\\emparejamiento.txt"',
+});
+igual("cmd: código con &, nada", ordenesCmd("ABCD&calc", "https://192.0.2.10:8443"), null);
+igual("cmd: dirección con &, nada", ordenesCmd("ABCD-EFGH-JK", "https://srv&calc:8443"), null);
+igual("cmd: dirección sin https, nada", ordenesCmd("ABCD-EFGH-JK", "http://192.0.2.10:8443"), null);
 
 // --- La línea de Linux ---------------------------------------------------------
 console.log("\n— Línea de Linux —");

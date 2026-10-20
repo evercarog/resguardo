@@ -294,6 +294,6 @@ proptest! {
             formato: 1, producto: p::PRODUCTO_AGENTE.into(), version: nueva, fecha: "2026-10-20T10:00:00Z".into(), canal: None, minimo_desde: None, notas: None, revocadas: vec![],
             archivos: vec![p::Archivo { plataforma: "linux-x86_64".into(), tipo: "tar.gz".into(), nombre: "a.tar.gz".into(), sha256: "0".repeat(64), tamano: 1, url: None }],
         };
-        let _ = p::decidir(&p::Entrada { actual: &actual, manifiesto: &m, plataforma: "linux-x86_64", politica: &efectiva, disponible_desde: fecha(d), ahora: fecha(t), en_marcha, fallidas: &[], almacen });
+        let _ = p::decidir(&p::Entrada { actual: &actual, manifiesto: &m, plataforma: "linux-x86_64", politica: &efectiva, disponible_desde: fecha(d), ahora: fecha(t), en_marcha, fallidas: &[], almacen, recien_vinculado: false });
     }
 }

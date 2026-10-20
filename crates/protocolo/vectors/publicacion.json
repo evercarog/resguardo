@@ -141,6 +141,27 @@
       "decision": { "estado": "pendiente", "motivo": "espera_anillo", "hasta": "2026-10-22T10:00:00-05:00" }
     },
     {
+      "nombre": "15x: recién vinculado con un agente viejo, no espera su anillo",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-21T11:00:00-05:00", "recien_vinculado": true,
+      "decision": { "estado": "instalar" }
+    },
+    {
+      "nombre": "15x: recién vinculado, pero con la política en «solo cuando apruebe»: espera",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "manual", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-21T11:00:00-05:00", "recien_vinculado": true,
+      "decision": { "estado": "pendiente", "motivo": "espera_aprobacion" }
+    },
+    {
+      "nombre": "15x: recién vinculado fuera de su ventana: espera a la ventana",
+      "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
+      "politica": { "modo": "auto", "anillo": "general", "dias_general": 2, "ventanas": [{ "desde": "22:00", "hasta": "06:00" }], "aprobadas": [], "retenidas": [] },
+      "disponible_desde": "2026-10-20T10:00:00-05:00", "ahora": "2026-10-21T11:00:00-05:00", "recien_vinculado": true,
+      "decision": { "estado": "pendiente", "motivo": "espera_ventana", "hasta": "2026-10-21T22:00:00-05:00" }
+    },
+    {
       "nombre": "anillo general pasados sus días: se instala",
       "actual": "0.7.24", "nueva": "0.7.25", "plataformas": ["windows-x86_64"], "plataforma": "windows-x86_64",
       "politica": { "modo": "auto", "anillo": "general", "dias_general": 2, "ventanas": [], "aprobadas": [], "retenidas": [] },

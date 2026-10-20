@@ -6,6 +6,7 @@
   import { tip } from "$lib/tooltip";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
   import PonerInstalador from "$lib/componentes/PonerInstalador.svelte";
+  import InstaladorServido from "$lib/componentes/InstaladorServido.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { onDestroy, untrack } from "svelte";
   import { goto } from "$app/navigation";
@@ -30,6 +31,7 @@
     esperando,
     lineaLinuxVarios,
     lineaPowerShell,
+    ordenesCmd,
     MAX_DIAS,
     MAX_USOS,
     resumenLote,
@@ -159,10 +161,13 @@
   const servidorOk = $derived(/^https:\/\/[A-Za-z0-9.\-:[\]]+$/.test(servidorLimpio));
 
   // El SHA-256 del instalador que sirve este servidor (va fijado en la línea de PowerShell).
-  let huella = $state<{ sha256: string; bytes: number } | null>(null);
+  let huella = $state<Awaited<ReturnType<typeof api.huellaInstalador>> | null>(null);
   let sinInstalador = $state(false);
+  // 15x: tras «Cambiarlo por el de la X», se vuelve a pedir (cambia la huella de la línea).
+  let vueltaHuella = $state(0);
   $effect(() => {
     const cc = c;
+    void vueltaHuella;
     if (!cc || !soportado || !loteId) return;
     if (app.servidor?.instalador_agente !== true) {
       sinInstalador = true;
@@ -179,6 +184,8 @@
   const activo = $derived(detalle?.estado === "activo");
   const linea = $derived(detalle && codigo && huella && servidorOk ? lineaPowerShell({ servidor: servidorLimpio, lote: detalle.id, sha256: huella.sha256, codigo }) : "");
   const lineaDespliegue = $derived(comandoCodificado(linea));
+  // 15x/F2: para ESET, Intune o una GPO, que ejecutan por `cmd`.
+  const cmd = $derived(codigo && servidorOk ? ordenesCmd(codigo, servidorLimpio) : null);
   const lineaLinux = $derived(codigo && servidorOk && app.servidor ? lineaLinuxVarios(codigo, servidorLimpio, app.servidor.huella_ca) : "");
 
   async function copiar(t: string, que: string) {
@@ -443,6 +450,7 @@
           {:else if !huella}
             <p class="espera" role="status"><LoaderCircle size={15} class="spin" />Calculando la huella del instalador…</p>
           {:else if linea}
+            <InstaladorServido info={{ ...huella, hay: true }} cambiado={() => ((huella = null), vueltaHuella++)} />
             <p>Abre <strong>PowerShell como administrador</strong> en cada equipo y pega esta línea. Baja el instalador de este servidor, comprueba su huella SHA-256, lo instala sin preguntar y enseña el número de comprobación.</p>
             <div class="linea">
               <code class="selectable">{linea}</code>
@@ -450,11 +458,24 @@
             </div>
             <details class="mas">
               <summary>Para una herramienta de despliegue</summary>
-              <p class="faint">La misma línea, codificada para no tener que escapar comillas (se ejecuta como administrador o como SYSTEM):</p>
+              <p class="faint">La misma línea, codificada para no tener que escapar comillas (se ejecuta como administrador o como SYSTEM). Sirve tal cual en una tarea «Ejecutar comando» de ESET, que va por <code>cmd</code> y no por PowerShell:</p>
               <div class="linea">
                 <code class="selectable">{lineaDespliegue}</code>
                 <button class="icon-btn" aria-label="Copiar la orden codificada" onclick={() => copiar(lineaDespliegue, "Orden")}><Copy size={14} /></button>
               </div>
+              {#if cmd}
+                <p class="faint">Si un equipo se instaló pero no se vinculó, en <code>cmd</code> como administrador (o en otra tarea de ESET):</p>
+                <div class="linea">
+                  <code class="selectable">{cmd.vincular}</code>
+                  <button class="icon-btn" aria-label="Copiar la orden para vincular" onclick={() => copiar(cmd.vincular, "Orden")}><Copy size={14} /></button>
+                </div>
+                <p class="faint">Y para ver su número de comprobación:</p>
+                <div class="linea">
+                  <code class="selectable">{cmd.numero}</code>
+                  <button class="icon-btn" aria-label="Copiar la orden para ver el número" onclick={() => copiar(cmd.numero, "Orden")}><Copy size={14} /></button>
+                </div>
+              {/if}
+              <p class="faint"><a class="link" href="/ayuda#guia-despliegue">Instalar con ESET, Intune o GPO</a>, paso a paso.</p>
             </details>
           {:else}
             <div class="notice notice-warn"><p>La dirección, el código o la huella no tienen la forma esperada: no se enseña la línea para no pegar algo distinto de lo que parece. Revisa la dirección.</p></div>

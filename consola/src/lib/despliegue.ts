@@ -90,16 +90,21 @@ export interface DatosLinea {
  * La línea de PowerShell (como administrador) para un equipo Windows, o `""` si alguna parte no
  * tiene su forma. Baja el instalador de ESTE servidor (sin comprobar el certificado: puede ser de
  * su autoridad propia), comprueba su SHA-256 (si no coincide, lo borra y no instala nada), lo
- * instala en silencio y lo vincula con el código (`/S /CODE=… /SERVIDOR=…`), y enseña el número
+ * instala en silencio y lo vincula con el código (`/S /CODE=… /SERVIDOR="…"`), y enseña el número
  * de comprobación que guarda el instalador. El servidor del equipo queda fijado al vincular y lo
  * autentica el número de comprobación (SAS v3, con la huella de la autoridad TLS).
+ *
+ * 15ff: la dirección va entre comillas. Los instaladores 0.8.0 la leían con `${GetOptions}` de
+ * NSIS, que corta el valor en la primera «/» fuera de comillas (quedaba «https:» y no vinculaba);
+ * entre comillas la leen entera (y les quita las comillas), y los nuevos, con o sin ellas.
+ * `Start-Process -ArgumentList` con un solo texto lo pasa tal cual, comillas incluidas.
  */
 export function lineaPowerShell(d: DatosLinea): string {
   const servidor = d.servidor.trim().replace(/\/+$/, "");
   if (!servidorValido(servidor) || !servidor.startsWith("https://")) return "";
   if (!UUID.test(d.lote) || !SHA256.test(d.sha256) || !codigoValido(d.codigo)) return "";
   const url = `${servidor}/api/agente/instalador/${d.lote.toLowerCase()}`;
-  const args = `/S /CODE=${d.codigo} /SERVIDOR=${servidor}`;
+  const args = `/S /CODE=${d.codigo} /SERVIDOR="${servidor}"`;
   return [
     "$ErrorActionPreference='Stop'",
     // TLS 1.2 además de lo que ya tuviera (Windows PowerShell 5.1 no siempre lo ofrece).
@@ -137,6 +142,25 @@ export function comandoCodificado(linea: string): string {
   let s = "";
   for (const x of b) s += String.fromCharCode(x);
   return `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${btoa(s)}`;
+}
+
+/** La carpeta del agente en Windows, para el símbolo del sistema (`cmd`). */
+const CARPETA_CMD = "%ProgramFiles%\\Resguardo Agente";
+
+/**
+ * 15x/F2: las órdenes en forma de `cmd` (las tareas «Ejecutar comando» de ESET, y muchas de
+ * Intune o de una GPO, van por `cmd`, no por PowerShell: ahí `&` y las órdenes de PowerShell
+ * sueltas fallan). `vincular` con la ruta entera (sirve aunque el PATH aún no tenga el agente) y
+ * leer `emparejamiento.txt` (el número de comprobación). `null` si el código o la dirección no
+ * tienen su forma.
+ */
+export function ordenesCmd(codigo: string, servidor: string): { vincular: string; numero: string } | null {
+  const s = servidor.trim().replace(/\/+$/, "");
+  if (!codigoValido(codigo) || !servidorValido(s) || !s.startsWith("https://")) return null;
+  return {
+    vincular: `"${CARPETA_CMD}\\resguardo-agente.exe" vincular ${codigo} --servidor ${s}`,
+    numero: `type "${CARPETA_CMD}\\emparejamiento.txt"`,
+  };
 }
 
 /**

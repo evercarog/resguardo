@@ -362,6 +362,8 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
                 "archivos_nuevos": e.files_new,
                 "archivos_cambiados": e.files_changed,
                 "reintento": e.origin == "retry",
+                // 15jj: quedó «en curso» y no terminó (va como «fallo» para las consolas anteriores).
+                "interrumpida": (e.origin == "interrumpida").then_some(true),
             });
             con_detalle(v, crate::history::detalle_de(&e.message))
         })

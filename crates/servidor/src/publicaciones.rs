@@ -471,12 +471,29 @@ fn estado_servidor(st: &St) -> Value {
             // En una compilación de desarrollo solo busca sola con RESGUARDO_GITHUB_AUTO=1.
             "automatica": crate::github::automatica_permitida(),
         },
-        // 14dd (0.8.0): el instalador del agente de Windows que da el servidor.
-        "instalador": {
-            "hay": st.opciones.instalador_agente.as_ref().is_some_and(|r| r.is_file()),
-            "de_datos": usa_el_de_datos,
-            "version": if usa_el_de_datos { ia::version_puesta(&st.datos) } else { None },
-        },
+        // 14dd (0.8.0): el instalador del agente de Windows que da el servidor; 15x: su versión
+        // también si se puso a mano y es el de una publicación conocida (por su SHA-256), y la
+        // versión por la que se puede cambiar.
+        "instalador": instalador_servido(st, &todas, usa_el_de_datos),
+    })
+}
+
+/// 15x: el instalador del agente que sirve el servidor (`hay`, `de_datos`, `version`, `origen`)
+/// y la versión firmada más nueva con instalador de Windows que tiene (`ultima`), la de «Cambiarlo».
+pub fn instalador_servido(st: &St, todas: &[Guardada], usa_el_de_datos: bool) -> Value {
+    use crate::instalador_agente as ia;
+    let ruta = st.opciones.instalador_agente.clone().filter(|r| r.is_file());
+    let servido = ruta.as_deref().and_then(|r| ia::huella_archivo(r).map(|(h, _)| ia::servido(&st.datos, r, &h, todas)));
+    let ultima = todas
+        .iter()
+        .find(|g| g.completa() && g.manifiesto.archivos.iter().any(|a| a.plataforma == "windows-x86_64" && a.tipo == "instalador-nsis"))
+        .map(|g| g.manifiesto.version.clone());
+    json!({
+        "hay": ruta.is_some(),
+        "de_datos": usa_el_de_datos,
+        "version": servido.as_ref().and_then(|s| s.version.clone()),
+        "origen": servido.as_ref().map(|s| s.origen),
+        "ultima": ultima,
     })
 }
 
@@ -571,7 +588,7 @@ pub async fn poner_instalador(State(st): State<St>, u: Usuario) -> Res<Json<Valu
                     .ok_or("No hay ninguna versión del agente con el instalador de Windows completa: súbela en «Actualizaciones de los agentes».")?
             }
         };
-        ia::de_publicacion(datos, &g, true)
+        ia::de_publicacion(datos, &g, &guardadas(datos, &l), true)
     })
     .await
     .map_err(ErrorApi::interno)?

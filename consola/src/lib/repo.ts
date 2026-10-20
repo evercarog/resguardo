@@ -181,6 +181,12 @@ export const ultimaEjecucion = (inf: RepoInforme | null): EjecucionInforme | nul
 export const TONO_RESULTADO: Record<EjecucionInforme["resultado"], Tono> = { ok: "ok", sin_cambios: "ok", aviso: "warn", fallo: "bad" };
 export const TEXTO_RESULTADO: Record<EjecucionInforme["resultado"], string> = { ok: "Correcta", sin_cambios: "Sin cambios", aviso: "Con avisos", fallo: "Falló" };
 
+/** 15jj: una vuelta cortada a mitad (equipo apagado, servicio reiniciado) llega como «fallo» con `interrumpida`. */
+type ConResultado = { resultado: EjecucionInforme["resultado"]; interrumpida?: boolean };
+const cortada = (e: ConResultado) => e.resultado === "fallo" && e.interrumpida === true;
+export const tonoResultado = (e: ConResultado): Tono => (cortada(e) ? "warn" : TONO_RESULTADO[e.resultado]);
+export const textoResultado = (e: ConResultado): string => (cortada(e) ? "Interrumpida" : TEXTO_RESULTADO[e.resultado]);
+
 /**
  * Una frase que lo resume todo, como en la app de escritorio: cuánto guarda,
  * cuándo fue la última y cómo está la protección.
@@ -237,9 +243,12 @@ export function diasCopia(inf: RepoInforme | null, copia: string, cuantos = 14, 
 export function estadoRepo(r: RepositorioResumen, inf: RepoInforme | null, copias: CopiaResumen[], ahora = Date.now()): { tono: Tono; texto: string } {
   const suyas = copias.filter((k) => k.repo === r.id);
   const ej = ultimaEjecucion(inf);
+  // 15jj: la última, cortada a mitad (se reintenta sola): no es un fallo de la copia.
+  const interrumpida = (ej && cortada(ej)) || suyas.some((k) => k.ultima?.interrumpida);
+  if (interrumpida && !suyas.some((k) => k.ultima?.estado === "fallo" && !k.ultima.interrumpida)) return { tono: "warn", texto: "Interrumpida" };
   if (suyas.some((k) => k.ultima?.estado === "fallo") || ej?.resultado === "fallo") return { tono: "bad", texto: "Falló" };
   if (suyas.some((k) => copiaAtrasada(k, ahora))) return { tono: "warn", texto: "Atrasado" };
-  if (ej) return { tono: TONO_RESULTADO[ej.resultado], texto: ej.resultado === "ok" ? "Al día" : TEXTO_RESULTADO[ej.resultado] };
+  if (ej) return { tono: tonoResultado(ej), texto: ej.resultado === "ok" ? "Al día" : textoResultado(ej) };
   if (!nVersiones(r, inf)) return { tono: "neutral", texto: r.solo_lectura ? "Importado" : "Sin copias todavía" };
   return { tono: "ok", texto: "Al día" };
 }

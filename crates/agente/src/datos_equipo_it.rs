@@ -252,6 +252,31 @@ fn datos_del_equipo_en_todas_sus_consolas_y_quitar_destinos() {
     crate::gestion_v2::dejar_de_copiar(&mut v, "r1", true, false).unwrap();
     assert_eq!(v.destinos.len(), 1);
 
+    // 15p: quitar la copia derivada «de cada día» (`hora: null`) la quita también del resumen
+    // de todas las consolas, aunque el repositorio ya no tenga copias activas, y olvida el
+    // destino que se creó solo para ella. Repetirla ya no dice que la quitó.
+    let mut v = cargar().unwrap();
+    v.destinos.push(crate::gestion_v2::Destino {
+        id: "d-externa".into(),
+        nombre: "Nube de la derivada".into(),
+        tipo: "local".into(),
+        donde: dir_agente.join("externa").to_string_lossy().into(),
+        ..Default::default()
+    });
+    v.repos_v2[0].externa = Some(json!({ "destino": "d-externa", "hora": "21:00", "destino_propio": true }));
+    crate::gestion_v2::subir_config(&mut v).unwrap();
+    guardar(&v).unwrap();
+    hasta(&cb, &eb, "B ve la copia derivada de cada día", |x| x["resumen"]["repositorios"][0]["externa"]["hora"] == "21:00");
+    let mut v = cargar().unwrap();
+    let m = crate::gestion_v2::cambiar_copia_externa(&mut v, &json!({ "repo": "r1", "hora": null }), "r1").unwrap();
+    assert!(m.contains("quitada") && m.contains("Nube de la derivada"), "{m}");
+    assert!(v.repos_v2[0].externa.is_none());
+    assert!(!v.destinos.iter().any(|d| d.id == "d-externa"), "el destino creado para ella se olvida");
+    guardar(&v).unwrap();
+    hasta(&cb, &eb, "B deja de ver la copia derivada de cada día", |x| x["resumen"]["repositorios"][0]["externa"].is_null());
+    let m = crate::gestion_v2::cambiar_copia_externa(&mut v, &json!({ "repo": "r1", "hora": null }), "r1").unwrap();
+    assert!(m.contains("ya no tenía"), "{m}");
+
     std::env::remove_var("RESGUARDO_AGENT_DIR");
     let _ = std::fs::remove_dir_all(dir_agente);
 }

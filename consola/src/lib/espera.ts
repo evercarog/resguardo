@@ -150,6 +150,14 @@ export function porQueNoSeAplico(o: Pick<T.Orden, "estado" | "mensaje" | "detall
       if (m.startsWith("Orden repetida o antigua"))
         return "Rechazada: el equipo ya había aceptado una orden posterior y descartó esta. Con agentes anteriores pasaba si se mandaba otra orden mientras esta esperaba su hora.";
       if (m.startsWith("Todavía no es la hora")) return "Rechazada: el reloj del equipo va atrasado y para él aún no era la hora. Pon el equipo en hora y vuelve a mandarla.";
+      // 15p: el agente dice cuánto (desde la 0.8.1); uno anterior, solo que viene del futuro.
+      if (m.startsWith("La orden viene del futuro")) {
+        const cuanto = /va (\d[^.()]*?) por detrás/.exec(m)?.[1];
+        return (
+          `Rechazada: el reloj del equipo va ${cuanto ? `${cuanto} ` : ""}por detrás del de la consola (o el de la consola va adelantado). ` +
+          "Pon el equipo en hora (en Windows: Configuración → Hora e idioma → «Sincronizar ahora»; en Linux: «timedatectl set-ntp true») y vuelve a mandarla."
+        );
+      }
       return m ? `Rechazada: ${m}` : "Rechazada por el equipo.";
     case "fallida":
       return m ? `No se pudo aplicar: ${m}` : "No se pudo aplicar.";

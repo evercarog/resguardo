@@ -470,7 +470,8 @@ export interface CopiaResumen {
   /** «Cada día a las 13:00 y 19:00», ya en frase, o el horario estructurado. */
   horario?: string | Horario;
   carpetas?: number;
-  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo"; bytes?: number; mensaje?: string | null } | null;
+  /** 15jj: `interrumpida`, quedó «en curso» y no terminó (con `estado: "fallo"`). */
+  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo"; bytes?: number; mensaje?: string | null; interrumpida?: boolean } | null;
   proxima?: string | null;
   activa?: boolean;
   /** v1.16 (agente ≥ 0.7.7): si guarda versión solo cuando algo cambió. */
@@ -883,6 +884,8 @@ export interface EjecucionInforme {
   reintento?: boolean;
   /** v1.8x (15oo): si falló, lo que dijo el motor de copias, completo y sin rutas (el «Detalle técnico»). */
   detalle?: string | null;
+  /** 15jj: quedó «en curso» y no terminó (equipo apagado, servicio reiniciado); va con `resultado: "fallo"`. */
+  interrumpida?: boolean;
 }
 
 export interface TareaInforme {
@@ -1100,7 +1103,7 @@ export interface PublicacionServidor {
     automatica: boolean;
   };
   /** 14dd: el instalador del agente de Windows que da el servidor. */
-  instalador?: { hay: boolean; de_datos: boolean; version?: string | null };
+  instalador?: { hay: boolean; de_datos: boolean; version?: string | null; origen?: "publicacion" | "huella" | "desconocida" | null; ultima?: string | null };
 }
 
 /** 14bbb: «Comprobar la contraseña» de un repositorio, según el equipo. */

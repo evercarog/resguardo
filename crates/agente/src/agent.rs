@@ -640,6 +640,68 @@ pub struct RunRecord {
     /// guardarlo), para el «Detalle técnico» plegado de la consola.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// 15jj: la copia quedó «en curso» y no llegó a terminar (el equipo se apagó o el
+    /// servicio se cortó a mitad). Va con `result: "error"`, así que cuenta para el reintento.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interrumpida: bool,
+}
+
+/// 15jj: lo que se anota de una copia que quedó «en curso» (`state.running`, en disco
+/// desde que empieza) y no terminó. Termina, para el reintento, en su último progreso.
+pub fn registro_interrumpida(c: &RunningCopy, ahora: DateTime<Local>) -> RunRecord {
+    let leer = |s: &str| DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Local));
+    let inicio = leer(&c.started).unwrap_or(ahora);
+    let fin = c.updated.as_deref().and_then(leer).unwrap_or(inicio).min(ahora);
+    RunRecord {
+        started: inicio.to_rfc3339(),
+        finished: fin.to_rfc3339(),
+        result: "error".into(),
+        message: format!(
+            "Interrumpida: empezó el {} y no llegó a terminar (el equipo se apagó o se suspendió, o se reinició el servicio). Se reintenta sola.",
+            inicio.format("%d/%m a las %H:%M")
+        ),
+        interrumpida: true,
+        ..Default::default()
+    }
+}
+
+/// 15jj: si una vuelta anterior dejó una copia «en curso» (nadie la está haciendo: esta vuelta
+/// tiene el cerrojo), queda como interrumpida en su registro y en el historial, y se reintenta
+/// como una copia fallida. Devuelve la clave de la copia, si había una.
+fn anotar_interrumpida(config: &AgentConfig, state: &mut AgentState, ahora: DateTime<Local>) -> Option<String> {
+    let c = state.running.take()?;
+    let repo = config.repos.iter().find(|r| r.id == c.repo_id);
+    let plan_id = c.plan_id.clone().or_else(|| repo.and_then(|r| r.plans.first()).map(|p| p.id.clone()))?;
+    let plan = repo.and_then(|r| r.plans.iter().find(|p| p.id == plan_id));
+    let key = crate::plans::plan_key(&c.repo_id, &plan_id);
+    let record = registro_interrumpida(&c, ahora);
+    let nombre = repo.map(|r| r.name.clone()).unwrap_or_else(|| c.repo_id.clone());
+    log(&format!("AVISO: «{nombre}» (plan «{}»): {}", plan.map(|p| p.name.as_str()).unwrap_or(&plan_id), record.message));
+    crate::history::append(
+        &crate::history::agent_file(),
+        &crate::history::Entry {
+            kind: "backup".into(),
+            origin: "interrumpida".into(),
+            requested_from: None,
+            repo_id: c.repo_id.clone(),
+            repo_name: nombre,
+            plan_id: Some(plan_id.clone()),
+            plan_name: plan.map(|p| p.name.clone()),
+            started: record.started.clone(),
+            finished: record.finished.clone(),
+            result: record.result.clone(),
+            message: record.message.clone(),
+            snapshot_id: None,
+            data_added: None,
+            files_new: None,
+            files_changed: None,
+            unchanged: false,
+            user: None,
+            ganchos: vec![],
+        },
+    );
+    state.runs.insert(key.clone(), record);
+    Some(key)
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -1491,6 +1553,36 @@ pub fn set_derived(repo_id: &str, id: &str, derived: Option<crate::tasks::Derive
     Ok(())
 }
 
+/// 15i: la ubicación nueva de la copia externa (`id: None`) o de una copia derivada de un
+/// repositorio, tras cambiar la dirección de su destino («Ordenar nombres de carpeta» en un
+/// almacén): la de la tarea (sin credenciales) y la del secreto (`con_auth`, con el usuario del
+/// servidor). Nada más cambia. `false` si el agente no la tiene (repositorio sin copias activas).
+pub fn cambiar_ubicacion_derivada(repo_id: &str, id: Option<&str>, location: &str, con_auth: &str) -> Result<bool, String> {
+    require_admin()?;
+    if crate::restic::has_embedded_password(location) {
+        return Err("No pongas la contraseña dentro de la ubicación: usa los campos de credenciales.".into());
+    }
+    let mut config = load_config();
+    let mut secrets = load_secrets()?;
+    let Some(entry) = config.repos.iter_mut().find(|r| r.id == repo_id) else { return Ok(false) };
+    let Some(secret) = secrets.get_mut(repo_id) else { return Ok(false) };
+    match id {
+        None => {
+            let Some(o) = entry.offsite.as_mut() else { return Ok(false) };
+            o.location = location.to_string();
+            secret.offsite_location = Some(con_auth.to_string());
+        }
+        Some(id) => {
+            let Some(d) = entry.derived.iter_mut().find(|d| d.id == id) else { return Ok(false) };
+            d.offsite.location = location.to_string();
+            secret.derived.entry(id.to_string()).or_default().location = Some(con_auth.to_string());
+        }
+    }
+    save_secrets(&secrets)?;
+    write_json("agent.json", &config)?;
+    Ok(true)
+}
+
 /// Activa, cambia o quita la copia externa de un repositorio del agente.
 pub fn set_offsite(repo_id: &str, offsite: Option<crate::tasks::Offsite>, creds: Option<OffsiteSecrets>) -> Result<(), String> {
     require_admin()?;
@@ -2100,7 +2192,11 @@ pub fn run() -> i32 {
     let config = load_config();
     let mut state = load_state();
     state.last_tick = Some(Local::now().to_rfc3339());
-    // Si una ejecución anterior se cortó a mitad de copia, ya no está en curso.
+    // Si una ejecución anterior se cortó a mitad de copia, ya no está en curso: 15jj, queda
+    // anotada como interrumpida (y se reintenta como una fallida).
+    if anotar_interrumpida(&config, &mut state, Local::now()).is_some() {
+        let _ = write_json("state.json", &state);
+    }
     state.running = None;
     let linked = crate::web::load_link().is_some_and(|l| !l.revoked);
     if config.repos.is_empty() && !linked {
@@ -2702,6 +2798,45 @@ pub mod tests {
         assert!(!retry_due(Some(&fallo), 2, at("2026-09-29 14:40")), "como mucho 2 reintentos");
         assert!(!retry_due(Some(&bien), 0, at("2026-09-29 14:40")));
         assert!(!retry_due(None, 0, at("2026-09-29 14:40")));
+    }
+
+    /// 15jj: una copia que quedó «en curso» (se apagó el equipo a mitad) queda como
+    /// interrumpida, con su motivo, y se reintenta como una fallida.
+    #[test]
+    fn copia_interrumpida_se_anota_y_se_reintenta() {
+        let c = RunningCopy {
+            repo_id: "r".into(),
+            plan_id: Some("p".into()),
+            started: at("2026-10-16 12:00").to_rfc3339(),
+            percent: Some(0.4),
+            files_done: 10,
+            total_files: 100,
+            bytes_done: 1,
+            total_bytes: 2,
+            seconds_remaining: None,
+            updated: Some(at("2026-10-16 12:40").to_rfc3339()),
+            phase: None,
+            bytes_per_s: None,
+            read_bps: None,
+            upload_bps: None,
+            files_per_s: None,
+        };
+        let r = registro_interrumpida(&c, at("2026-10-17 08:00"));
+        assert_eq!((r.result.as_str(), r.interrumpida), ("error", true));
+        assert_eq!(r.finished, at("2026-10-16 12:40").to_rfc3339(), "termina en su último progreso");
+        assert!(r.message.starts_with("Interrumpida: empezó el 16/10 a las 12:00"), "{}", r.message);
+        // Al encender al día siguiente, toca reintentarla enseguida.
+        assert!(retry_due(Some(&r), 0, at("2026-10-17 08:00")));
+        // Sin progreso todavía: termina donde empezó; un reloj que va hacia atrás no la deja en el futuro.
+        let sin = RunningCopy { updated: None, ..c.clone() };
+        assert_eq!(registro_interrumpida(&sin, at("2026-10-17 08:00")).finished, at("2026-10-16 12:00").to_rfc3339());
+        assert_eq!(registro_interrumpida(&c, at("2026-10-16 12:30")).finished, at("2026-10-16 12:30").to_rfc3339());
+        // En el estado en disco: el campo solo va si es cierto (compatible con lo anterior).
+        let j = serde_json::to_value(&r).unwrap();
+        assert_eq!(j["interrumpida"], true);
+        assert!(serde_json::to_value(RunRecord::default()).unwrap().get("interrumpida").is_none());
+        let viejo: RunRecord = serde_json::from_str(r#"{"started":"x","finished":"y","result":"ok","message":""}"#).unwrap();
+        assert!(!viejo.interrumpida);
     }
 
     #[test]

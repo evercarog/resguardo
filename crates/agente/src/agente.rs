@@ -43,6 +43,13 @@ pub fn main() -> i32 {
         let _ = service::uninstall();
         return crate::agent_purge();
     }
+    // 15o: el instalador y el desinstalador ponen o quitan la carpeta del programa del PATH del sistema.
+    if has("--anadir-al-path") {
+        return crate::path_sistema::anadir_main();
+    }
+    if has("--quitar-del-path") {
+        return crate::path_sistema::quitar_main();
+    }
     if let Some(code) = value("--pair") {
         let (url, key) = crate::web::defaults();
         let (url, key) = (value("--web-url").unwrap_or(url), value("--web-key").unwrap_or(key));
@@ -101,14 +108,24 @@ pub fn main() -> i32 {
         return report(tray::run());
     }
     // La ventana (docs/agente-ventana.md): la abre la bandeja, como el usuario.
+    // 15o: si no se puede abrir (como administrador o sin WebView2), un cuadro de aviso con el
+    // motivo y qué hacer, en vez de cerrarse sin decir nada.
     if has("--ventana") {
-        return report(crate::ventana::run());
+        return match crate::ventana::run() {
+            Ok(()) => 0,
+            Err(e) => {
+                crate::agent::log(&format!("Ventana: {e}"));
+                crate::ventana::explicar_que_no_abre(&e);
+                1
+            }
+        };
     }
     // En primer plano, sin servicio (pruebas o Linux sin systemd): el canal con
     // el servidor y una vuelta del agente cada `--cada` segundos (300 por defecto).
     if has("--primer-plano") {
         resguardo_motor::restic::require_bundled();
         let cada = value("--cada").and_then(|s| s.parse::<u64>().ok()).unwrap_or(300).max(10);
+        al_arrancar();
         crate::servidor_v2::hilo();
         crate::ipc_local::hilo();
         crate::actualizacion::hilo();
@@ -135,6 +152,25 @@ pub fn main() -> i32 {
         "Resguardo Agente funciona solo, como servicio, y se administra desde la consola.\n\nPara ver su estado o vincularlo, abre el símbolo del sistema como administrador y escribe:\n\n  resguardo-agente ayuda",
     );
     0
+}
+
+/// Lo que se pone en orden al arrancar el servicio, antes del canal con las consolas.
+/// (15jj: la copia que quedó «en curso» la anota como interrumpida la primera vuelta, que
+/// es la que sabe si de verdad no hay ninguna en marcha.)
+fn al_arrancar() {
+    // 15p: las copias derivadas «de cada día» quitadas que la consola seguía viendo.
+    if let Some(mut v) = crate::servidor_v2::cargar() {
+        let arreglados = crate::gestion_v2::limpiar_externas_sin_tarea(&mut v, &crate::agent::load_config());
+        if !arreglados.is_empty() {
+            match crate::servidor_v2::guardar(&v) {
+                Ok(()) => crate::agent::log(&format!(
+                    "Quitada de la consola la copia derivada de cada día de {} repositorio(s) que ya no la tenían.",
+                    arreglados.len()
+                )),
+                Err(e) => crate::agent::log(&format!("No se pudo quitar la copia derivada de cada día que ya no existía: {e}")),
+            }
+        }
+    }
 }
 
 fn report(r: Result<(), String>) -> i32 {
@@ -370,6 +406,7 @@ mod service {
         // La marca del instalador ya cumplió (o es de una actualización que no llegó a parar el servicio).
         let _ = std::fs::remove_file(crate::agent::agent_dir().join(MARCA_ACTUALIZACION));
         crate::agent::migrar_carpeta_fase5();
+        al_arrancar();
         // Agente v2: el canal con Resguardo Server (si el equipo está vinculado a uno).
         crate::servidor_v2::hilo();
         hilo_bandeja();
@@ -486,6 +523,7 @@ mod service {
             libc::signal(libc::SIGTERM, al_recibir_senal as *const () as libc::sighandler_t);
             libc::signal(libc::SIGINT, al_recibir_senal as *const () as libc::sighandler_t);
         }
+        al_arrancar();
         crate::servidor_v2::hilo();
         // El canal local con la clave de administración (docs/agente-ventana.md §4).
         crate::ipc_local::hilo();
@@ -737,9 +775,11 @@ mod tray {
         }
         let lado = lado_icono();
         let elevado = crate::platform::is_elevated();
+        // 15o: sin WebView2 la ventana no se abre; la bandeja lo sabe antes de ofrecerla.
+        let webview2 = crate::ventana::webview2_disponible();
         let mut estado = leer();
         let mut variante = bandeja::variante(&estado, &ahora());
-        let mut entradas = bandeja::menu(&estado, &ahora(), elevado);
+        let mut entradas = bandeja::menu(&estado, &ahora(), elevado, webview2);
         let (menu, mut acciones) = construir(&entradas);
         let mut tooltip = bandeja::tooltip(&estado, &ahora());
         let mut builder = tray_icon::TrayIconBuilder::new().with_tooltip(&tooltip).with_menu(Box::new(menu));
@@ -747,7 +787,7 @@ mod tray {
             builder = builder.with_icon(i);
         }
         // Con la ventana disponible, pulsar el icono la abre (el menú, con el botón derecho).
-        let disponible = |e: &EstadoBandeja| e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado;
+        let disponible = |e: &EstadoBandeja| e.escritorio.ventana != crate::escritorio::Ventana::Off && !elevado && webview2;
         let mut con_ventana = disponible(&estado);
         builder = builder.with_menu_on_left_click(!con_ventana);
         let tray = builder.build().map_err(|e| format!("No se pudo crear el icono de la bandeja: {e}"))?;
@@ -816,7 +856,7 @@ mod tray {
                         avisador.avisar(a);
                     }
                 }
-                if crate::escritorio::abrir_al_empezar(&mut vistas, &nuevo.actividades, nuevo.escritorio.ventana, false) && !elevado {
+                if crate::escritorio::abrir_al_empezar(&mut vistas, &nuevo.actividades, nuevo.escritorio.ventana, false) && !elevado && webview2 {
                     abrir_ventana();
                 }
                 if disponible(&nuevo) != con_ventana {
@@ -833,7 +873,7 @@ mod tray {
                     let _ = tray.set_tooltip(Some(&texto));
                     tooltip = texto;
                 }
-                let nuevas = bandeja::menu(&nuevo, &t, elevado);
+                let nuevas = bandeja::menu(&nuevo, &t, elevado, webview2);
                 if nuevas != entradas {
                     let (menu, a) = construir(&nuevas);
                     tray.set_menu(Some(Box::new(menu)));

@@ -10,11 +10,11 @@ Propuesta del 2026-10-19. **Visto bueno del responsable el 2026-10-19:** se hace
 
 Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. Van primero dentro de la versión.
 
-- [ ] **R1. Instalación silenciosa que no vincula (15ff, causa real de 14ee):** el instalador corta `/SERVIDOR=https://…` en la primera `/`. Leerlo bien, la línea de la consola con comillas, y **prueba real en el CI**: compilar el instalador, instalarlo en silencio en el Windows del CI y comprobar que vincula.
-- [ ] **R2. Quitar la derivada «de cada día» no la quita de la consola (15p):** limpiar `externa` al quitarla y, al arrancar, las que quedaron así.
-- [ ] **R3. El instalador de «Instalar muchos equipos» se queda viejo (15x):** cambiarlo solo al bajar una versión más nueva; la página dice qué versión reparte; «Cambiarlo» también si se puso a mano.
-- [ ] **R4. «Ordenar nombres de carpeta» rompe las derivadas hacia el almacén (15i).**
-- [ ] **R5. Copia cortada al apagar sin rastro ni reintento (15jj):** anotarla «en curso» al empezar, «interrumpida» al arrancar, y reintentarla.
+- [x] **R1. Instalación silenciosa que no vincula (15ff, causa real de 14ee):** el instalador corta `/SERVIDOR=https://…` en la primera `/`. Leerlo bien, la línea de la consola con comillas, y **prueba real en el CI**: compilar el instalador, instalarlo en silencio en el Windows del CI y comprobar que vincula. (Rama `ia/081-r`: `LeerServidor` en `agente.nsi`, con o sin comillas; la línea de PowerShell con `/SERVIDOR="…"`, que `${GetOptions}` de los instaladores 0.8.0 también entiende; el CI de Windows compila el instalador sin firmar, lo ejecuta en silencio contra `https://127.0.0.1:9`, con y sin comillas, y comprueba en `instalador.log` que el motivo ya no es la dirección cortada. Sin servidor de pruebas: comprueba que **intenta** vincular, no que vincula.)
+- [x] **R2. Quitar la derivada «de cada día» no la quita de la consola (15p):** limpiar `externa` al quitarla y, al arrancar, las que quedaron así. (Rama `ia/081-r`; también el destino creado solo para ella y las derivadas con id; «la orden viene del futuro» con la diferencia de hora y cómo corregirla.)
+- [x] **R3. El instalador de «Instalar muchos equipos» se queda viejo (15x):** cambiarlo solo al bajar una versión más nueva; la página dice qué versión reparte; «Cambiarlo» también si se puso a mano. (Rama `ia/081-r`: uno puesto a mano se reconoce por su SHA-256 entre las publicaciones que tiene el servidor; si no es de ninguna, no se pisa solo pero se ofrece «Cambiarlo por el de la X»; un equipo recién vinculado —sin ninguna copia aún— no espera los días de su anillo.)
+- [x] **R4. «Ordenar nombres de carpeta» rompe las derivadas hacia el almacén (15i).** (Rama `ia/081-r`, con prueba contra el rest-server real.)
+- [x] **R5. Copia cortada al apagar sin rastro ni reintento (15jj):** anotarla «en curso» al empezar, «interrumpida» al arrancar, y reintentarla. (Rama `ia/081-r`; queda de 15jj lo de la consola cuando un equipo deja de responder a mitad de una copia y el estado del equipo junto a la copia en «Copias».)
 
 ### Bloque A — Que nada falle en silencio
 
@@ -62,8 +62,8 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ### Bloque F — El agente en Windows
 
-- [ ] **F1.** `resguardo-agente` en el PATH, la bandeja tras instalar, y que diga por qué no abre la ventana (elevada o sin WebView2) (15o).
-- [ ] **F2.** Instalar sin rodeos con ESET, Intune o GPO: guía con las órdenes en forma `cmd` (15x) y, con R1, una sola tarea.
+- [x] **F1.** `resguardo-agente` en el PATH, la bandeja tras instalar, y que diga por qué no abre la ventana (elevada o sin WebView2) (15o). (Rama `ia/081-r`.)
+- [x] **F2.** Instalar sin rodeos con ESET, Intune o GPO: guía con las órdenes en forma `cmd` (15x) y, con R1, una sola tarea. (Rama `ia/081-r`: `guia-instalacion.md` §5.6, la guía «Instalar con ESET, Intune o GPO» en la ayuda de la consola y las órdenes de `cmd` en «Para una herramienta de despliegue».)
 
 ## Bloque G — Detalles menores (de la revisión del 2026-10-19)
 
@@ -72,7 +72,7 @@ Cuatro revisiones del código (textos, estados de las pantallas, accesibilidad y
 - [x] **G1. Fallos de verdad (con el bloque R):** (rama `ia/081-consola-g`: hecha la parte de la consola y `ui/`; la prueba de restauración contada como verificación en los avisos de Windows, en la rama `ia/081-mensajes`) variables de CSS que no existen (los fallos de los espejos no salen en rojo), Escape que cierra diálogos que no deben cerrarse (se pierde lo escrito o un código de un solo uso), cargas que no terminan nunca si falla una petición, un informe para el cliente con datos en blanco sin avisar, botones que mandan dos veces con un doble clic, errores inesperados en inglés, un enlace roto, la prueba de restauración contada como verificación en los avisos de Windows. Con una comprobación estática de variables de CSS en `test:vectores`.
 - [x] **G2. Confirmar y no perder trabajo:** (rama `ia/081-consola-g`) avisar al salir con cambios sin enviar, confirmar lo que borra, `BotonFalta` en los botones apagados que no dicen qué falta, estados vacíos con su botón.
 - [x] **G3. Un solo vocabulario en la consola:** (rama `ia/081-consola-g`; lo del agente, la ventana y el servidor va con G4) tipos de destino, credenciales, botones («Seguir», «Listo»…), «copia derivada», «quitar», unidades y fechas, erratas y frases largas.
-- [~] (rama `ia/081-mensajes`: avisos y correos, agente, bandeja, ventana, ayuda de `resguardo-agente` y errores de la API; **falta** lo del instalador, que hace otra línea, y los dos textos de la ventana que tocan el aviso de WebView2 y la ventana como administrador, que van con F1) **G4. Fuera de la consola:** avisos y correos con nombres legibles y qué hacer; «número de comprobación», «vincular», «almacén» y «copia derivada» también en el agente, la bandeja, la ventana y el instalador; textos del instalador que ya no son ciertos; ayuda de `resguardo-agente`; errores en inglés.
+- [x] (rama `ia/081-mensajes`; el instalador y la ventana sin WebView2 o elevada, en la rama `ia/081-r`: avisos y correos, agente, bandeja, ventana, ayuda de `resguardo-agente` y errores de la API; **falta** lo del instalador, que hace otra línea, y los dos textos de la ventana que tocan el aviso de WebView2 y la ventana como administrador, que van con F1) **G4. Fuera de la consola:** avisos y correos con nombres legibles y qué hacer; «número de comprobación», «vincular», «almacén» y «copia derivada» también en el agente, la bandeja, la ventana y el instalador; textos del instalador que ya no son ciertos; ayuda de `resguardo-agente`; errores en inglés.
 - [x] **G5. Accesibilidad:** (rama `ia/081-consola-g`) estados con icono y texto, sin `title` nativo, tablas y cambios legibles con lector de pantalla, teclado en las pestañas.
 - [x] **G6. Pantallas estrechas:** (rama `ia/081-consola-g`) tablas y fichas que desbordan a 375 px, direcciones largas, campos que hacen ampliar la página en el iPhone.
 - [x] **G7. Sistema de diseño:** (rama `ia/081-consola-g`) tamaños con sus tokens y piezas repetidas a `ui/` (kit imprimible, buscador, barra de fuerza de la clave).

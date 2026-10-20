@@ -577,3 +577,57 @@ jobs:
         env:
           RESGUARDO_TEST_REST_SERVER: ${{ github.workspace }}\src-tauri\binaries\rest-server-x86_64-pc-windows-msvc.exe
         run: cargo test --workspace
+      # 15ff (0.8.1): el instalador del agente, compilado (sin firmar ni publicar nada) y
+      # ejecutado en silencio como en un despliegue con /SERVIDOR=https://… Nadie escucha en
+      # 127.0.0.1:9, así que no puede vincular: lo que se comprueba es que el motivo que deja en
+      # instalador.log NO es «debe empezar por https://» (la dirección se lee entera, sin cortarla
+      # en la primera «/»), con y sin comillas. Y 15o: su carpeta entra y sale del PATH del sistema.
+      - name: Compilar el instalador del agente (sin firmar)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build -p resguardo-agente --bin resguardo-agente
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          if (-not (Test-Path $nsis)) {
+            choco install nsis -y --no-progress | Out-Null
+          }
+          if (-not (Test-Path $nsis)) { throw "No se encontró makensis en $nsis" }
+          $out = Join-Path $env:RUNNER_TEMP 'Resguardo-Agente-prueba-setup.exe'
+          & $nsis '-V2' '-INPUTCHARSET' 'UTF8' '-DVERSION=0.0.1' `
+            "-DAGENT_EXE=$PWD\src-tauri\target\debug\resguardo-agente.exe" `
+            "-DRESTIC_EXE=$PWD\src-tauri\binaries\restic-x86_64-pc-windows-msvc.exe" `
+            "-DRESTIC_LICENSE=$PWD\src-tauri\licenses\restic-LICENSE.txt" `
+            "-DOUT_FILE=$out" 'packaging\windows\agente.nsi'
+          if ($LASTEXITCODE -ne 0) { throw "makensis terminó con $LASTEXITCODE" }
+          "INSTALADOR_PRUEBA=$out" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Instalar en silencio con /SERVIDOR= (sin servidor que responda)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:ProgramData 'ResguardoAgente\instalador.log'
+          $dir = Join-Path $env:ProgramFiles 'Resguardo Agente'
+          $envKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+          $pathSistema = { (Get-Item $envKey).GetValue('Path', '', 'DoNotExpandEnvironmentNames') }
+          $antes = & $pathSistema
+          foreach ($servidor in @('https://127.0.0.1:9', '"https://127.0.0.1:9"')) {
+            if (Test-Path $log) { Remove-Item $log }
+            $p = Start-Process $env:INSTALADOR_PRUEBA -ArgumentList "/S /CODE=ABCD-EFGH-JK /SERVIDOR=$servidor" -Wait -PassThru
+            Write-Host "Con /SERVIDOR=$servidor el instalador terminó con $($p.ExitCode)"
+            if (-not (Test-Path $log)) { throw 'No dejó instalador.log' }
+            $linea = Get-Content $log -Tail 1
+            Write-Host "instalador.log: $linea"
+            if ($linea -match 'debe empezar por https://') { throw "Cortó la dirección del servidor: $linea" }
+            if ($linea -notmatch 'No se pudo vincular con https://127\.0\.0\.1:9:') { throw "No intentó vincular con https://127.0.0.1:9: $linea" }
+            if ($p.ExitCode -ne 2) { throw "Sin servidor debía terminar con 2 y terminó con $($p.ExitCode)" }
+          }
+          # 15o: la carpeta del programa en el PATH del sistema, sin tocar lo demás.
+          $con = & $pathSistema
+          Write-Host "PATH del sistema: $con"
+          if (-not (($con -split ';') -contains $dir)) { throw "La carpeta $dir no está en el PATH del sistema" }
+          if (-not $con.StartsWith($antes.TrimEnd(';'))) { throw 'El PATH del sistema cambió en algo más que la carpeta del agente' }
+          # Desinstalar (sin borrar los datos) y comprobar que sale del PATH.
+          $u = Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList "/S _?=$dir" -Wait -PassThru
+          Write-Host "El desinstalador terminó con $($u.ExitCode)"
+          $sin = & $pathSistema
+          if (($sin -split ';') -contains $dir) { throw "La carpeta $dir sigue en el PATH del sistema tras desinstalar" }
+          if ($sin.TrimEnd(';') -ne $antes.TrimEnd(';')) { throw "El PATH del sistema no quedó como estaba:`n$antes`n$sin" }

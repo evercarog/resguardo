@@ -120,7 +120,7 @@ En este orden:
 5. Aprobada esa versión → se instala ya (sin mirar anillo, días, ventana ni retenidas), salvo que haya algo en marcha (punto 10).
 6. Modo `manual` → `espera_aprobacion`.
 7. Retenida o ya falló en este equipo → `retenida`.
-8. Anillo `general` y no han pasado los días desde que está disponible → `espera_anillo` (con la fecha).
+8. Anillo `general` y no han pasado los días desde que está disponible → `espera_anillo` (con la fecha). **Salvo un equipo recién vinculado** (0.8.1, 15x: gestionado y sin ninguna copia hecha todavía): su agente es el del instalador que se repartió, quizá anterior a la versión vigente, así que no espera los días del anillo; lo demás (modo, retenidas, ventana, algo en marcha) sí cuenta.
 9. Fuera de la ventana → `espera_ventana` (con la hora en que abre).
 10. Algo en marcha (copia, verificación, prueba de restauración, copia externa, espejo, restauración, retención, traer historial…) → `en_marcha`; se vuelve a mirar en la siguiente vuelta (5 min).
 11. Un **almacén** («Este equipo guarda copias» activo) sin ventana → `almacen_sin_ventana`: actualizarlo corta un momento el servidor de copias de los demás equipos (en Windows el instalador lo para). Necesita una ventana o «Actualizar ahora».

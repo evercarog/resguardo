@@ -529,6 +529,45 @@ fn ordenar_carpetas_real() {
     let mut cfg = crate::server::load();
     cfg.espejo = Some(crate::espejo::Espejo::de_trabajos(vec![t]));
     crate::server::save(&cfg).unwrap();
+    // 15i: una copia derivada de otro repositorio del equipo (uno local) que va a ese almacén,
+    // a su carpeta de por defecto (`<repo>-<id>`), con su dirección guardada como al crearla.
+    let al_almacen = v.destinos.iter().find(|x| x.id == "almacen-0b5c1f8e").unwrap().clone();
+    let deriv = crate::gestion_v2::acceso_destino(&al_almacen, "local-d1", "clave de la derivada").unwrap();
+    assert_eq!(run(&deriv, &["init"]).code, Some(0), "la derivada en el almacén");
+    let dir_viejo = crate::tasks::location_with_auth(&deriv.location, deriv.rest_auth.as_ref());
+    v.destinos.push(crate::gestion_v2::Destino {
+        id: "disco-local".into(),
+        nombre: "Disco".into(),
+        tipo: "local".into(),
+        donde: base.join("local").display().to_string(),
+        ..Default::default()
+    });
+    v.repos_v2.push(crate::gestion_v2::RepoV2 {
+        id: "local".into(),
+        nombre: "Local".into(),
+        destino: "disco-local".into(),
+        contrasena: "clave local".into(),
+        derivadas: vec![serde_json::json!({ "id": "d1", "destino": "almacen-0b5c1f8e", "cuando": { "hora": "21:00" } })],
+        ..Default::default()
+    });
+    let mut config = crate::agent::load_config();
+    config.repos.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "local", "name": "Local", "location": base.join("local").join("local").display().to_string(), "paths": [],
+            "schedule": crate::agent::Schedule::Hours { every: 1 }, "enabled_at": "2026-10-01T00:00:00Z",
+            "derived": [{ "id": "d1", "offsite": { "location": deriv.location, "provider": "destino:almacen-0b5c1f8e",
+                "schedule": crate::agent::Schedule::Daily { time: "21:00".into() }, "target_name": "ALMACEN-01", "enabled_at": "2026-10-01T00:00:00Z" } }],
+        }))
+        .unwrap(),
+    );
+    crate::agent::write_json("agent.json", &config).unwrap();
+    let mut secretos = crate::agent::load_secrets().unwrap();
+    let mut s_local = crate::agent::Secret { password: "clave local".into(), ..Default::default() };
+    s_local
+        .derived
+        .insert("d1".into(), crate::agent::DerivedSecret { password: Some("clave de la derivada".into()), location: Some(dir_viejo.clone()), env: vec![] });
+    secretos.insert("local".into(), s_local);
+    crate::agent::save_secrets(&secretos).unwrap();
 
     // 1. El almacén mueve las carpetas (y espera a que el rest-server lea el usuario nuevo).
     let (m, detalle) =
@@ -555,7 +594,19 @@ fn ordenar_carpetas_real() {
     assert!(v.repos_v2[0].ubicacion_origen.is_none());
     let bien = serde_json::json!({ "destino": "almacen-0b5c1f8e", "donde": format!("https://localhost:{p}/{nuevo}/"), "usuario": nuevo,
                                    "carpetas": { "almacen-01-3f2a": "contabilidad" } });
-    crate::gestion_v2::cambiar_destino(&mut v, &bien).expect("la ruta nueva en el equipo");
+    let m = crate::gestion_v2::cambiar_destino(&mut v, &bien).expect("la ruta nueva en el equipo");
+    // 15i: la dirección de la copia derivada que va al almacén, también (su carpeta se movió con
+    // la del usuario), y abre con ella; antes seguía con la del usuario de antes y fallaba.
+    assert!(m.contains("1 copia derivada"), "{m}");
+    let config = crate::agent::load_config();
+    let d1 = &config.repos.iter().find(|r| r.id == "local").unwrap().derived[0].offsite;
+    assert!(d1.location.ends_with(&format!("/{nuevo}/local-d1")) && !d1.location.contains(&u), "{}", d1.location);
+    let dir_nuevo = crate::agent::load_secrets().unwrap()["local"].derived["d1"].location.clone().unwrap();
+    assert!(dir_nuevo != dir_viejo && !dir_nuevo.contains(&format!("/{u}/")), "con el usuario nuevo");
+    let mut deriv_nueva = deriv.clone();
+    deriv_nueva.location = dir_nuevo;
+    deriv_nueva.rest_auth = None;
+    assert_eq!(run(&deriv_nueva, &["cat", "config"]).code, Some(0), "la derivada se abre con la dirección nueva");
     let ahora = crate::gestion_v2::acceso(&v, "almacen-01-3f2a").unwrap();
     assert!(ahora.location.ends_with(&format!("/{nuevo}/contabilidad")), "{}", ahora.location);
     assert_eq!(restic::snapshots(&ahora).unwrap().len(), 1, "todo el historial");

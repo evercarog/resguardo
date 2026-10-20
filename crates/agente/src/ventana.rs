@@ -77,6 +77,91 @@ pub fn run() -> Result<(), String> {
     Err("La ventana solo existe en Windows por ahora.".into())
 }
 
+/// 15o: lo que devuelve `run` como administrador (no se abre un navegador elevado).
+pub const ERROR_ELEVADA: &str = "La ventana no se abre como administrador.";
+/// 15o: lo que devuelve `run` en un Windows sin WebView2 (p. ej. Windows Server 2016).
+pub const ERROR_SIN_WEBVIEW2: &str = "Falta «Microsoft Edge WebView2 Runtime», que la ventana necesita.";
+/// Donde Microsoft ofrece WebView2 (la página oficial, no una descarga directa).
+pub const ENLACE_WEBVIEW2: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
+
+/// ¿Tiene este Windows WebView2? (la bandeja lo mira antes de ofrecer la ventana). Como
+/// recomienda Microsoft: la versión (`pv`) del Runtime en el registro, del equipo o del
+/// usuario, que no esté vacía ni sea `0.0.0.0`.
+#[cfg(windows)]
+pub fn webview2_disponible() -> bool {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+    const RUNTIME: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+    let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let sitios: [(HKEY, String); 3] = [
+        (HKEY_LOCAL_MACHINE, format!(r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{RUNTIME}")),
+        (HKEY_LOCAL_MACHINE, format!(r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{RUNTIME}")),
+        (HKEY_CURRENT_USER, format!(r"Software\Microsoft\EdgeUpdate\Clients\{RUNTIME}")),
+    ];
+    let valor = w("pv");
+    sitios.iter().any(|(raiz, clave)| {
+        let clave = w(clave);
+        let mut buf = [0u16; 64];
+        let mut bytes = (buf.len() * 2) as u32;
+        // SAFETY: cadenas terminadas en cero y un búfer del tamaño que se indica.
+        let r = unsafe { RegGetValueW(*raiz, clave.as_ptr(), valor.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut bytes) };
+        if r != ERROR_SUCCESS {
+            return false;
+        }
+        let fin = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let v = String::from_utf16_lossy(&buf[..fin]);
+        !v.trim().is_empty() && v.trim() != "0.0.0.0"
+    })
+}
+
+#[cfg(not(windows))]
+pub fn webview2_disponible() -> bool {
+    false
+}
+
+/// 15o: el texto del cuadro de aviso cuando la ventana no se abre, con el motivo y qué hacer.
+/// El segundo valor dice si se ofrece abrir la página de WebView2.
+pub fn texto_no_abre(error: &str) -> (String, bool) {
+    let terminal = "Mientras tanto, las copias siguen funcionando. Para ver cómo van, en un símbolo del sistema:\n\n  resguardo-agente estado";
+    if error == ERROR_ELEVADA {
+        let t = format!(
+            "La ventana de Resguardo no se abre como administrador: sería un navegador con permisos de administrador en esta sesión.\n\n\
+             Ábrela desde el menú Inicio («Resguardo») o desde el icono de la bandeja, sin «Ejecutar como administrador».\n\n{terminal}"
+        );
+        return (t, false);
+    }
+    if error == ERROR_SIN_WEBVIEW2 || error.contains("WebView2") {
+        let t = format!(
+            "No se puede abrir la ventana de Resguardo: a este Windows le falta «Microsoft Edge WebView2 Runtime» (suele faltar en Windows Server 2016 y 2019).\n\n\
+             Instálalo desde la página de Microsoft:\n{ENLACE_WEBVIEW2}\ny vuelve a abrir Resguardo.\n\n{terminal}\n\n¿Abrir ahora la página de WebView2?"
+        );
+        return (t, true);
+    }
+    (format!("No se pudo abrir la ventana de Resguardo.\n\nMotivo: {error}\n\n{terminal}"), false)
+}
+
+/// 15o: el cuadro de aviso (con «Sí» para abrir la página de WebView2 si falta).
+pub fn explicar_que_no_abre(error: &str) {
+    let (texto, ofrecer) = texto_no_abre(error);
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, SW_SHOWNORMAL};
+        let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let (t, c) = (w(&texto), w("Resguardo"));
+        let estilo = if ofrecer { MB_YESNO | MB_ICONWARNING } else { MB_OK | MB_ICONINFORMATION };
+        // SAFETY: cadenas terminadas en cero que viven durante las llamadas.
+        unsafe {
+            if MessageBoxW(std::ptr::null_mut(), t.as_ptr(), c.as_ptr(), estilo) == IDYES && !crate::platform::is_elevated() {
+                let (verbo, url) = (w("open"), w(ENLACE_WEBVIEW2));
+                ShellExecuteW(std::ptr::null_mut(), verbo.as_ptr(), url.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    eprintln!("{texto}");
+}
+
 #[cfg(windows)]
 pub use win::{run, Avisador};
 
@@ -418,7 +503,11 @@ mod win {
         use tao::window::{Icon, WindowBuilder};
         if crate::platform::is_elevated() && !crate::agent::test_mode() {
             // Un navegador como administrador en la sesión del usuario: no.
-            return Err("La ventana no se abre como administrador.".into());
+            return Err(ERROR_ELEVADA.into());
+        }
+        // 15o: sin WebView2, decirlo antes de crear nada (si no, la ventana parpadea y se cierra).
+        if !webview2_disponible() {
+            return Err(ERROR_SIN_WEBVIEW2.into());
         }
         if ya_abierta() {
             return Ok(());
@@ -537,5 +626,17 @@ mod tests {
         assert!(std::str::from_utf8(html).unwrap().contains("Resguardo"));
         assert!(super::archivo("/../Cargo.toml").is_none());
         assert!(super::archivo("/no-existe.js").is_none());
+    }
+
+    /// 15o: cuando la ventana no se abre, el aviso dice el motivo y qué hacer.
+    #[test]
+    fn el_aviso_dice_por_que_no_abre() {
+        let (t, ofrecer) = super::texto_no_abre(super::ERROR_SIN_WEBVIEW2);
+        assert!(ofrecer && t.contains("Microsoft Edge WebView2 Runtime") && t.contains(super::ENLACE_WEBVIEW2) && t.contains("resguardo-agente estado"));
+        let (t, ofrecer) = super::texto_no_abre(super::ERROR_ELEVADA);
+        assert!(!ofrecer && t.contains("sin «Ejecutar como administrador»"));
+        let (t, ofrecer) = super::texto_no_abre("otra cosa");
+        assert!(!ofrecer && t.contains("Motivo: otra cosa"));
+        assert!(!t.to_lowercase().contains("restic"));
     }
 }

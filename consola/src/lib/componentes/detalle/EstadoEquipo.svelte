@@ -7,7 +7,7 @@
   import { saludEquipo } from "$lib/salud";
   import { problemasRecientes } from "$lib/detalle";
   import { explicarError } from "$lib/copia";
-  import { TEXTO_RESULTADO, TONO_RESULTADO } from "$lib/repo";
+  import { textoResultado, tonoResultado } from "$lib/repo";
   import { fechaCorta, relativo } from "$lib/formato";
   import { tip } from "$lib/tooltip";
   import Chip from "../Chip.svelte";
@@ -53,7 +53,7 @@
           {#each problemas as p (p.repo + p.e.hora)}
             <li>
               <a class="fila" href={enlace(p.repo, p.e.hora)} onclick={() => (abierto = false)}>
-                <Chip pequeno tono={TONO_RESULTADO[p.e.resultado]} texto={TEXTO_RESULTADO[p.e.resultado]} />
+                <Chip pequeno tono={tonoResultado(p.e)} texto={textoResultado(p.e)} />
                 <span class="que">
                   <strong>{nombreCopia(p.e.copia) ?? p.nombre}</strong>
                   <span class="faint">{explicarError(p.e.mensaje_corto).titulo} · {fechaCorta(p.e.hora)}</span>

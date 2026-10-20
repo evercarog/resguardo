@@ -891,7 +891,7 @@
               <span class="estado-k">
                 {#if !guardadas.has(k.id)}<span class="badge badge-sm tone-accent">Nueva</span>
                 {:else if !k.activa}<Chip tono="neutral" texto="Desactivada" pequeno />
-                {:else if ultima}<Chip tono={TONO_ULTIMA[ultima.estado]} texto={TEXTO_ULTIMA[ultima.estado]} pequeno />{/if}
+                {:else if ultima?.interrumpida && ultima.estado === "fallo"}<Chip tono="warn" texto="Interrumpida" pequeno />{:else if ultima}<Chip tono={TONO_ULTIMA[ultima.estado]} texto={TEXTO_ULTIMA[ultima.estado]} pequeno />{/if}
                 {#if rc}<TiraRegla {rc} cliente={c} ahora={reloj.ahora} compacta />{/if}
               </span>
               <label class="switch-row activa"><input type="checkbox" class="switch" bind:checked={k.activa} /><span>Activa</span></label>

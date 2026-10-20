@@ -204,7 +204,7 @@ const estadoPublicacion = (): T.PublicacionServidor => {
     guardadas: [publicacionMock],
     version_servidor: "0.1.0 (simulado)",
     github: { ...githubMock },
-    instalador: { hay: instaladorMock, de_datos: true, version: instaladorVersionMock },
+    instalador: { hay: instaladorMock, de_datos: true, version: instaladorVersionMock, origen: instaladorVersionMock ? "publicacion" : "desconocida", ultima: publicacionMock.version },
   };
 };
 const recordatoriosMock = new Map<string, T.RecordatorioKit>();
