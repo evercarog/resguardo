@@ -1465,7 +1465,9 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "termina": k.termina.as_ref().filter(|t| t.algo()),
                 "hechas": fin_de(&config, &estado, k).map(|f| f.0),
                 "completada": fin_de(&config, &estado, k).and_then(|f| f.1),
-                "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added })),
+                "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added,
+                    // 15jj: quedó «en curso» y no terminó (`estado` sigue en «fallo» para las consolas anteriores).
+                    "interrumpida": r.interrumpida.then_some(true) })),
                 "proxima": proximas.get(&k.id),
             })
         }).collect::<Vec<_>>(),
@@ -2124,13 +2126,51 @@ pub fn cambiar_destino(v: &mut Vinculo, c: &Value) -> Result<String, String> {
         resguardo_motor::restic::snapshots(&acc).map_err(|e| format!("Con los datos nuevos no se abre el repositorio «{r}»: {e}"))?;
     }
     *v = prueba;
+    // 15i: las copias derivadas (y la externa) que van a este destino guardan su propia
+    // dirección: con la nueva (su carpeta se movió con la del usuario en el almacén).
+    let derivadas = rehacer_derivadas_hacia(v, &id);
     // Las copias programadas, con el acceso nuevo.
     if let Some(cfg) = v.config_v1.clone() {
         aplicar_config(v, &json!({ "config": cfg }))?;
     } else {
         let _ = subir_config(v);
     }
-    Ok(format!("Destino actualizado ({} repositorios comprobados).", repos.len()))
+    let mut m = format!("Destino actualizado ({} repositorios comprobados).", repos.len());
+    match derivadas {
+        Ok(0) => {}
+        Ok(1) => m.push_str(" También la dirección de 1 copia derivada que va a él."),
+        Ok(n) => m.push_str(&format!(" También la dirección de {n} copias derivadas que van a él.")),
+        Err(e) => m.push_str(&format!(" No se pudo poner al día la dirección de sus copias derivadas: {e}. Ábrelas y guárdalas sin cambios para rehacerla.")),
+    }
+    Ok(m)
+}
+
+/// 15i: rehace la dirección de la copia externa y de las copias derivadas de cualquier
+/// repositorio del equipo que van al destino `destino`, con lo que ese destino dice ahora (su
+/// carpeta de siempre dentro de él: `ruta`, o la de por defecto). Devuelve cuántas cambió.
+pub(crate) fn rehacer_derivadas_hacia(v: &Vinculo, destino: &str) -> Result<usize, String> {
+    let Some(d) = v.destinos.iter().find(|d| d.id == destino) else { return Ok(0) };
+    let mut n = 0;
+    for r in &v.repos_v2 {
+        let mut pasos: Vec<(Option<String>, String)> = Vec::new();
+        if let Some(e) = r.externa.as_ref().filter(|e| e["destino"] == destino) {
+            pasos.push((None, e["ruta"].as_str().map(str::to_string).unwrap_or_else(|| r.id.clone())));
+        }
+        for e in r.derivadas.iter().filter(|e| e["destino"] == destino) {
+            let Some(id) = e["id"].as_str() else { continue };
+            pasos.push((Some(id.to_string()), e["ruta"].as_str().map(str::to_string).unwrap_or_else(|| format!("{}-{id}", r.id))));
+        }
+        for (id, ruta) in pasos {
+            // Como `acceso_destino`, sin tocar nada más (la autoridad TLS y las nubes, igual que antes).
+            let location = ubicacion(d, &ruta)?;
+            let auth = if d.tipo == "rest" { d.usuario.clone().map(|u| (u, d.secreto.clone().unwrap_or_default())) } else { None };
+            let con_auth = crate::tasks::location_with_auth(&location, auth.as_ref());
+            if crate::agent::cambiar_ubicacion_derivada(&r.id, id.as_deref(), &location, &con_auth)? {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
 }
 
 /// `nombre_repositorio { repo, nombre }` (B1, inofensiva): el nombre que se ve de un
@@ -2171,17 +2211,15 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
         return Err("Ese repositorio no lo gestiona este servidor.".into());
     }
     let solo_probar = c["solo_probar"] == true;
+    // 15p: quitarla también si el repositorio ya no tiene copias activas (antes, ese caso
+    // fallaba y la consola la seguía enseñando).
+    if !solo_probar && !c["hora"].is_string() {
+        return quitar_copia_externa(v, repo);
+    }
     if !solo_probar && !crate::agent::load_config().repos.iter().any(|r| r.id == repo) {
         return Err("Ese repositorio aún no tiene copias activas en este equipo: aplica antes una configuración con alguna copia.".into());
     }
-    let hora = match c["hora"].as_str() {
-        Some(h) => h.to_string(),
-        None if solo_probar => String::new(),
-        None => {
-            crate::agent::set_offsite(repo, None, None)?;
-            return Ok("Copia derivada de cada día quitada (lo ya copiado sigue en su destino).".into());
-        }
-    };
+    let hora = c["hora"].as_str().map(str::to_string).unwrap_or_default();
     let actual = v.repos_v2.iter().find(|r| r.id == repo).and_then(|r| r.externa.clone()).unwrap_or(Value::Null);
     let guardada = || crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.offsite_password.clone()));
     let p = preparar_derivada(v, c, repo, &actual, repo, &guardada, solo_probar)?;
@@ -2199,10 +2237,70 @@ pub fn cambiar_copia_externa(v: &mut Vinculo, c: &Value, repo: &str) -> Result<S
     if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
         let mut e = p.entrada.clone();
         e["hora"] = json!(hora);
+        // 15p: el destino se creó para ella (al quitarla, se olvida si nadie más lo usa).
+        if p.nuevo.is_some() || r.externa.as_ref().is_some_and(|x| x["destino_propio"] == true && x["destino"] == e["destino"]) {
+            e["destino_propio"] = json!(true);
+        }
         r.externa = Some(e);
     }
     let _ = subir_config(v);
     Ok(format!("Copia derivada a «{}» cada día a las {hora}. {}", p.destino.nombre, p.texto))
+}
+
+/// 15p: quita la copia derivada «de cada día» (la copia externa de antes): su tarea en el
+/// agente y `externa` en `repos_v2`, que es lo que el resumen manda a las consolas (si no, la
+/// seguían enseñando aunque ya no se hacía). Y el destino que se creó solo para ella, si ya
+/// no lo usa nada (nunca se borra nada de lo guardado allí).
+fn quitar_copia_externa(v: &mut Vinculo, repo: &str) -> Result<String, String> {
+    let config = crate::agent::load_config();
+    if config.repos.iter().any(|r| r.id == repo && r.offsite.is_some()) {
+        crate::agent::set_offsite(repo, None, None)?;
+    }
+    let antes = v.repos_v2.iter_mut().find(|r| r.id == repo).and_then(|r| r.externa.take());
+    let mut m = match &antes {
+        Some(_) => "Copia derivada de cada día quitada (lo ya copiado sigue en su destino).".to_string(),
+        None => "Este repositorio ya no tenía copia derivada de cada día.".to_string(),
+    };
+    if let Some(t) = antes.as_ref().and_then(|e| quitar_destino_propio(v, e)) {
+        m = format!("{m} {t}");
+    }
+    let _ = subir_config(v);
+    Ok(m)
+}
+
+/// 15p: si la copia `e` (externa o derivada) creó su destino (`destino_propio`) y ya no lo
+/// usa nada en el equipo, se olvida con sus credenciales. Lo guardado allí se queda.
+fn quitar_destino_propio(v: &mut Vinculo, e: &Value) -> Option<String> {
+    if e["destino_propio"] != true {
+        return None;
+    }
+    let id = e["destino"].as_str()?;
+    if !usos_destino(v, id).is_empty() {
+        return None;
+    }
+    let pos = v.destinos.iter().position(|d| d.id == id)?;
+    let d = v.destinos.remove(pos);
+    Some(texto_destino_quitado(&d))
+}
+
+/// 15p: al arrancar, las copias derivadas «de cada día» que siguen en `repos_v2` (y por eso en
+/// el resumen de las consolas) pero cuyo repositorio ya no tiene la tarea en la configuración
+/// del agente: se quitan (las dejaba así quitarla en un agente 0.8.0). Solo las de repositorios
+/// que están en la configuración (si no, no se toca nada: podría ser una configuración que no
+/// se pudo leer). Devuelve los repositorios arreglados.
+pub fn limpiar_externas_sin_tarea(v: &mut Vinculo, config: &crate::agent::AgentConfig) -> Vec<String> {
+    let mut arreglados = Vec::new();
+    let huerfanas: Vec<(String, Value)> = v
+        .repos_v2
+        .iter_mut()
+        .filter(|r| r.externa.is_some() && config.repos.iter().any(|x| x.id == r.id && x.offsite.is_none()))
+        .filter_map(|r| r.externa.take().map(|e| (r.id.clone(), e)))
+        .collect();
+    for (repo, e) in huerfanas {
+        quitar_destino_propio(v, &e);
+        arreglados.push(repo);
+    }
+    arreglados
 }
 
 /// Lo que se comprueba y prepara antes de guardar una copia externa o
@@ -2523,6 +2621,10 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     let mut e = p.entrada.clone();
     e["id"] = json!(id);
     e["cuando"] = cuando;
+    // 15p: el destino se creó para ella (al quitarla, se olvida si nadie más lo usa).
+    if p.nuevo.is_some() || (actual["destino_propio"] == true && actual["destino"] == e["destino"]) {
+        e["destino_propio"] = json!(true);
+    }
     if let Some(f) = &filtro {
         e["filtro"] = json!(f);
     }
@@ -2578,11 +2680,17 @@ pub fn quitar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String,
     if crate::agent::load_config().repos.iter().any(|x| x.id == repo) {
         crate::agent::set_derived(repo, &id, None, None)?;
     }
-    if let Some(r) = v.repos_v2.iter_mut().find(|r| r.id == repo) {
-        r.derivadas.retain(|x| x["id"] != id.as_str());
+    let quitada = v.repos_v2.iter_mut().find(|r| r.id == repo).and_then(|r| {
+        let pos = r.derivadas.iter().position(|x| x["id"] == id.as_str())?;
+        Some(r.derivadas.remove(pos))
+    });
+    let mut m = "Copia derivada quitada (lo ya copiado sigue en su destino).".to_string();
+    // 15p: y el destino que se creó solo para ella, si ya no lo usa nada.
+    if let Some(t) = quitada.as_ref().and_then(|e| quitar_destino_propio(v, e)) {
+        m = format!("{m} {t}");
     }
     let _ = subir_config(v);
-    Ok("Copia derivada quitada (lo ya copiado sigue en su destino).".into())
+    Ok(m)
 }
 
 /// Lo que va al resumen de una derivada (sin rutas: del filtro, solo cuántas carpetas).
@@ -2852,6 +2960,63 @@ pub fn resumen_guarda_copias() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 15p: al arrancar se quitan las copias derivadas «de cada día» cuyo repositorio ya no tiene
+    /// la tarea (las dejaba así quitarlas en un agente 0.8.0), con el destino creado solo para
+    /// ellas si nadie más lo usa; las que tienen su tarea y las de repositorios que no están en la
+    /// configuración no se tocan.
+    #[test]
+    fn externas_sin_tarea_al_arrancar() {
+        let repo = |id: &str, con_tarea: bool| -> crate::agent::AgentRepo {
+            let mut r: crate::agent::AgentRepo = serde_json::from_value(json!({
+                "id": id, "name": id, "location": "x", "paths": [], "schedule": crate::agent::Schedule::Hours { every: 1 },
+                "enabled_at": "2026-10-01T00:00:00Z",
+            }))
+            .unwrap();
+            if con_tarea {
+                r.offsite = Some(
+                    serde_json::from_value(json!({
+                        "location": "x", "provider": "destino:d-b", "schedule": crate::agent::Schedule::Daily { time: "21:00".into() },
+                        "target_name": "Nube", "enabled_at": "2026-10-01T00:00:00Z",
+                    }))
+                    .unwrap(),
+                );
+            }
+            r
+        };
+        let config = crate::agent::AgentConfig { repos: vec![repo("a", false), repo("b", true), repo("d", false)], ..Default::default() };
+        let mut v = Vinculo::default();
+        let destino = |id: &str| Destino {
+            id: id.into(),
+            nombre: format!("Destino {id}"),
+            tipo: "rest".into(),
+            donde: "https://almacen.ejemplo:8000/".into(),
+            ..Default::default()
+        };
+        v.destinos.push(destino("disco"));
+        for (id, dest, propio) in [("a", "d-a", true), ("b", "d-b", true), ("c", "d-c", true), ("d", "d-d", false)] {
+            v.destinos.push(destino(dest));
+            v.repos_v2.push(RepoV2 {
+                id: id.into(),
+                nombre: id.to_uppercase(),
+                destino: "disco".into(),
+                externa: Some(json!({ "destino": dest, "hora": "21:00", "destino_propio": propio })),
+                ..Default::default()
+            });
+        }
+        assert_eq!(limpiar_externas_sin_tarea(&mut v, &config), vec!["a".to_string(), "d".to_string()]);
+        let externa = |id: &str| v.repos_v2.iter().find(|r| r.id == id).unwrap().externa.is_some();
+        assert_eq!((externa("a"), externa("b"), externa("c"), externa("d")), (false, true, true, false));
+        // El destino creado para «a» se olvida; el de «d» no se sabe si era solo suyo: se queda.
+        let ids: Vec<&str> = v.destinos.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, ["disco", "d-b", "d-c", "d-d"]);
+        // Otra vez: nada que hacer.
+        assert!(limpiar_externas_sin_tarea(&mut v, &config).is_empty());
+        // Un destino propio que aún usa otra cosa (aquí, otro repositorio) no se olvida.
+        v.repos_v2.push(RepoV2 { id: "e".into(), destino: "d-b".into(), ..Default::default() });
+        assert_eq!(quitar_destino_propio(&mut v, &json!({ "destino": "d-b", "destino_propio": true })), None);
+        assert!(v.destinos.iter().any(|d| d.id == "d-b"));
+    }
 
     #[test]
     fn el_destino_recuerda_su_almacen() {

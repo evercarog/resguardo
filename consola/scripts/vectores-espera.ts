@@ -130,6 +130,16 @@ console.log("\n· Órdenes con espera a un agente anterior (v1.58): número rese
   igual("caducada sin llegar al equipo: lo dice", porQueNoSeAplico(o("caducada", { motivo: "sin_entregar" }))?.startsWith("Caducó sin aplicarse: no llegó"), true);
   igual("caducada sin respuesta", porQueNoSeAplico(o("caducada", { motivo: "sin_respuesta" }))?.includes("no contestó"), true);
   igual("caducada de un servidor anterior (sin motivo)", porQueNoSeAplico(o("caducada"))?.startsWith("Caducó sin aplicarse"), true);
+  igual(
+    "15p: del futuro, con la diferencia y cómo corregirla",
+    porQueNoSeAplico(o("rechazada", { mensaje: "La orden viene del futuro: el reloj de este equipo va 2 h y 10 min por detrás del de la consola (¿hora mal puesta?)." })),
+    "Rechazada: el reloj del equipo va 2 h y 10 min por detrás del de la consola (o el de la consola va adelantado). Pon el equipo en hora (en Windows: Configuración → Hora e idioma → «Sincronizar ahora»; en Linux: «timedatectl set-ntp true») y vuelve a mandarla.",
+  );
+  igual(
+    "15p: del futuro, de un agente anterior (sin la diferencia)",
+    porQueNoSeAplico(o("rechazada", { mensaje: "La orden viene del futuro (¿hora mal puesta?)." }))?.startsWith("Rechazada: el reloj del equipo va por detrás del de la consola"),
+    true,
+  );
   igual("antigua: se explica", porQueNoSeAplico(o("rechazada", { mensaje: "Orden repetida o antigua (n.º 12 ≤ 15)." }))?.includes("orden posterior"), true);
   igual("rechazada por otra cosa: su mensaje", porQueNoSeAplico(o("rechazada", { mensaje: "La contraseña del repositorio no es correcta." })), "Rechazada: La contraseña del repositorio no es correcta.");
   igual("cancelada desde otra consola: no es un fallo", porQueNoSeAplico(o("rechazada", { detalle: '{"cancelada":true,"consola":"Oficina"}' })), null);

@@ -100,6 +100,17 @@ pub fn abrir_con_espera(sellado: &str, box_secret: &str, cx: &Contexto, admite_e
     validar_con_espera(&plano, cx, admite_espera)
 }
 
+/// 15p: una diferencia de relojes en palabras («7 min», «3 h y 5 min», «2 días»).
+pub fn diferencia_reloj(segundos: i64) -> String {
+    let m = (segundos.max(0) + 59) / 60;
+    match m {
+        0..=59 => format!("{m} min"),
+        60..=2879 if m % 60 == 0 => format!("{} h", m / 60),
+        60..=2879 => format!("{} h y {} min", m / 60, m % 60),
+        _ => format!("{} días", m / 1440),
+    }
+}
+
 /// ¿Hay que guardarla en espera? Su `not_before` está más allá de la holgura de relojes.
 pub fn espera_aun(o: &OrdenV2, ahora: i64) -> bool {
     o.not_before.as_deref().and_then(|s| ts(s).ok()).is_some_and(|nb| nb > ahora + HOLGURA_S)
@@ -128,7 +139,11 @@ pub fn validar_con_espera(plano: &[u8], cx: &Contexto, admite_espera: bool) -> R
     let tipo = crate::ordenes::tipo(&o.tipo).ok_or("Tipo de orden desconocido.")?;
     let (emitida, caduca) = (ts(&o.emitida)?, ts(&o.caduca)?);
     if emitida > cx.ahora + HOLGURA_S {
-        return Err("La orden viene del futuro (¿hora mal puesta?).".into());
+        // 15p: con la diferencia, para que la consola diga cuánto y cómo corregirlo.
+        return Err(format!(
+            "La orden viene del futuro: el reloj de este equipo va {} por detrás del de la consola (¿hora mal puesta?).",
+            diferencia_reloj(emitida - cx.ahora)
+        ));
     }
     if caduca <= cx.ahora || caduca - emitida > crate::ordenes::MAX_CADUCIDAD_DIAS * 86_400 + HOLGURA_S {
         return Err("Orden caducada.".into());
@@ -205,6 +220,21 @@ mod tests {
         let mut caducada = orden(8, "copiar_ahora");
         caducada.caduca = (chrono::Local::now() - chrono::Duration::minutes(1)).to_rfc3339();
         assert!(validar(&serde_json::to_vec(&caducada).unwrap(), &cx(4, "copiar_ahora", 8)).unwrap_err().contains("caducada"));
+        // 15p: del futuro, con la diferencia de relojes (la consola la enseña con cómo corregirla).
+        let mut futura = orden(9, "copiar_ahora");
+        futura.emitida = (chrono::Local::now() + chrono::Duration::minutes(130)).to_rfc3339();
+        futura.caduca = (chrono::Local::now() + chrono::Duration::hours(4)).to_rfc3339();
+        let e = validar(&serde_json::to_vec(&futura).unwrap(), &cx(4, "copiar_ahora", 9)).unwrap_err();
+        assert!(e.starts_with("La orden viene del futuro") && e.contains("va 2 h y 10 min por detrás"), "{e}");
+    }
+
+    #[test]
+    fn diferencia_de_relojes_en_palabras() {
+        assert_eq!(diferencia_reloj(1), "1 min");
+        assert_eq!(diferencia_reloj(7 * 60), "7 min");
+        assert_eq!(diferencia_reloj(3 * 3600), "3 h");
+        assert_eq!(diferencia_reloj(3 * 3600 + 5 * 60), "3 h y 5 min");
+        assert_eq!(diferencia_reloj(3 * 86_400), "3 días");
     }
 
     /// v1.49: con espera admitida, una orden cuya hora no llegó se abre (sin ella, se rechaza
