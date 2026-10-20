@@ -388,6 +388,23 @@
   .elegible-fila:focus-visible {
     background: var(--surface-2);
   }
+  /* G6: a 375 px, el estado y la hora debajo del texto (si no, el texto queda en una columna estrecha). */
+  @media (max-width: 560px) {
+    .lista-rest .elegible-fila {
+      flex-wrap: wrap;
+    }
+    .lista-rest .fila-texto {
+      flex: 1 1 calc(100% - 48px);
+    }
+    .lista-rest .fila-meta {
+      flex-basis: 100%;
+      margin-left: 44px;
+      text-align: left;
+    }
+    .lista-rest .chips-fila {
+      justify-content: flex-start;
+    }
+  }
   .chips-fila {
     display: inline-flex;
     gap: 6px;

@@ -917,7 +917,7 @@
           <div class="elegidas">
             {#if elegidas.size}
               <!-- 15w: lo que de verdad se restaura (medido por el equipo si lo admite). -->
-              <strong class="num" aria-live="polite">{cuenta.linea}{#if cuenta.sin}<span class="sin-quitado"> · {cuenta.sin}</span>{/if}{#if midiendo}<LoaderCircle size={13} class="spin medir" aria-label="Calculando" />{/if}</strong>
+              <strong class="num" aria-live="polite">{cuenta.linea}{#if cuenta.sin}<span class="sin-quitado">{" · "}{cuenta.sin}</span>{/if}{#if midiendo}<LoaderCircle size={13} class="spin medir" aria-label="Calculando" />{/if}</strong>
               <span class="chips-elegidas">
                 {#each [...elegidas.entries()].slice(0, 3) as [ruta, e] (ruta)}
                   <span class="chip-elegida">{#if e.tipo === "dir"}<Folder size={12} />{:else}<File size={12} />{/if}<span class="ce-nombre">{e.nombre}</span><button type="button" aria-label="Quitar {e.nombre}" onclick={() => quitarElegida(ruta)}><X size={12} /></button></span>
@@ -936,7 +936,7 @@
         <div class="resumen-rest">
           <span class="tile-ic"><History size={16} /></span>
           <p>
-            <strong>{cuenta.linea}</strong>{#if cuenta.sin} ({cuenta.sin}){/if} de «{repo?.nombre}», versión del {dia(version.cuando)}, {hora(version.cuando)}.
+            <strong>{cuenta.linea}</strong>{#if cuenta.sin}{`, ${cuenta.sin}`}{/if} de «{repo?.nombre}», versión del {dia(version.cuando)}, {hora(version.cuando)}.
           </p>
         </div>
         <h2 class="section-title" id="t-destino">¿Dónde los quieres?</h2>
@@ -1043,7 +1043,7 @@
           {#if motivo}<input class="input" bind:value={notasMotivo} maxlength={500} placeholder="Notas (opcional): qué pasó, quién lo pidió… Sin contraseñas." aria-label="Notas del motivo" />{/if}
           {#if motivo === "prueba" && puede.ordenar(actual.cliente?.rol)}
             <!-- 15ee (14k): un simulacro se registra también como prueba funcional, con sus datos puestos. -->
-            <label class="switch-row prueba-func"><input type="checkbox" bind:checked={comoPrueba} /><span><strong>Registrar como prueba funcional</strong><span class="faint">Al terminar, se abre su registro con el día, el repositorio y lo que tardó ya puestos.</span></span></label>
+            <label class="switch-row prueba-func"><input type="checkbox" bind:checked={comoPrueba} /><span><strong>Registrar como prueba funcional</strong><span class="faint">Al terminar, te ofrecemos su registro con el día, el repositorio y lo que tardó ya puestos.</span></span></label>
           {/if}
         </fieldset>
         <p class="faint pequeno">¿Lo necesitas en otro equipo? <button class="link" onclick={() => (enOtro = { equipo: equipoId, repo: repoId })}>Restaurar en otro equipo</button></p>
