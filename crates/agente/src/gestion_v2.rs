@@ -755,6 +755,10 @@ pub struct Copia {
     /// 15y: tipos que se copian aunque pasen del límite (`*.pst`, `*.bak`; hasta 50).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub excepto_tamano: Vec<String>,
+    /// 0.8.1 (15ii, `admite: "equipos_moviles"`): además del horario, una vez al volver a
+    /// conectarse si la última copia buena es antigua.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub al_reconectar: bool,
 }
 
 /// 15y: un grupo de exclusiones aplicado a una copia (sus reglas, tal como estaban).
@@ -849,7 +853,11 @@ impl Copia {
 
     /// Lo nuevo del plan en el agente (0.8.1, bloque D).
     pub fn extra(&self) -> crate::agent::PlanExtra {
-        crate::agent::PlanExtra { larger_mb: self.mayores_mb, larger_except: if self.mayores_mb.is_some() { self.excepto_tamano.clone() } else { vec![] } }
+        crate::agent::PlanExtra {
+            larger_mb: self.mayores_mb,
+            larger_except: if self.mayores_mb.is_some() { self.excepto_tamano.clone() } else { vec![] },
+            on_reconnect: self.al_reconectar,
+        }
     }
 
     /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior»,
@@ -972,6 +980,11 @@ pub struct Configuracion {
     /// el equipo: una `config` de la consola lo quita.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cambiado_en_equipo: Option<String>,
+    /// 0.8.1 (15ii, `admite: "equipos_moviles"`): un equipo que entra y sale (portátil): si
+    /// «sale de la oficina» y con qué margen, y la batería y la conexión medida. Sin el campo
+    /// (una consola anterior) se queda lo que hubiera.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movil: Option<crate::movil::Movil>,
 }
 
 /// «Verificar automáticamente cada `cada_dias` días, `porcentaje` % de los datos»:
@@ -1241,6 +1254,11 @@ fn aplicar_config_marca(v: &mut Vinculo, c: &Value, cambiado_en_equipo: Option<S
         None => cfg.escritorio = v.config_v1.as_ref().and_then(|c| c.get("escritorio")).filter(|e| e.is_object()).cloned(),
     }
     cfg.cambiado_en_equipo = cambiado_en_equipo;
+    // 15ii: sin el campo (una consola anterior), el de antes.
+    match &cfg.movil {
+        Some(m) => m.valida()?,
+        None => cfg.movil = v.config_v1.as_ref().and_then(|c| c.get("movil")).and_then(|m| serde_json::from_value(m.clone()).ok()),
+    }
     let mut ids = std::collections::HashSet::new();
     for k in &cfg.copias {
         if !id_valido(&k.id) || !ids.insert(k.id.clone()) {
@@ -1294,6 +1312,8 @@ fn aplicar_config_marca(v: &mut Vinculo, c: &Value, cambiado_en_equipo: Option<S
         let extras = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(|k| (k.id.clone(), k.extra())).filter(|(_, x)| !x.vacio()).collect();
         crate::agent::set_schedule_full(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos, &fines, &extras)?;
     }
+    // 15ii: la batería y la conexión medida, en el agente (agent.json).
+    crate::agent::set_energia(cfg.movil.as_ref().and_then(crate::movil::Movil::energia))?;
     let verificados = aplicar_verificaciones(v, &cfg)?;
     aplicar_pruebas(v, &cfg)?;
     v.config_v1 = Some(serde_json::to_value(&cfg).map_err(|e| e.to_string())?);
@@ -1337,6 +1357,30 @@ pub fn documento(v: &Vinculo) -> Value {
         .collect::<Vec<_>>());
     doc["destinos"] = json!(v.destinos.iter().map(|d| json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde })).collect::<Vec<_>>());
     doc
+}
+
+/// 15ii: el estado y el mensaje de la última vuelta de una copia, con lo de «sale de la
+/// oficina»: (estado, mensaje, fuera de la oficina dentro del margen).
+pub fn estado_movil(
+    movil: Option<&crate::movil::Movil>,
+    estado: &crate::agent::AgentState,
+    key: &str,
+    r: &crate::agent::RunRecord,
+) -> (&'static str, String, bool) {
+    if r.result == "error" {
+        if let Some(m) = movil {
+            let tecnico = format!("{} {}", r.message, r.detail.as_deref().unwrap_or_default());
+            if let Some((e, msg)) = crate::movil::estado_fuera(m, &tecnico, crate::agent::ultima_buena(estado, key), chrono::Local::now()) {
+                return (e, msg, e == "aviso");
+            }
+        }
+    }
+    (estado_de(&r.result), r.message.clone(), false)
+}
+
+/// 15ii: lo de «sale de la oficina» de la configuración.
+pub fn movil_de(v: Option<&Vinculo>) -> Option<crate::movil::Movil> {
+    v.and_then(|v| v.config_v1.as_ref()).and_then(|c| c.get("movil")).and_then(|m| serde_json::from_value(m.clone()).ok())
 }
 
 fn estado_de(result: &str) -> &'static str {
@@ -1488,6 +1532,10 @@ pub const ADMITE: &[&str] = &[
     // { dar_suelto }` (moverlo a la carpeta de un equipo, sin copiar), `{ sueltos_en }` y, en
     // `adoptar_repositorio` sellado, `ultima_carpetas` y `ultimo_equipo`.
     "repos_sueltos",
+    // 0.8.1 (15ii): `config.movil` (sale de la oficina, margen, batería y conexión medida),
+    // `config.copias[].al_reconectar` y, en un equipo que sale de la oficina, las copias sin
+    // conexión dentro del margen como «aviso» con `fuera: true` (no «fallo»).
+    "equipos_moviles",
     // 0.8.1 (15y): `config.copias[].grupos_exclusiones`, `mayores_mb` y `excepto_tamano`
     // («no copiar más de N MB» con excepciones; lo que quedó fuera, en la versión) y la orden
     // `vista_exclusiones` (cuánto deja fuera cada grupo, sin copiar nada).
@@ -1508,6 +1556,7 @@ pub fn resumen(v: &Vinculo) -> Value {
     let estado = crate::agent::load_state();
     let config = crate::agent::load_config();
     let copias: Vec<Copia> = v.config_v1.as_ref().and_then(|c| serde_json::from_value::<Configuracion>(c.clone()).ok()).map(|c| c.copias).unwrap_or_default();
+    let movil = movil_de(Some(v));
     let now = chrono::Local::now();
     let pausa = config.repos.iter().filter(|r| v.repos_v2.iter().any(|x| x.id == r.id)).filter_map(|r| r.active_pause(now)).map(|p| p.until.clone()).next();
     let proximas = proximas(&copias, now);
@@ -1538,6 +1587,8 @@ pub fn resumen(v: &Vinculo) -> Value {
         // v1.36: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
         "escritorio": v.config_v1.as_ref().map(|c| crate::escritorio::Escritorio::de_config(c).a_json()),
         "escritorio_cambiado_en_equipo": v.config_v1.as_ref().and_then(|c| c.get("cambiado_en_equipo")).filter(|x| x.is_string()),
+        // 15ii: si sale de la oficina y su margen (y la batería y la conexión medida): no es secreto.
+        "movil": movil.as_ref(),
         "copias": copias.iter().map(|k| {
             let run = estado.runs.get(&crate::plans::plan_key(&k.repo, &k.id));
             json!({
@@ -1557,9 +1608,16 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "termina": k.termina.as_ref().filter(|t| t.algo()),
                 "hechas": fin_de(&config, &estado, k).map(|f| f.0),
                 "completada": fin_de(&config, &estado, k).and_then(|f| f.1),
-                "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added,
-                    // 15jj: quedó «en curso» y no terminó (`estado` sigue en «fallo» para las consolas anteriores).
-                    "interrumpida": r.interrumpida.then_some(true) })),
+                "ultima": run.map(|r| {
+                    let (e, m, fuera) = estado_movil(movil.as_ref(), &estado, &crate::plans::plan_key(&k.repo, &k.id), r);
+                    json!({ "cuando": r.finished, "estado": e, "mensaje": crate::web::public_message(&m), "bytes": r.data_added,
+                        // 15jj: quedó «en curso» y no terminó (`estado` sigue en «fallo» para las consolas anteriores).
+                        "interrumpida": r.interrumpida.then_some(true),
+                        // 15ii: sin conexión, en un equipo que sale de la oficina y dentro de su margen.
+                        "fuera": fuera.then_some(true) })
+                }),
+                // 15ii: además, al volver a conectarse.
+                "al_reconectar": k.al_reconectar.then_some(true),
                 "proxima": proximas.get(&k.id),
             })
         }).collect::<Vec<_>>(),
@@ -1746,6 +1804,7 @@ pub fn subir_config_enlace(v: &mut Vinculo) -> Result<(), String> {
 /// Informe para el servidor: estado del servicio y de las copias, sin rutas.
 pub fn informe(v: Option<&Vinculo>) -> Value {
     let estado = crate::agent::load_state();
+    let movil = movil_de(v);
     let copias: Vec<Copia> =
         v.and_then(|v| v.config_v1.as_ref()).and_then(|c| serde_json::from_value::<Configuracion>(c.clone()).ok()).map(|c| c.copias).unwrap_or_default();
     let filas: Vec<Value> = estado
@@ -1754,8 +1813,10 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
         .map(|(clave, r)| {
             let (repo, copia) = clave.split_once('#').unwrap_or((clave.as_str(), ""));
             let nombre = copias.iter().find(|k| k.repo == repo && k.id == copia).map(|k| k.nombre.clone());
+            // 15ii: en un equipo que sale de la oficina, sin conexión dentro del margen no es un fallo.
+            let (e, m, fuera) = estado_movil(movil.as_ref(), &estado, clave, r);
             json!({
-                "id": copia, "repo": repo, "nombre": nombre, "estado": estado_de(&r.result), "cuando": r.finished, "mensaje": crate::web::public_message(&r.message),
+                "id": copia, "repo": repo, "nombre": nombre, "estado": e, "cuando": r.finished, "mensaje": crate::web::public_message(&m), "fuera": fuera.then_some(true),
                 // 15f: con `verificado`, para que la tarjeta «Antes de copiar» diga «volcadas y verificadas».
                 "ganchos": r.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": crate::web::public_message(&g.mensaje), "verificado": g.verificado })).collect::<Vec<_>>(),
             })
@@ -3613,7 +3674,7 @@ mod tests {
             "grupos_exclusiones": [{"id": "musica", "nombre": "Música", "reglas": ["*.mp3"]}], "mayores_mb": 500, "excepto_tamano": ["*.pst"]}))
         .unwrap();
         assert!(k.valida_exclusiones().is_ok());
-        assert_eq!(k.extra(), crate::agent::PlanExtra { larger_mb: Some(500), larger_except: vec!["*.pst".into()] });
+        assert_eq!(k.extra(), crate::agent::PlanExtra { larger_mb: Some(500), larger_except: vec!["*.pst".into()], on_reconnect: false });
         // Sin límite, las excepciones no cuentan; y un plan sin nada nuevo no lleva `extra`.
         assert!(Copia { mayores_mb: None, ..k.clone() }.extra().vacio());
         assert!(Copia { mayores_mb: Some(0), ..k.clone() }.valida_exclusiones().is_err());

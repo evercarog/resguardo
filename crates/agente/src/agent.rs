@@ -393,6 +393,9 @@ pub struct PlanExtra {
     /// 15y: tipos que se copian aunque pasen del límite (`*.pst`, `*.bak`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub larger_except: Vec<String>,
+    /// 15ii: «además, al volver a conectarse» (movil.rs).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_reconnect: bool,
 }
 
 impl PlanExtra {
@@ -550,6 +553,21 @@ pub struct AgentConfig {
     /// discreto.rs). None: desactivado.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discreet: Option<crate::discreto::Discreet>,
+    /// 0.8.1 (15ii): no empezar una copia sola con poca batería o con una conexión medida
+    /// (de `config.movil`, ver movil.rs). None: no se mira.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energia: Option<crate::movil::Energia>,
+}
+
+/// 15ii: pone o quita lo de la batería y la conexión medida (agent.json, como administrador).
+pub fn set_energia(energia: Option<crate::movil::Energia>) -> Result<(), String> {
+    let mut config = load_config();
+    if config.energia == energia {
+        return Ok(());
+    }
+    require_admin()?;
+    config.energia = energia;
+    write_json("agent.json", &config)
 }
 
 /// Antes de cada copia o tarea: ¿toca ir con prioridad baja? Se lo dice a
@@ -761,6 +779,17 @@ pub struct AgentState {
     /// F1 (14pp): la cuenta de los planes con fin (`<repo>#<plan>`).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub ends: HashMap<String, EndCount>,
+    /// 0.8.1 (15ii): la última copia buena de cada plan (RFC 3339), para «al volver a
+    /// conectarse» y para el margen de un equipo que sale de la oficina.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub ultima_buena: HashMap<String, String>,
+    /// 15ii: si el destino de cada plan con «al volver a conectarse» respondía y si toca copiar.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub reconexion: HashMap<String, crate::movil::Reconexion>,
+    /// 15ii: la última vez que se apuntó en el registro que las copias esperaban por la
+    /// batería o la conexión medida (para no repetirlo cada vuelta).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aplazadas_aviso: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2224,6 +2253,46 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dy
     record
 }
 
+/// 15ii: ¿falló por no llegar al destino? (el mensaje es la frase; el detalle, lo técnico).
+fn fallo_de_red(r: &RunRecord) -> bool {
+    r.result == "error" && crate::movil::es_sin_conexion(&format!("{} {}", r.message, r.detail.as_deref().unwrap_or_default()))
+}
+
+/// 15ii: mira si responde el destino de los repositorios que lo necesitan (con algún plan
+/// «al volver a conectarse» o con su última copia fallida por la red) y anota la reconexión
+/// de cada plan. Devuelve lo visto por repositorio (`None`: no se sabe).
+fn mirar_destinos(config: &AgentConfig, state: &mut AgentState, ahora: DateTime<Local>) -> HashMap<String, Option<bool>> {
+    let mut out = HashMap::new();
+    for repo in &config.repos {
+        let interesa = repo.plans.iter().any(|p| p.extra.on_reconnect || state.runs.get(&crate::plans::plan_key(&repo.id, &p.id)).is_some_and(fallo_de_red));
+        if !interesa {
+            continue;
+        }
+        let alc = crate::movil::alcanzable(&repo.location);
+        out.insert(repo.id.clone(), alc);
+        for p in repo.plans.iter().filter(|p| p.extra.on_reconnect) {
+            let key = crate::plans::plan_key(&repo.id, &p.id);
+            let buena = ultima_buena(state, &key);
+            let hueco = i64::from(p.schedule.max_gap_hours()).clamp(1, 24 * 31);
+            let antes = state.reconexion.get(&key).cloned().unwrap_or_default();
+            let ahora_r = crate::movil::mirar(&antes, alc, buena, hueco, ahora);
+            if ahora_r.toca.is_some() && antes.toca.is_none() {
+                log(&format!("«{}» (plan «{}»): el destino vuelve a responder; si sigue así, se copia en unos minutos.", repo.name, p.name));
+            }
+            state.reconexion.insert(key, ahora_r);
+        }
+    }
+    out
+}
+
+/// 15ii: la última copia buena de un plan (la anotada o, si la última fue bien, la última).
+pub fn ultima_buena(state: &AgentState, key: &str) -> Option<DateTime<Local>> {
+    let leer = |s: &str| DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Local));
+    let anotada = state.ultima_buena.get(key).and_then(|s| leer(s));
+    let ultima = state.runs.get(key).filter(|r| r.result != "error").and_then(|r| leer(&r.finished));
+    anotada.max(ultima)
+}
+
 /// 15y: recorre las carpetas del plan y escribe, en la carpeta privada del agente, el
 /// archivo de exclusiones con los archivos de más de `mb` MB que no son de un tipo
 /// exceptuado. `Err(aviso)`: no se pudo (o no terminó a tiempo) y se copia **sin** el
@@ -2410,6 +2479,12 @@ pub fn run() -> i32 {
         }
     }
 
+    // 15ii: si responde el destino (para «al volver a conectarse» y los reintentos por red) y
+    // si se puede empezar con esta batería y esta conexión (solo lo que se hace solo).
+    let alcance = mirar_destinos(&config, &mut state, Local::now());
+    let aplazar =
+        config.energia.as_ref().and_then(|e| crate::movil::por_que_no(e, crate::movil::bateria(), if e.sin_medida { crate::movil::medida() } else { None }));
+    let mut aplazadas: Vec<String> = Vec::new();
     let mut failures = 0;
     let mut ran: Vec<String> = Vec::new();
     // Tarea 7c: varias pasadas. Un plan «después de la anterior» empieza en la misma
@@ -2431,7 +2506,24 @@ pub fn run() -> i32 {
                 // Si la anterior falló, la cadena se para aquí (y se anota una vez).
                 note_chain_stop(repo, plan, &key, &mut state);
                 let asked = pass == 0 && requested.contains(&key);
-                let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()) else { continue };
+                // 15ii: «además, al volver a conectarse» (una vez, tras unos minutos de calma).
+                let por_reconexion = !asked && plan.extra.on_reconnect && state.reconexion.get(&key).is_some_and(|r| crate::movil::toca(r, Local::now()));
+                let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()).or(por_reconexion.then_some(false)) else { continue };
+                // 15ii: un reintento por falta de red no se gasta mientras el destino no responde.
+                if retry && alcance.get(&repo.id).copied().flatten() == Some(false) && state.runs.get(&key).is_some_and(fallo_de_red) {
+                    continue;
+                }
+                // 15ii: con poca batería o con una conexión medida, lo que se hace solo espera.
+                if let (false, Some(_)) = (asked, &aplazar) {
+                    aplazadas.push(format!("«{}»", plan.name));
+                    continue;
+                }
+                if por_reconexion {
+                    log(&format!("«{}» (plan «{}»): el destino vuelve a responder y la última copia buena es antigua: se copia ahora.", repo.name, plan.name));
+                    if let Some(r) = state.reconexion.get_mut(&key) {
+                        r.toca = None;
+                    }
+                }
                 let by_chain = plan.after.is_some() && chain_turn(plan, &state, plan_since(plan, &key, &state), Local::now()) == ChainTurn::Go;
                 let attempts = state.retries.get(&key).copied().unwrap_or(0);
                 if retry {
@@ -2594,6 +2686,13 @@ pub fn run() -> i32 {
                         );
                     }
                 }
+                // 15ii: la última copia buena (para «al volver a conectarse» y el margen de «sale de la oficina»).
+                if record.result != "error" {
+                    state.ultima_buena.insert(key.clone(), record.finished.clone());
+                    if let Some(r) = state.reconexion.get_mut(&key) {
+                        r.toca = None;
+                    }
+                }
                 // F1: cuenta para su fin (si tiene) y, si llega, queda completada.
                 if note_end(plan, &key, &mut state, record.result != "error", Local::now()) {
                     log(&format!("«{}» (plan «{}») completada: hizo lo que tenía previsto. Sus versiones se quedan.", repo.name, plan.name));
@@ -2607,6 +2706,21 @@ pub fn run() -> i32 {
         if done_keys.len() == before {
             break;
         }
+    }
+    // 15ii: lo que espera por la batería o la conexión medida, en el registro (como mucho cada hora).
+    if let (Some(motivo), false) = (&aplazar, aplazadas.is_empty()) {
+        let reciente = state
+            .aplazadas_aviso
+            .as_deref()
+            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+            .is_some_and(|t| Local::now().signed_duration_since(t) < Duration::hours(1));
+        if !reciente {
+            aplazadas.dedup();
+            log(&format!("Copias aplazadas porque {motivo}: {}. Se hacen en cuanto se pueda (o con «Copiar ahora»).", aplazadas.join(", ")));
+            state.aplazadas_aviso = Some(Local::now().to_rfc3339());
+        }
+    } else if aplazar.is_none() {
+        state.aplazadas_aviso = None;
     }
     // Peticiones a distancia que no se pudieron empezar (p. ej. una verificación
     // tenía el destino bloqueado): se avisa en lugar de dejarlas sin respuesta.
