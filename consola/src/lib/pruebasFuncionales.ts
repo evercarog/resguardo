@@ -232,8 +232,13 @@ function unir(a: string, b: string, windows: boolean): string {
 export function opcionesPruebaEspejo(pasos: PasoVista[], e: Equipo, equipos: Equipo[]): OpcionPruebaEspejo[] {
   const windows = (e.so ?? "").toLowerCase().startsWith("win");
   const nubes = e.resumen?.nubes ?? [];
-  return pasos
-    .filter((p) => p.tipo === "espejo" && p.espejo)
+  const espejos = pasos.filter((p) => p.tipo === "espejo" && p.espejo);
+  // 14j: lo que sí se puede probar desde este equipo (para ofrecerlo cuando un disco no llega).
+  const alcanzable = (p: PasoVista) => {
+    const x = p.espejo!;
+    return (x.quien === "equipo" && !!x.trabajo) || (x.tipo === "nube" && nubes.length > 0 && !!x.ruta) || (x.almacen === e.id && !!x.ruta);
+  };
+  return espejos
     .map((p) => {
       const x = p.espejo!;
       const id = idPruebaEspejo(p);
@@ -259,7 +264,15 @@ export function opcionesPruebaEspejo(pasos: PasoVista[], e: Equipo, equipos: Equ
         modo: "carpeta",
         orden: base,
         sugerida,
-        nota: `Está en un disco de «${nombreAlmacen}», al que «${e.nombre}» no llega. Conecta ese disco a «${e.nombre}» (o copia allí la carpeta del repositorio) y di dónde está.`,
+        // 14j: un disco del almacén que este equipo no alcanza. Sin conectarlo no se puede: el
+        // almacén no tiene la contraseña del repositorio (y no se le dan llaves para esto).
+        nota: (() => {
+          const otra = espejos.find((q) => q !== p && alcanzable(q));
+          const alt = otra
+            ? ` Mientras tanto, pruébala desde «${otra.nombre}», que sí llega desde aquí.`
+            : " Si este repositorio también va a una nube (otro espejo), se podrá probar desde ella.";
+          return `Está en un disco de «${nombreAlmacen}», al que «${e.nombre}» no llega: no se puede probar sin conectar ese disco a «${e.nombre}» (o copiar allí la carpeta del repositorio) y decir dónde está.${alt}`;
+        })(),
       };
     });
 }

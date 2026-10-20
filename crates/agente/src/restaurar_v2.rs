@@ -608,6 +608,7 @@ pub fn entrada(
     let desde = match c["desde"].as_str() {
         None | Some("") => "principal",
         Some("externa") => "externa",
+        Some(d) if d.starts_with(DESDE_ESPEJO) => "espejo",
         Some(_) => "derivada",
     };
     let (resultado, mensaje, cifras) = match r {
@@ -699,15 +700,30 @@ pub fn anotar(
 }
 
 /// El acceso para restaurar o explorar: el del repositorio o, con `desde`, el de
-/// su copia externa (`externa`) o una copia derivada (su id) (14m). Devuelve
-/// también el nombre del destino de esa copia, si se sabe.
-pub fn acceso_desde(principal: impl FnOnce() -> Result<restic::Access, String>, repo: &str, c: &Value) -> Result<(restic::Access, Option<String>), String> {
+/// su copia externa (`externa`) o una copia derivada (su id) (14m) y, desde la 0.8.1,
+/// uno de los espejos que hace el propio equipo (`espejo:<id del trabajo>`, con la misma
+/// contraseña: es el mismo repositorio en otro sitio). Devuelve también el nombre del
+/// destino de esa copia, si se sabe.
+pub fn acceso_desde(v: &crate::servidor_v2::Vinculo, repo: &str, c: &Value) -> Result<(restic::Access, Option<String>), String> {
     match c["desde"].as_str().filter(|d| !d.is_empty()) {
-        None => Ok((principal()?, None)),
+        None => Ok((crate::gestion_v2::acceso(v, repo)?, None)),
         Some(d) if d == "externa" || crate::gestion_v2::id_derivada_valido(d) => crate::tasks::acceso_copia(repo, d),
+        Some(d) if d.starts_with(DESDE_ESPEJO) => {
+            let id = &d[DESDE_ESPEJO.len()..];
+            let mut p =
+                crate::prueba_espejo::Prueba { id: "restaurar".into(), nombre: "Restaurar".into(), trabajo: Some(id.to_string()), ..Default::default() };
+            crate::prueba_espejo::validar(&mut p).map_err(|_| "Espejo no válido.".to_string())?;
+            let nombre = crate::espejo_trabajos::cargar_equipo().trabajos.into_iter().find(|t| t.id == id).map(|t| t.nombre);
+            Ok((crate::prueba_espejo::acceso(v, repo, &p)?, nombre.filter(|n| !n.trim().is_empty())))
+        }
         Some(_) => Err("Copia de origen no válida.".into()),
     }
 }
+
+/// 0.8.1 (E4, 14m): `desde: "espejo:<id>"`, un espejo que hace el propio equipo.
+pub const DESDE_ESPEJO: &str = "espejo:";
+/// `resumen.admite`: `desde: "espejo:<id>"` en `explorar`, `restaurar` y `descargar`.
+pub const ADMITE_DESDE_ESPEJO: &str = "restaurar_espejo_equipo";
 
 #[cfg(test)]
 mod tests {
@@ -813,6 +829,17 @@ mod tests {
 
         std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 0.8.1 (E4, 14m): desde un espejo del propio equipo, solo con un id de trabajo válido.
+    #[test]
+    fn desde_un_espejo_del_equipo() {
+        let v = crate::servidor_v2::Vinculo::default();
+        for mal in ["espejo:", "espejo:../x", "espejo:a/b", "otra-cosa!"] {
+            assert!(acceso_desde(&v, "r1", &json!({ "desde": mal })).is_err(), "{mal}");
+        }
+        let c = json!({ "version": "x", "rutas": [], "desde": "espejo:nube" });
+        assert_eq!(entrada("r1", &c, "junto", &Quien::default(), chrono::Local::now(), chrono::Local::now(), &Ok(Cifras::default()), None)["desde"], "espejo");
     }
 
     /// 15w: lo que se quita de lo elegido.

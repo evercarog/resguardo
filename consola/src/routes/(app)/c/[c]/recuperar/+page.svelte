@@ -75,6 +75,7 @@
   import ProgresoCopia from "$lib/componentes/ProgresoCopia.svelte";
   import { tareasDe } from "$lib/progreso.svelte";
   import { espejoDelRepo, etiquetaCarpeta, nombreEnAlmacen } from "$lib/espejo";
+  import { trabajosDelEquipo } from "$lib/espejoTrabajos";
   import { claveEspejo } from "$lib/cripto/ordenes";
   import { errorCarpetaRestaurar, errorContrasenaZip, errorNombreZip, medidaEstimada, MOTIVOS, recomendar, textoMedida, type MedidaRestaurar, type OrigenRestauracion } from "$lib/restauraciones";
   // 15w: el árbol marca lo de dentro y deja quitar lo que no (el mismo de «Qué copiar»).
@@ -208,6 +209,21 @@
         motivo: sinEquipo,
       });
     }
+    // 14m (0.8.1, E4): también los espejos que hace el propio equipo (el mismo repositorio en
+    // otra carpeta suya o en una nube conectada en él), con la misma contraseña.
+    const admiteEspejoEquipo = !!equipo.resumen?.admite?.includes("restaurar_espejo_equipo");
+    for (const t of trabajosDelEquipo(equipo).filter((t) => t.que.tipo === "todos" || (t.que.tipo === "repos" && t.que.repos.includes(repo.id)))) {
+      os.push({
+        id: `espejo-equipo:${t.id}`,
+        tipo: "espejo",
+        nombre: `Espejo «${t.nombre.trim() || "sin nombre"}»`,
+        donde: t.adonde.tipo === "nube" ? (t.adonde.nube ?? "nube") : etiquetaCarpeta(t.adonde.carpeta),
+        estado: sinEquipo ? "aviso" : t.resultado === "fallo" || t.resultado === "error" ? "fallo" : t.ultima ? "ok" : "desconocido",
+        ultima: t.ultima ?? null,
+        noSe: !admiteEspejoEquipo ? `Para restaurar desde sus espejos, actualiza el agente de ${equipo.nombre}.` : !t.ultima ? "Este espejo aún no ha subido nada." : null,
+        motivo: sinEquipo,
+      });
+    }
     for (const dd of espejoRepo?.destinos ?? []) {
       os.push({
         id: `espejo:${claveEspejo(dd)}`,
@@ -227,6 +243,12 @@
   function seguirDesde() {
     const o = origenes.find((x) => x.id === origenElegido);
     if (!o || o.noSe) return;
+    // 14m: un espejo del propio equipo se abre como cualquier otro origen (lo hace él, con su acceso).
+    if (o.id.startsWith("espejo-equipo:")) {
+      desde = `espejo:${o.id.slice("espejo-equipo:".length)}`;
+      paso = "clave";
+      return;
+    }
     if (o.tipo === "espejo") {
       if (almacenRepo && nombreEspejo) desdeEspejo = { almacen: almacenRepo, clave: o.id.slice("espejo:".length), repo: nombreEspejo };
       return;
@@ -777,7 +799,7 @@
               <span class="fila-texto">
                 <span class="fila-titulo">{o.nombre} · {o.donde}{#if o.recomendado} <span class="badge badge-sm tone-accent">Recomendado</span>{/if}</span>
                 <span class="fila-sub">
-                  {#if o.noSe}{o.noSe}{:else if o.motivo}{o.motivo}{:else if o.tipo === "espejo"}Se abre con la contraseña del repositorio, en el equipo que elijas.{:else if o.tipo === "principal"}Donde copia {equipo.nombre}.{:else}La hace {equipo.nombre}: se restaura con su acceso.{/if}
+                  {#if o.noSe}{o.noSe}{:else if o.motivo}{o.motivo}{:else if o.id.startsWith("espejo-equipo:")}Lo hace {equipo.nombre}: el mismo repositorio, con su contraseña.{:else if o.tipo === "espejo"}Se abre con la contraseña del repositorio, en el equipo que elijas.{:else if o.tipo === "principal"}Donde copia {equipo.nombre}.{:else}La hace {equipo.nombre}: se restaura con su acceso.{/if}
                 </span>
               </span>
               <span class="fila-meta num">
@@ -798,7 +820,7 @@
           <div class="dlg-title">
             <span class="ticon"><LockKeyhole size={18} /></span>
             <div>
-              <h2>Abrir «{repo.nombre}» de {equipo.nombre}{#if desde}, desde «{origenes.find((o) => o.id === desde)?.donde ?? "otra copia"}»{/if}</h2>
+              <h2>Abrir «{repo.nombre}» de {equipo.nombre}{#if desde}, desde «{origenes.find((o) => o.id === desde || o.id === `espejo-equipo:${desde.slice(7)}`)?.donde ?? "otra copia"}»{/if}</h2>
               <p>Para ver sus versiones hace falta la contraseña del repositorio. Se usa solo en esta pantalla y se olvida al salir.</p>
             </div>
           </div>

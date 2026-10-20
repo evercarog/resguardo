@@ -87,6 +87,7 @@
           {#if o.modo === "no"}
             <span class="faint nota">{o.nota}</span>
           {:else if ordena && admite}
+            {#if o.modo === "carpeta"}<span class="faint nota">{o.nota}</span>{/if}
             <span class="botones">
               <button type="button" class="btn btn-sm" onclick={() => abrir("ahora", o)}><FlaskConical size={14} />Probar ahora</button>
               <button type="button" class="btn btn-sm btn-ghost" onclick={() => abrir("programar", o)}><CalendarClock size={14} />{p?.cada_dias ? "Cambiar" : "Programar…"}</button>

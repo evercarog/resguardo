@@ -1361,12 +1361,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // 14m: con `desde` (`externa` o el id de una copia derivada), desde esa copia.
         "explorar" => {
             let r = repo.unwrap_or("");
-            let (acc, _) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let (acc, _) = crate::restaurar_v2::acceso_desde(v, r, c)?;
             crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Explorar(Box::new(acc))).map(hecha)
         }
         "restaurar" => {
             let r = repo.unwrap_or("");
-            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(v, r, c)?;
             let mut c = c.clone();
             c["repo"] = json!(r);
             let q = quien(v, o, orden_id);
@@ -1376,7 +1376,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "descargar" => {
             let r = repo.unwrap_or("");
-            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(v, r, c)?;
             let mut c = c.clone();
             c["repo"] = json!(r);
             let q = quien(v, o, orden_id);

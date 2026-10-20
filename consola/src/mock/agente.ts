@@ -60,7 +60,7 @@ function anotarRestauracion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana, c: R
     bytes: ok ? 1_800_000_000 : null,
     destino,
     cifrado: (destino === "zip" || destino === "descarga") && typeof c.contrasena_zip === "string" && c.contrasena_zip.length > 0,
-    desde: !c.desde ? "principal" : c.desde === "externa" ? "externa" : "derivada",
+    desde: !c.desde ? "principal" : c.desde === "externa" ? "externa" : String(c.desde).startsWith("espejo:") ? "espejo" : "derivada",
     desde_nombre: null,
     resultado: ok ? "ok" : "fallo",
     mensaje,

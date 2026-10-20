@@ -1426,6 +1426,9 @@ pub const ADMITE: &[&str] = &[
     // 0.8.1 (E2, 15ee; H1, 15mm): los ajustes comunes `ajuste:restauraciones` (sin clave) y
     // `ajuste:recuperar` (con la clave) en `datos_cliente`.
     resguardo_protocolo::datos_cliente::ADMITE_AJUSTES,
+    // 0.8.1 (E4, 14m): `desde: "espejo:<id>"` (un espejo que hace el propio equipo) en
+    // `explorar`, `restaurar` y `descargar`.
+    crate::restaurar_v2::ADMITE_DESDE_ESPEJO,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

@@ -110,6 +110,7 @@ export function textoDestino(d: string | null | undefined): string {
 /** Desde dónde se restauró. */
 export function textoDesde(r: Pick<Restauracion, "desde" | "desde_nombre"> & Partial<Pick<Restauracion, "espejo">>): string {
   if (r.espejo) return r.espejo.nombre ? `Espejo «${r.espejo.nombre}»` : "Un espejo";
+  if (r.desde === "espejo") return r.desde_nombre ? `Espejo «${r.desde_nombre}» del equipo` : "Un espejo del equipo";
   if (r.desde === "derivada") return r.desde_nombre ? `Copia derivada en «${r.desde_nombre}»` : "Una copia derivada";
   if (r.desde === "externa") return r.desde_nombre ? `Copia derivada en «${r.desde_nombre}»` : "La copia derivada de cada día";
   return "Su repositorio";
