@@ -7,6 +7,8 @@ import { copiaNueva, etiquetasEnUso, limpiarEtiquetaVersion, nombrePropuesto, po
 import { configParaEnviar, type Admite } from "../src/lib/configEnvio";
 import { reglaSinNada, reglaVacia, sinPeriodo } from "../src/lib/retencion";
 import { atrasada, estadoCopia, margenMovil, ultimaVuelta } from "../src/lib/copia";
+import { esServidor } from "../src/lib/apagar";
+import { pideAdminPorCuerpo } from "../src/lib/cripto/ordenes";
 
 let fallos = 0;
 let total = 0;
@@ -117,6 +119,20 @@ function igual(nombre: string, obtenido: unknown, esperado: unknown) {
   igual("se manda movil limpio y al_reconectar", [(x as { movil?: unknown }).movil, (x.copias[0] as { al_reconectar?: boolean }).al_reconectar], [{ sale_oficina: true, margen_dias: 5 }, true]);
   const y = configParaEnviar(cfg, { ...a, moviles: false });
   igual("a un agente anterior, nada", ["movil" in y, "al_reconectar" in y.copias[0]], [false, false]);
+}
+
+// --- 15kk: apagar o hibernar al terminar ---
+{
+  const eq = (o: Record<string, unknown>) => ({ rol: "agente", so: "Windows 11 Pro", etiquetas: [], resumen: {}, ...o }) as unknown as Parameters<typeof esServidor>[0];
+  igual("un puesto no es servidor", esServidor(eq({})), false);
+  igual("un Windows Server, sí", esServidor(eq({ so: "Windows Server 2022" })), true);
+  igual("un almacén, sí", esServidor(eq({ rol: "almacenamiento" })), true);
+  igual("con la etiqueta, sí", esServidor(eq({ etiquetas: ["Servidores"] })), true);
+  igual("«Copiar ahora» que apaga pide la clave", [pideAdminPorCuerpo("copiar_ahora", { al_terminar: "apagar" }), pideAdminPorCuerpo("copiar_ahora", {})], [true, false]);
+  const a: Admite = { reglas: true, ganchos: true, soloCambios: true, verif: false, verifHorario: false, escritorio: false, apagar: true };
+  const cfg = { v: 1, copias: [{ ...copiaNueva("r1", "k1"), carpetas: ["C:\\D"], al_terminar: "hibernar", al_terminar_servidor: false }], repositorios: [], destinos: [] } as unknown as Configuracion;
+  igual("se manda al terminar", (configParaEnviar(cfg, a).copias[0] as { al_terminar?: string }).al_terminar, "hibernar");
+  igual("a un agente anterior, no", "al_terminar" in configParaEnviar(cfg, { ...a, apagar: false }).copias[0], false);
 }
 
 console.log(`\n${total - fallos}/${total} ${fallos ? "con fallos" : "bien"}`);

@@ -70,6 +70,8 @@
   import EtiquetasVersiones from "$lib/componentes/copias/EtiquetasVersiones.svelte";
   import EquipoMovil from "$lib/componentes/copias/EquipoMovil.svelte";
   import AlReconectar from "$lib/componentes/copias/AlReconectar.svelte";
+  import AlTerminar from "$lib/componentes/copias/AlTerminar.svelte";
+  import { esServidor } from "$lib/apagar";
   import CuandoEmpieza from "$lib/componentes/copias/CuandoEmpieza.svelte";
   import ResumenCopia from "$lib/componentes/copias/ResumenCopia.svelte";
   import type { PedidoRepoNuevo } from "$lib/componentes/copias/ElegirRepositorio.svelte";
@@ -454,6 +456,8 @@
   const admiteGrupos = $derived(admite(equipo, ADMITE_GRUPOS));
   /** 0.8.1 (15ii): «al volver a conectarse» y los equipos que salen de la oficina. */
   const admiteMoviles = $derived(admite(equipo, "equipos_moviles"));
+  /** 0.8.1 (15kk): apagar o hibernar al terminar. */
+  const admiteApagar = $derived(admite(equipo, "apagar_al_terminar"));
   /** Lo que cada control de «Cuándo empieza» puede ofrecer con este agente. */
   const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, termina: admiteTermina });
   /** Una copia antigua «después de» que además tenía su horario (ya no se ofrece): se dice y se puede quitar. */
@@ -757,6 +761,7 @@
       ...(ganchosDe(k.gancho).length && !admiteGanchos ? [`«${k.nombre}» tiene pasos «Antes de copiar» que este agente aún no admite`] : []),
       ...(ganchosDe(k.gancho).some((g) => errorGancho(g)) ? [`«${k.nombre}» tiene un paso «Antes de copiar» por completar`] : []),
       ...(errorTamano(k) ? [errorTamano(k)!] : []),
+      ...(k.al_terminar && equipo && esServidor(equipo) && !k.al_terminar_servidor ? [`«${k.nombre}» apaga ${equipo.nombre}, que es un servidor: confírmalo expresamente`] : []),
     ])).concat(cfg && errorCadenas(cfg.copias) ? [errorCadenas(cfg.copias)!.replace(/\.$/, "")] : []),
   );
 
@@ -781,6 +786,7 @@
         etiquetas: admiteEtiquetas,
         grupos: admiteGrupos,
         moviles: admiteMoviles,
+        apagar: admiteApagar,
       });
       // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
       for (const h of [...historiales]) {
@@ -1001,7 +1007,7 @@
                   cliente={actual.cliente}
                   prueba={prueba ?? undefined}
                   version={versionAgente}
-                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas, grupos: admiteGrupos, moviles: admiteMoviles }}
+                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas, grupos: admiteGrupos, moviles: admiteMoviles, apagar: admiteApagar }}
                   regla={rc}
                   puede={puedeSugerir(k)}
                   pendientes={pendientesDe(k)}
@@ -1101,6 +1107,7 @@
                   {/if}
                 </div>
                 <EditorGanchos id={k.id} bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admiteGanchos} version={versionAgente} cliente={actual.cliente ?? undefined} {equipo} prueba={prueba ?? undefined} />
+                <AlTerminar {k} {equipo} admite={admiteApagar} version={versionAgente} />
                 <EtiquetasVersiones id={k.id} bind:etiquetas={() => k.etiquetas ?? [], (v) => (k.etiquetas = v)} admite={admiteEtiquetas} version={versionAgente} sugeridas={etiquetasEnUso(actual.equipos)} />
                 {#if !k.activa}
                   <p class="faint nota"><Trash2 size={13} />Para quitarla del todo y dejar de proteger esas carpetas, usa «Dejar de copiar» en el repositorio (espera {actual.cliente?.espera_min_horas} h).</p>

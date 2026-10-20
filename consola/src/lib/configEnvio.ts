@@ -40,6 +40,8 @@ export interface Admite {
   grupos?: boolean;
   /** 15ii: «al volver a conectarse» y `config.movil` (agente con `admite: "equipos_moviles"`). */
   moviles?: boolean;
+  /** 15kk: apagar o hibernar al terminar (agente con `admite: "apagar_al_terminar"`). */
+  apagar?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -59,6 +61,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     etiquetas: !!equipo.resumen?.admite?.includes("etiquetas_copia"),
     grupos: !!equipo.resumen?.admite?.includes("grupos_en_copias"),
     moviles: !!equipo.resumen?.admite?.includes("equipos_moviles"),
+    apagar: !!equipo.resumen?.admite?.includes("apagar_al_terminar"),
   };
 }
 
@@ -79,7 +82,7 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
     // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
     // Plan 0.7.26: `inicio` solo para «despues» (lo demás se deduce de `tras`) y el retraso si hay; los dos, solo a un agente que los entiende.
     // Plan 0.8.0, F1: «Solo a mano» y «Termina», solo a un agente que los entiende (la consola no se los ofrece a otro).
-    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, grupos_exclusiones, mayores_mb, excepto_tamano, al_reconectar, ...resto } = k;
+    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, grupos_exclusiones, mayores_mb, excepto_tamano, al_reconectar, al_terminar, al_terminar_servidor, ...resto } = k;
     const conTras = !!a.cadenas && !!tras;
     const conFin = !!a.termina && !!termina && (termina.veces != null || !!termina.hasta || !!termina.una_vez);
     return {
@@ -103,6 +106,8 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       ...(a.grupos && mayores_mb ? { mayores_mb, ...(excepto_tamano?.length ? { excepto_tamano: [...excepto_tamano] } : {}) } : {}),
       // 15ii: además, al volver a conectarse (con su horario: sin él no tendría sentido).
       ...(a.moviles && al_reconectar && !conTras && !a_mano ? { al_reconectar: true } : {}),
+      // 15kk: apagar o hibernar al terminar (en un servidor, con su confirmación).
+      ...(a.apagar && al_terminar ? { al_terminar, ...(al_terminar_servidor ? { al_terminar_servidor: true } : {}) } : {}),
     };
   });
   return {

@@ -448,6 +448,11 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       // Como el agente: la orden solo la pide; la copia se ve avanzar en «progreso» (v1.25)
       // y cuenta como hecha al terminar.
       await espera(1200);
+      // 15kk: apagar o hibernar al terminar (el simulador nunca apaga nada).
+      const fin = typeof c.al_terminar === "string" && c.al_terminar ? c.al_terminar : null;
+      if (fin && !e.resumen?.admite?.includes("apagar_al_terminar")) return resultado(e, o, "rechazada", "Este agente aún no apaga al terminar: actualízalo.");
+      if (fin && !["apagar", "hibernar"].includes(fin)) return resultado(e, o, "fallida", "Al terminar: «apagar» o «hibernar».");
+      if (fin && e.resumen?.guarda_copias?.activo && c.confirmar_servidor !== true) return resultado(e, o, "fallida", "Este equipo guarda copias de otros equipos: apagarlo los dejaría sin destino. Hay que confirmarlo expresamente.");
       const copia = e.resumen?.copias?.find((x) => x.id === c.copia);
       if (copia)
         empezarCopia(e.cliente, e.id, copia.repo, copia.id, copia.nombre, !!e.informes[0]?.datos.copias?.find((x) => x.id === copia.id)?.ganchos?.length, () => {
@@ -458,7 +463,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
             if ((copia.termina.veces != null && copia.hechas >= copia.termina.veces) || copia.termina.una_vez) copia.completada = ahora();
           }
         });
-      return resultado(e, o, "hecha", "Copia pedida: empieza en unos segundos.");
+      return resultado(e, o, "hecha", fin ? `Copia pedida: empieza en unos segundos. Al terminar bien, el equipo ${fin === "hibernar" ? "hibernará" : "se apagará"} (2 minutos de aviso a quien lo use).` : "Copia pedida: empieza en unos segundos.");
     }
     case "subir_ahora":
       await espera(1200);

@@ -171,6 +171,7 @@
   import { datosBasicos, reinicioAntes, sistemaDe } from "$lib/datosBasicos";
   import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   import RenombrarCopia, { type QueRenombrar } from "$lib/componentes/copias/RenombrarCopia.svelte";
+  import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
@@ -378,6 +379,8 @@
   let dialogo = $state<Dialogo | null>(null);
   // 0.8.1 (15t): cambiar el nombre de una copia o de una copia derivada (con la clave).
   let renombrarCopia = $state<QueRenombrar | null>(null);
+  // 15kk: «Copiar ahora» con «Al terminar: apagar / hibernar».
+  let copiarK = $state<{ repo: string; id: string; nombre: string } | null>(null);
   const admiteNombreCopia = $derived(!!equipo?.resumen?.admite?.includes("nombre_copia"));
   /** Equipos del cliente que guardan copias (para «Copiar en …»). */
   const almacenes = $derived(actual.equipos.filter((x) => x.id !== equipo?.id && x.confirmado && x.modo !== "trasladado" && x.resumen?.guarda_copias?.activo));
@@ -1008,7 +1011,7 @@
               grupos={[
                 copias.map((k) => ({
                   texto: k.nombre,
-                  onclick: () => abrir({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" }),
+                  onclick: () => (copiarK = { repo: k.repo, id: k.id, nombre: k.nombre }),
                 })),
               ]}
             />
@@ -1170,7 +1173,7 @@
                     class="icon-btn"
                     use:tip={"Copiar ahora"}
                     aria-label="Copiar ahora «{k.nombre}»"
-                    onclick={() => abrir({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" })}
+                    onclick={() => (copiarK = { repo: k.repo, id: k.id, nombre: k.nombre })}
                     ><Play size={15} /></button
                   >
                 {/if}
@@ -1743,6 +1746,9 @@
   {/if}
 </div>
 
+{#if copiarK && equipo && actual.cliente}
+  <CopiarAhora cliente={actual.cliente} {equipo} repo={copiarK.repo} copia={copiarK.id} nombre={copiarK.nombre} onclose={() => ((copiarK = null), void cargar())} />
+{/if}
 {#if renombrarCopia && equipo && actual.cliente}
   <RenombrarCopia cliente={actual.cliente} {equipo} que={renombrarCopia} alCambiar={() => void cargar()} onclose={() => (renombrarCopia = null)} />
 {/if}

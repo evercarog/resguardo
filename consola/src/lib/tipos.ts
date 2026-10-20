@@ -1420,6 +1420,10 @@ export interface CopiaConfig {
   excepto_tamano?: string[];
   /** 0.8.1 (15ii, `admite: "equipos_moviles"`): además del horario, una vez al volver a conectarse. */
   al_reconectar?: boolean;
+  /** 0.8.1 (15kk, `admite: "apagar_al_terminar"`): al terminar bien, apagar o hibernar el equipo. */
+  al_terminar?: "apagar" | "hibernar" | null;
+  /** 15kk: confirmado expresamente en un servidor o un almacén. */
+  al_terminar_servidor?: boolean;
 }
 
 /** 15y: un grupo de exclusiones aplicado a una copia. */

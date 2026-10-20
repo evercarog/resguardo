@@ -17,6 +17,7 @@
   import { CalendarClock, ChevronRight, FolderSync, HardDrive, History, ListChecks, Pencil, Play, Search, TriangleAlert, X } from "@lucide/svelte";
   // 0.8.1 (15t): cambiar el nombre desde la fila (nombre nuevo y clave de administración).
   import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
+  import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, horarioEnFrase, numero, plural, relativo, cuandoFrase } from "$lib/formato";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
@@ -32,7 +33,6 @@
   import Cifra from "$lib/componentes/Cifra.svelte";
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
-  import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
@@ -294,15 +294,7 @@
 
 {#if copiar && actual.cliente}
   {@const x = copiar}
-  <OrdenDialog
-    cliente={actual.cliente}
-    equipo={x.equipo}
-    tipo="copiar_ahora"
-    cuerpo={{ repo: x.copia.repo, copia: x.copia.id }}
-    descripcion="Se hará ahora la copia «{x.copia.nombre}» de {x.equipo.nombre}, sin esperar a su hora. No borra nada."
-    accion="Copiar ahora"
-    onclose={() => (copiar = null)}
-  />
+  <CopiarAhora cliente={actual.cliente} equipo={x.equipo} repo={x.copia.repo} copia={x.copia.id} nombre={x.copia.nombre} onclose={() => (copiar = null)} />
 {/if}
 {#if renombrar && actual.cliente}
   {@const x = renombrar}

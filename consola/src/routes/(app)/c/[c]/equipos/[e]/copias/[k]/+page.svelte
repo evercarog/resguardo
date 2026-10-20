@@ -86,6 +86,7 @@
   import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // 0.8.1 (15t): el lápiz junto al título (nombre nuevo y clave de administración).
   import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
+  import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -228,8 +229,9 @@
 
   // --- Órdenes ---------------------------------------------------------------
   let dialogo = $state<{ tipo: string; cuerpo: Record<string, unknown>; descripcion: string; accion?: string } | null>(null);
-  const copiarAhora = () =>
-    k && (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
+  // 15kk: con «Al terminar: apagar / hibernar» para esa vez.
+  let copiandoAhora = $state(false);
+  const copiarAhora = () => (copiandoAhora = true);
 
   // Plan 0.8.0, F1: una copia completada se puede reanudar (cómo sigue, y después el editor).
   let reanudando = $state(false);
@@ -581,6 +583,9 @@
   <PanelDetalle cliente={actual.cliente} {equipo} {repo} inf={infRepo} {copias} historial={historia.entradas} soloCopia={k.id} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
 {/if}
 
+{#if copiandoAhora && equipo && actual.cliente && k}
+  <CopiarAhora cliente={actual.cliente} {equipo} repo={k.repo} copia={k.id} nombre={k.nombre} onclose={() => (copiandoAhora = false)} />
+{/if}
 {#if renombrando && equipo && actual.cliente && k}
   <RenombrarCopia cliente={actual.cliente} {equipo} que={{ tipo: "copia", id: k.id, nombre: k.nombre }} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} onclose={() => (renombrando = false)} />
 {/if}

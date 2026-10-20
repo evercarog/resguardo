@@ -98,6 +98,8 @@ export const PIDE_TAMBIEN_ADMIN = new Set(["quitar_repositorio", "compartir_acce
  * cuerpo (el equipo lo comprueba igual): restaurar en otra carpeta o en un .zip.
  */
 export function pideAdminPorCuerpo(tipo: string, cuerpo: Record<string, unknown> | undefined): boolean {
+  // 15kk: «Copiar ahora» que apaga o hiberna el equipo al terminar.
+  if (tipo === "copiar_ahora") return !!cuerpo?.al_terminar;
   return tipo === "restaurar" && ["nueva", "zip", "carpeta"].includes(String(cuerpo?.destino ?? ""));
 }
 

@@ -18,6 +18,7 @@
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
   import NoCopiar from "./NoCopiar.svelte";
   import AlReconectar from "./AlReconectar.svelte";
+  import AlTerminar from "./AlTerminar.svelte";
   import EtiquetasVersiones from "./EtiquetasVersiones.svelte";
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
   import { cuandoEnFrase, etiquetasEnUso, inicioDe, pasoHecho, PASOS_COPIA, ponerCarpetas, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
@@ -62,7 +63,7 @@
     cliente: Cliente;
     prueba?: Uint8Array;
     version: string | null;
-    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean; etiquetas?: boolean; grupos?: boolean; moviles?: boolean };
+    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean; etiquetas?: boolean; grupos?: boolean; moviles?: boolean; apagar?: boolean };
     /** Cómo queda en la regla 3-2-1-1-0 con lo elegido (sin repositorio, null). */
     regla: ReglaCopia | null;
     /** Las sugerencias de un clic que se pueden hacer con este equipo. */
@@ -113,7 +114,7 @@
     if (r && !k.carpetas.includes(r)) ponerCarpetas(k, [...k.carpetas, r], equipo.nombre);
     ruta = "";
   }
-  let masQue = $state(untrack(() => ganchosDe(copias[i]?.gancho).length > 0 || !!copias[i]?.etiquetas?.length || !!copias[i]?.grupos_exclusiones?.length || copias[i]?.mayores_mb != null));
+  let masQue = $state(untrack(() => ganchosDe(copias[i]?.gancho).length > 0 || !!copias[i]?.etiquetas?.length || !!copias[i]?.grupos_exclusiones?.length || copias[i]?.mayores_mb != null || !!copias[i]?.al_terminar));
   const sug = $derived(regla ? sugerencias(regla.regla.partes.filter((p) => !p.cumple_config).map((p) => p.accion), puede) : []);
   const win = $derived(/windows/i.test(equipo.so));
 </script>
@@ -160,6 +161,7 @@
               ></label
             >
             <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
+            <AlTerminar {k} {equipo} admite={!!admite.apagar} {version} />
             <EtiquetasVersiones id="g-{k.id}" bind:etiquetas={() => k.etiquetas ?? [], (v) => (k.etiquetas = v)} admite={!!admite.etiquetas} {version} sugeridas={etiquetasEnUso(equipos)} />
           </div>
         </details>
