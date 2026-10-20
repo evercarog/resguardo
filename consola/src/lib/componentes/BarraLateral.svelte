@@ -3,26 +3,12 @@
   // Barra lateral (docs/diseno.md §5): selector de cliente arriba, las
   // secciones del cliente y, abajo, ayuda y cuenta. En móvil es un cajón.
   import {
-    Activity,
-    ArchiveRestore,
-    ArrowRightLeft,
-    ClipboardCheck,
-    BellRing,
     ChevronsUpDown,
     CircleHelp,
-    ClipboardList,
-    Clock,
-    Database,
-    FileBarChart,
-    FileSearch,
     Gauge,
-    History,
-    LayoutDashboard,
     Layers,
     LogOut,
     Monitor,
-    FolderSync,
-    PackageCheck,
     Settings,
     UserRound,
     Users,
@@ -40,8 +26,8 @@
   import * as api from "$lib/api";
   import { actual, app, puede } from "$lib/estado.svelte";
   import { todos } from "$lib/todos.svelte";
-  import { sinDuplicados } from "$lib/salud";
-  import { funcionalesDe } from "$lib/funcionales.svelte";
+  import { SECCIONES_TODOS, enPestanaTodos, enSeccion, pestanasDe, rutaEnCliente, seccionesPara } from "$lib/secciones";
+  import { cuentaSeccion } from "$lib/seccionesCuentas.svelte";
   import CopiasEnMarcha from "./CopiasEnMarcha.svelte";
   import MarcaCliente from "./MarcaCliente.svelte";
 
@@ -59,65 +45,35 @@
     const avisos = todos.clientes.reduce((n, x) => n + (x.avisos_abiertos || 0), 0);
     const pendientes = todos.clientes.reduce((n, x) => n + (x.pendientes || 0), 0);
     const enMarcha = todos.progreso.reduce((n, x) => n + x.tareas.length, 0);
-    return [
-      { href: "/todos", texto: "Estado", icono: LayoutDashboard, exacto: true },
-      { href: "/todos/copias", texto: "Copias", icono: FolderSync },
-      { href: "/todos/equipos", texto: "Equipos", icono: Monitor },
-      { href: "/todos/avisos", texto: "Avisos", icono: BellRing, cuenta: avisos || undefined, tono: avisos ? "bad" : undefined },
-      { href: "/todos/ordenes", texto: "Órdenes en espera", icono: Clock, cuenta: pendientes || undefined, tono: pendientes ? "warn" : undefined },
-      { href: "/todos/en-curso", texto: "En curso", icono: Activity, cuenta: enMarcha || undefined },
-      { href: "/todos/restauraciones", texto: "Restauraciones", icono: ArchiveRestore },
-    ];
+    // Plan 0.8.1, B1: el mismo orden y las mismas secciones que dentro de un cliente.
+    const cuenta: Record<string, { cuenta?: number; tono?: "warn" | "bad" }> = {
+      avisos: { cuenta: avisos || undefined, tono: avisos ? "bad" : undefined },
+      actividad: pendientes ? { cuenta: pendientes, tono: "warn" } : { cuenta: enMarcha || undefined },
+    };
+    return SECCIONES_TODOS.map((s) => ({
+      href: s.pestanas[0].href,
+      texto: s.texto,
+      icono: s.icono,
+      ...cuenta[s.id],
+      activa: s.pestanas.some((p) => enPestanaTodos(p, page.url.pathname)),
+    }));
   });
   const variosClientes = $derived(app.clientes.length > 1);
   const rol = $derived(actual.cliente?.rol);
-  type Seccion = { href: string; texto: string; icono: typeof Monitor; exacto?: boolean; cuenta?: number; tono?: "warn" | "bad" };
-  // Las secciones del cliente, en tres grupos con su etiqueta (el orden de siempre).
-  /** E3 (14k): la prueba funcional se acerca (ámbar) o venció (rojo); si no, nada. */
-  const avisoPruebas = (cc: string): "warn" | "bad" | null => {
-    const f = funcionalesDe(cc)?.estado?.cliente.fase;
-    return f === "vencida" ? "bad" : f === "pronto" ? "warn" : null;
-  };
-
-  const grupos = $derived.by(() => {
-    const gs: { titulo: string; items: Seccion[] }[] = [
-      {
-        titulo: "Protección",
-        items: [
-          { href: `/c/${c}`, texto: "Estado", icono: LayoutDashboard, exacto: true },
-          { href: `/c/${c}/equipos`, texto: "Equipos", icono: Monitor, cuenta: sinDuplicados(actual.equipos).length || undefined },
-          { href: `/c/${c}/copias`, texto: "Copias", icono: FolderSync },
-          { href: `/c/${c}/repositorios`, texto: "Repositorios y destinos", icono: Database },
-        ],
-      },
-      {
-        titulo: "Operación",
-        items: [
-          { href: `/c/${c}/restaurar`, texto: "Restaurar", icono: History },
-          // Plan 0.8.0 (E2): el registro de restauraciones.
-          { href: `/c/${c}/restauraciones`, texto: "Restauraciones", icono: ArchiveRestore },
-          // Plan 0.8.0 (E3, 14k): los simulacros de recuperación y su plazo.
-          { href: `/c/${c}/pruebas`, texto: "Pruebas funcionales", icono: ClipboardCheck, cuenta: avisoPruebas(c) ? 1 : undefined, tono: avisoPruebas(c) ?? undefined },
-          { href: `/c/${c}/buscar`, texto: "Buscar archivos", icono: FileSearch },
-          { href: `/c/${c}/ordenes`, texto: "Órdenes", icono: ClipboardList, cuenta: actual.pendientes || undefined, tono: actual.pendientes ? "warn" : undefined },
-          { href: `/c/${c}/avisos`, texto: "Avisos", icono: BellRing, cuenta: actual.avisosAbiertos || undefined, tono: actual.avisosAbiertos ? "bad" : undefined },
-        ],
-      },
-      {
-        titulo: "Gestión",
-        items: [
-          { href: `/c/${c}/informes`, texto: "Informes", icono: FileBarChart },
-          // La actualización automática de los agentes (docs/actualizaciones.md).
-          { href: `/c/${c}/versiones`, texto: "Versiones", icono: PackageCheck },
-          // Los técnicos también leen la actividad (exportarla, solo administradores).
-          ...(puede.ordenar(rol) ? [{ href: `/c/${c}/auditoria`, texto: "Actividad", icono: Activity }] : []),
-          ...(puede.administrar(rol) ? [{ href: `/c/${c}/servidor`, texto: "Servidor", icono: ArrowRightLeft }] : []),
-          ...(puede.propietario(rol) ? [{ href: `/c/${c}/ajustes`, texto: "Personas y ajustes", icono: Users }] : []),
-        ],
-      },
-    ];
-    return gs.filter((g) => g.items.length);
-  });
+  type Seccion = { href: string; texto: string; icono: typeof Monitor; exacto?: boolean; cuenta?: number; tono?: "warn" | "bad"; activa: boolean };
+  // Plan 0.8.1, B1 (15bb): unas ocho secciones, sin títulos de grupo, y «Ajustes»
+  // abajo y aparte (lib/secciones.ts). Cada sección lleva a su primera pestaña
+  // y se marca en todas las suyas; su número es el de su pestaña con número.
+  const ruta = $derived(rutaEnCliente(page.url.pathname, c) ?? null);
+  const secciones = $derived.by((): (Seccion & { abajo?: boolean })[] =>
+    seccionesPara(rol).map((s) => {
+      const ps = pestanasDe(s, rol);
+      const n = cuentaSeccion(c, ps.map((p) => p.ruta));
+      return { href: `/c/${c}${ps[0].ruta}`, texto: s.texto, icono: s.icono, cuenta: n?.cuenta, tono: n?.tono, activa: ruta !== null && enSeccion(s, ruta), abajo: s.abajo };
+    }),
+  );
+  const arriba = $derived(secciones.filter((s) => !s.abajo));
+  const ajustes = $derived(secciones.filter((s) => s.abajo));
   /** Plegada, el nombre (con su contador) va en el `aria-label` y en el tooltip. */
   const nombreDe = (s: Seccion) => `${s.texto}${s.cuenta ? `, ${s.cuenta}` : ""}`;
 
@@ -158,6 +114,23 @@
 </script>
 
 <svelte:window onpointerdown={onwindow} />
+
+{#snippet enlace(s: Seccion)}
+  <li>
+    <a
+      href={s.href}
+      class:on={s.activa}
+      aria-current={s.activa ? "page" : undefined}
+      aria-label={plegada ? nombreDe(s) : undefined}
+      use:tip={plegada ? nombreDe(s) : null}
+      onclick={alNavegar}
+    >
+      <s.icono size={16} />
+      {#if !plegada}<span class="texto">{s.texto}</span>{/if}
+      {#if s.cuenta}<span class="cuenta num" class:warn={s.tono === "warn"} class:bad={s.tono === "bad"}>{s.cuenta}</span>{/if}
+    </a>
+  </li>
+{/snippet}
 
 <nav class="barra" class:plegada aria-label="Navegación principal">
   <div class="cabeza">
@@ -271,60 +244,27 @@
   {/if}
 
   {#if enTodos}
-    <div class="grupos">
-      <div class="grupo">
-        <p class="grupo-titulo" class:sr-only={plegada} id="grupo-todos">Todos los clientes</p>
-        <ul class="items" aria-labelledby="grupo-todos">
-          {#each seccionesTodos as s (s.href)}
-            <li>
-              <a
-                href={s.href}
-                class:on={activo(s.href, s.exacto)}
-                aria-current={activo(s.href, s.exacto) ? "page" : undefined}
-                aria-label={plegada ? nombreDe(s) : undefined}
-                use:tip={plegada ? nombreDe(s) : null}
-                onclick={alNavegar}
-              >
-                <s.icono size={16} />
-                {#if !plegada}<span class="texto">{s.texto}</span>{/if}
-                {#if s.cuenta}<span class="cuenta num" class:warn={s.tono === "warn"} class:bad={s.tono === "bad"}>{s.cuenta}</span>{/if}
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    </div>
+    <ul class="items lista-secciones" aria-label="Todos los clientes">
+      {#each seccionesTodos as s (s.href)}
+        {@render enlace(s)}
+      {/each}
+    </ul>
   {/if}
 
   {#if c && !enTodos}
-    <div class="grupos">
-      {#each grupos as g, gi (g.titulo)}
-        <div class="grupo">
-          <!-- La etiqueta da nombre a la lista; plegada, solo queda una raya fina entre grupos. -->
-          <p class="grupo-titulo" class:sr-only={plegada} id="grupo-{gi}">{g.titulo}</p>
-          {#if plegada && gi > 0}<span class="raya" aria-hidden="true"></span>{/if}
-          <ul class="items" aria-labelledby="grupo-{gi}">
-            {#each g.items as s (s.href)}
-              <li>
-                <a
-                  href={s.href}
-                  class:on={activo(s.href, s.exacto)}
-                  aria-current={activo(s.href, s.exacto) ? "page" : undefined}
-                  aria-label={plegada ? nombreDe(s) : undefined}
-                  use:tip={plegada ? nombreDe(s) : null}
-                  onclick={alNavegar}
-                >
-                  <s.icono size={16} />
-                  {#if !plegada}<span class="texto">{s.texto}</span>{/if}
-                  {#if s.cuenta}<span class="cuenta num" class:warn={s.tono === "warn"} class:bad={s.tono === "bad"}>{s.cuenta}</span>{/if}
-                </a>
-              </li>
-            {/each}
-          </ul>
-        </div>
+    <ul class="items lista-secciones" aria-label="Secciones de {actual.cliente?.nombre ?? 'este cliente'}">
+      {#each arriba as s (s.href)}
+        {@render enlace(s)}
       {/each}
-    </div>
+    </ul>
     <CopiasEnMarcha {alNavegar} compacto={plegada} />
+    {#if ajustes.length}
+      <ul class="items ajustes-cliente" aria-label="Ajustes de {actual.cliente?.nombre ?? 'este cliente'}">
+        {#each ajustes as s (s.href)}
+          {@render enlace(s)}
+        {/each}
+      </ul>
+    {/if}
   {/if}
 
   <ul class="items abajo">
@@ -522,28 +462,15 @@
     border: none;
     border-top: 1px solid var(--border);
   }
-  /* Grupos de secciones con su etiqueta pequeña en mayúsculas (docs/diseno.md §5). */
-  .grupos {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
+  /* Plan 0.8.1, B1: una sola lista de secciones, sin títulos de grupo; «Ajustes»
+   * del cliente, abajo y aparte (encima de la ayuda y la cuenta). */
+  .ajustes-cliente {
+    margin-top: auto;
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
   }
-  .grupo-titulo {
-    margin: 0 0 4px;
-    padding: 0 8px;
-    font-size: var(--fs-overline);
-    line-height: 16px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-3);
-  }
-  .raya {
-    display: block;
-    width: 20px;
-    height: 1px;
-    margin: 0 auto var(--sp-2);
-    background: var(--border-strong);
+  .ajustes-cliente ~ .abajo {
+    margin-top: 0;
   }
   .items {
     display: flex;
@@ -684,7 +611,6 @@
     padding: 2px;
   }
   .plegada .selector,
-  .plegada .grupos,
   .plegada .items {
     width: 100%;
   }
@@ -699,9 +625,6 @@
     width: 36px;
     margin-top: 0;
     padding: 0;
-  }
-  .plegada .grupos {
-    gap: var(--sp-2);
   }
   .plegada .items a {
     justify-content: center;
