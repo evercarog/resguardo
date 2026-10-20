@@ -226,6 +226,8 @@ export interface DatosEquipo {
   etiquetas?: CampoEquipo<string[]>;
   /** `""`: sin observación. */
   observacion?: CampoEquipo<string>;
+  /** 0.8.1 (C3, `admite: "tipo_equipo"`): el tipo de equipo corregido a mano. */
+  tipo?: CampoEquipo<{ clase: "fisico" | "virtual" | "contenedor"; plataforma?: string | null }>;
 }
 
 export interface ResumenEquipo {
@@ -659,6 +661,8 @@ export interface DestinoResumen {
   sistema_archivos?: string | null;
   /** 0.7.26, solo un destino local: cuándo vio el agente su disco conectado (para «Aislado»). Un agente anterior no lo dice. */
   aislado?: ConexionVolumen | null;
+  /** 0.8.1 (C1, 15n), solo un destino local: su carpeta (sin el nombre de la cuenta si está en un perfil). Un agente anterior no la dice. */
+  carpeta?: string | null;
 }
 
 export interface Equipo {

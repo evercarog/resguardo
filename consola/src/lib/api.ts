@@ -343,6 +343,9 @@ export const ponerAjusteEtiqueta = (c: string, a: { nombre: string; color: numbe
 // todas sus consolas (lib/datosComunes.ts). Solo administradores; un servidor anterior da 404.
 // Plan 0.8.0, D1 y D2: sedes, categorías y orden (cualquier miembro). Se cambian con ponerDatosComunes.
 export const organizacion = (c: string) => pedir<unknown>("GET", `${cli(c)}/organizacion`, undefined, { invisible: true });
+// Plan 0.8.1, C4 (15d): la infraestructura del cliente (cualquier miembro la ve; la cambian administradores).
+export const infraestructura = (c: string) => pedir<unknown>("GET", `${cli(c)}/infraestructura`, undefined, { invisible: true });
+export const ponerInfraestructura = (c: string, b: unknown) => pedir<unknown>("PUT", `${cli(c)}/infraestructura`, b);
 export const datosComunes = (c: string) => pedir<DatosComunesCliente>("GET", `${cli(c)}/datos-comunes`, undefined, { invisible: true });
 export const ponerDatosComunes = (c: string, entradas: { clave: string; valor: unknown; semilla?: boolean }[]) =>
   pedir<{ entradas: EntradaOrden[] }>("POST", `${cli(c)}/datos-comunes`, { entradas }, { invisible: true });

@@ -375,7 +375,7 @@ export async function sembrar(vacio = false) {
   // 14uu (plan 0.8.0, D3): los datos básicos que manda un agente nuevo (inventados).
   const G = 1_000_000_000;
   const win = (nombre: string, variante: string, version: string | null, compilacion: string): SistemaEquipo => ({ familia: "windows", nombre, variante, version, compilacion });
-  const disco = (punto: string, totalG: number, libreG: number, fs: string, en_uso = false) => ({ punto, total: totalG * G, libre: libreG * G, sistema_archivos: fs, en_uso });
+  const disco = (punto: string, totalG: number, libreG: number, fs: string, en_uso = false) => ({ punto, total: totalG * G, libre: libreG * G, sistema_archivos: fs, en_uso, volumen: null as string | null });
   const basicos = (sistema: SistemaEquipo, procesador: string, nucleos: number, memoriaG: number, fabricante: string | null, modelo: string | null, arrancoHaceMin: number, discos: ReturnType<typeof disco>[]) => ({
     leido: hace(60 * 3),
     sistema,
@@ -406,19 +406,23 @@ export async function sembrar(vacio = false) {
           nubes: [{ nombre: "Dropbox Altamar", tipo: "dropbox" }],
           espejo: { hora: "02:00", ultima: hace(60 * 14), destinos: [{ tipo: "nube", nube: "Dropbox Altamar", carpeta: "Altamar", ultima: hace(60 * 14), resultado: "Espejo hecho: 96 archivos nuevos (2 GB)." }] },
         },
-        admite: ["espejo_zonas", "espejo_flexible"],
+        admite: ["espejo_zonas", "espejo_flexible", "tipo_equipo"],
         // Tarea 8e: un contenedor de Proxmox (solo un dato en la consola).
         entorno: { contenedor: "lxc" },
-        datos_basicos: basicos(
-          { familia: "linux", nombre: "Debian GNU/Linux 12 (bookworm)", id: "debian", version: "12", kernel: "6.8.12-4-pve" },
-          "Intel(R) Xeon(R) E-2236 CPU @ 3.40GHz",
-          4,
-          8,
-          "QEMU",
-          "Standard PC (i440FX + PIIX, 1996)",
-          60 * 24 * 41,
-          [disco("/", 32, 21, "ext4"), disco("/srv/resguardo/copias", 4000, 640, "zfs", true)],
-        ),
+        // 0.8.1 (C4): desde dentro del contenedor se ve el grupo de ZFS («tank») de su carpeta, no los discos del anfitrión.
+        datos_basicos: {
+          ...basicos(
+            { familia: "linux", nombre: "Debian GNU/Linux 12 (bookworm)", id: "debian", version: "12", kernel: "6.8.12-4-pve" },
+            "Intel(R) Xeon(R) E-2236 CPU @ 3.40GHz",
+            4,
+            8,
+            "QEMU",
+            "Standard PC (i440FX + PIIX, 1996)",
+            60 * 24 * 41,
+            [disco("/", 32, 21, "ext4"), { ...disco("/srv/resguardo/copias", 4000, 640, "zfs", true), volumen: "tank" }],
+          ),
+          almacenamiento: { discos: [], conjuntos: [{ id: "tank", tipo: "zfs", forma: null, discos: null, estado: null, total: 4_000_000_000_000 }] },
+        },
         destinos: [destinoNube],
         repositorios: [repo("copia-externa", "Copia externa de la oficina", "b2-altamar", 210, 412_000_000_000)],
         copias: [copia("subida-nube", "Subida a la nube", "copia-externa", ["23:00"], 1)],
@@ -441,7 +445,9 @@ export async function sembrar(vacio = false) {
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo"],
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo", "tipo_equipo"],
+        // 0.8.1 (C3): una máquina virtual de Hyper-V (lo detecta el agente).
+        entorno: { virtual: "hyperv" },
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },
@@ -491,12 +497,27 @@ export async function sembrar(vacio = false) {
       so: "Windows Server 2016",
       resumen: {
         admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo"],
-        datos_basicos: basicos(win("Windows Server 2016 Standard", "ServerStandard", "1607", "14393.7428"), "Intel(R) Xeon(R) Silver 4310 CPU @ 2.10GHz", 24, 64, "HPE", "ProLiant DL380 Gen10 Plus", 60 * 24 * 12, [
-          disco("C:", 240, 88, "NTFS", true),
-          disco("D:", 4000, 1480, "ReFS", true),
-          disco("E:", 2000, 1900, "NTFS"),
-        ]),
-        destinos: [{ id: "carpeta-d", nombre: "Copias en el disco D", tipo: "local", donde: undefined, unidad: "D:", extraible: false, red: false }],
+        // 0.8.1 (C4): un equipo físico con una controladora RAID (vista como un disco) y Espacios de almacenamiento.
+        datos_basicos: {
+          ...basicos(win("Windows Server 2016 Standard", "ServerStandard", "1607", "14393.7428"), "Intel(R) Xeon(R) Silver 4310 CPU @ 2.10GHz", 24, 64, "HPE", "ProLiant DL380 Gen10 Plus", 60 * 24 * 12, [
+            { ...disco("C:", 240, 88, "NTFS", true), volumen: "disco0" },
+            { ...disco("D:", 4000, 1480, "ReFS", true), volumen: "disco1" },
+            { ...disco("E:", 2000, 1900, "NTFS"), volumen: "disco2" },
+          ]),
+          almacenamiento: {
+            discos: [
+              { id: "disco0", total: 240_000_000_000, bus: "sata", modelo: "Disco SSD 240", extraible: false },
+              { id: "disco1", total: 4_000_000_000_000, bus: "raid", modelo: "Controladora RAID", extraible: false },
+              { id: "disco2", total: 2_000_000_000_000, bus: "spaces", modelo: "Espacio de almacenamiento", extraible: false },
+            ],
+            conjuntos: [
+              { id: "disco1", tipo: "raid", total: 4_000_000_000_000 },
+              { id: "disco2", tipo: "storage_spaces", total: 2_000_000_000_000 },
+            ],
+          },
+        },
+        // 0.8.1 (C1): la carpeta de un destino local (sin el nombre de la cuenta si está en un perfil).
+        destinos: [{ id: "carpeta-d", nombre: "Copias en el disco D", tipo: "local", donde: undefined, unidad: "D:", extraible: false, red: false, carpeta: "D:\\Copias-Resguardo" }],
         // Plan 0.7.26 (bloque 4): el propio equipo hace el espejo de su repositorio del disco D a un USB.
         espejo_equipo: {
           trabajos: [

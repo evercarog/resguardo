@@ -140,7 +140,7 @@
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
   const catalogo = $derived(catalogoDe(c));
-  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora, actual.organizacion, listaFuncionales(c)) : null);
+  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora, actual.organizacion, listaFuncionales(c), actual.infra) : null);
   let marcar = $state<MarcarDestino | null>(null);
   const eslabones = $derived(caminoDeCopia(regla, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: actual.equipos, informe }));
   const despues = $derived(eslabones.filter((x) => x.clase !== "copia"));

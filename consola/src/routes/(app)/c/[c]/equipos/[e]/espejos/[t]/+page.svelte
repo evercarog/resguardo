@@ -136,7 +136,7 @@
       const eq = r.equipo ? actual.equipos.find((x) => x.id === r.equipo!.id) : undefined;
       const k = eq?.resumen?.copias?.find((x) => x.repo === r.repo?.id && x.activa !== false);
       if (!eq || !k) continue;
-      const rc = reglaDeCopia(eq, k, actual.equipos, ultimos.porEquipo[eq.id] ?? (eq.id === equipo?.id ? (equipo.ultimo_informe ?? null) : null), catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c));
+      const rc = reglaDeCopia(eq, k, actual.equipos, ultimos.porEquipo[eq.id] ?? (eq.id === equipo?.id ? (equipo.ultimo_informe ?? null) : null), catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c), actual.infra);
       const pasos = rc?.pasos.filter((p) => p.tipo === "espejo" && p.trabajo === t.id) ?? [];
       if (rc && pasos.length) out.push({ clave: `${eq.id}|${k.repo}`, equipo: eq, rc: { ...rc, pasos }, nombre: r.nombre });
     }

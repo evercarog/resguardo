@@ -23,6 +23,7 @@
     Monitor,
     FolderSync,
     PackageCheck,
+    ServerCog,
     Settings,
     UserRound,
     Users,
@@ -88,6 +89,8 @@
           { href: `/c/${c}/equipos`, texto: "Equipos", icono: Monitor, cuenta: sinDuplicados(actual.equipos).length || undefined },
           { href: `/c/${c}/copias`, texto: "Copias", icono: FolderSync },
           { href: `/c/${c}/repositorios`, texto: "Repositorios y destinos", icono: Database },
+          // Plan 0.8.1, C4 (15d): dónde están de verdad los datos (provisional: con el menú nuevo, dentro de «Destinos»).
+          { href: `/c/${c}/infraestructura`, texto: "Infraestructura", icono: ServerCog },
         ],
       },
       {

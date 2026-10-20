@@ -26,6 +26,38 @@ export interface DiscoEquipo {
   sistema_archivos?: string | null;
   /** Guarda algo de las copias (carpetas que se copian, destinos locales o el almacén). */
   en_uso?: boolean;
+  /** 0.8.1 (C4): el conjunto de discos donde está (grupo de ZFS «tank», «md0», «disco1»…), si se sabe. */
+  volumen?: string | null;
+}
+
+/** 0.8.1 (C4, docs/infraestructura.md): un disco que ve el equipo (sin número de serie). */
+export interface DiscoFisicoEquipo {
+  /** «sda», «nvme0n1» (Linux) o «disco0» (Windows). */
+  id: string;
+  total: number;
+  clase?: "ssd" | "hdd" | null;
+  /** «sata», «sas», «nvme», «usb», «raid», «spaces», «virtual», «iscsi»… */
+  bus?: string | null;
+  modelo?: string | null;
+  extraible?: boolean;
+}
+
+/** 0.8.1 (C4): un conjunto de discos que ve el equipo. */
+export interface ConjuntoEquipo {
+  /** «md0», «tank», «disco1». */
+  id: string;
+  /** `mdadm`, `zfs`, `storage_spaces` o `raid` (una controladora RAID vista como un disco). */
+  tipo: string;
+  /** «raid1», «raid5»… si se sabe (en ZFS, no). */
+  forma?: string | null;
+  discos?: number | null;
+  estado?: "bien" | "degradado" | "reconstruyendo" | null;
+  total?: number | null;
+}
+
+export interface AlmacenamientoEquipo {
+  discos: DiscoFisicoEquipo[];
+  conjuntos: ConjuntoEquipo[];
 }
 
 export interface DatosBasicos {
@@ -37,6 +69,8 @@ export interface DatosBasicos {
   modelo?: string | null;
   arranque?: string | null;
   discos?: DiscoEquipo[];
+  /** 0.8.1 (C4): lo que ve de su almacenamiento (un agente anterior no lo manda). */
+  almacenamiento?: AlmacenamientoEquipo | null;
 }
 
 /** Lo mismo que en el agente y en el servidor. */
@@ -73,7 +107,33 @@ export function datosBasicos(e: Pick<Equipo, "resumen"> | null | undefined): Dat
     const total = entero(y.total);
     const libre = entero(y.libre);
     if (!punto || !total || libre === null || libre > total) continue;
-    discos.push({ punto, total, libre, sistema_archivos: texto(y.sistema_archivos, 32), en_uso: y.en_uso === true });
+    discos.push({ punto, total, libre, sistema_archivos: texto(y.sistema_archivos, 32), en_uso: y.en_uso === true, volumen: texto(y.volumen, 64) });
+  }
+  // 0.8.1 (C4): los discos y conjuntos que ve (comprobados como lo demás).
+  let almacenamiento: AlmacenamientoEquipo | null = null;
+  const a = x.almacenamiento && typeof x.almacenamiento === "object" ? (x.almacenamiento as Record<string, unknown>) : null;
+  if (a) {
+    const fisicos: DiscoFisicoEquipo[] = [];
+    for (const k of Array.isArray(a.discos) ? a.discos.slice(0, MAX_DISCOS) : []) {
+      if (!k || typeof k !== "object") continue;
+      const y = k as Record<string, unknown>;
+      const id = texto(y.id, 40);
+      const total = entero(y.total);
+      if (!id || total === null) continue;
+      const clase = y.clase === "ssd" || y.clase === "hdd" ? y.clase : null;
+      fisicos.push({ id, total, clase, bus: texto(y.bus, 20), modelo: texto(y.modelo, 60), extraible: y.extraible === true });
+    }
+    const conjuntos: ConjuntoEquipo[] = [];
+    for (const k of Array.isArray(a.conjuntos) ? a.conjuntos.slice(0, MAX_DISCOS) : []) {
+      if (!k || typeof k !== "object") continue;
+      const y = k as Record<string, unknown>;
+      const id = texto(y.id, 64);
+      const tipo = texto(y.tipo, 20);
+      if (!id || !tipo) continue;
+      const estado = y.estado === "bien" || y.estado === "degradado" || y.estado === "reconstruyendo" ? y.estado : null;
+      conjuntos.push({ id, tipo, forma: texto(y.forma, 20), discos: entero(y.discos, 256), estado, total: entero(y.total) });
+    }
+    if (fisicos.length || conjuntos.length) almacenamiento = { discos: fisicos, conjuntos };
   }
   return {
     leido: fecha(x.leido),
@@ -94,7 +154,25 @@ export function datosBasicos(e: Pick<Equipo, "resumen"> | null | undefined): Dat
     modelo: texto(x.modelo),
     arranque: fecha(x.arranque),
     discos,
+    almacenamiento,
   };
+}
+
+/**
+ * 0.8.1 (C1, C4): el disco del equipo donde está una ruta suya (el punto más largo que
+ * la contiene: «D:» o «/srv/copias»), para decir su sistema de archivos, su conjunto, su
+ * tamaño y lo libre. `null` si no se sabe.
+ */
+export function discoDeRuta(d: DatosBasicos | null | undefined, ruta: string | null | undefined): DiscoEquipo | null {
+  if (!d?.discos?.length || !ruta) return null;
+  const r = ruta.trim();
+  const dentro = (p: string) => {
+    if (/^[A-Za-z]:$/.test(p)) return r.slice(0, 2).toUpperCase() === p.toUpperCase();
+    if (p === "/") return r.startsWith("/");
+    const base = p.replace(/\/+$/, "");
+    return r === base || r.startsWith(`${base}/`);
+  };
+  return d.discos.filter((k) => dentro(k.punto)).sort((a, b) => b.punto.length - a.punto.length)[0] ?? null;
 }
 
 /** El sistema exacto en palabras: «Windows 11 Pro 24H2», «Ubuntu 22.04.4 LTS». */

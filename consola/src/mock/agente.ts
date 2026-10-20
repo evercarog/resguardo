@@ -887,6 +887,20 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       observacionDelEquipo(e.cliente, e.id, t, `${plana.por ?? "El equipo"} (desde la consola «Consola de pruebas»)`);
       return resultado(e, o, "hecha", t ? "Observación guardada: la verán todas sus consolas." : "Observación quitada en todas sus consolas.");
     }
+    // Plan 0.8.1, C3 (15c): el tipo de equipo corregido a mano (como en crates/agente/src/datos_equipo.rs).
+    case "tipo_equipo": {
+      if (!e.resumen?.admite?.includes("tipo_equipo")) return resultado(e, o, "rechazada", "Tipo de orden desconocido.");
+      const clase = String(c.clase ?? "").trim();
+      e.resumen.datos_equipo ??= {};
+      if (!clase) {
+        delete e.resumen.datos_equipo.tipo;
+        return resultado(e, o, "hecha", "Tipo de equipo: el que detecta el agente, en todas sus consolas.");
+      }
+      if (!["fisico", "virtual", "contenedor"].includes(clase)) return resultado(e, o, "fallida", "Clase de equipo no válida (fisico, virtual o contenedor).");
+      const plataforma = typeof c.plataforma === "string" && c.plataforma ? c.plataforma : null;
+      e.resumen.datos_equipo.tipo = { valor: { clase: clase as "fisico", ...(plataforma ? { plataforma } : {}) }, cuando: ahora(), consola: "Consola de pruebas", esta: true, por: plana.por ?? null };
+      return resultado(e, o, "hecha", "Tipo de equipo guardado. Lo verán así todas sus consolas.");
+    }
     // Plan 0.8.0, F2 (14ww-2): comentarios en las versiones, guardados en el equipo.
     case "comentario_version": {
       if (!e.resumen?.admite?.includes("comentarios_version")) return resultado(e, o, "rechazada", "Tipo de orden desconocido.");
