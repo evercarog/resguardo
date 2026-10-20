@@ -52,7 +52,11 @@
   {:else if !todos.cargado}
     <Esqueleto forma="filas" n={6} etiqueta="Cargando los equipos de todos los clientes…" />
   {:else if !filas.length}
-    <div class="card"><Vacio icono={Monitor} ilustracion="sin-equipos" titulo="Todavía no hay equipos" texto="Cuando un cliente tenga equipos, salen aquí." /></div>
+    <div class="card">
+      <Vacio icono={Monitor} ilustracion="sin-equipos" titulo="Todavía no hay equipos" texto="Cuando un cliente tenga equipos, salen aquí. Se añaden desde cada cliente.">
+        <a class="btn btn-primary" href="/clientes">Ver los clientes</a>
+      </Vacio>
+    </div>
   {:else}
     <FiltroCliente seccion="equipos" bind:cliente bind:buscar placeholder="Buscar equipo, cliente, sede o sistema" />
     <div class="filtros">

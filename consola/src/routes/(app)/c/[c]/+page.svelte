@@ -6,7 +6,7 @@
   // después, todo lo de las copias junto (regla 3-2-1-1-0 y mapa), la lista de
   // las órdenes que esperan, la salud de cada equipo con sus 14 días, los
   // repositorios y cuánto se guarda en cada destino con su tendencia.
-  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert } from "@lucide/svelte";
+  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
@@ -109,7 +109,9 @@
   const sinPrimera = $derived(saludes.filter((x) => x.texto === "Sin copias todavía" || x.texto === "Sin copias").length);
   const titular = $derived(
     !delFiltro.length
-      ? "Todavía no hay equipos"
+      ? actual.equipos.length && filtroEtiqueta.valor
+        ? "Ningún equipo con esa etiqueta"
+        : "Todavía no hay equipos"
       : urgentes.length
         ? urgentes.length === 1
           ? "1 cosa necesita atención"
@@ -198,6 +200,8 @@
               {:else}
                 {plural(delFiltro.length, "equipo", "equipos")} · {#if ultima}última copia <Tiempo iso={ultima} />{:else}todavía sin copias{/if} · {plural(repos.length, "repositorio", "repositorios")}{#if protegido}{" "}con {bytes(protegido)}{/if}
               {/if}
+            {:else if actual.equipos.length && filtroEtiqueta.valor}
+              Ninguno de los {plural(actual.equipos.length, "equipo", "equipos")} de {actual.cliente.nombre} lleva «{filtroEtiqueta.valor}».
             {:else}
               Añade el primer equipo de {actual.cliente.nombre}: instala el agente y escribe el código que te daremos.
             {/if}
@@ -218,6 +222,8 @@
             </li>
           {/each}
         </ul>
+      {:else if actual.equipos.length && !delFiltro.length && filtroEtiqueta.valor}
+        <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
       {:else if !actual.equipos.length && puede.administrar(actual.cliente.rol)}
         <a class="btn btn-primary" href="/c/{c}/emparejar"><Plus size={16} />Añadir equipo</a>
       {/if}
@@ -322,7 +328,14 @@
       {/if}
     {:else}
       <div class="card">
-        <Vacio icono={Database} ilustracion="bienvenida" titulo="Las copias aparecerán aquí" texto="Cuando un equipo se conecte, verás sus copias, su estado y lo que necesite atención." />
+        {#if actual.equipos.length && filtroEtiqueta.valor}
+          <Vacio icono={Database} ilustracion="sin-resultados" titulo="Ningún equipo con esa etiqueta" texto="Quita el filtro para ver todos los equipos.">
+            <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
+          </Vacio>
+        {:else}
+          <!-- «Añadir equipo» ya está en el resumen de arriba: una sola acción a la vista. -->
+          <Vacio icono={Database} ilustracion="bienvenida" titulo="Las copias aparecerán aquí" texto="Cuando un equipo se conecte, verás sus copias, su estado y lo que necesite atención." />
+        {/if}
       </div>
     {/if}
 

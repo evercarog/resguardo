@@ -43,7 +43,11 @@
   {:else if !todos.cargado}
     <Esqueleto forma="filas" n={6} etiqueta="Cargando las copias de todos los clientes…" />
   {:else if !filas.length}
-    <div class="card"><Vacio icono={FolderSync} ilustracion="sin-repos" titulo="Todavía no hay copias" texto="Cuando un equipo de cualquier cliente tenga copias, salen aquí." /></div>
+    <div class="card">
+      <Vacio icono={FolderSync} ilustracion="sin-repos" titulo="Todavía no hay copias" texto="Cuando un equipo de cualquier cliente tenga copias, salen aquí. Las copias se eligen en la ficha de cada equipo.">
+        <a class="btn btn-primary" href="/todos/equipos">Ver los equipos</a>
+      </Vacio>
+    </div>
   {:else}
     <FiltroCliente seccion="copias" bind:cliente bind:buscar placeholder="Buscar copia, equipo, repositorio o cliente" />
     <div class="segmented inline" role="group" aria-label="Estado">
