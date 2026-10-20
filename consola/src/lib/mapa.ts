@@ -5,9 +5,18 @@
 //
 // Todo sale del resumen y del último informe de cada equipo; lo que está en
 // marcha llega como una función (`enVivo`) para que esto sea TypeScript sin
-// runas (se prueba en scripts/vectores.ts). Con muchos equipos, los que están
-// al día y van a los mismos sitios se juntan en un grupo.
+// runas (se prueba en scripts/vectores.ts y scripts/vectores-mapa.ts).
+//
+// Plan 0.8.1 (C2): los grupos («8 equipos») se juntan **por sede** (o por la
+// agrupación de Equipos), con «Agrupar: no / por sede / cuando hay más de N», y
+// cada uno se despliega con un clic (`desplegados`); al pasar por un grupo, la
+// lista de sus equipos y repositorios con su estado (`miembros`). Las copias
+// derivadas y los espejos se animan cuando están en marcha (15cc), un espejo
+// cuyos repositorios no se reconocen se dibuja desde el almacén con una marca
+// (15m), y cada tarjeta sabe su sede y dónde está físicamente (las capas, 15l).
 import type { DestinoCatalogo, DestinoResumen, Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
+import { sedeDeDestino, sedeDeEquipo, type Organizacion } from "./sedes";
+import { formaConjunto, sitioDeDestino, sitioDeEquipo, HIPERVISORES, type Infraestructura, type SitioVista } from "./infra";
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
@@ -59,6 +68,20 @@ export interface NodoMapa {
   plegado?: boolean;
   /** 0.7.26: tipo y marcas de un destino (Local, Fuera del sitio, Nube; Inmutable, Aislado). */
   tipoDestino?: TipoCorto;
+  /** 0.8.1 (C2, 15rr): un grupo (o una píldora de un grupo) se despliega con un clic: su id. */
+  grupo?: string;
+  /** 0.8.1 (15rr): lo que hay en un grupo, para la lista al pasar por él. */
+  miembros?: { tipo: "equipo" | "repo"; nombre: string; detalle?: string; tono: Tono; estado: string; href?: string }[];
+  /** 0.8.1 (15l, capa «Sedes»): su sede (la nube, ninguna: va aparte). */
+  sede?: { id: string; nombre: string } | null;
+  /** 0.8.1 (15l): está en la nube (o en un servidor de fuera): va en el recuadro «Nube». */
+  enNube?: boolean;
+  /** 0.8.1 (15l, capa «Infraestructura»): el servidor físico donde está («hv-01 · Proxmox VE»). */
+  servidorFisico?: string | null;
+  /** 0.8.1 (15l, capa «Almacenamiento»): su conjunto de discos («tank, espejo de 2 discos»). */
+  conjunto?: string | null;
+  /** 0.8.1 (15m): un espejo del que no se reconoce ningún repositorio (sale del almacén con esta marca). */
+  sinReconocer?: boolean;
 }
 
 export interface AristaMapa {
@@ -72,6 +95,8 @@ export interface AristaMapa {
   vivo: boolean;
   /** Frescura, corta: «hace 3 h», «falló hace 2 h» (rotulada sobre el trazo). */
   etiqueta?: string;
+  /** 0.8.1 (15cc): lo que lleva mientras está en marcha («45 %», «en cola»), en una píldora sobre el trazo. */
+  progreso?: string;
 }
 
 export interface Mapa {
@@ -79,7 +104,20 @@ export interface Mapa {
   aristas: AristaMapa[];
   /** La alternativa en texto, una frase por equipo y por almacén. */
   frases: string[];
+  /** 0.8.1 (15rr): los grupos desplegados ahora (para plegarlos de nuevo). */
+  desplegados?: { id: string; titulo: string }[];
 }
+
+/** 0.8.1 (15rr): cómo se juntan los equipos: nunca, por sede (o por la agrupación de Equipos) o, con más de N, los que están al día. */
+export type ModoAgrupar = "no" | "sede" | "mas_de";
+export interface Agrupar {
+  modo: ModoAgrupar;
+  n: number;
+}
+export const AGRUPAR_POR_DEFECTO: Agrupar = { modo: "mas_de", n: 8 };
+
+/** Lo que está en marcha: `tipo` y, de una derivada, su id; de un espejo, `repo` es su trabajo. */
+export type TipoVivo = "copia" | "copia_externa" | "derivada" | "espejo";
 
 export interface Raiz {
   perspectiva: Perspectiva;
@@ -91,10 +129,22 @@ export interface OpcionesMapa {
   cliente: string;
   ahora?: number;
   raiz?: Raiz;
-  /** Lo que está en marcha: texto corto («Copiando 40 %») o null. */
-  enVivo?: (equipo: string, repo: string, tipo: "copia" | "copia_externa") => string | null;
-  /** A partir de cuántos equipos se juntan los que están al día (por defecto, 8). */
+  /** Lo que está en marcha: texto corto («Copiando 40 %») o null. 0.8.1 (15cc): también derivadas (con su id) y espejos (`repo`: su trabajo). */
+  enVivo?: (equipo: string, repo: string, tipo: TipoVivo, id?: string) => string | null;
+  /** A partir de cuántos equipos se juntan los que están al día (por defecto, 8). Lo mismo que `agrupar: { modo: "mas_de", n }`. */
   agruparDesde?: number;
+  /** 0.8.1 (15rr): cómo se juntan (manda sobre `agruparDesde`). */
+  agrupar?: Agrupar;
+  /** 0.8.1 (15rr): con «por sede», el grupo de cada equipo (su sede o el primer nivel de Equipos); sin él, la sede. */
+  grupoDe?: (e: Equipo) => { id: string; nombre: string } | null;
+  /** 0.8.1 (15rr): los grupos desplegados (sus ids). */
+  desplegados?: ReadonlySet<string>;
+  /** 0.8.1 (15l): las sedes (capa «Sedes» y agrupar por sede). */
+  organizacion?: Organizacion | null;
+  /** 0.8.1 (15l, C4): la infraestructura (capas «Infraestructura» y «Almacenamiento», y el aviso de servidor compartido). */
+  infra?: Infraestructura | null;
+  /** 0.8.1 (15l): la primera columna, por sede (con la capa «Sedes»: así cada sede queda junta). */
+  ordenSede?: boolean;
   /** Todos los equipos del cliente (para encontrar los almacenes aunque un filtro los deje fuera). */
   todos?: Equipo[];
   /** 0.7.26: el catálogo de destinos del cliente (lo marcado por una persona en cada destino). */
@@ -219,6 +269,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   const vivo = o.enVivo ?? (() => null);
   const c = o.cliente;
   const todos = o.todos ?? equipos;
+  const org = o.organizacion ?? null;
+  const infra = o.infra?.servidores.length ? o.infra : null;
   const nodos = new Map<string, NodoMapa>();
   const aristas: AristaMapa[] = [];
   const poner = (n: NodoMapa) => nodos.get(n.id) ?? (nodos.set(n.id, n), n);
@@ -227,6 +279,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   };
   /** 0.7.26: de qué destino es cada nodo (su clave en la lista de destinos) o, si no tiene, su tipo ya sabido. */
   const tipoNodo = new Map<string, { clave?: string; si?: TipoCorto }>();
+  /** 0.8.1 (15l): quién guarda cada destino (para su sede y su servidor físico, si no tiene los suyos). */
+  const quienGuarda = new Map<string, string | null>();
 
   // Qué entra según la raíz.
   const paquetes: Paquete[] = [];
@@ -245,23 +299,51 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     paquetes.push({ equipo: e, repos });
   }
 
-  // Muchos equipos: los que están al día, sin nada en marcha, se juntan por los destinos a los que van.
-  const desde = o.agruparDesde ?? 8;
-  const grupos = new Map<string, Paquete[]>();
+  // Muchos equipos: se juntan (15rr). «Por sede»: los de cada sede (o del grupo elegido en
+  // Equipos); «más de N»: los que están al día, sin nada en marcha, por los destinos a los que
+  // van. Un grupo desplegado vuelve a enseñar sus equipos sueltos.
+  const ag: Agrupar = o.agrupar ?? { modo: "mas_de", n: o.agruparDesde ?? AGRUPAR_POR_DEFECTO.n };
+  const grupoDe = o.grupoDe ?? ((e: Equipo) => {
+    const s = sedeDeEquipo(org, e.id).sede;
+    return s ? { id: s.id, nombre: s.nombre } : null;
+  });
+  const grupos = new Map<string, { titulo: string | null; ps: Paquete[] }>();
   const sueltos: Paquete[] = [];
-  if (paquetes.length > desde) {
+  const desplegados: { id: string; titulo: string }[] = [];
+  if (ag.modo === "sede") {
+    for (const p of paquetes) {
+      const g = p.repos.length && !p.repos.some((x) => vivo(p.equipo.id, x.r.id, "copia")) ? grupoDe(p.equipo) : null;
+      if (!g) {
+        sueltos.push(p);
+        continue;
+      }
+      const k = `sede:${g.id}`;
+      const x = grupos.get(k) ?? { titulo: g.nombre, ps: [] };
+      x.ps.push(p);
+      grupos.set(k, x);
+    }
+  } else if (ag.modo === "mas_de" && paquetes.length > ag.n) {
     for (const p of paquetes) {
       const tranquilo =
         saludEquipo(p.equipo, ahora).tono === "ok" &&
         p.repos.every((x) => estadoRepo(x.r, informeDe(informes[p.equipo.id], x.r.id), p.equipo.resumen?.copias ?? [], ahora).tono === "ok" && !vivo(p.equipo.id, x.r.id, "copia") && !x.r.externa && !x.r.derivadas?.length && !riesgoMismoEquipo(x.r, p.equipo, todos));
       if (tranquilo && p.repos.length) {
         const k = [...new Set(p.repos.map((x) => x.destino))].sort().join("+");
-        grupos.set(k, [...(grupos.get(k) ?? []), p]);
+        const x = grupos.get(k) ?? { titulo: null, ps: [] };
+        x.ps.push(p);
+        grupos.set(k, x);
       } else sueltos.push(p);
     }
-    // Un grupo de uno no ahorra nada.
-    for (const [k, ps] of grupos) if (ps.length < 2) (sueltos.push(...ps), grupos.delete(k));
   } else sueltos.push(...paquetes);
+  // Un grupo de uno no ahorra nada; uno desplegado, tampoco se junta.
+  for (const [k, g] of grupos) {
+    const desplegado = o.desplegados?.has(`gr:${k}`);
+    if (g.ps.length < 2 || desplegado) {
+      sueltos.push(...g.ps);
+      grupos.delete(k);
+      if (desplegado && g.ps.length >= 2) desplegados.push({ id: `gr:${k}`, titulo: g.titulo ?? plural(g.ps.length, "equipo", "equipos") });
+    }
+  }
 
   /** 14mm: las píldoras que guardan en cada almacén, con el nombre de sus repositorios allí (para colgar de ellas los espejos). */
   const enAlmacenes = new Map<string, { pildora: string; en: { nombre: string; usuario: string; zona: string }[] }[]>();
@@ -284,6 +366,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       // La tarjeta es el almacén entero; lleva a la página de la zona del primer repositorio que llega (o la principal).
       const zona = zonaDeDestino(destinoDe(p.equipo.resumen?.destinos, x.r), todos)?.id ?? PRINCIPAL;
       tipoNodo.set(x.destino, { clave: claveZona(x.almacen.id, PRINCIPAL), si: { tipo: "local", inmutable: false, soloAnadir: true, aislado: false, bloqueoDias: null } });
+      quienGuarda.set(x.destino, x.almacen.id);
       return poner({
         id: x.destino,
         tipo: "destino",
@@ -327,6 +410,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         : `${l.clase === "usb" ? "Disco extraíble" : "Disco"} de ${p.equipo.nombre}${d?.unidad ? ` (${d.unidad})` : ""}`
       : (TIPO_DESTINO[d?.tipo ?? "otro"] ?? "Destino");
     if (d) tipoNodo.set(x.destino, { clave: d.id });
+    if (d?.tipo === "local" && !d.red) quienGuarda.set(x.destino, p.equipo.id);
     return poner({
       id: x.destino,
       tipo: "destino",
@@ -339,6 +423,64 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       href: d ? hrefDestino(c, d.id) : undefined,
       icono: d?.tipo === "local" ? "disco" : d?.tipo === "rest" || d?.tipo === "sftp" ? "servidor" : "nube",
     });
+  };
+
+  /** La copia externa y las copias derivadas de un repositorio, colgadas de su píldora (o de la de su grupo). */
+  const ponerDerivadas = (p: Paquete, x: Paquete["repos"][number], pildora: NodoMapa) => {
+    const e = p.equipo;
+    const inf = informeDe(informes[e.id], x.r.id);
+    // La copia externa del repositorio (cada día a otro destino).
+    const ext = inf?.externa;
+    if (x.r.externa || ext) {
+      const tono: Tono = ext ? (ext.resultado === "fallo" ? "bad" : ext.resultado === "aviso" ? "warn" : ext.ultima && Date.parse(ext.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
+      const subiendo = vivo(e.id, x.r.id, "copia_externa");
+      const n = poner({
+        id: `ex:${e.id}:${x.r.externa?.destino_id ?? x.r.externa?.destino ?? x.r.id}`,
+        tipo: "externa",
+        col: 3,
+        nombre: x.r.externa?.destino ?? "Copia derivada",
+        sub: x.r.externa ? `Copia derivada · cada día a las ${x.r.externa.hora}` : `De «${x.r.nombre}»`,
+        tono: subiendo ? "info" : tono,
+        estado: subiendo ?? (ext ? (tono === "bad" ? "Falló" : tono === "warn" ? (ext.resultado === "aviso" ? "Con avisos" : "Atrasada") : "Al día") : "Todavía sin ninguna"),
+        ultima: ext?.ultima ?? null,
+        // Su destino tiene página si el agente dice cuál es (`destino_id`); si no, el repositorio.
+        href: x.r.externa?.destino_id ? hrefDestino(c, x.r.externa.destino_id) : pildora.href,
+        icono: /disco|disk|[a-z]:\\/i.test(x.r.externa?.destino ?? "") ? "disco" : "nube",
+        vivo: subiendo,
+      });
+      if (x.r.externa?.destino_id) tipoNodo.set(n.id, { clave: x.r.externa.destino_id });
+      unir({ id: `${pildora.id}>${n.id}`, de: pildora.id, a: n.id, tipo: "externa", tono: n.tono, vivo: !!subiendo, etiqueta: subiendo ? undefined : frescura(n.tono, n.ultima, ahora), progreso: subiendo ? progresoCorto(subiendo) : undefined });
+    }
+
+    // 14kk: las copias derivadas, una flecha «después» del repositorio a su destino
+    // (el mismo nodo que los repositorios que ya guardan allí; si no hay, uno nuevo).
+    // 15cc: animada (con su porcentaje) mientras está en marcha, y su destino en «info».
+    for (const dv of x.r.derivadas ?? []) {
+      if (dv.activa === false) continue;
+      const dd = (e.resumen?.destinos ?? []).find((y) => y.id === dv.destino_id) ?? (e.resumen?.destinos ?? []).find((y) => y.nombre === dv.destino);
+      const k = claveDeDestino(e, dd, todos, dv.destino_id ?? dv.destino ?? dv.id);
+      const destinoNodo =
+        nodos.get(k.clave) ??
+        (dd
+          ? nodoDestino(p, { r: { ...x.r, destino: dd.id }, destino: k.clave, almacen: k.almacen, fuera: k.fuera })
+          : poner({ id: k.clave, tipo: "destino", col: 2, nombre: dv.destino ?? "Otro destino", sub: "Destino", tono: "neutral", estado: "Sin copias todavía", ultima: null, icono: "servidor" }));
+      const r = inf?.derivadas?.find((y) => y.id === dv.id);
+      const enMarcha = vivo(e.id, x.r.id, "derivada", dv.id);
+      const tono: Tono = enMarcha ? "info" : r?.resultado === "fallo" ? "bad" : r?.resultado === "aviso" ? "warn" : r?.ultima ? (Date.parse(r.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
+      const cuando = cuandoEnFrase(dv.cuando ?? null).toLowerCase();
+      unir({
+        id: `${pildora.id}>dv:${dv.id}>${destinoNodo.id}`,
+        de: pildora.id,
+        a: destinoNodo.id,
+        tipo: "derivada",
+        tono,
+        vivo: !!enMarcha,
+        etiqueta: enMarcha ? minus(enMarcha) : r?.ultima ? frescura(tono, r.ultima, ahora) : !cuando ? "después" : cuando.startsWith("después") ? cuando : `después · ${cuando}`,
+        progreso: enMarcha ? progresoCorto(enMarcha) : undefined,
+      });
+      if (enMarcha) destinoNodo.vivo = enMarcha;
+      if (r?.ultima && (!destinoNodo.ultima || r.ultima > destinoNodo.ultima)) destinoNodo.ultima = r.ultima;
+    }
   };
 
   /** Un repositorio: su píldora, su destino, su copia externa. Devuelve la píldora. */
@@ -364,6 +506,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       cifra: tam ? bytes(tam) : undefined,
       vivo: enMarcha,
     });
+    quienGuarda.set(pildora.id, e.id);
     const dest = nodoDestino(p, x);
     // v1.41: las copias se quedan en el mismo equipo que protegen (su disco o su propio almacén).
     const riesgo = riesgoMismoEquipo(x.r, e, todos);
@@ -374,56 +517,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     // El destino recuerda la versión más reciente que le llegó (y, si no es un almacén, si llegan copias).
     if (pildora.ultima && (!dest.ultima || pildora.ultima > dest.ultima)) dest.ultima = pildora.ultima;
     const t: Tono = enMarcha ? "info" : est.tono;
-    unir({ id: `${pildora.id}>${dest.id}`, de: pildora.id, a: dest.id, tipo: "guarda", tono: t, vivo: !!enMarcha, etiqueta: enMarcha ? undefined : frescura(t, pildora.ultima, ahora) });
-
-    // La copia externa del repositorio (cada día a otro destino).
-    const ext = inf?.externa;
-    if (x.r.externa || ext) {
-      const tono: Tono = ext ? (ext.resultado === "fallo" ? "bad" : ext.resultado === "aviso" ? "warn" : ext.ultima && Date.parse(ext.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
-      const subiendo = vivo(e.id, x.r.id, "copia_externa");
-      const n = poner({
-        id: `ex:${e.id}:${x.r.externa?.destino_id ?? x.r.externa?.destino ?? x.r.id}`,
-        tipo: "externa",
-        col: 3,
-        nombre: x.r.externa?.destino ?? "Copia derivada",
-        sub: x.r.externa ? `Copia derivada · cada día a las ${x.r.externa.hora}` : `De «${x.r.nombre}»`,
-        tono: subiendo ? "info" : tono,
-        estado: subiendo ?? (ext ? (tono === "bad" ? "Falló" : tono === "warn" ? (ext.resultado === "aviso" ? "Con avisos" : "Atrasada") : "Al día") : "Todavía sin ninguna"),
-        ultima: ext?.ultima ?? null,
-        // Su destino tiene página si el agente dice cuál es (`destino_id`); si no, el repositorio.
-        href: x.r.externa?.destino_id ? hrefDestino(c, x.r.externa.destino_id) : pildora.href,
-        icono: /disco|disk|[a-z]:\\/i.test(x.r.externa?.destino ?? "") ? "disco" : "nube",
-        vivo: subiendo,
-      });
-      if (x.r.externa?.destino_id) tipoNodo.set(n.id, { clave: x.r.externa.destino_id });
-      unir({ id: `${pildora.id}>${n.id}`, de: pildora.id, a: n.id, tipo: "externa", tono: n.tono, vivo: !!subiendo, etiqueta: subiendo ? undefined : frescura(n.tono, n.ultima, ahora) });
-    }
-
-    // 14kk: las copias derivadas, una flecha «después» del repositorio a su destino
-    // (el mismo nodo que los repositorios que ya guardan allí; si no hay, uno nuevo).
-    for (const dv of x.r.derivadas ?? []) {
-      if (dv.activa === false) continue;
-      const dd = (e.resumen?.destinos ?? []).find((y) => y.id === dv.destino_id) ?? (e.resumen?.destinos ?? []).find((y) => y.nombre === dv.destino);
-      const k = claveDeDestino(e, dd, todos, dv.destino_id ?? dv.destino ?? dv.id);
-      const destinoNodo =
-        nodos.get(k.clave) ??
-        (dd
-          ? nodoDestino(p, { r: { ...x.r, destino: dd.id }, destino: k.clave, almacen: k.almacen, fuera: k.fuera })
-          : poner({ id: k.clave, tipo: "destino", col: 2, nombre: dv.destino ?? "Otro destino", sub: "Destino", tono: "neutral", estado: "Sin copias todavía", ultima: null, icono: "servidor" }));
-      const r = inf?.derivadas?.find((y) => y.id === dv.id);
-      const tono: Tono = r?.resultado === "fallo" ? "bad" : r?.resultado === "aviso" ? "warn" : r?.ultima ? (Date.parse(r.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
-      const cuando = cuandoEnFrase(dv.cuando ?? null).toLowerCase();
-      unir({
-        id: `${pildora.id}>dv:${dv.id}>${destinoNodo.id}`,
-        de: pildora.id,
-        a: destinoNodo.id,
-        tipo: "derivada",
-        tono,
-        vivo: false,
-        etiqueta: r?.ultima ? frescura(tono, r.ultima, ahora) : !cuando ? "después" : cuando.startsWith("después") ? cuando : `después · ${cuando}`,
-      });
-      if (r?.ultima && (!destinoNodo.ultima || r.ultima > destinoNodo.ultima)) destinoNodo.ultima = r.ultima;
-    }
+    unir({ id: `${pildora.id}>${dest.id}`, de: pildora.id, a: dest.id, tipo: "guarda", tono: t, vivo: !!enMarcha, etiqueta: enMarcha ? undefined : frescura(t, pildora.ultima, ahora), progreso: enMarcha ? progresoCorto(enMarcha) : undefined });
+    ponerDerivadas(p, x, pildora);
     return pildora;
   };
 
@@ -444,6 +539,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       href: `/c/${c}/equipos/${e.id}`,
       icono: "equipo",
     });
+    quienGuarda.set(n.id, e.id);
     for (const x of p.repos) {
       const pildora = ponerRepo(p, x);
       anotarEnAlmacen(pildora.id, [{ p, x }]);
@@ -451,38 +547,73 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     }
   }
 
-  // Los grupos: un nodo «N equipos al día» y una píldora por destino.
-  for (const [k, ps] of grupos) {
-    const g = poner({
-      id: `gr:${k}`,
+  // Los grupos: un nodo «N equipos» (o la sede) y una píldora por destino. 15rr: se despliegan
+  // con un clic (`grupo`) y, al pasar por ellos, la lista de lo que hay dentro (`miembros`).
+  for (const [k, g] of grupos) {
+    const ps = g.ps;
+    const gid = `gr:${k}`;
+    const saludes = ps.map((p) => ({ p, s: saludEquipo(p.equipo, ahora) }));
+    const peor = saludes.reduce<Tono>((t, x) => (PESO[x.s.tono] < PESO[t] ? x.s.tono : t), "ok");
+    const conAvisos = saludes.filter((x) => x.s.tono === "bad" || x.s.tono === "warn").length;
+    const sede = k.startsWith("sede:") ? sedeDeEquipo(org, ps[0].equipo.id).sede : null;
+    const g0 = poner({
+      id: gid,
       tipo: "grupo",
       col: 0,
-      nombre: `${ps.length} equipos`,
+      nombre: g.titulo ? `${g.titulo} · ${plural(ps.length, "equipo", "equipos")}` : `${ps.length} equipos`,
       sub: lista(ps.slice(0, 3).map((p) => p.equipo.nombre)) + (ps.length > 3 ? ` y ${ps.length - 3} más` : ""),
-      tono: "ok",
-      estado: "Al día",
+      tono: peor,
+      estado: peor === "ok" ? "Al día" : conAvisos ? `${plural(conAvisos, "necesita", "necesitan")} atención` : (saludes.find((x) => x.s.tono === peor)?.s.texto ?? "Al día"),
       ultima: ps.flatMap((p) => (p.equipo.resumen?.copias ?? []).map((x) => x.ultima?.cuando ?? "")).sort().at(-1) || null,
       href: `/c/${c}/equipos`,
       icono: "grupo",
+      grupo: gid,
+      miembros: saludes
+        .sort((a, b) => PESO[a.s.tono] - PESO[b.s.tono] || a.p.equipo.nombre.localeCompare(b.p.equipo.nombre))
+        .map(({ p, s }) => ({ tipo: "equipo" as const, nombre: p.equipo.nombre, tono: s.tono, estado: s.texto, href: `/c/${c}/equipos/${p.equipo.id}` })),
+      ...(sede ? { sede: { id: sede.id, nombre: sede.nombre } } : {}),
     });
     const porDestino = new Map<string, { p: Paquete; x: Paquete["repos"][number] }[]>();
     for (const p of ps) for (const x of p.repos) porDestino.set(x.destino, [...(porDestino.get(x.destino) ?? []), { p, x }]);
     for (const [dk, xs] of porDestino) {
       const total = xs.reduce((s, { p, x }) => s + (bytesRepo(x.r, informeDe(informes[p.equipo.id], x.r.id)) ?? 0), 0);
       const ultima = xs.map(({ p, x }) => ultimaVersion(x.r, informeDe(informes[p.equipo.id], x.r.id)) ?? "").sort().at(-1) || null;
-      const pildora = poner({ id: `rg:${k}:${dk}`, tipo: "repo", col: 1, nombre: plural(xs.length, "repositorio", "repositorios"), sub: "al día", tono: "ok", estado: "Al día", ultima, href: `/c/${c}/repositorios`, icono: "repo", cifra: total ? bytes(total) : undefined });
+      const estados = xs.map(({ p, x }) => ({ p, x, e: estadoRepo(x.r, informeDe(informes[p.equipo.id], x.r.id), p.equipo.resumen?.copias ?? [], ahora) }));
+      const tono = estados.reduce<Tono>((t, y) => (PESO[y.e.tono] < PESO[t] ? y.e.tono : t), "ok");
+      const malos = estados.filter((y) => y.e.tono === "bad" || y.e.tono === "warn").length;
+      const pildora = poner({
+        id: `rg:${k}:${dk}`,
+        tipo: "repo",
+        col: 1,
+        nombre: plural(xs.length, "repositorio", "repositorios"),
+        sub: tono === "ok" ? "al día" : `${malos} con avisos`,
+        tono,
+        estado: tono === "ok" ? "Al día" : `${plural(malos, "necesita", "necesitan")} atención`,
+        ultima,
+        href: `/c/${c}/repositorios`,
+        icono: "repo",
+        cifra: total ? bytes(total) : undefined,
+        grupo: gid,
+        miembros: estados
+          .sort((a, b) => PESO[a.e.tono] - PESO[b.e.tono] || a.x.r.nombre.localeCompare(b.x.r.nombre))
+          .map(({ p, x, e }) => ({ tipo: "repo" as const, nombre: x.r.nombre, detalle: p.equipo.nombre, tono: e.tono, estado: e.texto, href: `/c/${c}/equipos/${p.equipo.id}/repositorios/${encodeURIComponent(x.r.id)}` })),
+        ...(sede ? { sede: { id: sede.id, nombre: sede.nombre } } : {}),
+      });
       const dest = nodoDestino(xs[0].p, xs[0].x);
       anotarEnAlmacen(pildora.id, xs);
       if (ultima && (!dest.ultima || ultima > dest.ultima)) dest.ultima = ultima;
-      unir({ id: `${g.id}>${pildora.id}`, de: g.id, a: pildora.id, tipo: "copia", tono: "ok", vivo: false });
-      unir({ id: `${pildora.id}>${dest.id}`, de: pildora.id, a: dest.id, tipo: "guarda", tono: "ok", vivo: false, etiqueta: frescura("ok", ultima, ahora) });
+      unir({ id: `${g0.id}>${pildora.id}`, de: g0.id, a: pildora.id, tipo: "copia", tono, vivo: false });
+      unir({ id: `${pildora.id}>${dest.id}`, de: pildora.id, a: dest.id, tipo: "guarda", tono, vivo: false, etiqueta: frescura(tono, ultima, ahora) });
+      // Las derivadas de los repositorios del grupo, de la píldora del grupo.
+      for (const { p, x } of xs) ponerDerivadas(p, x, pildora);
     }
   }
 
   // Destinos que no son almacén: al día si llegó algo en 2 días (su estado es el suyo, no el de cada copia).
   for (const n of nodos.values()) {
     if (n.tipo !== "destino" || n.icono === "almacen") continue;
-    if (!n.ultima) Object.assign(n, { tono: "neutral", estado: "Sin copias todavía" });
+    if (n.vivo) Object.assign(n, { tono: "info", estado: n.vivo });
+    else if (!n.ultima) Object.assign(n, { tono: "neutral", estado: "Sin copias todavía" });
     else if (Date.parse(n.ultima) < ahora - 2 * DIA) Object.assign(n, { tono: "warn", estado: "Sin copias recientes" });
     else Object.assign(n, { tono: "ok", estado: "Recibe copias" });
   }
@@ -497,7 +628,10 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     n.sub = cuandoCortoEspejo(esp).startsWith("cada noche") ? `Almacén · se refleja cada noche` : `Almacén · con espejo`;
     destinos.forEach((d, i) => {
       const mal = resultadoConError(d.resultado);
-      const tono: Tono = mal ? "bad" : d.ultima ? (Date.parse(d.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
+      // 15cc: un espejo en marcha (su trabajo, del progreso del almacén) se anima con su porcentaje.
+      const trabajo = "trabajo" in d ? d.trabajo : null;
+      const enMarcha = trabajo ? vivo(alm.id, trabajo, "espejo") : null;
+      const tono: Tono = enMarcha ? "info" : mal ? "bad" : d.ultima ? (Date.parse(d.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
       const nube = d.tipo === "nube";
       const e = poner({
         id: `es:${alm.id}:${i}`,
@@ -507,11 +641,12 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         nombre: (nube ? d.nube : d.tipo === "zona" ? (zonasDe(alm).find((z) => z.id === d.carpeta)?.nombre ?? d.carpeta) : d.carpeta) ?? "Espejo",
         sub: `Espejo · ${cuandoCorto(d, esp.hora)}`,
         tono,
-        estado: mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado",
+        estado: enMarcha ?? (mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado"),
         ultima: d.ultima ?? null,
         // Una nube o una zona tienen su página; una carpeta del espejo, no: la página del espejo (14i) o la ficha del almacén.
-        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : d.trabajo ? hrefEspejo(c, alm.id, d.trabajo) : `/c/${c}/equipos/${alm.id}`,
+        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : trabajo ? hrefEspejo(c, alm.id, trabajo) : `/c/${c}/equipos/${alm.id}`,
         icono: nube ? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "nube") : "disco",
+        vivo: enMarcha,
       });
       const tipoNube = (alm.resumen?.guarda_copias?.nubes ?? []).find((x) => x.nombre === d.nube)?.tipo ?? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "");
       tipoNodo.set(
@@ -522,19 +657,21 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
             ? { clave: claveZona(alm.id, d.carpeta), si: { tipo: "local", inmutable: false, soloAnadir: true, aislado: false, bloqueoDias: null } }
             : { si: { tipo: "local", inmutable: !!d.bloqueo, aislado: false, bloqueoDias: null } },
       );
+      if (!nube) quienGuarda.set(e.id, alm.id);
       // 14mm: un espejo de todo el almacén (su zona principal, sin selección) sale del almacén; uno con
-      // selección o de otra zona, de los repositorios que copia, con su estado. Si no se ve ninguno de
-      // los suyos, no se dibuja (es de equipos que no salen aquí); sin repositorios a la vista, del almacén.
+      // selección o de otra zona, de los repositorios que copia, con su estado. 15m (punto 5): si no se
+      // reconoce ninguno de los suyos (p. ej. carpetas antiguas `<uuid>/<repo>` o de equipos que no
+      // están aquí), sale igual del almacén, con una marca: no desaparece.
       const todo = !Array.isArray(d.repos) && (d.zona ?? PRINCIPAL) === PRINCIPAL;
       const vistos = enAlmacenes.get(alm.id) ?? [];
       const desde = todo ? [] : vistos.filter((y) => y.en.some((en) => entraEnEspejo(d, en))).map((y) => y.pildora);
-      const de = todo || !vistos.length ? [n.id] : desde;
+      let de = todo || !vistos.length ? [n.id] : desde;
       if (!de.length) {
-        nodos.delete(e.id);
-        tipoNodo.delete(e.id);
-        return;
+        de = [n.id];
+        e.sinReconocer = true;
+        e.aviso = "No sé de qué repositorios es";
       }
-      for (const x of de) unir({ id: `${x}>${e.id}`, de: x, a: e.id, tipo: "espejo", tono, vivo: false, etiqueta: frescura(tono, e.ultima, ahora) });
+      for (const x of de) unir({ id: `${x}>${e.id}`, de: x, a: e.id, tipo: "espejo", tono, vivo: !!enMarcha, etiqueta: enMarcha ? undefined : frescura(tono, e.ultima, ahora), progreso: enMarcha ? progresoCorto(enMarcha) : undefined });
     });
   }
 
@@ -545,6 +682,51 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     if (!k) continue;
     const v = k.clave ? vistas.find((x) => x.clave === k.clave || x.ids.includes(k.clave!)) : undefined;
     n.tipoDestino = v ? corta(clasificacionDeVista(v, todos)) : k.si;
+  }
+
+  // 0.8.1 (15l): la sede de cada tarjeta y dónde está físicamente (las capas). Sin sedes ni
+  // infraestructura, nada (todo como antes).
+  if (org?.sedes.length || infra) {
+    const nombreSitio = (s: SitioVista | null) => (s ? [s.servidor.nombre, HIPERVISORES.find((h) => h.id === s.servidor.hipervisor)?.nombre].filter(Boolean).join(" · ") : null);
+    const fisicoNodo = new Map<string, string>();
+    for (const n of nodos.values()) {
+      if (n.tipo === "cliente" || n.tipo === "fuera") continue;
+      const equipo = quienGuarda.get(n.id) ?? null;
+      const clave = tipoNodo.get(n.id)?.clave ?? null;
+      const nube = n.tipoDestino?.tipo === "nube" || n.icono === "nube" || n.icono === "dropbox";
+      if (n.tipo === "destino" || n.tipo === "espejo" || n.tipo === "externa") {
+        n.enNube = nube || (!equipo && n.icono === "servidor");
+        if (org?.sedes.length && !nube) {
+          const s = sedeDeDestino(org, { clave, equipo, nube }).sede;
+          n.sede = s ? { id: s.id, nombre: s.nombre } : null;
+        }
+        if (infra) {
+          const s = sitioDeDestino(infra, clave, equipo);
+          n.servidorFisico = nombreSitio(s);
+          n.conjunto = s?.conjunto ? `${s.conjunto.nombre} · ${formaConjunto(s.conjunto)}` : null;
+          if (s) fisicoNodo.set(n.id, s.servidor.id);
+        }
+      } else if (equipo && n.sede === undefined) {
+        if (org?.sedes.length) {
+          const s = sedeDeEquipo(org, equipo).sede;
+          n.sede = s ? { id: s.id, nombre: s.nombre } : null;
+        }
+        if (infra) {
+          const s = sitioDeEquipo(infra, equipo);
+          n.servidorFisico = nombreSitio(s);
+          if (s) fisicoNodo.set(n.id, s.servidor.id);
+        }
+      }
+    }
+    // El aviso «servidor físico compartido» (como la regla): un repositorio que guarda en un
+    // destino de otro equipo (o suelto) del mismo servidor físico que el equipo que copia.
+    for (const a of aristas) {
+      if (a.tipo !== "guarda") continue;
+      const f = fisicoNodo.get(a.de);
+      const dest = nodos.get(a.a);
+      if (!f || !dest || fisicoNodo.get(a.a) !== f || quienGuarda.get(a.de) === quienGuarda.get(a.a)) continue;
+      dest.aviso ??= "Mismo servidor físico que lo que copia";
+    }
   }
 
   // La alternativa en texto.
@@ -565,28 +747,37 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         const mas = [...ext, ...esp, ...der];
         return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)}${mismo})${mas.length ? `, con ${lista(mas)}` : ""}`;
       });
-    frases.push(partes.length ? `${n.nombre} copia ${lista(partes)}.` : `${n.nombre}: ${minus(n.sub)}.`);
+    const quienes = n.tipo === "grupo" && n.miembros?.length ? ` (${lista(n.miembros.map((m) => m.nombre))})` : "";
+    frases.push(partes.length ? `${n.nombre}${quienes} copia ${lista(partes)}.` : `${n.nombre}: ${minus(n.sub)}.`);
   }
   for (const n of lista_.filter((x) => x.tipo === "destino")) {
     const esp = aristas.filter((a) => a.de === n.id && a.tipo === "espejo").map((a) => por(a.a));
     const fuera = esp.filter((x) => x.tipo === "fuera");
     const reales = esp.filter((x) => x.tipo !== "fuera");
-    if (reales.length) frases.push(`${n.nombre} se refleja en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)})`))}.`);
+    if (reales.length) frases.push(`${n.nombre} se refleja en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)}${x.sinReconocer ? "; no se sabe de qué repositorios es" : ""})`))}.`);
     if (fuera.length) frases.push(`${n.nombre} es un almacén que no está en esta consola: sus espejos no se ven aquí (${minus(fuera[0].estado)}).`);
   }
 
-  return { nodos: ordenarMapa(lista_, aristas), aristas, frases };
+  const claveSede = o.ordenSede ? (n: NodoMapa) => n.sede?.nombre ?? "￿" : undefined;
+  return { nodos: ordenarMapa(lista_, aristas, false, claveSede), aristas, frases, desplegados };
+}
+
+/** «Copiando 45 %» → «45 %»; «En cola» → «en cola»; sin cifra, «en marcha». */
+export function progresoCorto(t: string): string {
+  const m = /(\d+)\s*%/.exec(t);
+  if (m) return `${m[1]} %`;
+  return /cola/i.test(t) ? "en cola" : "en marcha";
 }
 
 /**
  * Orden de las tarjetas: la primera columna, lo urgente arriba y por nombre
- * (o en el orden dado, con `primeraFija`); cada columna siguiente, a la altura
- * media de lo que le llega (menos cruces).
+ * (o en el orden dado, con `primeraFija`; 0.8.1, con `claveSede`, primero por
+ * sede); cada columna siguiente, a la altura media de lo que le llega (menos cruces).
  */
-export function ordenarMapa(nodos: NodoMapa[], aristas: AristaMapa[], primeraFija = false): NodoMapa[] {
+export function ordenarMapa(nodos: NodoMapa[], aristas: AristaMapa[], primeraFija = false, claveSede?: (n: NodoMapa) => string): NodoMapa[] {
   const orden = new Map<string, number>();
   const col0 = nodos.filter((n) => n.col === 0);
-  if (!primeraFija) col0.sort((a, b) => PESO[a.tono] - PESO[b.tono] || a.nombre.localeCompare(b.nombre));
+  if (!primeraFija) col0.sort((a, b) => (claveSede ? claveSede(a).localeCompare(claveSede(b)) : 0) || PESO[a.tono] - PESO[b.tono] || a.nombre.localeCompare(b.nombre));
   col0.forEach((n, i) => orden.set(n.id, i));
   const nodosOrdenados = [...col0];
   const ultima = Math.max(0, ...nodos.map((n) => n.col));

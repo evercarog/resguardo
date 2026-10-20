@@ -10,6 +10,11 @@
   import { construirMapaGlobal, plegadosPorDefecto, type FiltroEstado, type PanelCliente } from "$lib/global";
   import { enMarchaEn, tareasTodos } from "$lib/todos.svelte";
   import { guardar as guardarTexto, leerTexto } from "$lib/recordar";
+  import { untrack } from "svelte";
+  import { tareaDelTrazo, textoDelTrazo } from "$lib/mapaVivo";
+  import { clavePrefs, leerPrefs, PREFS_POR_DEFECTO, type PrefsMapa } from "$lib/mapaPreferencias";
+  import type { TipoVivo } from "$lib/mapa";
+  import { app } from "$lib/estado.svelte";
 
   let { clientes, ahora }: { clientes: PanelCliente[]; ahora: number } = $props();
 
@@ -47,14 +52,25 @@
     guardar();
   }
 
-  function enVivo(e: string, r: string, tipo: "copia" | "copia_externa"): string | null {
-    const t = tareasTodos(e, { repo: r, tipos: [tipo] })[0];
-    if (!t) return null;
-    const p = t.porcentaje != null ? Math.floor(Math.max(0, Math.min(1, t.porcentaje)) * 100) : null;
-    return `${tipo === "copia" ? "Copiando" : "Subiendo"}${p != null ? ` ${p} %` : "…"}`;
+  // 0.8.1 (15cc): también las copias derivadas y los espejos en marcha.
+  function enVivo(e: string, r: string, tipo: TipoVivo, id?: string): string | null {
+    const t = tareaDelTrazo(tareasTodos(e), r, tipo, id);
+    const p = t?.porcentaje != null ? Math.floor(Math.max(0, Math.min(1, t.porcentaje)) * 100) : null;
+    return textoDelTrazo(t, tipo, p);
+  }
+  // 0.8.1 (15rr, 15l): cómo se agrupa, lo desplegado y las capas, por persona (como en cada cliente).
+  const clavePrefsTodos = $derived(clavePrefs(app.cuenta?.id ?? "", "todos"));
+  let prefs = $state<PrefsMapa>(PREFS_POR_DEFECTO);
+  $effect(() => {
+    const k = clavePrefsTodos;
+    untrack(() => (prefs = leerPrefs(leerTexto(k), { ...PREFS_POR_DEFECTO, agrupar: { modo: "mas_de", n: 6 } })));
+  });
+  function alPrefs(p: PrefsMapa) {
+    prefs = p;
+    guardarTexto(clavePrefsTodos, JSON.stringify(p));
   }
   const clienteValido = $derived(clientes.some((c) => c.id === cliente) ? cliente : "");
-  const mapa = $derived(construirMapaGlobal(clientes, { ahora, plegados, cliente: clienteValido, estado, buscar, enVivo }));
+  const mapa = $derived(construirMapaGlobal(clientes, { ahora, plegados, cliente: clienteValido, estado, buscar, enVivo, agrupar: prefs.agrupar, desplegados: new Set(prefs.desplegados) }));
   const ESTADOS: { id: FiltroEstado; texto: string }[] = [
     { id: "todos", texto: "Todos" },
     { id: "problemas", texto: "Con problemas" },
@@ -92,7 +108,7 @@
   {/if}
 {/snippet}
 
-<MapaProteccion equipos={[]} informes={{}} cliente="todos" {ahora} titulo="Mapa de la protección" dado={mapa} {herramientas} {alPlegar} listaDesde={820} {vacio} />
+<MapaProteccion equipos={[]} informes={{}} cliente="todos" {ahora} titulo="Mapa de la protección" dado={mapa} {herramientas} {alPlegar} listaDesde={820} {vacio} {prefs} {alPrefs} />
 {#if mapa.fuera && mapa.nodos.length}
   <p class="faint fuera">{mapa.fuera === 1 ? "1 cliente no sale" : `${mapa.fuera} clientes no salen`} con este filtro.</p>
 {/if}
