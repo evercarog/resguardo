@@ -153,14 +153,215 @@ pub fn cifras_de_restore(l: &Value) -> Option<(Cifras, Option<Cifras>)> {
     Some((hechas, total))
 }
 
+// ---------- 15w: lo que se quita de lo elegido ----------
+
+/// `resumen.admite`: `excluir` en `restaurar` y `descargar`, y `medir` en `explorar`.
+pub const ADMITE_EXCLUIR: &str = "restaurar_excluir";
+/// Como mucho, rutas quitadas de lo elegido en una restauración.
+pub const MAX_EXCLUIR: usize = 1000;
+
+/// ¿Está `ruta` dentro de `carpeta` (no la misma)? Rutas de una versión, con `/`.
+pub fn dentro_de(ruta: &str, carpeta: &str) -> bool {
+    let c = carpeta.trim_end_matches('/');
+    ruta.len() > c.len() + 1 && ruta.starts_with(c) && ruta.as_bytes()[c.len()] == b'/'
+}
+
+/// 15w: `excluir` (opcional): las rutas exactas de la versión que se quitan de lo elegido
+/// (desmarcadas en el árbol de la consola). Cada una, **dentro** de una de las `rutas`
+/// (nunca una elegida entera: para eso no se elige), sin `..` ni NUL, sin repetir.
+pub fn excluidas(c: &Value, rutas: &[String]) -> Result<Vec<String>, String> {
+    let Some(xs) = c.get("excluir").filter(|x| !x.is_null()) else { return Ok(Vec::new()) };
+    let xs = xs.as_array().ok_or("Lo que se quita de lo elegido no es válido (una lista).")?;
+    if xs.len() > MAX_EXCLUIR {
+        return Err(format!("Como mucho {MAX_EXCLUIR} elementos quitados de lo elegido: elige las carpetas de dentro en su lugar."));
+    }
+    let rutas: Vec<String> = rutas.iter().map(|r| restic::snapshot_dir(r)).collect::<Result<_, _>>()?;
+    let mut out: Vec<String> = Vec::new();
+    for x in xs {
+        let e = restic::snapshot_dir(x.as_str().ok_or("Ruta quitada no válida.")?)?;
+        if e.len() > 4096 || e.chars().any(char::is_control) {
+            return Err("Ruta quitada no válida.".into());
+        }
+        if !rutas.iter().any(|r| dentro_de(&e, r)) {
+            return Err("Lo que se quita tiene que estar dentro de lo elegido.".into());
+        }
+        if !out.contains(&e) {
+            out.push(e);
+        }
+    }
+    Ok(out)
+}
+
+/// ¿Se quitó `ruta` (o una carpeta que la contiene)?
+pub fn quitada(ruta: &str, excluir: &[String]) -> bool {
+    excluir.iter().any(|e| e == ruta || dentro_de(ruta, e))
+}
+
+/// Un patrón de restic que solo coincide con `ruta` (relativa a lo que se restaura,
+/// empezando por `/`): sus comodines van entre corchetes (`[[]`, `[*]`, `[?]`), que es lo
+/// único que restic entiende igual en Windows y en Linux (en Windows `\` no escapa nada).
+pub fn patron_exacto(ruta: &str) -> String {
+    let mut out = String::with_capacity(ruta.len() + 8);
+    for ch in ruta.chars() {
+        match ch {
+            '[' => out.push_str("[[]"),
+            '*' => out.push_str("[*]"),
+            '?' => out.push_str("[?]"),
+            '\\' if !cfg!(windows) => out.push_str("[\\\\]"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Un nombre de la versión que se va a crear como carpeta en este equipo: sin
+/// separadores, `..`, dos puntos ni nombres de dispositivo (como `ruta_local`).
+fn nombre_seguro(n: &str) -> Result<(), String> {
+    let malo = n.is_empty()
+        || n == "."
+        || n == ".."
+        || n.contains(['/', '\0'])
+        || (cfg!(windows) && (n.contains(['\\', ':']) || n.ends_with(['.', ' ']) || crate::sesiones_v2::es_dispositivo(n)));
+    if malo {
+        return Err("Uno de los nombres elegidos no vale en este equipo.".into());
+    }
+    Ok(())
+}
+
+/// Une una carpeta de la versión (`""` es la raíz) y un nombre.
+fn unir(padre: &str, nombre: &str) -> String {
+    format!("{}/{nombre}", padre.trim_end_matches('/'))
+}
+
+/// Restaura lo de `padre` (los `nombres`) en `destino`. Los que no tienen nada quitado
+/// dentro, juntos (`--include`); cada uno con algo quitado, solo (desde
+/// `version:<padre>/<nombre>` a `destino/<nombre>`, con `--exclude`: restic no deja juntar
+/// `--include` y `--exclude`). `sobrescribir`: `Some("never")`… o lo de restic por defecto.
+/// Con `guarda`, cómo va (sumado a `base`). Devuelve lo restaurado.
+#[allow(clippy::too_many_arguments)]
+pub fn restaurar_grupo(
+    acc: &restic::Access,
+    version: &str,
+    padre: &str,
+    nombres: &[String],
+    destino: &Path,
+    excluir: &[String],
+    sobrescribir: Option<&str>,
+    guarda: Option<&crate::escritorio::en_marcha::Guarda>,
+    base: Cifras,
+    plazo: Duration,
+) -> Result<Cifras, String> {
+    let (con, sin): (Vec<&String>, Vec<&String>) = nombres.iter().partition(|n| excluir.iter().any(|e| dentro_de(e, &unir(padre, n))));
+    // (origen, carpeta donde restaurar, filtros)
+    let mut tandas: Vec<(String, std::path::PathBuf, Vec<String>)> = Vec::new();
+    if !sin.is_empty() {
+        let origen = if padre.is_empty() { version.to_string() } else { format!("{version}:{padre}") };
+        tandas.push((origen, destino.to_path_buf(), sin.iter().flat_map(|n| ["--include".to_string(), format!("/{n}")]).collect()));
+    }
+    for n in con {
+        nombre_seguro(n)?;
+        let ruta = unir(padre, n);
+        let filtros = excluir.iter().filter(|e| dentro_de(e, &ruta)).flat_map(|e| ["--exclude".to_string(), patron_exacto(&e[ruta.len()..])]).collect();
+        tandas.push((format!("{version}:{ruta}"), destino.join(n), filtros));
+    }
+    let mut total = Cifras::default();
+    for (origen, carpeta, filtros) in tandas {
+        if carpeta != destino {
+            if crate::platform::hay_enlace_en_el_camino(&carpeta) {
+                return Err("Una de las carpetas donde restaurar es un enlace: no se restaura ahí.".into());
+            }
+            match std::fs::create_dir(&carpeta) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && carpeta.is_dir() => {}
+                Err(e) => return Err(format!("No se pudo crear una carpeta para restaurar: {e}")),
+            }
+        }
+        let mut args: Vec<String> = vec!["restore".into(), origen, "--target".into(), carpeta.display().to_string(), "--json".into()];
+        if let Some(s) = sobrescribir {
+            args.extend(["--overwrite".into(), s.into()]);
+        }
+        args.extend(filtros);
+        let ya = Cifras { archivos: base.archivos + total.archivos, bytes: base.bytes + total.bytes };
+        let mut ultima = Cifras::default();
+        let mut al_avanzar = |l: &str| {
+            if let Some((hechas, t)) = serde_json::from_str::<Value>(l).ok().as_ref().and_then(cifras_de_restore) {
+                ultima = hechas;
+                if let Some(g) = guarda {
+                    g.cifras(
+                        Some(ya.bytes + hechas.bytes),
+                        t.map(|t| ya.bytes + t.bytes),
+                        Some(ya.archivos + hechas.archivos),
+                        t.map(|t| ya.archivos + t.archivos),
+                    );
+                }
+            }
+        };
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = restic::run_raw_lines(acc, &refs, plazo, &mut al_avanzar)?;
+        if out.code != Some(0) {
+            return Err(restic::exit_error(out.code, &out.stderr));
+        }
+        total.sumar(ultima);
+    }
+    Ok(total)
+}
+
+/// 15w: lo que de verdad se restaura (`medir { version, rutas, excluir? }` en la sesión
+/// `explorar`): carpetas elegidas, archivos y bytes, y lo que se deja fuera. Sin rutas.
+pub fn medir(acc: &restic::Access, c: &Value) -> Result<Value, String> {
+    let version = c["version"].as_str().unwrap_or("");
+    if !restic::valid_snapshot_id(version) {
+        return Err("Versión no válida.".into());
+    }
+    let rutas: Vec<String> = c["rutas"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    if rutas.is_empty() || rutas.len() > 100 {
+        return Err("Elige entre 1 y 100 archivos o carpetas.".into());
+    }
+    let rutas: Vec<String> = rutas.iter().map(|r| restic::snapshot_dir(r)).collect::<Result<_, _>>()?;
+    let excluir = excluidas(c, &rutas)?;
+    let mut args: Vec<String> = vec!["ls".into(), "--json".into(), "--no-lock".into(), "--recursive".into(), version.into()];
+    args.extend(rutas.iter().cloned());
+    let (mut carpetas, mut archivos, mut bytes, mut fuera, mut fuera_bytes) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let mut al_leer = |l: &str| {
+        if !l.contains(r#""struct_type":"node""#) {
+            return;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(l) else { return };
+        let Some(p) = v["path"].as_str() else { return };
+        let es_dir = v["type"] == "dir";
+        if es_dir && rutas.iter().any(|r| r == p) {
+            carpetas += 1;
+        }
+        if v["type"] != "file" {
+            return;
+        }
+        let b = v["size"].as_u64().unwrap_or(0);
+        if quitada(p, &excluir) {
+            fuera += 1;
+            fuera_bytes += b;
+        } else {
+            archivos += 1;
+            bytes += b;
+        }
+    };
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = restic::run_raw_lines(acc, &refs, Duration::from_secs(600), &mut al_leer)?;
+    if out.code != Some(0) {
+        return Err(restic::exit_error(out.code, &out.stderr));
+    }
+    Ok(json!({ "carpetas": carpetas, "archivos": archivos, "bytes": bytes, "fuera_archivos": fuera, "fuera_bytes": fuera_bytes }))
+}
+
 /// Restaura `rutas` de `version` en `carpeta` (ya comprobada: nueva o vacía).
 /// Una sola carpeta de origen: dentro, tal cual; varias: una subcarpeta por cada
 /// una (con su nombre). Una unidad entera (`/C`) o una carpeta de la raíz va
 /// en su propia subcarpeta (`C`). Nunca sobrescribe (`--overwrite never`).
+/// 15w: sin lo de `excluir`.
 pub fn restaurar_en_carpeta(
     acc: &restic::Access,
     version: &str,
     rutas: &[String],
+    excluir: &[String],
     carpeta: &Path,
     guarda: &crate::escritorio::en_marcha::Guarda,
 ) -> Result<Cifras, String> {
@@ -175,31 +376,8 @@ pub fn restaurar_en_carpeta(
             std::fs::create_dir(&d).map_err(|e| format!("No se pudo crear una carpeta para restaurar: {e}"))?;
             d
         };
-        let origen = if padre.is_empty() { version.to_string() } else { format!("{version}:{padre}") };
-        let destino_txt = destino.display().to_string();
-        let mut args: Vec<String> = vec!["restore".into(), origen, "--target".into(), destino_txt, "--overwrite".into(), "never".into(), "--json".into()];
-        for n in nombres {
-            args.extend(["--include".into(), format!("/{n}")]);
-        }
-        let base = total;
-        let mut ultima = Cifras::default();
-        let mut al_avanzar = |l: &str| {
-            if let Some((hechas, t)) = serde_json::from_str::<Value>(l).ok().as_ref().and_then(cifras_de_restore) {
-                ultima = hechas;
-                guarda.cifras(
-                    Some(base.bytes + hechas.bytes),
-                    t.map(|t| base.bytes + t.bytes),
-                    Some(base.archivos + hechas.archivos),
-                    t.map(|t| base.archivos + t.archivos),
-                );
-            }
-        };
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let out = restic::run_raw_lines(acc, &refs, Duration::from_secs(48 * 3600), &mut al_avanzar)?;
-        if out.code != Some(0) {
-            return Err(restic::exit_error(out.code, &out.stderr));
-        }
-        total.sumar(ultima);
+        let hecho = restaurar_grupo(acc, version, padre, nombres, &destino, excluir, Some("never"), Some(guarda), total, Duration::from_secs(48 * 3600))?;
+        total.sumar(hecho);
     }
     Ok(total)
 }
@@ -304,10 +482,12 @@ fn hora_zip(segundos: u64) -> Option<zip::DateTime> {
 
 /// Escribe en `w` un .zip con `rutas` de `version`, leído con `restic dump`
 /// (nada pasa por el disco sin cifrar). Con `contrasena`, cada archivo en AES-256.
+/// 15w: sin lo de `excluir` (lo que se quitó de lo elegido).
 pub fn zip_de_rutas<W: Write + Seek>(
     acc: &restic::Access,
     version: &str,
     rutas: &[String],
+    excluir: &[String],
     w: W,
     contrasena: Option<&str>,
     guarda: Option<&crate::escritorio::en_marcha::Guarda>,
@@ -343,6 +523,9 @@ pub fn zip_de_rutas<W: Write + Seek>(
                 for e in tar.entries().map_err(|e| format!("No se pudo leer la versión: {e}"))? {
                     let mut e = e.map_err(|e| format!("No se pudo leer la versión: {e}"))?;
                     let ruta_tar = String::from_utf8_lossy(&e.path_bytes()).into_owned();
+                    if quitada(&format!("/{}", ruta_tar.trim_matches('/')), excluir) {
+                        continue;
+                    }
                     let Some(dentro) = nombre_en_zip(&ruta_tar, &padre, &nombre, &arriba) else { continue };
                     let tipo = e.header().entry_type();
                     let hora = e.header().mtime().ok().and_then(hora_zip);
@@ -439,6 +622,8 @@ pub fn entrada(
         "repo": repo,
         "version": version,
         "elementos": elementos,
+        // 15w: cuántas cosas se quitaron de lo elegido (sin rutas).
+        "quitados": c["excluir"].as_array().map(Vec::len).filter(|n| *n > 0),
         "archivos": cifras.map(|x| x.archivos),
         "bytes": cifras.map(|x| x.bytes),
         "destino": destino,
@@ -573,6 +758,28 @@ mod tests {
             json!({ "repo": "r1", "version": version, "rutas": [ruta], "destino": "nueva", "carpeta": base.join("no").join("existe").display().to_string() });
         assert!(crate::sesiones_v2::restaurar(&acc, &lejos, None).is_err());
 
+        // 15w: lo de dentro que se quitó no se restaura (en otra carpeta, en un .zip y al medir).
+        let sin_sub = base.join("sin-sub");
+        let c = json!({ "repo": "r1", "version": version, "rutas": [ruta], "excluir": [format!("{ruta}/sub")], "destino": "nueva",
+                        "carpeta": sin_sub.display().to_string() });
+        crate::sesiones_v2::restaurar(&acc, &c, None).unwrap();
+        assert_eq!(std::fs::read(sin_sub.join("datos").join("a.txt")).unwrap(), b"hola");
+        assert!(!sin_sub.join("datos").join("sub").exists(), "lo quitado no se restaura");
+        let m = medir(&acc, &json!({ "version": version, "rutas": [ruta], "excluir": [format!("{ruta}/sub/b.txt")] })).unwrap();
+        assert_eq!((m["carpetas"].as_u64(), m["archivos"].as_u64(), m["bytes"].as_u64()), (Some(1), Some(1), Some(4)), "{m}");
+        assert_eq!((m["fuera_archivos"].as_u64(), m["fuera_bytes"].as_u64()), (Some(1), Some(5)), "{m}");
+        let zips_sin = base.join("zips-sin");
+        let c = json!({ "repo": "r1", "version": version, "rutas": [ruta], "excluir": [format!("{ruta}/a.txt")], "destino": "zip",
+                        "carpeta": zips_sin.display().to_string(), "nombre": "Sin" });
+        crate::sesiones_v2::restaurar(&acc, &c, None).unwrap();
+        let z0 = zip::ZipArchive::new(std::fs::File::open(zips_sin.join("Sin.zip")).unwrap()).unwrap();
+        let nombres: Vec<String> = z0.file_names().filter_map(Result::ok).map(|n| n.into_owned()).collect();
+        assert!(nombres.iter().any(|n| n == "datos/sub/b.txt") && !nombres.iter().any(|n| n.ends_with("a.txt")), "{nombres:?}");
+        // Fuera de lo elegido, no.
+        let mal = json!({ "repo": "r1", "version": version, "rutas": [ruta_a], "excluir": [format!("{ruta}/sub")], "destino": "nueva",
+                          "carpeta": base.join("mal").display().to_string() });
+        assert!(crate::sesiones_v2::restaurar(&acc, &mal, None).is_err());
+
         // 13b: en un .zip con contraseña (AES-256) y sin ella.
         let zips = base.join("zips");
         let c = json!({ "repo": "r1", "version": version, "rutas": [ruta, ruta_a], "destino": "zip", "carpeta": zips.display().to_string(),
@@ -597,7 +804,7 @@ mod tests {
 
         // 13d: en el registro, sin rutas ni la contraseña; 13e: cuenta como prueba.
         let registro: Vec<Value> = crate::bitacora::leer().into_iter().filter(|e| e["tipo"] == "restauracion").collect();
-        assert_eq!(registro.len(), 5, "{registro:?}");
+        assert_eq!(registro.len(), 8, "{registro:?}");
         let texto = serde_json::to_string(&registro).unwrap();
         assert!(!texto.contains("una clave larga") && !texto.contains(&d) && !texto.contains("datos"), "{texto}");
         assert!(registro.iter().any(|e| e["destino"] == "zip" && e["cifrado"] == true && e["resultado"] == "ok" && e["archivos"] == 3));
@@ -606,6 +813,38 @@ mod tests {
 
         std::env::remove_var("RESGUARDO_AGENT_DIR");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 15w: lo que se quita de lo elegido.
+    #[test]
+    fn lo_quitado_de_lo_elegido() {
+        let rutas = vec!["/C/Users/ana/Docs".to_string(), "/C/x.txt".to_string()];
+        assert_eq!(excluidas(&json!({}), &rutas).unwrap(), Vec::<String>::new());
+        assert_eq!(excluidas(&json!({ "excluir": null }), &rutas).unwrap(), Vec::<String>::new());
+        let e = excluidas(&json!({ "excluir": ["/C/Users/ana/Docs/sub/", "/C/Users/ana/Docs/a.txt", "/C/Users/ana/Docs/sub"] }), &rutas).unwrap();
+        assert_eq!(e, vec!["/C/Users/ana/Docs/sub".to_string(), "/C/Users/ana/Docs/a.txt".to_string()], "sin repetir ni barra final");
+        for mal in [
+            json!(["/C/Users/ana/Docs"]),
+            json!(["/C/Users/ana/Otra/a"]),
+            json!(["/C/Users/ana/Docs/../../x"]),
+            json!(["C/Users/ana/Docs/a"]),
+            json!("x"),
+            json!([3]),
+        ] {
+            assert!(excluidas(&json!({ "excluir": mal }), &rutas).is_err(), "{mal}");
+        }
+        let muchas: Vec<String> = (0..=MAX_EXCLUIR).map(|i| format!("/C/Users/ana/Docs/{i}")).collect();
+        assert!(excluidas(&json!({ "excluir": muchas }), &rutas).is_err());
+        assert!(dentro_de("/C/a/b", "/C/a") && dentro_de("/C/a/b", "/C/a/") && !dentro_de("/C/ab", "/C/a") && !dentro_de("/C/a", "/C/a"));
+        assert!(quitada("/C/a/b/c", &["/C/a/b".into()]) && quitada("/C/a/b", &["/C/a/b".into()]) && !quitada("/C/a/bc", &["/C/a/b".into()]));
+        // Los comodines, entre corchetes (en Windows `\` no escapa).
+        assert_eq!(patron_exacto("/a[1]/b*?.txt"), "/a[[]1]/b[*][?].txt");
+        assert_eq!(patron_exacto("/normal/x y.txt"), "/normal/x y.txt");
+        // Una carpeta con algo quitado se crea con su nombre: nada de separadores ni dispositivos.
+        assert!(nombre_seguro("Docs").is_ok() && nombre_seguro("..").is_err() && nombre_seguro("a/b").is_err());
+        if cfg!(windows) {
+            assert!(nombre_seguro(r"a\b").is_err() && nombre_seguro("c:x").is_err() && nombre_seguro("CON").is_err() && nombre_seguro("a.").is_err());
+        }
     }
 
     #[test]

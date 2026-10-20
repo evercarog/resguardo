@@ -1420,6 +1420,9 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_EXCLUSIONES,
     // 0.8.1 (B5, 15pp): guarda observaciones y comentarios comunes del cliente.
     resguardo_protocolo::datos_cliente::ADMITE_NOTAS,
+    // 0.8.1 (E1, 15w): `excluir` (rutas exactas quitadas de lo elegido) en `restaurar` y
+    // `descargar`, y la operación `medir` de la sesión `explorar` (lo que de verdad se restaura).
+    crate::restaurar_v2::ADMITE_EXCLUIR,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
