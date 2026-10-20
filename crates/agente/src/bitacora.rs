@@ -373,7 +373,9 @@ pub fn entrada_de_historial(e: &crate::history::Entry) -> Option<(&'static str, 
     };
     Some(match e.kind.as_str() {
         "backup" => {
-            let ganchos: Vec<Value> = e.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": corto(&g.mensaje) })).collect();
+            // 15f: con `verificado` (sin él, la consola no podía decir «volcadas y verificadas»).
+            let ganchos: Vec<Value> =
+                e.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": corto(&g.mensaje), "verificado": g.verificado })).collect();
             (
                 "copia",
                 json!({

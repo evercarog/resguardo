@@ -163,6 +163,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   quitar_destino: "Quitar un destino",
   // Plan 0.8.0, F2.
   comentario_version: "Comentar una versión",
+  bases_sqlserver: "Ver las bases de SQL Server",
   conservar_version: "Conservar una versión para siempre",
 };
 

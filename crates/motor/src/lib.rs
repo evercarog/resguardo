@@ -1,6 +1,7 @@
 //! Motor de copias de Resguardo: lo que comparten la app, el agente y (más
 //! adelante) el servidor. Ver docs/plataforma.md, «Repositorios».
 //!
+//! - [`errores`]: los errores de las copias, en palabras (tabla compartida con la consola).
 //! - [`restic`]: ejecutar restic con seguridad (sin shell, secretos por
 //!   variables de entorno, límites de tiempo, errores en español).
 //! - [`plans`]: planes de copia y sus horarios.
@@ -13,6 +14,7 @@
 
 pub mod buscar;
 pub mod diferencias;
+pub mod errores;
 pub mod ganchos;
 pub mod plans;
 pub mod proceso;

@@ -438,20 +438,81 @@ fn nombre_equipo(db: &dyn Almacen, ctx: &ClienteCtx, id: Option<&str>) -> R<Opti
     })
 }
 
+/// G4: el nombre de una orden para las personas (el de la consola, `nombreOrden` en
+/// `consola/src/lib/salud.ts`), nunca su nombre interno (`aplicar_retencion_almacen`).
+pub fn nombre_orden(tipo: &str) -> String {
+    let n = match tipo {
+        "cambiar_retencion" => "Cambiar la retención",
+        "aplicar_retencion" => "Aplicar la retención",
+        "quitar_repositorio" => "Quitar un repositorio",
+        "dejar_de_copiar" => "Dejar de copiar",
+        "cambiar_copia_externa" => "Cambiar la copia derivada",
+        "cambiar_derivada" => "Cambiar una copia derivada",
+        "quitar_derivada" => "Quitar una copia derivada",
+        "pausar" => "Pausar las copias",
+        "baja_equipo" => "Dar de baja el equipo",
+        "retencion_almacen" => "Retención en el almacén",
+        "aplicar_retencion_almacen" => "Aplicar la retención en el almacén",
+        "config" => "Cambiar las copias",
+        "guarda_copias" => "Guarda copias",
+        "conservar_version" => "Conservar una versión para siempre",
+        "cambiar_espera" => "Cambiar la espera",
+        _ => return tipo.replace('_', " "),
+    };
+    n.to_string()
+}
+
+/// G4: el aviso de una orden con espera: qué es y cuándo se aplica.
+pub fn texto_orden_con_espera(tipo: &str, equipo: &str, aplica: Option<Ts>) -> String {
+    let cuando = aplica.map(|t| format!("el {}", contenido::fecha_larga(t, zona(t)))).unwrap_or_else(|| "cuando termine su espera".into());
+    format!("«{}» espera en «{equipo}»: se aplica {cuando} si nadie la cancela. Puedes cancelarla antes desde «Órdenes».", nombre_orden(tipo))
+}
+
+/// G4: «cambio inusual» era un cajón de sastre (llegan de agentes de todas las versiones,
+/// también como sustituto de tipos que un servidor anterior no conocía): el título según
+/// lo que cuenta el mensaje.
+fn titulo_cambio_inusual(mensaje: &str, e: &str) -> String {
+    let m = mensaje;
+    if m.contains("se conectó también a este servidor") {
+        format!("{e} se conectó también a esta consola")
+    } else if m.contains("llegó a este servidor") {
+        format!("{e} llegó a esta consola")
+    } else if m.contains("se conectó también a otra consola") {
+        format!("{e} se conectó a otra consola")
+    } else if m.contains("dejó de conectarse a la consola") {
+        format!("{e} dejó de conectarse a una consola")
+    } else if m.starts_with("Orden en espera desde") {
+        format!("Orden con espera desde otra consola en {e}")
+    } else if m.starts_with("Se aprobó en el equipo una orden") {
+        format!("Se aprobó en {e} una orden que reducía la protección")
+    } else if m.contains("orden que se había cancelado") {
+        format!("Se aplicó en {e} una orden que se había cancelado")
+    } else if m.contains("cambio de servidor no se completó") {
+        format!("{e} no terminó de cambiar de consola")
+    } else if m.contains("volvió a la versión anterior") || m.contains("no pudo actualizarse") {
+        format!("{e} no pudo actualizarse y volvió a la versión anterior")
+    } else if m.contains("está frenada por precaución") {
+        format!("Subida a la nube frenada en {e}: una copia cambió mucho más de lo normal")
+    } else {
+        format!("Cambio inusual en {e}")
+    }
+}
+
 /// Lo que se cuenta de un aviso suelto: (título del problema, título al arreglarse).
-pub fn titulos_aviso(tipo: &str, equipo: Option<&str>, cliente: &str) -> (String, String) {
+pub fn titulos_aviso(tipo: &str, mensaje: &str, equipo: Option<&str>, cliente: &str) -> (String, String) {
     let e = equipo.map(|e| format!("«{e}»")).unwrap_or_else(|| cliente.to_string());
     let t = match tipo {
         "intentos_fallidos" => format!("Intentos fallidos con la clave en {e}"),
         "bloqueo" => format!("{e} bloqueó las órdenes por intentos fallidos"),
-        "cambio_inusual" => format!("Cambio inusual en {e}"),
-        "equipo_sin_contacto" => format!("{e} no conecta con el servidor"),
+        "cambio_inusual" => titulo_cambio_inusual(mensaje, &e),
+        "equipo_sin_contacto" => format!("{e} no conecta con la consola"),
         "copia_fallida" => format!("Falló una copia en {e}"),
         "copia_atrasada" => format!("Hay una copia atrasada en {e}"),
         "servicio_detenido" => format!("El servicio de Resguardo está detenido en {e}"),
-        "orden_destructiva" => format!("Orden destructiva pendiente en {e}"),
+        // G4: «destructiva» no se dice (docs/diseno.md, «Voz»).
+        "orden_destructiva" => format!("Orden con espera en {e}"),
         // v1.49: la mandó otra consola y el equipo la tiene en espera (consolas-multiples.md §5.6).
-        "orden_en_espera" => format!("Orden en espera desde otra consola en {e}"),
+        "orden_en_espera" => format!("Orden con espera desde otra consola en {e}"),
         // 14a: alguien con la clave de administración la aprobó delante del equipo, antes de su hora.
         "orden_aprobada_en_equipo" => format!("Se aprobó en {e} una orden que reducía la protección"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
@@ -491,7 +552,7 @@ fn procesar(db: &dyn Almacen, e: &Evento, ahora: Ts) -> R<()> {
             let ctx = ClienteCtx::autorizado(cliente);
             let nc = nombre_cliente(db, cliente)?;
             let ne = nombre_equipo(db, &ctx, equipo.as_deref())?;
-            let (titulo, _) = titulos_aviso(tipo, ne.as_deref(), &nc);
+            let (titulo, _) = titulos_aviso(tipo, mensaje, ne.as_deref(), &nc);
             let clave = format!("{cliente}|{}|{tipo}|", equipo.as_deref().unwrap_or(""));
             let texto = contenido::texto_publico(mensaje);
             ocurre(
@@ -517,7 +578,21 @@ fn procesar(db: &dyn Almacen, e: &Evento, ahora: Ts) -> R<()> {
             let ctx = ClienteCtx::autorizado(cliente);
             let nc = nombre_cliente(db, cliente)?;
             let ne = nombre_equipo(db, &ctx, Some(equipo))?.unwrap_or_default();
+            // G4: la retención del almacén, con el nombre del repositorio y su equipo (el
+            // almacén solo sabe su carpeta).
+            let equipos: Vec<(String, serde_json::Value)> = if problemas.iter().any(|p| p.tipo == "retencion_fallida") {
+                db.equipos(&ctx)?.into_iter().filter_map(|e| Some((e.nombre, e.resumen?))).collect()
+            } else {
+                Vec::new()
+            };
             for p in problemas {
+                let con_nombre;
+                let p = if p.tipo == "retencion_fallida" {
+                    con_nombre = problemas::Problema { nombre: problemas::nombre_en_almacen(&p.nombre, &equipos), ..p.clone() };
+                    &con_nombre
+                } else {
+                    p
+                };
                 let (titulo, _) = problemas::titulos(p, &ne);
                 let clave = format!("{cliente}|{equipo}|{}|{}", p.tipo, p.sujeto);
                 ocurre(
@@ -751,7 +826,7 @@ fn reconectados(db: &dyn Almacen, ahora: Ts) -> R<()> {
         if vuelve || equipo.is_none() {
             let nc = nombre_cliente(db, &inc.cliente)?;
             let ne = equipo.map(|e| e.nombre);
-            let (_, ok) = titulos_aviso(&inc.tipo, ne.as_deref(), &nc);
+            let (_, ok) = titulos_aviso(&inc.tipo, "", ne.as_deref(), &nc);
             cerrar(db, inc, vuelve, &ok, &nc, ne.as_deref(), ahora)?;
         }
     }

@@ -881,12 +881,16 @@ export interface EjecucionInforme {
   archivos_nuevos?: number | null;
   archivos_cambiados?: number | null;
   reintento?: boolean;
+  /** v1.8x (15oo): si falló, lo que dijo el motor de copias, completo y sin rutas (el «Detalle técnico»). */
+  detalle?: string | null;
 }
 
 export interface TareaInforme {
   ultima: string | null;
   resultado: "ok" | "aviso" | "fallo";
   mensaje_corto: string | null;
+  /** v1.8x (15oo): si falló, el texto técnico completo (el «Detalle técnico»). */
+  detalle?: string | null;
   /** 14nn (copia externa o derivada): falló porque su destino ya no existe. */
   motivo?: "destino_ausente" | null;
   /** 14nn: por eso dejó de intentarse (tras 3 vueltas seguidas), hasta cambiarla o «Subir ahora». */
@@ -1385,6 +1389,12 @@ export interface GanchoSqlserver {
   carpeta: string;
   /** 14ccc (agente con `admite: "verificar_volcado"`): `false` no comprueba cada volcado con `RESTORE VERIFYONLY`. Sin el campo, sí. */
   verificar?: boolean;
+  /** 15u (agente con `admite: "sqlserver_todas"`): todas las bases de usuario en línea, leídas de `sys.databases` en cada copia (sin `tempdb`); `bases` no cuenta. */
+  todas?: boolean;
+  /** 15u: con `todas`, las que no se vuelcan. */
+  excluir?: string[];
+  /** 15u: con `todas`, también `master` y `msdb`. */
+  sistema?: boolean;
 }
 /** Aviso si el archivo más nuevo de la carpeta (copias propias de una aplicación) es más viejo que `horas`. */
 export interface GanchoCarpetaReciente {

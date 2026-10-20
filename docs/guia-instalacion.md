@@ -240,7 +240,11 @@ En la ficha del equipo → **Añadir o cambiar copias** → **clave de administr
 5. **Solo guardar si hay cambios:** encendido, una copia sin cambios no guarda versión nueva. Imprescindible con horarios de cada pocos minutos u horas.
 6. **Repositorio:** el del paso 6.
 7. **Antes de copiar (opcional):**
-   - **Volcar bases de datos de SQL Server antes de copiar**: bases (una por línea), instancia (`.` es la predeterminada) y carpeta para los volcados. Cada base se vuelca con `COPY_ONLY`, entra en la copia y se borra. La cuenta del equipo (`NT AUTHORITY\SYSTEM`) necesita el rol **db_backupoperator** en cada base.
+   - **Volcar bases de datos de SQL Server antes de copiar**: bases (una por línea) o **todas las bases de la instancia** (se leen en cada copia: una base nueva entra sola; con «Menos estas» y «Volcar también master y msdb»), instancia (`.` es la predeterminada) y carpeta para los volcados. **Ver las bases de la instancia** las pide al equipo para elegirlas sin escribirlas. Cada base se vuelca con `COPY_ONLY`, se verifica, entra en la copia y se borra. La cuenta del equipo (`NT AUTHORITY\SYSTEM`) necesita dos permisos: el rol **db_backupoperator** en cada base (para volcarla) y **CREATE ANY DATABASE** en el servidor (para verificar; sin él, la copia sale con aviso «sin verificar»):
+     ```
+     sqlcmd -S . -E -Q "USE [Ventas]; IF USER_ID(N'NT AUTHORITY\SYSTEM') IS NULL CREATE USER [NT AUTHORITY\SYSTEM] FOR LOGIN [NT AUTHORITY\SYSTEM]; ALTER ROLE db_backupoperator ADD MEMBER [NT AUTHORITY\SYSTEM];"
+     sqlcmd -S . -E -Q "GRANT CREATE ANY DATABASE TO [NT AUTHORITY\SYSTEM];"
+     ```
    - **Avisar si la carpeta de copias de una aplicación lleva más de N horas sin archivos nuevos**: para programas que hacen sus propias copias. Solo avisa.
 8. **Enviar al equipo** (no debe salir «Antes de enviar: …»).
 
@@ -249,7 +253,7 @@ Las reglas de minutos, «cada N días» y «un día de cada mes» piden el agent
 En el menú de cada copia, **Guardar como plantilla…** guarda la configuración (cifrada) para usarla en otros equipos del cliente (**Desde una plantilla**).
 
 > **Si algo falla**
-> - El volcado falla por «permiso» o «inicio de sesión»: falta el rol db_backupoperator. Por «acceso denegado» al escribir: el servicio de SQL Server no puede escribir en la carpeta (mejor deja que la cree el agente).
+> - El volcado falla por «permiso» o «inicio de sesión»: falta el rol db_backupoperator. Por «acceso denegado» al escribir: el servicio de SQL Server no puede escribir en la carpeta (mejor deja que la cree el agente). «Sin verificar: falta permiso»: el volcado está hecho, pero falta CREATE ANY DATABASE para comprobarlo.
 > - «Las llaves de un equipo han cambiado»: no escribas contraseñas para ese equipo. Si sabes que se reinstaló, **Detalles → Volver a comprobar** con la clave; si no, revisa la **Actividad**.
 
 ---

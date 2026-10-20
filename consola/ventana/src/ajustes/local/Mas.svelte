@@ -5,6 +5,7 @@
   // consola sin perder nada.
   import { Cloud, History, KeyRound, Link2, Pause, Play, Printer, Server } from "@lucide/svelte";
   import { bytes, fechaCorta } from "$lib/formato";
+  import { fraseError } from "$lib/errorCopia";
   import { esBloqueo, pedir, servicio } from "../../puente.svelte";
   import CampoClave from "../CampoClave.svelte";
   import type { PropsParte } from "./comun";
@@ -60,7 +61,7 @@
     abierto = "historial";
     historial = await hacer(() => servicio<Entrada[]>("historial"));
   }
-  const TIPOS: Record<string, string> = { backup: "Copia", verify: "Verificación", offsite: "Copia externa", config: "Cambio", pause: "Pausa", resume: "Reanudar", kit: "Kit" };
+  const TIPOS: Record<string, string> = { backup: "Copia", verify: "Verificación", offsite: "Copia derivada", restore_test: "Prueba de restauración", config: "Cambio", pause: "Pausa", resume: "Reanudar", kit: "Kit" };
 
   // ---- Clave ----
   let clave = $state("");
@@ -169,7 +170,7 @@
         {#each historial ?? [] as h, i (i)}
           <li>
             <span class="badge badge-sm" class:tone-ok={h.resultado === "ok"} class:tone-warn={h.resultado === "warning"} class:tone-danger={h.resultado === "error"}>{TIPOS[h.tipo] ?? h.tipo}</span>
-            <span class="v-cortar"><b>{h.copia ?? h.repo}</b> <span class="v-mini">{h.mensaje}</span></span>
+            <span class="v-cortar"><b>{h.copia ?? h.repo}</b> <span class="v-mini">{fraseError(h.mensaje)}</span></span>
             <span class="v-mini cuando">{fechaCorta(h.cuando)}{h.bytes ? ` · ${bytes(h.bytes)}` : ""}</span>
           </li>
         {:else}
@@ -189,7 +190,7 @@
     </form>
   {:else if abierto === "guarda"}
     <section class="v-tarjeta v-pila">
-      <p class="v-sub">Este equipo puede guardar copias (un Servidor de copias de solo añadir) y copiarlo cada noche a otra carpeta o a la nube (el espejo).</p>
+      <p class="v-sub">Este equipo puede ser un almacén: guardar las copias de otros equipos (solo añadir) y copiarlas cada día, a la hora que elijas, a otra carpeta o a la nube (el espejo).</p>
       {#if gc?.activo}
         <p class="v-sub">Guarda copias en <span class="mono">{gc.carpeta}</span>, puerto {gc.puerto}.</p>
         <h4 class="v-titulo">Espejo cada noche</h4>
@@ -238,7 +239,7 @@
       <button class="btn btn-primary" disabled={ocupado || !codigo.trim() || url.length < 10}>{ocupado ? "Vinculando…" : "Vincular"}</button>
       {#if vinculado}
         <div class="notice notice-info">
-          <p>Código de comprobación: <b class="mono">{vinculado.sas}</b>. Comprueba que la consola enseña el mismo antes de confirmar.</p>
+          <p>Número de comprobación: <b class="mono">{vinculado.sas}</b>. Comprueba que la consola enseña el mismo antes de confirmar.</p>
           {#if !vinculado.sas_v3}<p class="v-mini">Compara también la huella de la autoridad: <span class="mono">{vinculado.huella_ca}</span>.</p>{/if}
           {#if vinculado.espera_alta}<p class="v-mini">Pendiente del alta en la consola con la misma clave de administración.</p>{/if}
         </div>

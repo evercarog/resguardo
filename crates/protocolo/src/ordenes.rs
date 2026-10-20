@@ -128,6 +128,9 @@ pub const TIPOS: &[Tipo] = &[
     // Plan 0.8.0, F2 (14ww-2): un comentario en una versión, guardado en el equipo y visto
     // por todas sus consolas. Inofensiva: texto validado, sin secretos; no toca el repositorio.
     t("comentario_version", Inofensiva, false, false, false),
+    // Plan 0.8.1 (15u): «Ver las bases de la instancia» (el equipo lee `sys.databases` y
+    // devuelve la lista sellada para la consola). No cambia nada: inofensiva.
+    t("bases_sqlserver", Inofensiva, false, false, false),
     // Plan 0.8.0, F2 (14cc): «Conservar esta versión para siempre», con motivo, en el equipo
     // dueño o en el almacén. Con la clave de administración; quitarla reduce la protección
     // (según el cuerpo: `conservar: false`).

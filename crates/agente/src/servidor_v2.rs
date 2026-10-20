@@ -537,7 +537,7 @@ pub fn vincular_con(url: &str, codigo: &str, nombre: &str, esperado: &Esperado) 
         });
         guardar(&v)?;
         crate::agent::log(&format!(
-            "Vinculado con Resguardo Server ({url}), pendiente del alta con la clave de administración de este equipo. Código de comprobación: {sas} (autoridad TLS {huella_ca})."
+            "Vinculado con la consola {url}, pendiente del alta con la clave de administración de este equipo. Número de comprobación: {sas} (autoridad TLS {huella_ca})."
         ));
         return Ok(Vinculado { sas, sas_v3, huella_ca, servidor: url, espera_alta: true });
     }
@@ -556,7 +556,7 @@ pub fn vincular_con(url: &str, codigo: &str, nombre: &str, esperado: &Esperado) 
     v.nonces.clear();
     v.modo = "gestionado".into();
     guardar(&v)?;
-    crate::agent::log(&format!("Vinculado con Resguardo Server ({}). Código de comprobación: {sas} (autoridad TLS {huella_ca}).", v.url));
+    crate::agent::log(&format!("Vinculado con la consola {}. Número de comprobación: {sas} (autoridad TLS {huella_ca}).", v.url));
     Ok(Vinculado { sas, sas_v3, huella_ca, servidor: v.url, espera_alta: false })
 }
 
@@ -1322,6 +1322,23 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(hecha(m))
         }
         "elegir_carpetas" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Carpetas).map(hecha),
+        // v1.8x (0.8.1, 15u): «Ver las bases de la instancia» en el editor del gancho de SQL
+        // Server. Inofensiva: solo lee `sys.databases` (nombre, estado y si es del sistema). La
+        // lista va sellada para la consola que la pidió (`responder_a`): el servidor no la ve.
+        "bases_sqlserver" => {
+            let inst = Some(c["instancia"].as_str().unwrap_or(".").trim()).filter(|i| !i.is_empty()).unwrap_or(".").to_string();
+            if !crate::ganchos::instancia_valida(&inst) {
+                return Err("Instancia de SQL Server no válida (p. ej. «.» o «EQUIPO\\SQLEXPRESS»).".into());
+            }
+            let destino = o.responder_a.clone().ok_or("Falta responder_a para entregar la lista.")?;
+            Ok(en_segundo_plano(v, orden_id, seq, "bases_sqlserver", "Leyendo las bases de la instancia…", move |_| {
+                let l = crate::ganchos::listar_bases(&inst)?;
+                let sellado = claves::seal_bytes(&destino, json!({ "bases": l }).to_string().as_bytes())?;
+                let n = l.iter().filter(|b| !b.sistema).count();
+                let m = if n == 1 { "La instancia tiene 1 base de usuario.".to_string() } else { format!("La instancia tiene {n} bases de usuario.") };
+                Ok(Resultado { detalle: Some(json!({ "sellado": sellado }).to_string()), ..hecha(m) })
+            }))
+        }
         "abrir_sesion" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Basica).map(hecha),
         // 14bbb: probar de verdad que la contraseña (ya comparada con la guardada, con el
         // bloqueo por intentos) abre el repositorio y sus copias con la misma. Puede tardar

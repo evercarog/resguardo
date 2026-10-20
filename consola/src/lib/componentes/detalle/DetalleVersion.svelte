@@ -11,7 +11,7 @@
   import NotasVersion from "./NotasVersion.svelte";
   import { anteriorDeLaCopia, ganchosDeVuelta, vueltasDeVersion } from "$lib/detalle";
   import { anadidoDe, duracion, TEXTO_RESULTADO, TONO_RESULTADO } from "$lib/repo";
-  import { explicarError } from "$lib/copia";
+  import { fraseError } from "$lib/errorCopia";
   import { agruparResultados, NOMBRE_GANCHO } from "$lib/ganchos";
   import { bytes, fechaLarga, hora, numero, plural } from "$lib/formato";
   import { tip } from "$lib/tooltip";
@@ -131,7 +131,7 @@
               <Chip pequeno tono={TONO_RESULTADO[e.resultado]} texto={TEXTO_RESULTADO[e.resultado]} />
               {#if e.reintento}<span class="badge badge-sm tone-neutral">reintento</span>{/if}
               <span class="faint meta num">{[e.duracion_s != null ? duracion(e.duracion_s) : null, e.anadido != null && e.resultado !== "fallo" ? `+${bytes(e.anadido)}` : null].filter(Boolean).join(" · ")}</span>
-              {#if e.mensaje_corto && e.resultado !== "ok"}<span class="msg">{explicarError(e.mensaje_corto).titulo}: «{e.mensaje_corto}»</span>{/if}
+              {#if e.mensaje_corto && e.resultado !== "ok"}<span class="msg">{fraseError(e.mensaje_corto)}</span>{/if}
             </button>
           </li>
         {/each}

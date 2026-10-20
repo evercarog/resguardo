@@ -242,12 +242,12 @@ pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
                 e.consola = Some(v.url.clone());
             }
         } else if v.modo == "gestionado" {
-            e.privacy = format!("Este equipo lo gestiona Resguardo Server ({host}): su administrador puede ver y restaurar sus copias.");
+            e.privacy = format!("Este equipo lo gestiona la consola {host}: su administrador puede ver y restaurar sus copias.");
             if v.url.starts_with("https://") {
                 e.consola = Some(v.url.clone());
             }
         } else {
-            e.aviso = Some("Ya no lo gestiona ningún servidor: sigue copiando por su cuenta.".into());
+            e.aviso = Some("Ya no lo gestiona ninguna consola: sigue copiando por su cuenta.".into());
         }
         let bandeja = v.config_v1.as_ref().and_then(|c| c.get("bandeja")).filter(|b| b.is_object());
         e.show = bandeja.and_then(|b| b["visible"].as_bool()).unwrap_or(true);
@@ -406,9 +406,10 @@ pub fn texto_actividad(a: &crate::escritorio::Actividad) -> String {
     let que = match a.tipo.as_str() {
         "restauracion" => format!("Restaurando desde «{}»…", a.nombre),
         "verificacion" => format!("Verificando «{}»…", a.nombre),
+        "prueba" => format!("Probando la restauración de «{}»…", a.nombre),
         "copia_externa" => format!("Subiendo la copia derivada de «{}»…", a.nombre),
-        "espejo" => format!("Copiando el espejo a «{}»…", a.nombre),
-        "nube" => format!("Subiendo a «{}»…", a.nombre),
+        // G4: un solo verbo para el espejo, vaya a un disco o a la nube.
+        "espejo" | "nube" => format!("Copiando el espejo a «{}»…", a.nombre),
         _ => format!("Copiando «{}»…", a.nombre),
     };
     match a.porcentaje {

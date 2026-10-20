@@ -124,7 +124,7 @@ pub async fn cambiar(State(st): State<St>, u: Usuario, Path(c): Path<String>, Js
     }
     let png = match &p.logo {
         Some(b) => {
-            let bytes = B64.decode(b).map_err(|_| ErrorApi::datos("Logo no válido (base64)."))?;
+            let bytes = B64.decode(b).map_err(|_| ErrorApi::datos("El logo no se pudo leer: vuelve a elegirlo."))?;
             if bytes.len() > MAX_LOGO {
                 return Err(ErrorApi::datos("El logo pesa demasiado: como mucho 200 KB."));
             }

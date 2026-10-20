@@ -63,7 +63,7 @@ pub fn main() -> i32 {
         return match outcome {
             Ok((console, sas)) => {
                 message(&format!(
-                    "Este equipo está emparejado con «{console}».\n\nCódigo de comprobación: {sas}\n\nComprueba en la consola que ve el mismo código antes de confirmar."
+                    "Este equipo está emparejado con «{console}».\n\nNúmero de comprobación: {sas}\n\nComprueba en la consola que ve el mismo número antes de confirmar."
                 ));
                 0
             }

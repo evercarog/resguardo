@@ -2,7 +2,7 @@
 
 export type Ventana = "off" | "siempre_disponible" | "al_trabajar";
 export type Avisos = "off" | "errores" | "todo";
-export type TipoActividad = "copia" | "restauracion" | "verificacion" | "copia_externa" | "espejo" | "nube";
+export type TipoActividad = "copia" | "restauracion" | "verificacion" | "prueba" | "copia_externa" | "espejo" | "nube";
 
 export interface Escritorio {
   ventana: Ventana;
@@ -44,6 +44,8 @@ export interface Hecha {
   resultado: "ok" | "warning" | "error";
   cuando: string;
   bytes?: number;
+  /** 15oo: si falló o tuvo avisos, el motivo en palabras (sin rutas). */
+  motivo?: string;
 }
 
 export interface EstadoBandeja {

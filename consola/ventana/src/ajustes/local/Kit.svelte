@@ -31,14 +31,14 @@
 
 <section class="v-tarjeta kit" aria-label="Kit de recuperación">
   <h3 class="v-titulo">Kit de recuperación · {nombreEquipo}</h3>
-  <p class="v-mini">{hoy}. Guárdalo fuera de este equipo (impreso, en un cajón o una caja fuerte). Con él y restic se abren las copias desde otro equipo.</p>
+  <p class="v-mini">{hoy}. Guárdalo fuera de este equipo (impreso, en un cajón o una caja fuerte). Con él y el programa de copias (restic) se abren las copias desde otro equipo, incluso sin Resguardo.</p>
   {#if error}<p class="v-error">{error}</p>{/if}
   {#each entradas as e (e.id)}
     <dl class="datos">
       <dt>Repositorio</dt><dd>{e.nombre}</dd>
       <dt>Dónde</dt><dd class="mono">{e.ubicacion ?? e.destino ?? "—"}</dd>
-      {#if e.usuario_servidor}<dt>Usuario del servidor</dt><dd class="mono">{e.usuario_servidor} (contraseña: ________________)</dd>{/if}
-      <dt>ID de restic</dt><dd class="mono">{e.id_restic ?? "—"}</dd>
+      {#if e.usuario_servidor}<dt>Usuario del almacén</dt><dd class="mono">{e.usuario_servidor} (contraseña: ________________)</dd>{/if}
+      <dt>Identificador del repositorio</dt><dd class="mono">{e.id_restic ?? "—"}</dd>
       <dt>Contraseña</dt>
       <dd class="mono">{recien && recien.id === e.id ? recien.contrasena : "______________________________"}</dd>
     </dl>

@@ -681,7 +681,7 @@ pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     }
     if r.distintos > 0 {
         problemas.push(format!(
-            "{} ya estaban en el espejo con otro tamaño y no se han reemplazado: alguien ha cambiado copias ya escritas (en el Servidor de copias o en el espejo). Revísalo",
+            "{} ya estaban en el espejo con otro tamaño y no se han reemplazado: alguien ha cambiado copias ya escritas (en el almacén o en el espejo). Revísalo",
             r.distintos
         ));
     }
@@ -700,7 +700,7 @@ pub(crate) fn resultado_global(destinos: &[Destino]) -> Option<String> {
         (_, 0, _) => None,
         (1, _, _) => Some(hechos[0].clone()),
         (n, _, 0) => Some(format!("Espejo hecho en los {n} destinos.")),
-        (n, _, f) => Some(format!("ERROR: espejo del Servidor de copias: {f} de {n} destinos con error.")),
+        (n, _, f) => Some(format!("ERROR: espejo del almacén: {f} de {n} destinos con error.")),
     }
 }
 
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(resultado_global(&[d(None), d(None)]), None);
         assert_eq!(resultado_global(&[d(Some("Espejo hecho en E: 3 archivos"))]).as_deref(), Some("Espejo hecho en E: 3 archivos"));
         assert_eq!(resultado_global(&[d(Some("bien")), d(None)]).as_deref(), Some("Espejo hecho en los 2 destinos."));
-        assert!(resultado_global(&[d(Some("bien")), d(Some("ERROR: x"))]).unwrap().starts_with("ERROR: espejo del Servidor de copias: 1 de 2"));
+        assert!(resultado_global(&[d(Some("bien")), d(Some("ERROR: x"))]).unwrap().starts_with("ERROR: espejo del almacén: 1 de 2"));
     }
     #[test]
     fn pedidos_y_destinos_quitados() {

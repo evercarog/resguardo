@@ -184,7 +184,7 @@ impl Schedule {
     /// Para la copia externa: cualquier horario menos «solo vigilar» y «según los planes».
     pub fn validate_offsite(&self) -> Result<(), String> {
         if matches!(self, Schedule::Monitor { .. } | Schedule::Plans) {
-            return Err("Ese horario no vale para la copia externa.".into());
+            return Err("Ese horario no vale para la copia derivada.".into());
         }
         self.validate()
     }
@@ -636,6 +636,10 @@ pub struct RunRecord {
     /// Resultado de los ganchos de la copia (ganchos.rs), si tiene.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ganchos: Vec<crate::ganchos::ResultadoGancho>,
+    /// 15oo: si falló, lo que dijo el motor de copias, completo (sin rutas al
+    /// guardarlo), para el «Detalle técnico» plegado de la consola.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -1533,7 +1537,7 @@ pub fn set_offsite(repo_id: &str, offsite: Option<crate::tasks::Offsite>, creds:
     let name = entry.name.clone();
     save_secrets(&secrets)?;
     write_json("agent.json", &config)?;
-    log(&format!("Copia externa de «{name}» actualizada."));
+    log(&format!("Copia derivada de «{name}» actualizada."));
     Ok(())
 }
 
@@ -1967,7 +1971,11 @@ fn apply_result(record: &mut RunRecord, code: Option<i32>, summary: Option<&serd
         Some(0) if record.unchanged => ("ok".into(), crate::restic::UNCHANGED_MESSAGE.into()),
         Some(0) => ("ok".into(), "Copia completada.".into()),
         Some(3) => ("warning".into(), "Copia terminada, pero algunos archivos no se pudieron leer.".into()),
-        code => ("error".into(), restic::exit_error(code, stderr)),
+        code => {
+            let (mensaje, detalle) = restic::exit_error_partes(code, stderr);
+            record.detail = detalle;
+            ("error".into(), mensaje)
+        }
     };
 }
 
@@ -2379,6 +2387,7 @@ pub fn run() -> i32 {
                 // El estado y el historial los leen todos los usuarios: sin rutas.
                 let mut record = record;
                 record.message = crate::web::local_message(&record.message);
+                record.detail = record.detail.as_deref().map(crate::web::local_message);
                 crate::history::append(
                     &crate::history::agent_file(),
                     &crate::history::Entry {
@@ -2399,7 +2408,8 @@ pub fn run() -> i32 {
                         started: record.started.clone(),
                         finished: record.finished.clone(),
                         result: record.result.clone(),
-                        message: record.message.clone(),
+                        // 15oo: con el detalle técnico en su propia línea.
+                        message: crate::history::con_detalle(&record.message, record.detail.as_deref()),
                         snapshot_id: record.snapshot_id.clone(),
                         data_added: record.data_added,
                         files_new: record.files_new,

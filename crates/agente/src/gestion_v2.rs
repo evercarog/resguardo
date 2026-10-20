@@ -1402,6 +1402,10 @@ pub const ADMITE: &[&str] = &[
     // 0.8.0 14ccc: `verificar` (opcional) en el gancho `sqlserver`
     // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
     "verificar_volcado",
+    // 0.8.1 (15u, 15f): «todas las bases» en el gancho `sqlserver` (`todas`, `excluir`, `sistema`),
+    // la orden `bases_sqlserver` («Ver las bases de la instancia») y el aviso (no fallo) cuando
+    // solo falta el permiso para verificar un volcado.
+    "sqlserver_todas",
     // 0.8.0 plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
     // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
     // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
@@ -1662,7 +1666,8 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
             let nombre = copias.iter().find(|k| k.repo == repo && k.id == copia).map(|k| k.nombre.clone());
             json!({
                 "id": copia, "repo": repo, "nombre": nombre, "estado": estado_de(&r.result), "cuando": r.finished, "mensaje": crate::web::public_message(&r.message),
-                "ganchos": r.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": crate::web::public_message(&g.mensaje) })).collect::<Vec<_>>(),
+                // 15f: con `verificado`, para que la tarjeta «Antes de copiar» diga «volcadas y verificadas».
+                "ganchos": r.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": crate::web::public_message(&g.mensaje), "verificado": g.verificado })).collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -2478,7 +2483,7 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     let r = v.repos_v2.iter().find(|r| r.id == repo).ok_or("Ese repositorio no lo gestiona este servidor.")?;
     let actual = r.derivadas.iter().find(|d| d["id"] == id.as_str()).cloned().unwrap_or(Value::Null);
     if actual.is_null() && r.derivadas.len() >= MAX_DERIVADAS {
-        return Err(format!("Como mucho {MAX_DERIVADAS} copias derivadas por repositorio (además de la copia externa)."));
+        return Err(format!("Como mucho {MAX_DERIVADAS} copias derivadas por repositorio (además de la de cada día)."));
     }
     let guardada = || crate::agent::load_secrets().ok().and_then(|s| s.get(repo).and_then(|x| x.derived.get(&id).and_then(|d| d.password.clone())));
     let ruta_defecto = format!("{repo}-{id}");
@@ -2795,11 +2800,11 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
             let puerto = c["puerto"].as_u64().unwrap_or(8000);
             let puerto = u16::try_from(puerto).map_err(|_| "Puerto no válido.".to_string())?;
             let cfg = server::activar(carpeta, puerto, c["solo_red_local"].as_bool().unwrap_or(true))?;
-            Ok((format!("Servidor de copias activado en el puerto {}.", cfg.port), None))
+            Ok((format!("Almacén activado en el puerto {}: este equipo ya guarda copias de otros.", cfg.port), None))
         }
         Some(false) => {
             server::desactivar()?;
-            Ok(("Servidor de copias desactivado (las copias guardadas se quedan).".into(), None))
+            Ok(("Almacén desactivado (las copias guardadas se quedan).".into(), None))
         }
         None => Err("Falta «activo», «anadir» o «quitar».".into()),
     }

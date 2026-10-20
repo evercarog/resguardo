@@ -306,6 +306,6 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   ganchos: {
     title: "Antes de copiar",
     text: "Dos pasos cerrados que el agente puede hacer antes de cada copia (nunca órdenes libres): volcar bases de datos de SQL Server con COPY_ONLY (el volcado entra en la copia y luego se borra), y avisar si la carpeta de copias propias de una aplicación lleva demasiadas horas sin archivos nuevos. Piden el agente 0.7.2 o posterior.",
-    todo: "Para el volcado, la cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita el rol db_backupoperator en cada base, o sysadmin. En SQL Server Management Studio: Seguridad → Inicios de sesión → NT AUTHORITY\\SYSTEM → Asignación de usuarios → marca cada base y el rol db_backupoperator.",
+    todo: "Para el volcado, la cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita dos permisos: el rol db_backupoperator en cada base (para volcarla) y CREATE ANY DATABASE en el servidor (para verificar cada volcado; sin él, la copia sale con aviso «sin verificar»). O sysadmin, que los incluye. En SQL Server Management Studio: Seguridad → Inicios de sesión → NT AUTHORITY\\SYSTEM → Asignación de usuarios (cada base y el rol db_backupoperator) y Elementos que pueden protegerse (Create any database).",
   },
 };

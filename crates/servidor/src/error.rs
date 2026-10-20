@@ -45,7 +45,8 @@ impl ErrorApi {
         Self::nuevo(StatusCode::FORBIDDEN, "prohibido", "Tu rol no permite hacer esto.")
     }
     pub fn no_existe() -> Self {
-        Self::nuevo(StatusCode::NOT_FOUND, "no_existe", "No existe.")
+        // G4: decir qué pasa y qué hacer, no solo «No existe.».
+        Self::nuevo(StatusCode::NOT_FOUND, "no_existe", "No se encuentra: puede que se quitara hace poco o que no tengas acceso. Vuelve a cargar la página.")
     }
     pub fn datos(mensaje: impl Into<String>) -> Self {
         Self::nuevo(StatusCode::UNPROCESSABLE_ENTITY, "datos", mensaje)

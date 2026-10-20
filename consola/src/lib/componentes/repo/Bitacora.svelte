@@ -428,6 +428,14 @@
     color: var(--text-3);
     white-space: nowrap;
   }
+  /* 15j: lo de un suceso puede ser largo («antes de copiar: …»): se ajusta en vez de salirse del marco. */
+  .meta-s {
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
   /* El motivo de lo que fue mal: debajo, a todo lo ancho, alineado con el texto. */
   .motivo {
     flex-basis: 100%;

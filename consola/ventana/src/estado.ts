@@ -24,9 +24,12 @@ export const TIPOS: Record<TipoActividad, string> = {
   copia: "Copia de seguridad",
   restauracion: "Restauración",
   verificacion: "Verificación",
-  copia_externa: "Copia externa",
+  // G4: la prueba de restauración con su nombre (antes salía como verificación).
+  prueba: "Prueba de restauración",
+  // La «copia externa» de antes se enseña como copia derivada (docs/diseno.md, «Voz»).
+  copia_externa: "Copia derivada",
   espejo: "Espejo",
-  nube: "Subida a la nube",
+  nube: "Espejo en la nube",
 };
 
 export function textoFase(a: Actividad): string {
@@ -42,7 +45,7 @@ export function textoFase(a: Actividad): string {
     case "terminando":
       return "Guardando la versión…";
     default:
-      return a.tipo === "restauracion" ? "Restaurando…" : a.tipo === "verificacion" ? "Verificando…" : "Subiendo…";
+      return a.tipo === "restauracion" ? "Restaurando…" : a.tipo === "verificacion" ? "Verificando…" : a.tipo === "prueba" ? "Probando la restauración…" : "Subiendo…";
   }
 }
 

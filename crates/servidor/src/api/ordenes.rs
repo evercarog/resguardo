@@ -171,7 +171,7 @@ pub async fn enviar(State(st): State<St>, u: Usuario, Path((c, e)): Path<(String
                     &ctx2,
                     Some(&nueva.equipo_id),
                     "orden_destructiva",
-                    &format!("Pendiente en «{nombre_equipo}»: {} (puedes cancelarla antes de que se aplique).", nueva.tipo),
+                    &crate::notificaciones::texto_orden_con_espera(&nueva.tipo, &nombre_equipo, nueva.not_before),
                 )?;
             }
             Ok(orden)

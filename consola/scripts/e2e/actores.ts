@@ -103,7 +103,7 @@ export class Agente {
   vincular(codigo: string, srv: Servidor): string {
     const r = this.cli(["vincular", codigo, "--servidor", srv.url, "--nombre", this.nombre]);
     comprobar(r.codigo === 0, `${this.nombre}: «vincular» falló`, r.salida);
-    const m = /Código de comprobación:\s*(\d{3} \d{3})/.exec(r.salida);
+    const m = /(?:Código|Número) de comprobación:\s*(\d{3} \d{3})/.exec(r.salida);
     comprobar(m, `${this.nombre}: «vincular» no enseñó el número de comprobación`, r.salida);
     return m[1];
   }
@@ -111,7 +111,7 @@ export class Agente {
   vincularInstalador(ruta: string): string {
     const r = this.cli(["vincular", "--instalador", ruta]);
     comprobar(r.codigo === 0, `${this.nombre}: «vincular --instalador» falló`, r.salida);
-    const m = /Código de comprobación:\s*(\d{3} \d{3})/.exec(r.salida);
+    const m = /(?:Código|Número) de comprobación:\s*(\d{3} \d{3})/.exec(r.salida);
     comprobar(m, `${this.nombre}: «vincular --instalador» no enseñó el número de comprobación`, r.salida);
     return m[1];
   }

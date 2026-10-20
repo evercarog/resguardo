@@ -58,6 +58,22 @@ pub struct Entry {
     pub ganchos: Vec<crate::ganchos::ResultadoGancho>,
 }
 
+/// 15oo: el mensaje de un fallo con su texto técnico en una línea aparte
+/// («Detalle técnico: …»), sin campo nuevo en [`Entry`] (la app congelada la
+/// construye entera). La primera línea sigue siendo la frase.
+pub fn con_detalle(mensaje: &str, detalle: Option<&str>) -> String {
+    match detalle.map(|d| d.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" · ")).filter(|d| !d.is_empty()) {
+        Some(d) => format!("{mensaje}\n{} {d}", resguardo_motor::errores::marca_detalle()),
+        None => mensaje.to_string(),
+    }
+}
+
+/// 15oo: el texto técnico guardado con [`con_detalle`], si lo hay.
+pub fn detalle_de(mensaje: &str) -> Option<&str> {
+    let marca = resguardo_motor::errores::marca_detalle();
+    mensaje.lines().skip(1).find_map(|l| l.trim().strip_prefix(marca)).map(str::trim).filter(|d| !d.is_empty())
+}
+
 /// Usuario de Windows que usa la app (para «quién cambió qué»).
 pub fn local_user() -> Option<String> {
     std::env::var("USERNAME").or_else(|_| std::env::var("USER")).ok().map(|u| u.trim().to_string()).filter(|u| !u.is_empty())

@@ -1268,11 +1268,11 @@ pub fn run() -> i32 {
         let destino = repo.offsite.as_ref().and_then(|o| o.target_name.clone()).unwrap_or_default();
         let what = match kind {
             "verify" => "Verificación".to_string(),
-            "verify_offsite" => "Verificación de la copia en la nube".to_string(),
+            "verify_offsite" => "Verificación de la copia derivada".to_string(),
             "restore_test" => "Prueba de restauración".to_string(),
             VERIFY_DERIVADA => format!("Verificación de la copia derivada a «{destino}»"),
             DERIVADA => format!("Copia derivada a «{destino}»"),
-            _ => "Copia externa".to_string(),
+            _ => "Copia derivada".to_string(),
         };
         let quiet = if agent::apply_discreet(&config) { " (modo discreto: prioridad baja)" } else { "" };
         agent::log(&format!("{what} de «{}»…{quiet}", repo.name));
@@ -1401,6 +1401,7 @@ pub fn run() -> i32 {
         }
         // El estado y el historial los leen todos los usuarios: sin rutas.
         record.message = crate::web::local_message(&record.message);
+        record.detail = record.detail.as_deref().map(crate::web::local_message);
         crate::history::append(
             &crate::history::agent_file(),
             &crate::history::Entry {
@@ -1412,7 +1413,10 @@ pub fn run() -> i32 {
                 finished: record.finished.clone(),
                 result: record.result.clone(),
                 // Tarea 4b: de qué derivada es (en el historial no hay otro campo para decirlo).
-                message: if derivada.is_some() { format!("«{destino}»: {}", record.message) } else { record.message.clone() },
+                message: crate::history::con_detalle(
+                    &if derivada.is_some() { format!("«{destino}»: {}", record.message) } else { record.message.clone() },
+                    record.detail.as_deref(),
+                ),
                 files_new: record.files_new,
                 // v1.6x (14o): lo restaurado en una prueba y de qué versión (para su detalle en la consola).
                 data_added: record.data_added,
@@ -1512,7 +1516,7 @@ pub fn acceso_copia(repo_id: &str, copia: &str) -> Result<(Access, Option<String
     let secrets = agent::load_secrets()?;
     let secret = secrets.get(repo_id).ok_or("Este equipo no tiene la contraseña de ese repositorio.")?;
     if copia == "externa" {
-        let o = repo.offsite.as_ref().ok_or("Ese repositorio no tiene copia externa.")?;
+        let o = repo.offsite.as_ref().ok_or("Ese repositorio no tiene copia derivada de cada día.")?;
         return Ok((dest_access_listo(o, secret)?, o.target_name.clone()));
     }
     let d = repo.derived.iter().find(|d| d.id == copia).ok_or("Esa copia derivada ya no existe.")?;
@@ -1671,7 +1675,11 @@ fn verify_repo(mut access: Access, verify: &Verify, part: u32, report: &mut dyn 
         Ok(out) => {
             let text = String::from_utf8_lossy(&out.stdout).to_lowercase() + &out.stderr.to_lowercase();
             record.result = "error".into();
-            record.message = if datos_danados(&text) { DATOS_DANADOS.into() } else { restic::exit_error(out.code, &out.stderr) };
+            if datos_danados(&text) {
+                record.message = DATOS_DANADOS.into();
+            } else {
+                (record.message, record.detail) = restic::exit_error_partes(out.code, &out.stderr);
+            }
         }
         Err(e) => {
             record.result = "error".into();
@@ -1907,7 +1915,7 @@ pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite,
         }
         Ok(out) => {
             record.result = "error".into();
-            record.message = restic::exit_error(out.code, &out.stderr);
+            (record.message, record.detail) = restic::exit_error_partes(out.code, &out.stderr);
             record.finished = Local::now().to_rfc3339();
             return record;
         }

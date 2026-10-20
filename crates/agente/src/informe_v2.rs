@@ -65,6 +65,22 @@ fn corto(m: &str) -> String {
     crate::web::public_message(m).chars().take(160).collect()
 }
 
+/// 15oo: el texto técnico de un fallo, sin rutas ni contraseñas y de 1000
+/// caracteres como mucho, para el «Detalle técnico» plegado de la consola.
+fn detalle(d: Option<&str>) -> Option<String> {
+    let d = d?.lines().map(str::trim).filter(|l| !l.is_empty()).map(crate::web::strip_paths).collect::<Vec<_>>().join("\n");
+    let d: String = d.chars().take(1000).collect();
+    (!d.is_empty()).then_some(d)
+}
+
+/// Añade `detalle` (v1.8x) solo si lo hay: los agentes y consolas anteriores no lo conocen.
+fn con_detalle(mut v: Value, d: Option<&str>) -> Value {
+    if let Some(d) = detalle(d) {
+        v["detalle"] = json!(d);
+    }
+    v
+}
+
 /// «ok», «aviso» o «fallo» de un resultado del agente.
 fn resultado(r: &str) -> &'static str {
     match r {
@@ -336,7 +352,7 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
             // v1.12: cuánto duró y qué añadió cada vuelta (para el detalle de una copia).
             let duracion =
                 DateTime::parse_from_rfc3339(&e.started).ok().zip(DateTime::parse_from_rfc3339(&e.finished).ok()).map(|(a, b)| (b - a).num_seconds().max(0));
-            json!({
+            let v = json!({
                 "hora": e.finished,
                 "copia": e.plan_id,
                 "resultado": if e.unchanged { "sin_cambios" } else { resultado(&e.result) },
@@ -346,7 +362,8 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
                 "archivos_nuevos": e.files_new,
                 "archivos_cambiados": e.files_changed,
                 "reintento": e.origin == "retry",
-            })
+            });
+            con_detalle(v, crate::history::detalle_de(&e.message))
         })
         .collect()
 }
@@ -354,7 +371,7 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
 fn tarea(t: &crate::tasks::TasksState, kind: &str, repo: &str) -> Value {
     match t.runs.get(&crate::tasks::key(kind, repo)) {
         Some(r) => con_ausencia(
-            json!({ "ultima": r.finished, "resultado": resultado(&r.result), "mensaje_corto": corto(&r.message) }),
+            con_detalle(json!({ "ultima": r.finished, "resultado": resultado(&r.result), "mensaje_corto": corto(&r.message) }), r.detail.as_deref()),
             t,
             &crate::tasks::key(kind, repo),
         ),
@@ -443,7 +460,11 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                     let destino = v.destinos.iter().find(|x| Some(x.id.as_str()) == d["destino"].as_str()).map(|x| x.nombre.clone());
                     let clave = crate::tasks::derived_key(crate::tasks::DERIVADA, &r.id, id);
                     let mut x = match t.runs.get(&clave) {
-                        Some(run) => con_ausencia(json!({ "ultima": run.finished, "resultado": resultado(&run.result), "mensaje_corto": corto(&run.message) }), &t, &clave),
+                        Some(run) => con_ausencia(
+                            con_detalle(json!({ "ultima": run.finished, "resultado": resultado(&run.result), "mensaje_corto": corto(&run.message) }), run.detail.as_deref()),
+                            &t,
+                            &clave,
+                        ),
                         None => json!({}),
                     };
                     x["id"] = json!(id);
@@ -571,6 +592,13 @@ mod tests {
         assert!(!v[1]["mensaje_corto"].as_str().unwrap().contains("Users"), "sin rutas");
         assert_eq!((v[0]["duracion_s"].as_i64(), v[0]["anadido"].as_u64()), (Some(90), Some(1234)));
         assert_eq!(v[0]["reintento"], false);
+        // 15oo: el detalle técnico, aparte, solo si lo hay y sin rutas.
+        assert!(v[0].get("detalle").is_none());
+        let mut fallo = e(ahora - Duration::hours(3), "error", false, "frase");
+        fallo.message = crate::history::con_detalle("frase", Some("Fatal: open E:\\Copias\\x: Access is denied.\nmás"));
+        let v = ejecuciones(&[fallo], "r1", ahora);
+        assert_eq!(v[0]["detalle"], "Fatal: open [ruta]: Access is denied. · más");
+        assert_eq!(v[0]["mensaje_corto"], "frase");
     }
 
     #[test]

@@ -55,7 +55,7 @@
             <span class="r" data-r={h.resultado}>
               {#if h.resultado === "ok"}<CircleCheck size={15} aria-hidden="true" />{:else if h.resultado === "warning"}<TriangleAlert size={15} aria-hidden="true" />{:else}<CircleAlert size={15} aria-hidden="true" />{/if}
             </span>
-            <span class="v-cortar"><b>{h.nombre}</b> <span class="v-mini">{TIPOS[h.tipo] ?? h.tipo}</span></span>
+            <span class="v-cortar"><b>{h.nombre}</b> <span class="v-mini">{TIPOS[h.tipo] ?? h.tipo}</span>{#if h.motivo && h.resultado !== "ok"}<span class="v-mini motivo">{h.motivo}</span>{/if}</span>
             <span class="v-mini cuando">{relativo(h.cuando)}{h.bytes ? ` · ${bytes(h.bytes)}` : ""}</span>
           </li>
         {/each}
@@ -65,6 +65,11 @@
 </div>
 
 <style>
+  .motivo {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .leyenda {
     display: flex;
     gap: var(--sp-3);

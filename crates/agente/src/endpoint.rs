@@ -83,7 +83,7 @@ pub fn pair(url: &str, key: &str, code: &str, device_name: &str) -> Result<(Stri
     let sas = crate::managed::sas(&state.console_sign_key, &box_pub);
     let console = state.console_name.clone();
     save(&state)?;
-    crate::agent::log(&format!("Emparejado con la consola «{console}». Código de comprobación: {sas}."));
+    crate::agent::log(&format!("Emparejado con la consola «{console}». Número de comprobación: {sas}."));
     Ok((console, sas))
 }
 

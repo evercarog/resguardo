@@ -164,10 +164,15 @@ GUIAS.push({
   texto: [
     "«Volcar bases de datos de SQL Server antes de copiar»: el agente hace una copia COPY_ONLY de cada base en una carpeta del equipo, la incluye en la copia y borra el volcado al terminar. COPY_ONLY no estorba a las copias propias de SQL Server. Si un volcado falla, la copia sale como fallida (el resto de carpetas se copia igual).",
     "«Avisar si la carpeta de copias de una aplicación lleva más de N horas sin archivos nuevos»: para programas que hacen sus propias copias. Si el archivo más nuevo es más viejo que lo indicado, la copia sale con avisos.",
-    "La cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita el rol db_backupoperator en cada base que se vuelca (o sysadmin). Se da en SQL Server Management Studio, en Seguridad → Inicios de sesión.",
+    "La cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita dos permisos (o sysadmin, que los incluye): el rol db_backupoperator en cada base que se vuelca, y CREATE ANY DATABASE en el servidor para verificar cada volcado (sin él, el volcado se hace igual y la copia sale con aviso «sin verificar: falta permiso»). Se dan en SQL Server Management Studio, en Seguridad → Inicios de sesión, o con las órdenes de abajo.",
+    "Con «Todas las bases», el agente lee las bases de la instancia en cada copia: una base nueva (por ejemplo, la de una empresa que se da de alta en el programa) entra sola. Las que no están en línea no se intentan volcar: la copia avisa. Con una lista fija, la copia avisa si la instancia tiene bases en línea que no están en la lista.",
     "Hace falta el agente 0.7.2 o posterior: con uno anterior, la consola no lo ofrece.",
   ],
   pasos: ["En la ficha del equipo, «Añadir o cambiar copias».", "En la copia, «Antes de copiar»: elige el paso y rellena sus datos.", "«Enviar al equipo» con la clave de administración."],
+  ordenes: [
+    { texto: "En el equipo con SQL Server, como administrador: el permiso para volcar «Ventas» (repítelo con cada base).", comando: "sqlcmd -S . -E -Q \"USE [Ventas]; IF USER_ID(N'NT AUTHORITY\\SYSTEM') IS NULL CREATE USER [NT AUTHORITY\\SYSTEM] FOR LOGIN [NT AUTHORITY\\SYSTEM]; ALTER ROLE db_backupoperator ADD MEMBER [NT AUTHORITY\\SYSTEM];\"" },
+    { texto: "El permiso para verificar los volcados (una vez, en el servidor):", comando: "sqlcmd -S . -E -Q \"GRANT CREATE ANY DATABASE TO [NT AUTHORITY\\SYSTEM];\"" },
+  ],
   ver: ["ganchos"],
 });
 
@@ -211,6 +216,8 @@ export const PREGUNTAS: Pregunta[] = [
     si: "El volcado de SQL Server falla",
     respuesta: [
       "Si dice que no hay permiso o que falló el inicio de sesión: la cuenta del equipo (NT AUTHORITY\\SYSTEM) necesita el rol db_backupoperator en esa base (o sysadmin).",
+      "Si dice «sin verificar: falta permiso»: el volcado se hizo y está en la copia, pero no se pudo comprobar. Para verificarlo, la cuenta del equipo necesita CREATE ANY DATABASE en el servidor: GRANT CREATE ANY DATABASE TO [NT AUTHORITY\\SYSTEM]; (o apaga «Verificar cada volcado» en «Más opciones» del paso).",
+      "Si dice que una base «no está en línea»: está sin conexión, restaurándose o pendiente de recuperación en SQL Server, y no se intenta volcar hasta que vuelva a estar en línea.",
       "Si dice «error 5» o «acceso denegado» al escribir: el servicio de SQL Server tiene que poder escribir en la carpeta de los volcados. Si la crea el agente, ya le da permiso; si la creaste tú, dáselo a «NT SERVICE\\MSSQLSERVER».",
       "Comprueba también el nombre de la base y de la instancia (en el equipo, «.» es la predeterminada).",
     ],

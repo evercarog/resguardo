@@ -125,7 +125,8 @@ pub fn kill_tree(child: &mut Child) {
 fn spawn_error(e: std::io::Error) -> String {
     if e.kind() == ErrorKind::NotFound {
         if !BUNDLED_ONLY.load(Ordering::Relaxed) {
-            "No se encontró el ejecutable de restic. Instálalo y asegúrate de que esté en el PATH.".into()
+            // G4: sin «restic» ni «PATH» (lo ve quien usa la línea de órdenes del agente).
+            "No se encontró el motor de copias. Vuelve a instalar Resguardo, que lo trae consigo.".into()
         } else if cfg!(windows) {
             "Falta el motor de copias junto a Resguardo. Vuelve a instalar Resguardo para recuperarlo.".into()
         } else {
@@ -241,19 +242,15 @@ fn repo_command_con(access: &Access, env: &[(String, String)]) -> Command {
 }
 
 /// ¿Es un «disco lleno»? (en minúsculas): el del sistema (también en el Windows en
-/// español, que traduce sus mensajes) o el «507 Insufficient Storage» de rest-server.
+/// español, que traduce sus mensajes) o el «507 Insufficient Storage» del almacén.
+/// La lista está en la tabla de errores (`crate::errores`, caso `disco_lleno`).
 pub fn sin_espacio(s: &str) -> bool {
-    s.contains("no space left on device")
-        || s.contains("not enough space")
-        || s.contains("disk is full")
-        || s.contains("insufficient storage")
-        || s.contains("http response (507)")
-        || s.contains("espacio suficiente en el disco")
-        || s.contains("espacio en disco insuficiente")
-        || s.contains("os error 112")
+    crate::errores::es_caso(s, "disco_lleno")
 }
 
-/// Explica en español los errores de conexión más comunes, si los reconoce.
+/// Explica en español los errores más comunes, si los reconoce: los bloqueos
+/// antiguos aquí (necesitan saber qué procesos hay en este equipo) y el resto
+/// con la tabla compartida con la consola (`crate::errores`, 15oo).
 fn explain(stderr: &str) -> Option<String> {
     let s = stderr.to_lowercase();
     // Un bloqueo sin renovar desde hace más de media hora: la operación que lo
@@ -272,70 +269,7 @@ fn explain(stderr: &str) -> Option<String> {
             }
         }
     }
-    // Límites de la cuenta en la nube (p. ej. el «Daily Storage Cap» de
-    // Backblaze): se comprueba antes que el 403 y el bloqueo, porque restic
-    // suele fallar al crear su archivo de bloqueo.
-    let msg = if s.contains("cap exceeded")
-        || s.contains("cap_exceeded")
-        || s.contains("quotaexceeded")
-        || s.contains("quota exceeded")
-        || s.contains("storage limit")
-    {
-        "El servicio en la nube rechazó la escritura: se alcanzó el límite de la cuenta (por ejemplo, el límite \
-         diario de almacenamiento de Backblaze, en «Caps & Alerts»). Súbelo o añade un método de pago y vuelve a \
-         intentarlo."
-    } else if sin_espacio(&s) {
-        // Disco lleno en el destino: una carpeta o disco de este equipo, o el del
-        // Servidor de copias (rest-server contesta «507 Insufficient Storage»).
-        "No queda espacio en el destino de las copias. Libera espacio en su disco o quita versiones antiguas (pestaña «Retención») y vuelve a copiar."
-    } else if s.contains("ciphertext verification failed") || s.contains("pack id does not match") || s.contains("does not match, want") {
-        // Un archivo de datos del repositorio dañado (en la prueba de resistencia: la retención
-        // del almacén lo encontró al podar y salía el texto de restic tal cual).
-        "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare."
-    } else if s.contains("401 unauthorized") || s.contains("(401)") {
-        "El servidor rechazó el usuario o la contraseña de acceso (401). Comprueba en el servidor que ese usuario sigue \
-         existiendo y tiene esa contraseña."
-    } else if s.contains("403 forbidden") || s.contains("(403)") {
-        "El servidor no permite el acceso a esa ruta (403). Si usa --private-repos, la ruta debe empezar por tu \
-         usuario: http://servidor:8000/USUARIO/"
-    } else if s.contains("404 not found") || s.contains("(404)") {
-        "No hay ningún repositorio en esa ruta del servidor (404). Revisa la URL."
-    } else if s.contains("x509:") || s.contains("certificate") {
-        "Problema con el certificado HTTPS del servidor. Si usa un certificado propio, indica su CA en Opciones \
-         avanzadas."
-    } else if s.contains("server gave http response to https client") {
-        "El servidor no usa HTTPS: cambia la URL a http://"
-    } else if s.contains("connection refused")
-        || s.contains("actively refused")
-        || s.contains("no such host")
-        || s.contains("i/o timeout")
-        || s.contains("no route to host")
-    {
-        "No se pudo conectar con el servidor. Revisa la dirección, el puerto y que esté encendido."
-    } else if s.contains("repository is already locked") || s.contains("unable to create lock") {
-        BUSY
-    } else if s.contains("unknown flag") || s.contains("unknown shorthand flag") {
-        "El motor de copias de este equipo es demasiado antiguo para Resguardo (hace falta la 0.17 o posterior). \
-         Reinstala Resguardo, que trae el suyo."
-    } else if s.contains("wrong password") || s.contains("no key found") {
-        "Contraseña incorrecta."
-    } else if (s.contains("unable to open config file") || s.contains("is there a repository at")) && !s.contains("://") {
-        "No se encuentra el repositorio en esa carpeta. ¿Está conectado el disco? Conéctalo (con la misma letra de unidad) y \
-         vuelve a intentarlo."
-    } else if cfg!(windows) && (s.contains("access is denied") || s.contains("acceso denegado") || s.contains("permission denied")) {
-        "Windows no permite acceder a algún archivo o carpeta. Si son archivos del sistema o de otro usuario, abre Resguardo como administrador."
-    } else if s.contains("permission denied") || s.contains("operation not permitted") {
-        "El sistema no permite acceder a algún archivo o carpeta. El agente corre como root: revisa los permisos y, en un \
-         contenedor sin privilegios, a quién pertenecen los archivos montados."
-    } else if s.contains("cannot find the path") || s.contains("the system cannot find") || s.contains("no such file or directory") {
-        "No se encuentra alguna de las carpetas o el disco. Revisa que siga existiendo y esté conectado; si la moviste o la \
-         renombraste, edita la copia para que apunte a la nueva."
-    } else if s.contains("context deadline exceeded") || s.contains("timeout") {
-        "El servidor tardó demasiado en responder. Revisa la conexión e inténtalo de nuevo."
-    } else {
-        return None;
-    };
-    Some(msg.to_string())
+    crate::errores::buscar(&crate::errores::texto_tecnico(stderr), cfg!(windows)).map(|(_, frase)| frase)
 }
 
 /// Última línea útil de stderr (para dar contexto sin volcar todo).
@@ -442,10 +376,16 @@ fn exit_error_text(code: Option<i32>, stderr: &str) -> String {
     match code {
         Some(10) => NOT_FOUND.to_string(),
         Some(11) => explain(stderr).filter(|m| !m.contains("ocupado")).unwrap_or_else(|| BUSY.to_string()),
-        Some(12) => "Contraseña incorrecta.".to_string(),
+        Some(12) => explain("wrong password").unwrap_or_default(),
         _ => explain(stderr).unwrap_or_else(|| {
-            if let Some(line) = key_line(stderr) {
-                format!("Falló: {line}")
+            let tecnico = crate::errores::texto_tecnico(stderr);
+            if let Some(line) = key_line(&tecnico) {
+                // Desconocido: la frase y, en la misma línea, lo que dijo el motor (15oo).
+                crate::errores::en_una_linea(&crate::errores::EnPalabras {
+                    caso: "desconocido".into(),
+                    frase: crate::errores::desconocido().into(),
+                    detalle: Some(line.to_string()),
+                })
             } else if let Some(c) = code {
                 format!("El motor de copias terminó con un error (código {c}). Vuelve a intentarlo; si se repite, mira el registro.")
             } else {
@@ -453,6 +393,13 @@ fn exit_error_text(code: Option<i32>, stderr: &str) -> String {
             }
         }),
     }
+}
+
+/// Como [`exit_error`], con el texto técnico completo aparte (sin contraseñas en
+/// las direcciones) para enseñarlo plegado como «Detalle técnico» (15oo).
+pub fn exit_error_partes(code: Option<i32>, stderr: &str) -> (String, Option<String>) {
+    let detalle = redact_credentials(&crate::errores::texto_tecnico(stderr));
+    (exit_error(code, stderr), Some(detalle).filter(|d| !d.is_empty()))
 }
 
 /// Límite para comprobar una conexión (añadir un repositorio).
@@ -886,7 +833,7 @@ pub mod tests {
     fn contrasena_incorrecta_da_mensaje_claro() {
         let Ok(repo) = std::env::var("RESGUARDO_TEST_REPO") else { return };
         let err = snapshots(&Access::new(repo, "contraseña-equivocada")).unwrap_err();
-        assert_eq!(err, "Contraseña incorrecta.");
+        assert!(err.starts_with("Contraseña incorrecta"), "{err}");
     }
 
     #[test]
@@ -947,8 +894,15 @@ pub mod tests {
         assert!(e("unable to create lock in backend: repository is already locked by PID 12").contains("ocupado"));
         assert!(e("Fatal: unable to open config file: stat E:\\Backups\\config: The system cannot find the path specified.\nIs there a repository at the following location?")
             .contains("¿Está conectado el disco?"));
-        // Desconocido: solo la línea importante, no todo el volcado.
-        assert_eq!(e("detalle 1\nFatal: algo raro pasó\ndetalle 2"), "Falló: algo raro pasó");
+        // Desconocido: la frase y solo la línea importante como detalle, no todo el volcado (15oo).
+        assert_eq!(e("detalle 1\nFatal: algo raro pasó\ndetalle 2"), format!("{} Detalle técnico: algo raro pasó", crate::errores::desconocido()));
+        // El JSON de `--json` (15oo): se lee su `message`, nunca sale tal cual.
+        let json = e(
+            r#"{"message_type":"exit_error","code":1,"message":"Fatal: unable to save snapshot: Post \"https://192.0.2.10:8002/x\": dial tcp 192.0.2.10:8002: connectex: A socket operation was attempted to an unreachable network."}"#,
+        );
+        assert!(json.starts_with("Se cortó la conexión con el destino (192.0.2.10)") && !json.contains("message_type"), "{json}");
+        let (m, d) = exit_error_partes(Some(1), "Fatal: algo\nFatal: https://ana:secreto@h/x");
+        assert!(m.contains("Detalle técnico") && d.as_deref() == Some("Fatal: algo\nFatal: https://ana:***@h/x"), "{m} {d:?}");
         // restic anterior a la 0.17 (p. ej. el de Debian 12) no conoce las opciones nuevas.
         assert!(e("unknown flag: --skip-if-unchanged").contains("0.17"));
         // Sin código de salida (lo mató una señal) y sin nada en stderr.

@@ -330,7 +330,8 @@ pub fn preparar(db: &dyn Almacen, cliente: &str, periodo: Periodo, desde: Ts, ha
             let Ok(v) = serde_json::from_str::<Value>(&h.datos) else { continue };
             let resultado = v["resultado"].as_str().unwrap_or("");
             let en_periodo = h.hora >= desde && h.hora < hasta;
-            let mensaje = || contenido::texto_publico(v["mensaje"].as_str().unwrap_or(""));
+            // 15oo: en palabras (los agentes anteriores mandaban el error del motor tal cual).
+            let mensaje = || contenido::texto_publico(&resguardo_motor::errores::en_palabras(v["mensaje"].as_str().unwrap_or("")).frase);
             let repo = || {
                 let id = v["repo"].as_str().unwrap_or("");
                 repos.get(id).cloned().unwrap_or_else(|| if id.is_empty() { "—".into() } else { "Repositorio quitado".into() })

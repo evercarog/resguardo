@@ -81,6 +81,8 @@ export const NIVEL: Record<string, Nivel> = {
   // Plan 0.8.0, F2: un comentario en una versión (inofensivo: texto validado, lo guarda el
   // equipo) y «Conservar para siempre» (con la clave; quitarlo, con espera).
   comentario_version: "sesion",
+  // Plan 0.8.1 (15u): «Ver las bases de la instancia» (solo lee la lista; sellada para esta consola).
+  bases_sqlserver: "sesion",
   conservar_version: "admin",
 };
 

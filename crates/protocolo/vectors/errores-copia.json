@@ -1,0 +1,202 @@
+{
+  "descripcion": "Los errores de las copias, en palabras (plan-mejoras 15oo). Una sola tabla para el agente y el servidor (crates/motor/src/errores.rs, que la lleva dentro) y para la consola y la ventana (consola/src/lib/errorCopia.ts, que la importa). Cada regla se cumple si el texto técnico (en minúsculas) contiene alguna de `alguna`, todas las de `todas` y ninguna de `ninguna`; gana la primera. `{destino}` se cambia por « (host)» si el texto dice a qué equipo intentó conectar. `frase_linux` es la del agente en Linux (la consola usa `frase`). `pruebas` las pasan los dos lados (cargo test -p resguardo-motor y npm run test:vectores). Nunca la palabra «restic».",
+  "desconocido": "La operación terminó con un error que Resguardo no reconoce. Vuelve a intentarlo; si se repite, mira el detalle técnico.",
+  "marca_detalle": "Detalle técnico:",
+  "reglas": [
+    {
+      "caso": "limite_nube",
+      "alguna": ["cap exceeded", "cap_exceeded", "quotaexceeded", "quota exceeded", "storage limit"],
+      "frase": "El servicio en la nube rechazó la escritura: se alcanzó el límite de la cuenta (por ejemplo, el límite diario de almacenamiento de Backblaze, en «Caps & Alerts»). Súbelo o añade un método de pago y vuelve a intentarlo."
+    },
+    {
+      "caso": "disco_lleno",
+      "alguna": ["no space left on device", "not enough space", "disk is full", "insufficient storage", "http response (507)", "espacio suficiente en el disco", "espacio en disco insuficiente", "os error 112"],
+      "frase": "No queda espacio en el destino de las copias. Libera espacio en su disco o quita versiones antiguas (pestaña «Retención») y vuelve a copiar."
+    },
+    {
+      "caso": "datos_danados",
+      "alguna": ["ciphertext verification failed", "pack id does not match", "does not match, want"],
+      "frase": "Hay datos dañados en el destino: algún archivo de las copias no se lee bien. Revisa su disco y pide a tu soporte que lo repare."
+    },
+    {
+      "caso": "conexion_al_guardar",
+      "todas": ["unable to save snapshot"],
+      "alguna": ["dial tcp", "connectex", "wsarecv", "wsasend", "connection reset", "forcibly closed", "broken pipe", "unexpected eof", "network is unreachable", "unreachable network", "unreachable host", "no route to host", "connection refused", "i/o timeout", "context deadline exceeded"],
+      "frase": "Se cortó la conexión con el destino{destino} justo al guardar la versión. ¿El equipo perdió la red o la VPN? Lo ya subido se aprovecha; se reintenta sola."
+    },
+    {
+      "caso": "usuario_rechazado",
+      "alguna": ["401 unauthorized", "(401)"],
+      "frase": "El destino rechazó el usuario o la contraseña de acceso (401). Comprueba que ese usuario sigue existiendo y tiene esa contraseña."
+    },
+    {
+      "caso": "ruta_prohibida",
+      "alguna": ["403 forbidden", "(403)"],
+      "frase": "El destino no permite el acceso a esa ruta (403). Si usa --private-repos, la ruta debe empezar por tu usuario: http://servidor:8000/USUARIO/"
+    },
+    {
+      "caso": "repositorio_no_existe",
+      "alguna": ["404 not found", "(404)"],
+      "frase": "No hay ningún repositorio en esa ruta del destino (404). Revisa la dirección."
+    },
+    {
+      "caso": "certificado",
+      "alguna": ["x509:", "certificate"],
+      "frase": "Problema con el certificado HTTPS del destino. Si usa un certificado propio, indica su CA en «Opciones avanzadas»."
+    },
+    {
+      "caso": "sin_https",
+      "alguna": ["server gave http response to https client"],
+      "frase": "El destino no usa HTTPS: cambia la dirección a http://"
+    },
+    {
+      "caso": "sin_conexion",
+      "alguna": ["connection refused", "actively refused", "no such host", "no route to host", "network is unreachable", "unreachable network", "unreachable host", "connectex", "dial tcp", "connection reset", "forcibly closed", "broken pipe", "wsarecv", "wsasend"],
+      "frase": "No se pudo conectar con el destino{destino}. Comprueba que esté encendido y con red, y su dirección y puerto."
+    },
+    {
+      "caso": "repositorio_bloqueado",
+      "alguna": ["repository is already locked", "unable to create lock"],
+      "frase": "El repositorio está ocupado por otra operación (por ejemplo, una copia automática o desde otro equipo). Espera a que termine y vuelve a intentarlo."
+    },
+    {
+      "caso": "motor_antiguo",
+      "alguna": ["unknown flag", "unknown shorthand flag"],
+      "frase": "El motor de copias de este equipo es demasiado antiguo para Resguardo (hace falta la 0.17 o posterior). Reinstala Resguardo, que trae el suyo."
+    },
+    {
+      "caso": "contrasena",
+      "alguna": ["wrong password", "no key found"],
+      "frase": "Contraseña incorrecta: el repositorio no se abre con la que tiene guardada este equipo. Lo ya copiado sigue a salvo; usa la de su kit de recuperación."
+    },
+    {
+      "caso": "repositorio_no_existe",
+      "alguna": ["unable to open config file", "is there a repository at"],
+      "ninguna": ["://"],
+      "frase": "No se encuentra el repositorio en esa carpeta. ¿Está conectado el disco? Conéctalo (con la misma letra de unidad) y vuelve a intentarlo."
+    },
+    {
+      "caso": "archivo_en_uso",
+      "alguna": ["being used by another process", "sharing violation", "lock violation", "siendo utilizado por otro proceso", "otro proceso está usando"],
+      "frase": "Otro programa tenía abierto un archivo y no se pudo leer. Ciérralo o espera a que termine; la próxima copia lo vuelve a intentar."
+    },
+    {
+      "caso": "permiso",
+      "alguna": ["access is denied", "acceso denegado", "permission denied", "operation not permitted"],
+      "frase": "Windows no permite acceder a algún archivo o carpeta. Si son archivos del sistema o de otro usuario, abre Resguardo como administrador.",
+      "frase_linux": "El sistema no permite acceder a algún archivo o carpeta. El agente corre como root: revisa los permisos y, en un contenedor sin privilegios, a quién pertenecen los archivos montados."
+    },
+    {
+      "caso": "carpeta_no_existe",
+      "alguna": ["cannot find the path", "the system cannot find", "no such file or directory"],
+      "frase": "No se encuentra alguna de las carpetas o el disco. Revisa que siga existiendo y esté conectado; si la moviste o la renombraste, edita la copia para que apunte a la nueva."
+    },
+    {
+      "caso": "destino_no_responde",
+      "alguna": ["context deadline exceeded", "timeout"],
+      "frase": "El destino{destino} tardó demasiado en responder (¿apagado, sin red o muy lento?). Vuelve a intentarlo; las copias programadas lo reintentan solas."
+    }
+  ],
+  "pruebas": [
+    {
+      "que": "El caso real de 15oo, cortado como llegaba de un agente 0.8.0 (JSON a medias, en inglés).",
+      "entrada": "Falló: {\"message_type\":\"exit_error\",\"code\":1,\"message\":\"Fatal: unable to save snapshot: Post [ruta]: dial tcp 192.0.2.10:8002: connectex: A socket operation…",
+      "caso": "conexion_al_guardar",
+      "frase": "Se cortó la conexión con el destino (192.0.2.10) justo al guardar la versión. ¿El equipo perdió la red o la VPN? Lo ya subido se aprovecha; se reintenta sola.",
+      "detalle": "Fatal: unable to save snapshot: Post [ruta]: dial tcp 192.0.2.10:8002: connectex: A socket operation…"
+    },
+    {
+      "que": "El mismo, entero, como lo escribe el motor con --json.",
+      "entrada": "{\"message_type\":\"exit_error\",\"code\":1,\"message\":\"Fatal: unable to save snapshot: Post \\\"https://192.0.2.10:8002/pc-01/data/3f\\\": dial tcp 192.0.2.10:8002: connectex: A socket operation was attempted to an unreachable network.\"}",
+      "caso": "conexion_al_guardar",
+      "frase": "Se cortó la conexión con el destino (192.0.2.10) justo al guardar la versión. ¿El equipo perdió la red o la VPN? Lo ya subido se aprovecha; se reintenta sola.",
+      "detalle": "Fatal: unable to save snapshot: Post \"https://192.0.2.10:8002/pc-01/data/3f\": dial tcp 192.0.2.10:8002: connectex: A socket operation was attempted to an unreachable network."
+    },
+    {
+      "que": "Destino apagado al empezar.",
+      "entrada": "Fatal: unable to open repository at rest:https://almacen.ejemplo.test:8000/pc-01/: Get \"https://almacen.ejemplo.test:8000/pc-01/config\": dial tcp 192.0.2.20:8000: connectex: No connection could be made because the target machine actively refused it.",
+      "caso": "sin_conexion",
+      "frase": "No se pudo conectar con el destino (192.0.2.20). Comprueba que esté encendido y con red, y su dirección y puerto."
+    },
+    {
+      "que": "Destino que no contesta.",
+      "entrada": "Fatal: unable to open config file: Stat: Get \"https://192.0.2.30/config\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+      "caso": "destino_no_responde",
+      "frase": "El destino (192.0.2.30) tardó demasiado en responder (¿apagado, sin red o muy lento?). Vuelve a intentarlo; las copias programadas lo reintentan solas."
+    },
+    {
+      "que": "Repositorio bloqueado por otra operación.",
+      "entrada": "unable to create lock in backend: repository is already locked by PID 12 on PC-02 by SYSTEM",
+      "caso": "repositorio_bloqueado",
+      "frase": "El repositorio está ocupado por otra operación (por ejemplo, una copia automática o desde otro equipo). Espera a que termine y vuelve a intentarlo."
+    },
+    {
+      "que": "Contraseña incorrecta.",
+      "entrada": "Fatal: wrong password or no key found",
+      "caso": "contrasena",
+      "frase": "Contraseña incorrecta: el repositorio no se abre con la que tiene guardada este equipo. Lo ya copiado sigue a salvo; usa la de su kit de recuperación."
+    },
+    {
+      "que": "Disco lleno, en el Windows en español.",
+      "entrada": "Fatal: unable to save snapshot: write E:\\Copias\\data\\3f: No hay espacio suficiente en el disco.",
+      "caso": "disco_lleno",
+      "frase": "No queda espacio en el destino de las copias. Libera espacio en su disco o quita versiones antiguas (pestaña «Retención») y vuelve a copiar."
+    },
+    {
+      "que": "Disco lleno en el almacén (507).",
+      "entrada": "{\"message_type\":\"exit_error\",\"code\":1,\"message\":\"Fatal: unable to save snapshot: error flushing repository: unexpected HTTP response (507): 507 Insufficient Storage\"}",
+      "caso": "disco_lleno",
+      "frase": "No queda espacio en el destino de las copias. Libera espacio en su disco o quita versiones antiguas (pestaña «Retención») y vuelve a copiar."
+    },
+    {
+      "que": "Permiso denegado.",
+      "entrada": "Fatal: unable to open repository: open E:\\Copias\\config: Access is denied.",
+      "caso": "permiso",
+      "frase": "Windows no permite acceder a algún archivo o carpeta. Si son archivos del sistema o de otro usuario, abre Resguardo como administrador."
+    },
+    {
+      "que": "Archivo en uso (gana a «acceso denegado»).",
+      "entrada": "Fatal: open E:\\Copias\\locks\\1a: The process cannot access the file because it is being used by another process.",
+      "caso": "archivo_en_uso",
+      "frase": "Otro programa tenía abierto un archivo y no se pudo leer. Ciérralo o espera a que termine; la próxima copia lo vuelve a intentar."
+    },
+    {
+      "que": "Repositorio que no existe en una carpeta.",
+      "entrada": "Fatal: unable to open config file: stat E:\\Copias\\config: The system cannot find the path specified.\nIs there a repository at the following location?",
+      "caso": "repositorio_no_existe",
+      "frase": "No se encuentra el repositorio en esa carpeta. ¿Está conectado el disco? Conéctalo (con la misma letra de unidad) y vuelve a intentarlo."
+    },
+    {
+      "que": "Repositorio que no existe en el almacén (404).",
+      "entrada": "Fatal: unexpected HTTP response (404): 404 Not Found",
+      "caso": "repositorio_no_existe",
+      "frase": "No hay ningún repositorio en esa ruta del destino (404). Revisa la dirección."
+    },
+    {
+      "que": "Desconocido en JSON: frase genérica y el original como detalle.",
+      "entrada": "Falló: {\"message_type\":\"exit_error\",\"code\":1,\"message\":\"Fatal: something odd happened\"}",
+      "caso": "desconocido",
+      "frase": "La operación terminó con un error que Resguardo no reconoce. Vuelve a intentarlo; si se repite, mira el detalle técnico.",
+      "detalle": "Fatal: something odd happened"
+    },
+    {
+      "que": "Lo que escribe un agente nuevo con un error desconocido: frase y detalle en la misma línea.",
+      "entrada": "La operación terminó con un error que Resguardo no reconoce. Vuelve a intentarlo; si se repite, mira el detalle técnico. Detalle técnico: algo raro pasó",
+      "caso": "desconocido",
+      "frase": "La operación terminó con un error que Resguardo no reconoce. Vuelve a intentarlo; si se repite, mira el detalle técnico.",
+      "detalle": "algo raro pasó"
+    },
+    {
+      "que": "Ya en palabras: se deja igual y sin detalle.",
+      "entrada": "El volcado de «Ventas» no se pudo hacer: falta permiso.",
+      "caso": "en_palabras",
+      "frase": "El volcado de «Ventas» no se pudo hacer: falta permiso."
+    },
+    {
+      "que": "Vacío.",
+      "entrada": "",
+      "caso": "en_palabras",
+      "frase": ""
+    }
+  ]
+}

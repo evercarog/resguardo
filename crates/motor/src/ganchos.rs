@@ -6,7 +6,8 @@
 //!   COPY_ONLY, CHECKSUM` de cada base a una carpeta local que entra en la
 //!   copia y, salvo `verificar: false`, un `RESTORE VERIFYONLY … WITH CHECKSUM`
 //!   de cada volcado (14ccc); al terminar, se borran los volcados que hizo el
-//!   gancho (solo esos archivos).
+//!   gancho (solo esos archivos). Con `todas` (15u), las bases son las de la
+//!   instancia en cada copia (`sys.databases`, solo las que están en línea).
 //! - `carpeta_reciente`: comprueba que la carpeta de copias propias de una
 //!   aplicación tiene algún archivo de las últimas `horas`; si no, la copia
 //!   termina con aviso (no cambia lo que se copia).
@@ -18,6 +19,9 @@ use serde::{Deserialize, Serialize};
 /// Máximo de ganchos por copia y de bases por gancho.
 pub const MAX_GANCHOS: usize = 4;
 pub const MAX_BASES: usize = 20;
+/// 15u: con `todas`, cuántas bases se excluyen como mucho y cuántas se vuelcan en una copia.
+pub const MAX_EXCLUIDAS: usize = 50;
+pub const MAX_BASES_TODAS: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tipo", rename_all = "snake_case", deny_unknown_fields)]
@@ -39,6 +43,18 @@ pub enum Gancho {
         /// `admite: "verificar_volcado"` (los anteriores rechazan campos que no conocen).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         verificar: Option<bool>,
+        /// v1.8x (0.8.1, 15u): todas las bases de usuario de la instancia que estén en
+        /// línea, leídas de `sys.databases` en cada copia (nunca `tempdb` ni `model`);
+        /// `bases` no cuenta. La consola solo lo manda a agentes con
+        /// `admite: "sqlserver_todas"`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        todas: bool,
+        /// 15u: con `todas`, las que no se vuelcan.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        excluir: Vec<String>,
+        /// 15u: con `todas`, también `master` y `msdb`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        sistema: bool,
     },
     /// Aviso si la carpeta de copias de una aplicación no tiene nada reciente.
     CarpetaReciente {
@@ -104,14 +120,18 @@ impl Gancho {
 
     pub fn validate(&self) -> Result<(), String> {
         match self {
-            Gancho::Sqlserver { instancia, bases, carpeta, .. } => {
+            Gancho::Sqlserver { instancia, bases, carpeta, todas, excluir, .. } => {
                 if !instancia_valida(instancia) {
                     return Err(format!("Instancia de SQL Server no válida: «{instancia}» (p. ej. «.» o «EQUIPO\\SQLEXPRESS»)."));
                 }
-                if bases.is_empty() || bases.len() > MAX_BASES {
+                // 15u: con `todas`, la lista puede ir vacía (no cuenta); las excluidas, con las mismas reglas.
+                if (!*todas && bases.is_empty()) || bases.len() > MAX_BASES {
                     return Err(format!("Indica de 1 a {MAX_BASES} bases de datos para volcar."));
                 }
-                if let Some(b) = bases.iter().find(|b| !base_valida(b)) {
+                if excluir.len() > MAX_EXCLUIDAS {
+                    return Err(format!("Como mucho {MAX_EXCLUIDAS} bases excluidas."));
+                }
+                if let Some(b) = bases.iter().chain(excluir).find(|b| !base_valida(b)) {
                     return Err(format!("Nombre de base de datos no admitido: «{b}»."));
                 }
                 let mut vistas = std::collections::HashSet::new();
@@ -223,6 +243,12 @@ mod tests {
         assert!(serde_json::to_value(&d[0]).unwrap().get("verificar").is_none());
         assert!(de_config(&json!({"tipo": "sqlserver", "bases": ["a"], "carpeta": "D:\\v", "verificar": "no"})).is_err());
         assert!(!dos[0].verifica_volcados());
+        // 15u: «todas las bases», con excluidas y las del sistema; sin el campo, como antes.
+        let t = de_config(&json!({"tipo": "sqlserver", "bases": [], "carpeta": "D:\\v", "todas": true, "excluir": ["Pruebas"], "sistema": true})).unwrap();
+        assert!(matches!(&t[0], Gancho::Sqlserver { todas: true, sistema: true, excluir, .. } if excluir == &vec!["Pruebas".to_string()]));
+        assert!(serde_json::to_value(&d[0]).unwrap().get("todas").is_none(), "sin `todas`, no se escribe");
+        assert!(de_config(&json!({"tipo": "sqlserver", "bases": [], "carpeta": "D:\\v", "todas": true, "excluir": ["x]; --"]})).is_err());
+        assert!(de_config(&json!({"tipo": "sqlserver", "bases": [], "carpeta": "D:\\v", "todas": false})).is_err());
         let cinco = serde_json::Value::Array(vec![json!({"tipo": "carpeta_reciente", "carpeta": "D:\\x", "horas": 5}); 5]);
         assert!(de_config(&cinco).is_err());
     }

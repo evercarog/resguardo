@@ -2,7 +2,7 @@
 // prepara «Añadir o cambiar copias», y el plan de «Aplicar una plantilla» a varios
 // equipos a la vez (v1.52, tarea 6). Sin estado ni red: se prueba en
 // scripts/vectores-etiquetas.ts.
-import { admiteVerificarVolcado, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "./ganchos";
+import { admiteTodasLasBases, admiteVerificarVolcado, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "./ganchos";
 import { errorReglas, normalizar, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "./horario";
 import type { Plantilla } from "./plantillas";
 import type { Configuracion, CopiaConfig, Equipo, Gancho, Horario } from "./tipos";
@@ -32,6 +32,8 @@ export interface Admite {
   termina?: boolean;
   /** 14ccc: `verificar` en el gancho de SQL Server (agente con `admite: "verificar_volcado"`). */
   verificarVolcado?: boolean;
+  /** 15u: «todas las bases» en el gancho de SQL Server (agente con `admite: "sqlserver_todas"`). */
+  todasLasBases?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -47,6 +49,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     despues: !!equipo.resumen?.admite?.includes("inicio_despues"),
     termina: !!equipo.resumen?.admite?.includes("termina"),
     verificarVolcado: admiteVerificarVolcado(equipo),
+    todasLasBases: admiteTodasLasBases(equipo),
   };
 }
 
@@ -77,7 +80,7 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
         horas: normalizar(k.horario.horas),
         ...(a.reglas && k.horario.reglas?.length ? { reglas: k.horario.reglas } : {}),
       },
-      gancho: a.ganchos ? paraConfig(ganchosDe(k.gancho as Gancho | Gancho[] | null), !!a.verificarVolcado) : null,
+      gancho: a.ganchos ? paraConfig(ganchosDe(k.gancho as Gancho | Gancho[] | null), !!a.verificarVolcado, !!a.todasLasBases) : null,
       ...(a.soloCambios ? { solo_si_cambios: solo_si_cambios !== false } : {}),
       ...(conTras ? { tras } : {}),
       ...(conTras && a.despues && inicio === "despues" ? { inicio } : {}),
