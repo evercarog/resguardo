@@ -1426,6 +1426,9 @@ pub const ADMITE: &[&str] = &[
     // 0.8.1 (15q): `quitar_repositorio { repo, vacio: true }` solo con la clave de administración
     // (el equipo comprueba que no tiene versiones).
     "quitar_vacio",
+    // 0.8.1 (15g): `clave_almacen { derivada }`, la clave del almacén en el repositorio de una
+    // copia derivada (para su «Retención en el almacén»), y `repositorios[].derivadas[].ruta`.
+    "retencion_derivada",
     // 0.8.1 (15ll): `config.copias[].permitir_suspension` y `evitando_suspension` en el progreso;
     // `datos_basicos.red_ahorro` (las tarjetas de red que el sistema puede apagar).
     crate::suspension::ADMITE,
@@ -2765,6 +2768,9 @@ fn derivada_resumen(v: &Vinculo, repo: &str, e: &Value, agente: Option<&crate::a
         "verificacion": e.get("verificacion"),
         // Plan 0.8.0, F4: la velocidad de subida según la hora (sin nada, no va).
         "limite": e.get("limite"),
+        // 15g: el nombre de su carpeta en el destino (sin la ruta del destino), si no es el de
+        // siempre (`<repo>-<id>`): la consola la busca en el almacén para su retención.
+        "ruta": e.get("ruta").filter(|r| r.as_str().is_some_and(|r| !r.contains(['/', '\\']))),
         // Si el agente la tiene (un repositorio sin copias activas la pierde) y si aplica retención allí.
         "activa": tarea.is_some(),
         "con_retencion": tarea.map(|t| t.offsite.retention.as_ref().is_some_and(|p| !p.is_empty())),

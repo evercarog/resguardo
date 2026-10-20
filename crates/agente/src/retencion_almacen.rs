@@ -868,7 +868,18 @@ pub fn anadir_clave(v: &crate::servidor_v2::Vinculo, repo: &str, c: &Value) -> R
     if clave.chars().count() < 20 || clave.chars().count() > 200 || clave.chars().any(char::is_control) {
         return Err("Clave del almacén no válida.".into());
     }
-    let acc = crate::gestion_v2::acceso(v, repo)?;
+    // 15g: la de una copia derivada suya que va a un almacén (`derivada: "<id>"`, o «externa»):
+    // la clave se añade al repositorio de la derivada, con las credenciales que ya tiene el equipo.
+    let acc = match c["derivada"].as_str().filter(|d| !d.is_empty()) {
+        Some(d) => {
+            let existe = (d == "externa" && r.externa.is_some()) || r.derivadas.iter().any(|x| x["id"] == d);
+            if !existe {
+                return Err("Esa copia derivada ya no está.".into());
+            }
+            crate::tasks::acceso_copia(repo, d)?.0
+        }
+        None => crate::gestion_v2::acceso(v, repo)?,
+    };
     crate::agent::prepare_dir()?;
     let archivo = crate::agent::private_dir().join(format!("clave-almacen-{}.tmp", uuid::Uuid::new_v4().simple()));
     std::fs::write(&archivo, clave).map_err(|e| format!("No se pudo preparar la clave: {e}"))?;

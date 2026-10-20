@@ -758,6 +758,37 @@ fn registro_de_subidas_y_nunca_terminado() {
     assert!(!viejo.nunca_bien() && reduce(&[viejo], &[]));
 }
 
+/// 15m: la última subida buena de cada repositorio se recuerda aunque salga de la selección
+/// (la consola dice «su copia en <destino> ya no se actualiza desde hace N días»). 15hh: una
+/// vuelta parada a petición no cuenta como bien ni como fallida.
+#[test]
+fn ultima_subida_de_cada_repositorio() {
+    let mut t = trabajo("u", carpeta("E:\\U"));
+    let vuelta = |fin: &'static str, repos: &[&str]| Vuelta {
+        inicio: fin,
+        fin,
+        motivo: Motivo::Horario,
+        ocupa: repos.iter().map(|r| (r.to_string(), 10)).collect(),
+        completo: true,
+    };
+    anotar_vuelta(&mut t, "Espejo hecho", &vuelta("2026-10-01T02:00:00+02:00", &["ana/conta", "srv/sql"]), &[Resumen::default()]);
+    // Después, solo uno (el otro salió de la selección): el otro se queda con su fecha.
+    anotar_vuelta(&mut t, "Espejo hecho", &vuelta("2026-10-05T02:00:00+02:00", &["srv/sql"]), &[Resumen::default()]);
+    assert_eq!(t.estado.ultima_por_repo.get("ana/conta").map(String::as_str), Some("2026-10-01T02:00:00+02:00"));
+    assert_eq!(t.estado.ultima_por_repo.get("srv/sql").map(String::as_str), Some("2026-10-05T02:00:00+02:00"));
+    // Una que falla o se para no cambia nada.
+    anotar_vuelta(&mut t, "ERROR: algo", &vuelta("2026-10-06T02:00:00+02:00", &["srv/sql"]), &[]);
+    let parada = format!("{} Parada por Ana.", crate::parar::PREFIJO_PARADA);
+    anotar_vuelta(&mut t, &parada, &vuelta("2026-10-07T02:00:00+02:00", &["srv/sql"]), &[]);
+    assert_eq!(t.estado.ultima_por_repo.get("srv/sql").map(String::as_str), Some("2026-10-05T02:00:00+02:00"));
+    assert_eq!(t.estado.bien.as_deref(), Some("2026-10-05T02:00:00+02:00"), "la parada no cuenta como bien");
+    assert_eq!(t.estado.subidas.last().map(|s| s.resultado.as_str()), Some("parada"));
+    t.estado.resultado = Some(parada);
+    assert!(!t.ok(), "parada: tampoco está bien");
+    let r = resumen(&t, Value::Null);
+    assert_eq!(r["ultima_por_repo"]["ana/conta"], "2026-10-01T02:00:00+02:00");
+}
+
 /// 14s: la primera subida «en la próxima franja de la madrugada»: no antes de su hora (salvo
 /// «Hacer ahora»); después, como siempre.
 #[test]
