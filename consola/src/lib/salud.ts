@@ -134,6 +134,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   config: "Cambiar las copias",
   elegir_carpetas: "Elegir carpetas",
   pausar: "Pausar las copias",
+  parar: "Parar o pausar",
   baja_equipo: "Dar de baja el equipo",
   desvincular: "Desvincular",
   cambiar_servidor: "Cambiar de servidor",

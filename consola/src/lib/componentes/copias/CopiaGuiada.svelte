@@ -17,6 +17,8 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
   import AvisoExclusiones from "./AvisoExclusiones.svelte";
+  import LimiteFranjas from "$lib/componentes/LimiteFranjas.svelte";
+  import { admiteParar, admiteSinSuspension } from "$lib/parar";
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
   import { alternarExclusion, cuandoEnFrase, EXCLUSIONES_HABITUALES, pasoHecho, PASOS_COPIA, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
   import { ganchosDe } from "$lib/ganchos";
@@ -169,6 +171,18 @@
               ></label
             >
             <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
+            <!-- 15ll: por defecto el equipo no se suspende mientras copia; en un portátil con batería, se puede dejar. -->
+            {#if admiteSinSuspension(equipo)}
+              <label class="switch-row"
+                ><input type="checkbox" class="switch" checked={k.permitir_suspension !== true} onchange={(e) => (k.permitir_suspension = !e.currentTarget.checked || undefined)} /><span
+                  >Que el equipo no se suspenda mientras copia<span class="faint">Apágalo en portátiles con batería. Nunca impide suspenderlo a mano ni cerrar la tapa.</span></span
+                ></label
+              >
+            {/if}
+            <!-- 15hh (5): «suave en horario de oficina, sin límite de noche», como en las derivadas. -->
+            {#if admiteParar(equipo)}
+              <LimiteFranjas id="lim-{k.id}" bind:franjas={() => k.limite?.franjas ?? [], (f) => (k.limite = f.length ? { ...(k.limite ?? {}), franjas: f } : null)} equipo={equipo.nombre} />
+            {/if}
           </div>
         </details>
         <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.carpetas.length ? null : { texto: "Elige al menos una carpeta" }}>Seguir<ArrowRight size={14} /></BotonFalta></div>

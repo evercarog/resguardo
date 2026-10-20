@@ -37,6 +37,8 @@ export interface DatosBasicos {
   modelo?: string | null;
   arranque?: string | null;
   discos?: DiscoEquipo[];
+  /** 15ll (Windows): tarjetas de red que el sistema puede apagar para ahorrar energía (sus nombres). */
+  red_ahorro?: string[];
 }
 
 /** Lo mismo que en el agente y en el servidor. */
@@ -94,6 +96,7 @@ export function datosBasicos(e: Pick<Equipo, "resumen"> | null | undefined): Dat
     modelo: texto(x.modelo),
     arranque: fecha(x.arranque),
     discos,
+    red_ahorro: (Array.isArray(x.red_ahorro) ? x.red_ahorro.slice(0, 8) : []).map((n) => texto(n, 80)).filter((n): n is string => !!n),
   };
 }
 

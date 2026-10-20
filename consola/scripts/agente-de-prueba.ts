@@ -104,7 +104,7 @@ async function procesar(o: Bruta) {
   const nivel = NIVEL[p.tipo];
   const pruebaOk = !!p.autorizacion.prueba_admin && !!e.verificador && iguales(sha256(deB64(p.autorizacion.prueba_admin)), deB64(e.verificador));
   if (p.tipo !== "alta" && (nivel === "admin" || PIDE_TAMBIEN_ADMIN.has(p.tipo)) && !pruebaOk) return resultado(o, "rechazada", "La clave de administración no es correcta.");
-  if (nivel === "repo") {
+  if (nivel === "repo" && !(p.tipo === "quitar_repositorio" && (p.cuerpo as Record<string, unknown>)?.vacio === true)) {
     const c = p.autorizacion.clave_repo;
     if (!c || e.contrasenas[c.repo] !== c.contrasena) return resultado(o, "rechazada", "La contraseña del repositorio no es correcta.");
   }

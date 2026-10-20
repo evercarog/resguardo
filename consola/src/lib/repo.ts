@@ -178,8 +178,8 @@ export function versionDeVuelta(versiones: VersionInforme[], e: EjecucionInforme
 
 export const ultimaEjecucion = (inf: RepoInforme | null): EjecucionInforme | null => inf?.ejecuciones[0] ?? null;
 
-export const TONO_RESULTADO: Record<EjecucionInforme["resultado"], Tono> = { ok: "ok", sin_cambios: "ok", aviso: "warn", fallo: "bad" };
-export const TEXTO_RESULTADO: Record<EjecucionInforme["resultado"], string> = { ok: "Correcta", sin_cambios: "Sin cambios", aviso: "Con avisos", fallo: "Falló" };
+export const TONO_RESULTADO: Record<EjecucionInforme["resultado"], Tono> = { ok: "ok", sin_cambios: "ok", aviso: "warn", fallo: "bad", parada: "neutral" };
+export const TEXTO_RESULTADO: Record<EjecucionInforme["resultado"], string> = { ok: "Correcta", sin_cambios: "Sin cambios", aviso: "Con avisos", fallo: "Falló", parada: "Parada" };
 
 /** 15jj: una vuelta cortada a mitad (equipo apagado, servicio reiniciado) llega como «fallo» con `interrumpida`. */
 type ConResultado = { resultado: EjecucionInforme["resultado"]; interrumpida?: boolean };

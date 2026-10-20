@@ -780,10 +780,14 @@
   /** «Quitar el repositorio» y, si su destino se queda sin uso, ofrecer quitarlo también (v1.56). */
   function quitarRepositorio(r: RepositorioResumen) {
     const vacio = destinoQueQuedaVacio(equipo!, r);
+    // 15q: sin versiones (y un agente que lo comprueba), basta la clave de administración.
+    const sinVersiones = r.versiones === 0 && !!equipo!.resumen?.admite?.includes("quitar_vacio");
     abrir({
       tipo: "quitar_repositorio",
-      cuerpo: { repo: r.id, ...(vacio ? { quitar_destino: true } : {}) },
-      descripcion: `${equipo!.nombre} dejará de copiar en «${r.nombre}» y lo olvidará. Lo guardado sigue en su destino.`,
+      cuerpo: { repo: r.id, ...(vacio ? { quitar_destino: true } : {}), ...(sinVersiones ? { vacio: true } : {}) },
+      descripcion: sinVersiones
+        ? `«${r.nombre}» no tiene ninguna versión: basta la clave de administración. ${equipo!.nombre} comprueba que de verdad está vacío antes de olvidarlo (si no, te pedirá su contraseña).`
+        : `${equipo!.nombre} dejará de copiar en «${r.nombre}» y lo olvidará. Lo guardado sigue en su destino.`,
       repo: { id: r.id, nombre: r.nombre },
       campos: vacio ? "quitarRepo" : undefined,
       destinoVacio: vacio ? { id: vacio.id, nombre: vacio.nombre, tipo: vacio.tipo } : undefined,

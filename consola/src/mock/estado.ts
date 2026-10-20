@@ -436,12 +436,14 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         servidores_respaldo: [{ url: "https://respaldo.ejemplo.co", identidad_corta: "7Q2kLm9x" }],
-        datos_basicos: basicos(win("Windows 11 Pro", "Professional", "24H2", "26100.2033"), "Intel(R) Core(TM) i5-12400", 12, 16, "Dell Inc.", "OptiPlex 7000", 60 * 26, [disco("C:", 512, 301, "NTFS", true)]),
+        // 15ll (2): su tarjeta de red la puede apagar Windows para ahorrar energía.
+        datos_basicos: { ...basicos(win("Windows 11 Pro", "Professional", "24H2", "26100.2033"), "Intel(R) Core(TM) i5-12400", 12, 16, "Dell Inc.", "OptiPlex 7000", 60 * 26, [disco("C:", 512, 301, "NTFS", true)]), red_ahorro: ["Intel(R) Ethernet Connection I219-V"] },
         respaldo_dias: 3,
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo"],
+        // 15hh, 15ll: se puede parar y pausar su copia larga, y no se suspende mientras copia.
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "parar", "sin_suspension"],
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },
@@ -608,7 +610,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "sqlserver_todas"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],

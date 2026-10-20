@@ -46,7 +46,7 @@ export interface Vuelta {
   interrumpida?: boolean;
 }
 
-const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado === "ok" ? "ok" : estado === "aviso" ? "aviso" : "fallo");
+const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado === "ok" ? "ok" : estado === "aviso" ? "aviso" : estado === "parada" ? "parada" : "fallo");
 
 /**
  * La última vuelta de la copia, de lo más reciente que haya: las vueltas del
@@ -108,6 +108,10 @@ export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boo
   // Plan 0.8.0, F1: completada (hizo lo previsto): ni fallida ni atrasada.
   if (k.completada) return { tono: "ok", texto: "Completada" };
   if (pausada) return { tono: "paused", texto: "En pausa" };
+  // 15hh (4): pausada con «Pausar»: sigue sola a su hora (o con «Copiar ahora»); no es un fallo.
+  if (k.pausa) return { tono: "paused", texto: k.pausa.hasta ? "En pausa hasta su hora" : "En pausa hasta «Copiar ahora»" };
+  // 15hh: parada a petición (con la clave): ni fallida ni al día.
+  if (vuelta?.resultado === "parada") return { tono: "neutral", texto: "Parada" };
   // 15jj: cortada a mitad (equipo apagado, servicio reiniciado): se reintenta sola.
   if (vuelta?.resultado === "fallo" && vuelta.interrumpida) return { tono: "warn", texto: "Interrumpida" };
   if (vuelta?.resultado === "fallo") return { tono: "bad", texto: "Con error" };
@@ -117,7 +121,7 @@ export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boo
   return { tono: "neutral", texto: "Sin copias todavía" };
 }
 
-const TEXTO_VUELTA: Record<ResultadoVuelta, string> = { ok: "fue correcta", sin_cambios: "no encontró cambios", aviso: "terminó con avisos", fallo: "falló" };
+const TEXTO_VUELTA: Record<ResultadoVuelta, string> = { ok: "fue correcta", sin_cambios: "no encontró cambios", aviso: "terminó con avisos", fallo: "falló", parada: "se paró a petición" };
 
 /** Una frase que lo resume: qué, de dónde, a dónde, cuándo, y cómo fue la última. */
 export function fraseCopia(
