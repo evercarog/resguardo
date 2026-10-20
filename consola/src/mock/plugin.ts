@@ -252,7 +252,7 @@ const rutas: Ruta[] = [
       const eq = ctx.url.searchParams.get("equipo");
       const ids = estado.equipos.filter((e) => e.cliente === c && (!eq || e.id === eq)).map((e) => e.id);
       return {
-        ajustes: { motivo_obligatorio: estado.ajustesRest.get(c) ?? false },
+        ajustes: ajustesRestauraciones(c),
         entradas: estado.restauraciones.filter((r) => r.cliente === c && ids.includes(r.equipo)).map(({ cliente: _c, ...r }) => r),
         notas: estado.notasRest.filter((n) => n.cliente === c && ids.includes(n.equipo)).map(({ cliente: _c, ...n }) => n),
       } satisfies T.Restauraciones;
@@ -263,8 +263,11 @@ const rutas: Ruta[] = [
     new RegExp(`^${C}/restauraciones/ajustes$`),
     (ctx, [c]) => {
       miembro(ctx, c, "administrador");
-      estado.ajustesRest.set(c, !!(ctx.cuerpo as { motivo_obligatorio?: boolean }).motivo_obligatorio);
-      return { motivo_obligatorio: estado.ajustesRest.get(c) ?? false, actualizada: new Date().toISOString(), por: sesionDe(ctx).nombre };
+      // 0.8.1: los dos son opcionales; sin poner nada, el motivo es obligatorio y «Recuperar en el equipo», no.
+      const b = ctx.cuerpo as { motivo_obligatorio?: boolean; recuperar?: { activo?: boolean; max_mb?: number } };
+      if (typeof b.motivo_obligatorio === "boolean") estado.ajustesRest.set(c, b.motivo_obligatorio);
+      if (b.recuperar) estado.recuperarRest.set(c, { activo: !!b.recuperar.activo, max_mb: b.recuperar.max_mb ?? 1024 });
+      return { ...ajustesRestauraciones(c), actualizada: new Date().toISOString(), por: sesionDe(ctx).nombre };
     },
   ],
   [
@@ -614,7 +617,7 @@ const rutas: Ruta[] = [
           return estado.ordenes.filter((o) => o.cliente === c && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).map(ordenPublica);
         sembrarRestauraciones(c);
         return {
-          ajustes: { motivo_obligatorio: estado.ajustesRest.get(c) ?? false },
+          ajustes: ajustesRestauraciones(c),
           entradas: estado.restauraciones.filter((r) => r.cliente === c).map(({ cliente: _c, ...r }) => r),
           notas: estado.notasRest.filter((n) => n.cliente === c).map(({ cliente: _c, ...n }) => n),
         };
@@ -2198,4 +2201,10 @@ function infraDe(c: string): Infraestructura {
   const s = { ...sembrada, actualizada: new Date(Date.now() - 86_400_000 * 3).toISOString(), por: "Ana Restrepo" };
   infraMock.set(c, s);
   return s;
+}
+
+/** 0.8.1 (E2, H1): los ajustes de las restauraciones de un cliente, como el servidor (comunes a todas las consolas). */
+function ajustesRestauraciones(c: string): T.Restauraciones["ajustes"] {
+  const r = estado.recuperarRest.get(c);
+  return { motivo_obligatorio: estado.ajustesRest.get(c) ?? true, comun: true, recuperar: { activo: r?.activo ?? false, max_mb: r?.max_mb ?? 1024, comun: !!r } };
 }

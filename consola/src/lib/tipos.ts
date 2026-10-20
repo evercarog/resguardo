@@ -1679,6 +1679,8 @@ export interface Restauracion {
   donde?: string | null;
   /** 15aa: de cuántos archivos de la versión se eligió la muestra. */
   candidatos?: number | null;
+  /** 0.8.1 (H1, 15mm): la cuenta del equipo que recuperó sus propios archivos («ana (PC-01)»). */
+  cuenta?: string | null;
   inicio?: string | null;
   duracion_s?: number | null;
   repo: string;
@@ -1717,7 +1719,16 @@ export interface NotaRestauracion {
 }
 
 export interface Restauraciones {
-  ajustes: { motivo_obligatorio: boolean; actualizada?: string | null; por?: string | null };
+  ajustes: {
+    /** Desde la 0.8.1 (E2, 15ee), sin ponerlo: obligatorio. */
+    motivo_obligatorio: boolean;
+    actualizada?: string | null;
+    por?: string | null;
+    /** 0.8.1: ya es común a todas las consolas del cliente (hay un dato común). */
+    comun?: boolean;
+    /** 0.8.1 (H1, 15mm): «Recuperar en el equipo» del cliente. Un servidor anterior no lo manda. */
+    recuperar?: { activo: boolean; max_mb: number; comun?: boolean; actualizada?: string | null; por?: string | null };
+  };
   entradas: Restauracion[];
   notas: NotaRestauracion[];
 }

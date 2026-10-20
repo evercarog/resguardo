@@ -25,6 +25,7 @@
     Calendar,
     Check,
     ChevronRight,
+    ClipboardCheck,
     Database,
     Download,
     FileArchive,
@@ -254,10 +255,13 @@
   /** Dónde quedó el .zip (si ya había uno con ese nombre, el equipo le pone «(2)»). */
   const rutaZip = $derived.by(() => (enviado ? `${enviado.carpeta.replace(/[\\/]+$/, "")}${esWindows ? "\\" : "/"}${enviado.nombreZip}` : ""));
 
-  // ---------- 14l: motivo ----------
+  // ---------- 14l, 15ee: motivo, antes de restaurar ----------
   let motivo = $state<MotivoRestauracion | "">("");
   let notasMotivo = $state("");
-  let motivoObligatorio = $state(false);
+  /** 15ee: obligatorio por defecto (un toque basta); el cliente puede hacerlo opcional, igual en todas sus consolas. */
+  let motivoObligatorio = $state(true);
+  /** 15ee (14k): con «Prueba», registrarla también como prueba funcional al terminar. */
+  let comoPrueba = $state(true);
   $effect(() => {
     const [cc, eq] = [actual.id, equipoId];
     if (!cc || !eq) return;
@@ -1007,7 +1011,7 @@
           </CampoClave>
         {/if}
         <fieldset class="motivo">
-          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio en este cliente)" : "(opcional)"}</span></legend>
+          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio: un toque basta)" : "(opcional)"}</span></legend>
           <div class="chips-motivo" role="radiogroup" aria-label="Motivo">
             {#each MOTIVOS as m (m.id)}
               <label class="chip-motivo" class:on={motivo === m.id}><input type="radio" name="motivo" value={m.id} bind:group={motivo} />{m.texto}</label>
@@ -1015,6 +1019,10 @@
             {#if motivo && !motivoObligatorio}<button type="button" class="link" onclick={() => (motivo = "")}>Quitar</button>{/if}
           </div>
           {#if motivo}<input class="input" bind:value={notasMotivo} maxlength={500} placeholder="Notas (opcional): qué pasó, quién lo pidió… Sin contraseñas." aria-label="Notas del motivo" />{/if}
+          {#if motivo === "prueba" && puede.ordenar(actual.cliente?.rol)}
+            <!-- 15ee (14k): un simulacro se registra también como prueba funcional, con sus datos puestos. -->
+            <label class="switch-row prueba-func"><input type="checkbox" bind:checked={comoPrueba} /><span><strong>Registrar como prueba funcional</strong><span class="faint">Al terminar, se abre su registro con el día, el repositorio y lo que tardó ya puestos.</span></span></label>
+          {/if}
         </fieldset>
         <p class="faint pequeno">¿Lo necesitas en otro equipo? <button class="link" onclick={() => (enOtro = { equipo: equipoId, repo: repoId })}>Restaurar en otro equipo</button></p>
         {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
@@ -1113,6 +1121,9 @@
               error = "";
             }}>Restaurar más de esta versión</button
           >
+          {#if motivo === "prueba" && comoPrueba && terminado && orden?.estado === "hecha" && puede.ordenar(actual.cliente?.rol)}
+            <a class="btn" href="/c/{actual.id}/recuperar/pruebas?restauracion={encodeURIComponent(`${equipoId}|restauracion-${orden.id}`)}"><ClipboardCheck size={15} />Registrar como prueba funcional</a>
+          {/if}
           <a class="btn" href="/c/{actual.id}/recuperar/restauraciones?equipo={encodeURIComponent(equipoId)}">Ver en Restauraciones</a>
           <a class="btn btn-primary" href="/c/{actual.id}/equipos/{equipoId}?tab=ordenes">Ver en el equipo</a>
         </div>
@@ -1283,6 +1294,9 @@
   .field-error {
     font-size: var(--fs-xs);
     color: var(--bad);
+  }
+  .prueba-func {
+    margin-top: var(--sp-1);
   }
   .sin-quitado {
     font-weight: 400;

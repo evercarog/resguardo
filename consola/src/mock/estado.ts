@@ -129,6 +129,8 @@ export interface Estado {
   restauraciones: (T.Restauracion & { cliente: string })[];
   notasRest: (T.NotaRestauracion & { cliente: string })[];
   ajustesRest: Map<string, boolean>;
+  /** 0.8.1 (H1, 15mm): «Recuperar en el equipo» de cada cliente. */
+  recuperarRest: Map<string, { activo: boolean; max_mb: number }>;
   restSembradas: Set<string>;
 }
 
@@ -323,6 +325,7 @@ export async function sembrar(vacio = false) {
     restauraciones: [],
     notasRest: [],
     ajustesRest: new Map(),
+    recuperarRest: new Map(),
     restSembradas: new Set(),
   };
   if (vacio) return;
@@ -643,7 +646,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "restaurar_excluir"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "restaurar_excluir", "ajustes_comunes", "recuperar_en_equipo"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -903,6 +906,40 @@ export function sembrarRestauraciones(cliente: string) {
           consola: n % 5 === 3 ? null : n % 4 === 1 ? "Consola en línea" : "Oficina",
           orden: n % 5 === 3 ? null : `ejemplo-${n}`,
           en_el_equipo: n % 5 === 3,
+          // H1 (15mm): una la recuperó la persona del equipo, desde su propia cuenta.
+          ...(n === 8 ? { cuenta: "recepcion (PC-RECEPCION)", destino: "junto", en_el_equipo: true, por: null, consola: null, orden: null } : {}),
+        });
+      }
+      // 0.8.1 (E3, 15aa): pruebas de restauración automáticas (cada semana) y alguna a mano o desde un espejo.
+      for (let k = 0; k < 6; k++) {
+        const n = i * 12 + j * 6 + k;
+        const fin = ahora - (k * 7 + 1 + i) * 86_400_000 - 5 * 3_600_000;
+        const dur = 50 + ((n * 61) % 400);
+        const mano = k === 2;
+        const espejo = k === 4 && j === 0;
+        const fallo = n % 11 === 3;
+        estado.restauraciones.push({
+          cliente,
+          equipo: e.id,
+          id: `prueba-ejemplo-${e.id.slice(0, 8)}-${n}`,
+          tipo: "prueba_restauracion",
+          hora: new Date(fin).toISOString(),
+          inicio: new Date(fin - dur * 1000).toISOString(),
+          duracion_s: dur,
+          repo: r.id,
+          version: ((n * 40503) >>> 0).toString(16).padStart(8, "0").slice(0, 8),
+          archivos: fallo ? null : 20,
+          bytes: fallo ? null : 30_000_000 + ((n * 3_100_000) % 150_000_000),
+          candidatos: 12_000 + n * 37,
+          resultado: fallo ? "fallo" : "ok",
+          mensaje: fallo ? "Un archivo (archivo .xlsx de 2,1 MB) se restauró con 0 bytes en lugar de 2.202.009." : "20 archivos de la versión restaurados y comprobados.",
+          origen: mano ? "a_mano" : "horario",
+          por: mano ? "Ana Pérez" : null,
+          consola: mano ? "Oficina" : null,
+          espejo: espejo ? { id: "nube", nombre: "Espejo en la nube" } : null,
+          desde: espejo ? "espejo" : "principal",
+          donde: "privada",
+          comprobacion: "contenido",
         });
       }
     });

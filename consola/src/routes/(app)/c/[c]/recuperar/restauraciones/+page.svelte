@@ -4,10 +4,13 @@
   // dónde, cuánto y cuánto tardó (el RTO real), su motivo y su ficha. Las anota
   // el propio equipo (sin rutas) y llegan a todas sus consolas; el motivo que se
   // añade aquí se queda en esta consola.
+  // 0.8.1 (E3, 15aa): también las pruebas de restauración, con el filtro «Reales /
+  // Pruebas automáticas / Pruebas a mano», su ficha y sus cifras aparte; `?ver=prueba_fallida`
+  // (desde su aviso) abre la última prueba fallida del equipo.
   import { untrack } from "svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { ArchiveRestore, CircleCheck, ClipboardCheck, Clock, History, ListChecks, LoaderCircle, MessageSquareText, TriangleAlert } from "@lucide/svelte";
+  import { ArchiveRestore, CircleCheck, ClipboardCheck, Clock, FlaskConical, History, LifeBuoy, ListChecks, LoaderCircle, MessageSquareText, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
@@ -20,7 +23,23 @@
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { bytes, fechaLarga, numero, plural, relativo } from "$lib/formato";
-  import { estadisticas, juntar, MOTIVOS, textoDesde, textoDestino, textoMotivo, textoQuien, textoTardo, type ConMotivo } from "$lib/restauraciones";
+  import {
+    claseRestauracion,
+    estadisticas,
+    juntar,
+    MOTIVOS,
+    NOMBRES_CLASE,
+    textoComprobacion,
+    textoDesde,
+    textoDestino,
+    textoMotivo,
+    textoMuestra,
+    textoQuien,
+    textoTardo,
+    type ClaseRestauracion,
+    type ConMotivo,
+  } from "$lib/restauraciones";
+  import AjustesRestauraciones from "$lib/componentes/AjustesRestauraciones.svelte";
   import type { MotivoRestauracion, Restauraciones } from "$lib/tipos";
 
   let datos = $state<Restauraciones | null>(null);
@@ -28,6 +47,9 @@
   const equipoFiltro = $derived(page.url.searchParams.get("equipo") ?? "");
   let periodo = $state<"30" | "90" | "365" | "todo">("365");
   let soloResultado = $state<"" | "ok" | "fallo">("");
+  /** 15aa: reales, pruebas automáticas o pruebas a mano (nunca juntas: sus cifras van aparte). */
+  let clase = $state<ClaseRestauracion>((page.url.searchParams.get("clase") as ClaseRestauracion | null) ?? "real");
+  const esPrueba = $derived(clase !== "real");
 
   let vuelta = 0;
   async function cargar(c: string, e: string) {
@@ -52,9 +74,36 @@
 
   const todas = $derived(datos ? juntar(datos) : []);
   const desdeT = $derived(periodo === "todo" ? 0 : reloj.ahora - Number(periodo) * 86_400_000);
-  const lista = $derived(todas.filter((r) => Date.parse(r.hora) >= desdeT && (!soloResultado || r.resultado === soloResultado)));
+  const porClase = $derived({
+    real: todas.filter((r) => claseRestauracion(r) === "real").length,
+    prueba_auto: todas.filter((r) => claseRestauracion(r) === "prueba_auto").length,
+    prueba_mano: todas.filter((r) => claseRestauracion(r) === "prueba_mano").length,
+  });
+  const ok = (r: ConMotivo) => r.resultado === "ok";
+  const lista = $derived(
+    todas.filter((r) => claseRestauracion(r) === clase && Date.parse(r.hora) >= desdeT && (!soloResultado || (soloResultado === "ok" ? ok(r) : !ok(r)))),
+  );
   const cifras = $derived(estadisticas(lista));
   const conDuracion = $derived(lista.filter((r) => r.resultado === "ok" && typeof r.duracion_s === "number"));
+  const desdeEspejo = $derived(lista.filter((r) => !!r.espejo).length);
+
+  // 15aa: desde el aviso de una prueba fallida, su ficha (la última fallida de ese equipo).
+  let abiertaDeUrl = "";
+  $effect(() => {
+    const [ver, eq, ts] = [page.url.searchParams.get("ver"), equipoFiltro, todas];
+    if (ver !== "prueba_fallida" || !ts.length) return;
+    untrack(() => {
+      const k = `${ver}|${eq}`;
+      if (abiertaDeUrl === k) return;
+      abiertaDeUrl = k;
+      const r = ts.find((x) => x.tipo === "prueba_restauracion" && x.resultado !== "ok" && (!eq || x.equipo === eq));
+      if (r) {
+        clase = claseRestauracion(r);
+        periodo = "todo";
+        abrir(r);
+      }
+    });
+  });
 
   function filtrarEquipo(id: string) {
     const u = new URL(page.url);
@@ -88,20 +137,7 @@
     }
   }
 
-  // ---------- Ajuste del cliente ----------
-  let cambiandoAjuste = $state(false);
-  async function obligatorio(v: boolean) {
-    if (!actual.id || !datos) return;
-    cambiandoAjuste = true;
-    try {
-      datos.ajustes = await api.ponerAjustesRestauraciones(actual.id, v);
-      avisar(v ? "El motivo será obligatorio al restaurar." : "El motivo vuelve a ser opcional.");
-    } catch (x) {
-      avisar((x as Error).message, "bad");
-    } finally {
-      cambiandoAjuste = false;
-    }
-  }
+  const iconoClase = { real: ArchiveRestore, prueba_auto: FlaskConical, prueba_mano: FlaskConical };
 </script>
 
 <svelte:head><title>Restauraciones · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
@@ -111,12 +147,18 @@
     titulo="Restauraciones"
     icono={ArchiveRestore}
     migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Restauraciones" }]}
-    resumen="Cada restauración queda anotada sola: quién, cuándo, qué versión, desde dónde, cuánto y cuánto tardó. Sin nombres de archivos: no salen del equipo."
+    resumen="Cada restauración y cada prueba de restauración quedan anotadas solas: quién, cuándo, qué versión, desde dónde, cuánto y cuánto tardó. Sin nombres de archivos: no salen del equipo."
   >
     {#snippet acciones()}
       {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-primary" href="/c/{actual.id}/recuperar{equipoFiltro ? `?equipo=${encodeURIComponent(equipoFiltro)}` : ''}"><History size={16} />Restaurar</a>{/if}
     {/snippet}
   </CabeceraPagina>
+
+  <div class="segmented inline clases" role="group" aria-label="Qué restauraciones">
+    {#each ["real", "prueba_auto", "prueba_mano"] as const as k (k)}
+      <button class:on={clase === k} aria-pressed={clase === k} onclick={() => ((clase = k), (soloResultado = ""))}>{NOMBRES_CLASE[k]}{#if datos}<span class="num cuenta">{porClase[k]}</span>{/if}</button>
+    {/each}
+  </div>
 
   <div class="filtros">
     <label class="field-inline">
@@ -140,7 +182,7 @@
       <select class="input" bind:value={soloResultado}>
         <option value="">Todos</option>
         <option value="ok">Correctas</option>
-        <option value="fallo">Fallidas</option>
+        <option value="fallo">{esPrueba ? "Fallidas o con avisos" : "Fallidas"}</option>
       </select>
     </label>
   </div>
@@ -158,40 +200,52 @@
       </Vacio>
     </div>
   {:else}
-    <div class="cifras" role="list" aria-label="Cifras de las restauraciones">
-      <Cifra icono={ArchiveRestore} etiqueta="Restauraciones" valor={numero(cifras.total)} sub={cifras.fallidas ? plural(cifras.fallidas, "fallida", "fallidas") : "todas correctas"} mal={cifras.fallidas > 0} />
-      <Cifra icono={Clock} etiqueta="Tiempo medio (RTO real)" valor={textoTardo(cifras.medio_s)} sub={cifras.maximo_s != null ? `la más larga, ${textoTardo(cifras.maximo_s)}` : "sin correctas"} />
-      <Cifra icono={CircleCheck} etiqueta="Éxito" valor={cifras.exito == null ? "—" : `${cifras.exito} %`} sub={`${bytes(cifras.bytes)} restaurados`} />
-      <Cifra icono={MessageSquareText} etiqueta="Sin motivo" valor={numero(cifras.sinMotivo)} sub={datos.ajustes.motivo_obligatorio ? "el motivo es obligatorio" : "el motivo es opcional"} />
+    <!-- 15aa: las cifras de lo que se ve (las pruebas nunca se mezclan con las reales). -->
+    <div class="cifras" role="list" aria-label="Cifras de {NOMBRES_CLASE[clase].toLowerCase()}">
+      <Cifra icono={iconoClase[clase]} etiqueta={esPrueba ? "Pruebas" : "Restauraciones"} valor={numero(cifras.total)} sub={cifras.fallidas ? plural(cifras.fallidas, "fallida", "fallidas") : cifras.total ? "todas correctas" : "ninguna en el periodo"} mal={cifras.fallidas > 0} />
+      <Cifra icono={Clock} etiqueta={esPrueba ? "Tiempo medio de una prueba" : "Tiempo medio (RTO real)"} valor={textoTardo(cifras.medio_s)} sub={cifras.maximo_s != null ? `la más larga, ${textoTardo(cifras.maximo_s)}` : "sin correctas"} />
+      <Cifra icono={CircleCheck} etiqueta="Éxito" valor={cifras.exito == null ? "—" : `${cifras.exito} %`} sub={`${bytes(cifras.bytes)} ${esPrueba ? "probados" : "restaurados"}`} />
+      {#if esPrueba}
+        <Cifra icono={LifeBuoy} etiqueta="Desde un espejo" valor={numero(desdeEspejo)} sub={desdeEspejo ? "probadas en su espejo" : "todas desde su repositorio"} />
+      {:else}
+        <Cifra icono={MessageSquareText} etiqueta="Sin motivo" valor={numero(cifras.sinMotivo)} sub={datos.ajustes.motivo_obligatorio ? "el motivo es obligatorio" : "el motivo es opcional"} />
+      {/if}
     </div>
 
     {#if conDuracion.length >= 2}
       <div class="graficas">
-        <div class="card p"><GraficaBarras titulo="Cuánto tardó cada restauración" datos={conDuracion} valor={(r) => r.duracion_s} formato={(x) => textoTardo(x)} alElegir={(r) => abrir(r)} clave={(r) => r.id} elegido={ficha?.id ?? null} /></div>
-        <div class="card p"><GraficaBarras titulo="Datos restaurados" datos={conDuracion} valor={(r) => r.bytes} formato={(x) => bytes(x)} alElegir={(r) => abrir(r)} clave={(r) => r.id} elegido={ficha?.id ?? null} /></div>
+        <div class="card p"><GraficaBarras titulo={esPrueba ? "Cuánto tardó cada prueba" : "Cuánto tardó cada restauración"} datos={conDuracion} valor={(r) => r.duracion_s} formato={(x) => textoTardo(x)} alElegir={(r) => abrir(r)} clave={(r) => r.id} elegido={ficha?.id ?? null} /></div>
+        <div class="card p"><GraficaBarras titulo={esPrueba ? "Datos probados" : "Datos restaurados"} datos={conDuracion} valor={(r) => r.bytes} formato={(x) => bytes(x)} alElegir={(r) => abrir(r)} clave={(r) => r.id} elegido={ficha?.id ?? null} /></div>
       </div>
     {/if}
 
     <section class="card p-0" aria-labelledby="t-lista">
-      <h2 class="sr-only" id="t-lista">Lista de restauraciones</h2>
+      <h2 class="sr-only" id="t-lista">Lista de {NOMBRES_CLASE[clase].toLowerCase()}</h2>
       {#if !lista.length}
-        <p class="faint vacio-filtro">Ninguna con estos filtros.</p>
+        <p class="faint vacio-filtro">
+          {#if clase === "prueba_auto" && !porClase.prueba_auto}Aún no hay pruebas automáticas: prográmalas al cambiar las copias (paso «Comprobar») o en la página de cada espejo.{:else if clase === "prueba_mano" && !porClase.prueba_mano}Aún no hay pruebas a mano: «Probar ahora» en la página del repositorio o de cada espejo.{:else}Ninguna con estos filtros.{/if}
+        </p>
       {/if}
       <ul class="lista-rest">
         {#each lista as r (`${r.equipo}|${r.id}`)}
+          {@const Ic = iconoClase[claseRestauracion(r)]}
           <li>
             <button class="fila elegible-fila" onclick={() => abrir(r)}>
-              <span class="tile-ic"><ArchiveRestore size={16} /></span>
+              <span class="tile-ic"><Ic size={16} /></span>
               <span class="fila-texto">
-                <span class="fila-titulo">«{nombreRepo(r.equipo, r.repo)}» de {nombreEquipo(r.equipo)}</span>
+                <span class="fila-titulo">{r.tipo === "prueba_restauracion" ? "Prueba de " : ""}«{nombreRepo(r.equipo, r.repo)}» de {nombreEquipo(r.equipo)}</span>
                 <span class="fila-sub">
-                  {plural(r.elementos ?? 0, "elemento", "elementos")}{r.archivos != null ? ` · ${plural(r.archivos, "archivo", "archivos")}` : ""}{r.bytes ? ` · ${bytes(r.bytes)}` : ""} · {textoDestino(r.destino)} · {textoQuien(r)}
+                  {#if r.tipo === "prueba_restauracion"}
+                    {textoMuestra(r)}{r.bytes ? ` · ${bytes(r.bytes)}` : ""} · {textoDesde(r)} · {textoQuien(r)}
+                  {:else}
+                    {plural(r.elementos ?? 0, "elemento", "elementos")}{r.archivos != null ? ` · ${plural(r.archivos, "archivo", "archivos")}` : ""}{r.bytes ? ` · ${bytes(r.bytes)}` : ""}{r.quitados ? ` (sin ${plural(r.quitados, "cosa quitada", "cosas quitadas")})` : ""} · {textoDestino(r.destino)} · {textoQuien(r)}
+                  {/if}
                 </span>
               </span>
               <span class="fila-meta num">
                 <span class="chips-fila">
                   {#if r.motivoFinal}<span class="badge badge-sm tone-neutral">{textoMotivo(r.motivoFinal.tipo)}</span>{/if}
-                  <Chip pequeno tono={r.resultado === "ok" ? "ok" : "bad"} texto={r.resultado === "ok" ? "Correcta" : "Falló"} />
+                  <Chip pequeno tono={r.resultado === "ok" ? "ok" : r.resultado === "aviso" ? "warn" : "bad"} texto={r.resultado === "ok" ? "Correcta" : r.resultado === "aviso" ? "Con avisos" : "Falló"} />
                 </span>
                 <span class="bloque">{relativo(r.hora, reloj.ahora)} · tardó {textoTardo(r.duracion_s)}</span>
               </span>
@@ -201,12 +255,10 @@
       </ul>
     </section>
 
-    {#if puede.administrar(actual.cliente?.rol)}
-      <label class="switch-row ajuste">
-        <input type="checkbox" checked={datos.ajustes.motivo_obligatorio} disabled={cambiandoAjuste} onchange={(e) => obligatorio(e.currentTarget.checked)} />
-        <span><strong>Pedir siempre el motivo</strong> al restaurar en este cliente<span class="faint">Sin marcar, se pide con un clic pero se puede dejar en blanco. Lo cumple esta consola.</span></span>
-      </label>
-    {/if}
+  {/if}
+  {#if datos && puede.ordenar(actual.cliente?.rol)}
+    <!-- 15ee y 15mm: los dos ajustes, iguales en todas las consolas del cliente. -->
+    <AjustesRestauraciones ajustes={datos.ajustes} alCambiar={(a) => datos && (datos.ajustes = a)} />
   {/if}
 </div>
 
@@ -216,10 +268,37 @@
     <div class="dlg-title">
       <span class="ticon"><ArchiveRestore size={18} /></span>
       <div>
-        <h2 id="t-ficha">Restauración de «{nombreRepo(r.equipo, r.repo)}»</h2>
+        <h2 id="t-ficha">{r.tipo === "prueba_restauracion" ? "Prueba de restauración" : "Restauración"} de «{nombreRepo(r.equipo, r.repo)}»</h2>
         <p>{nombreEquipo(r.equipo)} · {fechaLarga(r.hora)}</p>
       </div>
     </div>
+    {#if r.tipo === "prueba_restauracion"}
+      <!-- 15aa: la ficha de una prueba: qué, desde dónde, dónde, cómo se comprobó, cuánto y quién. -->
+      <dl class="ficha">
+        <dt>Resultado</dt>
+        <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : r.resultado === "aviso" ? "warn" : "bad"} texto={r.resultado === "ok" ? "Correcta" : r.resultado === "aviso" ? "Con avisos" : "Falló"} />{#if r.mensaje} <span class="faint">{r.mensaje}</span>{/if}</dd>
+        <dt>Quién la lanzó</dt>
+        <dd>{textoQuien(r)}</dd>
+        <dt>Cuándo</dt>
+        <dd>{r.inicio ? `${fechaLarga(r.inicio)} → ` : ""}{fechaLarga(r.hora)}</dd>
+        <dt>Cuánto tardó</dt>
+        <dd>{textoTardo(r.duracion_s)}</dd>
+        <dt>Versión</dt>
+        <dd class="num">{r.version || "—"}</dd>
+        <dt>Desde</dt>
+        <dd>{textoDesde(r)}</dd>
+        <dt>Qué archivos</dt>
+        <dd>{textoMuestra(r)}</dd>
+        <dt>Cuánto ocupaban</dt>
+        <dd>{r.bytes != null ? bytes(r.bytes) : "—"}</dd>
+        <dt>Dónde se restauró</dt>
+        <dd>{textoDestino(r.donde ?? "privada")}</dd>
+        <dt>Cómo se comprobó</dt>
+        <dd>{textoComprobacion(r)}</dd>
+      </dl>
+      <p class="faint pequeno">Una prueba no cambia nada de lo copiado: restaura una muestra, la comprueba y la borra. Sin nombres de archivos (son de otras personas).</p>
+      <footer class="pie-ficha"><button class="btn" onclick={() => (ficha = null)}>Cerrar</button></footer>
+    {:else}
     <dl class="ficha">
       <dt>Resultado</dt>
       <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : "bad"} texto={r.resultado === "ok" ? "Correcta" : "Falló"} />{#if r.mensaje} <span class="faint">{r.mensaje}</span>{/if}</dd>
@@ -230,7 +309,7 @@
       <dt>Cuánto tardó</dt>
       <dd>{textoTardo(r.duracion_s)}</dd>
       <dt>Qué</dt>
-      <dd>{plural(r.elementos ?? 0, "elemento elegido", "elementos elegidos")}{r.archivos != null ? `, ${plural(r.archivos, "archivo", "archivos")}` : ""}{r.bytes != null ? `, ${bytes(r.bytes)}` : ""}</dd>
+      <dd>{plural(r.elementos ?? 0, "elemento elegido", "elementos elegidos")}{r.quitados ? ` (sin ${plural(r.quitados, "cosa quitada de dentro", "cosas quitadas de dentro")})` : ""}{r.archivos != null ? `, ${plural(r.archivos, "archivo", "archivos")}` : ""}{r.bytes != null ? `, ${bytes(r.bytes)}` : ""}</dd>
       <dt>Versión</dt>
       <dd class="num">{r.version || "—"}</dd>
       <dt>Desde</dt>
@@ -268,6 +347,7 @@
         <footer><button class="btn" onclick={() => (ficha = null)}>Cerrar</button></footer>
       {/if}
     </div>
+    {/if}
   </Modal>
 {/if}
 
@@ -368,8 +448,14 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  .ajuste {
-    max-width: 660px;
+  .clases .cuenta {
+    margin-left: 6px;
+    color: var(--text-3);
+    font-weight: 400;
+  }
+  .pie-ficha {
+    display: flex;
+    justify-content: flex-end;
   }
   .como-prueba {
     display: flex;
