@@ -10,7 +10,7 @@
   const servidor = $derived(esServidor(equipo));
   const OPCIONES = [
     ["", "Nada"],
-    ["apagar", "Apagar el equipo"],
+    ["apagar", "Apagar"],
     ["hibernar", "Hibernar"],
   ] as const;
   function poner(v: "" | "apagar" | "hibernar") {
