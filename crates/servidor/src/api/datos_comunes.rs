@@ -58,7 +58,7 @@ pub async fn poner(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json
     }
     for n in &p.entradas {
         let Some((clase, _)) = dc::clase(&n.clave) else { return Err(ErrorApi::datos("Dato común desconocido.")) };
-        if clase != Clase::Plantilla {
+        if clase != Clase::Plantilla && !n.semilla {
             dc::valor_valido(&n.clave, &n.valor).map_err(ErrorApi::datos)?;
         }
     }

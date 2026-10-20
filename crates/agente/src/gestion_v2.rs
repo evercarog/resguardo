@@ -1446,6 +1446,8 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_EXCLUSIONES,
     // 0.8.1 (B5, 15pp): guarda observaciones y comentarios comunes del cliente.
     resguardo_protocolo::datos_cliente::ADMITE_NOTAS,
+    // 0.8.1 (H4, 15ss): guarda las pruebas funcionales y su política como datos comunes.
+    resguardo_protocolo::datos_cliente::ADMITE_PRUEBAS,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

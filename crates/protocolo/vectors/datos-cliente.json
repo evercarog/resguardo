@@ -96,7 +96,11 @@
     { "clave": "orden.equipos:todos", "valida": true, "pide_admin": false },
     { "clave": "orden.equipos:otro", "valida": false, "pide_admin": false },
     { "clave": "exclusiones:musica", "valida": true, "pide_admin": false },
-    { "clave": "exclusiones:a/b", "valida": false, "pide_admin": false }
+    { "clave": "exclusiones:a/b", "valida": false, "pide_admin": false },
+    { "clave": "prueba.funcional:0a0e1b2c-0000-4000-8000-000000000002", "valida": true, "pide_admin": false },
+    { "clave": "prueba.funcional:a/b", "valida": false, "pide_admin": false },
+    { "clave": "prueba.politica:cliente", "valida": true, "pide_admin": false },
+    { "clave": "prueba.politica:equipo", "valida": false, "pide_admin": false }
   ],
   "exclusiones": [
     { "nombre": "limpio y sin repetir", "valor": { "nombre": " Música ", "reglas": [" *.mp3 ", "*.flac", "*.mp3"] }, "valido": true, "limpio": { "nombre": "Música", "reglas": ["*.mp3", "*.flac"] } },

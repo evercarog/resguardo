@@ -83,6 +83,16 @@ pub enum Clase {
     /// o `null` (borrado). Un comentario de la bitácora de un equipo, una copia, un repositorio
     /// o un destino, con su autor; la consola de origen va en la entrada. Solo con [`ADMITE_NOTAS`].
     NotaComentario,
+    /// 0.8.1 (H4, 15ss): `prueba.funcional:<id>` → el registro de una prueba funcional (14k):
+    /// fecha, motivo, alcance, qué se restauró y dónde, quién, resultado, tiempos, notas, su
+    /// autor, cuándo se registró, la consola donde se registró (`origen`) y la **lista** de sus
+    /// adjuntos (nunca el contenido: se quedan en la consola que los tiene) o `null` (borrada).
+    /// Solo a agentes con [`ADMITE_PRUEBAS`].
+    PruebaFuncional,
+    /// 0.8.1 (H4): `prueba.politica:cliente` → la política de pruebas funcionales del cliente
+    /// (cada cuántos meses, aviso, plazos por repositorio, objetivos de RTO y RPO) o `null` (la de
+    /// por defecto). Solo a agentes con [`ADMITE_PRUEBAS`].
+    PruebaPolitica,
 }
 
 impl Clase {
@@ -101,11 +111,13 @@ impl Clase {
             Clase::GrupoExclusiones => "exclusiones:",
             Clase::NotaObservacion => "nota.observacion:",
             Clase::NotaComentario => "nota.comentario:",
+            Clase::PruebaFuncional => "prueba.funcional:",
+            Clase::PruebaPolitica => "prueba.politica:",
         }
     }
 }
 
-const CLASES: [Clase; 13] = [
+const CLASES: [Clase; 15] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -119,6 +131,8 @@ const CLASES: [Clase; 13] = [
     Clase::GrupoExclusiones,
     Clase::NotaObservacion,
     Clase::NotaComentario,
+    Clase::PruebaFuncional,
+    Clase::PruebaPolitica,
 ];
 
 /// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
@@ -176,6 +190,216 @@ pub const TIPOS_OBSERVACION: [&str; 3] = ["repositorio", "copia", "destino"];
 /// Tipos con comentarios comunes.
 pub const TIPOS_COMENTARIO: [&str; 4] = ["equipo", "repositorio", "copia", "destino"];
 
+/// 0.8.1 (H4, 15ss): `resumen.admite` de un agente que guarda las pruebas funcionales y su
+/// política (`prueba.funcional:`, `prueba.politica:`). A uno anterior no se le mandan.
+pub const ADMITE_PRUEBAS: &str = "pruebas_comunes";
+/// ¿Es una prueba funcional o su política (solo para agentes con [`ADMITE_PRUEBAS`])?
+pub fn es_de_pruebas(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::PruebaFuncional | Clase::PruebaPolitica))
+}
+/// Como mucho, lo que ocupa una prueba funcional como dato común (JSON). Una más grande
+/// sigue siendo solo de su consola (no cabría bien en una orden).
+pub const MAX_BYTES_PRUEBA: usize = 16 * 1024;
+/// Como en el servidor (`crates/servidor/src/pruebas_funcionales.rs`).
+pub const MOTIVOS_PRUEBA: [&str; 5] = ["programada", "auditoria", "cambio", "incidente", "otro"];
+pub const RESULTADOS_PRUEBA: [&str; 3] = ["ok", "parcial", "fallo"];
+pub const DESDE_PRUEBA: [&str; 4] = ["repositorio", "espejo", "derivada", "otro"];
+const MAX_REPOS_PRUEBA: usize = 200;
+const MAX_ADJUNTOS_LISTA: usize = 20;
+const MAX_MESES_PRUEBA: u64 = 36;
+const MAX_AVISO_PRUEBA: u64 = 90;
+const MAX_RTO_MIN: u64 = 525_600;
+const MAX_RPO_MIN: u64 = 5_256_000;
+
+/// La identidad de una consola (Ed25519 en base64): solo caracteres de base64, hasta 100.
+pub fn identidad_valida(x: &str) -> bool {
+    !x.is_empty() && x.len() <= 100 && x.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '-' | '_'))
+}
+
+/// Un texto opcional de una prueba: ausente, `null` o vacío → nada.
+fn texto_opcional(m: &Map<String, Value>, campo: &str, max: usize, lineas: bool) -> Result<Option<String>, &'static str> {
+    match m.get(campo) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => {
+            let t = v.as_str().ok_or("Texto no válido en la prueba.")?.trim();
+            if t.is_empty() {
+                return Ok(None);
+            }
+            texto_valido(Some(v), 1, max, lineas).map(Some).ok_or("Un texto de la prueba es demasiado largo o tiene caracteres que no valen.")
+        }
+    }
+}
+
+fn minutos(m: &Map<String, Value>, campo: &str, max: u64) -> Result<Option<u64>, &'static str> {
+    match m.get(campo) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().filter(|x| *x <= max).map(Some).ok_or("Tiempo no válido en la prueba."),
+    }
+}
+
+/// Un repositorio de un equipo (`{ equipo, repo }`) o un plazo propio (`{ equipo, repo, meses }`).
+fn repo_ref(v: &Value, con_meses: bool) -> Result<Value, &'static str> {
+    let m = v.as_object().ok_or("Repositorio no válido.")?;
+    solo_campos(m, if con_meses { &["equipo", "repo", "meses"] } else { &["equipo", "repo"] })?;
+    let equipo = m.get("equipo").and_then(Value::as_str).filter(|x| id_simple(x)).ok_or("Repositorio no válido.")?;
+    let repo = m.get("repo").and_then(Value::as_str).filter(|x| id_simple(x)).ok_or("Repositorio no válido.")?;
+    let mut out = json!({ "equipo": equipo, "repo": repo });
+    if con_meses {
+        out["meses"] =
+            json!(m.get("meses").and_then(Value::as_u64).filter(|x| (1..=MAX_MESES_PRUEBA).contains(x)).ok_or("Plazo no válido: de 1 a 36 meses.")?);
+    }
+    Ok(out)
+}
+
+/// Un adjunto de la lista de una prueba (sin el contenido). `de`: la identidad de la consola
+/// que lo tiene (vacío: la que manda el dato); `consola`: su nombre, si se sabe.
+fn adjunto_valido(a: &Value) -> Result<Value, &'static str> {
+    let a = a.as_object().ok_or("Adjunto no válido.")?;
+    solo_campos(a, &["n", "nombre", "tipo", "tamano", "de", "consola"])?;
+    let n = a.get("n").and_then(Value::as_u64).filter(|n| (1..=1_000_000).contains(n)).ok_or("Adjunto no válido.")?;
+    let nombre = texto_valido(a.get("nombre"), 1, 120, false).ok_or("Adjunto no válido.")?;
+    let tipo = a.get("tipo").and_then(Value::as_str).filter(|t| ["application/pdf", "image/png", "image/jpeg"].contains(t)).ok_or("Adjunto no válido.")?;
+    let tamano = a.get("tamano").and_then(Value::as_u64).filter(|t| *t <= 16 * 1024 * 1024).ok_or("Adjunto no válido.")?;
+    let de = a.get("de").and_then(Value::as_str).unwrap_or("");
+    if !de.is_empty() && !identidad_valida(de) {
+        return Err("Adjunto no válido.");
+    }
+    let mut x = json!({ "n": n, "nombre": nombre, "tipo": tipo, "tamano": tamano, "de": de });
+    let consola = texto_corto(a.get("consola").and_then(Value::as_str).unwrap_or(""), 60);
+    if !consola.is_empty() {
+        x["consola"] = json!(consola);
+    }
+    Ok(x)
+}
+
+/// El valor de `prueba.funcional:<id>` (ver [`Clase::PruebaFuncional`]), limpio.
+fn prueba_valida(m: &Map<String, Value>) -> Result<Value, &'static str> {
+    solo_campos(
+        m,
+        &[
+            "fecha",
+            "motivo",
+            "alcance",
+            "repos",
+            "que",
+            "donde",
+            "desde",
+            "quien",
+            "resultado",
+            "incidencias",
+            "rto_min",
+            "rpo_min",
+            "restauracion",
+            "notas",
+            "autor",
+            "creada",
+            "origen",
+            "adjuntos",
+        ],
+    )?;
+    let fecha = m
+        .get("fecha")
+        .and_then(Value::as_str)
+        .filter(|f| f.len() == 10 && chrono::NaiveDate::parse_from_str(f, "%Y-%m-%d").is_ok())
+        .ok_or("Fecha no válida.")?;
+    let motivo = m.get("motivo").and_then(Value::as_str).filter(|x| MOTIVOS_PRUEBA.contains(x)).ok_or("Motivo no válido.")?;
+    let resultado = m.get("resultado").and_then(Value::as_str).filter(|x| RESULTADOS_PRUEBA.contains(x)).ok_or("Resultado no válido.")?;
+    let alcance = m.get("alcance").and_then(Value::as_str).filter(|x| ["cliente", "repos"].contains(x)).ok_or("Alcance no válido.")?;
+    let mut v = json!({ "fecha": fecha, "motivo": motivo, "alcance": alcance, "resultado": resultado });
+    if alcance == "repos" {
+        let xs = m.get("repos").and_then(Value::as_array).ok_or("Faltan los repositorios de la prueba.")?;
+        if xs.is_empty() || xs.len() > MAX_REPOS_PRUEBA {
+            return Err("De 1 a 200 repositorios por prueba.");
+        }
+        v["repos"] = Value::Array(xs.iter().map(|x| repo_ref(x, false)).collect::<Result<_, _>>()?);
+    }
+    for (campo, max, lineas) in [("que", 2000, true), ("donde", 200, false), ("quien", 80, false), ("incidencias", 2000, true), ("notas", 2000, true)] {
+        if let Some(t) = texto_opcional(m, campo, max, lineas)? {
+            v[campo] = json!(t);
+        }
+    }
+    if let Some(d) = m.get("desde").filter(|d| !d.is_null()) {
+        let d = d.as_object().ok_or("«Desde dónde» no válido.")?;
+        solo_campos(d, &["tipo", "destino", "nombre"])?;
+        let tipo = d.get("tipo").and_then(Value::as_str).filter(|x| DESDE_PRUEBA.contains(x)).ok_or("«Desde dónde» no válido.")?;
+        let mut x = json!({ "tipo": tipo });
+        for (campo, max) in [("destino", 160), ("nombre", 120)] {
+            if let Some(t) = texto_opcional(d, campo, max, false)? {
+                x[campo] = json!(t);
+            }
+        }
+        v["desde"] = x;
+    }
+    if let Some(n) = minutos(m, "rto_min", MAX_RTO_MIN)? {
+        v["rto_min"] = json!(n);
+    }
+    if let Some(n) = minutos(m, "rpo_min", MAX_RPO_MIN)? {
+        v["rpo_min"] = json!(n);
+    }
+    if let Some(r) = m.get("restauracion").filter(|r| !r.is_null()) {
+        let r = r.as_object().ok_or("Restauración no válida.")?;
+        solo_campos(r, &["equipo", "id"])?;
+        let equipo = r.get("equipo").and_then(Value::as_str).filter(|x| id_simple(x)).ok_or("Restauración no válida.")?;
+        let id = r
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|x| {
+                x.len() <= 64 && x.strip_prefix("restauracion-").is_some_and(|y| !y.is_empty() && y.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+            })
+            .ok_or("Restauración no válida.")?;
+        v["restauracion"] = json!({ "equipo": equipo, "id": id });
+    }
+    v["autor"] = json!(texto_valido(m.get("autor"), 1, 80, false).ok_or("El autor de la prueba: de 1 a 80 caracteres.")?);
+    v["creada"] = json!(m.get("creada").and_then(Value::as_str).filter(|c| milis(c).is_some()).ok_or("Fecha de registro no válida.")?);
+    if let Some(o) = m.get("origen").filter(|o| !o.is_null()) {
+        let o = o.as_object().ok_or("Origen no válido.")?;
+        solo_campos(o, &["identidad", "consola"])?;
+        let identidad = o.get("identidad").and_then(Value::as_str).filter(|x| identidad_valida(x)).ok_or("Origen no válido.")?;
+        let consola = texto_corto(o.get("consola").and_then(Value::as_str).unwrap_or(""), 60);
+        v["origen"] = json!({ "identidad": identidad, "consola": consola });
+    }
+    if let Some(xs) = m.get("adjuntos").filter(|a| !a.is_null()) {
+        let xs = xs.as_array().ok_or("Adjuntos no válidos.")?;
+        if xs.len() > MAX_ADJUNTOS_LISTA {
+            return Err("Demasiados adjuntos en la prueba.");
+        }
+        if !xs.is_empty() {
+            v["adjuntos"] = Value::Array(xs.iter().map(adjunto_valido).collect::<Result<_, _>>()?);
+        }
+    }
+    if v.to_string().len() > MAX_BYTES_PRUEBA {
+        return Err("La prueba es demasiado grande para compartirla (hasta 16 KiB): sigue solo en su consola.");
+    }
+    Ok(v)
+}
+
+/// El valor de `prueba.politica:cliente` (ver [`Clase::PruebaPolitica`]), limpio.
+fn politica_valida(m: &Map<String, Value>) -> Result<Value, &'static str> {
+    solo_campos(m, &["activo", "meses", "aviso_dias", "rto_objetivo_min", "rpo_objetivo_min", "repos"])?;
+    let activo = m.get("activo").and_then(Value::as_bool).ok_or("Activa: sí o no.")?;
+    let meses = m.get("meses").and_then(Value::as_u64).filter(|x| (1..=MAX_MESES_PRUEBA).contains(x)).ok_or("Cada 1 a 36 meses.")?;
+    let aviso = m.get("aviso_dias").and_then(Value::as_u64).filter(|x| (1..=MAX_AVISO_PRUEBA).contains(x)).ok_or("El aviso, de 1 a 90 días antes.")?;
+    let mut v = json!({ "activo": activo, "meses": meses, "aviso_dias": aviso });
+    for (campo, max) in [("rto_objetivo_min", MAX_RTO_MIN), ("rpo_objetivo_min", MAX_RPO_MIN)] {
+        if let Some(n) = minutos(m, campo, max)? {
+            if n == 0 {
+                return Err("Objetivo de RTO o RPO no válido.");
+            }
+            v[campo] = json!(n);
+        }
+    }
+    if let Some(xs) = m.get("repos").filter(|r| !r.is_null()) {
+        let xs = xs.as_array().ok_or("Plazos no válidos.")?;
+        if xs.len() > MAX_REPOS_PRUEBA {
+            return Err("Como mucho 200 repositorios con plazo propio.");
+        }
+        if !xs.is_empty() {
+            v["repos"] = Value::Array(xs.iter().map(|x| repo_ref(x, true)).collect::<Result<_, _>>()?);
+        }
+    }
+    Ok(v)
+}
+
 /// Una parte de un objeto (equipo, id de una copia o de un repositorio, id de un destino):
 /// letras, cifras y `-_.:@`, de 1 a 128, sin `.` ni `..` solos.
 fn parte_objeto_valida(x: &str) -> bool {
@@ -232,7 +456,8 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
         Clase::SedeDestino => id_destino_valido(sujeto),
         Clase::OrdenEquipos => sujeto == "todos",
         Clase::NotaObservacion => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_OBSERVACION.contains(&t) && objeto_nota_valido(t, o)),
-        Clase::NotaComentario => id_simple(sujeto),
+        Clase::NotaComentario | Clase::PruebaFuncional => id_simple(sujeto),
+        Clase::PruebaPolitica => sujeto == "cliente",
     };
     ok.then_some((c, sujeto))
 }
@@ -527,6 +752,8 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
             }
             Ok(v)
         }
+        Clase::PruebaFuncional => prueba_valida(m),
+        Clase::PruebaPolitica => politica_valida(m),
     })();
     r.map_err(str::to_string)
 }
@@ -716,6 +943,60 @@ mod tests {
         let mut ed = k.clone();
         ed["editado"] = json!("2026-10-20T10:05:00Z");
         assert!(valor_valido("nota.comentario:k-1", &ed).is_ok());
+    }
+
+    /// 0.8.1 (H4, 15ss): las pruebas funcionales y su política, comunes.
+    #[test]
+    fn pruebas_funcionales_comunes() {
+        assert_eq!(clase("prueba.funcional:0b1c-2d3e").map(|x| x.0), Some(Clase::PruebaFuncional));
+        assert!(clase("prueba.funcional:a/b").is_none());
+        assert_eq!(clase("prueba.politica:cliente").map(|x| x.0), Some(Clase::PruebaPolitica));
+        assert!(clase("prueba.politica:otro").is_none());
+        assert!(es_de_pruebas("prueba.funcional:x") && es_de_pruebas("prueba.politica:cliente") && !es_de_pruebas("nota.comentario:x"));
+        assert!(!pide_admin("prueba.funcional:x") && !pide_admin("prueba.politica:cliente"));
+        let p = json!({
+            "fecha": "2026-10-01", "motivo": "programada", "alcance": "repos", "repos": [{ "equipo": "e-1", "repo": "docs" }],
+            "que": " Facturas\nde octubre ", "donde": "", "quien": "Ana", "resultado": "ok", "rto_min": 95, "notas": null,
+            "autor": "Ana", "creada": "2026-10-01T12:00:00Z",
+            "adjuntos": [{ "n": 1, "nombre": "Acta.pdf", "tipo": "application/pdf", "tamano": 1000, "de": "" }],
+        });
+        let limpio = valor_valido("prueba.funcional:k-1", &p).unwrap();
+        assert_eq!(limpio["que"], "Facturas\nde octubre");
+        assert!(limpio.get("donde").is_none() && limpio.get("notas").is_none(), "{limpio}");
+        assert_eq!(limpio["adjuntos"][0]["de"], "");
+        let mal = |campo: &str, x: Value| {
+            let mut q = p.clone();
+            q[campo] = x;
+            valor_valido("prueba.funcional:k-1", &q).is_err()
+        };
+        assert!(mal("fecha", json!("2026-13-01")));
+        assert!(mal("motivo", json!("inventado")));
+        assert!(mal("repos", json!([])));
+        assert!(mal("repos", json!([{ "equipo": "../x", "repo": "d" }])));
+        assert!(mal("rto_min", json!(-1)));
+        assert!(mal("autor", json!("")));
+        assert!(mal("creada", json!("ayer")));
+        assert!(mal("contrasena", json!("x")), "campos de más");
+        assert!(mal("adjuntos", json!([{ "n": 1, "nombre": "x.exe", "tipo": "application/x-msdownload", "tamano": 1, "de": "" }])));
+        assert!(mal("adjuntos", json!([{ "n": 1, "nombre": "x.pdf", "tipo": "application/pdf", "tamano": 1, "de": "no vale!" }])));
+        assert!(mal("adjuntos", json!([{ "n": 1, "nombre": "x.pdf", "tipo": "application/pdf", "tamano": 1, "datos": "JVBERi0=" }])), "nunca el contenido");
+        assert!(mal("notas", json!("x".repeat(2001))));
+        assert!(mal("origen", json!({ "identidad": "", "consola": "Oficina" })));
+        assert!(!mal("origen", json!({ "identidad": "aWQtb2ZpY2luYQ==", "consola": "Oficina" })));
+        // Tres textos largos con letras de varios bytes: no cabe (sigue en su consola).
+        let mut grande = p.clone();
+        for campo in ["que", "incidencias", "notas"] {
+            grande[campo] = json!("€".repeat(2000));
+        }
+        assert!(valor_valido("prueba.funcional:k-1", &grande).is_err());
+        // La política.
+        let pol = json!({ "activo": true, "meses": 6, "aviso_dias": 30, "rto_objetivo_min": 240, "repos": [{ "equipo": "e", "repo": "r", "meses": 3 }] });
+        assert_eq!(valor_valido("prueba.politica:cliente", &pol).unwrap(), pol);
+        for (campo, x) in [("meses", json!(0)), ("aviso_dias", json!(91)), ("rto_objetivo_min", json!(0)), ("activo", json!("si")), ("otra", json!(1))] {
+            let mut q = pol.clone();
+            q[campo] = x;
+            assert!(valor_valido("prueba.politica:cliente", &q).is_err(), "{campo}");
+        }
     }
 
     /// 0.8.1 (B2, 15y): grupos de exclusiones del cliente.

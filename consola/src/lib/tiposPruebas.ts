@@ -47,7 +47,14 @@ export interface PruebaFuncional extends EntradaPruebaFuncional {
   actualizada: string;
   por: string;
   adjuntos: AdjuntoPrueba[];
+  /** 0.8.1 (H4): quién la registró (la persona; sin él, `por`). */
+  autor?: string | null;
+  /** 0.8.1 (H4): la consola donde se registró, si fue otra. */
+  origen?: { consola: string } | null;
+  /** 0.8.1 (H4): adjuntos que están en otra consola (no se pueden bajar desde aquí). */
+  adjuntos_fuera?: (AdjuntoPrueba & { consola?: string })[];
   /** Si cumple los objetivos de la política (null: sin objetivo o sin el dato). */
+
   cumple_rto?: boolean | null;
   cumple_rpo?: boolean | null;
 }

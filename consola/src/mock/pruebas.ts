@@ -42,6 +42,9 @@ function de(c: string) {
         incidencias: "Faltaba el permiso de escritura en la carpeta restaurada; se arregló a mano.",
         rto_min: 320,
         rpo_min: 1500,
+        // 0.8.1 (H4): registrada en otra consola del cliente, con su acta allí.
+        origen: { consola: "En línea" },
+        adjuntos_fuera: [{ n: 1, nombre: "Acta del simulacro.pdf", tipo: "application/pdf", tamano: 184_320, consola: "En línea" }],
       },
       { fecha: dia(ahora - 390 * 86_400_000), motivo: "cambio", alcance: "cliente", que: "Todo el servidor de archivos", donde: "Equipo de repuesto", quien: "Luis Gómez", resultado: "ok", rto_min: 480, rpo_min: 900 },
     ];
@@ -64,8 +67,11 @@ function de(c: string) {
         restauracion: null,
         creada: new Date(Date.parse(`${p.fecha}T15:00:00`)).toISOString(),
         actualizada: new Date(Date.parse(`${p.fecha}T15:00:00`)).toISOString(),
-        por: p.quien ?? "Ana",
+        por: p.origen ? `${p.quien ?? "Ana"} (desde la consola «${p.origen.consola}»)` : (p.quien ?? "Ana"),
+        autor: p.quien ?? "Ana",
+        origen: p.origen ?? null,
         adjuntos: [],
+        adjuntos_fuera: p.adjuntos_fuera ?? [],
       });
     }
   }

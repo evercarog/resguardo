@@ -142,6 +142,41 @@ pub struct Entrada {
     pub restauracion: Option<RestauracionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notas: Option<String>,
+    /// 0.8.1 (H4): quién la registró (lo pone el servidor; nunca lo que mande la consola).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autor: Option<String>,
+    /// 0.8.1 (H4): la consola donde se registró, si fue otra (lo pone el servidor al recibirla).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origen: Option<Origen>,
+    /// 0.8.1 (H4): los adjuntos que están en otra consola (solo la lista: el contenido nunca viaja).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adjuntos_fuera: Vec<AdjuntoFuera>,
+}
+
+/// 0.8.1 (H4): la consola donde se registró una prueba que llegó de otra.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Origen {
+    /// Su identidad (Ed25519 en base64).
+    pub identidad: String,
+    /// El nombre que tiene en los equipos (vacío si no se sabe).
+    #[serde(default)]
+    pub consola: String,
+}
+
+/// 0.8.1 (H4): un adjunto que está en otra consola (sin el contenido).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AdjuntoFuera {
+    pub n: i64,
+    pub nombre: String,
+    pub tipo: String,
+    pub tamano: i64,
+    /// La identidad de la consola que lo tiene.
+    pub de: String,
+    /// Su nombre, si se sabe.
+    #[serde(default)]
+    pub consola: String,
 }
 
 /// Un plazo propio de un repositorio.
@@ -473,6 +508,19 @@ fn prueba_json(p: &PruebaGuardada, adjuntos: &[AdjuntoInfo], pol: &Politica) -> 
         .filter(|a| a.prueba == p.id)
         .map(|a| json!({ "n": a.n, "nombre": a.nombre, "tipo": a.tipo, "tamano": a.tamano }))
         .collect::<Vec<_>>());
+    // 0.8.1 (H4): los adjuntos de otra consola, solo la lista («adjunto en la consola X»).
+    if let Some(o) = v.as_object_mut() {
+        if let Some(fuera) = o.remove("adjuntos_fuera") {
+            o.insert("adjuntos_fuera".into(), fuera);
+        } else {
+            o.insert("adjuntos_fuera".into(), json!([]));
+        }
+        // El origen sin la identidad (no hace falta en la pantalla).
+        if let Some(c) = o.get("origen").and_then(|x| x.get("consola")).and_then(Value::as_str).map(str::to_string) {
+            o.insert("origen".into(), json!({ "consola": c }));
+        }
+    }
+
     // Si cumple los objetivos de la política (null: sin objetivo o sin el dato).
     if let Some(e) = e {
         v["cumple_rto"] = json!(pol.rto_objetivo_min.zip(e.rto_min).map(|(o, x)| x <= o));
@@ -641,6 +689,180 @@ pub fn para_informe(db: &dyn Almacen, ctx: &ClienteCtx, equipos: &[crate::almace
     Ok(ParaInforme { lista, mas, rto_objetivo_min: pol.rto_objetivo_min, rpo_objetivo_min: pol.rpo_objetivo_min, ultima, vence, fase })
 }
 
+// ---------- Datos comunes (0.8.1, H4, 15ss) ----------
+//
+// Cada registro (`prueba.funcional:<id>`) y la política (`prueba.politica:cliente`) viajan por
+// los equipos del cliente como los demás datos comunes (`crate::datos_comunes`,
+// consolas-multiples.md §6.5): gana el cambio más reciente. Los adjuntos **nunca** viajan (2 MB
+// no caben en una orden ni en el documento de un equipo): va su lista, con la identidad de la
+// consola que los tiene (`de`; vacía: la que manda el dato), y las demás enseñan «adjunto en la
+// consola X».
+
+/// La clave común de la política.
+pub const CLAVE_POLITICA: &str = "prueba.politica:cliente";
+
+/// La clave común de una prueba.
+pub fn clave_prueba(id: &str) -> String {
+    format!("prueba.funcional:{id}")
+}
+
+/// Apunta el valor de ahora de una prueba (o su borrado) para mandarlo a los equipos.
+fn compartir(db: &dyn Almacen, ctx: &ClienteCtx, id: &str, por: &str, propia: &str) {
+    crate::datos_comunes::registrar_lo_de_aqui(db, ctx, &clave_prueba(id), por, propia);
+}
+
+fn hora_rfc(t: Ts) -> String {
+    chrono::DateTime::from_timestamp(t, 0).unwrap_or_default().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Una prueba de aquí como dato común, sin limpiar (`None`: no existe). Sus adjuntos de aquí van
+/// con `de` vacío; los de otra consola, con la suya.
+pub fn valor_comun(db: &dyn Almacen, ctx: &ClienteCtx, id: &str) -> R<Option<Value>> {
+    let Some(p) = db.prueba_funcional(ctx, id)? else { return Ok(None) };
+    let Ok(e) = serde_json::from_str::<Entrada>(&p.datos) else { return Ok(Some(json!({ "ilegible": true }))) };
+    let mut v = serde_json::to_value(&e).map_err(|x| x.to_string())?;
+    if let Some(m) = v.as_object_mut() {
+        for k in ["autor", "origen", "adjuntos_fuera"] {
+            m.remove(k);
+        }
+    }
+    let autor: String = e.autor.clone().unwrap_or_else(|| p.por.clone()).chars().filter(|c| !c.is_control()).take(80).collect();
+    v["autor"] = json!(if autor.trim().is_empty() { "Sin nombre".to_string() } else { autor.trim().to_string() });
+    v["creada"] = json!(hora_rfc(p.creada));
+    if let Some(o) = &e.origen {
+        v["origen"] = json!({ "identidad": o.identidad, "consola": o.consola });
+    }
+    let mut adjuntos: Vec<Value> = db
+        .adjuntos_pruebas(ctx)?
+        .into_iter()
+        .filter(|a| a.prueba == p.id)
+        .map(|a| json!({ "n": a.n, "nombre": a.nombre, "tipo": a.tipo, "tamano": a.tamano, "de": "" }))
+        .collect();
+    for a in &e.adjuntos_fuera {
+        let mut x = json!({ "n": a.n, "nombre": a.nombre, "tipo": a.tipo, "tamano": a.tamano, "de": a.de });
+        if !a.consola.is_empty() {
+            x["consola"] = json!(a.consola);
+        }
+        adjuntos.push(x);
+    }
+    if !adjuntos.is_empty() {
+        v["adjuntos"] = json!(adjuntos);
+    }
+    Ok(Some(v))
+}
+
+/// Lo que llega de otro sitio, visto desde aquí: los adjuntos «de quien lo manda» (`de` vacío)
+/// pasan a ser de esa consola; los que son de aquí (`de` = esta identidad) vuelven a `de` vacío;
+/// el origen se pone si no lo trae (lo registró quien lo manda) y se quita si es esta consola.
+pub fn ver_desde_aqui(valor: &Value, identidad: &str, consola: &str, propia: &str) -> Value {
+    if valor.is_null() {
+        return Value::Null;
+    }
+    let mut v = valor.clone();
+    let la_de = |de: &str| -> String {
+        if de.is_empty() {
+            identidad.to_string()
+        } else {
+            de.to_string()
+        }
+    };
+    if let Some(xs) = v.get_mut("adjuntos").and_then(Value::as_array_mut) {
+        for a in xs.iter_mut() {
+            let de = la_de(a["de"].as_str().unwrap_or(""));
+            if a["de"].as_str().unwrap_or("").is_empty() && !consola.is_empty() {
+                a["consola"] = json!(consola);
+            }
+            if de == propia {
+                a["de"] = json!("");
+                if let Some(m) = a.as_object_mut() {
+                    m.remove("consola");
+                }
+            } else {
+                a["de"] = json!(de);
+            }
+        }
+    }
+    let origen = v.get("origen").filter(|o| !o.is_null()).cloned().unwrap_or_else(|| json!({ "identidad": identidad, "consola": consola }));
+    if origen["identidad"].as_str() == Some(propia) || origen["identidad"].as_str().unwrap_or("").is_empty() {
+        if let Some(m) = v.as_object_mut() {
+            m.remove("origen");
+        }
+    } else {
+        v["origen"] = origen;
+    }
+    v
+}
+
+/// Pone aquí una prueba que llega de otra consola (ya vista desde aquí, [`ver_desde_aqui`]).
+/// `null`: borrada (con sus adjuntos de aquí). Lo que no valga aquí se salta, sin error.
+pub fn aplicar_comun(db: &dyn Almacen, ctx: &ClienteCtx, id: &str, valor: &Value, por: &str) -> R<()> {
+    if valor.is_null() {
+        db.borrar_prueba_funcional(ctx, id)?;
+        return Ok(());
+    }
+    let mut m = valor.as_object().cloned().unwrap_or_default();
+    let autor = m.remove("autor").and_then(|x| x.as_str().map(str::to_string));
+    let creada = m.remove("creada").and_then(|x| x.as_str().and_then(resguardo_protocolo::datos_cliente::milis)).map(|ms| ms / 1000);
+    let origen = m.remove("origen").and_then(|x| serde_json::from_value::<Origen>(x).ok());
+    let adjuntos = m.remove("adjuntos").and_then(|x| x.as_array().cloned()).unwrap_or_default();
+    let Ok(e) = serde_json::from_value::<Entrada>(Value::Object(m)) else {
+        eprintln!("Prueba funcional común «{id}» que no se entiende aquí: se salta.");
+        return Ok(());
+    };
+    let ahora = ahora();
+    let (mut e, fecha) = match validar(e, ahora) {
+        Ok(x) => x,
+        Err(x) => {
+            eprintln!("Prueba funcional común «{id}» que no vale aquí ({x}): se salta.");
+            return Ok(());
+        }
+    };
+    e.autor = autor;
+    e.origen = origen;
+    e.adjuntos_fuera = adjuntos
+        .iter()
+        .filter(|a| !a["de"].as_str().unwrap_or("").is_empty())
+        .filter_map(|a| {
+            Some(AdjuntoFuera {
+                n: a["n"].as_i64()?,
+                nombre: a["nombre"].as_str()?.to_string(),
+                tipo: a["tipo"].as_str()?.to_string(),
+                tamano: a["tamano"].as_i64()?,
+                de: a["de"].as_str()?.to_string(),
+                consola: a["consola"].as_str().unwrap_or("").to_string(),
+            })
+        })
+        .collect();
+    let previa = db.prueba_funcional(ctx, id)?;
+    let creada = previa.as_ref().map(|p| p.creada).or(creada).unwrap_or(ahora);
+    let datos = serde_json::to_string(&e).map_err(|x| x.to_string())?;
+    let p = PruebaGuardada { id: id.to_string(), fecha, datos, creada, actualizada: ahora, por: por.chars().take(120).collect() };
+    if !db.guardar_prueba_funcional(ctx, &p, MAX_PRUEBAS)? {
+        eprintln!("Prueba funcional común «{id}»: este cliente ya tiene {MAX_PRUEBAS} pruebas aquí.");
+    }
+    Ok(())
+}
+
+/// La política de aquí como dato común (`null`: nunca se puso).
+pub fn politica_comun(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
+    Ok(match db.ajuste_cliente(ctx, AJUSTE)? {
+        Some(_) => serde_json::to_value(politica(db, ctx)?.0).map_err(|x| x.to_string())?,
+        None => Value::Null,
+    })
+}
+
+/// Pone aquí la política que llega de otra consola (`null`: la de por defecto).
+pub fn aplicar_politica_comun(db: &dyn Almacen, ctx: &ClienteCtx, valor: &Value, por: &str) -> R<()> {
+    let p = if valor.is_null() { Politica::default() } else { serde_json::from_value::<Politica>(valor.clone()).map_err(|x| x.to_string())? };
+    let p = validar_politica(p)?;
+    db.poner_ajuste_cliente(ctx, AJUSTE, &serde_json::to_string(&p).map_err(|x| x.to_string())?, por)
+}
+
+/// Los ids de las pruebas de aquí (para compartir las de antes una vez, como semilla).
+pub fn ids(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Vec<String>> {
+    Ok(db.pruebas_funcionales(ctx)?.into_iter().map(|p| p.id).collect())
+}
+
 // ---------- API ----------
 
 fn actor(u: &Usuario) -> String {
@@ -672,24 +894,31 @@ async fn guardar(st: St, u: Usuario, c: String, id: Option<String>, e: Entrada) 
     if e.quien.is_empty() {
         e.quien = u.0.cuenta.nombre.chars().take(80).collect();
     }
-    let datos = serde_json::to_string(&e).map_err(ErrorApi::interno)?;
-    let (actor, por) = (actor(&u), u.0.cuenta.nombre.clone());
+    let (actor, por, propia) = (actor(&u), u.0.cuenta.nombre.clone(), st.identidad_pub.clone());
     let nueva = id.is_none();
     let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let r = st
         .db_crudo(move |db| {
             equipos_del_cliente(db, &ctx, &e)?;
-            let creada = match db.prueba_funcional(&ctx, &id)? {
+            let previa = db.prueba_funcional(&ctx, &id)?;
+            let creada = match &previa {
                 Some(p) => p.creada,
                 None if nueva => ahora,
                 None => return Err("no_existe".into()),
             };
+            // 0.8.1 (H4): el autor, el origen y los adjuntos de otra consola los pone el servidor.
+            let antes = previa.as_ref().and_then(|p| serde_json::from_str::<Entrada>(&p.datos).ok());
+            e.autor = antes.as_ref().and_then(|a| a.autor.clone()).or_else(|| previa.as_ref().map(|p| p.por.clone())).or_else(|| Some(por.clone()));
+            e.origen = antes.as_ref().and_then(|a| a.origen.clone());
+            e.adjuntos_fuera = antes.map(|a| a.adjuntos_fuera).unwrap_or_default();
+            let datos = serde_json::to_string(&e).map_err(|x| x.to_string())?;
             let p = PruebaGuardada { id: id.clone(), fecha, datos, creada, actualizada: ahora, por };
             if !db.guardar_prueba_funcional(&ctx, &p, MAX_PRUEBAS)? {
                 return Err(format!("Como mucho {MAX_PRUEBAS} pruebas por cliente."));
             }
             let accion = if nueva { "registrar_prueba_funcional" } else { "cambiar_prueba_funcional" };
             db.auditar(&ctx, &actor, accion, &id, &json!({ "fecha": e.fecha, "resultado": e.resultado, "alcance": e.alcance }).to_string())?;
+            compartir(db, &ctx, &id, &p.por, &propia);
             let mut v = todo(db, &ctx, ahora)?;
             v["id"] = json!(id);
             Ok(v)
@@ -718,13 +947,14 @@ pub async fn borrar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Strin
     if !id_valido(&id) {
         return Err(ErrorApi::no_existe());
     }
-    let actor = actor(&u);
+    let (actor, por, propia) = (actor(&u), u.0.cuenta.nombre.clone(), st.identidad_pub.clone());
     let r = st
         .db_crudo(move |db| {
             if !db.borrar_prueba_funcional(&ctx, &id)? {
                 return Err("no_existe".into());
             }
             db.auditar(&ctx, &actor, "borrar_prueba_funcional", &id, "{}")?;
+            compartir(db, &ctx, &id, &por, &propia);
             todo(db, &ctx, ahora())
         })
         .await?
@@ -736,12 +966,14 @@ pub async fn borrar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Strin
 pub async fn poner_ajustes(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json(p): Json<Politica>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
     let p = validar_politica(p).map_err(ErrorApi::datos)?;
-    let (actor, por) = (actor(&u), u.0.cuenta.nombre.clone());
+    let (actor, por, propia) = (actor(&u), u.0.cuenta.nombre.clone(), st.identidad_pub.clone());
     let r = st
         .db(move |db| {
             let datos = serde_json::to_string(&p).map_err(|e| e.to_string())?;
             db.poner_ajuste_cliente(&ctx, AJUSTE, &datos, &por)?;
             db.auditar(&ctx, &actor, "ajustes_pruebas_funcionales", "", &json!({ "activo": p.activo, "meses": p.meses, "repos": p.repos.len() }).to_string())?;
+            // 0.8.1 (H4): la política, igual en todas las consolas del cliente.
+            crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, CLAVE_POLITICA, &por, &propia);
             todo(db, &ctx, ahora())
         })
         .await?;
@@ -780,7 +1012,7 @@ pub async fn anadir_adjunto(State(st): State<St>, u: Usuario, Path((c, id)): Pat
         creado: ahora(),
         por: u.0.cuenta.nombre.clone(),
     };
-    let actor = actor(&u);
+    let (actor, propia) = (actor(&u), st.identidad_pub.clone());
     let r = st
         .db_crudo(move |db| {
             if db.prueba_funcional(&ctx, &id)?.is_none() {
@@ -790,6 +1022,8 @@ pub async fn anadir_adjunto(State(st): State<St>, u: Usuario, Path((c, id)): Pat
                 return Err(format!("Como mucho {MAX_ADJUNTOS} adjuntos por prueba y 100 MB entre todos los del cliente."));
             };
             db.auditar(&ctx, &actor, "adjunto_prueba_funcional", &format!("{id}/{n}"), &json!({ "tipo": info.tipo, "tamano": info.tamano }).to_string())?;
+            // 0.8.1 (H4): las demás consolas ven que hay un adjunto (aquí).
+            compartir(db, &ctx, &id, &info.por, &propia);
             todo(db, &ctx, ahora())
         })
         .await?
@@ -827,13 +1061,14 @@ pub async fn borrar_adjunto(State(st): State<St>, u: Usuario, Path((c, id, n)): 
     if !id_valido(&id) {
         return Err(ErrorApi::no_existe());
     }
-    let actor = actor(&u);
+    let (actor, por, propia) = (actor(&u), u.0.cuenta.nombre.clone(), st.identidad_pub.clone());
     let r = st
         .db_crudo(move |db| {
             if !db.borrar_adjunto_prueba(&ctx, &id, n)? {
                 return Err("no_existe".into());
             }
             db.auditar(&ctx, &actor, "quitar_adjunto_prueba_funcional", &format!("{id}/{n}"), "{}")?;
+            compartir(db, &ctx, &id, &por, &propia);
             todo(db, &ctx, ahora())
         })
         .await?

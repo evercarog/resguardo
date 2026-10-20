@@ -25,8 +25,8 @@ export const admiteDatosCliente = (e: Pick<Equipo, "resumen"> | null | undefined
 /** Los equipos a los que se mandan: confirmados, gestionados desde aquí y con un agente que los guarda. */
 export const equiposQueGuardan = (equipos: Equipo[]) => equipos.filter((e) => e.confirmado && e.modo === "gestionado" && admiteDatosCliente(e));
 
-export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones" | "nota.observacion" | "nota.comentario";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario"];
+export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones" | "nota.observacion" | "nota.comentario" | "prueba.funcional" | "prueba.politica";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario", "prueba.funcional", "prueba.politica"];
 
 /** 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda sedes, categorías y orden. */
 export const ADMITE_SEDES = "sedes";
@@ -43,6 +43,12 @@ export const esDeExclusiones = (clave: string) => claseDe(clave)?.clase === "exc
 export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave: string): boolean {
   if (esDeSedes(clave)) return admiteSedes(e);
   if (esDeExclusiones(clave)) return !!e?.resumen?.admite?.includes(ADMITE_EXCLUSIONES);
+  if (esDePruebas(clave)) {
+    if (!e?.resumen?.admite?.includes(ADMITE_PRUEBAS)) return false;
+    // Como los comentarios: con el documento del equipo casi lleno, las pruebas siguen en esta consola.
+    const bytes = (e.resumen as { datos_cliente?: { bytes?: number } | null }).datos_cliente?.bytes ?? 0;
+    return claseDe(clave)?.clase !== "prueba.funcional" || bytes < LLENO_COMENTARIOS;
+  }
   if (esDeNotas(clave)) {
     if (!e?.resumen?.admite?.includes(ADMITE_NOTAS)) return false;
     // Los comentarios pueden ser muchos: con el documento del equipo ya a tres cuartos de su
@@ -52,6 +58,13 @@ export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave
   }
   return true;
 }
+
+/** 0.8.1 (H4, 15ss): `resumen.admite` de un agente que guarda las pruebas funcionales y su política. */
+export const ADMITE_PRUEBAS = "pruebas_comunes";
+/** ¿Es una prueba funcional o su política? (Solo a los agentes con `admite: "pruebas_comunes"`.) */
+export const esDePruebas = (clave: string) => ["prueba.funcional", "prueba.politica"].includes(claseDe(clave)?.clase ?? "");
+/** ¿Guarda este equipo las pruebas funcionales para todas las consolas? */
+export const admitePruebas = (e: Pick<Equipo, "resumen"> | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_PRUEBAS);
 
 /** 0.8.1 (B5, 15pp): `resumen.admite` de un agente que guarda observaciones y comentarios comunes. */
 export const ADMITE_NOTAS = "notas_comunes";
@@ -95,9 +108,11 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
           ? sujeto === "todos"
           : clase === "nota.observacion"
             ? ((i) => i > 0 && TIPOS_OBSERVACION_COMUN.includes(sujeto.slice(0, i)) && objetoNotaValido(sujeto.slice(0, i), sujeto.slice(i + 1)))(sujeto.indexOf(":"))
-            : clase === "nota.comentario"
+            : clase === "nota.comentario" || clase === "prueba.funcional"
               ? idSimple(sujeto)
-          : idDestinoValido(sujeto);
+              : clase === "prueba.politica"
+                ? sujeto === "cliente"
+                : idDestinoValido(sujeto);
   return ok ? { clase, sujeto } : null;
 }
 
@@ -307,6 +322,14 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
       const t = typeof v?.texto === "string" ? (v.texto as string).replace(/\s+/g, " ").trim() : "";
       return t ? (t.length > 80 ? `«${t.slice(0, 79)}…»` : `«${t}»`) : "sin observación";
     }
+    case "prueba.funcional": {
+      if (!v) return "borrada";
+      const r = v.resultado === "ok" ? "bien" : v.resultado === "parcial" ? "con incidencias" : v.resultado === "fallo" ? "falló" : "";
+      return typeof v.fecha === "string" ? `del ${v.fecha}${r ? `, ${r}` : ""}` : "la tiene";
+    }
+    case "prueba.politica":
+      if (!v) return "la de por defecto";
+      return v.activo === false ? "apagada" : `cada ${v.meses} ${v.meses === 1 ? "mes" : "meses"}, aviso ${v.aviso_dias} días antes`;
     default:
       return "—";
   }
@@ -348,6 +371,11 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
     }
     case "nota.comentario":
       return "Un comentario";
+    case "prueba.funcional":
+      return "Una prueba funcional";
+    case "prueba.politica":
+      return "Política de pruebas funcionales";
+
     default:
       return f.clave;
   }

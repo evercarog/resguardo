@@ -35,7 +35,13 @@ export function cargarFuncionales(c: string, forzar = false): Promise<void> {
   return p;
 }
 
-/** Lo que devuelve el servidor tras un cambio (ya trae todo). */
+/**
+ * Lo que devuelve el servidor tras un cambio (ya trae todo). 0.8.1 (H4, 15ss): el servidor
+ * apunta el cambio como dato común «por enviar» y aquí se manda ya a los equipos (si quien lo
+ * cambia es administrador; si no, lo hará la consola de un administrador al abrirse).
+ */
 export function ponerFuncionales(c: string, x: PruebasFuncionales) {
   porCliente[c] = x;
+  void import("./datosComunes.svelte").then((m) => m.sincronizar()).catch(() => {});
 }
+
