@@ -7,7 +7,7 @@
   // consola por traer (se abren aquí con la clave). Solo administradores.
   import { tip } from "$lib/tooltip";
   import { untrack } from "svelte";
-  import { ChevronRight, KeyRound, LayoutTemplate, Shuffle, TriangleAlert } from "@lucide/svelte";
+  import { ChevronRight, KeyRound, LayoutTemplate, Monitor, Shuffle, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import BotonCargando from "./BotonCargando.svelte";
   import CampoClave from "./CampoClave.svelte";
@@ -18,6 +18,9 @@
   import { destinosDelCliente } from "$lib/destinos";
   import { comunes, elegir, repartirConClave, sincronizar, traerPlantillas } from "$lib/datosComunes.svelte";
   import { claseDe, diferencia, equiposQueGuardan, pendiente, textoAviso, type Diferencia } from "$lib/datosComunes";
+  import { variasConsolas } from "$lib/datosEquipo";
+  import { fijarNombre, nombreSoloAqui } from "$lib/nombreEnTodas";
+  import type { Equipo } from "$lib/tipos";
 
   const admin = $derived(puede.administrar(actual.cliente?.rol));
 
@@ -40,7 +43,11 @@
 
   const p = $derived(comunes.cliente === actual.id ? pendiente(comunes.datos) : pendiente(null));
   const hayEquipos = $derived(equiposQueGuardan(actual.equipos).length > 0);
-  const texto = $derived(admin && hayEquipos ? textoAviso(p) : null);
+  // B5 (15pp): equipos con varias consolas cuyo nombre aún es solo de esta (el agente
+  // lo guardaría para todas, pero nadie se lo ha puesto): otra consola puede llamarlo distinto.
+  const nombres = $derived(admin ? actual.equipos.filter((e) => variasConsolas(e) && nombreSoloAqui(e)) : []);
+  const textoNombres = $derived(nombres.length ? (nombres.length === 1 ? "1 equipo con el nombre solo en esta consola" : `${nombres.length} equipos con el nombre solo en esta consola`) : null);
+  const texto = $derived([admin && hayEquipos ? textoAviso(p) : null, textoNombres].filter(Boolean).join(" · ") || null);
 
   /** El nombre con que se ve aquí cada destino (para no enseñar su id). */
   const nombreDestino = $derived.by(() => {
@@ -83,6 +90,28 @@
     hacer(`${d.clave}|${lado}`, () => elegir(actual.cliente!, actual.equipos, d, lado, clave, (t) => (paso = t)), d.conClave);
   const repartir = () => hacer("repartir", () => repartirConClave(actual.cliente!, actual.equipos, clave, (t) => (paso = t)), true);
   const traer = () => hacer("traer", () => traerPlantillas(actual.cliente!, clave, (t) => (paso = t)), true);
+  /** «Usar este en todas»: el nombre de aquí pasa a ser el del equipo (orden `nombre_equipo`, sin clave). */
+  const usarNombre = (e: Equipo) =>
+    hacer(
+      `nombre|${e.id}`,
+      async () => {
+        await fijarNombre(actual.cliente!, e);
+        return `Pedido a ${e.nombre}: todas sus consolas lo llamarán «${e.nombre}».`;
+      },
+      false,
+    );
+  const usarTodos = () =>
+    hacer(
+      "nombres",
+      async () => {
+        for (const e of nombres) {
+          paso = `Mandando el nombre a ${e.nombre}…`;
+          await fijarNombre(actual.cliente!, e);
+        }
+        return nombres.length === 1 ? "Nombre pedido al equipo." : `Nombres pedidos a ${nombres.length} equipos.`;
+      },
+      false,
+    );
 
   /** El color de una etiqueta (para la muestra), si el dato es un color. */
   function colorDe(clave: string, valor: unknown): number | null {
@@ -116,7 +145,7 @@
       <span class="ticon warn"><Shuffle size={18} /></span>
       <div>
         <h2 id="t-comunes">Lo mismo en todas las consolas</h2>
-        <p>Los colores de las etiquetas, los nombres, el tipo y las marcas de los destinos y las plantillas se ven igual en todas las consolas del cliente. Lo que aquí era distinto espera a que elijas.</p>
+        <p>Los colores de las etiquetas, los nombres de los equipos y de los destinos, el tipo y las marcas de los destinos, las observaciones y comentarios y las plantillas se ven igual en todas las consolas del cliente. Lo que aquí era distinto espera a que elijas.</p>
       </div>
     </div>
 
@@ -149,6 +178,27 @@
       </section>
     {/if}
 
+    {#if nombres.length}
+      <section class="bloque" aria-labelledby="t-nombres">
+        <h3 id="t-nombres"><Monitor size={15} />Nombres solo en esta consola</h3>
+        <p class="faint pequeno">Estos equipos están en varias consolas y su nombre de aquí no lo tiene puesto el equipo: en las otras pueden llamarse distinto (o como en Windows). Elige este para todas o deja que cada consola use el suyo.</p>
+        <ul class="difs">
+          {#each nombres as e (e.id)}
+            <li class="dif">
+              <div class="dif-texto">
+                <strong>{e.nombre}</strong>
+                <span class="faint pequeno">En esta consola: «{e.nombre}» · en las demás, el suyo</span>
+              </div>
+              <div class="dif-botones">
+                <BotonCargando type="button" class="btn btn-sm" cargando={ocupado === `nombre|${e.id}`} textoCargando="Pidiendo…" disabled={!!ocupado} onclick={() => usarNombre(e)}>Usar este en todas</BotonCargando>
+              </div>
+            </li>
+          {/each}
+        </ul>
+        {#if nombres.length > 1}<div><BotonCargando type="button" class="btn btn-sm" cargando={ocupado === "nombres"} textoCargando="Pidiendo…" disabled={!!ocupado} onclick={usarTodos}>Usar los de esta consola en todos</BotonCargando></div>{/if}
+      </section>
+    {/if}
+
     {#if conClave}
       <section class="bloque" aria-labelledby="t-regla">
         <h3 id="t-regla"><KeyRound size={15} />Tipo y marcas de destinos por repartir</h3>
@@ -171,7 +221,7 @@
       <p class="error-campo" role="alert">{errorClave}</p>
     {/if}
     {#if paso}<p class="faint pequeno" aria-live="polite">{paso}</p>{/if}
-    {#if !diferencias.length && !conClave && !p.porTraer.length}<p class="faint">Todo está igual en todas las consolas.</p>{/if}
+    {#if !diferencias.length && !conClave && !p.porTraer.length && !nombres.length}<p class="faint">Todo está igual en todas las consolas.</p>{/if}
 
     <footer>
       <button type="button" class="btn btn-ghost" onclick={cerrar}>Cerrar</button>

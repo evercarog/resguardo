@@ -20,6 +20,7 @@
   import { aleatorio, borrar } from "$lib/cripto/bytes";
   import { etiquetaEquipo, etiquetaValida, hashCodigo, kCfg, materialCliente, normalizarCodigo, sasV2, sasV3 } from "$lib/cripto/claves";
   import { Codigos, codigoDeHash, generarCodigo, LARGO_PREPARADO } from "$lib/codigo";
+  import { fijarNombreTrasAlta } from "$lib/nombreEnTodas";
   import { cola, nombreArchivo, validarDatos } from "$lib/cola";
   import { mandarOrden } from "$lib/ordenar";
   import { cuentaAtras } from "$lib/formato";
@@ -246,12 +247,17 @@
   }
 
   function seguirAlta(equipoId: string, ordenId: string, empId: string) {
+    const cliente = actual.cliente;
     const t = setInterval(async () => {
       try {
         const o = (await enFondo(() => api.ordenesEquipo(c, equipoId, 5))).find((x) => x.id === ordenId);
         if (o) alta = o;
         // Con el alta hecha, el código ya no sirve para nada: se olvida aquí también.
-        if (o?.estado === "hecha") codigos.olvidar(empId);
+        if (o?.estado === "hecha") {
+          codigos.olvidar(empId);
+          // B5 (15pp): el nombre que tiene aquí, también para las demás consolas (si el agente lo guarda).
+          if (cliente) void fijarNombreTrasAlta(cliente, equipoId).catch(() => {});
+        }
         if (o && !["pendiente", "entregada", "en_marcha"].includes(o.estado)) clearInterval(t);
       } catch {
         /* se reintenta */

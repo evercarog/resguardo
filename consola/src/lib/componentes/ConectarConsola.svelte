@@ -28,6 +28,7 @@
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
+  import { fijarNombre, nombreSoloAqui } from "$lib/nombreEnTodas";
 
   let {
     cliente,
@@ -76,6 +77,10 @@
     for (const e of activos) if (!(e.id in elegidos)) elegidos[e.id] = !motivo(e) && (!soloEquipos || soloEquipos.includes(e.id));
   });
   const aConectar = $derived(activos.filter((e) => elegidos[e.id] && !motivo(e)));
+  // B5 (15pp): los nombres de aquí que el equipo aún no tiene puestos. La otra consola tomaría
+  // el de Windows: se pregunta cuál queda (por defecto, el de aquí, para todas).
+  const nombresDistintos = $derived(aConectar.filter((e) => nombreSoloAqui(e)));
+  let nombresDeAqui = $state(true);
   const terminadas = $derived(enviadas.filter((x) => x.error || (x.orden && ["hecha", "fallida", "rechazada", "cancelada", "caducada"].includes(x.orden.estado))).length);
   /** Repetirla en un equipo que ya la tiene es inofensivo: el equipo contesta «ya gestiona este equipo» y no cambia nada. */
   const yaEstaba = (o: Orden | null) => !!o && o.estado === "fallida" && /ya gestiona este equipo/i.test(o.mensaje ?? "");
@@ -120,6 +125,8 @@
       for (const [i, eq] of lista.entries()) {
         pasoTxt = `${eq.nombre} (${i + 1} de ${lista.length})…`;
         try {
+          // B5: el nombre de aquí, antes, para que la otra consola lo vea ya con el primer informe.
+          if (nombresDeAqui && nombreSoloAqui(eq)) await fijarNombre(cliente, eq).catch(() => {});
           const o = await mandarOrden({ cliente, equipo: eq, tipo: "anadir_consola", cuerpo, secretos: { claveAdmin }, alPaso: (x) => (pasoTxt = `${eq.nombre}: ${x.toLowerCase()}`) });
           enviadas[i] = { equipo: eq, orden: o, error: null };
         } catch (err) {
@@ -222,6 +229,16 @@
           <p class="faint">No hay equipos gestionados desde aquí.</p>
         {/each}
       </fieldset>
+      {#if nombresDistintos.length}
+        <fieldset class="nombres">
+          <legend>Cómo se llamarán allí</legend>
+          <p class="faint pequeno">
+            {nombresDistintos.length === 1 ? `«${nombresDistintos[0].nombre}» tiene aquí un nombre` : `${nombresDistintos.length} equipos tienen aquí un nombre`} que el equipo aún no guarda: la otra consola lo llamaría como en Windows.
+          </p>
+          <label class="opcion"><input type="radio" name="nombres-conectar" value={true} bind:group={nombresDeAqui} />Con el nombre de aquí, en todas las consolas (recomendado)</label>
+          <label class="opcion"><input type="radio" name="nombres-conectar" value={false} bind:group={nombresDeAqui} />Que cada consola use el suyo</label>
+        </fieldset>
+      {/if}
       <CampoClave requerido id="clave-admin-conectar" etiqueta="Clave de administración" bind:value={claveAdmin}>
         {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
       </CampoClave>
@@ -265,6 +282,27 @@
 </Modal>
 
 <style>
+  .nombres {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .nombres legend {
+    padding: 0 4px;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .opcion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 24px;
+    font-size: var(--fs-sm);
+  }
   .guia {
     margin: 0;
     padding-left: 1.3em;
