@@ -106,6 +106,10 @@ pub struct Info {
     /// Nombres de los equipos que guardaron versiones en él (para elegir qué traer).
     pub equipos: Vec<String>,
     pub etiquetas: Vec<String>,
+    /// 0.8.1 (15gg): las carpetas y el equipo de la última versión (para que la copia nueva
+    /// siga desde ahí, con la misma versión padre, y avisar si el nombre del equipo no coincide).
+    pub ultima_carpetas: Vec<String>,
+    pub ultimo_equipo: Option<String>,
 }
 
 /// Comprueba que la contraseña abre el repositorio (`restic cat config`) y
@@ -130,7 +134,15 @@ pub fn abrir(acc: &Access) -> Result<Info, String> {
     let mut etiquetas: Vec<String> = snaps.iter().flat_map(|s| s.tags.iter().cloned()).collect();
     etiquetas.sort();
     etiquetas.dedup();
-    Ok(Info { versiones: snaps.len(), ultima: snaps.iter().map(|s| s.time.clone()).max(), equipos, etiquetas })
+    let ultima = snaps.iter().max_by(|a, b| a.time.cmp(&b.time));
+    Ok(Info {
+        versiones: snaps.len(),
+        ultima: ultima.map(|s| s.time.clone()),
+        equipos,
+        etiquetas,
+        ultima_carpetas: ultima.map(|s| s.paths.iter().take(100).cloned().collect()).unwrap_or_default(),
+        ultimo_equipo: ultima.map(|s| s.hostname.clone()).filter(|h| !h.is_empty()),
+    })
 }
 
 fn fecha_corta(iso: &str) -> String {
@@ -192,6 +204,9 @@ pub fn adoptar_repositorio(v: &mut Vinculo, c: &Value, sellado: bool) -> Result<
     if sellado {
         detalle["equipos"] = json!(info.equipos);
         detalle["etiquetas"] = json!(info.etiquetas);
+        // 15gg: solo sellado para la consola (son rutas).
+        detalle["ultima_carpetas"] = json!(info.ultima_carpetas);
+        detalle["ultimo_equipo"] = json!(info.ultimo_equipo);
     }
     let servidor = if solo_anadir == Some(true) { " El servidor es de solo añadir: la retención se aplica en él." } else { "" };
     if solo_probar {

@@ -152,10 +152,10 @@ export interface CarpetaDelAlmacen {
 const clave = (zona: string, valor: string) => `${zona}|${valor}`;
 
 /** Las derivadas de un repositorio con su carpeta por defecto (la externa de siempre: su id; las demás: `<repo>-<id>`). */
-function derivadasConCarpeta(r: RepositorioResumen): { id: string; externa?: boolean; destino_id?: string | null; destino?: string | null; carpeta: string }[] {
-  const l: { id: string; externa?: boolean; destino_id?: string | null; destino?: string | null; carpeta: string }[] = [];
+function derivadasConCarpeta(r: RepositorioResumen): { id: string; nombre?: string | null; externa?: boolean; destino_id?: string | null; destino?: string | null; carpeta: string }[] {
+  const l: { id: string; nombre?: string | null; externa?: boolean; destino_id?: string | null; destino?: string | null; carpeta: string }[] = [];
   if (r.externa) l.push({ id: "externa", externa: true, destino_id: r.externa.destino_id, destino: r.externa.destino, carpeta: r.id });
-  for (const d of r.derivadas ?? []) l.push({ id: d.id, destino_id: d.destino_id, destino: d.destino, carpeta: `${r.id}-${d.id}` });
+  for (const d of r.derivadas ?? []) l.push({ id: d.id, nombre: d.nombre, destino_id: d.destino_id, destino: d.destino, carpeta: `${r.id}-${d.id}` });
   return l;
 }
 
@@ -190,7 +190,8 @@ export function contenidoAlmacen(almacen: Pick<Equipo, "id">, equipos: Equipo[])
         if (!dd || ad?.id !== almacen.id) continue;
         const en = rutaEnElAlmacen(dd.donde, dv.carpeta);
         if (!en) continue;
-        const nombre = `${r.nombre || r.id} (copia derivada)`;
+        // 15t: su nombre, si se le puso.
+        const nombre = dv.nombre || `${r.nombre || r.id} (copia derivada)`;
         poner({ ...en, zona: zonaPorPuerto(ad, dd.donde), tipo: "derivada", equipo: e, repo: r, derivada: { id: dv.id, externa: dv.externa, destino: dv.destino }, adoptado: esAdoptado(e, dd, equipos), nombre, de: e.nombre, texto: `${nombre} · ${e.nombre}` });
       }
     }

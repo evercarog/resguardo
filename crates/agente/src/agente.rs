@@ -860,6 +860,12 @@ mod tray {
                     // Hasta el próximo inicio de sesión (si se muestra o no lo decide la consola).
                     Some(Accion::Ocultar) => return Ok(()),
                     Some(Accion::Ventana) => abrir_ventana(),
+                    // 15kk: la cuenta atrás se para aquí mismo (el usuario puede) y se le dice al servicio.
+                    Some(Accion::NoApagar) => {
+                        crate::apagar::cancelar();
+                        let _ = std::fs::write(crate::agent::requests_dir().join(crate::apagar::NO_APAGAR), chrono::Local::now().to_rfc3339());
+                        globo(&tray, "No se apagará", "Resguardo no apagará el equipo esta vez.", false);
+                    }
                     None => {}
                 }
             }
@@ -892,6 +898,10 @@ mod tray {
                     for a in crate::escritorio::avisos(&estado.actividades, &estado.hechas, &nuevo.actividades, &nuevo.hechas, nuevo.escritorio.avisos, false) {
                         avisador.avisar(a);
                     }
+                }
+                // 15kk: el equipo se va a apagar: se avisa siempre (aunque el icono esté oculto).
+                if let Some(a) = bandeja::aviso_apagado(&estado, &nuevo) {
+                    globo(&tray, &a.titulo, &a.texto, a.error);
                 }
                 if crate::escritorio::abrir_al_empezar(&mut vistas, &nuevo.actividades, nuevo.escritorio.ventana, false) && !elevado && webview2 {
                     abrir_ventana();

@@ -15,7 +15,7 @@
   import { comprobarLlaves } from "$lib/fijadas";
   import { esperarRespuesta } from "$lib/adoptar";
   import AlertaLlaves from "./AlertaLlaves.svelte";
-  import { esDestructiva } from "$lib/cripto/ordenes";
+  import { esDestructiva, pideAdminPorCuerpo } from "$lib/cripto/ordenes";
   import { resultadoFirmado } from "$lib/cripto/claves";
   import { bytes, cuentaAtras, fechaLarga } from "$lib/formato";
   import { infCopia, ultimaVuelta, type Vuelta } from "$lib/copia";
@@ -83,7 +83,8 @@
     if (estado === "cambiada") llavesCambiadas = true;
     else if (necesitaRepo(tipo, cuerpo) && !necesitaAdmin(tipo)) fijarPrimero = estado === "sin_fijar";
   });
-  const pideAdmin = $derived(necesitaAdmin(tipo) || fijarPrimero);
+  // 15kk: también las que lo piden por su cuerpo («Copiar ahora» que apaga al terminar).
+  const pideAdmin = $derived(necesitaAdmin(tipo) || pideAdminPorCuerpo(tipo, cuerpo) || fijarPrimero);
   const pideRepo = $derived(necesitaRepo(tipo, cuerpo));
   const espera = $derived(equipo.espera_min_horas ?? cliente.espera_min_horas);
   const destructiva = $derived(

@@ -11,10 +11,15 @@
   // Plan 0.8.0, F3 (14u): «A medida» con «Versiones por día» (de cada día, las más
   // cercanas a unas horas o la primera y la última), solo donde la aplica el
   // planificador del agente o del almacén (`admitePorDia`).
+  //
+  // 0.8.1 (15z): al pasar a «Personalizar», «Desde cero» (vacía, lo habitual) o «A partir
+  // de la elegida»; «Vaciar» siempre a mano y una «×» por fila. Es el mismo editor en la
+  // retención del equipo, del almacén y de las copias derivadas.
   import { untrack } from "svelte";
-  import { CalendarDays, Info, Plus, X } from "@lucide/svelte";
+  import { CalendarDays, Eraser, Info, Plus, X } from "@lucide/svelte";
   import { numero } from "$lib/formato";
-  import { copiaRegla, errorRegla, estimarVersiones, leerPlazo, MAX_HORAS_POR_DIA, PERIODOS, plazoEnPalabras, presetDe, PRESETS, resumenRegla, SIEMPRE, type Periodo } from "$lib/retencion";
+  import { tip } from "$lib/tooltip";
+  import { copiaRegla, errorRegla, estimarVersiones, leerPlazo, MAX_HORAS_POR_DIA, PERIODOS, plazoEnPalabras, presetDe, PRESETS, reglaSinNada, reglaVacia, resumenRegla, SIEMPRE, sinPeriodo, textoRegla, type Periodo } from "$lib/retencion";
   import type { Regla } from "$lib/tipos";
 
   let {
@@ -53,8 +58,19 @@
   const error = $derived(errorRegla(regla, admite, admitePorDia));
   const estimacion = $derived(error ? null : estimarVersiones(regla, horasDelDia));
 
+  /** 15z: la regla que estaba elegida al pasar a «Personalizar» (para «A partir de la elegida»). */
+  let base = $state<Regla | null>(null);
+  let desde = $state<"cero" | "elegida">("cero");
+  const textoBase = $derived(base ? (PRESETS.find((p) => p.id === presetDe(base!))?.texto ?? textoRegla(base)) : "");
+
   function elegir(p: string) {
     if (p === "personalizada") {
+      // Desde cero por defecto: no arrastra la que estaba elegida (se puede recuperar con «A partir de la elegida»).
+      if (!personalizada) {
+        base = reglaSinNada(regla) ? null : copiaRegla(regla);
+        desde = "cero";
+        regla = reglaVacia();
+      }
       personalizada = true;
       return;
     }
@@ -63,6 +79,16 @@
     personalizada = false;
     regla = copiaRegla(preset.regla);
   }
+
+  function ponerDesde(d: "cero" | "elegida") {
+    desde = d;
+    regla = d === "elegida" && base ? copiaRegla(base) : reglaVacia();
+  }
+  /** «Vaciar»: todo a cero (también «Versiones por día»). */
+  function vaciar() {
+    regla = reglaVacia();
+  }
+  const filaVacia = (k: Periodo) => cantidad(k) === 0 && !regla.plazos?.[k];
 
   const cantidad = (k: Periodo) => (k === "horarias" ? (regla.horarias ?? 0) : regla[k]);
   function ponerCantidad(k: Periodo, n: number) {
@@ -123,13 +149,25 @@
   </fieldset>
 
   {#if elegido === "personalizada"}
-    <div class="tabla" role="group" aria-label="Reglas a medida">
+    <div class="a-medida">
+      {#if base}
+        <div class="segmented inline" role="radiogroup" aria-label="Cómo empezar">
+          <button type="button" role="radio" aria-checked={desde === "cero"} class:on={desde === "cero"} onclick={() => ponerDesde("cero")}>Desde cero</button>
+          <button type="button" role="radio" aria-checked={desde === "elegida"} class:on={desde === "elegida"} onclick={() => ponerDesde("elegida")} use:tip={textoBase}>A partir de la elegida</button>
+        </div>
+      {/if}
+      <button type="button" class="btn btn-sm btn-ghost vaciar" disabled={reglaSinNada(regla)} onclick={vaciar}><Eraser size={14} />Vaciar</button>
+    </div>
+    {#if base && desde === "elegida"}<p class="faint nota">Partes de «{textoBase}»: cambia o quita lo que no quieras.</p>{/if}
+    <div class="tabla" class:con-plazo={admite} role="group" aria-label="Reglas a medida">
       <span class="cab"></span>
       {#if admite}<span class="cab">Una por periodo durante</span>{/if}
       <span class="cab">{admite ? "Y además, las últimas" : "Las últimas"}</span>
+      <span class="cab"></span>
       {#each filas as k (k)}
         {@const pl = plazo(k)}
         {@const n = cantidad(k)}
+        <div class="fila">
         <span class="nombre">{NOMBRE[k]}</span>
         {#if admite}
           <span class="plazo">
@@ -164,6 +202,8 @@
             <label class="siempre"><input type="checkbox" checked={n === SIEMPRE} onchange={(e) => ponerCantidad(k, e.currentTarget.checked ? SIEMPRE : 0)} />siempre</label>
           {/if}
         </span>
+        <button type="button" class="icon-btn quitar-fila" aria-label="Quitar las {NOMBRE[k].toLowerCase()}" use:tip={"Quitar esta fila"} disabled={filaVacia(k)} onclick={() => (regla = sinPeriodo(regla, k))}><X size={14} /></button>
+        </div>
       {/each}
     </div>
   {/if}
@@ -278,12 +318,24 @@
   }
   .tabla {
     display: grid;
-    grid-template-columns: max-content 1fr 1fr;
+    grid-template-columns: max-content 1fr auto;
     gap: 6px var(--sp-3);
     align-items: center;
   }
-  .tabla:not(:has(.plazo)) {
-    grid-template-columns: max-content 1fr;
+  .tabla.con-plazo {
+    grid-template-columns: max-content 1fr 1fr auto;
+  }
+  .a-medida {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .a-medida .vaciar {
+    margin-left: auto;
+  }
+  .quitar-fila {
+    justify-self: end;
   }
   .cab {
     font-size: var(--fs-xs);
@@ -332,9 +384,33 @@
   .err {
     color: var(--bad);
   }
+  .fila {
+    display: contents;
+  }
   @media (max-width: 520px) {
-    .tabla {
+    .tabla,
+    .tabla.con-plazo {
       grid-template-columns: 1fr;
+      gap: var(--sp-3);
+    }
+    /* Cada periodo, su bloque: el nombre con su «×» arriba y sus campos debajo. */
+    .fila {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .fila .nombre {
+      grid-column: 1;
+      grid-row: 1;
+    }
+    .fila .quitar-fila {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .fila .plazo,
+    .fila .cuantas {
+      grid-column: 1 / -1;
     }
     .cab {
       display: none;

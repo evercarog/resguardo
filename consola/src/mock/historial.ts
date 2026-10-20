@@ -88,7 +88,8 @@ export function informeRepo(r: T.RepositorioResumen, copias: T.CopiaResumen[], o
           archivos_cambiados: cambiados,
           archivos_sin_cambios: 18_000 + Math.floor(rnd() * 900),
           duracion_s: Math.round(dur),
-          etiquetas: d % 30 === 0 ? ["mensual"] : [],
+          // 15v: las de su copia (sin ninguna, «resguardo-agente», como el agente).
+          etiquetas: [...(k.etiquetas?.length ? k.etiquetas : ["resguardo-agente"]), ...(d % 30 === 0 ? ["mensual"] : [])],
         });
       }
     }

@@ -44,6 +44,7 @@
     Laptop,
     LoaderCircle,
     Monitor,
+    FolderInput,
     Pencil,
     Play,
     Power,
@@ -97,6 +98,7 @@
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import CopiarEnAlmacen from "$lib/componentes/CopiarEnAlmacen.svelte";
   import NuevoRepositorio from "$lib/componentes/NuevoRepositorio.svelte";
+  import AdoptarRepositorio from "$lib/componentes/AdoptarRepositorio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
@@ -146,6 +148,8 @@
   import NubesConectadas from "$lib/componentes/almacen/NubesConectadas.svelte";
   import RetencionesDelAlmacen from "$lib/componentes/almacen/RetencionesDelAlmacen.svelte";
   import AvisoOrdenar from "$lib/componentes/almacen/AvisoOrdenar.svelte";
+  import RepositoriosSueltos from "$lib/componentes/almacen/RepositoriosSueltos.svelte";
+  import { sueltosDe } from "$lib/sueltos";
   // C1 (plan 0.8.0, 14kk): el camino de cada repositorio en su tarjeta, y cada copia derivada como repositorio propio.
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
   import { caminoDeCopia, hrefDerivada, textoEslabon, type Eslabon } from "$lib/camino";
@@ -166,6 +170,8 @@
   import DatosDelEquipo from "$lib/componentes/DatosDelEquipo.svelte";
   import { datosBasicos, reinicioAntes, sistemaDe } from "$lib/datosBasicos";
   import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
+  import RenombrarCopia, { type QueRenombrar } from "$lib/componentes/copias/RenombrarCopia.svelte";
+  import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
@@ -278,8 +284,8 @@
   /** C1: cada copia derivada (también la «copia externa» de antes) como un repositorio propio, enlazado con su origen. */
   const reposDerivados = $derived(
     repos.flatMap((r) => [
-      ...(r.externa ? [{ r, id: "externa", destino: r.externa.destino ?? "otro destino", destinoId: r.externa.destino_id ?? null }] : []),
-      ...(r.derivadas ?? []).filter((dv) => dv.activa !== false).map((dv) => ({ r, id: dv.id, destino: dv.destino ?? "otro destino", destinoId: dv.destino_id ?? null })),
+      ...(r.externa ? [{ r, id: "externa", nombre: null, destino: r.externa.destino ?? "otro destino", destinoId: r.externa.destino_id ?? null }] : []),
+      ...(r.derivadas ?? []).filter((dv) => dv.activa !== false).map((dv) => ({ r, id: dv.id, nombre: dv.nombre ?? null, destino: dv.destino ?? "otro destino", destinoId: dv.destino_id ?? null })),
     ]),
   );
   const eslabonDerivada = (repo: string, id: string) => caminoRepo.get(repo)?.find((x) => x.id === (id === "externa" ? "externa" : `derivada-${id}`));
@@ -371,11 +377,25 @@
     destinoVacio?: { id: string; nombre: string; tipo: string };
   };
   let dialogo = $state<Dialogo | null>(null);
+  // 0.8.1 (15t): cambiar el nombre de una copia o de una copia derivada (con la clave).
+  let renombrarCopia = $state<QueRenombrar | null>(null);
+  // 15kk: «Copiar ahora» con «Al terminar: apagar / hibernar».
+  let copiarK = $state<{ repo: string; id: string; nombre: string } | null>(null);
+  const admiteNombreCopia = $derived(!!equipo?.resumen?.admite?.includes("nombre_copia"));
   /** Equipos del cliente que guardan copias (para «Copiar en …»). */
   const almacenes = $derived(actual.equipos.filter((x) => x.id !== equipo?.id && x.confirmado && x.modo !== "trasladado" && x.resumen?.guarda_copias?.activo));
   let copiarEn = $state<Equipo | null>(null);
   /** «Repositorio nuevo…» con este equipo ya elegido (almacén, nube o disco). */
   let repoNuevo = $state(false);
+  // 15gg: «Usar un repositorio que ya existe», a la vista; desde «Dar a un equipo» del almacén
+  // llega con ?adoptar=1&donde=<destino>&ruta=<carpeta> (nombres de carpeta, sin secretos).
+  let adoptar = $state<{ donde?: string; ruta?: string } | null>(null);
+  let adoptarPedido = false;
+  $effect(() => {
+    if (adoptarPedido || page.url.searchParams.get("adoptar") !== "1" || !equipo || !puede.administrar(rol)) return;
+    adoptarPedido = true;
+    untrack(() => (adoptar = { donde: page.url.searchParams.get("donde") ?? undefined, ruta: page.url.searchParams.get("ruta") ?? undefined }));
+  });
   /** v1.28: un almacén puede tener un repositorio en sí mismo (para lo suyo, p. ej. las copias de la consola). */
   const propioPosible = $derived(!!equipo && admiteAlmacenPropio(equipo) && !destinos.some((d) => esDeAlmacen(d, equipo!)));
   function abrirGuardar() {
@@ -957,6 +977,8 @@
             <a class="junto enlace-version" href="/c/{c}/ajustes/versiones" use:tip={actualizacionEq.detalle ?? actualizacionEq.texto}><Chip pequeno tono={actualizacionEq.tono} texto={actualizacionEq.texto} /></a>
           {/if}
           {#if equipo.rol === "almacenamiento"}<span class="junto">· Guarda copias <Ayuda id="guarda-copias" /></span>{/if}
+          <!-- 15ii: sin conexión no es un fallo hasta pasar su margen. -->
+          {#if equipo.resumen?.movil?.sale_oficina}<span class="junto" use:tip={`Sin conexión no cuenta como fallo hasta pasar ${equipo.resumen.movil.margen_dias ?? 7} días sin copia`}>· Sale de la oficina</span>{/if}
           <span class="junto">·
             {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)"></span>Conectado</span><Ayuda id="conectado" />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}</span
           >
@@ -993,7 +1015,7 @@
               grupos={[
                 copias.map((k) => ({
                   texto: k.nombre,
-                  onclick: () => abrir({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" }),
+                  onclick: () => (copiarK = { repo: k.repo, id: k.id, nombre: k.nombre }),
                 })),
               ]}
             />
@@ -1120,7 +1142,7 @@
           <div class="card p-0 lista">
             {#each copias as k (k.id)}
               {@const vuelta = ultimaVuelta(k, equipo.ultimo_informe)}
-              {@const est = estadoCopia(k, vuelta, pausado, reloj.ahora)}
+              {@const est = estadoCopia(k, vuelta, pausado, reloj.ahora, equipo.resumen?.movil)}
               {@const prox = proximaDe(k, equipo.ultimo_informe, reloj.ahora)}
               {@const rk = repos.find((r) => r.id === k.repo)}
               <div class="fila">
@@ -1147,12 +1169,15 @@
                   {#if prox && k.activa !== false && !pausado && Date.parse(prox) > reloj.ahora}<br />Próxima <Tiempo iso={prox} />{/if}
                 </span>
                 <Chip tono={est.tono} texto={est.texto} />
+                {#if puede.administrar(rol)}
+                  <button class="icon-btn" use:tip={"Cambiar el nombre"} aria-label="Cambiar el nombre de «{k.nombre}»" onclick={() => (renombrarCopia = { tipo: "copia", id: k.id, nombre: k.nombre })}><Pencil size={15} /></button>
+                {/if}
                 {#if puede.ordenar(rol)}
                   <button
                     class="icon-btn"
                     use:tip={"Copiar ahora"}
                     aria-label="Copiar ahora «{k.nombre}»"
-                    onclick={() => abrir({ tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" })}
+                    onclick={() => (copiarK = { repo: k.repo, id: k.id, nombre: k.nombre })}
                     ><Play size={15} /></button
                   >
                 {/if}
@@ -1174,7 +1199,11 @@
 
       {#if repos.length || pendRepos.length}
         <section>
-          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length}{` y ${reposDerivados.length} ${reposDerivados.length === 1 ? "derivado" : "derivados"}`}{/if}</span></h2></div>
+          <div class="section-head">
+            <h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length}{` y ${reposDerivados.length} ${reposDerivados.length === 1 ? "derivado" : "derivados"}`}{/if}</span></h2>
+            <!-- 15gg: a la vista (antes, escondido dentro de «Nuevo repositorio»). -->
+            {#if puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado"}<button class="btn btn-sm" onclick={() => (adoptar = {})}><FolderInput size={14} />Usar uno que ya existe</button>{/if}
+          </div>
           {#each pendRepos as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
           <div class="rejilla repos">
             {#each repos as r (r.id)}
@@ -1267,7 +1296,8 @@
                 <div class="repo-cab">
                   <span class="card-icon"><Database size={18} /></span>
                   <div class="repo-nombre">
-                    <h3>{d.r.nombre} <span class="faint">en</span> {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}</h3>
+                    <h3>{#if d.nombre}{d.nombre}{:else}{d.r.nombre} <span class="faint">en</span> {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}{/if}{#if d.id !== "externa" && puede.administrar(rol) && admiteNombreCopia}<button class="icon-btn icon-btn-sm lapiz" aria-label="Cambiar el nombre de esta copia derivada" use:tip={"Cambiar el nombre"} onclick={() => (renombrarCopia = { tipo: "derivada", repo: d.r.id, id: d.id, nombre: d.nombre ?? `${d.r.nombre} (copia derivada)` })}><Pencil size={14} /></button>{/if}</h3>
+                    {#if d.nombre}<p class="donde faint">En {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}</p>{/if}
                     <p class="donde faint">Copia derivada de <a class="link-suave" href="/c/{c}/equipos/{equipo.id}/repositorios/{encodeURIComponent(d.r.id)}">«{d.r.nombre}»</a>: sus versiones, en otro repositorio <Ayuda id="copia-derivada" /></p>
                   </div>
                   {#if x}<Chip pequeno tono={x.tono} texto={x.estado} girando={x.vivo} />{/if}
@@ -1478,6 +1508,15 @@
               <div class="notice notice-warn nube-por-anular"><p><strong>«{n.nombre}»</strong>: credenciales borradas de este equipo; no se pudo anular el permiso en {n.tipo === "dropbox" ? "Dropbox" : "el proveedor"} todavía: se reintentará{#if n.hasta}{" "}hasta el {fechaLarga(n.hasta)}{/if}.</p></div>
             {/each}
           </div>
+          <!-- 15gg: los repositorios de su disco que no son de ningún equipo, y «Dar a un equipo». -->
+          {#if actual.cliente}
+            <div class="sub-alm" role="group" aria-labelledby="t-alm-sueltos">
+              <div class="sub-cab">
+                <h4 id="t-alm-sueltos"><FolderInput size={15} />Repositorios sueltos{#if sueltosDe(equipo).length}<span class="count">· {sueltosDe(equipo).length}</span>{/if}</h4>
+              </div>
+              <RepositoriosSueltos cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} administra={puede.administrar(rol)} ahora={reloj.ahora} />
+            </div>
+          {/if}
           {#if puede.administrar(rol)}
             <div class="acciones"><MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} /></div>
           {/if}
@@ -1581,7 +1620,10 @@
         <section class="card p">
           <h3 class="section-title">Nuevo repositorio</h3>
           <p class="faint nota-almacen">En un almacén de la oficina, en una nube (Dropbox…) o en un disco. Si la nube aún no está conectada en {equipo.nombre}, se conecta desde ahí mismo.</p>
-          <div class="acciones"><button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Nuevo repositorio…</button></div>
+          <div class="acciones">
+            <button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Nuevo repositorio…</button>
+            <button class="btn btn-sm" onclick={() => (adoptar = {})}><FolderInput size={14} />Usar uno que ya existe…</button>
+          </div>
         </section>
       {/if}
 
@@ -1709,6 +1751,12 @@
   {/if}
 </div>
 
+{#if copiarK && equipo && actual.cliente}
+  <CopiarAhora cliente={actual.cliente} {equipo} repo={copiarK.repo} copia={copiarK.id} nombre={copiarK.nombre} onclose={() => ((copiarK = null), void cargar())} />
+{/if}
+{#if renombrarCopia && equipo && actual.cliente}
+  <RenombrarCopia cliente={actual.cliente} {equipo} que={renombrarCopia} alCambiar={() => void cargar()} onclose={() => (renombrarCopia = null)} />
+{/if}
 {#if dialogo && equipo && actual.cliente}
   {#key dialogo}
   <OrdenDialog
@@ -1803,6 +1851,9 @@
   {/key}
 {/if}
 
+{#if adoptar && equipo && actual.cliente}
+  <AdoptarRepositorio cliente={actual.cliente} equipos={actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x))} equipoInicial={equipo.id} dondeInicial={adoptar.donde} rutaInicial={adoptar.ruta} onclose={() => ((adoptar = null), void cargar())} />
+{/if}
 {#if repoNuevo && equipo && actual.cliente}
   <NuevoRepositorio
     cliente={actual.cliente}

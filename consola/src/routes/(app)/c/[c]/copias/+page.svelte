@@ -14,7 +14,10 @@
   // en «Necesitan atención» y en la cifra de las que están al día, y hay un
   // filtro «Con espejo / sin espejo».
   import { tip } from "$lib/tooltip";
-  import { CalendarClock, ChevronRight, FolderSync, HardDrive, History, ListChecks, Play, Search, TriangleAlert, X } from "@lucide/svelte";
+  import { CalendarClock, ChevronRight, FolderSync, HardDrive, History, ListChecks, Pencil, Play, Search, TriangleAlert, X } from "@lucide/svelte";
+  // 0.8.1 (15t): cambiar el nombre desde la fila (nombre nuevo y clave de administración).
+  import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
+  import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, horarioEnFrase, numero, plural, relativo, cuandoFrase } from "$lib/formato";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
@@ -30,7 +33,6 @@
   import Cifra from "$lib/componentes/Cifra.svelte";
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
-  import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
@@ -112,6 +114,8 @@
   // «Copiar ahora» de una fila: el diálogo de siempre.
   let copiar = $state<FilaCopia | null>(null);
   const puedeOrdenar = $derived(puede.ordenar(actual.cliente?.rol));
+  const puedeAdministrar = $derived(puede.administrar(actual.cliente?.rol));
+  let renombrar = $state<FilaCopia | null>(null);
 
   // Varias a la vez (solo «Copiar ahora», inofensivo).
   let seleccionando = $state(false);
@@ -261,6 +265,9 @@
             <div class="protegido num" use:tip={"Lo que ocupan sus archivos, según su última versión"}><span class="et-movil">{"Protege "}</span>{x.protegido != null ? bytes(x.protegido) : "—"}</div>
             <div class="acciones">
               <a class="icon-btn" href={href(x, "#t-historial")} aria-label="Ver las versiones de «{x.copia.nombre}»"><History size={15} /></a>
+              {#if puedeAdministrar && !seleccionando && x.equipo.modo !== "trasladado"}
+                <button class="icon-btn" aria-label="Cambiar el nombre de «{x.copia.nombre}» de {x.equipo.nombre}" use:tip={"Cambiar el nombre"} onclick={() => (renombrar = x)}><Pencil size={15} /></button>
+              {/if}
               {#if puedeOrdenar && x.ordenable && !seleccionando}
                 <button class="icon-btn" aria-label="Copiar ahora «{x.copia.nombre}» de {x.equipo.nombre}" onclick={() => (copiar = x)}><Play size={15} /></button>
               {/if}
@@ -287,15 +294,11 @@
 
 {#if copiar && actual.cliente}
   {@const x = copiar}
-  <OrdenDialog
-    cliente={actual.cliente}
-    equipo={x.equipo}
-    tipo="copiar_ahora"
-    cuerpo={{ repo: x.copia.repo, copia: x.copia.id }}
-    descripcion="Se hará ahora la copia «{x.copia.nombre}» de {x.equipo.nombre}, sin esperar a su hora. No borra nada."
-    accion="Copiar ahora"
-    onclose={() => (copiar = null)}
-  />
+  <CopiarAhora cliente={actual.cliente} equipo={x.equipo} repo={x.copia.repo} copia={x.copia.id} nombre={x.copia.nombre} onclose={() => (copiar = null)} />
+{/if}
+{#if renombrar && actual.cliente}
+  {@const x = renombrar}
+  <RenombrarCopia cliente={actual.cliente} equipo={x.equipo} que={{ tipo: "copia", id: x.copia.id, nombre: x.copia.nombre }} onclose={() => (renombrar = null)} />
 {/if}
 {#if enBloque && actual.cliente}
   <AccionesEnBloque cliente={actual.cliente} equipos={equiposSeleccion} accion="copiar" copias={new Set(seleccion.map((x) => x.clave))} onclose={() => (enBloque = false)} />

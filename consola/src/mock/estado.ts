@@ -506,7 +506,7 @@ export async function sembrar(vacio = false) {
       version_agente: "0.7.18",
       so: "Windows Server 2016",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo", "nombre_copia", "etiquetas_copia"],
         // 0.8.1 (C4): un equipo físico con una controladora RAID (vista como un disco) y Espacios de almacenamiento.
         datos_basicos: {
           ...basicos(win("Windows Server 2016 Standard", "ServerStandard", "1607", "14393.7428"), "Intel(R) Xeon(R) Silver 4310 CPU @ 2.10GHz", 24, 64, "HPE", "ProLiant DL380 Gen10 Plus", 60 * 24 * 12, [
@@ -550,7 +550,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       rol: "almacenamiento",
       // v1.28: agente nuevo (plazos, verificación automática y su propio almacén).
-      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles", "espejo_primera"],
+      resumen: { admite: ["repos_sueltos", "retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles", "espejo_primera"],
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         entorno: { virtual: "hyperv" },
@@ -560,6 +560,8 @@ export async function sembrar(vacio = false) {
           disco("F:", 2000, 1800, "ReFS", true),
         ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
+          // 0.8.1 (15gg): dos repositorios sueltos de un servidor de copias antiguo (para «Dar a un equipo»).
+          sueltos: [{ zona: null, ruta: "rest-antiguo/contabilidad", versiones: 412, ultima: hace(60 * 24 * 9) }, { zona: null, ruta: "viejo-portatil", versiones: 37, ultima: hace(60 * 24 * 200) }],
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
           espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a", "caja-d2"] }, { usuario: "caja-1", repos: ["historico"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
@@ -647,7 +649,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada", "nombre_copia", "etiquetas_copia", "grupos_en_copias", "repos_sueltos", "equipos_moviles", "apagar_al_terminar"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -679,7 +681,9 @@ export async function sembrar(vacio = false) {
           // 14mm: el mismo almacén dado de alta como «Servidor de copias» genérico (un repositorio adoptado): el mapa lo une.
           { ...repo("historico", "Histórico", "servidor-copias", 12, 1_300_000_000), ruta: "caja-1/historico", solo_anadir: true }],
         // Tarea 7c: «Ventas» va después de «Caja y facturas».
-        copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("ventas", "Ventas", "ventas", ["14:00"], 1), tras: "caja" }],
+        // 15v: las etiquetas de las versiones de cada copia.
+        // 15y: «Caja» usa el grupo «Archivos temporales» con sus reglas de antes (para ver «Aplicarles el cambio» en Organización).
+        copias: [{ ...copia("caja", "Caja y facturas", "caja", ["14:00"], 1), etiquetas: ["facturas"], grupos_exclusiones: [{ id: "temporales", nombre: "Archivos temporales", reglas: ["*.tmp", "~$*", "Thumbs.db"] }] }, { ...copia("ventas", "Ventas", "ventas", ["14:00"], 1), tras: "caja", etiquetas: ["bases"] }],
         destinos: [
           { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/", equipo_almacen: ID.almacen },
           { id: "almacen-sur-z3c4d5e", nombre: "Almacén Sur · Disco F", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8002/5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/", equipo_almacen: ID.almacen },

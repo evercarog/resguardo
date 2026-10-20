@@ -11,7 +11,10 @@
   // propio equipo `e`; `t` es el id del trabajo.
   import { page } from "$app/state";
   import { untrack } from "svelte";
-  import { ArrowRight, CalendarClock, ChartColumn, Cloud, Database, HardDrive, History, Info, Play, Settings2, ShieldAlert, ShieldCheck, Trash2 } from "@lucide/svelte";
+  import { ArrowRight, CalendarClock, ChartColumn, Cloud, Database, HardDrive, History, Info, Pencil, Play, Settings2, ShieldAlert, ShieldCheck, Trash2 } from "@lucide/svelte";
+  // 0.8.1 (15t): el lápiz junto al título.
+  import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
+  import { tip } from "$lib/tooltip";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
@@ -145,6 +148,7 @@
   });
 
   let orden = $state<{ cuerpo: Record<string, unknown>; titulo: string; descripcion: string } | null>(null);
+  let renombrando = $state(false);
   function ahora() {
     if (!t) return;
     orden = {
@@ -169,6 +173,9 @@
       icono={t.adonde.tipo === "nube" ? Cloud : HardDrive}
       migas={[{ texto: "Equipos", href: `/c/${c}/equipos` }, { texto: equipo.nombre, href: `/c/${c}/equipos/${id}` }, { texto: "Espejos", href: `/c/${c}/equipos/${id}/espejos` }, { texto: nombre }]}
     >
+      {#snippet junto()}
+        {#if admin}<button class="icon-btn" aria-label="Cambiar el nombre de «{nombre}»" use:tip={"Cambiar el nombre"} onclick={() => (renombrando = true)}><Pencil size={16} /></button>{/if}
+      {/snippet}
       {#snippet detalle()}
         <p class="linea">
           <Chip tono={TONO[estado]} texto={TEXTO[estado]} pequeno />
@@ -321,6 +328,15 @@
   {/if}
 </div>
 
+{#if renombrando && equipo && actual.cliente && t}
+  <RenombrarCopia
+    cliente={actual.cliente}
+    {equipo}
+    que={{ tipo: "espejo", trabajo: { ...t, nombre }, quien, lista: quien === "almacen" ? trabajosDelAlmacen(equipo) : trabajosDelEquipo(equipo) }}
+    alCambiar={() => cargar()}
+    onclose={() => (renombrando = false)}
+  />
+{/if}
 {#if orden && equipo && actual.cliente}
   <OrdenDialog cliente={actual.cliente} {equipo} tipo="guarda_copias" cuerpo={orden.cuerpo} titulo={orden.titulo} descripcion={orden.descripcion} onclose={() => (orden = null)} alTerminar={() => (cargar(), void cargarCliente(c, { silencioso: true }))} />
 {/if}

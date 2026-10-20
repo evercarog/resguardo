@@ -28,6 +28,9 @@ export interface Prueba {
   en_uso: string | null;
   equipos: string[];
   etiquetas: string[];
+  /** 0.8.1 (15gg): las carpetas y el equipo de la última versión (agente con `admite: "repos_sueltos"`). */
+  ultima_carpetas: string[];
+  ultimo_equipo: string | null;
 }
 
 const FINALES = ["hecha", "fallida", "rechazada", "cancelada", "caducada"];
@@ -120,11 +123,44 @@ export async function probarRepositorio(opts: {
       en_uso: d.en_uso ?? null,
       equipos: d.equipos ?? [],
       etiquetas: d.etiquetas ?? [],
+      ultima_carpetas: Array.isArray(d.ultima_carpetas) ? d.ultima_carpetas.filter((x): x is string => typeof x === "string").slice(0, 100) : [],
+      ultimo_equipo: typeof d.ultimo_equipo === "string" ? d.ultimo_equipo : null,
     };
   } finally {
     borrar(eph.secreta);
   }
 }
+
+// --- 0.8.1 (15gg): la copia nueva de un repositorio adoptado sigue desde su última versión ---
+
+const claveSeguir = (cliente: string, equipo: string) => `resguardo.seguir-adoptado.${cliente}.${equipo}`;
+export interface SeguirAdoptado {
+  repo: string;
+  carpetas: string[];
+  /** El nombre del equipo de su última versión. */
+  host: string | null;
+}
+/** Lo recuerda en esta pestaña (nunca en la dirección: son rutas) para el editor de copias. */
+export function recordarSeguir(cliente: string, equipo: string, s: SeguirAdoptado): void {
+  try {
+    sessionStorage.setItem(claveSeguir(cliente, equipo), JSON.stringify(s));
+  } catch {
+    /* sin almacenamiento: el editor empieza sin carpetas */
+  }
+}
+/** Lo recordado para ese repositorio (y lo olvida). */
+export function tomarSeguir(cliente: string, equipo: string, repo: string): SeguirAdoptado | null {
+  try {
+    const x = JSON.parse(sessionStorage.getItem(claveSeguir(cliente, equipo)) ?? "null") as SeguirAdoptado | null;
+    if (!x || x.repo !== repo || !Array.isArray(x.carpetas)) return null;
+    sessionStorage.removeItem(claveSeguir(cliente, equipo));
+    return { repo: x.repo, carpetas: x.carpetas.filter((c) => typeof c === "string").slice(0, 100), host: typeof x.host === "string" ? x.host : null };
+  } catch {
+    return null;
+  }
+}
+/** ¿Es otro equipo el de sus versiones? (Sin saberlo, no se avisa.) */
+export const otroEquipo = (host: string | null | undefined, nombre: string | null | undefined) => !!host && !!nombre && host.trim().toLowerCase() !== nombre.trim().toLowerCase();
 
 /** Lo que se explica al crear un repositorio «para traer el historial» de otro. */
 export const TEXTO_TROCEADO =

@@ -12,7 +12,7 @@ import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/cl
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
 import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, pideAdminPorCuerpo, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
 import { errorCarpetaRestaurar } from "../lib/restauraciones";
-import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
+import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarConfig, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
@@ -108,6 +108,10 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
       ...(c.inicio ? { inicio: c.inicio } : {}),
       ...(c.retraso_min ? { retraso_min: c.retraso_min } : {}),
+      ...(c.etiquetas?.length ? { etiquetas: c.etiquetas } : {}),
+      ...(c.grupos_exclusiones?.length ? { grupos_exclusiones: c.grupos_exclusiones } : {}),
+      ...(c.mayores_mb ? { mayores_mb: c.mayores_mb } : {}),
+      ...(c.al_reconectar ? { al_reconectar: true } : {}),
       // CONTABILIDAD (agente 0.7.2) vuelca sus bases de SQL Server antes de copiar «Ventas» (14gg: varias).
       gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
@@ -121,6 +125,8 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       ...(x.externa ? { externa: { destino: (r.destinos ?? []).find((d) => d.nombre === x.externa!.destino)?.id ?? x.externa.destino, hora: x.externa.hora } } : {}),
     })),
     destinos: r.destinos ?? [],
+    // 15ii: un equipo que entra y sale.
+    ...(r.movil ? { movil: r.movil } : {}),
     verificacion: { cada_dias: 7, porcentaje: 5 },
     bandeja: { visible: true, avisos: true },
     // v1.28: la verificación automática que ya tiene (solo un agente que la entiende).
@@ -138,6 +144,18 @@ function a3(dias: number) {
   d.setDate(d.getDate() + dias);
   d.setHours(3, 0, 0, 0);
   return d.toISOString();
+}
+
+/** La configuración que tiene el equipo (la última que se le mandó, o la de partida). */
+export function configActual(e: EquipoMock): T.Configuracion {
+  if (e.config && e.kcfg) {
+    try {
+      return descifrarConfig<T.Configuracion>(e.kcfg, e.id, e.config.seq, deB64(e.config.cifrado));
+    } catch {
+      /* la de partida */
+    }
+  }
+  return configInicial(e);
 }
 
 export function guardarConfig(e: EquipoMock, cfg: T.Configuracion, seq: number) {
@@ -184,6 +202,12 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       tras: c.tras ?? null,
       inicio: c.inicio ?? null,
       retraso_min: c.retraso_min ?? null,
+      // 15v: las etiquetas de sus versiones (solo con un agente que las entiende).
+      ...(previo.admite?.includes("etiquetas_copia") ? { etiquetas: c.etiquetas?.length ? c.etiquetas : null } : {}),
+      // 15ii: además, al volver a conectarse.
+      ...(previo.admite?.includes("equipos_moviles") ? { al_reconectar: c.al_reconectar ? true : null } : {}),
+      // 15y: los grupos de exclusiones que usa (con sus reglas) y el tamaño máximo.
+      ...(previo.admite?.includes("grupos_en_copias") ? { grupos_exclusiones: c.grupos_exclusiones?.length ? c.grupos_exclusiones : null, mayores_mb: c.mayores_mb ?? null } : {}),
       // Plan 0.8.0, F1: como el agente con `admite: "termina"` (la cuenta vuelve a cero si cambia la regla).
       ...(previo.admite?.includes("termina")
         ? (() => {
@@ -395,6 +419,12 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         if (conReglas && errorReglas(reglasDe(v.horario!))) return resultado(e, o, "fallida", `Horario de la verificación: ${errorReglas(reglasDe(v.horario!))}`);
         if ((!conReglas && !(v.cada_dias >= 1 && v.cada_dias <= 31)) || !(v.porcentaje >= 0 && v.porcentaje <= 100)) return resultado(e, o, "fallida", "La verificación automática va de cada día a cada 31 días.");
       }
+      // 15ii: un equipo que entra y sale (sin el campo, el de antes).
+      if (e.resumen?.admite?.includes("equipos_moviles")) {
+        const m = cfg.movil;
+        if (m && ((m.margen_dias != null && !(m.margen_dias >= 1 && m.margen_dias <= 90)) || (m.bateria_min != null && !(m.bateria_min >= 0 && m.bateria_min <= 95)))) return resultado(e, o, "fallida", "El margen va de 1 a 90 días y la batería mínima, de 0 % a 95 %.");
+        if (m) e.resumen.movil = m;
+      } else delete cfg.movil;
       e.resumen = resumenDe(e, cfg);
       guardarConfig(e, cfg, plana.seq);
       // Plan 0.8.0, F1: «Una sola vez · Ahora»: el equipo la hace en su próxima vuelta y queda completada.
@@ -420,6 +450,11 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       // Como el agente: la orden solo la pide; la copia se ve avanzar en «progreso» (v1.25)
       // y cuenta como hecha al terminar.
       await espera(1200);
+      // 15kk: apagar o hibernar al terminar (el simulador nunca apaga nada).
+      const fin = typeof c.al_terminar === "string" && c.al_terminar ? c.al_terminar : null;
+      if (fin && !e.resumen?.admite?.includes("apagar_al_terminar")) return resultado(e, o, "rechazada", "Este agente aún no apaga al terminar: actualízalo.");
+      if (fin && !["apagar", "hibernar"].includes(fin)) return resultado(e, o, "fallida", "Al terminar: «apagar» o «hibernar».");
+      if (fin && e.resumen?.guarda_copias?.activo && c.confirmar_servidor !== true) return resultado(e, o, "fallida", "Este equipo guarda copias de otros equipos: apagarlo los dejaría sin destino. Hay que confirmarlo expresamente.");
       const copia = e.resumen?.copias?.find((x) => x.id === c.copia);
       if (copia)
         empezarCopia(e.cliente, e.id, copia.repo, copia.id, copia.nombre, !!e.informes[0]?.datos.copias?.find((x) => x.id === copia.id)?.ganchos?.length, () => {
@@ -430,7 +465,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
             if ((copia.termina.veces != null && copia.hechas >= copia.termina.veces) || copia.termina.una_vez) copia.completada = ahora();
           }
         });
-      return resultado(e, o, "hecha", "Copia pedida: empieza en unos segundos.");
+      return resultado(e, o, "hecha", fin ? `Copia pedida: empieza en unos segundos. Al terminar bien, el equipo ${fin === "hibernar" ? "hibernará" : "se apagará"} (2 minutos de aviso a quien lo use).` : "Copia pedida: empieza en unos segundos.");
     }
     case "subir_ahora":
       await espera(1200);
@@ -535,6 +570,31 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     case "guarda_copias": {
       e.resumen ??= {};
+      // 0.8.1 (15gg): un repositorio suelto, a la carpeta de un equipo (como el agente: sin copiar).
+      if (c.dar_suelto && typeof c.dar_suelto === "object") {
+        const g = e.resumen.guarda_copias;
+        if (!g?.activo || !e.resumen.admite?.includes("repos_sueltos")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+        const d = c.dar_suelto as { zona?: string; ruta?: string; usuario?: string; carpeta?: string };
+        const i = (g.sueltos ?? []).findIndex((s) => s.ruta === d.ruta && (s.zona ?? null) === (d.zona ?? null) && !s.fuera);
+        if (i < 0) return resultado(e, o, "fallida", "Ese repositorio ya no está suelto en el almacén (puede que ya se moviera).");
+        const lista = d.zona ? g.zonas?.find((z) => z.id === d.zona)?.repositorios : g.repositorios;
+        const u = lista?.find((x) => x.usuario === d.usuario);
+        if (!u) return resultado(e, o, "fallida", "Ese equipo aún no tiene acceso a esta zona del almacén: dale acceso primero.");
+        if (!/^[a-z0-9-]{1,64}$/.test(String(d.carpeta))) return resultado(e, o, "fallida", "El nombre de la carpeta nueva: letras minúsculas, cifras y guiones.");
+        if (u.repos.includes(String(d.carpeta))) return resultado(e, o, "fallida", `Ya hay una carpeta «${d.carpeta}» en la del equipo: elige otro nombre.`);
+        await espera(1200);
+        u.repos = [...u.repos, String(d.carpeta)].sort();
+        g.sueltos = (g.sueltos ?? []).filter((_, j) => j !== i);
+        return resultado(e, o, "hecha", `«${d.ruta}» movido a la carpeta del equipo («${d.usuario}/${d.carpeta}»), sin copiar nada. Ahora el equipo puede adoptarlo con su contraseña.`);
+      }
+      if (Array.isArray(c.sueltos_en)) {
+        const g = e.resumen.guarda_copias;
+        if (!g?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias de otros.");
+        const l = (c.sueltos_en as string[]).filter(Boolean);
+        if (l.some((r) => !/^([A-Za-z]:\\|\/)/.test(r))) return resultado(e, o, "fallida", "Cada carpeta, una ruta completa de este equipo.");
+        g.sueltos_en = l.length ? l : null;
+        return resultado(e, o, "hecha", l.length ? `Se buscan repositorios también en ${l.length === 1 ? "1 carpeta más" : `${l.length} carpetas más`}.` : "Ya no se buscan repositorios fuera de la carpeta del almacén.");
+      }
       // Espejo nocturno a otra carpeta (otro disco): { carpeta, hora } o null para quitarlo.
       // §3b: confirmar lo que falta de golpe en el almacén (espera, como el agente).
       // Plan 0.7.26 (bloque 4): trabajos de espejo, del almacén o del propio equipo (como el agente).
@@ -974,6 +1034,27 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     // Plan 0.8.0, B1: el nombre de un repositorio (como el agente).
     // Plan 0.8.1 (15u): «Ver las bases de la instancia», sellada para la consola (como el agente).
+    case "vista_exclusiones": {
+      // 0.8.1 (15y): cuenta, como el agente, lo que deja fuera cada grupo (aquí, con cifras inventadas pero estables).
+      if (!e.resumen?.admite?.includes("grupos_en_copias")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      if (!plana.responder_a) return resultado(e, o, "rechazada", "Falta responder_a para entregar la vista previa.");
+      const carpetas = Array.isArray(c.carpetas) ? (c.carpetas as string[]) : [];
+      if (!carpetas.length) return resultado(e, o, "fallida", "Elige de 1 a 100 carpetas.");
+      await espera(1500);
+      const MB = 1024 * 1024;
+      const GB = 1024 * MB;
+      const tipico: Record<string, [number, number]> = { temporales: [3400, 1.2 * GB], musica: [812, 6.4 * GB], video: [37, 21 * GB], "imagenes-disco": [2, 9.5 * GB], instaladores: [64, 3.1 * GB] };
+      const grupos = ((c.grupos as { id: string }[]) ?? []).map((g) => {
+        const [a, b] = tipico[g.id] ?? [0, 0];
+        return { id: g.id, archivos: a * carpetas.length, bytes: Math.round(b * carpetas.length) };
+      });
+      const total = { archivos: 48_200 * carpetas.length, bytes: Math.round(96 * GB * carpetas.length) };
+      const tamano = c.mayores_mb ? { archivos: 6, bytes: Math.round(14.2 * GB) } : null;
+      const sueltas = { archivos: 120, bytes: 340 * MB };
+      const fuera = (c.grupos as { id: string }[] | undefined)?.length ? grupos.reduce((s, g) => s + g.bytes, 0) * 0.4 : 0;
+      const quedan = { archivos: total.archivos - 4400, bytes: Math.max(0, Math.round(total.bytes - fuera - (tamano?.bytes ?? 0) - sueltas.bytes)) };
+      return resultado(e, o, "hecha", `Revisados ${total.archivos.toLocaleString("es")} archivos.`, JSON.stringify({ sellado: detallePara(plana, { total, grupos, sueltas, tamano, quedan, completo: true }) }));
+    }
     case "bases_sqlserver": {
       if (!plana.responder_a) return resultado(e, o, "rechazada", "Falta responder_a para entregar la lista.");
       const bases = [
@@ -986,6 +1067,29 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         { nombre: "Empresa 3", estado: "RECOVERY_PENDING", sistema: false },
       ];
       return resultado(e, o, "hecha", "La instancia tiene 3 bases de usuario.", JSON.stringify({ sellado: detallePara(plana, { bases }) }));
+    }
+    case "nombre_copia": {
+      // 0.8.1 (15t): el nombre de una copia o de una copia derivada (clave de administración, sin espera).
+      if (!e.resumen?.admite?.includes("nombre_copia")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      const n = String(c.nombre ?? "").trim();
+      if (!n || [...n].length > 60) return resultado(e, o, "fallida", "Escribe un nombre (hasta 60 caracteres).");
+      const d = c.derivada as { repo?: string; id?: string } | undefined;
+      if (d) {
+        const r = e.resumen.repositorios?.find((x) => x.id === d.repo);
+        const dv = r?.derivadas?.find((x) => x.id === d.id);
+        if (!r || !dv) return resultado(e, o, "fallida", "Esa copia derivada ya no está.");
+        const antes = dv.nombre ?? `${r.nombre} (copia derivada)`;
+        dv.nombre = n;
+        return resultado(e, o, "hecha", `«${antes}» ahora se llama «${n}». Lo verán así todas sus consolas.`);
+      }
+      const cfg = configActual(e);
+      const k = cfg.copias.find((x) => x.id === c.copia);
+      if (!k) return resultado(e, o, "fallida", "Esa copia ya no está en este equipo.");
+      const antes = k.nombre;
+      k.nombre = n;
+      e.resumen = resumenDe(e, cfg);
+      guardarConfig(e, cfg, plana.seq);
+      return resultado(e, o, "hecha", `«${antes}» ahora se llama «${n}». Lo verán así todas sus consolas.`);
     }
     case "nombre_repositorio": {
       if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
@@ -1092,7 +1196,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const soloAnadir = d.tipo === "rest" ? /:8001/.test(String(d.donde)) : null;
       const ultima = new Date(Date.now() - 86400_000).toISOString();
       const enUso = e.resumen?.repositorios?.find((r) => r.id === `adoptado-${String(c.ruta)}`)?.nombre ?? null;
-      const info = { versiones: 412, ultima, solo_anadir: soloAnadir, en_uso: enUso, equipos: ["PC-CONTABLE", "PORTATIL-GERENCIA"], etiquetas: ["escritorio"] };
+      // 15gg: con `repos_sueltos`, las carpetas y el equipo de la última versión (sellado).
+      const info = {
+        versiones: 412,
+        ultima,
+        solo_anadir: soloAnadir,
+        en_uso: enUso,
+        equipos: ["PC-CONTABLE", "PORTATIL-GERENCIA"],
+        etiquetas: ["escritorio"],
+        ...(e.resumen?.admite?.includes("repos_sueltos") ? { ultima_carpetas: ["C:\\Contabilidad\\Empresa", "C:\\Users\\Public\\Documents\\Facturas"], ultimo_equipo: "PC-CONTABLE" } : {}),
+      };
       const servidor = soloAnadir ? " El servidor es de solo añadir: la retención se aplica en él." : "";
       if (c.solo_probar === true) {
         const datos = plana.responder_a ? info : { versiones: info.versiones, ultima, solo_anadir: soloAnadir, en_uso: enUso };

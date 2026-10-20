@@ -275,6 +275,7 @@
       notas={sucesos.notas}
       alAbrirSuceso={alAbrirVuelta ? abrirSuceso : undefined}
       {nombreRepo}
+      filtroCopia={!equipo}
       bind:enPeriodo
       bind:todas
     >

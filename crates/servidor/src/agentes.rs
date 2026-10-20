@@ -738,6 +738,8 @@ const TIPOS_AVISO: &[&str] = &[
     "nube_sin_anular",
     // 0.8.0 14a: se aprobó en el propio equipo una orden en espera.
     "orden_aprobada_en_equipo",
+    // 0.8.1 (15kk): el equipo se apaga (o hiberna) al terminar una copia, o alguien lo paró.
+    "equipo_apagado",
 ];
 
 #[derive(Deserialize)]

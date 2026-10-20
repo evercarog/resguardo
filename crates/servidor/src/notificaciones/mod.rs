@@ -508,6 +508,8 @@ pub fn titulos_aviso(tipo: &str, mensaje: &str, equipo: Option<&str>, cliente: &
         "equipo_sin_contacto" => format!("{e} no conecta con la consola"),
         "copia_fallida" => format!("Falló una copia en {e}"),
         "copia_atrasada" => format!("Hay una copia atrasada en {e}"),
+        // 15kk: informativo (lo pidió alguien con la clave de administración).
+        "equipo_apagado" => format!("{e} se apaga al terminar una copia"),
         "servicio_detenido" => format!("El servicio de Resguardo está detenido en {e}"),
         // G4: «destructiva» no se dice (docs/diseno.md, «Voz»).
         "orden_destructiva" => format!("Orden con espera en {e}"),

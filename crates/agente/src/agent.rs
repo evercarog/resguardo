@@ -378,6 +378,33 @@ pub struct AgentPlan {
     /// copias correctas o un día). Sin él, como siempre: con su horario, sin fin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<PlanEnd>,
+    /// 0.8.1 (bloque D): lo nuevo de cada plan (tamaño máximo, al volver a conectarse,
+    /// al terminar), junto para no tocar cada vez a quien construye un plan.
+    #[serde(default, skip_serializing_if = "PlanExtra::vacio")]
+    pub extra: PlanExtra,
+}
+
+/// 0.8.1 (bloque D): opciones de un plan que llegan de la configuración v1.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanExtra {
+    /// 15y: no copiar archivos de más de estos MB (con las excepciones de `larger_except`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub larger_mb: Option<u32>,
+    /// 15y: tipos que se copian aunque pasen del límite (`*.pst`, `*.bak`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub larger_except: Vec<String>,
+    /// 15ii: «además, al volver a conectarse» (movil.rs).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_reconnect: bool,
+    /// 15kk: al terminar bien, «apagar» o «hibernar» (apagar.rs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_finish: Option<String>,
+}
+
+impl PlanExtra {
+    pub fn vacio(&self) -> bool {
+        *self == PlanExtra::default()
+    }
 }
 
 /// F1 (14pp): cuándo termina un plan. La cuenta de copias correctas va en
@@ -529,6 +556,21 @@ pub struct AgentConfig {
     /// discreto.rs). None: desactivado.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discreet: Option<crate::discreto::Discreet>,
+    /// 0.8.1 (15ii): no empezar una copia sola con poca batería o con una conexión medida
+    /// (de `config.movil`, ver movil.rs). None: no se mira.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energia: Option<crate::movil::Energia>,
+}
+
+/// 15ii: pone o quita lo de la batería y la conexión medida (agent.json, como administrador).
+pub fn set_energia(energia: Option<crate::movil::Energia>) -> Result<(), String> {
+    let mut config = load_config();
+    if config.energia == energia {
+        return Ok(());
+    }
+    require_admin()?;
+    config.energia = energia;
+    write_json("agent.json", &config)
 }
 
 /// Antes de cada copia o tarea: ¿toca ir con prioridad baja? Se lo dice a
@@ -747,6 +789,24 @@ pub struct AgentState {
     /// su hora (o, «a mano», hasta «Copiar ahora»), y entonces siguen solas una vez.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub pausas: HashMap<String, PausaCopia>,
+    /// 0.8.1 (15ii): la última copia buena de cada plan (RFC 3339), para «al volver a
+    /// conectarse» y para el margen de un equipo que sale de la oficina.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub ultima_buena: HashMap<String, String>,
+    /// 15ii: si el destino de cada plan con «al volver a conectarse» respondía y si toca copiar.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub reconexion: HashMap<String, crate::movil::Reconexion>,
+    /// 15ii: la última vez que se apuntó en el registro que las copias esperaban por la
+    /// batería o la conexión medida (para no repetirlo cada vuelta).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aplazadas_aviso: Option<String>,
+    /// 15kk: un apagado listo para cuando no quede nada que hacer (la copia que lo pidió
+    /// terminó bien) y el nombre de esa copia.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apagar_listo: Option<(crate::apagar::Pedido, String)>,
+    /// 15kk: la cuenta atrás de un apagado en marcha.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apagando: Option<crate::apagar::EnMarcha>,
 }
 
 /// 15hh (4): una copia en pausa: hasta cuándo (sin hora, «a mano») y quién la pausó.
@@ -1202,6 +1262,7 @@ pub fn migrate_legacy(config: &mut AgentConfig, state: &mut AgentState) -> bool 
             after_always: false,
             after_delay_min: 0,
             end: None,
+            extra: PlanExtra::default(),
         });
         repo.schedule = Schedule::Plans;
         if let Some(run) = state.runs.remove(&repo.id) {
@@ -1359,7 +1420,7 @@ pub fn set_schedule_modes(
     schedule: Option<Schedule>,
     modes: &std::collections::BTreeMap<String, ChainMode>,
 ) -> Result<(), String> {
-    set_schedule_full(repo, access, schedule, modes, &std::collections::BTreeMap::new())
+    set_schedule_full(repo, access, schedule, modes, &std::collections::BTreeMap::new(), &std::collections::BTreeMap::new())
 }
 
 /// Como [`set_schedule_modes`], con el fin de cada plan (F1, 14pp; por id del plan).
@@ -1370,6 +1431,7 @@ pub fn set_schedule_full(
     schedule: Option<Schedule>,
     modes: &std::collections::BTreeMap<String, ChainMode>,
     ends: &std::collections::BTreeMap<String, PlanEnd>,
+    extras: &std::collections::BTreeMap<String, PlanExtra>,
 ) -> Result<(), String> {
     require_admin()?;
     prepare_dir()?;
@@ -1427,6 +1489,7 @@ pub fn set_schedule_full(
                         after_always: mode.always,
                         after_delay_min: mode.delay_min,
                         end,
+                        extra: extras.get(&p.id).cloned().unwrap_or_default(),
                     })
                 })
                 .collect()
@@ -2154,6 +2217,12 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, limite: Option<u3
         args.push(restic::exclude_flag().into());
         args.push(pattern.clone());
     }
+    // 15y: «No copiar archivos de más de N MB», con excepciones por tipo (excluir.rs).
+    let fuera = plan.extra.larger_mb.map(|mb| limite_de_tamano(&repo.id, plan, mb));
+    if let Some(Ok((archivo, _))) = &fuera {
+        args.push(if cfg!(windows) { "--iexclude-file".into() } else { "--exclude-file".into() });
+        args.push(archivo.to_string_lossy().to_string());
+    }
     // La copia la hace SYSTEM: nunca incluye el registro de Windows (SAM,
     // SECURITY…), que expondría las credenciales del equipo en el repositorio.
     let windir = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
@@ -2221,12 +2290,137 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, limite: Option<u3
     }
     crate::ganchos::despues(&preparado);
     crate::ganchos::aplicar(&mut record, &preparado);
+    // 15y: lo que quedó fuera por tamaño, en la versión (sin rutas); el archivo, fuera.
+    match fuera {
+        Some(Ok((archivo, f))) => {
+            let _ = std::fs::remove_file(&archivo);
+            if f.archivos > 0 && record.result != "error" {
+                record.message = format!(
+                    "{} Fuera por tamaño (más de {} MB): {}.",
+                    record.message,
+                    plan.extra.larger_mb.unwrap_or_default(),
+                    crate::excluir::texto_fuera(&f)
+                );
+            }
+        }
+        Some(Err(aviso)) if record.result != "error" => record.message = format!("{} {aviso}", record.message),
+        _ => {}
+    }
     // 0.7.26: si el repositorio está en un disco del equipo, su disco se vio ahora (marca «Aislado»).
     if record.result != "error" {
         crate::volumenes::tocar(&repo.location);
     }
     record.finished = Local::now().to_rfc3339();
     record
+}
+
+/// 15kk: si quien usa el equipo pulsó «No apagar», se anota; pasada la cuenta atrás, hibernar.
+fn seguir_apagado(state: &mut AgentState, ahora: DateTime<Local>) {
+    let Some(e) = state.apagando.clone() else { return };
+    if crate::apagar::cancelado(&e) {
+        crate::apagar::cancelar();
+        state.apagando = None;
+        let m = format!("No se apagó el equipo al terminar «{}»: quien lo usaba pulsó «No apagar».", e.nombre);
+        log(&m);
+        crate::bitacora::aviso("equipo_apagado", &m);
+        return;
+    }
+    if crate::apagar::vencida(&e, ahora) {
+        state.apagando = None;
+        if e.modo == "hibernar" {
+            match crate::apagar::hibernar_ya() {
+                Ok(()) => log(&format!(
+                    "Hibernando el equipo: terminó «{}».{}",
+                    e.nombre,
+                    if crate::apagar::de_prueba() { " (Modo de prueba: no se hiberna.)" } else { "" }
+                )),
+                Err(err) => log(&format!("ERROR: no se pudo hibernar el equipo: {err}")),
+            }
+        }
+    }
+}
+
+/// 15kk: empieza la cuenta atrás si hay un apagado listo y no queda nada más que hacer ahora
+/// (otras copias que tocan, pasos encadenados, tareas pendientes o en marcha). Si queda, espera
+/// a la vuelta siguiente.
+fn empezar_apagado(config: &AgentConfig, state: &mut AgentState, ahora: DateTime<Local>) {
+    let Some((p, nombre)) = state.apagar_listo.clone() else { return };
+    if state.apagando.is_some() {
+        return;
+    }
+    let toca_algo = config.repos.iter().any(|r| r.plans.iter().any(|pl| plan_turn(r, pl, state, false, ahora).is_some()));
+    if toca_algo || crate::tasks::hay_pendiente(config) {
+        return;
+    }
+    state.apagar_listo = None;
+    let e = crate::apagar::en_marcha(&p, &nombre, ahora);
+    match crate::apagar::empezar(&e) {
+        Ok(()) => {
+            let m = crate::apagar::texto_historial(&e);
+            log(&format!("{m}{}", if crate::apagar::de_prueba() { " (Modo de prueba: no se apaga.)" } else { "" }));
+            crate::bitacora::aviso("equipo_apagado", &m);
+            state.apagando = Some(e);
+        }
+        Err(err) => log(&format!("ERROR: no se pudo apagar el equipo al terminar «{nombre}»: {err}")),
+    }
+}
+
+/// 15ii: ¿falló por no llegar al destino? (el mensaje es la frase; el detalle, lo técnico).
+fn fallo_de_red(r: &RunRecord) -> bool {
+    r.result == "error" && crate::movil::es_sin_conexion(&format!("{} {}", r.message, r.detail.as_deref().unwrap_or_default()))
+}
+
+/// 15ii: mira si responde el destino de los repositorios que lo necesitan (con algún plan
+/// «al volver a conectarse» o con su última copia fallida por la red) y anota la reconexión
+/// de cada plan. Devuelve lo visto por repositorio (`None`: no se sabe).
+fn mirar_destinos(config: &AgentConfig, state: &mut AgentState, ahora: DateTime<Local>) -> HashMap<String, Option<bool>> {
+    let mut out = HashMap::new();
+    for repo in &config.repos {
+        let interesa = repo.plans.iter().any(|p| p.extra.on_reconnect || state.runs.get(&crate::plans::plan_key(&repo.id, &p.id)).is_some_and(fallo_de_red));
+        if !interesa {
+            continue;
+        }
+        let alc = crate::movil::alcanzable(&repo.location);
+        out.insert(repo.id.clone(), alc);
+        for p in repo.plans.iter().filter(|p| p.extra.on_reconnect) {
+            let key = crate::plans::plan_key(&repo.id, &p.id);
+            let buena = ultima_buena(state, &key);
+            let hueco = i64::from(p.schedule.max_gap_hours()).clamp(1, 24 * 31);
+            let antes = state.reconexion.get(&key).cloned().unwrap_or_default();
+            let ahora_r = crate::movil::mirar(&antes, alc, buena, hueco, ahora);
+            if ahora_r.toca.is_some() && antes.toca.is_none() {
+                log(&format!("«{}» (plan «{}»): el destino vuelve a responder; si sigue así, se copia en unos minutos.", repo.name, p.name));
+            }
+            state.reconexion.insert(key, ahora_r);
+        }
+    }
+    out
+}
+
+/// 15ii: la última copia buena de un plan (la anotada o, si la última fue bien, la última).
+pub fn ultima_buena(state: &AgentState, key: &str) -> Option<DateTime<Local>> {
+    let leer = |s: &str| DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Local));
+    let anotada = state.ultima_buena.get(key).and_then(|s| leer(s));
+    let ultima = state.runs.get(key).filter(|r| r.result != "error").and_then(|r| leer(&r.finished));
+    anotada.max(ultima)
+}
+
+/// 15y: recorre las carpetas del plan y escribe, en la carpeta privada del agente, el
+/// archivo de exclusiones con los archivos de más de `mb` MB que no son de un tipo
+/// exceptuado. `Err(aviso)`: no se pudo (o no terminó a tiempo) y se copia **sin** el
+/// límite, diciéndolo (mejor copiar de más que dejar fuera sin saberlo).
+fn limite_de_tamano(repo: &str, plan: &AgentPlan, mb: u32) -> Result<(PathBuf, crate::excluir::FueraPorTamano), String> {
+    let tope = std::time::Instant::now() + crate::excluir::TOPE_ANTES_DE_COPIAR;
+    let f = crate::excluir::fuera_por_tamano(&plan.paths, &plan.excludes, mb, &plan.extra.larger_except, tope);
+    if !f.completo {
+        return Err(format!("No se aplicó «no copiar más de {mb} MB»: revisar las carpetas tardó demasiado, así que se copió todo."));
+    }
+    let nombre: String = format!("{repo}-{}", plan.id).chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let archivo = private_dir().join(format!("fuera-por-tamano-{nombre}.txt"));
+    let mut texto = f.rutas.join("\n");
+    texto.push('\n');
+    std::fs::write(&archivo, texto).map_err(|e| format!("No se aplicó «no copiar más de {mb} MB» ({e}), así que se copió todo."))?;
+    Ok((archivo, f))
 }
 
 /// Punto de entrada de `--agent-run`. Devuelve el código de salida.
@@ -2397,6 +2591,14 @@ pub fn run() -> i32 {
         }
     }
 
+    // 15kk: la cuenta atrás de un apagado: «No apagar» o, pasada, hibernar.
+    seguir_apagado(&mut state, Local::now());
+    // 15ii: si responde el destino (para «al volver a conectarse» y los reintentos por red) y
+    // si se puede empezar con esta batería y esta conexión (solo lo que se hace solo).
+    let alcance = mirar_destinos(&config, &mut state, Local::now());
+    let aplazar =
+        config.energia.as_ref().and_then(|e| crate::movil::por_que_no(e, crate::movil::bateria(), if e.sin_medida { crate::movil::medida() } else { None }));
+    let mut aplazadas: Vec<String> = Vec::new();
     let mut failures = 0;
     let mut ran: Vec<String> = Vec::new();
     // Tarea 7c: varias pasadas. Un plan «después de la anterior» empieza en la misma
@@ -2418,7 +2620,24 @@ pub fn run() -> i32 {
                 // Si la anterior falló, la cadena se para aquí (y se anota una vez).
                 note_chain_stop(repo, plan, &key, &mut state);
                 let asked = pass == 0 && requested.contains(&key);
-                let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()) else { continue };
+                // 15ii: «además, al volver a conectarse» (una vez, tras unos minutos de calma).
+                let por_reconexion = !asked && plan.extra.on_reconnect && state.reconexion.get(&key).is_some_and(|r| crate::movil::toca(r, Local::now()));
+                let Some(retry) = plan_turn(repo, plan, &state, asked, Local::now()).or(por_reconexion.then_some(false)) else { continue };
+                // 15ii: un reintento por falta de red no se gasta mientras el destino no responde.
+                if retry && alcance.get(&repo.id).copied().flatten() == Some(false) && state.runs.get(&key).is_some_and(fallo_de_red) {
+                    continue;
+                }
+                // 15ii: con poca batería o con una conexión medida, lo que se hace solo espera.
+                if let (false, Some(_)) = (asked, &aplazar) {
+                    aplazadas.push(format!("«{}»", plan.name));
+                    continue;
+                }
+                if por_reconexion {
+                    log(&format!("«{}» (plan «{}»): el destino vuelve a responder y la última copia buena es antigua: se copia ahora.", repo.name, plan.name));
+                    if let Some(r) = state.reconexion.get_mut(&key) {
+                        r.toca = None;
+                    }
+                }
                 let by_chain = plan.after.is_some() && chain_turn(plan, &state, plan_since(plan, &key, &state), Local::now()) == ChainTurn::Go;
                 let attempts = state.retries.get(&key).copied().unwrap_or(0);
                 if retry {
@@ -2601,6 +2820,30 @@ pub fn run() -> i32 {
                         );
                     }
                 }
+                // 15kk: apagar o hibernar al terminar (pedido con «Copiar ahora» o en la copia), solo si fue bien.
+                let pedido_apagar = crate::apagar::tomar(&key).or_else(|| {
+                    plan.extra.on_finish.as_ref().map(|m| crate::apagar::Pedido {
+                        modo: m.clone(),
+                        clave: key.clone(),
+                        por: None,
+                        pedido: Local::now().to_rfc3339(),
+                    })
+                });
+                if let Some(p) = pedido_apagar {
+                    if record.result == "error" {
+                        log(&format!("«{}» (plan «{}») falló: no se apaga el equipo (para poder mirar qué pasó).", repo.name, plan.name));
+                        state.apagar_listo = None;
+                    } else {
+                        state.apagar_listo = Some((p, plan.name.clone()));
+                    }
+                }
+                // 15ii: la última copia buena (para «al volver a conectarse» y el margen de «sale de la oficina»).
+                if record.result != "error" {
+                    state.ultima_buena.insert(key.clone(), record.finished.clone());
+                    if let Some(r) = state.reconexion.get_mut(&key) {
+                        r.toca = None;
+                    }
+                }
                 // F1: cuenta para su fin (si tiene) y, si llega, queda completada.
                 if note_end(plan, &key, &mut state, !matches!(record.result.as_str(), "error" | "stopped"), Local::now()) {
                     log(&format!("«{}» (plan «{}») completada: hizo lo que tenía previsto. Sus versiones se quedan.", repo.name, plan.name));
@@ -2614,6 +2857,21 @@ pub fn run() -> i32 {
         if done_keys.len() == before {
             break;
         }
+    }
+    // 15ii: lo que espera por la batería o la conexión medida, en el registro (como mucho cada hora).
+    if let (Some(motivo), false) = (&aplazar, aplazadas.is_empty()) {
+        let reciente = state
+            .aplazadas_aviso
+            .as_deref()
+            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+            .is_some_and(|t| Local::now().signed_duration_since(t) < Duration::hours(1));
+        if !reciente {
+            aplazadas.dedup();
+            log(&format!("Copias aplazadas porque {motivo}: {}. Se hacen en cuanto se pueda (o con «Copiar ahora»).", aplazadas.join(", ")));
+            state.aplazadas_aviso = Some(Local::now().to_rfc3339());
+        }
+    } else if aplazar.is_none() {
+        state.aplazadas_aviso = None;
     }
     // Peticiones a distancia que no se pudieron empezar (p. ej. una verificación
     // tenía el destino bloqueado): se avisa en lugar de dejarlas sin respuesta.
@@ -2649,6 +2907,8 @@ pub fn run() -> i32 {
         let result = crate::protection::probe_append_only(&repo.location, auth, repo.cacert.as_deref());
         state.append_only.insert(repo.id.clone(), crate::protection::AppendOnlyCheck { checked_at: Local::now().to_rfc3339(), append_only: result });
     }
+    // 15kk: con la copia que lo pidió ya hecha y nada más por hacer, la cuenta atrás.
+    empezar_apagado(&config, &mut state, Local::now());
     let _ = crate::web::tick(&config, &secrets, &mut state, &ran, false);
     let _ = write_json("state.json", &state);
     // Verificaciones y copias externas: en otro proceso, sin esperar.
@@ -2990,6 +3250,7 @@ pub mod tests {
                 after_always: false,
                 after_delay_min: 0,
                 end: None,
+                extra: PlanExtra::default(),
             }],
             verify: None,
             offsite: None,

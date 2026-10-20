@@ -116,6 +116,8 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "conservar_version",
     // B1: el nombre de un repositorio.
     "nombre_repositorio",
+    // 0.8.1 (15t): el nombre de una copia o de una copia derivada.
+    "nombre_copia",
 ];
 
 /// El nombre que se enseña de una consola: el suyo o el nombre de su dirección.

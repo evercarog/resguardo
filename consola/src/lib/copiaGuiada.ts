@@ -325,7 +325,7 @@ const idNuevo = () => `copia-${crypto.randomUUID().slice(0, 8)}`;
 export function copiaNueva(repo: string, id = idNuevo()): CopiaConfig {
   return {
     id,
-    nombre: "Copia nueva",
+    nombre: NOMBRE_NUEVA,
     repo,
     carpetas: [],
     exclusiones: [...EXCLUSIONES_POR_DEFECTO],
@@ -334,6 +334,65 @@ export function copiaNueva(repo: string, id = idNuevo()): CopiaConfig {
     gancho: [],
     solo_si_cambios: true,
   };
+}
+
+/** 15v: como mucho, etiquetas en las versiones de una copia (como el motor: `Plan::validate`). */
+export const MAX_ETIQUETAS_VERSION = 10;
+export const ADMITE_ETIQUETAS = "etiquetas_copia";
+
+/** 15v: una etiqueta de versión limpia (sin espacios ni comas, hasta 40 caracteres), o por qué no vale. */
+export function limpiarEtiquetaVersion(t: string): { etiqueta: string } | { error: string } {
+  const x = t.trim().replace(/\s+/g, "-").replace(/,/g, "");
+  if (!x) return { error: "Escribe la etiqueta." };
+  if ([...x].length > 40) return { error: "Hasta 40 caracteres." };
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(x)) return { error: "Sin caracteres de control." };
+  return { etiqueta: x };
+}
+
+/** 15v: las etiquetas de versión que usan las copias de estos equipos (para proponerlas). */
+export function etiquetasEnUso(equipos: { resumen?: { copias?: { etiquetas?: string[] | null }[] | null } | null }[]): string[] {
+  const n = new Map<string, number>();
+  for (const e of equipos) for (const k of e.resumen?.copias ?? []) for (const t of k.etiquetas ?? []) n.set(t, (n.get(t) ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es")).map(([t]) => t);
+}
+
+/** El nombre de una copia nueva antes de proponer otro. */
+export const NOMBRE_NUEVA = "Copia nueva";
+/** Como el agente (`MAX_NOMBRE_COPIA`). */
+export const MAX_NOMBRE = 60;
+
+/** El último trozo de una ruta («C:\Users\Ana\Documents» → «Documents»; «D:\» → «D:»). */
+export function nombreDeCarpeta(ruta: string): string {
+  const partes = ruta.trim().split(/[\\/]+/).filter(Boolean);
+  return partes.at(-1) ?? ruta.trim();
+}
+
+/**
+ * 15t: el nombre que se propone a partir de las carpetas («Documents de PC-01»,
+ * «Documents y Escritorio de PC-01», «Documents y 2 más de PC-01»). Sin carpetas, el de
+ * una copia nueva.
+ */
+export function nombrePropuesto(carpetas: string[], equipo: string): string {
+  const n = carpetas.map(nombreDeCarpeta).filter(Boolean);
+  if (!n.length) return NOMBRE_NUEVA;
+  const que = n.length === 1 ? n[0] : n.length === 2 ? `${n[0]} y ${n[1]}` : `${n[0]} y ${n.length - 1} más`;
+  const de = equipo ? ` de ${equipo}` : "";
+  const t = `${que}${de}`;
+  if ([...t].length <= MAX_NOMBRE) return t;
+  const cabe = Math.max(10, MAX_NOMBRE - [...de].length - 1);
+  return `${[...que].slice(0, cabe).join("")}…${de}`.slice(0, MAX_NOMBRE);
+}
+
+/**
+ * 15t: pone las carpetas y, si el nombre era el de una copia nueva o el que se propuso con
+ * las carpetas de antes (nadie lo ha cambiado a mano), propone uno con las nuevas.
+ */
+export function ponerCarpetas(k: Pick<CopiaConfig, "nombre" | "carpetas">, carpetas: string[], equipo: string): void {
+  const antes = k.nombre.trim();
+  const automatico = !antes || antes === NOMBRE_NUEVA || antes === nombrePropuesto(k.carpetas, equipo);
+  k.carpetas = carpetas;
+  if (automatico) k.nombre = nombrePropuesto(carpetas, equipo);
 }
 
 /** «Duplicar»: lo mismo con otro id y nombre, con su propio horario (nunca en cadena: va justo debajo y se decide después). */

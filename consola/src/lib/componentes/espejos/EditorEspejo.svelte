@@ -63,8 +63,12 @@
     nuevo: boolean;
     onguardar: (t: TrabajoEspejo) => void;
     onclose: () => void;
+    /** 15r: desde una copia, su repositorio (va arriba en «Qué repositorios», marcado como «de esta copia»). */
+    primero?: string | null;
+    /** 15r: cómo se llama (y de qué equipo es), por si el almacén aún no lo ha contado (recién creado). */
+    primeroNombre?: { nombre: string; equipo?: string } | null;
   }
-  let { cliente, hace, quien, equipos, trabajo, todos, nuevo, onguardar, onclose }: Props = $props();
+  let { cliente, hace, quien, equipos, trabajo, todos, nuevo, onguardar, onclose, primero = null, primeroNombre = null }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let t = $state<TrabajoEspejo>(structuredClone($state.snapshot(trabajo)));
@@ -106,7 +110,13 @@
   // --- Qué ---
   const zonas = $derived(quien === "almacen" ? zonasDe(hace) : []);
   const zona = $derived(t.zona || PRINCIPAL);
-  const repos = $derived(opcionesRepos(hace, quien, equipos, zona));
+  // 15r: el de la copia desde la que se abrió, el primero.
+  // Recién creado, el almacén aún no lo cuenta en su resumen: se añade igual (el espejo lo copia en cuanto esté).
+  const repos = $derived.by(() => {
+    const l = opcionesRepos(hace, quien, equipos, zona);
+    if (primero && !l.some((x) => x.valor === primero)) l.push({ valor: primero, nombre: `${primeroNombre?.nombre ?? primero} (recién creado)`, equipo: primeroNombre?.equipo });
+    return l.sort((a, b) => Number(b.valor === primero) - Number(a.valor === primero));
+  });
   const usuarios = $derived(quien === "almacen" ? equiposDelAlmacen(hace, equipos, zona) : []);
   const nombreRepo = (r: string) => {
     const o = repos.find((x) => x.valor === r);
@@ -380,7 +390,7 @@
           {@const elegidos = t.que.repos}
           <div class="checks">
             {#each repos as r (r.valor)}
-              <label class="check"><input type="checkbox" checked={elegidos.includes(r.valor)} onchange={() => t.que.tipo === "repos" && (t.que = { tipo: "repos", repos: alternar(elegidos, r.valor) })} /><span>{r.nombre}{#if r.equipo}<span class="faint"> · {r.equipo}</span>{/if}</span></label>
+              <label class="check" class:de-la-copia={r.valor === primero}><input type="checkbox" checked={elegidos.includes(r.valor)} onchange={() => t.que.tipo === "repos" && (t.que = { tipo: "repos", repos: alternar(elegidos, r.valor) })} /><span>{r.nombre}{#if r.equipo}<span class="faint"> · {r.equipo}</span>{/if}{#if r.valor === primero}<span class="badge badge-sm tone-accent esta">De esta copia</span>{/if}</span></label>
             {:else}
               <p class="faint">{quien === "almacen" ? "Todavía no guarda ningún repositorio." : "No tiene repositorios en sus discos."}</p>
             {/each}
@@ -714,6 +724,17 @@
     display: flex;
     gap: 8px;
     align-items: flex-start;
+  }
+  /* 15r: el repositorio de la copia desde la que se abrió. */
+  .check.de-la-copia {
+    padding: 4px 6px;
+    margin: 0 -6px;
+    background: var(--accent-soft);
+    border-radius: var(--radius);
+  }
+  .esta {
+    justify-self: start;
+    margin-top: 2px;
   }
   .radio > span,
   .check > span,

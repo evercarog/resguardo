@@ -88,6 +88,10 @@ export const NIVEL: Record<string, Nivel> = {
   conservar_version: "admin",
   // Plan 0.8.1 (15hh): parar o pausar lo que está en marcha: con la clave, sin espera.
   parar: "admin",
+  // Plan 0.8.1 (15t): el nombre de una copia o de una copia derivada (con la clave, sin espera).
+  nombre_copia: "admin",
+  // Plan 0.8.1 (15y): la vista previa de «No copiar» (recorre carpetas del equipo, como «Elegir en el equipo»).
+  vista_exclusiones: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */
@@ -98,6 +102,8 @@ export const PIDE_TAMBIEN_ADMIN = new Set(["quitar_repositorio", "compartir_acce
  * cuerpo (el equipo lo comprueba igual): restaurar en otra carpeta o en un .zip.
  */
 export function pideAdminPorCuerpo(tipo: string, cuerpo: Record<string, unknown> | undefined): boolean {
+  // 15kk: «Copiar ahora» que apaga o hiberna el equipo al terminar.
+  if (tipo === "copiar_ahora") return !!cuerpo?.al_terminar;
   return tipo === "restaurar" && ["nueva", "zip", "carpeta"].includes(String(cuerpo?.destino ?? ""));
 }
 

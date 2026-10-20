@@ -4,7 +4,10 @@
   // pueden crear, renombrar, cambiar y quitar. Datos comunes (`exclusiones:<id>`): los
   // ven igual todas las consolas. Solo los datos: usarlos en el editor de copias es
   // otra parte (las copias guardan sus propias reglas). Editar: administradores y propietarios.
-  import { Check, ChevronDown, Pencil, Plus, RotateCcw, Trash2, TriangleAlert, X } from "@lucide/svelte";
+  import { Check, ChevronDown, Pencil, Plus, RefreshCw, RotateCcw, Trash2, TriangleAlert, X } from "@lucide/svelte";
+  // 0.8.1 (D2): qué copias usan cada grupo y aplicarles un cambio.
+  import { copiasQueUsan } from "$lib/exclusionesCopia";
+  import AplicarGrupoEnCopias from "./AplicarGrupoEnCopias.svelte";
   import BotonCargando from "../BotonCargando.svelte";
   import { actual } from "$lib/estado.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
@@ -38,7 +41,8 @@
     try {
       const nuevo = !editando.id;
       await guardarGrupoExclusiones(actual.id, { id: editando.id, nombre: editando.nombre, reglas: editando.reglas });
-      avisar(nuevo ? `Grupo «${editando.nombre.trim()}» creado.` : `Grupo «${editando.nombre.trim()}» guardado.`);
+      const n = editando.id ? copiasQueUsan(actual.equipos, { id: editando.id, nombre: editando.nombre, reglas: [] }).length : 0;
+      avisar(nuevo ? `Grupo «${editando.nombre.trim()}» creado.` : n ? `Grupo «${editando.nombre.trim()}» guardado. Lo ${n === 1 ? "usa 1 copia" : `usan ${n} copias`}: abajo puedes aplicarles el cambio.` : `Grupo «${editando.nombre.trim()}» guardado.`);
       editando = null;
     } catch (err) {
       error = (err as Error).message;
@@ -70,6 +74,9 @@
       ocupado = false;
     }
   }
+  const usosDe = (g: GrupoExclusiones) => copiasQueUsan(actual.equipos, g);
+  const viejasDe = (g: GrupoExclusiones) => usosDe(g).filter((x) => !x.alDia);
+  let aplicarA = $state<GrupoExclusiones | null>(null);
   const alternar = (id: string) => (abiertos = abiertos.includes(id) ? abiertos.filter((x) => x !== id) : [...abiertos, id]);
   const VISTAS = 8;
 </script>
@@ -92,7 +99,15 @@
             </button>
           {/if}
         </span>
-        <span class="faint">{plural(g.reglas.length, "regla", "reglas")}</span>
+        <span class="faint">{plural(g.reglas.length, "regla", "reglas")}{#if usosDe(g).length}{" · "}lo usa{usosDe(g).length === 1 ? "" : "n"} {plural(usosDe(g).length, "copia", "copias")}{/if}</span>
+        <!-- 15y: las copias que lo usan con las reglas de antes: se les puede aplicar (una orden por equipo). -->
+        {#if viejasDe(g).length}
+          <span class="viejas">
+            <TriangleAlert size={13} />
+            <span>{plural(viejasDe(g).length, "copia tiene", "copias tienen")} sus reglas de antes ({viejasDe(g).slice(0, 3).map((x) => `«${x.copia.nombre}» de ${x.equipo.nombre}`).join(", ")}{viejasDe(g).length > 3 ? "…" : ""}).</span>
+            {#if editar}<button type="button" class="btn btn-sm" onclick={() => (aplicarA = g)}><RefreshCw size={13} />Aplicarles el cambio</button>{/if}
+          </span>
+        {/if}
       </span>
       {#if editar && admitidos}
         {#if quitando?.id === g.id}
@@ -143,6 +158,9 @@
     </div>
   {/if}
 {/if}
+{#if aplicarA && actual.cliente}
+  <AplicarGrupoEnCopias cliente={actual.cliente} equipos={actual.equipos} grupo={aplicarA} onclose={() => (aplicarA = null)} />
+{/if}
 {#if sinGuardar.length}
   <p class="faint nota">{plural(sinGuardar.length, "equipo tiene", "equipos tienen")} un agente anterior que aún no guarda estos grupos ({sinGuardar.map((e) => e.nombre).join(", ")}): las demás consolas los verán por los equipos actualizados.</p>
 {/if}
@@ -185,6 +203,18 @@
   }
   .field-hint code {
     font-family: var(--mono);
+  }
+  .viejas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-top: 4px;
+    font-size: var(--fs-xs);
+    color: var(--warn);
+  }
+  .viejas > span {
+    color: var(--text-2);
   }
   .botones {
     display: flex;

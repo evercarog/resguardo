@@ -232,9 +232,23 @@ export interface DatosEquipo {
   tipo?: CampoEquipo<{ clase: "fisico" | "virtual" | "contenedor"; plataforma?: string | null }>;
 }
 
+/** 0.8.1 (15ii): un equipo que entra y sale (`config.movil`, `resumen.movil`). */
+export interface MovilEquipo {
+  /** «Sale de la oficina»: sin conexión no es un fallo hasta pasar el margen. */
+  sale_oficina?: boolean;
+  /** Días sin copia antes de avisar (sin él, 7). */
+  margen_dias?: number | null;
+  /** No empezar sola con la batería por debajo de este % (sin enchufar). */
+  bateria_min?: number | null;
+  /** Permitir empezar con una conexión medida (datos del móvil). */
+  permitir_medida?: boolean;
+}
+
 export interface ResumenEquipo {
   /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.36 «escritorio»). */
   admite?: string[];
+  /** 0.8.1 (15ii, `admite: "equipos_moviles"`): si sale de la oficina, su margen, la batería y la conexión medida. */
+  movil?: MovilEquipo | null;
   /** v1.36: la ventana y los avisos en el equipo (docs/agente-ventana.md), y cuándo se cambiaron allí. */
   escritorio?: Escritorio | null;
   escritorio_cambiado_en_equipo?: string | null;
@@ -346,6 +360,9 @@ export interface ResumenEquipo {
     conservadas?: { usuario: string; repo: string; versiones: { version: string; motivo: string; cuando: string }[] }[] | null;
     /** Plan 0.8.0, B1 (`admite: "nombres_legibles"`): carpetas movidas con «Ordenar nombres de carpeta» (las últimas, la más reciente primero). */
     renombres?: import("./nombres").RenombreAlmacen[] | null;
+    /** 0.8.1 (15gg, `admite: "repos_sueltos"`): repositorios sueltos en su disco (lib/sueltos.ts) y dónde busca además. */
+    sueltos?: import("./sueltos").Suelto[] | null;
+    sueltos_en?: string[] | null;
   } | null;
   pausado_hasta?: string | null;
   /** Plan 0.7.26 (agente con `admite: "espejo_equipo"`): los espejos que hace el propio equipo de los repositorios de sus discos. */
@@ -475,7 +492,9 @@ export interface CopiaResumen {
   horario?: string | Horario;
   carpetas?: number;
   /** 15jj: `interrumpida`, quedó «en curso» y no terminó (con `estado: "fallo"`). 15hh: `parada`, se paró o pausó a petición. */
-  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo" | "parada"; bytes?: number; mensaje?: string | null; interrumpida?: boolean } | null;
+  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo" | "parada"; bytes?: number; mensaje?: string | null; interrumpida?: boolean; fuera?: boolean } | null;
+  /** 0.8.1 (15ii): además, al volver a conectarse. */
+  al_reconectar?: boolean | null;
   proxima?: string | null;
   activa?: boolean;
   /** v1.16 (agente ≥ 0.7.7): si guarda versión solo cuando algo cambió. */
@@ -499,6 +518,12 @@ export interface CopiaResumen {
   limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
   /** 15ll: deja que el equipo se suspenda mientras copia. */
   permitir_suspension?: boolean | null;
+  /** 0.8.1 (15v): las etiquetas de sus versiones (sin ellas, «resguardo-agente»). */
+  etiquetas?: string[] | null;
+  /** 0.8.1 (15y): los grupos de exclusiones que usa, con sus reglas (sin las sueltas, que pueden llevar rutas). */
+  grupos_exclusiones?: GrupoUsado[] | null;
+  /** 15y: el tamaño máximo (MB). */
+  mayores_mb?: number | null;
 }
 
 /** Plan 0.8.0, F1 (14pp): cuándo termina una copia. */
@@ -536,6 +561,8 @@ export interface CuandoDerivada {
 /** Tarea 4b (`admite: "derivadas"`): otra copia derivada de un repositorio (la externa de siempre va aparte). */
 export interface DerivadaResumen {
   id: string;
+  /** 0.8.1 (15t, `admite: "nombre_copia"`): su nombre, si se le puso (sin él: «<repositorio> (copia derivada)»). */
+  nombre?: string | null;
   destino?: string | null;
   destino_id?: string | null;
   cuando?: CuandoDerivada | null;
@@ -955,7 +982,7 @@ export interface Informe {
   datos: {
     repos?: RepoInforme[];
     version?: string;
-    copias?: { id: string; repo?: string; nombre?: string; estado?: string; cuando?: string; bytes?: number; archivos?: number; duracion_s?: number; mensaje?: string | null; ganchos?: ResultadoGancho[] }[];
+    copias?: { id: string; repo?: string; nombre?: string; estado?: string; cuando?: string; bytes?: number; archivos?: number; duracion_s?: number; mensaje?: string | null; ganchos?: ResultadoGancho[]; fuera?: boolean }[];
     /** v1.12: la próxima vez que toca cada copia (null: desactivada o en pausa sin fecha). */
     proximas?: Record<string, string | null>;
     disco?: { libre?: number; total?: number };
@@ -1410,6 +1437,27 @@ export interface CopiaConfig {
   limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
   /** 15ll (`admite: "sin_suspension"`): deja que el equipo se suspenda mientras copia (con batería). */
   permitir_suspension?: boolean;
+  /** 0.8.1 (15v, `admite: "etiquetas_copia"`): las etiquetas de sus versiones (hasta 10). */
+  etiquetas?: string[];
+  /** 0.8.1 (15y, `admite: "grupos_en_copias"`): de qué grupos vienen reglas de `exclusiones` (con las suyas de entonces). */
+  grupos_exclusiones?: GrupoUsado[];
+  /** 15y: «No copiar archivos de más de N MB». */
+  mayores_mb?: number | null;
+  /** 15y: tipos que se copian aunque pasen del límite (`*.pst`). */
+  excepto_tamano?: string[];
+  /** 0.8.1 (15ii, `admite: "equipos_moviles"`): además del horario, una vez al volver a conectarse. */
+  al_reconectar?: boolean;
+  /** 0.8.1 (15kk, `admite: "apagar_al_terminar"`): al terminar bien, apagar o hibernar el equipo. */
+  al_terminar?: "apagar" | "hibernar" | null;
+  /** 15kk: confirmado expresamente en un servidor o un almacén. */
+  al_terminar_servidor?: boolean;
+}
+
+/** 15y: un grupo de exclusiones aplicado a una copia. */
+export interface GrupoUsado {
+  id: string;
+  nombre: string;
+  reglas: string[];
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */
@@ -1472,6 +1520,8 @@ export interface Configuracion {
   escritorio?: Escritorio;
   /** v1.36: lo puso el equipo al cambiar algo con la clave en su ventana. */
   cambiado_en_equipo?: string;
+  /** 0.8.1 (15ii): un equipo que entra y sale. */
+  movil?: MovilEquipo | null;
 }
 
 /** v1.36: la ventana del agente y sus avisos. */

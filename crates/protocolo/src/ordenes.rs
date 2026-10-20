@@ -142,6 +142,14 @@ pub const TIPOS: &[Tipo] = &[
     // dueño o en el almacén. Con la clave de administración; quitarla reduce la protección
     // (según el cuerpo: `conservar: false`).
     t("conservar_version", Administracion, false, false, false),
+    // Plan 0.8.1 (15t): el nombre de una copia o de una copia derivada, igual en todas las
+    // consolas. Con la clave de administración (para que nadie confunda las copias), sin
+    // espera: no reduce la protección.
+    t("nombre_copia", Administracion, false, false, false),
+    // Plan 0.8.1 (15y): la vista previa de «No copiar» (recorre las carpetas que dice la
+    // orden y cuenta lo que deja fuera cada grupo, sin copiar nada). Con la clave de
+    // administración, como «Elegir en el equipo»: mira carpetas del equipo.
+    t("vista_exclusiones", Administracion, false, false, false),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).
@@ -254,6 +262,9 @@ mod tests {
         assert!(c.nivel == Nivel::Inofensiva && !c.destructiva && !DESTRUCTIVAS_SEGUN_CUERPO.contains(&"comentario_version"));
         let c = tipo("conservar_version").unwrap();
         assert!(c.nivel == Nivel::Administracion && !c.destructiva && DESTRUCTIVAS_SEGUN_CUERPO.contains(&"conservar_version"));
+        // 0.8.1 (15t): renombrar una copia, con la clave y sin espera.
+        let n = tipo("nombre_copia").unwrap();
+        assert!(n.nivel == Nivel::Administracion && !n.destructiva && !DESTRUCTIVAS_SEGUN_CUERPO.contains(&"nombre_copia"));
         // Ninguna inofensiva es destructiva.
         assert!(TIPOS.iter().filter(|t| t.nivel == Nivel::Inofensiva).all(|t| !t.destructiva));
     }

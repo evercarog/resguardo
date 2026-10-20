@@ -621,7 +621,7 @@ fn poner_solo_destino(v: &mut Vinculo, dest: &Value) -> Result<String, String> {
 
 // ---------- Configuración v1 ----------
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct Horario {
     /// 1 = lunes … 7 = domingo.
     #[serde(default)]
@@ -697,7 +697,7 @@ fn si() -> bool {
     true
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Copia {
     pub id: String,
     pub nombre: String,
@@ -746,7 +746,47 @@ pub struct Copia {
     /// copia (equipos con batería). Sin el campo, sí se pide.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub permitir_suspension: bool,
+    /// 0.8.1 (15v, `admite: "etiquetas_copia"`): las etiquetas de sus versiones (hasta 10,
+    /// sin espacios ni comas; sin ninguna, `resguardo-agente`). Cambiarlas solo afecta a las
+    /// versiones nuevas. Un agente anterior las ignora (y sigue con `resguardo-agente`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub etiquetas: Vec<String>,
+    /// 0.8.1 (15y, `admite: "grupos_en_copias"`): de qué grupos de exclusiones del cliente
+    /// vienen reglas de `exclusiones`, con las reglas que tenía cada uno al aplicarlo (para
+    /// que la consola sepa qué copias usan un grupo y si ya tienen su última versión). Las
+    /// reglas que se aplican son siempre las de `exclusiones`: el equipo no depende de la consola.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grupos_exclusiones: Vec<GrupoUsado>,
+    /// 15y: «No copiar archivos de más de N MB» (1 a 1 000 000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mayores_mb: Option<u32>,
+    /// 15y: tipos que se copian aunque pasen del límite (`*.pst`, `*.bak`; hasta 50).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excepto_tamano: Vec<String>,
+    /// 0.8.1 (15ii, `admite: "equipos_moviles"`): además del horario, una vez al volver a
+    /// conectarse si la última copia buena es antigua.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub al_reconectar: bool,
+    /// 0.8.1 (15kk, `admite: "apagar_al_terminar"`): al terminar bien, `apagar` o `hibernar`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub al_terminar: Option<String>,
+    /// 15kk: confirmado expresamente en un equipo que guarda copias de otros (almacén).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub al_terminar_servidor: bool,
 }
+
+/// 15y: un grupo de exclusiones aplicado a una copia (sus reglas, tal como estaban).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct GrupoUsado {
+    pub id: String,
+    #[serde(default)]
+    pub nombre: String,
+    #[serde(default)]
+    pub reglas: Vec<String>,
+}
+
+/// 15y: como mucho, grupos aplicados a una copia.
+pub const MAX_GRUPOS_COPIA: usize = 50;
 
 /// F1 (14pp): cuándo termina una copia. Al terminar queda **completada**: no se
 /// hace sola ni avisa, y conserva su repositorio, sus versiones y su retención.
@@ -806,6 +846,35 @@ impl Termina {
 pub const MAX_RETRASO_MIN: u32 = 1440;
 
 impl Copia {
+    /// 15y: los grupos de exclusiones, el límite de tamaño y sus excepciones, válidos.
+    pub fn valida_exclusiones(&self) -> Result<(), String> {
+        let n = &self.nombre;
+        if self.grupos_exclusiones.len() > MAX_GRUPOS_COPIA {
+            return Err(format!("La copia «{n}» lleva demasiados grupos de exclusiones (como mucho {MAX_GRUPOS_COPIA})."));
+        }
+        for g in &self.grupos_exclusiones {
+            if !id_valido(&g.id) || g.nombre.chars().count() > 60 || g.nombre.chars().any(char::is_control) {
+                return Err(format!("Un grupo de exclusiones de la copia «{n}» no es válido."));
+            }
+            crate::excluir::reglas_validas(&g.reglas, 100, &format!("Las reglas del grupo «{}»", g.nombre))?;
+        }
+        if self.mayores_mb.is_some_and(|m| !(1..=crate::excluir::MAX_MB).contains(&m)) {
+            return Err(format!("El tamaño máximo de la copia «{n}» va de 1 MB a {} MB.", crate::excluir::MAX_MB));
+        }
+        crate::excluir::reglas_validas(&self.excepto_tamano, crate::excluir::MAX_EXCEPCIONES, &format!("Las excepciones al tamaño de «{n}»"))?;
+        Ok(())
+    }
+
+    /// Lo nuevo del plan en el agente (0.8.1, bloque D).
+    pub fn extra(&self) -> crate::agent::PlanExtra {
+        crate::agent::PlanExtra {
+            larger_mb: self.mayores_mb,
+            larger_except: if self.mayores_mb.is_some() { self.excepto_tamano.clone() } else { vec![] },
+            on_reconnect: self.al_reconectar,
+            on_finish: self.al_terminar.clone(),
+        }
+    }
+
     /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior»,
     /// «solo a mano» o «una sola vez».)
     pub fn con_horario(&self) -> bool {
@@ -926,6 +995,11 @@ pub struct Configuracion {
     /// el equipo: una `config` de la consola lo quita.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cambiado_en_equipo: Option<String>,
+    /// 0.8.1 (15ii, `admite: "equipos_moviles"`): un equipo que entra y sale (portátil): si
+    /// «sale de la oficina» y con qué margen, y la batería y la conexión medida. Sin el campo
+    /// (una consola anterior) se queda lo que hubiera.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movil: Option<crate::movil::Movil>,
 }
 
 /// «Verificar automáticamente cada `cada_dias` días, `porcentaje` % de los datos»:
@@ -1147,6 +1221,8 @@ fn plan_de(c: &Copia) -> Result<crate::plans::Plan, String> {
     };
     let plan: crate::plans::Plan = serde_json::from_value(json!({
         "id": c.id, "name": c.nombre, "paths": c.carpetas, "excludes": c.exclusiones,
+        // 15v: las etiquetas de sus versiones (el plan las valida: hasta 10, sin espacios ni comas).
+        "tags": c.etiquetas,
         "schedule": schedule,
         "skip_unchanged": c.solo_si_cambios,
     }))
@@ -1176,6 +1252,11 @@ pub fn aplicar_config(v: &mut Vinculo, c: &Value) -> Result<String, String> {
 /// `aplicar_config`, desde la consola (`en_equipo: false`) o desde el propio
 /// equipo con la clave de administración (la ventana, en modo local).
 pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Result<String, String> {
+    aplicar_config_marca(v, c, en_equipo.then(|| chrono::Local::now().to_rfc3339()))
+}
+
+/// `aplicar_config` con la marca «cambiado en el equipo» que se quiere dejar (`None`: ninguna).
+fn aplicar_config_marca(v: &mut Vinculo, c: &Value, cambiado_en_equipo: Option<String>) -> Result<String, String> {
     let mut cfg: Configuracion = serde_json::from_value(c["config"].clone()).map_err(|e| format!("Configuración no válida: {e}"))?;
     if cfg.v != 1 {
         return Err("Versión de la configuración no admitida (se espera v = 1).".into());
@@ -1187,7 +1268,12 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         // Una consola que no sabe de la ventana no deshace lo que haya.
         None => cfg.escritorio = v.config_v1.as_ref().and_then(|c| c.get("escritorio")).filter(|e| e.is_object()).cloned(),
     }
-    cfg.cambiado_en_equipo = en_equipo.then(|| chrono::Local::now().to_rfc3339());
+    cfg.cambiado_en_equipo = cambiado_en_equipo;
+    // 15ii: sin el campo (una consola anterior), el de antes.
+    match &cfg.movil {
+        Some(m) => m.valida()?,
+        None => cfg.movil = v.config_v1.as_ref().and_then(|c| c.get("movil")).and_then(|m| serde_json::from_value(m.clone()).ok()),
+    }
     let mut ids = std::collections::HashSet::new();
     for k in &cfg.copias {
         if !id_valido(&k.id) || !ids.insert(k.id.clone()) {
@@ -1203,6 +1289,10 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
             return Err(format!("Día no válido en la copia «{}» (1 = lunes … 7 = domingo).", k.nombre));
         }
         k.valida_termina()?;
+        k.valida_exclusiones()?;
+        if let Some(m) = &k.al_terminar {
+            valida_al_terminar(m, k.al_terminar_servidor)?;
+        }
         plan_de(k)?;
         k.valida_inicio()?;
         // 15hh (5): sus franjas de velocidad, como las de una derivada.
@@ -1240,8 +1330,12 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         let modos = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.modo_cadena()?))).collect();
         // F1: solo a mano, una sola vez o con fin.
         let fines = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.fin()?))).collect();
-        crate::agent::set_schedule_full(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos, &fines)?;
+        // 0.8.1 (bloque D): tamaño máximo y lo demás nuevo de cada copia.
+        let extras = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(|k| (k.id.clone(), k.extra())).filter(|(_, x)| !x.vacio()).collect();
+        crate::agent::set_schedule_full(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos, &fines, &extras)?;
     }
+    // 15ii: la batería y la conexión medida, en el agente (agent.json).
+    crate::agent::set_energia(cfg.movil.as_ref().and_then(crate::movil::Movil::energia))?;
     let verificados = aplicar_verificaciones(v, &cfg)?;
     aplicar_pruebas(v, &cfg)?;
     v.config_v1 = Some(serde_json::to_value(&cfg).map_err(|e| e.to_string())?);
@@ -1278,13 +1372,37 @@ pub fn documento(v: &Vinculo) -> Value {
         .map(|r| {
             let mut x = json!({ "id": r.id, "nombre": r.nombre, "destino": r.destino, "retencion": r.retencion });
             if !r.derivadas.is_empty() {
-                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion"), "limite": d.get("limite") })).collect::<Vec<_>>());
+                x["derivadas"] = json!(r.derivadas.iter().map(|d| json!({ "id": d["id"], "nombre": d.get("nombre"), "destino": d["destino"], "cuando": d["cuando"], "filtro": d.get("filtro"), "verificacion": d.get("verificacion"), "limite": d.get("limite") })).collect::<Vec<_>>());
             }
             x
         })
         .collect::<Vec<_>>());
     doc["destinos"] = json!(v.destinos.iter().map(|d| json!({ "id": d.id, "nombre": d.nombre, "tipo": d.tipo, "donde": d.donde })).collect::<Vec<_>>());
     doc
+}
+
+/// 15ii: el estado y el mensaje de la última vuelta de una copia, con lo de «sale de la
+/// oficina»: (estado, mensaje, fuera de la oficina dentro del margen).
+pub fn estado_movil(
+    movil: Option<&crate::movil::Movil>,
+    estado: &crate::agent::AgentState,
+    key: &str,
+    r: &crate::agent::RunRecord,
+) -> (&'static str, String, bool) {
+    if r.result == "error" {
+        if let Some(m) = movil {
+            let tecnico = format!("{} {}", r.message, r.detail.as_deref().unwrap_or_default());
+            if let Some((e, msg)) = crate::movil::estado_fuera(m, &tecnico, crate::agent::ultima_buena(estado, key), chrono::Local::now()) {
+                return (e, msg, e == "aviso");
+            }
+        }
+    }
+    (estado_de(&r.result), r.message.clone(), false)
+}
+
+/// 15ii: lo de «sale de la oficina» de la configuración.
+pub fn movil_de(v: Option<&Vinculo>) -> Option<crate::movil::Movil> {
+    v.and_then(|v| v.config_v1.as_ref()).and_then(|c| c.get("movil")).and_then(|m| serde_json::from_value(m.clone()).ok())
 }
 
 fn estado_de(result: &str) -> &'static str {
@@ -1446,6 +1564,26 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_EXCLUSIONES,
     // 0.8.1 (B5, 15pp): guarda observaciones y comentarios comunes del cliente.
     resguardo_protocolo::datos_cliente::ADMITE_NOTAS,
+    // 0.8.1 (15t): la orden `nombre_copia` (el nombre de una copia o de una copia derivada,
+    // con la clave de administración y sin espera) y `derivadas[].nombre`.
+    "nombre_copia",
+    // 0.8.1 (15v): `config.copias[].etiquetas` (las etiquetas de sus versiones) y en el resumen.
+    "etiquetas_copia",
+    // 0.8.1 (15gg): `guarda_copias.sueltos` (repositorios sueltos del almacén), `guarda_copias
+    // { dar_suelto }` (moverlo a la carpeta de un equipo, sin copiar), `{ sueltos_en }` y, en
+    // `adoptar_repositorio` sellado, `ultima_carpetas` y `ultimo_equipo`.
+    "repos_sueltos",
+    // 0.8.1 (15kk): `config.copias[].al_terminar` y `copiar_ahora { al_terminar }` (con la
+    // clave de administración): apagar o hibernar al terminar bien, con 2 minutos de aviso.
+    "apagar_al_terminar",
+    // 0.8.1 (15ii): `config.movil` (sale de la oficina, margen, batería y conexión medida),
+    // `config.copias[].al_reconectar` y, en un equipo que sale de la oficina, las copias sin
+    // conexión dentro del margen como «aviso» con `fuera: true` (no «fallo»).
+    "equipos_moviles",
+    // 0.8.1 (15y): `config.copias[].grupos_exclusiones`, `mayores_mb` y `excepto_tamano`
+    // («no copiar más de N MB» con excepciones; lo que quedó fuera, en la versión) y la orden
+    // `vista_exclusiones` (cuánto deja fuera cada grupo, sin copiar nada).
+    "grupos_en_copias",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1462,6 +1600,7 @@ pub fn resumen(v: &Vinculo) -> Value {
     let estado = crate::agent::load_state();
     let config = crate::agent::load_config();
     let copias: Vec<Copia> = v.config_v1.as_ref().and_then(|c| serde_json::from_value::<Configuracion>(c.clone()).ok()).map(|c| c.copias).unwrap_or_default();
+    let movil = movil_de(Some(v));
     let now = chrono::Local::now();
     let pausa = config.repos.iter().filter(|r| v.repos_v2.iter().any(|x| x.id == r.id)).filter_map(|r| r.active_pause(now)).map(|p| p.until.clone()).next();
     let proximas = proximas(&copias, now);
@@ -1492,10 +1631,18 @@ pub fn resumen(v: &Vinculo) -> Value {
         // v1.36: la ventana y los avisos del escritorio (no es secreto) y si se cambiaron en el equipo.
         "escritorio": v.config_v1.as_ref().map(|c| crate::escritorio::Escritorio::de_config(c).a_json()),
         "escritorio_cambiado_en_equipo": v.config_v1.as_ref().and_then(|c| c.get("cambiado_en_equipo")).filter(|x| x.is_string()),
+        // 15ii: si sale de la oficina y su margen (y la batería y la conexión medida): no es secreto.
+        "movil": movil.as_ref(),
         "copias": copias.iter().map(|k| {
             let run = estado.runs.get(&crate::plans::plan_key(&k.repo, &k.id));
             json!({
                 "id": k.id, "nombre": k.nombre, "repo": k.repo, "horario": k.horario, "carpetas": k.carpetas.len(), "activa": k.activa, "solo_si_cambios": k.solo_si_cambios,
+                // 15v: las etiquetas de sus versiones (no son secretas: van en cada versión).
+                "etiquetas": (!k.etiquetas.is_empty()).then_some(&k.etiquetas),
+                // 15y: qué grupos de exclusiones usa (con sus reglas: son datos comunes del cliente,
+                // sin rutas) y el tamaño máximo. Las reglas sueltas no salen (pueden llevar rutas).
+                "grupos_exclusiones": (!k.grupos_exclusiones.is_empty()).then_some(&k.grupos_exclusiones),
+                "mayores_mb": k.mayores_mb,
                 // Tarea 7c: «después de la anterior» (el id de la otra copia).
                 "tras": k.tras,
                 // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
@@ -1510,9 +1657,16 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "termina": k.termina.as_ref().filter(|t| t.algo()),
                 "hechas": fin_de(&config, &estado, k).map(|f| f.0),
                 "completada": fin_de(&config, &estado, k).and_then(|f| f.1),
-                "ultima": run.map(|r| json!({ "cuando": r.finished, "estado": estado_de(&r.result), "mensaje": crate::web::public_message(&r.message), "bytes": r.data_added,
-                    // 15jj: quedó «en curso» y no terminó (`estado` sigue en «fallo» para las consolas anteriores).
-                    "interrumpida": r.interrumpida.then_some(true) })),
+                "ultima": run.map(|r| {
+                    let (e, m, fuera) = estado_movil(movil.as_ref(), &estado, &crate::plans::plan_key(&k.repo, &k.id), r);
+                    json!({ "cuando": r.finished, "estado": e, "mensaje": crate::web::public_message(&m), "bytes": r.data_added,
+                        // 15jj: quedó «en curso» y no terminó (`estado` sigue en «fallo» para las consolas anteriores).
+                        "interrumpida": r.interrumpida.then_some(true),
+                        // 15ii: sin conexión, en un equipo que sale de la oficina y dentro de su margen.
+                        "fuera": fuera.then_some(true) })
+                }),
+                // 15ii: además, al volver a conectarse.
+                "al_reconectar": k.al_reconectar.then_some(true),
                 "proxima": proximas.get(&k.id),
             })
         }).collect::<Vec<_>>(),
@@ -1705,6 +1859,7 @@ pub fn subir_config_enlace(v: &mut Vinculo) -> Result<(), String> {
 /// Informe para el servidor: estado del servicio y de las copias, sin rutas.
 pub fn informe(v: Option<&Vinculo>) -> Value {
     let estado = crate::agent::load_state();
+    let movil = movil_de(v);
     let copias: Vec<Copia> =
         v.and_then(|v| v.config_v1.as_ref()).and_then(|c| serde_json::from_value::<Configuracion>(c.clone()).ok()).map(|c| c.copias).unwrap_or_default();
     let filas: Vec<Value> = estado
@@ -1713,8 +1868,10 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
         .map(|(clave, r)| {
             let (repo, copia) = clave.split_once('#').unwrap_or((clave.as_str(), ""));
             let nombre = copias.iter().find(|k| k.repo == repo && k.id == copia).map(|k| k.nombre.clone());
+            // 15ii: en un equipo que sale de la oficina, sin conexión dentro del margen no es un fallo.
+            let (e, m, fuera) = estado_movil(movil.as_ref(), &estado, clave, r);
             json!({
-                "id": copia, "repo": repo, "nombre": nombre, "estado": estado_de(&r.result), "cuando": r.finished, "mensaje": crate::web::public_message(&r.message),
+                "id": copia, "repo": repo, "nombre": nombre, "estado": e, "cuando": r.finished, "mensaje": crate::web::public_message(&m), "fuera": fuera.then_some(true),
                 // 15f: con `verificado`, para que la tarjeta «Antes de copiar» diga «volcadas y verificadas».
                 "ganchos": r.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": crate::web::public_message(&g.mensaje), "verificado": g.verificado })).collect::<Vec<_>>(),
             })
@@ -1823,7 +1980,25 @@ fn proxima_de(k: &Copia, desde: Option<chrono::DateTime<chrono::Local>>) -> Opti
 }
 
 /// `copiar_ahora {copia}` (o `{repo, copia}`): la copia de la configuración.
+/// 15kk: `apagar` o `hibernar`, y en un almacén solo con confirmación expresa (sus equipos se
+/// quedarían sin destino).
+pub fn valida_al_terminar(modo: &str, confirmado_servidor: bool) -> Result<(), String> {
+    if !crate::apagar::modo_valido(modo) {
+        return Err("Al terminar: «apagar» o «hibernar».".into());
+    }
+    if crate::server::load().enabled && !confirmado_servidor {
+        return Err("Este equipo guarda copias de otros equipos: apagarlo los dejaría sin destino. Hay que confirmarlo expresamente.".into());
+    }
+    Ok(())
+}
+
 pub fn copiar_ahora(v: &Vinculo, c: &Value) -> Result<String, String> {
+    copiar_ahora_por(v, c, None)
+}
+
+/// `copiar_ahora { copia, al_terminar?, confirmar_servidor? }` (15kk: con `al_terminar`, la
+/// orden lleva la clave de administración) y quién la pide.
+pub fn copiar_ahora_por(v: &Vinculo, c: &Value, por: Option<&str>) -> Result<String, String> {
     let copia = texto(c, "copia");
     let repo = match c["repo"].as_str() {
         Some(r) => r.to_string(),
@@ -1837,7 +2012,24 @@ pub fn copiar_ahora(v: &Vinculo, c: &Value) -> Result<String, String> {
     if !v.repos_v2.iter().any(|r| r.id == repo) {
         return Err("Ese repositorio no lo gestiona este servidor.".into());
     }
+    // 15kk: apagar o hibernar al terminar (solo esta vez).
+    let al_terminar = c["al_terminar"].as_str().filter(|m| !m.is_empty());
+    if let Some(m) = al_terminar {
+        valida_al_terminar(m, c["confirmar_servidor"] == true)?;
+    }
     crate::agent::request_backup(&repo, &copia)?;
+    if let Some(m) = al_terminar {
+        crate::apagar::pedir(crate::apagar::Pedido {
+            modo: m.to_string(),
+            clave: crate::plans::plan_key(&repo, &copia),
+            por: por.map(|p| p.chars().take(80).collect()),
+            pedido: chrono::Local::now().to_rfc3339(),
+        })?;
+        return Ok(format!(
+            "Copia pedida: empieza en unos segundos. Al terminar bien, el equipo {} (2 minutos de aviso a quien lo use).",
+            crate::apagar::verbo(m)
+        ));
+    }
     Ok("Copia pedida: empieza en unos segundos.".into())
 }
 
@@ -2257,6 +2449,52 @@ pub fn nombre_repositorio(v: &mut Vinculo, c: &Value) -> Result<String, String> 
         return Ok(format!("El repositorio ya se llama «{nombre}»."));
     }
     let antes = std::mem::replace(&mut r.nombre, nombre.clone());
+    Ok(format!("«{antes}» ahora se llama «{nombre}». Lo verán así todas sus consolas."))
+}
+
+/// Como mucho, caracteres del nombre de una copia (el motor no admite más: `Plan::validate`).
+pub const MAX_NOMBRE_COPIA: usize = 60;
+
+/// 0.8.1 (15t, `admite: "nombre_copia"`): `nombre_copia { copia, nombre }` o
+/// `{ derivada: { repo, id }, nombre }` (clave de administración, sin espera: no reduce la
+/// protección). Cambia el nombre que se ve de una copia o de una copia derivada, igual en
+/// todas las consolas y en el historial («"X" ahora se llama "Y"»). La copia sigue igual
+/// (mismo id, mismas versiones): solo se vuelve a aplicar su configuración con el nombre nuevo.
+pub fn nombre_copia(v: &mut Vinculo, c: &Value) -> Result<String, String> {
+    let nombre = texto(c, "nombre").trim().to_string();
+    if !texto_valido(&nombre, MAX_NOMBRE_COPIA) {
+        return Err(format!("Escribe un nombre (hasta {MAX_NOMBRE_COPIA} caracteres)."));
+    }
+    if let Some(d) = c.get("derivada").filter(|d| d.is_object()) {
+        let (repo, id) = (texto(d, "repo"), texto(d, "id"));
+        let r = v.repos_v2.iter_mut().find(|r| r.id == repo && !r.solo_lectura).ok_or("Ese repositorio no lo gestiona este servidor.")?;
+        let de = r.nombre.clone();
+        let e = r.derivadas.iter_mut().find(|e| e["id"] == id.as_str()).ok_or("Esa copia derivada ya no está.")?;
+        let antes = e["nombre"].as_str().map(str::to_string).unwrap_or_else(|| format!("{de} (copia derivada)"));
+        if antes == nombre {
+            return Ok(format!("La copia derivada ya se llama «{nombre}»."));
+        }
+        e["nombre"] = json!(nombre);
+        let _ = subir_config(v);
+        return Ok(format!("«{antes}» ahora se llama «{nombre}». Lo verán así todas sus consolas."));
+    }
+    let id = texto(c, "copia");
+    let mut cfg: Configuracion = v
+        .config_v1
+        .clone()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| format!("Configuración guardada no válida: {e}"))?
+        .ok_or("Este equipo aún no tiene copias.")?;
+    let k = cfg.copias.iter_mut().find(|k| k.id == id).ok_or("Esa copia ya no está en este equipo.")?;
+    if k.nombre == nombre {
+        return Ok(format!("La copia ya se llama «{nombre}»."));
+    }
+    let antes = std::mem::replace(&mut k.nombre, nombre.clone());
+    // La marca «cambiado en el equipo» se queda como estaba: el nombre no cambia lo que se hace.
+    let marca = cfg.cambiado_en_equipo.clone();
+    let cuerpo = json!({ "config": serde_json::to_value(&cfg).map_err(|e| e.to_string())? });
+    aplicar_config_marca(v, &cuerpo, marca)?;
     Ok(format!("«{antes}» ahora se llama «{nombre}». Lo verán así todas sus consolas."))
 }
 
@@ -2692,6 +2930,13 @@ pub fn cambiar_derivada(v: &mut Vinculo, c: &Value, repo: &str) -> Result<String
     let mut e = p.entrada.clone();
     e["id"] = json!(id);
     e["cuando"] = cuando;
+    // 15t: su nombre (el que llega o el que ya tenía).
+    match c["nombre"].as_str().map(str::trim).filter(|n| !n.is_empty()) {
+        Some(n) if texto_valido(n, MAX_NOMBRE_COPIA) => e["nombre"] = json!(n),
+        Some(_) => return Err(format!("El nombre de la copia derivada: hasta {MAX_NOMBRE_COPIA} caracteres.")),
+        None if actual["nombre"].is_string() => e["nombre"] = actual["nombre"].clone(),
+        None => {}
+    }
     // 15p: el destino se creó para ella (al quitarla, se olvida si nadie más lo usa).
     if p.nuevo.is_some() || (actual["destino_propio"] == true && actual["destino"] == e["destino"]) {
         e["destino_propio"] = json!(true);
@@ -2774,6 +3019,8 @@ fn derivada_resumen(v: &Vinculo, repo: &str, e: &Value, agente: Option<&crate::a
     }
     json!({
         "id": id,
+        // 15t: su nombre, si se le puso (sin él, la consola dice «<repositorio> (copia derivada)»).
+        "nombre": e.get("nombre").filter(|n| n.is_string()),
         "destino": v.destinos.iter().find(|d| Some(d.id.as_str()) == e["destino"].as_str()).map(|d| d.nombre.clone()),
         "destino_id": e["destino"],
         "cuando": e["cuando"],
@@ -2915,6 +3162,27 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         let donde = zona.and_then(|z| cfg.zonas.iter().find(|x| x.id == z).map(|x| format!(" en la zona «{}»", x.nombre))).unwrap_or_default();
         return Ok((format!("Equipo cliente «{usuario}» añadido{donde}."), Some(privado)));
     }
+    // 0.8.1 (15gg): un repositorio suelto del almacén, a la carpeta de un equipo (sin copiar).
+    if let Some(d) = c.get("dar_suelto").filter(|d| d.is_object()) {
+        crate::agent::require_admin()?;
+        let cfg = server::load();
+        if !cfg.enabled {
+            return Err("Este equipo no guarda copias de otros.".into());
+        }
+        let (m, _) = crate::sueltos::dar(&cfg, d)?;
+        return Ok((m, None));
+    }
+    // 15gg: dónde buscar además repositorios sueltos (fuera de la carpeta del almacén).
+    if let Some(l) = c.get("sueltos_en") {
+        crate::agent::require_admin()?;
+        let mut cfg = server::load();
+        if !cfg.enabled {
+            return Err("Este equipo no guarda copias de otros.".into());
+        }
+        let m = crate::sueltos::poner_busqueda(&mut cfg, l)?;
+        server::save(&cfg)?;
+        return Ok((m, None));
+    }
     // B1 (docs/nombres-legibles.md): «Ordenar nombres de carpeta» de un equipo.
     if let Some(m) = c.get("mover").filter(|m| m.is_object()) {
         let (mensaje, detalle) = crate::nombres::mover(m)?;
@@ -3028,6 +3296,10 @@ pub fn resumen_guarda_copias() -> Value {
         // B1: las carpetas movidas («Ordenar nombres de carpeta»), las 50 últimas: la
         // consola ve qué equipo sigue con la ruta de antes. Solo nombres de carpeta.
         "renombres": (!c.renombres.is_empty()).then(|| c.renombres.iter().rev().take(50).collect::<Vec<_>>()),
+        // 0.8.1 (15gg): repositorios sueltos en su disco (fuera de la carpeta de ningún
+        // equipo), sin abrirlos: carpeta relativa, cuántas versiones y la más reciente.
+        "sueltos": crate::sueltos::resumen(&c),
+        "sueltos_en": (!c.sueltos_en.is_empty()).then_some(&c.sueltos_en),
     })
 }
 
@@ -3493,8 +3765,7 @@ mod tests {
             retraso_min: None,
             a_mano: false,
             termina: None,
-            limite: None,
-            permitir_suspension: false,
+            ..Default::default()
         };
         let p = plan_de(&k).unwrap();
         assert!(p.skip_unchanged, "encendido por defecto");
@@ -3509,8 +3780,69 @@ mod tests {
         assert_eq!(plan_de(&con).unwrap().ganchos.len(), 1);
         let libre = Copia { gancho: Some(json!({"tipo": "orden", "linea": "cmd /c del"})), ..k.clone() };
         assert!(plan_de(&libre).is_err());
+        // 15v: las etiquetas de sus versiones pasan al plan; las que no valen, no.
+        let con = Copia { etiquetas: vec!["bases".into(), "binarios".into()], ..k.clone() };
+        assert_eq!(plan_de(&con).unwrap().tags, vec!["bases", "binarios"]);
+        assert!(plan_de(&Copia { etiquetas: vec!["con espacio".into()], ..k.clone() }).is_err());
+        assert!(plan_de(&Copia { etiquetas: (0..11).map(|i| format!("e{i}")).collect(), ..k.clone() }).is_err());
+        // Sin etiquetas, el campo no va (un agente anterior no ve nada nuevo).
+        assert!(serde_json::to_value(&k).unwrap().get("etiquetas").is_none());
         let mala = Copia { horario: Horario { dias: vec![1], horas: vec!["25:00".into()], reglas: vec![] }, ..k };
         assert!(plan_de(&mala).is_err());
+    }
+
+    /// 0.8.1 (15y): grupos de exclusiones, tamaño máximo y sus excepciones.
+    #[test]
+    fn exclusiones_de_una_copia() {
+        let k: Copia = serde_json::from_value(json!({"id": "k", "nombre": "K", "repo": "r1", "carpetas": ["/d"], "horario": {"dias": [1], "horas": ["13:00"]},
+            "grupos_exclusiones": [{"id": "musica", "nombre": "Música", "reglas": ["*.mp3"]}], "mayores_mb": 500, "excepto_tamano": ["*.pst"]}))
+        .unwrap();
+        assert!(k.valida_exclusiones().is_ok());
+        assert_eq!(k.extra(), crate::agent::PlanExtra { larger_mb: Some(500), larger_except: vec!["*.pst".into()], on_reconnect: false, on_finish: None });
+        // Sin límite, las excepciones no cuentan; y un plan sin nada nuevo no lleva `extra`.
+        assert!(Copia { mayores_mb: None, ..k.clone() }.extra().vacio());
+        assert!(Copia { mayores_mb: Some(0), ..k.clone() }.valida_exclusiones().is_err());
+        assert!(Copia { excepto_tamano: vec!["".into()], ..k.clone() }.valida_exclusiones().is_err());
+        let mal = GrupoUsado { id: "no vale".into(), ..Default::default() };
+        assert!(Copia { grupos_exclusiones: vec![mal], ..k.clone() }.valida_exclusiones().is_err());
+        // Un agente anterior no ve nada nuevo si no se usa.
+        let sin = serde_json::to_value(Copia { grupos_exclusiones: vec![], mayores_mb: None, excepto_tamano: vec![], ..k }).unwrap();
+        assert!(sin.get("grupos_exclusiones").is_none() && sin.get("mayores_mb").is_none() && sin.get("excepto_tamano").is_none());
+        assert!(ADMITE.contains(&"grupos_en_copias"));
+    }
+
+    /// 0.8.1 (15kk): al terminar, solo «apagar» o «hibernar»; en el plan, `on_finish`.
+    #[test]
+    fn apagar_al_terminar() {
+        assert!(valida_al_terminar("reiniciar", true).is_err());
+        assert!(valida_al_terminar("", true).is_err());
+        let k: Copia = serde_json::from_value(
+            json!({"id": "k", "nombre": "K", "repo": "r1", "carpetas": ["/d"], "horario": {"dias": [1], "horas": ["13:00"]}, "al_terminar": "hibernar"}),
+        )
+        .unwrap();
+        assert_eq!(k.extra().on_finish.as_deref(), Some("hibernar"));
+        assert!(ADMITE.contains(&"apagar_al_terminar"));
+    }
+
+    /// 0.8.1 (15t): el nombre de una copia derivada y lo que no vale.
+    #[test]
+    fn nombre_de_una_copia() {
+        let mut v = Vinculo::default();
+        v.repos_v2.push(RepoV2 { id: "r1".into(), nombre: "Docs".into(), derivadas: vec![json!({ "id": "d1", "destino": "x" })], ..Default::default() });
+        assert!(nombre_copia(&mut v, &json!({ "copia": "k", "nombre": "  " })).unwrap_err().contains("Escribe"));
+        assert!(nombre_copia(&mut v, &json!({ "copia": "k", "nombre": "x".repeat(61) })).is_err());
+        assert!(nombre_copia(&mut v, &json!({ "copia": "k", "nombre": "Nueva" })).unwrap_err().contains("aún no tiene copias"));
+        let m = nombre_copia(&mut v, &json!({ "derivada": { "repo": "r1", "id": "d1" }, "nombre": " Docs a la nube " })).unwrap();
+        assert!(m.contains("«Docs (copia derivada)» ahora se llama «Docs a la nube»"), "{m}");
+        assert_eq!(v.repos_v2[0].derivadas[0]["nombre"], "Docs a la nube");
+        assert!(nombre_copia(&mut v, &json!({ "derivada": { "repo": "r1", "id": "d1" }, "nombre": "Docs a la nube" })).unwrap().contains("ya se llama"));
+        assert!(nombre_copia(&mut v, &json!({ "derivada": { "repo": "r1", "id": "otra" }, "nombre": "X" })).is_err());
+        // El resumen de la derivada lleva su nombre.
+        assert_eq!(derivada_resumen(&v, "r1", &v.repos_v2[0].derivadas[0], None)["nombre"], "Docs a la nube");
+        // Una copia que no está.
+        v.config_v1 = Some(json!({ "v": 1, "copias": [] }));
+        assert!(nombre_copia(&mut v, &json!({ "copia": "k", "nombre": "Nueva" })).unwrap_err().contains("ya no está"));
+        assert!(ADMITE.contains(&"nombre_copia") && ADMITE.contains(&"etiquetas_copia"));
     }
 
     #[test]
@@ -3531,8 +3863,7 @@ mod tests {
             retraso_min: None,
             a_mano: false,
             termina: None,
-            limite: None,
-            permitir_suspension: false,
+            ..Default::default()
         };
         // Viernes 2 de octubre de 2026, 14:00: la siguiente, a las 19:00; después, el lunes.
         let vie = chrono::Local.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();

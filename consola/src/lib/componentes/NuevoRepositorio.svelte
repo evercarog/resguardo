@@ -63,7 +63,7 @@
     /** Desde el editor de copias: la autorización ya calculada al abrirlo (no se vuelve a pedir la clave) y el equipo fijo. */
     prueba?: Uint8Array | null;
     /** Desde el editor de copias: el repositorio pedido (para elegirlo ya en la copia). */
-    alCreado?: (r: { id: string; nombre: string; destino: string }) => void;
+    alCreado?: (r: { id: string; nombre: string; destino: string; almacen?: string }) => void;
     /** «Usar en una copia» desde la página de un destino: ese destino ya elegido (su clave). */
     destinoClave?: string;
     /**

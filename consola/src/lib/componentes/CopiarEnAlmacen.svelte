@@ -64,7 +64,7 @@
     /** Tarea 7b: una zona del almacén que no es la principal (sin ella, la principal). */
     zona?: ZonaVista;
     /** Desde el editor de copias: el repositorio ya creado (para elegirlo en la copia). */
-    alCreado?: (r: { id: string; nombre: string; destino: string }) => void;
+    alCreado?: (r: { id: string; nombre: string; destino: string; almacen?: string }) => void;
     onclose: () => void;
     /** Plan 0.7.26: nace con el troceado de otro repositorio de este equipo (`{ repo }`), para traer después sus versiones. */
     parametrosDe?: { repo: string };
@@ -200,7 +200,7 @@
       olvidarContrasena(pw);
       acceso = null;
       paso = "listo";
-      alCreado?.({ id, nombre: nombre.trim(), destino: idDestinoZona(almacen.id, enZona?.id ?? PRINCIPAL) });
+      alCreado?.({ id, nombre: nombre.trim(), destino: idDestinoZona(almacen.id, enZona?.id ?? PRINCIPAL), almacen: almacen.id });
       avisar(`${equipo.nombre} ya copia en ${nombreAlmacen}.`);
       void cargarCliente(cliente.id, { silencioso: true });
     } catch (err) {

@@ -19,8 +19,12 @@
   import AvisoExclusiones from "./AvisoExclusiones.svelte";
   import LimiteFranjas from "$lib/componentes/LimiteFranjas.svelte";
   import { admiteParar, admiteSinSuspension } from "$lib/parar";
+  import NoCopiar from "./NoCopiar.svelte";
+  import AlReconectar from "./AlReconectar.svelte";
+  import AlTerminar from "./AlTerminar.svelte";
+  import EtiquetasVersiones from "./EtiquetasVersiones.svelte";
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
-  import { alternarExclusion, cuandoEnFrase, EXCLUSIONES_HABITUALES, pasoHecho, PASOS_COPIA, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
+  import { cuandoEnFrase, etiquetasEnUso, inicioDe, pasoHecho, PASOS_COPIA, ponerCarpetas, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
   import { ganchosDe } from "$lib/ganchos";
   import { fraseConfig, type ReglaCopia } from "$lib/regla321";
   import { lista } from "$lib/formato";
@@ -62,7 +66,7 @@
     cliente: Cliente;
     prueba?: Uint8Array;
     version: string | null;
-    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean };
+    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean; etiquetas?: boolean; grupos?: boolean; moviles?: boolean; apagar?: boolean };
     /** Cómo queda en la regla 3-2-1-1-0 con lo elegido (sin repositorio, null). */
     regla: ReglaCopia | null;
     /** Las sugerencias de un clic que se pueden hacer con este equipo. */
@@ -110,11 +114,10 @@
   function anadirRuta(e: Event) {
     e.preventDefault();
     const r = ruta.trim();
-    if (r && !k.carpetas.includes(r)) k.carpetas = [...k.carpetas, r];
+    if (r && !k.carpetas.includes(r)) ponerCarpetas(k, [...k.carpetas, r], equipo.nombre);
     ruta = "";
   }
-  const otras = $derived(k.exclusiones.filter((x) => !EXCLUSIONES_HABITUALES.some((h) => h.regla === x)));
-  let masQue = $state(untrack(() => ganchosDe(copias[i]?.gancho).length > 0));
+  let masQue = $state(untrack(() => ganchosDe(copias[i]?.gancho).length > 0 || !!copias[i]?.etiquetas?.length || !!copias[i]?.grupos_exclusiones?.length || copias[i]?.mayores_mb != null || !!copias[i]?.al_terminar));
   const sug = $derived(regla ? sugerencias(regla.regla.partes.filter((p) => !p.cumple_config).map((p) => p.accion), puede) : []);
   const win = $derived(/windows/i.test(equipo.so));
 </script>
@@ -126,6 +129,8 @@
       {#snippet ayuda()}<Ayuda id="inicio-copia" />{/snippet}
       <form class="paso-form" onsubmit={siguiente}>
         <CuandoEmpieza {copias} {i} admite={{ reglas: admite.reglas, cadenas: admite.cadenas, despues: admite.despues, termina: admite.termina }} {version} equipo={equipo.nombre} guiado hechas={equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas ?? null} />
+        <!-- 15ii: además del horario, al volver a conectarse (portátiles). -->
+        {#if admite.moviles && inicioDe(k) === "horario"}<AlReconectar bind:activo={() => !!k.al_reconectar, (v) => (k.al_reconectar = v)} />{/if}
         <div class="pie"><button class="btn btn-primary btn-sm">Seguir<ArrowRight size={14} /></button></div>
       </form>
     </PasoGuiado>
@@ -133,15 +138,11 @@
     <PasoGuiado n={2} titulo={TITULO_PASO.que} abierto={paso === "que"} hecho={pasoHecho(k, "que")} resumen={resumenDe.que()} deshabilitado={!abrible("que")} onabrir={() => (paso = "que")}>
       <form class="paso-form" onsubmit={siguiente}>
         <div class="field">
-          <label class="field-label" for="g-nombre-{k.id}">Nombre</label>
-          <input id="g-nombre-{k.id}" class="input nombre" bind:value={k.nombre} maxlength="60" />
-        </div>
-        <div class="field">
           <span class="field-label" id="g-carp-{k.id}">Carpetas</span>
           {#if k.carpetas.length}
             <ul class="carpetas" aria-labelledby="g-carp-{k.id}">
               {#each k.carpetas as c (c)}
-                <li><FolderOpen size={14} /><span class="mono">{c}</span><button type="button" class="icon-btn icon-btn-sm" aria-label="Quitar {c}" use:tip={"Quitar"} onclick={() => (k.carpetas = k.carpetas.filter((x) => x !== c))}><X size={14} /></button></li>
+                <li><FolderOpen size={14} /><span class="mono">{c}</span><button type="button" class="icon-btn icon-btn-sm" aria-label="Quitar {c}" use:tip={"Quitar"} onclick={() => ponerCarpetas(k, k.carpetas.filter((x) => x !== c), equipo.nombre)}><X size={14} /></button></li>
               {/each}
             </ul>
           {/if}
@@ -155,16 +156,8 @@
           <summary>Más opciones</summary>
           <!-- 14q: cada sección con el aire de las demás (dentro de <details> el flex no siempre se aplica). -->
           <div class="mas-cuerpo">
-            <div class="field">
-              <span class="field-label">No copiar <Ayuda id="exclusiones" /></span>
-              <div class="chips-exc">
-                {#each EXCLUSIONES_HABITUALES as h (h.regla)}
-                  <button type="button" class="chip-exc" class:on={k.exclusiones.includes(h.regla)} aria-pressed={k.exclusiones.includes(h.regla)} use:tip={h.regla} onclick={() => alternarExclusion(k, h.regla)}>{#if k.exclusiones.includes(h.regla)}<Check size={12} />{/if}{h.texto}</button>
-                {/each}
-              </div>
-              <textarea class="input mono" rows="2" spellcheck="false" aria-label="Otras reglas, una por línea" placeholder="Otras reglas, una por línea" value={otras.join("\n")} oninput={(e) => (k.exclusiones = [...k.exclusiones.filter((x) => EXCLUSIONES_HABITUALES.some((h) => h.regla === x)), ...e.currentTarget.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)])}></textarea>
-              <AvisoExclusiones {k} />
-            </div>
+            <!-- 15y: los grupos de «Organización», las reglas sueltas, el tamaño máximo y la vista previa. -->
+            <NoCopiar {k} id="g-{k.id}" {equipo} {cliente} {prueba} admite={!!admite.grupos} {version} />
             <label class="switch-row"
               ><input type="checkbox" class="switch" checked={k.solo_si_cambios !== false} disabled={!admite.soloCambios} onchange={(e) => (k.solo_si_cambios = e.currentTarget.checked)} /><span
                 ><span class="con-ayuda">Solo guardar si hay cambios <Ayuda id="solo-si-cambios" /></span>{#if !admite.soloCambios}<span class="faint">Actualiza el agente para poder apagarlo.</span>{/if}</span
@@ -183,6 +176,8 @@
             {#if admiteParar(equipo)}
               <LimiteFranjas id="lim-{k.id}" bind:franjas={() => k.limite?.franjas ?? [], (f) => (k.limite = f.length ? { ...(k.limite ?? {}), franjas: f } : null)} equipo={equipo.nombre} />
             {/if}
+            <AlTerminar {k} {equipo} admite={!!admite.apagar} {version} />
+            <EtiquetasVersiones id="g-{k.id}" bind:etiquetas={() => k.etiquetas ?? [], (v) => (k.etiquetas = v)} admite={!!admite.etiquetas} {version} sugeridas={etiquetasEnUso(equipos)} />
           </div>
         </details>
         <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.carpetas.length ? null : { texto: "Elige al menos una carpeta" }}>Seguir<ArrowRight size={14} /></BotonFalta></div>
@@ -197,6 +192,8 @@
     </PasoGuiado>
 
     <PasoGuiado n={4} titulo={TITULO_PASO.resumen} abierto={paso === "resumen"} deshabilitado={!abrible("resumen")} onabrir={() => (paso = "resumen")}>
+      <!-- 15t: el nombre, repetido en el resumen (se cambia arriba, en la cabecera de la copia). -->
+      <p class="nombre-res"><span class="faint">Se llamará</span> <strong>{k.nombre || "Sin nombre"}</strong></p>
       <ResumenCopia {copias} {i} {repos} {equipo} {equipos} {catalogo} />
       {#if regla}
         <div class="regla" class:cumple={regla.regla.cumple_config}>
@@ -253,8 +250,10 @@
     justify-content: flex-end;
     gap: 8px;
   }
-  .nombre {
-    max-width: 360px;
+  .nombre-res {
+    margin: 0;
+    font-size: var(--fs-sm);
+    overflow-wrap: anywhere;
   }
   .carpetas {
     display: flex;
@@ -326,39 +325,6 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-  }
-  .chips-exc {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .chip-exc {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 28px;
-    padding: 0 10px;
-    font: inherit;
-    font-size: var(--fs-xs);
-    font-weight: 550;
-    color: var(--text-2);
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    cursor: pointer;
-  }
-  .chip-exc.on {
-    color: var(--accent-text);
-    background: var(--accent-soft);
-    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  }
-  .chip-exc:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  textarea.mono {
-    font-family: var(--mono);
-    font-size: 12.5px;
   }
   .regla {
     display: flex;

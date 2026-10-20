@@ -5,13 +5,14 @@
   // archivos nuevos, cambiados y sin cambios (cada recuento abre «Qué cambió»
   // con ese filtro), las vueltas que la dejaron (con reintentos y errores), los
   // pasos «Antes de copiar» y lo que se puede hacer con ella.
-  import { ArrowLeft, ArrowRight, Check, Copy, FolderSearch, GitCompareArrows, History, PieChart, TriangleAlert } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Check, Copy, FileX2, FolderSearch, GitCompareArrows, History, PieChart, TriangleAlert } from "@lucide/svelte";
   import type { Cliente, CopiaResumen, EjecucionInforme, EntradaHistorial, Equipo, RepositorioResumen, VersionInforme } from "$lib/tipos";
   import { actual } from "$lib/estado.svelte";
   import NotasVersion from "./NotasVersion.svelte";
   import { anteriorDeLaCopia, ganchosDeVuelta, vueltasDeVersion } from "$lib/detalle";
   import { anadidoDe, duracion, textoResultado, tonoResultado } from "$lib/repo";
   import { fraseError } from "$lib/errorCopia";
+  import { fueraPorTamano } from "$lib/exclusionesCopia";
   import { agruparResultados, NOMBRE_GANCHO } from "$lib/ganchos";
   import { bytes, fechaLarga, hora, numero, plural } from "$lib/formato";
   import { tip } from "$lib/tooltip";
@@ -123,6 +124,8 @@
       <p class="faint">El informe no trae la copia que la guardó (puede ser anterior a estos 60 días o de un agente anterior).</p>
     {:else}
       {#if errores.length}<p class="aviso"><TriangleAlert size={14} />{plural(errores.length, "intento con problemas", "intentos con problemas")} antes de guardarla.</p>{/if}
+      <!-- 15y: lo que «no copiar archivos grandes» dejó fuera de esta versión (sin rutas). -->
+      {#if fueraPorTamano(propia?.mensaje_corto)}<p class="aviso fuera"><FileX2 size={14} />{fueraPorTamano(propia?.mensaje_corto)}</p>{/if}
       <ul class="vueltas">
         {#each vueltas as e (e.hora)}
           <li>
@@ -235,6 +238,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  .aviso.fuera {
+    align-items: flex-start;
+    color: var(--text-2);
+  }
+  .aviso.fuera :global(svg) {
+    flex: none;
+    margin-top: 2px;
+    color: var(--warn);
   }
   .aviso {
     display: flex;

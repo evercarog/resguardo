@@ -63,6 +63,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_Networking_WinSock",
   "Win32_System_LibraryLoader",
   "Win32_System_Pipes",
+  # 0.8.1 (15ii): la batería (GetSystemPowerStatus), para no empezar una copia con poca.
+  "Win32_System_Power",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
@@ -80,7 +82,8 @@ tray-icon = "0.25"
 wry = { version = "0.57", default-features = false }
 tao = { version = "0.37", default-features = false, features = ["rwh_06"] }
 # Avisos nativos de Windows (WinRT), con grupo y etiqueta.
-windows = { version = "0.62", features = ["UI_Notifications", "Data_Xml_Dom", "Foundation"] }
+# 0.8.1 (15ii): `Networking_Connectivity`, para saber si la conexión es medida (datos del móvil).
+windows = { version = "0.62", features = ["UI_Notifications", "Data_Xml_Dom", "Foundation", "Networking_Connectivity"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

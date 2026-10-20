@@ -201,6 +201,10 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "guarda_copias" if c.get("mover").is_some() => {
             format!("Ordenar los nombres de carpeta de «{}» en el almacén", corto(c["mover"]["usuario"].as_str().unwrap_or("?"), 64))
         }
+        "guarda_copias" if c.get("dar_suelto").is_some() => {
+            format!("Dar el repositorio suelto «{}» del almacén a un equipo", corto(c["dar_suelto"]["ruta"].as_str().unwrap_or("?"), 80))
+        }
+        "guarda_copias" if c.get("sueltos_en").is_some() => "Cambiar dónde busca el almacén repositorios sueltos".to_string(),
         "guarda_copias" => "Cambiar o quitar el almacén («Guarda copias»)".to_string(),
         "cambiar_espera" => format!("Acortar la espera a {} h", c["horas"].as_i64().unwrap_or(0)),
         "quitar_nube" => format!("Desconectar la nube «{}»", corto(c["nombre"].as_str().unwrap_or(""), 60)),
@@ -211,6 +215,8 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         // Plan 0.8.0, F2 (con el motivo de «Conservar»).
         "comentario_version" | "conservar_version" => crate::versiones_v2::descripcion(&o.tipo, v, c)?,
         "nombre_repositorio" => format!("Cambiar el nombre de un repositorio a «{}»", corto(c["nombre"].as_str().unwrap_or("").trim(), 80)),
+        "vista_exclusiones" => "Ver cuánto deja fuera «No copiar»".to_string(),
+        "nombre_copia" => format!("Cambiar el nombre de una copia a «{}»", corto(c["nombre"].as_str().unwrap_or("").trim(), 60)),
         "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
         // 0.7.26 (bloque 8): datos comunes del cliente (sin los valores).
         "datos_cliente" | "datos_cliente_admin" => crate::datos_cliente::descripcion(c)?,

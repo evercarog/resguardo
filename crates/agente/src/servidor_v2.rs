@@ -935,7 +935,9 @@ fn quitar_vacio(o: &orden_v2::OrdenV2) -> bool {
 /// 13a/13b: restaurar en otra carpeta o en un .zip pide también la clave de
 /// administración (escribe donde se elija en el equipo).
 fn pide_admin_por_cuerpo(o: &orden_v2::OrdenV2) -> bool {
-    o.tipo == "restaurar" && matches!(o.cuerpo["destino"].as_str(), Some("nueva" | "zip" | "carpeta"))
+    (o.tipo == "restaurar" && matches!(o.cuerpo["destino"].as_str(), Some("nueva" | "zip" | "carpeta")))
+        // 15kk: «Copiar ahora» que apaga el equipo al terminar.
+        || (o.tipo == "copiar_ahora" && o.cuerpo["al_terminar"].as_str().is_some_and(|m| !m.is_empty()))
 }
 
 /// Las órdenes largas (restaurar, descargar, aplicar la retención): se
@@ -1220,6 +1222,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
+        // 0.8.1 (15t): el nombre de una copia o de una copia derivada (sube la configuración).
+        "nombre_copia" => {
+            let m = g::nombre_copia(v, c)?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
         // v1.56: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
         "quitar_destino" => {
             let m = g::quitar_destino(v, c)?;
@@ -1239,7 +1247,8 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(Resultado { detalle: privado.map(|p| p.to_string()), ..hecha(m) })
         }
         "copiar_ahora" => {
-            let m = g::copiar_ahora(v, c)?;
+            // 15kk: con quién la pide (para el historial si apaga el equipo al terminar).
+            let m = g::copiar_ahora_por(v, c, o.por.as_deref())?;
             vuelta_ahora();
             Ok(hecha(m))
         }
@@ -1353,6 +1362,25 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(hecha(m))
         }
         "elegir_carpetas" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Carpetas).map(hecha),
+        // 0.8.1 (15y): la vista previa de «No copiar»: cuánto deja fuera cada grupo en unas
+        // carpetas, sin copiar nada y con un tope de tiempo. Con la clave de administración
+        // (recorre carpetas del equipo, como «Elegir en el equipo»); la respuesta, solo cuentas
+        // sin rutas, va sellada para la consola que la pidió.
+        "vista_exclusiones" => {
+            let destino = o.responder_a.clone().ok_or("Falta responder_a para entregar la vista previa.")?;
+            let cuerpo = c.clone();
+            Ok(en_segundo_plano(v, orden_id, seq, "vista_exclusiones", "Revisando las carpetas…", move |_| {
+                let x = crate::excluir::vista_previa(&cuerpo, std::time::Instant::now() + crate::excluir::TOPE_VISTA)?;
+                let sellado = claves::seal_bytes(&destino, x.to_string().as_bytes())?;
+                let n = x["total"]["archivos"].as_u64().unwrap_or(0);
+                let m = if x["completo"] == true {
+                    format!("Revisados {} archivos.", crate::tasks::human_count(n))
+                } else {
+                    format!("Revisados {} archivos (no dio tiempo a verlo todo: es una muestra).", crate::tasks::human_count(n))
+                };
+                Ok(Resultado { detalle: Some(json!({ "sellado": sellado }).to_string()), ..hecha(m) })
+            }))
+        }
         // v1.8x (0.8.1, 15u): «Ver las bases de la instancia» en el editor del gancho de SQL
         // Server. Inofensiva: solo lee `sys.databases` (nombre, estado y si es del sistema). La
         // lista va sellada para la consola que la pidió (`responder_a`): el servidor no la ve.

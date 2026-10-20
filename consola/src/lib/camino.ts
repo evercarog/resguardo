@@ -113,7 +113,7 @@ export function caminoDeCopia(rc: ReglaCopia | null, o: OpcionesCamino): Eslabon
       const enMarcha = vivo(e.id, rc.repo.id, "copia");
       if (enMarcha) return { ...base, tono: "info", estado: enMarcha, cuando: null, vivo: true };
       const vuelta = ultimaVuelta(rc.copia, o.informe ?? null);
-      const est = estadoCopia(rc.copia, vuelta, enPausa(e, o.ahora), o.ahora);
+      const est = estadoCopia(rc.copia, vuelta, enPausa(e, o.ahora), o.ahora, e.resumen?.movil);
       const texto = est.texto === "Con error" ? "Falló" : est.texto === "Atrasada" ? "Atrasado" : est.texto === "Sin copias todavía" ? "Todavía sin ninguna" : est.texto;
       const sinConexion = est.tono === "warn" && atrasada(rc.copia, vuelta, false, o.ahora) && e.conectado === false;
       return { ...base, tono: est.tono, estado: sinConexion ? "Sin conexión" : texto, cuando: vuelta?.cuando ?? null, vivo: false };
