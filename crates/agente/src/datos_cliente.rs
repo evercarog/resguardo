@@ -33,6 +33,9 @@ pub fn aplicar(v: &mut Vinculo, c: &Value, admin: bool, por: Option<&str>) -> Re
             return Err("Dato común desconocido.".into());
         }
         if dc::pide_admin(clave) && !admin {
+            if dc::es_de_ajustes(clave) {
+                return Err("Que cada persona recupere sus archivos en el equipo se activa con la clave de administración.".into());
+            }
             return Err(
                 "El tipo, las marcas y la sede de un equipo o de un destino cuentan en la regla 3-2-1: cambiarlos pide la clave de administración.".into()
             );
@@ -106,6 +109,9 @@ pub fn descripcion(c: &Value) -> Option<String> {
             // 0.8.1 (B5): sin el texto (puede ser largo; el historial común no lo lleva).
             Some(dc::Clase::NotaObservacion) => "la observación de una copia, un repositorio o un destino".to_string(),
             Some(dc::Clase::NotaComentario) => "un comentario".to_string(),
+            // 0.8.1 (E2, H1).
+            Some(dc::Clase::Ajuste) if clave == "ajuste:restauraciones" => "«Pedir siempre el motivo» al restaurar".to_string(),
+            Some(dc::Clase::Ajuste) => "«Recuperar en el equipo» (cada persona, sus propios archivos)".to_string(),
             None => "un dato".to_string(),
         }
     };
@@ -114,6 +120,12 @@ pub fn descripcion(c: &Value) -> Option<String> {
         [x] => format!("Cambiar {} en todas las consolas", una(x)),
         xs => format!("Cambiar {} datos comunes del cliente en todas las consolas", xs.len()),
     })
+}
+
+/// 0.8.1 (E2, H1): el valor de un ajuste común en este equipo (el documento es uno para
+/// todas sus consolas: gana el cambio más reciente). `None`: nadie lo ha puesto (el de por defecto).
+pub fn ajuste(v: &Vinculo, nombre: &str) -> Option<Value> {
+    v.datos_cliente.get(&format!("{}{nombre}", dc::Clase::Ajuste.prefijo())).map(|e| e.valor.clone()).filter(|x| !x.is_null())
 }
 
 /// `resumen.datos_cliente`: cuántos datos tiene el equipo y su huella (`null` si ninguno).
@@ -261,6 +273,25 @@ mod tests {
         let quitar = json!({ "entradas": [{ "clave": "exclusiones:musica", "valor": null, "cambiado": "2026-10-07T11:00:00Z" }] });
         aplicar(&mut v, &quitar, false, None).unwrap();
         assert!(v.datos_cliente["exclusiones:musica"].valor.is_null());
+    }
+
+    /// 0.8.1 (E2, H1): los ajustes comunes; «recuperar» solo con la clave.
+    #[test]
+    fn ajustes_comunes() {
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_AJUSTES));
+        let mut v = vinculo("id", "Oficina");
+        let m = json!({ "entradas": [{ "clave": "ajuste:restauraciones", "valor": { "motivo_obligatorio": false }, "cambiado": "2026-10-07T10:00:00Z" }] });
+        aplicar(&mut v, &m, false, None).unwrap();
+        assert_eq!(descripcion(&m).unwrap(), "Cambiar «Pedir siempre el motivo» al restaurar en todas las consolas");
+        let r = json!({ "entradas": [{ "clave": "ajuste:recuperar", "valor": { "activo": true, "max_mb": 200 }, "cambiado": "2026-10-07T10:00:00Z" }] });
+        assert!(aplicar(&mut v, &r, false, None).unwrap_err().contains("clave de administración"));
+        aplicar(&mut v, &r, true, None).unwrap();
+        assert_eq!(ajuste(&v, "recuperar").unwrap()["max_mb"], 200);
+        // Otra consola con un cambio más reciente: gana ese (es el mismo documento).
+        let r2 = json!({ "entradas": [{ "clave": "ajuste:recuperar", "valor": { "activo": false }, "cambiado": "2026-10-08T10:00:00Z" }] });
+        aplicar(&mut v, &r2, true, None).unwrap();
+        assert_eq!(ajuste(&v, "recuperar").unwrap()["activo"], false);
+        assert!(ajuste(&v, "otro").is_none());
     }
 
     #[test]

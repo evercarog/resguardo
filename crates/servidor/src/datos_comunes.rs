@@ -135,7 +135,25 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
             None => Value::Null,
         },
         Clase::NotaComentario => db.comentario(ctx, sujeto)?.map(|k| comentario_comun(&k)).unwrap_or(Value::Null),
+        // 0.8.1 (E2, H1): el ajuste de aquí, si se puso alguna vez (si no, el de por defecto: nada propio).
+        Clase::Ajuste => ajuste_local(db, ctx, sujeto)?,
     })
+}
+
+/// 0.8.1 (E2, H1): un ajuste común tal como está en este servidor (`ajustes_cliente`), o `null`.
+pub fn ajuste_local(db: &dyn Almacen, ctx: &ClienteCtx, sujeto: &str) -> R<Value> {
+    let Some((d, _, _)) = db.ajuste_cliente(ctx, sujeto)? else { return Ok(Value::Null) };
+    let v: Value = serde_json::from_str(&d).unwrap_or(Value::Null);
+    let campo = if sujeto == "restauraciones" { "motivo_obligatorio" } else { "activo" };
+    if v.get(campo).is_none_or(Value::is_null) {
+        return Ok(Value::Null);
+    }
+    let solo = if sujeto == "restauraciones" {
+        json!({ "motivo_obligatorio": v["motivo_obligatorio"] })
+    } else {
+        json!({ "activo": v["activo"], "max_mb": v["max_mb"] })
+    };
+    Ok(dc::valor_valido(&format!("{}{sujeto}", Clase::Ajuste.prefijo()), &solo).unwrap_or(Value::Null))
 }
 
 /// Un comentario de aquí como dato común (su autor sin la consola: esa va en la entrada).
@@ -287,6 +305,11 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
                 };
                 db.poner_observacion(ctx, &obs, crate::api::notas::MAX_OBSERVACIONES)?;
             }
+        }
+        // 0.8.1 (E2, H1): a `ajustes_cliente` (`null`: el de por defecto).
+        Clase::Ajuste => {
+            let datos = if valor.is_null() { "{}".to_string() } else { valor.to_string() };
+            db.poner_ajuste_cliente(ctx, sujeto, &datos, por)?;
         }
         Clase::NotaComentario => {
             if valor.is_null() {
@@ -480,6 +503,12 @@ pub fn sin_compartir(db: &dyn Almacen, ctx: &ClienteCtx, ya: &BTreeMap<String, F
             claves.push(format!("{}{}:{}", Clase::NotaObservacion.prefijo(), n.tipo, n.objeto));
         }
     }
+    // 0.8.1 (E2, H1): los ajustes comunes puestos aquí antes de compartir.
+    for a in dc::AJUSTES {
+        if !ajuste_local(db, ctx, a)?.is_null() {
+            claves.push(format!("{}{a}", Clase::Ajuste.prefijo()));
+        }
+    }
     let mut out = Vec::new();
     for k in claves {
         if ya.contains_key(&k) || dc::clase(&k).is_none() {
@@ -546,6 +575,23 @@ mod tests {
 
     fn poner_color(db: &dyn Almacen, ctx: &ClienteCtx, nombre: &str, c: u8) {
         db.poner_ajuste_etiqueta(ctx, &AjusteEtiqueta { nombre: nombre.into(), color: Some(c), ..Default::default() }, 200).unwrap();
+    }
+
+    /// 0.8.1 (E2, H1): los ajustes comunes van y vienen por `ajustes_cliente`.
+    #[test]
+    fn ajustes_comunes() {
+        let (db, ctx, _dir) = almacen();
+        assert!(ajuste_local(&db, &ctx, "restauraciones").unwrap().is_null(), "sin ponerlo, el de por defecto");
+        let doc = json!({ "ajuste:restauraciones": entrada(json!({ "motivo_obligatorio": false }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina") });
+        assert_eq!(recibir(&db, &ctx, "e1", AQUI, &doc).unwrap(), 1);
+        assert_eq!(ajuste_local(&db, &ctx, "restauraciones").unwrap(), json!({ "motivo_obligatorio": false }));
+        let doc = json!({ "ajuste:recuperar": entrada(json!({ "activo": true, "max_mb": 300 }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina") });
+        recibir(&db, &ctx, "e1", AQUI, &doc).unwrap();
+        assert_eq!(ajuste_local(&db, &ctx, "recuperar").unwrap(), json!({ "activo": true, "max_mb": 300 }));
+        // Quitado en otra consola: vuelve al de por defecto.
+        let doc = json!({ "ajuste:recuperar": entrada(Value::Null, "2026-10-08T10:00:00Z", "id-oficina", "Oficina") });
+        recibir(&db, &ctx, "e1", AQUI, &doc).unwrap();
+        assert!(ajuste_local(&db, &ctx, "recuperar").unwrap().is_null());
     }
 
     #[test]

@@ -5,13 +5,19 @@
 //!
 //! - `GET /api/clientes/{c}/restauraciones[?equipo=]` (lectura): las entradas de
 //!   todos los equipos del cliente (o de uno), el motivo que les añadieron las
-//!   personas de esta consola y el ajuste del cliente.
+//!   personas de esta consola y el ajuste del cliente. Desde la 0.8.1 (E3, 15aa), también
+//!   las pruebas de restauración (`tipo: "prueba_restauracion"`).
 //! - `PUT /api/clientes/{c}/equipos/{e}/restauraciones/{id}` (técnico o más):
 //!   `{ motivo, notas? }`, el motivo (`borrado`, `dano`, `prueba`, `otro`) y las
 //!   notas de una restauración (también antes de que llegue su entrada: la
 //!   consola lo guarda al mandar la orden, con el id `restauracion-<orden>`).
 //! - `PUT /api/clientes/{c}/restauraciones/ajustes` (administrador o más):
-//!   `{ motivo_obligatorio }`. Por defecto, opcional.
+//!   `{ motivo_obligatorio?, recuperar?: { activo, max_mb } }`. Desde la 0.8.1 (E2, 15ee) el
+//!   motivo es **obligatorio por defecto** y los dos son datos comunes del cliente
+//!   (`ajuste:restauraciones` y `ajuste:recuperar`, docs/consolas-multiples.md §6.5): se
+//!   apuntan «por enviar» y la consola los manda a los equipos (el segundo, con la clave).
+//!   `recuperar` (H1, 15mm): que cada persona del equipo recupere sus propios archivos
+//!   (desactivado por defecto; lo aplica cada equipo).
 //!
 //! En claro, como las observaciones (no son secretos); cada cambio se audita sin el texto.
 
@@ -31,9 +37,10 @@ pub const MOTIVOS: [&str; 4] = ["borrado", "dano", "prueba", "otro"];
 pub const MAX_NOTAS: usize = 500;
 /// Restauraciones con motivo por cliente.
 pub const MAX_NOTAS_CLIENTE: i64 = 20_000;
-/// Entradas que se devuelven por equipo (las más recientes).
-pub const POR_EQUIPO: i64 = 500;
+/// Entradas que se devuelven por equipo (las más recientes; restauraciones y pruebas).
+pub const POR_EQUIPO: i64 = 1000;
 const AJUSTE: &str = "restauraciones";
+const AJUSTE_RECUPERAR: &str = "recuperar";
 
 fn id_valido(id: &str) -> bool {
     id.strip_prefix("restauracion-").is_some_and(|r| !r.is_empty() && r.len() <= 50 && r.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
@@ -49,16 +56,42 @@ fn ajustes_de(datos: Option<(String, i64, String)>) -> Value {
     let (d, t, por) = datos.unwrap_or_default();
     let v: Value = serde_json::from_str(&d).unwrap_or(Value::Null);
     json!({
-        "motivo_obligatorio": v["motivo_obligatorio"].as_bool().unwrap_or(false),
+        // 0.8.1 (E2, 15ee): sin ponerlo, obligatorio (un toque basta).
+        "motivo_obligatorio": v["motivo_obligatorio"].as_bool().unwrap_or(true),
         "actualizada": (t > 0).then(|| fecha(t)),
         "por": (!por.is_empty()).then_some(por),
     })
 }
 
+/// 0.8.1 (H1, 15mm): «Recuperar en el equipo» del cliente (desactivado por defecto).
+fn recuperar_de(datos: Option<(String, i64, String)>) -> Value {
+    let (d, t, por) = datos.unwrap_or_default();
+    let v: Value = serde_json::from_str(&d).unwrap_or(Value::Null);
+    json!({
+        "activo": v["activo"].as_bool().unwrap_or(false),
+        "max_mb": v["max_mb"].as_u64().unwrap_or(resguardo_protocolo::datos_cliente::RECUPERAR_MB_DEFECTO),
+        "actualizada": (t > 0).then(|| fecha(t)),
+        "por": (!por.is_empty()).then_some(por),
+    })
+}
+
+/// Los ajustes, con si ya son comunes a todas las consolas (hay un dato común de cada uno).
+fn ajustes_completos(db: &dyn crate::almacen::Almacen, ctx: &crate::almacen::ClienteCtx) -> crate::almacen::R<Value> {
+    let comunes = crate::datos_comunes::filas(db, ctx)?;
+    let mut a = ajustes_de(db.ajuste_cliente(ctx, AJUSTE)?);
+    a["comun"] = json!(comunes.contains_key("ajuste:restauraciones"));
+    let mut r = recuperar_de(db.ajuste_cliente(ctx, AJUSTE_RECUPERAR)?);
+    r["comun"] = json!(comunes.contains_key("ajuste:recuperar"));
+    a["recuperar"] = r;
+    Ok(a)
+}
+
 /// Lo de `listar` (también para «Todos los clientes», `GET /api/panel/restauraciones`).
 pub(super) fn de_cliente(db: &dyn crate::almacen::Almacen, ctx: &crate::almacen::ClienteCtx, solo: Option<String>) -> crate::almacen::R<Value> {
     let equipos: Vec<String> = db.equipos(ctx)?.into_iter().map(|e| e.id).filter(|id| solo.as_ref().is_none_or(|s| s == id)).collect();
-    let filtro = FiltroHistorial { tipos: vec!["restauracion".into()], ..Default::default() };
+    // 0.8.1 (E3, 15aa): también las pruebas de restauración (automáticas y con «Probar ahora»,
+    // también desde un espejo), con su `tipo` para separarlas de las reales.
+    let filtro = FiltroHistorial { tipos: vec!["restauracion".into(), "prueba_restauracion".into()], ..Default::default() };
     let mut entradas = Vec::new();
     for e in &equipos {
         for f in db.historial(ctx, e, &filtro, POR_EQUIPO)? {
@@ -74,7 +107,7 @@ pub(super) fn de_cliente(db: &dyn crate::almacen::Almacen, ctx: &crate::almacen:
         .filter(|n| equipos.contains(&n.equipo))
         .map(|n| json!({ "equipo": n.equipo, "id": n.id, "motivo": n.motivo, "notas": n.notas, "por": n.por, "actualizada": fecha(n.actualizada) }))
         .collect();
-    Ok(json!({ "ajustes": ajustes_de(db.ajuste_cliente(ctx, AJUSTE)?), "entradas": entradas, "notas": notas }))
+    Ok(json!({ "ajustes": ajustes_completos(db, ctx)?, "entradas": entradas, "notas": notas }))
 }
 
 /// `GET /api/clientes/{c}/restauraciones[?equipo=]`: `{ ajustes, entradas: [{ equipo, … }], notas: [...] }`.
@@ -124,20 +157,40 @@ pub async fn poner_motivo(State(st): State<St>, u: Usuario, Path((c, e, id)): Pa
 
 #[derive(Deserialize)]
 pub struct Ajustes {
-    motivo_obligatorio: bool,
+    #[serde(default)]
+    motivo_obligatorio: Option<bool>,
+    /// 0.8.1 (H1, 15mm): `{ activo, max_mb }`.
+    #[serde(default)]
+    recuperar: Option<Value>,
 }
 
-/// `PUT /api/clientes/{c}/restauraciones/ajustes`: `{ motivo_obligatorio }` (administrador o más).
+/// `PUT /api/clientes/{c}/restauraciones/ajustes`: `{ motivo_obligatorio?, recuperar? }` (administrador o más).
 pub async fn poner_ajustes(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json(p): Json<Ajustes>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Administrador).await?;
     let actor = format!("cuenta:{}", u.0.cuenta.correo);
     let por = u.0.cuenta.nombre.clone();
+    let propia = st.identidad_pub.clone();
+    let recuperar = match &p.recuperar {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(resguardo_protocolo::datos_cliente::valor_valido("ajuste:recuperar", v).map_err(ErrorApi::datos)?),
+    };
     let r = st
         .db(move |db| {
-            let datos = json!({ "motivo_obligatorio": p.motivo_obligatorio }).to_string();
-            db.poner_ajuste_cliente(&ctx, AJUSTE, &datos, &por)?;
-            db.auditar(&ctx, &actor, "ajustes_restauraciones", "", &datos)?;
-            Ok(ajustes_de(db.ajuste_cliente(&ctx, AJUSTE)?))
+            if let Some(m) = p.motivo_obligatorio {
+                let datos = json!({ "motivo_obligatorio": m }).to_string();
+                db.poner_ajuste_cliente(&ctx, AJUSTE, &datos, &por)?;
+                db.auditar(&ctx, &actor, "ajustes_restauraciones", "", &datos)?;
+                // 0.8.1 (E2): igual en todas las consolas del cliente (lo reparte la consola web).
+                crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, "ajuste:restauraciones", &por, &propia);
+            }
+            if let Some(v) = &recuperar {
+                let datos = v.to_string();
+                db.poner_ajuste_cliente(&ctx, AJUSTE_RECUPERAR, &datos, &por)?;
+                db.auditar(&ctx, &actor, "ajustes_recuperar_equipo", "", &datos)?;
+                // H1: lo aplica cada equipo cuando le llega, con la clave de administración.
+                crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, "ajuste:recuperar", &por, &propia);
+            }
+            ajustes_completos(db, &ctx)
         })
         .await?;
     Ok(Json(r))
@@ -158,7 +211,12 @@ mod tests {
 
     #[test]
     fn ajustes_por_defecto() {
-        assert_eq!(ajustes_de(None)["motivo_obligatorio"], false);
-        assert_eq!(ajustes_de(Some((r#"{"motivo_obligatorio":true}"#.into(), 1, "Ana".into())))["motivo_obligatorio"], true);
+        // 0.8.1 (E2, 15ee): obligatorio por defecto; opcional si alguien lo quitó.
+        assert_eq!(ajustes_de(None)["motivo_obligatorio"], true);
+        assert_eq!(ajustes_de(Some(("{}".into(), 1, "Ana".into())))["motivo_obligatorio"], true);
+        assert_eq!(ajustes_de(Some((r#"{"motivo_obligatorio":false}"#.into(), 1, "Ana".into())))["motivo_obligatorio"], false);
+        // H1: «Recuperar en el equipo», desactivado por defecto.
+        assert_eq!(recuperar_de(None)["activo"], false);
+        assert_eq!(recuperar_de(Some((r#"{"activo":true,"max_mb":200}"#.into(), 1, "Ana".into())))["max_mb"], 200);
     }
 }

@@ -1423,6 +1423,9 @@ pub const ADMITE: &[&str] = &[
     // 0.8.1 (E1, 15w): `excluir` (rutas exactas quitadas de lo elegido) en `restaurar` y
     // `descargar`, y la operación `medir` de la sesión `explorar` (lo que de verdad se restaura).
     crate::restaurar_v2::ADMITE_EXCLUIR,
+    // 0.8.1 (E2, 15ee; H1, 15mm): los ajustes comunes `ajuste:restauraciones` (sin clave) y
+    // `ajuste:recuperar` (con la clave) en `datos_cliente`.
+    resguardo_protocolo::datos_cliente::ADMITE_AJUSTES,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
