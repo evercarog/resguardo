@@ -37,6 +37,7 @@
   // v1.41: dónde se guarda cada copia (y si se queda en el mismo equipo).
   import { lugarRepo, riesgoMismoEquipo } from "$lib/dondeGuarda";
   import SeGuardaEn from "$lib/componentes/SeGuardaEn.svelte";
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
 
   // Los informes (la última vuelta de cada copia, lo que protege, «sin cambios»).
   $effect(() => {
@@ -243,7 +244,7 @@
               <!-- C1: una línea por paso de su camino (espejos y copias derivadas), con su estado y su enlace. -->
               {#if x.pasos.length}<div class="pasos-camino"><CaminoCopia eslabones={x.pasos} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{x.copia.nombre}»" /></div>{/if}
               <span class="sub faint">{horarioEnFrase(x.copia.horario)}</span>
-              {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub msg-fallo">{x.vuelta.mensaje}</span>{/if}
+              {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub msg-fallo"><ErrorCopia mensaje={x.vuelta.mensaje} detalle={x.vuelta.detalle} /></span>{/if}
               <span class="vivo"><EnMarcha equipo={x.equipo.id} copia={x.copia.id} compacto /></span>
             </div>
             <div class="estado">

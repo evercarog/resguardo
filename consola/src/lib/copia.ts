@@ -9,6 +9,7 @@ import { cuandoFrase, horarioEnFrase, lista, plural, relativo } from "./formato"
 import { informeDe } from "./repo";
 import { proximaVez, reglasDe, ultimaVez } from "./horario";
 import { esAhora, fechaHoraEnPalabras, terminaEnFrase } from "./copiaGuiada";
+import { enPalabras } from "./errorCopia";
 
 /** El informe del repositorio con solo las versiones y vueltas de esta copia. */
 export function infCopia(inf: RepoInforme | null, copia: string): RepoInforme | null {
@@ -39,6 +40,8 @@ export interface Vuelta {
   cuando: string;
   resultado: ResultadoVuelta;
   mensaje: string | null;
+  /** v1.8x (15oo): el «Detalle técnico» que manda el agente aparte. */
+  detalle?: string | null;
 }
 
 const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado === "ok" ? "ok" : estado === "aviso" ? "aviso" : "fallo");
@@ -51,7 +54,7 @@ const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado ===
 export function ultimaVuelta(k: CopiaResumen, informe: Informe | null | undefined): Vuelta | null {
   const candidatas: Vuelta[] = [];
   const ej = infCopia(informeDe(informe, k.repo), k.id)?.ejecuciones[0];
-  if (ej) candidatas.push({ cuando: ej.hora, resultado: ej.resultado, mensaje: ej.mensaje_corto });
+  if (ej) candidatas.push({ cuando: ej.hora, resultado: ej.resultado, mensaje: ej.mensaje_corto, detalle: ej.detalle ?? null });
   const fila = filaInforme(informe, k);
   if (fila?.cuando && fila.estado) candidatas.push({ cuando: fila.cuando, resultado: resultadoDe(fila.estado), mensaje: fila.mensaje ?? null });
   if (k.ultima) candidatas.push({ cuando: k.ultima.cuando, resultado: resultadoDe(k.ultima.estado), mensaje: k.ultima.mensaje ?? null });
@@ -197,7 +200,7 @@ const EXPLICACIONES: [RegExp, Explicacion][] = [
     { titulo: "El repositorio no se abrió", texto: "El equipo no pudo abrir el repositorio con la contraseña que tiene guardada. Lo ya copiado sigue a salvo; hace falta la contraseña de su kit.", ayuda: "si-contrasena-repo" },
   ],
   [
-    /bloque|lock/i,
+    /bloque|lock|ocupado por otra/i,
     { titulo: "El repositorio estaba bloqueado", texto: "Otra copia o comprobación lo tenía ocupado, o quedó un bloqueo de una copia que se cortó. En la ficha del equipo, «Quitar bloqueos antiguos» lo arregla sin borrar nada.", ayuda: "si-copia-falla" },
   ],
   [
@@ -209,11 +212,11 @@ const EXPLICACIONES: [RegExp, Explicacion][] = [
     { titulo: "No se pudo llegar al destino", texto: "El equipo no alcanzó el sitio donde guarda las copias (otro equipo, un NAS o la nube). Comprueba que está encendido y con red; la próxima copia lo vuelve a intentar sola.", ayuda: "si-copia-falla" },
   ],
   [
-    /en uso|no se pudieron leer|no se pudo leer|acceso denegado|access denied|permiso/i,
+    /en uso|no se pudieron leer|no se pudo leer|acceso denegado|access denied|permiso|no permite acceder/i,
     { titulo: "Algunos archivos no se pudieron leer", texto: "Estaban abiertos por otro programa o sin permiso. El resto se copió; esos entran en la próxima copia si están libres.", ayuda: "si-copia-falla" },
   ],
   [
-    /carpeta.*(no existe|no se encuentra)|not found|no existe/i,
+    /carpeta.*(no existe|no se encuentra)|no se encuentra alguna|not found|no existe/i,
     { titulo: "Falta una carpeta", texto: "Alguna de las carpetas de la copia ya no está (se movió, se borró o es de un disco que no está conectado). Revísalas en «Cambiar».", ayuda: "si-copia-falla" },
   ],
 ];
@@ -221,6 +224,7 @@ const EXPLICACIONES: [RegExp, Explicacion][] = [
 const GENERICA: Explicacion = { titulo: "La copia no terminó bien", texto: "El mensaje del equipo dice qué pasó. Lo ya copiado sigue a salvo; la próxima copia lo vuelve a intentar.", ayuda: "si-copia-falla" };
 
 export function explicarError(mensaje: string | null | undefined): Explicacion {
-  const m = mensaje ?? "";
+  // 15oo: sobre la frase (un agente anterior manda el error del motor tal cual).
+  const m = enPalabras(mensaje).frase;
   return EXPLICACIONES.find(([re]) => re.test(m))?.[1] ?? GENERICA;
 }

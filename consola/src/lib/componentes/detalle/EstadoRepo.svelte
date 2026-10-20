@@ -6,6 +6,8 @@
   import { problemasRecientes } from "$lib/detalle";
   import { proteccion, TEXTO_RESULTADO, TONO_COMPROBACION, TONO_RESULTADO, TEXTO_TAREA, TONO_TAREA, ultimaEjecucion } from "$lib/repo";
   import { explicarError } from "$lib/copia";
+  import { fraseError } from "$lib/errorCopia";
+  import ErrorCopia from "../ErrorCopia.svelte";
   import { fechaCorta, relativo } from "$lib/formato";
   import { tip } from "$lib/tooltip";
   import Chip from "../Chip.svelte";
@@ -36,7 +38,7 @@
       <button class="pulsable-bloque fila" use:tip={"Ver detalle"} onclick={() => abrirVuelta(ultima!.hora)}>
         <Chip tono={TONO_RESULTADO[ultima.resultado]} texto={TEXTO_RESULTADO[ultima.resultado]} />
         <span>{relativo(ultima.hora, ahora)}</span>
-        {#if ultima.mensaje_corto && ultima.resultado !== "ok"}<span class="msg">{explicarError(ultima.mensaje_corto).titulo}: «{ultima.mensaje_corto}»</span>{/if}
+        {#if ultima.mensaje_corto && ultima.resultado !== "ok"}<span class="msg">{fraseError(ultima.mensaje_corto)}</span>{/if}
       </button>
     {:else}
       <p class="faint">Todavía no hay copias en el informe.</p>
@@ -54,7 +56,7 @@
             <button class="pulsable-bloque fila" use:tip={"Ver detalle"} onclick={() => abrirVuelta(e.hora)}>
               <span class="num cuando">{fechaCorta(e.hora)}</span>
               <Chip pequeno tono={TONO_RESULTADO[e.resultado]} texto={TEXTO_RESULTADO[e.resultado]} />
-              <span class="msg">{explicarError(e.mensaje_corto).titulo}{#if e.mensaje_corto}: «{e.mensaje_corto}»{/if}</span>
+              <span class="msg">{e.mensaje_corto ? fraseError(e.mensaje_corto) : explicarError(e.mensaje_corto).titulo}</span>
             </button>
           </li>
         {/each}
@@ -68,7 +70,7 @@
       <h3>Comprobaciones</h3>
       <ul>
         {#each tareas as [nombre, t] (nombre)}
-          <li class="fila"><Chip pequeno tono={TONO_TAREA[t!.resultado]} texto={`${nombre}: ${TEXTO_TAREA[t!.resultado].toLowerCase()}`} />{#if t!.ultima}<span class="faint">{relativo(t!.ultima, ahora)}</span>{/if}{#if t!.mensaje_corto}<span class="msg">{t!.mensaje_corto}</span>{/if}</li>
+          <li class="fila"><Chip pequeno tono={TONO_TAREA[t!.resultado]} texto={`${nombre}: ${TEXTO_TAREA[t!.resultado].toLowerCase()}`} />{#if t!.ultima}<span class="faint">{relativo(t!.ultima, ahora)}</span>{/if}{#if t!.mensaje_corto}<span class="msg"><ErrorCopia mensaje={t!.mensaje_corto} detalle={t!.detalle} /></span>{/if}</li>
         {/each}
       </ul>
     </section>

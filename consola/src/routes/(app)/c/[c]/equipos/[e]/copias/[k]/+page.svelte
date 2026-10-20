@@ -83,6 +83,7 @@
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
   import { caminoDeCopia } from "$lib/camino";
   import { enVivoCamino } from "$lib/caminoVivo.svelte";
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -169,13 +170,13 @@
 
   /** Problemas de los últimos 60 días, agrupados por explicación (el más reciente primero). */
   const problemas = $derived.by(() => {
-    const grupos = new Map<string, { exp: ReturnType<typeof explicarError>; n: number; ultima: string; mensaje: string | null; tono: "bad" | "warn" }>();
+    const grupos = new Map<string, { exp: ReturnType<typeof explicarError>; n: number; ultima: string; mensaje: string | null; detalle: string | null; tono: "bad" | "warn" }>();
     for (const x of ejecuciones) {
       if (x.resultado !== "fallo" && x.resultado !== "aviso") continue;
       const exp = explicarError(x.mensaje_corto);
       const g = grupos.get(exp.titulo);
       if (g) g.n++;
-      else grupos.set(exp.titulo, { exp, n: 1, ultima: x.hora, mensaje: x.mensaje_corto, tono: x.resultado === "fallo" ? "bad" : "warn" });
+      else grupos.set(exp.titulo, { exp, n: 1, ultima: x.hora, mensaje: x.mensaje_corto, detalle: x.detalle ?? null, tono: x.resultado === "fallo" ? "bad" : "warn" });
     }
     return [...grupos.values()];
   });
@@ -312,7 +313,7 @@
         <TriangleAlert size={16} />
         <div>
           <p><strong>{explicacion.titulo}.</strong> {explicacion.texto}</p>
-          {#if vuelta.mensaje}<p class="msg-equipo">El equipo dijo: «{vuelta.mensaje.replace(/\.$/, "")}» (<span use:tip={fechaLarga(vuelta.cuando)}>{relativo(vuelta.cuando, reloj.ahora)}</span>).</p>{/if}
+          {#if vuelta.mensaje}<div class="msg-equipo">El equipo dijo (<span use:tip={fechaLarga(vuelta.cuando)}>{relativo(vuelta.cuando, reloj.ahora)}</span>): <ErrorCopia mensaje={vuelta.mensaje} detalle={vuelta.detalle} /></div>{/if}
           <p><a class="link" href="/ayuda#{explicacion.ayuda}"><CircleHelp size={14} />¿Qué hago?</a></p>
         </div>
       </div>
@@ -530,7 +531,7 @@
               <div>
                 <p class="linea"><button class="pulsable" use:tip={"Ver la última vez"} onclick={() => abrirVuelta(p.ultima)}><strong>{p.exp.titulo}</strong></button> <span class="faint num">{plural(p.n, "vez", "veces")} · la última {relativo(p.ultima, reloj.ahora)}</span></p>
                 <p class="faint">{p.exp.texto}</p>
-                {#if p.mensaje}<p class="faint pequeno">«{p.mensaje.replace(/\.$/, "")}»</p>{/if}
+                {#if p.mensaje}<div class="faint pequeno"><ErrorCopia mensaje={p.mensaje} detalle={p.detalle} /></div>{/if}
               </div>
               <a class="btn btn-sm btn-ghost" href="/ayuda#{p.exp.ayuda}"><CircleHelp size={14} />¿Qué hago?</a>
             </li>

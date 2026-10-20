@@ -153,6 +153,7 @@
   import { objetoDe } from "$lib/notas.svelte";
   import DatosDelEquipo from "$lib/componentes/DatosDelEquipo.svelte";
   import { datosBasicos, reinicioAntes, sistemaDe } from "$lib/datosBasicos";
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
@@ -1072,7 +1073,7 @@
                   <a class="fila-titulo enlace-copia" href="/c/{c}/equipos/{equipo.id}/copias/{encodeURIComponent(k.id)}" use:tip={`Ver el detalle de «${k.nombre}»`}>{k.nombre}<ContadorNotas tipo="copia" objeto={objetoDe(equipo.id, k.id)} /><ChevronRight size={14} /></a>
                   <span class="fila-sub">{#if k.tras}Después de «{copias.find((x) => x.id === k.tras)?.nombre ?? k.tras}»{#if typeof k.horario === "object" && (k.horario?.horas?.length || k.horario?.reglas?.length)}{" y "}{horarioEnFrase(k.horario).toLowerCase()}{/if}{:else}{horarioEnFrase(k.horario)}{/if}{k.carpetas !== undefined ? ` · ${plural(k.carpetas, "carpeta", "carpetas")}` : ""} → {rk?.nombre ?? k.repo}</span>
                   {#if rk}<span class="fila-sub"><SeGuardaEn pequeno lugar={lugarRepo(rk, equipo, actual.equipos)} riesgo={!!riesgoMismoEquipo(rk, equipo, actual.equipos)} /></span>{/if}
-                  {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo">{vuelta.mensaje}</span>{/if}
+                  {#if vuelta?.resultado === "fallo" && vuelta.mensaje}<span class="fila-sub msg-fallo"><ErrorCopia mensaje={vuelta.mensaje} detalle={vuelta.detalle} /></span>{/if}
                   <!-- 14uu: si el equipo arrancó poco antes del fallo, se dice (suele explicarlo). -->
                   {#if vuelta?.resultado === "fallo" && reinicioAntes(datosBasicos(equipo), vuelta.cuando)}<span class="fila-sub reinicio"><Power size={12} />{reinicioAntes(datosBasicos(equipo), vuelta.cuando)}</span>{/if}
                   <EnMarcha equipo={equipo.id} copia={k.id} />
@@ -1376,7 +1377,7 @@
                     <span class="d-texto">
                       {#if de}<a class="link" href="/c/{c}/equipos/{de.equipo.id}/repositorios/{encodeURIComponent(de.repo.id)}"><strong>{de.repo.nombre}</strong></a> <span class="faint">de {de.equipo.nombre}</span>{:else}<strong>{ra.usuario}/{ra.repo}</strong>{/if}
                       <span class="faint">{ra.texto} · {ra.horario.reglas?.length ? horarioEnFrase({ dias: [], horas: [], reglas: ra.horario.reglas }).replace(/^./, (x) => x.toLowerCase()) : (ra.horario_texto ?? textoHorario(ra.horario))}{#if ra.ultima}{" · "}<Tiempo iso={ra.ultima} />{/if}</span>
-                      {#if ra.resultado === "fallo" && ra.mensaje}<span class="msg-fallo">{ra.mensaje}</span>{:else if ra.clave === "pendiente"}<span class="msg-fallo">Su clave aún no abre el repositorio.</span>{/if}
+                      {#if ra.resultado === "fallo" && ra.mensaje}<span class="msg-fallo"><ErrorCopia mensaje={ra.mensaje} /></span>{:else if ra.clave === "pendiente"}<span class="msg-fallo">Su clave aún no abre el repositorio.</span>{/if}
                     </span>
                     {#if ra.resultado}<Chip pequeno tono={ra.resultado === "ok" ? "ok" : "bad"} texto={ra.resultado === "ok" ? "Aplicada" : "Falló"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
                   </li>
@@ -1561,7 +1562,7 @@
                     <td class="num der">{numero(cs.reduce((n, x) => n + (x.archivos ?? 0), 0))}</td>
                     <td>
                       <Chip pequeno tono={tono(peor)} texto={TEXTO_ESTADO[peor]} />
-                      {#each cs.filter((x) => x.mensaje) as x (x.id)}<p class="msg faint">{x.mensaje}</p>{/each}
+                      {#each cs.filter((x) => x.mensaje) as x (x.id)}<div class="msg faint"><ErrorCopia mensaje={x.mensaje} /></div>{/each}
                     </td>
                   </tr>
                 {/each}

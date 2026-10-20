@@ -17,6 +17,7 @@
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import FiltroCliente from "$lib/componentes/todos/FiltroCliente.svelte";
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
 
   let cliente = $state("");
   let buscar = $state("");
@@ -57,7 +58,7 @@
               <span class="sub"><a class="link-suave" href="/c/{x.cliente.id}/equipos/{x.equipo.id}">{x.equipo.nombre}</a>{" · "}{x.repo?.nombre ?? x.copia.repo}{x.destino ? ` → ${x.destino.nombre}` : ""}</span>
               {#if x.pasos.length}<div class="pasos"><CaminoCopia eslabones={x.pasos} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{x.copia.nombre}»" /></div>{/if}
               <span class="sub faint">{horarioEnFrase(x.copia.horario)}</span>
-              {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub fallo">{x.vuelta.mensaje}</span>{/if}
+              {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub fallo"><ErrorCopia mensaje={x.vuelta.mensaje} detalle={x.vuelta.detalle} /></span>{/if}
             </div>
             <div class="estado">
               <Chip tono={x.estado.tono} texto={x.estado.texto} />

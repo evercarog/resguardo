@@ -7,6 +7,8 @@
   import { ganchosDeVuelta } from "$lib/detalle";
   import { anadidoDe, claveDia, duracion, TEXTO_RESULTADO, TONO_RESULTADO, versionDeVuelta } from "$lib/repo";
   import { explicarError } from "$lib/copia";
+  import { fraseError } from "$lib/errorCopia";
+  import ErrorCopia from "../ErrorCopia.svelte";
   import { agruparResultados, NOMBRE_GANCHO } from "$lib/ganchos";
   import { bytes, fechaLarga, hora, numero } from "$lib/formato";
   import { tip } from "$lib/tooltip";
@@ -54,7 +56,7 @@
     <div class="explicacion tone-{e.resultado === 'fallo' ? 'bad' : 'warn'}">
       <strong>{exp.titulo}</strong>
       <p>{exp.texto}</p>
-      {#if e.mensaje_corto}<p class="faint">El equipo dijo: «{e.mensaje_corto.replace(/\.$/, "")}»</p>{/if}
+      {#if e.mensaje_corto}<div class="faint">El equipo dijo: <ErrorCopia mensaje={e.mensaje_corto} detalle={e.detalle} /></div>{/if}
       <a class="btn btn-sm btn-ghost" href="/ayuda#{exp.ayuda}"><CircleHelp size={14} />¿Qué hago?</a>
     </div>
   {:else if e.resultado === "sin_cambios"}
@@ -98,7 +100,7 @@
             <button class="pulsable-bloque otra" use:tip={"Ver detalle"} onclick={() => abrirVuelta(x.hora)}>
               <span class="num">{hora(x.hora)}</span>
               <Chip pequeno tono={TONO_RESULTADO[x.resultado]} texto={TEXTO_RESULTADO[x.resultado]} />
-              {#if x.mensaje_corto && x.resultado !== "ok"}<span class="faint msg">{x.mensaje_corto}</span>{/if}
+              {#if x.mensaje_corto && x.resultado !== "ok"}<span class="faint msg">{fraseError(x.mensaje_corto)}</span>{/if}
             </button>
           </li>
         {/each}
