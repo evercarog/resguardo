@@ -1429,6 +1429,9 @@ pub const ADMITE: &[&str] = &[
     // 0.8.1 (E4, 14m): `desde: "espejo:<id>"` (un espejo que hace el propio equipo) en
     // `explorar`, `restaurar` y `descargar`.
     crate::restaurar_v2::ADMITE_DESDE_ESPEJO,
+    // 0.8.1 (H1, 15mm): la orden `recuperar_en_equipo` (con la clave), `resumen.recuperar` y
+    // lo que la persona del equipo recupera por la ventana o la terminal (con `cuenta` en la bitácora).
+    crate::recuperar::ADMITE,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1607,6 +1610,8 @@ pub fn resumen(v: &Vinculo) -> Value {
     if !conservadas.is_null() {
         r["conservadas"] = conservadas;
     }
+    // 0.8.1 (H1, 15mm): «Recuperar en el equipo»: lo del cliente que llegó y lo de cada copia.
+    r["recuperar"] = crate::recuperar::resumen(v);
     // 14uu (plan 0.8.0, D3): sistema exacto, procesador, memoria, discos, modelo y último
     // arranque (leídos al arrancar y una vez al día). Las rutas solo marcan qué discos
     // guardan algo de las copias (`en_uso`): no salen del equipo.

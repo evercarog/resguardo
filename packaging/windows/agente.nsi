@@ -883,4 +883,8 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKLM "${UNINST_KEY}"
+  ; 0.8.1 (H1, 15mm): «Versiones anteriores con Resguardo» en el Explorador (lo pone el servicio
+  ; solo mientras está activado; aquí se quita siempre).
+  DeleteRegKey HKLM "Software\Classes\*\shell\ResguardoRecuperar"
+  DeleteRegKey HKLM "Software\Classes\Directory\shell\ResguardoRecuperar"
 SectionEnd

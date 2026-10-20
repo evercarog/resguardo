@@ -46,7 +46,7 @@ pub const ESPERA_PETICION_MS: u64 = 10_000;
 
 /// Qué operaciones llevan prueba de administración (todas menos estas).
 fn sin_prueba(op: &str) -> bool {
-    matches!(op, "hola" | "crear_clave" | "en_espera")
+    matches!(op, "hola" | "crear_clave" | "en_espera" | "recuperar_estado" | "recuperar_versiones" | "recuperar")
 }
 
 /// 14a: ¿puede `cliente` ver o aprobar las órdenes en espera en el equipo? Solo SYSTEM/root o
@@ -173,7 +173,17 @@ pub struct Cliente {
     /// 14a: el nombre de la cuenta (`EQUIPO\usuario` en Windows, el de `/etc/passwd` en
     /// Unix), para el historial («Aprobada en el equipo por …»). Vacío si no se supo.
     pub nombre: String,
+    /// 0.8.1 (H1, 15mm): en Windows, el token de identificación de quien pide (para
+    /// comprobar con `AccessCheck` lo que puede leer al recuperar sus archivos). Se cierra al soltarlo.
+    pub token: Option<std::sync::Arc<TokenCliente>>,
 }
+
+/// El token de quien pide por la tubería (Windows); en otros sistemas, nada.
+#[cfg(windows)]
+pub type TokenCliente = crate::recuperar::win::Token;
+#[cfg(not(windows))]
+#[derive(Debug, PartialEq)]
+pub struct TokenCliente;
 
 /// Cuentas distintas de las que se recuerdan los fallos a la vez (en un equipo
 /// hay pocas; se olvidan primero las que no están bloqueadas).
@@ -408,6 +418,17 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Client
         puede_aprobar(cliente, crate::agent::test_mode())?;
         let v = v.filter(|v| v.modo == "gestionado" && !v.secreto.is_empty());
         return Ok(json!({ "ordenes": v.as_ref().map(crate::espera_v2::lista_local).unwrap_or_default() }));
+    }
+    // 0.8.1 (H1, 15mm): la persona del equipo recupera sus propios archivos, sin clave: lo que
+    // puede leer lo dice el sistema con su cuenta (recuperar.rs), nunca la petición.
+    match op {
+        "recuperar_estado" => return Ok(crate::recuperar::estado(pet)),
+        "recuperar_versiones" => return crate::recuperar::versiones(pet, crate::recuperar::comprobador_de(cliente).as_ref()),
+        "recuperar" => {
+            let cuenta = if cliente.nombre.is_empty() { cliente.id.clone() } else { cliente.nombre.clone() };
+            return crate::recuperar::recuperar(pet, crate::recuperar::comprobador_de(cliente).as_ref(), &cuenta);
+        }
+        _ => {}
     }
     if sin_prueba(op) {
         return Err("Operación no válida.".into());
@@ -909,8 +930,9 @@ mod transporte {
             if !abierto {
                 return Cliente::default();
             }
-            let c = cliente_de_token(token);
-            CloseHandle(token);
+            let mut c = cliente_de_token(token);
+            // H1: el token se queda con el cliente (se cierra al soltarlo).
+            c.token = Some(std::sync::Arc::new(crate::recuperar::win::Token::de(token)));
             c
         }
     }
@@ -953,7 +975,7 @@ mod transporte {
                     .any(|x| IsWellKnownSid(x.Sid, WinBuiltinAdministratorsSid) != 0 && x.Attributes & (SE_GROUP_ENABLED | SE_GROUP_USE_FOR_DENY_ONLY) != 0);
             }
         }
-        Cliente { id, admin, nombre: nombre_de_sid(sid) }
+        Cliente { id, admin, nombre: nombre_de_sid(sid), token: None }
     }
 
     /// 14a: `EQUIPO\usuario` (o `DOMINIO\usuario`) de un SID, o vacío si no se sabe.
@@ -1091,7 +1113,7 @@ mod transporte {
             (unsafe { libc::getpeereid(fd, &mut uid, &mut gid) } == 0).then_some(uid)
         };
         match uid {
-            Some(u) => Cliente { id: format!("uid:{u}"), admin: u == 0, nombre: nombre_de_uid(u) },
+            Some(u) => Cliente { id: format!("uid:{u}"), admin: u == 0, nombre: nombre_de_uid(u), token: None },
             None => Cliente::default(),
         }
     }
@@ -1371,13 +1393,13 @@ mod tests {
     /// lo dice el sistema (con `sudo`, también quién lo pidió).
     #[test]
     fn aprobar_solo_administradores_y_quien() {
-        let usuario = Cliente { id: "S-1-5-21-1001".into(), admin: false, nombre: "pepe (PC-01)".into() };
-        let admin = Cliente { id: "S-1-5-21-500".into(), admin: true, nombre: "ana (PC-01)".into() };
+        let usuario = Cliente { id: "S-1-5-21-1001".into(), admin: false, nombre: "pepe (PC-01)".into(), ..Default::default() };
+        let admin = Cliente { id: "S-1-5-21-500".into(), admin: true, nombre: "ana (PC-01)".into(), ..Default::default() };
         assert!(puede_aprobar(&usuario, false).unwrap_err().contains("Solo un administrador"));
         assert!(puede_aprobar(&Cliente::default(), false).is_err());
         assert!(puede_aprobar(&admin, false).is_ok());
         assert_eq!(quien_aprueba(&admin, &json!({ "sudo_usuario": "otro" })), "ana (PC-01)", "sudo solo cuenta para root");
-        let root = Cliente { id: "uid:0".into(), admin: true, nombre: "root".into() };
+        let root = Cliente { id: "uid:0".into(), admin: true, nombre: "root".into(), ..Default::default() };
         assert_eq!(quien_aprueba(&root, &json!({ "sudo_usuario": "ana" })), "root (sudo, ana)");
         assert_eq!(quien_aprueba(&root, &json!({ "sudo_usuario": "ana; rm -rf /" })), "root", "nada raro de la petición");
         assert_eq!(quien_aprueba(&Cliente { id: "uid:1000".into(), ..Default::default() }, &json!({})), "uid:1000");
@@ -1451,6 +1473,11 @@ mod tests {
             respuesta(match pet["op"].as_str() {
                 // Quién dice el sistema que es el cliente (esta misma prueba).
                 Some("quien") => Ok(json!({ "id": cliente.id, "admin": cliente.admin })),
+                // H1: lo que puede leer quien pide, con su cuenta (el token de la tubería en Windows).
+                Some("lee") => {
+                    let c = crate::recuperar::comprobador_de(cliente);
+                    Ok(json!({ "lee": c.leer_ahora(std::path::Path::new(pet["ruta"].as_str().unwrap_or(""))) == crate::recuperar::Lectura::Si }))
+                }
                 Some("hola") => Ok(json!({ "reto": servidor.lock().unwrap().retos.nuevo(ahora_ms(), &cliente.id) })),
                 _ => servidor.lock().unwrap().autorizar(pet, None, ahora_ms(), &cliente.id).map(|_| Value::Null),
             })
@@ -1497,6 +1524,14 @@ mod tests {
             assert_eq!(id, format!("uid:{}", unsafe { libc::geteuid() }), "{r}");
             assert_eq!(r["datos"]["admin"], unsafe { libc::geteuid() } == 0);
         }
+        // H1: con la cuenta de quien pide (no con la del servicio) se lee un archivo suyo.
+        let propio = dir.join("propio.txt");
+        std::fs::write(&propio, b"x").unwrap();
+        let mut c = transporte::conectar(&direccion).unwrap();
+        let r = pedir_en(&mut c, &format!("{}\n", json!({ "op": "lee", "ruta": propio.display().to_string() })));
+        assert_eq!(r["datos"]["lee"], true, "{r}");
+        // Sin identificar a quien pide (ningún token), nada.
+        assert!(crate::recuperar::comprobador_de(&Cliente::default()).leer_ahora(&propio) == crate::recuperar::Lectura::No);
         // Una petición que llega a trozos, más despacio que el plazo total: se corta.
         use std::io::Write;
         let mut c = transporte::conectar(&direccion).unwrap();

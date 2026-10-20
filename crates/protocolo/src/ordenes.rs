@@ -138,6 +138,10 @@ pub const TIPOS: &[Tipo] = &[
     // dueño o en el almacén. Con la clave de administración; quitarla reduce la protección
     // (según el cuerpo: `conservar: false`).
     t("conservar_version", Administracion, false, false, false),
+    // Plan 0.8.1 (H1, 15mm): «Recuperar en el equipo» en una copia (sí, no o lo del cliente).
+    // Con la clave de administración y solo administradores: deja a cada persona del equipo
+    // recuperar sus propios archivos. No reduce la protección de nada: sin espera.
+    t("recuperar_en_equipo", Administracion, false, false, true),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).

@@ -42,6 +42,7 @@ pub const ORDENES: &[&str] = &[
     "ayuda",
     "version",
     "actualizaciones",
+    "recuperar",
 ];
 
 /// Otras formas de pedir la ayuda o la versión (`--help`, `-h`, `--version`…).
@@ -70,6 +71,13 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
                                           Restaura una carpeta o archivo de una versión (nunca sobrescribe)
   registro [n]                            Las últimas n líneas del registro (50 por defecto)
   kit <repo>                              Datos para recuperar las copias (incluye la contraseña)
+
+  Para cualquier persona del equipo (sin ser administrador), si se activó en la consola:
+  recuperar <ruta>                        Versiones anteriores de un archivo o carpeta tuyos
+  recuperar <ruta> --version <id> --motivo borrado|dano|prueba|otro [--notas <texto>] [--en <carpeta>]
+                                          Lo recupera junto al original con la fecha en el nombre (o en
+                                          otra carpeta tuya). Nunca sobrescribe; solo lo que tu cuenta
+                                          puede abrir
 
   Consolas y órdenes:
   vincular <código> --servidor <url> [--nombre <nombre>]
@@ -322,6 +330,40 @@ fn opciones(args: &[String], nombre: &str) -> Vec<String> {
     args.windows(2).filter(|w| w[0] == nombre).map(|w| w[1].clone()).collect()
 }
 
+/// `recuperar <ruta> [--version <id> --motivo <tipo> [--notas <t>] [--en <carpeta>]]` (H1):
+/// por el canal local, como la ventana; el servicio comprueba con esta cuenta lo que puede leer.
+fn recuperar(args: &[String]) -> Result<(), String> {
+    use serde_json::{json, Value};
+    let ruta = arg(args, 1)?;
+    let ruta = crate::recuperar::ruta_valida(ruta)?.display().to_string();
+    let Some(version) = opcion(args, "--version") else {
+        let r = crate::ipc_local::pedir(&json!({ "op": "recuperar_versiones", "ruta": ruta }))?;
+        let vs = r["versiones"].as_array().cloned().unwrap_or_default();
+        if vs.is_empty() {
+            println!("No hay versiones anteriores de «{ruta}».");
+            return Ok(());
+        }
+        println!("Versiones de «{ruta}» (la más reciente primero):");
+        for v in &vs {
+            let id: String = v["version"].as_str().unwrap_or("").chars().take(8).collect();
+            let cuando = chrono::DateTime::parse_from_rfc3339(v["cuando"].as_str().unwrap_or(""))
+                .map(|t| t.with_timezone(&chrono::Local).format("%d/%m/%Y %H:%M").to_string())
+                .unwrap_or_default();
+            let que = if v["carpeta"] == true { "carpeta".to_string() } else { v["bytes"].as_u64().map(crate::tasks::human_bytes).unwrap_or_default() };
+            println!("  {id}  {cuando}  {que}");
+        }
+        println!("\nPara recuperar una: resguardo-agente recuperar \"{ruta}\" --version <id> --motivo borrado|dano|prueba|otro");
+        return Ok(());
+    };
+    let motivo = opcion(args, "--motivo").map(|t| json!({ "tipo": t, "notas": opcion(args, "--notas") })).unwrap_or(Value::Null);
+    let r = crate::ipc_local::pedir(&json!({ "op": "recuperar", "ruta": ruta, "version": version, "motivo": motivo, "carpeta": opcion(args, "--en") }))?;
+    println!("Recuperado en «{}»: {} archivo(s).", r["donde"].as_str().unwrap_or(""), r["archivos"].as_u64().unwrap_or(0));
+    if r["sin_permiso"].as_u64().unwrap_or(0) > 0 {
+        println!("Sin {} cosa(s) que tu cuenta no puede abrir.", r["sin_permiso"]);
+    }
+    Ok(())
+}
+
 /// `nube conectar|lista|quitar`: las nubes para el espejo (nube.rs).
 fn nube(args: &[String]) -> Result<(), String> {
     match args.get(1).map(String::as_str) {
@@ -542,6 +584,8 @@ fn orden(args: &[String]) -> Result<(), String> {
             }
         }
         "ordenes" => ordenes(args),
+        // 0.8.1 (H1, 15mm): como el usuario que la escribe (no hace falta ser administrador).
+        "recuperar" => recuperar(args),
         "config" => {
             crate::agent::require_admin()?;
             let archivo = arg(args, 2)?;

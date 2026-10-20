@@ -110,6 +110,17 @@ pub fn main() -> i32 {
     // La ventana (docs/agente-ventana.md): la abre la bandeja, como el usuario.
     // 15o: si no se puede abrir (como administrador o sin WebView2), un cuadro de aviso con el
     // motivo y qué hacer, en vez de cerrarse sin decir nada.
+    // 0.8.1 (H1, 15mm): «Versiones anteriores con Resguardo» en el Explorador.
+    if let Some(r) = value("--recuperar") {
+        return match crate::ventana::recuperar(&r) {
+            Ok(()) => 0,
+            Err(e) => {
+                crate::agent::log(&format!("Ventana (recuperar): {e}"));
+                crate::ventana::explicar_que_no_abre(&e);
+                1
+            }
+        };
+    }
     if has("--ventana") {
         return match crate::ventana::run() {
             Ok(()) => 0,
@@ -158,6 +169,8 @@ pub fn main() -> i32 {
 /// (15jj: la copia que quedó «en curso» la anota como interrumpida la primera vuelta, que
 /// es la que sabe si de verdad no hay ninguna en marcha.)
 fn al_arrancar() {
+    // 0.8.1 (H1): el menú del Explorador, como digan los ajustes (sin ellos, quitado).
+    crate::recuperar::sincronizar_menu(None);
     // 15p: las copias derivadas «de cada día» quitadas que la consola seguía viendo.
     if let Some(mut v) = crate::servidor_v2::cargar() {
         let arreglados = crate::gestion_v2::limpiar_externas_sin_tarea(&mut v, &crate::agent::load_config());

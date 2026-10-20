@@ -1178,6 +1178,14 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // (datos_cliente.rs). El tipo y las marcas de un destino, solo con la clave.
         "datos_cliente" | "datos_cliente_admin" => {
             let m = crate::datos_cliente::aplicar(v, c, o.tipo == "datos_cliente_admin", o.por.as_deref())?;
+            // H1: si cambió «Recuperar en el equipo», el menú del Explorador lo sigue.
+            if c["entradas"].as_array().is_some_and(|xs| xs.iter().any(|x| x["clave"] == "ajuste:recuperar")) {
+                let v2 = v.clone();
+                std::thread::spawn(move || {
+                    let a = crate::recuperar::ajustes();
+                    crate::recuperar::sincronizar_menu_con(Some(&v2), &a);
+                });
+            }
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
@@ -1185,6 +1193,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // equipo dueño o, con `usuario`, en el almacén). Se suben al momento a todas.
         "comentario_version" => {
             let m = crate::versiones_v2::comentar(v, c, o.por.as_deref())?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        // 0.8.1 (H1, 15mm): «Recuperar en el equipo» en una copia (con la clave).
+        "recuperar_en_equipo" => {
+            let m = crate::recuperar::cambiar(c)?;
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
