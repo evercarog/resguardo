@@ -783,6 +783,30 @@ pub fn adonde_en_palabras(t: &Trabajo, zonas: &[(String, String)]) -> String {
     }
 }
 
+/// 0.8.1 (15t): los espejos que cambian de nombre, en palabras («"X" ahora se llama "Y"»),
+/// para el resultado de la orden que ven todas las consolas en el historial.
+pub fn renombres(antes: &[Trabajo], ahora: &[Trabajo]) -> Vec<String> {
+    let corto = |t: &str| t.trim().chars().take(60).collect::<String>();
+    ahora
+        .iter()
+        .filter_map(|n| {
+            let a = antes.iter().find(|a| a.id == n.id)?;
+            (corto(&a.nombre) != corto(&n.nombre) && !n.nombre.trim().is_empty())
+                .then(|| format!("«{}» ahora se llama «{}»", corto(&a.nombre), corto(&n.nombre)))
+        })
+        .collect()
+}
+
+/// Lo de [`renombres`] como final de una frase («. "X" ahora se llama "Y".»), o nada.
+pub fn texto_renombres(antes: &[Trabajo], ahora: &[Trabajo]) -> String {
+    let r = renombres(antes, ahora);
+    if r.is_empty() {
+        String::new()
+    } else {
+        format!(" {}.", r.join("; "))
+    }
+}
+
 /// 14c: qué cambia exactamente de `antes` a `ahora` (para el título de la orden en espera,
 /// que se ve en todas las consolas): «quitar «Contabilidad a la nube»», «cambiar el destino
 /// de «X» a la nube «B2»», «pausar «X»»… Sin rutas. `None` si no cambia nada que se diga.
@@ -794,6 +818,10 @@ pub fn describir_cambio(antes: &[Trabajo], ahora: &[Trabajo], zonas: &[(String, 
             partes.push(format!("quitar {}", nombre(a)));
             continue;
         };
+        // 0.8.1 (15t): un nombre nuevo también se dice.
+        if a.nombre.trim() != n.nombre.trim() && !n.nombre.trim().is_empty() {
+            partes.push(format!("{} pasa a llamarse {}", nombre(a), nombre(n)));
+        }
         if a.activo && !n.activo {
             partes.push(format!("pausar {}", nombre(a)));
         } else if !a.activo && n.activo {
@@ -1342,8 +1370,9 @@ pub fn poner_equipo(nuevos: Option<Vec<Trabajo>>) -> Result<String, String> {
     fijar_vistos(&mut nuevos, &anterior.trabajos, &|_| locales.clone());
     nuevos.sort_by_key(|t| t.orden);
     let n = nuevos.len();
+    let renombres = texto_renombres(&anterior.trabajos, &nuevos);
     guardar_equipo(&EspejoEquipo { trabajos: nuevos })?;
-    Ok(if n == 1 { "Espejo del equipo guardado.".into() } else { format!("{n} espejos del equipo guardados.") })
+    Ok(if n == 1 { format!("Espejo del equipo guardado.{renombres}") } else { format!("{n} espejos del equipo guardados.{renombres}") })
 }
 
 /// Lo que se ve de los espejos del equipo en el resumen (`null` si no hay).

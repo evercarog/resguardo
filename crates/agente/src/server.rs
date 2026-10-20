@@ -320,9 +320,11 @@ pub fn poner_trabajos(nuevos: Option<Vec<crate::espejo_trabajos::Trabajo>>) -> R
     et::fijar_vistos(&mut nuevos, &anterior, &|t| crate::espejo::repos_en(Path::new(c.carpeta_zona(t.zona.as_deref()).unwrap_or(&c.path))));
     nuevos.sort_by_key(|t| t.orden);
     let n = nuevos.len();
+    // 0.8.1 (15t): si alguno cambia de nombre, se dice (lo ven todas las consolas en el historial).
+    let renombres = et::texto_renombres(&anterior, &nuevos);
     c.espejo = Some(crate::espejo::Espejo::de_trabajos(nuevos));
     save(&c)?;
-    Ok(if n == 1 { "Espejo guardado.".into() } else { format!("{n} espejos guardados.") })
+    Ok(if n == 1 { format!("Espejo guardado.{renombres}") } else { format!("{n} espejos guardados.{renombres}") })
 }
 
 /// Dónde están los archivos del servidor: en producción, la carpeta del

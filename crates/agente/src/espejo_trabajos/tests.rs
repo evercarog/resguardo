@@ -805,3 +805,18 @@ fn que_cambia_en_palabras() {
     let muchos: Vec<Trabajo> = (0..5).map(|i| trabajo(&format!("n{i}"), carpeta("E:\\N"))).collect();
     assert!(describir_cambio(&[], &muchos, &zonas).unwrap().ends_with("y 2 cambios más"));
 }
+
+/// 0.8.1 (15t): cambiar el nombre de un espejo se dice en el resultado y en la espera.
+#[test]
+fn renombrar_un_espejo() {
+    let a = Trabajo { nombre: "Espejo de Docs".into(), ..trabajo("t1", carpeta(r"E:\Espejo")) };
+    let b = Trabajo { nombre: "Docs al disco E".into(), ..a.clone() };
+    let (aa, bb) = (std::slice::from_ref(&a), std::slice::from_ref(&b));
+    assert_eq!(renombres(aa, bb), vec!["«Espejo de Docs» ahora se llama «Docs al disco E»".to_string()]);
+    assert_eq!(texto_renombres(aa, aa), "");
+    assert!(texto_renombres(aa, bb).starts_with(" «"));
+    assert!(describir_cambio(aa, bb, &[]).unwrap().contains("pasa a llamarse «Docs al disco E»"));
+    // Sin nombre (se usa el de por defecto) no cuenta como cambio de nombre.
+    let sin = Trabajo { nombre: " ".into(), ..a.clone() };
+    assert!(renombres(aa, std::slice::from_ref(&sin)).is_empty());
+}

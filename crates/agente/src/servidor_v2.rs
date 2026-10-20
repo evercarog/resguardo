@@ -1201,6 +1201,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
+        // 0.8.1 (15t): el nombre de una copia o de una copia derivada (sube la configuración).
+        "nombre_copia" => {
+            let m = g::nombre_copia(v, c)?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
         // v1.56: olvidar un destino que ya no usa nada (nunca borra lo que hay en él).
         "quitar_destino" => {
             let m = g::quitar_destino(v, c)?;
