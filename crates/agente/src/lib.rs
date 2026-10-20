@@ -32,6 +32,7 @@ pub mod adoptar_v2;
 pub mod agent;
 pub mod agente;
 pub mod ancla;
+pub mod apagar;
 pub mod bandeja;
 pub mod bitacora;
 pub mod cli;

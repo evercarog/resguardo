@@ -918,7 +918,9 @@ fn r_de(c: &Value) -> &str {
 /// 13a/13b: restaurar en otra carpeta o en un .zip pide también la clave de
 /// administración (escribe donde se elija en el equipo).
 fn pide_admin_por_cuerpo(o: &orden_v2::OrdenV2) -> bool {
-    o.tipo == "restaurar" && matches!(o.cuerpo["destino"].as_str(), Some("nueva" | "zip" | "carpeta"))
+    (o.tipo == "restaurar" && matches!(o.cuerpo["destino"].as_str(), Some("nueva" | "zip" | "carpeta")))
+        // 15kk: «Copiar ahora» que apaga el equipo al terminar.
+        || (o.tipo == "copiar_ahora" && o.cuerpo["al_terminar"].as_str().is_some_and(|m| !m.is_empty()))
 }
 
 /// Las órdenes largas (restaurar, descargar, aplicar la retención): se
@@ -1226,7 +1228,8 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(Resultado { detalle: privado.map(|p| p.to_string()), ..hecha(m) })
         }
         "copiar_ahora" => {
-            let m = g::copiar_ahora(v, c)?;
+            // 15kk: con quién la pide (para el historial si apaga el equipo al terminar).
+            let m = g::copiar_ahora_por(v, c, o.por.as_deref())?;
             vuelta_ahora();
             Ok(hecha(m))
         }

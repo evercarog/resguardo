@@ -1194,6 +1194,17 @@ impl TasksLock {
 
 /// Lo llama el agente al final de cada vuelta: si alguna tarea toca y no hay
 /// otra en marcha, lanza el proceso de tareas y sigue (no lo espera).
+/// 15kk: ¿queda alguna tarea por hacer ahora o en marcha (derivadas, verificaciones…)?
+/// Antes de apagar el equipo al terminar una copia.
+pub fn hay_pendiente(config: &AgentConfig) -> bool {
+    let mut state = load_state();
+    let ctx = DueContext::load(config, Local::now());
+    if !due(config, &mut state, &ctx, false).is_empty() {
+        return true;
+    }
+    TasksLock::acquire().is_none()
+}
+
 pub fn spawn_if_due(config: &AgentConfig) {
     let mut state = load_state();
     let ctx = DueContext::load(config, Local::now());

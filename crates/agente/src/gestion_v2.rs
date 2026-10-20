@@ -759,6 +759,12 @@ pub struct Copia {
     /// conectarse si la última copia buena es antigua.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub al_reconectar: bool,
+    /// 0.8.1 (15kk, `admite: "apagar_al_terminar"`): al terminar bien, `apagar` o `hibernar`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub al_terminar: Option<String>,
+    /// 15kk: confirmado expresamente en un equipo que guarda copias de otros (almacén).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub al_terminar_servidor: bool,
 }
 
 /// 15y: un grupo de exclusiones aplicado a una copia (sus reglas, tal como estaban).
@@ -857,6 +863,7 @@ impl Copia {
             larger_mb: self.mayores_mb,
             larger_except: if self.mayores_mb.is_some() { self.excepto_tamano.clone() } else { vec![] },
             on_reconnect: self.al_reconectar,
+            on_finish: self.al_terminar.clone(),
         }
     }
 
@@ -1275,6 +1282,9 @@ fn aplicar_config_marca(v: &mut Vinculo, c: &Value, cambiado_en_equipo: Option<S
         }
         k.valida_termina()?;
         k.valida_exclusiones()?;
+        if let Some(m) = &k.al_terminar {
+            valida_al_terminar(m, k.al_terminar_servidor)?;
+        }
         plan_de(k)?;
         k.valida_inicio()?;
     }
@@ -1532,6 +1542,9 @@ pub const ADMITE: &[&str] = &[
     // { dar_suelto }` (moverlo a la carpeta de un equipo, sin copiar), `{ sueltos_en }` y, en
     // `adoptar_repositorio` sellado, `ultima_carpetas` y `ultimo_equipo`.
     "repos_sueltos",
+    // 0.8.1 (15kk): `config.copias[].al_terminar` y `copiar_ahora { al_terminar }` (con la
+    // clave de administración): apagar o hibernar al terminar bien, con 2 minutos de aviso.
+    "apagar_al_terminar",
     // 0.8.1 (15ii): `config.movil` (sale de la oficina, margen, batería y conexión medida),
     // `config.copias[].al_reconectar` y, en un equipo que sale de la oficina, las copias sin
     // conexión dentro del margen como «aviso» con `fuera: true` (no «fallo»).
@@ -1925,7 +1938,25 @@ fn proxima_de(k: &Copia, desde: Option<chrono::DateTime<chrono::Local>>) -> Opti
 }
 
 /// `copiar_ahora {copia}` (o `{repo, copia}`): la copia de la configuración.
+/// 15kk: `apagar` o `hibernar`, y en un almacén solo con confirmación expresa (sus equipos se
+/// quedarían sin destino).
+pub fn valida_al_terminar(modo: &str, confirmado_servidor: bool) -> Result<(), String> {
+    if !crate::apagar::modo_valido(modo) {
+        return Err("Al terminar: «apagar» o «hibernar».".into());
+    }
+    if crate::server::load().enabled && !confirmado_servidor {
+        return Err("Este equipo guarda copias de otros equipos: apagarlo los dejaría sin destino. Hay que confirmarlo expresamente.".into());
+    }
+    Ok(())
+}
+
 pub fn copiar_ahora(v: &Vinculo, c: &Value) -> Result<String, String> {
+    copiar_ahora_por(v, c, None)
+}
+
+/// `copiar_ahora { copia, al_terminar?, confirmar_servidor? }` (15kk: con `al_terminar`, la
+/// orden lleva la clave de administración) y quién la pide.
+pub fn copiar_ahora_por(v: &Vinculo, c: &Value, por: Option<&str>) -> Result<String, String> {
     let copia = texto(c, "copia");
     let repo = match c["repo"].as_str() {
         Some(r) => r.to_string(),
@@ -1939,7 +1970,24 @@ pub fn copiar_ahora(v: &Vinculo, c: &Value) -> Result<String, String> {
     if !v.repos_v2.iter().any(|r| r.id == repo) {
         return Err("Ese repositorio no lo gestiona este servidor.".into());
     }
+    // 15kk: apagar o hibernar al terminar (solo esta vez).
+    let al_terminar = c["al_terminar"].as_str().filter(|m| !m.is_empty());
+    if let Some(m) = al_terminar {
+        valida_al_terminar(m, c["confirmar_servidor"] == true)?;
+    }
     crate::agent::request_backup(&repo, &copia)?;
+    if let Some(m) = al_terminar {
+        crate::apagar::pedir(crate::apagar::Pedido {
+            modo: m.to_string(),
+            clave: crate::plans::plan_key(&repo, &copia),
+            por: por.map(|p| p.chars().take(80).collect()),
+            pedido: chrono::Local::now().to_rfc3339(),
+        })?;
+        return Ok(format!(
+            "Copia pedida: empieza en unos segundos. Al terminar bien, el equipo {} (2 minutos de aviso a quien lo use).",
+            crate::apagar::verbo(m)
+        ));
+    }
     Ok("Copia pedida: empieza en unos segundos.".into())
 }
 
@@ -3674,7 +3722,7 @@ mod tests {
             "grupos_exclusiones": [{"id": "musica", "nombre": "Música", "reglas": ["*.mp3"]}], "mayores_mb": 500, "excepto_tamano": ["*.pst"]}))
         .unwrap();
         assert!(k.valida_exclusiones().is_ok());
-        assert_eq!(k.extra(), crate::agent::PlanExtra { larger_mb: Some(500), larger_except: vec!["*.pst".into()], on_reconnect: false });
+        assert_eq!(k.extra(), crate::agent::PlanExtra { larger_mb: Some(500), larger_except: vec!["*.pst".into()], on_reconnect: false, on_finish: None });
         // Sin límite, las excepciones no cuentan; y un plan sin nada nuevo no lleva `extra`.
         assert!(Copia { mayores_mb: None, ..k.clone() }.extra().vacio());
         assert!(Copia { mayores_mb: Some(0), ..k.clone() }.valida_exclusiones().is_err());
@@ -3685,6 +3733,19 @@ mod tests {
         let sin = serde_json::to_value(Copia { grupos_exclusiones: vec![], mayores_mb: None, excepto_tamano: vec![], ..k }).unwrap();
         assert!(sin.get("grupos_exclusiones").is_none() && sin.get("mayores_mb").is_none() && sin.get("excepto_tamano").is_none());
         assert!(ADMITE.contains(&"grupos_en_copias"));
+    }
+
+    /// 0.8.1 (15kk): al terminar, solo «apagar» o «hibernar»; en el plan, `on_finish`.
+    #[test]
+    fn apagar_al_terminar() {
+        assert!(valida_al_terminar("reiniciar", true).is_err());
+        assert!(valida_al_terminar("", true).is_err());
+        let k: Copia = serde_json::from_value(
+            json!({"id": "k", "nombre": "K", "repo": "r1", "carpetas": ["/d"], "horario": {"dias": [1], "horas": ["13:00"]}, "al_terminar": "hibernar"}),
+        )
+        .unwrap();
+        assert_eq!(k.extra().on_finish.as_deref(), Some("hibernar"));
+        assert!(ADMITE.contains(&"apagar_al_terminar"));
     }
 
     /// 0.8.1 (15t): el nombre de una copia derivada y lo que no vale.

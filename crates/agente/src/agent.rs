@@ -396,6 +396,9 @@ pub struct PlanExtra {
     /// 15ii: «además, al volver a conectarse» (movil.rs).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_reconnect: bool,
+    /// 15kk: al terminar bien, «apagar» o «hibernar» (apagar.rs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_finish: Option<String>,
 }
 
 impl PlanExtra {
@@ -790,6 +793,13 @@ pub struct AgentState {
     /// batería o la conexión medida (para no repetirlo cada vuelta).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aplazadas_aviso: Option<String>,
+    /// 15kk: un apagado listo para cuando no quede nada que hacer (la copia que lo pidió
+    /// terminó bien) y el nombre de esa copia.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apagar_listo: Option<(crate::apagar::Pedido, String)>,
+    /// 15kk: la cuenta atrás de un apagado en marcha.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apagando: Option<crate::apagar::EnMarcha>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2253,6 +2263,57 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dy
     record
 }
 
+/// 15kk: si quien usa el equipo pulsó «No apagar», se anota; pasada la cuenta atrás, hibernar.
+fn seguir_apagado(state: &mut AgentState, ahora: DateTime<Local>) {
+    let Some(e) = state.apagando.clone() else { return };
+    if crate::apagar::cancelado(&e) {
+        crate::apagar::cancelar();
+        state.apagando = None;
+        let m = format!("No se apagó el equipo al terminar «{}»: quien lo usaba pulsó «No apagar».", e.nombre);
+        log(&m);
+        crate::bitacora::aviso("equipo_apagado", &m);
+        return;
+    }
+    if crate::apagar::vencida(&e, ahora) {
+        state.apagando = None;
+        if e.modo == "hibernar" {
+            match crate::apagar::hibernar_ya() {
+                Ok(()) => log(&format!(
+                    "Hibernando el equipo: terminó «{}».{}",
+                    e.nombre,
+                    if crate::apagar::de_prueba() { " (Modo de prueba: no se hiberna.)" } else { "" }
+                )),
+                Err(err) => log(&format!("ERROR: no se pudo hibernar el equipo: {err}")),
+            }
+        }
+    }
+}
+
+/// 15kk: empieza la cuenta atrás si hay un apagado listo y no queda nada más que hacer ahora
+/// (otras copias que tocan, pasos encadenados, tareas pendientes o en marcha). Si queda, espera
+/// a la vuelta siguiente.
+fn empezar_apagado(config: &AgentConfig, state: &mut AgentState, ahora: DateTime<Local>) {
+    let Some((p, nombre)) = state.apagar_listo.clone() else { return };
+    if state.apagando.is_some() {
+        return;
+    }
+    let toca_algo = config.repos.iter().any(|r| r.plans.iter().any(|pl| plan_turn(r, pl, state, false, ahora).is_some()));
+    if toca_algo || crate::tasks::hay_pendiente(config) {
+        return;
+    }
+    state.apagar_listo = None;
+    let e = crate::apagar::en_marcha(&p, &nombre, ahora);
+    match crate::apagar::empezar(&e) {
+        Ok(()) => {
+            let m = crate::apagar::texto_historial(&e);
+            log(&format!("{m}{}", if crate::apagar::de_prueba() { " (Modo de prueba: no se apaga.)" } else { "" }));
+            crate::bitacora::aviso("equipo_apagado", &m);
+            state.apagando = Some(e);
+        }
+        Err(err) => log(&format!("ERROR: no se pudo apagar el equipo al terminar «{nombre}»: {err}")),
+    }
+}
+
 /// 15ii: ¿falló por no llegar al destino? (el mensaje es la frase; el detalle, lo técnico).
 fn fallo_de_red(r: &RunRecord) -> bool {
     r.result == "error" && crate::movil::es_sin_conexion(&format!("{} {}", r.message, r.detail.as_deref().unwrap_or_default()))
@@ -2479,6 +2540,8 @@ pub fn run() -> i32 {
         }
     }
 
+    // 15kk: la cuenta atrás de un apagado: «No apagar» o, pasada, hibernar.
+    seguir_apagado(&mut state, Local::now());
     // 15ii: si responde el destino (para «al volver a conectarse» y los reintentos por red) y
     // si se puede empezar con esta batería y esta conexión (solo lo que se hace solo).
     let alcance = mirar_destinos(&config, &mut state, Local::now());
@@ -2686,6 +2749,23 @@ pub fn run() -> i32 {
                         );
                     }
                 }
+                // 15kk: apagar o hibernar al terminar (pedido con «Copiar ahora» o en la copia), solo si fue bien.
+                let pedido_apagar = crate::apagar::tomar(&key).or_else(|| {
+                    plan.extra.on_finish.as_ref().map(|m| crate::apagar::Pedido {
+                        modo: m.clone(),
+                        clave: key.clone(),
+                        por: None,
+                        pedido: Local::now().to_rfc3339(),
+                    })
+                });
+                if let Some(p) = pedido_apagar {
+                    if record.result == "error" {
+                        log(&format!("«{}» (plan «{}») falló: no se apaga el equipo (para poder mirar qué pasó).", repo.name, plan.name));
+                        state.apagar_listo = None;
+                    } else {
+                        state.apagar_listo = Some((p, plan.name.clone()));
+                    }
+                }
                 // 15ii: la última copia buena (para «al volver a conectarse» y el margen de «sale de la oficina»).
                 if record.result != "error" {
                     state.ultima_buena.insert(key.clone(), record.finished.clone());
@@ -2756,6 +2836,8 @@ pub fn run() -> i32 {
         let result = crate::protection::probe_append_only(&repo.location, auth, repo.cacert.as_deref());
         state.append_only.insert(repo.id.clone(), crate::protection::AppendOnlyCheck { checked_at: Local::now().to_rfc3339(), append_only: result });
     }
+    // 15kk: con la copia que lo pidió ya hecha y nada más por hacer, la cuenta atrás.
+    empezar_apagado(&config, &mut state, Local::now());
     let _ = crate::web::tick(&config, &secrets, &mut state, &ran, false);
     let _ = write_json("state.json", &state);
     // Verificaciones y copias externas: en otro proceso, sin esperar.

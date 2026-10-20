@@ -119,6 +119,9 @@ pub struct EstadoBandeja {
     /// Modo sin consola: se administra en el propio equipo, con su clave.
     #[serde(default)]
     pub local: bool,
+    /// 0.8.1 (15kk): el equipo se apagará (o hibernará) al terminar una copia: cuándo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apagando: Option<crate::apagar::EnMarcha>,
 }
 
 fn si() -> bool {
@@ -143,6 +146,7 @@ impl Default for EstadoBandeja {
             actividades: Vec::new(),
             hechas: Vec::new(),
             local: false,
+            apagando: None,
         }
     }
 }
@@ -222,6 +226,8 @@ pub fn componer(f: &Fuentes, ahora: &DateTime<FixedOffset>) -> EstadoBandeja {
         escrito: Some(ahora.to_rfc3339()),
         actividades: crate::escritorio::actividades_de(f.config, f.estado, f.tareas, ahora.with_timezone(&chrono::Local)),
         hechas: crate::escritorio::hechas_de(f.config, f.estado, f.tareas),
+        // 15kk: la cuenta atrás de un apagado, para avisar y ofrecer «No apagar».
+        apagando: f.estado.apagando.clone(),
         ..Default::default()
     };
     if let Some(v) = f.vinculo.filter(|v| v.modo == "local" && v.url.is_empty() && v.verificador.is_some()) {
@@ -509,6 +515,8 @@ pub enum Accion {
     Ocultar,
     /// Abrir la ventana (docs/agente-ventana.md).
     Ventana,
+    /// 15kk: parar el apagado al terminar la copia («No apagar»).
+    NoApagar,
 }
 
 /// Lo que dice el menú en lugar de «Abrir Resguardo» si la bandeja va como administrador.
@@ -552,6 +560,10 @@ pub enum Entrada {
 /// «Abrir Resguardo» lo dice y, al pulsarlo, explica cómo instalarlo (15o).
 pub fn menu(e: &EstadoBandeja, ahora: &DateTime<FixedOffset>, elevado: bool, webview2: bool) -> Vec<Entrada> {
     let mut m = vec![Entrada::Texto(linea_estado(e, ahora))];
+    // 15kk: lo primero, para pararlo a tiempo.
+    if let Some(a) = &e.apagando {
+        m.push(Entrada::Opcion(texto_no_apagar(a), Accion::NoApagar));
+    }
     // Quién gestiona el equipo, en líneas cortas (un menú no parte el texto).
     m.extend(en_lineas(&e.privacy, 60).into_iter().map(Entrada::Texto));
     m.push(Entrada::Separador);
@@ -600,6 +612,27 @@ pub struct Aviso {
     pub titulo: String,
     pub texto: String,
     pub error: bool,
+}
+
+/// 15kk: «No apagar el equipo (se apagará a las 21:32)».
+pub fn texto_no_apagar(a: &crate::apagar::EnMarcha) -> String {
+    let hora = DateTime::parse_from_rfc3339(&a.hasta).map(|h| h.with_timezone(&chrono::Local).format("%H:%M").to_string()).unwrap_or_default();
+    format!("No apagar el equipo ({} a las {hora})", crate::apagar::verbo(&a.modo))
+}
+
+/// 15kk: el aviso de que el equipo se va a apagar al terminar una copia (siempre, aunque
+/// no se pidan avisos), la primera vez que se ve la cuenta atrás.
+pub fn aviso_apagado(antes: &EstadoBandeja, ahora: &EstadoBandeja) -> Option<Aviso> {
+    let (None, Some(a)) = (&antes.apagando, &ahora.apagando) else { return None };
+    Some(Aviso {
+        titulo: cortar(&format!("El equipo {} en 2 minutos", crate::apagar::verbo(&a.modo)), 63),
+        texto: format!(
+            "Terminó la copia «{}». Para que no {}: icono de Resguardo → «No apagar».",
+            cortar(&a.nombre, 60),
+            if a.modo == "hibernar" { "hiberne" } else { "se apague" }
+        ),
+        error: true,
+    })
 }
 
 /// Lo que hay que avisar entre dos lecturas: una copia que falla o que se recupera.
@@ -1140,5 +1173,26 @@ mod tests {
                 std::fs::write(dir.join(format!("{nombre}-{lado}.bmp")), bmp).unwrap();
             }
         }
+    }
+
+    /// 15kk: con un apagado en marcha, «No apagar» lo primero y un aviso la primera vez.
+    #[test]
+    fn no_apagar() {
+        let antes = EstadoBandeja::default();
+        let a = crate::apagar::EnMarcha {
+            modo: "apagar".into(),
+            hasta: "2026-10-20T21:32:00+02:00".into(),
+            nombre: "Documentos".into(),
+            por: None,
+            desde: String::new(),
+        };
+        let ahora = EstadoBandeja { apagando: Some(a.clone()), ..Default::default() };
+        let t = DateTime::parse_from_rfc3339("2026-10-20T21:30:00+02:00").unwrap();
+        let m = menu(&ahora, &t, false, true);
+        assert!(matches!(&m[1], Entrada::Opcion(x, Accion::NoApagar) if x.starts_with("No apagar el equipo (se apagará a las")));
+        let av = aviso_apagado(&antes, &ahora).unwrap();
+        assert!(av.titulo.contains("se apagará en 2 minutos") && av.texto.contains("«Documentos»"));
+        assert!(aviso_apagado(&ahora, &ahora).is_none(), "solo la primera vez");
+        assert!(!menu(&antes, &t, false, true).iter().any(|e| matches!(e, Entrada::Opcion(_, Accion::NoApagar))));
     }
 }
