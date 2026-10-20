@@ -20,6 +20,7 @@ import {
   PackageCheck,
   ArrowRightLeft,
   ScrollText,
+  ServerCog,
   SlidersHorizontal,
   Users,
 } from "@lucide/svelte";
