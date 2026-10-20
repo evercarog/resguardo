@@ -36,6 +36,8 @@ export interface Admite {
   todasLasBases?: boolean;
   /** 15v: las etiquetas de las versiones de cada copia (agente con `admite: "etiquetas_copia"`). */
   etiquetas?: boolean;
+  /** 15y: de qué grupos vienen las reglas y «no copiar más de N MB» (agente con `admite: "grupos_en_copias"`). */
+  grupos?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -53,6 +55,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     verificarVolcado: admiteVerificarVolcado(equipo),
     todasLasBases: admiteTodasLasBases(equipo),
     etiquetas: !!equipo.resumen?.admite?.includes("etiquetas_copia"),
+    grupos: !!equipo.resumen?.admite?.includes("grupos_en_copias"),
   };
 }
 
@@ -73,7 +76,7 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
     // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
     // Plan 0.7.26: `inicio` solo para «despues» (lo demás se deduce de `tras`) y el retraso si hay; los dos, solo a un agente que los entiende.
     // Plan 0.8.0, F1: «Solo a mano» y «Termina», solo a un agente que los entiende (la consola no se los ofrece a otro).
-    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, ...resto } = k;
+    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, grupos_exclusiones, mayores_mb, excepto_tamano, ...resto } = k;
     const conTras = !!a.cadenas && !!tras;
     const conFin = !!a.termina && !!termina && (termina.veces != null || !!termina.hasta || !!termina.una_vez);
     return {
@@ -92,6 +95,9 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       ...(conFin ? { termina: Object.fromEntries(Object.entries(termina!).filter(([, v]) => v != null && v !== "")) } : {}),
       // 15v: sin etiquetas no va el campo (el agente pone «resguardo-agente»).
       ...(a.etiquetas && etiquetas?.length ? { etiquetas: [...etiquetas] } : {}),
+      // 15y: con un agente anterior, los grupos ya están en `exclusiones` (sus reglas); el límite, no se le ofrece.
+      ...(a.grupos && grupos_exclusiones?.length ? { grupos_exclusiones: grupos_exclusiones.map((g) => ({ id: g.id, nombre: g.nombre, reglas: [...g.reglas] })) } : {}),
+      ...(a.grupos && mayores_mb ? { mayores_mb, ...(excepto_tamano?.length ? { excepto_tamano: [...excepto_tamano] } : {}) } : {}),
     };
   });
   return {
@@ -147,6 +153,10 @@ export function planPlantilla(cfg: Configuracion, p: Plantilla, a: Admite, nuevo
       activa: true,
       gancho: JSON.parse(JSON.stringify(ganchos)) as Gancho[],
       solo_si_cambios: p.copia.solo_si_cambios !== false,
+      // 15y y 15v: viajan con la plantilla (configParaEnviar solo los manda a quien los entiende).
+      ...(p.copia.grupos_exclusiones?.length ? { grupos_exclusiones: JSON.parse(JSON.stringify(p.copia.grupos_exclusiones)) } : {}),
+      ...(p.copia.mayores_mb && a.grupos ? { mayores_mb: p.copia.mayores_mb, excepto_tamano: [...(p.copia.excepto_tamano ?? [])] } : {}),
+      ...(p.copia.etiquetas?.length ? { etiquetas: [...p.copia.etiquetas] } : {}),
     },
   };
 }

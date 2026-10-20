@@ -7,7 +7,7 @@
 import * as api from "./api";
 import { aB64, deB64 } from "./cripto/bytes";
 import { cifrarPlantilla, clavePlantillas, descifrarPlantilla } from "./cripto/simetrico";
-import type { CopiaConfig, Gancho, Horario, Regla } from "./tipos";
+import type { CopiaConfig, Gancho, Horario, Regla, GrupoUsado } from "./tipos";
 import { textoRegla } from "./retencion";
 
 /** La de un repositorio (v1.28: también horarias y plazos). */
@@ -24,6 +24,12 @@ export interface Plantilla {
     horario: Horario;
     solo_si_cambios?: boolean;
     gancho: Gancho[];
+    /** 0.8.1 (15y): los grupos de exclusiones (para saber de dónde vienen sus reglas) y el tamaño máximo. */
+    grupos_exclusiones?: GrupoUsado[];
+    mayores_mb?: number | null;
+    excepto_tamano?: string[];
+    /** 0.8.1 (15v): las etiquetas de las versiones. */
+    etiquetas?: string[];
   };
   /** La retención del repositorio de la copia al guardarla (solo como sugerencia: es del repositorio). */
   retencion?: Retencion | null;
@@ -66,6 +72,9 @@ export function plantillaDe(k: CopiaConfig, nombre: string, ganchos: Gancho[], r
       horario: JSON.parse(JSON.stringify(k.horario)) as Horario,
       solo_si_cambios: k.solo_si_cambios !== false,
       gancho: JSON.parse(JSON.stringify(ganchos)) as Gancho[],
+      ...(k.grupos_exclusiones?.length ? { grupos_exclusiones: JSON.parse(JSON.stringify(k.grupos_exclusiones)) as GrupoUsado[] } : {}),
+      ...(k.mayores_mb ? { mayores_mb: k.mayores_mb, excepto_tamano: [...(k.excepto_tamano ?? [])] } : {}),
+      ...(k.etiquetas?.length ? { etiquetas: [...k.etiquetas] } : {}),
     },
     retencion: retencion ? { ...retencion } : null,
     creada: new Date().toISOString(),

@@ -109,6 +109,8 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       ...(c.inicio ? { inicio: c.inicio } : {}),
       ...(c.retraso_min ? { retraso_min: c.retraso_min } : {}),
       ...(c.etiquetas?.length ? { etiquetas: c.etiquetas } : {}),
+      ...(c.grupos_exclusiones?.length ? { grupos_exclusiones: c.grupos_exclusiones } : {}),
+      ...(c.mayores_mb ? { mayores_mb: c.mayores_mb } : {}),
       // CONTABILIDAD (agente 0.7.2) vuelca sus bases de SQL Server antes de copiar «Ventas» (14gg: varias).
       gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
@@ -199,6 +201,8 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       retraso_min: c.retraso_min ?? null,
       // 15v: las etiquetas de sus versiones (solo con un agente que las entiende).
       ...(previo.admite?.includes("etiquetas_copia") ? { etiquetas: c.etiquetas?.length ? c.etiquetas : null } : {}),
+      // 15y: los grupos de exclusiones que usa (con sus reglas) y el tamaño máximo.
+      ...(previo.admite?.includes("grupos_en_copias") ? { grupos_exclusiones: c.grupos_exclusiones?.length ? c.grupos_exclusiones : null, mayores_mb: c.mayores_mb ?? null } : {}),
       // Plan 0.8.0, F1: como el agente con `admite: "termina"` (la cuenta vuelve a cero si cambia la regla).
       ...(previo.admite?.includes("termina")
         ? (() => {
@@ -958,6 +962,27 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     // Plan 0.8.0, B1: el nombre de un repositorio (como el agente).
     // Plan 0.8.1 (15u): «Ver las bases de la instancia», sellada para la consola (como el agente).
+    case "vista_exclusiones": {
+      // 0.8.1 (15y): cuenta, como el agente, lo que deja fuera cada grupo (aquí, con cifras inventadas pero estables).
+      if (!e.resumen?.admite?.includes("grupos_en_copias")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      if (!plana.responder_a) return resultado(e, o, "rechazada", "Falta responder_a para entregar la vista previa.");
+      const carpetas = Array.isArray(c.carpetas) ? (c.carpetas as string[]) : [];
+      if (!carpetas.length) return resultado(e, o, "fallida", "Elige de 1 a 100 carpetas.");
+      await espera(1500);
+      const MB = 1024 * 1024;
+      const GB = 1024 * MB;
+      const tipico: Record<string, [number, number]> = { temporales: [3400, 1.2 * GB], musica: [812, 6.4 * GB], video: [37, 21 * GB], "imagenes-disco": [2, 9.5 * GB], instaladores: [64, 3.1 * GB] };
+      const grupos = ((c.grupos as { id: string }[]) ?? []).map((g) => {
+        const [a, b] = tipico[g.id] ?? [0, 0];
+        return { id: g.id, archivos: a * carpetas.length, bytes: Math.round(b * carpetas.length) };
+      });
+      const total = { archivos: 48_200 * carpetas.length, bytes: Math.round(96 * GB * carpetas.length) };
+      const tamano = c.mayores_mb ? { archivos: 6, bytes: Math.round(14.2 * GB) } : null;
+      const sueltas = { archivos: 120, bytes: 340 * MB };
+      const fuera = (c.grupos as { id: string }[] | undefined)?.length ? grupos.reduce((s, g) => s + g.bytes, 0) * 0.4 : 0;
+      const quedan = { archivos: total.archivos - 4400, bytes: Math.max(0, Math.round(total.bytes - fuera - (tamano?.bytes ?? 0) - sueltas.bytes)) };
+      return resultado(e, o, "hecha", `Revisados ${total.archivos.toLocaleString("es")} archivos.`, JSON.stringify({ sellado: detallePara(plana, { total, grupos, sueltas, tamano, quedan, completo: true }) }));
+    }
     case "bases_sqlserver": {
       if (!plana.responder_a) return resultado(e, o, "rechazada", "Falta responder_a para entregar la lista.");
       const bases = [

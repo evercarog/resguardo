@@ -65,7 +65,8 @@
   import { app } from "$lib/estado.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import CopiaGuiada from "$lib/componentes/copias/CopiaGuiada.svelte";
-  import AvisoExclusiones from "$lib/componentes/copias/AvisoExclusiones.svelte";
+  import NoCopiar from "$lib/componentes/copias/NoCopiar.svelte";
+  import { ADMITE_GRUPOS, errorTamano } from "$lib/exclusionesCopia";
   import EtiquetasVersiones from "$lib/componentes/copias/EtiquetasVersiones.svelte";
   import CuandoEmpieza from "$lib/componentes/copias/CuandoEmpieza.svelte";
   import ResumenCopia from "$lib/componentes/copias/ResumenCopia.svelte";
@@ -272,6 +273,11 @@
     k.horario = JSON.parse(JSON.stringify(p.copia.horario)) as CopiaConfig["horario"];
     k.solo_si_cambios = p.copia.solo_si_cambios !== false;
     k.gancho = JSON.parse(JSON.stringify(p.copia.gancho ?? [])) as Gancho[];
+    // 15y y 15v: los grupos, el tamaño máximo y las etiquetas viajan con la plantilla.
+    k.grupos_exclusiones = JSON.parse(JSON.stringify(p.copia.grupos_exclusiones ?? [])) as CopiaConfig["grupos_exclusiones"];
+    k.mayores_mb = admiteGrupos ? (p.copia.mayores_mb ?? null) : null;
+    k.excepto_tamano = k.mayores_mb ? [...(p.copia.excepto_tamano ?? [])] : [];
+    k.etiquetas = [...(p.copia.etiquetas ?? [])];
     usadas[k.id] = p;
   }
   function nuevaDesde(p: Plantilla) {
@@ -433,6 +439,8 @@
   const admiteFiltros = $derived(admite(equipo, ADMITE.filtros));
   /** 0.8.1 (15v): las etiquetas de las versiones de cada copia. */
   const admiteEtiquetas = $derived(admite(equipo, ADMITE_ETIQUETAS));
+  /** 0.8.1 (15y): de qué grupos vienen las reglas, «no copiar más de N MB» y la vista previa. */
+  const admiteGrupos = $derived(admite(equipo, ADMITE_GRUPOS));
   /** Lo que cada control de «Cuándo empieza» puede ofrecer con este agente. */
   const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, termina: admiteTermina });
   /** Una copia antigua «después de» que además tenía su horario (ya no se ofrece): se dice y se puede quitar. */
@@ -735,6 +743,7 @@
       ...(problemaHorario(k) ? [problemaHorario(k)!] : []),
       ...(ganchosDe(k.gancho).length && !admiteGanchos ? [`«${k.nombre}» tiene pasos «Antes de copiar» que este agente aún no admite`] : []),
       ...(ganchosDe(k.gancho).some((g) => errorGancho(g)) ? [`«${k.nombre}» tiene un paso «Antes de copiar» por completar`] : []),
+      ...(errorTamano(k) ? [errorTamano(k)!] : []),
     ])).concat(cfg && errorCadenas(cfg.copias) ? [errorCadenas(cfg.copias)!.replace(/\.$/, "")] : []),
   );
 
@@ -757,6 +766,7 @@
         // Plan 0.8.0, F1: «Solo a mano», «Una sola vez» y «Termina».
         termina: admiteTermina,
         etiquetas: admiteEtiquetas,
+        grupos: admiteGrupos,
       });
       // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
       for (const h of [...historiales]) {
@@ -977,7 +987,7 @@
                   cliente={actual.cliente}
                   prueba={prueba ?? undefined}
                   version={versionAgente}
-                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas }}
+                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas, grupos: admiteGrupos }}
                   regla={rc}
                   puede={puedeSugerir(k)}
                   pendientes={pendientesDe(k)}
@@ -1039,11 +1049,7 @@
                     <textarea id="carp-{k.id}" class="input mono" rows="4" spellcheck="false" value={k.carpetas.join("\n")} oninput={(e) => ponerCarpetas(k, lineas(e.currentTarget.value), equipo!.nombre)} placeholder={/windows/i.test(equipo.so) ? "C:\\Users\\nombre\\Documents" : "/home/nombre"}></textarea>
                     <button type="button" class="btn btn-sm elegir" onclick={() => (elegirPara = i)}><FolderOpen size={14} />Elegir en el equipo</button>
                   </div>
-                  <div class="field">
-                    <label class="field-label" for="exc-{k.id}">No copiar <Ayuda id="exclusiones" /></label>
-                    <textarea id="exc-{k.id}" class="input mono" rows="4" spellcheck="false" value={k.exclusiones.join("\n")} oninput={(e) => (k.exclusiones = lineas(e.currentTarget.value))}></textarea>
-                    <AvisoExclusiones {k} />
-                  </div>
+                  {#if actual.cliente}<NoCopiar {k} id="exc-{k.id}" {equipo} cliente={actual.cliente} prueba={prueba ?? undefined} admite={admiteGrupos} version={versionAgente} />{/if}
                 </div>
                 {#if admiteSoloCambios}
                   <label class="switch-row"

@@ -493,6 +493,10 @@ export interface CopiaResumen {
   completada?: string | null;
   /** 0.8.1 (15v): las etiquetas de sus versiones (sin ellas, «resguardo-agente»). */
   etiquetas?: string[] | null;
+  /** 0.8.1 (15y): los grupos de exclusiones que usa, con sus reglas (sin las sueltas, que pueden llevar rutas). */
+  grupos_exclusiones?: GrupoUsado[] | null;
+  /** 15y: el tamaño máximo (MB). */
+  mayores_mb?: number | null;
 }
 
 /** Plan 0.8.0, F1 (14pp): cuándo termina una copia. */
@@ -1389,6 +1393,19 @@ export interface CopiaConfig {
   termina?: Termina | null;
   /** 0.8.1 (15v, `admite: "etiquetas_copia"`): las etiquetas de sus versiones (hasta 10). */
   etiquetas?: string[];
+  /** 0.8.1 (15y, `admite: "grupos_en_copias"`): de qué grupos vienen reglas de `exclusiones` (con las suyas de entonces). */
+  grupos_exclusiones?: GrupoUsado[];
+  /** 15y: «No copiar archivos de más de N MB». */
+  mayores_mb?: number | null;
+  /** 15y: tipos que se copian aunque pasen del límite (`*.pst`). */
+  excepto_tamano?: string[];
+}
+
+/** 15y: un grupo de exclusiones aplicado a una copia. */
+export interface GrupoUsado {
+  id: string;
+  nombre: string;
+  reglas: string[];
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */

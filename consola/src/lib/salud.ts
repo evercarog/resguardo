@@ -165,6 +165,7 @@ export const NOMBRE_ORDEN: Record<string, string> = {
   comentario_version: "Comentar una versión",
   bases_sqlserver: "Ver las bases de SQL Server",
   nombre_copia: "Cambiar el nombre de una copia",
+  vista_exclusiones: "Ver cuánto deja fuera «No copiar»",
   conservar_version: "Conservar una versión para siempre",
 };
 

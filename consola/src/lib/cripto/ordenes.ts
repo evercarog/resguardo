@@ -86,6 +86,8 @@ export const NIVEL: Record<string, Nivel> = {
   conservar_version: "admin",
   // Plan 0.8.1 (15t): el nombre de una copia o de una copia derivada (con la clave, sin espera).
   nombre_copia: "admin",
+  // Plan 0.8.1 (15y): la vista previa de «No copiar» (recorre carpetas del equipo, como «Elegir en el equipo»).
+  vista_exclusiones: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */

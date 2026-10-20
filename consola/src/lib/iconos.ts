@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Monitor,
   Pause,
+  Eye,
   Pencil,
   Pin,
   Play,
@@ -111,6 +112,7 @@ const ORDEN: Record<string, Icono> = {
   comentario_version: MessageSquare,
   bases_sqlserver: Database,
   nombre_copia: Pencil,
+  vista_exclusiones: Eye,
   conservar_version: Pin,
 };
 

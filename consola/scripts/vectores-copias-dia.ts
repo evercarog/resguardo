@@ -1,7 +1,8 @@
 // Pruebas del bloque D del plan 0.8.1 («Las copias de cada día, más fáciles»; docs/plan-0.8.1.md):
 // el nombre que se propone con las carpetas (15t), las etiquetas de las versiones (15v) y
 // la retención «Personalizada» desde cero (15z). `npm run test:vectores`.
-import type { Configuracion } from "../src/lib/tipos";
+import type { Configuracion, CopiaConfig, Equipo } from "../src/lib/tipos";
+import { alternarGrupo, copiasQueUsan, cuerpoVista, errorTamano, leerVista, ponerAlDia, ponerSueltas, sueltas, tamanoEnFrase, usaGrupo } from "../src/lib/exclusionesCopia";
 import { copiaNueva, etiquetasEnUso, limpiarEtiquetaVersion, nombrePropuesto, ponerCarpetas } from "../src/lib/copiaGuiada";
 import { configParaEnviar, type Admite } from "../src/lib/configEnvio";
 import { reglaSinNada, reglaVacia, sinPeriodo } from "../src/lib/retencion";
@@ -55,6 +56,45 @@ function igual(nombre: string, obtenido: unknown, esperado: unknown) {
   igual("quitar las diarias deja el plazo de las horarias", sinPeriodo(r, "diarias"), { diarias: 0, semanales: 0, mensuales: 0, anuales: 0, plazos: { horarias: "15d" } });
   igual("quitar todas deja la regla vacía", reglaSinNada(sinPeriodo(sinPeriodo(r, "diarias"), "horarias")), true);
   igual("sin tocar la original", r.plazos, { horarias: "15d", diarias: "1y" });
+}
+
+// --- 15y: grupos de exclusiones en una copia, tamaño máximo y vista previa ---
+{
+  const musica = { id: "musica", nombre: "Música", reglas: ["*.mp3", "*.flac"] };
+  const temp = { id: "temporales", nombre: "Archivos temporales", reglas: ["*.tmp", "~$*"] };
+  const k = { ...copiaNueva("r1", "k1"), exclusiones: ["*.tmp", "C:\\Datos\\cache"] } as CopiaConfig;
+  alternarGrupo(k, temp, true);
+  igual("activar un grupo añade sus reglas sin repetir", k.exclusiones, ["*.tmp", "C:\\Datos\\cache", "~$*"]);
+  alternarGrupo(k, musica, true);
+  igual("y queda anotado", [usaGrupo(k, "temporales"), usaGrupo(k, "musica")], [true, true]);
+  igual("las sueltas son las que no pone ningún grupo", sueltas(k), ["C:\\Datos\\cache"]);
+  ponerSueltas(k, ["C:\\Datos\\cache", "*.iso", " "]);
+  igual("cambiar las sueltas deja las de los grupos", k.exclusiones, ["*.tmp", "~$*", "*.mp3", "*.flac", "C:\\Datos\\cache", "*.iso"]);
+  alternarGrupo(k, temp, false);
+  igual("quitar un grupo quita sus reglas", k.exclusiones, ["*.mp3", "*.flac", "C:\\Datos\\cache", "*.iso"]);
+  const musica2 = { ...musica, reglas: ["*.mp3", "*.m4a"] };
+  igual("poner al día cambia las reglas del grupo", [ponerAlDia(k, musica2), k.exclusiones], [true, ["C:\\Datos\\cache", "*.iso", "*.mp3", "*.m4a"]]);
+  igual("uno que no usa, no", ponerAlDia(k, temp), false);
+  const eq = (copias: unknown[]) => ({ id: "e", nombre: "PC-01", resumen: { copias } }) as unknown as Equipo;
+  const usos = copiasQueUsan([eq([{ id: "a", nombre: "A", grupos_exclusiones: [{ ...musica }] }, { id: "b", nombre: "B" }]), eq([{ id: "c", nombre: "C", grupos_exclusiones: [{ ...musica2 }] }])], musica2);
+  igual("qué copias usan un grupo y si están al día", usos.map((x) => [x.copia.id, x.alDia]), [["a", false], ["c", true]]);
+  igual("tamaño en frase", tamanoEnFrase({ mayores_mb: 2048, excepto_tamano: ["*.pst", "*.bak"] }), "nada de más de 2 GB, salvo *.pst, *.bak");
+  igual("sin límite, nada", tamanoEnFrase({ mayores_mb: null }), null);
+  igual("límite no válido", errorTamano({ nombre: "K", mayores_mb: 0 }) !== null, true);
+  igual("el cuerpo de la vista previa", cuerpoVista({ ...k, carpetas: ["C:\\Datos"], mayores_mb: 500, excepto_tamano: ["*.pst"] }, [musica2, temp]), {
+    carpetas: ["C:\\Datos"],
+    grupos: [{ id: "musica", reglas: ["*.mp3", "*.m4a"] }, { id: "temporales", reglas: ["*.tmp", "~$*"] }],
+    sueltas: ["C:\\Datos\\cache", "*.iso"],
+    mayores_mb: 500,
+    excepto: ["*.pst"],
+  });
+  igual("una respuesta rara, a cero", leerVista({ grupos: [{ id: "x" }], completo: "sí" }), { total: { archivos: 0, bytes: 0 }, grupos: [{ id: "x", archivos: 0, bytes: 0 }], sueltas: { archivos: 0, bytes: 0 }, tamano: null, quedan: { archivos: 0, bytes: 0 }, completo: false });
+  const a: Admite = { reglas: true, ganchos: true, soloCambios: true, verif: false, verifHorario: false, escritorio: false, grupos: true };
+  const c1 = { v: 1, copias: [{ ...k, carpetas: ["C:\\D"], mayores_mb: 500, excepto_tamano: ["*.pst"] }], repositorios: [], destinos: [] } as unknown as Configuracion;
+  const x = configParaEnviar(c1, a).copias[0] as Record<string, unknown>;
+  igual("con el agente que lo entiende, van los grupos y el tamaño", [!!x.grupos_exclusiones, x.mayores_mb, x.excepto_tamano], [true, 500, ["*.pst"]]);
+  const y = configParaEnviar(c1, { ...a, grupos: false }).copias[0] as Record<string, unknown>;
+  igual("a uno anterior, solo las reglas", ["grupos_exclusiones" in y, "mayores_mb" in y, (y.exclusiones as string[]).includes("*.m4a")], [false, false, true]);
 }
 
 console.log(`\n${total - fallos}/${total} ${fallos ? "con fallos" : "bien"}`);
