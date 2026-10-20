@@ -15,6 +15,8 @@
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { bytes, numero, plural, relativo } from "$lib/formato";
   import { tip } from "$lib/tooltip";
+  import { TEXTO_ADOPTADO } from "$lib/almacenUnico";
+  import { hrefNube } from "$lib/nubesAlmacen";
   import { bytesRepo, estadoRepo, informeDe, nVersiones } from "$lib/repo";
   import { TEXTO_TIPO } from "$lib/destinos";
   import { nombreTipoNube } from "$lib/espejo";
@@ -58,9 +60,9 @@
   const v = $derived(vistaPorClave(clave, actual.equipos, catalogoDe(actual.id)));
   const suyos = $derived(v ? reposEnDestino(v, actual.equipos) : []);
   const filas = $derived(
-    suyos.map(({ equipo: e, repo: r }) => {
+    suyos.map(({ equipo: e, repo: r, adoptado }) => {
       const inf = informeDe(ultimos.porEquipo[e.id], r.id);
-      return { e, r, versiones: nVersiones(r, inf), tam: bytesRepo(r, inf), estado: estadoRepo(r, inf, e.resumen?.copias ?? [], reloj.ahora) };
+      return { e, r, adoptado: !!adoptado, versiones: nVersiones(r, inf), tam: bytesRepo(r, inf), estado: estadoRepo(r, inf, e.resumen?.copias ?? [], reloj.ahora) };
     }),
   );
   // Plan 0.8.0 (B2, 14r): los espejos que llegan aquí, por su nombre, con los repositorios que guarda cada uno.
@@ -72,7 +74,7 @@
           ...x,
           filas: x.repos.map((r) => {
             const aqui = x.trabajo.ocupa?.repos?.[r.valor];
-            return { ...r, real: aqui != null, tam: aqui ?? (r.repo && r.equipo ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null) };
+            return { ...r, real: aqui != null, tam: aqui ?? (r.repo && r.equipo && !r.derivada ? bytesRepo(r.repo, informeDe(ultimos.porEquipo[r.equipo.id], r.repo.id)) : null) };
           }),
         }))
       : [],
@@ -139,15 +141,15 @@
     <Esqueleto forma="tarjetas" n={2} />
   {:else if !v}
     <div class="card">
-      <Vacio icono={Database} ilustracion="no-encontrado" titulo="Este destino ya no está" texto="Puede que se quitara la zona o se desconectara la nube. Los demás destinos están en «Repositorios y destinos».">
-        <a class="btn btn-primary" href="/c/{c}/repositorios#destinos">Ver los destinos</a>
+      <Vacio icono={Database} ilustracion="no-encontrado" titulo="Este destino ya no está" texto="Puede que se quitara la zona o se desconectara la nube. Los demás destinos están en «Destinos».">
+        <a class="btn btn-primary" href="/c/{c}/destinos#destinos">Ver los destinos</a>
       </Vacio>
     </div>
   {:else}
     <CabeceraPagina
       titulo={v.nombre}
       icono={Icono}
-      migas={[{ texto: actual.cliente.nombre, href: `/c/${c}` }, { texto: "Repositorios y destinos", href: `/c/${c}/repositorios#destinos` }, { texto: v.nombre }]}
+      migas={[{ texto: actual.cliente.nombre, href: `/c/${c}` }, { texto: "Destinos", href: `/c/${c}/destinos#destinos` }, { texto: v.nombre }]}
       resumen="{queEs}{v.renombrado ? ` · antes «${v.nombrePorDefecto}»` : ''}"
     >
       {#snippet acciones()}
@@ -268,7 +270,7 @@
                           <ArrowRight size={14} class="flecha" />
                         </a>
                       {:else}
-                        <span class="fila-d"><Database size={14} class="ic" /><span class="fd-texto"><strong class="mono">{f.nombre}</strong><span class="faint">De un equipo que no está en esta consola</span></span></span>
+                        <span class="fila-d"><Database size={14} class="ic" /><span class="fd-texto"><strong class:mono={!f.equipo}>{f.nombre}</strong><span class="faint">{f.de.replace(/^./, (l) => l.toUpperCase())}</span></span></span>
                       {/if}
                     </li>
                   {/each}
@@ -291,7 +293,7 @@
               <li>
                 <a class="fila-d" href="/c/{c}/equipos/{x.e.id}/repositorios/{encodeURIComponent(x.r.id)}">
                   <Database size={16} class="ic" />
-                  <span class="fd-texto"><strong>{x.r.nombre}</strong><span class="faint">{x.e.nombre} · {plural(x.versiones, "versión", "versiones")}{x.tam ? ` · ${bytes(x.tam)}` : ""}</span></span>
+                  <span class="fd-texto"><strong>{x.r.nombre}{#if x.adoptado} <span class="badge badge-sm tone-neutral" use:tip={TEXTO_ADOPTADO}>Adoptado</span>{/if}</strong><span class="faint">{x.e.nombre} · {plural(x.versiones, "versión", "versiones")}{x.tam ? ` · ${bytes(x.tam)}` : ""}</span></span>
                   <Chip pequeno tono={x.estado.tono} texto={x.estado.texto} />
                   <ArrowRight size={14} class="flecha" />
                 </a>
@@ -384,6 +386,8 @@
         <div class="chips">
           <QuitarDestino cliente={actual.cliente} {v} equipos={actual.equipos} variante="pagina" alCambiar={recargar} />
         </div>
+        <!-- 15s: la página de la nube en su equipo (lo que guarda por espejo, conexión y «Probar»). -->
+        {#if v.nube}<p class="faint"><a class="link-suave" href={hrefNube(c, v.nube.equipo.id, v.nube.nombre)}>Ver «{v.nube.nombre}» en {v.nube.equipo.nombre}</a>: lo que guarda cada espejo, la conexión y «Probar».</p>{/if}
       </section>
     {/if}
   {/if}

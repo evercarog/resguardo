@@ -501,7 +501,7 @@
         {:else}
           <p class="faint">Ninguna restauración en este periodo.</p>
         {/if}
-        <p class="leyenda no-imprimir"><a href="/c/{actual.id}/restauraciones">Ver todas las restauraciones</a></p>
+        <p class="leyenda no-imprimir"><a href="/c/{actual.id}/recuperar/restauraciones">Ver todas las restauraciones</a></p>
       </section>
 
       <!-- Plan 0.8.0 (E3, 14k): las pruebas funcionales del periodo. -->
@@ -541,7 +541,7 @@
           {:else}
             <p class="faint">Ninguna prueba funcional en este periodo.</p>
           {/if}
-          <p class="leyenda no-imprimir"><a href="/c/{actual.id}/pruebas">Ver todas las pruebas funcionales</a></p>
+          <p class="leyenda no-imprimir"><a href="/c/{actual.id}/recuperar/pruebas">Ver todas las pruebas funcionales</a></p>
         </section>
       {/if}
 

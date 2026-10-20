@@ -7,6 +7,8 @@
 //! Desde aquí también se da de alta un cliente **para otra persona**: el
 //! cliente se crea sin que el propietario del servidor sea miembro, con una
 //! invitación de propietario (de un solo uso, 7 días) para quien lo va a llevar.
+//!
+//! 15nn: y se borra (sin equipos, con su nombre escrito), se archiva y se recupera.
 
 use super::fecha_opt;
 use crate::almacen::{ahora, ClienteCtx, Rol};
@@ -15,6 +17,7 @@ use crate::cuotas::{self, Cuotas};
 use crate::error::{ErrorApi, Res};
 use crate::estado::St;
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 use base64::Engine;
 use rand::RngCore;
@@ -58,6 +61,8 @@ pub async fn listar(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
                     "ultima_actividad": fecha_opt(uso.ultima_actividad), "bytes": uso.bytes,
                     "relevo_mes_bytes": relevo,
                     "cuotas": propias, "efectivas": efectivas,
+                    // 15nn: cuándo se archivó (null: activo).
+                    "archivado": fecha_opt(c.archivado),
                 }));
             }
             Ok((cuotas::predeterminadas(db, publico)?, filas))
@@ -182,4 +187,120 @@ pub async fn invitar_propietario(State(st): State<St>, u: Usuario, Path(c): Path
         Err(e) if e == "no_existe" => Err(ErrorApi::no_existe()),
         Err(e) => Err(ErrorApi::nuevo(axum::http::StatusCode::CONFLICT, "conflicto", e)),
     }
+}
+
+// ---------- 15nn: borrar, archivar y recuperar un cliente ----------
+
+#[derive(Deserialize)]
+pub struct Borrar {
+    /// El nombre del cliente, escrito para confirmar (tal cual, sin contar los espacios de los lados).
+    nombre: String,
+}
+
+/// `DELETE /api/servidor/clientes/{c}` (15nn): borra el cliente de verdad, con todo lo
+/// suyo. Solo si no tiene ningún equipo (tampoco sin confirmar) y con su nombre escrito
+/// para confirmar; queda en la auditoría del servidor (la del cliente se va con él).
+pub async fn borrar(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json(p): Json<Borrar>) -> Res<StatusCode> {
+    solo_propietario_servidor(&u)?;
+    let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    let c2 = c.clone();
+    let r = st
+        .db_crudo(move |db| {
+            let Some(cl) = db.cliente(&c2)? else { return Err("no_existe".into()) };
+            if p.nombre.trim() != cl.nombre.trim() {
+                return Err("nombre".into());
+            }
+            let equipos = db.equipos(&ClienteCtx::autorizado(&c2))?.len();
+            if equipos > 0 {
+                return Err(format!("equipos:{equipos}"));
+            }
+            let personas = db.miembros(&c2)?.len();
+            let completo = db.borrar_cliente(&c2)?;
+            let mut datos = json!({ "nombre": cl.nombre, "personas": personas });
+            if !completo {
+                datos["archivo_pendiente"] = json!(true);
+            }
+            db.auditar_servidor(&actor, "borrar_cliente", &c2, &datos.to_string())?;
+            Ok(completo)
+        })
+        .await?;
+    match r {
+        Ok(completo) => {
+            if !completo {
+                eprintln!("Cliente {c} borrado; su archivo de datos (clientes/{c}.db) no se pudo borrar: bórralo a mano.");
+            }
+            // Sus archivos sueltos: el paquete de exportación y los relés que quedaran.
+            if let Some(ruta) = super::clientes::ruta_paquete(&st, &c) {
+                let _ = tokio::fs::remove_file(ruta).await;
+            }
+            if uuid::Uuid::parse_str(&c).is_ok() {
+                let _ = tokio::fs::remove_dir_all(st.datos.join("relevos").join(&c)).await;
+            }
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(e) if e == "no_existe" => Err(ErrorApi::no_existe()),
+        Err(e) if e == "nombre" => Err(ErrorApi::datos("El nombre no coincide: escribe el nombre del cliente tal cual para confirmar.")),
+        Err(e) => match e.strip_prefix("equipos:") {
+            Some(n) => Err(ErrorApi::conflicto(format!(
+                "Tiene {n} {} (también cuentan los sin confirmar): quítalos antes, o archívalo.",
+                if n == "1" { "equipo" } else { "equipos" }
+            ))),
+            None => Err(ErrorApi::interno(e)),
+        },
+    }
+}
+
+/// `POST /api/servidor/clientes/{c}/archivar` (15nn): el cliente sale de todas las listas,
+/// nadie lo abre desde la consola y no recibe nada: sus equipos reciben un 403
+/// (`archivado`) al conectarse o informar, y no se mandan sus avisos ni sus informes.
+/// Nada se borra: «Recuperar» lo deja como estaba.
+pub async fn archivar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+    solo_propietario_servidor(&u)?;
+    let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    let (cuando, equipos) = st
+        .db(move |db| {
+            let Some(cl) = db.cliente(&c)? else { return Ok(None) };
+            if let Some(t) = db.cliente_archivado(&c)? {
+                return Ok(Some((t, Vec::new())));
+            }
+            let ahora = ahora();
+            db.archivar_cliente(&c, Some(ahora))?;
+            let ctx = ClienteCtx::autorizado(&c);
+            db.auditar_servidor(&actor, "archivar_cliente", &c, &json!({ "nombre": cl.nombre }).to_string())?;
+            // También en la suya: al recuperarlo, sus personas lo ven.
+            db.auditar(&ctx, &actor, "archivar_cliente", &c, "{}")?;
+            let equipos: Vec<String> = db.equipos(&ctx)?.into_iter().map(|e| e.id).collect();
+            Ok(Some((ahora, equipos)))
+        })
+        .await?
+        .ok_or_else(ErrorApi::no_existe)?;
+    // Los equipos que tenían el canal abierto lo cierran (al volver, se les rechaza).
+    {
+        let mapa = st.conectados.lock().unwrap_or_else(|e| e.into_inner());
+        for id in &equipos {
+            if let Some(tx) = mapa.get(id) {
+                let _ = tx.send(crate::agentes::CERRAR_CANAL.to_string());
+            }
+        }
+    }
+    Ok(Json(json!({ "archivado": super::fecha(cuando) })))
+}
+
+/// `POST /api/servidor/clientes/{c}/recuperar` (15nn): deshace «Archivar».
+pub async fn recuperar(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+    solo_propietario_servidor(&u)?;
+    let actor = format!("cuenta:{}", u.0.cuenta.correo);
+    st.db(move |db| {
+        let Some(cl) = db.cliente(&c)? else { return Ok(false) };
+        if db.cliente_archivado(&c)?.is_some() {
+            db.archivar_cliente(&c, None)?;
+            db.auditar_servidor(&actor, "recuperar_cliente", &c, &json!({ "nombre": cl.nombre }).to_string())?;
+            db.auditar(&ClienteCtx::autorizado(&c), &actor, "recuperar_cliente", &c, "{}")?;
+        }
+        Ok(true)
+    })
+    .await?
+    .then_some(())
+    .ok_or_else(ErrorApi::no_existe)?;
+    Ok(Json(json!({ "archivado": null })))
 }

@@ -70,14 +70,14 @@
 
   const c = $derived(actual.id);
   const INFO: Record<TipoAviso, { texto: string; tono: Tono; icono: typeof CircleAlert; que: string; accion: (equipo: string | null) => { texto: string; href: string } | null }> = {
-    intentos_fallidos: { texto: "Intentos fallidos", tono: "bad", icono: KeyRound, que: "Si no fuiste tú, cambia la clave de administración.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
+    intentos_fallidos: { texto: "Intentos fallidos", tono: "bad", icono: KeyRound, que: "Si no fuiste tú, cambia la clave de administración.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/actividad/registro` }) },
     bloqueo: { texto: "Equipo bloqueado", tono: "bad", icono: ShieldAlert, que: "Demasiados intentos: el equipo no acepta órdenes protegidas durante un tiempo.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
-    orden_destructiva: { texto: "Orden con espera", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
+    orden_destructiva: { texto: "Orden con espera", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/actividad` }) },
     equipo_sin_contacto: { texto: "Sin contacto", tono: "bad", icono: WifiOff, que: "Comprueba que el equipo está encendido y con red.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     copia_fallida: { texto: "Copia fallida", tono: "bad", icono: CircleAlert, que: "Abre el equipo, mira qué dijo y prueba «Copiar ahora».", accion: (e) => (e ? { texto: "Ver sus copias", href: `/c/${c}/equipos/${e}` } : null) },
     copia_atrasada: { texto: "Copia atrasada", tono: "warn", icono: TriangleAlert, que: "Puede que el equipo estuviera apagado a su hora. Si sigue, prueba «Copiar ahora».", accion: (e) => (e ? { texto: "Ver sus copias", href: `/c/${c}/equipos/${e}` } : null) },
     servicio_detenido: { texto: "Servicio detenido", tono: "bad", icono: Power, que: "Alguien paró Resguardo en el equipo. Lo ya copiado sigue a salvo.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
-    cambio_inusual: { texto: "Cambio inusual", tono: "warn", icono: ShieldAlert, que: "Revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
+    cambio_inusual: { texto: "Cambio inusual", tono: "warn", icono: ShieldAlert, que: "Revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/actividad/registro` }) },
     // v1.29: los crea el servidor a partir de lo que cuentan los equipos.
     verificacion_fallida: { texto: "Verificación fallida", tono: "bad", icono: ShieldAlert, que: "Puede haber datos dañados en el repositorio: ábrelo, mira qué dijo y verifícalo otra vez.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     // 14nn y 14tt: también las copias derivadas; si su destino ya no existe, en el equipo se quita o se vuelve a crear.
@@ -88,13 +88,13 @@
     cadena_parada: { texto: "Cadena parada", tono: "warn", icono: TriangleAlert, que: "La copia anterior de la cadena falló y esta no se hizo. Arregla la anterior: al salir bien, la cadena sigue sola.", accion: (e) => (e ? { texto: "Ver sus copias", href: `/c/${c}/equipos/${e}` } : null) },
     // v1.49: otra consola mandó una orden que el equipo tiene en espera (se puede cancelar desde aquí).
     // v1.58: una orden con espera que caducó, se rechazó o falló: en «Órdenes» se ve por qué y se puede volver a mandar.
-    orden_no_aplicada: { texto: "Orden sin aplicar", tono: "warn", icono: TriangleAlert, que: "Mira en Órdenes por qué no se aplicó y, si aún hace falta, vuelve a mandarla.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
+    orden_no_aplicada: { texto: "Orden sin aplicar", tono: "warn", icono: TriangleAlert, que: "Mira en Órdenes por qué no se aplicó y, si aún hace falta, vuelve a mandarla.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/actividad` }) },
     // 14a: alguien delante del equipo, con la clave de administración, la adelantó.
-    orden_aprobada_en_equipo: { texto: "Se aprobó en el equipo una orden que reducía la protección", tono: "warn", icono: MonitorCheck, que: "Alguien delante del equipo, como administrador y con la clave de administración, la aplicó sin esperar a su hora. Si no lo esperabas, cambia la clave de administración y revisa quién administra ese equipo.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
-    orden_en_espera: { texto: "Orden en espera desde otra consola", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes (desde cualquier consola) y cambia la clave de administración.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/ordenes` }) },
-    auditoria_rehecha: { texto: "Actividad rehecha", tono: "bad", icono: ShieldAlert, que: "Abre esa consola y, en Actividad, usa «Comprobar con un ancla» con un resumen por correo anterior.", accion: () => ({ texto: "Actividad de esta consola", href: `/c/${c}/auditoria` }) },
+    orden_aprobada_en_equipo: { texto: "Se aprobó en el equipo una orden que reducía la protección", tono: "warn", icono: MonitorCheck, que: "Alguien delante del equipo, como administrador y con la clave de administración, la aplicó sin esperar a su hora. Si no lo esperabas, cambia la clave de administración y revisa quién administra ese equipo.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/actividad` }) },
+    orden_en_espera: { texto: "Orden en espera desde otra consola", tono: "warn", icono: Clock, que: "Si no la esperabas, cancélala en Órdenes (desde cualquier consola) y cambia la clave de administración.", accion: () => ({ texto: "Ver las órdenes", href: `/c/${c}/actividad` }) },
+    auditoria_rehecha: { texto: "Actividad rehecha", tono: "bad", icono: ShieldAlert, que: "Abre esa consola y, en Actividad, usa «Comprobar con un ancla» con un resumen por correo anterior.", accion: () => ({ texto: "Actividad de esta consola", href: `/c/${c}/actividad/registro` }) },
     // v1.57: una versión nueva del agente no estuvo sana y el equipo volvió solo a la anterior.
-    actualizacion_fallida: { texto: "Actualización fallida", tono: "warn", icono: TriangleAlert, que: "El equipo volvió solo a la versión anterior y sigue copiando. Esa versión queda retenida para el resto del cliente.", accion: () => ({ texto: "Ver las versiones", href: `/c/${c}/versiones` }) },
+    actualizacion_fallida: { texto: "Actualización fallida", tono: "warn", icono: TriangleAlert, que: "El equipo volvió solo a la versión anterior y sigue copiando. Esa versión queda retenida para el resto del cliente.", accion: () => ({ texto: "Ver las versiones", href: `/c/${c}/ajustes/versiones` }) },
     // Plan 0.7.26 (1.1): las credenciales ya se borraron del equipo, pero el permiso puede seguir en Dropbox.
     nube_sin_anular: { texto: "Permiso de nube sin anular", tono: "warn", icono: Cloud, que: "Mira en la web de Dropbox → Configuración → Aplicaciones conectadas si sigue «Resguardo». Quítalo solo si ningún otro equipo la usa.", accion: (e) => (e ? { texto: "Ver el equipo", href: `/c/${c}/equipos/${e}` } : null) },
     // 14uu (plan 0.8.0, D3): de los datos básicos del equipo.
@@ -106,9 +106,9 @@
     // 14bbb: recordatorio (informativo) de comprobar que el kit de un repositorio sigue sirviendo.
     kit_por_comprobar: { texto: "Kit por comprobar", tono: "neutral", icono: KeyRound, que: "En la página del repositorio, «Comprobar la contraseña»: el equipo dice si la del kit lo abre de verdad.", accion: (e) => (e ? { texto: "Ver sus repositorios", href: `/c/${c}/equipos/${e}` } : null) },
     // Plan 0.8.0, E3 (14k): el plazo de las pruebas funcionales (simulacros de recuperación).
-    prueba_funcional_pronto: { texto: "Prueba funcional pronto", tono: "neutral", icono: ClipboardCheck, que: "Prepara el simulacro y regístralo en «Pruebas funcionales» con lo que tardó.", accion: () => ({ texto: "Ver las pruebas funcionales", href: `/c/${c}/pruebas` }) },
-    prueba_funcional_vencida: { texto: "Prueba funcional vencida", tono: "warn", icono: ClipboardCheck, que: "Haz el simulacro de recuperación y regístralo: hasta entonces no se sabe si se recuperaría a tiempo.", accion: () => ({ texto: "Registrar una prueba", href: `/c/${c}/pruebas?registrar=1` }) },
-    cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/auditoria` }) },
+    prueba_funcional_pronto: { texto: "Prueba funcional pronto", tono: "neutral", icono: ClipboardCheck, que: "Prepara el simulacro y regístralo en «Pruebas funcionales» con lo que tardó.", accion: () => ({ texto: "Ver las pruebas funcionales", href: `/c/${c}/recuperar/pruebas` }) },
+    prueba_funcional_vencida: { texto: "Prueba funcional vencida", tono: "warn", icono: ClipboardCheck, que: "Haz el simulacro de recuperación y regístralo: hasta entonces no se sabe si se recuperaría a tiempo.", accion: () => ({ texto: "Registrar una prueba", href: `/c/${c}/recuperar/pruebas?registrar=1` }) },
+    cambio_clave: { texto: "Clave de administración cambiada", tono: "bad", icono: KeyRound, que: "Si no fuiste tú ni alguien de confianza, revisa la actividad del cliente.", accion: () => ({ texto: "Ver la actividad", href: `/c/${c}/actividad/registro` }) },
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };
   const equipo = (id: string | null) => actual.equipos.find((e) => e.id === id);

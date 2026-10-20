@@ -10,6 +10,7 @@
 // Aquí: cómo se nombra cada objeto, el índice del cliente abierto (para los
 // contadores 💬 y la búsqueda de Ctrl+K) y los límites.
 import * as api from "./api";
+import { sincronizar } from "./datosComunes.svelte";
 import { primeraLinea } from "./markdown";
 import type { IndiceNota, NotasObjeto, Rol, TipoNota } from "./tipos";
 
@@ -132,7 +133,17 @@ export async function guardarObservacion(cliente: string, tipo: TipoNota, objeto
   const d = detalles[claveNota(tipo, objeto)];
   if (d) ponerDetalle(cliente, { ...d, observacion: obs });
   else actualizarIndice(cliente, tipo, objeto, obs?.texto ?? null, notaDe(tipo, objeto)?.comentarios ?? 0);
+  repartirNotas();
   return true;
+}
+
+/**
+ * 0.8.1 (B5, 15pp): las observaciones de copias, repositorios y destinos y los comentarios
+ * son datos comunes: el servidor los apunta «por enviar» y se mandan ya a los equipos (si
+ * quien escribe es administrador; si no, lo hará la consola de un administrador al abrirse).
+ */
+export function repartirNotas() {
+  void sincronizar().catch(() => {});
 }
 
 /** Lo que falla en un texto (o null). */

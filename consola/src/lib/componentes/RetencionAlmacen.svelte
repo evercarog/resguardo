@@ -146,7 +146,7 @@
     <div class="form">
       <p>
         Listo. {almacen.nombre} aplicará la retención de «{repo.nombre}» {usaReglas ? fraseReglas : textoHorario({ dias, hora })}
-        {#if hecho.not_before}cuando pase la espera (dentro de <strong>{cuentaAtras(hecho.not_before)}</strong>), salvo que alguien la cancele desde <a href="/c/{cliente.id}/ordenes">Órdenes</a>.{:else}.{/if}
+        {#if hecho.not_before}cuando pase la espera (dentro de <strong>{cuentaAtras(hecho.not_before)}</strong>), salvo que alguien la cancele desde <a href="/c/{cliente.id}/actividad">Órdenes</a>.{:else}.{/if}
       </p>
       <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
     </div>

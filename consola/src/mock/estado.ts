@@ -110,7 +110,8 @@ export interface Estado {
   servidor: { identidad: string; secreta: Uint8Array; inicializado: boolean };
   cuentas: CuentaMock[];
   sesiones: Map<string, { cuenta: string; completa: boolean }>;
-  clientes: (T.Cliente & { avisosAbiertos?: number })[];
+  /** 15nn: `archivado` (cuándo) y `creado`, para «Clientes del servidor». */
+  clientes: (T.Cliente & { avisosAbiertos?: number; archivado?: string | null; creado?: string })[];
   miembros: Map<string, { cuenta: string; rol: T.Rol }[]>;
   invitaciones: Map<string, { cliente: string; rol: T.Rol; caduca: number }>;
   equipos: EquipoMock[];
@@ -344,6 +345,10 @@ export async function sembrar(vacio = false) {
     { cuenta: ana.id, rol: "administrador" },
   ]);
   estado.miembros.set(propio.id, [{ cuenta: ana.id, rol: "propietario" }]);
+  // 15nn: un cliente archivado (sale solo en «Archivados» de «Clientes del servidor»).
+  const antiguo = { id: randomUUID(), nombre: "Imprenta Delta", sal_cliente: sal(), espera_min_horas: 24, rol: "propietario" as T.Rol, archivado: new Date(Date.now() - 20 * 86_400_000).toISOString() };
+  estado.clientes.push(antiguo);
+  estado.miembros.set(antiguo.id, [{ cuenta: ana.id, rol: "propietario" }]);
 
   const kcfgDe = async (c: { sal_cliente: string }) => kCfg(await argon2(utf8(DEMO.claveAdmin), Uint8Array.from(Buffer.from(c.sal_cliente, "base64"))));
   const [kAltamar, kSur, kPropio] = await Promise.all([kcfgDe(altamar), kcfgDe(sur), kcfgDe(propio)]);
@@ -441,7 +446,8 @@ export async function sembrar(vacio = false) {
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo"],
+        // 0.8.1 (B2): guarda sus etiquetas para todas sus consolas (renombrar en «Organización» le manda la orden).
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo"],
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },
@@ -473,6 +479,8 @@ export async function sembrar(vacio = false) {
       conectado: false,
       ultimo_contacto: hace(60 * 52),
       resumen: {
+        // 0.8.1 (B2): sin conexión: un cambio de sus etiquetas desde «Organización» queda pedido.
+        admite: ["datos_equipo"],
         destinos: [destinoNube],
         repositorios: [repo("gerencia", "Gerencia", "b2-altamar", 61, 12_900_000_000)],
         copias: [{ ...copia("gerencia", "Escritorio y documentos", "gerencia", ["12:00"], 2), ultima: { cuando: hace(60 * 54), estado: "ok", bytes: 22_000_000 }, proxima: hace(60 * 30) }],
@@ -530,9 +538,10 @@ export async function sembrar(vacio = false) {
         ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
-          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a"] }],
+          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a"] }, { usuario: "caja-1", repos: ["historico"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
-          zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 0, escucha: true, sistema_archivos: "ReFS", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [] }],
+          // Plan 0.8.1 (B6, 15k): la copia derivada de «Caja» llega a esta zona (`<usuario>/caja-d2`).
+          zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 1, escucha: true, sistema_archivos: "ReFS", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja-d2"] }] }],
           espejo: {
             hora: "02:00",
             ultima: hace(60 * 13),
@@ -572,6 +581,11 @@ export async function sembrar(vacio = false) {
                 ocupa: { bytes: 41_200_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": 41_200_000_000 }, cuando: hace(60 * 3) } },
               { id: "t3d4e5f6071", nombre: "Todo a B2 (bloqueo 30 días)", activo: false, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "nube", nube: "B2 Café del Sur", carpeta: "cafe-espejo/sur" },
                 cuando: { despues: "t0a1b2c3d4e", retraso_min: 60 }, retencion: { modo: "retraso", dias: 45 }, bloqueo_dias: 30, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 3, nunca_bien: true },
+              // Plan 0.8.1 (B6, 15k): la zona «Disco F» a B2, con la copia derivada de «Caja» (se ve con su nombre, no como ruta).
+              { id: "t4e5f607182", nombre: "Disco F a B2", activo: true, quien: "almacen", zona: "z3c4d5e", que: { tipo: "todos" }, adonde: { tipo: "nube", nube: "B2 Café del Sur", carpeta: "cafe-espejo/disco-f" },
+                cuando: { horario: { dias: [1, 2, 3, 4, 5, 6, 7], horas: ["03:00"] } }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 4,
+                ultima: hace(60 * 9), resultado: "Espejo «Disco F a B2» hecho: 41 archivos nuevos (2 GB).", bien: hace(60 * 9), nunca_bien: false,
+                ocupa: { bytes: 2_100_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja-d2": 2_100_000_000 }, cuando: hace(60 * 9) } },
             ],
           },
           nubes: [{ nombre: "Dropbox Oficina", tipo: "dropbox" }, { nombre: "B2 Café del Sur", tipo: "b2" }],
@@ -608,7 +622,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "sqlserver_todas"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -630,7 +644,11 @@ export async function sembrar(vacio = false) {
             contrasena_comprobada: { bien: hace(60 * 24 * 95), ultima: hace(60 * 24 * 95), resultado: "abre" },
             verificacion_auto: { cada_dias: 7, porcentaje: 10, proxima: dentro(60 * 24 * 3), todo_leido: hace(60 * 24 * 40) },
             // Tarea 4b: una copia derivada a la Dropbox conectada en el propio equipo, después de cada copia, solo las diarias.
-            derivadas: [{ id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true }] },
+            derivadas: [
+              { id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true },
+              // Plan 0.8.1 (B6, 15k): otra a la zona «Disco F» del almacén, cada noche: allí se ve con su nombre.
+              { id: "d2", destino: "Almacén Sur · Disco F", destino_id: "almacen-sur-z3c4d5e", cuando: { hora: "23:00" }, activa: true, con_retencion: false },
+            ] },
           // También en el almacén, todavía sin retención (v1.22: «Retención en el almacén…»).
           { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true, ruta: "almacen-sur-7c2a" },
           // 14mm: el mismo almacén dado de alta como «Servidor de copias» genérico (un repositorio adoptado): el mapa lo une.
@@ -639,6 +657,7 @@ export async function sembrar(vacio = false) {
         copias: [copia("caja", "Caja y facturas", "caja", ["14:00"], 1), { ...copia("ventas", "Ventas", "ventas", ["14:00"], 1), tras: "caja" }],
         destinos: [
           { id: "almacen-sur", nombre: "Almacén Sur", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8000/5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/", equipo_almacen: ID.almacen },
+          { id: "almacen-sur-z3c4d5e", nombre: "Almacén Sur · Disco F", tipo: "rest", donde: "https://cafedelsur.ejemplo.com:8002/5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/", equipo_almacen: ID.almacen },
           // 0.7.26: dos discos USB que se rotan (marcado «Aislado» en el catálogo): el agente dice cuándo vio cada uno.
           {
             id: "disco-2",
@@ -734,9 +753,10 @@ export async function sembrar(vacio = false) {
   for (const e of [recepcion, portatil, servidorAltamar, surAlmacen, surCaja, estudio]) if (e.informes[0]) e.informes[0].datos.version = e.version_agente;
   // Etiquetas (v1.18) para agrupar y filtrar.
   servidorAltamar.etiquetas = ["Servidores"];
-  recepcion.etiquetas = ["Recepción", "Sede norte"];
-  contabilidad.etiquetas = ["Contabilidad", "Sede norte"];
-  portatil.etiquetas = ["Gerencia"];
+  // 0.8.1 (B2): «Puestos» en tres equipos y «Contable», casi repetida de «Contabilidad» (para unirlas).
+  recepcion.etiquetas = ["Recepción", "Sede norte", "Puestos"];
+  contabilidad.etiquetas = ["Contabilidad", "Sede norte", "Puestos"];
+  portatil.etiquetas = ["Gerencia", "Puestos", "Contable"];
   surAlmacen.etiquetas = ["Servidores"];
   enriquecer(portatil, { soloAnadir: null, sinCambios: 0.3, medioAnadido: 40_000_000, silencioHoras: 54 });
   enriquecer(servidorAltamar, { externa: true, medioAnadido: 900_000_000, recortado: true });

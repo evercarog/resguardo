@@ -17,7 +17,7 @@ import { cifrarPlantilla, clavePlantillas, descifrarPlantilla } from "./cripto/s
 import { cargarCatalogo } from "./catalogoDestinos.svelte";
 import { actual, cargarCliente, puede } from "./estado.svelte";
 import { kcfgDelCliente, mandarOrden, pruebaParaEquipo } from "./ordenar";
-import { admiteSedes, equiposQueGuardan, esDeSedes, pendiente, trozos, type DatosComunesCliente, type Diferencia, type EntradaOrden } from "./datosComunes";
+import { admiteClave, equiposQueGuardan, pendiente, trozos, type DatosComunesCliente, type Diferencia, type EntradaOrden } from "./datosComunes";
 import type * as T from "./tipos";
 
 export const comunes = $state({
@@ -62,12 +62,12 @@ async function mandarATodos(cliente: T.Cliente, equipos: T.Equipo[], entradas: E
   const fallos: string[] = [];
   let ok = 0;
   if (!entradas.length || !destino.length) return { equipos: 0, fallos };
-  /** Lo que llegó a algún equipo (0.8.0: las sedes, solo a los que las guardan). */
+  /** Lo que llegó a algún equipo (0.8.0: las sedes y, 0.8.1, los grupos de exclusiones, solo a los que los guardan). */
   const llegaron = new Set<string>();
   for (const e of destino) {
     const prueba = pruebas?.get(e.id);
     if (pruebas && !prueba) continue;
-    const suyas = admiteSedes(e) ? entradas : entradas.filter((x) => !esDeSedes(x.clave));
+    const suyas = entradas.filter((x) => admiteClave(e, x.clave));
     if (!suyas.length) continue;
     let bien = true;
     for (const t of trozos(suyas)) {

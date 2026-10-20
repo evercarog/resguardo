@@ -16,7 +16,9 @@ use resguardo_protocolo::datos_cliente::{self as dc, Clase};
 use serde_json::{json, Map, Value};
 
 /// `{ sedes: [{ id, nombre, notas, principal }], equipos: { id: sede }, destinos: { id: sede },
-/// categorias: [{ id, nombre, etiquetas }], orden: [id] }`. Una asignación a una sede que ya no
+/// categorias: [{ id, nombre, etiquetas }], orden: [id], exclusiones: [{ id, nombre, reglas }],
+/// exclusiones_quitadas: [id] }` (0.8.1, B2: los grupos de «No copiar» y los que se quitaron, para
+/// que la consola no vuelva a enseñar como «de partida» uno que alguien borró). Una asignación a una sede que ya no
 /// existe no sale (vuelve a la de por defecto). Las sedes y las categorías, por nombre.
 pub fn organizacion(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
     let filas = dcs::filas(db, ctx)?;
@@ -25,9 +27,14 @@ pub fn organizacion(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
     let mut equipos = Map::new();
     let mut destinos = Map::new();
     let mut orden = Value::Array(Vec::new());
+    let mut exclusiones = Vec::new();
+    let mut quitadas = Vec::new();
     for (clave, f) in &filas {
         let v = &f.entrada.valor;
         if v.is_null() {
+            if let Some((Clase::GrupoExclusiones, id)) = dc::clase(clave) {
+                quitadas.push(json!(id));
+            }
             continue;
         }
         let Some((c, sujeto)) = dc::clase(clave) else { continue };
@@ -48,16 +55,21 @@ pub fn organizacion(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
             }
             Clase::EtiquetaCategoria => categorias.push(json!({ "id": sujeto, "nombre": v["nombre"], "etiquetas": v["etiquetas"] })),
             Clase::OrdenEquipos => orden = v["ids"].clone(),
+            Clase::GrupoExclusiones => exclusiones.push(json!({ "id": sujeto, "nombre": v["nombre"], "reglas": v["reglas"] })),
             _ => {}
         }
     }
     let nombre = |x: &Value| x["nombre"].as_str().unwrap_or_default().to_lowercase();
     sedes.sort_by_key(nombre);
     categorias.sort_by_key(nombre);
+    exclusiones.sort_by_key(nombre);
     let existe = |s: &Value| sedes.iter().any(|x| x["id"] == *s);
     equipos.retain(|_, s| existe(s));
     destinos.retain(|_, s| existe(s));
-    Ok(json!({ "sedes": sedes, "equipos": equipos, "destinos": destinos, "categorias": categorias, "orden": orden }))
+    Ok(json!({
+        "sedes": sedes, "equipos": equipos, "destinos": destinos, "categorias": categorias, "orden": orden,
+        "exclusiones": exclusiones, "exclusiones_quitadas": quitadas,
+    }))
 }
 
 #[cfg(test)]
@@ -72,7 +84,7 @@ mod tests {
         let c = db.crear_cliente("Cliente de prueba", &base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [3u8; 16]), 24).unwrap();
         let ctx = ClienteCtx::autorizado(&c.id);
         let vacia = organizacion(&db, &ctx).unwrap();
-        assert_eq!(vacia, json!({ "sedes": [], "equipos": {}, "destinos": {}, "categorias": [], "orden": [] }));
+        assert_eq!(vacia, json!({ "sedes": [], "equipos": {}, "destinos": {}, "categorias": [], "orden": [], "exclusiones": [], "exclusiones_quitadas": [] }));
         for (k, v) in [
             ("sede:sur", json!({ "nombre": "Planta Sur" })),
             ("sede:norte", json!({ "nombre": "Oficina Norte", "notas": "Planta baja", "principal": true })),
@@ -95,5 +107,26 @@ mod tests {
         assert_eq!(o["destinos"], json!({ "zona:a:principal": "norte" }));
         assert_eq!(o["categorias"][0]["etiquetas"], json!(["Servidor", "Puesto"]));
         assert_eq!(o["orden"], json!(["e2", "e1"]));
+    }
+
+    /// 0.8.1 (B2, 15y): los grupos de exclusiones, por nombre, y los quitados aparte.
+    #[test]
+    fn grupos_de_exclusiones() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Sqlite::abrir(dir.path()).unwrap();
+        let c = db.crear_cliente("Cliente de prueba", &base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [3u8; 16]), 24).unwrap();
+        let ctx = ClienteCtx::autorizado(&c.id);
+        dcs::registrar(&db, &ctx, "exclusiones:video", &json!({ "nombre": "Vídeo", "reglas": ["*.mp4"] }), false, "Ana", "yo").unwrap();
+        dcs::registrar(&db, &ctx, "exclusiones:propio", &json!({ "nombre": "Archivos de obra", "reglas": ["*.dwl", "*.bak"] }), false, "Ana", "yo").unwrap();
+        dcs::registrar(&db, &ctx, "exclusiones:musica", &Value::Null, false, "Ana", "yo").unwrap();
+        let o = organizacion(&db, &ctx).unwrap();
+        assert_eq!(
+            o["exclusiones"],
+            json!([
+                { "id": "propio", "nombre": "Archivos de obra", "reglas": ["*.dwl", "*.bak"] },
+                { "id": "video", "nombre": "Vídeo", "reglas": ["*.mp4"] },
+            ])
+        );
+        assert_eq!(o["exclusiones_quitadas"], json!(["musica"]));
     }
 }

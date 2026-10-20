@@ -505,6 +505,8 @@ pub struct ClienteServidor {
     pub creado: Ts,
     pub personas: i64,
     pub propietarios: i64,
+    /// 15nn: cuándo se archivó (`None`: está activo).
+    pub archivado: Option<Ts>,
 }
 
 /// Lo que usa un cliente: solo cifras y fechas.
@@ -560,8 +562,24 @@ pub trait Almacen: Send + Sync + AlmacenNotas + AlmacenPruebas {
     fn renombrar_cliente(&self, id: &str, nombre: &str) -> R<()>;
     /// Solo tras resultados firmados de `cambiar_espera` (nunca desde la consola).
     fn poner_espera_cliente(&self, id: &str, horas: i64) -> R<()>;
+    /// Los clientes de una cuenta, **sin los archivados** (15nn: no salen en ninguna lista).
     fn clientes_de(&self, cuenta: &str) -> R<Vec<(Cliente, Rol)>>;
+    /// Los de una cuenta, también los archivados (para comprobar permisos, no para listar).
+    fn clientes_de_todos(&self, cuenta: &str) -> R<Vec<(Cliente, Rol)>>;
+    /// Su papel en el cliente; `None` si no es miembro **o el cliente está archivado**
+    /// (15nn: un cliente archivado no se abre desde la consola, ni para sus miembros).
     fn rol(&self, cuenta: &str, cliente: &str) -> R<Option<Rol>>;
+    /// 15nn: archiva (`Some(cuándo)`) o recupera (`None`) un cliente; `false` si no existe.
+    /// Al archivar se descartan sus avisos pendientes de mandar.
+    fn archivar_cliente(&self, id: &str, cuando: Option<Ts>) -> R<bool>;
+    /// Cuándo se archivó el cliente (`None`: no está archivado, o no existe).
+    fn cliente_archivado(&self, id: &str) -> R<Option<Ts>>;
+    /// 15nn: borra el cliente de verdad: su base de datos y sus filas en las tablas comunes
+    /// (personas, invitaciones, códigos, fichas, índices, avisos y ajustes guardados con su
+    /// id). Quien la llama comprueba antes que no tiene equipos y borra sus archivos sueltos
+    /// (paquete, relés). `false` si su archivo de datos no se pudo borrar (queda suelto, sin
+    /// nada que lo enlace: se puede borrar a mano).
+    fn borrar_cliente(&self, id: &str) -> R<bool>;
     fn poner_rol(&self, cuenta: &str, cliente: &str, rol: Rol) -> R<()>;
     fn quitar_miembro(&self, cuenta: &str, cliente: &str) -> R<()>;
     fn miembros(&self, cliente: &str) -> R<Vec<Miembro>>;
@@ -799,9 +817,12 @@ pub trait Almacen: Send + Sync + AlmacenNotas + AlmacenPruebas {
     fn notif_limpiar(&self, antes: Ts) -> R<()>;
 
     // ---------- Mantenimiento ----------
+    /// Los clientes activos (15nn: sin los archivados, que no reciben avisos, informes ni
+    /// recordatorios).
     fn todos_los_clientes(&self) -> R<Vec<ClienteCtx>>;
     /// Todos los clientes con cuándo se crearon y cuántas personas y propietarios tienen
-    /// («Clientes del servidor», v1.34: sin nada de dentro de cada cliente).
+    /// («Clientes del servidor», v1.34: sin nada de dentro de cada cliente), también los
+    /// archivados (con `archivado`).
     fn clientes_del_servidor(&self) -> R<Vec<ClienteServidor>>;
     /// Cuánto usa un cliente (solo cifras, para «Clientes del servidor»).
     fn uso_cliente(&self, c: &ClienteCtx) -> R<UsoCliente>;

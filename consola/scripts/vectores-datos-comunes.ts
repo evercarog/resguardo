@@ -21,6 +21,10 @@ import {
   type FilaComun,
 } from "../src/lib/datosComunes";
 import { NIVEL, SOLO_ADMIN_ROL } from "../src/lib/cripto/ordenes";
+import { admiteClave, esDeExclusiones } from "../src/lib/datosComunes";
+import { GRUPOS_DE_PARTIDA, gruposDePartidaQuitados, gruposExclusiones, reglasDe, valorGrupo, valorGrupoDeFuera } from "../src/lib/gruposExclusiones";
+import { leerOrganizacion } from "../src/lib/sedes";
+import { ajusteTrasCambio, cambiosEnEquipos, categoriasTrasCambio, errorNombreEtiqueta, etiquetasTrasCambio } from "../src/lib/gestionEtiquetas";
 import type { Equipo } from "../src/lib/tipos";
 
 let fallos = 0;
@@ -37,13 +41,82 @@ console.log("\n· Vectores compartidos con Rust (crates/protocolo/vectors/datos-
   const doc = JSON.parse(readFileSync(new URL("../../crates/protocolo/vectors/datos-cliente.json", import.meta.url), "utf8")) as {
     fusion: { nombre: string; entradas: EntradaComun[]; gana: unknown }[];
     claves: { clave: string; valida: boolean; pide_admin: boolean }[];
+    exclusiones: { nombre: string; valor: unknown; valido: boolean; limpio?: unknown }[];
   };
+  for (const c of doc.exclusiones) {
+    const v = valorGrupoDeFuera(c.valor);
+    igual(`grupo de exclusiones: ${c.nombre}`, !!v, c.valido);
+    if (c.limpio) igual(`grupo de exclusiones: ${c.nombre} (limpio)`, v, c.limpio);
+  }
   for (const c of doc.fusion) {
     const d: Record<string, EntradaComun> = {};
     for (const e of c.entradas) fusionar(d, "etiqueta.color:servidor", e);
     igual(c.nombre, d["etiqueta.color:servidor"].valor, c.gana);
   }
   for (const c of doc.claves) igual(`clave ${c.clave}`, [!!claseDe(c.clave), pideClave(c.clave)], [c.valida, c.pide_admin]);
+}
+
+console.log("\n· Grupos de exclusiones (0.8.1, B2): de partida, guardados y quitados; a quién se mandan");
+{
+  igual("los de partida pasan la validación", GRUPOS_DE_PARTIDA.every((g) => "valor" in valorGrupo(g.nombre, g.reglas)), true);
+  igual(
+    "sin ninguno guardado, los de partida",
+    gruposExclusiones(leerOrganizacion({ exclusiones: [] })).map((g) => [g.id, g.dePartida]),
+    [
+      ["temporales", true],
+      ["imagenes-disco", true],
+      ["instaladores", true],
+      ["musica", true],
+      ["video", true],
+    ],
+  );
+  const o = leerOrganizacion({
+    exclusiones: [
+      { id: "musica", nombre: "Música", reglas: ["*.mp3", "*.mid"] },
+      { id: "obra-1a2b", nombre: "Planos antiguos", reglas: ["*.dwl"] },
+    ],
+    exclusiones_quitadas: ["video"],
+  });
+  const g = gruposExclusiones({ organizacion: o });
+  igual("guardados, de partida sin tocar y sin los quitados", g.map((x) => `${x.id}${x.dePartida ? "*" : ""}`), ["temporales*", "imagenes-disco*", "instaladores*", "musica", "obra-1a2b"]);
+  igual("el guardado manda sobre el de partida", g.find((x) => x.id === "musica")?.reglas, ["*.mp3", "*.mid"]);
+  igual("quitados que se pueden volver a poner", gruposDePartidaQuitados(o).map((x) => x.id), ["video"]);
+  igual("reglas de varios grupos sin repetir", reglasDe([{ reglas: ["*.a", "*.b"] }, { reglas: ["*.b", "*.c"] }]), ["*.a", "*.b", "*.c"]);
+  igual("el cuadro: una por línea, sin las vacías", valorGrupo(" Obra ", "*.dwl\n\n  *.bak \n*.dwl"), { valor: { nombre: "Obra", reglas: ["*.dwl", "*.bak"] } });
+  igual("un servidor anterior no los admite", leerOrganizacion({ sedes: [] }).exclusionesAdmitidas, false);
+  const conCap = (admite: string[]) => ({ resumen: { admite } }) as unknown as Equipo;
+  igual("es de exclusiones", [esDeExclusiones("exclusiones:musica"), esDeExclusiones("sede:x")], [true, false]);
+  igual("solo a los agentes que los guardan", [admiteClave(conCap(["datos_cliente", "sedes"]), "exclusiones:musica"), admiteClave(conCap(["grupos_exclusiones"]), "exclusiones:musica")], [false, true]);
+  igual("las sedes, como antes", [admiteClave(conCap(["grupos_exclusiones"]), "sede:x"), admiteClave(conCap([]), "etiqueta.color:x")], [false, true]);
+}
+
+console.log("\n· Renombrar, unir y borrar etiquetas en todos los equipos (0.8.1, B2, 15a)");
+{
+  igual("renombrar en su sitio", etiquetasTrasCambio(["Puestos", "Norte"], "puestos", "Oficina"), ["Oficina", "Norte"]);
+  igual("unir sin repetir", etiquetasTrasCambio(["Contable", "Gerencia", "Contabilidad"], "Contable", "Contabilidad"), ["Contabilidad", "Gerencia"]);
+  igual("solo las mayúsculas", etiquetasTrasCambio(["contabilidad"], "contabilidad", "Contabilidad"), ["Contabilidad"]);
+  igual("borrar", etiquetasTrasCambio(["A", "B"], "a", null), ["B"]);
+  igual("sin ella, nada", etiquetasTrasCambio(["A"], "Z", null), null);
+  const eqs = [
+    { id: "e1", etiquetas: ["Puestos"] },
+    { id: "e2", etiquetas: ["Otra"] },
+    { id: "e3", etiquetas: ["puestos", "Oficina"] },
+  ];
+  igual("los equipos afectados", cambiosEnEquipos(eqs, "Puestos", "Oficina").map((c) => [c.equipo.id, c.etiquetas]), [
+    ["e1", ["Oficina"]],
+    ["e3", ["Oficina"]],
+  ]);
+  const cats = [
+    { id: "tipo", nombre: "Tipo", etiquetas: ["Servidor", "Puesto"] },
+    { id: "area", nombre: "Área", etiquetas: ["Contabilidad"] },
+  ];
+  igual("la categoría pasa a la nueva", categoriasTrasCambio(cats, "Puesto", "Puestos"), [{ id: "tipo", nombre: "Tipo", etiquetas: ["Servidor", "Puestos"] }]);
+  igual("si la nueva ya tiene categoría, la vieja solo sale", categoriasTrasCambio(cats, "Puesto", "Contabilidad"), [{ id: "tipo", nombre: "Tipo", etiquetas: ["Servidor"] }]);
+  igual("al borrar, sale", categoriasTrasCambio(cats, "servidor", null), [{ id: "tipo", nombre: "Tipo", etiquetas: ["Puesto"] }]);
+  igual("color y plantilla de la vieja a la nueva", ajusteTrasCambio({ nombre: "A", color: 2, plantilla: "pla-1" }, undefined, "B", false), { nombre: "B", color: 2, plantilla: "pla-1", avisos: null });
+  igual("al unir, lo de la nueva se queda", ajusteTrasCambio({ nombre: "A", color: 2, plantilla: "pla-1" }, { nombre: "B", color: 5 }, "B", false), { nombre: "B", color: 5, plantilla: "pla-1", avisos: null });
+  igual("sin ajustes en la vieja, nada", ajusteTrasCambio(undefined, undefined, "B", true), null);
+  igual("nombre nuevo no válido", [errorNombreEtiqueta("  "), errorNombreEtiqueta("a,b"), errorNombreEtiqueta("Bien")], ["Escribe el nombre.", "Hasta 32 caracteres, sin comas.", null]);
 }
 
 console.log("\n· Juntar lo de varios equipos (cada uno puede ir por una versión)");

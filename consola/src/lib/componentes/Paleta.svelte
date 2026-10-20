@@ -16,6 +16,7 @@
   import { atajos, MOD } from "$lib/atajos.svelte";
   import { acciones } from "$lib/acciones.svelte";
   import { ICONO_SECCION } from "$lib/iconos";
+  import { pestanasDe, seccionesPara } from "$lib/secciones";
   import { asegurarIndice, notas } from "$lib/notas.svelte";
 
   interface Item {
@@ -45,22 +46,11 @@
     const out: Item[] = [];
     const rol = actual.cliente?.rol;
     if (c) {
-      const secciones: [string, string, typeof Search][] = [
-        ["Estado", "", ICONO_SECCION.estado],
-        ["Equipos", "/equipos", ICONO_SECCION.equipos],
-        ["Copias", "/copias", ICONO_SECCION.copias],
-        ["Repositorios y destinos", "/repositorios", ICONO_SECCION.repositorios],
-        ["Restaurar archivos", "/restaurar", ICONO_SECCION.restaurar],
-        ["Restauraciones", "/restauraciones", ICONO_SECCION.restauraciones],
-        ["Pruebas funcionales", "/pruebas", ICONO_SECCION.pruebas],
-        ["Buscar archivos…", "/buscar", ICONO_SECCION.buscar],
-        ["Órdenes", "/ordenes", ICONO_SECCION.ordenes],
-        ["Avisos", "/avisos", ICONO_SECCION.avisos],
-        ["Informes", "/informes", ICONO_SECCION.informes],
-        ...(puede.ordenar(rol) ? ([["Actividad", "/auditoria", ICONO_SECCION.actividad]] as [string, string, typeof Search][]) : []),
-        ...(puede.administrar(rol) ? ([["Servidor", "/servidor", ICONO_SECCION.servidor]] as [string, string, typeof Search][]) : []),
-        ...(puede.propietario(rol) ? ([["Personas y ajustes", "/ajustes", ICONO_SECCION.ajustes]] as [string, string, typeof Search][]) : []),
-      ];
+      // Plan 0.8.1, B1: cada sección y cada una de sus pestañas (lib/secciones.ts), con lo que ve este papel.
+      const secciones: [string, string, typeof Search, string][] = seccionesPara(rol).flatMap((sec) => {
+        const ps = pestanasDe(sec, rol);
+        return ps.map((p): [string, string, typeof Search, string] => [ps.length > 1 ? `${sec.texto} › ${p.texto}` : sec.texto, p.ruta, p.icono, `${sec.texto} ${p.texto} ${p.claves ?? ""}`]);
+      });
       // Acciones: abren lo mismo que sus botones (y piden lo mismo).
       const activos = actual.equipos.filter((e) => e.confirmado !== false && e.modo !== "trasladado");
       if (puede.administrar(rol)) {
@@ -75,9 +65,9 @@
         for (const { e, k } of copias)
           out.push({ grupo: "Copiar ahora", texto: `Copiar ahora «${k.nombre}»`, sub: e.nombre, accion: () => (acciones.copiar = { equipo: e, repo: k.repo, copia: k.id, nombre: k.nombre }), icono: Play, claves: sinTildes(`copiar ahora ${k.nombre} ${e.nombre}`) });
         for (const { e, r } of repos)
-          out.push({ grupo: "Restaurar", texto: `Restaurar archivos de «${r.nombre}»`, sub: e.nombre, href: `/c/${c}/restaurar?equipo=${encodeURIComponent(e.id)}&repo=${encodeURIComponent(r.id)}`, icono: History, claves: sinTildes(`restaurar archivos ${r.nombre} ${e.nombre}`) });
+          out.push({ grupo: "Restaurar", texto: `Restaurar archivos de «${r.nombre}»`, sub: e.nombre, href: `/c/${c}/recuperar?equipo=${encodeURIComponent(e.id)}&repo=${encodeURIComponent(r.id)}`, icono: History, claves: sinTildes(`restaurar archivos ${r.nombre} ${e.nombre}`) });
       }
-      for (const [t, r, ic] of secciones) out.push({ grupo: "Ir a", texto: t, sub: actual.cliente?.nombre, href: `/c/${c}${r}`, icono: ic, claves: `${sinTildes(t)} ir a` });
+      for (const [t, r, ic, k] of secciones) out.push({ grupo: "Ir a", texto: t, sub: actual.cliente?.nombre, href: `/c/${c}${r}`, icono: ic, claves: `${sinTildes(k)} ir a` });
       for (const e of actual.equipos) {
         const s = saludEquipo(e);
         out.push({ grupo: "Equipos", texto: e.nombre, sub: `${s.texto} · ${e.so}`, href: `/c/${c}/equipos/${e.id}`, icono: Monitor, claves: sinTildes(`${e.nombre} ${e.so} ${(e.etiquetas ?? []).join(" ")}`) });
@@ -108,7 +98,7 @@
                   : n.tipo === "copia" && e
                     ? { nombre: `${e.resumen?.copias?.find((k) => k.id === id)?.nombre ?? id} · ${e.nombre}`, href: `/c/${c}/equipos/${e.id}/copias/${encodeURIComponent(id)}` }
                     : n.tipo === "destino"
-                      ? { nombre: actual.equipos.flatMap((x) => x.resumen?.destinos ?? []).find((d) => d.id === n.objeto)?.nombre ?? n.objeto, href: `/c/${c}/repositorios` }
+                      ? { nombre: actual.equipos.flatMap((x) => x.resumen?.destinos ?? []).find((d) => d.id === n.objeto)?.nombre ?? n.objeto, href: `/c/${c}/destinos` }
                       : null;
           if (sitio) out.push({ grupo: "Observaciones", texto: n.titulo, sub: sitio.nombre, href: sitio.href, icono: NotebookPen, claves: sinTildes(`observaciones notas ${n.titulo} ${sitio.nombre}`) });
         }

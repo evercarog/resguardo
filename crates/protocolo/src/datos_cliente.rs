@@ -70,6 +70,19 @@ pub enum Clase {
     /// 0.8.0 (D2): `orden.equipos:<ámbito>` (hoy, `todos`) → `{ ids: [..] }` o `null` (el orden
     /// a mano de los equipos, igual en todas las consolas).
     OrdenEquipos,
+    /// 0.8.1 (B2, 15y): `exclusiones:<id>` → `{ nombre, reglas: [..] }` o `null` (quitado). Un
+    /// grupo de reglas de «No copiar» del cliente («Música»: `*.mp3`, `*.flac`…), igual en todas
+    /// sus consolas. Solo el dato: las copias guardan las reglas que aplican (el equipo no
+    /// depende de él). Solo a agentes con [`ADMITE_EXCLUSIONES`].
+    GrupoExclusiones,
+    /// 0.8.1 (B5, 15pp): `nota.observacion:<tipo>:<objeto>` → `{ texto }` o `null` (sin
+    /// observación). La observación de una copia o un repositorio (`<equipo>/<id>`) o de un
+    /// destino (su id), igual en todas las consolas. Solo a agentes con [`ADMITE_NOTAS`].
+    NotaObservacion,
+    /// 0.8.1 (B5): `nota.comentario:<id>` → `{ tipo, objeto, texto, autor, creado, editado? }`
+    /// o `null` (borrado). Un comentario de la bitácora de un equipo, una copia, un repositorio
+    /// o un destino, con su autor; la consola de origen va en la entrada. Solo con [`ADMITE_NOTAS`].
+    NotaComentario,
 }
 
 impl Clase {
@@ -85,11 +98,14 @@ impl Clase {
             Clase::SedeDestino => "sede.destino:",
             Clase::EtiquetaCategoria => "etiqueta.categoria:",
             Clase::OrdenEquipos => "orden.equipos:",
+            Clase::GrupoExclusiones => "exclusiones:",
+            Clase::NotaObservacion => "nota.observacion:",
+            Clase::NotaComentario => "nota.comentario:",
         }
     }
 }
 
-const CLASES: [Clase; 10] = [
+const CLASES: [Clase; 13] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -100,6 +116,9 @@ const CLASES: [Clase; 10] = [
     Clase::SedeDestino,
     Clase::EtiquetaCategoria,
     Clase::OrdenEquipos,
+    Clase::GrupoExclusiones,
+    Clase::NotaObservacion,
+    Clase::NotaComentario,
 ];
 
 /// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
@@ -113,6 +132,65 @@ pub fn es_de_sedes(clave: &str) -> bool {
 pub const MAX_SEDES: usize = 50;
 pub const MAX_ETIQUETAS_CATEGORIA: usize = 50;
 pub const MAX_ORDEN: usize = 500;
+
+/// 0.8.1 (B2, 15y): `resumen.admite` de un agente que guarda los grupos de exclusiones
+/// (`exclusiones:<id>`). A uno anterior no se le mandan (rechazaría la orden entera).
+pub const ADMITE_EXCLUSIONES: &str = "grupos_exclusiones";
+/// ¿Es un grupo de exclusiones (solo para agentes con [`ADMITE_EXCLUSIONES`])?
+pub fn es_de_exclusiones(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::GrupoExclusiones))
+}
+/// Como mucho, reglas en un grupo de exclusiones y caracteres en cada regla.
+pub const MAX_REGLAS_GRUPO: usize = 100;
+pub const MAX_LARGO_REGLA: usize = 200;
+
+/// Una regla de «No copiar» (un patrón de exclusión, como los de una copia): sin espacios
+/// alrededor, de 1 a [`MAX_LARGO_REGLA`] caracteres, sin caracteres de control y que no lo
+/// excluya todo (`*`, `*.*`, `/`, `**/*`…: solo comodines, puntos y barras).
+pub fn regla_exclusion_valida(r: &str) -> Result<String, &'static str> {
+    let r = r.trim();
+    let n = r.chars().count();
+    if n == 0 || n > MAX_LARGO_REGLA {
+        return Err("Cada regla: de 1 a 200 caracteres.");
+    }
+    if r.chars().any(char::is_control) {
+        return Err("Una regla no puede llevar caracteres de control.");
+    }
+    if r.chars().all(|c| matches!(c, '*' | '?' | '.' | '/' | '\\')) {
+        return Err("Esa regla lo dejaría todo sin copiar.");
+    }
+    Ok(r.to_string())
+}
+
+/// 0.8.1 (B5, 15pp): `resumen.admite` de un agente que guarda observaciones y comentarios
+/// (`nota.observacion:`, `nota.comentario:`). A uno anterior no se le mandan.
+pub const ADMITE_NOTAS: &str = "notas_comunes";
+/// ¿Es una observación o un comentario (solo para agentes con [`ADMITE_NOTAS`])?
+pub fn es_de_notas(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::NotaObservacion | Clase::NotaComentario))
+}
+/// Caracteres de una observación o de un comentario (como en el servidor).
+pub const MAX_TEXTO_NOTA: usize = 2000;
+/// Tipos con observación común (la del equipo ya va con `observacion_equipo`, v1.56).
+pub const TIPOS_OBSERVACION: [&str; 3] = ["repositorio", "copia", "destino"];
+/// Tipos con comentarios comunes.
+pub const TIPOS_COMENTARIO: [&str; 4] = ["equipo", "repositorio", "copia", "destino"];
+
+/// Una parte de un objeto (equipo, id de una copia o de un repositorio, id de un destino):
+/// letras, cifras y `-_.:@`, de 1 a 128, sin `.` ni `..` solos.
+fn parte_objeto_valida(x: &str) -> bool {
+    !x.is_empty() && x.len() <= 128 && x != "." && x != ".." && x.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '@'))
+}
+
+/// El objeto de una nota según su tipo: `<equipo>/<id>` (copia, repositorio), el id del
+/// equipo o el del destino.
+pub fn objeto_nota_valido(tipo: &str, objeto: &str) -> bool {
+    match tipo {
+        "repositorio" | "copia" => objeto.split_once('/').is_some_and(|(e, id)| parte_objeto_valida(e) && parte_objeto_valida(id)),
+        "equipo" | "destino" => parte_objeto_valida(objeto),
+        _ => false,
+    }
+}
 
 /// Un dato y quién lo cambió por última vez.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -150,9 +228,11 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
     let ok = match c {
         Clase::EtiquetaColor | Clase::EtiquetaPlantilla => normalizar_etiqueta(sujeto).is_some_and(|n| n.to_lowercase() == sujeto),
         Clase::Destino | Clase::DestinoRegla => id_destino_valido(sujeto),
-        Clase::Plantilla | Clase::Sede | Clase::SedeEquipo | Clase::EtiquetaCategoria => id_simple(sujeto),
+        Clase::Plantilla | Clase::Sede | Clase::SedeEquipo | Clase::EtiquetaCategoria | Clase::GrupoExclusiones => id_simple(sujeto),
         Clase::SedeDestino => id_destino_valido(sujeto),
         Clase::OrdenEquipos => sujeto == "todos",
+        Clase::NotaObservacion => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_OBSERVACION.contains(&t) && objeto_nota_valido(t, o)),
+        Clase::NotaComentario => id_simple(sujeto),
     };
     ok.then_some((c, sujeto))
 }
@@ -408,6 +488,45 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
             }
             Ok(json!({ "ids": out }))
         }
+        Clase::GrupoExclusiones => {
+            solo_campos(m, &["nombre", "reglas"])?;
+            let nombre = texto_valido(m.get("nombre"), 1, 60, false).ok_or("El nombre del grupo: de 1 a 60 caracteres.")?;
+            let xs = m.get("reglas").and_then(Value::as_array).ok_or("Faltan las reglas del grupo (una lista).")?;
+            if xs.is_empty() || xs.len() > MAX_REGLAS_GRUPO {
+                return Err("Un grupo lleva de 1 a 100 reglas.");
+            }
+            let mut out: Vec<String> = Vec::new();
+            for x in xs {
+                let r = regla_exclusion_valida(x.as_str().ok_or("Regla no válida.")?)?;
+                if !out.contains(&r) {
+                    out.push(r);
+                }
+            }
+            Ok(json!({ "nombre": nombre, "reglas": out }))
+        }
+        Clase::NotaObservacion => {
+            solo_campos(m, &["texto"])?;
+            let texto = texto_valido(m.get("texto"), 1, MAX_TEXTO_NOTA, true).ok_or("La observación: de 1 a 2000 caracteres (sin texto, quita el dato).")?;
+            Ok(json!({ "texto": texto }))
+        }
+        Clase::NotaComentario => {
+            solo_campos(m, &["tipo", "objeto", "texto", "autor", "creado", "editado"])?;
+            let tipo = m
+                .get("tipo")
+                .and_then(Value::as_str)
+                .filter(|t| TIPOS_COMENTARIO.contains(t))
+                .ok_or("Tipo no válido (equipo, repositorio, copia o destino).")?;
+            let objeto = m.get("objeto").and_then(Value::as_str).filter(|o| objeto_nota_valido(tipo, o)).ok_or("Objeto no válido.")?;
+            let texto = texto_valido(m.get("texto"), 1, MAX_TEXTO_NOTA, true).ok_or("El comentario: de 1 a 2000 caracteres.")?;
+            let autor = texto_valido(m.get("autor"), 1, 80, false).ok_or("El autor: de 1 a 80 caracteres.")?;
+            let creado = m.get("creado").and_then(Value::as_str).filter(|c| milis(c).is_some()).ok_or("Fecha no válida.")?;
+            let mut v = json!({ "tipo": tipo, "objeto": objeto, "texto": texto, "autor": autor, "creado": creado });
+            match m.get("editado") {
+                None | Some(Value::Null) => {}
+                Some(x) => v["editado"] = json!(x.as_str().filter(|c| milis(c).is_some()).ok_or("Fecha no válida.")?),
+            }
+            Ok(v)
+        }
     })();
     r.map_err(str::to_string)
 }
@@ -570,6 +689,63 @@ mod tests {
         assert!(pide_admin("sede.equipo:e-1") && pide_admin("sede.destino:x") && !pide_admin("sede:x") && !pide_admin("etiqueta.categoria:x"));
     }
 
+    /// 0.8.1 (B5, 15pp): observaciones y comentarios comunes.
+    #[test]
+    fn observaciones_y_comentarios() {
+        assert_eq!(clase("nota.observacion:copia:e-1/docs").map(|x| x.0), Some(Clase::NotaObservacion));
+        assert_eq!(clase("nota.observacion:destino:zona:e-1:principal").map(|x| x.0), Some(Clase::NotaObservacion));
+        assert!(clase("nota.observacion:equipo:e-1").is_none(), "la del equipo va con observacion_equipo");
+        assert!(clase("nota.observacion:copia:e-1").is_none(), "falta el id");
+        assert!(clase("nota.observacion:copia:../x").is_none() && clase("nota.observacion:copia:e 1/x").is_none());
+        assert!(clase("nota.comentario:a/b").is_none() && clase("nota.comentario:k-1").is_some());
+        assert!(es_de_notas("nota.comentario:k-1") && !es_de_notas("sede:x") && !pide_admin("nota.observacion:copia:e/x"));
+        assert_eq!(
+            valor_valido("nota.observacion:copia:e/x", &json!({ "texto": " Va al NAS\nde abajo " })).unwrap(),
+            json!({ "texto": "Va al NAS\nde abajo" })
+        );
+        assert!(valor_valido("nota.observacion:copia:e/x", &json!({ "texto": "" })).is_err());
+        assert!(valor_valido("nota.observacion:copia:e/x", &json!({ "texto": "x".repeat(2001) })).is_err());
+        assert!(valor_valido("nota.observacion:copia:e/x", &json!({ "texto": "a", "por": "b" })).is_err());
+        let k = json!({ "tipo": "repositorio", "objeto": "e-1/docs", "texto": "Revisado", "autor": "Ana", "creado": "2026-10-20T10:00:00Z" });
+        assert_eq!(valor_valido("nota.comentario:k-1", &k).unwrap(), k);
+        for (campo, malo) in [("objeto", json!("e-1")), ("tipo", json!("cliente")), ("creado", json!("ayer")), ("autor", json!(""))] {
+            let mut x = k.clone();
+            x[campo] = malo;
+            assert!(valor_valido("nota.comentario:k-1", &x).is_err(), "{campo}");
+        }
+        let mut ed = k.clone();
+        ed["editado"] = json!("2026-10-20T10:05:00Z");
+        assert!(valor_valido("nota.comentario:k-1", &ed).is_ok());
+    }
+
+    /// 0.8.1 (B2, 15y): grupos de exclusiones del cliente.
+    #[test]
+    fn grupos_de_exclusiones() {
+        assert_eq!(clase("exclusiones:musica").map(|x| x.0), Some(Clase::GrupoExclusiones));
+        assert!(clase("exclusiones:a/b").is_none());
+        assert!(es_de_exclusiones("exclusiones:musica") && !es_de_exclusiones("sede:x") && !es_de_sedes("exclusiones:musica"));
+        assert!(!pide_admin("exclusiones:musica"));
+        assert_eq!(
+            valor_valido("exclusiones:musica", &json!({ "nombre": " Música ", "reglas": [" *.mp3 ", "*.flac", "*.mp3"] })).unwrap(),
+            json!({ "nombre": "Música", "reglas": ["*.mp3", "*.flac"] }),
+            "limpio y sin repetir"
+        );
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "", "reglas": ["*.mp3"] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "a".repeat(61), "reglas": ["*.mp3"] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": [] })).is_err(), "sin reglas");
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música" })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": ["*.mp3"], "copias": ["x"] })).is_err(), "campos de más");
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": ["a\u{7}b"] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": ["x".repeat(201)] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": [3] })).is_err());
+        let muchas: Vec<String> = (0..101).map(|i| format!("*.e{i}")).collect();
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": muchas })).is_err());
+        for todo in ["*", "*.*", "**/*", "/", "\\", " ** "] {
+            assert!(regla_exclusion_valida(todo).is_err(), "{todo}");
+        }
+        assert!(regla_exclusion_valida("Downloads/*.exe").is_ok() && regla_exclusion_valida("~$*").is_ok());
+    }
+
     #[test]
     fn gana_el_mas_reciente_y_un_cambio_a_una_semilla() {
         let mut doc = Documento::new();
@@ -610,6 +786,13 @@ mod tests {
                 fusionar(&mut doc, "etiqueta.color:servidor", en);
             }
             assert_eq!(doc["etiqueta.color:servidor"].valor, caso["gana"], "{}", caso["nombre"]);
+        }
+        for caso in v["exclusiones"].as_array().unwrap() {
+            let r = valor_valido("exclusiones:grupo", &caso["valor"]);
+            assert_eq!(r.is_ok(), caso["valido"] == true, "{}", caso["nombre"]);
+            if let Some(l) = caso.get("limpio") {
+                assert_eq!(&r.unwrap(), l, "{}", caso["nombre"]);
+            }
         }
         for caso in v["claves"].as_array().unwrap() {
             let c = caso["clave"].as_str().unwrap();

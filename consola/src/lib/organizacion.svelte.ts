@@ -7,6 +7,7 @@ import * as api from "./api";
 import { actual, cargarCliente } from "./estado.svelte";
 import { sincronizar } from "./datosComunes.svelte";
 import { idNuevo, MAX_ORDEN, type CategoriaEtiqueta, type Sede } from "./sedes";
+import { gruposDePartidaQuitados, gruposExclusiones, idGrupoNuevo, valorGrupo } from "./gruposExclusiones";
 
 type Entrada = { clave: string; valor: unknown };
 
@@ -58,3 +59,25 @@ export const quitarCategoria = (cliente: string, id: string) => guardarOrganizac
 
 /** El orden a mano de los equipos (como mucho 500). */
 export const ponerOrden = (cliente: string, ids: string[]) => guardarOrganizacion(cliente, [{ clave: "orden.equipos:todos", valor: { ids: ids.slice(0, MAX_ORDEN) } }]);
+
+/**
+ * 0.8.1 (B2, 15y): crear o cambiar un grupo de exclusiones (`exclusiones:<id>`). Uno de
+ * partida se guarda con su id fijo al tocarlo. Valida como el protocolo (lib/gruposExclusiones.ts).
+ */
+export async function guardarGrupoExclusiones(cliente: string, g: { id?: string; nombre: string; reglas: string | string[] }): Promise<string> {
+  const v = valorGrupo(g.nombre, g.reglas);
+  if ("error" in v) throw new Error(v.error);
+  const id = g.id ?? idGrupoNuevo(v.valor.nombre, gruposExclusiones(actual).map((x) => x.id));
+  await guardarOrganizacion(cliente, [{ clave: `exclusiones:${id}`, valor: v.valor }]);
+  return id;
+}
+
+/** Quitar un grupo (`null`: uno de partida quitado ya no vuelve a salir). Las copias que usaban sus reglas las conservan. */
+export const quitarGrupoExclusiones = (cliente: string, id: string) => guardarOrganizacion(cliente, [{ clave: `exclusiones:${id}`, valor: null }]);
+
+/** Volver a poner los grupos de partida que se quitaron, como vinieron. */
+export const reponerGruposDePartida = (cliente: string) =>
+  guardarOrganizacion(
+    cliente,
+    gruposDePartidaQuitados(actual.organizacion).map((g) => ({ clave: `exclusiones:${g.id}`, valor: { nombre: g.nombre, reglas: [...g.reglas] } })),
+  );

@@ -318,7 +318,7 @@
         <section>
           <div class="section-head">
             <h2>Repositorios <span class="count">· {tarjetas.length}</span> <Ayuda id="repositorio" /></h2>
-            <a class="btn btn-sm btn-ghost" href="/c/{c}/repositorios">Ver todos</a>
+            <a class="btn btn-sm btn-ghost" href="/c/{c}/destinos">Ver todos</a>
           </div>
           <div class="rejilla repos">
             {#each tarjetas as t (t.equipo.id + t.repo.id)}
@@ -344,7 +344,7 @@
       <section>
         <div class="section-head">
           <h2>Dónde se guarda <span class="count">· {destinos.length}</span></h2>
-          <a class="btn btn-sm btn-ghost" href="/c/{c}/repositorios">Repositorios y destinos<ChevronRight size={14} /></a>
+          <a class="btn btn-sm btn-ghost" href="/c/{c}/destinos">Destinos<ChevronRight size={14} /></a>
         </div>
         <div class="card p-0 lista">
           {#each destinos as d (d.clave)}

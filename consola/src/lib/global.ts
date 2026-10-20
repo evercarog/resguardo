@@ -177,7 +177,7 @@ export function atencion(clientes: PanelCliente[], ahora = Date.now()): Atencion
     if (c.avisos_abiertos)
       out.push({ cliente: c, tono: "warn", titulo: plural(c.avisos_abiertos, "aviso sin revisar", "avisos sin revisar"), detalle: "Revísalos y márcalos como vistos.", accion: { texto: "Ver los avisos", href: `/c/${c.id}/avisos` }, orden: "~" });
     if (c.pendientes)
-      out.push({ cliente: c, tono: "info", titulo: plural(c.pendientes, "orden esperando su turno", "órdenes esperando su turno"), detalle: "Se aplicarán cuando pase la espera; aún se pueden cancelar.", accion: { texto: "Ver las órdenes", href: `/c/${c.id}/ordenes` }, orden: "~~" });
+      out.push({ cliente: c, tono: "info", titulo: plural(c.pendientes, "orden esperando su turno", "órdenes esperando su turno"), detalle: "Se aplicarán cuando pase la espera; aún se pueden cancelar.", accion: { texto: "Ver las órdenes", href: `/c/${c.id}/actividad` }, orden: "~~" });
   }
   return out
     .sort((a, b) => PESO[a.tono] - PESO[b.tono] || a.cliente.nombre.localeCompare(b.cliente.nombre) || a.orden.localeCompare(b.orden))

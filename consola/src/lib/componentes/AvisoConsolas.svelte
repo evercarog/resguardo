@@ -8,6 +8,8 @@
   // hace falta un código de conexión de esa consola y la clave de
   // administración; aquí solo se eligen ya los equipos y se dice cuál es la
   // consola esperada (su identidad, que ya tienen fijada los demás equipos).
+  // 15nn: y dice qué hacer en cada consola, para no crear otro cliente igual
+  // en la otra («Recibir un cliente») en vez de dar el código del que ya está.
   import { Monitor } from "@lucide/svelte";
   import { puede } from "$lib/estado.svelte";
   import { plural } from "$lib/formato";
@@ -58,7 +60,7 @@
         {:else if puedeConectar}
           <div class="acciones">
             <button type="button" class="btn btn-sm" onclick={() => (abierta = { consola: c, ids: [equipo.id] })}>Conectar también…</button>
-            <span class="nota">Necesitas un código de conexión de «{c.nombre}» y la clave de administración.</span>
+            <span class="nota">Necesitas la clave de administración y un código de conexión de «{c.nombre}»: allí, «{cliente.nombre}» → «Ajustes» → «Servidor» → «Dar un código de conexión».</span>
           </div>
         {:else}
           <p class="nota">Pídeselo a quien administra este cliente.</p>
@@ -85,6 +87,16 @@
           </li>
         {/each}
       </ul>
+      {#if puedeConectar}
+        <details class="como">
+          <summary>Cómo se hace</summary>
+          <ol>
+            <li><strong>En la otra consola</strong>, el cliente ya existe: abre «{cliente.nombre}» → «Ajustes» → «Servidor» → <strong>«Dar un código de conexión»</strong>. No uses «Recibir un cliente»: crearía otro cliente con el mismo nombre.</li>
+            <li><strong>Aquí</strong>, «Conectar también…»: pega ese código, comprueba las huellas de palabra con quien administra la otra y escribe la clave de administración.</li>
+            <li>Cada equipo se conecta a la vez a las dos; en la otra aparecen en «{cliente.nombre}», con los que ya tenía.</li>
+          </ol>
+        </details>
+      {/if}
     </div>
   </section>
 {/if}
@@ -138,6 +150,19 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+  }
+  .como {
+    font-size: var(--fs-sm);
+  }
+  .como summary {
+    cursor: pointer;
+    color: var(--text-2);
+  }
+  .como ol {
+    display: grid;
+    gap: 4px;
+    margin: 6px 0 0;
+    padding-left: 1.3em;
   }
   @media (max-width: 640px) {
     li {

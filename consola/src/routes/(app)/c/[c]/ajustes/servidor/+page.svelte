@@ -316,7 +316,7 @@
         <button class="btn btn-sm btn-ghost" onclick={bajarGuardada}>Descargar la copia guardada</button>
         <button class="btn btn-sm btn-ghost" onclick={pedirBorrarGuardada}><Trash2 size={14} />Borrar la copia guardada</button>
       </div>
-      {#if importadas}<p class="faint pequeno">Este cliente ya tiene el historial de su servidor anterior: está en <a href="/c/{actual.id}/auditoria?importada=1">Actividad</a>.</p>{/if}
+      {#if importadas}<p class="faint pequeno">Este cliente ya tiene el historial de su servidor anterior: está en <a href="/c/{actual.id}/actividad/registro?importada=1">Actividad</a>.</p>{/if}
     </section>
 
     {#if puede.propietario(rol)}
@@ -342,7 +342,7 @@
           <h2>Notificaciones <Ayuda id="notificaciones" /></h2>
           <p class="faint">El correo y los canales del servidor los pone su propietario. Los de {actual.cliente.nombre}, y qué recibe cada persona, en «Personas y ajustes».</p>
         </div>
-        <a class="btn" href="/c/{actual.id}/ajustes#sec-notificaciones">Abrir</a>
+        <a class="btn" href="/c/{actual.id}/ajustes/personas#sec-notificaciones">Abrir</a>
       </div>
     </section>
   {/if}

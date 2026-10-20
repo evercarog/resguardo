@@ -63,7 +63,7 @@
   const pasos = $derived<Paso[]>([
     zona
       ? { titulo: "Copia al almacén", estado: "hecho", texto: `En «${almacen?.nombre}${zona.nombre ? ` · ${zona.nombre}` : ""}», de solo añadir.` }
-      : { titulo: "Copia al almacén", estado: "falta", texto: "El repositorio elegido no está en un almacén: crea uno en un almacén de la oficina y elígelo arriba.", enlace: { texto: "Nuevo repositorio", href: `/c/${cliente}/repositorios` } },
+      : { titulo: "Copia al almacén", estado: "falta", texto: "El repositorio elegido no está en un almacén: crea uno en un almacén de la oficina y elígelo arriba.", enlace: { texto: "Nuevo repositorio", href: `/c/${cliente}/destinos` } },
     { titulo: "Verificación automática cada semana (10 %)", estado: verificacion ? "al_enviar" : "falta", texto: verificacion ? "Se envía con la copia." : "Actualiza el agente para programarla desde aquí." },
     {
       titulo: "Prueba de restauración cada mes",

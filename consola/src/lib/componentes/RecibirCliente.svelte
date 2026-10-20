@@ -4,6 +4,9 @@
   // cliente con la MISMA sal (así la clave de administración sigue valiendo)
   // y se muestra, una sola vez, el bloque con la ficha, la identidad y la
   // autoridad TLS de este servidor para pegarlo en el antiguo.
+  // 15nn: si ya hay un cliente con ese nombre, lo avisa; y para traer equipos
+  // de otra consola sin dejarla, lleva a «Dar un código de conexión», que
+  // pregunta antes si el cliente ya existe aquí.
   import { goto } from "$app/navigation";
   import { ArrowRightLeft, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
@@ -13,6 +16,8 @@
   import { bloqueServidor, huellaCorta } from "$lib/servidores";
   import type { ClienteRecibido } from "$lib/tipos";
   import BloqueCopiable from "./BloqueCopiable.svelte";
+  import AvisoNombreRepetido from "./AvisoNombreRepetido.svelte";
+  import { todosLosClientes } from "$lib/nombresClientes.svelte";
 
   let { onclose, alTambien }: { onclose: () => void; alTambien?: () => void } = $props();
 
@@ -59,13 +64,13 @@
         <span class="ticon"><ArrowRightLeft size={18} /></span>
         <div>
           <h2 id="t-recibir">Recibir un cliente</h2>
-          <p>Para traer a este servidor un cliente que hoy está en otro. En el antiguo, abre el cliente y elige «Mover este cliente a otro servidor»: te dará un bloque para pegar aquí.</p>
+          <p>Para <strong>mudar</strong> a este servidor un cliente que hoy está en otro: se crea aquí con su misma sal. En el antiguo, abre el cliente y elige «Mover este cliente a otro servidor»: te dará un bloque para pegar aquí.</p>
         </div>
       </div>
       {#if alTambien}
         <div class="notice notice-info tambien">
-          <p><strong>¿Sin dejar la otra consola?</strong> Para gestionar sus equipos desde las dos a la vez (por ejemplo, la del cliente en su oficina y esta en línea), crea un código de conexión.</p>
-          <button type="button" class="btn btn-sm" onclick={alTambien}>Gestionarlo también desde aquí…</button>
+          <p><strong>¿Traes equipos de otra consola sin dejarla?</strong> Para gestionarlos desde las dos a la vez (por ejemplo, la del cliente en su oficina y esta en línea), no hace falta recibir nada: da un código de conexión de aquí y pégalo allí. Si el cliente ya existe aquí, lo eliges y no se crea otro.</p>
+          <button type="button" class="btn btn-sm" onclick={alTambien}>Dar un código de conexión…</button>
         </div>
       {/if}
       <div class="field">
@@ -74,6 +79,7 @@
         {#if typeof datos === "string"}<p class="error-campo">{datos}</p>
         {:else if datos}<span class="field-hint">Se creará «{datos.nombre}» con la misma sal: su clave de administración seguirá valiendo.</span>{/if}
       </div>
+      {#if datos && typeof datos !== "string"}<AvisoNombreRepetido nombre={datos.nombre} clientes={todosLosClientes()} />{/if}
       <div class="dos">
         <div class="field">
           <label class="field-label" for="usos">Equipos que pueden llegar</label>
@@ -103,9 +109,9 @@
       </div>
       <BloqueCopiable texto={bloqueServidor(hecho)} etiqueta="Copiar el bloque" />
       <p class="faint pequeno">Identidad de este servidor: <span class="pastilla mono">{huellaCorta(hecho.servidor.identidad)}</span>. Compruébala con quien está en el antiguo. La ficha vale para {hecho.usos} equipos hasta el {new Date(hecho.caduca).toLocaleDateString("es")}.</p>
-      <div class="notice notice-warn"><TriangleAlert size={16} /><p>La ficha solo se muestra ahora. Si cierras sin copiarla, pide otra desde el cliente («Servidor» → «Dar una ficha»).</p></div>
+      <div class="notice notice-warn"><TriangleAlert size={16} /><p>La ficha solo se muestra ahora. Si cierras sin copiarla, pide otra desde el cliente («Ajustes» → «Servidor» → «Dar una ficha»).</p></div>
       <footer>
-        <button class="btn btn-primary" onclick={() => (onclose(), goto(`/c/${hecho!.cliente.id}/servidor`))}>Listo</button>
+        <button class="btn btn-primary" onclick={() => (onclose(), goto(`/c/${hecho!.cliente.id}/ajustes/servidor`))}>Listo</button>
       </footer>
     </div>
   {/if}

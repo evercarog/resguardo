@@ -58,6 +58,8 @@ export interface ClienteDelServidor {
   relevo_mes_bytes: number;
   cuotas: Cuotas;
   efectivas: Cuotas;
+  /** 15nn: cuándo se archivó (null o sin el campo: activo; un servidor anterior no lo manda). */
+  archivado?: string | null;
 }
 
 export interface ClientesDelServidor {

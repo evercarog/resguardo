@@ -104,7 +104,7 @@ export function primeraSubida(t: TrabajoEspejo, hace: Equipo, equipos: Equipo[])
   let bytes = 0;
   let sinTamano = 0;
   for (const r of repos) {
-    const b = r.repo ? bytesRepo(r.repo) : null;
+    const b = r.repo && !r.derivada ? bytesRepo(r.repo) : null;
     if (b == null) sinTamano++;
     else bytes += b;
   }

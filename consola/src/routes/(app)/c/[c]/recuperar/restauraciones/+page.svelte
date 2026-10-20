@@ -114,7 +114,7 @@
     resumen="Cada restauración queda anotada sola: quién, cuándo, qué versión, desde dónde, cuánto y cuánto tardó. Sin nombres de archivos: no salen del equipo."
   >
     {#snippet acciones()}
-      {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-primary" href="/c/{actual.id}/restaurar{equipoFiltro ? `?equipo=${encodeURIComponent(equipoFiltro)}` : ''}"><History size={16} />Restaurar</a>{/if}
+      {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-primary" href="/c/{actual.id}/recuperar{equipoFiltro ? `?equipo=${encodeURIComponent(equipoFiltro)}` : ''}"><History size={16} />Restaurar</a>{/if}
     {/snippet}
   </CabeceraPagina>
 
@@ -154,7 +154,7 @@
   {:else if !todas.length}
     <div class="card">
       <Vacio icono={ArchiveRestore} ilustracion="sin-versiones" titulo="Aún no hay restauraciones" texto="Cuando alguien restaure algo (desde aquí o desde la ventana del equipo), aparecerá aquí con su ficha.">
-        {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-primary" href="/c/{actual.id}/restaurar">Restaurar archivos</a>{/if}
+        {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-primary" href="/c/{actual.id}/recuperar">Restaurar archivos</a>{/if}
       </Vacio>
     </div>
   {:else}
@@ -245,7 +245,7 @@
     {#if puede.ordenar(actual.cliente?.rol)}
       <!-- Plan 0.8.0, E3 (14k): si fue un simulacro, se registra con sus datos ya puestos. -->
       <p class="como-prueba">
-        <a class="btn btn-sm" href="/c/{actual.id}/pruebas?restauracion={encodeURIComponent(`${r.equipo}|${r.id}`)}"><ClipboardCheck size={14} />Registrar como prueba funcional</a>
+        <a class="btn btn-sm" href="/c/{actual.id}/recuperar/pruebas?restauracion={encodeURIComponent(`${r.equipo}|${r.id}`)}"><ClipboardCheck size={14} />Registrar como prueba funcional</a>
         <span class="faint">Con el día, el repositorio y lo que tardó ya puestos.</span>
       </p>
     {/if}

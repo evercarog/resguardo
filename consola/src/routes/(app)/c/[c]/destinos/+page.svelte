@@ -31,6 +31,8 @@
   import RenombrarDestino from "$lib/componentes/RenombrarDestino.svelte";
   import { destinosDelCliente, TEXTO_TIPO, usosDeVista, type DestinoVista } from "$lib/destinos";
   import { hrefDestino } from "$lib/fichaDestino";
+  import { esAdoptado, TEXTO_ADOPTADO } from "$lib/almacenUnico";
+  import { hrefNube } from "$lib/nubesAlmacen";
   import { page } from "$app/state";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { nombreTipoNube } from "$lib/espejo";
@@ -56,6 +58,8 @@
   function otrosUsos(v: DestinoVista): string[] {
     return actual.equipos.flatMap((e) => (e.resumen?.destinos ?? []).filter((d) => v.ids.includes(d.id)).flatMap((d) => usosDestino(e, d.id).map((u) => `${u} (${e.nombre})`)));
   }
+  /** 15dd: los repositorios que llegan a una zona por un «Servidor de copias» genérico (adoptados). */
+  const adoptadosEn = (v: DestinoVista) => repos.filter((r) => v.adoptados?.includes(r.destino) && actual.equipos.some((e) => e.id === r.equipo.id && (e.resumen?.destinos ?? []).some((d) => d.id === r.destino && esAdoptado(e, d, actual.equipos)))).length;
   /** Las notas de un destino (no tiene página propia). */
   let notasDestino = $state<{ id: string; nombre: string } | null>(null);
   /** Repositorios (y destinos nuevos) en camino: se ven en su sitio mientras el equipo los crea. */
@@ -124,13 +128,13 @@
   const conProblemas = $derived(repos.filter((r) => r.estado.tono === "bad" || r.estado.tono === "warn").length);
 </script>
 
-<svelte:head><title>Repositorios y destinos · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
+<svelte:head><title>Destinos · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
 
 <div class="page">
   <CabeceraPagina
-    titulo="Repositorios y destinos"
+    titulo="Destinos"
     icono={Database}
-    migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Repositorios y destinos" }]}
+    migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Destinos" }]}
     resumen={actual.cargado
       ? `${plural(repos.length, "repositorio", "repositorios")} en ${plural(vistas.length, "destino", "destinos")} · ${bytes(total)} protegidos${enCamino.length ? ` · ${plural(enCamino.length, "cambio en camino", "cambios en camino")}` : ""}`
       : "Cargando…"}
@@ -181,7 +185,7 @@
                   <ChevronRight size={16} class="flecha" />
                 </a>
                 <p class="tile-linea num">
-                  {plural(z.usuarios, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}
+                  {plural(z.usuarios, "equipo copia aquí", "equipos copian aquí")}{#if suyos.length}{" · "}{plural(suyos.length, "repositorio", "repositorios")} · {bytes(suyos.reduce((n, r) => n + (r.bytes ?? 0), 0))}{/if}{#if adoptadosEn(v)}{" · "}<span use:tip={TEXTO_ADOPTADO}>{plural(adoptadosEn(v), "adoptado", "adoptados")}</span>{/if}
                 </p>
                 {#if mz.sistemaArchivos || entorno}<p class="tile-dato faint">{#if mz.sistemaArchivos}<span class="pastilla mono">{mz.sistemaArchivos}</span>{/if}{#if entorno}{" "}{entorno}{/if}</p>{/if}
                 <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} soloAnadir={cl.soloAnadir} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
@@ -216,6 +220,8 @@
                   {#if v.alias?.length || (v.nube && v.catalogo && v.catalogo.id !== v.clave)}<span class="badge badge-sm tone-neutral" use:tip={"La nube conectada y el destino de la lista con el mismo bucket son el mismo: una sola ficha."}>Unido</span>{/if}
                   <span class="corte" aria-hidden="true"></span>
                   {#if puede.ordenar(actual.cliente?.rol) && v.clase !== "suelto"}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
+                  <!-- 15s: la página de la nube en su equipo (lo que guarda, conexión, «Probar», «Desconectar»). -->
+                  {#if v.clase === "nube" && v.nube}<a class="btn btn-sm btn-ghost" href={hrefNube(actual.id ?? "", v.nube.equipo.id, v.nube.nombre)}><Cloud size={12} />En {v.nube.equipo.nombre}</a>{/if}
                   {#if d}<button class="btn btn-sm btn-ghost" class:notas-destino={v.clase === "suelto"} onclick={() => (notasDestino = { id: d.id, nombre: v.nombre })}>Notas</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" class:notas-destino={!d} onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (marcar = marcarDesdeVista(v, actual.equipos))} use:tip={"Local, Fuera del sitio o Nube; Inmutable, Aislado"}><ShieldCheck size={12} />Tipo y marcas</button>{/if}

@@ -40,9 +40,15 @@ export interface Organizacion {
   categorias: CategoriaEtiqueta[];
   /** El orden a mano de los equipos (ids). */
   orden: string[];
+  /** 0.8.1 (B2, 15y): los grupos de exclusiones guardados (lib/gruposExclusiones.ts). */
+  exclusiones: { id: string; nombre: string; reglas: string[] }[];
+  /** Los que se quitaron (`null`): un grupo de partida quitado no vuelve a salir. */
+  exclusiones_quitadas: string[];
+  /** El servidor sabe de grupos de exclusiones (uno anterior no manda el campo: no se ofrecen). */
+  exclusionesAdmitidas: boolean;
 }
 
-export const ORGANIZACION_VACIA: Organizacion = { sedes: [], equipos: {}, destinos: {}, categorias: [], orden: [] };
+export const ORGANIZACION_VACIA: Organizacion = { sedes: [], equipos: {}, destinos: {}, categorias: [], orden: [], exclusiones: [], exclusiones_quitadas: [], exclusionesAdmitidas: false };
 
 /** Lo que llega del servidor, limpio (un servidor anterior: vacía). */
 export function leerOrganizacion(x: unknown): Organizacion {
@@ -54,6 +60,11 @@ export function leerOrganizacion(x: unknown): Organizacion {
     destinos: obj(o.destinos),
     categorias: Array.isArray(o.categorias) ? o.categorias.filter((c) => c && typeof c.id === "string").map((c) => ({ id: c.id, nombre: c.nombre, etiquetas: Array.isArray(c.etiquetas) ? c.etiquetas : [] })) : [],
     orden: Array.isArray(o.orden) ? o.orden.filter((x) => typeof x === "string") : [],
+    exclusiones: Array.isArray(o.exclusiones)
+      ? o.exclusiones.filter((g) => g && typeof g.id === "string" && typeof g.nombre === "string" && Array.isArray(g.reglas)).map((g) => ({ id: g.id, nombre: g.nombre, reglas: g.reglas.filter((r) => typeof r === "string") }))
+      : [],
+    exclusiones_quitadas: Array.isArray(o.exclusiones_quitadas) ? o.exclusiones_quitadas.filter((x) => typeof x === "string") : [],
+    exclusionesAdmitidas: Array.isArray(o.exclusiones),
   };
 }
 

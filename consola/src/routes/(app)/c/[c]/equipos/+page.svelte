@@ -4,7 +4,6 @@
   import Modal from "$ui/componentes/Modal.svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
-  import OrganizarEquipos from "$lib/componentes/OrganizarEquipos.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { agruparPorNiveles, enOrdenManual, equiposSinSede, leerNiveles, moverAntesDe, moverEnGrupo, nivelesDisponibles, sedeDeEquipo, sedePorDefecto, type GrupoNivel, type Nivel } from "$lib/sedes";
   import { ponerOrden, ponerSedeEquipos } from "$lib/organizacion.svelte";
@@ -176,7 +175,6 @@
       grupo,
     );
   }
-  let organizar = $state(false);
   // «Varios a la vez» → poner sede.
   let ponerSede = $state(false);
   let sedeElegida = $state("");
@@ -277,7 +275,7 @@
     </div>
     {#if puede.administrar(actual.cliente?.rol)}
       <div class="acciones-cab">
-        <button class="btn" onclick={() => (organizar = true)}><Building2 size={16} />Sedes y categorías</button>
+        <a class="btn" href="/c/{actual.id}/ajustes/organizacion"><Building2 size={16} />Organización</a>
         <a class="btn btn-primary" href="/c/{actual.id}/emparejar"><Plus size={16} />Añadir equipo</a>
       </div>
     {/if}
@@ -492,7 +490,6 @@
   {/if}
 </div>
 
-{#if organizar}<OrganizarEquipos onclose={() => (organizar = false)} />{/if}
 
 {#if ponerSede}
   <Modal labelledby="t-poner-sede" onclose={() => (ponerSede = false)} width={440}>

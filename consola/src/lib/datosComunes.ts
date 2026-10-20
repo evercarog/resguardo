@@ -25,8 +25,8 @@ export const admiteDatosCliente = (e: Pick<Equipo, "resumen"> | null | undefined
 /** Los equipos a los que se mandan: confirmados, gestionados desde aquí y con un agente que los guarda. */
 export const equiposQueGuardan = (equipos: Equipo[]) => equipos.filter((e) => e.confirmado && e.modo === "gestionado" && admiteDatosCliente(e));
 
-export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos"];
+export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones" | "nota.observacion" | "nota.comentario";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario"];
 
 /** 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda sedes, categorías y orden. */
 export const ADMITE_SEDES = "sedes";
@@ -34,6 +34,43 @@ export const ADMITE_SEDES = "sedes";
 export const esDeSedes = (clave: string) => ["sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos"].includes(claseDe(clave)?.clase ?? "");
 /** ¿Las guarda este equipo? */
 export const admiteSedes = (e: Pick<Equipo, "resumen"> | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_SEDES);
+
+/** 0.8.1 (B2, 15y): `resumen.admite` de un agente que guarda los grupos de exclusiones (`exclusiones:<id>`). */
+export const ADMITE_EXCLUSIONES = "grupos_exclusiones";
+/** ¿Es un grupo de exclusiones? (Solo a los agentes con `admite: "grupos_exclusiones"`.) */
+export const esDeExclusiones = (clave: string) => claseDe(clave)?.clase === "exclusiones";
+/** ¿Guarda este equipo este dato? (Las clases nuevas, solo los agentes que las admiten: uno anterior rechazaría la orden entera.) */
+export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave: string): boolean {
+  if (esDeSedes(clave)) return admiteSedes(e);
+  if (esDeExclusiones(clave)) return !!e?.resumen?.admite?.includes(ADMITE_EXCLUSIONES);
+  if (esDeNotas(clave)) {
+    if (!e?.resumen?.admite?.includes(ADMITE_NOTAS)) return false;
+    // Los comentarios pueden ser muchos: con el documento del equipo ya a tres cuartos de su
+    // tope (256 KiB), dejan de repartirse (siguen en esta consola) para no llenarlo.
+    const bytes = (e.resumen as { datos_cliente?: { bytes?: number } | null }).datos_cliente?.bytes ?? 0;
+    return claseDe(clave)?.clase !== "nota.comentario" || bytes < LLENO_COMENTARIOS;
+  }
+  return true;
+}
+
+/** 0.8.1 (B5, 15pp): `resumen.admite` de un agente que guarda observaciones y comentarios comunes. */
+export const ADMITE_NOTAS = "notas_comunes";
+/** ¿Es una observación o un comentario común? (Solo a los agentes con `admite: "notas_comunes"`.) */
+export const esDeNotas = (clave: string) => ["nota.observacion", "nota.comentario"].includes(claseDe(clave)?.clase ?? "");
+/** Lo que puede ocupar el documento de un equipo antes de dejar de repartir comentarios. */
+export const LLENO_COMENTARIOS = 192 * 1024;
+/** Tipos con observación común (la del equipo va con `observacion_equipo`) y con comentarios comunes. */
+export const TIPOS_OBSERVACION_COMUN = ["repositorio", "copia", "destino"];
+export const TIPOS_COMENTARIO_COMUN = ["equipo", "repositorio", "copia", "destino"];
+const parteObjeto = (x: string) => x.length > 0 && x.length <= 128 && x !== "." && x !== ".." && /^[A-Za-z0-9_.:@-]+$/.test(x);
+/** El objeto de una nota según su tipo (como `objeto_nota_valido` del protocolo). */
+export function objetoNotaValido(tipo: string, objeto: string): boolean {
+  if (tipo === "repositorio" || tipo === "copia") {
+    const i = objeto.indexOf("/");
+    return i > 0 && parteObjeto(objeto.slice(0, i)) && parteObjeto(objeto.slice(i + 1));
+  }
+  return (tipo === "equipo" || tipo === "destino") && parteObjeto(objeto);
+}
 
 /** Una etiqueta limpia como las de los equipos (o null). */
 export function normalizarEtiqueta(x: string): string | null {
@@ -52,10 +89,14 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
   const ok =
     clase === "etiqueta.color" || clase === "etiqueta.plantilla"
       ? normalizarEtiqueta(sujeto)?.toLowerCase() === sujeto
-      : clase === "plantilla" || clase === "sede" || clase === "sede.equipo" || clase === "etiqueta.categoria"
+      : clase === "plantilla" || clase === "sede" || clase === "sede.equipo" || clase === "etiqueta.categoria" || clase === "exclusiones"
         ? idSimple(sujeto)
         : clase === "orden.equipos"
           ? sujeto === "todos"
+          : clase === "nota.observacion"
+            ? ((i) => i > 0 && TIPOS_OBSERVACION_COMUN.includes(sujeto.slice(0, i)) && objetoNotaValido(sujeto.slice(0, i), sujeto.slice(i + 1)))(sujeto.indexOf(":"))
+            : clase === "nota.comentario"
+              ? idSimple(sujeto)
           : idDestinoValido(sujeto);
   return ok ? { clase, sujeto } : null;
 }
@@ -259,6 +300,13 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
       return Array.isArray(v?.etiquetas) ? (v.etiquetas as string[]).join(", ") || "sin etiquetas" : "quitada";
     case "orden.equipos":
       return v ? "un orden a mano" : "sin orden a mano";
+    case "exclusiones":
+      return Array.isArray(v?.reglas) ? (v.reglas as string[]).join(", ") || "sin reglas" : "quitado";
+    case "nota.observacion":
+    case "nota.comentario": {
+      const t = typeof v?.texto === "string" ? (v.texto as string).replace(/\s+/g, " ").trim() : "";
+      return t ? (t.length > 80 ? `«${t.slice(0, 79)}…»` : `«${t}»`) : "sin observación";
+    }
     default:
       return "—";
   }
@@ -289,6 +337,17 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
       return `Categoría «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto}»`;
     case "orden.equipos":
       return "Orden de los equipos";
+    case "exclusiones":
+      return `Grupo de exclusiones «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto}»`;
+    case "nota.observacion": {
+      const i = c.sujeto.indexOf(":");
+      const tipo = c.sujeto.slice(0, i);
+      const obj = c.sujeto.slice(i + 1);
+      const quien = tipo === "destino" ? (nombres.destino?.(obj) ?? obj) : obj.slice(obj.indexOf("/") + 1);
+      return `Observación de ${tipo === "copia" ? "la copia" : tipo === "repositorio" ? "el repositorio" : "el destino"} «${quien}»`;
+    }
+    case "nota.comentario":
+      return "Un comentario";
     default:
       return f.clave;
   }

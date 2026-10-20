@@ -1,5 +1,5 @@
 // «Buscar archivos» en todas las versiones: la lógica (sin interfaz) de la
-// página /c/{c}/buscar. El equipo busca con `buscar_todas` en la sesión
+// página /c/{c}/recuperar/buscar. El equipo busca con `buscar_todas` en la sesión
 // cifrada `explorar` (api-servidor.md §7) y manda los archivos agrupados, con
 // las versiones en las que está cada uno. Aquí se unen las páginas (y los
 // repositorios), se comprueba lo que llega, se resume cada archivo (cuándo

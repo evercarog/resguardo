@@ -53,7 +53,7 @@
   const vuelta = $derived(vueltaPorHora(ejecuciones, sel.vuelta));
   const base = $derived(`/c/${cliente.id}/equipos/${equipo.id}`);
   const enlaceCopia = (k: string) => `${base}/copias/${encodeURIComponent(k)}`;
-  const enlaceRestaurar = (v: VersionInforme, todo: boolean) => `/c/${cliente.id}/restaurar?${new URLSearchParams({ equipo: equipo.id, repo: repo.id, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  const enlaceRestaurar = (v: VersionInforme, todo: boolean) => `/c/${cliente.id}/recuperar?${new URLSearchParams({ equipo: equipo.id, repo: repo.id, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
 
   // Una sesión para todo el panel (y mientras dure la página).
   let acceso: AccesoRepo | null = null;

@@ -5,9 +5,10 @@
 // lib/cadenas.ts, el mismo que «Añadir paso» del editor de copias). Todo sale de los
 // resúmenes de los equipos y del catálogo (sin rutas de los equipos ni secretos).
 import type { DestinoCatalogo, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
-import { claveNube, claveZona, clavesDe, PRINCIPAL, zonaDeDestino, zonasDe, type DestinoVista } from "./destinos";
+import { claveNube, claveZona, clavesDe, PRINCIPAL, zonaDeDestino, zonaDetras, zonasDe, type DestinoVista } from "./destinos";
+import { contenidoAlmacen, duenoDeCarpeta, esAdoptado } from "./almacenUnico";
 import { destinoDe } from "./repo";
-import { destinosParaPasos, repoEnAlmacen, usosPosibles } from "./cadenas";
+import { destinosParaPasos, usosPosibles } from "./cadenas";
 import { estadoTrabajo, hrefEspejo, nombrePorDefecto, trabajosDelAlmacen, trabajosDelEquipo } from "./espejoTrabajos";
 import type { TrabajoEspejoResumen } from "./tipos";
 
@@ -17,9 +18,15 @@ import type { TrabajoEspejoResumen } from "./tipos";
 export interface RepoPorEspejo {
   /** `<usuario>/<repo>` en el almacén, o el id del repositorio en un espejo del propio equipo. */
   valor: string;
+  /** «Contabilidad», «Contabilidad (copia derivada)» o la carpeta tal cual (15k). */
   nombre: string;
+  /** De quién es: el equipo, o «no sé de qué equipo es». */
+  de: string;
   equipo?: Equipo;
+  /** El repositorio (en una derivada, el de origen: su página). */
   repo?: RepositorioResumen;
+  /** 15k: es una copia derivada de `repo` (su tamaño no es el de `repo`). */
+  derivada?: boolean;
 }
 /** Un espejo que llega a un destino, con lo que guarda allí. */
 export interface EspejoEnDestino {
@@ -39,20 +46,18 @@ export function reposDeTrabajo(t: TrabajoEspejoResumen, hace: Equipo, equipos: E
     const locales = new Set((hace.resumen?.destinos ?? []).filter((d) => d.tipo === "local").map((d) => d.id));
     const suyos = (hace.resumen?.repositorios ?? []).filter((r) => locales.has(r.destino));
     const elegidos = t.que.tipo === "repos" ? suyos.filter((r) => (t.que as { repos: string[] }).repos.includes(r.id)) : suyos;
-    return elegidos.map((r) => ({ valor: r.id, nombre: r.nombre || r.id, equipo: hace, repo: r }));
+    return elegidos.map((r) => ({ valor: r.id, nombre: r.nombre || r.id, de: hace.nombre, equipo: hace, repo: r }));
   }
   const zona = t.zona || PRINCIPAL;
   const g = hace.resumen?.guarda_copias;
   const lista = zona === PRINCIPAL ? g?.repositorios : g?.zonas?.find((z) => z.id === zona)?.repositorios;
   const todos = [...new Set((lista ?? []).flatMap((u) => u.repos.map((r) => (r === "." || r === "" ? u.usuario : `${u.usuario}/${r}`))))].sort();
   const elegidos = t.que.tipo === "repos" ? todos.filter((x) => (t.que as { repos: string[] }).repos.includes(x)) : t.que.tipo === "equipos" ? todos.filter((x) => (t.que as { equipos: string[] }).equipos.includes(x.split("/")[0])) : todos;
+  // 15k: de quién es cada carpeta (sus repositorios, también los adoptados, y sus copias derivadas).
+  const contenido = contenidoAlmacen(hace, equipos);
   return elegidos.map((valor) => {
-    for (const e of equipos)
-      for (const r of e.resumen?.repositorios ?? []) {
-        const en = repoEnAlmacen(e, r, equipos);
-        if (en && en.almacen.id === hace.id && en.nombre === valor && en.zona === zona) return { valor, nombre: r.nombre || r.id, equipo: e, repo: r };
-      }
-    return { valor, nombre: valor };
+    const x = duenoDeCarpeta(hace, valor, equipos, zona, contenido);
+    return { valor, nombre: x.nombre, de: x.de, ...(x.equipo ? { equipo: x.equipo } : {}), ...(x.repo && (x.tipo === "repo" || x.tipo === "derivada") ? { repo: x.repo } : {}), ...(x.tipo === "derivada" ? { derivada: true } : {}) };
   });
 }
 
@@ -84,8 +89,9 @@ export function espejosEnDestino(v: DestinoVista, equipos: Equipo[], cliente: st
 export const hrefDestino = (cliente: string, clave: string) => `/c/${cliente}/destinos/${encodeURIComponent(clave)}`;
 
 /** La clave (la de su página y la del catálogo) del destino de un equipo: su zona si es de un almacén; si no, su id. */
-export function claveDeDestino(d: DestinoResumen, equipos: Equipo[]): string {
-  const z = zonaDeDestino(d, equipos);
+export function claveDeDestino(d: DestinoResumen, equipos: Equipo[], de?: Pick<Equipo, "id" | "resumen">): string {
+  // 15dd: con el equipo, un «Servidor de copias» que es un almacén del cliente es su zona.
+  const z = de ? zonaDetras(de, d, equipos) : zonaDeDestino(d, equipos);
   return z ? claveZona(z.almacen.id, z.id) : d.id;
 }
 
@@ -94,21 +100,25 @@ export function vistaPorClave(clave: string, equipos: Equipo[], catalogo: Destin
   // Los del cliente y las nubes conectadas en los equipos (las de «Añadir paso»).
   // Plan 0.8.0 (B2): también por la clave de lo que se unió a él (la entrada del catálogo con el mismo bucket).
   const l = destinosParaPasos(equipos, catalogo);
-  return l.find((v) => v.clave === clave) ?? l.find((v) => clavesDe(v).includes(clave)) ?? null;
+  // 15dd: la de un «Servidor de copias» que se unió a su almacén lleva a la zona.
+  return l.find((v) => v.clave === clave) ?? l.find((v) => clavesDe(v).includes(clave)) ?? l.find((v) => v.adoptados?.includes(clave)) ?? null;
 }
 
 export interface RepoEnDestino {
   equipo: Equipo;
   repo: RepositorioResumen;
+  /** 15dd: llega a la zona por un «Servidor de copias» genérico (adoptado). */
+  adoptado?: boolean;
 }
 
 /** Los repositorios que se guardan en un destino (en una zona: los de todos los equipos que copian en ella). */
 export function reposEnDestino(v: DestinoVista, equipos: Equipo[]): RepoEnDestino[] {
   return equipos.flatMap((e) =>
-    (e.resumen?.repositorios ?? []).filter((r) => {
-      const d = destinoDe(e.resumen?.destinos, r);
-      return !!d && v.ids.includes(d.id);
-    }).map((repo) => ({ equipo: e, repo })),
+    (e.resumen?.repositorios ?? []).flatMap((repo) => {
+      const d = destinoDe(e.resumen?.destinos, repo);
+      if (!d || !v.ids.includes(d.id)) return [];
+      return [{ equipo: e, repo, ...(v.zona && esAdoptado(e, d, equipos) ? { adoptado: true } : {}) }];
+    }),
   );
 }
 
@@ -221,7 +231,7 @@ export interface UsoPosible {
  * - un destino suelto del catálogo: «Nuevo repositorio» (`?nuevo=1`).
  */
 export function usarEnCopia(v: DestinoVista, equipos: Equipo[], cliente: string): UsoPosible[] {
-  if (v.clase === "suelto") return [{ texto: "Nuevo repositorio aquí", detalle: "Elige el equipo; pide las credenciales del destino una vez.", href: `/c/${cliente}/repositorios?nuevo=1` }];
+  if (v.clase === "suelto") return [{ texto: "Nuevo repositorio aquí", detalle: "Elige el equipo; pide las credenciales del destino una vez.", href: `/c/${cliente}/destinos?nuevo=1` }];
   const q = `destino=${encodeURIComponent(v.clave)}`;
   const activos = equipos.filter((e) => e.confirmado && e.modo !== "trasladado");
   const out: UsoPosible[] = [];

@@ -47,6 +47,7 @@
   import CampoClave from "$lib/componentes/CampoClave.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
+  import { fijarNombreTrasAlta } from "$lib/nombreEnTodas";
   import BotonFalta from "$lib/componentes/BotonFalta.svelte";
   import { primeraFalta } from "$lib/falta";
 
@@ -293,6 +294,8 @@
           const equipo = await api.equipo(c, eq.id);
           await mandarOrden({ cliente: actual.cliente, equipo, tipo: "alta", alta: { codigo: cod }, secretos: { claveAdmin: clave } });
           progreso[r.e.id] = { texto: "Alta enviada" };
+          // B5 (15pp): el nombre que tiene aquí, también para las demás consolas (si el agente lo guarda).
+          void fijarNombreTrasAlta(actual.cliente, eq.id).catch(() => {});
           marcar(r.e.id, false);
         } catch (err) {
           progreso[r.e.id] = { texto: (err as Error).message, mal: true };

@@ -133,6 +133,7 @@
     if (!t) return [];
     const out: { clave: string; equipo: (typeof actual.equipos)[number]; rc: ReglaCopia; nombre: string }[] = [];
     for (const r of filasRepos) {
+      if (r.derivada) continue;
       const eq = r.equipo ? actual.equipos.find((x) => x.id === r.equipo!.id) : undefined;
       const k = eq?.resumen?.copias?.find((x) => x.repo === r.repo?.id && x.activa !== false);
       if (!eq || !k) continue;
@@ -270,8 +271,8 @@
             {#each filasRepos as r (r.valor)}
               <li>
                 <Database size={14} class="faint" aria-hidden="true" />
-                {#if r.equipo && r.repo}<a class="link-suave" href="/c/{c}/equipos/{r.equipo.id}/repositorios/{encodeURIComponent(r.repo.id)}">{r.nombre}</a>{:else}<span class="mono">{r.nombre}</span>{/if}
-                <span class="faint">{r.equipo ? r.equipo.nombre : "de un equipo que no está en esta consola"}</span>
+                {#if r.equipo && r.repo}<a class="link-suave" href="/c/{c}/equipos/{r.equipo.id}/repositorios/{encodeURIComponent(r.repo.id)}">{r.nombre}</a>{:else}<span class:mono={!r.equipo}>{r.nombre}</span>{/if}
+                <span class="faint">{r.de}</span>
                 <span class="num tam">{r.aqui != null ? bytes(r.aqui) : "—"}</span>
               </li>
             {/each}

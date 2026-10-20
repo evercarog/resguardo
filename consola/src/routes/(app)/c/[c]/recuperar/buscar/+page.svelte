@@ -214,7 +214,7 @@
   );
   const totalVersiones = $derived(Object.values(porRepo).reduce((n, x) => n + (x.resultado?.versionesBuscadas ?? 0), 0));
 
-  const enlaceRestaurar = (repo: string) => (version: string) => `/c/${actual.id}/restaurar?${new URLSearchParams({ equipo: equipo?.id ?? "", repo, version })}`;
+  const enlaceRestaurar = (repo: string) => (version: string) => `/c/${actual.id}/recuperar?${new URLSearchParams({ equipo: equipo?.id ?? "", repo, version })}`;
 
   // --- Fechas ---------------------------------------------------------------
   const RAPIDAS = [
@@ -354,7 +354,7 @@
               {:else if x?.estado === "listo" && x.resultado}
                 <span class="ok"><CircleCheck size={14} />{plural(x.resultado.archivos.length, "archivo", "archivos")} en {plural(x.resultado.versionesBuscadas, "versión", "versiones")}</span>
               {:else if x?.estado === "actualizar"}
-                <span class="aviso"><TriangleAlert size={14} />Actualiza el agente de {equipo?.nombre} para buscar en todas las versiones. Mientras, puedes buscar dentro de una versión en&nbsp;<a href="/c/{actual.id}/restaurar?{new URLSearchParams({ equipo: equipo?.id ?? '', repo: id })}">Restaurar</a>.</span>
+                <span class="aviso"><TriangleAlert size={14} />Actualiza el agente de {equipo?.nombre} para buscar en todas las versiones. Mientras, puedes buscar dentro de una versión en&nbsp;<a href="/c/{actual.id}/recuperar?{new URLSearchParams({ equipo: equipo?.id ?? '', repo: id })}">Restaurar</a>.</span>
               {:else if x?.estado === "error"}
                 <span class="mal"><TriangleAlert size={14} />{x.mensaje}</span>
                 <button class="btn btn-sm btn-ghost" onclick={() => reintentar(id)}><RotateCcw size={14} />Reintentar</button>

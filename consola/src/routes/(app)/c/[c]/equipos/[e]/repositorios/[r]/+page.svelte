@@ -79,7 +79,8 @@
   // Plan 0.8.0, B1: cambiar el nombre (todas las consolas) y ordenar su carpeta en el almacén.
   import RenombrarRepositorio from "$lib/componentes/RenombrarRepositorio.svelte";
   import OrdenarCarpetas from "$lib/componentes/OrdenarCarpetas.svelte";
-  import { admiteNombres, equiposEnAlmacen, hayQueOrdenar, planOrden } from "$lib/nombres";
+  import { admiteNombres, porOrdenar as porOrdenarEn } from "$lib/nombres";
+  import AvisoOrdenar from "$lib/componentes/almacen/AvisoOrdenar.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -142,7 +143,7 @@
   );
   // La retención que se le aplica (las versiones guardadas la simulan).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
-  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/recuperar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
 
   // Órdenes desde aquí (con su diálogo de siempre). `para`: a otro equipo (el almacén).
   let dialogo = $state<{ tipo: string; cuerpo: Record<string, unknown>; descripcion: string; accion?: string; titulo?: string; para?: Equipo; repo?: { id: string; nombre: string } } | null>(null);
@@ -185,12 +186,8 @@
   }
   let renombrar = $state(false);
   let ordenar = $state(false);
-  /** B1: ¿su carpeta (o la del equipo) en el almacén aún no es legible? */
-  const porOrdenar = $derived.by(() => {
-    if (!enAlm || !repo || repo.solo_lectura || !admiteNombres(enAlm.almacen)) return false;
-    const en = equiposEnAlmacen(enAlm.almacen, actual.equipos).find((x) => x.equipo.id === e && x.repos.some((r) => r.repo.id === rid));
-    return !!en && hayQueOrdenar(planOrden(en));
-  });
+  /** B1 y 15h: ¿su carpeta en el almacén aún no es legible? Con lo que volverían a subir sus espejos. */
+  const porOrdenar = $derived(enAlm && repo && !repo.solo_lectura ? porOrdenarEn(enAlm.almacen, actual.equipos, e, rid) : []);
   // 14bbb: «Comprobar la contraseña» (el equipo la prueba de verdad contra el repositorio).
   const admiteComprobar = $derived(!!equipo?.resumen?.admite?.includes("comprobar_contrasena"));
   const comprobada = $derived(repo?.contrasena_comprobada ?? null);
@@ -226,7 +223,7 @@
       </div>
       {#if puede.ordenar(rol)}
         <div class="page-actions">
-          {#if nVersiones(repo, inf) || repo.solo_lectura}<a class="btn btn-primary" href="/c/{c}/restaurar?equipo={e}&repo={rid}"><History size={16} />Restaurar</a>{/if}
+          {#if nVersiones(repo, inf) || repo.solo_lectura}<a class="btn btn-primary" href="/c/{c}/recuperar?equipo={e}&repo={rid}"><History size={16} />Restaurar</a>{/if}
           {#if suyas.length === 1}
             <button class="btn" onclick={() => copiarAhora(suyas[0])}><Play size={16} />Copiar ahora</button>
           {:else if suyas.length > 1}
@@ -247,7 +244,9 @@
         </div>
       {/if}
     </header>
-    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} />{#if porOrdenar && puede.administrar(rol)}<button class="btn btn-sm btn-ghost" use:tip={"Que su carpeta en el almacén lleve su nombre"} onclick={() => (ordenar = true)}>Ordenar su carpeta…</button>{/if}</p>{/if}
+    {#if lugar}<p class="donde"><SeGuardaEn enlace {lugar} riesgo={!!riesgo} /></p>{/if}
+    <!-- 15h: aviso suave, con lo que volverían a subir sus espejos. -->
+    {#if porOrdenar.length && puede.administrar(rol)}<AvisoOrdenar items={porOrdenar} repo onordenar={() => (ordenar = true)} />{/if}
     <!-- Lo que se ajusta del repositorio, a la vista (docs/editor-de-copias.md). -->
     {#if actual.cliente && puede.ordenar(rol)}
       <PasosRepo cliente={actual.cliente} {equipo} {repo} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} copia={suyas.length === 1 ? suyas[0].id : null} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} />

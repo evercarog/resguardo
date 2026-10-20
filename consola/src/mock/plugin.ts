@@ -61,7 +61,35 @@ function sesionDe(ctx: Ctx, completa = true) {
 }
 
 function rolEn(cuentaId: string, cliente: string): T.Rol | null {
+  // 15nn: un cliente archivado no lo abre nadie (como si no existiera).
+  if (estado.clientes.find((x) => x.id === cliente)?.archivado) return null;
   return estado.miembros.get(cliente)?.find((m) => m.cuenta === cuentaId)?.rol ?? null;
+}
+
+/** «Clientes del servidor» (v1.34; 15nn con `archivado`): solo cifras. */
+function clienteDelServidor(c: (typeof estado.clientes)[number], cuenta: string): T.ClienteDelServidor {
+  const miembros = estado.miembros.get(c.id) ?? [];
+  const eqs = estado.equipos.filter((e) => e.cliente === c.id);
+  const sinLimite: T.Cuotas = { equipos: null, historial: null, relevo_mb_mes: null, ordenes_min: null };
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    creado: c.creado ?? new Date(Date.now() - 200 * 86_400_000).toISOString(),
+    personas: miembros.length,
+    propietarios: miembros.filter((m) => m.rol === "propietario").length,
+    soy_miembro: miembros.some((m) => m.cuenta === cuenta),
+    equipos: eqs.length,
+    equipos_confirmados: eqs.filter((e) => e.confirmado).length,
+    equipos_conectados: eqs.filter((e) => e.conectado).length,
+    historial: eqs.length * 120,
+    ordenes_30d: estado.ordenes.filter((o) => eqs.some((e) => e.id === o.equipo)).length,
+    ultima_actividad: eqs.map((e) => e.ultimo_contacto).filter((x): x is string => !!x).sort().at(-1) ?? null,
+    bytes: 180_000 + eqs.length * 2_400_000,
+    relevo_mes_bytes: 0,
+    cuotas: sinLimite,
+    efectivas: sinLimite,
+    archivado: c.archivado ?? null,
+  };
 }
 
 function miembro(ctx: Ctx, cliente: string, minimo: T.Rol = "lectura") {
@@ -627,6 +655,77 @@ const rutas: Ruta[] = [
       estado.miembros.set(c.id, [{ cuenta: cuenta.id, rol: "propietario" }]);
       auditar(c.id, cuenta.id, "cliente.crear", c.nombre, { espera_min_horas: horas });
       return { id: c.id, nombre: c.nombre, sal_cliente: c.sal_cliente };
+    },
+  ],
+  // 15nn: «Clientes del servidor», borrar, archivar y recuperar (como crates/servidor/src/api/servidor_clientes.rs).
+  [
+    "GET",
+    /^\/api\/servidor\/clientes$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      if (!cuenta.superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const sinLimite: T.Cuotas = { equipos: null, historial: null, relevo_mb_mes: null, ordenes_min: null };
+      return {
+        publico: false,
+        mes: new Date().toISOString().slice(0, 7),
+        predeterminadas: sinLimite,
+        de_fabrica: { equipos: 0, historial: 20_000, relevo_mb_mes: 0, ordenes_min: 300 },
+        clientes: [...estado.clientes].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((c) => clienteDelServidor(c, cuenta.id)),
+      } satisfies T.ClientesDelServidor;
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/clientes$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      if (!cuenta.superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const b = ctx.cuerpo as { nombre?: string; espera_min_horas?: number };
+      const nombre = b.nombre?.trim() ?? "";
+      if (!nombre || nombre.length > 80) throw err(422, "datos", "Escribe un nombre (hasta 80 caracteres).");
+      const c = { id: randomUUID(), nombre, sal_cliente: aB64(randomBytes(16)), espera_min_horas: Number(b.espera_min_horas ?? 24), rol: "propietario" as T.Rol, creado: new Date().toISOString() };
+      estado.clientes.push(c);
+      estado.miembros.set(c.id, []);
+      const token = randomBytes(24).toString("base64url");
+      const caduca = Date.now() + 7 * 86_400_000;
+      estado.invitaciones.set(token, { cliente: c.id, rol: "propietario", caduca });
+      return { id: c.id, nombre: c.nombre, invitacion: { enlace: `/invitacion#${token}`, caduca: new Date(caduca).toISOString() } };
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/servidor\/clientes\/([^/]+)$/,
+    (ctx, [c]) => {
+      if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const cl = estado.clientes.find((x) => x.id === c);
+      if (!cl) throw err(404, "no_existe", "Ese cliente no existe.");
+      if (String((ctx.cuerpo as { nombre?: string }).nombre ?? "").trim() !== cl.nombre.trim())
+        throw err(422, "datos", "El nombre no coincide: escribe el nombre del cliente tal cual para confirmar.");
+      const n = estado.equipos.filter((e) => e.cliente === c).length;
+      if (n) throw err(409, "conflicto", `Tiene ${n} ${n === 1 ? "equipo" : "equipos"} (también cuentan los sin confirmar): quítalos antes, o archívalo.`);
+      estado.clientes = estado.clientes.filter((x) => x.id !== c);
+      estado.miembros.delete(c);
+      for (const [t, i] of estado.invitaciones) if (i.cliente === c) estado.invitaciones.delete(t);
+      estado.auditoria.delete(c);
+      return undefined;
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/clientes\/([^/]+)\/(archivar|recuperar)$/,
+    (ctx, [c, que]) => {
+      const cuenta = sesionDe(ctx);
+      if (!cuenta.superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const cl = estado.clientes.find((x) => x.id === c);
+      if (!cl) throw err(404, "no_existe", "Ese cliente no existe.");
+      if (que === "archivar" && !cl.archivado) {
+        cl.archivado = new Date().toISOString();
+        auditar(c, cuenta.id, "archivar_cliente", c);
+      } else if (que === "recuperar" && cl.archivado) {
+        cl.archivado = null;
+        auditar(c, cuenta.id, "recuperar_cliente", c);
+      }
+      return { archivado: cl.archivado ?? null };
     },
   ],
   [
@@ -1922,6 +2021,8 @@ function datosComunesDe(c: string): DatosComunesCliente {
                 local: { clase: "local", atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" } },
               }),
               f({ clave: "etiqueta.color:caja", valor: { nombre: "Caja", color: 5 }, estado: "aplicado", semilla: false, cambiado: hace(120) }),
+              // 0.8.1 (B5, 15pp): una observación de copia distinta en la otra consola.
+              f({ clave: `nota.observacion:copia:${ID.caja}/caja`, valor: { texto: "Revisar los martes que el volcado de la caja terminó." }, local: { texto: "Copia de la caja: la revisa Luis." } }),
               f({ clave: "plantilla:pla-demo-sur", valor: { cifrado: "AAAA", sal: "c2FsLWRlLWxhLW90cmE=", cliente: "cliente-en-linea" }, estado: "por_traer", semilla: false }),
             ],
             sin_compartir: [],
@@ -1939,6 +2040,10 @@ function datosComunesDe(c: string): DatosComunesCliente {
                 ["etiqueta.categoria:tipo-4e5f", { nombre: "Tipo", etiquetas: ["Servidores"] }],
                 ["etiqueta.categoria:area-6a7b", { nombre: "Área", etiquetas: ["Recepción", "Contabilidad", "Gerencia"] }],
                 ["orden.equipos:todos", { ids: [ID.servidor, ID.contabilidad, ID.recepcion, ID.archivos, ID.portatil] }],
+                // 0.8.1 (B2, 15y): «Música» cambiado, un grupo propio y «Vídeo» quitado (los demás, de partida).
+                ["exclusiones:musica", { nombre: "Música", reglas: ["*.mp3", "*.flac", "*.m4a", "*.wav", "*.ogg", "*.wma", "*.aac", "*.mid"] }],
+                ["exclusiones:planos-7c8d", { nombre: "Planos antiguos", reglas: ["*.dwl", "*.dwl2", "*.bak", "Planos/Antiguos"] }],
+                ["exclusiones:video", null],
               ].map(([clave, valor]) => f({ clave: clave as string, valor, estado: "aplicado", semilla: false, esta: true, consola: null, por: "Ana Restrepo", cambiado: hace(60 * 24) })),
               sin_compartir: [],
             }
@@ -1950,12 +2055,23 @@ function datosComunesDe(c: string): DatosComunesCliente {
 
 /** Plan 0.8.0 (D1, D2): `GET /organizacion`, como el servidor (`crate::sedes`), de los datos comunes. */
 function organizacionDe(c: string) {
-  const o = { sedes: [] as { id: string; nombre: string; notas: string | null; principal: boolean }[], equipos: {} as Record<string, string>, destinos: {} as Record<string, string>, categorias: [] as { id: string; nombre: string; etiquetas: string[] }[], orden: [] as string[] };
+  const o = {
+    sedes: [] as { id: string; nombre: string; notas: string | null; principal: boolean }[],
+    equipos: {} as Record<string, string>,
+    destinos: {} as Record<string, string>,
+    categorias: [] as { id: string; nombre: string; etiquetas: string[] }[],
+    orden: [] as string[],
+    exclusiones: [] as { id: string; nombre: string; reglas: string[] }[],
+    exclusiones_quitadas: [] as string[],
+  };
   for (const f of datosComunesDe(c).filas) {
     const v = f.valor as Record<string, unknown> | null;
-    if (!v) continue;
     const [clase, ...resto] = f.clave.split(":");
     const sujeto = resto.join(":");
+    // 0.8.1 (B2, 15y): un grupo de exclusiones quitado (null) se dice aparte.
+    if (!v && clase === "exclusiones") o.exclusiones_quitadas.push(sujeto);
+    if (!v) continue;
+    if (clase === "exclusiones") o.exclusiones.push({ id: sujeto, nombre: String(v.nombre), reglas: (v.reglas as string[]) ?? [] });
     if (clase === "sede") o.sedes.push({ id: sujeto, nombre: String(v.nombre), notas: (v.notas as string) ?? null, principal: v.principal === true });
     else if (clase === "sede.equipo") o.equipos[sujeto] = String(v.sede);
     else if (clase === "sede.destino") o.destinos[sujeto] = String(v.sede);
@@ -1964,6 +2080,7 @@ function organizacionDe(c: string) {
   }
   o.sedes.sort((a, b) => a.nombre.localeCompare(b.nombre));
   o.categorias.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  o.exclusiones.sort((a, b) => a.nombre.localeCompare(b.nombre));
   const existe = (s: string) => o.sedes.some((x) => x.id === s);
   for (const m of [o.equipos, o.destinos]) for (const k of Object.keys(m)) if (!existe(m[k])) delete m[k];
   return o;

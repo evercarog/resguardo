@@ -218,7 +218,7 @@ export const aceptarInvitacion = (b: { token: string; correo?: string; nombre?: 
 // Clientes del servidor (v1.34, solo el propietario del servidor: cifras, sin entrar)
 // ---------------------------------------------------------------------------
 
-export const clientesDelServidor = () => pedir<T.ClientesDelServidor>("GET", "/api/servidor/clientes");
+export const clientesDelServidor = (opciones: { invisible?: boolean } = {}) => pedir<T.ClientesDelServidor>("GET", "/api/servidor/clientes", undefined, opciones);
 /** v1.38: «Todos los clientes»: lo de cada cliente del que la cuenta es miembro, en una petición (404 con un servidor anterior). */
 export const panel = (opciones: { invisible?: boolean } = {}) => pedir<import("./global").Panel>("GET", "/api/panel", undefined, opciones);
 /** v1.38: solo lo que está en marcha en todos esos clientes. */
@@ -234,6 +234,11 @@ export const crearClienteParaOtro = (b: { nombre: string; espera_min_horas?: num
 export const invitarPropietario = (c: string) => pedir<{ invitacion: T.Invitacion }>("POST", `/api/servidor/clientes/${enc(c)}/invitacion`);
 export const ponerCuotas = (c: string, cuotas: T.Cuotas) => pedir<{ cuotas: T.Cuotas; efectivas: T.Cuotas }>("PUT", `/api/servidor/clientes/${enc(c)}/cuotas`, cuotas);
 export const ponerCuotasPredeterminadas = (cuotas: T.Cuotas) => pedir<{ predeterminadas: T.Cuotas }>("PUT", "/api/servidor/cuotas", cuotas);
+/** 15nn: borra un cliente sin equipos (con su nombre escrito para confirmar). */
+export const borrarCliente = (c: string, nombre: string) => pedir<void>("DELETE", `/api/servidor/clientes/${enc(c)}`, { nombre });
+/** 15nn: archiva un cliente (sale de las listas y no recibe nada) o lo recupera. */
+export const archivarCliente = (c: string) => pedir<{ archivado: string }>("POST", `/api/servidor/clientes/${enc(c)}/archivar`);
+export const recuperarCliente = (c: string) => pedir<{ archivado: null }>("POST", `/api/servidor/clientes/${enc(c)}/recuperar`);
 
 // ---------------------------------------------------------------------------
 // Cambiar de servidor, respaldo y exportar (§11)
