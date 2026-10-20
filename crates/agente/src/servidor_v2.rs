@@ -3035,7 +3035,7 @@ mod tests {
             let mut r = agente_c.get(&format!("{}/api/clientes/{c}/relevos/{relevo}/trozos/0", consola.url)).header("cookie", &consola.cookie).call().unwrap();
             let zip_bytes = simetrico::descifrar_trozo(&clave_relevo, &relevo, 0, true, &r.body_mut().read_to_vec().unwrap()).unwrap();
             let mut z = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).unwrap();
-            let nombres: Vec<String> = z.file_names().map(str::to_string).collect();
+            let nombres: Vec<String> = z.file_names().map(|n| n.unwrap().to_string()).collect();
             assert!(nombres.iter().any(|n| n.ends_with("hola.txt")) && nombres.iter().any(|n| n.ends_with("adios.txt")), "{nombres:?}");
             // Lo elegido, sin la ruta del equipo por encima (ni sus carpetas con sus permisos: con
             // la carpeta temporal en C:\Users\…, restaurarlas sin ser administrador daba «acceso denegado»).
