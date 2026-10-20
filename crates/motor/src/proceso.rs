@@ -81,6 +81,222 @@ pub fn priorities(child: &std::process::Child) -> (u32, u32, u32) {
     }
 }
 
+// ---------- Que los procesos mueran con el servicio (15hh) ----------
+
+/// Variable que el servicio pone a los procesos que lanza (la vuelta de las copias): están
+/// dentro de su trabajo (*job object*) y no tienen que salirse de él.
+pub const VAR_TRABAJO_SERVICIO: &str = "RESGUARDO_TRABAJO_SERVICIO";
+
+/// ¿Está este proceso dentro del trabajo del servicio ([`unir_al_trabajo`])?
+pub fn en_trabajo_del_servicio() -> bool {
+    std::env::var_os(VAR_TRABAJO_SERVICIO).is_some_and(|v| v == "1")
+}
+
+/// Windows: mete este proceso (el servicio) en un trabajo propio con
+/// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: todo lo que lance después (la vuelta de las copias,
+/// las tareas, restic y rclone) se cierra con él, también si se para con `Restart-Service` o
+/// se cae. Lo que tiene que sobrevivirle (el actualizador) se lanza con
+/// `CREATE_BREAKAWAY_FROM_JOB` (el trabajo lo deja: `JOB_OBJECT_LIMIT_BREAKAWAY_OK`).
+/// En Linux no hace falta: systemd para todo el grupo de control del servicio.
+#[cfg(windows)]
+pub fn unir_al_trabajo() -> Result<(), String> {
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    // SAFETY: estructuras locales del tamaño que se indica; el handle del trabajo se queda
+    // abierto a propósito mientras viva el proceso (al cerrarse, cierra lo de dentro).
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return Err(format!("no se pudo crear el trabajo: {}", std::io::Error::last_os_error()));
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        if SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        ) == 0
+        {
+            return Err(format!("no se pudo preparar el trabajo: {}", std::io::Error::last_os_error()));
+        }
+        if AssignProcessToJobObject(job, GetCurrentProcess()) == 0 {
+            return Err(format!("no se pudo entrar en el trabajo: {}", std::io::Error::last_os_error()));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn unir_al_trabajo() -> Result<(), String> {
+    Ok(())
+}
+
+/// Linux: el proceso en su propio grupo (para [`terminar_grupo`]).
+#[cfg(unix)]
+pub fn grupo_propio(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0);
+}
+
+#[cfg(not(unix))]
+pub fn grupo_propio(_cmd: &mut std::process::Command) {}
+
+/// Linux: pide terminar a todo el grupo del proceso (lo puso [`grupo_propio`]) y, si en
+/// 5 s no ha terminado, lo termina a la fuerza. Solo si de verdad es el jefe de su grupo
+/// (si no, nunca se toca el grupo del propio agente).
+#[cfg(unix)]
+pub fn terminar_grupo(child: &mut std::process::Child) {
+    let pid = child.id() as libc::pid_t;
+    // SAFETY: llamadas al sistema con un pid nuestro; no tocan memoria.
+    unsafe {
+        if pid <= 1 || libc::getpgid(pid) != pid || libc::getpgid(0) == pid {
+            return;
+        }
+        libc::killpg(pid, libc::SIGTERM);
+    }
+    let hasta = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < hasta {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    // SAFETY: como arriba. Lo que quede del grupo (rclone), a la fuerza.
+    unsafe {
+        libc::killpg(pid, libc::SIGKILL);
+    }
+}
+
+/// Un proceso del motor de copias (restic o rclone, de la carpeta de Resguardo) que sigue
+/// en marcha sin nadie que lo espere (15hh: al arrancar el servicio).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcesoSuelto {
+    pub pid: u32,
+    pub nombre: String,
+}
+
+/// Los restic y rclone de `carpeta` (la del agente) en marcha cuyo padre ya no existe:
+/// quedaron de antes de reiniciar el servicio (un agente anterior, sin trabajo propio).
+pub fn procesos_sueltos(carpeta: &std::path::Path) -> Vec<ProcesoSuelto> {
+    let nombres: [&str; 2] = if cfg!(windows) { ["restic.exe", "rclone.exe"] } else { ["restic", "rclone"] };
+    let mismo = |a: &std::path::Path| {
+        if cfg!(windows) {
+            a.to_string_lossy().to_lowercase() == carpeta.to_string_lossy().to_lowercase()
+        } else {
+            a == carpeta
+        }
+    };
+    listar_procesos()
+        .into_iter()
+        .filter(|p| nombres.iter().any(|n| p.nombre.eq_ignore_ascii_case(n)))
+        .filter(|p| p.ruta.as_deref().and_then(std::path::Path::parent).is_some_and(mismo))
+        .filter(|p| p.padre == 0 || p.padre == p.pid || !process_alive(p.padre))
+        .map(|p| ProcesoSuelto { pid: p.pid, nombre: p.nombre })
+        .collect()
+}
+
+struct ProcesoVisto {
+    pid: u32,
+    padre: u32,
+    nombre: String,
+    ruta: Option<std::path::PathBuf>,
+}
+
+#[cfg(windows)]
+fn listar_procesos() -> Vec<ProcesoVisto> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+    use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
+    let mut out = Vec::new();
+    // SAFETY: búferes locales del tamaño indicado; handles que se cierran.
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE || snap.is_null() {
+            return out;
+        }
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut ok = Process32FirstW(snap, &mut e) != 0;
+        while ok {
+            let largo = e.szExeFile.iter().position(|c| *c == 0).unwrap_or(e.szExeFile.len());
+            let nombre = String::from_utf16_lossy(&e.szExeFile[..largo]);
+            let ruta = if nombre.eq_ignore_ascii_case("restic.exe") || nombre.eq_ignore_ascii_case("rclone.exe") {
+                let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, e.th32ProcessID);
+                if h.is_null() {
+                    None
+                } else {
+                    let mut buf = [0u16; 1024];
+                    let mut n = buf.len() as u32;
+                    let r = (QueryFullProcessImageNameW(h, 0, buf.as_mut_ptr(), &mut n) != 0)
+                        .then(|| std::path::PathBuf::from(String::from_utf16_lossy(&buf[..(n as usize).min(buf.len())])));
+                    CloseHandle(h);
+                    r
+                }
+            } else {
+                None
+            };
+            out.push(ProcesoVisto { pid: e.th32ProcessID, padre: e.th32ParentProcessID, nombre, ruta });
+            ok = Process32NextW(snap, &mut e) != 0;
+        }
+        CloseHandle(snap);
+    }
+    out
+}
+
+#[cfg(target_os = "linux")]
+fn listar_procesos() -> Vec<ProcesoVisto> {
+    let Ok(dir) = std::fs::read_dir("/proc") else { return Vec::new() };
+    dir.flatten()
+        .filter_map(|e| {
+            let pid: u32 = e.file_name().to_str()?.parse().ok()?;
+            let ruta = std::fs::read_link(e.path().join("exe")).ok()?;
+            let nombre = ruta.file_name()?.to_string_lossy().into_owned();
+            // «PPid:» de /proc/<pid>/status.
+            let estado = std::fs::read_to_string(e.path().join("status")).ok()?;
+            let padre = estado.lines().find_map(|l| l.strip_prefix("PPid:")).and_then(|x| x.trim().parse().ok()).unwrap_or(0);
+            Some(ProcesoVisto { pid, padre, nombre, ruta: Some(ruta) })
+        })
+        .collect()
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn listar_procesos() -> Vec<ProcesoVisto> {
+    Vec::new()
+}
+
+/// Termina un proceso suelto ([`procesos_sueltos`]).
+pub fn terminar_pid(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+        // SAFETY: handle que se cierra.
+        unsafe {
+            let h = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if h.is_null() {
+                return false;
+            }
+            let ok = TerminateProcess(h, 1) != 0;
+            CloseHandle(h);
+            ok
+        }
+    }
+    #[cfg(unix)]
+    {
+        // SAFETY: llamada al sistema sin memoria.
+        pid > 1 && unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) } == 0
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 // ---------- Herramientas del sistema ----------
 
 /// `C:\Windows\System32` según Windows (no según la variable SystemRoot, que
@@ -318,6 +534,12 @@ mod tests {
         } else {
             assert_eq!(p, "/usr/sbin:/usr/bin:/sbin:/bin");
         }
+    }
+
+    #[test]
+    fn sin_procesos_sueltos_en_una_carpeta_vacia() {
+        let d = std::env::temp_dir().join("resguardo-sin-procesos-sueltos");
+        assert!(procesos_sueltos(&d).is_empty());
     }
 
     #[test]

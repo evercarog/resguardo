@@ -3873,6 +3873,7 @@ name = "resguardo-motor"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "libc",
  "proptest",
  "rcgen",
  "serde",

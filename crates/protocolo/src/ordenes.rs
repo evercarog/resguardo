@@ -131,6 +131,10 @@ pub const TIPOS: &[Tipo] = &[
     // Plan 0.8.1 (15u): «Ver las bases de la instancia» (el equipo lee `sys.databases` y
     // devuelve la lista sellada para la consola). No cambia nada: inofensiva.
     t("bases_sqlserver", Inofensiva, false, false, false),
+    // Plan 0.8.1 (15hh): parar o pausar lo que está en marcha (una copia, una verificación, una
+    // copia derivada, un espejo, una restauración). Deja datos sin proteger: con la clave de
+    // administración (decisión del responsable), pero sin espera (hay que poder pararlo ya).
+    t("parar", Administracion, false, false, false),
     // Plan 0.8.0, F2 (14cc): «Conservar esta versión para siempre», con motivo, en el equipo
     // dueño o en el almacén. Con la clave de administración; quitarla reduce la protección
     // (según el cuerpo: `conservar: false`).
@@ -199,6 +203,9 @@ mod tests {
         let total = nombres.len();
         nombres.dedup();
         assert_eq!(total, nombres.len(), "tipos repetidos");
+        // 15hh: parar o pausar lo que está en marcha: con la clave, pero sin espera.
+        let p = tipo("parar").unwrap();
+        assert!(p.nivel == Nivel::Administracion && !p.destructiva && !p.abre_sesion);
         // Pausar reduce la protección: nunca inofensiva.
         assert_eq!(tipo("pausar").unwrap().nivel, Nivel::Administracion);
         assert!(tipo("pausar").unwrap().destructiva);
