@@ -12,6 +12,7 @@ use crate::estado::St;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use resguardo_protocolo::datos_cliente as dc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -167,7 +168,7 @@ pub async fn poner_observacion(State(st): State<St>, u: Usuario, Path(c): Path<S
     let texto = texto_limpio(&p.texto)?;
     objeto_valido(&st, &ctx, &p.tipo, &p.objeto).await?;
     let o = Observacion { tipo: p.tipo, objeto: p.objeto, texto, actualizada: ahora(), por_id: u.id().to_string(), por: u.nombre().to_string() };
-    let (o2, actor) = (o.clone(), actor(&u));
+    let (o2, actor, propia) = (o.clone(), actor(&u), st.identidad_pub.clone());
     let cabe = st
         .db(move |db| {
             let antes = db.observacion(&ctx, &o2.tipo, &o2.objeto)?;
@@ -179,6 +180,10 @@ pub async fn poner_observacion(State(st): State<St>, u: Usuario, Path(c): Path<S
             }
             let datos = json!({ "tipo": o2.tipo, "caracteres": o2.texto.chars().count(), "borrada": o2.texto.is_empty() });
             db.auditar(&ctx, &actor, "poner_observacion", &format!("{}:{}", o2.tipo, o2.objeto), &datos.to_string())?;
+            // 0.8.1 (B5, 15pp): la de una copia, un repositorio o un destino, igual en todas las consolas.
+            if dc::TIPOS_OBSERVACION.contains(&o2.tipo.as_str()) {
+                crate::datos_comunes::registrar_lo_de_aqui(db, &ctx, &format!("nota.observacion:{}:{}", o2.tipo, o2.objeto), &o2.por, &propia);
+            }
             Ok(true)
         })
         .await?;
@@ -213,12 +218,13 @@ pub async fn comentar(State(st): State<St>, u: Usuario, Path(c): Path<String>, J
         creado: ahora(),
         editado: None,
     };
-    let (k2, actor) = (k.clone(), actor(&u));
+    let (k2, actor, propia) = (k.clone(), actor(&u), st.identidad_pub.clone());
     let cabe = st
         .db(move |db| {
             if !db.crear_comentario(&ctx, &k2, MAX_COMENTARIOS_OBJETO, MAX_COMENTARIOS_CLIENTE)? {
                 return Ok(false);
             }
+            compartir_comentario(db, &ctx, &k2, &propia);
             db.auditar(
                 &ctx,
                 &actor,
@@ -268,9 +274,10 @@ pub async fn editar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Strin
         return Err(ErrorApi::datos("Escribe algo (o bórralo)."));
     }
     let (cuando, actor) = (ahora(), actor(&u));
-    let (id2, t2, obj) = (id.clone(), texto.clone(), format!("{}:{}", k.tipo, k.objeto));
+    let (id2, t2, obj, k2, propia) = (id.clone(), texto.clone(), format!("{}:{}", k.tipo, k.objeto), k.clone(), st.identidad_pub.clone());
     st.db(move |db| {
         db.editar_comentario(&ctx, &id2, &t2, cuando)?;
+        compartir_comentario(db, &ctx, &k2, &propia);
         db.auditar(&ctx, &actor, "editar_comentario", &obj, &json!({ "id": id2, "caracteres": t2.chars().count() }).to_string())
     })
     .await?;
@@ -284,12 +291,22 @@ pub async fn borrar(State(st): State<St>, u: Usuario, Path((c, id)): Path<(Strin
     let (ctx, _, k) = tocable(&st, &u, &c, &id, true).await?;
     let actor = actor(&u);
     let ajeno = k.autor_id != u.id();
+    let propia = st.identidad_pub.clone();
     st.db(move |db| {
         db.borrar_comentario(&ctx, &k.id)?;
+        compartir_comentario(db, &ctx, &k, &propia);
         db.auditar(&ctx, &actor, "borrar_comentario", &format!("{}:{}", k.tipo, k.objeto), &json!({ "id": k.id, "de_otra_persona": ajeno }).to_string())
     })
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// 0.8.1 (B5, 15pp): un comentario de un equipo, una copia, un repositorio o un destino, igual
+/// en todas las consolas (con su valor de ahora aquí: borrado, `null`).
+fn compartir_comentario(db: &dyn crate::almacen::Almacen, ctx: &crate::almacen::ClienteCtx, k: &Comentario, propia: &str) {
+    if dc::TIPOS_COMENTARIO.contains(&k.tipo.as_str()) {
+        crate::datos_comunes::registrar_lo_de_aqui(db, ctx, &format!("nota.comentario:{}", k.id), &k.autor, propia);
+    }
 }
 
 /// `GET /api/clientes/{c}/notas/todas` (administrador): todo, para el paquete de exportación.

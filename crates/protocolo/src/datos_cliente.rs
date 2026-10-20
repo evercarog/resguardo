@@ -75,6 +75,14 @@ pub enum Clase {
     /// sus consolas. Solo el dato: las copias guardan las reglas que aplican (el equipo no
     /// depende de él). Solo a agentes con [`ADMITE_EXCLUSIONES`].
     GrupoExclusiones,
+    /// 0.8.1 (B5, 15pp): `nota.observacion:<tipo>:<objeto>` → `{ texto }` o `null` (sin
+    /// observación). La observación de una copia o un repositorio (`<equipo>/<id>`) o de un
+    /// destino (su id), igual en todas las consolas. Solo a agentes con [`ADMITE_NOTAS`].
+    NotaObservacion,
+    /// 0.8.1 (B5): `nota.comentario:<id>` → `{ tipo, objeto, texto, autor, creado, editado? }`
+    /// o `null` (borrado). Un comentario de la bitácora de un equipo, una copia, un repositorio
+    /// o un destino, con su autor; la consola de origen va en la entrada. Solo con [`ADMITE_NOTAS`].
+    NotaComentario,
 }
 
 impl Clase {
@@ -91,11 +99,13 @@ impl Clase {
             Clase::EtiquetaCategoria => "etiqueta.categoria:",
             Clase::OrdenEquipos => "orden.equipos:",
             Clase::GrupoExclusiones => "exclusiones:",
+            Clase::NotaObservacion => "nota.observacion:",
+            Clase::NotaComentario => "nota.comentario:",
         }
     }
 }
 
-const CLASES: [Clase; 11] = [
+const CLASES: [Clase; 13] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -107,6 +117,8 @@ const CLASES: [Clase; 11] = [
     Clase::EtiquetaCategoria,
     Clase::OrdenEquipos,
     Clase::GrupoExclusiones,
+    Clase::NotaObservacion,
+    Clase::NotaComentario,
 ];
 
 /// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
@@ -150,6 +162,36 @@ pub fn regla_exclusion_valida(r: &str) -> Result<String, &'static str> {
     Ok(r.to_string())
 }
 
+/// 0.8.1 (B5, 15pp): `resumen.admite` de un agente que guarda observaciones y comentarios
+/// (`nota.observacion:`, `nota.comentario:`). A uno anterior no se le mandan.
+pub const ADMITE_NOTAS: &str = "notas_comunes";
+/// ¿Es una observación o un comentario (solo para agentes con [`ADMITE_NOTAS`])?
+pub fn es_de_notas(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::NotaObservacion | Clase::NotaComentario))
+}
+/// Caracteres de una observación o de un comentario (como en el servidor).
+pub const MAX_TEXTO_NOTA: usize = 2000;
+/// Tipos con observación común (la del equipo ya va con `observacion_equipo`, v1.56).
+pub const TIPOS_OBSERVACION: [&str; 3] = ["repositorio", "copia", "destino"];
+/// Tipos con comentarios comunes.
+pub const TIPOS_COMENTARIO: [&str; 4] = ["equipo", "repositorio", "copia", "destino"];
+
+/// Una parte de un objeto (equipo, id de una copia o de un repositorio, id de un destino):
+/// letras, cifras y `-_.:@`, de 1 a 128, sin `.` ni `..` solos.
+fn parte_objeto_valida(x: &str) -> bool {
+    !x.is_empty() && x.len() <= 128 && x != "." && x != ".." && x.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '@'))
+}
+
+/// El objeto de una nota según su tipo: `<equipo>/<id>` (copia, repositorio), el id del
+/// equipo o el del destino.
+pub fn objeto_nota_valido(tipo: &str, objeto: &str) -> bool {
+    match tipo {
+        "repositorio" | "copia" => objeto.split_once('/').is_some_and(|(e, id)| parte_objeto_valida(e) && parte_objeto_valida(id)),
+        "equipo" | "destino" => parte_objeto_valida(objeto),
+        _ => false,
+    }
+}
+
 /// Un dato y quién lo cambió por última vez.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Entrada {
@@ -189,6 +231,8 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
         Clase::Plantilla | Clase::Sede | Clase::SedeEquipo | Clase::EtiquetaCategoria | Clase::GrupoExclusiones => id_simple(sujeto),
         Clase::SedeDestino => id_destino_valido(sujeto),
         Clase::OrdenEquipos => sujeto == "todos",
+        Clase::NotaObservacion => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_OBSERVACION.contains(&t) && objeto_nota_valido(t, o)),
+        Clase::NotaComentario => id_simple(sujeto),
     };
     ok.then_some((c, sujeto))
 }
@@ -460,6 +504,29 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
             }
             Ok(json!({ "nombre": nombre, "reglas": out }))
         }
+        Clase::NotaObservacion => {
+            solo_campos(m, &["texto"])?;
+            let texto = texto_valido(m.get("texto"), 1, MAX_TEXTO_NOTA, true).ok_or("La observación: de 1 a 2000 caracteres (sin texto, quita el dato).")?;
+            Ok(json!({ "texto": texto }))
+        }
+        Clase::NotaComentario => {
+            solo_campos(m, &["tipo", "objeto", "texto", "autor", "creado", "editado"])?;
+            let tipo = m
+                .get("tipo")
+                .and_then(Value::as_str)
+                .filter(|t| TIPOS_COMENTARIO.contains(t))
+                .ok_or("Tipo no válido (equipo, repositorio, copia o destino).")?;
+            let objeto = m.get("objeto").and_then(Value::as_str).filter(|o| objeto_nota_valido(tipo, o)).ok_or("Objeto no válido.")?;
+            let texto = texto_valido(m.get("texto"), 1, MAX_TEXTO_NOTA, true).ok_or("El comentario: de 1 a 2000 caracteres.")?;
+            let autor = texto_valido(m.get("autor"), 1, 80, false).ok_or("El autor: de 1 a 80 caracteres.")?;
+            let creado = m.get("creado").and_then(Value::as_str).filter(|c| milis(c).is_some()).ok_or("Fecha no válida.")?;
+            let mut v = json!({ "tipo": tipo, "objeto": objeto, "texto": texto, "autor": autor, "creado": creado });
+            match m.get("editado") {
+                None | Some(Value::Null) => {}
+                Some(x) => v["editado"] = json!(x.as_str().filter(|c| milis(c).is_some()).ok_or("Fecha no válida.")?),
+            }
+            Ok(v)
+        }
     })();
     r.map_err(str::to_string)
 }
@@ -620,6 +687,35 @@ mod tests {
         assert!(valor_valido("orden.equipos:todos", &json!({ "ids": ids })).is_err());
         assert!(es_de_sedes("sede:norte") && es_de_sedes("orden.equipos:todos") && !es_de_sedes("etiqueta.color:x") && !es_de_sedes("inventada:x"));
         assert!(pide_admin("sede.equipo:e-1") && pide_admin("sede.destino:x") && !pide_admin("sede:x") && !pide_admin("etiqueta.categoria:x"));
+    }
+
+    /// 0.8.1 (B5, 15pp): observaciones y comentarios comunes.
+    #[test]
+    fn observaciones_y_comentarios() {
+        assert_eq!(clase("nota.observacion:copia:e-1/docs").map(|x| x.0), Some(Clase::NotaObservacion));
+        assert_eq!(clase("nota.observacion:destino:zona:e-1:principal").map(|x| x.0), Some(Clase::NotaObservacion));
+        assert!(clase("nota.observacion:equipo:e-1").is_none(), "la del equipo va con observacion_equipo");
+        assert!(clase("nota.observacion:copia:e-1").is_none(), "falta el id");
+        assert!(clase("nota.observacion:copia:../x").is_none() && clase("nota.observacion:copia:e 1/x").is_none());
+        assert!(clase("nota.comentario:a/b").is_none() && clase("nota.comentario:k-1").is_some());
+        assert!(es_de_notas("nota.comentario:k-1") && !es_de_notas("sede:x") && !pide_admin("nota.observacion:copia:e/x"));
+        assert_eq!(
+            valor_valido("nota.observacion:copia:e/x", &json!({ "texto": " Va al NAS\nde abajo " })).unwrap(),
+            json!({ "texto": "Va al NAS\nde abajo" })
+        );
+        assert!(valor_valido("nota.observacion:copia:e/x", &json!({ "texto": "" })).is_err());
+        assert!(valor_valido("nota.observacion:copia:e/x", &json!({ "texto": "x".repeat(2001) })).is_err());
+        assert!(valor_valido("nota.observacion:copia:e/x", &json!({ "texto": "a", "por": "b" })).is_err());
+        let k = json!({ "tipo": "repositorio", "objeto": "e-1/docs", "texto": "Revisado", "autor": "Ana", "creado": "2026-10-20T10:00:00Z" });
+        assert_eq!(valor_valido("nota.comentario:k-1", &k).unwrap(), k);
+        for (campo, malo) in [("objeto", json!("e-1")), ("tipo", json!("cliente")), ("creado", json!("ayer")), ("autor", json!(""))] {
+            let mut x = k.clone();
+            x[campo] = malo;
+            assert!(valor_valido("nota.comentario:k-1", &x).is_err(), "{campo}");
+        }
+        let mut ed = k.clone();
+        ed["editado"] = json!("2026-10-20T10:05:00Z");
+        assert!(valor_valido("nota.comentario:k-1", &ed).is_ok());
     }
 
     /// 0.8.1 (B2, 15y): grupos de exclusiones del cliente.

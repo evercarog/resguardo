@@ -448,7 +448,8 @@ Un equipo puede copiar en un almacén (`destinos[].equipo_almacen`) que solo est
 | Avisos de cada etiqueta | Cada servidor | Cada consola los suyos (§6.6) |
 | Plantillas de copia (0.7.26) | Cada servidor (cifradas con su `K_cfg`) y, cifradas tal cual, cada equipo del cliente | **Iguales en todas** (§6.5): se abren y se vuelven a cifrar en el navegador con la clave de administración. Las de más de 32 KiB cifradas siguen siendo de cada consola (no caben en una orden) |
 | Catálogo de destinos: nombre, tipo, marcas, días del bloqueo, soporte (0.7.26) | Cada servidor y, como dato común, cada equipo del cliente | **Igual en todas** (§6.5); el tipo y las marcas, con la clave de administración. **El nombre del destino que guarda el equipo** (el de «Nuevo repositorio» o «Copiar en …») sigue siendo el de siempre en todas |
-| Observaciones y comentarios de repositorios, copias, destinos y del cliente; comentarios del equipo | Cada servidor | Cada consola los suyos (los comentarios son una bitácora con los autores de las cuentas de cada servidor; solo la observación del equipo se comparte) |
+| Observaciones de repositorios, copias y destinos; comentarios de equipos, repositorios, copias y destinos (0.8.1, B5) | Cada servidor y, como dato común, cada equipo del cliente (`nota.observacion:`, `nota.comentario:`) | **Igual en todas** (§6.5) con agentes que lo admiten (`notas_comunes`), con su autor y la consola de origen; los comentarios de antes de la 0.8.1 y los que no caben (documento del equipo por encima de 192 KiB) siguen en cada consola |
+| Observación y comentarios del cliente | Cada servidor | Cada consola los suyos |
 | Órdenes de cada consola (su `seq`), sus avisos y sus informes | Cada servidor | Cada una las suyas; lo que hace el equipo con ellas se ve en todas por el historial común (§5.8) |
 | Servidores de respaldo, cambio de servidor en curso | El vínculo con cada consola (§1.4) | De cada consola |
 
@@ -477,5 +478,5 @@ Contrato «v1.66» en [api-servidor.md](api-servidor.md), «Cambios». Código: 
 
 - **Personas y accesos** (cuentas, papeles, segundo factor, invitaciones): son las cuentas de ese servidor. La autoridad sobre los equipos es la clave de administración, no la cuenta; repartir cuentas entre servidores daría a una consola comprometida acceso a las demás.
 - **Canales de aviso y sus reglas** (correo, webhook, ntfy, Telegram, a quién y con qué importancia), **incluidos los avisos de cada etiqueta**: apuntan a direcciones y secretos de ese servidor (URL de un webhook, token de un bot) y a sus personas. En otra consola no significan nada y no deben viajar por los equipos.
-- **Notas internas** (observaciones y comentarios de repositorios, copias, destinos y del cliente; comentarios del equipo): son la bitácora de quien trabaja en esa consola, con sus autores. Solo la observación del equipo es común (§6.1).
+- **Notas del cliente** (su observación y sus comentarios): son de cada consola. Desde la 0.8.1 (B5, 15pp) las observaciones de copias, repositorios y destinos y los comentarios de equipos, copias, repositorios y destinos son datos comunes (§6.4), con su autor y la consola de origen; los comentarios que llegan de otra consola no se pueden editar aquí.
 - El nombre del cliente, su marca y su espera por defecto, como hasta ahora (§6.4).

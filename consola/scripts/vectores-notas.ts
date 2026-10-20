@@ -6,6 +6,8 @@
 //   npm run test:vectores
 import { enlaceSeguro, escapar, markdown, primeraLinea } from "../src/lib/markdown";
 import { conHorario, errorVerificacion, fraseVerificacion } from "../src/lib/verificacion";
+import { admiteClave, claseDe, esDeNotas, LLENO_COMENTARIOS, objetoNotaValido, textoValor, tituloDato } from "../src/lib/datosComunes";
+import type { Equipo } from "../src/lib/tipos";
 
 let total = 0;
 let fallos = 0;
@@ -60,6 +62,18 @@ igual("con horario, cada_dias no cuenta", errorVerificacion({ ...domingos, cada_
 cierto("un agente anterior no lo admite", errorVerificacion(domingos, false) !== null);
 cierto("regla que no vale", errorVerificacion({ cada_dias: 7, porcentaje: 10, horario: { dias: [], horas: [], reglas: [{ tipo: "mensual", dia: 31, hora: "03:00" }] } }) !== null);
 igual("sin horario, como antes", fraseVerificacion({ cada_dias: 7, porcentaje: 10 }), "Cada 7 días, el 10 % de los datos: todo el repositorio en 10 verificaciones (unos 70 días).");
+
+console.log("\n— Observaciones y comentarios en todas las consolas (0.8.1, B5) —");
+{
+  cierto("clases de las notas", esDeNotas("nota.observacion:copia:e-1/docs") && esDeNotas("nota.comentario:k-1") && !esDeNotas("sede:x"));
+  igual("objetos", [objetoNotaValido("copia", "e-1/docs"), objetoNotaValido("copia", "e-1"), objetoNotaValido("destino", "zona:e1:principal"), objetoNotaValido("repositorio", "../x"), objetoNotaValido("cliente", "c")], [true, false, true, false, false]);
+  igual("la del equipo no es una clase común", claseDe("nota.observacion:equipo:e-1"), null);
+  const conCap = (admite: string[], bytes = 0) => ({ resumen: { admite, datos_cliente: { bytes } } }) as unknown as Equipo;
+  igual("solo a los agentes que las guardan", [admiteClave(conCap(["datos_cliente"]), "nota.observacion:copia:e/x"), admiteClave(conCap(["notas_comunes"]), "nota.observacion:copia:e/x")], [false, true]);
+  igual("con el documento casi lleno, los comentarios no", [admiteClave(conCap(["notas_comunes"], LLENO_COMENTARIOS), "nota.comentario:k-1"), admiteClave(conCap(["notas_comunes"], LLENO_COMENTARIOS), "nota.observacion:copia:e/x")], [false, true]);
+  igual("el texto, recortado", textoValor("nota.observacion:copia:e/x", { texto: "Va al\nNAS" }), "«Va al NAS»");
+  igual("título", tituloDato({ clave: "nota.observacion:copia:e-1/docs", valor: null, local: null }), "Observación de la copia «docs»");
+}
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

@@ -103,6 +103,9 @@ pub fn descripcion(c: &Value) -> Option<String> {
                     x["valor"]["nombre"].as_str().map(|n| n.chars().take(40).collect()).unwrap_or_else(|| sujeto("exclusiones:"))
                 )
             }
+            // 0.8.1 (B5): sin el texto (puede ser largo; el historial común no lo lleva).
+            Some(dc::Clase::NotaObservacion) => "la observación de una copia, un repositorio o un destino".to_string(),
+            Some(dc::Clase::NotaComentario) => "un comentario".to_string(),
             None => "un dato".to_string(),
         }
     };
@@ -221,6 +224,25 @@ mod tests {
         assert_eq!(v.datos_cliente["sede.equipo:e1"].valor["sede"], "norte");
         assert_eq!(descripcion(&de_equipo).unwrap(), "Cambiar la sede de un equipo en todas las consolas");
         assert_eq!(descripcion(&json!({ "entradas": [sedes["entradas"][0].clone()] })).unwrap(), "Cambiar la sede «Oficina Norte» en todas las consolas");
+    }
+
+    /// 0.8.1 (B5, 15pp): observaciones y comentarios comunes, sin clave y sin el texto en la descripción.
+    #[test]
+    fn observaciones_y_comentarios() {
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_NOTAS));
+        let mut v = vinculo("id", "Oficina");
+        let o = json!({ "entradas": [
+            { "clave": "nota.observacion:copia:e-1/docs", "valor": { "texto": "Va al NAS de abajo" }, "cambiado": "2026-10-07T10:00:00Z" },
+            { "clave": "nota.comentario:k-1", "valor": { "tipo": "copia", "objeto": "e-1/docs", "texto": "Revisada", "autor": "Ana", "creado": "2026-10-07T10:00:00Z" }, "cambiado": "2026-10-07T10:00:00Z" },
+        ]});
+        aplicar(&mut v, &o, false, None).unwrap();
+        assert_eq!(v.datos_cliente["nota.observacion:copia:e-1/docs"].valor["texto"], "Va al NAS de abajo");
+        assert_eq!(v.datos_cliente["nota.comentario:k-1"].valor["autor"], "Ana");
+        let una = json!({ "entradas": [o["entradas"][0].clone()] });
+        let d = descripcion(&una).unwrap();
+        assert!(!d.contains("NAS"), "{d}");
+        let malo = json!({ "entradas": [{ "clave": "nota.observacion:copia:../x", "valor": { "texto": "x" }, "cambiado": "2026-10-07T10:00:00Z" }] });
+        assert!(aplicar(&mut v, &malo, false, None).is_err());
     }
 
     /// 0.8.1 (B2, 15y): los grupos de exclusiones se guardan sin clave; el agente lo dice en `admite`.

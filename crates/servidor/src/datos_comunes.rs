@@ -20,7 +20,7 @@
 //!   aquí no se pueden abrir. Quedan «por traer» hasta que una persona con la clave
 //!   de administración las abre en el navegador y las vuelve a cifrar para aquí.
 
-use crate::almacen::{ahora, AjusteEtiqueta, Almacen, ClienteCtx, DestinoCatalogo, R};
+use crate::almacen::{ahora, AjusteEtiqueta, Almacen, ClienteCtx, Comentario, DestinoCatalogo, Observacion, R};
 use resguardo_protocolo::datos_cliente::{self as dc, Clase, Entrada};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -129,7 +129,33 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
         // solo como datos comunes (`crate::sedes`). Nunca chocan con «lo de aquí»: gana el más reciente.
         // 0.8.1 (B2, 15y): los grupos de exclusiones, igual (`crate::sedes::organizacion` los lee).
         Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones => Value::Null,
+        // 0.8.1 (B5, 15pp): la observación de aquí (vacía, nada) y el comentario de aquí, si existe.
+        Clase::NotaObservacion => match sujeto.split_once(':') {
+            Some((t, o)) => db.observacion(ctx, t, o)?.filter(|o| !o.texto.trim().is_empty()).map(|o| json!({ "texto": o.texto })).unwrap_or(Value::Null),
+            None => Value::Null,
+        },
+        Clase::NotaComentario => db.comentario(ctx, sujeto)?.map(|k| comentario_comun(&k)).unwrap_or(Value::Null),
     })
+}
+
+/// Un comentario de aquí como dato común (su autor sin la consola: esa va en la entrada).
+fn comentario_comun(k: &Comentario) -> Value {
+    let mut v = json!({ "tipo": k.tipo, "objeto": k.objeto, "texto": k.texto, "autor": dc::texto_corto(&k.autor, 80), "creado": hora_ms(k.creado * 1000) });
+    if let Some(e) = k.editado {
+        v["editado"] = json!(hora_ms(e * 1000));
+    }
+    v
+}
+
+/// «Oficina» de «Ana (desde la consola «Oficina»)» (para enseñar de dónde vino un comentario).
+fn consola_de(por: &str) -> Option<&str> {
+    let (_, r) = por.split_once("consola «")?;
+    r.rsplit_once('»').map(|(c, _)| c).filter(|c| !c.is_empty())
+}
+
+/// Segundos de una fecha RFC 3339 (o ahora).
+fn segundos(v: &Value) -> i64 {
+    v.as_str().and_then(dc::milis).map(|m| m / 1000).unwrap_or_else(ahora)
 }
 
 /// ¿Dicen lo mismo el valor de aquí y el del dato? (Una plantilla: si las dos existen o ninguna.)
@@ -247,6 +273,46 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
         }
         // 0.8.0 (D1, D2): su único sitio es el propio dato común (lo guarda `registrar` o `recibir`).
         Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones => {}
+        // 0.8.1 (B5, 15pp): a las notas de aquí, como si la hubiera puesto «Ana (desde la consola X)».
+        Clase::NotaObservacion => {
+            if let Some((t, o)) = sujeto.split_once(':') {
+                let texto = valor["texto"].as_str().unwrap_or("").to_string();
+                let obs = Observacion {
+                    tipo: t.to_string(),
+                    objeto: o.to_string(),
+                    texto,
+                    actualizada: ahora(),
+                    por_id: "comun".into(),
+                    por: dc::texto_corto(por, 120),
+                };
+                db.poner_observacion(ctx, &obs, crate::api::notas::MAX_OBSERVACIONES)?;
+            }
+        }
+        Clase::NotaComentario => {
+            if valor.is_null() {
+                db.borrar_comentario(ctx, sujeto)?;
+            } else if db.comentario(ctx, sujeto)?.is_some() {
+                let editado = if valor["editado"].is_null() { ahora() } else { segundos(&valor["editado"]) };
+                db.editar_comentario(ctx, sujeto, valor["texto"].as_str().unwrap_or(""), editado)?;
+            } else {
+                let autor = valor["autor"].as_str().unwrap_or("").to_string();
+                let autor = match consola_de(por) {
+                    Some(c) => format!("{autor} (desde «{c}»)"),
+                    None => autor,
+                };
+                let k = Comentario {
+                    id: sujeto.to_string(),
+                    tipo: valor["tipo"].as_str().unwrap_or("").to_string(),
+                    objeto: valor["objeto"].as_str().unwrap_or("").to_string(),
+                    texto: valor["texto"].as_str().unwrap_or("").to_string(),
+                    autor_id: "comun".into(),
+                    autor,
+                    creado: segundos(&valor["creado"]),
+                    editado: (!valor["editado"].is_null()).then(|| segundos(&valor["editado"])),
+                };
+                db.crear_comentario(ctx, &k, crate::api::notas::MAX_COMENTARIOS_OBJETO, crate::api::notas::MAX_COMENTARIOS_CLIENTE)?;
+            }
+        }
     }
     Ok(())
 }
@@ -407,6 +473,13 @@ pub fn sin_compartir(db: &dyn Almacen, ctx: &ClienteCtx, ya: &BTreeMap<String, F
     for p in db.plantillas(ctx)? {
         claves.push(format!("{}{}", Clase::Plantilla.prefijo(), p.id));
     }
+    // 0.8.1 (B5): las observaciones de copias, repositorios y destinos de antes de compartir (los
+    // comentarios de antes, no: pueden ser miles; los nuevos sí viajan).
+    for n in db.indice_notas(ctx)? {
+        if n.observacion.is_some() && dc::TIPOS_OBSERVACION.contains(&n.tipo.as_str()) {
+            claves.push(format!("{}{}:{}", Clase::NotaObservacion.prefijo(), n.tipo, n.objeto));
+        }
+    }
     let mut out = Vec::new();
     for k in claves {
         if ya.contains_key(&k) || dc::clase(&k).is_none() {
@@ -451,6 +524,7 @@ pub fn marcar_enviadas(db: &dyn Almacen, ctx: &ClienteCtx, enviadas: &[(String, 
 mod tests {
     use super::*;
     use crate::almacen::sqlite::Sqlite;
+    use crate::almacen::AlmacenNotas;
     use base64::Engine;
 
     const AQUI: &str = "id-aqui";
@@ -497,6 +571,47 @@ mod tests {
         let quitar = json!({ "etiqueta.color:servidor": entrada(Value::Null, "2026-10-07T12:00:00Z", "id-oficina", "Oficina") });
         recibir(&db, &ctx, "e1", AQUI, &quitar).unwrap();
         assert_eq!(color(&db, &ctx, "Servidor"), None);
+        drop(db);
+        drop(dir);
+    }
+
+    /// 0.8.1 (B5, 15pp): observaciones y comentarios de otra consola llegan a las notas de aquí.
+    #[test]
+    fn observaciones_y_comentarios_de_otra_consola() {
+        let (db, ctx, dir) = almacen();
+        let k = json!({ "tipo": "copia", "objeto": "e1/docs", "texto": "Revisada", "autor": "Ana", "creado": "2026-10-07T10:00:00Z" });
+        let doc = json!({
+            "nota.observacion:copia:e1/docs": entrada(json!({ "texto": "Va al NAS de abajo" }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina"),
+            "nota.comentario:k-1": entrada(k.clone(), "2026-10-07T10:00:00Z", "id-oficina", "Oficina"),
+        });
+        assert_eq!(recibir(&db, &ctx, "e1", AQUI, &doc).unwrap(), 2);
+        let o = db.observacion(&ctx, "copia", "e1/docs").unwrap().unwrap();
+        assert_eq!((o.texto.as_str(), o.por.as_str()), ("Va al NAS de abajo", "Ana (desde la consola «Oficina»)"));
+        let c = db.comentario(&ctx, "k-1").unwrap().unwrap();
+        assert_eq!((c.texto.as_str(), c.autor.as_str(), c.objeto.as_str()), ("Revisada", "Ana (desde «Oficina»)", "e1/docs"));
+        // Editado en la otra consola y después borrado.
+        let mut ed = k.clone();
+        ed["texto"] = json!("Revisada y probada");
+        ed["editado"] = json!("2026-10-07T10:05:00Z");
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "nota.comentario:k-1": entrada(ed, "2026-10-07T10:05:00Z", "id-oficina", "Oficina") })).unwrap();
+        assert_eq!(db.comentario(&ctx, "k-1").unwrap().unwrap().texto, "Revisada y probada");
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "nota.comentario:k-1": entrada(Value::Null, "2026-10-07T10:06:00Z", "id-oficina", "Oficina") })).unwrap();
+        assert!(db.comentario(&ctx, "k-1").unwrap().is_none());
+        // Una observación que aquí ya era otra: la primera vez no se pisa.
+        let aqui = Observacion {
+            tipo: "repositorio".into(),
+            objeto: "e1/docs".into(),
+            texto: "La de aquí".into(),
+            actualizada: 1,
+            por_id: "u".into(),
+            por: "Luis".into(),
+        };
+        db.poner_observacion(&ctx, &aqui, 100).unwrap();
+        let otra =
+            json!({ "nota.observacion:repositorio:e1/docs": entrada(json!({ "texto": "La de allí" }), "2026-10-07T11:00:00Z", "id-oficina", "Oficina") });
+        recibir(&db, &ctx, "e1", AQUI, &otra).unwrap();
+        assert_eq!(db.observacion(&ctx, "repositorio", "e1/docs").unwrap().unwrap().texto, "La de aquí");
+        assert_eq!(filas(&db, &ctx).unwrap()["nota.observacion:repositorio:e1/docs"].estado, Estado::Conflicto);
         drop(db);
         drop(dir);
     }

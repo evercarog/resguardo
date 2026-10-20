@@ -8,7 +8,7 @@
   import * as api from "$lib/api";
   import { actual } from "$lib/estado.svelte";
   import { fallo } from "$lib/avisos.svelte";
-  import { AVISO_SECRETOS, asegurarIndice, cargarNotas, claveNota, detalles, errorTextoNota, MAX_TEXTO, notas, ponerDetalle, puedeEscribirNotas } from "$lib/notas.svelte";
+  import { AVISO_SECRETOS, asegurarIndice, cargarNotas, claveNota, detalles, errorTextoNota, MAX_TEXTO, notas, ponerDetalle, puedeEscribirNotas, repartirNotas } from "$lib/notas.svelte";
   import type { ComentarioNota, TipoNota } from "$lib/tipos";
   import { tip } from "$lib/tooltip";
   import Tiempo from "../Tiempo.svelte";
@@ -52,6 +52,7 @@
     enviando = true;
     try {
       const k = await api.comentar(actual.id, tipo, objeto, nuevo);
+      repartirNotas();
       poner((l) => [...l, k]);
       nuevo = "";
     } catch (err) {
@@ -65,6 +66,7 @@
     ocupado = true;
     try {
       const nuevoK = await api.editarComentario(actual.id, k.id, textoEdicion);
+      repartirNotas();
       poner((l) => l.map((x) => (x.id === k.id ? nuevoK : x)));
       editandoId = null;
     } catch (err) {
@@ -79,6 +81,7 @@
     ocupado = true;
     try {
       await api.borrarComentario(actual.id, k.id);
+      repartirNotas();
       poner((l) => l.filter((x) => x.id !== k.id));
       borrandoId = null;
     } catch (err) {

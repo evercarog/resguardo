@@ -1409,6 +1409,8 @@ pub const ADMITE: &[&str] = &[
     // 0.8.1 (B2, 15y): el dato común `exclusiones:<id>` (grupos de «No copiar» del cliente)
     // en `datos_cliente`. Solo se guarda y se reparte: las copias llevan sus propias reglas.
     resguardo_protocolo::datos_cliente::ADMITE_EXCLUSIONES,
+    // 0.8.1 (B5, 15pp): guarda observaciones y comentarios comunes del cliente.
+    resguardo_protocolo::datos_cliente::ADMITE_NOTAS,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
