@@ -19,7 +19,7 @@
   import { resultadoFirmado } from "$lib/cripto/claves";
   import { bytes, cuentaAtras, fechaLarga } from "$lib/formato";
   import { infCopia, ultimaVuelta, type Vuelta } from "$lib/copia";
-  import { anadidoDe, duracion, informeDe, TEXTO_RESULTADO, TONO_RESULTADO, versionDeVuelta } from "$lib/repo";
+  import { anadidoDe, duracion, informeDe, textoResultado, tonoResultado, versionDeVuelta } from "$lib/repo";
   import { ESTADO_ORDEN, nombreOrden } from "$lib/salud";
   import { mensajeOrden } from "$lib/textosEquipo";
   import { cargarCliente } from "$lib/estado.svelte";
@@ -366,7 +366,7 @@
               <Chip tono="info" texto="Copiando" girando />
               <p>Esperando a que {equipo.nombre} diga cómo terminó. Puedes cerrar esta ventana: la copia sigue en el equipo y te avisaremos al terminar.</p>
             {:else if copia.estado === "fin" && copia.vuelta}
-              <Chip tono={TONO_RESULTADO[copia.vuelta.resultado]} texto={copia.vuelta.resultado === "ok" ? "Copia terminada" : TEXTO_RESULTADO[copia.vuelta.resultado]} />
+              <Chip tono={tonoResultado(copia.vuelta)} texto={copia.vuelta.resultado === "ok" ? "Copia terminada" : textoResultado(copia.vuelta)} />
               <p>
                 {copia.vuelta.resultado === "sin_cambios" ? "No había nada nuevo: no hizo falta guardar otra versión." : copia.vuelta.resultado === "fallo" ? (copia.vuelta.mensaje ?? "La copia no terminó bien.") : copia.vuelta.resultado === "aviso" ? (copia.vuelta.mensaje ?? "Terminó con avisos.") : "Guardada una versión nueva."}
                 {#if copia.meta}<span class="faint">{" "}({copia.meta})</span>{/if}

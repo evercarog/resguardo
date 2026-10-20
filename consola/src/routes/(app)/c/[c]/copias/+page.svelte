@@ -254,7 +254,7 @@
               {/if}
             </div>
             <div class="cuando num">
-              <span>{#if x.vuelta}Última <Tiempo iso={x.vuelta.cuando} /><span class="faint">{" · "}{TEXTO_ULTIMA[x.vuelta.resultado]}</span>{:else}<span class="faint">Ninguna todavía</span>{/if}</span>
+              <span>{#if x.vuelta}Última <Tiempo iso={x.vuelta.cuando} /><span class="faint">{" · "}{x.vuelta.interrumpida ? "se interrumpió" : TEXTO_ULTIMA[x.vuelta.resultado]}</span>{:else}<span class="faint">Ninguna todavía</span>{/if}</span>
               <span class="faint">{#if x.proxima && Date.parse(x.proxima) > reloj.ahora}Próxima <Tiempo iso={x.proxima} />{:else if x.copia.activa === false}Desactivada{:else if x.estado.tono === "paused"}En pausa{:else}Sin próxima a la vista{/if}</span>
             </div>
             <div class="protegido num" use:tip={"Lo que ocupan sus archivos, según su última versión"}><span class="et-movil">{"Protege "}</span>{x.protegido != null ? bytes(x.protegido) : "—"}</div>

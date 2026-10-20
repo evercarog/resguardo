@@ -5,7 +5,7 @@
   import { ArrowRight, CircleHelp } from "@lucide/svelte";
   import type { CopiaResumen, EjecucionInforme, EntradaHistorial, VersionInforme } from "$lib/tipos";
   import { ganchosDeVuelta } from "$lib/detalle";
-  import { anadidoDe, claveDia, duracion, TEXTO_RESULTADO, TONO_RESULTADO, versionDeVuelta } from "$lib/repo";
+  import { anadidoDe, claveDia, duracion, textoResultado, tonoResultado, versionDeVuelta } from "$lib/repo";
   import { explicarError } from "$lib/copia";
   import { agruparResultados, NOMBRE_GANCHO } from "$lib/ganchos";
   import { bytes, fechaLarga, hora, numero } from "$lib/formato";
@@ -44,7 +44,7 @@
 
 <div class="vuelta">
   <p class="sub">
-    <Chip tono={TONO_RESULTADO[e.resultado]} texto={TEXTO_RESULTADO[e.resultado]} />
+    <Chip tono={tonoResultado(e)} texto={textoResultado(e)} />
     {#if e.reintento}<span class="badge badge-sm tone-neutral">reintento</span>{/if}
     <span>{fechaLarga(e.hora)}</span>
     {#if copia}· <a class="link" href={enlaceCopia(copia.id)}>{copia.nombre}</a>{/if}
@@ -97,7 +97,7 @@
           <li>
             <button class="pulsable-bloque otra" use:tip={"Ver detalle"} onclick={() => abrirVuelta(x.hora)}>
               <span class="num">{hora(x.hora)}</span>
-              <Chip pequeno tono={TONO_RESULTADO[x.resultado]} texto={TEXTO_RESULTADO[x.resultado]} />
+              <Chip pequeno tono={tonoResultado(x)} texto={textoResultado(x)} />
               {#if x.mensaje_corto && x.resultado !== "ok"}<span class="faint msg">{x.mensaje_corto}</span>{/if}
             </button>
           </li>

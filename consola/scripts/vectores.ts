@@ -23,7 +23,7 @@ import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnA
 import { cuerpoBloqueo, cuerpoExistente, detallesExterna, ordenQuitarExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
 import { resultadoConError } from "../src/lib/salud";
 import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
-import { bytesRepo, destinoDe, versionDeVuelta } from "../src/lib/repo";
+import { bytesRepo, destinoDe, textoResultado, tonoResultado, versionDeVuelta } from "../src/lib/repo";
 import type { CopiaResumen, Equipo, Informe, ReglaHorario, RepoInforme, TareaEnMarcha } from "../src/lib/tipos";
 import { cifrasTarea, porcentaje, textoCorto, textoFase, textoQuedan } from "../src/lib/textoProgreso";
 import { baseValida, errorCarpetaDestino, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, agruparResultados, ganchosEnFrase, resultadoDeGancho, instanciaValida, limpiar, rutaValida, versionAlMenos } from "../src/lib/ganchos";
@@ -519,6 +519,16 @@ if (v1.paquete) {
   igual("estado: al día", estadoCopia(k, v, false, ahora).texto, "Al día");
   igual("estado: con error", estadoCopia(k, { cuando: iso(2, 13, 4), resultado: "fallo", mensaje: null }, false, ahora).texto, "Con error");
   igual("estado: desactivada", estadoCopia({ ...k, activa: false }, v, false, ahora).texto, "Desactivada");
+  // 15jj: una copia cortada a mitad (equipo apagado) no sale como «Sin copias todavía» ni como error.
+  const cortada = { cuando: iso(2, 13, 40), resultado: "fallo" as const, mensaje: "Interrumpida: empezó el 02/10 a las 13:00 y no llegó a terminar.", interrumpida: true };
+  igual("15jj: estado de una interrumpida", estadoCopia(k, cortada, false, ahora), { tono: "warn", texto: "Interrumpida" });
+  igual(
+    "15jj: del resumen, aunque el informe aún no la tenga",
+    ultimaVuelta({ ...k, ultima: { cuando: iso(2, 14, 0), estado: "fallo", mensaje: "Interrumpida: …", interrumpida: true } }, informe)?.interrumpida,
+    true,
+  );
+  cierto("15jj: la frase lo dice", fraseCopia(k, { equipo: "PC-02", repo: "Documentos", vuelta: cortada, proxima: null, pausada: false }, ahora).includes("se interrumpió"));
+  igual("15jj: resultado de una vuelta interrumpida", [tonoResultado({ resultado: "fallo", interrumpida: true }), textoResultado({ resultado: "fallo", interrumpida: true }), textoResultado({ resultado: "fallo" })], ["warn", "Interrumpida", "Falló"]);
   igual("estado: nunca hecha", estadoCopia({ ...k, horario: { dias: [6], horas: ["13:00"] }, ultima: null }, null, false, ahora).texto, "Sin copias todavía");
   const cf = cifrasCopia(solo);
   igual("cifras: vueltas, correctas, fallidas, duración media, tamaño, añadido", [cf.vueltas, cf.correctas, cf.fallidas, cf.duracionMedia, cf.tamano, cf.anadido], [2, 1, 1, 17, 5_000, 60]);

@@ -39,6 +39,8 @@ export interface Vuelta {
   cuando: string;
   resultado: ResultadoVuelta;
   mensaje: string | null;
+  /** 15jj: quedó «en curso» y no terminó (el equipo se apagó o se reinició el servicio); va como «fallo». */
+  interrumpida?: boolean;
 }
 
 const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado === "ok" ? "ok" : estado === "aviso" ? "aviso" : "fallo");
@@ -51,10 +53,10 @@ const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado ===
 export function ultimaVuelta(k: CopiaResumen, informe: Informe | null | undefined): Vuelta | null {
   const candidatas: Vuelta[] = [];
   const ej = infCopia(informeDe(informe, k.repo), k.id)?.ejecuciones[0];
-  if (ej) candidatas.push({ cuando: ej.hora, resultado: ej.resultado, mensaje: ej.mensaje_corto });
+  if (ej) candidatas.push({ cuando: ej.hora, resultado: ej.resultado, mensaje: ej.mensaje_corto, interrumpida: ej.interrumpida === true });
   const fila = filaInforme(informe, k);
   if (fila?.cuando && fila.estado) candidatas.push({ cuando: fila.cuando, resultado: resultadoDe(fila.estado), mensaje: fila.mensaje ?? null });
-  if (k.ultima) candidatas.push({ cuando: k.ultima.cuando, resultado: resultadoDe(k.ultima.estado), mensaje: k.ultima.mensaje ?? null });
+  if (k.ultima) candidatas.push({ cuando: k.ultima.cuando, resultado: resultadoDe(k.ultima.estado), mensaje: k.ultima.mensaje ?? null, interrumpida: k.ultima.interrumpida === true });
   // La más reciente; a igual hora, la primera (la del informe detallado).
   return candidatas.reduce<Vuelta | null>((a, b) => (!a || Date.parse(b.cuando) > Date.parse(a.cuando) ? b : a), null);
 }
@@ -103,6 +105,8 @@ export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boo
   // Plan 0.8.0, F1: completada (hizo lo previsto): ni fallida ni atrasada.
   if (k.completada) return { tono: "ok", texto: "Completada" };
   if (pausada) return { tono: "paused", texto: "En pausa" };
+  // 15jj: cortada a mitad (equipo apagado, servicio reiniciado): se reintenta sola.
+  if (vuelta?.resultado === "fallo" && vuelta.interrumpida) return { tono: "warn", texto: "Interrumpida" };
   if (vuelta?.resultado === "fallo") return { tono: "bad", texto: "Con error" };
   if (atrasada(k, vuelta, pausada, ahora)) return { tono: "warn", texto: "Atrasada" };
   if (vuelta?.resultado === "aviso") return { tono: "warn", texto: "Con avisos" };
@@ -125,7 +129,7 @@ export function fraseCopia(
   if (k.activa === false) partes.push("Ahora está desactivada: no se hará hasta que la actives.");
   else if (k.completada) partes.push(`Está completada desde ${relativo(k.completada, ahora)}: ya no se hace sola; sus versiones se quedan.`);
   else if (o.pausada) partes.push("Las copias automáticas están en pausa.");
-  if (o.vuelta) partes.push(`La última copia, ${relativo(o.vuelta.cuando, ahora)}, ${TEXTO_VUELTA[o.vuelta.resultado]}.`);
+  if (o.vuelta) partes.push(`La última copia, ${relativo(o.vuelta.cuando, ahora)}, ${o.vuelta.interrumpida ? "se interrumpió (se reintenta sola)" : TEXTO_VUELTA[o.vuelta.resultado]}.`);
   else partes.push("Todavía no se ha hecho ninguna vez.");
   if (o.proxima && k.activa !== false && Date.parse(o.proxima) > ahora) partes.push(`La próxima será ${cuandoFrase(o.proxima, ahora)}.`);
   return partes.join(" ");
