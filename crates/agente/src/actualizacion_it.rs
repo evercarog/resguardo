@@ -77,7 +77,11 @@ fn actualizacion_desde_su_consola_con_vuelta_atras_y_aprobacion() {
         resguardo_servidor::publicaciones::llaves(&resguardo_servidor::estado::Opciones { llaves_pruebas: Some(pp::LLAVE_A_PUB.into()), ..Default::default() });
     assert!(resguardo_servidor::publicaciones::poner_carpeta(&a.dir, &llaves_srv, &origen).unwrap().completa());
 
-    // 1. Anillo general (por defecto): espera sus 2 días.
+    // 1. Anillo general (por defecto): espera sus 2 días. Con alguna copia ya hecha: uno recién
+    // vinculado, sin ninguna, no espera su anillo (15x, en los vectores de `decidir`).
+    let mut st = crate::agent::load_state();
+    st.runs.insert("r#p".into(), crate::agent::RunRecord { result: "ok".into(), ..Default::default() });
+    crate::agent::write_json("state.json", &st).unwrap();
     super::actualizacion::buscar_e_instalar().unwrap();
     let e = super::actualizacion::leer_estado();
     assert_eq!((e.estado.as_str(), e.motivo.as_deref(), e.version_disponible.as_deref()), ("pendiente", Some("espera_anillo"), Some(nueva.as_str())), "{e:?}");

@@ -55,6 +55,22 @@ export const GUIAS: Guia[] = [
     ver: ["guarda-copias", "solo-anadir"],
   },
   {
+    id: "guia-despliegue",
+    titulo: "Instalar con ESET, Intune o GPO",
+    resumen: "Las herramientas de despliegue ejecutan las órdenes por cmd, no por PowerShell: así se instala y se vincula en una sola tarea.",
+    texto: [
+      "En «Añadir equipo → Instalar muchos equipos», «Para una herramienta de despliegue» da la línea de PowerShell codificada. Empieza por powershell.exe, así que una tarea «Ejecutar comando» de ESET (que va por cmd) la lanza tal cual, como SYSTEM: baja el instalador de este servidor, comprueba su huella, lo instala y lo vincula. En Intune sirve como script o aplicación Win32; en una GPO, como script de inicio del equipo.",
+      "Una orden suelta de PowerShell en esas tareas falla («no se reconoce», «No se esperaba &»). Para lo demás, usa las órdenes de cmd de abajo (con la ruta entera: funcionan aunque el PATH aún no tenga el agente). Los valores son de ejemplo: el código y la dirección, los de tu consola.",
+      "Después, en la consola, «Equipos esperando confirmación»: compara el número de cada equipo y confírmalo. Sin sesión abierta (SYSTEM), el icono de la bandeja sale cuando alguien entra en Windows.",
+    ],
+    ordenes: [
+      { texto: "Si un equipo se instaló pero no se vinculó, vincularlo:", comando: '"%ProgramFiles%\\Resguardo Agente\\resguardo-agente.exe" vincular ABCD-EFGH-JKMN-PQRS --servidor https://192.0.2.20:8443' },
+      { texto: "Ver su número de comprobación:", comando: 'type "%ProgramFiles%\\Resguardo Agente\\emparejamiento.txt"' },
+      { texto: "Ver por qué no se vinculó:", comando: 'type "%ProgramData%\\ResguardoAgente\\instalador.log"' },
+      { texto: "Con el instalador en una carpeta compartida (la dirección, entre comillas):", comando: '"\\\\servidor-archivos\\software\\Resguardo-Agente-setup.exe" /S /CODE=ABCD-EFGH-JKMN-PQRS /SERVIDOR="https://192.0.2.20:8443"' },
+    ],
+  },
+  {
     id: "guia-espejo",
     titulo: "Espejo del equipo que guarda copias (otro disco o la nube)",
     resumen: "Lo que guarda se copia a otros sitios, cuando tú elijas. Nunca borra allí, salvo que le pongas retención.",

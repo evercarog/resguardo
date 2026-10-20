@@ -471,6 +471,7 @@
                   <button class="icon-btn" aria-label="Copiar la orden para ver el número" onclick={() => copiar(cmd.numero, "Orden")}><Copy size={14} /></button>
                 </div>
               {/if}
+              <p class="faint"><a class="link" href="/ayuda#guia-despliegue">Instalar con ESET, Intune o GPO</a>, paso a paso.</p>
             </details>
           {:else}
             <div class="notice notice-warn"><p>La dirección, el código o la huella no tienen la forma esperada: no se enseña la línea para no pegar algo distinto de lo que parece. Revisa la dirección.</p></div>
