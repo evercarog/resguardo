@@ -18,6 +18,7 @@
   import { alPulsar, atajos } from "$lib/atajos.svelte";
   import CopiasEnMarcha from "$lib/componentes/CopiasEnMarcha.svelte";
   import AccionesGlobales from "$lib/componentes/AccionesGlobales.svelte";
+  import ConfirmarSalida from "$lib/componentes/ConfirmarSalida.svelte";
   import { actual, app, cargarClientes } from "$lib/estado.svelte";
   import { todasEnMarcha } from "$lib/progreso.svelte";
   import { ponerIcono } from "$lib/favicon";
@@ -112,6 +113,7 @@
   <Paleta />
   <AccionesGlobales />
   <AyudaAtajos />
+  <ConfirmarSalida />
 {/if}
 
 <svelte:window

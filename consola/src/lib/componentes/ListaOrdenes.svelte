@@ -35,7 +35,10 @@
   const esperando = (o: Orden) => o.estado === "pendiente" && !!o.not_before && Date.parse(o.not_before) > reloj.ahora;
   const cancelable = (o: Orden) => o.estado === "pendiente" && (esperando(o) || !o.not_before);
 
+  /** G2: cancelar pregunta antes, como las demás listas de órdenes. */
+  let confirmar = $state<string | null>(null);
   async function cancelar(o: Orden) {
+    if (cancelando) return;
     cancelando = o.id;
     try {
       await api.cancelarOrden(actual.id, o.id);
@@ -46,6 +49,7 @@
       fallo(e);
     } finally {
       cancelando = null;
+      confirmar = null;
     }
   }
 </script>
@@ -86,7 +90,15 @@
           <a class="btn btn-sm volver" href="/c/{actual.id}/equipos/{eq.id}" title="Va sellada para el equipo: pídela otra vez desde su ficha."><RotateCcw size={14} />Volver a mandar</a>
         {/if}
         {#if cancelable(o) && puede.ordenar(actual.cliente?.rol)}
-          <button class="btn btn-sm cancelar" disabled={cancelando === o.id} onclick={() => cancelar(o)}><X size={14} />{cancelando === o.id ? "Cancelando…" : "Cancelar"}</button>
+          {#if confirmar === o.id}
+            <span class="conf">
+              <span class="faint">¿Cancelarla?</span>
+              <button class="btn btn-sm btn-ghost" onclick={() => (confirmar = null)}>No</button>
+              <button class="btn btn-sm btn-danger" disabled={cancelando === o.id} onclick={() => cancelar(o)}>{cancelando === o.id ? "Cancelando…" : "Sí, cancelar"}</button>
+            </span>
+          {:else}
+            <button class="btn btn-sm cancelar" onclick={() => (confirmar = o.id)}><X size={14} />Cancelar</button>
+          {/if}
         {/if}
       </div>
       </div>
@@ -189,6 +201,13 @@
   }
   .firma.ok {
     color: var(--ok);
+  }
+  .conf {
+    margin-left: auto;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
   }
   .cancelar,
   .volver {

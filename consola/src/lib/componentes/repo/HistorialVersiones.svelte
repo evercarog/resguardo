@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { tip } from "$lib/tooltip";
   // «Historial y versiones» (docs/diseno.md §4): una sola sección con una sola
   // línea de tiempo para un repositorio, una copia o un equipo entero. Junta lo
@@ -195,13 +196,9 @@
 
   let copiado = $state<string | null>(null);
   async function copiarId(x: string) {
-    try {
-      await navigator.clipboard.writeText(x);
-      copiado = x;
-      setTimeout(() => copiado === x && (copiado = null), 1400);
-    } catch {
-      /* sin portapapeles */
-    }
+    if (!(await alPortapapeles(x))) return;
+    copiado = x;
+    setTimeout(() => copiado === x && (copiado = null), 1400);
   }
   const cambios = (v: VersionInforme) =>
     v.archivos_nuevos != null || v.archivos_cambiados != null ? `${numero(v.archivos_nuevos ?? 0)} nuevos · ${numero(v.archivos_cambiados ?? 0)} cambiados` : null;

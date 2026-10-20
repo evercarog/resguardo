@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { untrack } from "svelte";
   // Personas y ajustes del cliente (solo propietarios): nombre, papeles,
   // invitaciones por enlace, la espera de lo destructivo y (v1.29) qué avisos
@@ -431,8 +432,7 @@
           <button
             class="btn btn-sm"
             onclick={async () => {
-              await navigator.clipboard.writeText(enlaceCompleto);
-              avisar("Enlace copiado.");
+              if (await alPortapapeles(enlaceCompleto)) avisar("Enlace copiado.");
             }}><Copy size={14} />Copiar</button
           >
         </div>
@@ -552,8 +552,7 @@
         <button
           class="btn"
           onclick={async () => {
-            await navigator.clipboard.writeText(mensajeRest);
-            avisar("Instrucciones y código copiados.");
+            if (await alPortapapeles(mensajeRest)) avisar("Instrucciones y código copiados.");
           }}><Copy size={14} />Copiar con las instrucciones</button
         >
         <button class="btn btn-primary" onclick={() => (restablecer = null)}>Hecho</button>

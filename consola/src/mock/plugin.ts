@@ -1806,7 +1806,8 @@ export function mockApi(): Plugin {
       if (!req.url?.startsWith("/api/")) return next();
       await listo;
       const url = new URL(req.url, "http://localhost");
-      const metodo = req.method ?? "GET";
+      // HEAD es un GET sin cuerpo (como en el servidor, axum).
+      const metodo = req.method === "HEAD" ? "GET" : (req.method ?? "GET");
       const cookies: string[] = [];
       const crudo = await leer(req);
       let cuerpo: Record<string, unknown> = {};

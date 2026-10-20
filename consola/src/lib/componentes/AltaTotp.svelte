@@ -1,6 +1,7 @@
 <script lang="ts">
   // Alta de la verificación en dos pasos: QR (generado aquí), la clave por si
   // no se puede escanear y el primer código.
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { Copy } from "@lucide/svelte";
   import Qr from "./Qr.svelte";
   import CampoCodigo from "./CampoCodigo.svelte";
@@ -27,8 +28,7 @@
         type="button"
         class="btn btn-sm btn-ghost"
         onclick={async () => {
-          await navigator.clipboard.writeText(totp.secreto);
-          avisar("Clave copiada.");
+          if (await alPortapapeles(totp.secreto)) avisar("Clave copiada.");
         }}><Copy size={14} />Copiar</button
       >
     </div>

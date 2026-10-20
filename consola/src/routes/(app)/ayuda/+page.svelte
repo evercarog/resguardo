@@ -3,6 +3,7 @@
   // hacer, «¿Qué hago si…?», qué ve el servidor, el certificado y el glosario
   // (las mismas entradas que los «?» de la consola). Cada bloque tiene su
   // ancla: /ayuda#guia-espejo, /ayuda#si-llaves, /ayuda#espejo…
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { onMount, tick } from "svelte";
   import { Check, ChevronRight, Copy, Eye, EyeOff, KeyRound, LifeBuoy, LockKeyhole, Search, ShieldCheck, X } from "@lucide/svelte";
   import { GLOSARIO } from "$lib/glosario";
@@ -31,13 +32,9 @@
   });
 
   async function copiar(t: string) {
-    try {
-      await navigator.clipboard.writeText(t);
-      copiado = t;
-      setTimeout(() => copiado === t && (copiado = ""), 1500);
-    } catch {
-      /* sin portapapeles */
-    }
+    if (!(await alPortapapeles(t))) return;
+    copiado = t;
+    setTimeout(() => copiado === t && (copiado = ""), 1500);
   }
 </script>
 

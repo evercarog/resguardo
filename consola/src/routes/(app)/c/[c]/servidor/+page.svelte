@@ -5,6 +5,7 @@
   // también la copia de la consola (v1.23) y las notificaciones (v1.29).
   import { onDestroy, onMount, untrack } from "svelte";
   import { Archive, ArrowRightLeft, BellRing, Download, FileUp, LifeBuoy, Monitor, Ticket, Trash2 } from "@lucide/svelte";
+  import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
@@ -140,12 +141,24 @@
       fallo(err);
     }
   }
+  // G2: borrar la copia guardada pregunta antes, y no dice «borrada» si no había ninguna.
+  let borrarCopia = $state(false);
+  let borrandoCopia = $state(false);
+  async function pedirBorrarGuardada() {
+    if ((await api.hayPaquete(actual.id)) === false) return avisar("No hay ninguna copia guardada en este servidor.");
+    borrarCopia = true;
+  }
   async function borrarGuardada() {
+    if (borrandoCopia) return;
+    borrandoCopia = true;
     try {
       await api.borrarPaquete(actual.id);
       avisar("Copia guardada borrada de este servidor.");
+      borrarCopia = false;
     } catch (err) {
       fallo(err);
+    } finally {
+      borrandoCopia = false;
     }
   }
 </script>
@@ -301,7 +314,7 @@
           <button class="btn btn-sm" onclick={() => (historial = "importar")} disabled={!!importadas}><FileUp size={14} />Importar el de otro servidor</button>
         {/if}
         <button class="btn btn-sm btn-ghost" onclick={bajarGuardada}>Descargar la copia guardada</button>
-        <button class="btn btn-sm btn-ghost" onclick={borrarGuardada}><Trash2 size={14} />Borrar la copia guardada</button>
+        <button class="btn btn-sm btn-ghost" onclick={pedirBorrarGuardada}><Trash2 size={14} />Borrar la copia guardada</button>
       </div>
       {#if importadas}<p class="faint pequeno">Este cliente ya tiene el historial de su servidor anterior: está en <a href="/c/{actual.id}/auditoria?importada=1">Actividad</a>.</p>{/if}
     </section>
@@ -440,6 +453,22 @@
         <footer><button class="btn btn-primary" onclick={() => ((fichaDlg = false), (ficha = null))}>Hecho</button></footer>
       </div>
     {/if}
+  </Modal>
+{/if}
+
+{#if borrarCopia}
+  <Modal labelledby="t-borrar-copia" onclose={() => (borrarCopia = false)} width={440} ocupado={borrandoCopia}>
+    <div class="dlg-title">
+      <span class="ticon danger"><Trash2 size={18} /></span>
+      <div>
+        <h2 id="t-borrar-copia">¿Borrar la copia guardada?</h2>
+        <p>Se borra de este servidor el historial que guardaste para llevarlo a otro. Si aún no lo has importado en el nuevo, descárgalo antes.</p>
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="btn btn-ghost" onclick={() => (borrarCopia = false)}>Cancelar</button>
+      <BotonCargando class="btn btn-danger" cargando={borrandoCopia} textoCargando="Borrando…" onclick={borrarGuardada}>Borrar</BotonCargando>
+    </footer>
   </Modal>
 {/if}
 

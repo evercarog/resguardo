@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { preguntarAlSalir } from "$lib/salir.svelte";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import BotonFalta from "$lib/componentes/BotonFalta.svelte";
   import { tip } from "$lib/tooltip";
@@ -209,6 +210,8 @@
   }
 
   const cambiado = $derived(cfg ? JSON.stringify(cfg) !== original : false);
+  // G2: salir con cambios sin guardar pregunta antes.
+  preguntarAlSalir(() => cambiado && !guardando, "Los cambios de las copias aún no se han guardado ni mandado al equipo, y se perderán.");
 
   // --- Horario: reglas que se suman (lib/horario.ts, EditorHorario) -----------
   // Con un agente anterior a la 0.7.9 se guarda como siempre (la lista de horas

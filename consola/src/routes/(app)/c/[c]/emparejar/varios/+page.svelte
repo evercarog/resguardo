@@ -3,6 +3,7 @@
   // este navegador; el servidor solo guarda su hash), la línea de PowerShell y la de Linux para
   // pegar en cada equipo, y «Equipos esperando confirmación». Nada se da de alta solo: cada equipo
   // enseña su número de comprobación y aquí se marca, después de compararlo, uno a uno o varios.
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import PonerInstalador from "$lib/componentes/PonerInstalador.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { onDestroy, untrack } from "svelte";
@@ -180,8 +181,7 @@
   const lineaLinux = $derived(codigo && servidorOk && app.servidor ? lineaLinuxVarios(codigo, servidorLimpio, app.servidor.huella_ca) : "");
 
   async function copiar(t: string, que: string) {
-    await navigator.clipboard.writeText(t);
-    avisar(`${que} copiada.`);
+    if (await alPortapapeles(t)) avisar(`${que} copiada.`);
   }
 
   // «Anular el código»

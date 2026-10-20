@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import PonerInstalador from "$lib/componentes/PonerInstalador.svelte";
   import { tip } from "$lib/tooltip";
   // Añadir un equipo: código de un solo uso → el equipo se une → número de
@@ -506,8 +507,7 @@
 
   const lineaLinux = $derived(emp ? lineaVincular(emp.codigo, urlAgentes()) : "");
   async function copiar(t: string, que: string) {
-    await navigator.clipboard.writeText(t);
-    avisar(`${que} copiado.`);
+    if (await alPortapapeles(t)) avisar(`${que} copiado.`);
   }
 </script>
 

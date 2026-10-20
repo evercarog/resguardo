@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { tip } from "$lib/tooltip";
   // «Primeros pasos» de un cliente nuevo, en Estado. Cada paso se marca solo,
   // a partir de lo que ya hay (no de lo que se ha pulsado): equipos, quién
@@ -185,8 +186,7 @@
                   <button
                     class="btn btn-sm"
                     onclick={async () => {
-                      await navigator.clipboard.writeText(comando);
-                      avisar("Línea copiada.");
+                      if (await alPortapapeles(comando)) avisar("Línea copiada.");
                     }}><Copy size={14} />Copiar</button
                   >
                 </div>

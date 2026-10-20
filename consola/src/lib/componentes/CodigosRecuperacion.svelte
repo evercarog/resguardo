@@ -1,6 +1,7 @@
 <script lang="ts">
   // Códigos de recuperación: se muestran una sola vez. Se pueden copiar,
   // descargar o imprimir, y hay que confirmar que se guardaron.
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { Copy, Download, Printer } from "@lucide/svelte";
   import { avisar } from "$lib/avisos.svelte";
 
@@ -26,8 +27,7 @@
       type="button"
       class="btn btn-sm"
       onclick={async () => {
-        await navigator.clipboard.writeText(codigos.join("\n"));
-        avisar("Códigos copiados.");
+        if (await alPortapapeles(codigos.join("\n"))) avisar("Códigos copiados.");
       }}><Copy size={14} />Copiar</button
     >
     <button type="button" class="btn btn-sm" onclick={descargar}><Download size={14} />Descargar</button>

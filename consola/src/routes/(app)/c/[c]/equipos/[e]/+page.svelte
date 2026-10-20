@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
   // Ficha de un equipo: estado, copias, repositorios, órdenes, informes y detalles.
@@ -1615,13 +1616,10 @@
           <button
             class="btn btn-sm"
             onclick={async () => {
-              await navigator.clipboard.writeText(equipo!.id);
-              avisar("Identificador copiado.");
+              if (await alPortapapeles(equipo!.id)) avisar("Identificador copiado.");
             }}><Copy size={14} />Copiar identificador</button
           >
           {#if puede.ordenar(rol)}
-            <!-- El agente aún no admite estas dos: «próximamente». -->
-            <button class="btn btn-sm" disabled use:tip={"Próximamente"}>Actualizar el agente · próximamente</button>
             <button class="btn btn-sm" onclick={() => abrir({ tipo: "desbloquear", cuerpo: { repo: "" }, descripcion: "Quita los bloqueos antiguos de los repositorios (de copias que se cortaron). Es seguro: no borra datos.", accion: "Quitar bloqueos", campos: "repo" })}>Quitar bloqueos antiguos</button>
           {/if}
         </div>

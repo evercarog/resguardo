@@ -268,6 +268,15 @@ export async function bajarPaquete(c: string): Promise<Uint8Array | null> {
   return new Uint8Array(await res.arrayBuffer());
 }
 export const borrarPaquete = (c: string) => pedir<void>("DELETE", `${cli(c)}/paquete`);
+/** ¿Hay una copia guardada? Sin bajarla (HEAD). `null` si no se sabe (un fallo que no es 404). */
+export async function hayPaquete(c: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${cli(c)}/paquete`, { method: "HEAD", credentials: "same-origin", cache: "no-store" });
+    return res.status === 404 ? false : res.ok ? true : null;
+  } catch {
+    return null;
+  }
+}
 /** En el servidor nuevo: el historial que el navegador sacó del paquete. */
 export const importarHistorial = (c: string, b: { origen: string; auditoria: T.EntradaAuditoria[]; informes: { equipo: string; recibido: string; datos: unknown }[]; avisos: { equipo: string | null; tipo: string; mensaje: string; creado: string }[]; notas?: T.NotasExportadas }) =>
   pedir<unknown>("POST", `${cli(c)}/importar`, b);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copiar as alPortapapeles } from "$lib/portapapeles";
   import EtiquetaVersion from "$lib/componentes/EtiquetaVersion.svelte";
   // Una versión en detalle: cuándo, de qué copia, cuánto duró y añadió, los
   // archivos nuevos, cambiados y sin cambios (cada recuento abre «Qué cambió»
@@ -58,13 +59,9 @@
 
   let copiado = $state(false);
   async function copiarId() {
-    try {
-      await navigator.clipboard.writeText(v.id);
-      copiado = true;
-      setTimeout(() => (copiado = false), 1400);
-    } catch {
-      /* sin portapapeles */
-    }
+    if (!(await alPortapapeles(v.id))) return;
+    copiado = true;
+    setTimeout(() => (copiado = false), 1400);
   }
   const fmtDelta = (d: number) => (Math.abs(d) < 1 ? "igual que la anterior" : `${d > 0 ? "+" : "−"}${bytes(Math.abs(d))} que la anterior`);
 </script>

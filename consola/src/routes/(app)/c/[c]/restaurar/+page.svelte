@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { preguntarAlSalir } from "$lib/salir.svelte";
   import MarcasVersion from "$lib/componentes/MarcasVersion.svelte";
   import Ilustracion from "$ui/componentes/Ilustracion.svelte";
   import { tip } from "$lib/tooltip";
@@ -94,6 +95,8 @@
 
   type Paso = "origen" | "repo" | "desde" | "clave" | "version" | "archivos" | "destino" | "progreso";
   let paso = $state<Paso>("origen");
+  // G2: con archivos elegidos y sin restaurar aún, salir pregunta antes.
+  preguntarAlSalir(() => (paso === "archivos" || paso === "destino") && elegidas.size > 0, "Lo que has elegido para restaurar aún no se ha pedido al equipo, y se perderá.");
   let equipoId = $state(page.url.searchParams.get("equipo") ?? "");
   $effect(() => {
     // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
