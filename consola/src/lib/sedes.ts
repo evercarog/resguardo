@@ -15,6 +15,7 @@
 // - Todo viaja como datos comunes (lib/datosComunes.ts): `sede:`, `sede.equipo:`,
 //   `sede.destino:` (estas dos con la clave de administración), `etiqueta.categoria:`
 //   y `orden.equipos:todos`.
+import { leerInventario, type FichaInventario } from "./inventario";
 import type { Equipo } from "./tipos";
 
 export interface Sede {
@@ -46,6 +47,8 @@ export interface Organizacion {
   exclusiones_quitadas: string[];
   /** El servidor sabe de grupos de exclusiones (uno anterior no manda el campo: no se ofrecen). */
   exclusionesAdmitidas: boolean;
+  /** 0.8.1 (H2, 15qq): el inventario de lo protegido, por `equipo:<id>` o `repositorio:<equipo>/<id>` (lib/inventario.ts). */
+  inventario?: Record<string, FichaInventario>;
 }
 
 export const ORGANIZACION_VACIA: Organizacion = { sedes: [], equipos: {}, destinos: {}, categorias: [], orden: [], exclusiones: [], exclusiones_quitadas: [], exclusionesAdmitidas: false };
@@ -65,6 +68,7 @@ export function leerOrganizacion(x: unknown): Organizacion {
       : [],
     exclusiones_quitadas: Array.isArray(o.exclusiones_quitadas) ? o.exclusiones_quitadas.filter((x) => typeof x === "string") : [],
     exclusionesAdmitidas: Array.isArray(o.exclusiones),
+    inventario: leerInventario((o as { inventario?: unknown }).inventario),
   };
 }
 

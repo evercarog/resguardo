@@ -460,9 +460,58 @@ const rutas: Ruta[] = [
       // v1.27: con la verificación restablecida, hace falta el código que dio el propietario.
       const r = cuenta.restablecida;
       if (r) return { necesita: "restablecimiento", restablecida: { cuando: r.cuando, por: r.por }, caducado: r.caduca <= Date.now() };
-      return cuenta.totp ? { necesita: "totp" } : { necesita: "alta_totp", totp: totpDe(cuenta.correo) };
+      return cuenta.totp ? { necesita: "totp", passkeys: passkeysDe(cuenta.id).length } : { necesita: "alta_totp", totp: totpDe(cuenta.correo) };
     },
   ],
+  // 0.8.1 (H3): llaves de acceso. El simulador no comprueba firmas (eso lo prueba el servidor
+  // con un autenticador simulado): guarda lo que llega y deja entrar con cualquier respuesta.
+  ["GET", /^\/api\/cuenta\/passkeys$/, (ctx) => ({ passkeys: passkeysDe(sesionDe(ctx).id), max: 10 })],
+  [
+    "POST",
+    /^\/api\/cuenta\/passkeys\/opciones$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      const b = ctx.cuerpo as { contrasena?: string; codigo?: string };
+      if (b.contrasena !== cuenta.contrasena) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      if (!/^\d{6}$/.test(String(b.codigo ?? ""))) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      const host = String(ctx.req.headers.host ?? "localhost").split(":")[0];
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) throw err(422, "datos", "Las llaves de acceso no funcionan si entras por una IP: entra por el nombre de la consola.");
+      const b64u = (x: Buffer) => x.toString("base64url");
+      return {
+        challenge: b64u(randomBytes(32)),
+        rp: { id: host, name: "Resguardo Server" },
+        user: { id: b64u(Buffer.from(cuenta.id)), name: cuenta.correo, displayName: cuenta.nombre },
+        pubKeyCredParams: [-7, -8, -257].map((alg) => ({ type: "public-key", alg })),
+        excludeCredentials: [],
+        authenticatorSelection: { residentKey: "discouraged", userVerification: "preferred" },
+        attestation: "none",
+        timeout: 300_000,
+      };
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/cuenta\/passkeys$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      const b = ctx.cuerpo as { nombre?: string };
+      const lista = passkeysDe(cuenta.id);
+      lista.push({ ref: randomUUID().slice(0, 16), nombre: String(b.nombre ?? "Llave"), creada: new Date().toISOString(), usada: null, dominio: String(ctx.req.headers.host ?? "localhost").split(":")[0] });
+      return { passkeys: lista, max: 10 };
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/cuenta\/passkeys\/([^/]+)$/,
+    (ctx, [ref]) => {
+      const cuenta = sesionDe(ctx);
+      const b = ctx.cuerpo as { contrasena?: string; codigo?: string };
+      if (b.contrasena !== cuenta.contrasena || !/^\d{6}$/.test(String(b.codigo ?? ""))) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      passkeysMock.set(cuenta.id, passkeysDe(cuenta.id).filter((p) => p.ref !== ref));
+      return { passkeys: passkeysDe(cuenta.id), max: 10 };
+    },
+  ],
+
 
   [
     "POST",
@@ -2034,6 +2083,15 @@ function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
  * una plantilla suya por traer.
  */
 const datosComunesMock = new Map<string, DatosComunesCliente>();
+/** 0.8.1 (H3): las llaves de acceso de cada cuenta (la de Ana con una de ejemplo). */
+const passkeysMock = new Map<string, { ref: string; nombre: string; creada: string; usada: string | null; dominio: string }[]>();
+function passkeysDe(cuenta: string) {
+  if (!passkeysMock.has(cuenta)) {
+    const ana = estado.cuentas.find((c) => c.correo === DEMO.correo)?.id === cuenta;
+    passkeysMock.set(cuenta, ana ? [{ ref: "0a1b2c3d4e5f6071", nombre: "Portátil de la oficina", creada: new Date(Date.now() - 40 * 86_400_000).toISOString(), usada: new Date(Date.now() - 3 * 86_400_000).toISOString(), dominio: "consola.ejemplo.com" }] : []);
+  }
+  return passkeysMock.get(cuenta)!;
+}
 function datosComunesDe(c: string): DatosComunesCliente {
   if (!datosComunesMock.has(c)) {
     const hace = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
@@ -2065,6 +2123,8 @@ function datosComunesDe(c: string): DatosComunesCliente {
                 ["sede:sur-2c3d", { nombre: "Planta Sur", notas: "Nave de producción" }],
                 [`sede.equipo:${ID.servidor}`, { sede: "norte-0a1b" }],
                 [`sede.equipo:${ID.recepcion}`, { sede: "norte-0a1b" }],
+                // 0.8.1 (H2, 15qq): lo anotado en el inventario de lo protegido.
+                [`inventario:equipo:${ID.servidor}`, { responsable: "Luis Gómez", criticidad: "critica", datos_personales: true, rto_min: 240, rpo_min: 60, id_externo: "INV-0042" }],
                 [`sede.equipo:${ID.contabilidad}`, { sede: "norte-0a1b" }],
                 [`sede.equipo:${ID.archivos}`, { sede: "sur-2c3d" }],
                 ["etiqueta.categoria:tipo-4e5f", { nombre: "Tipo", etiquetas: ["Servidores"] }],
@@ -2093,6 +2153,8 @@ function organizacionDe(c: string) {
     orden: [] as string[],
     exclusiones: [] as { id: string; nombre: string; reglas: string[] }[],
     exclusiones_quitadas: [] as string[],
+    // 0.8.1 (H2): el inventario de lo protegido.
+    inventario: {} as Record<string, unknown>,
   };
   for (const f of datosComunesDe(c).filas) {
     const v = f.valor as Record<string, unknown> | null;
@@ -2107,6 +2169,7 @@ function organizacionDe(c: string) {
     else if (clase === "sede.destino") o.destinos[sujeto] = String(v.sede);
     else if (clase === "etiqueta.categoria") o.categorias.push({ id: sujeto, nombre: String(v.nombre), etiquetas: (v.etiquetas as string[]) ?? [] });
     else if (clase === "orden.equipos") o.orden = (v.ids as string[]) ?? [];
+    else if (clase === "inventario") o.inventario[sujeto] = v;
   }
   o.sedes.sort((a, b) => a.nombre.localeCompare(b.nombre));
   o.categorias.sort((a, b) => a.nombre.localeCompare(b.nombre));

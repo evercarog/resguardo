@@ -112,6 +112,14 @@ pub fn descripcion(c: &Value) -> Option<String> {
             // 0.8.1 (E2, H1).
             Some(dc::Clase::Ajuste) if clave == "ajuste:restauraciones" => "«Pedir siempre el motivo» al restaurar".to_string(),
             Some(dc::Clase::Ajuste) => "«Recuperar en el equipo» (cada persona, sus propios archivos)".to_string(),
+            // 0.8.1 (H4): sin los textos de la prueba (el historial común no los lleva).
+            Some(dc::Clase::PruebaFuncional) => format!(
+                "el registro de una prueba funcional{}",
+                x["valor"]["fecha"].as_str().filter(|f| f.len() == 10).map(|f| format!(" del {f}")).unwrap_or_default()
+            ),
+            Some(dc::Clase::PruebaPolitica) => "la política de pruebas funcionales".to_string(),
+            // 0.8.1 (H2): sin el responsable ni el identificador (no hacen falta en el historial).
+            Some(dc::Clase::Inventario) => "el inventario de un equipo o un repositorio".to_string(),
             None => "un dato".to_string(),
         }
     };
@@ -255,6 +263,32 @@ mod tests {
         assert!(!d.contains("NAS"), "{d}");
         let malo = json!({ "entradas": [{ "clave": "nota.observacion:copia:../x", "valor": { "texto": "x" }, "cambiado": "2026-10-07T10:00:00Z" }] });
         assert!(aplicar(&mut v, &malo, false, None).is_err());
+    }
+
+    /// 0.8.1 (H4, 15ss): las pruebas funcionales y su política, sin clave y sin sus textos en la descripción.
+    #[test]
+    fn pruebas_funcionales() {
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_PRUEBAS));
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_INVENTARIO));
+        let mut v = vinculo("id", "Oficina");
+        let p = json!({ "entradas": [
+            { "clave": "prueba.funcional:k-1", "valor": {
+                "fecha": "2026-10-01", "motivo": "programada", "alcance": "cliente", "resultado": "ok", "que": "Las facturas de Ventas",
+                "autor": "Ana", "creada": "2026-10-01T12:00:00Z",
+                "adjuntos": [{ "n": 1, "nombre": "Acta.pdf", "tipo": "application/pdf", "tamano": 1000, "de": "" }] },
+              "cambiado": "2026-10-07T10:00:00Z" },
+            { "clave": "prueba.politica:cliente", "valor": { "activo": true, "meses": 6, "aviso_dias": 30 }, "cambiado": "2026-10-07T10:00:00Z" },
+        ]});
+        aplicar(&mut v, &p, false, None).unwrap();
+        assert_eq!(v.datos_cliente["prueba.funcional:k-1"].valor["autor"], "Ana");
+        let una = json!({ "entradas": [p["entradas"][0].clone()] });
+        let d = descripcion(&una).unwrap();
+        assert_eq!(d, "Cambiar el registro de una prueba funcional del 2026-10-01 en todas las consolas");
+        let con_contenido = json!({ "entradas": [{ "clave": "prueba.funcional:k-2", "valor": {
+            "fecha": "2026-10-01", "motivo": "programada", "alcance": "cliente", "resultado": "ok", "autor": "Ana", "creada": "2026-10-01T12:00:00Z",
+            "adjuntos": [{ "n": 1, "nombre": "Acta.pdf", "tipo": "application/pdf", "tamano": 4, "de": "", "datos": "JVBERi0=" }] },
+            "cambiado": "2026-10-07T10:00:00Z" }] });
+        assert!(aplicar(&mut v, &con_contenido, false, None).is_err(), "nunca el contenido de un adjunto");
     }
 
     /// 0.8.1 (B2, 15y): los grupos de exclusiones se guardan sin clave; el agente lo dice en `admite`.

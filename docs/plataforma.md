@@ -129,7 +129,7 @@ Lo que hoy funciona con la web de Supabase (equipos con la app, oficinas con el 
   - El paquete compilado va dentro del binario (`rust-embed`).
 - **Base de datos.** Ver 2.3.
 - **Cuentas y roles.**
-  - Cuentas locales con contraseña (Argon2id) y **TOTP obligatorio** (RFC 6238), con códigos de recuperación.
+  - Cuentas locales con contraseña (Argon2id) y **TOTP obligatorio** (RFC 6238), con códigos de recuperación. Desde la 0.8.1, una **llave de acceso** (passkey, WebAuthn) puede sustituir al código como segundo paso ([passkeys.md](passkeys.md)).
   - Sesiones con cookie `HttpOnly` y `SameSite=Strict`, protección CSRF y límite de intentos por cuenta y por IP.
   - Roles: propietario, administrador, técnico y solo lectura. Auditoría encadenada por hash.
   - **OIDC opcional más adelante** (Entra ID, Google Workspace, Keycloak).

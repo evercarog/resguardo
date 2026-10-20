@@ -10,6 +10,7 @@ import type * as T from "./tipos";
 import type * as TP from "./tiposPruebas";
 import type { CodigoAbierto } from "./emparejar";
 import type { DatosComunesCliente, EntradaOrden } from "./datosComunes";
+import type { OpcionesAlta, OpcionesEntrar, PasskeyVista } from "./passkeys";
 import type { Lote, LoteDetalle } from "./despliegue";
 import type { InstaladorServido } from "./actualizaciones";
 import { mensajePausa, pausaTras } from "./pausa429";
@@ -178,6 +179,16 @@ export const entrar = (correo: string, contrasena: string) => pedir<T.RespuestaS
 export const usarRestablecimiento = (codigo: string) => pedir<T.RespuestaSesion>("POST", "/api/sesion/restablecimiento", { codigo }, { sinRedirigir: true });
 export const segundoPaso = (b: { codigo: string } | { recuperacion: string }) => pedir<T.RespuestaTotp>("POST", "/api/sesion/totp", b, { sinRedirigir: true });
 
+// 0.8.1 (H3, 12c): llaves de acceso (passkeys) como segundo factor (lib/passkeys.ts).
+export const opcionesPasskeyEntrar = () => pedir<OpcionesEntrar>("POST", "/api/sesion/passkey/opciones", undefined, { sinRedirigir: true });
+export const entrarConPasskey = (b: { id: string; client_data: string; authenticator_data: string; firma: string }) =>
+  pedir<T.RespuestaTotp>("POST", "/api/sesion/passkey", b, { sinRedirigir: true });
+export const passkeys = () => pedir<{ passkeys: PasskeyVista[]; max: number }>("GET", "/api/cuenta/passkeys", undefined, { invisible: true });
+export const opcionesPasskeyAlta = (contrasena: string, codigo: string) => pedir<OpcionesAlta>("POST", "/api/cuenta/passkeys/opciones", { contrasena, codigo });
+export const altaPasskey = (b: { nombre: string; id: string; client_data: string; attestation: string }) =>
+  pedir<{ passkeys: PasskeyVista[]; max: number }>("POST", "/api/cuenta/passkeys", b);
+export const bajaPasskey = (ref: string, contrasena: string, codigo: string) =>
+  pedir<{ passkeys: PasskeyVista[]; max: number }>("DELETE", `/api/cuenta/passkeys/${enc(ref)}`, { contrasena, codigo });
 export const salir = () => pedir<void>("DELETE", "/api/sesion", undefined, { sinRedirigir: true });
 
 export const cuenta = (opciones: { sinRedirigir?: boolean } = {}) => pedir<T.Cuenta>("GET", "/api/cuenta", undefined, opciones);

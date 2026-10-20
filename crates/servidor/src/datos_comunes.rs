@@ -128,7 +128,9 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
         // 0.8.0 (D1, D2): las sedes, las categorías y el orden no tienen otro sitio aquí: viven
         // solo como datos comunes (`crate::sedes`). Nunca chocan con «lo de aquí»: gana el más reciente.
         // 0.8.1 (B2, 15y): los grupos de exclusiones, igual (`crate::sedes::organizacion` los lee).
-        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones => Value::Null,
+        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones | Clase::Inventario => {
+            Value::Null
+        }
         // 0.8.1 (B5, 15pp): la observación de aquí (vacía, nada) y el comentario de aquí, si existe.
         Clase::NotaObservacion => match sujeto.split_once(':') {
             Some((t, o)) => db.observacion(ctx, t, o)?.filter(|o| !o.texto.trim().is_empty()).map(|o| json!({ "texto": o.texto })).unwrap_or(Value::Null),
@@ -137,6 +139,20 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
         Clase::NotaComentario => db.comentario(ctx, sujeto)?.map(|k| comentario_comun(&k)).unwrap_or(Value::Null),
         // 0.8.1 (E2, H1): el ajuste de aquí, si se puso alguna vez (si no, el de por defecto: nada propio).
         Clase::Ajuste => ajuste_local(db, ctx, sujeto)?,
+        // 0.8.1 (H4, 15ss): la prueba de aquí, limpia como dato común (si no se puede limpiar, tal
+        // cual: existe, pero no se comparte) y la política, si se puso.
+        Clase::PruebaFuncional => match crate::pruebas_funcionales::valor_comun(db, ctx, sujeto)? {
+            Some(v) => dc::valor_valido(clave, &v).unwrap_or(v),
+            None => Value::Null,
+        },
+        Clase::PruebaPolitica => {
+            let v = crate::pruebas_funcionales::politica_comun(db, ctx)?;
+            if v.is_null() {
+                v
+            } else {
+                dc::valor_valido(clave, &v).unwrap_or(v)
+            }
+        }
     })
 }
 
@@ -188,6 +204,12 @@ pub fn iguales(clave: &str, local: &Value, valor: &Value) -> bool {
 /// valor de aquí, o la plantilla cifrada con la sal y el cliente de aquí.
 pub fn valor_para_compartir(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Option<Value>> {
     let Some((c, sujeto)) = dc::clase(clave) else { return Ok(None) };
+    // 0.8.1 (H4): una prueba que existe aquí pero no cabe como dato común (más de 16 KiB) sigue
+    // siendo solo de aquí: nunca se manda como «borrada».
+    if c == Clase::PruebaFuncional || c == Clase::PruebaPolitica {
+        let v = valor_local(db, ctx, clave)?;
+        return Ok(if v.is_null() { Some(v) } else { dc::valor_valido(clave, &v).ok() });
+    }
     if c != Clase::Plantilla {
         return Ok(Some(valor_local(db, ctx, clave)?));
     }
@@ -290,7 +312,8 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
             }
         }
         // 0.8.0 (D1, D2): su único sitio es el propio dato común (lo guarda `registrar` o `recibir`).
-        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones => {}
+        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones | Clase::Inventario => {
+        }
         // 0.8.1 (B5, 15pp): a las notas de aquí, como si la hubiera puesto «Ana (desde la consola X)».
         Clase::NotaObservacion => {
             if let Some((t, o)) = sujeto.split_once(':') {
@@ -336,6 +359,10 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
                 db.crear_comentario(ctx, &k, crate::api::notas::MAX_COMENTARIOS_OBJETO, crate::api::notas::MAX_COMENTARIOS_CLIENTE)?;
             }
         }
+        // 0.8.1 (H4, 15ss): el registro de una prueba funcional (ya visto desde aquí al recibirlo,
+        // `pruebas_funcionales::ver_desde_aqui`) y la política.
+        Clase::PruebaFuncional => crate::pruebas_funcionales::aplicar_comun(db, ctx, sujeto, valor, por)?,
+        Clase::PruebaPolitica => crate::pruebas_funcionales::aplicar_politica_comun(db, ctx, valor, por)?,
     }
     Ok(())
 }
@@ -360,9 +387,15 @@ pub fn recibir(db: &dyn Almacen, ctx: &ClienteCtx, equipo: &str, propia: &str, d
             continue;
         }
         let Some((clase, _)) = dc::clase(&clave) else { continue };
+        // 0.8.1 (H4): una prueba funcional se ve desde aquí (de quién es cada adjunto, su origen).
+        let valor = if clase == Clase::PruebaFuncional {
+            crate::pruebas_funcionales::ver_desde_aqui(&e.valor, &e.identidad, &e.consola, propia)
+        } else {
+            e.valor.clone()
+        };
         let en_diferencia = actual.is_some_and(|f| f.estado == Estado::Conflicto);
         let local = valor_local(db, ctx, &clave)?;
-        let distinto = !local.is_null() && !iguales(&clave, &local, &e.valor);
+        let distinto = !local.is_null() && !iguales(&clave, &local, &valor);
         let conflicto = match (clase, actual.is_none()) {
             // Una diferencia sin resolver: otra semilla la deja igual (con su valor nuevo); un
             // cambio de verdad más reciente (alguien eligió en otra consola para todas) la resuelve.
@@ -389,8 +422,8 @@ pub fn recibir(db: &dyn Almacen, ctx: &ClienteCtx, equipo: &str, propia: &str, d
         }
         // Una plantilla de otra consola no se puede abrir aquí: queda por traer.
         let estado = if clase == Clase::Plantilla && !e.valor.is_null() && !propio { Estado::PorTraer } else { Estado::Aplicado };
-        if !iguales(&clave, &local, &e.valor) {
-            aplicar_local(db, ctx, &clave, &e.valor, &quien(&e))?;
+        if !iguales(&clave, &local, &valor) {
+            aplicar_local(db, ctx, &clave, &valor, &quien(&e))?;
             if !propio {
                 db.auditar(ctx, &actor, "datos_comunes", &clave, &datos.to_string())?;
             }
@@ -458,7 +491,11 @@ pub fn compartiendo(db: &dyn Almacen, ctx: &ClienteCtx) -> R<bool> {
 /// Lo que se manda a la consola web: una fila con su clave y si es de esta consola. Una
 /// plantilla solo lleva su cifrado si hace falta (por traer o por enviar): pesan.
 pub fn vista(clave: &str, f: &Fila, propia: &str) -> Value {
-    let pesa = clave.starts_with(Clase::Plantilla.prefijo()) && !f.entrada.valor.is_null() && f.estado != Estado::PorTraer && !f.por_enviar;
+    // Una plantilla y (0.8.1, H4) una prueba funcional solo llevan su valor si hace falta: pesan.
+    let pesa = (clave.starts_with(Clase::Plantilla.prefijo()) && f.estado != Estado::PorTraer
+        || clave.starts_with(Clase::PruebaFuncional.prefijo()) && f.estado != Estado::Conflicto)
+        && !f.entrada.valor.is_null()
+        && !f.por_enviar;
     json!({
         "clave": clave,
         "valor": if pesa { json!({ "aqui": true }) } else { f.entrada.valor.clone() },
@@ -509,14 +546,22 @@ pub fn sin_compartir(db: &dyn Almacen, ctx: &ClienteCtx, ya: &BTreeMap<String, F
             claves.push(format!("{}{a}", Clase::Ajuste.prefijo()));
         }
     }
+    // 0.8.1 (H4, 15ss): las pruebas funcionales de antes y la política se reparten una vez, como
+    // semilla (cada prueba tiene su id: nunca chocan con las de otra consola).
+    for id in crate::pruebas_funcionales::ids(db, ctx)? {
+        claves.push(crate::pruebas_funcionales::clave_prueba(&id));
+    }
+    claves.push(crate::pruebas_funcionales::CLAVE_POLITICA.to_string());
     let mut out = Vec::new();
     for k in claves {
         if ya.contains_key(&k) || dc::clase(&k).is_none() {
             continue;
         }
         if let Some(v) = valor_para_compartir(db, ctx, &k)?.filter(|v| !v.is_null()) {
-            // Una plantilla, sin su cifrado (al compartirla, el servidor pone la de aquí).
-            let v = if k.starts_with(Clase::Plantilla.prefijo()) { json!({ "aqui": true }) } else { v };
+            // Una plantilla sin su cifrado y una prueba sin su texto (al compartirlas, el servidor
+            // pone las de aquí).
+            let v = if k.starts_with(Clase::Plantilla.prefijo()) || k.starts_with(Clase::PruebaFuncional.prefijo()) { json!({ "aqui": true }) } else { v };
+
             out.push(json!({ "clave": k, "valor": v }));
         }
     }
@@ -658,6 +703,82 @@ mod tests {
         recibir(&db, &ctx, "e1", AQUI, &otra).unwrap();
         assert_eq!(db.observacion(&ctx, "repositorio", "e1/docs").unwrap().unwrap().texto, "La de aquí");
         assert_eq!(filas(&db, &ctx).unwrap()["nota.observacion:repositorio:e1/docs"].estado, Estado::Conflicto);
+        drop(db);
+        drop(dir);
+    }
+
+    /// 0.8.1 (H4, 15ss): una prueba funcional y la política de otra consola llegan aquí, con su
+    /// autor, su consola de origen y la lista de sus adjuntos (que se quedan allí).
+    #[test]
+    fn pruebas_funcionales_de_otra_consola() {
+        use crate::almacen::AlmacenPruebas;
+        let (db, ctx, dir) = almacen();
+        let p = json!({
+            "fecha": "2026-10-01", "motivo": "programada", "alcance": "cliente", "resultado": "ok", "quien": "Ana",
+            "que": "Las facturas", "rto_min": 90, "autor": "Ana", "creada": "2026-10-01T12:00:00Z",
+            "adjuntos": [{ "n": 1, "nombre": "Acta.pdf", "tipo": "application/pdf", "tamano": 2048, "de": "" }],
+        });
+        let doc = json!({
+            "prueba.funcional:k-1": entrada(p.clone(), "2026-10-07T10:00:00Z", "id-oficina", "Oficina"),
+            "prueba.politica:cliente": entrada(json!({ "activo": true, "meses": 3, "aviso_dias": 15 }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina"),
+        });
+        assert_eq!(recibir(&db, &ctx, "e1", AQUI, &doc).unwrap(), 2);
+        let g = db.prueba_funcional(&ctx, "k-1").unwrap().expect("llegó");
+        assert_eq!(g.por, "Ana (desde la consola «Oficina»)");
+        let e: crate::pruebas_funcionales::Entrada = serde_json::from_str(&g.datos).unwrap();
+        assert_eq!(e.autor.as_deref(), Some("Ana"));
+        assert_eq!(e.origen.as_ref().map(|o| o.consola.as_str()), Some("Oficina"));
+        assert_eq!(e.adjuntos_fuera.len(), 1);
+        assert_eq!((e.adjuntos_fuera[0].de.as_str(), e.adjuntos_fuera[0].consola.as_str()), ("id-oficina", "Oficina"));
+        assert!(db.adjuntos_pruebas(&ctx).unwrap().is_empty(), "el contenido no viaja");
+        let (pol, _) = crate::pruebas_funcionales::politica(&db, &ctx).unwrap();
+        assert_eq!((pol.meses, pol.aviso_dias), (3, 15));
+        // Lo de aquí se vuelve a compartir tal cual (con su origen y el adjunto de la otra consola).
+        let v = valor_para_compartir(&db, &ctx, "prueba.funcional:k-1").unwrap().unwrap();
+        assert_eq!(v["origen"]["identidad"], "id-oficina");
+        assert_eq!(v["adjuntos"][0]["de"], "id-oficina");
+        // Cambiada aquí y de vuelta en la consola de origen: su adjunto vuelve a ser «de aquí» y
+        // el origen desaparece (es ella).
+        let alli = ver_desde_oficina(&v, AQUI);
+        assert!(alli.get("origen").is_none(), "{alli}");
+        assert_eq!(alli["adjuntos"][0]["de"], "");
+        // Borrada en la otra consola: se borra aquí.
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "prueba.funcional:k-1": entrada(Value::Null, "2026-10-07T11:00:00Z", "id-oficina", "Oficina") })).unwrap();
+        assert!(db.prueba_funcional(&ctx, "k-1").unwrap().is_none());
+        // Una que no vale aquí (fecha futura) se salta sin romper nada.
+        let mut futura = p.clone();
+        futura["fecha"] = json!("2099-01-01");
+        recibir(&db, &ctx, "e1", AQUI, &json!({ "prueba.funcional:k-2": entrada(futura, "2026-10-07T12:00:00Z", "id-oficina", "Oficina") })).unwrap();
+        assert!(db.prueba_funcional(&ctx, "k-2").unwrap().is_none());
+        drop(db);
+        drop(dir);
+    }
+
+    /// Lo que vería la consola «Oficina» (identidad `id-oficina`) de un valor mandado desde aquí.
+    fn ver_desde_oficina(v: &Value, desde: &str) -> Value {
+        crate::pruebas_funcionales::ver_desde_aqui(v, desde, "En línea", "id-oficina")
+    }
+
+    /// 0.8.1 (H4): las pruebas de antes se ofrecen una vez como semilla, sin su texto.
+    #[test]
+    fn pruebas_de_antes_como_semilla() {
+        use crate::almacen::{AlmacenPruebas, PruebaGuardada};
+        let (db, ctx, dir) = almacen();
+        let datos = json!({ "fecha": "2026-09-01", "motivo": "auditoria", "alcance": "cliente", "resultado": "parcial", "quien": "Luis" }).to_string();
+        db.guardar_prueba_funcional(
+            &ctx,
+            &PruebaGuardada { id: "vieja".into(), fecha: 1, datos, creada: 1_790_000_000, actualizada: 1_790_000_000, por: "Luis".into() },
+            10,
+        )
+        .unwrap();
+        let s = sin_compartir(&db, &ctx, &BTreeMap::new()).unwrap();
+        let x = s.iter().find(|x| x["clave"] == "prueba.funcional:vieja").expect("se ofrece");
+        assert_eq!(x["valor"], json!({ "aqui": true }), "sin el texto: lo pone el servidor");
+        let v = valor_para_compartir(&db, &ctx, "prueba.funcional:vieja").unwrap().unwrap();
+        assert_eq!((v["autor"].as_str(), v["resultado"].as_str()), (Some("Luis"), Some("parcial")));
+        assert!(v.get("origen").is_none() && v.get("adjuntos").is_none());
+        // La política sin poner no se ofrece.
+        assert!(!s.iter().any(|x| x["clave"] == "prueba.politica:cliente"));
         drop(db);
         drop(dir);
     }

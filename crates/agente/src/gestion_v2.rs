@@ -1596,6 +1596,10 @@ pub const ADMITE: &[&str] = &[
     // 0.8.1 (H1, 15mm): la orden `recuperar_en_equipo` (con la clave), `resumen.recuperar` y
     // lo que la persona del equipo recupera por la ventana o la terminal (con `cuenta` en la bitácora).
     crate::recuperar::ADMITE,
+    // 0.8.1 (H4, 15ss): guarda las pruebas funcionales y su política como datos comunes.
+    resguardo_protocolo::datos_cliente::ADMITE_PRUEBAS,
+    // 0.8.1 (H2, 15qq): guarda el inventario de lo protegido (responsable, criticidad…).
+    resguardo_protocolo::datos_cliente::ADMITE_INVENTARIO,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

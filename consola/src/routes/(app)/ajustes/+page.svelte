@@ -15,6 +15,7 @@
   import AltaTotp from "$lib/componentes/AltaTotp.svelte";
   import CodigosRecuperacion from "$lib/componentes/CodigosRecuperacion.svelte";
   import MisNotificaciones from "$lib/componentes/MisNotificaciones.svelte";
+  import LlavesAcceso from "$lib/componentes/LlavesAcceso.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import type { Totp } from "$lib/tipos";
 
@@ -176,6 +177,8 @@
       <button class="btn btn-sm" onclick={() => abrirModal("codigos")}>Generar códigos de recuperación nuevos</button>
     </div>
   </section>
+
+  <LlavesAcceso />
 
   <MisNotificaciones />
 

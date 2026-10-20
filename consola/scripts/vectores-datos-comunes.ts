@@ -21,7 +21,7 @@ import {
   type FilaComun,
 } from "../src/lib/datosComunes";
 import { NIVEL, SOLO_ADMIN_ROL } from "../src/lib/cripto/ordenes";
-import { admiteClave, esDeExclusiones } from "../src/lib/datosComunes";
+import { admiteClave, esDeExclusiones, esDePruebas } from "../src/lib/datosComunes";
 import { GRUPOS_DE_PARTIDA, gruposDePartidaQuitados, gruposExclusiones, reglasDe, valorGrupo, valorGrupoDeFuera } from "../src/lib/gruposExclusiones";
 import { leerOrganizacion } from "../src/lib/sedes";
 import { ajusteTrasCambio, cambiosEnEquipos, categoriasTrasCambio, errorNombreEtiqueta, etiquetasTrasCambio } from "../src/lib/gestionEtiquetas";
@@ -210,6 +210,15 @@ console.log("\n· Órdenes y equipos");
     { ...base, id: "d", nombre: "D (local)", modo: "local", confirmado: true, resumen: { admite: ["datos_cliente"] } },
   ];
   igual("solo a los que lo guardan (agente nuevo, confirmado, gestionado)", equiposQueGuardan(eqs).map((e) => e.id), ["a"]);
+}
+
+console.log("\n· Pruebas funcionales y su política, comunes (0.8.1, H4, 15ss)");
+{
+  const conCap = (admite: string[], bytes = 0) => ({ resumen: { admite, datos_cliente: { bytes } } }) as unknown as Equipo;
+  igual("es de pruebas", [esDePruebas("prueba.funcional:k-1"), esDePruebas("prueba.politica:cliente"), esDePruebas("nota.comentario:k-1")], [true, true, false]);
+  igual("solo a los agentes que las guardan", [admiteClave(conCap(["notas_comunes"]), "prueba.funcional:k-1"), admiteClave(conCap(["pruebas_comunes"]), "prueba.funcional:k-1")], [false, true]);
+  igual("con el documento casi lleno, las pruebas no (la política sí)", [admiteClave(conCap(["pruebas_comunes"], 200 * 1024), "prueba.funcional:k-1"), admiteClave(conCap(["pruebas_comunes"], 200 * 1024), "prueba.politica:cliente")], [false, true]);
+  igual("en palabras", [textoValor("prueba.funcional:k-1", { fecha: "2026-10-01", resultado: "parcial" }), textoValor("prueba.politica:cliente", { activo: true, meses: 6, aviso_dias: 30 }), textoValor("prueba.politica:cliente", null)], ["del 2026-10-01, con incidencias", "cada 6 meses, aviso 30 días antes", "la de por defecto"]);
 }
 
 console.log(`\n${total - fallos}/${total} bien`);

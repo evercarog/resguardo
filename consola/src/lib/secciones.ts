@@ -21,6 +21,8 @@ import {
   ArrowRightLeft,
   ScrollText,
   ServerCog,
+  ListTree,
+  ShieldCheck,
   SlidersHorizontal,
   Users,
 } from "@lucide/svelte";
@@ -95,7 +97,19 @@ export const SECCIONES: SeccionDef[] = [
       { ruta: "/actividad/registro", texto: "Registro", icono: ScrollText, puede: ordenar, claves: "actividad auditoria registro quien hizo que" },
     ],
   },
-  { id: "informes", texto: "Informes", icono: FileBarChart, prefijo: "/informes", pestanas: [{ ruta: "/informes", texto: "Informes", icono: FileBarChart, claves: "informe imprimir pdf ejecutivo" }] },
+  {
+    id: "informes",
+    texto: "Informes",
+    icono: FileBarChart,
+    prefijo: "/informes",
+    pestanas: [
+      { ruta: "/informes", texto: "Informes", icono: FileBarChart, exacto: true, claves: "informe imprimir pdf ejecutivo" },
+      // 0.8.1 (H5, 15tt): la configuración de copias, en PDF y CSV.
+      { ruta: "/informes/configuracion", texto: "Configuración", icono: ListTree, claves: "configuracion copias carpetas exclusiones horario retencion csv excel pdf" },
+      // 0.8.1 (H2, 15qq): el paquete de evidencia para auditoría y el inventario de lo protegido.
+      { ruta: "/informes/auditoria", texto: "Auditoría", icono: ShieldCheck, puede: administrar, claves: "auditoria cumplimiento evidencia iso 27001 cis inventario responsable criticidad datos personales rto rpo" },
+    ],
+  },
   {
     id: "ajustes",
     texto: "Ajustes",

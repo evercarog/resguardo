@@ -29,6 +29,9 @@
   import { juntar, soloReales, type ConMotivo } from "$lib/restauraciones";
   import { ultimos } from "$lib/informes.svelte";
   import { informeDe } from "$lib/repo";
+  import { seguirCambios } from "$lib/vivo.svelte";
+  import { admitePruebas } from "$lib/datosComunes";
+  import { variasConsolas } from "$lib/datosEquipo";
   import type { EntradaPruebaFuncional, PoliticaPruebas, PruebaFuncional } from "$lib/tiposPruebas";
 
   const c = $derived(actual.id);
@@ -50,6 +53,17 @@
         .catch(() => {});
     });
   });
+
+  // 0.8.1 (H4, 15ss): las pruebas y la política son comunes a todas las consolas del cliente.
+  // Cuando llega un cambio de otra consola (por los equipos), se vuelven a pedir.
+  $effect(() => {
+    const cc = c;
+    if (!cc) return;
+    return untrack(() => seguirCambios(() => actual.id === cc && cargarFuncionales(cc, true), { ms: 300_000, toca: (x) => x.t === "datos_comunes" }));
+  });
+  const gestionados = $derived(actual.equipos.filter((e) => e.confirmado !== false && e.modo === "gestionado"));
+  /** Con varias consolas y ningún agente que las guarde, las pruebas solo están aquí: se dice. */
+  const soloAqui = $derived(gestionados.some((e) => variasConsolas(e)) && !gestionados.some((e) => admitePruebas(e)));
 
   const nombreEquipo = (id: string) => actual.equipos.find((e) => e.id === id)?.nombre ?? "Equipo quitado";
   const nombreRepo = (eq: string, repo: string) => actual.equipos.find((e) => e.id === eq)?.resumen?.repositorios?.find((r) => r.id === repo)?.nombre ?? repo;
@@ -145,7 +159,10 @@
     nuevoRepo = "";
   }
 
+  /** «la consola «Oficina»» u «otra consola». */
+  const deConsola = (n: string | null | undefined) => (n?.trim() ? `la consola «${n.trim()}»` : "otra consola");
   const conTiempos = $derived(pruebas.map((p) => ({ ...p, hora: `${p.fecha}T12:00:00` })));
+
   const tono = (r: string) => resultadoPrueba(r).tono;
   const cumpleTexto = (x: boolean | null | undefined) => (x === false ? " (no cumple el objetivo)" : "");
 </script>
@@ -172,6 +189,11 @@
   {:else if datos === null}
     <div class="notice notice-info"><p>Este servidor aún no guarda las pruebas funcionales: actualiza Resguardo Server para registrarlas.</p></div>
   {:else}
+    {#if soloAqui}
+      <div class="notice notice-info">
+        <p>Las pruebas funcionales de este cliente se guardan solo en esta consola: sus agentes aún no las reparten a las demás. Actualízalos para verlas en todas.</p>
+      </div>
+    {/if}
     <section class="card p estado" aria-labelledby="t-plazo">
       <div class="estado-cab">
         <h2 class="section-title" id="t-plazo"><CalendarClock size={16} />Plazo</h2>
@@ -236,7 +258,7 @@
                 <span class="tile-ic"><ClipboardCheck size={16} /></span>
                 <span class="fila-texto">
                   <span class="fila-titulo">{diaLargo(p.fecha)} · {textoAlcance(p, nombre)}</span>
-                  <span class="fila-sub">{textoMotivoPrueba(p.motivo)}{p.quien ? ` · ${p.quien}` : ""}{p.donde ? ` · ${p.donde}` : ""}{p.adjuntos.length ? ` · ${plural(p.adjuntos.length, "adjunto", "adjuntos")}` : ""}</span>
+                  <span class="fila-sub">{textoMotivoPrueba(p.motivo)}{p.quien ? ` · ${p.quien}` : ""}{p.donde ? ` · ${p.donde}` : ""}{p.adjuntos.length + (p.adjuntos_fuera?.length ?? 0) ? ` · ${plural(p.adjuntos.length + (p.adjuntos_fuera?.length ?? 0), "adjunto", "adjuntos")}` : ""}{p.origen ? ` · registrada en ${deConsola(p.origen.consola)}` : ""}</span>
                 </span>
                 <span class="fila-meta num">
                   <Chip pequeno tono={r.tono} texto={r.texto} />
@@ -285,23 +307,24 @@
       <dd>{textoMinutos(p.rpo_min)}{cumpleTexto(p.cumple_rpo)}</dd>
       {#if p.restauracion}<dt>Restauración</dt><dd><a class="link-suave" href="/c/{actual.id}/recuperar/restauraciones?equipo={encodeURIComponent(p.restauracion.equipo)}">La registrada en {nombreEquipo(p.restauracion.equipo)}</a></dd>{/if}
       {#if p.notas}<dt>Notas</dt><dd class="pre">{p.notas}</dd>{/if}
-      {#if p.adjuntos.length}
+      {#if p.adjuntos.length || p.adjuntos_fuera?.length}
         <dt>Adjuntos</dt>
         <dd>
           <ul class="adjuntos">
             {#each p.adjuntos as a (a.n)}<li><FileText size={14} /><a class="link-suave" href={api.urlAdjuntoPrueba(actual.id, p.id, a.n)} download>{a.nombre}</a> <span class="faint">{bytes(a.tamano)}</span></li>{/each}
+            {#each p.adjuntos_fuera ?? [] as a (`${a.consola ?? ""}|${a.n}`)}<li><FileText size={14} /><span>{a.nombre}</span> <span class="faint">{bytes(a.tamano)} · adjunto en {deConsola(a.consola)}</span></li>{/each}
           </ul>
         </dd>
       {/if}
       <dt>Registrada</dt>
-      <dd class="faint">{fechaLarga(p.creada)} por {p.por}{p.actualizada !== p.creada ? ` · cambiada ${fechaLarga(p.actualizada)}` : ""}</dd>
+      <dd class="faint">{fechaLarga(p.creada)} por {p.autor || p.por}{p.origen ? ` en ${deConsola(p.origen.consola)}` : ""}{p.actualizada !== p.creada ? ` · cambiada ${fechaLarga(p.actualizada)}${p.por !== (p.autor || p.por) ? ` por ${p.por}` : ""}` : ""}</dd>
       <dt>En la regla</dt>
       <dd>{p.resultado === "ok" ? "Cuenta como prueba de restauración correcta de los repositorios que incluye (45 días)." : "Deja el «0» de esos repositorios por revisar hasta que haya otra correcta."}</dd>
     </dl>
     <footer class="pie">
       {#if puede.administrar(actual.cliente?.rol)}
         {#if confirmarBorrar}
-          <span class="faint">¿Borrarla con sus adjuntos?</span>
+          <span class="faint">¿Borrarla con sus adjuntos? Se borra en todas las consolas del cliente.</span>
           <button class="btn btn-danger" disabled={borrando} onclick={borrar}><Trash2 size={15} />Sí, borrarla</button>
         {:else}
           <button class="btn btn-ghost" onclick={() => (confirmarBorrar = true)}><Trash2 size={15} />Borrar</button>
@@ -493,7 +516,10 @@
   .adjuntos li {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .pie {
     display: flex;

@@ -11,7 +11,8 @@
   import AltaTotp from "$lib/componentes/AltaTotp.svelte";
   import CodigosRecuperacion from "$lib/componentes/CodigosRecuperacion.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
-  import { ArrowLeft, KeyRound, LifeBuoy, ShieldAlert, Smartphone } from "@lucide/svelte";
+  import { ArrowLeft, Fingerprint, KeyRound, LifeBuoy, ShieldAlert, Smartphone } from "@lucide/svelte";
+  import { errorNavegador, firmar, soporteAqui } from "$lib/passkeys";
 
   type Paso = "credenciales" | "totp" | "recuperacion" | "restablecimiento" | "alta" | "codigos";
   let paso = $state<Paso>("credenciales");
@@ -27,6 +28,9 @@
   let restablecida = $state<Restablecida | null>(null);
   let caducado = $state(false);
   let codigoRest = $state("");
+  // 0.8.1 (H3): llaves de acceso de la cuenta para esta dirección (en vez del código).
+  let passkeysN = $state(0);
+  const soportePk = soporteAqui();
 
   const volver = $derived.by(() => {
     const v = page.url.searchParams.get("volver");
@@ -48,7 +52,10 @@
         restablecida = r.restablecida;
         caducado = r.caducado;
         paso = "restablecimiento";
-      } else paso = "totp";
+      } else {
+        passkeysN = r.passkeys ?? 0;
+        paso = "totp";
+      }
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -69,6 +76,29 @@
         codigoRest = "";
         paso = "alta";
       }
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      ocupado = false;
+    }
+  }
+
+  /** 0.8.1 (H3): entrar con una llave de acceso en vez del código. */
+  async function conLlave() {
+    if (ocupado) return;
+    error = "";
+    ocupado = true;
+    try {
+      const op = await api.opcionesPasskeyEntrar();
+      let f;
+      try {
+        f = await firmar(op);
+      } catch (e) {
+        throw new Error(errorNavegador(e));
+      }
+      const r = await api.entrarConPasskey(f);
+      app.cuenta = r.cuenta;
+      await goto(volver, { replaceState: true });
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -117,6 +147,14 @@
   </Portada>
 {:else if paso === "totp"}
   <Portada titulo="Verificación en dos pasos" sub="Un segundo paso para que nadie entre solo con tu contraseña.">
+    {#if passkeysN > 0 && soportePk.ok}
+      <div class="con-llave">
+        <button class="btn btn-primary btn-lg" type="button" disabled={ocupado} onclick={conLlave}><Fingerprint size={18} />{ocupado ? "Esperando a la llave…" : "Usar mi llave de acceso"}</button>
+        <p class="faint">Con la huella, el PIN o la llave USB que diste de alta. O escribe el código de tu aplicación:</p>
+      </div>
+    {:else if passkeysN > 0 && !soportePk.ok}
+      <p class="faint con-llave">Tienes llaves de acceso, pero aquí no se pueden usar: {soportePk.motivo} Usa el código de tu aplicación.</p>
+    {/if}
     <div class="paso-dos">
       <span class="ic-movil" aria-hidden="true"><Smartphone size={22} /></span>
       <ol class="instrucciones">
@@ -205,6 +243,16 @@
 {/snippet}
 
 <style>
+  .con-llave {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-4);
+  }
+  .con-llave p {
+    margin: 0;
+    font-size: var(--fs-sm);
+  }
   .aviso-rest {
     display: flex;
     gap: var(--sp-2);

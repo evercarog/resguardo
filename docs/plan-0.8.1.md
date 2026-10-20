@@ -80,9 +80,10 @@ Cuatro revisiones del código (textos, estados de las pantallas, accesibilidad y
 ## Bloque H — Lo que se decidió meter también (2026-10-19)
 
 - [x] (rama `ia/081-e`; [recuperar-en-el-equipo.md](recuperar-en-el-equipo.md); **sin probar** el menú del Explorador de verdad, otra cuenta de Windows sin privilegios, Linux real ni la ventana en su simulador) **H1.** Que la persona del equipo recupere sus propios archivos desde el menú contextual, con sus salvaguardas (15mm).
-- [ ] **H2.** Paquete de evidencia para auditoría y campos opcionales de responsable, criticidad y datos personales (15qq).
-- [ ] **H3.** Passkeys (WebAuthn) para entrar en la consola, además del TOTP (12c).
-- [ ] **H4.** Las pruebas funcionales (registros y política) iguales en todas las consolas del cliente (15ss, pedido del 2026-10-20).
+- [x] (rama `ia/081-h`: inventario de lo protegido —responsable, criticidad, datos personales sí/no, RTO y RPO objetivo, identificador externo— como dato común `inventario:`; «Informes → Auditoría» con su CSV y el paquete de un periodo en PDF y CSV, cada parte con su control y «evidencia, no certificación», hecho en el navegador; sin probar con un auditor de verdad) **H2.** Paquete de evidencia para auditoría y campos opcionales de responsable, criticidad y datos personales (15qq).
+- [x] (rama `ia/081-h`, [passkeys.md](passkeys.md): segundo paso en vez del TOTP, con la contraseña siempre; sin entrada sin contraseña, decidido y justificado; con `ring`, sin dependencias nuevas; probado con un autenticador simulado, **sin probar** con Windows Hello, un móvil o una llave USB de verdad ni detrás de un proxy) **H3.** Passkeys (WebAuthn) para entrar en la consola, además del TOTP (12c).
+- [x] (rama `ia/081-h`: datos comunes `prueba.funcional:<id>` y `prueba.politica:cliente` con `admite: "pruebas_comunes"`; los adjuntos no viajan —«adjunto en la consola X»—; las de antes, una vez como semilla; sin probar con dos consolas reales) **H4.** Las pruebas funcionales (registros y política) iguales en todas las consolas del cliente (15ss, pedido del 2026-10-20).
+- [x] (rama `ia/081-h`: «Informes → Configuración», PDF y CSV hechos en el navegador; con la clave de administración, carpetas, exclusiones y volcados; filtro por todos, una sede o un equipo) **H5.** Informe de la configuración de copias en PDF y CSV (15tt, pedido del 2026-10-20).
 
 ## Decisiones (2026-10-19)
 
