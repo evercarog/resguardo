@@ -3,6 +3,22 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-10-20 · `ia/integracion-081` · **Resumen de la versión 0.8.1 (para el responsable)**
+
+Claude Code (Opus), en autónomo (pedido del 2026-10-19: «empieza ya con la 0.8.1, trabaja de manera autónoma hasta terminar la versión»; añadidos del 2026-10-20: las pruebas funcionales en todas las consolas y un informe descargable de la configuración). Plan: [plan-0.8.1.md](plan-0.8.1.md); detalle de cada rama más abajo.
+
+**Qué entra (ramas unidas en este orden):** `ia/081-consola-g` (G, pulido de la consola), `ia/081-mensajes` (A3, A4, G4), `ia/081-r` (R: el instalador con `/SERVIDOR=https://…`, F1, F2), `ia/081-b` (menú corto por secciones con pestañas, «Organización», clientes archivados, notas comunes), `ia/081-c` (dónde está cada cosa: mapa, discos, infraestructura dentro de «Destinos»), `ia/081-a` (parar y pausar con la clave, sin suspensión, página de la derivada, quitar vacíos), `ia/081-d` (renombrar, grupos de exclusiones, etiquetas, sueltos del almacén, portátiles, apagar al terminar), `ia/081-e` (árbol de Restaurar, motivo obligatorio, pruebas automáticas en «Restauraciones», restaurar desde el espejo del equipo, H1 recuperar en el equipo) y `ia/081-h` (H4 pruebas funcionales comunes, H5 informe de configuración en PDF y CSV, H2 inventario y paquete para auditoría, H3 llaves de acceso). Contrato: v1.82 a v1.93 en `api-servidor.md`.
+
+**Comprobado en la integración tras cada unión:** `cargo fmt`, los dos `clippy`, `cargo test --workspace` (con los tres `--skip` de siempre), `npm run check`, `build`, `test:vectores`, `npm run e2e` («Escenario completo») y `test:sin-referencias`. Una prueba es inestable con el PC muy cargado: `nube::tests::restic_en_la_nube_renueva_el_token_caducado` falló una vez (tras unir D) y pasó sola dos veces y en las vueltas siguientes. El e2e de la rama H falló una vez por plazo (paso 6b3) con otras compilaciones en marcha y pasó al repetirlo.
+
+**Queda a medias (`[~]` en el plan):** A7 (el Wi‑Fi en ahorro y la tarjeta de red en Linux), B3 («Pasar al almacén gestionado» los adoptados), C4 (la infraestructura aún es de cada consola, no común), D7 (reanudar una copia cortada por perder la red), 15y punto 3 (grupos en «Varios a la vez» y como plantilla por etiqueta), parar una restauración a .zip.
+
+**Sin probar en real (antes del anillo «general»):** el instalador nuevo en una máquina virtual de Windows y por ESET; nada del agente en Linux (no se compila aquí); apagar o hibernar de verdad; el menú «Recuperar» del Explorador con otra cuenta; las llaves de acceso con Windows Hello, móvil o llave USB; dos consolas reales repartiendo notas, pruebas e inventario.
+
+**Incidente (2026-10-20):** el agente de la rama A cerró su simulador con `taskkill //F //FI "WINDOWTITLE eq *"`, que cierra a la fuerza **todas** las ventanas del PC; pudo cerrar ventanas tuyas. Desde entonces cada encargo dice: parar solo los procesos propios, por su PID.
+
+**Decisiones tomadas por defecto (revísalas):** el motivo de restaurar obligatorio por defecto para todos; parar, pausar y apagar con la clave de administración; parar no es un fallo (`parada`); la llave de acceso sustituye al código, no a la contraseña, y no funciona entrando por IP; los informes H2/H5 se arman en el navegador (el servidor no ve rutas) con un PDF de texto propio; «Quién tiene acceso» solo para propietarios; borrar una prueba funcional la borra en todas las consolas; los comentarios de antes de la 0.8.1 no se reparten; la carpeta de un destino local sale ya del equipo (sin la cuenta); el resto, en «Decisiones» de cada rama. Sin publicar ni cambiar números de versión: eso, con tu visto bueno.
+
 ## 2026-10-20 · `ia/081-d` · Plan 0.8.1, bloque D: las copias de cada día, más fáciles (D1–D8)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: D1 (15t, renombrar), D2 (15y, grupos de exclusiones en las copias y «no copiar más de N MB»), D3 (15z, retención «Personalizada»), D4 (15v, etiquetas de las versiones), D5 (15r, espejo desde una copia), D6 (15gg, repositorios sueltos del almacén), D7 (15ii, equipos que entran y salen) y D8 (15kk, apagar al terminar), sin tocar el progreso en vivo ni la página de la derivada (bloque A) ni 15hh.
