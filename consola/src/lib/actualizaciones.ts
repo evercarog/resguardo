@@ -146,3 +146,38 @@ export function frasePolitica(p: { modo: string; dias_general: number; ventana: 
   const dias = p.dias_general === 0 ? "a la vez que los de prueba" : p.dias_general === 1 ? "1 día después" : `${p.dias_general} días después`;
   return `Automática: los equipos de prueba en cuanto sale; los demás, ${dias}${ventana}.`;
 }
+
+// --- 15x: el instalador que reparte «Instalar muchos equipos» ------------------------
+
+/** Lo que dice el servidor del instalador del agente que sirve (`…/instalador-agente/huella` y `instalador` de la publicación). */
+export interface InstaladorServido {
+  hay: boolean;
+  /** Si está en la carpeta de datos del servidor (solo entonces se puede cambiar desde la consola). */
+  de_datos?: boolean;
+  version?: string | null;
+  /** `publicacion` (puesto desde una), `huella` (puesto a mano, pero es el de esa versión firmada), `desconocida`. */
+  origen?: "publicacion" | "huella" | "desconocida" | null;
+  /** La versión firmada más nueva con instalador de Windows que tiene el servidor. */
+  ultima?: string | null;
+}
+
+/**
+ * 15x: qué versión del agente reparte el servidor, en palabras, y por cuál se puede cambiar
+ * («Cambiarlo por el de la X»): si es más vieja que la última firmada que tiene o si no se sabe
+ * de qué versión es (puesto a mano), y solo si está en la carpeta de datos del servidor.
+ */
+export function describirInstalador(i: InstaladorServido | null | undefined): { texto: string; cambiarPor: string | null; aviso: boolean } {
+  if (!i?.hay) return { texto: "Este servidor aún no tiene el instalador del agente de Windows.", cambiarPor: null, aviso: true };
+  const ultima = i.ultima ?? null;
+  const cambiable = !!i.de_datos && !!ultima;
+  if (i.version) {
+    const viejo = !!ultima && compararVersiones(i.version, ultima) === -1;
+    const como = i.origen === "huella" ? " (puesto a mano: es el de esa versión firmada)" : "";
+    const texto = viejo ? `Reparte el agente ${i.version}${como}, anterior a la ${ultima} que ya tiene este servidor.` : `Reparte el agente ${i.version}${como}.`;
+    return { texto, cambiarPor: viejo && cambiable ? ultima : null, aviso: viejo };
+  }
+  const texto = i.de_datos
+    ? "Reparte un instalador puesto a mano: no es el de ninguna versión firmada que tenga este servidor, así que no se sabe qué versión instala."
+    : "Reparte el instalador que trae Resguardo Server (o el de --instalador-agente): no es el de ninguna versión firmada que tenga este servidor, así que no se sabe qué versión instala.";
+  return { texto, cambiarPor: cambiable ? ultima : null, aviso: true };
+}

@@ -5,7 +5,7 @@
 // 3. El estado de cada equipo en palabras (lib/actualizaciones.ts) y la política.
 // `npm run test:vectores` (con las demás).
 import { readFileSync } from "node:fs";
-import { compararVersiones, frasePolitica, horaValida, leerVersion, vistaActualizacion } from "../src/lib/actualizaciones";
+import { compararVersiones, describirInstalador, frasePolitica, horaValida, leerVersion, vistaActualizacion } from "../src/lib/actualizaciones";
 // @ts-expect-error: módulo de Node en JavaScript, sin tipos.
 import { comprobarFirma, leerLlaves } from "../../scripts/lib/minisign.mjs";
 
@@ -73,6 +73,23 @@ igual("automática con ventana", frasePolitica({ modo: "auto", dias_general: 1, 
 igual("solo cuando apruebe", frasePolitica({ modo: "manual", dias_general: 2, ventana: null }), "Solo cuando la apruebes con «Actualizar ahora».");
 igual("en pausa", frasePolitica({ modo: "pausada", dias_general: 2, ventana: null }), "En pausa: ningún equipo se actualiza.");
 igual("horas de la ventana", ["22:00", "06:00", "24:00", "7:00", "22:60"].map(horaValida), [true, true, false, false, false]);
+
+console.log("\n· 15x: el instalador que se reparte");
+igual("sin instalador", describirInstalador({ hay: false, de_datos: true }).cambiarPor, null);
+igual(
+  "el de la última",
+  describirInstalador({ hay: true, de_datos: true, version: "0.8.1", origen: "publicacion", ultima: "0.8.1" }),
+  { texto: "Reparte el agente 0.8.1.", cambiarPor: null, aviso: false },
+);
+igual(
+  "uno más viejo: se ofrece cambiarlo",
+  describirInstalador({ hay: true, de_datos: true, version: "0.7.26", origen: "huella", ultima: "0.8.1" }),
+  { texto: "Reparte el agente 0.7.26 (puesto a mano: es el de esa versión firmada), anterior a la 0.8.1 que ya tiene este servidor.", cambiarPor: "0.8.1", aviso: true },
+);
+igual("puesto a mano sin versión conocida: también se ofrece", describirInstalador({ hay: true, de_datos: true, version: null, origen: "desconocida", ultima: "0.8.1" }).cambiarPor, "0.8.1");
+igual("puesto a mano sin ninguna versión en el servidor: nada que ofrecer", describirInstalador({ hay: true, de_datos: true, version: null, origen: "desconocida", ultima: null }).cambiarPor, null);
+igual("el que trae el servidor no se cambia desde la consola", describirInstalador({ hay: true, de_datos: false, version: "0.7.26", origen: "huella", ultima: "0.8.1" }).cambiarPor, null);
+igual("servidor anterior (sin version ni ultima)", describirInstalador({ hay: true, de_datos: true }).cambiarPor, null);
 
 console.log(`\n${fallos ? "MAL" : "bien"}  ${total - fallos}/${total} vectores de las actualizaciones`);
 if (fallos) process.exit(1);

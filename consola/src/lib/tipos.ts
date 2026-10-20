@@ -1096,7 +1096,7 @@ export interface PublicacionServidor {
     automatica: boolean;
   };
   /** 14dd: el instalador del agente de Windows que da el servidor. */
-  instalador?: { hay: boolean; de_datos: boolean; version?: string | null };
+  instalador?: { hay: boolean; de_datos: boolean; version?: string | null; origen?: "publicacion" | "huella" | "desconocida" | null; ultima?: string | null };
 }
 
 /** 14bbb: «Comprobar la contraseña» de un repositorio, según el equipo. */

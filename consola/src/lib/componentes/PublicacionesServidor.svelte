@@ -11,6 +11,7 @@
   import type { PublicacionAgente, PublicacionServidor } from "$lib/tipos";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
+  import InstaladorServido from "$lib/componentes/InstaladorServido.svelte";
 
   const MANIFIESTO = "manifiesto-agente.json";
   const FIRMA = "manifiesto-agente.json.minisig";
@@ -28,6 +29,14 @@
       r = null;
     }
   });
+  // 15x: tras «Cambiarlo por el de la X».
+  async function recargar() {
+    try {
+      r = await api.publicacionServidor();
+    } catch {
+      /* se queda lo que había */
+    }
+  }
 
   // 14f: bajarlas solas de GitHub (con la misma comprobación que al subirlas).
   let buscando = $state(false);
@@ -203,13 +212,17 @@
       </div>
     {/if}
     {#if r.instalador}
-      <p class="faint pequeno">
-        Instalador del agente para «Instalar muchos equipos» y «Descargar instalador listo»:
-        {#if !r.instalador.hay}ninguno todavía{#if r.instalador.de_datos}{" "}(se pone solo al bajar una versión de GitHub, o desde «Instalar muchos equipos»){/if}.
-        {:else if r.instalador.version}el de la {r.instalador.version}, de una versión firmada.
-        {:else if r.instalador.de_datos}uno puesto a mano.
-        {:else}el que trae Resguardo Server (o el de <code>--instalador-agente</code>).{/if}
-      </p>
+      <div class="faint pequeno">
+        <p>
+          Instalador del agente para «Instalar muchos equipos» y «Descargar instalador listo»:
+          {#if !r.instalador.hay}ninguno todavía{#if r.instalador.de_datos}{" "}(se pone solo al bajar una versión de GitHub, o desde «Instalar muchos equipos»){/if}.
+          {:else if r.instalador.version && r.instalador.origen === "publicacion"}el de la {r.instalador.version}, de una versión firmada. Se cambia solo al bajar una más nueva.
+          {:else if r.instalador.version}el de la {r.instalador.version} (puesto a mano: es el de esa versión firmada).
+          {:else if r.instalador.de_datos}uno puesto a mano (no se cambia solo: no se sabe de qué versión es).
+          {:else}el que trae Resguardo Server (o el de <code>--instalador-agente</code>).{/if}
+        </p>
+        <InstaladorServido info={r.instalador} cambiado={recargar} soloAccion />
+      </div>
     {/if}
     <details class="ayuda">
       <summary>Actualizar este servidor ({r.version_servidor})</summary>
