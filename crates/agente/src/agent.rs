@@ -2408,7 +2408,8 @@ pub fn run() -> i32 {
                         started: record.started.clone(),
                         finished: record.finished.clone(),
                         result: record.result.clone(),
-                        message: record.message.clone(),
+                        // 15oo: con el detalle técnico en su propia línea.
+                        message: crate::history::con_detalle(&record.message, record.detail.as_deref()),
                         snapshot_id: record.snapshot_id.clone(),
                         data_added: record.data_added,
                         files_new: record.files_new,
@@ -2416,7 +2417,6 @@ pub fn run() -> i32 {
                         unchanged: record.unchanged,
                         user: None,
                         ganchos: record.ganchos.clone(),
-                        detail: record.detail.clone(),
                     },
                 );
                 if let (Some(cmd), Some((link, secret))) = (from_remote, &web_access) {

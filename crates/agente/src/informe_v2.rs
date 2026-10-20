@@ -363,7 +363,7 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
                 "archivos_cambiados": e.files_changed,
                 "reintento": e.origin == "retry",
             });
-            con_detalle(v, e.detail.as_deref())
+            con_detalle(v, crate::history::detalle_de(&e.message))
         })
         .collect()
 }
@@ -595,9 +595,10 @@ mod tests {
         // 15oo: el detalle técnico, aparte, solo si lo hay y sin rutas.
         assert!(v[0].get("detalle").is_none());
         let mut fallo = e(ahora - Duration::hours(3), "error", false, "frase");
-        fallo.detail = Some("Fatal: open E:\\Copias\\x: Access is denied.\nmás".into());
+        fallo.message = crate::history::con_detalle("frase", Some("Fatal: open E:\\Copias\\x: Access is denied.\nmás"));
         let v = ejecuciones(&[fallo], "r1", ahora);
-        assert_eq!(v[0]["detalle"], "Fatal: open [ruta]: Access is denied.\nmás");
+        assert_eq!(v[0]["detalle"], "Fatal: open [ruta]: Access is denied. · más");
+        assert_eq!(v[0]["mensaje_corto"], "frase");
     }
 
     #[test]

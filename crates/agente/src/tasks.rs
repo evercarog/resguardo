@@ -1413,12 +1413,14 @@ pub fn run() -> i32 {
                 finished: record.finished.clone(),
                 result: record.result.clone(),
                 // Tarea 4b: de qué derivada es (en el historial no hay otro campo para decirlo).
-                message: if derivada.is_some() { format!("«{destino}»: {}", record.message) } else { record.message.clone() },
+                message: crate::history::con_detalle(
+                    &if derivada.is_some() { format!("«{destino}»: {}", record.message) } else { record.message.clone() },
+                    record.detail.as_deref(),
+                ),
                 files_new: record.files_new,
                 // v1.6x (14o): lo restaurado en una prueba y de qué versión (para su detalle en la consola).
                 data_added: record.data_added,
                 snapshot_id: record.snapshot_id.clone(),
-                detail: record.detail.clone(),
                 ..Default::default()
             },
         );
