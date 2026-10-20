@@ -14,7 +14,7 @@
   import { leerSeleccion } from "$lib/detalle";
   import { usarHistorialEquipo } from "$lib/historialEquipo.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
@@ -214,6 +214,14 @@
   });
   $effect(() => {
     if (tab === "informes" && id) untrack(() => void cargarInformes());
+  });
+  // Un enlace con ancla (p. ej. «#guarda» desde los espejos): la sección sale al llegar el equipo, después de navegar.
+  let anclaVista = "";
+  $effect(() => {
+    const ancla = page.url.hash.slice(1);
+    if (!equipo || !ancla || anclaVista === `${id}#${ancla}`) return;
+    anclaVista = `${id}#${ancla}`;
+    void tick().then(() => document.getElementById(ancla)?.scrollIntoView());
   });
   // Al día sin recargar: con el canal en vivo, cuando cambia algo de este equipo; sin él, cada 8 s.
   $effect(() => {
@@ -1292,7 +1300,7 @@
 
       {#if equipo.resumen?.guarda_copias?.activo}
         {@const g = equipo.resumen.guarda_copias}
-        <section class="card p">
+        <section class="card p" id="guarda">
           <div class="repo-cab">
             <span class="card-icon on"><Server size={18} /></span>
             <div>
