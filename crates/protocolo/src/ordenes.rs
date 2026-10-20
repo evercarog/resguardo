@@ -139,6 +139,10 @@ pub const TIPOS: &[Tipo] = &[
     // consolas. Con la clave de administración (para que nadie confunda las copias), sin
     // espera: no reduce la protección.
     t("nombre_copia", Administracion, false, false, false),
+    // Plan 0.8.1 (15y): la vista previa de «No copiar» (recorre las carpetas que dice la
+    // orden y cuenta lo que deja fuera cada grupo, sin copiar nada). Con la clave de
+    // administración, como «Elegir en el equipo»: mira carpetas del equipo.
+    t("vista_exclusiones", Administracion, false, false, false),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).

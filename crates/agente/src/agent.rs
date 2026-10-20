@@ -378,6 +378,27 @@ pub struct AgentPlan {
     /// copias correctas o un día). Sin él, como siempre: con su horario, sin fin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<PlanEnd>,
+    /// 0.8.1 (bloque D): lo nuevo de cada plan (tamaño máximo, al volver a conectarse,
+    /// al terminar), junto para no tocar cada vez a quien construye un plan.
+    #[serde(default, skip_serializing_if = "PlanExtra::vacio")]
+    pub extra: PlanExtra,
+}
+
+/// 0.8.1 (bloque D): opciones de un plan que llegan de la configuración v1.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanExtra {
+    /// 15y: no copiar archivos de más de estos MB (con las excepciones de `larger_except`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub larger_mb: Option<u32>,
+    /// 15y: tipos que se copian aunque pasen del límite (`*.pst`, `*.bak`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub larger_except: Vec<String>,
+}
+
+impl PlanExtra {
+    pub fn vacio(&self) -> bool {
+        *self == PlanExtra::default()
+    }
 }
 
 /// F1 (14pp): cuándo termina un plan. La cuenta de copias correctas va en
@@ -1176,6 +1197,7 @@ pub fn migrate_legacy(config: &mut AgentConfig, state: &mut AgentState) -> bool 
             after_always: false,
             after_delay_min: 0,
             end: None,
+            extra: PlanExtra::default(),
         });
         repo.schedule = Schedule::Plans;
         if let Some(run) = state.runs.remove(&repo.id) {
@@ -1333,7 +1355,7 @@ pub fn set_schedule_modes(
     schedule: Option<Schedule>,
     modes: &std::collections::BTreeMap<String, ChainMode>,
 ) -> Result<(), String> {
-    set_schedule_full(repo, access, schedule, modes, &std::collections::BTreeMap::new())
+    set_schedule_full(repo, access, schedule, modes, &std::collections::BTreeMap::new(), &std::collections::BTreeMap::new())
 }
 
 /// Como [`set_schedule_modes`], con el fin de cada plan (F1, 14pp; por id del plan).
@@ -1344,6 +1366,7 @@ pub fn set_schedule_full(
     schedule: Option<Schedule>,
     modes: &std::collections::BTreeMap<String, ChainMode>,
     ends: &std::collections::BTreeMap<String, PlanEnd>,
+    extras: &std::collections::BTreeMap<String, PlanExtra>,
 ) -> Result<(), String> {
     require_admin()?;
     prepare_dir()?;
@@ -1401,6 +1424,7 @@ pub fn set_schedule_full(
                         after_always: mode.always,
                         after_delay_min: mode.delay_min,
                         end,
+                        extra: extras.get(&p.id).cloned().unwrap_or_default(),
                     })
                 })
                 .collect()
@@ -2103,6 +2127,12 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dy
         args.push(restic::exclude_flag().into());
         args.push(pattern.clone());
     }
+    // 15y: «No copiar archivos de más de N MB», con excepciones por tipo (excluir.rs).
+    let fuera = plan.extra.larger_mb.map(|mb| limite_de_tamano(&repo.id, plan, mb));
+    if let Some(Ok((archivo, _))) = &fuera {
+        args.push(if cfg!(windows) { "--iexclude-file".into() } else { "--exclude-file".into() });
+        args.push(archivo.to_string_lossy().to_string());
+    }
     // La copia la hace SYSTEM: nunca incluye el registro de Windows (SAM,
     // SECURITY…), que expondría las credenciales del equipo en el repositorio.
     let windir = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
@@ -2170,12 +2200,46 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dy
     }
     crate::ganchos::despues(&preparado);
     crate::ganchos::aplicar(&mut record, &preparado);
+    // 15y: lo que quedó fuera por tamaño, en la versión (sin rutas); el archivo, fuera.
+    match fuera {
+        Some(Ok((archivo, f))) => {
+            let _ = std::fs::remove_file(&archivo);
+            if f.archivos > 0 && record.result != "error" {
+                record.message = format!(
+                    "{} Fuera por tamaño (más de {} MB): {}.",
+                    record.message,
+                    plan.extra.larger_mb.unwrap_or_default(),
+                    crate::excluir::texto_fuera(&f)
+                );
+            }
+        }
+        Some(Err(aviso)) if record.result != "error" => record.message = format!("{} {aviso}", record.message),
+        _ => {}
+    }
     // 0.7.26: si el repositorio está en un disco del equipo, su disco se vio ahora (marca «Aislado»).
     if record.result != "error" {
         crate::volumenes::tocar(&repo.location);
     }
     record.finished = Local::now().to_rfc3339();
     record
+}
+
+/// 15y: recorre las carpetas del plan y escribe, en la carpeta privada del agente, el
+/// archivo de exclusiones con los archivos de más de `mb` MB que no son de un tipo
+/// exceptuado. `Err(aviso)`: no se pudo (o no terminó a tiempo) y se copia **sin** el
+/// límite, diciéndolo (mejor copiar de más que dejar fuera sin saberlo).
+fn limite_de_tamano(repo: &str, plan: &AgentPlan, mb: u32) -> Result<(PathBuf, crate::excluir::FueraPorTamano), String> {
+    let tope = std::time::Instant::now() + crate::excluir::TOPE_ANTES_DE_COPIAR;
+    let f = crate::excluir::fuera_por_tamano(&plan.paths, &plan.excludes, mb, &plan.extra.larger_except, tope);
+    if !f.completo {
+        return Err(format!("No se aplicó «no copiar más de {mb} MB»: revisar las carpetas tardó demasiado, así que se copió todo."));
+    }
+    let nombre: String = format!("{repo}-{}", plan.id).chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let archivo = private_dir().join(format!("fuera-por-tamano-{nombre}.txt"));
+    let mut texto = f.rutas.join("\n");
+    texto.push('\n');
+    std::fs::write(&archivo, texto).map_err(|e| format!("No se aplicó «no copiar más de {mb} MB» ({e}), así que se copió todo."))?;
+    Ok((archivo, f))
 }
 
 /// Punto de entrada de `--agent-run`. Devuelve el código de salida.
@@ -2919,6 +2983,7 @@ pub mod tests {
                 after_always: false,
                 after_delay_min: 0,
                 end: None,
+                extra: PlanExtra::default(),
             }],
             verify: None,
             offsite: None,

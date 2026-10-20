@@ -743,7 +743,32 @@ pub struct Copia {
     /// versiones nuevas. Un agente anterior las ignora (y sigue con `resguardo-agente`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub etiquetas: Vec<String>,
+    /// 0.8.1 (15y, `admite: "grupos_en_copias"`): de qué grupos de exclusiones del cliente
+    /// vienen reglas de `exclusiones`, con las reglas que tenía cada uno al aplicarlo (para
+    /// que la consola sepa qué copias usan un grupo y si ya tienen su última versión). Las
+    /// reglas que se aplican son siempre las de `exclusiones`: el equipo no depende de la consola.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grupos_exclusiones: Vec<GrupoUsado>,
+    /// 15y: «No copiar archivos de más de N MB» (1 a 1 000 000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mayores_mb: Option<u32>,
+    /// 15y: tipos que se copian aunque pasen del límite (`*.pst`, `*.bak`; hasta 50).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excepto_tamano: Vec<String>,
 }
+
+/// 15y: un grupo de exclusiones aplicado a una copia (sus reglas, tal como estaban).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct GrupoUsado {
+    pub id: String,
+    #[serde(default)]
+    pub nombre: String,
+    #[serde(default)]
+    pub reglas: Vec<String>,
+}
+
+/// 15y: como mucho, grupos aplicados a una copia.
+pub const MAX_GRUPOS_COPIA: usize = 50;
 
 /// F1 (14pp): cuándo termina una copia. Al terminar queda **completada**: no se
 /// hace sola ni avisa, y conserva su repositorio, sus versiones y su retención.
@@ -803,6 +828,30 @@ impl Termina {
 pub const MAX_RETRASO_MIN: u32 = 1440;
 
 impl Copia {
+    /// 15y: los grupos de exclusiones, el límite de tamaño y sus excepciones, válidos.
+    pub fn valida_exclusiones(&self) -> Result<(), String> {
+        let n = &self.nombre;
+        if self.grupos_exclusiones.len() > MAX_GRUPOS_COPIA {
+            return Err(format!("La copia «{n}» lleva demasiados grupos de exclusiones (como mucho {MAX_GRUPOS_COPIA})."));
+        }
+        for g in &self.grupos_exclusiones {
+            if !id_valido(&g.id) || g.nombre.chars().count() > 60 || g.nombre.chars().any(char::is_control) {
+                return Err(format!("Un grupo de exclusiones de la copia «{n}» no es válido."));
+            }
+            crate::excluir::reglas_validas(&g.reglas, 100, &format!("Las reglas del grupo «{}»", g.nombre))?;
+        }
+        if self.mayores_mb.is_some_and(|m| !(1..=crate::excluir::MAX_MB).contains(&m)) {
+            return Err(format!("El tamaño máximo de la copia «{n}» va de 1 MB a {} MB.", crate::excluir::MAX_MB));
+        }
+        crate::excluir::reglas_validas(&self.excepto_tamano, crate::excluir::MAX_EXCEPCIONES, &format!("Las excepciones al tamaño de «{n}»"))?;
+        Ok(())
+    }
+
+    /// Lo nuevo del plan en el agente (0.8.1, bloque D).
+    pub fn extra(&self) -> crate::agent::PlanExtra {
+        crate::agent::PlanExtra { larger_mb: self.mayores_mb, larger_except: if self.mayores_mb.is_some() { self.excepto_tamano.clone() } else { vec![] } }
+    }
+
     /// ¿Tiene horario propio? (Uno vacío solo vale con «después de la anterior»,
     /// «solo a mano» o «una sola vez».)
     pub fn con_horario(&self) -> bool {
@@ -1207,6 +1256,7 @@ fn aplicar_config_marca(v: &mut Vinculo, c: &Value, cambiado_en_equipo: Option<S
             return Err(format!("Día no válido en la copia «{}» (1 = lunes … 7 = domingo).", k.nombre));
         }
         k.valida_termina()?;
+        k.valida_exclusiones()?;
         plan_de(k)?;
         k.valida_inicio()?;
     }
@@ -1240,7 +1290,9 @@ fn aplicar_config_marca(v: &mut Vinculo, c: &Value, cambiado_en_equipo: Option<S
         let modos = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.modo_cadena()?))).collect();
         // F1: solo a mano, una sola vez o con fin.
         let fines = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).filter_map(|k| Some((k.id.clone(), k.fin()?))).collect();
-        crate::agent::set_schedule_full(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos, &fines)?;
+        // 0.8.1 (bloque D): tamaño máximo y lo demás nuevo de cada copia.
+        let extras = cfg.copias.iter().filter(|k| k.repo == r.id && k.activa).map(|k| (k.id.clone(), k.extra())).filter(|(_, x)| !x.vacio()).collect();
+        crate::agent::set_schedule_full(&repo, Some(&acc), Some(crate::agent::Schedule::Plans), &modos, &fines, &extras)?;
     }
     let verificados = aplicar_verificaciones(v, &cfg)?;
     aplicar_pruebas(v, &cfg)?;
@@ -1432,6 +1484,10 @@ pub const ADMITE: &[&str] = &[
     "nombre_copia",
     // 0.8.1 (15v): `config.copias[].etiquetas` (las etiquetas de sus versiones) y en el resumen.
     "etiquetas_copia",
+    // 0.8.1 (15y): `config.copias[].grupos_exclusiones`, `mayores_mb` y `excepto_tamano`
+    // («no copiar más de N MB» con excepciones; lo que quedó fuera, en la versión) y la orden
+    // `vista_exclusiones` (cuánto deja fuera cada grupo, sin copiar nada).
+    "grupos_en_copias",
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
@@ -1484,6 +1540,10 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "id": k.id, "nombre": k.nombre, "repo": k.repo, "horario": k.horario, "carpetas": k.carpetas.len(), "activa": k.activa, "solo_si_cambios": k.solo_si_cambios,
                 // 15v: las etiquetas de sus versiones (no son secretas: van en cada versión).
                 "etiquetas": (!k.etiquetas.is_empty()).then_some(&k.etiquetas),
+                // 15y: qué grupos de exclusiones usa (con sus reglas: son datos comunes del cliente,
+                // sin rutas) y el tamaño máximo. Las reglas sueltas no salen (pueden llevar rutas).
+                "grupos_exclusiones": (!k.grupos_exclusiones.is_empty()).then_some(&k.grupos_exclusiones),
+                "mayores_mb": k.mayores_mb,
                 // Tarea 7c: «después de la anterior» (el id de la otra copia).
                 "tras": k.tras,
                 // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
@@ -3515,6 +3575,26 @@ mod tests {
         assert!(serde_json::to_value(&k).unwrap().get("etiquetas").is_none());
         let mala = Copia { horario: Horario { dias: vec![1], horas: vec!["25:00".into()], reglas: vec![] }, ..k };
         assert!(plan_de(&mala).is_err());
+    }
+
+    /// 0.8.1 (15y): grupos de exclusiones, tamaño máximo y sus excepciones.
+    #[test]
+    fn exclusiones_de_una_copia() {
+        let k: Copia = serde_json::from_value(json!({"id": "k", "nombre": "K", "repo": "r1", "carpetas": ["/d"], "horario": {"dias": [1], "horas": ["13:00"]},
+            "grupos_exclusiones": [{"id": "musica", "nombre": "Música", "reglas": ["*.mp3"]}], "mayores_mb": 500, "excepto_tamano": ["*.pst"]}))
+        .unwrap();
+        assert!(k.valida_exclusiones().is_ok());
+        assert_eq!(k.extra(), crate::agent::PlanExtra { larger_mb: Some(500), larger_except: vec!["*.pst".into()] });
+        // Sin límite, las excepciones no cuentan; y un plan sin nada nuevo no lleva `extra`.
+        assert!(Copia { mayores_mb: None, ..k.clone() }.extra().vacio());
+        assert!(Copia { mayores_mb: Some(0), ..k.clone() }.valida_exclusiones().is_err());
+        assert!(Copia { excepto_tamano: vec!["".into()], ..k.clone() }.valida_exclusiones().is_err());
+        let mal = GrupoUsado { id: "no vale".into(), ..Default::default() };
+        assert!(Copia { grupos_exclusiones: vec![mal], ..k.clone() }.valida_exclusiones().is_err());
+        // Un agente anterior no ve nada nuevo si no se usa.
+        let sin = serde_json::to_value(Copia { grupos_exclusiones: vec![], mayores_mb: None, excepto_tamano: vec![], ..k }).unwrap();
+        assert!(sin.get("grupos_exclusiones").is_none() && sin.get("mayores_mb").is_none() && sin.get("excepto_tamano").is_none());
+        assert!(ADMITE.contains(&"grupos_en_copias"));
     }
 
     /// 0.8.1 (15t): el nombre de una copia derivada y lo que no vale.

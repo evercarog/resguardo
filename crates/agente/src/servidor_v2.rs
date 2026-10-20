@@ -1328,6 +1328,25 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             Ok(hecha(m))
         }
         "elegir_carpetas" => crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Carpetas).map(hecha),
+        // 0.8.1 (15y): la vista previa de «No copiar»: cuánto deja fuera cada grupo en unas
+        // carpetas, sin copiar nada y con un tope de tiempo. Con la clave de administración
+        // (recorre carpetas del equipo, como «Elegir en el equipo»); la respuesta, solo cuentas
+        // sin rutas, va sellada para la consola que la pidió.
+        "vista_exclusiones" => {
+            let destino = o.responder_a.clone().ok_or("Falta responder_a para entregar la vista previa.")?;
+            let cuerpo = c.clone();
+            Ok(en_segundo_plano(v, orden_id, seq, "vista_exclusiones", "Revisando las carpetas…", move |_| {
+                let x = crate::excluir::vista_previa(&cuerpo, std::time::Instant::now() + crate::excluir::TOPE_VISTA)?;
+                let sellado = claves::seal_bytes(&destino, x.to_string().as_bytes())?;
+                let n = x["total"]["archivos"].as_u64().unwrap_or(0);
+                let m = if x["completo"] == true {
+                    format!("Revisados {} archivos.", crate::tasks::human_count(n))
+                } else {
+                    format!("Revisados {} archivos (no dio tiempo a verlo todo: es una muestra).", crate::tasks::human_count(n))
+                };
+                Ok(Resultado { detalle: Some(json!({ "sellado": sellado }).to_string()), ..hecha(m) })
+            }))
+        }
         // v1.8x (0.8.1, 15u): «Ver las bases de la instancia» en el editor del gancho de SQL
         // Server. Inofensiva: solo lee `sys.databases` (nombre, estado y si es del sistema). La
         // lista va sellada para la consola que la pidió (`responder_a`): el servidor no la ve.
