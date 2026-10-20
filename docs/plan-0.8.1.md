@@ -28,12 +28,12 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ### Bloque B — Menos pantallas, más orden
 
-- [ ] **B1. Menú izquierdo de ~8 entradas con pestañas** (15bb): Estado · Equipos · Copias · Destinos · Recuperar · Avisos · Actividad · Informes, y Ajustes aparte. Probarlo con alguien que no conozca la consola.
-- [ ] **B2. «Organización»** (hoy «Sedes y categorías»): sedes, categorías, **etiquetas** (renombrar, borrar, unir) y **grupos de exclusiones** (15a, 15y).
-- [ ] **B3. Un almacén, una sola ficha** (15dd) y su tarjeta por secciones: espejos, retención y nubes, con página propia de cada nube (15s); «Ordenar nombres de carpeta» como aviso suave (15h).
-- [ ] **B4. Clientes:** borrar o archivar uno, aviso de nombre repetido y un camino claro para traer equipos de otra consola (15nn).
-- [ ] **B5. Lo que describe los datos, igual en todas las consolas:** nombres y observaciones de equipos, copias, repositorios y destinos (15pp).
-- [ ] **B6.** Las derivadas con su nombre en todas las listas (15k).
+- [x] **B1. Menú izquierdo de ~8 entradas con pestañas** (15bb; rama `ia/081-b`: `lib/secciones.ts`, `ui/componentes/Pestanas.svelte`, direcciones nuevas con las de antes redirigiendo; **falta** probarlo con alguien que no conozca la consola): Estado · Equipos · Copias · Destinos · Recuperar · Avisos · Actividad · Informes, y Ajustes aparte. Probarlo con alguien que no conozca la consola.
+- [x] **B2. «Organización»** (rama `ia/081-b`; los grupos de exclusiones, solo el dato y su gestión: su uso en el editor de copias es D2) (hoy «Sedes y categorías»): sedes, categorías, **etiquetas** (renombrar, borrar, unir) y **grupos de exclusiones** (15a, 15y).
+- [~] **B3. Un almacén, una sola ficha** (rama `ia/081-b`: hecho todo salvo «Pasar al almacén gestionado» los adoptados, 15dd punto 2, que necesita una orden coordinada nueva; «Probar» una nube lanza uno de sus espejos) (15dd) y su tarjeta por secciones: espejos, retención y nubes, con página propia de cada nube (15s); «Ordenar nombres de carpeta» como aviso suave (15h).
+- [x] **B4. Clientes:** (rama `ia/081-b`) borrar o archivar uno, aviso de nombre repetido y un camino claro para traer equipos de otra consola (15nn).
+- [x] **B5. Lo que describe los datos, igual en todas las consolas:** (rama `ia/081-b`; los comentarios de antes de la 0.8.1 no se reparten) nombres y observaciones de equipos, copias, repositorios y destinos (15pp).
+- [x] **B6.** Las derivadas con su nombre en todas las listas (15k). (Rama `ia/081-b`; sin el nombre legible de la carpeta de las derivadas en «Ordenar nombres de carpeta».)
 
 ### Bloque C — Ver dónde está cada cosa
 
