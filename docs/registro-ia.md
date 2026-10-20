@@ -2,6 +2,32 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-20 · `ia/081-e` · Plan 0.8.1, bloque E (restaurar) y H1 (recuperar en el equipo)
+
+Claude Code (Opus), en autónomo, desde la integración de la 0.8.1 (con R, B y C). Pedido: E1 (15w, el árbol de Restaurar como el de «Qué copiar»), E2 (15ee, el motivo antes de restaurar, obligatorio por defecto y común a todas las consolas), E3 (15aa, las pruebas de restauración en «Restauraciones» con su ficha), E4 (14m, 14j) y H1 (15mm, que la persona del equipo recupere sus propios archivos, con sus salvaguardas y su modelo de amenazas).
+
+**Hecho:**
+
+- **E1:** Restaurar usa `lib/arbolCarpetas.ts` con rutas de la versión: marcar una carpeta marca lo de dentro, desmarcar un hijo lo quita y la de arriba queda a medias; la cuenta de abajo, medida por el equipo («1 carpeta · 20 archivos · 5,4 GB · sin 2 archivos»). Agente: `excluir` en `restaurar` y `descargar` (cada elegido con algo quitado va solo, desde `version:<ruta>` con `--exclude`; restic no deja juntar `--include` y `--exclude`; los comodines del nombre entre corchetes, lo único que entiende igual en Windows y Linux, comprobado con restic 0.19.1), la operación `medir` y `admite: "restaurar_excluir"`. Con un agente anterior no se deja quitar nada de dentro.
+- **E2:** clase nueva de datos comunes `ajuste:` (`ajuste:restauraciones` sin clave, `ajuste:recuperar` con la clave), `admite: "ajustes_comunes"`, servidor (`ajustes_cliente`, «por enviar», `comun`), consola (`AjustesRestauraciones.svelte`, se reparte solo o con la clave). Motivo **obligatorio por defecto** en el último paso, con «Registrar como prueba funcional» si es «Prueba». «Restaurar en otro equipo» y «desde un espejo» acaban en ese mismo paso.
+- **E3:** el servidor da también las `prueba_restauracion`; el agente les añade `origen`, `por`, `consola`, `desde`, `donde`, `comprobacion` y `candidatos` (`history::append_con`, sin tocar `history::Entry`, que la app congelada construye entera). Consola: filtro «Reales / Pruebas automáticas / Pruebas a mano» en el cliente y en «Todos los clientes», cifras aparte, ficha de la prueba, el aviso de prueba fallida lleva a su ficha; Informes y Pruebas funcionales solo cuentan las reales.
+- **E4:** `desde: "espejo:<id>"` (espejos del propio equipo) en «Desde dónde», con `admite: "restaurar_espejo_equipo"`; la prueba desde un disco del almacén que el equipo no alcanza dice que sin conectarlo no se puede y ofrece otro espejo que sí llegue.
+- **H1:** `crates/agente/src/recuperar.rs`, canal local sin clave (`recuperar_estado`, `recuperar_versiones`, `recuperar`), `--recuperar "<ruta>"` (ventana), `resguardo-agente recuperar <ruta>`, orden `recuperar_en_equipo` (clave), `resumen.recuperar`, menú del Explorador que pone y quita el servicio según los ajustes (y el desinstalador quita), pestaña «Recuperar» de la ventana y «Recuperar en el equipo» por copia en la consola. Modelo de amenazas y cómo se comprueba cada salvaguarda: `docs/recuperar-en-el-equipo.md`.
+- Contrato en `api-servidor.md` («Cambios», v1.8x de `ia/081-e`, y `medir` en §7), `consolas-multiples.md` §6.4–6.5; simuladores al día.
+
+**Comprobado (resultado real, en esta copia, al final):** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings` y `cargo test --workspace --no-fail-fast` (con los tres `--skip` pedidos): todo bien. En `consola`: `npm run check`, `check:ventana`, `build`, `build:ventana` y `test:vectores`, bien; `npm run e2e`: bien («Escenario completo», con los binarios de la copia principal). `npm run test:sin-referencias`, bien. Pruebas nuevas con restic de verdad (restaurar sin lo quitado, `medir`, recuperar junto al original sin pisar nada) y, en Windows, `AccessCheck` con un token de verdad (un archivo que su ACL niega a la cuenta con `icacls /deny`) y con el token que llega por la tubería. Revisado en el simulador a 375 px, claro y oscuro: Restaurar (árbol a medias, cuenta, motivo), Restauraciones (filtro, cifras, ficha de una prueba, ajustes), Todos los clientes; capturas en `tmp/capturas/081-e`.
+
+**Sin probar:** el menú del Explorador de verdad (no se registra en este PC), otra cuenta de Windows sin privilegios, Linux real (el comprobador por dueño, `lchown` y lo que solo se compila en Linux: ni siquiera se compiló aquí), la ventana del agente en su simulador (`npm run dev:ventana` no arranca en este entorno: falla el análisis de dependencias de Vite, «Could not resolve node:module»; se comprobó con `check:ventana` y `build:ventana`), nada con agentes ni consolas reales.
+
+**Decisiones dudosas (para revisar):**
+
+- **Motivo obligatorio por defecto** también para clientes que nunca tocaron el ajuste (antes, opcional). Las pruebas de un agente anterior (sin `origen`) cuentan como automáticas.
+- **H1, el dueño y los permisos:** en Windows lo recuperado hereda los permisos de su carpeta y su dueño es el servicio (no se cambia: haría falta el privilegio de restaurar). En Linux solo recupera el **dueño** (no el grupo). Lo borrado se decide con el descriptor de seguridad que restic guardó en la versión; sin él, no se recupera. Un recorrido de como mucho 500 carpetas y 20 000 archivos.
+- **H1 sin consola (modo local):** no hay forma de activarlo todavía (no llegan datos comunes y la orden por copia viene de una consola).
+- **E2:** «Registrar como prueba funcional» es un botón al terminar, no se abre solo; si el equipo aún no ha subido la entrada, el formulario sale sin rellenar.
+- **E4 (14j):** hacer la prueba en el almacén «si tuviera la llave de la retención» no se hace: el almacén solo tiene llaves para la retención y no se le dan para esto.
+- La ventana compilada (`crates/agente/ventana/`) va en el commit, como en las demás ramas.
+
 ## 2026-10-20 · `ia/081-b` · Plan 0.8.1, bloque B: menos pantallas, más orden (B1–B6)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: B1 (15bb, menú de ocho secciones con pestañas), B2 (15a y los datos de 15y, «Organización»), B3 (15dd, 15s, 15h, el almacén), B4 (15nn, clientes), B5 (15pp, nombres y notas iguales en todas las consolas) y B6 (15k, derivadas con su nombre). Hecho por la sesión principal (B1, B5) y tres asistentes en paralelo en la misma copia (B2; B3 y B6; B4), cada uno con sus commits.

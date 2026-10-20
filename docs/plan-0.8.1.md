@@ -55,10 +55,10 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ### Bloque E — Restaurar
 
-- [ ] **E1.** El árbol de archivos marca lo de dentro y deja quitar lo que no (15w).
-- [ ] **E2.** El motivo **antes** de restaurar, obligatorio por defecto, común a todas las consolas (15ee).
-- [ ] **E3.** Las pruebas de restauración automáticas y a mano en «Restauraciones», con su ficha (15aa).
-- [ ] **E4.** Lo que quedó de la 0.8.0: restaurar desde los espejos del propio equipo (14m) y la prueba desde un disco del almacén (14j).
+- [x] (rama `ia/081-e`: `excluir` y la operación `medir` con `admite: "restaurar_excluir"`) **E1.** El árbol de archivos marca lo de dentro y deja quitar lo que no (15w).
+- [x] (rama `ia/081-e`: dato común `ajuste:restauraciones`; en otro equipo y desde un espejo se pide en el mismo último paso) **E2.** El motivo **antes** de restaurar, obligatorio por defecto, común a todas las consolas (15ee).
+- [x] (rama `ia/081-e`; las de un agente anterior salen como automáticas y sin ficha completa) **E3.** Las pruebas de restauración automáticas y a mano en «Restauraciones», con su ficha (15aa).
+- [x] (rama `ia/081-e`: `desde: "espejo:<id>"`; la prueba desde un disco que no llega dice que sin conectarlo no se puede y ofrece otro espejo; hacerla en el almacén queda fuera: no tiene la contraseña y no se le dan llaves) **E4.** Lo que quedó de la 0.8.0: restaurar desde los espejos del propio equipo (14m) y la prueba desde un disco del almacén (14j).
 
 ### Bloque F — El agente en Windows
 
@@ -79,7 +79,7 @@ Cuatro revisiones del código (textos, estados de las pantallas, accesibilidad y
 
 ## Bloque H — Lo que se decidió meter también (2026-10-19)
 
-- [ ] **H1.** Que la persona del equipo recupere sus propios archivos desde el menú contextual, con sus salvaguardas (15mm).
+- [x] (rama `ia/081-e`; [recuperar-en-el-equipo.md](recuperar-en-el-equipo.md); **sin probar** el menú del Explorador de verdad, otra cuenta de Windows sin privilegios, Linux real ni la ventana en su simulador) **H1.** Que la persona del equipo recupere sus propios archivos desde el menú contextual, con sus salvaguardas (15mm).
 - [ ] **H2.** Paquete de evidencia para auditoría y campos opcionales de responsable, criticidad y datos personales (15qq).
 - [ ] **H3.** Passkeys (WebAuthn) para entrar en la consola, además del TOTP (12c).
 
