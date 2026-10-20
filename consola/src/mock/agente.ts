@@ -54,11 +54,13 @@ function anotarRestauracion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana, c: R
     repo: String(c.repo ?? ""),
     version: String(c.version ?? "").slice(0, 8),
     elementos: Array.isArray(c.rutas) ? c.rutas.length : 0,
+    // 15w: como el agente, cuántas cosas se quitaron de lo elegido.
+    quitados: Array.isArray(c.excluir) && c.excluir.length ? c.excluir.length : null,
     archivos: ok ? 4_200 : null,
     bytes: ok ? 1_800_000_000 : null,
     destino,
     cifrado: (destino === "zip" || destino === "descarga") && typeof c.contrasena_zip === "string" && c.contrasena_zip.length > 0,
-    desde: !c.desde ? "principal" : c.desde === "externa" ? "externa" : "derivada",
+    desde: !c.desde ? "principal" : c.desde === "externa" ? "externa" : String(c.desde).startsWith("espejo:") ? "espejo" : "derivada",
     desde_nombre: null,
     resultado: ok ? "ok" : "fallo",
     mensaje,
@@ -1445,6 +1447,11 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     case "restaurar": {
       const rutas = (Array.isArray(c.rutas) ? c.rutas : []).map(String);
+      // 15w: como el agente, lo quitado tiene que estar dentro de lo elegido.
+      if (Array.isArray(c.excluir) && e.resumen?.admite?.includes("restaurar_excluir")) {
+        const malo = c.excluir.map(String).find((x) => !rutas.some((r) => x.startsWith(`${r.replace(/\/+$/, "")}/`)));
+        if (malo) return resultado(e, o, "fallida", "Lo que se quita tiene que estar dentro de lo elegido.");
+      }
       const inicio = Date.now();
       const anotar = (ok: boolean, mensaje: string | null) => anotarRestauracion(e, o, plana, c, String(c.destino ?? "junto"), inicio, ok, mensaje);
       // Plan 0.8.0 (13a, 13b): otra carpeta (nueva o vacía) o un .zip, como el agente.
@@ -1490,6 +1497,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       // después no toca la orden: el servidor no puede cambiar un resultado firmado por el equipo.
       abrirSesion(e, o, plana);
       return resultado(e, o, "hecha", "Sesión abierta.");
+    }
+    case "recuperar_en_equipo": {
+      // 0.8.1 (H1): como el agente, sí, no o lo del cliente en esa copia.
+      if (!e.resumen?.admite?.includes("recuperar_en_equipo")) return resultado(e, o, "fallida", "Operación no válida.");
+      const r = (e.resumen.recuperar ??= { cliente: false, max_mb: 1024, copias: {} });
+      const k = `${c.repo}#${c.copia}`;
+      r.copias = { ...(r.copias ?? {}) };
+      if (c.activo === true || c.activo === false) r.copias[k] = c.activo;
+      else delete r.copias[k];
+      return resultado(e, o, "hecha", c.activo === true ? "Cada persona puede recuperar en este equipo sus propios archivos de esta copia." : c.activo === false ? "Nadie recupera desde este equipo los archivos de esta copia." : "La copia sigue lo del cliente para recuperar en el equipo.");
     }
     case "comprobar_contrasena": {
       // 14bbb: como el agente, la contraseña ya se comparó con la guardada (y contó como intento);
@@ -1577,7 +1594,14 @@ function abrirSesion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     : plana.tipo === "elegir_carpetas"
       ? ["carpetas", "sugerencias", "crear_carpeta"]
       : plana.tipo === "explorar"
-        ? ["versiones", "listar", "buscar", ...(versionAlMenos(e.version_agente, VERSION_DETALLE) ? OPS_DETALLE : []), ...(versionAlMenos(e.version_agente, VERSION_BUSCAR) ? [OP_BUSCAR] : [])]
+        ? [
+            "versiones",
+            "listar",
+            "buscar",
+            ...(versionAlMenos(e.version_agente, VERSION_DETALLE) ? OPS_DETALLE : []),
+            ...(versionAlMenos(e.version_agente, VERSION_BUSCAR) ? [OP_BUSCAR] : []),
+            ...(e.resumen?.admite?.includes("restaurar_excluir") ? ["medir"] : []),
+          ]
         : [];
   enviarDesdeEquipo(s, { i: 0, op: "lista", tipo: plana.tipo, ...(ops ? { ops } : {}) });
 }
@@ -1619,6 +1643,30 @@ export async function mensajeDeConsola(s: SesionMock, cifrado: string) {
       return enviar(s, { op: "versiones", repo: m.repo, versiones: versiones(String(m.repo ?? s.repo), s.equipo) });
     case "listar":
       return enviar(s, { op: "listar", version: m.version, ruta: m.ruta, entradas: listarVersion(String(m.ruta ?? "/")) });
+    case "medir": {
+      // 15w: como el agente (restaurar_v2.rs, medir): lo elegido sin lo quitado, recorriendo el árbol de mentira.
+      const rutas = (Array.isArray(m.rutas) ? m.rutas : []).map(String);
+      const excluir = (Array.isArray(m.excluir) ? m.excluir : []).map(String);
+      const fuera = (r: string) => excluir.some((x) => r === x || r.startsWith(`${x}/`));
+      const t = { carpetas: 0, archivos: 0, bytes: 0, fuera_archivos: 0, fuera_bytes: 0 };
+      const contar = (r: string, tipo: string, b: number, hondo: number) => {
+        if (tipo !== "dir") {
+          if (fuera(r)) (t.fuera_archivos++, (t.fuera_bytes += b));
+          else (t.archivos++, (t.bytes += b));
+          return;
+        }
+        if (hondo > 6) return;
+        for (const x of listarVersion(r)) contar(`${r.replace(/\/+$/, "")}/${x.nombre}`, x.tipo, x.bytes ?? 0, hondo + 1);
+      };
+      for (const r of rutas) {
+        const padre = r.replace(/\/+$/, "").split("/").slice(0, -1).join("/") || "/";
+        const e2 = listarVersion(padre).find((x) => x.nombre === r.split("/").pop());
+        if ((e2?.tipo ?? "dir") === "dir") t.carpetas++;
+        contar(r, e2?.tipo ?? "dir", e2?.bytes ?? 0, 0);
+      }
+      await espera(400);
+      return enviar(s, { op: "medir", ...t });
+    }
     case "carpetas": {
       const r = String(m.ruta ?? "").replace(/[\\/]+$/, "");
       const nuevas = (creadas.get(r.toLowerCase()) ?? []).map((nombre) => ({ nombre, tipo: "dir" as const }));

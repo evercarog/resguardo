@@ -26,7 +26,7 @@
   import { bytes, fechaLarga, numero, plural } from "$lib/formato";
   import { cargarFuncionales, errorFuncionales, funcionalesDe, ponerFuncionales } from "$lib/funcionales.svelte";
   import { aMinutos, cifrasPruebas, deMinutos, deRestauracion, diaLargo, resultadoPrueba, textoAlcance, textoMinutos, textoMotivoPrueba, textoPlazo, DESDE_PRUEBA } from "$lib/pruebasFuncionales";
-  import { juntar, type ConMotivo } from "$lib/restauraciones";
+  import { juntar, soloReales, type ConMotivo } from "$lib/restauraciones";
   import { ultimos } from "$lib/informes.svelte";
   import { informeDe } from "$lib/repo";
   import type { EntradaPruebaFuncional, PoliticaPruebas, PruebaFuncional } from "$lib/tiposPruebas";
@@ -46,7 +46,7 @@
       void cargarFuncionales(cc, true);
       api
         .restauraciones(cc)
-        .then((r) => cc === actual.id && (restauraciones = juntar(r)))
+        .then((r) => cc === actual.id && (restauraciones = soloReales(juntar(r))))
         .catch(() => {});
     });
   });

@@ -689,6 +689,10 @@ pub struct RunRecord {
     /// 15g (copia externa o derivada): las versiones que tiene su repositorio tras la vuelta.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub versiones_destino: Option<u64>,
+    /// 0.8.1 (E3, 15aa): en una prueba de restauración, de cuántos archivos de la versión se
+    /// eligió la muestra (para su ficha en «Restauraciones»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidatos: Option<u64>,
 }
 
 /// 15jj: lo que se anota de una copia que quedó «en curso» (`state.running`, en disco

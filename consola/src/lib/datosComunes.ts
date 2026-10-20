@@ -25,8 +25,29 @@ export const admiteDatosCliente = (e: Pick<Equipo, "resumen"> | null | undefined
 /** Los equipos a los que se mandan: confirmados, gestionados desde aquí y con un agente que los guarda. */
 export const equiposQueGuardan = (equipos: Equipo[]) => equipos.filter((e) => e.confirmado && e.modo === "gestionado" && admiteDatosCliente(e));
 
-export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones" | "nota.observacion" | "nota.comentario";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario"];
+export type ClaseDato =
+  | "etiqueta.color"
+  | "etiqueta.plantilla"
+  | "destino.regla"
+  | "destino"
+  | "plantilla"
+  | "sede"
+  | "sede.equipo"
+  | "sede.destino"
+  | "etiqueta.categoria"
+  | "orden.equipos"
+  | "exclusiones"
+  | "nota.observacion"
+  | "nota.comentario"
+  | "ajuste";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario", "ajuste"];
+
+/** 0.8.1 (E2, H1): `resumen.admite` de un agente que guarda los ajustes comunes (`ajuste:restauraciones`, `ajuste:recuperar`). */
+export const ADMITE_AJUSTES = "ajustes_comunes";
+/** Los ajustes comunes que hay (como `datos_cliente::AJUSTES`). */
+export const AJUSTES_COMUNES = ["restauraciones", "recuperar"];
+/** ¿Es un ajuste común? (Solo a los agentes con `admite: "ajustes_comunes"`.) */
+export const esDeAjustes = (clave: string) => claseDe(clave)?.clase === "ajuste";
 
 /** 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda sedes, categorías y orden. */
 export const ADMITE_SEDES = "sedes";
@@ -43,6 +64,7 @@ export const esDeExclusiones = (clave: string) => claseDe(clave)?.clase === "exc
 export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave: string): boolean {
   if (esDeSedes(clave)) return admiteSedes(e);
   if (esDeExclusiones(clave)) return !!e?.resumen?.admite?.includes(ADMITE_EXCLUSIONES);
+  if (esDeAjustes(clave)) return !!e?.resumen?.admite?.includes(ADMITE_AJUSTES);
   if (esDeNotas(clave)) {
     if (!e?.resumen?.admite?.includes(ADMITE_NOTAS)) return false;
     // Los comentarios pueden ser muchos: con el documento del equipo ya a tres cuartos de su
@@ -97,12 +119,14 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
             ? ((i) => i > 0 && TIPOS_OBSERVACION_COMUN.includes(sujeto.slice(0, i)) && objetoNotaValido(sujeto.slice(0, i), sujeto.slice(i + 1)))(sujeto.indexOf(":"))
             : clase === "nota.comentario"
               ? idSimple(sujeto)
-          : idDestinoValido(sujeto);
+              : clase === "ajuste"
+                ? AJUSTES_COMUNES.includes(sujeto)
+                : idDestinoValido(sujeto);
   return ok ? { clase, sujeto } : null;
 }
 
 /** ¿Cambiarlo pide la clave de administración? (Lo que cuenta en la regla 3-2-1: el tipo y las marcas de un destino y la sede de un equipo o de un destino.) */
-export const pideClave = (clave: string) => ["destino.regla:", "sede.equipo:", "sede.destino:"].some((p) => clave.startsWith(p));
+export const pideClave = (clave: string) => ["destino.regla:", "sede.equipo:", "sede.destino:"].some((p) => clave.startsWith(p)) || clave === "ajuste:recuperar";
 
 export const claveColor = (etiqueta: string) => {
   const n = normalizarEtiqueta(etiqueta);
@@ -231,7 +255,9 @@ export function textoAviso(p: Pendiente): string | null {
   const conClave = [...p.porEnviarConClave, ...p.sinCompartirConClave];
   const k = conClave.filter((x) => x.clave.startsWith("destino.regla:")).length;
   if (k) partes.push(k === 1 ? "1 tipo de destino por repartir (pide la clave)" : `${k} tipos de destino por repartir (piden la clave)`);
-  const ks = conClave.length - k;
+  const ka = conClave.filter((x) => x.clave.startsWith("ajuste:")).length;
+  if (ka) partes.push("«recuperar en el equipo» por repartir (pide la clave)");
+  const ks = conClave.length - k - ka;
   if (ks) partes.push(ks === 1 ? "1 sede de un equipo o destino por repartir (pide la clave)" : `${ks} sedes de equipos o destinos por repartir (piden la clave)`);
   const t = p.porTraer.length;
   if (t) partes.push(t === 1 ? "1 plantilla de otra consola por traer" : `${t} plantillas de otra consola por traer`);
@@ -302,6 +328,9 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
       return v ? "un orden a mano" : "sin orden a mano";
     case "exclusiones":
       return Array.isArray(v?.reglas) ? (v.reglas as string[]).join(", ") || "sin reglas" : "quitado";
+    case "ajuste":
+      if (c.sujeto === "restauraciones") return v ? (v.motivo_obligatorio ? "pedir siempre el motivo" : "el motivo es opcional") : "lo de por defecto";
+      return v ? (v.activo ? `activado, hasta ${v.max_mb ?? 1024} MB` : "desactivado") : "desactivado";
     case "nota.observacion":
     case "nota.comentario": {
       const t = typeof v?.texto === "string" ? (v.texto as string).replace(/\s+/g, " ").trim() : "";
@@ -348,6 +377,8 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
     }
     case "nota.comentario":
       return "Un comentario";
+    case "ajuste":
+      return c.sujeto === "restauraciones" ? "Pedir siempre el motivo al restaurar" : "Que cada persona recupere sus archivos en su equipo";
     default:
       return f.clave;
   }

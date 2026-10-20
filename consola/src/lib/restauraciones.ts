@@ -4,6 +4,52 @@
 // consola y se sacan las cifras (número, tiempo medio —el RTO real— y éxito).
 // Sin dependencias de Svelte (lo prueban los vectores).
 import type { MotivoRestauracion, NotaRestauracion, Restauracion, Restauraciones } from "./tipos";
+import { bytes as tamano, plural } from "./formato";
+
+/** 15w: lo que de verdad se restaura (la operación `medir` del equipo, o lo que se sabe en la consola). */
+export interface MedidaRestaurar {
+  carpetas: number;
+  archivos: number;
+  bytes: number;
+  fuera_archivos?: number;
+  fuera_bytes?: number;
+  /** Sin medir: carpetas quitadas (no se sabe cuántos archivos llevan). */
+  fuera_carpetas?: number;
+  /** `false`: lo que se sabe en la consola (sin lo de dentro de las carpetas). */
+  exacta?: boolean;
+}
+
+/** 15w: «1 carpeta · 20 archivos · 5,4 GB» y, si se quitó algo, «sin 2 archivos (3 MB)». */
+export function textoMedida(m: MedidaRestaurar): { linea: string; sin: string | null } {
+  const partes: string[] = [];
+  if (m.carpetas) partes.push(plural(m.carpetas, "carpeta", "carpetas"));
+  // Sin medir, una carpeta no dice cuántos archivos lleva dentro: no se pone «0 archivos».
+  if (m.archivos || m.exacta !== false || !m.carpetas) partes.push(plural(m.archivos, "archivo", "archivos"));
+  if (m.bytes) partes.push(tamano(m.bytes));
+  const f = m.fuera_archivos ?? 0;
+  const fc = m.exacta === false ? (m.fuera_carpetas ?? 0) : 0;
+  const quitado = [fc ? plural(fc, "carpeta", "carpetas") : "", f ? plural(f, "archivo", "archivos") : ""].filter(Boolean).join(" y ");
+  const sin = quitado ? `sin ${quitado}${m.fuera_bytes ? ` (${tamano(m.fuera_bytes)})` : ""}` : null;
+  return { linea: partes.join(" · "), sin };
+}
+
+/**
+ * 15w: lo que se sabe en la consola sin preguntar al equipo (agente anterior o mientras
+ * contesta): las carpetas y archivos elegidos, con el tamaño de los archivos, y cuántas
+ * cosas se quitaron de dentro. Las carpetas no dicen su tamaño hasta medirlas.
+ */
+export function medidaEstimada(elegidas: { tipo: "dir" | "archivo"; bytes?: number }[], quitadas: { tipo: "dir" | "archivo"; bytes?: number }[]): MedidaRestaurar {
+  const archivos = elegidas.filter((e) => e.tipo !== "dir");
+  return {
+    carpetas: elegidas.length - archivos.length,
+    archivos: archivos.length,
+    bytes: archivos.reduce((n, e) => n + (e.bytes ?? 0), 0),
+    fuera_archivos: quitadas.filter((e) => e.tipo !== "dir").length,
+    fuera_carpetas: quitadas.filter((e) => e.tipo === "dir").length,
+    fuera_bytes: quitadas.reduce((n, e) => n + (e.tipo !== "dir" ? (e.bytes ?? 0) : 0), 0),
+    exacta: false,
+  };
+}
 
 export const MOTIVOS: { id: MotivoRestauracion; texto: string }[] = [
   { id: "borrado", texto: "Archivo borrado por error" },
@@ -14,9 +60,37 @@ export const MOTIVOS: { id: MotivoRestauracion; texto: string }[] = [
 
 export const textoMotivo = (m: string | null | undefined) => MOTIVOS.find((x) => x.id === m)?.texto ?? null;
 
+/** 15aa: una restauración real, una prueba automática (su horario) o una prueba a mano («Probar ahora»). */
+export type ClaseRestauracion = "real" | "prueba_auto" | "prueba_mano";
+
+/** 15aa: de qué clase es. Una prueba de un agente anterior (sin `origen`) cuenta como automática. */
+export function claseRestauracion(r: Pick<Restauracion, "tipo" | "origen">): ClaseRestauracion {
+  if (r.tipo !== "prueba_restauracion") return "real";
+  return r.origen === "a_mano" ? "prueba_mano" : "prueba_auto";
+}
+
+export const NOMBRES_CLASE: Record<ClaseRestauracion, string> = { real: "Reales", prueba_auto: "Pruebas automáticas", prueba_mano: "Pruebas a mano" };
+
+/** 15aa: cómo se comprobó lo restaurado en una prueba, en palabras. */
+export function textoComprobacion(r: Pick<Restauracion, "tipo" | "comprobacion">): string | null {
+  if (r.tipo !== "prueba_restauracion") return null;
+  if (r.comprobacion === "contenido" || !r.comprobacion) return "Cada archivo leído entero y comparado con sus huellas de la versión, y con su tamaño.";
+  return r.comprobacion;
+}
+
+/** 15aa: qué se restauró en una prueba: «20 archivos al azar (de 13.200 de la versión)». */
+export function textoMuestra(r: Pick<Restauracion, "archivos" | "candidatos">): string {
+  const n = r.archivos ?? 0;
+  if (!n) return "Ningún archivo";
+  const base = `${plural(n, "archivo", "archivos")} al azar`;
+  return r.candidatos ? `${base} (de ${plural(r.candidatos, "archivo", "archivos")} de la versión)` : base;
+}
+
 /** A dónde se restauró, en palabras (nunca la ruta: no sale del equipo). */
 export function textoDestino(d: string | null | undefined): string {
   switch (d) {
+    case "privada":
+      return "En una carpeta privada del equipo, borrada al terminar";
     case "junto":
       return "Junto al original";
     case "original":
@@ -34,14 +108,23 @@ export function textoDestino(d: string | null | undefined): string {
 }
 
 /** Desde dónde se restauró. */
-export function textoDesde(r: Pick<Restauracion, "desde" | "desde_nombre">): string {
+export function textoDesde(r: Pick<Restauracion, "desde" | "desde_nombre"> & Partial<Pick<Restauracion, "espejo">>): string {
+  if (r.espejo) return r.espejo.nombre ? `Espejo «${r.espejo.nombre}»` : "Un espejo";
+  if (r.desde === "espejo") return r.desde_nombre ? `Espejo «${r.desde_nombre}» del equipo` : "Un espejo del equipo";
   if (r.desde === "derivada") return r.desde_nombre ? `Copia derivada en «${r.desde_nombre}»` : "Una copia derivada";
   if (r.desde === "externa") return r.desde_nombre ? `Copia derivada en «${r.desde_nombre}»` : "La copia derivada de cada día";
   return "Su repositorio";
 }
 
-/** Quién y desde dónde la pidió. */
-export function textoQuien(r: Pick<Restauracion, "por" | "consola" | "en_el_equipo">): string {
+/** Quién y desde dónde la pidió (una prueba automática: su horario). */
+export function textoQuien(r: Pick<Restauracion, "por" | "consola" | "en_el_equipo"> & Partial<Pick<Restauracion, "tipo" | "origen" | "cuenta">>): string {
+  if (r.tipo === "prueba_restauracion") {
+    if (r.origen !== "a_mano") return "Su horario (automática)";
+    const quien = r.por?.trim();
+    return quien ? (r.consola ? `${quien}, con «Probar ahora» desde «${r.consola}»` : `${quien}, con «Probar ahora»`) : "Con «Probar ahora»";
+  }
+  // 15mm: la persona del equipo, desde su propia cuenta de Windows o de Linux.
+  if (r.cuenta) return `${r.cuenta}, en su equipo`;
   if (r.en_el_equipo) return "Desde la ventana del equipo";
   const quien = r.por?.trim() || "Alguien";
   return r.consola ? `${quien}, desde «${r.consola}»` : quien;
@@ -70,6 +153,9 @@ export function juntar(r: Restauraciones): ConMotivo[] {
     })
     .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora));
 }
+
+/** 15aa: solo las restauraciones reales (las pruebas van aparte en las cifras). */
+export const soloReales = <R extends Pick<Restauracion, "tipo" | "origen">>(rs: R[]) => rs.filter((r) => claseRestauracion(r) === "real");
 
 export interface Estadisticas {
   total: number;

@@ -308,6 +308,8 @@ fn run_in(access: &Access, cfg: &RestoreTest, base: &Path, report: Report) -> Ru
     report("Eligiendo los archivos…", None);
     let max_bytes = cfg.max_mb as u64 * 1024 * 1024;
     let mut sampler = Sampler::new(cfg.files as usize * 3, max_bytes);
+    // 15aa: de cuántos archivos de la versión sale la muestra (para su ficha).
+    let mut candidatos = 0u64;
     let mut on_line = |line: &str| {
         if !line.contains(r#""struct_type":"node""#) {
             return;
@@ -316,6 +318,7 @@ fn run_in(access: &Access, cfg: &RestoreTest, base: &Path, report: Report) -> Ru
         if v["type"] != "file" {
             return;
         }
+        candidatos += 1;
         if let (Some(path), Some(size)) = (v["path"].as_str(), v["size"].as_u64()) {
             sampler.offer(Candidate { path: path.to_string(), size }, &mut rng);
         }
@@ -383,8 +386,26 @@ fn run_in(access: &Access, cfg: &RestoreTest, base: &Path, report: Report) -> Ru
     record.files_new = Some(chosen.len() as u64);
     record.data_added = Some(total);
     record.snapshot_id = Some(snap.id.clone());
+    record.candidatos = Some(candidatos);
     record.finished = Local::now().to_rfc3339();
     record
+}
+
+/// 0.8.1 (E3, 15aa): lo que la ficha de una prueba necesita y el historial no lleva: si la
+/// lanzó su horario o alguien con «Probar ahora» (quién y desde qué consola), desde dónde,
+/// dónde se restauró y cómo se comprobó. Sin rutas.
+pub fn ficha(a_mano: bool, por: Option<&str>, consola: Option<&str>, record: &RunRecord) -> serde_json::Value {
+    let limpio = |s: &str, n: usize| s.chars().filter(|c| !c.is_control()).take(n).collect::<String>().trim().to_string();
+    serde_json::json!({
+        "origen": if a_mano { "a_mano" } else { "horario" },
+        "por": por.map(|p| limpio(p, 80)).filter(|p| !p.is_empty()),
+        "consola": consola.map(|c| limpio(c, 60)).filter(|c| !c.is_empty()),
+        "inicio": Some(record.started.clone()).filter(|s| !s.is_empty()),
+        "desde": "principal",
+        "donde": "privada",
+        "comprobacion": "contenido",
+        "candidatos": record.candidatos,
+    })
 }
 
 #[cfg(test)]
@@ -393,6 +414,17 @@ mod tests {
 
     fn cand(path: &str, size: u64) -> Candidate {
         Candidate { path: path.into(), size }
+    }
+
+    /// 0.8.1 (E3, 15aa): lo que lleva la ficha de una prueba (sin rutas).
+    #[test]
+    fn ficha_de_la_prueba() {
+        let r = RunRecord { started: "2026-10-13T05:00:00+00:00".into(), candidatos: Some(13_200), ..Default::default() };
+        let f = ficha(true, Some("Ana\u{7}"), Some("Oficina"), &r);
+        assert_eq!((f["origen"].as_str(), f["por"].as_str(), f["consola"].as_str()), (Some("a_mano"), Some("Ana"), Some("Oficina")));
+        assert_eq!((f["donde"].as_str(), f["comprobacion"].as_str(), f["candidatos"].as_u64()), (Some("privada"), Some("contenido"), Some(13_200)));
+        let g = ficha(false, None, None, &r);
+        assert!(g["origen"] == "horario" && g["por"].is_null());
     }
 
     #[test]

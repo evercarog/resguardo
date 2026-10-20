@@ -89,6 +89,8 @@ export interface Datos {
   bandeja: EstadoBandeja | null;
   ventana: EstadoVentana | null;
   ahora: string;
+  /** 0.8.1 (H1): lo pedido desde el Explorador («Versiones anteriores con Resguardo»). */
+  recuperar?: { ruta: string; hora?: string } | null;
 }
 
 /** 14a: una orden que espera su turno en este equipo (`en_espera` del servicio). */

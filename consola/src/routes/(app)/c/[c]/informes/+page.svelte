@@ -33,7 +33,7 @@
   import { cuentaRegla, fraseRegla, PARTES, reglasDelCliente } from "$lib/regla321";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import InformeEjecutivo from "$lib/componentes/InformeEjecutivo.svelte";
-  import { estadisticas, juntar, MOTIVOS, textoTardo } from "$lib/restauraciones";
+  import { estadisticas, juntar, MOTIVOS, soloReales, textoTardo } from "$lib/restauraciones";
   import type { Restauraciones } from "$lib/tipos";
 
   type Periodo = "mes" | "anterior" | "30";
@@ -161,7 +161,7 @@
   });
   const restDelPeriodo = $derived(
     restauraciones
-      ? juntar(restauraciones).filter((r) => {
+      ? soloReales(juntar(restauraciones)).filter((r) => {
           const t = Date.parse(r.hora);
           const eq = actual.equipos.find((e) => e.id === r.equipo);
           return t >= rango.desde.getTime() && t < rango.hasta.getTime() && (!eq || pasaFiltro(eq, deEtiqueta));

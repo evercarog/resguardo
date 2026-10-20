@@ -162,7 +162,7 @@ fn atender(v: &Vinculo, id: &str, clave: &[u8; 32], tipo: &Tipo) -> Result<(), S
 fn ops(tipo: &Tipo) -> &'static [&'static str] {
     match tipo {
         Tipo::Carpetas => &["carpetas", "sugerencias", "crear_carpeta"],
-        Tipo::Explorar(_) => &["versiones", "listar", "buscar", "diferencias", "ocupa", "historial_archivo", "buscar_todas"],
+        Tipo::Explorar(_) => &["versiones", "listar", "buscar", "diferencias", "ocupa", "historial_archivo", "buscar_todas", "medir"],
         Tipo::Basica => &[],
     }
 }
@@ -211,6 +211,8 @@ fn operar(tipo: &Tipo, op: &str, p: &Value, memoria: &mut Memoria) -> Result<Val
             Ok(json!({ "ruta": ruta, "versiones": diferencias::versiones_de_archivo(acc, ruta)? }))
         }
         (Tipo::Explorar(acc), "buscar_todas") => buscar_todas(acc, p, memoria, busqueda::TIEMPO),
+        // 15w: lo que de verdad se restaura con lo elegido y lo quitado.
+        (Tipo::Explorar(acc), "medir") => crate::restaurar_v2::medir(acc, p),
         _ => Err(format!("Operación no disponible en esta sesión: «{op}».")),
     }
 }
@@ -887,6 +889,8 @@ fn restaurar_dentro(
     if rutas.is_empty() || rutas.len() > 100 {
         return Err("Elige entre 1 y 100 archivos o carpetas.".into());
     }
+    // 15w: lo que se quitó de lo elegido (rutas exactas dentro de lo elegido).
+    let excluir = r2::excluidas(c, &rutas)?;
     // Para la ventana, los avisos del escritorio y las consolas (el nombre del repositorio, sin rutas).
     let repo = c["repo"].as_str().unwrap_or("");
     let nombre = crate::agent::load_config().repos.iter().find(|r| r.id == repo).map(|r| r.name.clone()).unwrap_or_else(|| "Copias".into());
@@ -896,7 +900,7 @@ fn restaurar_dentro(
         Some("nueva") => {
             let carpeta = r2::carpeta_nueva_o_vacia(c["carpeta"].as_str().unwrap_or(""), dueno)?;
             let guarda = crate::escritorio::en_marcha::empezar_por("restauracion", repo, &nombre, q);
-            let cifras = r2::restaurar_en_carpeta(acc, version, &rutas, &carpeta, &guarda)?;
+            let cifras = r2::restaurar_en_carpeta(acc, version, &rutas, &excluir, &carpeta, &guarda)?;
             guarda.terminar("ok");
             return Ok((format!("Restaurado ({} elementos) en «{}».", rutas.len(), carpeta.display()), cifras));
         }
@@ -908,7 +912,7 @@ fn restaurar_dentro(
             let nombre_zip = r2::nombre_zip(c["nombre"].as_str(), &sello)?;
             let (ruta_zip, archivo) = r2::crear_zip_nuevo(&carpeta, &nombre_zip)?;
             let guarda = crate::escritorio::en_marcha::empezar_por("restauracion", repo, &nombre, q);
-            let hecho = r2::zip_de_rutas(acc, version, &rutas, std::io::BufWriter::new(archivo), contrasena.as_deref(), Some(&guarda))
+            let hecho = r2::zip_de_rutas(acc, version, &rutas, &excluir, std::io::BufWriter::new(archivo), contrasena.as_deref(), Some(&guarda))
                 .and_then(|(w, cifras)| w.into_inner().map_err(|e| e.to_string())?.sync_all().map(|_| cifras).map_err(|e| e.to_string()));
             let cifras = match hecho {
                 Ok(x) => x,
@@ -971,33 +975,22 @@ fn restaurar_dentro(
             return Err(format!("«{ruta}»: su carpeta en el equipo es ahora un enlace; restáuralo junto al original."));
         }
         let destino = objetivo.display().to_string();
-        let origen = format!("{version}:{padre}");
-        let incluir = format!("/{nombre}");
         // Con `--json`, restic dice cuánto lleva: la ventana del equipo y las consolas lo enseñan (13c).
-        let base = total;
-        let mut ultima = r2::Cifras::default();
-        let mut al_avanzar = |l: &str| {
-            if let Some((hechas, t)) = serde_json::from_str::<Value>(l).ok().as_ref().and_then(r2::cifras_de_restore) {
-                ultima = hechas;
-                guarda.cifras(
-                    Some(base.bytes + hechas.bytes),
-                    t.map(|t| base.bytes + t.bytes),
-                    Some(base.archivos + hechas.archivos),
-                    t.map(|t| base.archivos + t.archivos),
-                );
-            }
-        };
-        let out = restic::run_raw_lines(
+        // 15w: sin lo quitado de lo elegido (si hay algo dentro, esa carpeta va sola, con `--exclude`).
+        let hecho = r2::restaurar_grupo(
             acc,
-            &["restore", &origen, "--target", &destino, "--include", &incluir, "--overwrite", if reemplazar { "always" } else { "never" }, "--json"],
+            version,
+            &padre,
+            std::slice::from_ref(&nombre),
+            &objetivo,
+            &excluir,
+            Some(if reemplazar { "always" } else { "never" }),
+            Some(&guarda),
+            total,
             Duration::from_secs(24 * 3600),
-            &mut al_avanzar,
         )?;
-        if out.code != Some(0) {
-            return Err(restic::exit_error(out.code, &out.stderr));
-        }
-        total.archivos += ultima.archivos;
-        total.bytes += ultima.bytes;
+        total.archivos += hecho.archivos;
+        total.bytes += hecho.bytes;
         if !destinos.contains(&destino) {
             destinos.push(destino);
         }
@@ -1033,6 +1026,8 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<(u64, c
         return Err("Elige entre 1 y 100 archivos o carpetas.".into());
     }
     let rutas = rutas.iter().map(|r| restic::snapshot_dir(r)).collect::<Result<Vec<_>, _>>()?;
+    // 15w: lo que se quitó de lo elegido.
+    let excluir = crate::restaurar_v2::excluidas(c, &rutas)?;
     let relevo = c["relevo"]["id"].as_str().filter(|s| uuid::Uuid::parse_str(s).is_ok()).ok_or("Falta el relé.")?.to_string();
     let clave = clave32(c["relevo"]["clave"].as_str().unwrap_or(""))?;
     let zip = match c["formato"].as_str().unwrap_or("archivo") {
@@ -1047,7 +1042,7 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<(u64, c
             std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
             let archivo = tmp.join("descarga.zip");
             let f = std::fs::File::create(&archivo).map_err(|e| e.to_string())?;
-            let (w, cifras) = crate::restaurar_v2::zip_de_rutas(acc, version, &rutas, std::io::BufWriter::new(f), Some(&contrasena), None)?;
+            let (w, cifras) = crate::restaurar_v2::zip_de_rutas(acc, version, &rutas, &excluir, std::io::BufWriter::new(f), Some(&contrasena), None)?;
             drop(w.into_inner().map_err(|e| e.to_string())?);
             let mut f = std::fs::File::open(&archivo).map_err(|e| e.to_string())?;
             Ok((subir(v, &relevo, &clave, &mut f)?, cifras))
@@ -1058,7 +1053,9 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<(u64, c
     if rutas.len() > 1 && !zip {
         return Err("Varios archivos o carpetas se descargan en un zip.".into());
     }
-    if rutas.len() == 1 {
+    // Con algo quitado de dentro, una sola carpeta va también por el camino de varias
+    // (restaurar en una carpeta temporal sin lo quitado y comprimir): `dump` no sabe quitar.
+    if rutas.len() == 1 && excluir.is_empty() {
         let mut args: Vec<String> = vec!["dump".into(), "--no-lock".into()];
         if zip {
             args.extend(["--archive".into(), "zip".into()]);
@@ -1105,24 +1102,10 @@ pub fn descargar(v: &Vinculo, acc: &restic::Access, c: &Value) -> Result<(u64, c
         for (padre, nombres) in &grupos {
             let destino = if grupos.len() == 1 { datos.clone() } else { datos.join(nombre_de_grupo(padre, &mut usados)) };
             std::fs::create_dir_all(&destino).map_err(|e| e.to_string())?;
-            let mut args: Vec<String> = vec!["restore".into(), format!("{version}:{padre}"), "--target".into(), destino.display().to_string(), "--json".into()];
-            for n in nombres {
-                args.extend(["--include".into(), format!("/{n}")]);
-            }
-            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            let out = restic::run_raw(acc, &refs, Duration::from_secs(24 * 3600))?;
-            if out.code != Some(0) {
-                return Err(restic::exit_error(out.code, &out.stderr));
-            }
-            if let Some((hechas, _)) = String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .rev()
-                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-                .find_map(|l| crate::restaurar_v2::cifras_de_restore(&l))
-            {
-                cifras.archivos += hechas.archivos;
-                cifras.bytes += hechas.bytes;
-            }
+            let hechas =
+                crate::restaurar_v2::restaurar_grupo(acc, version, padre, nombres, &destino, &excluir, None, None, cifras, Duration::from_secs(24 * 3600))?;
+            cifras.archivos += hechas.archivos;
+            cifras.bytes += hechas.bytes;
         }
         let archivo = tmp.join("descarga.zip");
         comprimir(&datos, &archivo)?;

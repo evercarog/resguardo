@@ -517,14 +517,19 @@ export const historialEquipo = (c: string, e: string, o: { antes?: string; desde
  */
 export const restauraciones = (c: string, equipo?: string) =>
   pedir<T.Restauraciones>("GET", `${cli(c)}/restauraciones${equipo ? `?equipo=${enc(equipo)}` : ""}`).catch((x: unknown) => {
-    if (x instanceof ApiError && x.estado === 404) return { ajustes: { motivo_obligatorio: false }, entradas: [], notas: [] } as T.Restauraciones;
+    if (x instanceof ApiError && x.estado === 404) return { ajustes: { motivo_obligatorio: true }, entradas: [], notas: [] } as T.Restauraciones;
     throw x;
   });
 /** El motivo (y las notas) de una restauración; `id` es `restauracion-<orden>` o el de su entrada. */
 export const ponerMotivoRestauracion = (c: string, e: string, id: string, motivo: T.MotivoRestauracion, notas?: string | null) =>
   pedir<{ ok: boolean }>("PUT", `${cli(c)}/equipos/${enc(e)}/restauraciones/${enc(id)}`, { motivo, notas: notas ?? null });
-export const ponerAjustesRestauraciones = (c: string, motivoObligatorio: boolean) =>
-  pedir<T.Restauraciones["ajustes"]>("PUT", `${cli(c)}/restauraciones/ajustes`, { motivo_obligatorio: motivoObligatorio });
+/**
+ * Los ajustes de las restauraciones del cliente: «Pedir siempre el motivo» y (0.8.1, H1)
+ * «Recuperar en el equipo». Desde la 0.8.1 son datos comunes (el servidor los apunta «por
+ * enviar»: después, `sincronizar` o `repartirConClave` los mandan a los equipos).
+ */
+export const ponerAjustesRestauraciones = (c: string, cambios: { motivo_obligatorio?: boolean; recuperar?: { activo: boolean; max_mb: number } }) =>
+  pedir<T.Restauraciones["ajustes"]>("PUT", `${cli(c)}/restauraciones/ajustes`, cambios);
 /**
  * Plan 0.8.0, E3 (14k): las pruebas funcionales del cliente, su política y su plazo. Con
  * un servidor anterior (404), `null` (la consola no ofrece registrarlas).

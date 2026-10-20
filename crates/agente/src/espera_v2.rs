@@ -220,6 +220,12 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "quitar_destino" => format!("Quitar el destino «{}»", nombre_destino(v, c["destino"].as_str().unwrap_or(""))),
         // 0.7.26 (bloque 8): datos comunes del cliente (sin los valores).
         "datos_cliente" | "datos_cliente_admin" => crate::datos_cliente::descripcion(c)?,
+        // 0.8.1 (H1, 15mm).
+        "recuperar_en_equipo" => match c["activo"].as_bool() {
+            Some(true) => "Dejar a cada persona recuperar sus propios archivos de una copia en el equipo".to_string(),
+            Some(false) => "No dejar recuperar en el equipo los archivos de una copia".to_string(),
+            None => "Que una copia siga lo del cliente para recuperar en el equipo".to_string(),
+        },
         _ => return None,
     };
     Some(corto(&crate::web::public_message(&d), 160))

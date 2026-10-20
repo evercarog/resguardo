@@ -153,6 +153,34 @@ export async function simular(op: string, c: Record<string, unknown>): Promise<u
       return { mensaje: "Copia pedida: empieza en unos segundos." };
     case "bloquear":
       return null;
+    // 0.8.1 (H1): recuperar lo suyo. «privado» hace de lo que la cuenta no puede abrir.
+    case "recuperar_estado":
+      return { activo: true, cliente: true, max_mb: 1024, motivo_obligatorio: true };
+    case "recuperar_versiones": {
+      const r = String(c.ruta ?? "");
+      if (/privado/i.test(r)) throw new Error("Solo puedes recuperar lo que tu cuenta puede abrir.");
+      if (!/^[A-Za-z]:\\./.test(r)) throw new Error("Esa ruta no vale: escribe la ruta entera de un archivo o una carpeta de este equipo.");
+      const carpeta = !/\.[a-z0-9]{1,5}$/i.test(r);
+      return {
+        versiones: Array.from({ length: 6 }, (_, i) => ({
+          version: `a1b2c3d${i}`.padEnd(64, "0"),
+          cuando: new Date(Date.now() - (i * 24 + 3) * 3600_000).toISOString(),
+          carpeta,
+          bytes: carpeta ? null : 2_200_000 - i * 40_000,
+        })),
+      };
+    }
+    case "recuperar": {
+      const r = String(c.ruta ?? "");
+      const nombre = r.split("\\").pop() ?? r;
+      const punto = nombre.lastIndexOf(".");
+      const conFecha = punto > 0 ? `${nombre.slice(0, punto)} (14-10-2026 10.00)${nombre.slice(punto)}` : `${nombre} (14-10-2026 10.00)`;
+      const dir = c.carpeta ? String(c.carpeta) : r.slice(0, r.length - nombre.length - 1);
+      return { donde: `${dir}\\${conFecha}`, archivos: punto > 0 ? 1 : 37, bytes: 2_200_000, sin_permiso: punto > 0 ? 0 : 2 };
+    }
+    case "recuperar_visto":
+    case "abrir_carpeta":
+      return null;
     // 14a: una orden que espera su turno y «Aprobar ahora» (con la clave del simulador).
     case "en_espera":
       return { ordenes: ordenesSimuladas };

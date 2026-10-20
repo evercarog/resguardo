@@ -163,7 +163,13 @@ pub fn explicar_que_no_abre(error: &str) {
 }
 
 #[cfg(windows)]
-pub use win::{run, Avisador};
+pub use win::{recuperar, run, Avisador};
+
+/// H1: en sistemas sin ventana, la orden de la terminal (`resguardo-agente recuperar`).
+#[cfg(not(windows))]
+pub fn recuperar(_: &str) -> Result<(), String> {
+    Err("Usa «resguardo-agente recuperar <ruta>» en la terminal.".into())
+}
 
 #[cfg(windows)]
 mod win {
@@ -315,6 +321,22 @@ mod win {
     }
 
     // ---------- La ventana ----------
+
+    /// H1 (15mm): lo que pide el Explorador para la ventana (`--recuperar "<ruta>"`), en la
+    /// carpeta del usuario: la ventana (esta o la que ya estaba abierta) lo lee y lo enseña.
+    fn archivo_pedido() -> std::path::PathBuf {
+        carpeta_usuario().join("recuperar-pedido.json")
+    }
+
+    /// `resguardo-agente --recuperar "<ruta>"` (el menú del Explorador): deja la ruta para la
+    /// ventana y la abre (o trae al frente la que ya estaba). Lo comprueba todo el servicio.
+    pub fn recuperar(ruta: &str) -> Result<(), String> {
+        let r = crate::recuperar::ruta_valida(ruta)?;
+        let _ = std::fs::create_dir_all(carpeta_usuario());
+        std::fs::write(archivo_pedido(), json!({ "ruta": r.display().to_string(), "hora": chrono::Local::now().to_rfc3339() }).to_string())
+            .map_err(|e| format!("No se pudo preparar la ventana: {e}"))?;
+        run()
+    }
 
     /// Ya abierta: se trae al frente y este proceso no abre otra.
     fn ya_abierta() -> bool {
@@ -468,6 +490,36 @@ mod win {
                 let token = crate::nube::token_de_salida(&String::from_utf8_lossy(&salida.stdout)).ok_or("No llegó el permiso de la nube.")?;
                 ipc::pedir_con_prueba("conectar_nube", &prueba, json!({ "tipo": tipo, "nombre": p["nombre"], "token": token }))
             }
+            // 0.8.1 (H1, 15mm): recuperar sus propios archivos, sin clave. El servicio comprueba
+            // con la cuenta de quien pide (la de este proceso, la da el sistema) lo que puede leer.
+            "recuperar_estado" => ipc::pedir(&json!({ "op": "recuperar_estado", "ruta": p["ruta"] })),
+            "recuperar_versiones" => ipc::pedir(&json!({ "op": "recuperar_versiones", "ruta": p["ruta"] })),
+            "recuperar" => {
+                ipc::pedir(&json!({ "op": "recuperar", "ruta": p["ruta"], "version": p["version"], "motivo": p["motivo"], "carpeta": p["carpeta"] }))
+            }
+            // Lo pedido desde el Explorador ya está en la página: se olvida.
+            "recuperar_visto" => {
+                let _ = std::fs::remove_file(archivo_pedido());
+                Ok(Value::Null)
+            }
+            // Abre la carpeta donde quedó lo recuperado (en el Explorador, como el usuario).
+            "abrir_carpeta" => {
+                let r = crate::recuperar::ruta_valida(p["ruta"].as_str().unwrap_or(""))?;
+                let dir = if r.is_dir() { r } else { r.parent().map(std::path::Path::to_path_buf).ok_or("Ruta no válida.")? };
+                let (verbo, d) = (ancho("open"), ancho(&dir.display().to_string()));
+                // SAFETY: cadenas terminadas en cero que viven durante la llamada.
+                unsafe {
+                    windows_sys::Win32::UI::Shell::ShellExecuteW(
+                        std::ptr::null_mut(),
+                        verbo.as_ptr(),
+                        d.as_ptr(),
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+                    );
+                }
+                Ok(Value::Null)
+            }
             // 14a: las órdenes que esperan su turno (solo para administradores del equipo: lo
             // comprueba el servicio con la cuenta que da el sistema).
             "en_espera" => ipc::pedir(&json!({ "op": "en_espera" })),
@@ -580,6 +632,8 @@ mod win {
                 let d = json!({
                     "bandeja": leer(crate::bandeja::ARCHIVO),
                     "ventana": leer(crate::escritorio::ARCHIVO_VENTANA),
+                    // H1: lo pedido desde el Explorador («Versiones anteriores con Resguardo»).
+                    "recuperar": std::fs::read(archivo_pedido()).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null),
                     "ahora": chrono::Local::now().to_rfc3339(),
                 });
                 let mut sin_hora = d.clone();

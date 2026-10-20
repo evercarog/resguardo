@@ -4,7 +4,8 @@
 // clave de administración por su cuerpo (src/lib/cripto/ordenes.ts).
 //
 //   npm run test:vectores
-import { errorCarpetaRestaurar, errorContrasenaZip, errorNombreZip, estadisticas, juntar, porMes, recomendar, textoDesde, textoDestino, textoQuien, textoTardo } from "../src/lib/restauraciones";
+import { claseRestauracion, soloReales, textoComprobacion, textoMuestra, errorCarpetaRestaurar, errorContrasenaZip, errorNombreZip, estadisticas, juntar, medidaEstimada, porMes, recomendar, textoDesde, textoDestino, textoMedida, textoQuien, textoTardo } from "../src/lib/restauraciones";
+import { alternarNodo, estadoNodo, exclusionesVisibles } from "../src/lib/arbolCarpetas";
 import { conRestauracionReal } from "../src/lib/regla321";
 import { quienRestaura, textoFase } from "../src/lib/textoProgreso";
 import { pideAdminPorCuerpo } from "../src/lib/cripto/ordenes";
@@ -112,6 +113,46 @@ igual("desde esta consola", textoFase(t({ por: "Ana", otra_consola: false })), "
 igual("desde otra consola", textoFase(t({ por: "Ana", otra_consola: true, consola: "Oficina" })), "Restaurando (pedida por Ana desde «Oficina»)");
 igual("desde la ventana del equipo", quienRestaura(t({ en_el_equipo: true })), "desde la ventana del equipo");
 igual("un agente anterior (sin datos)", textoFase(t({})), "Restaurando");
+
+console.log("\n— El árbol de Restaurar y lo que de verdad se restaura (15w) —");
+{
+  // Rutas de una versión: siempre con «/» y distinguiendo mayúsculas (win = false).
+  let s = { elegidas: [] as string[], excluidas: [] as string[] };
+  s = alternarNodo("/C/Docs", s, false);
+  igual("marcar una carpeta marca lo de dentro", estadoNodo("/C/Docs/a.txt", s, false), "si");
+  s = alternarNodo("/C/Docs/sub", s, false);
+  igual("desmarcar un hijo lo quita…", exclusionesVisibles(s, false), ["/C/Docs/sub"]);
+  igual("…y la de arriba queda a medias", estadoNodo("/C/Docs", s, false), "medio");
+  igual("lo de dentro de lo quitado, sin marcar", estadoNodo("/C/Docs/sub/x", s, false), "no");
+  s = alternarNodo("/C/Docs/sub", s, false);
+  igual("volver a marcarlo deja la carpeta entera", [estadoNodo("/C/Docs", s, false), exclusionesVisibles(s, false)], ["si", []]);
+  igual("mayúsculas distintas son otra ruta", estadoNodo("/C/docs/a.txt", s, false), "no");
+}
+const nbsp = (x: string) => x.replace(/\s/g, " ");
+igual("medido por el equipo", nbsp(textoMedida({ carpetas: 1, archivos: 20, bytes: 5_400_000_000 }).linea), "1 carpeta · 20 archivos · 5,4 GB");
+igual("con algo quitado", nbsp(textoMedida({ carpetas: 1, archivos: 20, bytes: 1000, fuera_archivos: 2 }).sin ?? ""), "sin 2 archivos");
+igual("sin carpetas", textoMedida({ carpetas: 0, archivos: 1, bytes: 0 }).linea, "1 archivo");
+const est = medidaEstimada([{ tipo: "dir" }, { tipo: "archivo", bytes: 2048 }], [{ tipo: "dir" }, { tipo: "archivo", bytes: 10 }]);
+igual("lo que se sabe sin medir", nbsp(textoMedida(est).linea), "1 carpeta · 1 archivo · 2 KB");
+igual("lo quitado sin medir", nbsp(textoMedida(est).sin ?? ""), "sin 1 carpeta y 1 archivo (10 B)");
+igual("solo carpetas sin medir: no dice «0 archivos»", textoMedida(medidaEstimada([{ tipo: "dir" }], [])).linea, "1 carpeta");
+
+console.log("\n— Las pruebas de restauración en «Restauraciones» (15aa) —");
+{
+  const p = (x: Partial<Restauracion>) => r({ tipo: "prueba_restauracion", ...x });
+  igual("una real", claseRestauracion(r({})), "real");
+  igual("una prueba de su horario", claseRestauracion(p({ origen: "horario" })), "prueba_auto");
+  igual("una prueba de un agente anterior cuenta como automática", claseRestauracion(p({})), "prueba_auto");
+  igual("una prueba con «Probar ahora»", claseRestauracion(p({ origen: "a_mano" })), "prueba_mano");
+  igual("las reales, aparte", soloReales([r({}), p({}), p({ origen: "a_mano" })]).length, 1);
+  igual("quién: su horario", textoQuien(p({ origen: "horario" })), "Su horario (automática)");
+  igual("quién: a mano", textoQuien(p({ origen: "a_mano", por: "Ana", consola: "Oficina" })), "Ana, con «Probar ahora» desde «Oficina»");
+  igual("quién: la persona del equipo (15mm)", textoQuien(r({ cuenta: "ana (PC-01)", en_el_equipo: true })), "ana (PC-01), en su equipo");
+  igual("desde un espejo", textoDesde(p({ espejo: { id: "x", nombre: "Nube" } })), "Espejo «Nube»");
+  igual("la muestra", textoMuestra({ archivos: 20, candidatos: 1200 }).replace(/\s/g, " "), "20 archivos al azar (de 1200 archivos de la versión)");
+  igual("dónde", textoDestino("privada"), "En una carpeta privada del equipo, borrada al terminar");
+  igual("cómo se comprobó (solo en pruebas)", [textoComprobacion(p({})) !== null, textoComprobacion(r({}))], [true, null]);
+}
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
 if (fallos) process.exit(1);

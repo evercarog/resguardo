@@ -118,6 +118,8 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "nombre_repositorio",
     // 0.8.1 (15t): el nombre de una copia o de una copia derivada.
     "nombre_copia",
+    // 0.8.1 (H1): «Recuperar en el equipo» en una copia.
+    "recuperar_en_equipo",
 ];
 
 /// El nombre que se enseña de una consola: el suyo o el nombre de su dirección.

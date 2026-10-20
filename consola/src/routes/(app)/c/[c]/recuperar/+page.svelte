@@ -25,6 +25,7 @@
     Calendar,
     Check,
     ChevronRight,
+    ClipboardCheck,
     Database,
     Download,
     FileArchive,
@@ -74,8 +75,11 @@
   import ProgresoCopia from "$lib/componentes/ProgresoCopia.svelte";
   import { tareasDe } from "$lib/progreso.svelte";
   import { espejoDelRepo, etiquetaCarpeta, nombreEnAlmacen } from "$lib/espejo";
+  import { trabajosDelEquipo } from "$lib/espejoTrabajos";
   import { claveEspejo } from "$lib/cripto/ordenes";
-  import { errorCarpetaRestaurar, errorContrasenaZip, errorNombreZip, MOTIVOS, recomendar, type OrigenRestauracion } from "$lib/restauraciones";
+  import { errorCarpetaRestaurar, errorContrasenaZip, errorNombreZip, medidaEstimada, MOTIVOS, recomendar, textoMedida, type MedidaRestaurar, type OrigenRestauracion } from "$lib/restauraciones";
+  // 15w: el árbol marca lo de dentro y deja quitar lo que no (el mismo de «Qué copiar»).
+  import { alternarNodo, dentroDeExcluida, estadoNodo, exclusionesVisibles, misma, type Seleccion } from "$lib/arbolCarpetas";
   import type { MotivoRestauracion } from "$lib/tipos";
 
   interface Version {
@@ -121,7 +125,16 @@
   let buscando = $state(false);
   let errorBusqueda = $state("");
   let abiertas = $state<Record<string, boolean>>({});
-  let elegidas = $state<Map<string, Entrada>>(new Map());
+  /** 15w: lo marcado (carpetas y archivos enteros) y lo quitado de dentro, con rutas de la versión. */
+  let sel = $state<Seleccion>({ elegidas: [], excluidas: [] });
+  /** Lo que se ha visto de cada ruta (nombre, tipo, tamaño), para los chips y la cuenta. */
+  let vistas = $state<Record<string, Entrada>>({});
+  const entradaDe = (r: string): Entrada => vistas[r] ?? { nombre: r.replace(/\/+$/, "").split("/").pop() || r, tipo: "dir" };
+  const elegidas = $derived(new Map(sel.elegidas.map((r) => [r, entradaDe(r)] as const)));
+  /** Lo quitado de dentro de lo marcado (va al equipo como `excluir`). */
+  const quitadas = $derived(exclusionesVisibles(sel, false));
+  /** 15w: lo que de verdad se restaura, medido por el equipo (con un agente que lo admite). */
+  let medida = $state<MedidaRestaurar | null>(null);
   let buscar = $state("");
   let resultados = $state<Entrada[] | null>(null);
   let destino = $state<"junto" | "original" | "nueva" | "zip" | "descargar">("junto");
@@ -142,7 +155,7 @@
   let enOtro = $state<{ equipo: string; repo: string } | null | undefined>(undefined);
   /** Rutas de una versión: las de restic, siempre con «/» (en Windows, `/C/Users/…`). */
   const unir = (ruta: string, nombre: string) => (ruta.endsWith("/") ? ruta + nombre : `${ruta}/${nombre}`);
-  const totalElegido = $derived([...elegidas.values()].reduce((n, e) => n + (e.bytes ?? 0), 0));
+  const totalElegido = $derived(medida?.bytes ?? [...elegidas.values()].reduce((n, e) => n + (e.bytes ?? 0), 0));
   const hayCarpetas = $derived([...elegidas.values()].some((e) => e.tipo === "dir"));
   /** Lo más que puede ocupar una descarga por el relé (lo dice el servidor; uno anterior, 500 MB). */
   const MAX_RELEVO = $derived(app.servidor?.max_descarga ?? 500 * 1024 * 1024);
@@ -196,6 +209,21 @@
         motivo: sinEquipo,
       });
     }
+    // 14m (0.8.1, E4): también los espejos que hace el propio equipo (el mismo repositorio en
+    // otra carpeta suya o en una nube conectada en él), con la misma contraseña.
+    const admiteEspejoEquipo = !!equipo.resumen?.admite?.includes("restaurar_espejo_equipo");
+    for (const t of trabajosDelEquipo(equipo).filter((t) => t.que.tipo === "todos" || (t.que.tipo === "repos" && t.que.repos.includes(repo.id)))) {
+      os.push({
+        id: `espejo-equipo:${t.id}`,
+        tipo: "espejo",
+        nombre: `Espejo «${t.nombre.trim() || "sin nombre"}»`,
+        donde: t.adonde.tipo === "nube" ? (t.adonde.nube ?? "nube") : etiquetaCarpeta(t.adonde.carpeta),
+        estado: sinEquipo ? "aviso" : t.resultado === "fallo" || t.resultado === "error" ? "fallo" : t.ultima ? "ok" : "desconocido",
+        ultima: t.ultima ?? null,
+        noSe: !admiteEspejoEquipo ? `Para restaurar desde sus espejos, actualiza el agente de ${equipo.nombre}.` : !t.ultima ? "Este espejo aún no ha subido nada." : null,
+        motivo: sinEquipo,
+      });
+    }
     for (const dd of espejoRepo?.destinos ?? []) {
       os.push({
         id: `espejo:${claveEspejo(dd)}`,
@@ -215,6 +243,12 @@
   function seguirDesde() {
     const o = origenes.find((x) => x.id === origenElegido);
     if (!o || o.noSe) return;
+    // 14m: un espejo del propio equipo se abre como cualquier otro origen (lo hace él, con su acceso).
+    if (o.id.startsWith("espejo-equipo:")) {
+      desde = `espejo:${o.id.slice("espejo-equipo:".length)}`;
+      paso = "clave";
+      return;
+    }
     if (o.tipo === "espejo") {
       if (almacenRepo && nombreEspejo) desdeEspejo = { almacen: almacenRepo, clave: o.id.slice("espejo:".length), repo: nombreEspejo };
       return;
@@ -243,10 +277,13 @@
   /** Dónde quedó el .zip (si ya había uno con ese nombre, el equipo le pone «(2)»). */
   const rutaZip = $derived.by(() => (enviado ? `${enviado.carpeta.replace(/[\\/]+$/, "")}${esWindows ? "\\" : "/"}${enviado.nombreZip}` : ""));
 
-  // ---------- 14l: motivo ----------
+  // ---------- 14l, 15ee: motivo, antes de restaurar ----------
   let motivo = $state<MotivoRestauracion | "">("");
   let notasMotivo = $state("");
-  let motivoObligatorio = $state(false);
+  /** 15ee: obligatorio por defecto (un toque basta); el cliente puede hacerlo opcional, igual en todas sus consolas. */
+  let motivoObligatorio = $state(true);
+  /** 15ee (14k): con «Prueba», registrarla también como prueba funcional al terminar. */
+  let comoPrueba = $state(true);
   $effect(() => {
     const [cc, eq] = [actual.id, equipoId];
     if (!cc || !eq) return;
@@ -317,7 +354,7 @@
       sesion = null;
       versiones = [];
       version = null;
-      elegidas = new Map();
+      sel = { elegidas: [], excluidas: [] };
       claveAdmin = "";
     }
     if (destinoPaso === "origen") repoId = "";
@@ -369,7 +406,7 @@
           await cargar("/");
           const raiz = hijos["/"];
           if (Array.isArray(raiz) && raiz.length) {
-            elegidas = new Map(raiz.map((x) => [unir("/", x.nombre), x]));
+            sel = { elegidas: raiz.map((x) => unir("/", x.nombre)), excluidas: [] };
             paso = "destino";
           }
         }
@@ -393,6 +430,7 @@
     try {
       const r = await sesion.pedir<MensajeEquipo & { entradas: Entrada[] }>("listar", { version: version.id, ruta });
       hijos[ruta] = [...(r.entradas ?? [])].sort((a, b) => (a.tipo === b.tipo ? a.nombre.localeCompare(b.nombre) : a.tipo === "dir" ? -1 : 1));
+      for (const e of hijos[ruta] as Entrada[]) vistas[unir(ruta, e.nombre)] = e;
     } catch (err) {
       delete hijos[ruta];
       fallosNivel[ruta] = (err as Error).message || "El equipo no respondió.";
@@ -405,18 +443,66 @@
     fallosNivel = {};
     errorBusqueda = "";
     abiertas = {};
-    elegidas = new Map();
+    sel = { elegidas: [], excluidas: [] };
     resultados = null;
     paso = "archivos";
     void cargar("/");
   }
 
-  function marcar(ruta: string, e: Entrada, on: boolean) {
-    const m = new Map(elegidas);
-    if (on) m.set(ruta, e);
-    else m.delete(ruta);
-    elegidas = m;
+  /** 15w: ¿admite el equipo quitar cosas de dentro de lo elegido (`excluir`) y medirlo? */
+  const admiteExcluir = $derived(!!equipo?.resumen?.admite?.includes("restaurar_excluir"));
+  let avisoArbol = $state("");
+  /** Pulsar la casilla: marcada → sin marcar (si la cubre una de arriba, se quita de dentro); si no, marcada entera. */
+  function alternar(ruta: string, e?: Entrada) {
+    if (e) vistas[ruta] = e;
+    const nueva = alternarNodo(ruta, sel, false);
+    if (!admiteExcluir && exclusionesVisibles(nueva, false).length) {
+      avisoArbol = `Para quitar algo de dentro de una carpeta marcada, actualiza el agente de ${equipo?.nombre ?? "este equipo"}. Mientras, desmarca la carpeta y marca solo lo que quieras de dentro.`;
+      return;
+    }
+    avisoArbol = "";
+    sel = nueva;
   }
+  /** Quitar un elegido entero (desde su chip): fuera él y lo quitado de dentro. */
+  function quitarElegida(ruta: string) {
+    sel = { elegidas: sel.elegidas.filter((x) => x !== ruta), excluidas: sel.excluidas.filter((x) => !misma(x, ruta, false) && !x.startsWith(`${ruta.replace(/\/+$/, "")}/`)) };
+  }
+  /** Casilla a medias (–): `indeterminate` solo existe como propiedad. */
+  function aMedias(nodo: HTMLInputElement, medio: boolean) {
+    nodo.indeterminate = medio;
+    return { update: (m: boolean) => void (nodo.indeterminate = m) };
+  }
+
+  // 15w: lo que de verdad se restaura, medido por el equipo (con un agente que lo admite).
+  let midiendo = $state(false);
+  let vueltaMedida = 0;
+  let temporizadorMedida: ReturnType<typeof setTimeout> | undefined;
+  async function medir(v: string, rutas: string[], excluir: string[]) {
+    const mia = ++vueltaMedida;
+    midiendo = true;
+    try {
+      const r = await sesion!.pedir<MensajeEquipo & MedidaRestaurar>("medir", { version: v, rutas, ...(excluir.length ? { excluir } : {}) });
+      if (mia === vueltaMedida) medida = { carpetas: r.carpetas, archivos: r.archivos, bytes: r.bytes, fuera_archivos: r.fuera_archivos, fuera_bytes: r.fuera_bytes };
+    } catch {
+      if (mia === vueltaMedida) medida = null;
+    } finally {
+      if (mia === vueltaMedida) midiendo = false;
+    }
+  }
+  $effect(() => {
+    // Lo elegido cambia → se vuelve a medir (con una pausa, para no preguntar a cada clic).
+    const [v, rutas, excluir, puede] = [version?.id, [...sel.elegidas], [...quitadas], admiteExcluir && !!sesion];
+    untrack(() => {
+      clearTimeout(temporizadorMedida);
+      vueltaMedida++;
+      medida = null;
+      midiendo = false;
+      if (!v || !rutas.length || !puede) return;
+      temporizadorMedida = setTimeout(() => void medir(v, rutas, excluir), 500);
+    });
+  });
+  /** La cuenta de abajo: la medida o, mientras tanto, lo que se sabe aquí. */
+  const cuenta = $derived(textoMedida(medida ?? medidaEstimada([...elegidas.values()], quitadas.map(entradaDe))));
 
   async function hacerBusqueda(ev?: SubmitEvent) {
     ev?.preventDefault();
@@ -452,6 +538,8 @@
     error = "";
     ocupado = true;
     const rutas = [...elegidas.keys()];
+    // 15w: lo quitado de dentro (solo a un agente que lo admite; si no, no se pudo quitar nada).
+    const conExcluir = admiteExcluir && quitadas.length ? { excluir: [...quitadas] } : {};
     carpetaFija = carpetaRestaurado;
     // 14l: el motivo va con la orden (el equipo lo anota en su registro, que ven todas las consolas).
     const conMotivo = motivo ? { motivo: { tipo: motivo, ...(notasMotivo.trim() ? { notas: notasMotivo.trim().slice(0, 500) } : {}) } } : {};
@@ -462,12 +550,12 @@
         const relevo = crypto.randomUUID();
         const clave = aleatorio(32);
         // Con contraseña (13b), siempre un .zip en AES-256 (lo hace el equipo).
-        const formato = rutas.length === 1 && !hayCarpetas && !zipCifrado ? "archivo" : "zip";
+        const formato = rutas.length === 1 && !hayCarpetas && !zipCifrado && !quitadas.length ? "archivo" : "zip";
         orden = await mandarOrden({
           cliente: actual.cliente,
           equipo,
           tipo: "descargar",
-          cuerpo: { repo: repo.id, version: version.id, rutas, formato, relevo: { id: relevo, clave: aB64(clave) }, ...conDesde, ...conMotivo, ...(zipCifrado ? { contrasena_zip: contrasenaZip } : {}) },
+          cuerpo: { repo: repo.id, version: version.id, rutas, formato, relevo: { id: relevo, clave: aB64(clave) }, ...conDesde, ...conExcluir, ...conMotivo, ...(zipCifrado ? { contrasena_zip: contrasenaZip } : {}) },
           secretos: { repo: { repo: repo.id, contrasena } },
           relevo: { id: relevo, max_bytes: MAX_RELEVO },
           alPaso: (t) => (pasoTxt = t),
@@ -483,7 +571,7 @@
         terminado = true;
         avisar("Descarga lista.");
       } else {
-        const cuerpo: Record<string, unknown> = { repo: repo.id, version: version.id, rutas, ...conDesde, ...conMotivo };
+        const cuerpo: Record<string, unknown> = { repo: repo.id, version: version.id, rutas, ...conDesde, ...conExcluir, ...conMotivo };
         if (destino === "nueva") Object.assign(cuerpo, { destino: "nueva", carpeta: carpetaNueva.trim() });
         else if (destino === "zip")
           Object.assign(cuerpo, { destino: "zip", carpeta: carpetaZip.trim(), ...(nombreZip.trim() ? { nombre: nombreZip.trim() } : {}), ...(zipCifrado ? { contrasena_zip: contrasenaZip } : {}) });
@@ -711,7 +799,7 @@
               <span class="fila-texto">
                 <span class="fila-titulo">{o.nombre} · {o.donde}{#if o.recomendado} <span class="badge badge-sm tone-accent">Recomendado</span>{/if}</span>
                 <span class="fila-sub">
-                  {#if o.noSe}{o.noSe}{:else if o.motivo}{o.motivo}{:else if o.tipo === "espejo"}Se abre con la contraseña del repositorio, en el equipo que elijas.{:else if o.tipo === "principal"}Donde copia {equipo.nombre}.{:else}La hace {equipo.nombre}: se restaura con su acceso.{/if}
+                  {#if o.noSe}{o.noSe}{:else if o.motivo}{o.motivo}{:else if o.id.startsWith("espejo-equipo:")}Lo hace {equipo.nombre}: el mismo repositorio, con su contraseña.{:else if o.tipo === "espejo"}Se abre con la contraseña del repositorio, en el equipo que elijas.{:else if o.tipo === "principal"}Donde copia {equipo.nombre}.{:else}La hace {equipo.nombre}: se restaura con su acceso.{/if}
                 </span>
               </span>
               <span class="fila-meta num">
@@ -732,7 +820,7 @@
           <div class="dlg-title">
             <span class="ticon"><LockKeyhole size={18} /></span>
             <div>
-              <h2>Abrir «{repo.nombre}» de {equipo.nombre}{#if desde}, desde «{origenes.find((o) => o.id === desde)?.donde ?? "otra copia"}»{/if}</h2>
+              <h2>Abrir «{repo.nombre}» de {equipo.nombre}{#if desde}, desde «{origenes.find((o) => o.id === desde || o.id === `espejo-equipo:${desde.slice(7)}`)?.donde ?? "otra copia"}»{/if}</h2>
               <p>Para ver sus versiones hace falta la contraseña del repositorio. Se usa solo en esta pantalla y se olvida al salir.</p>
             </div>
           </div>
@@ -805,8 +893,16 @@
           <div class="resultados">
             <p class="faint pequeno res-cab">{resultados.length ? plural(resultados.length, "resultado", "resultados") : "Nada con ese nombre en esta versión"} · <button class="link" onclick={() => (resultados = null)}>Volver a las carpetas</button></p>
             {#each resultados as r (r.ruta)}
+              {@const est = estadoNodo(r.ruta!, sel, false)}
               <label class="nodo">
-                <input type="checkbox" checked={elegidas.has(r.ruta!)} onchange={(e) => marcar(r.ruta!, r, e.currentTarget.checked)} />
+                <input
+                  type="checkbox"
+                  checked={est === "si"}
+                  use:aMedias={est === "medio"}
+                  aria-checked={est === "medio" ? "mixed" : est === "si"}
+                  disabled={dentroDeExcluida(r.ruta!, sel, false)}
+                  onchange={() => alternar(r.ruta!, r)}
+                />
                 {#if r.tipo === "dir"}<Folder size={15} class="ic-dir" />{:else}<File size={15} />{/if}
                 <span class="nombre res-nombre"><span>{r.ruta!.replace(/\/+$/, "").split("/").pop()}</span><span class="faint pequeno">{carpetaDe(r.ruta!)}</span></span>
                 {#if r.tipo !== "dir"}{#if r.modificado}<span class="faint pequeno meta fecha num">{fechaCorta(r.modificado)}</span>{/if}<span class="faint pequeno meta num">{bytes(r.bytes)}</span>{/if}
@@ -816,13 +912,15 @@
         {:else}
           <div class="arbol" role="tree" aria-label="Archivos de la versión" aria-multiselectable="true">{@render nivel("/")}</div>
         {/if}
+        {#if avisoArbol}<div class="notice notice-info fallo-arbol" role="status"><p>{avisoArbol}</p></div>{/if}
         <div class="pie-paso">
           <div class="elegidas">
             {#if elegidas.size}
-              <strong class="num">{plural(elegidas.size, "elemento", "elementos")}{totalElegido ? ` · ${bytes(totalElegido)}` : ""}</strong>
+              <!-- 15w: lo que de verdad se restaura (medido por el equipo si lo admite). -->
+              <strong class="num" aria-live="polite">{cuenta.linea}{#if cuenta.sin}<span class="sin-quitado">{" · "}{cuenta.sin}</span>{/if}{#if midiendo}<LoaderCircle size={13} class="spin medir" aria-label="Calculando" />{/if}</strong>
               <span class="chips-elegidas">
                 {#each [...elegidas.entries()].slice(0, 3) as [ruta, e] (ruta)}
-                  <span class="chip-elegida">{#if e.tipo === "dir"}<Folder size={12} />{:else}<File size={12} />{/if}<span class="ce-nombre">{e.nombre}</span><button type="button" aria-label="Quitar {e.nombre}" onclick={() => marcar(ruta, e, false)}><X size={12} /></button></span>
+                  <span class="chip-elegida">{#if e.tipo === "dir"}<Folder size={12} />{:else}<File size={12} />{/if}<span class="ce-nombre">{e.nombre}</span><button type="button" aria-label="Quitar {e.nombre}" onclick={() => quitarElegida(ruta)}><X size={12} /></button></span>
                 {/each}
                 {#if elegidas.size > 3}<span class="faint pequeno">y {elegidas.size - 3} más</span>{/if}
               </span>
@@ -838,7 +936,7 @@
         <div class="resumen-rest">
           <span class="tile-ic"><History size={16} /></span>
           <p>
-            <strong>{plural(elegidas.size, "elemento", "elementos")}{totalElegido ? ` · ${bytes(totalElegido)}` : ""}</strong> de «{repo?.nombre}», versión del {dia(version.cuando)}, {hora(version.cuando)}.
+            <strong>{cuenta.linea}</strong>{#if cuenta.sin}{`, ${cuenta.sin}`}{/if} de «{repo?.nombre}», versión del {dia(version.cuando)}, {hora(version.cuando)}.
           </p>
         </div>
         <h2 class="section-title" id="t-destino">¿Dónde los quieres?</h2>
@@ -935,7 +1033,7 @@
           </CampoClave>
         {/if}
         <fieldset class="motivo">
-          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio en este cliente)" : "(opcional)"}</span></legend>
+          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio: un toque basta)" : "(opcional)"}</span></legend>
           <div class="chips-motivo" role="radiogroup" aria-label="Motivo">
             {#each MOTIVOS as m (m.id)}
               <label class="chip-motivo" class:on={motivo === m.id}><input type="radio" name="motivo" value={m.id} bind:group={motivo} />{m.texto}</label>
@@ -943,6 +1041,10 @@
             {#if motivo && !motivoObligatorio}<button type="button" class="link" onclick={() => (motivo = "")}>Quitar</button>{/if}
           </div>
           {#if motivo}<input class="input" bind:value={notasMotivo} maxlength={500} placeholder="Notas (opcional): qué pasó, quién lo pidió… Sin contraseñas." aria-label="Notas del motivo" />{/if}
+          {#if motivo === "prueba" && puede.ordenar(actual.cliente?.rol)}
+            <!-- 15ee (14k): un simulacro se registra también como prueba funcional, con sus datos puestos. -->
+            <label class="switch-row prueba-func"><input type="checkbox" bind:checked={comoPrueba} /><span><strong>Registrar como prueba funcional</strong><span class="faint">Al terminar, te ofrecemos su registro con el día, el repositorio y lo que tardó ya puestos.</span></span></label>
+          {/if}
         </fieldset>
         <p class="faint pequeno">¿Lo necesitas en otro equipo? <button class="link" onclick={() => (enOtro = { equipo: equipoId, repo: repoId })}>Restaurar en otro equipo</button></p>
         {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
@@ -1041,6 +1143,9 @@
               error = "";
             }}>Restaurar más de esta versión</button
           >
+          {#if motivo === "prueba" && comoPrueba && terminado && orden?.estado === "hecha" && puede.ordenar(actual.cliente?.rol)}
+            <a class="btn" href="/c/{actual.id}/recuperar/pruebas?restauracion={encodeURIComponent(`${equipoId}|restauracion-${orden.id}`)}"><ClipboardCheck size={15} />Registrar como prueba funcional</a>
+          {/if}
           <a class="btn" href="/c/{actual.id}/recuperar/restauraciones?equipo={encodeURIComponent(equipoId)}">Ver en Restauraciones</a>
           <a class="btn btn-primary" href="/c/{actual.id}/equipos/{equipoId}?tab=ordenes">Ver en el equipo</a>
         </div>
@@ -1064,8 +1169,11 @@
     <ul role="group">
       {#each h as e (e.nombre)}
         {@const r = unir(ruta, e.nombre)}
-        <li role="treeitem" aria-selected={elegidas.has(r)} aria-expanded={e.tipo === "dir" ? !!abiertas[r] : undefined}>
-          <div class="nodo" class:marcado={elegidas.has(r)}>
+        {@const est = estadoNodo(r, sel, false)}
+        {@const bajoQuitada = dentroDeExcluida(r, sel, false)}
+        {@const quitada = quitadas.some((x) => misma(x, r, false))}
+        <li role="treeitem" aria-selected={est !== "no"} aria-expanded={e.tipo === "dir" ? !!abiertas[r] : undefined}>
+          <div class="nodo" class:marcado={est === "si"} class:quitado={quitada || bajoQuitada}>
             {#if e.tipo === "dir"}
               <button
                 type="button"
@@ -1078,9 +1186,18 @@
                 }}><ChevronRight size={14} /></button
               >
             {:else}<span class="hueco"></span>{/if}
-            <input type="checkbox" checked={elegidas.has(r)} aria-label="Restaurar {r}" onchange={(ev) => marcar(r, e, ev.currentTarget.checked)} />
+            <input
+              type="checkbox"
+              checked={est === "si"}
+              use:aMedias={est === "medio"}
+              aria-checked={est === "medio" ? "mixed" : est === "si"}
+              disabled={bajoQuitada}
+              aria-label="Restaurar {r}"
+              onchange={() => alternar(r, e)}
+            />
             {#if e.tipo === "dir"}<Folder size={15} class="ic-dir" />{:else}<File size={15} />{/if}
             <span class="nombre">{ruta === "/" && e.tipo === "dir" && /^[A-Za-z]$/.test(e.nombre) && esWindows ? `Disco ${e.nombre.toUpperCase()}:` : e.nombre}</span>
+            {#if quitada}<span class="marca-quitado">No se restaura</span>{/if}
             {#if e.tipo === "archivo"}
               {#if e.modificado}<span class="faint pequeno meta fecha num">{fechaCorta(e.modificado)}</span>{/if}
               <span class="faint pequeno meta num">{bytes(e.bytes)}</span>
@@ -1199,6 +1316,29 @@
   .field-error {
     font-size: var(--fs-xs);
     color: var(--bad);
+  }
+  .prueba-func {
+    margin-top: var(--sp-1);
+  }
+  .sin-quitado {
+    font-weight: 400;
+    color: var(--text-2);
+  }
+  :global(.medir) {
+    margin-left: 6px;
+    vertical-align: -2px;
+  }
+  .quitado .nombre {
+    color: var(--text-3);
+    text-decoration: line-through;
+  }
+  .marca-quitado {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: var(--fs-xs);
   }
   .paso-card {
     display: flex;

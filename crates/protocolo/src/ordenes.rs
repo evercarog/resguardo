@@ -150,6 +150,10 @@ pub const TIPOS: &[Tipo] = &[
     // orden y cuenta lo que deja fuera cada grupo, sin copiar nada). Con la clave de
     // administración, como «Elegir en el equipo»: mira carpetas del equipo.
     t("vista_exclusiones", Administracion, false, false, false),
+    // Plan 0.8.1 (H1, 15mm): «Recuperar en el equipo» en una copia (sí, no o lo del cliente).
+    // Con la clave de administración y solo administradores: deja a cada persona del equipo
+    // recuperar sus propios archivos. No reduce la protección de nada: sin espera.
+    t("recuperar_en_equipo", Administracion, false, false, true),
 ];
 
 /// El tipo de orden por su nombre, o `None` si no se conoce (se rechaza).

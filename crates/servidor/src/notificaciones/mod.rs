@@ -456,6 +456,7 @@ pub fn nombre_orden(tipo: &str) -> String {
         "config" => "Cambiar las copias",
         "guarda_copias" => "Guarda copias",
         "conservar_version" => "Conservar una versión para siempre",
+        "recuperar_en_equipo" => "Recuperar en el equipo",
         "cambiar_espera" => "Cambiar la espera",
         _ => return tipo.replace('_', " "),
     };

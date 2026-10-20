@@ -1197,6 +1197,14 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // (datos_cliente.rs). El tipo y las marcas de un destino, solo con la clave.
         "datos_cliente" | "datos_cliente_admin" => {
             let m = crate::datos_cliente::aplicar(v, c, o.tipo == "datos_cliente_admin", o.por.as_deref())?;
+            // H1: si cambió «Recuperar en el equipo», el menú del Explorador lo sigue.
+            if c["entradas"].as_array().is_some_and(|xs| xs.iter().any(|x| x["clave"] == "ajuste:recuperar")) {
+                let v2 = v.clone();
+                std::thread::spawn(move || {
+                    let a = crate::recuperar::ajustes();
+                    crate::recuperar::sincronizar_menu_con(Some(&v2), &a);
+                });
+            }
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
@@ -1204,6 +1212,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // equipo dueño o, con `usuario`, en el almacén). Se suben al momento a todas.
         "comentario_version" => {
             let m = crate::versiones_v2::comentar(v, c, o.por.as_deref())?;
+            let _ = g::subir_config(v);
+            Ok(hecha(m))
+        }
+        // 0.8.1 (H1, 15mm): «Recuperar en el equipo» en una copia (con la clave).
+        "recuperar_en_equipo" => {
+            let m = crate::recuperar::cambiar(c)?;
             let _ = g::subir_config(v);
             Ok(hecha(m))
         }
@@ -1264,7 +1278,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             // E4 (14j): la prueba de restauración desde un espejo (ahora, programarla o quitarla).
             if o.tipo == "probar_restauracion" {
                 if c.get("espejo").is_some() {
-                    return crate::prueba_espejo::pedir_ahora(v, &r, c).map(hecha);
+                    return crate::prueba_espejo::pedir_ahora(v, &r, c, quien(v, o, orden_id)).map(hecha);
                 }
                 if c.get("programar_espejo").is_some() {
                     let m = crate::prueba_espejo::programar(v, &r, c)?;
@@ -1418,12 +1432,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         // 14m: con `desde` (`externa` o el id de una copia derivada), desde esa copia.
         "explorar" => {
             let r = repo.unwrap_or("");
-            let (acc, _) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let (acc, _) = crate::restaurar_v2::acceso_desde(v, r, c)?;
             crate::sesiones_v2::abrir(v, c, crate::sesiones_v2::Tipo::Explorar(Box::new(acc))).map(hecha)
         }
         "restaurar" => {
             let r = repo.unwrap_or("");
-            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(v, r, c)?;
             let mut c = c.clone();
             c["repo"] = json!(r);
             let q = quien(v, o, orden_id);
@@ -1433,7 +1447,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "descargar" => {
             let r = repo.unwrap_or("");
-            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(|| g::acceso(v, r), r, c)?;
+            let (acc, desde_nombre) = crate::restaurar_v2::acceso_desde(v, r, c)?;
             let mut c = c.clone();
             c["repo"] = json!(r);
             let q = quien(v, o, orden_id);

@@ -210,8 +210,11 @@ fn carpeta_trabajo() -> PathBuf {
     crate::agent::private_dir().join("prueba-espejo")
 }
 
+/// 0.8.1 (E3, 15aa): quién lanzó una prueba (`None`: su horario).
+pub type Pedida = Option<crate::restaurar_v2::Quien>;
+
 /// Hace la prueba (bloquea: en otro hilo) y la anota.
-pub fn hacer(v: &Vinculo, repo: &str, p: &Prueba) -> Ultima {
+pub fn hacer(v: &Vinculo, repo: &str, p: &Prueba, pedida: &Pedida) -> Ultima {
     let inicio = chrono::Local::now();
     let nombre_repo = v.repos_v2.iter().find(|r| r.id == repo).map(|r| r.nombre.clone()).unwrap_or_else(|| repo.to_string());
     let op = crate::progreso_v2::ops::empezar(crate::progreso_v2::ops::Operacion::de_consola(
@@ -253,14 +256,27 @@ pub fn hacer(v: &Vinculo, repo: &str, p: &Prueba) -> Ultima {
     let duracion =
         chrono::DateTime::parse_from_rfc3339(&u.fin).ok().zip(chrono::DateTime::parse_from_rfc3339(&u.inicio).ok()).map(|(f, i)| (f - i).num_seconds().max(0));
     crate::agent::log(&format!("{}Prueba de restauración de «{nombre_repo}» desde «{}»: {}", if ok { "" } else { "ERROR: " }, p.nombre, u.mensaje));
-    crate::bitacora::anotar(
-        "prueba_restauracion",
-        json!({
+    crate::bitacora::anotar("prueba_restauracion", {
+        // 0.8.1 (E3, 15aa): con lo que pide su ficha en «Restauraciones».
+        let mut e = json!({
             "hora": u.fin, "repo": repo, "resultado": u.resultado, "mensaje": u.mensaje, "duracion_s": duracion,
             "archivos": u.archivos, "bytes": u.bytes, "version": u.version,
             "espejo": { "id": p.id, "nombre": p.nombre },
-        }),
-    );
+        });
+        let f = crate::restore_test::ficha(
+            pedida.is_some(),
+            pedida.as_ref().and_then(|q| q.por.as_deref()),
+            pedida.as_ref().and_then(|q| q.consola.as_deref()),
+            &record,
+        );
+        if let (Some(m), Value::Object(x)) = (e.as_object_mut(), f) {
+            for (k, v) in x {
+                m.entry(k).or_insert(v);
+            }
+        }
+        e["desde"] = json!("espejo");
+        e
+    });
     let (k, u2) = (clave(repo, &p.id), u.clone());
     let _ = cambiar(|g| {
         g.ultimas.insert(k, u2);
@@ -270,12 +286,12 @@ pub fn hacer(v: &Vinculo, repo: &str, p: &Prueba) -> Ultima {
 }
 
 /// En otro hilo, de una en una. `Err` si ya hay una en marcha.
-fn lanzar(v: Vinculo, repo: String, p: Prueba) -> Result<(), String> {
+fn lanzar(v: Vinculo, repo: String, p: Prueba, pedida: Pedida) -> Result<(), String> {
     if EN_MARCHA.swap(true, Ordering::SeqCst) {
         return Err("Ya hay una prueba desde un espejo en marcha en este equipo: espera a que termine.".into());
     }
     std::thread::spawn(move || {
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| hacer(&v, &repo, &p)));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| hacer(&v, &repo, &p, &pedida)));
         EN_MARCHA.store(false, Ordering::SeqCst);
     });
     Ok(())
@@ -287,13 +303,13 @@ fn prueba_de(c: &Value, campo: &str) -> Result<Prueba, String> {
     Ok(p)
 }
 
-/// `probar_restauracion { repo, espejo }`: ahora.
-pub fn pedir_ahora(v: &Vinculo, repo: &str, c: &Value) -> Result<String, String> {
+/// `probar_restauracion { repo, espejo }`: ahora. `quien`: quién la pidió (para su ficha).
+pub fn pedir_ahora(v: &Vinculo, repo: &str, c: &Value, quien: crate::restaurar_v2::Quien) -> Result<String, String> {
     let p = prueba_de(c, "espejo")?;
     // Lo que se puede saber ya (el espejo existe, la carpeta tiene la copia, la nube está): fuera de la prueba.
     acceso(v, repo, &p)?;
     let nombre = p.nombre.clone();
-    lanzar(v.clone(), repo.to_string(), p)?;
+    lanzar(v.clone(), repo.to_string(), p, Some(quien))?;
     Ok(format!("Prueba desde «{nombre}» pedida: empieza ahora."))
 }
 
@@ -375,7 +391,7 @@ pub fn si_toca() {
         }
         Ok(())
     });
-    let _ = lanzar(v, repo, p);
+    let _ = lanzar(v, repo, p, None);
 }
 
 /// La próxima de una programada.

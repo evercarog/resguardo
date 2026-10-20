@@ -167,6 +167,11 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
     title: "Repositorio de solo lectura",
     text: "Un repositorio de otro equipo que se añadió aquí para explorarlo y restaurar. Ninguna copia de este equipo escribe en él.",
   },
+  "recuperar-en-el-equipo": {
+    title: "Recuperar en el equipo",
+    text: "Con esto activado, cada persona puede recuperar las versiones anteriores de sus propios archivos desde su equipo: clic derecho en el Explorador, «Versiones anteriores con Resguardo», o «Recuperar un archivo» en la ventana de Resguardo. Solo ve y recupera lo que su cuenta ya puede leer; nunca sobrescribe (deja la copia al lado, con la fecha en el nombre) y no ve contraseñas ni repositorios.",
+    todo: "Cada recuperación sale en «Restauraciones» de todas las consolas, con la cuenta que la pidió y su motivo. Ponle un límite de tamaño: para más, restaura desde aquí.",
+  },
   "copia-externa": {
     title: "Copia derivada (antes «copia externa»)",
     text: "La «copia externa» de antes es una copia derivada: cada día, a la hora fijada, el equipo copia las versiones del repositorio a otro destino (por ejemplo, un segundo disco o la nube). Si el destino principal falla, queda esta.",

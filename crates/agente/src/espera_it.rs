@@ -254,7 +254,7 @@ fn ordenes_en_espera_entre_dos_consolas() {
     assert_eq!(r_b["en_espera"][0]["aprobable"], true, "por defecto, se puede: {r_b}");
     assert_eq!(r_b["aprobar_en_equipo"], true, "{r_b}");
     let local = std::sync::Mutex::new(crate::ipc_local::Servidor::default());
-    let quien = crate::ipc_local::Cliente { id: "S-1-5-21-500".into(), admin: true, nombre: "ana (PRUEBA)".into() };
+    let quien = crate::ipc_local::Cliente { id: "S-1-5-21-500".into(), admin: true, nombre: "ana (PRUEBA)".into(), ..Default::default() };
     let lista = crate::ipc_local::atender(&local, &json!({ "op": "en_espera" }), &quien);
     assert_eq!(lista["datos"]["ordenes"][0]["id"], id9.as_str(), "{lista}");
     assert_eq!(lista["datos"]["ordenes"][0]["consola"], "Oficina", "{lista}");

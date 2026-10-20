@@ -191,7 +191,7 @@
   {#if hecho}
     <div class="form">
       <div class="notice notice-success" role="status"><p>{hecho.mensaje}</p></div>
-      <p class="faint">«{hecho.nombre}» ya está en {hecho.equipo.nombre}. Ahora elige la versión y los archivos.</p>
+      <p class="faint">«{hecho.nombre}» ya está en {hecho.equipo.nombre}. Ahora elige la versión y los archivos; antes de restaurar te pedimos el motivo.</p>
       <footer>
         <button class="btn btn-ghost" onclick={onclose}>Cerrar</button>
         <button class="btn btn-primary" onclick={irARestaurar}>Restaurar en {hecho.equipo.nombre}<ArrowRight size={15} /></button>

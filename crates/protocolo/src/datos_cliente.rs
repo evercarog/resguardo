@@ -83,6 +83,16 @@ pub enum Clase {
     /// o `null` (borrado). Un comentario de la bitácora de un equipo, una copia, un repositorio
     /// o un destino, con su autor; la consola de origen va en la entrada. Solo con [`ADMITE_NOTAS`].
     NotaComentario,
+    /// 0.8.1 (E2, 15ee; H1, 15mm): `ajuste:<nombre>` → un ajuste del cliente igual en todas sus
+    /// consolas, o `null` (el de por defecto). Solo dos:
+    /// - `ajuste:restauraciones` → `{ motivo_obligatorio }` («Pedir siempre el motivo»; por
+    ///   defecto, sí). Lo cumplen las consolas (y la ventana del equipo al recuperar).
+    /// - `ajuste:recuperar` → `{ activo, max_mb }`: que cada persona del equipo recupere sus
+    ///   propios archivos (desactivado por defecto). **Pide la clave de administración**: el
+    ///   equipo lo aplica ([`crate`] no decide nada más).
+    ///
+    /// Solo a agentes con [`ADMITE_AJUSTES`].
+    Ajuste,
 }
 
 impl Clase {
@@ -101,11 +111,12 @@ impl Clase {
             Clase::GrupoExclusiones => "exclusiones:",
             Clase::NotaObservacion => "nota.observacion:",
             Clase::NotaComentario => "nota.comentario:",
+            Clase::Ajuste => "ajuste:",
         }
     }
 }
 
-const CLASES: [Clase; 13] = [
+const CLASES: [Clase; 14] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -119,7 +130,20 @@ const CLASES: [Clase; 13] = [
     Clase::GrupoExclusiones,
     Clase::NotaObservacion,
     Clase::NotaComentario,
+    Clase::Ajuste,
 ];
+
+/// 0.8.1 (E2, H1): `resumen.admite` de un agente que guarda los ajustes comunes (`ajuste:`).
+pub const ADMITE_AJUSTES: &str = "ajustes_comunes";
+/// Los ajustes comunes que hay.
+pub const AJUSTES: [&str; 2] = ["restauraciones", "recuperar"];
+/// ¿Es un ajuste común (solo para agentes con [`ADMITE_AJUSTES`])?
+pub fn es_de_ajustes(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::Ajuste))
+}
+/// H1 (15mm): el límite de tamaño de lo que una persona recupera en su equipo, en MB.
+pub const RECUPERAR_MAX_MB: u64 = 10_240;
+pub const RECUPERAR_MB_DEFECTO: u64 = 1024;
 
 /// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
 /// etiqueta y el orden de los equipos. A uno anterior no se le mandan (rechazaría la orden entera).
@@ -233,6 +257,7 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
         Clase::OrdenEquipos => sujeto == "todos",
         Clase::NotaObservacion => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_OBSERVACION.contains(&t) && objeto_nota_valido(t, o)),
         Clase::NotaComentario => id_simple(sujeto),
+        Clase::Ajuste => AJUSTES.contains(&sujeto),
     };
     ok.then_some((c, sujeto))
 }
@@ -240,7 +265,7 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
 /// ¿Cambiar este dato pide la clave de administración? (Lo que cuenta en la regla 3-2-1: el
 /// tipo y las marcas de un destino y, desde la 0.8.0, la sede de un equipo o de un destino.)
 pub fn pide_admin(clave: &str) -> bool {
-    [Clase::DestinoRegla, Clase::SedeEquipo, Clase::SedeDestino].iter().any(|c| clave.starts_with(c.prefijo()))
+    [Clase::DestinoRegla, Clase::SedeEquipo, Clase::SedeDestino].iter().any(|c| clave.starts_with(c.prefijo())) || clave == "ajuste:recuperar"
 }
 
 /// Una etiqueta limpia como las de los equipos: sin espacios de más, de 1 a 32
@@ -527,6 +552,19 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
             }
             Ok(v)
         }
+        Clase::Ajuste if sujeto == "restauraciones" => {
+            solo_campos(m, &["motivo_obligatorio"])?;
+            Ok(json!({ "motivo_obligatorio": m.get("motivo_obligatorio").and_then(Value::as_bool).ok_or("Motivo obligatorio: sí o no.")? }))
+        }
+        Clase::Ajuste => {
+            solo_campos(m, &["activo", "max_mb"])?;
+            let activo = m.get("activo").and_then(Value::as_bool).ok_or("Activo: sí o no.")?;
+            let max_mb = match m.get("max_mb") {
+                None | Some(Value::Null) => RECUPERAR_MB_DEFECTO,
+                Some(x) => x.as_u64().filter(|n| (1..=RECUPERAR_MAX_MB).contains(n)).ok_or("El límite: de 1 MB a 10 GB.")?,
+            };
+            Ok(json!({ "activo": activo, "max_mb": max_mb }))
+        }
     })();
     r.map_err(str::to_string)
 }
@@ -716,6 +754,24 @@ mod tests {
         let mut ed = k.clone();
         ed["editado"] = json!("2026-10-20T10:05:00Z");
         assert!(valor_valido("nota.comentario:k-1", &ed).is_ok());
+    }
+
+    /// 0.8.1 (E2, H1): los dos ajustes comunes.
+    #[test]
+    fn ajustes_comunes() {
+        assert_eq!(clase("ajuste:restauraciones").map(|x| x.0), Some(Clase::Ajuste));
+        assert!(clase("ajuste:otro").is_none() && clase("ajuste:").is_none());
+        assert!(es_de_ajustes("ajuste:recuperar") && !es_de_ajustes("sede:x"));
+        assert!(!pide_admin("ajuste:restauraciones") && pide_admin("ajuste:recuperar"), "recuperar en el equipo pide la clave");
+        assert_eq!(valor_valido("ajuste:restauraciones", &json!({ "motivo_obligatorio": false })).unwrap(), json!({ "motivo_obligatorio": false }));
+        assert!(valor_valido("ajuste:restauraciones", &json!({ "motivo_obligatorio": "no" })).is_err());
+        assert!(valor_valido("ajuste:restauraciones", &json!({ "motivo_obligatorio": true, "x": 1 })).is_err());
+        assert_eq!(valor_valido("ajuste:recuperar", &json!({ "activo": true })).unwrap(), json!({ "activo": true, "max_mb": RECUPERAR_MB_DEFECTO }));
+        assert_eq!(valor_valido("ajuste:recuperar", &json!({ "activo": false, "max_mb": 50 })).unwrap(), json!({ "activo": false, "max_mb": 50 }));
+        for mal in [json!({ "activo": true, "max_mb": 0 }), json!({ "activo": true, "max_mb": 10_241 }), json!({ "max_mb": 5 }), json!({ "activo": 1 })] {
+            assert!(valor_valido("ajuste:recuperar", &mal).is_err(), "{mal}");
+        }
+        assert!(valor_valido("ajuste:recuperar", &Value::Null).unwrap().is_null());
     }
 
     /// 0.8.1 (B2, 15y): grupos de exclusiones del cliente.

@@ -1090,18 +1090,17 @@ pub fn request_now_por(repo_id: &str, kind: &str, quien: Option<&crate::restaura
 /// repositorio, si esa solicitud es la que se acaba de atender (en la última hora). La
 /// carpeta de solicitudes la pueden escribir los usuarios del equipo: solo nombres cortos
 /// y limpios, que se enseñan como dato (nunca deciden nada).
-fn quien_pidio(state: &TasksState, repo_id: &str, pedida: &str) -> PedidaPor {
-    let nada = PedidaPor::default();
+/// 0.8.1 (E3, 15aa): si la tarea se pidió con «Ahora» y esta vuelta es la que la atiende,
+/// quién la pidió (puede no decirlo: la ventana del equipo); `None`: le tocaba por su horario.
+fn solicitud_atendida(state: &TasksState, repo_id: &str, pedida: &str) -> Option<PedidaPor> {
     let path = agent::requests_dir().join(format!("{repo_id}.{pedida}"));
-    let Ok(meta) = fs::symlink_metadata(&path) else { return nada };
-    let Some(stamp) = meta.is_file().then(|| meta.modified().ok()).flatten().map(|m| DateTime::<chrono::Utc>::from(m).min(chrono::Utc::now())) else {
-        return nada;
-    };
+    let meta = fs::symlink_metadata(&path).ok()?;
+    let stamp = meta.is_file().then(|| meta.modified().ok()).flatten().map(|m| DateTime::<chrono::Utc>::from(m).min(chrono::Utc::now()))?;
     let atendida = state.requests_seen.get(&key(pedida, repo_id)).and_then(|s| DateTime::parse_from_rfc3339(s).ok()).is_some_and(|s| s >= stamp);
     if !atendida || chrono::Utc::now().signed_duration_since(stamp) > chrono::Duration::hours(1) {
-        return nada;
+        return None;
     }
-    quien_de(&leer_solicitud(&path))
+    Some(quien_de(&leer_solicitud(&path)))
 }
 
 /// Una solicitud «Ahora» (como mucho 4 KiB: la carpeta la pueden escribir los usuarios).
@@ -1298,7 +1297,10 @@ pub fn run() -> i32 {
             Some(d) => derived_request(kind, &d.id),
             None => kind.to_string(),
         };
-        let PedidaPor { por, consola, enlace } = quien_pidio(&state, &repo.id, &pedida);
+        let a_mano = solicitud_atendida(&state, &repo.id, &pedida);
+        let PedidaPor { por, consola, enlace } = a_mano.clone().unwrap_or_default();
+        // 0.8.1 (E3, 15aa): la ficha de una prueba de restauración dice quién la lanzó.
+        let pedida_por = a_mano.map(|q| (q.por, q.consola));
         state.running = Some(RunningTask {
             repo_id: repo.id.clone(),
             kind: kind.into(),
@@ -1434,11 +1436,15 @@ pub fn run() -> i32 {
         // El estado y el historial los leen todos los usuarios: sin rutas.
         record.message = crate::web::local_message(&record.message);
         record.detail = record.detail.as_deref().map(crate::web::local_message);
-        crate::history::append(
+        let ficha = (kind == "restore_test").then(|| {
+            let (por, consola) = pedida_por.clone().unwrap_or_default();
+            crate::restore_test::ficha(pedida_por.is_some(), por.as_deref(), consola.as_deref(), &record)
+        });
+        crate::history::append_con(
             &crate::history::agent_file(),
             &crate::history::Entry {
                 kind: kind.into(),
-                origin: "agent".into(),
+                origin: if pedida_por.is_some() { "manual" } else { "agent" }.into(),
                 repo_id: repo.id.clone(),
                 repo_name: repo.name.clone(),
                 started: record.started.clone(),
@@ -1455,6 +1461,7 @@ pub fn run() -> i32 {
                 snapshot_id: record.snapshot_id.clone(),
                 ..Default::default()
             },
+            ficha,
         );
         state.runs.insert(task_key(kind, &repo), record);
         save_state(&mut state);
