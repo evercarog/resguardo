@@ -286,7 +286,7 @@ pub async fn cambiar_prestador(State(st): State<St>, u: Usuario, Json(b): Json<C
     };
     let png = match &b.logo {
         Some(x) => {
-            let bytes = B64.decode(x).map_err(|_| ErrorApi::datos("Logo no válido (base64)."))?;
+            let bytes = B64.decode(x).map_err(|_| ErrorApi::datos("El logo no se pudo leer: vuelve a elegirlo."))?;
             if bytes.len() > super::marca::MAX_LOGO {
                 return Err(ErrorApi::datos("El logo pesa demasiado: como mucho 200 KB."));
             }

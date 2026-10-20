@@ -161,7 +161,7 @@ fn cada_uno_recibe_lo_suyo_y_lo_repetido_se_agrupa() {
     let c = p.correos();
     assert_eq!(c.len(), 3);
     assert_eq!(c[2].0, "ana@ejemplo.com");
-    assert!(c[2].1.contains("no conecta con el servidor"), "{}", c[2].1);
+    assert!(c[2].1.contains("no conecta con la consola"), "{}", c[2].1);
     // El registro lo cuenta (y sin secretos).
     let r = p.st.db.notif_registro(None, 100).unwrap();
     assert_eq!(r.iter().filter(|e| e.estado == "enviado").count(), 4);
@@ -548,4 +548,22 @@ fn correo_con_la_marca_del_cliente() {
     let w = p.webhooks();
     assert_eq!(w.len(), 1);
     assert!(!w[0].to_string().contains("cid:") && !w[0].to_string().contains(&b64));
+}
+
+/// G4: títulos con nombres para personas: «cambio inusual» según lo que cuenta, y la orden
+/// con espera con su nombre legible y cuándo se aplica (nunca `aplicar_retencion_almacen`).
+#[test]
+fn titulos_legibles() {
+    let t = |m: &str| titulos_aviso("cambio_inusual", m, Some("PC-01"), "Cliente").0;
+    assert_eq!(t("«PC-01» se conectó también a este servidor: lo sigue gestionando además otra consola."), "«PC-01» se conectó también a esta consola");
+    assert_eq!(t("Se aplicó una orden que se había cancelado («pausar»): …"), "Se aplicó en «PC-01» una orden que se había cancelado");
+    assert_eq!(
+        t("La copia «Docs» añadió 4 GB y 900 archivos (lo normal: ~1 MB y ~3). La subida a la nube está frenada por precaución."),
+        "Subida a la nube frenada en «PC-01»: una copia cambió mucho más de lo normal"
+    );
+    assert_eq!(t("algo"), "Cambio inusual en «PC-01»");
+    assert_eq!(titulos_aviso("orden_destructiva", "", Some("PC-01"), "Cliente").0, "Orden con espera en «PC-01»");
+    let texto = texto_orden_con_espera("aplicar_retencion_almacen", "PC-01", Some(1_790_000_000));
+    assert!(texto.starts_with("«Aplicar la retención en el almacén» espera en «PC-01»: se aplica el ") && !texto.contains('_'), "{texto}");
+    assert!(texto_orden_con_espera("otra_cosa", "PC-01", None).contains("«otra cosa»"));
 }

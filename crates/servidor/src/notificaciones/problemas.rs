@@ -42,6 +42,13 @@ fn corto(v: &Value, max: usize) -> String {
     v.as_str().unwrap_or_default().chars().filter(|c| !c.is_control()).take(max).collect()
 }
 
+/// 15oo: el mensaje de un fallo, en palabras: los agentes anteriores mandaban lo que
+/// decía el motor de copias tal cual (en inglés, en JSON y cortado). La frase con qué
+/// hacer y, detrás de «Detalle técnico:», el texto original (el correo lo pone aparte).
+fn en_palabras(s: &str) -> String {
+    resguardo_motor::errores::en_una_linea(&resguardo_motor::errores::en_palabras(s))
+}
+
 fn id_ok(s: &str) -> bool {
     !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
@@ -60,7 +67,7 @@ pub fn de_informe(datos: &Value) -> (Vec<Problema>, Vec<String>) {
                     tipo: tipo.into(),
                     sujeto: sujeto.into(),
                     nombre,
-                    mensaje: corto(&v[mensaje], 300),
+                    mensaje: en_palabras(&corto(&v[mensaje], 300)),
                     cuando: crate::api::de_fecha(&marca),
                     marca,
                 });
@@ -131,7 +138,34 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
     let (mut p, mut sanos) = (Vec::new(), Vec::new());
     let e = &resumen["guarda_copias"]["espejo"];
     let resultado = corto(&e["resultado"], 300);
-    if e.is_object() && !resultado.is_empty() {
+    // G4: con trabajos (0.7.26), cada espejo con su aviso, su nombre y su destino; el
+    // global (sin sujeto) de antes queda arreglado.
+    let trabajos = e["trabajos"].as_array().filter(|t| !t.is_empty());
+    for t in trabajos.into_iter().flatten().take(MAX_PROBLEMAS) {
+        let id = corto(&t["id"], 64);
+        let r = corto(&t["resultado"], 300);
+        if !id_ok(&id) || r.is_empty() || t["activo"] == false {
+            continue;
+        }
+        match r.strip_prefix("ERROR") {
+            Some(resto) => {
+                let marca = corto(&t["ultima"], 40);
+                let nombre = Some(corto(&t["nombre"], 80)).filter(|n| !n.is_empty()).unwrap_or_else(|| id.clone());
+                p.push(Problema {
+                    tipo: "espejo_fallido".into(),
+                    sujeto: id,
+                    nombre: format!("{nombre}» a «{}", destino_espejo(&t["adonde"])),
+                    mensaje: en_palabras(resto.trim_start_matches([':', ' '])),
+                    cuando: crate::api::de_fecha(&marca),
+                    marca,
+                });
+            }
+            None => sanos.push(format!("espejo_fallido|{id}")),
+        }
+    }
+    if trabajos.is_some() {
+        sanos.push("espejo_fallido|".into());
+    } else if e.is_object() && !resultado.is_empty() {
         match resultado.strip_prefix("ERROR") {
             Some(resto) => {
                 let marca = corto(&e["ultima"], 40);
@@ -139,7 +173,7 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
                     tipo: "espejo_fallido".into(),
                     sujeto: String::new(),
                     nombre: String::new(),
-                    mensaje: resto.trim_start_matches([':', ' ']).to_string(),
+                    mensaje: en_palabras(resto.trim_start_matches([':', ' '])),
                     cuando: crate::api::de_fecha(&marca),
                     marca,
                 });
@@ -159,8 +193,10 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
                 p.push(Problema {
                     tipo: "retencion_fallida".into(),
                     sujeto,
-                    nombre: repo,
-                    mensaje: corto(&r["mensaje"], 300),
+                    // G4: el nombre del repositorio lo pone quien procesa el aviso
+                    // (`nombre_en_almacen`); el almacén solo sabe su carpeta.
+                    nombre: format!("{usuario}/{repo}"),
+                    mensaje: en_palabras(&corto(&r["mensaje"], 300)),
                     cuando: crate::api::de_fecha(&marca),
                     marca,
                 });
@@ -174,6 +210,38 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
     p.extend(mas);
     sanos.extend(mas_sanos);
     (p, sanos)
+}
+
+/// G4: a dónde sube un espejo, dicho sin rutas: la nube por su nombre, la zona o «un disco».
+fn destino_espejo(a: &Value) -> String {
+    match a["tipo"].as_str() {
+        Some("nube") => corto(&a["nube"], 60),
+        Some("zona") if a["carpeta"] == "principal" => "la zona principal del almacén".into(),
+        Some("zona") => format!("la zona {}", corto(&a["carpeta"], 40)),
+        _ => "un disco del almacén".into(),
+    }
+}
+
+/// G4: «Contabilidad» de «PC-01» para la retención de la carpeta `pc-01-3f2a/contabilidad`
+/// de un almacén, buscando el repositorio entre los equipos del cliente (`repositorios` y
+/// `destinos` de su resumen). Sin encontrarlo, la carpeta.
+pub fn nombre_en_almacen(carpeta: &str, equipos: &[(String, Value)]) -> String {
+    let Some((usuario, repo)) = carpeta.split_once('/') else { return carpeta.to_string() };
+    for (nombre_equipo, r) in equipos {
+        let destinos = r["destinos"].as_array().map(Vec::as_slice).unwrap_or_default();
+        for x in r["repositorios"].as_array().into_iter().flatten() {
+            let Some(d) = destinos.iter().find(|d| d["id"] == x["destino"] && d["tipo"] == "rest") else { continue };
+            let donde = d["donde"].as_str().unwrap_or_default();
+            let ruta = donde.split_once("://").map_or(donde, |(_, r)| r);
+            let primero = ruta.split('/').nth(1).unwrap_or_default();
+            let propia = x["ruta"].as_str().filter(|r| !r.is_empty()).or(x["id"].as_str()).unwrap_or_default();
+            if primero == usuario && propia == repo {
+                let n = x["nombre"].as_str().unwrap_or(repo);
+                return format!("{n}» de «{nombre_equipo}");
+            }
+        }
+    }
+    repo.to_string()
 }
 
 /// Para no apuntar lo mismo con cada informe.
@@ -194,7 +262,8 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
         "verificacion_fallida" => format!("la verificación de «{nombre}» en «{equipo}»"),
         "externa_fallida" => format!("la copia derivada de «{nombre}» en «{equipo}»"),
         "prueba_fallida" => format!("la prueba de restauración de «{nombre}» en «{equipo}»"),
-        "espejo_fallido" => format!("el espejo de «{equipo}»"),
+        "espejo_fallido" if nombre.is_empty() => format!("el espejo de «{equipo}»"),
+        "espejo_fallido" => format!("el espejo «{nombre}» en «{equipo}»"),
         "retencion_fallida" => format!("la retención de «{nombre}» en el almacén «{equipo}»"),
         "cadena_parada" => format!("la cadena de la copia «{nombre}» en «{equipo}»"),
         _ => format!("algo en «{equipo}»"),
@@ -301,12 +370,45 @@ mod tests {
             { "usuario": "c3", "repo": "nunca" }
         ] } }));
         assert_eq!(p.len(), 1);
-        assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str(), p[0].nombre.as_str()), ("retencion_fallida", "d8c60f71_r-oficina", "r-oficina"));
+        assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str(), p[0].nombre.as_str()), ("retencion_fallida", "d8c60f71_r-oficina", "d8c60f71/r-oficina"));
         assert_eq!(s, vec!["retencion_fallida|a1b2_r-caja".to_string()]);
-        let (t, ok) = titulos(&p[0], "ALMACEN");
-        assert_eq!(t, "Falló la retención de «r-oficina» en el almacén «ALMACEN»");
+        // G4: con el nombre del repositorio y su equipo, si se encuentra; si no, su carpeta.
+        let equipos = vec![(
+            "PC-01".to_string(),
+            json!({ "destinos": [{ "id": "d1", "tipo": "rest", "donde": "https://192.0.2.5:8000/d8c60f71/" }],
+                    "repositorios": [{ "id": "r-oficina", "nombre": "Oficina", "destino": "d1" }] }),
+        )];
+        let mut con = p[0].clone();
+        con.nombre = nombre_en_almacen(&p[0].nombre, &equipos);
+        let (t, ok) = titulos(&con, "ALMACEN");
+        assert_eq!(t, "Falló la retención de «Oficina» de «PC-01» en el almacén «ALMACEN»");
         assert_eq!(titulo_ok(&t), ok);
+        assert_eq!(nombre_en_almacen(&p[0].nombre, &[]), "r-oficina");
         assert!(tipos(Fuente::Resumen).contains(&"retencion_fallida"));
+    }
+
+    /// G4: cada trabajo de espejo con su aviso, su nombre y su destino.
+    #[test]
+    fn espejos_por_trabajo() {
+        let (p, s) = de_resumen(&json!({ "guarda_copias": { "espejo": { "resultado": "ERROR: espejo del Servidor de copias: 1 de 2", "trabajos": [
+            { "id": "t1", "nombre": "Bases a la nube", "activo": true, "adonde": { "tipo": "nube", "nube": "Nube Oficina", "carpeta": "x" },
+              "ultima": "2026-10-04T02:00:00+02:00", "resultado": "ERROR: espejo «Bases a la nube» en Nube Oficina:x: no se pudo subir" },
+            { "id": "t2", "nombre": "Disco E", "activo": true, "adonde": { "tipo": "carpeta", "carpeta": "E:\\Espejo" }, "resultado": "Espejo «Disco E» hecho" }
+        ] } } }));
+        assert_eq!(p.len(), 1);
+        assert_eq!((p[0].sujeto.as_str(), p[0].nombre.as_str()), ("t1", "Bases a la nube» a «Nube Oficina"));
+        assert_eq!(s, vec!["espejo_fallido|t2".to_string(), "espejo_fallido|".to_string()]);
+        assert_eq!(titulos(&p[0], "ALMACEN").0, "Falló el espejo «Bases a la nube» a «Nube Oficina» en «ALMACEN»");
+    }
+
+    /// 15oo: el error crudo de un agente anterior llega en palabras, con el original aparte.
+    #[test]
+    fn errores_en_palabras() {
+        let crudo = r#"Falló: {"message_type":"exit_error","code":1,"message":"Fatal: unable to save snapshot: Post [ruta]: dial tcp 192.0.2.10:8002: connectex: A socket operation"#;
+        let (p, _) =
+            de_informe(&json!({ "copias": [{ "id": "c1", "nombre": "Docs", "estado": "fallo", "cuando": "2026-10-04T10:00:00+02:00", "mensaje": crudo }] }));
+        assert!(p[0].mensaje.starts_with("Se cortó la conexión con el destino (192.0.2.10)"), "{}", p[0].mensaje);
+        assert!(p[0].mensaje.contains("Detalle técnico: Fatal: unable to save snapshot") && !p[0].mensaje.contains("message_type"), "{}", p[0].mensaje);
     }
 
     /// 14uu: los títulos de los datos básicos del equipo y su vuelta a la normalidad.

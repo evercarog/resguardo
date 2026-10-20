@@ -142,7 +142,7 @@ pub fn de_cliente(
         }
         .into();
         if q.estado == "sin_contacto" && !abiertos.iter().any(|i| i.tipo == "equipo_sin_contacto") {
-            r.atencion.push(format!("«{}» no conecta con el servidor", e.nombre));
+            r.atencion.push(format!("«{}» no conecta con la consola", e.nombre));
         }
         for i in abiertos {
             let veces = if i.veces > 1 { format!(" ({} veces)", i.veces) } else { String::new() };
@@ -381,6 +381,6 @@ pub(crate) mod tests {
         let srv = &r.equipos[0];
         assert_eq!((srv.copias_ok, srv.fallos, srv.ultima_ok), (1, 2, Some(hasta - 4 * 24 * 3600)));
         assert_eq!((r.copias_ok, r.fallos, r.bytes), (3, 2, 5_368_709_120 + 1_610_612_736));
-        assert_eq!(r.atencion, vec!["Falló la copia «SQL» en «Servidor» (2 veces)".to_string(), "«Portátil de Ana» no conecta con el servidor".to_string()]);
+        assert_eq!(r.atencion, vec!["Falló la copia «SQL» en «Servidor» (2 veces)".to_string(), "«Portátil de Ana» no conecta con la consola".to_string()]);
     }
 }

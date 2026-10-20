@@ -9,7 +9,7 @@ Del 27 sep al 4 oct 2026, 10:00.
 - PC-Contabilidad [Bien]: Última copia correcta: 4 oct, 09:00 · 2 copias correctas · 5,4 GB
 Necesita atención:
   · Falló la copia «SQL» en «Servidor» (2 veces)
-  · «Portátil de Ana» no conecta con el servidor
+  · «Portátil de Ana» no conecta con la consola
 Ver en la consola: https://copias.ejemplo.com:8443/c/cl
 Ancla de la actividad (n.º 1234, 4 oct, 09:00): resguardo-ancla:1:cl:1234:1791097200:5be1c0a7f3d2e4b6a8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5
 

@@ -424,8 +424,17 @@ fn alerta(m: &Mensaje) -> Option<(&Alerta, bool)> {
     }
 }
 
+/// 15oo: la frase y, aparte, el detalle técnico de un fallo («frase Detalle técnico: …»).
+pub fn frase_y_detalle(texto: &str) -> (&str, Option<&str>) {
+    match texto.split_once(resguardo_motor::errores::marca_detalle()) {
+        Some((f, d)) => (f.trim(), Some(d.trim()).filter(|d| !d.is_empty())),
+        None => (texto, None),
+    }
+}
+
 fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato, m: Option<&MarcaCorreo>) -> Salida {
     let enlace = enlace(f, &a.ruta);
+    let (frase, detalle) = frase_y_detalle(&a.texto);
     let asunto = if resuelto { format!("{} · {}", a.titulo, a.cliente) } else { format!("{}: {} · {}", a.severidad.texto(), a.titulo, a.cliente) };
     let mut datos = vec![("Cliente", a.cliente.clone())];
     if let Some(e) = &a.equipo {
@@ -435,9 +444,12 @@ fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato, m: Option<&MarcaCorreo>) 
     if let (Some(v), false) = (veces(a, f.zona), resuelto) {
         datos.push(("Veces", v));
     }
+    if let Some(d) = detalle {
+        datos.push(("Detalle técnico", d.to_string()));
+    }
     let mut texto = format!("{}\n\n", a.titulo);
-    if !a.texto.is_empty() {
-        let _ = write!(texto, "{}\n\n", a.texto);
+    if !frase.is_empty() {
+        let _ = write!(texto, "{frase}\n\n");
     }
     for (k, v) in &datos {
         let _ = writeln!(texto, "{k}: {v}");
@@ -452,14 +464,14 @@ fn una_alerta(a: &Alerta, resuelto: bool, f: &Formato, m: Option<&MarcaCorreo>) 
     let (tono, etiqueta) = if resuelto { (Tono::Bien, "Resuelto".to_string()) } else { (Tono::de(a.severidad), a.severidad.texto().to_string()) };
     let mut cuerpo = chip(tono, &etiqueta);
     cuerpo.push_str(&h1(&a.titulo));
-    if !a.texto.is_empty() {
-        cuerpo.push_str(&p(&a.texto));
+    if !frase.is_empty() {
+        cuerpo.push_str(&p(frase));
     }
     cuerpo.push_str(&filas(&datos));
     if let Some(u) = &enlace {
         cuerpo.push_str(&boton(u, "Ver en la consola"));
     }
-    let html = pagina(f, m, &asunto, &format!("{} · {}", a.texto, sitio(a)), &cuerpo);
+    let html = pagina(f, m, &asunto, &format!("{frase} · {}", sitio(a)), &cuerpo);
     Salida {
         evento: if resuelto { "recuperacion" } else { "aviso" },
         asunto,
@@ -491,8 +503,9 @@ fn grupo(alertas: &[(&Alerta, bool)], f: &Formato, m: Option<&MarcaCorreo>) -> S
     for (a, resuelto) in alertas.iter().take(50) {
         let etiqueta = if *resuelto { "Resuelto" } else { a.severidad.texto() };
         let _ = writeln!(texto, "- [{etiqueta}] {} ({}, {})", a.titulo, sitio(a), fecha_corta(a.hora, f.zona));
-        if !a.texto.is_empty() {
-            let _ = writeln!(texto, "  {}", a.texto);
+        let frase = frase_y_detalle(&a.texto).0;
+        if !frase.is_empty() {
+            let _ = writeln!(texto, "  {frase}");
         }
         let tono = if *resuelto { Tono::Bien } else { Tono::de(a.severidad) };
         let _ = write!(
@@ -504,10 +517,10 @@ fn grupo(alertas: &[(&Alerta, bool)], f: &Formato, m: Option<&MarcaCorreo>) -> S
             esc(&a.titulo),
             esc(&sitio(a)),
             esc(&fecha_corta(a.hora, f.zona)),
-            if a.texto.is_empty() {
+            if frase.is_empty() {
                 String::new()
             } else {
-                format!("<div class=\"t2\" style=\"margin-top:4px;font-size:13px;line-height:18px;color:#52525b\">{}</div>", esc(&a.texto))
+                format!("<div class=\"t2\" style=\"margin-top:4px;font-size:13px;line-height:18px;color:#52525b\">{}</div>", esc(frase))
             }
         );
     }
@@ -880,7 +893,7 @@ pub fn webhook(ms: &[Mensaje], s: &Salida, f: &Formato, id: &str, ahora: Ts) -> 
         .filter_map(alerta)
         .map(|(a, resuelto)| {
             json!({
-                "tipo": a.tipo, "severidad": a.severidad.clave(), "resuelto": resuelto, "titulo": a.titulo, "texto": a.texto,
+                "tipo": a.tipo, "severidad": a.severidad.clave(), "resuelto": resuelto, "titulo": a.titulo, "texto": frase_y_detalle(&a.texto).0,
                 "cliente": { "id": a.cliente_id, "nombre": a.cliente },
                 "equipo": a.equipo_id.as_ref().map(|id| json!({ "id": id, "nombre": a.equipo })),
                 "veces": a.veces, "desde": fecha(a.desde), "hora": fecha(a.hora), "enlace": enlace(f, &a.ruta),
