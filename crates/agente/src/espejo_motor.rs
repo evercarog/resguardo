@@ -789,6 +789,10 @@ fn copiar_a_carpeta(
 ) -> Result<(), String> {
     let mut vistas = HashSet::new();
     for a in archivos {
+        // 15hh: «Parar» (con la clave): lo copiado hasta aquí se queda; lo demás, la próxima vez.
+        if resguardo_motor::restic::cancelado_en_hilo() {
+            return Err(crate::parar::PARADO.into());
+        }
         // Nunca a través de un enlace (desviaría lo que escribe SYSTEM).
         if let Some(p) = enlace_en_el_camino(destino, &a.rel, &mut vistas) {
             return Err(format!("{} es un enlace: el espejo no escribe a través de enlaces.", p.display()));

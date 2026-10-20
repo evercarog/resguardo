@@ -86,6 +86,8 @@ fn resultado(r: &str) -> &'static str {
     match r {
         "ok" => "ok",
         "warning" => "aviso",
+        // 15hh: parada o pausada a petición (con la clave): ni bien ni fallo.
+        "stopped" => "parada",
         _ => "fallo",
     }
 }

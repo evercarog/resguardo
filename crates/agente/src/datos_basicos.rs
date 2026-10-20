@@ -236,6 +236,8 @@ mod sistema {
             "fabricante": texto(BIOS, "SystemManufacturer"),
             "modelo": texto(BIOS, "SystemProductName"),
             "arranque": arranque.to_rfc3339(),
+            // 15ll (2): tarjetas de red que el sistema puede apagar para ahorrar energía.
+            "red_ahorro": Some(crate::suspension::red_con_ahorro()).filter(|l| !l.is_empty()),
         })
     }
 

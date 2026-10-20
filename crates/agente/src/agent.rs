@@ -740,6 +740,29 @@ pub struct AgentState {
     /// F1 (14pp): la cuenta de los planes con fin (`<repo>#<plan>`).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub ends: HashMap<String, EndCount>,
+    /// 15hh (4): las copias pausadas con «Pausar» (`<repo>#<plan>`): no se hacen solas hasta
+    /// su hora (o, «a mano», hasta «Copiar ahora»), y entonces siguen solas una vez.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub pausas: HashMap<String, PausaCopia>,
+}
+
+/// 15hh (4): una copia en pausa: hasta cuándo (sin hora, «a mano») y quién la pausó.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PausaCopia {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hasta: Option<String>,
+    /// Cuándo se pausó (RFC 3339).
+    pub desde: String,
+    /// «por Ana desde la consola «Oficina»», como lo dice [`crate::parar::Peticion::quien`].
+    #[serde(default)]
+    pub quien: String,
+}
+
+impl PausaCopia {
+    /// La hora a la que sigue sola (`None`: a mano).
+    pub fn hasta_local(&self) -> Option<DateTime<Local>> {
+        self.hasta.as_deref().and_then(|h| DateTime::parse_from_rfc3339(h).ok()).map(|h| h.with_timezone(&Local))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1868,6 +1891,10 @@ pub fn plan_since(plan: &AgentPlan, key: &str, state: &AgentState) -> DateTime<L
 /// para; con `after_delay_min`, espera esos minutos desde que terminó la anterior.
 pub fn chain_turn(plan: &AgentPlan, state: &AgentState, since: DateTime<Local>, now: DateTime<Local>) -> ChainTurn {
     let Some(finished) = chain_previous_end(plan, state, since) else { return ChainTurn::Wait };
+    // 15hh: la anterior se paró o se pausó a petición: se espera a que termine de verdad.
+    if plan.after.as_ref().and_then(|a| state.runs.get(a)).is_some_and(|r| r.result == "stopped") {
+        return ChainTurn::Wait;
+    }
     let failed = plan.after.as_ref().and_then(|a| state.runs.get(a)).is_some_and(|r| r.result == "error");
     if failed && !plan.after_always {
         return ChainTurn::Stopped;
@@ -1954,6 +1981,11 @@ fn plan_turn(repo: &AgentRepo, plan: &AgentPlan, state: &AgentState, asked: bool
         return None;
     }
     let key = crate::plans::plan_key(&repo.id, &plan.id);
+    // 15hh (4): «Pausar»: nada hasta su hora; entonces sigue sola (una vez). «A mano»: hasta
+    // que se pida (`asked`, arriba).
+    if let Some(p) = state.pausas.get(&key) {
+        return p.hasta_local().filter(|h| now >= *h).map(|_| false);
+    }
     // F1: una copia completada ya no se hace sola (sí a mano, con «Copiar ahora»).
     if plan_finished(plan, &key, state, now) {
         return None;
@@ -1993,6 +2025,8 @@ pub fn wait_until_next_slot(max: std::time::Duration, now: DateTime<Local>) -> s
         // F1: «una sola vez», a su hora.
         .filter_map(|p| p.schedule.next_slot(now).into_iter().chain(p.end.as_ref().and_then(PlanEnd::once_local).filter(|t| *t > now)).min())
         .min();
+    // 15hh (4): la hora a la que sigue sola una copia pausada.
+    let next = next.into_iter().chain(load_state().pausas.values().filter_map(PausaCopia::hasta_local).filter(|t| *t > now)).min();
     // Plan 0.7.26: un «después de» con retraso que ya tiene su hora.
     let chained = if config.repos.iter().any(|r| r.plans.iter().any(|p| p.after_delay_min > 0)) { next_chain_slot(&config, &load_state(), now) } else { None };
     wait_for(next.into_iter().chain(chained).min(), now, max)
@@ -2074,7 +2108,16 @@ fn apply_result(record: &mut RunRecord, code: Option<i32>, summary: Option<&serd
 /// Límite de una copia programada.
 const BACKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20 * 3600);
 
-fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dyn FnMut(&serde_json::Value)) -> RunRecord {
+/// 15hh (5): el límite de subida de la copia a esta hora (KiB/s), según sus franjas
+/// (`config.copias[].limite`, como las derivadas). `None`: sin límite propio.
+pub fn limite_de_copia(repo_id: &str, plan_id: &str, now: DateTime<Local>) -> Option<u32> {
+    let v = crate::servidor_v2::cargar()?;
+    let k = v.config_v1.as_ref()?["copias"].as_array()?.iter().find(|k| k["repo"] == repo_id && k["id"] == plan_id)?.clone();
+    let (kib, franjas) = crate::gestion_v2::limite_de(&k).ok()??;
+    crate::franjas::limite_ahora(&franjas, kib, now)
+}
+
+fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, limite: Option<u32>, progress: &mut dyn FnMut(&serde_json::Value)) -> RunRecord {
     let started = Local::now();
     let access = Access {
         location: repo.location.clone(),
@@ -2085,6 +2128,11 @@ fn backup(repo: &AgentRepo, plan: &AgentPlan, secret: &Secret, progress: &mut dy
     };
     // --retry-lock: si el servidor está aplicando la retención, se espera.
     let mut args: Vec<String> = vec!["backup".into(), "--json".into(), "--retry-lock".into(), "30m".into()];
+    // 15hh (5): el límite de subida de esta copia a esta hora (manda sobre el del modo discreto).
+    if let Some(k) = limite {
+        args.push("--limit-upload".into());
+        args.push(k.to_string());
+    }
     // «Solo guardar si hay cambios»: sin cambios, restic no crea versión (y termina bien).
     if plan.skip_unchanged {
         args.push("--skip-if-unchanged".into());
@@ -2383,6 +2431,8 @@ pub fn run() -> i32 {
                     Some(cmd) => log(&format!("Copia de «{}» (plan «{}»), pedida a distancia desde {}…{quiet}", repo.name, plan.name, cmd.origin_label())),
                     None => log(&format!("Copia de «{}» (plan «{}»)…{quiet}", repo.name, plan.name)),
                 }
+                // 15hh (4): empieza (a su hora, pedida o al terminar su pausa): ya no está en pausa.
+                state.pausas.remove(&key);
                 state.running = Some(RunningCopy {
                     repo_id: repo.id.clone(),
                     plan_id: Some(plan.id.clone()),
@@ -2406,55 +2456,73 @@ pub fn run() -> i32 {
                 // La web muestra «Copiando…» mientras dura.
                 crate::web::report_started(&config, &secrets, &mut state);
                 let mut last_write = std::time::Instant::now();
-                let record = backup(repo, plan, secret, &mut |v| {
-                    // Cambio de fase (ganchos «Antes de copiar»): se guarda enseguida.
-                    if v["message_type"] == "phase" {
-                        if let Some(r) = state.running.as_mut() {
-                            r.phase = v["phase"].as_str().map(str::to_string);
-                            r.updated = Some(Local::now().to_rfc3339());
+                // 15hh: se puede parar o pausar (con la clave de administración) mientras copia.
+                let vigilancia = crate::parar::vigilar(&format!("copia:{}:{}", repo.id, plan.id));
+                let limite = limite_de_copia(&repo.id, &plan.id, Local::now());
+                let marca = vigilancia.marca().clone();
+                let record = restic::con_cancelacion(&marca, || {
+                    backup(repo, plan, secret, limite, &mut |v| {
+                        // Cambio de fase (ganchos «Antes de copiar»): se guarda enseguida.
+                        if v["message_type"] == "phase" {
+                            if let Some(r) = state.running.as_mut() {
+                                r.phase = v["phase"].as_str().map(str::to_string);
+                                r.updated = Some(Local::now().to_rfc3339());
+                            }
+                            let _ = write_json("state.json", &state);
+                            return;
                         }
-                        let _ = write_json("state.json", &state);
-                        return;
-                    }
-                    if last_write.elapsed() < PROGRESS_EVERY {
-                        return;
-                    }
-                    let seconds = last_write.elapsed().as_secs_f64();
-                    last_write = std::time::Instant::now();
-                    let now = Local::now().to_rfc3339();
-                    let io = restic::pid_en_marcha().and_then(|pid| crate::platform::io_proceso(pid).map(|x| (pid, x)));
-                    if let Some(r) = state.running.as_mut() {
-                        let bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
-                        let files_done = v["files_done"].as_u64().unwrap_or(0);
-                        if r.updated.is_some() && r.phase.is_none() {
-                            r.bytes_per_s = smoothed_rate(r.bytes_per_s, bytes_done.saturating_sub(r.bytes_done), seconds);
-                            r.files_per_s = smoothed_rate(r.files_per_s, files_done.saturating_sub(r.files_done), seconds);
-                            // Del mismo restic que la muestra anterior.
-                            if let (Some((p0, (l0, e0))), Some((p1, (l1, e1)))) = (io_antes, io) {
-                                if p0 == p1 {
-                                    r.read_bps = smoothed_rate(r.read_bps, l1.saturating_sub(l0), seconds);
-                                    r.upload_bps = smoothed_rate(r.upload_bps, e1.saturating_sub(e0), seconds);
+                        if last_write.elapsed() < PROGRESS_EVERY {
+                            return;
+                        }
+                        let seconds = last_write.elapsed().as_secs_f64();
+                        last_write = std::time::Instant::now();
+                        let now = Local::now().to_rfc3339();
+                        let io = restic::pid_en_marcha().and_then(|pid| crate::platform::io_proceso(pid).map(|x| (pid, x)));
+                        if let Some(r) = state.running.as_mut() {
+                            let bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
+                            let files_done = v["files_done"].as_u64().unwrap_or(0);
+                            if r.updated.is_some() && r.phase.is_none() {
+                                r.bytes_per_s = smoothed_rate(r.bytes_per_s, bytes_done.saturating_sub(r.bytes_done), seconds);
+                                r.files_per_s = smoothed_rate(r.files_per_s, files_done.saturating_sub(r.files_done), seconds);
+                                // Del mismo restic que la muestra anterior.
+                                if let (Some((p0, (l0, e0))), Some((p1, (l1, e1)))) = (io_antes, io) {
+                                    if p0 == p1 {
+                                        r.read_bps = smoothed_rate(r.read_bps, l1.saturating_sub(l0), seconds);
+                                        r.upload_bps = smoothed_rate(r.upload_bps, e1.saturating_sub(e0), seconds);
+                                    }
                                 }
                             }
+                            r.phase = None;
+                            r.percent = v["percent_done"].as_f64();
+                            r.files_done = v["files_done"].as_u64().unwrap_or(0);
+                            r.total_files = v["total_files"].as_u64().unwrap_or(0);
+                            r.bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
+                            r.total_bytes = v["total_bytes"].as_u64().unwrap_or(0);
+                            r.seconds_remaining = v["seconds_remaining"].as_u64();
+                            r.updated = Some(now.clone());
                         }
-                        r.phase = None;
-                        r.percent = v["percent_done"].as_f64();
-                        r.files_done = v["files_done"].as_u64().unwrap_or(0);
-                        r.total_files = v["total_files"].as_u64().unwrap_or(0);
-                        r.bytes_done = v["bytes_done"].as_u64().unwrap_or(0);
-                        r.total_bytes = v["total_bytes"].as_u64().unwrap_or(0);
-                        r.seconds_remaining = v["seconds_remaining"].as_u64();
-                        r.updated = Some(now.clone());
-                    }
-                    io_antes = io;
-                    // El agente sigue vivo aunque la copia sea larga.
-                    state.last_tick = Some(now);
-                    let _ = write_json("state.json", &state);
+                        io_antes = io;
+                        // El agente sigue vivo aunque la copia sea larga.
+                        state.last_tick = Some(now);
+                        let _ = write_json("state.json", &state);
+                    })
                 });
                 state.running = None;
+                // 15hh: parada o pausada a petición: no es un fallo ni se reintenta; dice quién.
+                let mut record = record;
+                if let Some(p) = vigilancia.peticion() {
+                    record.result = "stopped".into();
+                    record.message = p.texto();
+                    record.detail = None;
+                    if p.pausa() {
+                        state.pausas.insert(key.clone(), PausaCopia { hasta: p.hasta.clone(), desde: Local::now().to_rfc3339(), quien: p.quien() });
+                    }
+                }
+                drop(vigilancia);
+                let record = record;
                 let tag = match record.result.as_str() {
                     "ok" => "",
-                    "warning" => "AVISO: ",
+                    "warning" | "stopped" => "AVISO: ",
                     _ => "ERROR: ",
                 };
                 log(&format!("{tag}«{}» (plan «{}»): {}", repo.name, plan.name, record.message));
@@ -2531,7 +2599,7 @@ pub fn run() -> i32 {
                     }
                 }
                 // F1: cuenta para su fin (si tiene) y, si llega, queda completada.
-                if note_end(plan, &key, &mut state, record.result != "error", Local::now()) {
+                if note_end(plan, &key, &mut state, !matches!(record.result.as_str(), "error" | "stopped"), Local::now()) {
                     log(&format!("«{}» (plan «{}») completada: hizo lo que tenía previsto. Sus versiones se quedan.", repo.name, plan.name));
                 }
                 done_keys.push(key.clone());
@@ -2969,6 +3037,42 @@ pub mod tests {
         // Una fecha de fin ilegible no deja las copias paradas para siempre.
         repo.pause = Some(Pause { since: "x".into(), until: Some("mañana".into()) });
         assert!(repo.active_pause(now).is_none());
+    }
+
+    /// 15hh (4): «Pausar» una copia en marcha: nada hasta su hora (ni lo programado ni los
+    /// reintentos), y entonces sigue sola; «a mano», solo si se pide. Parada o pausada no
+    /// cuenta como fallida (no hay reintento) y la cadena espera.
+    #[test]
+    fn pausar_una_copia_sigue_sola_a_su_hora() {
+        let repo = repo_cada_hora();
+        let plan = repo.plans[0].clone();
+        let now = at("2026-09-30 10:30");
+        let mut state = AgentState::default();
+        let parada = RunRecord {
+            started: at("2026-09-30 10:00").to_rfc3339(),
+            finished: at("2026-09-30 10:20").to_rfc3339(),
+            result: "stopped".into(),
+            ..Default::default()
+        };
+        state.runs.insert("r#p".into(), parada);
+        state.pausas.insert("r#p".into(), PausaCopia { hasta: Some(at("2026-09-30 22:00").to_rfc3339()), desde: now.to_rfc3339(), quien: "por Ana".into() });
+        assert_eq!(plan_turn(&repo, &plan, &state, false, now), None, "en pausa, ni su hora");
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 21:59")), None);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 22:00")), Some(false), "a su hora sigue sola");
+        assert_eq!(plan_turn(&repo, &plan, &state, true, now), Some(false), "«Copiar ahora» la reanuda ya");
+        // A mano: solo si se pide.
+        state.pausas.insert("r#p".into(), PausaCopia { hasta: None, desde: now.to_rfc3339(), quien: String::new() });
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-10-07 10:30")), None);
+        assert_eq!(plan_turn(&repo, &plan, &state, true, now), Some(false));
+        // Parada (sin pausa): no es un fallo, así que no hay reintento; su próxima hora, como siempre.
+        state.pausas.clear();
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 10:25")), None);
+        assert_eq!(plan_turn(&repo, &plan, &state, false, at("2026-09-30 11:01")), Some(false));
+        // Una copia «después de» esta espera a que termine de verdad.
+        let mut tras = plan.clone();
+        tras.id = "q".into();
+        tras.after = Some("r#p".into());
+        assert_eq!(chain_turn(&tras, &state, at("2026-09-30 09:00"), now), ChainTurn::Wait);
     }
 
     /// F1 (14pp): un plan con fin cuenta sus copias correctas y, al llegar, queda

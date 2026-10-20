@@ -359,7 +359,7 @@ impl Trabajo {
     }
 
     pub fn ok(&self) -> bool {
-        self.estado.resultado.as_deref().is_some_and(|r| !r.starts_with("ERROR"))
+        self.estado.resultado.as_deref().is_some_and(|r| !r.starts_with("ERROR") && !r.starts_with(crate::parar::PREFIJO_PARADA))
     }
 
     /// 14c: ¿nunca ha terminado bien una vuelta? (Quitarlo o cambiarlo no reduce la
@@ -1148,7 +1148,9 @@ pub struct Vuelta<'a> {
 pub fn anotar_vuelta(t: &mut Trabajo, texto: &str, v: &Vuelta, resumenes: &[crate::espejo_motor::Resumen]) {
     anotar_resultado(t, texto, v.fin, resumenes);
     let error = texto.starts_with("ERROR");
-    if !error {
+    // 15hh: parada a petición: ni bien ni fallida.
+    let parada = texto.starts_with(crate::parar::PREFIJO_PARADA);
+    if !error && !parada {
         t.estado.bien = Some(v.fin.to_string());
         t.estado.registro = true;
     }
@@ -1174,7 +1176,14 @@ pub fn anotar_vuelta(t: &mut Trabajo, texto: &str, v: &Vuelta, resumenes: &[crat
     t.estado.subidas.push(Subida {
         inicio: v.inicio.to_string(),
         fin: v.fin.to_string(),
-        resultado: if error { "error" } else { "ok" }.into(),
+        resultado: if error {
+            "error"
+        } else if parada {
+            "parada"
+        } else {
+            "ok"
+        }
+        .into(),
         motivo: v.motivo.clave().into(),
         archivos: suma(&|r| r.copiados),
         bytes: suma(&|r| r.bytes),
@@ -1456,8 +1465,12 @@ pub fn hacer_equipo(t: &Trabajo, motivo: Motivo, locales: &[(String, PathBuf)]) 
         hechos.push((Some(id), texto));
     }
     let completo = hechos.iter().all(|(_, r)| r.is_ok());
-    let texto = texto_de(t, motivo, &hechos);
-    if texto.starts_with("ERROR") {
+    let mut texto = texto_de(t, motivo, &hechos);
+    // 15hh: parado a petición (con la clave): lo subido se queda; ni bien ni fallido.
+    if let Some(p) = guarda.parada() {
+        texto = format!("{} {}", crate::parar::PREFIJO_PARADA, p.texto());
+        guarda.terminar("parada");
+    } else if texto.starts_with("ERROR") {
         drop(guarda);
     } else {
         guarda.terminar("ok");

@@ -461,6 +461,14 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Client
             crate::agente::refrescar_bandeja();
             Ok(json!({ "escritorio": e.a_json() }))
         }
+        // 15hh: parar o pausar lo que está en marcha, con la clave (también en un equipo
+        // gestionado: queda en el historial de todas sus consolas, con la cuenta que lo pidió).
+        "parar" => {
+            let quien = quien_aprueba(cliente, pet);
+            let m = crate::parar::orden(&pet["parar"], Some(&quien), None)?;
+            crate::agente::refrescar_bandeja();
+            Ok(json!({ "mensaje": m }))
+        }
         _ if !local => Err("En un equipo gestionado por una consola, las copias se cambian en la consola.".into()),
         "estado_local" => Ok(estado_local(&v)),
         "crear_repositorio" => {

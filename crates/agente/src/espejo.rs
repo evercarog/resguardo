@@ -807,8 +807,12 @@ pub fn hacer(t: &crate::espejo_trabajos::Trabajo, motivo: crate::espejo_trabajos
         x
     });
     let completo = !resumenes.is_empty();
-    let texto = et::texto_de(t, motivo, &[(None, texto)]);
-    if texto.starts_with("ERROR") {
+    let mut texto = et::texto_de(t, motivo, &[(None, texto)]);
+    // 15hh: parado a petición (con la clave): lo subido se queda; ni bien ni fallido.
+    if let Some(p) = guarda.parada() {
+        texto = format!("{} {}", crate::parar::PREFIJO_PARADA, p.texto());
+        guarda.terminar("parada");
+    } else if texto.starts_with("ERROR") {
         drop(guarda);
     } else {
         guarda.terminar("ok");

@@ -70,6 +70,7 @@ pub mod managed;
 pub mod nombres;
 pub mod nube;
 pub mod nube_anular;
+pub mod parar;
 pub mod path_sistema;
 #[cfg(test)]
 mod perder_consola_it;
@@ -79,6 +80,7 @@ pub mod progreso_v2;
 #[cfg(test)]
 mod propiedades;
 pub mod protection;
+pub mod suspension;
 // Plan 0.8.0, E4 (14j): prueba de restauración desde un espejo, hecha por el equipo dueño.
 pub mod prueba_espejo;
 pub mod remote;

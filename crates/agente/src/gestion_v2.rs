@@ -738,6 +738,14 @@ pub struct Copia {
     /// F1: cuándo termina («Una sola vez», tras N copias o el día …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub termina: Option<Termina>,
+    /// 15hh (5, `admite: "parar"`): la velocidad de subida según la hora, `{ kib?, franjas? }`
+    /// como en las copias derivadas (14t). Un agente anterior lo ignora.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limite: Option<Value>,
+    /// 15ll (`admite: "sin_suspension"`): no pedir al sistema que no se suspenda mientras
+    /// copia (equipos con batería). Sin el campo, sí se pide.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub permitir_suspension: bool,
 }
 
 /// F1 (14pp): cuándo termina una copia. Al terminar queda **completada**: no se
@@ -1197,6 +1205,10 @@ pub fn aplicar_config_desde(v: &mut Vinculo, c: &Value, en_equipo: bool) -> Resu
         k.valida_termina()?;
         plan_de(k)?;
         k.valida_inicio()?;
+        // 15hh (5): sus franjas de velocidad, como las de una derivada.
+        if let Some(l) = &k.limite {
+            limite_de(&json!({ "limite": l })).map_err(|e| format!("Copia «{}»: {e}", k.nombre))?;
+        }
     }
     validar_cadenas(&cfg.copias)?;
     for (repo, va) in cfg.verificaciones.iter().flatten() {
@@ -1279,6 +1291,8 @@ fn estado_de(result: &str) -> &'static str {
     match result {
         "ok" => "ok",
         "warning" => "aviso",
+        // 15hh: parada o pausada a petición (con la clave): ni bien ni fallo.
+        "stopped" => "parada",
         _ => "fallo",
     }
 }
@@ -1406,6 +1420,15 @@ pub const ADMITE: &[&str] = &[
     // la orden `bases_sqlserver` («Ver las bases de la instancia») y el aviso (no fallo) cuando
     // solo falta el permiso para verificar un volcado.
     "sqlserver_todas",
+    // 0.8.1 (15hh): la orden `parar { clave, pausa? }`, `parar` y `pausable` en el progreso,
+    // `copias[].pausa` en el resumen y `config.copias[].limite` (franjas de velocidad).
+    crate::parar::ADMITE,
+    // 0.8.1 (15q): `quitar_repositorio { repo, vacio: true }` solo con la clave de administración
+    // (el equipo comprueba que no tiene versiones).
+    "quitar_vacio",
+    // 0.8.1 (15ll): `config.copias[].permitir_suspension` y `evitando_suspension` en el progreso;
+    // `datos_basicos.red_ahorro` (las tarjetas de red que el sistema puede apagar).
+    crate::suspension::ADMITE,
     // 0.8.0 plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
     // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
     // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
@@ -1466,6 +1489,11 @@ pub fn resumen(v: &Vinculo) -> Value {
                 "inicio": k.inicio, "retraso_min": k.retraso_min,
                 // F1 (14pp): solo a mano, cuándo termina, cuántas lleva y si ya terminó.
                 "a_mano": k.a_mano.then_some(true),
+                // 15hh (4): en pausa con «Pausar»: hasta cuándo (sin hora: a mano) y quién la pausó.
+                "pausa": estado.pausas.get(&crate::plans::plan_key(&k.repo, &k.id)).map(|p| json!({ "hasta": p.hasta, "desde": p.desde, "quien": p.quien })),
+                // 15hh (5) y 15ll: su límite de velocidad y si deja suspender el equipo.
+                "limite": k.limite,
+                "permitir_suspension": k.permitir_suspension.then_some(true),
                 "termina": k.termina.as_ref().filter(|t| t.algo()),
                 "hechas": fin_de(&config, &estado, k).map(|f| f.0),
                 "completada": fin_de(&config, &estado, k).and_then(|f| f.1),
@@ -2035,6 +2063,25 @@ fn texto_destino_quitado(d: &Destino) -> String {
         };
     }
     format!("Destino «{nombre}» quitado del equipo, con sus credenciales. Lo guardado allí se queda.")
+}
+
+/// 15q: ¿de verdad no tiene ninguna versión? (Para quitarlo solo con la clave de
+/// administración.) Si en el destino no hay repositorio, tampoco hay nada que perder.
+pub fn comprobar_vacio(v: &Vinculo, repo: &str) -> Result<(), String> {
+    use resguardo_motor::restic;
+    let acc = acceso(v, repo)?;
+    let out = restic::run_raw(&acc, &["snapshots", "--json", "--no-lock"], restic::QUERY_TIMEOUT)
+        .map_err(|e| format!("No se pudo comprobar que esté vacío ({e}). Quítalo con su contraseña."))?;
+    match out.code {
+        Some(0) => match restic::parse_snapshots(&out.stdout)?.len() {
+            0 => Ok(()),
+            1 => Err("Tiene 1 versión: para quitarlo hace falta también su contraseña.".into()),
+            n => Err(format!("Tiene {n} versiones: para quitarlo hace falta también su contraseña.")),
+        },
+        // Sin repositorio en el destino (nunca se llegó a crear o ya no está).
+        Some(10) => Ok(()),
+        code => Err(format!("No se pudo comprobar que esté vacío ({}). Quítalo con su contraseña.", restic::exit_error(code, &out.stderr))),
+    }
 }
 
 pub fn dejar_de_copiar(v: &mut Vinculo, repo: &str, olvidar: bool, quitar_destino_vacio: bool) -> Result<String, String> {
@@ -3412,6 +3459,8 @@ mod tests {
             retraso_min: None,
             a_mano: false,
             termina: None,
+            limite: None,
+            permitir_suspension: false,
         };
         let p = plan_de(&k).unwrap();
         assert!(p.skip_unchanged, "encendido por defecto");
@@ -3448,6 +3497,8 @@ mod tests {
             retraso_min: None,
             a_mano: false,
             termina: None,
+            limite: None,
+            permitir_suspension: false,
         };
         // Viernes 2 de octubre de 2026, 14:00: la siguiente, a las 19:00; después, el lunes.
         let vie = chrono::Local.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();

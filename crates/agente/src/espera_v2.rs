@@ -167,6 +167,9 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "restaurar" => format!("Restaurar «{}» reemplazando los archivos originales", r()),
         "comprobar_contrasena" => format!("Comprobar la contraseña de «{}»", r()),
         "pausar" => "Pausar las copias".to_string(),
+        // 15hh: lo que está en marcha (sin rutas: la clave lleva ids).
+        "parar" if c.get("pausa").is_some_and(|p| !p.is_null()) => "Pausar lo que estaba en marcha".to_string(),
+        "parar" => "Parar lo que estaba en marcha".to_string(),
         "baja_equipo" => "Dar de baja el equipo".to_string(),
         "desvincular" => "Dejar de copiar y desvincular el equipo".to_string(),
         "config" => "Cambiar las copias (quedan sin ninguna activa)".to_string(),

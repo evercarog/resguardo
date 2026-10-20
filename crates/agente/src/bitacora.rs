@@ -99,6 +99,8 @@ fn resultado(r: &str) -> &'static str {
     match r {
         "ok" => "ok",
         "warning" => "aviso",
+        // 15hh: parada o pausada a petición (con la clave): ni bien ni fallo.
+        "stopped" => "parada",
         _ => "fallo",
     }
 }
@@ -188,6 +190,8 @@ pub fn resumir(entradas: Vec<Value>) -> Vec<Value> {
         let campo = match e["resultado"].as_str() {
             Some("fallo") => "fallidas",
             Some("sin_cambios") => "sin_cambios",
+            // 15hh: las paradas a petición no son correctas ni fallidas.
+            Some("parada") => "paradas",
             _ => "ok",
         };
         r[campo] = json!(r[campo].as_u64().unwrap_or(0) + 1);
@@ -408,7 +412,13 @@ pub fn entrada_de_historial(e: &crate::history::Entry) -> Option<(&'static str, 
 /// lo que ocupa en el destino y cuánto tardó), campos opcionales.
 pub fn espejo(hora: &str, resultado_texto: &str, trabajo: Option<(&crate::espejo_trabajos::Trabajo, Option<&crate::espejo_trabajos::Subida>)>) {
     let fallo = resultado_texto.starts_with("ERROR");
-    let mut e = json!({ "hora": hora, "resultado": if fallo { "fallo" } else { "ok" }, "mensaje": corto(resultado_texto) });
+    // 15hh: parada a petición (con la clave): ni bien ni fallida.
+    let (resultado, texto) = match resultado_texto.strip_prefix(crate::parar::PREFIJO_PARADA) {
+        Some(t) => ("parada", t.trim()),
+        None if fallo => ("fallo", resultado_texto),
+        None => ("ok", resultado_texto),
+    };
+    let mut e = json!({ "hora": hora, "resultado": resultado, "mensaje": corto(texto) });
     if let Some((t, s)) = trabajo {
         e["espejo"] = t.id.clone().into();
         e["nombre"] = t.nombre.clone().into();

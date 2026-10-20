@@ -168,6 +168,12 @@ pub struct Actividad {
     pub quien: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub primera: bool,
+    /// 15hh: con qué clave se para (`parar`, con la clave de administración), si se puede.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parar: Option<String>,
+    /// 15hh: si además se puede pausar (seguir sola a una hora).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pausable: bool,
 }
 
 /// Lo último terminado de cada tarea.
@@ -233,6 +239,8 @@ pub fn actividad_copia(r: &crate::agent::RunningCopy, nombre: &str, ahora: DateT
         archivos_s: t["archivos_s"].as_u64(),
         quedan_s: t["quedan_s"].as_u64(),
         empezo: r.started.clone(),
+        parar: t["parar"].as_str().map(str::to_string),
+        pausable: t["pausable"] == true,
         ..Default::default()
     })
 }
@@ -255,6 +263,7 @@ pub fn actividad_tarea(t: &crate::tasks::RunningTask, nombre: &str) -> Actividad
         subida: t.upload_bps,
         quedan_s: t.eta_s,
         empezo: t.started.clone(),
+        parar: Some(crate::progreso_v2::clave_tarea(t)),
         ..Default::default()
     }
 }
@@ -275,6 +284,11 @@ pub mod en_marcha {
         id: String,
         resultado: Option<String>,
         desde: std::time::Instant,
+        /// 15hh: se puede parar mientras dura (`parar { clave: "<tipo>:<clave>" }`): restic y
+        /// rclone de este hilo se paran con esta marca.
+        parar: Option<crate::parar::Vigilancia>,
+        /// La marca de «Parar» que tenía el hilo antes (se vuelve a poner al soltarla).
+        antes: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     }
 
     /// [`empezar`] con quién la pidió y desde qué consola (13f).
@@ -295,7 +309,7 @@ pub mod en_marcha {
         let n = CONTADOR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let ahora = chrono::Local::now().to_rfc3339();
         let id = format!("{tipo}:{clave}@{ahora}#{n}");
-        let a = Actividad {
+        let mut a = Actividad {
             id: id.clone(),
             clave: format!("{tipo}:{clave}"),
             tipo: tipo.into(),
@@ -304,10 +318,13 @@ pub mod en_marcha {
             empezo: ahora,
             ..Default::default()
         };
+        a.parar = crate::parar::clave_valida(&a.clave).then(|| a.clave.clone());
+        let parar = crate::parar::clave_valida(&a.clave).then(|| crate::parar::vigilar(&a.clave));
+        let antes = parar.as_ref().map(|p| resguardo_motor::restic::poner_cancelacion_hilo(Some(p.marca().clone()))).unwrap_or_default();
         if let Ok(mut v) = EN_CURSO.lock() {
             v.push(a);
         }
-        Guarda { id, resultado: None, desde: std::time::Instant::now() }
+        Guarda { id, resultado: None, desde: std::time::Instant::now(), parar, antes }
     }
 
     impl Guarda {
@@ -372,10 +389,18 @@ pub mod en_marcha {
         pub fn terminar(mut self, resultado: &str) {
             self.resultado = Some(resultado.into());
         }
+
+        /// 15hh: ¿se pidió pararla? Con quién y desde dónde.
+        pub fn parada(&self) -> Option<crate::parar::Peticion> {
+            self.parar.as_ref().and_then(crate::parar::Vigilancia::peticion)
+        }
     }
 
     impl Drop for Guarda {
         fn drop(&mut self) {
+            if self.parar.take().is_some() {
+                resguardo_motor::restic::poner_cancelacion_hilo(self.antes.take());
+            }
             let Ok(mut v) = EN_CURSO.lock() else { return };
             let Some(i) = v.iter().position(|a| a.id == self.id) else { return };
             let a = v.remove(i);
