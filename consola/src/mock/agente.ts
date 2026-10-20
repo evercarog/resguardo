@@ -111,6 +111,7 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       ...(c.etiquetas?.length ? { etiquetas: c.etiquetas } : {}),
       ...(c.grupos_exclusiones?.length ? { grupos_exclusiones: c.grupos_exclusiones } : {}),
       ...(c.mayores_mb ? { mayores_mb: c.mayores_mb } : {}),
+      ...(c.al_reconectar ? { al_reconectar: true } : {}),
       // CONTABILIDAD (agente 0.7.2) vuelca sus bases de SQL Server antes de copiar «Ventas» (14gg: varias).
       gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
@@ -124,6 +125,8 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       ...(x.externa ? { externa: { destino: (r.destinos ?? []).find((d) => d.nombre === x.externa!.destino)?.id ?? x.externa.destino, hora: x.externa.hora } } : {}),
     })),
     destinos: r.destinos ?? [],
+    // 15ii: un equipo que entra y sale.
+    ...(r.movil ? { movil: r.movil } : {}),
     verificacion: { cada_dias: 7, porcentaje: 5 },
     bandeja: { visible: true, avisos: true },
     // v1.28: la verificación automática que ya tiene (solo un agente que la entiende).
@@ -201,6 +204,8 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       retraso_min: c.retraso_min ?? null,
       // 15v: las etiquetas de sus versiones (solo con un agente que las entiende).
       ...(previo.admite?.includes("etiquetas_copia") ? { etiquetas: c.etiquetas?.length ? c.etiquetas : null } : {}),
+      // 15ii: además, al volver a conectarse.
+      ...(previo.admite?.includes("equipos_moviles") ? { al_reconectar: c.al_reconectar ? true : null } : {}),
       // 15y: los grupos de exclusiones que usa (con sus reglas) y el tamaño máximo.
       ...(previo.admite?.includes("grupos_en_copias") ? { grupos_exclusiones: c.grupos_exclusiones?.length ? c.grupos_exclusiones : null, mayores_mb: c.mayores_mb ?? null } : {}),
       // Plan 0.8.0, F1: como el agente con `admite: "termina"` (la cuenta vuelve a cero si cambia la regla).
@@ -412,6 +417,12 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         if (conReglas && errorReglas(reglasDe(v.horario!))) return resultado(e, o, "fallida", `Horario de la verificación: ${errorReglas(reglasDe(v.horario!))}`);
         if ((!conReglas && !(v.cada_dias >= 1 && v.cada_dias <= 31)) || !(v.porcentaje >= 0 && v.porcentaje <= 100)) return resultado(e, o, "fallida", "La verificación automática va de cada día a cada 31 días.");
       }
+      // 15ii: un equipo que entra y sale (sin el campo, el de antes).
+      if (e.resumen?.admite?.includes("equipos_moviles")) {
+        const m = cfg.movil;
+        if (m && ((m.margen_dias != null && !(m.margen_dias >= 1 && m.margen_dias <= 90)) || (m.bateria_min != null && !(m.bateria_min >= 0 && m.bateria_min <= 95)))) return resultado(e, o, "fallida", "El margen va de 1 a 90 días y la batería mínima, de 0 % a 95 %.");
+        if (m) e.resumen.movil = m;
+      } else delete cfg.movil;
       e.resumen = resumenDe(e, cfg);
       guardarConfig(e, cfg, plana.seq);
       // Plan 0.8.0, F1: «Una sola vez · Ahora»: el equipo la hace en su próxima vuelta y queda completada.

@@ -230,9 +230,23 @@ export interface DatosEquipo {
   observacion?: CampoEquipo<string>;
 }
 
+/** 0.8.1 (15ii): un equipo que entra y sale (`config.movil`, `resumen.movil`). */
+export interface MovilEquipo {
+  /** «Sale de la oficina»: sin conexión no es un fallo hasta pasar el margen. */
+  sale_oficina?: boolean;
+  /** Días sin copia antes de avisar (sin él, 7). */
+  margen_dias?: number | null;
+  /** No empezar sola con la batería por debajo de este % (sin enchufar). */
+  bateria_min?: number | null;
+  /** Permitir empezar con una conexión medida (datos del móvil). */
+  permitir_medida?: boolean;
+}
+
 export interface ResumenEquipo {
   /** v1.28: lo nuevo que entiende el agente («retencion_plazos», «verificacion_auto», «almacen_propio»; v1.36 «escritorio»). */
   admite?: string[];
+  /** 0.8.1 (15ii, `admite: "equipos_moviles"`): si sale de la oficina, su margen, la batería y la conexión medida. */
+  movil?: MovilEquipo | null;
   /** v1.36: la ventana y los avisos en el equipo (docs/agente-ventana.md), y cuándo se cambiaron allí. */
   escritorio?: Escritorio | null;
   escritorio_cambiado_en_equipo?: string | null;
@@ -476,7 +490,9 @@ export interface CopiaResumen {
   horario?: string | Horario;
   carpetas?: number;
   /** 15jj: `interrumpida`, quedó «en curso» y no terminó (con `estado: "fallo"`). */
-  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo"; bytes?: number; mensaje?: string | null; interrumpida?: boolean } | null;
+  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo"; bytes?: number; mensaje?: string | null; interrumpida?: boolean; fuera?: boolean } | null;
+  /** 0.8.1 (15ii): además, al volver a conectarse. */
+  al_reconectar?: boolean | null;
   proxima?: string | null;
   activa?: boolean;
   /** v1.16 (agente ≥ 0.7.7): si guarda versión solo cuando algo cambió. */
@@ -950,7 +966,7 @@ export interface Informe {
   datos: {
     repos?: RepoInforme[];
     version?: string;
-    copias?: { id: string; repo?: string; nombre?: string; estado?: string; cuando?: string; bytes?: number; archivos?: number; duracion_s?: number; mensaje?: string | null; ganchos?: ResultadoGancho[] }[];
+    copias?: { id: string; repo?: string; nombre?: string; estado?: string; cuando?: string; bytes?: number; archivos?: number; duracion_s?: number; mensaje?: string | null; ganchos?: ResultadoGancho[]; fuera?: boolean }[];
     /** v1.12: la próxima vez que toca cada copia (null: desactivada o en pausa sin fecha). */
     proximas?: Record<string, string | null>;
     disco?: { libre?: number; total?: number };
@@ -1402,6 +1418,8 @@ export interface CopiaConfig {
   mayores_mb?: number | null;
   /** 15y: tipos que se copian aunque pasen del límite (`*.pst`). */
   excepto_tamano?: string[];
+  /** 0.8.1 (15ii, `admite: "equipos_moviles"`): además del horario, una vez al volver a conectarse. */
+  al_reconectar?: boolean;
 }
 
 /** 15y: un grupo de exclusiones aplicado a una copia. */
@@ -1471,6 +1489,8 @@ export interface Configuracion {
   escritorio?: Escritorio;
   /** v1.36: lo puso el equipo al cambiar algo con la clave en su ventana. */
   cambiado_en_equipo?: string;
+  /** 0.8.1 (15ii): un equipo que entra y sale. */
+  movil?: MovilEquipo | null;
 }
 
 /** v1.36: la ventana del agente y sus avisos. */

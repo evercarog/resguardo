@@ -54,7 +54,7 @@ export function filasCopias(
       const repo = e.resumen?.repositorios?.find((r) => r.id === k.repo) ?? null;
       const vuelta = ultimaVuelta(k, informe);
       const ultimaVersion = infCopia(informeDe(informe, k.repo), k.id)?.versiones[0];
-      const estado = estadoCopia(k, vuelta, pausada, ahora);
+      const estado = estadoCopia(k, vuelta, pausada, ahora, e.resumen?.movil);
       const pasos = caminoDeCopia(reglaDeCopia(e, k, todos, informe, catalogo, ahora, null, o.funcionales ?? []), { cliente: o.cliente ?? "", ahora, enVivo: o.enVivo, equipos: todos, informe }).filter((x) => x.clase !== "copia");
       const pasoMal = pasos.some(eslabonMal);
       return {

@@ -17,9 +17,10 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
   import NoCopiar from "./NoCopiar.svelte";
+  import AlReconectar from "./AlReconectar.svelte";
   import EtiquetasVersiones from "./EtiquetasVersiones.svelte";
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
-  import { cuandoEnFrase, etiquetasEnUso, pasoHecho, PASOS_COPIA, ponerCarpetas, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
+  import { cuandoEnFrase, etiquetasEnUso, inicioDe, pasoHecho, PASOS_COPIA, ponerCarpetas, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
   import { ganchosDe } from "$lib/ganchos";
   import { fraseConfig, type ReglaCopia } from "$lib/regla321";
   import { lista } from "$lib/formato";
@@ -61,7 +62,7 @@
     cliente: Cliente;
     prueba?: Uint8Array;
     version: string | null;
-    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean; etiquetas?: boolean; grupos?: boolean };
+    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean; etiquetas?: boolean; grupos?: boolean; moviles?: boolean };
     /** Cómo queda en la regla 3-2-1-1-0 con lo elegido (sin repositorio, null). */
     regla: ReglaCopia | null;
     /** Las sugerencias de un clic que se pueden hacer con este equipo. */
@@ -124,6 +125,8 @@
       {#snippet ayuda()}<Ayuda id="inicio-copia" />{/snippet}
       <form class="paso-form" onsubmit={siguiente}>
         <CuandoEmpieza {copias} {i} admite={{ reglas: admite.reglas, cadenas: admite.cadenas, despues: admite.despues, termina: admite.termina }} {version} equipo={equipo.nombre} guiado hechas={equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas ?? null} />
+        <!-- 15ii: además del horario, al volver a conectarse (portátiles). -->
+        {#if admite.moviles && inicioDe(k) === "horario"}<AlReconectar bind:activo={() => !!k.al_reconectar, (v) => (k.al_reconectar = v)} />{/if}
         <div class="pie"><button class="btn btn-primary btn-sm">Seguir<ArrowRight size={14} /></button></div>
       </form>
     </PasoGuiado>

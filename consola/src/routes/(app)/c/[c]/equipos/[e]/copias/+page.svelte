@@ -68,6 +68,8 @@
   import NoCopiar from "$lib/componentes/copias/NoCopiar.svelte";
   import { ADMITE_GRUPOS, errorTamano } from "$lib/exclusionesCopia";
   import EtiquetasVersiones from "$lib/componentes/copias/EtiquetasVersiones.svelte";
+  import EquipoMovil from "$lib/componentes/copias/EquipoMovil.svelte";
+  import AlReconectar from "$lib/componentes/copias/AlReconectar.svelte";
   import CuandoEmpieza from "$lib/componentes/copias/CuandoEmpieza.svelte";
   import ResumenCopia from "$lib/componentes/copias/ResumenCopia.svelte";
   import type { PedidoRepoNuevo } from "$lib/componentes/copias/ElegirRepositorio.svelte";
@@ -450,6 +452,8 @@
   const admiteEtiquetas = $derived(admite(equipo, ADMITE_ETIQUETAS));
   /** 0.8.1 (15y): de qué grupos vienen las reglas, «no copiar más de N MB» y la vista previa. */
   const admiteGrupos = $derived(admite(equipo, ADMITE_GRUPOS));
+  /** 0.8.1 (15ii): «al volver a conectarse» y los equipos que salen de la oficina. */
+  const admiteMoviles = $derived(admite(equipo, "equipos_moviles"));
   /** Lo que cada control de «Cuándo empieza» puede ofrecer con este agente. */
   const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, termina: admiteTermina });
   /** Una copia antigua «después de» que además tenía su horario (ya no se ofrece): se dice y se puede quitar. */
@@ -776,6 +780,7 @@
         termina: admiteTermina,
         etiquetas: admiteEtiquetas,
         grupos: admiteGrupos,
+        moviles: admiteMoviles,
       });
       // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
       for (const h of [...historiales]) {
@@ -996,7 +1001,7 @@
                   cliente={actual.cliente}
                   prueba={prueba ?? undefined}
                   version={versionAgente}
-                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas, grupos: admiteGrupos }}
+                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas, grupos: admiteGrupos, moviles: admiteMoviles }}
                   regla={rc}
                   puede={puedeSugerir(k)}
                   pendientes={pendientesDe(k)}
@@ -1048,6 +1053,7 @@
                 <div class="field">
                   <span class="field-label">Cuándo empieza <Ayuda id="inicio-copia" /></span>
                   <CuandoEmpieza copias={cfg.copias} {i} admite={admiteInicio} version={versionAgente} equipo={equipo.nombre} hechas={equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas ?? null} />
+                  {#if admiteMoviles && inicioDe(k) === "horario"}<AlReconectar bind:activo={() => !!k.al_reconectar, (v) => (k.al_reconectar = v)} />{/if}
                   {#if conHorarioDeAntes(k)}
                     <p class="faint nota">Además tenía su horario ({resumenHorario(k.horario)}).<button type="button" class="btn btn-sm btn-ghost" onclick={() => (k.horario = { dias: [], horas: [] })}>Quitarlo</button></p>
                   {/if}
@@ -1184,6 +1190,10 @@
           </div>
           <span class="faint">«Errores»: al fallar y al recuperarse. «Todo»: también al empezar y al terminar.</span>
         </div>
+      {/if}
+      <!-- 15ii: un portátil o un equipo de campo. -->
+      {#if admiteMoviles}
+        <EquipoMovil bind:movil={() => cfg!.movil ?? null, (v) => (cfg!.movil = v)} nombre={equipo.nombre} />
       {/if}
     </section>
 

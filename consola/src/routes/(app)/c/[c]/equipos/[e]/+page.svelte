@@ -970,6 +970,8 @@
             <a class="junto enlace-version" href="/c/{c}/ajustes/versiones" use:tip={actualizacionEq.detalle ?? actualizacionEq.texto}><Chip pequeno tono={actualizacionEq.tono} texto={actualizacionEq.texto} /></a>
           {/if}
           {#if equipo.rol === "almacenamiento"}<span class="junto">· Guarda copias <Ayuda id="guarda-copias" /></span>{/if}
+          <!-- 15ii: sin conexión no es un fallo hasta pasar su margen. -->
+          {#if equipo.resumen?.movil?.sale_oficina}<span class="junto" use:tip={`Sin conexión no cuenta como fallo hasta pasar ${equipo.resumen.movil.margen_dias ?? 7} días sin copia`}>· Sale de la oficina</span>{/if}
           <span class="junto">·
             {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)"></span>Conectado</span><Ayuda id="conectado" />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}</span
           >
@@ -1133,7 +1135,7 @@
           <div class="card p-0 lista">
             {#each copias as k (k.id)}
               {@const vuelta = ultimaVuelta(k, equipo.ultimo_informe)}
-              {@const est = estadoCopia(k, vuelta, pausado, reloj.ahora)}
+              {@const est = estadoCopia(k, vuelta, pausado, reloj.ahora, equipo.resumen?.movil)}
               {@const prox = proximaDe(k, equipo.ultimo_informe, reloj.ahora)}
               {@const rk = repos.find((r) => r.id === k.repo)}
               <div class="fila">

@@ -6,6 +6,7 @@ import { alternarGrupo, copiasQueUsan, cuerpoVista, errorTamano, leerVista, pone
 import { copiaNueva, etiquetasEnUso, limpiarEtiquetaVersion, nombrePropuesto, ponerCarpetas } from "../src/lib/copiaGuiada";
 import { configParaEnviar, type Admite } from "../src/lib/configEnvio";
 import { reglaSinNada, reglaVacia, sinPeriodo } from "../src/lib/retencion";
+import { atrasada, estadoCopia, margenMovil, ultimaVuelta } from "../src/lib/copia";
 
 let fallos = 0;
 let total = 0;
@@ -95,6 +96,27 @@ function igual(nombre: string, obtenido: unknown, esperado: unknown) {
   igual("con el agente que lo entiende, van los grupos y el tamaño", [!!x.grupos_exclusiones, x.mayores_mb, x.excepto_tamano], [true, 500, ["*.pst"]]);
   const y = configParaEnviar(c1, { ...a, grupos: false }).copias[0] as Record<string, unknown>;
   igual("a uno anterior, solo las reglas", ["grupos_exclusiones" in y, "mayores_mb" in y, (y.exclusiones as string[]).includes("*.m4a")], [false, false, true]);
+}
+
+// --- 15ii: equipos que entran y salen ---
+{
+  const ahora = Date.parse("2026-10-20T12:00:00Z");
+  const k = { id: "k", nombre: "K", repo: "r", horario: { dias: [1, 2, 3, 4, 5, 6, 7], horas: ["09:00"] } };
+  const vieja = { cuando: "2026-10-15T09:00:00Z", resultado: "ok" as const, mensaje: null };
+  igual("sin salir, atrasada", atrasada(k, vieja, false, ahora), true);
+  igual("saliendo, no hasta el margen", atrasada(k, vieja, false, ahora, { sale_oficina: true, margen_dias: 7 }), false);
+  igual("pasado el margen, sí", atrasada(k, vieja, false, ahora, { sale_oficina: true, margen_dias: 3 }), true);
+  igual("margen por defecto y acotado", [margenMovil(null), margenMovil({ margen_dias: 500 }), margenMovil({ margen_dias: 0 })], [7, 90, 1]);
+  const conFuera = { ...k, ultima: { cuando: "2026-10-19T09:00:00Z", estado: "aviso" as const, mensaje: "Fuera de la oficina: sin conexión con el destino.", fuera: true } };
+  const v = ultimaVuelta(conFuera, null);
+  igual("la vuelta fuera de la oficina", [v?.resultado, v?.fuera], ["aviso", true]);
+  igual("su estado", estadoCopia(conFuera, v, false, ahora, { sale_oficina: true }).texto, "Fuera de la oficina");
+  const a: Admite = { reglas: true, ganchos: true, soloCambios: true, verif: false, verifHorario: false, escritorio: false, moviles: true };
+  const cfg = { v: 1, copias: [{ ...copiaNueva("r1", "k1"), carpetas: ["C:\\D"], al_reconectar: true }], repositorios: [], destinos: [], movil: { sale_oficina: true, margen_dias: 5, permitir_medida: false, bateria_min: null } } as unknown as Configuracion;
+  const x = configParaEnviar(cfg, a);
+  igual("se manda movil limpio y al_reconectar", [(x as { movil?: unknown }).movil, (x.copias[0] as { al_reconectar?: boolean }).al_reconectar], [{ sale_oficina: true, margen_dias: 5 }, true]);
+  const y = configParaEnviar(cfg, { ...a, moviles: false });
+  igual("a un agente anterior, nada", ["movil" in y, "al_reconectar" in y.copias[0]], [false, false]);
 }
 
 console.log(`\n${total - fallos}/${total} ${fallos ? "con fallos" : "bien"}`);

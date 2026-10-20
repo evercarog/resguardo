@@ -128,7 +128,7 @@
   const vuelta = $derived(k ? ultimaVuelta(k, informe) : null);
   const pausada = $derived(equipo ? enPausa(equipo, reloj.ahora) : false);
   const proxima = $derived(k ? proximaDe(k, informe, reloj.ahora) : null);
-  const estado = $derived(k ? estadoCopia(k, vuelta, pausada, reloj.ahora) : null);
+  const estado = $derived(k ? estadoCopia(k, vuelta, pausada, reloj.ahora, equipo?.resumen?.movil) : null);
   const cifras = $derived(cifrasCopia(inf));
   const versiones = $derived(inf?.versiones ?? []);
   const ejecuciones = $derived(inf?.ejecuciones ?? []);
@@ -495,7 +495,7 @@
           </div>
           <div>
             <dt>Última</dt>
-            <dd>{#if vuelta}<Tiempo iso={vuelta.cuando} />{#if atrasada(k, vuelta, pausada, reloj.ahora)} <Chip pequeno tono="warn" texto="Atrasada" />{/if}{:else}<span class="faint">Todavía ninguna</span>{/if}</dd>
+            <dd>{#if vuelta}<Tiempo iso={vuelta.cuando} />{#if atrasada(k, vuelta, pausada, reloj.ahora, equipo.resumen?.movil)} <Chip pequeno tono="warn" texto="Atrasada" />{/if}{:else}<span class="faint">Todavía ninguna</span>{/if}</dd>
           </div>
           <div>
             <dt>Si no hay cambios</dt>

@@ -38,7 +38,8 @@ pub struct Movil {
     /// No empezar una copia sola con la batería por debajo de este % (0 o sin él: no se mira).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bateria_min: Option<u8>,
-    /// Permitir empezar con una conexión medida (datos del móvil). Sin él, no.
+    /// Permitir empezar con una conexión medida (datos del móvil). Sin él, en un equipo que
+    /// sale de la oficina, no.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub permitir_medida: bool,
 }
@@ -58,7 +59,8 @@ impl Movil {
     }
     /// Lo que se guarda en el agente para decidir si empieza (agent.json).
     pub fn energia(&self) -> Option<Energia> {
-        let e = Energia { bateria_min: self.bateria_min.filter(|b| *b > 0), sin_medida: !self.permitir_medida };
+        // La conexión medida solo se mira en un equipo que sale de la oficina (un portátil).
+        let e = Energia { bateria_min: self.bateria_min.filter(|b| *b > 0), sin_medida: self.sale_oficina && !self.permitir_medida };
         (e.bateria_min.is_some() || e.sin_medida).then_some(e)
     }
 }
@@ -291,13 +293,14 @@ mod tests {
 
     #[test]
     fn energia_y_conexion_medida() {
-        let e = Movil { bateria_min: Some(30), ..Default::default() }.energia().unwrap();
-        assert!(e.sin_medida, "sin permitirlo, la medida no");
+        let e = Movil { sale_oficina: true, bateria_min: Some(30), ..Default::default() }.energia().unwrap();
+        assert!(e.sin_medida, "un portátil, sin permitirlo, con conexión medida no");
+        assert!(!Movil { bateria_min: Some(30), ..Default::default() }.energia().unwrap().sin_medida, "un equipo fijo no mira la medida");
         assert!(por_que_no(&e, Some((20, false)), Some(false)).unwrap().contains("20 %"));
         assert!(por_que_no(&e, Some((20, true)), Some(false)).is_none(), "enchufado sí");
         assert!(por_que_no(&e, None, None).is_none(), "sin batería ni saberlo, sí");
         assert!(por_que_no(&e, Some((80, false)), Some(true)).unwrap().contains("medida"));
-        let permitir = Movil { permitir_medida: true, ..Default::default() };
+        let permitir = Movil { sale_oficina: true, permitir_medida: true, ..Default::default() };
         assert!(permitir.energia().is_none());
         assert!(Movil { margen_dias: Some(0), ..Default::default() }.valida().is_err());
         assert!(Movil { bateria_min: Some(99), ..Default::default() }.valida().is_err());

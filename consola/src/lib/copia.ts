@@ -3,7 +3,7 @@
 // con sus ganchos), la próxima vez que toca (`informe.datos.proximas`, v1.12)
 // y, del informe detallado de su repositorio, solo sus vueltas y versiones.
 // Sin informe detallado, la página sigue funcionando con el resumen.
-import type { CopiaResumen, EjecucionInforme, Informe, RepoInforme } from "./tipos";
+import type { CopiaResumen, EjecucionInforme, Informe, RepoInforme, MovilEquipo } from "./tipos";
 import type { Tono } from "./salud";
 import { cuandoFrase, horarioEnFrase, lista, plural, relativo } from "./formato";
 import { informeDe } from "./repo";
@@ -44,6 +44,8 @@ export interface Vuelta {
   detalle?: string | null;
   /** 15jj: quedó «en curso» y no terminó (el equipo se apagó o se reinició el servicio); va como «fallo». */
   interrumpida?: boolean;
+  /** 15ii: sin conexión, en un equipo que sale de la oficina y dentro de su margen (va como «aviso»). */
+  fuera?: boolean;
 }
 
 const resultadoDe = (estado: string | undefined): ResultadoVuelta => (estado === "ok" ? "ok" : estado === "aviso" ? "aviso" : "fallo");
@@ -59,9 +61,16 @@ export function ultimaVuelta(k: CopiaResumen, informe: Informe | null | undefine
   if (ej) candidatas.push({ cuando: ej.hora, resultado: ej.resultado, mensaje: ej.mensaje_corto, detalle: ej.detalle ?? null, interrumpida: ej.interrumpida === true });
   const fila = filaInforme(informe, k);
   if (fila?.cuando && fila.estado) candidatas.push({ cuando: fila.cuando, resultado: resultadoDe(fila.estado), mensaje: fila.mensaje ?? null });
-  if (k.ultima) candidatas.push({ cuando: k.ultima.cuando, resultado: resultadoDe(k.ultima.estado), mensaje: k.ultima.mensaje ?? null, interrumpida: k.ultima.interrumpida === true });
+  if (k.ultima) candidatas.push({ cuando: k.ultima.cuando, resultado: resultadoDe(k.ultima.estado), mensaje: k.ultima.mensaje ?? null, interrumpida: k.ultima.interrumpida === true, fuera: k.ultima.fuera === true });
   // La más reciente; a igual hora, la primera (la del informe detallado).
-  return candidatas.reduce<Vuelta | null>((a, b) => (!a || Date.parse(b.cuando) > Date.parse(a.cuando) ? b : a), null);
+  const v = candidatas.reduce<Vuelta | null>((a, b) => (!a || Date.parse(b.cuando) > Date.parse(a.cuando) ? b : a), null);
+  // 15ii: si el equipo dice que esa vuelta fue «fuera de la oficina» (el historial no lo distingue), así se cuenta.
+  const fuera = v && ((fila?.fuera && fila.cuando === v.cuando) || (k.ultima?.fuera && k.ultima.cuando === v.cuando));
+  if (v && fuera) {
+    const m = fila?.fuera && fila.cuando === v.cuando ? fila.mensaje : k.ultima?.mensaje;
+    return { ...v, resultado: "aviso", fuera: true, mensaje: m ?? v.mensaje, detalle: null };
+  }
+  return v;
 }
 
 /**
@@ -90,20 +99,25 @@ const MARGEN = 2 * 3600_000;
  * no ha terminado ninguna vuelta. Una copia que nunca se hizo no cuenta (no se
  * sabe desde cuándo existe): sale como «Sin copias todavía».
  */
-export function atrasada(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now()): boolean {
+export function atrasada(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now(), movil?: MovilEquipo | null): boolean {
   // Plan 0.8.0, F1: una completada o solo a mano nunca va atrasada.
   if (k.activa === false || pausada || !vuelta || k.completada || k.a_mano) return false;
+  // 15ii: un equipo que sale de la oficina solo va atrasado pasado su margen (sin copia).
+  if (movil?.sale_oficina) return ahora - Date.parse(vuelta.cuando) > margenMovil(movil) * 86_400_000;
   const slot = ultimaProgramada(k.horario, ahora);
   if (slot == null || slot > ahora - MARGEN) return false;
   return Date.parse(vuelta.cuando) < slot;
 }
+
+/** 15ii: los días de margen de un equipo que sale de la oficina (7 sin decirlo). */
+export const margenMovil = (m: MovilEquipo | null | undefined) => Math.min(90, Math.max(1, Math.trunc(m?.margen_dias ?? 7)));
 
 export interface EstadoCopia {
   tono: Tono;
   texto: string;
 }
 
-export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now()): EstadoCopia {
+export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now(), movil?: MovilEquipo | null): EstadoCopia {
   if (k.activa === false) return { tono: "neutral", texto: "Desactivada" };
   // Plan 0.8.0, F1: completada (hizo lo previsto): ni fallida ni atrasada.
   if (k.completada) return { tono: "ok", texto: "Completada" };
@@ -111,7 +125,9 @@ export function estadoCopia(k: CopiaResumen, vuelta: Vuelta | null, pausada: boo
   // 15jj: cortada a mitad (equipo apagado, servicio reiniciado): se reintenta sola.
   if (vuelta?.resultado === "fallo" && vuelta.interrumpida) return { tono: "warn", texto: "Interrumpida" };
   if (vuelta?.resultado === "fallo") return { tono: "bad", texto: "Con error" };
-  if (atrasada(k, vuelta, pausada, ahora)) return { tono: "warn", texto: "Atrasada" };
+  // 15ii: sin conexión, dentro del margen de un equipo que sale de la oficina.
+  if (vuelta?.fuera) return { tono: "neutral", texto: "Fuera de la oficina" };
+  if (atrasada(k, vuelta, pausada, ahora, movil)) return { tono: "warn", texto: movil?.sale_oficina ? `Lleva más de ${margenMovil(movil)} días sin copia` : "Atrasada" };
   if (vuelta?.resultado === "aviso") return { tono: "warn", texto: "Con avisos" };
   if (vuelta) return { tono: "ok", texto: "Al día" };
   return { tono: "neutral", texto: "Sin copias todavía" };

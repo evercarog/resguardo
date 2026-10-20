@@ -38,6 +38,8 @@ export interface Admite {
   etiquetas?: boolean;
   /** 15y: de qué grupos vienen las reglas y «no copiar más de N MB» (agente con `admite: "grupos_en_copias"`). */
   grupos?: boolean;
+  /** 15ii: «al volver a conectarse» y `config.movil` (agente con `admite: "equipos_moviles"`). */
+  moviles?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -56,6 +58,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     todasLasBases: admiteTodasLasBases(equipo),
     etiquetas: !!equipo.resumen?.admite?.includes("etiquetas_copia"),
     grupos: !!equipo.resumen?.admite?.includes("grupos_en_copias"),
+    moviles: !!equipo.resumen?.admite?.includes("equipos_moviles"),
   };
 }
 
@@ -76,7 +79,7 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
     // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
     // Plan 0.7.26: `inicio` solo para «despues» (lo demás se deduce de `tras`) y el retraso si hay; los dos, solo a un agente que los entiende.
     // Plan 0.8.0, F1: «Solo a mano» y «Termina», solo a un agente que los entiende (la consola no se los ofrece a otro).
-    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, grupos_exclusiones, mayores_mb, excepto_tamano, ...resto } = k;
+    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, grupos_exclusiones, mayores_mb, excepto_tamano, al_reconectar, ...resto } = k;
     const conTras = !!a.cadenas && !!tras;
     const conFin = !!a.termina && !!termina && (termina.veces != null || !!termina.hasta || !!termina.una_vez);
     return {
@@ -98,6 +101,8 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       // 15y: con un agente anterior, los grupos ya están en `exclusiones` (sus reglas); el límite, no se le ofrece.
       ...(a.grupos && grupos_exclusiones?.length ? { grupos_exclusiones: grupos_exclusiones.map((g) => ({ id: g.id, nombre: g.nombre, reglas: [...g.reglas] })) } : {}),
       ...(a.grupos && mayores_mb ? { mayores_mb, ...(excepto_tamano?.length ? { excepto_tamano: [...excepto_tamano] } : {}) } : {}),
+      // 15ii: además, al volver a conectarse (con su horario: sin él no tendría sentido).
+      ...(a.moviles && al_reconectar && !conTras && !a_mano ? { al_reconectar: true } : {}),
     };
   });
   return {
@@ -117,6 +122,17 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
     ...(a.escritorio && c0.escritorio ? { escritorio: c0.escritorio } : {}),
     // Tarea 8: la prueba de restauración automática, como la verificación (solo a un agente que la entiende).
     ...(a.pruebas && c0.pruebas_restauracion ? { pruebas_restauracion: c0.pruebas_restauracion } : {}),
+    // 15ii: un equipo que entra y sale (solo a un agente que lo entiende y si se ha tocado).
+    ...(a.moviles && c0.movil ? { movil: movilParaEnviar(c0.movil) } : {}),
+  };
+}
+
+/** 15ii: `config.movil` sin lo que no dice nada (como lo guarda el agente). */
+export function movilParaEnviar(m: NonNullable<Configuracion["movil"]>) {
+  return {
+    ...(m.sale_oficina ? { sale_oficina: true, ...(m.margen_dias ? { margen_dias: Math.trunc(m.margen_dias) } : {}) } : {}),
+    ...(m.bateria_min ? { bateria_min: Math.trunc(m.bateria_min) } : {}),
+    ...(m.permitir_medida ? { permitir_medida: true } : {}),
   };
 }
 
