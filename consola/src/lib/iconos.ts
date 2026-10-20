@@ -110,6 +110,7 @@ const ORDEN: Record<string, Icono> = {
   // Plan 0.8.0, F2.
   comentario_version: MessageSquare,
   bases_sqlserver: Database,
+  nombre_copia: Pencil,
   conservar_version: Pin,
 };
 

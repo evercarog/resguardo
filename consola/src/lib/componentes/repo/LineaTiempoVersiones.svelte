@@ -82,6 +82,8 @@
     todas?: boolean;
     /** Plan 0.8.0, F2: comentarios y «se conserva para siempre» junto a cada versión. */
     marcas?: { equipo: import("$lib/tipos").Equipo | null | undefined; repo?: string | null } | null;
+    /** 0.8.1 (15v): ofrecer el filtro por copia (sin él, solo por etiqueta; p. ej. si fuera ya se elige la copia). */
+    filtroCopia?: boolean;
   }
   let {
     versiones,
@@ -109,14 +111,24 @@
     enPeriodo = $bindable(0),
     todas = $bindable(false),
     marcas = null,
+    filtroCopia = true,
   }: Props = $props();
 
   const id = $props.id();
   // El reloj, al minuto: el calendario no se rehace cada 15 s.
   const minuto = $derived(Math.floor(ahora / 60_000) * 60_000);
-  const lista = $derived([...versiones].map((v) => ({ ...v, t: Date.parse(v.hora) })).sort((a, b) => b.t - a.t));
+  // 0.8.1 (15v): filtrar por las etiquetas de las versiones o por la copia que las hizo.
+  let porEtiqueta = $state("");
+  let porCopia = $state("");
+  const etiquetasHay = $derived([...new Set(versiones.flatMap((v) => v.etiquetas ?? []))].sort((a, b) => a.localeCompare(b, "es")));
+  const copiasHay = $derived([...new Set(versiones.map((v) => v.copia).filter((c): c is string => !!c))]);
+  const conFiltroEtiqueta = $derived(etiquetasHay.length > 1 || (etiquetasHay.length === 1 && versiones.some((v) => !v.etiquetas?.length)));
+  const conFiltroCopia = $derived(filtroCopia && copiasHay.length > 1);
+  const pasaVersion = (v: VersionLinea) => (!porEtiqueta || !!v.etiquetas?.includes(porEtiqueta)) && (!porCopia || v.copia === porCopia);
+  const lista = $derived([...versiones].filter(pasaVersion).map((v) => ({ ...v, t: Date.parse(v.hora) })).sort((a, b) => b.t - a.t));
   const conSucesos = $derived(sucesos != null);
-  const todosSucesos = $derived(sucesos ?? []);
+  // Con un filtro de copia, lo que pasó con las demás copias no se cuenta; con uno de etiqueta, los sucesos siguen (no llevan etiquetas).
+  const todosSucesos = $derived((sucesos ?? []).filter((s) => !porCopia || !s.copia || s.copia === porCopia));
   const hay = $derived(lista.length > 0 || todosSucesos.length > 0);
   const huecos = $derived(huecosDeCopia(copias, lista.map((v) => v.copia)));
   const nombreCopia = (c: string | null | undefined, r?: string | null) => copias.find((k) => k.id === c)?.nombre ?? (r && nombreRepo ? nombreRepo(r) : c ? c : "Sin copia");
@@ -393,6 +405,29 @@
           <button type="button" class="btn btn-sm btn-ghost" onclick={quitarFiltro}><X size={14} />Ver todo</button>
         {/if}
       </div>
+      {#if conFiltroEtiqueta || conFiltroCopia}
+        <div class="filtro-et" role="group" aria-label="Filtrar las versiones">
+          {#if conFiltroEtiqueta}
+            <label>
+              <span class="sr-only">Etiqueta de las versiones</span>
+              <select class="input" bind:value={porEtiqueta} onchange={() => (limite = PRIMERAS)}>
+                <option value="">Todas las etiquetas</option>
+                {#each etiquetasHay as t (t)}<option value={t}>Con la etiqueta «{t}»</option>{/each}
+              </select>
+            </label>
+          {/if}
+          {#if conFiltroCopia}
+            <label>
+              <span class="sr-only">Copia que hizo las versiones</span>
+              <select class="input" bind:value={porCopia} onchange={() => (limite = PRIMERAS)}>
+                <option value="">Todas las copias</option>
+                {#each copiasHay as k (k)}<option value={k}>De «{nombreCopia(k)}»</option>{/each}
+              </select>
+            </label>
+          {/if}
+          {#if porEtiqueta || porCopia}<button type="button" class="btn btn-sm btn-ghost" onclick={() => ((porEtiqueta = ""), (porCopia = ""))}><X size={14} />Quitar el filtro</button>{/if}
+        </div>
+      {/if}
       {#if conSucesos}
         <div class="filtros" role="group" aria-label="Qué mostrar">
           {#each FILTROS_HISTORIAL as f (f.id)}
@@ -554,6 +589,27 @@
     /* Centrado, pero si algo no cabe, que sobre por abajo (nunca se corte la cabecera). */
     justify-content: safe center;
     min-width: 0;
+  }
+  /* 15v: por etiqueta y por copia. */
+  .filtro-et {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+  }
+  .filtro-et .input {
+    width: auto;
+    max-width: min(100%, 18rem);
+    height: 28px;
+    padding: 0 8px;
+    font-size: var(--fs-xs);
+  }
+  @media (max-width: 640px) {
+    .filtro-et label,
+    .filtro-et .input {
+      flex: 1 1 100%;
+      max-width: none;
+    }
   }
   /* Los filtros de la bitácora: píldoras con su cuenta. */
   .filtros {

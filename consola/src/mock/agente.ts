@@ -12,7 +12,7 @@ import { etiquetaEquipo, mensajeResultado, pruebaCodigo } from "../lib/cripto/cl
 import { enCarpetaDelSistema, errorCarpetaEspejo, errorCarpetaLocal, errorGancho, errorNombreCarpeta, ganchosDe, MAX_GANCHOS, VERSION_GANCHOS, versionAlMenos } from "../lib/ganchos";
 import { claveEspejo, destinosDeCuerpo, esDestructiva, NIVEL, PIDE_TAMBIEN_ADMIN, pideAdminPorCuerpo, type DestinoEspejo, type OrdenPlana } from "../lib/cripto/ordenes";
 import { errorCarpetaRestaurar } from "../lib/restauraciones";
-import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
+import { claveDireccion, cifrarConfig, cifrarMensaje, cifrarTrozo, descifrarConfig, descifrarMensaje, TROZO } from "../lib/cripto/simetrico";
 import type * as T from "../lib/tipos";
 import { errorHorario, errorRegla, textoHorario, textoRegla } from "../lib/retencion";
 import { errorReglas, horaValida, proximaVez, reglasDe, VERSION_REGLAS } from "../lib/horario";
@@ -108,6 +108,7 @@ export function configInicial(e: EquipoMock): T.Configuracion {
       // Plan 0.7.26: cómo empieza tras la anterior y con cuánto retraso.
       ...(c.inicio ? { inicio: c.inicio } : {}),
       ...(c.retraso_min ? { retraso_min: c.retraso_min } : {}),
+      ...(c.etiquetas?.length ? { etiquetas: c.etiquetas } : {}),
       // CONTABILIDAD (agente 0.7.2) vuelca sus bases de SQL Server antes de copiar «Ventas» (14gg: varias).
       gancho: c.id === "ventas" && versionAlMenos(e.version_agente, VERSION_GANCHOS) ? [{ tipo: "sqlserver" as const, bases: ["VENTAS_2026", "Nominas", "Compras", "Bancos", "Cartera", "Activos"], carpeta: "C:\\ResguardoVolcados" }] : null,
     })),
@@ -138,6 +139,18 @@ function a3(dias: number) {
   d.setDate(d.getDate() + dias);
   d.setHours(3, 0, 0, 0);
   return d.toISOString();
+}
+
+/** La configuración que tiene el equipo (la última que se le mandó, o la de partida). */
+export function configActual(e: EquipoMock): T.Configuracion {
+  if (e.config && e.kcfg) {
+    try {
+      return descifrarConfig<T.Configuracion>(e.kcfg, e.id, e.config.seq, deB64(e.config.cifrado));
+    } catch {
+      /* la de partida */
+    }
+  }
+  return configInicial(e);
 }
 
 export function guardarConfig(e: EquipoMock, cfg: T.Configuracion, seq: number) {
@@ -184,6 +197,8 @@ function resumenDe(e: EquipoMock, cfg: T.Configuracion): T.ResumenEquipo {
       tras: c.tras ?? null,
       inicio: c.inicio ?? null,
       retraso_min: c.retraso_min ?? null,
+      // 15v: las etiquetas de sus versiones (solo con un agente que las entiende).
+      ...(previo.admite?.includes("etiquetas_copia") ? { etiquetas: c.etiquetas?.length ? c.etiquetas : null } : {}),
       // Plan 0.8.0, F1: como el agente con `admite: "termina"` (la cuenta vuelve a cero si cambia la regla).
       ...(previo.admite?.includes("termina")
         ? (() => {
@@ -955,6 +970,29 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         { nombre: "Empresa 3", estado: "RECOVERY_PENDING", sistema: false },
       ];
       return resultado(e, o, "hecha", "La instancia tiene 3 bases de usuario.", JSON.stringify({ sellado: detallePara(plana, { bases }) }));
+    }
+    case "nombre_copia": {
+      // 0.8.1 (15t): el nombre de una copia o de una copia derivada (clave de administración, sin espera).
+      if (!e.resumen?.admite?.includes("nombre_copia")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+      const n = String(c.nombre ?? "").trim();
+      if (!n || [...n].length > 60) return resultado(e, o, "fallida", "Escribe un nombre (hasta 60 caracteres).");
+      const d = c.derivada as { repo?: string; id?: string } | undefined;
+      if (d) {
+        const r = e.resumen.repositorios?.find((x) => x.id === d.repo);
+        const dv = r?.derivadas?.find((x) => x.id === d.id);
+        if (!r || !dv) return resultado(e, o, "fallida", "Esa copia derivada ya no está.");
+        const antes = dv.nombre ?? `${r.nombre} (copia derivada)`;
+        dv.nombre = n;
+        return resultado(e, o, "hecha", `«${antes}» ahora se llama «${n}». Lo verán así todas sus consolas.`);
+      }
+      const cfg = configActual(e);
+      const k = cfg.copias.find((x) => x.id === c.copia);
+      if (!k) return resultado(e, o, "fallida", "Esa copia ya no está en este equipo.");
+      const antes = k.nombre;
+      k.nombre = n;
+      e.resumen = resumenDe(e, cfg);
+      guardarConfig(e, cfg, plana.seq);
+      return resultado(e, o, "hecha", `«${antes}» ahora se llama «${n}». Lo verán así todas sus consolas.`);
     }
     case "nombre_repositorio": {
       if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");

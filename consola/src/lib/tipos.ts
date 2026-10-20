@@ -491,6 +491,8 @@ export interface CopiaResumen {
   hechas?: number | null;
   /** F1: cuándo terminó (RFC 3339): queda «completada». */
   completada?: string | null;
+  /** 0.8.1 (15v): las etiquetas de sus versiones (sin ellas, «resguardo-agente»). */
+  etiquetas?: string[] | null;
 }
 
 /** Plan 0.8.0, F1 (14pp): cuándo termina una copia. */
@@ -528,6 +530,8 @@ export interface CuandoDerivada {
 /** Tarea 4b (`admite: "derivadas"`): otra copia derivada de un repositorio (la externa de siempre va aparte). */
 export interface DerivadaResumen {
   id: string;
+  /** 0.8.1 (15t, `admite: "nombre_copia"`): su nombre, si se le puso (sin él: «<repositorio> (copia derivada)»). */
+  nombre?: string | null;
   destino?: string | null;
   destino_id?: string | null;
   cuando?: CuandoDerivada | null;
@@ -1383,6 +1387,8 @@ export interface CopiaConfig {
   a_mano?: boolean;
   /** F1: cuándo termina («Una sola vez», tras N copias o el día …). */
   termina?: Termina | null;
+  /** 0.8.1 (15v, `admite: "etiquetas_copia"`): las etiquetas de sus versiones (hasta 10). */
+  etiquetas?: string[];
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */

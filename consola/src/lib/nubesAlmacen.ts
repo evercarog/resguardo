@@ -136,10 +136,10 @@ export function directosEn(e: Pick<Equipo, "resumen">, nombre: string): Guardado
   for (const r of e.resumen?.repositorios ?? []) {
     const d = destinoDe(e.resumen?.destinos, r);
     if (d && destinos.includes(d)) out.push({ repo: r, nombre: r.nombre || r.id, ruta: ruta(d.donde, r.ruta && r.ruta !== "." ? r.ruta : r.id) });
-    const dvs = [...(r.externa ? [{ id: "externa", destino_id: r.externa.destino_id, destino: r.externa.destino, carpeta: r.id }] : []), ...(r.derivadas ?? []).map((x) => ({ id: x.id, destino_id: x.destino_id, destino: x.destino, carpeta: `${r.id}-${x.id}` }))];
+    const dvs = [...(r.externa ? [{ id: "externa", destino_id: r.externa.destino_id, destino: r.externa.destino, carpeta: r.id }] : []), ...(r.derivadas ?? []).map((x) => ({ id: x.id, nombre: x.nombre, destino_id: x.destino_id, destino: x.destino, carpeta: `${r.id}-${x.id}` }))];
     for (const x of dvs) {
       const dd = destinos.find((y) => y.id === x.destino_id) ?? destinos.find((y) => y.nombre === x.destino);
-      if (dd) out.push({ repo: r, derivada: x.id, nombre: `${r.nombre || r.id} (copia derivada)`, ruta: ruta(dd.donde, x.carpeta) });
+      if (dd) out.push({ repo: r, derivada: x.id, nombre: ("nombre" in x && x.nombre) || `${r.nombre || r.id} (copia derivada)`, ruta: ruta(dd.donde, x.carpeta) });
     }
   }
   return out;

@@ -84,6 +84,8 @@
   import { caminoDeCopia } from "$lib/camino";
   import { enVivoCamino } from "$lib/caminoVivo.svelte";
   import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
+  // 0.8.1 (15t): el lápiz junto al título (nombre nuevo y clave de administración).
+  import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
 
   const c = $derived(page.params.c ?? "");
   const e = $derived(page.params.e ?? "");
@@ -231,6 +233,7 @@
 
   // Plan 0.8.0, F1: una copia completada se puede reanudar (cómo sigue, y después el editor).
   let reanudando = $state(false);
+  let renombrando = $state(false);
 
   const tonoGancho = (s: string) => (s === "ok" ? "ok" : s === "aviso" ? "warn" : "bad") as "ok" | "warn" | "bad";
   const textoGancho = (s: string) => (s === "ok" ? "Correcto" : s === "aviso" ? "Con avisos" : "Falló");
@@ -253,6 +256,7 @@
       <div class="cab-texto">
         <div class="titulo">
           <h1>{k.nombre}</h1>
+          {#if puede.administrar(rol)}<button class="icon-btn lapiz" aria-label="Cambiar el nombre de «{k.nombre}»" use:tip={"Cambiar el nombre"} onclick={() => (renombrando = true)}><Pencil size={16} /></button>{/if}
           <button class="pulsable-bloque chip-pulsable" use:tip={"¿Por qué? Ver detalle"} onclick={abrirEstado}><Chip tono={estado.tono} texto={estado.texto} /></button>
         </div>
         <p class="sub">
@@ -577,6 +581,9 @@
   <PanelDetalle cliente={actual.cliente} {equipo} {repo} inf={infRepo} {copias} historial={historia.entradas} soloCopia={k.id} puedeRestaurar={puede.ordenar(rol)} ahora={reloj.ahora} />
 {/if}
 
+{#if renombrando && equipo && actual.cliente && k}
+  <RenombrarCopia cliente={actual.cliente} {equipo} que={{ tipo: "copia", id: k.id, nombre: k.nombre }} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} onclose={() => (renombrando = false)} />
+{/if}
 {#if dialogo && equipo && actual.cliente}
   {#key dialogo}
     <OrdenDialog cliente={actual.cliente} {equipo} tipo={dialogo.tipo} cuerpo={dialogo.cuerpo} descripcion={dialogo.descripcion} accion={dialogo.accion} onclose={() => (dialogo = null)} />
@@ -625,6 +632,10 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-2) var(--sp-3);
+  }
+  .titulo .lapiz {
+    margin-left: calc(var(--sp-2) * -1);
+    color: var(--text-3);
   }
   h1 {
     margin: 0;

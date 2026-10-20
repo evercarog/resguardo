@@ -5,7 +5,9 @@
   // Cada uno en una tarjeta con su resumen y cómo fue; se ordenan, se pausan, se
   // cambian con el editor guiado y se quitan. Cada cambio manda la lista entera al
   // equipo con la clave de administración (lo que reduce la protección, con la espera).
-  import { ArrowDown, ArrowUp, CornerDownRight, Plus, ShieldAlert } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, CornerDownRight, Pencil, Plus, ShieldAlert } from "@lucide/svelte";
+  // 0.8.1 (15t): el lápiz junto al nombre (nombre nuevo y clave de administración).
+  import RenombrarCopia from "../copias/RenombrarCopia.svelte";
   import OrdenDialog from "../OrdenDialog.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import MenuAcciones from "../MenuAcciones.svelte";
@@ -95,6 +97,7 @@
 
   // --- Editor y órdenes ---
   let editor = $state<{ trabajo: TrabajoEspejo; nuevo: boolean } | null>(null);
+  let renombrar = $state<TrabajoEspejoResumen | null>(null);
   let orden = $state<{ cuerpo: Record<string, unknown>; titulo: string; descripcion: string; exito?: string } | null>(null);
   const cuerpo = (ts: TrabajoEspejo[]) => (quien === "almacen" ? cuerpoAlmacen(ts) : cuerpoEquipo(ts));
   const base = $derived(lista.map(paraOrden));
@@ -175,7 +178,7 @@
     <article class="card espejo" class:pausado={!t.activo} class:tras={!!despues}>
       {#if despues}<p class="tras-de faint"><CornerDownRight size={13} />{t.cuando.cadena ? "En cadena tras" : "Después de"} «{nombreDe(despues)}»</p>{/if}
       <div class="cab">
-        <h3><a class="link-suave" href={hrefEspejo(cliente.id, hace.id, t.id)}>{t.nombre || nombrePorDefecto(t.adonde)}</a></h3>
+        <h3><a class="link-suave" href={hrefEspejo(cliente.id, hace.id, t.id)}>{t.nombre || nombrePorDefecto(t.adonde)}</a>{#if admin}<button class="icon-btn icon-btn-sm lapiz" aria-label="Cambiar el nombre de «{t.nombre || nombrePorDefecto(t.adonde)}»" use:tip={"Cambiar el nombre"} onclick={() => (renombrar = t)}><Pencil size={13} /></button>{/if}</h3>
         <Chip tono={TONO[e]} texto={TEXTO[e]} pequeno />
         {#if admin}
           <div class="acciones">
@@ -233,6 +236,9 @@
   {/if}
 </div>
 
+{#if renombrar}
+  <RenombrarCopia {cliente} equipo={hace} que={{ tipo: "espejo", trabajo: { ...renombrar, nombre: renombrar.nombre || nombrePorDefecto(renombrar.adonde) }, quien, lista }} alCambiar={() => alTerminar?.()} onclose={() => (renombrar = null)} />
+{/if}
 {#if editor}
   <EditorEspejo {cliente} {hace} {quien} {equipos} trabajo={editor.trabajo} todos={base} nuevo={editor.nuevo} onguardar={guardado} onclose={() => (editor = null)} />
 {/if}
@@ -286,6 +292,11 @@
     margin: 0;
     font-size: var(--fs-h2);
     overflow-wrap: anywhere;
+  }
+  .cab h3 .lapiz {
+    margin-left: 4px;
+    vertical-align: middle;
+    color: var(--text-3);
   }
   .acciones {
     margin-left: auto;

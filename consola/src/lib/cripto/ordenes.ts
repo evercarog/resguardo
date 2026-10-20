@@ -84,6 +84,8 @@ export const NIVEL: Record<string, Nivel> = {
   // Plan 0.8.1 (15u): «Ver las bases de la instancia» (solo lee la lista; sellada para esta consola).
   bases_sqlserver: "sesion",
   conservar_version: "admin",
+  // Plan 0.8.1 (15t): el nombre de una copia o de una copia derivada (con la clave, sin espera).
+  nombre_copia: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */

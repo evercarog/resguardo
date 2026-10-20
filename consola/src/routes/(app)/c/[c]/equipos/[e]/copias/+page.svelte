@@ -66,14 +66,17 @@
   import Chip from "$lib/componentes/Chip.svelte";
   import CopiaGuiada from "$lib/componentes/copias/CopiaGuiada.svelte";
   import AvisoExclusiones from "$lib/componentes/copias/AvisoExclusiones.svelte";
+  import EtiquetasVersiones from "$lib/componentes/copias/EtiquetasVersiones.svelte";
   import CuandoEmpieza from "$lib/componentes/copias/CuandoEmpieza.svelte";
   import ResumenCopia from "$lib/componentes/copias/ResumenCopia.svelte";
   import type { PedidoRepoNuevo } from "$lib/componentes/copias/ElegirRepositorio.svelte";
   import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
   import CopiaDerivada from "$lib/componentes/CopiaDerivada.svelte";
   import {
+    ADMITE_ETIQUETAS,
     ADMITE_INICIO_DESPUES,
     ADMITE_TERMINA,
+    etiquetasEnUso,
     leerComoSeguir,
     reanudarCopia,
     copiaNueva,
@@ -83,6 +86,8 @@
     inicioDe,
     leerAvanzado,
     limpiarInicio,
+    MAX_NOMBRE,
+    ponerCarpetas,
     ponerInicio,
     primerPaso,
     retrasoEnFrase,
@@ -426,6 +431,8 @@
   /** Plan 0.8.0, F1: «Solo a mano», «Una sola vez» y «Termina» (`a_mano`, `termina`). */
   const admiteTermina = $derived(admite(equipo, ADMITE_TERMINA));
   const admiteFiltros = $derived(admite(equipo, ADMITE.filtros));
+  /** 0.8.1 (15v): las etiquetas de las versiones de cada copia. */
+  const admiteEtiquetas = $derived(admite(equipo, ADMITE_ETIQUETAS));
   /** Lo que cada control de «Cuándo empieza» puede ofrecer con este agente. */
   const admiteInicio = $derived({ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, termina: admiteTermina });
   /** Una copia antigua «después de» que además tenía su horario (ya no se ofrece): se dice y se puede quitar. */
@@ -537,8 +544,10 @@
   /** «Usar en una copia» desde la página de un destino sin repositorio de este equipo: ese destino. */
   let destinoPedido = $state<string | undefined>(undefined);
   let avisoRepo = $state("");
-  function repoCreado(r: { id: string; nombre: string; destino: string }) {
+  function repoCreado(r: { id: string; nombre: string; destino: string; almacen?: string }) {
     if (!cfg || !equipo) return;
+    // 15r: en un almacén (su espejo se puede pedir ya: se abre al enviar).
+    if (r.almacen && !enAlmacenNuevos.includes(r.id)) enAlmacenNuevos = [...enAlmacenNuevos, r.id];
     if (!cfg.repositorios.some((x) => x.id === r.id)) cfg.repositorios.push({ id: r.id, nombre: r.nombre, destino: r.destino });
     const k = cfg.copias.find((x) => x.id === repoNuevoPara);
     if (k) k.repo = r.id;
@@ -598,13 +607,35 @@
     else derivadaDe = r;
     elegirOrigen = null;
   }
+  // --- 15r: el espejo de un repositorio que aún no existe (recién pedido en este editor) ---
+  /** ¿Es un repositorio nuevo de este editor (aún no en el resumen del equipo) en un almacén? */
+  function nuevoEnAlmacen(id: string): boolean {
+    if (!id || repoResumen(id) || !cfg) return false;
+    if (enAlmacenNuevos.includes(id)) return true;
+    const r = cfg.repositorios.find((x) => x.id === id);
+    const d = r ? [...(equipo?.resumen?.destinos ?? []), ...(cfg.destinos ?? [])].find((x) => x.id === r.destino) : undefined;
+    return !!d && ("equipo_almacen" in d ? !!d.equipo_almacen : false);
+  }
+  /** Los repositorios nuevos que se crearon en un almacén desde este editor. */
+  let enAlmacenNuevos = $state<string[]>([]);
+  /** El repositorio cuyo espejo se pide al guardar (se abre «Añadir un espejo» en la ficha en cuanto exista). */
+  let espejoPendiente = $state<string | null>(null);
+  function pedirEspejoPendiente(k: CopiaConfig) {
+    espejoPendiente = k.repo;
+    avisoRepo = `Al enviar, en cuanto «${repos.find((x) => x.id === k.repo)?.nombre ?? k.repo}» esté en el almacén, se abrirá «Añadir un espejo» con él ya marcado.`;
+  }
   /** Las del menú «+» de una copia (con su repositorio ya elegido). */
   function menuAnadir(k: CopiaConfig) {
     const r = repoResumen(k.repo);
+    const pendiente = !r && nuevoEnAlmacen(k.repo);
     return [
       [
         { texto: "Copia nueva después de esta", icono: FolderPlus, onclick: () => anadir("carpetas", k) },
-        { texto: TEXTO_ANADIR.espejo.titulo, icono: HardDrive, detalle: r ? (porQueNo("espejo", r) ?? `De «${r.nombre}»`) : "Primero, guarda la copia", disabled: !r || !!porQueNo("espejo", r), onclick: () => anadir("espejo", k) },
+        r
+          ? { texto: TEXTO_ANADIR.espejo.titulo, icono: HardDrive, detalle: porQueNo("espejo", r) ?? `De «${r.nombre}»`, disabled: !!porQueNo("espejo", r), onclick: () => anadir("espejo", k) }
+          : pendiente
+            ? { texto: TEXTO_ANADIR.espejo.titulo, icono: HardDrive, detalle: espejoPendiente === k.repo ? "Pedido: se abre al enviar" : "Se añade al enviar la copia", onclick: () => pedirEspejoPendiente(k) }
+            : { texto: TEXTO_ANADIR.espejo.titulo, icono: HardDrive, detalle: "Guarda primero la copia: el espejo se añade después", disabled: true, onclick: () => {} },
         { texto: TEXTO_ANADIR.derivada.titulo, icono: GitBranch, detalle: r ? (porQueNo("derivada", r) ?? `De «${r.nombre}»`) : "Primero, guarda la copia", disabled: !r || !!porQueNo("derivada", r), onclick: () => anadir("derivada", k) },
       ],
     ];
@@ -615,13 +646,14 @@
     return {
       verificacion: admiteVerif && !!k.repo && !cfg?.verificaciones?.[k.repo],
       prueba: admitePrueba && !!k.repo && !cfg?.pruebas_restauracion?.[k.repo],
-      espejo: !!r && !porQueNo("espejo", r),
+      espejo: (!!r && !porQueNo("espejo", r)) || (!r && nuevoEnAlmacen(k.repo) && espejoPendiente !== k.repo),
       derivada: !!r && !porQueNo("derivada", r),
     };
   }
   function sugerir(k: CopiaConfig, s: Sugerencia) {
     if (s === "verificacion") ponerVerif(k.repo, { ...VERIFICACION_POR_DEFECTO, cada_dias: 7, porcentaje: 10 });
     else if (s === "prueba") ponerPrueba(k.repo, { ...PRUEBA_POR_DEFECTO });
+    else if (s === "espejo" && !repoResumen(k.repo)) pedirEspejoPendiente(k);
     else anadir(s, k);
   }
 
@@ -724,6 +756,7 @@
         despues: admiteDespues,
         // Plan 0.8.0, F1: «Solo a mano», «Una sola vez» y «Termina».
         termina: admiteTermina,
+        etiquetas: admiteEtiquetas,
       });
       // Lo pendiente de los repositorios nuevos («con las versiones de otro»), antes que las copias.
       for (const h of [...historiales]) {
@@ -740,7 +773,9 @@
       );
       void cargarCliente(c, { silencioso: true });
       // A la ficha: allí se ve «Cambios en las copias» en camino hasta que el equipo los aplica.
-      await goto(`/c/${c}/equipos/${equipo.id}`);
+      // 15r: con un espejo pedido para un repositorio nuevo, la ficha abre «Añadir un espejo» en cuanto exista.
+      const pend = espejoPendiente && cfg.copias.some((k) => k.repo === espejoPendiente) ? espejoPendiente : null;
+      await goto(`/c/${c}/equipos/${equipo.id}${pend ? `?paso_espejo=${encodeURIComponent(pend)}` : ""}`);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -881,8 +916,9 @@
 
           <div class="cuerpo">
             <div class="cab">
-              {#if avanzado && abiertaK}
-                <input id="t-{k.id}" class="input titulo" bind:value={k.nombre} aria-label="Nombre de la copia" />
+              {#if abiertaK}
+                <!-- 15t: el nombre arriba de todo, siempre visible y editable (se propone solo con las carpetas). -->
+                <input id="t-{k.id}" class="input titulo" bind:value={k.nombre} maxlength={MAX_NOMBRE} aria-label="Nombre de la copia" placeholder="Nombre de la copia" autocomplete="off" />
               {:else}
                 <h2 class="titulo-txt" id="t-{k.id}">
                   <button type="button" class="abrir" aria-expanded={abiertaK} aria-controls="form-{k.id}" onclick={() => (abiertas[k.id] = !abiertaK)}>{k.nombre}</button>
@@ -941,7 +977,7 @@
                   cliente={actual.cliente}
                   prueba={prueba ?? undefined}
                   version={versionAgente}
-                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina }}
+                  admite={{ reglas: admiteReglas, cadenas: admiteCadenas, despues: admiteDespues, soloCambios: admiteSoloCambios, ganchos: admiteGanchos, filtros: admiteFiltros, termina: admiteTermina, etiquetas: admiteEtiquetas }}
                   regla={rc}
                   puede={puedeSugerir(k)}
                   pendientes={pendientesDe(k)}
@@ -1000,7 +1036,7 @@
                 <div class="rejilla-2">
                   <div class="field">
                     <label class="field-label" for="carp-{k.id}">Carpetas</label>
-                    <textarea id="carp-{k.id}" class="input mono" rows="4" spellcheck="false" value={k.carpetas.join("\n")} oninput={(e) => (k.carpetas = lineas(e.currentTarget.value))} placeholder={/windows/i.test(equipo.so) ? "C:\\Users\\nombre\\Documents" : "/home/nombre"}></textarea>
+                    <textarea id="carp-{k.id}" class="input mono" rows="4" spellcheck="false" value={k.carpetas.join("\n")} oninput={(e) => ponerCarpetas(k, lineas(e.currentTarget.value), equipo!.nombre)} placeholder={/windows/i.test(equipo.so) ? "C:\\Users\\nombre\\Documents" : "/home/nombre"}></textarea>
                     <button type="button" class="btn btn-sm elegir" onclick={() => (elegirPara = i)}><FolderOpen size={14} />Elegir en el equipo</button>
                   </div>
                   <div class="field">
@@ -1044,6 +1080,7 @@
                   {/if}
                 </div>
                 <EditorGanchos id={k.id} bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admiteGanchos} version={versionAgente} cliente={actual.cliente ?? undefined} {equipo} prueba={prueba ?? undefined} />
+                <EtiquetasVersiones id={k.id} bind:etiquetas={() => k.etiquetas ?? [], (v) => (k.etiquetas = v)} admite={admiteEtiquetas} version={versionAgente} sugeridas={etiquetasEnUso(actual.equipos)} />
                 {#if !k.activa}
                   <p class="faint nota"><Trash2 size={13} />Para quitarla del todo y dejar de proteger esas carpetas, usa «Dejar de copiar» en el repositorio (espera {actual.cliente?.espera_min_horas} h).</p>
                 {/if}
@@ -1239,7 +1276,7 @@
     onclose={() => (elegirPara = null)}
     alElegir={(rutas, gancho, exclusiones) => {
       const k = cfg!.copias[elegirPara!];
-      k.carpetas = rutas;
+      ponerCarpetas(k, rutas, equipo!.nombre);
       // 14zz: las subcarpetas desmarcadas van a «No copiar» (ruta exacta); las reglas de antes se quedan.
       if (exclusiones) k.exclusiones = exclusiones;
       void gancho;

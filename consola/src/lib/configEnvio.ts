@@ -34,6 +34,8 @@ export interface Admite {
   verificarVolcado?: boolean;
   /** 15u: «todas las bases» en el gancho de SQL Server (agente con `admite: "sqlserver_todas"`). */
   todasLasBases?: boolean;
+  /** 15v: las etiquetas de las versiones de cada copia (agente con `admite: "etiquetas_copia"`). */
+  etiquetas?: boolean;
 }
 
 export function admiteDe(equipo: Equipo, version: string | null | undefined = equipo.version_agente): Admite {
@@ -50,6 +52,7 @@ export function admiteDe(equipo: Equipo, version: string | null | undefined = eq
     termina: !!equipo.resumen?.admite?.includes("termina"),
     verificarVolcado: admiteVerificarVolcado(equipo),
     todasLasBases: admiteTodasLasBases(equipo),
+    etiquetas: !!equipo.resumen?.admite?.includes("etiquetas_copia"),
   };
 }
 
@@ -70,7 +73,7 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
     // Tarea 7c: `tras` solo a un agente que lo entiende (uno anterior haría la copia solo con su horario).
     // Plan 0.7.26: `inicio` solo para «despues» (lo demás se deduce de `tras`) y el retraso si hay; los dos, solo a un agente que los entiende.
     // Plan 0.8.0, F1: «Solo a mano» y «Termina», solo a un agente que los entiende (la consola no se los ofrece a otro).
-    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, ...resto } = k;
+    const { solo_si_cambios, tras, inicio, retraso_min, a_mano, termina, etiquetas, ...resto } = k;
     const conTras = !!a.cadenas && !!tras;
     const conFin = !!a.termina && !!termina && (termina.veces != null || !!termina.hasta || !!termina.una_vez);
     return {
@@ -87,6 +90,8 @@ export function configParaEnviar(c0: Configuracion, a: Admite) {
       ...(conTras && a.despues && retraso_min && retraso_min > 0 ? { retraso_min } : {}),
       ...(a.termina && a_mano ? { a_mano: true } : {}),
       ...(conFin ? { termina: Object.fromEntries(Object.entries(termina!).filter(([, v]) => v != null && v !== "")) } : {}),
+      // 15v: sin etiquetas no va el campo (el agente pone «resguardo-agente»).
+      ...(a.etiquetas && etiquetas?.length ? { etiquetas: [...etiquetas] } : {}),
     };
   });
   return {

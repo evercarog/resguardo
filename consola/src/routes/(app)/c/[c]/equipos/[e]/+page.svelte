@@ -166,6 +166,7 @@
   import DatosDelEquipo from "$lib/componentes/DatosDelEquipo.svelte";
   import { datosBasicos, reinicioAntes, sistemaDe } from "$lib/datosBasicos";
   import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
+  import RenombrarCopia, { type QueRenombrar } from "$lib/componentes/copias/RenombrarCopia.svelte";
 
   const c = $derived(page.params.c ?? "");
   // Los informes de los demás equipos (para el camino de las copias de un almacén).
@@ -278,8 +279,8 @@
   /** C1: cada copia derivada (también la «copia externa» de antes) como un repositorio propio, enlazado con su origen. */
   const reposDerivados = $derived(
     repos.flatMap((r) => [
-      ...(r.externa ? [{ r, id: "externa", destino: r.externa.destino ?? "otro destino", destinoId: r.externa.destino_id ?? null }] : []),
-      ...(r.derivadas ?? []).filter((dv) => dv.activa !== false).map((dv) => ({ r, id: dv.id, destino: dv.destino ?? "otro destino", destinoId: dv.destino_id ?? null })),
+      ...(r.externa ? [{ r, id: "externa", nombre: null, destino: r.externa.destino ?? "otro destino", destinoId: r.externa.destino_id ?? null }] : []),
+      ...(r.derivadas ?? []).filter((dv) => dv.activa !== false).map((dv) => ({ r, id: dv.id, nombre: dv.nombre ?? null, destino: dv.destino ?? "otro destino", destinoId: dv.destino_id ?? null })),
     ]),
   );
   const eslabonDerivada = (repo: string, id: string) => caminoRepo.get(repo)?.find((x) => x.id === (id === "externa" ? "externa" : `derivada-${id}`));
@@ -371,6 +372,9 @@
     destinoVacio?: { id: string; nombre: string; tipo: string };
   };
   let dialogo = $state<Dialogo | null>(null);
+  // 0.8.1 (15t): cambiar el nombre de una copia o de una copia derivada (con la clave).
+  let renombrarCopia = $state<QueRenombrar | null>(null);
+  const admiteNombreCopia = $derived(!!equipo?.resumen?.admite?.includes("nombre_copia"));
   /** Equipos del cliente que guardan copias (para «Copiar en …»). */
   const almacenes = $derived(actual.equipos.filter((x) => x.id !== equipo?.id && x.confirmado && x.modo !== "trasladado" && x.resumen?.guarda_copias?.activo));
   let copiarEn = $state<Equipo | null>(null);
@@ -1143,6 +1147,9 @@
                   {#if prox && k.activa !== false && !pausado && Date.parse(prox) > reloj.ahora}<br />Próxima <Tiempo iso={prox} />{/if}
                 </span>
                 <Chip tono={est.tono} texto={est.texto} />
+                {#if puede.administrar(rol)}
+                  <button class="icon-btn" use:tip={"Cambiar el nombre"} aria-label="Cambiar el nombre de «{k.nombre}»" onclick={() => (renombrarCopia = { tipo: "copia", id: k.id, nombre: k.nombre })}><Pencil size={15} /></button>
+                {/if}
                 {#if puede.ordenar(rol)}
                   <button
                     class="icon-btn"
@@ -1262,7 +1269,8 @@
                 <div class="repo-cab">
                   <span class="card-icon"><Database size={18} /></span>
                   <div class="repo-nombre">
-                    <h3>{d.r.nombre} <span class="faint">en</span> {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}</h3>
+                    <h3>{#if d.nombre}{d.nombre}{:else}{d.r.nombre} <span class="faint">en</span> {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}{/if}{#if d.id !== "externa" && puede.administrar(rol) && admiteNombreCopia}<button class="icon-btn icon-btn-sm lapiz" aria-label="Cambiar el nombre de esta copia derivada" use:tip={"Cambiar el nombre"} onclick={() => (renombrarCopia = { tipo: "derivada", repo: d.r.id, id: d.id, nombre: d.nombre ?? `${d.r.nombre} (copia derivada)` })}><Pencil size={14} /></button>{/if}</h3>
+                    {#if d.nombre}<p class="donde faint">En {#if d.destinoId}<a class="link-suave" href={hrefDestino(c, d.destinoId)}>{d.destino}</a>{:else}{d.destino}{/if}</p>{/if}
                     <p class="donde faint">Copia derivada de <a class="link-suave" href="/c/{c}/equipos/{equipo.id}/repositorios/{encodeURIComponent(d.r.id)}">«{d.r.nombre}»</a>: sus versiones, en otro repositorio <Ayuda id="copia-derivada" /></p>
                   </div>
                   {#if x}<Chip pequeno tono={x.tono} texto={x.estado} girando={x.vivo} />{/if}
@@ -1704,6 +1712,9 @@
   {/if}
 </div>
 
+{#if renombrarCopia && equipo && actual.cliente}
+  <RenombrarCopia cliente={actual.cliente} {equipo} que={renombrarCopia} alCambiar={() => void cargar()} onclose={() => (renombrarCopia = null)} />
+{/if}
 {#if dialogo && equipo && actual.cliente}
   {#key dialogo}
   <OrdenDialog

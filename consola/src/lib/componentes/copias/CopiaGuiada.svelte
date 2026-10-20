@@ -17,8 +17,9 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import EditorGanchos from "$lib/componentes/EditorGanchos.svelte";
   import AvisoExclusiones from "./AvisoExclusiones.svelte";
+  import EtiquetasVersiones from "./EtiquetasVersiones.svelte";
   import TiraRegla from "$lib/componentes/regla/TiraRegla.svelte";
-  import { alternarExclusion, cuandoEnFrase, EXCLUSIONES_HABITUALES, pasoHecho, PASOS_COPIA, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
+  import { alternarExclusion, cuandoEnFrase, etiquetasEnUso, EXCLUSIONES_HABITUALES, pasoHecho, PASOS_COPIA, ponerCarpetas, queEnFrase, sugerencias, TEXTO_SUGERENCIA, TITULO_PASO, type PasoCopia, type Sugerencia } from "$lib/copiaGuiada";
   import { ganchosDe } from "$lib/ganchos";
   import { fraseConfig, type ReglaCopia } from "$lib/regla321";
   import { lista } from "$lib/formato";
@@ -60,7 +61,7 @@
     cliente: Cliente;
     prueba?: Uint8Array;
     version: string | null;
-    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean };
+    admite: { reglas: boolean; cadenas: boolean; despues: boolean; soloCambios: boolean; ganchos: boolean; filtros: boolean; termina?: boolean; etiquetas?: boolean };
     /** Cómo queda en la regla 3-2-1-1-0 con lo elegido (sin repositorio, null). */
     regla: ReglaCopia | null;
     /** Las sugerencias de un clic que se pueden hacer con este equipo. */
@@ -108,11 +109,11 @@
   function anadirRuta(e: Event) {
     e.preventDefault();
     const r = ruta.trim();
-    if (r && !k.carpetas.includes(r)) k.carpetas = [...k.carpetas, r];
+    if (r && !k.carpetas.includes(r)) ponerCarpetas(k, [...k.carpetas, r], equipo.nombre);
     ruta = "";
   }
   const otras = $derived(k.exclusiones.filter((x) => !EXCLUSIONES_HABITUALES.some((h) => h.regla === x)));
-  let masQue = $state(untrack(() => ganchosDe(copias[i]?.gancho).length > 0));
+  let masQue = $state(untrack(() => ganchosDe(copias[i]?.gancho).length > 0 || !!copias[i]?.etiquetas?.length));
   const sug = $derived(regla ? sugerencias(regla.regla.partes.filter((p) => !p.cumple_config).map((p) => p.accion), puede) : []);
   const win = $derived(/windows/i.test(equipo.so));
 </script>
@@ -131,15 +132,11 @@
     <PasoGuiado n={2} titulo={TITULO_PASO.que} abierto={paso === "que"} hecho={pasoHecho(k, "que")} resumen={resumenDe.que()} deshabilitado={!abrible("que")} onabrir={() => (paso = "que")}>
       <form class="paso-form" onsubmit={siguiente}>
         <div class="field">
-          <label class="field-label" for="g-nombre-{k.id}">Nombre</label>
-          <input id="g-nombre-{k.id}" class="input nombre" bind:value={k.nombre} maxlength="60" />
-        </div>
-        <div class="field">
           <span class="field-label" id="g-carp-{k.id}">Carpetas</span>
           {#if k.carpetas.length}
             <ul class="carpetas" aria-labelledby="g-carp-{k.id}">
               {#each k.carpetas as c (c)}
-                <li><FolderOpen size={14} /><span class="mono">{c}</span><button type="button" class="icon-btn icon-btn-sm" aria-label="Quitar {c}" use:tip={"Quitar"} onclick={() => (k.carpetas = k.carpetas.filter((x) => x !== c))}><X size={14} /></button></li>
+                <li><FolderOpen size={14} /><span class="mono">{c}</span><button type="button" class="icon-btn icon-btn-sm" aria-label="Quitar {c}" use:tip={"Quitar"} onclick={() => ponerCarpetas(k, k.carpetas.filter((x) => x !== c), equipo.nombre)}><X size={14} /></button></li>
               {/each}
             </ul>
           {/if}
@@ -169,6 +166,7 @@
               ></label
             >
             <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
+            <EtiquetasVersiones id="g-{k.id}" bind:etiquetas={() => k.etiquetas ?? [], (v) => (k.etiquetas = v)} admite={!!admite.etiquetas} {version} sugeridas={etiquetasEnUso(equipos)} />
           </div>
         </details>
         <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.carpetas.length ? null : { texto: "Elige al menos una carpeta" }}>Seguir<ArrowRight size={14} /></BotonFalta></div>
@@ -183,6 +181,8 @@
     </PasoGuiado>
 
     <PasoGuiado n={4} titulo={TITULO_PASO.resumen} abierto={paso === "resumen"} deshabilitado={!abrible("resumen")} onabrir={() => (paso = "resumen")}>
+      <!-- 15t: el nombre, repetido en el resumen (se cambia arriba, en la cabecera de la copia). -->
+      <p class="nombre-res"><span class="faint">Se llamará</span> <strong>{k.nombre || "Sin nombre"}</strong></p>
       <ResumenCopia {copias} {i} {repos} {equipo} {equipos} {catalogo} />
       {#if regla}
         <div class="regla" class:cumple={regla.regla.cumple_config}>
@@ -239,8 +239,10 @@
     justify-content: flex-end;
     gap: 8px;
   }
-  .nombre {
-    max-width: 360px;
+  .nombre-res {
+    margin: 0;
+    font-size: var(--fs-sm);
+    overflow-wrap: anywhere;
   }
   .carpetas {
     display: flex;
