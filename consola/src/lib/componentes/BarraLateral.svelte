@@ -464,12 +464,12 @@
   }
   /* Plan 0.8.1, B1: una sola lista de secciones, sin títulos de grupo; «Ajustes»
    * del cliente, abajo y aparte (encima de la ayuda y la cuenta). */
-  .ajustes-cliente {
+  .items.ajustes-cliente {
     margin-top: auto;
     padding-top: var(--sp-3);
     border-top: 1px solid var(--border);
   }
-  .ajustes-cliente ~ .abajo {
+  .items.ajustes-cliente ~ .items.abajo {
     margin-top: 0;
   }
   .items {
