@@ -262,7 +262,7 @@
     font-size: var(--fs-xs);
   }
   .mono {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
   }
   .aviso {
     display: flex;
