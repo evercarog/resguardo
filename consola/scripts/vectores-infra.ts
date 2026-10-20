@@ -2,7 +2,8 @@
 // la infraestructura (C4, src/lib/infra.ts: leer, proponer, la línea de cada
 // destino y la regla con los soportes reales) y lo que el agente ve de su
 // almacenamiento (src/lib/datosBasicos.ts). `npm run test:vectores` (con las demás).
-import type { Equipo } from "../src/lib/tipos";
+import type { Equipo, TrabajoEspejo } from "../src/lib/tipos";
+import { rutaDelRepositorio, rutaEnEspejo, rutasDelEspejo, unirRuta } from "../src/lib/dondeEsta";
 import { cuerpoTipo, grupoTipo, textoTipo, tipoEquipo } from "../src/lib/tipoEquipo";
 import { fisicoDe, formaConjunto, idDe, leerInfra, lineaFisica, paraGuardar, propuestas, sitioDeDestino, sitioDeEquipo, textoConjunto, tipoDeConjunto } from "../src/lib/infra";
 import { datosBasicos, discoDeRuta } from "../src/lib/datosBasicos";
@@ -135,6 +136,49 @@ igual("…con su línea para enseñarla", pasos[0].lineaFisica, "hv-01 · tank, 
 igual("fisicoDe", [fisicoDe(sz), fisicoDe(null)], [{ fisico: "hv-01", soporte: "conjunto:hv-01:tank" }, null]);
 const intactos = [paso("destino", "equipo:alm:principal", "alm", "zona:alm:principal")];
 igual("sin infraestructura, nada cambia", [ponerInfra("e2", intactos, null), intactos[0].soporte, intactos[0].fisico ?? null], [{ soporte: "equipo:e2:origen", fisico: null }, "equipo:alm:principal", null]);
+
+console.log("\n· Dónde está (C1, src/lib/dondeEsta.ts): rutas reales");
+{
+  const pcR = eq("pc1", "PC-01", {
+    destinos: [
+      { id: "d-alm", nombre: "Almacén", tipo: "rest", donde: "https://192.0.2.10:8000/pc-01-3f2a/", equipo_almacen: "alm" },
+      { id: "d-loc", nombre: "Disco D", tipo: "local", unidad: "D:", carpeta: "D:\\Copias" },
+      { id: "d-b2", nombre: "B2", tipo: "b2", donde: "mi-bucket:Resguardo" },
+      { id: "d-old", nombre: "Viejo", tipo: "local", unidad: "E:" },
+    ],
+    repositorios: [
+      { id: "contabilidad", nombre: "Contabilidad", destino: "d-alm" },
+      { id: "fotos", nombre: "Fotos", destino: "d-loc" },
+      { id: "r3", nombre: "Nube", destino: "d-b2", ruta: "pc-01/r3" },
+      { id: "r4", nombre: "Viejo", destino: "d-old" },
+    ],
+  });
+  const r = (id: string) => pcR.resumen!.repositorios!.find((x) => x.id === id)!;
+  igual(
+    "en el almacén (zona y <usuario>/<repo>), en un disco, en un bucket y con un agente anterior",
+    ["contabilidad", "fotos", "r3", "r4"].map((id) => rutaDelRepositorio(pcR, r(id), [pcR, alm])),
+    ["/tank/copias/pc-01-3f2a/contabilidad", "D:\\Copias\\fotos", "mi-bucket:Resguardo/pc-01/r3", "E:\\…\\r4"],
+  );
+  igual("unir rutas con las barras de la base", [unirRuta("/srv/", "a/b"), unirRuta("E:\\Espejo", "u/r"), unirRuta("", "x")], ["/srv/a/b", "E:\\Espejo\\u\\r", "x"]);
+  igual(
+    "en el destino de un espejo: carpeta, nube y otra zona del almacén",
+    [rutaEnEspejo({ tipo: "carpeta", carpeta: "E:\\Espejo" }, "pc-01/conta"), rutaEnEspejo({ tipo: "nube", carpeta: "Resguardo", nube: "Dropbox Oficina" }, "pc-01/conta"), rutaEnEspejo({ tipo: "zona", carpeta: "z0a0b0c" }, "pc-01/conta", alm)],
+    ["E:\\Espejo\\pc-01\\conta", "Dropbox Oficina:Resguardo/pc-01/conta", "/mnt/usb/copias/pc-01/conta"],
+  );
+  const trab = (id: string, carpeta: string, repos: string[]) => ({ id, nombre: id, activo: true, quien: "almacen" as const, que: { tipo: "repos" as const, repos }, adonde: { tipo: "nube" as const, carpeta, nube: "B2 Norte" }, cuando: {}, retencion: {}, freno: {}, orden: 0 }) as unknown as TrabajoEspejo;
+  const nuevo = trab("t-nuevo", "Resguardo", ["pc-01/a", "pc-01/b", "pc-01/c"]);
+  const otros = [trab("t-1", "Resguardo", ["pc-01/a"]), trab("t-2", "Antigua", ["pc-01/b"])];
+  igual(
+    "cada repositorio: nuevo, ya está allí (otro espejo, misma ruta) u otra ruta (se subiría entero)",
+    rutasDelEspejo(nuevo, otros, ["pc-01/a", "pc-01/b", "pc-01/c"]).map((x) => [x.repo, x.estado, x.otra ?? null]),
+    [
+      ["pc-01/a", "ya_esta", null],
+      ["pc-01/b", "otra_ruta", "B2 Norte:Antigua/pc-01/b"],
+      ["pc-01/c", "nuevo", null],
+    ],
+  );
+  igual("al cambiar un espejo, lo suyo con la misma ruta ya está", rutasDelEspejo(nuevo, [], ["pc-01/a"], null, nuevo)[0].estado, "ya_esta");
+}
 
 console.log(`\n${total - fallos}/${total} bien`);
 if (fallos) process.exit(1);

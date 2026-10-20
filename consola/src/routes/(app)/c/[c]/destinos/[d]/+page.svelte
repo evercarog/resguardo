@@ -39,6 +39,9 @@
   import { ponerSedeDestino } from "$lib/organizacion.svelte";
   import NotasDialogo from "$lib/componentes/notas/NotasDialogo.svelte";
   import ContadorNotas from "$lib/componentes/notas/ContadorNotas.svelte";
+  import Copiable from "$lib/componentes/Copiable.svelte";
+  import { rutaDelRepositorio, rutaEnEspejo } from "$lib/dondeEsta";
+  import { lineaFisica, sitioDeDestino } from "$lib/infra";
 
   const c = $derived(page.params.c ?? "");
   // SvelteKit ya decodifica el parámetro (las claves solo llevan [a-z0-9:_.-]).
@@ -110,6 +113,8 @@
     return null;
   });
   const equiposQueLoUsan = $derived(actual.equipos.filter((e) => v?.equipos.includes(e.nombre)));
+  // Plan 0.8.1 (C1, C4): dónde está físicamente (con infraestructura anotada) y la carpeta de una zona.
+  const fisico = $derived(v ? lineaFisica(sitioDeDestino(actual.infra, v.clave, v.zona?.almacen.id ?? (v.destino?.tipo === "local" && !v.destino.red ? equiposQueLoUsan[0]?.id : null)), actual.organizacion) : null);
 
   /** Qué es, en palabras: «Almacén · zona principal», «Disco extraíble de CAJA-1», «Dropbox · conectada en ALMACEN-01»… */
   const queEs = $derived.by(() => {
@@ -181,6 +186,10 @@
             <dt>{v.clase === "nube" ? "Conectada en" : "Lo tiene"}</dt>
             <dd>{#each equiposQueLoUsan as e, i (e.id)}{i ? ", " : ""}<a class="link" href="/c/{c}/equipos/{e.id}">{e.nombre}</a>{/each}</dd>
           {/if}
+          {#if v.zona?.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.zona.carpeta} que="la carpeta" /></dd>{/if}
+          {#if v.destino?.tipo === "local" && v.destino.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.destino.carpeta} que="la carpeta" /></dd>{/if}
+          <dt>Dónde está físicamente</dt>
+          <dd>{#if fisico}<a class="link" href="/c/{c}/infraestructura">{fisico}</a>{:else}<span class="faint">Sin anotar ·</span> <a class="link" href="/c/{c}/infraestructura">Anotarlo</a>{/if}</dd>
           {#if marca?.sistemaArchivos}<dt>Sistema de archivos</dt><dd><span class="pastilla mono">{marca.sistemaArchivos}</span> <span class="faint">solo un dato</span></dd>{/if}
           {#if entorno}<dt>Entorno</dt><dd>{entorno}</dd>{/if}
         </dl>
@@ -264,7 +273,7 @@
                       {#if f.equipo && f.repo}
                         <a class="fila-d" href="/c/{c}/equipos/{f.equipo.id}/repositorios/{encodeURIComponent(f.repo.id)}">
                           <Database size={14} class="ic" />
-                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)}${f.real ? " aquí" : " (como en el almacén)"}` : ""}</span></span>
+                          <span class="fd-texto"><strong>{f.nombre}</strong><span class="faint">{f.equipo.nombre}{f.tam ? ` · ${bytes(f.tam)}${f.real ? " aquí" : " (como en el almacén)"}` : ""}</span>{#if rutaEnEspejo(x.trabajo.adonde, f.valor, x.hace)}<span class="ruta-d mono">{rutaEnEspejo(x.trabajo.adonde, f.valor, x.hace)}</span>{/if}</span>
                           <ArrowRight size={14} class="flecha" />
                         </a>
                       {:else}
@@ -291,7 +300,7 @@
               <li>
                 <a class="fila-d" href="/c/{c}/equipos/{x.e.id}/repositorios/{encodeURIComponent(x.r.id)}">
                   <Database size={16} class="ic" />
-                  <span class="fd-texto"><strong>{x.r.nombre}</strong><span class="faint">{x.e.nombre} · {plural(x.versiones, "versión", "versiones")}{x.tam ? ` · ${bytes(x.tam)}` : ""}</span></span>
+                  <span class="fd-texto"><strong>{x.r.nombre}</strong><span class="faint">{x.e.nombre} · {plural(x.versiones, "versión", "versiones")}{x.tam ? ` · ${bytes(x.tam)}` : ""}</span>{#if rutaDelRepositorio(x.e, x.r, actual.equipos)}<span class="ruta-d mono">{rutaDelRepositorio(x.e, x.r, actual.equipos)}</span>{/if}</span>
                   <Chip pequeno tono={x.estado.tono} texto={x.estado.texto} />
                   <ArrowRight size={14} class="flecha" />
                 </a>
@@ -417,6 +426,12 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-2);
+  }
+  /* 0.8.1 (C1): la ruta real de cada repositorio aquí. */
+  .ruta-d {
+    font-size: 11.5px;
+    color: var(--text-3);
+    overflow-wrap: anywhere;
   }
   .section-title {
     display: flex;
