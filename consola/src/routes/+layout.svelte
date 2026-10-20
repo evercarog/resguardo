@@ -69,7 +69,7 @@
 {#if error}
   <main>
     <PantallaError pantallaCompleta ilustracion="sin-conexion" titulo="No hay conexión con Resguardo Server" texto={error}>
-      <button class="btn btn-primary" onclick={() => location.reload()}>Volver a intentarlo</button>
+      <button class="btn btn-primary" onclick={() => location.reload()}>Reintentar</button>
     </PantallaError>
   </main>
 {:else if app.listo}

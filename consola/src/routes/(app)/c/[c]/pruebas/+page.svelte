@@ -17,13 +17,14 @@
   import Chip from "$lib/componentes/Chip.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import GraficaBarras from "$lib/componentes/repo/GraficaBarras.svelte";
   import FormPruebaFuncional from "$lib/componentes/pruebas/FormPruebaFuncional.svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
   import { bytes, fechaLarga, numero, plural } from "$lib/formato";
-  import { cargarFuncionales, funcionalesDe, ponerFuncionales } from "$lib/funcionales.svelte";
+  import { cargarFuncionales, errorFuncionales, funcionalesDe, ponerFuncionales } from "$lib/funcionales.svelte";
   import { aMinutos, cifrasPruebas, deMinutos, deRestauracion, diaLargo, resultadoPrueba, textoAlcance, textoMinutos, textoMotivoPrueba, textoPlazo, DESDE_PRUEBA } from "$lib/pruebasFuncionales";
   import { juntar, type ConMotivo } from "$lib/restauraciones";
   import { ultimos } from "$lib/informes.svelte";
@@ -164,7 +165,9 @@
     {/snippet}
   </CabeceraPagina>
 
-  {#if datos === undefined}
+  {#if datos === undefined && errorFuncionales(c)}
+    <ErrorCarga que="las pruebas funcionales" error={errorFuncionales(c)} reintentar={() => cargarFuncionales(c, true)} />
+  {:else if datos === undefined}
     <Cargando forma="lineas" />
   {:else if datos === null}
     <div class="notice notice-info"><p>Este servidor aún no guarda las pruebas funcionales: actualiza Resguardo Server para registrarlas.</p></div>

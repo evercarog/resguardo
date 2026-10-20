@@ -16,6 +16,7 @@
   import type { Tono } from "$lib/salud";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
@@ -31,6 +32,8 @@
   let solo = $state(true);
   let agrupar = $state<"gravedad" | "equipo">("gravedad");
   let avisos = $state<Aviso[] | null>(null);
+  /** La carga falló (sin datos aún): se enseña con «Reintentar». */
+  let errorCarga = $state("");
   let marcando = $state<Set<string>>(new Set());
   let todos = $state(false);
 
@@ -38,8 +41,10 @@
     if (!actual.id) return;
     try {
       avisos = await api.avisos(actual.id, solo);
+      errorCarga = "";
     } catch (e) {
-      fallo(e);
+      errorCarga = (e as Error).message;
+      if (avisos !== null) fallo(e);
     }
   }
   $effect(() => {
@@ -192,7 +197,9 @@
 
   <FiltroEtiquetas />
 
-  {#if avisos === null}
+  {#if avisos === null && errorCarga}
+    <ErrorCarga que="los avisos" error={errorCarga} reintentar={cargar} />
+  {:else if avisos === null}
     <Cargando />
   {:else if !visibles.length}
     <div class="card">

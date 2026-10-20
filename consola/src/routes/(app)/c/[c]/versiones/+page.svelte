@@ -15,11 +15,14 @@
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
 
   /** undefined: cargando; null: un servidor anterior (sin esta función). */
   let datos = $state<ActualizacionesCliente | null | undefined>(undefined);
+  /** La carga falló (que no sea un servidor anterior): se enseña con «Reintentar». */
+  let errorCarga = $state("");
   let modo = $state<PoliticaActualizaciones["modo"]>("auto");
   let dias = $state(2);
   let conVentana = $state(false);
@@ -38,6 +41,7 @@
     try {
       const r = await api.actualizaciones(actual.id);
       datos = r;
+      errorCarga = "";
       if (r) {
         modo = r.politica.modo;
         dias = r.politica.dias_general;
@@ -45,8 +49,9 @@
         if (r.politica.ventana) [desde, hasta] = [r.politica.ventana.desde, r.politica.ventana.hasta];
       }
     } catch (e) {
-      fallo(e);
-      datos = null;
+      // Antes, cualquier fallo se leía como «servidor anterior: actualiza Resguardo Server».
+      errorCarga = (e as Error).message;
+      if (datos) fallo(e);
     }
   }
 
@@ -169,7 +174,9 @@
     {/snippet}
   </CabeceraPagina>
 
-  {#if datos === undefined || !actual.cargado}
+  {#if !datos && errorCarga}
+    <ErrorCarga que="las versiones de los agentes" error={errorCarga} reintentar={cargar} />
+  {:else if datos === undefined || !actual.cargado}
     <Cargando />
   {:else if datos === null}
     <div class="notice notice-info"><p>Este servidor es de una versión anterior: aún no da actualizaciones a los equipos. Actualiza Resguardo Server.</p></div>

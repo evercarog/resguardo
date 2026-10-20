@@ -18,6 +18,7 @@
   import type { Aviso, TipoAviso } from "$lib/tipos";
   import type { PanelDe } from "$lib/global";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
@@ -103,7 +104,7 @@
   <CabeceraPagina titulo="Avisos" icono={BellRing} migas={[{ texto: "Todos los clientes", href: "/todos" }, { texto: "Avisos" }]} resumen={datos ? `${plural(filas.length, "aviso sin revisar", "avisos sin revisar")}${urgentes ? ` · ${plural(urgentes, "urgente", "urgentes")}` : ""}` : undefined} />
 
   {#if error && !datos}
-    <div class="notice notice-danger" role="alert"><p>{error}</p></div>
+    <ErrorCarga que="los avisos" {error} reintentar={cargar} />
   {:else if !datos}
     <Esqueleto forma="filas" n={5} etiqueta="Cargando los avisos de todos los clientes…" />
   {:else if !filas.length}

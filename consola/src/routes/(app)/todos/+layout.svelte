@@ -10,7 +10,7 @@
   let { children }: { children: Snippet } = $props();
 
   onMount(() => {
-    void cargarClientes();
+    void cargarClientes().catch(() => {}); // el fallo lo enseña la página que necesita la lista
     return vigilarTodos();
   });
 </script>

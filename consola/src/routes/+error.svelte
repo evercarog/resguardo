@@ -4,6 +4,8 @@
   import PantallaError from "$lib/componentes/PantallaError.svelte";
 
   const estado = $derived(page.status);
+  // «Internal Error» y «Not Found» son los textos de SvelteKit, en inglés: nunca a la vista.
+  const mensaje = $derived(!page.error?.message || /^(Internal Error|Not Found)$/i.test(page.error.message) ? "Vuelve a intentarlo en un momento." : page.error.message);
 </script>
 
 <svelte:head><title>{estado === 404 ? "No existe" : "Error"} · Resguardo Server</title></svelte:head>
@@ -18,8 +20,8 @@
       <a class="btn btn-primary" href="/">Ir al inicio</a>
     </PantallaError>
   {:else}
-    <PantallaError pantallaCompleta ilustracion="sin-conexion" titulo="Algo no ha ido bien" texto={page.error?.message || "Vuelve a intentarlo en un momento."}>
-      <button class="btn btn-primary" onclick={() => location.reload()}>Volver a intentarlo</button>
+    <PantallaError pantallaCompleta ilustracion="sin-conexion" titulo="Algo no ha ido bien" texto={mensaje}>
+      <button class="btn btn-primary" onclick={() => location.reload()}>Reintentar</button>
       <a class="btn" href="/">Ir al inicio</a>
     </PantallaError>
   {/if}

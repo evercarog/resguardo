@@ -89,7 +89,7 @@
     {#if todos.errorCodigo === "red"}
       <PantallaError ilustracion="sin-conexion" titulo="Sin conexión con el servidor" texto={todos.error}><button class="btn btn-primary" onclick={() => cargarTodos()}>Reintentar</button></PantallaError>
     {:else}
-      <div class="notice notice-danger"><p>{todos.error}</p></div>
+      <PantallaError ilustracion="sin-conexion" titulo="No se pudo cargar «Todos los clientes»" texto={todos.error}><button class="btn btn-primary" onclick={() => cargarTodos()}>Reintentar</button></PantallaError>
     {/if}
   {:else if !todos.cargado}
     <Esqueleto forma="cifras" n={4} etiqueta="Cargando todos los clientes…" />

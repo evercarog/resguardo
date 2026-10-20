@@ -7,9 +7,10 @@
   import { plural } from "$lib/formato";
   import { sinTildes } from "$lib/global";
   import { equiposTodos } from "$lib/todosSecciones";
-  import { todos } from "$lib/todos.svelte";
+  import { cargarTodos, todos } from "$lib/todos.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
@@ -46,7 +47,9 @@
 <div class="page ancha">
   <CabeceraPagina titulo="Equipos" icono={Monitor} migas={[{ texto: "Todos los clientes", href: "/todos" }, { texto: "Equipos" }]} resumen={todos.cargado ? `${plural(filas.length, "equipo", "equipos")} en ${plural(todos.clientes.length, "cliente", "clientes")} · ${plural(atencion, "necesita atención", "necesitan atención")}` : undefined} />
 
-  {#if !todos.cargado}
+  {#if todos.error && !todos.cargado}
+    <ErrorCarga que="los equipos de todos los clientes" error={todos.error} reintentar={() => cargarTodos()} />
+  {:else if !todos.cargado}
     <Esqueleto forma="filas" n={6} etiqueta="Cargando los equipos de todos los clientes…" />
   {:else if !filas.length}
     <div class="card"><Vacio icono={Monitor} ilustracion="sin-equipos" titulo="Todavía no hay equipos" texto="Cuando un cliente tenga equipos, salen aquí." /></div>

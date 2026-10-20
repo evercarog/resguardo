@@ -28,7 +28,7 @@
   let principal = $state<HTMLElement>();
 
   onMount(() => {
-    void cargarClientes();
+    void cargarClientes().catch(() => {}); // el fallo lo enseña la página que necesita la lista
   });
   // ¿Se actualizó el servidor con esta pestaña abierta? Entonces, «Recargar».
   let versionCargada: string | undefined;

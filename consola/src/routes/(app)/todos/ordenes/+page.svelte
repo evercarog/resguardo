@@ -22,6 +22,7 @@
   import type { PanelDe } from "$lib/global";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
@@ -86,7 +87,7 @@
   </CabeceraPagina>
 
   {#if error && !propias}
-    <div class="notice notice-danger" role="alert"><p>{error}</p></div>
+    <ErrorCarga que="las órdenes en espera" {error} reintentar={cargar} />
   {:else if !propias || !todos.cargado}
     <Esqueleto forma="filas" n={3} etiqueta="Cargando las órdenes en espera…" />
   {:else if !filas.length}

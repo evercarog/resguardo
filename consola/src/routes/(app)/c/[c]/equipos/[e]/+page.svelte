@@ -31,6 +31,7 @@
     Clock,
     CloudUpload,
     Database,
+    FileBarChart,
     FolderOpen,
     FolderSync,
     HardDrive,
@@ -72,6 +73,7 @@
   import EditorRetencion from "$lib/componentes/EditorRetencion.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
@@ -165,7 +167,9 @@
 
   let equipo = $state<EquipoDetalle | null>(null);
   let ordenes = $state<Orden[]>([]);
-  let informes = $state<Informe[]>([]);
+  /** null: aún sin cargar. */
+  let informes = $state<Informe[] | null>(null);
+  let errorInformes = $state("");
   let error = $state("");
   let renombrando = $state(false);
   /** Las notas de un destino (no tiene página propia). */
@@ -195,14 +199,17 @@
   async function cargarInformes() {
     try {
       informes = await api.informes(c, id, 20);
+      errorInformes = "";
     } catch (e) {
-      fallo(e);
+      errorInformes = (e as Error).message;
     }
   }
   $effect(() => {
     void id;
     void c;
     equipo = null;
+    informes = null;
+    errorInformes = "";
     untrack(() => void cargar());
   });
   $effect(() => {
@@ -1543,8 +1550,12 @@
       </section>
     {:else if tab === "informes"}
       <section>
-        {#if !informes.length}
+        {#if errorInformes && !informes}
+          <ErrorCarga que="los informes" error={errorInformes} reintentar={cargarInformes} />
+        {:else if !informes}
           <Cargando />
+        {:else if !informes.length}
+          <div class="card"><Vacio icono={FileBarChart} titulo="Todavía no hay informes" texto="Cada vez que {equipo.nombre} termine una copia, su informe saldrá aquí." /></div>
         {:else}
           <div class="card p-0 desplazable">
             <table class="tabla">

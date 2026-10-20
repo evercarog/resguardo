@@ -10,6 +10,7 @@
   import { plural } from "$lib/formato";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import RecibirCliente from "$lib/componentes/RecibirCliente.svelte";
   import DarCodigoConexion from "$lib/componentes/DarCodigoConexion.svelte";
@@ -27,10 +28,17 @@
   let ocupado = $state(false);
   let error = $state("");
 
-  onMount(async () => {
-    await cargarClientes();
-    cargado = true;
-  });
+  let errorCarga = $state("");
+  async function cargar() {
+    try {
+      await cargarClientes();
+      errorCarga = "";
+      cargado = true;
+    } catch (e) {
+      errorCarga = (e as Error).message;
+    }
+  }
+  onMount(cargar);
 
   async function crear(e: SubmitEvent) {
     e.preventDefault();
@@ -68,7 +76,9 @@
     {/if}
   </div>
 
-  {#if !cargado}
+  {#if !cargado && errorCarga}
+    <ErrorCarga que="los clientes" error={errorCarga} reintentar={cargar} />
+  {:else if !cargado}
     <Cargando />
   {:else if !app.clientes.length}
     <div class="card">

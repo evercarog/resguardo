@@ -73,7 +73,7 @@
     {:else if actual.errorCodigo === "red"}
       <PantallaError ilustracion="sin-conexion" titulo="Sin conexión con el servidor" texto={actual.error}><button class="btn btn-primary" onclick={() => cargarCliente(id)}>Reintentar</button></PantallaError>
     {:else}
-      <div class="notice notice-danger"><p>{actual.error}</p></div>
+      <PantallaError ilustracion="sin-conexion" titulo="No se pudo cargar este cliente" texto={actual.error}><button class="btn btn-primary" onclick={() => cargarCliente(id)}>Reintentar</button><a class="btn" href="/clientes">Ver mis clientes</a></PantallaError>
     {/if}
   </div>
 {:else}

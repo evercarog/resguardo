@@ -155,7 +155,7 @@
     <div class="notice notice-info"><p>El agente de {acceso.equipo.nombre} todavía no sabe comparar versiones. Actualízalo para ver aquí qué archivos cambiaron. Mientras, puedes explorar cada versión en Restaurar.</p></div>
   {:else if error}
     <div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>
-    <button class="btn btn-sm" onclick={() => cargar(version.id, desde)}>Volver a intentarlo</button>
+    <button class="btn btn-sm" onclick={() => cargar(version.id, desde)}>Reintentar</button>
   {:else if cargando || !dif}
     <p class="espera" role="status"><LoaderCircle size={15} class="spin" />{progreso}</p>
   {:else if !dif.primera}

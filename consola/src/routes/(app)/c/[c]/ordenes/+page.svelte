@@ -10,6 +10,7 @@
   import { fallo } from "$lib/avisos.svelte";
   import type { Orden } from "$lib/tipos";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import ListaOrdenes from "$lib/componentes/ListaOrdenes.svelte";
   import Pendientes from "$lib/componentes/Pendientes.svelte";
   import OrdenesOtrasConsolas from "$lib/componentes/OrdenesOtrasConsolas.svelte";
@@ -18,6 +19,8 @@
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
 
   let ordenes = $state<Orden[] | null>(null);
+  /** La carga falló (sin datos aún): se enseña con «Reintentar». */
+  let errorCarga = $state("");
   let siguiente = $state<string | null>(null);
   let filtro = $state<"todas" | "en_marcha" | "fallida" | "rechazada">("todas");
   let equipo = $state("");
@@ -33,8 +36,11 @@
       if (mia !== vuelta) return;
       ordenes = mas ? [...(ordenes ?? []), ...r.ordenes] : r.ordenes;
       siguiente = r.siguiente;
+      errorCarga = "";
     } catch (e) {
-      if (mia === vuelta) fallo(e);
+      if (mia !== vuelta) return;
+      errorCarga = (e as Error).message;
+      if (ordenes !== null) fallo(e);
     } finally {
       if (mia === vuelta) cargando = false;
     }
@@ -77,7 +83,9 @@
         </div>
       </div>
     </div>
-    {#if ordenes === null}
+    {#if ordenes === null && errorCarga}
+      <ErrorCarga que="las órdenes" error={errorCarga} reintentar={() => cargar()} />
+    {:else if ordenes === null}
       <Cargando />
     {:else if ordenes.length}
       <div class="card p-0"><ListaOrdenes {ordenes} equipos={actual.equipos} mostrarEquipo alCambiar={() => cargar()} /></div>

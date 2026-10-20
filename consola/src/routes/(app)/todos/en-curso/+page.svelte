@@ -5,8 +5,9 @@
   // panel (GET /api/panel/progreso, cada 3 s mientras hay algo).
   import { Activity } from "@lucide/svelte";
   import { plural } from "$lib/formato";
-  import { todos } from "$lib/todos.svelte";
+  import { cargarTodos, todos } from "$lib/todos.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import EnMarchaTodos from "$lib/componentes/todos/EnMarchaTodos.svelte";
@@ -40,7 +41,9 @@
 
 <div class="page ancha">
   <CabeceraPagina titulo="En curso" icono={Activity} migas={[{ texto: "Todos los clientes", href: "/todos" }, { texto: "En curso" }]} resumen={todos.cargado ? (tareas.length ? `${resumen} en marcha` : "Nada en marcha ahora") : undefined} />
-  {#if !todos.cargado}
+  {#if todos.error && !todos.cargado}
+    <ErrorCarga que="lo que está en marcha de todos los clientes" error={todos.error} reintentar={() => cargarTodos()} />
+  {:else if !todos.cargado}
     <Esqueleto forma="filas" n={3} etiqueta="Cargando lo que está en marcha…" />
   {:else}
     <FiltroCliente seccion="en-curso" bind:cliente bind:buscar placeholder="Buscar cliente o equipo" />

@@ -15,7 +15,7 @@
   import * as api from "$lib/api";
   import { actual, app, puede, reloj } from "$lib/estado.svelte";
   import { avisar } from "$lib/avisos.svelte";
-  import { bytes, fechaLarga, numero, plural, relativo } from "$lib/formato";
+  import { bytes, fechaLarga, lista, numero, plural, relativo } from "$lib/formato";
   import { saludEquipo } from "$lib/salud";
   import { bytesRepo, claveDia, informeDe, nVersiones, proteccion, pruebaRestauracion, verificacion, type Dia } from "$lib/repo";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
@@ -60,16 +60,23 @@
     r: "ok" | "aviso" | "fallo" | "sin_cambios";
     bytes: number;
   }
-  let datos = $state<{ equipo: Equipo; vueltas: Vuelta[] }[] | null>(null);
+  /** `falta`: no se pudieron leer sus copias del periodo (se dice en el informe; no cuenta como «0 copias»). */
+  let datos = $state<{ equipo: Equipo; vueltas: Vuelta[]; falta?: boolean }[] | null>(null);
+  /** Un servidor anterior sin la ruta (404) no es un fallo: es que no hay ese dato. */
+  const noExiste = (e: unknown) => e instanceof api.ApiError && e.estado === 404;
   let vuelta = 0;
 
   /** Las copias del historial desde `desde`, página a página (v1.26; un servidor anterior repite la primera: se para). */
   async function copiasDesde(equipo: Equipo, desde: Date): Promise<EntradaHistorial[]> {
+    // Lanza si falla (G1, plan 0.8.1: antes se tragaba y el informe decía «0 copias»).
     const todas: EntradaHistorial[] = [];
     const vistas = new Set<string>();
     let antes: string | undefined;
     for (let i = 0; i < 20; i++) {
-      const pag = await api.historialEquipo(actual.id, equipo.id, { desde: desde.toISOString(), tipo: ["copia"], limite: 2000, antes }).catch(() => [] as EntradaHistorial[]);
+      const pag = await api.historialEquipo(actual.id, equipo.id, { desde: desde.toISOString(), tipo: ["copia"], limite: 2000, antes }).catch((e: unknown) => {
+        if (noExiste(e)) return [] as EntradaHistorial[];
+        throw e;
+      });
       const nuevas = pag.filter((x) => !vistas.has(x.id));
       for (const x of nuevas) vistas.add(x.id);
       todas.push(...nuevas);
@@ -84,7 +91,10 @@
     const h = await copiasDesde(equipo, desde);
     const copias = h.filter((x) => x.tipo === "copia" && x.resultado);
     if (copias.length) return copias.map((x) => ({ t: Date.parse(x.hora), r: x.resultado!, bytes: x.resultado === "fallo" || x.resultado === "sin_cambios" ? 0 : (x.anadido ?? 0) }));
-    const informes: Informe[] = await api.informes(actual.id, equipo.id, 30).catch(() => []);
+    const informes: Informe[] = await api.informes(actual.id, equipo.id, 30).catch((e: unknown) => {
+      if (noExiste(e)) return [];
+      throw e;
+    });
     const repos = informes[0]?.datos.repos;
     if (repos?.length) {
       return repos.flatMap((r) => {
@@ -114,7 +124,15 @@
     untrack(() => {
       if (periodoCargado !== desdeMs) datos = null;
       const eqs = actual.equipos.filter((e) => ids.includes(e.id));
-      void Promise.all(eqs.map(async (equipo) => ({ equipo, vueltas: await vueltasDe(equipo, desde) }))).then((d) => {
+      void Promise.all(
+        eqs.map(async (equipo) => {
+          try {
+            return { equipo, vueltas: await vueltasDe(equipo, desde) };
+          } catch {
+            return { equipo, vueltas: [], falta: true };
+          }
+        }),
+      ).then((d) => {
         if (n !== vuelta) return;
         datos = d;
         periodoCargado = desdeMs;
@@ -129,14 +147,15 @@
 
   // Plan 0.8.0 (E2, 13d): las restauraciones del periodo (número, tiempo medio —el RTO real— y éxito).
   let restauraciones = $state<Restauraciones | null>(null);
+  let faltanRestauraciones = $state(false);
   $effect(() => {
     const cc = actual.id;
     if (!cc) return;
     untrack(() =>
       void api
         .restauraciones(cc)
-        .then((r) => (restauraciones = r))
-        .catch(() => (restauraciones = null)),
+        .then((r) => ((restauraciones = r), (faltanRestauraciones = false)))
+        .catch((e: unknown) => ((restauraciones = null), (faltanRestauraciones = !noExiste(e)))),
     );
   });
   const restDelPeriodo = $derived(
@@ -182,6 +201,8 @@
   const delPeriodo = $derived(
     (datos ?? []).map((d) => ({ equipo: actual.equipos.find((e) => e.id === d.equipo.id) ?? d.equipo, vueltas: d.vueltas.filter(enRango) })).filter((d) => pasaFiltro(d.equipo, deEtiqueta)),
   );
+  /** Los equipos (del filtro) cuyas copias no se pudieron leer: el informe lo dice. */
+  const faltanDatos = $derived((datos ?? []).filter((d) => d.falta && pasaFiltro(d.equipo, deEtiqueta)).map((d) => d.equipo.nombre));
   /** Sin etiqueta elegida: una fila por etiqueta (y los que no tienen). */
   const porEtiqueta = $derived(deEtiqueta || !etiquetas.length ? [] : gruposPorEtiqueta(delPeriodo.map((d) => ({ ...d, etiquetas: d.equipo.etiquetas }))));
   const todas = $derived(delPeriodo.flatMap((d) => d.vueltas));
@@ -339,6 +360,14 @@
         <a class="btn btn-primary no-imprimir" href="/c/{actual.id}/equipos">Ver los equipos</a>
       </Vacio>
     {:else}
+      {#if faltanDatos.length}
+        <div class="notice notice-warn falta" role="alert">
+          <p>
+            <strong>Faltan datos de {lista(faltanDatos)}.</strong> No se pudieron leer sus copias del periodo: las cifras y la tabla no las cuentan.
+            <button class="notice-action no-imprimir" onclick={() => recarga++}>Reintentar</button>
+          </p>
+        </div>
+      {/if}
       <p class="frase">{frase}</p>
 
       <div class="cifras" role="list" aria-label="Cifras del periodo">
@@ -467,6 +496,8 @@
               </tr>
             </tbody>
           </table>
+        {:else if faltanRestauraciones}
+          <p class="aviso-falta"><strong>Faltan datos de las restauraciones:</strong> no se pudieron leer. Vuelve a abrir el informe para intentarlo de nuevo.</p>
         {:else}
           <p class="faint">Ninguna restauración en este periodo.</p>
         {/if}
@@ -583,6 +614,13 @@
     margin: 2px 0;
     font-size: var(--fs-sm);
     color: var(--text-2);
+  }
+  .falta {
+    margin-bottom: var(--sp-4);
+  }
+  .aviso-falta {
+    margin: 0;
+    color: var(--warn);
   }
   .hoja {
     display: flex;
