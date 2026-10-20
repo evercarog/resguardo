@@ -82,6 +82,7 @@ Cuatro revisiones del código (textos, estados de las pantallas, accesibilidad y
 - [ ] **H1.** Que la persona del equipo recupere sus propios archivos desde el menú contextual, con sus salvaguardas (15mm).
 - [ ] **H2.** Paquete de evidencia para auditoría y campos opcionales de responsable, criticidad y datos personales (15qq).
 - [ ] **H3.** Passkeys (WebAuthn) para entrar en la consola, además del TOTP (12c).
+- [ ] **H4.** Las pruebas funcionales (registros y política) iguales en todas las consolas del cliente (15ss, pedido del 2026-10-20).
 
 ## Decisiones (2026-10-19)
 
