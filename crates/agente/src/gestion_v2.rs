@@ -1402,6 +1402,10 @@ pub const ADMITE: &[&str] = &[
     // 0.8.0 14ccc: `verificar` (opcional) en el gancho `sqlserver`
     // (`RESTORE VERIFYONLY … WITH CHECKSUM` de cada volcado, por defecto sí) y `verificado` en sus resultados.
     "verificar_volcado",
+    // 0.8.1 (15u, 15f): «todas las bases» en el gancho `sqlserver` (`todas`, `excluir`, `sistema`),
+    // la orden `bases_sqlserver` («Ver las bases de la instancia») y el aviso (no fallo) cuando
+    // solo falta el permiso para verificar un volcado.
+    "sqlserver_todas",
     // 0.8.0 plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
     // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
     // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
@@ -1662,7 +1666,8 @@ pub fn informe(v: Option<&Vinculo>) -> Value {
             let nombre = copias.iter().find(|k| k.repo == repo && k.id == copia).map(|k| k.nombre.clone());
             json!({
                 "id": copia, "repo": repo, "nombre": nombre, "estado": estado_de(&r.result), "cuando": r.finished, "mensaje": crate::web::public_message(&r.message),
-                "ganchos": r.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": crate::web::public_message(&g.mensaje) })).collect::<Vec<_>>(),
+                // 15f: con `verificado`, para que la tarjeta «Antes de copiar» diga «volcadas y verificadas».
+                "ganchos": r.ganchos.iter().map(|g| json!({ "tipo": g.tipo, "estado": g.estado, "mensaje": crate::web::public_message(&g.mensaje), "verificado": g.verificado })).collect::<Vec<_>>(),
             })
         })
         .collect();
