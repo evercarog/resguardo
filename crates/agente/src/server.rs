@@ -122,6 +122,10 @@ pub struct ServerConfig {
     /// carpeta» (las últimas). El espejo no frena por lo que falta bajo una `de`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renombres: Vec<crate::nombres::Renombre>,
+    /// 0.8.1 (15gg): carpetas de fuera del almacén donde buscar además repositorios
+    /// sueltos (solo se enseñan: no se mueven). Ver sueltos.rs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sueltos_en: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -137,6 +141,7 @@ impl Default for ServerConfig {
             espejo: None,
             zonas: Vec::new(),
             renombres: Vec::new(),
+            sueltos_en: Vec::new(),
         }
     }
 }

@@ -95,6 +95,7 @@ pub mod servidor_v2;
 pub mod sesiones_v2;
 pub mod share;
 pub mod store;
+pub mod sueltos;
 pub mod tasks;
 #[cfg(test)]
 mod traslado_it;

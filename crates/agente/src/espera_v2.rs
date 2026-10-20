@@ -198,6 +198,10 @@ pub fn descripcion(v: &Vinculo, o: &orden_v2::OrdenV2) -> Option<String> {
         "guarda_copias" if c.get("mover").is_some() => {
             format!("Ordenar los nombres de carpeta de «{}» en el almacén", corto(c["mover"]["usuario"].as_str().unwrap_or("?"), 64))
         }
+        "guarda_copias" if c.get("dar_suelto").is_some() => {
+            format!("Dar el repositorio suelto «{}» del almacén a un equipo", corto(c["dar_suelto"]["ruta"].as_str().unwrap_or("?"), 80))
+        }
+        "guarda_copias" if c.get("sueltos_en").is_some() => "Cambiar dónde busca el almacén repositorios sueltos".to_string(),
         "guarda_copias" => "Cambiar o quitar el almacén («Guarda copias»)".to_string(),
         "cambiar_espera" => format!("Acortar la espera a {} h", c["horas"].as_i64().unwrap_or(0)),
         "quitar_nube" => format!("Desconectar la nube «{}»", corto(c["nombre"].as_str().unwrap_or(""), 60)),

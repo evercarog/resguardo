@@ -1484,6 +1484,10 @@ pub const ADMITE: &[&str] = &[
     "nombre_copia",
     // 0.8.1 (15v): `config.copias[].etiquetas` (las etiquetas de sus versiones) y en el resumen.
     "etiquetas_copia",
+    // 0.8.1 (15gg): `guarda_copias.sueltos` (repositorios sueltos del almacén), `guarda_copias
+    // { dar_suelto }` (moverlo a la carpeta de un equipo, sin copiar), `{ sueltos_en }` y, en
+    // `adoptar_repositorio` sellado, `ultima_carpetas` y `ultimo_equipo`.
+    "repos_sueltos",
     // 0.8.1 (15y): `config.copias[].grupos_exclusiones`, `mayores_mb` y `excepto_tamano`
     // («no copiar más de N MB» con excepciones; lo que quedó fuera, en la versión) y la orden
     // `vista_exclusiones` (cuánto deja fuera cada grupo, sin copiar nada).
@@ -2985,6 +2989,27 @@ pub fn guarda_copias(c: &Value, responder_a: bool) -> Result<(String, Option<Val
         let donde = zona.and_then(|z| cfg.zonas.iter().find(|x| x.id == z).map(|x| format!(" en la zona «{}»", x.nombre))).unwrap_or_default();
         return Ok((format!("Equipo cliente «{usuario}» añadido{donde}."), Some(privado)));
     }
+    // 0.8.1 (15gg): un repositorio suelto del almacén, a la carpeta de un equipo (sin copiar).
+    if let Some(d) = c.get("dar_suelto").filter(|d| d.is_object()) {
+        crate::agent::require_admin()?;
+        let cfg = server::load();
+        if !cfg.enabled {
+            return Err("Este equipo no guarda copias de otros.".into());
+        }
+        let (m, _) = crate::sueltos::dar(&cfg, d)?;
+        return Ok((m, None));
+    }
+    // 15gg: dónde buscar además repositorios sueltos (fuera de la carpeta del almacén).
+    if let Some(l) = c.get("sueltos_en") {
+        crate::agent::require_admin()?;
+        let mut cfg = server::load();
+        if !cfg.enabled {
+            return Err("Este equipo no guarda copias de otros.".into());
+        }
+        let m = crate::sueltos::poner_busqueda(&mut cfg, l)?;
+        server::save(&cfg)?;
+        return Ok((m, None));
+    }
     // B1 (docs/nombres-legibles.md): «Ordenar nombres de carpeta» de un equipo.
     if let Some(m) = c.get("mover").filter(|m| m.is_object()) {
         let (mensaje, detalle) = crate::nombres::mover(m)?;
@@ -3098,6 +3123,10 @@ pub fn resumen_guarda_copias() -> Value {
         // B1: las carpetas movidas («Ordenar nombres de carpeta»), las 50 últimas: la
         // consola ve qué equipo sigue con la ruta de antes. Solo nombres de carpeta.
         "renombres": (!c.renombres.is_empty()).then(|| c.renombres.iter().rev().take(50).collect::<Vec<_>>()),
+        // 0.8.1 (15gg): repositorios sueltos en su disco (fuera de la carpeta de ningún
+        // equipo), sin abrirlos: carpeta relativa, cuántas versiones y la más reciente.
+        "sueltos": crate::sueltos::resumen(&c),
+        "sueltos_en": (!c.sueltos_en.is_empty()).then_some(&c.sueltos_en),
     })
 }
 
