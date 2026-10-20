@@ -71,7 +71,7 @@
   import { errorCarpetaDestino, errorCarpetaEspejo, agruparResultados } from "$lib/ganchos";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
   import { estadoCopia, proximaDe, ultimaVuelta } from "$lib/copia";
-  import type { Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen, RetencionAlmacen } from "$lib/tipos";
+  import type { DestinoResumen, Equipo, EquipoDetalle, Horario, Informe, Orden, Regla, RepositorioResumen, RetencionAlmacen } from "$lib/tipos";
   import { admiteAlmacenPropio, admitePlazos, almacenDe, copiaRegla, errorRegla, esDeAlmacen, horarioDeCopias, REGLA_POR_DEFECTO, reglaDe, reglaParaOrden, repoDeRetencion, TEXTO_ALMACEN_PROPIO, textoHorario } from "$lib/retencion";
   import EditorRetencion from "$lib/componentes/EditorRetencion.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -101,7 +101,7 @@
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import ConectarNube from "$lib/componentes/ConectarNube.svelte";
-  import { admiteRevocar, motivoNoDesconectar, nubesDelEquipo, nubesPorAnular, queHaceAlDesconectar } from "$lib/nubesEquipo";
+  import { admiteRevocar, nubesDelEquipo, nubesPorAnular, queHaceAlDesconectar } from "$lib/nubesEquipo";
   import ConectarDestino from "$lib/componentes/ConectarDestino.svelte";
   import RestaurarDesdeEspejo from "$lib/componentes/RestaurarDesdeEspejo.svelte";
   // Plan 0.8.0, B1: «Ordenar nombres de carpeta» y las rutas que un equipo aún no usa.
@@ -138,7 +138,14 @@
   import PasoEspejo from "$lib/componentes/PasoEspejo.svelte";
   import { admiteEspejoEquipo, admiteTrabajos, estadoTrabajo, hrefEspejos, opcionesRepos, textoCuando as textoCuandoTrabajo, textoRetencion as textoRetencionTrabajo, trabajosDelAlmacen, trabajosDelEquipo } from "$lib/espejoTrabajos";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
-  import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
+  import { claveZona, nombreZonaPorDefecto, zonaDetras, zonasDe, type ZonaVista } from "$lib/destinos";
+  // Plan 0.8.1, B3 (15dd, 15s, 15h): el almacén en una sola ficha, por secciones.
+  import { almacenDetras, esAdoptado, retencionesDelAlmacen, TEXTO_ADOPTADO } from "$lib/almacenUnico";
+  import { nubesVista, hrefNubes } from "$lib/nubesAlmacen";
+  import { porOrdenar } from "$lib/nombres";
+  import NubesConectadas from "$lib/componentes/almacen/NubesConectadas.svelte";
+  import RetencionesDelAlmacen from "$lib/componentes/almacen/RetencionesDelAlmacen.svelte";
+  import AvisoOrdenar from "$lib/componentes/almacen/AvisoOrdenar.svelte";
   // C1 (plan 0.8.0, 14kk): el camino de cada repositorio en su tarjeta, y cada copia derivada como repositorio propio.
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
   import { caminoDeCopia, textoEslabon, type Eslabon } from "$lib/camino";
@@ -276,6 +283,26 @@
   );
   const eslabonDerivada = (repo: string, id: string) => caminoRepo.get(repo)?.find((x) => x.id === (id === "externa" ? "externa" : `derivada-${id}`));
   const destinos = $derived(equipo?.resumen?.destinos ?? []);
+  /** Los equipos del cliente con este tal como se acaba de cargar (para lo que mira su propio resumen). */
+  const conEste = $derived(equipo ? [...actual.equipos.filter((x) => x.id !== equipo!.id), equipo] : actual.equipos);
+  // 15dd: los destinos del equipo, cada zona de un almacén una vez: la que dio el almacén y, debajo,
+  // los demás accesos al mismo servidor (un «Servidor de copias» por donde llegan los adoptados).
+  type GrupoDestino = { clave: string; zona: ZonaVista | null; principal: DestinoResumen; otros: DestinoResumen[] };
+  const adoptadoAqui = (d: DestinoResumen) => !!equipo && esAdoptado(equipo, d, conEste);
+  const destinosAgrupados = $derived.by(() => {
+    const out: GrupoDestino[] = [];
+    for (const d of destinos) {
+      const zona = equipo && almacenDetras(equipo, d, conEste) ? zonaDetras(equipo, d, conEste) : null;
+      const clave = zona ? claveZona(zona.almacen.id, zona.id) : d.id;
+      const g = out.find((x) => x.clave === clave);
+      if (!g) out.push({ clave, zona, principal: d, otros: [] });
+      // El que dio el almacén va primero; los adoptados, debajo.
+      else if (adoptadoAqui(g.principal) && !adoptadoAqui(d)) g.otros.unshift(g.principal), (g.principal = d);
+      else g.otros.push(d);
+    }
+    return out;
+  });
+  const nReposEn = (id: string) => repos.filter((r) => destinoDe(destinos, r)?.id === id).length;
   const pausado = $derived(!!equipo && enPausa(equipo, reloj.ahora));
   // Cifras del resumen: última vuelta y próxima de todas sus copias, lo protegido y los 60 días.
   const ultimaDeTodas = $derived(
@@ -405,6 +432,12 @@
   // Plan 0.7.26 (bloque 4): con trabajos, el espejo se cambia en su página («Espejos»).
   const conTrabajos = $derived(admiteTrabajos(equipo));
   const trabajosAlmacen = $derived([...trabajosDelAlmacen(equipo)].sort((a, b) => a.orden - b.orden));
+  // 15s y 15h: la retención que aplica el almacén (y lo que no tiene), sus nubes ahí mismo y lo que hay por ordenar.
+  const retAlmacen = $derived(equipo?.resumen?.guarda_copias?.activo ? retencionesDelAlmacen(equipo, conEste) : null);
+  const nubesVistas = $derived(equipo ? nubesVista(equipo, conEste, catalogoDe(c), c) : []);
+  const ordenables = $derived(equipo?.resumen?.guarda_copias?.activo ? porOrdenar(equipo, conEste) : []);
+  /** El equipo con el que se abre «Ordenar nombres de carpeta» (desde el aviso). */
+  let ordenarEquipo = $state<string | undefined>(undefined);
   const trabajosPropios = $derived([...trabajosDelEquipo(equipo)].sort((a, b) => a.orden - b.orden));
   /** Destinos actuales, en la forma de la orden (sin sus resultados, con sus opciones). */
   const destinosActuales = $derived<DestinoEspejoUI[]>((espejoActual?.destinos ?? []).map(destinoParaOrden));
@@ -1268,38 +1301,47 @@
 
       {#if destinos.length || pendDestinos.length}
         <section>
-          <div class="section-head"><h2>Destinos <span class="count">· {destinos.length}</span></h2></div>
+          <div class="section-head"><h2>Destinos <span class="count">· {destinosAgrupados.length}</span></h2></div>
           {#each pendDestinos as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
           <div class="card p-0 lista">
-            {#each destinos as d (d.id)}
-              <div class="fila">
-                <span class="fila-texto">
-                  <span class="fila-titulo">{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></span>
-                  <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · inmutable" : ""}</span>
-                  {#if !usosDestino(equipo, d.id).length}<span class="fila-sub sin-uso">Sin repositorios ni copias que lo usen{#if d.tipo === "local"}{" · "}lo que haya en su carpeta se queda{/if}</span>{/if}
-                </span>
-                <button class="btn btn-sm btn-ghost" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
-                {#if puede.administrar(rol) && destinoQuitable(equipo, d.id)}
-                  <button class="btn btn-sm btn-ghost quitar-dest" onclick={() => quitarDestino(d)}><Trash2 size={13} />Quitar este destino</button>
-                {/if}
-                {#if puede.administrar(rol) && d.tipo !== "local"}
-                  <button
-                    class="btn btn-sm btn-ghost"
-                    onclick={() =>
-                      abrir({
-                        tipo: "cambiar_destino",
-                        cuerpo: { destino: d.id, donde: "", usuario: "", secreto: "", ca_pem: "" },
-                        titulo: "Cambiar las credenciales del destino",
-                        descripcion: `Nuevos datos para «${d.nombre}». El equipo comprueba que cada repositorio se abre con ellos antes de guardarlos; si alguno no, no cambia nada. Deja en blanco lo que no cambie.`,
-                        campos: "destino",
-                      })}>Cambiar credenciales</button
-                  >
-                {/if}
-              </div>
+            <!-- 15dd: un almacén sale una vez, aunque también llegue a él un «Servidor de copias» (repositorios adoptados). -->
+            {#each destinosAgrupados as gr (gr.clave)}
+              {@render filaDestino(gr.principal, gr)}
+              {#each gr.otros as d (d.id)}{@render filaDestino(d, null)}{/each}
             {/each}
           </div>
         </section>
       {/if}
+
+      {#snippet filaDestino(d: DestinoResumen, gr: GrupoDestino | null)}
+        {@const adoptado = adoptadoAqui(d)}
+        <div class="fila" class:dentro-almacen={!gr}>
+          <span class="fila-texto">
+            <span class="fila-titulo">{#if gr?.zona}<a class="link-suave" href={hrefDestino(c, claveZona(gr.zona.almacen.id, gr.zona.id))}>{d.nombre}</a>{:else}{d.nombre}{/if} <ContadorNotas tipo="destino" objeto={d.id} />{#if adoptado} <span class="badge badge-sm tone-neutral" use:tip={TEXTO_ADOPTADO}>Adoptado</span>{/if}</span>
+            {#if !gr}<span class="fila-sub">Por la dirección del servidor: es el mismo almacén{#if nReposEn(d.id)}{" · "}{plural(nReposEn(d.id), "repositorio adoptado", "repositorios adoptados")}{/if}</span>{/if}
+            <span class="fila-sub">{#if gr?.zona}{gr.zona.principal ? "Almacén" : "Otra zona del almacén"} {gr.zona.almacen.nombre}{gr.zona.nombre ? ` · ${gr.zona.nombre}` : ""}{:else}{TIPO_DESTINO[d.tipo] ?? d.tipo}{/if}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · inmutable" : ""}</span>
+            {#if gr?.otros.length}<span class="fila-sub">{gr.otros.length === 1 ? "Debajo, otro acceso a este mismo almacén" : `Debajo, ${gr.otros.length} accesos más a este mismo almacén`}: {adoptado || gr.otros.some(adoptadoAqui) ? "los repositorios adoptados llegan por la dirección del servidor, no por el usuario de cada equipo" : "el mismo servidor"}.</span>{/if}
+            {#if !usosDestino(equipo!, d.id).length}<span class="fila-sub sin-uso">Sin repositorios ni copias que lo usen{#if d.tipo === "local"}{" · "}lo que haya en su carpeta se queda{/if}</span>{/if}
+          </span>
+          <button class="btn btn-sm btn-ghost" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
+          {#if puede.administrar(rol) && destinoQuitable(equipo!, d.id)}
+            <button class="btn btn-sm btn-ghost quitar-dest" onclick={() => quitarDestino(d)}><Trash2 size={13} />Quitar este destino</button>
+          {/if}
+          {#if puede.administrar(rol) && d.tipo !== "local"}
+            <button
+              class="btn btn-sm btn-ghost"
+              onclick={() =>
+                abrir({
+                  tipo: "cambiar_destino",
+                  cuerpo: { destino: d.id, donde: "", usuario: "", secreto: "", ca_pem: "" },
+                  titulo: "Cambiar las credenciales del destino",
+                  descripcion: `Nuevos datos para «${d.nombre}». El equipo comprueba que cada repositorio se abre con ellos antes de guardarlos; si alguno no, no cambia nada. Deja en blanco lo que no cambie.`,
+                  campos: "destino",
+                })}>Cambiar credenciales</button
+            >
+          {/if}
+        </div>
+      {/snippet}
 
       {#if equipo.resumen?.guarda_copias?.activo}
         {@const g = equipo.resumen.guarda_copias}
@@ -1314,10 +1356,23 @@
           {#each pendGuarda as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
           <!-- Tarea 7b: las zonas (otros discos que sirve, cada uno con su puerto). -->
           {#if actual.cliente}<ZonasAlmacen cliente={actual.cliente} {equipo} equipos={actual.equipos} administra={puede.administrar(rol)} alCambiar={() => void cargar()} />{/if}
-          {#if conTrabajos}
-            <!-- Plan 0.7.26 (bloque 4): los espejos como trabajos, en su página («Espejos»). -->
-            <div class="espejo">
-              <p class="externa"><HardDrive size={14} /><span>Espejos de lo que guarda</span><Ayuda id="espejo" /></p>
+          <!-- 15h: «Ordenar nombres de carpeta», como aviso suave y con lo que costaría. -->
+          {#if ordenables.length && puede.administrar(rol)}<AvisoOrdenar items={ordenables} onordenar={(id) => ((ordenarEquipo = id), (ordenarCarpetas = true))} />{/if}
+          <!-- 15s: tres secciones, cada una con su título y sus acciones en la cabecera. -->
+          <div class="sub-alm" role="group" aria-labelledby="t-alm-espejos">
+            <div class="sub-cab">
+              <h4 id="t-alm-espejos"><HardDrive size={15} />Espejos{#if conTrabajos && trabajosAlmacen.length}<span class="count">· {trabajosAlmacen.length}</span>{/if} <Ayuda id="espejo" /></h4>
+              <div class="sub-acc">
+                {#if conTrabajos}
+                  {#if puede.administrar(rol)}<a class="btn btn-sm" href={hrefEspejos(c, equipo.id, { quien: "almacen" })}><Plus size={14} />Añadir un espejo</a>{/if}
+                  <a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id)}>Ver todos</a>
+                {:else if puede.administrar(rol)}
+                  <button class="btn btn-sm" onclick={() => abrirEspejo()}><Plus size={14} />{g.espejo ? "Añadir destino del espejo" : "Espejo de lo que guarda"}</button>
+                {/if}
+              </div>
+            </div>
+            {#if conTrabajos}
+              <div class="espejo">
               {#if trabajosAlmacen.length}
                 <ul class="destinos-espejo">
                   {#each trabajosAlmacen as t (t.id)}
@@ -1335,8 +1390,9 @@
                   {/each}
                 </ul>
               {/if}
-            </div>
-          {:else if g.espejo}
+                {#if !trabajosAlmacen.length}<p class="faint vacio-sub">Ninguno todavía: un espejo copia lo que guarda a otro disco o a una nube, sin contraseñas.</p>{/if}
+              </div>
+            {:else if g.espejo}
             <div class="espejo">
               <p class="externa">
                 <HardDrive size={14} /><span>{flexible ? "Espejo de lo que guarda" : `Espejo cada noche a las ${g.espejo.hora}`}{#if g.espejo.limite_kib}{" · "}subida limitada a {velocidadEnFrase(g.espejo.limite_kib)}{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
@@ -1382,42 +1438,42 @@
                 <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo">{g.espejo.resultado}</span>{:else}{g.espejo.resultado}{/if}</p>
               {/if}
             </div>
-          {/if}
-          {#if g.retenciones?.length}
-            <div class="espejo">
-              <p class="externa"><History size={14} /><span>Retención que aplica en local (los equipos no pueden borrar aquí)</span><Ayuda id="retencion-almacen" /></p>
-              <ul class="destinos-espejo">
-                {#each g.retenciones as ra (ra.usuario + "/" + ra.repo)}
-                  {@const de = repoDeRetencion(ra, equipo, actual.equipos)}
-                  <li>
-                    <span class="ic-d"><Database size={14} /></span>
-                    <span class="d-texto">
-                      {#if de}<a class="link" href="/c/{c}/equipos/{de.equipo.id}/repositorios/{encodeURIComponent(de.repo.id)}"><strong>{de.repo.nombre}</strong></a> <span class="faint">de {de.equipo.nombre}</span>{:else}<strong>{ra.usuario}/{ra.repo}</strong>{/if}
-                      <span class="faint">{ra.texto} · {ra.horario.reglas?.length ? horarioEnFrase({ dias: [], horas: [], reglas: ra.horario.reglas }).replace(/^./, (x) => x.toLowerCase()) : (ra.horario_texto ?? textoHorario(ra.horario))}{#if ra.ultima}{" · "}<Tiempo iso={ra.ultima} />{/if}</span>
-                      {#if ra.resultado === "fallo" && ra.mensaje}<span class="msg-fallo">{ra.mensaje}</span>{:else if ra.clave === "pendiente"}<span class="msg-fallo">Su clave aún no abre el repositorio.</span>{/if}
-                    </span>
-                    {#if ra.resultado}<Chip pequeno tono={ra.resultado === "ok" ? "ok" : "bad"} texto={ra.resultado === "ok" ? "Aplicada" : "Falló"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
-                  </li>
-                {/each}
-              </ul>
+            {:else}
+              <p class="faint vacio-sub">Ninguno todavía: un espejo copia lo que guarda a otro disco o a una nube, sin contraseñas.</p>
+            {/if}
+          </div>
+          <div class="sub-alm" role="group" aria-labelledby="t-alm-ret">
+            <div class="sub-cab">
+              <h4 id="t-alm-ret"><History size={15} />Retención en el almacén <Ayuda id="retencion-almacen" /></h4>
             </div>
-          {/if}
-          {#if g.nubes?.length}
-            <p class="externa"><Cloud size={14} />Nubes conectadas: {g.nubes.map((n) => n.nombre).join(", ")} <a class="link" href="#t-nubes">(ver abajo)</a></p>
-          {/if}
-          {#if conTrabajos}
-            <div class="acciones">
-              <a class="btn btn-sm" href={hrefEspejos(c, equipo.id)}><HardDrive size={14} />Espejos{#if trabajosAlmacen.length}{" "}({trabajosAlmacen.length}){/if}</a>
-              {#if puede.administrar(rol)}
-                <a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "almacen" })}><Plus size={14} />Añadir un espejo</a>
-                <MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} />
-              {/if}
+            <p class="faint nota-sub">La aplica el almacén en local: los equipos no pueden borrar aquí.</p>
+            {#if retAlmacen && !retAlmacen.admite}
+              <p class="faint vacio-sub">Este almacén tiene un agente anterior: no aplica retención en local. Actualízalo para poder ponerla.</p>
+            {:else if retAlmacen}
+              <RetencionesDelAlmacen cliente={c} con={retAlmacen.con} sin={retAlmacen.sin} administra={puede.administrar(rol)} />
+            {/if}
+          </div>
+          <div class="sub-alm" role="group" aria-labelledby="t-alm-nubes">
+            <div class="sub-cab">
+              <h4 id="t-alm-nubes"><Cloud size={15} />Nubes conectadas{#if nubesVistas.length}<span class="count">· {nubesVistas.length}</span>{/if}</h4>
+              <div class="sub-acc">
+                {#if puede.administrar(rol)}<button class="btn btn-sm" onclick={() => (admiteMasDestinos(equipo) ? (conectarDestino = true) : (conectarNube = true))}><Plus size={14} />Conectar una nube</button>{/if}
+                {#if nubesVistas.length}<a class="btn btn-sm btn-ghost" href={hrefNubes(c, equipo.id)}>Ver todas</a>{/if}
+              </div>
             </div>
-          {:else if puede.administrar(rol)}
-            <div class="acciones">
-              <button class="btn btn-sm" onclick={() => abrirEspejo()}><Plus size={14} />{g.espejo ? "Añadir destino del espejo" : "Espejo de lo que guarda"}</button>
-              <MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} />
-            </div>
+            {#each pendNubes as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
+            {#if nubesVistas.length}
+              <NubesConectadas cliente={c} equipo={equipo.id} nubes={nubesVistas} administra={puede.administrar(rol)} ondesconectar={quitarNube} />
+              {#if !admiteRevocar(equipo)}<p class="faint nota-sub">Actualiza el agente de {equipo.nombre} para que, al desconectar, anule también el permiso en Dropbox.</p>{/if}
+            {:else}
+              <p class="faint vacio-sub">Ninguna: conecta Dropbox, Backblaze B2, S3, SFTP, una carpeta de red o WebDAV para usarla como destino de un espejo.</p>
+            {/if}
+            {#each porAnular as n (n.nombre)}
+              <div class="notice notice-warn nube-por-anular"><p><strong>«{n.nombre}»</strong>: credenciales borradas de este equipo; no se pudo anular el permiso en {n.tipo === "dropbox" ? "Dropbox" : "el proveedor"} todavía: se reintentará{#if n.hasta}{" "}hasta el {fechaLarga(n.hasta)}{/if}.</p></div>
+            {/each}
+          </div>
+          {#if puede.administrar(rol)}
+            <div class="acciones"><MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} /></div>
           {/if}
         </section>
       {:else if puede.administrar(rol)}
@@ -1463,28 +1519,13 @@
         </section>
       {/if}
 
-      {#if nubesEquipo.length || porAnular.length || pendNubes.length}
-        <!-- Plan 0.7.26 (1.1): en cualquier equipo, no solo en los almacenes. -->
+      {#if !equipo.resumen?.guarda_copias?.activo && (nubesEquipo.length || porAnular.length || pendNubes.length)}
+        <!-- Plan 0.7.26 (1.1): en cualquier equipo, no solo en los almacenes (en un almacén, en su ficha: 15s). -->
         <section class="card p" aria-labelledby="t-nubes">
-          <h3 class="section-title" id="t-nubes">Nubes conectadas</h3>
+          <div class="sub-cab"><h3 class="section-title" id="t-nubes">Nubes conectadas</h3>{#if nubesVistas.length}<div class="sub-acc"><a class="btn btn-sm btn-ghost" href={hrefNubes(c, equipo.id)}>Ver todas</a></div>{/if}</div>
           {#each pendNubes as p (p.orden.id)}<div class="en-camino dentro"><PendienteItem {p} /></div>{/each}
-          {#if nubesEquipo.length}
-            <ul class="lista-nubes">
-              {#each nubesEquipo as n (n.nombre)}
-                {@const motivo = motivoNoDesconectar(equipo, n)}
-                <li class="nube-fila">
-                  <span class="ic-d"><Cloud size={14} /></span>
-                  <span class="nube-texto">
-                    <strong>{n.nombre}</strong>
-                    <span class="faint">{nombreTipoNube(n.tipo) || n.tipo}{#if n.usos.length}{" · "}la usa {n.usos.join(", ")}{:else}{" · "}sin uso en este equipo{/if}</span>
-                    {#if motivo && puede.administrar(rol)}<span class="faint nube-motivo">{motivo}</span>{/if}
-                  </span>
-                  {#if puede.administrar(rol) && !motivo}
-                    <button class="btn btn-sm btn-ghost quitar-nube" onclick={() => quitarNube(n.nombre)} aria-label="Desconectar {n.nombre}">Desconectar</button>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
+          {#if nubesVistas.length}
+            <NubesConectadas cliente={c} equipo={equipo.id} nubes={nubesVistas} administra={puede.administrar(rol)} ondesconectar={quitarNube} />
             {#if !admiteRevocar(equipo)}
               <p class="faint nota-almacen">Actualiza el agente de {equipo.nombre} para que, al desconectar, anule también el permiso en Dropbox.</p>
             {/if}
@@ -1700,7 +1741,7 @@
   <ConectarNube cliente={actual.cliente} {equipo} onclose={() => ((conectarNube = false), void cargar())} />
 {/if}
 {#if ordenarCarpetas && equipo && actual.cliente}
-  <OrdenarCarpetas cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} onclose={() => (ordenarCarpetas = false)} />
+  <OrdenarCarpetas cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} equipoInicial={ordenarEquipo} onclose={() => ((ordenarCarpetas = false), (ordenarEquipo = undefined))} />
 {/if}
 
 {#if desdeEspejo && equipo && actual.cliente}
@@ -2357,6 +2398,55 @@
     color: inherit;
     text-decoration: none;
   }
+  /* 15s: las secciones de la ficha del almacén (Espejos, Retención en el almacén, Nubes conectadas). */
+  .sub-alm {
+    display: grid;
+    gap: 6px;
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
+  }
+  .sub-cab {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+  }
+  .sub-cab h4 {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+  }
+  .sub-cab h4 .count {
+    color: var(--text-3);
+    font-weight: 400;
+  }
+  .sub-acc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .vacio-sub,
+  .nota-sub {
+    margin: 0;
+    font-size: var(--fs-sm);
+  }
+  /* 15dd: en pantallas estrechas, el texto de cada destino a lo ancho y sus botones debajo. */
+  @media (max-width: 640px) {
+    .lista > .fila {
+      flex-wrap: wrap;
+    }
+    .lista > .fila > .fila-texto {
+      flex: 1 1 100%;
+    }
+  }
+  /* 15dd: otro acceso al mismo almacén, debajo del suyo. */
+  .fila.dentro-almacen {
+    padding-left: calc(var(--sp-3) + 18px);
+  }
   .espejo {
     display: flex;
     flex-direction: column;
@@ -2424,33 +2514,6 @@
   }
   .conectar-nube {
     margin-top: 8px;
-  }
-  .quitar-nube {
-    margin-left: auto;
-  }
-  .lista-nubes {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .nube-fila {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .nube-texto {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1 1 200px;
-  }
-  .nube-texto .faint {
-    font-size: var(--fs-sm);
-    overflow-wrap: anywhere;
   }
   .nube-por-anular {
     margin-top: 8px;
