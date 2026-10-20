@@ -119,7 +119,7 @@ console.log("\n· El camino de una copia (lib/camino.ts)");
   const c = caminoDeCopia(rc, opciones(informeMal));
   igual("la derivada falló: lo dice con cuándo", [c[2].tono, c[2].estado, textoEslabon(c[2], AHORA)], ["bad", "Falló", "falló hace 3 h"]);
   igual("y cuenta como paso mal", resumenCamino(c).mal, 1);
-  const vivo = caminoDeCopia(rc, { ...opciones(informeMal), enVivo: (_e, _r, t) => (t === "copia_externa" ? "Subiendo 45 %" : null) });
+  const vivo = caminoDeCopia(rc, { ...opciones(informeMal), enVivo: (_e, _r, t, id) => (t === "derivada" && !!id ? "Subiendo 45 %" : null) });
   igual("subiendo: en marcha (no cuenta como mal)", [vivo[2].estado, vivo[2].vivo, eslabonMal(vivo[2]), lineaEslabon(vivo[2], AHORA)], ["Subiendo 45 %", true, false, "→ Disco USB · subiendo 45 %"]);
   const copiando = caminoDeCopia(rc, { ...opciones(informeMal), enVivo: (_e, _r, t) => (t === "copia" ? "Copiando 10 %" : null) });
   igual("la copia en marcha", [copiando[0].tono, copiando[0].estado], ["info", "Copiando 10 %"]);

@@ -1163,10 +1163,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         "cancelar_espera" => crate::espera_v2::cancelar(v, c, o.por.as_deref()).map(hecha),
         // v1.56: el nombre, las etiquetas y la observación del equipo, iguales en todas sus
         // consolas (datos_equipo.rs). Se suben al momento a todas (el resumen los lleva).
-        "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" => {
+        // Plan 0.8.1 (C3): también el tipo de equipo corregido a mano.
+        "nombre_equipo" | "etiquetas_equipo" | "observacion_equipo" | "tipo_equipo" => {
             let m = match o.tipo.as_str() {
                 "nombre_equipo" => crate::datos_equipo::nombre(v, c, o.por.as_deref())?,
                 "etiquetas_equipo" => crate::datos_equipo::etiquetas(v, c, o.por.as_deref())?,
+                "tipo_equipo" => crate::datos_equipo::tipo(v, c, o.por.as_deref())?,
                 _ => crate::datos_equipo::observacion(v, c, o.por.as_deref())?,
             };
             let _ = g::subir_config(v);

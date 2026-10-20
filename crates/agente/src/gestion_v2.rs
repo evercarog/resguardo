@@ -1406,6 +1406,11 @@ pub const ADMITE: &[&str] = &[
     // la orden `bases_sqlserver` («Ver las bases de la instancia») y el aviso (no fallo) cuando
     // solo falta el permiso para verificar un volcado.
     "sqlserver_todas",
+    // 0.8.1 (C3, 15c): la orden `tipo_equipo` (el tipo de equipo corregido a mano, en
+    // `datos_equipo.tipo`). (C4, 15d; C1, 15n; C2, 15cc; campos opcionales, sin token):
+    // `datos_basicos.almacenamiento` y `discos[].volumen`, `destinos[].carpeta` de un destino
+    // local y `derivada` en el progreso de una copia derivada en marcha.
+    "tipo_equipo",
     // 0.8.0 plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
     // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
     // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
@@ -1523,6 +1528,12 @@ pub fn resumen(v: &Vinculo) -> Value {
                 let disco = crate::espacio::disco_de(&d.donde).json();
                 for k in ["unidad", "extraible", "red"] {
                     x[k] = disco[k].clone();
+                }
+                // Plan 0.8.1 (C1, 15n): su carpeta, para «Dónde está» (como la del almacén), sin
+                // el nombre de la cuenta si está dentro de un perfil de usuario.
+                // Una carpeta de la red no: su ruta dice el nombre del servidor.
+                if let Some(c) = crate::espacio::ruta_publica(&d.donde).filter(|_| disco["red"] != true) {
+                    x["carpeta"] = json!(c);
                 }
                 // Tarea 8e: el sistema de archivos (solo su nombre; nunca resta en la regla 3-2-1).
                 x["sistema_archivos"] = crate::espacio::json_fs(&d.donde);
@@ -3065,7 +3076,19 @@ mod tests {
         if cfg!(any(windows, target_os = "linux")) {
             assert!(r["destinos"][0]["sistema_archivos"].is_string(), "{r}");
         }
-        assert!(!r["destinos"][0].to_string().contains(&tmp), "sin la ruta");
+        // Plan 0.8.1 (C1): su carpeta sí (para «Dónde está»), pero nunca con el nombre de la cuenta.
+        assert_eq!(r["destinos"][0]["carpeta"].as_str(), crate::espacio::ruta_publica(&tmp).as_deref());
+        if tmp.to_lowercase().contains("users") || tmp.starts_with("/home/") {
+            assert!(!r["destinos"][0].to_string().contains(&tmp), "sin el nombre de la cuenta");
+        }
+        // Una carpeta de la red, nunca (su ruta dice el servidor).
+        assert!(v_red_sin_carpeta());
+    }
+
+    fn v_red_sin_carpeta() -> bool {
+        let local = Destino { id: "nas".into(), nombre: "NAS".into(), tipo: "local".into(), donde: r"\\nas\copias".into(), ..Default::default() };
+        let v = Vinculo { destinos: vec![local], ..Default::default() };
+        resumen(&v)["destinos"][0].get("carpeta").is_none()
     }
 
     #[test]

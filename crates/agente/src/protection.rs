@@ -418,6 +418,10 @@ pub struct OrigenRegla {
     /// consola; el agente no las conoce).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sede: Option<String>,
+    /// 0.8.1 (C4, 15d): el servidor físico donde está el equipo, si se anotó la
+    /// infraestructura (lo pone la consola; el agente no la conoce).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fisico: Option<String>,
 }
 
 /// Un destino al que llegan los datos de la copia (un paso del camino o de la cadena).
@@ -471,6 +475,11 @@ pub struct PasoRegla {
     /// 0.8.0 (D1, 14ll): la sede del destino, si se sabe (la nube no es sede: siempre fuera).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sede: Option<String>,
+    /// 0.8.1 (C4, 15d): el servidor físico donde está el destino, si se anotó la
+    /// infraestructura (lo pone la consola). Dos copias en el mismo servidor físico (una
+    /// máquina virtual y el almacén que la copia en el mismo anfitrión) avisan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fisico: Option<String>,
 }
 
 impl PasoRegla {
@@ -561,8 +570,9 @@ pub struct Regla321 {
     /// Los pasos que no están al día.
     pub atrasados: Vec<String>,
     /// `mismo_equipo` (dos soportes en el mismo equipo: un incendio se los lleva a la vez),
-    /// `inmutable_local` (lo inmutable o aislado está todo en el sitio) y
-    /// `aislado_sin_conectar` (un medio aislado no se ha conectado en sus N días).
+    /// `inmutable_local` (lo inmutable o aislado está todo en el sitio),
+    /// `aislado_sin_conectar` (un medio aislado no se ha conectado en sus N días) y, 0.8.1
+    /// (C4), `servidor_compartido` (dos copias en equipos distintos del mismo servidor físico).
     pub avisos: Vec<String>,
 }
 
@@ -691,6 +701,21 @@ pub fn regla_321(e: &EntradaRegla, ahora: DateTime<Local>) -> Regla321 {
     }
     if todos.iter().any(|p| aislado_sin_conectar(p, ahora)) {
         avisos.push("aislado_sin_conectar".to_string());
+    }
+    // 0.8.1 (C4): dos copias de los mismos datos en equipos distintos (o un destino suelto,
+    // como un NAS) del mismo servidor físico: un fallo del servidor se las lleva a la vez.
+    // En el mismo equipo ya lo dice `mismo_equipo`.
+    let mut por_fisico: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    if let Some(f) = e.origen.fisico.as_deref().filter(|f| !f.is_empty()) {
+        por_fisico.entry(f).or_default().insert(e.origen.equipo.as_str());
+    }
+    for p in &todos {
+        if let Some(f) = p.fisico.as_deref().filter(|f| !f.is_empty()) {
+            por_fisico.entry(f).or_default().insert(p.equipo.as_deref().filter(|x| !x.is_empty()).unwrap_or(p.id.as_str()));
+        }
+    }
+    if por_fisico.values().any(|s| s.len() >= 2) {
+        avisos.push("servidor_compartido".to_string());
     }
     Regla321 { cumple, cumple_config, dejo_de_cumplir: cumple_config && !cumple, partes, atrasados, avisos }
 }
@@ -1062,7 +1087,7 @@ mod tests {
         // Con entrada: la regla va aparte y no toca la puntuación.
         let mut f = completo();
         f.regla = Some(EntradaRegla {
-            origen: OrigenRegla { equipo: "e1".into(), soporte: "equipo:e1:origen".into(), sede: None },
+            origen: OrigenRegla { equipo: "e1".into(), soporte: "equipo:e1:origen".into(), sede: None, fisico: None },
             pasos: vec![PasoRegla {
                 id: "zona".into(),
                 lugar: Lugar::Oficina,

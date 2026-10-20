@@ -26,6 +26,7 @@ import { rutasInforme } from "./informe";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
 import { reiniciarPruebas, rutasPruebas } from "./pruebas";
 import { errorDondeCatalogo, errorSubcarpeta } from "../lib/destinos";
+import { INFRA_VACIA, leerInfra, type Infraestructura } from "../lib/infra";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
 
 class HttpError extends Error {
@@ -1469,6 +1470,27 @@ const rutas: Ruta[] = [
     (ctx, [c]) => (miembro(ctx, c), organizacionDe(c)),
   ],
   [
+    // Plan 0.8.1, C4 (15d): la infraestructura del cliente (como `crate::infraestructura`).
+    "GET",
+    new RegExp(`^${C}/infraestructura$`),
+    (ctx, [c]) => (miembro(ctx, c), infraDe(c)),
+  ],
+  [
+    "PUT",
+    new RegExp(`^${C}/infraestructura$`),
+    (ctx, [c]) => {
+      miembro(ctx, c, "administrador");
+      const x = ctx.cuerpo as Record<string, unknown>;
+      if (!x || typeof x !== "object" || Object.keys(x).some((k) => !["servidores", "equipos", "destinos"].includes(k))) throw err(422, "datos", "Hay datos de más.");
+      const limpia = leerInfra(x);
+      if ((Array.isArray(x.servidores) ? x.servidores.length : 0) !== limpia.servidores.length) throw err(422, "datos", "Hay un servidor con un id no válido o repetido.");
+      const guardada = { ...limpia, actualizada: new Date().toISOString(), por: sesionDe(ctx).nombre };
+      infraMock.set(c, guardada);
+      auditar(c, sesionDe(ctx).id, "cambiar_infraestructura", c, { servidores: limpia.servidores.length });
+      return guardada;
+    },
+  ],
+  [
     // 0.7.26 (bloque 8): los datos comunes del cliente (solo administradores).
     "GET",
     new RegExp(`^${C}/datos-comunes$`),
@@ -2146,4 +2168,34 @@ function unirSolo(p: EmparejamientoMock, nombre: string, so: string, ms: number)
         };
         p.estado = "unido";
       }, ms);
+}
+
+/** Plan 0.8.1, C4 (15d): la infraestructura de cada cliente (en memoria, como `infra:<cliente>` del servidor). */
+const infraMock = new Map<string, Infraestructura>();
+/** La de un cliente; en el de ejemplo, un Proxmox anotado («hv-01» con «tank») con su almacén dentro. */
+function infraDe(c: string): Infraestructura {
+  const ya = infraMock.get(c);
+  if (ya) return ya;
+  if (c !== ID.altamar) return { ...INFRA_VACIA };
+  const sembrada = leerInfra({
+    servidores: [
+      {
+        id: "hv-01",
+        nombre: "hv-01",
+        marca: "Marca X",
+        modelo: "Servidor 1U",
+        hipervisor: "proxmox",
+        notas: "Rack de la oficina, abajo.",
+        conjuntos: [
+          { id: "tank", nombre: "tank", tipo: "zfs_espejo", discos: 2, capacidad: 4_000_000_000_000, estado: "bien" },
+          { id: "ssd", nombre: "SSD del sistema", tipo: "disco", discos: 1, capacidad: 500_000_000_000 },
+        ],
+      },
+    ],
+    equipos: { [ID.servidor]: { servidor: "hv-01", conjunto: "ssd" } },
+    destinos: { [`zona:${ID.servidor}:principal`]: { servidor: "hv-01", conjunto: "tank" } },
+  });
+  const s = { ...sembrada, actualizada: new Date(Date.now() - 86_400_000 * 3).toISOString(), por: "Ana Restrepo" };
+  infraMock.set(c, s);
+  return s;
 }

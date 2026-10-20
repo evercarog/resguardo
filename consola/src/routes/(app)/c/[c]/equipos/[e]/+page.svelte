@@ -263,7 +263,7 @@
     const todos = actual.equipos.map((x) => (x.id === eq.id ? eq : x));
     for (const r of repos) {
       const k = copias.find((x) => x.repo === r.id && x.activa !== false);
-      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c)) : null;
+      const rc = k ? reglaDeCopia(eq, k, todos, eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c), actual.infra) : null;
       if (rc) m.set(r.id, rc);
     }
     return m;

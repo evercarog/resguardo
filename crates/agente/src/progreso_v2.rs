@@ -138,6 +138,8 @@ fn tarea_larga_sin_quien(t: &crate::tasks::RunningTask) -> Value {
         "quedan_s": t.eta_s,
         "empezo": t.started,
         "actualizado": t.updated,
+        // Plan 0.8.1 (C2, 15cc): de qué copia derivada es (el mapa anima su flecha).
+        "derivada": derivada_de(&t.kind),
     })
 }
 

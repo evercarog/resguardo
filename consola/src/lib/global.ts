@@ -9,7 +9,8 @@
 // - «¿Cuándo se llena?» de todos los almacenes y destinos,
 // - el mapa de la protección con un nivel más: clientes → equipos → … .
 import type { Equipo, Informe, MarcaCliente, Rol, TareaEnMarcha } from "./tipos";
-import { construirMapa, ordenarMapa, type AristaMapa, type Mapa, type NodoMapa } from "./mapa";
+import { construirMapa, ordenarMapa, type Agrupar, type AristaMapa, type Mapa, type NodoMapa, type TipoVivo } from "./mapa";
+import { leerOrganizacion } from "./sedes";
 import { dias, type Dia } from "./repo";
 import { bytesRepo, informeDe } from "./repo";
 import { copiaAtrasada, PESO, saludEquipo, type Tono } from "./salud";
@@ -255,9 +256,13 @@ export interface OpcionesMapaGlobal {
   estado?: FiltroEstado;
   /** Palabras que buscar en los nombres (clientes, equipos, repositorios, destinos). */
   buscar?: string;
-  enVivo?: (equipo: string, repo: string, tipo: "copia" | "copia_externa") => string | null;
+  enVivo?: (equipo: string, repo: string, tipo: TipoVivo, id?: string) => string | null;
   /** A partir de cuántos equipos de un cliente se juntan los que están al día (por defecto, 6). */
   agruparDesde?: number;
+  /** 0.8.1 (15rr): cómo se juntan los equipos de cada cliente (manda sobre `agruparDesde`). */
+  agrupar?: Agrupar;
+  /** 0.8.1 (15rr): los grupos desplegados (`<cliente>/gr:…`). */
+  desplegados?: ReadonlySet<string>;
 }
 
 export interface MapaGlobal extends Mapa {
@@ -285,6 +290,7 @@ export function construirMapaGlobal(clientes: PanelCliente[], o: OpcionesMapaGlo
   const aristas: AristaMapa[] = [];
   const frases: string[] = [];
   const salen: MapaGlobal["clientes"] = [];
+  const desplegadosTodos: { id: string; titulo: string }[] = [];
   let fuera = 0;
   const orden = [...clientes]
     .map((c) => ({ c, s: saludCliente(c, ahora) }))
@@ -299,9 +305,19 @@ export function construirMapaGlobal(clientes: PanelCliente[], o: OpcionesMapaGlo
       fuera++;
       continue;
     }
-    const m = construirMapa(c.equipos, informesDe(c), { cliente: c.id, ahora, enVivo: o.enVivo, agruparDesde: o.agruparDesde ?? 6 });
     const pre = (id: string) => `${c.id}/${id}`;
-    let suyos = m.nodos.map((n) => ({ ...n, id: pre(n.id), col: (n.col + 1) as NodoMapa["col"] }));
+    const desplegados = new Set([...(o.desplegados ?? [])].filter((x) => x.startsWith(`${c.id}/`)).map((x) => x.slice(c.id.length + 1)));
+    const m = construirMapa(c.equipos, informesDe(c), {
+      cliente: c.id,
+      ahora,
+      enVivo: o.enVivo,
+      agruparDesde: o.agruparDesde ?? 6,
+      ...(o.agrupar ? { agrupar: o.agrupar } : {}),
+      desplegados,
+      organizacion: c.organizacion ? leerOrganizacion(c.organizacion) : null,
+    });
+    for (const d of m.desplegados ?? []) desplegadosTodos.push({ id: pre(d.id), titulo: `${c.nombre} · ${d.titulo}` });
+    let suyos = m.nodos.map((n) => ({ ...n, id: pre(n.id), col: (n.col + 1) as NodoMapa["col"], ...(n.grupo ? { grupo: pre(n.grupo) } : {}) }));
     let susAristas = m.aristas.map((a) => ({ ...a, id: pre(a.id), de: pre(a.de), a: pre(a.a) }));
     // Buscar: si el cliente no casa, solo las cadenas de lo que casa (y nada si no casa nada).
     if (palabras.length && !casa(c.nombre)) {
@@ -357,5 +373,5 @@ export function construirMapaGlobal(clientes: PanelCliente[], o: OpcionesMapaGlo
     }
     frases.push(...m.frases.filter((f) => !palabras.length || suyos.some((n) => f.includes(n.nombre))));
   }
-  return { nodos: ordenarMapa(nodos, aristas, true), aristas, frases, clientes: salen, fuera };
+  return { nodos: ordenarMapa(nodos, aristas, true), aristas, frases, clientes: salen, fuera, desplegados: desplegadosTodos };
 }

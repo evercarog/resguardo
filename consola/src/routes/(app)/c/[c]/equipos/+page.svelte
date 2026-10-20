@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tip } from "$lib/tooltip";
-  import { ArrowDown, ArrowUp, Building2, ChevronRight, CirclePause, CirclePlay, Clock, GripVertical, LayoutTemplate, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, Building2, ChevronRight, CirclePause, CirclePlay, Clock, Cpu, GripVertical, LayoutTemplate, List, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, Waypoints, X } from "@lucide/svelte";
+  import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
+  import { grupoTipo } from "$lib/tipoEquipo";
   import Modal from "$ui/componentes/Modal.svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -52,6 +54,10 @@
   const sistemas = $derived([...new Set(actual.equipos.map((e) => grupoSistema(e)))].sort((a, b) => a.localeCompare(b, "es", { numeric: true })));
   // Un sistema que ya no tiene ningún equipo deja de filtrar.
   const sistemaActivo = $derived(sistemas.includes(sistema) ? sistema : "");
+  // 0.8.1 (C3, 15c): filtrar por tipo de equipo (físico, máquina virtual y de qué tipo, contenedor).
+  let tipo = $state("");
+  const tipos = $derived([...new Set(actual.equipos.map((e) => grupoTipo(e)))].sort((a, b) => a.localeCompare(b, "es")));
+  const tipoActivo = $derived(tipos.includes(tipo) ? tipo : "");
 
   const lista = $derived(
     actual.equipos
@@ -59,6 +65,7 @@
         const t = buscar.trim().toLowerCase();
         if (t && !`${e.nombre} ${textoBuscable(e)} ${(e.etiquetas ?? []).join(" ")}`.toLowerCase().includes(t)) return false;
         if (sistemaActivo && grupoSistema(e) !== sistemaActivo) return false;
+        if (tipoActivo && grupoTipo(e) !== tipoActivo) return false;
         if (!pasaFiltro(e, filtroEtiqueta.valor)) return false;
         const tono: Tono = saludEquipo(e, reloj.ahora).tono;
         if (filtro === "atencion") return tono === "bad" || tono === "warn";
@@ -73,7 +80,7 @@
   const yo = $derived(app.cuenta?.id ?? "");
   const org = $derived(actual.organizacion);
   const conSistema = $derived(sistemas.length > 1 || actual.equipos.some((e) => !!datosBasicos(e)));
-  const disponibles = $derived(nivelesDisponibles(org, conSistema));
+  const disponibles = $derived(nivelesDisponibles(org, conSistema, tipos.length > 1));
   let niveles = $state<Nivel[]>([]);
   $effect.pre(() => {
     if (!actual.id) return;
@@ -100,7 +107,28 @@
   const ordenada = $derived(
     orden === "manual" ? enOrdenManual(lista, org.orden) : orden === "nombre" ? [...lista].sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true })) : lista,
   );
-  const arbol = $derived(niveles.length && !filtroEtiqueta.valor ? agruparPorNiveles(ordenada, niveles, { organizacion: org, sistema: grupoSistema }) : null);
+  const arbol = $derived(niveles.length && !filtroEtiqueta.valor ? agruparPorNiveles(ordenada, niveles, { organizacion: org, sistema: grupoSistema, tipo: grupoTipo }) : null);
+
+  // 0.8.1 (C2, 15b): la misma lista como mapa (los mismos filtros; «por sede» junta por el
+  // primer nivel de «Agrupar por»). Se recuerda por persona.
+  const VISTAS = ["lista", "mapa"] as const;
+  let vista = $state<(typeof VISTAS)[number]>("lista");
+  $effect.pre(() => {
+    if (actual.id) vista = leer(`equipos.vista.${yo}.${actual.id}`, VISTAS, "lista");
+  });
+  function ponerVista(v: (typeof VISTAS)[number]) {
+    vista = v;
+    guardar(`equipos.vista.${yo}.${actual.id}`, v === "lista" ? "" : v);
+  }
+  /** El grupo de cada equipo en el mapa: el del primer nivel elegido (sede, categoría, sistema o tipo). */
+  const grupoMapa = $derived.by(() => {
+    const n = niveles[0];
+    if (!n || n === "sede") return undefined;
+    return (e: Equipo) => {
+      const g = agruparPorNiveles([e], [n], { organizacion: org, sistema: grupoSistema, tipo: grupoTipo })[0];
+      return g && !g.sin ? { id: `${n}=${g.titulo}`.toLowerCase().replace(/[^a-z0-9=:-]+/g, "-"), nombre: g.titulo } : null;
+    };
+  });
   /** La sede en cada fila (si hay sedes y no se agrupa por ella). */
   const sedeFila = (e: Equipo) => {
     if (!org.sedes.length || niveles.includes("sede")) return null;
@@ -322,6 +350,12 @@
           {#each sistemas as s (s)}<option value={s}>{s} ({actual.equipos.filter((e) => grupoSistema(e) === s).length})</option>{/each}
         </select>
       {/if}
+      {#if tipos.length > 1}
+        <select class="input sistema" bind:value={tipo} aria-label="Filtrar por tipo de equipo">
+          <option value="">Todos los tipos</option>
+          {#each tipos as t (t)}<option value={t}>{t} ({actual.equipos.filter((e) => grupoTipo(e) === t).length})</option>{/each}
+        </select>
+      {/if}
       <div class="segmented inline" role="group" aria-label="Filtrar">
         <button class:on={filtro === "todos"} aria-pressed={filtro === "todos"} onclick={() => ponerFiltro("todos")}>Todos</button>
         <button class:on={filtro === "atencion"} aria-pressed={filtro === "atencion"} onclick={() => ponerFiltro("atencion")}>Necesitan atención</button>
@@ -347,6 +381,10 @@
           </select>
         {/if}
       {/if}
+      <div class="segmented inline lista-mapa" role="group" aria-label="Ver como">
+        <button class:on={vista === "lista"} aria-pressed={vista === "lista"} onclick={() => ponerVista("lista")}><List size={14} />Lista</button>
+        <button class:on={vista === "mapa"} aria-pressed={vista === "mapa"} onclick={() => ponerVista("mapa")}><Waypoints size={14} />Mapa</button>
+      </div>
       <label class="agrupar" for="orden">Orden</label>
       <select id="orden" class="input input-sm" value={orden} onchange={(e) => ponerOrdenVista(e.currentTarget.value as (typeof ORDENES)[number])}>
         <option value="atencion">Lo que necesita atención primero</option>
@@ -430,6 +468,7 @@
             {#if g.sin}<span class="sin-et">{g.titulo}</span>
             {:else if g.nivel === "sede"}<span class="titulo-g"><Building2 size={14} />{g.titulo}</span>
             {:else if g.nivel === "sistema"}<span class="titulo-g"><Monitor size={14} />{g.titulo}</span>
+            {:else if g.nivel === "tipo"}<span class="titulo-g"><Cpu size={14} />{g.titulo}</span>
             {:else if g.nivel === "etiqueta"}<span class="titulo-g">{#each g.titulo.split(" · ") as t (t)}<EtiquetaChip nombre={t} />{/each}</span>
             {:else}<span class="titulo-g"><EtiquetaChip nombre={g.titulo} /></span>{/if}
           </button>
@@ -444,7 +483,10 @@
         {/if}
       </section>
     {/snippet}
-    {#if arbol && ordenada.length}
+    {#if vista === "mapa" && ordenada.length}
+      <!-- 15b: el mapa de la protección con los equipos de la lista (los mismos filtros). -->
+      <MapaProteccion equipos={ordenada} todos={actual.equipos} informes={ultimos.cliente === actual.id ? ultimos.porEquipo : {}} cliente={actual.id} ahora={reloj.ahora} titulo="Mapa de estos equipos" grupoDe={grupoMapa} vacio="Estos equipos aún no tienen copias que dibujar." />
+    {:else if arbol && ordenada.length}
       <div class="grupos">
         {#each arbol as g (g.clave)}{@render grupo(g, 0)}{/each}
       </div>
@@ -468,6 +510,7 @@
             onclick={() => {
               buscar = "";
               sistema = "";
+              tipo = "";
               ponerFiltro("todos");
               filtroEtiqueta.poner("");
             }}><X size={14} />Quitar los filtros</button

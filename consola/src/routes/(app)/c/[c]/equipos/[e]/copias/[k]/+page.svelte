@@ -10,6 +10,7 @@
   // resumen del equipo y de su último informe; las carpetas, que van cifradas,
   // se ven con la clave de administración (y se olvidan al salir).
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
+  import DondeEsta from "$lib/componentes/DondeEsta.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { lineaCadena } from "$lib/cadenas";
@@ -140,7 +141,7 @@
     if (cc) untrack(() => void cargarCatalogo(cc));
   });
   const catalogo = $derived(catalogoDe(c));
-  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora, actual.organizacion, listaFuncionales(c)) : null);
+  const regla = $derived(equipo && k ? reglaDeCopia(equipo, k, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x)), informe, catalogo, reloj.ahora, actual.organizacion, listaFuncionales(c), actual.infra) : null);
   let marcar = $state<MarcarDestino | null>(null);
   const eslabones = $derived(caminoDeCopia(regla, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: actual.equipos, informe }));
   const despues = $derived(eslabones.filter((x) => x.clase !== "copia"));
@@ -332,6 +333,7 @@
       items={[
         { id: "sec-resumen", texto: "Resumen" },
         ...(regla ? [{ id: "sec-regla", texto: "Regla 3-2-1" }] : []),
+        ...(repo ? [{ id: "sec-donde", texto: "Dónde está" }] : []),
         { id: "t-historial", texto: "Historial y versiones" },
         { id: "t-que", texto: "Qué y cuándo" },
         ...(problemas.length ? [{ id: "t-errores", texto: "Errores" }] : []),
@@ -378,6 +380,8 @@
       <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de su camino. -->
       {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={regla} equipos={actual.equipos} ordena={puede.ordenar(rol) && equipo.modo !== "trasladado"} />{/if}
     {/if}
+    <!-- Plan 0.8.1, C1 (15n): dónde están los datos de esta copia, con su ruta real. -->
+    {#if repo}<DondeEsta {equipo} {repo} rc={regla} {informe} cliente={c} />{/if}
 
     {#if repo}
       <HistorialVersiones

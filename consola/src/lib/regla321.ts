@@ -30,6 +30,7 @@ import { servidorDe } from "./dondeGuarda";
 import { lista, plural, relativo } from "./formato";
 import type { PruebaEspejoInforme, PruebaFuncional } from "./tiposPruebas";
 import { sedeDeDestino, sedeDeEquipo, type Organizacion } from "./sedes";
+import { fisicoDe, lineaFisica, sitioDeDestino, sitioDeEquipo, type Infraestructura } from "./infra";
 
 // ---------- 1. La regla (como protection.rs) ----------
 
@@ -40,6 +41,8 @@ export interface OrigenRegla {
   soporte: string;
   /** 0.8.0 (D1, 14ll): la sede del equipo que copia, si el cliente tiene sedes. */
   sede?: string | null;
+  /** 0.8.1 (C4, 15d): el servidor físico donde está el equipo, si se anotó la infraestructura. */
+  fisico?: string | null;
 }
 
 export interface PasoRegla {
@@ -72,6 +75,8 @@ export interface PasoRegla {
   inmutable_marcado?: boolean;
   /** 0.8.0 (D1, 14ll): la sede del destino, si se sabe (la nube no es sede: siempre fuera). */
   sede?: string | null;
+  /** 0.8.1 (C4, 15d): el servidor físico donde está el destino, si se anotó la infraestructura. */
+  fisico?: string | null;
 }
 
 export interface PruebaRegla {
@@ -112,7 +117,7 @@ export interface Regla321 {
   dejo_de_cumplir: boolean;
   partes: ParteRegla[];
   atrasados: string[];
-  /** `mismo_equipo`, `inmutable_local`, `aislado_sin_conectar`. */
+  /** `mismo_equipo`, `inmutable_local`, `aislado_sin_conectar` y (0.8.1, C4) `servidor_compartido`. */
   avisos: string[];
 }
 
@@ -237,6 +242,16 @@ export function regla321(e: EntradaRegla, ahora: number): Regla321 {
   if ([...porEquipo.values()].some((x) => x.size >= 2)) avisos.push("mismo_equipo");
   if (ic > 0 && !todos.some((p) => cuentaInmutable(p) && esFuera(p, e.origen))) avisos.push("inmutable_local");
   if (todos.some((p) => aisladoSinConectar(p, ahora))) avisos.push("aislado_sin_conectar");
+  // 0.8.1 (C4): dos copias en equipos distintos (o un destino suelto, como un NAS) del mismo
+  // servidor físico: un fallo del servidor se las lleva a la vez. En el mismo equipo ya lo
+  // dice `mismo_equipo`.
+  const porFisico = new Map<string, Set<string>>();
+  const anotar = (f: string | null | undefined, quien: string) => {
+    if (f) porFisico.set(f, new Set([...(porFisico.get(f) ?? []), quien]));
+  };
+  anotar(e.origen.fisico, e.origen.equipo);
+  for (const p of todos) anotar(p.fisico, p.equipo || p.id);
+  if ([...porFisico.values()].some((x) => x.size >= 2)) avisos.push("servidor_compartido");
   return { cumple, cumple_config: cumpleConfig, dejo_de_cumplir: cumpleConfig && !cumple, partes, atrasados, avisos };
 }
 
@@ -287,6 +302,8 @@ export interface PasoVista extends PasoRegla {
   /** 14i/14h: de un espejo, el id de su trabajo y la clave de este repositorio en lo que ocupa (`<usuario>/<repo>` o su id). */
   trabajo?: string | null;
   ocupaClave?: string | null;
+  /** 0.8.1 (C4): dónde está físicamente («hv-01 · tank, espejo de 2 discos · Oficina central»), si se anotó. */
+  lineaFisica?: string | null;
 }
 
 /** Lo que hace falta para marcar un destino (AtributosDestino.svelte). */
@@ -426,6 +443,7 @@ export function reglaDeCopia(
   ahora: number,
   organizacion?: Organizacion | null,
   funcionales: PruebaFuncional[] = [],
+  infra?: Infraestructura | null,
 ): ReglaCopia | null {
   if (k.activa === false) return null;
   const r = e.resumen?.repositorios?.find((x) => x.id === k.repo);
@@ -698,7 +716,13 @@ export function reglaDeCopia(
   const f = ultimaFuncional(funcionales, e.id, r.id);
   if (f) prueba = conOtraPrueba(prueba, { cuando: f.cuando, ok: f.ok, origen: "funcional" });
   const sedeOrigen = ponerSedes(e.id, pasos, organizacion);
-  const entrada: EntradaRegla = { origen: { equipo: e.id, soporte: `equipo:${e.id}:origen`, ...(sedeOrigen ? { sede: sedeOrigen } : {}) }, pasos, verificacion, prueba_restauracion: prueba };
+  const origen = ponerInfra(e.id, pasos, infra, organizacion);
+  const entrada: EntradaRegla = {
+    origen: { equipo: e.id, soporte: origen.soporte, ...(sedeOrigen ? { sede: sedeOrigen } : {}), ...(origen.fisico ? { fisico: origen.fisico } : {}) },
+    pasos,
+    verificacion,
+    prueba_restauracion: prueba,
+  };
   return { equipo: e, copia: k, repo: r, entrada, pasos, regla: regla321(entrada, ahora) };
 }
 
@@ -716,6 +740,34 @@ export function ponerSedes(equipo: string, pasos: PasoVista[], o: Organizacion |
     p.sedeAsignada = s.asignada;
   }
   return sedeDeEquipo(o, equipo).sede?.id ?? null;
+}
+
+/**
+ * 0.8.1 (C4, 15d): con la infraestructura anotada, el servidor físico de los originales y
+ * de cada paso (`fisico`, para el aviso «servidor físico compartido») y sus soportes
+ * reales (el conjunto de discos, si se sabe; lo que marcó una persona en el destino manda).
+ * Un paso que tenía el soporte de los originales (una carpeta del propio equipo) sigue con
+ * el de los originales. Devuelve el soporte y el servidor de los originales.
+ */
+export function ponerInfra(equipo: string, pasos: PasoVista[], infra: Infraestructura | null | undefined, o?: Organizacion | null): { soporte: string; fisico: string | null } {
+  const antes = `equipo:${equipo}:origen`;
+  if (!infra?.servidores.length) return { soporte: antes, fisico: null };
+  const deOrigen = fisicoDe(sitioDeEquipo(infra, equipo));
+  const soporte = deOrigen?.soporte ?? antes;
+  for (const p of pasos) {
+    if (p.soporte === antes) {
+      p.soporte = soporte;
+      if (deOrigen) p.fisico = deOrigen.fisico;
+      continue;
+    }
+    const sitio = sitioDeDestino(infra, p.clave, p.equipo);
+    const f = fisicoDe(sitio);
+    if (!f) continue;
+    p.fisico = f.fisico;
+    p.lineaFisica = lineaFisica(sitio, o);
+    if (f.soporte && !p.marcado?.soporte) p.soporte = f.soporte;
+  }
+  return { soporte, fisico: deOrigen?.fisico ?? null };
 }
 
 /**
@@ -778,10 +830,11 @@ export function reglasDelCliente(
   todos: Equipo[] = equipos,
   organizacion?: Organizacion | null,
   funcionales: PruebaFuncional[] = [],
+  infra?: Infraestructura | null,
 ): ReglaCopia[] {
   return equipos
     .filter((e) => e.modo !== "trasladado")
-    .flatMap((e) => (e.resumen?.copias ?? []).map((k) => reglaDeCopia(e, k, todos, informes[e.id], catalogo, ahora, organizacion, funcionales)))
+    .flatMap((e) => (e.resumen?.copias ?? []).map((k) => reglaDeCopia(e, k, todos, informes[e.id], catalogo, ahora, organizacion, funcionales, infra)))
     .filter((x): x is ReglaCopia => !!x);
 }
 
@@ -801,9 +854,10 @@ export function reglaEnEdicion(
   programado: { verificacion?: boolean; prueba?: boolean } = {},
   organizacion?: Organizacion | null,
   funcionales: PruebaFuncional[] = [],
+  infra?: Infraestructura | null,
 ): ReglaCopia | null {
   const previa = e.resumen?.copias?.find((x) => x.id === k.id);
-  const rc = reglaDeCopia(e, { ...previa, ...k, activa: k.activa !== false }, equipos, informe, catalogo, ahora, organizacion, funcionales);
+  const rc = reglaDeCopia(e, { ...previa, ...k, activa: k.activa !== false }, equipos, informe, catalogo, ahora, organizacion, funcionales, infra);
   if (!rc) return null;
   const entrada: EntradaRegla = {
     ...rc.entrada,
@@ -1122,6 +1176,7 @@ export const TEXTO_AVISO: Record<string, string> = {
   mismo_equipo: "Dos soportes están en el mismo equipo: un fallo del equipo, un robo o un incendio se los lleva a la vez.",
   inmutable_local: "Lo inmutable o aislado está todo en el sitio: no protege de un incendio o un robo.",
   aislado_sin_conectar: "Un medio aislado lleva demasiado sin conectarse: conéctalo para comprobar la rotación.",
+  servidor_compartido: "Servidor físico compartido: dos copias están en el mismo servidor físico (p. ej. una máquina virtual y el almacén que la copia en el mismo anfitrión). Un fallo del servidor se las lleva a la vez.",
 };
 
 /** «Cumple la regla 3-2-1-1-0», «Le falta: 1 fuera de la oficina y 0 errores», «Dejó de cumplir: …». */

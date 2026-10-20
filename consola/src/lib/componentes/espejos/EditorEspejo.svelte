@@ -47,6 +47,7 @@
   import type { Cliente, Equipo, Horario } from "$lib/tipos";
   import LimiteFranjas from "../LimiteFranjas.svelte";
   import { admiteFranjas, velocidadEnFrase } from "$lib/franjas";
+  import { rutasDelEspejo } from "$lib/dondeEsta";
 
   interface Props {
     cliente: Cliente;
@@ -217,6 +218,14 @@
   /** Un repositorio de ejemplo para la ruta final («caja-1/siigo»). */
   const ejemploRepo = $derived(t.que.tipo === "repos" && t.que.repos[0] ? t.que.repos[0] : quien === "equipo" ? (repos[0]?.valor ?? "<repositorio>") : (repos[0]?.valor ?? "<equipo>/<repositorio>"));
   const rutaFinal = $derived(t.adonde.tipo === "zona" ? null : t.adonde.carpeta.trim() ? `${t.adonde.carpeta.trim().replace(/[\\/]+$/, "")}${t.adonde.tipo === "carpeta" && win ? "\\" : "/"}${t.adonde.tipo === "carpeta" && win ? ejemploRepo.replace(/\//g, "\\") : ejemploRepo}` : null);
+  // Plan 0.8.1, C1 (15n): la ruta de **cada** repositorio elegido y si ya está en ese destino
+  // (otro espejo lo deja en la misma carpeta: solo subirá lo nuevo; o en otra: lo subiría entero).
+  const elegidos = $derived(
+    t.que.tipo === "repos" ? t.que.repos : t.que.tipo === "equipos" ? repos.map((o) => o.valor).filter((v) => (t.que.tipo === "equipos" ? t.que.equipos : []).some((u) => v === u || v.startsWith(`${u}/`))) : repos.map((o) => o.valor),
+  );
+  const rutas = $derived(t.adonde.tipo && (t.adonde.carpeta.trim() || t.adonde.tipo === "zona") ? rutasDelEspejo(t, todos, elegidos, quien === "almacen" ? hace : null, nuevo ? null : trabajo) : []);
+  const VER_RUTAS = 6;
+  let todasRutas = $state(false);
   /** Al guardar: el bucket escrito queda en el destino (catálogo del cliente), para no pedirlo más. */
   function recordarBucket() {
     if (!pideBucket || propia || !bucketEscrito.trim() || t.adonde.tipo !== "nube" || !t.adonde.nube || !puede.administrar(cliente.rol)) return;
@@ -425,7 +434,22 @@
             <div class="notice notice-warn"><TriangleAlert size={16} /><p>{TIPOS_NUBE[tipoNube].nombre} no es inmutable: quien entre en la cuenta podría borrar lo de allí.</p></div>
           {/if}
         {/if}
-        {#if rutaFinal}<p class="ruta faint">Quedará en <code>{rutaFinal}</code></p>{/if}
+        {#if rutas.length}
+          <div class="rutas">
+            <p class="faint">Cada repositorio quedará en:</p>
+            <ul>
+              {#each todasRutas ? rutas : rutas.slice(0, VER_RUTAS) as x (x.repo)}
+                <li>
+                  <span class="r-n">{nombreRepo(x.repo)}</span>
+                  {#if x.ruta}<code>{x.ruta}</code>{/if}
+                  {#if x.estado === "ya_esta"}<span class="r-ok">ya está allí{x.espejo ? ` (por «${x.espejo}»)` : ""}: solo subirá lo nuevo</span>
+                  {:else if x.estado === "otra_ruta"}<span class="r-aviso"><TriangleAlert size={12} />Ya está en este destino en <code>{x.otra}</code> (por «{x.espejo}»): con esta carpeta se subiría entero otra vez</span>{/if}
+                </li>
+              {/each}
+            </ul>
+            {#if rutas.length > VER_RUTAS && !todasRutas}<button type="button" class="btn btn-sm btn-ghost" onclick={() => (todasRutas = true)}>Ver las {rutas.length}</button>{/if}
+          </div>
+        {:else if rutaFinal}<p class="ruta faint">Quedará en <code>{rutaFinal}</code></p>{/if}
         {#if puede.administrar(cliente.rol)}
           <div class="conectar">
             <button type="button" class="btn btn-sm btn-ghost" onclick={() => ((conectarCon = null), (conectar = "otro"))}><Cloud size={13} />Conectar otra nube o servidor en {hace.nombre}…</button>
@@ -766,6 +790,42 @@
     margin: 0;
     font-size: var(--fs-sm);
     overflow-wrap: anywhere;
+  }
+  /* 0.8.1 (C1): la ruta de cada repositorio elegido. */
+  .rutas p {
+    margin: 0 0 4px;
+    font-size: var(--fs-sm);
+  }
+  .rutas ul {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-sm);
+  }
+  .rutas li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    overflow-wrap: anywhere;
+  }
+  .r-n {
+    font-weight: 500;
+  }
+  .r-ok {
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  .r-aviso {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--fs-xs);
+    color: var(--warn);
   }
   .enlinea {
     margin-left: 4px;

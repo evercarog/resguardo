@@ -21,6 +21,7 @@
   import ContadorNotas from "./notas/ContadorNotas.svelte";
   import SinConfirmar from "./SinConfirmar.svelte";
   import { sistemaDe } from "$lib/datosBasicos";
+  import { tipoEquipo } from "$lib/tipoEquipo";
 
   let {
     equipo,
@@ -49,6 +50,13 @@
       .at(-1),
   );
   const proxima = $derived(proximaCopia(copias, reloj.ahora));
+  /** 0.8.1 (C3): «máquina virtual (Hyper-V)», «contenedor (LXC)»; el físico no se dice (es lo normal). */
+  const tipoCorto = $derived.by(() => {
+    const t = tipoEquipo(equipo);
+    if (t.clase !== "virtual" && t.clase !== "contenedor") return null;
+    const p = t.plataforma ? { kvm: "KVM", vmware: "VMware", hyperv: "Hyper-V", virtualbox: "VirtualBox", xen: "Xen", lxc: "LXC", docker: "Docker", podman: "Podman", wsl: "WSL" }[t.plataforma] : null;
+    return `${t.clase === "virtual" ? "máquina virtual" : "contenedor"}${p ? ` ${p}` : ""}`;
+  });
   const cuadros = $derived(informe ? diasEquipo(informe, 14, reloj.ahora) : []);
   const Icono = $derived(equipo.rol === "almacenamiento" ? Server : /portatil|laptop/i.test(equipo.nombre) ? Laptop : /linux|debian|ubuntu/i.test(equipo.so) ? HardDrive : Monitor);
 
@@ -80,7 +88,7 @@
       <span class="solo-movil est-movil"><EnMarcha equipo={equipo.id} compacto /><Chip pequeno tono={salud.tono} texto={salud.texto} /></span>
       {#if sinConfirmar}<span class="fila-sub">{#if duplicado}Duplicado: este equipo ya está dado de alta como «{duplicado.nombre}»{:else}Falta confirmar el número de comprobación{/if}</span>{/if}
       <span class="fila-sub">
-        {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{#if sede}<span class="sede"><Building2 size={11} aria-hidden="true" />{sede}</span>{" · "}{/if}{sistemaDe(equipo)}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
+        {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{#if sede}<span class="sede"><Building2 size={11} aria-hidden="true" />{sede}</span>{" · "}{/if}{sistemaDe(equipo)}{tipoCorto ? ` · ${tipoCorto}` : ""}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
         {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado</span>{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}
       </span>
       <!-- En móvil, la última copia va aquí (la columna de la derecha no cabe). -->

@@ -3,9 +3,10 @@
 // (MapaProteccion.svelte), en un solo sitio para la página de la copia, la
 // tarjeta del repositorio y la página «Copias».
 import { pctVisible, tareasDe } from "./progreso.svelte";
+import { tareaDelTrazo } from "./mapaVivo";
 
-export function enVivoCamino(equipo: string, repo: string, tipo: "copia" | "copia_externa" | "espejo"): string | null {
-  const t = tareasDe(equipo, { repo, tipos: [tipo] })[0];
+export function enVivoCamino(equipo: string, repo: string, tipo: "copia" | "copia_externa" | "espejo" | "derivada", id?: string): string | null {
+  const t = tareaDelTrazo(tareasDe(equipo), repo, tipo, id);
   if (!t) return null;
   if (t.fase === "en_cola") return "En cola";
   const p = pctVisible(equipo, t);

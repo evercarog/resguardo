@@ -7,6 +7,7 @@
   // los cuadros de 60 días, las gráficas, las versiones y su historia.
   // Todo sale del resumen del equipo y de su último informe (v1.7 §6).
   import IndicePagina from "$lib/componentes/IndicePagina.svelte";
+  import DondeEsta from "$lib/componentes/DondeEsta.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
   import { page } from "$app/state";
   import { untrack } from "svelte";
@@ -129,7 +130,7 @@
     if (!equipo || !repo) return null;
     const eq = equipo;
     const k = copias.find((x) => x.repo === repo!.id && x.activa !== false);
-    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c)) : null;
+    return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c), actual.infra) : null;
   });
   const prot = $derived(saludCompleta(inf, { extra: equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null, rc: reglaRepo, retencionAlmacen: reglaEfectiva(repo, destino, actual.equipos)?.quien ?? null, ahora: reloj.ahora }));
   const ej = $derived(ultimaEjecucion(inf));
@@ -262,6 +263,7 @@
       items={[
         { id: "sec-resumen", texto: "Resumen" },
         { id: "t-flujo", texto: "Cómo se protege" },
+        { id: "sec-donde", texto: "Dónde está" },
         { id: "sec-proteccion", texto: "Protección" },
         ...(versiones.length >= 2 ? [{ id: "sec-graficas", texto: "Gráficas" }] : []),
         { id: "t-historial", texto: "Historial y versiones" },
@@ -296,6 +298,8 @@
     <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} alQuitarExterna={puedeQuitarExterna ? quitarExterna : undefined} />
     <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de este repositorio. -->
     {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={reglaRepo} equipos={actual.equipos} ordena={puede.ordenar(rol)} />{/if}
+    <!-- Plan 0.8.1, C1 (15n): todos los sitios donde están sus datos, con su ruta real. -->
+    <DondeEsta {equipo} {repo} rc={reglaRepo} informe={equipo.ultimo_informe} cliente={c} />
 
     <div class="dos" id="sec-proteccion">
       {#if prot}

@@ -2159,7 +2159,7 @@
         "atrasados": [],
         "avisos": []
       }
-    },
+    },
     {
       "nombre": "sede_misma_no_cuenta_fuera",
       "que": "D1: un servidor marcado Fuera del sitio en la misma sede que el equipo: con sedes, no cuenta fuera.",
@@ -2245,7 +2245,7 @@
         "atrasados": [],
         "avisos": []
       }
-    },
+    },
     {
       "nombre": "nube_siempre_fuera_con_sedes",
       "que": "D1: la nube no es sede: siempre fuera, aunque diga una sede.",
@@ -2331,7 +2331,7 @@
         "atrasados": [],
         "avisos": []
       }
-    },
+    },
     {
       "nombre": "sin_sede_del_destino_manda_el_tipo",
       "que": "D1: el equipo tiene sede pero el destino no (un servidor de fuera sin sede): manda su tipo, como antes.",
@@ -2426,7 +2426,7 @@
         "atrasados": [],
         "avisos": []
       }
-    },
+    },
     {
       "nombre": "inmutable_en_otra_sede",
       "que": "D1: instantáneas del anfitrión en el almacén de otra sede: inmutable y fuera, sin el aviso «todo en el sitio».",
@@ -2513,7 +2513,7 @@
         "atrasados": [],
         "avisos": []
       }
-    },
+    },
     {
       "nombre": "inmutable_en_la_misma_sede",
       "que": "D1: las mismas instantáneas en la sede del propio equipo: inmutable pero en el sitio (avisa).",
@@ -2601,6 +2601,372 @@
         "atrasados": [],
         "avisos": [
           "inmutable_local"
+        ]
+      }
+    },
+    {
+      "nombre": "servidor_fisico_compartido",
+      "que": "0.8.1 (C4): la máquina virtual y el almacén que la copia están en el mismo servidor físico (hv-01): aviso servidor_compartido; los soportes reales (conjuntos de discos) cuentan distinto.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-vm",
+          "soporte": "conjunto:hv-01:ssd",
+          "fisico": "hv-01"
+        },
+        "pasos": [
+          {
+            "id": "destino",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "conjunto:hv-01:tank",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T14:00:00Z",
+            "cada_horas": 24,
+            "fisico": "hv-01"
+          },
+          {
+            "id": "espejo-1",
+            "tipo": "espejo",
+            "lugar": "nube",
+            "inmutable": "object_lock",
+            "soporte": "nube:b2:copias",
+            "ultima_ok": "2026-10-01T07:00:00Z",
+            "cada_horas": 24
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-29T17:00:00Z"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-23T09:00:00Z"
+        }
+      },
+      "esperado": {
+        "cumple": true,
+        "cumple_config": true,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 1,
+            "valor_config": 1,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "servidor_compartido"
+        ]
+      }
+    },
+    {
+      "nombre": "servidores_fisicos_distintos",
+      "que": "0.8.1 (C4): el almacén está en otro servidor físico (hv-02): sin aviso.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-vm",
+          "soporte": "conjunto:hv-01:ssd",
+          "fisico": "hv-01"
+        },
+        "pasos": [
+          {
+            "id": "destino",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "conjunto:hv-02:tank",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T14:00:00Z",
+            "cada_horas": 24,
+            "fisico": "hv-02"
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-29T17:00:00Z"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-23T09:00:00Z"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": []
+      }
+    },
+    {
+      "nombre": "mismo_equipo_no_es_servidor_compartido",
+      "que": "0.8.1 (C4): dos zonas del mismo almacén en el mismo servidor físico: es mismo_equipo, no servidor_compartido (el equipo que copia está en otro).",
+      "entrada": {
+        "origen": {
+          "equipo": "e-pc",
+          "soporte": "equipo:e-pc:origen"
+        },
+        "pasos": [
+          {
+            "id": "destino",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "solo_anadir",
+            "soporte": "equipo:e-almacen:D:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T14:00:00Z",
+            "cada_horas": 24,
+            "fisico": "hv-01"
+          },
+          {
+            "id": "espejo-1",
+            "tipo": "espejo",
+            "lugar": "oficina",
+            "inmutable": "no",
+            "soporte": "equipo:e-almacen:E:",
+            "equipo": "e-almacen",
+            "ultima_ok": "2026-10-01T12:00:00Z",
+            "cada_horas": 24,
+            "fisico": "hv-01"
+          }
+        ],
+        "verificacion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-29T17:00:00Z"
+        },
+        "prueba_restauracion": {
+          "configurada": true,
+          "ultima_ok": "2026-09-23T09:00:00Z"
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 3,
+            "valor_config": 3,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "mismo_equipo"
+        ]
+      }
+    },
+    {
+      "nombre": "nas_en_el_mismo_servidor",
+      "que": "0.8.1 (C4): un destino sin equipo (un NAS anotado en el servidor físico del equipo que copia) también avisa.",
+      "entrada": {
+        "origen": {
+          "equipo": "e-servidor",
+          "soporte": "equipo:e-servidor:origen",
+          "fisico": "srv-01"
+        },
+        "pasos": [
+          {
+            "id": "destino",
+            "tipo": "copia",
+            "lugar": "oficina",
+            "inmutable": "no",
+            "soporte": "red:nas",
+            "ultima_ok": "2026-10-01T14:00:00Z",
+            "cada_horas": 24,
+            "fisico": "srv-01"
+          }
+        ],
+        "verificacion": {
+          "configurada": false
+        },
+        "prueba_restauracion": {
+          "configurada": false
+        }
+      },
+      "esperado": {
+        "cumple": false,
+        "cumple_config": false,
+        "dejo_de_cumplir": false,
+        "partes": [
+          {
+            "id": "copias",
+            "meta": 3,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_destino"
+          },
+          {
+            "id": "soportes",
+            "meta": 2,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": true,
+            "cumple_config": true,
+            "accion": ""
+          },
+          {
+            "id": "fuera",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_fuera"
+          },
+          {
+            "id": "inmutable",
+            "meta": 1,
+            "valor": 0,
+            "valor_config": 0,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "anadir_inmutable"
+          },
+          {
+            "id": "errores",
+            "meta": 0,
+            "valor": 2,
+            "valor_config": 2,
+            "cumple": false,
+            "cumple_config": false,
+            "accion": "programar_verificacion"
+          }
+        ],
+        "atrasados": [],
+        "avisos": [
+          "servidor_compartido"
         ]
       }
     }

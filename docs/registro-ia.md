@@ -27,6 +27,31 @@ Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: B1 (15bb, 
 - **B4:** ni el propietario del servidor abre un cliente archivado (hay que recuperarlo); se puede borrar con historial si no tiene equipos; con servidores de respaldo, el 403 `archivado` cuenta como «no responde» para el agente. `.page-actions { flex: none }` de `ui/` aún desborda a 375 px en otras páginas con muchas acciones (solo se arregló en «Clientes del servidor»).
 - **B2:** el grupo «Instaladores» usa `Downloads/*.exe` y no `*.exe`; sin una entrada única de auditoría «etiqueta renombrada» (quedan las de cada orden); dos cambios seguidos a un equipo sin conexión se encadenan solo en memoria (recargar la página antes los perdería).
 - **B3:** «Probar» una nube lanza uno de sus espejos (el agente no tiene una prueba de conexión aparte); la derivada sin retención en el almacén sale sin botón (su página es 15g); la carpeta de una derivada se reconoce por la de por defecto (`<repo>-<derivada>`).
+## 2026-10-20 · `ia/081-c` · Plan 0.8.1, bloque C: ver dónde está cada cosa (C1–C4)
+
+Claude Code (Opus), en autónomo, desde la integración de la 0.8.1. Pedido: el bloque C de [plan-0.8.1.md](plan-0.8.1.md) — «Dónde está» con las rutas reales (C1, 15n), el mapa (C2: 15rr, 15cc, 15m punto 5, 15b, 15l), el tipo de equipo (C3, 15c) y la infraestructura fase 1 para cualquier entorno (C4, 15d), sin integraciones con un proveedor ni tocar la barra lateral, la tarjeta del almacén ni `DatosComunes` (los hace otra línea).
+
+**Hecho (un commit por tema):**
+
+- **Agente:** orden inofensiva `tipo_equipo { clase, plataforma? }` (solo administradores, guardada en el equipo como el nombre, en `datos_equipo.tipo`, `admite: "tipo_equipo"`); `datos_basicos.almacenamiento` (Linux: `/sys/block`, `/proc/mdstat`, grupos de ZFS por el origen del montaje y su estado; Windows: `PhysicalDriveN` con su bus y modelo, Storage Spaces y controladoras RAID por el bus; nunca números de serie) y `discos[].volumen`; `destinos[].carpeta` de un destino en un disco del equipo (sin el nombre de la cuenta; nunca de la red); `derivada` en el progreso de una derivada en marcha.
+- **Servidor:** `GET/PUT /api/clientes/{c}/infraestructura` (`crates/servidor/src/infraestructura.rs`, valores `infra:<cliente>`, sin campos de más, auditado).
+- **Regla 3-2-1-1-0:** `fisico` en el origen y los pasos y el aviso `servidor_compartido`, igual en `protection.rs` y `regla321.ts` con cuatro vectores nuevos; con infraestructura, los soportes reales (el conjunto de discos).
+- **Consola:** tipo de equipo (ficha con «Cambiar», fila, filtro y «Agrupar por tipo de equipo»); página «Infraestructura» (propone con lo que ven los equipos y la persona confirma; servidores, discos, lo que vive en cada uno, asignar equipos y destinos); «Dónde está» en el repositorio, la copia y el destino, y la ruta de cada repositorio en el editor del espejo («ya está allí» / «en otra ruta»); el mapa con «Agrupar: no / por sede / con más de N», grupos que se despliegan y su lista al pasar, derivadas y espejos animados con su porcentaje, el espejo sin reconocer con su marca, capas (Sedes, Copias, Estado, Infraestructura, Almacenamiento), «Lista / Mapa» en Equipos y lo mismo en «Todos los clientes», todo recordado por persona. Simulador con datos de ejemplo de todo.
+- **Docs:** [infraestructura.md](infraestructura.md) (nuevo), «Cambios» v1.8x e «Infraestructura» en api-servidor.md, regla-3-2-1.md, diseno.md (mapa y «Dónde está»), planes.
+
+**Comprobado:** `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, el de `resguardo-servidor --features consola-integrada`, `cargo test --workspace` con los tres saltos pedidos (falló `el_canal_de_un_equipo_callado_se_cierra` una vez, con otras líneas compilando a la vez; solo, pasa: no toca nada de esta rama), `npm run check`, `build`, `test:vectores` (con `vectores-infra.ts` nuevo y más casos en `vectores-mapa.ts`), `npm run e2e` (escenario completo, con los binarios de esta rama) y `test:sin-referencias`. Visto en el simulador (capturas en `tmp/capturas/081-c`, claro y oscuro, a 375 px la página de infraestructura).
+
+**Sin probar:** la detección de discos en máquinas reales (un Windows con Espacios de almacenamiento o una controladora RAID, un Linux con mdadm y con ZFS, dentro de un contenedor de Proxmox); la orden `tipo_equipo` contra un agente real; el mapa con muchos equipos de verdad (rendimiento: las cuentas son lineales, el globo del grupo enseña 12 como mucho).
+
+**Decisiones para revisar:**
+
+1. **La infraestructura es de cada consola** (fase 1), no un dato común por los equipos (§6.5): añadir una clase a `datos_cliente.rs` se pisaba con el bloque B5. Queda escrito en infraestructura.md.
+2. **La página «Infraestructura» tiene una entrada provisional en el menú** (junto a «Repositorios y destinos»): con el menú nuevo del bloque B debería ir dentro de «Destinos».
+3. **La carpeta de un destino local ahora sale del equipo** (antes, a propósito, nunca): sin el nombre de la cuenta y nunca de una carpeta de la red. Lo pide 15n («su ruta real»); si no se quiere, basta con quitar `destinos[].carpeta` y «Dónde está» dirá la unidad.
+4. **Agrupar «por sede» junta todos los equipos de la sede**, también los que tienen avisos (el grupo toma el peor estado y su lista los dice); los que tienen algo en marcha quedan sueltos. «Con más de N» sigue como antes (solo los que están al día).
+5. **Solo se propone como servidor un equipo físico que lo parece** (ve conjuntos, varios discos o guarda copias); un puesto se anota a mano.
+6. Las capas Infraestructura y Almacenamiento son una línea en cada tarjeta, no columnas propias (servidor → hipervisor → VM).
+7. El estado de un conjunto que ve el agente (degradado) solo se enseña en la ficha del equipo: no hay aviso todavía.
 
 ## 2026-10-20 · `ia/081-consola-g` · Plan 0.8.1, bloque G: pulido de la consola (G1 de la consola, G2, G3, G5, G6 y G7)
 

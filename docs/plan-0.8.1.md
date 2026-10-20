@@ -37,10 +37,10 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ### Bloque C — Ver dónde está cada cosa
 
-- [ ] **C1. «Dónde está»** en cada repositorio y copia, con la ruta real en cada sitio, su tamaño y si está al día (15n).
-- [ ] **C2. El mapa:** grupos que se despliegan y agrupación por sede (15rr), derivadas y espejos animados (15cc), vista «Mapa» en Equipos (15b) y capas (15l, empezando por Sedes, Copias y Estado).
-- [ ] **C3. Tipo de equipo** (físico, VM, contenedor), detectado y corregible (15c).
-- [ ] **C4. Infraestructura, fase 1, para cualquier entorno** (15d): lo que el agente detecta solo, el resto anotado con ayuda, una línea por destino. Sin conectar ningún hipervisor (15e aparcada).
+- [x] (rama `ia/081-c`; la ruta de una derivada en su destino no se sabe del todo: se dice el destino) **C1. «Dónde está»** en cada repositorio y copia, con la ruta real en cada sitio, su tamaño y si está al día (15n).
+- [x] (rama `ia/081-c`; la capa «Infraestructura» es una línea en cada tarjeta, no columnas propias servidor → hipervisor → VM) **C2. El mapa:** grupos que se despliegan y agrupación por sede (15rr), derivadas y espejos animados (15cc), vista «Mapa» en Equipos (15b) y capas (15l, empezando por Sedes, Copias y Estado).
+- [x] (rama `ia/081-c`) **C3. Tipo de equipo** (físico, VM, contenedor), detectado y corregible (15c).
+- [~] (rama `ia/081-c`; [infraestructura.md](infraestructura.md). **Falta:** que sea común a todas las consolas del cliente —de momento es de cada consola—; ya es la pestaña «Infraestructura» de «Destinos» (al unir con el bloque B); y probar la detección de discos en un Windows con Espacios de almacenamiento o controladora RAID y en un Linux con mdadm/ZFS reales) **C4. Infraestructura, fase 1, para cualquier entorno** (15d): lo que el agente detecta solo, el resto anotado con ayuda, una línea por destino. Sin conectar ningún hipervisor (15e aparcada).
 
 ### Bloque D — Las copias de cada día, más fáciles
 

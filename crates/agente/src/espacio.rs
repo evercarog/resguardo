@@ -253,6 +253,37 @@ pub(crate) fn montaje_de(mountinfo: &str, ruta: &str) -> Option<(String, String)
         .map(|(_, t, f)| (t, f))
 }
 
+/// Plan 0.8.1 (C1, 15n): la carpeta de un destino local para «Dónde está» de la consola,
+/// sin el nombre de la cuenta si está dentro de un perfil (`C:\Users\ana\Copias` →
+/// `C:\Users\…\Copias`, `/home/ana/copias` → `/home/…/copias`). Hasta 300 caracteres y
+/// sin caracteres de control; `None` si no hay nada que enseñar.
+pub fn ruta_publica(ruta: &str) -> Option<String> {
+    let r = ruta.trim();
+    if r.is_empty() || r.chars().any(char::is_control) {
+        return None;
+    }
+    let sep = if r.contains('\\') { '\\' } else { '/' };
+    let partes: Vec<&str> = r.split(sep).collect();
+    let mut out: Vec<String> = Vec::with_capacity(partes.len());
+    let mut i = 0;
+    while i < partes.len() {
+        let p = partes[i];
+        out.push(p.to_string());
+        let perfil = p.eq_ignore_ascii_case("users")
+            || p.eq_ignore_ascii_case("usuarios")
+            || p.eq_ignore_ascii_case("documents and settings")
+            || (p == "home" && sep == '/');
+        if perfil && i + 1 < partes.len() && !partes[i + 1].is_empty() {
+            out.push("…".to_string());
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    let r: String = out.join(&sep.to_string()).chars().take(300).collect();
+    Some(r)
+}
+
 // ---------- Sistema de archivos y entorno (tarea 8e, docs/regla-3-2-1.md) ----------
 //
 // Solo se enseña como dato en la consola («NTFS», «zfs», «en una máquina
@@ -472,6 +503,17 @@ mod tests {
         // Lo que se manda: nada o solo esos nombres.
         let e = entorno();
         assert!(e.is_null() || e.as_object().is_some_and(|o| o.keys().all(|k| k == "virtual" || k == "contenedor")), "{e}");
+    }
+
+    #[test]
+    fn ruta_publica_sin_la_cuenta() {
+        assert_eq!(ruta_publica(r"E:\Resguardo").as_deref(), Some(r"E:\Resguardo"));
+        assert_eq!(ruta_publica(r"C:\Users\ana\Copias").as_deref(), Some(r"C:\Users\…\Copias"));
+        assert_eq!(ruta_publica("/home/ana/copias").as_deref(), Some("/home/…/copias"));
+        assert_eq!(ruta_publica("/srv/copias").as_deref(), Some("/srv/copias"));
+        assert_eq!(ruta_publica(r"\\nas\copias").as_deref(), Some(r"\\nas\copias"));
+        assert_eq!(ruta_publica("  "), None);
+        assert_eq!(ruta_publica("a\u{7}"), None);
     }
 
     #[test]

@@ -65,7 +65,11 @@ export const SECCIONES: SeccionDef[] = [
     texto: "Destinos",
     icono: Database,
     prefijo: "/destinos",
-    pestanas: [{ ruta: "/destinos", texto: "Destinos", icono: Database, claves: "repositorios y destinos almacen nube discos" }],
+    pestanas: [
+      { ruta: "/destinos", texto: "Destinos", icono: Database, claves: "repositorios y destinos almacen nube discos" },
+      // Plan 0.8.1, C4 (15d): dónde están de verdad los datos (servidores, discos, hipervisores).
+      { ruta: "/destinos/infraestructura", texto: "Infraestructura", icono: ServerCog, claves: "infraestructura servidores fisicos discos raid zfs hipervisor" },
+    ],
   },
   {
     id: "recuperar",

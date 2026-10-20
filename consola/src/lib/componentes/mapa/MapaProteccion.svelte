@@ -14,10 +14,20 @@
   // arrastrar, Ctrl/⌘ + rueda o pellizcar, doble clic, + − 0 y las flechas,
   // los botones de abajo y pantalla completa. Lo que se acerca y se mueve se
   // recuerda en esta pestaña, por mapa.
+  //
+  // Plan 0.8.1 (C2): los grupos se despliegan con un clic y, al pasar por ellos,
+  // dicen qué hay dentro; «Agrupar» junto a «Ajustar»; las capas (Sedes, Copias,
+  // Estado y, con infraestructura anotada, Infraestructura y Almacenamiento); lo
+  // que está en marcha (también derivadas y espejos) con su porcentaje sobre el
+  // trazo. Lo elegido se recuerda por persona (lib/mapaPreferencias.ts).
   import { tick, untrack, type Snippet } from "svelte";
-  import { ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, Cloud, Database, HardDrive, Layers, Link2, List, LoaderCircle, Maximize, Minimize, Monitor, Scan, Server, TriangleAlert, Waypoints, ZoomIn, ZoomOut } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, CircleHelp, Cloud, Database, HardDrive, Layers, Link2, List, LoaderCircle, Maximize, Minimize, Monitor, Scan, Server, TriangleAlert, Waypoints, ZoomIn, ZoomOut } from "@lucide/svelte";
   import type { Equipo, Informe } from "$lib/tipos";
-  import { construirMapa, raices, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva } from "$lib/mapa";
+  import { construirMapa, raices, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva, type TipoVivo } from "$lib/mapa";
+  import { tareaDelTrazo, textoDelTrazo } from "$lib/mapaVivo";
+  import { alternarGrupo, CAPAS_POR_DEFECTO, clavePrefs, leerPrefs, OPCIONES_N, PREFS_POR_DEFECTO, type Capas, type PrefsMapa } from "$lib/mapaPreferencias";
+  import { guardar as guardarTexto, leerTexto } from "$lib/recordar";
+  import { actual, app } from "$lib/estado.svelte";
   import { disponer, puntoEn } from "$lib/mapaGeometria";
   import MarcaCliente from "../MarcaCliente.svelte";
   import TipoDestino from "../TipoDestino.svelte";
@@ -51,6 +61,11 @@
      * está en esta consola (p. ej. el almacén, gestionado desde otra). Sin ella, solo el aviso.
      */
     alConectarFuera?: (n: NodoMapa) => void;
+    /** 0.8.1 (15b): con «por sede», el grupo de cada equipo (la agrupación elegida en Equipos); sin ella, su sede. */
+    grupoDe?: (e: Equipo) => { id: string; nombre: string } | null;
+    /** 0.8.1 (15rr, 15l): las preferencias de un mapa ya hecho (`dado`): las lleva quien lo hace. */
+    prefs?: PrefsMapa;
+    alPrefs?: (p: PrefsMapa) => void;
   }
   let {
     equipos,
@@ -66,7 +81,51 @@
     listaDesde = 640,
     vacio = "Todavía no hay copias que dibujar: cuando un equipo tenga un repositorio, aparecerá aquí con su camino.",
     alConectarFuera,
+    grupoDe,
+    prefs: prefsDadas,
+    alPrefs,
   }: Props = $props();
+
+  // 0.8.1 (15rr, 15l): cómo se agrupa, qué grupos están desplegados y qué capas se ven,
+  // recordado por persona y por mapa (el de un equipo no se agrupa: siempre lo suyo).
+  const clavePropia = $derived(clavePrefs(app.cuenta?.id ?? "", equipo ? `equipo` : cliente));
+  let prefsPropias = $state<PrefsMapa>(PREFS_POR_DEFECTO);
+  $effect(() => {
+    const k = clavePropia;
+    untrack(() => (prefsPropias = leerPrefs(leerTexto(k))));
+  });
+  const prefs = $derived(prefsDadas ?? prefsPropias);
+  function cambiarPrefs(p: PrefsMapa) {
+    if (alPrefs) return alPrefs(p);
+    prefsPropias = p;
+    guardarTexto(clavePropia, JSON.stringify(p));
+  }
+  const capas = $derived<Capas>(prefs.capas ?? CAPAS_POR_DEFECTO);
+  const ponerCapa = (k: keyof Capas, v: boolean) => cambiarPrefs({ ...prefs, capas: { ...capas, [k]: v } });
+  const alternar = (id: string) => cambiarPrefs(alternarGrupo(prefs, id));
+  const deEsteCliente = $derived(actual.id === cliente);
+  const conSedes = $derived(deEsteCliente && actual.organizacion.sedes.length > 0);
+  // El menú de las capas se cierra al pulsar fuera de él o con Escape.
+  let menuCapas = $state<HTMLDetailsElement | null>(null);
+  $effect(() => {
+    const m = menuCapas;
+    if (!m) return;
+    const fuera = (ev: Event) => {
+      if (m.open && !m.contains(ev.target as Node)) m.open = false;
+    };
+    const tecla = (ev: KeyboardEvent) => {
+      if (m.open && ev.key === "Escape") {
+        m.open = false;
+        m.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", fuera);
+    document.addEventListener("keydown", tecla);
+    return () => {
+      document.removeEventListener("pointerdown", fuera);
+      document.removeEventListener("keydown", tecla);
+    };
+  });
 
   // La perspectiva y la raíz elegidas se recuerdan por cliente (en este navegador).
   const CLAVE = $derived(`resguardo.mapa.${cliente}`);
@@ -95,16 +154,45 @@
   // Una raíz que ya no existe (otro cliente, un equipo que se fue): todos.
   const raizValida = $derived(opciones.some((o) => o.id === raiz) ? raiz : "");
 
-  function enVivo(e: string, r: string, tipo: "copia" | "copia_externa"): string | null {
-    const t = tareasDe(e, { repo: r, tipos: [tipo] })[0];
-    if (!t) return null;
-    const p = pctVisible(e, t);
-    return `${tipo === "copia" ? "Copiando" : "Subiendo"}${p != null ? ` ${p} %` : "…"}`;
+  /** 15cc: copias, derivadas (por su id) y espejos (por su trabajo), con el porcentaje que se pinta. */
+  function enVivo(e: string, r: string, tipo: TipoVivo, id?: string): string | null {
+    const t = tareaDelTrazo(tareasDe(e), r, tipo, id);
+    return textoDelTrazo(t, tipo, t ? pctVisible(e, t) : null);
   }
+  const desplegadosSet = $derived(new Set(prefs.desplegados));
   const mapa = $derived(
     dado ??
-    construirMapa(equipo ? (todos ?? equipos) : equipos, informes, { cliente, ahora, enVivo, todos, catalogo: catalogoDe(cliente), raiz: equipo ? { perspectiva: "equipos", id: equipo } : { perspectiva, id: raizValida } }),
+      construirMapa(equipo ? (todos ?? equipos) : equipos, informes, {
+        cliente,
+        ahora,
+        enVivo,
+        todos,
+        catalogo: catalogoDe(cliente),
+        raiz: equipo ? { perspectiva: "equipos", id: equipo } : { perspectiva, id: raizValida },
+        agrupar: equipo ? { modo: "no", n: 8 } : prefs.agrupar,
+        desplegados: desplegadosSet,
+        grupoDe,
+        organizacion: deEsteCliente ? actual.organizacion : null,
+        infra: deEsteCliente ? actual.infra : null,
+        ordenSede: capas.sedes,
+      }),
   );
+  // Lo que se puede encender: sedes si alguna tarjeta tiene sede; infraestructura y almacenamiento si se anotó.
+  const hayCapa = $derived({
+    sedes: mapa.nodos.some((n) => n.sede || n.enNube),
+    infra: mapa.nodos.some((n) => n.servidorFisico),
+    almacenamiento: mapa.nodos.some((n) => n.conjunto),
+  });
+  const verSedes = $derived(capas.sedes && hayCapa.sedes);
+  const verInfra = $derived(capas.infra && hayCapa.infra);
+  const verAlmacenamiento = $derived(capas.almacenamiento && hayCapa.almacenamiento);
+  /** «Agrupar»: no, por sede (o por el grupo de Equipos) o con más de N. */
+  const valorAgrupar = $derived(prefs.agrupar.modo === "mas_de" ? `mas_de:${prefs.agrupar.n}` : prefs.agrupar.modo);
+  function cambiarAgrupar(v: string) {
+    const [modo, n] = v.split(":");
+    cambiarPrefs({ ...prefs, agrupar: modo === "mas_de" ? { modo: "mas_de", n: Number(n) || 8 } : { modo: modo === "sede" ? "sede" : "no", n: prefs.agrupar.n } });
+  }
+  const puedeAgruparPorSede = $derived(conSedes || !!grupoDe || !!dado);
   const porId = $derived(new Map(mapa.nodos.map((n) => [n.id, n])));
   const aristaPorId = $derived(new Map(mapa.aristas.map((a) => [a.id, a])));
 
@@ -472,9 +560,41 @@
   /** 14kk: las copias derivadas llevan «después» sobre su flecha (el estado va en su marca y en las frases). */
   const despues = $derived(
     disp.rutas
-      .filter((r) => aristaPorId.get(r.id)?.tipo === "derivada" && r.tramos.length)
+      .filter((r) => aristaPorId.get(r.id)?.tipo === "derivada" && !aristaPorId.get(r.id)?.vivo && r.tramos.length)
       .map((r) => ({ id: r.id, de: r.de, a: r.a, ...puntoEn(r.tramos[0], r.marca ? 0.28 : 0.5), titulo: aristaPorId.get(r.id)?.etiqueta ?? "después" })),
   );
+  /** 15cc: lo que está en marcha lleva su porcentaje sobre el trazo (una píldora en su mitad). */
+  const progresos = $derived(
+    disp.rutas
+      .filter((r) => aristaPorId.get(r.id)?.vivo && aristaPorId.get(r.id)?.progreso && r.tramos.length)
+      .map((r) => ({ id: r.id, de: r.de, a: r.a, ...puntoEn(r.tramos[Math.floor(r.tramos.length / 2)], 0.5), texto: aristaPorId.get(r.id)!.progreso! })),
+  );
+
+  /** 15l: los recuadros de cada sede (y de la nube), columna a columna, alrededor de las tarjetas seguidas de la misma sede. */
+  const recuadros = $derived.by(() => {
+    if (!verSedes) return [];
+    const out: { id: string; x: number; y: number; w: number; h: number; titulo: string; nube: boolean }[] = [];
+    for (const capa of disp.capas) {
+      const xs = capa
+        .map((id) => ({ n: porId.get(id), c: disp.cajas[id] }))
+        .filter((x): x is { n: NodoMapa; c: (typeof disp.cajas)[string] } => !!x.n && !!x.c)
+        .sort((a, b) => a.c.y - b.c.y);
+      let actualR: (typeof out)[number] | null = null;
+      let claveR = "";
+      for (const { n, c } of xs) {
+        const k = n.enNube ? "nube" : n.sede ? `s:${n.sede.id}` : "";
+        if (k && k === claveR && actualR) {
+          actualR.h = c.y + c.h + 8 - actualR.y;
+          actualR.w = Math.max(actualR.w, c.w + 16);
+          continue;
+        }
+        claveR = k;
+        actualR = k ? { id: `${k}@${c.x}:${c.y}`, x: c.x - 8, y: c.y - 8, w: c.w + 16, h: c.h + 16, titulo: n.enNube ? "Nube y fuera" : n.sede!.nombre, nube: !!n.enNube } : null;
+        if (actualR) out.push(actualR);
+      }
+    }
+    return out;
+  });
 
   // Al pasar por una tarjeta (o enfocarla), su cadena entera resalta y lo demás se apaga.
   let foco = $state<string | null>(null);
@@ -531,7 +651,10 @@
 
   const ICONO: Record<IconoNodo, typeof Monitor> = { cliente: Layers, equipo: Monitor, grupo: Layers, almacen: Server, disco: HardDrive, nube: Cloud, dropbox: Cloud, servidor: Server, repo: Database, otra_consola: Link2 };
   const ESTADO = { ok: CircleCheck, warn: TriangleAlert, bad: CircleAlert, info: LoaderCircle, paused: CirclePause, neutral: CircleDashed };
-  const tonoTrazo = (t: Tono) => (t === "bad" || t === "warn" || t === "info" ? t : "calma");
+  // 15l: con la capa «Estado» apagada, todo en tinta tenue (lo que está en marcha sigue moviéndose).
+  const tonoTrazo = (t: Tono) => (t === "info" ? "info" : capas.estado && (t === "bad" || t === "warn") ? t : "calma");
+  /** La lista de un grupo al pasar por él (15rr). */
+  const grupoFoco = $derived(foco ? porId.get(foco) : undefined);
   const cuando = (n: NodoMapa) => (n.ultima ? relativo(n.ultima, ahora) : null);
   const hijos = (id: string) => mapa.aristas.filter((x) => x.de === id && porId.has(x.a)).map((x) => ({ a: x, n: porId.get(x.a)! }));
   const idCliente = (n: NodoMapa) => n.id.replace(/^cl:/, "");
@@ -549,14 +672,58 @@
 {#snippet estado(n: NodoMapa, conCuando = true)}
   {@const Ic = ESTADO[n.tono]}
   <span class="st">
-    <span class="st-ic tone-{n.tono}" aria-hidden="true"><Ic size={12} class={n.tono === "info" ? "spin" : ""} /></span>
+    <span class="st-ic tone-{capas.estado || n.tono === 'info' ? n.tono : 'neutral'}" aria-hidden="true"><Ic size={12} class={n.tono === "info" ? "spin" : ""} /></span>
     <span>{n.estado}{#if conCuando && cuando(n) && !n.vivo}<span class="cuando">{" · "}{cuando(n)}</span>{/if}</span>
   </span>
 {/snippet}
 
+{#snippet capasDe(n: NodoMapa)}
+  {#if verInfra && n.servidorFisico}<span class="n-capa"><Server size={11} aria-hidden="true" /><span class="sr-only">Servidor físico:&nbsp;</span>{n.servidorFisico}</span>{/if}
+  {#if verAlmacenamiento && n.conjunto}<span class="n-capa"><HardDrive size={11} aria-hidden="true" /><span class="sr-only">Discos:&nbsp;</span>{n.conjunto}</span>{/if}
+{/snippet}
+
 {#snippet tarjeta(n: NodoMapa)}
   {@const Ic = ICONO[n.icono]}
-  {#if n.tipo === "repo"}
+  {#if n.grupo && (n.tipo === "grupo" || n.tipo === "repo")}
+    <!-- 15rr: un grupo (o su píldora) se despliega con un clic; al pasar por él, lo que hay dentro. -->
+    <button
+      type="button"
+      class={n.tipo === "grupo" ? "nodo nodo-grupo" : "pildora pildora-grupo"}
+      class:apagado={cadena && !cadena.has(n.id)}
+      class:no-ok={n.tono !== "ok"}
+      data-nodo={n.id}
+      aria-expanded="false"
+      aria-label={`${n.nombre}: ${n.estado}. ${n.miembros?.length ? `${n.miembros.map((m) => `${m.nombre}${m.detalle ? ` (${m.detalle})` : ""}, ${m.estado.toLowerCase()}`).join("; ")}. ` : ""}Desplegar.`}
+      onclick={() => alternar(n.grupo!)}
+      onmouseenter={() => (foco = n.id)}
+      onmouseleave={() => (foco = null)}
+      onfocus={() => (foco = n.id)}
+      onblur={() => (foco = null)}
+    >
+      {#if n.tipo === "grupo"}
+        <span class="n-ic" aria-hidden="true"><Ic size={16} /></span>
+        <span class="n-txt">
+          <span class="n-nombre">{n.nombre}</span>
+          <span class="n-sub">{n.sub}</span>
+          {@render capasDe(n)}
+          {@render estado(n)}
+          <span class="desplegar" aria-hidden="true"><ChevronRight size={12} />Desplegar</span>
+        </span>
+      {:else}
+        {#if n.tono === "ok" || !capas.estado}
+          <span class="punto" aria-hidden="true"></span>
+        {:else}
+          {@const St = ESTADO[n.tono]}
+          <span class="st-ic tone-{n.tono}" aria-hidden="true"><St size={12} /></span>
+        {/if}
+        <span class="p-txt">
+          <span class="p-nombre">{n.nombre}</span>
+          <span class="p-sub">{n.tono === "ok" ? (cuando(n) ? `última ${cuando(n)}` : n.sub) : n.estado}</span>
+        </span>
+        {#if n.cifra}<span class="nodo-cifra num">{n.cifra}</span>{/if}
+      {/if}
+    </button>
+  {:else if n.tipo === "repo"}
     <a
       class="pildora"
       class:apagado={cadena && !cadena.has(n.id)}
@@ -570,7 +737,7 @@
       onblur={() => (foco = null)}
       use:tip={[n.sub, n.ultima ? `Última versión: ${fechaLarga(n.ultima)}` : null].filter(Boolean).join(" · ")}
     >
-      {#if n.tono === "ok"}
+      {#if n.tono === "ok" || (!capas.estado && n.tono !== "info")}
         <span class="punto" aria-hidden="true"></span>
       {:else}
         {@const St = ESTADO[n.tono]}
@@ -579,7 +746,7 @@
       <span class="p-txt">
         <span class="p-nombre">{n.nombre}</span>
         <span class="p-sub">{n.tono === "ok" ? (cuando(n) ? `última ${cuando(n)}` : n.sub) : n.estado}</span>
-        {#if n.aviso}<span class="aviso-nodo"><TriangleAlert size={11} aria-hidden="true" />{n.aviso}</span>{/if}
+        {#if n.aviso && capas.estado}<span class="aviso-nodo"><TriangleAlert size={11} aria-hidden="true" />{n.aviso}</span>{/if}
       </span>
       {#if n.cifra}<span class="nodo-cifra num">{n.cifra}</span>{/if}
       <span class="sr-only">{n.tono === "ok" ? `, ${n.estado}` : ""}, {n.sub}</span>
@@ -652,8 +819,12 @@
         <span class="n-nombre">{n.nombre}</span>
         <span class="n-sub">{n.sub}</span>
         {#if n.tipoDestino}<span class="n-tipo"><TipoDestino {...n.tipoDestino} /></span>{/if}
+        {@render capasDe(n)}
         {@render estado(n, n.icono !== "almacen")}
-        {#if n.aviso}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{n.aviso}</span>{/if}
+        {#if n.sinReconocer}
+          <!-- 15m: un espejo del que no se reconoce ningún repositorio sale del almacén con esta marca. -->
+          <span class="sin-reconocer"><CircleHelp size={12} aria-hidden="true" />{n.aviso}</span>
+        {:else if n.aviso && capas.estado}<span class="aviso-nodo"><TriangleAlert size={12} aria-hidden="true" />{n.aviso}</span>{/if}
       </span>
     </a>
   {/if}
@@ -704,6 +875,34 @@
           <ChevronsUpDown size={14} aria-hidden="true" />
         </label>
       {/if}
+      {#if mapa.nodos.length && !equipo}
+        <!-- 15l: las capas que se encienden y apagan (se recuerdan por persona). -->
+        <details class="capas" bind:this={menuCapas}>
+          <summary class="btn btn-sm btn-ghost"><Layers size={14} />Capas</summary>
+          <div class="capas-menu" role="group" aria-label="Capas del mapa">
+            <label class:apagada={!hayCapa.sedes}>
+              <input type="checkbox" checked={capas.sedes} disabled={!hayCapa.sedes} onchange={(ev) => ponerCapa("sedes", ev.currentTarget.checked)} />
+              <span>Sedes<small>{hayCapa.sedes ? "Un recuadro por sede y la nube aparte" : "Pon las sedes en «Sedes y categorías»"}</small></span>
+            </label>
+            <label>
+              <input type="checkbox" checked={capas.copias} onchange={(ev) => ponerCapa("copias", ev.currentTarget.checked)} />
+              <span>Copias<small>Copia → repositorio → derivada → espejo</small></span>
+            </label>
+            <label>
+              <input type="checkbox" checked={capas.estado} onchange={(ev) => ponerCapa("estado", ev.currentTarget.checked)} />
+              <span>Estado<small>Colores y avisos</small></span>
+            </label>
+            <label class:apagada={!hayCapa.infra}>
+              <input type="checkbox" checked={capas.infra} disabled={!hayCapa.infra} onchange={(ev) => ponerCapa("infra", ev.currentTarget.checked)} />
+              <span>Infraestructura<small>{hayCapa.infra ? "El servidor físico de cada cosa" : "Anótala en «Infraestructura»"}</small></span>
+            </label>
+            <label class:apagada={!hayCapa.almacenamiento}>
+              <input type="checkbox" checked={capas.almacenamiento} disabled={!hayCapa.almacenamiento} onchange={(ev) => ponerCapa("almacenamiento", ev.currentTarget.checked)} />
+              <span>Almacenamiento<small>{hayCapa.almacenamiento ? "Los discos donde vive cada destino" : "Anota los conjuntos de discos"}</small></span>
+            </label>
+          </div>
+        </details>
+      {/if}
       {#if mapa.nodos.length}
         <!-- En estrecho empieza en lista, pero el mapa (con dedo y pellizco) también se puede ver. -->
         <button type="button" class="btn btn-sm btn-ghost" aria-pressed={enLista} onclick={() => (modo = enLista ? "mapa" : "lista")}>
@@ -712,6 +911,16 @@
       {/if}
     </div>
   </header>
+
+  {#if mapa.desplegados?.length}
+    <!-- 15rr: los grupos desplegados, para plegarlos otra vez. -->
+    <div class="desplegados" role="group" aria-label="Grupos desplegados">
+      <span class="faint">Desplegados:</span>
+      {#each mapa.desplegados as d (d.id)}
+        <button type="button" class="btn btn-sm" onclick={() => alternar(d.id)}><ChevronsDownUp size={13} />Plegar {d.titulo}</button>
+      {/each}
+    </div>
+  {/if}
 
   {#if !mapa.nodos.length}
     <p class="faint vacio">{vacio}</p>
@@ -788,7 +997,12 @@
           style:height="{altoPlano}px"
           style:transform="translate({vista.x}px, {vista.y}px) scale({vista.s})"
         >
-          <svg class="trazos" width={anchoPlano} height={altoPlano} aria-hidden="true">
+          {#each recuadros as b (b.id)}
+            <div class="recuadro" class:nube={b.nube} style:left="{MARGEN + b.x}px" style:top="{MARGEN + b.y}px" style:width="{b.w}px" style:height="{b.h}px" aria-hidden="true">
+              <span class="recuadro-t">{#if b.nube}<Cloud size={11} />{/if}{b.titulo}</span>
+            </div>
+          {/each}
+          <svg class="trazos" class:oculto={!capas.copias} width={anchoPlano} height={altoPlano} aria-hidden="true">
             <g transform="translate({MARGEN} {MARGEN})">
               {#each disp.rutas as r (r.id)}
                 {@const a = aristaPorId.get(r.id)}
@@ -808,13 +1022,39 @@
               {/if}
             {/each}
           {/each}
-          {#each despues as r (r.id)}
-            <span class="despues" class:apagado={cadena && !(cadena.has(r.de) && cadena.has(r.a))} style:left="{MARGEN + r.x}px" style:top="{MARGEN + r.y}px" aria-hidden="true">después</span>
-          {/each}
-          {#each marcas as r (r.id)}
-            {@const St = ESTADO[r.tono]}
-            <span class="marca tone-{r.tono}" class:apagado={cadena && !(cadena.has(r.de) && cadena.has(r.a))} style:left="{MARGEN + r.x}px" style:top="{MARGEN + r.y}px" aria-hidden="true"><St size={11} /></span>
-          {/each}
+          {#if capas.copias}
+            {#each despues as r (r.id)}
+              <span class="despues" class:apagado={cadena && !(cadena.has(r.de) && cadena.has(r.a))} style:left="{MARGEN + r.x}px" style:top="{MARGEN + r.y}px" aria-hidden="true">después</span>
+            {/each}
+            {#each progresos as r (r.id)}
+              <span class="progreso" class:apagado={cadena && !(cadena.has(r.de) && cadena.has(r.a))} style:left="{MARGEN + r.x}px" style:top="{MARGEN + r.y}px" aria-hidden="true">{r.texto}</span>
+            {/each}
+            {#if capas.estado}
+              {#each marcas as r (r.id)}
+                {@const St = ESTADO[r.tono]}
+                <span class="marca tone-{r.tono}" class:apagado={cadena && !(cadena.has(r.de) && cadena.has(r.a))} style:left="{MARGEN + r.x}px" style:top="{MARGEN + r.y}px" aria-hidden="true"><St size={11} /></span>
+              {/each}
+            {/if}
+          {/if}
+          {#if grupoFoco?.miembros?.length && disp.cajas[grupoFoco.id]}
+            {@const c = disp.cajas[grupoFoco.id]}
+            <!-- 15rr: al pasar por un grupo, sus equipos o repositorios con su estado (lo mismo se lee en su nombre accesible). -->
+            <div class="globo-grupo" style:left="{MARGEN + c.x + c.w + 10}px" style:top="{MARGEN + c.y}px" aria-hidden="true">
+              <p class="gg-t">{grupoFoco.tipo === "grupo" ? "Equipos" : "Repositorios"} · {grupoFoco.miembros.length}</p>
+              <ul>
+                {#each grupoFoco.miembros.slice(0, 12) as m (m.nombre + (m.detalle ?? "") + (m.href ?? ""))}
+                  {@const St = ESTADO[m.tono]}
+                  <li>
+                    <span class="st-ic tone-{capas.estado ? m.tono : 'neutral'}"><St size={12} /></span>
+                    <span class="gg-n">{m.nombre}{#if m.detalle}<span class="faint"> · {m.detalle}</span>{/if}</span>
+                    <span class="gg-e">{m.estado}</span>
+                  </li>
+                {/each}
+              </ul>
+              {#if grupoFoco.miembros.length > 12}<p class="faint gg-mas">y {grupoFoco.miembros.length - 12} más</p>{/if}
+              <p class="faint gg-mas">Pulsa para desplegar.</p>
+            </div>
+          {/if}
         </div>
         <div class="m-pista" class:visible={pista} aria-hidden="true">{esMac ? "⌘" : "Ctrl"} + rueda para acercar · arrastra para moverte</div>
         <div class="m-ctrl" class:chico={ancho < 420} role="group" aria-label="Acercar y mover el mapa">
@@ -822,6 +1062,18 @@
           <button type="button" class="m-pct num" aria-label="Tamaño real (ahora al {Math.round(vista.s * 100)} %)" use:tip={"Tamaño real"} onclick={tamanoReal}>{Math.round(vista.s * 100)} %</button>
           <button type="button" class="icon-btn" aria-label="Acercar" use:tip={"Acercar (+)"} disabled={vista.s >= MAX - 0.001} onclick={() => zoomCentro(1.25)}><ZoomIn size={15} /></button>
           <span class="m-sep" aria-hidden="true"></span>
+          {#if !equipo}
+            <!-- 15rr: cómo se juntan los equipos (se recuerda por persona). -->
+            <label class="m-agrupar">
+              <Layers size={14} aria-hidden="true" />
+              <span class="sr-only">Agrupar los equipos</span>
+              <select value={valorAgrupar} onchange={(ev) => cambiarAgrupar(ev.currentTarget.value)}>
+                <option value="no">No agrupar</option>
+                {#if puedeAgruparPorSede}<option value="sede">{conSedes || dado ? "Por sede" : "Por grupo"}</option>{/if}
+                {#each OPCIONES_N as n (n)}<option value="mas_de:{n}">Con más de {n}</option>{/each}
+              </select>
+            </label>
+          {/if}
           <button type="button" class="m-txt" aria-label="Ajustar el mapa a la vista" use:tip={"Todo a la vista (0)"} onclick={ajustar}><Scan size={14} aria-hidden="true" />Ajustar</button>
           <button type="button" class="icon-btn" aria-label={pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"} use:tip={pantallaCompleta ? "Salir (Esc)" : "Pantalla completa"} onclick={alternarPantalla}>
             {#if pantallaCompleta}<Minimize size={15} />{:else}<Maximize size={15} />{/if}
@@ -1446,5 +1698,233 @@
   }
   .vacio {
     margin: 0;
+  }
+
+  /* 0.8.1 (15rr): un grupo es un botón (se despliega); dice «Desplegar» y, al pasar, lo que lleva. */
+  button.nodo,
+  button.pildora {
+    width: 100%;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .nodo-grupo {
+    border-style: dashed;
+  }
+  .desplegar {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 4px;
+    font-size: var(--fs-xs);
+    color: var(--accent-text);
+  }
+  .globo-grupo {
+    position: absolute;
+    z-index: 5;
+    width: 260px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    pointer-events: none;
+  }
+  .globo-grupo ul {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .globo-grupo li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+  }
+  .gg-t {
+    margin: 0;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .gg-n {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gg-e {
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+  .gg-mas {
+    margin: 6px 0 0;
+    font-size: var(--fs-xs);
+  }
+  .desplegados {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: calc(-1 * var(--sp-2));
+    font-size: var(--fs-sm);
+  }
+  /* 15cc: el porcentaje de lo que está en marcha, sobre su trazo. */
+  .progreso {
+    position: absolute;
+    z-index: 2;
+    padding: 0 6px;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
+    color: var(--info);
+    background: var(--surface);
+    border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+    border-radius: 999px;
+    translate: -50% -50%;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .trazos.oculto {
+    display: none;
+  }
+  /* 15m: un espejo sin reconocer sus repositorios (no es un fallo: una pregunta). */
+  .sin-reconocer {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+  }
+  /* 15l: líneas de las capas «Infraestructura» y «Almacenamiento». */
+  .n-capa {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .n-capa :global(svg) {
+    flex: none;
+    color: var(--text-3);
+  }
+  /* 15l: un recuadro por sede (y la nube aparte), detrás de las tarjetas. */
+  .recuadro {
+    position: absolute;
+    z-index: 0;
+    background: color-mix(in srgb, var(--text-3) 5%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--text-3) 45%, transparent);
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  .recuadro.nube {
+    background: color-mix(in srgb, var(--info) 4%, transparent);
+    border-color: color-mix(in srgb, var(--info) 35%, transparent);
+  }
+  .recuadro-t {
+    position: absolute;
+    top: -9px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: calc(100% - 20px);
+    padding: 0 6px;
+    overflow: hidden;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 16px;
+    color: var(--text-2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--bg-subtle);
+    border-radius: 999px;
+  }
+  /* 15l: el menú de las capas. */
+  .capas {
+    position: relative;
+  }
+  .capas summary {
+    list-style: none;
+  }
+  .capas summary::-webkit-details-marker {
+    display: none;
+  }
+  .capas-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 280px;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+  }
+  .capas-menu label {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .capas-menu label.apagada {
+    color: var(--text-3);
+    cursor: default;
+  }
+  .capas-menu input {
+    margin-top: 3px;
+  }
+  .capas-menu span {
+    display: flex;
+    flex-direction: column;
+  }
+  .capas-menu small {
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  /* 15rr: «Agrupar», junto a «Ajustar». */
+  .m-agrupar {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 30px;
+    padding: 0 0 0 6px;
+    color: var(--text-2);
+  }
+  .m-agrupar select {
+    height: 26px;
+    max-width: 130px;
+    padding: 0 4px;
+    font: inherit;
+    font-size: var(--fs-xs);
+    color: var(--text-1);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .m-ctrl.chico .m-agrupar :global(svg) {
+    display: none;
+  }
+  @media (max-width: 640px) {
+    .capas-menu {
+      right: auto;
+      left: 0;
+      width: min(280px, calc(100vw - 48px));
+    }
   }
 </style>

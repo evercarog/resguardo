@@ -53,7 +53,7 @@ export interface OpcionesCamino {
   cliente: string;
   ahora: number;
   /** Lo que está en marcha (la misma que el mapa): «Copiando 40 %», «Subiendo 12 %», o null. (14p: de un espejo, `repo` es su trabajo.) */
-  enVivo?: (equipo: string, repo: string, tipo: "copia" | "copia_externa" | "espejo") => string | null;
+  enVivo?: (equipo: string, repo: string, tipo: "copia" | "copia_externa" | "espejo" | "derivada", id?: string) => string | null;
   /** Para saber si quien hace el paso (el almacén) está conectado. */
   equipos?: Equipo[];
   informe?: Informe | null;
@@ -113,7 +113,8 @@ export function caminoDeCopia(rc: ReglaCopia | null, o: OpcionesCamino): Eslabon
       return { ...base, tono: est.tono, estado: sinConexion ? "Sin conexión" : texto, cuando: vuelta?.cuando ?? null, vivo: false };
     }
     if (clase === "derivada") {
-      const enMarcha = vivo(e.id, rc.repo.id, "copia_externa");
+      // 0.8.1 (15cc): cada derivada con lo suyo (la copia externa antigua, sin id).
+      const enMarcha = p.id.startsWith("derivada-") ? vivo(e.id, rc.repo.id, "derivada", p.id.slice("derivada-".length)) : vivo(e.id, rc.repo.id, "copia_externa");
       if (enMarcha) return { ...base, tono: "info", estado: enMarcha.replace(/^Copiando/, "Subiendo"), cuando: null, vivo: true };
       return { ...base, ...estadoPaso(p, e, o.ahora), vivo: false };
     }

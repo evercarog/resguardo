@@ -127,6 +127,29 @@ function sembrar() {
     es.empezo = Date.now() - (es.preparar + es.subir * 0.18);
     sims.push(es);
   }
+  // 0.8.1 (15cc): CAJA-1 sube su copia derivada «d1» a Dropbox (el mapa anima su flecha con el porcentaje).
+  const caja = estado.equipos.find((e) => e.nombre === "CAJA-1");
+  if (caja) {
+    const dv: Sim = {
+      cliente: caja.cliente,
+      equipo: caja.id,
+      tipo: "copia_externa",
+      repo: "caja",
+      nombre: "Copia derivada a Dropbox Caja",
+      empezo: 0,
+      ganchos: 0,
+      preparar: 3_000,
+      escanear: 0,
+      subir: 18 * 60_000,
+      terminar: 0,
+      archivos: 0,
+      bytes: 4_100_000_000,
+      bucle: true,
+      extra: { derivada: "d1" },
+    };
+    dv.empezo = Date.now() - (dv.preparar + dv.subir * 0.45);
+    sims.push(dv);
+  }
 }
 
 /** Una tarea en marcha según el tiempo que lleva. */

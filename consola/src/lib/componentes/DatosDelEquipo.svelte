@@ -2,13 +2,25 @@
   // 14uu (plan 0.8.0, D3): la tarjeta «Equipo» de la ficha: sistema exacto,
   // procesador, memoria, discos (con barra de uso), fabricante y modelo, y el
   // último arranque. Con un agente anterior (sin `datos_basicos`), lo dice.
-  import { Cpu, HardDrive, MemoryStick, Monitor, Power, Server, TriangleAlert } from "@lucide/svelte";
+  //
+  // Plan 0.8.1: su tipo (C3: físico, máquina virtual o contenedor, detectado y
+  // corregible), dónde está físicamente (C4, si se anotó la infraestructura) y
+  // el conjunto de discos de cada disco (grupo de ZFS, RAID…).
+  import { Cpu, HardDrive, Layers, MemoryStick, Monitor, Pencil, Power, Server, TriangleAlert } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import { bytes, fechaLarga, relativo } from "$lib/formato";
   import { datosBasicos, textoMemoria, textoModelo, textoProcesador, textoSistema, usoDisco } from "$lib/datosBasicos";
   import type { Equipo } from "$lib/tipos";
+  import { actual, puede } from "$lib/estado.svelte";
+  import { admiteTipoEquipo, textoTipo, TEXTO_ORIGEN, tipoEquipo } from "$lib/tipoEquipo";
+  import { lineaFisica, sitioDeEquipo } from "$lib/infra";
+  import TipoEquipo from "./TipoEquipo.svelte";
 
   let { equipo, ahora = Date.now() }: { equipo: Equipo; ahora?: number } = $props();
+  const tipo = $derived(tipoEquipo(equipo));
+  const fisico = $derived(lineaFisica(sitioDeEquipo(actual.infra, equipo.id), actual.organizacion));
+  const puedeCambiarTipo = $derived(!!actual.cliente && puede.administrar(actual.cliente.rol) && admiteTipoEquipo(equipo));
+  let cambiandoTipo = $state(false);
   const d = $derived(datosBasicos(equipo));
   const sistema = $derived(textoSistema(d));
   const detalleSistema = $derived(
@@ -25,6 +37,20 @@
     <p class="faint">Actualiza el agente para ver estos datos: sistema, procesador, memoria, discos y último arranque.</p>
   {:else}
     <dl class="datos">
+      <div>
+        <dt><Cpu size={14} />Tipo</dt>
+        <dd>
+          <span use:tip={TEXTO_ORIGEN[tipo.origen]}>{textoTipo(tipo)}</span>
+          {#if tipo.origen === "a_mano"}<span class="faint sub">Corregido a mano</span>{/if}
+          {#if puedeCambiarTipo}<button type="button" class="btn btn-sm btn-ghost cambiar" onclick={() => (cambiandoTipo = true)}><Pencil size={13} />Cambiar</button>{/if}
+        </dd>
+      </div>
+      {#if fisico}
+        <div>
+          <dt><Server size={14} />Dónde está físicamente</dt>
+          <dd><a class="link" href="/c/{actual.id}/destinos/infraestructura">{fisico}</a></dd>
+        </div>
+      {/if}
       <div>
         <dt><Monitor size={14} />Sistema</dt>
         <dd>{sistema ?? equipo.so}{#if detalleSistema}<span class="faint sub">{detalleSistema}</span>{/if}</dd>
@@ -54,6 +80,7 @@
             <div class="disco-cab">
               <span class="mono punto">{k.punto}</span>
               {#if k.sistema_archivos}<span class="pastilla mono">{k.sistema_archivos}</span>{/if}
+              {#if k.volumen}<span class="pastilla mono" use:tip={"El conjunto de discos donde está (grupo de ZFS, RAID…)"}><Layers size={11} />{k.volumen}</span>{/if}
               {#if k.en_uso}<span class="faint en-uso" use:tip={"Hay carpetas que se copian, un destino local o el almacén en este disco"}>con copias</span>{/if}
               <span class="num libre" class:aviso={u.tono !== "ok"}>{bytes(k.libre)} libres de {bytes(k.total)}</span>
             </div>
@@ -65,9 +92,23 @@
         {/each}
       </ul>
     {/if}
+    {#if d.almacenamiento?.conjuntos.length}
+      <h4 class="sub-titulo"><Layers size={14} />Conjuntos de discos</h4>
+      <ul class="conjuntos">
+        {#each d.almacenamiento.conjuntos as c (c.id)}
+          <li>
+            <span class="mono">{c.id}</span>
+            <span class="faint">{c.tipo === "zfs" ? "ZFS" : c.tipo === "mdadm" ? "RAID por software" : c.tipo === "storage_spaces" ? "Espacios de almacenamiento" : "Controladora RAID"}{c.forma ? ` · ${c.forma}` : ""}{c.discos ? ` · ${c.discos} discos` : ""}{c.total ? ` · ${bytes(c.total)}` : ""}</span>
+            {#if c.estado === "degradado"}<span class="badge tone-warn"><TriangleAlert size={12} />Degradado</span>{:else if c.estado === "reconstruyendo"}<span class="badge tone-info">Reconstruyendo</span>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if d.leido}<p class="faint leido">Leído {relativo(d.leido, ahora)}. El equipo los vuelve a leer una vez al día.</p>{/if}
   {/if}
 </section>
+
+{#if cambiandoTipo && actual.cliente}<TipoEquipo cliente={actual.cliente} {equipo} onclose={() => (cambiandoTipo = false)} />{/if}
 
 <style>
   .datos {
@@ -95,6 +136,25 @@
   .sub {
     display: block;
     font-size: var(--fs-xs);
+  }
+  .cambiar {
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .conjuntos {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    font-size: var(--fs-sm);
+    list-style: none;
+  }
+  .conjuntos li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
   .sub-titulo {
     display: flex;
