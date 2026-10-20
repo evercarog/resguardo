@@ -12,8 +12,9 @@ import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./re
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
 import { bytes, lista, plural, relativo, resumenHorario } from "./formato";
-import { almacenDeDestino, lugarDe, riesgoMismoEquipo, servidorDe } from "./dondeGuarda";
-import { claveNube, claveZona, PRINCIPAL, puertoDe, zonaDeDestino, zonasDe } from "./destinos";
+import { lugarDe, riesgoMismoEquipo } from "./dondeGuarda";
+import { almacenDetras, rutaEnElAlmacen, zonaPorPuerto } from "./almacenUnico";
+import { claveNube, claveZona, PRINCIPAL, zonaDeDestino, zonasDe } from "./destinos";
 // Las páginas de los destinos (como las de los repositorios): cada tarjeta de destino lleva a la suya.
 import { hrefDestino } from "./fichaDestino";
 import { hrefEspejo } from "./espejoTrabajos";
@@ -114,38 +115,8 @@ export function claveDestino(e: Equipo, r: RepositorioResumen, equipos: Equipo[]
   return claveDeDestino(e, destinoDe(e.resumen?.destinos, r), equipos, r.destino);
 }
 
-const LOCALES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
-/** El nombre del servidor de una dirección, sin usuario ni puerto («https://nas:8002/caja/» → «nas»). */
-export function servidorSinPuerto(donde: string | null | undefined): string | null {
-  const h = servidorDe(donde);
-  return h ? h.replace(/^[^@]*@/, "").replace(/:\d+$/, "").toLowerCase() || null : null;
-}
-
-/**
- * 14mm: el almacén del cliente que hay detrás de un destino de `e`. Además de los
- * que dio «Copiar en …» (`equipo_almacen`) y de los que se reconocen por su id o
- * su nombre, un destino «Servidor de copias» (REST, p. ej. el de los
- * repositorios adoptados) es el mismo almacén si apunta al mismo servidor que
- * los accesos que ese almacén dio a otros equipos, o a «localhost» desde el
- * propio almacén. Así el mapa lo dibuja una sola vez.
- */
-export function almacenDetras(e: Equipo, d: DestinoResumen | undefined, equipos: Equipo[]): Equipo | undefined {
-  if (!d) return undefined;
-  if (d.equipo_almacen) return equipos.find((x) => x.id === d.equipo_almacen);
-  if (d.tipo !== "rest") return undefined;
-  const conocido = almacenDeDestino(d, equipos);
-  if (conocido) return conocido;
-  const host = servidorSinPuerto(d.donde);
-  if (!host) return undefined;
-  if (LOCALES.has(host)) return e.resumen?.guarda_copias?.activo ? e : undefined;
-  for (const x of equipos)
-    for (const y of x.resumen?.destinos ?? []) {
-      if (!y.equipo_almacen || y.tipo !== "rest" || servidorSinPuerto(y.donde) !== host) continue;
-      const a = equipos.find((z) => z.id === y.equipo_almacen && z.resumen?.guarda_copias?.activo);
-      if (a) return a;
-    }
-  return undefined;
-}
+// 14mm y 15dd: `servidorSinPuerto` y `almacenDetras` viven en almacenUnico.ts (los usan también la lista de destinos y la ficha del equipo).
+export { almacenDetras, servidorSinPuerto } from "./almacenUnico";
 
 /** Como `claveDestino`, para un destino cualquiera de `e` (el de un repositorio o el de una derivada). */
 export function claveDeDestino(e: Equipo, d: DestinoResumen | undefined, equipos: Equipo[], respaldo: string): { clave: string; almacen?: Equipo; fuera?: boolean } {
@@ -163,26 +134,8 @@ export function claveDeDestino(e: Equipo, d: DestinoResumen | undefined, equipos
  */
 export function enAlmacenDe(r: RepositorioResumen, d: DestinoResumen | undefined, almacen: Equipo): { nombre: string; usuario: string; zona: string } | null {
   if (!d || d.tipo !== "rest") return null;
-  const sin = (d.donde ?? "").trim().replace(/^[a-z0-9+]+:(?=[a-z]+:\/\/)/i, "");
-  let ruta = "";
-  try {
-    ruta = new URL(sin.includes("://") ? sin : `x://${sin}`).pathname;
-  } catch {
-    ruta = sin.replace(/^[^/]*/, "");
-  }
-  const propia = r.ruta === "." ? "" : (r.ruta || r.id);
-  const partes = [...ruta.split("/"), ...propia.split("/")].map((x) => {
-    try {
-      return decodeURIComponent(x);
-    } catch {
-      return x;
-    }
-  }).filter(Boolean);
-  if (!partes.length) return null;
-  const zonas = zonasDe(almacen);
-  const p = puertoDe(d.donde);
-  const zona = (p != null ? zonas.find((z) => z.puerto === p)?.id : undefined) ?? PRINCIPAL;
-  return { nombre: partes.join("/"), usuario: partes[0], zona };
+  const x = rutaEnElAlmacen(d.donde, r.ruta === "." ? "" : r.ruta || r.id);
+  return x ? { nombre: x.valor, usuario: x.usuario, zona: zonaPorPuerto(almacen, d.donde) } : null;
 }
 
 /** ¿Entra este repositorio en un destino del espejo? (Su zona y su selección: todos, el usuario o el repositorio.) */
@@ -265,16 +218,18 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
 
   /** 14mm: las píldoras que guardan en cada almacén, con el nombre de sus repositorios allí (para colgar de ellas los espejos). */
   const enAlmacenes = new Map<string, { pildora: string; en: { nombre: string; usuario: string; zona: string }[] }[]>();
+  const anotar = (almacen: string, pildora: string, en: { nombre: string; usuario: string; zona: string }) => {
+    const l = enAlmacenes.get(almacen) ?? [];
+    const ya = l.find((y) => y.pildora === pildora);
+    if (ya) ya.en.push(en);
+    else l.push({ pildora, en: [en] });
+    enAlmacenes.set(almacen, l);
+  };
   const anotarEnAlmacen = (pildora: string, xs: { p: Paquete; x: Paquete["repos"][number] }[]) => {
     for (const { p, x } of xs) {
       if (!x.almacen) continue;
       const en = enAlmacenDe(x.r, destinoDe(p.equipo.resumen?.destinos, x.r), x.almacen);
-      if (!en) continue;
-      const l = enAlmacenes.get(x.almacen.id) ?? [];
-      const ya = l.find((y) => y.pildora === pildora);
-      if (ya) ya.en.push(en);
-      else l.push({ pildora, en: [en] });
-      enAlmacenes.set(x.almacen.id, l);
+      if (en) anotar(x.almacen.id, pildora, en);
     }
   };
 
@@ -282,7 +237,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     if (x.almacen) {
       const s = saludEquipo(x.almacen, ahora);
       // La tarjeta es el almacén entero; lleva a la página de la zona del primer repositorio que llega (o la principal).
-      const zona = zonaDeDestino(destinoDe(p.equipo.resumen?.destinos, x.r), todos)?.id ?? PRINCIPAL;
+      const dx = destinoDe(p.equipo.resumen?.destinos, x.r);
+      const zona = zonaDeDestino(dx, todos)?.id ?? (dx?.tipo === "rest" ? zonaPorPuerto(x.almacen, dx.donde) : PRINCIPAL);
       tipoNodo.set(x.destino, { clave: claveZona(x.almacen.id, PRINCIPAL), si: { tipo: "local", inmutable: false, soloAnadir: true, aislado: false, bloqueoDias: null } });
       return poner({
         id: x.destino,
@@ -410,6 +366,12 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         (dd
           ? nodoDestino(p, { r: { ...x.r, destino: dd.id }, destino: k.clave, almacen: k.almacen, fuera: k.fuera })
           : poner({ id: k.clave, tipo: "destino", col: 2, nombre: dv.destino ?? "Otro destino", sub: "Destino", tono: "neutral", estado: "Sin copias todavía", ultima: null, icono: "servidor" }));
+      // 15k: una derivada que llega a un almacén está en él con su carpeta (`<repo>-<id>`): los
+      // espejos que la copian cuelgan también del repositorio de origen.
+      if (k.almacen && dd) {
+        const en = enAlmacenDe({ ...x.r, ruta: `${x.r.id}-${dv.id}` }, dd, k.almacen);
+        if (en) anotar(k.almacen.id, pildora.id, en);
+      }
       const r = inf?.derivadas?.find((y) => y.id === dv.id);
       const tono: Tono = r?.resultado === "fallo" ? "bad" : r?.resultado === "aviso" ? "warn" : r?.ultima ? (Date.parse(r.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
       const cuando = cuandoEnFrase(dv.cuando ?? null).toLowerCase();

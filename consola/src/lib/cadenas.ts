@@ -10,6 +10,7 @@
 import type { CopiaConfig, CuandoDerivada, DerivadaResumen, DestinoCatalogo, Equipo, FiltroVersiones, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { almacenDe } from "./retencion";
+import { almacenDetras, esAdoptado, rutaEnElAlmacen, zonaPorPuerto } from "./almacenUnico";
 import { almacenesDe, catalogoDeRed, claveNube, destinosDelCliente, nombreZonaPorDefecto, PRINCIPAL, TEXTO_TIPO, zonaDeDestino, zonasDe, type DestinoVista, type ZonaVista } from "./destinos";
 import { etiquetaCarpeta, nombreTipoNube, TIPOS_NUBE } from "./espejo";
 import { horarioEnFrase } from "./formato";
@@ -379,7 +380,13 @@ export function idDerivadaNueva(r: Pick<RepositorioResumen, "derivadas">): strin
 export function repoEnAlmacen(e: Equipo, r: RepositorioResumen, equipos: Equipo[]): { almacen: Equipo; nombre: string; zona: string } | null {
   const d = destinoDe(e.resumen?.destinos, r);
   const en = almacenDe(r, d, equipos);
-  if (!en) return null;
+  if (!en) {
+    // 15dd: uno adoptado (llega por un «Servidor de copias» que es el almacén) también está en él.
+    if (!d || r.solo_lectura || !esAdoptado(e, d, equipos)) return null;
+    const a = almacenDetras(e, d, equipos);
+    const x = a ? rutaEnElAlmacen(d.donde, r.ruta || r.id) : null;
+    return a && x ? { almacen: a, nombre: x.valor, zona: zonaPorPuerto(a, d.donde) } : null;
+  }
   return { almacen: en.almacen, nombre: en.carpeta === "." || !en.carpeta ? en.usuario : `${en.usuario}/${en.carpeta}`, zona: zonaDeDestino(d, equipos)?.id ?? PRINCIPAL };
 }
 

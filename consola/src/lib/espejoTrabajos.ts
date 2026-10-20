@@ -9,6 +9,7 @@
 import { errorFranjas } from "./franjas";
 import { horarioEnFrase, lista } from "./formato";
 import { repoEnAlmacen } from "./cadenas";
+import { contenidoAlmacen, duenoDeCarpeta } from "./almacenUnico";
 import { destinoDe } from "./repo";
 import { PRINCIPAL } from "./destinos";
 import { claveDestinoTrabajo, FRENO_DEFECTO } from "./espejoReduce";
@@ -310,22 +311,21 @@ export function opcionesRepos(hace: Equipo, quien: "almacen" | "equipo", equipos
   const g = hace.resumen?.guarda_copias;
   const lista = zona === PRINCIPAL ? g?.repositorios : g?.zonas?.find((z) => z.id === zona)?.repositorios;
   const nombres = [...new Set((lista ?? []).flatMap((u) => u.repos.map((r) => (r === "." || r === "" ? u.usuario : `${u.usuario}/${r}`))))].filter((n) => n.split("/").length <= 2).sort();
+  // 15k: de quién es cada carpeta (también las copias derivadas y los repositorios adoptados).
+  const contenido = contenidoAlmacen(hace, equipos);
   return nombres.map((n) => {
-    for (const e of equipos)
-      for (const r of e.resumen?.repositorios ?? []) {
-        const en = repoEnAlmacen(e, r, equipos);
-        if (en && en.almacen.id === hace.id && en.nombre === n && en.zona === zona) return { valor: n, nombre: r.nombre || r.id, equipo: e.nombre };
-      }
-    return { valor: n, nombre: n };
+    const x = duenoDeCarpeta(hace, n, equipos, zona, contenido);
+    return { valor: n, nombre: x.nombre, equipo: x.de };
   });
 }
 
 /** Los equipos que guardan en el almacén (su usuario y, si está aquí, su nombre). */
 export function equiposDelAlmacen(almacen: Equipo, equipos: Equipo[], zona: string = PRINCIPAL): { usuario: string; nombre: string }[] {
   const usuarios = [...new Set(opcionesRepos(almacen, "almacen", equipos, zona).map((o) => o.valor.split("/")[0]))];
+  const contenido = contenidoAlmacen(almacen, equipos);
   return usuarios.map((u) => {
-    const e = equipos.find((x) => (x.resumen?.repositorios ?? []).some((r) => repoEnAlmacen(x, r, equipos)?.nombre.split("/")[0] === u && repoEnAlmacen(x, r, equipos)?.almacen.id === almacen.id));
-    return { usuario: u, nombre: e?.nombre ?? u };
+    const x = duenoDeCarpeta(almacen, u, equipos, zona, contenido);
+    return { usuario: u, nombre: x.equipo ? x.equipo.nombre : `${u} (no sé de qué equipo es)` };
   });
 }
 

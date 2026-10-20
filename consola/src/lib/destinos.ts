@@ -15,6 +15,7 @@
 import type { DestinoCatalogo, DestinoResumen, EspacioVolumen, Equipo } from "./tipos";
 import { esDeAlmacen } from "./retencion";
 import { NOMBRE_TIPO_DESTINO } from "./direccion";
+import { almacenDetras, esAdoptado, zonaPorPuerto } from "./almacenUnico";
 
 /** El agente entiende las zonas (`guarda_copias { zona }`, `{ anadir, zona }`…). */
 export const ADMITE_ZONAS = "zonas_almacen";
@@ -126,6 +127,22 @@ export function zonaDeDestino(d: DestinoResumen | undefined, equipos: Equipo[]):
   return (p != null && zonas.find((z) => z.puerto === p)) || zonas[0] || null;
 }
 
+/**
+ * 15dd: como `zonaDeDestino`, pero reconoce también un «Servidor de copias» genérico
+ * de `e` que apunta a un almacén del cliente (por donde llegan los repositorios
+ * adoptados): es esa zona, no otro servidor. Solo para enseñar (una sola ficha por
+ * almacén); lo que decide qué hace el almacén sigue con `zonaDeDestino`.
+ */
+export function zonaDetras(e: Pick<Equipo, "id" | "resumen">, d: DestinoResumen | undefined, equipos: Equipo[]): ZonaVista | null {
+  const z = zonaDeDestino(d, equipos);
+  if (z || !d || d.tipo !== "rest" || d.equipo_almacen) return z;
+  const a = almacenDetras(e, d, equipos);
+  if (!a || !almacenesDe(equipos).some((x) => x.id === a.id)) return null;
+  const zonas = zonasDe(a);
+  const id = zonaPorPuerto(a, d.donde);
+  return zonas.find((x) => x.id === id) ?? zonas[0] ?? null;
+}
+
 export type ClaseDestino = "zona" | "equipo" | "nube" | "suelto";
 
 export interface DestinoVista {
@@ -145,6 +162,8 @@ export interface DestinoVista {
   destino?: DestinoResumen;
   /** Los ids de destino de los equipos que caen aquí (para contar sus repositorios). */
   ids: string[];
+  /** 15dd: de esos, los «Servidor de copias» genéricos que son este almacén (repositorios adoptados). */
+  adoptados?: string[];
   /** Los equipos que lo usan (por nombre). */
   equipos: string[];
   /** Una nube conectada en un equipo (para el espejo). */
@@ -180,12 +199,14 @@ export function destinosDelCliente(equipos: Equipo[], catalogo: DestinoCatalogo[
   // 2. Los destinos de los equipos (agrupados por su id); los de una zona, dentro de ella.
   for (const e of equipos)
     for (const d of e.resumen?.destinos ?? []) {
-      const z = zonaDeDestino(d, equipos);
+      // 15dd: un «Servidor de copias» genérico que es un almacén del cliente, dentro de su zona.
+      const z = zonaDetras(e, d, equipos);
       const clave = z ? claveZona(z.almacen.id, z.id) : d.id;
       const v =
         porClave.get(clave) ??
         poner({ clave, nombre: d.nombre, nombrePorDefecto: d.nombre, renombrado: false, clase: "equipo", tipo: d.tipo, donde: d.tipo === "local" ? null : (d.donde ?? null), destino: d, ids: [], equipos: [] });
       if (!v.ids.includes(d.id)) v.ids.push(d.id);
+      if (z && esAdoptado(e, d, equipos) && !v.adoptados?.includes(d.id)) v.adoptados = [...(v.adoptados ?? []), d.id];
       if (!v.equipos.includes(e.nombre)) v.equipos.push(e.nombre);
     }
   // 3. Las nubes conectadas en los almacenes (para el espejo).

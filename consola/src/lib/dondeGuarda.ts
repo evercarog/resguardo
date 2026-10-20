@@ -10,8 +10,9 @@
 import type { ComprobacionProteccion, DestinoResumen, Equipo, RepositorioResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { esDeAlmacen } from "./retencion";
-import { claveZona, zonaDeDestino } from "./destinos";
+import { claveZona, zonaDeDestino, zonaDetras } from "./destinos";
 import { NOMBRE_TIPO_DESTINO } from "./direccion";
+import { almacenDeDestino, almacenDetras, esAdoptado, servidorDe } from "./almacenUnico";
 
 export type ClaseLugar = "almacen" | "almacen_propio" | "carpeta" | "usb" | "red" | "nube" | "servidor" | "desconocido";
 
@@ -35,27 +36,14 @@ export interface Lugar {
   clave?: string;
   /** v1.56: un almacén que no está en esta consola (se gestiona desde otra). */
   deOtraConsola?: boolean;
+  /** 15dd: llega al almacén por un «Servidor de copias» genérico (repositorio adoptado). */
+  adoptado?: boolean;
 }
 
 const NUBE: Record<string, string> = { s3: "S3", b2: "Backblaze B2" };
 
-/** «host:puerto» de una dirección («https://nas:8000/caja-1/» → «nas:8000»), sin usuario. */
-export function servidorDe(donde: string | null | undefined): string | null {
-  if (!donde) return null;
-  const sin = donde.trim().replace(/^[a-z0-9+]+:(?=[a-z]+:\/\/)/i, "");
-  try {
-    const u = new URL(sin.includes("://") ? sin : `x://${sin}`);
-    return u.host || null;
-  } catch {
-    return sin.replace(/^[^@]*@/, "").split("/")[0] || null;
-  }
-}
-
-/** El almacén del cliente que guarda este destino (o undefined). */
-export function almacenDeDestino(d: DestinoResumen | undefined, equipos: Equipo[]): Equipo | undefined {
-  if (!d || d.tipo !== "rest") return undefined;
-  return equipos.find((a) => a.resumen?.guarda_copias?.activo && a.modo !== "trasladado" && esDeAlmacen(d, a)) ?? (d.equipo_almacen ? equipos.find((a) => a.id === d.equipo_almacen) : undefined);
-}
+// 15dd: `servidorDe` y `almacenDeDestino` viven en almacenUnico.ts (un almacén es uno solo).
+export { almacenDeDestino, servidorDe } from "./almacenUnico";
 
 /**
  * Dónde guarda un destino de `equipo` (el que hace la copia), en palabras.
@@ -71,15 +59,21 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
       return { clase: "carpeta", texto: `En este mismo equipo${u}`, detalle: d.nombre, mismoEquipo: true, discoDesconocido: !("extraible" in d) ? "agente" : d.extraible == null ? "no_se_sabe" : undefined, clave: d.id };
     }
     case "rest": {
-      const a = almacenDeDestino(d, equipos);
+      // 15dd: un «Servidor de copias» genérico que apunta a un almacén del cliente es ese
+      // almacén (repositorios adoptados): se dice así, no como otro servidor.
+      const quien = equipos.find((x) => x.id === equipo.id) ?? { id: equipo.id, resumen: null };
+      const adoptado = !almacenDeDestino(d, equipos) && esAdoptado(quien, d, equipos);
+      const a = adoptado ? almacenDetras(quien, d, equipos) : almacenDeDestino(d, equipos);
       // Tarea 7b: en otra zona del almacén (otro disco), con su carpeta.
-      const z = a ? zonaDeDestino(d, equipos) : null;
+      const z = a ? (adoptado ? zonaDetras(quien, d, equipos) : zonaDeDestino(d, equipos)) : null;
       const zona = z && !z.principal && z.almacen.id === a?.id ? z : null;
       const carpeta = zona ? zona.carpeta : (a?.resumen?.guarda_copias?.carpeta ?? null);
       const enZona = zona?.nombre ? ` · ${zona.nombre}` : "";
       const clave = z ? claveZona(z.almacen.id, z.id) : d.id;
-      if (a && a.id === equipo.id) return { clase: "almacen_propio", texto: `Su propio almacén${enZona} (este mismo equipo)`, detalle: carpeta, mismoEquipo: true, almacen: a, clave };
-      if (a) return { clase: "almacen", texto: `Almacén ${a.nombre}${enZona} (otro equipo)`, detalle: carpeta, mismoEquipo: false, almacen: a, clave };
+      const det = adoptado ? ["adoptado", carpeta].filter(Boolean).join(" · ") : carpeta;
+      const ad = adoptado ? { adoptado: true } : {};
+      if (a && a.id === equipo.id) return { clase: "almacen_propio", texto: `Su propio almacén${enZona} (este mismo equipo)`, detalle: det, mismoEquipo: true, almacen: a, clave, ...ad };
+      if (a) return { clase: "almacen", texto: `Almacén ${a.nombre}${enZona} (otro equipo)`, detalle: det, mismoEquipo: false, almacen: a, clave, ...ad };
       // v1.56: lo dio un almacén del cliente («Copiar en …») que no está en esta consola: el
       // nombre del destino (el mismo en todas las consolas: lo guarda el equipo), no «externo».
       if (d.equipo_almacen) return { clase: "almacen", texto: `Almacén ${d.nombre} (otro equipo)`, detalle: "se gestiona desde otra consola", mismoEquipo: false, clave, deOtraConsola: true };

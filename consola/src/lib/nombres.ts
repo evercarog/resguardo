@@ -16,6 +16,7 @@ import type { DestinoResumen, Equipo, RepositorioResumen, TrabajoEspejoResumen }
 import { usuarioEnAlmacen } from "./direccion";
 import { destinoDe } from "./repo";
 import { esDeAlmacen } from "./retencion";
+import { contenidoAlmacen } from "./almacenUnico";
 
 /** `resumen.admite`: carpetas legibles, «Ordenar nombres de carpeta», `cambiar_destino { carpetas }` y `nombre_repositorio`. */
 export const ADMITE_NOMBRES = "nombres_legibles";
@@ -267,6 +268,8 @@ export function mapaNombres(alm: Equipo, equipos: Equipo[]): Map<string, string>
     if (!m.has(en.usuario)) m.set(en.usuario, en.equipo.nombre);
     for (const r of en.repos) m.set(`${en.usuario}/${r.carpeta}`, `${r.repo.nombre}, de ${en.equipo.nombre}`);
   }
+  // 15k: también las copias derivadas y los repositorios adoptados que llegan al almacén.
+  for (const x of contenidoAlmacen(alm, equipos).values()) if (x.equipo && !m.has(x.valor)) m.set(x.valor, `${x.nombre}, de ${x.equipo.nombre}`);
   return m;
 }
 
@@ -288,4 +291,52 @@ export function legibleEnTexto(texto: string, mapa: Map<string, string>): string
     const n = mapa.get(r ? `${u}/${r}` : u);
     return n && (r || usuarioDeAntes(u) || /-[0-9a-f]{4}$/.test(u)) ? `«${n}»` : todo;
   });
+}
+
+// --- 15h (plan 0.8.1, B3): «Ordenar nombres de carpeta» como aviso suave, con datos ---
+
+/** Lo que volvería a subir un espejo si se ordena: la carpeta nueva se sube entera. */
+export interface Resubida {
+  trabajo: TrabajoEspejoResumen;
+  /** Aproximado: lo que ocupa allí (si el agente lo cuenta) o lo que ocupa en el almacén. */
+  bytes: number;
+  /** Cuántos de los que se mueven copia. */
+  repos: number;
+}
+
+/** Un equipo dueño con carpetas de nombre antiguo en el almacén, con lo que costaría ordenarlas. */
+export interface PorOrdenar {
+  en: EnElAlmacen;
+  plan: PlanOrden;
+  resubidas: Resubida[];
+}
+
+/**
+ * Qué espejos del almacén tendrían que volver a subir y cuánto si se ordena `plan`
+ * (la carpeta del equipo entera si cambia su usuario; si no, solo los repositorios
+ * que cambian). Tamaño aproximado: lo que ocupa cada uno en ese espejo o, si no se
+ * sabe, en el almacén.
+ */
+export function resubidas(alm: Equipo, en: EnElAlmacen, plan: PlanOrden): Resubida[] {
+  const mueve = plan.usuario ? en.repos.filter((r) => !r.repo.solo_lectura) : en.repos.filter((r) => plan.repos.some((x) => x.de === r.carpeta));
+  if (!mueve.length) return [];
+  const out: Resubida[] = [];
+  for (const t of espejosQueLoCopian(alm, en.usuario, mueve.map((r) => r.carpeta))) {
+    const entra = (c: string) => t.que.tipo !== "repos" || t.que.repos.some((x) => x === en.usuario || x === `${en.usuario}/${c}`);
+    const suyos = mueve.filter((r) => entra(r.carpeta));
+    if (!suyos.length) continue;
+    const bytes = suyos.reduce((s, r) => s + (t.ocupa?.repos?.[`${en.usuario}/${r.carpeta}`] ?? r.repo.bytes ?? 0), 0);
+    out.push({ trabajo: t, bytes, repos: suyos.length });
+  }
+  return out.sort((a, b) => b.bytes - a.bytes);
+}
+
+/** Los equipos dueños con algo que ordenar en el almacén `alm` (para el aviso suave). `soloRepo`: solo ese repositorio. */
+export function porOrdenar(alm: Equipo, equipos: Equipo[], soloEquipo?: string, soloRepo?: string): PorOrdenar[] {
+  if (!admiteNombres(alm)) return [];
+  return equiposEnAlmacen(alm, equipos)
+    .filter((en) => !en.importado && (!soloEquipo || en.equipo.id === soloEquipo))
+    .map((en) => ({ en, plan: planOrden(en, soloRepo) }))
+    .filter((x) => hayQueOrdenar(x.plan))
+    .map((x) => ({ ...x, resubidas: resubidas(alm, x.en, x.plan) }));
 }
