@@ -483,7 +483,7 @@
 {/if}
 
 {#if restablecer}
-  <Modal labelledby="t-restablecer" onclose={() => (restablecer = null)} width={500} dismissible={!codigoRest}>
+  <Modal labelledby="t-restablecer" onclose={() => (restablecer = null)} width={500} dismissible={!codigoRest} sePierde="El código no se vuelve a enseñar: cópialo antes de cerrar.">
     {#if !codigoRest}
       <form
         class="form"

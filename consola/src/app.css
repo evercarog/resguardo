@@ -208,11 +208,11 @@ button.fila {
 /* Diálogos con el título fuera del formulario: el mismo aire bajo el título
  * que en los que lo llevan dentro (el `gap` de `.form`). Los márgenes se
  * funden con el del bloque siguiente, así que no se suman. */
-.dialog > .dlg-title {
+.dialog > .contenido > .dlg-title {
   margin-bottom: var(--sp-4);
 }
 /* C6: los pasos de un asistente en un diálogo, con el mismo aire debajo. */
-.dialog > .pasos-dlg {
+.dialog > .contenido > .pasos-dlg {
   margin-bottom: var(--sp-5);
 }
 

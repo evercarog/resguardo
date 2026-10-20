@@ -278,7 +278,7 @@
   }
 </script>
 
-<Modal labelledby="t-orden" onclose={cerrar} width={500} dismissible={fase !== "enviando"}>
+<Modal labelledby="t-orden" onclose={cerrar} width={500} ocupado={fase === "enviando"}>
   <form class="form" onsubmit={enviar}>
     <div class="dlg-title">
       <span class="ticon" class:danger={destructiva}>

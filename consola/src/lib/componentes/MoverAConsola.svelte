@@ -156,7 +156,7 @@
   }
 </script>
 
-<Modal labelledby="t-mover-consola" {onclose} width={620} dismissible={!ocupado}>
+<Modal labelledby="t-mover-consola" {onclose} width={620} ocupado={ocupado}>
   <div class="dlg-title">
     <span class="ticon"><ArrowRightLeft size={18} /></span>
     <div>

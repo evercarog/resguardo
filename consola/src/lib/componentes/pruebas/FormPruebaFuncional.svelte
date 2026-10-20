@@ -5,7 +5,7 @@
   // (RTO real), la antigüedad de lo recuperado (RPO), notas y adjuntos pequeños
   // (PDF, PNG o JPG). Puede salir de una restauración ya registrada: rellena el
   // día, el repositorio, el tiempo y, si se sabe, la antigüedad.
-  import { ClipboardCheck, FileText, LoaderCircle, Paperclip, Trash2, Wand } from "@lucide/svelte";
+  import { ClipboardCheck, FileText, LoaderCircle, Paperclip, Trash2, Undo2, Wand } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { avisar } from "$lib/avisos.svelte";
@@ -111,7 +111,7 @@
         avisar(`«${file.name}»: solo PDF, PNG o JPG.`, "bad");
         continue;
       }
-      if (adjuntos.length + pendientes.length >= 5) {
+      if (adjuntos.length - aQuitar.length + pendientes.length >= 5) {
         avisar("Como mucho 5 adjuntos por prueba.", "bad");
         break;
       }
@@ -125,16 +125,9 @@
     for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
     return btoa(s);
   }
-  async function quitarAdjunto(n: number) {
-    if (!editando) return;
-    try {
-      const x = await api.borrarAdjuntoPrueba(cliente, editando.id, n);
-      ponerFuncionales(cliente, x);
-      adjuntos = adjuntos.filter((a) => a.n !== n);
-    } catch (e) {
-      avisar((e as Error).message, "bad");
-    }
-  }
+  // Quitar un adjunto que ya estaba: se quita al guardar (si se cancela, sigue ahí).
+  let aQuitar = $state<number[]>([]);
+  const alternarQuitar = (n: number) => (aQuitar = aQuitar.includes(n) ? aQuitar.filter((x) => x !== n) : [...aQuitar, n]);
 
   async function guardar() {
     tocado = true;
@@ -145,6 +138,14 @@
       if (editando) x = await api.cambiarPruebaFuncional(cliente, editando.id, entrada);
       else x = await api.registrarPruebaFuncional(cliente, entrada);
       let ultimo: PruebasFuncionales = x;
+      for (const n of aQuitar) {
+        const a = adjuntos.find((y) => y.n === n);
+        try {
+          ultimo = await api.borrarAdjuntoPrueba(cliente, x.id, n);
+        } catch (e) {
+          avisar(`«${a?.nombre ?? n}»: ${(e as Error).message}`, "bad");
+        }
+      }
       for (const file of pendientes) {
         try {
           ultimo = await api.anadirAdjuntoPrueba(cliente, x.id, file.name, await enBase64(file));
@@ -163,7 +164,7 @@
   }
 </script>
 
-<Modal labelledby="t-pf" {onclose} width={680}>
+<Modal labelledby="t-pf" {onclose} width={680} dismissible={false} ocupado={guardando}>
   <div class="dlg-title">
     <span class="ticon"><ClipboardCheck size={18} /></span>
     <div>
@@ -316,9 +317,14 @@
       {#if adjuntos.length || pendientes.length}
         <ul class="adjuntos">
           {#each adjuntos as a (a.n)}
-            <li>
-              <FileText size={14} /><a class="link-suave" href={api.urlAdjuntoPrueba(cliente, editando?.id ?? "", a.n)} download>{a.nombre}</a><span class="faint">{bytes(a.tamano)}</span>
-              <button type="button" class="btn btn-ghost btn-sm" aria-label="Quitar {a.nombre}" onclick={() => quitarAdjunto(a.n)}><Trash2 size={14} /></button>
+            {@const quita = aQuitar.includes(a.n)}
+            <li class:quita>
+              <FileText size={14} /><a class="link-suave" href={api.urlAdjuntoPrueba(cliente, editando?.id ?? "", a.n)} download>{a.nombre}</a><span class="faint">{bytes(a.tamano)}{quita ? " · se quita al guardar" : ""}</span>
+              {#if quita}
+                <button type="button" class="btn btn-ghost btn-sm" onclick={() => alternarQuitar(a.n)}><Undo2 size={14} />Deshacer</button>
+              {:else}
+                <button type="button" class="btn btn-ghost btn-sm" aria-label="Quitar {a.nombre}" onclick={() => alternarQuitar(a.n)}><Trash2 size={14} /></button>
+              {/if}
             </li>
           {/each}
           {#each pendientes as p, i (`${p.name}-${i}`)}
@@ -392,10 +398,16 @@
     gap: 4px;
     font-size: var(--fs-sm);
   }
+  .adjuntos li.quita a {
+    text-decoration: line-through;
+    color: var(--text-3);
+  }
   .adjuntos li {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   footer {
     display: flex;

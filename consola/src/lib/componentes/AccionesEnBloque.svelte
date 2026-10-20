@@ -186,7 +186,7 @@
   }
 </script>
 
-<Modal labelledby="t-bloque" {onclose} width={600} dismissible={!enMarcha || terminado}>
+<Modal labelledby="t-bloque" {onclose} width={600} dismissible={!enMarcha || terminado} sePierde="Lo que ya se mandó sigue en «Órdenes»; lo demás no se manda.">
   <div class="dlg-title">
     <span class="ticon">
       {#if accion === "copiar"}<Play size={18} />{:else if accion === "verificar"}<ShieldCheck size={18} />{:else if accion === "pausar"}<CirclePause size={18} />{:else}<CirclePlay size={18} />{/if}

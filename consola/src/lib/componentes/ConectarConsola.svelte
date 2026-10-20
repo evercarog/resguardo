@@ -154,7 +154,7 @@
   };
 </script>
 
-<Modal labelledby="t-conectar" {onclose} width={620} dismissible={paso !== "equipos" || !ocupado}>
+<Modal labelledby="t-conectar" {onclose} width={620} ocupado={paso === "equipos" && ocupado}>
   <div class="dlg-title">
     <span class="ticon"><Monitor size={18} /></span>
     <div>

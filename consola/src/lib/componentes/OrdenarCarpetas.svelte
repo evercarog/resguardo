@@ -211,7 +211,7 @@
   const nombreEquipo = (id: string) => [en, ...importadores].find((x) => x?.equipo.id === id)?.equipo.nombre ?? "un equipo";
 </script>
 
-<Modal labelledby="t-ordenar" {onclose} width={620} dismissible={!ocupado}>
+<Modal labelledby="t-ordenar" {onclose} width={620} ocupado={ocupado}>
   <div class="dlg-title">
     <span class="ticon"><FolderTree size={18} /></span>
     <div>

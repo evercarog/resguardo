@@ -399,7 +399,7 @@
   />
 {/if}
 {#if fichaDlg}
-  <Modal labelledby="t-ficha" onclose={() => ((fichaDlg = false), (ficha = null))} width={540} dismissible={!ficha}>
+  <Modal labelledby="t-ficha" onclose={() => ((fichaDlg = false), (ficha = null))} width={540} dismissible={!ficha} sePierde="La ficha no se vuelve a enseñar: cópiala antes de cerrar.">
     {#if !ficha}
       <form class="form" onsubmit={darFicha}>
         <div class="dlg-title">

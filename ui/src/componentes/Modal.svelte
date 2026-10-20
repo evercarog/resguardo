@@ -16,16 +16,37 @@
     onclose: () => void;
     labelledby: string;
     width?: number;
-    /** false: pulsar fuera no cierra (formularios que se perderían). Escape sigue cerrando. */
+    /**
+     * false: pulsar fuera no cierra, y Escape pregunta antes («¿Cerrar sin
+     * terminar?»): formularios y asistentes que perderían lo escrito, códigos que
+     * no se vuelven a enseñar.
+     */
     dismissible?: boolean;
+    /** Lo que se pierde al cerrar, en la pregunta de Escape (con `dismissible={false}`). */
+    sePierde?: string;
+    /** Mientras envía: ni Escape ni pulsar fuera cierran (los botones del diálogo mandan). */
+    ocupado?: boolean;
     children: Snippet;
   }
-  let { onclose, labelledby, width = 520, dismissible = true, children }: Props = $props();
+  let { onclose, labelledby, width = 520, dismissible = true, sePierde = "Lo que has escrito se pierde.", ocupado = false, children }: Props = $props();
 
   const id = Symbol("modal");
   /** Un modal abierto encima de otro (p. ej. la ayuda desde un formulario) queda por delante, con su fondo. */
   const layer = 10 + stack.length * 2;
   let dialog: HTMLDivElement;
+  /** Escape en un diálogo que no se cierra sin más: la pregunta, encima de todo. */
+  let preguntando = $state(false);
+  let quedarse = $state<HTMLButtonElement>();
+
+  async function preguntar() {
+    preguntando = true;
+    await tick();
+    quedarse?.focus();
+  }
+  function seguir() {
+    preguntando = false;
+    tick().then(() => dialog?.focus());
+  }
 
   const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -56,7 +77,10 @@
     if (stack.at(-1) !== id) return;
     if (e.key === "Escape") {
       e.stopPropagation();
-      onclose();
+      if (preguntando) seguir();
+      else if (ocupado) return;
+      else if (dismissible) onclose();
+      else void preguntar();
     } else if (e.key === "Tab") {
       // Trampa de foco: Tab y Mayús+Tab dan la vuelta dentro del diálogo.
       const items = focusables();
@@ -81,7 +105,7 @@
 
 <svelte:window {onkeydown} />
 
-<div class="backdrop" style:z-index={layer} transition:fade={{ duration: dur(150) }} onclick={() => dismissible && onclose()} role="presentation"></div>
+<div class="backdrop" style:z-index={layer} transition:fade={{ duration: dur(150) }} onclick={() => dismissible && !ocupado && !preguntando && onclose()} role="presentation"></div>
 
 <div
   bind:this={dialog}
@@ -94,7 +118,19 @@
   tabindex="-1"
   transition:scale={{ duration: dur(180), start: 0.96 }}
 >
-  {@render children()}
+  <div class="contenido" inert={preguntando}>{@render children()}</div>
+  {#if preguntando}
+    <div class="pregunta" role="alertdialog" aria-modal="true" aria-labelledby="{labelledby}-cerrar" aria-describedby="{labelledby}-pierde">
+      <div class="pregunta-caja">
+        <p class="pregunta-titulo" id="{labelledby}-cerrar">¿Cerrar sin terminar?</p>
+        <p class="pregunta-texto" id="{labelledby}-pierde">{sePierde}</p>
+        <div class="pregunta-botones">
+          <button type="button" class="btn btn-ghost" onclick={() => ((preguntando = false), onclose())}>Cerrar</button>
+          <button type="button" class="btn btn-primary" bind:this={quedarse} onclick={seguir}>Seguir aquí</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -138,5 +174,44 @@
   }
   .dialog:focus {
     outline: none;
+  }
+  .contenido {
+    display: contents;
+  }
+  /* La pregunta de Escape: tapa el diálogo (lo de debajo, inerte) sin moverlo. */
+  .pregunta {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    margin: var(--sp-4) calc(-1 * var(--sp-6)) calc(-1 * var(--sp-6));
+    padding: var(--sp-4) var(--sp-6) var(--sp-6);
+    background: linear-gradient(to bottom, transparent, var(--surface) var(--sp-4));
+  }
+  .pregunta-caja {
+    width: 100%;
+    padding: var(--sp-4);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+  }
+  .pregunta-titulo {
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .pregunta-texto {
+    margin: 2px 0 0;
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+  }
+  .pregunta-botones {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
   }
 </style>

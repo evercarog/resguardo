@@ -68,7 +68,7 @@
   }
 </script>
 
-<Modal labelledby="t-codigo-conexion" {onclose} width={580} dismissible={!hecho}>
+<Modal labelledby="t-codigo-conexion" {onclose} width={580} dismissible={!hecho} sePierde="El código no se vuelve a enseñar: cópialo antes de cerrar.">
   <div class="dlg-title">
     <span class="ticon"><Monitor size={18} /></span>
     <div>

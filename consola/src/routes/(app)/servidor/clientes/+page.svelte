@@ -282,7 +282,7 @@
 {/if}
 
 {#if invitacion}
-  <Modal labelledby="t-invitacion" onclose={() => (invitacion = null)} width={560}>
+  <Modal labelledby="t-invitacion" onclose={() => (invitacion = null)} width={560} dismissible={false} sePierde="El enlace no se vuelve a enseñar: cópialo antes de cerrar.">
     <div class="form">
       <div class="dlg-title">
         <span class="ticon"><Link2 size={18} /></span>

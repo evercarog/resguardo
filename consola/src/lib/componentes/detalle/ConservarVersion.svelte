@@ -65,7 +65,7 @@
   });
 </script>
 
-<Modal labelledby="t-conservar" {onclose} width={500} dismissible={!enviando}>
+<Modal labelledby="t-conservar" {onclose} width={500} ocupado={enviando}>
   <form class="form" onsubmit={enviar}>
     <div class="dlg-title">
       <span class="ticon" class:danger={!conservar}>{#if conservar}<Pin size={18} />{:else}<PinOff size={18} />{/if}</span>

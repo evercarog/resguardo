@@ -130,7 +130,7 @@
   }
 </script>
 
-<Modal labelledby="t-ret-alm" {onclose} width={560} dismissible={!ocupado}>
+<Modal labelledby="t-ret-alm" {onclose} width={560} ocupado={ocupado}>
   <div class="dlg-title">
     <span class="ticon danger"><CalendarClock size={18} /></span>
     <div>

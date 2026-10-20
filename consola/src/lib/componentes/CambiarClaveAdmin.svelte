@@ -183,7 +183,7 @@
   const caduca = $derived(quedan.map((x) => x.orden?.caduca).filter(Boolean).sort()[0] ?? null);
 </script>
 
-<Modal labelledby="t-clave-admin" {onclose} width={600} dismissible={paso !== "enviando" || !ocupado}>
+<Modal labelledby="t-clave-admin" {onclose} width={600} dismissible={paso !== "claves"} ocupado={paso === "enviando" && ocupado}>
   {#if paso === "claves"}
     <form class="form" onsubmit={cambiar}>
       <div class="dlg-title">
