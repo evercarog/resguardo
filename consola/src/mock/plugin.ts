@@ -2038,6 +2038,10 @@ function datosComunesDe(c: string): DatosComunesCliente {
                 ["etiqueta.categoria:tipo-4e5f", { nombre: "Tipo", etiquetas: ["Servidores"] }],
                 ["etiqueta.categoria:area-6a7b", { nombre: "Área", etiquetas: ["Recepción", "Contabilidad", "Gerencia"] }],
                 ["orden.equipos:todos", { ids: [ID.servidor, ID.contabilidad, ID.recepcion, ID.archivos, ID.portatil] }],
+                // 0.8.1 (B2, 15y): «Música» cambiado, un grupo propio y «Vídeo» quitado (los demás, de partida).
+                ["exclusiones:musica", { nombre: "Música", reglas: ["*.mp3", "*.flac", "*.m4a", "*.wav", "*.ogg", "*.wma", "*.aac", "*.mid"] }],
+                ["exclusiones:planos-7c8d", { nombre: "Planos antiguos", reglas: ["*.dwl", "*.dwl2", "*.bak", "Planos/Antiguos"] }],
+                ["exclusiones:video", null],
               ].map(([clave, valor]) => f({ clave: clave as string, valor, estado: "aplicado", semilla: false, esta: true, consola: null, por: "Ana Restrepo", cambiado: hace(60 * 24) })),
               sin_compartir: [],
             }
@@ -2049,12 +2053,23 @@ function datosComunesDe(c: string): DatosComunesCliente {
 
 /** Plan 0.8.0 (D1, D2): `GET /organizacion`, como el servidor (`crate::sedes`), de los datos comunes. */
 function organizacionDe(c: string) {
-  const o = { sedes: [] as { id: string; nombre: string; notas: string | null; principal: boolean }[], equipos: {} as Record<string, string>, destinos: {} as Record<string, string>, categorias: [] as { id: string; nombre: string; etiquetas: string[] }[], orden: [] as string[] };
+  const o = {
+    sedes: [] as { id: string; nombre: string; notas: string | null; principal: boolean }[],
+    equipos: {} as Record<string, string>,
+    destinos: {} as Record<string, string>,
+    categorias: [] as { id: string; nombre: string; etiquetas: string[] }[],
+    orden: [] as string[],
+    exclusiones: [] as { id: string; nombre: string; reglas: string[] }[],
+    exclusiones_quitadas: [] as string[],
+  };
   for (const f of datosComunesDe(c).filas) {
     const v = f.valor as Record<string, unknown> | null;
-    if (!v) continue;
     const [clase, ...resto] = f.clave.split(":");
     const sujeto = resto.join(":");
+    // 0.8.1 (B2, 15y): un grupo de exclusiones quitado (null) se dice aparte.
+    if (!v && clase === "exclusiones") o.exclusiones_quitadas.push(sujeto);
+    if (!v) continue;
+    if (clase === "exclusiones") o.exclusiones.push({ id: sujeto, nombre: String(v.nombre), reglas: (v.reglas as string[]) ?? [] });
     if (clase === "sede") o.sedes.push({ id: sujeto, nombre: String(v.nombre), notas: (v.notas as string) ?? null, principal: v.principal === true });
     else if (clase === "sede.equipo") o.equipos[sujeto] = String(v.sede);
     else if (clase === "sede.destino") o.destinos[sujeto] = String(v.sede);
@@ -2063,6 +2078,7 @@ function organizacionDe(c: string) {
   }
   o.sedes.sort((a, b) => a.nombre.localeCompare(b.nombre));
   o.categorias.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  o.exclusiones.sort((a, b) => a.nombre.localeCompare(b.nombre));
   const existe = (s: string) => o.sedes.some((x) => x.id === s);
   for (const m of [o.equipos, o.destinos]) for (const k of Object.keys(m)) if (!existe(m[k])) delete m[k];
   return o;

@@ -446,7 +446,8 @@ export async function sembrar(vacio = false) {
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
-        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo"],
+        // 0.8.1 (B2): guarda sus etiquetas para todas sus consolas (renombrar en «Organización» le manda la orden).
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo"],
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
         copias: [copia("documentos", "Documentos", "docs-recepcion", ["13:00", "19:00"], 3)],
       },
@@ -478,6 +479,8 @@ export async function sembrar(vacio = false) {
       conectado: false,
       ultimo_contacto: hace(60 * 52),
       resumen: {
+        // 0.8.1 (B2): sin conexión: un cambio de sus etiquetas desde «Organización» queda pedido.
+        admite: ["datos_equipo"],
         destinos: [destinoNube],
         repositorios: [repo("gerencia", "Gerencia", "b2-altamar", 61, 12_900_000_000)],
         copias: [{ ...copia("gerencia", "Escritorio y documentos", "gerencia", ["12:00"], 2), ultima: { cuando: hace(60 * 54), estado: "ok", bytes: 22_000_000 }, proxima: hace(60 * 30) }],
@@ -750,9 +753,10 @@ export async function sembrar(vacio = false) {
   for (const e of [recepcion, portatil, servidorAltamar, surAlmacen, surCaja, estudio]) if (e.informes[0]) e.informes[0].datos.version = e.version_agente;
   // Etiquetas (v1.18) para agrupar y filtrar.
   servidorAltamar.etiquetas = ["Servidores"];
-  recepcion.etiquetas = ["Recepción", "Sede norte"];
-  contabilidad.etiquetas = ["Contabilidad", "Sede norte"];
-  portatil.etiquetas = ["Gerencia"];
+  // 0.8.1 (B2): «Puestos» en tres equipos y «Contable», casi repetida de «Contabilidad» (para unirlas).
+  recepcion.etiquetas = ["Recepción", "Sede norte", "Puestos"];
+  contabilidad.etiquetas = ["Contabilidad", "Sede norte", "Puestos"];
+  portatil.etiquetas = ["Gerencia", "Puestos", "Contable"];
   surAlmacen.etiquetas = ["Servidores"];
   enriquecer(portatil, { soloAnadir: null, sinCambios: 0.3, medioAnadido: 40_000_000, silencioHoras: 54 });
   enriquecer(servidorAltamar, { externa: true, medioAnadido: 900_000_000, recortado: true });
