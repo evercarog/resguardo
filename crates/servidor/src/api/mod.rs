@@ -333,6 +333,8 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/datos-comunes", get(datos_comunes::ver).post(datos_comunes::poner))
         // Plan 0.8.0, D1 y D2: sedes, categorías de etiqueta y orden de los equipos (cualquier miembro).
         .route("/api/clientes/{c}/organizacion", get(organizacion::ver))
+        // Plan 0.8.1, C4 (15d): servidores físicos, conjuntos de discos y dónde está cada equipo y destino.
+        .route("/api/clientes/{c}/infraestructura", get(crate::infraestructura::ver).put(crate::infraestructura::poner))
         .route("/api/clientes/{c}/datos-comunes/enviadas", post(datos_comunes::enviadas))
         .route("/api/clientes/{c}/datos-comunes/traer", post(datos_comunes::traer))
         .route("/api/clientes/{c}/emparejamientos/{p}", get(equipos::ver_emparejamiento).delete(equipos::cancelar_emparejamiento))

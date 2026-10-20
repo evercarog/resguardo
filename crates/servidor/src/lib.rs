@@ -20,6 +20,8 @@ pub mod error;
 pub mod estado;
 pub mod github;
 pub mod identidad;
+// Plan 0.8.1, C4 (15d): infraestructura (servidores físicos, discos, dónde está cada cosa).
+pub mod infraestructura;
 pub mod instalador_agente;
 // Plan 0.8.0 (G1): el informe ejecutivo en PDF, programado por correo.
 pub mod informe;
