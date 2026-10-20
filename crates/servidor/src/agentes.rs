@@ -312,6 +312,15 @@ pub fn error_cuota(mensaje: String) -> ErrorApi {
     ErrorApi::nuevo(StatusCode::FORBIDDEN, "cuota", mensaje)
 }
 
+/// 15nn: código del 403 que recibe el equipo de un cliente archivado en este servidor.
+pub const ARCHIVADO: &str = "archivado";
+/// 15nn: lo que se le dice (el agente lo deja en su registro).
+pub const MENSAJE_ARCHIVADO: &str =
+    "Este cliente está archivado en este servidor: no recibe informes ni manda órdenes. Pide que lo recuperen o quita esta consola del equipo.";
+
+/// 15nn: lo que se manda por el canal de un equipo para cerrarlo (no llega al equipo).
+pub const CERRAR_CANAL: &str = "\u{0}cerrar";
+
 // ---------- Autenticación del agente ----------
 
 /// Un equipo autenticado con `Authorization: Equipo <id>:<secreto>`.
@@ -344,13 +353,18 @@ impl FromRequestParts<St> for Agente {
                 if !ok {
                     return Ok(None);
                 }
+                // 15nn: el cliente está archivado en este servidor: no recibe nada del equipo.
+                if db.cliente_archivado(ctx.id())?.is_some() {
+                    return Ok(Some(Err(())));
+                }
                 db.contacto_equipo(&ctx, &id2, ahora())?;
                 let e = db.equipo(&ctx, &id2)?;
-                Ok(e.map(|e| (ctx, e.sign_pub)))
+                Ok(e.map(|e| Ok((ctx, e.sign_pub))))
             })
             .await?;
         match encontrado {
-            Some((ctx, sign_pub)) => Ok(Agente { ctx, equipo: id, sign_pub }),
+            Some(Ok((ctx, sign_pub))) => Ok(Agente { ctx, equipo: id, sign_pub }),
+            Some(Err(())) => Err(ErrorApi::nuevo(StatusCode::FORBIDDEN, ARCHIVADO, MENSAJE_ARCHIVADO)),
             None => {
                 st.limites.intento(&format!("agente-fallo:{ip}"), 30, Duration::from_secs(900));
                 Err(ErrorApi::sin_sesion().acceso("equipo"))
@@ -1211,6 +1225,10 @@ async fn atender(st: St, a: Agente, firma: String, socket: WebSocket) {
         tokio::select! {
             salida = rx.recv() => {
                 let Some(texto) = salida else { break };
+                // 15nn: su cliente se archivó: se cierra el canal (al volver, se le rechaza).
+                if texto == CERRAR_CANAL {
+                    break;
+                }
                 if !matches!(tokio::time::timeout(PLAZO_ENVIO_AGENTE, envio.send(Message::Text(texto.into()))).await, Ok(Ok(()))) {
                     break;
                 }

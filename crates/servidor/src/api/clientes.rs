@@ -277,7 +277,7 @@ pub async fn ficha(State(st): State<St>, u: Usuario, Path(c): Path<String>, Json
 /// Tamaño máximo del paquete de exportación.
 pub const MAX_PAQUETE: usize = 64 * 1024 * 1024;
 
-fn ruta_paquete(st: &St, c: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn ruta_paquete(st: &St, c: &str) -> Option<std::path::PathBuf> {
     (!c.is_empty() && c.chars().all(|x| x.is_ascii_alphanumeric() || x == '-')).then(|| st.datos.join("paquetes").join(format!("{c}.resguardo-cliente")))
 }
 

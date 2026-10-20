@@ -205,6 +205,20 @@ fn abrir(path: &Path, esquema: &str) -> R<Connection> {
     Ok(c)
 }
 
+/// 15nn: los clientes que no están archivados (en las consultas de las tablas comunes).
+const SIN_ARCHIVADOS: &str = "cliente_id NOT IN (SELECT id FROM clientes WHERE archivado IS NOT NULL)";
+
+/// Columnas añadidas a `control.db` después de la primera versión del esquema.
+fn migrar_control(db: &Connection) -> R<()> {
+    let mut st = db.prepare("SELECT name FROM pragma_table_info('clientes')").map_err(s)?;
+    let cols = st.query_map([], |r| r.get::<_, String>(0)).map_err(s)?.collect::<Result<Vec<_>, _>>().map_err(s)?;
+    // 15nn: cuándo se archivó el cliente (NULL: activo).
+    if !cols.iter().any(|c| c == "archivado") {
+        db.execute_batch("ALTER TABLE clientes ADD COLUMN archivado INTEGER").map_err(s)?;
+    }
+    Ok(())
+}
+
 /// Columnas añadidas después de la primera versión del esquema.
 fn migrar_cliente(db: &Connection) -> R<()> {
     let tiene = |tabla: &str, col: &str| -> R<bool> {
@@ -338,6 +352,7 @@ impl Sqlite {
     pub fn abrir(dir: &Path) -> R<Self> {
         std::fs::create_dir_all(dir.join("clientes")).map_err(s)?;
         let control = abrir(&dir.join("control.db"), ESQUEMA_CONTROL)?;
+        migrar_control(&control)?;
         Ok(Self { dir: dir.to_path_buf(), control: Mutex::new(control), clientes: Mutex::new(Conexiones::nuevas(MAX_CONEXIONES_CLIENTES)) })
     }
 
@@ -369,6 +384,25 @@ impl Sqlite {
         // Cerrar una conexión puede pasar el WAL a la base: sin bloquear a los demás.
         drop(cerrar);
         Ok(con)
+    }
+
+    fn clientes_de_con(&self, cuenta: &str, archivados: bool) -> R<Vec<(Cliente, Rol)>> {
+        let c = self.ctl();
+        let filtro = if archivados { "" } else { " AND c.archivado IS NULL" };
+        let mut st = c
+            .prepare(&format!(
+                "SELECT c.id, c.nombre, c.sal, c.espera_min_horas, p.rol FROM clientes c JOIN pertenencias p ON p.cliente_id = c.id WHERE p.cuenta_id = ?1{filtro} ORDER BY c.nombre COLLATE NOCASE"
+            ))
+            .map_err(s)?;
+        let filas = st.query_map([cuenta], |r| Ok((fila_cliente(r)?, r.get::<_, String>(4)?))).map_err(s)?;
+        let mut out = Vec::new();
+        for f in filas {
+            let (cl, rol) = f.map_err(s)?;
+            if let Some(rol) = Rol::de(&rol) {
+                out.push((cl, rol));
+            }
+        }
+        Ok(out)
     }
 
     /// Cuántas conexiones con clientes hay abiertas (para las pruebas).
@@ -643,27 +677,72 @@ impl Almacen for Sqlite {
         Ok(())
     }
     fn clientes_de(&self, cuenta: &str) -> R<Vec<(Cliente, Rol)>> {
-        let c = self.ctl();
-        let mut st = c
-            .prepare("SELECT c.id, c.nombre, c.sal, c.espera_min_horas, p.rol FROM clientes c JOIN pertenencias p ON p.cliente_id = c.id WHERE p.cuenta_id = ?1 ORDER BY c.nombre COLLATE NOCASE")
-            .map_err(s)?;
-        let filas = st.query_map([cuenta], |r| Ok((fila_cliente(r)?, r.get::<_, String>(4)?))).map_err(s)?;
-        let mut out = Vec::new();
-        for f in filas {
-            let (cl, rol) = f.map_err(s)?;
-            if let Some(rol) = Rol::de(&rol) {
-                out.push((cl, rol));
-            }
-        }
-        Ok(out)
+        self.clientes_de_con(cuenta, false)
+    }
+    fn clientes_de_todos(&self, cuenta: &str) -> R<Vec<(Cliente, Rol)>> {
+        self.clientes_de_con(cuenta, true)
     }
     fn rol(&self, cuenta: &str, cliente: &str) -> R<Option<Rol>> {
         let r: Option<String> = self
             .ctl()
-            .query_row("SELECT rol FROM pertenencias WHERE cuenta_id = ?1 AND cliente_id = ?2", [cuenta, cliente], |r| r.get(0))
+            .query_row(
+                "SELECT p.rol FROM pertenencias p JOIN clientes c ON c.id = p.cliente_id WHERE p.cuenta_id = ?1 AND p.cliente_id = ?2 AND c.archivado IS NULL",
+                [cuenta, cliente],
+                |r| r.get(0),
+            )
             .optional()
             .map_err(s)?;
         Ok(r.and_then(|r| Rol::de(&r)))
+    }
+    fn archivar_cliente(&self, id: &str, cuando: Option<Ts>) -> R<bool> {
+        let mut c = self.ctl();
+        let tx = c.transaction().map_err(s)?;
+        let n = tx.execute("UPDATE clientes SET archivado = ?2 WHERE id = ?1", params![id, cuando]).map_err(s)?;
+        if n > 0 && cuando.is_some() {
+            // Lo que estaba en la cola de avisos ya no se manda (en su registro sale como descartado).
+            tx.execute(
+                "UPDATE notif_envios SET estado = 'descartado', nota = 'Cliente archivado.' WHERE estado = 'pendiente' AND (cliente_id = ?1 OR ambito = 'cliente:' || ?1)",
+                [id],
+            )
+            .map_err(s)?;
+        }
+        tx.commit().map_err(s)?;
+        Ok(n > 0)
+    }
+    fn cliente_archivado(&self, id: &str) -> R<Option<Ts>> {
+        let r: Option<Option<Ts>> = self.ctl().query_row("SELECT archivado FROM clientes WHERE id = ?1", [id], |r| r.get(0)).optional().map_err(s)?;
+        Ok(r.flatten())
+    }
+    fn borrar_cliente(&self, id: &str) -> R<bool> {
+        let id = id_seguro(id)?.to_string();
+        {
+            let mut c = self.ctl();
+            let tx = c.transaction().map_err(s)?;
+            for tabla in ["pertenencias", "invitaciones", "codigos", "codigos_varios", "indice_equipos", "fichas", "notif_incidentes"] {
+                tx.execute(&format!("DELETE FROM {tabla} WHERE cliente_id = ?1"), [&id]).map_err(s)?;
+            }
+            tx.execute("DELETE FROM notif_envios WHERE cliente_id = ?1 OR ambito = 'cliente:' || ?1", [&id]).map_err(s)?;
+            // Eventos aún sin procesar que lo nombran (el id es un UUID: no se confunde con otra cosa).
+            tx.execute("DELETE FROM notif_eventos WHERE instr(datos, ?1) > 0", [&id]).map_err(s)?;
+            // Sus ajustes guardados en `servidor` llevan su id como un tramo de la clave
+            // (`marca:<id>`, `cuotas:<id>`, `relevo_mes:<id>:<mes>`, `notif:pref:<id>:<cuenta>`,
+            // `pf:<id>:…`, `kit:<id>:…`…).
+            tx.execute("DELETE FROM servidor WHERE substr(clave, -length(?1) - 1) = ':' || ?1 OR instr(clave, ':' || ?1 || ':') > 0", [&id]).map_err(s)?;
+            tx.execute("DELETE FROM clientes WHERE id = ?1", [&id]).map_err(s)?;
+            tx.commit().map_err(s)?;
+        }
+        // Su base de datos: se cierra la conexión (si estaba abierta) y se borran sus archivos.
+        let abierta = self.clientes.lock().unwrap_or_else(|e| e.into_inner()).abiertas.remove(&id);
+        drop(abierta);
+        let base = self.dir.join("clientes").join(format!("{id}.db"));
+        for ext in ["db-wal", "db-shm"] {
+            let _ = std::fs::remove_file(base.with_extension(ext));
+        }
+        match std::fs::remove_file(&base) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
     fn poner_rol(&self, cuenta: &str, cliente: &str, rol: Rol) -> R<()> {
         self.ctl()
@@ -707,9 +786,11 @@ impl Almacen for Sqlite {
         let mut c = self.ctl();
         let tx = c.transaction().map_err(s)?;
         let fila: Option<(String, String)> = tx
-            .query_row("SELECT cliente_id, rol FROM invitaciones WHERE token_hash = ?1 AND caduca > ?2", params![token_hash, ahora()], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
+            .query_row(
+                &format!("SELECT cliente_id, rol FROM invitaciones WHERE token_hash = ?1 AND caduca > ?2 AND {SIN_ARCHIVADOS}"),
+                params![token_hash, ahora()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()
             .map_err(s)?;
         tx.execute("DELETE FROM invitaciones WHERE token_hash = ?1", [token_hash]).map_err(s)?;
@@ -731,9 +812,11 @@ impl Almacen for Sqlite {
         let mut c = self.ctl();
         let tx = c.transaction().map_err(s)?;
         let fila: Option<(String, String)> = tx
-            .query_row("SELECT cliente_id, emparejamiento_id FROM codigos WHERE codigo_hash = ?1 AND caduca > ?2", params![codigo_hash, ahora()], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
+            .query_row(
+                &format!("SELECT cliente_id, emparejamiento_id FROM codigos WHERE codigo_hash = ?1 AND caduca > ?2 AND {SIN_ARCHIVADOS}"),
+                params![codigo_hash, ahora()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()
             .map_err(s)?;
         tx.execute("DELETE FROM codigos WHERE codigo_hash = ?1", [codigo_hash]).map_err(s)?;
@@ -764,9 +847,11 @@ impl Almacen for Sqlite {
     fn codigo_varios(&self, codigo_hash: &str) -> R<Option<(String, String)>> {
         let fila: Option<(String, String, String)> = self
             .ctl()
-            .query_row("SELECT codigo_hash, cliente_id, lote_id FROM codigos_varios WHERE codigo_hash = ?1", [codigo_hash], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })
+            .query_row(
+                &format!("SELECT codigo_hash, cliente_id, lote_id FROM codigos_varios WHERE codigo_hash = ?1 AND {SIN_ARCHIVADOS}"),
+                [codigo_hash],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
             .optional()
             .map_err(s)?;
         // La búsqueda va por el hash (un SHA-256 de un código de ≈ 79 bits: lo que tarde no dice
@@ -774,7 +859,10 @@ impl Almacen for Sqlite {
         Ok(fila.filter(|(h, _, _)| bool::from(subtle::ConstantTimeEq::ct_eq(h.as_bytes(), codigo_hash.as_bytes()))).map(|(_, c, l)| (c, l)))
     }
     fn cliente_de_lote(&self, lote: &str) -> R<Option<String>> {
-        self.ctl().query_row("SELECT cliente_id FROM codigos_varios WHERE lote_id = ?1", [lote], |r| r.get(0)).optional().map_err(s)
+        self.ctl()
+            .query_row(&format!("SELECT cliente_id FROM codigos_varios WHERE lote_id = ?1 AND {SIN_ARCHIVADOS}"), [lote], |r| r.get(0))
+            .optional()
+            .map_err(s)
     }
     fn indexar_equipo(&self, equipo: &str, cliente: &str) -> R<()> {
         self.ctl().execute("INSERT INTO indice_equipos (equipo_id, cliente_id) VALUES (?1, ?2)", [equipo, cliente]).map_err(s)?;
@@ -795,7 +883,9 @@ impl Almacen for Sqlite {
     }
     fn usar_ficha(&self, hash: &str, ahora: Ts) -> R<Option<String>> {
         let c = self.ctl();
-        let n = c.execute("UPDATE fichas SET usos = usos - 1 WHERE hash = ?1 AND usos > 0 AND caduca > ?2", params![hash, ahora]).map_err(s)?;
+        let n = c
+            .execute(&format!("UPDATE fichas SET usos = usos - 1 WHERE hash = ?1 AND usos > 0 AND caduca > ?2 AND {SIN_ARCHIVADOS}"), params![hash, ahora])
+            .map_err(s)?;
         if n == 0 {
             return Ok(None);
         }
@@ -1934,7 +2024,7 @@ impl Almacen for Sqlite {
 
     fn todos_los_clientes(&self) -> R<Vec<ClienteCtx>> {
         let c = self.ctl();
-        let mut st = c.prepare("SELECT id FROM clientes").map_err(s)?;
+        let mut st = c.prepare("SELECT id FROM clientes WHERE archivado IS NULL").map_err(s)?;
         let filas = st.query_map([], |r| r.get::<_, String>(0)).map_err(s)?;
         Ok(filas.filter_map(Result::ok).map(|id| ClienteCtx::autorizado(&id)).collect())
     }
@@ -1944,12 +2034,14 @@ impl Almacen for Sqlite {
             .prepare(
                 "SELECT c.id, c.nombre, c.creado, \
                    (SELECT COUNT(*) FROM pertenencias p WHERE p.cliente_id = c.id), \
-                   (SELECT COUNT(*) FROM pertenencias p WHERE p.cliente_id = c.id AND p.rol = 'propietario') \
+                   (SELECT COUNT(*) FROM pertenencias p WHERE p.cliente_id = c.id AND p.rol = 'propietario'), c.archivado \
                  FROM clientes c ORDER BY c.nombre COLLATE NOCASE",
             )
             .map_err(s)?;
         let filas = st
-            .query_map([], |r| Ok(ClienteServidor { id: r.get(0)?, nombre: r.get(1)?, creado: r.get(2)?, personas: r.get(3)?, propietarios: r.get(4)? }))
+            .query_map([], |r| {
+                Ok(ClienteServidor { id: r.get(0)?, nombre: r.get(1)?, creado: r.get(2)?, personas: r.get(3)?, propietarios: r.get(4)?, archivado: r.get(5)? })
+            })
             .map_err(s)?;
         filas.collect::<Result<Vec<_>, _>>().map_err(s)
     }

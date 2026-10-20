@@ -228,6 +228,10 @@ pub fn router(st: St) -> Router {
         .route("/api/servidor/informes/logo", get(informe::logo_prestador))
         // Clientes del servidor (v1.34: solo cifras; sin entrar en los clientes)
         .route("/api/servidor/clientes", get(servidor_clientes::listar).post(servidor_clientes::crear_para_otro))
+        // 15nn: borrar (sin equipos, con su nombre), archivar y recuperar un cliente.
+        .route("/api/servidor/clientes/{c}", delete(servidor_clientes::borrar))
+        .route("/api/servidor/clientes/{c}/archivar", post(servidor_clientes::archivar))
+        .route("/api/servidor/clientes/{c}/recuperar", post(servidor_clientes::recuperar))
         .route("/api/servidor/clientes/{c}/cuotas", put(servidor_clientes::poner_cuotas))
         .route("/api/servidor/clientes/{c}/invitacion", post(servidor_clientes::invitar_propietario))
         .route("/api/servidor/cuotas", put(servidor_clientes::poner_predeterminadas))

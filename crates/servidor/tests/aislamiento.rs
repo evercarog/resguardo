@@ -445,3 +445,116 @@ async fn cuotas_de_cada_cliente() {
     assert_eq!(r.json["publico"], true);
     assert!(r.json["url_agentes"].is_null());
 }
+
+/// Las acciones de la auditoría del servidor (en `control.db`).
+fn auditoria_servidor(p: &Prueba) -> Vec<(String, String, String)> {
+    let db = rusqlite::Connection::open(p._dir.path().join("control.db")).unwrap();
+    let mut st = db.prepare("SELECT accion, objetivo, datos FROM auditoria ORDER BY n").unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
+}
+
+/// 15nn: borrar un cliente sin equipos, archivar uno con equipos y recuperarlo.
+#[tokio::test]
+async fn borrar_archivar_y_recuperar_un_cliente() {
+    let p = servidor();
+    let ana = propietario_servidor(&p).await;
+    // A: con un equipo y con Luis de propietario.
+    let r = pedir(&p.app, "POST", "/api/clientes", Some(json!({ "nombre": "Cliente A" })), Some(&ana)).await;
+    let a = r.json["id"].as_str().unwrap().to_string();
+    let r = pedir(&p.app, "POST", &format!("/api/clientes/{a}/invitaciones"), Some(json!({ "rol": "propietario" })), Some(&ana)).await;
+    let luis = aceptar(&p, r.json["enlace"].as_str().unwrap(), "luis@cliente-a.ejemplo.com").await;
+    let (eq, _) = equipo(&p, &ana, &a, "PC-01").await;
+    // Vacío: para otra persona, sin equipos, con cuotas propias y la invitación sin usar.
+    let r = pedir(&p.app, "POST", "/api/servidor/clientes", Some(json!({ "nombre": "Cliente Vacío", "cuotas": { "equipos": 3 } })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    let v = r.json["id"].as_str().unwrap().to_string();
+    let invitacion_v = r.json["invitacion"]["enlace"].as_str().unwrap().to_string();
+    assert!(p.st.db.valor(&format!("cuotas:{v}")).unwrap().is_some());
+    // Un ajuste de otro cliente, que no se puede llevar por delante.
+    let r = pedir(&p.app, "PUT", &format!("/api/servidor/clientes/{a}/cuotas"), Some(json!({ "equipos": 9 })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+
+    // Solo el propietario del servidor (Luis es propietario de A, no del servidor).
+    for (m, ruta, cuerpo) in [
+        ("DELETE", format!("/api/servidor/clientes/{v}"), Some(json!({ "nombre": "Cliente Vacío" }))),
+        ("POST", format!("/api/servidor/clientes/{a}/archivar"), None),
+        ("POST", format!("/api/servidor/clientes/{a}/recuperar"), None),
+    ] {
+        let r = pedir(&p.app, m, &ruta, cuerpo, Some(&luis)).await;
+        assert_eq!(r.estado, StatusCode::FORBIDDEN, "{m} {ruta}: {}", r.texto);
+    }
+
+    // Borrar: no con equipos; el nombre tiene que coincidir.
+    let r = pedir(&p.app, "DELETE", &format!("/api/servidor/clientes/{a}"), Some(json!({ "nombre": "Cliente A" })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::CONFLICT, "{}", r.json);
+    assert!(r.json["mensaje"].as_str().unwrap().contains("1 equipo"), "{}", r.json);
+    let r = pedir(&p.app, "DELETE", &format!("/api/servidor/clientes/{v}"), Some(json!({ "nombre": "cliente vacío" })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.json);
+    let r = pedir(&p.app, "DELETE", &format!("/api/servidor/clientes/{}", uuid::Uuid::new_v4()), Some(json!({ "nombre": "x" })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::NOT_FOUND, "{}", r.json);
+    let archivo_v = p._dir.path().join("clientes").join(format!("{v}.db"));
+    assert!(archivo_v.exists());
+    let r = pedir(&p.app, "DELETE", &format!("/api/servidor/clientes/{v}"), Some(json!({ "nombre": "  Cliente Vacío " })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::NO_CONTENT, "{}", r.texto);
+    // Ya no está: ni en la lista, ni su archivo, ni sus ajustes, ni su invitación.
+    let r = pedir(&p.app, "GET", "/api/servidor/clientes", None, Some(&ana)).await;
+    assert!(!r.texto.contains(&v), "{}", r.texto);
+    assert!(p.st.db.cliente(&v).unwrap().is_none());
+    assert!(!archivo_v.exists());
+    assert!(p.st.db.valor(&format!("cuotas:{v}")).unwrap().is_none());
+    assert!(p.st.db.valor(&format!("cuotas:{a}")).unwrap().is_some(), "lo de A sigue");
+    let token = invitacion_v.split('#').nth(1).unwrap();
+    let cuerpo = json!({ "token": token, "correo": "bea@cliente-vacio.ejemplo.com", "nombre": "Bea", "contrasena": "contraseña de la invitada" });
+    let r = pedir(&p.app, "POST", "/api/invitaciones/aceptar", Some(cuerpo), None).await;
+    assert!(r.estado.is_client_error(), "la invitación se fue con él: {}", r.texto);
+    let r = pedir(&p.app, "DELETE", &format!("/api/servidor/clientes/{v}"), Some(json!({ "nombre": "Cliente Vacío" })), Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::NOT_FOUND);
+
+    // Archivar A: sale de las listas de todos, nadie lo abre y su equipo no entra.
+    let r = pedir(&p.app, "POST", &format!("/api/servidor/clientes/{a}/archivar"), None, Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert!(r.json["archivado"].is_string());
+    for quien in [&ana, &luis] {
+        for ruta in ["/api/cuenta".to_string(), "/api/clientes".to_string(), "/api/panel".to_string()] {
+            let r = pedir(&p.app, "GET", &ruta, None, Some(quien)).await;
+            assert!(!r.texto.contains(&a), "{ruta}: {}", r.texto);
+        }
+        for ruta in [format!("/api/clientes/{a}"), format!("/api/clientes/{a}/equipos")] {
+            let r = pedir(&p.app, "GET", &ruta, None, Some(quien)).await;
+            assert_eq!(r.estado, StatusCode::NOT_FOUND, "{ruta}: {}", r.texto);
+        }
+    }
+    let auth_eq = eq.auth();
+    let informe =
+        || pedir_bytes(&p.app, "POST", "/api/agente/informe", Body::from(json!({ "datos": {} }).to_string()), "application/json", None, Some(&auth_eq));
+    let r = informe().await;
+    assert_eq!((r.estado, r.json["error"].as_str()), (StatusCode::FORBIDDEN, Some("archivado")), "{}", r.texto);
+    assert!(p.st.db.todos_los_clientes().unwrap().iter().all(|c| c.id() != a), "sin avisos ni informes");
+    // El propietario del servidor lo sigue viendo en «Clientes del servidor», marcado.
+    let r = pedir(&p.app, "GET", "/api/servidor/clientes", None, Some(&ana)).await;
+    let fila = r.json["clientes"].as_array().unwrap().iter().find(|c| c["id"] == a.as_str()).unwrap().clone();
+    assert!(fila["archivado"].is_string() && fila["equipos"] == 1, "{fila}");
+    // Archivar otra vez no cambia nada.
+    let r = pedir(&p.app, "POST", &format!("/api/servidor/clientes/{a}/archivar"), None, Some(&ana)).await;
+    assert_eq!(r.json["archivado"], fila["archivado"]);
+
+    // Recuperar: vuelve como estaba.
+    let r = pedir(&p.app, "POST", &format!("/api/servidor/clientes/{a}/recuperar"), None, Some(&ana)).await;
+    assert_eq!(r.estado, StatusCode::OK, "{}", r.json);
+    assert!(r.json["archivado"].is_null());
+    let r = pedir(&p.app, "GET", "/api/cuenta", None, Some(&luis)).await;
+    assert!(r.texto.contains(&a), "{}", r.texto);
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{a}/equipos"), None, Some(&luis)).await;
+    assert!(r.texto.contains("PC-01"), "{}", r.texto);
+    let r = informe().await;
+    assert!(r.estado.is_success(), "{}", r.texto);
+
+    // Todo en la auditoría del servidor; archivar y recuperar, también en la del cliente.
+    let acciones: Vec<_> = auditoria_servidor(&p).into_iter().filter(|(_, o, _)| *o == a || *o == v).collect();
+    for (accion, de) in [("borrar_cliente", &v), ("archivar_cliente", &a), ("recuperar_cliente", &a)] {
+        assert_eq!(acciones.iter().filter(|(x, o, _)| x == accion && o == de).count(), 1, "{accion}: {acciones:?}");
+    }
+    assert!(acciones.iter().any(|(x, _, d)| x == "borrar_cliente" && d.contains("Cliente Vacío")), "{acciones:?}");
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{a}/auditoria"), None, Some(&luis)).await;
+    assert!(r.texto.contains("archivar_cliente") && r.texto.contains("recuperar_cliente"), "{}", r.texto);
+}

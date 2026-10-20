@@ -676,7 +676,7 @@ fn puede_restablecer(db: &dyn crate::almacen::Almacen, yo: &str, su: bool, c: &s
         return Err("La del propietario del servidor no se puede restablecer desde la consola.".into());
     }
     if !su {
-        let suyos = db.clientes_de(cuenta)?;
+        let suyos = db.clientes_de_todos(cuenta)?;
         if suyos.iter().any(|(_, r)| *r == Rol::Propietario) {
             return Err("Es propietario: solo el propietario del servidor puede restablecer su verificación en dos pasos.".into());
         }
