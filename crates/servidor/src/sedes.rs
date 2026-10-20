@@ -29,6 +29,7 @@ pub fn organizacion(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
     let mut orden = Value::Array(Vec::new());
     let mut exclusiones = Vec::new();
     let mut quitadas = Vec::new();
+    let mut inventario = Map::new();
     for (clave, f) in &filas {
         let v = &f.entrada.valor;
         if v.is_null() {
@@ -56,6 +57,10 @@ pub fn organizacion(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
             Clase::EtiquetaCategoria => categorias.push(json!({ "id": sujeto, "nombre": v["nombre"], "etiquetas": v["etiquetas"] })),
             Clase::OrdenEquipos => orden = v["ids"].clone(),
             Clase::GrupoExclusiones => exclusiones.push(json!({ "id": sujeto, "nombre": v["nombre"], "reglas": v["reglas"] })),
+            // 0.8.1 (H2, 15qq): `inventario: { "equipo:<id>" | "repositorio:<equipo>/<id>": { responsable?, … } }`.
+            Clase::Inventario => {
+                inventario.insert(sujeto.to_string(), v);
+            }
             _ => {}
         }
     }
@@ -68,7 +73,7 @@ pub fn organizacion(db: &dyn Almacen, ctx: &ClienteCtx) -> R<Value> {
     destinos.retain(|_, s| existe(s));
     Ok(json!({
         "sedes": sedes, "equipos": equipos, "destinos": destinos, "categorias": categorias, "orden": orden,
-        "exclusiones": exclusiones, "exclusiones_quitadas": quitadas,
+        "exclusiones": exclusiones, "exclusiones_quitadas": quitadas, "inventario": inventario,
     }))
 }
 
@@ -84,7 +89,10 @@ mod tests {
         let c = db.crear_cliente("Cliente de prueba", &base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [3u8; 16]), 24).unwrap();
         let ctx = ClienteCtx::autorizado(&c.id);
         let vacia = organizacion(&db, &ctx).unwrap();
-        assert_eq!(vacia, json!({ "sedes": [], "equipos": {}, "destinos": {}, "categorias": [], "orden": [], "exclusiones": [], "exclusiones_quitadas": [] }));
+        assert_eq!(
+            vacia,
+            json!({ "sedes": [], "equipos": {}, "destinos": {}, "categorias": [], "orden": [], "exclusiones": [], "exclusiones_quitadas": [], "inventario": {} })
+        );
         for (k, v) in [
             ("sede:sur", json!({ "nombre": "Planta Sur" })),
             ("sede:norte", json!({ "nombre": "Oficina Norte", "notas": "Planta baja", "principal": true })),
@@ -107,6 +115,10 @@ mod tests {
         assert_eq!(o["destinos"], json!({ "zona:a:principal": "norte" }));
         assert_eq!(o["categorias"][0]["etiquetas"], json!(["Servidor", "Puesto"]));
         assert_eq!(o["orden"], json!(["e2", "e1"]));
+        // 0.8.1 (H2, 15qq): el inventario, por objeto.
+        dcs::registrar(&db, &ctx, "inventario:equipo:e1", &json!({ "responsable": "Ana", "id_externo": "INV-1" }), false, "Ana", "yo").unwrap();
+        let o = organizacion(&db, &ctx).unwrap();
+        assert_eq!(o["inventario"], json!({ "equipo:e1": { "responsable": "Ana", "id_externo": "INV-1" } }));
     }
 
     /// 0.8.1 (B2, 15y): los grupos de exclusiones, por nombre, y los quitados aparte.

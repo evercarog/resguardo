@@ -1448,6 +1448,8 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_NOTAS,
     // 0.8.1 (H4, 15ss): guarda las pruebas funcionales y su política como datos comunes.
     resguardo_protocolo::datos_cliente::ADMITE_PRUEBAS,
+    // 0.8.1 (H2, 15qq): guarda el inventario de lo protegido (responsable, criticidad…).
+    resguardo_protocolo::datos_cliente::ADMITE_INVENTARIO,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

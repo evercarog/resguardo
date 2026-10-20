@@ -93,6 +93,13 @@ pub enum Clase {
     /// (cada cuántos meses, aviso, plazos por repositorio, objetivos de RTO y RPO) o `null` (la de
     /// por defecto). Solo a agentes con [`ADMITE_PRUEBAS`].
     PruebaPolitica,
+    /// 0.8.1 (H2, 15qq): `inventario:<tipo>:<objeto>` → lo que dice el cliente de un equipo
+    /// (`equipo:<id>`) o de un repositorio (`repositorio:<equipo>/<id>`) para su inventario de lo
+    /// protegido: `{ responsable?, criticidad?, datos_personales?, rto_min?, rpo_min?, id_externo? }`
+    /// (`id_externo`, solo de un equipo: la etiqueta de su inventario) o `null` (nada anotado). Nunca
+    /// el contenido de los datos: solo si hay datos personales, sí o no. Solo a agentes con
+    /// [`ADMITE_INVENTARIO`].
+    Inventario,
 }
 
 impl Clase {
@@ -113,11 +120,12 @@ impl Clase {
             Clase::NotaComentario => "nota.comentario:",
             Clase::PruebaFuncional => "prueba.funcional:",
             Clase::PruebaPolitica => "prueba.politica:",
+            Clase::Inventario => "inventario:",
         }
     }
 }
 
-const CLASES: [Clase; 15] = [
+const CLASES: [Clase; 16] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -133,6 +141,7 @@ const CLASES: [Clase; 15] = [
     Clase::NotaComentario,
     Clase::PruebaFuncional,
     Clase::PruebaPolitica,
+    Clase::Inventario,
 ];
 
 /// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
@@ -400,6 +409,56 @@ fn politica_valida(m: &Map<String, Value>) -> Result<Value, &'static str> {
     Ok(v)
 }
 
+/// 0.8.1 (H2, 15qq): `resumen.admite` de un agente que guarda el inventario de lo protegido
+/// (`inventario:`). A uno anterior no se le manda.
+pub const ADMITE_INVENTARIO: &str = "inventario_comun";
+/// ¿Es un dato del inventario (solo para agentes con [`ADMITE_INVENTARIO`])?
+pub fn es_de_inventario(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::Inventario))
+}
+/// Lo que se anota en el inventario: de equipos y de repositorios.
+pub const TIPOS_INVENTARIO: [&str; 2] = ["equipo", "repositorio"];
+/// La criticidad, de menos a más.
+pub const CRITICIDADES: [&str; 4] = ["baja", "media", "alta", "critica"];
+
+/// El valor de `inventario:<tipo>:<objeto>`, limpio (sin nada anotado: `null`).
+fn inventario_valido(tipo: &str, m: &Map<String, Value>) -> Result<Value, &'static str> {
+    solo_campos(m, &["responsable", "criticidad", "datos_personales", "rto_min", "rpo_min", "id_externo"])?;
+    let mut v = Map::new();
+    if let Some(r) = texto_opcional(m, "responsable", 80, false)? {
+        v.insert("responsable".into(), json!(r));
+    }
+    match m.get("criticidad") {
+        None | Some(Value::Null) => {}
+        Some(c) => {
+            let c = c.as_str().filter(|c| CRITICIDADES.contains(c)).ok_or("Criticidad no válida: baja, media, alta o crítica.")?;
+            v.insert("criticidad".into(), json!(c));
+        }
+    }
+    match m.get("datos_personales") {
+        None | Some(Value::Null) => {}
+        Some(Value::Bool(b)) => {
+            v.insert("datos_personales".into(), json!(b));
+        }
+        _ => return Err("¿Datos personales?: sí o no."),
+    }
+    for (campo, max) in [("rto_min", MAX_RTO_MIN), ("rpo_min", MAX_RPO_MIN)] {
+        if let Some(n) = minutos(m, campo, max)? {
+            if n == 0 {
+                return Err("El RTO o el RPO objetivo: mayor que cero.");
+            }
+            v.insert(campo.into(), json!(n));
+        }
+    }
+    if let Some(id) = texto_opcional(m, "id_externo", 64, false)? {
+        if tipo != "equipo" {
+            return Err("El identificador externo es de un equipo.");
+        }
+        v.insert("id_externo".into(), json!(id));
+    }
+    Ok(if v.is_empty() { Value::Null } else { Value::Object(v) })
+}
+
 /// Una parte de un objeto (equipo, id de una copia o de un repositorio, id de un destino):
 /// letras, cifras y `-_.:@`, de 1 a 128, sin `.` ni `..` solos.
 fn parte_objeto_valida(x: &str) -> bool {
@@ -458,6 +517,7 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
         Clase::NotaObservacion => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_OBSERVACION.contains(&t) && objeto_nota_valido(t, o)),
         Clase::NotaComentario | Clase::PruebaFuncional => id_simple(sujeto),
         Clase::PruebaPolitica => sujeto == "cliente",
+        Clase::Inventario => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_INVENTARIO.contains(&t) && objeto_nota_valido(t, o)),
     };
     ok.then_some((c, sujeto))
 }
@@ -754,6 +814,7 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
         }
         Clase::PruebaFuncional => prueba_valida(m),
         Clase::PruebaPolitica => politica_valida(m),
+        Clase::Inventario => inventario_valido(sujeto.split_once(':').map(|x| x.0).unwrap_or(""), m),
     })();
     r.map_err(str::to_string)
 }
@@ -996,6 +1057,27 @@ mod tests {
             let mut q = pol.clone();
             q[campo] = x;
             assert!(valor_valido("prueba.politica:cliente", &q).is_err(), "{campo}");
+        }
+    }
+
+    /// 0.8.1 (H2, 15qq): el inventario de lo protegido.
+    #[test]
+    fn inventario() {
+        assert_eq!(clase("inventario:equipo:e-1").map(|x| x.0), Some(Clase::Inventario));
+        assert_eq!(clase("inventario:repositorio:e-1/docs").map(|x| x.0), Some(Clase::Inventario));
+        assert!(clase("inventario:copia:e-1/docs").is_none() && clase("inventario:repositorio:e-1").is_none());
+        assert!(es_de_inventario("inventario:equipo:e-1") && !pide_admin("inventario:equipo:e-1"));
+        let v = json!({ "responsable": " Ana ", "criticidad": "alta", "datos_personales": true, "rto_min": 240, "id_externo": "INV-0042" });
+        assert_eq!(
+            valor_valido("inventario:equipo:e-1", &v).unwrap(),
+            json!({ "responsable": "Ana", "criticidad": "alta", "datos_personales": true, "rto_min": 240, "id_externo": "INV-0042" })
+        );
+        assert!(valor_valido("inventario:repositorio:e-1/docs", &v).is_err(), "el identificador externo es de un equipo");
+        assert_eq!(valor_valido("inventario:equipo:e-1", &json!({ "responsable": "" })).unwrap(), Value::Null, "nada anotado");
+        for (campo, malo) in [("criticidad", json!("maxima")), ("datos_personales", json!("si")), ("rto_min", json!(0)), ("contenido", json!("nombres"))] {
+            let mut x = json!({ "responsable": "Ana" });
+            x[campo] = malo;
+            assert!(valor_valido("inventario:equipo:e-1", &x).is_err(), "{campo}");
         }
     }
 

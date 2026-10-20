@@ -2057,6 +2057,8 @@ function datosComunesDe(c: string): DatosComunesCliente {
                 ["sede:sur-2c3d", { nombre: "Planta Sur", notas: "Nave de producción" }],
                 [`sede.equipo:${ID.servidor}`, { sede: "norte-0a1b" }],
                 [`sede.equipo:${ID.recepcion}`, { sede: "norte-0a1b" }],
+                // 0.8.1 (H2, 15qq): lo anotado en el inventario de lo protegido.
+                [`inventario:equipo:${ID.servidor}`, { responsable: "Luis Gómez", criticidad: "critica", datos_personales: true, rto_min: 240, rpo_min: 60, id_externo: "INV-0042" }],
                 [`sede.equipo:${ID.contabilidad}`, { sede: "norte-0a1b" }],
                 [`sede.equipo:${ID.archivos}`, { sede: "sur-2c3d" }],
                 ["etiqueta.categoria:tipo-4e5f", { nombre: "Tipo", etiquetas: ["Servidores"] }],
@@ -2085,6 +2087,8 @@ function organizacionDe(c: string) {
     orden: [] as string[],
     exclusiones: [] as { id: string; nombre: string; reglas: string[] }[],
     exclusiones_quitadas: [] as string[],
+    // 0.8.1 (H2): el inventario de lo protegido.
+    inventario: {} as Record<string, unknown>,
   };
   for (const f of datosComunesDe(c).filas) {
     const v = f.valor as Record<string, unknown> | null;
@@ -2099,6 +2103,7 @@ function organizacionDe(c: string) {
     else if (clase === "sede.destino") o.destinos[sujeto] = String(v.sede);
     else if (clase === "etiqueta.categoria") o.categorias.push({ id: sujeto, nombre: String(v.nombre), etiquetas: (v.etiquetas as string[]) ?? [] });
     else if (clase === "orden.equipos") o.orden = (v.ids as string[]) ?? [];
+    else if (clase === "inventario") o.inventario[sujeto] = v;
   }
   o.sedes.sort((a, b) => a.nombre.localeCompare(b.nombre));
   o.categorias.sort((a, b) => a.nombre.localeCompare(b.nombre));

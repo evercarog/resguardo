@@ -112,6 +112,8 @@ pub fn descripcion(c: &Value) -> Option<String> {
                 x["valor"]["fecha"].as_str().filter(|f| f.len() == 10).map(|f| format!(" del {f}")).unwrap_or_default()
             ),
             Some(dc::Clase::PruebaPolitica) => "la política de pruebas funcionales".to_string(),
+            // 0.8.1 (H2): sin el responsable ni el identificador (no hacen falta en el historial).
+            Some(dc::Clase::Inventario) => "el inventario de un equipo o un repositorio".to_string(),
             None => "un dato".to_string(),
         }
     };
@@ -255,6 +257,7 @@ mod tests {
     #[test]
     fn pruebas_funcionales() {
         assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_PRUEBAS));
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_INVENTARIO));
         let mut v = vinculo("id", "Oficina");
         let p = json!({ "entradas": [
             { "clave": "prueba.funcional:k-1", "valor": {

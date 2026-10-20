@@ -25,8 +25,8 @@ export const admiteDatosCliente = (e: Pick<Equipo, "resumen"> | null | undefined
 /** Los equipos a los que se mandan: confirmados, gestionados desde aquí y con un agente que los guarda. */
 export const equiposQueGuardan = (equipos: Equipo[]) => equipos.filter((e) => e.confirmado && e.modo === "gestionado" && admiteDatosCliente(e));
 
-export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones" | "nota.observacion" | "nota.comentario" | "prueba.funcional" | "prueba.politica";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario", "prueba.funcional", "prueba.politica"];
+export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones" | "nota.observacion" | "nota.comentario" | "prueba.funcional" | "prueba.politica" | "inventario";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario", "prueba.funcional", "prueba.politica", "inventario"];
 
 /** 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda sedes, categorías y orden. */
 export const ADMITE_SEDES = "sedes";
@@ -43,6 +43,7 @@ export const esDeExclusiones = (clave: string) => claseDe(clave)?.clase === "exc
 export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave: string): boolean {
   if (esDeSedes(clave)) return admiteSedes(e);
   if (esDeExclusiones(clave)) return !!e?.resumen?.admite?.includes(ADMITE_EXCLUSIONES);
+  if (claseDe(clave)?.clase === "inventario") return !!e?.resumen?.admite?.includes(ADMITE_INVENTARIO);
   if (esDePruebas(clave)) {
     if (!e?.resumen?.admite?.includes(ADMITE_PRUEBAS)) return false;
     // Como los comentarios: con el documento del equipo casi lleno, las pruebas siguen en esta consola.
@@ -59,6 +60,8 @@ export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave
   return true;
 }
 
+/** 0.8.1 (H2, 15qq): `resumen.admite` de un agente que guarda el inventario de lo protegido. */
+export const ADMITE_INVENTARIO = "inventario_comun";
 /** 0.8.1 (H4, 15ss): `resumen.admite` de un agente que guarda las pruebas funcionales y su política. */
 export const ADMITE_PRUEBAS = "pruebas_comunes";
 /** ¿Es una prueba funcional o su política? (Solo a los agentes con `admite: "pruebas_comunes"`.) */
@@ -112,7 +115,9 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
               ? idSimple(sujeto)
               : clase === "prueba.politica"
                 ? sujeto === "cliente"
-                : idDestinoValido(sujeto);
+                : clase === "inventario"
+                  ? ((i) => i > 0 && ["equipo", "repositorio"].includes(sujeto.slice(0, i)) && objetoNotaValido(sujeto.slice(0, i), sujeto.slice(i + 1)))(sujeto.indexOf(":"))
+                  : idDestinoValido(sujeto);
   return ok ? { clase, sujeto } : null;
 }
 
@@ -327,6 +332,9 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
       const r = v.resultado === "ok" ? "bien" : v.resultado === "parcial" ? "con incidencias" : v.resultado === "fallo" ? "falló" : "";
       return typeof v.fecha === "string" ? `del ${v.fecha}${r ? `, ${r}` : ""}` : "la tiene";
     }
+    case "inventario":
+      if (!v) return "nada anotado";
+      return [v.responsable ? `responsable ${v.responsable}` : "", v.criticidad ? `criticidad ${v.criticidad}` : "", v.datos_personales === true ? "con datos personales" : v.datos_personales === false ? "sin datos personales" : ""].filter(Boolean).join(", ") || "anotado";
     case "prueba.politica":
       if (!v) return "la de por defecto";
       return v.activo === false ? "apagada" : `cada ${v.meses} ${v.meses === 1 ? "mes" : "meses"}, aviso ${v.aviso_dias} días antes`;
@@ -375,6 +383,9 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
       return "Una prueba funcional";
     case "prueba.politica":
       return "Política de pruebas funcionales";
+    case "inventario":
+      return "Inventario de lo protegido";
+
 
     default:
       return f.clave;

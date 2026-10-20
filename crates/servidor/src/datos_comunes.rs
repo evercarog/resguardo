@@ -128,7 +128,9 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
         // 0.8.0 (D1, D2): las sedes, las categorías y el orden no tienen otro sitio aquí: viven
         // solo como datos comunes (`crate::sedes`). Nunca chocan con «lo de aquí»: gana el más reciente.
         // 0.8.1 (B2, 15y): los grupos de exclusiones, igual (`crate::sedes::organizacion` los lee).
-        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones => Value::Null,
+        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones | Clase::Inventario => {
+            Value::Null
+        }
         // 0.8.1 (B5, 15pp): la observación de aquí (vacía, nada) y el comentario de aquí, si existe.
         Clase::NotaObservacion => match sujeto.split_once(':') {
             Some((t, o)) => db.observacion(ctx, t, o)?.filter(|o| !o.texto.trim().is_empty()).map(|o| json!({ "texto": o.texto })).unwrap_or(Value::Null),
@@ -292,7 +294,8 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
             }
         }
         // 0.8.0 (D1, D2): su único sitio es el propio dato común (lo guarda `registrar` o `recibir`).
-        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones => {}
+        Clase::Sede | Clase::SedeEquipo | Clase::SedeDestino | Clase::EtiquetaCategoria | Clase::OrdenEquipos | Clase::GrupoExclusiones | Clase::Inventario => {
+        }
         // 0.8.1 (B5, 15pp): a las notas de aquí, como si la hubiera puesto «Ana (desde la consola X)».
         Clase::NotaObservacion => {
             if let Some((t, o)) = sujeto.split_once(':') {
