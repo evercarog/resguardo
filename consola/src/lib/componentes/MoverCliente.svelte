@@ -16,6 +16,7 @@
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import BloqueCopiable from "./BloqueCopiable.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
 
   let { cliente, equipos, onclose, alEnviar }: { cliente: Cliente; equipos: Equipo[]; onclose: () => void; alEnviar: (enviados: number) => void } = $props();
@@ -44,7 +45,7 @@
 
   async function mover(e: SubmitEvent) {
     e.preventDefault();
-    if (!destino || typeof destino === "string") return;
+    if (!destino || typeof destino === "string" || !aMover.length || !entendido || !claveAdmin || ocupado) return;
     error = "";
     ocupado = true;
     let hechos = 0;
@@ -121,7 +122,7 @@
       <div class="notice notice-info">
         <p>Cada equipo contesta «en marcha», se da de alta en el nuevo, comprueba su identidad, sube su configuración y solo entonces deja este. Si en 24 h no lo consigue, sigue aquí y se crea un aviso.</p>
       </div>
-      <label class="check"><input type="checkbox" bind:checked={entendido} />Entiendo que, al llegar, los equipos dejarán de recibir órdenes desde este servidor.</label>
+      <label class="check"><input id="mc-entendido" type="checkbox" bind:checked={entendido} />Entiendo que, al llegar, los equipos dejarán de recibir órdenes desde este servidor.</label>
 
       <CampoClave requerido id="clave-admin" etiqueta="Clave de administración" bind:value={claveAdmin}>
         {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
@@ -131,9 +132,20 @@
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={() => (paso = "cliente")}>Atrás</button>
-        <button class="btn btn-primary" disabled={ocupado || !destino || typeof destino === "string" || !aMover.length || !entendido || !claveAdmin}>
+        <BotonFalta
+          disabled={ocupado}
+          falta={!destino || typeof destino === "string"
+            ? { texto: "Pega el bloque del servidor nuevo", campo: "bloque-servidor", yaVisible: typeof destino === "string" }
+            : !aMover.length
+              ? { texto: "Elige al menos un equipo" }
+              : !entendido
+                ? { texto: "Marca «Entiendo…»", campo: "mc-entendido" }
+                : !claveAdmin
+                  ? { texto: "Falta la clave de administración", campo: "clave-admin" }
+                  : null}
+        >
           <KeyRound size={15} />Mover {plural(aMover.length, "equipo", "equipos")}
-        </button>
+        </BotonFalta>
       </footer>
     </form>
   {/if}

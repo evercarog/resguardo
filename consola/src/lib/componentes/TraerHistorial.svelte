@@ -14,6 +14,7 @@
   import type { Cliente, Equipo, Orden, RepositorioResumen } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
   import FormRepoExistente from "./FormRepoExistente.svelte";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
@@ -109,6 +110,7 @@
 
   async function traer(e: SubmitEvent) {
     e.preventDefault();
+    if (!listo || ocupado) return;
     error = "";
     ocupado = true;
     try {
@@ -243,7 +245,18 @@
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cancelar</button>
         {#if modo === "otro"}<button type="button" class="btn" disabled={!repoExistenteCompleto(origen) || !claveAdmin || ocupado} onclick={probar}><FlaskConical size={15} />Probar</button>{/if}
-        <button class="btn btn-primary" disabled={!listo || ocupado}><KeyRound size={15} />Traer el historial</button>
+        <BotonFalta
+          disabled={ocupado}
+          falta={modo === "equipo" && !origenId
+            ? { texto: "Elige el repositorio de origen", campo: "h-origen" }
+            : !claveAdmin
+              ? { texto: "Falta la clave de administración", campo: "h-admin" }
+              : modo !== "equipo" && !probado
+                ? { texto: "Antes, pulsa «Probar»" }
+                : errorF
+                  ? { texto: errorF, yaVisible: true }
+                  : null}><KeyRound size={15} />Traer el historial</BotonFalta
+        >
       </footer>
     </form>
   {/if}

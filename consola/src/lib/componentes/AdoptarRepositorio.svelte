@@ -28,6 +28,7 @@
   import type { Cliente, DestinoResumen, Equipo } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
   import FormRepoExistente from "./FormRepoExistente.svelte";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
@@ -146,7 +147,7 @@
 
   async function adoptar(e: SubmitEvent) {
     e.preventDefault();
-    if (!equipo || !probado) return;
+    if (!equipo || !probado || probado.en_uso || !nombre.trim() || ocupado) return;
     error = "";
     ocupado = true;
     try {
@@ -293,7 +294,10 @@
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         {#if onvolver}<button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onvolver}><ArrowLeft size={15} />Crear uno nuevo</button>{/if}
         <button type="button" class="btn" disabled={!listoParaProbar || ocupado} onclick={probar}><FlaskConical size={15} />Probar</button>
-        <button class="btn btn-primary" disabled={!probado || !!probado.en_uso || !nombre.trim() || ocupado}><KeyRound size={15} />Usar este repositorio</button>
+        <BotonFalta
+          disabled={ocupado || !!probado?.en_uso}
+          falta={!probado ? { texto: listoParaProbar ? "Antes, pulsa «Probar»" : "Rellena lo de arriba y pulsa «Probar»" } : !nombre.trim() ? { texto: "Falta el nombre", campo: "a-nombre" } : null}><KeyRound size={15} />Usar este repositorio</BotonFalta
+        >
       </footer>
     </form>
   {/if}

@@ -14,6 +14,7 @@
   import type { Cliente, Equipo } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
 
   let { cliente, equipos, onclose, alEnviar }: { cliente: Cliente; equipos: Equipo[]; onclose: () => void; alEnviar: (texto: string) => void } = $props();
@@ -39,6 +40,7 @@
 
   async function enviar(e: SubmitEvent) {
     e.preventDefault();
+    if (ocupado || hayErrores || repetidos || !activos.length || !claveAdmin) return;
     error = "";
     ocupado = true;
     let hechos = 0;
@@ -109,9 +111,20 @@
     <footer>
       {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
       <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cancelar</button>
-      <button class="btn btn-primary" disabled={ocupado || hayErrores || repetidos || !activos.length || !claveAdmin}>
+      <BotonFalta
+        disabled={ocupado}
+        falta={!activos.length
+          ? { texto: "No hay equipos confirmados a los que mandarlo" }
+          : hayErrores
+            ? { texto: "Arregla el bloque que no se entiende", yaVisible: true }
+            : repetidos
+              ? { texto: "Quita el servidor repetido", yaVisible: true }
+              : !claveAdmin
+                ? { texto: "Falta la clave de administración", campo: "clave-admin" }
+                : null}
+      >
         <KeyRound size={15} />{validos.length ? "Mandar a los equipos" : "Quitar los respaldos"}
-      </button>
+      </BotonFalta>
     </footer>
   </form>
 </Modal>

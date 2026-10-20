@@ -31,6 +31,7 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
+  import BotonFalta from "$lib/componentes/BotonFalta.svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Pasos from "$lib/componentes/Pasos.svelte";
   import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
@@ -194,7 +195,7 @@
 
   async function confirmar(e: SubmitEvent) {
     e.preventDefault();
-    if (!emp || !estadoEmp?.equipo || !actual.cliente) return;
+    if (!emp || !estadoEmp?.equipo || !actual.cliente || !claveValida || ocupado || (!emp.codigo && !codigoEscrito.trim())) return;
     error = "";
     // v1.48: el código lo generó otro navegador: se escribe aquí y se comprueba con su hash.
     if (!emp.codigo) {
@@ -288,6 +289,16 @@
   /** El error solo cuando ya se ha escrito algo (vacío, se explica sin rojo). */
   const errorServidor = $derived(servidorValido || !servidorUrl.trim() ? null : "Escribe la dirección con https:// y el puerto, sin ruta (p. ej. https://192.168.1.20:8443).");
   const listoParaPreparar = $derived(!!nombreEq.trim() && !errorNombreEq && servidorValido);
+  /** G2: qué falta para preparar el instalador o la línea (BotonFalta). */
+  const faltaPreparar = $derived(
+    !nombreEq.trim()
+      ? { texto: "Falta el nombre del equipo", campo: "p-nombre" }
+      : errorNombreEq
+        ? { texto: errorNombreEq, campo: "p-nombre", yaVisible: true }
+        : !servidorValido
+          ? { texto: "Falta la dirección del servidor", campo: "p-servidor", yaVisible: !!errorServidor }
+          : null,
+  );
 
   // La lista de preparados, cada 5 s. El efecto depende SOLO del cliente: antes también
   // de la lista que él mismo cambiaba, y pedía sin parar (lib/preparados.svelte.ts).
@@ -620,7 +631,7 @@
           <div class="field">
             <span class="field-label">Los equipos llegarán a este servidor en</span>
             {#if editarServidor || !servidorValido}
-              <input class="input mono" bind:value={servidorUrl} spellcheck="false" aria-label="Dirección del servidor para los equipos" placeholder="https://192.168.1.20:8443" aria-required="true" aria-invalid={!!errorServidor} aria-describedby="servidor-url-ayuda" />
+              <input id="p-servidor" class="input mono" bind:value={servidorUrl} spellcheck="false" aria-label="Dirección del servidor para los equipos" placeholder="https://192.168.1.20:8443" aria-required="true" aria-invalid={!!errorServidor} aria-describedby="servidor-url-ayuda" />
               {#if errorServidor}<p class="error-campo" id="servidor-url-ayuda">{errorServidor}</p>{:else if !servidorUrl.trim()}<span class="field-hint" id="servidor-url-ayuda">La dirección con la que los equipos de la red llegan a este servidor, con https:// y el puerto (por ejemplo, https://192.168.1.20:8443).</span>{:else}<span class="field-hint" id="servidor-url-ayuda">La que usan los equipos de la red (por ejemplo, la IP del servidor), no la de este navegador si es otra.</span>{/if}
             {:else}
               <span class="dir-servidor"><code>{servidorUrl}</code><button type="button" class="link" onclick={() => (editarServidor = true)}>Cambiar</button></span>
@@ -629,9 +640,9 @@
           {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
           <div class="fin">
             {#if so === "windows"}
-              <BotonCargando class="btn btn-primary" disabled={!listoParaPreparar || bloqueado} cargando={preparando} textoCargando="Preparando el instalador…" onclick={descargarListo}><Download size={16} />Descargar instalador listo</BotonCargando>
+              <BotonFalta disabled={bloqueado} falta={faltaPreparar} cargando={preparando} textoCargando="Preparando el instalador…" onclick={descargarListo}><Download size={16} />Descargar instalador listo</BotonFalta>
             {:else}
-              <BotonCargando class="btn btn-primary" disabled={!listoParaPreparar || bloqueado} cargando={preparando} textoCargando="Preparando…" onclick={prepararLinea}><Terminal size={16} />Preparar la línea</BotonCargando>
+              <BotonFalta disabled={bloqueado} falta={faltaPreparar} cargando={preparando} textoCargando="Preparando…" onclick={prepararLinea}><Terminal size={16} />Preparar la línea</BotonFalta>
             {/if}
           </div>
           {#if bloqueado}<p class="faint pequeno-izq" role="status">{podrasPedirEn((esperarHasta - reloj.ahora) / 1000)}</p>{/if}
@@ -821,13 +832,26 @@
             <TriangleAlert size={16} />
             <p>Guárdala en un gestor de contraseñas o imprímela. <strong>Si la pierdes</strong>, los equipos siguen copiando, pero para cambiarlos habrá que restablecerla en cada uno.</p>
           </div>
-          <label class="switch-row"><input type="checkbox" bind:checked={guardada} /><span>La he guardado en un sitio seguro</span></label>
+          <label class="switch-row"><input id="clave-guardada" type="checkbox" bind:checked={guardada} /><span>La he guardado en un sitio seguro</span></label>
         {/if}
         {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
         <footer class="pie">
           {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{paso2}</span>{/if}
           <button type="button" class="btn btn-ghost" onclick={cancelar} disabled={ocupado}>Cancelar</button>
-          <button class="btn btn-primary" disabled={!claveValida || ocupado || (!!emp && !emp.codigo && !codigoEscrito.trim())}>Dar de alta {estadoEmp.equipo.nombre}</button>
+          <BotonFalta
+            disabled={ocupado}
+            falta={!clave
+              ? { texto: "Falta la clave de administración", campo: "clave-admin" }
+              : primero && clave.length < 16
+                ? { texto: "La clave: al menos 16 caracteres", campo: "clave-admin" }
+                : primero && clave !== repetir
+                  ? { texto: "Las dos claves no coinciden", campo: "clave-repetir" }
+                  : primero && !guardada
+                    ? { texto: "Marca «La he guardado»", campo: "clave-guardada" }
+                    : !!emp && !emp.codigo && !codigoEscrito.trim()
+                      ? { texto: "Falta el código de este equipo", campo: "codigo-escrito" }
+                      : null}>Dar de alta {estadoEmp.equipo.nombre}</BotonFalta
+          >
         </footer>
       </form>
     </section>

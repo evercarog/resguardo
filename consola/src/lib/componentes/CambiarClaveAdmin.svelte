@@ -32,6 +32,7 @@
   import type { Tono } from "$lib/salud";
   import Ayuda from "./Ayuda.svelte";
   import BloqueCopiable from "./BloqueCopiable.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
   import Chip from "./Chip.svelte";
 
@@ -210,12 +211,27 @@
           {#if otrasConsolas.length}También lo gestionan {otrasConsolas.join(", ")}: allí valdrá la nueva en cuanto cada equipo la aplique (quien las use necesitará la clave nueva).{/if}
         </p>
       </div>
-      <label class="switch-row"><input type="checkbox" bind:checked={guardada} /><span>He guardado la clave nueva en un sitio seguro (un gestor de contraseñas o impresa)</span></label>
+      <label class="switch-row"><input id="ca-guardada" type="checkbox" bind:checked={guardada} /><span>He guardado la clave nueva en un sitio seguro (un gestor de contraseñas o impresa)</span></label>
       {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
       <footer>
         {#if pasoTxt}<span class="espera" role="status">{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" onclick={onclose} disabled={ocupado}>Cancelar</button>
-        <button class="btn btn-primary" disabled={!valida || ocupado}><KeyRound size={15} />Cambiar la clave</button>
+        <BotonFalta
+          disabled={ocupado}
+          falta={!actual
+            ? { texto: "Falta la clave actual", campo: "ca-actual" }
+            : [...nueva].length < MIN
+              ? { texto: `La clave nueva: al menos ${MIN} caracteres`, campo: "ca-nueva" }
+              : f.nivel < 2
+                ? { texto: "La clave nueva es poco segura", campo: "ca-nueva" }
+                : nueva === actual
+                  ? { texto: "La clave nueva es igual que la actual", campo: "ca-nueva" }
+                  : nueva !== repetida
+                    ? { texto: "Las dos claves nuevas no coinciden", campo: "ca-repetida" }
+                    : !guardada
+                      ? { texto: "Marca «He guardado la clave nueva»", campo: "ca-guardada" }
+                      : null}><KeyRound size={15} />Cambiar la clave</BotonFalta
+        >
       </footer>
     </form>
   {:else if paso === "enviando"}

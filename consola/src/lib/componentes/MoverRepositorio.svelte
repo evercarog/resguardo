@@ -39,6 +39,7 @@
   import type { Cliente, Configuracion, DestinoResumen, Equipo, Orden, RepositorioResumen } from "$lib/tipos";
   import AlertaLlaves from "./AlertaLlaves.svelte";
   import Ayuda from "./Ayuda.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
   import SeGuardaEn from "./SeGuardaEn.svelte";
@@ -234,7 +235,7 @@
   async function empezar(e: SubmitEvent) {
     e.preventDefault();
     const o = opcion;
-    if (!o || !nombre.trim()) return;
+    if (!o || !nombre.trim() || !claveAdmin) return;
     const conAcceso = !!o.almacen && !o.destino;
     pasos = pasosIniciales(conAcceso, o.almacen?.nombre);
     vista = "pasos";
@@ -316,6 +317,7 @@
   /** Seguir donde se quedó (también tras volver a abrir). */
   async function seguir(e?: SubmitEvent) {
     e?.preventDefault();
+    if (e && !claveAdmin) return;
     await correr(async () => {
       await prepararClave();
       await restoDePasos();
@@ -525,7 +527,7 @@
         </CampoClave>
         <footer>
           <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-          <button class="btn btn-primary" disabled={!opcion || !nombre.trim() || !claveAdmin}><KeyRound size={15} />Empezar</button>
+          <BotonFalta falta={!opcion ? { texto: "Elige adónde moverlo" } : !nombre.trim() ? { texto: "Falta el nombre", campo: "m-nombre" } : !claveAdmin ? { texto: "Falta la clave de administración", campo: "m-admin" } : null}><KeyRound size={15} />Empezar</BotonFalta>
         </footer>
       {/if}
     </form>
@@ -561,8 +563,8 @@
                 </article>
                 <div class="kit-acc">
                   <button type="button" class="btn btn-sm" onclick={() => window.print()}><Printer size={14} />Imprimir o guardar en PDF</button>
-                  <label class="switch-row"><input type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
-                  <button type="button" class="btn btn-sm btn-primary" disabled={!impreso || !!errorPw} onclick={() => kitListo?.()}><Check size={14} />Seguir</button>
+                  <label class="switch-row"><input id="m-impreso" type="checkbox" bind:checked={impreso} /><span>He guardado el kit en un sitio seguro</span></label>
+                  <BotonFalta type="button" class="btn btn-sm btn-primary" falta={errorPw ? { texto: errorPw, yaVisible: true } : !impreso ? { texto: "Marca «He guardado el kit»", campo: "m-impreso" } : null} onclick={() => kitListo?.()}><Check size={14} />Seguir</BotonFalta>
                 </div>
               {/if}
             </div>
@@ -601,7 +603,7 @@
               {#if plan}<button type="button" class="btn btn-ghost hueco" use:tip={"Olvida lo hecho aquí (el repositorio nuevo, si se creó, se queda en el equipo)"} onclick={empezarDeNuevo}>Empezar de nuevo</button>{/if}
               <button type="button" class="btn btn-ghost" onclick={onclose}>Cerrar</button>
               {#if plan}
-                <button class="btn btn-primary" disabled={!claveAdmin}><KeyRound size={15} />Seguir</button>
+                <BotonFalta falta={!claveAdmin ? { texto: "Falta la clave de administración", campo: "m-admin2" } : null}><KeyRound size={15} />Seguir</BotonFalta>
               {:else}
                 <button type="button" class="btn btn-primary" onclick={empezarDeNuevo}>Volver a empezar</button>
               {/if}

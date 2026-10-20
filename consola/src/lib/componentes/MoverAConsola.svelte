@@ -21,6 +21,7 @@
   import type { Cliente, Equipo, Orden } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
 
   let { cliente, equipos, onclose, alTerminar }: { cliente: Cliente; equipos: Equipo[]; onclose: () => void; alTerminar?: () => void } = $props();
@@ -75,7 +76,7 @@
 
   async function conectar(e: SubmitEvent) {
     e.preventDefault();
-    if (!datos) return;
+    if (!datos || !comprobado || !claveAdmin || !movibles.length || ocupado) return;
     error = "";
     cambiadas = null;
     ocupado = true;
@@ -118,6 +119,7 @@
 
   async function dejar(e: SubmitEvent) {
     e.preventDefault();
+    if (!listos.length || !claveAdmin || ocupado) return;
     error = "";
     ocupado = true;
     try {
@@ -184,7 +186,7 @@
           <div><span class="faint">Autoridad TLS</span><code>{huellaConPuntos(datos.huella_ca)}</code></div>
           <div><span class="faint">Vale hasta</span><span>{fechaLarga(datos.caduca)}</span></div>
         </div>
-        <label class="check"><input type="checkbox" bind:checked={comprobado} /><ShieldCheck size={14} />He comprobado las huellas de palabra con quien administra la otra consola.</label>
+        <label class="check"><input id="mac-comprobado" type="checkbox" bind:checked={comprobado} /><ShieldCheck size={14} />He comprobado las huellas de palabra con quien administra la otra consola.</label>
         <p class="faint pequeno">Se moverán {plural(movibles.length, "equipo", "equipos")}.{#if sinSoporte.length} {plural(sinSoporte.length, "equipo tiene", "equipos tienen")} un agente anterior y se quedarán aquí ({sinSoporte.map((e) => e.nombre).join(", ")}): actualízalos o usa «Mover…» (cambiar de servidor).{/if}</p>
         <CampoClave requerido id="clave-mover" etiqueta="Clave de administración" bind:value={claveAdmin}>
           {#snippet extra()}<Ayuda id="clave-admin" />{/snippet}
@@ -195,7 +197,18 @@
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cancelar</button>
-        <button class="btn btn-primary" disabled={ocupado || !datos || !comprobado || !claveAdmin || !movibles.length}><KeyRound size={15} />1. Conectar a la otra</button>
+        <BotonFalta
+          disabled={ocupado}
+          falta={!datos
+            ? { texto: "Pega el código de la otra consola", campo: "codigo-mover" }
+            : !movibles.length
+              ? { texto: "Ningún equipo se puede mover" }
+              : !comprobado
+                ? { texto: "Marca «He comprobado las huellas»", campo: "mac-comprobado" }
+                : !claveAdmin
+                  ? { texto: "Falta la clave de administración", campo: "clave-mover" }
+                  : null}><KeyRound size={15} />1. Conectar a la otra</BotonFalta
+        >
       </footer>
     </form>
   {:else}
@@ -220,7 +233,7 @@
           <footer>
             {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
             <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cerrar</button>
-            <button class="btn btn-primary" disabled={ocupado || !listos.length || !claveAdmin}>3. Dejar esta consola en {plural(listos.length, "equipo", "equipos")}</button>
+            <BotonFalta disabled={ocupado} falta={!listos.length ? { texto: "Aún no hay ninguno allí" } : !claveAdmin ? { texto: "Falta la clave de administración", campo: "clave-dejar" } : null}>3. Dejar esta consola en {plural(listos.length, "equipo", "equipos")}</BotonFalta>
           </footer>
         </form>
       {:else if paso === "dejar"}

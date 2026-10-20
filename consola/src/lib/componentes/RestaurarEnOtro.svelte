@@ -20,6 +20,7 @@
   import type { KitDesdeEspejo } from "$lib/espejo";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
 
@@ -104,7 +105,8 @@
 
   async function importar(e: SubmitEvent) {
     e.preventDefault();
-    if (!destino) return;
+    // Con Intro en un campo también llega aquí: el botón ya no va con `disabled`.
+    if (!destino || !listo || ocupado) return;
     error = "";
     ocupado = true;
     let paraLlaves: Equipo = destino;
@@ -261,7 +263,7 @@
           </div>
         {/if}
         <div class="field">
-          <label class="field-label" for="k-repo">{kitInicial ? "Repositorio dentro del espejo" : "Id del repositorio"}</label>
+          <label class="field-label" for="k-repo">{kitInicial ? "Repositorio dentro del espejo" : "Identificador del repositorio"}</label>
           <input id="k-repo" class="input mono" bind:value={kitRepo} spellcheck="false" placeholder="documentos-recepcion-1a2b" />
           <span class="field-hint">{kitInicial ? "Su carpeta dentro del espejo (<equipo>/<repositorio>)." : "Está en el kit, junto al nombre del repositorio."}</span>
         </div>
@@ -293,7 +295,24 @@
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={onclose}>Cancelar</button>
-        <button class="btn btn-primary" disabled={!listo || ocupado}><KeyRound size={15} />Confirmar con las dos claves</button>
+        <BotonFalta
+          disabled={ocupado}
+          falta={modo === "vivo" && !elegido
+            ? { texto: "Elige el repositorio", campo: "o-origen" }
+            : modo !== "vivo" && !kitDonde.trim()
+              ? { texto: "Falta dónde está el repositorio", campo: "k-donde" }
+              : modo !== "vivo" && !kitRepo.trim()
+                ? { texto: "Falta el repositorio", campo: "k-repo" }
+                : !destino
+                  ? { texto: "Elige dónde restaurar", campo: "o-destino" }
+                  : !nombre.trim()
+                    ? { texto: "Falta el nombre", campo: "o-nombre" }
+                    : !contrasena
+                      ? { texto: "Falta la contraseña del repositorio", campo: "o-contrasena" }
+                      : !claveAdmin
+                        ? { texto: "Falta la clave de administración", campo: "o-clave" }
+                        : null}><KeyRound size={15} />Confirmar con las dos claves</BotonFalta
+        >
       </footer>
     </form>
   {/if}

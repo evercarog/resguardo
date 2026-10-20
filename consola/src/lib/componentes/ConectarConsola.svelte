@@ -26,6 +26,7 @@
   import type { Cliente, Equipo, Orden } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
+  import BotonFalta from "./BotonFalta.svelte";
   import CampoClave from "./CampoClave.svelte";
 
   let {
@@ -101,7 +102,7 @@
 
   async function conectar(e: SubmitEvent) {
     e.preventDefault();
-    if (!datos) return;
+    if (!datos || !aConectar.length || !claveAdmin || ocupado) return;
     error = "";
     cambiadas = null;
     ocupado = true;
@@ -199,11 +200,11 @@
           <ShieldCheck size={16} />
           <p>Compara de palabra (por teléfono, en persona) la <strong>identidad</strong> y la <strong>autoridad TLS</strong> con quien administra la otra consola. Esa consola verá los nombres y el estado de los equipos, como esta; nunca las contraseñas ni los archivos.</p>
         </div>
-        <label class="check"><input type="checkbox" bind:checked={comprobado} />He comprobado las huellas: es la consola que esperaba.</label>
+        <label class="check"><input id="cc-comprobado" type="checkbox" bind:checked={comprobado} />He comprobado las huellas: es la consola que esperaba.</label>
       {/if}
       <footer>
         <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-        <button type="button" class="btn btn-primary" disabled={!datos || !comprobado} onclick={() => (paso = "equipos")}>Seguir</button>
+        <BotonFalta type="button" falta={!datos ? { texto: "Pega el código de conexión", campo: "codigo-conexion" } : !comprobado ? { texto: "Marca «He comprobado las huellas»", campo: "cc-comprobado" } : null} onclick={() => (paso = "equipos")}>Seguir</BotonFalta>
       </footer>
     </div>
   {:else if paso === "equipos" && datos}
@@ -230,9 +231,9 @@
       <footer>
         {#if ocupado}<span class="espera" role="status"><LoaderCircle size={15} class="spin" />{pasoTxt}</span>{/if}
         <button type="button" class="btn btn-ghost" disabled={ocupado} onclick={() => (paso = "codigo")}>Atrás</button>
-        <button class="btn btn-primary" disabled={ocupado || !aConectar.length || !claveAdmin}>
+        <BotonFalta disabled={ocupado} falta={!aConectar.length ? { texto: "Elige al menos un equipo" } : !claveAdmin ? { texto: "Falta la clave de administración", campo: "clave-admin-conectar" } : null}>
           <KeyRound size={15} />Conectar {plural(aConectar.length, "equipo", "equipos")}
-        </button>
+        </BotonFalta>
       </footer>
     </form>
   {:else}
