@@ -61,6 +61,7 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
+  import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import RestaurarEnOtro from "$lib/componentes/RestaurarEnOtro.svelte";
   import LineaTiempoVersiones from "$lib/componentes/repo/LineaTiempoVersiones.svelte";
@@ -112,6 +113,10 @@
   let versiones = $state<Version[]>([]);
   let version = $state<Version | null>(null);
   let hijos = $state<Record<string, Entrada[] | "cargando">>({});
+  /** Carpetas que no se pudieron abrir: el motivo, en su sitio del árbol, con «Reintentar». */
+  let fallosNivel = $state<Record<string, string>>({});
+  let buscando = $state(false);
+  let errorBusqueda = $state("");
   let abiertas = $state<Record<string, boolean>>({});
   let elegidas = $state<Map<string, Entrada>>(new Map());
   let buscar = $state("");
@@ -381,18 +386,21 @@
   async function cargar(ruta: string) {
     if (!sesion || !version || hijos[ruta]) return;
     hijos[ruta] = "cargando";
+    delete fallosNivel[ruta];
     try {
       const r = await sesion.pedir<MensajeEquipo & { entradas: Entrada[] }>("listar", { version: version.id, ruta });
       hijos[ruta] = [...(r.entradas ?? [])].sort((a, b) => (a.tipo === b.tipo ? a.nombre.localeCompare(b.nombre) : a.tipo === "dir" ? -1 : 1));
     } catch (err) {
       delete hijos[ruta];
-      error = (err as Error).message;
+      fallosNivel[ruta] = (err as Error).message || "El equipo no respondió.";
     }
   }
 
   function elegirVersion(v: Version) {
     version = v;
     hijos = {};
+    fallosNivel = {};
+    errorBusqueda = "";
     abiertas = {};
     elegidas = new Map();
     resultados = null;
@@ -407,15 +415,19 @@
     elegidas = m;
   }
 
-  async function hacerBusqueda(ev: SubmitEvent) {
-    ev.preventDefault();
+  async function hacerBusqueda(ev?: SubmitEvent) {
+    ev?.preventDefault();
     if (!sesion || !version || !buscar.trim()) return;
     resultados = null;
+    errorBusqueda = "";
+    buscando = true;
     try {
       const r = await sesion.pedir<MensajeEquipo & { resultados: Entrada[] }>("buscar", { version: version.id, texto: buscar.trim() });
       resultados = r.resultados ?? [];
     } catch (err) {
-      error = (err as Error).message;
+      errorBusqueda = (err as Error).message || "El equipo no respondió.";
+    } finally {
+      buscando = false;
     }
   }
 
@@ -777,9 +789,16 @@
         <form class="buscar" onsubmit={hacerBusqueda} role="search">
           <Search size={15} />
           <input class="input" type="search" placeholder="Busca por nombre: «factura», «.xlsx»…" bind:value={buscar} aria-label="Buscar en la versión" />
-          <button class="btn btn-sm" disabled={!buscar.trim()}>Buscar</button>
+          <BotonCargando class="btn btn-sm" cargando={buscando} textoCargando="Buscando…" disabled={!buscar.trim()}>Buscar</BotonCargando>
         </form>
-        {#if resultados}
+        {#if buscando}
+          <p class="cargando" role="status"><LoaderCircle size={14} class="spin" />Buscando «{buscar.trim()}» en la versión… En carpetas grandes tarda un poco.</p>
+        {:else if errorBusqueda}
+          <div class="notice notice-danger fallo-arbol" role="alert">
+            <TriangleAlert size={16} />
+            <p>No se pudo buscar: {errorBusqueda} <button type="button" class="notice-action" onclick={() => hacerBusqueda()}>Reintentar</button> · <button type="button" class="link" onclick={() => (errorBusqueda = "")}>Volver a las carpetas</button></p>
+          </div>
+        {:else if resultados}
           <div class="resultados">
             <p class="faint pequeno res-cab">{resultados.length ? plural(resultados.length, "resultado", "resultados") : "Nada con ese nombre en esta versión"} · <button class="link" onclick={() => (resultados = null)}>Volver a las carpetas</button></p>
             {#each resultados as r (r.ruta)}
@@ -1031,6 +1050,11 @@
   {@const h = hijos[ruta]}
   {#if h === "cargando"}
     <div class="cargando"><LoaderCircle size={14} class="spin" />Abriendo la carpeta…</div>
+  {:else if !h && fallosNivel[ruta]}
+    <div class="notice notice-danger fallo-arbol" role="alert">
+      <TriangleAlert size={16} />
+      <p>{ruta === "/" ? "No se pudo abrir la versión" : "No se pudo abrir la carpeta"}: {fallosNivel[ruta]} <button type="button" class="notice-action" onclick={() => cargar(ruta)}>Reintentar</button></p>
+    </div>
   {:else if h && !h.length}
     <div class="cargando">Carpeta vacía</div>
   {:else if h}
@@ -1278,6 +1302,9 @@
   }
   .cab-texto .faint {
     font-size: var(--fs-sm);
+  }
+  .fallo-arbol {
+    margin: var(--sp-2) var(--sp-4);
   }
   .buscar {
     position: relative;

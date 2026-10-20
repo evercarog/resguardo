@@ -14,6 +14,7 @@
   import Chip from "$lib/componentes/Chip.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import GraficaBarras from "$lib/componentes/repo/GraficaBarras.svelte";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
@@ -36,10 +37,8 @@
       const r = await api.restauraciones(c, e || undefined);
       if (mia === vuelta) datos = r;
     } catch (x) {
-      if (mia === vuelta) {
-        error = (x as Error).message;
-        datos = { ajustes: { motivo_obligatorio: false }, entradas: [], notas: [] };
-      }
+      // Sin datos inventados: antes salían a la vez el error y «Aún no hay restauraciones».
+      if (mia === vuelta) error = (x as Error).message;
     }
   }
   $effect(() => {
@@ -146,9 +145,11 @@
     </label>
   </div>
 
-  {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
+  {#if error && datos}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
 
-  {#if !datos}
+  {#if !datos && error}
+    <ErrorCarga que="las restauraciones" {error} reintentar={() => cargar(actual.id, equipoFiltro)} />
+  {:else if !datos}
     <Cargando forma="lineas" />
   {:else if !todas.length}
     <div class="card">

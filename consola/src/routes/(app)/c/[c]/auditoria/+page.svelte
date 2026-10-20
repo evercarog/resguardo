@@ -21,6 +21,7 @@
   import type { EntradaAuditoria, VerificacionAuditoria } from "$lib/tipos";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
 
   let entradas = $state<EntradaAuditoria[] | null>(null);
@@ -72,7 +73,8 @@
     } catch (e) {
       if (mia !== vuelta) return;
       error = e instanceof ApiError && e.codigo === "prohibido" ? "Tu papel en este cliente no permite ver la actividad." : (e as Error).message;
-      if (!mas) entradas = [];
+      // Sin datos inventados: antes salían a la vez el error y «Sin actividad todavía».
+      if (!mas && entradas === null) return;
     } finally {
       cargandoMas = false;
     }
@@ -269,9 +271,11 @@
     {/if}
   {/if}
 
-  {#if error}<div class="notice notice-warn"><p>{error}</p></div>{/if}
+  {#if error && entradas !== null}<div class="notice notice-warn"><p>{error}</p></div>{/if}
 
-  {#if entradas === null}
+  {#if entradas === null && error}
+    <ErrorCarga que="la actividad" {error} reintentar={() => cargar()} />
+  {:else if entradas === null}
     <Cargando filas={8} />
   {:else if entradas.length}
     <label class="buscar">

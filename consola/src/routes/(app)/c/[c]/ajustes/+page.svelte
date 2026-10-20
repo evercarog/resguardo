@@ -22,6 +22,7 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CampoClave from "$lib/componentes/CampoClave.svelte";
   import Cargando from "$lib/componentes/Cargando.svelte";
+  import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import { Palette, Users } from "@lucide/svelte";
@@ -31,6 +32,7 @@
   import { equiposDelCambio, pendientesDeCambio } from "$lib/cambioClave";
 
   let miembros = $state<Miembro[] | null>(null);
+  let errorMiembros = $state("");
   let rolInvitacion = $state<Rol>("tecnico");
   let invitacion = $state<Invitacion | null>(null);
   let editarMarca = $state(false);
@@ -91,9 +93,10 @@
     void cargarCambioClave();
     try {
       miembros = await api.miembros(actual.id);
+      errorMiembros = "";
     } catch (e) {
-      fallo(e);
-      miembros = [];
+      errorMiembros = (e as Error).message;
+      if (miembros) fallo(e);
     }
     // v1.29: qué recibe cada persona (null con un servidor anterior: no se enseña).
     notif = await api.personasNotif(actual.id).catch(() => null);
@@ -360,7 +363,9 @@
 
     <section>
       <div class="section-head"><h2>Personas <span class="count">· {miembros?.length ?? ""}</span></h2></div>
-      {#if !miembros}
+      {#if !miembros && errorMiembros}
+        <ErrorCarga que="las personas" error={errorMiembros} reintentar={cargar} />
+      {:else if !miembros}
         <Cargando />
       {:else}
         <div class="card p-0 lista">
