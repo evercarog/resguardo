@@ -2,6 +2,7 @@
   // «Restaurar este archivo» desde «Qué cambió» o desde sus versiones: junto
   // al original (lo seguro: no pisa nada) o descargado a este navegador por el
   // relé cifrado. Usa la contraseña con la que se abrió el repositorio.
+  import { tip } from "$lib/tooltip";
   import { onDestroy } from "svelte";
   import { CircleCheck, Download, History, LoaderCircle, TriangleAlert } from "@lucide/svelte";
   import * as api from "$lib/api";
@@ -106,7 +107,7 @@
 
 <div class="restaurar" aria-live="polite">
   <p class="que">
-    Restaurar <strong class="selectable">{nombre}</strong>{#if tamano != null}{" "}<span class="faint num">({bytes(tamano)})</span>{/if} tal como estaba en la versión <span class="pastilla mono" title={version}>{version.slice(0, 8)}</span>{#if cuando}{" "}<span class="faint">({fechaCorta(cuando)})</span>{/if}.
+    Restaurar <strong class="selectable">{nombre}</strong>{#if tamano != null}{" "}<span class="faint num">({bytes(tamano)})</span>{/if} tal como estaba en la versión <span class="pastilla mono" use:tip={version}>{version.slice(0, 8)}</span>{#if cuando}{" "}<span class="faint">({fechaCorta(cuando)})</span>{/if}.
   </p>
   <p class="faint pequeno">Junto al original: en una carpeta «Restaurado …» al lado, en {acceso.equipo.nombre}, sin pisar nada. Estaba en <span class="selectable">{rutaLegible(partesRuta(ruta).carpeta)}</span></p>
   {#if hecho}

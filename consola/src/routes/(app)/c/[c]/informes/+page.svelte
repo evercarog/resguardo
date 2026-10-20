@@ -404,7 +404,7 @@
         <section class="bloque" aria-labelledby="t-etiquetas">
           <h3 id="t-etiquetas">Por etiqueta</h3>
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <div class="desliza" role="region" aria-label="Por etiqueta (se desliza a los lados)" tabindex="0">
+          <div class="desplazable" role="region" aria-label="Por etiqueta (se desliza a los lados)" tabindex="0">
           <table class="tabla" aria-labelledby="t-etiquetas">
             <thead><tr><th scope="col">Etiqueta</th><th scope="col" class="der">Equipos</th><th scope="col" class="der">Al día</th><th scope="col" class="der">Copias</th><th scope="col" class="der">Fallidas</th><th scope="col" class="der">Datos nuevos</th></tr></thead>
             <tbody>
@@ -429,7 +429,7 @@
       <section class="bloque" aria-labelledby="t-equipos">
         <h3 id="t-equipos">Equipos</h3>
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div class="desliza" role="region" aria-label="Equipos (se desliza a los lados)" tabindex="0">
+        <div class="desplazable" role="region" aria-label="Equipos (se desliza a los lados)" tabindex="0">
         <table class="tabla t-equipos" aria-labelledby="t-equipos">
           <thead><tr><th scope="col">Equipo</th><th scope="col">Estado hoy</th><th scope="col" class="der">Copias</th><th scope="col" class="der">Fallidas</th><th scope="col" class="der">Datos nuevos</th><th scope="col">Cada día</th></tr></thead>
           <tbody>
@@ -453,13 +453,13 @@
         <section class="bloque" aria-labelledby="t-regla">
           <h3 id="t-regla">Regla 3-2-1-1-0 <span class="sub-h">· {cuentaR.cumplen} de {plural(cuentaR.total, "copia la cumple", "copias la cumplen")}</span></h3>
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <div class="desliza" role="region" aria-label="Regla 3-2-1-1-0 (se desliza a los lados)" tabindex="0">
+          <div class="desplazable" role="region" aria-label="Regla 3-2-1-1-0 (se desliza a los lados)" tabindex="0">
           <table class="tabla t-regla">
             <caption class="sr-only">Cómo cumple cada copia la regla 3-2-1-1-0</caption>
             <thead>
               <tr>
                 <th scope="col">Copia</th>
-                {#each reglas[0].regla.partes as p (p.id)}<th scope="col" class="centro" title={PARTES[p.id].titulo}>{PARTES[p.id].cifra}</th>{/each}
+                {#each reglas[0].regla.partes as p (p.id)}<th scope="col" class="centro"><abbr use:tip={PARTES[p.id].titulo} aria-hidden="true">{PARTES[p.id].cifra}</abbr><span class="sr-only">{PARTES[p.id].cifra}: {PARTES[p.id].titulo}</span></th>{/each}
                 <th scope="col">Qué le falta</th>
               </tr>
             </thead>
@@ -513,6 +513,8 @@
             <p class="leyenda">{t.texto}</p>
           {/if}
           {#if cifrasPf.total}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div class="desplazable" role="region" aria-label="Pruebas funcionales (se desliza a los lados)" tabindex="0">
             <table class="tabla">
               <caption class="sr-only">Pruebas funcionales del periodo</caption>
               <thead><tr><th scope="col">Fecha</th><th scope="col">Alcance</th><th scope="col">Resultado</th><th scope="col" class="der">Datos de vuelta</th><th scope="col" class="der">Antigüedad</th><th scope="col">Quién</th></tr></thead>
@@ -529,6 +531,7 @@
                 {/each}
               </tbody>
             </table>
+            </div>
             {#if funcionales.ajustes.rto_objetivo_min || funcionales.ajustes.rpo_objetivo_min}
               <p class="leyenda">
                 Objetivos: {[funcionales.ajustes.rto_objetivo_min ? `datos de vuelta en ${textoMinutos(funcionales.ajustes.rto_objetivo_min)} (RTO)` : "", funcionales.ajustes.rpo_objetivo_min ? `perder ${textoMinutos(funcionales.ajustes.rpo_objetivo_min)} como mucho (RPO)` : ""].filter(Boolean).join(" · ")}.
@@ -550,7 +553,7 @@
             <div class="por-equipo">
               <h4>{d.equipo.nombre}</h4>
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-              <div class="desliza" role="region" aria-label="Repositorios de {d.equipo.nombre} (se desliza a los lados)" tabindex="0">
+              <div class="desplazable" role="region" aria-label="Repositorios de {d.equipo.nombre} (se desliza a los lados)" tabindex="0">
               <table class="tabla">
                 <caption class="sr-only">Repositorios de {d.equipo.nombre}</caption>
                 <thead><tr><th scope="col">Repositorio</th><th scope="col" class="der">Versiones</th><th scope="col" class="der">Tamaño</th><th scope="col">Verificado</th><th scope="col">Restauración probada</th><th scope="col">Protección</th></tr></thead>
@@ -912,17 +915,13 @@
       display: none;
     }
   }
-  /* En pantallas estrechas, las tablas se deslizan dentro de la hoja (la página no). */
-  .desliza {
-    overflow-x: auto;
+  /* En pantallas estrechas, las tablas se deslizan dentro de la hoja (la página no):
+   * `.desplazable`, la de toda la consola (app.css). */
+  .hoja .desplazable {
     max-width: 100%;
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius-sm);
   }
-  .desliza:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .desliza > .tabla {
+  .hoja .desplazable > .tabla {
     min-width: 100%;
   }
 

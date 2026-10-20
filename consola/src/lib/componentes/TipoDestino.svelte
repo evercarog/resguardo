@@ -6,6 +6,7 @@
   // (página y tarjetas del destino): todo con palabra, los días del bloqueo y,
   // si lo marcó una persona, «marcado por una persona». 14z: «Solo añadir» es un
   // dato aparte (escudo a medias): no es la marca «Inmutable».
+  import { tip } from "$lib/tooltip";
   import { Building2, Cloud, HardDrive, Lock, ShieldHalf, Unplug } from "@lucide/svelte";
   import { TEXTO_TIPO, textoClasificacion } from "$lib/tipoDestino";
   import type { TipoDestino } from "$lib/tipos";
@@ -38,7 +39,7 @@
   const tam = $derived(variante === "completa" ? 15 : 13);
 </script>
 
-<span class="td" class:completa={variante === "completa"} title={texto} data-tipo={tipo}>
+<span class="td" class:completa={variante === "completa"} use:tip={texto} data-tipo={tipo}>
   <span class="sr-only">{texto}</span>
   <span class="pieza" aria-hidden="true"><Icono size={tam} />{#if !soloIcono}<span>{TEXTO_TIPO[tipo]}</span>{/if}</span>
   {#if inmutable}

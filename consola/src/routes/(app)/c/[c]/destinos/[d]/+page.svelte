@@ -188,7 +188,7 @@
           {#if v.zona}
             <span class="badge badge-sm tone-neutral" use:tip={"Los equipos pueden añadir copias, pero no borrarlas. No es inmutable: no protege de quien sea administrador del almacén ni de su retención."}><ShieldHalf size={11} />Solo añadir<Ayuda id="solo-anadir" /></span>
             {#if v.zona.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}
-            {#if v.zona.escucha === false}<span class="badge badge-sm tone-warn"><TriangleAlert size={11} />Sin responder</span>{/if}
+            {#if v.zona.escucha === false}<Chip pequeno tono="warn" texto="Sin responder" />{/if}
           {/if}
           {#if d?.inmutable}<span class="badge badge-sm tone-ok"><Lock size={11} />Inmutable<Ayuda id="inmutable" /></span>{/if}
           {#if d?.tipo === "local" && d.red}<span class="badge badge-sm tone-neutral"><Network size={11} />En otra máquina</span>{/if}

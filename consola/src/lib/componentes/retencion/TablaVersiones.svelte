@@ -2,6 +2,7 @@
   // Una lista de versiones de «Retención en detalle» (quitadas o que se
   // quitarán): versión, fecha, copia, lo que ocupaban sus archivos y por qué.
   // En el móvil, cada versión en un bloque (sin desplazamiento lateral).
+  import { tip } from "$lib/tooltip";
   import { bytes, fechaLarga } from "$lib/formato";
   import type { FilaVersion } from "$lib/retencionDetalle";
 
@@ -21,8 +22,8 @@
       {#each filas as f (f.id)}
         <tr class:queda={f.tono === "queda"}>
           <td data-k="Versión"><code>{f.id}</code></td>
-          <td data-k="Fecha">{#if f.hora}<span title={fechaLarga(f.hora)}>{fmt.format(new Date(f.hora))}</span>{:else}<span class="faint">—</span>{/if}</td>
-          <td data-k="Copia" class="copia" title={f.copia ?? undefined}>{f.copia ?? "—"}</td>
+          <td data-k="Fecha">{#if f.hora}<span use:tip={fechaLarga(f.hora)}>{fmt.format(new Date(f.hora))}</span>{:else}<span class="faint">—</span>{/if}</td>
+          <td data-k="Copia" class="copia" use:tip={f.copia ?? undefined}>{f.copia ?? "—"}</td>
           <td data-k="Tamaño" class="der num">{f.bytes != null ? bytes(f.bytes) : "—"}</td>
           <td data-k="Por qué" class="porque">{f.porque}</td>
         </tr>

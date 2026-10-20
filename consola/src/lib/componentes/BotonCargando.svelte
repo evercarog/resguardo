@@ -4,10 +4,12 @@
   import type { Snippet } from "svelte";
   import type { HTMLButtonAttributes } from "svelte/elements";
   import { LoaderCircle } from "@lucide/svelte";
+  import { tip as globo } from "$lib/tooltip";
 
-  let { cargando = false, textoCargando, children, disabled, class: clase = "btn", ...resto }: HTMLButtonAttributes & { cargando?: boolean; textoCargando?: string; children: Snippet } = $props();
+  // `tip`: el globo de siempre (en la consola no se usa `title` nativo).
+  let { cargando = false, textoCargando, children, disabled, tip = null, class: clase = "btn", ...resto }: HTMLButtonAttributes & { cargando?: boolean; textoCargando?: string; tip?: string | null; children: Snippet } = $props();
 </script>
 
-<button {...resto} class={clase} disabled={disabled || cargando} aria-busy={cargando}>
+<button {...resto} class={clase} disabled={disabled || cargando} aria-busy={cargando} use:globo={tip}>
   {#if cargando}<LoaderCircle size={15} class="spin" />{#if textoCargando}{textoCargando}{:else}{@render children()}{/if}{:else}{@render children()}{/if}
 </button>

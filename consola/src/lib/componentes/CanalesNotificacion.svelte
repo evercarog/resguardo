@@ -4,6 +4,7 @@
   // del servidor: aquí solo se sabe si están puestos («Configurado»), y para
   // cambiar a dónde va un canal o un secreto hace falta un código de la
   // aplicación de autenticación (el servidor lo comprueba).
+  import { tip } from "$lib/tooltip";
   import { BellRing, CircleAlert, Hash, Mail, MessageSquare, MessagesSquare, MoonStar, Pencil, Plus, Power, Send, Trash2, Webhook } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
@@ -225,7 +226,7 @@
               {c.nombre}
               <span class="tipo">{TIPO_CANAL[c.tipo].texto}</span>
               {#if !c.activo}<Chip pequeno tono="neutral" texto="Apagado" />{:else if !c.completo}<Chip pequeno tono="warn" texto="Faltan datos" />{/if}
-              {#if c.reglas.silencio && c.tipo !== "correo"}<span class="silencio" title="Horas de silencio"><MoonStar size={12} />{c.reglas.silencio.desde}–{c.reglas.silencio.hasta}</span>{/if}
+              {#if c.reglas.silencio && c.tipo !== "correo"}<span class="silencio" use:tip={"Horas de silencio"}><MoonStar size={12} />{c.reglas.silencio.desde}–{c.reglas.silencio.hasta}</span>{/if}
             </span>
             <span class="fila-sub">{destino(c)} · {que(c)}</span>
           </span>
@@ -358,8 +359,8 @@
           </label>
           {#if conSilencio && reglas.silencio}
             <div class="horas">
-              <label>De <input class="input" type="time" bind:value={reglas.silencio.desde} required /></label>
-              <label>a <input class="input" type="time" bind:value={reglas.silencio.hasta} required /></label>
+              <label>Desde las <input class="input" type="time" bind:value={reglas.silencio.desde} required /></label>
+              <label>hasta las <input class="input" type="time" bind:value={reglas.silencio.hasta} required /></label>
               <label class="check"><input type="checkbox" bind:checked={reglas.silencio.salvo_criticos} /><span>Los críticos, al momento</span></label>
             </div>
           {/if}

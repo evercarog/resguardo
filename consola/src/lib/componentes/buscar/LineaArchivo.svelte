@@ -3,6 +3,7 @@
   // del repositorio (en las fechas de la búsqueda), rellena donde el archivo
   // está, de color donde cambió respecto a la anterior y hueca donde falta.
   // Es un dibujo: lo mismo va en texto al lado (para lectores de pantalla).
+  import { tip } from "$lib/tooltip";
   import { fechaCorta } from "$lib/formato";
   import type { MarcaLinea } from "$lib/buscarArchivos";
 
@@ -24,7 +25,7 @@
   </svg>
   <div class="marcas" aria-hidden="true">
     {#each marcas as m (m.version)}
-      <span class="m {m.estado}" class:elegida={elegida != null && m.version === elegida} style:left="{X(m.x)}%" style:--r="{r}px" title="{fechaCorta(m.cuando)} · {TEXTO[m.estado]}"></span>
+      <span class="m {m.estado}" class:elegida={elegida != null && m.version === elegida} style:left="{X(m.x)}%" style:--r="{r}px" use:tip={`${fechaCorta(m.cuando)} · ${TEXTO[m.estado]}`}></span>
     {/each}
   </div>
 </div>

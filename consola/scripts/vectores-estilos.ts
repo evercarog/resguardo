@@ -57,5 +57,17 @@ igual(`${usos.length} usos de var(--…) en ${archivos.length} archivos: todos d
 igual("los tokens de la escala de espaciado de diseno.md existen", ["--sp-1", "--sp-2", "--sp-3", "--sp-4", "--sp-5", "--sp-6", "--sp-8", "--sp-10", "--sp-12", "--sp-16"].filter((v) => !definidas.has(v)), []);
 igual("los tokens de texto de diseno.md existen", ["--fs-display", "--fs-title", "--fs-stat", "--fs-h2", "--fs-body", "--fs-sm", "--fs-xs", "--fs-overline", "--mono", "--font"].filter((v) => !definidas.has(v)), []);
 
+// G5: en la consola no se usa `title` nativo (diseno.md §4, «Tooltips»): `use:tip`, que
+// llega también al teclado, al táctil y a los lectores de pantalla.
+console.log("\n— Sin title nativo en la consola —");
+{
+  const conTitle: string[] = [];
+  for (const a of archivos.filter((x) => x.endsWith(".svelte") && x.startsWith(raices[0]))) {
+    const t = readFileSync(a, "utf8");
+    for (const m of t.matchAll(/<([a-z][a-z0-9]*)\b[^<>]*?\stitle=/g)) conTitle.push(`${relative(join(consola, ".."), a).replaceAll("\\", "/")}:${t.slice(0, m.index).split("\n").length}`);
+  }
+  igual("ningún elemento con title nativo (usa use:tip)", conTitle, []);
+}
+
 console.log(`\n${total - fallos}/${total} correctas`);
 if (fallos) process.exit(1);

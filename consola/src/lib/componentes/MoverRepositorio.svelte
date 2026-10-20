@@ -506,7 +506,7 @@
               <input type="radio" name="mover-a" value={o.clave} bind:group={elegida} />
               <span class="o-txt">
                 <SeGuardaEn lugar={o.lugar} etiqueta="" riesgo={o.lugar.mismoEquipo && o.lugar.clase !== "usb"} />
-                {#if o.recomendado}<span class="badge badge-sm tone-ok">Recomendado</span>{/if}
+                {#if o.recomendado}<span class="badge badge-sm tone-accent">Recomendado</span>{/if}
                 {#if o.almacen && !o.destino}<span class="faint pequeno">{o.almacen.nombre} dará a {equipo.nombre} su propio usuario, sin poder borrar lo ya copiado.</span>{/if}
                 {#if o.almacen && !ahoraDe(o.almacen).conectado}<span class="faint pequeno aviso-txt">{o.almacen.nombre} no está conectado ahora: tendrá que encenderse para dar el acceso.</span>{/if}
                 {#if o.lugar.mismoEquipo && o.lugar.clase !== "usb"}<span class="faint pequeno aviso-txt">Sigue en {equipo.nombre}: no protege si se daña ese equipo.</span>{/if}

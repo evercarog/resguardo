@@ -1,6 +1,7 @@
 <script lang="ts">
   // Órdenes con su estado, quién las pidió, la respuesta del equipo y si esa
   // respuesta está firmada por él. Las que aún se pueden cancelar, con su botón.
+  import { tip } from "$lib/tooltip";
   import { RotateCcw, ShieldAlert, ShieldCheck, X } from "@lucide/svelte";
   import { porQueNoSeAplico, sePuedeVolverAMandar } from "$lib/espera";
   import * as api from "$lib/api";
@@ -87,7 +88,7 @@
         {/if}
         {#if detalle(o)}<span class="faint det">{detalle(o)}</span>{/if}
         {#if sePuedeVolverAMandar(o) && eq && puede.ordenar(actual.cliente?.rol)}
-          <a class="btn btn-sm volver" href="/c/{actual.id}/equipos/{eq.id}" title="Va sellada para el equipo: pídela otra vez desde su ficha."><RotateCcw size={14} />Volver a mandar</a>
+          <a class="btn btn-sm volver" href="/c/{actual.id}/equipos/{eq.id}" use:tip={"Va sellada para el equipo: pídela otra vez desde su ficha."}><RotateCcw size={14} />Volver a mandar</a>
         {/if}
         {#if cancelable(o) && puede.ordenar(actual.cliente?.rol)}
           {#if confirmar === o.id}

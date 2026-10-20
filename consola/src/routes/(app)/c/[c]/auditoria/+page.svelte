@@ -282,7 +282,8 @@
       <Search size={15} />
       <input class="input" type="search" placeholder="Buscar por persona, acción o equipo" bind:value={buscar} aria-label="Buscar en la actividad" />
     </label>
-    <div class="card p-0 desplazable alto">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="card p-0 desplazable alto" tabindex="0" role="region" aria-label="Actividad (se desplaza)">
       <table class="tabla actividad">
         <caption class="sr-only">Registro de actividad</caption>
         <thead><tr><th scope="col">N.º</th><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Qué</th><th scope="col">Sobre</th><th scope="col">Huella</th></tr></thead>

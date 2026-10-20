@@ -5,6 +5,7 @@
   // unos archivos desde la copia del espejo (la suya, una nube conectada en él o el
   // disco del espejo conectado ahí) a una carpeta temporal y los compara. El almacén
   // nunca recibe la contraseña. Cuenta en la regla 3-2-1-1-0 para ese destino.
+  import { tip } from "$lib/tooltip";
   import { CalendarClock, FlaskConical, HardDrive } from "@lucide/svelte";
   import OrdenDialog from "../OrdenDialog.svelte";
   import Chip from "../Chip.svelte";
@@ -77,7 +78,7 @@
           <span class="est">
             {#if p?.resultado}
               <Chip pequeno tono={p.resultado === "ok" ? "ok" : "bad"} texto={p.resultado === "ok" ? "Probado" : "Falló"} />
-              <span class="faint" title={p.ultima ? fechaLarga(p.ultima) : ""}>{p.ultima ? relativo(p.ultima, reloj.ahora) : ""} · {textoPruebaEspejo(p)}</span>
+              <span class="faint" use:tip={p.ultima ? fechaLarga(p.ultima) : ""}>{p.ultima ? relativo(p.ultima, reloj.ahora) : ""} · {textoPruebaEspejo(p)}</span>
             {:else}
               <span class="faint">{textoPruebaEspejo(null)}</span>
             {/if}

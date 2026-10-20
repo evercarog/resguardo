@@ -709,7 +709,7 @@
               <input type="radio" name="desde" value={o.id} bind:group={origenElegido} disabled={!!o.noSe} />
               <span class="tile-ic">{#if o.tipo === "espejo"}<LifeBuoy size={16} />{:else if o.tipo === "principal"}<Database size={16} />{:else}<Server size={16} />{/if}</span>
               <span class="fila-texto">
-                <span class="fila-titulo">{o.nombre} · {o.donde}{#if o.recomendado} <span class="badge badge-sm tone-ok">Recomendado</span>{/if}</span>
+                <span class="fila-titulo">{o.nombre} · {o.donde}{#if o.recomendado} <span class="badge badge-sm tone-accent">Recomendado</span>{/if}</span>
                 <span class="fila-sub">
                   {#if o.noSe}{o.noSe}{:else if o.motivo}{o.motivo}{:else if o.tipo === "espejo"}Se abre con la contraseña del repositorio, en el equipo que elijas.{:else if o.tipo === "principal"}Donde copia {equipo.nombre}.{:else}La hace {equipo.nombre}: se restaura con su acceso.{/if}
                 </span>
@@ -847,7 +847,7 @@
             <input type="radio" bind:group={destino} value="junto" />
             <FolderPlus size={18} />
             <span>
-              <strong>En {equipo.nombre}, junto al original <span class="badge badge-sm tone-ok">Recomendado</span></strong>
+              <strong>En {equipo.nombre}, junto al original <span class="badge badge-sm tone-accent">Recomendado</span></strong>
               <span class="faint">Al lado de cada elemento se crea una carpeta «{carpetaRestaurado}» con lo restaurado dentro. No toca nada de lo que hay: compara y quédate con lo que quieras.</span>
               {#if ejemploJunto}<span class="ejemplo">Por ejemplo: <code>{ejemploJunto}</code></span>{/if}
             </span>

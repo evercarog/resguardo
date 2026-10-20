@@ -63,7 +63,7 @@
       <h3 id={idTitulo} class="nombre selectable">
         {#each trozosNombre(archivo.nombre, texto) as t, i (i)}{#if t.marca}<mark>{t.texto}</mark>{:else}{t.texto}{/if}{/each}
       </h3>
-      <p class="carpeta faint selectable" title={rutaLegible(archivo.ruta)}>{rutaLegible(archivo.carpeta)}{#if nombreRepo}<span class="badge badge-sm tone-neutral repo">{nombreRepo}</span>{/if}</p>
+      <p class="carpeta faint selectable" use:tip={rutaLegible(archivo.ruta)}>{rutaLegible(archivo.carpeta)}{#if nombreRepo}<span class="badge badge-sm tone-neutral repo">{nombreRepo}</span>{/if}</p>
     </div>
     <div class="tam num">
       <strong use:tip={"Lo que ocupa en la versión más reciente en la que está"}>{bytes(archivo.bytes)}</strong>

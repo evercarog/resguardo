@@ -33,6 +33,7 @@
   import Ayuda from "./Ayuda.svelte";
   import BloqueCopiable from "./BloqueCopiable.svelte";
   import BotonFalta from "./BotonFalta.svelte";
+  import FuerzaClave from "./FuerzaClave.svelte";
   import CampoClave from "./CampoClave.svelte";
   import Chip from "./Chip.svelte";
 
@@ -197,10 +198,7 @@
       <CampoClave requerido id="ca-actual" etiqueta="Clave actual" autocomplete="current-password" autofocus bind:value={actual} />
       <CampoClave requerido id="ca-nueva" etiqueta="Clave nueva" autocomplete="new-password" bind:value={nueva} ayuda="Al menos {MIN} caracteres. Mejor una generada o una frase larga que no uses en otro sitio." />
       {#if nueva}
-        <div class="fuerza" aria-live="polite">
-          <div class="barra nivel-{f.nivel}" role="meter" aria-valuemin="0" aria-valuemax="4" aria-valuenow={f.nivel} aria-label="Fuerza de la clave"><span></span></div>
-          <span class="pequeno">{f.texto}{[...nueva].length < MIN ? ` · Al menos ${MIN} caracteres.` : f.consejo ? ` · ${f.consejo}` : ""}</span>
-        </div>
+        <FuerzaClave {f} extra={[...nueva].length < MIN ? `Al menos ${MIN} caracteres.` : ""} />
       {/if}
       <CampoClave requerido id="ca-repetida" etiqueta="Repite la clave nueva" autocomplete="new-password" bind:value={repetida} error={repetida && repetida !== nueva ? "No coincide." : nueva && nueva === actual ? "Es la misma que la actual." : ""} />
       <button type="button" class="btn btn-sm generar" onclick={generar}><Shuffle size={14} />Generar una clave segura</button>
@@ -306,40 +304,6 @@
 <style>
   .generar {
     align-self: flex-start;
-  }
-  .fuerza {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    margin-top: -6px;
-  }
-  .fuerza .barra {
-    flex: 0 0 140px;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--border);
-    overflow: hidden;
-  }
-  .fuerza .barra span {
-    display: block;
-    height: 100%;
-    width: 8%;
-    background: var(--bad);
-  }
-  .nivel-1 span {
-    width: 30% !important;
-  }
-  .nivel-2 span {
-    width: 55% !important;
-    background: var(--warn) !important;
-  }
-  .nivel-3 span {
-    width: 80% !important;
-    background: var(--ok) !important;
-  }
-  .nivel-4 span {
-    width: 100% !important;
-    background: var(--ok) !important;
   }
   .pequeno {
     font-size: var(--fs-xs);

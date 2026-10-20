@@ -294,8 +294,14 @@ button.fila {
 .tabla .mono {
   font-size: 12px;
 }
+/* Lo que se desliza a los lados (tablas anchas): una sola clase en toda la consola (G7).
+ * Con `tabindex="0"`, `role="region"` y su nombre, se mueve también con el teclado (G5). */
 .desplazable {
   overflow-x: auto;
+}
+.desplazable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 /* Tablas largas: se desplazan dentro de su tarjeta con la cabecera fija. */
 @media (min-width: 641px) {

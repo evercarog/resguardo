@@ -198,7 +198,7 @@
       </label>
       <label class="sel">
         <span class="faint">Espejos</span>
-        <select class="input" bind:value={espejo} aria-label="Con o sin espejo o copia derivada">
+        <select class="input" bind:value={espejo} aria-label="Espejos: con o sin espejo o copia derivada">
           {#each ESPEJO_FILTRO as f (f.id)}<option value={f.id}>{f.texto}</option>{/each}
         </select>
       </label>

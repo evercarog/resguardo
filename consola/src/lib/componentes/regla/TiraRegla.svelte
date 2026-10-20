@@ -8,6 +8,7 @@
   // obligación: no bloquea nada.
   // `compacta`: la misma tira en una píldora de cinco segmentos (listas,
   // «Cambiar las copias», Estado): cifra e icono de estado en cada uno.
+  import Chip from "../Chip.svelte";
   import { Building2, Check, CircleDashed, Clock, FlaskConical, Info, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import Ayuda from "../Ayuda.svelte";
@@ -120,7 +121,7 @@
             <li class="paso">
               {#if href}<a class="p-nombre link-suave" {href}>{p.nombre}</a>{:else}<span class="p-nombre">{p.nombre}</span>{/if}
               <span class="faint p-tipo"><TipoDestino {...corta(p.clasificacion)} />{#if p.clasificacion.tipoPorPersona || p.clasificacion.marcasPorPersona}<span class="badge badge-sm tone-neutral" use:tip={"Lo marcó una persona en el destino (no se deduce)."}>Marcado por una persona</span>{/if}{#if p.clasificacion.aislado}{@const cx = estadoConexion(p.conexion, p.clasificacion.aisladoDias, ahora)}<span class:tarde={cx.tarde}>{cx.texto}</span>{/if}{#if p.sistemaArchivos}<span class="pastilla mono">{p.sistemaArchivos}</span>{/if}{#if p.sedeNombre}<span class="sede" use:tip={p.sede && rc.entrada.origen.sede ? (p.sede === rc.entrada.origen.sede ? "En la misma sede que el equipo que copia: en el sitio." : "En otra sede que el equipo que copia: fuera del sitio.") : null}><Building2 size={12} aria-hidden="true" />{p.sedeNombre}{p.sedeAsignada ? "" : " (la de su equipo)"}</span>{/if}</span>
-              <span class="badge badge-sm tone-{al ? 'ok' : 'warn'}">{al ? "Al día" : p.ultima_ok ? `Atrasado · ${relativo(p.ultima_ok, ahora)}` : "No está al día"}</span>
+              <Chip pequeno tono={al ? "ok" : "warn"} texto={al ? "Al día" : p.ultima_ok ? `Atrasado · ${relativo(p.ultima_ok, ahora)}` : "No está al día"} />
               {#if onmarcar && p.clave}<button class="btn btn-sm btn-ghost" onclick={() => onmarcar(p)}>Cambiar</button>{/if}
             </li>
           {/each}

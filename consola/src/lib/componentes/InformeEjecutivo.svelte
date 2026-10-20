@@ -176,12 +176,12 @@
         </select>
         <BotonCargando class="btn" cargando={descargando} textoCargando="Preparando…" onclick={descargar}><Download size={15} />Descargar el informe</BotonCargando>
         {#if admin}
-          <BotonCargando class="btn" cargando={enviando} textoCargando="Enviando…" disabled={!!porQueNoEnviar} title={porQueNoEnviar || undefined} onclick={enviar}>
+          <BotonCargando class="btn" cargando={enviando} textoCargando="Enviando…" disabled={!!porQueNoEnviar} aria-describedby={porQueNoEnviar ? "ie-porque" : undefined} onclick={enviar}>
             <Send size={15} />Enviar ahora
           </BotonCargando>
         {/if}
       </div>
-      {#if admin && porQueNoEnviar}<p class="faint pista">«Enviar ahora»: {porQueNoEnviar}</p>{/if}
+      {#if admin && porQueNoEnviar}<p class="faint pista" id="ie-porque">«Enviar ahora»: {porQueNoEnviar}</p>{/if}
     </div>
 
     <h3 class="sub"><CalendarClock size={15} />Programado por correo</h3>

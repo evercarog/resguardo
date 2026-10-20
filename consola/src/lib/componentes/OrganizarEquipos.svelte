@@ -111,9 +111,10 @@
       <p>Lo ven igual todas las consolas del cliente.</p>
     </div>
   </div>
-  <div class="segmented" role="tablist" aria-label="Qué organizar">
-    <button role="tab" aria-selected={pestana === "sedes"} class:on={pestana === "sedes"} onclick={() => (pestana = "sedes")}><Building2 size={14} />Sedes</button>
-    <button role="tab" aria-selected={pestana === "categorias"} class:on={pestana === "categorias"} onclick={() => (pestana = "categorias")}><Tags size={14} />Categorías de etiqueta</button>
+  <!-- G5: dos botones de verdad con aria-pressed (antes, pestañas sin flechas ni panel). -->
+  <div class="segmented" role="group" aria-label="Qué organizar">
+    <button type="button" aria-pressed={pestana === "sedes"} class:on={pestana === "sedes"} onclick={() => (pestana = "sedes")}><Building2 size={14} />Sedes</button>
+    <button type="button" aria-pressed={pestana === "categorias"} class:on={pestana === "categorias"} onclick={() => (pestana = "categorias")}><Tags size={14} />Categorías de etiqueta</button>
   </div>
 
   {#if pestana === "sedes"}

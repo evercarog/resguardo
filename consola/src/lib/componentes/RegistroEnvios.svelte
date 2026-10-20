@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "$lib/tooltip";
   import { untrack } from "svelte";
   // Registro de envíos de las notificaciones (los últimos 100): qué se mandó,
   // a quién, cómo fue y, si falló o espera, por qué (sin secretos ni direcciones).
@@ -69,7 +70,7 @@
           </span>
           <span class="derecha">
             <Chip pequeno tono={st.tono} texto={st.texto} />
-            <span class="cuando" title={fechaLarga(e.enviado ?? e.creado)}><Tiempo iso={e.enviado ?? e.creado} /></span>
+            <span class="cuando" use:tip={fechaLarga(e.enviado ?? e.creado)}><Tiempo iso={e.enviado ?? e.creado} /></span>
           </span>
         </div>
       {/each}

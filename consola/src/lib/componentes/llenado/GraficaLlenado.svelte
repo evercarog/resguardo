@@ -150,7 +150,8 @@
   <span class="sr-only" aria-live="polite" aria-atomic="true">{dato?.texto ?? ""}</span>
   <details class="datos">
     <summary>Ver los datos</summary>
-    <div class="desplazable">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="desplazable" tabindex="0" role="region" aria-label="Espacio ocupado en {p.nombre} (se desliza a los lados)">
       <table class="tabla">
         <caption class="sr-only">Espacio ocupado en {p.nombre}, por fecha</caption>
         <thead><tr><th scope="col">Fecha</th><th scope="col" class="der">Ocupado</th><th scope="col">Dato</th></tr></thead>

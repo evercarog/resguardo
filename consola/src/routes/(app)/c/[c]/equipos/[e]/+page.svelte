@@ -1568,7 +1568,8 @@
         {:else if !informes.length}
           <div class="card"><Vacio icono={FileBarChart} titulo="Todavía no hay informes" texto="Cada vez que {equipo.nombre} termine una copia, su informe saldrá aquí." /></div>
         {:else}
-          <div class="card p-0 desplazable">
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div class="card p-0 desplazable" tabindex="0" role="region" aria-label="Informes recibidos (se desliza a los lados)">
             <table class="tabla">
               <caption class="sr-only">Informes recibidos de {equipo.nombre}</caption>
               <thead><tr><th scope="col">Recibido</th><th scope="col">Copias</th><th scope="col" class="der">Datos nuevos</th><th scope="col" class="der">Archivos</th><th scope="col">Resultado</th></tr></thead>
@@ -1606,8 +1607,8 @@
             <dt>En este navegador</dt>
             <dd>
               {#if llaves === "fijada"}<span class="badge badge-sm tone-ok"><ShieldCheck size={11} />Llaves comprobadas</span> <span class="faint">el {fechaLarga(fijadaFecha)}</span>
-              {:else if llaves === "cambiada"}<span class="badge badge-sm tone-bad">Las llaves cambiaron</span>
-              {:else}<span class="badge badge-sm tone-neutral">Llaves aún sin comprobar</span>{/if}
+              {:else if llaves === "cambiada"}<Chip pequeno tono="bad" texto="Las llaves cambiaron" />
+              {:else}<Chip pequeno tono="neutral" texto="Llaves aún sin comprobar" />{/if}
               {#if puede.ordenar(rol)}<button class="link" onclick={() => (comprobar = true)}>{llaves === "fijada" ? "Volver a comprobar" : "Comprobar con la clave de administración"}</button>{/if}
             </dd>
           </div>

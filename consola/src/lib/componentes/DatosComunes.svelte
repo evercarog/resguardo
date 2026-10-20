@@ -5,6 +5,7 @@
   // entre consolas (se elige cuál vale para todas; nada se pisa sin preguntar), el
   // tipo y las marcas de destinos por repartir (con la clave) y plantillas de otra
   // consola por traer (se abren aquí con la clave). Solo administradores.
+  import { tip } from "$lib/tooltip";
   import { untrack } from "svelte";
   import { ChevronRight, KeyRound, LayoutTemplate, Shuffle, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
@@ -127,7 +128,7 @@
             <li class="dif">
               <div class="dif-texto">
                 <strong>{d.titulo}</strong>
-                <span class="frase" title={d.frase}>
+                <span class="frase" use:tip={d.frase}>
                   <span class="lado">
                     {@render punto(d.clave, d.valorAqui)}En esta consola: <b>{d.aqui}</b>
                   </span>

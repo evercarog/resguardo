@@ -131,8 +131,8 @@
     <p class="entre">
       {#if dif?.primera}Es la primera versión de su copia: no hay otra anterior con la que compararla.
       {:else}
-        De <strong>{desde ? fechaCorta(cuandoDe(desde) ?? dif?.desdeCuando) : "la versión anterior de la misma copia"}</strong>{#if desde}{" "}<span class="pastilla mono" title={desde}>{desde.slice(0, 8)}</span>{/if}
-        a <strong>{fechaCorta("hora" in version ? version.hora : null)}</strong> <span class="pastilla mono" title={version.id}>{version.id.slice(0, 8)}</span>
+        De <strong>{desde ? fechaCorta(cuandoDe(desde) ?? dif?.desdeCuando) : "la versión anterior de la misma copia"}</strong>{#if desde}{" "}<span class="pastilla mono" use:tip={desde}>{desde.slice(0, 8)}</span>{/if}
+        a <strong>{fechaCorta("hora" in version ? version.hora : null)}</strong> <span class="pastilla mono" use:tip={version.id}>{version.id.slice(0, 8)}</span>
       {/if}
     </p>
     {#if elegibles.length}
@@ -199,8 +199,8 @@
         {@const Icono = ICONO[c.tipo]}
         {@const d = deltaDe(c)}
         <li class="archivo">
-          <span class="ic tone-{TONO[c.tipo]}" use:tip={TEXTO_TIPO[c.tipo]}><Icono size={15} /></span>
-          <span class="nombre selectable" title={rutaLegible(c.ruta)}>{agrupar ? partesRuta(c.ruta).nombre : rutaLegible(c.ruta)}</span>
+          <span class="ic tone-{TONO[c.tipo]}" use:tip={TEXTO_TIPO[c.tipo]}><Icono size={15} aria-hidden="true" /><span class="sr-only">{TEXTO_TIPO[c.tipo]}:</span></span>
+          <span class="nombre selectable" use:tip={rutaLegible(c.ruta)}>{agrupar ? partesRuta(c.ruta).nombre : rutaLegible(c.ruta)}</span>
           <span class="tam num">
             {#if c.bytes != null || c.bytes_antes != null}<span use:tip={c.tipo === "borrado" ? "Lo que ocupaba" : "Lo que ocupa"}>{bytes(c.bytes ?? c.bytes_antes)}</span>{/if}
             {#if d != null && c.tipo === "cambiado"}<small class:sube={d > 0} use:tip={`Antes: ${bytes(c.bytes_antes)}`}>{fmtDelta(d)}</small>{/if}

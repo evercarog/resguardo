@@ -3,6 +3,7 @@
   // este navegador; el servidor solo guarda su hash), la línea de PowerShell y la de Linux para
   // pegar en cada equipo, y «Equipos esperando confirmación». Nada se da de alta solo: cada equipo
   // enseña su número de comprobación y aquí se marca, después de compararlo, uno a uno o varios.
+  import { tip } from "$lib/tooltip";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
   import PonerInstalador from "$lib/componentes/PonerInstalador.svelte";
   import Migas from "$lib/componentes/Migas.svelte";
@@ -494,7 +495,7 @@
           <div class="card p-0 lista">
             {#each revisiones as r (r.e.id)}
               <div class="fila" class:mal={!r.coincide}>
-                <label class="marca" title={r.coincide ? "Marcar: su número coincide" : "No se puede confirmar"}>
+                <label class="marca" use:tip={r.coincide ? "Marcar: su número coincide" : "No se puede confirmar"}>
                   <input type="checkbox" disabled={!r.coincide || ocupado} checked={marcadosSet.has(r.e.id)} onchange={(ev) => marcar(r.e.id, (ev.currentTarget as HTMLInputElement).checked)} aria-label="Coincide el número de {r.e.equipo?.nombre}" />
                 </label>
                 <span class="fila-texto">

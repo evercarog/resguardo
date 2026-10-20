@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "$lib/tooltip";
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -92,7 +93,7 @@
         <a class="card cliente" href="/c/{c.id}">
           <MarcaCliente nombre={c.nombre} marca={c.marca} tam={40} />
           <span class="texto">
-            <strong title={c.nombre}>{c.nombre}</strong>
+            <strong use:tip={c.nombre}>{c.nombre}</strong>
             <span class="meta">
               <span>{NOMBRE_ROL[c.rol]}</span>
               <span class="equipos"><Monitor size={13} />{plural(c.equipos, "equipo", "equipos")}</span>

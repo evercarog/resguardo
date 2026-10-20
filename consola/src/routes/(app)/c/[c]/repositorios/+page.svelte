@@ -186,7 +186,7 @@
                 {#if mz.sistemaArchivos || entorno}<p class="tile-dato faint">{#if mz.sistemaArchivos}<span class="pastilla mono">{mz.sistemaArchivos}</span>{/if}{#if entorno}{" "}{entorno}{/if}</p>{/if}
                 <p class="tile-dato tile-tipo"><TipoDestino variante="completa" tipo={cl.tipo} inmutable={cl.inmutable} soloAnadir={cl.soloAnadir} aislado={cl.aislado} bloqueoDias={cl.bloqueoDias} porPersona={cl.tipoPorPersona || cl.marcasPorPersona} />{#if cl.soporte}<span class="faint">soporte «{cl.soporte}»</span>{/if}</p>
                 {#if cl.conexion}<p class="tile-dato" class:tarde={cl.conexion.tarde}>{#if cl.conexion.tarde}<TriangleAlert size={12} />{/if}<span>{cl.conexion.texto}</span></p>{/if}
-                <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<span class="badge badge-sm tone-warn">Sin responder</span>{/if}
+                <span class="tile-chips"><span class="badge badge-sm tone-ok" use:tip={"Los equipos pueden añadir copias, pero no borrarlas: protege contra el ransomware."}><Lock size={11} />Solo añadir</span>{#if z.almacen.resumen?.guarda_copias?.solo_red_local}<span class="badge badge-sm tone-neutral">Solo red local</span>{/if}{#if z.escucha === false}<Chip pequeno tono="warn" texto="Sin responder" />{/if}
                   <span class="corte" aria-hidden="true"></span>
                   {#if puede.ordenar(actual.cliente?.rol)}<a class="btn btn-sm btn-ghost usar" href="{hrefDestino(actual.id ?? '', v.clave)}#usar" use:tip={"Dónde se puede usar: una copia nueva, un espejo o un repositorio a partir de otro"}><Plus size={12} />Usar en una copia</a>{/if}
                   {#if administra}<button class="btn btn-sm btn-ghost" onclick={() => (renombrar = v)}><Pencil size={12} />Nombre</button><button class="btn btn-sm btn-ghost" onclick={() => (marcar = mz)} use:tip={"Local, Fuera del sitio o Nube; Inmutable, Aislado"}><ShieldCheck size={12} />Tipo y marcas</button>{/if}</span>
@@ -243,7 +243,8 @@
         <div class="en-camino">{#each enCamino as p (p.orden.id)}<PendienteItem {p} conEquipo />{/each}</div>
       {/if}
       {#if repos.length}
-        <div class="card p-0 desplazable solo-ancho-tabla">
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div class="card p-0 desplazable solo-ancho-tabla" tabindex="0" role="region" aria-label="Repositorios (se desliza a los lados)">
           <table class="tabla">
             <caption class="sr-only">Repositorios</caption>
             <thead><tr><th scope="col">Repositorio</th><th scope="col">Estado</th><th scope="col">Equipo · dónde se guarda</th><th scope="col" class="der">Versiones</th><th scope="col" class="der">Tamaño</th><th scope="col">Verificado</th><th scope="col">Restauración probada</th></tr></thead>

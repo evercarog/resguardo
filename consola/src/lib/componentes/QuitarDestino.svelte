@@ -20,6 +20,7 @@
   import { textoUsos, textoUsosCorto, usosDeVista, type DestinoVista } from "$lib/destinos";
   import { queHaceAlDesconectar } from "$lib/nubesEquipo";
   import { tip } from "$lib/tooltip";
+  const uid = `qd-${Math.random().toString(36).slice(2, 8)}`;
   import type { Cliente, DestinoResumen, Equipo } from "$lib/tipos";
 
   interface Props {
@@ -76,10 +77,11 @@
 {/if}
 {#if nube}
   {#if nubeOcupada && usosNube}
+    <!-- G5: el motivo, también para el teclado y los lectores de pantalla (no solo en el globo). -->
     <span class="apagado" use:tip={textoUsos(usosNube) ?? ""}>
-      <button class="btn btn-ghost" class:btn-sm={pequeno} disabled aria-describedby={variante === "pagina" ? "qd-nube" : undefined}><Unplug size={pequeno ? 12 : 14} />{textoUsosCorto(usosNube)}</button>
+      <button type="button" class="btn btn-ghost" class:btn-sm={pequeno} aria-disabled="true" aria-describedby="{uid}-nube"><Unplug size={pequeno ? 12 : 14} />{textoUsosCorto(usosNube)}</button>
     </span>
-    {#if variante === "pagina"}<p class="faint motivo" id="qd-nube">{textoUsos(usosNube)} Quítalo antes de ahí para poder desconectarla de {nube.equipo.nombre}.</p>{/if}
+    <p class="faint motivo" class:sr-only={variante !== "pagina"} id="{uid}-nube">{textoUsos(usosNube)} Quítalo antes de ahí para poder desconectarla de {nube.equipo.nombre}.</p>
   {:else}
     <button class="btn btn-ghost quitar" class:btn-sm={pequeno} onclick={() => (desconectar = true)}><Unplug size={pequeno ? 12 : 14} />Desconectar{variante === "pagina" ? ` de ${nube.equipo.nombre}` : ""}</button>
   {/if}
@@ -89,9 +91,9 @@
 {/each}
 {#if ocupado}
   <span class="apagado" use:tip={textoUsos(usosEquipos) ?? ""}>
-    <button class="btn btn-ghost" class:btn-sm={pequeno} disabled aria-describedby={variante === "pagina" ? "qd-eq" : undefined}><Trash2 size={pequeno ? 12 : 14} />{textoUsosCorto(usosEquipos)}</button>
+    <button type="button" class="btn btn-ghost" class:btn-sm={pequeno} aria-disabled="true" aria-describedby="{uid}-eq"><Trash2 size={pequeno ? 12 : 14} />{textoUsosCorto(usosEquipos)}</button>
   </span>
-  {#if variante === "pagina"}<p class="faint motivo" id="qd-eq">{textoUsos(usosEquipos)} Para quitarlo, antes hay que quitar eso.</p>{/if}
+  <p class="faint motivo" class:sr-only={variante !== "pagina"} id="{uid}-eq">{textoUsos(usosEquipos)} Para quitarlo, antes hay que quitar eso.</p>
 {/if}
 
 {#if quitarLista}
@@ -139,6 +141,10 @@
   }
   .apagado {
     display: inline-flex;
+  }
+  .apagado [aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .motivo {
     flex-basis: 100%;

@@ -69,7 +69,8 @@
       {/if}
     </div>
     {#if vistas.length}
-      <div class="card p-0 desplazable">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="card p-0 desplazable" tabindex="0" role="region" aria-label="Equipos (se desliza a los lados)">
         <table class="tabla">
           <caption class="sr-only">Equipos de todos los clientes</caption>
           <thead>

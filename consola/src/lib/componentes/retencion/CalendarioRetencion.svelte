@@ -5,6 +5,7 @@
   // en que dejan de entrar en la regla: un cuadro con borde discontinuo). Forma,
   // número y texto, nunca solo el color. Pulsar un día con algo lo elige (y
   // filtra las listas de abajo); otra vez, lo quita.
+  import { tip } from "$lib/tooltip";
   import { claveDia } from "$lib/retencionDetalle";
 
   type Marca = { quitadas: number; vueltas: number; fallos: number; previstas: number };
@@ -78,7 +79,7 @@
             class:elegido={dia === x.k}
             aria-pressed={dia === x.k}
             aria-label={etiqueta(x)}
-            title={etiqueta(x)}
+            use:tip={etiqueta(x)}
             onclick={() => alDia(dia === x.k ? null : x.k)}
           >
             <span class="num-dia">{x.d.getDate()}</span>
@@ -86,7 +87,7 @@
             {#if x.m.previstas}<span class="marca se-ira">−{x.m.previstas}</span>{/if}
           </button>
         {:else}
-          <span class="dia" class:hoy={x.hoy} class:futuro={x.futuro} title={etiqueta(x)}><span class="num-dia">{x.d.getDate()}</span></span>
+          <span class="dia" class:hoy={x.hoy} class:futuro={x.futuro} use:tip={etiqueta(x)}><span class="num-dia">{x.d.getDate()}</span></span>
         {/if}
       {/each}
     </div>

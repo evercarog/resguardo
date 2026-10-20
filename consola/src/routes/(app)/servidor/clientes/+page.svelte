@@ -4,6 +4,7 @@
   // última actividad, uso de las cuotas); ni nombres de equipos, ni correos,
   // ni avisos. Desde aquí se da de alta un cliente para otra persona (con su
   // invitación de propietario) y se ponen las cuotas.
+  import Chip from "$lib/componentes/Chip.svelte";
   import { onMount } from "svelte";
   import { Building2, Gauge, Link2, Plus, RefreshCw, UserPlus } from "@lucide/svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
@@ -197,7 +198,7 @@
                 </td>
                 <td class="num">
                   {numero(c.personas)}
-                  {#if !c.propietarios}<span class="badge badge-sm tone-warn">sin propietario</span>{/if}
+                  {#if !c.propietarios}<Chip pequeno tono="warn" texto="Sin propietario" />{/if}
                 </td>
                 <td class="num">
                   {numero(c.equipos)}{#if c.efectivas.equipos}{" / "}{numero(c.efectivas.equipos)}{/if}

@@ -164,7 +164,7 @@
   >
     {#snippet acciones()}
       {#if datos && puede.ordenar(rol)}
-        <BotonCargando class="btn" cargando={buscando} textoCargando="Avisando…" onclick={buscarAhora} title="Que los equipos busquen ya una versión nueva, aunque este servidor aún no la tenga"><RefreshCw size={16} />Buscar ahora</BotonCargando>
+        <BotonCargando class="btn" cargando={buscando} textoCargando="Avisando…" onclick={buscarAhora} tip="Que los equipos busquen ya una versión nueva, aunque este servidor aún no la tenga"><RefreshCw size={16} />Buscar ahora</BotonCargando>
       {/if}
       {#if datos && admin && disponible}
         <BotonCargando class="btn btn-primary" cargando={aprobando === "*"} textoCargando="Aprobando…" onclick={() => ahora()} disabled={datos.politica.modo === "pausada"}

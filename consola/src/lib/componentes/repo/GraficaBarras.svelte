@@ -157,7 +157,8 @@
     <!-- Alternativa en texto: los mismos datos en una tabla. -->
     <details class="datos">
       <summary>Ver los datos</summary>
-      <div class="desplazable">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="desplazable" tabindex="0" role="region" aria-label="{titulo} (se desliza a los lados)">
         <table class="tabla">
           <caption class="sr-only">{titulo}</caption>
           <thead><tr><th scope="col">Versión</th><th scope="col" class="der">{titulo}</th></tr></thead>

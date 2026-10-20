@@ -604,7 +604,7 @@
         <div class="opciones" role="radiogroup" aria-label="Cómo añadirlo">
           <label class="opcion" class:on={modoWin === "listo"}>
             <input type="radio" bind:group={modoWin} value="listo" />
-            <span><strong>Descargar instalador listo</strong> <span class="badge badge-sm tone-ok">Recomendado</span><span class="faint">Se vincula solo al instalarlo: nadie tiene que escribir códigos ni direcciones.</span></span>
+            <span><strong>Descargar instalador listo</strong> <span class="badge badge-sm tone-accent">Recomendado</span><span class="faint">Se vincula solo al instalarlo: nadie tiene que escribir códigos ni direcciones.</span></span>
           </label>
           <label class="opcion" class:on={modoWin === "codigo"}>
             <input type="radio" bind:group={modoWin} value="codigo" />

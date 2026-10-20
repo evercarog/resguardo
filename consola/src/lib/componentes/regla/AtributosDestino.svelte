@@ -8,6 +8,7 @@
   // consolas con la clave de administración: cuenta en la regla 3-2-1. El
   // sistema de archivos, el entorno y la última conexión que vio el agente se
   // enseñan solo como dato.
+  import { tip } from "$lib/tooltip";
   import { Building2, Cloud, HardDrive, Lock, ShieldCheck, ShieldHalf, TriangleAlert, Unplug } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import BotonCargando from "../BotonCargando.svelte";
@@ -115,7 +116,7 @@
       <div class="opciones">
         {#each TIPOS_DESTINO as t (t)}
           {@const Icono = ICONO[t]}
-          <label class="opcion" title={AYUDA_TIPO[t]}>
+          <label class="opcion" use:tip={AYUDA_TIPO[t]}>
             <input type="radio" name="at-tipo" value={t} bind:group={tipo} />
             <span class="op-texto"><span class="op-nombre"><Icono size={15} aria-hidden="true" />{TEXTO_TIPO[t]}</span>{#if t === tipoDeducido}<span class="faint deducido">lo deducido</span>{/if}</span>
           </label>

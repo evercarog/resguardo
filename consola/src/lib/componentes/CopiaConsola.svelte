@@ -4,6 +4,7 @@
   // la consola. Esa clave se elige aquí y no sale del navegador: al servidor
   // solo le llega la clave pública que sale de ella (lib/cripto/respaldo.ts).
   // Al ponerla se muestra su kit para imprimir, como el de los repositorios.
+  import FuerzaClave from "./FuerzaClave.svelte";
   import { onMount } from "svelte";
   import { CircleAlert, DatabaseBackup, KeyRound, LifeBuoy, Play, Printer, ShieldCheck } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
@@ -202,10 +203,7 @@
         {/if}
         <CampoClave requerido id="cr-clave" etiqueta="Clave de respaldo" autocomplete="new-password" autofocus bind:value={clave} ayuda="Una frase larga que no uses en otro sitio. Distinta de la clave de administración." />
         {#if clave}
-          <div class="fuerza" aria-live="polite">
-            <div class="barra nivel-{f.nivel}" role="meter" aria-valuemin="0" aria-valuemax="4" aria-valuenow={f.nivel} aria-label="Fuerza de la clave"><span></span></div>
-            <span class="pequeno">{f.texto}{f.consejo ? ` · ${f.consejo}` : ""}</span>
-          </div>
+          <FuerzaClave {f} />
         {/if}
         <CampoClave requerido id="cr-repetida" etiqueta="Repítela" autocomplete="new-password" bind:value={repetida} error={repetida && repetida !== clave ? "No coinciden." : ""} />
         <div class="dos">
@@ -315,45 +313,6 @@
     padding-left: 1.4em;
     display: grid;
     gap: 4px;
-  }
-  .fuerza {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    margin-top: -6px;
-  }
-  .fuerza .barra {
-    flex: 0 0 140px;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--border);
-    overflow: hidden;
-  }
-  .fuerza .barra span {
-    display: block;
-    height: 100%;
-    width: 8%;
-    background: var(--bad, #c0392b);
-  }
-  .nivel-1 span {
-    width: 30% !important;
-    background: var(--bad, #c0392b) !important;
-  }
-  .nivel-2 span {
-    width: 55% !important;
-    background: var(--warn, #d68910) !important;
-  }
-  .nivel-3 span {
-    width: 80% !important;
-    background: var(--ok, #1e8449) !important;
-  }
-  .nivel-4 span {
-    width: 100% !important;
-    background: var(--ok, #1e8449) !important;
-  }
-  .pequeno {
-    font-size: var(--fs-xs);
-    color: var(--text-2);
   }
   .dos {
     display: grid;
