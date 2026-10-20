@@ -2,6 +2,38 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+
+## 2026-10-20 · `ia/081-d` · Plan 0.8.1, bloque D: las copias de cada día, más fáciles (D1–D8)
+
+Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: D1 (15t, renombrar), D2 (15y, grupos de exclusiones en las copias y «no copiar más de N MB»), D3 (15z, retención «Personalizada»), D4 (15v, etiquetas de las versiones), D5 (15r, espejo desde una copia), D6 (15gg, repositorios sueltos del almacén), D7 (15ii, equipos que entran y salen) y D8 (15kk, apagar al terminar), sin tocar el progreso en vivo ni la página de la derivada (bloque A) ni 15hh.
+
+**Hecho (commits por tema, agente y consola por separado):**
+
+- **D1:** orden `nombre_copia` (administración, sin espera) para copias y derivadas; los espejos, con su lista. Lápiz junto al título de la copia, en su fila de «Copias», en la ficha del equipo, en la página del espejo y en la derivada; el historial de todas las consolas dice «"X" ahora se llama "Y"». En el asistente, el nombre arriba con propuesta automática («Documentos de PC-01») y repetido en el resumen.
+- **D2:** `config.copias[].grupos_exclusiones`, `mayores_mb` y `excepto_tamano`. El motor no admite excepciones a `--exclude-larger-than`: el agente recorre antes las carpetas (`excluir.rs`) y deja fuera por ruta exacta lo que pasa del límite; lo que quedó fuera va en el mensaje de la versión y en su detalle (sin rutas). Orden `vista_exclusiones` (cuánto deja fuera cada grupo, sellada, 60 s como mucho). «Aplicarles el cambio» en Organización y las plantillas de copias con sus grupos.
+- **D3:** «Personalizada» pregunta «Desde cero» o «A partir de la elegida», con «Vaciar» y «×» por fila, en el editor común de retención.
+- **D4:** `config.copias[].etiquetas` y filtro por etiqueta y por copia en «Historial y versiones» y Restaurar.
+- **D5:** el espejo desde una copia lleva su repositorio marcado y arriba y ofrece añadirlo a un espejo que ya va a ese destino; con el repositorio aún sin crear, el espejo queda pendiente y se abre al guardar.
+- **D6:** `guarda_copias.sueltos` (repositorios del disco del almacén fuera de la carpeta de cualquier equipo), «Buscar también en otras carpetas…», «Dar a un equipo» (un `rename` dentro de la zona, sin seguir enlaces, con la clave de administración) que sigue en «Usar un repositorio que ya existe», ya visible en la ficha del equipo con «Dar acceso…». La copia nueva propone las carpetas de la última versión y avisa si el equipo de esas versiones es otro.
+- **D7:** `config.movil` (sale de la oficina, margen, batería mínima, conexión medida) y «Además, al volver a conectarse»; dentro del margen, una copia que no llega al destino sale como aviso «Fuera de la oficina» y, pasado, «Lleva N días sin conectarse». En la consola, «Sale de la oficina» en la ficha y los textos de atraso.
+- **D8:** «Al terminar: nada / apagar / hibernar» en la copia y en «Copiar ahora» (clave de administración; en un servidor o almacén, con confirmación). Solo si termina bien o con avisos y no queda nada por hacer; 2 minutos con «No apagar» en el icono; aviso `equipo_apagado` en el historial común.
+- Contrato en `api-servidor.md` («Cambios», v1.8x), órdenes nuevas en la tabla de tipos y en `cripto/ordenes.ts`, capacidades en `admite`, simulador al día, `scripts/vectores-copias-dia.ts` en `test:vectores`.
+
+**Comprobado (resultado real, al final, en esta copia):** `cargo fmt --all --check` bien; `cargo clippy --workspace --all-targets -- -D warnings` bien; `cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings` bien; `cargo test --workspace --no-fail-fast` saltando las tres de siempre: 859 bien, 0 mal; `npm run check` (0 errores, 0 avisos), `npm run build` y `npm run test:vectores` bien; `npm run e2e`: escenario completo, bien (tras `cargo build -p resguardo-servidor -p resguardo-agente --bins`); `npm run test:sin-referencias` antes de cada commit, bien. En el simulador, a escritorio y a 375 px en claro y oscuro (capturas en `tmp/capturas/081-d`, fuera del repositorio); de ahí salió acortar «Apagar el equipo» a «Apagar».
+
+**Sin probar:** un apagado o hibernación de verdad (solo pruebas unitarias y el modo de prueba, `RESGUARDO_PRUEBA_APAGADO=1`); la detección de conexión medida y batería desde el servicio como SYSTEM en Windows, y las rutas de Linux (`busctl`, `/sys/class/power_supply`), que solo compilan en Linux; el recorrido del límite de tamaño junto con VSS y con carpetas enormes; mover un repositorio suelto en un almacén real; todo lo de la consola solo en el simulador.
+
+**Decisiones dudosas (para revisar):**
+
+- `vista_exclusiones` es de nivel administración (enseña cuentas de las carpetas del equipo), aunque no cambia nada.
+- «Fuera de la oficina» va como `estado: "aviso"` con `fuera: true` para que un servidor anterior no abra un incidente; la conexión medida solo frena en equipos que salen de la oficina y no lo permiten; la batería y la red medida solo frenan las copias automáticas (no «Copiar ahora»).
+- El límite de tamaño recorre las carpetas antes de copiar; si tarda más de 15 min, copia sin límite y lo dice.
+- Renombrar un espejo manda la lista entera de espejos (no hay orden propia).
+- Los sueltos van en el resumen en claro con su carpeta relativa (no son secretos, pero son nombres de carpeta del almacén).
+- D5: el espejo pendiente de un repositorio aún sin crear solo funciona para los que crea el asistente (`?paso_espejo=`).
+- La retención de los espejos (solo días) no recibió el trato de 15z.
+- D2: falta aplicar grupos en «Varios a la vez» y como plantilla por etiqueta (15y punto 3).
+
 ## 2026-10-20 · `ia/081-b` · Plan 0.8.1, bloque B: menos pantallas, más orden (B1–B6)
 
 Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: B1 (15bb, menú de ocho secciones con pestañas), B2 (15a y los datos de 15y, «Organización»), B3 (15dd, 15s, 15h, el almacén), B4 (15nn, clientes), B5 (15pp, nombres y notas iguales en todas las consolas) y B6 (15k, derivadas con su nombre). Hecho por la sesión principal (B1, B5) y tres asistentes en paralelo en la misma copia (B2; B3 y B6; B4), cada uno con sus commits.

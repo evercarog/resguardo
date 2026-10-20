@@ -44,14 +44,14 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ### Bloque D — Las copias de cada día, más fáciles
 
-- [ ] **D1. Renombrar** una copia, un espejo o una derivada con un lápiz y la clave; el nombre arriba del asistente (15t).
-- [ ] **D2. Grupos de exclusiones** de un toque, gestionables por cliente, «no copiar más de N MB» y vista previa de lo que se deja fuera (15y).
-- [ ] **D3. Retención «Personalizada»** desde cero o desde la elegida (15z).
-- [ ] **D4. Etiquetas de las versiones** por copia y filtro en el historial (15v).
-- [ ] **D5. Espejo desde una copia** con su repositorio marcado, o añadirlo a uno que ya existe (15r).
-- [ ] **D6. Traer repositorios viejos al almacén** sin terminal: repositorios sueltos del disco del almacén, «Dar a un equipo» y adoptar (15gg).
-- [ ] **D7. Equipos que entran y salen:** «además, al volver a conectarse», avisos de «lleva N días fuera» y no empezar sin batería (15ii).
-- [ ] **D8. Apagar el equipo al terminar** una copia, con la clave y aviso al usuario (15kk).
+- [x] (rama `ia/081-d`; orden `nombre_copia`, sin espera) **D1. Renombrar** una copia, un espejo o una derivada con un lápiz y la clave; el nombre arriba del asistente (15t).
+- [x] (rama `ia/081-d`; el límite de tamaño con excepciones lo aplica el agente recorriendo antes las carpetas; plantillas de copias con sus grupos; «Aplicarles el cambio» en Organización; sin «Varios a la vez» ni plantilla por etiqueta) **D2. Grupos de exclusiones** de un toque, gestionables por cliente, «no copiar más de N MB» y vista previa de lo que se deja fuera (15y).
+- [x] (rama `ia/081-d`; en el editor común de retención: copias, almacén y derivadas; la de los espejos, que solo tiene días, no lo necesita) **D3. Retención «Personalizada»** desde cero o desde la elegida (15z).
+- [x] (rama `ia/081-d`) **D4. Etiquetas de las versiones** por copia y filtro en el historial (15v).
+- [x] (rama `ia/081-d`; un repositorio aún sin crear deja el espejo pendiente y abre «Añadir un espejo» al guardar) **D5. Espejo desde una copia** con su repositorio marcado, o añadirlo a uno que ya existe (15r).
+- [x] (rama `ia/081-d`; el almacén los mueve con un `rename` dentro de su zona, sin seguir enlaces; sin probar contra un almacén real) **D6. Traer repositorios viejos al almacén** sin terminal: repositorios sueltos del disco del almacén, «Dar a un equipo» y adoptar (15gg).
+- [~] (rama `ia/081-d`: hecho «al volver a conectarse», margen y aviso «lleva N días», batería y conexión medida, «Sale de la oficina» en la consola; **falta** reanudar una copia cortada por perder la red aprovechando lo subido, que va con 15hh/15jj) **D7. Equipos que entran y salen:** «además, al volver a conectarse», avisos de «lleva N días fuera» y no empezar sin batería (15ii).
+- [x] (rama `ia/081-d`; solo probado con pruebas unitarias y el modo de prueba: no se apagó ningún equipo de verdad) **D8. Apagar el equipo al terminar** una copia, con la clave y aviso al usuario (15kk).
 
 ### Bloque E — Restaurar
 
