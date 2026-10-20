@@ -154,6 +154,13 @@ pub fn app_file(config_dir: &Path) -> PathBuf {
 
 /// Añade una entrada (sin fallar nunca la operación que la origina).
 pub fn append(path: &Path, entry: &Entry) {
+    append_con(path, entry, None);
+}
+
+/// [`append`] con campos de más para la entrada de la bitácora (0.8.1, E3: lo que la
+/// consola enseña en la ficha de una prueba de restauración y que [`Entry`] no lleva; la
+/// app congelada construye `Entry` entera, así que no se le añaden campos).
+pub fn append_con(path: &Path, entry: &Entry, extra: Option<serde_json::Value>) {
     // El historial del agente lo leen todos los usuarios del equipo: sin rutas
     // ni contraseñas en los mensajes (el de la app es solo del usuario).
     let sanitized;
@@ -175,7 +182,7 @@ pub fn append(path: &Path, entry: &Entry) {
     }
     // Lo que cuenta a la consola, también en la bitácora del equipo (para una consola nueva).
     if path == agent_file() {
-        crate::bitacora::desde_historial(entry);
+        crate::bitacora::desde_historial_con(entry, extra);
     }
 }
 

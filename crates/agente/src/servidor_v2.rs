@@ -1232,7 +1232,7 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             // E4 (14j): la prueba de restauración desde un espejo (ahora, programarla o quitarla).
             if o.tipo == "probar_restauracion" {
                 if c.get("espejo").is_some() {
-                    return crate::prueba_espejo::pedir_ahora(v, &r, c).map(hecha);
+                    return crate::prueba_espejo::pedir_ahora(v, &r, c, quien(v, o, orden_id)).map(hecha);
                 }
                 if c.get("programar_espejo").is_some() {
                     let m = crate::prueba_espejo::programar(v, &r, c)?;

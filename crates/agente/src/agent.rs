@@ -644,6 +644,10 @@ pub struct RunRecord {
     /// servicio se cortó a mitad). Va con `result: "error"`, así que cuenta para el reintento.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrumpida: bool,
+    /// 0.8.1 (E3, 15aa): en una prueba de restauración, de cuántos archivos de la versión se
+    /// eligió la muestra (para su ficha en «Restauraciones»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidatos: Option<u64>,
 }
 
 /// 15jj: lo que se anota de una copia que quedó «en curso» (`state.running`, en disco

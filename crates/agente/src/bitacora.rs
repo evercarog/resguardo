@@ -344,7 +344,18 @@ pub fn compactar_si_toca(dir: &Path, ahora: DateTime<Local>) {
 /// verificaciones, pruebas de restauración, copias externas y cambios
 /// inusuales. El resto (pausas, configuración…) no sale del equipo.
 pub fn desde_historial(e: &crate::history::Entry) {
-    if let Some((tipo, campos)) = entrada_de_historial(e) {
+    desde_historial_con(e, None);
+}
+
+/// [`desde_historial`] con campos de más (0.8.1, E3: la ficha de una prueba de restauración).
+/// Solo se añaden los que la entrada no trae ya.
+pub fn desde_historial_con(e: &crate::history::Entry, extra: Option<Value>) {
+    if let Some((tipo, mut campos)) = entrada_de_historial(e) {
+        if let (Some(m), Some(Value::Object(x))) = (campos.as_object_mut(), extra) {
+            for (k, v) in x {
+                m.entry(k).or_insert(v);
+            }
+        }
         anotar(tipo, campos);
     }
 }
