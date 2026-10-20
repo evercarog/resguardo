@@ -141,7 +141,7 @@
   import { nombreZonaPorDefecto, zonasDe } from "$lib/destinos";
   // C1 (plan 0.8.0, 14kk): el camino de cada repositorio en su tarjeta, y cada copia derivada como repositorio propio.
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
-  import { caminoDeCopia, textoEslabon, type Eslabon } from "$lib/camino";
+  import { caminoDeCopia, hrefDerivada, textoEslabon, type Eslabon } from "$lib/camino";
   import { enVivoCamino } from "$lib/caminoVivo.svelte";
   import { reglaDeCopia, type ReglaCopia } from "$lib/regla321";
   import { saludCompleta } from "$lib/saludCompleta";
@@ -1185,7 +1185,7 @@
                 <EnMarcha equipo={equipo.id} repo={r.id} tipos={["verificar", "verificar_externa", "copia_externa", "prueba_restauracion", "historial", "retencion", "restauracion"]} sinMover />
                 {#if riesgo}<AvisoMismoEquipo compacto {riesgo} onmover={puede.administrar(rol) && !moverBloqueado(r.id) ? () => (mover = r) : undefined} hrefExterna={puede.ordenar(rol) && copias.some((k) => k.repo === r.id) ? `/c/${c}/equipos/${equipo.id}?externa=${encodeURIComponent(r.id)}` : undefined} />{/if}
                 {#if r.retencion}<p class="faint retencion">Guarda {r.retencion} <Ayuda id="retencion" /></p>{/if}
-                {#if r.externa}<p class="externa"><CloudUpload size={14} />Copia derivada a «{r.externa.destino ?? "un destino que ya no está"}» cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
+                {#if r.externa}<p class="externa"><CloudUpload size={14} /><a class="link-suave" href={hrefDerivada(c, equipo.id, r.id, "externa")}>Copia derivada a «{r.externa.destino ?? "un destino que ya no está"}»</a> cada día a las {r.externa.hora}{#each detallesExterna(r.externa) as d (d)}{" · "}{d}{/each} <Ayuda id="copia-externa" /></p>
                   {@const raro = problemaDestinoPaso(equipo, r.externa.destino_id, r.externa.destino)}
                   {#if raro}<p class="paso-raro" role="note"><TriangleAlert size={13} /><span class="txt"><strong>Copia derivada:</strong> {TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarExterna(r)}>Quitar la copia derivada</button>{/if}</p>{/if}
                   <!-- 14nn: su destino ya no existe: quitarla o volver a crearla desde cero. -->
@@ -1196,7 +1196,8 @@
                   <div class="externa derivada">
                     <CloudUpload size={14} />
                     <span>
-                      Copia derivada a «{dv.destino ?? "otro destino"}» · {cuandoEnFrase(dv.cuando).toLowerCase()}{#if filtroEnFrase(dv.filtro)}{" · "}solo las versiones {filtroEnFrase(dv.filtro)}{/if}{#each detallesExterna(dv) as d (d)}{" · "}{d}{/each}
+                      <!-- 15g: su página propia (versiones, retención, dónde está…). -->
+                      <a class="link-suave" href={hrefDerivada(c, equipo.id, r.id, dv.id)}>Copia derivada a «{dv.destino ?? "otro destino"}»</a> · {cuandoEnFrase(dv.cuando).toLowerCase()}{#if filtroEnFrase(dv.filtro)}{" · "}solo las versiones {filtroEnFrase(dv.filtro)}{/if}{#each detallesExterna(dv) as d (d)}{" · "}{d}{/each}
                       {#if dv.activa === false}<span class="faint">{" · "}sin copias activas en el repositorio: no se hace</span>{/if}
                       {#if problemaDestinoPaso(equipo, dv.destino_id, dv.destino)}{@const raro = problemaDestinoPaso(equipo, dv.destino_id, dv.destino)!}<span class="paso-raro en-linea" role="note"><TriangleAlert size={13} /><span class="txt">{TEXTO_PROBLEMA_PASO[raro]}</span>{#if puede.ordenar(rol)}<button class="btn btn-sm" onclick={() => quitarDerivada(r, dv)}>Quitar la copia derivada</button>{/if}</span>{/if}
                       {#if ult?.resultado}{" · "}<Chip pequeno tono={ult.resultado === "fallo" ? "bad" : "ok"} texto={ult.resultado === "fallo" ? (ult.pausada ? "En pausa" : "Falló") : "Hecha"} />{/if}

@@ -545,6 +545,8 @@ export interface DerivadaResumen {
   con_retencion?: boolean | null;
   /** Plan 0.8.0, F4 (14t, `admite: "limite_franjas"`): la velocidad de subida según la hora. */
   limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
+  /** 15g: su carpeta en el destino, si no es la de siempre (`<repo>-<id>`). */
+  ruta?: string | null;
 }
 
 export interface RepositorioResumen {
@@ -905,6 +907,8 @@ export interface TareaInforme {
   motivo?: "destino_ausente" | null;
   /** 14nn: por eso dejó de intentarse (tras 3 vueltas seguidas), hasta cambiarla o «Subir ahora». */
   pausada?: boolean;
+  /** 15g (copia derivada): las versiones de su repositorio tras la última vuelta. */
+  versiones?: number | null;
 }
 
 export type EstadoComprobacion = "ok" | "aviso" | "fallo" | "desconocido";
@@ -931,7 +935,8 @@ export interface RepoInforme {
   restauracion_real?: { ultima: string; archivos?: number; bytes?: number } | null;
   externa: TareaInforme | null;
   /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
-  derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
+  /** 15g: `versiones`, las de su repositorio tras la última vuelta; `ultima_bien`, la última que salió bien. */
+  derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null; versiones?: number | null; ultima_bien?: string | null })[];
   /** Plan 0.8.0, E4 (14j): las pruebas de restauración desde un espejo (agentes con `prueba_espejo`). */
   pruebas_espejo?: import("./tiposPruebas").PruebaEspejoInforme[];
   proteccion: { puntuacion: number; total: number; items: ComprobacionProteccion[] } | null;
@@ -1320,6 +1325,8 @@ export interface TrabajoEspejoResumen extends TrabajoEspejo {
   subidas?: SubidaEspejo[] | null;
   /** v1.6x (14i, 14h): lo que ocupa en el destino, en total y por repositorio (`<usuario>/<repo>` en el almacén, el id en el equipo). */
   ocupa?: { bytes: number; repos?: Record<string, number> | null; cuando: string } | null;
+  /** v1.8x (15m): la última subida buena de cada repositorio (también de los que ya no incluye: su copia allí no se actualiza). */
+  ultima_por_repo?: Record<string, string> | null;
   /** v1.6x (14p): «Hacer ahora» pedido y aún sin empezar. */
   en_cola?: boolean | null;
 }

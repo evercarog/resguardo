@@ -65,10 +65,16 @@ const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 /** El enlace de un paso: un espejo, su página (14i); si no, la página de su destino si la tiene; si no, los espejos de quien lo hace o el repositorio. */
 function enlace(p: PasoVista, rc: ReglaCopia, cliente: string): string | null {
   if (p.tipo === "espejo" && p.equipoId && p.trabajo) return hrefEspejo(cliente, p.equipoId, p.trabajo);
+  // 15g: una copia derivada, su propia página (versiones, retención, dónde está…).
+  if (p.tipo === "derivada" || p.tipo === "externa") return hrefDerivada(cliente, rc.equipo.id, rc.repo.id, p.tipo === "externa" ? "externa" : p.id.replace(/^derivada-/, ""));
   if (p.clave && !p.clave.startsWith("espejo:")) return hrefDestino(cliente, p.clave);
   if (p.tipo === "espejo" && p.equipoId) return `/c/${cliente}/equipos/${p.equipoId}/espejos`;
   return `/c/${cliente}/equipos/${rc.equipo.id}/repositorios/${encodeURIComponent(rc.repo.id)}`;
 }
+
+/** 15g: la página de una copia derivada (`externa`: la de cada día de antes). */
+export const hrefDerivada = (cliente: string, equipo: string, repo: string, id: string) =>
+  `/c/${cliente}/equipos/${equipo}/repositorios/${encodeURIComponent(repo)}/derivadas/${encodeURIComponent(id)}`;
 
 /** El estado de un paso que no es la copia: lo que dice su última vuelta y si está al día. */
 function estadoPaso(p: PasoVista, hace: Equipo | undefined, ahora: number): Pick<Eslabon, "tono" | "estado" | "cuando"> {

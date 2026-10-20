@@ -46,6 +46,7 @@
   } from "$lib/espejoTrabajos";
   import type { Cliente, Equipo, Horario } from "$lib/tipos";
   import LimiteFranjas from "../LimiteFranjas.svelte";
+  import { destinoEspejo, salenDelEspejo, textoSalen } from "$lib/espejosRepo";
   import { admiteFranjas, velocidadEnFrase } from "$lib/franjas";
 
   interface Props {
@@ -111,6 +112,8 @@
     return o ? (o.equipo ? `${o.nombre} (${o.equipo})` : o.nombre) : r;
   };
   const nombreEquipo = (u: string) => usuarios.find((x) => x.usuario === u)?.nombre ?? u;
+  /** 15m (1): al cambiar uno que ya existía, los repositorios que dejan de estar en él. */
+  const salen = $derived(nuevo ? [] : salenDelEspejo(trabajo, t, repos.map((o) => o.valor)));
   function elegirQue(tipo: "todos" | "equipos" | "repos") {
     if (tipo === "todos") t.que = { tipo: "todos" };
     else if (tipo === "equipos") t.que = { tipo: "equipos", equipos: t.que.tipo === "equipos" ? t.que.equipos : [] };
@@ -546,6 +549,10 @@
         <li><span class="et">Freno</span><span class="val faint">{textoFreno(t.freno)}</span><button type="button" class="btn btn-sm btn-ghost" onclick={() => ((mas.retencion = true), irA("retencion"))}>Cambiar</button></li>
       </ul>
       {#if t.retencion.modo === "igual"}<div class="notice notice-warn"><TriangleAlert size={16} /><p>{AVISO_IGUAL}</p></div>{/if}
+    {/if}
+    {#if (avanzado || paso === "resumen") && salen.length}
+      <!-- 15m (1): los repositorios que dejan de estar y qué pasa con lo ya subido. -->
+      <div class="notice notice-warn" role="status"><TriangleAlert size={16} /><p>{textoSalen(salen.map(nombreRepo), destinoEspejo(t, hace))}</p></div>
     {/if}
 
     {#if (avanzado || paso === "resumen") && primera}

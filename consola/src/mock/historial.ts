@@ -136,7 +136,11 @@ export function informeRepo(r: T.RepositorioResumen, copias: T.CopiaResumen[], o
     espacio: { en_disco_bytes: Math.round(total * 0.46), sin_comprimir: total, ratio: 2.17, leido: hace(10) },
     verificacion: { ultima: hace(30), resultado: "ok", mensaje_corto: "Sin errores en el 5 % revisado." },
     prueba_restauracion: { ultima: hace(24 * 9), resultado: "ok", mensaje_corto: "25 archivos restaurados y comprobados." },
-    externa: o.externa ? { ultima: hace(15), resultado: "ok", mensaje_corto: null } : null,
+    externa: o.externa ? { ultima: hace(15), resultado: "ok", mensaje_corto: null, versiones: 64 } : null,
+    // 15g: las copias derivadas, con las versiones de su repositorio y la última que salió bien.
+    ...((r.derivadas ?? []).length
+      ? { derivadas: (r.derivadas ?? []).map((d, i) => ({ id: d.id, destino: d.destino ?? null, ultima: hace(3 + i * 7), ultima_bien: hace(3 + i * 7), resultado: "ok" as const, mensaje_corto: "3 copias subidas.", versiones: 41 + i * 9 })) }
+      : {}),
     proteccion: { puntuacion: items.filter((i) => i.estado === "ok").length, total: items.length, items },
     ...(o.recortado ? { recortado: true } : {}),
   };
