@@ -79,7 +79,7 @@ export function configParaEnviar(c: ConfigLocal): ConfigLocal {
 
 export const TIPOS_DESTINO: Record<DestinoLocal["tipo"], string> = {
   local: "Carpeta o disco de este equipo",
-  rest: "Servidor de copias (rest-server)",
+  rest: "Almacén (otro equipo que guarda copias)",
   s3: "S3 (Amazon, Wasabi, MinIO…)",
   b2: "Backblaze B2",
   sftp: "SFTP",

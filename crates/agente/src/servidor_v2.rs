@@ -537,7 +537,7 @@ pub fn vincular_con(url: &str, codigo: &str, nombre: &str, esperado: &Esperado) 
         });
         guardar(&v)?;
         crate::agent::log(&format!(
-            "Vinculado con Resguardo Server ({url}), pendiente del alta con la clave de administración de este equipo. Código de comprobación: {sas} (autoridad TLS {huella_ca})."
+            "Vinculado con la consola {url}, pendiente del alta con la clave de administración de este equipo. Número de comprobación: {sas} (autoridad TLS {huella_ca})."
         ));
         return Ok(Vinculado { sas, sas_v3, huella_ca, servidor: url, espera_alta: true });
     }
@@ -556,7 +556,7 @@ pub fn vincular_con(url: &str, codigo: &str, nombre: &str, esperado: &Esperado) 
     v.nonces.clear();
     v.modo = "gestionado".into();
     guardar(&v)?;
-    crate::agent::log(&format!("Vinculado con Resguardo Server ({}). Código de comprobación: {sas} (autoridad TLS {huella_ca}).", v.url));
+    crate::agent::log(&format!("Vinculado con la consola {}. Número de comprobación: {sas} (autoridad TLS {huella_ca}).", v.url));
     Ok(Vinculado { sas, sas_v3, huella_ca, servidor: v.url, espera_alta: false })
 }
 

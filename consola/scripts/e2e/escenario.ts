@@ -1402,7 +1402,7 @@ async function principal() {
     // -----------------------------------------------------------------------
     paso("6a2. «Orden destructiva pendiente»: se cierra al aplicarse o cancelarse, y la siguiente vuelve a avisar");
     // La de la retención del paso 5 ya se aplicó: su aviso está cerrado, así que esta avisa otra vez.
-    const destructivas = () => buzon.correos.filter((m) => /Orden destructiva pendiente en «ALMACEN-A»/.test(m.asunto));
+    const destructivas = () => buzon.correos.filter((m) => /Orden con espera en «ALMACEN-A»/.test(m.asunto));
     const cancelar = async (o: { id: string }) => {
       await consola.ok("POST", `/api/clientes/${c.id}/ordenes/${o.id}/cancelar`);
       await consola.resultado(c, eqA.id, o as any, { estados: ["cancelada"], plazo: 10_000 });
@@ -1417,9 +1417,9 @@ async function principal() {
     await esperar("otro correo para la orden destructiva siguiente", () => destructivas().length === 2 || null, { plazo: 60_000 });
     await cancelar(d2);
     await dormir(5_000);
-    comprobar(!buzon.correos.some((m) => /Orden destructiva/.test(m.asunto) && !/pendiente/.test(m.asunto)), "Ningún «Resuelto» ni «Volvió a funcionar» de una orden destructiva", buzon.correos.map((m) => m.asunto));
+    comprobar(!buzon.correos.some((m) => /Orden con espera/.test(m.asunto) && /^Resuelto|Volvió a funcionar/.test(m.asunto)), "Ningún «Resuelto» ni «Volvió a funcionar» de una orden destructiva", buzon.correos.map((m) => m.asunto));
     const reg2 = await consola.ok("GET", "/api/servidor/notificaciones/registro");
-    comprobar(!reg2.some((e: any) => e.tipo === "recuperacion" && /Orden destructiva/.test(e.titulo)), "El registro no tiene recuperación de una orden destructiva", reg2);
+    comprobar(!reg2.some((e: any) => e.tipo === "recuperacion" && /Orden con espera/.test(e.titulo)), "El registro no tiene recuperación de una orden destructiva", reg2);
 
     // -----------------------------------------------------------------------
     paso("6b. Verificación automática y «Verificar ahora»");

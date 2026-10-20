@@ -221,7 +221,7 @@ pub fn poner_espejo(nuevo: Option<crate::espejo::Espejo>) -> Result<String, Stri
     crate::agent::require_admin()?;
     let c = load();
     if !c.enabled {
-        return Err("Activa antes el Servidor de copias.".into());
+        return Err("Activa antes el almacén (que este equipo guarde copias de otros).".into());
     }
     // Quitarlo todo vale siempre (como antes).
     let Some(mut nuevo) = nuevo else { return poner_trabajos(None) };
@@ -264,7 +264,7 @@ pub fn poner_trabajos(nuevos: Option<Vec<crate::espejo_trabajos::Trabajo>>) -> R
     crate::agent::require_admin()?;
     let mut c = load();
     if !c.enabled {
-        return Err("Activa antes el Servidor de copias.".into());
+        return Err("Activa antes el almacén (que este equipo guarde copias de otros).".into());
     }
     let anterior = c.espejo.as_ref().map(|e| e.trabajos_efectivos()).unwrap_or_default();
     let Some(mut nuevos) = nuevos.filter(|n| !n.is_empty()) else {
@@ -280,10 +280,10 @@ pub fn poner_trabajos(nuevos: Option<Vec<crate::espejo_trabajos::Trabajo>>) -> R
                 let d = &t.adonde.carpeta;
                 crate::platform::carpeta_local_valida(d)?;
                 if se_solapan(d, &c.path) {
-                    return Err("La carpeta del espejo no puede estar dentro de la del Servidor de copias (ni al revés).".into());
+                    return Err("La carpeta del espejo no puede estar dentro de la del almacén (ni al revés).".into());
                 }
                 if c.zonas.iter().any(|z| se_solapan(d, &z.path)) {
-                    return Err("La carpeta del espejo no puede estar dentro de una zona del Servidor de copias (ni al revés).".into());
+                    return Err("La carpeta del espejo no puede estar dentro de una zona del almacén (ni al revés).".into());
                 }
                 if carpeta_del_sistema(Path::new(d)) {
                     return Err("La carpeta del espejo no puede estar en la carpeta de Windows, de los programas o de Resguardo.".into());
@@ -386,7 +386,7 @@ impl Files {
     /// Vuelve a emitir el certificado del servidor con la misma autoridad.
     pub fn issue_leaf(&self, names: &[String]) -> Result<(), String> {
         let ca_key = std::fs::read_to_string(self.private("servidor-ca.key"))
-            .map_err(|_| "Falta la clave de la autoridad del servidor: vuelve a activar el Servidor de copias.".to_string())?;
+            .map_err(|_| "Falta la clave de la autoridad del almacén: vuelve a activarlo.".to_string())?;
         let ca_pem = std::fs::read_to_string(self.ca()).map_err(|_| "Falta el certificado de la autoridad del servidor.".to_string())?;
         let (pem, key) = generate_leaf(&ca_key, names)?;
         self.write_private("servidor-tls.key", &key)?;
@@ -1200,7 +1200,7 @@ pub fn anadir_equipo_legible(name: &str, zona: Option<&str>, legible: Option<&st
     crate::agent::require_admin()?;
     let mut c = load();
     if !c.enabled {
-        return Err("Activa antes el Servidor de copias.".into());
+        return Err("Activa antes el almacén (que este equipo guarde copias de otros).".into());
     }
     let base = user_name(name);
     let (lista, port) = match zona {
@@ -1333,7 +1333,7 @@ fn nombre_zona_valido(n: &str) -> bool {
 /// del almacén. No mira el disco ni si el puerto está libre.
 pub fn validar_zona_nueva(c: &ServerConfig, carpeta: &str, port: u16) -> Result<(), String> {
     if !c.enabled {
-        return Err("Activa antes el Servidor de copias.".into());
+        return Err("Activa antes el almacén (que este equipo guarde copias de otros).".into());
     }
     if c.zonas.len() >= ZONAS_MAX {
         return Err(format!("Como mucho {ZONAS_MAX} zonas además de la principal."));

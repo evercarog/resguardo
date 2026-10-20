@@ -67,7 +67,7 @@ fn vincular_sin_carpeta_preparada() {
     let v = crate::servidor_v2::cargar().expect("vínculo guardado");
     assert_eq!(v.url, srv.url);
     let log = leer(&dir.join("agent.log"));
-    assert!(log.contains("Vinculado con Resguardo Server"), "{log}");
+    assert!(log.contains("Vinculado con la consola"), "{log}");
     assert!(!log.contains(&codigo), "el código no va al registro");
 
     std::env::remove_var("RESGUARDO_AGENT_DIR");

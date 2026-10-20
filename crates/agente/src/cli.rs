@@ -54,9 +54,11 @@ pub fn alias(a: &str) -> Option<&'static str> {
     }
 }
 
+// G4: «Consolas y órdenes» aparte del modo local; «almacén», no «Servidor de copias» ni
+// «rest-server»; sin mayúsculas de énfasis; el horario del espejo dicho como en la consola.
 const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador; en Linux, con sudo)
 
-  estado                                  Resumen: servidor, copias (última y próxima), Servidor de copias,
+  estado                                  Resumen: consola, copias (última y próxima), almacén,
                                           espejo, nubes y últimos errores
   version                                 La versión del agente
   actualizaciones                         La actualización automática: versión disponible, estado y motivo
@@ -68,38 +70,20 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
                                           Restaura una carpeta o archivo de una versión (nunca sobrescribe)
   registro [n]                            Las últimas n líneas del registro (50 por defecto)
   kit <repo>                              Datos para recuperar las copias (incluye la contraseña)
+
+  Consolas y órdenes:
   vincular <código> --servidor <url> [--nombre <nombre>]
-                                          Une el equipo a Resguardo Server. Si ya tenía clave de
-                                          administración (p. ej. se perdió la consola), conserva todo
-                                          y espera el alta del servidor nuevo con esa misma clave.
+                                          Vincula el equipo con una consola (Resguardo Server). Si ya tenía
+                                          clave de administración (p. ej. se perdió la consola), conserva
+                                          todo y espera el alta de la consola nueva con esa misma clave.
                                           Con --huella-ca AB:CD:…, solo si la autoridad TLS es esa
   vincular <código> --servidor <url> --empezar-de-cero
-                                          Olvida el servidor, la clave y las copias que gestionaba
+                                          Olvida la consola, la clave y las copias que gestionaba
                                           (lo copiado se queda) y lo vincula como equipo nuevo
-  vincular --instalador <ruta>            Une el equipo con los datos de un instalador «listo»
+  vincular --instalador <ruta>            Vincula con los datos de un instalador «listo»
   leer-instalador <ruta>                  ¿Trae ese instalador datos para vincular?
-  desvincular                             Deja el servidor y sigue copiando en modo local
-
-  Guardar las copias de otros equipos (Servidor de copias, rest-server solo añadir):
-  guardar-copias estado
-  guardar-copias activar --carpeta <ruta> [--puerto 8000] [--toda-la-red]
-                                          Por defecto solo acepta la red local
-  guardar-copias anadir <equipo>          Usuario y contraseña para un equipo cliente
-  guardar-copias quitar <equipo>          Ya no puede entrar (sus copias se quedan)
-  guardar-copias desactivar               Para el servidor (las copias se quedan)
-  guardar-copias espejo [--carpeta <ruta>]... [--nube <nombre> --carpeta-nube <carpeta>]...
-                        [--hora 02:00] [--limite-kib <KiB/s>]
-                                          Cada noche, copia todo lo guardado a otra carpeta (otro disco)
-                                          y/o a una nube conectada (solo añade: nunca borra)
-  guardar-copias espejo --quitar          Deja de hacer el espejo (lo copiado se queda)
-  nube conectar dropbox|drive --nombre <nombre>
-                                          Conecta una nube para el espejo (abre el navegador; el permiso
-                                          se guarda protegido solo en este equipo)
-  nube lista                              Nubes conectadas en este equipo
-  nube quitar <nombre>                    Olvida una nube (revoca también el permiso en su web)
-
-  Sin servidor (modo local) o para moverse:
-  servidores                              Servidor actual, cambio en curso y servidores de respaldo
+  desvincular                             Deja la consola y sigue copiando en modo local
+  servidores                              Consola actual, cambio en curso y consolas de respaldo
   consolas                                Las consolas que gestionan este equipo (pueden ser varias a la vez)
   consolas quitar <n.º | dirección | huella>
                                           Deja de conectarse a una consola (p. ej. una que ya no existe);
@@ -108,11 +92,34 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
   ordenes aprobar <n.º>                   La aplica ya, sin esperar a su hora: pide la clave de administración
                                           (sin que se vea al escribirla) y queda en el historial de todas
                                           las consolas, con un aviso en todas
+
+  Sin consola (modo local):
   config exportar <archivo>               La configuración del equipo, sin contraseñas (JSON)
   config importar <archivo>               Aplica las copias de un archivo (solo en modo local)
-  repositorio crear <id> --nombre <n> --tipo local|rest|s3|b2|sftp --donde <dónde> [--usuario <u>]
-                                          Crea un repositorio (solo en modo local). Pide la contraseña
+  repositorio crear <id> --nombre <n> --tipo local|rest|s3|b2|sftp --donde <dónde>
+                    [--usuario <u>] [--nombre-destino <n>]
+                                          Crea un repositorio (solo en modo local). --nombre-destino es el
+                                          nombre de su destino (por defecto, «Destino»). Pide la contraseña
                                           (y el secreto del destino, si hay usuario) por la entrada estándar
+
+  Guardar las copias de otros equipos (almacén, de solo añadir):
+  guardar-copias estado
+  guardar-copias activar --carpeta <ruta> [--puerto 8000] [--toda-la-red]
+                                          Por defecto solo acepta la red local
+  guardar-copias anadir <equipo>          Usuario y contraseña para un equipo que copia aquí
+  guardar-copias quitar <equipo>          Ya no puede entrar (sus copias se quedan)
+  guardar-copias desactivar               Deja de guardar copias (las copias se quedan)
+  guardar-copias espejo [--carpeta <ruta>]... [--nube <nombre> --carpeta-nube <carpeta>]...
+                        [--hora 02:00] [--limite-kib <KiB/s>]
+                                          Cada día a las 02:00 (o a la hora de --hora), copia todo lo
+                                          guardado a otra carpeta (mejor en otro disco) y/o a una nube
+                                          conectada; nunca borra allí
+  guardar-copias espejo --quitar          Deja de hacer el espejo (lo copiado se queda)
+  nube conectar dropbox|drive --nombre <nombre>
+                                          Conecta una nube para el espejo (abre el navegador; el permiso
+                                          se guarda protegido solo en este equipo)
+  nube lista                              Nubes conectadas en este equipo
+  nube quitar <nombre>                    Olvida una nube (revoca también el permiso en su web)
 ";
 
 /// `actualizaciones [github si|no]` (docs/actualizaciones.md).
@@ -265,17 +272,17 @@ fn vincular_y_contar(args: &[String]) -> Result<(), String> {
     println!("Vinculado con {}.", v.servidor);
     println!("Huella de la autoridad TLS del servidor: {}", v.huella_ca);
     println!();
-    println!("  Código de comprobación: {}", v.sas);
+    println!("  Número de comprobación: {}", v.sas);
     println!();
-    println!("Comprueba en la consola que ve el mismo código antes de confirmar.");
+    println!("Comprueba en la consola que ve el mismo número antes de confirmar.");
     if !v.sas_v3 {
-        println!("El servidor es antiguo y el código no cubre su certificado: comprueba también que la consola");
+        println!("La consola es antigua y el número no cubre su certificado: comprueba también que la consola");
         println!("enseña esta misma huella de la autoridad TLS. Si no es la misma, no confirmes.");
     }
     if v.espera_alta {
         println!();
         println!("Este equipo ya tenía clave de administración: conserva su configuración y sus copias.");
-        println!("El servidor nuevo tiene que darlo de alta con esa MISMA clave; hasta entonces no recibe nada.");
+        println!("La consola nueva tiene que darlo de alta con esa misma clave; hasta entonces no recibe nada.");
         println!("Si es otro cliente (otra clave), repite con --empezar-de-cero.");
     }
     Ok(())
@@ -441,7 +448,9 @@ fn orden(args: &[String]) -> Result<(), String> {
             println!("Repositorio: {} ({})", repo.name, repo.id);
             println!("Ubicación:   {}", access.location);
             println!("Contraseña:  {}", access.password);
-            println!("\nGuárdalo en un lugar seguro: con esto se pueden abrir las copias con restic en cualquier equipo.");
+            // Decisión (G4): el kit es para recuperar sin Resguardo, así que aquí sí se nombra
+            // el programa, una vez («el programa de copias (restic)»).
+            println!("\nGuárdalo en un lugar seguro: con esto se pueden abrir las copias con el programa de copias (restic) en cualquier equipo.");
             Ok(())
         }
         "leer-instalador" => {
@@ -547,7 +556,7 @@ fn orden(args: &[String]) -> Result<(), String> {
                 "importar" => {
                     let mut v = vinculo_local(true)?;
                     let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(archivo).map_err(|e| format!("No se pudo leer {archivo}: {e}"))?)
-                        .map_err(|e| format!("{archivo} no es JSON: {e}"))?;
+                        .map_err(|_| format!("{archivo} no es una configuración que se pueda leer: usa un archivo de «config exportar»."))?;
                     let m = crate::gestion_v2::aplicar_config(&mut v, &serde_json::json!({ "config": doc }))?;
                     crate::servidor_v2::guardar(&v)?;
                     println!("{m}");
@@ -769,7 +778,7 @@ fn resultado(r: &str) -> &str {
     match r {
         "ok" => "bien",
         "warning" => "con avisos",
-        "error" => "ERROR",
+        "error" => "falló",
         "info" => "aviso",
         otro => otro,
     }
@@ -805,18 +814,18 @@ fn estado(now: chrono::DateTime<chrono::Local>) -> String {
         let _ = writeln!(s, "(Sin permisos de administrador: el servidor, las nubes y algunos datos no se pueden leer. Repite la orden como administrador.)");
     }
 
-    // Servidor (Resguardo Server), consola de Windows y Resguardo Web.
-    let _ = writeln!(s, "\nServidor");
+    // La consola (Resguardo Server), la consola de Windows y Resguardo Web.
+    let _ = writeln!(s, "\nConsola");
     match crate::servidor_v2::cargar() {
         Some(v) if v.modo == "gestionado" && !v.secreto.is_empty() => {
-            let _ = writeln!(s, "  Vinculado con Resguardo Server: {}", v.url);
+            let _ = writeln!(s, "  Vinculado con la consola {}", v.url);
             if v.ultimo_ok > 0 {
                 if let Some(t) = chrono::DateTime::from_timestamp(v.ultimo_ok, 0) {
-                    let _ = writeln!(s, "  Última respuesta del servidor: {}", cuando(t.with_timezone(&chrono::Local), now));
+                    let _ = writeln!(s, "  Última respuesta de la consola: {}", cuando(t.with_timezone(&chrono::Local), now));
                 }
             }
             if let Some(c) = &v.cambio {
-                let _ = writeln!(s, "  Cambio de servidor en curso hacia {}", c.destino.url);
+                let _ = writeln!(s, "  Cambio de consola en curso hacia {}", c.destino.url);
             }
             // v1.35: varias consolas a la vez.
             for e in &v.otras {
@@ -824,14 +833,14 @@ fn estado(now: chrono::DateTime<chrono::Local>) -> String {
             }
         }
         Some(_) => {
-            let _ = writeln!(s, "  Sin servidor (modo local): el equipo hace sus copias solo.");
+            let _ = writeln!(s, "  Sin consola (modo local): el equipo hace sus copias solo.");
         }
         None => {
             let _ = writeln!(s, "  Sin vincular: el equipo hace sus copias solo. Para vincularlo: resguardo-agente vincular <código> --servidor <url>");
         }
     }
     if let Some(a) = crate::servidor_v2::cargar().and_then(|v| v.adopcion) {
-        let _ = writeln!(s, "  Pendiente del alta en {}: el equipo pasa cuando allí lo den de alta con su misma clave de administración.", a.url);
+        let _ = writeln!(s, "  Pendiente del alta en la consola {}: el equipo pasa cuando allí lo den de alta con su misma clave de administración.", a.url);
     }
     if let Some(e) = crate::endpoint::load() {
         let estado = if e.stopped { "ya no lo gestiona" } else { "emparejado" };
@@ -862,16 +871,16 @@ fn estado(now: chrono::DateTime<chrono::Local>) -> String {
         let _ = writeln!(s, "  Ahora mismo: copiando «{nombre}»{avance} (desde {})", cuando_rfc3339(&c.started, now));
     }
 
-    // Servidor de copias y espejo.
+    // El almacén (guarda copias de otros equipos) y su espejo.
     let srv = crate::server::load();
-    let _ = writeln!(s, "\nServidor de copias");
+    let _ = writeln!(s, "\nAlmacén");
     if srv.enabled {
-        let marcha = if crate::server::listening(srv.port) { "en marcha" } else { "SIN RESPONDER" };
+        let marcha = if crate::server::listening(srv.port) { "en marcha" } else { "sin responder" };
         let equipos = crate::server::repos_by_user(&srv).len();
         let _ = writeln!(s, "  {marcha} en el puerto {} · {equipos} equipo(s) · más detalle: resguardo-agente guardar-copias estado", srv.port);
         match &srv.espejo {
             Some(e) => {
-                let _ = writeln!(s, "  Espejo (sin horario propio, cada día a las {})", e.hora);
+                let _ = writeln!(s, "  Espejo: cada día a las {}", e.hora);
                 for d in e.destinos() {
                     let ultima = d.ultima.as_deref().map_or("todavía no".to_string(), |u| cuando_rfc3339(u, now));
                     let _ = writeln!(
@@ -888,7 +897,7 @@ fn estado(now: chrono::DateTime<chrono::Local>) -> String {
             }
         }
     } else {
-        let _ = writeln!(s, "  Desactivado (este equipo no guarda copias de otros).");
+        let _ = writeln!(s, "  Este equipo no guarda copias de otros.");
     }
 
     // Nubes.
@@ -922,8 +931,8 @@ fn nombre_de_clave(config: &crate::agent::AgentConfig, clave: &str) -> String {
     if let Some((tarea, repo)) = clave.split_once(':') {
         let que = match tarea {
             "verify" => "Verificación",
-            "offsite" => "Copia externa",
-            "verify_offsite" => "Verificación de la copia externa",
+            "offsite" => "Copia derivada",
+            "verify_offsite" => "Verificación de la copia derivada",
             "restore_test" => "Prueba de restauración",
             _ => return clave.to_string(),
         };
@@ -939,7 +948,7 @@ fn nombre_de_clave(config: &crate::agent::AgentConfig, clave: &str) -> String {
     }
 }
 
-/// `guardar-copias …`: el Servidor de copias de este equipo (server.rs).
+/// `guardar-copias …`: el almacén de este equipo (server.rs).
 fn guardar_copias(args: &[String]) -> Result<(), String> {
     let r = guardar_copias_sin_avisar(args);
     // Si el equipo está vinculado, el resumen de la consola al día (guarda copias, espejo).
@@ -954,19 +963,19 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
     let mostrar_estado = || {
         let c = server::load();
         if !c.enabled {
-            println!("El Servidor de copias está desactivado.");
+            println!("Este equipo no guarda copias de otros (el almacén está desactivado).");
             return;
         }
         let en_marcha = if server::listening(c.port) { "en marcha" } else { "sin responder" };
-        println!("Servidor de copias {en_marcha} en el puerto {} · carpeta {}", c.port, c.path);
+        println!("Almacén {en_marcha} en el puerto {} · carpeta {}", c.port, c.path);
         println!("Acepta: {}", if c.local_subnet_only { "solo la red local" } else { "cualquier red" });
         if let Some(h) = &c.tls_sha256 {
             println!("Huella de su autoridad TLS: {h}");
         }
-        println!("Certificado para los clientes (--cacert): {}", server::cert_file().display());
+        println!("Certificado de su autoridad para los equipos que copian aquí: {}", server::cert_file().display());
         if let Some(e) = &c.espejo {
             let limite = e.limite_kib.map(|k| format!(" · subida a la nube hasta {k} KiB/s")).unwrap_or_default();
-            println!("Espejo (sin horario propio, cada día a las {}){limite}", e.hora);
+            println!("Espejo: cada día a las {}{limite}", e.hora);
             for d in e.destinos() {
                 println!(
                     "  {}{} · última: {} · {}",
@@ -998,7 +1007,7 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
         }
         Some("anadir") => {
             let (usuario, contrasena, ubicacion) = server::anadir_equipo(arg(args, 2)?)?;
-            println!("Equipo cliente «{usuario}» añadido. Datos para configurarlo (la contraseña no se vuelve a mostrar):");
+            println!("Equipo «{usuario}» añadido. Datos para que copie aquí (la contraseña no se vuelve a mostrar):");
             println!();
             println!("  Ubicación:   {ubicacion}");
             println!("  Usuario:     {usuario}");
@@ -1012,7 +1021,7 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
         Some("quitar") => {
             let nombre = arg(args, 2)?;
             server::quitar_equipo(nombre)?;
-            println!("«{nombre}» ya no puede entrar. Sus copias siguen en la carpeta del servidor.");
+            println!("«{nombre}» ya no puede entrar. Sus copias siguen en la carpeta del almacén.");
             Ok(())
         }
         Some("espejo") => {
@@ -1022,7 +1031,7 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
             }
             let (carpetas, nubes, en_nube) = (opciones(args, "--carpeta"), opciones(args, "--nube"), opciones(args, "--carpeta-nube"));
             if nubes.len() != en_nube.len() {
-                return Err("Cada --nube <nombre> va con su --carpeta-nube <carpeta> (por ejemplo, Resguardo/Sur).".into());
+                return Err("Cada --nube <nombre> va con su --carpeta-nube <carpeta> (por ejemplo, Resguardo/Almacen).".into());
             }
             let mut destinos: Vec<_> = carpetas.into_iter().map(|c| serde_json::json!({ "tipo": "carpeta", "carpeta": c })).collect();
             destinos.extend(nubes.into_iter().zip(en_nube).map(|(n, c)| serde_json::json!({ "tipo": "nube", "nube": n, "carpeta": c })));
@@ -1041,7 +1050,7 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
         }
         Some("desactivar") => {
             server::desactivar()?;
-            println!("Servidor de copias desactivado. Las copias guardadas se quedan en su carpeta.");
+            println!("Almacén desactivado. Las copias guardadas se quedan en su carpeta.");
             Ok(())
         }
         Some(otra) => Err(format!("Orden desconocida: guardar-copias {otra}. Usa «resguardo-agente ayuda».")),
@@ -1053,7 +1062,7 @@ fn guardar_copias_sin_avisar(args: &[String]) -> Result<(), String> {
 fn vinculo_local(cambiar: bool) -> Result<crate::servidor_v2::Vinculo, String> {
     match crate::servidor_v2::cargar() {
         Some(v) if cambiar && v.modo == "gestionado" && !v.secreto.is_empty() => {
-            Err("Este equipo lo gestiona un servidor: cámbialo desde la consola (o «desvincular» antes).".into())
+            Err("Este equipo lo gestiona una consola: cámbialo desde ella (o «desvincular» antes).".into())
         }
         Some(v) => Ok(v),
         None => Ok(crate::servidor_v2::Vinculo { modo: "local".into(), espera_min_horas: 24, ..Default::default() }),

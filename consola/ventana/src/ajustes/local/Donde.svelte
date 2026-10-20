@@ -49,7 +49,7 @@
     if (!nuevo) return null;
     if (!nuevo.nombre.trim()) return "Ponle un nombre.";
     if (!nuevo.destino && !nuevo.donde.trim()) return nuevo.tipo === "local" ? "Elige la carpeta o el disco." : "Escribe dónde.";
-    if (!nuevo.destino && nuevo.tipo === "rest" && !/^https?:\/\//.test(nuevo.donde.trim())) return "La dirección del servidor empieza por https://.";
+    if (!nuevo.destino && nuevo.tipo === "rest" && !/^https?:\/\//.test(nuevo.donde.trim())) return "La dirección del almacén empieza por https://.";
     if (!nuevo.guardada) return "Marca que has guardado la contraseña (o imprime el kit).";
     return null;
   });
@@ -139,10 +139,10 @@
         </div>
       </div>
       <p class="v-mini">Se guardan: {r.retencion ? resumenRegla(r.retencion) : "todas las versiones (sin retención)."}</p>
-      <p class="v-mini">Copia externa: {r.externa ? `a «${destinoDe(r.externa.destino)?.nombre ?? r.externa.destino}» cada día a las ${r.externa.hora}` : "no"}.</p>
+      <p class="v-mini">Copia derivada: {r.externa ? `a «${destinoDe(r.externa.destino)?.nombre ?? r.externa.destino}» cada día a las ${r.externa.hora}` : "no"}.</p>
       <div class="v-fila nuevos">
         <button class="btn btn-sm" onclick={() => (retencion ={ repo: r, regla: copiaRegla(r.retencion ?? PRESETS[2].regla) })}><ShieldCheck size={14} aria-hidden="true" />Qué versiones se guardan</button>
-        <button class="btn btn-sm" onclick={() => (externa = { repo: r, destino: r.externa?.destino ?? "", tipo: "local", donde: "", usuario: "", secreto: "", hora: r.externa?.hora ?? "02:00" })}>Copia externa</button>
+        <button class="btn btn-sm" onclick={() => (externa = { repo: r, destino: r.externa?.destino ?? "", tipo: "local", donde: "", usuario: "", secreto: "", hora: r.externa?.hora ?? "02:00" })}>Copia derivada</button>
         <button class="btn btn-sm" onclick={() => (historialDe = historialDe === r.id ? null : r.id)}><History size={14} aria-hidden="true" />Traer historial</button>
       </div>
 
@@ -167,7 +167,7 @@
 
       {#if externa?.repo.id === r.id}
         <div class="v-pila sub">
-          <p class="v-mini">Cada día, las versiones nuevas se copian también a otro sitio (otro disco, otro servidor o la nube): si se pierde este, quedan allí.</p>
+          <p class="v-mini">Cada día, las versiones nuevas se copian también a otro destino (otro disco, un almacén o la nube): si se pierde este, quedan allí.</p>
           <label class="field">
             <span class="field-label">A dónde</span>
             <select class="input" bind:value={externa.destino}>
@@ -207,7 +207,7 @@
         <label class="field">
           <span class="field-label">En</span>
           <select class="input" bind:value={nuevo.destino}>
-            <option value="">Un sitio nuevo…</option>
+            <option value="">Un destino nuevo…</option>
             {#each estado.destinos as d (d.id)}<option value={d.id}>{d.nombre}</option>{/each}
           </select>
         </label>
@@ -224,11 +224,11 @@
             <input class="input mono" bind:value={nuevo.donde} placeholder="E:\Copias" aria-label="Carpeta" />
             <button type="button" class="btn btn-sm" onclick={() => (elegirCarpeta = "nuevo")}><FolderOpen size={14} />Elegir</button>
           </div>
-          <p class="v-mini">Un disco USB o externo protege de un fallo del disco del equipo; para un robo o un incendio, añade después una copia externa.</p>
+          <p class="v-mini">Un disco USB o externo protege de un fallo del disco del equipo; para un robo o un incendio, añade después una copia derivada a otro destino.</p>
         {:else if nuevo.tipo === "rest"}
-          <input class="input mono" bind:value={nuevo.donde} placeholder="https://servidor:8000" aria-label="Dirección del servidor" />
+          <input class="input mono" bind:value={nuevo.donde} placeholder="https://servidor:8000" aria-label="Dirección del almacén" />
           <input class="input" bind:value={nuevo.usuario} placeholder="Usuario" aria-label="Usuario" autocomplete="off" />
-          <input class="input" type="password" bind:value={nuevo.secreto} placeholder="Contraseña del servidor" aria-label="Contraseña del servidor" autocomplete="off" />
+          <input class="input" type="password" bind:value={nuevo.secreto} placeholder="Contraseña del almacén" aria-label="Contraseña del almacén" autocomplete="off" />
           <textarea class="input mono" rows="2" bind:value={nuevo.ca} placeholder="Certificado propio (opcional): -----BEGIN CERTIFICATE-----…" aria-label="Certificado"></textarea>
         {:else if nuevo.tipo === "sftp"}
           <input class="input mono" bind:value={nuevo.donde} placeholder="usuario@servidor:/copias" aria-label="Dirección SFTP" />
@@ -238,7 +238,7 @@
           <input class="input" bind:value={nuevo.usuario} placeholder="ID de la clave" aria-label="ID de la clave" autocomplete="off" />
           <input class="input" type="password" bind:value={nuevo.secreto} placeholder="Clave secreta" aria-label="Clave secreta" autocomplete="off" />
         {/if}
-        <label class="field"><span class="field-hint">Nombre del sitio (opcional)</span><input class="input" bind:value={nuevo.nombreDestino} maxlength="80" placeholder={TIPOS_DESTINO[nuevo.tipo]} /></label>
+        <label class="field"><span class="field-hint">Nombre del destino (opcional)</span><input class="input" bind:value={nuevo.nombreDestino} maxlength="80" placeholder={TIPOS_DESTINO[nuevo.tipo]} /></label>
       {/if}
       <div class="field">
         <span class="field-label">Contraseña de las copias</span>
@@ -265,7 +265,7 @@
     />
   {:else}
     <div class="v-fila nuevos">
-      <button class="btn btn-primary" onclick={empezarNuevo}><Plus size={15} aria-hidden="true" />{estado.repositorios.length ? "Otro sitio para copias" : "Elegir dónde guardar las copias"}</button>
+      <button class="btn btn-primary" onclick={empezarNuevo}><Plus size={15} aria-hidden="true" />{estado.repositorios.length ? "Otro destino para las copias" : "Elegir dónde guardar las copias"}</button>
       <button class="btn" onclick={() => ((existente = true), (hecho = error = ""))}><Database size={15} aria-hidden="true" />Usar uno que ya existe</button>
     </div>
   {/if}

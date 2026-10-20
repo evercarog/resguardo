@@ -432,7 +432,7 @@ async function emparejarPorCable(consola: Consola, c: Cliente, ag: AgenteR, url:
     h.on("close", () => ok(t));
   });
   fs.appendFileSync(ag.registro, `\n$ resguardo-agente vincular …\n${salida}\n`);
-  const sasEquipo = /Código de comprobación:\s*(\d{3} \d{3})/.exec(salida)?.[1];
+  const sasEquipo = /(?:Código|Número) de comprobación:\s*(\d{3} \d{3})/.exec(salida)?.[1];
   comprobar(sasEquipo, `${ag.nombre}: «vincular» falló`, salida);
   const unido = await esperar("que el equipo se una", async () => {
     const x = await consola.ok("GET", `/api/clientes/${c.id}/emparejamientos/${emp.id}`);

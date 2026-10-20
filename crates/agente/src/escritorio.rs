@@ -181,13 +181,28 @@ pub struct Hecha {
     pub cuando: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
+    /// 15oo: si falló o tuvo avisos, el motivo en palabras (sin rutas ni el detalle
+    /// técnico): para el aviso de Windows y la ventana.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motivo: Option<String>,
+}
+
+/// 15oo: el motivo de un fallo para el escritorio: la frase (sin el detalle técnico), sin rutas y corta.
+fn motivo_de(resultado: &str, mensaje: &str) -> Option<String> {
+    if resultado == "ok" || mensaje.trim().is_empty() {
+        return None;
+    }
+    let frase = resguardo_motor::errores::en_palabras(mensaje).frase;
+    Some(crate::bandeja::cortar(&crate::web::public_message(&frase), 160)).filter(|m| !m.is_empty())
 }
 
 /// Tipo de una tarea de `tasks.rs`.
 pub fn tipo_tarea(kind: &str) -> &'static str {
     match kind {
         "offsite" | crate::tasks::DERIVADA => "copia_externa",
-        // verify, verify_offsite, restore_test: comprobar que las copias están bien.
+        // G4: la prueba de restauración con su tipo (antes contaba como verificación).
+        "restore_test" => "prueba",
+        // verify, verify_offsite: comprobar que las copias están bien.
         _ => "verificacion",
     }
 }
@@ -372,6 +387,7 @@ pub mod en_marcha {
                 resultado: self.resultado.clone().unwrap_or_else(|| "error".into()),
                 cuando: chrono::Local::now().to_rfc3339(),
                 bytes: a.bytes,
+                motivo: None,
             };
             if let Ok(mut h) = HECHAS.lock() {
                 h.retain(|x| x.clave != hecha.clave);
@@ -537,7 +553,7 @@ fn grupo(tipo: &str) -> &'static str {
     match tipo {
         "copia" => "copias",
         "restauracion" => "restauraciones",
-        "verificacion" => "verificaciones",
+        "verificacion" | "prueba" => "verificaciones",
         _ => "subidas",
     }
 }
@@ -548,9 +564,9 @@ fn sustantivo(tipo: &str) -> &'static str {
         "copia" => "la copia",
         "restauracion" => "la restauración",
         "verificacion" => "la verificación",
-        "copia_externa" => "la copia externa",
-        "espejo" => "el espejo",
-        "nube" => "la subida a la nube",
+        "prueba" => "la prueba de restauración",
+        "copia_externa" => "la copia derivada",
+        "espejo" | "nube" => "el espejo",
         _ => "la tarea",
     }
 }
@@ -565,9 +581,10 @@ fn al_empezar(a: &Actividad) -> (String, String) {
         "copia" => format!("Copiando «{}»", a.nombre),
         "restauracion" => format!("Restaurando desde «{}»", a.nombre),
         "verificacion" => format!("Verificando «{}»", a.nombre),
+        "prueba" => format!("Probando la restauración de «{}»", a.nombre),
         "copia_externa" => format!("Subiendo la copia derivada de «{}»", a.nombre),
-        "espejo" => format!("Copiando el espejo a «{}»", a.nombre),
-        "nube" => format!("Subiendo a «{}»", a.nombre),
+        // G4: un solo verbo para el espejo, vaya a un disco o a la nube.
+        "espejo" | "nube" => format!("Copiando el espejo a «{}»", a.nombre),
         _ => format!("Empezó «{}»", a.nombre),
     };
     (titulo, "Puedes seguir trabajando: te avisaremos al terminar.".into())
@@ -616,10 +633,11 @@ pub fn avisos(
         let aviso = match (fallaba, h.resultado.as_str()) {
             (false, "error") => Some((
                 format!("Falló {que} «{}»", h.nombre),
-                if h.tipo == "restauracion" {
-                    "No se restauró todo. Vuelve a intentarlo o avisa a quien gestiona este equipo.".to_string()
-                } else {
-                    "Resguardo lo volverá a intentar. Si se repite, avisa a quien gestiona este equipo.".to_string()
+                // 15oo: el motivo en palabras, si lo hay.
+                match (h.tipo.as_str(), &h.motivo) {
+                    ("restauracion", _) => "No se restauró todo. Vuelve a intentarlo o avisa a quien gestiona este equipo.".to_string(),
+                    (_, Some(m)) => format!("{m} Si se repite, avisa a quien gestiona este equipo."),
+                    _ => "Resguardo lo volverá a intentar. Si se repite, avisa a quien gestiona este equipo.".to_string(),
                 },
                 true,
             )),
@@ -631,9 +649,9 @@ pub fn avisos(
                     "copia" => format!("Copia «{}» terminada", h.nombre),
                     "restauracion" => format!("Restauración desde «{}» terminada", h.nombre),
                     "verificacion" => format!("«{}» verificado: todo en orden", h.nombre),
-                    "copia_externa" => format!("Copia externa de «{}» terminada", h.nombre),
-                    "espejo" => format!("Espejo en «{}» terminado", h.nombre),
-                    "nube" => format!("Subida a «{}» terminada", h.nombre),
+                    "prueba" => format!("Prueba de restauración de «{}»: todo en orden", h.nombre),
+                    "copia_externa" => format!("Copia derivada de «{}» terminada", h.nombre),
+                    "espejo" | "nube" => format!("Espejo en «{}» terminado", h.nombre),
                     _ => format!("«{}» terminada", h.nombre),
                 },
                 format!("Correcta{}", texto_bytes(h)),
@@ -641,7 +659,14 @@ pub fn avisos(
             )),
             (false, "warning") if nivel == Avisos::Todo => Some((
                 format!("{} «{}» terminó con avisos", mayuscula(que), h.nombre),
-                "Algunos archivos no se pudieron leer. Lo verás en el historial.".into(),
+                // G4: según la tarea («no se pudieron leer» solo en las copias).
+                match (&h.motivo, h.tipo.as_str()) {
+                    (Some(m), _) => format!("{m} Lo verás en el historial."),
+                    (None, "copia") => "Algunos archivos no se pudieron leer. Lo verás en el historial.".into(),
+                    (None, "restauracion") => "Algunos archivos no se pudieron restaurar. Lo verás en el historial.".into(),
+                    (None, "espejo" | "nube") => "Algunos archivos no se pudieron copiar al espejo. Lo verás en el historial.".into(),
+                    (None, _) => "Hay algo que revisar. Lo verás en el historial.".into(),
+                },
                 false,
             )),
             _ => None,
@@ -682,6 +707,7 @@ pub fn hechas_de(config: &crate::agent::AgentConfig, estado: &crate::agent::Agen
                     resultado: r.result.clone(),
                     cuando: r.finished.clone(),
                     bytes: r.data_added,
+                    motivo: motivo_de(&r.result, &r.message),
                 });
             }
         }
@@ -694,6 +720,7 @@ pub fn hechas_de(config: &crate::agent::AgentConfig, estado: &crate::agent::Agen
                     resultado: r.result.clone(),
                     cuando: r.finished.clone(),
                     bytes: None,
+                    motivo: motivo_de(&r.result, &r.message),
                 });
             }
         }
@@ -898,6 +925,7 @@ mod tests {
             resultado: resultado.into(),
             cuando: cuando.into(),
             bytes: Some(1_500_000),
+            motivo: None,
         }
     }
 
@@ -941,9 +969,20 @@ mod tests {
         let v = avisos(&[], &[], &[], &[hecha("verify:r", "verificacion", "ok", "1")], Avisos::Todo, false);
         assert_eq!(v[0].titulo, "«Documentos» verificado: todo en orden");
         let v = avisos(&[], &[], &[], &[hecha("offsite:r", "copia_externa", "warning", "1")], Avisos::Todo, false);
-        assert_eq!(v[0].titulo, "La copia externa «Documentos» terminó con avisos");
+        assert_eq!(v[0].titulo, "La copia derivada «Documentos» terminó con avisos");
+        assert!(!v[0].texto.contains("no se pudieron leer"), "solo en las copias: {}", v[0].texto);
         let v = avisos(&[], &[], &[], &[hecha("nube:n", "nube", "ok", "1")], Avisos::Todo, false);
-        assert_eq!(v[0].titulo, "Subida a «Documentos» terminada");
+        assert_eq!(v[0].titulo, "Espejo en «Documentos» terminado");
+        // G4: la prueba de restauración con su tipo, no como verificación.
+        assert_eq!(tipo_tarea("restore_test"), "prueba");
+        let v = avisos(&[], &[], &[], &[hecha("restore_test:r", "prueba", "ok", "1")], Avisos::Todo, false);
+        assert_eq!(v[0].titulo, "Prueba de restauración de «Documentos»: todo en orden");
+        // 15oo: el motivo en palabras en el aviso de un fallo.
+        let mut m = hecha("copia:r#k", "copia", "error", "9");
+        m.motivo = motivo_de("error", r#"Falló: {"message_type":"exit_error","code":1,"message":"Fatal: wrong password or no key found"}"#);
+        let v = avisos(&[], &bien, &[], &[m], Avisos::Errores, false);
+        assert!(v[0].texto.starts_with("Contraseña incorrecta") && v[0].texto.ends_with("avisa a quien gestiona este equipo."), "{}", v[0].texto);
+        assert_eq!(motivo_de("ok", "x"), None);
         // Lo primero que lee la bandeja al arrancar no avisa.
         assert!(avisos(&[], &[], std::slice::from_ref(&a), &mal, Avisos::Todo, true).is_empty());
     }

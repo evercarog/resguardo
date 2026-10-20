@@ -200,7 +200,7 @@ pub fn copias_de(repo_id: &str, nombre_destino: &dyn Fn(&str) -> Option<String>)
     let mut v = Vec::new();
     if let Some(o) = &r.offsite {
         v.push(Copia {
-            nombre: nombre(o, "la copia externa".into()),
+            nombre: nombre(o, "la copia derivada".into()),
             acceso: misma(&secreto.offsite_password).then(|| crate::tasks::acceso_de_copia_externa(o, &secreto)),
         });
     }

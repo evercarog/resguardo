@@ -1268,11 +1268,11 @@ pub fn run() -> i32 {
         let destino = repo.offsite.as_ref().and_then(|o| o.target_name.clone()).unwrap_or_default();
         let what = match kind {
             "verify" => "Verificación".to_string(),
-            "verify_offsite" => "Verificación de la copia en la nube".to_string(),
+            "verify_offsite" => "Verificación de la copia derivada".to_string(),
             "restore_test" => "Prueba de restauración".to_string(),
             VERIFY_DERIVADA => format!("Verificación de la copia derivada a «{destino}»"),
             DERIVADA => format!("Copia derivada a «{destino}»"),
-            _ => "Copia externa".to_string(),
+            _ => "Copia derivada".to_string(),
         };
         let quiet = if agent::apply_discreet(&config) { " (modo discreto: prioridad baja)" } else { "" };
         agent::log(&format!("{what} de «{}»…{quiet}", repo.name));
@@ -1514,7 +1514,7 @@ pub fn acceso_copia(repo_id: &str, copia: &str) -> Result<(Access, Option<String
     let secrets = agent::load_secrets()?;
     let secret = secrets.get(repo_id).ok_or("Este equipo no tiene la contraseña de ese repositorio.")?;
     if copia == "externa" {
-        let o = repo.offsite.as_ref().ok_or("Ese repositorio no tiene copia externa.")?;
+        let o = repo.offsite.as_ref().ok_or("Ese repositorio no tiene copia derivada de cada día.")?;
         return Ok((dest_access_listo(o, secret)?, o.target_name.clone()));
     }
     let d = repo.derived.iter().find(|d| d.id == copia).ok_or("Esa copia derivada ya no existe.")?;

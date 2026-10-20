@@ -547,7 +547,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         const equipo = "espejo_equipo" in c;
         const cuerpo = (equipo ? c.espejo_equipo : c.espejo) as { trabajos?: T.TrabajoEspejo[] } | null;
         const nuevos = cuerpo?.trabajos ?? [];
-        if (!equipo && !e.resumen.guarda_copias?.activo) return resultado(e, o, "fallida", "Activa antes el Servidor de copias.");
+        if (!equipo && !e.resumen.guarda_copias?.activo) return resultado(e, o, "fallida", "Activa antes el almacén (que este equipo guarde copias de otros).");
         const err = errorTrabajos(nuevos, equipo ? "equipo" : "almacen");
         if (err) return resultado(e, o, "fallida", err);
         const antes = equipo ? trabajosDelEquipo(e) : trabajosDelAlmacen(e);

@@ -125,7 +125,8 @@ pub fn kill_tree(child: &mut Child) {
 fn spawn_error(e: std::io::Error) -> String {
     if e.kind() == ErrorKind::NotFound {
         if !BUNDLED_ONLY.load(Ordering::Relaxed) {
-            "No se encontró el ejecutable de restic. Instálalo y asegúrate de que esté en el PATH.".into()
+            // G4: sin «restic» ni «PATH» (lo ve quien usa la línea de órdenes del agente).
+            "No se encontró el motor de copias. Vuelve a instalar Resguardo, que lo trae consigo.".into()
         } else if cfg!(windows) {
             "Falta el motor de copias junto a Resguardo. Vuelve a instalar Resguardo para recuperarlo.".into()
         } else {

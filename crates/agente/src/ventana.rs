@@ -302,7 +302,11 @@ mod win {
             }
             "abrir_consola" => {
                 // Solo la dirección que dice el servicio (https://), nunca una de la página.
-                let url = leer(crate::bandeja::ARCHIVO)["consola"].as_str().filter(|u| u.starts_with("https://")).map(str::to_string).ok_or("Sin consola.")?;
+                let url = leer(crate::bandeja::ARCHIVO)["consola"]
+                    .as_str()
+                    .filter(|u| u.starts_with("https://"))
+                    .map(str::to_string)
+                    .ok_or("Este equipo no está vinculado a ninguna consola.")?;
                 let (verbo, u) = (ancho("open"), ancho(&url));
                 // SAFETY: cadenas terminadas en cero que viven durante la llamada.
                 unsafe {
@@ -322,13 +326,15 @@ mod win {
                 let sal = hola["sal_equipo"].as_str().ok_or("Este equipo aún no tiene clave de administración.")?;
                 let prueba = ipc::prueba(p["clave"].as_str().unwrap_or(""), sal)?;
                 let r = ipc::pedir(&json!({ "op": "comprobar", "reto": hola["reto"], "prueba": prueba }))?;
-                desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = Some((prueba, Instant::now()));
+                desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba = Some((prueba, Instant::now()));
                 Ok(r)
             }
             // ¿Sigue desbloqueada? (Al volver a «Ajustes» no se pide otra vez la clave.)
-            "desbloqueada" => Ok(json!({ "abierta": desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().is_some() })),
+            "desbloqueada" => {
+                Ok(json!({ "abierta": desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba().is_some() }))
+            }
             "bloquear" => {
-                desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = None;
+                desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba = None;
                 Ok(Value::Null)
             }
             "crear_clave" => {
@@ -340,17 +346,19 @@ mod win {
                 datos["reto"] = hola["reto"].clone();
                 let r = ipc::pedir(&datos)?;
                 // Ya desbloqueada con la clave que se acaba de poner.
-                desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = Some((ipc::prueba(clave, &sal)?, Instant::now()));
+                desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba =
+                    Some((ipc::prueba(clave, &sal)?, Instant::now()));
                 Ok(r)
             }
             "cambiar_clave" => {
                 // La clave nueva se deriva aquí (como la consola): al servicio solo van el verificador y K_cfg.
-                let prueba = desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().ok_or("bloqueada")?;
+                let prueba = desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba().ok_or("bloqueada")?;
                 let clave = p["clave"].as_str().unwrap_or("");
                 let datos = ipc::datos_clave_nueva(clave)?;
                 let sal = datos["sal_equipo"].as_str().unwrap_or_default().to_string();
                 let r = ipc::pedir_con_prueba("cambiar_clave", &prueba, datos)?;
-                desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = Some((ipc::prueba(clave, &sal)?, Instant::now()));
+                desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba =
+                    Some((ipc::prueba(clave, &sal)?, Instant::now()));
                 Ok(r)
             }
             "nube_autorizar" => {
@@ -359,7 +367,7 @@ mod win {
                 if !matches!(tipo, "dropbox" | "drive") {
                     return Err("Tipo de nube no admitido.".into());
                 }
-                let prueba = desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().ok_or("bloqueada")?;
+                let prueba = desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba().ok_or("bloqueada")?;
                 let conf = carpeta_usuario().join("rclone-vacio.conf");
                 let _ = std::fs::create_dir_all(carpeta_usuario());
                 let salida = std::process::Command::new(crate::nube::comprobar_binario()?)
@@ -367,7 +375,7 @@ mod win {
                     .arg(&conf)
                     .stdin(std::process::Stdio::null())
                     .output()
-                    .map_err(|e| format!("No se pudo ejecutar rclone: {e}"))?;
+                    .map_err(|e| format!("No se pudo abrir la herramienta para conectar la nube: {e}"))?;
                 let _ = std::fs::remove_file(&conf);
                 if !salida.status.success() {
                     return Err("No se terminó de dar permiso (¿se cerró el navegador?).".into());
@@ -391,11 +399,11 @@ mod win {
                 if !OPS_CON_CLAVE.contains(&op) {
                     return Err("Operación no válida.".into());
                 }
-                let prueba = desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba().ok_or("bloqueada")?;
+                let prueba = desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba().ok_or("bloqueada")?;
                 let r = ipc::pedir_con_prueba(op, &prueba, p["cuerpo"].clone());
                 if r.as_ref().is_err_and(|e| e == ipc::CLAVE_INCORRECTA) {
                     // La clave cambió (desde la consola): hay que volver a escribirla.
-                    desbloqueo.lock().map_err(|_| "Ocupado.")?.prueba = None;
+                    desbloqueo.lock().map_err(|_| "La ventana está ocupada con otra operación: vuelve a intentarlo.")?.prueba = None;
                 }
                 r
             }

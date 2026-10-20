@@ -184,7 +184,7 @@ impl Schedule {
     /// Para la copia externa: cualquier horario menos «solo vigilar» y «según los planes».
     pub fn validate_offsite(&self) -> Result<(), String> {
         if matches!(self, Schedule::Monitor { .. } | Schedule::Plans) {
-            return Err("Ese horario no vale para la copia externa.".into());
+            return Err("Ese horario no vale para la copia derivada.".into());
         }
         self.validate()
     }
@@ -1537,7 +1537,7 @@ pub fn set_offsite(repo_id: &str, offsite: Option<crate::tasks::Offsite>, creds:
     let name = entry.name.clone();
     save_secrets(&secrets)?;
     write_json("agent.json", &config)?;
-    log(&format!("Copia externa de «{name}» actualizada."));
+    log(&format!("Copia derivada de «{name}» actualizada."));
     Ok(())
 }
 
