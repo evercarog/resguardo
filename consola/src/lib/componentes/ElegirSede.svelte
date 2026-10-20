@@ -65,6 +65,8 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+    max-width: 100%;
+    min-width: 0;
     font-size: var(--fs-sm);
   }
   .lbl {
@@ -80,5 +82,7 @@
   select {
     width: auto;
     max-width: 100%;
+    min-width: 0;
+    text-overflow: ellipsis;
   }
 </style>
