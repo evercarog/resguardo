@@ -461,7 +461,7 @@
     display: block;
   }
   .aviso {
-    color: var(--warn-text, var(--warn));
+    color: var(--warn);
   }
   .ficha {
     display: grid;

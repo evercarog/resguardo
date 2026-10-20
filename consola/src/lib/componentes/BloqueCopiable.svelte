@@ -34,7 +34,7 @@
     width: 100%;
     margin: 0;
     overflow: auto;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--mono);
     font-size: 11.5px;
     line-height: 1.5;
     white-space: pre-wrap;

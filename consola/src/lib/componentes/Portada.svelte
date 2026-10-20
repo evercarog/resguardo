@@ -24,7 +24,7 @@
     align-items: center;
     gap: var(--sp-5);
     min-height: 100dvh;
-    padding: var(--sp-16, 64px) var(--sp-4) var(--sp-6);
+    padding: var(--sp-16) var(--sp-4) var(--sp-6);
   }
   .marca {
     display: flex;

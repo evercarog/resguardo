@@ -122,7 +122,7 @@
     font-size: var(--fs-sm);
   }
   .mono {
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--mono);
     font-size: 12px;
   }
   .anadir {

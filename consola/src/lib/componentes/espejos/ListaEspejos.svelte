@@ -284,7 +284,7 @@
   }
   .cab h3 {
     margin: 0;
-    font-size: var(--fs-md, 1rem);
+    font-size: var(--fs-h2);
     overflow-wrap: anywhere;
   }
   .acciones {
@@ -309,10 +309,10 @@
     min-width: 0;
   }
   .flecha {
-    color: var(--text-muted);
+    color: var(--text-3);
   }
   .igual {
-    color: var(--warn-text, var(--text));
+    color: var(--warn);
     font-weight: 600;
   }
   .aviso-igual {
@@ -321,7 +321,7 @@
     gap: 4px;
     align-items: center;
     font-size: var(--fs-xs);
-    color: var(--warn-text, var(--text-muted));
+    color: var(--warn);
   }
   .estado {
     margin: 0;
@@ -335,7 +335,7 @@
   .msg-fallo {
     margin: 2px 0 0;
     font-size: var(--fs-sm);
-    color: var(--danger-text, var(--danger));
+    color: var(--bad);
     overflow-wrap: anywhere;
   }
   .freno p {

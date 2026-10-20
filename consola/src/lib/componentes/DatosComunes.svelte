@@ -198,7 +198,7 @@
     align-items: center;
     gap: 6px;
     margin: 0;
-    font-size: var(--fs-md, 15px);
+    font-size: var(--fs-h2);
     font-weight: 600;
   }
   .difs {

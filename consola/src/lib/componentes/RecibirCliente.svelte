@@ -121,7 +121,7 @@
     margin: 0;
   }
   .mono {
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--mono);
     font-size: 12px;
   }
   .dos {

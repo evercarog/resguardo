@@ -335,7 +335,7 @@
     background: transparent;
     color: inherit;
     font: inherit;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--mono);
     cursor: pointer;
   }
   .chip.on {

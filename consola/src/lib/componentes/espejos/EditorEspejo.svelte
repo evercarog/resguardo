@@ -641,7 +641,7 @@
   }
   .linea .et,
   .resumen .et {
-    color: var(--text-muted);
+    color: var(--text-3);
     min-width: 8.5em;
   }
   .linea .val,
@@ -732,7 +732,7 @@
     align-items: center;
     gap: 4px;
     font-size: var(--fs-sm);
-    color: var(--text-muted);
+    color: var(--text-3);
     list-style: none;
   }
   .mas summary::-webkit-details-marker {

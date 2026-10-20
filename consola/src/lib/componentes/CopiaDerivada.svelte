@@ -472,7 +472,7 @@
   }
   .kit h3 {
     margin: 0 0 var(--sp-2);
-    font-size: var(--fs-md, 15px);
+    font-size: var(--fs-h2);
   }
   .kit dl {
     display: grid;

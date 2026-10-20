@@ -457,7 +457,7 @@
     display: flex;
     align-items: center;
     margin: 0;
-    font-size: var(--fs-md, 15px);
+    font-size: var(--fs-h2);
   }
   .cab p {
     margin: 2px 0 0;

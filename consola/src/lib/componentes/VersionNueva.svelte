@@ -25,7 +25,7 @@
     gap: 10px;
     padding: 8px var(--sp-4);
     font-size: var(--fs-sm);
-    color: var(--text);
+    color: var(--text-1);
     background: var(--accent-soft);
     border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   }

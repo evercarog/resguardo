@@ -2,7 +2,7 @@
 
 /* Lo que recibe el foco no queda tapado por lo fijo de arriba (índice de página, cabecera del móvil). WCAG 2.4.11. */
 html {
-  scroll-padding-top: var(--sp-16, 64px);
+  scroll-padding-top: var(--sp-16);
 }
 :root {
   /* Barra lateral plegada a iconos (docs/diseno.md §5). */
