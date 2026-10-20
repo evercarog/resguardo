@@ -82,6 +82,26 @@ const cantidad = (r: Regla, k: Periodo) => (k === "horarias" ? (r.horarias ?? 0)
 /** ¿Usa algo de v1.28 (horarias, «siempre» o plazos)? Un agente anterior no lo entiende. */
 export const usaPlazos = (r: Regla) => PERIODOS.some((k) => plazoDe(r, k) || cantidad(r, k) === SIEMPRE || (k === "horarias" && cantidad(r, k) !== 0));
 
+/** 15z: una regla vacía, para «Personalizar → Desde cero» y «Vaciar» (no guarda nada hasta que se escriba algo). */
+export const reglaVacia = (): Regla => ({ diarias: 0, semanales: 0, mensuales: 0, anuales: 0 });
+
+/** 15z: ¿no guarda nada todavía (ninguna cantidad, plazo ni «por día»)? */
+export const reglaSinNada = (r: Regla) => !PERIODOS.some((k) => cantidad(r, k) !== 0 || plazoDe(r, k)) && !r.por_dia;
+
+/** 15z: la fila de un periodo, vacía (sin cantidad ni plazo). */
+export function sinPeriodo(r: Regla, k: Periodo): Regla {
+  const out = copiaRegla(r);
+  if (k === "horarias") delete out.horarias;
+  else out[k] = 0;
+  if (out.plazos) {
+    const { [k]: _quitado, ...resto } = out.plazos;
+    void _quitado;
+    if (Object.values(resto).some(Boolean)) out.plazos = resto;
+    else delete out.plazos;
+  }
+  return out;
+}
+
 /** Una copia de la regla (también de un proxy de Svelte, que `structuredClone` no admite). */
 export const copiaRegla = (r: Regla): Regla => JSON.parse(JSON.stringify(r)) as Regla;
 
