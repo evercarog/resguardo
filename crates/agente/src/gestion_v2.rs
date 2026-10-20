@@ -1524,7 +1524,8 @@ pub fn resumen(v: &Vinculo) -> Value {
                 }
                 // Plan 0.8.1 (C1, 15n): su carpeta, para «Dónde está» (como la del almacén), sin
                 // el nombre de la cuenta si está dentro de un perfil de usuario.
-                if let Some(c) = crate::espacio::ruta_publica(&d.donde) {
+                // Una carpeta de la red no: su ruta dice el nombre del servidor.
+                if let Some(c) = crate::espacio::ruta_publica(&d.donde).filter(|_| disco["red"] != true) {
                     x["carpeta"] = json!(c);
                 }
                 // Tarea 8e: el sistema de archivos (solo su nombre; nunca resta en la regla 3-2-1).
@@ -2905,7 +2906,19 @@ mod tests {
         if cfg!(any(windows, target_os = "linux")) {
             assert!(r["destinos"][0]["sistema_archivos"].is_string(), "{r}");
         }
-        assert!(!r["destinos"][0].to_string().contains(&tmp), "sin la ruta");
+        // Plan 0.8.1 (C1): su carpeta sí (para «Dónde está»), pero nunca con el nombre de la cuenta.
+        assert_eq!(r["destinos"][0]["carpeta"].as_str(), crate::espacio::ruta_publica(&tmp).as_deref());
+        if tmp.to_lowercase().contains("users") || tmp.starts_with("/home/") {
+            assert!(!r["destinos"][0].to_string().contains(&tmp), "sin el nombre de la cuenta");
+        }
+        // Una carpeta de la red, nunca (su ruta dice el servidor).
+        assert!(v_red_sin_carpeta());
+    }
+
+    fn v_red_sin_carpeta() -> bool {
+        let local = Destino { id: "nas".into(), nombre: "NAS".into(), tipo: "local".into(), donde: r"\\nas\copias".into(), ..Default::default() };
+        let v = Vinculo { destinos: vec![local], ..Default::default() };
+        resumen(&v)["destinos"][0].get("carpeta").is_none()
     }
 
     #[test]
