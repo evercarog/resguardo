@@ -22,7 +22,7 @@
 </script>
 
 <div class="barra">
-  <label class="buscar">
+  <label class="buscar campo-buscar">
     <Search size={15} />
     <input class="input" type="search" {placeholder} bind:value={buscar} aria-label={placeholder} />
   </label>
@@ -42,18 +42,8 @@
     gap: var(--sp-3);
   }
   .buscar {
-    position: relative;
     flex: 1;
     min-width: 200px;
-  }
-  .buscar :global(svg) {
-    position: absolute;
-    top: 10px;
-    left: 11px;
-    color: var(--text-3);
-  }
-  .buscar .input {
-    padding-left: 34px;
   }
   .cliente {
     width: auto;

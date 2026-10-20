@@ -221,7 +221,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 8px);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--fs-body);
   }
   .opcion:has(input:checked) {
     border-color: var(--accent);
@@ -243,13 +243,13 @@
     font-weight: 500;
   }
   .deducido {
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
   }
   .marca {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.875rem;
+    font-size: var(--fs-body);
     padding: 4px 0;
     cursor: pointer;
   }
@@ -263,7 +263,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.8125rem;
+    font-size: var(--fs-sm);
     flex-wrap: wrap;
   }
   .dias .input {
@@ -274,7 +274,7 @@
     align-items: center;
     gap: 6px;
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--fs-sm);
     color: var(--text-2);
   }
   .conexion.tarde,
@@ -284,19 +284,19 @@
   .discos {
     margin: 0;
     padding-left: 18px;
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
     color: var(--text-2);
   }
   .error {
     color: var(--bad);
   }
   .dato {
-    font-size: 0.8125rem;
+    font-size: var(--fs-sm);
     margin: 0;
   }
   .solo-dato {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
   }
   .izquierda {
     margin-right: auto;

@@ -819,3 +819,27 @@ button.fila {
     transform: translateX(3px);
   }
 }
+
+/* El kit de recuperación que se imprime (G7: antes, este bloque copiado en seis
+ * componentes). Solo cuando hay un kit en la página: lo demás no se imprime. */
+.kit {
+  padding: var(--sp-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+@media print {
+  body:has(#kit-imprimible) * {
+    visibility: hidden;
+  }
+  body:has(#kit-imprimible) #kit-imprimible,
+  body:has(#kit-imprimible) #kit-imprimible * {
+    visibility: visible;
+  }
+  body:has(#kit-imprimible) #kit-imprimible {
+    position: fixed;
+    inset: 0 auto auto 0;
+    width: 100%;
+    border: none;
+    color: #000;
+  }
+}

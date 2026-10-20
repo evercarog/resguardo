@@ -574,11 +574,6 @@
   .avanzado[open] summary {
     margin-bottom: var(--sp-3);
   }
-  .kit {
-    padding: var(--sp-5);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius);
-  }
   .kit h3 {
     margin-bottom: var(--sp-3);
     font-size: var(--fs-h2);
@@ -617,20 +612,4 @@
     color: var(--text-2);
   }
   /* Al imprimir, solo el kit. */
-  @media print {
-    :global(body *) {
-      visibility: hidden;
-    }
-    :global(#kit-imprimible),
-    :global(#kit-imprimible *) {
-      visibility: visible;
-    }
-    :global(#kit-imprimible) {
-      position: fixed;
-      inset: 0 auto auto 0;
-      width: 100%;
-      border: none;
-      color: #000;
-    }
-  }
 </style>

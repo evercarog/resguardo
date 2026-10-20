@@ -25,6 +25,10 @@
   --fs-title: 22px;
   --lh-title: 28px;
   --fs-stat: 22px;
+  /* G7 (0.8.1): títulos de diálogos y cajones, y cifras dentro de una ficha o un cajón. */
+  --fs-dialogo: 17px;
+  --lh-dialogo: 24px;
+  --fs-stat-sm: 18px;
   --fs-h2: 15px;
   --lh-h2: 22px;
   --fs-body: 14px;
@@ -152,6 +156,15 @@
   --onda-1: #2a78d6;
   --onda-2: #eb6834;
   --onda-3: #1baf7a;
+
+  /* Escala de calor del calendario de las versiones (G7: antes, en un componente y
+   * usada en otro). Un solo tono (el azul secuencial validado), de claro a oscuro;
+   * en oscuro, al revés (lo de más, lo más claro). Contraste en docs/diseno.md §7. */
+  --calor-0: var(--surface-3);
+  --calor-1: #9ec5f4;
+  --calor-2: #5598e7;
+  --calor-3: #256abf;
+  --calor-4: #0d366b;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -203,6 +216,11 @@
     --onda-1: #3987e5;
     --onda-2: #d95926;
     --onda-3: #199e70;
+
+    --calor-1: #184f95;
+    --calor-2: #2a78d6;
+    --calor-3: #6da7ec;
+    --calor-4: #b7d3f6;
   }
 }
 :root[data-theme="dark"],
@@ -249,6 +267,11 @@
   --onda-1: #3987e5;
   --onda-2: #d95926;
   --onda-3: #199e70;
+
+  --calor-1: #184f95;
+  --calor-2: #2a78d6;
+  --calor-3: #6da7ec;
+  --calor-4: #b7d3f6;
 }
 
 /* Negro: oscuro con fondos negros puros (pantallas OLED, salas oscuras). */
@@ -507,6 +530,22 @@ code,
   outline: none;
 }
 
+/* Buscador con su lupa dentro (G7: antes, copiado en cinco páginas):
+ * <label class="campo-buscar"><Search size={15} /><input class="input" …></label>. */
+.campo-buscar {
+  position: relative;
+}
+.campo-buscar > svg {
+  position: absolute;
+  top: 10px;
+  left: 11px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.campo-buscar > .input {
+  padding-left: 34px;
+}
+
 /* Solo para lectores de pantalla. */
 .sr-only {
   position: absolute;
@@ -550,6 +589,15 @@ code,
   transition:
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease);
+}
+/* G6 (0.8.1): Safari en el iPhone amplía la página al enfocar un campo de menos de 16 px. */
+@media (max-width: 640px) {
+  .input,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 textarea.input {
   height: auto;
@@ -837,7 +885,7 @@ button.card:focus-visible {
 }
 .stat-value {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: var(--fs-title);
   line-height: 28px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -881,7 +929,7 @@ button.card:focus-visible {
 }
 .kpi strong {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: var(--fs-stat);
   line-height: 1.1;
   color: var(--text-1);
   font-variant-numeric: tabular-nums;
@@ -1062,15 +1110,17 @@ button.card:focus-visible {
 
 /* Pastilla neutra para un dato (no un estado): tamaños, horas, versiones,
  * puertos. Con .mono, en monoespaciada y cifras tabulares. */
+/* G6 (0.8.1): bloque en línea (no flex) para que una dirección larga acabe en «…»
+ * en vez de cortarse en seco; el valor entero va en su globo. */
 .pastilla {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: inline-block;
+  vertical-align: middle;
   flex: none;
   max-width: 100%;
   height: 20px;
   padding: 0 7px;
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11.5px;
   line-height: 18px;
   font-weight: 500;
@@ -1099,7 +1149,9 @@ button.card:focus-visible {
   box-decoration-break: clone;
 }
 .pastilla svg {
-  flex: none;
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 4px;
   color: var(--text-3);
 }
 
@@ -1423,7 +1475,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 17px;
+  font-size: var(--fs-dialogo);
   line-height: 24px;
   font-weight: 600;
   letter-spacing: -0.01em;

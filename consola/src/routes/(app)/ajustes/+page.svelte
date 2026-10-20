@@ -301,7 +301,7 @@
     border: 2px solid transparent;
     border-radius: 999px;
     cursor: pointer;
-    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-1) 22%, transparent) /* G7: se ve también en oscuro */;
   }
   .color.on {
     border-color: var(--text-1);

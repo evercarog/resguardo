@@ -266,7 +266,7 @@
 
 <style>
   .cal {
-    /* La escala de calor (--calor-0…4) la pone la línea de tiempo (LineaTiempoVersiones). */
+    /* La escala de calor (--calor-0…4) es del sistema de diseño (ui/src/estilos.css). */
     --raya: var(--text-3);
     --etq-ancho: 44px;
     --col: minmax(7px, 1fr);

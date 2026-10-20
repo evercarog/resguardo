@@ -452,13 +452,6 @@
   .flecha {
     color: var(--accent);
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-  }
   @media (max-width: 760px) {
     .modos {
       grid-template-columns: 1fr;

@@ -107,7 +107,7 @@
   }
   dd {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fs-stat-sm);
     font-weight: 600;
   }
   h3 {

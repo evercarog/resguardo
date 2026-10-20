@@ -912,7 +912,7 @@
       grid-template-columns: minmax(0, 1fr);
     }
     .cifra strong {
-      font-size: 20px;
+      font-size: var(--fs-title);
     }
     .errores li {
       grid-template-columns: 16px minmax(0, 1fr);

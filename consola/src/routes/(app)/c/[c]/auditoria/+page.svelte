@@ -278,7 +278,7 @@
   {:else if entradas === null}
     <Cargando filas={8} />
   {:else if entradas.length}
-    <label class="buscar">
+    <label class="buscar campo-buscar">
       <Search size={15} />
       <input class="input" type="search" placeholder="Buscar por persona, acción o equipo" bind:value={buscar} aria-label="Buscar en la actividad" />
     </label>
@@ -318,18 +318,6 @@
     align-items: center;
     gap: 4px 8px;
     margin: 0;
-  }
-  .buscar {
-    position: relative;
-  }
-  .buscar :global(svg) {
-    position: absolute;
-    top: 10px;
-    left: 11px;
-    color: var(--text-3);
-  }
-  .buscar .input {
-    padding-left: 34px;
   }
   .mas {
     align-self: center;

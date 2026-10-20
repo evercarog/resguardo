@@ -90,7 +90,7 @@
     overflow-wrap: anywhere;
   }
   .total strong {
-    font-size: 18px;
+    font-size: var(--fs-stat-sm);
   }
   .lista {
     margin: 0;

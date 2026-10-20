@@ -321,7 +321,8 @@
   }
   .ficha {
     display: grid;
-    grid-template-columns: max-content 1fr;
+    /* G6: con rutas largas, la columna del valor encoge y parte (no desborda a 375 px). */
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
     gap: 6px var(--sp-4);
     margin: 0 0 var(--sp-5);
     font-size: var(--fs-sm);
@@ -331,6 +332,8 @@
   }
   .ficha dd {
     margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .motivo-ficha footer {
     display: flex;

@@ -689,7 +689,7 @@
       grid-template-columns: minmax(0, 1fr);
     }
     .cifra strong {
-      font-size: 20px;
+      font-size: var(--fs-title);
     }
   }
 </style>

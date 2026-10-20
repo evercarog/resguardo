@@ -159,7 +159,7 @@
     background: var(--marca);
     border: 2px solid transparent;
     border-radius: 999px;
-    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-1) 22%, transparent) /* G7: se ve también en oscuro */;
     cursor: pointer;
   }
   .color.ninguno {
@@ -175,7 +175,7 @@
     border-color: var(--text-1);
     box-shadow:
       inset 0 0 0 2px var(--surface),
-      inset 0 0 0 3px rgb(0 0 0 / 0.08);
+      inset 0 0 0 3px color-mix(in srgb, var(--text-1) 22%, transparent);
   }
   .color.ninguno.on {
     color: var(--text-1);

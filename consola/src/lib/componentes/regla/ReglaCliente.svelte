@@ -116,7 +116,7 @@
     font-size: var(--fs-sm);
   }
   .cuenta strong {
-    font-size: 1.25rem;
+    font-size: var(--fs-title);
     color: var(--text-1);
   }
   .barra {

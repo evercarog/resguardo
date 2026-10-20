@@ -456,15 +456,7 @@
 <style>
   .linea {
     --cal-brillo: 0 0 0 transparent;
-    /* La escala de calor del calendario: un solo tono (el azul secuencial
-     * validado de dataviz), de claro a oscuro; en oscuro, al revés (lo de
-     * más, lo más claro). Las vacías, la pista `--surface-3`. Contraste en
-     * docs/diseno.md §7. */
-    --calor-0: var(--surface-3);
-    --calor-1: #9ec5f4;
-    --calor-2: #5598e7;
-    --calor-3: #256abf;
-    --calor-4: #0d366b;
+    /* La escala de calor (--calor-0…4) está en ui/src/estilos.css. */
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
@@ -473,19 +465,11 @@
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .linea {
       --cal-brillo: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
-      --calor-1: #184f95;
-      --calor-2: #2a78d6;
-      --calor-3: #6da7ec;
-      --calor-4: #b7d3f6;
     }
   }
   :global(:root[data-theme="dark"]) .linea,
   :global(:root[data-theme="black"]) .linea {
     --cal-brillo: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
-    --calor-1: #184f95;
-    --calor-2: #2a78d6;
-    --calor-3: #6da7ec;
-    --calor-4: #b7d3f6;
   }
   .herr {
     position: relative;

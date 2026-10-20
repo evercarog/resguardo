@@ -157,8 +157,8 @@
   /* Piezas comunes de los diálogos (docs/diseno.md): título, pie con las
    * acciones a la derecha. Cada diálogo puede añadir lo suyo. */
   .dialog :global(h2) {
-    font-size: 17px;
-    line-height: 24px;
+    font-size: var(--fs-dialogo);
+    line-height: var(--lh-dialogo);
     font-weight: 600;
     letter-spacing: -0.01em;
   }

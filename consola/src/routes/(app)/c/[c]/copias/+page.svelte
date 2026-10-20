@@ -171,7 +171,7 @@
     </div>
 
     <div class="barra-filtros">
-      <label class="buscar">
+      <label class="buscar campo-buscar">
         <Search size={15} />
         <input class="input" type="search" placeholder="Buscar por copia, equipo, repositorio o destino" bind:value={buscar} aria-label="Buscar copias" />
       </label>
@@ -311,18 +311,8 @@
     margin-top: calc(-1 * var(--sp-2));
   }
   .buscar {
-    position: relative;
     flex: 1;
     min-width: 240px;
-  }
-  .buscar :global(svg) {
-    position: absolute;
-    top: 10px;
-    left: 11px;
-    color: var(--text-3);
-  }
-  .buscar .input {
-    padding-left: 34px;
   }
   .sel {
     display: inline-flex;

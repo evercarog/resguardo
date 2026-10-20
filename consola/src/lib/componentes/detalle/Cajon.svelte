@@ -144,7 +144,7 @@
   }
   h2 {
     margin: var(--sp-2) 0 0;
-    font-size: 18px;
+    font-size: var(--fs-dialogo);
     line-height: 24px;
     font-weight: 650;
     letter-spacing: -0.01em;
