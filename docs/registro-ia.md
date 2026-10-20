@@ -2,6 +2,35 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-10-20 · `ia/081-mensajes` · Plan 0.8.1: A3, A4 y la parte de G4 fuera de la consola (15oo, 15j, 15f, 15u)
+
+Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: los errores de las copias en palabras con el detalle técnico plegado (15oo) en un solo sitio para agente, servidor y consola; el historial que no se salga del marco y agrupe los volcados (15j); el permiso que falta para verificar un volcado de SQL Server dicho claro y como aviso (15f); «todas las bases» y aviso de bases nuevas (15u); y G4 salvo el instalador (avisos y correos, agente, bandeja, ventana, ayuda de `resguardo-agente`, errores en inglés).
+
+**Hecho:**
+
+- **15oo, una sola tabla:** `crates/protocolo/vectors/errores-copia.json` (reglas por texto con su frase y qué hacer, y las pruebas). La lleva dentro `crates/motor/src/errores.rs` (agente y servidor) y la importa `consola/src/lib/errorCopia.ts`; los dos lados pasan las mismas pruebas (`cargo test -p resguardo-motor`, `scripts/vectores-errores.ts`). Lee el JSON `exit_error` (también cortado a 160 de un agente 0.8.0), la línea `Fatal:` y el «Falló: …» de antes. Casos: conexión cortada al guardar la versión («lo ya subido se aprovecha; se reintenta sola», con la IP del destino), sin conexión, destino que no responde, repositorio bloqueado, contraseña, disco lleno, permiso, archivo en uso, repositorio que no existe y los que ya había (nube al límite, datos dañados, 401/403/404, certificado…). Nunca «restic». Lo desconocido: frase genérica + «Detalle técnico: …» en la misma línea.
+- **Agente:** `RunRecord.detail` / `history.Entry.detail` con el texto técnico completo de una copia, verificación o derivada fallida; en el informe, `detalle` opcional (sin rutas, 1000 caracteres) en `ejecuciones[]`, `externa` y `derivadas[]`. El aviso de Windows de un fallo dice el motivo (`Hecha.motivo`).
+- **Servidor:** avisos y correos con la frase; el correo pone el original en la fila «Detalle técnico» (los agrupados y los webhooks, solo la frase). G4: «Orden con espera» con el nombre legible de la orden y la fecha en que se aplica (antes `aplicar_retencion_almacen`); «Cambio inusual» con un título por caso (por el texto del mensaje); un aviso por trabajo de espejo con su nombre y destino; la retención del almacén con el nombre del repositorio y su equipo; «no conecta con la consola»; «No existe.» y «Logo no válido (base64).» dicen qué pasa.
+- **Consola:** `ErrorCopia.svelte` (frase y «Detalle técnico» plegado) en Copias, «Todos los clientes» → Copias, la ficha del equipo, la página de la copia y el detalle de vueltas y versiones (cambios mínimos en esas páginas; dentro de botones, solo la frase).
+- **15j:** en «Historial y versiones», «antes de copiar» sin repetir el volcado por cada base («volcado de SQL Server: 4 bases bien, 2 fallaron») y las líneas largas se ajustan (`.meta-s`).
+- **15f:** el error de sqlcmd se lee también en español («Mens. 262…»: por eso salía «sqlcmd terminó con error»); sin CREATE ANY DATABASE el volcado sale **con aviso** («hecho, sin verificar: falta permiso» + la orden GRANT) y no se reintenta con cada base; sin permiso para volcar, la pista con ALTER ROLE. `verificado` va de verdad en el informe y el historial (no se mandaba: por eso «6 bases volcadas» aunque estuvieran verificadas). Los dos permisos en la ayuda del paso, el glosario, la guía (con las órdenes sqlcmd) y `guia-instalacion.md`.
+- **15u:** gancho `sqlserver` con `todas`, `excluir` y `sistema` (`admite: "sqlserver_todas"`); el agente lee `sys.databases` en cada copia (solo en línea, sin `tempdb` ni `model`, como mucho 100); con lista fija, aviso de las bases en línea que no se vuelcan; las que no están en línea (RECOVERY_PENDING…) no se intentan: aviso. Orden nueva **inofensiva** `bases_sqlserver` («Ver las bases de la instancia» en el editor; la lista va sellada para la consola). Simulador y vectores (`vectores-volcados.ts`).
+- **G4, agente:** ayuda de `resguardo-agente` con «Consolas y órdenes» aparte del modo local, `--nombre-destino` documentado, sin el ejemplo con nombre de empresa, sin mayúsculas de énfasis, el horario del espejo como en la consola; «almacén» en vez de «Servidor de copias» en la ayuda, `estado`, `guardar-copias` y los resultados de órdenes; «número de comprobación» en `vincular`, el registro y la ventana; «copia derivada» en `cli.rs`, `escritorio.rs`, `tasks.rs` y la ventana; la prueba de restauración con su tipo (`prueba`) en los avisos de Windows, la bandeja y la ventana; un solo verbo para el espejo; «con avisos» según la tarea; «la consola» en la bandeja; errores técnicos (`rclone`, «no es JSON», `--cacert`, «ejecutable de restic… PATH»).
+- **Ventana:** textos («almacén», «destino», «copia derivada», «número de comprobación», el kit) y el motivo de lo último que falló; rehecha (`npm run build:ventana`).
+- Contrato en `api-servidor.md` (gancho y «Cambios», «v1.8x (pendiente de numerar al unir)»).
+
+**Sin probar:** nada contra un SQL Server real (el permiso que falta, «todas las bases», la salida de `sqlcmd -h -1 -W -f 65001` con go-sqlcmd y con el clásico, nombres con tildes); los avisos de Windows reales; un correo real con la fila «Detalle técnico»; la orden `bases_sqlserver` con un equipo real (solo con el simulador y las pruebas del agente).
+
+**Decisiones para revisar:**
+
+- **El kit es la excepción a «sin restic»:** se nombra una vez como «el programa de copias (restic)», con su orden (`cli.rs` y `Kit.svelte`), porque sirve para recuperar sin Resguardo.
+- **15f (4):** no se desactiva la verificación en las copias que ya existían al actualizar: con el aviso, la copia ya no sale fallida y dice cómo dar el permiso.
+- **Lo desconocido** va en una sola línea («frase Detalle técnico: …») para que llegue también por los caminos que solo llevan un texto (órdenes, avisos); el texto completo, aparte en `detalle`.
+- **«Cambio inusual»:** el título se saca del texto del mensaje (los agentes de todas las versiones mandan ese tipo); un tipo nuevo por caso habría obligado a cambiar el contrato y no serviría con los agentes ya instalados.
+- **Espejo por trabajo:** el aviso global de antes (sin sujeto) se da por arreglado al llegar un resumen con trabajos; uno abierto se cerrará una vez al actualizar.
+- **WebView2 y «la ventana no se abre como administrador»** (`ventana.rs`) se quedan para la línea de F1 (15o), que toca justo eso.
+- «Copia derivada» también para la tarea `verify_offsite` (antes «la copia en la nube») y «Espejo en la nube» para el tipo `nube` en la ventana.
+
 ## 2026-10-14 · `ia/integracion-080` · **Resumen de la versión 0.8.0 (para el responsable)**
 
 Claude Code (Opus), en autónomo del 2026-10-13 al 2026-10-14, con el plan [plan-0.8.0.md](plan-0.8.0.md) aprobado («una sola versión grande»). Trabajo repartido en 13 ramas `ia/080-*` hechas por asistentes en paralelo y unidas en `ia/integracion-080` solo tras pasar todas las comprobaciones. **No se ha publicado nada**; no se unió a `main` (salvo el README).

@@ -20,8 +20,8 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 - [ ] **A1.** Un repositorio que sale de un espejo avisa, y lo que queda en el destino sin actualizar se ve (15m).
 - [ ] **A2.** La página del repositorio conoce sus derivadas, y cada derivada tiene su página con «Retención en el almacén…» (15g).
-- [ ] **A3.** Volcados de SQL: el permiso que falta, dicho claro y como aviso, no como fallo (15f); «todas las bases» y aviso de bases nuevas (15u).
-- [ ] **A4.** Los errores de las copias en palabras, con qué hacer, y el detalle técnico plegado (15oo); el historial corta las líneas largas (15j).
+- [x] (rama `ia/081-mensajes`; sin probar contra un SQL Server real) **A3.** Volcados de SQL: el permiso que falta, dicho claro y como aviso, no como fallo (15f); «todas las bases» y aviso de bases nuevas (15u).
+- [x] (rama `ia/081-mensajes`) **A4.** Los errores de las copias en palabras, con qué hacer, y el detalle técnico plegado (15oo); el historial corta las líneas largas (15j).
 - [ ] **A5.** Parar y pausar una copia en marcha, con la clave de administración; restic muere con el servicio (15hh).
 - [ ] **A6.** Que el equipo no se suspenda mientras copia (15ll).
 - [ ] **A7.** Quitar un repositorio vacío solo con la clave; `kit` y `copias` ven todos los repositorios del equipo (15q). Lo que queda de 14nn.
@@ -72,7 +72,7 @@ Cuatro revisiones del código (textos, estados de las pantallas, accesibilidad y
 - [ ] **G1. Fallos de verdad (con el bloque R):** variables de CSS que no existen (los fallos de los espejos no salen en rojo), Escape que cierra diálogos que no deben cerrarse (se pierde lo escrito o un código de un solo uso), cargas que no terminan nunca si falla una petición, un informe para el cliente con datos en blanco sin avisar, botones que mandan dos veces con un doble clic, errores inesperados en inglés, un enlace roto, la prueba de restauración contada como verificación en los avisos de Windows. Con una comprobación estática de variables de CSS en `test:vectores`.
 - [ ] **G2. Confirmar y no perder trabajo:** avisar al salir con cambios sin enviar, confirmar lo que borra, `BotonFalta` en los botones apagados que no dicen qué falta, estados vacíos con su botón.
 - [ ] **G3. Un solo vocabulario en la consola:** tipos de destino, credenciales, botones («Seguir», «Listo»…), «copia derivada», «quitar», unidades y fechas, erratas y frases largas.
-- [ ] **G4. Fuera de la consola:** avisos y correos con nombres legibles y qué hacer; «número de comprobación», «vincular», «almacén» y «copia derivada» también en el agente, la bandeja, la ventana y el instalador; textos del instalador que ya no son ciertos; ayuda de `resguardo-agente`; errores en inglés.
+- [~] (rama `ia/081-mensajes`: avisos y correos, agente, bandeja, ventana, ayuda de `resguardo-agente` y errores de la API; **falta** lo del instalador, que hace otra línea, y los dos textos de la ventana que tocan el aviso de WebView2 y la ventana como administrador, que van con F1) **G4. Fuera de la consola:** avisos y correos con nombres legibles y qué hacer; «número de comprobación», «vincular», «almacén» y «copia derivada» también en el agente, la bandeja, la ventana y el instalador; textos del instalador que ya no son ciertos; ayuda de `resguardo-agente`; errores en inglés.
 - [ ] **G5. Accesibilidad:** estados con icono y texto, sin `title` nativo, tablas y cambios legibles con lector de pantalla, teclado en las pestañas.
 - [ ] **G6. Pantallas estrechas:** tablas y fichas que desbordan a 375 px, direcciones largas, campos que hacen ampliar la página en el iPhone.
 - [ ] **G7. Sistema de diseño:** tamaños con sus tokens y piezas repetidas a `ui/` (kit imprimible, buscador, barra de fuerza de la clave).
