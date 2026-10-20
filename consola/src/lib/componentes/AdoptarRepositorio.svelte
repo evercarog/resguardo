@@ -195,7 +195,7 @@
 
   {#if cambiadas}
     <AlertaLlaves equipo={cambiadas} cliente={cliente.id} />
-    <footer><button class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
   {:else if hecho}
     <div class="form">
       <div class="notice notice-success" role="status"><CircleCheck size={16} /><p>{hecho.mensaje}</p></div>

@@ -37,6 +37,8 @@ export interface CampoDestino {
   secreto?: boolean;
   opcional?: boolean;
   opciones?: string[];
+  /** Cómo se enseña cada opción (el valor va tal cual al equipo: es el que entiende rclone). */
+  textoOpcion?: Record<string, string>;
   ayuda?: string;
   ejemplo?: string;
   largo?: boolean;
@@ -49,7 +51,7 @@ export const CAMPOS_DESTINO: Record<"b2" | "s3" | "sftp" | "smb" | "webdav", Cam
     { clave: "clave", etiqueta: "Clave secreta", secreto: true, ayuda: "En B2, la «applicationKey». Mejor una clave limitada al bucket del espejo y sin permiso para saltarse el bloqueo de objetos." },
   ],
   s3: [
-    { clave: "proveedor", etiqueta: "Proveedor", opcional: true, opciones: ["Other", "AWS", "Wasabi", "Minio", "Cloudflare", "Ceph", "DigitalOcean", "IDrive", "Scaleway", "IONOS", "Storj"] },
+    { clave: "proveedor", etiqueta: "Proveedor", opcional: true, textoOpcion: { Other: "Otro", Minio: "MinIO" }, opciones: ["Other", "AWS", "Wasabi", "Minio", "Cloudflare", "Ceph", "DigitalOcean", "IDrive", "Scaleway", "IONOS", "Storj"] },
     { clave: "endpoint", etiqueta: "Dirección del servicio (endpoint)", opcional: true, ejemplo: "https://s3.eu-central-003.ejemplo.com", ayuda: "Con https. En AWS se puede dejar vacía." },
     { clave: "region", etiqueta: "Región", opcional: true, ejemplo: "eu-central-003" },
     { clave: "id_clave", etiqueta: "Identificador de la clave", ayuda: "En S3, la «access key ID»." },
@@ -77,7 +79,7 @@ export const CAMPOS_DESTINO: Record<"b2" | "s3" | "sftp" | "smb" | "webdav", Cam
   ],
   webdav: [
     { clave: "url", etiqueta: "Dirección (https)", ejemplo: "https://nube.ejemplo.com/remote.php/dav/files/copias/" },
-    { clave: "proveedor", etiqueta: "Servicio", opcional: true, opciones: ["other", "nextcloud", "owncloud"] },
+    { clave: "proveedor", etiqueta: "Servicio", opcional: true, opciones: ["other", "nextcloud", "owncloud"], textoOpcion: { other: "Otro", nextcloud: "Nextcloud", owncloud: "ownCloud" } },
     { clave: "usuario", etiqueta: "Usuario" },
     { clave: "contrasena", etiqueta: "Contraseña", secreto: true, ayuda: "En Nextcloud, mejor una contraseña de aplicación." },
   ],

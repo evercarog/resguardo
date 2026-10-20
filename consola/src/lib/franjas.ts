@@ -5,6 +5,7 @@
 // 10 000 000 KiB/s (o 0: sin límite) y sin pisarse. Sin estado: lo prueban los
 // vectores (scripts/vectores-versiones.ts).
 import type { Equipo, FranjaVelocidad } from "./tipos";
+import { bytes } from "./formato";
 
 export const ADMITE_FRANJAS = "limite_franjas";
 export const admiteFranjas = (e: Equipo | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_FRANJAS);
@@ -26,7 +27,7 @@ export function errorFranjas(fs: FranjaVelocidad[] | null | undefined): string |
     if (!f.dias.length || f.dias.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) return "Cada franja de velocidad necesita sus días.";
     if (!HORA.test(f.desde) || !HORA.test(f.hasta)) return "Las horas de las franjas de velocidad son HH:MM.";
     if (f.desde >= f.hasta) return `La franja de ${f.desde} a ${f.hasta} tiene que empezar antes de terminar (el mismo día).`;
-    if (!Number.isInteger(f.kib) || (f.kib !== 0 && (f.kib < MIN_KIB || f.kib > MAX_KIB))) return `El límite de cada franja va de ${MIN_KIB} KiB/s a ${MAX_KIB} KiB/s (o sin límite).`;
+    if (!Number.isInteger(f.kib) || (f.kib !== 0 && (f.kib < MIN_KIB || f.kib > MAX_KIB))) return `El límite de cada franja va de ${velocidadEnFrase(MIN_KIB)} a ${velocidadEnFrase(MAX_KIB)} (o sin límite).`;
     for (const d of f.dias) {
       if (tramos.some(([e, a, b]) => e === d && f.desde < b && a < f.hasta)) return "Dos franjas de velocidad se pisan el mismo día.";
       tramos.push([d, f.desde, f.hasta]);
@@ -46,10 +47,15 @@ export function diasEnFrase(dias: number[]): string {
   return n.length > 1 ? `${n.slice(0, -1).join(", ")} y ${n.at(-1)}` : (n[0] ?? "");
 }
 
-/** «2 MB/s», «512 KiB/s», «sin límite». */
+/**
+ * «2,1 MB/s», «524 KB/s», «sin límite». El agente cuenta el límite en KiB/s; aquí se dice
+ * con las mismas unidades que el resto de la consola (`bytes`, de 1000 en 1000, con espacio
+ * fino), como la velocidad de una copia en marcha (G3, plan 0.8.1: antes «MB/s» salía de
+ * dividir KiB entre 1024 y las etiquetas decían «KiB/s»).
+ */
 export function velocidadEnFrase(kib: number | null | undefined): string {
   if (!kib) return "sin límite";
-  return kib >= 1024 && kib % 1024 === 0 ? `${kib / 1024} MB/s` : `${kib} KiB/s`;
+  return `${bytes(kib * 1024)}/s`;
 }
 
 /** «2 MB/s de 08:00 a 18:00 (lun–vie); el resto, sin límite». */

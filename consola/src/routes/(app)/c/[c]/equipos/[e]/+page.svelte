@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { velocidadEnFrase } from "$lib/franjas";
   import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { listaFuncionales } from "$lib/funcionales.svelte";
@@ -1338,7 +1339,7 @@
           {:else if g.espejo}
             <div class="espejo">
               <p class="externa">
-                <HardDrive size={14} /><span>{flexible ? "Espejo de lo que guarda" : `Espejo cada noche a las ${g.espejo.hora}`}{#if g.espejo.limite_kib}{" · "}subida limitada a {numero(g.espejo.limite_kib)} KiB/s{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
+                <HardDrive size={14} /><span>{flexible ? "Espejo de lo que guarda" : `Espejo cada noche a las ${g.espejo.hora}`}{#if g.espejo.limite_kib}{" · "}subida limitada a {velocidadEnFrase(g.espejo.limite_kib)}{/if}{#if g.espejo.ultima}{" · "}la última subida <Tiempo iso={g.espejo.ultima} />{/if}</span>
                 <Ayuda id="espejo" />
               </p>
               {#if g.espejo.destinos?.length}
@@ -1408,7 +1409,7 @@
             <div class="acciones">
               <a class="btn btn-sm" href={hrefEspejos(c, equipo.id)}><HardDrive size={14} />Espejos{#if trabajosAlmacen.length}{" "}({trabajosAlmacen.length}){/if}</a>
               {#if puede.administrar(rol)}
-                <a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "almacen" })}><Plus size={14} />Añadir espejo</a>
+                <a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "almacen" })}><Plus size={14} />Añadir un espejo</a>
                 <MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} />
               {/if}
             </div>
@@ -1457,7 +1458,7 @@
           {/if}
           <div class="acciones">
             <a class="btn btn-sm" href={hrefEspejos(c, equipo.id)}><HardDrive size={14} />Espejos</a>
-            {#if puede.administrar(rol)}<a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "equipo" })}><Plus size={14} />Añadir espejo</a>{/if}
+            {#if puede.administrar(rol)}<a class="btn btn-sm btn-ghost" href={hrefEspejos(c, equipo.id, { quien: "equipo" })}><Plus size={14} />Añadir un espejo</a>{/if}
           </div>
         </section>
       {/if}
@@ -1505,7 +1506,7 @@
       {@const hayMas = !!equipo.resumen?.escritorio || (propioPosible && puede.administrar(rol)) || (puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado") || (!!almacenes.length && puede.administrar(rol))}
       {#if hayMas}
       <details class="menos-usado" open={!repos.length}>
-        <summary>Más opciones<span class="faint">Repositorio nuevo, copiar en otro equipo y la ventana del agente</span></summary>
+        <summary>Más opciones<span class="faint">Nuevo repositorio, copiar en otro equipo y la ventana del agente</span></summary>
         <div class="menos-usado-cuerpo">
       {#if equipo.resumen?.escritorio}
         {@const esc = equipo.resumen.escritorio}
@@ -1531,9 +1532,9 @@
       {#if puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado"}
         <!-- Tarea 4a: un repositorio nuevo en cualquier destino (también directamente en una nube), con este equipo ya elegido. -->
         <section class="card p">
-          <h3 class="section-title">Repositorio nuevo</h3>
+          <h3 class="section-title">Nuevo repositorio</h3>
           <p class="faint nota-almacen">En un almacén de la oficina, en una nube (Dropbox…) o en un disco. Si la nube aún no está conectada en {equipo.nombre}, se conecta desde ahí mismo.</p>
-          <div class="acciones"><button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Repositorio nuevo…</button></div>
+          <div class="acciones"><button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Nuevo repositorio…</button></div>
         </section>
       {/if}
 

@@ -301,7 +301,7 @@
       </div>
       <BloqueCopiable texto={enlace} etiqueta="Copiar el enlace" alto={3} />
       <footer>
-        <button class="btn btn-primary" onclick={() => (invitacion = null)}>Hecho</button>
+        <button class="btn btn-primary" onclick={() => (invitacion = null)}>Listo</button>
       </footer>
     </div>
   </Modal>

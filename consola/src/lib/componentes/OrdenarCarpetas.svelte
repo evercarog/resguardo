@@ -222,7 +222,7 @@
 
   {#if cambiadas}
     <AlertaLlaves equipo={cambiadas} cliente={cliente.id} />
-    <footer><button class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
   {:else if fase === "listo"}
     <p><Check size={15} /> Listo: {en?.equipo.nombre} ya guarda en <code>{movido?.usuario?.a ?? en?.usuario}</code>{movido?.repos.length ? `, con ${movido.repos.map((r) => r.a).join(", ")}` : ""}.</p>
     {#if espejos.length}<p class="faint">Los espejos subirán la carpeta nueva la próxima vez que copien.</p>{/if}

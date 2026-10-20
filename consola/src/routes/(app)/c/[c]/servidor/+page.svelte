@@ -197,7 +197,7 @@
         <span class="card-icon"><Monitor size={18} /></span>
         <div class="cab-texto">
           <h2>Gestionarlo también desde otra consola</h2>
-          <p class="faint">Los equipos siguen aquí y, además, se gestionan desde otra consola: cualquier Resguardo Server que alcancen (la de otra oficina por VPN, una en línea, otra de la misma red). Cada una funciona sola: si quitas una, la otra sigue igual. Para irse del todo a otra, «Mover a otra consola…».</p>
+          <p class="faint">Los equipos siguen aquí y, además, se gestionan desde otra consola: la de otra oficina por VPN, una en línea u otra de la misma red. Cada consola funciona sola: si quitas una, la otra sigue igual. Para irte del todo a otra, «Mover a otra consola…».</p>
         </div>
         <div class="botones">
           <button class="btn btn-primary" onclick={() => (conectar = true)} disabled={!actual.equipos.some((e) => e.confirmado && e.modo === "gestionado")}>Conectar también a otra consola…</button>
@@ -450,7 +450,7 @@
         </div>
         <BloqueCopiable texto={bloqueServidor(ficha)} etiqueta="Copiar el bloque" />
         <p class="faint pequeno">Identidad de este servidor: <code>{huellaCorta(ficha.servidor.identidad)}</code> · vale para {plural(ficha.usos, "equipo", "equipos")} hasta el {fechaLarga(ficha.caduca)}.</p>
-        <footer><button class="btn btn-primary" onclick={() => ((fichaDlg = false), (ficha = null))}>Hecho</button></footer>
+        <footer><button class="btn btn-primary" onclick={() => ((fichaDlg = false), (ficha = null))}>Listo</button></footer>
       </div>
     {/if}
   </Modal>

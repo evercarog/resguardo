@@ -1,12 +1,12 @@
 // «Retención en detalle» (la página `…/repositorios/[r]/retencion`): lo que no
 // es pantalla.
 //
-// - Lo que se eliminó: las vueltas de la retención que anota cada equipo en su
+// - Lo que se quitó: las vueltas de la retención que anota cada equipo en su
 //   historial (v1.45, `tipo: "retencion"`; agente: retencion_registro.rs): la
 //   del propio equipo, la del almacén (en el historial del almacén, por usuario
 //   y carpeta) y la de la copia externa (en su destino). Con las versiones que
 //   quitó cada una (las 50 vueltas más recientes; de las anteriores, las cifras).
-// - Lo que se eliminará: una simulación con la regla de ahora (las reglas de
+// - Lo que se quitará: una simulación con la regla de ahora (las reglas de
 //   `restic forget`, como `seQuedan`/`motivosQuedan`, por copia: restic agrupa
 //   por equipo y carpetas) sobre las versiones que conoce la consola, con las
 //   copias que vendrán según su horario. Es una simulación: decide restic, y el

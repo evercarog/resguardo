@@ -477,7 +477,7 @@
     tipo="comprobar_contrasena"
     cuerpo={{ repo: repo.id }}
     titulo="Comprobar la contraseña de «{repo.nombre}»"
-    descripcion="Escribe la contraseña de tu kit. {equipo.nombre} probará si abre «{repo.nombre}» de verdad y también sus copias externas o derivadas con la misma contraseña. Sus espejos son el mismo repositorio: se abren con la misma. No cambia nada ni guarda la contraseña."
+    descripcion="Escribe la contraseña de tu kit. {equipo.nombre} probará si abre «{repo.nombre}» de verdad, y sus copias derivadas con la misma contraseña. Los espejos se abren con la misma. No cambia nada ni guarda la contraseña."
     repo={{ id: repo.id, nombre: repo.nombre }}
     accion="Comprobar"
     alTerminar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})}

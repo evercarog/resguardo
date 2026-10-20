@@ -245,7 +245,7 @@
             {:else}{dejadas.length} de {filas.length} ya solo están en {destino?.nombre}; los demás siguen aquí (mira el motivo arriba) y puedes repetirlo.{/if}
           </p>
         </div>
-        <footer><button class="btn btn-primary" onclick={onclose}>Hecho</button></footer>
+        <footer><button class="btn btn-primary" onclick={onclose}>Listo</button></footer>
       {/if}
     </div>
   {/if}

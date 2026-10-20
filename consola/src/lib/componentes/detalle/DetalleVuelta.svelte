@@ -95,7 +95,7 @@
       <ul class="otras">
         {#each mismoDia as x (x.hora)}
           <li>
-            <button class="pulsable-bloque otra" use:tip={"Ver detalle"} onclick={() => abrirVuelta(x.hora)}>
+            <button class="pulsable-bloque otra" use:tip={"Ver el detalle"} onclick={() => abrirVuelta(x.hora)}>
               <span class="num">{hora(x.hora)}</span>
               <Chip pequeno tono={TONO_RESULTADO[x.resultado]} texto={TEXTO_RESULTADO[x.resultado]} />
               {#if x.mensaje_corto && x.resultado !== "ok"}<span class="faint msg">{x.mensaje_corto}</span>{/if}

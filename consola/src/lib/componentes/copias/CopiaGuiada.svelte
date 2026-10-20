@@ -124,7 +124,7 @@
       {#snippet ayuda()}<Ayuda id="inicio-copia" />{/snippet}
       <form class="paso-form" onsubmit={siguiente}>
         <CuandoEmpieza {copias} {i} admite={{ reglas: admite.reglas, cadenas: admite.cadenas, despues: admite.despues, termina: admite.termina }} {version} equipo={equipo.nombre} guiado hechas={equipo.resumen?.copias?.find((x) => x.id === k.id)?.hechas ?? null} />
-        <div class="pie"><button class="btn btn-primary btn-sm">Siguiente<ArrowRight size={14} /></button></div>
+        <div class="pie"><button class="btn btn-primary btn-sm">Seguir<ArrowRight size={14} /></button></div>
       </form>
     </PasoGuiado>
 
@@ -171,14 +171,14 @@
             <EditorGanchos id="g-{k.id}" bind:ganchos={() => ganchosDe(k.gancho), (v) => (k.gancho = v)} admite={admite.ganchos} {version} {cliente} {equipo} {prueba} />
           </div>
         </details>
-        <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.carpetas.length ? null : { texto: "Elige al menos una carpeta" }}>Siguiente<ArrowRight size={14} /></BotonFalta></div>
+        <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.carpetas.length ? null : { texto: "Elige al menos una carpeta" }}>Seguir<ArrowRight size={14} /></BotonFalta></div>
       </form>
     </PasoGuiado>
 
     <PasoGuiado n={3} titulo={TITULO_PASO.donde} abierto={paso === "donde"} hecho={pasoHecho(k, "donde")} resumen={resumenDe.donde()} deshabilitado={!abrible("donde")} onabrir={() => (paso = "donde")}>
       <form class="paso-form" onsubmit={siguiente}>
         <ElegirRepositorio id={k.id} {repos} {equipo} {equipos} {catalogo} {copias} copia={k.id} bind:value={k.repo} admiteFiltros={admite.filtros} onNuevo={onNuevoRepo} />
-        <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.repo ? null : { texto: "Elige dónde se guarda" }}>Siguiente<ArrowRight size={14} /></BotonFalta></div>
+        <div class="pie"><BotonFalta type="submit" class="btn btn-primary btn-sm" falta={k.repo ? null : { texto: "Elige dónde se guarda" }}>Seguir<ArrowRight size={14} /></BotonFalta></div>
       </form>
     </PasoGuiado>
 

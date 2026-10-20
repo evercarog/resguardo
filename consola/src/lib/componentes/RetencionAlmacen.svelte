@@ -141,7 +141,7 @@
 
   {#if cambiadas}
     <AlertaLlaves equipo={cambiadas} cliente={cliente.id} />
-    <footer><button class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
   {:else if hecho}
     <div class="form">
       <p>

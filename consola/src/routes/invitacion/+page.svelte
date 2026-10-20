@@ -72,7 +72,7 @@
 
 {#if !token}
   <Portada titulo="Enlace incompleto" sub="A este enlace de invitación le falta el final. Pide que te lo vuelvan a enviar.">
-    <a class="btn btn-lg ancho" href="/entrar">Ir a entrar</a>
+    <a class="btn btn-lg ancho" href="/entrar">Entrar</a>
   </Portada>
 {:else if paso === "con_cuenta"}
   <Portada titulo="Te han invitado a un cliente" sub="Te unirás con tu cuenta {app.cuenta?.correo}.">

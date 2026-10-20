@@ -236,7 +236,7 @@ export const PREGUNTAS: Pregunta[] = [
     si: "La contraseña de un repositorio se filtró",
     respuesta: [
       "No se cambia en el mismo repositorio: quien copió su kit podría seguir abriéndolo (la llave de dentro no cambia) y los espejos guardan la llave antigua. Lo seguro es pasar a un repositorio nuevo con otra contraseña, con todo su historial.",
-      "1. En la página de la copia o del repositorio, «Añadir paso → Repositorio nuevo a partir de esta», con «Otra contraseña». Se crea con otra llave y se le traen todas las versiones. Guarda su kit nuevo.",
+      "1. En la página de la copia o del repositorio, «Añadir paso → Nuevo repositorio a partir de esta», con «Otra contraseña». Se crea con otra llave y se le traen todas las versiones. Guarda su kit nuevo.",
       "2. Cuando haya traído el historial, «Cambiar» la copia para que guarde en el repositorio nuevo.",
       "3. Pasado un tiempo (cuando ya no necesites restaurar desde el viejo), quita el repositorio viejo y sus espejos. Destruye el kit antiguo.",
     ],
@@ -282,7 +282,7 @@ export const PREGUNTAS: Pregunta[] = [
   },
   {
     id: "si-orden",
-    si: "Hay una orden destructiva que no esperaba",
+    si: "Hay una orden con espera que no esperaba",
     respuesta: ["Cancélala en «Órdenes» antes de que se aplique: para eso esperan. Después cambia la clave de administración y revisa quién la pidió en la Actividad."],
   },
   {

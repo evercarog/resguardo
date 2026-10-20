@@ -229,7 +229,7 @@
 
   {#if cambiadas}
     <AlertaLlaves equipo={cambiadas} cliente={cliente.id} />
-    <footer><button class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
   {:else if paso === "clave"}
     <form class="form" onsubmit={pedirAcceso}>
       <div class="field">

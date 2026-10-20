@@ -206,7 +206,7 @@
             {#if d != null && c.tipo === "cambiado"}<small class:sube={d > 0} use:tip={`Antes: ${bytes(c.bytes_antes)}`}>{fmtDelta(d)}</small>{/if}
           </span>
           <span class="acc">
-            <button class="icon-btn" use:tip={"Ver versiones de este archivo"} aria-label="Ver las versiones de {partesRuta(c.ruta).nombre}" onclick={() => alVerArchivo(c.ruta)}><FileClock size={15} /></button>
+            <button class="icon-btn" use:tip={"Ver las versiones de este archivo"} aria-label="Ver las versiones de {partesRuta(c.ruta).nombre}" onclick={() => alVerArchivo(c.ruta)}><FileClock size={15} /></button>
             {#if puedeRestaurar}
               <button class="icon-btn" use:tip={"Restaurar este archivo"} aria-label="Restaurar {partesRuta(c.ruta).nombre}" aria-expanded={restaurando === c.ruta} onclick={() => (restaurando = restaurando === c.ruta ? null : c.ruta)}><History size={15} /></button>
             {/if}

@@ -4,6 +4,7 @@
   // `<destino>/<usuario>/<repo>`, con la misma contraseña (la del kit). Aquí
   // se elige el destino y el repositorio; después, «Restaurar en otro equipo»
   // con los datos del kit ya puestos lo abre en el equipo que elijas.
+  import Tiempo from "./Tiempo.svelte";
   import { ArrowRight, LifeBuoy } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { claveEspejo } from "$lib/cripto/ordenes";
@@ -71,7 +72,7 @@
           <select id="de-destino" class="input" bind:value={clave}>
             {#each destinos as d (claveEspejo(d))}<option value={claveEspejo(d)}>{etiqueta(d)}</option>{/each}
           </select>
-          {#if destino?.ultima}<span class="field-hint">Copiado al espejo por última vez: {new Date(destino.ultima).toLocaleString("es")}. Lo copiado después en el almacén no está en el espejo.</span>{/if}
+          {#if destino?.ultima}<span class="field-hint">Copiado al espejo por última vez <Tiempo iso={destino.ultima} />. Lo copiado después en el almacén no está en el espejo.</span>{/if}
         </div>
         <div class="field">
           <label class="field-label" for="de-repo">Repositorio</label>

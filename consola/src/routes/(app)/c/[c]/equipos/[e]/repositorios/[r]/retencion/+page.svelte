@@ -1,7 +1,7 @@
 <script lang="ts">
-  // «Retención en detalle» de un repositorio: lo que se eliminó (cada vuelta de
+  // «Retención en detalle» de un repositorio: lo que se quitó (cada vuelta de
   // la retención que anotó el equipo, su almacén o su copia externa, con las
-  // versiones que quitó) y lo que se eliminará (simulado con la regla de ahora:
+  // versiones que quitó) y lo que se quitará (simulado con la regla de ahora:
   // la próxima vuelta y los días que vienen), con un calendario de las dos
   // cosas y filtros por copia. Desde «Ver en detalle» en la página del
   // repositorio, la de la copia y Ctrl+K.
@@ -159,8 +159,8 @@
       items={[
         ...(conservadas.length ? [{ id: "ret-conservadas", texto: "Para siempre" }] : []),
         { id: "ret-calendario", texto: "Calendario" },
-        { id: "ret-eliminado", texto: "Lo que se eliminó" },
-        ...(prevision ? [{ id: "ret-proximo", texto: "Lo que se eliminará" }] : []),
+        { id: "ret-eliminado", texto: "Lo que se quitó" },
+        ...(prevision ? [{ id: "ret-proximo", texto: "Lo que se quitará" }] : []),
       ]}
     />
 
@@ -171,7 +171,7 @@
         <span class="faint">{cifras.fallidas ? plural(cifras.fallidas, "fallida", "fallidas") : "anotadas por los equipos"}</span>
       </div>
       <div class="cifra">
-        <span class="k">Versiones eliminadas</span>
+        <span class="k">Versiones quitadas</span>
         <strong class="num">{leidas ? numero(cifras.quitadas) : "…"}</strong>
         <span class="faint">en esas veces</span>
       </div>
@@ -183,7 +183,7 @@
       <div class="cifra">
         <span class="k">La próxima vez</span>
         <strong class="num">{prevision ? numero(prevision.proxima.ids.length) : "—"}</strong>
-        <span class="faint">{!prevision ? "sin retención" : prevision.proxima.cuando ? `se eliminarían el ${fmtCuando.format(new Date(prevision.proxima.cuando))}` : "se eliminarían al aplicar la retención"}</span>
+        <span class="faint">{!prevision ? "sin retención" : prevision.proxima.cuando ? `se quitarían el ${fmtCuando.format(new Date(prevision.proxima.cuando))}` : "se quitarían al aplicar la retención"}</span>
       </div>
     </div>
 
@@ -229,7 +229,7 @@
     </section>
 
     <section class="card p" id="ret-eliminado" aria-labelledby="ret-eliminado-t">
-      <h2 class="section-title" id="ret-eliminado-t">Lo que se eliminó</h2>
+      <h2 class="section-title" id="ret-eliminado-t">Lo que se quitó</h2>
       {#if errorVueltas}
         <div class="notice notice-danger"><p>{errorVueltas}</p></div>
       {:else if !leidas}
@@ -244,7 +244,7 @@
 
     {#if prevision && efectiva}
       <section class="card p previ" id="ret-proximo" aria-labelledby="ret-proximo-t">
-        <h2 class="section-title" id="ret-proximo-t">Lo que se eliminará próximamente</h2>
+        <h2 class="section-title" id="ret-proximo-t">Lo que se quitará próximamente</h2>
         <PrevisionRetencion
           {prevision}
           {versiones}

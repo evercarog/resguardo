@@ -68,8 +68,8 @@ igual("lo que necesita atención: lo grave arriba, con su cliente", at.map((x) =
   ["Altamar", "bad", "CONTABILIDAD · copia fallida"],
   ["Bodega", "warn", "2 avisos sin revisar"],
 ]);
-igual("con su acción («Copiar ahora» si su papel lo permite)", at.map((x) => x.accion.texto), ["Copiar ahora", "Ver avisos"]);
-igual("solo lectura: «Ver equipo» en vez de «Copiar ahora»", atencion([{ ...a, rol: "lectura" }], ahora)[0].accion, { texto: "Ver equipo", href: "/c/A/equipos/a2" });
+igual("con su acción («Copiar ahora» si su papel lo permite)", at.map((x) => x.accion.texto), ["Copiar ahora", "Ver los avisos"]);
+igual("solo lectura: «Ver el equipo» en vez de «Copiar ahora»", atencion([{ ...a, rol: "lectura" }], ahora)[0].accion, { texto: "Ver el equipo", href: "/c/A/equipos/a2" });
 
 const t = totales(todos, ahora);
 igual("cifras de todos", [t.equipos, t.alDia, t.porTono.bad, t.repos, t.protegido, t.versiones24, t.fallos24], [6, 5, 1, 5, 10e9, 5, 1]);

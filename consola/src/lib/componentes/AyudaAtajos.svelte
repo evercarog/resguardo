@@ -27,7 +27,7 @@
       {/each}
       <div><dt>Cerrar un diálogo o menú</dt><dd><kbd>Esc</kbd></dd></div>
     </dl>
-    <footer><button class="btn btn-primary" onclick={cerrar}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={cerrar}>Cerrar</button></footer>
   </Modal>
 {/if}
 

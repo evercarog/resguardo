@@ -18,6 +18,7 @@ import { pasoAlDia } from "../src/lib/regla321";
 import { comentariosDe, conservadaDe, destinosConservar, errorComentario, errorMotivo, esMio, mismaVersion, pareceSecreto } from "../src/lib/versionesNotas";
 import { errorPorDia, errorRegla, porDiaQuedan, reglaParaOrden, seQuedan, textoPorDia, textoRegla } from "../src/lib/retencion";
 import { explicar, prever, textoSeQueda } from "../src/lib/retencionDetalle";
+const NB = " "; // el espacio fino de lib/formato.ts
 import { errorFranjas, franjaNueva, franjasEnFrase, velocidadEnFrase } from "../src/lib/franjas";
 
 let fallos = 0;
@@ -51,7 +52,7 @@ console.log("\n· F1: «Solo a mano» y «Una sola vez»");
   igual("en una fecha y hora", cuandoEnFrase(copias, 0, null, AHORA), "Una sola vez, el 20 oct 2026 a las 21:30");
   ponerInicio(copias, 0, "horario", null, AHORA);
   igual("volver a «Con horario» quita «una sola vez» y pone el de por defecto", [copias[0].termina, copias[0].horario.horas], [undefined, ["13:00"]]);
-  igual("un agente anterior no entiende «Solo a mano»", errorInicio(copias, 1, { cadenas: true, despues: true, termina: false }), "«Nueva copia»: actualiza el agente para «Solo a mano», «Una sola vez» o «Termina».");
+  igual("un agente anterior no entiende «Solo a mano»", errorInicio(copias, 1, { cadenas: true, despues: true, termina: false }), "«Copia nueva»: actualiza el agente para «Solo a mano», «Una sola vez» o «Termina».");
   igual("uno nuevo, sí", errorInicio(copias, 1, { cadenas: true, despues: true, termina: true }), null);
   // Lo que se envía: solo a un agente que lo entiende.
   const cfg = { v: 1, copias: copiar(copias), repositorios: [], destinos: [] };
@@ -70,7 +71,7 @@ console.log("\n· F1: «Termina después de N copias o el día …»");
   igual("como mucho 10 000", k.termina?.veces, 10_000);
   ponerTermina(k, "hasta", "2027-01-31", AHORA);
   igual("hasta un día", terminaEnFrase(k.termina), "hasta el 31 ene 2027");
-  igual("el día mal escrito no vale", errorInicio([{ ...k, termina: { hasta: "31/01/2027" } }], 0, { cadenas: true, despues: true, termina: true }), "«Nueva copia»: el día en que termina no es válido.");
+  igual("el día mal escrito no vale", errorInicio([{ ...k, termina: { hasta: "31/01/2027" } }], 0, { cadenas: true, despues: true, termina: true }), "«Copia nueva»: el día en que termina no es válido.");
   ponerTermina(k, "nunca");
   igual("nunca: sin el campo", k.termina, undefined);
   const cfg = { v: 1, copias: [{ ...copiaNueva("r1", "k1"), termina: { veces: 3, desde: "2026-10-13T08:00:00.000Z", hasta: null } }], repositorios: [], destinos: [] };
@@ -172,10 +173,10 @@ console.log("\n· F4: franjas de velocidad (como el agente)");
   igual("la de por defecto vale", errorFranjas([of]), null);
   igual("al revés, no", errorFranjas([{ ...of, desde: "18:00", hasta: "08:00" }]), "La franja de 18:00 a 08:00 tiene que empezar antes de terminar (el mismo día).");
   igual("se pisan, no", errorFranjas([of, { dias: [5], desde: "17:00", hasta: "20:00", kib: 512 }]), "Dos franjas de velocidad se pisan el mismo día.");
-  igual("un límite ridículo, no", errorFranjas([{ ...of, kib: 10 }]), "El límite de cada franja va de 64 KiB/s a 10000000 KiB/s (o sin límite).");
+  igual("un límite ridículo, no", errorFranjas([{ ...of, kib: 10 }]), `El límite de cada franja va de 66${NB}KB/s a 10${NB}GB/s (o sin límite).`);
   igual("sin días, no", errorFranjas([{ ...of, dias: [] }]), "Cada franja de velocidad necesita sus días.");
-  igual("en palabras", franjasEnFrase([of], null), "2 MB/s de 08:00 a 18:00 (lun–vie); el resto, sin límite");
-  igual("velocidades", [velocidadEnFrase(0), velocidadEnFrase(512), velocidadEnFrase(4096)], ["sin límite", "512 KiB/s", "4 MB/s"]);
+  igual("en palabras", franjasEnFrase([of], null), `2,1${NB}MB/s de 08:00 a 18:00 (lun–vie); el resto, sin límite`);
+  igual("velocidades", [velocidadEnFrase(0), velocidadEnFrase(512), velocidadEnFrase(4096)], ["sin límite", `524${NB}KB/s`, `4,2${NB}MB/s`]);
 }
 
 console.log(`\n${total - fallos}/${total} ${fallos ? "con fallos" : "bien"}`);

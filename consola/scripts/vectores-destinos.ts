@@ -216,7 +216,7 @@ console.log("\n· La página de un destino (lib/fichaDestino.ts)");
   igual(
     "usar una zona: una copia nueva de cada equipo (no del propio almacén) y, de lo que está en otra zona, espejo o repositorio a partir de él (no lo que ya está aquí)",
     usarEnCopia(vE2, eqs, "c1").map((u) => u.texto),
-    ["Copia nueva de RECEPCION", "Copia nueva de CAJA", "Espejo de «documentos» (RECEPCION)", "Repositorio nuevo a partir de «documentos» (RECEPCION)"],
+    ["Copia nueva de RECEPCION", "Copia nueva de CAJA", "Espejo de «documentos» (RECEPCION)", "Nuevo repositorio a partir de «documentos» (RECEPCION)"],
   );
   igual(
     "usar un destino de un equipo: copia nueva desde quien lo tiene y repositorios a partir de los suyos",

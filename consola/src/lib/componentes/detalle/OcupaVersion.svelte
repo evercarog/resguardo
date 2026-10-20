@@ -69,7 +69,7 @@
           <span class="nombre selectable" title={rutaLegible(x.ruta)}>{corta(x.ruta)}</span>
           <span class="tam num">{bytes(x.bytes)}<small class="faint">{Math.round((x.bytes / Math.max(1, datos.total_bytes)) * 100)} %{#if que === "carpetas" && x.archivos}{" "}· {numero(x.archivos)}{/if}</small></span>
           {#if que === "archivos"}
-            <button class="icon-btn" use:tip={"Ver versiones de este archivo"} aria-label="Ver las versiones de {partesRuta(x.ruta).nombre}" onclick={() => alVerArchivo(x.ruta)}><FileClock size={15} /></button>
+            <button class="icon-btn" use:tip={"Ver las versiones de este archivo"} aria-label="Ver las versiones de {partesRuta(x.ruta).nombre}" onclick={() => alVerArchivo(x.ruta)}><FileClock size={15} /></button>
           {:else}<span></span>{/if}
           <span class="barra" aria-hidden="true"><span style:width="{(x.bytes / max) * 100}%"></span></span>
         </li>

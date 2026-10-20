@@ -139,7 +139,7 @@
   {#if hecho}
     <div class="form">
       <div class="notice notice-success" role="status"><Check size={16} /><p>«{nombre.trim()}» está conectada. {alConectar ? "Ya puedes elegirla como destino." : enAlmacen ? "Ya puedes añadirla como destino del espejo." : "Ya puedes elegirla como destino de un repositorio o al añadir un paso."}</p></div>
-      <footer><button class="btn btn-primary" onclick={onclose}>Hecho</button></footer>
+      <footer><button class="btn btn-primary" onclick={onclose}>Listo</button></footer>
     </div>
   {:else}
     <ol class="progreso" aria-label="Pasos">

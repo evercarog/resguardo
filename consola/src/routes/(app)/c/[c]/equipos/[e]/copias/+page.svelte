@@ -179,7 +179,7 @@
         const repoPedido = page.url.searchParams.get("repo");
         if (k && repoPedido && cfg.repositorios.some((r) => r.id === repoPedido)) k.repo = repoPedido;
         else if (k && enDestino) k.repo = enDestino.id;
-        // Aún sin repositorio en ese destino (p. ej. una nube): «+ Repositorio nuevo…» con él ya elegido.
+        // Aún sin repositorio en ese destino (p. ej. una nube): «+ Nuevo repositorio…» con él ya elegido.
         else if (k && dest) {
           destinoPedido = dest;
           repoNuevoPara = k.id;
@@ -526,7 +526,7 @@
   const nubesCliente = $derived(destinosParaPasos(actual.equipos, catalogo).filter((v) => v.clase === "nube"));
   const admiteRepoEnNube = $derived(admite(equipo, ADMITE.repoEnNube));
 
-  // --- «+ Repositorio nuevo…» sin salir del editor -----------------------------
+  // --- «+ Nuevo repositorio…» sin salir del editor -----------------------------
   // El mismo diálogo que «Nuevo repositorio» (lib/repoNuevo.ts: almacenes y sus zonas,
   // destinos del equipo, catálogo, nubes y uno nuevo), con este equipo fijo y la
   // autorización que ya se calculó al abrir el editor. El repositorio lo crea el
@@ -547,7 +547,7 @@
     pedidoRepo = null;
     avisoRepo = `«${r.nombre}» pedido a ${equipo.nombre}: lo crea antes de aplicar las copias.${k ? ` Ya está elegido en «${k.nombre}».` : ""} Cuando acabes, pulsa «Enviar al equipo».`;
   }
-  /** El selector del repositorio de una copia: «+ Repositorio nuevo…» abre el diálogo (y no cambia la copia). */
+  /** El selector del repositorio de una copia: «+ Nuevo repositorio…» abre el diálogo (y no cambia la copia). */
   function elegirRepo(k: CopiaConfig, sel: HTMLSelectElement) {
     if (sel.value === REPO_NUEVO) {
       sel.value = k.repo;
@@ -813,14 +813,14 @@
       <div class="notice notice-warn">
         <TriangleAlert size={16} />
         <p>Este equipo aún no tiene repositorios: crea uno aquí mismo (en un almacén, una nube o un disco).</p>
-        <button type="button" class="btn btn-sm" onclick={() => (repoNuevoPara = "")}><Plus size={14} />Repositorio nuevo…</button>
+        <button type="button" class="btn btn-sm" onclick={() => (repoNuevoPara = "")}><Plus size={14} />Nuevo repositorio…</button>
       </div>
     {/if}
     {#if avisoRepo}
       <div class="notice notice-info aviso-orden" role="status">
         <Database size={16} />
         <p>{avisoRepo}</p>
-        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (avisoRepo = "")}>Entendido</button>
+        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (avisoRepo = "")}>Cerrar</button>
       </div>
     {/if}
 
@@ -829,7 +829,7 @@
       <div class="notice notice-info aviso-orden" role="status">
         <CalendarClock size={16} />
         <p>{avisoOrden}</p>
-        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (avisoOrden = "")}>Entendido</button>
+        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (avisoOrden = "")}>Cerrar</button>
       </div>
     {/if}
 
@@ -1027,7 +1027,7 @@
                     <select id="repo-{k.id}" class="input" value={k.repo} onchange={(e) => elegirRepo(k, e.currentTarget)}>
                       {#if !k.repo}<option value="" disabled>Elige un repositorio</option>{/if}
                       {#each repos as r (r.id)}<option value={r.id}>{r.nombre}</option>{/each}
-                      <option value={REPO_NUEVO}>+ Repositorio nuevo… (un almacén, una nube o un disco)</option>
+                      <option value={REPO_NUEVO}>+ Nuevo repositorio… (un almacén, una nube o un disco)</option>
                       {#if nubesCliente.length && !admiteRepoEnNube}
                         <!-- Un agente sin `repo_en_nube`: directo a una nube, todavía no. Se ven, desactivadas, con el camino que sí. -->
                         <optgroup label="Nubes: actualiza el agente o copia aquí y después «Copia derivada»">
@@ -1297,7 +1297,7 @@
       </div>
       <footer>
         <button type="button" class="btn btn-ghost" onclick={() => (elegirOrigen = null)}>Cancelar</button>
-        <button class="btn btn-primary" disabled={!origenElegido}>Siguiente</button>
+        <button class="btn btn-primary" disabled={!origenElegido}>Seguir</button>
       </footer>
     </form>
   </Modal>

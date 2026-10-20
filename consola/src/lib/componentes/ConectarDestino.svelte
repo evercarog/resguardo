@@ -290,7 +290,7 @@
     {#if hecho}
       <div class="form">
         <div class="notice notice-success" role="status"><Check size={16} /><p>{hecho}</p></div>
-        <footer><button class="btn btn-primary" onclick={onclose}>Hecho</button></footer>
+        <footer><button class="btn btn-primary" onclick={onclose}>Listo</button></footer>
       </div>
     {:else}
       <form class="form" onsubmit={guardar}>
@@ -370,7 +370,7 @@
                 {#if c.opciones}
                   <select id="cd-{c.clave}" class="input" bind:value={valores[c.clave]}>
                     <option value="">—</option>
-                    {#each c.opciones as op (op)}<option value={op}>{op}</option>{/each}
+                    {#each c.opciones as op (op)}<option value={op}>{c.textoOpcion?.[op] ?? op}</option>{/each}
                   </select>
                 {:else if c.largo}
                   <textarea id="cd-{c.clave}" class="input mono" rows="3" bind:value={valores[c.clave]} placeholder={c.ejemplo} spellcheck="false"></textarea>

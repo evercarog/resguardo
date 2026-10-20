@@ -54,7 +54,7 @@
       <ol>
         {#each masAnadieron as v (v.id)}
           <li>
-            <button class="pulsable-bloque fila" use:tip={"Ver detalle"} onclick={() => abrirVersion(v.id)}>
+            <button class="pulsable-bloque fila" use:tip={"Ver el detalle"} onclick={() => abrirVersion(v.id)}>
               <span class="num cuando">{fechaCorta(v.hora)}</span>
               <span class="barra" aria-hidden="true"><span style:width="{((anadidoDe(v) ?? 0) / max) * 100}%"></span></span>
               <span class="num tam">{bytes(anadidoDe(v))}</span>

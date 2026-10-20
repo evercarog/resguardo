@@ -99,7 +99,7 @@ console.log("\n· Guiado = Avanzado (la misma configuración)");
   igual("después de la anterior con 15 min", enviar(lg), enviar(la));
   igual("…lo que va al equipo", enviar(lg).copias[1], {
     id: "fotos",
-    nombre: "Nueva copia",
+    nombre: "Copia nueva",
     repo: "r1",
     carpetas: ["D:\\Fotos"],
     exclusiones: ["*.tmp", "~$*", "Thumbs.db"],
@@ -133,10 +133,10 @@ console.log("\n· Cuándo empieza");
   igual("vuelve a «Con horario» con el que tenía", [inicioDe(l[1]), l[1].horario, "inicio" in l[1]], ["horario", { dias: [6], horas: ["10:00"] }, false]);
   ponerInicio(l, 2, "cadena");
   ponerRetraso(l[2], 30);
-  igual("en frase (en cadena)", cuandoEnFrase(l, 2), "En cadena tras «Nueva copia» · con 30 min de retraso");
+  igual("en frase (en cadena)", cuandoEnFrase(l, 2), "En cadena tras «Copia nueva» · con 30 min de retraso");
   ponerInicio(l, 2, "despues");
   ponerRetraso(l[2], 0);
-  igual("en frase (después)", cuandoEnFrase(l, 2), "Después de «Nueva copia» · inmediatamente");
+  igual("en frase (después)", cuandoEnFrase(l, 2), "Después de «Copia nueva» · inmediatamente");
   igual("en frase (horario)", cuandoEnFrase(l, 0), "Cada día laborable a las 13:00");
   igual("retrasos", [retrasoEnFrase(0), retrasoEnFrase(15), retrasoEnFrase(120)], ["Inmediatamente", "Con 15 min de retraso", "Con 2 h de retraso"]);
   ponerRetraso(l[0], 15);
@@ -146,8 +146,8 @@ console.log("\n· Cuándo empieza");
 
   const a = { cadenas: true, despues: true };
   igual("errores: bien", errorInicio(l, 2, a), null);
-  igual("errores: agente sin «después»", errorInicio(l, 2, { cadenas: true, despues: false }), "«Nueva copia»: actualiza el agente para «Después de la anterior» o un retraso.");
-  igual("errores: agente sin cadenas", errorInicio(l, 2, { cadenas: false, despues: false }), "«Nueva copia» va después de otra copia y el agente de este equipo aún no lo admite.");
+  igual("errores: agente sin «después»", errorInicio(l, 2, { cadenas: true, despues: false }), "«Copia nueva»: actualiza el agente para «Después de la anterior» o un retraso.");
+  igual("errores: agente sin cadenas", errorInicio(l, 2, { cadenas: false, despues: false }), "«Copia nueva» va después de otra copia y el agente de este equipo aún no lo admite.");
   igual("errores: la primera en cadena", errorInicio([{ id: "x", nombre: "X", tras: "y" }], 0, a), "«X» es la primera: empieza con su horario.");
 
   // Al ordenar: la que llega arriba pierde el «después» y toma horario.
@@ -190,7 +190,7 @@ console.log("\n· Los pasos");
   igual("qué, en frase", queEnFrase(k), "1 carpeta · 3 exclusiones");
   igual("sin carpetas", queEnFrase(copiaNueva("")), "Sin carpetas");
   const d = duplicarCopia({ ...k, tras: "otra", inicio: "despues", retraso_min: 5, horario: { dias: [], horas: [] } }, "k2");
-  igual("duplicar: con horario y sin cadena", [d.id, d.nombre, d.tras, "inicio" in d, d.horario.horas.length > 0, d.carpetas], ["k2", "Nueva copia (copia)", null, false, true, ["C:\\Datos"]]);
+  igual("duplicar: con horario y sin cadena", [d.id, d.nombre, d.tras, "inicio" in d, d.horario.horas.length > 0, d.carpetas], ["k2", "Copia nueva (copia)", null, false, true, ["C:\\Datos"]]);
 }
 
 console.log("\n· Sugerencias de un clic (regla 3-2-1-1-0)");

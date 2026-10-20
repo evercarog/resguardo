@@ -126,7 +126,7 @@
       <ul class="vueltas">
         {#each vueltas as e (e.hora)}
           <li>
-            <button class="pulsable-bloque fila-vuelta" use:tip={"Ver detalle"} onclick={() => abrirVuelta(e.hora)}>
+            <button class="pulsable-bloque fila-vuelta" use:tip={"Ver el detalle"} onclick={() => abrirVuelta(e.hora)}>
               <span class="num hora">{hora(e.hora)}</span>
               <Chip pequeno tono={TONO_RESULTADO[e.resultado]} texto={TEXTO_RESULTADO[e.resultado]} />
               {#if e.reintento}<span class="badge badge-sm tone-neutral">reintento</span>{/if}

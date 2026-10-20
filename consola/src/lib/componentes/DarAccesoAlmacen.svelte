@@ -137,7 +137,7 @@
   </div>
   {#if cambiadas}
     <AlertaLlaves equipo={cambiadas} cliente={cliente.id} />
-    <footer><button class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
   {:else if hecho}
     <div class="form">
       <div class="notice notice-success" role="status"><Check size={16} /><p>{equipo.nombre} ya puede guardar en {nombreZona}. Sigue con la copia derivada.</p></div>

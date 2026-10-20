@@ -122,7 +122,7 @@
       <p class="faint pequeno">Quien lo pegue en la otra consola verá estas huellas: compárenlas de palabra. Vale para {plural(hecho.usos, "equipo", "equipos")} hasta el {fechaLarga(hecho.caduca)}.</p>
       <div class="notice notice-warn"><TriangleAlert size={16} /><p>El código solo se muestra ahora y lleva una ficha para dar de alta equipos aquí: compártelo solo con quien administra la otra consola. Sin la clave de administración del cliente no sirve para conectar ningún equipo.</p></div>
       <footer>
-        <button class="btn btn-primary" onclick={() => (onclose(), cliente ? undefined : goto(`/c/${hecho!.cliente.id}`))}>Hecho</button>
+        <button class="btn btn-primary" onclick={() => (onclose(), cliente ? undefined : goto(`/c/${hecho!.cliente.id}`))}>Listo</button>
       </footer>
     </div>
   {/if}

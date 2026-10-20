@@ -86,7 +86,7 @@
       <button type="button" class="btn btn-sm" onclick={() => alDarAcceso(a.equipo, a.zona)}><KeyRound size={13} />{a.texto}</button>
     {:else if !o.uso.ok && o.uso.accion?.tipo === "otro_paso" && alOtroPaso}
       {@const a = o.uso.accion}
-      <button type="button" class="btn btn-sm btn-ghost" onclick={() => alOtroPaso(a.uso)}>{a.uso === "derivada" ? "Repositorio nuevo a partir de esta" : a.uso === "espejo" ? "Espejo" : "Copia nueva"}</button>
+      <button type="button" class="btn btn-sm btn-ghost" onclick={() => alOtroPaso(a.uso)}>{a.uso === "derivada" ? "Nuevo repositorio a partir de esta" : a.uso === "espejo" ? "Espejo" : "Copia nueva"}</button>
     {/if}
   </div>
 {/snippet}

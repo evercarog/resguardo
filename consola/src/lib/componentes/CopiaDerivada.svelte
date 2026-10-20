@@ -1,6 +1,6 @@
 <script lang="ts">
   import LimiteFranjas from "./LimiteFranjas.svelte";
-  import { admiteFranjas, errorFranjas, MAX_KIB, MIN_KIB } from "$lib/franjas";
+  import { admiteFranjas, errorFranjas, MAX_KIB, MIN_KIB, velocidadEnFrase } from "$lib/franjas";
   // Copia derivada (tarea 4b, docs/copias-en-cadena.md): otra copia de un
   // repositorio en otro destino, además de la copia externa de siempre. La hace
   // el equipo dueño (que tiene las dos contraseñas) con `cambiar_derivada`:
@@ -278,7 +278,7 @@
               {@render resumenCampos()}
             {/if}
             {#if x !== "resumen"}
-              <div class="pie-paso"><button type="button" class="btn btn-primary btn-sm" disabled={!pasoValido[x]()} onclick={siguientePaso}>Siguiente</button></div>
+              <div class="pie-paso"><button type="button" class="btn btn-primary btn-sm" disabled={!pasoValido[x]()} onclick={siguientePaso}>Seguir</button></div>
             {/if}
           </PasoGuiado>
         {/each}
@@ -441,7 +441,7 @@
     <div class="field">
       <label class="field-label" for="dv-vel">Velocidad máxima de subida (KiB/s)</label>
       <input id="dv-vel" class="input num corto" type="number" min="0" placeholder="sin límite" bind:value={f.limiteKib} />
-      <span class="field-hint">Fuera de las franjas de abajo (si las hay).</span>
+      <span class="field-hint">{Number(f.limiteKib) > 0 ? `${velocidadEnFrase(Number(f.limiteKib))}. ` : ""}Fuera de las franjas de abajo (si las hay).</span>
     </div>
   {/if}
   <LimiteFranjas id="dv-fr" bind:franjas={f.franjas} porDefecto={Number(f.limiteKib) > 0 ? Number(f.limiteKib) : null} admite={admiteFranjas(equipo)} equipo={equipo.nombre} />

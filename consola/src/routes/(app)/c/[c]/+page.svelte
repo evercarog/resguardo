@@ -78,7 +78,7 @@
         accion:
           copia && !sinContacto && puede.ordenar(actual.cliente?.rol)
             ? { texto: "Copiar ahora", orden: { equipo: e, repo: copia.repo, copia: copia.id, nombre: copia.nombre } }
-            : { texto: "Ver equipo", href: `/c/${c}/equipos/${e.id}` },
+            : { texto: "Ver el equipo", href: `/c/${c}/equipos/${e.id}` },
       });
     }
     // v1.41: copias que se quedan en el mismo equipo que protegen.
@@ -92,7 +92,7 @@
           ? { texto: "Mover a un almacén…", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}?mover=1` }
           : { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}` },
       });
-    if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver avisos", href: `/c/${c}/avisos` } });
+    if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver los avisos", href: `/c/${c}/avisos` } });
     return out.sort((a, b) => PESO[a.tono] - PESO[b.tono]);
   });
   const ultima = $derived(

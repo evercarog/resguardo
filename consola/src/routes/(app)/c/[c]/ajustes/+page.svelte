@@ -555,7 +555,7 @@
             if (await alPortapapeles(mensajeRest)) avisar("Instrucciones y código copiados.");
           }}><Copy size={14} />Copiar con las instrucciones</button
         >
-        <button class="btn btn-primary" onclick={() => (restablecer = null)}>Hecho</button>
+        <button class="btn btn-primary" onclick={() => (restablecer = null)}>Listo</button>
       </footer>
     {/if}
   </Modal>

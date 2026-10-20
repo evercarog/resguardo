@@ -325,7 +325,7 @@ const idNuevo = () => `copia-${crypto.randomUUID().slice(0, 8)}`;
 export function copiaNueva(repo: string, id = idNuevo()): CopiaConfig {
   return {
     id,
-    nombre: "Nueva copia",
+    nombre: "Copia nueva",
     repo,
     carpetas: [],
     exclusiones: [...EXCLUSIONES_POR_DEFECTO],

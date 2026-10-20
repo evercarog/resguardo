@@ -340,7 +340,7 @@
 
     <div class="cifras" id="sec-resumen">
       {#if ejecuciones[0]}
-        <button class="cifra pulsable-bloque" use:tip={"Ver detalle de la última copia"} onclick={() => abrirVuelta(ejecuciones[0].hora)}>
+        <button class="cifra pulsable-bloque" use:tip={"Ver el detalle de la última copia"} onclick={() => abrirVuelta(ejecuciones[0].hora)}>
           <span class="k">Última copia</span>
           <strong class="num">{vuelta ? relativo(vuelta.cuando, reloj.ahora) : "—"}</strong>
           <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : "falló") : "todavía ninguna"}</span>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // «Lo que se eliminó»: cada vuelta de la retención (del equipo, del almacén
+  // «Lo que se quitó»: cada vuelta de la retención (del equipo, del almacén
   // o de la copia externa) con quién la aplicó, la regla, las cifras y, al
   // abrirla, las versiones que quitó y por qué no las guardó la regla.
   import { ChevronDown, ChevronRight } from "@lucide/svelte";

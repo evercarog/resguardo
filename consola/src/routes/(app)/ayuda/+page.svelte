@@ -143,7 +143,7 @@
           </ul>
         </div>
       </div>
-      <p class="faint nota">Si alguien controlara el servidor podría servir una consola manipulada y capturar una clave al escribirla. Por eso: lo destructivo espera y se puede cancelar, los destinos son de solo añadir o inmutables, y la app de escritorio puede comprobar que la consola es la publicada.</p>
+      <p class="faint nota">Si alguien controlara el servidor podría servir una consola manipulada y capturar una clave al escribirla. Por eso: las órdenes que quitan protección esperan y se pueden cancelar, los destinos son de solo añadir o inmutables, y la app de escritorio puede comprobar que la consola es la publicada.</p>
     </section>
 
     <section class="card p" id="certificado">

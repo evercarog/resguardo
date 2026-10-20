@@ -292,7 +292,7 @@
 
     {#if llavesCambiadas}
       <AlertaLlaves {equipo} cliente={cliente.id} />
-      <footer><button type="button" class="btn btn-primary" onclick={cerrar}>Entendido</button></footer>
+      <footer><button type="button" class="btn btn-primary" onclick={cerrar}>Cerrar</button></footer>
     {:else if fase === "pedir" || fase === "enviando"}
       <p class="desc">{descripcion}</p>
       {@render campos?.()}

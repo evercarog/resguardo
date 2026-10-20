@@ -358,7 +358,7 @@ export function recomendarFueraRetencion(pasos: PasoCadena[]): boolean {
 }
 
 export const TEXTO_FUERA_RETENCION =
-  "Todos los destinos siguen a la retención del original. Recomendado: al menos uno fuera de su alcance (un espejo sin retención, una copia derivada con su propia retención o una nube con bloqueo de objetos): si un equipo comprometido llenara el repositorio de versiones basura, no desplazaría las buenas en todos.";
+  "Todos los destinos siguen a la retención del original. Mejor que uno quede fuera de su alcance: un espejo sin retención, una copia derivada con su propia retención o una nube con bloqueo. Así, versiones basura de un equipo comprometido no desplazarían las buenas en todos.";
 
 /** Los almacenes del cliente con espejo por zonas (para ofrecer pasos «espejo»). */
 export const almacenesConZonas = (equipos: Equipo[]) => almacenesDe(equipos).filter((a) => admite(a, ADMITE.espejoZonas));
@@ -499,7 +499,7 @@ export function usosPosibles(d: DestinoVista, equipo: Equipo, repo: RepositorioR
         : { ok: false, motivo: `Hace falta también en ${en.almacen.nombre}`, accion: { tipo: "conectar_nube", equipo: en.almacen, nube: d.nube.nombre, tipoNube: d.nube.tipo } };
   else espejo = { ok: false, motivo: `El espejo va a otra zona o a una nube de ${en.almacen.nombre}` };
 
-  // Repositorio nuevo a partir de esta: el equipo dueño.
+  // Nuevo repositorio a partir de esta: el equipo dueño.
   let derivada: Uso;
   const tiene = d.ids.some((id) => equipo.resumen?.destinos?.some((x) => x.id === id));
   if (esElSuyo) derivada = yaEsta;

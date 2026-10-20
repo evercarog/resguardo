@@ -105,7 +105,7 @@
       <p class="faint pequeno">Identidad de este servidor: <span class="pastilla mono">{huellaCorta(hecho.servidor.identidad)}</span>. Compruébala con quien está en el antiguo. La ficha vale para {hecho.usos} equipos hasta el {new Date(hecho.caduca).toLocaleDateString("es")}.</p>
       <div class="notice notice-warn"><TriangleAlert size={16} /><p>La ficha solo se muestra ahora. Si cierras sin copiarla, pide otra desde el cliente («Servidor» → «Dar una ficha»).</p></div>
       <footer>
-        <button class="btn btn-primary" onclick={() => (onclose(), goto(`/c/${hecho!.cliente.id}/servidor`))}>Hecho</button>
+        <button class="btn btn-primary" onclick={() => (onclose(), goto(`/c/${hecho!.cliente.id}/servidor`))}>Listo</button>
       </footer>
     </div>
   {/if}

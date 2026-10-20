@@ -255,7 +255,7 @@ export function usarEnCopia(v: DestinoVista, equipos: Equipo[], cliente: string)
       const d = u.derivada;
       if (d.ok || d.accion?.tipo === "conectar_nube")
         out.push({
-          texto: `Repositorio nuevo a partir de «${r.nombre}» (${e.nombre})`,
+          texto: `Nuevo repositorio a partir de «${r.nombre}» (${e.nombre})`,
           detalle: d.ok ? `Lo hace ${e.nombre}, con su propia contraseña y retención${d.motivo ? ` (${d.motivo.toLowerCase()})` : ""}.` : `Lo hace ${e.nombre}: antes hay que conectar «${v.nube?.nombre ?? v.nombre}» también en ese equipo (te lo ofrece el diálogo).`,
           href: `/c/${cliente}/equipos/${e.id}?derivada=${encodeURIComponent(r.id)}&${q}`,
         });

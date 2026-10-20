@@ -85,7 +85,7 @@
       for (const e of actual.equipos)
         for (const r of e.resumen?.repositorios ?? [])
           out.push({ grupo: "Repositorios", texto: r.nombre, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}`, icono: Database, claves: sinTildes(`${r.nombre} ${e.nombre}`) });
-      // «Retención en detalle»: lo que se eliminó y lo que se eliminará.
+      // «Retención en detalle»: lo que se quitó y lo que se quitará.
       for (const e of actual.equipos)
         for (const r of (e.resumen?.repositorios ?? []).filter((r) => r.retencion || r.retencion_regla))
           out.push({ grupo: "Retención", texto: `Retención en detalle de «${r.nombre}»`, sub: e.nombre, href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}/retencion`, icono: History, claves: sinTildes(`retencion en detalle eliminado eliminara versiones borradas ${r.nombre} ${e.nombre}`) });

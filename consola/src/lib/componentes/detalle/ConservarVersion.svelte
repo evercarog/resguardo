@@ -89,7 +89,7 @@
         </p>
       </div>
       {#if error}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
-      <footer><button type="button" class="btn btn-primary" onclick={onclose}>Hecho</button></footer>
+      <footer><button type="button" class="btn btn-primary" onclick={onclose}>Listo</button></footer>
     {:else}
       <p class="desc">
         {#if conservar}

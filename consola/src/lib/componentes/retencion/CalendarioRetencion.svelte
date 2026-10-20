@@ -1,7 +1,7 @@
 <script lang="ts">
   // El calendario de «Retención en detalle»: las últimas semanas y las que
-  // vienen, con lo que se eliminó (el día de cada vuelta: un cuadro relleno con
-  // cuántas quitó; con borde rojo si alguna falló) y lo que se eliminará (el día
+  // vienen, con lo que se quitó (el día de cada vuelta: un cuadro relleno con
+  // cuántas quitó; con borde rojo si alguna falló) y lo que se quitará (el día
   // en que dejan de entrar en la regla: un cuadro con borde discontinuo). Forma,
   // número y texto, nunca solo el color. Pulsar un día con algo lo elige (y
   // filtra las listas de abajo); otra vez, lo quita.
@@ -53,8 +53,8 @@
 
   function etiqueta(x: { d: Date; m: Marca | null; hoy: boolean }) {
     const partes = [`${fmtLargo.format(x.d)}${x.hoy ? " (hoy)" : ""}`];
-    if (x.m?.vueltas) partes.push(`${x.m.vueltas === 1 ? "se aplicó la retención" : `se aplicó la retención ${x.m.vueltas} veces`}: se ${x.m.quitadas === 1 ? "eliminó 1 versión" : `eliminaron ${x.m.quitadas} versiones`}${x.m.fallos ? ` (${x.m.fallos === 1 ? "una falló" : `${x.m.fallos} fallaron`})` : ""}`);
-    if (x.m?.previstas) partes.push(`se ${x.m.previstas === 1 ? "eliminará 1 versión" : `eliminarán ${x.m.previstas} versiones`} (simulado)`);
+    if (x.m?.vueltas) partes.push(`${x.m.vueltas === 1 ? "se aplicó la retención" : `se aplicó la retención ${x.m.vueltas} veces`}: se ${x.m.quitadas === 1 ? "quitó 1 versión" : `quitaron ${x.m.quitadas} versiones`}${x.m.fallos ? ` (${x.m.fallos === 1 ? "una falló" : `${x.m.fallos} fallaron`})` : ""}`);
+    if (x.m?.previstas) partes.push(`se ${x.m.previstas === 1 ? "quitará 1 versión" : `quitarán ${x.m.previstas} versiones`} (simulado)`);
     return partes.join(". ");
   }
 </script>
@@ -92,9 +92,9 @@
     </div>
   {/each}
   <p class="leyenda">
-    <span><span class="marca se-fue">−n</span> se eliminó (el día que se aplicó la retención)</span>
+    <span><span class="marca se-fue">−n</span> se quitó (el día que se aplicó la retención)</span>
     <span><span class="marca se-fue fallo">!</span> falló al aplicarla</span>
-    <span><span class="marca se-ira">−n</span> se eliminará (simulado: el día que deja de entrar en la regla)</span>
+    <span><span class="marca se-ira">−n</span> se quitará (simulado: el día que deja de entrar en la regla)</span>
   </p>
 </div>
 

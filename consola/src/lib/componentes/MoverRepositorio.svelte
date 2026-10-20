@@ -488,7 +488,7 @@
 
   {#if cambiadas}
     <AlertaLlaves equipo={cambiadas} cliente={cliente.id} />
-    <footer><button class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+    <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
   {:else if vista === "elegir"}
     <form class="form" onsubmit={empezar}>
       <div class="ahora">
@@ -497,7 +497,7 @@
       </div>
       {#if !opciones.length}
         <div class="notice notice-info"><TriangleAlert size={16} /><p>{equipo.nombre} no tiene otro destino y {cliente.nombre} no tiene ningún almacén en otro equipo. Activa «Este equipo guarda copias» en otro equipo (p. ej. un PC dedicado a copias) y vuelve aquí.</p></div>
-        <footer><button type="button" class="btn btn-primary" onclick={onclose}>Entendido</button></footer>
+        <footer><button type="button" class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
       {:else}
         <fieldset class="opciones">
           <legend class="field-label">¿A dónde?</legend>

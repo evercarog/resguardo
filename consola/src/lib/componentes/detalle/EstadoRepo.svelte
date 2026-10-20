@@ -33,7 +33,7 @@
   <section>
     <h3>La última copia</h3>
     {#if ultima}
-      <button class="pulsable-bloque fila" use:tip={"Ver detalle"} onclick={() => abrirVuelta(ultima!.hora)}>
+      <button class="pulsable-bloque fila" use:tip={"Ver el detalle"} onclick={() => abrirVuelta(ultima!.hora)}>
         <Chip tono={TONO_RESULTADO[ultima.resultado]} texto={TEXTO_RESULTADO[ultima.resultado]} />
         <span>{relativo(ultima.hora, ahora)}</span>
         {#if ultima.mensaje_corto && ultima.resultado !== "ok"}<span class="msg">{explicarError(ultima.mensaje_corto).titulo}: «{ultima.mensaje_corto}»</span>{/if}
@@ -51,7 +51,7 @@
       <ul>
         {#each problemas as e (e.hora)}
           <li>
-            <button class="pulsable-bloque fila" use:tip={"Ver detalle"} onclick={() => abrirVuelta(e.hora)}>
+            <button class="pulsable-bloque fila" use:tip={"Ver el detalle"} onclick={() => abrirVuelta(e.hora)}>
               <span class="num cuando">{fechaCorta(e.hora)}</span>
               <Chip pequeno tono={TONO_RESULTADO[e.resultado]} texto={TEXTO_RESULTADO[e.resultado]} />
               <span class="msg">{explicarError(e.mensaje_corto).titulo}{#if e.mensaje_corto}: «{e.mensaje_corto}»{/if}</span>

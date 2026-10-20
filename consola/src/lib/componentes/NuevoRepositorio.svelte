@@ -323,7 +323,7 @@
   {#if paso === "datos"}
     <div class="form">
       {#if !alCreado}
-        <div class="segmented" role="group" aria-label="Repositorio nuevo o existente">
+        <div class="segmented" role="group" aria-label="Nuevo repositorio o uno que ya existe">
           <button type="button" class="on" aria-pressed="true">Crear uno nuevo</button>
           <button type="button" aria-pressed="false" onclick={() => (olvidar(), (existente = true))}>Usar uno que ya existe</button>
         </div>

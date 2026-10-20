@@ -46,7 +46,7 @@
   } from "$lib/espejoTrabajos";
   import type { Cliente, Equipo, Horario } from "$lib/tipos";
   import LimiteFranjas from "../LimiteFranjas.svelte";
-  import { admiteFranjas } from "$lib/franjas";
+  import { admiteFranjas, velocidadEnFrase } from "$lib/franjas";
 
   interface Props {
     cliente: Cliente;
@@ -449,7 +449,7 @@
             <div class="field">
               <label class="field-label" for="ee-vel">Velocidad máxima (KiB/s)</label>
               <input id="ee-vel" class="input num corto" type="number" min="1" placeholder="sin límite" value={t.limite_kib ?? ""} oninput={(e) => (t.limite_kib = e.currentTarget.value === "" ? null : Number(e.currentTarget.value))} />
-              <span class="field-hint">Fuera de las franjas de abajo (si las hay).</span>
+              <span class="field-hint">{t.limite_kib ? `${velocidadEnFrase(t.limite_kib)}. ` : ""}Fuera de las franjas de abajo (si las hay).</span>
             </div>
             <!-- Plan 0.8.0, F4 (14t): p. ej. 2 MB/s en horario de oficina y sin límite de noche. -->
             <LimiteFranjas id="ee-fr" bind:franjas={() => t.limite_franjas ?? [], (v) => (t.limite_franjas = v.length ? v : null)} porDefecto={t.limite_kib} admite={admiteFranjas(hace)} equipo={hace.nombre} />
@@ -587,7 +587,7 @@
       {#if avanzado || paso === "resumen"}
         <BotonFalta type="submit" falta={error ? { texto: error, yaVisible: true } : null}><Save size={15} />Guardar…</BotonFalta>
       {:else}
-        <BotonFalta type="submit" falta={errorPaso ? { texto: errorPaso, yaVisible: true } : null}>{desdeResumen ? "Listo" : "Siguiente"}<ArrowRight size={15} /></BotonFalta>
+        <BotonFalta type="submit" falta={errorPaso ? { texto: errorPaso, yaVisible: true } : null}>{desdeResumen ? "Listo" : "Seguir"}<ArrowRight size={15} /></BotonFalta>
       {/if}
     </footer>
   </form>

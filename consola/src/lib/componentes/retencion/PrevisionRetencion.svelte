@@ -1,5 +1,5 @@
 <script lang="ts">
-  // «Lo que se eliminará próximamente»: la simulación con la regla de ahora
+  // «Lo que se quitará próximamente»: la simulación con la regla de ahora
   // (retencionDetalle.ts, `prever`): lo que quitará la próxima vuelta, lo que
   // irá dejando de entrar en la regla los próximos días y por qué se queda
   // cada una de las demás. Siempre dice que es una simulación.
@@ -85,7 +85,7 @@
   <section class="bloque" aria-labelledby="{id}-prox">
     <h3 id="{id}-prox">
       {prevision.proxima.cuando ? `La próxima vez que se aplique, el ${fmtCuando.format(new Date(prevision.proxima.cuando))}` : "Al aplicar la retención"}
-      <span class="cuenta">{proximas.length ? `· se eliminarán ${plural(proximas.length, "versión", "versiones")}` : "· no se eliminaría ninguna"}</span>
+      <span class="cuenta">{proximas.length ? `· se quitarán ${plural(proximas.length, "versión", "versiones")}` : "· no se quitaría ninguna"}</span>
     </h3>
     {#if proximas.length}
       <TablaVersiones filas={proximas.map((x) => fila(x))} titulo="Versiones que quitaría la retención la próxima vez" />

@@ -258,7 +258,7 @@
         <p class="faint pequeno">Puedes cerrar: cada equipo se conecta en cuanto recibe la orden (dura 7 días). Lo verás en su página («También lo gestiona») y en «Servidor».</p>
       {/if}
       <footer>
-        <button class="btn btn-primary" disabled={ocupado} onclick={onclose}>{terminadas === enviadas.length ? "Hecho" : "Cerrar"}</button>
+        <button class="btn btn-primary" disabled={ocupado} onclick={onclose}>{terminadas === enviadas.length ? "Listo" : "Cerrar"}</button>
       </footer>
     </div>
   {/if}
