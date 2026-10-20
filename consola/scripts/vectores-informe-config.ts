@@ -4,6 +4,7 @@
 import { anchoTexto, byteWin, maquetar, partir, pdfDe } from "../src/lib/pdfTexto";
 import { celdaCsv, csv, nombreArchivo } from "../src/lib/csv";
 import { copiasInforme, csvConfig, documentoConfig, separarGrupos } from "../src/lib/informeConfig";
+import { aB64url, deB64url, esIp, soporte } from "../src/lib/passkeys";
 import { csvInventario, errorFicha, leerInventario, valorFicha } from "../src/lib/inventario";
 import { csvPaquete, documentoPaquete, filasInventario, incidentes } from "../src/lib/paqueteAuditoria";
 import type { Configuracion, EntradaHistorial, Equipo } from "../src/lib/tipos";
@@ -159,6 +160,15 @@ console.log("\n· Inventario y paquete para auditoría (H2)");
   cierto("sin el correo de las personas", !JSON.stringify(pdf).includes("ana@ejemplo.com") && !csvPaquete(d).includes("ana@ejemplo.com"));
   cierto("sin la ley de ningún país", !/RGPD|GDPR|LOPD|LGPD|Ley \d/.test(JSON.stringify(pdf)));
   cierto("el CSV tiene la parte y sus controles", csvPaquete(d).includes("Incidentes: copias fallidas y cómo se resolvieron;A.8.13 CIS 11"));
+}
+
+console.log("\n· Llaves de acceso (H3): base64url y cuándo se pueden usar");
+{
+  igual("base64url ida y vuelta", aB64url(deB64url("AQID_-8")), "AQID_-8");
+  igual("IP o nombre", [esIp("192.0.2.10"), esIp("[2001:db8::1]"), esIp("consola.ejemplo.com"), esIp("localhost")], [true, true, false, false]);
+  igual("por IP, no", soporte({ hostname: "192.0.2.10", seguro: true, api: true }).ok, false);
+  igual("sin conexión segura, no", soporte({ hostname: "consola.ejemplo.com", seguro: false, api: true }).ok, false);
+  igual("por nombre y seguro, sí", soporte({ hostname: "consola.ejemplo.com", seguro: true, api: true }).ok, true);
 }
 
 console.log(`\n${total - fallos}/${total} bien`);

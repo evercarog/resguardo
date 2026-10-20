@@ -108,7 +108,7 @@ export interface Restablecida {
 }
 
 export type RespuestaSesion =
-  | { necesita: "totp" }
+  | { necesita: "totp"; /** 0.8.1 (H3): llaves de acceso de la cuenta para esta dirección. */ passkeys?: number }
   | { necesita: "alta_totp"; totp: Totp; restablecida?: Restablecida }
   | { necesita: "restablecimiento"; restablecida: Restablecida; caducado: boolean };
 

@@ -58,6 +58,12 @@ Resguardo está en **desarrollo activo**. Solo la última versión publicada rec
 - [docs/actualizaciones.md](docs/actualizaciones.md): actualización automática de los agentes (manifiestos firmados con minisign y llave fuera de línea, consolas como espejo que no firman, sin bajar de versión, vuelta atrás) y su modelo de amenazas (§7).
 - Vectores de prueba del protocolo: `crates/protocolo/vectors/`.
 
+## Entrar en la consola
+
+- Contraseña (Argon2id) y un segundo paso obligatorio: el código TOTP o, desde la 0.8.1, una **llave de acceso** (passkey, WebAuthn) dada de alta en «Mi cuenta y servidor». Diseño y amenazas: [docs/passkeys.md](docs/passkeys.md).
+- La llave es un segundo factor, no sustituye a la contraseña. Retos de un solo uso con caducidad, origen y `rpId` exactos, presencia del usuario y contador de firmas comprobados en el servidor; los intentos cuentan con los del TOTP. Dar de alta o quitar una llave pide la contraseña y un código TOTP y queda en la auditoría (con su nombre, nunca su id ni su clave).
+- Las llaves de acceso no funcionan si se entra a la consola por una IP o con un certificado que el navegador no da por bueno: entonces se sigue con el código.
+
 ## Diseño de seguridad de la app y el agente (Windows)
 
 - Las contraseñas de los repositorios y de los servidores REST se guardan únicamente en el almacén de credenciales del sistema operativo. `repos.json` solo contiene datos no secretos (nombre, ubicación, usuario del servidor, rutas).

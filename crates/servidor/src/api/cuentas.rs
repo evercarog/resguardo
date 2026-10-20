@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 
-const VENTANA: Duration = Duration::from_secs(15 * 60);
-const MAX_INTENTOS: u32 = 10;
+pub(crate) const VENTANA: Duration = Duration::from_secs(15 * 60);
+pub(crate) const MAX_INTENTOS: u32 = 10;
 
-fn con_cookie(cookie: String, cuerpo: Value) -> Response {
+pub(crate) fn con_cookie(cookie: String, cuerpo: Value) -> Response {
     ([(header::SET_COOKIE, cookie)], Json(cuerpo)).into_response()
 }
 
@@ -156,7 +156,7 @@ pub struct Entrar {
     contrasena: String,
 }
 
-pub async fn entrar(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p): Json<Entrar>) -> Res<Response> {
+pub async fn entrar(State(st): State<St>, ip: Option<Extension<IpCliente>>, headers: HeaderMap, Json(p): Json<Entrar>) -> Res<Response> {
     let correo = p.correo.trim().to_lowercase();
     let ip = ip_de(ip);
     if !st.limites.intento(&format!("entrar-ip:{ip}"), MAX_INTENTOS * 3, VENTANA) {
@@ -197,7 +197,10 @@ pub async fn entrar(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json
         return Ok(con_cookie(cookie, json!({ "necesita": "restablecimiento", "restablecida": r.aviso(), "caducado": r.caduca <= ahora() })));
     }
     if cuenta.totp_activo {
-        return Ok(con_cookie(cookie, json!({ "necesita": "totp" })));
+        // 0.8.1 (H3): si tiene llaves de acceso para esta dirección, la consola ofrece usarlas.
+        let (id, host) = (cuenta.id.clone(), headers.get(header::HOST).and_then(|h| h.to_str().ok()).map(str::to_string));
+        let n = st.db(move |db| Ok(super::passkeys::cuantas_para(db, &id, host.as_deref()))).await?;
+        return Ok(con_cookie(cookie, json!({ "necesita": "totp", "passkeys": n })));
     }
     // Sin TOTP todavía: se da de alta en este paso (obligatorio). Si ya hay
     // uno pendiente, el mismo: entrar otra vez con la contraseña no cambia
@@ -443,14 +446,14 @@ pub async fn renombrar(State(st): State<St>, u: Usuario, Json(p): Json<NombreCue
 }
 
 #[derive(Deserialize)]
-pub struct Reautenticar {
+pub(crate) struct Reautenticar {
     contrasena: String,
     codigo: String,
 }
 
 /// Pide la contraseña y un código TOTP del autenticador actual (para cambiar
 /// el autenticador o los códigos de recuperación). Devuelve el paso aceptado.
-async fn reautenticar(st: &St, u: &Usuario, p: &Reautenticar) -> Res<i64> {
+pub(crate) async fn reautenticar(st: &St, u: &Usuario, p: &Reautenticar) -> Res<i64> {
     if !st.limites.intento(&format!("reautenticar:{}", u.id()), MAX_INTENTOS, VENTANA) {
         return Err(ErrorApi::demasiados());
     }
@@ -657,6 +660,8 @@ pub async fn restablecer_totp(
         db.poner_valor(&clave_totp_pendiente(&cuenta), "")?;
         db.borrar_sesiones_de(&cuenta, None)?;
         db.poner_valor(&clave_restablecimiento(&cuenta), &valor)?;
+        // 0.8.1 (H3): las llaves de acceso también fuera (si alguien tomó la cuenta, pudo dar de alta la suya).
+        super::quitar_passkeys(db, &cuenta)?;
         let datos = json!({ "correo": otro.correo, "nombre": otro.nombre }).to_string();
         db.auditar(&ctx, &actor, "restablecer_totp", &cuenta, &datos)?;
         db.auditar_servidor(&actor, "restablecer_totp", &cuenta, &json!({ "cliente": ctx.id(), "correo": otro.correo }).to_string())

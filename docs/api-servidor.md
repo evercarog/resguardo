@@ -249,6 +249,19 @@ Cambiar el autenticador (otro móvil):
 
 `{ "contrasena", "codigo" }` (código TOTP actual) → `{ "codigos_recuperacion": ["…" ×10] }`. Los anteriores dejan de valer.
 
+### Llaves de acceso (passkeys; v1.8x, plan 0.8.1 H3, [passkeys.md](passkeys.md))
+
+Segundo factor en vez del código TOTP (la contraseña sigue haciendo falta). Todo en base64url sin relleno.
+
+- `POST /api/sesion` con TOTP activo: `{ "necesita": "totp", "passkeys": n }`, cuántas llaves tiene la cuenta para esta dirección (la del `Host`).
+- `POST /api/sesion/passkey/opciones` (sesión a medias) → opciones de `navigator.credentials.get`: `{ challenge, rpId, allowCredentials: [{ type, id }], userVerification: "preferred", timeout }`. Reto de un solo uso, 2 min, atado a la sesión a medias. Sin llaves para esta dirección: 422.
+- `POST /api/sesion/passkey` `{ id, client_data, authenticator_data, firma }` → como `POST /api/sesion/totp` (`{ cuenta }` y ficha nueva). Si no vale, 401 `codigo`. Cuenta en el mismo límite de intentos que el TOTP.
+- `GET /api/cuenta/passkeys` → `{ passkeys: [{ ref, nombre, creada, usada, dominio }], max }` (sin el id de la credencial).
+- `POST /api/cuenta/passkeys/opciones` `{ contrasena, codigo }` (TOTP actual) → opciones de `navigator.credentials.create`: `{ challenge, rp: { id, name }, user: { id, name, displayName }, pubKeyCredParams (ES256, EdDSA, RS256), excludeCredentials, authenticatorSelection, attestation: "none", timeout }`. Reto de un solo uso, 5 min. Por una IP: 422 (no hay llaves de acceso por IP).
+- `POST /api/cuenta/passkeys` `{ nombre (1–60), id, client_data, attestation }` → la lista. Como mucho 10 por cuenta. Auditoría `alta_passkey` (con el nombre).
+- `DELETE /api/cuenta/passkeys/{ref}` `{ contrasena, codigo }` → la lista. Auditoría `baja_passkey`.
+- Restablecer la verificación en dos pasos de alguien (`…/restablecer-totp`) quita también sus llaves.
+
 **Límites:** 10 intentos de contraseña o TOTP por cuenta y por IP cada 15 min; después, 429.
 
 ---
@@ -1631,3 +1644,4 @@ La política y los anillos se guardan en la tabla de valores del servidor (`act:
   - Clase nueva de datos comunes, sin clave de administración: `inventario:<tipo>:<objeto>` (`equipo:<id>` o `repositorio:<equipo>/<id>`) → `{ responsable? (≤ 80), criticidad?: "baja" | "media" | "alta" | "critica", datos_personales?: bool, rto_min?, rpo_min?, id_externo? (≤ 64, solo de un equipo) }` o `null` (nada anotado). Solo si hay datos personales, nunca cuáles. `admite: "inventario_comun"`: el agente la guarda; a uno anterior no se le manda.
   - `GET /api/clientes/{c}/organizacion` lleva además `inventario: { "equipo:<id>" | "repositorio:<equipo>/<id>": {…} }` (cualquier miembro). Se cambia con `POST …/datos-comunes` (administradores), como las sedes.
   - Solo en la consola (sin rutas nuevas): «Informes → Configuración» (H5, 15tt) y «Informes → Auditoría» (H2) arman en el navegador el informe de la configuración de copias y el paquete para auditoría, en PDF y CSV, con lo que ya dan la API y, con la clave de administración, la configuración descifrada de cada equipo (las carpetas y exclusiones nunca van al servidor).
+- v1.8x (pendiente de numerar al unir; plan 0.8.1 H3, plan-mejoras 12c, rama `ia/081-h`). **Llaves de acceso (passkeys) para entrar en la consola** ([passkeys.md](passkeys.md)). Solo entre la consola web y su servidor (los agentes no cambian). Rutas nuevas `POST /api/sesion/passkey/opciones`, `POST /api/sesion/passkey`, `GET/POST /api/cuenta/passkeys`, `POST /api/cuenta/passkeys/opciones` y `DELETE /api/cuenta/passkeys/{ref}` (§2); `POST /api/sesion` añade `passkeys` cuando pide el TOTP; restablecer la verificación en dos pasos quita las llaves. Las llaves se guardan en la tabla de valores del servidor (`passkeys:<cuenta>`, sin cambios de esquema). Una consola anterior ignora `passkeys` y sigue con el código.

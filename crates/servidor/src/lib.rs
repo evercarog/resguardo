@@ -38,6 +38,7 @@ pub mod registro;
 pub mod respaldo;
 pub mod sedes;
 pub mod vivo;
+pub mod webauthn;
 
 use estado::{Estado, IpCliente, Limites, Opciones, St};
 use std::collections::HashMap;

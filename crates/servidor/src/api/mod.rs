@@ -18,6 +18,9 @@ pub(crate) mod notas;
 mod notificaciones;
 mod ordenes;
 mod panel;
+// 0.8.1 (H3, 12c): llaves de acceso (passkeys) como segundo factor.
+mod passkeys;
+pub(crate) use passkeys::quitar_todas as quitar_passkeys;
 pub(crate) mod plantillas;
 // Tarea 7a: el catálogo de destinos del cliente (en claro, sin secretos).
 pub(crate) mod destinos;
@@ -238,6 +241,11 @@ pub fn router(st: St) -> Router {
         .route("/api/inicio", post(cuentas::inicio))
         .route("/api/sesion", post(cuentas::entrar).delete(cuentas::salir))
         .route("/api/sesion/totp", post(cuentas::totp))
+        .route("/api/sesion/passkey", post(passkeys::entrar))
+        .route("/api/sesion/passkey/opciones", post(passkeys::opciones_entrar))
+        .route("/api/cuenta/passkeys", get(passkeys::listar).post(passkeys::alta))
+        .route("/api/cuenta/passkeys/opciones", post(passkeys::opciones_alta))
+        .route("/api/cuenta/passkeys/{r}", delete(passkeys::baja))
         .route("/api/sesion/restablecimiento", post(cuentas::usar_restablecimiento))
         .route("/api/cuenta", get(cuentas::cuenta).patch(cuentas::renombrar))
         .route("/api/cuenta/totp", post(cuentas::totp_nuevo))
