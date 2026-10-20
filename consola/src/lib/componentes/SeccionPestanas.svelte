@@ -44,6 +44,12 @@
   .panel > :global(.page) {
     animation: entrar-vista var(--dur-slow) var(--ease-out) backwards;
   }
+  /* 0.8.1 (H5): «Informes» tiene pestañas y se imprime: la tira no sale en el papel. */
+  @media print {
+    .tira {
+      display: none;
+    }
+  }
   @media (max-width: 640px) {
     .tira {
       margin-top: 0;

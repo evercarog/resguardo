@@ -516,7 +516,10 @@
   .adjuntos li {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .pie {
     display: flex;
