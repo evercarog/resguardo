@@ -110,7 +110,8 @@ export interface Estado {
   servidor: { identidad: string; secreta: Uint8Array; inicializado: boolean };
   cuentas: CuentaMock[];
   sesiones: Map<string, { cuenta: string; completa: boolean }>;
-  clientes: (T.Cliente & { avisosAbiertos?: number })[];
+  /** 15nn: `archivado` (cuándo) y `creado`, para «Clientes del servidor». */
+  clientes: (T.Cliente & { avisosAbiertos?: number; archivado?: string | null; creado?: string })[];
   miembros: Map<string, { cuenta: string; rol: T.Rol }[]>;
   invitaciones: Map<string, { cliente: string; rol: T.Rol; caduca: number }>;
   equipos: EquipoMock[];
@@ -344,6 +345,10 @@ export async function sembrar(vacio = false) {
     { cuenta: ana.id, rol: "administrador" },
   ]);
   estado.miembros.set(propio.id, [{ cuenta: ana.id, rol: "propietario" }]);
+  // 15nn: un cliente archivado (sale solo en «Archivados» de «Clientes del servidor»).
+  const antiguo = { id: randomUUID(), nombre: "Imprenta Delta", sal_cliente: sal(), espera_min_horas: 24, rol: "propietario" as T.Rol, archivado: new Date(Date.now() - 20 * 86_400_000).toISOString() };
+  estado.clientes.push(antiguo);
+  estado.miembros.set(antiguo.id, [{ cuenta: ana.id, rol: "propietario" }]);
 
   const kcfgDe = async (c: { sal_cliente: string }) => kCfg(await argon2(utf8(DEMO.claveAdmin), Uint8Array.from(Buffer.from(c.sal_cliente, "base64"))));
   const [kAltamar, kSur, kPropio] = await Promise.all([kcfgDe(altamar), kcfgDe(sur), kcfgDe(propio)]);

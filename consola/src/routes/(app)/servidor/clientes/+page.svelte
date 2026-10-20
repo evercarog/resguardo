@@ -3,11 +3,15 @@
   // compartido, sin entrar en los clientes. Solo cifras (personas, equipos,
   // última actividad, uso de las cuotas); ni nombres de equipos, ni correos,
   // ni avisos. Desde aquí se da de alta un cliente para otra persona (con su
-  // invitación de propietario) y se ponen las cuotas.
+  // invitación de propietario) y se ponen las cuotas. 15nn: y se archiva, se
+  // recupera o se borra un cliente (solo sin equipos, escribiendo su nombre).
   import Chip from "$lib/componentes/Chip.svelte";
   import { onMount } from "svelte";
-  import { Building2, Gauge, Link2, Plus, RefreshCw, UserPlus } from "@lucide/svelte";
+  import { Archive, ArchiveRestore, Building2, Gauge, Link2, Plus, RefreshCw, Trash2, UserPlus } from "@lucide/svelte";
   import BotonCargando from "$lib/componentes/BotonCargando.svelte";
+  import BotonFalta from "$lib/componentes/BotonFalta.svelte";
+  import AvisoNombreRepetido from "$lib/componentes/AvisoNombreRepetido.svelte";
+  import { tip } from "$lib/tooltip";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { app, cargarClientes } from "$lib/estado.svelte";
@@ -131,6 +135,73 @@
   }
 
   const enlace = $derived(invitacion ? `${location.origin}${invitacion.inv.enlace}` : "");
+
+  // --- 15nn: archivar, recuperar y borrar ------------------------------------
+  const activos = $derived(datos?.clientes.filter((c) => !c.archivado) ?? []);
+  const archivados = $derived(datos?.clientes.filter((c) => c.archivado) ?? []);
+
+  let archivando = $state<ClienteDelServidor | null>(null);
+  let errorArchivar = $state("");
+  /** El cliente que se está archivando o recuperando ahora. */
+  let cambiando = $state<string | null>(null);
+
+  async function archivar() {
+    if (!archivando || cambiando) return;
+    const c = archivando;
+    cambiando = c.id;
+    errorArchivar = "";
+    try {
+      await api.archivarCliente(c.id);
+      archivando = null;
+      avisar(`«${c.nombre}» archivado. Lo tienes en «Archivados», al final de esta página.`);
+      await Promise.all([cargar(), cargarClientes()]);
+    } catch (e) {
+      errorArchivar = (e as Error).message;
+    } finally {
+      cambiando = null;
+    }
+  }
+
+  async function recuperar(c: ClienteDelServidor) {
+    if (cambiando) return;
+    cambiando = c.id;
+    try {
+      await api.recuperarCliente(c.id);
+      avisar(`«${c.nombre}» recuperado: vuelve a estar como antes.`);
+      await Promise.all([cargar(), cargarClientes()]);
+    } catch (e) {
+      avisar((e as Error).message, "bad");
+    } finally {
+      cambiando = null;
+    }
+  }
+
+  let borrando = $state<{ c: ClienteDelServidor; escrito: string } | null>(null);
+  let borrandoAhora = $state(false);
+  let errorBorrar = $state("");
+  const nombreCoincide = $derived(!!borrando && borrando.escrito.trim() === borrando.c.nombre.trim());
+
+  async function borrar(e: SubmitEvent) {
+    e.preventDefault();
+    if (!borrando || !nombreCoincide || borrandoAhora) return;
+    const c = borrando.c;
+    borrandoAhora = true;
+    errorBorrar = "";
+    try {
+      await api.borrarCliente(c.id, borrando.escrito);
+      borrando = null;
+      avisar(`«${c.nombre}» borrado.`);
+      await Promise.all([cargar(), cargarClientes()]);
+    } catch (e) {
+      errorBorrar = (e as Error).message;
+    } finally {
+      borrandoAhora = false;
+    }
+  }
+  const abrirBorrar = (c: ClienteDelServidor) => ((errorBorrar = ""), (borrando = { c, escrito: "" }));
+  const abrirArchivar = (c: ClienteDelServidor) => ((errorArchivar = ""), (archivando = c));
+  const conEquipos = (c: ClienteDelServidor) =>
+    avisar(`«${c.nombre}» tiene ${plural(c.equipos, "equipo", "equipos")}: para borrarlo, quítalos antes desde el cliente. Si solo quieres que no salga, archívalo.`, "warn");
   /** El uso frente a su límite, para una barrita (null: sin límite). */
   function proporcion(uso: number, limite: number | null): number | null {
     if (!limite) return null;
@@ -166,9 +237,9 @@
       {datos.publico ? "Consola en internet" : "Consola en la red local"} · cuotas predeterminadas:
       {#each CAMPOS as campo, i (campo.k)}{i ? " · " : ""}{campo.nombre.toLowerCase()}: {limiteEnFrase(datos.predeterminadas[campo.k], campo.k === "equipos" ? "" : campo.unidad)}{/each}
     </p>
-    {#if !datos.clientes.length}
+    {#if !activos.length}
       <div class="card">
-        <Vacio icono={Building2} titulo="Todavía no hay clientes" texto="Crea uno para otra persona: le llega una invitación de propietario y tú no entras en él.">
+        <Vacio icono={Building2} titulo={archivados.length ? "No hay clientes activos" : "Todavía no hay clientes"} texto="Crea uno para otra persona: le llega una invitación de propietario y tú no entras en él.">
           <button class="btn btn-primary" onclick={() => (nuevo = true)}><Plus size={16} />Cliente para otra persona</button>
         </Vacio>
       </div>
@@ -188,7 +259,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each datos.clientes as c (c.id)}
+            {#each activos as c (c.id)}
               {@const relLimite = c.efectivas.relevo_mb_mes ? c.efectivas.relevo_mb_mes * 1024 * 1024 : null}
               {@const eqP = proporcion(c.equipos, c.efectivas.equipos)}
               <tr>
@@ -215,6 +286,12 @@
                 <td class="acciones">
                   <button class="btn btn-sm" onclick={() => (editando = { cliente: c, valores: aTexto(c.cuotas) })}><Gauge size={14} />Cuotas</button>
                   {#if !c.propietarios}<BotonCargando class="btn btn-sm" cargando={invitandoA === c.id} disabled={!!invitandoA} onclick={() => otraInvitacion(c)}><UserPlus size={14} />Invitación</BotonCargando>{/if}
+                  <button class="btn btn-sm" onclick={() => abrirArchivar(c)} use:tip={"Sale de las listas y no recibe nada. Se puede recuperar."}><Archive size={14} />Archivar</button>
+                  {#if c.equipos}
+                    <button class="btn btn-sm btn-ghost apagado" aria-disabled="true" onclick={() => conEquipos(c)} use:tip={`Tiene ${plural(c.equipos, "equipo", "equipos")}: archívalo, o quítalos antes`}><Trash2 size={14} />Borrar</button>
+                  {:else}
+                    <button class="btn btn-sm btn-ghost peligro" onclick={() => abrirBorrar(c)}><Trash2 size={14} />Borrar</button>
+                  {/if}
                 </td>
               </tr>
             {/each}
@@ -222,8 +299,88 @@
         </table>
       </div>
     {/if}
+
+    {#if archivados.length}
+      <section class="card archivados" aria-labelledby="t-archivados">
+        <h2 id="t-archivados"><Archive size={16} />Archivados</h2>
+        <p class="faint">No salen en ninguna lista, nadie los abre y no reciben nada: sus equipos no pueden conectarse a esta consola y no se mandan sus avisos. Nada se ha borrado: al recuperarlos vuelven como estaban.</p>
+        <ul>
+          {#each archivados as c (c.id)}
+            <li>
+              <span class="texto">
+                <strong>{c.nombre}</strong>
+                <span class="faint pequeno">archivado {c.archivado ? fechaLarga(c.archivado) : ""} · {plural(c.equipos, "equipo", "equipos")} · {plural(c.personas, "persona", "personas")} · {bytes(c.bytes)}</span>
+              </span>
+              <span class="acciones">
+                <BotonCargando class="btn btn-sm" cargando={cambiando === c.id} disabled={!!cambiando} onclick={() => recuperar(c)}><ArchiveRestore size={14} />Recuperar</BotonCargando>
+                {#if !c.equipos}<button class="btn btn-sm btn-ghost peligro" onclick={() => abrirBorrar(c)}><Trash2 size={14} />Borrar</button>{/if}
+              </span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
   {/if}
 </div>
+
+{#if archivando}
+  <Modal labelledby="t-archivar" onclose={() => (archivando = null)} width={500} ocupado={cambiando === archivando.id}>
+    <div class="form">
+      <div class="dlg-title">
+        <span class="ticon"><Archive size={18} /></span>
+        <div>
+          <h2 id="t-archivar">¿Archivar «{archivando.nombre}»?</h2>
+          <p>Para un cliente que ya no se lleva desde aquí, pero cuyo historial quieres guardar. Nada se borra.</p>
+        </div>
+      </div>
+      <ul class="efectos">
+        <li>Sale de todas las listas (también de «Todos los clientes» y del buscador) y nadie lo abre, ni sus personas.</li>
+        <li>
+          No recibe nada:
+          {archivando.equipos
+            ? archivando.equipos === 1
+              ? "su equipo no puede conectarse a esta consola (sigue copiando igual y, si está también en otra consola, allí sigue como siempre)"
+              : `sus ${archivando.equipos} equipos no pueden conectarse a esta consola (siguen copiando igual y, si están también en otra consola, allí siguen como siempre)`
+            : "sus invitaciones y códigos dejan de valer"},
+          y no se mandan sus avisos ni sus informes.
+        </li>
+        <li>Lo recuperas cuando quieras en «Archivados», en esta misma página.</li>
+      </ul>
+      {#if errorArchivar}<p class="error-campo" role="alert">{errorArchivar}</p>{/if}
+      <footer>
+        <button type="button" class="btn btn-ghost" onclick={() => (archivando = null)}>Cancelar</button>
+        <BotonCargando class="btn btn-primary" cargando={cambiando === archivando.id} textoCargando="Archivando…" onclick={archivar}><Archive size={16} />Archivar</BotonCargando>
+      </footer>
+    </div>
+  </Modal>
+{/if}
+
+{#if borrando}
+  <Modal labelledby="t-borrar" onclose={() => (borrando = null)} width={500} dismissible={false} ocupado={borrandoAhora}>
+    <form class="form" onsubmit={borrar}>
+      <div class="dlg-title">
+        <span class="ticon danger"><Trash2 size={18} /></span>
+        <div>
+          <h2 id="t-borrar">¿Borrar «{borrando.c.nombre}»?</h2>
+          <p>No tiene equipos. Se borra para siempre, con sus personas, invitaciones, ajustes y su registro de actividad. No se puede deshacer: si dudas, archívalo.</p>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="borrar-nombre">Escribe su nombre para confirmar: <strong>{borrando.c.nombre}</strong></label>
+        <input id="borrar-nombre" class="input" bind:value={borrando.escrito} autocomplete="off" spellcheck="false" aria-required="true" />
+      </div>
+      {#if errorBorrar}<p class="error-campo" role="alert">{errorBorrar}</p>{/if}
+      <footer>
+        <button type="button" class="btn btn-ghost" onclick={() => (borrando = null)}>Cancelar</button>
+        <BotonFalta
+          class="btn btn-danger"
+          cargando={borrandoAhora}
+          textoCargando="Borrando…"
+          falta={nombreCoincide ? null : { texto: borrando.escrito.trim() ? "El nombre no coincide" : "Escribe su nombre", campo: "borrar-nombre" }}><Trash2 size={16} />Borrar para siempre</BotonFalta>
+      </footer>
+    </form>
+  </Modal>
+{/if}
 
 {#if editando}
   <Modal labelledby="t-cuotas" onclose={() => (editando = null)} width={520} dismissible={false}>
@@ -270,6 +427,7 @@
         <label class="field-label" for="nombre-ajeno">Nombre</label>
         <input id="nombre-ajeno" class="input" bind:value={nombre} placeholder="Por ejemplo: Oficina Norte" aria-required="true" />
       </div>
+      <AvisoNombreRepetido {nombre} clientes={datos?.clientes ?? []} />
       <div class="field">
         <label class="field-label" for="espera-ajeno">Espera antes de borrar</label>
         <select id="espera-ajeno" class="input" bind:value={espera}>
@@ -312,6 +470,13 @@
   .resumen {
     margin: 0 0 var(--sp-3);
   }
+  /* A 375 px las acciones no caben en una fila (flex: none): que se repartan en varias. */
+  @media (max-width: 640px) {
+    .page-actions {
+      flex: 1 1 100%;
+      min-width: 0;
+    }
+  }
   .tabla-envoltura {
     overflow-x: auto;
     padding: 0;
@@ -342,5 +507,50 @@
   }
   .barra.llena {
     background: var(--bad);
+  }
+  .peligro {
+    color: var(--bad);
+  }
+  .apagado {
+    opacity: 0.55;
+  }
+  .archivados {
+    margin-top: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+  }
+  .archivados h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 4px;
+    font-size: var(--fs-body);
+  }
+  .archivados > p {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+  .archivados ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .archivados li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px var(--sp-3);
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+  .archivados .texto {
+    flex: 1;
+    min-width: 12em;
+  }
+  .efectos {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 1.2em;
+    font-size: var(--fs-sm);
   }
 </style>

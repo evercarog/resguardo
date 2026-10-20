@@ -33,7 +33,7 @@
         </div>
       </div>
       <ol class="pasos">
-        <li><strong>Aquí:</strong> pide un código de conexión de esta consola.</li>
+        <li><strong>Aquí:</strong> pide un código de conexión de esta consola para «{cliente.nombre}» (el botón de abajo, o «Ajustes» → «Servidor» → «Dar un código de conexión»). Es el mismo cliente: no hace falta crear otro.</li>
         <li><strong>En {donde}:</strong> abre ese almacén y usa «Conectar también a otra consola…» (o «Conectar también…» en el aviso de equipos que no están en todas tus consolas). Pega el código, comprueba la huella y escribe la clave de administración.</li>
         <li>En cuanto informe aquí, el mapa enseña todo su camino.</li>
       </ol>

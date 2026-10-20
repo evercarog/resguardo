@@ -175,7 +175,7 @@
     <div class="form">
       <ol class="guia">
         {#if esperada}<li>Los demás equipos ya están en <strong>{esperada.nombre}</strong> ({hostDe(esperada.url)}). Pide allí un código de conexión para este cliente.</li>{/if}
-        <li>En la <strong>otra consola</strong>: <strong>Clientes → Recibir un cliente → «Gestionarlo también desde aquí»</strong> (o, si el cliente ya existe allí, en su página <strong>Servidor → «Dar un código de conexión»</strong>).</li>
+        <li>En la <strong>otra consola</strong>, si el cliente ya existe allí: ábrelo → <strong>Ajustes → Servidor → «Dar un código de conexión»</strong>. Si aún no existe: <strong>Clientes → Recibir un cliente → «Dar un código de conexión…»</strong>, que pregunta antes si es de un cliente que ya tiene (para no crear otro igual).</li>
         <li>Te dará un <strong>código de conexión</strong> (empieza por «RGC1.»). Pégalo aquí.</li>
       </ol>
       <div class="field">

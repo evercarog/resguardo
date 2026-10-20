@@ -15,6 +15,8 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import RecibirCliente from "$lib/componentes/RecibirCliente.svelte";
   import DarCodigoConexion from "$lib/componentes/DarCodigoConexion.svelte";
+  import AvisoNombreRepetido from "$lib/componentes/AvisoNombreRepetido.svelte";
+  import { todosLosClientes } from "$lib/nombresClientes.svelte";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
   import CampoObservaciones from "$lib/componentes/notas/CampoObservaciones.svelte";
   import { errorTextoNota, guardarObservacion } from "$lib/notas.svelte";
@@ -124,6 +126,7 @@
         <label class="field-label" for="nombre-cliente">Nombre</label>
         <input id="nombre-cliente" class="input" bind:value={nombre} placeholder="Por ejemplo: Oficina Norte" aria-required="true" />
       </div>
+      <AvisoNombreRepetido {nombre} clientes={todosLosClientes()} />
       <div class="field">
         <div class="label-row"><label class="field-label" for="espera">Espera antes de borrar</label><Ayuda id="espera" /></div>
         <select id="espera" class="input" bind:value={espera}>

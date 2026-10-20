@@ -61,7 +61,35 @@ function sesionDe(ctx: Ctx, completa = true) {
 }
 
 function rolEn(cuentaId: string, cliente: string): T.Rol | null {
+  // 15nn: un cliente archivado no lo abre nadie (como si no existiera).
+  if (estado.clientes.find((x) => x.id === cliente)?.archivado) return null;
   return estado.miembros.get(cliente)?.find((m) => m.cuenta === cuentaId)?.rol ?? null;
+}
+
+/** «Clientes del servidor» (v1.34; 15nn con `archivado`): solo cifras. */
+function clienteDelServidor(c: (typeof estado.clientes)[number], cuenta: string): T.ClienteDelServidor {
+  const miembros = estado.miembros.get(c.id) ?? [];
+  const eqs = estado.equipos.filter((e) => e.cliente === c.id);
+  const sinLimite: T.Cuotas = { equipos: null, historial: null, relevo_mb_mes: null, ordenes_min: null };
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    creado: c.creado ?? new Date(Date.now() - 200 * 86_400_000).toISOString(),
+    personas: miembros.length,
+    propietarios: miembros.filter((m) => m.rol === "propietario").length,
+    soy_miembro: miembros.some((m) => m.cuenta === cuenta),
+    equipos: eqs.length,
+    equipos_confirmados: eqs.filter((e) => e.confirmado).length,
+    equipos_conectados: eqs.filter((e) => e.conectado).length,
+    historial: eqs.length * 120,
+    ordenes_30d: estado.ordenes.filter((o) => eqs.some((e) => e.id === o.equipo)).length,
+    ultima_actividad: eqs.map((e) => e.ultimo_contacto).filter((x): x is string => !!x).sort().at(-1) ?? null,
+    bytes: 180_000 + eqs.length * 2_400_000,
+    relevo_mes_bytes: 0,
+    cuotas: sinLimite,
+    efectivas: sinLimite,
+    archivado: c.archivado ?? null,
+  };
 }
 
 function miembro(ctx: Ctx, cliente: string, minimo: T.Rol = "lectura") {
@@ -627,6 +655,77 @@ const rutas: Ruta[] = [
       estado.miembros.set(c.id, [{ cuenta: cuenta.id, rol: "propietario" }]);
       auditar(c.id, cuenta.id, "cliente.crear", c.nombre, { espera_min_horas: horas });
       return { id: c.id, nombre: c.nombre, sal_cliente: c.sal_cliente };
+    },
+  ],
+  // 15nn: «Clientes del servidor», borrar, archivar y recuperar (como crates/servidor/src/api/servidor_clientes.rs).
+  [
+    "GET",
+    /^\/api\/servidor\/clientes$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      if (!cuenta.superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const sinLimite: T.Cuotas = { equipos: null, historial: null, relevo_mb_mes: null, ordenes_min: null };
+      return {
+        publico: false,
+        mes: new Date().toISOString().slice(0, 7),
+        predeterminadas: sinLimite,
+        de_fabrica: { equipos: 0, historial: 20_000, relevo_mb_mes: 0, ordenes_min: 300 },
+        clientes: [...estado.clientes].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((c) => clienteDelServidor(c, cuenta.id)),
+      } satisfies T.ClientesDelServidor;
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/clientes$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      if (!cuenta.superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const b = ctx.cuerpo as { nombre?: string; espera_min_horas?: number };
+      const nombre = b.nombre?.trim() ?? "";
+      if (!nombre || nombre.length > 80) throw err(422, "datos", "Escribe un nombre (hasta 80 caracteres).");
+      const c = { id: randomUUID(), nombre, sal_cliente: aB64(randomBytes(16)), espera_min_horas: Number(b.espera_min_horas ?? 24), rol: "propietario" as T.Rol, creado: new Date().toISOString() };
+      estado.clientes.push(c);
+      estado.miembros.set(c.id, []);
+      const token = randomBytes(24).toString("base64url");
+      const caduca = Date.now() + 7 * 86_400_000;
+      estado.invitaciones.set(token, { cliente: c.id, rol: "propietario", caduca });
+      return { id: c.id, nombre: c.nombre, invitacion: { enlace: `/invitacion#${token}`, caduca: new Date(caduca).toISOString() } };
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/servidor\/clientes\/([^/]+)$/,
+    (ctx, [c]) => {
+      if (!sesionDe(ctx).superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const cl = estado.clientes.find((x) => x.id === c);
+      if (!cl) throw err(404, "no_existe", "Ese cliente no existe.");
+      if (String((ctx.cuerpo as { nombre?: string }).nombre ?? "").trim() !== cl.nombre.trim())
+        throw err(422, "datos", "El nombre no coincide: escribe el nombre del cliente tal cual para confirmar.");
+      const n = estado.equipos.filter((e) => e.cliente === c).length;
+      if (n) throw err(409, "conflicto", `Tiene ${n} ${n === 1 ? "equipo" : "equipos"} (también cuentan los sin confirmar): quítalos antes, o archívalo.`);
+      estado.clientes = estado.clientes.filter((x) => x.id !== c);
+      estado.miembros.delete(c);
+      for (const [t, i] of estado.invitaciones) if (i.cliente === c) estado.invitaciones.delete(t);
+      estado.auditoria.delete(c);
+      return undefined;
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/clientes\/([^/]+)\/(archivar|recuperar)$/,
+    (ctx, [c, que]) => {
+      const cuenta = sesionDe(ctx);
+      if (!cuenta.superusuario) throw err(403, "prohibido", "Solo quien administra el servidor.");
+      const cl = estado.clientes.find((x) => x.id === c);
+      if (!cl) throw err(404, "no_existe", "Ese cliente no existe.");
+      if (que === "archivar" && !cl.archivado) {
+        cl.archivado = new Date().toISOString();
+        auditar(c, cuenta.id, "archivar_cliente", c);
+      } else if (que === "recuperar" && cl.archivado) {
+        cl.archivado = null;
+        auditar(c, cuenta.id, "recuperar_cliente", c);
+      }
+      return { archivado: cl.archivado ?? null };
     },
   ],
   [

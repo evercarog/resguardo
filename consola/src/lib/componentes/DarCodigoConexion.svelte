@@ -5,11 +5,15 @@
   // se crea con una sal nueva («Recibir un cliente»); con uno que ya existe
   // (propietario), solo se pide otra ficha. El código lleva la dirección, la
   // identidad, la huella de la autoridad TLS, la ficha y la sal del cliente.
+  // 15nn: abierto sin cliente, pregunta antes si es de uno que ya existe aquí
+  // (lo normal al traer equipos de otra consola): así no se crea otro igual.
   import { goto } from "$app/navigation";
   import { Monitor, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
-  import { cargarClientes } from "$lib/estado.svelte";
+  import { app, cargarClientes } from "$lib/estado.svelte";
+  import { todosLosClientes } from "$lib/nombresClientes.svelte";
+  import AvisoNombreRepetido from "./AvisoNombreRepetido.svelte";
   import { aB64, aleatorio } from "$lib/cripto/bytes";
   import { crearCodigo, huellaConPuntos } from "$lib/conexion";
   import { huellaCorta } from "$lib/servidores";
@@ -27,6 +31,16 @@
   let error = $state("");
   let hecho = $state<{ codigo: string; identidad: string; huella: string; caduca: string; usos: number; cliente: { id: string; nombre: string } } | null>(null);
 
+  // 15nn: sin cliente, ¿es de uno que ya existe aquí? Su código solo lo da su propietario.
+  const propios = $derived(app.clientes.filter((c) => c.rol === "propietario"));
+  const otros = $derived(app.clientes.length - propios.length);
+  let eleccion = $state<"existente" | "nuevo">(app.clientes.some((c) => c.rol === "propietario") ? "existente" : "nuevo");
+  let existenteId = $state(app.clientes.find((c) => c.rol === "propietario")?.id ?? "");
+  function usarExistente(c: { id: string }) {
+    eleccion = "existente";
+    existenteId = c.id;
+  }
+
   async function crear(e: SubmitEvent) {
     e.preventDefault();
     ocupado = true;
@@ -34,10 +48,11 @@
     try {
       const srv = await api.servidor();
       let ficha, sal: string, cli: { id: string; nombre: string };
-      if (cliente) {
-        ficha = await api.nuevaFicha(cliente.id, { usos, dias });
-        sal = cliente.sal_cliente;
-        cli = { id: cliente.id, nombre: cliente.nombre };
+      const elegido = cliente ?? (eleccion === "existente" && existenteId ? await api.cliente(existenteId) : null);
+      if (elegido) {
+        ficha = await api.nuevaFicha(elegido.id, { usos, dias });
+        sal = elegido.sal_cliente;
+        cli = { id: elegido.id, nombre: elegido.nombre };
       } else {
         // Un cliente nuevo aquí, con su propia sal: la otra consola calcula la K_cfg de aquí con ella.
         const r = await api.recibirCliente({ nombre: nombreCliente.trim(), sal_cliente: aB64(aleatorio(16)), usos, dias });
@@ -73,22 +88,42 @@
     <span class="ticon"><Monitor size={18} /></span>
     <div>
       {#if !hecho}
-        <h2 id="t-codigo-conexion">{cliente ? "Dar un código de conexión" : "Gestionar también desde aquí"}</h2>
+        <h2 id="t-codigo-conexion">Dar un código de conexión</h2>
         <p>Para que los equipos de un cliente que ya se gestiona en otra consola se gestionen <strong>también</strong> desde esta, sin dejar aquella. En la otra se pega este código en «Conectar también a otra consola…».</p>
       {:else}
         <h2 id="t-codigo-conexion">Código de conexión de «{hecho.cliente.nombre}»</h2>
-        <p>Cópialo y pégalo en la otra consola, en el cliente → «Servidor» → «Conectar también a otra consola…».</p>
+        <p>Cópialo y pégalo en la otra consola: en el cliente → «Ajustes» → «Servidor» → «Conectar también a otra consola…» (o en «Conectar también…» del aviso de equipos que no están en todas tus consolas).</p>
       {/if}
     </div>
   </div>
   {#if !hecho}
     <form class="form" onsubmit={crear}>
       {#if !cliente}
-        <div class="field">
-          <label class="field-label" for="cc-cliente">Nombre del cliente</label>
-          <input id="cc-cliente" class="input" required maxlength="80" bind:value={nombreCliente} placeholder="Café del Sur" />
-          <span class="field-hint">Se crea aquí con su propia sal. Su clave de administración sigue siendo la misma que en la otra consola.</span>
-        </div>
+        <fieldset class="field eleccion">
+          <legend class="field-label">¿Es de un cliente que ya tienes aquí?</legend>
+          <label class="opcion" class:apagada={!propios.length}>
+            <input type="radio" name="cc-eleccion" value="existente" bind:group={eleccion} disabled={!propios.length} />
+            <span>Sí: elige cuál y te damos su código de conexión</span>
+          </label>
+          {#if eleccion === "existente" && propios.length}
+            <select id="cc-existente" class="input" bind:value={existenteId} aria-label="Cliente de esta consola">
+              {#each propios as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
+            </select>
+          {/if}
+          <label class="opcion">
+            <input type="radio" name="cc-eleccion" value="nuevo" bind:group={eleccion} />
+            <span>No, aún no está aquí: crearlo</span>
+          </label>
+          {#if otros}<span class="field-hint">Solo salen los clientes de los que eres propietario: el código de los demás lo da su propietario.</span>{/if}
+        </fieldset>
+        {#if eleccion === "nuevo"}
+          <div class="field">
+            <label class="field-label" for="cc-cliente">Nombre del cliente</label>
+            <input id="cc-cliente" class="input" required maxlength="80" bind:value={nombreCliente} placeholder="Café del Sur" />
+            <span class="field-hint">Se crea aquí con su propia sal. Su clave de administración sigue siendo la misma que en la otra consola.</span>
+          </div>
+          <AvisoNombreRepetido nombre={nombreCliente} clientes={todosLosClientes()} alUsar={usarExistente} usables={propios.map((c) => c.id)} />
+        {/if}
       {/if}
       <div class="field">
         <label class="field-label" for="cc-consola">Cómo se llamará esta consola en los equipos</label>
@@ -109,7 +144,7 @@
       {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
       <footer>
         <button type="button" class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-        <button class="btn btn-primary" disabled={ocupado || (!cliente && !nombreCliente.trim())}>{ocupado ? "Creando…" : "Crear el código"}</button>
+        <button class="btn btn-primary" disabled={ocupado || (!cliente && (eleccion === "nuevo" ? !nombreCliente.trim() : !existenteId))}>{ocupado ? "Creando…" : "Crear el código"}</button>
       </footer>
     </form>
   {:else}
@@ -129,6 +164,27 @@
 </Modal>
 
 <style>
+  .eleccion {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .opcion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fs-sm);
+  }
+  .opcion.apagada {
+    color: var(--text-3);
+  }
+  .eleccion select {
+    margin-left: 26px;
+    width: calc(100% - 26px);
+  }
   .dos {
     display: grid;
     grid-template-columns: 1fr 1fr;
