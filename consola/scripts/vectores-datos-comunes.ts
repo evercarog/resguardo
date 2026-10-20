@@ -24,6 +24,7 @@ import { NIVEL, SOLO_ADMIN_ROL } from "../src/lib/cripto/ordenes";
 import { admiteClave, esDeExclusiones } from "../src/lib/datosComunes";
 import { GRUPOS_DE_PARTIDA, gruposDePartidaQuitados, gruposExclusiones, reglasDe, valorGrupo, valorGrupoDeFuera } from "../src/lib/gruposExclusiones";
 import { leerOrganizacion } from "../src/lib/sedes";
+import { ajusteTrasCambio, cambiosEnEquipos, categoriasTrasCambio, errorNombreEtiqueta, etiquetasTrasCambio } from "../src/lib/gestionEtiquetas";
 import type { Equipo } from "../src/lib/tipos";
 
 let fallos = 0;
@@ -87,6 +88,35 @@ console.log("\n· Grupos de exclusiones (0.8.1, B2): de partida, guardados y qui
   igual("es de exclusiones", [esDeExclusiones("exclusiones:musica"), esDeExclusiones("sede:x")], [true, false]);
   igual("solo a los agentes que los guardan", [admiteClave(conCap(["datos_cliente", "sedes"]), "exclusiones:musica"), admiteClave(conCap(["grupos_exclusiones"]), "exclusiones:musica")], [false, true]);
   igual("las sedes, como antes", [admiteClave(conCap(["grupos_exclusiones"]), "sede:x"), admiteClave(conCap([]), "etiqueta.color:x")], [false, true]);
+}
+
+console.log("\n· Renombrar, unir y borrar etiquetas en todos los equipos (0.8.1, B2, 15a)");
+{
+  igual("renombrar en su sitio", etiquetasTrasCambio(["Puestos", "Norte"], "puestos", "Oficina"), ["Oficina", "Norte"]);
+  igual("unir sin repetir", etiquetasTrasCambio(["Contable", "Gerencia", "Contabilidad"], "Contable", "Contabilidad"), ["Contabilidad", "Gerencia"]);
+  igual("solo las mayúsculas", etiquetasTrasCambio(["contabilidad"], "contabilidad", "Contabilidad"), ["Contabilidad"]);
+  igual("borrar", etiquetasTrasCambio(["A", "B"], "a", null), ["B"]);
+  igual("sin ella, nada", etiquetasTrasCambio(["A"], "Z", null), null);
+  const eqs = [
+    { id: "e1", etiquetas: ["Puestos"] },
+    { id: "e2", etiquetas: ["Otra"] },
+    { id: "e3", etiquetas: ["puestos", "Oficina"] },
+  ];
+  igual("los equipos afectados", cambiosEnEquipos(eqs, "Puestos", "Oficina").map((c) => [c.equipo.id, c.etiquetas]), [
+    ["e1", ["Oficina"]],
+    ["e3", ["Oficina"]],
+  ]);
+  const cats = [
+    { id: "tipo", nombre: "Tipo", etiquetas: ["Servidor", "Puesto"] },
+    { id: "area", nombre: "Área", etiquetas: ["Contabilidad"] },
+  ];
+  igual("la categoría pasa a la nueva", categoriasTrasCambio(cats, "Puesto", "Puestos"), [{ id: "tipo", nombre: "Tipo", etiquetas: ["Servidor", "Puestos"] }]);
+  igual("si la nueva ya tiene categoría, la vieja solo sale", categoriasTrasCambio(cats, "Puesto", "Contabilidad"), [{ id: "tipo", nombre: "Tipo", etiquetas: ["Servidor"] }]);
+  igual("al borrar, sale", categoriasTrasCambio(cats, "servidor", null), [{ id: "tipo", nombre: "Tipo", etiquetas: ["Puesto"] }]);
+  igual("color y plantilla de la vieja a la nueva", ajusteTrasCambio({ nombre: "A", color: 2, plantilla: "pla-1" }, undefined, "B", false), { nombre: "B", color: 2, plantilla: "pla-1", avisos: null });
+  igual("al unir, lo de la nueva se queda", ajusteTrasCambio({ nombre: "A", color: 2, plantilla: "pla-1" }, { nombre: "B", color: 5 }, "B", false), { nombre: "B", color: 5, plantilla: "pla-1", avisos: null });
+  igual("sin ajustes en la vieja, nada", ajusteTrasCambio(undefined, undefined, "B", true), null);
+  igual("nombre nuevo no válido", [errorNombreEtiqueta("  "), errorNombreEtiqueta("a,b"), errorNombreEtiqueta("Bien")], ["Escribe el nombre.", "Hasta 32 caracteres, sin comas.", null]);
 }
 
 console.log("\n· Juntar lo de varios equipos (cada uno puede ir por una versión)");
