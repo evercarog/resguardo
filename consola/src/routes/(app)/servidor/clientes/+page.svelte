@@ -6,6 +6,7 @@
   // invitación de propietario) y se ponen las cuotas.
   import { onMount } from "svelte";
   import { Building2, Gauge, Link2, Plus, RefreshCw, UserPlus } from "@lucide/svelte";
+  import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import * as api from "$lib/api";
   import { app, cargarClientes } from "$lib/estado.svelte";
@@ -97,6 +98,7 @@
 
   async function crear(e: SubmitEvent) {
     e.preventDefault();
+    if (creando) return;
     creando = true;
     errorNuevo = "";
     try {
@@ -112,12 +114,18 @@
     }
   }
 
+  /** El cliente al que se está pidiendo una invitación (un doble clic daría dos enlaces válidos). */
+  let invitandoA = $state<string | null>(null);
   async function otraInvitacion(c: ClienteDelServidor) {
+    if (invitandoA) return;
+    invitandoA = c.id;
     try {
       const r = await api.invitarPropietario(c.id);
       invitacion = { nombre: c.nombre, inv: r.invitacion };
     } catch (e) {
       avisar((e as Error).message, "bad");
+    } finally {
+      invitandoA = null;
     }
   }
 
@@ -205,7 +213,7 @@
                 <td class="num">{bytes(c.bytes)}</td>
                 <td class="acciones">
                   <button class="btn btn-sm" onclick={() => (editando = { cliente: c, valores: aTexto(c.cuotas) })}><Gauge size={14} />Cuotas</button>
-                  {#if !c.propietarios}<button class="btn btn-sm" onclick={() => otraInvitacion(c)}><UserPlus size={14} />Invitación</button>{/if}
+                  {#if !c.propietarios}<BotonCargando class="btn btn-sm" cargando={invitandoA === c.id} disabled={!!invitandoA} onclick={() => otraInvitacion(c)}><UserPlus size={14} />Invitación</BotonCargando>{/if}
                 </td>
               </tr>
             {/each}

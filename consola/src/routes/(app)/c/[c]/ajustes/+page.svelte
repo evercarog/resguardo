@@ -176,8 +176,13 @@
     }
   }
 
+  /** Lo que se está mandando ahora: los botones se apagan para que un doble clic no lo mande dos veces. */
+  let quitando = $state(false);
+  let invitando = $state(false);
+  let guardandoNombre = $state(false);
   async function confirmarQuitar() {
-    if (!quitar) return;
+    if (!quitar || quitando) return;
+    quitando = true;
     try {
       await api.quitarMiembro(actual.id, quitar.cuenta);
       avisar(`${quitar.nombre} ya no tiene acceso a ${actual.cliente?.nombre}.`);
@@ -185,6 +190,8 @@
       await cargar();
     } catch (e) {
       fallo(e);
+    } finally {
+      quitando = false;
     }
   }
 
@@ -224,16 +231,26 @@
   );
 
   async function invitar() {
+    if (invitando) return;
+    invitando = true;
     try {
       invitacion = await api.invitar(actual.id, rolInvitacion);
     } catch (e) {
       fallo(e);
+    } finally {
+      invitando = false;
     }
   }
   const enlaceCompleto = $derived(invitacion ? `${location.origin}${invitacion.enlace}` : "");
 
   async function guardarNombre(e: SubmitEvent) {
     e.preventDefault();
+    if (guardandoNombre) return;
+    if (!nombre.trim()) {
+      avisar("Escribe el nombre del cliente.", "bad");
+      return;
+    }
+    guardandoNombre = true;
     try {
       await api.renombrarCliente(actual.id, nombre.trim());
       renombrar = false;
@@ -241,6 +258,8 @@
       await Promise.all([cargarCliente(actual.id), cargarClientes()]);
     } catch (e) {
       fallo(e);
+    } finally {
+      guardandoNombre = false;
     }
   }
 
@@ -292,8 +311,8 @@
           {#if renombrar}
             <form class="renombrar" onsubmit={guardarNombre}>
               <!-- svelte-ignore a11y_autofocus -->
-              <input class="input" bind:value={nombre} aria-label="Nombre del cliente" autofocus />
-              <button class="icon-btn" aria-label="Guardar"><Check size={16} /></button>
+              <input class="input" bind:value={nombre} aria-label="Nombre del cliente" required autofocus />
+              <BotonCargando class="icon-btn" aria-label="Guardar" cargando={guardandoNombre} disabled={!nombre.trim()}>{#if !guardandoNombre}<Check size={16} />{/if}</BotonCargando>
               <button type="button" class="icon-btn" aria-label="Cancelar" onclick={() => (renombrar = false)}><X size={16} /></button>
             </form>
           {:else}
@@ -403,7 +422,7 @@
         <select class="input" bind:value={rolInvitacion} aria-label="Papel de la persona invitada">
           {#each ROLES as r (r)}<option value={r}>{NOMBRE_ROL[r]}</option>{/each}
         </select>
-        <button class="btn btn-primary" onclick={invitar}><Link2 size={15} />Crear enlace</button>
+        <BotonCargando class="btn btn-primary" cargando={invitando} textoCargando="Creando…" onclick={invitar}><Link2 size={15} />Crear enlace</BotonCargando>
       </div>
       <p class="faint pequeno">{DESC[rolInvitacion]}</p>
       {#if invitacion}
@@ -472,7 +491,7 @@
 {/if}
 
 {#if quitar}
-  <Modal labelledby="t-quitar" onclose={() => (quitar = null)} width={440}>
+  <Modal labelledby="t-quitar" onclose={() => (quitar = null)} width={440} ocupado={quitando}>
     <div class="dlg-title">
       <span class="ticon danger"><Trash2 size={18} /></span>
       <div>
@@ -482,7 +501,7 @@
     </div>
     <footer>
       <button class="btn btn-ghost" onclick={() => (quitar = null)}>Cancelar</button>
-      <button class="btn btn-danger" onclick={confirmarQuitar}>Quitar</button>
+      <BotonCargando class="btn btn-danger" cargando={quitando} textoCargando="Quitando…" onclick={confirmarQuitar}>Quitar</BotonCargando>
     </footer>
   </Modal>
 {/if}

@@ -186,8 +186,10 @@
 
   // «Anular el código»
   let anulando = $state(false);
+  let anulandoYa = $state(false);
   async function anular() {
-    if (!detalle) return;
+    if (!detalle || anulandoYa) return;
+    anulandoYa = true;
     try {
       await api.anularCodigoVarios(c, detalle.id);
       avisar("Anulado: ningún equipo más podrá unirse con ese código.");
@@ -197,6 +199,7 @@
       error = (e as Error).message;
     } finally {
       anulando = false;
+      anulandoYa = false;
     }
   }
 
@@ -410,7 +413,7 @@
         {#if activo}
           <div class="acciones-izq">
             {#if anulando}
-              <span class="confirmar-anular">¿Anular el código? Ningún equipo más podrá unirse con él; los que esperan siguen abajo. <button class="btn btn-sm btn-danger" onclick={anular}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anulando = false)}>No</button></span>
+              <span class="confirmar-anular">¿Anular el código? Ningún equipo más podrá unirse con él; los que esperan siguen abajo. <BotonCargando class="btn btn-sm btn-danger" cargando={anulandoYa} textoCargando="Anulando…" onclick={anular}>Sí, anular</BotonCargando><button class="btn btn-sm btn-ghost" onclick={() => (anulando = false)}>No</button></span>
             {:else}
               <button class="btn btn-sm btn-ghost" onclick={() => (anulando = true)}><Ban size={14} />Anular el código</button>
             {/if}

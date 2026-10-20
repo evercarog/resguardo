@@ -45,6 +45,7 @@
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MenuAcciones from "$lib/componentes/MenuAcciones.svelte";
+  import BotonCargando from "$lib/componentes/BotonCargando.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import { cargarPlantillas, guardarPlantilla, plantillaDe, retencionEnFrase, type Plantilla } from "$lib/plantillas";
   import { admitePruebaAuto, configParaEnviar, PRUEBA_POR_DEFECTO } from "$lib/configEnvio";
@@ -293,7 +294,10 @@
       }
     }
   }
+  let borrandoYa = $state(false);
   async function borrarPlantillaGuardada(p: Plantilla) {
+    if (borrandoYa) return;
+    borrandoYa = true;
     try {
       await api.borrarPlantilla(c, p.id);
       plantillas = plantillas.filter((x) => x.id !== p.id);
@@ -302,6 +306,7 @@
       error = (err as Error).message;
     } finally {
       borrandoPlantilla = null;
+      borrandoYa = false;
     }
   }
   /** ¿Sugiere la plantilla otra retención que la del repositorio de la copia? */
@@ -1206,7 +1211,7 @@
               {#if p.por}<span class="faint">Guardada por {p.por} · {relativo(p.creada)}</span>{/if}
             </span>
             {#if borrandoPlantilla === p.id}
-              <span class="confirmar">¿Borrarla? <button class="btn btn-sm btn-danger" onclick={() => borrarPlantillaGuardada(p)}>Borrar</button><button class="btn btn-sm btn-ghost" onclick={() => (borrandoPlantilla = null)}>No</button></span>
+              <span class="confirmar">¿Borrarla? <BotonCargando class="btn btn-sm btn-danger" cargando={borrandoYa} textoCargando="Borrando…" onclick={() => borrarPlantillaGuardada(p)}>Borrar</BotonCargando><button class="btn btn-sm btn-ghost" onclick={() => (borrandoPlantilla = null)}>No</button></span>
             {:else}
               <button class="icon-btn" aria-label="Borrar la plantilla «{p.nombre}»" use:tip={"Borrar"} onclick={() => (borrandoPlantilla = p.id)}><Trash2 size={14} /></button>
             {/if}

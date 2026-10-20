@@ -85,8 +85,10 @@
   }
 
   let quitar = $state<CanalNotif | null>(null);
+  let quitando = $state(false);
   async function confirmarQuitar() {
-    if (!quitar) return;
+    if (!quitar || quitando) return;
+    quitando = true;
     try {
       await api.borrarCanal(ambito, quitar.id);
       canales = canales.filter((x) => x.id !== quitar!.id);
@@ -95,6 +97,8 @@
       quitar = null;
     } catch (e) {
       fallo(e);
+    } finally {
+      quitando = false;
     }
   }
 
@@ -391,7 +395,7 @@
     </div>
     <footer>
       <button class="btn btn-ghost" onclick={() => (quitar = null)}>Cancelar</button>
-      <button class="btn btn-danger" onclick={confirmarQuitar}>Quitar</button>
+      <BotonCargando class="btn btn-danger" cargando={quitando} textoCargando="Quitando…" onclick={confirmarQuitar}>Quitar</BotonCargando>
     </footer>
   </Modal>
 {/if}

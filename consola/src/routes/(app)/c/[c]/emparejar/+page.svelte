@@ -164,8 +164,11 @@
   }
   /** «Anular» el código pendiente desde la primera pantalla. */
   let anularCodigo = $state(false);
+  /** El código que se está anulando: los «Sí, anular» se apagan para no mandarlo dos veces. */
+  let anulandoId = $state<string | null>(null);
   async function anularPendiente() {
-    if (!pendiente) return;
+    if (!pendiente || anulandoId) return;
+    anulandoId = pendiente.id;
     try {
       await api.cancelarEmparejamiento(c, pendiente.id);
       codigos.olvidar(pendiente.id);
@@ -175,6 +178,7 @@
       error = (e as Error).message;
     } finally {
       anularCodigo = false;
+      anulandoId = null;
     }
   }
 
@@ -377,6 +381,8 @@
     }
   }
   async function anularPreparado(id: string) {
+    if (anulandoId) return;
+    anulandoId = id;
     try {
       await api.cancelarEmparejamiento(c, id);
       codigos.olvidar(id);
@@ -386,6 +392,7 @@
       error = (e as Error).message;
     } finally {
       anular = null;
+      anulandoId = null;
       void cargarLista();
     }
   }
@@ -448,6 +455,8 @@
     return () => clearInterval(t);
   });
   async function anularAMedias(id: string) {
+    if (anulandoId) return;
+    anulandoId = id;
     try {
       await api.cancelarEmparejamiento(c, id);
       codigos.olvidar(id);
@@ -456,6 +465,7 @@
       error = (e as Error).message;
     } finally {
       anularMedias = null;
+      anulandoId = null;
       void cargarMedias(c);
       void cargarLista();
     }
@@ -548,7 +558,7 @@
         <div class="acciones-pendiente">
           <button class="btn btn-sm btn-primary" onclick={() => seguirCodigo(pendiente!)}>{#if pendiente.estado === "unido"}<Check size={14} />Comprobar y dar de alta{:else}Seguir con este código{/if}</button>
           {#if anularCodigo}
-            <span class="confirmar-anular">¿Anular? <button class="btn btn-sm btn-danger" onclick={anularPendiente}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anularCodigo = false)}>No</button></span>
+            <span class="confirmar-anular">¿Anular? <BotonCargando class="btn btn-sm btn-danger" cargando={!!anulandoId} textoCargando="Anulando…" onclick={anularPendiente}>Sí, anular</BotonCargando><button class="btn btn-sm btn-ghost" onclick={() => (anularCodigo = false)}>No</button></span>
           {:else}
             <button class="btn btn-sm btn-ghost" onclick={() => (anularCodigo = true)} use:tip={"El código deja de servir (y, si ya se unió, el equipo se quita)"}><Ban size={14} />Anular</button>
           {/if}
@@ -685,7 +695,7 @@
               </span>
               <button class="btn btn-sm btn-primary" onclick={() => seguirPreparado(m.id)}><Check size={14} />{m.estado === "unido" ? "Continuar: comparar el número y dar de alta" : "Continuar: dar de alta"}</button>
               {#if anularMedias === m.id}
-                <span class="confirmar-anular">¿Anular? Se quita el equipo. <button class="btn btn-sm btn-danger" onclick={() => anularAMedias(m.id)}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = null)}>No</button></span>
+                <span class="confirmar-anular">¿Anular? Se quita el equipo. <BotonCargando class="btn btn-sm btn-danger" cargando={anulandoId === m.id} textoCargando="Anulando…" onclick={() => anularAMedias(m.id)}>Sí, anular</BotonCargando><button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = null)}>No</button></span>
               {:else}
                 <button class="btn btn-sm btn-ghost" onclick={() => (anularMedias = m.id)} use:tip={"El equipo se quita y se puede volver a vincular desde el principio"}><Ban size={14} />Anular y empezar de nuevo</button>
               {/if}
@@ -712,7 +722,7 @@
                 <Chip tono="neutral" texto="Esperando al equipo" girando />
               {/if}
               {#if anular === p.id}
-                <span class="confirmar-anular">¿Anular? <button class="btn btn-sm btn-danger" onclick={() => anularPreparado(p.id)}>Sí, anular</button><button class="btn btn-sm btn-ghost" onclick={() => (anular = null)}>No</button></span>
+                <span class="confirmar-anular">¿Anular? <BotonCargando class="btn btn-sm btn-danger" cargando={anulandoId === p.id} textoCargando="Anulando…" onclick={() => anularPreparado(p.id)}>Sí, anular</BotonCargando><button class="btn btn-sm btn-ghost" onclick={() => (anular = null)}>No</button></span>
               {:else}
                 <button class="btn btn-sm btn-ghost" onclick={() => (anular = p.id)} use:tip={"El código deja de servir (y, si ya se unió, el equipo se quita)"}><Ban size={14} />Anular</button>
               {/if}
