@@ -1406,6 +1406,11 @@ pub const ADMITE: &[&str] = &[
     // la orden `bases_sqlserver` («Ver las bases de la instancia») y el aviso (no fallo) cuando
     // solo falta el permiso para verificar un volcado.
     "sqlserver_todas",
+    // 0.8.1 (C3, 15c): la orden `tipo_equipo` (el tipo de equipo corregido a mano, en
+    // `datos_equipo.tipo`). (C4, 15d; C1, 15n; C2, 15cc; campos opcionales, sin token):
+    // `datos_basicos.almacenamiento` y `discos[].volumen`, `destinos[].carpeta` de un destino
+    // local y `derivada` en el progreso de una copia derivada en marcha.
+    "tipo_equipo",
     // 0.8.0 plan 0.8.0, E4 (14j): `probar_restauracion { espejo }`,
     // `{ programar_espejo }` y `{ quitar_espejo }` (prueba de restauración desde un espejo, la hace
     // el equipo dueño) e `informe.repos[].pruebas_espejo[]`.
@@ -1516,6 +1521,11 @@ pub fn resumen(v: &Vinculo) -> Value {
                 let disco = crate::espacio::disco_de(&d.donde).json();
                 for k in ["unidad", "extraible", "red"] {
                     x[k] = disco[k].clone();
+                }
+                // Plan 0.8.1 (C1, 15n): su carpeta, para «Dónde está» (como la del almacén), sin
+                // el nombre de la cuenta si está dentro de un perfil de usuario.
+                if let Some(c) = crate::espacio::ruta_publica(&d.donde) {
+                    x["carpeta"] = json!(c);
                 }
                 // Tarea 8e: el sistema de archivos (solo su nombre; nunca resta en la regla 3-2-1).
                 x["sistema_archivos"] = crate::espacio::json_fs(&d.donde);

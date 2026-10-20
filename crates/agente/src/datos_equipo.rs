@@ -9,6 +9,12 @@
 //! consola que lo cambió y lo dice en su resumen (`datos_equipo`). Cada consola
 //! enseña el valor del equipo.
 //!
+//! Plan 0.8.1 (C3, 15c): también el **tipo de equipo** corregido a mano
+//! (`tipo_equipo { clase, plataforma? }`: físico, máquina virtual y de qué tipo, o
+//! contenedor). Lo detecta el agente (`entorno` y el fabricante y el modelo de
+//! `datos_basicos`); esto solo guarda la corrección de una persona, igual en todas
+//! sus consolas. Con `clase` vacía se quita y vuelve a valer lo detectado.
+//!
 //! Convivencia: mientras un dato no se haya puesto con su orden, el equipo no
 //! dice nada de él y cada consola sigue con el suyo (no se pisa el nombre que ya
 //! tenía cada una al actualizar el agente). Solo son metadatos (como los ve hoy
@@ -31,6 +37,15 @@ pub const MAX_OBSERVACION: usize = 2000;
 pub const NOMBRE: &str = "nombre";
 pub const ETIQUETAS: &str = "etiquetas";
 pub const OBSERVACION: &str = "observacion";
+/// Plan 0.8.1 (C3): el tipo de equipo corregido a mano.
+pub const TIPO: &str = "tipo";
+
+/// Las clases de equipo que se pueden poner a mano.
+pub const CLASES_TIPO: [&str; 3] = ["fisico", "virtual", "contenedor"];
+/// De qué tipo es una máquina virtual (como `entorno.virtual`).
+pub const PLATAFORMAS_VIRTUAL: [&str; 6] = ["kvm", "vmware", "hyperv", "virtualbox", "xen", "otra"];
+/// De qué tipo es un contenedor (como `entorno.contenedor`).
+pub const PLATAFORMAS_CONTENEDOR: [&str; 5] = ["lxc", "docker", "podman", "wsl", "otro"];
 
 /// Un dato del equipo y quién lo cambió por última vez.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -99,6 +114,40 @@ pub fn limpiar_observacion(t: &str) -> Result<String, String> {
     Ok(t)
 }
 
+/// El tipo de equipo, limpio: `{ clase, plataforma? }` con valores de la lista, o
+/// `None` si `clase` va vacía (quitar la corrección).
+pub fn limpiar_tipo(c: &Value) -> Result<Option<Value>, String> {
+    let clase = c["clase"].as_str().ok_or("Falta la clase (fisico, virtual o contenedor; vacía para quitarla).")?.trim();
+    if clase.is_empty() {
+        return Ok(None);
+    }
+    if !CLASES_TIPO.contains(&clase) {
+        return Err("Clase de equipo no válida (fisico, virtual o contenedor).".into());
+    }
+    let plataforma = match c.get("plataforma") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(p)) if p.trim().is_empty() => None,
+        Some(Value::String(p)) => {
+            let p = p.trim();
+            let validas: &[&str] = match clase {
+                "virtual" => &PLATAFORMAS_VIRTUAL,
+                "contenedor" => &PLATAFORMAS_CONTENEDOR,
+                _ => &[],
+            };
+            if !validas.contains(&p) {
+                return Err("Ese tipo de máquina virtual o de contenedor no se conoce.".into());
+            }
+            Some(p.to_string())
+        }
+        Some(_) => return Err("La plataforma es un texto.".into()),
+    };
+    let mut v = json!({ "clase": clase });
+    if let Some(p) = plataforma {
+        v["plataforma"] = json!(p);
+    }
+    Ok(Some(v))
+}
+
 fn corto(t: &str, max: usize) -> String {
     t.chars().take(max).collect()
 }
@@ -144,6 +193,47 @@ pub fn observacion(v: &mut Vinculo, c: &Value, por: Option<&str>) -> Result<Stri
     Ok(m.into())
 }
 
+/// `tipo_equipo { clase, plataforma? }`: el tipo de equipo corregido a mano, en todas sus
+/// consolas. Con `clase` vacía se quita (vuelve a valer lo que detecta el agente).
+pub fn tipo(v: &mut Vinculo, c: &Value, por: Option<&str>) -> Result<String, String> {
+    match limpiar_tipo(c)? {
+        None => {
+            v.datos_equipo.remove(TIPO);
+            Ok("Tipo de equipo: el que detecta el agente, en todas sus consolas.".into())
+        }
+        Some(t) => {
+            let m = format!("Tipo de equipo: {}. Lo verán así todas sus consolas.", texto_tipo(&t));
+            poner(v, TIPO, t, por);
+            Ok(m)
+        }
+    }
+}
+
+/// El tipo en palabras («máquina virtual (Hyper-V)»), para los mensajes y el historial.
+fn texto_tipo(t: &Value) -> String {
+    let p = t["plataforma"].as_str().map(|p| match p {
+        "kvm" => "KVM/QEMU",
+        "vmware" => "VMware",
+        "hyperv" => "Hyper-V",
+        "virtualbox" => "VirtualBox",
+        "xen" => "Xen",
+        "lxc" => "LXC",
+        "docker" => "Docker",
+        "podman" => "Podman",
+        "wsl" => "WSL",
+        _ => "otro",
+    });
+    let base = match t["clase"].as_str() {
+        Some("fisico") => "equipo físico",
+        Some("virtual") => "máquina virtual",
+        _ => "contenedor",
+    };
+    match p {
+        Some(p) => format!("{base} ({p})"),
+        None => base.to_string(),
+    }
+}
+
 /// La descripción para el historial común (sin la observación: puede ser larga).
 pub fn descripcion(tipo: &str, c: &Value) -> Option<String> {
     Some(match tipo {
@@ -157,6 +247,10 @@ pub fn descripcion(tipo: &str, c: &Value) -> Option<String> {
             }
         }
         "observacion_equipo" => "Cambiar la observación del equipo".to_string(),
+        "tipo_equipo" => match limpiar_tipo(c) {
+            Ok(Some(t)) => format!("Cambiar el tipo del equipo a {}", texto_tipo(&t)),
+            _ => "Volver al tipo de equipo que detecta el agente".to_string(),
+        },
         _ => return None,
     })
 }
@@ -171,7 +265,7 @@ pub fn resumen(v: &Vinculo) -> Value {
     let m: serde_json::Map<String, Value> = v
         .datos_equipo
         .iter()
-        .filter(|(k, _)| [NOMBRE, ETIQUETAS, OBSERVACION].contains(&k.as_str()))
+        .filter(|(k, _)| [NOMBRE, ETIQUETAS, OBSERVACION, TIPO].contains(&k.as_str()))
         .map(|(k, c)| {
             (
                 k.clone(),
@@ -282,5 +376,30 @@ mod tests {
         assert_eq!(descripcion("etiquetas_equipo", &json!({ "etiquetas": [] })).unwrap(), "Quitar las etiquetas del equipo");
         assert!(descripcion("observacion_equipo", &json!({ "texto": "secreto" })).unwrap().find("secreto").is_none(), "sin el texto");
         assert!(descripcion("copiar_ahora", &json!({})).is_none());
+        assert_eq!(
+            descripcion("tipo_equipo", &json!({ "clase": "virtual", "plataforma": "hyperv" })).unwrap(),
+            "Cambiar el tipo del equipo a máquina virtual (Hyper-V)"
+        );
+        assert_eq!(descripcion("tipo_equipo", &json!({ "clase": "" })).unwrap(), "Volver al tipo de equipo que detecta el agente");
+    }
+
+    #[test]
+    fn tipo_de_equipo_a_mano_y_quitarlo() {
+        let mut v = vinculo();
+        assert!(tipo(&mut v, &json!({}), None).is_err());
+        assert!(tipo(&mut v, &json!({ "clase": "nube" }), None).is_err());
+        assert!(tipo(&mut v, &json!({ "clase": "virtual", "plataforma": "lxc" }), None).is_err(), "lxc es de contenedor");
+        assert!(tipo(&mut v, &json!({ "clase": "fisico", "plataforma": "kvm" }), None).is_err());
+        assert!(tipo(&mut v, &json!({ "clase": "virtual", "plataforma": 3 }), None).is_err());
+        assert!(v.datos_equipo.is_empty());
+        let m = tipo(&mut v, &json!({ "clase": " virtual ", "plataforma": "vmware" }), Some("Ana")).unwrap();
+        assert!(m.contains("VMware"), "{m}");
+        assert_eq!(valor(&v, TIPO), Some(&json!({ "clase": "virtual", "plataforma": "vmware" })));
+        assert_eq!(resumen(&v)["tipo"]["valor"]["clase"], "virtual");
+        tipo(&mut v, &json!({ "clase": "fisico", "plataforma": "" }), None).unwrap();
+        assert_eq!(valor(&v, TIPO), Some(&json!({ "clase": "fisico" })));
+        tipo(&mut v, &json!({ "clase": "" }), None).unwrap();
+        assert!(valor(&v, TIPO).is_none(), "vacía: vuelve lo detectado");
+        assert_eq!(resumen(&v), Value::Null);
     }
 }

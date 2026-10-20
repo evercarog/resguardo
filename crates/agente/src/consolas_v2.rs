@@ -108,6 +108,8 @@ pub const CAMBIAN_CONFIG: &[&str] = &[
     "nombre_equipo",
     "etiquetas_equipo",
     "observacion_equipo",
+    // Plan 0.8.1 (C3): el tipo de equipo corregido a mano.
+    "tipo_equipo",
     "quitar_destino",
     // Plan 0.8.0, F2: comentarios en las versiones y «Conservar para siempre».
     "comentario_version",
