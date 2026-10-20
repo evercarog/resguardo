@@ -479,6 +479,14 @@ mod win {
                 let prueba = ipc::prueba(p["clave"].as_str().unwrap_or(""), sal)?;
                 ipc::pedir(&json!({ "op": "aprobar_espera", "reto": hola["reto"], "prueba": prueba, "id": p["orden"] }))
             }
+            // 15hh: parar o pausar lo que está en marcha, siempre con la clave escrita en ese
+            // momento (como «Aprobar»); la prueba se calcula aquí y la clave no sale de este proceso.
+            "parar" => {
+                let hola = ipc::pedir(&json!({ "op": "hola" }))?;
+                let sal = hola["sal_equipo"].as_str().ok_or("Este equipo aún no tiene clave de administración.")?;
+                let prueba = ipc::prueba(p["clave"].as_str().unwrap_or(""), sal)?;
+                ipc::pedir(&json!({ "op": "parar", "reto": hola["reto"], "prueba": prueba, "parar": { "clave": p["parar"], "pausa": p["pausa"] } }))
+            }
             "servicio" => {
                 let op = p["que"].as_str().unwrap_or("");
                 if !OPS_CON_CLAVE.contains(&op) {

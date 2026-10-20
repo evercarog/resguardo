@@ -9,6 +9,7 @@
   import { quedan, seriesDe, textoFase, tono, TIPOS } from "./estado";
   import type { Actividad } from "./tipos";
   import EnEspera from "./EnEspera.svelte";
+  import Parar from "./Parar.svelte";
 
   let { irAjustes, sinConfigurar }: { irAjustes: () => void; sinConfigurar: boolean } = $props();
 
@@ -87,6 +88,8 @@
       </div>
       <p class="v-sub"><LoaderCircle size={13} class="spin" aria-hidden="true" /> {textoFase(a)}</p>
       {#if cifras(a).length}<p class="v-mini num">{cifras(a).join(" · ")}</p>{/if}
+      <!-- 15hh: parar o pausar, con la clave de administración. -->
+      {#if a.parar}<Parar {a} />{/if}
     </section>
   {/each}
 

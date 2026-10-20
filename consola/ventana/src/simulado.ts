@@ -49,6 +49,8 @@ function bandeja(ahora: number): EstadoBandeja {
           {
             id: "copia:principal#docs@1",
             clave: "copia:principal#docs",
+            parar: "copia:principal:docs",
+            pausable: true,
             tipo: "copia",
             nombre: "Documentos",
             fase: "subiendo",
@@ -158,6 +160,11 @@ export async function simular(op: string, c: Record<string, unknown>): Promise<u
       if (c.clave !== "caballo bateria grapa") throw new Error("La clave de administración no es correcta.");
       ordenesSimuladas = ordenesSimuladas.filter((o) => o.id !== c.orden);
       return { estado: "hecha", mensaje: "Aprobada en el equipo por ana (PORTATIL-ANA): Copias en pausa durante 2 h." };
+    }
+    // 15hh: parar o pausar (con la clave del simulador).
+    case "parar": {
+      if (c.clave !== "caballo bateria grapa") throw new Error("La clave de administración no es correcta.");
+      return { mensaje: c.pausa ? "Pausando «Documentos»: se para en unos segundos y sigue sola a su hora." : "Parando «Documentos»: se para en unos segundos." };
     }
     case "desbloqueada":
       return { abierta: false };
