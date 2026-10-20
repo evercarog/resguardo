@@ -21,6 +21,14 @@ ignore = [
   # no usa `glib::Variant` ni recorre `VariantStrIter`. Quitar cuando Tauri pase
   # a gtk-rs 0.19+ (glib ≥ 0.20, con la corrección).
   { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter unsound, solo vía la pila GTK de Tauri en Linux (app de escritorio); no se usa VariantStrIter" },
+  # zbus_names, zvariant y zvariant_derive sin mantener (avisos de octubre de 2026).
+  # Llegan solo por zbus en Linux, que traen tauri-plugin-opener y
+  # tauri-plugin-single-instance de la app de escritorio congelada, no el
+  # agente, el servidor ni el motor (`cargo tree -i zvariant --target all`).
+  # Sin vulnerabilidad conocida. Quitar cuando la app se retire o Tauri cambie.
+  { id = "RUSTSEC-2026-0370", reason = "zvariant sin mantener, solo vía zbus de los plugins de Tauri (app de escritorio congelada)" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names sin mantener, solo vía zbus de los plugins de Tauri (app de escritorio congelada)" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive sin mantener, solo vía zbus de los plugins de Tauri (app de escritorio congelada)" },
 ]
 
 [licenses]
