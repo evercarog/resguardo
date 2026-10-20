@@ -77,14 +77,14 @@
   let fijarPrimero = $state(false);
   let llavesCambiadas = $state(false);
   onMount(async () => {
-    if (!necesitaRepo(tipo) && !necesitaAdmin(tipo)) return;
+    if (!necesitaRepo(tipo, cuerpo) && !necesitaAdmin(tipo)) return;
     const estado = await comprobarLlaves(cliente.id, equipo);
     // Si las llaves cambiaron, ni se piden secretos: alerta directamente.
     if (estado === "cambiada") llavesCambiadas = true;
-    else if (necesitaRepo(tipo) && !necesitaAdmin(tipo)) fijarPrimero = estado === "sin_fijar";
+    else if (necesitaRepo(tipo, cuerpo) && !necesitaAdmin(tipo)) fijarPrimero = estado === "sin_fijar";
   });
   const pideAdmin = $derived(necesitaAdmin(tipo) || fijarPrimero);
-  const pideRepo = $derived(necesitaRepo(tipo));
+  const pideRepo = $derived(necesitaRepo(tipo, cuerpo));
   const espera = $derived(equipo.espera_min_horas ?? cliente.espera_min_horas);
   const destructiva = $derived(
     esDestructiva(tipo, cuerpo, espera, {

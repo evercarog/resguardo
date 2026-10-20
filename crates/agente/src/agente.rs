@@ -131,6 +131,7 @@ pub fn main() -> i32 {
         crate::actualizacion::hilo();
         #[cfg(windows)]
         hilo_bandeja();
+        crate::suspension::hilo();
         // En pruebas, el Servidor de copias corre dentro de este proceso.
         if crate::agent::test_mode() && crate::server::load().enabled {
             crate::server::arrancar_en_pruebas();
@@ -158,6 +159,13 @@ pub fn main() -> i32 {
 /// (15jj: la copia que quedó «en curso» la anota como interrumpida la primera vuelta, que
 /// es la que sabe si de verdad no hay ninguna en marcha.)
 fn al_arrancar() {
+    // 15hh: lo que lance el servicio (la vuelta de las copias, las tareas, restic, rclone)
+    // muere con él, también con `Restart-Service` o si se cae (Windows: trabajo propio).
+    if let Err(e) = resguardo_motor::proceso::unir_al_trabajo() {
+        crate::agent::log(&format!("AVISO: los procesos de las copias no quedan atados al servicio ({e})."));
+    }
+    // Y los que quedaron sueltos de antes (un agente anterior, que no los ataba): se paran y se avisa.
+    procesos_sueltos();
     // 15p: las copias derivadas «de cada día» quitadas que la consola seguía viendo.
     if let Some(mut v) = crate::servidor_v2::cargar() {
         let arreglados = crate::gestion_v2::limpiar_externas_sin_tarea(&mut v, &crate::agent::load_config());
@@ -171,6 +179,26 @@ fn al_arrancar() {
             }
         }
     }
+}
+
+/// 15hh: restic o rclone de la carpeta del agente que siguen en marcha sin nadie que los
+/// espere (quedaron de antes de reiniciar el servicio): se paran y se avisa a las consolas
+/// (la copia que hacían ya se anota como interrumpida y se reintenta).
+fn procesos_sueltos() {
+    let Some(carpeta) = std::env::current_exe().ok().and_then(|e| e.parent().map(std::path::Path::to_path_buf)) else { return };
+    let sueltos = resguardo_motor::proceso::procesos_sueltos(&carpeta);
+    if sueltos.is_empty() {
+        return;
+    }
+    let parados = sueltos.iter().filter(|p| resguardo_motor::proceso::terminar_pid(p.pid)).count();
+    let m = format!(
+        "Al arrancar el servicio quedaban {} {} del motor de copias de antes (seguían solos tras reiniciar el servicio): {}. Lo que hacían se reintenta.",
+        sueltos.len(),
+        if sueltos.len() == 1 { "proceso" } else { "procesos" },
+        if parados == sueltos.len() { "se han parado".to_string() } else { format!("se han parado {parados}; los demás, reinicia el equipo") }
+    );
+    crate::agent::log(&format!("AVISO: {m}"));
+    crate::bitacora::aviso("cambio_inusual", &m);
 }
 
 fn report(r: Result<(), String>) -> i32 {
@@ -314,7 +342,12 @@ fn one_tick() {
     }
     write_tray_status();
     if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).arg("--agent-run").stdin(std::process::Stdio::null()).status();
+        // 15hh: dentro del trabajo del servicio (las tareas que lance no se salen de él).
+        let _ = std::process::Command::new(exe)
+            .arg("--agent-run")
+            .env(resguardo_motor::proceso::VAR_TRABAJO_SERVICIO, "1")
+            .stdin(std::process::Stdio::null())
+            .status();
     }
     write_tray_status();
 }
@@ -414,6 +447,8 @@ mod service {
         crate::ipc_local::hilo();
         // La actualización automática (docs/actualizaciones.md).
         crate::actualizacion::hilo();
+        // 15ll: que el equipo no se suspenda por inactividad mientras copia.
+        crate::suspension::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         loop {
@@ -529,6 +564,8 @@ mod service {
         crate::ipc_local::hilo();
         // La actualización automática (docs/actualizaciones.md).
         crate::actualizacion::hilo();
+        // 15ll: que el equipo no se suspenda por inactividad mientras copia.
+        crate::suspension::hilo();
         set_service_running(true);
         crate::agent::log("Resguardo Agente: servicio en marcha.");
         'vueltas: loop {

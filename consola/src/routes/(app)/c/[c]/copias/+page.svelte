@@ -141,7 +141,7 @@
   }
 
   const href = (x: FilaCopia, ancla = "") => `/c/${actual.id}/equipos/${x.equipo.id}/copias/${encodeURIComponent(x.copia.id)}${ancla}`;
-  const TEXTO_ULTIMA = { ok: "correcta", sin_cambios: "sin cambios", aviso: "con avisos", fallo: "falló" } as const;
+  const TEXTO_ULTIMA = { ok: "correcta", sin_cambios: "sin cambios", aviso: "con avisos", fallo: "falló", parada: "parada a petición" } as const;
 </script>
 
 <svelte:head><title>Copias · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>

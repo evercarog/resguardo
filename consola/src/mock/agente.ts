@@ -21,7 +21,7 @@ import { usosDeNube, usosEspejoDeNube } from "../lib/nubesEquipo";
 import { ADMITE_EQUIPO, ADMITE_TRABAJOS, claveDestinoTrabajo, errorTrabajos, nombrePorDefecto, reduceTrabajos, trabajosDelAlmacen, trabajosDelEquipo } from "../lib/espejoTrabajos";
 import { auditar, estado, type EquipoMock, type OrdenMock, type SesionMock } from "./estado";
 import { zipSinComprimir } from "./zip";
-import { empezarCopia, empezarHistorial, empezarRestauracion, empezarTarea } from "./progreso";
+import { empezarCopia, empezarHistorial, empezarRestauracion, empezarTarea, pararTarea } from "./progreso";
 import { operarDetalle, OPS_DETALLE, VERSION_DETALLE } from "./detalle";
 import { buscarTodas, OP_BUSCAR, VERSION_BUSCAR } from "./buscar";
 import { observacionDelEquipo } from "./notas";
@@ -253,7 +253,9 @@ export async function procesarOrden(o: OrdenMock) {
       motivo = "La clave de administración no es correcta.";
     }
   }
-  if (autorizada && nivel === "repo" && !repoOk()) {
+  // 15q: quitar un repositorio sin versiones solo con la clave (se comprueba al hacerla, abajo).
+  const quitarVacio = plana.tipo === "quitar_repositorio" && (plana.cuerpo as Record<string, unknown>)?.vacio === true && !plana.autorizacion?.clave_repo && !!e.resumen?.admite?.includes("quitar_vacio");
+  if (autorizada && nivel === "repo" && !quitarVacio && !repoOk()) {
     autorizada = false;
     motivo = "La contraseña del repositorio no es correcta.";
   }
@@ -468,6 +470,21 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       }
       await espera(3000);
       return resultado(e, o, "hecha", "Prueba de restauración correcta: 25 archivos comparados.");
+    }
+    // 15hh: parar o pausar lo que está en marcha (como el agente con `admite: "parar"`).
+    case "parar": {
+      if (!e.resumen?.admite?.includes("parar")) return resultado(e, o, "rechazada", "Tipo de orden desconocido.");
+      const x = pararTarea(e.id, String(c.clave ?? ""));
+      if (!x) return resultado(e, o, "fallida", "Ya no está en marcha: terminó o aún no ha empezado.");
+      const pausa = c.pausa as { hasta?: string; a_mano?: boolean } | null | undefined;
+      const quien = `por ${plana.por ?? "alguien"} desde la consola «Simulador»`;
+      const k = x.tipo === "copia" ? e.resumen?.copias?.find((y) => y.id === x.copia) : undefined;
+      if (k) {
+        k.ultima = { cuando: ahora(), estado: "parada", mensaje: pausa ? "En pausa (pausada a petición)." : `Parada ${quien}.` };
+        k.pausa = pausa ? { hasta: pausa.hasta ?? null, desde: ahora(), quien } : null;
+      }
+      const nombre = x.nombre ? ` «${x.nombre}»` : "";
+      return resultado(e, o, "hecha", pausa ? `Pausando${nombre}: se para en unos segundos y sigue sola a su hora.` : `Parando${nombre}: se para en unos segundos.`);
     }
     case "pausar": {
       const h = Number(c.horas ?? 0);
@@ -1388,6 +1405,7 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       // Como el agente: lo olvida (y deja de copiar en él); lo guardado sigue en su destino.
       const r = e.resumen?.repositorios?.find((x) => x.id === c.repo);
       if (!r || !e.resumen) return resultado(e, o, "fallida", "Ese repositorio no existe en este equipo.");
+      if (c.vacio === true && !plana.autorizacion?.clave_repo && (r.versiones ?? 0) > 0) return resultado(e, o, "fallida", `Tiene ${r.versiones} versiones: para quitarlo hace falta también su contraseña.`);
       e.resumen.repositorios = (e.resumen.repositorios ?? []).filter((x) => x.id !== r.id);
       e.resumen.copias = (e.resumen.copias ?? []).filter((k) => k.repo !== r.id);
       guardarConfig(e, configInicial(e), plana.seq);

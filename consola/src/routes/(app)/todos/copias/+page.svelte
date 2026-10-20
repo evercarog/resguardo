@@ -30,7 +30,7 @@
     ordenarCopias(filtrarCopias(delCliente, { estado }), "estado").filter((x) => !buscar.trim() || x.cliente.nombre.toLowerCase().includes(buscar.trim().toLowerCase()) || filtrarCopias([x], { buscar }).length > 0),
   );
   const cuenta = $derived(cuentaCopias(delCliente));
-  const TEXTO_ULTIMA = { ok: "correcta", sin_cambios: "sin cambios", aviso: "con avisos", fallo: "falló" } as const;
+  const TEXTO_ULTIMA = { ok: "correcta", sin_cambios: "sin cambios", aviso: "con avisos", fallo: "falló", parada: "parada a petición" } as const;
   const href = (x: (typeof filas)[number]) => `/c/${x.cliente.id}/equipos/${x.equipo.id}/copias/${encodeURIComponent(x.copia.id)}`;
 </script>
 

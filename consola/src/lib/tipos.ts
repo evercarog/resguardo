@@ -474,8 +474,8 @@ export interface CopiaResumen {
   /** «Cada día a las 13:00 y 19:00», ya en frase, o el horario estructurado. */
   horario?: string | Horario;
   carpetas?: number;
-  /** 15jj: `interrumpida`, quedó «en curso» y no terminó (con `estado: "fallo"`). */
-  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo"; bytes?: number; mensaje?: string | null; interrumpida?: boolean } | null;
+  /** 15jj: `interrumpida`, quedó «en curso» y no terminó (con `estado: "fallo"`). 15hh: `parada`, se paró o pausó a petición. */
+  ultima?: { cuando: string; estado: "ok" | "aviso" | "fallo" | "parada"; bytes?: number; mensaje?: string | null; interrumpida?: boolean } | null;
   proxima?: string | null;
   activa?: boolean;
   /** v1.16 (agente ≥ 0.7.7): si guarda versión solo cuando algo cambió. */
@@ -493,6 +493,12 @@ export interface CopiaResumen {
   hechas?: number | null;
   /** F1: cuándo terminó (RFC 3339): queda «completada». */
   completada?: string | null;
+  /** 15hh (4, `admite: "parar"`): en pausa con «Pausar»: hasta cuándo (sin hora, a mano) y quién la pausó. */
+  pausa?: { hasta?: string | null; desde?: string | null; quien?: string | null } | null;
+  /** 15hh (5): su velocidad de subida según la hora (como las derivadas). */
+  limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
+  /** 15ll: deja que el equipo se suspenda mientras copia. */
+  permitir_suspension?: boolean | null;
 }
 
 /** Plan 0.8.0, F1 (14pp): cuándo termina una copia. */
@@ -543,6 +549,8 @@ export interface DerivadaResumen {
   con_retencion?: boolean | null;
   /** Plan 0.8.0, F4 (14t, `admite: "limite_franjas"`): la velocidad de subida según la hora. */
   limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
+  /** 15g: su carpeta en el destino, si no es la de siempre (`<repo>-<id>`). */
+  ruta?: string | null;
 }
 
 export interface RepositorioResumen {
@@ -880,7 +888,8 @@ export interface VersionInforme {
 export interface EjecucionInforme {
   hora: string;
   copia: string | null;
-  resultado: "ok" | "aviso" | "fallo" | "sin_cambios";
+  /** 15hh: `parada`, se paró o se pausó a petición (con la clave): ni bien ni fallo. */
+  resultado: "ok" | "aviso" | "fallo" | "sin_cambios" | "parada";
   mensaje_corto: string | null;
   /** v1.12 (agente ≥ 0.7.4): lo que duró y añadió esa vuelta. */
   duracion_s?: number | null;
@@ -904,6 +913,8 @@ export interface TareaInforme {
   motivo?: "destino_ausente" | null;
   /** 14nn: por eso dejó de intentarse (tras 3 vueltas seguidas), hasta cambiarla o «Subir ahora». */
   pausada?: boolean;
+  /** 15g (copia derivada): las versiones de su repositorio tras la última vuelta. */
+  versiones?: number | null;
 }
 
 export type EstadoComprobacion = "ok" | "aviso" | "fallo" | "desconocido";
@@ -930,7 +941,8 @@ export interface RepoInforme {
   restauracion_real?: { ultima: string; archivos?: number; bytes?: number } | null;
   externa: TareaInforme | null;
   /** Tarea 4b: la última vuelta de cada copia derivada (y de su verificación). */
-  derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null })[];
+  /** 15g: `versiones`, las de su repositorio tras la última vuelta; `ultima_bien`, la última que salió bien. */
+  derivadas?: (Partial<TareaInforme> & { id: string; destino?: string | null; verificacion?: TareaInforme | null; versiones?: number | null; ultima_bien?: string | null })[];
   /** Plan 0.8.0, E4 (14j): las pruebas de restauración desde un espejo (agentes con `prueba_espejo`). */
   pruebas_espejo?: import("./tiposPruebas").PruebaEspejoInforme[];
   proteccion: { puntuacion: number; total: number; items: ComprobacionProteccion[] } | null;
@@ -1006,8 +1018,13 @@ export interface TareaEnMarcha {
   espejo?: string | null;
   quien?: "almacen" | "equipo" | null;
   primera?: boolean | null;
-  /** v1.6x (14p): la copia derivada de una tarea pedida con «Ahora» (en cola). */
+  /** v1.6x (14p): la copia derivada de una tarea pedida con «Ahora» (en cola). 15hh: también en marcha. */
   derivada?: string | null;
+  /** v1.8x (15hh): con qué clave se para (`parar { clave }`, con la clave de administración) y si se puede pausar. */
+  parar?: string | null;
+  pausable?: boolean | null;
+  /** v1.8x (15ll): el equipo no se suspende mientras esto sigue en marcha. */
+  evitando_suspension?: boolean | null;
 }
 
 export interface ProgresoEquipo {
@@ -1314,6 +1331,8 @@ export interface TrabajoEspejoResumen extends TrabajoEspejo {
   subidas?: SubidaEspejo[] | null;
   /** v1.6x (14i, 14h): lo que ocupa en el destino, en total y por repositorio (`<usuario>/<repo>` en el almacén, el id en el equipo). */
   ocupa?: { bytes: number; repos?: Record<string, number> | null; cuando: string } | null;
+  /** v1.8x (15m): la última subida buena de cada repositorio (también de los que ya no incluye: su copia allí no se actualiza). */
+  ultima_por_repo?: Record<string, string> | null;
   /** v1.6x (14p): «Hacer ahora» pedido y aún sin empezar. */
   en_cola?: boolean | null;
 }
@@ -1387,6 +1406,10 @@ export interface CopiaConfig {
   a_mano?: boolean;
   /** F1: cuándo termina («Una sola vez», tras N copias o el día …). */
   termina?: Termina | null;
+  /** 15hh (5, `admite: "parar"`): la velocidad de subida según la hora (como en las derivadas). */
+  limite?: { kib?: number | null; franjas?: FranjaVelocidad[] | null } | null;
+  /** 15ll (`admite: "sin_suspension"`): deja que el equipo se suspenda mientras copia (con batería). */
+  permitir_suspension?: boolean;
 }
 
 /** Volcado COPY_ONLY de bases de SQL Server antes de copiar (la carpeta entra en la copia y los volcados se borran después). */

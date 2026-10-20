@@ -11,6 +11,7 @@
   import { resultadoConError } from "$lib/salud";
   import { destinoDe, nVersiones, proteccion, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import Ayuda from "../Ayuda.svelte";
+  import { textoEslabon, type Eslabon } from "$lib/camino";
 
   let {
     repo,
@@ -21,6 +22,7 @@
     ahora,
     equipo,
     alQuitarExterna,
+    pasos = null,
   }: {
     repo: RepositorioResumen;
     inf: RepoInforme | null;
@@ -32,6 +34,11 @@
     equipo?: Equipo;
     /** 14nn: «Quitar la copia externa» cuando falla (solo si quien mira puede mandar órdenes). */
     alQuitarExterna?: () => void;
+    /**
+     * 15g: los pasos después del repositorio (espejos y copias derivadas), los mismos del camino
+     * de la copia (`lib/camino.ts`). Sin ellos (un repositorio sin copia activa), lo de antes.
+     */
+    pasos?: Eslabon[] | null;
   } = $props();
 
   const suyas = $derived(copias.filter((k) => k.repo === repo.id));
@@ -112,6 +119,28 @@
       </div>
     </li>
 
+    {#if pasos?.length}
+      <!-- 15g: los pasos de verdad (espejos y copias derivadas), con su estado y su enlace. -->
+      <li class="flecha" aria-hidden="true"><ArrowRight size={16} /><span>después</span></li>
+      <li class="paso tone-{pasos.some((x) => x.tono === 'bad') ? 'bad' : pasos.some((x) => x.tono === 'warn') ? 'warn' : 'ok'}">
+        <span class="ic" aria-hidden="true"><Cloud size={18} /></span>
+        <div class="cuerpo">
+          <span class="k">Después <Ayuda id="copia-externa" /></span>
+          <ul class="lista-pasos">
+            {#each pasos as x (x.id)}
+              <li>
+                <span class="faint">{x.clase === "espejo" ? "Espejo" : "Copia derivada"}</span>
+                {#if x.href}<a class="link-suave" href={x.href}>{x.nombre}</a>{:else}<strong>{x.nombre}</strong>{/if}
+                <span class="st">
+                  {#if x.tono === "ok"}<CircleCheck size={13} />{:else if x.tono === "bad"}<CircleAlert size={13} />{:else if x.tono === "warn"}<TriangleAlert size={13} />{:else}<CircleDashed size={13} />{/if}
+                  {textoEslabon(x, ahora)}
+                </span>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      </li>
+    {:else}
     <li class="flecha" class:off={!tercero} aria-hidden="true"><ArrowRight size={16} /><span>{tercero?.flecha ?? ""}</span></li>
 
     <li class="paso tone-{tercero?.tono ?? 'neutral'}" class:discontinuo={!tercero}>
@@ -131,10 +160,25 @@
         {/if}
       </div>
     </li>
+    {/if}
   </ol>
 </section>
 
 <style>
+  .lista-pasos {
+    display: grid;
+    gap: 4px;
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .lista-pasos li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 6px;
+    font-size: var(--fs-sm);
+  }
   .flujo {
     display: flex;
     flex-direction: column;

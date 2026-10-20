@@ -6,8 +6,9 @@
   // lleva. Entre dos noticias del equipo (cada 3–5 s) la barra avanza sola al
   // ritmo que lleva, sin pasarse; con «reducir movimiento», sin animaciones.
   // `compacto`: solo un chip «Copiando… 42 %».
-  import { LoaderCircle } from "@lucide/svelte";
+  import { LoaderCircle, MoonStar } from "@lucide/svelte";
   import Anuncio from "./Anuncio.svelte";
+  import PararTarea from "./PararTarea.svelte";
   import type { TareaEnMarcha } from "$lib/tipos";
   import { pctPintado, pctVisible, pulso } from "$lib/progreso.svelte";
   import { cifrasTarea, porcentaje, textoCorto, textoDuracion, textoFase } from "$lib/textoProgreso";
@@ -82,6 +83,10 @@
       {#if ondasArchivos.length}<GraficaOndas series={ondasArchivos} titulo="Archivos por segundo" alto={36} retraso={6000} formato={porSegundoArchivos} />{/if}
     {/if}
     {#if callado}<p class="callado">Sin noticias del equipo desde hace {callado} min: puede estar esperando al almacén o haberse apagado.</p>{/if}
+    <!-- 15ll: el equipo pide al sistema que no se suspenda por inactividad mientras sigue. -->
+    {#if tarea.evitando_suspension}<p class="sin-suspension"><MoonStar size={13} aria-hidden="true" />Evitando la suspensión del equipo mientras {tarea.tipo === "restauracion" ? "restaura" : "copia"}</p>{/if}
+    <!-- 15hh: parar o pausar, con la clave de administración. -->
+    <PararTarea {tarea} {equipo} />
   </div>
 {/if}
 
@@ -182,5 +187,13 @@
     margin: 0;
     font-size: var(--fs-xs);
     color: var(--warn);
+  }
+  .sin-suspension {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: var(--fs-xs);
+    color: var(--text-2);
   }
 </style>

@@ -53,11 +53,15 @@ const TEXTOS: &[(&str, usize)] = &[
     ("espejo", 40),
     ("quien", 10),
     ("derivada", 40),
+    // v1.8x (15hh, pendiente de numerar al unir): con qué clave se para (`parar { clave }`).
+    ("parar", 200),
 ];
 /// v1.47: `mover` (un paso de «Mover a otro sitio…») y `otra_consola` (la empezó otra
 /// consola del equipo: aquí solo se enseña).
 /// v1.6x: `en_el_equipo` (13f: pedida desde la ventana del equipo) y `primera` (14p: la primera subida de un espejo).
-const SINO: &[&str] = &["mover", "otra_consola", "en_el_equipo", "primera"];
+/// v1.8x (pendiente de numerar al unir): `pausable` (15hh: la copia se puede pausar) y
+/// `evitando_suspension` (15ll: el equipo no se suspende mientras sigue en marcha).
+const SINO: &[&str] = &["mover", "otra_consola", "en_el_equipo", "primera", "pausable", "evitando_suspension"];
 // v1.36: `lectura` y `subida` (bytes/s medidos en el equipo) y `archivos_s`, para las gráficas en vivo.
 const NUMEROS: &[&str] =
     &["archivos", "archivos_total", "bytes", "bytes_total", "velocidad", "lectura", "subida", "archivos_s", "quedan_s", "versiones", "versiones_total"];
@@ -222,6 +226,16 @@ mod tests {
         assert_eq!((v[0]["lectura"].as_u64(), v[0]["subida"].as_u64(), v[0]["archivos_s"].as_u64()), (Some(1000), Some(400), Some(12)));
         assert!(limpiar(&json!(vec![json!({}); MAX_TAREAS + 1])).is_err());
         assert!(limpiar(&json!([{ "tipo": "copia", "fase": "subiendo", "repo": "r", "nombre": "x".repeat(MAX_BYTES) }])).is_err());
+    }
+
+    /// v1.8x (15hh, 15ll): la clave para parar, si se puede pausar y si evita la suspensión.
+    #[test]
+    fn parar_y_suspension() {
+        let v = limpiar(
+            &json!([{ "tipo": "copia", "fase": "subiendo", "repo": "r", "parar": "copia:r:k\u{0007}", "pausable": true, "evitando_suspension": true }]),
+        )
+        .unwrap();
+        assert_eq!((v[0]["parar"].as_str(), v[0]["pausable"].as_bool(), v[0]["evitando_suspension"].as_bool()), (Some("copia:r:k"), Some(true), Some(true)));
     }
 
     /// v1.47: traer el historial (y los pasos de «Mover a otro sitio…») llega a cada consola

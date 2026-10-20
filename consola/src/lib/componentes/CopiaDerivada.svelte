@@ -11,6 +11,8 @@
   import { onDestroy } from "svelte";
   import { Cloud, KeyRound, Printer, TriangleAlert } from "@lucide/svelte";
   import OrdenDialog from "./OrdenDialog.svelte";
+  import { goto } from "$app/navigation";
+  import { hrefDerivada } from "$lib/camino";
   import CampoClave from "./CampoClave.svelte";
   import EditorRetencion from "./EditorRetencion.svelte";
   import Ayuda from "./Ayuda.svelte";
@@ -226,6 +228,11 @@
     if (!si) Object.assign(f, { etiquetas: "", equipos: "", carpetas: "", desde: "", ultimosDias: "" });
   }
   const efecto = $derived(textoRetencionDestino(f.conRetencion, f.conBloqueo ? diasBloqueo(f.bloqueoDias) : null));
+  // 15g: ¿va a la zona de un almacén? Allí la retención la aplica el almacén (el equipo no puede borrar).
+  const aAlmacen = $derived(!nubeElegida && !esNuevo && !!equipo.resumen?.destinos?.some((d) => d.id === f.destino && d.tipo === "rest" && !!d.equipo_almacen));
+  const admiteRetDerivada = $derived(!!equipo.resumen?.admite?.includes("retencion_derivada"));
+  let retencionDespues = $state(true);
+  let irARetencion = false;
   const nombreDestino = $derived(nubeElegida ?? (esNuevo ? f.nombre : (destinos.find((d) => d.id === f.destino)?.nombre ?? "")));
   const resumen = $derived(
     `«${repo.nombre}» → ${nombreDestino || "otro destino"} (${[cuandoEnFrase(f.cuando === "tras" ? { tras_copia: true } : f.cuando === "horario" ? derivada?.cuando : { hora: f.hora }).toLowerCase(), filtro ? `solo las versiones ${filtroEnFrase(filtro)}` : "todas las versiones", f.otra ? "con otra contraseña" : "con la misma contraseña", f.conRetencion ? "con su propia retención" : "sin retención propia"].join(", ")}).`,
@@ -243,7 +250,12 @@
   valido={valido && (!guiado || paso === "resumen")}
   sinSecretos={guiado && paso !== "resumen"}
   probar={{ cuerpo: { solo_probar: true }, texto: "Probar" }}
-  {onclose}
+  alTerminar={(o) => (irARetencion = o.estado === "hecha" && aAlmacen && admiteRetDerivada && retencionDespues)}
+  onclose={() => {
+    onclose();
+    // 15g: al crearla en un almacén, su «Retención en el almacén…» (en la página de la derivada).
+    if (irARetencion) void goto(`${hrefDerivada(cliente.id, equipo.id, repo.id, id)}?retencion=1`);
+  }}
 >
   {#snippet campos()}
     {#if guiado}
@@ -388,7 +400,16 @@
   {/if}
 {/snippet}
 {#snippet retencionCampos()}
-
+  {#if aAlmacen}
+    <!-- 15g: en un almacén (solo añadir) la retención la aplica el almacén: se ofrece ponerla al terminar. -->
+    <label class="switch-row"
+      ><input type="checkbox" bind:checked={retencionDespues} disabled={!admiteRetDerivada} /><span
+        >Después, ponerle su retención en el almacén<span class="faint"
+          >{admiteRetDerivada ? "El almacén es de solo añadir: sin ella, esta copia crece sin límite. Al terminar se abre «Retención en el almacén…»." : `Actualiza el agente de ${equipo.nombre} para ponérsela desde aquí.`}</span
+        ></span
+      ></label
+    >
+  {/if}
   <label class="switch-row"><input type="checkbox" bind:checked={f.conRetencion} /><span>Retención propia<span class="faint">Si no, allí se guardan todas las versiones que suba.</span></span></label>
   {#if f.conRetencion}
     <EditorRetencion id="dvr" bind:regla={f.retencion} admite={admitePlazos(equipo)} {...horarioDeCopias(equipo.resumen?.copias, repo.id)} />

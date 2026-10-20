@@ -17,6 +17,8 @@
   import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CloudUpload, Copy, CornerDownRight, Database, FlaskConical, FolderOpen, FolderPlus, GitBranch, GripVertical, HardDrive, KeyRound, LayoutTemplate, LoaderCircle, LockKeyhole, MonitorCheck, Plus, Save, ShieldCheck, Trash2, TriangleAlert, Undo2 } from "@lucide/svelte";
   import { ADMITE, admite, destinosParaPasos, errorCadenas, moverA, pasosDelRepo, recomendarFueraRetencion, reenlazar, TEXTO_FUERA_RETENCION } from "$lib/cadenas";
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
+  import LimiteFranjas from "$lib/componentes/LimiteFranjas.svelte";
+  import { admiteParar, admiteSinSuspension } from "$lib/parar";
   import * as api from "$lib/api";
   import { ApiError } from "$lib/api";
   import { argon2Navegador } from "$lib/cripto/argon2";
@@ -508,8 +510,8 @@
   }
   /** El estado de la última vez de una copia ya enviada (del resumen del equipo). */
   const ultimaDe = (k: CopiaConfig) => equipo?.resumen?.copias?.find((x) => x.id === k.id)?.ultima ?? null;
-  const TEXTO_ULTIMA = { ok: "Al día", aviso: "Con avisos", fallo: "Falló" } as const;
-  const TONO_ULTIMA = { ok: "ok", aviso: "warn", fallo: "bad" } as const;
+  const TEXTO_ULTIMA = { ok: "Al día", aviso: "Con avisos", fallo: "Falló", parada: "Parada" } as const;
+  const TONO_ULTIMA = { ok: "ok", aviso: "warn", fallo: "bad", parada: "neutral" } as const;
   /** Abre la tarjeta y lleva a sus ajustes del repositorio (verificación, prueba). */
   async function irAAjustes(k: CopiaConfig) {
     abiertas[k.id] = true;
@@ -1019,6 +1021,18 @@
                       >Solo guardar si hay cambios<span class="faint">Actualiza el agente para poder apagarlo{versionAgente ? ` (tiene la ${versionAgente})` : ""}.</span></span
                     ></label
                   >
+                {/if}
+                <!-- 15ll: por defecto el equipo no se suspende mientras copia; en un portátil con batería, se puede dejar. -->
+                {#if admiteSinSuspension(equipo)}
+                  <label class="switch-row"
+                    ><input type="checkbox" class="switch" checked={k.permitir_suspension !== true} onchange={(e) => (k.permitir_suspension = !e.currentTarget.checked || undefined)} /><span
+                      >Que el equipo no se suspenda mientras copia<span class="faint">Apágalo en portátiles con batería. Nunca impide suspenderlo a mano ni cerrar la tapa.</span></span
+                    ></label
+                  >
+                {/if}
+                <!-- 15hh (5): «suave en horario de oficina, sin límite de noche», como en las derivadas. -->
+                {#if admiteParar(equipo)}
+                  <LimiteFranjas id="lim-{k.id}" bind:franjas={() => k.limite?.franjas ?? [], (f) => (k.limite = f.length ? { ...(k.limite ?? {}), franjas: f } : null)} equipo={equipo.nombre} />
                 {/if}
 
                 <div class="repo-k" id="ajustes-{k.id}">

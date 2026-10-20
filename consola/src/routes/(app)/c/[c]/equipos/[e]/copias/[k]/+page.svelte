@@ -24,6 +24,7 @@
     ChartColumn,
     CircleCheck,
     CircleHelp,
+    CirclePause,
     Database,
     Eye,
     FolderOpen,
@@ -39,6 +40,7 @@
     TriangleAlert,
   } from "@lucide/svelte";
   import * as api from "$lib/api";
+  import { textoPausa } from "$lib/parar";
   import { ApiError } from "$lib/api";
   import { borrar, deB64 } from "$lib/cripto/bytes";
   import { descifrarConfig } from "$lib/cripto/simetrico";
@@ -305,6 +307,17 @@
       {/if}
     {/if}
 
+    {#if k.pausa}
+      <!-- 15hh (4): pausada con «Pausar»: sigue sola a su hora; no cuenta como fallida. -->
+      <div class="notice notice-info" role="status">
+        <CirclePause size={16} />
+        <p>
+          {textoPausa(k, reloj.ahora)}. {k.pausa.hasta ? "Entonces sigue sola, aprovechando lo ya copiado." : ""} Mientras, no cuenta como fallida.
+          {#if puede.ordenar(rol) && k.activa !== false}<button type="button" class="btn btn-sm btn-ghost" onclick={copiarAhora}><Play size={14} />Seguir ahora</button>{/if}
+        </p>
+      </div>
+    {/if}
+
     <p class="frase">
       {fraseCopia(k, { equipo: equipo.nombre, repo: repo?.nombre ?? k.repo, vuelta, proxima, pausada, ganchos: ganchosEnFrase(detalle ? ganchosDe(detalle.gancho) : null, ganchosRes) }, reloj.ahora)}
     </p>
@@ -346,13 +359,13 @@
         <button class="cifra pulsable-bloque" use:tip={"Ver el detalle de la última copia"} onclick={() => abrirVuelta(ejecuciones[0].hora)}>
           <span class="k">Última copia</span>
           <strong class="num">{vuelta ? relativo(vuelta.cuando, reloj.ahora) : "—"}</strong>
-          <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : vuelta.interrumpida ? "se interrumpió" : "falló") : "todavía ninguna"}</span>
+          <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : vuelta.resultado === "parada" ? "parada a petición" : vuelta.interrumpida ? "se interrumpió" : "falló") : "todavía ninguna"}</span>
         </button>
       {:else}
       <div class="cifra">
         <span class="k">Última copia</span>
         <strong class="num">{vuelta ? relativo(vuelta.cuando, reloj.ahora) : "—"}</strong>
-        <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : vuelta.interrumpida ? "se interrumpió" : "falló") : "todavía ninguna"}</span>
+        <span class="faint">{vuelta ? (vuelta.resultado === "sin_cambios" ? "sin cambios" : vuelta.resultado === "ok" ? "correcta" : vuelta.resultado === "aviso" ? "con avisos" : vuelta.resultado === "parada" ? "parada a petición" : vuelta.interrumpida ? "se interrumpió" : "falló") : "todavía ninguna"}</span>
       </div>
       {/if}
       <div class="cifra">

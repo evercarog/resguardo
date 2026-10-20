@@ -109,7 +109,7 @@ console.log("\n· El camino de una copia (lib/camino.ts)");
     ["nube", false],
     ["local", false],
   ]);
-  igual("enlaces: la zona del almacén, la nube del almacén y el disco", c.map((x) => x.href), ["/c/c1/destinos/zona%3Aa1%3Aprincipal", "/c/c1/destinos/nube%3Aa1%3Abackblaze-oficina", "/c/c1/destinos/dest-usb"]);
+  igual("enlaces: la zona del almacén, la nube del almacén y (15g) la página de la derivada", c.map((x) => x.href), ["/c/c1/destinos/zona%3Aa1%3Aprincipal", "/c/c1/destinos/nube%3Aa1%3Abackblaze-oficina", "/c/c1/equipos/e1/repositorios/docs/derivadas/d1"]);
   igual("en una línea de «Copias»", lineaEslabon(c[1], AHORA), "→ Backblaze Oficina · al día, hace 2 h");
   cierto("el camino en texto (lectores de pantalla)", caminoEnTexto(c, AHORA).replace(/[  ]/g, " ").startsWith("Almacén ALMACEN-01 · Disco D (al día, hace 2 h) → después, Backblaze Oficina (espejo, al día"));
   igual("resumen: dos pasos, nada mal", resumenCamino(c), { pasos: 2, espejos: 1, derivadas: 1, mal: 0, tono: "ok" });

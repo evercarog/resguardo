@@ -627,6 +627,7 @@ fn vuelta_ahora() {
         if let Ok(exe) = std::env::current_exe() {
             let _ = std::process::Command::new(exe)
                 .arg("--agent-run")
+                .env(resguardo_motor::proceso::VAR_TRABAJO_SERVICIO, "1")
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
@@ -856,6 +857,17 @@ pub(crate) fn comprobar(v: &mut Vinculo, o: &orden_v2::OrdenV2, tipo: &ordenes::
         }
         acierto(v, "admin");
     }
+    // 15q: quitar un repositorio **sin versiones** solo con la clave de administración (p. ej. uno
+    // creado solo para dar acceso a un almacén, cuyo kit nadie guardó). Al aplicarla, el equipo
+    // comprueba que de verdad está vacío ([`crate::gestion_v2::comprobar_vacio`]); si no, la rechaza.
+    if quitar_vacio(o) {
+        let r = o.cuerpo["repo"].as_str().unwrap_or("");
+        return if v.repos_v2.iter().any(|x| x.id == r && !r.is_empty()) {
+            Ok(Some(r.to_string()))
+        } else {
+            Err((rechazada("Ese repositorio ya no está en este equipo."), None))
+        };
+    }
     if !necesita_repo {
         return Ok(None);
     }
@@ -913,6 +925,11 @@ fn quien(v: &Vinculo, o: &orden_v2::OrdenV2, orden_id: &str) -> crate::restaurar
 
 fn r_de(c: &Value) -> &str {
     c["repo"].as_str().unwrap_or("")
+}
+
+/// 15q: `quitar_repositorio { repo, vacio: true }` sin la contraseña del repositorio.
+fn quitar_vacio(o: &orden_v2::OrdenV2) -> bool {
+    o.tipo == "quitar_repositorio" && o.cuerpo["vacio"] == true && o.autorizacion.clave_repo.is_none()
 }
 
 /// 13a/13b: restaurar en otra carpeta o en un .zip pide también la clave de
@@ -1226,6 +1243,12 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
             vuelta_ahora();
             Ok(hecha(m))
         }
+        // 15hh: parar o pausar lo que está en marcha (con la clave de administración, sin espera).
+        // Queda en el historial de todas las consolas (la orden y lo que se paró, con quién).
+        "parar" => {
+            let q = quien(v, o, orden_id);
+            crate::parar::orden(c, q.por.as_deref(), q.consola.as_deref()).map(hecha)
+        }
         "verificar_ahora" | "subir_ahora" | "probar_restauracion" => {
             let r = texto(c, "repo");
             repo_gestionado(v, &r)?;
@@ -1284,7 +1307,13 @@ fn ejecutar(v: &mut Vinculo, o: &orden_v2::OrdenV2, repo: Option<&str>, orden_id
         }
         "dejar_de_copiar" => g::dejar_de_copiar(v, repo.unwrap_or(""), false, false).map(hecha),
         // v1.56: con `quitar_destino: true`, también su destino si se queda sin uso.
-        "quitar_repositorio" => g::dejar_de_copiar(v, repo.unwrap_or(""), true, c["quitar_destino"] == true).map(hecha),
+        "quitar_repositorio" => {
+            // 15q: sin su contraseña, solo si de verdad no tiene versiones (se mira ahora).
+            if quitar_vacio(o) {
+                g::comprobar_vacio(v, repo.unwrap_or(""))?;
+            }
+            g::dejar_de_copiar(v, repo.unwrap_or(""), true, c["quitar_destino"] == true).map(hecha)
+        }
         "cambiar_espera" => {
             let h = c["horas"].as_i64().unwrap_or(0);
             if !(1..=168).contains(&h) {

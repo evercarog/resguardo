@@ -15,6 +15,7 @@
 //! resguardo-agente servidores
 //! resguardo-agente consolas [quitar <n.º | dirección | huella>]
 //! resguardo-agente ordenes [aprobar <n.º>]
+//! resguardo-agente parar [<n.º> [--hasta HH:MM | --en <horas> | --a-mano]]
 //! resguardo-agente config exportar|importar <archivo>
 //! resguardo-agente repositorio crear <id> --nombre … --tipo … --donde … [--usuario …]
 //! ```
@@ -37,6 +38,7 @@ pub const ORDENES: &[&str] = &[
     "servidores",
     "consolas",
     "ordenes",
+    "parar",
     "config",
     "repositorio",
     "ayuda",
@@ -63,13 +65,15 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
   version                                 La versión del agente
   actualizaciones                         La actualización automática: versión disponible, estado y motivo
   actualizaciones github si|no            Buscar también en las publicaciones de GitHub (por defecto, sí)
-  copias                                  Repositorios y copias que hace este equipo
+  copias                                  Todos los repositorios del equipo (también los vacíos), sus
+                                          copias y sus copias derivadas
   copiar-ahora <repo> <copia>             Lanza una copia ya
   versiones <repo>                        Versiones guardadas en un repositorio
   restaurar <repo> <versión> <ruta> --destino <carpeta>
                                           Restaura una carpeta o archivo de una versión (nunca sobrescribe)
   registro [n]                            Las últimas n líneas del registro (50 por defecto)
-  kit <repo>                              Datos para recuperar las copias (incluye la contraseña)
+  kit <repo> [<derivada>]                 Datos para recuperar las copias (incluye la contraseña) de un
+                                          repositorio o de una de sus copias derivadas
 
   Consolas y órdenes:
   vincular <código> --servidor <url> [--nombre <nombre>]
@@ -92,6 +96,11 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
   ordenes aprobar <n.º>                   La aplica ya, sin esperar a su hora: pide la clave de administración
                                           (sin que se vea al escribirla) y queda en el historial de todas
                                           las consolas, con un aviso en todas
+  parar                                   Lo que está en marcha ahora (copias, verificaciones, espejos…)
+  parar <n.º>                             Lo para ya: pide la clave de administración (sin que se vea)
+  parar <n.º> --hasta 22:00 | --en 2 | --a-mano
+                                          Pausa una copia: se para ya y sigue sola a esa hora (o dentro
+                                          de esas horas); con --a-mano, cuando se pida «Copiar ahora»
 
   Sin consola (modo local):
   config exportar <archivo>               La configuración del equipo, sin contraseñas (JSON)
@@ -288,12 +297,62 @@ fn vincular_y_contar(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// ¿Se enganchó a la consola de la terminal que lo lanzó? (El programa es de ventana: `cmd` y
+/// PowerShell no lo esperan y ya enseñan su aviso mientras escribe.)
+static ADJUNTADA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Las ventanas de Windows sin consola: la de la terminal desde la que se lanza.
 fn adjuntar_consola() {
     #[cfg(windows)]
     unsafe {
         use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
-        AttachConsole(ATTACH_PARENT_PROCESS);
+        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
+            ADJUNTADA.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// 15q: al terminar, que la terminal vuelva a enseñar su aviso **detrás** de lo escrito. `cmd`
+/// no espera a un programa de ventana: su aviso sale antes que la salida. Si se escribió en esa
+/// consola (sin redirigir), se le manda una pulsación de Intro, que pinta el aviso de nuevo
+/// debajo, y se suelta la consola. (La forma limpia sería un `resguardo-agente-cli.exe` de
+/// consola, que el instalador tendría que llevar: anotado.)
+fn soltar_consola() {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    #[cfg(windows)]
+    if ADJUNTADA.load(std::sync::atomic::Ordering::Relaxed) {
+        use windows_sys::Win32::System::Console::{
+            FreeConsole, GetConsoleMode, GetStdHandle, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0,
+            STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        };
+        // SAFETY: handles de la consola propia; estructuras locales.
+        unsafe {
+            let (entrada, salida) = (GetStdHandle(STD_INPUT_HANDLE), GetStdHandle(STD_OUTPUT_HANDLE));
+            let mut m = 0u32;
+            let en_consola = !salida.is_null() && GetConsoleMode(salida, &mut m) != 0 && !entrada.is_null() && GetConsoleMode(entrada, &mut m) != 0;
+            if en_consola {
+                const VK_RETURN: u16 = 0x0D;
+                let tecla = |abajo: bool| INPUT_RECORD {
+                    EventType: KEY_EVENT as u16,
+                    Event: INPUT_RECORD_0 {
+                        KeyEvent: KEY_EVENT_RECORD {
+                            bKeyDown: i32::from(abajo),
+                            wRepeatCount: 1,
+                            wVirtualKeyCode: VK_RETURN,
+                            wVirtualScanCode: 0x1C,
+                            uChar: KEY_EVENT_RECORD_0 { UnicodeChar: u16::from(b'\r') },
+                            dwControlKeyState: 0,
+                        },
+                    },
+                };
+                let teclas = [tecla(true), tecla(false)];
+                let mut escritas = 0u32;
+                WriteConsoleInputW(entrada, teclas.as_ptr(), 2, &mut escritas);
+            }
+            FreeConsole();
+        }
     }
 }
 
@@ -365,16 +424,158 @@ fn acceso(repo_id: &str) -> Result<(crate::agent::AgentRepo, crate::restic::Acce
     Ok((repo, access))
 }
 
+/// 15q: lo que hay en el equipo, para `copias`: **todos** los repositorios (también los vacíos,
+/// los de solo lectura y los que no tienen copias), las copias y las copias derivadas, por separado.
+#[derive(Debug, Default, PartialEq)]
+pub struct Listado {
+    pub repos: Vec<RepoListado>,
+    pub copias: Vec<CopiaListada>,
+    pub derivadas: Vec<DerivadaListada>,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct RepoListado {
+    pub id: String,
+    pub nombre: String,
+    /// El destino (su nombre) o la ubicación sin credenciales.
+    pub donde: String,
+    pub versiones: Option<u64>,
+    pub solo_lectura: bool,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct CopiaListada {
+    pub id: String,
+    pub nombre: String,
+    pub repo: String,
+    pub carpetas: usize,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct DerivadaListada {
+    pub repo: String,
+    /// Su id (`externa`: la de cada día de antes).
+    pub id: String,
+    pub destino: String,
+}
+
+/// Junta lo de la configuración del agente y lo de la consola (repositorios gestionados).
+fn listado() -> Listado {
+    let config = crate::agent::load_config();
+    let v = crate::servidor_v2::cargar();
+    let versiones = |id: &str| crate::informe_v2::resumen_repo(id)["versiones"].as_u64();
+    let mut l = Listado::default();
+    if let Some(v) = &v {
+        let destino =
+            |id: &str| v.destinos.iter().find(|d| d.id == id).map(|d| format!("«{}»", d.nombre)).unwrap_or_else(|| "un destino que ya no está".into());
+        for r in &v.repos_v2 {
+            l.repos.push(RepoListado {
+                id: r.id.clone(),
+                nombre: r.nombre.clone(),
+                donde: destino(&r.destino),
+                versiones: versiones(&r.id),
+                solo_lectura: r.solo_lectura,
+            });
+            if let Some(e) = &r.externa {
+                l.derivadas.push(DerivadaListada { repo: r.id.clone(), id: "externa".into(), destino: destino(e["destino"].as_str().unwrap_or("")) });
+            }
+            for d in &r.derivadas {
+                l.derivadas.push(DerivadaListada {
+                    repo: r.id.clone(),
+                    id: d["id"].as_str().unwrap_or("?").to_string(),
+                    destino: destino(d["destino"].as_str().unwrap_or("")),
+                });
+            }
+        }
+    }
+    for r in &config.repos {
+        if !l.repos.iter().any(|x| x.id == r.id) {
+            l.repos.push(RepoListado {
+                id: r.id.clone(),
+                nombre: r.name.clone(),
+                donde: crate::kit::public_location(&r.location),
+                versiones: versiones(&r.id),
+                solo_lectura: false,
+            });
+            for d in &r.derived {
+                let destino = d.offsite.target_name.clone().map(|n| format!("«{n}»")).unwrap_or_else(|| crate::kit::public_location(&d.offsite.location));
+                l.derivadas.push(DerivadaListada { repo: r.id.clone(), id: d.id.clone(), destino });
+            }
+        }
+        for p in &r.plans {
+            l.copias.push(CopiaListada { id: p.id.clone(), nombre: p.name.clone(), repo: r.id.clone(), carpetas: p.paths.len() });
+        }
+    }
+    l
+}
+
+/// El listado de `copias`, en palabras.
+pub fn texto_copias(l: &Listado) -> String {
+    let mut s = String::new();
+    let nombre_repo = |id: &str| l.repos.iter().find(|r| r.id == id).map(|r| format!("«{}» ({id})", r.nombre)).unwrap_or_else(|| id.to_string());
+    if l.repos.is_empty() {
+        s.push_str("Este equipo aún no tiene ningún repositorio.\n");
+        return s;
+    }
+    s.push_str(&format!("Repositorios ({}):\n", l.repos.len()));
+    for r in &l.repos {
+        let versiones = match r.versiones {
+            Some(0) => " · sin versiones".to_string(),
+            Some(1) => " · 1 versión".to_string(),
+            Some(n) => format!(" · {n} versiones"),
+            None => String::new(),
+        };
+        let lectura = if r.solo_lectura { " · solo lectura (importado de otro equipo)" } else { "" };
+        s.push_str(&format!("  {} · id del repositorio: {} · en {}{versiones}{lectura}\n", r.nombre, r.id, r.donde));
+    }
+    s.push_str(&format!("\nCopias ({}):\n", l.copias.len()));
+    if l.copias.is_empty() {
+        s.push_str("  Ninguna.\n");
+    }
+    for k in &l.copias {
+        let carpetas = if k.carpetas == 1 { "1 carpeta".to_string() } else { format!("{} carpetas", k.carpetas) };
+        s.push_str(&format!("  {} · id de la copia: {} · guarda en {} · {carpetas}\n", k.nombre, k.id, nombre_repo(&k.repo)));
+    }
+    if !l.derivadas.is_empty() {
+        s.push_str(&format!("\nCopias derivadas ({}):\n", l.derivadas.len()));
+        for d in &l.derivadas {
+            let de_cada_dia = if d.id == "externa" { " (la de cada día)" } else { "" };
+            s.push_str(&format!("  de {} · id de la derivada: {}{de_cada_dia} · a {}\n", nombre_repo(&d.repo), d.id, d.destino));
+        }
+    }
+    s.push_str("\nKit de recuperación (como administrador): resguardo-agente kit <id del repositorio> [<id de la derivada>]\n");
+    s
+}
+
+/// 15q: el acceso para el kit de cualquier repositorio del equipo (con copias o sin ellas,
+/// gestionado por una consola o no) o de una de sus copias derivadas.
+fn acceso_kit(repo_id: &str, derivada: Option<&str>) -> Result<(String, crate::restic::Access), String> {
+    if let Some(d) = derivada {
+        let (acc, destino) = crate::tasks::acceso_copia(repo_id, d).map_err(|e| format!("{e} (mira «resguardo-agente copias»)."))?;
+        let destino = destino.map(|n| format!(" a «{n}»")).unwrap_or_default();
+        return Ok((format!("copia derivada «{d}»{destino} de {repo_id}"), acc));
+    }
+    if crate::agent::load_config().repos.iter().any(|r| r.id == repo_id) {
+        let (repo, acc) = acceso(repo_id)?;
+        return Ok((format!("{} ({})", repo.name, repo.id), acc));
+    }
+    let v = crate::servidor_v2::cargar().ok_or_else(|| format!("No hay ningún repositorio «{repo_id}» en este equipo (mira «copias»)."))?;
+    let r = v.repos_v2.iter().find(|r| r.id == repo_id).ok_or_else(|| format!("No hay ningún repositorio «{repo_id}» en este equipo (mira «copias»)."))?;
+    Ok((format!("{} ({})", r.nombre, r.id), crate::gestion_v2::acceso(&v, repo_id)?))
+}
+
 /// Ejecuta una orden de la línea de órdenes. `args[0]` es la orden.
 pub fn ejecutar(args: &[String]) -> i32 {
     adjuntar_consola();
-    match orden(args) {
+    let r = match orden(args) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("Error: {e}");
             1
         }
-    }
+    };
+    soltar_consola();
+    r
 }
 
 fn orden(args: &[String]) -> Result<(), String> {
@@ -393,12 +594,7 @@ fn orden(args: &[String]) -> Result<(), String> {
         }
         "actualizaciones" => actualizaciones(args),
         "copias" => {
-            for r in crate::agent::load_config().repos {
-                println!("{} ({}) · {}", r.name, r.id, r.location);
-                for p in &r.plans {
-                    println!("  {} ({}) · {} carpeta(s)", p.name, p.id, p.paths.len());
-                }
-            }
+            print!("{}", texto_copias(&listado()));
             Ok(())
         }
         "copiar-ahora" => {
@@ -444,9 +640,12 @@ fn orden(args: &[String]) -> Result<(), String> {
         }
         "kit" => {
             crate::agent::require_admin()?;
-            let (repo, access) = acceso(arg(args, 1)?)?;
-            println!("Repositorio: {} ({})", repo.name, repo.id);
-            println!("Ubicación:   {}", access.location);
+            let (nombre, access) = acceso_kit(arg(args, 1)?, args.get(2).map(String::as_str))?;
+            println!("Repositorio: {nombre}");
+            println!("Ubicación:   {}", crate::kit::public_location(&access.location));
+            if let Some((usuario, _)) = &access.rest_auth {
+                println!("Usuario del servidor: {usuario} (su contraseña está en el equipo; si la necesitas, pídela en la consola)");
+            }
             println!("Contraseña:  {}", access.password);
             // Decisión (G4): el kit es para recuperar sin Resguardo, así que aquí sí se nombra
             // el programa, una vez («el programa de copias (restic)»).
@@ -542,6 +741,7 @@ fn orden(args: &[String]) -> Result<(), String> {
             }
         }
         "ordenes" => ordenes(args),
+        "parar" => parar(args, chrono::Local::now()),
         "config" => {
             crate::agent::require_admin()?;
             let archivo = arg(args, 2)?;
@@ -643,6 +843,96 @@ fn ordenes(args: &[String]) -> Result<(), String> {
     }
 }
 
+/// 15hh: `parar` (lo que está en marcha, numerado) y `parar <n.º> [--hasta | --en | --a-mano]`.
+fn parar(args: &[String], ahora: chrono::DateTime<chrono::Local>) -> Result<(), String> {
+    crate::agent::require_admin()?;
+    let lista: Vec<serde_json::Value> =
+        crate::progreso_v2::tareas(crate::servidor_v2::cargar().as_ref()).into_iter().filter(|t| t["parar"].is_string() && t["fase"] != "en_cola").collect();
+    let Some(n) = args.get(1) else {
+        if lista.is_empty() {
+            println!("No hay nada en marcha en este equipo.");
+        }
+        for (i, t) in lista.iter().enumerate() {
+            println!("{}", texto_en_marcha(i + 1, t));
+        }
+        if !lista.is_empty() {
+            println!("\nPara pararlo: resguardo-agente parar <n.º> (pide la clave de administración).");
+        }
+        return Ok(());
+    };
+    let n: usize = n.parse().map_err(|_| "Di el número (el de «resguardo-agente parar»).")?;
+    let t = n.checked_sub(1).and_then(|i| lista.get(i)).ok_or(format!("No hay nada en marcha con el número {n}."))?;
+    let pausa = pausa_de(args, ahora)?;
+    if pausa.is_some() && t["pausable"] != true {
+        return Err("Esto se puede parar, pero no pausar (solo las copias).".into());
+    }
+    println!("{}", texto_en_marcha(n, t));
+    println!(
+        "{}",
+        match &pausa {
+            Some(p) if p["a_mano"] == true => "Se parará ya y seguirá cuando se pida «Copiar ahora».".to_string(),
+            Some(p) => format!("Se parará ya y seguirá sola {}.", cuando_rfc3339(p["hasta"].as_str().unwrap_or(""), ahora)),
+            None => "Se parará ya (lo copiado hasta ahora se aprovecha la próxima vez).".to_string(),
+        }
+    );
+    let hola = crate::ipc_local::pedir(&serde_json::json!({ "op": "hola" }))?;
+    let sal = hola["sal_equipo"].as_str().ok_or("Este equipo aún no tiene clave de administración.")?.to_string();
+    let clave = leer_clave("Clave de administración (Intro para no pararlo): ")?;
+    if clave.is_empty() {
+        println!("No se paró: sigue en marcha.");
+        return Ok(());
+    }
+    let prueba = crate::ipc_local::prueba(&clave, &sal)?;
+    drop(clave);
+    let sudo = std::env::var("SUDO_USER").ok().filter(|_| cfg!(unix));
+    let r = crate::ipc_local::pedir(&serde_json::json!({
+        "op": "parar", "reto": hola["reto"], "prueba": prueba, "sudo_usuario": sudo,
+        "parar": { "clave": t["parar"], "pausa": pausa },
+    }))?;
+    println!("{}", r["mensaje"].as_str().unwrap_or("Parando."));
+    Ok(())
+}
+
+/// `--hasta HH:MM` (hoy o, si ya pasó, mañana), `--en <horas>` o `--a-mano`: la pausa (o nada).
+fn pausa_de(args: &[String], ahora: chrono::DateTime<chrono::Local>) -> Result<Option<serde_json::Value>, String> {
+    if args.iter().any(|a| a == "--a-mano") {
+        return Ok(Some(serde_json::json!({ "a_mano": true })));
+    }
+    if let Some(h) = opcion(args, "--hasta") {
+        let t = chrono::NaiveTime::parse_from_str(&h, "%H:%M").map_err(|_| "--hasta va en HH:MM (p. ej. 22:00).")?;
+        let hoy = ahora.date_naive().and_time(t).and_local_timezone(chrono::Local).earliest().ok_or("Esa hora no existe hoy.")?;
+        let hasta = if hoy > ahora { hoy } else { hoy + chrono::Duration::days(1) };
+        return Ok(Some(serde_json::json!({ "hasta": hasta.to_rfc3339() })));
+    }
+    if let Some(h) = opcion(args, "--en") {
+        let horas: f64 = h.replace(',', ".").parse().map_err(|_| "--en va en horas (p. ej. 2).")?;
+        if !(0.05..=168.0).contains(&horas) {
+            return Err("--en va de unos minutos a 168 horas.".into());
+        }
+        let hasta = ahora + chrono::Duration::minutes((horas * 60.0).round() as i64);
+        return Ok(Some(serde_json::json!({ "hasta": hasta.to_rfc3339() })));
+    }
+    Ok(None)
+}
+
+/// Algo en marcha, para la terminal: «1. Copia «Documentos» · subiendo 45 %».
+pub fn texto_en_marcha(n: usize, t: &serde_json::Value) -> String {
+    let tipo = match t["tipo"].as_str().unwrap_or("") {
+        "copia" => "Copia",
+        "verificar" => "Verificación",
+        "verificar_externa" => "Verificación de una copia derivada",
+        "prueba_restauracion" => "Prueba de restauración",
+        "copia_externa" => "Copia derivada",
+        "espejo" => "Espejo",
+        "restauracion" => "Restauración",
+        otro => otro,
+    };
+    let nombre = t["nombre"].as_str().or(t["repo"].as_str()).map(|x| format!(" «{x}»")).unwrap_or_default();
+    let pct = t["porcentaje"].as_f64().map(|p| format!(" · {} %", (p * 100.0).round())).unwrap_or_default();
+    let pausa = if t["pausable"] == true { " (se puede pausar)" } else { "" };
+    format!("{n}. {tipo}{nombre}{pct}{pausa}")
+}
+
 /// Una orden en espera, para la terminal.
 pub fn texto_orden(o: &serde_json::Value, ahora: chrono::DateTime<chrono::Local>) -> String {
     let t = |k: &str| o[k].as_str().unwrap_or("").to_string();
@@ -665,6 +955,15 @@ pub fn texto_orden(o: &serde_json::Value, ahora: chrono::DateTime<chrono::Local>
 /// terminal, p. ej. redirigida, la lee tal cual). Nunca va en los argumentos.
 fn leer_clave(pregunta: &str) -> Result<String, String> {
     use std::io::Write;
+    // 15q: en Windows, desde `cmd` o PowerShell la terminal no espera a este programa (es de
+    // ventana) y lee el teclado a la vez: la clave podría acabar escrita como una orden de la
+    // terminal (y en su historial). Se pide en una ventana de consola propia.
+    #[cfg(windows)]
+    if ADJUNTADA.load(std::sync::atomic::Ordering::Relaxed) && entrada_es_consola() {
+        eprintln!("Se abre una ventana para escribir la clave (así la terminal no la ve).");
+        let _ = std::io::stderr().flush();
+        return leer_clave_en_ventana(pregunta);
+    }
     eprint!("{pregunta}");
     let _ = std::io::stderr().flush();
     let _eco = SinEco::poner();
@@ -675,6 +974,77 @@ fn leer_clave(pregunta: &str) -> Result<String, String> {
     }
     r.map_err(|e| e.to_string())?;
     Ok(s.trim_end_matches(['\r', '\n']).to_string())
+}
+
+/// ¿La entrada estándar es una consola (no redirigida)?
+#[cfg(windows)]
+fn entrada_es_consola() -> bool {
+    use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE};
+    let mut m = 0u32;
+    // SAFETY: el handle de la entrada estándar; si no es una consola, falla y ya.
+    unsafe {
+        let h = GetStdHandle(STD_INPUT_HANDLE);
+        !h.is_null() && GetConsoleMode(h, &mut m) != 0
+    }
+}
+
+/// 15q: pide la clave en una consola propia (sin eco) y vuelve a la de la terminal.
+#[cfg(windows)]
+fn leer_clave_en_ventana(pregunta: &str) -> Result<String, String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
+    use windows_sys::Win32::System::Console::{
+        AllocConsole, AttachConsole, FreeConsole, GetConsoleMode, ReadConsoleW, SetConsoleMode, SetConsoleTitleW, WriteConsoleW, ATTACH_PARENT_PROCESS,
+        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
+    };
+    let ancho = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    // SAFETY: llamadas a la consola con cadenas terminadas en 0 y búferes propios; los handles
+    // abiertos aquí se cierran aquí. Al final se vuelve a la consola de la terminal.
+    unsafe {
+        FreeConsole();
+        if AllocConsole() == 0 {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+            return Err("No se pudo abrir la ventana para escribir la clave.".into());
+        }
+        SetConsoleTitleW(ancho("Resguardo Agente: clave de administración").as_ptr());
+        let abrir = |n: &str| {
+            CreateFileW(
+                ancho(n).as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                std::ptr::null_mut(),
+            )
+        };
+        let (entrada, salida) = (abrir("CONIN$"), abrir("CONOUT$"));
+        let mut r = Err("No se pudo leer la clave.".to_string());
+        if entrada != INVALID_HANDLE_VALUE && salida != INVALID_HANDLE_VALUE {
+            let texto: Vec<u16> = pregunta.encode_utf16().collect();
+            let mut n = 0u32;
+            WriteConsoleW(salida, texto.as_ptr().cast(), texto.len() as u32, &mut n, std::ptr::null());
+            let mut modo = 0u32;
+            GetConsoleMode(entrada, &mut modo);
+            SetConsoleMode(entrada, (modo | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT) & !ENABLE_ECHO_INPUT);
+            let mut buf = [0u16; 512];
+            let mut leidos = 0u32;
+            if ReadConsoleW(entrada, buf.as_mut_ptr().cast(), buf.len() as u32, &mut leidos, std::ptr::null()) != 0 {
+                let s = String::from_utf16_lossy(&buf[..(leidos as usize).min(buf.len())]);
+                r = Ok(s.trim_end_matches(['\r', '\n']).to_string());
+            }
+            // El búfer tenía la clave: fuera.
+            buf.iter_mut().for_each(|c| *c = 0);
+        }
+        for h in [entrada, salida] {
+            if h != INVALID_HANDLE_VALUE {
+                CloseHandle(h);
+            }
+        }
+        FreeConsole();
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        r
+    }
 }
 
 /// Quita el eco de la terminal mientras vive (y lo devuelve como estaba al soltarlo).
@@ -780,6 +1150,7 @@ fn resultado(r: &str) -> &str {
         "warning" => "con avisos",
         "error" => "falló",
         "info" => "aviso",
+        "stopped" => "parada",
         otro => otro,
     }
 }
@@ -1086,6 +1457,49 @@ mod tests {
 
     fn at(s: &str) -> chrono::DateTime<Local> {
         Local.from_local_datetime(&chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()).unwrap()
+    }
+
+    /// 15q: `copias` enseña todos los repositorios (vacíos, de solo lectura, sin copias),
+    /// las copias y las derivadas por separado, y cómo sacar el kit.
+    #[test]
+    fn copias_con_todos_los_repositorios() {
+        let l = Listado {
+            repos: vec![
+                RepoListado { id: "r1".into(), nombre: "Documentos".into(), donde: "«Almacén»".into(), versiones: Some(12), solo_lectura: false },
+                RepoListado { id: "r2".into(), nombre: "Acceso".into(), donde: "«Almacén»".into(), versiones: Some(0), solo_lectura: false },
+                RepoListado { id: "r3".into(), nombre: "Fotos".into(), donde: "«Disco E»".into(), versiones: None, solo_lectura: true },
+            ],
+            copias: vec![CopiaListada { id: "k1".into(), nombre: "Diaria".into(), repo: "r1".into(), carpetas: 3 }],
+            derivadas: vec![DerivadaListada { repo: "r1".into(), id: "d1".into(), destino: "«Nube»".into() }],
+        };
+        let t = texto_copias(&l);
+        assert!(t.starts_with("Repositorios (3):"), "{t}");
+        assert!(t.contains("Acceso · id del repositorio: r2 · en «Almacén» · sin versiones"), "{t}");
+        assert!(t.contains("solo lectura"), "{t}");
+        assert!(t.contains("Diaria · id de la copia: k1 · guarda en «Documentos» (r1) · 3 carpetas"), "{t}");
+        assert!(t.contains("de «Documentos» (r1) · id de la derivada: d1 · a «Nube»"), "{t}");
+        assert!(t.contains("resguardo-agente kit <id del repositorio>"), "{t}");
+        assert_eq!(texto_copias(&Listado::default()), "Este equipo aún no tiene ningún repositorio.\n");
+    }
+
+    /// 15hh: `parar <n.º> --hasta | --en | --a-mano`.
+    #[test]
+    fn pausa_de_la_terminal() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let ahora = at("2026-10-20 18:00");
+        assert_eq!(pausa_de(&a(&["parar", "1"]), ahora).unwrap(), None);
+        assert_eq!(pausa_de(&a(&["parar", "1", "--a-mano"]), ahora).unwrap().unwrap()["a_mano"], true);
+        let h = pausa_de(&a(&["parar", "1", "--hasta", "22:00"]), ahora).unwrap().unwrap();
+        assert_eq!(h["hasta"], at("2026-10-20 22:00").to_rfc3339());
+        // Si ya pasó hoy, mañana.
+        let m = pausa_de(&a(&["parar", "1", "--hasta", "08:00"]), ahora).unwrap().unwrap();
+        assert_eq!(m["hasta"], at("2026-10-21 08:00").to_rfc3339());
+        let e = pausa_de(&a(&["parar", "1", "--en", "2"]), ahora).unwrap().unwrap();
+        assert_eq!(e["hasta"], at("2026-10-20 20:00").to_rfc3339());
+        assert!(pausa_de(&a(&["parar", "1", "--hasta", "25:00"]), ahora).is_err());
+        assert!(pausa_de(&a(&["parar", "1", "--en", "999"]), ahora).is_err());
+        let t = serde_json::json!({ "tipo": "copia", "nombre": "Diaria", "porcentaje": 0.45, "pausable": true });
+        assert_eq!(texto_en_marcha(1, &t), "1. Copia «Diaria» · 45 % (se puede pausar)");
     }
 
     /// 14a: `ordenes`, una por bloque, con cómo aprobarla (o por qué no se puede).

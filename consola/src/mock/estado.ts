@@ -445,13 +445,15 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       resumen: {
         servidores_respaldo: [{ url: "https://respaldo.ejemplo.co", identidad_corta: "7Q2kLm9x" }],
-        datos_basicos: basicos(win("Windows 11 Pro", "Professional", "24H2", "26100.2033"), "Intel(R) Core(TM) i5-12400", 12, 16, "Dell Inc.", "OptiPlex 7000", 60 * 26, [disco("C:", 512, 301, "NTFS", true)]),
+        // 15ll (2): su tarjeta de red la puede apagar Windows para ahorrar energía.
+        datos_basicos: { ...basicos(win("Windows 11 Pro", "Professional", "24H2", "26100.2033"), "Intel(R) Core(TM) i5-12400", 12, 16, "Dell Inc.", "OptiPlex 7000", 60 * 26, [disco("C:", 512, 301, "NTFS", true)]), red_ahorro: ["Intel(R) Ethernet Connection I219-V"] },
         respaldo_dias: 3,
         // Con su usuario en el almacén (así el almacén puede hacer pasos «espejo» de su repositorio).
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
+        // 15hh, 15ll: se puede parar y pausar su copia larga, y no se suspende mientras copia.
         // 0.8.1 (B2): guarda sus etiquetas para todas sus consolas (renombrar en «Organización» le manda la orden).
-        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo", "tipo_equipo"],
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo", "tipo_equipo", "parar", "sin_suspension"],
         // 0.8.1 (C3): una máquina virtual de Hyper-V (lo detecta el agente).
         entorno: { virtual: "hyperv" },
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
@@ -559,7 +561,7 @@ export async function sembrar(vacio = false) {
         ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
-          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a"] }, { usuario: "caja-1", repos: ["historico"] }],
+          espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a", "caja-d2"] }, { usuario: "caja-1", repos: ["historico"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
           // Plan 0.8.1 (B6, 15k): la copia derivada de «Caja» llega a esta zona (`<usuario>/caja-d2`).
           zonas: [{ id: "z3c4d5e", nombre: "Disco F", carpeta: "F:\\Resguardo", puerto: 8002, usuarios: 1, escucha: true, sistema_archivos: "ReFS", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja-d2"] }] }],
@@ -599,7 +601,9 @@ export async function sembrar(vacio = false) {
                 ultima: hace(60 * 3), resultado: "Espejo «Caja a Disco F» hecho en zona z3c4d5e (después de una copia nueva): 12 archivos nuevos (4 MB), 3.120 ya estaban.", espacio: { libre: 1_800_000_000_000, total: 2_000_000_000_000, leido: hace(2) },
                 bien: hace(60 * 3), nunca_bien: false,
                 subidas: subidasEspejo(12, 60 * 3, 60 * 8, { bytes: 60_000_000, ocupa: 41_200_000_000, motivo: "tras_copia", borrar: [2, 9] }),
-                ocupa: { bytes: 41_200_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": 41_200_000_000 }, cuando: hace(60 * 3) } },
+                ocupa: { bytes: 41_200_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": 41_200_000_000 }, cuando: hace(60 * 3) },
+                // 15m: «Ventas» estuvo en este espejo hasta hace 12 días: su copia allí ya no se actualiza.
+                ultima_por_repo: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": hace(60 * 3), "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a": hace(60 * 24 * 12) } },
               { id: "t3d4e5f6071", nombre: "Todo a B2 (bloqueo 30 días)", activo: false, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "nube", nube: "B2 Café del Sur", carpeta: "cafe-espejo/sur" },
                 cuando: { despues: "t0a1b2c3d4e", retraso_min: 60 }, retencion: { modo: "retraso", dias: 45 }, bloqueo_dias: 30, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, orden: 3, nunca_bien: true },
               // Plan 0.8.1 (B6, 15k): la zona «Disco F» a B2, con la copia derivada de «Caja» (se ve con su nombre, no como ruta).
@@ -643,7 +647,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -667,8 +671,8 @@ export async function sembrar(vacio = false) {
             // Tarea 4b: una copia derivada a la Dropbox conectada en el propio equipo, después de cada copia, solo las diarias.
             derivadas: [
               { id: "d1", destino: "Dropbox Caja", destino_id: "nube-dropbox-caja", cuando: { tras_copia: true }, filtro: { etiquetas: ["diaria"], ultimos_dias: 90 }, activa: true, con_retencion: true },
-              // Plan 0.8.1 (B6, 15k): otra a la zona «Disco F» del almacén, cada noche: allí se ve con su nombre.
-              { id: "d2", destino: "Almacén Sur · Disco F", destino_id: "almacen-sur-z3c4d5e", cuando: { hora: "23:00" }, activa: true, con_retencion: false },
+              // 15g: otra al almacén (de solo añadir), todavía sin retención allí: crece sin límite.
+              { id: "d2", destino: "Almacén Sur", destino_id: "almacen-sur", cuando: { hora: "23:00" }, activa: true, ruta: "caja-d2" },
             ] },
           // También en el almacén, todavía sin retención (v1.22: «Retención en el almacén…»).
           { ...repo("ventas", "Ventas", "almacen-sur", 52, 9_800_000_000), solo_anadir: true, ruta: "almacen-sur-7c2a" },

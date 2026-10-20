@@ -18,13 +18,13 @@ Solo fallos, para desplegar muchos equipos sin rodeos. Con su prueba cada uno. V
 
 ### Bloque A — Que nada falle en silencio
 
-- [ ] **A1.** Un repositorio que sale de un espejo avisa, y lo que queda en el destino sin actualizar se ve (15m).
-- [ ] **A2.** La página del repositorio conoce sus derivadas, y cada derivada tiene su página con «Retención en el almacén…» (15g).
+- [x] (rama `ia/081-a`; el punto 5 de 15m, el mapa, lo lleva otra línea) **A1.** Un repositorio que sale de un espejo avisa, y lo que queda en el destino sin actualizar se ve (15m).
+- [x] (rama `ia/081-a`; sin probar contra un almacén real) **A2.** La página del repositorio conoce sus derivadas, y cada derivada tiene su página con «Retención en el almacén…» (15g).
 - [x] (rama `ia/081-mensajes`; sin probar contra un SQL Server real) **A3.** Volcados de SQL: el permiso que falta, dicho claro y como aviso, no como fallo (15f); «todas las bases» y aviso de bases nuevas (15u).
 - [x] (rama `ia/081-mensajes`) **A4.** Los errores de las copias en palabras, con qué hacer, y el detalle técnico plegado (15oo); el historial corta las líneas largas (15j).
-- [ ] **A5.** Parar y pausar una copia en marcha, con la clave de administración; restic muere con el servicio (15hh).
-- [ ] **A6.** Que el equipo no se suspenda mientras copia (15ll).
-- [ ] **A7.** Quitar un repositorio vacío solo con la clave; `kit` y `copias` ven todos los repositorios del equipo (15q). Lo que queda de 14nn.
+- [x] (rama `ia/081-a`: parar y pausar —consola, ventana y `resguardo-agente parar`—, el trabajo de Windows, los procesos sueltos y la velocidad según la hora en las copias. Comprobado con restic 0.19: guarda su índice cada ~10 min, así que de una subida cortada se pierden como mucho esos minutos; no hace falta más. **Sin hacer:** parar una restauración en un .zip; sin probar en Linux ni con el servicio instalado) **A5.** Parar y pausar una copia en marcha, con la clave de administración; restic muere con el servicio (15hh).
+- [~] (rama `ia/081-a`: hecho en Windows y Linux, la opción por copia y el aviso de la tarjeta de red en Windows. **Falta:** el Wi‑Fi en ahorro máximo y la tarjeta de red en Linux, que el agente no lee sin privilegios raros; sin probar en un portátil de verdad) **A6.** Que el equipo no se suspenda mientras copia (15ll).
+- [x] (rama `ia/081-a`; la salida en `cmd` se arregla con una pulsación de Intro al terminar y la clave se pide en una ventana propia: la forma limpia, un `resguardo-agente-cli.exe` de consola, toca el instalador) **A7.** Quitar un repositorio vacío solo con la clave; `kit` y `copias` ven todos los repositorios del equipo (15q). Lo que queda de 14nn.
 
 ### Bloque B — Menos pantallas, más orden
 

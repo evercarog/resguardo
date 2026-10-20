@@ -99,6 +99,9 @@ fn base_command() -> Command {
     if discreet() {
         crate::proceso::lower(&mut cmd);
     }
+    // 15hh: en Linux, restic (y el rclone que lance) en su propio grupo de procesos, para
+    // poder pararlos juntos (`kill_tree`). Con el servicio de systemd mueren con él (su cgroup).
+    crate::proceso::grupo_propio(&mut cmd);
     cmd
 }
 
@@ -108,6 +111,12 @@ fn base_command() -> Command {
 /// arranca el ejecutable real como proceso hijo. Terminar solo el lanzador
 /// dejaría el restic real funcionando (y a la app esperando su salida).
 pub fn kill_tree(child: &mut Child) {
+    // 15hh: en Linux, todo su grupo de procesos (restic y el rclone que lanzó). Primero se le
+    // pide que termine (restic quita su bloqueo del repositorio) y, si no, a la fuerza.
+    #[cfg(unix)]
+    {
+        crate::proceso::terminar_grupo(child);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -469,6 +478,34 @@ fn take_line(line: String, out: &mut Vec<u8>, on_line: &mut Option<&mut dyn FnMu
 thread_local! {
     /// El restic que está lanzando este hilo (para medir su lectura y escritura).
     static PID_EN_MARCHA: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+    /// 15hh: «Parar» de lo que hace este hilo (ver [`con_cancelacion`]).
+    static CANCELAR_HILO: std::cell::RefCell<Option<std::sync::Arc<AtomicBool>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 15hh: todo restic que se lance en este hilo mientras dura `f` se para (como con
+/// `cancel`) en cuanto `flag` se ponga a `true`, aunque quien lo lanza no pase ningún
+/// `cancel` (las vueltas largas de las tareas, de las copias derivadas…).
+pub fn con_cancelacion<T>(flag: &std::sync::Arc<AtomicBool>, f: impl FnOnce() -> T) -> T {
+    let antes = CANCELAR_HILO.with(|c| c.replace(Some(flag.clone())));
+    let r = f();
+    CANCELAR_HILO.with(|c| *c.borrow_mut() = antes);
+    r
+}
+
+/// Como [`con_cancelacion`] sin cierre: pone la marca de «Parar» de este hilo y devuelve la
+/// que había (para volver a ponerla al terminar).
+pub fn poner_cancelacion_hilo(flag: Option<std::sync::Arc<AtomicBool>>) -> Option<std::sync::Arc<AtomicBool>> {
+    CANCELAR_HILO.with(|c| c.replace(flag))
+}
+
+/// ¿Se pidió parar lo que hace este hilo ([`con_cancelacion`])?
+pub fn cancelado_en_hilo() -> bool {
+    CANCELAR_HILO.with(|c| c.borrow().as_ref().is_some_and(|f| f.load(Ordering::Relaxed)))
+}
+
+/// La marca de «Parar» de este hilo, si hay (para pasarla a otro hilo que lance restic).
+pub fn cancelacion_del_hilo() -> Option<std::sync::Arc<AtomicBool>> {
+    CANCELAR_HILO.with(|c| c.borrow().clone())
 }
 
 /// El proceso de restic que corre ahora en este hilo, si hay uno (dentro de
@@ -523,7 +560,7 @@ fn run_child(child: &mut Child, timeout: Duration, cancel: Option<&AtomicBool>, 
             Ok(None) => {}
             Err(e) => break Err(format!("No se pudo esperar al motor de copias: {e}")),
         }
-        if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+        if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) || cancelado_en_hilo() {
             break Err(CANCELLED.to_string());
         }
         if started.elapsed() >= timeout {
@@ -918,6 +955,25 @@ pub mod tests {
         let err = run_with(&access, &["cat", "config", "--no-lock"], Duration::from_secs(3), None).unwrap_err();
         assert!(t.elapsed() < Duration::from_secs(10), "tardó {:?}", t.elapsed());
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn se_puede_cancelar_desde_el_hilo() {
+        if sin_restic() {
+            return;
+        }
+        let access = Access::new("rest:http://10.255.255.1:9/", "x");
+        let flag = std::sync::Arc::new(AtomicBool::new(false));
+        let f2 = flag.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            f2.store(true, Ordering::Relaxed);
+        });
+        let t = Instant::now();
+        let err = con_cancelacion(&flag, || run_with(&access, &["cat", "config", "--no-lock"], Duration::from_secs(60), None)).unwrap_err();
+        assert_eq!(err, CANCELLED);
+        assert!(t.elapsed() < Duration::from_secs(20), "tardó {:?}", t.elapsed());
+        assert!(!cancelado_en_hilo(), "fuera de `con_cancelacion` ya no cuenta");
     }
 
     #[test]

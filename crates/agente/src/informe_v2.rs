@@ -86,6 +86,8 @@ fn resultado(r: &str) -> &'static str {
     match r {
         "ok" => "ok",
         "warning" => "aviso",
+        // 15hh: parada o pausada a petición (con la clave): ni bien ni fallo.
+        "stopped" => "parada",
         _ => "fallo",
     }
 }
@@ -372,11 +374,18 @@ pub fn ejecuciones(historial: &[crate::history::Entry], repo: &str, ahora: DateT
 
 fn tarea(t: &crate::tasks::TasksState, kind: &str, repo: &str) -> Value {
     match t.runs.get(&crate::tasks::key(kind, repo)) {
-        Some(r) => con_ausencia(
-            con_detalle(json!({ "ultima": r.finished, "resultado": resultado(&r.result), "mensaje_corto": corto(&r.message) }), r.detail.as_deref()),
-            t,
-            &crate::tasks::key(kind, repo),
-        ),
+        Some(r) => {
+            let mut x = con_ausencia(
+                con_detalle(json!({ "ultima": r.finished, "resultado": resultado(&r.result), "mensaje_corto": corto(&r.message) }), r.detail.as_deref()),
+                t,
+                &crate::tasks::key(kind, repo),
+            );
+            // 15g (copia derivada de cada día): las versiones de su repositorio tras la vuelta.
+            if let Some(n) = r.versiones_destino {
+                x["versiones"] = json!(n);
+            }
+            x
+        }
         None => Value::Null,
     }
 }
@@ -469,6 +478,13 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                         ),
                         None => json!({}),
                     };
+                    // 15g: las versiones de su repositorio y la última que salió bien (campos opcionales).
+                    if let Some(n) = t.runs.get(&clave).and_then(|r| r.versiones_destino) {
+                        x["versiones"] = json!(n);
+                    }
+                    if let Some(run) = t.runs.get(&clave).filter(|r| r.result == "ok" || r.result == "warning") {
+                        x["ultima_bien"] = json!(run.finished);
+                    }
                     x["id"] = json!(id);
                     x["destino"] = json!(destino);
                     if let Some(run) = t.runs.get(&crate::tasks::derived_key(crate::tasks::VERIFY_DERIVADA, &r.id, id)) {

@@ -165,6 +165,11 @@ pub struct EstadoTrabajo {
     /// 14i/14h: lo que ocupa en el destino (tras la última vuelta que lo pudo contar).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ocupa: Option<Ocupa>,
+    /// 15m: cuándo se subió bien por última vez cada repositorio (en el almacén
+    /// `<usuario>/<repo>`; en el equipo, su id). Se queda aunque salga de la selección: así la
+    /// consola sabe que su copia en el destino ya no se actualiza y desde cuándo.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub ultima_por_repo: std::collections::BTreeMap<String, String>,
 }
 
 /// 14i: como mucho, tantas vueltas en el registro de cada trabajo.
@@ -359,7 +364,7 @@ impl Trabajo {
     }
 
     pub fn ok(&self) -> bool {
-        self.estado.resultado.as_deref().is_some_and(|r| !r.starts_with("ERROR"))
+        self.estado.resultado.as_deref().is_some_and(|r| !r.starts_with("ERROR") && !r.starts_with(crate::parar::PREFIJO_PARADA))
     }
 
     /// 14c: ¿nunca ha terminado bien una vuelta? (Quitarlo o cambiarlo no reduce la
@@ -1148,9 +1153,22 @@ pub struct Vuelta<'a> {
 pub fn anotar_vuelta(t: &mut Trabajo, texto: &str, v: &Vuelta, resumenes: &[crate::espejo_motor::Resumen]) {
     anotar_resultado(t, texto, v.fin, resumenes);
     let error = texto.starts_with("ERROR");
-    if !error {
+    // 15hh: parada a petición: ni bien ni fallida.
+    let parada = texto.starts_with(crate::parar::PREFIJO_PARADA);
+    if !error && !parada {
         t.estado.bien = Some(v.fin.to_string());
         t.estado.registro = true;
+        // 15m: los repositorios de esta vuelta, con su fecha (los que ya no están se quedan con la suya).
+        for repo in v.ocupa.keys() {
+            t.estado.ultima_por_repo.insert(repo.clone(), v.fin.to_string());
+        }
+        // Como mucho los MAX_OCUPA_REPOS más recientes.
+        if t.estado.ultima_por_repo.len() > MAX_OCUPA_REPOS {
+            let mut l: Vec<(String, String)> = std::mem::take(&mut t.estado.ultima_por_repo).into_iter().collect();
+            l.sort_by(|a, b| b.1.cmp(&a.1));
+            l.truncate(MAX_OCUPA_REPOS);
+            t.estado.ultima_por_repo = l.into_iter().collect();
+        }
     }
     if !v.ocupa.is_empty() || (v.completo && !resumenes.is_empty()) {
         let mut repos = if v.completo { std::collections::BTreeMap::new() } else { t.estado.ocupa.as_ref().map(|o| o.repos.clone()).unwrap_or_default() };
@@ -1174,7 +1192,14 @@ pub fn anotar_vuelta(t: &mut Trabajo, texto: &str, v: &Vuelta, resumenes: &[crat
     t.estado.subidas.push(Subida {
         inicio: v.inicio.to_string(),
         fin: v.fin.to_string(),
-        resultado: if error { "error" } else { "ok" }.into(),
+        resultado: if error {
+            "error"
+        } else if parada {
+            "parada"
+        } else {
+            "ok"
+        }
+        .into(),
         motivo: v.motivo.clave().into(),
         archivos: suma(&|r| r.copiados),
         bytes: suma(&|r| r.bytes),
@@ -1203,6 +1228,8 @@ pub fn resumen(t: &Trabajo, espacio: Value) -> Value {
         // v1.6x (14c, 14i, 14h, 14p): si alguna vez terminó bien, sus últimas vueltas, lo
         // que ocupa en el destino y «Hacer ahora» pendiente (en cola).
         "bien": t.estado.bien, "nunca_bien": t.nunca_bien(),
+        // 15m: la última subida buena de cada repositorio (también de los que ya no incluye).
+        "ultima_por_repo": (!t.estado.ultima_por_repo.is_empty()).then_some(&t.estado.ultima_por_repo),
         "subidas": (!t.estado.subidas.is_empty()).then_some(&t.estado.subidas),
         "ocupa": t.estado.ocupa, "en_cola": t.estado.pedido_ahora,
     });
@@ -1456,8 +1483,12 @@ pub fn hacer_equipo(t: &Trabajo, motivo: Motivo, locales: &[(String, PathBuf)]) 
         hechos.push((Some(id), texto));
     }
     let completo = hechos.iter().all(|(_, r)| r.is_ok());
-    let texto = texto_de(t, motivo, &hechos);
-    if texto.starts_with("ERROR") {
+    let mut texto = texto_de(t, motivo, &hechos);
+    // 15hh: parado a petición (con la clave): lo subido se queda; ni bien ni fallido.
+    if let Some(p) = guarda.parada() {
+        texto = format!("{} {}", crate::parar::PREFIJO_PARADA, p.texto());
+        guarda.terminar("parada");
+    } else if texto.starts_with("ERROR") {
         drop(guarda);
     } else {
         guarda.terminar("ok");

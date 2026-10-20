@@ -27,12 +27,22 @@
   import CampoClave from "./CampoClave.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
 
-  let { cliente, equipo, repo, en, onclose }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; en: EnAlmacen; onclose: () => void } = $props();
+  // 15g: `derivada`, la de una copia derivada de `repo` que va a un almacén (su repositorio en él):
+  // la clave del almacén la añade el equipo dueño en el repositorio de la derivada y la regla se
+  // queda solo en el almacén (no cambia la del repositorio de origen).
+  let {
+    cliente,
+    equipo,
+    repo,
+    en,
+    derivada = null,
+    onclose,
+  }: { cliente: Cliente; equipo: Equipo; repo: RepositorioResumen; en: EnAlmacen; derivada?: { id: string; nombre: string } | null; onclose: () => void } = $props();
 
   // Lo que ya hay (al abrir): la regla del almacén o, si no, la guardada en el equipo.
-  const reglaEquipo = $derived(reglaDe(repo));
+  const reglaEquipo = $derived(derivada ? null : reglaDe(repo));
   const inicio = () => ({
-    regla: copiaRegla(en.retencion?.retencion ?? reglaDe(repo) ?? REGLA_POR_DEFECTO) as Regla,
+    regla: copiaRegla(en.retencion?.retencion ?? (derivada ? null : reglaDe(repo)) ?? REGLA_POR_DEFECTO) as Regla,
     dias: [...(en.retencion?.horario.dias ?? HORARIO_POR_DEFECTO.dias)],
     hora: en.retencion?.horario.hora ?? HORARIO_POR_DEFECTO.hora,
     verificar: en.retencion?.verificar ?? true,
@@ -60,7 +70,9 @@
   const almacen = $derived(en.almacen);
   /** Hace falta otra clave si el almacén no tiene una que ya abra el repositorio. */
   const claveNueva = $derived(en.retencion?.clave !== "ok");
-  const cambiaRegla = $derived(!mismaRegla(regla, reglaEquipo));
+  const cambiaRegla = $derived(!derivada && !mismaRegla(regla, reglaEquipo));
+  /** Cómo se llama en los textos: el repositorio o su copia derivada. */
+  const nombre = $derived(derivada ? `${repo.nombre} (copia derivada a ${derivada.nombre})` : repo.nombre);
   const pideContrasena = $derived(claveNueva || cambiaRegla);
   /** Horarias, plazos y «siempre» (v1.28): los dos agentes tienen que entenderlos. */
   const admite = $derived(admitePlazos(equipo) && admitePlazos(en.almacen));
@@ -99,7 +111,7 @@
       // 2) Una clave propia del almacén, añadida por el equipo dueño (antes de mandarla al almacén).
       if (claveNueva) {
         clave = nuevaClave();
-        const o = await mandarOrden({ cliente, equipo, tipo: "clave_almacen", cuerpo: { repo: repo.id, clave }, secretos: secretosRepo, alPaso: (t) => (paso = t) });
+        const o = await mandarOrden({ cliente, equipo, tipo: "clave_almacen", cuerpo: { repo: repo.id, clave, ...(derivada ? { derivada: derivada.id } : {}) }, secretos: secretosRepo, alPaso: (t) => (paso = t) });
         paso = `Esperando a ${equipo.nombre}…`;
         const r = await respuesta(equipo, o);
         // Un agente anterior a v1.22 no conoce la orden: hay que actualizarlo.
@@ -112,11 +124,11 @@
         equipo: almacen,
         tipo: "retencion_almacen",
         // B1: `nombre`, para que el historial y las órdenes en espera digan cuál es (no la carpeta).
-        cuerpo: { usuario: en.usuario, repo: en.carpeta, nombre: `${repo.nombre}, de ${equipo.nombre}`, ...(clave ? { clave } : {}), retencion: reglaParaOrden(regla), horario: { dias: [...dias], hora, ...(usaReglas ? { reglas: reglasDe(horarioAlm) } : {}) }, verificar },
+        cuerpo: { usuario: en.usuario, repo: en.carpeta, nombre: `${nombre}, de ${equipo.nombre}`, ...(clave ? { clave } : {}), retencion: reglaParaOrden(regla), horario: { dias: [...dias], hora, ...(usaReglas ? { reglas: reglasDe(horarioAlm) } : {}) }, verificar },
         secretos: { claveAdmin },
         alPaso: (t) => (paso = t),
       });
-      avisar(`Retención de «${repo.nombre}» enviada a ${almacen.nombre}.`);
+      avisar(`Retención de «${nombre}» enviada a ${almacen.nombre}.`);
       void cargarCliente(cliente.id, { silencioso: true });
     } catch (err) {
       if (err instanceof ErrorLlavesCambiadas) cambiadas = err.equipo === almacen.nombre ? almacen : equipo;
@@ -135,7 +147,10 @@
     <span class="ticon danger"><CalendarClock size={18} /></span>
     <div>
       <h2 id="t-ret-alm">Retención en {almacen.nombre}</h2>
-      <p>«{repo.nombre}» de {equipo.nombre} está en {almacen.nombre}, que es de solo añadir: desde el equipo no se puede borrar nada. La retención la aplica el almacén, en local y a su hora. <Ayuda id="retencion-almacen" /></p>
+      <p>
+        {#if derivada}La copia derivada de «{repo.nombre}» a «{derivada.nombre}» está en {almacen.nombre}, que es de solo añadir: sin retención, crece sin límite. La aplica el almacén, en local y a su hora (la del repositorio de origen no cambia).{:else}«{repo.nombre}» de {equipo.nombre} está en {almacen.nombre}, que es de solo añadir: desde el equipo no se puede borrar nada. La retención la aplica el almacén, en local y a su hora.{/if}
+        <Ayuda id="retencion-almacen" />
+      </p>
     </div>
   </div>
 
@@ -145,7 +160,7 @@
   {:else if hecho}
     <div class="form">
       <p>
-        Listo. {almacen.nombre} aplicará la retención de «{repo.nombre}» {usaReglas ? fraseReglas : textoHorario({ dias, hora })}
+        Listo. {almacen.nombre} aplicará la retención de «{nombre}» {usaReglas ? fraseReglas : textoHorario({ dias, hora })}
         {#if hecho.not_before}cuando pase la espera (dentro de <strong>{cuentaAtras(hecho.not_before)}</strong>), salvo que alguien la cancele desde <a href="/c/{cliente.id}/actividad">Órdenes</a>.{:else}.{/if}
       </p>
       <footer><button class="btn btn-primary" onclick={onclose}>Cerrar</button></footer>
@@ -177,7 +192,7 @@
       <div class="notice notice-warn">
         <KeyRound size={16} />
         <p>
-          {#if claveNueva}{equipo.nombre} añadirá al repositorio una <strong>clave propia de {almacen.nombre}</strong> (tiene que estar encendido). Con ella el almacén puede podar, y también <strong>leer</strong> este repositorio. Se revoca con «Dejar de aplicarla».{:else}{almacen.nombre} ya tiene su clave de este repositorio: solo cambian la regla o el horario.{/if}
+          {#if claveNueva}{equipo.nombre} añadirá al repositorio{derivada ? " de la copia derivada" : ""} una <strong>clave propia de {almacen.nombre}</strong> (tiene que estar encendido). Con ella el almacén puede podar, y también <strong>leer</strong> ese repositorio. Se revoca con «Dejar de aplicarla».{:else}{almacen.nombre} ya tiene su clave de este repositorio: solo cambian la regla o el horario.{/if}
           Borra versiones, así que <strong>espera {espera} h</strong> antes de aplicarse y cualquiera del cliente puede cancelarla. Después se aplica sola.
         </p>
       </div>

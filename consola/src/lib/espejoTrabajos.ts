@@ -285,6 +285,8 @@ export function textoFreno(f: FrenoEspejo): string {
 export function estadoTrabajo(t: TrabajoEspejoResumen): "ok" | "error" | "pausado" | "nuevo" {
   if (!t.activo) return "pausado";
   if (!t.resultado) return "nuevo";
+  // 15hh: la última vuelta se paró a petición (con la clave): ni bien ni fallida.
+  if (t.resultado.startsWith("PARADA:")) return "pausado";
   return t.resultado.startsWith("ERROR") ? "error" : "ok";
 }
 

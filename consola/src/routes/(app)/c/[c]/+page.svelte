@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { espejosDelRepo, sinActualizar, textoSinActualizar } from "$lib/espejosRepo";
   import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { untrack } from "svelte";
   import { tip } from "$lib/tooltip";
@@ -92,6 +93,17 @@
           ? { texto: "Mover a un almacén…", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}?mover=1` }
           : { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}` },
       });
+    // 15m (2): un repositorio que salió de un espejo: su copia allí ya no se actualiza.
+    for (const e of delFiltro)
+      for (const r of e.resumen?.repositorios ?? [])
+        for (const x of sinActualizar(espejosDelRepo(e, r, actual.equipos)))
+          out.push({
+            tono: "warn",
+            texto: `«${r.nombre}» de ${e.nombre}: ${textoSinActualizar(x, reloj.ahora)}`,
+            titulo: `${e.nombre} · copia en un espejo sin actualizar`,
+            detalle: `«${r.nombre}»: ${textoSinActualizar(x, reloj.ahora)}`,
+            accion: { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}#t-espejos` },
+          });
     if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver los avisos", href: `/c/${c}/avisos` } });
     return out.sort((a, b) => PESO[a.tono] - PESO[b.tono]);
   });

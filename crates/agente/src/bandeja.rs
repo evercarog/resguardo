@@ -485,6 +485,7 @@ pub fn fila_copia(c: &CopiaBandeja, en_curso: Option<&EnCurso>, ahora: &DateTime
             "ok" => format!("correcta{cuando}"),
             "warning" => format!("con avisos{cuando}"),
             "error" => format!("falló{cuando}"),
+            "stopped" => format!("parada{cuando}"),
             _ => "aún sin copias".into(),
         };
         if c.pausada {

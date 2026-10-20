@@ -38,7 +38,12 @@ export interface Secretos {
 
 export const necesitaAdmin = (tipo: string) => NIVEL[tipo] === "admin" || PIDE_TAMBIEN_ADMIN.has(tipo);
 const necesitaAdminTipo = necesitaAdmin;
-export const necesitaRepo = (tipo: string) => NIVEL[tipo] === "repo";
+/**
+ * 15q: `quitar_repositorio { vacio: true }` (un repositorio sin versiones, agente con
+ * `admite: "quitar_vacio"`) va solo con la clave de administración: el equipo comprueba que de
+ * verdad está vacío y, si no, la rechaza.
+ */
+export const necesitaRepo = (tipo: string, cuerpo?: Record<string, unknown>) => NIVEL[tipo] === "repo" && !(tipo === "quitar_repositorio" && cuerpo?.vacio === true);
 /** v1.49: ¿guarda el equipo las órdenes con espera (las recibe al momento)? */
 const admiteEspera = (e: T.Equipo) => !!e.resumen?.admite?.includes("ordenes_en_espera");
 
@@ -156,7 +161,7 @@ export async function mandarOrden(opts: {
       aBorrar.push(prueba);
       autorizacion.prueba_admin = aB64(prueba);
     }
-    if (necesitaRepo(tipo)) {
+    if (necesitaRepo(tipo, cuerpo)) {
       const r = opts.secretos?.repo;
       if (!r?.contrasena) throw new Error("Escribe la contraseña del repositorio.");
       const llaves = await comprobarLlaves(cliente.id, equipo);

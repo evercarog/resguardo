@@ -57,7 +57,8 @@
 
   interface Vuelta {
     t: number;
-    r: "ok" | "aviso" | "fallo" | "sin_cambios";
+    /** 15hh: «parada», parada o pausada a petición (no cuenta ni como bien ni como fallo). */
+    r: "ok" | "aviso" | "fallo" | "sin_cambios" | "parada";
     bytes: number;
   }
   /** `falta`: no se pudieron leer sus copias del periodo (se dice en el informe; no cuenta como «0 copias»). */

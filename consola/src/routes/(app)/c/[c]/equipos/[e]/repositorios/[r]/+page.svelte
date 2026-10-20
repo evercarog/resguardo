@@ -12,7 +12,9 @@
   import { page } from "$app/state";
   import { untrack } from "svelte";
   import { seguirCambios, tocaEquipo } from "$lib/vivo.svelte";
-  import { ArrowRightLeft, Database, History, Pencil, Play, ShieldCheck } from "@lucide/svelte";
+  import { ArrowRightLeft, Database, History, Pencil, Play, ShieldCheck, TriangleAlert } from "@lucide/svelte";
+  import { destinoEspejo, espejosDelRepo, nombreEspejo, sinActualizar, textoSinActualizar } from "$lib/espejosRepo";
+  import { hrefEspejo } from "$lib/espejoTrabajos";
   import * as api from "$lib/api";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, fechaLarga, numero, relativo } from "$lib/formato";
@@ -39,6 +41,7 @@
   import type { Equipo, EquipoDetalle, VersionInforme } from "$lib/tipos";
   import { almacenDe, textoHorario, textoRegla } from "$lib/retencion";
   import { ordenQuitarExterna } from "$lib/copiaExterna";
+  import { textoDestinoAusente } from "$lib/datosEquipo";
   import { admiteVerificacion, fraseVerificacion } from "$lib/verificacion";
   import RetencionAlmacen from "$lib/componentes/RetencionAlmacen.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
@@ -57,6 +60,8 @@
   import PasosRepo from "$lib/componentes/PasosRepo.svelte";
   import { reglaEfectiva } from "$lib/lineaTiempo";
   import { saludCompleta } from "$lib/saludCompleta";
+  import { caminoDeCopia, hrefDerivada } from "$lib/camino";
+  import { enVivoCamino } from "$lib/caminoVivo.svelte";
   import { reglaDeCopia } from "$lib/regla321";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   // «Pulsar para ver más»: el panel de detalle (versión, qué cambió, espacio…) según la URL.
@@ -132,7 +137,12 @@
     const k = copias.find((x) => x.repo === repo!.id && x.activa !== false);
     return k ? reglaDeCopia(eq, k, actual.equipos.map((x) => (x.id === eq.id ? eq : x)), eq.ultimo_informe ?? null, catalogoDe(c), reloj.ahora, actual.organizacion, listaFuncionales(c), actual.infra) : null;
   });
+  // 15g: el mismo camino que la página de la copia (espejos y copias derivadas, con su estado).
+  const pasosRepo = $derived(caminoDeCopia(reglaRepo, { cliente: c, ahora: reloj.ahora, enVivo: enVivoCamino, equipos: actual.equipos, informe: equipo?.ultimo_informe ?? null }).filter((x) => x.clase !== "copia"));
   const prot = $derived(saludCompleta(inf, { extra: equipo && repo ? comprobacionLugar(repo, equipo, actual.equipos) : null, rc: reglaRepo, retencionAlmacen: reglaEfectiva(repo, destino, actual.equipos)?.quien ?? null, ahora: reloj.ahora }));
+  // 15m: los espejos que lo incluyen o lo incluyeron (con su última subida) y los que dejó.
+  const espejosRepo = $derived(equipo && repo ? espejosDelRepo(equipo, repo, actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x))) : []);
+  const fuera = $derived(sinActualizar(espejosRepo));
   const ej = $derived(ultimaEjecucion(inf));
   const verif = $derived(repo ? verificacion(repo, inf) : null);
   const prueba = $derived(repo ? pruebaRestauracion(repo, inf) : null);
@@ -195,6 +205,17 @@
   let comprobar = $state(false);
   const TEXTO_COMPROBADA = { abre: "La abre", no_abre: "No la abre", sin_respuesta: "Sin respuesta" } as const;
   const TONO_COMPROBADA = { abre: "ok", no_abre: "bad", sin_respuesta: "warn" } as const;
+  /** 14nn: quitar una copia derivada cuyo destino ya no existe (o cualquiera), también desde aquí. */
+  function quitarDerivada(id: string, destino: string | null) {
+    if (!repo) return;
+    dialogo = {
+      tipo: "quitar_derivada",
+      cuerpo: { repo: rid, id },
+      titulo: "Quitar la copia derivada",
+      descripcion: `«${repo.nombre}» dejará de copiarse a «${destino ?? "su destino"}». Lo ya copiado allí se queda.`,
+      repo: { id: rid, nombre: repo.nombre },
+    };
+  }
   const copiarAhora = (k: (typeof suyas)[number]) =>
     (dialogo = { tipo: "copiar_ahora", cuerpo: { repo: k.repo, copia: k.id }, descripcion: `Se hará ahora la copia «${k.nombre}», sin esperar a su hora. No borra nada.`, accion: "Copiar ahora" });
 </script>
@@ -258,6 +279,10 @@
       <AvisoMismoEquipo {riesgo} onmover={!repo.solo_lectura && puede.administrar(rol) && !moverBloqueado ? () => (mover = true) : undefined} hrefExterna={puede.ordenar(rol) && suyas.length ? `/c/${c}/equipos/${e}?externa=${encodeURIComponent(rid)}` : undefined} />
     {/if}
     <Observaciones tipo="repositorio" objeto={objetoDe(e, rid)} />
+    {#each fuera as x (`${x.hace.id}|${x.trabajo.id}`)}
+      <!-- 15m (2): salió de un espejo: su copia allí ya no se actualiza. -->
+      <div class="notice notice-warn" role="note"><TriangleAlert size={16} /><p>{textoSinActualizar(x, reloj.ahora)} <a class="link" href={hrefEspejo(c, x.hace.id, x.trabajo.id)}>Ver el espejo</a></p></div>
+    {/each}
 
     <IndicePagina
       items={[
@@ -295,7 +320,28 @@
       </div>
     </div>
 
-    <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} alQuitarExterna={puedeQuitarExterna ? quitarExterna : undefined} />
+    <FlujoRepo {repo} {inf} {copias} {destinos} {equipo} equipos={actual.equipos} ahora={reloj.ahora} alQuitarExterna={puedeQuitarExterna ? quitarExterna : undefined} pasos={reglaRepo ? pasosRepo : null} />
+    <!-- 15m (3): los espejos que lo incluyen y los que lo incluyeron, con su última subida. -->
+    {#if espejosRepo.length}
+      <section class="card p espejos-repo" aria-labelledby="t-espejos">
+        <h2 class="section-title" id="t-espejos">Sus espejos <Ayuda id="espejo" /></h2>
+        <ul class="lista-espejos">
+          {#each espejosRepo as x (`${x.hace.id}|${x.trabajo.id}`)}
+            <li>
+              <a class="link-suave" href={hrefEspejo(c, x.hace.id, x.trabajo.id)}>{nombreEspejo(x.trabajo)}</a>
+              <span class="faint">→ {destinoEspejo(x.trabajo, x.hace)}{x.hace.id !== e ? ` · lo hace ${x.hace.nombre}` : ""}</span>
+              {#if x.incluye}
+                <Chip pequeno tono={x.trabajo.activo ? "ok" : "paused"} texto={x.trabajo.activo ? "Lo incluye" : "En pausa"} />
+              {:else}
+                <Chip pequeno tono="warn" texto="Ya no lo incluye" />
+              {/if}
+              <span class="faint">{x.ultima ? `última subida ${relativo(x.ultima, reloj.ahora)}` : "todavía sin subida"}</span>
+            </li>
+          {/each}
+        </ul>
+        {#if fuera.length}<p class="faint nota-espejos">Lo que ya no incluye se queda en su destino, sin actualizarse: la retención del espejo solo mira lo que incluye. Si ya no lo quieres allí, bórralo a mano.</p>{/if}
+      </section>
+    {/if}
     <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de este repositorio. -->
     {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={reglaRepo} equipos={actual.equipos} ordena={puede.ordenar(rol)} />{/if}
     <!-- Plan 0.8.1, C1 (15n): todos los sitios donde están sus datos, con su ruta real. -->
@@ -368,14 +414,31 @@
             </dd>
           </div>
           <div>
-            <dt>Copia derivada</dt>
+            <dt>Copias derivadas</dt>
             <dd>
-              {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />
-              {:else if repo.externa}<span class="faint">A «{repo.externa.destino}» cada día a las {repo.externa.hora}, todavía sin ninguna</span>
-              {:else}<span class="faint">No tiene</span>{/if}
-              {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
-              <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
-              {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia derivada</button></span>{/if}
+              {#if repo.externa}
+                <span class="msg">
+                  {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />{" · "}{/if}
+                  <a class="link-suave" href={hrefDerivada(c, e, rid, "externa")}>A «{repo.externa.destino}» cada día a las {repo.externa.hora}</a>{#if !inf?.externa?.ultima}<span class="faint">, todavía sin ninguna</span>{/if}
+                </span>
+                {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
+                <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
+                {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia derivada</button></span>{/if}
+              {/if}
+              <!-- 15g: también las demás copias derivadas (antes la página solo conocía la de cada día). -->
+              {#each repo.derivadas ?? [] as dv (dv.id)}
+                {@const u = inf?.derivadas?.find((x) => x.id === dv.id)}
+                <span class="msg">
+                  {#if u?.ultima && u.resultado}<Chip pequeno tono={TONO_TAREA[u.resultado]} texto={u.pausada ? "En pausa" : TEXTO_TAREA[u.resultado]} /> <Tiempo iso={u.ultima} />{" · "}{/if}
+                  <a class="link-suave" href={hrefDerivada(c, e, rid, dv.id)}>A «{dv.destino ?? "otro destino"}»</a>{#if !u?.ultima}<span class="faint">, todavía sin ninguna</span>{/if}
+                </span>
+                {#if u?.motivo === "destino_ausente"}
+                  <!-- 14nn: su destino ya no existe: «Quitar» también desde aquí. -->
+                  <span class="msg aviso-ret">{textoDestinoAusente(u)}</span>
+                  {#if puede.ordenar(rol) && !repo.solo_lectura}<span class="msg"><button type="button" class="btn btn-sm" onclick={() => quitarDerivada(dv.id, dv.destino ?? null)}>Quitar esta copia</button></span>{/if}
+                {:else if u?.resultado === "fallo" && u.mensaje_corto}<span class="faint msg">{u.mensaje_corto}</span>{/if}
+              {/each}
+              {#if !repo.externa && !(repo.derivadas ?? []).length}<span class="faint">No tiene</span>{/if}
             </dd>
           </div>
           {#if enAlm}
@@ -513,6 +576,27 @@
 {/if}
 
 <style>
+  .espejos-repo {
+    margin-top: var(--sp-5);
+  }
+  .lista-espejos {
+    display: grid;
+    gap: var(--sp-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .lista-espejos li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: var(--fs-sm);
+  }
+  .nota-espejos {
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
   .cab {
     display: flex;
     flex-wrap: wrap;

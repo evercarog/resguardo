@@ -152,10 +152,34 @@ function sembrar() {
   }
 }
 
+/** 15hh: con qué clave se para (como el agente con `admite: "parar"`). */
+function claveParar(s: Sim): string {
+  if (s.tipo === "copia") return `copia:${s.repo}:${s.copia}`;
+  if (s.tipo === "espejo" || s.tipo === "restauracion") return `${s.tipo}:${s.repo}`;
+  const kind = { verificar: "verify", verificar_externa: "verify_offsite", prueba_restauracion: "restore_test", copia_externa: "offsite" }[s.tipo as string] ?? s.tipo;
+  return `tarea:${s.repo}:${kind}`;
+}
+
+/** 15hh, 15ll: lo que dice un agente que sabe parar y que evita la suspensión. */
+function extraParar(s: Sim): Partial<T.TareaEnMarcha> {
+  const e = estado.equipos.find((x) => x.id === s.equipo);
+  if (!e?.resumen?.admite?.includes("parar") || s.tipo === "historial" || s.tipo === "retencion") return {};
+  return { parar: claveParar(s), pausable: s.tipo === "copia" ? true : null, evitando_suspension: e.resumen.admite.includes("sin_suspension") ? true : null };
+}
+
+/** 15hh: parar (o pausar) lo que está en marcha con esa clave. Devuelve qué era, o null si ya no está. */
+export function pararTarea(equipo: string, clave: string): { tipo: T.TipoTarea; repo: string; copia?: string; nombre?: string } | null {
+  sembrar();
+  const s = sims.find((x) => x.equipo === equipo && claveParar(x) === clave && !(x.cola && Date.now() < x.empezo));
+  if (!s) return null;
+  sims = sims.filter((x) => x !== s);
+  return { tipo: s.tipo, repo: s.repo, copia: s.copia, nombre: s.nombre };
+}
+
 /** Una tarea en marcha según el tiempo que lleva. */
 function tareaDe(s: Sim, ahora: number): T.TareaEnMarcha {
   const t = Math.max(0, ahora - s.empezo);
-  const base = { tipo: s.tipo, repo: s.repo, copia: s.copia ?? null, nombre: s.nombre ?? null, empezo: iso(s.empezo), actualizado: iso(ahora - (ahora % 3000)), ...s.extra };
+  const base = { tipo: s.tipo, repo: s.repo, copia: s.copia ?? null, nombre: s.nombre ?? null, empezo: iso(s.empezo), actualizado: iso(ahora - (ahora % 3000)), ...s.extra, ...extraParar(s) };
   // 14p: pedida con «Ahora» y aún sin empezar.
   if (s.cola && ahora < s.empezo) return { ...base, fase: "en_cola", etapa: "En cola", empezo: null };
   if (s.tipo === "espejo") {

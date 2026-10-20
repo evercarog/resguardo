@@ -81,6 +81,9 @@ pub fn tarea_copia(r: &RunningCopy, nombre: Option<&str>, ahora: DateTime<Local>
         "quedan_s": if fase == "subiendo" { r.seconds_remaining } else { None },
         "empezo": r.started,
         "actualizado": r.updated,
+        // 15hh: con qué clave se para o se pausa (`parar { clave }`, con la clave de administración).
+        "parar": r.plan_id.as_ref().map(|p| format!("copia:{}:{p}", r.repo_id)),
+        "pausable": r.plan_id.is_some().then_some(true),
     }))
 }
 
@@ -138,9 +141,18 @@ fn tarea_larga_sin_quien(t: &crate::tasks::RunningTask) -> Value {
         "quedan_s": t.eta_s,
         "empezo": t.started,
         "actualizado": t.updated,
-        // Plan 0.8.1 (C2, 15cc): de qué copia derivada es (el mapa anima su flecha).
-        "derivada": derivada_de(&t.kind),
+        // Plan 0.8.1 (C2, 15cc; 15hh): de qué copia derivada es (el mapa anima su flecha) y con qué clave se para.
+        "derivada": t.derivada.as_deref().or_else(|| derivada_de(&t.kind)),
+        "parar": clave_tarea(t),
     })
+}
+
+/// 15hh: la clave para parar una tarea larga (`tarea:<repo>:<pedida>`, como su «Ahora»).
+pub fn clave_tarea(t: &crate::tasks::RunningTask) -> String {
+    match t.derivada.as_deref() {
+        Some(d) => format!("tarea:{}:{}", t.repo_id, crate::tasks::derived_request(&t.kind, d)),
+        None => format!("tarea:{}:{}", t.repo_id, t.kind),
+    }
 }
 
 /// 14p: el tipo para la consola de una tarea pedida con «Ahora» (`verify`, `derivada-<id>`…).
@@ -193,6 +205,8 @@ pub fn tarea_espejo(a: &crate::escritorio::Actividad, enlace: &str) -> Option<Va
         "por": a.por,
         "otra_consola": a.enlace.is_some().then_some(otra),
         "consola": if otra { a.consola.clone() } else { None },
+        // 15hh: con qué clave se para.
+        "parar": a.clave,
     }))
 }
 
@@ -250,6 +264,16 @@ pub fn tareas(v: Option<&Vinculo>) -> Vec<Value> {
         out.extend(espejos_en_cola(&actividades, &enlace));
     }
     out.truncate(MAX_TAREAS);
+    // 15ll: el equipo no se suspende por inactividad mientras esto sigue en marcha (salvo las
+    // copias que lo dejan, en su configuración).
+    if crate::suspension::evitando() {
+        for t in out.iter_mut().filter(|t| t["fase"] != "en_cola") {
+            let permite = t["tipo"] == "copia" && copias.iter().any(|k| k.permitir_suspension && t["repo"] == k.repo.as_str() && t["copia"] == k.id.as_str());
+            if !permite {
+                t["evitando_suspension"] = true.into();
+            }
+        }
+    }
     out
 }
 
@@ -277,6 +301,8 @@ pub fn tarea_restauracion(a: &crate::escritorio::Actividad, enlace: &str) -> Opt
         "otra_consola": otra,
         "consola": if otra { a.consola.clone() } else { None },
         "en_el_equipo": a.enlace.is_none(),
+        // 15hh: con qué clave se para.
+        "parar": a.clave,
     }))
 }
 

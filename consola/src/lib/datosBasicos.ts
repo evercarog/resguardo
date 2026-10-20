@@ -71,6 +71,8 @@ export interface DatosBasicos {
   discos?: DiscoEquipo[];
   /** 0.8.1 (C4): lo que ve de su almacenamiento (un agente anterior no lo manda). */
   almacenamiento?: AlmacenamientoEquipo | null;
+  /** 15ll (Windows): tarjetas de red que el sistema puede apagar para ahorrar energía (sus nombres). */
+  red_ahorro?: string[];
 }
 
 /** Lo mismo que en el agente y en el servidor. */
@@ -155,6 +157,7 @@ export function datosBasicos(e: Pick<Equipo, "resumen"> | null | undefined): Dat
     arranque: fecha(x.arranque),
     discos,
     almacenamiento,
+    red_ahorro: (Array.isArray(x.red_ahorro) ? x.red_ahorro.slice(0, 8) : []).map((n) => texto(n, 80)).filter((n): n is string => !!n),
   };
 }
 

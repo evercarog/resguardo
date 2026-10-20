@@ -26,8 +26,15 @@ windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
   "Wdk_System_Threading",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+# 15hh: grupos de procesos (parar restic con el rclone que lanza).
+libc = "0.2"
 
 [dev-dependencies]
 # Pruebas de propiedades (docs/plataforma.md, §7.3).

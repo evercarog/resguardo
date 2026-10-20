@@ -470,6 +470,27 @@ export function almacenDe(repo: RepositorioResumen, destino: DestinoResumen | un
   };
 }
 
+/**
+ * 15g: el almacén donde está una copia derivada de `repo` (su repositorio en él), o null si va a
+ * otro sitio. Su carpeta: la que dice el agente (`ruta`) o la de siempre (`<repo>-<id>`; la de
+ * cada día, `<repo>`).
+ */
+export function almacenDeDerivada(
+  repo: RepositorioResumen,
+  d: { id: string; destino_id?: string | null; ruta?: string | null },
+  destinos: DestinoResumen[] | undefined,
+  equipos: Equipo[],
+): EnAlmacen | null {
+  const destino = (destinos ?? []).find((x) => x.id === d.destino_id);
+  if (!destino || destino.tipo !== "rest" || repo.solo_lectura) return null;
+  const almacen = equipos.find((a) => a.resumen?.guarda_copias?.activo && a.modo !== "trasladado" && esDeAlmacen(destino, a));
+  const usuario = usuarioEnAlmacen(destino.donde);
+  if (!almacen || !usuario) return null;
+  const carpeta = d.ruta || (d.id === "externa" ? repo.id : `${repo.id}-${d.id}`);
+  const lista = almacen.resumen?.guarda_copias?.retenciones;
+  return { almacen, usuario, carpeta, retencion: lista?.find((r) => r.usuario === usuario && r.repo === carpeta) ?? null, admite: Array.isArray(lista) };
+}
+
 /** El repositorio (y su equipo) de una retención de un almacén, si es de este cliente. */
 export function repoDeRetencion(r: RetencionAlmacen, almacen: Equipo, equipos: Equipo[]): { equipo: Equipo; repo: RepositorioResumen } | null {
   for (const e of equipos) {

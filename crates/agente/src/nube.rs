@@ -601,6 +601,12 @@ fn salida_midiendo(c: &mut std::process::Command, ritmos: &mut dyn FnMut(Option<
         match hijo.try_wait() {
             Ok(Some(e)) => break e,
             Ok(None) => {
+                // 15hh: «Parar» (con la clave): rclone se para; lo subido se queda.
+                if resguardo_motor::restic::cancelado_en_hilo() {
+                    let _ = hijo.kill();
+                    let _ = hijo.wait();
+                    return Err(crate::parar::PARADO.into());
+                }
                 let (l, s) = ritmo.medir(Some(pid));
                 ritmos(l, s);
                 std::thread::sleep(std::time::Duration::from_millis(500));

@@ -6,7 +6,7 @@
   // Plan 0.8.1: su tipo (C3: físico, máquina virtual o contenedor, detectado y
   // corregible), dónde está físicamente (C4, si se anotó la infraestructura) y
   // el conjunto de discos de cada disco (grupo de ZFS, RAID…).
-  import { Cpu, HardDrive, Layers, MemoryStick, Monitor, Pencil, Power, Server, TriangleAlert } from "@lucide/svelte";
+  import { Cpu, HardDrive, Layers, MemoryStick, Monitor, Pencil, Power, Server, TriangleAlert, Wifi } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import { bytes, fechaLarga, relativo } from "$lib/formato";
   import { datosBasicos, textoMemoria, textoModelo, textoProcesador, textoSistema, usoDisco } from "$lib/datosBasicos";
@@ -104,6 +104,15 @@
         {/each}
       </ul>
     {/if}
+    {#if d.red_ahorro?.length}
+      <!-- 15ll (2): tarjetas de red que Windows puede apagar para ahorrar energía. -->
+      <div class="notice notice-info red-ahorro" role="note">
+        <Wifi size={16} />
+        <p>
+          Windows puede apagar {d.red_ahorro.length === 1 ? `la tarjeta de red «${d.red_ahorro[0]}»` : `${d.red_ahorro.length} tarjetas de red (${d.red_ahorro.map((n) => `«${n}»`).join(", ")})`} para ahorrar energía. Mientras copia, el equipo no se suspende y no pasa nada; si se suspende igual, la copia se corta. Para quitarlo: Administrador de dispositivos → la tarjeta → Propiedades → Administración de energía → quita «Permitir que el equipo apague este dispositivo para ahorrar energía».
+        </p>
+      </div>
+    {/if}
     {#if d.leido}<p class="faint leido">Leído {relativo(d.leido, ahora)}. El equipo los vuelve a leer una vez al día.</p>{/if}
   {/if}
 </section>
@@ -119,6 +128,13 @@
   }
   .datos > div {
     min-width: 0;
+  }
+  .red-ahorro {
+    margin-top: var(--sp-4);
+  }
+  .red-ahorro p {
+    margin: 0;
+    font-size: var(--fs-sm);
   }
   dt {
     display: flex;

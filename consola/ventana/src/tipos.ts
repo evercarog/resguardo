@@ -35,6 +35,10 @@ export interface Actividad {
   archivos_s?: number;
   quedan_s?: number;
   empezo: string;
+  /** 15hh: con qué clave se para (con la clave de administración), si se puede. */
+  parar?: string;
+  /** 15hh: si además se puede pausar (las copias). */
+  pausable?: boolean;
 }
 
 export interface Hecha {

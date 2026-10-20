@@ -761,6 +761,9 @@ pub struct RunningTask {
     pub consola: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enlace: Option<String>,
+    /// 15hh: la copia derivada (su id) si la tarea es de una.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derivada: Option<String>,
 }
 
 /// Progreso de una tarea, tal como lo informa quien la ejecuta.
@@ -1220,10 +1223,13 @@ pub fn spawn_if_due(config: &AgentConfig) {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
         // Fuera del trabajo de la tarea programada, para que el Programador
-        // no lo cuente como «la tarea sigue en ejecución».
-        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB);
-        if cmd.spawn().is_ok() {
-            return;
+        // no lo cuente como «la tarea sigue en ejecución». 15hh: lanzado por el servicio,
+        // dentro de su trabajo (muere con él, con restic y rclone).
+        if !resguardo_motor::proceso::en_trabajo_del_servicio() {
+            cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB);
+            if cmd.spawn().is_ok() {
+                return;
+            }
         }
         cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
     }
@@ -1292,9 +1298,12 @@ pub fn run() -> i32 {
             por,
             consola,
             enlace,
+            derivada: derivada.as_ref().map(|d| d.id.clone()),
             ..Default::default()
         });
         save_state(&mut state);
+        // 15hh: se puede parar (con la clave de administración) mientras se hace.
+        let vigilancia = state.running.as_ref().map(|t| crate::parar::vigilar(&crate::progreso_v2::clave_tarea(t)));
 
         // 14nn: la carpeta del destino (de este equipo) ya no está y la copia ya había subido
         // (o ya faltaba la vez anterior): no se crea otra vacía que lo suba todo de nuevo.
@@ -1339,7 +1348,8 @@ pub fn run() -> i32 {
                 std::thread::spawn(crate::web::report_detached);
             }
         };
-        let record = match kind {
+        let marca = vigilancia.as_ref().map(|v| v.marca().clone()).unwrap_or_default();
+        let record = restic::con_cancelacion(&marca, || match kind {
             "verify" => verify_repo(source_access(&repo, secret), repo.verify.as_ref().unwrap(), part, &mut report),
             "restore_test" => {
                 let mut stage_report = |stage: &str, percent: Option<f64>| {
@@ -1357,8 +1367,19 @@ pub fn run() -> i32 {
             }
             _ if carpeta_ausente => failed(RunRecord { started: Local::now().to_rfc3339(), ..Default::default() }, DESTINO_AUSENTE.into()),
             _ => offsite_repo(&repo, secret, repo.offsite.as_ref().unwrap(), load_guard().holds.contains_key(&repo.id), &mut report),
-        };
+        });
         let mut record = record;
+        // 15hh: parada a petición (con la clave): no es un fallo; queda dicho quién la paró.
+        let parada = vigilancia.as_ref().and_then(crate::parar::Vigilancia::peticion);
+        drop(vigilancia);
+        if let Some(p) = &parada {
+            record.result = "stopped".into();
+            record.message = p.texto();
+            record.detail = None;
+            if record.finished.is_empty() {
+                record.finished = Local::now().to_rfc3339();
+            }
+        }
         if kind == "offsite" || kind == DERIVADA {
             // 14tt: una copia que no llega a su destino: qué pasa y qué se hace.
             if record.result == "error" {
@@ -1385,7 +1406,7 @@ pub fn run() -> i32 {
         }
         let tag = match record.result.as_str() {
             "ok" => "",
-            "warning" => "AVISO: ",
+            "warning" | "stopped" => "AVISO: ",
             _ => "ERROR: ",
         };
         agent::log(&format!("{tag}{what} de «{}»: {}", repo.name, record.message));
@@ -2011,6 +2032,8 @@ pub(crate) fn offsite_repo(repo: &AgentRepo, secret: &Secret, offsite: &Offsite,
             });
         }
     }
+    // 15g: cuántas versiones tiene ahora su repositorio (para la página de la copia derivada).
+    record.versiones_destino = restic::snapshots(&dest).ok().map(|l| l.len() as u64);
     record.finished = Local::now().to_rfc3339();
     record
 }
