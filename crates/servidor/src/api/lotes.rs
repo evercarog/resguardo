@@ -330,12 +330,26 @@ fn sin_instalador() -> ErrorApi {
 
 /// `GET /api/clientes/{c}/instalador-agente/huella` (administrador): `{ sha256, bytes }` del
 /// instalador genérico que sirve este servidor. La consola lo pone en la línea de PowerShell, que
-/// no ejecuta un instalador con otra huella. 404 `sin_instalador`.
+/// no ejecuta un instalador con otra huella. 404 `sin_instalador`. 15x: además `version` y
+/// `origen` del instalador (ver `instalador_agente::Servido`), `ultima` (la versión firmada más
+/// nueva con instalador de Windows que tiene el servidor) y `de_datos` (si se puede cambiar
+/// desde la consola), para decir qué versión reparte y ofrecer «Cambiarlo por el de la X».
 pub async fn huella(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     u.miembro(&st, &c, Rol::Administrador).await?;
     let ruta = st.opciones.instalador_agente.clone().ok_or_else(sin_instalador)?;
-    let (sha256, bytes) = huella_instalador(ruta).await.ok_or_else(sin_instalador)?;
-    Ok(Json(json!({ "sha256": sha256, "bytes": bytes })))
+    let (sha256, bytes) = huella_instalador(ruta.clone()).await.ok_or_else(sin_instalador)?;
+    let st2 = st.clone();
+    let info = tokio::task::spawn_blocking(move || {
+        let todas = crate::publicaciones::guardadas(&st2.datos, &crate::publicaciones::llaves(&st2.opciones));
+        let de_datos = ruta == crate::instalador_agente::en_datos(&st2.datos);
+        crate::publicaciones::instalador_servido(&st2, &todas, de_datos)
+    })
+    .await
+    .map_err(ErrorApi::interno)?;
+    Ok(Json(json!({
+        "sha256": sha256, "bytes": bytes,
+        "version": info["version"], "origen": info["origen"], "ultima": info["ultima"], "de_datos": info["de_datos"],
+    })))
 }
 
 /// `GET /api/agente/instalador/{lote}` (sin sesión, con límite por IP): el instalador genérico

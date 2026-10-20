@@ -360,14 +360,18 @@ pub fn buscar_y_anotar(st: &St, fuente: &Fuente) -> Option<Ultima> {
 }
 
 /// 14dd: tras bajar una versión completa, el instalador del agente (si el servidor usa el
-/// de su carpeta de datos y no hay ninguno o es de una versión anterior).
+/// de su carpeta de datos y no hay ninguno o es de una versión anterior). 15x: uno puesto a
+/// mano cuenta con la versión de la publicación que tenga su mismo SHA-256; si no es de
+/// ninguna conocida, no se pisa (la consola ofrece «Cambiarlo por el de la X»).
 fn instalador_tras_bajar(st: &St) -> Option<String> {
     use crate::instalador_agente as ia;
     if st.opciones.instalador_agente.as_deref() != Some(ia::en_datos(&st.datos).as_path()) {
         return None;
     }
-    let g = pb::vigente(&st.datos, &pb::llaves(&st.opciones))?;
-    match ia::de_publicacion(&st.datos, &g, false) {
+    let l = pb::llaves(&st.opciones);
+    let g = pb::vigente(&st.datos, &l)?;
+    let conocidas = pb::guardadas(&st.datos, &l);
+    match ia::de_publicacion(&st.datos, &g, &conocidas, false) {
         Ok(ia::DePublicacion::Puesto { version, .. }) => Some(format!("Instalador del agente de Windows puesto: el de la {version}.")),
         Ok(_) => None,
         Err(e) => Some(format!("No se pudo poner el instalador del agente: {e}")),
@@ -592,25 +596,44 @@ mod pruebas {
         let (texto, firma, exe, tgz) = publicacion("0.8.0");
         buscar(&d, &l, &fuente(&mentira(rutas_de("0.8.0", &texto, &firma, &exe, &tgz)))).unwrap();
         let g = pb::vigente(&d, &l).unwrap();
+        let conocidas = pb::guardadas(&d, &l);
         // Sin ninguno: se pone, con su versión.
-        assert_eq!(ia::de_publicacion(&d, &g, false).unwrap(), ia::DePublicacion::Puesto { version: "0.8.0".into(), bytes: exe.len() as u64 });
+        assert_eq!(ia::de_publicacion(&d, &g, &conocidas, false).unwrap(), ia::DePublicacion::Puesto { version: "0.8.0".into(), bytes: exe.len() as u64 });
         assert_eq!(std::fs::read(ia::en_datos(&d)).unwrap(), exe);
         assert_eq!(ia::version_puesta(&d).as_deref(), Some("0.8.0"));
-        assert_eq!(ia::de_publicacion(&d, &g, false).unwrap(), ia::DePublicacion::AlDia { version: "0.8.0".into() });
+        assert_eq!(ia::de_publicacion(&d, &g, &conocidas, false).unwrap(), ia::DePublicacion::AlDia { version: "0.8.0".into() });
         // Una más nueva: se cambia sola.
         let (texto, firma, exe2, tgz) = publicacion("0.8.1");
         buscar(&d, &l, &fuente(&mentira(rutas_de("0.8.1", &texto, &firma, &exe2, &tgz)))).unwrap();
         let g2 = pb::vigente(&d, &l).unwrap();
-        assert!(matches!(ia::de_publicacion(&d, &g2, false).unwrap(), ia::DePublicacion::Puesto { .. }));
+        let conocidas = pb::guardadas(&d, &l);
+        assert!(matches!(ia::de_publicacion(&d, &g2, &conocidas, false).unwrap(), ia::DePublicacion::Puesto { .. }));
         assert_eq!(std::fs::read(ia::en_datos(&d)).unwrap(), exe2);
-        // Uno puesto a mano (versión desconocida): solo con «Ponerlo ahora».
+        let sha = |b: &[u8]| ia::sha256_hex(b);
+        assert_eq!(ia::servido(&d, &ia::en_datos(&d), &sha(&exe2), &conocidas), ia::Servido { version: Some("0.8.1".into()), origen: "publicacion" });
+        // 15x: uno puesto a mano que es el de una publicación conocida (el de la 0.8.0): cuenta con
+        // esa versión y se cambia solo por el de la 0.8.1.
         let a_mano = d.parent().unwrap().join("a-mano.exe");
         std::fs::write(&a_mano, &exe).unwrap();
         ia::poner(&d, &a_mano, None).unwrap();
         assert_eq!(ia::version_puesta(&d), None);
-        assert_eq!(ia::de_publicacion(&d, &g2, false).unwrap(), ia::DePublicacion::OtroAMano);
-        assert!(matches!(ia::de_publicacion(&d, &g2, true).unwrap(), ia::DePublicacion::Puesto { .. }));
+        assert_eq!(ia::servido(&d, &ia::en_datos(&d), &sha(&exe), &conocidas), ia::Servido { version: Some("0.8.0".into()), origen: "huella" });
+        assert_eq!(ia::de_publicacion(&d, &g2, &conocidas, false).unwrap(), ia::DePublicacion::Puesto { version: "0.8.1".into(), bytes: exe2.len() as u64 });
         assert_eq!(std::fs::read(ia::en_datos(&d)).unwrap(), exe2);
+        // Uno puesto a mano que no es de ninguna publicación conocida: no se pisa solo; sí con
+        // «Cambiarlo por el de la 0.8.1» (forzar).
+        let mut raro = exe.clone();
+        raro[3000] = 7;
+        std::fs::write(&a_mano, &raro).unwrap();
+        ia::poner(&d, &a_mano, None).unwrap();
+        assert_eq!(ia::servido(&d, &ia::en_datos(&d), &sha(&raro), &conocidas), ia::Servido { version: None, origen: "desconocida" });
+        assert_eq!(ia::de_publicacion(&d, &g2, &conocidas, false).unwrap(), ia::DePublicacion::OtroAMano);
+        assert_eq!(std::fs::read(ia::en_datos(&d)).unwrap(), raro);
+        assert!(matches!(ia::de_publicacion(&d, &g2, &conocidas, true).unwrap(), ia::DePublicacion::Puesto { .. }));
+        assert_eq!(std::fs::read(ia::en_datos(&d)).unwrap(), exe2);
+        // La marca de la versión no vale si el archivo cambió después (mismo nombre, otro SHA-256).
+        std::fs::write(ia::en_datos(&d), &raro).unwrap();
+        assert_eq!(ia::servido(&d, &ia::en_datos(&d), &sha(&raro), &conocidas).origen, "desconocida");
     }
 
     #[test]
