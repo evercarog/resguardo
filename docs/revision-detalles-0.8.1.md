@@ -2,6 +2,20 @@
 
 Cuatro revisiones de solo lectura del código (sin arrancar la consola ni probar en un navegador), hechas para el bloque G de [plan-0.8.1.md](plan-0.8.1.md): textos y voz de la consola; estados de las pantallas (vacíos, carga, errores, confirmaciones); accesibilidad y pantallas estrechas; y lo que ven las personas fuera de la consola (agente, bandeja, ventana, instalador, avisos y correos del servidor). Las rutas son relativas a `consola/src` salvo que digan otra cosa. Al hacer cada punto, comprobar que sigue igual en el código: esto es una foto del 2026-10-19.
 
+## Estado tras la rama `ia/081-consola-g` (2026-10-20)
+
+Hecho en la consola y `ui/`: G1 (salvo el aviso de Windows del agente), G2, G3, G5, G6 y G7. Lo que quedó sin hacer o se decidió distinto:
+
+- **G1, «Prueba de restauración contada como verificación» (`crates/agente/src/escritorio.rs`):** es del agente; va con G4 (otra línea).
+- **G1, Escape:** con `dismissible={false}` pregunta «¿Cerrar sin terminar?» (no lo bloquea); mientras envía (`ocupado`), no hace nada. La invitación de propietario, los códigos de un solo uso y la ficha avisan de que no se vuelven a enseñar.
+- **G3, «bucket»:** se queda la palabra en el texto corrido (es la que usa cada proveedor); en las etiquetas, «Contenedor (bucket)». «endpoint», entre paréntesis tras «Dirección del servicio».
+- **G3, «Entendido»:** pasa a «Cerrar» en los diálogos que solo informan; se queda en la tarjeta del logro «Primera copia hecha» (la nombra `diseno.md`).
+- **G3, velocidades:** el límite se sigue escribiendo en KiB/s (lo que entiende el agente); se enseña con `bytes()` («2,1 MB/s»), como la velocidad de una copia en marcha.
+- **G3, «espera que compruebes»:** no está en la consola (será de la ventana o del agente: G4).
+- **G5, motivo de un botón apagado:** «Enviar ahora» (informe ejecutivo) y «Quitar» un destino ocupado, enlazados con `aria-describedby`; el de «Quitar» pasa a `aria-disabled` para poder enfocarse.
+- **G2, «Copias de un equipo» vacías:** ya tenían su botón para quien administra; no se cambió.
+- **G7, títulos de diálogo:** en vez de bajarlos a `--fs-h2` (15 px, lo que decía `diseno.md`), un token nuevo `--fs-dialogo` (17 px, lo que se veía) y `--fs-stat-sm` (18 px) para las cifras de las fichas; `diseno.md` los recoge.
+
 ## G1. Fallos de verdad (primero)
 
 - **Variables de CSS que no existen:** `--text`, `--text-muted`, `--danger`, `--danger-text`, `--warn-text` en `espejos/ListaEspejos.svelte` (312, 315, 324, 338), `espejos/EditorEspejo.svelte` (644, 735) y `VersionNueva.svelte` (28): los fallos de los espejos no salen en rojo. `--font-mono` (el token es `--mono`) en 8 componentes; `--fs-md` (no existe) en 11 sitios; `--sp-16` que `docs/diseno.md` lista y `ui/src/estilos.css` no define. Una comprobación estática en `test:vectores` que avise de variables `var(--…)` sin definir.
