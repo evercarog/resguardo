@@ -19,6 +19,8 @@ Claude Code (Opus), en autónomo, desde `ia/integracion-081`. Pedido: los errore
 - **Ventana:** textos («almacén», «destino», «copia derivada», «número de comprobación», el kit) y el motivo de lo último que falló; rehecha (`npm run build:ventana`).
 - Contrato en `api-servidor.md` (gancho y «Cambios», «v1.8x (pendiente de numerar al unir)»).
 
+**Comprobado (en esta rama, Windows):** `cargo fmt --check`, `clippy --workspace` y el del servidor con la consola integrada sin avisos, `cargo test --workspace` (827, con las 3 de siempre saltadas), `npm run check`, `check:ventana`, `build`, `test:vectores`, el e2e completo y `test:sin-referencias`. Para compilar la app congelada hizo falta copiar a esta copia (sin subirlos) `src-tauri/binaries` y `build/` del checkout principal.
+
 **Sin probar:** nada contra un SQL Server real (el permiso que falta, «todas las bases», la salida de `sqlcmd -h -1 -W -f 65001` con go-sqlcmd y con el clásico, nombres con tildes); los avisos de Windows reales; un correo real con la fila «Detalle técnico»; la orden `bases_sqlserver` con un equipo real (solo con el simulador y las pruebas del agente).
 
 **Decisiones para revisar:**
