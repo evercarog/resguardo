@@ -206,3 +206,7 @@ En [api-servidor.md](api-servidor.md) → «Cambios», como «v1.54»:
 ## Sedes (0.8.0, D1)
 
 Con sedes en el cliente ([sedes.md](sedes.md)), «fuera del sitio» es estar en **otra sede que el equipo que copia** (la nube, siempre fuera): `OrigenRegla.sede?` y `PasoRegla.sede?` en la entrada, con vectores compartidos (`sede_otra_cuenta_fuera`, `sede_misma_no_cuenta_fuera`, `nube_siempre_fuera_con_sedes`, `sin_sede_del_destino_manda_el_tipo`, `inmutable_en_otra_sede`, `inmutable_en_la_misma_sede`). Sin sedes, como antes. Lo pone la consola; el agente no conoce las sedes.
+
+## Infraestructura (0.8.1, C4)
+
+Con la infraestructura anotada ([infraestructura.md](infraestructura.md)), la consola pone en la entrada `OrigenRegla.fisico?` y `PasoRegla.fisico?` (el servidor físico) y, si se sabe el conjunto de discos, el soporte real (`conjunto:<servidor>:<conjunto>`) en vez de «equipo + disco»; lo marcado por una persona en el catálogo manda. Aviso nuevo **`servidor_compartido`**: dos copias en equipos distintos (o un destino suelto, como un NAS) del mismo servidor físico (p. ej. una máquina virtual y el almacén que la copia en el mismo anfitrión); en el mismo equipo sigue siendo `mismo_equipo`. Igual en `protection.rs` y `regla321.ts`, con vectores compartidos (`servidor_fisico_compartido`, `servidores_fisicos_distintos`, `mismo_equipo_no_es_servidor_compartido`, `nas_en_el_mismo_servidor`). Sin infraestructura, como antes.
