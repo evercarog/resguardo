@@ -86,6 +86,8 @@ export const NIVEL: Record<string, Nivel> = {
   // Plan 0.8.1 (15u): «Ver las bases de la instancia» (solo lee la lista; sellada para esta consola).
   bases_sqlserver: "sesion",
   conservar_version: "admin",
+  // Plan 0.8.1 (H1, 15mm): «Recuperar en el equipo» en una copia, con la clave.
+  recuperar_en_equipo: "admin",
 };
 
 /** Además de la contraseña del repositorio, piden la clave de administración. */
@@ -104,7 +106,7 @@ export function pideAdminPorCuerpo(tipo: string, cuerpo: Record<string, unknown>
 export const ABRE_SESION = new Set(["abrir_sesion", "explorar", "elegir_carpetas"]);
 
 /** Los técnicos no pueden mandarlas. */
-export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "nombre_repositorio", "tipo_equipo", "quitar_destino", "datos_cliente", "datos_cliente_admin"]);
+export const SOLO_ADMIN_ROL = new Set(["baja_equipo", "desvincular", "cambiar_servidor", "cambiar_clave_admin", "servidores_respaldo", "anadir_consola", "quitar_consola", "nombre_equipo", "nombre_repositorio", "tipo_equipo", "quitar_destino", "datos_cliente", "datos_cliente_admin", "recuperar_en_equipo"]);
 
 /**
  * ¿Es destructiva? Algunas solo lo son con cierto cuerpo: desvincular con

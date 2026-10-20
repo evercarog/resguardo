@@ -362,6 +362,8 @@ export interface ResumenEquipo {
   comentarios?: ComentarioVersion[] | null;
   /** Plan 0.8.0, F2 (14cc, `admite: "conservar_version"`): versiones que la retención del equipo nunca quita. */
   conservadas?: VersionConservada[] | null;
+  /** 0.8.1 (H1, 15mm; `admite: "recuperar_en_equipo"`): lo del cliente que llegó al equipo y lo de cada copia (`<repo>#<copia>`). */
+  recuperar?: { cliente: boolean; max_mb: number; copias?: Record<string, boolean> } | null;
 }
 
 /** Plan 0.8.0, F2 (14ww-2): un comentario en una versión (lo guarda el equipo; lo ven todas sus consolas). */

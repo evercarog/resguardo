@@ -3,14 +3,16 @@
   // ondas en vivo), las copias, el historial y, con la clave, los ajustes (y en
   // modo sin consola, todo lo del equipo). Lo pesado se carga al abrirlo.
   import Logo from "$ui/componentes/Logo.svelte";
-  import { Activity, CalendarClock, History, Settings2 } from "@lucide/svelte";
+  import { Activity, ArchiveRestore, CalendarClock, History, Settings2 } from "@lucide/svelte";
+  import { untrack } from "svelte";
   import { vivo } from "./puente.svelte";
   import { tono } from "./estado";
   import Ahora from "./Ahora.svelte";
   import Copias from "./Copias.svelte";
   import Historial from "./Historial.svelte";
+  import Recuperar from "./Recuperar.svelte";
 
-  type Pestana = "ahora" | "copias" | "historial" | "ajustes";
+  type Pestana = "ahora" | "copias" | "historial" | "recuperar" | "ajustes";
   let pestana = $state<Pestana>("ahora");
   const b = $derived(vivo.datos?.bandeja ?? null);
   const t = $derived(tono(b, vivo.datos?.ahora));
@@ -21,8 +23,20 @@
     { id: "ahora", texto: "Ahora", icono: Activity },
     { id: "copias", texto: "Copias", icono: CalendarClock },
     { id: "historial", texto: "Historial", icono: History },
+    // 0.8.1 (H1, 15mm): la persona del equipo recupera lo suyo (sin clave).
+    { id: "recuperar", texto: "Recuperar", icono: ArchiveRestore },
     { id: "ajustes", texto: "Ajustes", icono: Settings2 },
   ];
+  // Desde el Explorador («Versiones anteriores con Resguardo»): directamente a «Recuperar».
+  let pedidoVisto = "";
+  $effect(() => {
+    const h = vivo.datos?.recuperar?.hora ?? "";
+    if (!h || h === pedidoVisto) return;
+    untrack(() => {
+      pedidoVisto = h;
+      pestana = "recuperar";
+    });
+  });
 </script>
 
 <div class="marco">
@@ -52,6 +66,8 @@
       <Copias />
     {:else if pestana === "historial"}
       <Historial />
+    {:else if pestana === "recuperar"}
+      <Recuperar />
     {:else}
       {#await cargarAjustes()}
         <p class="v-sub">Cargando…</p>

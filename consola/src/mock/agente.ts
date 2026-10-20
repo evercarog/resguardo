@@ -1368,6 +1368,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       abrirSesion(e, o, plana);
       return resultado(e, o, "hecha", "Sesión abierta.");
     }
+    case "recuperar_en_equipo": {
+      // 0.8.1 (H1): como el agente, sí, no o lo del cliente en esa copia.
+      if (!e.resumen?.admite?.includes("recuperar_en_equipo")) return resultado(e, o, "fallida", "Operación no válida.");
+      const r = (e.resumen.recuperar ??= { cliente: false, max_mb: 1024, copias: {} });
+      const k = `${c.repo}#${c.copia}`;
+      r.copias = { ...(r.copias ?? {}) };
+      if (c.activo === true || c.activo === false) r.copias[k] = c.activo;
+      else delete r.copias[k];
+      return resultado(e, o, "hecha", c.activo === true ? "Cada persona puede recuperar en este equipo sus propios archivos de esta copia." : c.activo === false ? "Nadie recupera desde este equipo los archivos de esta copia." : "La copia sigue lo del cliente para recuperar en el equipo.");
+    }
     case "comprobar_contrasena": {
       // 14bbb: como el agente, la contraseña ya se comparó con la guardada (y contó como intento);
       // aquí el motor «abre» el repositorio y sus copias con la misma.

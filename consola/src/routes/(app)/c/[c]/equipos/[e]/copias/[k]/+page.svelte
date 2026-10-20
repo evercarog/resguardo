@@ -60,6 +60,7 @@
   import Cargando from "$lib/componentes/Cargando.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
+  import RecuperarEnCopia from "$lib/componentes/RecuperarEnCopia.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import GraficaBarras from "$lib/componentes/repo/GraficaBarras.svelte";
@@ -380,6 +381,8 @@
       <!-- Plan 0.8.0, E4 (14j): probar a restaurar desde cada espejo de su camino. -->
       {#if actual.cliente}<PruebasEspejo cliente={actual.cliente} {equipo} rc={regla} equipos={actual.equipos} ordena={puede.ordenar(rol) && equipo.modo !== "trasladado"} />{/if}
     {/if}
+    <!-- Plan 0.8.1, H1 (15mm): que cada persona del equipo recupere sus propios archivos de esta copia. -->
+    {#if actual.cliente && k}<RecuperarEnCopia cliente={actual.cliente} {equipo} copia={{ id: k.id, repo: k.repo, nombre: k.nombre }} />{/if}
     <!-- Plan 0.8.1, C1 (15n): dónde están los datos de esta copia, con su ruta real. -->
     {#if repo}<DondeEsta {equipo} {repo} rc={regla} {informe} cliente={c} />{/if}
 

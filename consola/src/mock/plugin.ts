@@ -266,7 +266,12 @@ const rutas: Ruta[] = [
       // 0.8.1: los dos son opcionales; sin poner nada, el motivo es obligatorio y «Recuperar en el equipo», no.
       const b = ctx.cuerpo as { motivo_obligatorio?: boolean; recuperar?: { activo?: boolean; max_mb?: number } };
       if (typeof b.motivo_obligatorio === "boolean") estado.ajustesRest.set(c, b.motivo_obligatorio);
-      if (b.recuperar) estado.recuperarRest.set(c, { activo: !!b.recuperar.activo, max_mb: b.recuperar.max_mb ?? 1024 });
+      if (b.recuperar) {
+        estado.recuperarRest.set(c, { activo: !!b.recuperar.activo, max_mb: b.recuperar.max_mb ?? 1024 });
+        // Como si el dato común llegara a los equipos que lo admiten.
+        for (const e of estado.equipos.filter((x) => x.cliente === c && x.resumen?.admite?.includes("recuperar_en_equipo")))
+          e.resumen!.recuperar = { ...(e.resumen!.recuperar ?? { copias: {} }), cliente: !!b.recuperar.activo, max_mb: b.recuperar.max_mb ?? 1024 };
+      }
       return { ...ajustesRestauraciones(c), actualizada: new Date().toISOString(), por: sesionDe(ctx).nombre };
     },
   ],
