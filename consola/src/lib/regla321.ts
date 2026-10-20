@@ -1079,13 +1079,13 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
     case "anadir_destino":
       return { texto: "Añade otro destino: una copia derivada (la nube u otro disco) o un espejo del almacén.", enlace: externa };
     case "otro_soporte":
-      return { texto: "Guarda una copia en otro equipo u otro disco: un almacén de la oficina, un disco USB o la nube.", enlace: { texto: "Repositorios y destinos", href: `/c/${cliente}/repositorios` } };
+      return { texto: "Guarda una copia en otro equipo u otro disco: un almacén de la oficina, un disco USB o la nube.", enlace: { texto: "Destinos", href: `/c/${cliente}/destinos` } };
     case "anadir_fuera":
       return { texto: "Añade un destino fuera del sitio o en la nube: Backblaze B2 (con bloqueo de objetos) o Dropbox, como copia derivada, espejo del almacén o copia directa a la nube.", enlace: externa };
     case "anadir_inmutable":
       return {
         texto: "Añade un destino inmutable (B2 o S3 con bloqueo de objetos), marca las instantáneas del anfitrión del almacén que él no ve, o marca uno como Aislado (un disco que se desconecta y se rota). Un almacén de solo añadir no basta: no protege de quien lo administra.",
-        enlace: { texto: "Destinos", href: `/c/${cliente}/repositorios#destinos` },
+        enlace: { texto: "Destinos", href: `/c/${cliente}/destinos#destinos` },
       };
     case "programar_verificacion":
       return { texto: "Programa la verificación automática del repositorio (por ejemplo, cada semana, un 10 %).", enlace: { texto: "Verificación", href: `/c/${cliente}/equipos/${e.id}/copias?verificacion=${encodeURIComponent(rc.repo.id)}` } };
@@ -1105,7 +1105,7 @@ export function queHacer(p: ParteRegla, rc: ReglaCopia, cliente: string, ahora: 
             ? "La última prueba funcional no salió del todo bien: revísala y repítela."
             : "La última prueba de restauración falló: revísala."
           : `No hay una prueba de restauración correcta en los últimos ${DIAS_PRUEBA_REGLA} días: prueba ahora.`,
-        enlace: rc.entrada.prueba_restauracion.fallo && rc.entrada.prueba_restauracion.origen === "funcional" ? { texto: "Ver las pruebas funcionales", href: `/c/${cliente}/pruebas` } : { texto: "Ver el repositorio", href: repo },
+        enlace: rc.entrada.prueba_restauracion.fallo && rc.entrada.prueba_restauracion.origen === "funcional" ? { texto: "Ver las pruebas funcionales", href: `/c/${cliente}/recuperar/pruebas` } : { texto: "Ver el repositorio", href: repo },
       };
     case "revisar_destino": {
       const x = rc.pasos.find((y) => y.verificacion_mal);

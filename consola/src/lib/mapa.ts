@@ -470,7 +470,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     for (const [dk, xs] of porDestino) {
       const total = xs.reduce((s, { p, x }) => s + (bytesRepo(x.r, informeDe(informes[p.equipo.id], x.r.id)) ?? 0), 0);
       const ultima = xs.map(({ p, x }) => ultimaVersion(x.r, informeDe(informes[p.equipo.id], x.r.id)) ?? "").sort().at(-1) || null;
-      const pildora = poner({ id: `rg:${k}:${dk}`, tipo: "repo", col: 1, nombre: plural(xs.length, "repositorio", "repositorios"), sub: "al día", tono: "ok", estado: "Al día", ultima, href: `/c/${c}/repositorios`, icono: "repo", cifra: total ? bytes(total) : undefined });
+      const pildora = poner({ id: `rg:${k}:${dk}`, tipo: "repo", col: 1, nombre: plural(xs.length, "repositorio", "repositorios"), sub: "al día", tono: "ok", estado: "Al día", ultima, href: `/c/${c}/destinos`, icono: "repo", cifra: total ? bytes(total) : undefined });
       const dest = nodoDestino(xs[0].p, xs[0].x);
       anotarEnAlmacen(pildora.id, xs);
       if (ultima && (!dest.ultima || ultima > dest.ultima)) dest.ultima = ultima;

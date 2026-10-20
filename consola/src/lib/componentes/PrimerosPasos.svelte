@@ -47,7 +47,7 @@
             hecho: !!respaldo.clave_puesta && respaldo.activo,
             titulo: "Copia de la consola",
             texto: "Pon la clave de respaldo de la consola e imprime su kit: cada noche este servidor guardará una copia cifrada de sí mismo, para restaurarlo en otra máquina sin volver a vincular los equipos.",
-            accion: { texto: "Ponerla", href: `/c/${c}/servidor#copia-consola` },
+            accion: { texto: "Ponerla", href: `/c/${c}/ajustes/servidor#copia-consola` },
           },
         ]
       : [],

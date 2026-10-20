@@ -17,12 +17,14 @@ export const IR_A: { tecla: string; texto: string; ruta: string }[] = [
   { tecla: "s", texto: "Estado", ruta: "" },
   { tecla: "e", texto: "Equipos", ruta: "/equipos" },
   { tecla: "c", texto: "Copias", ruta: "/copias" },
-  { tecla: "r", texto: "Repositorios y destinos", ruta: "/repositorios" },
-  { tecla: "t", texto: "Restaurar", ruta: "/restaurar" },
-  { tecla: "b", texto: "Buscar archivos", ruta: "/buscar" },
-  { tecla: "o", texto: "Órdenes", ruta: "/ordenes" },
+  { tecla: "d", texto: "Destinos", ruta: "/destinos" },
+  // Plan 0.8.1, B1: «r» lleva ahora a Recuperar (Restaurar es su primera pestaña).
+  { tecla: "r", texto: "Recuperar", ruta: "/recuperar" },
+  { tecla: "b", texto: "Buscar archivos", ruta: "/recuperar/buscar" },
   { tecla: "a", texto: "Avisos", ruta: "/avisos" },
+  { tecla: "o", texto: "Actividad: órdenes", ruta: "/actividad" },
   { tecla: "i", texto: "Informes", ruta: "/informes" },
+  { tecla: "j", texto: "Ajustes", ruta: "/ajustes" },
 ];
 
 function escribiendo(e: KeyboardEvent) {

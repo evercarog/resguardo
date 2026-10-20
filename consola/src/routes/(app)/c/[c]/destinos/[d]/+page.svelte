@@ -139,15 +139,15 @@
     <Esqueleto forma="tarjetas" n={2} />
   {:else if !v}
     <div class="card">
-      <Vacio icono={Database} ilustracion="no-encontrado" titulo="Este destino ya no está" texto="Puede que se quitara la zona o se desconectara la nube. Los demás destinos están en «Repositorios y destinos».">
-        <a class="btn btn-primary" href="/c/{c}/repositorios#destinos">Ver los destinos</a>
+      <Vacio icono={Database} ilustracion="no-encontrado" titulo="Este destino ya no está" texto="Puede que se quitara la zona o se desconectara la nube. Los demás destinos están en «Destinos».">
+        <a class="btn btn-primary" href="/c/{c}/destinos#destinos">Ver los destinos</a>
       </Vacio>
     </div>
   {:else}
     <CabeceraPagina
       titulo={v.nombre}
       icono={Icono}
-      migas={[{ texto: actual.cliente.nombre, href: `/c/${c}` }, { texto: "Repositorios y destinos", href: `/c/${c}/repositorios#destinos` }, { texto: v.nombre }]}
+      migas={[{ texto: actual.cliente.nombre, href: `/c/${c}` }, { texto: "Destinos", href: `/c/${c}/destinos#destinos` }, { texto: v.nombre }]}
       resumen="{queEs}{v.renombrado ? ` · antes «${v.nombrePorDefecto}»` : ''}"
     >
       {#snippet acciones()}

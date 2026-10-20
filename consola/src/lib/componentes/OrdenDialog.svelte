@@ -343,7 +343,7 @@
       <div class="resultado">
         {#if orden.not_before && orden.estado === "pendiente"}
           <Chip tono="warn" texto="Esperando su turno" />
-          <p>Se aplicará dentro de <strong>{cuentaAtras(orden.not_before)}</strong>, salvo que alguien la cancele desde <a href="/c/{cliente.id}/ordenes">Órdenes</a>. Todo el cliente ha recibido un aviso.</p>
+          <p>Se aplicará dentro de <strong>{cuentaAtras(orden.not_before)}</strong>, salvo que alguien la cancele desde <a href="/c/{cliente.id}/actividad">Órdenes</a>. Todo el cliente ha recibido un aviso.</p>
         {:else}
           <Chip tono={ESTADO_ORDEN[orden.estado].tono} texto={ESTADO_ORDEN[orden.estado].texto} girando={fase === "esperando"} />
           <p>

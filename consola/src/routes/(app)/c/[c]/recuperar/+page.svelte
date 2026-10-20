@@ -1041,7 +1041,7 @@
               error = "";
             }}>Restaurar más de esta versión</button
           >
-          <a class="btn" href="/c/{actual.id}/restauraciones?equipo={encodeURIComponent(equipoId)}">Ver en Restauraciones</a>
+          <a class="btn" href="/c/{actual.id}/recuperar/restauraciones?equipo={encodeURIComponent(equipoId)}">Ver en Restauraciones</a>
           <a class="btn btn-primary" href="/c/{actual.id}/equipos/{equipoId}?tab=ordenes">Ver en el equipo</a>
         </div>
       </section>

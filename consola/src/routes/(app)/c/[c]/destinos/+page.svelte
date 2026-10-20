@@ -124,13 +124,13 @@
   const conProblemas = $derived(repos.filter((r) => r.estado.tono === "bad" || r.estado.tono === "warn").length);
 </script>
 
-<svelte:head><title>Repositorios y destinos · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
+<svelte:head><title>Destinos · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
 
 <div class="page">
   <CabeceraPagina
-    titulo="Repositorios y destinos"
+    titulo="Destinos"
     icono={Database}
-    migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Repositorios y destinos" }]}
+    migas={[{ texto: actual.cliente?.nombre ?? "Cliente", href: `/c/${actual.id}` }, { texto: "Destinos" }]}
     resumen={actual.cargado
       ? `${plural(repos.length, "repositorio", "repositorios")} en ${plural(vistas.length, "destino", "destinos")} · ${bytes(total)} protegidos${enCamino.length ? ` · ${plural(enCamino.length, "cambio en camino", "cambios en camino")}` : ""}`
       : "Cargando…"}

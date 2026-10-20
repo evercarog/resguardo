@@ -142,7 +142,7 @@
   );
   // La retención que se le aplica (las versiones guardadas la simulan).
   const retencionLinea = $derived(reglaEfectiva(repo, destino, actual.equipos));
-  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/recuperar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
 
   // Órdenes desde aquí (con su diálogo de siempre). `para`: a otro equipo (el almacén).
   let dialogo = $state<{ tipo: string; cuerpo: Record<string, unknown>; descripcion: string; accion?: string; titulo?: string; para?: Equipo; repo?: { id: string; nombre: string } } | null>(null);
@@ -226,7 +226,7 @@
       </div>
       {#if puede.ordenar(rol)}
         <div class="page-actions">
-          {#if nVersiones(repo, inf) || repo.solo_lectura}<a class="btn btn-primary" href="/c/{c}/restaurar?equipo={e}&repo={rid}"><History size={16} />Restaurar</a>{/if}
+          {#if nVersiones(repo, inf) || repo.solo_lectura}<a class="btn btn-primary" href="/c/{c}/recuperar?equipo={e}&repo={rid}"><History size={16} />Restaurar</a>{/if}
           {#if suyas.length === 1}
             <button class="btn" onclick={() => copiarAhora(suyas[0])}><Play size={16} />Copiar ahora</button>
           {:else if suyas.length > 1}

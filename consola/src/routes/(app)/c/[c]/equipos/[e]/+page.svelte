@@ -916,7 +916,7 @@
           <span class="junto">{sistemaDe(equipo)} · agente <span class="pastilla mono">{equipo.version_agente}</span></span>
           <!-- La actualización automática (docs/actualizaciones.md): solo si hay algo que contar. -->
           {#if actualizacionEq && !["al_dia", "sin_datos"].includes(actualizacionEq.clave)}
-            <a class="junto enlace-version" href="/c/{c}/versiones" use:tip={actualizacionEq.detalle ?? actualizacionEq.texto}><Chip pequeno tono={actualizacionEq.tono} texto={actualizacionEq.texto} /></a>
+            <a class="junto enlace-version" href="/c/{c}/ajustes/versiones" use:tip={actualizacionEq.detalle ?? actualizacionEq.texto}><Chip pequeno tono={actualizacionEq.tono} texto={actualizacionEq.texto} /></a>
           {/if}
           {#if equipo.rol === "almacenamiento"}<span class="junto">· Guarda copias <Ayuda id="guarda-copias" /></span>{/if}
           <span class="junto">·
@@ -1214,7 +1214,7 @@
                 {/each}
                 {#if puede.ordenar(rol)}
                   <div class="acciones">
-                    {#if nVersiones(r, inf) || r.solo_lectura}<a class="btn btn-sm btn-primary" href="/c/{c}/restaurar?equipo={equipo.id}&repo={r.id}"><History size={14} />Restaurar</a>{/if}
+                    {#if nVersiones(r, inf) || r.solo_lectura}<a class="btn btn-sm btn-primary" href="/c/{c}/recuperar?equipo={equipo.id}&repo={r.id}"><History size={14} />Restaurar</a>{/if}
                     {#if actual.cliente}<PasosRepo cliente={actual.cliente} {equipo} repo={r} equipos={actual.equipos} administra={puede.administrar(rol)} ordena={puede.ordenar(rol)} alCambiar={() => void cargar()} />{/if}
                     <MenuAcciones etiqueta="Más acciones de «{r.nombre}»" grupos={masRepo(r)} />
                   </div>
@@ -1247,7 +1247,7 @@
           equipo
           historial={historia.entradas}
           ultimas={equipo.ultimo_informe?.datos.copias ?? []}
-          enlace={(r, v, todo) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: equipo!.id, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`}
+          enlace={(r, v, todo) => `/c/${c}/recuperar?${new URLSearchParams({ equipo: equipo!.id, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`}
           ahora={reloj.ahora}
           puedeRestaurar={puede.ordenar(rol)}
           vacio="Cada vez que se haga una copia se guardará aquí una versión que podrás explorar y restaurar."

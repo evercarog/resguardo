@@ -132,7 +132,7 @@
   const conDuracion = $derived(ejecuciones.filter((x) => x.duracion_s != null));
   const ganchosRes = $derived(fila?.ganchos ?? []);
   const rol = $derived(equipo?.modo === "trasladado" ? "lectura" : actual.cliente?.rol);
-  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/restaurar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
+  const enlace = (r: string, v: VersionInforme, todo: boolean) => `/c/${c}/recuperar?${new URLSearchParams({ equipo: e, repo: r, version: v.id, ...(todo ? { todo: "1" } : {}) })}`;
   // Tarea 8: la regla 3-2-1-1-0, con lo que dice el catálogo de destinos del cliente.
   $effect(() => {
     const cc = c;
@@ -265,7 +265,7 @@
           {#if k.activa !== false}<button class="btn btn-primary" onclick={copiarAhora}><Play size={16} />Copiar ahora</button>{/if}
           {#if k.completada && puede.administrar(rol)}<button class="btn" onclick={() => (reanudando = !reanudando)} aria-expanded={reanudando}><RotateCcw size={16} />Reanudar</button>{/if}
           {#if puede.administrar(rol)}<a class="btn" href="/c/{c}/equipos/{e}/copias?copia={encodeURIComponent(kid)}" use:tip={"Carpetas, horario, cuándo empieza y su orden, en el editor de copias"}><Pencil size={16} />Cambiar</a>{/if}
-          {#if versiones.length || repo?.versiones}<a class="btn btn-ghost" href="/c/{c}/restaurar?equipo={e}&repo={encodeURIComponent(k.repo)}"><History size={16} />Restaurar</a>{/if}
+          {#if versiones.length || repo?.versiones}<a class="btn btn-ghost" href="/c/{c}/recuperar?equipo={e}&repo={encodeURIComponent(k.repo)}"><History size={16} />Restaurar</a>{/if}
         </div>
       {/if}
     </header>

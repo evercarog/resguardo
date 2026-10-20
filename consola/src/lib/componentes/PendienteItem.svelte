@@ -51,7 +51,7 @@
   </span>
   <span class="texto">
     <span class="titulo">{p.titulo}{#if conEquipo}<span class="faint">{" · "}{p.equipoNombre}</span>{/if}</span>
-    <span class="estado">{texto}{#if estado === "espera" || estado === "mal"} <a class="link" href="/c/{p.cliente}/ordenes">Ver en Órdenes</a>{/if}</span>
+    <span class="estado">{texto}{#if estado === "espera" || estado === "mal"} <a class="link" href="/c/{p.cliente}/actividad">Ver en Órdenes</a>{/if}</span>
   </span>
   {#if estado === "mal" || estado === "hecha"}
     <button type="button" class="icon-btn" aria-label="Quitar este aviso" use:tip={"Quitar"} onclick={() => quitarPendiente(o.id)}><X size={14} /></button>

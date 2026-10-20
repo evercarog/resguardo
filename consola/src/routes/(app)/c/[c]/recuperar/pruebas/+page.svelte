@@ -160,7 +160,7 @@
     resumen="Simulacros de recuperación: recuperar datos como el día de un problema y apuntar cuánto se tardó (RTO) y de cuándo eran los datos (RPO). La última correcta de cada repositorio cuenta en el «0» de la regla 3-2-1-1-0."
   >
     {#snippet acciones()}
-      <a class="btn" href="/c/{actual.id}/restauraciones"><History size={16} />Restauraciones</a>
+      <a class="btn" href="/c/{actual.id}/recuperar/restauraciones"><History size={16} />Restauraciones</a>
       {#if puedeRegistrar && datos}<button class="btn btn-primary" onclick={() => (form = { editando: null, inicial: null })}><Plus size={16} />Registrar una prueba</button>{/if}
     {/snippet}
   </CabeceraPagina>
@@ -283,7 +283,7 @@
       <dd>{textoMinutos(p.rto_min)}{cumpleTexto(p.cumple_rto)}</dd>
       <dt>Antigüedad (RPO)</dt>
       <dd>{textoMinutos(p.rpo_min)}{cumpleTexto(p.cumple_rpo)}</dd>
-      {#if p.restauracion}<dt>Restauración</dt><dd><a class="link-suave" href="/c/{actual.id}/restauraciones?equipo={encodeURIComponent(p.restauracion.equipo)}">La registrada en {nombreEquipo(p.restauracion.equipo)}</a></dd>{/if}
+      {#if p.restauracion}<dt>Restauración</dt><dd><a class="link-suave" href="/c/{actual.id}/recuperar/restauraciones?equipo={encodeURIComponent(p.restauracion.equipo)}">La registrada en {nombreEquipo(p.restauracion.equipo)}</a></dd>{/if}
       {#if p.notas}<dt>Notas</dt><dd class="pre">{p.notas}</dd>{/if}
       {#if p.adjuntos.length}
         <dt>Adjuntos</dt>

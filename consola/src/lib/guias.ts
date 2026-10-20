@@ -227,7 +227,7 @@ export const PREGUNTAS: Pregunta[] = [
   {
     id: "si-contrasena-repo",
     si: "Perdí la contraseña de un repositorio",
-    respuesta: ["Está en su kit de recuperación. Si no lo tienes, el propio equipo la muestra en local, como administrador (cambia «documentos» por el identificador del repositorio, que ves en «Repositorios y destinos»)."],
+    respuesta: ["Está en su kit de recuperación. Si no lo tienes, el propio equipo la muestra en local, como administrador (cambia «documentos» por el identificador del repositorio, que ves en «Destinos»)."],
     comando: "resguardo-agente kit documentos",
   },
   // 14yy (lo que sí se hace): la contraseña de un repositorio no se cambia en el sitio.

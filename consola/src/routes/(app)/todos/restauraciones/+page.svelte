@@ -72,7 +72,7 @@
         <li>
           <span class="ic" class:mal={r.resultado === "fallo"} aria-hidden="true">{#if r.resultado === "fallo"}<CircleAlert size={16} />{:else}<CircleCheck size={16} />{/if}</span>
           <span class="txt">
-            <span class="quien"><MarcaCliente nombre={r.cliente.nombre} marca={r.cliente.marca} tam={16} /><a class="link-suave" href="/c/{r.cliente.id}/restauraciones">{r.cliente.nombre}</a>{#if r.equipoNombre}{" · "}<a class="link-suave" href="/c/{r.cliente.id}/equipos/{r.equipo}">{r.equipoNombre}</a>{/if}</span>
+            <span class="quien"><MarcaCliente nombre={r.cliente.nombre} marca={r.cliente.marca} tam={16} /><a class="link-suave" href="/c/{r.cliente.id}/recuperar/restauraciones">{r.cliente.nombre}</a>{#if r.equipoNombre}{" · "}<a class="link-suave" href="/c/{r.cliente.id}/equipos/{r.equipo}">{r.equipoNombre}</a>{/if}</span>
             <strong>{r.resultado === "fallo" ? "Falló" : "Restaurado"} · {r.repo}<span class="sr-only">{r.resultado === "fallo" ? " (fallida)" : " (correcta)"}</span></strong>
             <span class="det">{plural(r.elementos ?? 0, "elemento", "elementos")}{r.bytes ? ` · ${bytes(r.bytes)}` : ""} · {textoDestino(r.destino)} · {textoQuien(r)}{#if r.motivoFinal}{" · "}{textoMotivo(r.motivoFinal.tipo)}{/if}</span>
             {#if r.resultado === "fallo" && r.mensaje}<span class="det mal">{r.mensaje}</span>{/if}

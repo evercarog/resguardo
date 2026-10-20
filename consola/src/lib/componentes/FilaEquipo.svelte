@@ -65,7 +65,7 @@
     return [
       deCopias,
       [
-        ...(equipo.resumen?.repositorios?.length ? [{ texto: "Restaurar archivos…", icono: History, onclick: () => goto(`/c/${cliente}/restaurar?equipo=${equipo.id}`) }] : []),
+        ...(equipo.resumen?.repositorios?.length ? [{ texto: "Restaurar archivos…", icono: History, onclick: () => goto(`/c/${cliente}/recuperar?equipo=${equipo.id}`) }] : []),
         { texto: "Ver sus órdenes", icono: ClipboardList, onclick: () => goto(`${base}?tab=ordenes`) },
       ],
     ];

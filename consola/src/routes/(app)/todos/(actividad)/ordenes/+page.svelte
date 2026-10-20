@@ -100,7 +100,7 @@
         {#each vistas as o (o.clave)}
           <li>
             <span class="texto">
-              <span class="quien"><MarcaCliente nombre={o.cliente.nombre} marca={o.cliente.marca} tam={16} /><a class="link-suave" href="/c/{o.cliente.id}/ordenes">{o.cliente.nombre}</a></span>
+              <span class="quien"><MarcaCliente nombre={o.cliente.nombre} marca={o.cliente.marca} tam={16} /><a class="link-suave" href="/c/{o.cliente.id}/actividad">{o.cliente.nombre}</a></span>
               <span><strong>{o.descripcion ?? nombreOrden(o.tipo)}</strong> en <a class="link-suave" href="/c/{o.cliente.id}/equipos/{o.equipo}">{o.equipoNombre}</a></span>
               <span class="faint">
                 {#if o.otraConsola}Desde otra consola: <strong>{o.otraConsola}</strong>{#if o.por}{" · "}pedida por {o.por}{/if}{:else}Pedida por {o.por ?? "?"}{/if}

@@ -175,7 +175,7 @@
     if (!hecho) return;
     const q = new URLSearchParams({ equipo: hecho.equipo.id, repo: hecho.repo, nombre: hecho.nombre });
     // Carga de nuevo la página de restaurar con ese equipo y repositorio (también si ya estaba en ella).
-    location.assign(`/c/${cliente.id}/restaurar?${q}`);
+    location.assign(`/c/${cliente.id}/recuperar?${q}`);
   }
 </script>
 

@@ -221,7 +221,7 @@ export interface UsoPosible {
  * - un destino suelto del catálogo: «Nuevo repositorio» (`?nuevo=1`).
  */
 export function usarEnCopia(v: DestinoVista, equipos: Equipo[], cliente: string): UsoPosible[] {
-  if (v.clase === "suelto") return [{ texto: "Nuevo repositorio aquí", detalle: "Elige el equipo; pide las credenciales del destino una vez.", href: `/c/${cliente}/repositorios?nuevo=1` }];
+  if (v.clase === "suelto") return [{ texto: "Nuevo repositorio aquí", detalle: "Elige el equipo; pide las credenciales del destino una vez.", href: `/c/${cliente}/destinos?nuevo=1` }];
   const q = `destino=${encodeURIComponent(v.clave)}`;
   const activos = equipos.filter((e) => e.confirmado && e.modo !== "trasladado");
   const out: UsoPosible[] = [];
