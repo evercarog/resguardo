@@ -70,6 +70,11 @@ pub enum Clase {
     /// 0.8.0 (D2): `orden.equipos:<ámbito>` (hoy, `todos`) → `{ ids: [..] }` o `null` (el orden
     /// a mano de los equipos, igual en todas las consolas).
     OrdenEquipos,
+    /// 0.8.1 (B2, 15y): `exclusiones:<id>` → `{ nombre, reglas: [..] }` o `null` (quitado). Un
+    /// grupo de reglas de «No copiar» del cliente («Música»: `*.mp3`, `*.flac`…), igual en todas
+    /// sus consolas. Solo el dato: las copias guardan las reglas que aplican (el equipo no
+    /// depende de él). Solo a agentes con [`ADMITE_EXCLUSIONES`].
+    GrupoExclusiones,
 }
 
 impl Clase {
@@ -85,11 +90,12 @@ impl Clase {
             Clase::SedeDestino => "sede.destino:",
             Clase::EtiquetaCategoria => "etiqueta.categoria:",
             Clase::OrdenEquipos => "orden.equipos:",
+            Clase::GrupoExclusiones => "exclusiones:",
         }
     }
 }
 
-const CLASES: [Clase; 10] = [
+const CLASES: [Clase; 11] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -100,6 +106,7 @@ const CLASES: [Clase; 10] = [
     Clase::SedeDestino,
     Clase::EtiquetaCategoria,
     Clase::OrdenEquipos,
+    Clase::GrupoExclusiones,
 ];
 
 /// 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda las sedes, las categorías de
@@ -113,6 +120,35 @@ pub fn es_de_sedes(clave: &str) -> bool {
 pub const MAX_SEDES: usize = 50;
 pub const MAX_ETIQUETAS_CATEGORIA: usize = 50;
 pub const MAX_ORDEN: usize = 500;
+
+/// 0.8.1 (B2, 15y): `resumen.admite` de un agente que guarda los grupos de exclusiones
+/// (`exclusiones:<id>`). A uno anterior no se le mandan (rechazaría la orden entera).
+pub const ADMITE_EXCLUSIONES: &str = "grupos_exclusiones";
+/// ¿Es un grupo de exclusiones (solo para agentes con [`ADMITE_EXCLUSIONES`])?
+pub fn es_de_exclusiones(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::GrupoExclusiones))
+}
+/// Como mucho, reglas en un grupo de exclusiones y caracteres en cada regla.
+pub const MAX_REGLAS_GRUPO: usize = 100;
+pub const MAX_LARGO_REGLA: usize = 200;
+
+/// Una regla de «No copiar» (un patrón de exclusión, como los de una copia): sin espacios
+/// alrededor, de 1 a [`MAX_LARGO_REGLA`] caracteres, sin caracteres de control y que no lo
+/// excluya todo (`*`, `*.*`, `/`, `**/*`…: solo comodines, puntos y barras).
+pub fn regla_exclusion_valida(r: &str) -> Result<String, &'static str> {
+    let r = r.trim();
+    let n = r.chars().count();
+    if n == 0 || n > MAX_LARGO_REGLA {
+        return Err("Cada regla: de 1 a 200 caracteres.");
+    }
+    if r.chars().any(char::is_control) {
+        return Err("Una regla no puede llevar caracteres de control.");
+    }
+    if r.chars().all(|c| matches!(c, '*' | '?' | '.' | '/' | '\\')) {
+        return Err("Esa regla lo dejaría todo sin copiar.");
+    }
+    Ok(r.to_string())
+}
 
 /// Un dato y quién lo cambió por última vez.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -150,7 +186,7 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
     let ok = match c {
         Clase::EtiquetaColor | Clase::EtiquetaPlantilla => normalizar_etiqueta(sujeto).is_some_and(|n| n.to_lowercase() == sujeto),
         Clase::Destino | Clase::DestinoRegla => id_destino_valido(sujeto),
-        Clase::Plantilla | Clase::Sede | Clase::SedeEquipo | Clase::EtiquetaCategoria => id_simple(sujeto),
+        Clase::Plantilla | Clase::Sede | Clase::SedeEquipo | Clase::EtiquetaCategoria | Clase::GrupoExclusiones => id_simple(sujeto),
         Clase::SedeDestino => id_destino_valido(sujeto),
         Clase::OrdenEquipos => sujeto == "todos",
     };
@@ -408,6 +444,22 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
             }
             Ok(json!({ "ids": out }))
         }
+        Clase::GrupoExclusiones => {
+            solo_campos(m, &["nombre", "reglas"])?;
+            let nombre = texto_valido(m.get("nombre"), 1, 60, false).ok_or("El nombre del grupo: de 1 a 60 caracteres.")?;
+            let xs = m.get("reglas").and_then(Value::as_array).ok_or("Faltan las reglas del grupo (una lista).")?;
+            if xs.is_empty() || xs.len() > MAX_REGLAS_GRUPO {
+                return Err("Un grupo lleva de 1 a 100 reglas.");
+            }
+            let mut out: Vec<String> = Vec::new();
+            for x in xs {
+                let r = regla_exclusion_valida(x.as_str().ok_or("Regla no válida.")?)?;
+                if !out.contains(&r) {
+                    out.push(r);
+                }
+            }
+            Ok(json!({ "nombre": nombre, "reglas": out }))
+        }
     })();
     r.map_err(str::to_string)
 }
@@ -570,6 +622,34 @@ mod tests {
         assert!(pide_admin("sede.equipo:e-1") && pide_admin("sede.destino:x") && !pide_admin("sede:x") && !pide_admin("etiqueta.categoria:x"));
     }
 
+    /// 0.8.1 (B2, 15y): grupos de exclusiones del cliente.
+    #[test]
+    fn grupos_de_exclusiones() {
+        assert_eq!(clase("exclusiones:musica").map(|x| x.0), Some(Clase::GrupoExclusiones));
+        assert!(clase("exclusiones:a/b").is_none());
+        assert!(es_de_exclusiones("exclusiones:musica") && !es_de_exclusiones("sede:x") && !es_de_sedes("exclusiones:musica"));
+        assert!(!pide_admin("exclusiones:musica"));
+        assert_eq!(
+            valor_valido("exclusiones:musica", &json!({ "nombre": " Música ", "reglas": [" *.mp3 ", "*.flac", "*.mp3"] })).unwrap(),
+            json!({ "nombre": "Música", "reglas": ["*.mp3", "*.flac"] }),
+            "limpio y sin repetir"
+        );
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "", "reglas": ["*.mp3"] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "a".repeat(61), "reglas": ["*.mp3"] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": [] })).is_err(), "sin reglas");
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música" })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": ["*.mp3"], "copias": ["x"] })).is_err(), "campos de más");
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": ["a\u{7}b"] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": ["x".repeat(201)] })).is_err());
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": [3] })).is_err());
+        let muchas: Vec<String> = (0..101).map(|i| format!("*.e{i}")).collect();
+        assert!(valor_valido("exclusiones:musica", &json!({ "nombre": "Música", "reglas": muchas })).is_err());
+        for todo in ["*", "*.*", "**/*", "/", "\\", " ** "] {
+            assert!(regla_exclusion_valida(todo).is_err(), "{todo}");
+        }
+        assert!(regla_exclusion_valida("Downloads/*.exe").is_ok() && regla_exclusion_valida("~$*").is_ok());
+    }
+
     #[test]
     fn gana_el_mas_reciente_y_un_cambio_a_una_semilla() {
         let mut doc = Documento::new();
@@ -610,6 +690,13 @@ mod tests {
                 fusionar(&mut doc, "etiqueta.color:servidor", en);
             }
             assert_eq!(doc["etiqueta.color:servidor"].valor, caso["gana"], "{}", caso["nombre"]);
+        }
+        for caso in v["exclusiones"].as_array().unwrap() {
+            let r = valor_valido("exclusiones:grupo", &caso["valor"]);
+            assert_eq!(r.is_ok(), caso["valido"] == true, "{}", caso["nombre"]);
+            if let Some(l) = caso.get("limpio") {
+                assert_eq!(&r.unwrap(), l, "{}", caso["nombre"]);
+            }
         }
         for caso in v["claves"].as_array().unwrap() {
             let c = caso["clave"].as_str().unwrap();

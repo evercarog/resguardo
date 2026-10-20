@@ -1,5 +1,5 @@
 {
-  "descripcion": "Datos comunes del cliente (0.7.26, bloque 8): orden entre dos cambios del mismo dato y claves válidas. Los pasan crates/protocolo/src/datos_cliente.rs y consola/scripts/vectores-datos-comunes.ts. Cada caso de «fusion» mete sus entradas en orden en un documento vacío; «gana» es el valor que queda.",
+  "descripcion": "Datos comunes del cliente (0.7.26, bloque 8): orden entre dos cambios del mismo dato y claves válidas (y, desde la 0.8.1, valores de los grupos de exclusiones, «exclusiones»). Los pasan crates/protocolo/src/datos_cliente.rs y consola/scripts/vectores-datos-comunes.ts. Cada caso de «fusion» mete sus entradas en orden en un documento vacío; «gana» es el valor que queda.",
   "fusion": [
     {
       "nombre": "gana el más reciente",
@@ -86,6 +86,21 @@
     { "clave": "sede.destino:../x", "valida": false, "pide_admin": true },
     { "clave": "etiqueta.categoria:tipo", "valida": true, "pide_admin": false },
     { "clave": "orden.equipos:todos", "valida": true, "pide_admin": false },
-    { "clave": "orden.equipos:otro", "valida": false, "pide_admin": false }
+    { "clave": "orden.equipos:otro", "valida": false, "pide_admin": false },
+    { "clave": "exclusiones:musica", "valida": true, "pide_admin": false },
+    { "clave": "exclusiones:a/b", "valida": false, "pide_admin": false }
+  ],
+  "exclusiones": [
+    { "nombre": "limpio y sin repetir", "valor": { "nombre": " Música ", "reglas": [" *.mp3 ", "*.flac", "*.mp3"] }, "valido": true, "limpio": { "nombre": "Música", "reglas": ["*.mp3", "*.flac"] } },
+    { "nombre": "con rutas", "valor": { "nombre": "Instaladores", "reglas": ["Downloads/*.exe", "*.msi"] }, "valido": true },
+    { "nombre": "sin nombre", "valor": { "nombre": "  ", "reglas": ["*.mp3"] }, "valido": false },
+    { "nombre": "nombre largo", "valor": { "nombre": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "reglas": ["*.mp3"] }, "valido": false },
+    { "nombre": "sin reglas", "valor": { "nombre": "Vacío", "reglas": [] }, "valido": false },
+    { "nombre": "regla vacía", "valor": { "nombre": "Vacío", "reglas": ["   "] }, "valido": false },
+    { "nombre": "regla larga", "valor": { "nombre": "Largo", "reglas": ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"] }, "valido": false },
+    { "nombre": "regla con control", "valor": { "nombre": "Raro", "reglas": ["a\tb"] }, "valido": false },
+    { "nombre": "lo excluye todo", "valor": { "nombre": "Todo", "reglas": ["*.*"] }, "valido": false },
+    { "nombre": "campos de más", "valor": { "nombre": "Música", "reglas": ["*.mp3"], "copias": [] }, "valido": false },
+    { "nombre": "101 reglas", "valor": { "nombre": "Muchas", "reglas": ["*.e0", "*.e1", "*.e2", "*.e3", "*.e4", "*.e5", "*.e6", "*.e7", "*.e8", "*.e9", "*.e10", "*.e11", "*.e12", "*.e13", "*.e14", "*.e15", "*.e16", "*.e17", "*.e18", "*.e19", "*.e20", "*.e21", "*.e22", "*.e23", "*.e24", "*.e25", "*.e26", "*.e27", "*.e28", "*.e29", "*.e30", "*.e31", "*.e32", "*.e33", "*.e34", "*.e35", "*.e36", "*.e37", "*.e38", "*.e39", "*.e40", "*.e41", "*.e42", "*.e43", "*.e44", "*.e45", "*.e46", "*.e47", "*.e48", "*.e49", "*.e50", "*.e51", "*.e52", "*.e53", "*.e54", "*.e55", "*.e56", "*.e57", "*.e58", "*.e59", "*.e60", "*.e61", "*.e62", "*.e63", "*.e64", "*.e65", "*.e66", "*.e67", "*.e68", "*.e69", "*.e70", "*.e71", "*.e72", "*.e73", "*.e74", "*.e75", "*.e76", "*.e77", "*.e78", "*.e79", "*.e80", "*.e81", "*.e82", "*.e83", "*.e84", "*.e85", "*.e86", "*.e87", "*.e88", "*.e89", "*.e90", "*.e91", "*.e92", "*.e93", "*.e94", "*.e95", "*.e96", "*.e97", "*.e98", "*.e99", "*.e100"] }, "valido": false }
   ]
 }

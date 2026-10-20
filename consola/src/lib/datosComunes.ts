@@ -25,8 +25,8 @@ export const admiteDatosCliente = (e: Pick<Equipo, "resumen"> | null | undefined
 /** Los equipos a los que se mandan: confirmados, gestionados desde aquí y con un agente que los guarda. */
 export const equiposQueGuardan = (equipos: Equipo[]) => equipos.filter((e) => e.confirmado && e.modo === "gestionado" && admiteDatosCliente(e));
 
-export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos"];
+export type ClaseDato = "etiqueta.color" | "etiqueta.plantilla" | "destino.regla" | "destino" | "plantilla" | "sede" | "sede.equipo" | "sede.destino" | "etiqueta.categoria" | "orden.equipos" | "exclusiones";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones"];
 
 /** 0.8.0 (D1, D2): `resumen.admite` de un agente que guarda sedes, categorías y orden. */
 export const ADMITE_SEDES = "sedes";
@@ -34,6 +34,17 @@ export const ADMITE_SEDES = "sedes";
 export const esDeSedes = (clave: string) => ["sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos"].includes(claseDe(clave)?.clase ?? "");
 /** ¿Las guarda este equipo? */
 export const admiteSedes = (e: Pick<Equipo, "resumen"> | null | undefined) => !!e?.resumen?.admite?.includes(ADMITE_SEDES);
+
+/** 0.8.1 (B2, 15y): `resumen.admite` de un agente que guarda los grupos de exclusiones (`exclusiones:<id>`). */
+export const ADMITE_EXCLUSIONES = "grupos_exclusiones";
+/** ¿Es un grupo de exclusiones? (Solo a los agentes con `admite: "grupos_exclusiones"`.) */
+export const esDeExclusiones = (clave: string) => claseDe(clave)?.clase === "exclusiones";
+/** ¿Guarda este equipo este dato? (Las clases nuevas, solo los agentes que las admiten: uno anterior rechazaría la orden entera.) */
+export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave: string): boolean {
+  if (esDeSedes(clave)) return admiteSedes(e);
+  if (esDeExclusiones(clave)) return !!e?.resumen?.admite?.includes(ADMITE_EXCLUSIONES);
+  return true;
+}
 
 /** Una etiqueta limpia como las de los equipos (o null). */
 export function normalizarEtiqueta(x: string): string | null {
@@ -52,7 +63,7 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
   const ok =
     clase === "etiqueta.color" || clase === "etiqueta.plantilla"
       ? normalizarEtiqueta(sujeto)?.toLowerCase() === sujeto
-      : clase === "plantilla" || clase === "sede" || clase === "sede.equipo" || clase === "etiqueta.categoria"
+      : clase === "plantilla" || clase === "sede" || clase === "sede.equipo" || clase === "etiqueta.categoria" || clase === "exclusiones"
         ? idSimple(sujeto)
         : clase === "orden.equipos"
           ? sujeto === "todos"
@@ -259,6 +270,8 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
       return Array.isArray(v?.etiquetas) ? (v.etiquetas as string[]).join(", ") || "sin etiquetas" : "quitada";
     case "orden.equipos":
       return v ? "un orden a mano" : "sin orden a mano";
+    case "exclusiones":
+      return Array.isArray(v?.reglas) ? (v.reglas as string[]).join(", ") || "sin reglas" : "quitado";
     default:
       return "—";
   }
@@ -289,6 +302,8 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
       return `Categoría «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto}»`;
     case "orden.equipos":
       return "Orden de los equipos";
+    case "exclusiones":
+      return `Grupo de exclusiones «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto}»`;
     default:
       return f.clave;
   }
