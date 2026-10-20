@@ -109,6 +109,7 @@ const ORDEN: Record<string, Icono> = {
   quitar_destino: Trash2,
   // Plan 0.8.0, F2.
   comentario_version: MessageSquare,
+  bases_sqlserver: Database,
   conservar_version: Pin,
 };
 

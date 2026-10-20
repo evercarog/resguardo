@@ -332,7 +332,12 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         const gs = ganchosDe(k.gancho);
         if (gs.length > MAX_GANCHOS) return resultado(e, o, "fallida", `«${k.nombre}»: como mucho ${MAX_GANCHOS} ganchos.`);
         for (const g of gs) {
-          const permitidos = g.tipo === "sqlserver" ? ["tipo", "instancia", "bases", "carpeta", ...(e.resumen?.admite?.includes("verificar_volcado") ? ["verificar"] : [])] : g.tipo === "carpeta_reciente" ? ["tipo", "carpeta", "horas", "extension"] : null;
+          const permitidos =
+            g.tipo === "sqlserver"
+              ? ["tipo", "instancia", "bases", "carpeta", ...(e.resumen?.admite?.includes("verificar_volcado") ? ["verificar"] : []), ...(e.resumen?.admite?.includes("sqlserver_todas") ? ["todas", "excluir", "sistema"] : [])]
+              : g.tipo === "carpeta_reciente"
+                ? ["tipo", "carpeta", "horas", "extension"]
+                : null;
           if (!permitidos || Object.keys(g).some((x) => !permitidos.includes(x))) return resultado(e, o, "fallida", "Configuración no válida: gancho desconocido o con campos de más.");
           const err = errorGancho(g);
           if (err) return resultado(e, o, "fallida", err);
@@ -937,6 +942,20 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       return resultado(e, o, "hecha", c.conservar === true ? `Versión de «${repo.nombre}» conservada para siempre: la retención nunca la quitará.` : `La versión de «${repo.nombre}» ya no se conserva para siempre: la retención podrá quitarla.`);
     }
     // Plan 0.8.0, B1: el nombre de un repositorio (como el agente).
+    // Plan 0.8.1 (15u): «Ver las bases de la instancia», sellada para la consola (como el agente).
+    case "bases_sqlserver": {
+      if (!plana.responder_a) return resultado(e, o, "rechazada", "Falta responder_a para entregar la lista.");
+      const bases = [
+        { nombre: "master", estado: "ONLINE", sistema: true },
+        { nombre: "model", estado: "ONLINE", sistema: true },
+        { nombre: "msdb", estado: "ONLINE", sistema: true },
+        { nombre: "tempdb", estado: "ONLINE", sistema: true },
+        { nombre: "Ventas", estado: "ONLINE", sistema: false },
+        { nombre: "Nominas", estado: "ONLINE", sistema: false },
+        { nombre: "Empresa 3", estado: "RECOVERY_PENDING", sistema: false },
+      ];
+      return resultado(e, o, "hecha", "La instancia tiene 3 bases de usuario.", JSON.stringify({ sellado: detallePara(plana, { bases }) }));
+    }
     case "nombre_repositorio": {
       if (!e.resumen?.admite?.includes(ADMITE_NOMBRES)) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
       const r = e.resumen.repositorios?.find((x) => x.id === c.repo);

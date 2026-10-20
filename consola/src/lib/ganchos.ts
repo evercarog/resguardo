@@ -7,6 +7,8 @@ import type { Gancho, GanchoCarpetaReciente, GanchoSqlserver, ResultadoGancho } 
 
 export const MAX_GANCHOS = 4;
 export const MAX_BASES = 20;
+/** 15u: con «todas las bases», cuántas se pueden excluir. */
+export const MAX_EXCLUIDAS = 50;
 /** Versión mínima del agente que acepta ganchos. */
 export const VERSION_GANCHOS = "0.7.2";
 
@@ -54,10 +56,18 @@ export function errorGancho(g: Gancho): string | null {
   if (g.tipo === "sqlserver") {
     const inst = (g.instancia ?? ".").trim() || ".";
     if (!instanciaValida(inst)) return `Instancia de SQL Server no válida: «${inst}» (p. ej. «.» o «EQUIPO\\SQLEXPRESS»).`;
-    if (!g.bases.length || g.bases.length > MAX_BASES) return `Indica de 1 a ${MAX_BASES} bases de datos.`;
-    const mala = g.bases.find((b) => !baseValida(b));
-    if (mala !== undefined) return `Nombre de base de datos no admitido: «${mala}» (letras, números, espacio y _ - . $).`;
-    if (new Set(g.bases.map((b) => b.toLowerCase())).size !== g.bases.length) return "Hay una base de datos repetida.";
+    if (g.todas) {
+      // 15u: todas las de la instancia; las excluidas, con las mismas reglas que una base.
+      const ex = g.excluir ?? [];
+      if (ex.length > MAX_EXCLUIDAS) return `Como mucho ${MAX_EXCLUIDAS} bases excluidas.`;
+      const malaEx = ex.find((b) => !baseValida(b));
+      if (malaEx !== undefined) return `Nombre de base de datos no admitido: «${malaEx}» (letras, números, espacio y _ - . $).`;
+    } else {
+      if (!g.bases.length || g.bases.length > MAX_BASES) return `Indica de 1 a ${MAX_BASES} bases de datos.`;
+      const mala = g.bases.find((b) => !baseValida(b));
+      if (mala !== undefined) return `Nombre de base de datos no admitido: «${mala}» (letras, números, espacio y _ - . $).`;
+      if (new Set(g.bases.map((b) => b.toLowerCase())).size !== g.bases.length) return "Hay una base de datos repetida.";
+    }
     // Además (v1.10, seguridad): de un disco del equipo, no su raíz ni de red.
     if (!rutaValida(g.carpeta) || errorCarpetaLocal(g.carpeta, !g.carpeta.trim().startsWith("/")))
       return "La carpeta de los volcados tiene que ser de un disco del equipo (no su raíz ni de red), sin comillas ni ; * ? < > | (p. ej. C:\\ResguardoVolcados).";
@@ -73,18 +83,27 @@ export function errorGancho(g: Gancho): string | null {
 
 /** 14ccc: ¿el agente entiende `verificar` en el gancho de SQL Server? (Los anteriores rechazan campos que no conocen.) */
 export const admiteVerificarVolcado = (e: { resumen?: { admite?: string[] | null } | null } | null | undefined) => !!e?.resumen?.admite?.includes("verificar_volcado");
+/** 15u: ¿entiende «todas las bases» (`todas`, `excluir`, `sistema`) y la orden `bases_sqlserver` («Ver las bases de la instancia»)? */
+export const admiteTodasLasBases = (e: { resumen?: { admite?: string[] | null } | null } | null | undefined) => !!e?.resumen?.admite?.includes("sqlserver_todas");
 
 /**
  * El gancho exactamente con los campos que acepta el agente (ni uno más).
  * `verificar` (14ccc) solo se manda apagado y a un agente que lo entiende: sin
  * el campo, el agente nuevo verifica cada volcado.
  */
-export function limpiar(g: Gancho, conVerificar = false): Gancho {
+export function limpiar(g: Gancho, conVerificar = false, conTodas = false): Gancho {
   if (g.tipo === "sqlserver") {
-    const s: GanchoSqlserver = { tipo: "sqlserver", bases: g.bases.map((b) => b), carpeta: g.carpeta.trim() };
+    // 15u: «todas las bases» solo a un agente que lo entiende (la consola no se lo ofrece a otro).
+    const todas = conTodas && !!g.todas;
+    const s: GanchoSqlserver = { tipo: "sqlserver", bases: todas ? [] : g.bases.map((b) => b), carpeta: g.carpeta.trim() };
     const inst = (g.instancia ?? "").trim();
     if (inst && inst !== ".") s.instancia = inst;
     if (conVerificar && g.verificar === false) s.verificar = false;
+    if (todas) {
+      s.todas = true;
+      if (g.excluir?.length) s.excluir = [...g.excluir];
+      if (g.sistema) s.sistema = true;
+    }
     return s;
   }
   const c: GanchoCarpetaReciente = { tipo: "carpeta_reciente", carpeta: g.carpeta.trim(), horas: g.horas };
@@ -94,8 +113,8 @@ export function limpiar(g: Gancho, conVerificar = false): Gancho {
 }
 
 /** El valor de `gancho` para la configuración: null, uno o la lista. */
-export function paraConfig(gs: Gancho[], conVerificar = false): Gancho | Gancho[] | null {
-  const l = gs.map((g) => limpiar(g, conVerificar));
+export function paraConfig(gs: Gancho[], conVerificar = false, conTodas = false): Gancho | Gancho[] | null {
+  const l = gs.map((g) => limpiar(g, conVerificar, conTodas));
   return l.length === 0 ? null : l.length === 1 ? l[0] : l;
 }
 
@@ -118,10 +137,13 @@ function nombresCortos(xs: string[], max = 3): string {
 export function ganchosEnFrase(ganchos: Gancho[] | null | undefined, resultados: Pick<ResultadoGancho, "tipo" | "mensaje">[] = []): string[] {
   const out: string[] = [];
   if (ganchos?.length) {
-    const bases = [...new Set(ganchos.flatMap((g) => (g.tipo === "sqlserver" ? g.bases.filter(Boolean) : [])))];
+    // 15u: «todas las bases» (las de la instancia, en cada copia).
+    const todas = ganchos.filter((g): g is GanchoSqlserver => g.tipo === "sqlserver" && !!g.todas);
+    for (const g of todas) out.push(`volcado de todas las bases de SQL Server${g.excluir?.length ? ` salvo ${nombresCortos(g.excluir)}` : ""}`);
+    const bases = [...new Set(ganchos.flatMap((g) => (g.tipo === "sqlserver" && !g.todas ? g.bases.filter(Boolean) : [])))];
     if (bases.length === 1) out.push(`volcado de la base «${bases[0]}» de SQL Server`);
     else if (bases.length > 1) out.push(`volcado de ${bases.length} bases de SQL Server (${nombresCortos(bases)})`);
-    else if (ganchos.some((g) => g.tipo === "sqlserver")) out.push("volcado de SQL Server");
+    else if (!todas.length && ganchos.some((g) => g.tipo === "sqlserver")) out.push("volcado de SQL Server");
     const carpetas = ganchos.filter((g) => g.tipo === "carpeta_reciente").length;
     if (carpetas === 1) out.push("comprobar que las copias de la aplicación están al día");
     else if (carpetas > 1) out.push(`comprobar que las copias de la aplicación están al día en ${carpetas} carpetas`);
@@ -146,22 +168,62 @@ export function ganchosEnFrase(ganchos: Gancho[] | null | undefined, resultados:
  * mensaje (14gg).
  */
 export function agruparResultados<R extends Pick<ResultadoGancho, "tipo" | "estado" | "mensaje" | "verificado">>(rs: R[]): R[] {
-  const bien = rs.filter((r) => r.tipo === "sqlserver" && r.estado === "ok");
-  if (bien.length < 2) return rs;
-  const nombres = bien.map((r) => /«([^»]+)»/.exec(r.mensaje ?? "")?.[1]).filter((x): x is string => !!x);
-  // 14ccc: «y verificadas» solo si lo están todas.
-  const verificadas = bien.every((r) => r.verificado === true);
-  const mensaje = `${bien.length} bases volcadas${verificadas ? " y verificadas" : ""}${nombres.length === bien.length ? `: ${nombresCortos(nombres)}` : ""}.`;
-  const out: R[] = [];
-  let puesto = false;
+  const nombreDe = (r: R) => /«([^»]+)»/.exec(r.mensaje ?? "")?.[1];
+  // 15f, 15j: los volcados con el mismo problema (aviso o fallo) también se juntan: el mensaje
+  // sin el nombre de la base es la clave («Volcado de «…» hecho, sin verificar: falta permiso…»).
+  const claveDe = (r: R) => (r.tipo !== "sqlserver" ? null : r.estado === "ok" ? "ok" : `${r.estado}|${(r.mensaje ?? "").replace(/«[^»]+»/, "«…»")}`);
+  const grupos = new Map<string, R[]>();
   for (const r of rs) {
-    if (!bien.includes(r)) out.push(r);
-    else if (!puesto) {
-      out.push({ ...r, mensaje, verificado: verificadas || null });
-      puesto = true;
+    const k = claveDe(r);
+    if (k) grupos.set(k, [...(grupos.get(k) ?? []), r]);
+  }
+  const juntar = (k: string, xs: R[]): R => {
+    const nombres = xs.map(nombreDe).filter((x): x is string => !!x);
+    const lista = nombres.length === xs.length ? nombresCortos(nombres) : "";
+    if (k === "ok") {
+      // 14ccc: «y verificadas» solo si lo están todas; «sin verificar» si no se verificó ninguna (15f).
+      const verificadas = xs.every((r) => r.verificado === true);
+      const sinVerificar = xs.every((r) => /sin verificar/.test(r.mensaje ?? ""));
+      const mensaje = `${xs.length} bases volcadas${verificadas ? " y verificadas" : sinVerificar ? " sin verificar" : ""}${lista ? `: ${lista}` : ""}.`;
+      return { ...xs[0], mensaje, verificado: verificadas || null };
+    }
+    return { ...xs[0], mensaje: (xs[0].mensaje ?? "").replace(/«[^»]+»/, `${xs.length} bases${lista ? ` (${lista})` : ""}`), verificado: null };
+  };
+  const out: R[] = [];
+  const puestos = new Set<string>();
+  for (const r of rs) {
+    const k = claveDe(r);
+    const xs = k ? grupos.get(k) : undefined;
+    if (!k || !xs || xs.length < 2) out.push(r);
+    else if (!puestos.has(k)) {
+      out.push(juntar(k, xs));
+      puestos.add(k);
     }
   }
   return out;
+}
+
+/**
+ * 15j: los resultados de los pasos previos de una vuelta en una línea corta, sin
+ * repetir el mismo paso por cada base: «volcado de SQL Server correcto (6 bases)»,
+ * «volcado de SQL Server: 4 bases bien, 2 fallaron». Para el historial.
+ */
+export function resumenResultados(rs: Pick<ResultadoGancho, "tipo" | "estado">[]): string {
+  const TXT = { ok: "correcto", aviso: "con avisos", fallo: "falló" } as const;
+  const porTipo = new Map<string, Pick<ResultadoGancho, "tipo" | "estado">[]>();
+  for (const r of rs) porTipo.set(r.tipo, [...(porTipo.get(r.tipo) ?? []), r]);
+  return [...porTipo.entries()]
+    .map(([tipo, xs]) => {
+      const nombre = (NOMBRE_GANCHO[tipo as Gancho["tipo"]] ?? tipo).replace(/^./, (c) => c.toLowerCase());
+      if (xs.length === 1) return `${nombre} ${TXT[xs[0].estado]}`;
+      const [uno, varios] = tipo === "sqlserver" ? ["base", "bases"] : ["vez", "veces"];
+      const cuenta = (n: number) => `${n} ${n === 1 ? uno : varios}`;
+      if (xs.every((x) => x.estado === xs[0].estado)) return `${nombre} ${TXT[xs[0].estado]} (${cuenta(xs.length)})`;
+      const n = (e: ResultadoGancho["estado"]) => xs.filter((x) => x.estado === e).length;
+      const partes = [n("ok") && `${cuenta(n("ok"))} bien`, n("aviso") && `${n("aviso")} con avisos`, n("fallo") && `${n("fallo")} ${n("fallo") === 1 ? "falló" : "fallaron"}`];
+      return `${nombre}: ${partes.filter(Boolean).join(", ")}`;
+    })
+    .join(", ");
 }
 
 /**
@@ -180,7 +242,8 @@ export function resultadoDeGancho<R extends Pick<ResultadoGancho, "tipo" | "esta
 export function fraseGancho(g: Gancho): string {
   if (g.tipo === "sqlserver") {
     const n = g.bases.filter(Boolean).length;
-    return `vuelca ${n === 1 ? `la base «${g.bases[0]}»` : `${n} bases`} de SQL Server en ${g.carpeta || "…"} y lo copia con lo demás`;
+    const que = g.todas ? `todas las bases${g.excluir?.length ? ` (salvo ${nombresCortos(g.excluir)})` : ""}` : n === 1 ? `la base «${g.bases[0]}»` : `${n} bases`;
+    return `vuelca ${que} de SQL Server en ${g.carpeta || "…"} y lo copia con lo demás`;
   }
   const ext = (g.extension ?? "").trim();
   return `avisa si en ${g.carpeta || "…"} no hay ${ext ? `archivos ${ext.startsWith(".") ? ext : `.${ext}`} ` : "nada "}de las últimas ${g.horas} h`;
