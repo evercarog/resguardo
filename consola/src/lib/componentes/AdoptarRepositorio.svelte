@@ -13,7 +13,9 @@
     idDe,
     partirDireccion,
     probarRepositorio,
+    otroEquipo,
     pruebaParaEquipo,
+    recordarSeguir,
     repoExistenteCompleto,
     repoExistenteVacio,
     rutaEnAlmacen,
@@ -24,7 +26,11 @@
   import { ErrorLlavesCambiadas, mandarOrden } from "$lib/ordenar";
   import { avisar } from "$lib/avisos.svelte";
   import { cargarCliente } from "$lib/estado.svelte";
-  import { fechaLarga } from "$lib/formato";
+  import { fechaLarga, plural } from "$lib/formato";
+  import { goto } from "$app/navigation";
+  import { zonaPorPuerto } from "$lib/almacenUnico";
+  import { nombreZonaPorDefecto, zonasDe, type ZonaVista } from "$lib/destinos";
+  import DarAccesoAlmacen from "./DarAccesoAlmacen.svelte";
   import type { Cliente, DestinoResumen, Equipo } from "$lib/tipos";
   import Ayuda from "./Ayuda.svelte";
   import AlertaLlaves from "./AlertaLlaves.svelte";
@@ -33,7 +39,25 @@
   import FormRepoExistente from "./FormRepoExistente.svelte";
   import ElegirCarpetas from "./ElegirCarpetas.svelte";
 
-  let { cliente, equipos, equipoInicial, onclose, onvolver }: { cliente: Cliente; equipos: Equipo[]; equipoInicial?: string; onclose: () => void; onvolver?: () => void } = $props();
+  let {
+    cliente,
+    equipos,
+    equipoInicial,
+    dondeInicial,
+    rutaInicial,
+    onclose,
+    onvolver,
+  }: {
+    cliente: Cliente;
+    equipos: Equipo[];
+    equipoInicial?: string;
+    /** 15gg: el destino del equipo donde está (p. ej. su acceso al almacén tras «Dar a un equipo»). */
+    dondeInicial?: string;
+    /** 15gg: la carpeta dentro de ese destino. */
+    rutaInicial?: string;
+    onclose: () => void;
+    onvolver?: () => void;
+  } = $props();
 
   const posibles = $derived(equipos.filter((e) => e.confirmado && e.modo !== "trasladado"));
   const inicial = () => equipoInicial ?? equipos.find((e) => e.confirmado && e.rol !== "almacenamiento")?.id ?? equipos[0]?.id ?? "";
@@ -46,7 +70,7 @@
   let error = $state("");
   let cambiadas = $state<Equipo | null>(null);
   let probado = $state<Prueba | null>(null);
-  let hecho = $state<{ id: string; mensaje: string } | null>(null);
+  let hecho = $state<{ id: string; mensaje: string; carpetas: string[]; host: string | null } | null>(null);
 
   const equipo = $derived(posibles.find((e) => e.id === equipoId));
 
@@ -57,7 +81,7 @@
   const esDe = (d: DestinoResumen, a: Equipo) => d.equipo_almacen === a.id || d.id === `almacen-${a.id.slice(0, 8)}` || (!d.equipo_almacen && d.tipo === "rest" && d.nombre === a.nombre);
   const almacenDe = (d: DestinoResumen) => equipos.find((a) => a.id !== equipoId && a.resumen?.guarda_copias?.activo && esDe(d, a));
   let dondeSel = $state("otro");
-  let ruta = $state("");
+  let ruta = $state(untrack(() => rutaInicial ?? ""));
   const destinoSel = $derived(destinosEquipo.find((d) => d.id === dondeSel));
   const almacen = $derived(destinoSel ? almacenDe(destinoSel) : undefined);
   const usuarioAlmacen = $derived(almacen ? usuarioEnAlmacen(destinoSel?.donde) : "");
@@ -91,9 +115,33 @@
   let equipoVisto = "";
   $effect(() => {
     if (equipoId === equipoVisto) return;
+    const primera = !equipoVisto;
     equipoVisto = equipoId;
-    dondeSel = untrack(() => destinosEquipo.find((d) => almacenDe(d))?.id ?? "otro");
+    dondeSel = untrack(() => (primera && dondeInicial && destinosEquipo.some((d) => d.id === dondeInicial) ? dondeInicial : (destinosEquipo.find((d) => almacenDe(d))?.id ?? "otro")));
   });
+  // 15gg: «Dar acceso a … en este almacén» aquí mismo: las zonas de los almacenes del cliente
+  // donde este equipo aún no tiene acceso (después, se elige sola).
+  const sinAcceso = $derived(
+    equipo
+      ? equipos
+          .filter((a) => a.id !== equipoId && a.resumen?.guarda_copias?.activo)
+          .flatMap((a) => zonasDe(a))
+          .filter((z) => !destinosEquipo.some((d) => esDe(d, z.almacen) && (z.principal ? !d.donde || zonaPorPuerto(z.almacen, d.donde) === "principal" : zonaPorPuerto(z.almacen, d.donde ?? "") === z.id)))
+      : [],
+  );
+  let darAcceso = $state<ZonaVista | null>(null);
+  let accesoNuevo = $state<string | null>(null);
+  $effect(() => {
+    const id = accesoNuevo;
+    if (id && destinosEquipo.some((d) => d.id === id)) untrack(() => ((dondeSel = id), (accesoNuevo = null)));
+  });
+  /** 15gg: la copia nueva sigue desde su última versión (mismas carpetas). */
+  function copiarEnEl() {
+    if (!hecho) return;
+    recordarSeguir(cliente.id, equipoId, { repo: hecho.id, carpetas: hecho.carpetas, host: hecho.host });
+    onclose();
+    void goto(`/c/${cliente.id}/equipos/${equipoId}/copias?nueva=1&repo=${encodeURIComponent(hecho.id)}`);
+  }
   /** La prueba de la clave de administración para ese equipo (se calcula una vez). */
   let prueba: { equipo: string; clave: string; bytes: Uint8Array } | null = null;
   function soltarPrueba() {
@@ -169,9 +217,11 @@
       pasoTxt = `Esperando a ${equipo.nombre}…`;
       const r = await esperarRespuesta(cliente.id, equipo, o);
       if (r.estado !== "hecha") throw new Error(r.mensaje ?? `${equipo.nombre} no pudo usar el repositorio.`);
+      // 15gg: lo de su última versión, antes de olvidar lo probado.
+      const ult = { carpetas: probado.ultima_carpetas, host: probado.ultimo_equipo };
       soltarPrueba();
       claveAdmin = repo.contrasena = repo.secreto = "";
-      hecho = { id, mensaje: r.mensaje ?? "Repositorio listo." };
+      hecho = { id, mensaje: r.mensaje ?? "Repositorio listo.", ...ult };
       avisar(`${equipo.nombre} ya puede copiar en «${nombre.trim()}».`);
       void cargarCliente(cliente.id, { silencioso: true });
     } catch (err) {
@@ -199,10 +249,15 @@
   {:else if hecho}
     <div class="form">
       <div class="notice notice-success" role="status"><CircleCheck size={16} /><p>{hecho.mensaje}</p></div>
-      <p class="faint">Ahora elige qué carpetas se copian en él y cuándo, en las copias de {equipo?.nombre}.</p>
+      {#if hecho.carpetas.length}
+        <p class="faint">Para que siga desde su última versión, la copia nueva puede llevar las mismas carpetas ({plural(hecho.carpetas.length, "carpeta", "carpetas")}). Se revisan antes de enviar.</p>
+      {:else}
+        <p class="faint">Ahora elige qué carpetas se copian en él y cuándo, en las copias de {equipo?.nombre}.</p>
+      {/if}
       <footer>
         <button class="btn btn-ghost" onclick={onclose}>Cerrar</button>
-        <a class="btn btn-primary" href="/c/{cliente.id}/equipos/{equipoId}/repositorios/{encodeURIComponent(hecho.id)}" onclick={onclose}>Ver el repositorio</a>
+        <a class="btn" href="/c/{cliente.id}/equipos/{equipoId}/repositorios/{encodeURIComponent(hecho.id)}" onclick={onclose}>Ver el repositorio</a>
+        <button class="btn btn-primary" onclick={copiarEnEl}>{hecho.carpetas.length ? "Crear la copia con esas carpetas" : "Crear una copia en él"}</button>
       </footer>
     </div>
   {:else}
@@ -223,6 +278,14 @@
           {/each}
           <option value="otro">Otro sitio (escribir la dirección)…</option>
         </select>
+        {#if sinAcceso.length}
+          <div class="sin-acceso">
+            {#each sinAcceso as z (z.almacen.id + z.id)}
+              <button type="button" class="btn btn-sm" onclick={() => (darAcceso = z)}><KeyRound size={14} />Dar acceso a {equipo?.nombre} en {z.principal ? z.almacen.nombre : `${z.almacen.nombre} · ${nombreZonaPorDefecto(z)}`}</button>
+            {/each}
+            <span class="faint nota">Si el repositorio está en un almacén donde {equipo?.nombre} aún no copia.</span>
+          </div>
+        {/if}
       </div>
 
       {#if destinoSel}
@@ -275,6 +338,7 @@
           <div>
             <p>{probado.mensaje}</p>
             {#if probado.ultima}<p class="faint pequeno">Última versión: {fechaLarga(probado.ultima)}{probado.equipos.length ? ` · copiaron en él: ${probado.equipos.join(", ")}` : ""}</p>{/if}
+            {#if otroEquipo(probado.ultimo_equipo, equipo?.nombre)}<p class="faint pequeno">Su última versión es de «{probado.ultimo_equipo}» y en la consola este equipo se llama «{equipo?.nombre}». Si es el mismo equipo, no pasa nada: la primera copia releerá todos los archivos (tarda más), pero no vuelve a subir lo que ya está.</p>{/if}
             {#if probado.solo_anadir}<p class="faint pequeno">Es un servidor de solo añadir: nadie puede borrar desde los equipos, y la retención (qué versiones se quitan) se aplica en el propio servidor.</p>{/if}
           </div>
         </div>
@@ -303,6 +367,9 @@
   {/if}
 </Modal>
 
+{#if darAcceso && equipo}
+  <DarAccesoAlmacen {cliente} {equipo} zona={darAcceso} onclose={() => (darAcceso = null)} alDar={(d) => ((accesoNuevo = d), (darAcceso = null), void cargarCliente(cliente.id, { silencioso: true }))} />
+{/if}
 {#if explorar && equipo}
   <ElegirCarpetas
     {cliente}
@@ -324,6 +391,13 @@
 {/if}
 
 <style>
+  .sin-acceso {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
   .encontrados {
     display: flex;
     flex-wrap: wrap;

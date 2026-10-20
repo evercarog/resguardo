@@ -537,6 +537,31 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     }
     case "guarda_copias": {
       e.resumen ??= {};
+      // 0.8.1 (15gg): un repositorio suelto, a la carpeta de un equipo (como el agente: sin copiar).
+      if (c.dar_suelto && typeof c.dar_suelto === "object") {
+        const g = e.resumen.guarda_copias;
+        if (!g?.activo || !e.resumen.admite?.includes("repos_sueltos")) return resultado(e, o, "rechazada", "Este agente aún no admite esta orden: actualízalo.");
+        const d = c.dar_suelto as { zona?: string; ruta?: string; usuario?: string; carpeta?: string };
+        const i = (g.sueltos ?? []).findIndex((s) => s.ruta === d.ruta && (s.zona ?? null) === (d.zona ?? null) && !s.fuera);
+        if (i < 0) return resultado(e, o, "fallida", "Ese repositorio ya no está suelto en el almacén (puede que ya se moviera).");
+        const lista = d.zona ? g.zonas?.find((z) => z.id === d.zona)?.repositorios : g.repositorios;
+        const u = lista?.find((x) => x.usuario === d.usuario);
+        if (!u) return resultado(e, o, "fallida", "Ese equipo aún no tiene acceso a esta zona del almacén: dale acceso primero.");
+        if (!/^[a-z0-9-]{1,64}$/.test(String(d.carpeta))) return resultado(e, o, "fallida", "El nombre de la carpeta nueva: letras minúsculas, cifras y guiones.");
+        if (u.repos.includes(String(d.carpeta))) return resultado(e, o, "fallida", `Ya hay una carpeta «${d.carpeta}» en la del equipo: elige otro nombre.`);
+        await espera(1200);
+        u.repos = [...u.repos, String(d.carpeta)].sort();
+        g.sueltos = (g.sueltos ?? []).filter((_, j) => j !== i);
+        return resultado(e, o, "hecha", `«${d.ruta}» movido a la carpeta del equipo («${d.usuario}/${d.carpeta}»), sin copiar nada. Ahora el equipo puede adoptarlo con su contraseña.`);
+      }
+      if (Array.isArray(c.sueltos_en)) {
+        const g = e.resumen.guarda_copias;
+        if (!g?.activo) return resultado(e, o, "fallida", "Este equipo no guarda copias de otros.");
+        const l = (c.sueltos_en as string[]).filter(Boolean);
+        if (l.some((r) => !/^([A-Za-z]:\\|\/)/.test(r))) return resultado(e, o, "fallida", "Cada carpeta, una ruta completa de este equipo.");
+        g.sueltos_en = l.length ? l : null;
+        return resultado(e, o, "hecha", l.length ? `Se buscan repositorios también en ${l.length === 1 ? "1 carpeta más" : `${l.length} carpetas más`}.` : "Ya no se buscan repositorios fuera de la carpeta del almacén.");
+      }
       // Espejo nocturno a otra carpeta (otro disco): { carpeta, hora } o null para quitarlo.
       // §3b: confirmar lo que falta de golpe en el almacén (espera, como el agente).
       // Plan 0.7.26 (bloque 4): trabajos de espejo, del almacén o del propio equipo (como el agente).
@@ -1124,7 +1149,16 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
       const soloAnadir = d.tipo === "rest" ? /:8001/.test(String(d.donde)) : null;
       const ultima = new Date(Date.now() - 86400_000).toISOString();
       const enUso = e.resumen?.repositorios?.find((r) => r.id === `adoptado-${String(c.ruta)}`)?.nombre ?? null;
-      const info = { versiones: 412, ultima, solo_anadir: soloAnadir, en_uso: enUso, equipos: ["PC-CONTABLE", "PORTATIL-GERENCIA"], etiquetas: ["escritorio"] };
+      // 15gg: con `repos_sueltos`, las carpetas y el equipo de la última versión (sellado).
+      const info = {
+        versiones: 412,
+        ultima,
+        solo_anadir: soloAnadir,
+        en_uso: enUso,
+        equipos: ["PC-CONTABLE", "PORTATIL-GERENCIA"],
+        etiquetas: ["escritorio"],
+        ...(e.resumen?.admite?.includes("repos_sueltos") ? { ultima_carpetas: ["C:\\Contabilidad\\Empresa", "C:\\Users\\Public\\Documents\\Facturas"], ultimo_equipo: "PC-CONTABLE" } : {}),
+      };
       const servidor = soloAnadir ? " El servidor es de solo añadir: la retención se aplica en él." : "";
       if (c.solo_probar === true) {
         const datos = plana.responder_a ? info : { versiones: info.versiones, ultima, solo_anadir: soloAnadir, en_uso: enUso };

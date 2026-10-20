@@ -98,6 +98,7 @@
     type Sugerencia,
   } from "$lib/copiaGuiada";
   import { claveNube } from "$lib/destinos";
+  import { otroEquipo, tomarSeguir } from "$lib/adoptar";
   import { filtroEnFrase, repoEnAlmacen } from "$lib/cadenas";
   import type { FiltroVersiones, RepositorioResumen } from "$lib/tipos";
 
@@ -183,7 +184,15 @@
         const k = i >= 0 ? cfg.copias[i + 1] : cfg.copias.at(-1);
         // 14rr: ?repo=<id> (un repositorio recién creado fuera del editor): ya elegido.
         const repoPedido = page.url.searchParams.get("repo");
-        if (k && repoPedido && cfg.repositorios.some((r) => r.id === repoPedido)) k.repo = repoPedido;
+        if (k && repoPedido && cfg.repositorios.some((r) => r.id === repoPedido)) {
+          k.repo = repoPedido;
+          // 15gg: un repositorio recién adoptado: las mismas carpetas que su última versión (sigue desde ahí).
+          const s = tomarSeguir(c, equipo.id, repoPedido);
+          if (s?.carpetas.length) {
+            ponerCarpetas(k, s.carpetas, equipo.nombre);
+            avisoRepo = `Lleva las mismas carpetas que la última versión de «${cfg.repositorios.find((r) => r.id === repoPedido)?.nombre ?? repoPedido}»: así sigue desde ahí. Revísalas antes de enviar.${otroEquipo(s.host, equipo.nombre) ? ` Ojo: esas versiones son de «${s.host}» y aquí el equipo se llama «${equipo.nombre}»; si es el mismo, la primera copia releerá todos los archivos (tarda más) pero no vuelve a subir lo que ya está.` : ""}`;
+          }
+        }
         else if (k && enDestino) k.repo = enDestino.id;
         // Aún sin repositorio en ese destino (p. ej. una nube): «+ Nuevo repositorio…» con él ya elegido.
         else if (k && dest) {

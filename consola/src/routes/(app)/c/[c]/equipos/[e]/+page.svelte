@@ -44,6 +44,7 @@
     Laptop,
     LoaderCircle,
     Monitor,
+    FolderInput,
     Pencil,
     Play,
     Power,
@@ -97,6 +98,7 @@
   import EnMarcha from "$lib/componentes/EnMarcha.svelte";
   import CopiarEnAlmacen from "$lib/componentes/CopiarEnAlmacen.svelte";
   import NuevoRepositorio from "$lib/componentes/NuevoRepositorio.svelte";
+  import AdoptarRepositorio from "$lib/componentes/AdoptarRepositorio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
   import { cargarInformes as cargarUltimos, ultimos } from "$lib/informes.svelte";
   import ElegirCarpetas from "$lib/componentes/ElegirCarpetas.svelte";
@@ -146,6 +148,8 @@
   import NubesConectadas from "$lib/componentes/almacen/NubesConectadas.svelte";
   import RetencionesDelAlmacen from "$lib/componentes/almacen/RetencionesDelAlmacen.svelte";
   import AvisoOrdenar from "$lib/componentes/almacen/AvisoOrdenar.svelte";
+  import RepositoriosSueltos from "$lib/componentes/almacen/RepositoriosSueltos.svelte";
+  import { sueltosDe } from "$lib/sueltos";
   // C1 (plan 0.8.0, 14kk): el camino de cada repositorio en su tarjeta, y cada copia derivada como repositorio propio.
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
   import { caminoDeCopia, textoEslabon, type Eslabon } from "$lib/camino";
@@ -380,6 +384,15 @@
   let copiarEn = $state<Equipo | null>(null);
   /** «Repositorio nuevo…» con este equipo ya elegido (almacén, nube o disco). */
   let repoNuevo = $state(false);
+  // 15gg: «Usar un repositorio que ya existe», a la vista; desde «Dar a un equipo» del almacén
+  // llega con ?adoptar=1&donde=<destino>&ruta=<carpeta> (nombres de carpeta, sin secretos).
+  let adoptar = $state<{ donde?: string; ruta?: string } | null>(null);
+  let adoptarPedido = false;
+  $effect(() => {
+    if (adoptarPedido || page.url.searchParams.get("adoptar") !== "1" || !equipo || !puede.administrar(rol)) return;
+    adoptarPedido = true;
+    untrack(() => (adoptar = { donde: page.url.searchParams.get("donde") ?? undefined, ruta: page.url.searchParams.get("ruta") ?? undefined }));
+  });
   /** v1.28: un almacén puede tener un repositorio en sí mismo (para lo suyo, p. ej. las copias de la consola). */
   const propioPosible = $derived(!!equipo && admiteAlmacenPropio(equipo) && !destinos.some((d) => esDeAlmacen(d, equipo!)));
   function abrirGuardar() {
@@ -1177,7 +1190,11 @@
 
       {#if repos.length || pendRepos.length}
         <section>
-          <div class="section-head"><h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length}{` y ${reposDerivados.length} ${reposDerivados.length === 1 ? "derivado" : "derivados"}`}{/if}</span></h2></div>
+          <div class="section-head">
+            <h2>Repositorios <span class="count">· {repos.length}{#if reposDerivados.length}{` y ${reposDerivados.length} ${reposDerivados.length === 1 ? "derivado" : "derivados"}`}{/if}</span></h2>
+            <!-- 15gg: a la vista (antes, escondido dentro de «Nuevo repositorio»). -->
+            {#if puede.administrar(rol) && equipo.confirmado && equipo.modo !== "trasladado"}<button class="btn btn-sm" onclick={() => (adoptar = {})}><FolderInput size={14} />Usar uno que ya existe</button>{/if}
+          </div>
           {#each pendRepos as p (p.orden.id)}<div class="en-camino"><PendienteItem {p} /></div>{/each}
           <div class="rejilla repos">
             {#each repos as r (r.id)}
@@ -1481,6 +1498,15 @@
               <div class="notice notice-warn nube-por-anular"><p><strong>«{n.nombre}»</strong>: credenciales borradas de este equipo; no se pudo anular el permiso en {n.tipo === "dropbox" ? "Dropbox" : "el proveedor"} todavía: se reintentará{#if n.hasta}{" "}hasta el {fechaLarga(n.hasta)}{/if}.</p></div>
             {/each}
           </div>
+          <!-- 15gg: los repositorios de su disco que no son de ningún equipo, y «Dar a un equipo». -->
+          {#if actual.cliente}
+            <div class="sub-alm" role="group" aria-labelledby="t-alm-sueltos">
+              <div class="sub-cab">
+                <h4 id="t-alm-sueltos"><FolderInput size={15} />Repositorios sueltos{#if sueltosDe(equipo).length}<span class="count">· {sueltosDe(equipo).length}</span>{/if}</h4>
+              </div>
+              <RepositoriosSueltos cliente={actual.cliente} almacen={equipo} equipos={actual.equipos} administra={puede.administrar(rol)} ahora={reloj.ahora} />
+            </div>
+          {/if}
           {#if puede.administrar(rol)}
             <div class="acciones"><MenuAcciones etiqueta="Más acciones de «Guarda copias»" grupos={masAlmacen(!!g.espejo)} /></div>
           {/if}
@@ -1584,7 +1610,10 @@
         <section class="card p">
           <h3 class="section-title">Nuevo repositorio</h3>
           <p class="faint nota-almacen">En un almacén de la oficina, en una nube (Dropbox…) o en un disco. Si la nube aún no está conectada en {equipo.nombre}, se conecta desde ahí mismo.</p>
-          <div class="acciones"><button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Nuevo repositorio…</button></div>
+          <div class="acciones">
+            <button class="btn btn-sm" onclick={() => (repoNuevo = true)}><Database size={14} />Nuevo repositorio…</button>
+            <button class="btn btn-sm" onclick={() => (adoptar = {})}><FolderInput size={14} />Usar uno que ya existe…</button>
+          </div>
         </section>
       {/if}
 
@@ -1809,6 +1838,9 @@
   {/key}
 {/if}
 
+{#if adoptar && equipo && actual.cliente}
+  <AdoptarRepositorio cliente={actual.cliente} equipos={actual.equipos.map((x) => (x.id === equipo!.id ? equipo! : x))} equipoInicial={equipo.id} dondeInicial={adoptar.donde} rutaInicial={adoptar.ruta} onclose={() => ((adoptar = null), void cargar())} />
+{/if}
 {#if repoNuevo && equipo && actual.cliente}
   <NuevoRepositorio
     cliente={actual.cliente}

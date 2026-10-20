@@ -527,7 +527,7 @@ export async function sembrar(vacio = false) {
       so: "Windows 11 Pro",
       rol: "almacenamiento",
       // v1.28: agente nuevo (plazos, verificación automática y su propio almacén).
-      resumen: { admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles", "espejo_primera"],
+      resumen: { admite: ["repos_sueltos", "retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "espejo_flexible", "espejo_destinos", "zonas_almacen", "espejo_zonas", "espejo_trabajos", "espejo_equipo", "nombres_legibles", "espejo_primera"],
         // Tarea 2: se añadió aquí y no está en la consola en línea, como CAJA-1 («N equipos no están en todas tus consolas»).
         consolas: [{ id: "principal", nombre: "cafedelsur.ejemplo.com", url: "https://cafedelsur.ejemplo.com:8443", identidad: "ZXN0YS1jb25zb2xhLXNpbXVsYWRhLTAwMDAwMDAwMDA=", sal_cliente: null, ultimo_contacto: hace(5), desde: null, esta: true }],
         entorno: { virtual: "hyperv" },
@@ -537,6 +537,8 @@ export async function sembrar(vacio = false) {
           disco("F:", 2000, 1800, "ReFS", true),
         ]),
         guarda_copias: { activo: true, puerto: 8000, solo_red_local: false, usuarios: 5, carpeta: "D:\\Resguardo\\Copias", sistema_archivos: "NTFS",
+          // 0.8.1 (15gg): dos repositorios sueltos de un servidor de copias antiguo (para «Dar a un equipo»).
+          sueltos: [{ zona: null, ruta: "rest-antiguo/contabilidad", versiones: 412, ultima: hace(60 * 24 * 9) }, { zona: null, ruta: "viejo-portatil", versiones: 37, ultima: hace(60 * 24 * 200) }],
           // v1.31: el espacio de su disco y el de cada destino del espejo («¿Cuándo se llena?»).
           espacio: { libre: 3_400_000_000, total: 500_000_000_000, leido: hace(2) }, repositorios: [{ usuario: "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b", repos: ["caja", "almacen-sur-7c2a"] }, { usuario: "caja-1", repos: ["historico"] }],
           // Tarea 7b: otra zona (otro disco), con su puerto.
@@ -622,7 +624,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "nombre_copia", "etiquetas_copia", "grupos_en_copias"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "nombre_copia", "etiquetas_copia", "grupos_en_copias", "repos_sueltos"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],

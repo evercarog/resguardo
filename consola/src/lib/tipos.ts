@@ -344,6 +344,9 @@ export interface ResumenEquipo {
     conservadas?: { usuario: string; repo: string; versiones: { version: string; motivo: string; cuando: string }[] }[] | null;
     /** Plan 0.8.0, B1 (`admite: "nombres_legibles"`): carpetas movidas con «Ordenar nombres de carpeta» (las últimas, la más reciente primero). */
     renombres?: import("./nombres").RenombreAlmacen[] | null;
+    /** 0.8.1 (15gg, `admite: "repos_sueltos"`): repositorios sueltos en su disco (lib/sueltos.ts) y dónde busca además. */
+    sueltos?: import("./sueltos").Suelto[] | null;
+    sueltos_en?: string[] | null;
   } | null;
   pausado_hasta?: string | null;
   /** Plan 0.7.26 (agente con `admite: "espejo_equipo"`): los espejos que hace el propio equipo de los repositorios de sus discos. */
