@@ -451,7 +451,7 @@ export async function sembrar(vacio = false) {
         destinos: [{ ...destinoServidor, donde: "https://192.168.1.20:8000/recepcion/" }, destinoNube],
         // Tarea 8: cumple la regla 3-2-1-1-0 (almacén de solo añadir y copia externa a B2 con bloqueo, verificada y probada).
         // 0.8.1 (B2): guarda sus etiquetas para todas sus consolas (renombrar en «Organización» le manda la orden).
-        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo", "tipo_equipo"],
+        admite: ["prueba_auto", "cadenas", "derivadas", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "prueba_espejo", "datos_equipo", "tipo_equipo", "restaurar_excluir"],
         // 0.8.1 (C3): una máquina virtual de Hyper-V (lo detecta el agente).
         entorno: { virtual: "hyperv" },
         repositorios: [{ ...repo("docs-recepcion", "Documentos de recepción", "servidor-altamar", 148, 38_400_000_000), externa: { destino: "Backblaze B2", destino_id: "b2-altamar", hora: "23:00", bloqueo_dias: 30 }, prueba_auto: { cada_dias: 30, proxima: dentro(60 * 24 * 21) } }],
@@ -643,7 +643,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "restaurar_excluir"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],

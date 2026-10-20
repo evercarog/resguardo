@@ -1662,6 +1662,23 @@ export interface Restauracion {
   equipo: string;
   id: string;
   hora: string;
+  /**
+   * 0.8.1 (E3, 15aa): `restauracion` (una real; sin el campo, también) o `prueba_restauracion`
+   * (una prueba de restauración: automática o con «Probar ahora», también desde un espejo).
+   */
+  tipo?: "restauracion" | "prueba_restauracion" | null;
+  /** 0.8.1 (E1, 15w): cuántas cosas se quitaron de lo elegido. */
+  quitados?: number | null;
+  /** 15aa: de una prueba, si la lanzó su horario o alguien con «Probar ahora». */
+  origen?: "horario" | "a_mano" | null;
+  /** 15aa: la prueba se hizo desde este espejo (su id y su nombre). */
+  espejo?: { id: string; nombre?: string | null } | null;
+  /** 15aa: cómo se comprobó lo restaurado (`contenido`: huellas de cada trozo y el tamaño de cada archivo). */
+  comprobacion?: string | null;
+  /** 15aa: dónde se restauró la prueba (`privada`: una carpeta del agente que se borra al terminar). */
+  donde?: string | null;
+  /** 15aa: de cuántos archivos de la versión se eligió la muestra. */
+  candidatos?: number | null;
   inicio?: string | null;
   duracion_s?: number | null;
   repo: string;
@@ -1677,7 +1694,8 @@ export interface Restauracion {
   /** `principal`, `externa` o `derivada`. */
   desde?: string | null;
   desde_nombre?: string | null;
-  resultado: "ok" | "fallo";
+  /** Una prueba también puede acabar `aviso`. */
+  resultado: "ok" | "fallo" | "aviso";
   mensaje?: string | null;
   motivo?: { tipo: MotivoRestauracion; notas?: string | null } | null;
   por?: string | null;

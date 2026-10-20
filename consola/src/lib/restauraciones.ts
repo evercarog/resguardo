@@ -4,6 +4,52 @@
 // consola y se sacan las cifras (número, tiempo medio —el RTO real— y éxito).
 // Sin dependencias de Svelte (lo prueban los vectores).
 import type { MotivoRestauracion, NotaRestauracion, Restauracion, Restauraciones } from "./tipos";
+import { bytes as tamano, plural } from "./formato";
+
+/** 15w: lo que de verdad se restaura (la operación `medir` del equipo, o lo que se sabe en la consola). */
+export interface MedidaRestaurar {
+  carpetas: number;
+  archivos: number;
+  bytes: number;
+  fuera_archivos?: number;
+  fuera_bytes?: number;
+  /** Sin medir: carpetas quitadas (no se sabe cuántos archivos llevan). */
+  fuera_carpetas?: number;
+  /** `false`: lo que se sabe en la consola (sin lo de dentro de las carpetas). */
+  exacta?: boolean;
+}
+
+/** 15w: «1 carpeta · 20 archivos · 5,4 GB» y, si se quitó algo, «sin 2 archivos (3 MB)». */
+export function textoMedida(m: MedidaRestaurar): { linea: string; sin: string | null } {
+  const partes: string[] = [];
+  if (m.carpetas) partes.push(plural(m.carpetas, "carpeta", "carpetas"));
+  // Sin medir, una carpeta no dice cuántos archivos lleva dentro: no se pone «0 archivos».
+  if (m.archivos || m.exacta !== false || !m.carpetas) partes.push(plural(m.archivos, "archivo", "archivos"));
+  if (m.bytes) partes.push(tamano(m.bytes));
+  const f = m.fuera_archivos ?? 0;
+  const fc = m.exacta === false ? (m.fuera_carpetas ?? 0) : 0;
+  const quitado = [fc ? plural(fc, "carpeta", "carpetas") : "", f ? plural(f, "archivo", "archivos") : ""].filter(Boolean).join(" y ");
+  const sin = quitado ? `sin ${quitado}${m.fuera_bytes ? ` (${tamano(m.fuera_bytes)})` : ""}` : null;
+  return { linea: partes.join(" · "), sin };
+}
+
+/**
+ * 15w: lo que se sabe en la consola sin preguntar al equipo (agente anterior o mientras
+ * contesta): las carpetas y archivos elegidos, con el tamaño de los archivos, y cuántas
+ * cosas se quitaron de dentro. Las carpetas no dicen su tamaño hasta medirlas.
+ */
+export function medidaEstimada(elegidas: { tipo: "dir" | "archivo"; bytes?: number }[], quitadas: { tipo: "dir" | "archivo"; bytes?: number }[]): MedidaRestaurar {
+  const archivos = elegidas.filter((e) => e.tipo !== "dir");
+  return {
+    carpetas: elegidas.length - archivos.length,
+    archivos: archivos.length,
+    bytes: archivos.reduce((n, e) => n + (e.bytes ?? 0), 0),
+    fuera_archivos: quitadas.filter((e) => e.tipo !== "dir").length,
+    fuera_carpetas: quitadas.filter((e) => e.tipo === "dir").length,
+    fuera_bytes: quitadas.reduce((n, e) => n + (e.tipo !== "dir" ? (e.bytes ?? 0) : 0), 0),
+    exacta: false,
+  };
+}
 
 export const MOTIVOS: { id: MotivoRestauracion; texto: string }[] = [
   { id: "borrado", texto: "Archivo borrado por error" },
