@@ -2021,6 +2021,8 @@ function datosComunesDe(c: string): DatosComunesCliente {
                 local: { clase: "local", atributos: { inmutable: "desconectado", aislado: true, soporte: "Discos USB rotados" } },
               }),
               f({ clave: "etiqueta.color:caja", valor: { nombre: "Caja", color: 5 }, estado: "aplicado", semilla: false, cambiado: hace(120) }),
+              // 0.8.1 (B5, 15pp): una observación de copia distinta en la otra consola.
+              f({ clave: `nota.observacion:copia:${ID.caja}/caja`, valor: { texto: "Revisar los martes que el volcado de la caja terminó." }, local: { texto: "Copia de la caja: la revisa Luis." } }),
               f({ clave: "plantilla:pla-demo-sur", valor: { cifrado: "AAAA", sal: "c2FsLWRlLWxhLW90cmE=", cliente: "cliente-en-linea" }, estado: "por_traer", semilla: false }),
             ],
             sin_compartir: [],
