@@ -99,6 +99,17 @@ export function tamanoEnFrase(k: Pick<CopiaConfig, "mayores_mb" | "excepto_taman
   return `nada de más de ${mb}${ex.length ? `, salvo ${ex.length <= 3 ? ex.join(", ") : `${ex.slice(0, 3).join(", ")} y ${ex.length - 3} más`}` : ""}`;
 }
 
+/**
+ * 15y: lo que el agente dice de «no copiar más de N MB» en el mensaje de una copia
+ * («Fuera por tamaño (más de 500 MB): 3 archivos (12 GB: 2 .mp4 y 1 .iso).» o «No se
+ * aplicó…»), o null.
+ */
+export function fueraPorTamano(mensaje: string | null | undefined): string | null {
+  if (!mensaje) return null;
+  const i = mensaje.search(/Fuera por tamaño|No se aplicó «no copiar más de/);
+  return i < 0 ? null : mensaje.slice(i).trim();
+}
+
 // --- Vista previa (`vista_exclusiones`) ---
 
 export interface Cuenta {
