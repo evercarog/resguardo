@@ -631,10 +631,10 @@ console.log("\n· Copia externa a un repositorio que ya existe (v1.46)");
   igual("días de bloqueo", [diasBloqueo(30), diasBloqueo("30"), diasBloqueo(""), diasBloqueo(0), diasBloqueo(3651), diasBloqueo("1.5")], [30, 30, null, null, null, null]);
   igual("bloqueo en la orden", [cuerpoBloqueo({ ...x, conBloqueo: true }), cuerpoBloqueo(x)], [{ bloqueo_dias: 30 }, {}]);
   cierto("bloqueo sin días: error", !!errorBloqueo({ ...x, conBloqueo: true, bloqueoDias: "" }) && !errorBloqueo({ ...x, bloqueoDias: "" }));
-  cierto("con bloqueo y retención: sin prune, no libera", textoRetencionDestino(true, 30).includes("sin prune") && textoRetencionDestino(true, 30).includes("no libera espacio"));
+  cierto("con bloqueo y retención: no libera espacio (y sin jerga)", textoRetencionDestino(true, 30).includes("no libera espacio") && !/forget|prune/.test(textoRetencionDestino(true, 30)));
   cierto("con bloqueo sin retención: no se borra nada", textoRetencionDestino(false, 30).includes("no se borra nada"));
   igual("sin nada", textoRetencionDestino(false, null), "");
-  igual("detalles en la ficha", detallesExterna({ existente: true, bloqueo_dias: 30 }), ["a un repositorio que ya existía", "bloqueo de 30 días (sin prune)"]);
+  igual("detalles en la ficha", detallesExterna({ existente: true, bloqueo_dias: 30 }), ["a un repositorio que ya existía", "bloqueo de 30 días (no libera espacio)"]);
   igual("probar no espera; quitar sí", [esDestructiva("cambiar_copia_externa", { repo: "r", hora: null, solo_probar: true }), esDestructiva("cambiar_copia_externa", { repo: "r", hora: null })], [false, true]);
 }
 

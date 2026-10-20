@@ -11,6 +11,7 @@ import type { ComprobacionProteccion, DestinoResumen, Equipo, RepositorioResumen
 import { destinoDe } from "./repo";
 import { esDeAlmacen } from "./retencion";
 import { claveZona, zonaDeDestino } from "./destinos";
+import { NOMBRE_TIPO_DESTINO } from "./direccion";
 
 export type ClaseLugar = "almacen" | "almacen_propio" | "carpeta" | "usb" | "red" | "nube" | "servidor" | "desconocido";
 
@@ -82,7 +83,7 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
       // v1.56: lo dio un almacén del cliente («Copiar en …») que no está en esta consola: el
       // nombre del destino (el mismo en todas las consolas: lo guarda el equipo), no «externo».
       if (d.equipo_almacen) return { clase: "almacen", texto: `Almacén ${d.nombre} (otro equipo)`, detalle: "se gestiona desde otra consola", mismoEquipo: false, clave, deOtraConsola: true };
-      return { clase: "servidor", texto: "Servidor de copias externo", detalle: [d.nombre, servidorDe(d.donde)].filter(Boolean).join(" · ") || null, mismoEquipo: false, clave: d.id };
+      return { clase: "servidor", texto: NOMBRE_TIPO_DESTINO.rest, detalle: [d.nombre, servidorDe(d.donde)].filter(Boolean).join(" · ") || null, mismoEquipo: false, clave: d.id };
     }
     case "s3":
     case "b2":
@@ -91,7 +92,7 @@ export function lugarDe(d: DestinoResumen | undefined, equipo: Pick<Equipo, "id"
     case "nube":
       return { clase: "nube", texto: `Nube (${d.nube ?? d.nombre})`, detalle: d.donde ? `carpeta ${d.donde}` : null, mismoEquipo: false, clave: d.id };
     case "sftp":
-      return { clase: "servidor", texto: "Servidor externo (SFTP)", detalle: servidorDe(d.donde) ?? d.nombre, mismoEquipo: false, clave: d.id };
+      return { clase: "servidor", texto: NOMBRE_TIPO_DESTINO.sftp, detalle: servidorDe(d.donde) ?? d.nombre, mismoEquipo: false, clave: d.id };
     default:
       return { clase: "desconocido", texto: `Destino «${d.nombre}»`, detalle: d.donde ?? null, mismoEquipo: false, clave: d.id };
   }

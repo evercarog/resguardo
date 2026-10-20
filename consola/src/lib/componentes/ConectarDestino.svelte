@@ -14,6 +14,7 @@
   // - Al conectar, los datos viajan SELLADOS para el equipo en `conectar_nube` (clave de
   //   administración): el servidor no los ve. El equipo prueba que entra antes de guardarlos.
   // - Aviso si ya hay un destino con ese bucket o ese servidor («Ya tienes este bucket como …»).
+  import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { onDestroy } from "svelte";
   import { Check, Cloud, LoaderCircle, Server, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
@@ -59,13 +60,13 @@
   let { cliente, equipo = null, inicial = null, onclose, alConectar, pasos }: Props = $props();
 
   const TIPOS: { tipo: Tipo; texto: string; detalle: string }[] = [
-    { tipo: "b2", texto: "Backblaze B2", detalle: "Bucket; inmutable con bloqueo de objetos" },
+    { tipo: "b2", texto: "Backblaze B2", detalle: "Contenedor (bucket); inmutable con bloqueo de objetos" },
     { tipo: "s3", texto: "S3 compatible", detalle: "Wasabi, R2, MinIO, AWS…" },
     { tipo: "dropbox", texto: "Dropbox", detalle: "Solo su carpeta de aplicación" },
     { tipo: "smb", texto: "NAS (carpeta de red)", detalle: "Con su propio usuario" },
     { tipo: "sftp", texto: "SFTP", detalle: "Un servidor con SSH" },
     { tipo: "webdav", texto: "WebDAV", detalle: "Nextcloud, ownCloud…" },
-    { tipo: "rest", texto: "Servidor de copias de fuera", detalle: "Otro servidor de copias (https)" },
+    { tipo: "rest", texto: NOMBRE_TIPO_DESTINO.rest, detalle: "Otro servidor de copias, por https" },
   ];
   /** Los que se pueden dejar solo en la lista (sin conectarlos aún en ningún equipo). */
   const SOLO_LISTA: Tipo[] = ["b2", "s3", "rest"];
@@ -316,7 +317,7 @@
 
         {#if tipo === "s3" || tipo === "rest"}
           <div class="field">
-            <label class="field-label" for="cd-servidor">{tipo === "rest" ? "Dirección" : "Servidor (endpoint)"}{#if tipo === "s3"}<span class="faint"> (vacío en AWS)</span>{/if}</label>
+            <label class="field-label" for="cd-servidor">{tipo === "rest" ? "Dirección" : "Dirección del servicio (endpoint)"}{#if tipo === "s3"}<span class="faint"> (vacío en AWS)</span>{/if}</label>
             <input id="cd-servidor" class="input mono" bind:value={servidor} spellcheck="false" placeholder={tipo === "rest" ? "https://copias.ejemplo.com:8000" : "https://s3.eu-central-1.ejemplo.com"} />
             {#if errorServidor && servidor}<p class="error-campo">{errorServidor}</p>{/if}
           </div>
@@ -325,7 +326,7 @@
           <div class="fila-campos">
             {#if CON_BUCKET.includes(tipo)}
               <div class="field">
-                <label class="field-label" for="cd-bucket">{tipo === "smb" ? "Recurso compartido" : "Bucket"}</label>
+                <label class="field-label" for="cd-bucket">{tipo === "smb" ? "Recurso compartido" : "Contenedor (bucket)"}</label>
                 <input id="cd-bucket" class="input mono" bind:value={bucket} spellcheck="false" placeholder={tipo === "smb" ? "copias" : "mi-bucket"} />
                 {#if errorDeBucket && bucket}<p class="error-campo">{errorDeBucket}</p>{/if}
               </div>

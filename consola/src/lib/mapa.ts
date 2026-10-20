@@ -20,6 +20,7 @@ import { hrefEspejo } from "./espejoTrabajos";
 import { cuandoEnFrase, destinosParaPasos } from "./cadenas";
 import { clasificacionDeVista } from "./regla321";
 import { corta, tipoDeNube, type TipoCorto } from "./tipoDestino";
+import { NOMBRE_TIPO_DESTINO } from "./direccion";
 
 /** «cliente»: solo en el mapa de todos los clientes (lib/global.ts), una columna antes que los equipos. */
 /**
@@ -101,7 +102,7 @@ export interface OpcionesMapa {
 }
 
 const DIA = 86_400_000;
-const TIPO_DESTINO: Record<string, string> = { rest: "Servidor de copias", local: "Disco", s3: "S3", b2: "Backblaze B2", sftp: "SFTP", otro: "Destino" };
+const TIPO_DESTINO: Record<string, string> = NOMBRE_TIPO_DESTINO;
 const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
 /**

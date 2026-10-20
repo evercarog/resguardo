@@ -44,7 +44,7 @@ const alm = lugarDe({ id: "almacen-alm", nombre: "ALMACEN-OFICINA", tipo: "rest"
 igual("el almacén de otro equipo, con su carpeta", [alm.clase, alm.texto, alm.detalle, alm.mismoEquipo], ["almacen", "Almacén ALMACEN-OFICINA (otro equipo)", "E:\\Copias", false]);
 igual("su propio almacén: el mismo equipo", lugarDe({ id: "almacen-alm", nombre: "ALMACEN-OFICINA", tipo: "rest", equipo_almacen: "alm" }, almacen, todos).clase, "almacen_propio");
 igual("la nube, con su bucket", lineaLugar(lugarDe({ id: "b2", nombre: "B2", tipo: "b2", donde: "copias-x" }, servidor, todos)), "Nube (Backblaze B2) · bucket copias-x");
-igual("un servidor de copias de fuera, con su máquina", lineaLugar(lugarDe({ id: "rs", nombre: "Proveedor", tipo: "rest", donde: "https://copias.ejemplo.com:8000/x/" }, servidor, todos)), "Servidor de copias externo · Proveedor · copias.ejemplo.com:8000");
+igual("un servidor de copias de fuera, con su máquina", lineaLugar(lugarDe({ id: "rs", nombre: "Proveedor", tipo: "rest", donde: "https://copias.ejemplo.com:8000/x/" }, servidor, todos)), "Servidor de copias · Proveedor · copias.ejemplo.com:8000");
 igual("servidorDe quita el esquema de restic y el usuario", servidorDe("rest:https://ana@nas.local:8000/a/"), "nas.local:8000");
 
 console.log("\n· Copias en el mismo equipo");

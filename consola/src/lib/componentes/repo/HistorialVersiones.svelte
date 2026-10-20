@@ -302,7 +302,7 @@
             <span class="num">{fechaLarga(v.hora)}{#if v.duracion_s != null}<span class="faint">{" · "}<span use:tip={"Duración de la copia"}>{duracion(v.duracion_s)}</span></span>{/if}{#if varios}<span class="faint">{" · "}«{nombreRepo(x.repo)}»</span>{/if}</span>
             <span class="id-wrap">
               <code class="id selectable">{v.id}</code>
-              <button class="icon-btn copiar" use:tip={"Copiar el id"} aria-label="Copiar el id de la versión {v.id}" onclick={() => copiarId(v.id)}>
+              <button class="icon-btn copiar" use:tip={"Copiar el identificador"} aria-label="Copiar el identificador de la versión {v.id}" onclick={() => copiarId(v.id)}>
                 {#if copiado === v.id}<Check size={12} />{:else}<Copy size={12} />{/if}
               </button>
               {#if alAbrir && (v.archivos_nuevos != null || v.archivos_cambiados != null)}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { idRepoEnAlmacen } from "$lib/nombres";
-  import { usuarioEnAlmacen } from "$lib/direccion";
+  import { NOMBRE_TIPO_DESTINO, usuarioEnAlmacen } from "$lib/direccion";
   // Crear un repositorio desde la consola (orden «crear_repositorio», con la
   // clave de administración). La contraseña del repositorio la genera este
   // navegador, se muestra en el kit de recuperación (para imprimir) y viaja
@@ -168,7 +168,7 @@
       [nombre.trim(), { texto: "Falta el nombre", campo: "r-nombre" }],
       [elegida?.uso.ok, { texto: "Elige un destino que sirva desde este equipo" }],
       [!conCampos || nombreDestino.trim(), { texto: "Falta el nombre del destino", campo: "d-nombre" }],
-      [!conCampos || donde.trim(), { texto: tipo === "local" ? "Falta la carpeta" : tipo === "rest" ? "Falta la dirección" : "Falta el bucket", campo: "d-donde" }],
+      [!conCampos || donde.trim(), { texto: tipo === "local" ? "Falta la carpeta" : tipo === "rest" ? "Falta la dirección" : "Falta el contenedor (bucket)", campo: "d-donde" }],
       [!carpetaError, { texto: carpetaError ?? "", campo: "r-carpeta-nube" }],
       [!paraHistorial || repoExistenteCompleto(origen), { texto: "Faltan datos del repositorio de origen" }],
       [!errorTextoNota(observaciones), { texto: errorTextoNota(observaciones) ?? "", campo: "r-observaciones" }],
@@ -204,7 +204,7 @@
     if (nubeElegida && equipo) return destinoNubeCuerpo(equipo, nubeElegida.nube, carpetaNube);
     return { id: destino?.id ?? destinoId };
   }
-  const ETIQUETA_TIPO = { rest: "Servidor de copias", b2: "Backblaze B2", s3: "S3 compatible", local: "Carpeta de este equipo (o un disco USB)" };
+  const ETIQUETA_TIPO = { rest: NOMBRE_TIPO_DESTINO.rest, b2: NOMBRE_TIPO_DESTINO.b2, s3: NOMBRE_TIPO_DESTINO.s3, local: NOMBRE_TIPO_DESTINO.local };
 
   // v1.41: «Se guarda en: …» de lo elegido, y si se queda en el mismo equipo que protege.
   const letra = (r: string) => /^[a-z]:/i.test(r.trim()) ? `${r.trim()[0].toUpperCase()}:` : null;
@@ -365,7 +365,7 @@
             <input id="d-nombre" class="input" bind:value={nombreDestino} placeholder={tipo === "b2" ? "Backblaze B2" : "Servidor de la oficina"} />
           </div>
           <div class="field">
-            <label class="field-label" for="d-donde">{tipo === "rest" ? "Dirección (https://servidor:puerto)" : tipo === "local" ? "Carpeta o disco" : "Bucket"}</label>
+            <label class="field-label" for="d-donde">{tipo === "rest" ? "Dirección (https://servidor:puerto)" : tipo === "local" ? "Carpeta o disco" : "Contenedor (bucket)"}</label>
             {#if tipo === "local"}
               <div class="con-boton">
                 <input id="d-donde" class="input mono" bind:value={donde} spellcheck="false" placeholder={/windows/i.test(equipo?.so ?? "") ? "E:\\Resguardo" : "/mnt/disco2/resguardo"} />
@@ -379,7 +379,7 @@
           {#if tipo !== "local"}
             <div class="fila-campos">
               <div class="field">
-                <label class="field-label" for="d-usuario">{tipo === "rest" ? "Usuario" : "Id de la clave"}</label>
+                <label class="field-label" for="d-usuario">{tipo === "rest" ? "Usuario" : "Identificador de la clave"}</label>
                 <input id="d-usuario" class="input mono" bind:value={usuario} autocomplete="off" spellcheck="false" />
               </div>
               <CampoClave id="d-secreto" etiqueta={tipo === "rest" ? "Contraseña" : "Clave secreta"} bind:value={secretoDestino} />

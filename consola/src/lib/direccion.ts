@@ -5,12 +5,32 @@
 
 export type TipoExistente = "rest" | "local" | "b2" | "s3" | "sftp";
 
-export const ETIQUETA_TIPO_EXISTENTE: Record<TipoExistente, string> = {
+/**
+ * G3 (plan 0.8.1): el nombre de cada tipo de destino, **el mismo en toda la consola**
+ * (listas, fichas, mapa, formularios). Antes había cinco tablas con «Disco», «Disco del
+ * equipo», «Disco o carpeta del equipo» y «Carpeta de este equipo» para lo mismo, y
+ * «Servidor de copias», «… de fuera» o «… externo» para el servidor REST de otro.
+ */
+export const NOMBRE_TIPO_DESTINO: Record<string, string> = {
+  zona: "Zona de un almacén",
+  almacen: "Almacén",
   rest: "Servidor de copias",
   local: "Disco o carpeta del equipo",
-  b2: "Backblaze B2",
   s3: "S3 compatible",
+  b2: "Backblaze B2",
   sftp: "SFTP",
+  nube: "Nube conectada",
+  otro: "Otro destino",
+};
+/** El nombre del tipo de un destino (uno desconocido, como «otro»). */
+export const nombreTipoDestino = (tipo: string | null | undefined): string => NOMBRE_TIPO_DESTINO[tipo ?? "otro"] ?? NOMBRE_TIPO_DESTINO.otro;
+
+export const ETIQUETA_TIPO_EXISTENTE: Record<TipoExistente, string> = {
+  rest: NOMBRE_TIPO_DESTINO.rest,
+  local: NOMBRE_TIPO_DESTINO.local,
+  b2: NOMBRE_TIPO_DESTINO.b2,
+  s3: NOMBRE_TIPO_DESTINO.s3,
+  sftp: NOMBRE_TIPO_DESTINO.sftp,
 };
 
 /** Lo que se escribe para llegar a un repositorio que ya existe. */

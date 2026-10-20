@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { untrack } from "svelte";
   import { tip } from "$lib/tooltip";
   // Estado del cliente (docs/diseno.md §5, «Inicio»): el resumen grande con
@@ -145,7 +146,7 @@
   /** Dónde se guarda y cuánto, con la tendencia de 30 días. */
   const destinos = $derived(almacenesDe(delFiltro, informes, 30, reloj.ahora));
   const ICONO_DESTINO = { almacen: Server, rest: Server, local: HardDrive, s3: Cloud, b2: Cloud, sftp: Server, nube: Cloud, otro: Database };
-  const TIPO_DESTINO = { almacen: "Almacén", rest: "Servidor de copias", local: "Disco del equipo", s3: "S3", b2: "Backblaze B2", sftp: "SFTP", nube: "Nube", otro: "Otro destino" };
+  const TIPO_DESTINO = NOMBRE_TIPO_DESTINO;
   const fmtDiaCorto = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
   const etiquetaDia = (k: string) => fmtDiaCorto.format(new Date(`${k}T12:00:00`));
   /** Cuánto creció en el periodo, en texto («+1,2 GB en 30 días»). */

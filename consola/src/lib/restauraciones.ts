@@ -36,7 +36,7 @@ export function textoDestino(d: string | null | undefined): string {
 /** Desde dónde se restauró. */
 export function textoDesde(r: Pick<Restauracion, "desde" | "desde_nombre">): string {
   if (r.desde === "derivada") return r.desde_nombre ? `Copia derivada en «${r.desde_nombre}»` : "Una copia derivada";
-  if (r.desde === "externa") return r.desde_nombre ? `Copia externa en «${r.desde_nombre}»` : "La copia externa";
+  if (r.desde === "externa") return r.desde_nombre ? `Copia derivada en «${r.desde_nombre}»` : "La copia derivada de cada día";
   return "Su repositorio";
 }
 

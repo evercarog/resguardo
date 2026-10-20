@@ -266,7 +266,7 @@ export const GLOSARIO: Record<string, EntradaGlosario> = {
   },
   kit: {
     title: "Kit de recuperación",
-    text: "Una hoja por repositorio con su destino, su id y su contraseña. Con ella se pueden abrir las copias en cualquier equipo, incluso sin Resguardo: el formato es abierto.",
+    text: "Una hoja por repositorio con su destino, su identificador y su contraseña. Con ella se pueden abrir las copias en cualquier equipo, incluso sin Resguardo: el formato es abierto.",
     todo: "Imprímelo o guárdalo en PDF fuera del equipo, en un sitio seguro.",
   },
   nube: {

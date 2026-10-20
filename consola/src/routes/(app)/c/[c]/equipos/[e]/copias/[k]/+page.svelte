@@ -500,7 +500,7 @@
             <dt>Repositorio</dt>
             <dd>
               {#if repo}<a class="link" href="/c/{c}/equipos/{e}/repositorios/{encodeURIComponent(repo.id)}">{repo.nombre}</a>{:else}{k.repo}{/if}
-              {#if lugar}<SeGuardaEn enlace pequeno etiqueta="en" {lugar} riesgo={!!riesgo} />{#if destino?.inmutable}<span class="faint">(solo añadir)</span>{/if}{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
+              {#if lugar}<SeGuardaEn enlace pequeno etiqueta="en" {lugar} riesgo={!!riesgo} />{#if destino?.inmutable}<span class="faint">(inmutable)</span>{/if}{:else if repo?.destino}<span class="faint">en {repo.destino}</span>{/if}
             </dd>
           </div>
           <!-- C1/14x: lo que va después del repositorio (espejos y copias derivadas), con su estado; el camino entero está arriba. -->

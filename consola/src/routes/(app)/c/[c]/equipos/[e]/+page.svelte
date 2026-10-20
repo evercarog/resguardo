@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
@@ -601,7 +602,7 @@
     ];
   }
 
-  const TIPO_DESTINO: Record<string, string> = { local: "Disco o carpeta del equipo", rest: "Servidor de copias", s3: "S3 compatible", b2: "Backblaze B2", sftp: "SFTP", nube: "Nube conectada en el equipo", otro: "Otro" };
+  const TIPO_DESTINO = NOMBRE_TIPO_DESTINO;
 
   /** Una línea en vez de cuatro cifras vacías: cuándo llegará la primera versión. */
   function sinVersiones(r: RepositorioResumen) {
@@ -1273,7 +1274,7 @@
               <div class="fila">
                 <span class="fila-texto">
                   <span class="fila-titulo">{d.nombre} <ContadorNotas tipo="destino" objeto={d.id} /></span>
-                  <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · solo añadir" : ""}</span>
+                  <span class="fila-sub">{TIPO_DESTINO[d.tipo] ?? d.tipo}{#if d.donde}{" · "}<span class="pastilla mono">{d.donde}</span>{/if}{d.inmutable ? " · inmutable" : ""}</span>
                   {#if !usosDestino(equipo, d.id).length}<span class="fila-sub sin-uso">Sin repositorios ni copias que lo usen{#if d.tipo === "local"}{" · "}lo que haya en su carpeta se queda{/if}</span>{/if}
                 </span>
                 <button class="btn btn-sm btn-ghost" onclick={() => (notasDestino = { id: d.id, nombre: d.nombre })}>Notas</button>
@@ -1870,7 +1871,7 @@
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for="x-donde">{ext.tipo === "local" ? "Carpeta" : ext.tipo === "rest" ? "Dirección (https://servidor:puerto)" : ext.tipo === "sftp" ? "Servidor y ruta (usuario@servidor:/ruta)" : "Bucket"}</label>
+          <label class="field-label" for="x-donde">{ext.tipo === "local" ? "Carpeta" : ext.tipo === "rest" ? "Dirección (https://servidor:puerto)" : ext.tipo === "sftp" ? "Servidor y ruta (usuario@servidor:/ruta)" : "Contenedor (bucket)"}</label>
           <div class="con-boton">
             <input id="x-donde" class="input mono" bind:value={ext.donde} placeholder={ext.tipo === "local" ? (/windows/i.test(equipo?.so ?? "") ? "E:\\Resguardo" : "/mnt/disco2/resguardo") : ""} spellcheck="false" />
             {#if ext.tipo === "local"}<button type="button" class="btn" onclick={() => ((validarEleccion = (r: string) => errorCarpetaDestino(r, win, true)), (inicialEleccion = ext.donde.trim()), (elegirCarpeta = (ruta) => (ext.donde = ruta)))}><FolderOpen size={15} />Explorar…</button>{/if}
@@ -1882,7 +1883,7 @@
         {#if ext.tipo !== "local"}
           <div class="fila-campos">
             <div class="field">
-              <label class="field-label" for="x-usuario">{ext.tipo === "rest" || ext.tipo === "sftp" ? "Usuario" : "Id de la clave"}</label>
+              <label class="field-label" for="x-usuario">{ext.tipo === "rest" || ext.tipo === "sftp" ? "Usuario" : "Identificador de la clave"}</label>
               <input id="x-usuario" class="input mono" bind:value={ext.usuario} autocomplete="off" spellcheck="false" />
             </div>
             <CampoClave requerido id="x-secreto" etiqueta={ext.tipo === "rest" || ext.tipo === "sftp" ? "Contraseña" : "Clave secreta"} bind:value={ext.secreto} />

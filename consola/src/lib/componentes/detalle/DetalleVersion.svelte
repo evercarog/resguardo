@@ -69,7 +69,7 @@
 <div class="detalle">
   <p class="sub">
     {#if copia}<a class="link" href={enlaceCopia(copia.id)}>{copia.nombre}</a>{:else}<span>Copia</span>{/if}
-    · <span class="id-wrap"><code class="selectable">{v.id}</code><button class="icon-btn mini" use:tip={"Copiar el id"} aria-label="Copiar el id de la versión" onclick={copiarId}>{#if copiado}<Check size={12} />{:else}<Copy size={12} />{/if}</button></span>
+    · <span class="id-wrap"><code class="selectable">{v.id}</code><button class="icon-btn mini" use:tip={"Copiar el identificador"} aria-label="Copiar el identificador de la versión" onclick={copiarId}>{#if copiado}<Check size={12} />{:else}<Copy size={12} />{/if}</button></span>
     {#each v.etiquetas ?? [] as t (t)}<EtiquetaVersion nombre={t} />{/each}
   </p>
 

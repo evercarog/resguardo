@@ -337,13 +337,13 @@
         </div>
       </div>
       <div class="field">
-        <label class="field-label" for="dv-donde">{f.tipo === "local" ? "Carpeta" : f.tipo === "rest" ? "Dirección (https://servidor:puerto)" : "Bucket"}</label>
+        <label class="field-label" for="dv-donde">{f.tipo === "local" ? "Carpeta" : f.tipo === "rest" ? "Dirección (https://servidor:puerto)" : "Contenedor (bucket)"}</label>
         <input id="dv-donde" class="input mono" bind:value={f.donde} placeholder={f.tipo === "local" ? (win ? "E:\\Resguardo" : "/mnt/disco2/resguardo") : ""} spellcheck="false" />
       </div>
       {#if f.tipo !== "local"}
         <div class="fila-campos">
           <div class="field">
-            <label class="field-label" for="dv-usuario">{f.tipo === "rest" ? "Usuario" : "Id de la clave"}</label>
+            <label class="field-label" for="dv-usuario">{f.tipo === "rest" ? "Usuario" : "Identificador de la clave"}</label>
             <input id="dv-usuario" class="input mono" bind:value={f.usuario} autocomplete="off" spellcheck="false" />
           </div>
           <CampoClave requerido id="dv-secreto" etiqueta={f.tipo === "rest" ? "Contraseña" : "Clave secreta"} bind:value={f.secreto} />

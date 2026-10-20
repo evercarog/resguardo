@@ -14,6 +14,7 @@
 // Sin dependencias de Svelte: lo prueban los vectores (scripts/vectores-destinos.ts).
 import type { DestinoCatalogo, DestinoResumen, EspacioVolumen, Equipo } from "./tipos";
 import { esDeAlmacen } from "./retencion";
+import { NOMBRE_TIPO_DESTINO } from "./direccion";
 
 /** El agente entiende las zonas (`guarda_copias { zona }`, `{ anadir, zona }`…). */
 export const ADMITE_ZONAS = "zonas_almacen";
@@ -309,16 +310,8 @@ export const errorNombreDestino = (n: string) => (!n.trim() ? "Escribe un nombre
 /** Un id nuevo para un destino suelto del catálogo (también será su id en los equipos que lo usen). */
 export const idDestinoNuevo = () => `destino-${crypto.randomUUID().slice(0, 8)}`;
 
-/** Lo que se ve del tipo de un destino. */
-export const TEXTO_TIPO: Record<string, string> = {
-  zona: "Zona de un almacén",
-  rest: "Servidor de copias",
-  local: "Disco o carpeta del equipo",
-  s3: "S3",
-  b2: "Backblaze B2",
-  sftp: "SFTP",
-  nube: "Nube conectada",
-};
+/** Lo que se ve del tipo de un destino: la tabla única de `direccion.ts` (G3). */
+export const TEXTO_TIPO: Record<string, string> = NOMBRE_TIPO_DESTINO;
 
 // --- Plan 0.8.0 (B2 y B3; plan-mejoras 14b y 14r): un destino es uno solo ---
 //
@@ -542,7 +535,7 @@ export function usosDeVista(v: DestinoVista, equipos: Equipo[]): UsosVista {
     const en = (id?: string | null, nombre?: string | null) => (!!id && ids.has(id)) || (!id && !!nombre && nombres.has(nombre));
     for (const r of e.resumen?.repositorios ?? []) {
       if (ids.has(r.destino) || nombres.has(r.destino)) out.repos.push(`«${r.nombre}» (${e.nombre})`);
-      if (r.externa && en(r.externa.destino_id, r.externa.destino)) out.copias.push(`la copia externa de «${r.nombre}» (${e.nombre})`);
+      if (r.externa && en(r.externa.destino_id, r.externa.destino)) out.copias.push(`la copia derivada de «${r.nombre}» (${e.nombre})`);
       for (const d of r.derivadas ?? []) if (en(d.destino_id, d.destino)) out.copias.push(`una copia derivada de «${r.nombre}» (${e.nombre})`);
     }
   }

@@ -126,7 +126,7 @@ export const GUIAS: Guia[] = [
     resumen: "Para recuperar los archivos de un equipo en otro: porque se perdió, o porque los necesitas allí.",
     texto: [
       "Si el equipo original sigue conectado, comparte su acceso al destino con el otro, sellado solo para él, y el otro añade el repositorio como solo lectura: puede explorarlo y restaurar, pero ninguna copia escribe en él.",
-      "Si el equipo original ya no existe, escribes los datos de su kit de recuperación (destino, id del repositorio y contraseña): viajan sellados solo para el equipo que lo importa.",
+      "Si el equipo original ya no existe, escribes los datos de su kit de recuperación (destino, identificador del repositorio y contraseña): viajan sellados solo para el equipo que lo importa.",
     ],
     pasos: ["En «Restaurar», «Restaurar en otro equipo».", "Elige el repositorio y el equipo donde lo quieres, o los datos del kit.", "Confirma con la contraseña del repositorio y la clave de administración.", "Después, restaura en ese equipo como en cualquier otro."],
     ver: ["solo-lectura", "contrasena-repo"],
@@ -227,7 +227,7 @@ export const PREGUNTAS: Pregunta[] = [
   {
     id: "si-contrasena-repo",
     si: "Perdí la contraseña de un repositorio",
-    respuesta: ["Está en su kit de recuperación. Si no lo tienes, el propio equipo la muestra en local, como administrador (cambia «documentos» por el id del repositorio, que ves en «Repositorios y destinos»)."],
+    respuesta: ["Está en su kit de recuperación. Si no lo tienes, el propio equipo la muestra en local, como administrador (cambia «documentos» por el identificador del repositorio, que ves en «Repositorios y destinos»)."],
     comando: "resguardo-agente kit documentos",
   },
   // 14yy (lo que sí se hace): la contraseña de un repositorio no se cambia en el sitio.

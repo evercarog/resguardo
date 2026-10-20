@@ -236,7 +236,7 @@
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for="k-donde">{kitTipo === "rest" ? "Dirección (https://servidor:puerto/…)" : kitTipo === "local" ? "Carpeta" : kitTipo === "sftp" ? "Servidor y ruta" : "Bucket"}</label>
+          <label class="field-label" for="k-donde">{kitTipo === "rest" ? "Dirección (https://servidor:puerto/…)" : kitTipo === "local" ? "Carpeta" : kitTipo === "sftp" ? "Servidor y ruta" : "Contenedor (bucket)"}</label>
           {#if kitTipo === "local"}
             <div class="con-boton">
               <input id="k-donde" class="input mono" bind:value={kitDonde} spellcheck="false" />
@@ -250,10 +250,10 @@
         {#if kitTipo !== "local"}
           <div class="dos">
             <div class="field">
-              <label class="field-label" for="k-usuario">{kitTipo === "s3" || kitTipo === "b2" ? "Id de la clave" : "Usuario"}</label>
+              <label class="field-label" for="k-usuario">{kitTipo === "s3" || kitTipo === "b2" ? "Identificador de la clave" : "Usuario"}</label>
               <input id="k-usuario" class="input mono" bind:value={kitUsuario} autocomplete="off" spellcheck="false" />
             </div>
-            <CampoClave id="k-secreto" etiqueta={kitTipo === "s3" || kitTipo === "b2" ? "Clave secreta" : "Contraseña del destino"} bind:value={kitSecreto} />
+            <CampoClave id="k-secreto" etiqueta={kitTipo === "s3" || kitTipo === "b2" ? "Clave secreta" : "Contraseña"} bind:value={kitSecreto} />
           </div>
         {/if}
         {#if kitTipo === "rest"}

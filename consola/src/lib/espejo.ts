@@ -45,14 +45,14 @@ export interface CampoDestino {
 /** §3c: lo que pide cada tipo (lo mismo que comprueba el agente). */
 export const CAMPOS_DESTINO: Record<"b2" | "s3" | "sftp" | "smb" | "webdav", CampoDestino[]> = {
   b2: [
-    { clave: "cuenta", etiqueta: "keyID de la clave de aplicación", ejemplo: "0012ab34cd56ef7000000000a" },
-    { clave: "clave", etiqueta: "Clave de aplicación", secreto: true, ayuda: "Mejor una clave limitada al bucket del espejo y sin permiso para saltarse el bloqueo de objetos." },
+    { clave: "cuenta", etiqueta: "Identificador de la clave", ejemplo: "0012ab34cd56ef7000000000a", ayuda: "En B2, el «keyID» de una clave de aplicación." },
+    { clave: "clave", etiqueta: "Clave secreta", secreto: true, ayuda: "En B2, la «applicationKey». Mejor una clave limitada al bucket del espejo y sin permiso para saltarse el bloqueo de objetos." },
   ],
   s3: [
     { clave: "proveedor", etiqueta: "Proveedor", opcional: true, opciones: ["Other", "AWS", "Wasabi", "Minio", "Cloudflare", "Ceph", "DigitalOcean", "IDrive", "Scaleway", "IONOS", "Storj"] },
     { clave: "endpoint", etiqueta: "Dirección del servicio (endpoint)", opcional: true, ejemplo: "https://s3.eu-central-003.ejemplo.com", ayuda: "Con https. En AWS se puede dejar vacía." },
     { clave: "region", etiqueta: "Región", opcional: true, ejemplo: "eu-central-003" },
-    { clave: "id_clave", etiqueta: "Id de la clave de acceso" },
+    { clave: "id_clave", etiqueta: "Identificador de la clave", ayuda: "En S3, la «access key ID»." },
     { clave: "clave", etiqueta: "Clave secreta", secreto: true },
   ],
   sftp: [
@@ -306,7 +306,7 @@ export function kitDesdeEspejo(d: Pick<DestinoEspejoResumen, "tipo" | "carpeta" 
       repo,
       nombreDestino: `Espejo · ${d.nube ?? "B2"}`,
       descargar: false,
-      nota: "Escribe una clave de aplicación de B2 con permiso para leer ese bucket (keyID y clave). La del almacén solo la tiene el almacén.",
+      nota: "Escribe una clave de aplicación de B2 con permiso para leer ese bucket (identificador y clave secreta). La del almacén solo la tiene el almacén.",
     };
   }
   if (tipoNube === "s3") {

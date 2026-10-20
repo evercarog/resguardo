@@ -409,7 +409,7 @@
             <div class="fila">
               {#if pideBucket}
                 <div class="field">
-                  <label class="field-label" for="ee-bucket">{tipoNube === "smb" ? "Recurso compartido" : "Bucket"}</label>
+                  <label class="field-label" for="ee-bucket">{tipoNube === "smb" ? "Recurso compartido" : "Contenedor (bucket)"}</label>
                   <input id="ee-bucket" class="input mono" bind:value={bucketEscrito} oninput={rehacerCarpeta} spellcheck="false" placeholder={tipoNube === "smb" ? "copias" : "mi-bucket"} />
                   {#if errorBucketEscrito && bucketEscrito}<p class="error-campo">{errorBucketEscrito}</p>{:else}<span class="field-hint">Una sola vez: el destino lo recordará.</span>{/if}
                 </div>

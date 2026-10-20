@@ -65,15 +65,15 @@ export const existenteCompleto = (x: ExternaExtra) => repoExistenteCompleto(x.ex
 export function textoRetencionDestino(conRetencion: boolean, bloqueo: number | null, soloAnadir = false): string {
   if (soloAnadir) return "El destino es de solo añadir: desde este equipo no se borra nada allí (la retención la aplica el propio servidor).";
   if (bloqueo && conRetencion)
-    return `Con bloqueo de ${bloqueo} días, la retención de allí solo quita versiones de más de ${bloqueo} días (forget, sin prune): no libera espacio, así que el destino guarda todo lo subido y crece.`;
+    return `Con bloqueo de ${bloqueo} días, la retención de allí solo quita versiones de más de ${bloqueo} días: las marca como quitadas pero no libera espacio, así que el destino guarda todo lo subido y crece.`;
   if (bloqueo) return `Con bloqueo de ${bloqueo} días y sin retención propia, allí no se borra nada: guarda todas las versiones que suba.`;
-  return conRetencion ? "La retención propia quita allí las versiones sobrantes y libera su espacio (forget --prune) después de cada subida." : "";
+  return conRetencion ? "La retención propia quita allí las versiones sobrantes y libera su espacio después de cada subida." : "";
 }
 
 /** Lo que se dice de una copia externa en la ficha del repositorio («· a uno que ya existía · bloqueo de 30 días»). */
 export function detallesExterna(x: { existente?: boolean | null; bloqueo_dias?: number | null; solo_anadir?: boolean | null } | null | undefined): string[] {
   if (!x) return [];
-  return [x.existente ? "a un repositorio que ya existía" : "", x.bloqueo_dias ? `bloqueo de ${x.bloqueo_dias} días (sin prune)` : "", x.solo_anadir ? "destino de solo añadir" : ""].filter(Boolean);
+  return [x.existente ? "a un repositorio que ya existía" : "", x.bloqueo_dias ? `bloqueo de ${x.bloqueo_dias} días (no libera espacio)` : "", x.solo_anadir ? "destino de solo añadir" : ""].filter(Boolean);
 }
 
 /** El destino de la copia externa de `r` (su id o, con un agente anterior, por el nombre). */

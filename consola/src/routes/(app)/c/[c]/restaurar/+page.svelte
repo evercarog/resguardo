@@ -181,7 +181,7 @@
     const actualiza = `Para restaurar desde aquí, actualiza el agente de ${equipo.nombre}.`;
     if (repo.externa) {
       const t = informeRepo?.externa;
-      os.push({ id: "externa", tipo: "externa", nombre: "Copia externa", donde: repo.externa.destino, estado: sinEquipo ? "aviso" : estadoTarea(t), ultima: t?.ultima ?? null, noSe: admiteDesde ? null : actualiza, motivo: sinEquipo });
+      os.push({ id: "externa", tipo: "externa", nombre: "Copia derivada de cada día", donde: repo.externa.destino, estado: sinEquipo ? "aviso" : estadoTarea(t), ultima: t?.ultima ?? null, noSe: admiteDesde ? null : actualiza, motivo: sinEquipo });
     }
     for (const d of repo.derivadas ?? []) {
       const t = informeRepo?.derivadas?.find((x) => x.id === d.id);

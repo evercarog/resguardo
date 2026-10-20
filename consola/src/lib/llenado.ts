@@ -13,6 +13,7 @@ import type { EspacioVolumen, Equipo, Informe, RepoInforme } from "./tipos";
 import { anadidoDe, destinoDe, informeDe } from "./repo";
 import { claveDestino } from "./mapa";
 import { bytes } from "./formato";
+import { nombreTipoDestino } from "./direccion";
 import type { Tono } from "./salud";
 
 const DIA = 86_400_000;
@@ -138,7 +139,7 @@ export function previsiones(equipos: Equipo[], informes: Record<string, Informe 
         grupos
           .set(clave, {
             nombre: almacen?.nombre ?? d?.nombre ?? r.destino,
-            sub: almacen ? "Almacén" : ({ rest: "Servidor de copias", local: "Disco del equipo", s3: "S3", b2: "Backblaze B2", sftp: "SFTP", nube: "Nube", otro: "Destino" } as const)[d?.tipo ?? "otro"],
+            sub: almacen ? "Almacén" : nombreTipoDestino(d?.tipo),
             icono: almacen ? "almacen" : d?.tipo === "local" ? "disco" : d?.tipo === "rest" || d?.tipo === "sftp" ? "servidor" : "nube",
             href: almacen ? `/c/${cliente}/equipos/${almacen.id}` : undefined,
             almacen,

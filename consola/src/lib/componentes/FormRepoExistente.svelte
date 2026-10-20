@@ -56,7 +56,7 @@
   {#if repo.tipo !== "local" && repo.tipo !== "sftp"}
     <div class="dos">
       <div class="field">
-        <label class="field-label" for="{id}-usuario">{nube ? "Id de la clave" : "Usuario (si tiene)"}</label>
+        <label class="field-label" for="{id}-usuario">{nube ? "Identificador de la clave" : "Usuario (si tiene)"}</label>
         <input id="{id}-usuario" class="input mono" bind:value={repo.usuario} autocomplete="off" spellcheck="false" />
       </div>
       <CampoClave id="{id}-secreto" etiqueta={nube ? "Clave secreta" : "Contraseña del servidor (si tiene)"} bind:value={repo.secreto} />
