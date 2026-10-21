@@ -6,9 +6,9 @@ Cómo usar esta lista: cada prueba con su resultado (`[x]` bien, `[!]` falló �
 
 ## 1. Instalación y vinculación (lo más importante antes de desplegar)
 
-- [ ] 1a. Instalar el agente en silencio con `/S /CODE=… /SERVIDOR="https://…"` en un Windows Server limpio: instala **y** vincula; `instalador.log` dice el resultado.
-- [ ] 1b. Lo mismo desde una tarea de **ESET** (forma `cmd`), en un Windows 10/11.
-- [ ] 1c. La línea de PowerShell de «Instalar muchos equipos».
+- [ ] 1a. Instalar el agente **por comandos** en un Windows limpio, en silencio (`/S /CODE=… /SERVIDOR="https://…"`): instala **y** vincula; `instalador.log` dice el resultado. Probarlo en `cmd` y en PowerShell, como administrador y como SYSTEM (que es como lo lanzan las herramientas de despliegue: GPO, Intune, PDQ, un antivirus con consola…). No hace falta ninguna herramienta concreta: basta con que el comando funcione.
+- [ ] 1b. Un Windows Server y un Windows 10/11, por si se comportan distinto.
+- [ ] 1c. La línea de PowerShell de «Instalar muchos equipos» copiada tal cual.
 - [ ] 1d. Un Windows Server 2016 sin WebView2: la bandeja y «Abrir Resguardo» dicen qué falta.
 - [ ] 1e. Agente en Linux (Debian/Ubuntu) con `instalar-agente.sh`: instala, vincula y copia.
 - [ ] 1f. Desinstalar en Windows: quita el servicio, el menú del Explorador y el `PATH`; los datos de copias se quedan.
