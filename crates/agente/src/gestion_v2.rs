@@ -2140,19 +2140,27 @@ pub fn aplicar_retencion_por(v: &Vinculo, repo: &str, por: &'static str) -> Resu
     // planificador propio (las reglas de `restic forget`, probadas contra él) y se quitan
     // por id; si no, `restic forget` con la regla, como siempre.
     let conservadas = crate::versiones_v2::conservadas_de(v, repo);
-    let (out, r) = if !conservadas.is_empty() || regla.por_dia.is_some() {
-        retencion_por_ids(&acc, antes.as_deref(), regla, &conservadas)
-    } else {
-        let mut args: Vec<String> = vec!["forget".into(), "--prune".into(), "--retry-lock".into(), "30m".into()];
-        args.extend(politica.args());
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let out = resguardo_motor::restic::run_raw(&acc, &refs, std::time::Duration::from_secs(6 * 3600));
-        let r = match &out {
-            Ok(o) if o.code == Some(0) => Ok("Retención aplicada.".to_string()),
-            Ok(o) => Err(resguardo_motor::restic::exit_error(o.code, &o.stderr)),
-            Err(e) => Err(e.clone()),
-        };
-        (out, r)
+    let podar = || {
+        if !conservadas.is_empty() || regla.por_dia.is_some() {
+            retencion_por_ids(&acc, antes.as_deref(), regla, &conservadas)
+        } else {
+            let mut args: Vec<String> = vec!["forget".into(), "--prune".into(), "--retry-lock".into(), "30m".into()];
+            args.extend(politica.args());
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            let out = resguardo_motor::restic::run_raw(&acc, &refs, std::time::Duration::from_secs(6 * 3600));
+            let r = match &out {
+                Ok(o) if o.code == Some(0) => Ok("Retención aplicada.".to_string()),
+                Ok(o) => Err(resguardo_motor::restic::exit_error(o.code, &o.stderr)),
+                Err(e) => Err(e.clone()),
+            };
+            (out, r)
+        }
+    };
+    // B3 (plan 0.8.2): en un disco de este equipo, lo que quite la poda queda anotado
+    // para los espejos que hace el propio equipo de este repositorio (su freno).
+    let (out, r) = match crate::podas::carpeta_local(&acc.location) {
+        Some(c) => crate::podas::con_registro(&c, podar),
+        None => podar(),
     };
     if let Some(antes) = &antes {
         let despues = resguardo_motor::restic::snapshots(&acc).ok();

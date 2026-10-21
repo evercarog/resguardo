@@ -172,6 +172,10 @@ pub struct Opciones {
     /// el freno (se movió a propósito) pero sí para la retención; en un destino con
     /// selección, la ruta vieja de lo elegido se sigue mirando en el destino.
     pub antiguas: Vec<(String, String)>,
+    /// B3 (plan 0.8.2): lo que quitó la poda del propio equipo en el origen
+    /// (`podas.rs`, relativo al origen) y el día de la más reciente. No cuenta para el
+    /// freno (se quitó a propósito) pero sí para la retención (borrado diferido).
+    pub podado: crate::podas::Podado,
 }
 
 /// Cuándo se borra lo que falta.
@@ -182,6 +186,11 @@ enum Borrado {
 }
 
 impl Opciones {
+    /// ¿Esta vuelta puede borrar algo del destino (lleva la cuenta de lo que falta)?
+    pub fn borra(&self) -> bool {
+        self.borrado().is_some()
+    }
+
     /// Cuándo se borra, contando el bloqueo de objetos (con él, nunca o solo pasados más de N días).
     fn borrado(&self) -> Option<Borrado> {
         if self.bloqueo {
@@ -399,6 +408,10 @@ pub struct Resumen {
     pub retenidos_bytes: u64,
     /// 14i: lo que ocupaban en el destino los borrados de esta vuelta.
     pub borrados_bytes: u64,
+    /// B3 (plan 0.8.2): lo que faltó por primera vez porque lo quitó la poda del propio
+    /// equipo (se borrará del espejo a su tiempo), y el día de esa poda.
+    pub podados: u64,
+    pub poda: Option<String>,
     /// 14i/14h: lo que ocupa en el destino, al terminar la vuelta, cada repositorio
     /// (`<usuario>/<repo>`, o "" lo que esté en la raíz) del alcance.
     pub ocupa: BTreeMap<String, u64>,
@@ -569,7 +582,14 @@ pub fn retencion(
         faltan.iter().filter(|(k, _)| !estado.faltan.contains_key(**k) && !estado.retenidos.contains_key(**k)).map(|(k, v)| (*k, *v)).collect();
     // B1: lo que se movió a propósito en el almacén no cuenta para el freno.
     let movido = |k: &str| op.antiguas.iter().any(|(de, _)| k.starts_with(&format!("{de}/")));
-    let cuentan: Vec<&(&str, u64)> = nuevos.iter().filter(|(k, _)| !movido(k)).collect();
+    // B3 (plan 0.8.2): lo que quitó la poda del propio equipo, tampoco.
+    let podado = |k: &str| op.podado.rels.contains(k);
+    let cuentan: Vec<&(&str, u64)> = nuevos.iter().filter(|(k, _)| !movido(k) && !podado(k)).collect();
+    let de_la_poda: Vec<(&str, u64)> = nuevos.iter().filter(|(k, _)| podado(k)).copied().collect();
+    r.podados = de_la_poda.len() as u64;
+    if r.podados > 0 {
+        r.poda.clone_from(&op.podado.ultima);
+    }
     // Un repositorio entero: su `config` está en el destino y no en el almacén.
     let enteros: Vec<&str> = cuentan.iter().filter_map(|(k, _)| k.strip_suffix("/config").or((*k == "config").then_some("(raíz)"))).collect();
     let mucho = op.freno.salta(cuentan.len() as u64, destino.len() as u64, origen.len() as u64);
@@ -580,21 +600,30 @@ pub fn retencion(
         } else {
             format!("el repositorio {} entero", enteros.join(", "))
         };
+        // B3: si hubo una poda del propio equipo, se dice (lo que quitó ella no cuenta aquí).
+        let tras = match op.podado.ultima.as_deref().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+            Some(d) => format!(", tras la poda del día {} (lo que quitó esa poda no cuenta)", d.format("%d/%m/%Y")),
+            None => String::new(),
+        };
         match op.freno.accion {
             AccionFreno::Confirmar => {
                 r.freno = Some(format!(
-                    "falta de golpe en el almacén {que}: no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén"
+                    "falta de golpe en el almacén {que}{tras}: no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén"
                 ));
                 borrar_ahora = false;
             }
             AccionFreno::Avisar => {
                 r.freno = Some(format!(
-                    "falta de golpe en el almacén {que}: se conserva en el espejo y no se borrará. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola para que también se borre aquí; si no, revisa el almacén"
+                    "falta de golpe en el almacén {que}{tras}: se conserva en el espejo y no se borrará. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola para que también se borre aquí; si no, revisa el almacén"
                 ));
-                for (k, v) in nuevos {
-                    estado.retenidos.insert(k.to_string(), v);
+                for (k, v) in nuevos.iter().filter(|(k, _)| !podado(k)) {
+                    estado.retenidos.insert(k.to_string(), *v);
                 }
             }
+        }
+        // Lo de la poda sigue la retención del espejo como siempre, aunque el freno salte por lo demás.
+        for (k, v) in de_la_poda {
+            estado.faltan.insert(k.to_string(), Falta { desde: desde.clone(), bytes: v, vuelta });
         }
     } else {
         for (k, v) in nuevos {
@@ -1053,6 +1082,146 @@ mod tests {
         let mut r = Resumen::default();
         retencion(&lado, &sin_srv, &listar(), &Opciones::default(), &mut est, &mut r, dia(400)).unwrap();
         assert_eq!(r.borrados, 0);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// B3 (plan 0.8.2): lo que quitó la poda del propio almacén no hace saltar el freno
+    /// (sigue la retención como siempre); lo demás que falte de golpe, sí, diciendo la poda.
+    #[test]
+    fn la_poda_del_almacen_no_frena() {
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-poda-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let d = base.join("destino");
+        let mut origen: Vec<Archivo> = Vec::new();
+        let mut destino = BTreeMap::new();
+        for i in 0..400 {
+            let rel = if i == 0 { "pc-01/conta/config".to_string() } else { format!("pc-01/conta/data/{i:03}") };
+            std::fs::create_dir_all(d.join(&rel).parent().unwrap()).unwrap();
+            std::fs::write(d.join(&rel), b"x").unwrap();
+            destino.insert(rel.clone(), 1u64);
+            origen.push(Archivo { rel, len: 1, reciente: false });
+        }
+        let lado = Lado::Carpeta(&d);
+        let dia = |n: i64| chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap() + chrono::Duration::days(n);
+        let quitar = |o: &mut Vec<Archivo>, rels: &[String]| o.retain(|a| !rels.contains(&a.rel));
+        let listar = || -> BTreeMap<String, u64> { listar_carpeta(&d, &Alcance::Todos).unwrap().into_iter().map(|a| (a.rel, a.len)).collect() };
+        // La poda del almacén quita de golpe el 25 % (100 archivos), y lo anotó.
+        let podados: Vec<String> = (1..=100).map(|i| format!("pc-01/conta/data/{i:03}")).collect();
+        quitar(&mut origen, &podados);
+        let op = Opciones {
+            retencion_dias: Some(30),
+            podado: crate::podas::Podado { rels: podados.iter().cloned().collect(), ultima: Some("2026-10-01".into()) },
+            ..Default::default()
+        };
+        let mut est = Estado::default();
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(0)).unwrap();
+        assert_eq!((r.freno.clone(), r.por_borrar, r.podados, r.poda.as_deref()), (None, 100, 100, Some("2026-10-01")));
+        // El texto de la vuelta no es un error ni un aviso: lo dice y ya.
+        let t = crate::espejo::texto_de(&r).unwrap();
+        assert!(!t.starts_with(crate::espejo::PREFIJO_AVISO) && t.contains("100 archivos que quitó la poda del día 01/10/2026"), "{t}");
+        // Pasados los 30 días, se borran como siempre.
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(30)).unwrap();
+        assert_eq!(r.borrados, 100);
+        // Otros 60 que faltan sin venir de la poda (alguien borrando a mano): frena igual.
+        let a_mano: Vec<String> = (200..260).map(|i| format!("pc-01/conta/data/{i:03}")).collect();
+        let otra_poda: Vec<String> = (300..320).map(|i| format!("pc-01/conta/data/{i:03}")).collect();
+        quitar(&mut origen, &a_mano);
+        quitar(&mut origen, &otra_poda);
+        let op = Opciones {
+            retencion_dias: Some(30),
+            podado: crate::podas::Podado { rels: otra_poda.iter().cloned().collect(), ultima: Some("2026-10-31".into()) },
+            ..Default::default()
+        };
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(31)).unwrap();
+        let f = r.freno.clone().unwrap_or_default();
+        assert!(f.contains("60 archivos") && f.contains("tras la poda del día 31/10/2026"), "{f}");
+        // Lo de la poda sí se anota (se borrará a su tiempo); lo demás, nada.
+        assert_eq!((r.por_borrar, r.podados), (20, 20));
+        assert!(a_mano.iter().all(|k| !est.faltan.contains_key(k)));
+        // Solo el freno: la vuelta es un aviso (lo nuevo sí se subió), no un error.
+        let t = crate::espejo::texto_de(&r).unwrap();
+        assert!(t.starts_with(crate::espejo::PREFIJO_AVISO) && t.contains("falta de golpe"), "{t}");
+        // Con el freno «avisar», lo de la poda tampoco se conserva para siempre.
+        let mut est2 = est.clone();
+        est2.faltan.clear();
+        let op2 = Opciones { freno: Freno { accion: AccionFreno::Avisar, ..Default::default() }, ..op.clone() };
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op2, &mut est2, &mut r, dia(31)).unwrap();
+        assert_eq!((r.retenidos, r.por_borrar), (60, 20));
+        // Un error de verdad sigue siendo un error.
+        let mut r = Resumen::default();
+        retencion(&lado, &origen, &listar(), &op, &mut est, &mut r, dia(32)).unwrap();
+        r.danados_origen.push("pc-01/conta/data/399".into());
+        assert!(crate::espejo::texto_de(&r).is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// B3 (plan 0.8.2), con restic de verdad: la poda (`forget` + `prune`) de un repositorio
+    /// del almacén, anotada, no hace saltar el freno de su espejo; sin anotar, sí; y un
+    /// archivo borrado a mano después frena aunque esté la poda anotada.
+    #[test]
+    fn la_poda_real_no_frena_el_espejo() {
+        if crate::restic::version().is_err() {
+            eprintln!("Sin restic: se salta la prueba.");
+            return;
+        }
+        let _l = crate::restic::tests::real_repo_lock();
+        let base = std::env::temp_dir().join(format!("resguardo-espejo-poda-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (datos, almacen, espejo) = (base.join("datos"), base.join("almacen"), base.join("espejo"));
+        std::fs::create_dir_all(&datos).unwrap();
+        let repo = almacen.join("pc-01-3f2a/conta");
+        let acc = crate::restic::Access::new(repo.display().to_string(), "contraseña de prueba de la poda");
+        let restic = |args: &[&str]| {
+            let out = crate::restic::run_raw(&acc, args, Duration::from_secs(120)).unwrap();
+            assert_eq!(out.code, Some(0), "{}", out.stderr);
+        };
+        let envejecer = || {
+            let viejo = SystemTime::now() - Duration::from_secs(3600);
+            for a in listar_carpeta(&almacen, &Alcance::Todos).unwrap() {
+                std::fs::File::options().write(true).open(almacen.join(&a.rel)).unwrap().set_modified(viejo).unwrap();
+            }
+        };
+        restic(&["init"]);
+        // Tres versiones, cada una con datos propios (la poda tendrá algo que quitar).
+        for i in 0..3 {
+            let contenido: String = (0..20_000).map(|j| format!("{i}-{j};")).collect();
+            std::fs::write(datos.join("facturas.csv"), contenido).unwrap();
+            restic(&["backup", "--host", "PC-01", datos.to_str().unwrap()]);
+        }
+        envejecer();
+        // Freno sensible (sin mínimos), retención de 30 días.
+        let op = Opciones { retencion_dias: Some(30), freno: Freno { pct: 1, min_archivos: 0, min_faltan: 1, ..Default::default() }, ..Default::default() };
+        let lado = Lado::Carpeta(&espejo);
+        let mut est = Estado::default();
+        let r = vuelta(&almacen, &lado, &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();
+        assert!(r.copiados > 5 && r.freno.is_none(), "{r:?}");
+        // La retención del almacén: se queda con la última, anotando lo que quita.
+        let antes = crate::podas::listar(&repo).unwrap();
+        restic(&["forget", "--keep-last", "1", "--prune"]);
+        envejecer();
+        let despues = crate::podas::listar(&repo).unwrap();
+        let mut lista = Vec::new();
+        crate::podas::anotar_en(&mut lista, &repo, &antes, &despues, chrono::Local::now());
+        let podado = crate::podas::de_origen_en(&lista, &almacen, chrono::Local::now());
+        assert!(podado.rels.len() >= 3 && podado.rels.iter().any(|k| k.contains("/data/")), "{:?}", podado.rels);
+        // Sin anotarla, el espejo frena (como antes de B3).
+        let r = vuelta(&almacen, &lado, &Alcance::Todos, &op, &mut est.clone(), &mut |_, _| {}).unwrap();
+        assert!(r.freno.is_some(), "{r:?}");
+        // Anotada, no: lo quitado se borrará a su tiempo.
+        let op = Opciones { podado: podado.clone(), ..op };
+        let r = vuelta(&almacen, &lado, &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();
+        assert_eq!((r.freno.clone(), r.podados), (None, podado.rels.len() as u64), "{r:?}");
+        assert!(crate::espejo::texto_de(&r).is_ok_and(|t| !t.starts_with(crate::espejo::PREFIJO_AVISO)));
+        // Alguien borra a mano un archivo de datos que sigue en uso: frena igual.
+        let a_mano = despues.iter().find(|k| k.starts_with("data/")).unwrap();
+        std::fs::remove_file(repo.join(a_mano)).unwrap();
+        let r = vuelta(&almacen, &lado, &Alcance::Todos, &op, &mut est, &mut |_, _| {}).unwrap();
+        assert!(r.freno.as_deref().is_some_and(|f| f.contains("tras la poda del día")), "{r:?}");
+        assert!(espejo.join("pc-01-3f2a/conta").join(a_mano).is_file(), "no se borra del espejo");
         let _ = std::fs::remove_dir_all(&base);
     }
 

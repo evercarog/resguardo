@@ -314,6 +314,7 @@ impl Trabajo {
             bloqueo_dias: self.bloqueo_dias,
             freno: self.freno.clone(),
             antiguas: Vec::new(),
+            podado: Default::default(),
         }
     }
 
@@ -1085,6 +1086,10 @@ pub fn vuelta(
     if !t.es_equipo() {
         op.antiguas = crate::nombres::antiguas(&crate::server::load(), t.zona.as_deref());
     }
+    // B3 (plan 0.8.2): lo que quitó la poda del propio equipo tampoco (podas.rs).
+    if op.borra() {
+        op.podado = crate::podas::de_origen(origen);
+    }
     let r = crate::espejo_motor::vuelta(origen, &lado, alcance, &op, &mut e, avance);
     guardar_estado(estado, &e);
     r
@@ -1291,8 +1296,13 @@ pub fn texto_de(t: &Trabajo, motivo: Motivo, hechos: &[(Option<String>, Result<S
         })
         .collect();
     let errores = hechos.iter().filter(|(_, r)| r.is_err()).count();
+    // B3 (plan 0.8.2): lo nuevo se subió, pero el freno espera que alguien confirme lo que falta.
+    let avisos = hechos.iter().filter(|(_, r)| r.as_ref().is_ok_and(|t| t.starts_with(crate::espejo::PREFIJO_AVISO))).count();
+    let partes: Vec<String> = partes.into_iter().map(|p| p.replacen(crate::espejo::PREFIJO_AVISO, "", 1)).collect();
     if errores > 0 {
         format!("ERROR: espejo «{}» en {}{por}: {}", t.nombre, t.texto_destino(), partes.join(" · "))
+    } else if avisos > 0 {
+        format!("{} espejo «{}» hecho en {}{por}: {}", crate::espejo::PREFIJO_AVISO.trim_end(), t.nombre, t.texto_destino(), partes.join(" · "))
     } else if partes.is_empty() {
         format!("Espejo «{}» en {}{por}: no había ningún repositorio que copiar.", t.nombre, t.texto_destino())
     } else {
