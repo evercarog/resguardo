@@ -276,7 +276,8 @@
               {#each s.discos as d (d.id)}
                 <label class="miembro">
                   <input type="checkbox" checked={c.miembros?.includes(d.id)} disabled={ocupado} onchange={(ev) => alternarMiembro(c, d.id, ev.currentTarget.checked)} />
-                  <span>{d.nombre || "Disco sin nombre"}</span>
+                  <!-- Con el número de serie (o la bahía): dos discos del mismo modelo se distinguen. -->
+                  <span>{d.nombre || "Disco sin nombre"}{#if d.serie || d.bahia}<span class="faint ident"> · {d.serie ? `S/N ${d.serie}` : `bahía ${d.bahia}`}</span>{/if}</span>
                 </label>
               {/each}
             </div>
