@@ -55,7 +55,7 @@
   const admin = $derived(!!actual.cliente && puede.administrar(actual.cliente.rol));
   const ordena = $derived(!!actual.cliente && puede.ordenar(actual.cliente.rol));
   const TONO = { ok: "ok", bad: "bad", neutral: "neutral" } as const;
-  const ESTADO = { ok: ["ok", "Al día"], error: ["bad", "Falló"], pausado: ["paused", "En pausa"], nuevo: ["neutral", "Todavía no"] } as const;
+  const ESTADO = { ok: ["ok", "Al día"], error: ["bad", "Falló"], aviso: ["warn", "Por confirmar"], pausado: ["paused", "En pausa"], nuevo: ["neutral", "Todavía no"] } as const;
 
   let orden = $state<{ tipo: string; cuerpo: Record<string, unknown>; titulo: string; descripcion: string; accion?: string } | null>(null);
   function probar(t: { id: string; nombre: string }, quien: "almacen" | "equipo") {

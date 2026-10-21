@@ -1,7 +1,7 @@
 // Datos simulados para `npm run dev:ventana` (solo en desarrollo: no entra en
 // la página que lleva el agente). Una copia en marcha con ritmos que suben y
 // bajan, y un servicio de mentira para los ajustes y el modo local.
-import type { Datos, EstadoBandeja, OrdenLocal, Punto } from "./tipos";
+import type { ConsolaLocal, Datos, EstadoBandeja, OrdenLocal, Punto } from "./tipos";
 
 const inicio = Date.now();
 const serie: Punto[] = [];
@@ -138,6 +138,12 @@ let ordenesSimuladas: OrdenLocal[] = [
   },
 ];
 
+// C1 (plan 0.8.2): las consolas del equipo simulado (con «?modo=gestionado»).
+let consolasSimuladas: ConsolaLocal[] = [
+  { n: 1, nombre: "Oficina", url: "https://192.0.2.10:8443", identidad: "AAAA", huella: "3F:2A:91:0C:7B:44:E2:18", principal: true, contacto: new Date(Date.now() - 15 * 60_000).toISOString(), en_espera: 1 },
+  { n: 2, nombre: "Consola en línea", url: "https://consola.example.com", identidad: "BBBB", huella: "A0:5D:33:C9:12:8E:F4:07", principal: false, contacto: new Date(Date.now() - 40 * 86_400_000).toISOString(), en_espera: 0 },
+];
+
 export async function simular(op: string, c: Record<string, unknown>): Promise<unknown> {
   await espera(250);
   switch (op) {
@@ -193,6 +199,19 @@ export async function simular(op: string, c: Record<string, unknown>): Promise<u
     case "parar": {
       if (c.clave !== "caballo bateria grapa") throw new Error("La clave de administración no es correcta.");
       return { mensaje: c.pausa ? "Pausando «Documentos»: se para en unos segundos y sigue sola a su hora." : "Parando «Documentos»: se para en unos segundos." };
+    }
+    case "consolas":
+      return { consolas: modo === "gestionado" ? consolasSimuladas : [], con_clave: true };
+    case "dejar_consola": {
+      if (c.clave !== "caballo bateria grapa") throw new Error("La clave de administración no es correcta.");
+      if (c.todas) {
+        consolasSimuladas = [];
+        modo = "local";
+        return { mensaje: "El equipo ya no lo gestiona ninguna consola: sigue con sus copias, sin consola." };
+      }
+      const q = consolasSimuladas.find((x) => x.identidad === c.consola);
+      consolasSimuladas = consolasSimuladas.filter((x) => x !== q).map((x, i) => ({ ...x, n: i + 1, principal: i === 0 }));
+      return { mensaje: `Este equipo ya no se conecta a ${q?.nombre} (${q?.url}). Las demás consolas siguen igual.` };
     }
     case "desbloqueada":
       return { abierta: false };

@@ -610,6 +610,8 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         if (t.retencion.modo === "nunca") return resultado(e, o, "fallida", "Ese espejo nunca borra nada: no hay nada que confirmar.");
         t.freno_aviso = null;
         t.retenidos = null;
+        // B3 (plan 0.8.2): ya no queda nada por confirmar.
+        if (t.resultado?.startsWith("AVISO")) t.resultado = t.resultado.replace(/^AVISO: e/, "E").replace(/ Pero falta de golpe.*$/, "");
         return resultado(e, o, "hecha", `Confirmado: la próxima vez que se haga «${t.nombre}» se anota lo que ya no está y se borrará del espejo a su tiempo.`);
       }
       if ("espejo_ahora" in c && (conTrabajosMock || delEquipoMock)) {

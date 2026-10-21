@@ -278,6 +278,7 @@ export const PREGUNTAS: Pregunta[] = [
     respuesta: [
       "Cada destino del espejo muestra su último resultado. Si es una carpeta: comprueba que el disco está conectado y tiene sitio. Si es la nube: que el equipo tiene internet y que la cuenta tiene espacio.",
       "Un fallo no borra nada: la próxima noche vuelve a intentarlo y sube lo que faltaba.",
+      "«Espejo frenado: confírmalo» no es un fallo: lo nuevo se subió, pero falta de golpe en el almacén algo que no quitó su propia poda (la retención del almacén ya no cuenta), y el espejo no lo borra. Si sabes por qué falta (un repositorio quitado a propósito), confírmalo en el espejo; si no, revisa el disco del almacén.",
     ],
   },
   {
@@ -302,6 +303,15 @@ export const PREGUNTAS: Pregunta[] = [
     si: "Un equipo lleva días sin contacto",
     respuesta: ["Comprueba que está encendido y con red, y que el servicio «Resguardo Agente» está en marcha. En el equipo, el estado y el registro dicen qué pasa."],
     comando: "resguardo-agente estado",
+  },
+  {
+    id: "si-dejar-consola",
+    si: "Quiero sacar un equipo de una consola desde el propio equipo",
+    respuesta: [
+      "En el equipo, ventana de Resguardo → Ajustes → Consolas: «Quitar» deja una consola (las demás siguen) y «Usar sin consola» las deja todas. Hace falta ser administrador del equipo y la clave de administración. En la terminal, como administrador, los comandos de abajo (piden la clave sin que se vea).",
+      "Las copias siguen con su horario y los destinos y el almacén no se tocan. Las órdenes en espera de esa consola no se aplicarán. La consola lo ve como «dejó esta consola desde el propio equipo», con la fecha y la cuenta, y lo avisa.",
+    ],
+    comando: "resguardo-agente consolas quitar 2",
   },
   {
     id: "si-orden",

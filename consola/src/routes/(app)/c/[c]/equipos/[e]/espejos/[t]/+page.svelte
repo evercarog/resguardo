@@ -78,8 +78,8 @@
   const nombre = $derived(t ? t.nombre || nombrePorDefecto(t.adonde) : "Espejo");
 
   const estado = $derived(t ? estadoTrabajo(t) : "nuevo");
-  const TONO = { ok: "ok", error: "bad", pausado: "paused", nuevo: "info" } as const;
-  const TEXTO = { ok: "Al día", error: "Con error", pausado: "En pausa", nuevo: "Aún no ha terminado ninguna subida" } as const;
+  const TONO = { ok: "ok", error: "bad", aviso: "warn", pausado: "paused", nuevo: "info" } as const;
+  const TEXTO = { ok: "Al día", error: "Con error", aviso: "Por confirmar", pausado: "En pausa", nuevo: "Aún no ha terminado ninguna subida" } as const;
 
   // Adónde va: su nombre del catálogo, su tipo (icono) y la página del destino si la tiene.
   const vistas = $derived(destinosParaPasos(equipos, catalogoDe(c)));
@@ -206,7 +206,7 @@
     {/if}
 
     <div class="cifras" role="list" aria-label="Cifras del espejo">
-      <Cifra icono={History} etiqueta="Última subida" valor={t.ultima ? relativo(t.ultima, reloj.ahora) : "Todavía no"} detalle={t.ultima ? fechaLarga(t.ultima) : undefined} sub={t.bien && t.bien !== t.ultima ? `la última bien, ${relativo(t.bien, reloj.ahora)}` : estado === "error" ? "falló" : estado === "ok" ? "bien" : t.activo ? "pendiente" : "en pausa"} mal={estado === "error"} />
+      <Cifra icono={History} etiqueta="Última subida" valor={t.ultima ? relativo(t.ultima, reloj.ahora) : "Todavía no"} detalle={t.ultima ? fechaLarga(t.ultima) : undefined} sub={t.bien && t.bien !== t.ultima ? `la última bien, ${relativo(t.bien, reloj.ahora)}` : estado === "error" ? "falló" : estado === "aviso" ? "bien, con el freno por confirmar" : estado === "ok" ? "bien" : t.activo ? "pendiente" : "en pausa"} mal={estado === "error"} />
       <Cifra icono={CalendarClock} etiqueta="Próxima" valor={t.en_cola ? "En cola" : t.activo && t.proxima ? relativo(t.proxima, reloj.ahora) : t.activo ? "Tras una copia" : "En pausa"} detalle={t.proxima ? fechaLarga(t.proxima) : undefined} sub={textoCuando(t, nombreDe)} />
       <Cifra icono={Database} etiqueta="En el destino" valor={t.ocupa ? bytes(t.ocupa.bytes) : "—"} sub={t.ocupa ? `contado ${relativo(t.ocupa.cuando, reloj.ahora)}` : "se sabrá tras la próxima subida"} />
       <Cifra
