@@ -518,6 +518,8 @@ pub fn titulos_aviso(tipo: &str, mensaje: &str, equipo: Option<&str>, cliente: &
         "orden_en_espera" => format!("Orden con espera desde otra consola en {e}"),
         // 14a: alguien con la clave de administración la aprobó delante del equipo, antes de su hora.
         "orden_aprobada_en_equipo" => format!("Se aprobó en {e} una orden que reducía la protección"),
+        // C1 (plan 0.8.2, 15uu): lo dijo el equipo, firmado, al dejarla.
+        "dejada_en_equipo" => format!("{e} dejó esta consola desde el propio equipo"),
         "cambio_clave" => format!("Se cambió la clave de administración de {e}"),
         "auditoria_rehecha" => format!("{e} vio que una consola rehízo su registro de actividad"),
         // v1.58: una orden con espera que caducó, se rechazó o falló sin aplicarse.

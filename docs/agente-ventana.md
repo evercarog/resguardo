@@ -189,6 +189,8 @@ ACL, atada a un reto de un uso: lo mismo que ya viaja (cifrado) en cada orden.
 
 | `en_espera` | sin clave, solo administradores del equipo | 14a: las órdenes que esperan su turno (`n`, descripción, consola por su nombre, quién, cuándo, repositorio, `aprobable`) |
 | `aprobar_espera { id }` | con clave, solo administradores del equipo, gestionado | 14a: la aplica ya (docs/consolas-multiples.md §5.11); además del bloqueo de la ventana, el de las órdenes (cuenta `equipo`) |
+| `consolas` | sin clave, solo administradores del equipo | C1 (plan 0.8.2): las consolas que lo gestionan (nombre, dirección, huella, último contacto, órdenes en espera) y si el equipo tiene clave |
+| `dejar_consola { todas \| consola }` | con clave si el equipo la tiene, solo administradores del equipo, gestionado | C1 (plan 0.8.2): deja una consola o todas («Usar sin consola»), avisándoles firmado (docs/consolas-multiples.md §2.6); además del bloqueo de la ventana, el de la cuenta `equipo` |
 
 En un equipo gestionado la ventana solo cambia `escritorio` y, con la clave escrita en ese momento, **aprueba** órdenes en espera (14a: sección «Órdenes esperando su turno» en «Ahora», que solo ve un administrador del equipo). La línea de órdenes hace lo mismo con `resguardo-agente ordenes [aprobar <n.º>]`.
 

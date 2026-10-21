@@ -326,7 +326,9 @@ pub fn vinculo_local(datos: &Value) -> Result<crate::servidor_v2::Vinculo, Strin
 pub fn modo(v: Option<&crate::servidor_v2::Vinculo>, web: bool) -> &'static str {
     match v {
         _ if web => "web",
-        Some(v) if v.verificador.is_some() && v.modo == "local" && v.url.is_empty() => "local",
+        // C1 (plan 0.8.2): también el que dejó sus consolas («Usar sin consola»): se sigue
+        // usando aquí con su clave (antes quedaba «desvinculado», sin poder cambiar nada).
+        Some(v) if v.verificador.is_some() && v.modo == "local" && (v.url.is_empty() || v.secreto.is_empty()) => "local",
         Some(v) if v.verificador.is_some() && v.modo == "gestionado" => "gestionado",
         Some(v) if v.verificador.is_some() => "desvinculado",
         Some(_) => "pendiente",
@@ -429,6 +431,20 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Client
             return crate::recuperar::recuperar(pet, crate::recuperar::comprobador_de(cliente).as_ref(), &cuenta);
         }
         _ => {}
+    }
+    // C1 (plan 0.8.2, 15uu): las consolas del equipo y dejarlas desde aquí.
+    if op == "consolas" {
+        if puede_aprobar(cliente, crate::agent::test_mode()).is_err() {
+            return Err(SOLO_ADMIN_CONSOLAS.into());
+        }
+        let v = v.filter(|v| v.modo == "gestionado" && !v.secreto.is_empty());
+        return Ok(json!({
+            "consolas": v.as_ref().map(crate::consolas_v2::lista_local).unwrap_or_default(),
+            "con_clave": v.as_ref().is_some_and(|v| v.verificador.is_some()),
+        }));
+    }
+    if op == "dejar_consola" {
+        return dejar_consola(servidor, pet, cliente, v.as_ref());
     }
     if sin_prueba(op) {
         return Err("Operación no válida.".into());
@@ -598,6 +614,52 @@ fn atender_(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Client
         }
         _ => Err(format!("Operación desconocida: «{op}».")),
     }
+}
+
+/// C1: lo que se contesta a una cuenta que no es administradora del equipo.
+const SOLO_ADMIN_CONSOLAS: &str = "Solo un administrador de este equipo puede ver y dejar sus consolas.";
+
+/// C1 (plan 0.8.2, 15uu): dejar una consola (`consola`: su identidad) o todas (`todas:
+/// true`) desde el propio equipo. Solo un administrador del equipo (lo dice el sistema) y,
+/// si el equipo tiene clave de administración, con ella escrita en ese momento (reto de un
+/// solo uso y el bloqueo por intentos del equipo, como «Aprobar ahora»). Sin clave (un
+/// equipo de antes), como hasta ahora: basta ser administrador.
+fn dejar_consola(servidor: &std::sync::Mutex<Servidor>, pet: &Value, cliente: &Cliente, v: Option<&crate::servidor_v2::Vinculo>) -> Result<Value, String> {
+    use crate::servidor_v2 as s;
+    let gastar = || servidor.lock().map(|mut sv| sv.retos.gastar(pet["reto"].as_str().unwrap_or(""), ahora_ms(), &cliente.id)).unwrap_or(false);
+    if puede_aprobar(cliente, crate::agent::test_mode()).is_err() {
+        gastar();
+        crate::agent::log(&format!("Equipo: la cuenta {} (sin ser administradora) intentó dejar una consola.", cliente.id));
+        return Err(SOLO_ADMIN_CONSOLAS.into());
+    }
+    let v = v.filter(|v| v.modo == "gestionado" && !v.secreto.is_empty()).ok_or("Este equipo no está gestionado por ninguna consola.")?;
+    match v.verificador.as_deref().and_then(|x| B64.decode(x).ok()) {
+        Some(ver) => {
+            if let Some(m) = s::bloqueo_equipo() {
+                gastar();
+                return Err(m);
+            }
+            let r = servidor.lock().map_err(|_| "Ocupado.")?.autorizar(pet, Some(&ver), ahora_ms(), &cliente.id);
+            match &r {
+                Ok(()) => s::acierto_equipo(),
+                Err(e) if e == CLAVE_INCORRECTA => s::fallo_equipo(),
+                Err(_) => {}
+            }
+            r?;
+        }
+        None if !gastar() => return Err("La petición caducó o ya se usó: vuelve a intentarlo.".into()),
+        None => {}
+    }
+    let que = if pet["todas"] == true {
+        crate::consolas_v2::Dejar::Todas
+    } else {
+        let id = pet["consola"].as_str().map(str::trim).filter(|x| !x.is_empty() && x.len() <= 200).ok_or("Di qué consola dejar.")?;
+        crate::consolas_v2::Dejar::Una(id.to_string())
+    };
+    let quien = quien_aprueba(cliente, pet);
+    let m = crate::consolas_v2::dejar_en_equipo(&que, &quien)?;
+    crate::agente::refrescar_bandeja();
+    Ok(json!({ "mensaje": m }))
 }
 
 /// Repositorios, destinos (sin credenciales), copias, nubes y el Servidor de

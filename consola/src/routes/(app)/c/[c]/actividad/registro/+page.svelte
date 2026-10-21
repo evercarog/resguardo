@@ -134,6 +134,8 @@
     guardar_paquete: "Guardó el historial cifrado",
     equipo_recibido: "Llegó un equipo de otro servidor",
     deja_el_servidor: "Un equipo se fue a otro servidor",
+    // C1 (plan 0.8.2, 15uu): lo dijo el equipo, firmado.
+    dejada_en_equipo: "Un equipo dejó esta consola desde el propio equipo",
     trasladado: "Un equipo se fue a otro servidor",
     espera_confirmada: "Un equipo confirmó su espera",
     etiqueta_equipo: "Un equipo actualizó su etiqueta (clave de administración nueva)",

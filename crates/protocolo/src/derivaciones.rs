@@ -133,9 +133,26 @@ pub fn texto_resultado(orden: &str, seq: u64, estado: &str, mensaje: Option<&str
     format!("resguardo-resultado-v1|{orden}|{seq}|{estado}|{}|{}", mensaje.unwrap_or(""), detalle.unwrap_or(""))
 }
 
+/// C1 (plan 0.8.2, 15uu): texto que firma el agente al dejar una consola desde el propio
+/// equipo: a qué consola (`identidad`, su llave pública), qué equipo, cuándo (RFC 3339),
+/// con qué cuenta del sistema y si deja todas (pasa a funcionar sin consola). Con la
+/// identidad dentro, la firma no vale para otra consola.
+pub fn texto_dejada(identidad: &str, equipo: &str, cuando: &str, cuenta: &str, todas: bool) -> String {
+    format!("resguardo-dejada-v1|{identidad}|{equipo}|{cuando}|{cuenta}|{}", if todas { "todas" } else { "una" })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texto_de_la_consola_dejada() {
+        assert_eq!(
+            texto_dejada("ID", "eq-1", "2026-10-21T12:40:00+02:00", "ana (PC-01)", true),
+            "resguardo-dejada-v1|ID|eq-1|2026-10-21T12:40:00+02:00|ana (PC-01)|todas"
+        );
+        assert!(texto_dejada("ID", "eq-1", "t", "c", false).ends_with("|una"));
+    }
 
     #[test]
     fn hkdf_coincide_con_rfc5869() {

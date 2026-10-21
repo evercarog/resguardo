@@ -644,7 +644,13 @@ fn archivo_estado(d: &Destino) -> PathBuf {
     crate::espejo_trabajos::archivo_estado(&crate::espejo_trabajos::de_destino(d, "02:00", None, 0), None)
 }
 
-/// El resultado de una vuelta en una frase (error si algo no cuadra).
+/// B3 (plan 0.8.2): el principio del resultado de una vuelta que subió lo nuevo pero
+/// cuyo freno espera una confirmación: no es un fallo (aviso `espejo_freno`, no
+/// `espejo_fallido`). Una consola anterior lo ve como hecho, con su «Freno: …».
+pub const PREFIJO_AVISO: &str = "AVISO: ";
+
+/// El resultado de una vuelta en una frase (error si algo no cuadra; con
+/// [`PREFIJO_AVISO`] si solo saltó el freno).
 pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     let mut texto =
         format!("{} archivos nuevos ({} MB), {} ya estaban, {} se dejan para la próxima vez.", r.copiados, r.bytes / (1024 * 1024), r.iguales, r.recientes);
@@ -656,6 +662,10 @@ pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     }
     if r.borrados > 0 {
         texto += &format!(" Borrados {} archivos que ya no estaban en el almacén.", r.borrados);
+    }
+    if r.podados > 0 {
+        let dia = r.poda.as_deref().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).map(|d| format!(" del día {}", d.format("%d/%m/%Y")));
+        texto += &format!(" {} archivos que quitó la poda{} se borrarán del espejo a su tiempo.", r.podados, dia.unwrap_or_default());
     }
     // §3d: lo que no cuadra con su nombre. Todo es un error (aviso `espejo_fallido`).
     let mut problemas = Vec::new();
@@ -676,14 +686,18 @@ pub fn texto_de(r: &crate::espejo_motor::Resumen) -> Result<String, String> {
     if r.reparados > 0 {
         problemas.push(format!("{} archivos dañados del espejo se han vuelto a copiar bien del almacén: revisa el disco del espejo", r.reparados));
     }
-    if let Some(f) = &r.freno {
-        problemas.push(f.clone());
-    }
     if r.distintos > 0 {
         problemas.push(format!(
             "{} ya estaban en el espejo con otro tamaño y no se han reemplazado: alguien ha cambiado copias ya escritas (en el almacén o en el espejo). Revísalo",
             r.distintos
         ));
+    }
+    if let Some(f) = &r.freno {
+        // B3: solo el freno: lo nuevo sí se subió; falta que alguien confirme lo que falta.
+        if problemas.is_empty() {
+            return Ok(format!("{PREFIJO_AVISO}{texto} Pero {f}."));
+        }
+        problemas.push(f.clone());
     }
     if !problemas.is_empty() {
         return Err(format!("{texto} Pero {}.", problemas.join(". Además, ")));

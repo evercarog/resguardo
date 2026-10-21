@@ -42,6 +42,8 @@ pub fn router() -> Router<St> {
         .route("/api/agente/informe", post(informe_http))
         .route("/api/agente/config", post(config_http))
         .route("/api/agente/aviso", post(aviso_http))
+        // C1 (plan 0.8.2, 15uu): el equipo deja esta consola desde el propio equipo.
+        .route("/api/agente/dejada", post(dejada_http))
         .route("/api/agente/historial", post(historial_http))
         .route("/api/agente/progreso", post(progreso_http))
         .route("/api/agente/sesiones/{s}/mensajes", get(leer_sesion).post(escribir_sesion))
@@ -770,6 +772,83 @@ async fn registrar_aviso(st: &St, a: &Agente, av: Aviso) -> Res<()> {
     st.notif.despertar.notify_one();
     st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
     Ok(())
+}
+
+// ---------- Dejada desde el propio equipo (C1, plan 0.8.2, 15uu) ----------
+
+#[derive(Deserialize)]
+pub struct Dejada {
+    cuando: String,
+    cuenta: String,
+    todas: bool,
+    #[serde(default)]
+    siguen: Vec<String>,
+    firma: String,
+}
+
+/// Lo que se acepta del equipo: la hora razonable (un día de margen por los relojes), la
+/// cuenta y los nombres cortos y sin control, y la firma del equipo sobre todo ello y la
+/// identidad de este servidor (no vale la de otra consola).
+pub(crate) fn dejada_valida(d: &Dejada, identidad: &str, equipo: &str, sign_pub: &str, ahora: crate::almacen::Ts) -> Result<Value, String> {
+    let t = crate::api::de_fecha(&d.cuando).ok_or("Fecha no válida.")?;
+    if (t - ahora).abs() > 86_400 {
+        return Err("Fecha no válida.".into());
+    }
+    if d.cuenta.chars().count() > 120 || d.cuenta.chars().any(char::is_control) || d.siguen.len() > 8 {
+        return Err("Datos no válidos.".into());
+    }
+    let texto = derivaciones::texto_dejada(identidad, equipo, &d.cuando, &d.cuenta, d.todas);
+    let clave: [u8; 32] = B64.decode(sign_pub).ok().and_then(|v| v.try_into().ok()).ok_or("Clave del equipo.")?;
+    let firma: [u8; 64] = B64.decode(&d.firma).ok().and_then(|v| v.try_into().ok()).ok_or("Firma no válida.")?;
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(&clave).map_err(|e| e.to_string())?;
+    vk.verify(texto.as_bytes(), &ed25519_dalek::Signature::from_bytes(&firma)).map_err(|_| "La firma no es de este equipo.".to_string())?;
+    let siguen: Vec<String> = d.siguen.iter().map(|x| texto_corto(x, 80)).filter(|x| !x.trim().is_empty()).collect();
+    Ok(json!({ "cuando": d.cuando, "cuenta": texto_corto(&d.cuenta, 120), "todas": d.todas, "siguen": siguen }))
+}
+
+/// El texto del aviso `dejada_en_equipo` (escrito aquí, con lo que firmó el equipo).
+pub(crate) fn texto_dejada(d: &Value) -> String {
+    let fecha = crate::api::de_fecha(d["cuando"].as_str().unwrap_or(""))
+        .map(|t| crate::notificaciones::contenido::fecha_larga(t, crate::notificaciones::zona(t)))
+        .unwrap_or_default();
+    let siguen: Vec<&str> = d["siguen"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let sigue = if d["todas"] == true || siguen.is_empty() {
+        "Sigue copiando, sin consola.".to_string()
+    } else {
+        format!(
+            "Sigue copiando y lo gestiona{} {}.",
+            if siguen.len() > 1 { "n" } else { "" },
+            siguen.iter().map(|x| format!("«{x}»")).collect::<Vec<_>>().join(", ")
+        )
+    };
+    format!(
+        "Dejó esta consola desde el propio equipo el {fecha}, con la cuenta «{}» (como administrador del equipo y con la clave de administración, si la tiene). {sigue} Ya no recibe órdenes de aquí.",
+        d["cuenta"].as_str().unwrap_or("")
+    )
+}
+
+async fn registrar_dejada(st: &St, a: &Agente, d: Dejada) -> Res<()> {
+    if !st.limites.intento(&format!("dejada:{}", a.equipo), 10, Duration::from_secs(3600)) {
+        return Err(ErrorApi::demasiados());
+    }
+    let datos = dejada_valida(&d, &st.identidad_pub, &a.equipo, &a.sign_pub, ahora()).map_err(ErrorApi::datos)?;
+    let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
+    st.db(move |db| {
+        db.poner_modo(&ctx, &equipo, "local")?;
+        db.poner_dejada(&ctx, &equipo, Some(&datos.to_string()))?;
+        db.auditar(&ctx, &format!("equipo:{equipo}"), "dejada_en_equipo", &equipo, &datos.to_string())?;
+        crate::notificaciones::aviso(db, &ctx, Some(&equipo), "dejada_en_equipo", &texto_dejada(&datos))
+    })
+    .await?;
+    st.notif.despertar.notify_one();
+    st.vivo.avisar(a.ctx.id(), Cambio::Avisos(Some(&a.equipo)));
+    st.vivo.avisar(a.ctx.id(), Cambio::Equipo(&a.equipo));
+    Ok(())
+}
+
+async fn dejada_http(State(st): State<St>, a: Agente, Json(d): Json<Dejada>) -> Res<StatusCode> {
+    registrar_dejada(&st, &a, d).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------- Historial del equipo (v1.23) ----------

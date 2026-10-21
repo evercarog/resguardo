@@ -89,7 +89,7 @@
       {#if sinConfirmar}<span class="fila-sub">{#if duplicado}Duplicado: este equipo ya está dado de alta como «{duplicado.nombre}»{:else}Falta confirmar el número de comprobación{/if}</span>{/if}
       <span class="fila-sub">
         {#if equipo.modo === "trasladado"}Trasladado a otro servidor{" · "}{/if}{#if sede}<span class="sede"><Building2 size={11} aria-hidden="true" />{sede}</span>{" · "}{/if}{sistemaDe(equipo)}{tipoCorto ? ` · ${tipoCorto}` : ""}{equipo.rol === "almacenamiento" ? " · Guarda copias" : ""}{" · "}
-        {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado</span>{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}
+        {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)" aria-hidden="true"></span>Conectado</span>{:else if equipo.modo === "local" && equipo.dejada}dejó esta consola desde el equipo <Tiempo iso={equipo.dejada.cuando} />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}
       </span>
       <!-- En móvil, la última copia va aquí (la columna de la derecha no cabe). -->
       <span class="fila-sub solo-movil">{#if sinConfirmar}{:else if ultima}Última copia {relativo(ultima, reloj.ahora)}{:else if proxima}Primera copia {cuandoFrase(proxima, reloj.ahora)}{:else}Sin copias todavía{/if}</span>

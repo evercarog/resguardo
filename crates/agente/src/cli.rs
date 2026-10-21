@@ -94,12 +94,13 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
                                           (lo copiado se queda) y lo vincula como equipo nuevo
   vincular --instalador <ruta>            Vincula con los datos de un instalador «listo»
   leer-instalador <ruta>                  ¿Trae ese instalador datos para vincular?
-  desvincular                             Deja la consola y sigue copiando en modo local
+  desvincular                             Deja todas sus consolas y sigue copiando sin consola: pide la
+                                          clave de administración (sin que se vea) y la consola lo sabe
   servidores                              Consola actual, cambio en curso y consolas de respaldo
   consolas                                Las consolas que gestionan este equipo (pueden ser varias a la vez)
   consolas quitar <n.º | dirección | huella>
                                           Deja de conectarse a una consola (p. ej. una que ya no existe);
-                                          las demás siguen igual
+                                          las demás siguen igual. Pide la clave de administración
   ordenes                                 Órdenes que esperan su turno en este equipo (de todas sus consolas)
   ordenes aprobar <n.º>                   La aplica ya, sin esperar a su hora: pide la clave de administración
                                           (sin que se vea al escribirla) y queda en el historial de todas
@@ -717,11 +718,9 @@ fn orden(args: &[String]) -> Result<(), String> {
             }
         }
         "vincular" => vincular(args),
-        "desvincular" => {
-            crate::servidor_v2::desvincular_local()?;
-            println!("El equipo ha dejado el servidor y sigue con sus copias en modo local.");
-            Ok(())
-        }
+        // C1 (plan 0.8.2, 15uu): con la clave de administración (si el equipo la tiene), y la
+        // consola se entera («dejó esta consola desde el propio equipo»).
+        "desvincular" => dejar_desde_terminal(crate::consolas_v2::Dejar::Todas),
         "guardar-copias" => guardar_copias(args),
         "nube" => {
             let r = nube(args);
@@ -773,12 +772,7 @@ fn orden(args: &[String]) -> Result<(), String> {
                     }
                     Ok(())
                 }
-                Some("quitar") => {
-                    let que = arg(args, 2)?;
-                    let quitada = crate::consolas_v2::quitar_local(que)?;
-                    println!("Este equipo ya no se conecta a {quitada}. Las demás consolas siguen igual.");
-                    Ok(())
-                }
+                Some("quitar") => dejar_desde_terminal(crate::consolas_v2::Dejar::Una(arg(args, 2)?.to_string())),
                 Some(otro) => Err(format!("«consolas {otro}» no existe. Usa «consolas» o «consolas quitar <n.º | dirección | huella>».")),
             }
         }
@@ -885,6 +879,40 @@ fn ordenes(args: &[String]) -> Result<(), String> {
         }
         Some(otro) => Err(format!("«ordenes {otro}» no existe. Usa «ordenes» o «ordenes aprobar <n.º>».")),
     }
+}
+
+/// C1 (plan 0.8.2, 15uu): `desvincular` (todas las consolas) y `consolas quitar <…>` (una).
+/// Como administrador del equipo y, si tiene clave de administración, escribiéndola (sin que
+/// se vea; Intro sin nada no hace nada), con el bloqueo por intentos de siempre.
+fn dejar_desde_terminal(que: crate::consolas_v2::Dejar) -> Result<(), String> {
+    use crate::consolas_v2::Dejar;
+    crate::agent::require_admin()?;
+    let v = crate::servidor_v2::cargar()
+        .filter(|v| v.modo == "gestionado" && !v.secreto.is_empty())
+        .ok_or("Este equipo no está gestionado por ninguna consola.")?;
+    let n = 1 + v.otras.len();
+    println!(
+        "{}",
+        match &que {
+            Dejar::Todas if n == 1 => "El equipo dejará su consola y seguirá copiando sin consola.".to_string(),
+            Dejar::Todas => format!("El equipo dejará sus {n} consolas y seguirá copiando sin consola."),
+            Dejar::Una(x) => format!("El equipo dejará la consola «{x}»; las demás siguen igual."),
+        }
+    );
+    println!("Las copias siguen con su horario; los destinos y el almacén no se tocan. Las órdenes en espera de esa consola no se aplicarán.");
+    println!("La consola lo verá como «dejó esta consola desde el propio equipo», con la fecha y tu cuenta.");
+    if let Some(sal) = v.verificador.as_ref().map(|_| v.sal_equipo.clone()) {
+        let clave = leer_clave("Clave de administración (Intro para no hacerlo): ")?;
+        if clave.is_empty() {
+            println!("No se ha cambiado nada.");
+            return Ok(());
+        }
+        let prueba = crate::ipc_local::prueba(&clave, &sal)?;
+        drop(clave);
+        crate::servidor_v2::comprobar_clave_equipo(&prueba)?;
+    }
+    println!("{}", crate::consolas_v2::dejar_en_equipo(&que, &crate::consolas_v2::cuenta_local())?);
+    Ok(())
 }
 
 /// 15hh: `parar` (lo que está en marcha, numerado) y `parar <n.º> [--hasta | --en | --a-mano]`.

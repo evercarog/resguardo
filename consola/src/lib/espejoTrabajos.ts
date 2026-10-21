@@ -281,14 +281,21 @@ export function textoFreno(f: FrenoEspejo): string {
   return `Frena si falta de golpe más del ${f.pct} % (con más de ${f.min_archivos} archivos y ${f.min_faltan} que falten) o un repositorio entero · ${f.accion === "avisar" ? "conserva y avisa" : "pide confirmación"}`;
 }
 
-/** ¿Va bien? «ok», «error», «pausado», «nuevo» (aún no se ha hecho). */
-export function estadoTrabajo(t: TrabajoEspejoResumen): "ok" | "error" | "pausado" | "nuevo" {
+/**
+ * ¿Va bien? «ok», «error», «aviso» (B3, plan 0.8.2: subió lo nuevo pero su freno espera
+ * que alguien confirme lo que falta), «pausado», «nuevo» (aún no se ha hecho).
+ */
+export function estadoTrabajo(t: TrabajoEspejoResumen): "ok" | "error" | "aviso" | "pausado" | "nuevo" {
   if (!t.activo) return "pausado";
   if (!t.resultado) return "nuevo";
   // 15hh: la última vuelta se paró a petición (con la clave): ni bien ni fallida.
   if (t.resultado.startsWith("PARADA:")) return "pausado";
-  return t.resultado.startsWith("ERROR") ? "error" : "ok";
+  if (t.resultado.startsWith("ERROR")) return "error";
+  return t.resultado.startsWith("AVISO") ? "aviso" : "ok";
 }
+
+/** B3: el resultado de un espejo sin su prefijo («ERROR:», «AVISO:»), para enseñarlo. */
+export const sinPrefijo = (r: string) => r.replace(/^(ERROR|AVISO):\s*/, "");
 
 // --- Qué se puede elegir ---
 

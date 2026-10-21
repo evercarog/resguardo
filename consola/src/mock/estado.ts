@@ -589,13 +589,14 @@ export async function sembrar(vacio = false) {
               { id: "t0a1b2c3d4e", nombre: "Disco E cada hora", activo: true, quien: "almacen", que: { tipo: "todos" }, adonde: { tipo: "carpeta", carpeta: "E:\\Resguardo-espejo" },
                 cuando: { horario: { dias: [1, 2, 3, 4, 5], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5], cada_min: 60, desde: "08:00", hasta: "19:00" }] }, tras_copia: true },
                 retencion: { modo: "retraso", dias: 30 }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, verificar_pct: 5, orden: 0,
-                ultima: hace(60 * 13), resultado: "Espejo «Disco E cada hora» hecho en E:\\Resguardo-espejo: 1.204 archivos nuevos (38 GB).", proxima: dentro(47), verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 },
+                ultima: hace(60 * 13), resultado: "AVISO: espejo «Disco E cada hora» hecho en E:\\Resguardo-espejo: 1.204 archivos nuevos (38 GB). Pero falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos), tras la poda del día 19/10/2026 (lo que quitó esa poda no cuenta): no se borra nada del espejo.", proxima: dentro(47), verificacion: { ultima: hace(60 * 13), archivos: 61, mal: 0 },
                 // 14i: su registro de vueltas y lo que ocupa en el destino.
                 bien: hace(60 * 13), nunca_bien: false,
                 subidas: subidasEspejo(30, 60 * 13, 60, { bytes: 1_400_000_000, ocupa: 312_000_000_000, fallos: [7, 8], borrar: [3, 15], verificar: 61, error: "No se pudo escribir en el destino: el disco E no está conectado." }),
                 ocupa: { bytes: 312_000_000_000, repos: { "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/caja": 41_200_000_000, "5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a": 270_800_000_000 }, cuando: hace(60 * 13) },
                 por_borrar: { archivos: 214, bytes: 3_100_000_000, primero: "2026-11-02" },
-                freno_aviso: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos): no se borra nada del espejo. Si fue a propósito, confírmalo en la consola; si no, revisa el almacén",
+                // B3 (plan 0.8.2): salta por lo que no quitó la poda del almacén (lo nuevo sí se subió).
+                freno_aviso: "falta de golpe en el almacén el 35 % de lo que hay en el espejo (812 archivos), tras la poda del día 19/10/2026 (lo que quitó esa poda no cuenta): no se borra nada del espejo. Si fue a propósito (una poda grande o un repositorio quitado), confírmalo en la consola; si no, revisa el almacén",
                 espacio: { libre: 1_310_000_000_000, total: 2_000_000_000_000, leido: hace(2) } },
               { id: "t1b2c3d4e5f", nombre: "Ventas a Dropbox", activo: true, quien: "almacen", que: { tipo: "repos", repos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"] }, vistos: ["5d1e7c3a-2b4f-4a6e-9c8d-1f2e3a4b/almacen-sur-7c2a"], adonde: { tipo: "nube", nube: "Dropbox Oficina", carpeta: "CafeDelSur" },
                 cuando: { cadena: "t0a1b2c3d4e", retraso_min: 15 }, retencion: { modo: "nunca" }, freno: { pct: 10, min_archivos: 100, min_faltan: 20, accion: "confirmar" }, limite_kib: 4096, orden: 1,

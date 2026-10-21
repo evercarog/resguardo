@@ -29,11 +29,15 @@ pub fn severidad(tipo: &str) -> Severidad {
         | "orden_destructiva"
         | "orden_en_espera"
         | "orden_aprobada_en_equipo"
+        // C1 (plan 0.8.2, 15uu): alguien delante del equipo lo sacó de esta consola.
+        | "dejada_en_equipo"
         | "cambio_clave"
         | "auditoria_rehecha" => Severidad::Critico,
         "equipo_sin_contacto"
         | "copia_atrasada"
         | "espejo_fallido"
+        // B3 (plan 0.8.2): el freno del espejo espera confirmación (lo nuevo sí se subió).
+        | "espejo_freno"
         | "retencion_fallida"
         | "externa_fallida"
         | "prueba_fallida"

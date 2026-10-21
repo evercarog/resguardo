@@ -618,17 +618,21 @@ pub fn ejecutar_con(carpeta: &Path, e: &mut Entrada, d: &mut Detalle) -> Result<
     d.sospechosas = plan.sospechosas;
     d.antes = Some(lista);
     if !plan.quitar.is_empty() {
-        // Por ids (lo decidido arriba), en tandas; después, un solo `prune`.
-        for tanda in plan.quitar.chunks(100) {
-            let mut args: Vec<&str> = vec!["forget", "--retry-lock", "30m", "--"];
-            args.extend(tanda.iter().map(String::as_str));
-            let out = restic(&acc, &args)?;
-            if out.code != Some(0) {
-                d.despues = versiones_del_repo(&acc).ok();
-                return Err(format!("No se pudo aplicar la retención: {}", error_publico(&out)));
+        // B3 (plan 0.8.2): lo que quite esta poda queda anotado para los espejos de este
+        // almacén, que así no lo toman por un borrado inesperado (su freno).
+        let podado = crate::podas::con_registro(carpeta, || -> Result<crate::restic::RawOutput, String> {
+            // Por ids (lo decidido arriba), en tandas; después, un solo `prune`.
+            for tanda in plan.quitar.chunks(100) {
+                let mut args: Vec<&str> = vec!["forget", "--retry-lock", "30m", "--"];
+                args.extend(tanda.iter().map(String::as_str));
+                let out = restic(&acc, &args)?;
+                if out.code != Some(0) {
+                    return Ok(out);
+                }
             }
-        }
-        let out = restic(&acc, &["prune", "--retry-lock", "30m"])?;
+            restic(&acc, &["prune", "--retry-lock", "30m"])
+        });
+        let out = podado?;
         d.despues = versiones_del_repo(&acc).ok();
         if out.code != Some(0) {
             return Err(format!("No se pudo aplicar la retención: {}", error_publico(&out)));

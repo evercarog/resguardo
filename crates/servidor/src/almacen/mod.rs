@@ -150,6 +150,9 @@ pub struct Equipo {
     /// guarda (`ordenes_en_espera`): por encima de las que se manden mientras espera, para
     /// que el equipo no la descarte por «antigua» al llegar su hora (ver `numeros_orden`).
     pub seq_espera: u64,
+    /// C1 (plan 0.8.2, 15uu): el equipo dejó esta consola desde el propio equipo (lo dijo
+    /// firmado): `{ cuando, cuenta, todas, siguen }`. Se olvida si vuelve a vincularse.
+    pub dejada: Option<serde_json::Value>,
 }
 
 /// Holgura de números entre `siguiente_seq` y una orden con espera para un agente anterior:
@@ -664,6 +667,8 @@ pub trait Almacen: Send + Sync + AlmacenNotas + AlmacenPruebas {
     fn adelantar_seq(&self, c: &ClienteCtx, id: &str, minimo: u64) -> R<()>;
     /// "gestionado" o "local" (el equipo dejó el servidor y sigue solo).
     fn poner_modo(&self, c: &ClienteCtx, id: &str, modo: &str) -> R<()>;
+    /// C1 (plan 0.8.2): lo que dijo el equipo al dejar esta consola desde el propio equipo (JSON).
+    fn poner_dejada(&self, c: &ClienteCtx, id: &str, dejada: Option<&str>) -> R<()>;
     /// «agente» o «almacenamiento» (guarda copias de otros), según su resumen.
     fn poner_papel(&self, c: &ClienteCtx, id: &str, papel: &str) -> R<()>;
     /// Un equipo que vuelve (con las mismas claves): secreto nuevo y gestionado otra vez.

@@ -851,3 +851,23 @@ fn renombrar_un_espejo() {
     let sin = Trabajo { nombre: " ".into(), ..a.clone() };
     assert!(renombres(aa, std::slice::from_ref(&sin)).is_empty());
 }
+
+/// B3 (plan 0.8.2): una vuelta en la que solo saltó el freno no es un fallo del espejo
+/// (lo nuevo se subió): sale como aviso, cuenta como terminada y la bitácora lo dice.
+#[test]
+fn solo_el_freno_es_un_aviso() {
+    let t = trabajo("t1", carpeta("E:/Espejo"));
+    let ok = Ok(format!("{}3 archivos nuevos (0 MB). Pero falta de golpe en el almacén el 12 % …", crate::espejo::PREFIJO_AVISO));
+    let texto = texto_de(&t, Motivo::Horario, &[(None, ok.clone())]);
+    assert!(texto.starts_with("AVISO: espejo «Espejo t1» hecho en"), "{texto}");
+    assert_eq!(texto.matches("AVISO").count(), 1, "{texto}");
+    // Con un error en otro repositorio, manda el error.
+    let texto = texto_de(&t, Motivo::Horario, &[(Some("a".into()), ok), (Some("b".into()), Err("mal".into()))]);
+    assert!(texto.starts_with("ERROR"), "{texto}");
+    // Cuenta como terminada bien (14c): no es «Con error».
+    let mut t = trabajo("t2", carpeta("E:/Espejo"));
+    let v =
+        Vuelta { inicio: "2026-10-21T02:00:00+02:00", fin: "2026-10-21T02:10:00+02:00", motivo: Motivo::Horario, ocupa: Default::default(), completo: true };
+    anotar_vuelta(&mut t, "AVISO: espejo «Espejo t2» hecho en …", &v, &[]);
+    assert_eq!(t.estado.bien.as_deref(), Some("2026-10-21T02:10:00+02:00"));
+}

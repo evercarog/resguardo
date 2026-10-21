@@ -539,6 +539,18 @@ mod win {
                 let prueba = ipc::prueba(p["clave"].as_str().unwrap_or(""), sal)?;
                 ipc::pedir(&json!({ "op": "parar", "reto": hola["reto"], "prueba": prueba, "parar": { "clave": p["parar"], "pausa": p["pausa"] } }))
             }
+            // C1 (plan 0.8.2, 15uu): las consolas del equipo (solo para administradores del
+            // equipo: lo comprueba el servicio) y dejar una o todas, con la clave escrita en ese
+            // momento si el equipo la tiene (la prueba se calcula aquí; la clave no sale).
+            "consolas" => ipc::pedir(&json!({ "op": "consolas" })),
+            "dejar_consola" => {
+                let hola = ipc::pedir(&json!({ "op": "hola" }))?;
+                let prueba = match hola["sal_equipo"].as_str() {
+                    Some(sal) => Some(ipc::prueba(p["clave"].as_str().unwrap_or(""), sal)?),
+                    None => None,
+                };
+                ipc::pedir(&json!({ "op": "dejar_consola", "reto": hola["reto"], "prueba": prueba, "todas": p["todas"] == true, "consola": p["consola"] }))
+            }
             "servicio" => {
                 let op = p["que"].as_str().unwrap_or("");
                 if !OPS_CON_CLAVE.contains(&op) {

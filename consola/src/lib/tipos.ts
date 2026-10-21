@@ -734,6 +734,11 @@ export interface Equipo {
   resumen: ResumenEquipo | null;
   /** v1.18: etiquetas libres para agrupar (en claro). No es `etiqueta` (el HMAC). */
   etiquetas?: string[];
+  /**
+   * C1 (plan 0.8.2, 15uu): dejó esta consola desde el propio equipo (lo dijo firmado): cuándo,
+   * con qué cuenta del equipo, si dejó todas y qué consolas siguen. Un servidor anterior no lo manda.
+   */
+  dejada?: { cuando: string; cuenta: string; todas: boolean; siguen?: string[] } | null;
 }
 
 export interface EquipoDetalle extends Equipo {
@@ -1081,6 +1086,10 @@ export type TipoAviso =
   | "externa_fallida"
   | "prueba_fallida"
   | "espejo_fallido"
+  // B3 (plan 0.8.2): el freno del espejo saltó (lo nuevo sí se subió): espera que alguien confirme.
+  | "espejo_freno"
+  // C1 (plan 0.8.2, 15uu): el equipo dejó esta consola desde el propio equipo (firmado).
+  | "dejada_en_equipo"
   // v1.43: la retención del almacén que falló (la que se aplica sola a su hora).
   | "retencion_fallida"
   // Tarea 7c: una copia «después de la anterior» que no se hizo porque la anterior falló.

@@ -51,6 +51,8 @@
     externa_fallida: ["Copia derivada fallida", "warn"],
     prueba_fallida: ["Prueba de restauración fallida", "warn"],
     espejo_fallido: ["Espejo fallido", "warn"],
+    espejo_freno: ["Espejo frenado: confírmalo", "warn"],
+    dejada_en_equipo: ["Dejó esta consola desde el equipo", "warn"],
     retencion_fallida: ["Retención del almacén fallida", "warn"],
     cadena_parada: ["Cadena parada", "warn"],
     orden_no_aplicada: ["Orden sin aplicar", "warn"],

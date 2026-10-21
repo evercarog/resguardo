@@ -427,7 +427,11 @@ pub fn espejo(hora: &str, resultado_texto: &str, trabajo: Option<(&crate::espejo
     let (resultado, texto) = match resultado_texto.strip_prefix(crate::parar::PREFIJO_PARADA) {
         Some(t) => ("parada", t.trim()),
         None if fallo => ("fallo", resultado_texto),
-        None => ("ok", resultado_texto),
+        // B3 (plan 0.8.2): subió lo nuevo, pero el freno espera una confirmación.
+        None => match resultado_texto.strip_prefix(crate::espejo::PREFIJO_AVISO) {
+            Some(t) => ("aviso", t.trim()),
+            None => ("ok", resultado_texto),
+        },
     };
     let mut e = json!({ "hora": hora, "resultado": resultado, "mensaje": corto(texto) });
     if let Some((t, s)) = trabajo {

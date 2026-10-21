@@ -317,10 +317,21 @@ fn dos_consolas_a_la_vez() {
     assert_eq!(lista.len(), 2, "{lista:?}");
     assert!(crate::consolas_v2::quitar_local("9").is_err());
     let quitada = crate::consolas_v2::quitar_local(&a.url).unwrap();
-    assert!(quitada.contains(&a.url), "{quitada}");
+    assert!(quitada.contains(&a.url) && !quitada.contains("No se pudo avisar"), "{quitada}");
     assert!(crate::consolas_v2::quitar_local("1").unwrap_err().contains("única"));
     let v = cargar().unwrap();
     assert_eq!((v.url.as_str(), v.otras.len()), (b.url.as_str(), 0));
+    // C1 (plan 0.8.2, 15uu): A se enteró, firmado: lo marca como que ya no está allí, con
+    // quién y cuándo, y avisa (en vez de verlo solo «sin conexión»).
+    let (_, e_a) = ca.pedir("GET", &format!("/api/clientes/{c_a}/equipos/{id}"), None);
+    assert_eq!(e_a["modo"], "local", "{e_a}");
+    assert_eq!((e_a["dejada"]["todas"].as_bool(), e_a["dejada"]["cuenta"].is_string()), (Some(false), true), "{e_a}");
+    assert!(e_a["dejada"]["siguen"].to_string().contains(&crate::consolas_v2::nombre_de(&v.nombre_consola, &v.url)), "{e_a}");
+    let (_, avisos_a) = ca.pedir("GET", &format!("/api/clientes/{c_a}/avisos?abiertos=1"), None);
+    assert!(avisos_a.to_string().contains("dejada_en_equipo"), "{avisos_a}");
+    // Y B (la que queda), el aviso de siempre.
+    let (_, avisos_b) = cb.pedir("GET", &format!("/api/clientes/{c_b}/avisos?abiertos=1"), None);
+    assert!(avisos_b.to_string().contains("desde el propio equipo"), "{avisos_b}");
 
     // 12. Mover todo de B a A: conectar también a A y, ya allí, «Dejar esta consola» desde B
     // (quitar_consola de sí misma): B lo marca como que ya no está aquí y A queda sola.

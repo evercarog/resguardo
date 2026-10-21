@@ -32,7 +32,8 @@ pub fn tipos(f: Fuente) -> &'static [&'static str] {
     match f {
         Fuente::Informe => &["copia_fallida", "verificacion_fallida", "externa_fallida", "prueba_fallida", "cadena_parada"],
         // 14uu: los datos básicos del equipo (disco casi lleno, sistema sin soporte).
-        Fuente::Resumen => &["espejo_fallido", "retencion_fallida", "disco_lleno", "sin_soporte_pronto", "sin_soporte"],
+        // B3 (plan 0.8.2): `espejo_freno`, un espejo que subió lo nuevo pero cuyo freno espera confirmación.
+        Fuente::Resumen => &["espejo_fallido", "espejo_freno", "retencion_fallida", "disco_lleno", "sin_soporte_pronto", "sin_soporte"],
     }
 }
 
@@ -176,7 +177,7 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
                 let nombre = Some(corto(&t["nombre"], 80)).filter(|n| !n.is_empty()).unwrap_or_else(|| id.clone());
                 p.push(Problema {
                     tipo: "espejo_fallido".into(),
-                    sujeto: id,
+                    sujeto: id.clone(),
                     nombre: format!("{nombre}» a «{}", destino_espejo(&t["adonde"])),
                     mensaje: en_palabras(resto.trim_start_matches([':', ' '])),
                     cuando: crate::api::de_fecha(&marca),
@@ -185,9 +186,30 @@ pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
             }
             None => sanos.push(format!("espejo_fallido|{id}")),
         }
+        // B3 (plan 0.8.2): el freno saltó (no se borra nada del espejo) pero lo nuevo sí se
+        // subió: no es un fallo del espejo, sino algo que alguien tiene que confirmar. El
+        // agente lo dice con `AVISO:` y el texto del freno (`freno_aviso`).
+        let freno = corto(&t["freno_aviso"], 300);
+        match r.strip_prefix("AVISO") {
+            Some(_) if !freno.is_empty() => {
+                let marca = corto(&t["ultima"], 40);
+                let nombre = Some(corto(&t["nombre"], 80)).filter(|n| !n.is_empty()).unwrap_or_else(|| id.clone());
+                p.push(Problema {
+                    tipo: "espejo_freno".into(),
+                    sujeto: id,
+                    nombre: format!("{nombre}» a «{}", destino_espejo(&t["adonde"])),
+                    mensaje: format!("Lo nuevo sí se subió. Pero {freno}."),
+                    cuando: crate::api::de_fecha(&marca),
+                    marca,
+                });
+            }
+            _ if r.starts_with("ERROR") => {}
+            _ => sanos.push(format!("espejo_freno|{id}")),
+        }
     }
     if trabajos.is_some() {
         sanos.push("espejo_fallido|".into());
+        sanos.push("espejo_freno|".into());
     } else if e.is_object() && !resultado.is_empty() {
         match resultado.strip_prefix("ERROR") {
             Some(resto) => {
@@ -286,7 +308,7 @@ fn sujeto(tipo: &str, nombre: &str, equipo: &str) -> String {
         "externa_fallida" => format!("la copia derivada de «{nombre}» en «{equipo}»"),
         "prueba_fallida" => format!("la prueba de restauración de «{nombre}» en «{equipo}»"),
         "espejo_fallido" if nombre.is_empty() => format!("el espejo de «{equipo}»"),
-        "espejo_fallido" => format!("el espejo «{nombre}» en «{equipo}»"),
+        "espejo_fallido" | "espejo_freno" => format!("el espejo «{nombre}» en «{equipo}»"),
         "retencion_fallida" => format!("la retención de «{nombre}» en el almacén «{equipo}»"),
         "cadena_parada" => format!("la cadena de la copia «{nombre}» en «{equipo}»"),
         _ => format!("algo en «{equipo}»"),
@@ -311,6 +333,12 @@ pub fn titulos(p: &Problema, equipo: &str) -> (String, String) {
         }
         _ => {}
     }
+    // B3 (plan 0.8.2): el freno del espejo no es un fallo: espera una confirmación.
+    if p.tipo == "espejo_freno" {
+        let s = sujeto(&p.tipo, &p.nombre, equipo);
+        let t = format!("{CONFIRMA}{s}");
+        return (t.clone(), titulo_ok(&t));
+    }
     // 14tt: una copia derivada (sujeto `<repo>--<derivada>`) no es «la copia externa».
     let s = if p.tipo == "externa_fallida" && p.sujeto.contains("--") {
         format!("la copia derivada «{}» en «{equipo}»", p.nombre)
@@ -323,8 +351,14 @@ pub fn titulos(p: &Problema, equipo: &str) -> (String, String) {
 /// 14uu: el principio del título de `disco_lleno` («Queda poco espacio en el disco C: de «pc-01»»).
 const ESPACIO_POCO: &str = "Queda poco espacio en el disco ";
 
+/// B3 (plan 0.8.2): el principio del título de `espejo_freno`.
+const CONFIRMA: &str = "Confirma lo que falta en ";
+
 /// El título de «arreglado» a partir del de «falló».
 pub fn titulo_ok(titulo: &str) -> String {
+    if let Some(s) = titulo.strip_prefix(CONFIRMA) {
+        return format!("Resuelto: ya no falta nada por confirmar en {s}");
+    }
     if let Some(s) = titulo.strip_prefix(ESPACIO_POCO) {
         return format!("Vuelve a haber espacio en el disco {s}");
     }
@@ -420,8 +454,42 @@ mod tests {
         ] } } }));
         assert_eq!(p.len(), 1);
         assert_eq!((p[0].sujeto.as_str(), p[0].nombre.as_str()), ("t1", "Bases a la nube» a «Nube Oficina"));
-        assert_eq!(s, vec!["espejo_fallido|t2".to_string(), "espejo_fallido|".to_string()]);
+        assert_eq!(s, ["espejo_fallido|t2", "espejo_freno|t2", "espejo_fallido|", "espejo_freno|"].map(String::from).to_vec());
         assert_eq!(titulos(&p[0], "ALMACEN").0, "Falló el espejo «Bases a la nube» a «Nube Oficina» en «ALMACEN»");
+    }
+
+    /// B3 (plan 0.8.2): el freno del espejo (lo nuevo sí se subió) es un aviso aparte, no un fallo.
+    #[test]
+    fn freno_del_espejo_no_es_un_fallo() {
+        let resumen = |resultado: &str, freno: Option<&str>| {
+            json!({ "guarda_copias": { "espejo": { "trabajos": [
+                { "id": "t1", "nombre": "Todo a la nube", "activo": true, "adonde": { "tipo": "nube", "nube": "Nube Oficina", "carpeta": "x" },
+                  "ultima": "2026-10-20T02:00:00+02:00", "resultado": resultado, "freno_aviso": freno }
+            ] } } })
+        };
+        let freno = "falta de golpe en el almacén el 12 % de lo que hay en el espejo (60 archivos), tras la poda del día 19/10/2026 (lo que quitó esa poda no cuenta): no se borra nada del espejo";
+        let (p, s) = de_resumen(&resumen("AVISO: espejo «Todo a la nube» hecho en Nube Oficina:x: 3 archivos nuevos", Some(freno)));
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].tipo, "espejo_freno");
+        assert!(
+            p[0].mensaje.starts_with("Lo nuevo sí se subió. Pero falta de golpe") && p[0].mensaje.contains("tras la poda del día 19/10/2026"),
+            "{}",
+            p[0].mensaje
+        );
+        // El espejo no falló: su «espejo_fallido» queda arreglado.
+        assert!(s.contains(&"espejo_fallido|t1".to_string()));
+        let (t, ok) = titulos(&p[0], "ALMACEN");
+        assert_eq!(t, "Confirma lo que falta en el espejo «Todo a la nube» a «Nube Oficina» en «ALMACEN»");
+        assert_eq!(titulo_ok(&t), ok);
+        assert_eq!(crate::notificaciones::reglas::severidad("espejo_freno"), crate::notificaciones::Severidad::Importante);
+        // Confirmado (sin freno): arreglado.
+        let (p, s) = de_resumen(&resumen("Espejo «Todo a la nube» hecho en Nube Oficina:x: 0 archivos nuevos", None));
+        assert!(p.is_empty() && s.contains(&"espejo_freno|t1".to_string()));
+        // Con un error, manda el fallo (y el freno no se da por arreglado ni se duplica).
+        let (p, s) = de_resumen(&resumen("ERROR: espejo «Todo a la nube»: no se pudo subir", Some(freno)));
+        assert_eq!(p.iter().map(|x| x.tipo.as_str()).collect::<Vec<_>>(), vec!["espejo_fallido"]);
+        assert!(!s.contains(&"espejo_freno|t1".to_string()));
+        assert!(tipos(Fuente::Resumen).contains(&"espejo_freno"));
     }
 
     /// 15oo: el error crudo de un agente anterior llega en palabras, con el original aparte.

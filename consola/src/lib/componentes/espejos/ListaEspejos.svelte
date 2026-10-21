@@ -92,8 +92,8 @@
     }
     return { nombre: t.adonde.carpeta, tipo: { tipo: "local" as const, inmutable: false, aislado: false, bloqueoDias: null } };
   }
-  const TONO = { ok: "ok", error: "bad", pausado: "paused", nuevo: "info" } as const;
-  const TEXTO = { ok: "Al día", error: "Con error", pausado: "Pausado", nuevo: "Aún no se ha hecho" } as const;
+  const TONO = { ok: "ok", error: "bad", aviso: "warn", pausado: "paused", nuevo: "info" } as const;
+  const TEXTO = { ok: "Al día", error: "Con error", aviso: "Por confirmar", pausado: "Pausado", nuevo: "Aún no se ha hecho" } as const;
 
   // --- Editor y órdenes ---
   let editor = $state<{ trabajo: TrabajoEspejo; nuevo: boolean } | null>(null);

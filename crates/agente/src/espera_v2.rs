@@ -420,6 +420,12 @@ fn descartar(v: &mut Vinculo, t: i64) -> bool {
     cambio_lista
 }
 
+/// C1 (plan 0.8.2): tras dejar una consola desde el equipo, sus órdenes en espera fuera,
+/// anotadas como canceladas (y las caducadas) en el historial común.
+pub fn descartar_ahora(v: &mut Vinculo) {
+    descartar(v, ahora());
+}
+
 /// Vuelve a abrir el sobre guardado y comprueba que sigue valiendo.
 fn abrir_guardada(v: &Vinculo, e: &EnEspera, t: i64) -> Result<orden_v2::OrdenV2, String> {
     if v.identidad != e.identidad {

@@ -346,6 +346,8 @@
   const rolCliente = $derived(actual.cliente?.rol);
   /** Un equipo trasladado a otro servidor ya no recibe órdenes de este: se ve, pero no se toca. */
   const trasladado = $derived(equipo?.modo === "trasladado");
+  /** C1 (plan 0.8.2, 15uu): dejó esta consola desde el propio equipo (y sigue sin volver). */
+  const dejada = $derived(equipo?.modo === "local" ? (equipo.dejada ?? null) : null);
   const rol = $derived(trasladado && rolCliente ? "lectura" : rolCliente);
   // v1.36: las otras consolas que gestionan este equipo y el último cambio, si vino de una de ellas.
   const otrasConsolas = $derived((equipo?.resumen?.consolas ?? []).filter((x) => !x.esta));
@@ -980,7 +982,7 @@
           <!-- 15ii: sin conexión no es un fallo hasta pasar su margen. -->
           {#if equipo.resumen?.movil?.sale_oficina}<span class="junto" use:tip={`Sin conexión no cuenta como fallo hasta pasar ${equipo.resumen.movil.margen_dias ?? 7} días sin copia`}>· Sale de la oficina</span>{/if}
           <span class="junto">·
-            {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)"></span>Conectado</span><Ayuda id="conectado" />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}</span
+            {#if equipo.conectado}<span class="conn"><span class="dot" style="--tone: var(--ok)"></span>Conectado</span><Ayuda id="conectado" />{:else if dejada}dejó esta consola <Tiempo iso={dejada.cuando} />{:else}visto <Tiempo iso={equipo.ultimo_contacto} />{/if}</span
           >
         </p>
         {#if equipo.etiquetas?.length || puede.ordenar(rol)}
@@ -1038,6 +1040,17 @@
     {#if trasladado}
       <div class="notice notice-info trasladado"><Info size={16} /><p>{equipo.nombre} se trasladó a otro servidor y ya no recibe órdenes desde aquí. Se conserva su historial.</p></div>
     {/if}
+    <!-- C1 (plan 0.8.2, 15uu): lo dijo el equipo, firmado, al dejar esta consola. -->
+    {#if dejada}
+      <div class="notice notice-warn trasladado">
+        <Unlink size={16} />
+        <p>
+          {equipo.nombre} dejó esta consola desde el propio equipo el {fechaLarga(dejada.cuando)}, con la cuenta «{dejada.cuenta}».
+          {dejada.todas || !dejada.siguen?.length ? "Sigue copiando, sin consola." : `Sigue copiando y lo gestiona${dejada.siguen.length > 1 ? "n" : ""} ${dejada.siguen.map((x) => `«${x}»`).join(", ")}.`}
+          Ya no recibe órdenes desde aquí; se conserva su historial. Para volver a gestionarlo, vincúlalo otra vez (con «Añadir equipo» o, desde otra consola, «Conectar también…»).
+        </p>
+      </div>
+    {/if}
     <Observaciones tipo="equipo" objeto={equipo.id} />
     {#if actual.cliente}<RutasPendientes cliente={actual.cliente} equipos={actual.equipos} {equipo} puede={puede.administrar(rol)} />{/if}
 
@@ -1066,6 +1079,9 @@
               </li>
             {/each}
           </ul>
+          {#if equipo.resumen?.admite?.includes("dejar_en_equipo")}
+            <p class="faint cambio">También se puede dejar una consola en el propio equipo: ventana de Resguardo → Ajustes → Consolas, con la clave de administración. La consola que se deja lo ve y lo avisa.</p>
+          {/if}
           {#if cambioDeOtra}
             <p class="faint cambio">Cambiado desde otra consola {relativo(cambioDeOtra.cuando, reloj.ahora)}: «{nombreOrden(cambioDeOtra.tipo)}», desde {nombreConsola(cambioDeOtra.consola)}.</p>
           {/if}
@@ -1421,7 +1437,7 @@
                         {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado} <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
                         {#if t.freno_aviso}<span class="msg-fallo">Freno: {t.freno_aviso}</span>{/if}
                       </span>
-                      <Chip pequeno tono={e === "error" ? "bad" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
+                      <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
                     </li>
                   {/each}
                 </ul>
@@ -1550,7 +1566,7 @@
                     <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosPropios.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
                     {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado}</span>{/if}
                   </span>
-                  <Chip pequeno tono={e === "error" ? "bad" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
+                  <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
                 </li>
               {/each}
             </ul>
@@ -1687,7 +1703,7 @@
       <section class="card p detalles">
         <dl>
           <div><dt>Identificador</dt><dd><Copiable texto={equipo.id} que="el identificador" /></dd></div>
-          <div><dt>Modo</dt><dd>{equipo.modo === "gestionado" ? (otrasConsolas.length ? `Gestionado desde este servidor y ${plural(otrasConsolas.length, "consola más", "consolas más")}` : "Gestionado desde este servidor") : equipo.modo === "trasladado" ? "Trasladado a otro servidor" : "Local (sin servidor)"}</dd></div>
+          <div><dt>Modo</dt><dd>{equipo.modo === "gestionado" ? (otrasConsolas.length ? `Gestionado desde este servidor y ${plural(otrasConsolas.length, "consola más", "consolas más")}` : "Gestionado desde este servidor") : equipo.modo === "trasladado" ? "Trasladado a otro servidor" : dejada ? "Dejó esta consola desde el propio equipo" : "Local (sin servidor)"}</dd></div>
           <div><dt>Papel</dt><dd>{equipo.rol === "almacenamiento" ? "Guarda copias" : "Agente"}</dd></div>
           <div><dt>Siguiente orden</dt><dd class="num">N.º {equipo.siguiente_seq} <Ayuda id="seq" /></dd></div>
           <div><dt>Llave para recibir (X25519)</dt><dd class="llave"><Copiable texto={equipo.box_pub} que="la llave" /></dd></div>

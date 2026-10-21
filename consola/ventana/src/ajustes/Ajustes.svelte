@@ -8,6 +8,7 @@
   import { esBloqueo, pedir, servicio, vivo } from "../puente.svelte";
   import type { Avisos, Escritorio, Modo, Ventana } from "../tipos";
   import CampoClave from "./CampoClave.svelte";
+  import Consolas from "./Consolas.svelte";
 
   let modo = $state<Modo | null>(null);
   let abierta = $state(false);
@@ -93,6 +94,15 @@
     ["todo", "Todo"],
   ];
   const cargarLocal = () => import("./local/Local.svelte");
+
+  // C1 (plan 0.8.2): tras dejar las consolas, el modo puede cambiar (a «sin consola»).
+  async function trasDejar() {
+    try {
+      modo = (await pedir<{ modo: Modo }>("hola")).modo;
+    } catch {
+      // Se queda como estaba.
+    }
+  }
 </script>
 
 <div class="v-pila">
@@ -156,6 +166,11 @@
     {:else if modo === "gestionado"}
       <p class="v-mini">Las copias de este equipo las decide la consola que lo gestiona.</p>
     {/if}
+  {/if}
+  {#if modo === "gestionado" || modo === "pendiente"}
+    <!-- C1 (plan 0.8.2, 15uu): pide la clave cada vez (si el equipo la tiene), así que no hace
+         falta desbloquear antes. También en un equipo vinculado sin clave de administración. -->
+    <Consolas alCambiar={trasDejar} />
   {/if}
 </div>
 

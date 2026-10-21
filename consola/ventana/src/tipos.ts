@@ -112,3 +112,18 @@ export interface OrdenLocal {
 
 /** Lo que dice el servicio de este equipo (`hola`). */
 export type Modo = "sin_clave" | "local" | "gestionado" | "web" | "pendiente" | "desvinculado";
+
+/** C1 (plan 0.8.2, 15uu): una consola que gestiona este equipo (sin secretos). */
+export interface ConsolaLocal {
+  n: number;
+  nombre: string;
+  url: string;
+  identidad: string;
+  /** Los 8 primeros bytes de su identidad, para reconocerla. */
+  huella: string;
+  principal: boolean;
+  /** Último contacto (redondeado a 15 min), o null si nunca. */
+  contacto: string | null;
+  /** Órdenes suyas que esperan su turno en el equipo (no se aplicarán si se deja). */
+  en_espera: number;
+}
