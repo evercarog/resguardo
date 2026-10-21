@@ -387,7 +387,9 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const inf = informeDe(informes[e.id], x.r.id);
     // La copia externa del repositorio (cada día a otro destino).
     const ext = inf?.externa;
-    if (x.r.externa || ext) {
+    // Solo si el repositorio aún la tiene: la última vuelta de una ya quitada se queda en el
+    // informe del equipo y no debe dibujarse (visto con una derivada a su propio disco).
+    if (x.r.externa) {
       const tono: Tono = ext ? (ext.resultado === "fallo" ? "bad" : ext.resultado === "aviso" ? "warn" : ext.ultima && Date.parse(ext.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
       const subiendo = vivo(e.id, x.r.id, "copia_externa");
       const n = poner({

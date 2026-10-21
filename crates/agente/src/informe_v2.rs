@@ -464,7 +464,13 @@ pub fn repos(v: &Vinculo) -> Vec<Value> {
                 "prueba_restauracion": tarea(&t, "restore_test", &r.id),
                 // 13e: la última restauración real correcta (cuenta como prueba de restauración).
                 "restauracion_real": crate::restaurar_v2::real_de(&r.id).map(|x| json!({ "ultima": x.fin, "archivos": x.archivos, "bytes": x.bytes })),
-                "externa": tarea(&t, "offsite", &r.id),
+                // Solo mientras la tenga: la última vuelta de una copia derivada «de cada día» ya
+                // quitada se queda en el estado de las tareas y la consola la seguía dibujando.
+                "externa": if r.externa.is_some() || cfg.repos.iter().any(|x| x.id == r.id && x.offsite.is_some()) {
+                    tarea(&t, "offsite", &r.id)
+                } else {
+                    Value::Null
+                },
                 // Tarea 4b: la última vuelta de cada copia derivada (de ahí el aviso `externa_fallida`).
                 "derivadas": r.derivadas.iter().filter_map(|d| {
                     let id = d["id"].as_str()?;
