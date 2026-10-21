@@ -236,6 +236,10 @@
     color: var(--text-2);
     overflow-wrap: anywhere;
   }
+  .anfitrion :global(svg),
+  .fisico-vol :global(svg) {
+    flex: none;
+  }
   .fisico-vol {
     display: flex;
     align-items: center;

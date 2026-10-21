@@ -5,7 +5,11 @@
   // plegados. Filtro por cliente y por estado, y buscar por nombre (clientes,
   // equipos, repositorios, destinos). Lo que cada persona pliega se recuerda
   // en este navegador.
-  import { ChevronsDownUp, ChevronsUpDown, Search } from "@lucide/svelte";
+  //
+  // 0.8.2 (A4, 15xx): con un cliente elegido y su infraestructura anotada, filtrar
+  // por uno de sus servidores físicos (o un disco o conjunto), recordado por persona.
+  import { ChevronsDownUp, ChevronsUpDown, Search, Server } from "@lucide/svelte";
+  import { leerFiltroInfra, leerInfra, opcionesFiltroInfra } from "$lib/infra";
   import MapaProteccion from "../mapa/MapaProteccion.svelte";
   import { construirMapaGlobal, plegadosPorDefecto, type FiltroEstado, type PanelCliente } from "$lib/global";
   import { enMarchaEn, tareasTodos } from "$lib/todos.svelte";
@@ -70,7 +74,15 @@
     guardarTexto(clavePrefsTodos, JSON.stringify(p));
   }
   const clienteValido = $derived(clientes.some((c) => c.id === cliente) ? cliente : "");
-  const mapa = $derived(construirMapaGlobal(clientes, { ahora, plegados, cliente: clienteValido, estado, buscar, enVivo, agrupar: prefs.agrupar, desplegados: new Set(prefs.desplegados) }));
+  const infraCliente = $derived.by(() => {
+    const c = clientes.find((x) => x.id === clienteValido);
+    return c?.infra ? leerInfra(c.infra) : null;
+  });
+  const opcionesInfra = $derived(opcionesFiltroInfra(infraCliente));
+  const filtroInfra = $derived(infraCliente ? leerFiltroInfra(prefs.infra, infraCliente) : null);
+  const mapa = $derived(
+    construirMapaGlobal(clientes, { ahora, plegados, cliente: clienteValido, estado, buscar, enVivo, agrupar: prefs.agrupar, desplegados: new Set(prefs.desplegados), filtroInfra }),
+  );
   const ESTADOS: { id: FiltroEstado; texto: string }[] = [
     { id: "todos", texto: "Todos" },
     { id: "problemas", texto: "Con problemas" },
@@ -96,6 +108,16 @@
     </select>
     <ChevronsUpDown size={14} aria-hidden="true" />
   </label>
+  {#if opcionesInfra.length}
+    <label class="sel">
+      <span class="sr-only">Filtrar por infraestructura</span>
+      <select value={filtroInfra ? prefs.infra : ""} onchange={(ev) => alPrefs({ ...prefs, infra: ev.currentTarget.value })}>
+        <option value="">Toda la infraestructura</option>
+        {#each opcionesInfra as o (o.valor)}<option value={o.valor}>{o.nivel ? "· " : ""}{o.texto}</option>{/each}
+      </select>
+      <Server size={14} aria-hidden="true" />
+    </label>
+  {/if}
   <div class="segmentos" role="group" aria-label="Estado">
     {#each ESTADOS as e (e.id)}
       <button type="button" aria-pressed={estado === e.id} onclick={() => ((estado = e.id), guardar())}>{e.texto}</button>

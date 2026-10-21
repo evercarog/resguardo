@@ -316,7 +316,7 @@
                     <li>
                       <Layers size={14} aria-hidden="true" />
                       <span class="cj-n">{x.nombre}</span>
-                      <span class="faint">{TIPOS_CONJUNTO.find((t) => t.id === x.tipo)?.nombre ?? x.tipo}{x.miembros?.length ? ` de ${miembrosDe(s, x)}` : x.discos ? ` · ${plural(x.discos, "disco", "discos")}` : ""}{x.capacidad ? ` · ${bytes(x.capacidad)}` : ""}</span>
+                      <span class="faint">{TIPOS_CONJUNTO.find((t) => t.id === x.tipo)?.nombre ?? x.tipo}{x.miembros?.length ? `${x.tipo === "disco" ? ":" : " de"} ${miembrosDe(s, x)}` : x.discos ? ` · ${plural(x.discos, "disco", "discos")}` : ""}{x.capacidad ? ` · ${bytes(x.capacidad)}` : ""}</span>
                       {#if x.estado === "degradado"}<span class="badge tone-warn"><Ic size={12} />Degradado</span>{:else if x.estado === "reconstruyendo"}<span class="badge tone-info"><Ic size={12} />Reconstruyendo</span>{:else if x.estado === "bien"}<span class="badge tone-ok"><Ic size={12} />Bien</span>{/if}
                     </li>
                   {/each}
@@ -431,7 +431,7 @@
       <div class="faint pie comun">
         <Share2 size={13} aria-hidden="true" />
         <p>
-          {#if infra.comun}Igual en todas las consolas del cliente: viaja por sus equipos (ocupa {bytes(ocupa)} de {bytes(MAX_BYTES_INFRA)}). Los servidores y sus discos se reparten solos; dónde está cada equipo o destino, con la clave de administración desde el aviso «Lo mismo en todas las consolas».{:else}De momento es de esta consola: se compartirá con las demás cuando sus equipos tengan un agente que la guarde.{/if}
+          {#if infra.comun}Igual en todas las consolas del cliente: viaja por sus equipos (ocupa el {Math.max(1, Math.round((ocupa / MAX_BYTES_INFRA) * 100))} % de lo que cabe en cada uno). Los servidores y sus discos se reparten solos; dónde está cada equipo o destino, con la clave de administración desde el aviso «Lo mismo en todas las consolas».{:else}De momento es de esta consola: se compartirá con las demás cuando sus equipos tengan un agente que la guarde.{/if}
           {#if infra.actualizada} Cambiado {infra.por ? `por ${infra.por} ` : ""}el {new Date(infra.actualizada).toLocaleString("es")}.{/if}
         </p>
       </div>
@@ -625,6 +625,14 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-2);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .as-c :global(select),
+  .volumenes :global(select),
+  .p-acciones :global(select) {
+    min-width: 0;
+    text-overflow: ellipsis;
   }
   .volumenes {
     display: flex;
