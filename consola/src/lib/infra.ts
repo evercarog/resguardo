@@ -152,7 +152,7 @@ export const ESTADOS_CONJUNTO: { id: NonNullable<ConjuntoDiscos["estado"]>; nomb
 /** 0.8.2 (A2): el tipo de un disco físico (como `datos_cliente::TIPOS_DISCO`). */
 export const TIPOS_DISCO: { id: TipoDisco; nombre: string; corto: string }[] = [
   { id: "ssd", nombre: "SSD", corto: "SSD" },
-  { id: "hdd", nombre: "HDD (de platos)", corto: "HDD" },
+  { id: "hdd", nombre: "HDD", corto: "HDD" },
   { id: "nvme", nombre: "NVMe", corto: "NVMe" },
   { id: "otro", nombre: "Otro", corto: "disco" },
 ];
