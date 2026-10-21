@@ -22,7 +22,8 @@ Propuesto el 2026-10-21 a partir del uso real de la 0.8.1. **Pendiente del visto
 - [ ] **C1. Dejar las consolas desde la ventana del agente (15uu)**, con la clave de administración del cliente, y que la consola diga «dejó esta consola desde el propio equipo».
 - [ ] **C2.** Grupos de exclusiones en «Varios a la vez» y como plantilla por etiqueta (lo que quedó de 15y).
 - [ ] **C3.** Una copia que estaba en marcha cuando el equipo deja de responder: «Interrumpida: X se desconectó a las …» (lo que quedó de 15jj).
-- [ ] **C4.** Repaso de textos y pantallas que se vean en el uso hasta empezar.
+- [ ] **C4. Equipos en vista «Mapa»: los controles de arriba hacen lo que dicen** (visto el 2026-10-21): hoy «Agrupar por», «luego» y «Orden» casi no cambian el mapa (por sede, el mapa ya dibuja sus recuadros; los demás niveles solo se aplican si el control propio del mapa, «Con más de 8», agrupa; «luego» y «Orden» no se usan). Hacer: en el mapa de Equipos, **un solo control**: «Agrupar por» manda (sede, categoría, sistema, tipo, y con A4 servidor físico o disco), con recuadros por grupo como los de sede y grupos plegables, sin el selector propio del mapa; «luego» agrupa dentro de cada recuadro o se oculta; «Orden» ordena los equipos de arriba abajo en su columna (también «A mano»). Lo que no aplique al mapa se oculta en vez de quedarse sin efecto.
+- [ ] **C5.** Repaso de textos y pantallas que se vean en el uso hasta empezar.
 
 ## Fuera (para una versión posterior)
 
