@@ -3,6 +3,27 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-10-21 · `ia/082-agente` · Plan 0.8.2: B3 (el freno del espejo tras la poda del almacén) y C1 (dejar las consolas desde el equipo, 15uu)
+
+Claude Code (Opus), encargo del agente coordinador de la 0.8.2, desde `ia/082-pulido`. Pedido: B3 y C1 del plan 0.8.2, con pruebas y docs.
+
+**Hecho:**
+
+- **B3.** `crates/agente/src/podas.rs`: la retención del almacén (`retencion_almacen::ejecutar_con`) y la del propio equipo en un repositorio de sus discos (`gestion_v2::aplicar_retencion_por`) anotan qué archivos de `data/`, `index/`, `snapshots/` y `keys/` quitó cada poda (lista antes y después; `podas.json` en la carpeta privada, 180 días, 30 podas por repositorio, 2 millones de archivos). El motor del espejo (`espejo_motor::retencion`) no cuenta esos archivos para el freno y los anota para su borrado diferido aunque el freno salte por otros; si salta, dice «tras la poda del día X». Solo el freno ya no es un fallo: resultado `AVISO:` (cuenta como terminada, bitácora `aviso`), aviso nuevo `espejo_freno` en el servidor (importante) en vez de `espejo_fallido`; en la consola, «Por confirmar» y «Espejo frenado: confírmalo».
+- **C1.** Canal local `consolas` y `dejar_consola` (administrador del equipo y, si tiene, la clave de administración con el bloqueo de la cuenta «equipo»); ventana: Ajustes → «Consolas» (`consola/ventana/src/ajustes/Consolas.svelte`) con la explicación de qué pasa; terminal: `desvincular` y `consolas quitar` piden la clave. `consolas_v2::dejar_en_equipo` avisa antes, firmado, a cada consola que deja (`POST /api/agente/dejada`, `derivaciones::texto_dejada`; a un servidor anterior, `cambio_inusual`), y a las que quedan; cancela y anota sus órdenes en espera. Servidor: columna `equipos.dejada`, `dejada` en la API, auditoría y aviso `dejada_en_equipo` (crítico). Consola: banner en la ficha, «dejó esta consola…» en la lista, Actividad, avisos y ayuda. `admite: "dejar_en_equipo"`. Tras «Usar sin consola», la ventana lo trata como local (antes «desvinculado», sin poder cambiar nada).
+- Docs: `espejo.md`, `consolas-multiples.md` (§2.6 nueva), `agente-ventana.md`, `api-servidor.md` «Cambios» (v1.9x pendiente de numerar), plan 0.8.2 (B3 y C1) y 15uu.
+
+**Comprobado (resultado real, código de salida 0):** `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings`; `cargo test --workspace --no-fail-fast` con los tres `--skip` (489 del agente y el resto, todo bien), con la prueba nueva con restic de verdad `la_poda_real_no_frena_el_espejo` y las de integración `consolas_it` y `espera_it` ampliadas (consola que se entera, firma, clave mal y bien, órdenes en espera); `npm run check`, `build`, `check:ventana`, `build:ventana`, `test:vectores`; `cargo build` de los binarios y `npm run e2e` («Escenario completo»); `npm run test:sin-referencias`. El e2e falló dos veces en «4c» (la prueba de restauración desde un espejo en disco: «Windows no permite acceder…», restic restauró `CSERS` con sus permisos de verdad y el proceso sin administrador no pudo escribir ni borrar dentro); en la misma copia, con la rama base, pasó, y la tercera vez con esta rama también pasó: lo doy por intermitente, no por esta rama (no toca esa parte), pero conviene vigilarlo.
+
+**Sin probar:** la ventana en un Windows real (solo `svelte-check` y el simulador); el aviso contra una consola anterior (404 → `cambio_inusual`); una poda en un almacén real grande; Linux (no se compila aquí).
+
+**Decisiones dudosas (para el responsable):**
+- Solo el freno es un **aviso**, no un fallo. Con una consola anterior y un agente nuevo, esa vuelta no crea ningún aviso (se ve hecha, con su «Freno: …» en la tarjeta del espejo); lo que no viene de la poda sigue **frenando** igual (no borra), solo cambia cómo se avisa.
+- Lo que alguien borre a mano **durante** la poda se toma por la poda. Una poda de hace más de 180 días ya no cuenta (vuelve el freno de siempre).
+- El aviso `dejada_en_equipo` es **crítico** (como `orden_aprobada_en_equipo`).
+- La terminal comprueba la clave en el mismo proceso (como administrador), con el bloqueo de la cuenta «equipo»; la ventana lo hace por el servicio. Un equipo sin clave de administración sigue bastando con ser administrador.
+- Al dejar una consola se espera como mucho 20 s a que conteste; si no, se deja igual.
+
 ## 2026-10-20 · `ia/integracion-081` · **Resumen de la versión 0.8.1 (para el responsable)**
 
 Claude Code (Opus), en autónomo (pedido del 2026-10-19: «empieza ya con la 0.8.1, trabaja de manera autónoma hasta terminar la versión»; añadidos del 2026-10-20: las pruebas funcionales en todas las consolas y un informe descargable de la configuración). Plan: [plan-0.8.1.md](plan-0.8.1.md); detalle de cada rama más abajo.

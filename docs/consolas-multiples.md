@@ -22,7 +22,7 @@ Documentos relacionados: [plataforma.md](plataforma.md) (modelo de seguridad, «
 - **Cada consola tiene su canal** (WebSocket o sondeo) y recibe todo: informes, resumen, configuración cifrada, historial y progreso en vivo. Las órdenes de cualquiera se comprueban **igual que hoy** (clave de administración o contraseña del repositorio, espera de lo destructivo con las reglas del equipo, `not_before`, caducidad, `nonce`).
 - **Conectar una segunda consola** es una orden con la clave de administración, `anadir_consola`, con un **código de conexión** que da la otra consola. En la consola de origen: cliente → «Conectar también a otra consola…», pegar el código, comprobar la huella y escribir la clave una vez. Se manda a todos los equipos del cliente.
 - **Mover un cliente a otra consola** («Mover a otra consola…»): conectar también a la otra, esperar a que cada equipo informe allí y «Dejar esta consola» (§2.3). Ningún equipo se queda sin consola en ningún momento.
-- **Quitar una consola**: la orden `quitar_consola` desde cualquiera de ellas, «Dejar de gestionar este equipo» desde la propia consola (solo se va ella), o `resguardo-agente consolas quitar` en el equipo si esa consola ya no existe.
+- **Quitar una consola**: la orden `quitar_consola` desde cualquiera de ellas, «Dejar de gestionar este equipo» desde la propia consola (solo se va ella), o en el propio equipo (ventana → Ajustes → Consolas, o `resguardo-agente consolas quitar`), con la clave de administración; la consola que se deja se entera (§2.6).
 
 ---
 
@@ -164,12 +164,32 @@ Los equipos con un agente anterior (sin `admite: consolas_multiples`) no pueden 
 
 - **`quitar_consola { identidad }`** (clave de administración, solo administradores): desde cualquier consola, quita **otra** (o la propia, si quedan más: es el paso 3 de «Mover a otra consola»). La que se quita recibe un último aviso («Este equipo dejó de conectarse a esta consola») y las demás otro. Quitar la única no se puede: es «Desvincular».
 - **«Dejar de gestionar este equipo»** en la propia consola: `desvincular` en «seguir en local», que con otras consolas solo la quita a ella (1.5).
-- **En el equipo**, como administrador, si esa consola ya no existe:
+- **En el equipo** (p. ej. si esa consola ya no existe): ventana de Resguardo → Ajustes → **Consolas** («Quitar» una o «Usar sin consola»), o en la terminal, como administrador (§2.6):
 
   ```text
   resguardo-agente consolas                  # la lista, con su huella y último contacto
   resguardo-agente consolas quitar <n.º | dirección | huella>
+  resguardo-agente desvincular               # todas: el equipo sigue copiando sin consola
   ```
+
+### 2.6 Dejar las consolas desde el propio equipo (plan 0.8.2, C1; plan-mejoras 15uu)
+
+Contrato «v1.9x» en [api-servidor.md](api-servidor.md), «Cambios». Código: `consolas_v2::dejar_en_equipo`, `ipc_local::dejar_consola`, `cli.rs::dejar_desde_terminal`, `consola/ventana/src/ajustes/Consolas.svelte`; en el servidor, `agentes.rs::registrar_dejada`.
+
+**Dónde.** En la ventana del agente, Ajustes → «Consolas» (también con los ajustes bloqueados: pide la clave cada vez): la lista con el nombre, la dirección, la huella, el último contacto y sus órdenes en espera; «Quitar» en cada una (si hay más de una) y «Usar sin consola» (todas). Antes de hacerlo, la ventana explica qué pasa (abajo). En la terminal, `resguardo-agente consolas quitar <…>` (una) y `resguardo-agente desvincular` (todas), que dicen lo mismo y piden la clave.
+
+**Quién.** Solo un **administrador del equipo** (lo dice el sistema: el token de la tubería o el uid del socket; en la terminal, `require_admin`) **y**, si el equipo tiene clave de administración, **con ella** escrita en ese momento (no vale la de «desbloqueada»): la ventana calcula la prueba (Argon2id con la sal del equipo) y la manda con un reto de un solo uso; la terminal la lee sin eco y la comprueba en el mismo proceso. Los fallos cuentan para el **bloqueo por intentos del equipo** (la cuenta «equipo» del vínculo, la misma de «Aprobar ahora», con su aviso a todas las consolas) y, en la ventana, también para el de la ventana. Un equipo **sin** clave de administración (vinculado antes de que existiera) sigue como hasta ahora: basta ser administrador. Antes (hasta la 0.8.1) bastaba siempre con ser administrador de Windows.
+
+**Lo que se avisa.** Antes de quitar nada, el equipo manda a cada consola que deja `POST /api/agente/dejada { cuando, cuenta, todas, siguen, firma }`, **firmado con su llave** sobre la identidad de esa consola, su id de equipo, la hora, la cuenta del sistema (`usuario (EQUIPO o DOMINIO)`; en Linux, la cuenta y `root (sudo, ana)`) y si deja todas. Ese servidor comprueba la firma, marca el equipo como `local` (ya no está aquí), guarda lo que dijo en `equipo.dejada` (la ficha y la lista de Equipos dicen «dejó esta consola desde el propio equipo el …, con la cuenta «…»» en vez de «sin conexión»), lo anota en Actividad (`dejada_en_equipo`, con el equipo como actor) y crea el aviso **«Dejó esta consola desde el equipo»** (crítico). Un servidor anterior (sin esa ruta) recibe el aviso `cambio_inusual` de siempre con el mismo texto («… dejó de conectarse a la consola … desde el propio equipo …»). Se espera como mucho 20 s a todas a la vez: si una no responde (ya no existe), se deja igual y se dice («No se pudo avisar a …: allí se verá como sin conexión»). A las consolas que **quedan**, el aviso `cambio_inusual` («Este equipo dejó de conectarse a la consola X desde el propio equipo, con la cuenta «…»») y su lista de consolas al día. Si el equipo vuelve a vincularse a esa consola, `dejada` se olvida.
+
+**Qué pasa con lo demás** (comprobado en `espera_it.rs` y `consolas_it.rs`):
+
+- **Las copias siguen** con su horario; **los destinos, el almacén y lo ya copiado no se tocan**. Con «Usar sin consola» el equipo queda en modo local y, desde la 0.8.2, su ventana deja cambiar las copias en Ajustes con la clave (antes quedaba «desvinculado», sin poder cambiar nada hasta vincularlo).
+- **Las órdenes en espera** de las consolas que se van **no se aplicarán**: se quitan al momento y se anotan como canceladas («La consola que la mandó ya no gestiona este equipo») en el historial común, que reciben las que quedan. Las de las demás consolas siguen esperando. Antes, con `desvincular` se borraban sin anotar y con `consolas quitar` se descartaban en la siguiente vuelta.
+- **Los datos comunes del cliente** (§6.5: nombres y marcas de los destinos, colores, plantillas, sedes, notas, pruebas funcionales…) siguen en el documento del equipo y en las demás consolas; la consola que se deja conserva su copia en su servidor. Si el equipo vuelve a una consola, se juntan como siempre (gana el cambio más reciente).
+- El historial (bitácora), el nombre, las etiquetas y la observación del equipo no cambian.
+
+**Modelo de amenazas.** Como en §5.11: alguien sin ser administrador del equipo no puede ni ver la lista; un administrador sin la clave no puede (cada intento cuenta y avisa a todas las consolas); un administrador con la clave puede sacar el equipo de la gestión, pero deja rastro firmado en las consolas que deja y aviso en las que quedan. Lo que ya podía (parar el servicio, borrar la carpeta del agente) lo sigue pudiendo, pero entonces la consola solo ve «sin conexión»: la clave no evita eso, solo que se haga «por las buenas» sin que nadie se entere.
 
 ### 2.5 Equipos que no están en todas las consolas
 
@@ -236,7 +256,7 @@ El verificador es **del equipo** (uno), así que tras `cambiar_clave_admin` desd
 |---|---|
 | Ya no quieres la consola en línea | Desde la local, en el equipo (o en el cliente, para todos): «Quitar» → `quitar_consola`. O desde la en línea: «Dejar de gestionar este equipo». |
 | La consola en línea está comprometida | Quítala desde la local (`quitar_consola`, no hace falta su colaboración). Si se escribió la clave en ella, **cambia la clave de administración** desde la local. |
-| La consola ya no existe o no responde | `quitar_consola` desde otra, o `resguardo-agente consolas quitar` en el equipo. Mientras tanto, nada se rompe: su canal reintenta sin molestar a las demás. |
+| La consola ya no existe o no responde | `quitar_consola` desde otra, o en el equipo (ventana → Ajustes → Consolas, o `resguardo-agente consolas quitar`, con la clave de administración; §2.6). Mientras tanto, nada se rompe: su canal reintenta sin molestar a las demás. |
 | La ficha del código de conexión se filtró | Caduca sola (7 días) y tiene un tope de equipos. Sin la clave de administración nadie puede usarla para conectar un equipo: la orden la exige. Lo peor es que alguien dé de alta, con ella, un equipo falso en esa consola (lo mismo que con «Recibir un cliente» hoy). |
 | Una consola de más que no reconoces en la lista | Alguien con la clave de administración la añadió: quítala y cambia la clave. |
 
