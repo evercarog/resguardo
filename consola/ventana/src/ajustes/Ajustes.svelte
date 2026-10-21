@@ -167,8 +167,9 @@
       <p class="v-mini">Las copias de este equipo las decide la consola que lo gestiona.</p>
     {/if}
   {/if}
-  {#if modo === "gestionado"}
-    <!-- C1 (plan 0.8.2, 15uu): pide la clave cada vez, así que no hace falta desbloquear antes. -->
+  {#if modo === "gestionado" || modo === "pendiente"}
+    <!-- C1 (plan 0.8.2, 15uu): pide la clave cada vez (si el equipo la tiene), así que no hace
+         falta desbloquear antes. También en un equipo vinculado sin clave de administración. -->
     <Consolas alCambiar={trasDejar} />
   {/if}
 </div>

@@ -757,7 +757,8 @@ async function principal() {
       // Falta de golpe casi todo: salta el freno, no se borra nada y avisa.
       for (const rel of paquetes.slice(1)) fs.rmSync(path.join(raizFalsa, rel));
       const f1 = await pasada("la vuelta en la que salta el freno");
-      comprobar(f1.resultado?.startsWith("ERROR") && /falta de golpe/.test(f1.freno_aviso ?? ""), "El freno salta y lo dice", f1);
+      // B3 (plan 0.8.2): lo nuevo se subió: es un aviso («AVISO:», aviso espejo_freno), no un fallo.
+      comprobar(f1.resultado?.startsWith("AVISO") && /falta de golpe/.test(f1.freno_aviso ?? ""), "El freno salta y lo dice (como aviso, no como fallo)", f1);
       comprobar(paquetes.slice(1).every(enPrincipal), "Con el freno, no se borra nada");
       // Confirmado con la clave (espera; aquí de 0 s): se anota y se borra en la vuelta siguiente.
       await consola.hecha(c, eqA.id, "guarda_copias", { espejo_freno: { trabajo: "e2e-igual" } }, { claveAdmin: CLAVE_ADMIN });
