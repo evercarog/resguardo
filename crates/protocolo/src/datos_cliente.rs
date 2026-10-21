@@ -110,6 +110,19 @@ pub enum Clase {
     /// el contenido de los datos: solo si hay datos personales, sí o no. Solo a agentes con
     /// [`ADMITE_INVENTARIO`].
     Inventario,
+    /// 0.8.2 (A5; plan-mejoras 15d, 15vv, 15ww; docs/infraestructura.md): la infraestructura del
+    /// cliente, igual en todas sus consolas. Tres tipos:
+    /// - `infra:servidor:<id>` → un servidor físico con sus discos uno a uno y sus conjuntos
+    ///   (`{ nombre, marca?, modelo?, sede?, hipervisor?, notas?, discos?, conjuntos? }`), o `null`
+    ///   (quitado). El número de serie de un disco lo escribe la persona (el agente no lo lee).
+    /// - `infra:equipo:<id>` → en qué servidor (y conjunto o disco) está un equipo y, si se dijo,
+    ///   cada uno de sus volúmenes (`{ servidor, conjunto?, disco?, volumenes? }`), o `null`.
+    ///   **Pide la clave de administración** (cuenta en la regla 3-2-1, como la sede).
+    /// - `infra:destino:<clave del catálogo>` → `{ servidor, conjunto?, disco? }` o `null`. **Pide
+    ///   la clave de administración.**
+    ///
+    /// Solo a agentes con [`ADMITE_INFRA`].
+    Infra,
 }
 
 impl Clase {
@@ -132,11 +145,12 @@ impl Clase {
             Clase::PruebaFuncional => "prueba.funcional:",
             Clase::PruebaPolitica => "prueba.politica:",
             Clase::Inventario => "inventario:",
+            Clase::Infra => "infra:",
         }
     }
 }
 
-const CLASES: [Clase; 17] = [
+const CLASES: [Clase; 18] = [
     Clase::EtiquetaColor,
     Clase::EtiquetaPlantilla,
     Clase::DestinoRegla,
@@ -154,6 +168,7 @@ const CLASES: [Clase; 17] = [
     Clase::PruebaFuncional,
     Clase::PruebaPolitica,
     Clase::Inventario,
+    Clase::Infra,
 ];
 
 /// 0.8.1 (E2, H1): `resumen.admite` de un agente que guarda los ajustes comunes (`ajuste:`).
@@ -483,6 +498,279 @@ fn inventario_valido(tipo: &str, m: &Map<String, Value>) -> Result<Value, &'stat
     Ok(if v.is_empty() { Value::Null } else { Value::Object(v) })
 }
 
+// ---------------------------------------------------------------------------
+// 0.8.2 (A5): la infraestructura del cliente (`infra:`)
+// ---------------------------------------------------------------------------
+
+/// 0.8.2 (A5): `resumen.admite` de un agente que guarda la infraestructura (`infra:`). A uno
+/// anterior no se le manda (rechazaría la orden entera).
+pub const ADMITE_INFRA: &str = "infra_comun";
+/// ¿Es un dato de la infraestructura (solo para agentes con [`ADMITE_INFRA`])?
+pub fn es_de_infra(clave: &str) -> bool {
+    matches!(clase(clave).map(|x| x.0), Some(Clase::Infra))
+}
+/// Los hipervisores que se conocen (sin él: un servidor de uso directo).
+pub const HIPERVISORES: [&str; 8] = ["proxmox", "vmware", "hyperv", "xen", "kvm", "nutanix", "virtualbox", "otro"];
+/// Las formas de un conjunto de discos.
+pub const TIPOS_CONJUNTO: [&str; 13] =
+    ["raid0", "raid1", "raid5", "raid6", "raid10", "zfs_espejo", "zfs_raidz1", "zfs_raidz2", "zfs_raidz3", "storage_spaces", "nas", "disco", "otro"];
+/// El estado anotado de un conjunto (Resguardo no lo comprueba: lo dice la persona).
+pub const ESTADOS_CONJUNTO: [&str; 4] = ["bien", "degradado", "reconstruyendo", "sin_revisar"];
+/// 0.8.2 (A2, 15vv): el tipo de un disco físico.
+pub const TIPOS_DISCO: [&str; 4] = ["ssd", "hdd", "nvme", "otro"];
+/// 0.8.2 (A2): el estado anotado de un disco físico.
+pub const ESTADOS_DISCO: [&str; 4] = ["bien", "aviso", "averiado", "sin_revisar"];
+/// Como mucho tantos discos físicos por servidor.
+pub const MAX_DISCOS_SERVIDOR: usize = 64;
+/// Como mucho tantos conjuntos de discos por servidor.
+pub const MAX_CONJUNTOS_SERVIDOR: usize = 32;
+/// Como mucho tantos volúmenes anotados por equipo.
+pub const MAX_VOLUMENES_EQUIPO: usize = 32;
+/// Lo que ocupa como mucho un servidor (JSON): con 64 discos y notas cortas cabe de sobra.
+pub const MAX_BYTES_SERVIDOR: usize = 16 * 1024;
+/// Lo que ocupa como mucho toda la infraestructura de un cliente en el documento de cada equipo
+/// (sus datos con su clave y su entrada, aproximado: [`bytes_dato`]). El documento entero no
+/// pasa de [`MAX_BYTES`]: la infraestructura deja sitio a lo demás. Lo comprueba quien la guarda.
+pub const MAX_BYTES_INFRA: usize = 96 * 1024;
+/// Lo que se cuenta por cada dato además de su clave y su valor (la hora, la consola, quién).
+pub const SOBRE_ENTRADA: usize = 260;
+
+/// El id de un servidor, de un disco o de un conjunto: minúsculas, cifras y `-`, de 1 a 40.
+pub fn id_infra_valido(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 40 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// La clave de un destino en la infraestructura (la del catálogo: `zona:<almacén>:<zona>`, el id
+/// de un destino…): letras, cifras y `:._-`, de 1 a 200, sin partes vacías.
+pub fn clave_destino_infra_valida(k: &str) -> bool {
+    !k.is_empty()
+        && k.len() <= 200
+        && k.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_' | '.'))
+        && !k.split(':').any(|p| p.is_empty() || p == "." || p == "..")
+}
+
+/// Un texto opcional de la infraestructura: ausente, `null` o vacío → nada.
+fn texto_infra(m: &Map<String, Value>, campo: &str, max: usize, lineas: bool) -> Result<Option<String>, &'static str> {
+    match m.get(campo) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => {
+            let t = v.as_str().ok_or("Texto no válido en la infraestructura.")?.trim();
+            if t.is_empty() {
+                return Ok(None);
+            }
+            texto_valido(Some(v), 1, max, lineas).map(Some).ok_or("Un texto de la infraestructura es demasiado largo o tiene caracteres que no valen.")
+        }
+    }
+}
+
+/// Uno de una lista cerrada (opcional; vacío: nada).
+fn uno_de(m: &Map<String, Value>, campo: &str, lista: &[&str], error: &'static str) -> Result<Option<String>, &'static str> {
+    match m.get(campo) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if s.is_empty() => Ok(None),
+        Some(v) => v.as_str().filter(|x| lista.contains(x)).map(|x| Some(x.to_string())).ok_or(error),
+    }
+}
+
+/// Un número opcional entre `min` y `max`.
+fn numero_infra(m: &Map<String, Value>, campo: &str, min: u64, max: u64, error: &'static str) -> Result<Option<u64>, &'static str> {
+    match m.get(campo) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().filter(|n| (min..=max).contains(n)).map(Some).ok_or(error),
+    }
+}
+
+/// Pone en `v` lo que haya.
+fn poner_si<T: Into<Value>>(v: &mut Map<String, Value>, campo: &str, x: Option<T>) {
+    if let Some(x) = x {
+        v.insert(campo.into(), x.into());
+    }
+}
+
+/// Un disco físico de un servidor (15vv). `visto`: cómo lo llama el equipo que es ese
+/// servidor (`disco0`, `sda`), para poner su nombre en la ficha del equipo.
+fn disco_infra_valido(d: &Value) -> Result<Value, &'static str> {
+    let m = d.as_object().ok_or("Disco no válido.")?;
+    solo_campos(m, &["id", "nombre", "tipo", "modelo", "serie", "tamano", "bahia", "estado", "notas", "visto"])?;
+    let id = m.get("id").and_then(Value::as_str).filter(|x| id_infra_valido(x)).ok_or("Un disco tiene un id no válido.")?;
+    let nombre = texto_valido(m.get("nombre"), 1, 80, false).ok_or("Cada disco necesita un nombre (hasta 80 caracteres).")?;
+    let mut v = Map::new();
+    v.insert("id".into(), json!(id));
+    v.insert("nombre".into(), json!(nombre));
+    poner_si(&mut v, "tipo", uno_de(m, "tipo", &TIPOS_DISCO, "Tipo de disco no válido: SSD, HDD, NVMe u otro.")?);
+    poner_si(&mut v, "modelo", texto_infra(m, "modelo", 120, false)?);
+    poner_si(&mut v, "serie", texto_infra(m, "serie", 64, false)?);
+    poner_si(&mut v, "tamano", numero_infra(m, "tamano", 1, 1 << 60, "Ese tamaño de disco no es razonable.")?);
+    poner_si(&mut v, "bahia", texto_infra(m, "bahia", 40, false)?);
+    poner_si(&mut v, "estado", uno_de(m, "estado", &ESTADOS_DISCO, "Estado de disco no válido.")?);
+    poner_si(&mut v, "notas", texto_infra(m, "notas", 500, true)?);
+    poner_si(&mut v, "visto", texto_infra(m, "visto", 64, false)?);
+    Ok(Value::Object(v))
+}
+
+/// Un conjunto de discos de un servidor; `discos`: los ids de los discos del servidor.
+fn conjunto_infra_valido(c: &Value, discos: &[String]) -> Result<Value, &'static str> {
+    let m = c.as_object().ok_or("Conjunto no válido.")?;
+    solo_campos(m, &["id", "nombre", "tipo", "discos", "miembros", "capacidad", "estado", "notas", "visto"])?;
+    let id = m.get("id").and_then(Value::as_str).filter(|x| id_infra_valido(x)).ok_or("Un conjunto tiene un id no válido.")?;
+    let nombre = texto_valido(m.get("nombre"), 1, 80, false).ok_or("Cada conjunto de discos necesita un nombre (hasta 80 caracteres).")?;
+    let tipo = m.get("tipo").and_then(Value::as_str).filter(|t| TIPOS_CONJUNTO.contains(t)).ok_or("Ese tipo de conjunto de discos no se conoce.")?;
+    let mut v = Map::new();
+    v.insert("id".into(), json!(id));
+    v.insert("nombre".into(), json!(nombre));
+    v.insert("tipo".into(), json!(tipo));
+    poner_si(&mut v, "discos", numero_infra(m, "discos", 1, 256, "Un conjunto tiene de 1 a 256 discos.")?);
+    match m.get("miembros") {
+        None | Some(Value::Null) => {}
+        Some(x) => {
+            let xs = x.as_array().ok_or("Los discos de un conjunto van en una lista.")?;
+            if xs.len() > MAX_DISCOS_SERVIDOR {
+                return Err("Demasiados discos en un conjunto.");
+            }
+            let mut out: Vec<&str> = Vec::new();
+            for d in xs {
+                let d = d.as_str().filter(|d| discos.iter().any(|x| x == d)).ok_or("Un conjunto usa un disco que no es de su servidor.")?;
+                if out.contains(&d) {
+                    return Err("Un conjunto repite un disco.");
+                }
+                out.push(d);
+            }
+            if !out.is_empty() {
+                v.insert("miembros".into(), json!(out));
+            }
+        }
+    }
+    poner_si(&mut v, "capacidad", numero_infra(m, "capacidad", 1, 1 << 60, "Esa capacidad no es razonable.")?);
+    poner_si(&mut v, "estado", uno_de(m, "estado", &ESTADOS_CONJUNTO, "Ese estado no se conoce.")?);
+    poner_si(&mut v, "notas", texto_infra(m, "notas", 1000, true)?);
+    poner_si(&mut v, "visto", texto_infra(m, "visto", 64, false)?);
+    Ok(Value::Object(v))
+}
+
+/// El valor de `infra:servidor:<id>`.
+fn servidor_infra_valido(m: &Map<String, Value>) -> Result<Value, &'static str> {
+    solo_campos(m, &["nombre", "marca", "modelo", "sede", "hipervisor", "notas", "discos", "conjuntos"])?;
+    let nombre = texto_valido(m.get("nombre"), 1, 80, false).ok_or("Cada servidor necesita un nombre (hasta 80 caracteres).")?;
+    let mut v = Map::new();
+    v.insert("nombre".into(), json!(nombre));
+    poner_si(&mut v, "marca", texto_infra(m, "marca", 80, false)?);
+    poner_si(&mut v, "modelo", texto_infra(m, "modelo", 120, false)?);
+    match m.get("sede") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(s)) if s.is_empty() => {}
+        Some(s) => {
+            v.insert("sede".into(), json!(s.as_str().filter(|s| id_simple(s)).ok_or("La sede de un servidor no es válida.")?));
+        }
+    }
+    poner_si(&mut v, "hipervisor", uno_de(m, "hipervisor", &HIPERVISORES, "Ese hipervisor no se conoce (elige «Otro»).")?);
+    poner_si(&mut v, "notas", texto_infra(m, "notas", 1000, true)?);
+    let lista = |campo: &str, max: usize| -> Result<Vec<Value>, &'static str> {
+        match m.get(campo) {
+            None | Some(Value::Null) => Ok(Vec::new()),
+            Some(x) => {
+                let xs = x.as_array().ok_or("Los discos y los conjuntos van en listas.")?;
+                if xs.len() > max {
+                    return Err("Demasiados discos o conjuntos en un servidor.");
+                }
+                Ok(xs.clone())
+            }
+        }
+    };
+    let mut discos = Vec::new();
+    let mut ids: Vec<String> = Vec::new();
+    for d in lista("discos", MAX_DISCOS_SERVIDOR)? {
+        let d = disco_infra_valido(&d)?;
+        let id = d["id"].as_str().unwrap_or_default().to_string();
+        if ids.contains(&id) {
+            return Err("Hay dos discos con el mismo id.");
+        }
+        ids.push(id);
+        discos.push(d);
+    }
+    let mut conjuntos = Vec::new();
+    let mut cids: Vec<String> = Vec::new();
+    for c in lista("conjuntos", MAX_CONJUNTOS_SERVIDOR)? {
+        let c = conjunto_infra_valido(&c, &ids)?;
+        let id = c["id"].as_str().unwrap_or_default().to_string();
+        if cids.contains(&id) {
+            return Err("Hay dos conjuntos con el mismo id.");
+        }
+        cids.push(id);
+        conjuntos.push(c);
+    }
+    if !discos.is_empty() {
+        v.insert("discos".into(), Value::Array(discos));
+    }
+    if !conjuntos.is_empty() {
+        v.insert("conjuntos".into(), Value::Array(conjuntos));
+    }
+    let v = Value::Object(v);
+    if v.to_string().len() > MAX_BYTES_SERVIDOR {
+        return Err("Un servidor ocupa demasiado (hasta 16 KiB): acorta las notas.");
+    }
+    Ok(v)
+}
+
+/// El conjunto o el disco de un sitio (uno u otro, o ninguno).
+fn donde_en_servidor(m: &Map<String, Value>, v: &mut Map<String, Value>) -> Result<(), &'static str> {
+    let id = |campo: &str| -> Result<Option<String>, &'static str> {
+        match m.get(campo) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(s)) if s.is_empty() => Ok(None),
+            Some(x) => x.as_str().filter(|x| id_infra_valido(x)).map(|x| Some(x.to_string())).ok_or("Un conjunto o un disco con un id no válido."),
+        }
+    };
+    let (c, d) = (id("conjunto")?, id("disco")?);
+    if c.is_some() && d.is_some() {
+        return Err("O un conjunto de discos o un disco, no los dos.");
+    }
+    poner_si(v, "conjunto", c);
+    poner_si(v, "disco", d);
+    Ok(())
+}
+
+/// El valor de `infra:equipo:<id>` (`volumenes`, solo de un equipo) o de `infra:destino:<clave>`.
+fn sitio_infra_valido(m: &Map<String, Value>, equipo: bool) -> Result<Value, &'static str> {
+    solo_campos(m, if equipo { &["servidor", "conjunto", "disco", "volumenes"] } else { &["servidor", "conjunto", "disco"] })?;
+    let servidor = m.get("servidor").and_then(Value::as_str).filter(|x| id_infra_valido(x)).ok_or("Falta el servidor físico (o no es válido).")?;
+    let mut v = Map::new();
+    v.insert("servidor".into(), json!(servidor));
+    donde_en_servidor(m, &mut v)?;
+    if let Some(x) = m.get("volumenes").filter(|x| !x.is_null()) {
+        let xs = x.as_array().ok_or("Los volúmenes van en una lista.")?;
+        if xs.len() > MAX_VOLUMENES_EQUIPO {
+            return Err("Como mucho 32 volúmenes anotados por equipo.");
+        }
+        let mut out = Vec::new();
+        let mut puntos: Vec<String> = Vec::new();
+        for y in xs {
+            let y = y.as_object().ok_or("Volumen no válido.")?;
+            solo_campos(y, &["punto", "conjunto", "disco"])?;
+            let punto = texto_valido(y.get("punto"), 1, 64, false).ok_or("Un volumen sin nombre (C:, /srv…).")?;
+            if puntos.contains(&punto) {
+                return Err("Un volumen está dos veces.");
+            }
+            let mut w = Map::new();
+            w.insert("punto".into(), json!(punto));
+            donde_en_servidor(y, &mut w)?;
+            if w.len() < 2 {
+                return Err("Cada volumen anotado va en un conjunto o en un disco.");
+            }
+            puntos.push(punto);
+            out.push(Value::Object(w));
+        }
+        if !out.is_empty() {
+            v.insert("volumenes".into(), Value::Array(out));
+        }
+    }
+    Ok(Value::Object(v))
+}
+
+/// Lo que ocupa aproximadamente un dato de la infraestructura en el documento de cada equipo.
+pub fn bytes_dato(clave: &str, valor: &Value) -> usize {
+    clave.len() + valor.to_string().len() + SOBRE_ENTRADA
+}
+
 /// Una parte de un objeto (equipo, id de una copia o de un repositorio, id de un destino):
 /// letras, cifras y `-_.:@`, de 1 a 128, sin `.` ni `..` solos.
 fn parte_objeto_valida(x: &str) -> bool {
@@ -543,6 +831,12 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
         Clase::NotaComentario | Clase::PruebaFuncional => id_simple(sujeto),
         Clase::PruebaPolitica => sujeto == "cliente",
         Clase::Inventario => sujeto.split_once(':').is_some_and(|(t, o)| TIPOS_INVENTARIO.contains(&t) && objeto_nota_valido(t, o)),
+        Clase::Infra => match sujeto.split_once(':') {
+            Some(("servidor", id)) => id_infra_valido(id),
+            Some(("equipo", id)) => parte_objeto_valida(id),
+            Some(("destino", k)) => clave_destino_infra_valida(k),
+            _ => false,
+        },
     };
     ok.then_some((c, sujeto))
 }
@@ -550,7 +844,11 @@ pub fn clase(clave: &str) -> Option<(Clase, &str)> {
 /// ¿Cambiar este dato pide la clave de administración? (Lo que cuenta en la regla 3-2-1: el
 /// tipo y las marcas de un destino y, desde la 0.8.0, la sede de un equipo o de un destino.)
 pub fn pide_admin(clave: &str) -> bool {
-    [Clase::DestinoRegla, Clase::SedeEquipo, Clase::SedeDestino].iter().any(|c| clave.starts_with(c.prefijo())) || clave == "ajuste:recuperar"
+    [Clase::DestinoRegla, Clase::SedeEquipo, Clase::SedeDestino].iter().any(|c| clave.starts_with(c.prefijo()))
+        || clave == "ajuste:recuperar"
+        // 0.8.2 (A5): dónde está físicamente un equipo o un destino (cuenta en la regla 3-2-1).
+        || clave.starts_with("infra:equipo:")
+        || clave.starts_with("infra:destino:")
 }
 
 /// Una etiqueta limpia como las de los equipos: sin espacios de más, de 1 a 32
@@ -853,6 +1151,11 @@ pub fn valor_valido(clave: &str, valor: &Value) -> Result<Value, String> {
         Clase::PruebaFuncional => prueba_valida(m),
         Clase::PruebaPolitica => politica_valida(m),
         Clase::Inventario => inventario_valido(sujeto.split_once(':').map(|x| x.0).unwrap_or(""), m),
+        Clase::Infra => match sujeto.split_once(':').map(|x| x.0) {
+            Some("servidor") => servidor_infra_valido(m),
+            Some("equipo") => sitio_infra_valido(m, true),
+            _ => sitio_infra_valido(m, false),
+        },
     })();
     r.map_err(str::to_string)
 }
@@ -1137,6 +1440,69 @@ mod tests {
         }
     }
 
+    /// 0.8.2 (A5, A2): la infraestructura como dato común.
+    #[test]
+    fn infraestructura() {
+        assert_eq!(clase("infra:servidor:hv-01").map(|x| x.0), Some(Clase::Infra));
+        assert_eq!(clase("infra:equipo:3f2a9c1e-0b5c").map(|x| x.0), Some(Clase::Infra));
+        assert_eq!(clase("infra:destino:zona:e-1:principal").map(|x| x.0), Some(Clase::Infra));
+        assert!(clase("infra:servidor:HV 01").is_none() && clase("infra:otro:x").is_none() && clase("infra:destino:zona::x").is_none());
+        assert!(es_de_infra("infra:servidor:hv-01") && !es_de_infra("inventario:equipo:e"));
+        assert!(!pide_admin("infra:servidor:hv-01"), "describir un servidor no cambia la regla");
+        assert!(pide_admin("infra:equipo:e-1") && pide_admin("infra:destino:zona:e-1:principal"), "dónde está algo, sí");
+        let s = json!({
+            "nombre": " hv-01 ", "marca": "Marca X", "hipervisor": "proxmox", "sede": "norte-0a1b", "notas": "Rack 1\nabajo",
+            "discos": [
+                { "id": "b2", "nombre": "Bahía 2", "tipo": "hdd", "modelo": "Disco 4T", "serie": "SN-0002", "tamano": 4_000_000_000_000u64, "bahia": "2", "estado": "bien" },
+                { "id": "b3", "nombre": "Bahía 3", "tipo": "hdd", "serie": "", "visto": "sdb" }
+            ],
+            "conjuntos": [{ "id": "dv2", "nombre": "Disco virtual 2", "tipo": "raid1", "discos": 2, "miembros": ["b2", "b3"], "estado": "bien" }]
+        });
+        let v = valor_valido("infra:servidor:hv-01", &s).unwrap();
+        assert_eq!(v["nombre"], "hv-01");
+        assert!(v["discos"][1].get("serie").is_none(), "vacío: nada");
+        assert_eq!(v["conjuntos"][0]["miembros"], json!(["b2", "b3"]));
+        assert_eq!(valor_valido("infra:servidor:hv-01", &v).unwrap(), v, "limpio una vez, igual siempre");
+        let mal = |f: &dyn Fn(&mut Value)| {
+            let mut x = s.clone();
+            f(&mut x);
+            valor_valido("infra:servidor:hv-01", &x).is_err()
+        };
+        assert!(mal(&|x| x["contrasena"] = json!("x")), "sin campos de más (ni secretos)");
+        assert!(mal(&|x| x["discos"][0]["clave"] = json!("x")));
+        assert!(mal(&|x| x["discos"][0]["tipo"] = json!("cinta")));
+        assert!(mal(&|x| x["discos"][0]["estado"] = json!("roto")));
+        assert!(mal(&|x| x["discos"][1]["id"] = json!("b2")), "repetido");
+        assert!(mal(&|x| x["conjuntos"][0]["miembros"] = json!(["b9"])), "un disco que no es suyo");
+        assert!(mal(&|x| x["conjuntos"][0]["miembros"] = json!(["b2", "b2"])));
+        assert!(mal(&|x| x["conjuntos"][0]["tipo"] = json!("raid99")));
+        assert!(mal(&|x| x["hipervisor"] = json!("mainframe")));
+        assert!(mal(&|x| x["nombre"] = json!("a\u{7}b")));
+        assert!(mal(&|x| x["notas"] = json!("x".repeat(1001))));
+        assert!(mal(&|x| x["discos"][0]["serie"] = json!("s".repeat(65))));
+        assert!(mal(&|x| x["discos"] = json!((0..65).map(|i| json!({ "id": format!("d{i}"), "nombre": "x" })).collect::<Vec<_>>())));
+        // Muchos discos con notas largas: no cabe (16 KiB por servidor).
+        let grande: Vec<Value> = (0..64).map(|i| json!({ "id": format!("d{i}"), "nombre": "Disco", "notas": "n".repeat(400) })).collect();
+        assert!(mal(&|x| x["discos"] = json!(grande.clone())));
+        // Equipos y destinos.
+        let e = json!({ "servidor": "hv-01", "conjunto": "dv2", "volumenes": [{ "punto": "C:", "disco": "b2" }, { "punto": "D:", "conjunto": "dv2" }] });
+        assert_eq!(valor_valido("infra:equipo:e-1", &e).unwrap(), e);
+        assert!(valor_valido("infra:equipo:e-1", &json!({ "servidor": "hv-01", "conjunto": "a", "disco": "b" })).is_err(), "uno u otro");
+        assert!(valor_valido("infra:equipo:e-1", &json!({ "servidor": "hv-01", "volumenes": [{ "punto": "C:" }] })).is_err(), "un volumen sin sitio");
+        assert!(valor_valido(
+            "infra:equipo:e-1",
+            &json!({ "servidor": "hv-01", "volumenes": [{ "punto": "C:", "disco": "b2" }, { "punto": "C:", "disco": "b3" }] })
+        )
+        .is_err());
+        assert!(valor_valido("infra:equipo:e-1", &json!({ "conjunto": "dv2" })).is_err(), "sin servidor");
+        assert!(valor_valido("infra:destino:zona:e-1:principal", &json!({ "servidor": "hv-01", "volumenes": [] })).is_err(), "volúmenes, solo de un equipo");
+        assert_eq!(
+            valor_valido("infra:destino:zona:e-1:principal", &json!({ "servidor": "hv-01", "disco": "", "conjunto": "dv2" })).unwrap(),
+            json!({ "servidor": "hv-01", "conjunto": "dv2" })
+        );
+        assert!(bytes_dato("infra:servidor:hv-01", &v) > SOBRE_ENTRADA);
+    }
+
     /// 0.8.1 (B2, 15y): grupos de exclusiones del cliente.
     #[test]
     fn grupos_de_exclusiones() {
@@ -1209,6 +1575,14 @@ mod tests {
         for caso in v["exclusiones"].as_array().unwrap() {
             let r = valor_valido("exclusiones:grupo", &caso["valor"]);
             assert_eq!(r.is_ok(), caso["valido"] == true, "{}", caso["nombre"]);
+            if let Some(l) = caso.get("limpio") {
+                assert_eq!(&r.unwrap(), l, "{}", caso["nombre"]);
+            }
+        }
+        // 0.8.2 (A5): valores de la infraestructura (los pasa también la consola, lib/infra.ts).
+        for caso in v["infra"].as_array().unwrap() {
+            let r = valor_valido(caso["clave"].as_str().unwrap(), &caso["valor"]);
+            assert_eq!(r.is_ok(), caso["valido"] == true, "{}: {r:?}", caso["nombre"]);
             if let Some(l) = caso.get("limpio") {
                 assert_eq!(&r.unwrap(), l, "{}", caso["nombre"]);
             }

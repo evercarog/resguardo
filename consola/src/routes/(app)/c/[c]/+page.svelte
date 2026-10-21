@@ -27,6 +27,7 @@
   import Sparkline from "$lib/componentes/Sparkline.svelte";
   import Pendientes from "$lib/componentes/Pendientes.svelte";
   import AvisoConsolas from "$lib/componentes/AvisoConsolas.svelte";
+  import AvisoSinAnotar from "$lib/componentes/infra/AvisoSinAnotar.svelte";
   import PrimerosPasos from "$lib/componentes/PrimerosPasos.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
@@ -296,6 +297,8 @@
     <Pendientes bind:filas={enEspera} />
 
     <AvisoConsolas cliente={actual.cliente} equipos={actual.equipos} ahora={reloj.ahora} />
+    <!-- 0.8.2 (A1): equipos o destinos sin anotar en la infraestructura (se oculta). -->
+    <AvisoSinAnotar />
 
     {#if delFiltro.length}
       <section>

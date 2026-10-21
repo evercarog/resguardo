@@ -30,6 +30,8 @@
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { guardar, leer, leerTexto } from "$lib/recordar";
   import { datosBasicos, grupoSistema, textoBuscable } from "$lib/datosBasicos";
+  import { conInfra, discoParaAgrupar, servidorParaAgrupar, sitioDeDestino } from "$lib/infra";
+  import { sedeDeDestino } from "$lib/sedes";
 
   let buscar = $state("");
   // El filtro se recuerda en este navegador (por cliente).
@@ -81,7 +83,15 @@
   const yo = $derived(app.cuenta?.id ?? "");
   const org = $derived(actual.organizacion);
   const conSistema = $derived(sistemas.length > 1 || actual.equipos.some((e) => !!datosBasicos(e)));
-  const disponibles = $derived(nivelesDisponibles(org, conSistema, tipos.length > 1));
+  // 0.8.2 (A4, C4): con infraestructura anotada, también por servidor físico y por disco o conjunto.
+  const disponibles = $derived(nivelesDisponibles(org, conSistema, tipos.length > 1, conInfra(actual.infra)));
+  const ctxNiveles = $derived({
+    organizacion: org,
+    sistema: grupoSistema,
+    tipo: grupoTipo,
+    servidor: (e: Equipo) => servidorParaAgrupar(actual.infra, e.id),
+    disco: (e: Equipo) => discoParaAgrupar(actual.infra, e.id),
+  });
   let niveles = $state<Nivel[]>([]);
   $effect.pre(() => {
     if (!actual.id) return;
@@ -108,7 +118,7 @@
   const ordenada = $derived(
     orden === "manual" ? enOrdenManual(lista, org.orden) : orden === "nombre" ? [...lista].sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true })) : lista,
   );
-  const arbol = $derived(niveles.length && !filtroEtiqueta.valor ? agruparPorNiveles(ordenada, niveles, { organizacion: org, sistema: grupoSistema, tipo: grupoTipo }) : null);
+  const arbol = $derived(niveles.length && !filtroEtiqueta.valor ? agruparPorNiveles(ordenada, niveles, ctxNiveles) : null);
 
   // 0.8.1 (C2, 15b): la misma lista como mapa (los mismos filtros; «por sede» junta por el
   // primer nivel de «Agrupar por»). Se recuerda por persona.
@@ -121,14 +131,34 @@
     vista = v;
     guardar(`equipos.vista.${yo}.${actual.id}`, v === "lista" ? "" : v);
   }
-  /** El grupo de cada equipo en el mapa: el del primer nivel elegido (sede, categoría, sistema o tipo). */
-  const grupoMapa = $derived.by(() => {
+  /**
+   * 0.8.2 (C4): en el mapa manda «Agrupar por»: un recuadro por grupo del primer nivel (sede,
+   * categoría, sistema, tipo, servidor físico o disco), plegable, y los equipos en el orden de
+   * la lista («Orden», también «A mano»). «luego» no se usa en el mapa (se oculta).
+   */
+  const agruparMapa = $derived.by(() => {
     const n = niveles[0];
-    if (!n || n === "sede") return undefined;
-    return (e: Equipo) => {
-      const g = agruparPorNiveles([e], [n], { organizacion: org, sistema: grupoSistema, tipo: grupoTipo })[0];
-      return g && !g.sin ? { id: `${n}=${g.titulo}`.toLowerCase().replace(/[^a-z0-9=:-]+/g, "-"), nombre: g.titulo } : null;
+    const orden = (arbol ? arbol.flatMap((g) => g.equipos) : ordenada).map((e) => e.id);
+    if (!n || !arbol) return { orden };
+    const id = (titulo: string) => `${n}=${titulo}`.toLowerCase();
+    const grupoDe = (e: Equipo) => {
+      const g = agruparPorNiveles([e], [n], ctxNiveles)[0];
+      return g ? { id: id(g.sin ? "" : g.titulo), nombre: g.titulo } : null;
     };
+    // Los destinos también van en su recuadro si se agrupa por sede o por servidor físico.
+    const grupoDestino =
+      n === "sede"
+        ? (clave: string | null, equipo: string | null, nube: boolean) => {
+            const s = nube ? null : sedeDeDestino(org, { clave, equipo, nube }).sede;
+            return s ? { id: id(s.nombre), nombre: s.nombre } : null;
+          }
+        : n === "servidor"
+          ? (clave: string | null, equipo: string | null) => {
+              const s = sitioDeDestino(actual.infra, clave, equipo)?.servidor;
+              return s ? { id: id(s.nombre), nombre: s.nombre } : null;
+            }
+          : undefined;
+    return { grupoDe, grupoDestino, orden };
   });
   /** La sede en cada fila (si hay sedes y no se agrupa por ella). */
   const sedeFila = (e: Equipo) => {
@@ -375,7 +405,7 @@
           <option value="">Nada</option>
           {#each disponibles as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
         </select>
-        {#if niveles[0]}
+        {#if niveles[0] && vista !== "mapa"}
           <label class="agrupar" for="ag-2">luego</label>
           <select id="ag-2" class="input input-sm" value={niveles[1] ?? ""} onchange={(e) => ponerNivel(1, e.currentTarget.value)}>
             <option value="">Nada</option>
@@ -487,7 +517,7 @@
     {/snippet}
     {#if vista === "mapa" && ordenada.length}
       <!-- 15b: el mapa de la protección con los equipos de la lista (los mismos filtros). -->
-      <MapaProteccion equipos={ordenada} todos={actual.equipos} informes={ultimos.cliente === actual.id ? ultimos.porEquipo : {}} cliente={actual.id} ahora={reloj.ahora} titulo="Mapa de estos equipos" grupoDe={grupoMapa} vacio="Estos equipos aún no tienen copias que dibujar." />
+      <MapaProteccion equipos={ordenada} todos={actual.equipos} informes={ultimos.cliente === actual.id ? ultimos.porEquipo : {}} cliente={actual.id} ahora={reloj.ahora} titulo="Mapa de estos equipos" agruparFijo={agruparMapa} vacio="Estos equipos aún no tienen copias que dibujar." />
     {:else if arbol && ordenada.length}
       <div class="grupos">
         {#each arbol as g (g.clave)}{@render grupo(g, 0)}{/each}

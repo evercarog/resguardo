@@ -265,6 +265,8 @@ struct Disco {
     fs: Option<String>,
     /// C4: el conjunto de discos en el que está (grupo de ZFS, RAID…), si se sabe.
     volumen: Option<String>,
+    /// 0.8.2 (A3, 15ww): la etiqueta del volumen («Datos»), si tiene (Windows).
+    etiqueta: Option<String>,
 }
 
 /// C4: lo que el equipo ve de su almacenamiento (`almacenamiento` del resumen).
@@ -396,9 +398,40 @@ mod sistema {
             // C4: en qué disco está (el primero de sus trozos): `disco1`, que es un conjunto si
             // ese disco es de Storage Spaces o de una controladora RAID.
             let volumen = discos_del_volumen(letra).first().map(|n| format!("disco{n}"));
-            out.push(Disco { punto: format!("{letra}:"), total: e.total, libre: e.libre, fs: crate::espacio::sistema_archivos(&ruta), volumen });
+            out.push(Disco {
+                punto: format!("{letra}:"),
+                total: e.total,
+                libre: e.libre,
+                fs: crate::espacio::sistema_archivos(&ruta),
+                volumen,
+                etiqueta: etiqueta(&raiz),
+            });
         }
         out
+    }
+
+    /// 0.8.2 (A3, 15ww): la etiqueta del volumen de `raiz` (`C:\`, terminada en 0), si tiene.
+    fn etiqueta(raiz: &[u16]) -> Option<String> {
+        use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationW;
+        let mut nombre = [0u16; 64];
+        // SAFETY: `raiz` terminada en 0; solo se pide la etiqueta, en un búfer propio con su tamaño.
+        let ok = unsafe {
+            GetVolumeInformationW(
+                raiz.as_ptr(),
+                nombre.as_mut_ptr(),
+                nombre.len() as u32,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        let fin = nombre.iter().position(|&c| c == 0).unwrap_or(nombre.len());
+        limpio(&String::from_utf16_lossy(&nombre[..fin]), 32)
     }
 
     /// Abre un dispositivo (`\\.\D:`, `\\.\PhysicalDrive0`) sin pedir lectura (solo para
@@ -633,7 +666,7 @@ mod sistema {
             .into_iter()
             .filter_map(|(punto, fs, volumen)| {
                 let e = crate::espacio::del_volumen(std::path::Path::new(&punto))?;
-                Some(Disco { punto, total: e.total, libre: e.libre, fs: Some(fs), volumen })
+                Some(Disco { punto, total: e.total, libre: e.libre, fs: Some(fs), volumen, etiqueta: None })
             })
             .collect()
     }
@@ -735,6 +768,10 @@ pub fn resumen(rutas: &[String]) -> Value {
             // C4: el conjunto de discos en el que está (solo si se sabe).
             if let Some(v) = &d.volumen {
                 x["volumen"] = json!(v);
+            }
+            // 0.8.2 (A3): la etiqueta del volumen, si tiene.
+            if let Some(t) = &d.etiqueta {
+                x["etiqueta"] = json!(t);
             }
             x
         })

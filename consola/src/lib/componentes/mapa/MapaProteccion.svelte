@@ -20,12 +20,18 @@
   // Estado y, con infraestructura anotada, Infraestructura y Almacenamiento); lo
   // que está en marcha (también derivadas y espejos) con su porcentaje sobre el
   // trazo. Lo elegido se recuerda por persona (lib/mapaPreferencias.ts).
+  //
+  // Plan 0.8.2: filtrar por infraestructura (A4: un servidor físico, o un disco o
+  // conjunto, con lo que guarda o recibe; recordado por persona) y, en Equipos
+  // (C4, `agruparFijo`), «Agrupar por» manda: un recuadro por grupo, plegable, y
+  // los equipos en el orden de la lista, sin el selector propio del mapa.
   import { tick, untrack, type Snippet } from "svelte";
   import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleAlert, CircleCheck, CircleDashed, CirclePause, CircleHelp, Cloud, Database, HardDrive, Layers, Link2, List, LoaderCircle, Maximize, Minimize, Monitor, Scan, Server, TriangleAlert, Waypoints, ZoomIn, ZoomOut } from "@lucide/svelte";
   import type { Equipo, Informe } from "$lib/tipos";
   import { construirMapa, raices, type IconoNodo, type Mapa, type NodoMapa, type Perspectiva, type TipoVivo } from "$lib/mapa";
   import { tareaDelTrazo, textoDelTrazo } from "$lib/mapaVivo";
-  import { alternarGrupo, CAPAS_POR_DEFECTO, clavePrefs, leerPrefs, OPCIONES_N, PREFS_POR_DEFECTO, type Capas, type PrefsMapa } from "$lib/mapaPreferencias";
+  import { alternarGrupo, alternarPlegado, CAPAS_POR_DEFECTO, clavePrefs, leerPrefs, OPCIONES_N, PREFS_POR_DEFECTO, type Capas, type PrefsMapa } from "$lib/mapaPreferencias";
+  import { leerFiltroInfra, opcionesFiltroInfra } from "$lib/infra";
   import { guardar as guardarTexto, leerTexto } from "$lib/recordar";
   import { actual, app } from "$lib/estado.svelte";
   import { disponer, puntoEn } from "$lib/mapaGeometria";
@@ -66,6 +72,16 @@
     /** 0.8.1 (15rr, 15l): las preferencias de un mapa ya hecho (`dado`): las lleva quien lo hace. */
     prefs?: PrefsMapa;
     alPrefs?: (p: PrefsMapa) => void;
+    /**
+     * 0.8.2 (C4): en Equipos, «Agrupar por» manda (sin el selector propio del mapa): con
+     * `grupoDe`, un recuadro por grupo (plegable); sin él, nada se junta. `orden`: los ids de
+     * los equipos en el orden de la lista.
+     */
+    agruparFijo?: {
+      grupoDe?: (e: Equipo) => { id: string; nombre: string } | null;
+      grupoDestino?: (clave: string | null, equipo: string | null, nube: boolean) => { id: string; nombre: string } | null;
+      orden?: string[];
+    } | null;
   }
   let {
     equipos,
@@ -84,6 +100,7 @@
     grupoDe,
     prefs: prefsDadas,
     alPrefs,
+    agruparFijo = null,
   }: Props = $props();
 
   // 0.8.1 (15rr, 15l): cómo se agrupa, qué grupos están desplegados y qué capas se ven,
@@ -102,7 +119,12 @@
   }
   const capas = $derived<Capas>(prefs.capas ?? CAPAS_POR_DEFECTO);
   const ponerCapa = (k: keyof Capas, v: boolean) => cambiarPrefs({ ...prefs, capas: { ...capas, [k]: v } });
-  const alternar = (id: string) => cambiarPrefs(alternarGrupo(prefs, id));
+  const conRecuadros = $derived(!!agruparFijo?.grupoDe && !equipo);
+  const alternar = (id: string) => cambiarPrefs(conRecuadros ? alternarPlegado(prefs, id) : alternarGrupo(prefs, id));
+  // 0.8.2 (A4): el filtro por infraestructura (solo en el mapa de un cliente, con algo anotado).
+  const opcionesInfra = $derived(!equipo && !dado && actual.id === cliente ? opcionesFiltroInfra(actual.infra) : []);
+  const filtroInfra = $derived(opcionesInfra.length ? leerFiltroInfra(prefs.infra, actual.infra) : null);
+  const ponerFiltroInfra = (v: string) => cambiarPrefs({ ...prefs, infra: v });
   const deEsteCliente = $derived(actual.id === cliente);
   const conSedes = $derived(deEsteCliente && actual.organizacion.sedes.length > 0);
   // El menú de las capas se cierra al pulsar fuera de él o con Escape.
@@ -160,6 +182,7 @@
     return textoDelTrazo(t, tipo, t ? pctVisible(e, t) : null);
   }
   const desplegadosSet = $derived(new Set(prefs.desplegados));
+  const plegadosSet = $derived(new Set(prefs.plegados));
   const mapa = $derived(
     dado ??
       construirMapa(equipo ? (todos ?? equipos) : equipos, informes, {
@@ -169,9 +192,13 @@
         todos,
         catalogo: catalogoDe(cliente),
         raiz: equipo ? { perspectiva: "equipos", id: equipo } : { perspectiva, id: raizValida },
-        agrupar: equipo ? { modo: "no", n: 8 } : prefs.agrupar,
+        agrupar: equipo ? { modo: "no", n: 8 } : agruparFijo ? { modo: conRecuadros ? "recuadros" : "no", n: 8 } : prefs.agrupar,
         desplegados: desplegadosSet,
-        grupoDe,
+        grupoDe: agruparFijo?.grupoDe ?? grupoDe,
+        grupoDestino: agruparFijo?.grupoDestino,
+        ordenEquipos: agruparFijo?.orden,
+        plegados: plegadosSet,
+        filtroInfra,
         organizacion: deEsteCliente ? actual.organizacion : null,
         infra: deEsteCliente ? actual.infra : null,
         ordenSede: capas.sedes,
@@ -572,7 +599,9 @@
 
   /** 15l: los recuadros de cada sede (y de la nube), columna a columna, alrededor de las tarjetas seguidas de la misma sede. */
   const recuadros = $derived.by(() => {
-    if (!verSedes) return [];
+    // 0.8.2 (C4): con «Agrupar por» de Equipos, los recuadros son sus grupos.
+    const porGrupo = mapa.nodos.some((n) => n.recuadro);
+    if (!verSedes && !porGrupo) return [];
     const out: { id: string; x: number; y: number; w: number; h: number; titulo: string; nube: boolean }[] = [];
     for (const capa of disp.capas) {
       const xs = capa
@@ -582,14 +611,16 @@
       let actualR: (typeof out)[number] | null = null;
       let claveR = "";
       for (const { n, c } of xs) {
-        const k = n.enNube ? "nube" : n.sede ? `s:${n.sede.id}` : "";
+        const k = porGrupo ? (n.recuadro ? `r:${n.recuadro.id}` : "") : n.enNube ? "nube" : n.sede ? `s:${n.sede.id}` : "";
         if (k && k === claveR && actualR) {
           actualR.h = c.y + c.h + 8 - actualR.y;
           actualR.w = Math.max(actualR.w, c.w + 16);
           continue;
         }
         claveR = k;
-        actualR = k ? { id: `${k}@${c.x}:${c.y}`, x: c.x - 8, y: c.y - 8, w: c.w + 16, h: c.h + 16, titulo: n.enNube ? "Nube y fuera" : n.sede!.nombre, nube: !!n.enNube } : null;
+        actualR = k
+          ? { id: `${k}@${c.x}:${c.y}`, x: c.x - 8, y: c.y - 8, w: c.w + 16, h: c.h + 16, titulo: porGrupo ? n.recuadro!.nombre : n.enNube ? "Nube y fuera" : n.sede!.nombre, nube: !porGrupo && !!n.enNube }
+          : null;
         if (actualR) out.push(actualR);
       }
     }
@@ -875,6 +906,17 @@
           <ChevronsUpDown size={14} aria-hidden="true" />
         </label>
       {/if}
+      {#if opcionesInfra.length}
+        <!-- 0.8.2 (A4, 15xx): solo un servidor físico (o un disco o conjunto) y lo que guarda o recibe. -->
+        <label class="raiz">
+          <span class="sr-only">Filtrar por infraestructura</span>
+          <select value={filtroInfra ? prefs.infra : ""} onchange={(ev) => ponerFiltroInfra(ev.currentTarget.value)}>
+            <option value="">Toda la infraestructura</option>
+            {#each opcionesInfra as o (o.valor)}<option value={o.valor}>{o.nivel ? "· " : ""}{o.texto}</option>{/each}
+          </select>
+          <Server size={14} aria-hidden="true" />
+        </label>
+      {/if}
       {#if mapa.nodos.length && !equipo}
         <!-- 15l: las capas que se encienden y apagan (se recuerdan por persona). -->
         <details class="capas" bind:this={menuCapas}>
@@ -912,7 +954,24 @@
     </div>
   </header>
 
-  {#if mapa.desplegados?.length}
+  {#if mapa.filtro && !mapa.filtro.nada}
+    <div class="desplegados" role="status">
+      <span class="faint">Solo {mapa.filtro.texto} y lo que guarda o recibe.</span>
+      <button type="button" class="btn btn-sm" onclick={() => ponerFiltroInfra("")}>Ver todo</button>
+    </div>
+  {/if}
+  {#if mapa.grupos?.length}
+    <!-- 0.8.2 (C4): cada grupo de «Agrupar por», para plegarlo o desplegarlo. -->
+    <div class="desplegados" role="group" aria-label="Grupos del mapa">
+      <span class="faint">Grupos:</span>
+      {#each mapa.grupos as g (g.id)}
+        <button type="button" class="btn btn-sm" aria-pressed={!g.plegado} onclick={() => alternar(g.id)}>
+          {#if g.plegado}<ChevronsUpDown size={13} />Desplegar{:else}<ChevronsDownUp size={13} />Plegar{/if}
+          {g.titulo} <span class="faint">· {g.equipos}</span>
+        </button>
+      {/each}
+    </div>
+  {:else if mapa.desplegados?.length}
     <!-- 15rr: los grupos desplegados, para plegarlos otra vez. -->
     <div class="desplegados" role="group" aria-label="Grupos desplegados">
       <span class="faint">Desplegados:</span>
@@ -922,7 +981,9 @@
     </div>
   {/if}
 
-  {#if !mapa.nodos.length}
+  {#if mapa.filtro?.nada}
+    <p class="faint vacio">Nada de lo que hay en {mapa.filtro.texto} tiene copias que dibujar. <button type="button" class="btn btn-sm" onclick={() => ponerFiltroInfra("")}>Ver todo</button></p>
+  {:else if !mapa.nodos.length}
     <p class="faint vacio">{vacio}</p>
   {:else}
     <!-- La alternativa en texto (siempre): lo mismo en frases. -->
@@ -960,7 +1021,9 @@
     >
       {#if enLista}
         <ul class="arbol">
-          {#each mapa.nodos.filter((n) => n.col === 0) as n (n.id)}
+          {#each mapa.nodos.filter((n) => n.col === 0) as n, i (n.id)}
+            <!-- 0.8.2 (C4): en lista, el nombre de cada grupo de «Agrupar por» antes de sus equipos. -->
+            {#if n.recuadro && n.recuadro.id !== mapa.nodos.filter((x) => x.col === 0)[i - 1]?.recuadro?.id}<li class="titulo-grupo">{n.recuadro.nombre}</li>{/if}
             <li>{@render rama(n)}</li>
           {/each}
           {#each mapa.nodos.filter((n) => n.tipo === "destino" && hijos(n.id).length) as n (n.id)}
@@ -1062,8 +1125,8 @@
           <button type="button" class="m-pct num" aria-label="Tamaño real (ahora al {Math.round(vista.s * 100)} %)" use:tip={"Tamaño real"} onclick={tamanoReal}>{Math.round(vista.s * 100)} %</button>
           <button type="button" class="icon-btn" aria-label="Acercar" use:tip={"Acercar (+)"} disabled={vista.s >= MAX - 0.001} onclick={() => zoomCentro(1.25)}><ZoomIn size={15} /></button>
           <span class="m-sep" aria-hidden="true"></span>
-          {#if !equipo}
-            <!-- 15rr: cómo se juntan los equipos (se recuerda por persona). -->
+          {#if !equipo && !agruparFijo}
+            <!-- 15rr: cómo se juntan los equipos (se recuerda por persona). En Equipos manda «Agrupar por» (C4). -->
             <label class="m-agrupar">
               <Layers size={14} aria-hidden="true" />
               <span class="sr-only">Agrupar los equipos</span>
@@ -1814,6 +1877,14 @@
   }
   .n-capa :global(svg) {
     flex: none;
+    color: var(--text-3);
+  }
+  .titulo-grupo {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--text-3);
   }
   /* 15l: un recuadro por sede (y la nube aparte), detrás de las tarjetas. */

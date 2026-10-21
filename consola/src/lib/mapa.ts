@@ -14,9 +14,15 @@
 // derivadas y los espejos se animan cuando están en marcha (15cc), un espejo
 // cuyos repositorios no se reconocen se dibuja desde el almacén con una marca
 // (15m), y cada tarjeta sabe su sede y dónde está físicamente (las capas, 15l).
+//
+// Plan 0.8.2: filtrar por infraestructura (A4, 15xx: `filtroInfra`, un servidor
+// físico o un disco o conjunto, con lo que guarda o recibe) y, en Equipos (C4),
+// «Agrupar por» manda: recuadros por grupo (`agrupar: { modo: "recuadros" }` con
+// `grupoDe`, plegables con `plegados`) y los equipos en el orden de la lista
+// (`ordenEquipos`).
 import type { DestinoCatalogo, DestinoResumen, Equipo, Informe, MarcaCliente, RepositorioResumen } from "./tipos";
 import { sedeDeDestino, sedeDeEquipo, type Organizacion } from "./sedes";
-import { formaConjunto, sitioDeDestino, sitioDeEquipo, HIPERVISORES, type Infraestructura, type SitioVista } from "./infra";
+import { detalleDisco, enFiltroInfra, equipoEnFiltroInfra, formaConjunto, sitioDeDestino, sitioDeEquipo, textoFiltroInfra, HIPERVISORES, type FiltroInfra, type Infraestructura, type SitioVista } from "./infra";
 import { bytesRepo, destinoDe, estadoRepo, informeDe, ultimaVersion } from "./repo";
 import { PESO, resultadoConError, saludEquipo, type Tono } from "./salud";
 import { cuandoCorto, cuandoCortoEspejo } from "./espejo";
@@ -83,6 +89,8 @@ export interface NodoMapa {
   conjunto?: string | null;
   /** 0.8.1 (15m): un espejo del que no se reconoce ningún repositorio (sale del almacén con esta marca). */
   sinReconocer?: boolean;
+  /** 0.8.2 (C4): el recuadro de su grupo («Agrupar por» de Equipos). */
+  recuadro?: { id: string; nombre: string } | null;
 }
 
 export interface AristaMapa {
@@ -107,10 +115,15 @@ export interface Mapa {
   frases: string[];
   /** 0.8.1 (15rr): los grupos desplegados ahora (para plegarlos de nuevo). */
   desplegados?: { id: string; titulo: string }[];
+  /** 0.8.2 (C4): con recuadros, todos los grupos y si están plegados (para plegarlos y desplegarlos). */
+  grupos?: { id: string; titulo: string; plegado: boolean; equipos: number }[];
+  /** 0.8.2 (A4): el filtro por infraestructura que se aplicó («hv-01 · tank») y si no quedó nada. */
+  filtro?: { texto: string; nada: boolean } | null;
 }
 
 /** 0.8.1 (15rr): cómo se juntan los equipos: nunca, por sede (o por la agrupación de Equipos) o, con más de N, los que están al día. */
-export type ModoAgrupar = "no" | "sede" | "mas_de";
+/** 0.8.2 (C4): «recuadros»: cada grupo de `grupoDe` en su recuadro, desplegado salvo que se pliegue. */
+export type ModoAgrupar = "no" | "sede" | "mas_de" | "recuadros";
 export interface Agrupar {
   modo: ModoAgrupar;
   n: number;
@@ -150,6 +163,14 @@ export interface OpcionesMapa {
   todos?: Equipo[];
   /** 0.7.26: el catálogo de destinos del cliente (lo marcado por una persona en cada destino). */
   catalogo?: DestinoCatalogo[];
+  /** 0.8.2 (C4): con recuadros, los grupos plegados (sus ids, `gr:rq:<grupo>`). */
+  plegados?: ReadonlySet<string>;
+  /** 0.8.2 (C4): con recuadros, el grupo de un destino (por sede o por servidor físico); sin él, los destinos van sueltos. */
+  grupoDestino?: (clave: string | null, equipo: string | null, nube: boolean) => { id: string; nombre: string } | null;
+  /** 0.8.2 (C4): la primera columna en este orden (ids de equipo: el de la lista de Equipos). */
+  ordenEquipos?: readonly string[];
+  /** 0.8.2 (A4, 15xx): solo un servidor físico, o un disco o conjunto, y lo que guarda o recibe. */
+  filtroInfra?: FiltroInfra | null;
 }
 
 const DIA = 86_400_000;
@@ -255,7 +276,9 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   // Muchos equipos: se juntan (15rr). «Por sede»: los de cada sede (o del grupo elegido en
   // Equipos); «más de N»: los que están al día, sin nada en marcha, por los destinos a los que
   // van. Un grupo desplegado vuelve a enseñar sus equipos sueltos.
-  const ag: Agrupar = o.agrupar ?? { modo: "mas_de", n: o.agruparDesde ?? AGRUPAR_POR_DEFECTO.n };
+  // 0.8.2 (A4): con un filtro por infraestructura quedan pocas cosas: nada se junta.
+  const filtro = o.filtroInfra && infra ? o.filtroInfra : null;
+  const ag: Agrupar = filtro ? { modo: "no", n: 8 } : (o.agrupar ?? { modo: "mas_de", n: o.agruparDesde ?? AGRUPAR_POR_DEFECTO.n });
   const grupoDe = o.grupoDe ?? ((e: Equipo) => {
     const s = sedeDeEquipo(org, e.id).sede;
     return s ? { id: s.id, nombre: s.nombre } : null;
@@ -263,7 +286,37 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
   const grupos = new Map<string, { titulo: string | null; ps: Paquete[] }>();
   const sueltos: Paquete[] = [];
   const desplegados: { id: string; titulo: string }[] = [];
-  if (ag.modo === "sede") {
+  /** 0.8.2 (C4): el recuadro de cada equipo suelto, los equipos de cada grupo plegado y la lista de grupos. */
+  const recuadroDe = new Map<string, { id: string; nombre: string }>();
+  const miembrosDeGrupo = new Map<string, string[]>();
+  const listaGrupos: NonNullable<Mapa["grupos"]> = [];
+  if (ag.modo === "recuadros") {
+    for (const p of paquetes) {
+      const g = grupoDe(p.equipo);
+      if (!g) {
+        sueltos.push(p);
+        continue;
+      }
+      const k = `rq:${g.id}`;
+      const x = grupos.get(k) ?? { titulo: g.nombre, ps: [] };
+      x.ps.push(p);
+      grupos.set(k, x);
+    }
+    for (const [k, g] of grupos) {
+      const gid = `gr:${k}`;
+      const plegado = !!o.plegados?.has(gid);
+      listaGrupos.push({ id: gid, titulo: g.titulo ?? "", plegado, equipos: g.ps.length });
+      miembrosDeGrupo.set(gid, g.ps.map((p) => p.equipo.id));
+      if (plegado) continue;
+      for (const p of g.ps) recuadroDe.set(p.equipo.id, { id: k, nombre: g.titulo ?? "" });
+      sueltos.push(...g.ps);
+      grupos.delete(k);
+    }
+    // En el orden de la lista (el primero de cada grupo) o, sin él, por nombre.
+    const pos = new Map((o.ordenEquipos ?? []).map((id, i) => [id, i]));
+    const primero = (id: string) => Math.min(...(miembrosDeGrupo.get(id) ?? []).map((e) => pos.get(e) ?? 1e9), 1e9);
+    listaGrupos.sort((a, b) => (o.ordenEquipos ? primero(a.id) - primero(b.id) : 0) || a.titulo.localeCompare(b.titulo, "es"));
+  } else if (ag.modo === "sede") {
     for (const p of paquetes) {
       const g = p.repos.length && !p.repos.some((x) => vivo(p.equipo.id, x.r.id, "copia")) ? grupoDe(p.equipo) : null;
       if (!g) {
@@ -288,8 +341,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       } else sueltos.push(p);
     }
   } else sueltos.push(...paquetes);
-  // Un grupo de uno no ahorra nada; uno desplegado, tampoco se junta.
-  for (const [k, g] of grupos) {
+  // Un grupo de uno no ahorra nada; uno desplegado, tampoco se junta (con recuadros, uno plegado se queda plegado).
+  for (const [k, g] of ag.modo === "recuadros" ? [] : grupos) {
     const desplegado = o.desplegados?.has(`gr:${k}`);
     if (g.ps.length < 2 || desplegado) {
       sueltos.push(...g.ps);
@@ -471,6 +524,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       vivo: enMarcha,
     });
     quienGuarda.set(pildora.id, e.id);
+    if (recuadroDe.has(e.id)) pildora.recuadro = recuadroDe.get(e.id);
     const dest = nodoDestino(p, x);
     // v1.41: las copias se quedan en el mismo equipo que protegen (su disco o su propio almacén).
     const riesgo = riesgoMismoEquipo(x.r, e, todos);
@@ -502,6 +556,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       ultima: ok,
       href: `/c/${c}/equipos/${e.id}`,
       icono: "equipo",
+      ...(recuadroDe.has(e.id) ? { recuadro: recuadroDe.get(e.id) } : {}),
     });
     quienGuarda.set(n.id, e.id);
     for (const x of p.repos) {
@@ -520,6 +575,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const peor = saludes.reduce<Tono>((t, x) => (PESO[x.s.tono] < PESO[t] ? x.s.tono : t), "ok");
     const conAvisos = saludes.filter((x) => x.s.tono === "bad" || x.s.tono === "warn").length;
     const sede = k.startsWith("sede:") ? sedeDeEquipo(org, ps[0].equipo.id).sede : null;
+    // 0.8.2 (C4): un grupo plegado de los recuadros sigue en su recuadro (con su nombre).
+    const recuadro = k.startsWith("rq:") ? { id: k, nombre: g.titulo ?? "" } : null;
     const g0 = poner({
       id: gid,
       tipo: "grupo",
@@ -536,6 +593,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         .sort((a, b) => PESO[a.s.tono] - PESO[b.s.tono] || a.p.equipo.nombre.localeCompare(b.p.equipo.nombre))
         .map(({ p, s }) => ({ tipo: "equipo" as const, nombre: p.equipo.nombre, tono: s.tono, estado: s.texto, href: `/c/${c}/equipos/${p.equipo.id}` })),
       ...(sede ? { sede: { id: sede.id, nombre: sede.nombre } } : {}),
+      ...(recuadro ? { recuadro } : {}),
     });
     const porDestino = new Map<string, { p: Paquete; x: Paquete["repos"][number] }[]>();
     for (const p of ps) for (const x of p.repos) porDestino.set(x.destino, [...(porDestino.get(x.destino) ?? []), { p, x }]);
@@ -562,6 +620,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
           .sort((a, b) => PESO[a.e.tono] - PESO[b.e.tono] || a.x.r.nombre.localeCompare(b.x.r.nombre))
           .map(({ p, x, e }) => ({ tipo: "repo" as const, nombre: x.r.nombre, detalle: p.equipo.nombre, tono: e.tono, estado: e.texto, href: `/c/${c}/equipos/${p.equipo.id}/repositorios/${encodeURIComponent(x.r.id)}` })),
         ...(sede ? { sede: { id: sede.id, nombre: sede.nombre } } : {}),
+        ...(recuadro ? { recuadro } : {}),
       });
       const dest = nodoDestino(xs[0].p, xs[0].x);
       anotarEnAlmacen(pildora.id, xs);
@@ -650,6 +709,12 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
 
   // 0.8.1 (15l): la sede de cada tarjeta y dónde está físicamente (las capas). Sin sedes ni
   // infraestructura, nada (todo como antes).
+  /** 0.8.2 (A4): el sitio físico de cada tarjeta y el equipo de cada una (para filtrar). */
+  const sitioNodo = new Map<string, SitioVista | null>();
+  const equipoNodo = new Map<string, string>();
+  /** «tank · espejo de 2 discos», «Bahía 2 · HDD 4 TB». */
+  const textoDiscos = (s: SitioVista | null) =>
+    s?.conjunto ? `${s.conjunto.nombre} · ${formaConjunto(s.conjunto)}` : s?.disco ? [s.disco.nombre, detalleDisco(s.disco)].filter(Boolean).join(" · ") : null;
   if (org?.sedes.length || infra) {
     const nombreSitio = (s: SitioVista | null) => (s ? [s.servidor.nombre, HIPERVISORES.find((h) => h.id === s.servidor.hipervisor)?.nombre].filter(Boolean).join(" · ") : null);
     const fisicoNodo = new Map<string, string>();
@@ -667,7 +732,8 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         if (infra) {
           const s = sitioDeDestino(infra, clave, equipo);
           n.servidorFisico = nombreSitio(s);
-          n.conjunto = s?.conjunto ? `${s.conjunto.nombre} · ${formaConjunto(s.conjunto)}` : null;
+          n.conjunto = textoDiscos(s);
+          sitioNodo.set(n.id, s);
           if (s) fisicoNodo.set(n.id, s.servidor.id);
         }
       } else if (equipo && n.sede === undefined) {
@@ -678,6 +744,9 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         if (infra) {
           const s = sitioDeEquipo(infra, equipo);
           n.servidorFisico = nombreSitio(s);
+          // 0.8.2 (A4): también el conjunto o disco del equipo (se nota lo anotado).
+          if (n.tipo === "equipo") n.conjunto = textoDiscos(s);
+          equipoNodo.set(n.id, equipo);
           if (s) fisicoNodo.set(n.id, s.servidor.id);
         }
       }
@@ -691,6 +760,45 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       if (!f || !dest || fisicoNodo.get(a.a) !== f || quienGuarda.get(a.de) === quienGuarda.get(a.a)) continue;
       dest.aviso ??= "Mismo servidor físico que lo que copia";
     }
+  }
+
+  // 0.8.2 (C4): con recuadros, el de cada destino (su sede o su servidor físico, si se pide).
+  if (ag.modo === "recuadros" && o.grupoDestino) {
+    for (const n of nodos.values()) {
+      if (n.tipo !== "destino" && n.tipo !== "espejo" && n.tipo !== "externa") continue;
+      const nube = n.tipoDestino?.tipo === "nube" || n.icono === "nube" || n.icono === "dropbox";
+      const g = o.grupoDestino(tipoNodo.get(n.id)?.clave ?? null, quienGuarda.get(n.id) ?? null, nube);
+      if (g) n.recuadro = { id: `rq:${g.id}`, nombre: g.nombre };
+    }
+  }
+
+  // 0.8.2 (A4, 15xx): solo lo que está en el servidor (o en el disco o conjunto) elegido y
+  // su camino entero: lo que guarda (hacia la derecha) y quién le manda (hacia la izquierda).
+  let filtroTexto: Mapa["filtro"] = null;
+  if (filtro) {
+    const quedan = new Set<string>();
+    const ir = (id: string, dir: "de" | "a") => {
+      for (const x of aristas) {
+        const [desde, hasta] = dir === "de" ? [x.de, x.a] : [x.a, x.de];
+        if (desde === id && !quedan.has(hasta)) {
+          quedan.add(hasta);
+          ir(hasta, dir);
+        }
+      }
+    };
+    const casan = [...nodos.values()].filter((n) => {
+      const eq = equipoNodo.get(n.id);
+      if (eq) return equipoEnFiltroInfra(infra, eq, filtro);
+      return sitioNodo.has(n.id) && enFiltroInfra(sitioNodo.get(n.id) ?? null, filtro);
+    });
+    for (const n of casan) quedan.add(n.id);
+    for (const n of casan) {
+      ir(n.id, "de");
+      ir(n.id, "a");
+    }
+    for (const id of [...nodos.keys()]) if (!quedan.has(id)) nodos.delete(id);
+    for (let i = aristas.length - 1; i >= 0; i--) if (!quedan.has(aristas[i].de) || !quedan.has(aristas[i].a)) aristas.splice(i, 1);
+    filtroTexto = { texto: textoFiltroInfra(filtro, infra), nada: !nodos.size };
   }
 
   // La alternativa en texto.
@@ -722,8 +830,20 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     if (fuera.length) frases.push(`${n.nombre} es un almacén que no está en esta consola: sus espejos no se ven aquí (${minus(fuera[0].estado)}).`);
   }
 
-  const claveSede = o.ordenSede ? (n: NodoMapa) => n.sede?.nombre ?? "￿" : undefined;
-  return { nodos: ordenarMapa(lista_, aristas, false, claveSede), aristas, frases, desplegados };
+  const claveSede =
+    ag.modo === "recuadros" ? (n: NodoMapa) => n.recuadro?.nombre ?? "￿" : o.ordenSede ? (n: NodoMapa) => n.sede?.nombre ?? "￿" : undefined;
+  // 0.8.2 (C4): la primera columna en el orden de la lista de Equipos (un grupo plegado, donde su primer equipo).
+  let ordenados: NodoMapa[];
+  if (o.ordenEquipos) {
+    const pos = new Map(o.ordenEquipos.map((id, i) => [id, i]));
+    const lugar = (n: NodoMapa) => {
+      if (n.tipo === "grupo") return Math.min(...(miembrosDeGrupo.get(n.id) ?? []).map((id) => pos.get(id) ?? 1e9), 1e9);
+      return pos.get(quienGuarda.get(n.id) ?? "") ?? 1e9;
+    };
+    const col0 = lista_.filter((n) => n.col === 0).sort((a, b) => lugar(a) - lugar(b) || a.nombre.localeCompare(b.nombre));
+    ordenados = ordenarMapa([...col0, ...lista_.filter((n) => n.col !== 0)], aristas, true);
+  } else ordenados = ordenarMapa(lista_, aristas, false, claveSede);
+  return { nodos: ordenados, aristas, frases, desplegados, ...(ag.modo === "recuadros" ? { grupos: listaGrupos } : {}), ...(filtroTexto ? { filtro: filtroTexto } : {}) };
 }
 
 /** «Copiando 45 %» → «45 %»; «En cola» → «en cola»; sin cifra, «en marcha». */

@@ -33,6 +33,9 @@ pub fn aplicar(v: &mut Vinculo, c: &Value, admin: bool, por: Option<&str>) -> Re
             return Err("Dato común desconocido.".into());
         }
         if dc::pide_admin(clave) && !admin {
+            if dc::es_de_infra(clave) {
+                return Err("Dónde está físicamente un equipo o un destino cuenta en la regla 3-2-1: cambiarlo pide la clave de administración.".into());
+            }
             if dc::es_de_ajustes(clave) {
                 return Err("Que cada persona recupere sus archivos en el equipo se activa con la clave de administración.".into());
             }
@@ -120,6 +123,12 @@ pub fn descripcion(c: &Value) -> Option<String> {
             Some(dc::Clase::PruebaPolitica) => "la política de pruebas funcionales".to_string(),
             // 0.8.1 (H2): sin el responsable ni el identificador (no hacen falta en el historial).
             Some(dc::Clase::Inventario) => "el inventario de un equipo o un repositorio".to_string(),
+            // 0.8.2 (A5): sin números de serie ni notas (no hacen falta en el historial).
+            Some(dc::Clase::Infra) if clave.starts_with("infra:servidor:") => format!(
+                "el servidor físico «{}» de la infraestructura",
+                x["valor"]["nombre"].as_str().map(|n| n.chars().take(40).collect()).unwrap_or_else(|| sujeto("infra:servidor:"))
+            ),
+            Some(dc::Clase::Infra) => "dónde está físicamente un equipo o un destino".to_string(),
             None => "un dato".to_string(),
         }
     };
@@ -247,6 +256,24 @@ mod tests {
     }
 
     /// 0.8.1 (B5, 15pp): observaciones y comentarios comunes, sin clave y sin el texto en la descripción.
+    /// 0.8.2 (A5): la infraestructura; dónde está cada cosa, solo con la clave.
+    #[test]
+    fn infraestructura() {
+        assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_INFRA));
+        let mut v = vinculo("id", "Oficina");
+        let s = json!({ "entradas": [
+            { "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "Bahía 1", "serie": "SN-1" }] }, "cambiado": "2026-10-07T10:00:00Z" },
+        ]});
+        aplicar(&mut v, &s, false, None).unwrap();
+        assert_eq!(v.datos_cliente["infra:servidor:hv-01"].valor["discos"][0]["serie"], "SN-1");
+        let d = descripcion(&s).unwrap();
+        assert!(d.contains("hv-01") && !d.contains("SN-1"), "{d}");
+        let e = json!({ "entradas": [{ "clave": "infra:equipo:e-1", "valor": { "servidor": "hv-01" }, "cambiado": "2026-10-07T10:00:00Z" }] });
+        assert!(aplicar(&mut v, &e, false, None).unwrap_err().contains("clave de administración"));
+        aplicar(&mut v, &e, true, None).unwrap();
+        assert_eq!(v.datos_cliente["infra:equipo:e-1"].valor["servidor"], "hv-01");
+    }
+
     #[test]
     fn observaciones_y_comentarios() {
         assert!(crate::gestion_v2::ADMITE.contains(&dc::ADMITE_NOTAS));

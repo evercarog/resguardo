@@ -383,7 +383,7 @@ export async function sembrar(vacio = false) {
   // 14uu (plan 0.8.0, D3): los datos básicos que manda un agente nuevo (inventados).
   const G = 1_000_000_000;
   const win = (nombre: string, variante: string, version: string | null, compilacion: string): SistemaEquipo => ({ familia: "windows", nombre, variante, version, compilacion });
-  const disco = (punto: string, totalG: number, libreG: number, fs: string, en_uso = false) => ({ punto, total: totalG * G, libre: libreG * G, sistema_archivos: fs, en_uso, volumen: null as string | null });
+  const disco = (punto: string, totalG: number, libreG: number, fs: string, en_uso = false) => ({ punto, total: totalG * G, libre: libreG * G, sistema_archivos: fs, en_uso, volumen: null as string | null, etiqueta: null as string | null });
   const basicos = (sistema: SistemaEquipo, procesador: string, nucleos: number, memoriaG: number, fabricante: string | null, modelo: string | null, arrancoHaceMin: number, discos: ReturnType<typeof disco>[]) => ({
     leido: hace(60 * 3),
     sistema,
@@ -509,13 +509,15 @@ export async function sembrar(vacio = false) {
       version_agente: "0.7.18",
       so: "Windows Server 2016",
       resumen: {
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo", "nombre_copia", "etiquetas_copia"],
+        // 0.8.2 (A5): guarda la infraestructura para todas las consolas.
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "escritorio", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "espejo_equipo", "nombre_copia", "etiquetas_copia", "infra_comun"],
         // 0.8.1 (C4): un equipo físico con una controladora RAID (vista como un disco) y Espacios de almacenamiento.
         datos_basicos: {
           ...basicos(win("Windows Server 2016 Standard", "ServerStandard", "1607", "14393.7428"), "Intel(R) Xeon(R) Silver 4310 CPU @ 2.10GHz", 24, 64, "HPE", "ProLiant DL380 Gen10 Plus", 60 * 24 * 12, [
-            { ...disco("C:", 240, 88, "NTFS", true), volumen: "disco0" },
-            { ...disco("D:", 4000, 1480, "ReFS", true), volumen: "disco1" },
-            { ...disco("E:", 2000, 1900, "NTFS"), volumen: "disco2" },
+            // 0.8.2 (A3): con la etiqueta de cada volumen.
+            { ...disco("C:", 240, 88, "NTFS", true), volumen: "disco0", etiqueta: "Sistema" },
+            { ...disco("D:", 4000, 1480, "ReFS", true), volumen: "disco1", etiqueta: "Datos" },
+            { ...disco("E:", 2000, 1900, "NTFS"), volumen: "disco2", etiqueta: "Compartidas" },
           ]),
           almacenamiento: {
             discos: [
@@ -652,7 +654,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada", "nombre_copia", "etiquetas_copia", "grupos_en_copias", "repos_sueltos", "equipos_moviles", "apagar_al_terminar", "restaurar_excluir", "ajustes_comunes", "recuperar_en_equipo", "restaurar_espejo_equipo", "pruebas_comunes", "inventario_comun"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada", "nombre_copia", "etiquetas_copia", "grupos_en_copias", "repos_sueltos", "equipos_moviles", "apagar_al_terminar", "restaurar_excluir", "ajustes_comunes", "recuperar_en_equipo", "restaurar_espejo_equipo", "pruebas_comunes", "inventario_comun", "infra_comun"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],

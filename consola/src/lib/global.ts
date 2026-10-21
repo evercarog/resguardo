@@ -11,6 +11,7 @@
 import type { Equipo, Informe, MarcaCliente, Rol, TareaEnMarcha } from "./tipos";
 import { construirMapa, ordenarMapa, type Agrupar, type AristaMapa, type Mapa, type NodoMapa, type TipoVivo } from "./mapa";
 import { leerOrganizacion } from "./sedes";
+import { leerInfra, type FiltroInfra } from "./infra";
 import { dias, type Dia } from "./repo";
 import { bytesRepo, informeDe } from "./repo";
 import { copiaAtrasada, PESO, saludEquipo, type Tono } from "./salud";
@@ -34,6 +35,8 @@ export interface PanelCliente {
   informes_completos: boolean;
   /** Plan 0.8.0 (D1, D2): sedes, categorías y orden (un servidor anterior no lo manda). */
   organizacion?: unknown;
+  /** 0.8.2 (A4): la infraestructura anotada (`null` o ausente: nada anotado o un servidor anterior). */
+  infra?: unknown;
 }
 
 /** Plan 0.8.0, D4: lo mismo de cada cliente de la cuenta (`/api/panel/avisos`, `/ordenes`, `/restauraciones`). */
@@ -263,6 +266,8 @@ export interface OpcionesMapaGlobal {
   agrupar?: Agrupar;
   /** 0.8.1 (15rr): los grupos desplegados (`<cliente>/gr:…`). */
   desplegados?: ReadonlySet<string>;
+  /** 0.8.2 (A4, 15xx): con un cliente elegido, solo un servidor físico (o un disco o conjunto) suyo. */
+  filtroInfra?: FiltroInfra | null;
 }
 
 export interface MapaGlobal extends Mapa {
@@ -292,6 +297,7 @@ export function construirMapaGlobal(clientes: PanelCliente[], o: OpcionesMapaGlo
   const salen: MapaGlobal["clientes"] = [];
   const desplegadosTodos: { id: string; titulo: string }[] = [];
   let fuera = 0;
+  let filtroGlobal: Mapa["filtro"] = null;
   const orden = [...clientes]
     .map((c) => ({ c, s: saludCliente(c, ahora) }))
     .sort((a, b) => PESO[a.s.tono] - PESO[b.s.tono] || a.c.nombre.localeCompare(b.c.nombre));
@@ -315,7 +321,11 @@ export function construirMapaGlobal(clientes: PanelCliente[], o: OpcionesMapaGlo
       ...(o.agrupar ? { agrupar: o.agrupar } : {}),
       desplegados,
       organizacion: c.organizacion ? leerOrganizacion(c.organizacion) : null,
+      // 0.8.2 (A4): lo anotado en cada tarjeta y, con el cliente elegido, el filtro.
+      infra: c.infra ? leerInfra(c.infra) : null,
+      filtroInfra: o.cliente === c.id ? (o.filtroInfra ?? null) : null,
     });
+    if (m.filtro) filtroGlobal = m.filtro;
     for (const d of m.desplegados ?? []) desplegadosTodos.push({ id: pre(d.id), titulo: `${c.nombre} · ${d.titulo}` });
     let suyos = m.nodos.map((n) => ({ ...n, id: pre(n.id), col: (n.col + 1) as NodoMapa["col"], ...(n.grupo ? { grupo: pre(n.grupo) } : {}) }));
     let susAristas = m.aristas.map((a) => ({ ...a, id: pre(a.id), de: pre(a.de), a: pre(a.a) }));
@@ -373,5 +383,5 @@ export function construirMapaGlobal(clientes: PanelCliente[], o: OpcionesMapaGlo
     }
     frases.push(...m.frases.filter((f) => !palabras.length || suyos.some((n) => f.includes(n.nombre))));
   }
-  return { nodos: ordenarMapa(nodos, aristas, true), aristas, frases, clientes: salen, fuera, desplegados: desplegadosTodos };
+  return { nodos: ordenarMapa(nodos, aristas, true), aristas, frases, clientes: salen, fuera, desplegados: desplegadosTodos, ...(filtroGlobal ? { filtro: filtroGlobal } : {}) };
 }

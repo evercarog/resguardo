@@ -179,7 +179,8 @@ export function equiposConVariasDe<E extends Pick<Equipo, "id" | "etiquetas">>(c
 
 /** `sede`, `sistema`, `etiqueta` (las sueltas) o `categoria:<id>`. */
 /** 0.8.1 (C3): también por el tipo de equipo (físico, máquina virtual, contenedor). */
-export type Nivel = "sede" | "sistema" | "tipo" | "etiqueta" | `categoria:${string}`;
+/** 0.8.2 (A4, C4): y por la infraestructura anotada: su servidor físico o su disco o conjunto. */
+export type Nivel = "sede" | "sistema" | "tipo" | "etiqueta" | "servidor" | "disco" | `categoria:${string}`;
 
 export interface OpcionNivel {
   nivel: Nivel;
@@ -187,12 +188,13 @@ export interface OpcionNivel {
 }
 
 /** Los niveles que se ofrecen en «Agrupar por»: sede (si hay), cada categoría, sistema y etiquetas. */
-export function nivelesDisponibles(o: Organizacion | null | undefined, conSistema: boolean, conTipo = false): OpcionNivel[] {
+export function nivelesDisponibles(o: Organizacion | null | undefined, conSistema: boolean, conTipo = false, conInfra = false): OpcionNivel[] {
   const xs: OpcionNivel[] = [];
   if (o?.sedes.length) xs.push({ nivel: "sede", nombre: "Sede" });
   for (const c of [...(o?.categorias ?? [])].sort(porNombre)) xs.push({ nivel: `categoria:${c.id}`, nombre: c.nombre });
   if (conSistema) xs.push({ nivel: "sistema", nombre: "Sistema" });
   if (conTipo) xs.push({ nivel: "tipo", nombre: "Tipo de equipo" });
+  if (conInfra) xs.push({ nivel: "servidor", nombre: "Servidor físico" }, { nivel: "disco", nombre: "Disco o conjunto" });
   xs.push({ nivel: "etiqueta", nombre: "Etiquetas" });
   return xs;
 }
@@ -224,6 +226,9 @@ export interface Contexto<E> {
   sistema: (e: E) => string;
   /** 0.8.1 (C3): el tipo de equipo agrupado («Máquina virtual (Hyper-V)»). */
   tipo?: (e: E) => string;
+  /** 0.8.2 (A4): su servidor físico anotado («hv-01») y su disco o conjunto («hv-01 · tank»), o null. */
+  servidor?: (e: E) => string | null;
+  disco?: (e: E) => string | null;
 }
 
 function valorDe<E extends Pick<Equipo, "id" | "etiquetas">>(e: E, n: Nivel, ctx: Contexto<E>): string | null {
@@ -231,6 +236,8 @@ function valorDe<E extends Pick<Equipo, "id" | "etiquetas">>(e: E, n: Nivel, ctx
   if (n === "sede") return sedeDeEquipo(o, e.id).sede?.nombre ?? null;
   if (n === "sistema") return ctx.sistema(e) || null;
   if (n === "tipo") return ctx.tipo?.(e) || null;
+  if (n === "servidor") return ctx.servidor?.(e) || null;
+  if (n === "disco") return ctx.disco?.(e) || null;
   if (n === "etiqueta") {
     const s = etiquetasSueltas(o, e.etiquetas);
     return s.length ? [...s].sort((a, b) => a.localeCompare(b, "es")).join(" · ") : null;
@@ -244,6 +251,8 @@ function sinDe(n: Nivel, o: Organizacion | null | undefined): string {
   if (n === "sede") return "Sin sede";
   if (n === "sistema") return "Sin sistema";
   if (n === "tipo") return "Tipo sin saber";
+  if (n === "servidor") return "Sin servidor anotado";
+  if (n === "disco") return "Sin disco anotado";
   if (n === "etiqueta") return "Sin etiqueta";
   return `Sin ${o?.categorias.find((x) => `categoria:${x.id}` === n)?.nombre ?? "categoría"}`;
 }

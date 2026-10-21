@@ -25,6 +25,31 @@ Claude Code (Opus), en autónomo, desde `ia/082-pulido`. Pedido: B4 (la copia de
 - B4: los avisos se filtran con el resumen **guardado** del equipo; si el resumen aún no llegó tras quitarla, el aviso de esa vuelta puede salir una vez más.
 - En plan-mejoras usé **15zz** y no 15yy: el plan de la 0.8.2 ya nombra 15yy para B3 y puede llegar de otra rama.
 
+## 2026-10-21 · `ia/082-infra` · Plan 0.8.2, bloque A (infraestructura) y C4 (Equipos en vista «Mapa»)
+
+Claude Code (Opus), en autónomo, desde `ia/082-pulido`. Pedido: A1 (Infraestructura en Ajustes, «Anotar» y aviso en Estado), A2 (15vv, discos físicos uno a uno), A3 (15ww, la tarjeta «Equipo» en tres niveles y cada volumen en su sitio), A4 (15xx, filtrar el mapa por infraestructura), A5 (la infraestructura como dato común del cliente) y C4 (en el mapa de Equipos manda «Agrupar por»).
+
+**Hecho (4 commits por tema):**
+
+- **A5 + A2 + A3 (protocolo, agente, servidor):** clase nueva de datos comunes `infra:` (`infra:servidor:<id>`, `infra:equipo:<id>`, `infra:destino:<clave>`), validada en `datos_cliente.rs` con vectores compartidos («infra» en `vectors/datos-cliente.json`) y `admite: "infra_comun"`. Discos físicos (nombre, tipo, modelo, número de serie escrito a mano, tamaño, bahía, estado, notas, `visto`), conjuntos con `miembros`, sitios con `disco` y `volumenes`. El servidor sigue con `infra:<cliente>` como «lo de aquí»: `valor_local`, `aplicar`, semillas, y cada `PUT` deja por enviar lo que cambió. Topes: 16 KiB por servidor y 96 KiB toda la infraestructura (medido: un cliente grande, 58 KiB). El agente manda la etiqueta de cada volumen en Windows. El panel de todos los clientes lleva la infraestructura.
+- **Consola (A1, A2, A3, A5):** «Ajustes → Infraestructura» (redirigen `destinos/infraestructura` e `infraestructura`), `?equipo=`/`?destino=` preseleccionan la fila; «Anotar»/«Cambiar» en la ficha del equipo y del destino; aviso suave en Estado (`AvisoSinAnotar`, se oculta por persona hasta que falte algo más). Editor del servidor con discos y «Hecho de:». Propuesta «ve N discos que no están anotados». `discosEnNiveles` para la tarjeta «Equipo» (nunca «disco0»). «Por volumen» en Infraestructura. Datos comunes: clase `infra`, clave, `LLENO_INFRA` (224 KiB), en palabras.
+- **Mapa (A4, C4):** `filtroInfra` en `construirMapa` (lo que está allí y su camino entero), selector en Estado, Equipos y «Todos los clientes» (con un cliente elegido), recordado por persona; lo anotado visible por defecto en cada tarjeta (también equipos). En Equipos, modo `recuadros` con `grupoDe`, `grupoDestino` (sede o servidor), `plegados` y `ordenEquipos`; sin «Con más de 8»; «luego» oculto en el mapa; «Agrupar por» con «Servidor físico» y «Disco o conjunto».
+- Simulador con ejemplos inventados; vectores nuevos `scripts/vectores-infra-082.ts` (81 comprobaciones); docs: `infraestructura.md` (reescrito), `api-servidor.md` (sección y «Cambios» v1.9x), `consolas-multiples.md` §6.4/§6.5, `plan-0.8.2.md`, `plan-mejoras.md`.
+
+**Comprobado (resultado real):** `cargo fmt --all --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings` 0; `cargo test --workspace --no-fail-fast` con los tres `--skip`: 101 por **un** fallo, `el_canal_de_un_equipo_callado_se_cierra` (tiempos del canal, nada de esta rama), que pasa solo y con todo `--test api` (39 de 39) al repetirlo; `cargo build -p resguardo-servidor -p resguardo-agente --bins` 0; `npm run check` 0 errores; `npm run build` 0; `npm run test:vectores` 0; `npm run e2e` (con `RESGUARDO_E2E_BINARIOS`): la primera vez falló en el paso 6c («Plazo agotado esperando que termine la copia de B»: el servidor limitó `POST /api/agente/config` a EQUIPO-B, el tope de 120 por hora, con el PC muy cargado por otras dos ramas compilando); repetido sin cambios, **«Escenario completo», salida 0**; `npm run test:sin-referencias` 0. En el simulador (`dev:mock`), a 375 px en claro y oscuro: Infraestructura (fila preseleccionada, por volumen, editor con discos y conjuntos, guardar), ficha de un servidor físico y de una VM, aviso de Estado, filtro del mapa por «tank», mapa de Equipos agrupado por servidor (recuadros, plegar) y la diferencia entre consolas de un servidor. Capturas fuera del repositorio (`tmp/capturas/082-infra`). Arreglado de lo visto: desplegables que se salían a 375 px e iconos encogidos.
+
+**Sin probar:** con dos consolas reales (repartir, diferencias, semilla, la clave para las ubicaciones); la etiqueta del volumen en un Windows real (no hay Linux: allí no se lee); agentes reales con `infra_comun`; el aviso del editor al pasar del 80 %.
+
+**Decisiones dudosas (para el responsable):**
+- Dónde está un equipo o un destino (`infra:equipo:`, `infra:destino:`) **pide la clave de administración** para repartirse (como la sede: cuenta en la regla 3-2-1); describir un servidor y sus discos, no. En la consola de origen se aplica al momento; las demás lo ven cuando alguien lo reparte desde «Lo mismo en todas las consolas».
+- Se queda como dato común con topes (16 KiB por servidor, 96 KiB en total, deja de repartirse a un equipo con el documento por encima de 224 KiB) en vez de la alternativa (repartir solo los servidores).
+- «Infraestructura» en Ajustes la ve cualquier miembro (como antes); cambiarla, administradores.
+- El soporte de los originales en la regla sigue siendo el del equipo, no el de cada volumen.
+- En «Todos los clientes» el filtro solo sale con un cliente elegido (los ids de los servidores son de cada cliente).
+- Las capas «Infraestructura» y «Almacenamiento» pasan a estar encendidas por defecto (sin nada anotado no salen); quien ya las tenía guardadas apagadas, sigue así.
+- «luego» se oculta en el mapa (no agrupa dentro del recuadro).
+
+
 ## 2026-10-20 · `ia/integracion-081` · **Resumen de la versión 0.8.1 (para el responsable)**
 
 Claude Code (Opus), en autónomo (pedido del 2026-10-19: «empieza ya con la 0.8.1, trabaja de manera autónoma hasta terminar la versión»; añadidos del 2026-10-20: las pruebas funcionales en todas las consolas y un informe descargable de la configuración). Plan: [plan-0.8.1.md](plan-0.8.1.md); detalle de cada rama más abajo.

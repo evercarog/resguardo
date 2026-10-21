@@ -116,6 +116,7 @@
   });
   const equiposQueLoUsan = $derived(actual.equipos.filter((e) => v?.equipos.includes(e.nombre)));
   // Plan 0.8.1 (C1, C4): dónde está físicamente (con infraestructura anotada) y la carpeta de una zona.
+  const puedeAnotar = $derived(!!actual.cliente && puede.administrar(actual.cliente.rol));
   const fisico = $derived(v ? lineaFisica(sitioDeDestino(actual.infra, v.clave, v.zona?.almacen.id ?? (v.destino?.tipo === "local" && !v.destino.red ? equiposQueLoUsan[0]?.id : null)), actual.organizacion) : null);
 
   /** Qué es, en palabras: «Almacén · zona principal», «Disco extraíble de CAJA-1», «Dropbox · conectada en ALMACEN-01»… */
@@ -191,7 +192,8 @@
           {#if v.zona?.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.zona.carpeta} que="la carpeta" /></dd>{/if}
           {#if v.destino?.tipo === "local" && v.destino.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.destino.carpeta} que="la carpeta" /></dd>{/if}
           <dt>Dónde está físicamente</dt>
-          <dd>{#if fisico}<a class="link" href="/c/{c}/destinos/infraestructura">{fisico}</a>{:else}<span class="faint">Sin anotar ·</span> <a class="link" href="/c/{c}/infraestructura">Anotarlo</a>{/if}</dd>
+          <!-- 0.8.2 (A1): «Anotar» lleva a Ajustes → Infraestructura con este destino ya elegido. -->
+          <dd>{#if fisico}<a class="link" href="/c/{c}/ajustes/infraestructura?destino={encodeURIComponent(v.clave)}">{fisico}</a>{:else}<span class="faint">Sin anotar</span>{#if puedeAnotar}<span class="faint"> · </span><a class="link" href="/c/{c}/ajustes/infraestructura?destino={encodeURIComponent(v.clave)}">Anotar</a>{/if}{/if}</dd>
           {#if marca?.sistemaArchivos}<dt>Sistema de archivos</dt><dd><span class="pastilla mono">{marca.sistemaArchivos}</span> <span class="faint">solo un dato</span></dd>{/if}
           {#if entorno}<dt>Entorno</dt><dd>{entorno}</dd>{/if}
         </dl>

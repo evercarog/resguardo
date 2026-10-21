@@ -70,8 +70,6 @@ export const SECCIONES: SeccionDef[] = [
     prefijo: "/destinos",
     pestanas: [
       { ruta: "/destinos", texto: "Destinos", icono: Database, claves: "repositorios y destinos almacen nube discos" },
-      // Plan 0.8.1, C4 (15d): dónde están de verdad los datos (servidores, discos, hipervisores).
-      { ruta: "/destinos/infraestructura", texto: "Infraestructura", icono: ServerCog, claves: "infraestructura servidores fisicos discos raid zfs hipervisor" },
     ],
   },
   {
@@ -119,6 +117,9 @@ export const SECCIONES: SeccionDef[] = [
     pestanas: [
       { ruta: "/ajustes/personas", texto: "Personas y ajustes", icono: Users, puede: propietario, claves: "personas cuentas invitar ajustes del cliente notificaciones marca" },
       { ruta: "/ajustes/organizacion", texto: "Organización", icono: Building2, puede: ordenar, claves: "organizacion sedes categorias etiquetas grupos de exclusiones no copiar" },
+      // Plan 0.8.1, C4 (15d) y 0.8.2, A1: dónde están de verdad los datos (servidores, discos,
+      // hipervisores). Se configura una vez, como las sedes: va en Ajustes, no en Destinos.
+      { ruta: "/ajustes/infraestructura", texto: "Infraestructura", icono: ServerCog, claves: "infraestructura servidores fisicos discos raid zfs hipervisor numero de serie bahia volumenes" },
       { ruta: "/ajustes/versiones", texto: "Versiones del agente", icono: PackageCheck, claves: "versiones del agente actualizaciones anillos" },
       { ruta: "/ajustes/servidor", texto: "Servidor", icono: ArrowRightLeft, puede: administrar, claves: "servidor consolas conectar codigo de conexion mover copia de la consola" },
     ],

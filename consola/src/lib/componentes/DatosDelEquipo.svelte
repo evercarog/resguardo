@@ -6,19 +6,28 @@
   // Plan 0.8.1: su tipo (C3: físico, máquina virtual o contenedor, detectado y
   // corregible), dónde está físicamente (C4, si se anotó la infraestructura) y
   // el conjunto de discos de cada disco (grupo de ZFS, RAID…).
+  //
+  // Plan 0.8.2 (A3, 15ww): los discos en tres niveles (discos físicos con su
+  // nombre de Infraestructura, conjuntos o discos virtuales con sus discos, y los
+  // volúmenes con lo que guarda cada uno y, si se anotó, dónde está cada uno);
+  // nunca «disco0» (el número interno de Windows). «Anotar» (A1) lleva a Ajustes
+  // → Infraestructura con este equipo ya elegido.
   import { Cpu, HardDrive, Layers, MemoryStick, Monitor, Pencil, Power, Server, TriangleAlert, Wifi } from "@lucide/svelte";
   import { tip } from "$lib/tooltip";
   import { bytes, fechaLarga, relativo } from "$lib/formato";
-  import { datosBasicos, textoMemoria, textoModelo, textoProcesador, textoSistema, usoDisco } from "$lib/datosBasicos";
+  import { datosBasicos, textoMemoria, textoModelo, textoProcesador, textoSistema } from "$lib/datosBasicos";
   import type { Equipo } from "$lib/tipos";
   import { actual, puede } from "$lib/estado.svelte";
   import { admiteTipoEquipo, textoTipo, TEXTO_ORIGEN, tipoEquipo } from "$lib/tipoEquipo";
-  import { lineaFisica, sitioDeEquipo } from "$lib/infra";
+  import { discosEnNiveles, lineaFisica, sitioDeEquipo, type VolumenVista } from "$lib/infra";
   import TipoEquipo from "./TipoEquipo.svelte";
 
   let { equipo, ahora = Date.now() }: { equipo: Equipo; ahora?: number } = $props();
   const tipo = $derived(tipoEquipo(equipo));
   const fisico = $derived(lineaFisica(sitioDeEquipo(actual.infra, equipo.id), actual.organizacion));
+  const puedeAnotar = $derived(!!actual.cliente && puede.administrar(actual.cliente.rol));
+  const hrefAnotar = $derived(`/c/${actual.id}/ajustes/infraestructura?equipo=${encodeURIComponent(equipo.id)}`);
+  const niveles = $derived(discosEnNiveles(equipo, actual.infra, actual.organizacion));
   const puedeCambiarTipo = $derived(!!actual.cliente && puede.administrar(actual.cliente.rol) && admiteTipoEquipo(equipo));
   let cambiandoTipo = $state(false);
   const d = $derived(datosBasicos(equipo));
@@ -30,6 +39,21 @@
   const modelo = $derived(textoModelo(d));
   const TONO = { ok: "var(--graf-marca)", warn: "var(--warn)", bad: "var(--bad)" } as const;
 </script>
+
+{#snippet volumen(v: VolumenVista)}
+  <div class="disco-cab">
+    <span class="mono punto">{v.punto}</span>
+    {#if v.etiqueta}<span class="etiqueta-vol">«{v.etiqueta}»</span>{/if}
+    {#if v.sistemaArchivos}<span class="pastilla mono">{v.sistemaArchivos}</span>{/if}
+    {#each v.guarda as g (g)}<span class="faint en-uso" use:tip={"Lo que guarda este volumen"}>{g}</span>{/each}
+    <span class="num libre" class:aviso={v.tono !== "ok"}>{bytes(v.libre)} libres de {bytes(v.total)}</span>
+  </div>
+  <div class="pista" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow={v.usado} aria-label="{v.punto}: {v.usado} % usado">
+    <span style="width: {v.usado}%; background: {TONO[v.tono]}"></span>
+  </div>
+  {#if v.fisico}<p class="faint fisico-vol"><Server size={11} aria-hidden="true" />Físicamente en {v.fisico}</p>{/if}
+  {#if v.tono === "bad"}<p class="casi-lleno"><TriangleAlert size={12} />Casi lleno: si se llena, las copias pueden fallar.</p>{/if}
+{/snippet}
 
 <section class="card p datos-equipo" aria-labelledby="t-datos-equipo">
   <h3 class="section-title" id="t-datos-equipo">Equipo</h3>
@@ -45,10 +69,14 @@
           {#if puedeCambiarTipo}<button type="button" class="btn btn-sm btn-ghost cambiar" onclick={() => (cambiandoTipo = true)}><Pencil size={13} />Cambiar</button>{/if}
         </dd>
       </div>
-      {#if fisico}
+      {#if fisico || puedeAnotar}
         <div>
           <dt><Server size={14} />Dónde está físicamente</dt>
-          <dd><a class="link" href="/c/{actual.id}/destinos/infraestructura">{fisico}</a></dd>
+          <dd>
+            {#if fisico}<a class="link" href={hrefAnotar}>{fisico}</a>{:else}<span class="faint">Sin anotar</span>{/if}
+            {#if puedeAnotar}<a class="btn btn-sm btn-ghost cambiar" href={hrefAnotar}><Pencil size={13} />{fisico ? "Cambiar" : "Anotar"}</a>{/if}
+            {#if niveles.porVolumen}<span class="faint sub">Algunos volúmenes están en otro sitio: abajo, en cada uno.</span>{/if}
+          </dd>
         </div>
       {/if}
       <div>
@@ -71,38 +99,34 @@
         </div>
       {/if}
     </dl>
-    {#if d.discos?.length}
+    {#if d.discos?.length || niveles.nodos.length}
       <h4 class="sub-titulo"><HardDrive size={14} />Discos</h4>
-      <ul class="discos">
-        {#each d.discos as k (k.punto)}
-          {@const u = usoDisco(k)}
-          <li>
-            <div class="disco-cab">
-              <span class="mono punto">{k.punto}</span>
-              {#if k.sistema_archivos}<span class="pastilla mono">{k.sistema_archivos}</span>{/if}
-              {#if k.volumen}<span class="pastilla mono" use:tip={"El conjunto de discos donde está (grupo de ZFS, RAID…)"}><Layers size={11} />{k.volumen}</span>{/if}
-              {#if k.en_uso}<span class="faint en-uso" use:tip={"Hay carpetas que se copian, un destino local o el almacén en este disco"}>con copias</span>{/if}
-              <span class="num libre" class:aviso={u.tono !== "ok"}>{bytes(k.libre)} libres de {bytes(k.total)}</span>
+      {#if niveles.anfitrion}<p class="anfitrion"><Server size={13} aria-hidden="true" />Sus discos virtuales están en {niveles.anfitrion}</p>{/if}
+      <ul class="nodos">
+        {#each niveles.nodos as n (n.clave)}
+          <li class="nodo">
+            <div class="nodo-cab">
+              <span class="nodo-ic" aria-hidden="true">{#if n.nivel === "conjunto"}<Layers size={14} />{:else}<HardDrive size={14} />{/if}</span>
+              <span class="nodo-t">{n.titulo}</span>
+              {#if n.detalle}<span class="faint nodo-d">{n.detalle}</span>{/if}
+              {#if n.estado}<span class="badge tone-{n.tono}">{#if n.tono !== "ok"}<TriangleAlert size={12} />{/if}{n.estado}</span>{/if}
             </div>
-            <div class="pista" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow={u.usado} aria-label="{k.punto}: {u.usado} % usado">
-              <span style="width: {u.usado}%; background: {TONO[u.tono]}"></span>
-            </div>
-            {#if u.tono === "bad"}<p class="casi-lleno"><TriangleAlert size={12} />Casi lleno: si se llena, las copias pueden fallar.</p>{/if}
+            {#if n.miembros.length}
+              <p class="faint miembros">Hecho de {n.miembros.map((m) => (m.detalle ? `${m.titulo} (${m.detalle})` : m.titulo)).join(" + ")}</p>
+            {/if}
+            {#if n.volumenes.length}
+              <ul class="discos dentro">
+                {#each n.volumenes as v (v.punto)}<li>{@render volumen(v)}</li>{/each}
+              </ul>
+            {/if}
           </li>
         {/each}
       </ul>
-    {/if}
-    {#if d.almacenamiento?.conjuntos.length}
-      <h4 class="sub-titulo"><Layers size={14} />Conjuntos de discos</h4>
-      <ul class="conjuntos">
-        {#each d.almacenamiento.conjuntos as c (c.id)}
-          <li>
-            <span class="mono">{c.id}</span>
-            <span class="faint">{c.tipo === "zfs" ? "ZFS" : c.tipo === "mdadm" ? "RAID por software" : c.tipo === "storage_spaces" ? "Espacios de almacenamiento" : "Controladora RAID"}{c.forma ? ` · ${c.forma}` : ""}{c.discos ? ` · ${c.discos} discos` : ""}{c.total ? ` · ${bytes(c.total)}` : ""}</span>
-            {#if c.estado === "degradado"}<span class="badge tone-warn"><TriangleAlert size={12} />Degradado</span>{:else if c.estado === "reconstruyendo"}<span class="badge tone-info">Reconstruyendo</span>{/if}
-          </li>
-        {/each}
-      </ul>
+      {#if niveles.sueltos.length}
+        <ul class="discos" class:dentro={niveles.nodos.length > 0}>
+          {#each niveles.sueltos as v (v.punto)}<li>{@render volumen(v)}</li>{/each}
+        </ul>
+      {/if}
     {/if}
     {#if d.red_ahorro?.length}
       <!-- 15ll (2): tarjetas de red que Windows puede apagar para ahorrar energía. -->
@@ -157,20 +181,71 @@
     margin-left: 6px;
     vertical-align: middle;
   }
-  .conjuntos {
+  .anfitrion {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+  }
+  .nodos {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--sp-3);
     margin: 0;
     padding: 0;
-    font-size: var(--fs-sm);
     list-style: none;
   }
-  .conjuntos li {
+  .nodo {
+    padding: var(--sp-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-width: 0;
+  }
+  .nodo-cab {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    font-size: var(--fs-sm);
+  }
+  .nodo-ic {
+    display: inline-flex;
+    color: var(--text-3);
+  }
+  .nodo-t {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .nodo-d {
+    overflow-wrap: anywhere;
+  }
+  .miembros {
+    margin: 4px 0 0;
+    font-size: var(--fs-xs);
+    overflow-wrap: anywhere;
+  }
+  .discos.dentro {
+    margin-top: var(--sp-3);
+    padding-left: var(--sp-3);
+    border-left: 2px solid var(--border);
+  }
+  .etiqueta-vol {
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .anfitrion :global(svg),
+  .fisico-vol :global(svg) {
+    flex: none;
+  }
+  .fisico-vol {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 4px 0 0;
+    font-size: var(--fs-xs);
   }
   .sub-titulo {
     display: flex;

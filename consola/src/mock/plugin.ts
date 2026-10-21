@@ -26,7 +26,7 @@ import { rutasInforme } from "./informe";
 import { importarNotas, rutasNotas, sembrarNotas } from "./notas";
 import { reiniciarPruebas, rutasPruebas } from "./pruebas";
 import { errorDondeCatalogo, errorSubcarpeta } from "../lib/destinos";
-import { INFRA_VACIA, leerInfra, type Infraestructura } from "../lib/infra";
+import { bytesInfra, datosInfra, INFRA_VACIA, infraValida, leerInfra, MAX_BYTES_INFRA, type Infraestructura } from "../lib/infra";
 import { cerrarSesion, configInicial, esperando, guardarConfig, mensajeDeConsola, procesarOrden, revisarEsperas } from "./agente";
 
 class HttpError extends Error {
@@ -649,6 +649,8 @@ const rutas: Ruta[] = [
           informes: estado.equipos.filter((e) => e.cliente === c.id && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] })),
           informes_completos: true,
           organizacion: organizacionDe(c.id),
+          // 0.8.2 (A4): la infraestructura anotada (para el mapa de todos los clientes).
+          infra: infraDe(c.id).servidores.length ? infraDe(c.id) : null,
         })),
         progreso: suyos.flatMap((c) => progresoDe(c.id).map((p) => ({ ...p, cliente: c.id }))),
       };
@@ -1530,7 +1532,7 @@ const rutas: Ruta[] = [
     // Plan 0.8.1, C4 (15d): la infraestructura del cliente (como `crate::infraestructura`).
     "GET",
     new RegExp(`^${C}/infraestructura$`),
-    (ctx, [c]) => (miembro(ctx, c), infraDe(c)),
+    (ctx, [c]) => (miembro(ctx, c), conComun(c, infraDe(c))),
   ],
   [
     "PUT",
@@ -1541,10 +1543,16 @@ const rutas: Ruta[] = [
       if (!x || typeof x !== "object" || Object.keys(x).some((k) => !["servidores", "equipos", "destinos"].includes(k))) throw err(422, "datos", "Hay datos de más.");
       const limpia = leerInfra(x);
       if ((Array.isArray(x.servidores) ? x.servidores.length : 0) !== limpia.servidores.length) throw err(422, "datos", "Hay un servidor con un id no válido o repetido.");
+      // 0.8.2 (A5): cada parte tiene que valer como dato común (como el protocolo) y caber.
+      for (const [k, v] of Object.entries(datosInfra(limpia))) {
+        const r = infraValida(k, v);
+        if (!r.ok) throw err(422, "datos", `No se puede compartir con las demás consolas: ${r.error}`);
+      }
+      if (bytesInfra(limpia) > MAX_BYTES_INFRA) throw err(422, "datos", "Demasiado anotado para repartirlo a todas las consolas (como mucho 96 KB): acorta las notas o quita discos que no hagan falta.");
       const guardada = { ...limpia, actualizada: new Date().toISOString(), por: sesionDe(ctx).nombre };
       infraMock.set(c, guardada);
       auditar(c, sesionDe(ctx).id, "cambiar_infraestructura", c, { servidores: limpia.servidores.length });
-      return guardada;
+      return conComun(c, guardada);
     },
   ],
   [
@@ -2112,6 +2120,12 @@ function datosComunesDe(c: string): DatosComunesCliente {
               // 0.8.1 (B5, 15pp): una observación de copia distinta en la otra consola.
               f({ clave: `nota.observacion:copia:${ID.caja}/caja`, valor: { texto: "Revisar los martes que el volcado de la caja terminó." }, local: { texto: "Copia de la caja: la revisa Luis." } }),
               f({ clave: "plantilla:pla-demo-sur", valor: { cifrado: "AAAA", sal: "c2FsLWRlLWxhLW90cmE=", cliente: "cliente-en-linea" }, estado: "por_traer", semilla: false }),
+              // 0.8.2 (A5): el mismo servidor físico anotado distinto en la otra consola (un disco más).
+              f({
+                clave: "infra:servidor:hv-sur",
+                valor: { nombre: "hv-sur", hipervisor: "hyperv", discos: [{ id: "b1", nombre: "Bahía 1", tipo: "ssd", tamano: 1e12 }, { id: "b2", nombre: "Bahía 2", tipo: "ssd", tamano: 1e12 }, { id: "b3", nombre: "Bahía 3", tipo: "hdd", tamano: 4e12 }], conjuntos: [{ id: "c1", nombre: "Espejo de datos", tipo: "raid1", miembros: ["b1", "b2"], capacidad: 1e12, estado: "bien" }] },
+                local: { nombre: "hv-sur", hipervisor: "hyperv", discos: [{ id: "b1", nombre: "Bahía 1", tipo: "ssd", tamano: 1e12 }, { id: "b2", nombre: "Bahía 2", tipo: "ssd", tamano: 1e12 }], conjuntos: [{ id: "c1", nombre: "Espejo de datos", tipo: "raid1", miembros: ["b1", "b2"], capacidad: 1e12, estado: "bien" }] },
+              }),
             ],
             sin_compartir: [],
           }
@@ -2243,30 +2257,94 @@ function unirSolo(p: EmparejamientoMock, nombre: string, so: string, ms: number)
 
 /** Plan 0.8.1, C4 (15d): la infraestructura de cada cliente (en memoria, como `infra:<cliente>` del servidor). */
 const infraMock = new Map<string, Infraestructura>();
-/** La de un cliente; en el de ejemplo, un Proxmox anotado («hv-01» con «tank») con su almacén dentro. */
+/** 0.8.2 (A5): como el servidor: si algún equipo la guarda para todas las consolas y lo que ocupa. */
+const conComun = (c: string, i: Infraestructura): Infraestructura => ({
+  ...i,
+  comun: estado.equipos.some((e) => e.cliente === c && e.confirmado && (e.resumen?.admite as string[] | undefined)?.includes("infra_comun")),
+  bytes_comunes: bytesInfra(i),
+});
+/**
+ * La de un cliente. En el de ejemplo, un Proxmox («hv-01», con sus discos uno a uno, «tank» en
+ * espejo y el SSD del sistema) con su almacén dentro, y el servidor de archivos (físico, con
+ * Hyper-V) con su RAID de la controladora y sus Espacios de almacenamiento, donde vive RECEPCION.
+ * En el otro, un anfitrión con su almacén. Todo inventado.
+ */
 function infraDe(c: string): Infraestructura {
   const ya = infraMock.get(c);
   if (ya) return ya;
-  if (c !== ID.altamar) return { ...INFRA_VACIA };
-  const sembrada = leerInfra({
-    servidores: [
-      {
-        id: "hv-01",
-        nombre: "hv-01",
-        marca: "Marca X",
-        modelo: "Servidor 1U",
-        hipervisor: "proxmox",
-        notas: "Rack de la oficina, abajo.",
-        conjuntos: [
-          { id: "tank", nombre: "tank", tipo: "zfs_espejo", discos: 2, capacidad: 4_000_000_000_000, estado: "bien" },
-          { id: "ssd", nombre: "SSD del sistema", tipo: "disco", discos: 1, capacidad: 500_000_000_000 },
-        ],
-      },
-    ],
-    equipos: { [ID.servidor]: { servidor: "hv-01", conjunto: "ssd" } },
-    destinos: { [`zona:${ID.servidor}:principal`]: { servidor: "hv-01", conjunto: "tank" } },
-  });
-  const s = { ...sembrada, actualizada: new Date(Date.now() - 86_400_000 * 3).toISOString(), por: "Ana Restrepo" };
+  const T = 1_000_000_000_000;
+  const sembrada =
+    c === ID.altamar
+      ? leerInfra({
+          servidores: [
+            {
+              id: "hv-01",
+              nombre: "hv-01",
+              marca: "Marca X",
+              modelo: "Servidor 1U",
+              hipervisor: "proxmox",
+              sede: "norte-0a1b",
+              notas: "Rack de la oficina, abajo.",
+              discos: [
+                { id: "b1", nombre: "Bahía 1", tipo: "hdd", modelo: "Disco 4T", serie: "SN-EJ-0001", tamano: 4 * T, bahia: "1", estado: "bien" },
+                { id: "b2", nombre: "Bahía 2", tipo: "hdd", modelo: "Disco 4T", serie: "SN-EJ-0002", tamano: 4 * T, bahia: "2", estado: "aviso", notas: "Avisos de sectores en marzo: vigilarlo." },
+                { id: "m2", nombre: "SSD del sistema", tipo: "nvme", modelo: "NVMe 500G", tamano: 0.5 * T, bahia: "M.2" },
+              ],
+              conjuntos: [
+                { id: "tank", nombre: "tank", tipo: "zfs_espejo", miembros: ["b1", "b2"], capacidad: 4 * T, estado: "bien" },
+                { id: "ssd", nombre: "SSD del sistema", tipo: "disco", miembros: ["m2"], capacidad: 0.5 * T },
+              ],
+            },
+            {
+              id: "srv-archivos",
+              nombre: "SERVIDOR-ARCHIVOS",
+              marca: "HPE",
+              modelo: "ProLiant DL380 Gen10 Plus",
+              hipervisor: "hyperv",
+              sede: "sur-2c3d",
+              discos: [
+                { id: "d0", nombre: "SSD del sistema", tipo: "ssd", modelo: "Disco SSD 240", tamano: 0.24 * T, bahia: "1", visto: "disco0", estado: "bien" },
+                { id: "b2", nombre: "Bahía 2", tipo: "hdd", modelo: "Disco 4T", serie: "SN-EJ-1002", tamano: 4 * T, bahia: "2", estado: "bien" },
+                { id: "b3", nombre: "Bahía 3", tipo: "hdd", modelo: "Disco 4T", serie: "SN-EJ-1003", tamano: 4 * T, bahia: "3", estado: "bien" },
+                { id: "b4", nombre: "Bahía 4", tipo: "ssd", modelo: "Disco SSD 2T", tamano: 2 * T, bahia: "4" },
+                { id: "b5", nombre: "Bahía 5", tipo: "ssd", modelo: "Disco SSD 2T", tamano: 2 * T, bahia: "5" },
+              ],
+              conjuntos: [
+                { id: "dv2", nombre: "Disco virtual 2", tipo: "raid1", miembros: ["b2", "b3"], capacidad: 4 * T, estado: "bien", visto: "disco1" },
+                { id: "datos", nombre: "Espacio de datos", tipo: "storage_spaces", miembros: ["b4", "b5"], capacidad: 2 * T, visto: "disco2" },
+              ],
+            },
+          ],
+          equipos: {
+            [ID.servidor]: { servidor: "hv-01", conjunto: "ssd" },
+            [ID.archivos]: { servidor: "srv-archivos" },
+            [ID.recepcion]: { servidor: "srv-archivos", conjunto: "dv2", volumenes: [{ punto: "C:", disco: "d0" }] },
+          },
+          destinos: {
+            [`zona:${ID.servidor}:principal`]: { servidor: "hv-01", conjunto: "tank" },
+            "carpeta-d": { servidor: "srv-archivos", conjunto: "dv2" },
+          },
+        })
+      : c === ID.sur
+        ? leerInfra({
+            servidores: [
+              {
+                id: "hv-sur",
+                nombre: "hv-sur",
+                hipervisor: "hyperv",
+                discos: [
+                  { id: "b1", nombre: "Bahía 1", tipo: "ssd", tamano: 1 * T },
+                  { id: "b2", nombre: "Bahía 2", tipo: "ssd", tamano: 1 * T },
+                ],
+                conjuntos: [{ id: "c1", nombre: "Espejo de datos", tipo: "raid1", miembros: ["b1", "b2"], capacidad: 1 * T, estado: "bien" }],
+              },
+            ],
+            equipos: { [ID.almacen]: { servidor: "hv-sur", conjunto: "c1" } },
+            destinos: {},
+          })
+        : { ...INFRA_VACIA };
+  const hay = sembrada.servidores.length > 0;
+  const s = { ...sembrada, actualizada: hay ? new Date(Date.now() - 86_400_000 * 3).toISOString() : null, por: hay ? "Ana Restrepo" : null };
   infraMock.set(c, s);
   return s;
 }
