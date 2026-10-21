@@ -6,7 +6,7 @@
   import { ChevronRight, Cloud, CloudOff } from "@lucide/svelte";
   import type { CopiaResumen, Equipo, RepoInforme, RepositorioResumen } from "$lib/tipos";
   import { bytes, numero, relativo } from "$lib/formato";
-  import { bytesRepo, destinoDe, dias, estadoRepo, nVersiones, proteccion, ultimaEjecucion, ultimaVersion } from "$lib/repo";
+  import { bytesRepo, destinoDe, dias, estadoRepo, externaViva, nVersiones, proteccion, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import { primeraCopiaFrase } from "$lib/salud";
   import Chip from "../Chip.svelte";
   import AnilloProteccion from "./AnilloProteccion.svelte";
@@ -25,6 +25,7 @@
   const riesgo = $derived(riesgoMismoEquipo(repo, equipo, todos));
   const prot = $derived(proteccion(inf, comprobacionLugar(repo, equipo, todos)));
   const ej = $derived(ultimaEjecucion(inf));
+  const ext = $derived(externaViva(repo, inf));
   const ult = $derived(ultimaVersion(repo, inf));
   const n = $derived(nVersiones(repo, inf));
   const proxima = $derived(
@@ -58,9 +59,10 @@
     <p class="linea faint">{repo.solo_lectura ? "Importado de otro equipo." : primeraCopiaFrase(copias, ahora).replace(" También puedes pulsar «Copiar ahora».", "")}</p>
   {/if}
 
-  <p class="linea externa" class:sin={!repo.externa && !inf?.externa}>
-    {#if !repo.externa && inf?.externa}<Cloud size={13} />Copia derivada{#if inf.externa.ultima}{" · "}última {relativo(inf.externa.ultima, ahora)}{/if}{#if inf.externa.resultado === "fallo"}{" · "}<span class="mal">falló</span>{/if}
-    {:else if repo.externa}<Cloud size={13} />A «{repo.externa.destino}» cada día a las {repo.externa.hora}{#if inf?.externa?.ultima}{" · "}última {relativo(inf.externa.ultima, ahora)}{/if}
+  <p class="linea externa" class:sin={!repo.externa && !repo.derivadas?.length}>
+    <!-- B4 (0.8.2): solo la que el repositorio aún tiene (lo último de una ya quitada no cuenta). -->
+    {#if repo.externa}<Cloud size={13} />A «{repo.externa.destino}» cada día a las {repo.externa.hora}{#if ext?.ultima}{" · "}última {relativo(ext.ultima, ahora)}{/if}{#if ext?.resultado === "fallo"}{" · "}<span class="mal">falló</span>{/if}
+    {:else if repo.derivadas?.length}<Cloud size={13} />{repo.derivadas.length === 1 ? `Copia derivada a «${repo.derivadas[0].destino ?? "otro destino"}»` : `${repo.derivadas.length} copias derivadas`}
     {:else}<CloudOff size={13} />Sin copia derivada{/if}
   </p>
 

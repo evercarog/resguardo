@@ -60,7 +60,7 @@ export interface Suceso {
   tono: Tono;
   /** Fallo, aviso o bien (`claseDe`): «Fallos» y la marca del calendario son solo los fallos. */
   clase: ClaseSuceso;
-  /** «Copia «Documentos»», «Verificación», «Subida a la nube»… */
+  /** «Copia «Documentos»», «Verificación», «Copia derivada»… */
   titulo: string;
   /** El estado en una palabra, para el chip (siempre con su icono). */
   chip: string;
@@ -350,7 +350,7 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
     const TAREA: Partial<Record<EntradaHistorial["tipo"], [TipoSuceso, string]>> = {
       verificacion: ["verificacion", "Verificación"],
       prueba_restauracion: ["prueba", "Prueba de restauración"],
-      externa: ["externa", "Subida a la nube"],
+      externa: ["externa", "Copia derivada"],
       espejo: ["espejo", "Espejo"],
     };
     for (const h of historial) {
@@ -424,7 +424,7 @@ export function sucesosDe(e: EntradaSucesos): { sucesos: Suceso[]; notas: Map<st
     const tareas: [TipoSuceso, string, TareaInforme | null][] = [
       ["verificacion", "Verificación", verificacion(repo, inf)],
       ["prueba", "Prueba de restauración", pruebaRestauracion(repo, inf)],
-      ["externa", "Subida a la nube", inf?.externa ?? null],
+      ["externa", "Copia derivada", inf?.externa ?? null],
     ];
     for (const [tipo, titulo, x] of tareas) {
       if (!x?.ultima || vistas.has(`t|${tipo}|${Math.round(ms(x.ultima) / 60_000)}`)) continue;

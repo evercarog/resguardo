@@ -134,6 +134,29 @@ pub fn de_informe(datos: &Value) -> (Vec<Problema>, Vec<String>) {
 /// Y la retención del almacén (`guarda_copias.retenciones[]`, `resultado = "fallo"`), por
 /// repositorio: sin esto, la que se aplica sola a su hora fallaba sin que nadie se enterara
 /// (en la prueba de resistencia, con un archivo dañado al podar).
+/// B4 (0.8.2): el informe sin la copia derivada «de cada día» (`repos[].externa`) de los
+/// repositorios que, según el resumen del equipo, ya no la tienen. El equipo guarda la última
+/// vuelta de cada tarea y los agentes hasta la 0.8.1 la seguían mandando tras quitarla: su fallo
+/// dejaba un aviso abierto para siempre. Todos los agentes mandan `repositorios[].externa` en el
+/// resumen mientras exista. Sin resumen o sin el repositorio en él, no se toca. `None`: nada que quitar.
+pub fn sin_externas_quitadas(datos: &Value, resumen: Option<&Value>) -> Option<Value> {
+    let repos = resumen?.get("repositorios")?.as_array()?;
+    let quitada = |id: &str| repos.iter().any(|r| r["id"].as_str() == Some(id) && !r["externa"].is_object());
+    let hay = datos["repos"].as_array()?.iter().any(|r| r["externa"].is_object() && r["id"].as_str().is_some_and(quitada));
+    if !hay {
+        return None;
+    }
+    let mut d = datos.clone();
+    for r in d["repos"].as_array_mut().into_iter().flatten() {
+        if r["externa"].is_object() && r["id"].as_str().is_some_and(quitada) {
+            if let Some(o) = r.as_object_mut() {
+                o.remove("externa");
+            }
+        }
+    }
+    Some(d)
+}
+
 pub fn de_resumen(resumen: &Value) -> (Vec<Problema>, Vec<String>) {
     let (mut p, mut sanos) = (Vec::new(), Vec::new());
     let e = &resumen["guarda_copias"]["espejo"];
@@ -458,6 +481,27 @@ mod tests {
         assert_eq!((p[0].tipo.as_str(), p[0].sujeto.as_str()), ("prueba_fallida", "r1--e-eq-t1"));
         assert!(p[0].nombre.contains("Disco E"));
         assert!(sanos.contains(&"prueba_fallida|r1--e-n-sur".to_string()), "{sanos:?}");
+    }
+
+    /// B4 (0.8.2): la última vuelta de una copia derivada «de cada día» ya quitada no deja aviso.
+    #[test]
+    fn externa_quitada_no_avisa() {
+        let informe = json!({ "repos": [
+            { "id": "r1", "nombre": "Oficina", "externa": { "ultima": "2026-10-04T03:00:00+02:00", "resultado": "fallo", "mensaje_corto": "sin red" } },
+            { "id": "r2", "nombre": "Fotos", "externa": { "ultima": "2026-10-04T03:00:00+02:00", "resultado": "fallo", "mensaje_corto": "sin red" } },
+            { "id": "r3", "nombre": "Otro", "externa": { "ultima": "2026-10-04T03:00:00+02:00", "resultado": "fallo" } }
+        ] });
+        let resumen = json!({ "repositorios": [
+            { "id": "r1", "externa": null },
+            { "id": "r2", "externa": { "destino": "Nube", "hora": "21:00" } }
+        ] });
+        let limpio = sin_externas_quitadas(&informe, Some(&resumen)).expect("quita la de r1");
+        let (p, _) = de_informe(&limpio);
+        let sujetos: Vec<&str> = p.iter().map(|x| x.sujeto.as_str()).collect();
+        // r1 ya no la tiene; r2 sí; r3 no está en el resumen (no se sabe: se deja).
+        assert_eq!(sujetos, ["r2", "r3"]);
+        assert!(sin_externas_quitadas(&informe, None).is_none(), "sin resumen no se toca");
+        assert!(sin_externas_quitadas(&limpio, Some(&resumen)).is_none(), "nada más que quitar");
     }
 
     /// Tarea 7c: `cadena_parada` sale de `informe.cadenas[]`; y 4b: las derivadas, como `externa_fallida`.

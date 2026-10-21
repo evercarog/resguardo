@@ -28,6 +28,8 @@ export interface EnMarchaEquipo {
 export const enMarcha = $state({
   cliente: "",
   porEquipo: {} as Record<string, EnMarchaEquipo>,
+  /** 0.8.2 (C3): lo que quedó cortado en cada equipo (lib/interrumpidas.ts decide qué se enseña). */
+  cortadas: {} as Record<string, { desde: string; tareas: TareaEnMarcha[] }>,
   /** ¿Lo da el servidor (v1.25)? Si no, sale de los informes. */
   enVivo: true,
 });
@@ -82,10 +84,12 @@ function hayAlgo() {
   return Object.values(enMarcha.porEquipo).some((x) => x.tareas.length);
 }
 
+let cortadasLeidas: Record<string, { desde: string; tareas: TareaEnMarcha[] }> = {};
 async function leer(cliente: string): Promise<Record<string, EnMarchaEquipo>> {
   if (enMarcha.enVivo) {
     try {
       const xs = await api.progreso(cliente);
+      cortadasLeidas = Object.fromEntries(xs.filter((x) => x.interrumpidas?.tareas?.length).map((x) => [x.equipo, { desde: x.interrumpidas!.desde, tareas: x.interrumpidas!.tareas }]));
       return Object.fromEntries(xs.filter((x) => x.tareas.length).map((x) => [x.equipo, { recibido: x.recibido, tareas: x.tareas }]));
     } catch (e) {
       if (!(e instanceof api.ApiError && e.estado === 404)) throw e;
@@ -124,6 +128,7 @@ async function preguntar(cliente: string, n: number, siempre = false) {
         }
       ritmosVersion.n++;
       enMarcha.porEquipo = nuevo;
+      if (JSON.stringify(cortadasLeidas) !== JSON.stringify(enMarcha.cortadas)) enMarcha.cortadas = cortadasLeidas;
       pulso.ahora = ahora;
       latir();
       if (terminadas.length) {
@@ -185,6 +190,8 @@ export function vigilarProgreso(cliente: string): () => void {
   if (enMarcha.cliente !== cliente) {
     enMarcha.cliente = cliente;
     enMarcha.porEquipo = {};
+    enMarcha.cortadas = {};
+    cortadasLeidas = {};
     enMarcha.enVivo = true;
     llegadas.clear();
     ritmos.clear();

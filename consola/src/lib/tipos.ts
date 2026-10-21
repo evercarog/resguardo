@@ -1060,6 +1060,11 @@ export interface ProgresoEquipo {
   equipo: string;
   recibido: string;
   tareas: TareaEnMarcha[];
+  /**
+   * 0.8.2 (C3, 15jj): lo que estaba en marcha y dejó de contarse sin terminar (el equipo se
+   * desconectó o se apagó a mitad). `desde`: la última noticia. Solo en la memoria del servidor.
+   */
+  interrumpidas?: { desde: string; tareas: TareaEnMarcha[] } | null;
 }
 
 export type TipoAviso =

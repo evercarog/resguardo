@@ -3,6 +3,28 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-10-21 · `ia/082-consola` · Plan 0.8.2: B4, C2, C3 y C5
+
+Claude Code (Opus), en autónomo, desde `ia/082-pulido`. Pedido: B4 (la copia derivada «de cada día» ya quitada en las demás pantallas), C2 (resto de 15y), C3 (resto de 15jj) y C5 (repaso de textos y pantallas). Sin tocar el mapa de Equipos ni Infraestructura (otra rama).
+
+**Hecho (un commit por tema):**
+
+- **B4:** `externaViva` (`lib/repo.ts`): la tarjeta del repositorio, su camino («Cómo se protegen tus datos», `FlujoRepo`) y «¿Por qué este estado?» solo enseñan la última vuelta si el repositorio aún tiene `externa`; la tarjeta dice además las otras derivadas. El historial la deja como entrada pasada («Copia derivada», antes «Subida a la nube»). La ficha del equipo, la página del repositorio, la de la derivada, «Recuperar», la regla y «Dónde está» ya miraban `r.externa`. En el servidor, los avisos `externa_fallida` se calculan sin la vuelta de una copia que el resumen guardado ya no tiene (`problemas::sin_externas_quitadas`; antes el aviso se quedaba abierto para siempre con los agentes hasta la 0.8.1). Comprobado en el código que el agente manda `repositorios[].externa` en el resumen desde el primer resumen v2: no hay agente admitido que no lo mande.
+- **C2:** «No copiar…» en Equipos → «Varios a la vez» (`GruposEnBloque.svelte`, `gruposEnCopias`): pone o quita grupos en todas las copias de los elegidos, con la clave y una orden `config` por equipo, como «Aplicarles el cambio». La plantilla (también la de una etiqueta, en bloque o desde el editor) lleva los grupos con sus reglas de ahora (`gruposAlDia`, `planPlantilla(…, grupos)`); «Ajustar» de la etiqueta dice qué grupos lleva la plantilla.
+- **C3:** lo calcula **el servidor** (`progreso.rs`): el progreso que deja de llegar sin la lista vacía del final pasa a «cortado» y `GET …/progreso` lo da en `interrumpidas` (contrato v1.9x, pendiente de numerar). La consola (`lib/interrumpidas.ts`) lo enseña en el progreso (ficha, repositorio, página de la copia) y en «Copias» como «Interrumpida: PC-02 se desconectó a las 12:40», con «desconectado desde …» junto a las copias de un equipo sin conexión; manda el equipo en cuanto hay una vuelta igual o más nueva que el inicio de la copia (o un informe posterior, en las demás tareas).
+- **C5:** `.page-actions` (ui/) con `max-width: 100%` (desbordaba a 375 px), «Restauraciones» y «Todos los clientes → En marcha» sin desbordes a 375 px, «Reanudar» en «Varios a la vez» dice por qué está apagado. Lo grande, en plan-mejoras **15zz** (botones apagados que solo explican el motivo en un globo). Capturas en la carpeta de capturas de la sesión (`082-consola/`, fuera del repositorio).
+
+**Comprobado (resultado real, por código de salida):** `cargo fmt --all --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `npm run check` 0; `npm run build` 0; `npm run test:vectores` 1 la primera vez (un comentario HTML con «vuelta» en `TarjetaRepo`), arreglado y repetido: 0, con `scripts/vectores-082.ts` (23 de 23); `cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings` 0; `cargo test --workspace --no-fail-fast` con los tres `--skip` 0 (902 pasan, 0 fallan; nuevas `externa_quitada_no_avisa` y `lo_cortado`); `cargo build -p resguardo-servidor -p resguardo-agente --bins` 0; `npm run e2e` con los binarios de `resguardo/src-tauri/binaries` 0 («Escenario completo»); `npm run test:sin-referencias` 0 antes de cada commit. En el simulador (puerto propio 5287): C3 en «Copias» y en la página de la copia de PORTATIL-GERENCIA, «No copiar…» en bloque mandando la orden, y un recorrido de 27 páginas a 375 px buscando elementos que se salen.
+
+**Sin probar:** C3 con un equipo real que se desconecta a mitad (solo la prueba unitaria del servidor y el simulador); C2 contra agentes reales y con un agente sin `grupos_en_copias` (las reglas se ponen, pero «Quitarlos» no las encuentra por grupo: lo dice el diálogo); el modo claro solo en dos páginas a 375 px.
+
+**Decisiones dudosas:**
+- C3 lo calcula el servidor y **solo en memoria** (como el progreso): tras reiniciar el servidor se olvida, y se olvida a los 7 días. Guardarlo en la base de datos sería más fiable pero más cambio.
+- Lo cortado no cuenta lo «en cola» ni la actualización del agente. «Todos los clientes» (`/api/panel/progreso`) aún no lo enseña.
+- El chip de estado de la copia sigue siendo el suyo (p. ej. «Atrasada»); «Interrumpida…» va en una línea aparte.
+- B4: los avisos se filtran con el resumen **guardado** del equipo; si el resumen aún no llegó tras quitarla, el aviso de esa vuelta puede salir una vez más.
+- En plan-mejoras usé **15zz** y no 15yy: el plan de la 0.8.2 ya nombra 15yy para B3 y puede llegar de otra rama.
+
 ## 2026-10-20 · `ia/integracion-081` · **Resumen de la versión 0.8.1 (para el responsable)**
 
 Claude Code (Opus), en autónomo (pedido del 2026-10-19: «empieza ya con la 0.8.1, trabaja de manera autónoma hasta terminar la versión»; añadidos del 2026-10-20: las pruebas funcionales en todas las consolas y un informe descargable de la configuración). Plan: [plan-0.8.1.md](plan-0.8.1.md); detalle de cada rama más abajo.

@@ -68,7 +68,8 @@
   import Chip from "$lib/componentes/Chip.svelte";
   import CopiaGuiada from "$lib/componentes/copias/CopiaGuiada.svelte";
   import NoCopiar from "$lib/componentes/copias/NoCopiar.svelte";
-  import { ADMITE_GRUPOS, errorTamano } from "$lib/exclusionesCopia";
+  import { ADMITE_GRUPOS, errorTamano, gruposAlDia } from "$lib/exclusionesCopia";
+  import { gruposExclusiones } from "$lib/gruposExclusiones";
   import EtiquetasVersiones from "$lib/componentes/copias/EtiquetasVersiones.svelte";
   import EquipoMovil from "$lib/componentes/copias/EquipoMovil.svelte";
   import AlReconectar from "$lib/componentes/copias/AlReconectar.svelte";
@@ -290,6 +291,9 @@
     k.gancho = JSON.parse(JSON.stringify(p.copia.gancho ?? [])) as Gancho[];
     // 15y y 15v: los grupos, el tamaño máximo y las etiquetas viajan con la plantilla.
     k.grupos_exclusiones = JSON.parse(JSON.stringify(p.copia.grupos_exclusiones ?? [])) as CopiaConfig["grupos_exclusiones"];
+    // 0.8.2 (C2): con las reglas de ahora de cada grupo (la plantilla guarda las de cuando se hizo).
+    const alDia = gruposAlDia(k, gruposExclusiones(actual));
+    if (alDia.length) avisar(`Con las reglas de ahora de ${lista(alDia.map((x) => `«${x}»`))} (la plantilla tenía las de antes).`);
     k.mayores_mb = admiteGrupos ? (p.copia.mayores_mb ?? null) : null;
     k.excepto_tamano = k.mayores_mb ? [...(p.copia.excepto_tamano ?? [])] : [];
     k.etiquetas = [...(p.copia.etiquetas ?? [])];

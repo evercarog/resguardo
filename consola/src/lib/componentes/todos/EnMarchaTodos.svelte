@@ -165,6 +165,11 @@
     }
     .fase {
       margin-left: 40px;
+      /* 0.8.2 (C5): una fase larga («Primera subida de …») se partía fuera de la pantalla. */
+      min-width: 0;
+      max-width: calc(100% - 40px);
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
   }
 </style>

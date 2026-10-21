@@ -14,7 +14,9 @@
   import { abrirVuelta } from "./navegar";
   import "./pulsable.css";
 
-  let { inf, ahora }: { inf: RepoInforme | null; ahora: number } = $props();
+  // B4 (0.8.2): `conExterna`, si el repositorio aún tiene su copia derivada «de cada día» (sin
+  // ella, la última vuelta que queda en el informe es de una copia ya quitada).
+  let { inf, ahora, conExterna = true }: { inf: RepoInforme | null; ahora: number; conExterna?: boolean } = $props();
 
   const ultima = $derived(ultimaEjecucion(inf));
   const problemas = $derived(problemasRecientes(inf?.ejecuciones ?? []));
@@ -25,7 +27,7 @@
       [
         ["Verificación", inf?.verificacion],
         ["Prueba de restauración", inf?.prueba_restauracion],
-        ["Copia derivada", inf?.externa],
+        ["Copia derivada", conExterna ? inf?.externa : null],
       ] as const
     ).filter(([, t]) => t && t.resultado !== "ok"),
   );

@@ -397,7 +397,9 @@
       flex: 1 1 calc(100% - 48px);
     }
     .lista-rest .fila-meta {
-      flex-basis: 100%;
+      /* 0.8.2 (C5): con el margen, el 100 % se salía 44 px a 375 px. */
+      flex-basis: calc(100% - 44px);
+      min-width: 0;
       margin-left: 44px;
       text-align: left;
     }

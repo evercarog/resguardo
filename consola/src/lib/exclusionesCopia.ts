@@ -73,6 +73,43 @@ export function alDia(usado: Pick<GrupoUsado, "reglas">, g: Pick<GrupoDato, "reg
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
+/**
+ * 0.8.2 (C2, 15y): poner o quitar grupos en varias copias a la vez («Varios a la vez» en
+ * Equipos). Poner: los que la copia no tiene entran con sus reglas de ahora y los que tiene
+ * con reglas de antes se ponen al día. Quitar: salen con sus reglas (las que no ponga otro
+ * grupo). Devuelve las copias que cambian (las demás, igual).
+ */
+export function gruposEnCopias<K extends ConGrupos & { nombre: string }>(copias: K[], grupos: GrupoDato[], quitar = false): K[] {
+  const foto = (k: ConGrupos) => JSON.stringify([k.exclusiones, k.grupos_exclusiones ?? []]);
+  return copias.filter((k) => {
+    const antes = foto(k);
+    for (const g of grupos) {
+      const u = k.grupos_exclusiones?.find((x) => x.id === g.id);
+      if (quitar) {
+        if (u) alternarGrupo(k, g, false);
+      } else if (!u || !alDia(u, g) || g.reglas.some((r) => !k.exclusiones.includes(r))) alternarGrupo(k, g, true);
+    }
+    return foto(k) !== antes;
+  });
+}
+
+/**
+ * 0.8.2 (C2, 15y): los grupos de una plantilla (también la de una etiqueta, 6b) con las
+ * reglas de ahora de «Organización»: la plantilla guarda las de cuando se hizo. Los grupos
+ * que ya no existen se quedan como estaban. Devuelve los nombres de los que se pusieron al día.
+ */
+export function gruposAlDia(k: ConGrupos, grupos: GrupoDato[]): string[] {
+  const out: string[] = [];
+  for (const u of [...(k.grupos_exclusiones ?? [])]) {
+    const g = grupos.find((x) => x.id === u.id);
+    if (g && !alDia(u, g)) {
+      ponerAlDia(k, g);
+      out.push(g.nombre);
+    }
+  }
+  return out;
+}
+
 /** Las copias (del resumen de cada equipo) que usan un grupo, y si tienen sus reglas de ahora. */
 export function copiasQueUsan(equipos: Equipo[], g: GrupoDato): { equipo: Equipo; copia: { id: string; nombre: string }; alDia: boolean }[] {
   return equipos.flatMap((e) =>

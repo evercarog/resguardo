@@ -74,9 +74,69 @@ struct Entrada {
     tareas: Vec<Value>,
 }
 
-/// El último progreso de cada equipo.
+/// 0.8.2 (C3, 15jj): lo que estaba en marcha en un equipo y dejó de contarse sin terminar (el
+/// equipo se desconectó, se apagó o el servicio se paró a mitad). Solo en memoria, como el
+/// progreso: tras reiniciar el servidor no se sabe.
+struct Cortada {
+    cliente: String,
+    /// Hora (Unix) de la última noticia de la tarea.
+    desde: i64,
+    visto: Instant,
+    tareas: Vec<Value>,
+}
+
+/// Lo cortado se olvida pasado este tiempo (el equipo ya habrá dicho lo suyo o no volverá).
+pub const OLVIDA_CORTADAS: Duration = Duration::from_secs(7 * 24 * 3600);
+
+/// Lo que no cuenta como cortado: lo que aún no había empezado y la actualización del
+/// agente (reinicia el servicio a propósito).
+fn se_corta(t: &Value) -> bool {
+    t["fase"] != "en_cola" && t["tipo"] != "actualizacion"
+}
+
+/// El último progreso de cada equipo y lo que quedó cortado.
 #[derive(Default)]
-pub struct Progresos(Mutex<HashMap<String, Entrada>>);
+pub struct Progresos(Mutex<HashMap<String, Entrada>>, Mutex<HashMap<String, Cortada>>);
+
+impl Progresos {
+    /// Pasa a «cortado» lo que caducó: `[(cliente, equipo)]` de lo que se quitó.
+    fn caducar(&self, m: &mut HashMap<String, Entrada>, ahora: Instant) -> Vec<(String, String)> {
+        let viejos: Vec<String> = m.iter().filter(|(_, e)| ahora.duration_since(e.visto) >= CADUCA).map(|(id, _)| id.clone()).collect();
+        let mut c = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        c.retain(|_, x| ahora.duration_since(x.visto) < OLVIDA_CORTADAS);
+        let mut out = Vec::new();
+        for id in viejos {
+            let Some(e) = m.remove(&id) else { continue };
+            let tareas: Vec<Value> = e.tareas.into_iter().filter(se_corta).collect();
+            if !tareas.is_empty() {
+                let x = c.entry(id.clone()).or_insert_with(|| Cortada { cliente: e.cliente.clone(), desde: e.recibido, visto: ahora, tareas: Vec::new() });
+                if x.cliente != e.cliente {
+                    x.tareas.clear();
+                    x.cliente = e.cliente.clone();
+                }
+                // Las de antes de la misma tarea se sustituyen; como mucho, MAX_TAREAS.
+                let nuevas: Vec<String> = tareas.iter().map(clave).collect();
+                x.tareas.retain(|t| !nuevas.contains(&clave(t)));
+                x.tareas.extend(tareas);
+                let sobran = x.tareas.len().saturating_sub(MAX_TAREAS);
+                x.tareas.drain(..sobran);
+                x.desde = e.recibido;
+                x.visto = ahora;
+            }
+            out.push((e.cliente, id));
+        }
+        out
+    }
+
+    /// Lo cortado en los equipos de un cliente: `[(equipo, desde, tareas)]`.
+    pub fn cortadas_de(&self, cliente: &str) -> Vec<(String, i64, Vec<Value>)> {
+        let c = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        let mut v: Vec<_> =
+            c.iter().filter(|(_, x)| x.cliente == cliente && !x.tareas.is_empty()).map(|(id, x)| (id.clone(), x.desde, x.tareas.clone())).collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    }
+}
 
 impl Progresos {
     /// Anota lo que está en marcha en un equipo; vacío, lo quita. Devuelve qué
@@ -85,7 +145,18 @@ impl Progresos {
         let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let ahora = Instant::now();
         let habia = m.get(equipo).filter(|e| e.cliente == cliente && ahora.duration_since(e.visto) < CADUCA).map(|e| e.tareas.clone());
-        m.retain(|_, e| ahora.duration_since(e.visto) < CADUCA);
+        self.caducar(&mut m, ahora);
+        // Lo que vuelve a estar en marcha ya no está cortado.
+        if !tareas.is_empty() {
+            let mut c = self.1.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(x) = c.get_mut(equipo) {
+                let nuevas: Vec<String> = tareas.iter().map(clave).collect();
+                x.tareas.retain(|t| !nuevas.contains(&clave(t)));
+                if x.tareas.is_empty() {
+                    c.remove(equipo);
+                }
+            }
+        }
         if tareas.is_empty() {
             m.remove(equipo);
             habia.map(|_| Paso::Termina)
@@ -104,13 +175,7 @@ impl Progresos {
     /// Quita lo que caducó (el agente dejó de contar) y dice de quién era: `[(cliente, equipo)]`.
     pub fn purgar(&self) -> Vec<(String, String)> {
         let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let ahora = Instant::now();
-        let viejos: Vec<(String, String)> =
-            m.iter().filter(|(_, e)| ahora.duration_since(e.visto) >= CADUCA).map(|(id, e)| (e.cliente.clone(), id.clone())).collect();
-        for (_, id) in &viejos {
-            m.remove(id);
-        }
-        viejos
+        self.caducar(&mut m, Instant::now())
     }
 
     /// Lo que está en marcha en los equipos de un cliente: `[(equipo, recibido, tareas)]`.
@@ -125,6 +190,18 @@ impl Progresos {
         v.sort_by(|a, b| a.0.cmp(&b.0));
         v
     }
+}
+
+/// Qué tarea es, sin su fase ni sus cifras (para lo cortado).
+fn clave(x: &Value) -> String {
+    format!(
+        "{}|{}|{}|{}|{}",
+        x["tipo"].as_str().unwrap_or(""),
+        x["repo"].as_str().unwrap_or(""),
+        x["copia"].as_str().unwrap_or(""),
+        x["espejo"].as_str().unwrap_or(""),
+        x["derivada"].as_str().unwrap_or("")
+    )
 }
 
 /// Qué tareas son (tipo, repositorio y copia), sin sus cifras. v1.6x: lo que pasa de «en
@@ -191,16 +268,29 @@ pub fn limpiar(tareas: &Value) -> Res<Vec<Value>> {
 pub async fn ver(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, Rol::Lectura).await?;
     let filas = st.progreso.de_cliente(ctx.id());
-    if filas.is_empty() {
+    let cortadas = st.progreso.cortadas_de(ctx.id());
+    if filas.is_empty() && cortadas.is_empty() {
         return Ok(Json(json!([])));
     }
     // Solo los equipos que siguen en el cliente (uno que se movió a otro no se enseña aquí).
     let suyos: std::collections::HashSet<String> = st.db(move |db| Ok(db.equipos(&ctx)?.into_iter().map(|e| e.id).collect())).await?;
-    Ok(Json(json!(filas
-        .into_iter()
-        .filter(|(e, _, _)| suyos.contains(e))
-        .map(|(e, t, tareas)| json!({ "equipo": e, "recibido": fecha(t), "tareas": tareas }))
-        .collect::<Vec<_>>())))
+    Ok(Json(json!(con_cortadas(filas, cortadas, &suyos))))
+}
+
+/// Las filas de `GET …/progreso`: lo que está en marcha y, 0.8.2 (C3), lo cortado
+/// (`interrumpidas`, con `desde`: la última noticia). Un equipo con solo lo cortado va con
+/// `tareas: []`, que una consola anterior no enseña.
+fn con_cortadas(filas: Vec<(String, i64, Vec<Value>)>, cortadas: Vec<(String, i64, Vec<Value>)>, suyos: &std::collections::HashSet<String>) -> Vec<Value> {
+    let mut out: Vec<Value> =
+        filas.into_iter().filter(|(e, _, _)| suyos.contains(e)).map(|(e, t, tareas)| json!({ "equipo": e, "recibido": fecha(t), "tareas": tareas })).collect();
+    for (e, desde, tareas) in cortadas.into_iter().filter(|(e, _, _)| suyos.contains(e)) {
+        let corte = json!({ "desde": fecha(desde), "tareas": tareas });
+        match out.iter_mut().find(|x| x["equipo"] == e.as_str()) {
+            Some(x) => x["interrumpidas"] = corte,
+            None => out.push(json!({ "equipo": e, "recibido": fecha(desde), "tareas": [], "interrumpidas": corte })),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -287,6 +377,45 @@ mod tests {
         assert_eq!(p.poner("c1", "e1", cola), Some(Paso::Empieza));
         assert_eq!(p.poner("c1", "e1", ya.clone()), Some(Paso::Empieza));
         assert_eq!(p.poner("c1", "e1", ya), Some(Paso::Cambia));
+    }
+
+    /// 0.8.2 (C3): lo que deja de contarse sin terminar queda «cortado» hasta que vuelve a
+    /// estar en marcha; lo que termina bien (lista vacía), no; ni lo «en cola» ni la actualización.
+    #[test]
+    fn lo_cortado() {
+        let p = Progresos::default();
+        let copia = json!({ "tipo": "copia", "fase": "subiendo", "repo": "r", "copia": "k", "nombre": "Documentos" });
+        p.poner(
+            "c1",
+            "e1",
+            vec![
+                copia.clone(),
+                json!({ "tipo": "verificar", "fase": "en_cola", "repo": "r" }),
+                json!({ "tipo": "actualizacion", "fase": "en_marcha", "repo": "" }),
+            ],
+        );
+        p.poner("c1", "e2", vec![copia.clone()]);
+        p.poner("c1", "e2", vec![]);
+        // Se caduca a mano (sin esperar 90 s).
+        {
+            let mut m = p.0.lock().unwrap();
+            for e in m.values_mut() {
+                e.visto -= CADUCA;
+            }
+        }
+        assert_eq!(p.purgar(), vec![("c1".to_string(), "e1".to_string())]);
+        let c = p.cortadas_de("c1");
+        assert_eq!(c.len(), 1, "e2 terminó bien");
+        assert_eq!((c[0].0.as_str(), c[0].2.len(), c[0].2[0]["copia"].as_str()), ("e1", 1, Some("k")), "sin lo «en cola» ni la actualización");
+        assert!(p.cortadas_de("c2").is_empty());
+        // La fila de la consola: e1 sin nada en marcha, con lo cortado; un equipo de otro cliente, fuera.
+        let suyos: std::collections::HashSet<String> = ["e1".to_string()].into();
+        let filas = con_cortadas(p.de_cliente("c1"), c, &suyos);
+        assert_eq!(filas.len(), 1);
+        assert_eq!((filas[0]["tareas"].as_array().map(Vec::len), filas[0]["interrumpidas"]["tareas"][0]["nombre"].as_str()), (Some(0), Some("Documentos")));
+        // Vuelve a estar en marcha: ya no está cortada.
+        p.poner("c1", "e1", vec![json!({ "tipo": "copia", "fase": "escaneando", "repo": "r", "copia": "k" })]);
+        assert!(p.cortadas_de("c1").is_empty());
     }
 
     #[test]

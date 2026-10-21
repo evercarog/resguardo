@@ -144,7 +144,7 @@
         <p class="faint">Esa copia ya no está en el informe del equipo (solo trae los últimos 60 días).</p>
       {/if}
     {:else if sel.vista === "estado"}
-      <EstadoRepo inf={soloCopia ? infCopia(inf, soloCopia) : inf} {ahora} />
+      <EstadoRepo inf={soloCopia ? infCopia(inf, soloCopia) : inf} {ahora} conExterna={!!repo.externa} />
     {/if}
   </Cajon>
 {/if}

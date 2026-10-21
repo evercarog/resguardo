@@ -586,7 +586,17 @@ async fn registrar_informe(st: &St, a: &Agente, datos: Value) -> Res<()> {
     // v1.57: una versión que falló en este equipo se retiene para el resto del cliente.
     let fallida = crate::publicaciones::fallida_del_informe(&datos);
     // Copias, verificaciones… que fallan o vuelven a ir bien: para las notificaciones (solo si cambió algo).
-    let evento = crate::notificaciones::evento_estado(&st.notif, &a.ctx, &a.equipo, crate::notificaciones::problemas::Fuente::Informe, &datos);
+    // B4 (0.8.2): sin la copia derivada «de cada día» que el resumen ya no tiene (agentes hasta la 0.8.1).
+    let (ctx0, eq0) = (a.ctx.clone(), a.equipo.clone());
+    let resumen = st.db(move |db| Ok(db.equipo(&ctx0, &eq0)?.and_then(|e| e.resumen))).await.ok().flatten();
+    let para_avisos = crate::notificaciones::problemas::sin_externas_quitadas(&datos, resumen.as_ref());
+    let evento = crate::notificaciones::evento_estado(
+        &st.notif,
+        &a.ctx,
+        &a.equipo,
+        crate::notificaciones::problemas::Fuente::Informe,
+        para_avisos.as_ref().unwrap_or(&datos),
+    );
     let hay_evento = evento.is_some();
     let (ctx, equipo) = (a.ctx.clone(), a.equipo.clone());
     st.db(move |db| {

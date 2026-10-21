@@ -810,6 +810,9 @@ button.card:focus-visible {
   align-items: center;
   gap: 6px;
   flex: none;
+  /* 0.8.2 (C5): sin esto, a 375 px una fila de muchas acciones no se partía y desbordaba. */
+  max-width: 100%;
+  min-width: 0;
 }
 /* Cabecera sencilla (Estado, Actividad): título, subtítulo y acciones a la derecha. */
 .page-top {

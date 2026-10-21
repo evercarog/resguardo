@@ -5,6 +5,7 @@
 import { admiteTodasLasBases, admiteVerificarVolcado, ganchosDe, paraConfig, VERSION_GANCHOS, versionAlMenos } from "./ganchos";
 import { errorReglas, normalizar, reglasDe, VERSION_REGLAS, VERSION_SOLO_CAMBIOS } from "./horario";
 import type { Plantilla } from "./plantillas";
+import { gruposAlDia } from "./exclusionesCopia";
 import type { Configuracion, CopiaConfig, Equipo, Gancho, Horario } from "./tipos";
 import { admiteVerificacion, admiteVerificacionHorario } from "./verificacion";
 
@@ -150,7 +151,7 @@ export type PlanPlantilla = { ok: true; copia: CopiaConfig; repos: { id: string;
  * (con el motivo) si no puede: sin repositorio, ya tiene una copia con ese
  * nombre, o su agente no entiende algo de la plantilla. Nada se envía aquí.
  */
-export function planPlantilla(cfg: Configuracion, p: Plantilla, a: Admite, nuevoId: string): PlanPlantilla {
+export function planPlantilla(cfg: Configuracion, p: Plantilla, a: Admite, nuevoId: string, grupos: { id: string; nombre: string; reglas: string[] }[] = []): PlanPlantilla {
   const repos = cfg.repositorios.filter((r) => !r.solo_lectura).map((r) => ({ id: r.id, nombre: r.nombre }));
   if (!repos.length) return { ok: false, motivo: "Sin repositorio donde guardar: créalo antes en su ficha." };
   const nombre = p.nombre.trim();
@@ -161,23 +162,22 @@ export function planPlantilla(cfg: Configuracion, p: Plantilla, a: Admite, nuevo
   const horario = JSON.parse(JSON.stringify(p.copia.horario)) as Horario;
   const reglas = reglasDe(horario, a.reglas);
   if (!reglas.length || errorReglas(reglas, a.reglas)) return { ok: false, motivo: "El horario de la plantilla no vale para su agente: aplícala desde «Añadir o cambiar copias»." };
-  return {
-    ok: true,
-    repos,
-    copia: {
-      id: nuevoId,
-      nombre,
-      repo: repos[0].id,
-      carpetas: [...p.copia.carpetas],
-      exclusiones: [...p.copia.exclusiones],
-      horario,
-      activa: true,
-      gancho: JSON.parse(JSON.stringify(ganchos)) as Gancho[],
-      solo_si_cambios: p.copia.solo_si_cambios !== false,
-      // 15y y 15v: viajan con la plantilla (configParaEnviar solo los manda a quien los entiende).
-      ...(p.copia.grupos_exclusiones?.length ? { grupos_exclusiones: JSON.parse(JSON.stringify(p.copia.grupos_exclusiones)) } : {}),
-      ...(p.copia.mayores_mb && a.grupos ? { mayores_mb: p.copia.mayores_mb, excepto_tamano: [...(p.copia.excepto_tamano ?? [])] } : {}),
-      ...(p.copia.etiquetas?.length ? { etiquetas: [...p.copia.etiquetas] } : {}),
-    },
+  const copia: CopiaConfig = {
+    id: nuevoId,
+    nombre,
+    repo: repos[0].id,
+    carpetas: [...p.copia.carpetas],
+    exclusiones: [...p.copia.exclusiones],
+    horario,
+    activa: true,
+    gancho: JSON.parse(JSON.stringify(ganchos)) as Gancho[],
+    solo_si_cambios: p.copia.solo_si_cambios !== false,
+    // 15y y 15v: viajan con la plantilla (configParaEnviar solo los manda a quien los entiende).
+    ...(p.copia.grupos_exclusiones?.length ? { grupos_exclusiones: JSON.parse(JSON.stringify(p.copia.grupos_exclusiones)) } : {}),
+    ...(p.copia.mayores_mb && a.grupos ? { mayores_mb: p.copia.mayores_mb, excepto_tamano: [...(p.copia.excepto_tamano ?? [])] } : {}),
+    ...(p.copia.etiquetas?.length ? { etiquetas: [...p.copia.etiquetas] } : {}),
   };
+  // 0.8.2 (C2): sus grupos de exclusiones con las reglas de ahora (la plantilla guarda las de entonces).
+  gruposAlDia(copia, grupos);
+  return { ok: true, repos, copia };
 }

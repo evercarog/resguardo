@@ -66,16 +66,8 @@
           flecha: `cada día a las ${repo.externa.hora}`,
           texto: inf?.externa ? (inf.externa.resultado === "fallo" ? (inf.externa.mensaje_corto ?? "La última falló") : inf.externa.resultado === "aviso" ? "Con avisos" : "Al día") : "Todavía sin ninguna",
         }
-      : inf?.externa
-        ? {
-            // El agente informa de una copia externa propia (p. ej. a la nube) aunque el resumen no la nombre.
-            tono: inf.externa.resultado === "fallo" ? "bad" : inf.externa.resultado === "aviso" ? "warn" : "ok",
-            nombre: "Copia derivada",
-            sub: inf.externa.ultima ? `Última ${relativo(inf.externa.ultima, ahora)}` : "Todavía sin ninguna",
-            flecha: "copia derivada",
-            texto: inf.externa.resultado === "fallo" ? (inf.externa.mensaje_corto ?? "La última falló") : inf.externa.resultado === "aviso" ? "Con avisos" : "Al día",
-          }
-        : espejo
+      : // B4 (0.8.2): la última vuelta de una copia derivada ya quitada no se enseña como viva.
+        espejo
         ? {
             tono: resultadoConError(espejo.resultado) || espejo.destinos?.some((d) => resultadoConError(d.resultado)) ? "bad" : espejo.ultima ? "ok" : "warn",
             nombre: espejo.destinos?.length ? espejo.destinos.map((d) => (d.tipo === "nube" ? d.nube : d.carpeta)).join(", ") : `Espejo de ${almacen?.nombre}`,

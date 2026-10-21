@@ -791,6 +791,8 @@ export async function sembrar(vacio = false) {
   portatil.etiquetas = ["Gerencia", "Puestos", "Contable"];
   surAlmacen.etiquetas = ["Servidores"];
   enriquecer(portatil, { soloAnadir: null, sinCambios: 0.3, medioAnadido: 40_000_000, silencioHoras: 54 });
+  // 0.8.2 (C3): sin conexión desde hace 2 días, su último informe no puede traer una copia de hace 3 h.
+  for (const k of portatil.informes[0]?.datos.copias ?? []) k.cuando = hace(60 * 54);
   enriquecer(servidorAltamar, { externa: true, medioAnadido: 900_000_000, recortado: true });
   enriquecer(surCaja, { externa: true, medioAnadido: 25_000_000 });
   enriquecer(archivos, { externa: false, soloAnadir: false, medioAnadido: 650_000_000, local: { unidad: "D:" } });

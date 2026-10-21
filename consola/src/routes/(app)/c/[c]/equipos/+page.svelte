@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tip } from "$lib/tooltip";
-  import { ArrowDown, ArrowUp, Building2, ChevronRight, CirclePause, CirclePlay, Clock, Cpu, GripVertical, LayoutTemplate, List, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, Waypoints, X } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, Building2, ChevronRight, CirclePause, CirclePlay, Clock, Cpu, FileX, GripVertical, LayoutTemplate, List, ListChecks, Monitor, Play, Plus, Search, ShieldCheck, TriangleAlert, Waypoints, X } from "@lucide/svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
   import { grupoTipo } from "$lib/tipoEquipo";
   import Modal from "$ui/componentes/Modal.svelte";
@@ -12,6 +12,7 @@
   import type { Equipo } from "$lib/tipos";
   import AccionesEnBloque from "$lib/componentes/AccionesEnBloque.svelte";
   import AplicarPlantillaEnBloque from "$lib/componentes/AplicarPlantillaEnBloque.svelte";
+  import GruposEnBloque from "$lib/componentes/GruposEnBloque.svelte";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
@@ -242,6 +243,7 @@
   // --- Acciones en bloque: copiar ahora, verificar, reanudar (inofensivas), pausar
   // (con la clave, y espera) y aplicar una plantilla (con la clave; v1.52) -------
   let seleccionando = $state(false);
+  let gruposBloque = $state(false);
   let elegidos = $state<Set<string>>(new Set());
   let enBloque = $state<"copiar" | "verificar" | "pausar" | "reanudar" | null>(null);
   let aplicarPlantilla = $state(false);
@@ -362,7 +364,7 @@
         <button class:on={filtro === "almacen"} aria-pressed={filtro === "almacen"} onclick={() => ponerFiltro("almacen")}>Guardan copias</button>
       </div>
       {#if puede.ordenar(actual.cliente.rol) && !seleccionando}
-        <button class="btn" onclick={() => (seleccionando = true)} use:tip={"Copiar ahora o verificar varios equipos a la vez"}><ListChecks size={16} />Varios a la vez</button>
+        <button class="btn" onclick={() => (seleccionando = true)} use:tip={"Copiar ahora, verificar o cambiar varios equipos a la vez"}><ListChecks size={16} />Varios a la vez</button>
       {/if}
     </div>
     <FiltroEtiquetas />
@@ -524,8 +526,10 @@
         <button class="btn btn-sm btn-primary" disabled={!seleccion.length} onclick={() => (enBloque = "copiar")}><Play size={14} />Copiar ahora</button>
         <button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (enBloque = "verificar")}><ShieldCheck size={14} />Verificar</button>
         {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (enBloque = "pausar")}><CirclePause size={14} />Pausar</button>{/if}
-        <button class="btn btn-sm" disabled={!seleccion.some((e) => e.resumen?.pausado_hasta)} onclick={() => (enBloque = "reanudar")}><CirclePlay size={14} />Reanudar</button>
+        <button class="btn btn-sm" disabled={!seleccion.some((e) => e.resumen?.pausado_hasta)} use:tip={seleccion.some((e) => e.resumen?.pausado_hasta) ? "Reanudar las copias de los que están en pausa" : "Ninguno de los elegidos está en pausa"} onclick={() => (enBloque = "reanudar")}><CirclePlay size={14} />Reanudar</button>
         {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (aplicarPlantilla = true)}><LayoutTemplate size={14} />Aplicar plantilla</button>{/if}
+        <!-- 0.8.2 (C2, 15y): grupos de «No copiar» en todas las copias de los elegidos. -->
+        {#if puede.administrar(actual.cliente.rol)}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => (gruposBloque = true)}><FileX size={14} />No copiar…</button>{/if}
         {#if puede.administrar(actual.cliente.rol) && org.sedes.length}<button class="btn btn-sm" disabled={!seleccion.length} onclick={() => ((sedeElegida = ""), (ponerSede = true))}><Building2 size={14} />Poner sede</button>{/if}
         <button class="btn btn-sm btn-ghost" onclick={salirDeSeleccion}><X size={14} />Terminar</button>
       </div>
@@ -560,6 +564,10 @@
 
 {#if aplicarPlantilla && actual.cliente}
   <AplicarPlantillaEnBloque cliente={actual.cliente} equipos={seleccion} plantillaInicial={plantillaComun} onclose={() => (aplicarPlantilla = false)} />
+{/if}
+
+{#if gruposBloque && actual.cliente}
+  <GruposEnBloque cliente={actual.cliente} equipos={seleccion} onclose={() => (gruposBloque = false)} />
 {/if}
 
 {#if enBloque && actual.cliente}

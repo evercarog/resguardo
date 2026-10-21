@@ -14,12 +14,14 @@
   // en «Necesitan atención» y en la cifra de las que están al día, y hay un
   // filtro «Con espejo / sin espejo».
   import { tip } from "$lib/tooltip";
-  import { CalendarClock, ChevronRight, FolderSync, HardDrive, History, ListChecks, Pencil, Play, Search, TriangleAlert, X } from "@lucide/svelte";
+  import { CalendarClock, ChevronRight, CircleAlert, FolderSync, HardDrive, History, ListChecks, Pencil, Play, Search, TriangleAlert, Unplug, X } from "@lucide/svelte";
+  import { cortadaDeCopia, equipoDesconectado, textoCortada } from "$lib/interrumpidas";
+  import { enMarcha } from "$lib/progreso.svelte";
   // 0.8.1 (15t): cambiar el nombre desde la fila (nombre nuevo y clave de administración).
   import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
   import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
-  import { bytes, horarioEnFrase, numero, plural, relativo, cuandoFrase } from "$lib/formato";
+  import { bytes, fechaLarga, horarioEnFrase, numero, plural, relativo, cuandoFrase } from "$lib/formato";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { cuentaCopias, ESPEJO_FILTRO, ESTADOS_FILTRO, filasCopias, filtrarCopias, ORDENES, ordenarCopias, type EspejoFiltro, type EstadoFiltro, type FilaCopia, type Orden } from "$lib/copiasCliente";
   import CaminoCopia from "$lib/componentes/CaminoCopia.svelte";
@@ -249,7 +251,10 @@
               {#if x.pasos.length}<div class="pasos-camino"><CaminoCopia eslabones={x.pasos} ahora={reloj.ahora} forma="lineas" etiqueta="Después de «{x.copia.nombre}»" /></div>{/if}
               <span class="sub faint">{horarioEnFrase(x.copia.horario)}</span>
               {#if x.vuelta?.resultado === "fallo" && x.vuelta.mensaje}<span class="sub msg-fallo"><ErrorCopia mensaje={x.vuelta.mensaje} detalle={x.vuelta.detalle} /></span>{/if}
-              <span class="vivo"><EnMarcha equipo={x.equipo.id} copia={x.copia.id} compacto /></span>
+              <span class="vivo"><EnMarcha equipo={x.equipo.id} copia={x.copia.id} compacto sinCortadas /></span>
+              <!-- 0.8.2 (C3, 15jj): la copia que se cortó porque su equipo dejó de responder, y el estado del equipo. -->
+              {#each [cortadaDeCopia(enMarcha.cortadas, x.equipo, x.copia.id, ultimos.porEquipo)].filter((c) => !!c) as corte (corte.desde)}<span class="sub corte"><CircleAlert size={13} aria-hidden="true" />{textoCortada(corte, reloj.ahora)}</span>{/each}
+              {#if x.equipo.modo !== "trasladado" && x.equipo.confirmado && !x.equipo.conectado}<span class="sub faint desconectado" use:tip={x.equipo.ultimo_contacto ? fechaLarga(x.equipo.ultimo_contacto) : null}><Unplug size={13} aria-hidden="true" />{equipoDesconectado(x.equipo, reloj.ahora)}</span>{/if}
             </div>
             <div class="estado">
               <Chip tono={x.estado.tono} texto={x.estado.texto} />
@@ -402,6 +407,15 @@
     color: var(--text-2);
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .sub.corte,
+  .sub.desconectado {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .sub.corte {
+    color: var(--warn);
   }
   .sub.faint {
     font-size: var(--fs-xs);

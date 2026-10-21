@@ -41,6 +41,16 @@ export const verificacion = (r: RepositorioResumen, inf?: RepoInforme | null): T
 export const pruebaRestauracion = (r: RepositorioResumen, inf?: RepoInforme | null): TareaInforme | null =>
   inf?.prueba_restauracion ?? (r.prueba_restauracion ? { ultima: r.prueba_restauracion, resultado: "ok", mensaje_corto: null } : null);
 
+/**
+ * B4 (0.8.2): la última vuelta de la copia derivada «de cada día», solo si el repositorio aún la
+ * tiene. El equipo guarda la última vuelta de cada tarea y los agentes hasta la 0.8.1 la seguían
+ * mandando en el informe tras quitarla; todos los agentes mandan `repositorios[].externa` en el
+ * resumen mientras exista, así que sin ella no es una copia viva (en el historial sí queda como
+ * algo que pasó).
+ */
+export const externaViva = (r: Pick<RepositorioResumen, "externa"> | null | undefined, inf?: RepoInforme | null): TareaInforme | null =>
+  r?.externa ? (inf?.externa ?? null) : null;
+
 export const TONO_TAREA: Record<TareaInforme["resultado"], Tono> = { ok: "ok", aviso: "warn", fallo: "bad" };
 export const TEXTO_TAREA: Record<TareaInforme["resultado"], string> = { ok: "Correcta", aviso: "Con avisos", fallo: "Falló" };
 

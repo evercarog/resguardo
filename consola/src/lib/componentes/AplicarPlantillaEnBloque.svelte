@@ -22,7 +22,8 @@
   import { cargarPlantillas, type Plantilla } from "$lib/plantillas";
   import { admiteDe, configParaEnviar, paraEditar, planPlantilla, type PlanPlantilla } from "$lib/configEnvio";
   import { plural } from "$lib/formato";
-  import { cargarCliente } from "$lib/estado.svelte";
+  import { actual, cargarCliente } from "$lib/estado.svelte";
+  import { gruposExclusiones } from "$lib/gruposExclusiones";
   import type { Cliente, Configuracion, Equipo } from "$lib/tipos";
   import BotonCargando from "./BotonCargando.svelte";
   import CampoClave from "./CampoClave.svelte";
@@ -109,7 +110,7 @@
           }
         }
         cfg = paraEditar(cfg);
-        out.push({ equipo: eq, cfg, plan: planPlantilla(cfg, $state.snapshot(plantilla) as Plantilla, admiteDe(eq), `copia-${crypto.randomUUID().slice(0, 8)}`) });
+        out.push({ equipo: eq, cfg, plan: planPlantilla(cfg, $state.snapshot(plantilla) as Plantilla, admiteDe(eq), `copia-${crypto.randomUUID().slice(0, 8)}`, gruposExclusiones(actual)) });
       }
       filas = out;
       paso = "plan";

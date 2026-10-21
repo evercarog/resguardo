@@ -288,7 +288,20 @@ export function progresoDe(cliente: string): T.ProgresoEquipo[] {
   terminar(ahora);
   const porEquipo = new Map<string, T.TareaEnMarcha[]>();
   for (const s of sims.filter((x) => x.cliente === cliente)) porEquipo.set(s.equipo, [...(porEquipo.get(s.equipo) ?? []), tareaDe(s, ahora)]);
-  return [...porEquipo].map(([equipo, tareas]) => ({ equipo, recibido: iso(ahora), tareas }));
+  const out: T.ProgresoEquipo[] = [...porEquipo].map(([equipo, tareas]) => ({ equipo, recibido: iso(ahora), tareas }));
+  // 0.8.2 (C3): PORTATIL-GERENCIA se desconectó a mitad de su copia (lo calcula el servidor).
+  const portatil = estado.equipos.find((e) => e.id === ID.portatil && e.cliente === cliente && !e.conectado);
+  if (portatil && !porEquipo.has(portatil.id) && portatil.ultimo_contacto) {
+    const desde = portatil.ultimo_contacto;
+    const empezo = iso(Date.parse(desde) - 25 * 60_000);
+    out.push({
+      equipo: portatil.id,
+      recibido: desde,
+      tareas: [],
+      interrumpidas: { desde, tareas: [{ tipo: "copia", fase: "subiendo", repo: "gerencia", copia: "gerencia", nombre: "Escritorio y documentos", porcentaje: 0.42, empezo, actualizado: desde }] },
+    });
+  }
+  return out;
 }
 
 /** «Copiar ahora»: la copia se pone en marcha (sustituye a la que hubiera de esa copia). */

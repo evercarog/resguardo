@@ -19,7 +19,8 @@
   import { equiposQueGuardan } from "$lib/datosComunes";
   import { sincronizar } from "$lib/datosComunes.svelte";
   import { ajusteDe, colorPorNombre, conAvisos, cuerpoAjuste, N_COLORES, NOMBRES_COLOR } from "$lib/etiquetasGrupos";
-  import { plural } from "$lib/formato";
+  import { lista, plural } from "$lib/formato";
+  import { gruposExclusiones } from "$lib/gruposExclusiones";
   import { TIPO_CANAL } from "$lib/notificaciones";
   import type { CanalRef, NotifCliente, Severidad, TipoCanal } from "$lib/tipos";
   import EtiquetaChip from "./EtiquetaChip.svelte";
@@ -47,6 +48,7 @@
   let errorClave = $state("");
   let abriendo = $state(false);
   const nombrePlantilla = $derived(plantillas?.find((p) => p.id === plantilla)?.nombre);
+  const gruposPlantilla = $derived((plantillas?.find((p) => p.id === plantilla)?.copia.grupos_exclusiones ?? []).map((g) => gruposExclusiones(actual).find((x) => x.id === g.id)?.nombre ?? g.nombre));
   async function abrirPlantillas() {
     if (!actual.cliente || abriendo) return;
     if (!clave) return void (errorClave = "Escribe la clave de administración.");
@@ -148,6 +150,8 @@
             {#each plantillas as p (p.id)}<option value={p.id}>{p.nombre}</option>{/each}
             {#if plantilla && !nombrePlantilla}<option value={plantilla}>La que tenía (ya no existe)</option>{/if}
           </select>
+          <!-- 0.8.2 (C2, 15y): los grupos de «No copiar» que lleva (se aplican con sus reglas de ahora). -->
+          {#if gruposPlantilla.length}<span class="field-hint">No copia {lista(gruposPlantilla.map((g) => `«${g}»`))}: un equipo nuevo con «{nombre}» los recibe con sus reglas de ahora.</span>{/if}
           {#if !plantillas.length}<span class="field-hint">No hay plantillas todavía: se guardan desde «Añadir o cambiar copias» de un equipo («Guardar como plantilla…»).</span>{/if}
         </div>
       {:else if pidiendoClave}
