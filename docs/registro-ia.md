@@ -3,6 +3,20 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-10-21 · `ia/082-pulido` · **Resumen de la versión 0.8.2 (para el responsable)**
+
+Claude Code (Opus), en autónomo (visto bueno del 2026-10-21 al plan [plan-0.8.2.md](plan-0.8.2.md)). Versión pequeña de pulido tras el uso real de la 0.8.1.
+
+**Qué entra:** en `ia/082-pulido`, B1 («Firma no válida» mientras carga el cliente) y B2 (el mapa y el agente dejan de dibujar una copia derivada «de cada día» ya quitada); `ia/082-consola` (B4, C2, C3, C5), unida **aplastada** porque un commit intermedio llevaba una ruta local en el registro (quitada en el siguiente; queda solo en esa rama de GitHub); `ia/082-infra` (A1–A5 y C4: infraestructura en Ajustes, discos uno a uno, tarjeta del equipo en tres niveles, mapa filtrado por infraestructura, dato común `infra:` y «Agrupar por» que manda en el mapa de Equipos); `ia/082-agente` (B3: la poda del propio almacén no frena el espejo y el freno es un aviso «Por confirmar»; C1: dejar las consolas desde la ventana del agente y la terminal, con la clave de administración y aviso firmado a la consola). Contrato: v1.94 a v1.96.
+
+**Comprobado en la integración tras cada unión y al final:** `cargo fmt`, los dos `clippy`, `cargo test --workspace` (con los tres `--skip`; sin fallos), `npm run check`, `check:ventana`, `build`, `test:vectores`, `npm run e2e` («Escenario completo») y `test:sin-referencias`. En las ramas hubo fallos sueltos que pasaron al repetir: `el_canal_de_un_equipo_callado_se_cierra` (infra), el e2e por el límite de 120 configuraciones por hora (infra) y el paso 4c del e2e (agente, permisos de una carpeta restaurada).
+
+**Queda a medias:** A4, la capa de infraestructura como columnas propias en el mapa (servidor → VM); C5, los botones apagados que solo explican el motivo en un globo (15zz).
+
+**Sin probar en real:** dos consolas reales repartiendo la infraestructura; la etiqueta de cada volumen en un Windows real; la ventana «Consolas» en un Windows real y contra una consola anterior; una poda grande en un almacén real; una copia que se corta porque el equipo se desconecta.
+
+**Decisiones tomadas por defecto (revísalas):** dónde está un equipo o destino pide la clave para llegar a las demás consolas (cuenta en la regla), describir servidores y discos no; la infraestructura común con topes (16 KiB por servidor, 96 KiB en total); las capas Infraestructura y Almacenamiento encendidas por defecto; «luego» se oculta en el mapa; el freno solo es un aviso, no un fallo, y lo que se borre a mano durante una poda cuenta como poda; el aviso «dejó esta consola desde el propio equipo» es crítico y se esperan 20 s a la consola que se deja; «Interrumpida» lo calcula el servidor en memoria (se olvida al reiniciarlo). Sin publicar ni cambiar números de versión.
+
 ## 2026-10-21 · `ia/082-consola` · Plan 0.8.2: B4, C2, C3 y C5
 
 Claude Code (Opus), en autónomo, desde `ia/082-pulido`. Pedido: B4 (la copia derivada «de cada día» ya quitada en las demás pantallas), C2 (resto de 15y), C3 (resto de 15jj) y C5 (repaso de textos y pantallas). Sin tocar el mapa de Equipos ni Infraestructura (otra rama).

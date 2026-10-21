@@ -174,7 +174,7 @@ Los equipos con un agente anterior (sin `admite: consolas_multiples`) no pueden 
 
 ### 2.6 Dejar las consolas desde el propio equipo (plan 0.8.2, C1; plan-mejoras 15uu)
 
-Contrato «v1.9x» en [api-servidor.md](api-servidor.md), «Cambios». Código: `consolas_v2::dejar_en_equipo`, `ipc_local::dejar_consola`, `cli.rs::dejar_desde_terminal`, `consola/ventana/src/ajustes/Consolas.svelte`; en el servidor, `agentes.rs::registrar_dejada`.
+Contrato v1.96 en [api-servidor.md](api-servidor.md), «Cambios». Código: `consolas_v2::dejar_en_equipo`, `ipc_local::dejar_consola`, `cli.rs::dejar_desde_terminal`, `consola/ventana/src/ajustes/Consolas.svelte`; en el servidor, `agentes.rs::registrar_dejada`.
 
 **Dónde.** En la ventana del agente, Ajustes → «Consolas» (también con los ajustes bloqueados: pide la clave cada vez): la lista con el nombre, la dirección, la huella, el último contacto y sus órdenes en espera; «Quitar» en cada una (si hay más de una) y «Usar sin consola» (todas). Antes de hacerlo, la ventana explica qué pasa (abajo). En la terminal, `resguardo-agente consolas quitar <…>` (una) y `resguardo-agente desvincular` (todas), que dicen lo mismo y piden la clave.
 
