@@ -81,7 +81,8 @@
       <!-- v1.58: lo que no se aplicó dice por qué (antes, una caducada no decía nada). -->
       {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje}<p class="mensaje">{mensajeOrden(o.tipo, o.mensaje)}</p>{/if}
       <div class="pie">
-        {#if o.firma_agente}
+        <!-- Sin la ficha del equipo (aún cargando o de otro cliente) no se puede comprobar: no se dice nada. -->
+        {#if o.firma_agente && eq}
           <span class="firma" class:ok={firmada}>
             {#if firmada}<ShieldCheck size={13} />Firmada por el equipo{:else}<ShieldAlert size={13} />Firma no válida{/if}
           </span>
