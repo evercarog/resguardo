@@ -1,5 +1,5 @@
 {
-  "descripcion": "Datos comunes del cliente (0.7.26, bloque 8): orden entre dos cambios del mismo dato y claves válidas (y, desde la 0.8.1, valores de los grupos de exclusiones, «exclusiones»). Los pasan crates/protocolo/src/datos_cliente.rs y consola/scripts/vectores-datos-comunes.ts. Cada caso de «fusion» mete sus entradas en orden en un documento vacío; «gana» es el valor que queda.",
+  "descripcion": "Datos comunes del cliente (0.7.26, bloque 8): orden entre dos cambios del mismo dato y claves válidas (y, desde la 0.8.1, valores de los grupos de exclusiones, «exclusiones»; desde la 0.8.2, valores de la infraestructura, «infra»). Los pasan crates/protocolo/src/datos_cliente.rs y consola/scripts/vectores-datos-comunes.ts. Cada caso de «fusion» mete sus entradas en orden en un documento vacío; «gana» es el valor que queda.",
   "fusion": [
     {
       "nombre": "gana el más reciente",
@@ -106,7 +106,13 @@
     { "clave": "prueba.politica:equipo", "valida": false, "pide_admin": false },
     { "clave": "inventario:equipo:3f2a9c1e-0b5c-4d1e-9a7f-2b6c8d0e1f3a", "valida": true, "pide_admin": false },
     { "clave": "inventario:repositorio:e-1/docs", "valida": true, "pide_admin": false },
-    { "clave": "inventario:copia:e-1/docs", "valida": false, "pide_admin": false }
+    { "clave": "inventario:copia:e-1/docs", "valida": false, "pide_admin": false },
+    { "clave": "infra:servidor:hv-01", "valida": true, "pide_admin": false },
+    { "clave": "infra:servidor:HV-01", "valida": false, "pide_admin": false },
+    { "clave": "infra:equipo:3f2a9c1e-0b5c-4d1e-9a7f-2b6c8d0e1f3a", "valida": true, "pide_admin": true },
+    { "clave": "infra:destino:zona:3f2a9c1e-0b5c-4d1e-9a7f-2b6c8d0e1f3a:principal", "valida": true, "pide_admin": true },
+    { "clave": "infra:destino:zona::principal", "valida": false, "pide_admin": true },
+    { "clave": "infra:volumen:c", "valida": false, "pide_admin": false }
   ],
   "exclusiones": [
     { "nombre": "limpio y sin repetir", "valor": { "nombre": " Música ", "reglas": [" *.mp3 ", "*.flac", "*.mp3"] }, "valido": true, "limpio": { "nombre": "Música", "reglas": ["*.mp3", "*.flac"] } },
@@ -120,5 +126,24 @@
     { "nombre": "lo excluye todo", "valor": { "nombre": "Todo", "reglas": ["*.*"] }, "valido": false },
     { "nombre": "campos de más", "valor": { "nombre": "Música", "reglas": ["*.mp3"], "copias": [] }, "valido": false },
     { "nombre": "101 reglas", "valor": { "nombre": "Muchas", "reglas": ["*.e0", "*.e1", "*.e2", "*.e3", "*.e4", "*.e5", "*.e6", "*.e7", "*.e8", "*.e9", "*.e10", "*.e11", "*.e12", "*.e13", "*.e14", "*.e15", "*.e16", "*.e17", "*.e18", "*.e19", "*.e20", "*.e21", "*.e22", "*.e23", "*.e24", "*.e25", "*.e26", "*.e27", "*.e28", "*.e29", "*.e30", "*.e31", "*.e32", "*.e33", "*.e34", "*.e35", "*.e36", "*.e37", "*.e38", "*.e39", "*.e40", "*.e41", "*.e42", "*.e43", "*.e44", "*.e45", "*.e46", "*.e47", "*.e48", "*.e49", "*.e50", "*.e51", "*.e52", "*.e53", "*.e54", "*.e55", "*.e56", "*.e57", "*.e58", "*.e59", "*.e60", "*.e61", "*.e62", "*.e63", "*.e64", "*.e65", "*.e66", "*.e67", "*.e68", "*.e69", "*.e70", "*.e71", "*.e72", "*.e73", "*.e74", "*.e75", "*.e76", "*.e77", "*.e78", "*.e79", "*.e80", "*.e81", "*.e82", "*.e83", "*.e84", "*.e85", "*.e86", "*.e87", "*.e88", "*.e89", "*.e90", "*.e91", "*.e92", "*.e93", "*.e94", "*.e95", "*.e96", "*.e97", "*.e98", "*.e99", "*.e100"] }, "valido": false }
+  ],
+  "infra": [
+    { "nombre": "servidor limpio", "clave": "infra:servidor:hv-01", "valor": { "nombre": " hv-01 ", "hipervisor": "proxmox", "marca": "", "discos": [{ "id": "b2", "nombre": "Bahía 2", "tipo": "hdd", "serie": "SN-0002", "tamano": 4000000000000, "bahia": "2" }, { "id": "b3", "nombre": "Bahía 3", "tipo": "hdd" }], "conjuntos": [{ "id": "dv2", "nombre": "Disco virtual 2", "tipo": "raid1", "discos": 2, "miembros": ["b2", "b3"], "estado": "bien" }] }, "valido": true, "limpio": { "nombre": "hv-01", "hipervisor": "proxmox", "discos": [{ "id": "b2", "nombre": "Bahía 2", "tipo": "hdd", "serie": "SN-0002", "tamano": 4000000000000, "bahia": "2" }, { "id": "b3", "nombre": "Bahía 3", "tipo": "hdd" }], "conjuntos": [{ "id": "dv2", "nombre": "Disco virtual 2", "tipo": "raid1", "discos": 2, "miembros": ["b2", "b3"], "estado": "bien" }] } },
+    { "nombre": "servidor sin discos", "clave": "infra:servidor:nas-1", "valor": { "nombre": "NAS de la oficina", "discos": [], "conjuntos": [] }, "valido": true, "limpio": { "nombre": "NAS de la oficina" } },
+    { "nombre": "servidor sin nombre", "clave": "infra:servidor:hv-01", "valor": { "nombre": "  " }, "valido": false },
+    { "nombre": "servidor con un campo de más", "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "usuario": "root" }, "valido": false },
+    { "nombre": "disco con un campo de más", "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "B1", "contrasena": "x" }] }, "valido": false },
+    { "nombre": "disco de un tipo raro", "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "B1", "tipo": "cinta" }] }, "valido": false },
+    { "nombre": "conjunto con un disco que no es suyo", "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "B1" }], "conjuntos": [{ "id": "c1", "nombre": "C1", "tipo": "raid1", "miembros": ["b9"] }] }, "valido": false },
+    { "nombre": "dos discos con el mismo id", "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "B1" }, { "id": "b1", "nombre": "B2" }] }, "valido": false },
+    { "nombre": "serie demasiado larga", "clave": "infra:servidor:hv-01", "valor": { "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "B1", "serie": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }] }, "valido": false },
+    { "nombre": "equipo con sus volúmenes", "clave": "infra:equipo:e-1", "valor": { "servidor": "hv-01", "conjunto": "", "volumenes": [{ "punto": "C:", "disco": "b2" }, { "punto": "D:", "conjunto": "dv2" }] }, "valido": true, "limpio": { "servidor": "hv-01", "volumenes": [{ "punto": "C:", "disco": "b2" }, { "punto": "D:", "conjunto": "dv2" }] } },
+    { "nombre": "equipo con conjunto y disco a la vez", "clave": "infra:equipo:e-1", "valor": { "servidor": "hv-01", "conjunto": "dv2", "disco": "b2" }, "valido": false },
+    { "nombre": "volumen sin sitio", "clave": "infra:equipo:e-1", "valor": { "servidor": "hv-01", "volumenes": [{ "punto": "C:" }] }, "valido": false },
+    { "nombre": "volumen repetido", "clave": "infra:equipo:e-1", "valor": { "servidor": "hv-01", "volumenes": [{ "punto": "C:", "disco": "b2" }, { "punto": "C:", "disco": "b3" }] }, "valido": false },
+    { "nombre": "equipo sin servidor", "clave": "infra:equipo:e-1", "valor": { "conjunto": "dv2" }, "valido": false },
+    { "nombre": "destino en un conjunto", "clave": "infra:destino:zona:e-1:principal", "valor": { "servidor": "hv-01", "conjunto": "tank" }, "valido": true, "limpio": { "servidor": "hv-01", "conjunto": "tank" } },
+    { "nombre": "destino con volúmenes", "clave": "infra:destino:zona:e-1:principal", "valor": { "servidor": "hv-01", "volumenes": [] }, "valido": false },
+    { "nombre": "quitado", "clave": "infra:destino:zona:e-1:principal", "valor": null, "valido": true, "limpio": null }
   ]
 }

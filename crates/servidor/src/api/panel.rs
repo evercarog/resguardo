@@ -47,6 +47,8 @@ struct Foto {
     informes: Vec<(Value, usize)>,
     /// Plan 0.8.0 (D1, D2): sedes, categorías y orden del cliente (`crate::sedes`).
     organizacion: Value,
+    /// 0.8.2 (A4): la infraestructura anotada (para filtrar el mapa por servidor físico), o `null`.
+    infra: Value,
 }
 
 static FOTOS: LazyLock<Mutex<HashMap<String, Arc<Foto>>>> = LazyLock::new(Default::default);
@@ -179,12 +181,13 @@ async fn fotos(st: &St, clientes: Vec<String>) -> Res<HashMap<String, Arc<Foto>>
                 let pendientes = db.ordenes_con_espera(&ctx, t)?.len() + super::en_espera_de_otras(&equipos, t);
                 let marca = super::marca::json(&c, &super::marca::leer(db, &c)?);
                 let organizacion = crate::sedes::organizacion(db, &ctx)?;
-                v.push((c, equipos, avisos, pendientes, informes, marca, organizacion));
+                let infra = crate::infraestructura::para_panel(db, &c)?;
+                v.push((c, equipos, avisos, pendientes, informes, marca, organizacion, infra));
             }
             Ok(v)
         })
         .await?;
-    for (c, equipos, avisos, pendientes, informes, marca, organizacion) in leidos {
+    for (c, equipos, avisos, pendientes, informes, marca, organizacion, infra) in leidos {
         let f = Arc::new(Foto {
             hecha: Instant::now(),
             marca,
@@ -194,6 +197,7 @@ async fn fotos(st: &St, clientes: Vec<String>) -> Res<HashMap<String, Arc<Foto>>
             pendientes,
             informes,
             organizacion,
+            infra,
         });
         guardar_foto(&c, f.clone());
         out.insert(c, f);
@@ -244,7 +248,7 @@ pub async fn ver(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
         clientes.push(json!({
             "id": id, "nombre": nombre, "rol": rol.texto(), "marca": f.marca,
             "equipos": f.equipos, "avisos_abiertos": f.avisos, "pendientes": f.pendientes,
-            "informes": informes, "informes_completos": completos, "organizacion": f.organizacion,
+            "informes": informes, "informes_completos": completos, "organizacion": f.organizacion, "infra": f.infra,
         }));
     }
     Ok(Json(json!({ "generado": fecha(ahora()), "clientes": clientes, "omitidos": omitidos, "progreso": progreso })))
@@ -339,6 +343,7 @@ mod tests {
                 pendientes: 0,
                 informes: vec![(json!({ "datos": "x".repeat(1000) }), 1000)],
                 organizacion: Value::Null,
+                infra: Value::Null,
             })
         };
         guardar_foto("prueba-fotos-vieja", foto(60));

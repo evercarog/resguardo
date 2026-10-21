@@ -153,6 +153,8 @@ pub fn valor_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str) -> R<Value> 
                 dc::valor_valido(clave, &v).unwrap_or(v)
             }
         }
+        // 0.8.2 (A5): lo anotado en la infraestructura de aquí (`crate::infraestructura`).
+        Clase::Infra => crate::infraestructura::valor_local(db, ctx.id(), clave)?,
     })
 }
 
@@ -363,6 +365,8 @@ pub fn aplicar_local(db: &dyn Almacen, ctx: &ClienteCtx, clave: &str, valor: &Va
         // `pruebas_funcionales::ver_desde_aqui`) y la política.
         Clase::PruebaFuncional => crate::pruebas_funcionales::aplicar_comun(db, ctx, sujeto, valor, por)?,
         Clase::PruebaPolitica => crate::pruebas_funcionales::aplicar_politica_comun(db, ctx, valor, por)?,
+        // 0.8.2 (A5): a la infraestructura de aquí.
+        Clase::Infra => crate::infraestructura::aplicar(db, ctx.id(), clave, valor, por)?,
     }
     Ok(())
 }
@@ -552,6 +556,8 @@ pub fn sin_compartir(db: &dyn Almacen, ctx: &ClienteCtx, ya: &BTreeMap<String, F
         claves.push(crate::pruebas_funcionales::clave_prueba(&id));
     }
     claves.push(crate::pruebas_funcionales::CLAVE_POLITICA.to_string());
+    // 0.8.2 (A5): la infraestructura anotada aquí antes de compartirla (cada servidor, equipo y destino).
+    claves.extend(crate::infraestructura::claves(db, ctx.id())?);
     let mut out = Vec::new();
     for k in claves {
         if ya.contains_key(&k) || dc::clase(&k).is_none() {
@@ -637,6 +643,34 @@ mod tests {
         let doc = json!({ "ajuste:recuperar": entrada(Value::Null, "2026-10-08T10:00:00Z", "id-oficina", "Oficina") });
         recibir(&db, &ctx, "e1", AQUI, &doc).unwrap();
         assert!(ajuste_local(&db, &ctx, "recuperar").unwrap().is_null());
+    }
+
+    /// 0.8.2 (A5): la infraestructura llega de otra consola, se pone aquí y lo de antes es semilla.
+    #[test]
+    fn infraestructura_comun() {
+        let (db, ctx, _dir) = almacen();
+        let s = json!({ "nombre": "hv-01", "discos": [{ "id": "b1", "nombre": "Bahía 1", "serie": "SN-1" }] });
+        let doc = json!({
+            "infra:servidor:hv-01": entrada(s.clone(), "2026-10-07T10:00:00Z", "id-oficina", "Oficina"),
+            "infra:equipo:e1": entrada(json!({ "servidor": "hv-01" }), "2026-10-07T10:00:00Z", "id-oficina", "Oficina"),
+        });
+        assert_eq!(recibir(&db, &ctx, "e1", AQUI, &doc).unwrap(), 2);
+        let i = crate::infraestructura::leer(&db, ctx.id()).unwrap();
+        assert_eq!((i.servidores[0].discos[0].serie.as_deref(), i.equipos["e1"].servidor.as_str()), (Some("SN-1"), "hv-01"));
+        assert_eq!(valor_local(&db, &ctx, "infra:servidor:hv-01").unwrap(), s);
+        // Ya juntado: no es «de antes de compartir».
+        let ya = filas(&db, &ctx).unwrap();
+        assert!(sin_compartir(&db, &ctx, &ya).unwrap().iter().all(|x| !x["clave"].as_str().unwrap_or("").starts_with("infra:")));
+        // Otro servidor anotado solo aquí sí se ofrece como semilla.
+        let mut d = i.clone();
+        d.servidores.push(crate::infraestructura::Servidor { id: "nas-1".into(), nombre: "NAS".into(), ..Default::default() });
+        db.poner_valor(&format!("infra:{}", ctx.id()), &serde_json::to_string(&json!({ "infra": d })).unwrap()).unwrap();
+        let sin = sin_compartir(&db, &ctx, &ya).unwrap();
+        assert_eq!(sin.iter().filter_map(|x| x["clave"].as_str()).collect::<Vec<_>>(), vec!["infra:servidor:nas-1"]);
+        // Otra consola lo quita: aquí también.
+        let quitar = json!({ "infra:servidor:hv-01": entrada(Value::Null, "2026-10-08T10:00:00Z", "id-oficina", "Oficina") });
+        recibir(&db, &ctx, "e1", AQUI, &quitar).unwrap();
+        assert!(crate::infraestructura::leer(&db, ctx.id()).unwrap().servidores.iter().all(|s| s.id != "hv-01"));
     }
 
     #[test]

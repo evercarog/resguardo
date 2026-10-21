@@ -1600,6 +1600,8 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_PRUEBAS,
     // 0.8.1 (H2, 15qq): guarda el inventario de lo protegido (responsable, criticidad…).
     resguardo_protocolo::datos_cliente::ADMITE_INVENTARIO,
+    // 0.8.2 (A5): guarda la infraestructura del cliente (servidores físicos, discos, dónde está cada cosa).
+    resguardo_protocolo::datos_cliente::ADMITE_INFRA,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.
