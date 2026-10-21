@@ -42,8 +42,9 @@ export type ClaseDato =
   | "ajuste"
   | "prueba.funcional"
   | "prueba.politica"
-  | "inventario";
-const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario", "ajuste", "prueba.funcional", "prueba.politica", "inventario"];
+  | "inventario"
+  | "infra";
+const CLASES: ClaseDato[] = ["etiqueta.color", "etiqueta.plantilla", "destino.regla", "destino", "plantilla", "sede", "sede.equipo", "sede.destino", "etiqueta.categoria", "orden.equipos", "exclusiones", "nota.observacion", "nota.comentario", "ajuste", "prueba.funcional", "prueba.politica", "inventario", "infra"];
 
 /** 0.8.1 (E2, H1): `resumen.admite` de un agente que guarda los ajustes comunes (`ajuste:restauraciones`, `ajuste:recuperar`). */
 export const ADMITE_AJUSTES = "ajustes_comunes";
@@ -69,6 +70,13 @@ export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave
   if (esDeExclusiones(clave)) return !!e?.resumen?.admite?.includes(ADMITE_EXCLUSIONES);
   if (esDeAjustes(clave)) return !!e?.resumen?.admite?.includes(ADMITE_AJUSTES);
   if (claseDe(clave)?.clase === "inventario") return !!e?.resumen?.admite?.includes(ADMITE_INVENTARIO);
+  if (claseDe(clave)?.clase === "infra") {
+    // 0.8.2 (A5): la infraestructura, con más sitio que los comentarios (deja de repartirse
+    // solo con el documento del equipo casi lleno: allí sigue en esta consola).
+    if (!e?.resumen?.admite?.includes(ADMITE_INFRA)) return false;
+    const bytes = (e.resumen as { datos_cliente?: { bytes?: number } | null }).datos_cliente?.bytes ?? 0;
+    return bytes < LLENO_INFRA;
+  }
   if (esDePruebas(clave)) {
     if (!e?.resumen?.admite?.includes(ADMITE_PRUEBAS)) return false;
     // Como los comentarios: con el documento del equipo casi lleno, las pruebas siguen en esta consola.
@@ -85,6 +93,10 @@ export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave
   return true;
 }
 
+/** 0.8.2 (A5): `resumen.admite` de un agente que guarda la infraestructura (`infra:`). */
+export const ADMITE_INFRA = "infra_comun";
+/** 0.8.2 (A5): con el documento del equipo por encima de esto, la infraestructura deja de repartirse a ese equipo. */
+export const LLENO_INFRA = 224 * 1024;
 /** 0.8.1 (H2, 15qq): `resumen.admite` de un agente que guarda el inventario de lo protegido. */
 export const ADMITE_INVENTARIO = "inventario_comun";
 /** 0.8.1 (H4, 15ss): `resumen.admite` de un agente que guarda las pruebas funcionales y su política. */
@@ -121,6 +133,15 @@ export function normalizarEtiqueta(x: string): string | null {
 }
 const idDestinoValido = (id: string) => id.length > 0 && id.length <= 120 && /^[a-z0-9:_.-]+$/.test(id) && !id.split(":").some((p) => p === "" || p === "." || p === "..");
 const idSimple = (id: string) => /^[A-Za-z0-9_-]{1,64}$/.test(id);
+/** 0.8.2 (A5): `servidor:<id>`, `equipo:<id>` o `destino:<clave del catálogo>` (como `datos_cliente::clase`). */
+function sujetoInfraValido(sujeto: string): boolean {
+  const i = sujeto.indexOf(":");
+  const [t, o] = [sujeto.slice(0, i), sujeto.slice(i + 1)];
+  if (i <= 0) return false;
+  if (t === "servidor") return /^[a-z0-9-]{1,40}$/.test(o);
+  if (t === "equipo") return parteObjeto(o);
+  return t === "destino" && o.length <= 200 && /^[A-Za-z0-9:._-]+$/.test(o) && !o.split(":").some((p) => p === "" || p === "." || p === "..");
+}
 
 /** La clase de un dato y su sujeto (la etiqueta, el id del destino o de la plantilla), o null. */
 export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | null {
@@ -144,12 +165,14 @@ export function claseDe(clave: string): { clase: ClaseDato; sujeto: string } | n
                   ? sujeto === "cliente"
                   : clase === "inventario"
                     ? ((i) => i > 0 && ["equipo", "repositorio"].includes(sujeto.slice(0, i)) && objetoNotaValido(sujeto.slice(0, i), sujeto.slice(i + 1)))(sujeto.indexOf(":"))
-                    : idDestinoValido(sujeto);
+                    : clase === "infra"
+                      ? sujetoInfraValido(sujeto)
+                      : idDestinoValido(sujeto);
   return ok ? { clase, sujeto } : null;
 }
 
 /** ¿Cambiarlo pide la clave de administración? (Lo que cuenta en la regla 3-2-1: el tipo y las marcas de un destino y la sede de un equipo o de un destino.) */
-export const pideClave = (clave: string) => ["destino.regla:", "sede.equipo:", "sede.destino:"].some((p) => clave.startsWith(p)) || clave === "ajuste:recuperar";
+export const pideClave = (clave: string) => ["destino.regla:", "sede.equipo:", "sede.destino:", "infra:equipo:", "infra:destino:"].some((p) => clave.startsWith(p)) || clave === "ajuste:recuperar";
 
 export const claveColor = (etiqueta: string) => {
   const n = normalizarEtiqueta(etiqueta);
@@ -280,7 +303,10 @@ export function textoAviso(p: Pendiente): string | null {
   if (k) partes.push(k === 1 ? "1 tipo de destino por repartir (pide la clave)" : `${k} tipos de destino por repartir (piden la clave)`);
   const ka = conClave.filter((x) => x.clave.startsWith("ajuste:")).length;
   if (ka) partes.push("«recuperar en el equipo» por repartir (pide la clave)");
-  const ks = conClave.length - k - ka;
+  // 0.8.2 (A5): dónde está físicamente cada equipo o destino.
+  const ki = conClave.filter((x) => x.clave.startsWith("infra:")).length;
+  if (ki) partes.push(ki === 1 ? "1 ubicación física por repartir (pide la clave)" : `${ki} ubicaciones físicas por repartir (piden la clave)`);
+  const ks = conClave.length - k - ka - ki;
   if (ks) partes.push(ks === 1 ? "1 sede de un equipo o destino por repartir (pide la clave)" : `${ks} sedes de equipos o destinos por repartir (piden la clave)`);
   const t = p.porTraer.length;
   if (t) partes.push(t === 1 ? "1 plantilla de otra consola por traer" : `${t} plantillas de otra consola por traer`);
@@ -367,6 +393,17 @@ export function textoValor(clave: string, valor: unknown, nombres: { destino?: (
     case "inventario":
       if (!v) return "nada anotado";
       return [v.responsable ? `responsable ${v.responsable}` : "", v.criticidad ? `criticidad ${v.criticidad}` : "", v.datos_personales === true ? "con datos personales" : v.datos_personales === false ? "sin datos personales" : ""].filter(Boolean).join(", ") || "anotado";
+    case "infra": {
+      // 0.8.2 (A5): un servidor (con sus discos y conjuntos) o dónde está un equipo o destino.
+      if (!v) return c.sujeto.startsWith("servidor:") ? "quitado" : "sin anotar";
+      if (c.sujeto.startsWith("servidor:")) {
+        const nd = Array.isArray(v.discos) ? v.discos.length : 0;
+        const nc = Array.isArray(v.conjuntos) ? v.conjuntos.length : 0;
+        return [`«${String(v.nombre ?? "")}»`, nd ? `${nd} ${nd === 1 ? "disco" : "discos"}` : "", nc ? `${nc} ${nc === 1 ? "conjunto" : "conjuntos"}` : ""].filter(Boolean).join(", ");
+      }
+      const nv = Array.isArray(v.volumenes) ? v.volumenes.length : 0;
+      return [`en ${String(v.servidor ?? "")}`, v.conjunto ? `conjunto ${v.conjunto}` : v.disco ? `disco ${v.disco}` : "", nv ? `${nv} ${nv === 1 ? "volumen" : "volúmenes"} aparte` : ""].filter(Boolean).join(", ");
+    }
     case "prueba.politica":
       if (!v) return "la de por defecto";
       return v.activo === false ? "apagada" : `cada ${v.meses} ${v.meses === 1 ? "mes" : "meses"}, aviso ${v.aviso_dias} días antes`;
@@ -419,6 +456,12 @@ export function tituloDato(f: Pick<FilaComun, "clave" | "valor" | "local">, nomb
       return "Política de pruebas funcionales";
     case "inventario":
       return "Inventario de lo protegido";
+    case "infra":
+      return c.sujeto.startsWith("servidor:")
+        ? `Servidor físico «${nombre(f.valor) ?? nombre(f.local) ?? c.sujeto.slice(9)}»`
+        : c.sujeto.startsWith("equipo:")
+          ? "Dónde está físicamente un equipo"
+          : `Dónde está físicamente ${nombres.destino?.(c.sujeto.slice(8)) ? `«${nombres.destino(c.sujeto.slice(8))}»` : "un destino"}`;
     default:
       return f.clave;
   }

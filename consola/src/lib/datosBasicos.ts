@@ -28,6 +28,8 @@ export interface DiscoEquipo {
   en_uso?: boolean;
   /** 0.8.1 (C4): el conjunto de discos donde está (grupo de ZFS «tank», «md0», «disco1»…), si se sabe. */
   volumen?: string | null;
+  /** 0.8.2 (A3): la etiqueta del volumen («Datos»), si tiene (Windows). */
+  etiqueta?: string | null;
 }
 
 /** 0.8.1 (C4, docs/infraestructura.md): un disco que ve el equipo (sin número de serie). */
@@ -109,7 +111,7 @@ export function datosBasicos(e: Pick<Equipo, "resumen"> | null | undefined): Dat
     const total = entero(y.total);
     const libre = entero(y.libre);
     if (!punto || !total || libre === null || libre > total) continue;
-    discos.push({ punto, total, libre, sistema_archivos: texto(y.sistema_archivos, 32), en_uso: y.en_uso === true, volumen: texto(y.volumen, 64) });
+    discos.push({ punto, total, libre, sistema_archivos: texto(y.sistema_archivos, 32), en_uso: y.en_uso === true, volumen: texto(y.volumen, 64), etiqueta: texto(y.etiqueta, 32) });
   }
   // 0.8.1 (C4): los discos y conjuntos que ve (comprobados como lo demás).
   let almacenamiento: AlmacenamientoEquipo | null = null;
