@@ -71,6 +71,8 @@ pub fn equipo_json(e: &Equipo, conectado: bool) -> Value {
         // v1.58: el número de una orden con espera para un agente que no las guarda
         // (sin `admite: ["ordenes_en_espera"]`): por encima de las que se manden mientras.
         "seq_espera": e.seq_espera,
+        // C1 (plan 0.8.2, 15uu): dejó esta consola desde el propio equipo (si lo hizo).
+        "dejada": e.dejada,
     })
 }
 

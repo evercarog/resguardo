@@ -578,18 +578,36 @@ pub fn empezar_de_cero() -> Result<(), String> {
     Ok(())
 }
 
-/// Pasa a modo local: deja el servidor y sigue haciendo sus copias solo.
-pub fn desvincular_local() -> Result<(), String> {
+/// Pasa a modo local: deja todas las consolas y sigue haciendo sus copias solo (con la
+/// clave ya comprobada). C1 (plan 0.8.2): avisa antes a cada consola, firmado.
+pub fn desvincular_local() -> Result<String, String> {
     crate::agent::require_admin()?;
-    let mut v = cargar().ok_or("Este equipo no está vinculado a ningún servidor.")?;
-    v.modo = "local".into();
-    v.secreto.clear();
-    // Todas las consolas: el equipo entero pasa a funcionar solo (y sin órdenes de ninguna).
-    v.otras.clear();
-    v.en_espera.clear();
-    guardar(&v)?;
-    crate::agent::log("Desvinculado del servidor: el equipo sigue con sus copias en modo local.");
-    Ok(())
+    crate::consolas_v2::dejar_en_equipo(&crate::consolas_v2::Dejar::Todas, &crate::consolas_v2::cuenta_local())
+}
+
+/// C1 (plan 0.8.2): firma `texto` con la llave del equipo (en base64).
+pub(crate) fn firmar(v: &Vinculo, texto: &str) -> Result<String, String> {
+    Ok(B64.encode(firma_de(&v.sign_seed)?.sign(texto.as_bytes()).to_bytes()))
+}
+
+/// C1 (plan 0.8.2): la clave de administración escrita en el propio equipo (la terminal),
+/// como prueba (`ipc_local::prueba`), con el mismo bloqueo por intentos que la ventana y
+/// «ordenes aprobar» (y su aviso a todas las consolas). Sin clave en el equipo (uno de
+/// antes), no hace falta: basta ser administrador.
+pub fn comprobar_clave_equipo(prueba_b64: &str) -> Result<(), String> {
+    let v = cargar().ok_or("Este equipo no está vinculado a ningún servidor.")?;
+    let Some(ver) = v.verificador.as_deref().and_then(|x| B64.decode(x).ok()) else { return Ok(()) };
+    if let Some(m) = bloqueo_equipo() {
+        return Err(m);
+    }
+    let prueba = B64.decode(prueba_b64).unwrap_or_default();
+    if prueba.len() == 32 && resguardo_protocolo::derivaciones::comprueba_prueba(&prueba, &ver) {
+        acierto_equipo();
+        Ok(())
+    } else {
+        fallo_equipo();
+        Err(crate::ipc_local::CLAVE_INCORRECTA.into())
+    }
 }
 
 // ---------- Órdenes ----------

@@ -1600,6 +1600,10 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_PRUEBAS,
     // 0.8.1 (H2, 15qq): guarda el inventario de lo protegido (responsable, criticidad…).
     resguardo_protocolo::datos_cliente::ADMITE_INVENTARIO,
+    // 0.8.2 (C1, 15uu): sus consolas se pueden dejar desde el propio equipo (ventana y
+    // terminal, con la clave de administración), y antes les avisa firmado
+    // (`POST /api/agente/dejada`).
+    crate::consolas_v2::ADMITE_DEJAR,
 ];
 
 /// Puertos que se proponen para el Servidor de copias, en orden.

@@ -233,6 +233,10 @@ fn migrar_cliente(db: &Connection) -> R<()> {
     if !tiene("equipos", "etiquetas")? {
         db.execute_batch("ALTER TABLE equipos ADD COLUMN etiquetas TEXT NOT NULL DEFAULT '[]'").map_err(s)?;
     }
+    // C1 (plan 0.8.2, 15uu): el equipo dejó esta consola desde el propio equipo (JSON).
+    if !tiene("equipos", "dejada")? {
+        db.execute_batch("ALTER TABLE equipos ADD COLUMN dejada TEXT").map_err(s)?;
+    }
     // v1.17: emparejamientos preparados (instalador listo o línea de Linux): nombre, sistema y
     // el código (lo genera el servidor; se borra al confirmar, anular o caducar).
     for col in ["nombre", "so", "codigo"] {
@@ -450,7 +454,7 @@ fn fila_cliente(r: &rusqlite::Row) -> rusqlite::Result<Cliente> {
 }
 
 const COLS_EQUIPO: &str = "e.id, e.nombre, e.so, e.version_agente, e.box_pub, e.sign_pub, e.sal_equipo, e.etiqueta, e.rol, e.modo, e.confirmado, \
-                           e.ultimo_contacto, e.estado_servicio, e.siguiente_seq, e.atencion_hasta, c.resumen, e.espera_min_horas, e.etiquetas,                            (SELECT MAX(o.seq) FROM ordenes o WHERE o.equipo_id = e.id),                            EXISTS (SELECT 1 FROM ordenes o WHERE o.equipo_id = e.id AND o.seq >= e.siguiente_seq AND o.estado IN ('pendiente', 'entregada', 'en_marcha'))";
+                           e.ultimo_contacto, e.estado_servicio, e.siguiente_seq, e.atencion_hasta, c.resumen, e.espera_min_horas, e.etiquetas,                            (SELECT MAX(o.seq) FROM ordenes o WHERE o.equipo_id = e.id),                            EXISTS (SELECT 1 FROM ordenes o WHERE o.equipo_id = e.id AND o.seq >= e.siguiente_seq AND o.estado IN ('pendiente', 'entregada', 'en_marcha')), e.dejada";
 fn fila_equipo(r: &rusqlite::Row) -> rusqlite::Result<Equipo> {
     let resumen: Option<String> = r.get(15)?;
     let (siguiente_seq, seq_espera) =
@@ -475,6 +479,7 @@ fn fila_equipo(r: &rusqlite::Row) -> rusqlite::Result<Equipo> {
         espera_min_horas: r.get(16)?,
         etiquetas: r.get::<_, Option<String>>(17)?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default(),
         seq_espera,
+        dejada: r.get::<_, Option<String>>(20)?.and_then(|t| serde_json::from_str(&t).ok()),
     })
 }
 
@@ -1136,6 +1141,12 @@ impl Almacen for Sqlite {
             Ok(())
         })
     }
+    fn poner_dejada(&self, c: &ClienteCtx, id: &str, dejada: Option<&str>) -> R<()> {
+        self.con(c, |db| {
+            db.execute("UPDATE equipos SET dejada = ?2 WHERE id = ?1", rusqlite::params![id, dejada]).map_err(s)?;
+            Ok(())
+        })
+    }
     fn poner_papel(&self, c: &ClienteCtx, id: &str, papel: &str) -> R<()> {
         self.con(c, |db| {
             db.execute("UPDATE equipos SET rol = ?2 WHERE id = ?1", [id, papel]).map_err(s)?;
@@ -1144,7 +1155,7 @@ impl Almacen for Sqlite {
     }
     fn reactivar_equipo(&self, c: &ClienteCtx, id: &str, secreto_hash: &str) -> R<()> {
         self.con(c, |db| {
-            db.execute("UPDATE equipos SET secreto_hash = ?2, modo = 'gestionado' WHERE id = ?1", [id, secreto_hash]).map_err(s)?;
+            db.execute("UPDATE equipos SET secreto_hash = ?2, modo = 'gestionado', dejada = NULL WHERE id = ?1", [id, secreto_hash]).map_err(s)?;
             Ok(())
         })
     }

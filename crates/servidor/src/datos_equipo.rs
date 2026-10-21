@@ -135,6 +135,7 @@ mod tests {
             estado_servicio: None,
             siguiente_seq: 1,
             seq_espera: 1000,
+            dejada: None,
             atencion_hasta: None,
             resumen: None,
             espera_min_horas: None,

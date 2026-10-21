@@ -320,6 +320,38 @@ fn ordenes_en_espera_entre_dos_consolas() {
     let r_b = resumen_de(&cb, &eb, &kcfg_b);
     assert_eq!(r_b["en_espera"].as_array().map(Vec::len), Some(0), "{r_b}");
 
+    // 9. C1 (plan 0.8.2, 15uu): dejar la última consola desde el propio equipo, por la ventana
+    // (el canal local): solo un administrador del equipo y con la clave de administración.
+    enviar(&cb, &eb, &con_espera(&eb, 4, "pausar", json!({}), 3600));
+    ronda().unwrap();
+    assert_eq!(cargar().unwrap().en_espera.len(), 1);
+    let lista = crate::ipc_local::atender(&local, &json!({ "op": "consolas" }), &quien);
+    assert_eq!((lista["datos"]["consolas"][0]["en_espera"].as_u64(), lista["datos"]["con_clave"].as_bool()), (Some(1), Some(true)), "{lista}");
+    let dejar = |clave: &str| {
+        let hola = crate::ipc_local::atender(&local, &json!({ "op": "hola" }), &quien);
+        let p = crate::ipc_local::prueba(clave, hola["datos"]["sal_equipo"].as_str().unwrap()).unwrap();
+        crate::ipc_local::atender(&local, &json!({ "op": "dejar_consola", "reto": hola["datos"]["reto"], "prueba": p, "todas": true }), &quien)
+    };
+    std::thread::sleep(Duration::from_millis(1100));
+    let mala = dejar("otra clave cualquiera");
+    assert_eq!(mala["ok"], false, "{mala}");
+    assert_eq!(cargar().unwrap().fallos.get("equipo").map(|f| f.n), Some(1), "cuenta como intento fallido");
+    assert_eq!(cargar().unwrap().modo, "gestionado", "con la clave mal, no se deja nada");
+    std::thread::sleep(Duration::from_millis(1100));
+    let buena = dejar(CLAVE);
+    assert_eq!(buena["ok"], true, "{buena}");
+    let v = cargar().unwrap();
+    assert_eq!((v.modo.as_str(), v.secreto.is_empty(), v.en_espera.len()), ("local", true, 0), "sin consola y sin órdenes en espera");
+    // B lo sabe: firmado, con la cuenta de quien lo hizo, y lo avisa.
+    let (_, e_b) = cb.pedir("GET", &format!("/api/clientes/{c_b}/equipos/{}", eb.id), None);
+    assert_eq!(
+        (e_b["modo"].as_str(), e_b["dejada"]["todas"].as_bool(), e_b["dejada"]["cuenta"].as_str()),
+        (Some("local"), Some(true), Some("ana (PRUEBA)")),
+        "{e_b}"
+    );
+    let (_, av) = cb.pedir("GET", &format!("/api/clientes/{c_b}/avisos?abiertos=1"), None);
+    assert!(av.as_array().unwrap().iter().any(|x| x["tipo"] == "dejada_en_equipo" && x["mensaje"].as_str().unwrap_or("").contains("ana (PRUEBA)")), "{av}");
+
     std::env::remove_var("RESGUARDO_AGENT_DIR");
     let _ = std::fs::remove_dir_all(&dir_agente);
 }

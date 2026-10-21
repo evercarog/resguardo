@@ -579,41 +579,198 @@ pub fn listar(v: &Vinculo) -> Vec<String> {
     l
 }
 
-/// `resguardo-agente consolas quitar <n.º | dirección | huella>`: en el equipo,
-/// para una consola que ya no existe. Como administrador local.
+// ---------- Dejar consolas desde el propio equipo (C1, plan 0.8.2, 15uu) ----------
+
+/// La capacidad en `resumen.admite`: sus consolas se pueden dejar desde el propio equipo.
+pub const ADMITE_DEJAR: &str = "dejar_en_equipo";
+
+/// Qué consolas se dejan desde el propio equipo (ventana o terminal).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Dejar {
+    /// Todas: el equipo sigue copiando solo, sin consola (modo local).
+    Todas,
+    /// Una: su n.º en la lista (desde 1), su dirección, su huella o su identidad.
+    Una(String),
+}
+
+/// La posición (desde 0) de la consola `que` en `todas`.
+fn buscar(todas: &[Enlace], que: &str) -> Result<usize, String> {
+    let que = que.trim();
+    let norm = |x: &str| x.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>().to_ascii_uppercase();
+    match que.parse::<usize>() {
+        Ok(n) if (1..=todas.len()).contains(&n) => Ok(n - 1),
+        _ => todas
+            .iter()
+            .position(|e| {
+                (!que.is_empty() && e.identidad == que)
+                    || e.url.trim_end_matches('/') == que.trim_end_matches('/')
+                    || (norm(que).len() >= 8 && norm(&huella_corta(&e.identidad)).starts_with(&norm(que)))
+            })
+            .ok_or_else(|| format!("No hay ninguna consola «{que}». Mira la lista con «resguardo-agente consolas».")),
+    }
+}
+
+/// Las consolas del equipo para la ventana (sin secretos ni credenciales): cómo se
+/// llaman, su dirección, su huella, el último contacto y sus órdenes en espera.
+pub fn lista_local(v: &Vinculo) -> Vec<Value> {
+    std::iter::once(v.enlace())
+        .chain(v.otras.iter().cloned())
+        .enumerate()
+        .map(|(i, e)| {
+            json!({
+                "n": i + 1, "nombre": nombre_de(&e.nombre, &e.url), "url": e.url, "identidad": e.identidad,
+                "huella": huella_corta(&e.identidad), "principal": i == 0, "contacto": contacto(e.ultimo_ok),
+                "en_espera": v.en_espera.iter().filter(|x| x.enlace == e.id).count(),
+            })
+        })
+        .collect()
+}
+
+/// La cuenta de quien ejecuta la línea de órdenes (para el aviso y el historial), como la
+/// escribe la ventana: `usuario (EQUIPO o DOMINIO)` en Windows; en Linux la cuenta y, con
+/// `sudo`, quién lo pidió.
+pub fn cuenta_local() -> String {
+    let limpio = |s: String| s.chars().filter(|c| !c.is_control()).collect::<String>().trim().chars().take(60).collect::<String>();
+    let var = |k: &str| std::env::var(k).ok().map(limpio).filter(|s| !s.is_empty());
+    if cfg!(windows) {
+        match (var("USERNAME"), var("USERDOMAIN")) {
+            (Some(u), Some(d)) => format!("{u} ({d})"),
+            (Some(u), None) => u,
+            _ => "una cuenta sin identificar".into(),
+        }
+    } else {
+        let u = var("USER").unwrap_or_else(|| "root".into());
+        match var("SUDO_USER") {
+            Some(s) if u == "root" && s != "root" => format!("root (sudo, {s})"),
+            _ => u,
+        }
+    }
+}
+
+/// Lo que se manda a la consola que se deja si es anterior (sin `POST /api/agente/dejada`):
+/// el aviso de siempre, que su servidor titula «… dejó de conectarse a una consola».
+fn texto_dejada(nombre: &str, cuando: &str, cuenta: &str, todas: bool, siguen: &[String]) -> String {
+    let fecha = chrono::DateTime::parse_from_rfc3339(cuando).map(|d| d.format("%d/%m/%Y %H:%M").to_string()).unwrap_or_else(|_| cuando.to_string());
+    let sigue = if todas || siguen.is_empty() { "sigue copiando sin consola".to_string() } else { format!("sigue gestionado desde {}", siguen.join(", ")) };
+    format!("Este equipo dejó de conectarse a la consola {nombre} desde el propio equipo, el {fecha}, con la cuenta «{cuenta}»; {sigue}.")
+}
+
+/// Avisa a una consola de que el equipo la deja desde el propio equipo: firmado, para que
+/// lo enseñe en la ficha y en Actividad en vez de verlo solo «sin conexión».
+fn avisar_dejada(w: &Vinculo, cuando: &str, cuenta: &str, todas: bool, siguen: &[String]) -> Result<(), String> {
+    let firma = s::firmar(w, &resguardo_protocolo::derivaciones::texto_dejada(&w.identidad, &w.equipo_id, cuando, cuenta, todas))?;
+    let cuerpo = json!({ "cuando": cuando, "cuenta": cuenta, "todas": todas, "siguen": siguen, "firma": firma });
+    match s::llamar(w, "POST", "/api/agente/dejada", Some(&cuerpo))? {
+        (e, _) if e < 300 => Ok(()),
+        // Un servidor anterior: el aviso de siempre.
+        (404 | 405, _) => {
+            let m = texto_dejada(&nombre_de(&w.nombre_consola, &w.url), cuando, cuenta, todas, siguen);
+            s::llamar_ok(w, "/api/agente/aviso", &json!({ "tipo": "cambio_inusual", "mensaje": m })).map(|_| ())
+        }
+        (e, r) => Err(format!("respondió {e}: {}", r["mensaje"].as_str().unwrap_or("error"))),
+    }
+}
+
+/// Lo que se espera, en total, a que contesten las consolas que se dejan.
+const ESPERA_AVISO: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Avisa a la vez a las consolas que se dejan (`(vínculo, nombre)`), sin esperar más de
+/// [`ESPERA_AVISO`]. Devuelve los nombres de las que no se enteraron.
+fn avisar_dejadas(quienes: Vec<(Vinculo, String)>, cuando: &str, cuenta: &str, todas: bool, siguen: &[String]) -> Vec<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut pendientes: Vec<String> = quienes.iter().map(|(_, n)| n.clone()).collect();
+    for (w, nombre) in quienes {
+        let (tx, cuando, cuenta, siguen) = (tx.clone(), cuando.to_string(), cuenta.to_string(), siguen.to_vec());
+        std::thread::spawn(move || {
+            let r = avisar_dejada(&w, &cuando, &cuenta, todas, &siguen);
+            let _ = tx.send((nombre, r));
+        });
+    }
+    drop(tx);
+    let fin = std::time::Instant::now() + ESPERA_AVISO;
+    let mut no = Vec::new();
+    while !pendientes.is_empty() {
+        let Ok((nombre, r)) = rx.recv_timeout(fin.saturating_duration_since(std::time::Instant::now())) else { break };
+        pendientes.retain(|x| *x != nombre);
+        if let Err(e) = r {
+            crate::agent::log(&format!("Dejar la consola {nombre}: no se le pudo avisar ({e})."));
+            no.push(nombre);
+        }
+    }
+    no.extend(pendientes);
+    no
+}
+
+/// C1 (plan 0.8.2, 15uu): deja una consola, o todas, desde el propio equipo. Quien llama ya
+/// comprobó que es un administrador del equipo y su clave de administración (si el equipo
+/// la tiene). Antes de quitarlas, les avisa con un mensaje firmado («dejó esta consola desde
+/// el propio equipo», con la fecha y `cuenta`); a las que quedan, el aviso de siempre. Las
+/// órdenes en espera de las que se van se anotan como canceladas en el historial común. Las
+/// copias, los destinos, el almacén y los datos comunes del cliente no se tocan.
+pub fn dejar_en_equipo(que: &Dejar, cuenta: &str) -> Result<String, String> {
+    let v = s::cargar().filter(|v| v.modo == "gestionado" && !v.secreto.is_empty()).ok_or("Este equipo no está gestionado por ninguna consola.")?;
+    let todas_l: Vec<Enlace> = std::iter::once(v.enlace()).chain(v.otras.iter().cloned()).collect();
+    let (todas, se_van): (bool, Vec<Enlace>) = match que {
+        Dejar::Todas => (true, todas_l.clone()),
+        Dejar::Una(x) => {
+            let i = buscar(&todas_l, x)?;
+            if todas_l.len() == 1 {
+                return Err("Es la única consola de este equipo: para dejarla, «Usar sin consola» («resguardo-agente desvincular» en la terminal).".into());
+            }
+            (false, vec![todas_l[i].clone()])
+        }
+    };
+    let ids: Vec<String> = se_van.iter().map(|e| e.id.clone()).collect();
+    let siguen: Vec<String> = todas_l.iter().filter(|e| !ids.contains(&e.id)).map(|e| nombre_de(&e.nombre, &e.url)).collect();
+    let cuando = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+    let quienes: Vec<(Vinculo, String)> = se_van
+        .iter()
+        .filter_map(|e| {
+            let mut w = v.clone();
+            w.activar(&e.id).then(|| (w, nombre_de(&e.nombre, &e.url)))
+        })
+        .collect();
+    let no = avisar_dejadas(quienes, &cuando, cuenta, todas, &siguen);
+    let resumen = se_van.iter().map(|e| format!("{} ({})", nombre_de(&e.nombre, &e.url), e.url)).collect::<Vec<_>>().join(", ");
+    modificar(|v| {
+        if todas {
+            v.secreto.clear();
+            v.otras.clear();
+            v.modo = "local".into();
+        } else {
+            if ids.contains(&v.id_enlace()) {
+                v.secreto.clear();
+            }
+            v.otras.retain(|e| !ids.contains(&e.id));
+            // Las que quedan reciben enseguida su lista de consolas al día.
+            v.config_pendiente = true;
+            for e in v.otras.iter_mut() {
+                e.config_pendiente = true;
+            }
+        }
+        // Lo que esperaba de las que se van ya no se aplicará: anotado en el historial común.
+        crate::espera_v2::descartar_ahora(v);
+    })
+    .ok_or("Este equipo no está vinculado a ningún servidor.")?;
+    crate::agent::log(&format!("Consolas dejadas desde el propio equipo por la cuenta «{cuenta}»: {resumen}."));
+    if !todas {
+        avisar_a_todas(&format!("Este equipo dejó de conectarse a la consola {resumen} desde el propio equipo, con la cuenta «{cuenta}»."));
+    }
+    let mut m = if todas {
+        "El equipo ya no lo gestiona ninguna consola: sigue con sus copias, sin consola.".to_string()
+    } else {
+        format!("Este equipo ya no se conecta a {resumen}. Las demás consolas siguen igual.")
+    };
+    if !no.is_empty() {
+        m.push_str(&format!(" No se pudo avisar a {} (no respondió): allí se verá como sin conexión.", no.join(", ")));
+    }
+    Ok(m)
+}
+
+/// `resguardo-agente consolas quitar <n.º | dirección | huella>` (con la clave ya comprobada).
 pub fn quitar_local(que: &str) -> Result<String, String> {
     crate::agent::require_admin()?;
-    let que = que.trim();
-    modificar(|v| {
-        if v.modo != "gestionado" || v.secreto.is_empty() {
-            return Err("Este equipo no está gestionado por ninguna consola.".to_string());
-        }
-        let todas: Vec<Enlace> = std::iter::once(v.enlace()).chain(v.otras.iter().cloned()).collect();
-        let norm = |x: &str| x.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>().to_ascii_uppercase();
-        let i = match que.parse::<usize>() {
-            Ok(n) if (1..=todas.len()).contains(&n) => n - 1,
-            _ => todas
-                .iter()
-                .position(|e| {
-                    e.url.trim_end_matches('/') == que.trim_end_matches('/')
-                        || (norm(que).len() >= 8 && norm(&huella_corta(&e.identidad)).starts_with(&norm(que)))
-                })
-                .ok_or_else(|| format!("No hay ninguna consola «{que}». Mira la lista con «resguardo-agente consolas»."))?,
-        };
-        if todas.len() == 1 {
-            return Err("Es la única consola de este equipo: para dejarla, «resguardo-agente desvincular».".into());
-        }
-        let e = &todas[i];
-        let resumen = format!("{} ({})", nombre_de(&e.nombre, &e.url), e.url);
-        if i == 0 {
-            v.secreto.clear();
-        } else {
-            v.otras.remove(i - 1);
-        }
-        crate::agent::log(&format!("Consola quitada en el equipo (resguardo-agente consolas quitar): {resumen}."));
-        Ok(resumen)
-    })
-    .ok_or("Este equipo no está vinculado a ningún servidor.")?
+    dejar_en_equipo(&Dejar::Una(que.to_string()), &cuenta_local())
 }
 
 /// `cambiar_clave_admin` con varias consolas: la `K_cfg` nueva de cada una.
