@@ -15,6 +15,7 @@
 //   pasó mientras tanto no llegó.
 import { app } from "./estado.svelte";
 import { frenar } from "./freno";
+import { enFondo } from "./actividad.svelte";
 
 export type TipoCambio = "informe" | "progreso" | "orden" | "avisos" | "historial" | "config" | "equipo" | "datos_comunes" | "resync";
 
@@ -239,7 +240,9 @@ export function seguirCambios(cargar: () => unknown, opciones: { ms: number; toc
   // Como mucho una carga cada `minEntre` y nunca dos a la vez (lib/freno.ts): los cambios
   // que llegan seguidos (un equipo que se conecta y se cae en bucle, muchas órdenes) se
   // juntan en una carga más al final, no en una por cambio.
-  const freno = frenar(cargar, opciones.minEntre ?? MIN_ENTRE_CARGAS);
+  // Las cargas automáticas son de fondo («Actualizando…» discreto), no la barra de carga de arriba:
+  // antes salía la línea verde cada pocos segundos en cualquier página con datos en vivo.
+  const freno = frenar(() => enFondo(cargar), opciones.minEntre ?? MIN_ENTRE_CARGAS);
   const dejar = alCambiar((cs) => {
     if (cs.some((c) => c.t === "resync" || opciones.toca(c))) freno.pedir();
   });
