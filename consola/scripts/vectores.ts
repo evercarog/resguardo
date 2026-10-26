@@ -508,7 +508,7 @@ if (v1.paquete) {
   igual("infCopia: solo sus versiones y vueltas", [solo.versiones.length, solo.ejecuciones.length], [1, 2]);
   const v = ultimaVuelta(k, informe);
   igual("ultimaVuelta: la del informe, más nueva que la del resumen", [v?.cuando, v?.resultado], [iso(2, 13, 4), "ok"]);
-  igual("proximaDe: del informe si el resumen no la trae", proximaDe(k, informe), iso(5, 13));
+  igual("proximaDe: del informe si el resumen no la trae", proximaDe(k, informe, ahora), iso(5, 13));
   igual("proximaDe: del horario con un agente que no la dice", proximaDe(k, { recibido: iso(2, 14), datos: {} }, ahora), new Date(2026, 9, 5, 13, 0).toISOString());
   igual("proximaDe: null si el informe dice que no hay", proximaDe(k, { recibido: iso(2, 14), datos: { proximas: { docs: null } } }, ahora), null);
   igual("ultimaProgramada: hoy a las 13:00", ultimaProgramada(k.horario, ahora), new Date(2026, 9, 2, 13, 0).getTime());
@@ -516,6 +516,14 @@ if (v1.paquete) {
   cierto("atrasada: no, hecha después de su hora", !atrasada(k, v, false, ahora));
   cierto("atrasada: sí, la última fue ayer y hoy ya tocaba hace 2 h", atrasada(k, { cuando: iso(1, 13, 5), resultado: "ok", mensaje: null }, false, new Date(2026, 9, 2, 15, 30).getTime()));
   cierto("atrasada: no si está en pausa", !atrasada(k, null, true, ahora));
+  // 16y: cada hora y el equipo desconectado desde ayer: atrasada (antes salía «Al día» porque la última hora siempre era de hace < 2 h).
+  const horaria: CopiaResumen = { ...k, horario: { dias: [], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5, 6, 7], cada_min: 60, desde: "00:00", hasta: "23:00" }] }, proxima: iso(1, 14) };
+  const ayer = { cuando: iso(1, 13, 1), resultado: "ok" as const, mensaje: null };
+  cierto("16y: cada hora, la última hace 26 h: atrasada", atrasada(horaria, ayer, false, ahora));
+  igual("16y: y su estado", estadoCopia(horaria, ayer, false, ahora).texto, "Atrasada");
+  cierto("16y: cada hora, la última hace 40 min: al día", !atrasada(horaria, { ...ayer, cuando: iso(2, 14, 20) }, false, ahora));
+  cierto("16y: cada hora, la última hace 2 h 50 min: atrasada (tocaba a las 13:00)", atrasada(horaria, { ...ayer, cuando: iso(2, 12, 10) }, false, ahora));
+  igual("16y: la próxima que dijo el equipo ya pasó: del horario", proximaDe(horaria, null, ahora), new Date(2026, 9, 2, 16, 0).toISOString());
   igual("estado: al día", estadoCopia(k, v, false, ahora).texto, "Al día");
   igual("estado: con error", estadoCopia(k, { cuando: iso(2, 13, 4), resultado: "fallo", mensaje: null }, false, ahora).texto, "Con error");
   igual("estado: desactivada", estadoCopia({ ...k, activa: false }, v, false, ahora).texto, "Desactivada");
