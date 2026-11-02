@@ -20,8 +20,10 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import TarjetaRepo from "$lib/componentes/repo/TarjetaRepo.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
-  import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { agruparPorEtiqueta, filtroEtiqueta, gruposPorEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import BarraFiltros from "$lib/componentes/BarraFiltros.svelte";
+  import { agruparPorEtiqueta, gruposPorEtiqueta } from "$lib/etiquetas.svelte";
+  import { contextoFiltros, filtrosEquipos } from "$lib/filtrosEquipos.svelte";
+  import { hayFiltros, pasaFiltros, vacios } from "$lib/filtrosEquipos";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import TarjetaEquipo from "$lib/componentes/TarjetaEquipo.svelte";
   import Sparkline from "$lib/componentes/Sparkline.svelte";
@@ -48,14 +50,20 @@
   import { reglasDelCliente } from "$lib/regla321";
 
   const c = $derived(actual.id);
-  // Con una etiqueta elegida (Equipos, Avisos y Estado comparten el filtro), solo sus equipos.
+  // 16e: con filtros (Equipos y Estado comparten la barra), solo sus equipos.
   // Sin los duplicados sin confirmar (la misma máquina, una vez; se quitan desde Equipos).
-  const delFiltro = $derived(sinDuplicados(actual.equipos).filter((e) => pasaFiltro(e, filtroEtiqueta.valor)));
+  const sinRepetir = $derived(sinDuplicados(actual.equipos));
+  const conFiltros = $derived(hayFiltros(filtrosEquipos.valor));
+  const delFiltro = $derived.by(() => {
+    const f = filtrosEquipos.valor;
+    const ctx = contextoFiltros();
+    return sinRepetir.filter((e) => pasaFiltros(e, f, ctx, reloj.ahora));
+  });
   const equipos = $derived([...delFiltro].sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)));
   const saludes = $derived(delFiltro.map((e) => saludEquipo(e, reloj.ahora)));
   // v1.52: agrupados por etiqueta (como en Equipos; la misma preferencia).
   const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
-  const grupos = $derived(agruparPorEtiqueta.valor && hayEtiquetas && !filtroEtiqueta.valor ? gruposPorEtiqueta(equipos) : null);
+  const grupos = $derived(agruparPorEtiqueta.valor && hayEtiquetas ? gruposPorEtiqueta(equipos) : null);
   /** Cuántos de un grupo están bien, necesitan atención o fallan (con texto, no solo color). */
   function cuentaGrupo(es: Equipo[]) {
     const t = es.map((e) => saludEquipo(e, reloj.ahora).tono);
@@ -123,8 +131,8 @@
   const sinPrimera = $derived(saludes.filter((x) => x.texto === "Sin copias todavía" || x.texto === "Sin copias").length);
   const titular = $derived(
     !delFiltro.length
-      ? actual.equipos.length && filtroEtiqueta.valor
-        ? "Ningún equipo con esa etiqueta"
+      ? actual.equipos.length && conFiltros
+        ? "Ningún equipo con esos filtros"
         : "Todavía no hay equipos"
       : urgentes.length
         ? urgentes.length === 1
@@ -223,8 +231,8 @@
               {:else}
                 {plural(delFiltro.length, "equipo", "equipos")} · {#if ultima}última copia <Tiempo iso={ultima} />{:else}todavía sin copias{/if} · {plural(repos.length, "repositorio", "repositorios")}{#if protegido}{" "}con {bytes(protegido)}{/if}
               {/if}
-            {:else if actual.equipos.length && filtroEtiqueta.valor}
-              Ninguno de los {plural(actual.equipos.length, "equipo", "equipos")} de {actual.cliente.nombre} lleva «{filtroEtiqueta.valor}».
+            {:else if actual.equipos.length && conFiltros}
+              Ninguno de los {plural(actual.equipos.length, "equipo", "equipos")} de {actual.cliente.nombre} pasa los filtros elegidos.
             {:else}
               Añade el primer equipo de {actual.cliente.nombre}: instala el agente y escribe el código que te daremos.
             {/if}
@@ -289,8 +297,8 @@
             </ul>
           {/if}
         {/if}
-      {:else if actual.equipos.length && !delFiltro.length && filtroEtiqueta.valor}
-        <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
+      {:else if actual.equipos.length && !delFiltro.length && conFiltros}
+        <button type="button" class="btn" onclick={() => filtrosEquipos.poner(vacios())}><X size={16} />Quitar los filtros</button>
       {:else if !actual.equipos.length && puede.administrar(actual.cliente.rol)}
         <a class="btn btn-primary" href="/c/{c}/emparejar"><Plus size={16} />Añadir equipo</a>
       {/if}
@@ -330,7 +338,7 @@
     <PrimerosPasos cliente={actual.cliente} equipos={actual.equipos} {informes} />
     {#if delFiltro.length}<ReglaCliente cliente={c} equipos={delFiltro} todos={actual.equipos} {informes} ahora={reloj.ahora} />{/if}
 
-    <FiltroEtiquetas />
+    {#if actual.equipos.length > 1}<BarraFiltros equipos={sinRepetir} vistos={delFiltro.length} />{/if}
 
     {#if delFiltro.length}
       <MapaProteccion equipos={delFiltro} todos={actual.equipos} {informes} cliente={c} ahora={reloj.ahora} alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
@@ -347,7 +355,7 @@
         <div class="section-head">
           <h2>Equipos <span class="count">· {delFiltro.length}</span></h2>
           <span class="acciones-eq">
-            {#if hayEtiquetas && !filtroEtiqueta.valor}<label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>{/if}
+            {#if hayEtiquetas}<label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>{/if}
             {#if puede.administrar(actual.cliente.rol)}<a class="btn btn-sm btn-ghost" href="/c/{c}/emparejar"><Plus size={14} />Añadir equipo</a>{/if}
           </span>
         </div>
@@ -355,7 +363,7 @@
           {#each grupos as g (g.etiqueta ?? "")}
             {@const n = cuentaGrupo(g.equipos)}
             <div class="cab-grupo">
-              {#if g.etiqueta}<button type="button" class="sin-boton" onclick={() => filtroEtiqueta.poner(g.etiqueta!)} use:tip={`Ver solo los de «${g.etiqueta}»`}><EtiquetaChip nombre={g.etiqueta} /></button>{:else}<span class="sin-et">Sin etiqueta</span>{/if}
+              {#if g.etiqueta}<button type="button" class="sin-boton" onclick={() => filtrosEquipos.poner({ ...vacios(), etiquetas: [g.etiqueta!] })} use:tip={`Ver solo los de «${g.etiqueta}»`}><EtiquetaChip nombre={g.etiqueta} /></button>{:else}<span class="sin-et">Sin etiqueta</span>{/if}
               <span class="faint">
                 {plural(g.equipos.length, "equipo", "equipos")}{#if n.mal}{" · "}<span class="g-mal"><CircleAlert size={12} />{plural(n.mal, "con problemas", "con problemas")}</span>{/if}{#if n.atencion}{" · "}<span class="g-aviso"><TriangleAlert size={12} />{plural(n.atencion, "necesita atención", "necesitan atención")}</span>{/if}{#if n.bien === g.equipos.length}{" · "}<span class="g-ok"><CircleCheck size={12} />todos bien</span>{/if}
               </span>
@@ -386,9 +394,9 @@
       {/if}
     {:else}
       <div class="card">
-        {#if actual.equipos.length && filtroEtiqueta.valor}
-          <Vacio icono={Database} ilustracion="sin-resultados" titulo="Ningún equipo con esa etiqueta" texto="Quita el filtro para ver todos los equipos.">
-            <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
+        {#if actual.equipos.length && conFiltros}
+          <Vacio icono={Database} ilustracion="sin-resultados" titulo="Ningún equipo con esos filtros" texto="Quita los filtros para ver todos los equipos.">
+            <button type="button" class="btn" onclick={() => filtrosEquipos.poner(vacios())}><X size={16} />Quitar los filtros</button>
           </Vacio>
         {:else}
           <!-- «Añadir equipo» ya está en el resumen de arriba: una sola acción a la vista. -->

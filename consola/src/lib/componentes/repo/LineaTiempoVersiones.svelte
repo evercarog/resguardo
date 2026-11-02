@@ -41,6 +41,7 @@
   import Bitacora, { type FilaBitacora } from "./Bitacora.svelte";
   import FormaCopia from "./FormaCopia.svelte";
   import ElegirFechas from "./ElegirFechas.svelte";
+  import VerMas from "../VerMas.svelte";
 
   interface Props {
     versiones: VersionLinea[];
@@ -472,16 +473,8 @@
           {alAbrirSuceso}
           etiqueta={filtro ? `Lo de ${filtro.texto}` : conSucesos ? `Historial y versiones de ${nombreRango}` : `Versiones de ${nombreRango}`}
         />
-        {#if quedan > 0}
-          <div class="mas">
-            <button type="button" class="btn btn-sm" aria-describedby="{id}-quedan" onclick={() => (limite += PAGINA)}>
-              Ver más ({numero(Math.min(PAGINA, quedan))})
-            </button>
-            <span class="faint num" id="{id}-quedan">{`Se ven ${limite === PRIMERAS ? "las " : ""}${numero(filasVisibles.length)}${limite === PRIMERAS ? " más recientes" : ""} de ${numero(filas.length)}; quedan ${numero(quedan)}.`}</span>
-          </div>
-        {:else if limite > PRIMERAS && filas.length > PRIMERAS}
-          <div class="mas"><button type="button" class="btn btn-sm btn-ghost" onclick={() => (limite = PRIMERAS)}>Ver solo las más recientes</button></div>
-        {/if}
+        <!-- 16t: el mismo «Ver más» que las demás listas largas. -->
+        <VerMas vistas={filasVisibles.length} total={filas.length} tanda={PAGINA} onclick={() => (limite += PAGINA)} alVolver={limite > PRIMERAS ? () => (limite = PRIMERAS) : undefined} />
       {:else}
         <p class="faint vacio">
           {#if filtro}{conSucesos ? VACIO[que] : "Ninguna versión en ese momento."} Prueba con otra casilla o con el día entero.
@@ -591,13 +584,6 @@
     max-width: min(100%, 16rem);
     height: 28px;
     padding: 0 8px;
-    font-size: var(--fs-xs);
-  }
-  .mas {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 10px;
     font-size: var(--fs-xs);
   }
   /* El marco del calendario: el mismo alto en todos los periodos (lo de debajo no salta). */

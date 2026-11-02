@@ -4,7 +4,7 @@
   // Actividad del cliente: el registro encadenado de todo lo que se hace, con
   // «Verificar la cadena» (en el servidor y, para lo cargado, también aquí) y
   // exportación a CSV.
-  import { Anchor, Download, ShieldCheck, ShieldX, LoaderCircle, Search, Activity, CalendarDays, Clock, UsersRound } from "@lucide/svelte";
+  import { Anchor, Download, ShieldCheck, ShieldX, LoaderCircle, Activity, CalendarDays, Clock, UsersRound } from "@lucide/svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Cifra from "$lib/componentes/Cifra.svelte";
   import Copiable from "$lib/componentes/Copiable.svelte";
@@ -23,6 +23,9 @@
   import Cargando from "$lib/componentes/Cargando.svelte";
   import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
+  import BarraTabla from "$lib/componentes/BarraTabla.svelte";
+  import VerMas from "$lib/componentes/VerMas.svelte";
+  import { casaBusqueda, enRango, SIN_RANGO, tanda, TANDA, textoFilas, type Rango } from "$lib/tablas";
 
   let entradas = $state<EntradaAuditoria[] | null>(null);
   let error = $state("");
@@ -204,7 +207,16 @@
   const deHoy = $derived((entradas ?? []).filter((e) => Date.parse(e.creado) >= hoyIni).length);
   const de7 = $derived((entradas ?? []).filter((e) => Date.parse(e.creado) >= reloj.ahora - 7 * 86_400_000).length);
   const personas = $derived(new Set((entradas ?? []).filter((e) => e.actor.startsWith("cuenta:")).map((e) => e.actor)).size);
-  const visibles = $derived((entradas ?? []).filter((e) => !buscar.trim() || `${actor(e.actor)} ${accion(e.accion)} ${e.objetivo} ${e.datos}`.toLowerCase().includes(buscar.trim().toLowerCase())));
+  // 16t: buscar (sin tildes) y el rango de fechas, sobre lo cargado; las más antiguas, con «Ver más antiguas».
+  let rango = $state<Rango>({ ...SIN_RANGO });
+  const visibles = $derived((entradas ?? []).filter((e) => enRango(e.creado, rango) && casaBusqueda(buscar, actor(e.actor), accion(e.accion), objetivo(e.objetivo), datos(e.datos), e.objetivo)));
+  // La importada llega entera: se enseña por tandas.
+  let limite = $state(TANDA * 4);
+  $effect.pre(() => {
+    void [buscar, rango, importada];
+    limite = TANDA * 4;
+  });
+  const enPantalla = $derived(importada ? tanda(visibles, limite).visibles : visibles);
 
   function exportar() {
     const esc = (s: string) => `"${String(s).replaceAll('"', '""')}"`;
@@ -280,17 +292,22 @@
   {:else if entradas === null}
     <Cargando filas={8} />
   {:else if entradas.length}
-    <label class="buscar campo-buscar">
-      <Search size={15} />
-      <input class="input" type="search" placeholder="Buscar por persona, acción o equipo" bind:value={buscar} aria-label="Buscar en la actividad" />
-    </label>
+    <BarraTabla
+      bind:buscar
+      placeholder="Buscar por persona, acción o equipo"
+      {rango}
+      alElegirRango={(r) => (rango = r)}
+      ahora={reloj.ahora}
+      cuenta={textoFilas(visibles.length, entradas.length, "entrada", "entradas") + (hayMas ? " cargadas" : "")}
+      limpiar={() => ((buscar = ""), (rango = { ...SIN_RANGO }))}
+    />
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div class="card p-0 desplazable alto" tabindex="0" role="region" aria-label="Actividad (se desplaza)">
       <table class="tabla actividad">
         <caption class="sr-only">Registro de actividad</caption>
         <thead><tr><th scope="col">N.º</th><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Qué</th><th scope="col">Sobre</th><th scope="col">Huella</th></tr></thead>
         <tbody>
-          {#each visibles as e (e.n)}
+          {#each enPantalla as e (e.n)}
             <tr>
               <td class="num faint">{e.n}</td>
               <td class="nowrap">{fechaLarga(e.creado)}</td>
@@ -303,7 +320,12 @@
         </tbody>
       </table>
     </div>
-    {#if hayMas}<button class="btn mas" disabled={cargandoMas} onclick={() => cargar(true)}>{cargandoMas ? "Cargando…" : "Ver más antiguas"}</button>{/if}
+    {#if !visibles.length}<p class="faint">Nada de lo cargado coincide.{hayMas ? " Prueba con «Ver más antiguas»." : ""}</p>{/if}
+    {#if importada}
+      <VerMas vistas={enPantalla.length} total={visibles.length} tanda={TANDA * 4} onclick={() => (limite += TANDA * 4)} />
+    {:else}
+      <VerMas vistas={visibles.length} total={hayMas ? null : visibles.length} cargando={cargandoMas} onclick={() => cargar(true)} />
+    {/if}
   {:else if !error}
     <div class="card"><Vacio icono={Activity} titulo="Sin actividad todavía" texto="Aquí quedará anotado, en orden, todo lo que se haga en el cliente: quién, qué y cuándo." /></div>
   {/if}
@@ -320,9 +342,6 @@
     align-items: center;
     gap: 4px 8px;
     margin: 0;
-  }
-  .mas {
-    align-self: center;
   }
   .nowrap {
     white-space: nowrap;

@@ -442,6 +442,8 @@
   }
   .dos > .card {
     display: grid;
+    /* 16r: sin esto, la columna toma el ancho de su contenido y a 375 px se sale. */
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     gap: var(--sp-3);
   }

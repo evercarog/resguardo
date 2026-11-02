@@ -60,6 +60,8 @@ import { copiaAtrasada } from "../src/lib/salud";
 import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
 import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
 import { agruparAvisos, agruparUrgentes, primerPaso, ultimaPrueba } from "../src/lib/urgentes";
+import { aDireccion, chipsDe, conVista, deDireccion, deTexto, errorNombreVista, estadosDe, leerVistas, mismosFiltros, pasaEtiquetas, pasaFiltros, textoCuenta, vacios, vistaActual } from "../src/lib/filtrosEquipos";
+import { casaBusqueda, enRango, rangoATexto, rangoDeTexto, SIN_RANGO, tanda, textoFilas, textoSeVen, textoRango, ultimosDias } from "../src/lib/tablas";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1137,6 +1139,69 @@ console.log("\n· 16m y 16o: ¿estoy protegido? y cada aviso con un solo «qué 
   igual("16s: sin equipos, «Añadir equipo» (y nada si no puede)", [primerPaso("c", [], true)?.texto, primerPaso("c", [], false)], ["Añadir equipo", null]);
   igual("16s: un solo equipo sin copias, su primera copia ahí mismo", primerPaso("c", [sin], true)?.href, "/c/c/equipos/e1/copias?nueva=1");
   igual("16s: varios, la lista de equipos", primerPaso("c", [sin, { ...sin, id: "e2" }], true)?.texto, "Ver los equipos");
+}
+
+console.log("\n· 16e: los filtros de los equipos, combinados, en la dirección y en vistas guardadas");
+{
+  const ahora = Date.parse("2026-11-02T12:00:00Z");
+  const hace = (h: number) => new Date(ahora - h * 3600_000).toISOString();
+  const eq = (id: string, x: Partial<Equipo> & { copias?: unknown[]; movil?: unknown } = {}) =>
+    ({ id, nombre: id, so: "windows", version_agente: "0.8.2", rol: "agente", modo: "gestionado", confirmado: true, conectado: true, ultimo_contacto: hace(0.1), estado_servicio: "en_marcha", etiquetas: [], ...x, resumen: { copias: x.copias ?? [{ id: "k", nombre: "Docs", repo: "r", ultima: { cuando: hace(2), estado: "ok" } }], movil: x.movil ?? null } }) as unknown as Equipo;
+  const bien = eq("PC-1", { etiquetas: ["Contabilidad", "Planta"] });
+  const falla = eq("PC-2", { etiquetas: ["Contabilidad"], copias: [{ id: "k", nombre: "Docs", repo: "r", ultima: { cuando: hace(2), estado: "fallo" } }] });
+  const portatil = eq("PORTATIL-1", { conectado: false, ultimo_contacto: hace(30), movil: { sale_oficina: true }, version_agente: "0.8.1" });
+  const almacen = eq("ALMACEN", { rol: "almacenamiento", copias: [] });
+  const todos = [bien, falla, portatil, almacen];
+  const sedes: Record<string, string> = { "PC-1": "planta", "PC-2": "oficina", "PORTATIL-1": "oficina", ALMACEN: "oficina" };
+  const ctx = { sede: (e: Equipo) => sedes[e.id], sistema: () => "Windows 11", tipo: () => "Físico" };
+  const pasan = (f: ReturnType<typeof vacios>) => todos.filter((e) => pasaFiltros(e, f, ctx, ahora)).map((e) => e.id);
+  igual("sin filtros, todos", pasan(vacios()), ["PC-1", "PC-2", "PORTATIL-1", "ALMACEN"]);
+  igual("estados de cada uno", todos.map((e) => [...estadosDe(e, ahora)].sort()), [["al_dia"], ["atencion", "fallando"], ["atencion", "fuera", "sin_conexion"], ["al_dia"]]);
+  igual("dos estados: cualquiera de ellos", pasan({ ...vacios(), estados: ["fallando", "fuera"] }), ["PC-2", "PORTATIL-1"]);
+  igual("estado y sede a la vez: los dos", pasan({ ...vacios(), estados: ["atencion"], sedes: ["oficina"] }), ["PC-2", "PORTATIL-1"]);
+  igual("varias sedes: cualquiera", pasan({ ...vacios(), sedes: ["planta", "oficina"] }).length, 4);
+  igual("etiquetas, cualquiera", pasan({ ...vacios(), etiquetas: ["planta", "Contabilidad"] }), ["PC-1", "PC-2"]);
+  igual("etiquetas, todas (sin distinguir mayúsculas)", pasan({ ...vacios(), etiquetas: ["planta", "contabilidad"], modo: "todas" }), ["PC-1"]);
+  igual("sin etiquetas pedidas, también los que no tienen", pasaEtiquetas({ etiquetas: [] }, []), true);
+  igual("guardan copias y versión del agente", [pasan({ ...vacios(), almacen: true }), pasan({ ...vacios(), versiones: ["0.8.1"] })], [["ALMACEN"], ["PORTATIL-1"]]);
+  igual("servidor físico: lo decide el contexto", todos.filter((e) => pasaFiltros(e, { ...vacios(), infra: "srv:hv-01" }, { ...ctx, enInfra: (x) => x.id === "ALMACEN" }, ahora)).map((e) => e.id), ["ALMACEN"]);
+
+  const f = { ...vacios(), estados: ["atrasada" as const], sedes: ["planta"], etiquetas: ["Contabilidad", "Puesto de oficina"], modo: "todas" as const, infra: "cj:hv-01:tank" };
+  const q = aDireccion(f, new URLSearchParams("vista=mapa"));
+  igual("en la dirección, sin tocar lo demás", q.toString(), "vista=mapa&estado=atrasada&sede=planta&et=Contabilidad&et=Puesto+de+oficina&modo=todas&infra=cj%3Ahv-01%3Atank");
+  igual("ida y vuelta por la dirección", mismosFiltros(deDireccion(q), f), true);
+  igual("«?filtro=atencion» de antes (16o) es «Necesitan atención»", deDireccion(new URLSearchParams("filtro=atencion")).estados, ["atencion"]);
+  igual("lo que no vale en la dirección se descarta", [deDireccion(new URLSearchParams("estado=raro")).estados, deDireccion(new URLSearchParams("infra=../x")).infra], [[], ""]);
+  igual("chips quitables", chipsDe(f, { sede: (id) => (id === "planta" ? "Planta" : null), infra: () => "hv-01 · tank" }).map((c) => c.texto), ["Atrasados", "Sede: Planta", "Etiqueta: Contabilidad (todas)", "Etiqueta: Puesto de oficina (todas)", "En hv-01 · tank"]);
+  igual("quitar un chip deja el resto", chipsDe(f)[1].sin.sedes, []);
+  igual("la cuenta", [textoCuenta(8, 30), textoCuenta(30, 30), textoCuenta(1, 1)], ["8 de 30 equipos", "30 equipos", "1 equipo"]);
+
+  let vs = conVista([], "Servidores de la planta", f);
+  vs = conVista(vs, "Fallando", { ...vacios(), estados: ["fallando"] });
+  igual("vistas guardadas: la que coincide con los filtros puestos (sin importar el orden)", vistaActual(vs, { ...f, etiquetas: ["Puesto de oficina", "Contabilidad"] })?.nombre, "Servidores de la planta");
+  igual("guardar con el mismo nombre la cambia", conVista(vs, "fallando", { ...vacios(), estados: ["atrasada"] }).map((v) => [v.nombre, deTexto(v.filtros).estados]), [["Servidores de la planta", ["atrasada"]], ["fallando", ["atrasada"]]]);
+  igual("se leen de vuelta (y lo que no tiene forma, fuera)", leerVistas(JSON.stringify([...vs, { nombre: "" }, 3])).length, 2);
+  igual("texto roto: ninguna", leerVistas("{"), []);
+  igual("nombre de la vista: hace falta uno y algún filtro", [errorNombreVista("", f), errorNombreVista("Algo", vacios()), errorNombreVista("Algo", f)], ["Ponle un nombre.", "Elige antes algún filtro.", null]);
+}
+
+console.log("\n· 16t: listas largas: buscar, rango de fechas y «Ver más»");
+{
+  const dia = (a: number, m: number, d: number, h = 0) => new Date(a, m - 1, d, h).getTime();
+  const r = { desde: dia(2026, 10, 3), hasta: dia(2026, 10, 9) };
+  igual("el rango incluye el primer y el último día enteros", [enRango(new Date(dia(2026, 10, 3, 0)).toISOString(), r), enRango(new Date(dia(2026, 10, 9, 23)).toISOString(), r), enRango(new Date(dia(2026, 10, 10, 0)).toISOString(), r), enRango(new Date(dia(2026, 10, 2, 23)).toISOString(), r)], [true, true, false, false]);
+  igual("al revés vale igual", enRango(dia(2026, 10, 5, 12), { desde: r.hasta, hasta: r.desde }), true);
+  igual("sin rango, todo (también sin fecha); con rango, lo que no tiene fecha queda fuera", [enRango(null, SIN_RANGO), enRango("no es fecha", r)], [true, false]);
+  const ahora = dia(2026, 11, 2, 15);
+  const u7 = ultimosDias(7, ahora);
+  igual("los últimos 7 días, hoy incluido", [enRango(dia(2026, 10, 27, 1), u7), enRango(dia(2026, 10, 26, 23), u7)], [true, false]);
+  igual("en palabras", [textoRango(SIN_RANGO, ahora), textoRango({ desde: dia(2026, 11, 2), hasta: dia(2026, 11, 2) }, ahora)], ["Todas las fechas", "Hoy"]);
+  igual("en la dirección, ida y vuelta", rangoDeTexto(rangoATexto(r)), r);
+  igual("dirección rota: sin rango", rangoDeTexto("2026-13-99..x"), SIN_RANGO);
+  igual("buscar: todas las palabras, sin tildes ni mayúsculas, en cualquiera de los campos", [casaBusqueda("recepcion ana", "Contabilidad de RECEPCIÓN", "Ana"), casaBusqueda("recepcion luis", "RECEPCIÓN", "Ana"), casaBusqueda("  ", "x")], [true, false, true]);
+  const xs = Array.from({ length: 120 }, (_, i) => i);
+  igual("una tanda y lo que queda", [tanda(xs, 50).visibles.length, tanda(xs, 50).quedan, tanda(xs, 200).quedan], [50, 70, 0]);
+  igual("lo que se dice", [textoSeVen(50, 1230), textoFilas(12, 80, "restauración", "restauraciones"), textoFilas(1, 1, "orden", "órdenes")], ["Se ven 50 de 1230; quedan 1180.", "12 de 80 restauraciones", "1 orden"]);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

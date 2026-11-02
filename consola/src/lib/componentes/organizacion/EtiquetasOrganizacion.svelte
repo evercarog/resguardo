@@ -11,7 +11,7 @@
   import { actual } from "$lib/estado.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { plural } from "$lib/formato";
-  import { ajusteDe, etiquetasDe, filtroEtiqueta, mismaEtiqueta, NOMBRES_COLOR } from "$lib/etiquetas.svelte";
+  import { ajusteDe, etiquetasDe, mismaEtiqueta, NOMBRES_COLOR } from "$lib/etiquetas.svelte";
   import { colorDe, conAvisos } from "$lib/etiquetasGrupos";
   import { categoriaDe } from "$lib/sedes";
   import { guardarOrganizacion } from "$lib/organizacion.svelte";
@@ -58,7 +58,7 @@
         <span class="txt">
           <span class="linea">
             <EtiquetaChip nombre={t.nombre} />
-            <a class="n" href="/c/{actual.id}/equipos" onclick={() => filtroEtiqueta.poner(t.nombre)}>{plural(t.n, "equipo", "equipos")}</a>
+            <a class="n" href="/c/{actual.id}/equipos?et={encodeURIComponent(t.nombre)}">{plural(t.n, "equipo", "equipos")}</a>
           </span>
           <span class="faint">
             {NOMBRES_COLOR[colorDe(t.nombre, actual.etiquetas)]}{a?.color == null ? " (automático)" : ""}

@@ -88,7 +88,7 @@
   import ElegirSede from "$lib/componentes/ElegirSede.svelte";
   import { sedePorDefecto } from "$lib/sedes";
   import { ponerSedeEquipos } from "$lib/organizacion.svelte";
-  import { filtroEtiqueta, plantillasPropuestas } from "$lib/etiquetas.svelte";
+  import { plantillasPropuestas } from "$lib/etiquetas.svelte";
   import PendienteItem from "$lib/componentes/PendienteItem.svelte";
   import { pendientesDe, terminada } from "$lib/pendientes.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
@@ -994,7 +994,7 @@
         </p>
         {#if equipo.etiquetas?.length || puede.ordenar(rol)}
           <div class="etiquetas-eq">
-            {#each equipo.etiquetas ?? [] as t (t)}<a class="et-enlace" href="/c/{c}/equipos" onclick={() => filtroEtiqueta.poner(t)} use:tip={`Ver los equipos con «${t}»`}><EtiquetaChip nombre={t} /></a>{/each}
+            {#each equipo.etiquetas ?? [] as t (t)}<a class="et-enlace" href="/c/{c}/equipos?et={encodeURIComponent(t)}" use:tip={`Ver los equipos con «${t}»`}><EtiquetaChip nombre={t} /></a>{/each}
             {#if puede.ordenar(rol)}<button class="link mini-et" onclick={() => (editarEtiquetas = true)}><Tag size={12} />{equipo.etiquetas?.length ? "Cambiar etiquetas" : "Añadir etiquetas"}</button>{/if}
           </div>
         {/if}

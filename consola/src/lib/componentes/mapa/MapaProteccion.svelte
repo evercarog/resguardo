@@ -1992,10 +1992,18 @@
     display: none;
   }
   @media (max-width: 640px) {
+    /* 16r: el menú se coloca respecto a la fila de herramientas (no al botón, que puede
+       estar a la derecha): así no se sale de la pantalla a 375 px. */
+    .m-herr {
+      position: relative;
+    }
+    .capas {
+      position: static;
+    }
     .capas-menu {
       right: auto;
       left: 0;
-      width: min(280px, calc(100vw - 48px));
+      width: min(280px, 100%);
     }
   }
 </style>

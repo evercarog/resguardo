@@ -25,8 +25,10 @@
   import { PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import FilaEquipo from "$lib/componentes/FilaEquipo.svelte";
-  import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { agruparPorEtiqueta, ajusteDe, etiquetasDe, filtroEtiqueta, mismaEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import BarraFiltros from "$lib/componentes/BarraFiltros.svelte";
+  import { agruparPorEtiqueta, ajusteDe, etiquetasDe, mismaEtiqueta } from "$lib/etiquetas.svelte";
+  import { contextoFiltros, filtrosEquipos } from "$lib/filtrosEquipos.svelte";
+  import { pasaFiltros, vacios } from "$lib/filtrosEquipos";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { guardar, leer, leerTexto } from "$lib/recordar";
@@ -35,19 +37,10 @@
   import { sedeDeDestino } from "$lib/sedes";
 
   let buscar = $state("");
-  // El filtro se recuerda en este navegador (por cliente).
-  const FILTROS = ["todos", "atencion", "almacen"] as const;
-  let filtro = $state<(typeof FILTROS)[number]>("todos");
-  $effect.pre(() => {
-    if (!actual.id) return;
-    // 16o: «Ver los equipos» de Estado llega con `?filtro=atencion`.
-    const q = untrack(() => page.url.searchParams.get("filtro"));
-    filtro = FILTROS.includes(q as (typeof FILTROS)[number]) ? (q as (typeof FILTROS)[number]) : leer(`equipos.filtro.${actual.id}`, FILTROS, "todos");
-  });
-  function ponerFiltro(f: (typeof FILTROS)[number]) {
-    filtro = f;
-    guardar(`equipos.filtro.${actual.id}`, f === "todos" ? "" : f);
-  }
+  // 16e: los filtros (estado, sede, etiquetas, sistema, tipo…), los mismos que en Estado;
+  // recordados por persona y en la dirección (`?filtro=atencion` de Estado sigue valiendo).
+  const filtros = $derived(filtrosEquipos.valor);
+  const ctxFiltros = $derived(contextoFiltros());
   // Los informes, para los cuadros de 14 días de cada fila.
   $effect(() => {
     // Las cargas, sin seguir lo que leen (si no, cada respuesta podría volver a lanzar el efecto).
@@ -56,28 +49,16 @@
   });
   const informeDe = (id: string) => (ultimos.cliente === actual.id ? ultimos.porEquipo[id] : undefined);
 
-  // 14uu: filtrar por sistema («Windows 11», «Windows Server 2016», «Ubuntu 22.04»…).
-  let sistema = $state("");
-  const sistemas = $derived([...new Set(actual.equipos.map((e) => grupoSistema(e)))].sort((a, b) => a.localeCompare(b, "es", { numeric: true })));
-  // Un sistema que ya no tiene ningún equipo deja de filtrar.
-  const sistemaActivo = $derived(sistemas.includes(sistema) ? sistema : "");
-  // 0.8.1 (C3, 15c): filtrar por tipo de equipo (físico, máquina virtual y de qué tipo, contenedor).
-  let tipo = $state("");
-  const tipos = $derived([...new Set(actual.equipos.map((e) => grupoTipo(e)))].sort((a, b) => a.localeCompare(b, "es")));
-  const tipoActivo = $derived(tipos.includes(tipo) ? tipo : "");
+  // Para «Agrupar por» (los filtros de sistema y tipo están en la barra de filtros, 16e).
+  const sistemas = $derived([...new Set(actual.equipos.map((e) => grupoSistema(e)))]);
+  const tipos = $derived([...new Set(actual.equipos.map((e) => grupoTipo(e)))]);
 
   const lista = $derived(
     actual.equipos
       .filter((e) => {
         const t = buscar.trim().toLowerCase();
         if (t && !`${e.nombre} ${textoBuscable(e)} ${(e.etiquetas ?? []).join(" ")}`.toLowerCase().includes(t)) return false;
-        if (sistemaActivo && grupoSistema(e) !== sistemaActivo) return false;
-        if (tipoActivo && grupoTipo(e) !== tipoActivo) return false;
-        if (!pasaFiltro(e, filtroEtiqueta.valor)) return false;
-        const tono: Tono = saludEquipo(e, reloj.ahora).tono;
-        if (filtro === "atencion") return tono === "bad" || tono === "warn";
-        if (filtro === "almacen") return e.rol === "almacenamiento";
-        return true;
+        return pasaFiltros(e, filtros, ctxFiltros, reloj.ahora);
       })
       .sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)),
   );
@@ -122,7 +103,7 @@
   const ordenada = $derived(
     orden === "manual" ? enOrdenManual(lista, org.orden) : orden === "nombre" ? [...lista].sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true })) : lista,
   );
-  const arbol = $derived(niveles.length && !filtroEtiqueta.valor ? agruparPorNiveles(ordenada, niveles, ctxNiveles) : null);
+  const arbol = $derived(niveles.length ? agruparPorNiveles(ordenada, niveles, ctxNiveles) : null);
 
   // 0.8.1 (C2, 15b): la misma lista como mapa (los mismos filtros; «por sede» junta por el
   // primer nivel de «Agrupar por»). Se recuerda por persona.
@@ -375,47 +356,27 @@
       </Vacio>
     </div>
   {:else}
-    <div class="barra-filtros">
+    <BarraFiltros equipos={actual.equipos} vistos={lista.length}>
       <label class="buscar campo-buscar">
         <Search size={15} />
         <input class="input" type="search" placeholder="Buscar por nombre o sistema" bind:value={buscar} aria-label="Buscar equipos" />
       </label>
-      {#if sistemas.length > 1}
-        <select class="input sistema" bind:value={sistema} aria-label="Filtrar por sistema">
-          <option value="">Todos los sistemas</option>
-          {#each sistemas as s (s)}<option value={s}>{s} ({actual.equipos.filter((e) => grupoSistema(e) === s).length})</option>{/each}
-        </select>
-      {/if}
-      {#if tipos.length > 1}
-        <select class="input sistema" bind:value={tipo} aria-label="Filtrar por tipo de equipo">
-          <option value="">Todos los tipos</option>
-          {#each tipos as t (t)}<option value={t}>{t} ({actual.equipos.filter((e) => grupoTipo(e) === t).length})</option>{/each}
-        </select>
-      {/if}
-      <div class="segmented inline" role="group" aria-label="Filtrar">
-        <button class:on={filtro === "todos"} aria-pressed={filtro === "todos"} onclick={() => ponerFiltro("todos")}>Todos</button>
-        <button class:on={filtro === "atencion"} aria-pressed={filtro === "atencion"} onclick={() => ponerFiltro("atencion")}>Necesitan atención</button>
-        <button class:on={filtro === "almacen"} aria-pressed={filtro === "almacen"} onclick={() => ponerFiltro("almacen")}>Guardan copias</button>
-      </div>
       {#if puede.ordenar(actual.cliente.rol) && !seleccionando}
         <button class="btn" onclick={() => (seleccionando = true)} use:tip={"Copiar ahora, verificar o cambiar varios equipos a la vez"}><ListChecks size={16} />Varios a la vez</button>
       {/if}
-    </div>
-    <FiltroEtiquetas />
+    </BarraFiltros>
     <div class="vista" role="group" aria-label="Cómo ver la lista">
-      {#if !filtroEtiqueta.valor}
-        <label class="agrupar" for="ag-1">Agrupar por</label>
-        <select id="ag-1" class="input input-sm" value={niveles[0] ?? ""} onchange={(e) => ponerNivel(0, e.currentTarget.value)}>
+      <label class="agrupar" for="ag-1">Agrupar por</label>
+      <select id="ag-1" class="input input-sm" value={niveles[0] ?? ""} onchange={(e) => ponerNivel(0, e.currentTarget.value)}>
+        <option value="">Nada</option>
+        {#each disponibles as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
+      </select>
+      {#if niveles[0] && vista !== "mapa"}
+        <label class="agrupar" for="ag-2">luego</label>
+        <select id="ag-2" class="input input-sm" value={niveles[1] ?? ""} onchange={(e) => ponerNivel(1, e.currentTarget.value)}>
           <option value="">Nada</option>
-          {#each disponibles as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
+          {#each disponibles.filter((d) => d.nivel !== niveles[0]) as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
         </select>
-        {#if niveles[0] && vista !== "mapa"}
-          <label class="agrupar" for="ag-2">luego</label>
-          <select id="ag-2" class="input input-sm" value={niveles[1] ?? ""} onchange={(e) => ponerNivel(1, e.currentTarget.value)}>
-            <option value="">Nada</option>
-            {#each disponibles.filter((d) => d.nivel !== niveles[0]) as d (d.nivel)}<option value={d.nivel}>{d.nombre}</option>{/each}
-          </select>
-        {/if}
       {/if}
       <div class="segmented inline lista-mapa" role="group" aria-label="Ver como">
         <button class:on={vista === "lista"} aria-pressed={vista === "lista"} onclick={() => ponerVista("lista")}><List size={14} />Lista</button>
@@ -531,7 +492,7 @@
         {#if seleccionando}
           <label class="fila sel-todos">
             <input type="checkbox" checked={todosElegidos} indeterminate={!todosElegidos && elegiblesVisibles.some((e) => elegidos.has(e.id))} onchange={(ev) => alternarTodos(ev.currentTarget.checked)} />
-            <span>Todos los que se ven{filtroEtiqueta.valor ? ` con «${filtroEtiqueta.valor}»` : ""} ({elegiblesVisibles.length})</span>
+            <span>Todos los que se ven ({elegiblesVisibles.length})</span>
           </label>
           {@render filas(ordenada)}
         {:else}
@@ -545,10 +506,7 @@
             class="btn btn-sm"
             onclick={() => {
               buscar = "";
-              sistema = "";
-              tipo = "";
-              ponerFiltro("todos");
-              filtroEtiqueta.poner("");
+              filtrosEquipos.poner(vacios());
             }}><X size={14} />Quitar los filtros</button
           >
         </Vacio>
@@ -765,7 +723,7 @@
   }
   .barra-bloque {
     position: sticky;
-    bottom: var(--sp-4);
+    bottom: calc(var(--sp-4) + var(--barra-movil, 0px));
     z-index: 4;
     display: flex;
     flex-wrap: wrap;
@@ -782,19 +740,9 @@
     font-size: var(--fs-sm);
     font-weight: 500;
   }
-  .barra-filtros {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--sp-3);
-  }
   .buscar {
     flex: 1;
-    min-width: 220px;
-  }
-  .sistema {
-    width: auto;
-    max-width: 100%;
+    min-width: min(220px, 100%);
   }
   @media (max-width: 640px) {
     .segmented.inline {

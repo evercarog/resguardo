@@ -1557,7 +1557,7 @@
   }
   .pie-paso {
     position: sticky;
-    bottom: 0;
+    bottom: var(--barra-movil, 0px);
     display: flex;
     align-items: center;
     justify-content: space-between;
