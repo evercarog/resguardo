@@ -11,6 +11,8 @@ pub mod almacen;
 pub mod ancla;
 pub mod api;
 pub mod auth;
+/// 16x (7): las respuestas grandes de lectura de la consola, en gzip.
+pub mod comprimir;
 #[cfg(feature = "consola-integrada")]
 pub mod consola_integrada;
 pub mod cuotas;

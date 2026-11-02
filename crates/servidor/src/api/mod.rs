@@ -390,7 +390,13 @@ pub fn router(st: St) -> Router {
 
     let web = match &st.opciones.consola {
         Some(dir) => {
-            Router::new().fallback_service(tower_http::services::ServeDir::new(dir).fallback(tower_http::services::ServeFile::new(dir.join("index.html"))))
+            // 16x (0): con los `.br` y `.gz` de la compilación, si están (sin caché: es para probar).
+            Router::new().fallback_service(
+                tower_http::services::ServeDir::new(dir)
+                    .precompressed_br()
+                    .precompressed_gzip()
+                    .fallback(tower_http::services::ServeFile::new(dir.join("index.html")).precompressed_br().precompressed_gzip()),
+            )
         }
         #[cfg(feature = "consola-integrada")]
         None if crate::consola_integrada::disponible() => Router::new().fallback(crate::consola_integrada::servir),
@@ -403,6 +409,8 @@ pub fn router(st: St) -> Router {
         .merge(web)
         .route("/api/{*resto}", patch(no_existe).get(no_existe).post(no_existe).put(no_existe).delete(no_existe))
         .layer(middleware::from_fn(cuerpo_con_espera))
+        // 16x (7): las respuestas grandes de lectura (informes, panel…), en gzip si se acepta.
+        .layer(middleware::from_fn(crate::comprimir::respuestas))
         .layer(middleware::from_fn_with_state(st.clone(), limite_y_registro))
         .layer(middleware::from_fn_with_state(st.clone(), cabeceras))
         .with_state(st)

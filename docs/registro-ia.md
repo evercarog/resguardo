@@ -70,6 +70,33 @@ Claude Code (Opus), en autónomo, desde `ia/083-pulido` (con la parte de la cons
 5. **16t, Restauraciones empieza en «todas las fechas»** (antes, «Último año»): las cifras de arriba son de lo que se ve.
 6. **16r:** ¿cinco entradas abajo, o cuatro (sin Copias, que también se ve en Estado)?
 
+## 2026-11-02 · `ia/083-rendimiento` · Plan 0.8.3: rendimiento con muchos equipos (16q), consumo (16x) y «Comprobar todo» (16v)
+
+Claude Code (Opus), en autónomo, desde `ia/083-pulido`, en paralelo con otras dos ramas (sesiones e Infraestructura; filtros, tablas largas y móvil). No se tocaron la entrada, las sesiones, Infraestructura ni el aspecto de las páginas; en la consola, solo la carga de datos, Estado (primeras 24 tarjetas) y la entrada nueva de «Comprobar todo». Todo medido en [rendimiento.md](rendimiento.md).
+
+**Hecho (un commit por paso):**
+
+- **16q, el simulador y la medida:** `MOCK_EQUIPOS=200` (`consola/src/mock/grande.ts`): «Distribuidora Gran Escala», 200 equipos y 600 repositorios inventados, semilla fija; `MOCK_LATENCIA=0`; el panel del simulador resumido y acotado como el del servidor. `consola/scripts/medir-rendimiento.ts`: Edge sin ventana por el protocolo de depuración contra `vite preview --mode mock`; carga, navegación y reposo de Estado, Equipos, Copias y «Todos los clientes».
+- **16x (0), la consola comprimida:** `consola/scripts/comprimir.mjs` en `npm run build` (`.br` y `.gz`); `consola_integrada.rs` manda el que acepta el navegador con `Content-Encoding`, `Vary` y `ETag` (304); `--consola DIR` con los precomprimidos de `ServeDir`. 3,55 MB → 1,08 MB en brotli.
+- **16x (7a), los informes:** una vez por cliente (Estado, Equipos y Copias los pedían dos veces) y los refrescos con `GET …/informes?desde=` (servidor: `ultimo_informe_desde`, sin abrir el JSON de los demás). Al cargar, 24,9 → 12,8 MB; en reposo, 51 → 3,1 MB por minuto.
+- **16q, Estado:** las primeras 24 tarjetas de equipos y de repositorios con «Ver los N restantes»: 188 000 → 42 000 elementos, 6,3 → 4,2 s.
+- **16x (7b), gzip de lo grande:** `crates/servidor/src/comprimir.rs`, solo `GET /api/panel`, `…/informes`, `…/resumen`, `…/equipos/{e}/informes`, `…/equipos/{e}/historial` y `…/restauraciones` (lectura, sin secretos: sin riesgo tipo BREACH), con `miniz_oxide` (ya estaba). `…/informes` de 200 equipos: 12,1 → 1,66 MB en 101 ms.
+- **16v, «Comprobar todo»:** botón en Estado (`ComprobarTodo.svelte`, lógica en `lib/comprobarTodo.ts` con vectores): `verificar_ahora` de cada repositorio con versiones y de cada derivada, `probar_restauracion { espejo }` desde los espejos a los que el equipo llega sin preguntar; los demás espejos, con el motivo; los kits, uno a uno con el diálogo de siempre; veredicto de cada una con el informe del equipo; informe en CSV. Sin capacidades nuevas en el agente.
+- Contrato: `desde` y el gzip en `api-servidor.md` «Cambios» como v1.9x (pendiente de numerar al unir); nada para los agentes.
+
+**Comprobado:** `cargo fmt --all --check`; `cargo clippy --workspace --exclude resguardo --all-targets -- -D warnings` (el paquete `resguardo`, la app congelada, no compila en este worktree: le faltan `src-tauri/binaries`); `cargo clippy -p resguardo-servidor --features consola-integrada --all-targets -- -D warnings`; `cargo test -p resguardo-servidor --features consola-integrada` (bien; `el_canal_de_un_equipo_callado_se_cierra` falló una vez por tiempos y pasó al repetir, como en la 0.8.2); pruebas nuevas en `tests/api.rs` (consola comprimida, ETag/304, `desde`) y en `comprimir.rs` (la capa con un router, CRC-32, gzip que se abre); `npm run check`, `build`, `test:vectores` (`scripts/vectores-083-rendimiento.ts`, 24 de 24) y `test:sin-referencias` en cada commit. El servidor de verdad (compilado con la consola) sirve brotli, gzip o sin comprimir según `Accept-Encoding`, con la CSP y 304. «Comprobar todo» probado en el simulador con un navegador sin ventana (Ferretería Altamar: 5 verificaciones pedidas, 4 bien en 45 s y la del equipo sin conexión esperando; los espejos que no se pueden, con su motivo). `cargo test --workspace --exclude resguardo` con `--skip restaurar_desde_el_espejo --skip prueba_desde_una_carpeta_con_restic` (las dos que fallan en este equipo por permisos): 886 pasan, 0 fallan (la primera vez no llegó a compilar: el disco F: se quedó sin espacio). **e2e** (`npm run e2e` con los binarios de esta rama y restic/rest-server de otra carpeta local): pasa del paso 1 al 4b y falla en el **4c** como en la rama de partida en este equipo («Windows no permite acceder a algún archivo o carpeta…» en la prueba desde el disco del espejo); no falló nada antes ni de otra forma. Los pasos de después del 4c no corrieron.
+
+**Sin probar:** «Comprobar todo» contra agentes reales (el veredicto depende de que el informe llegue después de la verificación; en el simulador sí); el gzip de la API en un navegador de verdad contra el servidor (probado con una capa de prueba y `curl`, no con la consola entera); las medidas son con el simulador, en un equipo cargado por otras compilaciones (los tiempos varían; los bytes y elementos no).
+
+**Para el responsable:**
+
+1. 16x pasos 1 a 6 (prioridad de disco, `--max-unused`, `--pack-size`, rclone, memoria, el agente en reposo) **no se tocaron**: cambian cómo copia el agente y solo se miden con copias de verdad en el laboratorio. ¿Se programa esa medida?
+2. Copias (~120 000 elementos con 600 copias) y Equipos quedan para 16t (tablas largas, otra rama).
+3. «Todos los clientes» sigue pidiendo `/api/panel` entero cada 30 s (con gzip, ~0,8 MB con un cliente de 200 equipos). ¿Merece pedir solo lo que cambió?
+4. Estado enseña 24 tarjetas de cada lista: ¿está bien ese número, o mejor ninguna lista de repositorios en Estado con muchos equipos?
+5. «Comprobar todo» se ofrece a quien puede mandar órdenes (técnico o más) y, con una etiqueta elegida en Estado, solo a sus equipos. Los espejos que piden elegir una nube o una carpeta del equipo no se prueban desde ahí (se dice por qué y dónde hacerlo).
+6. El disco F: de este equipo se quedó **sin espacio** (0 bytes libres) durante las pruebas, con las otras ramas compilando: borré solo lo mío que se regenera (la compilación *release* y los símbolos de depuración de mis pruebas).
+
 ## 2026-11-02 · `ia/083-consola` · Plan 0.8.3: la parte de la consola (16j, 16l, 16y, 16w, 16m, 16o, 16c, 16p, 16s, 16u, 16n)
 
 Claude Code (Opus), en autónomo, desde `ia/083-pulido`, en paralelo con otra rama (servidor, infraestructura y sesiones: 16k, 16a/d/f/g, 16b, 16h) y otra pequeña del aviso del antivirus junto a «desconectado». No se tocaron Infraestructura, la entrada ni las sesiones, ni el aviso de equipo desconectado. Sin cambios de contrato.

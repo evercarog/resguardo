@@ -717,6 +717,11 @@ pub trait Almacen: Send + Sync + AlmacenNotas + AlmacenPruebas {
     fn config(&self, c: &ClienteCtx, equipo: &str) -> R<Option<(u64, String, serde_json::Value)>>;
     fn guardar_informe(&self, c: &ClienteCtx, equipo: &str, datos: &serde_json::Value) -> R<()>;
     fn informes(&self, c: &ClienteCtx, equipo: &str, limite: i64) -> R<Vec<(Ts, serde_json::Value)>>;
+    /// 16x (7): el último informe del equipo, solo si llegó en `desde` o después (los más
+    /// viejos no se leen ni se mandan: la consola ya los tiene).
+    fn ultimo_informe_desde(&self, c: &ClienteCtx, equipo: &str, desde: Option<Ts>) -> R<Option<(Ts, serde_json::Value)>> {
+        Ok(self.informes(c, equipo, 1)?.into_iter().next().filter(|(t, _)| desde.is_none_or(|d| *t >= d)))
+    }
 
     // ---------- Órdenes ----------
     /// Inserta la orden si `seq` es exactamente el siguiente del equipo; si no, `Err("seq:<siguiente>")`.

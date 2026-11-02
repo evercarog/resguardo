@@ -39,10 +39,10 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 
 ## E. Rendimiento y confianza
 
-- [ ] **16q.** Rendimiento con ~200 equipos.
-- [ ] **16v.** «Comprobar todo» de un cliente.
+- [~] (rama `ia/083-rendimiento`; [rendimiento.md](rendimiento.md); falta Copias y Equipos, con 16t) **16q.** Rendimiento con ~200 equipos.
+- [x] (rama `ia/083-rendimiento`) **16v.** «Comprobar todo» de un cliente.
 - [x] **16w.** Lo que ocupa de verdad en disco, también en los totales.
-- [ ] **16x.** Rendimiento y consumo: medir antes de tocar; ajustes suaves y en orden (primero, la consola comprimida).
+- [~] (rama `ia/083-rendimiento`: la consola comprimida, los informes nuevos y el gzip de lo grande; los pasos del agente, en el laboratorio) **16x.** Rendimiento y consumo: medir antes de tocar; ajustes suaves y en orden (primero, la consola comprimida).
 
 ## Fuera de esta versión (para hablarlo)
 

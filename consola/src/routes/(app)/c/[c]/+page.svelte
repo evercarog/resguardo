@@ -8,7 +8,7 @@
   // después, todo lo de las copias junto (regla 3-2-1-1-0 y mapa), la lista de
   // las órdenes que esperan, la salud de cada equipo con sus 14 días, los
   // repositorios y cuánto se guarda en cada destino con su tendencia.
-  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X, ListChecks } from "@lucide/svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
@@ -23,7 +23,7 @@
   import BarraFiltros from "$lib/componentes/BarraFiltros.svelte";
   import { agruparPorEtiqueta, gruposPorEtiqueta } from "$lib/etiquetas.svelte";
   import { contextoFiltros, filtrosEquipos } from "$lib/filtrosEquipos.svelte";
-  import { hayFiltros, pasaFiltros, vacios } from "$lib/filtrosEquipos";
+  import { chipsDe, hayFiltros, pasaFiltros, vacios } from "$lib/filtrosEquipos";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import TarjetaEquipo from "$lib/componentes/TarjetaEquipo.svelte";
   import Sparkline from "$lib/componentes/Sparkline.svelte";
@@ -32,6 +32,7 @@
   import AvisoSinAnotar from "$lib/componentes/infra/AvisoSinAnotar.svelte";
   import PrimerosPasos from "$lib/componentes/PrimerosPasos.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
+  import ComprobarTodo from "$lib/componentes/ComprobarTodo.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
@@ -186,6 +187,14 @@
     return `${d > 0 ? "+" : "−"}${bytes(Math.abs(d))} en 30 días`;
   }
 
+  /**
+   * 16q: con muchos equipos, Estado pintaba una tarjeta por equipo y por repositorio (200 y
+   * 600 en la medida: ~200 000 elementos y 7–9 s de JavaScript). Lo que falla va primero:
+   * se enseñan las primeras y el resto con un botón (o en Equipos y «Repositorios y destinos»).
+   */
+  const PRIMERAS = 24;
+  let todosEquipos = $state(false);
+  let todosRepos = $state(false);
   /** Repositorios de todos los equipos (no los trasladados): lo que falla, primero. */
   const tarjetas = $derived(
     delFiltro
@@ -206,6 +215,8 @@
       .at(0),
   );
   let copiar = $state<{ equipo: Equipo; repo: string; copia: string; nombre: string } | null>(null);
+  /** 16v: «Comprobar todo» (repositorios, derivadas, espejos y, con la persona, los kits). */
+  let comprobarTodo = $state(false);
 </script>
 
 <svelte:head><title>Estado · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
@@ -263,6 +274,12 @@
             <span class="t-sub">{prueba.cuando ? (prueba.tono === "ok" ? `${prueba.recientes} de ${plural(prueba.repos, "repositorio probado", "repositorios probados")} en ${PRUEBA_VALE_DIAS} días` : `hace más de ${PRUEBA_VALE_DIAS} días o falló: prueba otra`) : "comprueba que se puede recuperar"}</span>
           </div>
         </dl>
+        {#if puede.ordenar(actual.cliente.rol)}
+          <p class="comprobar-todo">
+            <button type="button" class="btn btn-sm" onclick={() => (comprobarTodo = true)}><ListChecks size={14} />Comprobar todo</button>
+            <span class="faint">Verifica repositorios, copias derivadas y espejos de una vez, y deja un informe.</span>
+          </p>
+        {/if}
       {/if}
       {#if urgentes.length}
         {@const u = urgentes[0]}
@@ -374,8 +391,11 @@
           {/each}
         {:else}
           <div class="rejilla equipos">
-            {#each equipos as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
+            {#each todosEquipos ? equipos : equipos.slice(0, PRIMERAS) as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
           </div>
+          {#if !todosEquipos && equipos.length > PRIMERAS}
+            <p class="ver-mas"><button type="button" class="btn btn-sm" onclick={() => (todosEquipos = true)}>Ver los {equipos.length - PRIMERAS} equipos restantes</button><a class="link" href="/c/{c}/equipos">o la lista en Equipos</a></p>
+          {/if}
         {/if}
       </section>
 
@@ -386,10 +406,13 @@
             <a class="btn btn-sm btn-ghost" href="/c/{c}/destinos">Ver todos</a>
           </div>
           <div class="rejilla repos">
-            {#each tarjetas as t (t.equipo.id + t.repo.id)}
+            {#each todosRepos ? tarjetas : tarjetas.slice(0, PRIMERAS) as t (t.equipo.id + t.repo.id)}
               <TarjetaRepo repo={t.repo} inf={informeDe(informes[t.equipo.id], t.repo.id)} equipo={t.equipo} cliente={c} ahora={reloj.ahora} />
             {/each}
           </div>
+          {#if !todosRepos && tarjetas.length > PRIMERAS}
+            <p class="ver-mas"><button type="button" class="btn btn-sm" onclick={() => (todosRepos = true)}>Ver los {tarjetas.length - PRIMERAS} repositorios restantes</button></p>
+          {/if}
         </section>
       {/if}
     {:else}
@@ -443,6 +466,10 @@
 
 {#if fuera && actual.cliente}<AlmacenEnOtraConsola cliente={actual.cliente} almacen={fuera.almacen} consolas={fuera.consolas} onclose={() => (fuera = null)} />{/if}
 
+{#if comprobarTodo && actual.cliente}
+  <ComprobarTodo cliente={actual.cliente} equipos={delFiltro} {reglas} filtro={chipsDe(filtrosEquipos.valor).map((c) => c.texto).join(", ")} onclose={() => (comprobarTodo = false)} />
+{/if}
+
 {#if copiar && actual.cliente}
   {#key copiar}
   <OrdenDialog
@@ -458,6 +485,22 @@
 {/if}
 
 <style>
+  .ver-mas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
+  .comprobar-todo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
   .linea-espera {
     align-items: center;
   }

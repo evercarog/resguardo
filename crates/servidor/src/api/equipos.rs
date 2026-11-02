@@ -208,15 +208,28 @@ pub async fn historial(State(st): State<St>, u: Usuario, Path((c, e)): Path<(Str
     Ok(Json(json!(filas.iter().filter_map(|f| serde_json::from_str::<Value>(&f.datos).ok()).collect::<Vec<_>>())))
 }
 
-/// `GET /api/clientes/{c}/informes`: el último informe de cada equipo del
-/// cliente, de una vez (la pantalla «Estado» no pide equipo a equipo).
-pub async fn ultimos_informes(State(st): State<St>, u: Usuario, Path(c): Path<String>) -> Res<Json<Value>> {
+#[derive(Deserialize)]
+pub struct DesdeQ {
+    desde: Option<String>,
+}
+
+/// `GET /api/clientes/{c}/informes[?desde=<fecha>]`: el último informe de cada equipo del
+/// cliente, de una vez (la pantalla «Estado» no pide equipo a equipo). 16x (7): con
+/// `desde`, solo los que llegaron en ese segundo o después (la consola ya tiene los
+/// demás: con 200 equipos, cada refresco completo eran ~12 MB). Un servidor anterior
+/// no lo mira y los manda todos (la consola los junta igual).
+pub async fn ultimos_informes(State(st): State<St>, u: Usuario, Path(c): Path<String>, Query(q): Query<DesdeQ>) -> Res<Json<Value>> {
     let (ctx, _) = u.miembro(&st, &c, MIEMBRO).await?;
+    let desde = match q.desde.as_deref().filter(|d| !d.is_empty()) {
+        Some(d) if d.len() <= 64 => Some(super::de_fecha(d).ok_or_else(|| ErrorApi::datos("Fecha no válida."))?),
+        Some(_) => return Err(ErrorApi::datos("Fecha no válida.")),
+        None => None,
+    };
     let filas = st
         .db(move |db| {
             let mut out = Vec::new();
             for e in db.equipos(&ctx)? {
-                if let Some((t, d)) = db.informes(&ctx, &e.id, 1)?.into_iter().next() {
+                if let Some((t, d)) = db.ultimo_informe_desde(&ctx, &e.id, desde)? {
                     out.push((e.id, t, d));
                 }
             }
