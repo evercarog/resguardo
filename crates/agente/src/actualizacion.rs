@@ -1029,7 +1029,19 @@ pub trait Plataforma {
     fn dormir(&self, d: Duration) {
         std::thread::sleep(d);
     }
+    /// 16z: ¿desapareció el programa o el servicio tras instalar (un antivirus que lo puso en
+    /// cuarentena)? Devuelve el motivo en palabras; `None` si todo sigue en su sitio.
+    fn desaparecido(&self, _plan: &Plan) -> Option<String> {
+        None
+    }
 }
+
+/// 16z: el motivo cuando el programa o el servicio desaparecen justo después de instalar.
+pub const MOTIVO_QUITADO: &str = "Windows o el antivirus quitó o bloqueó Resguardo Agente justo después de instalarlo. Mira la cuarentena del antivirus (en Microsoft Defender: Seguridad de Windows → Protección contra virus y amenazas → Historial de protección) y la ayuda «El antivirus lo bloqueó».";
+
+/// 16z: código de salida del instalador de Windows cuando, tras instalar, el programa o el
+/// servicio ya no están (`packaging/windows/agente.nsi`, `ComprobarInstalado`).
+pub const SALIDA_QUITADO: i32 = 6;
 
 /// Cada cuánto mira la salud.
 const PASO_SALUD: Duration = Duration::from_secs(5);
@@ -1054,6 +1066,10 @@ pub fn ejecutar(plan: &Plan, pl: &dyn Plataforma) -> Resultado {
     while esperado < Duration::from_secs(plan.plazo_s) {
         if pl.sana(plan) {
             return resultado("actualizada", None);
+        }
+        // 16z: si el antivirus lo quitó, no tiene sentido esperar la salud hasta el final.
+        if let Some(m) = pl.desaparecido(plan) {
+            return volver(m);
         }
         let paso = PASO_SALUD.min(Duration::from_secs(plan.plazo_s));
         pl.dormir(paso);
@@ -1168,10 +1184,30 @@ impl Plataforma for Real {
             .status()
             .map_err(|e| format!("No se pudo ejecutar el instalador: {e}"))?;
         let _ = std::fs::remove_dir_all(&tmp);
+        if estado.code() == Some(SALIDA_QUITADO) {
+            return Err(MOTIVO_QUITADO.into());
+        }
         if !estado.success() {
             return Err(format!("El instalador terminó con el código {}.", estado.code().unwrap_or(-1)));
         }
         Ok(())
+    }
+
+    fn desaparecido(&self, plan: &Plan) -> Option<String> {
+        use std::os::windows::process::CommandExt;
+        if !plan.instalacion.join("resguardo-agente.exe").is_file() {
+            return Some(MOTIVO_QUITADO.into());
+        }
+        // 1060: el servicio no existe.
+        let r = std::process::Command::new(PathBuf::from(crate::platform::system_dir()).join("sc.exe"))
+            .args(["query", crate::agente::SERVICE_NAME])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(0x0800_0000)
+            .status()
+            .ok()?;
+        (r.code() == Some(1060)).then(|| MOTIVO_QUITADO.into())
     }
 
     fn volver_atras(&self, plan: &Plan) -> Result<(), String> {
@@ -1202,7 +1238,17 @@ impl Plataforma for Real {
                 "/reg:64",
             ],
         );
-        let r = sistema("sc.exe", &["start", crate::agente::SERVICE_NAME]).map_err(|e| e.to_string())?;
+        let mut r = sistema("sc.exe", &["start", crate::agente::SERVICE_NAME]).map_err(|e| e.to_string())?;
+        // 16z: 1060, el servicio ya no existe (un antivirus lo quitó con el programa): se vuelve a
+        // instalar con el programa anterior, que también lo arranca.
+        if r.code() == Some(1060) {
+            r = std::process::Command::new(plan.instalacion.join("resguardo-agente.exe"))
+                .arg("--install-service")
+                .stdin(std::process::Stdio::null())
+                .creation_flags(0x0800_0000)
+                .status()
+                .map_err(|e| format!("No se pudo volver a instalar el servicio: {e}"))?;
+        }
         // 1056: ya estaba en marcha.
         if !r.success() && r.code() != Some(1056) {
             return Err(format!("No se pudo arrancar el servicio (código {}).", r.code().unwrap_or(-1)));
@@ -1423,6 +1469,36 @@ mod tests {
         let r = ejecutar(&plan(d.path(), 30), &f);
         assert_eq!(r.estado, "vuelta_atras_fallida");
         assert!(r.motivo.unwrap().contains("sin permiso"));
+    }
+
+    #[test]
+    fn si_el_antivirus_lo_quita_vuelve_atras_con_el_motivo() {
+        // 16z: el programa o el servicio desaparecen tras instalar: no se espera el plazo entero.
+        struct Quitada(Falsa);
+        impl Plataforma for Quitada {
+            fn instalar(&self, p: &Plan) -> Result<(), String> {
+                self.0.instalar(p)
+            }
+            fn volver_atras(&self, p: &Plan) -> Result<(), String> {
+                self.0.volver_atras(p)
+            }
+            fn sana(&self, p: &Plan) -> bool {
+                self.0.sana(p)
+            }
+            fn dormir(&self, d: Duration) {
+                self.0.dormir(d)
+            }
+            fn desaparecido(&self, _: &Plan) -> Option<String> {
+                (self.0.miradas.get() >= 2).then(|| MOTIVO_QUITADO.to_string())
+            }
+        }
+        let d = tempfile::tempdir().unwrap();
+        let f = Quitada(Falsa::nueva(Ok(()), Ok(()), None));
+        let r = ejecutar(&plan(d.path(), 600), &f);
+        assert_eq!(r.estado, "vuelta_atras");
+        assert!(r.motivo.unwrap().contains("antivirus"));
+        assert_eq!(*f.0.pasos.borrow(), ["instalar", "volver"]);
+        assert_eq!(f.0.dormido.get(), 5, "no esperó los 10 minutos");
     }
 
     #[test]

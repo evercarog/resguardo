@@ -397,7 +397,7 @@ Section "Resguardo Agente" SecMain
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${PRODUCT}"
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "${UNINST_KEY}" "Publisher" "Resguardo"
-  ; El icono de Resguardo (resguardo-agente.exe no lleva icono; el desinstalador, sí).
+  ; El icono de Resguardo (el del desinstalador: los agentes anteriores a la 0.8.3 no lo llevaban).
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\uninstall.exe,0"
   WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNINST_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
@@ -411,6 +411,27 @@ Section "Resguardo Agente" SecMain
   ${If} $0 != 0
     MessageBox MB_ICONSTOP "No se pudo instalar el servicio de Resguardo Agente (código $0).$\r$\n$\r$\nVuelve a abrir el instalador. Si se repite, reinicia el equipo y prueba otra vez; el motivo queda en el registro del agente ($APPDATA\ResguardoAgente\agent.log)." /SD IDOK
     SetErrorLevel 4
+    Abort
+  ${EndIf}
+
+  ; 16z: ¿sigue ahí? Un antivirus puede poner el programa en cuarentena nada más instalarlo
+  ; (quita el .exe y el servicio). Si pasa, se dice aquí en vez de dejar un equipo mudo.
+  ; Códigos de salida (los lee el actualizador, crates/agente/src/actualizacion.rs): 6 si el
+  ; programa o el servicio desaparecieron, 7 si el servicio está pero no arranca.
+  DetailPrint "Comprobando que Resguardo Agente sigue en marcha..."
+  Call ComprobarInstalado
+  Pop $0
+  ${If} $0 == "quitado"
+    Push "Windows o el antivirus quitó o bloqueó Resguardo Agente justo después de instalarlo (falta el programa o el servicio). Mira la cuarentena del antivirus; ayuda: «El antivirus lo bloqueó»."
+    Call AnotarInstalador
+    MessageBox MB_ICONSTOP "Windows o el antivirus quitó o bloqueó Resguardo Agente justo después de instalarlo.$\r$\n$\r$\nMira la cuarentena del antivirus. En Microsoft Defender: Seguridad de Windows → Protección contra virus y amenazas → Historial de protección. Si sale ahí, es un falso positivo: restáuralo o añade una exclusión solo para resguardo-agente.exe y vuelve a abrir este instalador (la configuración del equipo se conserva).$\r$\n$\r$\nTienes los pasos en la ayuda de Resguardo: «El antivirus lo bloqueó»." /SD IDOK
+    SetErrorLevel 6
+    Abort
+  ${ElseIf} $0 == "parado"
+    Push "El servicio de Resguardo Agente está instalado pero no arranca. Si hay un antivirus, mira su cuarentena; ayuda: «El antivirus lo bloqueó»."
+    Call AnotarInstalador
+    MessageBox MB_ICONSTOP "El servicio de Resguardo Agente está instalado pero no arranca.$\r$\n$\r$\nSi tienes un antivirus, mira su cuarentena: puede haberlo bloqueado (ayuda de Resguardo: «El antivirus lo bloqueó»). Si no, reinicia el equipo y vuelve a abrir el instalador; el motivo queda en el registro del agente ($APPDATA\ResguardoAgente\agent.log)." /SD IDOK
+    SetErrorLevel 7
     Abort
   ${EndIf}
 
@@ -612,6 +633,46 @@ Function AnotarInstalador
   Pop $2
   Pop $1
   Pop $R7
+FunctionEnd
+
+; 16z: tras instalar el servicio, comprueba (hasta unos 15 s) que el programa sigue en su
+; carpeta y que el servicio existe y está en marcha. Deja en la pila "" si todo va bien,
+; "quitado" si falta el programa o el servicio (un antivirus que lo puso en cuarentena) o
+; "parado" si el servicio está pero no llega a arrancar.
+Function ComprobarInstalado
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  StrCpy $3 0
+  ${Do}
+    Sleep 3000
+    IntOp $3 $3 + 1
+    ${IfNot} ${FileExists} "$INSTDIR\resguardo-agente.exe"
+      StrCpy $2 "quitado"
+      ${Break}
+    ${EndIf}
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" query ${SERVICE}'
+    Pop $0
+    Pop $1
+    ; 1060: el servicio no existe.
+    ${If} $0 == 1060
+      StrCpy $2 "quitado"
+      ${Break}
+    ${EndIf}
+    ; El nombre del estado (RUNNING) no se traduce en sc.exe.
+    ${StrStr} $2 $1 "RUNNING"
+    ${If} $2 != ""
+      StrCpy $2 ""
+      ${Break}
+    ${EndIf}
+    StrCpy $2 "parado"
+  ${LoopUntil} $3 >= 5
+  StrCpy $0 $2
+  Pop $3
+  Pop $2
+  Pop $1
+  Exch $0
 FunctionEnd
 
 ; ---------- Vincular con la consola ----------
