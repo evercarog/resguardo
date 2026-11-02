@@ -1218,6 +1218,15 @@ impl Almacen for Sqlite {
         })
     }
 
+    fn ultimo_informe_desde(&self, c: &ClienteCtx, equipo: &str, desde: Option<Ts>) -> R<Option<(Ts, serde_json::Value)>> {
+        self.con(c, |db| {
+            let mut st = db.prepare("SELECT recibido, datos FROM informes WHERE equipo_id = ?1 ORDER BY id DESC LIMIT 1").map_err(s)?;
+            let fila = st.query_row(params![equipo], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).optional().map_err(s)?;
+            // Sin leer el JSON de lo que la consola ya tiene.
+            Ok(fila.filter(|(t, _)| desde.is_none_or(|d| *t >= d)).map(|(t, d)| (t, serde_json::from_str(&d).unwrap_or_default())))
+        })
+    }
+
     // ---------- Órdenes ----------
     fn insertar_orden(&self, c: &ClienteCtx, o: &OrdenNueva) -> R<Orden> {
         let con = self.conexion(c)?;

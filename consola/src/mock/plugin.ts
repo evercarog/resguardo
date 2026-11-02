@@ -1458,7 +1458,13 @@ const rutas: Ruta[] = [
     (ctx, [c]) => {
       miembro(ctx, c);
       // El último informe de cada equipo (v1.8); los que no tienen, no salen.
-      return estado.equipos.filter((e) => e.cliente === c && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] }));
+      // 16x (7): con `desde`, solo los que llegaron en ese segundo o después (como el servidor).
+      const d = ctx.url.searchParams.get("desde");
+      const desde = d ? Math.floor(Date.parse(d) / 1000) : null;
+      if (d && !Number.isFinite(desde)) throw err(422, "datos", "Fecha no válida.");
+      return estado.equipos
+        .filter((e) => e.cliente === c && e.informes[0] && (desde === null || Math.floor(Date.parse(e.informes[0].recibido) / 1000) >= desde))
+        .map((e) => ({ equipo: e.id, ...e.informes[0] }));
     },
   ],
   [

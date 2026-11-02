@@ -641,6 +641,16 @@ async fn canal_websocket() {
     // El último informe de cada equipo, de una vez.
     let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/informes"), None, Some(&cookie), &[]).await;
     assert_eq!((r.json[0]["equipo"].as_str(), r.json[0]["datos"]["version"].as_str()), (Some(ag.id.as_str()), Some("0.7.0")));
+    // 16x (7): `desde` da solo lo que llegó en ese segundo o después; una fecha que no vale, 422.
+    let recibido = r.json[0]["recibido"].as_str().unwrap().to_string();
+    let codificar = |s: &str| s.replace('+', "%2B").replace(':', "%3A");
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/informes?desde={}", codificar(&recibido)), None, Some(&cookie), &[]).await;
+    assert_eq!(r.json.as_array().map(Vec::len), Some(1), "{}", r.json);
+    let futuro = (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/informes?desde={}", codificar(&futuro)), None, Some(&cookie), &[]).await;
+    assert_eq!(r.json.as_array().map(Vec::len), Some(0), "{}", r.json);
+    let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/informes?desde=ayer"), None, Some(&cookie), &[]).await;
+    assert_eq!(r.estado, StatusCode::UNPROCESSABLE_ENTITY);
     let mut visto = false;
     for _ in 0..50 {
         let r = pedir(&p.app, "GET", &format!("/api/clientes/{c}/progreso"), None, Some(&cookie), &[]).await;

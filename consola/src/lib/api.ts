@@ -488,7 +488,9 @@ export const resumen = (c: string) => pedir<T.Resumen>("GET", `${cli(c)}/resumen
 /** El último informe de cada equipo del cliente (v1.8; los equipos sin informe no salen). */
 /** v1.25: lo que está en marcha ahora en los equipos del cliente (no cuenta como «cargar»). */
 export const progreso = (c: string) => pedir<T.ProgresoEquipo[]>("GET", `${cli(c)}/progreso`, undefined, { invisible: true });
-export const ultimosInformes = (c: string) => pedir<(T.Informe & { equipo: string })[]>("GET", `${cli(c)}/informes`);
+/** 16x (7): con `desde`, solo los que llegaron en ese segundo o después (un servidor anterior los da todos). */
+export const ultimosInformes = (c: string, desde?: string) =>
+  pedir<(T.Informe & { equipo: string })[]>("GET", `${cli(c)}/informes${desde ? `?desde=${encodeURIComponent(desde)}` : ""}`);
 export const actualizaciones = (c: string) => sin404(pedir<T.ActualizacionesCliente>("GET", `${cli(c)}/actualizaciones`));
 export const cambiarPoliticaActualizaciones = (c: string, b: { modo: T.PoliticaActualizaciones["modo"]; dias_general: number; ventana: T.VentanaMantenimiento | null }) =>
   pedir<{ politica: T.PoliticaActualizaciones }>("PUT", `${cli(c)}/actualizaciones`, b);
