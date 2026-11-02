@@ -899,9 +899,9 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       .map((p) => {
         const destinos = aristas.filter((a) => a.de === p.id).map((a) => ({ a, n: por(a.a) }));
         const guarda = destinos.filter((x) => x.a.tipo === "guarda").map((x) => x.n.nombre);
-        const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia derivada" ? `copia derivada (${enFrase(x.n, ahora)})` : `copia derivada a ${x.n.nombre} (${enFrase(x.n, ahora)})`));
-        const der = destinos.filter((x) => x.a.tipo === "derivada").map((x) => `después, una copia derivada a ${x.n.nombre}${x.a.etiqueta ? ` (${x.a.etiqueta})` : ""}`);
-        const esp = destinos.filter((x) => x.a.tipo === "espejo" && x.n.tipo === "espejo").map((x) => `espejo en ${x.n.nombre} (${enFrase(x.n, ahora)})`);
+        const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia derivada" ? `una copia hecha a partir de esta (${enFrase(x.n, ahora)})` : `una copia hecha a partir de esta en ${x.n.nombre} (${enFrase(x.n, ahora)})`));
+        const der = destinos.filter((x) => x.a.tipo === "derivada").map((x) => `después, una copia hecha a partir de esta en ${x.n.nombre}${x.a.etiqueta ? ` (${x.a.etiqueta})` : ""}`);
+        const esp = destinos.filter((x) => x.a.tipo === "espejo" && x.n.tipo === "espejo").map((x) => `otra copia igual en ${x.n.nombre} (${enFrase(x.n, ahora)})`);
         const mismo = p.aviso || destinos.some((x) => x.a.tipo === "guarda" && x.n.aviso) ? ", en el mismo equipo que protege" : "";
         const mas = [...ext, ...esp, ...der];
         return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)}${mismo})${mas.length ? `, con ${lista(mas)}` : ""}`;
@@ -913,7 +913,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const esp = aristas.filter((a) => a.de === n.id && a.tipo === "espejo").map((a) => por(a.a));
     const fuera = esp.filter((x) => x.tipo === "fuera");
     const reales = esp.filter((x) => x.tipo !== "fuera");
-    if (reales.length) frases.push(`${n.nombre} se refleja en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)}${x.sinReconocer ? "; no se sabe de qué repositorios es" : ""})`))}.`);
+    if (reales.length) frases.push(`${n.nombre} tiene otra copia igual en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)}${x.sinReconocer ? "; no se sabe de qué repositorios es" : ""})`))}.`);
     if (fuera.length) frases.push(`${n.nombre} es un almacén que no está en esta consola: sus espejos no se ven aquí (${minus(fuera[0].estado)}).`);
   }
 

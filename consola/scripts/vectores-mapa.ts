@@ -167,7 +167,7 @@ console.log("\n· 14mm: un solo nodo por servidor y los espejos desde sus reposi
   igual("el de un repositorio que no sale aquí, desde el almacén", espejo("Nube de nadie"), [["al:alm-este", "ok"]]);
   igual("…con la marca «no sé de qué repositorios es»", m.nodos.filter((n) => n.sinReconocer).map((n) => [n.nombre, n.aviso]), [["Nube de nadie", "No sé de qué repositorios es"]]);
   cierto("los demás espejos no cuelgan del almacén", m.aristas.filter((x) => x.tipo === "espejo" && x.de === "al:alm-este").length === 1);
-  cierto("la frase lo cuenta desde el repositorio", m.frases.some((f) => f.includes("«Ventas»") && f.includes("espejo en Nube Este")));
+  cierto("la frase lo cuenta desde el repositorio", m.frases.some((f) => f.includes("«Ventas»") && f.includes("otra copia igual en Nube Este")));
   comprobar("un solo nodo por servidor", m);
 }
 
@@ -188,7 +188,7 @@ console.log("\n· 14kk: las copias derivadas, «después» del repositorio a su 
   igual("dos flechas derivadas desde «Caja»", der.map((x) => [x.de, x.a]), [["rp:caja-3:caja", "al:alm-oeste"], ["rp:caja-3:caja", "de:b2|oeste-copias"]]);
   igual("con su estado y «después» si aún no se hizo", der.map((x) => [x.tono, x.etiqueta?.replace(/\s/g, " ")]), [["bad", "falló hace 2 h"], ["neutral", "después · cada día a las 23:00"]]);
   cierto("al almacén de la derivada llegan también los suyos (un solo nodo)", m.nodos.filter((n) => n.id === "al:alm-oeste").length === 1 && m.aristas.some((x) => x.tipo === "guarda" && x.de === "rp:caja-3:docs" && x.a === "al:alm-oeste"));
-  cierto("la frase lo cuenta", m.frases.some((f) => f.includes("después, una copia derivada a B2 Oeste")));
+  cierto("la frase lo cuenta", m.frases.some((f) => f.includes("después, una copia hecha a partir de esta en B2 Oeste")));
   comprobar("derivadas", m);
 }
 

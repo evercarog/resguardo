@@ -3,6 +3,35 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-11-02 · `ia/083-consola` · Plan 0.8.3: la parte de la consola (16j, 16l, 16y, 16w, 16m, 16o, 16c, 16p, 16s, 16u, 16n)
+
+Claude Code (Opus), en autónomo, desde `ia/083-pulido`, en paralelo con otra rama (servidor, infraestructura y sesiones: 16k, 16a/d/f/g, 16b, 16h) y otra pequeña del aviso del antivirus junto a «desconectado». No se tocaron Infraestructura, la entrada ni las sesiones, ni el aviso de equipo desconectado. Sin cambios de contrato.
+
+**Hecho (un commit por punto):**
+
+- **16j** (`lib/mapa.ts`, `lib/fichaDestino.ts`): la causa de «dos nodos de la misma nube» y «solo algunos repositorios tienen su línea» era que, con trabajos de espejo, el agente manda en `espejo.destinos` una vista **sin repetir destino**, con la selección del primero. El mapa y la ficha de la zona leen ahora los trabajos (`espejosDelAlmacen`): un nodo por destino (`nodoEspejo`) con la lista de espejos al pasar el ratón y su peor estado, una línea por repositorio con el nombre de su espejo, lo que un espejo copia de una derivada sale del destino de la derivada (repositorio → derivada → espejo) y la zona cuenta los espejos uno a uno. La página de una nube ya no pide «Dónde está físicamente» ni «Soporte». Un espejo de **todo** el almacén sigue saliendo del almacén (no una línea por repositorio: con muchos repositorios llenaba el mapa); al pasar el ratón por un repositorio se resalta igual su camino.
+- **16l** (`lib/primerPlano.ts`, `lib/actividad.svelte.ts`): una petición solo enciende la barra de arriba si la persona hizo algo hace menos de 4 s (cambiar de pantalla, pulsar, escribir) o si ya hay otra de primer plano en marcha (la misma carga en serie).
+- **16y** (`lib/salud.ts`, `lib/copia.ts`, `lib/lineaTiempo.ts`): `copiaAtrasada` y `atrasada` comparten `atrasadaPorHorario`; una copia que nunca se hizo o en pausa no va atrasada en Estado (antes sí, por la «Próxima»). El calendario del historial marca con un aro hueco las horas en que tocaba y no hubo ninguna vuelta (`horasPerdidas`: solo desde la primera vuelta del historial y hasta hace más del margen; las versiones solo cuentan como vuelta hecha, no marcan el principio, porque la retención las quita).
+- **16w** (`lib/panel.ts`): «ocupan X en disco con todo su historial» bajo «Protegido» en Estado, la ficha del equipo y «Todos los clientes» (con cuándo se midió y cuántos repositorios lo miden), y en la página de un destino. Sin contrato nuevo: cada equipo ya lo mide (`espacio.en_disco_bytes`).
+- **16m / 16o** (`lib/urgentes.ts`): en Estado, tres cifras (equipos al día, copias con una copia fuera del sitio según la regla, última prueba de restauración) y «Lo primero que hay que hacer» con su botón; lo demás plegado; los equipos con lo mismo en una línea («3 equipos · sin contacto», con Equipos filtrado por `?filtro=atencion`). En Avisos, un solo botón por aviso y los repetidos (mismo tipo y motivo) en una fila.
+- **16c**: «Actualizaciones de los agentes» en «Mi cuenta y servidor»; en el cliente, una tarjeta con «Abrir»; «Versiones del agente» enlaza allí. `docs/publicar.md` y `docs/actualizaciones.md` nombran el sitio nuevo.
+- **16u**: `ErrorCopia`/`fraseError` en espejos, órdenes fallidas, verificación, prueba, derivadas, retención del almacén, restauraciones, bitácora y actualizaciones del agente.
+- **16p** (en parte): enlaces entre el ajuste y donde se nota (correo y logo del informe programado, «Pedir siempre el motivo», «Recuperar en el equipo»), casillas apagadas con su motivo en «Mis notificaciones».
+- **16s**: las páginas vacías sin copias dan el paso que toca (`primerPaso`).
+- **16n** (en parte): la alternativa en texto del mapa dice «otra copia igual en …» y «una copia hecha a partir de esta en …» en vez de «espejo» y «copia derivada».
+
+**Comprobado:** en cada commit, `npm run check`, `npm run build`, `npm run test:vectores` (vectores nuevos en `scripts/vectores.ts` y `scripts/vectores-mapa.ts`) y `npm run test:sin-referencias`. Estado, Avisos, «Mi cuenta y servidor» y la ficha del almacén, leídos en el simulador (`dev:mock`) con el texto de la página (las capturas de la ventana del navegador salían en negro: **no** se miró el aspecto, solo el contenido). El e2e, ver al final. No se tocó Rust.
+
+**Sin probar:** el mapa con trabajos de espejo reales de un agente (el simulador no los trae; está en los vectores); la barra de carga a ojo, página por página; las horas perdidas con un historial real (cuántas vueltas trae de verdad); ningún espejo fallido en el simulador para ver `ErrorCopia` allí.
+
+**Para el responsable (decisiones abiertas):**
+
+1. **16m:** ¿plegar por defecto el mapa y la regla en Estado? Se dejaron abiertos (el pedido decía «plegable»).
+2. **16o, del servidor:** no avisar de lo que se arregla solo en pocos minutos y el resumen diario por correo como opción (hoy existe el resumen diario por persona en «Mis notificaciones»; falta que sustituya a un correo por aviso).
+3. **16p, por confirmar con el agente:** el freno del espejo se ofrece también con «Nunca borra» (ahí no haría nada); «Retención propia» en una derivada hacia un almacén de solo añadir (parece que la aplica el almacén); «Además, al volver a conectarse» sale en equipos que nunca salen; el recordatorio de kits (Personas y ajustes) no enlaza con su aviso. Los botones apagados que solo se explican en un globo son 15zz.
+4. **16n, nombres dudosos (no se cambiaron; probarlos con alguien que no conozca Resguardo):** «Copia derivada» → «Copia hecha a partir de esta»; «Espejo» → «Otra copia igual»; «Almacén» → «Servidor de copias»; «Zona» → «Disco del almacén»; «Destino» → «Dónde se guarda»; «Retención» → «Cuánto tiempo se guardan»; «Regla 3-2-1-1-0» → «¿Está bien protegido?» con la regla en el detalle; «Repositorio» se queda (sin un sustituto claro). Cambiarlos a medias deja la consola con dos vocabularios: mejor de una vez, con la ayuda y el glosario.
+5. **16w:** «Dónde se guarda» de Estado no suma aún lo que suben los espejos a cada nube.
+
 ## 2026-10-21 · `ia/082-pulido` · **Resumen de la versión 0.8.2 (para el responsable)**
 
 Claude Code (Opus), en autónomo (visto bueno del 2026-10-21 al plan [plan-0.8.2.md](plan-0.8.2.md)). Versión pequeña de pulido tras el uso real de la 0.8.1.
