@@ -18,6 +18,9 @@
   import ErrorCarga from "$lib/componentes/ErrorCarga.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
+  import BarraTabla from "$lib/componentes/BarraTabla.svelte";
+  import VerMas from "$lib/componentes/VerMas.svelte";
+  import { casaBusqueda, tanda, TANDA, textoFilas } from "$lib/tablas";
 
   /** undefined: cargando; null: un servidor anterior (sin esta función). */
   let datos = $state<ActualizacionesCliente | null | undefined>(undefined);
@@ -75,6 +78,18 @@
       .sort((a, b) => a.e.nombre.localeCompare(b.e.nombre)),
   );
   const cuenta = (clave: string) => filas.filter((f) => f.v.clave === clave).length;
+  // 16t: con muchos equipos, buscar, filtrar por estado y por anillo, y «Ver más».
+  let buscar = $state("");
+  let soloEstado = $state("");
+  let soloAnillo = $state<"" | "prueba" | "general">("");
+  const estadosVistos = $derived([...new Map(filas.map((f) => [f.v.clave, f.v.texto])).entries()]);
+  const filtradas = $derived(filas.filter((f) => (!soloEstado || f.v.clave === soloEstado) && (!soloAnillo || f.anillo === soloAnillo) && casaBusqueda(buscar, f.e.nombre, f.version, f.v.texto)));
+  let limite = $state(TANDA);
+  $effect.pre(() => {
+    void [buscar, soloEstado, soloAnillo];
+    limite = TANDA;
+  });
+  const enPantalla = $derived(tanda(filtradas, limite).visibles);
   const alDia = $derived(filas.filter((f) => f.v.clave === "al_dia").length);
   const problemas = $derived(filas.filter((f) => f.v.tono === "bad").length);
   const cambiado = $derived(
@@ -289,8 +304,29 @@
       {#if !filas.length}
         <p class="faint">Aún no hay equipos.</p>
       {:else}
+        {#if filas.length > 8}
+          <BarraTabla
+            bind:buscar
+            placeholder="Buscar equipo o versión"
+            ahora={0}
+            cuenta={textoFilas(filtradas.length, filas.length, "equipo", "equipos")}
+            hayMas={!!soloEstado || !!soloAnillo}
+            limpiar={() => ((buscar = ""), (soloEstado = ""), (soloAnillo = ""))}
+          >
+            <select class="input input-sm" bind:value={soloEstado} aria-label="Filtrar por estado">
+              <option value="">Todos los estados</option>
+              {#each estadosVistos as [clave, texto] (clave)}<option value={clave}>{texto}</option>{/each}
+            </select>
+            <select class="input input-sm" bind:value={soloAnillo} aria-label="Filtrar por anillo">
+              <option value="">Los dos anillos</option>
+              <option value="prueba">Anillo de prueba</option>
+              <option value="general">Anillo general</option>
+            </select>
+          </BarraTabla>
+        {/if}
+        {#if !filtradas.length}<p class="faint">Ningún equipo con estos filtros.</p>{/if}
         <div class="tabla" role="table" aria-label="Versión de cada equipo">
-          {#each filas as f (f.e.id)}
+          {#each enPantalla as f (f.e.id)}
             <div class="fila" role="row">
               <div class="c-nombre" role="cell">
                 <a href="/c/{actual.id}/equipos/{f.e.id}">{f.e.nombre}</a>
@@ -319,6 +355,7 @@
             </div>
           {/each}
         </div>
+        <VerMas vistas={enPantalla.length} total={filtradas.length} onclick={() => (limite += TANDA)} alVolver={() => (limite = TANDA)} />
         <p class="faint pequeno">Cada equipo cuenta su estado en su informe, cada pocos minutos.</p>
       {/if}
     </section>

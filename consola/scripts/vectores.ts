@@ -61,6 +61,7 @@ import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
 import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
 import { agruparAvisos, agruparUrgentes, primerPaso, ultimaPrueba } from "../src/lib/urgentes";
 import { aDireccion, chipsDe, conVista, deDireccion, deTexto, errorNombreVista, estadosDe, leerVistas, mismosFiltros, pasaEtiquetas, pasaFiltros, textoCuenta, vacios, vistaActual } from "../src/lib/filtrosEquipos";
+import { casaBusqueda, enRango, rangoATexto, rangoDeTexto, SIN_RANGO, tanda, textoFilas, textoSeVen, textoRango, ultimosDias } from "../src/lib/tablas";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1182,6 +1183,25 @@ console.log("\n· 16e: los filtros de los equipos, combinados, en la dirección 
   igual("se leen de vuelta (y lo que no tiene forma, fuera)", leerVistas(JSON.stringify([...vs, { nombre: "" }, 3])).length, 2);
   igual("texto roto: ninguna", leerVistas("{"), []);
   igual("nombre de la vista: hace falta uno y algún filtro", [errorNombreVista("", f), errorNombreVista("Algo", vacios()), errorNombreVista("Algo", f)], ["Ponle un nombre.", "Elige antes algún filtro.", null]);
+}
+
+console.log("\n· 16t: listas largas: buscar, rango de fechas y «Ver más»");
+{
+  const dia = (a: number, m: number, d: number, h = 0) => new Date(a, m - 1, d, h).getTime();
+  const r = { desde: dia(2026, 10, 3), hasta: dia(2026, 10, 9) };
+  igual("el rango incluye el primer y el último día enteros", [enRango(new Date(dia(2026, 10, 3, 0)).toISOString(), r), enRango(new Date(dia(2026, 10, 9, 23)).toISOString(), r), enRango(new Date(dia(2026, 10, 10, 0)).toISOString(), r), enRango(new Date(dia(2026, 10, 2, 23)).toISOString(), r)], [true, true, false, false]);
+  igual("al revés vale igual", enRango(dia(2026, 10, 5, 12), { desde: r.hasta, hasta: r.desde }), true);
+  igual("sin rango, todo (también sin fecha); con rango, lo que no tiene fecha queda fuera", [enRango(null, SIN_RANGO), enRango("no es fecha", r)], [true, false]);
+  const ahora = dia(2026, 11, 2, 15);
+  const u7 = ultimosDias(7, ahora);
+  igual("los últimos 7 días, hoy incluido", [enRango(dia(2026, 10, 27, 1), u7), enRango(dia(2026, 10, 26, 23), u7)], [true, false]);
+  igual("en palabras", [textoRango(SIN_RANGO, ahora), textoRango({ desde: dia(2026, 11, 2), hasta: dia(2026, 11, 2) }, ahora)], ["Todas las fechas", "Hoy"]);
+  igual("en la dirección, ida y vuelta", rangoDeTexto(rangoATexto(r)), r);
+  igual("dirección rota: sin rango", rangoDeTexto("2026-13-99..x"), SIN_RANGO);
+  igual("buscar: todas las palabras, sin tildes ni mayúsculas, en cualquiera de los campos", [casaBusqueda("recepcion ana", "Contabilidad de RECEPCIÓN", "Ana"), casaBusqueda("recepcion luis", "RECEPCIÓN", "Ana"), casaBusqueda("  ", "x")], [true, false, true]);
+  const xs = Array.from({ length: 120 }, (_, i) => i);
+  igual("una tanda y lo que queda", [tanda(xs, 50).visibles.length, tanda(xs, 50).quedan, tanda(xs, 200).quedan], [50, 70, 0]);
+  igual("lo que se dice", [textoSeVen(50, 1230), textoFilas(12, 80, "restauración", "restauraciones"), textoFilas(1, 1, "orden", "órdenes")], ["Se ven 50 de 1230; quedan 1180.", "12 de 80 restauraciones", "1 orden"]);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

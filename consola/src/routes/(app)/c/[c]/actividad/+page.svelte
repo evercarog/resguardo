@@ -6,7 +6,7 @@
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
   import { seguirCambios } from "$lib/vivo.svelte";
-  import { actual } from "$lib/estado.svelte";
+  import { actual, reloj } from "$lib/estado.svelte";
   import { fallo } from "$lib/avisos.svelte";
   import type { Orden } from "$lib/tipos";
   import Cargando from "$lib/componentes/Cargando.svelte";
@@ -17,6 +17,10 @@
   import Vacio from "$lib/componentes/Vacio.svelte";
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
+  import BarraTabla from "$lib/componentes/BarraTabla.svelte";
+  import VerMas from "$lib/componentes/VerMas.svelte";
+  import { casaBusqueda, enRango, SIN_RANGO, textoFilas, type Rango } from "$lib/tablas";
+  import { ESTADO_ORDEN, nombreOrden } from "$lib/salud";
 
   let ordenes = $state<Orden[] | null>(null);
   /** La carga falló (sin datos aún): se enseña con «Reintentar». */
@@ -26,6 +30,11 @@
   let equipo = $state("");
   let cargando = $state(false);
   let vuelta = 0;
+  // 16t: buscar y el rango de fechas, sobre las órdenes ya cargadas (las más antiguas, con «Ver más antiguas»).
+  let buscar = $state("");
+  let rango = $state<Rango>({ ...SIN_RANGO });
+  const nombreEquipo = (id: string | undefined) => (id ? (actual.equipos.find((e) => e.id === id)?.nombre ?? "") : "");
+  const visibles = $derived((ordenes ?? []).filter((o) => enRango(o.emitida, rango) && casaBusqueda(buscar, nombreOrden(o.tipo), o.emitida_por?.nombre, o.mensaje, o.detalle, nombreEquipo(o.equipo), ESTADO_ORDEN[o.estado]?.texto)));
 
   async function cargar(mas = false) {
     if (!actual.id) return;
@@ -88,8 +97,21 @@
     {:else if ordenes === null}
       <Cargando />
     {:else if ordenes.length}
-      <div class="card p-0"><ListaOrdenes {ordenes} equipos={actual.equipos} mostrarEquipo alCambiar={() => cargar()} /></div>
-      {#if siguiente}<button class="btn mas" disabled={cargando} onclick={() => cargar(true)}>{cargando ? "Cargando…" : "Ver más antiguas"}</button>{/if}
+      <BarraTabla
+        bind:buscar
+        placeholder="Buscar orden, equipo, quién o respuesta"
+        {rango}
+        alElegirRango={(r) => (rango = r)}
+        ahora={reloj.ahora}
+        cuenta={textoFilas(visibles.length, ordenes.length, "orden", "órdenes") + (siguiente ? " cargadas" : "")}
+        limpiar={() => ((buscar = ""), (rango = { ...SIN_RANGO }))}
+      />
+      {#if visibles.length}
+        <div class="card p-0"><ListaOrdenes ordenes={visibles} equipos={actual.equipos} mostrarEquipo alCambiar={() => cargar()} /></div>
+      {:else}
+        <p class="faint vacio-filtro">Ninguna de las órdenes cargadas coincide.{siguiente ? " Prueba con «Ver más antiguas»." : ""}</p>
+      {/if}
+      <VerMas vistas={ordenes.length} total={siguiente ? null : ordenes.length} {cargando} onclick={() => cargar(true)} />
     {:else}
       <div class="card">
         <Vacio icono={ClipboardList} titulo={filtro === "todas" && !equipo ? "Todavía no hay órdenes" : "Nada por aquí"} texto={filtro === "todas" && !equipo ? "Cuando se pida algo a un equipo (copiar ahora, cambiar sus copias…), aparecerá aquí con su respuesta." : "Ninguna orden coincide con el filtro."}>
@@ -123,12 +145,12 @@
   .equipo {
     width: 200px;
   }
-  .mas {
-    align-self: center;
-    margin-top: var(--sp-3);
+  .vacio-filtro {
+    padding: var(--sp-4) 0;
   }
   section {
     display: flex;
     flex-direction: column;
+    gap: var(--sp-3);
   }
 </style>
