@@ -803,10 +803,19 @@ export interface NodoDisco {
   estado: string | null;
   tono: "ok" | "warn" | "bad" | null;
   /** De un conjunto: sus discos («Bahía 2 · HDD 4 TB»). */
-  miembros: { titulo: string; detalle: string }[];
+  miembros: { titulo: string; detalle: string; soporte?: RefSoporte }[];
   volumenes: VolumenVista[];
   /** El nombre lo puso una persona en Infraestructura. */
   anotado: boolean;
+  /** 16d: lo anotado en Infraestructura, para enlazar a su página. */
+  soporte?: RefSoporte;
+}
+
+/** 16d: un disco o un conjunto anotado de un servidor (para enlazar a su página). */
+export interface RefSoporte {
+  servidor: string;
+  tipo: "disco" | "conjunto";
+  id: string;
 }
 
 export interface DiscosEnNiveles {
@@ -879,6 +888,7 @@ export function discosEnNiveles(e: Equipo, i: Infraestructura | null | undefined
       miembros: [],
       volumenes: [],
       anotado: !!x,
+      ...(x && propio ? { soporte: { servidor: propio.id, tipo: "disco" as const, id: x.id } } : {}),
     };
     nodos.push(nodo);
     porId.set(d.id, nodo);
@@ -897,9 +907,13 @@ export function discosEnNiveles(e: Equipo, i: Infraestructura | null | undefined
       detalle: [forma, tam && (x || c.tipo === "zfs" || c.tipo === "mdadm") ? bytes(tam) : null].filter(Boolean).join(" · "),
       estado: est?.texto ?? null,
       tono: est?.tono ?? null,
-      miembros: (x?.miembros ?? []).map((m) => discoDe(propio, m)).filter((d): d is DiscoFisico => !!d).map((d) => ({ titulo: d.nombre, detalle: detalleDisco(d) })),
+      miembros: (x?.miembros ?? [])
+        .map((m) => discoDe(propio, m))
+        .filter((d): d is DiscoFisico => !!d)
+        .map((d) => ({ titulo: d.nombre, detalle: detalleDisco(d), ...(propio ? { soporte: { servidor: propio.id, tipo: "disco" as const, id: d.id } } : {}) })),
       volumenes: [],
       anotado: !!x,
+      ...(x && propio ? { soporte: { servidor: propio.id, tipo: "conjunto" as const, id: x.id } } : {}),
     };
     nodos.push(nodo);
     porId.set(c.id, nodo);

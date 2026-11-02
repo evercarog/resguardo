@@ -35,7 +35,7 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 
 - [x] **16a.** Marca de cada disco (hecho: «HDD» sin «(de platos)» y el número de serie en «Hecho de:»).
 - [x] **16f.** Número de serie del servidor físico.
-- [ ] **16d.** Página de cada disco y de cada conjunto con lo que hay dentro.
+- [~] **16d.** Página de cada disco y de cada conjunto con lo que hay dentro.
 
 ## E. Rendimiento y confianza
 

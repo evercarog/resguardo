@@ -3,6 +3,7 @@
 import type { Equipo, SesionCuenta } from "../src/lib/tipos";
 import { detalleDisco, infraValida, leerInfra, marcaDeModelo, marcaYModelo, sinAnotar, type Infraestructura } from "../src/lib/infra";
 import { equiposPorGrupo, grupoInfra, hipervisoresPara, servidoresParaElegir, servidorPropuesto, textoFaltan } from "../src/lib/infraGrupos";
+import { fichaSoporte, hrefSoporte } from "../src/lib/infraFicha";
 import { adaptarPara } from "../src/lib/datosComunes";
 import { conTopes, esMovil, frasePlazos, lineaSesion, motivoNoCerrar, nuevasSinVer, ordenarSesiones, textoSesionNueva } from "../src/lib/sesionesCuenta";
 
@@ -139,6 +140,51 @@ console.log("\n· 16g: los equipos de usuario no salen «Sin anotar»");
   cierto("faltan: una", (textoFaltan(1) ?? "").startsWith("Falta decir dónde está 1"));
   const sa = sinAnotar(infra, [puesto, vmw, ct, srvFis, viejo], []);
   igual("aviso de Estado: solo virtuales y contenedores sin servidor", sa.equipos.map((e) => e.id), ["vm1", "ct1"]);
+}
+
+console.log("\n· 16d: la página de cada disco y de cada conjunto");
+{
+  const eq = (id: string) => ({ id, nombre: id.toUpperCase(), confirmado: true, modo: "gestionado", resumen: {} }) as unknown as Equipo;
+  const infra = {
+    servidores: [
+      {
+        id: "srv",
+        nombre: "SRV-01",
+        hipervisor: "hyperv",
+        discos: [
+          { id: "b1", nombre: "Bahía 1", tipo: "hdd" },
+          { id: "b2", nombre: "Bahía 2", tipo: "hdd" },
+          { id: "s1", nombre: "SSD suelto", tipo: "ssd" },
+        ],
+        conjuntos: [
+          { id: "dv1", nombre: "Disco virtual 1", tipo: "raid1", miembros: ["b1", "b2"] },
+          { id: "r0", nombre: "Rápido", tipo: "raid0" },
+        ],
+      },
+    ],
+    equipos: { vm1: { servidor: "srv", conjunto: "dv1" }, vm2: { servidor: "srv", volumenes: [{ punto: "D:", disco: "s1" }] } },
+    destinos: { "zona:alm:principal": { servidor: "srv", conjunto: "dv1" } },
+  } as unknown as Infraestructura;
+  const destinos = [{ clave: "zona:alm:principal", nombre: "Almacén · principal", equipo: "alm" }];
+  const fc = fichaSoporte(infra, "srv", "conjunto", "dv1", [eq("vm1"), eq("vm2")], destinos);
+  igual("conjunto: sus discos", fc?.discosDelConjunto.map((d) => d.id), ["b1", "b2"]);
+  igual("conjunto: lo que vive en él", fc?.equipos.map((x) => [x.equipo.id, x.entero]), [["vm1", true]]);
+  igual("conjunto: sus destinos", fc?.destinos.map((d) => d.clave), ["zona:alm:principal"]);
+  cierto("conjunto redundante: aguanta un disco", (fc?.siFalla[0] ?? "").startsWith("Aguanta que fallen un disco"));
+  const fd = fichaSoporte(infra, "srv", "disco", "b1", [eq("vm1"), eq("vm2")], destinos);
+  igual("disco: de qué conjunto", fd?.conjuntosDelDisco.map((c) => c.id), ["dv1"]);
+  igual("disco en un espejo: lo de dentro también se ve", fd?.equipos.map((x) => x.equipo.id), ["vm1"]);
+  igual("disco en un espejo: una frase (el conjunto aguanta)", fd?.siFalla.length, 1);
+  const fs = fichaSoporte(infra, "srv", "disco", "s1", [eq("vm1"), eq("vm2")], destinos);
+  igual("disco suelto: el volumen D: de VM2", fs?.equipos.map((x) => [x.equipo.id, x.entero, x.volumenes]), [["vm2", false, ["D:"]]]);
+  cierto("disco suelto: se pierde", (fs?.siFalla[0] ?? "").startsWith("Es un disco suelto"));
+  cierto("disco suelto: los originales de VM2 (D:)", (fs?.siFalla[1] ?? "").includes("VM2 (D:)"));
+  const f0 = fichaSoporte(infra, "srv", "conjunto", "r0", [], []);
+  cierto("RAID 0: lo dice", (f0?.siFalla[0] ?? "").startsWith("Es un RAID 0"));
+  cierto("RAID 0 vacío: nada anotado", (f0?.siFalla.at(-1) ?? "") === "No hay nada anotado en él.");
+  igual("no existe: null", fichaSoporte(infra, "srv", "disco", "nada", [], []), null);
+  igual("servidor que no existe: null", fichaSoporte(infra, "otro", "disco", "b1", [], []), null);
+  igual("dirección de la página", hrefSoporte("c1", "srv", "disco", "b1"), "/c/c1/ajustes/infraestructura/srv/disco/b1");
 }
 
 console.log(`\n${total - fallos} de ${total} bien`);

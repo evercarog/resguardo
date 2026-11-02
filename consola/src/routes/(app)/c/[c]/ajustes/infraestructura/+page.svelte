@@ -44,6 +44,7 @@
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { textoTipo, tipoEquipo } from "$lib/tipoEquipo";
   import { equiposPorGrupo, servidoresParaElegir, servidorPropuesto, TEXTO_EQUIPOS_INFRA, textoFaltan } from "$lib/infraGrupos";
+  import { hrefSoporte } from "$lib/infraFicha";
   import { sedePorId } from "$lib/sedes";
   import { bytes, plural } from "$lib/formato";
   import { guardar as guardarTexto, leerTexto } from "$lib/recordar";
@@ -312,7 +313,7 @@
                   {#each s.discos as d (d.id)}
                     <li>
                       <HardDrive size={14} aria-hidden="true" />
-                      <span class="cj-n">{d.nombre}</span>
+                      <a class="cj-n link" href={hrefSoporte(c, s.id, "disco", d.id)}>{d.nombre}</a>
                       {#if detalleDisco(d)}<span class="faint">{detalleDisco(d)}</span>{/if}
                       {#if d.serie}<span class="faint mono serie">S/N {d.serie}</span>{/if}
                       {#if d.estado === "averiado"}<span class="badge tone-bad"><TriangleAlert size={12} />Averiado</span>{:else if d.estado === "aviso"}<span class="badge tone-warn"><TriangleAlert size={12} />Con avisos</span>{:else if d.estado === "bien"}<span class="badge tone-ok"><Check size={12} />Bien</span>{/if}
@@ -327,7 +328,7 @@
                     {@const Ic = x.estado ? ICONO_ESTADO[x.estado] : Layers}
                     <li>
                       <Layers size={14} aria-hidden="true" />
-                      <span class="cj-n">{x.nombre}</span>
+                      <a class="cj-n link" href={hrefSoporte(c, s.id, "conjunto", x.id)}>{x.nombre}</a>
                       <span class="faint">{TIPOS_CONJUNTO.find((t) => t.id === x.tipo)?.nombre ?? x.tipo}{x.miembros?.length ? `${x.tipo === "disco" ? ":" : " de"} ${miembrosDe(s, x)}` : x.discos ? ` · ${plural(x.discos, "disco", "discos")}` : ""}{x.capacidad ? ` · ${bytes(x.capacidad)}` : ""}</span>
                       {#if x.estado === "degradado"}<span class="badge tone-warn"><Ic size={12} />Degradado</span>{:else if x.estado === "reconstruyendo"}<span class="badge tone-info"><Ic size={12} />Reconstruyendo</span>{:else if x.estado === "bien"}<span class="badge tone-ok"><Ic size={12} />Bien</span>{/if}
                     </li>

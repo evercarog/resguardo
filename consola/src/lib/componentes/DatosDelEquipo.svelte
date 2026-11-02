@@ -21,6 +21,7 @@
   import { admiteTipoEquipo, textoTipo, TEXTO_ORIGEN, tipoEquipo } from "$lib/tipoEquipo";
   import { discosEnNiveles, lineaFisica, sitioDeEquipo, type VolumenVista } from "$lib/infra";
   import TipoEquipo from "./TipoEquipo.svelte";
+  import { hrefSoporte } from "$lib/infraFicha";
 
   let { equipo, ahora = Date.now() }: { equipo: Equipo; ahora?: number } = $props();
   const tipo = $derived(tipoEquipo(equipo));
@@ -107,12 +108,12 @@
           <li class="nodo">
             <div class="nodo-cab">
               <span class="nodo-ic" aria-hidden="true">{#if n.nivel === "conjunto"}<Layers size={14} />{:else}<HardDrive size={14} />{/if}</span>
-              <span class="nodo-t">{n.titulo}</span>
+              {#if n.soporte}<a class="nodo-t link" href={hrefSoporte(actual.id, n.soporte.servidor, n.soporte.tipo, n.soporte.id)}>{n.titulo}</a>{:else}<span class="nodo-t">{n.titulo}</span>{/if}
               {#if n.detalle}<span class="faint nodo-d">{n.detalle}</span>{/if}
               {#if n.estado}<span class="badge tone-{n.tono}">{#if n.tono !== "ok"}<TriangleAlert size={12} />{/if}{n.estado}</span>{/if}
             </div>
             {#if n.miembros.length}
-              <p class="faint miembros">Hecho de {n.miembros.map((m) => (m.detalle ? `${m.titulo} (${m.detalle})` : m.titulo)).join(" + ")}</p>
+              <p class="faint miembros">Hecho de {#each n.miembros as m, j (j)}{j ? " + " : ""}{#if m.soporte}<a class="link" href={hrefSoporte(actual.id, m.soporte.servidor, m.soporte.tipo, m.soporte.id)}>{m.titulo}</a>{:else}{m.titulo}{/if}{m.detalle ? ` (${m.detalle})` : ""}{/each}</p>
             {/if}
             {#if n.volumenes.length}
               <ul class="discos dentro">
