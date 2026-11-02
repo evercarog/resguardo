@@ -646,8 +646,8 @@ const rutas: Ruta[] = [
           equipos: estado.equipos.filter((e) => e.cliente === c.id).map(publico),
           avisos_abiertos: estado.avisos.filter((a) => a.cliente === c.id && a.abierto).length,
           pendientes: estado.ordenes.filter((o) => o.cliente === c.id && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).length,
-          informes: estado.equipos.filter((e) => e.cliente === c.id && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] })),
-          informes_completos: true,
+          // 16q: resumidos y con tope, como el servidor (api/panel.rs, `resumir_informe`).
+          ...informesDelPanel(c.id),
           organizacion: organizacionDe(c.id),
           // 0.8.2 (A4): la infraestructura anotada (para el mapa de todos los clientes).
           infra: infraDe(c.id).servidores.length ? infraDe(c.id) : null,
@@ -1935,6 +1935,42 @@ const rutas: Ruta[] = [
 
 const SIN_CUERPO = Symbol("sin cuerpo");
 
+/**
+ * 16q: el informe resumido del panel, como el servidor (`api/panel.rs`, `resumir_informe`):
+ * 60 versiones y 60 vueltas de 15 días por repositorio, y 4 MB en total por respuesta.
+ * (El tope es de toda la respuesta; aquí, por cliente: con un solo cliente grande, lo mismo.)
+ */
+function informesDelPanel(cliente: string) {
+  const corto = (t: unknown, n: number) => (typeof t === "string" && t.length > n ? `${t.slice(0, n)}…` : (t ?? null));
+  const desde = Date.now() - 15 * 86_400_000;
+  let quedan = 4 * 1024 * 1024;
+  let completos = true;
+  const informes: unknown[] = [];
+  for (const e of estado.equipos.filter((x) => x.cliente === cliente && x.informes[0])) {
+    const d = e.informes[0].datos as unknown as Record<string, unknown>;
+    const repos = ((d.repos as Record<string, unknown>[] | undefined) ?? []).slice(0, 50).map((r) => {
+      const vs = ((r.versiones as Record<string, unknown>[] | undefined) ?? []).slice(0, 60).map((v) => ({ id: v.id, hora: v.hora, copia: v.copia, total_bytes: v.total_bytes, anadido: v.anadido, anadido_empaquetado: v.anadido_empaquetado, etiquetas: [] }));
+      const todas = (r.ejecuciones as Record<string, unknown>[] | undefined) ?? [];
+      const es = todas
+        .filter((x) => Date.parse(String(x.hora)) >= desde)
+        .slice(0, 60)
+        .map((x) => ({ hora: x.hora, copia: x.copia, resultado: x.resultado, duracion_s: x.duracion_s, anadido: x.anadido, mensaje_corto: corto(x.mensaje_corto, 160) }));
+      const fuera = vs.length < ((r.versiones as unknown[]) ?? []).length || es.length < todas.length;
+      return { id: r.id, nombre: r.nombre, solo_lectura: r.solo_lectura, versiones_leidas: r.versiones_leidas ?? null, espacio: r.espacio ?? null, verificacion: r.verificacion ?? null, prueba_restauracion: r.prueba_restauracion ?? null, externa: r.externa ?? null, proteccion: r.proteccion ?? null, versiones: vs, ejecuciones: es, ...(fuera || r.recortado ? { recortado: true } : {}) };
+    });
+    const copias = ((d.copias as Record<string, unknown>[] | undefined) ?? []).slice(0, 50).map((k) => ({ id: k.id, repo: k.repo, nombre: k.nombre, estado: k.estado, cuando: k.cuando, bytes: k.bytes, archivos: k.archivos, duracion_s: k.duracion_s, mensaje: corto(k.mensaje, 200) }));
+    const x = { equipo: e.id, recibido: e.informes[0].recibido, datos: { version: d.version, proximas: d.proximas, disco: d.disco, copias, repos } };
+    const n = JSON.stringify(x).length;
+    if (n <= quedan) {
+      quedan -= n;
+      informes.push(x);
+    } else completos = false;
+  }
+  return { informes, informes_completos: completos };
+}
+/** 16q: sin la latencia inventada con `MOCK_LATENCIA=0`. */
+const LATENCIA = process.env.MOCK_LATENCIA !== "0";
+
 /** Una ficha de este servidor (se muestra una vez; se guarda su hash). */
 function darFicha(cliente: string, usos: number, dias: number) {
   const ficha = aB64(randomBytes(24)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -2016,7 +2052,8 @@ export function mockApi(): Plugin {
         // Latencia de una red de verdad (600–1500 ms), para ver los esqueletos y la barra de carga;
         // las sesiones y el relé, más rápidos (ya tienen su propia espera).
         const rapida = /\/(sesiones|relevos)\//.test(url.pathname) || url.pathname === "/api/servidor";
-        await new Promise((r) => setTimeout(r, rapida ? 120 + Math.random() * 180 : 600 + Math.random() * 900));
+        // 16q: MOCK_LATENCIA=0 para medir sin la espera inventada.
+        if (LATENCIA) await new Promise((r) => setTimeout(r, rapida ? 120 + Math.random() * 180 : 600 + Math.random() * 900));
         for (const [m, re, f] of rutas) {
           if (m !== metodo) continue;
           const x = re.exec(url.pathname);
