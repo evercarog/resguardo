@@ -12,7 +12,7 @@
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
-  import { almacenes as almacenesDe, proximaDeTodos, ultimas24h } from "$lib/panel";
+  import { almacenes as almacenesDe, espacioTotal, fraseEnDisco, proximaDeTodos, ultimas24h } from "$lib/panel";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { copiaAtrasada, PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
   import type { Equipo } from "$lib/tipos";
@@ -152,6 +152,8 @@
   });
   const informes = $derived(ultimos.cliente === c ? ultimos.porEquipo : {});
 
+  // 16w: lo que ocupa de verdad en disco, junto a lo protegido.
+  const espacio = $derived(espacioTotal(delFiltro, informes));
   // Las cuatro cifras de arriba.
   const alDia = $derived(saludes.filter((x) => x.tono === "ok").length);
   const recientes = $derived(ultimas24h(delFiltro, informes, reloj.ahora));
@@ -259,7 +261,7 @@
         <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><Database size={14} /></span>Protegido</span>
           <span class="c-val num">{protegido ? bytes(protegido) : "—"}</span>
-          <span class="c-sub">en {plural(repos.length, "repositorio", "repositorios")}</span>
+          <span class="c-sub" use:tip={fraseEnDisco(espacio) ? `${fraseEnDisco(espacio)}.${espacio.leido ? ` Medido ${relativo(espacio.leido, reloj.ahora)} (cada equipo lo mide una vez al día).` : ""}` : "Lo que ocupan tus archivos en la última versión de cada repositorio."}>{#if espacio.enDisco != null}ocupan {bytes(espacio.enDisco)} en disco con todo su historial{:else}en {plural(repos.length, "repositorio", "repositorios")}{/if}</span>
         </div>
         <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><Archive size={14} /></span>Versiones en 24 h</span>

@@ -10,7 +10,7 @@
   import { bytesRepo, destinoDe, dias, diasCopia, informeDe, nVersiones, proteccion, textoResultado, tonoResultado, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
-  import { ultimas24h } from "$lib/panel";
+  import { espacioTotal, fraseEnDisco, ultimas24h } from "$lib/panel";
   import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
   import { abrirVersion, abrirVuelta, elegirDia, elegirFechas } from "$lib/componentes/detalle/navegar";
@@ -320,6 +320,8 @@
   );
   const proximaDeTodas = $derived(pausado ? null : proximaCopia(copias, reloj.ahora));
   const protegidoEquipo = $derived(repos.reduce((n, r) => n + (bytesRepo(r, informeDe(equipo?.ultimo_informe, r.id)) ?? 0), 0));
+  /** 16w: lo que ocupan en disco sus repositorios (todas las versiones, comprimidas y sin duplicados). */
+  const espacioEquipo = $derived(equipo ? espacioTotal([equipo], { [equipo.id]: equipo.ultimo_informe ?? null }) : null);
   // «Historial y versiones» de todas sus copias y repositorios (el mismo de la página de cada uno).
   const historia = usarHistorialEquipo(() => c, () => id);
   const sel = $derived(leerSeleccion(page.url.searchParams));
@@ -1135,7 +1137,7 @@
           <div class="stat">
             <span class="stat-label">Protegido</span>
             <span class="stat-value">{protegidoEquipo ? bytes(protegidoEquipo) : "—"}</span>
-            <span class="stat-sub">en {plural(repos.length, "repositorio", "repositorios")}</span>
+            <span class="stat-sub" use:tip={espacioEquipo && fraseEnDisco(espacioEquipo) ? `${fraseEnDisco(espacioEquipo)}.${espacioEquipo.leido ? ` Medido ${relativo(espacioEquipo.leido, reloj.ahora)}.` : ""}` : undefined}>{#if espacioEquipo?.enDisco != null}ocupan {bytes(espacioEquipo.enDisco)} en disco con su historial{:else}en {plural(repos.length, "repositorio", "repositorios")}{/if}</span>
           </div>
           <div class="stat">
             <span class="stat-label">Versiones en 24 h</span>

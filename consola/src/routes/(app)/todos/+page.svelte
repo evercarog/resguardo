@@ -158,7 +158,7 @@
       <div class="cifra" role="listitem">
         <span class="c-et"><span class="c-ic" aria-hidden="true"><Database size={14} /></span>Protegido</span>
         <span class="c-val num">{t.protegido ? bytes(t.protegido) : "—"}</span>
-        <span class="c-sub">en {plural(t.repos, "repositorio", "repositorios")}</span>
+        <span class="c-sub">{#if t.enDisco != null}ocupan {bytes(t.enDisco)} en disco con todo su historial{:else}en {plural(t.repos, "repositorio", "repositorios")}{/if}</span>
       </div>
       <div class="cifra" role="listitem">
         <span class="c-et"><span class="c-ic" aria-hidden="true"><Archive size={14} /></span>Copias en 24 h</span>

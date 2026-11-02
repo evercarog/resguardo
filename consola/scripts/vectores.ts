@@ -57,6 +57,7 @@ import { diasEnFrase, horarioEnFrase, resumenHorario, resumenReglas } from "../s
 import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
 import { copiaAtrasada } from "../src/lib/salud";
 import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
+import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1072,6 +1073,19 @@ console.log("\n· 16y: Estado y cada copia dicen lo mismo, y las horas perdidas 
   igual("sin horario (a mano), nada", horasPerdidas(null, vueltas, hora(48), ahora16), []);
   const cal = calendario([], null, ahora16, 7, false, [], undefined, perdidas);
   igual("el calendario las marca en sus casillas", cal.celdas.flat().reduce((n, x) => n + x.perdidas, 0), 4);
+}
+
+console.log("\n· 16w: lo que ocupa de verdad en disco, también en el total");
+{
+  const GB = 1e9;
+  const eq = (id: string, repos: { id: string; bytes: number }[]) => ({ id, nombre: id.toUpperCase(), resumen: { repositorios: repos.map((r) => ({ id: r.id, nombre: r.id, destino: "d", bytes: r.bytes })) } }) as unknown as Equipo;
+  const infDe = (repos: { id: string; disco: number | null; leido: string }[]) => ({ recibido: "2026-10-26T08:00:00Z", datos: { repos: repos.map((r) => ({ id: r.id, nombre: r.id, versiones: [], versiones_leidas: null, ejecuciones: [], espacio: r.disco == null ? null : { en_disco_bytes: r.disco, sin_comprimir: null, ratio: null, leido: r.leido }, verificacion: null, prueba_restauracion: null, externa: null })) } }) as unknown as Informe;
+  const equipos = [eq("pc-1", [{ id: "a", bytes: 100 * GB }, { id: "b", bytes: 39 * GB }]), eq("pc-2", [{ id: "c", bytes: 10 * GB }])];
+  const informes = { "pc-1": infDe([{ id: "a", disco: 50 * GB, leido: "2026-10-26T06:00:00Z" }, { id: "b", disco: 20 * GB, leido: "2026-10-25T06:00:00Z" }]), "pc-2": infDe([{ id: "c", disco: null, leido: "" }]) };
+  const t = espacioTotal(equipos, informes);
+  igual("suma lo protegido de todos y lo que ocupa de los que lo miden", [t.protegido / GB, t.enDisco! / GB, t.medidos, t.repos, t.leido], [149, 70, 2, 3, "2026-10-25T06:00:00Z"]);
+  igual("en palabras, con los que faltan por medir", fraseEnDisco(t)?.replace(/\s/g, " "), "149 GB protegidos ocupan 70 GB con todo su historial (medido en 2 de 3 repositorios)");
+  igual("si nadie lo midió, no se dice", fraseEnDisco(espacioTotal([equipos[1]], informes)), null);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
