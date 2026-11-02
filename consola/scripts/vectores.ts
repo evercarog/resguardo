@@ -54,6 +54,7 @@ import { cifrarPaquete, descifrarPaquete } from "../src/lib/cripto/paquete";
 import { publicaRespaldo, salRespaldo, secretoRespaldo } from "../src/lib/cripto/respaldo";
 import { desplegar, errorIntervalo, errorRegla as errorReglaHorario, errorReglas, expresable, horarioParaEnviar, normalizar, proximaVez, reconocer, reglasDe, ultimaVez } from "../src/lib/horario";
 import { diasEnFrase, horarioEnFrase, resumenHorario, resumenReglas } from "../src/lib/formato";
+import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1033,6 +1034,15 @@ console.log("\n· Palabras: «copias», no «vueltas»");
   };
   for (const r of raices) if (fs.existsSync(r)) recorrer(r);
   igual("ningún texto con «vuelta(s)» en la consola ni en la ventana", malas, []);
+}
+
+console.log("\n· 16l: la barra de arriba, solo al cambiar de pantalla o al mandar algo");
+{
+  const t = 1_000_000;
+  igual("lo marcado como fondo, siempre de fondo", esPrimerPlano({ enFondo: true, ahora: t, ultimaAccion: t, enMarcha: 3 }), false);
+  igual("justo después de pulsar o de cambiar de pantalla: primer plano", esPrimerPlano({ enFondo: false, ahora: t + 500, ultimaAccion: t, enMarcha: 0 }), true);
+  igual("un refresco automático lejos de cualquier acción (lo que pide después de su primer await): fondo", esPrimerPlano({ enFondo: false, ahora: t + VENTANA_ACCION_MS + 1, ultimaAccion: t, enMarcha: 0 }), false);
+  igual("una carga en serie que tarda (otra de primer plano en marcha): sigue en primer plano", esPrimerPlano({ enFondo: false, ahora: t + 60_000, ultimaAccion: t, enMarcha: 1 }), true);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

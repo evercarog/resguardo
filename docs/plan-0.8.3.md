@@ -8,7 +8,7 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 - [ ] **16y (resto).** Huecos perdidos en el mapa de calor y `copiaAtrasada` en la salud.
 
 - [x] **16j.** El mapa con los espejos y las derivadas que sí funcionan (un nodo por destino, una línea por repositorio, contar bien los espejos de una zona, una nube sin «ubicación física»).
-- [~] **16l.** La línea verde de carga cada pocos segundos (hecho lo principal; revisar las cargas en serie).
+- [x] **16l.** La línea verde de carga cada pocos segundos (también las cargas en serie: solo cuenta lo que sigue a una acción de la persona).
 - [ ] Lo que salga de las pruebas en máquinas virtuales.
 
 ## B. Que se entienda sin explicarla
