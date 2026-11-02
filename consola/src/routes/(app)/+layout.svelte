@@ -24,9 +24,11 @@
   import { todasEnMarcha } from "$lib/progreso.svelte";
   import { ponerIcono } from "$lib/favicon";
   import { barra } from "$lib/barra.svelte";
+  import BarraMovil from "$lib/componentes/BarraMovil.svelte";
 
   let { children }: { children: Snippet } = $props();
   let cajon = $state(false);
+  const enCliente = $derived(!!actual.id && page.url.pathname.startsWith(`/c/${actual.id}`));
   let principal = $state<HTMLElement>();
 
   onMount(() => {
@@ -107,11 +109,13 @@
       </div>
     {/if}
 
-    <main id="contenido" class="contenido" bind:this={principal} tabindex="-1">
+    <main id="contenido" class="contenido" class:con-barra-movil={enCliente} bind:this={principal} tabindex="-1">
       <SinConexion />
       <VersionNueva />
       {@render children()}
     </main>
+    <!-- 16r: en el móvil, lo principal del cliente abajo, a un toque. -->
+    {#if enCliente}<BarraMovil />{/if}
   </div>
   <Paleta />
   <AccionesGlobales />
@@ -214,6 +218,12 @@
       margin-left: auto;
       width: 36px;
       height: 36px;
+    }
+    /* Que la barra de abajo no tape lo último de la página. */
+    .contenido.con-barra-movil {
+      /* Lo pegado abajo (las barras de «Varios a la vez», «Restaurar»…) sube lo mismo. */
+      --barra-movil: calc(64px + env(safe-area-inset-bottom));
+      padding-bottom: var(--barra-movil);
     }
   }
 </style>

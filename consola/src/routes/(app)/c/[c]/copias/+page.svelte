@@ -476,7 +476,7 @@
   }
   .barra-bloque {
     position: sticky;
-    bottom: var(--sp-4);
+    bottom: calc(var(--sp-4) + var(--barra-movil, 0px));
     z-index: 4;
     display: flex;
     flex-wrap: wrap;
