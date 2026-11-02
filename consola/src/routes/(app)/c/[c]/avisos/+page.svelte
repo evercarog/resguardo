@@ -20,7 +20,8 @@
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { filtroEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import { filtrosEquipos } from "$lib/filtrosEquipos.svelte";
+  import { pasaEtiquetas } from "$lib/filtrosEquipos";
   // «Pulsar para ver más»: cada aviso lleva a la vuelta o al repositorio que lo explica.
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { destinoAviso } from "$lib/detalle";
@@ -118,8 +119,12 @@
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };
   const equipo = (id: string | null) => actual.equipos.find((e) => e.id === id);
-  // Con una etiqueta elegida, solo los avisos de sus equipos (los del cliente en general, no).
-  const visibles = $derived((avisos ?? []).filter((a) => !filtroEtiqueta.valor || pasaFiltro(equipo(a.equipo), filtroEtiqueta.valor)));
+  // Con etiquetas elegidas (las mismas que en Equipos y Estado), solo los avisos de sus equipos
+  // (los del cliente en general, no).
+  const visibles = $derived.by(() => {
+    const f = filtrosEquipos.valor;
+    return (avisos ?? []).filter((a) => !f.etiquetas.length || pasaEtiquetas(equipo(a.equipo), f.etiquetas, f.modo));
+  });
   const sinVer = $derived(visibles.filter((a) => !a.visto_por));
   const urgentes = $derived(sinVer.filter((a) => info(a).tono === "bad").length);
 

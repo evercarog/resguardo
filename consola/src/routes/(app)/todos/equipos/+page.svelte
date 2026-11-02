@@ -7,6 +7,7 @@
   import { plural } from "$lib/formato";
   import { sinTildes } from "$lib/global";
   import { equiposTodos } from "$lib/todosSecciones";
+  import { ESTADOS_FILTRO, estadosDe, NOMBRE_ESTADO, type EstadoFiltro } from "$lib/filtrosEquipos";
   import { cargarTodos, todos } from "$lib/todos.svelte";
   import CabeceraPagina from "$lib/componentes/CabeceraPagina.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
@@ -19,14 +20,15 @@
 
   let cliente = $state("");
   let buscar = $state("");
-  let soloAtencion = $state(false);
+  // 16e: el mismo estado que la barra de filtros de un cliente (en la dirección no, por ahora).
+  let estado = $state<EstadoFiltro | "">("");
   let sistema = $state("");
   const filas = $derived(equiposTodos(todos.clientes, reloj.ahora));
   const sistemas = $derived([...new Set(filas.map((x) => x.grupoSistema))].sort((a, b) => a.localeCompare(b, "es", { numeric: true })));
   const vistas = $derived(
     filas.filter((x) => {
       if (cliente && x.cliente.id !== cliente) return false;
-      if (soloAtencion && x.tono !== "bad" && x.tono !== "warn") return false;
+      if (estado && !estadosDe(x.equipo, reloj.ahora).has(estado)) return false;
       if (sistema && x.grupoSistema !== sistema) return false;
       const p = sinTildes(buscar).split(/\s+/).filter(Boolean);
       const t = sinTildes([x.equipo.nombre, x.cliente.nombre, x.sede ?? "", x.sistema, ...(x.equipo.etiquetas ?? [])].join(" "));
@@ -60,7 +62,10 @@
   {:else}
     <FiltroCliente seccion="equipos" bind:cliente bind:buscar placeholder="Buscar equipo, cliente, sede o sistema" />
     <div class="filtros">
-      <label class="check"><input type="checkbox" bind:checked={soloAtencion} />Solo los que necesitan atención</label>
+      <select class="input input-sm" bind:value={estado} aria-label="Filtrar por estado">
+        <option value="">Todos los estados</option>
+        {#each ESTADOS_FILTRO as s (s)}<option value={s}>{NOMBRE_ESTADO[s]}</option>{/each}
+      </select>
       {#if sistemas.length > 1}
         <select class="input input-sm" bind:value={sistema} aria-label="Filtrar por sistema">
           <option value="">Todos los sistemas</option>
@@ -100,7 +105,7 @@
               buscar = "";
               cliente = "";
               sistema = "";
-              soloAtencion = false;
+              estado = "";
             }}><X size={14} />Quitar los filtros</button
           >
         </Vacio>
@@ -123,12 +128,6 @@
   }
   .filtros select {
     width: auto;
-  }
-  .check {
-    display: inline-flex;
-    gap: 8px;
-    align-items: center;
-    font-size: var(--fs-sm);
   }
   .cli,
   .sede {
