@@ -28,7 +28,6 @@
   import MoverAConsola from "$lib/componentes/MoverAConsola.svelte";
   import ServidoresRespaldo from "$lib/componentes/ServidoresRespaldo.svelte";
   import CopiaConsola from "$lib/componentes/CopiaConsola.svelte";
-  import PublicacionesServidor from "$lib/componentes/PublicacionesServidor.svelte";
   import NotificacionesServidor from "$lib/componentes/NotificacionesServidor.svelte";
   import PrestadorInformes from "$lib/componentes/PrestadorInformes.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
@@ -348,7 +347,18 @@
   {/if}
   {#if app.cuenta?.superusuario}<PrestadorInformes />{/if}
   {#if app.cuenta?.superusuario}<CopiaConsola />{/if}
-  {#if app.cuenta?.superusuario}<PublicacionesServidor />{/if}
+  {#if app.cuenta?.superusuario}
+    <!-- 16c: es de todo el servidor (no de este cliente): vive en «Mi cuenta y servidor». -->
+    <section class="card p" id="publicaciones">
+      <div class="cab">
+        <div class="cab-texto">
+          <h2>Actualizaciones de los agentes</h2>
+          <p class="faint">La versión del agente que da este servidor a todos sus clientes, «Buscar ahora» y el instalador de «Instalar muchos equipos» están en «Mi cuenta y servidor».</p>
+        </div>
+        <a class="btn" href="/ajustes#publicaciones">Abrir</a>
+      </div>
+    </section>
+  {/if}
 </div>
 
 {#if mover && actual.cliente}
