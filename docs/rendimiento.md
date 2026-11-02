@@ -81,3 +81,17 @@ Estado pintaba una tarjeta por equipo y otra por repositorio: con 200 y 600, ~19
 | Copias → Estado (dentro de la consola) | 9,0 s | 2,9 s |
 
 En reposo (60 s), con los informes del simulador cada uno en su segundo: **3,1 MB** por minuto en Estado, Equipos y Copias (casi todo `…/resumen`, 4 × 663 KB).
+
+### 7b. Las respuestas grandes de lectura, en gzip (16x, paso 7)
+
+Lo que queda pesado se manda en gzip si el navegador lo acepta (`crates/servidor/src/comprimir.rs`): **solo** `GET /api/panel`, `…/informes`, `…/resumen`, `…/equipos/{e}/informes`, `…/equipos/{e}/historial` y `…/restauraciones`, con estado 200, JSON y más de 32 KiB. Son rutas de solo lectura sin secretos (ni contraseñas ni claves: las llaves públicas y las etiquetas de los equipos no sirven sin la clave de administración), así que comprimirlas no abre la puerta a adivinar un secreto por el tamaño (BREACH); el resto de la API sigue sin comprimir. Con el deflate de `miniz_oxide`, que ya estaba en el árbol (sin dependencias nuevas), nivel 3, fuera del hilo de la red.
+
+Medido con las respuestas del simulador (compilación *release*, el mismo equipo):
+
+| Respuesta | Sin comprimir | En gzip | Tiempo de comprimir |
+|---|---|---|---|
+| `…/informes` (200 equipos) | 12,1 MB | 1,66 MB (13,7 %) | 101 ms |
+| `/api/panel` | 5,0 MB | 0,83 MB (16,5 %) | 46 ms |
+| `…/resumen` | 663 KB | 96 KB (14,4 %) | 6 ms |
+
+Con esto, lo que baja Estado al cargarlo pasa de 12,8 MB a ~1,8 MB, y lo que pide en reposo de ~3,1 MB a ~0,45 MB por minuto; «Todos los clientes» en reposo, de 10 MB a ~1,7 MB por minuto. (Calculado con los tamaños de arriba: el simulador no comprime, así que esta parte no sale en la medida del navegador.) A cambio, unos 100 ms de procesador del servidor cada vez que alguien abre un cliente de 200 equipos, y ~50 ms cada 30 s por pestaña de «Todos los clientes».

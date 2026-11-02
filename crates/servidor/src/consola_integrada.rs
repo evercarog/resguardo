@@ -8,6 +8,7 @@
 //! nada al servir. Cada archivo lleva su `ETag` (la huella que guarda la
 //! compilación), así `index.html` (sin caché) vuelve con un 304 si no cambió.
 
+use crate::comprimir::acepta;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 
@@ -22,19 +23,6 @@ pub fn disponible() -> bool {
 
 /// Las codificaciones que se pueden mandar, de la preferida a la menos.
 const CODIFICACIONES: [(&str, &str); 2] = [("br", "br"), ("gzip", "gz")];
-
-/// ¿Acepta el navegador esta codificación? (`Accept-Encoding`, sin las de `q=0`.)
-fn acepta(cabeceras: &HeaderMap, codificacion: &str) -> bool {
-    cabeceras.get_all(header::ACCEPT_ENCODING).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(',')).any(|parte| {
-        let mut trozos = parte.split(';');
-        let nombre = trozos.next().unwrap_or("").trim();
-        let q_cero = trozos.any(|p| {
-            let p = p.trim();
-            p.strip_prefix("q=").or_else(|| p.strip_prefix("Q=")).and_then(|q| q.trim().parse::<f32>().ok()).is_some_and(|q| q <= 0.0)
-        });
-        !q_cero && (nombre.eq_ignore_ascii_case(codificacion) || nombre == "*")
-    })
-}
 
 /// ¿Ya tiene el navegador esta versión? (`If-None-Match` con la misma ETag, o `*`.)
 fn ya_la_tiene(cabeceras: &HeaderMap, etag: &str) -> bool {
@@ -112,22 +100,6 @@ mod pruebas {
         let mut h = HeaderMap::new();
         h.insert(nombre, HeaderValue::from_str(valor).unwrap());
         h
-    }
-
-    #[test]
-    fn lee_accept_encoding() {
-        let h = con(header::ACCEPT_ENCODING, "gzip, deflate, br, zstd");
-        assert!(acepta(&h, "br") && acepta(&h, "gzip"));
-        let h = con(header::ACCEPT_ENCODING, "gzip;q=1.0, br;q=0");
-        assert!(acepta(&h, "gzip") && !acepta(&h, "br"));
-        let h = con(header::ACCEPT_ENCODING, "identity");
-        assert!(!acepta(&h, "gzip") && !acepta(&h, "br"));
-        assert!(!acepta(&HeaderMap::new(), "br"));
-        let h = con(header::ACCEPT_ENCODING, "*");
-        assert!(acepta(&h, "br"));
-        // Basura: sin pánico y sin comprimir.
-        let h = con(header::ACCEPT_ENCODING, ";;q=x,,br;q=abc");
-        assert!(acepta(&h, "br") && !acepta(&h, "gzip"));
     }
 
     #[test]

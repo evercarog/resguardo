@@ -400,6 +400,8 @@ pub fn router(st: St) -> Router {
         .merge(web)
         .route("/api/{*resto}", patch(no_existe).get(no_existe).post(no_existe).put(no_existe).delete(no_existe))
         .layer(middleware::from_fn(cuerpo_con_espera))
+        // 16x (7): las respuestas grandes de lectura (informes, panel…), en gzip si se acepta.
+        .layer(middleware::from_fn(crate::comprimir::respuestas))
         .layer(middleware::from_fn_with_state(st.clone(), limite_y_registro))
         .layer(middleware::from_fn_with_state(st.clone(), cabeceras))
         .with_state(st)
