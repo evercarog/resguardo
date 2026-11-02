@@ -22,6 +22,7 @@ import { errorVerificacion, fraseVerificacion, partesVerificacion } from "../src
 import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnAlmacen } from "../src/lib/direccion";
 import { cuerpoBloqueo, cuerpoExistente, detallesExterna, ordenQuitarExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
 import { resultadoConError } from "../src/lib/salud";
+import { pistaAntivirus } from "../src/lib/antivirus";
 import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
 import { bytesRepo, destinoDe, textoResultado, tonoResultado, versionDeVuelta } from "../src/lib/repo";
 import type { CopiaResumen, Equipo, Informe, ReglaHorario, RepoInforme, TareaEnMarcha } from "../src/lib/tipos";
@@ -1033,6 +1034,29 @@ console.log("\n· Palabras: «copias», no «vueltas»");
   };
   for (const r of raices) if (fs.existsSync(r)) recorrer(r);
   igual("ningún texto con «vuelta(s)» en la consola ni en la ventana", malas, []);
+}
+
+// ---------------------------------------------------------------------------
+// 16z: pista «¿lo bloqueó el antivirus?» cuando un equipo deja de responder justo
+// después de una copia correcta (y no dijo que lo paraban).
+// ---------------------------------------------------------------------------
+console.log("\n· Pista del antivirus (16z)");
+{
+  const ahora = Date.parse("2026-10-25T12:00:00Z");
+  const hace = (min: number) => new Date(ahora - min * 60_000).toISOString();
+  const copia = (cuando: string, estado: "ok" | "aviso" | "fallo" = "ok") => ({ id: "k", nombre: "Documentos", repo: "r", ultima: { cuando, estado } });
+  const res = (x: unknown) => x as Equipo["resumen"];
+  const base = { confirmado: true, modo: "gestionado" as const, conectado: false, ultimo_contacto: hace(60), estado_servicio: "en_marcha" as const, resumen: res({ copias: [copia(hace(65))] }) };
+  igual("desconectado justo tras una copia correcta: pista", pistaAntivirus(base, ahora), hace(65));
+  igual("conectado: nada", pistaAntivirus({ ...base, conectado: true }, ahora), null);
+  igual("sin contacto hace solo 5 min: aún nada", pistaAntivirus({ ...base, ultimo_contacto: hace(5), resumen: res({ copias: [copia(hace(8))] }) }, ahora), null);
+  igual("detenido por un administrador: nada", pistaAntivirus({ ...base, estado_servicio: "detenido_por_admin" }, ahora), null);
+  igual("dejó la consola o trasladado: nada", [pistaAntivirus({ ...base, modo: "local" }, ahora), pistaAntivirus({ ...base, modo: "trasladado" }, ahora)], [null, null]);
+  igual("la copia terminó horas antes del corte: nada", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(300))] }) }, ahora), null);
+  igual("la última fue un fallo: nada", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(65)), { ...copia(hace(62), "fallo"), id: "k2" }] }) }, ahora), null);
+  igual("con avisos también cuenta", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(70), "aviso")] }) }, ahora), hace(70));
+  igual("equipo que sale de la oficina: nada", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(65))], movil: { sale_oficina: true } }) }, ahora), null);
+  igual("sin copias: nada", pistaAntivirus({ ...base, resumen: res({ copias: [] }) }, ahora), null);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
