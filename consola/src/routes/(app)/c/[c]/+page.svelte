@@ -178,6 +178,14 @@
     return `${d > 0 ? "+" : "−"}${bytes(Math.abs(d))} en 30 días`;
   }
 
+  /**
+   * 16q: con muchos equipos, Estado pintaba una tarjeta por equipo y por repositorio (200 y
+   * 600 en la medida: ~200 000 elementos y 7–9 s de JavaScript). Lo que falla va primero:
+   * se enseñan las primeras y el resto con un botón (o en Equipos y «Repositorios y destinos»).
+   */
+  const PRIMERAS = 24;
+  let todosEquipos = $state(false);
+  let todosRepos = $state(false);
   /** Repositorios de todos los equipos (no los trasladados): lo que falla, primero. */
   const tarjetas = $derived(
     delFiltro
@@ -366,8 +374,11 @@
           {/each}
         {:else}
           <div class="rejilla equipos">
-            {#each equipos as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
+            {#each todosEquipos ? equipos : equipos.slice(0, PRIMERAS) as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
           </div>
+          {#if !todosEquipos && equipos.length > PRIMERAS}
+            <p class="ver-mas"><button type="button" class="btn btn-sm" onclick={() => (todosEquipos = true)}>Ver los {equipos.length - PRIMERAS} equipos restantes</button><a class="link" href="/c/{c}/equipos">o la lista en Equipos</a></p>
+          {/if}
         {/if}
       </section>
 
@@ -378,10 +389,13 @@
             <a class="btn btn-sm btn-ghost" href="/c/{c}/destinos">Ver todos</a>
           </div>
           <div class="rejilla repos">
-            {#each tarjetas as t (t.equipo.id + t.repo.id)}
+            {#each todosRepos ? tarjetas : tarjetas.slice(0, PRIMERAS) as t (t.equipo.id + t.repo.id)}
               <TarjetaRepo repo={t.repo} inf={informeDe(informes[t.equipo.id], t.repo.id)} equipo={t.equipo} cliente={c} ahora={reloj.ahora} />
             {/each}
           </div>
+          {#if !todosRepos && tarjetas.length > PRIMERAS}
+            <p class="ver-mas"><button type="button" class="btn btn-sm" onclick={() => (todosRepos = true)}>Ver los {tarjetas.length - PRIMERAS} repositorios restantes</button></p>
+          {/if}
         </section>
       {/if}
     {:else}
@@ -450,6 +464,22 @@
 {/if}
 
 <style>
+  .ver-mas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
+  .comprobar-todo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
   .linea-espera {
     align-items: center;
   }

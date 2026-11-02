@@ -67,3 +67,17 @@ Medido (la misma compilación salvo esto):
 | Copias | 24,9 MB | 12,8 MB | 6,1 s → 3,8 s (JavaScript 6,1 s → 2,9 s: la página se calculaba dos veces) |
 
 En reposo, 60 s: **51 MB → 7,0 MB** en Estado, Equipos y Copias (lo que queda: `…/resumen`, 4 × 663 KB, y los informes que el simulador daba como nuevos por llegar en el mismo segundo; corregido después en el simulador, cada uno en su segundo). «Todos los clientes» no cambia con esto (10 MB por minuto).
+
+### Estado: las primeras 24 tarjetas (16q, «cargas parciales»)
+
+Estado pintaba una tarjeta por equipo y otra por repositorio: con 200 y 600, ~190 000 elementos y 4–5 s de JavaScript solo en eso. Ahora enseña las primeras 24 de cada lista (lo que falla va primero, como antes) y «Ver los N restantes» (o la lista en Equipos). Con menos de 25 no cambia nada.
+
+| Estado (carga sin caché) | Antes de esto | Después |
+|---|---|---|
+| Tiempo | 6,3 s | 4,2 s |
+| Elementos | 188 478 | 41 794 |
+| JavaScript | 4,6 s | 2,9 s |
+| Memoria JS | 202 MB | 102 MB |
+| Copias → Estado (dentro de la consola) | 9,0 s | 2,9 s |
+
+En reposo (60 s), con los informes del simulador cada uno en su segundo: **3,1 MB** por minuto en Estado, Equipos y Copias (casi todo `…/resumen`, 4 × 663 KB).
