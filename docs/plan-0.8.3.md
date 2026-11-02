@@ -29,7 +29,7 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 - [ ] **16t.** Tablas largas cómodas.
 - [ ] **16u.** Errores siempre en palabras.
 - [~] **16b.** Ver qué archivos no se pudieron leer, y «No copiar esto».
-- [ ] **16h.** «Este equipo no llega a esa consola» para los que no tienen internet a propósito.
+- [x] **16h.** «Este equipo no llega a esa consola» para los que no tienen internet a propósito.
 
 ## D. Infraestructura (pequeño)
 

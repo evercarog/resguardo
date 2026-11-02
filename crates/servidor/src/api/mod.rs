@@ -31,6 +31,8 @@ mod servidor_clientes;
 mod sesiones;
 // 16k: las sesiones de la consola de cada cuenta.
 mod sesiones_cuenta;
+// 16h: «Este equipo no llega a esa consola».
+mod no_llega;
 
 pub use cuentas::preparar_codigo_arranque;
 pub(crate) use etiquetas::normalizar_etiqueta;
@@ -355,6 +357,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/organizacion", get(organizacion::ver))
         // Plan 0.8.1, C4 (15d): servidores físicos, conjuntos de discos y dónde está cada equipo y destino.
         .route("/api/clientes/{c}/infraestructura", get(crate::infraestructura::ver).put(crate::infraestructura::poner))
+        .route("/api/clientes/{c}/no-llega", get(no_llega::ver).put(no_llega::poner))
         .route("/api/clientes/{c}/datos-comunes/enviadas", post(datos_comunes::enviadas))
         .route("/api/clientes/{c}/datos-comunes/traer", post(datos_comunes::traer))
         .route("/api/clientes/{c}/emparejamientos/{p}", get(equipos::ver_emparejamiento).delete(equipos::cancelar_emparejamiento))

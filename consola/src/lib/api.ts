@@ -11,6 +11,7 @@ import type * as TP from "./tiposPruebas";
 import type { CodigoAbierto } from "./emparejar";
 import type { DatosComunesCliente, EntradaOrden } from "./datosComunes";
 import type { OpcionesAlta, OpcionesEntrar, PasskeyVista } from "./passkeys";
+import type { MarcasNoLlega } from "./consolasCliente";
 import type { Lote, LoteDetalle } from "./despliegue";
 import type { InstaladorServido } from "./actualizaciones";
 import { mensajePausa, pausaTras } from "./pausa429";
@@ -194,6 +195,10 @@ export const bajaPasskey = (ref: string, contrasena: string, codigo: string) =>
 export const salir = () => pedir<void>("DELETE", "/api/sesion", undefined, { sinRedirigir: true });
 
 export const cuenta = (opciones: { sinRedirigir?: boolean } = {}) => pedir<T.Cuenta>("GET", "/api/cuenta", undefined, opciones);
+
+// 16h: «Este equipo no llega a esa consola» (equipo → identidad de la consola → marca).
+export const noLlegaCliente = (c: string) => pedir<MarcasNoLlega>("GET", `${cli(c)}/no-llega`, undefined, { invisible: true });
+export const ponerNoLlega = (c: string, b: { equipo: string; consola: string; motivo?: string | null; quitar?: boolean }) => pedir<MarcasNoLlega>("PUT", `${cli(c)}/no-llega`, b);
 
 // 16k: las sesiones de la cuenta y sus plazos.
 export const sesionesCuenta = () =>

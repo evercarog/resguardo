@@ -16,6 +16,10 @@
   import { admiteVarias, equiposQueFaltan, faltaEn, fraseEquipo, nombreConsola, otrasConsolas, type OtraConsola } from "$lib/consolasCliente";
   import type { Cliente, Equipo } from "$lib/tipos";
   import ConectarConsola from "./ConectarConsola.svelte";
+  // 16h: «Este equipo no llega a esa consola» (los marcados no cuentan como que faltan).
+  import { untrack } from "svelte";
+  import { cargarNoLlega, marcasNoLlega } from "$lib/noLlega.svelte";
+  import NoLlegaConsola from "./NoLlegaConsola.svelte";
 
   let {
     cliente,
@@ -34,7 +38,13 @@
     ahora: number;
   } = $props();
 
-  const consolas = $derived(otrasConsolas(equipos, ahora, nuevo && equipo ? [equipo.id] : []));
+  $effect(() => {
+    const c = cliente.id;
+    untrack(() => void cargarNoLlega(c));
+  });
+  const marcas = $derived(marcasNoLlega.cliente === cliente.id ? marcasNoLlega.datos : null);
+  const consolas = $derived(otrasConsolas(equipos, ahora, nuevo && equipo ? [equipo.id] : [], marcas));
+  const aproposito = $derived(equipo ? consolas.filter((c) => c.aproposito.some((x) => x.equipo.id === equipo.id)) : []);
   const deEste = $derived(equipo ? faltaEn(equipo, consolas) : []);
   const faltan = $derived(equiposQueFaltan(consolas));
   const puedeConectar = $derived(puede.administrar(cliente.rol));
@@ -62,11 +72,15 @@
             <button type="button" class="btn btn-sm" onclick={() => (abierta = { consola: c, ids: [equipo.id] })}>Conectar también…</button>
             <span class="nota">Necesitas la clave de administración y un código de conexión de «{c.nombre}»: allí, «{cliente.nombre}» → «Ajustes» → «Servidor» → «Dar un código de conexión».</span>
           </div>
+          <NoLlegaConsola cliente={cliente.id} {equipo} consola={c} puede={puedeConectar} />
         {:else}
           <p class="nota">Pídeselo a quien administra este cliente.</p>
         {/if}
       </div>
     </div>
+  {/each}
+  {#each aproposito as c (c.identidad)}
+    <NoLlegaConsola cliente={cliente.id} {equipo} consola={c} marcado={{ motivo: c.aproposito.find((x) => x.equipo.id === equipo.id)?.motivo ?? null }} puede={puedeConectar} />
   {/each}
 {:else if faltan.length}
   <section class="notice notice-info aviso" aria-labelledby="t-aviso-consolas">
@@ -79,7 +93,7 @@
           <li>
             <span class="texto">
               <span>{c.sin.length === 1 ? "Falta" : "Faltan"} en <strong>{nombreConsola(c)}</strong>: {nombres(c.sin)}.</span>
-              <span class="nota">Ya {c.con.length === 1 ? "está" : "están"} allí {plural(c.con.length, "equipo", "equipos")}{viejos.length ? ` · ${plural(viejos.length, "necesita", "necesitan")} actualizar el agente: ${nombres(viejos)}` : ""}.</span>
+              <span class="nota">Ya {c.con.length === 1 ? "está" : "están"} allí {plural(c.con.length, "equipo", "equipos")}{viejos.length ? ` · ${plural(viejos.length, "necesita", "necesitan")} actualizar el agente: ${nombres(viejos)}` : ""}{c.aproposito.length ? ` · ${plural(c.aproposito.length, "no llega", "no llegan")} a propósito` : ""}. Si alguno no puede llegar (sin internet), márcalo en su ficha.</span>
             </span>
             {#if puedeConectar && viejos.length < c.sin.length}
               <button type="button" class="btn btn-sm" onclick={() => (abierta = { consola: c, ids: c.sin.map((e) => e.id) })}>Conectar también…</button>

@@ -463,6 +463,26 @@ const rutas: Ruta[] = [
       return cuenta.totp ? { necesita: "totp", passkeys: passkeysDe(cuenta.id).length } : { necesita: "alta_totp", totp: totpDe(cuenta.correo) };
     },
   ],
+  // 16h: «Este equipo no llega a esa consola» (de esta consola, por cliente).
+  ["GET", /^\/api\/clientes\/([^/]+)\/no-llega$/, (_ctx, [c]) => noLlegaMock.get(c) ?? {}],
+  [
+    "PUT",
+    /^\/api\/clientes\/([^/]+)\/no-llega$/,
+    (ctx, [c]) => {
+      sesionDe(ctx);
+      const b = ctx.cuerpo as { equipo?: string; consola?: string; motivo?: string | null; quitar?: boolean };
+      if (!b.equipo || !b.consola || !estado.equipos.some((e) => e.id === b.equipo && e.cliente === c)) throw err(422, "datos", "Equipo o consola no válidos.");
+      if ((b.motivo ?? "").length > 200) throw err(422, "datos", "El motivo es demasiado largo (hasta 200).");
+      const m = noLlegaMock.get(c) ?? {};
+      const de = { ...(m[b.equipo] ?? {}) };
+      if (b.quitar) delete de[b.consola];
+      else de[b.consola] = { motivo: b.motivo?.trim() || null, por: sesionDe(ctx).nombre, cuando: new Date().toISOString() };
+      if (Object.keys(de).length) m[b.equipo] = de;
+      else delete m[b.equipo];
+      noLlegaMock.set(c, m);
+      return m;
+    },
+  ],
   // 16k: las sesiones de la cuenta (la actual y dos de ejemplo) y sus plazos.
   ["GET", /^\/api\/cuenta\/sesiones$/, (ctx) => ({ sesiones: sesionesMockDe(sesionDe(ctx).id, ctx.token ?? ""), puede_cerrar: true, puede_desde: null })],
   [
@@ -2135,6 +2155,8 @@ function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
  */
 const datosComunesMock = new Map<string, DatosComunesCliente>();
 /** 0.8.1 (H3): las llaves de acceso de cada cuenta (la de Ana con una de ejemplo). */
+// 16h: las marcas «no llega a esa consola» de cada cliente.
+const noLlegaMock = new Map<string, Record<string, Record<string, { motivo: string | null; por: string; cuando: string }>>>();
 // 16k: sesiones de ejemplo (además de la actual) y plazos.
 let plazosMock = { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 };
 const sesionesCerradasMock = new Set<string>();

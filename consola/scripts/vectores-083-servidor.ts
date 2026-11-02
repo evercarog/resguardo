@@ -5,6 +5,7 @@ import { detalleDisco, infraValida, leerInfra, marcaDeModelo, marcaYModelo, sinA
 import { equiposPorGrupo, grupoInfra, hipervisoresPara, servidoresParaElegir, servidorPropuesto, textoFaltan } from "../src/lib/infraGrupos";
 import { fichaSoporte, hrefSoporte } from "../src/lib/infraFicha";
 import { agruparArchivos, carpetaDe, claseError, conExclusiones, leerArchivos, nombreDe, resumenRepeticion } from "../src/lib/archivosConError";
+import { equiposQueFaltan, faltaEn, noLlega, otrasConsolas } from "../src/lib/consolasCliente";
 import { adaptarPara } from "../src/lib/datosComunes";
 import { conTopes, esMovil, frasePlazos, lineaSesion, motivoNoCerrar, nuevasSinVer, ordenarSesiones, textoSesionNueva } from "../src/lib/sesionesCuenta";
 
@@ -218,6 +219,28 @@ console.log("\n· 16b: los archivos que no se pudieron leer");
   igual("leer: nada", leerArchivos(null), { archivos: [], copias: 1 });
   igual("exclusiones sin repetir (Windows, sin mayúsculas)", conExclusiones(["C:\\U\\ana\\A.pst"], ["C:\\U\\ana\\a.pst", "C:\\U\\ana\\b.pst"], true), ["C:\\U\\ana\\A.pst", "C:\\U\\ana\\b.pst"]);
   igual("exclusiones en Linux distinguen mayúsculas", conExclusiones(["/srv/A"], ["/srv/a"], false), ["/srv/A", "/srv/a"]);
+}
+
+console.log("\n· 16h: «Este equipo no llega a esa consola»");
+{
+  const ahora = Date.parse("2026-11-02T12:00:00Z");
+  const reciente = new Date(ahora - 3600_000).toISOString();
+  const linea = { identidad: "ID-LINEA", nombre: "Consola en línea", url: "https://consola.ejemplo.com", esta: false, ultimo_contacto: reciente };
+  const local = { identidad: "ID-LOCAL", nombre: "Oficina", url: "https://oficina.ejemplo.com", esta: true, ultimo_contacto: reciente };
+  const eq = (id: string, consolas: unknown[]) => ({ id, nombre: id.toUpperCase(), confirmado: true, modo: "gestionado", resumen: { admite: ["consolas_multiples"], consolas } }) as unknown as Equipo;
+  const a = eq("a", [local, linea]);
+  const vm1 = eq("vm1", [local]);
+  const vm2 = eq("vm2", [local]);
+  const sin = otrasConsolas([a, vm1, vm2], ahora);
+  igual("sin marcas: faltan las dos", sin[0].sin.map((e) => e.id), ["vm1", "vm2"]);
+  const marcas = { vm1: { "ID-LINEA": { motivo: "Red aislada" } } };
+  const con = otrasConsolas([a, vm1, vm2], ahora, [], marcas);
+  igual("con la marca: solo falta la otra", con[0].sin.map((e) => e.id), ["vm2"]);
+  igual("la marcada sale aparte, con su motivo", con[0].aproposito.map((x) => [x.equipo.id, x.motivo]), [["vm1", "Red aislada"]]);
+  igual("el aviso cuenta solo las que de verdad faltan", equiposQueFaltan(con).map((e) => e.id), ["vm2"]);
+  igual("en su ficha ya no falta", faltaEn(vm1, con).length, 0);
+  igual("marca de otra consola: no cuenta", otrasConsolas([a, vm1], ahora, [], { vm1: { "OTRA": {} } })[0].sin.map((e) => e.id), ["vm1"]);
+  igual("¿marcado?", [noLlega(marcas, "vm1", "ID-LINEA"), noLlega(marcas, "vm2", "ID-LINEA"), noLlega(null, "vm1", "ID-LINEA")], [true, false, false]);
 }
 
 console.log(`\n${total - fallos} de ${total} bien`);

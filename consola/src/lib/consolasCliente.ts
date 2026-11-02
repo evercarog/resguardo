@@ -27,7 +27,15 @@ export interface OtraConsola {
   con: Equipo[];
   /** Los que no. */
   sin: Equipo[];
+  /** 16h: los que no están porque no llegan a ella, a propósito (sin internet, red aislada). */
+  aproposito: { equipo: Equipo; motivo: string | null }[];
 }
+
+/** 16h: equipo → identidad de la consola → la marca «no llega a esa consola». */
+export type MarcasNoLlega = Record<string, Record<string, { motivo?: string | null; por?: string; cuando?: string }>>;
+
+/** 16h: ¿está marcado que este equipo no llega a esa consola? */
+export const noLlega = (marcas: MarcasNoLlega | null | undefined, equipo: string, consola: string) => !!marcas?.[equipo]?.[consola];
 
 const DIA = 24 * 3600_000;
 /** Sin contacto de ningún equipo en este tiempo, la consola se da por abandonada. */
@@ -51,7 +59,7 @@ function viva(x: ConsolaDelEquipo, ahora: number) {
  * `nuevos`: ids de equipos recién dados de alta que aún no han mandado su
  * resumen (cuentan como que solo están aquí).
  */
-export function otrasConsolas(equipos: Equipo[], ahora: number, nuevos: string[] = []): OtraConsola[] {
+export function otrasConsolas(equipos: Equipo[], ahora: number, nuevos: string[] = [], marcas: MarcasNoLlega | null = null): OtraConsola[] {
   const activos = equipos.filter(gestionable);
   const porId = new Map<string, { x: ConsolaDelEquipo; con: Equipo[]; viva: boolean }>();
   for (const e of activos)
@@ -69,13 +77,18 @@ export function otrasConsolas(equipos: Equipo[], ahora: number, nuevos: string[]
   const sabido = (e: Equipo) => !!e.resumen || nuevos.includes(e.id);
   return [...porId.values()]
     .filter((v) => v.viva)
-    .map(({ x, con }) => ({
-      identidad: x.identidad,
-      nombre: x.nombre?.trim() || hostDe(x.url),
-      url: x.url,
-      con,
-      sin: activos.filter((e) => !con.includes(e) && sabido(e)),
-    }))
+    .map(({ x, con }) => {
+      const faltan = activos.filter((e) => !con.includes(e) && sabido(e));
+      return {
+        identidad: x.identidad,
+        nombre: x.nombre?.trim() || hostDe(x.url),
+        url: x.url,
+        con,
+        // 16h: los marcados «no llega a esa consola» no cuentan como que faltan.
+        sin: faltan.filter((e) => !noLlega(marcas, e.id, x.identidad)),
+        aproposito: faltan.filter((e) => noLlega(marcas, e.id, x.identidad)).map((e) => ({ equipo: e, motivo: marcas?.[e.id]?.[x.identidad]?.motivo ?? null })),
+      };
+    })
     .sort((a, b) => b.con.length - a.con.length || a.nombre.localeCompare(b.nombre));
 }
 
