@@ -55,6 +55,8 @@ import { publicaRespaldo, salRespaldo, secretoRespaldo } from "../src/lib/cripto
 import { desplegar, errorIntervalo, errorRegla as errorReglaHorario, errorReglas, expresable, horarioParaEnviar, normalizar, proximaVez, reconocer, reglasDe, ultimaVez } from "../src/lib/horario";
 import { diasEnFrase, horarioEnFrase, resumenHorario, resumenReglas } from "../src/lib/formato";
 import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
+import { copiaAtrasada } from "../src/lib/salud";
+import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1043,6 +1045,33 @@ console.log("\n· 16l: la barra de arriba, solo al cambiar de pantalla o al mand
   igual("justo después de pulsar o de cambiar de pantalla: primer plano", esPrimerPlano({ enFondo: false, ahora: t + 500, ultimaAccion: t, enMarcha: 0 }), true);
   igual("un refresco automático lejos de cualquier acción (lo que pide después de su primer await): fondo", esPrimerPlano({ enFondo: false, ahora: t + VENTANA_ACCION_MS + 1, ultimaAccion: t, enMarcha: 0 }), false);
   igual("una carga en serie que tarda (otra de primer plano en marcha): sigue en primer plano", esPrimerPlano({ enFondo: false, ahora: t + 60_000, ultimaAccion: t, enMarcha: 1 }), true);
+}
+
+console.log("\n· 16y: Estado y cada copia dicen lo mismo, y las horas perdidas en el calendario");
+{
+  const ahora16 = new Date(2026, 9, 26, 10, 30).getTime();
+  const hora = (h: number) => ahora16 - h * 3600_000;
+  const cadaHora = { dias: [1, 2, 3, 4, 5, 6, 7], horas: Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`) };
+  // Cada hora, la última bien hace 22 h (el equipo se desconectó); la «Próxima» que dijo es de hace 21 h.
+  const k = { id: "k1", nombre: "Docs", repo: "r1", activa: true, horario: cadaHora, ultima: { cuando: new Date(hora(22)).toISOString(), estado: "ok" }, proxima: new Date(hora(21)).toISOString() } as unknown as CopiaResumen;
+  const vuelta = { cuando: new Date(hora(22)).toISOString(), resultado: "ok", mensaje: null } as never;
+  igual("cada hora y 22 h sin copia: atrasada en la copia y en Estado", [atrasada(k, vuelta, false, ahora16), copiaAtrasada(k, ahora16)], [true, true]);
+  const alDia = { ...k, ultima: { cuando: new Date(hora(1)).toISOString(), estado: "ok" }, proxima: new Date(hora(-0.5)).toISOString() } as unknown as CopiaResumen;
+  igual("la última hace 1 h: al día en los dos", [atrasada(alDia, { ...vuelta, cuando: alDia.ultima!.cuando }, false, ahora16), copiaAtrasada(alDia, ahora16)], [false, false]);
+  const nunca = { ...k, ultima: null } as unknown as CopiaResumen;
+  igual("nunca se hizo: no va atrasada (sale «Sin copias todavía»)", copiaAtrasada(nunca, ahora16), false);
+  igual("en pausa con «Pausar»: tampoco", copiaAtrasada({ ...k, pausa: { hasta: null } } as unknown as CopiaResumen, ahora16), false);
+  const sinHorario = { ...k, horario: "cada noche", proxima: new Date(hora(3)).toISOString() } as unknown as CopiaResumen;
+  igual("sin horario que leer: la «Próxima» pasada de más de 1 h", copiaAtrasada(sinHorario, ahora16), true);
+
+  // Las horas perdidas: vueltas hasta hace 6 h y nada después (las de las 2 últimas horas aún no cuentan).
+  const vueltas = [10, 9, 8, 7, 6].map((h) => hora(h) + 2 * 60_000);
+  const perdidas = horasPerdidas(cadaHora, vueltas, hora(48), ahora16);
+  igual("cada hora: las 4 horas sin copia (5:00 a 8:00; la de las 9:00 aún está dentro del margen de 2 h)", perdidas.map((t) => new Date(t).getHours()), [5, 6, 7, 8]);
+  igual("sin vueltas que se sepan, nada (no se sabe desde cuándo existe)", horasPerdidas(cadaHora, [], hora(48), ahora16), []);
+  igual("sin horario (a mano), nada", horasPerdidas(null, vueltas, hora(48), ahora16), []);
+  const cal = calendario([], null, ahora16, 7, false, [], undefined, perdidas);
+  igual("el calendario las marca en sus casillas", cal.celdas.flat().reduce((n, x) => n + x.perdidas, 0), 4);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
