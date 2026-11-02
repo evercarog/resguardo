@@ -18,7 +18,7 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 - [ ] **16o.** Cada aviso con un solo «qué hago», agrupados, resumen diario opcional.
 - [ ] **16p.** Ningún ajuste lejos de donde se nota; ningún control que no haga nada.
 - [ ] **16c.** «Actualizaciones de los agentes» en «Mi cuenta y servidor».
-- [ ] **16g.** Los equipos de usuario no salen «Sin anotar» en Infraestructura.
+- [x] **16g.** Los equipos de usuario no salen «Sin anotar» en Infraestructura.
 - [ ] **16s.** Primeras veces y estados vacíos.
 
 ## C. Comodidad

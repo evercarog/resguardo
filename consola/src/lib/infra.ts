@@ -937,8 +937,8 @@ export function discosEnNiveles(e: Equipo, i: Infraestructura | null | undefined
 export const destinoAnotable = (d: { tipo: string }) => d.tipo !== "nube" && d.tipo !== "b2" && d.tipo !== "s3";
 
 /**
- * 0.8.2 (A1): con algún servidor anotado, los equipos y destinos que aún no están en
- * ninguno (para el aviso suave de Estado). Un destino que hereda el servidor de quien lo
+ * 0.8.2 (A1): con algún servidor anotado, las máquinas virtuales y contenedores (16g) y los
+ * destinos que aún no están en ninguno (para el aviso suave de Estado). Un destino que hereda el servidor de quien lo
  * guarda no cuenta como sin anotar.
  */
 export function sinAnotar(
@@ -948,7 +948,8 @@ export function sinAnotar(
 ): { equipos: Equipo[]; destinos: { clave: string; tipo: string }[] } {
   if (!conInfra(i)) return { equipos: [], destinos: [] };
   return {
-    equipos: equipos.filter((e) => e.confirmado && e.modo !== "trasladado" && !i!.equipos[e.id]),
+    // 16g: solo las máquinas virtuales y los contenedores piden su servidor; un equipo físico es su propio equipo.
+    equipos: equipos.filter((e) => e.confirmado && e.modo !== "trasladado" && !i!.equipos[e.id] && ["virtual", "contenedor"].includes(tipoEquipo(e).clase)),
     destinos: destinos.filter((d) => destinoAnotable(d) && !sitioDeDestino(i, d.clave, d.equipo ?? null)),
   };
 }

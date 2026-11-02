@@ -1,7 +1,8 @@
 // Pruebas de la rama `ia/083-servidor` (plan 0.8.3): 16k (sesiones de la consola) y lo
 // que venga después en esta rama. `npm run test:vectores`.
 import type { Equipo, SesionCuenta } from "../src/lib/tipos";
-import { detalleDisco, infraValida, leerInfra, marcaDeModelo, marcaYModelo } from "../src/lib/infra";
+import { detalleDisco, infraValida, leerInfra, marcaDeModelo, marcaYModelo, sinAnotar, type Infraestructura } from "../src/lib/infra";
+import { equiposPorGrupo, grupoInfra, hipervisoresPara, servidoresParaElegir, servidorPropuesto, textoFaltan } from "../src/lib/infraGrupos";
 import { adaptarPara } from "../src/lib/datosComunes";
 import { conTopes, esMovil, frasePlazos, lineaSesion, motivoNoCerrar, nuevasSinVer, ordenarSesiones, textoSesionNueva } from "../src/lib/sesionesCuenta";
 
@@ -98,6 +99,46 @@ console.log("\n· 16a y 16f: marca de los discos, número de serie e inventario 
   const leido = leerInfra({ servidores: [{ id: "hv-01", nombre: "hv-01", serie: "ABC1234", inventario: "INV-0042", discos: [{ id: "b1", nombre: "Bahía 1", marca: "WD" }], conjuntos: [] }] });
   igual("leer: la serie y el inventario del servidor", [leido.servidores[0].serie, leido.servidores[0].inventario], ["ABC1234", "INV-0042"]);
   igual("leer: la marca del disco", leido.servidores[0].discos[0].marca, "WD");
+}
+
+console.log("\n· 16g: los equipos de usuario no salen «Sin anotar»");
+{
+  const eq = (id: string, resumen: Record<string, unknown>) => ({ id, nombre: id.toUpperCase(), confirmado: true, modo: "gestionado", resumen }) as unknown as Equipo;
+  const vmw = eq("vm1", { entorno: { virtual: "vmware" } });
+  const kvm = eq("vm2", { entorno: { virtual: "kvm" } });
+  const ct = eq("ct1", { entorno: { contenedor: "lxc" } });
+  const puesto = eq("pc1", { datos_basicos: {} });
+  const srvFis = eq("hv1", { datos_basicos: {} });
+  const viejo = eq("old", {});
+  const infra = {
+    servidores: [
+      { id: "esx", nombre: "ESX-01", hipervisor: "vmware", discos: [], conjuntos: [] },
+      { id: "pve", nombre: "PVE-01", hipervisor: "proxmox", discos: [], conjuntos: [] },
+      { id: "nas", nombre: "NAS", hipervisor: null, discos: [], conjuntos: [] },
+    ],
+    equipos: { hv1: { servidor: "pve" }, vm2: { servidor: "pve" } },
+    destinos: {},
+  } as unknown as Infraestructura;
+  igual("grupo: máquina virtual", grupoInfra(vmw, infra), "virtual");
+  igual("grupo: contenedor", grupoInfra(ct, infra), "virtual");
+  igual("grupo: físico de usuario", grupoInfra(puesto, infra), "usuario");
+  igual("grupo: físico anotado en un servidor", grupoInfra(srvFis, infra), "servidor");
+  igual("grupo: sin saber el tipo, como de usuario", grupoInfra(viejo, infra), "usuario");
+  const g = equiposPorGrupo([puesto, kvm, vmw, ct, srvFis, viejo], infra);
+  igual("por grupo: las virtuales sin anotar arriba", g.virtual.map((e) => e.id), ["vm1", "ct1", "vm2"]);
+  igual("por grupo: faltan solo las virtuales sin servidor", g.faltan, 2);
+  igual("por grupo: de usuario", g.usuario.map((e) => e.id), ["pc1", "old"]);
+  igual("propuesto: el único VMware", servidorPropuesto(vmw, infra)?.id, "esx");
+  igual("propuesto: LXC en el Proxmox", servidorPropuesto(ct, infra)?.id, "pve");
+  igual("propuesto: a un físico, nada", servidorPropuesto(puesto, infra), null);
+  const dos = { ...infra, servidores: [...infra.servidores, { id: "esx2", nombre: "ESX-02", hipervisor: "vmware", discos: [], conjuntos: [] }] } as unknown as Infraestructura;
+  igual("propuesto: con dos que encajan, ninguno", servidorPropuesto(vmw, dos), null);
+  igual("para elegir: primero los que encajan", servidoresParaElegir(ct, infra).map((s) => s.id)[0], "pve");
+  igual("hipervisores de KVM", hipervisoresPara("kvm"), ["proxmox", "kvm", "nutanix"]);
+  igual("faltan: nada", textoFaltan(0), null);
+  cierto("faltan: una", (textoFaltan(1) ?? "").startsWith("Falta decir dónde está 1"));
+  const sa = sinAnotar(infra, [puesto, vmw, ct, srvFis, viejo], []);
+  igual("aviso de Estado: solo virtuales y contenedores sin servidor", sa.equipos.map((e) => e.id), ["vm1", "ct1"]);
 }
 
 console.log(`\n${total - fallos} de ${total} bien`);
