@@ -3,6 +3,43 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-11-02 · `ia/083-servidor` · Plan 0.8.3: sesiones, infraestructura, archivos con error y consolas (16k, 16a, 16f, 16d, 16g, 16b, 16h)
+
+Claude Code (Opus), en autónomo, desde `ia/083-pulido` (visto bueno del 2026-11-02). Pedido: la parte de servidor, infraestructura y sesiones de la 0.8.3, en este orden: 16k, 16a, 16f, 16d, 16g, 16b, 16h. Otras dos ramas tocan a la vez la consola (mapa, Estado, avisos, textos) y el agente (antivirus, `build.rs`, NSIS): no toqué `crates/agente/build.rs` ni `packaging/`, y en la consola me quedé en entrar/sesiones, Infraestructura y los archivos con error de la copia (salvo `AvisoConsolas.svelte` y el aviso de Infraestructura de Estado, `AvisoSinAnotar.svelte`, que sí cambian).
+
+**Hecho (un commit por tema):**
+
+- **16k [~] (sesiones).** Plazos: 8 h sin usarla y 24 h como mucho; con «Recordar este dispositivo», 7 días sin usarla y 14 como mucho (antes, 12 h desde el último uso y sin máximo). El uso la renueva (una escritura por minuto como mucho) sin pasar nunca del máximo; la cookie dura hasta el máximo. El propietario del servidor los ajusta con topes (`GET`/`PUT /api/servidor/sesiones`, en «Mi cuenta»). «Dónde tienes la sesión abierta» en «Mi cuenta» (navegador y sistema resumidos del `User-Agent` —nunca el texto entero—, IP, última vez) con «Cerrar» y «Cerrar en todos los demás», siempre con contraseña y código. **Una sesión de menos de 24 h** (desde que se entró con la contraseña) recibe 403 `sesion_nueva` al cerrar otras, cambiar la contraseña, el autenticador, los códigos de recuperación o las llaves de acceso; excepción: una cuenta creada hace menos de 24 h (no hay sesiones antiguas que proteger). Aviso «Nueva sesión en …, ¿eras tú?» en las demás sesiones (`GET /api/cuenta` → `sesiones_nuevas`; se descarta por navegador). «Cerrar todas sus sesiones» del propietario del servidor en Personas (`POST /api/servidor/cuentas/{id}/sesiones/cerrar`). Ayuda: «La sesión se me cierra muy seguido en el móvil» y «Veo una sesión que no reconozco». Prueba HTTP completa en `api/sesiones_cuenta.rs` y unitarias en `auth.rs`.
+- **16a [x] y 16f [x].** `marca` de cada disco (propuesta a partir del modelo cuando es evidente, `marcaDeModelo`) y `serie` e `inventario` del servidor físico, en el formulario, la validación del protocolo y del servidor, la tarjeta del servidor y la tarjeta «Equipo». Capacidad nueva `infra_ficha`: a un agente sin ella la consola le manda el servidor sin esos campos (`adaptarPara`).
+- **16d [~].** Página de cada disco y de cada conjunto (`/c/{c}/ajustes/infraestructura/{servidor}/{disco|conjunto}/{id}`): ficha, de qué conjunto forma parte o sus discos, lo que vive en él (equipos enteros, volúmenes, destinos y zonas) y qué se perdería si falla según la redundancia anotada. Enlazada desde Infraestructura y la tarjeta «Equipo».
+- **16g [x].** Infraestructura agrupa los equipos: máquinas virtuales y contenedores arriba (con el servidor que encaja con su hipervisor propuesto), servidores físicos y equipos de usuario plegados («Es su propio equipo», «Anotarlo como servidor»). El aviso de Estado (`sinAnotar`) solo cuenta máquinas virtuales y contenedores sin servidor (cambié la expectativa de `vectores-infra-082.ts` en consecuencia).
+- **16b [~].** «Ver los archivos» en el aviso de la copia: operación nueva `archivos_con_error` de la sesión `elegir_carpetas` (clave de administración; las rutas van cifradas), agrupados por motivo (en uso, sin permiso, OneDrive sin descargar, ruta larga, ya no estaban) y carpeta, con «siempre los mismos N» (cuántas de las últimas 5 copias). «No copiar lo marcado» manda una orden `config` con la ruta exacta en «No copiar». En el equipo, `resguardo-agente archivos-con-error <repo> <copia>`.
+- **16h [x].** «Este equipo no llega a esa consola» (motivo opcional, «Deshacer») en el aviso de su ficha; el aviso de Estado cuenta solo los que faltan de verdad. Ruta nueva `GET`/`PUT /api/clientes/{c}/no-llega` (de esta consola, auditada).
+
+Contrato en `api-servidor.md` → «Cambios», cinco entradas «v1.9x (pendiente de numerar al unir)»: 16k (solo consola ↔ servidor), 16a/16f (`infra_ficha`), 16b (`archivos_con_error`), 16h (solo consola ↔ servidor).
+
+**Comprobado:** `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test` de `resguardo-servidor`, `resguardo-protocolo` y `resguardo-motor` (todo bien) y las pruebas nuevas del agente; `npm run check`, `build`, `test:vectores` (archivo nuevo `scripts/vectores-083-servidor.ts`), `test:sin-referencias` antes de cada commit. En la consola simulada (`dev:mock`, en otro puerto para no chocar con las otras ramas): entrar con «Recordar», la lista de sesiones y cerrar una, Infraestructura agrupada, la página de un conjunto y de un disco, «Ver los archivos» y «No copiar lo marcado», y «no llega a esa consola» con «Deshacer». `cargo test --workspace` entero: **4 pruebas del agente fallan en esta máquina** (`espejo_motor::restaurar_desde_el_espejo`, `espejo_trabajos::espejo_del_equipo_con_restic_y_rclone`, `gestion_v2::repositorio_directo_en_una_nube_conectada`, `prueba_espejo::prueba_desde_una_carpeta_con_restic`), todas restaurando con restic/rclone de verdad; no toqué ese código y el primer fallo salió antes de cambiar nada del agente: parecen del entorno (binarios copiados de otra carpeta de trabajo), sin confirmar. **El e2e** (`npm run e2e`) pasó los pasos 1 a 4b y falló en el **4c** («La prueba desde el disco del espejo sale bien: Windows no permite acceder a algún archivo o carpeta»): el mismo fallo de permisos de una carpeta restaurada que el registro de la 0.8.2 ya anota como suelto en esta máquina, y que la rama `ia/083-consola` vio a la vez en el mismo paso; es una restauración con restic, como las 4 pruebas del agente de arriba. No lo repetí: queda sin comprobar el e2e del paso 4c en adelante.
+
+**Sin probar en real:** las sesiones en un navegador de verdad (cookies `__Host-`, móvil); un agente de verdad contestando `archivos_con_error` (sus pruebas leen un registro detallado escrito por la prueba); la marca y la serie llegando a otra consola por un agente real; el aviso de sesión nueva entre dos navegadores reales.
+
+**Decisiones tomadas por defecto (revísalas):**
+
+- Plazos por defecto 8 h / 24 h / 14 días (con «Recordar», 7 días sin usarla). Topes: inactividad 1–24 h, máximo hasta 7 días, «Recordar» 0–30 días.
+- **No se rota la ficha con el uso** (el plan decía «la cookie y la ficha renovadas»): rotarla en cada uso rompe varias pestañas a la vez; la ficha solo vive en una cookie `HttpOnly`, `SameSite=Strict` y nunca sale en URL ni en registros. Se renueva al cambiar contraseña o autenticador, como antes.
+- Excepción a las 24 h para cuentas creadas hace menos de 24 h (si no, quien estrena cuenta no podría añadir su llave de acceso). Una sesión abierta antes de esta versión toma como máximo 24 h desde que se creó.
+- Cerrar una sola sesión ajena también pide contraseña y código (el plan solo lo dice de «cerrar las demás»).
+- La IP de la lista es la entera (IPv4) o su /64 (IPv6), la misma que ya se usa en los límites; solo la ve el dueño de la cuenta.
+- 16b va por la sesión `elegir_carpetas` (clave de administración) y no por una sesión sin clave: las rutas pueden decir mucho.
+- 16h es de cada consola (no se reparte a las demás del cliente): lo ve quien gestiona el equipo aquí, que es quien recibe el aviso.
+
+**Preguntas para el responsable:**
+
+- 16k: ¿el aviso de sesión nueva **por correo** a la cuenta? Necesita un tipo de mensaje nuevo en las notificaciones del servidor (hoy van por cliente); no lo hice. ¿Y que también un propietario **del cliente** (no solo del servidor) pueda cerrar las sesiones de alguien? Implica decidir qué cliente manda cuando la persona está en varios.
+- 16d: ¿«Ver en el mapa» filtrado por ese disco? El filtro del mapa vive en las preferencias de cada persona, no en la dirección; habría que tocar el mapa (otra rama).
+- 16b: ¿«No copiar esto» también por patrón (`*.lck`) además de la ruta exacta?
+
+**Pendiente:** 16k (correo y propietario del cliente), 16d (enlaces desde el mapa y «Dónde está», el análisis por repositorio con la regla 3-2-1-1-0, historial), 16b (en la ventana del agente).
+
 ## 2026-10-21 · `ia/082-pulido` · **Resumen de la versión 0.8.2 (para el responsable)**
 
 Claude Code (Opus), en autónomo (visto bueno del 2026-10-21 al plan [plan-0.8.2.md](plan-0.8.2.md)). Versión pequeña de pulido tras el uso real de la 0.8.1.
