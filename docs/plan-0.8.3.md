@@ -7,7 +7,7 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 - [ ] **16z. Antivirus que pone el agente en cuarentena** (dos clientes el mismo día, 2026-10-25, la misma detección heurística contra la 0.8.2). En esta versión: (a) el ejecutable con datos de versión, fabricante, descripción, icono y manifiesto (hoy no lleva ninguno, y eso sube la sospecha de las heurísticas); (b) el instalador comprueba al terminar que el programa sigue ahí y que el servicio arranca, y si no, lo dice con el motivo probable; (c) la consola, cuando un equipo deja de responder justo después de una copia correcta, sugiere mirar el antivirus; (d) ayuda «El antivirus lo bloqueó» y paso en la receta de publicación: enviar cada versión al análisis de falsos positivos de Microsoft antes de soltarla. La firma de código queda para decidir (de pago).
 - [ ] **16y (resto).** Huecos perdidos en el mapa de calor y `copiaAtrasada` en la salud.
 
-- [ ] **16j.** El mapa con los espejos y las derivadas que sí funcionan (un nodo por destino, una línea por repositorio, contar bien los espejos de una zona, una nube sin «ubicación física»).
+- [x] **16j.** El mapa con los espejos y las derivadas que sí funcionan (un nodo por destino, una línea por repositorio, contar bien los espejos de una zona, una nube sin «ubicación física»).
 - [~] **16l.** La línea verde de carga cada pocos segundos (hecho lo principal; revisar las cargas en serie).
 - [ ] Lo que salga de las pruebas en máquinas virtuales.
 

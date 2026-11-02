@@ -129,6 +129,8 @@
     return TEXTO_TIPO[v.tipo] ?? v.tipo;
   });
   const Icono = $derived(v?.zona ? Server : v?.nube ? Cloud : d?.tipo === "local" ? (d.extraible ? Usb : d.red ? Network : HardDrive) : ["b2", "s3", "nube"].includes(v?.tipo ?? "") ? Cloud : v?.tipo === "rest" || v?.tipo === "sftp" ? Server : Database);
+  /** 16j: una nube (conectada o del catálogo): sin «Dónde está físicamente» ni soporte de equipo. */
+  const esNube = $derived(!!v?.nube || v?.clase === "nube" || clase?.tipo === "nube");
   const mismoEquipo = $derived(d?.tipo === "local" && !d.red && !d.extraible);
 
   let renombrar = $state(false);
@@ -191,9 +193,12 @@
           {/if}
           {#if v.zona?.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.zona.carpeta} que="la carpeta" /></dd>{/if}
           {#if v.destino?.tipo === "local" && v.destino.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.destino.carpeta} que="la carpeta" /></dd>{/if}
+          <!-- 16j: una nube no tiene «ubicación física» que anotar. -->
+          {#if !esNube}
           <dt>Dónde está físicamente</dt>
           <!-- 0.8.2 (A1): «Anotar» lleva a Ajustes → Infraestructura con este destino ya elegido. -->
           <dd>{#if fisico}<a class="link" href="/c/{c}/ajustes/infraestructura?destino={encodeURIComponent(v.clave)}">{fisico}</a>{:else}<span class="faint">Sin anotar</span>{#if puedeAnotar}<span class="faint"> · </span><a class="link" href="/c/{c}/ajustes/infraestructura?destino={encodeURIComponent(v.clave)}">Anotar</a>{/if}{/if}</dd>
+          {/if}
           {#if marca?.sistemaArchivos}<dt>Sistema de archivos</dt><dd><span class="pastilla mono">{marca.sistemaArchivos}</span> <span class="faint">solo un dato</span></dd>{/if}
           {#if entorno}<dt>Entorno</dt><dd>{entorno}</dd>{/if}
         </dl>
@@ -235,8 +240,10 @@
                 <span class="faint">Avisa a los {clase.aisladoDias} días · {quien(clase.aislado !== deducida?.aislado)}.</span>
               {:else}No <span class="faint">· {quien(clase.aislado !== deducida?.aislado)}</span>{/if}
             </dd>
-            <dt>Soporte</dt>
-            <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
+            {#if !esNube || atrib?.soporte}
+              <dt>Soporte</dt>
+              <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
+            {/if}
           </dl>
           <!-- Plan 0.8.0, D1: su sede (la nube no es sede: siempre fuera). -->
           {#if actual.organizacion.sedes.length && clase.tipo !== "nube"}
