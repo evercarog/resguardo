@@ -381,7 +381,13 @@ pub fn router(st: St) -> Router {
 
     let web = match &st.opciones.consola {
         Some(dir) => {
-            Router::new().fallback_service(tower_http::services::ServeDir::new(dir).fallback(tower_http::services::ServeFile::new(dir.join("index.html"))))
+            // 16x (0): con los `.br` y `.gz` de la compilación, si están (sin caché: es para probar).
+            Router::new().fallback_service(
+                tower_http::services::ServeDir::new(dir)
+                    .precompressed_br()
+                    .precompressed_gzip()
+                    .fallback(tower_http::services::ServeFile::new(dir.join("index.html")).precompressed_br().precompressed_gzip()),
+            )
         }
         #[cfg(feature = "consola-integrada")]
         None if crate::consola_integrada::disponible() => Router::new().fallback(crate::consola_integrada::servir),

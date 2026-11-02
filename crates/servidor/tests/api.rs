@@ -952,6 +952,39 @@ async fn consola_integrada() {
     assert_eq!(pedir(&p.app, "GET", "/api/no-existe", None, None, &[]).await.estado, StatusCode::NOT_FOUND);
     let res = p.app.clone().oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
     assert!(res.headers().get("content-security-policy").unwrap().to_str().unwrap().contains("script-src 'self'"));
+
+    // 16x (0): comprimida si el navegador lo acepta (lo deja `npm run build`), con las mismas cabeceras de seguridad.
+    let crudo = String::from_utf8_lossy(&r.bytes).to_string();
+    let arranque = format!("/{}", crudo.split("src=\"/").nth(1).and_then(|r| r.split('"').next()).expect("index.html sin arranque"));
+    let cab = |res: &axum::http::Response<Body>, n: &str| res.headers().get(n).map(|v| v.to_str().unwrap().to_string());
+    let sin = pedir_crudo(&p.app, "GET", &arranque, vec![], &[]).await;
+    assert_eq!(sin.status(), StatusCode::OK);
+    assert_eq!(cab(&sin, "content-encoding"), None);
+    let original = sin.into_body().collect().await.unwrap().to_bytes();
+    let br = pedir_crudo(&p.app, "GET", &arranque, vec![], &[("accept-encoding", "gzip, deflate, br")]).await;
+    assert_eq!(cab(&br, "content-encoding").as_deref(), Some("br"), "falta el .br (¿consola/build sin `npm run build`?)");
+    assert_eq!(cab(&br, "vary").as_deref(), Some("accept-encoding"));
+    assert!(cab(&br, "content-type").unwrap().contains("javascript"));
+    assert!(cab(&br, "content-security-policy").is_some() && cab(&br, "x-content-type-options").as_deref() == Some("nosniff"));
+    let etag_br = cab(&br, "etag").unwrap();
+    let cuerpo_br = br.into_body().collect().await.unwrap().to_bytes();
+    assert!(cuerpo_br.len() < original.len());
+    let gz = pedir_crudo(&p.app, "GET", &arranque, vec![], &[("accept-encoding", "gzip, br;q=0")]).await;
+    assert_eq!(cab(&gz, "content-encoding").as_deref(), Some("gzip"));
+    assert_ne!(cab(&gz, "etag").unwrap(), etag_br);
+    // index.html sin caché, pero con su ETag: si no cambió, 304 sin cuerpo.
+    let ini = pedir_crudo(&p.app, "GET", "/", vec![], &[("accept-encoding", "br")]).await;
+    assert_eq!(cab(&ini, "cache-control").as_deref(), Some("no-cache"));
+    let etag = cab(&ini, "etag").unwrap();
+    let otra = pedir_crudo(&p.app, "GET", "/", vec![], &[("accept-encoding", "br"), ("if-none-match", &etag)]).await;
+    assert_eq!(otra.status(), StatusCode::NOT_MODIFIED);
+    assert!(otra.into_body().collect().await.unwrap().to_bytes().is_empty());
+    // Lo de _app/immutable, para siempre.
+    let inmutable = crudo.split("\"/_app/immutable/").nth(1).and_then(|r| r.split('"').next()).expect("index.html sin _app/immutable");
+    let res = pedir_crudo(&p.app, "GET", &format!("/_app/immutable/{inmutable}"), vec![], &[("accept-encoding", "br")]).await;
+    assert_eq!(cab(&res, "cache-control").as_deref(), Some("public, max-age=31536000, immutable"));
+    // Las comprimidas no se piden por su nombre.
+    assert_eq!(pedir(&p.app, "GET", &format!("{arranque}.br"), None, None, &[]).await.estado, StatusCode::NOT_FOUND);
 }
 
 /// Instalador listo (v1.17): el servidor añade la cola con el código; el equipo entra con
