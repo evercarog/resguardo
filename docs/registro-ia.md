@@ -2,6 +2,10 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-11-02 · `ia/083-pulido` · Por qué fallan en este PC las pruebas que restauran
+
+Las pruebas del agente que restauran con restic de verdad (`restaurar_desde_el_espejo`, `prueba_desde_una_carpeta_con_restic`, `espejo_del_equipo_con_restic_y_rclone`, `repositorio_directo_en_una_nube_conectada`) y el paso 4c del e2e fallan en Windows con «Windows no permite acceder…». En el CI pasan. Causa, reproducida a mano con restic 0.19.1: al restaurar, restic pone también los permisos (DACL) de las carpetas de arriba, entre ellas la de los perfiles de usuario. Con un usuario **sin elevar**, después ya no puede escribir en esa carpeta restaurada y falla al ponerle la fecha («failed to restore timestamp … Access is denied», salida 1); esas carpetas quedan además sin poder borrarse sin elevar. En el CI el usuario es administrador y el agente real corre como SYSTEM, así que no afecta a las copias de verdad. Queda por valorar: que la prueba de restauración trate como aviso, y no como fallo, un error de fecha o de permisos en una carpeta cuando todos los archivos restaurados coinciden en su huella; y si «Recuperar en el equipo» (15mm) restaura los permisos de las carpetas padre.
+
 
 ## 2026-11-02 · `ia/083-servidor` · Plan 0.8.3: sesiones, infraestructura, archivos con error y consolas (16k, 16a, 16f, 16d, 16g, 16b, 16h)
 
