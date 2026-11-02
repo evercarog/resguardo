@@ -102,7 +102,7 @@
     </div>
     {#if editando}
       <form class="form rec-form" onsubmit={guardarRecuperar}>
-        <label class="switch-row"><input type="checkbox" bind:checked={activo} /><span><strong>Que cada persona recupere sus propios archivos</strong><span class="faint">En todos los equipos del cliente. Se puede afinar por copia en la página de cada copia.</span></span></label>
+        <label class="switch-row"><input type="checkbox" bind:checked={activo} /><span><strong>Que cada persona recupere sus propios archivos</strong><span class="faint">En todos los equipos del cliente. Se puede afinar por copia en la página de cada copia («Recuperar en el equipo → Cambiar»).</span></span></label>
         {#if activo}
           <label class="field">
             <span class="field-label">Como mucho, cada vez</span>

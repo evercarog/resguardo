@@ -122,6 +122,7 @@
         <div class="tr cab" role="row">
           <span role="columnheader">Cliente</span>
           {#each SEVERIDADES as s (s)}<span role="columnheader" class="c">{SEVERIDAD[s].texto}</span>{/each}
+          <!-- 16p: sin correo del cliente o sin ningún resumen encendido, esas casillas no harían nada: apagadas (lo dice la nota de abajo y el resumen de arriba). -->
           <span role="columnheader" class="c">Resumen</span>
         </div>
         {#each m.clientes as c (c.id)}
@@ -133,14 +134,15 @@
                 >{/if}</span
             >
             {#each SEVERIDADES as s (s)}
-              <span role="cell" class="c"><input type="checkbox" aria-label="{SEVERIDAD[s].texto} de {c.nombre}" checked={c.preferencias.inmediatos.includes(s)} onchange={(e) => marcar(c, s, e.currentTarget.checked)} /></span>
+              <span role="cell" class="c"><input type="checkbox" aria-label="{SEVERIDAD[s].texto} de {c.nombre}" checked={c.preferencias.inmediatos.includes(s)} disabled={!c.correo} onchange={(e) => marcar(c, s, e.currentTarget.checked)} /></span>
             {/each}
-            <span role="cell" class="c"><input type="checkbox" aria-label="Resumen de {c.nombre}" checked={c.preferencias.resumen} onchange={(e) => prefs(c, c.preferencias.inmediatos, e.currentTarget.checked)} /></span>
+            <span role="cell" class="c"><input type="checkbox" aria-label="Resumen de {c.nombre}" checked={c.preferencias.resumen} disabled={!c.correo || (!m.resumen_semanal && !m.resumen_diario)} onchange={(e) => prefs(c, c.preferencias.inmediatos, e.currentTarget.checked)} /></span>
           </div>
         {/each}
       </div>
+      {#if !m.resumen_semanal && !m.resumen_diario}<p class="faint">La columna «Resumen» se enciende con el resumen semanal o el diario (arriba).</p>{/if}
       {#if m.clientes.some((c) => !c.correo)}
-        <div class="notice notice-info"><Info size={16} /><p>Donde dice «sin correo», aún no hay un canal de correo: lo pone el propietario del servidor (o el del cliente).</p></div>
+        <div class="notice notice-info"><Info size={16} /><p>Donde dice «sin correo», aún no hay un canal de correo, así que sus casillas están apagadas: lo pone el propietario del servidor (o el del cliente).</p></div>
       {/if}
     {/if}
   </section>

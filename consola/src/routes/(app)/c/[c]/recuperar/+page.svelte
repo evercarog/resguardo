@@ -1033,7 +1033,7 @@
           </CampoClave>
         {/if}
         <fieldset class="motivo">
-          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio: un toque basta)" : "(opcional)"}</span></legend>
+          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio: un toque basta)" : "(opcional)"}{#if puede.administrar(actual.cliente?.rol)} · <a class="link" href="/c/{actual.id}/recuperar/restauraciones#t-ajustes-rest">cambiarlo</a>{/if}</span></legend>
           <div class="chips-motivo" role="radiogroup" aria-label="Motivo">
             {#each MOTIVOS as m (m.id)}
               <label class="chip-motivo" class:on={motivo === m.id}><input type="radio" name="motivo" value={m.id} bind:group={motivo} />{m.texto}</label>
