@@ -88,6 +88,10 @@ windows = { version = "0.62", features = ["UI_Notifications", "Data_Xml_Dom", "F
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[build-dependencies]
+# Datos de versión, icono y manifiesto del .exe en Windows (16z); en Linux no hace nada.
+embed-resource = "3"
+
 [dev-dependencies]
 # Pruebas de propiedades (docs/plataforma.md, §7.3).
 proptest = { version = "1", default-features = false, features = ["std"] }
