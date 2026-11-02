@@ -3,6 +3,23 @@
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
 
+## 2026-11-02 · `ia/083-antivirus` · 16z: el antivirus que pone el agente en cuarentena
+
+Claude Code (Opus), desde `ia/083-pulido`. Pedido: el punto 16z de la 0.8.3 (Defender detectó `resguardo-agente.exe` 0.8.2 como troyano por heurística y lo quitó con su servicio; la consola solo vio «desconectado»).
+
+**Hecho (un commit por parte):**
+
+- **(a) Recursos de Windows en los .exe** del agente y del servidor: `crates/agente/recursos_windows.rs` (lo incluyen los dos `build.rs`) escribe un `.rc` y un manifiesto en `OUT_DIR` y los enlaza con `embed-resource` 3 (ya estaba en `Cargo.lock` por la app antigua) solo en el binario y solo si `CARGO_CFG_TARGET_OS` es `windows`; en Linux (también musl y `zigbuild`) no hace nada. Datos de versión en español (Resguardo, «Resguardo Agente» / «Resguardo Server», versión de `CARGO_PKG_VERSION`, el mismo copyright que los instaladores, `OriginalFilename`), el icono de `packaging/windows/arte/resguardo.ico` y un manifiesto `asInvoker`, Windows 10/11 y `longPathAware`. Sin `dpiAware` en el manifiesto: el agente ya lo pone por código.
+- **(b) Instalador y actualizador:** tras `--install-service`, `ComprobarInstalado` (`agente.nsi`) mira hasta unos 15 s que el programa sigue y que el servicio existe y está en marcha (`sc query`). Si falta algo: mensaje claro (en silencio, solo en `instalador.log`) y salida **6**; si el servicio está pero no arranca, salida **7**. El actualizador (`actualizacion.rs`) traduce la salida 6 al motivo «Windows o el antivirus quitó o bloqueó…», y mientras espera la salud mira además si el programa o el servicio desaparecieron (`Plataforma::desaparecido`): vuelve atrás enseguida con ese motivo, sin esperar los 10 minutos. Al volver atrás, si el servicio ya no existe, lo reinstala con el programa anterior. Prueba nueva: `si_el_antivirus_lo_quita_vuelve_atras_con_el_motivo`.
+- **(c) Consola:** `lib/antivirus.ts` (`pistaAntivirus`, con vectores en `scripts/vectores.ts`) y un aviso en la ficha del equipo: desconectado desde hace 10 min o más, sin servicio detenido por un administrador, sin dejar la consola, sin «Sale de la oficina», y su última copia correcta terminó como mucho 30 min antes del último contacto. Enlaza a la ayuda. Nada más en la consola (otra rama la está cambiando).
+- **(d) Ayuda:** «El antivirus lo bloqueó» en el centro de ayuda (`si-antivirus` en `lib/guias.ts`) y en `guia-instalacion.md` (5.7); paso 6 en `publicar.md`: mandar cada .exe publicado al análisis de falsos positivos de Microsoft antes de pasar a los anillos.
+
+**Comprobado:** compilación de depuración en Windows y `(Get-Item …).VersionInfo` de los dos .exe con todos los campos (idioma «Español (España, tradicional)»); los dos arrancan (manifiesto válido) y el icono se extrae; `makensis` (el de Tauri) compila el instalador con el cambio; `cargo fmt`, `clippy -D warnings` de agente y servidor, `cargo test` de agente y servidor (todo bien salvo dos pruebas que fallan en esta máquina por permisos de su carpeta temporal (no pasan por nada de lo cambiado; no lo comprobé en la rama de partida), `restaurar_desde_el_espejo` y `prueba_desde_una_carpeta_con_restic`: «Access is denied» al restaurar la fecha de una carpeta del perfil; con `--skip` de esas dos, sin fallos), `npm run check`, `build`, `test:vectores` y `test:sin-referencias`.
+
+**Sin probar:** el comportamiento real de Defender (que los datos de versión bajen las detecciones es lo esperado, no está comprobado); **el instalador no se ejecutó** en esta máquina (instalaría un servicio): lo ejecuta el CI de Windows («Instalar en silencio con /SERVIDOR=»), que ahora pasa también por `ComprobarInstalado` y espera la salida 2, así que si el servicio de la compilación de depuración no llegara a «RUNNING» allí, saldría 7 y fallaría; la vuelta atrás con el servicio borrado; el aviso de la consola con un equipo real; el e2e (el cambio de la consola es un aviso, no un flujo).
+
+**Decisiones a revisar:** salida 7 (servicio que no arranca) también se atribuye «posiblemente» al antivirus en el mensaje; la pista de la consola no distingue un apagado a mano (el agente no avisa al apagarse el equipo) y por eso dice «si nadie lo apagó»; `DisplayIcon` sigue apuntando al desinstalador; la firma de código sigue por decidir.
+
 ## 2026-10-21 · `ia/082-pulido` · **Resumen de la versión 0.8.2 (para el responsable)**
 
 Claude Code (Opus), en autónomo (visto bueno del 2026-10-21 al plan [plan-0.8.2.md](plan-0.8.2.md)). Versión pequeña de pulido tras el uso real de la 0.8.1.

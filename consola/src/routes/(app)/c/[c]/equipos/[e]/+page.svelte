@@ -62,6 +62,8 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { bytes, cuandoFrase, fechaLarga, horarioEnFrase, numero, plural, relativo } from "$lib/formato";
   import { enPausa, nombreOrden, proximaCopia, resultadoConError, saludEquipo, type Tono } from "$lib/salud";
+  import { pistaAntivirus } from "$lib/antivirus";
+  import { aLas } from "$lib/interrumpidas";
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
@@ -254,6 +256,8 @@
   });
 
   const salud = $derived(equipo ? saludEquipo(equipo, reloj.ahora) : null);
+  // 16z: dejó de responder justo después de una copia correcta: ¿el antivirus?
+  const pistaAv = $derived(equipo ? pistaAntivirus(equipo, reloj.ahora) : null);
   const copias = $derived(equipo?.resumen?.copias ?? []);
   const repos = $derived(equipo?.resumen?.repositorios ?? []);
   // C1: lo que va después de cada repositorio (espejos y copias derivadas), con su estado: de la
@@ -1111,6 +1115,9 @@
       <div class="notice notice-info sin-confirmar"><div><SinConfirmar cliente={c} {equipo} /></div></div>
     {:else if salud.tono !== "ok"}
       <div class="notice {salud.tono === 'bad' ? 'notice-danger' : salud.tono === 'warn' ? 'notice-warn' : 'notice-info'}"><p>{salud.detalle}</p></div>
+    {/if}
+    {#if pistaAv}
+      <div class="notice notice-warn"><TriangleAlert size={16} /><p>{equipo.nombre} dejó de responder justo después de una copia correcta (terminó {aLas(pistaAv, reloj.ahora)}). Si nadie lo apagó, puede que el antivirus haya puesto Resguardo Agente en cuarentena. <a href="/ayuda#si-antivirus">Qué mirar</a>.</p></div>
     {/if}
 
     <nav class="pestanas" aria-label="Secciones del equipo">

@@ -304,6 +304,18 @@ export const PREGUNTAS: Pregunta[] = [
     respuesta: ["Comprueba que está encendido y con red, y que el servicio «Resguardo Agente» está en marcha. En el equipo, el estado y el registro dicen qué pasa."],
     comando: "resguardo-agente estado",
   },
+  // 16z: un antivirus que pone el agente en cuarentena (lo quita con su servicio).
+  {
+    id: "si-antivirus",
+    si: "El antivirus lo bloqueó",
+    respuesta: [
+      "Algunos antivirus confunden Resguardo Agente con una amenaza (un falso positivo) y lo ponen en cuarentena: borran el programa y su servicio, y el equipo deja de responder, a menudo justo después de una copia. Lo ya copiado sigue a salvo.",
+      "Cómo verlo en Microsoft Defender: en Seguridad de Windows → Protección contra virus y amenazas → Historial de protección. En PowerShell como administrador, el comando de abajo lista las detecciones; en el Visor de eventos están en Microsoft-Windows-Windows Defender/Operational, sucesos 1116 (detectado) y 1117 (acción tomada).",
+      "Qué hacer: envía el archivo a Microsoft como falso positivo (microsoft.com/wdsi/filesubmission) y pon una exclusión solo para el programa: Add-MpPreference -ExclusionPath \"C:\\Program Files\\Resguardo Agente\\resguardo-agente.exe\". Luego vuelve a instalar la misma versión, sin código: la configuración del equipo se conserva y vuelve a conectarse solo.",
+      "Con otro antivirus, pon la misma exclusión (solo ese programa) desde su propia consola. Si despliegas por instalación por comandos, añade la exclusión antes de instalar. En Windows Server, Defender no pasa solo a modo pasivo cuando hay otro antivirus: puede haber dos vigilando a la vez.",
+    ],
+    comando: "Get-MpThreatDetection | Sort-Object InitialDetectionTime -Descending | Select-Object -First 5",
+  },
   {
     id: "si-dejar-consola",
     si: "Quiero sacar un equipo de una consola desde el propio equipo",

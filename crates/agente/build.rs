@@ -4,7 +4,10 @@
 
 use std::path::Path;
 
+include!("recursos_windows.rs");
+
 fn main() {
+    recursos_windows("resguardo-agente", "Resguardo Agente", "Resguardo Agente: copias de seguridad programadas");
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ventana");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut archivos: Vec<(String, String)> = Vec::new();
