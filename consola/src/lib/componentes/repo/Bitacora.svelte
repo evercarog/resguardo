@@ -24,6 +24,8 @@
   import { NOMBRE_MOTIVO, nombreDia, type VersionLinea } from "$lib/lineaTiempo";
   import { esFallo, NO_CONSTA, SIN_DETALLE, type NotaVersion, type Suceso, type TipoSuceso } from "$lib/historial";
   import { NOMBRE_GANCHO } from "$lib/ganchos";
+  import { fraseError } from "$lib/errorCopia";
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   import type { MotivoQueda } from "$lib/retencion";
   import type { Tono } from "$lib/salud";
   import FormaCopia from "./FormaCopia.svelte";
@@ -216,7 +218,8 @@
                 <span class="hueco"></span>
                 {#if s.meta}<span class="meta-s num">{s.meta}</span>{/if}
                 {#if abre || conFicha}<ChevronRight size={15} class="flecha {abierto ? 'girada' : ''}" aria-hidden="true" />{/if}
-                {#if s.detalle}<span class="motivo">{s.detalle}</span>{/if}
+                <!-- 16u: lo que falló, en palabras (el texto del equipo, plegado en la ficha). -->
+                {#if s.detalle}<span class="motivo">{s.tono === "bad" || s.tono === "warn" ? fraseError(s.detalle) || s.detalle : s.detalle}</span>{/if}
               {/snippet}
               {#if abre}
                 <button type="button" class="fs fv" aria-label={describirSuceso(s)} onclick={() => alAbrirSuceso!(s)}>{@render contenido()}</button>
@@ -228,7 +231,7 @@
                       {#each s.ficha ?? [] as x, i (i)}
                         <div class="fila-f"><dt>{x.k}</dt><dd class:sin={x.v == null}>{x.v ?? (s.anterior ? SIN_DETALLE : NO_CONSTA)}</dd></div>
                       {/each}
-                      {#if s.detalle}<div class="fila-f"><dt>{s.tono === "bad" || s.tono === "warn" ? "Errores" : "Mensaje"}</dt><dd>{s.detalle}</dd></div>{/if}
+                      {#if s.detalle}<div class="fila-f"><dt>{s.tono === "bad" || s.tono === "warn" ? "Errores" : "Mensaje"}</dt><dd>{#if s.tono === "bad" || s.tono === "warn"}<ErrorCopia mensaje={s.detalle} />{:else}{s.detalle}{/if}</dd></div>{/if}
                     </dl>
                     {#if s.enlace}<a class="link" href={s.enlace.href}>{s.enlace.texto}</a>{/if}
                   </div>

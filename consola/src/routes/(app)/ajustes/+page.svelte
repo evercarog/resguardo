@@ -17,6 +17,8 @@
   import MisNotificaciones from "$lib/componentes/MisNotificaciones.svelte";
   import LlavesAcceso from "$lib/componentes/LlavesAcceso.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
+  // 16c: «Actualizaciones de los agentes» es de todo el servidor: su sitio es este (no un cliente).
+  import PublicacionesServidor from "$lib/componentes/PublicacionesServidor.svelte";
   import type { Totp } from "$lib/tipos";
 
   let nombre = $state(app.cuenta?.nombre ?? "");
@@ -222,6 +224,7 @@
       <p class="faint nota">Compáralas con las que muestra el servidor al instalarlo (<code>journalctl -u resguardo-server</code>). Si no coinciden, no escribas aquí ninguna clave.</p>
     </section>
   {/if}
+  {#if app.cuenta?.superusuario}<PublicacionesServidor />{/if}
 </div>
 
 {#if modal}

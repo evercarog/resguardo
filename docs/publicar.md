@@ -63,7 +63,7 @@ Ponla en el repositorio:
 
    Los equipos que pueden salir a Internet la verán en GitHub (`releases/latest/download/manifiesto-agente.json`) si sus consolas no la tienen.
 5. **Cada Resguardo Server** (para los equipos de su red, aunque no tengan Internet):
-   - en la consola: **Servidor → Actualizaciones de los agentes → Subir una versión** (el manifiesto, su firma y los archivos), o
+   - en la consola: **Mi cuenta y servidor → Actualizaciones de los agentes → Subir una versión** (el manifiesto, su firma y los archivos), o
    - en la máquina del servidor: `sudo resguardo-server poner-publicacion /ruta/a/0.7.25` (en Windows, como administrador).
 
    El servidor comprueba la firma y cada SHA-256 antes de aceptarla.

@@ -6,7 +6,7 @@
   import { untrack } from "svelte";
   import { CircleArrowUp, CirclePause, CirclePlay, PackageCheck, RefreshCw, ShieldCheck, TriangleAlert } from "@lucide/svelte";
   import * as api from "$lib/api";
-  import { actual, cargarCliente, puede } from "$lib/estado.svelte";
+  import { actual, app, cargarCliente, puede } from "$lib/estado.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { cargarInformes, recargarInformes, ultimos } from "$lib/informes.svelte";
   import { fechaLarga, plural } from "$lib/formato";
@@ -195,8 +195,9 @@
                 : ""}
             </p>
           {:else}
-            <p class="faint">Este servidor aún no tiene ninguna versión del agente para dar. La pone su propietario («Servidor → Actualizaciones de los agentes»); mientras, los equipos que salen a Internet la buscan en GitHub.</p>
+            <p class="faint">Este servidor aún no tiene ninguna versión del agente para dar. {#if app.cuenta?.superusuario}Ponla en <a class="link" href="/ajustes#publicaciones">Mi cuenta y servidor → Actualizaciones de los agentes</a>{:else}Pídesela a quien administra el servidor{/if}; mientras, los equipos que salen a Internet la buscan en GitHub.</p>
           {/if}
+          {#if app.cuenta?.superusuario && !datos.sin_llave}<p class="faint"><a class="link" href="/ajustes#publicaciones">Buscar otra versión o subirla</a> (para todo el servidor).</p>{/if}
         </div>
         {#if filas.length}
           <Chip tono={problemas ? "bad" : alDia === filas.length ? "ok" : "info"} texto={`${alDia} de ${filas.length} al día`} />

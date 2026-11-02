@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // Restauraciones (plan 0.8.0, E2: 13d, 14l): cada restauración de los equipos
   // del cliente (o de uno, `?equipo=`), con quién, cuándo, qué versión, desde
   // dónde, cuánto y cuánto tardó (el RTO real), su motivo y su ficha. Las anota
@@ -276,7 +277,7 @@
       <!-- 15aa: la ficha de una prueba: qué, desde dónde, dónde, cómo se comprobó, cuánto y quién. -->
       <dl class="ficha">
         <dt>Resultado</dt>
-        <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : r.resultado === "aviso" ? "warn" : "bad"} texto={r.resultado === "ok" ? "Correcta" : r.resultado === "aviso" ? "Con avisos" : "Falló"} />{#if r.mensaje} <span class="faint">{r.mensaje}</span>{/if}</dd>
+        <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : r.resultado === "aviso" ? "warn" : "bad"} texto={r.resultado === "ok" ? "Correcta" : r.resultado === "aviso" ? "Con avisos" : "Falló"} />{#if r.mensaje} <span class="faint">{#if r.resultado === "ok"}{r.mensaje}{:else}<ErrorCopia mensaje={r.mensaje} />{/if}</span>{/if}</dd>
         <dt>Quién la lanzó</dt>
         <dd>{textoQuien(r)}</dd>
         <dt>Cuándo</dt>
@@ -301,7 +302,7 @@
     {:else}
     <dl class="ficha">
       <dt>Resultado</dt>
-      <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : "bad"} texto={r.resultado === "ok" ? "Correcta" : "Falló"} />{#if r.mensaje} <span class="faint">{r.mensaje}</span>{/if}</dd>
+      <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : "bad"} texto={r.resultado === "ok" ? "Correcta" : "Falló"} />{#if r.mensaje} <span class="faint">{#if r.resultado === "ok"}{r.mensaje}{:else}<ErrorCopia mensaje={r.mensaje} />{/if}</span>{/if}</dd>
       <dt>Quién</dt>
       <dd>{textoQuien(r)}</dd>
       <dt>Cuándo</dt>

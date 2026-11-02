@@ -4,6 +4,7 @@
   import { fade, fly } from "svelte/transition";
   import { Menu, Search } from "@lucide/svelte";
   import { afterNavigate } from "$app/navigation";
+  import { marcarAccion } from "$lib/actividad.svelte";
   import { page } from "$app/state";
   import Logo from "$ui/componentes/Logo.svelte";
   import { dur } from "$ui/movimiento";
@@ -47,6 +48,8 @@
   onMount(() => () => ponerIcono("normal"));
   // Al cambiar de pantalla, el foco va al contenido (lectores de pantalla y teclado).
   afterNavigate(({ type }) => {
+    // 16l: lo que la pantalla nueva pide al llegar es de primer plano (la barra de arriba).
+    marcarAccion();
     if (type !== "enter") principal?.focus({ preventScroll: true });
   });
 

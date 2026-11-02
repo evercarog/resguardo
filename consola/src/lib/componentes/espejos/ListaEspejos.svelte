@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { sinPrefijo } from "$lib/espejoTrabajos";
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   import { franjasEnFrase, velocidadEnFrase } from "$lib/franjas";
   // Los espejos de un equipo (plan 0.7.26, bloque 4): los que hace el almacén con lo
   // que guarda o los que hace el propio equipo con los repositorios de sus discos.
@@ -217,7 +219,7 @@
       {#if t.ocupa}<p class="estado faint">Ocupa {bytes(t.ocupa.bytes)} en el destino · <a class="link-suave" href={hrefEspejo(cliente.id, hace.id, t.id)}>historial de subidas</a></p>{/if}
       <!-- 14p: su subida en vivo (o «en cola»), en todas las consolas. -->
       <EnMarcha equipo={hace.id} repo={t.id} tipos={["espejo"]} />
-      {#if e === "error" && t.resultado}<p class="msg-fallo">{t.resultado}</p>{/if}
+      {#if e === "error" && t.resultado}<div class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /></div>{/if}
       {#if t.freno_aviso || t.retenidos}
         <div class="notice notice-warn freno">
           <ShieldAlert size={16} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // 15g: la página de una copia derivada (como la de cada espejo): de qué repositorio viene,
   // dónde está (destino y carpeta), sus versiones, su última subida, sus comprobaciones, su
   // retención y, si va a un almacén, «Retención en el almacén…» (sin ella, crece sin límite).
@@ -146,7 +147,7 @@
         </p>
       </div>
     {:else if ultima?.resultado === "fallo" && ultima.mensaje_corto}
-      <div class="notice notice-danger"><ShieldAlert size={16} /><p>{ultima.mensaje_corto}</p></div>
+      <div class="notice notice-danger"><ShieldAlert size={16} /><div><ErrorCopia mensaje={ultima.mensaje_corto} detalle={ultima.detalle} /></div></div>
     {/if}
     {#if dv.activa === false}
       <div class="notice notice-warn"><Info size={16} /><p>Ahora no se hace: «{repo.nombre}» no tiene ninguna copia activa. Vuelve a hacerse en cuanto la tenga.</p></div>

@@ -6,6 +6,8 @@
 // por qué, qué quitaría la próxima vez).
 import type { DestinoResumen, Equipo, Regla, RepositorioResumen } from "./tipos";
 import { almacenDe, motivosQuedan, reglaDe, type MotivoQueda } from "./retencion";
+import { proximaVez, reglasDe } from "./horario";
+import { MARGEN_ATRASO } from "./salud";
 
 const HORA = 3_600_000;
 const DIA = 24 * HORA;
@@ -154,6 +156,8 @@ export interface Celda {
   quitan: number;
   /** Cuántas cosas fallaron en el tramo (copias, comprobaciones…): una marca aparte del color. */
   fallos: number;
+  /** 16y: cuántas veces tocaba una copia en el tramo y no se hizo (ni bien ni mal): otra marca. */
+  perdidas: number;
   /** 0 sin versiones; 1–4, de menos a más (relativo al máximo a la vista). */
   nivel: 0 | 1 | 2 | 3 | 4;
   /** Después de ahora (aún no puede haber nada). */
@@ -241,13 +245,15 @@ export function calendario(
   tira = false,
   fallos: number[] = [],
   filas_?: { desde: number; paso: number; n: number },
+  perdidas: number[] = [],
 ): Calendario {
   const hoy = inicioDia(ahora);
   const inicio = inicioDia(ahora, 1 - dias);
   const enRango = versiones.filter((v) => v.t >= inicio && v.t <= ahora).sort((a, b) => b.t - a.t);
   const fallosEnRango = fallos.filter((t) => t >= inicio && t <= ahora);
+  const perdidasEnRango = perdidas.filter((t) => t >= inicio && t <= ahora);
   const quita = (id: string) => !!motivos && motivos.get(id) === null;
-  const mk = (k: string, desde: number, hasta: number, fuera = false): Celda => ({ k, desde, hasta, ids: [], quitan: 0, fallos: 0, nivel: 0, futura: desde > ahora, fuera, ahora: desde <= ahora && ahora < hasta });
+  const mk = (k: string, desde: number, hasta: number, fuera = false): Celda => ({ k, desde, hasta, ids: [], quitan: 0, fallos: 0, perdidas: 0, nivel: 0, futura: desde > ahora, fuera, ahora: desde <= ahora && ahora < hasta });
 
   let modo: Calendario["modo"];
   let filas: Calendario["filas"];
@@ -304,6 +310,10 @@ export function calendario(
       const x = casilla(t);
       if (x) x.fallos++;
     }
+    for (const t of perdidasEnRango) {
+      const x = casilla(t);
+      if (x) x.perdidas++;
+    }
   } else {
     // Días en columnas; en la tira, una fila; si no, las horas en filas.
     modo = tira ? "tira" : "horas";
@@ -346,6 +356,15 @@ export function calendario(
       const x = celdas[f]?.[c];
       if (x) x.fallos++;
     }
+    for (const t of perdidasEnRango) {
+      const c = Math.round((inicioDia(t) - inicio) / DIA);
+      const col = columnas[c];
+      if (!col) continue;
+      col.dia!.perdidas++;
+      const f = tira ? 0 : Math.max(0, Math.min(fh.n - 1, Math.floor((new Date(t).getHours() - fh.desde) / fh.paso)));
+      const x = celdas[f]?.[c];
+      if (x) x.perdidas++;
+    }
   }
 
   const todas = celdas.flat();
@@ -362,6 +381,45 @@ export function calendario(
     }
   const diasCon = new Set(enRango.map((v) => claveDia(v.t))).size;
   return { modo, filas, columnas, celdas, paso, total: enRango.length, quitan: enRango.filter((v) => quita(v.id)).length, diasCon, max };
+}
+
+// ── 16y: las horas en que tocaba una copia y no se hizo ─────────────────────
+
+/** Cuántas horas programadas se miran como mucho por copia (cada 5 min durante un año serían 100.000). */
+export const MAX_HORAS_PERDIDAS = 5000;
+
+/**
+ * Las horas programadas de una copia en las que no hubo ninguna vuelta (ni bien, ni sin cambios,
+ * ni fallida): el equipo estaba apagado o desconectado. Solo desde la primera vuelta que se
+ * conoce (antes no se sabe si la copia existía ni si el historial llega tan atrás) y hasta hace
+ * más del margen de atraso (lo de ahora aún puede estar en marcha). Una vuelta cuenta para la hora
+ * programada anterior a ella hasta la siguiente (un poco antes también: el reloj del equipo).
+ * Las versiones no sirven: la retención las quita.
+ */
+export function horasPerdidas(horario: unknown, vueltas: number[], desde: number, ahora: number): number[] {
+  if (!horario || typeof horario === "string" || !vueltas.length) return [];
+  const reglas = reglasDe(horario as Parameters<typeof reglasDe>[0]);
+  if (!reglas.length) return [];
+  const orden = [...vueltas].sort((a, b) => a - b);
+  const hasta = ahora - MARGEN_ATRASO;
+  let t = Math.max(desde, orden[0]);
+  const slots: number[] = [];
+  for (let i = 0; i < MAX_HORAS_PERDIDAS; i++) {
+    const s = proximaVez(reglas, t);
+    if (s == null || s > hasta) break;
+    slots.push(s);
+    t = s;
+  }
+  if (slots.length >= MAX_HORAS_PERDIDAS) return [];
+  const ANTES = 10 * 60_000;
+  const out: number[] = [];
+  let j = 0;
+  slots.forEach((s, i) => {
+    const fin = slots[i + 1] ?? s + MARGEN_ATRASO;
+    while (j < orden.length && orden[j] < s - ANTES) j++;
+    if (!(j < orden.length && orden[j] < fin - ANTES)) out.push(s);
+  });
+  return out;
 }
 
 // ── La bitácora ───────────────────────────────────────────────────────────

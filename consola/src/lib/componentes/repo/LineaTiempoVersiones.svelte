@@ -22,6 +22,7 @@
     claveDia,
     diaDeClave,
     filasHoras,
+    horasPerdidas,
     huecosDeCopia,
     inicioDia,
     nombreDia,
@@ -43,7 +44,8 @@
 
   interface Props {
     versiones: VersionLinea[];
-    copias?: { id: string; nombre: string }[];
+    /** 16y: con su horario, el calendario marca las horas en que tocaba y no hubo copia. */
+    copias?: { id: string; nombre: string; repo?: string; horario?: import("$lib/tipos").CopiaResumen["horario"]; activa?: boolean; a_mano?: boolean | null; completada?: string | null }[];
     regla?: Regla | null;
     /** Quién aplica la retención (un almacén), si no es el equipo. */
     quien?: string | null;
@@ -142,6 +144,21 @@
   const motivos = $derived(motivosDados !== undefined ? motivosDados : retencionDe(lista, regla));
   const quitaria = $derived(motivos ? [...motivos.values()].filter((m) => m === null).length : 0);
   const fallos = $derived(todosSucesos.filter(esFallo).map((s) => s.t));
+  /** 16y: las horas en que tocaba una copia y no hubo ninguna vuelta (de las vueltas que se saben). */
+  const perdidas = $derived.by(() => {
+    if (!conSucesos) return [];
+    return copias
+      .filter((k) => k.activa !== false && !k.a_mano && !k.completada && (!porCopia || k.id === porCopia))
+      .flatMap((k) => {
+        // Las vueltas que se saben: las del historial (bien, sin cambios o fallidas) y las versiones que
+        // dejó (las vueltas del último informe con versión van solo como versión). Desde la primera del
+        // historial: las versiones viejas que quedan tras la retención no dicen nada de las horas de entre medias.
+        const corridas = todosSucesos.filter((s) => (s.tipo === "copia" || s.tipo === "sin_cambios" || s.tipo === "fallo") && s.copia === k.id).map((s) => s.t);
+        if (!corridas.length) return [];
+        const desde = Math.max(inicioDia(minuto, -365), Math.min(...corridas));
+        return horasPerdidas(k.horario, [...corridas, ...lista.filter((v) => v.copia === k.id).map((v) => v.t)], desde, minuto);
+      });
+  });
 
   // El rango (se elige una vez, con lo primero que llega) y el ancho (el móvil).
   let rango = $state<Rango>(30);
@@ -169,7 +186,7 @@
   });
   /** Con «Todas», el calendario enseña el último año (como mucho un año, 14d). */
   const rangoVisto = $derived<Rango>(todas ? 365 : rango);
-  const cal = $derived(calendario(lista, motivos, minuto, rangoVisto, movil, fallos, rangoVisto === 365 || movil ? undefined : filasFijas));
+  const cal = $derived(calendario(lista, motivos, minuto, rangoVisto, movil, fallos, rangoVisto === 365 || movil ? undefined : filasFijas, perdidas));
   /** El alto del marco del calendario: el mismo en todos los periodos. */
   const altoMarco = $derived(altoCalendario(filasFijas.n, movil));
   const inicioRango = $derived(inicioDia(minuto, 1 - rangoVisto));
@@ -380,6 +397,7 @@
             <span class="l escala">Menos<span class="sw n0"></span><span class="sw n1"></span><span class="sw n2"></span><span class="sw n3"></span><span class="sw n4"></span>Más</span>
             {#if motivos}<span class="l"><span class="sw raya"></span>Todas las quitaría la retención</span>{/if}
             {#if conSucesos}<span class="l"><span class="sw falla"></span>Hubo fallos</span>{/if}
+            {#if perdidas.length}<span class="l"><span class="sw perdida"></span>Tocaba y no se hizo</span>{/if}
             <span class="l"><span class="sw ahora"></span>Ahora</span>
           </div>
           <!-- Lo mismo que las casillas, con un control de tamaño cómodo (WCAG 2.5.8). -->
@@ -741,6 +759,21 @@
   }
   .sw.raya {
     background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text-3) 80%, transparent) 0 1.5px, var(--calor-0) 1.5px 4px);
+  }
+  .sw.perdida {
+    position: relative;
+    background: var(--calor-0);
+  }
+  .sw.perdida::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1.5px var(--warn);
   }
   .sw.falla {
     position: relative;

@@ -6,6 +6,8 @@
 import type { Equipo, RepositorioResumen } from "../src/lib/tipos";
 import { construirMapa, progresoCorto, type Mapa } from "../src/lib/mapa";
 import { leerOrganizacion } from "../src/lib/sedes";
+import { usosDeDestino, vistaPorClave } from "../src/lib/fichaDestino";
+import { claveZona, PRINCIPAL } from "../src/lib/destinos";
 import { leerInfra } from "../src/lib/infra";
 import { tareaDelTrazo, textoDelTrazo } from "../src/lib/mapaVivo";
 import { alternarGrupo, clavePrefs, leerPrefs, PREFS_POR_DEFECTO } from "../src/lib/mapaPreferencias";
@@ -165,7 +167,7 @@ console.log("\n· 14mm: un solo nodo por servidor y los espejos desde sus reposi
   igual("el de un repositorio que no sale aquí, desde el almacén", espejo("Nube de nadie"), [["al:alm-este", "ok"]]);
   igual("…con la marca «no sé de qué repositorios es»", m.nodos.filter((n) => n.sinReconocer).map((n) => [n.nombre, n.aviso]), [["Nube de nadie", "No sé de qué repositorios es"]]);
   cierto("los demás espejos no cuelgan del almacén", m.aristas.filter((x) => x.tipo === "espejo" && x.de === "al:alm-este").length === 1);
-  cierto("la frase lo cuenta desde el repositorio", m.frases.some((f) => f.includes("«Ventas»") && f.includes("espejo en Nube Este")));
+  cierto("la frase lo cuenta desde el repositorio", m.frases.some((f) => f.includes("«Ventas»") && f.includes("otra copia igual en Nube Este")));
   comprobar("un solo nodo por servidor", m);
 }
 
@@ -186,8 +188,64 @@ console.log("\n· 14kk: las copias derivadas, «después» del repositorio a su 
   igual("dos flechas derivadas desde «Caja»", der.map((x) => [x.de, x.a]), [["rp:caja-3:caja", "al:alm-oeste"], ["rp:caja-3:caja", "de:b2|oeste-copias"]]);
   igual("con su estado y «después» si aún no se hizo", der.map((x) => [x.tono, x.etiqueta?.replace(/\s/g, " ")]), [["bad", "falló hace 2 h"], ["neutral", "después · cada día a las 23:00"]]);
   cierto("al almacén de la derivada llegan también los suyos (un solo nodo)", m.nodos.filter((n) => n.id === "al:alm-oeste").length === 1 && m.aristas.some((x) => x.tipo === "guarda" && x.de === "rp:caja-3:docs" && x.a === "al:alm-oeste"));
-  cierto("la frase lo cuenta", m.frases.some((f) => f.includes("después, una copia derivada a B2 Oeste")));
+  cierto("la frase lo cuenta", m.frases.some((f) => f.includes("después, una copia hecha a partir de esta en B2 Oeste")));
   comprobar("derivadas", m);
+}
+
+console.log("\n· 16j: un almacén con cuatro espejos a la misma nube y una derivada desde el disco de un equipo");
+{
+  // ALMACEN-RIO guarda 8 repositorios (4 equipos con 2 cada uno) y tiene 4 trabajos de espejo a «Nube Río»
+  // (cada uno con otra carpeta y otros repositorios). La vista por destinos que manda el agente no
+  // repite destino: solo trae el primero.
+  const alm = almacen("alm-rio", "ALMACEN-RIO", 0);
+  const trabajo = (id: string, nombre: string, repos: string[], ultima: string, resultado = "Espejo hecho.") => ({
+    id,
+    nombre,
+    activo: true,
+    quien: "almacen",
+    que: { tipo: "repos", repos },
+    adonde: { tipo: "nube", carpeta: id, nube: "Nube Río" },
+    cuando: { tras_copia: true },
+    retencion: { modo: "nunca" },
+    freno: { pct: 10, min_archivos: 100, min_faltan: 10, accion: "avisar" },
+    orden: 0,
+    ultima,
+    resultado,
+  });
+  alm.resumen!.guarda_copias!.espejo = {
+    hora: "02:00",
+    destinos: [{ tipo: "nube", nube: "Nube Río", ultima: h(2), resultado: "Espejo hecho.", repos: ["pc-1/r1", "pc-1/r2"], trabajo: "t1" }],
+    trabajos: [
+      trabajo("t1", "Puesto 1 a la nube", ["pc-1/r1", "pc-1/r2"], h(2)),
+      trabajo("t2", "Puesto 2 a la nube", ["pc-2/r1", "pc-2/r2"], h(3)),
+      trabajo("t3", "Puesto 3 a la nube", ["pc-3/r1", "pc-3/r2"], h(4), "ERROR: la nube respondió 429."),
+      trabajo("t4", "Puesto 4 a la nube", ["pc-4/r1", "pc-4/r2", "pc-4/r9-dv1"], h(5)),
+    ],
+  } as never;
+  const dAlm = (u: string) => ({ id: "d-alm", nombre: "Almacén Río", tipo: "rest", donde: `https://rio.lan:8000/${u}/`, equipo_almacen: "alm-rio" });
+  const puestos = [1, 2, 3, 4].map((i) => pc(`p${i}`, `PUESTO-${i}`, [repo("r1", `Documentos ${i}`, "d-alm"), repo("r2", `Correo ${i}`, "d-alm")], [dAlm(`pc-${i}`)] as never));
+  // PUESTO-4 tiene además un repositorio en su disco D con una copia derivada al almacén (carpeta «r9-dv1»).
+  puestos[3].resumen!.destinos = [dAlm("pc-4"), { id: "d-local", nombre: "Disco D", tipo: "local", unidad: "D:" }] as never;
+  puestos[3].resumen!.repositorios!.push({ ...repo("r9", "Planos", "d-local"), derivadas: [{ id: "dv1", destino: "Almacén Río", destino_id: "d-alm", cuando: { tras_copia: true } }] } as RepositorioResumen);
+  const m = construirMapa([...puestos, alm], {}, { cliente: "c", ahora, agrupar: { modo: "no", n: 8 } });
+  const nubes = m.nodos.filter((n) => n.tipo === "espejo");
+  igual("la nube sale una sola vez", nubes.map((n) => n.nombre), ["Nube Río"]);
+  igual("…con los cuatro espejos que le llegan", [nubes[0].sub, nubes[0].miembros?.map((x) => x.nombre)], ["4 espejos llegan aquí", ["Puesto 1 a la nube", "Puesto 2 a la nube", "Puesto 3 a la nube", "Puesto 4 a la nube"]]);
+  igual("…y su estado es el peor (uno falló)", nubes[0].tono, "bad");
+  const lineas = m.aristas.filter((a) => a.tipo === "espejo" && a.a === nubes[0].id);
+  igual("una línea desde cada repositorio que le llega (y desde el almacén, la de la derivada)", lineas.map((a) => a.de).sort(), ["al:alm-rio", ...[1, 2, 3, 4].flatMap((i) => [`rp:p${i}:r1`, `rp:p${i}:r2`])].sort());
+  igual("cada línea con el nombre de su espejo", lineas.find((a) => a.de === "rp:p3:r2")?.nombres, ["Puesto 3 a la nube"]);
+  igual("la derivada: del repositorio de origen a su destino", m.aristas.filter((a) => a.tipo === "derivada").map((a) => [a.de, a.a]), [["rp:p4:r9", "al:alm-rio"]]);
+  cierto("…y su espejo no sale del repositorio de origen (que guarda en el disco D)", !m.aristas.some((a) => a.tipo === "espejo" && a.de === "rp:p4:r9"));
+  comprobar("cuatro espejos a una nube", m);
+  // Lo mismo sin trabajos (agente anterior): un nodo por destino, como antes.
+  const viejo = almacen("alm-v2", "ALMACEN-V2", 4);
+  const m2 = construirMapa([viejo, pc("pv", "PV", [repo("r", "Datos", "d-alm")], [{ id: "d-alm", nombre: "Almacén", tipo: "rest", equipo_almacen: "alm-v2" }] as never)], {}, { cliente: "c", ahora });
+  igual("sin trabajos: un nodo por destino del espejo", m2.nodos.filter((n) => n.tipo === "espejo").length, 4);
+  // La ficha de la zona principal cuenta los cuatro espejos que salen de ella (lib/fichaDestino.ts).
+  const v = vistaPorClave(claveZona("alm-rio", PRINCIPAL), [...puestos, alm], []);
+  const usos = v ? usosDeDestino(v, [...puestos, alm], "c").filter((u) => u.tipo === "espejo_sale") : [];
+  igual("la zona: «Espejos y copias que lo usan» con los cuatro", usos.length, 4);
 }
 
 console.log("\n· El mapa de todos los clientes, con muchos equipos");

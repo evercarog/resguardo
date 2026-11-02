@@ -33,7 +33,7 @@
       <strong>Recuperar en el equipo</strong>
       <Ayuda id="recuperar-en-el-equipo" />
       <p class="faint">
-        {texto}{#if efectivo} · cada persona de {equipo.nombre} puede recuperar sus propios archivos de esta copia (hasta {r?.max_mb ?? 1024} MB cada vez).{:else}.{/if}
+        {#if propio === null}Como el cliente (<a class="link" href="/c/{cliente.id}/recuperar/restauraciones#t-ajustes-rest">{r?.cliente ? "activado" : "desactivado"}</a>){:else}{texto}{/if}{#if efectivo} · cada persona de {equipo.nombre} puede recuperar sus propios archivos de esta copia (hasta {r?.max_mb ?? 1024} MB cada vez).{:else}.{/if}
       </p>
     </div>
     {#if puede.administrar(cliente.rol) && equipo.modo !== "trasladado"}<button class="btn btn-sm" onclick={abrir}>Cambiar</button>{/if}

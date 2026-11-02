@@ -3,6 +3,7 @@
 // pone en palabras. La versión disponible es la que sirve este servidor.
 // Vectores: scripts/vectores-actualizaciones.ts (con los de crates/protocolo/vectors/publicacion.json).
 import type { Tono } from "./salud";
+import { fraseError } from "./errorCopia";
 
 /** `informe.actualizacion` de un agente (v1.57). */
 export interface EstadoActualizacion {
@@ -116,10 +117,10 @@ export function vistaActualizacion(info: EstadoActualizacion | null | undefined,
         clave: "vuelta_atras",
         texto: "Volvió a la anterior",
         tono: "bad",
-        detalle: `La ${info.version_fallida ?? "versión nueva"} no estuvo sana y el equipo volvió a la que tenía.${info.mensaje ? ` ${info.mensaje}` : ""}`,
+        detalle: `La ${info.version_fallida ?? "versión nueva"} no estuvo sana y el equipo volvió a la que tenía.${info.mensaje ? ` ${fraseError(info.mensaje)}` : ""}`,
       };
     case "fallida":
-      return { clave: "fallo", texto: "Falló", tono: "bad", detalle: `No se pudo actualizar${info.version_objetivo ? ` a la ${info.version_objetivo}` : ""}.${info.mensaje ? ` ${info.mensaje}` : ""}` };
+      return { clave: "fallo", texto: "Falló", tono: "bad", detalle: `No se pudo actualizar${info.version_objetivo ? ` a la ${info.version_objetivo}` : ""}.${info.mensaje ? ` ${fraseError(info.mensaje)}` : ""}` };
     default:
       return { clave: "sin_datos", texto: info.estado, tono: "neutral" };
   }

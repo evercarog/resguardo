@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sinPrefijo } from "$lib/espejoTrabajos";
   import { velocidadEnFrase } from "$lib/franjas";
   import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
@@ -10,7 +11,7 @@
   import { bytesRepo, destinoDe, dias, diasCopia, informeDe, nVersiones, proteccion, textoResultado, tonoResultado, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
-  import { ultimas24h } from "$lib/panel";
+  import { espacioTotal, fraseEnDisco, ultimas24h } from "$lib/panel";
   import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
   import { abrirVersion, abrirVuelta, elegirDia, elegirFechas } from "$lib/componentes/detalle/navegar";
@@ -324,6 +325,8 @@
   );
   const proximaDeTodas = $derived(pausado ? null : proximaCopia(copias, reloj.ahora));
   const protegidoEquipo = $derived(repos.reduce((n, r) => n + (bytesRepo(r, informeDe(equipo?.ultimo_informe, r.id)) ?? 0), 0));
+  /** 16w: lo que ocupan en disco sus repositorios (todas las versiones, comprimidas y sin duplicados). */
+  const espacioEquipo = $derived(equipo ? espacioTotal([equipo], { [equipo.id]: equipo.ultimo_informe ?? null }) : null);
   // «Historial y versiones» de todas sus copias y repositorios (el mismo de la página de cada uno).
   const historia = usarHistorialEquipo(() => c, () => id);
   const sel = $derived(leerSeleccion(page.url.searchParams));
@@ -1142,7 +1145,7 @@
           <div class="stat">
             <span class="stat-label">Protegido</span>
             <span class="stat-value">{protegidoEquipo ? bytes(protegidoEquipo) : "—"}</span>
-            <span class="stat-sub">en {plural(repos.length, "repositorio", "repositorios")}</span>
+            <span class="stat-sub" use:tip={espacioEquipo && fraseEnDisco(espacioEquipo) ? `${fraseEnDisco(espacioEquipo)}.${espacioEquipo.leido ? ` Medido ${relativo(espacioEquipo.leido, reloj.ahora)}.` : ""}` : undefined}>{#if espacioEquipo?.enDisco != null}ocupan {bytes(espacioEquipo.enDisco)} en disco con su historial{:else}en {plural(repos.length, "repositorio", "repositorios")}{/if}</span>
           </div>
           <div class="stat">
             <span class="stat-label">Versiones en 24 h</span>
@@ -1441,7 +1444,7 @@
                       <span class="d-texto">
                         <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
                         <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosAlmacen.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
-                        {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado} <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
+                        {#if e === "error" && t.resultado}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /> <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
                         {#if t.freno_aviso}<span class="msg-fallo">Freno: {t.freno_aviso}</span>{/if}
                       </span>
                       <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
@@ -1472,7 +1475,7 @@
                           <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
                           <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
                           {#if d.freno && puede.administrar(rol)}<span class="freno"><button class="btn btn-sm" onclick={() => confirmarFreno(d)}>Confirmar lo que falta…</button></span>{/if}{/if}
-                        {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
+                        {#if resultadoConError(d.resultado)}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(d.resultado ?? "")} /> <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
                       {#if puede.administrar(rol)}
@@ -1494,7 +1497,7 @@
                 </div>
               {/if}
               {:else if g.espejo.resultado}
-                <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo">{g.espejo.resultado}</span>{:else}{g.espejo.resultado}{/if}</p>
+                <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(g.espejo.resultado ?? "")} /></span>{:else}{g.espejo.resultado}{/if}</p>
               {/if}
             </div>
             {:else}
@@ -1571,7 +1574,7 @@
                   <span class="d-texto">
                     <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
                     <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosPropios.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
-                    {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado}</span>{/if}
+                    {#if e === "error" && t.resultado}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /></span>{/if}
                   </span>
                   <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
                 </li>

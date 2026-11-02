@@ -3,6 +3,7 @@
 // tendencia. Todo sale del resumen y del último informe de cada equipo.
 import type { DestinoResumen, Equipo, Informe, RepoInforme } from "./tipos";
 import { bytesRepo, claveDia, destinoDe, dias, informeDe, type Dia } from "./repo";
+import { bytes } from "./formato";
 
 const DIA = 86_400_000;
 
@@ -131,4 +132,44 @@ export function almacenes(equipos: Equipo[], informes: Record<string, Informe | 
   return [...m.values()]
     .map(({ _repos: _r, _bytes: _b, ...x }) => x)
     .sort((a, b) => b.protegido - a.protegido || a.nombre.localeCompare(b.nombre));
+}
+
+/**
+ * 16w: lo protegido (los archivos de la última versión de cada repositorio) y lo que ocupa de
+ * verdad en disco (todas las versiones, comprimidas y sin duplicados), sumando lo que mide cada
+ * equipo una vez al día. `medidos`: los repositorios con esa cifra (los demás no suman en
+ * `enDisco`); `leido`: la medida más antigua de las sumadas.
+ */
+export interface EspacioTotal {
+  protegido: number;
+  enDisco: number | null;
+  repos: number;
+  medidos: number;
+  leido: string | null;
+}
+
+export function espacioTotal(equipos: Equipo[], informes: Record<string, Informe | null | undefined>): EspacioTotal {
+  const t: EspacioTotal = { protegido: 0, enDisco: null, repos: 0, medidos: 0, leido: null };
+  for (const e of equipos) {
+    if (e.modo === "trasladado") continue;
+    for (const r of e.resumen?.repositorios ?? []) {
+      const inf = informeDe(informes[e.id] ?? null, r.id);
+      t.repos++;
+      t.protegido += bytesRepo(r, inf) ?? 0;
+      const disco = inf?.espacio?.en_disco_bytes;
+      if (disco == null) continue;
+      t.enDisco = (t.enDisco ?? 0) + disco;
+      t.medidos++;
+      const l = inf?.espacio?.leido;
+      if (l && (!t.leido || l < t.leido)) t.leido = l;
+    }
+  }
+  return t;
+}
+
+/** 16w: «139 GB protegidos ocupan 70 GB con todo su historial» (null si ningún equipo lo midió). */
+export function fraseEnDisco(t: EspacioTotal): string | null {
+  if (t.enDisco == null) return null;
+  const parte = t.medidos < t.repos ? ` (medido en ${t.medidos} de ${t.repos} repositorios)` : "";
+  return t.protegido ? `${bytes(t.protegido)} protegidos ocupan ${bytes(t.enDisco)} con todo su historial${parte}` : `Ocupan ${bytes(t.enDisco)} en disco con todo su historial${parte}`;
 }
