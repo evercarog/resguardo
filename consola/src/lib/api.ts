@@ -173,7 +173,9 @@ export async function subirArchivoPublicacion(version: string, nombre: string, a
 export const primerArranque = (b: { codigo_arranque: string; correo: string; nombre: string; contrasena: string }) =>
   pedir<{ totp: T.Totp }>("POST", "/api/inicio", b, { sinRedirigir: true });
 
-export const entrar = (correo: string, contrasena: string) => pedir<T.RespuestaSesion>("POST", "/api/sesion", { correo, contrasena }, { sinRedirigir: true });
+/** 16k: `recordar` = «Recordar este dispositivo» (los servidores anteriores lo ignoran). */
+export const entrar = (correo: string, contrasena: string, recordar = false) =>
+  pedir<T.RespuestaSesion>("POST", "/api/sesion", { correo, contrasena, recordar }, { sinRedirigir: true });
 
 /** v1.27: el código que dio el propietario tras restablecer la verificación en dos pasos. */
 export const usarRestablecimiento = (codigo: string) => pedir<T.RespuestaSesion>("POST", "/api/sesion/restablecimiento", { codigo }, { sinRedirigir: true });
@@ -193,7 +195,18 @@ export const salir = () => pedir<void>("DELETE", "/api/sesion", undefined, { sin
 
 export const cuenta = (opciones: { sinRedirigir?: boolean } = {}) => pedir<T.Cuenta>("GET", "/api/cuenta", undefined, opciones);
 
-export const cambiarContrasena = (actual: string, nueva: string) => pedir<void>("PUT", "/api/cuenta/contrasena", { actual, nueva });
+// 16k: las sesiones de la cuenta y sus plazos.
+export const sesionesCuenta = () =>
+  pedir<{ sesiones: T.SesionCuenta[]; puede_cerrar: boolean; puede_desde: string | null }>("GET", "/api/cuenta/sesiones", undefined, { invisible: true });
+export const cerrarSesiones = (b: { ids?: string[]; otras?: boolean; contrasena: string; codigo: string }) =>
+  pedir<{ cerradas: number }>("POST", "/api/cuenta/sesiones/cerrar", b);
+export const plazosSesion = () => pedir<{ plazos: T.PlazosSesion; predeterminados: T.PlazosSesion }>("GET", "/api/servidor/sesiones", undefined, { invisible: true });
+export const ponerPlazosSesion = (p: T.PlazosSesion) => pedir<{ plazos: T.PlazosSesion }>("PUT", "/api/servidor/sesiones", p);
+export const cerrarSesionesDeOtra = (cuenta: string, contrasena: string, codigo: string) =>
+  pedir<{ cerradas: number }>("POST", `/api/servidor/cuentas/${enc(cuenta)}/sesiones/cerrar`, { contrasena, codigo });
+
+export const cambiarContrasena = (actual: string, nueva: string) =>
+  pedir<void>("PUT", "/api/cuenta/contrasena", { actual, nueva });
 export const renombrarCuenta = (nombre: string) => pedir<T.Cuenta>("PATCH", "/api/cuenta", { nombre });
 /** Nuevo autenticador: 1) con la contraseña y un código del actual; 2) con un código del nuevo (cierra las demás sesiones). */
 export const totpNuevo = (contrasena: string, codigo: string) => pedir<{ totp: T.Totp; caduca: string }>("POST", "/api/cuenta/totp", { contrasena, codigo });

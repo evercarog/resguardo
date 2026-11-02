@@ -16,6 +16,7 @@
   import CodigosRecuperacion from "$lib/componentes/CodigosRecuperacion.svelte";
   import MisNotificaciones from "$lib/componentes/MisNotificaciones.svelte";
   import LlavesAcceso from "$lib/componentes/LlavesAcceso.svelte";
+  import SesionesCuenta from "$lib/componentes/SesionesCuenta.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   import type { Totp } from "$lib/tipos";
 
@@ -179,6 +180,8 @@
   </section>
 
   <LlavesAcceso />
+
+  <SesionesCuenta />
 
   <MisNotificaciones />
 

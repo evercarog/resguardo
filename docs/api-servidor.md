@@ -201,7 +201,7 @@ Abre una sesión **pendiente de TOTP**. La cuenta queda como propietaria del ser
 
 ### `POST /api/sesion`
 
-- Pide: `{ "correo", "contrasena" }`
+- Pide: `{ "correo", "contrasena", "recordar"? }` (16k: `recordar: true` = «Recordar este dispositivo»; pasa a la sesión completa al dar el segundo paso; sin el campo, `false`).
 - Responde:
   - `{ "necesita": "totp" }`, o
   - `{ "necesita": "alta_totp", "totp": { secreto, uri } }` (la cuenta aún no tiene TOTP), o
@@ -228,8 +228,20 @@ Cierra la sesión.
 ### `GET /api/cuenta`
 
 ```json
-{ "id", "correo", "nombre", "superusuario": false, "clientes": [{ "id", "nombre", "rol" }] }
+{ "id", "correo", "nombre", "superusuario": false, "clientes": [{ "id", "nombre", "rol" }],
+  "sesion": { "id", "creada", "recordar", "caduca", "maximo", "nueva_hasta": "…|null" },
+  "sesiones_nuevas": [{ "id", "navegador", "creada" }] }
 ```
+
+16k: `sesion` es la sesión en la que estás (`nueva_hasta`: hasta cuándo no puede cerrar otras ni cambiar la contraseña, el segundo paso o las llaves; `null` si ya puede). `sesiones_nuevas`: las otras sesiones de la cuenta abiertas **después** de esta en las últimas 24 h, para el aviso «Nueva sesión en … ¿eras tú?».
+
+### Sesiones: plazos, lista y «una sesión nueva no manda» (16k)
+
+- **Plazos.** Una sesión completa caduca tras **8 h sin usarla** y, aunque se use, a las **24 h**; con «Recordar este dispositivo», tras 7 días sin usarla y a los **14 días** como mucho. El uso la renueva (como mucho una escritura por minuto) sin pasar nunca de su máximo; la cookie dura hasta ese máximo. Cambiar la contraseña o el autenticador da otra ficha a la sesión, con la misma hora de entrada y el mismo máximo. El propietario del servidor los ajusta con topes (inactividad 1–24 h, máximo hasta 7 días, «Recordar» 0–30 días; 0 = no se ofrece): `GET /api/servidor/sesiones` → `{ "plazos": { inactividad_horas, maximo_horas, recordar_dias }, "predeterminados" }` y `PUT /api/servidor/sesiones` con `plazos` (se recortan a los topes; en la auditoría `plazos_sesiones`). `GET /api/servidor` dice `sesion: { recordar_dias, inactividad_horas }` para la página de entrar.
+- **Una sesión nueva no manda sobre las demás.** Durante sus primeras **24 h** (contadas desde que se entró con la contraseña), una sesión recibe **403 `sesion_nueva`** (con `desde`: cuándo podrá) en `PUT /api/cuenta/contrasena`, `POST /api/cuenta/totp`, `…/totp/confirmar`, `POST /api/cuenta/recuperacion`, el alta y la baja de llaves de acceso y al cerrar otras sesiones. Salvo en una cuenta creada hace menos de 24 h (no hay sesiones antiguas que proteger). Las sesiones antiguas sí pueden cerrar la nueva.
+- `GET /api/cuenta/sesiones` → `{ "sesiones": [{ id, actual, navegador, ip, creada, usada, caduca, maximo, recordar, nueva }], "puede_cerrar", "puede_desde" }`. `navegador` es un resumen del `User-Agent` («Chrome · Android»; el texto entero no se guarda) e `ip` la de la petición al entrar (la /64 en IPv6). `id` es un identificador público aparte: ni la ficha ni su hash salen nunca.
+- `POST /api/cuenta/sesiones/cerrar` con `{ "ids": [...] }` o `{ "otras": true }`, más `{ "contrasena", "codigo" }` (siempre) → `{ "cerradas": n }`. La sesión propia se cierra con `DELETE /api/sesion` (422 si va en `ids`). Auditoría `cerrar_sesion` / `cerrar_otras_sesiones` con los navegadores.
+- `POST /api/servidor/cuentas/{id}/sesiones/cerrar` con `{ "contrasena", "codigo" }`: el propietario del servidor cierra todas las sesiones de **otra** cuenta (quien perdió su único dispositivo y no puede esperar 24 h). Auditoría `cerrar_sesiones_de_otra`.
 
 ### `PUT /api/cuenta/contrasena`
 
@@ -1683,3 +1695,4 @@ La política y los anillos se guardan en la tabla de valores del servidor (`act:
 - v1.96 (0.8.2; plan 0.8.2 B3 y C1, plan-mejoras 15uu, rama `ia/082-agente`). Compatible hacia atrás:
   - **B3. El freno del espejo tras la poda del propio almacén** ([espejo.md](espejo.md), «La poda del propio almacén no frena»). Sin campos nuevos: un trabajo de espejo (`guarda_copias.espejo.trabajos[]` y los del equipo) cuya última vuelta subió lo nuevo pero cuyo freno saltó tiene `resultado` que empieza por **`AVISO:`** (antes, `ERROR:`) y su `freno_aviso` de siempre; lo que quitó la poda del propio almacén (o del propio equipo) ya no cuenta para el freno y el texto dice «tras la poda del día X» si la hubo. La bitácora (`espejo`) lo anota con `resultado: "aviso"`. El servidor crea el aviso nuevo **`espejo_freno`** (importante, de la fuente `resumen`, sujeto el id del trabajo) en vez de `espejo_fallido`, y lo da por resuelto cuando `freno_aviso` desaparece. Un servidor anterior no crea ningún aviso para esa vuelta (la ve hecha) y su consola enseña el «Freno: …» de la tarjeta del espejo; un agente anterior sigue mandando `ERROR:` (aviso `espejo_fallido`, como siempre).
   - **C1. Dejar las consolas desde el propio equipo** ([consolas-multiples.md](consolas-multiples.md) §2.6). Ruta nueva **`POST /api/agente/dejada`** (§8, sondeo) y texto firmado nuevo `derivaciones::texto_dejada` (`resguardo-dejada-v1|identidad|equipo|cuando|cuenta|todas o una`). `GET …/equipos` y `GET …/equipos/{e}` llevan **`dejada: { cuando, cuenta, todas, siguen } | null`** (columna nueva `equipos.dejada`; se olvida al volver a vincularse). Aviso nuevo **`dejada_en_equipo`** (crítico) y acción de auditoría `dejada_en_equipo` (actor `equipo:<id>`). Capacidad nueva en `resumen.admite`: **`dejar_en_equipo`** (la consola dice en la ficha que también se puede dejar desde el equipo). Contra un servidor anterior (404 o 405 en esa ruta), el agente manda el aviso `cambio_inusual` de siempre con el texto «… dejó de conectarse a la consola … desde el propio equipo …». En el canal local (`ipc_local`), operaciones nuevas `consolas` (solo administradores del equipo) y `dejar_consola { reto, prueba?, todas | consola }` (administrador del equipo y la prueba de la clave de administración si el equipo la tiene, con el bloqueo por intentos del equipo). En la terminal, `desvincular` y `consolas quitar` piden la clave (sin eco). El modo «desvinculado» del canal local pasa a ser «local» cuando el equipo dejó todas sus consolas (sus copias se cambian en la ventana).
+- v1.9x (pendiente de numerar al unir; 0.8.3, plan-mejoras 16k, rama `ia/083-servidor`). **Sesiones de la consola renovadas con el uso, «Recordar este dispositivo», lista de sesiones y una sesión nueva sin poder sobre las demás durante 24 h** (§2, «Sesiones…»). Solo entre la consola y su servidor; los agentes no cambian. Compatible hacia atrás: `POST /api/sesion` acepta `recordar` (opcional); `GET /api/cuenta` añade `sesion` y `sesiones_nuevas`; `GET /api/servidor` añade `sesion`; rutas nuevas `GET /api/cuenta/sesiones`, `POST /api/cuenta/sesiones/cerrar`, `GET`/`PUT /api/servidor/sesiones` y `POST /api/servidor/cuentas/{id}/sesiones/cerrar`. Antes una sesión duraba 12 h desde el último uso sin máximo; ahora 8 h sin usarla y 24 h como mucho (14 días con «Recordar»). Error nuevo 403 `sesion_nueva`. Tabla `sesiones` con columnas nuevas (`id`, `usada`, `maximo`, `recordar`, `agente`, `ip`), migradas al arrancar; las sesiones abiertas antes conservan su caducidad.

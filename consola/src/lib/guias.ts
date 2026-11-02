@@ -323,4 +323,20 @@ export const PREGUNTAS: Pregunta[] = [
     si: "Perdí el móvil del segundo paso",
     respuesta: ["Entra con uno de tus códigos de recuperación y, en «Mi cuenta», vuelve a configurar el segundo paso y genera códigos nuevos. Si tampoco los tienes, pide al propietario que la restablezca (Personas → menú de la persona → «Restablecer verificación en dos pasos»): te dará un código de un solo uso, válido 24 horas, para vincular el móvil nuevo al entrar. La de un propietario solo la puede restablecer el propietario del servidor."],
   },
+  {
+    id: "si-sesion-movil",
+    si: "La sesión se me cierra muy seguido en el móvil",
+    respuesta: [
+      "Al entrar, marca «Recordar este dispositivo»: la sesión dura hasta 14 días (sin marcarlo, se cierra tras unas horas sin usarla). Hazlo solo en un móvil u ordenador tuyo.",
+      "Para entrar más rápido: añade una llave de acceso en «Mi cuenta» (la huella o el PIN del móvil en vez del código) y, en el navegador del móvil, «Añadir a pantalla de inicio» para abrir la consola como una app.",
+    ],
+  },
+  {
+    id: "si-sesion-desconocida",
+    si: "Veo una sesión que no reconozco",
+    respuesta: [
+      "En «Mi cuenta» → «Dónde tienes la sesión abierta», ciérrala con «Cerrar» (o «Cerrar en todos los demás») y cambia la contraseña. Te pedirá la contraseña y el código.",
+      "Una sesión abierta hace menos de 24 horas no puede cerrar las demás ni cambiar la contraseña: así, quien te robe la contraseña y el código puede mirar, pero no echarte. Hazlo desde un dispositivo donde ya tenías la sesión. Si perdiste el único, espera las 24 horas o pide al propietario del servidor que cierre tus sesiones.",
+    ],
+  },
 ];

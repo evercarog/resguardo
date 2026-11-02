@@ -23,7 +23,7 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 
 ## C. Comodidad
 
-- [ ] **16k.** Sesión renovada con el uso, «Recordar este dispositivo», lista de sesiones y una sesión nueva sin poder sobre las demás durante 24 h.
+- [~] **16k.** Sesión renovada con el uso, «Recordar este dispositivo», lista de sesiones y una sesión nueva sin poder sobre las demás durante 24 h.
 - [ ] **16r.** Lo que se hace desde el móvil, a dos toques.
 - [ ] **16e.** Más filtros en Equipos y en el mapa (sede, varias etiquetas, estado…), con vistas guardadas.
 - [ ] **16t.** Tablas largas cómodas.

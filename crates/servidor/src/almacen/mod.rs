@@ -91,7 +91,36 @@ pub struct Sesion {
     pub cuenta_id: String,
     /// 1: falta el TOTP; 2: completa.
     pub aal: u8,
+    /// Caduca por inactividad (se renueva con el uso, nunca más allá de `maximo`).
     pub expira: Ts,
+    /// Identificador público para la lista de sesiones (no es la ficha ni su hash).
+    pub id: String,
+    /// Cuándo se entró (con la contraseña): cuenta para las 24 h de una sesión nueva.
+    pub creada: Ts,
+    /// Último uso.
+    pub usada: Ts,
+    /// Máximo absoluto: ni el uso la alarga más allá.
+    pub maximo: Ts,
+    /// «Recordar este dispositivo».
+    pub recordar: bool,
+    /// Navegador y sistema en pocas palabras («Chrome · Android»), nunca el texto entero.
+    pub agente: String,
+    /// Desde dónde, aproximado (la IP, o su /64 en IPv6).
+    pub ip: String,
+}
+
+/// Datos de una sesión nueva (16k).
+#[derive(Clone, Debug)]
+pub struct NuevaSesion {
+    pub token_hash: String,
+    pub cuenta: String,
+    pub aal: u8,
+    pub expira: Ts,
+    pub maximo: Ts,
+    pub creada: Ts,
+    pub recordar: bool,
+    pub agente: String,
+    pub ip: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -553,9 +582,16 @@ pub trait Almacen: Send + Sync + AlmacenNotas + AlmacenPruebas {
     fn usar_codigo_recuperacion(&self, cuenta: &str, hash: &str) -> R<bool>;
     fn cambiar_contrasena(&self, cuenta: &str, hash: &str) -> R<()>;
     fn renombrar_cuenta(&self, cuenta: &str, nombre: &str) -> R<()>;
-    fn crear_sesion(&self, token_hash: &str, cuenta: &str, aal: u8, expira: Ts) -> R<()>;
+    fn crear_sesion(&self, n: &NuevaSesion) -> R<()>;
     fn sesion(&self, token_hash: &str) -> R<Option<Sesion>>;
-    fn elevar_sesion(&self, token_hash: &str, expira: Ts) -> R<()>;
+    /// Anota el uso y la nueva caducidad por inactividad.
+    fn tocar_sesion(&self, token_hash: &str, expira: Ts, ahora: Ts) -> R<()>;
+    /// Las sesiones completas y vigentes de la cuenta.
+    fn sesiones_de(&self, cuenta: &str) -> R<Vec<Sesion>>;
+    /// Cierra una sesión de la cuenta por su identificador público. Devuelve si existía.
+    fn borrar_sesion_por_id(&self, cuenta: &str, id: &str) -> R<bool>;
+    /// Cuándo se creó la cuenta.
+    fn cuenta_creada(&self, cuenta: &str) -> R<Option<Ts>>;
     fn borrar_sesion(&self, token_hash: &str) -> R<()>;
     fn borrar_sesiones_de(&self, cuenta: &str, salvo: Option<&str>) -> R<()>;
 

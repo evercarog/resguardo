@@ -401,7 +401,7 @@ const rutas: Ruta[] = [
       return { anillo: a };
     },
   ],
-  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: instaladorMock, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024 })],
+  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: instaladorMock, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024, sesion: { recordar_dias: plazosMock.recordar_dias, inactividad_horas: plazosMock.inactividad_horas } })],
 
   ["GET", /^\/api\/servidor\/respaldo$/, (ctx) => respaldoDe(ctx)],
   [
@@ -461,6 +461,49 @@ const rutas: Ruta[] = [
       const r = cuenta.restablecida;
       if (r) return { necesita: "restablecimiento", restablecida: { cuando: r.cuando, por: r.por }, caducado: r.caduca <= Date.now() };
       return cuenta.totp ? { necesita: "totp", passkeys: passkeysDe(cuenta.id).length } : { necesita: "alta_totp", totp: totpDe(cuenta.correo) };
+    },
+  ],
+  // 16k: las sesiones de la cuenta (la actual y dos de ejemplo) y sus plazos.
+  ["GET", /^\/api\/cuenta\/sesiones$/, (ctx) => ({ sesiones: sesionesMockDe(sesionDe(ctx).id, ctx.token ?? ""), puede_cerrar: true, puede_desde: null })],
+  [
+    "POST",
+    /^\/api\/cuenta\/sesiones\/cerrar$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      const b = ctx.cuerpo as { ids?: string[]; otras?: boolean; contrasena?: string; codigo?: string };
+      if (b.contrasena !== cuenta.contrasena || !/^\d{6}$/.test(String(b.codigo ?? ""))) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      const otras = sesionesMockDe(cuenta.id, ctx.token ?? "").filter((s) => !s.actual && (b.otras || (b.ids ?? []).includes(s.id)));
+      for (const s of otras) sesionesCerradasMock.add(s.id);
+      return { cerradas: otras.length };
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/cuentas\/([^/]+)\/sesiones\/cerrar$/,
+    (ctx, [otra]) => {
+      const yo = sesionDe(ctx);
+      const b = ctx.cuerpo as { contrasena?: string; codigo?: string };
+      if (!yo.superusuario) throw err(403, "prohibido", "Solo el propietario del servidor.");
+      if (b.contrasena !== yo.contrasena || !/^\d{6}$/.test(String(b.codigo ?? ""))) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      let n = 0;
+      for (const [t, s] of estado.sesiones) {
+        if (s.cuenta === otra) {
+          estado.sesiones.delete(t);
+          n++;
+        }
+      }
+      return { cerradas: n };
+    },
+  ],
+  ["GET", /^\/api\/servidor\/sesiones$/, () => ({ plazos: plazosMock, predeterminados: { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 } })],
+  [
+    "PUT",
+    /^\/api\/servidor\/sesiones$/,
+    (ctx) => {
+      const b = ctx.cuerpo as typeof plazosMock;
+      const inactividad_horas = Math.min(24, Math.max(1, Math.round(Number(b.inactividad_horas) || 8)));
+      plazosMock = { inactividad_horas, maximo_horas: Math.min(168, Math.max(inactividad_horas, Math.round(Number(b.maximo_horas) || 24))), recordar_dias: Math.min(30, Math.max(0, Math.round(Number(b.recordar_dias) || 0))) };
+      return { plazos: plazosMock };
     },
   ],
   // 0.8.1 (H3): llaves de acceso. El simulador no comprueba firmas (eso lo prueba el servidor
@@ -2092,6 +2135,21 @@ function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
  */
 const datosComunesMock = new Map<string, DatosComunesCliente>();
 /** 0.8.1 (H3): las llaves de acceso de cada cuenta (la de Ana con una de ejemplo). */
+// 16k: sesiones de ejemplo (además de la actual) y plazos.
+let plazosMock = { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 };
+const sesionesCerradasMock = new Set<string>();
+function sesionesMockDe(cuenta: string, token: string) {
+  const ahora = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const actual = { id: `a${token.slice(0, 15).replace(/[^0-9a-f]/g, "0").padEnd(15, "0")}`, actual: true, navegador: "Chrome · Windows", ip: "192.0.2.10", creada: iso(ahora - 2 * 86_400_000), usada: iso(ahora), caduca: iso(ahora + 8 * 3_600_000), maximo: iso(ahora + 22 * 3_600_000), recordar: false, nueva: false };
+  const ejemplos = estado.cuentas.find((c) => c.id === cuenta)?.correo === "ana@ejemplo.com"
+    ? [
+        { id: "b0000000000000000000000000000001", actual: false, navegador: "Safari · iPhone", ip: "198.51.100.7", creada: iso(ahora - 5 * 86_400_000), usada: iso(ahora - 3 * 3_600_000), caduca: iso(ahora + 4 * 86_400_000), maximo: iso(ahora + 9 * 86_400_000), recordar: true, nueva: false },
+        { id: "b0000000000000000000000000000002", actual: false, navegador: "Firefox · Linux", ip: "203.0.113.25", creada: iso(ahora - 2 * 3_600_000), usada: iso(ahora - 40 * 60_000), caduca: iso(ahora + 7 * 3_600_000), maximo: iso(ahora + 22 * 3_600_000), recordar: false, nueva: true },
+      ]
+    : [];
+  return [actual, ...ejemplos.filter((s) => !sesionesCerradasMock.has(s.id))];
+}
 const passkeysMock = new Map<string, { ref: string; nombre: string; creada: string; usada: string | null; dominio: string }[]>();
 function passkeysDe(cuenta: string) {
   if (!passkeysMock.has(cuenta)) {

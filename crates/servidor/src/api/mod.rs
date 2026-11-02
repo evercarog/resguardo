@@ -29,6 +29,8 @@ mod respaldo;
 pub(crate) mod restauraciones;
 mod servidor_clientes;
 mod sesiones;
+// 16k: las sesiones de la consola de cada cuenta.
+mod sesiones_cuenta;
 
 pub use cuentas::preparar_codigo_arranque;
 pub(crate) use etiquetas::normalizar_etiqueta;
@@ -255,6 +257,10 @@ pub fn router(st: St) -> Router {
         .route("/api/cuenta/recuperacion", post(cuentas::codigos_nuevos))
         .route("/api/cuenta/notificaciones", get(notificaciones::mias).put(notificaciones::cambiar_mias))
         .route("/api/cuenta/contrasena", put(cuentas::cambiar_contrasena))
+        .route("/api/cuenta/sesiones", get(sesiones_cuenta::listar))
+        .route("/api/cuenta/sesiones/cerrar", post(sesiones_cuenta::cerrar))
+        .route("/api/servidor/sesiones", get(sesiones_cuenta::ver_plazos).put(sesiones_cuenta::poner_plazos))
+        .route("/api/servidor/cuentas/{id}/sesiones/cerrar", post(sesiones_cuenta::cerrar_de_otra))
         .route("/api/invitaciones/aceptar", post(cuentas::aceptar_invitacion))
         // Clientes
         .route("/api/clientes", get(clientes::listar).post(clientes::crear))

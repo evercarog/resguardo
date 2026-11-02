@@ -18,6 +18,10 @@
   let paso = $state<Paso>("credenciales");
   let correo = $state("");
   let contrasena = $state("");
+  // 16k: «Recordar este dispositivo» (solo si el servidor lo ofrece).
+  let recordar = $state(false);
+  const diasRecordar = $derived(app.servidor?.sesion?.recordar_dias ?? 0);
+  const horasSinUso = $derived(app.servidor?.sesion?.inactividad_horas ?? 8);
   let codigo = $state("");
   let recuperacion = $state("");
   let totp = $state<Totp | null>(null);
@@ -43,7 +47,7 @@
     error = "";
     ocupado = true;
     try {
-      const r = await api.entrar(correo.trim(), contrasena);
+      const r = await api.entrar(correo.trim(), contrasena, diasRecordar > 0 && recordar);
       contrasena = "";
       if (r.necesita === "alta_totp") {
         totp = r.totp;
@@ -138,6 +142,14 @@
         <input id="correo" class="input" type="email" bind:value={correo} autocomplete="username" required autofocus placeholder="tu@empresa.com" />
       </div>
       <CampoClave requerido id="contrasena" etiqueta="Contraseña" bind:value={contrasena} autocomplete="current-password" />
+      {#if diasRecordar > 0}
+        <div class="recordar">
+          <label><input type="checkbox" bind:checked={recordar} data-testid="recordar" /> Recordar este dispositivo ({diasRecordar} días)</label>
+          <p class="faint">
+            Solo en un móvil u ordenador tuyo. Sin marcarlo, la sesión se cierra tras {horasSinUso} h sin usarla.
+          </p>
+        </div>
+      {/if}
       {#if error}<p class="error-campo" role="alert">{error}</p>{/if}
       <button class="btn btn-primary btn-lg" disabled={ocupado || !correo || !contrasena}>{ocupado ? "Entrando…" : "Seguir"}</button>
     </form>
@@ -243,6 +255,16 @@
 {/snippet}
 
 <style>
+  .recordar label {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    cursor: pointer;
+  }
+  .recordar p {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+  }
   .con-llave {
     display: flex;
     flex-direction: column;
