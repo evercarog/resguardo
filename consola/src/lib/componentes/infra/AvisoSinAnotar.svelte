@@ -36,7 +36,7 @@
     guardar(clave, huella);
   }
   const partes = $derived(
-    [faltan.equipos.length ? plural(faltan.equipos.length, "equipo", "equipos") : "", faltan.destinos.length ? plural(faltan.destinos.length, "destino", "destinos") : ""].filter(Boolean),
+    [faltan.equipos.length ? plural(faltan.equipos.length, "máquina virtual o contenedor", "máquinas virtuales o contenedores") : "", faltan.destinos.length ? plural(faltan.destinos.length, "destino", "destinos") : ""].filter(Boolean),
   );
 </script>
 

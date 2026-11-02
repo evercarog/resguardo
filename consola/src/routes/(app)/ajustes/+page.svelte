@@ -16,6 +16,7 @@
   import CodigosRecuperacion from "$lib/componentes/CodigosRecuperacion.svelte";
   import MisNotificaciones from "$lib/componentes/MisNotificaciones.svelte";
   import LlavesAcceso from "$lib/componentes/LlavesAcceso.svelte";
+  import SesionesCuenta from "$lib/componentes/SesionesCuenta.svelte";
   import Modal from "$ui/componentes/Modal.svelte";
   // 16c: «Actualizaciones de los agentes» es de todo el servidor: su sitio es este (no un cliente).
   import PublicacionesServidor from "$lib/componentes/PublicacionesServidor.svelte";
@@ -181,6 +182,8 @@
   </section>
 
   <LlavesAcceso />
+
+  <SesionesCuenta />
 
   <MisNotificaciones />
 

@@ -9,7 +9,7 @@
   // con su «cuántos discos».
   import { ChevronDown, ChevronRight, HardDrive, Layers, Plus, Server, Trash2, TriangleAlert } from "@lucide/svelte";
   import Modal from "$ui/componentes/Modal.svelte";
-  import { bytesInfra, detalleDisco, ESTADOS_CONJUNTO, ESTADOS_DISCO, HIPERVISORES, idDe, MAX_BYTES_INFRA, TIPOS_CONJUNTO, TIPOS_DISCO, type ConjuntoDiscos, type DiscoFisico, type ServidorFisico } from "$lib/infra";
+  import { bytesInfra, detalleDisco, ESTADOS_CONJUNTO, ESTADOS_DISCO, HIPERVISORES, idDe, marcaDeModelo, MAX_BYTES_INFRA, TIPOS_CONJUNTO, TIPOS_DISCO, type ConjuntoDiscos, type DiscoFisico, type ServidorFisico } from "$lib/infra";
   import { actual } from "$lib/estado.svelte";
   import type { Sede } from "$lib/sedes";
   import BotonFalta from "../BotonFalta.svelte";
@@ -60,7 +60,7 @@
   function anadirDisco() {
     const ids = s.discos.map((d) => d.id);
     const id = idDe(`disco-${s.discos.length + 1}`, ids);
-    s.discos = [...s.discos, { id, nombre: `Bahía ${s.discos.length + 1}`, tipo: null, modelo: null, serie: null, tamano: null, bahia: null, estado: null, notas: null }];
+    s.discos = [...s.discos, { id, nombre: `Bahía ${s.discos.length + 1}`, tipo: null, marca: null, modelo: null, serie: null, tamano: null, bahia: null, estado: null, notas: null }];
     terasDisco = [...terasDisco, ""];
     abiertos = new Set([...abiertos, id]);
   }
@@ -95,6 +95,7 @@
     const discos: DiscoFisico[] = s.discos.map((d, i) => ({
       ...d,
       nombre: d.nombre.trim(),
+      marca: d.marca?.trim() || null,
       modelo: d.modelo?.trim() || null,
       serie: d.serie?.trim() || null,
       bahia: d.bahia?.trim() || null,
@@ -108,7 +109,18 @@
       discos: c.miembros?.length ? null : c.discos && c.discos > 0 ? Math.min(256, Math.floor(c.discos)) : null,
       capacidad: teras[i]?.trim() ? Math.round(numeroTB(teras[i]) * 1e12) : null,
     }));
-    return { ...s, id: s.id || idDe(s.nombre, usados), nombre: s.nombre.trim(), marca: s.marca?.trim() || null, modelo: s.modelo?.trim() || null, notas: s.notas?.trim() || null, discos, conjuntos };
+    return {
+      ...s,
+      id: s.id || idDe(s.nombre, usados),
+      nombre: s.nombre.trim(),
+      marca: s.marca?.trim() || null,
+      modelo: s.modelo?.trim() || null,
+      serie: s.serie?.trim() || null,
+      inventario: s.inventario?.trim() || null,
+      notas: s.notas?.trim() || null,
+      discos,
+      conjuntos,
+    };
   }
   /** A5: lo que ocupará toda la infraestructura en cada equipo con este servidor así. */
   const ocupara = $derived.by(() => {
@@ -163,6 +175,14 @@
         <label class="field-label" for="es-modelo">Modelo <span class="faint">(opcional)</span></label>
         <input id="es-modelo" class="input" bind:value={s.modelo} maxlength="120" disabled={ocupado} />
       </div>
+      <div class="field">
+        <label class="field-label" for="es-serie">Número de serie <span class="faint">(opcional)</span></label>
+        <input id="es-serie" class="input mono" bind:value={s.serie} maxlength="64" autocomplete="off" spellcheck="false" placeholder="La «Service Tag» o el S/N de la etiqueta" disabled={ocupado} />
+      </div>
+      <div class="field">
+        <label class="field-label" for="es-inv">Etiqueta de inventario <span class="faint">(opcional)</span></label>
+        <input id="es-inv" class="input mono" bind:value={s.inventario} maxlength="64" autocomplete="off" spellcheck="false" placeholder="La de tu inventario" disabled={ocupado} />
+      </div>
       {#if sedes.length}
         <div class="field">
           <label class="field-label" for="es-sede">Sede</label>
@@ -199,6 +219,13 @@
                   <option value={null}>Sin decir</option>
                   {#each TIPOS_DISCO as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}
                 </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="es-d-k-{i}">Marca</label>
+                <input id="es-d-k-{i}" class="input" bind:value={d.marca} maxlength="80" placeholder={marcaDeModelo(d.modelo) ?? "Samsung, WD, Seagate…"} disabled={ocupado} />
+                {#if !d.marca?.trim() && marcaDeModelo(d.modelo)}
+                  <button type="button" class="btn btn-ghost btn-sm propuesta" disabled={ocupado} onclick={() => (d.marca = marcaDeModelo(d.modelo))}>Poner «{marcaDeModelo(d.modelo)}» (por el modelo)</button>
+                {/if}
               </div>
               <div class="field">
                 <label class="field-label" for="es-d-m-{i}">Modelo</label>
@@ -304,6 +331,10 @@
 </Modal>
 
 <style>
+  .propuesta {
+    align-self: flex-start;
+    margin-top: 4px;
+  }
   .fila2 {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

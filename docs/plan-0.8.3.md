@@ -18,24 +18,24 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 - [~] **16o.** Cada aviso con un solo «qué hago», agrupados, resumen diario opcional.
 - [~] **16p.** Ningún ajuste lejos de donde se nota; ningún control que no haga nada.
 - [x] **16c.** «Actualizaciones de los agentes» en «Mi cuenta y servidor».
-- [ ] **16g.** Los equipos de usuario no salen «Sin anotar» en Infraestructura.
+- [x] **16g.** Los equipos de usuario no salen «Sin anotar» en Infraestructura.
 - [x] **16s.** Primeras veces y estados vacíos.
 
 ## C. Comodidad
 
-- [ ] **16k.** Sesión renovada con el uso, «Recordar este dispositivo», lista de sesiones y una sesión nueva sin poder sobre las demás durante 24 h.
+- [~] **16k.** Sesión renovada con el uso, «Recordar este dispositivo», lista de sesiones y una sesión nueva sin poder sobre las demás durante 24 h.
 - [ ] **16r.** Lo que se hace desde el móvil, a dos toques.
 - [ ] **16e.** Más filtros en Equipos y en el mapa (sede, varias etiquetas, estado…), con vistas guardadas.
 - [ ] **16t.** Tablas largas cómodas.
 - [x] **16u.** Errores siempre en palabras.
-- [ ] **16b.** Ver qué archivos no se pudieron leer, y «No copiar esto».
-- [ ] **16h.** «Este equipo no llega a esa consola» para los que no tienen internet a propósito.
+- [~] **16b.** Ver qué archivos no se pudieron leer, y «No copiar esto».
+- [x] **16h.** «Este equipo no llega a esa consola» para los que no tienen internet a propósito.
 
 ## D. Infraestructura (pequeño)
 
-- [ ] **16a.** Marca de cada disco (hecho: «HDD» sin «(de platos)» y el número de serie en «Hecho de:»).
-- [ ] **16f.** Número de serie del servidor físico.
-- [ ] **16d.** Página de cada disco y de cada conjunto con lo que hay dentro.
+- [x] **16a.** Marca de cada disco (hecho: «HDD» sin «(de platos)» y el número de serie en «Hecho de:»).
+- [x] **16f.** Número de serie del servidor físico.
+- [~] **16d.** Página de cada disco y de cada conjunto con lo que hay dentro.
 
 ## E. Rendimiento y confianza
 

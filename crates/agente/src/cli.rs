@@ -73,6 +73,7 @@ const AYUDA: &str = "Resguardo Agente: órdenes (ejecútalas como administrador;
   restaurar <repo> <versión> <ruta> --destino <carpeta>
                                           Restaura una carpeta o archivo de una versión (nunca sobrescribe)
   registro [n]                            Las últimas n líneas del registro (50 por defecto)
+  archivos-con-error <repo> <copia>       Los archivos que no se pudieron leer en la última copia
   kit <repo> [<derivada>]                 Datos para recuperar las copias (incluye la contraseña) de un
                                           repositorio o de una de sus copias derivadas
 
@@ -607,6 +608,19 @@ fn acceso_kit(repo_id: &str, derivada: Option<&str>) -> Result<(String, crate::r
     Ok((format!("{} ({})", r.nombre, r.id), crate::gestion_v2::acceso(&v, repo_id)?))
 }
 
+/// 0.8.3 (16b): los archivos que no se pudieron leer, para la terminal.
+fn texto_archivos_con_error(archivos: &[crate::agent::ArchivoConError], copias: usize) -> String {
+    if archivos.is_empty() {
+        return "En la última copia se pudieron leer todos los archivos.\n".into();
+    }
+    let mut s = format!("{} {} no se pudieron leer en la última copia:\n", archivos.len(), if archivos.len() == 1 { "archivo" } else { "archivos" });
+    for a in archivos {
+        let veces = if copias > 1 && a.veces == copias { format!(" (en las últimas {copias} copias)") } else { String::new() };
+        s.push_str(&format!("  {}{veces}\n    {}\n", a.ruta, if a.motivo.is_empty() { "sin motivo" } else { &a.motivo }));
+    }
+    s
+}
+
 /// Ejecuta una orden de la línea de órdenes. `args[0]` es la orden.
 pub fn ejecutar(args: &[String]) -> i32 {
     adjuntar_consola();
@@ -672,6 +686,14 @@ fn orden(args: &[String]) -> Result<(), String> {
                 return Err(crate::restic::exit_error(out.code, &out.stderr));
             }
             println!("Restaurado en {destino}.");
+            Ok(())
+        }
+        "archivos-con-error" => {
+            // 0.8.3 (16b): del registro detallado privado (solo administradores).
+            crate::agent::require_admin()?;
+            let (repo, copia) = (arg(args, 1)?, arg(args, 2)?);
+            let (archivos, copias) = crate::agent::archivos_con_error(repo, copia, 5);
+            print!("{}", texto_archivos_con_error(&archivos, copias));
             Ok(())
         }
         "registro" => {

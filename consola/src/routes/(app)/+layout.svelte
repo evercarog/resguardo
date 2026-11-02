@@ -11,6 +11,7 @@
   import BarraLateral from "$lib/componentes/BarraLateral.svelte";
   import SinConexion from "$lib/componentes/SinConexion.svelte";
   import VersionNueva from "$lib/componentes/VersionNueva.svelte";
+  import AvisoSesionNueva from "$lib/componentes/AvisoSesionNueva.svelte";
   import { vigilarVersion } from "$lib/version.svelte";
   import * as api from "$lib/api";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
@@ -110,6 +111,7 @@
     <main id="contenido" class="contenido" bind:this={principal} tabindex="-1">
       <SinConexion />
       <VersionNueva />
+      <AvisoSesionNueva />
       {@render children()}
     </main>
   </div>

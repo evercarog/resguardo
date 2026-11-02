@@ -505,6 +505,10 @@ fn inventario_valido(tipo: &str, m: &Map<String, Value>) -> Result<Value, &'stat
 /// 0.8.2 (A5): `resumen.admite` de un agente que guarda la infraestructura (`infra:`). A uno
 /// anterior no se le manda (rechazaría la orden entera).
 pub const ADMITE_INFRA: &str = "infra_comun";
+/// 0.8.3 (16a, 16f): `resumen.admite` de un agente que acepta la `marca` de cada disco y la
+/// `serie` y el `inventario` de un servidor físico. A uno anterior la consola le manda el
+/// servidor sin esos campos (los rechazaría).
+pub const ADMITE_INFRA_FICHA: &str = "infra_ficha";
 /// ¿Es un dato de la infraestructura (solo para agentes con [`ADMITE_INFRA`])?
 pub fn es_de_infra(clave: &str) -> bool {
     matches!(clase(clave).map(|x| x.0), Some(Clase::Infra))
@@ -591,13 +595,15 @@ fn poner_si<T: Into<Value>>(v: &mut Map<String, Value>, campo: &str, x: Option<T
 /// servidor (`disco0`, `sda`), para poner su nombre en la ficha del equipo.
 fn disco_infra_valido(d: &Value) -> Result<Value, &'static str> {
     let m = d.as_object().ok_or("Disco no válido.")?;
-    solo_campos(m, &["id", "nombre", "tipo", "modelo", "serie", "tamano", "bahia", "estado", "notas", "visto"])?;
+    solo_campos(m, &["id", "nombre", "tipo", "marca", "modelo", "serie", "tamano", "bahia", "estado", "notas", "visto"])?;
     let id = m.get("id").and_then(Value::as_str).filter(|x| id_infra_valido(x)).ok_or("Un disco tiene un id no válido.")?;
     let nombre = texto_valido(m.get("nombre"), 1, 80, false).ok_or("Cada disco necesita un nombre (hasta 80 caracteres).")?;
     let mut v = Map::new();
     v.insert("id".into(), json!(id));
     v.insert("nombre".into(), json!(nombre));
     poner_si(&mut v, "tipo", uno_de(m, "tipo", &TIPOS_DISCO, "Tipo de disco no válido: SSD, HDD, NVMe u otro.")?);
+    // 0.8.3 (16a): la marca (fabricante), escrita por la persona.
+    poner_si(&mut v, "marca", texto_infra(m, "marca", 80, false)?);
     poner_si(&mut v, "modelo", texto_infra(m, "modelo", 120, false)?);
     poner_si(&mut v, "serie", texto_infra(m, "serie", 64, false)?);
     poner_si(&mut v, "tamano", numero_infra(m, "tamano", 1, 1 << 60, "Ese tamaño de disco no es razonable.")?);
@@ -649,12 +655,15 @@ fn conjunto_infra_valido(c: &Value, discos: &[String]) -> Result<Value, &'static
 
 /// El valor de `infra:servidor:<id>`.
 fn servidor_infra_valido(m: &Map<String, Value>) -> Result<Value, &'static str> {
-    solo_campos(m, &["nombre", "marca", "modelo", "sede", "hipervisor", "notas", "discos", "conjuntos"])?;
+    solo_campos(m, &["nombre", "marca", "modelo", "serie", "inventario", "sede", "hipervisor", "notas", "discos", "conjuntos"])?;
     let nombre = texto_valido(m.get("nombre"), 1, 80, false).ok_or("Cada servidor necesita un nombre (hasta 80 caracteres).")?;
     let mut v = Map::new();
     v.insert("nombre".into(), json!(nombre));
     poner_si(&mut v, "marca", texto_infra(m, "marca", 80, false)?);
     poner_si(&mut v, "modelo", texto_infra(m, "modelo", 120, false)?);
+    // 0.8.3 (16f): número de serie y etiqueta de inventario, escritos por la persona.
+    poner_si(&mut v, "serie", texto_infra(m, "serie", 64, false)?);
+    poner_si(&mut v, "inventario", texto_infra(m, "inventario", 64, false)?);
     match m.get("sede") {
         None | Some(Value::Null) => {}
         Some(Value::String(s)) if s.is_empty() => {}
@@ -1479,6 +1488,17 @@ mod tests {
         assert!(mal(&|x| x["hipervisor"] = json!("mainframe")));
         assert!(mal(&|x| x["nombre"] = json!("a\u{7}b")));
         assert!(mal(&|x| x["notas"] = json!("x".repeat(1001))));
+        // 0.8.3 (16a, 16f): la marca de cada disco y la serie y el inventario del servidor.
+        let mut f = s.clone();
+        f["serie"] = json!(" ABC1234 ");
+        f["inventario"] = json!("INV-0042");
+        f["discos"][0]["marca"] = json!("Marca D");
+        let v = valor_valido("infra:servidor:hv-01", &f).unwrap();
+        assert_eq!((v["serie"].as_str(), v["inventario"].as_str(), v["discos"][0]["marca"].as_str()), (Some("ABC1234"), Some("INV-0042"), Some("Marca D")));
+        assert!(mal(&|x| x["serie"] = json!("s".repeat(65))));
+        assert!(mal(&|x| x["inventario"] = json!("i".repeat(65))));
+        assert!(mal(&|x| x["discos"][0]["marca"] = json!("m".repeat(81))));
+        assert!(mal(&|x| x["discos"][0]["marca"] = json!("a\u{7}b")));
         assert!(mal(&|x| x["discos"][0]["serie"] = json!("s".repeat(65))));
         assert!(mal(&|x| x["discos"] = json!((0..65).map(|i| json!({ "id": format!("d{i}"), "nombre": "x" })).collect::<Vec<_>>())));
         // Muchos discos con notas largas: no cabe (16 KiB por servidor).

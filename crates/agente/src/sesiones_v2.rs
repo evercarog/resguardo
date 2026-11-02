@@ -161,10 +161,29 @@ fn atender(v: &Vinculo, id: &str, clave: &[u8; 32], tipo: &Tipo) -> Result<(), S
 /// Lo que se puede pedir en cada tipo de sesión (se anuncia en `lista`).
 fn ops(tipo: &Tipo) -> &'static [&'static str] {
     match tipo {
-        Tipo::Carpetas => &["carpetas", "sugerencias", "crear_carpeta"],
+        Tipo::Carpetas => &["carpetas", "sugerencias", "crear_carpeta", "archivos_con_error"],
         Tipo::Explorar(_) => &["versiones", "listar", "buscar", "diferencias", "ocupa", "historial_archivo", "buscar_todas", "medir"],
         Tipo::Basica => &[],
     }
+}
+
+/// 0.8.3 (16b): `archivos_con_error {repo, copia, copias?}` (solo en `elegir_carpetas`, con la
+/// clave de administración): los archivos que no se pudieron leer en la última copia de esa
+/// copia, con su motivo y en cuántas de las últimas `copias` (5 si no se dice) pasó lo mismo.
+/// Las rutas van cifradas en la sesión: el servidor no las ve.
+pub const ADMITE_ARCHIVOS_CON_ERROR: &str = "archivos_con_error";
+
+fn archivos_con_error(p: &Value) -> Result<Value, String> {
+    let id = |campo: &str| {
+        p[campo]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128 && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)))
+            .ok_or_else(|| format!("Falta «{campo}» (o no es válido)."))
+    };
+    let (repo, copia) = (id("repo")?, id("copia")?);
+    let copias = p["copias"].as_u64().unwrap_or(5).clamp(1, 10) as usize;
+    let (archivos, miradas) = crate::agent::archivos_con_error(repo, copia, copias);
+    Ok(json!({ "archivos": archivos, "copias": miradas }))
 }
 
 /// Lo último que se calculó en la sesión (para dar las páginas siguientes sin repetirlo).
@@ -194,6 +213,7 @@ fn operar(tipo: &Tipo, op: &str, p: &Value, memoria: &mut Memoria) -> Result<Val
             Ok(json!({ "ruta": ruta, "ya_existia": ya }))
         }
         (Tipo::Carpetas, "sugerencias") => Ok(json!({ "sugerencias": sugerencias() })),
+        (Tipo::Carpetas, "archivos_con_error") => archivos_con_error(p),
         (Tipo::Explorar(acc), "versiones") => Ok(json!({ "versiones": versiones(acc)? })),
         (Tipo::Explorar(acc), "listar") => {
             let version = p["version"].as_str().unwrap_or("");
@@ -1343,6 +1363,25 @@ mod tests {
         }
         // Fuera de «explorar», no.
         assert!(operar(&Tipo::Carpetas, "diferencias", &json!({ "hasta": "aaaaaaaa" }), &mut m).is_err());
+    }
+
+    #[test]
+    fn archivos_con_error_solo_en_carpetas_y_validado() {
+        let mut m = Memoria::default();
+        assert!(ops(&Tipo::Carpetas).contains(&"archivos_con_error"));
+        assert!(!ops(&Tipo::Basica).contains(&"archivos_con_error"), "sin la clave de administración, no");
+        for p in [
+            json!({}),
+            json!({ "repo": "r1" }),
+            json!({ "repo": "../x", "copia": "c1" }),
+            json!({ "repo": "r1", "copia": "a b" }),
+            json!({ "repo": "r".repeat(129), "copia": "c" }),
+        ] {
+            assert!(operar(&Tipo::Carpetas, "archivos_con_error", &p, &mut m).is_err(), "{p}");
+        }
+        assert!(operar(&Tipo::Basica, "archivos_con_error", &json!({ "repo": "r1", "copia": "c1" }), &mut m).is_err());
+        let r = operar(&Tipo::Carpetas, "archivos_con_error", &json!({ "repo": "r-sin-copias-16b", "copia": "c1" }), &mut m).unwrap();
+        assert_eq!(r["archivos"], json!([]));
     }
 
     #[test]

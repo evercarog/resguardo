@@ -17,7 +17,7 @@ import { cifrarPlantilla, clavePlantillas, descifrarPlantilla } from "./cripto/s
 import { cargarCatalogo } from "./catalogoDestinos.svelte";
 import { actual, cargarCliente, puede } from "./estado.svelte";
 import { kcfgDelCliente, mandarOrden, pruebaParaEquipo } from "./ordenar";
-import { admiteClave, equiposQueGuardan, pendiente, trozos, type DatosComunesCliente, type Diferencia, type EntradaOrden } from "./datosComunes";
+import { adaptarPara, admiteClave, equiposQueGuardan, pendiente, trozos, type DatosComunesCliente, type Diferencia, type EntradaOrden } from "./datosComunes";
 import type * as T from "./tipos";
 
 export const comunes = $state({
@@ -67,7 +67,7 @@ async function mandarATodos(cliente: T.Cliente, equipos: T.Equipo[], entradas: E
   for (const e of destino) {
     const prueba = pruebas?.get(e.id);
     if (pruebas && !prueba) continue;
-    const suyas = entradas.filter((x) => admiteClave(e, x.clave));
+    const suyas = entradas.filter((x) => admiteClave(e, x.clave)).map((x) => adaptarPara(e, x));
     if (!suyas.length) continue;
     let bien = true;
     for (const t of trozos(suyas)) {

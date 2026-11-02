@@ -1594,7 +1594,7 @@ function abrirSesion(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
   const ops = !versionAlMenos(e.version_agente, VERSION_CREAR_CARPETA)
     ? undefined
     : plana.tipo === "elegir_carpetas"
-      ? ["carpetas", "sugerencias", "crear_carpeta"]
+      ? ["carpetas", "sugerencias", "crear_carpeta", ...((e.resumen?.admite as string[] | undefined)?.includes("archivos_con_error") ? ["archivos_con_error"] : [])]
       : plana.tipo === "explorar"
         ? [
             "versiones",
@@ -1688,6 +1688,19 @@ export async function mensajeDeConsola(s: SesionMock, cifrado: string) {
       if (!ya) creadas.set(padre.toLowerCase(), [...l, nombre]);
       return enviar(s, { op: "crear_carpeta", ruta, ya_existia: ya });
     }
+    case "archivos_con_error":
+      // 0.8.3 (16b): como el agente (sesiones_v2.rs): los de la última copia y cuántas veces.
+      await espera(300);
+      return enviar(s, {
+        op: "archivos_con_error",
+        copias: 5,
+        archivos: [
+          { ruta: "C:\\Users\\recepcion\\AppData\\Local\\Correo\\buzon.pst", motivo: "open C:\\Users\\recepcion\\AppData\\Local\\Correo\\buzon.pst: The process cannot access the file because it is being used by another process.", veces: 5 },
+          { ruta: "C:\\Users\\recepcion\\OneDrive\\Documentos\\Informe anual.docx", motivo: "read: The cloud file provider is not running.", veces: 5 },
+          { ruta: "C:\\Users\\recepcion\\OneDrive\\Documentos\\Fotos de la obra.zip", motivo: "read: The cloud file provider is not running.", veces: 5 },
+          { ruta: "C:\\AppVentas\\Temporal\\bloqueo.lck", motivo: "open C:\\AppVentas\\Temporal\\bloqueo.lck: Access is denied.", veces: 2 },
+        ],
+      });
     case "sugerencias":
       return enviar(s, {
         op: "sugerencias",

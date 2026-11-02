@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS cuentas (
   superusuario INTEGER NOT NULL DEFAULT 0, totp_secreto TEXT, totp_activo INTEGER NOT NULL DEFAULT 0,
   totp_ultimo INTEGER NOT NULL DEFAULT 0, creada INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS recuperacion (cuenta_id TEXT NOT NULL, hash TEXT NOT NULL, usado INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (cuenta_id, hash));
-CREATE TABLE IF NOT EXISTS sesiones (token_hash TEXT PRIMARY KEY, cuenta_id TEXT NOT NULL, aal INTEGER NOT NULL, expira INTEGER NOT NULL, creada INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sesiones (token_hash TEXT PRIMARY KEY, cuenta_id TEXT NOT NULL, aal INTEGER NOT NULL, expira INTEGER NOT NULL, creada INTEGER NOT NULL,
+  id TEXT, usada INTEGER, maximo INTEGER, recordar INTEGER NOT NULL DEFAULT 0, agente TEXT, ip TEXT);
 CREATE TABLE IF NOT EXISTS clientes (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, sal TEXT NOT NULL, espera_min_horas INTEGER NOT NULL, creado INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pertenencias (cuenta_id TEXT NOT NULL, cliente_id TEXT NOT NULL, rol TEXT NOT NULL, PRIMARY KEY (cuenta_id, cliente_id));
 CREATE TABLE IF NOT EXISTS invitaciones (token_hash TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, rol TEXT NOT NULL, caduca INTEGER NOT NULL, creada_por TEXT NOT NULL);
@@ -216,6 +217,19 @@ fn migrar_control(db: &Connection) -> R<()> {
     if !cols.iter().any(|c| c == "archivado") {
         db.execute_batch("ALTER TABLE clientes ADD COLUMN archivado INTEGER").map_err(s)?;
     }
+    // 16k: lista de sesiones, «Recordar este dispositivo» y máximo absoluto.
+    let mut st = db.prepare("SELECT name FROM pragma_table_info('sesiones')").map_err(s)?;
+    let cols = st.query_map([], |r| r.get::<_, String>(0)).map_err(s)?.collect::<Result<Vec<_>, _>>().map_err(s)?;
+    for (col, def) in
+        [("id", "TEXT"), ("usada", "INTEGER"), ("maximo", "INTEGER"), ("recordar", "INTEGER NOT NULL DEFAULT 0"), ("agente", "TEXT"), ("ip", "TEXT")]
+    {
+        if !cols.iter().any(|c| c == col) {
+            db.execute_batch(&format!("ALTER TABLE sesiones ADD COLUMN {col} {def}")).map_err(s)?;
+        }
+    }
+    db.execute_batch("UPDATE sesiones SET id = lower(hex(randomblob(16))) WHERE id IS NULL").map_err(s)?;
+    // Las abiertas antes de tener máximo: 24 h desde que se entró (o lo que ya les quedaba).
+    db.execute_batch("UPDATE sesiones SET maximo = MAX(expira, creada + 86400) WHERE maximo IS NULL").map_err(s)?;
     Ok(())
 }
 
@@ -434,6 +448,24 @@ fn fila_cuenta(r: &rusqlite::Row) -> rusqlite::Result<Cuenta> {
         totp_ultimo: r.get(7)?,
     })
 }
+const COLS_SESION: &str =
+    "cuenta_id, aal, expira, COALESCE(id, ''), creada, COALESCE(usada, creada), COALESCE(maximo, expira), recordar, COALESCE(agente, ''), COALESCE(ip, '')";
+
+fn fila_sesion(r: &rusqlite::Row) -> rusqlite::Result<Sesion> {
+    Ok(Sesion {
+        cuenta_id: r.get(0)?,
+        aal: r.get(1)?,
+        expira: r.get(2)?,
+        id: r.get(3)?,
+        creada: r.get(4)?,
+        usada: r.get(5)?,
+        maximo: r.get(6)?,
+        recordar: r.get::<_, i64>(7)? != 0,
+        agente: r.get(8)?,
+        ip: r.get(9)?,
+    })
+}
+
 const COLS_CUENTA: &str = "id, correo, nombre, hash, superusuario, totp_secreto, totp_activo, totp_ultimo";
 
 fn fila_auditoria(r: &rusqlite::Row) -> rusqlite::Result<EntradaAuditoria> {
@@ -629,26 +661,48 @@ impl Almacen for Sqlite {
         self.ctl().execute("UPDATE cuentas SET nombre = ?2 WHERE id = ?1", [cuenta, nombre]).map_err(s)?;
         Ok(())
     }
-    fn crear_sesion(&self, token_hash: &str, cuenta: &str, aal: u8, expira: Ts) -> R<()> {
+    fn crear_sesion(&self, n: &NuevaSesion) -> R<()> {
         self.ctl()
             .execute(
-                "INSERT INTO sesiones (token_hash, cuenta_id, aal, expira, creada) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![token_hash, cuenta, aal, expira, ahora()],
+                "INSERT INTO sesiones (token_hash, cuenta_id, aal, expira, creada, id, usada, maximo, recordar, agente, ip)
+                 VALUES (?1, ?2, ?3, ?4, ?5, lower(hex(randomblob(16))), ?6, ?7, ?8, ?9, ?10)",
+                params![n.token_hash, n.cuenta, n.aal, n.expira.min(n.maximo), n.creada, ahora(), n.maximo, n.recordar as i64, n.agente, n.ip],
             )
             .map_err(s)?;
         Ok(())
     }
     fn sesion(&self, token_hash: &str) -> R<Option<Sesion>> {
+        let ahora = ahora();
         self.ctl()
-            .query_row("SELECT cuenta_id, aal, expira FROM sesiones WHERE token_hash = ?1 AND expira > ?2", params![token_hash, ahora()], |r| {
-                Ok(Sesion { cuenta_id: r.get(0)?, aal: r.get(1)?, expira: r.get(2)? })
-            })
+            .query_row(
+                &format!("SELECT {COLS_SESION} FROM sesiones WHERE token_hash = ?1 AND expira > ?2 AND COALESCE(maximo, expira) > ?2"),
+                params![token_hash, ahora],
+                fila_sesion,
+            )
             .optional()
             .map_err(s)
     }
-    fn elevar_sesion(&self, token_hash: &str, expira: Ts) -> R<()> {
-        self.ctl().execute("UPDATE sesiones SET aal = 2, expira = ?2 WHERE token_hash = ?1", params![token_hash, expira]).map_err(s)?;
+    fn tocar_sesion(&self, token_hash: &str, expira: Ts, ahora: Ts) -> R<()> {
+        self.ctl()
+            .execute("UPDATE sesiones SET usada = ?3, expira = MIN(?2, COALESCE(maximo, ?2)) WHERE token_hash = ?1", params![token_hash, expira, ahora])
+            .map_err(s)?;
         Ok(())
+    }
+    fn sesiones_de(&self, cuenta: &str) -> R<Vec<Sesion>> {
+        let c = self.ctl();
+        let mut st = c
+            .prepare(&format!(
+                "SELECT {COLS_SESION} FROM sesiones WHERE cuenta_id = ?1 AND aal >= 2 AND expira > ?2 AND COALESCE(maximo, expira) > ?2 ORDER BY COALESCE(usada, creada) DESC"
+            ))
+            .map_err(s)?;
+        let filas = st.query_map(params![cuenta, ahora()], fila_sesion).map_err(s)?;
+        filas.collect::<Result<Vec<_>, _>>().map_err(s)
+    }
+    fn borrar_sesion_por_id(&self, cuenta: &str, id: &str) -> R<bool> {
+        Ok(self.ctl().execute("DELETE FROM sesiones WHERE cuenta_id = ?1 AND id = ?2", [cuenta, id]).map_err(s)? > 0)
+    }
+    fn cuenta_creada(&self, cuenta: &str) -> R<Option<Ts>> {
+        self.ctl().query_row("SELECT creada FROM cuentas WHERE id = ?1", [cuenta], |r| r.get(0)).optional().map_err(s)
     }
     fn borrar_sesion(&self, token_hash: &str) -> R<()> {
         self.ctl().execute("DELETE FROM sesiones WHERE token_hash = ?1", [token_hash]).map_err(s)?;
