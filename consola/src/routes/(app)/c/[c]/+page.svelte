@@ -8,7 +8,7 @@
   // después, todo lo de las copias junto (regla 3-2-1-1-0 y mapa), la lista de
   // las órdenes que esperan, la salud de cada equipo con sus 14 días, los
   // repositorios y cuánto se guarda en cada destino con su tendencia.
-  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X, ListChecks } from "@lucide/svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
@@ -30,6 +30,7 @@
   import AvisoSinAnotar from "$lib/componentes/infra/AvisoSinAnotar.svelte";
   import PrimerosPasos from "$lib/componentes/PrimerosPasos.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
+  import ComprobarTodo from "$lib/componentes/ComprobarTodo.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
@@ -206,6 +207,8 @@
       .at(0),
   );
   let copiar = $state<{ equipo: Equipo; repo: string; copia: string; nombre: string } | null>(null);
+  /** 16v: «Comprobar todo» (repositorios, derivadas, espejos y, con la persona, los kits). */
+  let comprobarTodo = $state(false);
 </script>
 
 <svelte:head><title>Estado · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
@@ -263,6 +266,12 @@
             <span class="t-sub">{prueba.cuando ? (prueba.tono === "ok" ? `${prueba.recientes} de ${plural(prueba.repos, "repositorio probado", "repositorios probados")} en ${PRUEBA_VALE_DIAS} días` : `hace más de ${PRUEBA_VALE_DIAS} días o falló: prueba otra`) : "comprueba que se puede recuperar"}</span>
           </div>
         </dl>
+        {#if puede.ordenar(actual.cliente.rol)}
+          <p class="comprobar-todo">
+            <button type="button" class="btn btn-sm" onclick={() => (comprobarTodo = true)}><ListChecks size={14} />Comprobar todo</button>
+            <span class="faint">Verifica repositorios, copias derivadas y espejos de una vez, y deja un informe.</span>
+          </p>
+        {/if}
       {/if}
       {#if urgentes.length}
         {@const u = urgentes[0]}
@@ -448,6 +457,10 @@
 </div>
 
 {#if fuera && actual.cliente}<AlmacenEnOtraConsola cliente={actual.cliente} almacen={fuera.almacen} consolas={fuera.consolas} onclose={() => (fuera = null)} />{/if}
+
+{#if comprobarTodo && actual.cliente}
+  <ComprobarTodo cliente={actual.cliente} equipos={delFiltro} {reglas} filtro={filtroEtiqueta.valor ?? ""} onclose={() => (comprobarTodo = false)} />
+{/if}
 
 {#if copiar && actual.cliente}
   {#key copiar}

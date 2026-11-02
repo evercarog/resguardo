@@ -476,6 +476,22 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
     case "verificar_ahora":
       // La verificación se ve en marcha (v1.25) mientras el equipo responde; 14p: primero unos segundos «en cola».
       empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "verificar", 20_000, undefined, { por: "Ana" }, 6_000);
+      // 16v: al terminar, su resultado en el informe (y en el resumen), como el agente; la
+      // derivada, en la suya. Así «Comprobar todo» tiene qué enseñar en el simulador.
+      setTimeout(() => {
+        const repo = String(c.repo ?? "");
+        const der = typeof c.derivada === "string" ? c.derivada : null;
+        const inf = e.informes[0];
+        const rinf = inf?.datos.repos?.find((x) => x.id === repo);
+        const v = { ultima: new Date().toISOString(), resultado: "ok" as const, mensaje_corto: "Sin errores en la parte comprobada." };
+        if (rinf && der) {
+          const d = (rinf.derivadas ??= []).find((x) => x.id === der) ?? rinf.derivadas[rinf.derivadas.push({ id: der }) - 1];
+          d.verificacion = v;
+        } else if (rinf) rinf.verificacion = v;
+        const r = e.resumen?.repositorios?.find((x) => x.id === repo);
+        if (r && !der) r.verificado = v.ultima;
+        if (inf) inf.recibido = v.ultima;
+      }, 26_000);
       await espera(1_500);
       return resultado(e, o, "hecha", "Tarea pedida: empieza en unos segundos.");
     case "probar_restauracion": {
@@ -496,6 +512,8 @@ async function ejecutar(e: EquipoMock, o: OrdenMock, plana: OrdenPlana) {
         empezarTarea(e.cliente, e.id, String(c.repo ?? ""), "prueba_restauracion", 6_000);
         await espera(6500);
         Object.assign(x, { ultima: new Date().toISOString(), inicio: new Date(Date.now() - 6000).toISOString(), resultado: "ok", mensaje_corto: "20 archivos (84 MB) de la versión de ayer restaurados y comprobados.", archivos: 20, bytes: 88_080_384 });
+        // 16x: el informe «llega» ahora (los refrescos de la consola solo piden los nuevos).
+        if (e.informes[0]) e.informes[0].recibido = new Date().toISOString();
         return resultado(e, o, "hecha", `Prueba desde «${p.nombre}» pedida: empieza ahora.`);
       }
       if (c.quitar_espejo) {
