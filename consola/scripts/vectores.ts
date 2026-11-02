@@ -58,6 +58,7 @@ import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
 import { copiaAtrasada } from "../src/lib/salud";
 import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
 import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
+import { agruparAvisos, agruparUrgentes, ultimaPrueba } from "../src/lib/urgentes";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1086,6 +1087,27 @@ console.log("\n· 16w: lo que ocupa de verdad en disco, también en el total");
   igual("suma lo protegido de todos y lo que ocupa de los que lo miden", [t.protegido / GB, t.enDisco! / GB, t.medidos, t.repos, t.leido], [149, 70, 2, 3, "2026-10-25T06:00:00Z"]);
   igual("en palabras, con los que faltan por medir", fraseEnDisco(t)?.replace(/\s/g, " "), "149 GB protegidos ocupan 70 GB con todo su historial (medido en 2 de 3 repositorios)");
   igual("si nadie lo midió, no se dice", fraseEnDisco(espacioTotal([equipos[1]], informes)), null);
+}
+
+console.log("\n· 16m y 16o: ¿estoy protegido? y cada aviso con un solo «qué hago», los repetidos juntos");
+{
+  const u = (quien: string, tono: "bad" | "warn", grupo?: string) => ({ tono, texto: quien, titulo: `${quien} · algo`, detalle: "x", quien, grupo, grupoTexto: grupo === "salud:Sin contacto" ? "sin contacto" : "copia fallida", accion: { texto: "Ver el equipo", href: `/e/${quien}` } });
+  const r = agruparUrgentes([u("PC-1", "warn", "salud:Sin contacto"), u("PC-2", "bad", "salud:Copia fallida"), u("PC-3", "warn", "salud:Sin contacto"), u("PC-4", "warn", "salud:Sin contacto"), u("ALMACEN", "warn")], () => ({ texto: "Ver los equipos", href: "/equipos?filtro=atencion" }));
+  igual("tres sin contacto, en una línea; lo grave, arriba", r.map((x) => x.titulo), ["PC-2 · algo", "3 equipos · sin contacto", "ALMACEN · algo"]);
+  igual("…con sus nombres y una sola acción a la lista", [r[1].detalle, r[1].accion?.href], ["PC-1, PC-3 y PC-4.", "/equipos?filtro=atencion"]);
+  igual("uno solo de un grupo sigue como estaba", r[0].accion?.href, "/e/PC-2");
+  const ahoraP = Date.parse("2026-10-26T12:00:00Z");
+  const eqP = (id: string, repos: string[]) => ({ id, nombre: id, resumen: { repositorios: repos.map((x) => ({ id: x, nombre: x, destino: "d" })) } }) as unknown as Equipo;
+  const infP = (repos: { id: string; prueba?: [string, "ok" | "fallo"]; real?: string }[]) =>
+    ({ recibido: "", datos: { repos: repos.map((r) => ({ id: r.id, nombre: r.id, versiones: [], ejecuciones: [], espacio: null, verificacion: null, prueba_restauracion: r.prueba ? { ultima: r.prueba[0], resultado: r.prueba[1], mensaje_corto: null } : null, restauracion_real: r.real ? { ultima: r.real } : null, externa: null })) } }) as unknown as Informe;
+  const p1 = ultimaPrueba([eqP("a", ["r1", "r2"]), eqP("b", ["r3"])], { a: infP([{ id: "r1", prueba: ["2026-10-20T03:00:00Z", "ok"] }, { id: "r2", real: "2026-10-22T10:00:00Z" }]), b: infP([{ id: "r3", prueba: ["2026-07-01T03:00:00Z", "ok"] }]) }, ahoraP);
+  igual("la última prueba (una restauración real cuenta) y cuántos repositorios tienen una reciente", [p1.cuando, p1.tono, p1.recientes, p1.repos], ["2026-10-22T10:00:00Z", "ok", 2, 3]);
+  const p2 = ultimaPrueba([eqP("a", ["r1"])], { a: infP([{ id: "r1", prueba: ["2026-10-25T03:00:00Z", "fallo"] }]) }, ahoraP);
+  igual("la última falló: hay que mirarlo", [p2.tono, p2.recientes], ["warn", 0]);
+  igual("ninguna: «Nunca»", ultimaPrueba([eqP("a", ["r1"])], {}, ahoraP).cuando, null);
+  const av = (id: string, tipo: string, mensaje: string, visto: string | null = null) => ({ id, tipo, equipo: null, mensaje, creado: "2026-10-26T10:00:00Z", visto_por: visto });
+  const g = agruparAvisos([av("1", "copia_fallida", "«PC-1»: no se pudo conectar con el almacén a las 02:00."), av("2", "copia_fallida", "«PC-2»: no se pudo conectar con el almacén a las 03:15."), av("3", "copia_fallida", "«PC-3»: disco lleno."), av("4", "copia_fallida", "«PC-4»: no se pudo conectar con el almacén a las 02:00.", "Ana")]);
+  igual("avisos: los del mismo motivo en una fila (sin mezclar los ya vistos)", g.map((x) => [x.id, x.repetidos.map((y) => y.id)]), [["1", ["2"]], ["3", []], ["4", []]]);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

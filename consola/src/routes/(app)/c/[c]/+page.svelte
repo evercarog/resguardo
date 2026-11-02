@@ -42,14 +42,10 @@
   // Tarea 8: cuántas copias cumplen la regla 3-2-1-1-0 (y las que dejaron de cumplir, sin urgencia).
   import ReglaCliente from "$lib/componentes/regla/ReglaCliente.svelte";
 
-  interface Urgente {
-    tono: Tono;
-    texto: string;
-    /** Quién (el equipo) y qué le pasa, por separado. */
-    titulo?: string;
-    detalle?: string;
-    accion?: { texto: string; href?: string; orden?: { equipo: Equipo; repo: string; copia: string; nombre: string } };
-  }
+  import { agruparUrgentes, ultimaPrueba, PRUEBA_VALE_DIAS, type Urgente } from "$lib/urgentes";
+  import { catalogoDe } from "$lib/catalogoDestinos.svelte";
+  import { listaFuncionales } from "$lib/funcionales.svelte";
+  import { reglasDelCliente } from "$lib/regla321";
 
   const c = $derived(actual.id);
   // Con una etiqueta elegida (Equipos, Avisos y Estado comparten el filtro), solo sus equipos.
@@ -77,6 +73,10 @@
         texto: `${e.nombre}: ${s.detalle}`,
         titulo: `${e.nombre} · ${s.texto.toLowerCase()}`,
         detalle: s.detalle,
+        // 16o: los que tienen lo mismo («Sin contacto», «Copia fallida»…), juntos en una línea.
+        grupo: `salud:${s.texto}`,
+        grupoTexto: s.texto.toLowerCase(),
+        quien: e.nombre,
         accion:
           copia && !sinContacto && puede.ordenar(actual.cliente?.rol)
             ? { texto: "Copiar ahora", orden: { equipo: e, repo: copia.repo, copia: copia.id, nombre: copia.nombre } }
@@ -106,7 +106,7 @@
             accion: { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}#t-espejos` },
           });
     if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver los avisos", href: `/c/${c}/avisos` } });
-    return out.sort((a, b) => PESO[a.tono] - PESO[b.tono]);
+    return agruparUrgentes(out, () => ({ texto: "Ver los equipos", href: `/c/${c}/equipos?filtro=atencion` }));
   });
   const ultima = $derived(
     delFiltro
@@ -151,6 +151,13 @@
     untrack(() => void cargarInformes(cc, ids));
   });
   const informes = $derived(ultimos.cliente === c ? ultimos.porEquipo : {});
+  // 16m: «¿estoy protegido?» en tres cifras: equipos al día, copias con una copia fuera del sitio
+  // (la regla 3-2-1-1-0) y la última prueba de restauración.
+  const reglas = $derived(c ? reglasDelCliente(delFiltro, informes, catalogoDe(c), reloj.ahora, actual.equipos, actual.organizacion, listaFuncionales(c), actual.infra) : []);
+  const fueraDelSitio = $derived({ con: reglas.filter((r) => r.regla.partes.find((x) => x.id === "fuera")?.cumple).length, total: reglas.length });
+  const prueba = $derived(ultimaPrueba(delFiltro, informes, reloj.ahora));
+  /** 16m: lo primero que hay que hacer (con su botón); lo demás, plegado debajo. */
+  let verOtras = $state(false);
 
   // 16w: lo que ocupa de verdad en disco, junto a lo protegido.
   const espacio = $derived(espacioTotal(delFiltro, informes));
@@ -224,20 +231,64 @@
           </p>
         </div>
       </div>
+      {#if delFiltro.length}
+        <!-- 16m: lo que contesta «¿estoy protegido?» de un vistazo. -->
+        <dl class="tres">
+          <div class="t-c">
+            <dt><ShieldCheck size={14} aria-hidden="true" />Equipos al día</dt>
+            <dd class="num">{alDia}<small>{` de ${delFiltro.length}`}</small></dd>
+            <span class="barra" aria-hidden="true">
+              {#each ["ok", "warn", "bad", "paused", "neutral"] as const as t (t)}
+                {@const n = saludes.filter((x) => x.tono === t).length}
+                {#if n}<span style:flex={n} style="--tone: var(--{t})"></span>{/if}
+              {/each}
+            </span>
+          </div>
+          <div class="t-c">
+            <dt><Cloud size={14} aria-hidden="true" />Con una copia fuera del sitio <Ayuda id="regla-321" /></dt>
+            <dd class="num" class:flojo={fueraDelSitio.total > 0 && fueraDelSitio.con < fueraDelSitio.total}>{fueraDelSitio.total ? fueraDelSitio.con : "—"}{#if fueraDelSitio.total}<small>{` de ${plural(fueraDelSitio.total, "copia", "copias")}`}</small>{/if}</dd>
+            <span class="t-sub">{fueraDelSitio.total ? (fueraDelSitio.con === fueraDelSitio.total ? "en otro sitio o en la nube" : "las demás, todo en el mismo sitio") : "sin copias todavía"}</span>
+          </div>
+          <div class="t-c">
+            <dt><Archive size={14} aria-hidden="true" />Última prueba de restauración</dt>
+            <dd class:flojo={prueba.tono !== "ok"}>{#if prueba.cuando}<Tiempo iso={prueba.cuando} />{:else}Nunca{/if}</dd>
+            <span class="t-sub">{prueba.cuando ? (prueba.tono === "ok" ? `${prueba.recientes} de ${plural(prueba.repos, "repositorio probado", "repositorios probados")} en ${PRUEBA_VALE_DIAS} días` : `hace más de ${PRUEBA_VALE_DIAS} días o falló: prueba otra`) : "comprueba que se puede recuperar"}</span>
+          </div>
+        </dl>
+      {/if}
       {#if urgentes.length}
-        <ul class="urgentes">
-          {#each urgentes.slice(0, 6) as u, i (i)}
-            <li>
-              <span class="u-ic tone-{u.tono}" aria-hidden="true">{#if u.tono === "bad"}<CircleAlert size={16} />{:else}<TriangleAlert size={16} />{/if}</span>
-              <span class="texto">{#if u.titulo}<strong>{u.titulo}</strong><span class="det">{u.detalle}</span>{:else}{u.texto}{/if}</span>
-              {#if u.accion?.href}
-                <a class="btn btn-sm" href={u.accion.href}>{u.accion.texto}</a>
-              {:else if u.accion?.orden}
-                <button class="btn btn-sm" onclick={() => (copiar = u.accion!.orden!)}>{u.accion.texto}</button>
-              {/if}
-            </li>
-          {/each}
-        </ul>
+        {@const u = urgentes[0]}
+        <!-- 16m/16o: lo único que hay que hacer hoy, con su botón; lo demás, plegado. -->
+        <div class="hoy">
+          <p class="hoy-t">{urgentes.length === 1 ? "Lo que hay que hacer" : "Lo primero que hay que hacer"}</p>
+          <div class="hoy-fila">
+            <span class="u-ic tone-{u.tono}" aria-hidden="true">{#if u.tono === "bad"}<CircleAlert size={16} />{:else}<TriangleAlert size={16} />{/if}</span>
+            <span class="texto">{#if u.titulo}<strong>{u.titulo}</strong><span class="det">{u.detalle}</span>{:else}{u.texto}{/if}</span>
+            {#if u.accion?.href}
+              <a class="btn btn-primary btn-sm" href={u.accion.href}>{u.accion.texto}</a>
+            {:else if u.accion?.orden}
+              <button class="btn btn-primary btn-sm" onclick={() => (copiar = u.accion!.orden!)}>{u.accion.texto}</button>
+            {/if}
+          </div>
+        </div>
+        {#if urgentes.length > 1}
+          <button type="button" class="btn btn-ghost btn-sm otras" aria-expanded={verOtras} onclick={() => (verOtras = !verOtras)}><ChevronRight size={14} class={verOtras ? "girado" : ""} />{verOtras ? "Ocultar lo demás" : `Ver ${urgentes.length === 2 ? "la otra" : `las otras ${urgentes.length - 1}`}`}</button>
+          {#if verOtras}
+            <ul class="urgentes">
+              {#each urgentes.slice(1) as u, i (i)}
+                <li>
+                  <span class="u-ic tone-{u.tono}" aria-hidden="true">{#if u.tono === "bad"}<CircleAlert size={16} />{:else}<TriangleAlert size={16} />{/if}</span>
+                  <span class="texto">{#if u.titulo}<strong>{u.titulo}</strong><span class="det">{u.detalle}</span>{:else}{u.texto}{/if}</span>
+                  {#if u.accion?.href}
+                    <a class="btn btn-sm" href={u.accion.href}>{u.accion.texto}</a>
+                  {:else if u.accion?.orden}
+                    <button class="btn btn-sm" onclick={() => (copiar = u.accion!.orden!)}>{u.accion.texto}</button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/if}
       {:else if actual.equipos.length && !delFiltro.length && filtroEtiqueta.valor}
         <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
       {:else if !actual.equipos.length && puede.administrar(actual.cliente.rol)}
@@ -247,17 +298,6 @@
 
     {#if delFiltro.length}
       <div class="cifras" role="list" aria-label="Cifras del cliente">
-        <div class="cifra" role="listitem">
-          <span class="c-et"><span class="c-ic" aria-hidden="true"><ShieldCheck size={14} /></span>Equipos al día</span>
-          <span class="c-val num">{alDia}<small>{` de ${delFiltro.length}`}</small></span>
-          <span class="barra" aria-hidden="true">
-            {#each ["ok", "warn", "bad", "paused", "neutral"] as const as t (t)}
-              {@const n = saludes.filter((x) => x.tono === t).length}
-              {#if n}<span style:flex={n} style="--tone: var(--{t})"></span>{/if}
-            {/each}
-          </span>
-          <span class="c-sub">{cuenta("bad") ? plural(cuenta("bad"), "con un problema", "con problemas") : cuenta("warn") ? plural(cuenta("warn"), "con avisos", "con avisos") : "ninguno con problemas"}</span>
-        </div>
         <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><Database size={14} /></span>Protegido</span>
           <span class="c-val num">{protegido ? bytes(protegido) : "—"}</span>
@@ -538,6 +578,85 @@
     margin-top: 2px;
     color: var(--tone);
   }
+  /* 16m: las tres cifras de «¿estoy protegido?», dentro del resumen. */
+  .tres {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+    gap: var(--sp-4);
+    margin: 0;
+  }
+  .t-c {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .t-c dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .t-c dd {
+    margin: 0;
+    font-size: var(--fs-stat);
+    line-height: 28px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .t-c dd small {
+    font-size: var(--fs-sm);
+    font-weight: 400;
+    color: var(--text-3);
+    letter-spacing: 0;
+  }
+  .t-c dd.flojo {
+    color: var(--warn);
+  }
+  .t-sub {
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  /* 16m: lo único que hay que hacer hoy, con su botón. */
+  .hoy {
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--border);
+  }
+  .hoy-t {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-overline);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .hoy-fila {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+  }
+  .hoy-fila .texto {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .hoy-fila strong {
+    font-weight: 500;
+  }
+  .hoy-fila .det {
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+  }
+  .otras {
+    align-self: flex-start;
+  }
+  .otras :global(.girado) {
+    transform: rotate(90deg);
+  }
   .rejilla.repos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   }
@@ -636,6 +755,15 @@
       flex-basis: calc(100% - 28px);
     }
     .urgentes .btn {
+      margin-left: 28px;
+    }
+    .hoy-fila {
+      flex-wrap: wrap;
+    }
+    .hoy-fila .texto {
+      flex-basis: calc(100% - 28px);
+    }
+    .hoy-fila .btn {
       margin-left: 28px;
     }
   }

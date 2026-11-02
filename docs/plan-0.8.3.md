@@ -13,9 +13,9 @@ Propuesto el 2026-10-22, tras la 0.8.2 y la decisión de «probar y pulir». **V
 
 ## B. Que se entienda sin explicarla
 
-- [ ] **16m.** Inicio del cliente que conteste «¿estoy protegido?».
+- [x] **16m.** Inicio del cliente que conteste «¿estoy protegido?».
 - [ ] **16n.** Menos vocabulario a la vista (con alguien que no conozca Resguardo).
-- [ ] **16o.** Cada aviso con un solo «qué hago», agrupados, resumen diario opcional.
+- [~] **16o.** Cada aviso con un solo «qué hago», agrupados, resumen diario opcional.
 - [ ] **16p.** Ningún ajuste lejos de donde se nota; ningún control que no haga nada.
 - [ ] **16c.** «Actualizaciones de los agentes» en «Mi cuenta y servidor».
 - [ ] **16g.** Los equipos de usuario no salen «Sin anotar» en Infraestructura.

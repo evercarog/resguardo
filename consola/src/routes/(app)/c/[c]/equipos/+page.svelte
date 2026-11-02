@@ -17,6 +17,7 @@
   import * as api from "$lib/api";
   import { enFondo } from "$lib/actividad.svelte";
   import { untrack } from "svelte";
+  import { page } from "$app/state";
   import { seguirCambios } from "$lib/vivo.svelte";
   import { actual, app, puede, reloj } from "$lib/estado.svelte";
   import { lista as lista_, plural } from "$lib/formato";
@@ -38,7 +39,10 @@
   const FILTROS = ["todos", "atencion", "almacen"] as const;
   let filtro = $state<(typeof FILTROS)[number]>("todos");
   $effect.pre(() => {
-    if (actual.id) filtro = leer(`equipos.filtro.${actual.id}`, FILTROS, "todos");
+    if (!actual.id) return;
+    // 16o: «Ver los equipos» de Estado llega con `?filtro=atencion`.
+    const q = untrack(() => page.url.searchParams.get("filtro"));
+    filtro = FILTROS.includes(q as (typeof FILTROS)[number]) ? (q as (typeof FILTROS)[number]) : leer(`equipos.filtro.${actual.id}`, FILTROS, "todos");
   });
   function ponerFiltro(f: (typeof FILTROS)[number]) {
     filtro = f;
