@@ -240,6 +240,34 @@ En **Intune**, como aplicación Win32 o script de plataforma, sirve la misma ord
 > - «El código no es válido o ha caducado» (Linux): pide uno nuevo.
 > - «Esa no es la clave de administración de este cliente»: usa la del paso 4.2.
 
+### 5.7 El antivirus lo bloqueó
+
+Algunos antivirus confunden Resguardo Agente con una amenaza (un falso positivo, a menudo por una heurística de aprendizaje automático) y lo ponen en **cuarentena**: borran el programa, su servicio, el icono de la bandeja y el acceso del menú Inicio. Las copias paran y la consola solo ve el equipo desconectado, muchas veces justo después de una copia correcta (la consola lo sugiere en la ficha del equipo). Lo ya copiado sigue a salvo.
+
+Desde la 0.8.3, el instalador comprueba al terminar que el programa sigue ahí y que el servicio arranca; si no, lo dice («Windows o el antivirus quitó o bloqueó Resguardo Agente…») y lo deja en `C:\ProgramData\ResguardoAgente\instalador.log`. La actualización automática lo trata como un fallo: vuelve a la versión anterior y lo avisa con ese motivo.
+
+**Cómo verlo** (Microsoft Defender), en PowerShell como administrador:
+
+```powershell
+Get-MpThreatDetection | Sort-Object InitialDetectionTime -Descending | Select-Object -First 5
+Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -MaxEvents 200 | Where-Object Id -in 1116,1117
+```
+
+El suceso **1116** es la detección y el **1117**, lo que hizo (cuarentena, borrado). También en Seguridad de Windows → Protección contra virus y amenazas → Historial de protección.
+
+**Qué hacer:**
+
+1. **Avisa a Microsoft del falso positivo**: sube el archivo en <https://www.microsoft.com/wdsi/filesubmission> (como desarrollador o como cliente, marcando que es una detección incorrecta). Cuando lo revisan, la detección desaparece para todos con la siguiente actualización de firmas.
+2. **Pon una exclusión solo para el programa** (no para la carpeta entera ni para los datos):
+
+   ```powershell
+   Add-MpPreference -ExclusionPath "C:\Program Files\Resguardo Agente\resguardo-agente.exe"
+   ```
+
+3. **Vuelve a instalar la misma versión, sin código**: la configuración (vínculo con las consolas, copias, claves) está en `C:\ProgramData\ResguardoAgente` y la cuarentena no la toca, así que el equipo vuelve a conectarse solo. Restaurar el archivo desde la cuarentena no basta: el servicio ya no existe.
+
+**Con otro antivirus**, pon la misma exclusión (solo `resguardo-agente.exe`) desde su propia consola de administración y, si despliegas por instalación por comandos, antes de instalar. **En Windows Server**, Defender no pasa solo a modo pasivo cuando se instala otro antivirus (en Windows 10 y 11 sí): pueden quedar los dos vigilando, y el que detecta es a menudo Defender. Si el otro antivirus es el que manda, pon Defender en modo pasivo como indique su fabricante, o añade la exclusión en los dos.
+
 ---
 
 ## 6. Repositorios: dónde se guardan las copias
