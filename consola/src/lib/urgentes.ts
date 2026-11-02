@@ -110,3 +110,16 @@ export function agruparAvisos<A extends { id: string; tipo: string; mensaje: str
   }
   return out;
 }
+
+/**
+ * 16s: el botón de una página vacía porque aún no hay copias: sin equipos, «Añadir equipo»; con
+ * un solo equipo sin copias, crear su primera copia ahí mismo; si no, la lista de equipos (con los
+ * que necesitan algo arriba). null si la persona no puede hacer nada de eso.
+ */
+export function primerPaso(cliente: string, equipos: Pick<Equipo, "id" | "nombre" | "modo" | "resumen">[], administra: boolean): { texto: string; href: string } | null {
+  const activos = equipos.filter((e) => e.modo !== "trasladado");
+  if (!activos.length) return administra ? { texto: "Añadir equipo", href: `/c/${cliente}/emparejar` } : null;
+  const sinCopias = activos.filter((e) => !(e.resumen?.copias ?? []).length);
+  if (activos.length === 1 && sinCopias.length === 1 && administra) return { texto: `Crear la primera copia de ${activos[0].nombre}`, href: `/c/${cliente}/equipos/${activos[0].id}/copias?nueva=1` };
+  return { texto: "Ver los equipos", href: `/c/${cliente}/equipos` };
+}

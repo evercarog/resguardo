@@ -58,7 +58,7 @@ import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
 import { copiaAtrasada } from "../src/lib/salud";
 import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
 import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
-import { agruparAvisos, agruparUrgentes, ultimaPrueba } from "../src/lib/urgentes";
+import { agruparAvisos, agruparUrgentes, primerPaso, ultimaPrueba } from "../src/lib/urgentes";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -1108,6 +1108,11 @@ console.log("\n· 16m y 16o: ¿estoy protegido? y cada aviso con un solo «qué 
   const av = (id: string, tipo: string, mensaje: string, visto: string | null = null) => ({ id, tipo, equipo: null, mensaje, creado: "2026-10-26T10:00:00Z", visto_por: visto });
   const g = agruparAvisos([av("1", "copia_fallida", "«PC-1»: no se pudo conectar con el almacén a las 02:00."), av("2", "copia_fallida", "«PC-2»: no se pudo conectar con el almacén a las 03:15."), av("3", "copia_fallida", "«PC-3»: disco lleno."), av("4", "copia_fallida", "«PC-4»: no se pudo conectar con el almacén a las 02:00.", "Ana")]);
   igual("avisos: los del mismo motivo en una fila (sin mezclar los ya vistos)", g.map((x) => [x.id, x.repetidos.map((y) => y.id)]), [["1", ["2"]], ["3", []], ["4", []]]);
+  // 16s: el botón de una página vacía.
+  const sin = { id: "e1", nombre: "PC-1", modo: "gestionado", resumen: { copias: [] } } as unknown as Equipo;
+  igual("16s: sin equipos, «Añadir equipo» (y nada si no puede)", [primerPaso("c", [], true)?.texto, primerPaso("c", [], false)], ["Añadir equipo", null]);
+  igual("16s: un solo equipo sin copias, su primera copia ahí mismo", primerPaso("c", [sin], true)?.href, "/c/c/equipos/e1/copias?nueva=1");
+  igual("16s: varios, la lista de equipos", primerPaso("c", [sin, { ...sin, id: "e2" }], true)?.texto, "Ver los equipos");
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);

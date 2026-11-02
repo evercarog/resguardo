@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { primerPaso } from "$lib/urgentes";
   // «Buscar archivos»: un archivo por su nombre en TODAS las versiones de un
   // repositorio (o de todos los de un equipo, uno tras otro), con unas fechas
   // opcionales. Cada repositorio se abre con su contraseña en una sesión
@@ -290,7 +291,7 @@
   {:else if !equipos.length}
     <div class="card">
       <Vacio icono={FileSearch} ilustracion="sin-versiones" titulo="Todavía no hay dónde buscar" texto="Cuando un equipo tenga su primera copia, podrás buscar sus archivos en todas las versiones.">
-        <a class="btn btn-primary" href="/c/{actual.id}/equipos">Ver los equipos</a>
+        {#if primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))}{@const pp = primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))!}<a class="btn btn-primary" href={pp.href}>{pp.texto}</a>{/if}
       </Vacio>
     </div>
   {:else}

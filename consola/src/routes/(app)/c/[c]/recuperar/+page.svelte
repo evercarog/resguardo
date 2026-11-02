@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { primerPaso } from "$lib/urgentes";
   import { preguntarAlSalir } from "$lib/salir.svelte";
   import MarcasVersion from "$lib/componentes/MarcasVersion.svelte";
   import Ilustracion from "$ui/componentes/Ilustracion.svelte";
@@ -747,7 +748,7 @@
         {:else}
           <div class="card">
             <Vacio icono={History} ilustracion="sin-versiones" titulo="Nada que restaurar todavía" texto="Cuando un equipo tenga su primera copia, podrás recuperar sus archivos desde aquí.">
-              <a class="btn btn-primary" href="/c/{actual.id}/equipos">Ver los equipos</a>
+              {#if primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))}{@const pp = primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))!}<a class="btn btn-primary" href={pp.href}>{pp.texto}</a>{/if}
             </Vacio>
           </div>
         {/if}
