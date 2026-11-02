@@ -284,7 +284,7 @@
                 <span class="tile-ic" aria-hidden="true"><Server size={16} /></span>
                 <div class="srv-t">
                   <h3 id="srv-{s.id}">{s.nombre}</h3>
-                  <p class="faint">{[nombreHiper(s.hipervisor) ?? "Sin hipervisor", [s.marca, s.modelo].filter(Boolean).join(" "), sede?.nombre].filter(Boolean).join(" · ")}</p>
+                  <p class="faint">{[nombreHiper(s.hipervisor) ?? "Sin hipervisor", [s.marca, s.modelo].filter(Boolean).join(" "), s.serie ? `S/N ${s.serie}` : null, s.inventario ? `inventario ${s.inventario}` : null, sede?.nombre].filter(Boolean).join(" · ")}</p>
                 </div>
                 {#if admin}
                   <div class="srv-acc">

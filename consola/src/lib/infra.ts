@@ -35,6 +35,8 @@ export interface DiscoFisico {
   id: string;
   nombre: string;
   tipo?: TipoDisco | null;
+  /** 0.8.3 (16a): la marca (fabricante: «Samsung», «WD»…), escrita o propuesta a partir del modelo. */
+  marca?: string | null;
   modelo?: string | null;
   serie?: string | null;
   /** Bytes. */
@@ -69,6 +71,10 @@ export interface ServidorFisico {
   nombre: string;
   marca?: string | null;
   modelo?: string | null;
+  /** 0.8.3 (16f): número de serie («Service Tag»…), escrito a mano. */
+  serie?: string | null;
+  /** 0.8.3 (16f): etiqueta de inventario del cliente (identificador externo). */
+  inventario?: string | null;
   /** El id de una sede del cliente. */
   sede?: string | null;
   /** Uno de `HIPERVISORES`, o null (sin hipervisor: un servidor de uso directo). */
@@ -185,6 +191,7 @@ function leerDisco(x: unknown): DiscoFisico | null {
     id: z.id,
     nombre,
     tipo: TIPOS_DISCO.find((t) => t.id === z.tipo)?.id ?? null,
+    marca: textoDe(z.marca, 80),
     modelo: textoDe(z.modelo, 120),
     serie: textoDe(z.serie, 64),
     tamano: numero(z.tamano, 2 ** 60),
@@ -225,6 +232,8 @@ export function leerInfra(x: unknown): Infraestructura {
       nombre,
       marca: textoDe(y.marca, 80),
       modelo: textoDe(y.modelo, 120),
+      serie: textoDe(y.serie, 64),
+      inventario: textoDe(y.inventario, 64),
       sede: typeof y.sede === "string" && claveOk(y.sede) ? y.sede : null,
       hipervisor: HIPERVISORES.some((h) => h.id === y.hipervisor) ? (y.hipervisor as string) : null,
       notas: textoDe(y.notas, 1000),
@@ -305,11 +314,45 @@ export function textoConjunto(c: ConjuntoDiscos): string {
   return c.nombre.toLowerCase() === f.toLowerCase() ? f : `${c.nombre}, ${f}`;
 }
 
-/** 0.8.2 (A2): «HDD 4 TB · Modelo X» (lo que se sabe de un disco físico, sin su nombre). */
-export function detalleDisco(d: Pick<DiscoFisico, "tipo" | "tamano" | "modelo" | "bahia">): string {
+/** 0.8.2 (A2): «HDD 4 TB · Samsung Modelo X» (lo que se sabe de un disco físico, sin su nombre; 16a: con su marca). */
+export function detalleDisco(d: Pick<DiscoFisico, "tipo" | "tamano" | "modelo" | "bahia"> & { marca?: string | null }): string {
   const tipo = d.tipo ? (TIPOS_DISCO.find((t) => t.id === d.tipo)?.corto ?? "") : "";
   const tam = d.tamano ? bytes(d.tamano) : "";
-  return [[tipo === "disco" && tam ? "" : tipo, tam].filter(Boolean).join(" "), d.modelo, d.bahia ? `bahía ${d.bahia}` : null].filter(Boolean).join(" · ");
+  return [[tipo === "disco" && tam ? "" : tipo, tam].filter(Boolean).join(" "), marcaYModelo(d.marca, d.modelo), d.bahia ? `bahía ${d.bahia}` : null].filter(Boolean).join(" · ");
+}
+
+/** 16a: «Samsung 870 EVO» sin repetir la marca si el modelo ya empieza por ella. */
+export function marcaYModelo(marca: string | null | undefined, modelo: string | null | undefined): string {
+  const m = (modelo ?? "").trim();
+  const k = (marca ?? "").trim();
+  if (!k) return m;
+  if (!m) return k;
+  return m.toLowerCase().startsWith(k.toLowerCase()) ? m : `${k} ${m}`;
+}
+
+/** 16a: la marca que se deduce del modelo que ve el agente, solo cuando es evidente (si no, null). */
+export function marcaDeModelo(modelo: string | null | undefined): string | null {
+  const m = (modelo ?? "").trim().toUpperCase();
+  if (!m) return null;
+  const reglas: [RegExp, string][] = [
+    [/^SAMSUNG\b|^MZ[0-9A-Z]{2,}/, "Samsung"],
+    [/^WDC\b|^WD[ _-]?[0-9A-Z]|^WESTERN DIGITAL\b/, "WD"],
+    [/^SEAGATE\b|^ST[0-9]{3,}/, "Seagate"],
+    [/^TOSHIBA\b|^KIOXIA\b/, m.startsWith("KIOXIA") ? "Kioxia" : "Toshiba"],
+    [/^HGST\b|^HITACHI\b/, m.startsWith("HGST") ? "HGST" : "Hitachi"],
+    [/^INTEL\b|^SSDSC/, "Intel"],
+    [/^CRUCIAL\b|^CT[0-9]{3,}/, "Crucial"],
+    [/^MICRON\b/, "Micron"],
+    [/^KINGSTON\b/, "Kingston"],
+    [/^SANDISK\b/, "SanDisk"],
+    [/^SK ?HYNIX\b|^HFS[0-9]/, "SK hynix"],
+    [/^DELL\b/, "Dell"],
+    [/^HPE?\b/, m.startsWith("HPE") ? "HPE" : "HP"],
+    [/^LENOVO\b/, "Lenovo"],
+    [/^ADATA\b/, "ADATA"],
+    [/^TRANSCEND\b|^TS[0-9]+GSSD/, "Transcend"],
+  ];
+  return reglas.find(([r]) => r.test(m))?.[1] ?? null;
 }
 
 /** 0.8.2 (A2): «Bahía 2 + Bahía 3» (los discos de un conjunto, por su nombre). */
@@ -417,13 +460,14 @@ function poner(out: Record<string, unknown>, campo: string, r: { ok: boolean; v?
 function discoValido(x: unknown): Record<string, unknown> | string {
   if (!x || typeof x !== "object" || Array.isArray(x)) return "Disco no válido.";
   const m = x as Record<string, unknown>;
-  if (!soloCampos(m, ["id", "nombre", "tipo", "modelo", "serie", "tamano", "bahia", "estado", "notas", "visto"])) return "Campos de más en el valor.";
+  if (!soloCampos(m, ["id", "nombre", "tipo", "marca", "modelo", "serie", "tamano", "bahia", "estado", "notas", "visto"])) return "Campos de más en el valor.";
   if (!idOk(m.id)) return "Un disco tiene un id no válido.";
   const nombre = textoOpc(m.nombre, 80);
   if (!nombre.v) return "Cada disco necesita un nombre (hasta 80 caracteres).";
   const v: Record<string, unknown> = { id: m.id, nombre: nombre.v };
   const ok =
     poner(v, "tipo", enLista(m.tipo, TIPOS_DISCO.map((t) => t.id))) &&
+    poner(v, "marca", textoOpc(m.marca, 80)) &&
     poner(v, "modelo", textoOpc(m.modelo, 120)) &&
     poner(v, "serie", textoOpc(m.serie, 64)) &&
     poner(v, "tamano", numOpc(m.tamano, 1, 2 ** 60)) &&
@@ -487,7 +531,7 @@ export function infraValida(clave: string, valor: unknown): Resultado {
   if (!valor || typeof valor !== "object" || Array.isArray(valor)) return { ok: false, error: "Valor no válido." };
   const o = valor as Record<string, unknown>;
   if (tipo === "servidor") {
-    if (!soloCampos(o, ["nombre", "marca", "modelo", "sede", "hipervisor", "notas", "discos", "conjuntos"])) return { ok: false, error: "Campos de más en el valor." };
+    if (!soloCampos(o, ["nombre", "marca", "modelo", "serie", "inventario", "sede", "hipervisor", "notas", "discos", "conjuntos"])) return { ok: false, error: "Campos de más en el valor." };
     const nombre = textoOpc(o.nombre, 80);
     if (!nombre.v) return { ok: false, error: "Cada servidor necesita un nombre." };
     const v: Record<string, unknown> = { nombre: nombre.v };
@@ -495,6 +539,8 @@ export function infraValida(clave: string, valor: unknown): Resultado {
     const ok =
       poner(v, "marca", textoOpc(o.marca, 80)) &&
       poner(v, "modelo", textoOpc(o.modelo, 120)) &&
+      poner(v, "serie", textoOpc(o.serie, 64)) &&
+      poner(v, "inventario", textoOpc(o.inventario, 64)) &&
       poner(v, "sede", sede) &&
       poner(v, "hipervisor", enLista(o.hipervisor, HIPERVISORES.map((h) => h.id))) &&
       poner(v, "notas", textoOpc(o.notas, 1000, true));
@@ -637,7 +683,8 @@ export function discosPropuestos(e: Equipo, usados: readonly string[] = []): Dis
     const id = idDe(`disco-${n + 1}`, ids);
     ids.push(id);
     const tipo = tipoDeDisco(d);
-    return { id, nombre: d.modelo ? `${d.modelo}` : `Disco ${n + 1}`, tipo, modelo: d.modelo ?? null, tamano: d.total || null, visto: d.id };
+    // 16a: la marca, solo si el modelo la deja clara.
+    return { id, nombre: d.modelo ? `${d.modelo}` : `Disco ${n + 1}`, tipo, marca: marcaDeModelo(d.modelo), modelo: d.modelo ?? null, tamano: d.total || null, visto: d.id };
   });
 }
 
@@ -820,7 +867,7 @@ export function discosEnNiveles(e: Equipo, i: Infraestructura | null | undefined
     const x = anotadoDisco(d.id);
     const virtual = d.bus === "virtual";
     const tipo = x?.tipo ?? tipoDeDisco(d);
-    const visto = detalleDisco({ tipo, tamano: d.total || x?.tamano, modelo: x?.modelo ?? d.modelo, bahia: x?.bahia });
+    const visto = detalleDisco({ tipo, tamano: d.total || x?.tamano, marca: x?.marca, modelo: x?.modelo ?? d.modelo, bahia: x?.bahia });
     const est = x?.estado ? ESTADO_DISCO_TEXTO[x.estado] : null;
     const nodo: NodoDisco = {
       clave: `d:${d.id}`,

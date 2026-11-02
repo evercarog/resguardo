@@ -1,6 +1,8 @@
 // Pruebas de la rama `ia/083-servidor` (plan 0.8.3): 16k (sesiones de la consola) y lo
 // que venga después en esta rama. `npm run test:vectores`.
-import type { SesionCuenta } from "../src/lib/tipos";
+import type { Equipo, SesionCuenta } from "../src/lib/tipos";
+import { detalleDisco, infraValida, leerInfra, marcaDeModelo, marcaYModelo } from "../src/lib/infra";
+import { adaptarPara } from "../src/lib/datosComunes";
 import { conTopes, esMovil, frasePlazos, lineaSesion, motivoNoCerrar, nuevasSinVer, ordenarSesiones, textoSesionNueva } from "../src/lib/sesionesCuenta";
 
 let fallos = 0;
@@ -64,6 +66,38 @@ console.log("\n· 16k: sesiones de la consola");
   igual("topes: lo que no es un número, al valor por defecto", conTopes({ inactividad_horas: Number.NaN, maximo_horas: Number.NaN, recordar_dias: Number.NaN }), { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 });
   igual("plazos en una frase", frasePlazos({ inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 }), "Se cierra tras 8 h sin usarla y, aunque se use, a las 24 h; con «Recordar este dispositivo», hasta 14 días.");
   cierto("plazos sin recordar", frasePlazos({ inactividad_horas: 8, maximo_horas: 24, recordar_dias: 0 }).endsWith("sin «Recordar este dispositivo»."));
+}
+
+console.log("\n· 16a y 16f: marca de los discos, número de serie e inventario del servidor");
+{
+  igual("marca: Samsung por el modelo", marcaDeModelo("Samsung SSD 870 EVO 1TB"), "Samsung");
+  igual("marca: WD por WDC", marcaDeModelo("WDC WD40EFRX-68N32N0"), "WD");
+  igual("marca: Seagate por ST…", marcaDeModelo("ST4000VN008-2DR166"), "Seagate");
+  igual("marca: Crucial por CT…", marcaDeModelo("CT1000MX500SSD1"), "Crucial");
+  igual("marca: Toshiba", marcaDeModelo("TOSHIBA MG04ACA400E"), "Toshiba");
+  igual("marca: HPE (no HP)", marcaDeModelo("HPE MB4000GVYZK"), "HPE");
+  igual("marca: si no es evidente, nada", marcaDeModelo("Disco virtual 2"), null);
+  igual("marca: sin modelo, nada", marcaDeModelo(null), null);
+  igual("marca y modelo sin repetir", marcaYModelo("Samsung", "Samsung SSD 870 EVO"), "Samsung SSD 870 EVO");
+  igual("marca y modelo juntos", marcaYModelo("WD", "Red Plus 4TB"), "WD Red Plus 4TB");
+  igual("solo la marca", marcaYModelo("Dell", null), "Dell");
+  igual("detalle del disco con su marca", detalleDisco({ tipo: "hdd", tamano: null, marca: "WD", modelo: "Red Plus", bahia: "2" }), "HDD · WD Red Plus · bahía 2");
+
+  const valor = { nombre: "hv-01", serie: "ABC1234", inventario: "INV-0042", discos: [{ id: "b1", nombre: "Bahía 1", marca: "WD", serie: "SN-1" }] };
+  igual("infra válida con serie, inventario y marca", infraValida("infra:servidor:hv-01", valor), { ok: true, limpio: valor });
+  igual("serie de más de 64: no", infraValida("infra:servidor:hv-01", { nombre: "hv-01", serie: "x".repeat(65) }).ok, false);
+  igual("marca de más de 80: no", infraValida("infra:servidor:hv-01", { nombre: "hv-01", discos: [{ id: "b1", nombre: "B", marca: "m".repeat(81) }] }).ok, false);
+
+  const nuevo = { resumen: { admite: ["infra_comun", "infra_ficha"] } } as unknown as Equipo;
+  const viejo = { resumen: { admite: ["infra_comun"] } } as unknown as Equipo;
+  const x = { clave: "infra:servidor:hv-01", valor, cambiado: "2026-11-02T10:00:00Z" };
+  igual("a un agente que lo admite: tal cual", adaptarPara(nuevo, x), x);
+  igual("a uno anterior: sin serie, inventario ni marca", adaptarPara(viejo, x).valor, { nombre: "hv-01", discos: [{ id: "b1", nombre: "Bahía 1", serie: "SN-1" }] });
+  igual("otras claves: tal cual", adaptarPara(viejo, { clave: "infra:equipo:e1", valor: { servidor: "hv-01" } }).valor, { servidor: "hv-01" });
+  igual("quitado (null): tal cual", adaptarPara(viejo, { clave: "infra:servidor:hv-01", valor: null }).valor, null);
+  const leido = leerInfra({ servidores: [{ id: "hv-01", nombre: "hv-01", serie: "ABC1234", inventario: "INV-0042", discos: [{ id: "b1", nombre: "Bahía 1", marca: "WD" }], conjuntos: [] }] });
+  igual("leer: la serie y el inventario del servidor", [leido.servidores[0].serie, leido.servidores[0].inventario], ["ABC1234", "INV-0042"]);
+  igual("leer: la marca del disco", leido.servidores[0].discos[0].marca, "WD");
 }
 
 console.log(`\n${total - fallos} de ${total} bien`);
