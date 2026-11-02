@@ -88,6 +88,8 @@
   import { caminoDeCopia } from "$lib/camino";
   import { enVivoCamino } from "$lib/caminoVivo.svelte";
   import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
+  import ArchivosConError from "$lib/componentes/ArchivosConError.svelte";
+  import { ADMITE_ARCHIVOS_CON_ERROR } from "$lib/archivosConError";
   // 0.8.1 (15t): el lápiz junto al título (nombre nuevo y clave de administración).
   import RenombrarCopia from "$lib/componentes/copias/RenombrarCopia.svelte";
   import CopiarAhora from "$lib/componentes/copias/CopiarAhora.svelte";
@@ -188,6 +190,9 @@
     return [...grupos.values()];
   });
   const explicacion = $derived(vuelta && (vuelta.resultado === "fallo" || vuelta.resultado === "aviso") ? explicarError(vuelta.mensaje) : null);
+  // 16b: «Ver los archivos» que no se pudieron leer (con un agente que sabe decirlos).
+  let viendoArchivos = $state(false);
+  const puedeVerArchivos = $derived(!!explicacion && explicacion.titulo === "Algunos archivos no se pudieron leer" && !!equipo?.resumen?.admite?.includes(ADMITE_ARCHIVOS_CON_ERROR));
 
   // --- Las carpetas (cifradas): con la clave de administración ------------
   let clave = $state("");
@@ -335,7 +340,10 @@
         <div>
           <p><strong>{explicacion.titulo}.</strong> {explicacion.texto}</p>
           {#if vuelta.mensaje}<div class="msg-equipo">El equipo dijo (<span use:tip={fechaLarga(vuelta.cuando)}>{relativo(vuelta.cuando, reloj.ahora)}</span>): <ErrorCopia mensaje={vuelta.mensaje} detalle={vuelta.detalle} /></div>{/if}
-          <p><a class="link" href="/ayuda#{explicacion.ayuda}"><CircleHelp size={14} />¿Qué hago?</a></p>
+          <p>
+            {#if puedeVerArchivos && puede.administrar(rol)}<button class="btn btn-sm" onclick={() => (viendoArchivos = true)}>Ver los archivos</button>{/if}
+            <a class="link" href="/ayuda#{explicacion.ayuda}"><CircleHelp size={14} />¿Qué hago?</a>
+          </p>
         </div>
       </div>
     {:else if estado.texto === "Atrasada"}
@@ -606,6 +614,10 @@
 {#if copiandoAhora && equipo && actual.cliente && k}
   <CopiarAhora cliente={actual.cliente} {equipo} repo={k.repo} copia={k.id} nombre={k.nombre} onclose={() => (copiandoAhora = false)} />
 {/if}
+{#if viendoArchivos && equipo && actual.cliente && k}
+  <ArchivosConError cliente={actual.cliente} {equipo} repo={k.repo} copia={k.id} nombreCopia={k.nombre} onclose={() => (viendoArchivos = false)} />
+{/if}
+
 {#if renombrando && equipo && actual.cliente && k}
   <RenombrarCopia cliente={actual.cliente} {equipo} que={{ tipo: "copia", id: k.id, nombre: k.nombre }} alCambiar={() => api.equipo(c, e).then((x) => (equipo = x)).catch(() => {})} onclose={() => (renombrando = false)} />
 {/if}

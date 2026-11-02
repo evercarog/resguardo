@@ -1063,6 +1063,63 @@ fn failed_files_in(dir: &std::path::Path, key: &str) -> Vec<String> {
 /// Como mucho, cuántos archivos con error se anotan por copia.
 const MAX_DETAIL_FILES: usize = 500;
 
+/// 0.8.3 (16b): un archivo que no se pudo leer en la última copia de un plan, con en
+/// cuántas de las últimas copias pasó lo mismo.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct ArchivoConError {
+    pub ruta: String,
+    pub motivo: String,
+    /// En cuántas de las copias miradas falló este archivo (contando la última).
+    pub veces: usize,
+}
+
+/// 0.8.3 (16b): los archivos de la última copia de un plan que no se pudieron leer, y en
+/// cuántas de las últimas `copias` (como mucho 10) pasó lo mismo. Devuelve también cuántas
+/// copias se miraron. Del registro detallado privado: solo para quien ya puede verlo
+/// (el servicio, o un administrador del equipo).
+pub fn archivos_con_error(repo_id: &str, plan_id: &str, copias: usize) -> (Vec<ArchivoConError>, usize) {
+    archivos_con_error_in(&private_dir(), &crate::plans::plan_key(repo_id, plan_id), copias)
+}
+
+/// «ruta: motivo» (la ruta va antes del primer «: »; en Windows, «C:\…» no lleva espacio).
+pub fn partir_archivo_con_error(linea: &str) -> (String, String) {
+    match linea.split_once(": ") {
+        Some((r, m)) if !r.trim().is_empty() => (r.trim().to_string(), m.trim().to_string()),
+        _ => (linea.trim().to_string(), String::new()),
+    }
+}
+
+fn archivos_con_error_in(dir: &std::path::Path, key: &str, copias: usize) -> (Vec<ArchivoConError>, usize) {
+    let lines = detail_tail_in(dir, usize::MAX);
+    let start = detail_start(key);
+    let marker = detail_file(key);
+    // Las copias de este plan, cada una con sus archivos (de la más vieja a la más nueva).
+    let mut tandas: Vec<Vec<String>> = Vec::new();
+    for l in &lines {
+        if l.contains(&start) {
+            tandas.push(Vec::new());
+        } else if let Some((_, resto)) = l.split_once(&marker) {
+            match tandas.last_mut() {
+                Some(t) if t.len() < MAX_DETAIL_FILES => t.push(resto.to_string()),
+                Some(_) => {}
+                None => tandas.push(vec![resto.to_string()]),
+            }
+        }
+    }
+    let n = copias.clamp(1, 10).min(tandas.len());
+    let Some(ultima) = tandas.last() else { return (Vec::new(), 0) };
+    let recientes = &tandas[tandas.len() - n..];
+    let archivos = ultima
+        .iter()
+        .map(|l| {
+            let (ruta, motivo) = partir_archivo_con_error(l);
+            let veces = recientes.iter().filter(|t| t.iter().any(|x| partir_archivo_con_error(x).0 == ruta)).count();
+            ArchivoConError { ruta, motivo, veces }
+        })
+        .collect();
+    (archivos, n)
+}
+
 /// Últimas líneas del registro del agente (lo pueden leer todos los usuarios
 /// del equipo; no contiene contraseñas). Incluye el registro anterior si el
 /// actual acaba de rotar.
@@ -3009,6 +3066,37 @@ pub mod tests {
         let tail = detail_tail_in(&dir, 50);
         assert!(tail.iter().any(|l| l.contains(r"C:\Users\ana\a b.pst")), "el detalle conserva las rutas");
         assert!(!tail.iter().any(|l| l.contains("clave")), "nunca contraseñas");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn archivos_con_error_y_cuantas_veces() {
+        let dir = std::env::temp_dir().join(format!("resguardo-detalle-16b-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let key = crate::plans::plan_key("r16b", "p1");
+        assert_eq!(archivos_con_error_in(&dir, &key, 5), (vec![], 0), "sin copias, nada");
+        for i in 0..3 {
+            log_detail_in(&dir, &format!("{} «D» / «C»", detail_start(&key)));
+            log_detail_in(&dir, &format!(r"{}C:\Users\ana\correo.pst: open C:\Users\ana\correo.pst: The process cannot access the file", detail_file(&key)));
+            if i == 2 {
+                log_detail_in(&dir, &format!(r"{}C:\Users\ana\OneDrive\informe.docx: cloud file provider", detail_file(&key)));
+            }
+        }
+        let (archivos, copias) = archivos_con_error_in(&dir, &key, 5);
+        assert_eq!(copias, 3);
+        assert_eq!(archivos.len(), 2);
+        assert_eq!(archivos[0].ruta, r"C:\Users\ana\correo.pst");
+        assert!(archivos[0].motivo.contains("cannot access"));
+        assert_eq!(archivos[0].veces, 3, "en las tres copias");
+        assert_eq!(archivos[1].veces, 1, "solo en la última");
+        // Solo se miran las que se piden.
+        assert_eq!(archivos_con_error_in(&dir, &key, 2).1, 2);
+        // Una última copia sin errores: nada (aunque las de antes los tuvieran).
+        log_detail_in(&dir, &format!("{} «D» / «C»", detail_start(&key)));
+        assert!(archivos_con_error_in(&dir, &key, 5).0.is_empty());
+        assert_eq!(partir_archivo_con_error("/srv/a: b: c"), ("/srv/a".to_string(), "b: c".to_string()));
+        assert_eq!(partir_archivo_con_error("sin motivo"), ("sin motivo".to_string(), String::new()));
         let _ = fs::remove_dir_all(&dir);
     }
 

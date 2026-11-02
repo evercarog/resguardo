@@ -4,6 +4,7 @@ import type { Equipo, SesionCuenta } from "../src/lib/tipos";
 import { detalleDisco, infraValida, leerInfra, marcaDeModelo, marcaYModelo, sinAnotar, type Infraestructura } from "../src/lib/infra";
 import { equiposPorGrupo, grupoInfra, hipervisoresPara, servidoresParaElegir, servidorPropuesto, textoFaltan } from "../src/lib/infraGrupos";
 import { fichaSoporte, hrefSoporte } from "../src/lib/infraFicha";
+import { agruparArchivos, carpetaDe, claseError, conExclusiones, leerArchivos, nombreDe, resumenRepeticion } from "../src/lib/archivosConError";
 import { adaptarPara } from "../src/lib/datosComunes";
 import { conTopes, esMovil, frasePlazos, lineaSesion, motivoNoCerrar, nuevasSinVer, ordenarSesiones, textoSesionNueva } from "../src/lib/sesionesCuenta";
 
@@ -185,6 +186,38 @@ console.log("\n· 16d: la página de cada disco y de cada conjunto");
   igual("no existe: null", fichaSoporte(infra, "srv", "disco", "nada", [], []), null);
   igual("servidor que no existe: null", fichaSoporte(infra, "otro", "disco", "b1", [], []), null);
   igual("dirección de la página", hrefSoporte("c1", "srv", "disco", "b1"), "/c/c1/ajustes/infraestructura/srv/disco/b1");
+}
+
+console.log("\n· 16b: los archivos que no se pudieron leer");
+{
+  igual("motivo: en uso", claseError("open C:\\x.pst: The process cannot access the file because it is being used by another process."), "en_uso");
+  igual("motivo: sin permiso", claseError("open C:\\x: Access is denied."), "permiso");
+  igual("motivo: OneDrive", claseError("read: The cloud file provider is not running."), "nube");
+  igual("motivo: ruta larga", claseError("The filename or extension is too long."), "larga");
+  igual("motivo: ya no estaba", claseError("lstat C:\\x: The system cannot find the file specified."), "no_existe");
+  igual("motivo: carpeta que el agente no ve", claseError("el agente no encuentra esta carpeta"), "no_existe");
+  igual("motivo: otro", claseError("algo raro"), "otro");
+  igual("carpeta (Windows)", carpetaDe("C:\\Users\\ana\\a.pst"), "C:\\Users\\ana");
+  igual("carpeta (raíz de Windows)", carpetaDe("C:\\a.pst"), "C:\\");
+  igual("carpeta (Linux)", carpetaDe("/srv/datos/a.db"), "/srv/datos");
+  igual("nombre", nombreDe("C:\\Users\\ana\\a b.pst"), "a b.pst");
+  const xs = [
+    { ruta: "C:\\U\\ana\\a.pst", motivo: "being used by another process", veces: 5 },
+    { ruta: "C:\\U\\ana\\b.pst", motivo: "being used by another process", veces: 5 },
+    { ruta: "C:\\U\\OneDrive\\c.docx", motivo: "cloud file provider", veces: 5 },
+  ];
+  const g = agruparArchivos(xs);
+  igual("agrupados: primero el motivo con más archivos", g.map((x) => [x.clase, x.total]), [["en_uso", 2], ["nube", 1]]);
+  igual("agrupados: por carpeta", g[0].carpetas.map((c) => [c.carpeta, c.archivos.length]), [["C:\\U\\ana", 2]]);
+  cierto("OneDrive: explica qué pasa", g[1].explica.includes("Mantener siempre en este dispositivo"));
+  igual("siempre los mismos", resumenRepeticion(xs, 5), "Son siempre los mismos 3 archivos: fallaron en las últimas 5 copias.");
+  igual("uno siempre", resumenRepeticion([xs[0]], 5), "Es siempre el mismo archivo: falló en las últimas 5 copias.");
+  cierto("algunos siempre", (resumenRepeticion([xs[0], { ...xs[1], veces: 1 }], 5) ?? "").startsWith("1 de 2 fallaron"));
+  igual("una sola copia: nada que comparar", resumenRepeticion(xs, 1), null);
+  igual("leer: lo que no cuadra, fuera", leerArchivos({ archivos: [{ ruta: "C:\\a", motivo: "x", veces: 2 }, { motivo: "sin ruta" }, null, "x"], copias: 99 }), { archivos: [{ ruta: "C:\\a", motivo: "x", veces: 2 }], copias: 10 });
+  igual("leer: nada", leerArchivos(null), { archivos: [], copias: 1 });
+  igual("exclusiones sin repetir (Windows, sin mayúsculas)", conExclusiones(["C:\\U\\ana\\A.pst"], ["C:\\U\\ana\\a.pst", "C:\\U\\ana\\b.pst"], true), ["C:\\U\\ana\\A.pst", "C:\\U\\ana\\b.pst"]);
+  igual("exclusiones en Linux distinguen mayúsculas", conExclusiones(["/srv/A"], ["/srv/a"], false), ["/srv/A", "/srv/a"]);
 }
 
 console.log(`\n${total - fallos} de ${total} bien`);
