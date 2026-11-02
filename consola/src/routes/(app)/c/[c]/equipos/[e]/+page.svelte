@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sinPrefijo } from "$lib/espejoTrabajos";
   import { velocidadEnFrase } from "$lib/franjas";
   import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
@@ -1436,7 +1437,7 @@
                       <span class="d-texto">
                         <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
                         <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosAlmacen.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
-                        {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado} <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
+                        {#if e === "error" && t.resultado}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /> <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
                         {#if t.freno_aviso}<span class="msg-fallo">Freno: {t.freno_aviso}</span>{/if}
                       </span>
                       <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
@@ -1467,7 +1468,7 @@
                           <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
                           <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
                           {#if d.freno && puede.administrar(rol)}<span class="freno"><button class="btn btn-sm" onclick={() => confirmarFreno(d)}>Confirmar lo que falta…</button></span>{/if}{/if}
-                        {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
+                        {#if resultadoConError(d.resultado)}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(d.resultado ?? "")} /> <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
                       {#if puede.administrar(rol)}
@@ -1489,7 +1490,7 @@
                 </div>
               {/if}
               {:else if g.espejo.resultado}
-                <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo">{g.espejo.resultado}</span>{:else}{g.espejo.resultado}{/if}</p>
+                <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(g.espejo.resultado ?? "")} /></span>{:else}{g.espejo.resultado}{/if}</p>
               {/if}
             </div>
             {:else}
@@ -1566,7 +1567,7 @@
                   <span class="d-texto">
                     <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
                     <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosPropios.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
-                    {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado}</span>{/if}
+                    {#if e === "error" && t.resultado}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /></span>{/if}
                   </span>
                   <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
                 </li>

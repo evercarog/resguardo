@@ -5,6 +5,7 @@
 // carpeta de sus espejos), si es inmutable, qué la usa, lo que ocupa y el estado de
 // la conexión según la última subida de sus espejos (el agente no manda otro dato:
 // no hay una orden «probar la nube»). Sin nada de Svelte.
+import { fraseError } from "./errorCopia";
 import type { DestinoCatalogo, EspacioVolumen, Equipo, RepositorioResumen, TrabajoEspejoResumen } from "./tipos";
 import { destinoDe } from "./repo";
 import { claveNube, type DestinoVista } from "./destinos";
@@ -78,7 +79,7 @@ export function conexionDe(espejos: Pick<EspejoEnNube, "trabajo">[]): Conexion {
   if (!ts.length) return { tono: "neutral", texto: espejos.length ? "Sin subidas todavía" : "Ningún espejo sube aquí", cuando: null, error: null };
   const ultima = [...ts].sort((a, b) => (b.ultima ?? "").localeCompare(a.ultima ?? ""))[0];
   const mal = estadoTrabajo(ultima) === "error";
-  if (mal) return { tono: "bad", texto: "La última subida falló", cuando: ultima.ultima ?? null, error: (ultima.resultado ?? "").replace(/^ERROR:\s*/, "") || null };
+  if (mal) return { tono: "bad", texto: "La última subida falló", cuando: ultima.ultima ?? null, error: fraseError((ultima.resultado ?? "").replace(/^ERROR:\s*/, "")) || null };
   return { tono: "ok", texto: "Responde", cuando: ultima.ultima ?? null, error: null };
 }
 

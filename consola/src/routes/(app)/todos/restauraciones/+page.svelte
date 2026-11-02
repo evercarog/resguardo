@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // «Todos los clientes» → Restauraciones (plan 0.8.0, D4, 14xx; 13d): el registro de
   // restauraciones de todos los clientes de la cuenta (GET /api/panel/restauraciones),
   // la más reciente primero, con sus cifras (cuántas, éxito, tiempo medio). Cada fila
@@ -93,7 +94,7 @@
             {:else}
               <span class="det">{plural(r.elementos ?? 0, "elemento", "elementos")}{r.bytes ? ` · ${bytes(r.bytes)}` : ""} · {textoDestino(r.destino)} · {textoQuien(r)}{#if r.motivoFinal}{" · "}{textoMotivo(r.motivoFinal.tipo)}{/if}</span>
             {/if}
-            {#if r.resultado !== "ok" && r.mensaje}<span class="det mal">{r.mensaje}</span>{/if}
+            {#if r.resultado !== "ok" && r.mensaje}<span class="det mal"><ErrorCopia mensaje={r.mensaje} /></span>{/if}
           </span>
           <span class="cuando num">{relativo(r.hora, reloj.ahora)}<span class="faint">tardó {textoTardo(r.duracion_s)}</span></span>
         </li>

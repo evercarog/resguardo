@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // La página de un destino (como la de un repositorio): una zona de un
   // almacén, un disco o carpeta de un equipo, una nube o un destino suelto del
   // catálogo. Cabecera con su nombre, qué es, dónde está y sus acciones
@@ -286,7 +287,7 @@
                 <Chip pequeno tono={x.estado === "error" ? "bad" : x.estado === "ok" ? "ok" : x.estado === "pausado" ? "paused" : "neutral"} texto={x.estado === "error" ? "Falló" : x.estado === "ok" ? "Al día" : x.estado === "pausado" ? "En pausa" : "Todavía no"} />
                 <ArrowRight size={14} class="flecha" />
               </a>
-              {#if x.estado === "error" && x.trabajo.resultado}<p class="faint mal-espejo">{x.trabajo.resultado.replace(/^ERROR:\s*/, "")}</p>{/if}
+              {#if x.estado === "error" && x.trabajo.resultado}<div class="faint mal-espejo"><ErrorCopia mensaje={x.trabajo.resultado.replace(/^ERROR:\s*/, "")} /></div>{/if}
               {#if x.filas.length}
                 <ul class="lista-d dentro">
                   {#each x.filas as f (f.valor)}

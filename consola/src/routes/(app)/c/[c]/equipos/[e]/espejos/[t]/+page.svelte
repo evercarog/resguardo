@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   import PruebasEspejo from "$lib/componentes/pruebas/PruebasEspejo.svelte";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
@@ -200,7 +201,7 @@
     {#if t.nunca_bien}
       <div class="notice notice-info"><Info size={16} /><p>Aún no ha terminado ninguna subida{t.ultima ? " bien" : ""}: hasta entonces no protege nada, así que se puede cambiar o quitar sin esperar.</p></div>
     {/if}
-    {#if estado === "error" && t.resultado}<div class="notice notice-danger"><ShieldAlert size={16} /><p>{t.resultado.replace(/^ERROR:\s*/, "")}</p></div>{/if}
+    {#if estado === "error" && t.resultado}<div class="notice notice-danger"><ShieldAlert size={16} /><div><ErrorCopia mensaje={t.resultado.replace(/^ERROR:\s*/, "")} /></div></div>{/if}
     {#if t.freno_aviso || t.retenidos}
       <div class="notice notice-warn"><ShieldAlert size={16} /><p><strong>Freno:</strong> {t.freno_aviso ? t.freno_aviso.replace(/\.?$/, ".") : `se conservan ${plural(t.retenidos?.archivos ?? 0, "archivo", "archivos")} que faltan en el original.`} Confírmalo desde <a href={hrefEspejos(c, id)}>los espejos de {equipo.nombre}</a> si sabes por qué falta.</p></div>
     {/if}
@@ -257,7 +258,7 @@
                     {#if f.borrados}<span class="faint"><Trash2 size={12} aria-hidden="true" /> quitó {plural(f.borrados, "archivo", "archivos")} ({bytes(f.borrados_bytes ?? 0)})</span>{/if}
                     {#if f.verificados}<span class="faint">comprobó {plural(f.verificados, "archivo", "archivos")}{f.mal ? `, ${f.mal} mal` : ""}</span>{/if}
                   {:else}
-                    <span class="error">{f.error ?? "Falló"}</span>
+                    <span class="error">{#if f.error}<ErrorCopia mensaje={f.error} />{:else}Falló{/if}</span>
                   {/if}
                 </div>
                 <Chip pequeno tono={f.resultado === "ok" ? (f.mal ? "warn" : "ok") : "bad"} texto={f.resultado === "ok" ? (f.mal ? "Con avisos" : "Bien") : "Falló"} />

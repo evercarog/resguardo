@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fraseError } from "$lib/errorCopia";
   import { tip } from "$lib/tooltip";
   // «Desde otras consolas» en Órdenes (v1.49, docs/consolas-multiples.md §5.8): lo que
   // los equipos con más de una consola cuentan en su historial de las órdenes que les
@@ -69,7 +70,7 @@
                 Desde {h.consola ? `«${h.consola}»` : "otra consola"}{#if h.por}{" · "}pedida por {h.por}{/if}
                 {#if h.cancelada_desde}{" · "}cancelada desde «{h.cancelada_desde}»{/if}
                 {#if h.aprobada_en_equipo}{" · "}<strong class="aprobada">aprobada en el equipo por {h.aprobada_en_equipo}</strong>{/if}
-                {#if h.mensaje && resultadoOrden(h) !== "hecha"}{" · "}{mensajeOrden(h.orden, h.mensaje)}{/if}
+                {#if h.mensaje && resultadoOrden(h) !== "hecha"}{" · "}{fraseError(mensajeOrden(h.orden, h.mensaje)) || mensajeOrden(h.orden, h.mensaje)}{/if}
               </span>
             </span>
             <span class="lado">

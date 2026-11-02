@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   import PruebasEspejo from "$lib/componentes/pruebas/PruebasEspejo.svelte";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { tip } from "$lib/tooltip";
@@ -363,7 +364,7 @@
             <dt>Verificación</dt>
             <dd>
               {#if verif?.ultima}<Chip pequeno tono={TONO_TAREA[verif.resultado]} texto={TEXTO_TAREA[verif.resultado]} /> <Tiempo iso={verif.ultima} />{:else}<span class="faint">Todavía no</span>{/if}
-              {#if verif?.mensaje_corto}<span class="faint msg">{verif.mensaje_corto}</span>{/if}
+              {#if verif?.mensaje_corto}<span class="faint msg">{#if verif.resultado === "fallo"}<ErrorCopia mensaje={verif.mensaje_corto} detalle={verif.detalle} />{:else}{verif.mensaje_corto}{/if}</span>{/if}
               <!-- v1.28: la automática del equipo (cada N días, rotativa) y, en un almacén, la del almacén. -->
               {#if repo.verificacion_auto}
                 {@const va = repo.verificacion_auto}
@@ -388,7 +389,7 @@
             <dt>Prueba de restauración</dt>
             <dd>
               {#if prueba?.ultima}<Chip pequeno tono={TONO_TAREA[prueba.resultado]} texto={TEXTO_TAREA[prueba.resultado]} /> <Tiempo iso={prueba.ultima} />{:else}<span class="faint">Todavía no</span>{/if}
-              {#if prueba?.mensaje_corto}<span class="faint msg">{prueba.mensaje_corto}</span>{/if}
+              {#if prueba?.mensaje_corto}<span class="faint msg">{#if prueba.resultado === "fallo"}<ErrorCopia mensaje={prueba.mensaje_corto} detalle={prueba.detalle} />{:else}{prueba.mensaje_corto}{/if}</span>{/if}
             </dd>
           </div>
           <div id="kit">
@@ -421,7 +422,7 @@
                   {#if inf?.externa?.ultima}<Chip pequeno tono={TONO_TAREA[inf.externa.resultado]} texto={TEXTO_TAREA[inf.externa.resultado]} /> <Tiempo iso={inf.externa.ultima} />{" · "}{/if}
                   <a class="link-suave" href={hrefDerivada(c, e, rid, "externa")}>A «{repo.externa.destino}» cada día a las {repo.externa.hora}</a>{#if !inf?.externa?.ultima}<span class="faint">, todavía sin ninguna</span>{/if}
                 </span>
-                {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg">{inf.externa.mensaje_corto}</span>{/if}
+                {#if inf?.externa?.resultado === "fallo" && inf.externa.mensaje_corto}<span class="faint msg"><ErrorCopia mensaje={inf.externa.mensaje_corto} detalle={inf.externa.detalle} /></span>{/if}
                 <!-- 14nn: también aquí (antes, solo en «Más…» de la ficha del equipo). -->
                 {#if puedeQuitarExterna}<span class="msg"><button type="button" class="btn btn-sm" onclick={quitarExterna}>Quitar la copia derivada</button></span>{/if}
               {/if}
@@ -436,7 +437,7 @@
                   <!-- 14nn: su destino ya no existe: «Quitar» también desde aquí. -->
                   <span class="msg aviso-ret">{textoDestinoAusente(u)}</span>
                   {#if puede.ordenar(rol) && !repo.solo_lectura}<span class="msg"><button type="button" class="btn btn-sm" onclick={() => quitarDerivada(dv.id, dv.destino ?? null)}>Quitar esta copia</button></span>{/if}
-                {:else if u?.resultado === "fallo" && u.mensaje_corto}<span class="faint msg">{u.mensaje_corto}</span>{/if}
+                {:else if u?.resultado === "fallo" && u.mensaje_corto}<span class="faint msg"><ErrorCopia mensaje={u.mensaje_corto} detalle={u.detalle} /></span>{/if}
               {/each}
               {#if !repo.externa && !(repo.derivadas ?? []).length}<span class="faint">No tiene</span>{/if}
             </dd>
@@ -451,7 +452,7 @@
                   <span class="faint msg">La aplica el almacén {enAlm.almacen.nombre} {ra.horario_texto ?? textoHorario(ra.horario)}{ra.verificar ? " y después comprueba el repositorio" : ""}.</span>
                   {#if ra.clave === "pendiente"}<span class="msg aviso-ret">Su clave aún no abre el repositorio: vuelve a guardar la retención con {equipo.nombre} encendido.</span>{/if}
                   {#if ra.ultima}
-                    <span class="msg"><Chip pequeno tono={ra.resultado === "ok" ? "ok" : "bad"} texto={ra.resultado === "ok" ? "Aplicada" : "Falló"} /> <Tiempo iso={ra.ultima} />{#if ra.mensaje}<span class="faint">{" · "}{ra.mensaje}</span>{/if}</span>
+                    <span class="msg"><Chip pequeno tono={ra.resultado === "ok" ? "ok" : "bad"} texto={ra.resultado === "ok" ? "Aplicada" : "Falló"} /> <Tiempo iso={ra.ultima} />{#if ra.mensaje}<span class="faint">{" · "}{#if ra.resultado === "ok"}{ra.mensaje}{:else}<ErrorCopia mensaje={ra.mensaje} />{/if}</span>{/if}</span>
                   {:else}
                     <span class="faint msg">Todavía no se ha aplicado.</span>
                   {/if}

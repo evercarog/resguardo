@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // Órdenes con su estado, quién las pidió, la respuesta del equipo y si esa
   // respuesta está firmada por él. Las que aún se pueden cancelar, con su botón.
   import { tip } from "$lib/tooltip";
@@ -79,7 +80,7 @@
         {#if o.not_before}{" · "}espera hasta <time datetime={o.not_before}>{fechaLarga(o.not_before)}</time>{/if}
       </p>
       <!-- v1.58: lo que no se aplicó dice por qué (antes, una caducada no decía nada). -->
-      {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje}<p class="mensaje">{mensajeOrden(o.tipo, o.mensaje)}</p>{/if}
+      {#if porQueNoSeAplico(o)}<p class="mensaje motivo">{porQueNoSeAplico(o)}</p>{:else if o.mensaje && (o.estado === "fallida" || o.estado === "rechazada")}<div class="mensaje"><ErrorCopia mensaje={mensajeOrden(o.tipo, o.mensaje)} /></div>{:else if o.mensaje}<p class="mensaje">{mensajeOrden(o.tipo, o.mensaje)}</p>{/if}
       <div class="pie">
         <!-- Sin la ficha del equipo (aún cargando o de otro cliente) no se puede comprobar: no se dice nada. -->
         {#if o.firma_agente && eq}
