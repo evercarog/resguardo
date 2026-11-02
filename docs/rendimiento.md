@@ -95,3 +95,29 @@ Medido con las respuestas del simulador (compilación *release*, el mismo equipo
 | `…/resumen` | 663 KB | 96 KB (14,4 %) | 6 ms |
 
 Con esto, lo que baja Estado al cargarlo pasa de 12,8 MB a ~1,8 MB, y lo que pide en reposo de ~3,1 MB a ~0,45 MB por minuto; «Todos los clientes» en reposo, de 10 MB a ~1,7 MB por minuto. (Calculado con los tamaños de arriba: el simulador no comprime, así que esta parte no sale en la medida del navegador.) A cambio, unos 100 ms de procesador del servidor cada vez que alguien abre un cliente de 200 equipos, y ~50 ms cada 30 s por pestaña de «Todos los clientes».
+
+## Resumen: antes y después
+
+Con el simulador de 200 equipos y 600 repositorios (los tiempos, con el equipo cargado por otras compilaciones; los bytes y los elementos no dependen de eso):
+
+| | Antes | Después |
+|---|---|---|
+| Estado, carga sin caché | 8,8 s · 24,9 MB de la API · 199 765 elementos | 4,2 s · 12,8 MB (~1,8 MB en gzip) · 41 794 elementos |
+| Equipos, carga sin caché | 2,3 s · 24,9 MB | 1,4 s · 12,8 MB (~1,8 MB en gzip) |
+| Copias, carga sin caché | 6,1 s · 24,9 MB · JavaScript 6,1 s | 3,8 s · 12,8 MB (~1,8 MB en gzip) · JavaScript 2,8 s |
+| Todos los clientes, carga | 2,5 s · 5,0 MB | 2,4 s · 5,0 MB (~0,85 MB en gzip) |
+| Copias → Estado dentro de la consola | 9,9 s | 2,9 s |
+| Equipos a «Mapa» | 1,9 s | 1,4 s |
+| Una pestaña quieta en Estado, Equipos o Copias, por minuto | 51 MB | 3,1 MB (~0,45 MB en gzip) |
+| Una pestaña quieta en «Todos los clientes», por minuto | 10 MB | 10 MB (~1,7 MB en gzip) |
+| La consola entera (JavaScript, CSS, HTML) | 3,55 MB | 1,08 MB en brotli |
+| Lo que baja la primera página (HTML y lo que precarga) | 321 KB | 93 KB en brotli |
+
+Comprobado contra el servidor de verdad (compilado con `consola-integrada`, sin TLS en 127.0.0.1): el archivo de arranque llega sin `Content-Encoding` si no se pide, en gzip con `Accept-Encoding: gzip`, en brotli con `gzip, deflate, br`, siempre con `Vary: accept-encoding`, su `ETag` y la misma CSP; `index.html` con `If-None-Match` contesta 304.
+
+## Lo que queda (para decidir)
+
+- **Copias** sigue pintando una fila por copia con su camino (~120 000 elementos, ~2,8 s de JavaScript con 600 copias) y **Equipos**, ~52 000: son las «tablas largas» de 16t (otra rama). Una lista virtual o «Ver más» por tandas lo arreglaría; no se tocó aquí para no pisar ese trabajo.
+- **«Todos los clientes»** pide `/api/panel` entero cada 30 s (5 MB con un cliente de 200 equipos, ya acotado a 4 MiB de informes por el servidor). Con gzip baja a ~0,8 MB; para bajar más haría falta pedir solo lo que cambió (como `…/informes?desde=`), con cuidado porque el panel recorta informes cuando no caben.
+- **`…/resumen`** (663 KB con 200 equipos) se pide entero cada 15 s sin canal en vivo (cada 60 s con él). Con gzip, ~96 KB.
+- **16x, pasos 1 a 6** (prioridad de disco baja en las copias, `prune --max-unused`, paquetes más grandes hacia la nube, transferencias de rclone, memoria de restic, lo que hace el agente en reposo): cambian cómo copia el agente y solo se pueden medir con copias de verdad (restic y rclone contra discos y nubes reales, con datos de tamaño real) en el laboratorio de máquinas virtuales ([pruebas-reales.md](pruebas-reales.md)); el simulador no sirve para eso. No se tocaron: quedan para esa medida, con valores prudentes y ajustables por copia como pide 16x.

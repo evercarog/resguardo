@@ -1,6 +1,6 @@
 # Capacidad: cuánto pide la consola y cuánto aguanta el servidor
 
-Qué carga ponen las consolas abiertas y los equipos sobre Resguardo Server, los límites que la protegen y lo medido (octubre de 2026, contrato v1.42).
+Qué carga ponen las consolas abiertas y los equipos sobre Resguardo Server, los límites que la protegen y lo medido (octubre de 2026, contrato v1.42). Con muchos equipos en un cliente (200 equipos, 600 repositorios): [rendimiento.md](rendimiento.md).
 
 ## Lo que pide una consola abierta
 
